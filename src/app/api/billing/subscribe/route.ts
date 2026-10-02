@@ -46,10 +46,7 @@ export async function POST(request: Request) {
     return Response.json({ demo: true });
   }
   if (!paymentsEnabled()) {
-    return Response.json(
-      { error: "Payments aren't switched on yet. Add a Stripe key to turn on plans." },
-      { status: 503 },
-    );
+    return Response.json({ error: "Paid plans and top-ups are coming soon." }, { status: 503 });
   }
   try {
     const customer = await one<{ customer: string }>(

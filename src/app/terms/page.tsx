@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { COMPANY, CONTACT, LegalPage } from "@/components/LegalPage";
 
-export const metadata: Metadata = { title: "Terms of Service · Flash AI" };
+export const metadata: Metadata = { title: "Terms of Service" };
 
 export default function Terms() {
   return (
@@ -20,8 +20,8 @@ export default function Terms() {
 
       <h2>2. What Flash does</h2>
       <p>
-        Flash sends your requests to third-party AI providers (such as Anthropic, OpenAI, ElevenLabs and models offered
-        through fal.ai) and returns their results. Features, models and providers may change over time.
+        Flash sends your requests to third-party AI providers (such as Anthropic, and Groq, OpenRouter and Cloudflare
+        for free open-source models) and returns their results. Features, models and providers may change over time.
       </p>
 
       <h2>3. Credits and payments</h2>
@@ -57,7 +57,7 @@ export default function Terms() {
           Credits used by a request that fails are returned automatically. Other purchases are non-refundable, except
           where the law requires otherwise. Contact us if you were charged in error.
         </li>
-        <li>Payments are processed by Stripe. We do not store your card details.</li>
+        <li>When paid plans are available, payments are processed by Stripe. We do not store your card details.</li>
       </ul>
 
       <h2>4. Acceptable use</h2>

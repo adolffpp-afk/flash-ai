@@ -1,4 +1,5 @@
 import type { Media } from "./media.ts";
+import { FriendlyError } from "./errors.ts";
 
 // fal.ai runs hundreds of image, video and music models behind one key and one queue API.
 const FAL_QUEUE = process.env.FAL_BASE_URL || "https://queue.fal.run";
@@ -46,7 +47,7 @@ export async function falGenerate(
 
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    if (Date.now() > deadline) throw new Error("This is taking too long. Please try again.");
+    if (Date.now() > deadline) throw new FriendlyError("This is taking too long. Please try again.");
     const poll = await fetch(job.status_url, { headers: headers() });
     if (!poll.ok) throw await failure(poll);
     const status = (await poll.json()) as { status: string; queue_position?: number };
@@ -58,7 +59,7 @@ export async function falGenerate(
   const res = await fetch(job.response_url, { headers: headers() });
   if (!res.ok) throw await failure(res);
   const file = findFile(await res.json());
-  if (!file) throw new Error("The model finished but sent nothing back.");
+  if (!file) throw new FriendlyError("The model finished but sent nothing back. Please try again.");
   const download = await fetch(file.url);
   if (!download.ok) throw await failure(download);
   return {

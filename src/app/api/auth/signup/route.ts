@@ -33,11 +33,13 @@ export async function POST(request: Request) {
     now(),
   ]);
   await ensureMonthlyCredits(id);
-  // The account works even if the email can't be sent; the user can ask for it again.
+  // The account works even if the email can't be sent; the banner asks the user to send it again.
+  let emailFailed = false;
   const devLink = await sendVerification({ id, email }, new URL(request.url).origin).catch((err) => {
     console.error("[flash] verification email failed", err);
+    emailFailed = true;
     return undefined;
   });
   const cookie = await createSession(id, isSecure(request));
-  return Response.json({ ok: true, devLink }, { headers: { "Set-Cookie": cookie } });
+  return Response.json({ ok: true, devLink, emailFailed }, { headers: { "Set-Cookie": cookie } });
 }

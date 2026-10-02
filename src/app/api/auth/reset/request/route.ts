@@ -9,7 +9,7 @@ const HOUR = 3600_000;
 export async function POST(request: Request) {
   if (!emailEnabled() && !demoEmails()) {
     return Response.json(
-      { error: "Password reset isn't switched on yet. Contact the site owner for help." },
+      { error: `Password reset isn't available right now. Email ${process.env.FLASH_CONTACT_EMAIL || "support@flash-app.dev"} for help.` },
       { status: 503 },
     );
   }

@@ -1,28 +1,7 @@
-import { claudeConfigured } from "@/lib/engines/claude.ts";
-import { elevenConfigured, openaiConfigured } from "@/lib/engines/media.ts";
-import { falConfigured } from "@/lib/engines/fal.ts";
-import type { Engine } from "@/lib/types.ts";
+import { engineStatus } from "@/lib/server/status.ts";
 
 export const dynamic = "force-dynamic";
 
 export function GET() {
-  const claude = claudeConfigured();
-  const openai = openaiConfigured();
-  const eleven = elevenConfigured();
-  const fal = falConfigured();
-  const status: Record<Engine, boolean> = {
-    text: claude,
-    search: claude,
-    code: claude,
-    translate: claude,
-    docs: claude,
-    image: openai || fal,
-    video: openai || fal,
-    voice: eleven,
-    music: eleven || fal,
-    transcribe: eleven,
-    app: claude,
-    slides: claude,
-  };
-  return Response.json(status);
+  return Response.json(engineStatus());
 }

@@ -74,8 +74,8 @@ export type CreditPack = { id: string; name: string; credits: number; priceCents
 // One-off top-ups. Plans give more credits per dollar, like Lovable's and Emergent's.
 export const CREDIT_PACKS: CreditPack[] = [
   { id: "starter", name: "Starter", credits: 500, priceCents: 500, blurb: "About 120 chats or 4 apps" },
-  { id: "creator", name: "Creator", credits: 2200, priceCents: 2000, blurb: "Apps, images and music for a busy week" },
-  { id: "studio", name: "Studio", credits: 5800, priceCents: 5000, blurb: "Heavy app building and video" },
+  { id: "creator", name: "Creator", credits: 2200, priceCents: 2000, blurb: "Apps, slides and research for a busy week" },
+  { id: "studio", name: "Studio", credits: 5800, priceCents: 5000, blurb: "Heavy app building" },
 ];
 
 /*
@@ -102,7 +102,7 @@ export const PLANS: Plan[] = [
     yearlyPriceCents: 2000,
     credits: 3000,
     blurb: "For makers who build every week",
-    features: ["3,000 credits a month", "About 25 apps or 700 chats", "Every model, including video", "Unused credits carry over"],
+    features: ["3,000 credits a month", "About 25 apps or 700 chats", "Writing, research, code, apps and slides", "Unused credits carry over"],
   },
   {
     id: "power",
@@ -110,8 +110,8 @@ export const PLANS: Plan[] = [
     priceCents: 5000,
     yearlyPriceCents: 4000,
     credits: 6500,
-    blurb: "For daily building, images and music",
-    features: ["6,500 credits a month", "About 55 apps or 1,600 chats", "Every model, including video", "Unused credits carry over"],
+    blurb: "For daily building and research",
+    features: ["6,500 credits a month", "About 55 apps or 1,600 chats", "Writing, research, code, apps and slides", "Unused credits carry over"],
   },
   {
     id: "max",
@@ -119,8 +119,8 @@ export const PLANS: Plan[] = [
     priceCents: 20000,
     yearlyPriceCents: 16000,
     credits: 28000,
-    blurb: "For studios and heavy video work",
-    features: ["28,000 credits a month", "About 35 Veo videos or 230 apps", "Every model, including video", "Unused credits carry over"],
+    blurb: "For studios and heavy app building",
+    features: ["28,000 credits a month", "About 230 apps or 7,000 chats", "Writing, research, code, apps and slides", "Unused credits carry over"],
   },
 ];
 

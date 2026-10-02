@@ -1,3 +1,5 @@
+import { FriendlyError } from "./errors.ts";
+
 export const IMAGE_MODEL = process.env.FLASH_IMAGE_MODEL || "gpt-image-2.5-sunburst";
 export const VIDEO_MODEL = process.env.FLASH_VIDEO_MODEL || "sora-2-pro";
 export const VOICE_ID = process.env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM";
@@ -38,7 +40,7 @@ export async function generateImage(prompt: string): Promise<Media> {
     if (!img.ok) throw await failure(img, "The image service");
     return { data: Buffer.from(await img.arrayBuffer()), mime: img.headers.get("content-type") ?? "image/png" };
   }
-  throw new Error("The image service returned no image.");
+  throw new FriendlyError("The image service sent no image back. Please try again.");
 }
 
 /**
@@ -55,7 +57,7 @@ export async function generateVideo(prompt: string, onProgress: (pct: number) =>
   let job = (await res.json()) as { id: string; status: string; progress?: number; error?: { message?: string } };
   const deadline = Date.now() + 9 * 60 * 1000;
   while (job.status === "queued" || job.status === "in_progress") {
-    if (Date.now() > deadline) throw new Error("The video is taking too long. Please try again.");
+    if (Date.now() > deadline) throw new FriendlyError("The video is taking too long. Please try again.");
     await sleep(5000);
     const poll = await fetch(`${OPENAI}/videos/${job.id}`, { headers: openaiHeaders() });
     if (!poll.ok) throw await failure(poll, "The video service");

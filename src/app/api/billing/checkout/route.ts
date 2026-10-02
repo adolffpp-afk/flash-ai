@@ -16,10 +16,7 @@ export async function POST(request: Request) {
     return Response.json({ demo: true });
   }
   if (!paymentsEnabled()) {
-    return Response.json(
-      { error: "Payments aren't switched on yet. Add a Stripe key to turn on credit purchases." },
-      { status: 503 },
-    );
+    return Response.json({ error: "Paid plans and top-ups are coming soon." }, { status: 503 });
   }
   try {
     const url = await createCheckout(pack, user.id, user.email, new URL(request.url).origin);

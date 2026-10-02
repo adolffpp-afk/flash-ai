@@ -10,7 +10,7 @@ export const demoEmails = () => !emailEnabled() && process.env.FLASH_DEMO_EMAILS
 /** Whether new accounts must confirm their email before getting free credits. */
 export const verificationRequired = () => emailEnabled() || demoEmails();
 
-const FROM = () => process.env.FLASH_EMAIL_FROM || "Flash AI <hello@example.com>";
+const FROM = () => process.env.FLASH_EMAIL_FROM || "Flash AI <hello@flash-app.dev>";
 
 function layout(heading: string, body: string, button: string, link: string): string {
   return `<!doctype html><html><body style="margin:0;background:#f4f4f5;font-family:system-ui,-apple-system,Segoe UI,sans-serif">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ENGINES, ENGINE_LABELS, type Engine } from "@/lib/types";
 import { api, type Me } from "@/lib/store";
 import { IntervalToggle, PlanCards, type Interval } from "./PlanCards";
@@ -24,6 +24,18 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
   const [message, setMessage] = useState("");
   const [billing, setBilling] = useState<Interval>(me.plan?.interval ?? "month");
   const plan = me.plan;
+  // Plans and top-ups can't be bought until payments are switched on.
+  const canBuy = me.paymentsEnabled || me.testPurchases;
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  // Runs once on open: focus starts on Close, and Escape closes the dialog.
+  useEffect(() => {
+    closeRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function subscribe(planId: string) {
     setBusy(planId);
@@ -83,6 +95,7 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
     <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-4" onClick={onClose}>
       <div
         role="dialog"
+        aria-modal="true"
         aria-label="Credits"
         className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-t-2xl border border-zinc-800 bg-zinc-950 p-6 sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
@@ -110,7 +123,7 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
               </p>
             )}
           </div>
-          <button onClick={onClose} className="rounded-lg p-2 text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100" aria-label="Close">
+          <button ref={closeRef} onClick={onClose} className="rounded-lg p-2 text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100" aria-label="Close">
             ✕
           </button>
         </div>
@@ -131,7 +144,7 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
           </div>
         </div>
         <div className="mt-3">
-          <PlanCards pricing={me} interval={billing} current={plan} busy={busy} onPick={subscribe} compact />
+          <PlanCards pricing={me} interval={billing} current={plan} busy={busy} onPick={subscribe} comingSoon={!canBuy} compact />
         </div>
         {plan && (
           <p className="mt-2 text-xs text-zinc-500">
@@ -155,17 +168,19 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
               <p className="mb-3 mt-2 text-xs text-zinc-500">{p.blurb}</p>
               <button
                 onClick={() => buy(p.id)}
-                disabled={busy !== null}
+                disabled={busy !== null || !canBuy}
                 className="mt-auto w-full rounded-lg bg-gradient-to-r from-indigo-600 to-fuchsia-600 py-2 text-sm font-medium text-white hover:brightness-110 disabled:opacity-50"
               >
-                {busy === p.id ? "Opening…" : "Buy"}
+                {!canBuy ? "Coming soon" : busy === p.id ? "Opening…" : "Buy"}
               </button>
             </div>
           ))}
         </div>
         {message && <p className="mt-3 text-sm text-amber-300">{message}</p>}
-        {!me.paymentsEnabled && !message && (
-          <p className="mt-3 text-xs text-zinc-500">Payments switch on once a Stripe key is added.</p>
+        {!canBuy && !message && (
+          <p className="mt-3 text-xs text-zinc-500">
+            Paid plans and top-ups are coming soon. Your free credits refill on the 1st of each month.
+          </p>
         )}
 
         {me.freeLane.chats > 0 && (
@@ -196,7 +211,7 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
               <span className="w-40 shrink-0 text-zinc-200">{m.label}</span>
               <span className="min-w-0 flex-1 text-xs text-zinc-500">
                 {m.blurb}
-                {!m.live && <span className="ml-1 text-amber-400/80">(not set up)</span>}
+                {!m.live && <span className="ml-1 text-zinc-400">(coming soon)</span>}
               </span>
               <span className="shrink-0">{m.credits}</span>
             </li>

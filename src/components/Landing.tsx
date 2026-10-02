@@ -28,10 +28,23 @@ const STEPS = [
   { title: "Keep, download or publish", text: "Everything is saved in your projects. Apps go live with one click." },
 ];
 
-const FAQ = [
+// Lists words the way a sentence would: "a", "a and b", "a, b and c".
+const join = (words: string[]) => (words.length > 1 ? `${words.slice(0, -1).join(", ")} and ${words.at(-1)}` : (words[0] ?? ""));
+
+// What the media engines make, in the order the copy lists them.
+const MEDIA_WORDS: [Engine, string][] = [
+  ["image", "images"],
+  ["video", "video"],
+  ["music", "music"],
+  ["voice", "voice"],
+  ["transcribe", "transcripts"],
+];
+
+/** The questions and answers, worded for the engines that are live and whether plans are on sale. */
+const faq = (live: string[], soon: string[], canBuy: boolean) => [
   {
     q: "What is Flash?",
-    a: "One app that brings together the best AI for each job: writing, research, code, apps, slides, images, video, music, voice and transcripts. You ask once and Flash sends the request to the right model.",
+    a: `One app that brings together the best AI for each job: ${join(["writing", "research", "code", "apps", "slides", "translation", ...live])}. ${soon.length ? `${join(soon).replace(/^./, (c) => c.toUpperCase())} ${soon.length > 1 ? "are" : "is"} coming soon. ` : ""}You ask once and Flash sends the request to the right model.`,
   },
   {
     q: "Do I need to know how to code to build an app?",
@@ -39,15 +52,17 @@ const FAQ = [
   },
   {
     q: "How do credits work?",
-    a: "Every account gets free credits each month. Each request uses credits based on what it costs to make: a short chat answer uses a few, an app or a video uses more. You always see the cost on each reply, and failed requests are free.",
+    a: "Every account gets free credits each month. Each request uses credits based on what it costs to make: a short chat answer uses a few, an app uses more. You always see the cost on each reply, and failed requests are free.",
   },
   {
     q: "Do I need a subscription?",
-    a: "No. The free plan gives you credits every month. Plans give you more credits each month for less per credit, and you can cancel any time. You can also buy one-off top-ups. Unused plan credits carry over, and bought credits don't expire.",
+    a: canBuy
+      ? "No. The free plan gives you credits every month. Plans give you more credits each month for less per credit, and you can cancel any time. You can also buy one-off top-ups. Unused plan credits carry over, and bought credits don't expire."
+      : "No. The free plan gives you credits every month, with no card needed. Paid plans and top-ups are coming soon.",
   },
   {
     q: "What happens when my credits run out?",
-    a: "Chat, writing, code and translation keep working on free open-source models, with a daily allowance, and you can make a few free images a day. App building, video, music, voice and web research need credits.",
+    a: "Chat, writing, code and translation keep working on free open-source models, with a daily allowance. App building and web research need credits, and your free credits refill on the 1st of each month.",
   },
   {
     q: "Can I change or cancel my plan?",
@@ -55,7 +70,7 @@ const FAQ = [
   },
   {
     q: "Which AI models does Flash use?",
-    a: "Leading models from Anthropic (Claude), OpenAI, ElevenLabs and Google, Black Forest Labs, Kuaishou and MiniMax through fal.ai. Flash picks one for each request, or you can choose yourself.",
+    a: "Leading models from Anthropic (Claude), plus free open-source models from Groq, OpenRouter and Cloudflare. Flash picks one for each request, or you can choose yourself.",
   },
   {
     q: "Who owns what I make?",
@@ -67,13 +82,28 @@ const FAQ = [
   },
 ];
 
-export function Landing({ onStart }: { onStart: (mode: "signup" | "login") => void }) {
-  const [pricing, setPricing] = useState<Pricing | null>(null);
+export function Landing({
+  onStart,
+  status,
+  initialPricing,
+}: {
+  onStart: (mode: "signup" | "login") => void;
+  // Which engines are live; the others are marked coming soon. Null while unknown.
+  status: Record<Engine, boolean> | null;
+  initialPricing?: Pricing;
+}) {
+  const [pricing, setPricing] = useState<Pricing | null>(initialPricing ?? null);
   const [billing, setBilling] = useState<Interval>("month");
   useEffect(() => {
-    api<Pricing>("/api/pricing").then(setPricing).catch(() => {});
-  }, []);
+    if (!initialPricing) api<Pricing>("/api/pricing").then(setPricing).catch(() => {});
+  }, [initialPricing]);
   const free = pricing?.freeMonthly;
+  const isLive = (e: Engine) => !status || status[e];
+  const liveCount = status ? ENGINES.filter((e) => status[e]).length : 0;
+  const liveMedia = MEDIA_WORDS.filter(([e]) => isLive(e)).map(([, word]) => word);
+  const soonMedia = MEDIA_WORDS.filter(([e]) => !isLive(e)).map(([, word]) => word);
+  // Until the prices load, plans are assumed to be on sale so nothing flickers to "coming soon".
+  const canBuy = !pricing || pricing.paymentsEnabled || pricing.testPurchases;
 
   const cta =
     "rounded-xl bg-gradient-to-r from-indigo-600 to-fuchsia-600 px-5 py-3 font-medium text-white shadow-lg shadow-fuchsia-500/20 transition hover:brightness-110";
@@ -105,14 +135,15 @@ export function Landing({ onStart }: { onStart: (mode: "signup" | "login") => vo
         <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(99,102,241,0.25),transparent_60%)]" />
         <div className="relative mx-auto max-w-4xl px-4 pb-16 pt-16 text-center sm:pt-24">
           <p className="mx-auto inline-flex rounded-full border border-zinc-800 bg-zinc-900/60 px-3 py-1 text-xs text-zinc-300">
-            12 AI tools · one app · one bill
+            {liveCount ? `${liveCount} AI tools` : "AI tools"} · one app · one bill
           </p>
           <h1 className="mt-6 bg-gradient-to-b from-white to-zinc-400 bg-clip-text text-4xl font-semibold tracking-tight text-transparent sm:text-6xl">
             One AI for everything
           </h1>
           <p className="mx-auto mt-5 max-w-2xl text-lg text-zinc-400">
-            Build and publish apps, make slides, write, research, code and translate, and create images, video, music
-            and voice. Ask once, and Flash picks the best AI for the job.
+            Build and publish apps, make slides, write, research, code and translate
+            {liveMedia.length ? `, and create ${join(liveMedia)}` : ""}. Ask once, and Flash picks the best AI for the
+            job.
           </p>
           <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <button onClick={() => onStart("signup")} className={cta}>
@@ -165,15 +196,20 @@ export function Landing({ onStart }: { onStart: (mode: "signup" | "login") => vo
       <section id="features" className="mx-auto max-w-6xl scroll-mt-16 px-4 py-16">
         <h2 className="text-center text-3xl font-semibold tracking-tight">Everything you&apos;d use five AI apps for</h2>
         <p className="mx-auto mt-3 max-w-2xl text-center text-zinc-400">
-          A chatbot, an app builder, a slide maker, an image and video studio and a music and voice studio, in one
-          place with one account.
+          A chatbot, an app builder, a slide maker and a research assistant, in one place with one account.
+          {soonMedia.length ? ` ${join(soonMedia).replace(/^./, (c) => c.toUpperCase())} ${soonMedia.length > 1 ? "are" : "is"} coming soon.` : ""}
         </p>
         <div className="mt-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {ENGINES.map((e) => (
-            <div key={e} className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+            <div key={e} className={`rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 ${isLive(e) ? "" : "opacity-60"}`}>
               <div className="flex items-center gap-2 font-medium">
                 <span aria-hidden>{ENGINE_COPY[e].icon}</span>
                 {ENGINE_LABELS[e]}
+                {!isLive(e) && (
+                  <span className="ml-auto rounded-full border border-zinc-700 px-2 py-0.5 text-[10px] font-normal uppercase tracking-wide text-zinc-400">
+                    Coming soon
+                  </span>
+                )}
               </div>
               <p className="mt-1.5 text-sm text-zinc-400">{ENGINE_COPY[e].text}</p>
             </div>
@@ -198,20 +234,27 @@ export function Landing({ onStart }: { onStart: (mode: "signup" | "login") => vo
       <section id="pricing" className="mx-auto max-w-5xl scroll-mt-16 px-4 py-16">
         <h2 className="text-center text-3xl font-semibold tracking-tight">Plans for every maker</h2>
         <p className="mx-auto mt-3 max-w-2xl text-center text-zinc-400">
-          Start free. Upgrade for more monthly credits, or top up any time. Cancel whenever you like, and unused
-          credits carry over.
+          {canBuy
+            ? "Start free. Upgrade for more monthly credits, or top up any time. Cancel whenever you like, and unused credits carry over."
+            : "Start free with credits every month. Paid plans and top-ups are coming soon."}
         </p>
         <div className="mt-6 flex justify-center">
           <IntervalToggle value={billing} onChange={setBilling} />
         </div>
         {pricing && (
           <div className="mt-8">
-            <PlanCards pricing={pricing} interval={billing} onFree={() => onStart("signup")} onPick={() => onStart("signup")} />
+            <PlanCards
+              pricing={pricing}
+              interval={billing}
+              onFree={() => onStart("signup")}
+              onPick={() => onStart("signup")}
+              comingSoon={!canBuy}
+            />
           </div>
         )}
         {pricing && (
           <p className="mt-4 text-center text-sm text-zinc-400">
-            Need more? Top up any time:{" "}
+            {canBuy ? "Need more? Top up any time: " : "Top-ups, coming soon: "}
             {pricing.packs.map((p) => `${p.credits.toLocaleString("en-US")} credits for ${money(p.priceCents)}`).join(" · ")}.
             Bought credits never expire.
           </p>
@@ -223,7 +266,7 @@ export function Landing({ onStart }: { onStart: (mode: "signup" | "login") => vo
               {ENGINES.map((e) => (
                 <div key={e} className="flex justify-between border-b border-zinc-900 py-1">
                   <span className="text-zinc-400">{ENGINE_LABELS[e]}</span>
-                  <span>{pricing.limits[e] ? "~" : "from "}{pricing.costs[e]}</span>
+                  <span>{isLive(e) ? `${pricing.limits[e] ? "~" : "from "}${pricing.costs[e]}` : <span className="text-zinc-500">soon</span>}</span>
                 </div>
               ))}
             </div>
@@ -238,7 +281,7 @@ export function Landing({ onStart }: { onStart: (mode: "signup" | "login") => vo
       <section id="faq" className="mx-auto max-w-3xl scroll-mt-16 px-4 pb-16">
         <h2 className="text-center text-3xl font-semibold tracking-tight">Questions</h2>
         <div className="mt-8 divide-y divide-zinc-900 rounded-xl border border-zinc-800">
-          {FAQ.map((f) => (
+          {faq(liveMedia, soonMedia, canBuy).map((f) => (
             <details key={f.q} className="group px-5 py-4">
               <summary className="flex cursor-pointer list-none items-center justify-between font-medium">
                 {f.q}

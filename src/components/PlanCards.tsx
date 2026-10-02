@@ -36,6 +36,7 @@ export function PlanCards({
   busy,
   onFree,
   onPick,
+  comingSoon = false,
   compact = false,
 }: {
   pricing: Pricing;
@@ -44,6 +45,8 @@ export function PlanCards({
   busy?: string | null;
   onFree?: () => void;
   onPick: (plan: string) => void;
+  // Paid plans aren't on sale yet: the landing page offers the free plan instead, the app disables them.
+  comingSoon?: boolean;
   compact?: boolean;
 }) {
   const pad = compact ? "p-4" : "p-5";
@@ -54,7 +57,7 @@ export function PlanCards({
         <div className="mt-1 text-3xl font-semibold">$0</div>
         <div className="text-sm text-zinc-400">{pricing.freeMonthly} credits a month</div>
         <ul className="mb-4 mt-3 space-y-1 text-xs text-zinc-400">
-          <li>✓ Try every tool</li>
+          <li>✓ Try every live tool</li>
           <li>✓ Publish apps</li>
           <li>✓ Tops up on the 1st</li>
           {pricing.freeLane.chats > 0 && (
@@ -83,7 +86,11 @@ export function PlanCards({
           >
             <div className="flex items-baseline justify-between">
               <span className="font-medium">{p.name}</span>
-              {popular && <span className="text-[10px] uppercase tracking-wide text-indigo-300">Popular</span>}
+              {comingSoon ? (
+                <span className="text-[10px] uppercase tracking-wide text-zinc-400">Coming soon</span>
+              ) : (
+                popular && <span className="text-[10px] uppercase tracking-wide text-indigo-300">Popular</span>
+              )}
             </div>
             <div className="mt-1 flex items-baseline gap-1">
               <span className="text-3xl font-semibold">{money(monthly)}</span>
@@ -99,15 +106,25 @@ export function PlanCards({
               ))}
             </ul>
             <button
-              onClick={() => onPick(p.id)}
-              disabled={isCurrent || (busy ?? null) !== null}
+              onClick={() => (comingSoon ? onFree?.() : onPick(p.id))}
+              disabled={isCurrent || (busy ?? null) !== null || (comingSoon && !onFree)}
               className={`mt-auto rounded-lg py-2 text-sm font-medium disabled:opacity-60 ${
                 popular
                   ? "bg-gradient-to-r from-indigo-600 to-fuchsia-600 text-white hover:brightness-110"
                   : "bg-white text-zinc-900 hover:bg-zinc-200"
               }`}
             >
-              {isCurrent ? "Current plan" : busy === p.id ? "Opening…" : current ? `Switch to ${p.name}` : `Get ${p.name}`}
+              {isCurrent
+                ? "Current plan"
+                : comingSoon
+                  ? onFree
+                    ? "Start free for now"
+                    : "Coming soon"
+                  : busy === p.id
+                    ? "Opening…"
+                    : current
+                      ? `Switch to ${p.name}`
+                      : `Get ${p.name}`}
             </button>
           </div>
         );

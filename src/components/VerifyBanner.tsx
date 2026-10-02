@@ -4,24 +4,34 @@ import { useState } from "react";
 import { api } from "@/lib/store";
 
 /** Asks a new user to confirm their email, which unlocks the free monthly credits. */
-export function VerifyBanner({ email, free }: { email: string; free: number }) {
+export function VerifyBanner({ email, free, failed = false }: { email: string; free: number; failed?: boolean }) {
   const [state, setState] = useState<{ busy?: boolean; message?: string; devLink?: string }>({});
+  // Whether sign-up's email didn't go out, until a resend works.
+  const [unsent, setUnsent] = useState(failed);
 
   async function resend() {
     setState({ busy: true });
     try {
       const res = await api<{ devLink?: string }>("/api/auth/verify/send", { method: "POST" });
       setState({ message: `Sent. Check ${email}, including the spam folder.`, devLink: res.devLink });
+      setUnsent(false);
     } catch (err) {
       setState({ message: err instanceof Error ? err.message : "Couldn't send the email." });
     }
   }
 
   return (
-    <div className="rounded-xl border border-indigo-500/40 bg-indigo-500/10 px-4 py-3 text-sm text-indigo-100">
+    <div role="status" className="rounded-xl border border-indigo-500/40 bg-indigo-500/10 px-4 py-3 text-sm text-indigo-100">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <span className="flex-1">
-          Confirm your email to get your {free} free credits. We sent a link to <strong>{email}</strong>.
+          Confirm your email to get your {free} free credits.{" "}
+          {unsent ? (
+            "We couldn't send the email. Press Send again."
+          ) : (
+            <>
+              We sent a link to <strong>{email}</strong>.
+            </>
+          )}
         </span>
         <button
           onClick={resend}

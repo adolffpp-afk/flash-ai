@@ -77,6 +77,13 @@ const markdownComponents: Components = {
   },
 };
 
+/** A download name for an image: data URLs carry their type, and saved files are named by the server. */
+function imageFileName(url: string): string {
+  const type = /^data:image\/([\w+.-]+)/.exec(url)?.[1];
+  if (!type) return "";
+  return `flash-image.${type === "jpeg" ? "jpg" : type === "svg+xml" ? "svg" : type}`;
+}
+
 function plainText(m: UIMessage): string {
   return [m.content, m.after].filter(Boolean).join("\n\n").trim();
 }
@@ -114,10 +121,13 @@ export function Message({
   onRetry,
   onBuyCredits,
   onPublished,
+  paymentsOn = true,
 }: {
   m: UIMessage;
   onRetry?: () => void;
   onBuyCredits?: () => void;
+  // False while plans and top-ups aren't on sale yet, so the copy doesn't offer them.
+  paymentsOn?: boolean;
   onPublished?: (slug: string) => void;
 }) {
   if (m.role === "user") {
@@ -144,7 +154,7 @@ export function Message({
               {ENGINE_LABELS[m.engine]}
             </span>
             <span>{m.reason}</span>
-            {m.demo && <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-300">demo</span>}
+            {m.demo && <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-zinc-300">coming soon</span>}
             {m.model && (
               <span className="rounded-full bg-indigo-500/15 px-2 py-0.5 text-indigo-200" title={`Picked because: ${m.modelWhy ?? ""}`}>
                 {m.model}
@@ -159,7 +169,7 @@ export function Message({
             You&apos;re out of credits, so a free open-source model answered.{" "}
             {onBuyCredits && (
               <button onClick={onBuyCredits} className="text-indigo-300 underline-offset-2 hover:underline">
-                Get credits for the best models
+                {paymentsOn ? "Get credits for the best models" : "See your credits"}
               </button>
             )}
           </p>
@@ -172,7 +182,7 @@ export function Message({
           </div>
         )}
         {m.status && (
-          <div className="mt-2 flex items-center gap-2 text-sm text-zinc-400">
+          <div role="status" className="mt-2 flex items-center gap-2 text-sm text-zinc-400">
             <span className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-600 border-t-indigo-400" />
             {m.status}
           </div>
@@ -191,7 +201,7 @@ export function Message({
               <img src={img.url} alt={img.prompt} className="max-h-[512px] rounded-xl border border-zinc-800" />
               <figcaption className="mt-1 flex gap-3 text-xs text-zinc-500">
                 <span className="line-clamp-2">{img.prompt}</span>
-                <a href={img.url} download="flash-image.png" className="shrink-0 text-indigo-400 hover:underline">
+                <a href={img.url} download={imageFileName(img.url)} className="shrink-0 text-indigo-400 hover:underline">
                   Download
                 </a>
               </figcaption>
@@ -244,23 +254,26 @@ export function Message({
         )}
         {m.stopped && <p className="mt-2 text-xs text-zinc-500">Stopped.</p>}
         {m.error && m.errorCode === "out_of_credits" ? (
-          <div className="mt-2 rounded-xl border border-indigo-500/40 bg-gradient-to-br from-indigo-500/15 to-fuchsia-500/10 p-4 text-sm">
+          <div role="status" className="mt-2 rounded-xl border border-indigo-500/40 bg-gradient-to-br from-indigo-500/15 to-fuchsia-500/10 p-4 text-sm">
             <p className="font-medium text-zinc-100">You&apos;re out of credits for this one</p>
             <p className="mt-1 text-zinc-300">
-              {m.error} Pick a plan or top up to keep going, or wait for your free monthly credits.
+              {m.error}{" "}
+              {paymentsOn
+                ? "Pick a plan or top up to keep going, or wait for your free monthly credits."
+                : "Your free credits refill on the 1st of each month."}
             </p>
             {onBuyCredits && (
               <button
                 onClick={onBuyCredits}
                 className="mt-3 rounded-lg bg-gradient-to-r from-indigo-600 to-fuchsia-600 px-3 py-1.5 text-sm font-medium text-white hover:brightness-110"
               >
-                Get more credits
+                {paymentsOn ? "Get more credits" : "See your credits"}
               </button>
             )}
           </div>
         ) : (
           m.error && (
-            <div className="mt-2 rounded-lg border border-red-900 bg-red-950/50 px-3 py-2 text-sm text-red-300">
+            <div role="status" className="mt-2 rounded-lg border border-red-900 bg-red-950/50 px-3 py-2 text-sm text-red-300">
               {m.error}
             </div>
           )

@@ -11,11 +11,6 @@ const FEATURES = [
   "💻 Code",
   "🌍 Translation",
   "📊 Docs & sheets",
-  "🎨 Images",
-  "🎬 Video",
-  "🎵 Music",
-  "🔊 Voice",
-  "📝 Transcripts",
 ];
 
 export function AuthScreen({
@@ -23,7 +18,8 @@ export function AuthScreen({
   initialMode = "signup",
   onBack,
 }: {
-  onDone: () => void;
+  // Sign-up says when the confirmation email couldn't be sent.
+  onDone: (result?: { emailFailed?: boolean }) => void;
   initialMode?: "signup" | "login";
   onBack?: () => void;
 }) {
@@ -49,11 +45,12 @@ export function AuthScreen({
         );
         return;
       }
-      await api(`/api/auth/${mode}`, {
-        method: "POST",
-        json: { name, email, password },
-      });
-      onDone();
+      onDone(
+        await api<{ emailFailed?: boolean }>(`/api/auth/${mode}`, {
+          method: "POST",
+          json: { name, email, password },
+        }),
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
@@ -117,6 +114,7 @@ export function AuthScreen({
               <input
                 className={input}
                 placeholder="Your name"
+                aria-label="Your name"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 autoComplete="name"
@@ -126,6 +124,7 @@ export function AuthScreen({
               className={input}
               type="email"
               placeholder="Email"
+              aria-label="Email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="email"
@@ -138,6 +137,7 @@ export function AuthScreen({
                 placeholder={
                   mode === "signup" ? "Password (8+ characters)" : "Password"
                 }
+                aria-label="Password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete={
@@ -175,7 +175,11 @@ export function AuthScreen({
               )}
             </div>
           )}
-          {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
+          {error && (
+            <p role="alert" className="mt-3 text-sm text-red-400">
+              {error}
+            </p>
+          )}
           {mode === "signup" && (
             <p className="mt-3 text-xs text-zinc-500">
               By creating an account you agree to the{" "}

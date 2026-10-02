@@ -1,6 +1,7 @@
 import type { ChatTurn, Engine, StreamEvent } from "../types.ts";
 import { system, type WritingMode } from "./claude.ts";
 import type { Media } from "./media.ts";
+import { FriendlyError } from "./errors.ts";
 
 /*
  * The free lane: open-source models on providers' free tiers, used when a user has run out of
@@ -187,7 +188,7 @@ export async function* streamFreeChat(
     await record(p.id, input + output, p.id === "cloudflare" ? cloudflareChatNeurons(input, output) : 0);
     return;
   }
-  throw new Error(
+  throw new FriendlyError(
     lastError
       ? "The free models are busy right now. Please try again in a minute, or get more credits."
       : "Today's free messages are used up across Flash. They reset tomorrow, or you can get more credits.",

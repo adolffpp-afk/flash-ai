@@ -1,5 +1,5 @@
 import { route, textToSpeak } from "@/lib/router.ts";
-import { ENGINES, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types.ts";
+import { ENGINES, ENGINE_LABELS, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types.ts";
 import {
   NO_BUDGET,
   classifyRequest,
@@ -33,7 +33,8 @@ import { saveFile } from "@/lib/server/files.ts";
 import { MARKUP, TRANSCRIBE_COST_CENTS, TYPICAL_CREDITS, creditsFor, planHold, voiceCostCents } from "@/lib/credits.ts";
 import { falConfigured, falGenerate } from "@/lib/engines/fal.ts";
 import { MEDIA_ENGINES, modelCredits, pickModel, videoSeconds, type MediaEngine, type ModelInfo, type Provider } from "@/lib/models.ts";
-import { demoReply } from "@/lib/engines/demo.ts";
+import { unavailableReply } from "@/lib/engines/demo.ts";
+import { FriendlyError } from "@/lib/engines/errors.ts";
 import { streamBuild } from "@/lib/engines/builder.ts";
 
 // Vercel Hobby allows 300 seconds; on Vercel Pro this can go up to 800 for long video jobs.
@@ -112,6 +113,15 @@ const mediaCents = (model: ModelInfo, request: string) =>
 
 type Store = (media: Media, name: string) => Promise<string>;
 
+const EXTENSIONS: Record<string, string> = { jpeg: "jpg", mpeg: "mp3", "svg+xml": "svg", quicktime: "mov" };
+
+/** "flash-image.png" becomes "flash-image.jpg" when the image is really a JPEG. */
+function withExtension(name: string, mime: string): string {
+  const subtype = mime.split("/")[1]?.split(";")[0].trim().toLowerCase();
+  if (!subtype || !/^[\w.+-]+$/.test(subtype)) return name;
+  return name.replace(/\.\w+$/, "") + "." + (EXTENSIONS[subtype] ?? subtype);
+}
+
 async function* run(
   engine: Engine,
   history: ChatTurn[],
@@ -123,7 +133,7 @@ async function* run(
 ): AsyncGenerator<StreamEvent> {
   const last = history[history.length - 1];
   if (isMedia(engine) ? !model : !configured(engine)) {
-    yield* demoReply(engine, last.content);
+    yield* unavailableReply(engine);
     return;
   }
   switch (engine) {
@@ -220,7 +230,7 @@ async function* runFree(
   const last = history[history.length - 1];
   if (lane === "image") {
     if (!(await reserveFreeImage())) {
-      throw new Error("Today's free images are used up across Flash. They reset tomorrow, or you can get more credits.");
+      throw new FriendlyError("Today's free images are used up across Flash. They reset tomorrow, or you can get more credits.");
     }
     used.provider = "cloudflare";
     used.model = "flux-1-schnell";
@@ -271,7 +281,9 @@ export async function POST(request: Request) {
   // Skipped for users out of credits, so the free lane costs Flash nothing.
   if (!override && auto.guessed && !last.attachment && claudeConfigured() && available >= 5) {
     const guess = await classifyRequest(last.content, meter);
-    if (guess && guess !== "text" && guess !== "transcribe") {
+    // A guess is only a guess, so it never sends a request to an engine that isn't available yet.
+    const ready = (e: Engine) => (isMedia(e) ? Boolean(pickModel(e, last.content, providers())) : configured(e));
+    if (guess && guess !== "text" && guess !== "transcribe" && ready(guess)) {
       engine = guess;
       reason = "Flash's router read your request.";
     }
@@ -280,7 +292,7 @@ export async function POST(request: Request) {
   const picked = isMedia(engine) ? pickModel(engine, last.content, providers(), body.model) : null;
   const model = picked?.model ?? null;
 
-  // Demo replies are free. Media has a fixed price per model. Claude engines are charged by
+  // Engines that aren't available yet reply for free. Media has a fixed price per model. Claude engines are charged by
   // length: Flash holds up to a limit, then keeps only what the reply really cost.
   const live = isMedia(engine) ? Boolean(model) : configured(engine);
   const metered = live && !isMedia(engine) && engine !== "voice" && engine !== "transcribe";
@@ -338,7 +350,8 @@ export async function POST(request: Request) {
       { status: 402 },
     );
   }
-  const store: Store = (media, name) => saveFile(user.id, media.mime, name, media.data);
+  // Saved files take the extension of what the provider really sent, so downloads open correctly.
+  const store: Store = (media, name) => saveFile(user.id, media.mime, withExtension(name, media.mime), media.data);
   const preferences = body.preferences ?? user.preferences;
 
   const encoder = new TextEncoder();
@@ -382,7 +395,11 @@ export async function POST(request: Request) {
       } catch (err) {
         console.error(`[flash] ${engine} engine failed`, err);
         ok = false;
-        failure = err instanceof Error ? err.message : "Something went wrong.";
+        // Provider errors can hold raw responses, so only messages written for the user are shown.
+        failure =
+          err instanceof FriendlyError
+            ? err.message
+            : `${engine === "text" ? "Flash" : ENGINE_LABELS[engine]} is busy right now. Please try again in a moment.`;
       }
       const costCents = spend.reduce((sum, s) => sum + s.cents, 0);
       // A failed request costs nothing. A stopped reply is charged what it used, or a typical reply.

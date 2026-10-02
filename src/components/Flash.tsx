@@ -7,7 +7,7 @@ import { Landing } from "./Landing";
 import { VerifyBanner } from "./VerifyBanner";
 import { CreditsDialog } from "./CreditsDialog";
 import { ENGINES, ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types";
-import { api, newId, type Me, type ProjectSummary, type UIMessage } from "@/lib/store";
+import { api, newId, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
 
 // A project's messages are loaded the first time it is opened.
 type Project = ProjectSummary & { messages?: UIMessage[] };
@@ -18,6 +18,13 @@ const ACCEPT =
   "image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,text/markdown,text/csv,.md,.csv,.txt,.json," +
   "audio/*,video/mp4,video/webm,video/quicktime";
 const MAX_FILE_MB = 3;
+// What the image, video, music and voice engines make, for the welcome text.
+const MEDIA_WORDS: [Engine, string][] = [
+  ["image", "images"],
+  ["video", "video"],
+  ["music", "music"],
+  ["voice", "voice"],
+];
 
 const SUGGESTIONS: { icon: string; engine: Engine; text: string }[] = [
   { icon: "🛠️", engine: "app", text: "Build a habit tracker app with streaks and a weekly chart" },
@@ -34,7 +41,7 @@ const SUGGESTIONS: { icon: string; engine: Engine; text: string }[] = [
   { icon: "📝", engine: "transcribe", text: "Attach a recording and get a clean transcript" },
 ];
 
-type Status = Record<Engine, boolean>;
+export type Status = Record<Engine, boolean>;
 
 function applyEvent(m: UIMessage, e: StreamEvent): UIMessage {
   switch (e.type) {
@@ -75,18 +82,30 @@ function readFile(file: File): Promise<Attachment> {
   });
 }
 
-export function Flash() {
+export function Flash({
+  signedIn = true,
+  initialStatus,
+  pricing,
+}: {
+  // False when the browser has no session cookie, so the landing page shows straight away.
+  signedIn?: boolean;
+  initialStatus?: Status;
+  // Prices for the landing page, when the server already has them.
+  pricing?: Pricing;
+}) {
   const [me, setMe] = useState<Me | null>(null);
-  const [signedOut, setSignedOut] = useState(false);
+  const [signedOut, setSignedOut] = useState(!signedIn);
   const [loadError, setLoadError] = useState(false);
   // Signed-out visitors see the landing page until they choose to sign up or sign in.
   const [authMode, setAuthMode] = useState<"signup" | "login" | null>(null);
   const [showCredits, setShowCredits] = useState(false);
   const [notice, setNotice] = useState("");
+  // Set when sign-up couldn't send the confirmation email, so the banner asks to send it again.
+  const [emailFailed, setEmailFailed] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeId, setActiveId] = useState<string>("");
   const [preferences, setPreferences] = useState("");
-  const [status, setStatus] = useState<Status | null>(null);
+  const [status, setStatus] = useState<Status | null>(initialStatus ?? null);
   const [input, setInput] = useState("");
   const [choice, setChoice] = useState<Choice>("auto");
   // Image, video and music model picked per engine; missing means Flash picks.
@@ -123,19 +142,26 @@ export function Flash() {
     if (!data) return;
     setSignedOut(false);
     setPreferences(data.user.preferences);
-    let { projects: list } = await api<{ projects: ProjectSummary[] }>("/api/projects");
-    if (!list.length) list = [(await api<{ project: ProjectSummary }>("/api/projects", { method: "POST", json: { name: "My first project" } })).project];
-    setProjects(list);
-    await openProject(list[0].id);
+    try {
+      let { projects: list } = await api<{ projects: ProjectSummary[] }>("/api/projects");
+      if (!list.length) list = [(await api<{ project: ProjectSummary }>("/api/projects", { method: "POST", json: { name: "My first project" } })).project];
+      setProjects(list);
+      await openProject(list[0].id);
+    } catch {
+      setMe(null);
+      setLoadError(true);
+    }
   }
 
   useEffect(() => {
     // Loading the account must wait for the browser, so this runs once after mount.
-    start();
-    fetch("/api/status")
-      .then((r) => r.json())
-      .then(setStatus)
-      .catch(() => {});
+    if (signedIn) start();
+    if (!initialStatus) {
+      fetch("/api/status")
+        .then((r) => r.json())
+        .then(setStatus)
+        .catch(() => {});
+    }
     const params = new URLSearchParams(window.location.search);
     const purchase = params.get("purchase");
     if (purchase) {
@@ -200,8 +226,8 @@ export function Flash() {
     try {
       const { project } = await api<{ project: Project }>(`/api/projects/${id}`);
       setProjects((list) => list.map((p) => (p.id === id ? { ...p, messages: p.messages ?? project.messages } : p)));
-    } catch (err) {
-      setNotice(err instanceof Error ? err.message : "Couldn't open that project.");
+    } catch {
+      setNotice("Couldn't open that project. Pick it again in the sidebar to try again.");
     }
   }
 
@@ -231,8 +257,13 @@ export function Flash() {
 
   async function deleteProject(id: string) {
     if (!confirm("Delete this project and its history?")) return;
+    try {
+      await api(`/api/projects/${id}`, { method: "DELETE" });
+    } catch {
+      setNotice("Couldn't delete that project. Please try again.");
+      return;
+    }
     dirtyRef.current.delete(id);
-    await api(`/api/projects/${id}`, { method: "DELETE" }).catch(() => {});
     const rest = projects.filter((p) => p.id !== id);
     if (!rest.length) {
       setProjects([]);
@@ -246,9 +277,12 @@ export function Flash() {
   function renameProject(id: string) {
     const current = projects.find((p) => p.id === id);
     const name = prompt("Project name", current?.name)?.trim();
-    if (!name) return;
+    if (!name || !current) return;
     setProjects((list) => list.map((p) => (p.id === id ? { ...p, name } : p)));
-    api(`/api/projects/${id}`, { method: "PUT", json: { name } }).catch(() => {});
+    api(`/api/projects/${id}`, { method: "PUT", json: { name } }).catch(() => {
+      setProjects((list) => list.map((p) => (p.id === id ? { ...p, name: current.name } : p)));
+      setNotice("Couldn't rename that project. Please try again.");
+    });
   }
 
   function changePreferences(value: string) {
@@ -272,7 +306,11 @@ export function Flash() {
   }
 
   async function send(text: string) {
-    if (!active?.messages || busy) return;
+    if (busy) return;
+    if (!active?.messages) {
+      if (active) setNotice("This project didn't load. Pick it again in the sidebar.");
+      return;
+    }
     const content = text.trim();
     if (!content && !attachment) return;
     const userMsg: UIMessage = { id: newId(), role: "user", content, attachmentName: attachment?.name };
@@ -382,6 +420,11 @@ export function Flash() {
       alert(`Files must be ${MAX_FILE_MB} MB or smaller.`);
       return;
     }
+    // Audio and video files go to Transcribe, so say so up front when it isn't available yet.
+    if (/^(audio|video)\//.test(file.type) && status && !status.transcribe) {
+      setNotice("Transcribing audio and video isn't available yet. It's coming soon.");
+      return;
+    }
     setAttachment(await readFile(file));
     inputRef.current?.focus();
   }
@@ -393,13 +436,25 @@ export function Flash() {
   }
 
   const sorted = [...projects].sort((a, b) => b.updated_at - a.updated_at);
-  const demoAll = status && !Object.values(status).some(Boolean);
+  // Engines whose AI provider isn't set up yet show as coming soon, and light up once /api/status says so.
+  const isLive = (e: Engine) => !status || status[e];
+  const liveCount = ENGINES.filter(isLive).length;
+  const allOff = status && !liveCount;
+  const makes = MEDIA_WORDS.filter(([e]) => isLive(e)).map(([, word]) => word);
 
   if (signedOut) {
     return authMode ? (
-      <AuthScreen key={authMode} initialMode={authMode} onDone={start} onBack={() => setAuthMode(null)} />
+      <AuthScreen
+        key={authMode}
+        initialMode={authMode}
+        onDone={(result) => {
+          setEmailFailed(Boolean(result?.emailFailed));
+          start();
+        }}
+        onBack={() => setAuthMode(null)}
+      />
     ) : (
-      <Landing onStart={setAuthMode} />
+      <Landing onStart={setAuthMode} status={status} initialPricing={pricing} />
     );
   }
   if (!me && loadError) {
@@ -459,14 +514,14 @@ export function Flash() {
                 {p.name}
               </button>
               <button
-                className="px-1 text-zinc-500 opacity-0 hover:text-zinc-200 group-hover:opacity-100"
+                className="px-1 text-zinc-500 hover:text-zinc-200 focus:opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
                 onClick={() => renameProject(p.id)}
                 aria-label="Rename project"
               >
                 ✎
               </button>
               <button
-                className="px-2 text-zinc-500 opacity-0 hover:text-red-400 group-hover:opacity-100"
+                className="px-2 text-zinc-500 hover:text-red-400 focus:opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
                 onClick={() => deleteProject(p.id)}
                 aria-label="Delete project"
               >
@@ -490,13 +545,16 @@ export function Flash() {
           {status && (
             <details className="mt-2 text-xs text-zinc-400">
               <summary className="cursor-pointer select-none hover:text-zinc-200">
-                {ENGINES.filter((e) => status[e]).length} of {ENGINES.length} engines live
+                {liveCount === ENGINES.length
+                  ? `All ${liveCount} tools ready`
+                  : `${liveCount} tools ready · ${ENGINES.length - liveCount} coming soon`}
               </summary>
               <div className="mt-2 grid grid-cols-2 gap-1">
                 {ENGINES.map((e) => (
                   <span key={e} className="flex items-center gap-1.5">
-                    <span className={`h-1.5 w-1.5 rounded-full ${status[e] ? "bg-emerald-400" : "bg-amber-400"}`} />
-                    {ENGINE_LABELS[e]} {status[e] ? "live" : "demo"}
+                    <span className={`h-1.5 w-1.5 rounded-full ${status[e] ? "bg-emerald-400" : "bg-zinc-600"}`} />
+                    {ENGINE_LABELS[e]}
+                    {!status[e] && <span className="text-zinc-500">coming soon</span>}
                   </span>
                 ))}
               </div>
@@ -564,18 +622,20 @@ export function Flash() {
         <div className="flex-1 overflow-y-auto">
           <div className="mx-auto max-w-3xl space-y-6 px-4 py-6">
             {notice && (
-              <div className="flex items-start gap-3 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-4 py-3 text-sm text-indigo-100">
+              <div
+                role="status"
+                className="flex items-start gap-3 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-4 py-3 text-sm text-indigo-100"
+              >
                 <span className="flex-1">{notice}</span>
                 <button onClick={() => setNotice("")} aria-label="Dismiss" className="text-indigo-300 hover:text-white">
                   ✕
                 </button>
               </div>
             )}
-            {me && !me.verified && <VerifyBanner email={me.user.email} free={me.freeMonthly} />}
-            {demoAll && (
-              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-                Flash is running in demo mode, so nothing uses credits yet. Add your API keys to <code>.env.local</code> to
-                switch on real answers.
+            {me && !me.verified && <VerifyBanner email={me.user.email} free={me.freeMonthly} failed={emailFailed} />}
+            {allOff && (
+              <div role="status" className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+                Flash is taking a short break, so answers are paused and nothing uses credits. Please check back soon.
               </div>
             )}
             {active?.messages && active.messages.length === 0 && (
@@ -587,11 +647,12 @@ export function Flash() {
                   One AI for everything
                 </h2>
                 <p className="mx-auto mt-3 max-w-lg text-zinc-400">
-                  Build apps, make slides, write, research, code, translate, crunch spreadsheets, and create images,
-                  video, music and voice. Ask anything and Flash picks the best AI for the job.
+                  Build apps, make slides, write, research, code, translate and crunch spreadsheets
+                  {makes.length ? `, and create ${makes.slice(0, -1).join(", ")}${makes.length > 1 ? " and " : ""}${makes.at(-1)}` : ""}.
+                  Ask anything and Flash picks the best AI for the job.
                 </p>
                 <div className="mt-8 grid grid-cols-1 gap-2 text-left sm:grid-cols-2 lg:grid-cols-3">
-                  {SUGGESTIONS.map((s) => (
+                  {SUGGESTIONS.filter((s) => isLive(s.engine)).map((s) => (
                     <button
                       key={s.text}
                       onClick={() => (s.engine === "transcribe" ? fileRef.current?.click() : send(s.text))}
@@ -615,6 +676,7 @@ export function Flash() {
                 m={m}
                 onRetry={i === all.length - 1 && m.role === "assistant" && !m.pending && !busy ? retry : undefined}
                 onBuyCredits={() => setShowCredits(true)}
+                paymentsOn={me.paymentsEnabled || me.testPurchases}
                 onPublished={(slug) => setAppSlug(m.id, slug)}
               />
             ))}
@@ -630,24 +692,35 @@ export function Flash() {
               role="radiogroup"
               aria-label="Engine"
             >
-              {CHOICES.map((c) => (
-                <button
-                  key={c}
-                  role="radio"
-                  aria-checked={choice === c}
-                  title={c === "auto" ? "Flash picks the best engine for each message" : `Always use ${ENGINE_LABELS[c]}`}
-                  onClick={() => setChoice(c)}
-                  className={`shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-xs transition ${
-                    choice === c
-                      ? "bg-gradient-to-r from-indigo-600 to-fuchsia-600 text-white shadow"
-                      : "border border-zinc-800 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200"
-                  }`}
-                >
-                  {c === "auto" ? "⚡ Auto" : ENGINE_LABELS[c]}
-                </button>
-              ))}
+              {CHOICES.map((c) => {
+                const soon = c !== "auto" && !isLive(c);
+                return (
+                  <button
+                    key={c}
+                    role="radio"
+                    aria-checked={choice === c}
+                    disabled={soon}
+                    title={
+                      c === "auto"
+                        ? "Flash picks the best engine for each message"
+                        : soon
+                          ? `${ENGINE_LABELS[c]} is coming soon`
+                          : `Always use ${ENGINE_LABELS[c]}`
+                    }
+                    onClick={() => setChoice(c)}
+                    className={`shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-xs transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                      choice === c
+                        ? "bg-gradient-to-r from-indigo-600 to-fuchsia-600 text-white shadow"
+                        : "border border-zinc-800 text-zinc-400 enabled:hover:border-zinc-600 enabled:hover:text-zinc-200"
+                    }`}
+                  >
+                    {c === "auto" ? "⚡ Auto" : ENGINE_LABELS[c]}
+                    {soon && <span className="ml-1 text-[10px] text-zinc-500">soon</span>}
+                  </button>
+                );
+              })}
             </div>
-            {choice !== "auto" && me.models.some((x) => x.engine === choice) && (
+            {choice !== "auto" && me.models.some((x) => x.engine === choice && x.live) && (
               <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-zinc-400">
                 <label htmlFor="model">Model</label>
                 <select
@@ -661,7 +734,7 @@ export function Flash() {
                     .filter((x) => x.engine === choice)
                     .map((x) => (
                       <option key={x.id} value={x.id} disabled={!x.live}>
-                        {x.label} · {x.credits} credits{x.live ? "" : " (not set up)"}
+                        {x.label} · {x.credits} credits{x.live ? "" : " (coming soon)"}
                       </option>
                     ))}
                 </select>
