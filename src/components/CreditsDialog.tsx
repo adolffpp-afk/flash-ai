@@ -104,7 +104,8 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
           <div>
             <p className="text-sm text-zinc-400">Your balance</p>
             <p className="text-4xl font-semibold tracking-tight">
-              {me.credits.toLocaleString("en-US")} <span className="text-lg font-normal text-zinc-400">credits</span>
+              <span className="text-gold-gradient">{me.credits.toLocaleString("en-US")}</span>{" "}
+              <span className="text-lg font-normal text-zinc-400">credits</span>
             </p>
             {plan ? (
               <p className="mt-1 text-xs text-zinc-400">
@@ -157,11 +158,11 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
           {me.packs.map((p, i) => (
             <div
               key={p.id}
-              className={`flex flex-col rounded-xl border p-4 ${i === 1 ? "border-indigo-500/60 bg-indigo-500/5" : "border-zinc-800"}`}
+              className={`flex flex-col rounded-xl border p-4 ${i === 1 ? "border-gold/60 bg-gold/5 shadow-lg shadow-gold/10" : "border-zinc-800"}`}
             >
               <div className="flex items-baseline justify-between">
                 <span className="font-medium">{p.name}</span>
-                {i === 1 && <span className="text-[10px] uppercase tracking-wide text-indigo-300">Popular</span>}
+                {i === 1 && <span className="rounded-full bg-gold/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gold">Popular</span>}
               </div>
               <div className="mt-1 text-2xl font-semibold">{money(p.priceCents)}</div>
               <div className="text-sm text-zinc-400">{p.credits.toLocaleString("en-US")} credits</div>
@@ -169,7 +170,7 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
               <button
                 onClick={() => buy(p.id)}
                 disabled={busy !== null || !canBuy}
-                className="mt-auto w-full rounded-lg bg-gradient-to-r from-indigo-600 to-fuchsia-600 py-2 text-sm font-medium text-white hover:brightness-110 disabled:opacity-50"
+                className="mt-auto w-full rounded-lg bg-brand py-2 text-sm font-medium text-white hover:brightness-110 disabled:opacity-50"
               >
                 {!canBuy ? "Coming soon" : busy === p.id ? "Opening…" : "Buy"}
               </button>

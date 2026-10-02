@@ -1,5 +1,5 @@
 import { ImageResponse } from "next/og";
-import { Bolt, GRADIENT } from "./brand";
+import { BRAND, BrandMark } from "./brand";
 
 // The preview shown when a Flash link is shared. Twitter uses it too.
 export const alt = "Flash AI: one AI for everything";
@@ -17,15 +17,17 @@ export default function OpengraphImage() {
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          background: "linear-gradient(180deg, #1e1b4b, #09090b)",
+          background: `radial-gradient(circle at 50% 35%, #0f3d2c, ${BRAND.ink} 70%)`,
           color: "white",
         }}
       >
-        <div style={{ display: "flex", width: 160, height: 160, borderRadius: 36, background: GRADIENT }}>
-          <Bolt size={160} />
+        <BrandMark size={180} />
+        <div style={{ display: "flex", marginTop: 36, fontSize: 96, fontWeight: 700, letterSpacing: -2 }}>
+          <span>Flash</span>
+          <span style={{ marginLeft: 24, color: BRAND.gold }}>AI</span>
         </div>
-        <div style={{ marginTop: 40, fontSize: 96, fontWeight: 700, letterSpacing: -2 }}>Flash AI</div>
-        <div style={{ marginTop: 12, fontSize: 40, color: "#a1a1aa" }}>One AI for everything</div>
+        <div style={{ marginTop: 12, fontSize: 40, color: "#b6c5bc" }}>One AI for everything</div>
+        <div style={{ display: "flex", marginTop: 36, width: 220, height: 6, borderRadius: 3, background: `linear-gradient(90deg, ${BRAND.emerald}, ${BRAND.gold}, ${BRAND.spark})` }} />
       </div>
     ),
     size,

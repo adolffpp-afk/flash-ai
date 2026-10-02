@@ -8,6 +8,8 @@ import { VerifyBanner } from "./VerifyBanner";
 import { CreditsDialog } from "./CreditsDialog";
 import { ENGINES, ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types";
 import { api, newId, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
+import { BoltIcon, Logo, LogoMark } from "@/app/brand";
+import { EngineIcon } from "./EngineIcon";
 
 // A project's messages are loaded the first time it is opened.
 type Project = ProjectSummary & { messages?: UIMessage[] };
@@ -26,19 +28,19 @@ const MEDIA_WORDS: [Engine, string][] = [
   ["voice", "voice"],
 ];
 
-const SUGGESTIONS: { icon: string; engine: Engine; text: string }[] = [
-  { icon: "🛠️", engine: "app", text: "Build a habit tracker app with streaks and a weekly chart" },
-  { icon: "🖥️", engine: "slides", text: "Make a presentation about the future of solar energy in Africa" },
-  { icon: "✍️", engine: "text", text: "Write a friendly email asking my landlord to fix the heater" },
-  { icon: "🔎", engine: "search", text: "What's the latest news in AI this week?" },
-  { icon: "💻", engine: "code", text: "Write a Python function that checks if a number is prime" },
-  { icon: "🌍", engine: "translate", text: "Translate 'Welcome to our shop' into French, Spanish and Yoruba" },
-  { icon: "📊", engine: "docs", text: "Create a monthly budget spreadsheet for a family of four" },
-  { icon: "🎨", engine: "image", text: "Draw a minimalist logo for a coffee shop called Flash Brew" },
-  { icon: "🎬", engine: "video", text: "Make a video of ocean waves at sunset, slow drone shot" },
-  { icon: "🎵", engine: "music", text: "Compose an upbeat jingle for a bakery ad" },
-  { icon: "🔊", engine: "voice", text: "Read this aloud: Welcome to Flash, your all-in-one AI." },
-  { icon: "📝", engine: "transcribe", text: "Attach a recording and get a clean transcript" },
+const SUGGESTIONS: { engine: Engine; text: string }[] = [
+  { engine: "app", text: "Build a habit tracker app with streaks and a weekly chart" },
+  { engine: "slides", text: "Make a presentation about the future of solar energy in Africa" },
+  { engine: "text", text: "Write a friendly email asking my landlord to fix the heater" },
+  { engine: "search", text: "What's the latest news in AI this week?" },
+  { engine: "code", text: "Write a Python function that checks if a number is prime" },
+  { engine: "translate", text: "Translate 'Welcome to our shop' into French, Spanish and Yoruba" },
+  { engine: "docs", text: "Create a monthly budget spreadsheet for a family of four" },
+  { engine: "image", text: "Draw a minimalist logo for a coffee shop called Flash Brew" },
+  { engine: "video", text: "Make a video of ocean waves at sunset, slow drone shot" },
+  { engine: "music", text: "Compose an upbeat jingle for a bakery ad" },
+  { engine: "voice", text: "Read this aloud: Welcome to Flash, your all-in-one AI." },
+  { engine: "transcribe", text: "Attach a recording and get a clean transcript" },
 ];
 
 export type Status = Record<Engine, boolean>;
@@ -476,7 +478,7 @@ export function Flash({
   if (!me) {
     return (
       <div className="flex h-full items-center justify-center">
-        <span className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-700 border-t-indigo-400" aria-label="Loading" />
+        <span className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-700 border-t-gold" aria-label="Loading" />
       </div>
     );
   }
@@ -488,10 +490,7 @@ export function Flash({
         className={`${sidebar ? "flex" : "hidden"} fixed inset-0 z-20 w-full flex-col border-r border-zinc-800 bg-zinc-950 md:static md:flex md:w-72`}
       >
         <div className="flex items-center justify-between p-4">
-          <div className="flex items-center gap-2 text-lg font-semibold">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-pink-500">⚡</span>
-            Flash AI
-          </div>
+          <Logo size={32} className="text-lg" />
           <button className="text-zinc-400 md:hidden" onClick={() => setSidebar(false)} aria-label="Close menu">
             ✕
           </button>
@@ -540,7 +539,7 @@ export function Flash({
             onChange={(e) => changePreferences(e.target.value)}
             placeholder="e.g. I run a small bakery in Lagos. Keep answers short."
             rows={3}
-            className="mt-1 w-full resize-none rounded-lg border border-zinc-800 bg-zinc-900 p-2 text-sm outline-none focus:border-indigo-500"
+            className="mt-1 w-full resize-none rounded-lg border border-zinc-800 bg-zinc-900 p-2 text-sm outline-none focus:border-primary"
           />
           {status && (
             <details className="mt-2 text-xs text-zinc-400">
@@ -568,7 +567,7 @@ export function Flash({
               {me.user.name || me.user.email}
             </span>
             {me.isAdmin && (
-              <a href="/admin" className="text-xs text-indigo-300 hover:text-indigo-200">
+              <a href="/admin" className="text-xs text-primary-soft hover:text-white">
                 Dashboard
               </a>
             )}
@@ -598,7 +597,7 @@ export function Flash({
         }}
       >
         {dragging && (
-          <div className="pointer-events-none absolute inset-3 z-30 flex items-center justify-center rounded-2xl border-2 border-dashed border-indigo-400 bg-indigo-500/10 text-lg font-medium text-indigo-200">
+          <div className="pointer-events-none absolute inset-3 z-30 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary bg-primary/10 text-lg font-medium text-primary-soft">
             Drop a file for Flash to read, analyse or transcribe
           </div>
         )}
@@ -609,12 +608,14 @@ export function Flash({
           <h1 className="min-w-0 flex-1 truncate font-medium">{active?.name ?? "Flash AI"}</h1>
           <button
             onClick={() => setShowCredits(true)}
-            className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition hover:bg-zinc-900 ${
-              me.credits < 10 ? "border-amber-500/50 text-amber-300" : "border-zinc-700 text-zinc-200"
+            className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium transition ${
+              me.credits < 10
+                ? "border-spark/50 bg-spark/10 text-spark-soft hover:bg-spark/20"
+                : "border-gold/40 bg-gold/10 text-gold-soft hover:bg-gold/20"
             }`}
             title="Credits: see costs and top up"
           >
-            ⚡ {me.credits.toLocaleString()} credits
+            <BoltIcon className="h-3.5 w-3.5 text-gold" /> {me.credits.toLocaleString()} credits
           </button>
         </header>
         {showCredits && <CreditsDialog me={me} onClose={() => setShowCredits(false)} onChanged={refreshMe} />}
@@ -624,10 +625,10 @@ export function Flash({
             {notice && (
               <div
                 role="status"
-                className="flex items-start gap-3 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-4 py-3 text-sm text-indigo-100"
+                className="flex items-start gap-3 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm text-zinc-100"
               >
                 <span className="flex-1">{notice}</span>
-                <button onClick={() => setNotice("")} aria-label="Dismiss" className="text-indigo-300 hover:text-white">
+                <button onClick={() => setNotice("")} aria-label="Dismiss" className="text-primary-soft hover:text-white">
                   ✕
                 </button>
               </div>
@@ -640,11 +641,9 @@ export function Flash({
             )}
             {active?.messages && active.messages.length === 0 && (
               <div className="pt-6 text-center sm:pt-12">
-                <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 via-fuchsia-500 to-pink-500 text-3xl shadow-lg shadow-fuchsia-500/20">
-                  ⚡
-                </div>
-                <h2 className="bg-gradient-to-r from-white to-zinc-400 bg-clip-text text-3xl font-semibold tracking-tight text-transparent">
-                  One AI for everything
+                <LogoMark size={64} className="mx-auto mb-5 drop-shadow-[0_8px_28px_rgba(245,197,66,0.3)]" />
+                <h2 className="text-3xl font-semibold tracking-tight text-white">
+                  One AI for <span className="text-gold-gradient">everything</span>
                 </h2>
                 <p className="mx-auto mt-3 max-w-lg text-zinc-400">
                   Build apps, make slides, write, research, code, translate and crunch spreadsheets
@@ -656,12 +655,10 @@ export function Flash({
                     <button
                       key={s.text}
                       onClick={() => (s.engine === "transcribe" ? fileRef.current?.click() : send(s.text))}
-                      className="group rounded-xl border border-zinc-800 bg-zinc-900/40 p-3 text-left transition hover:-translate-y-0.5 hover:border-indigo-500/60 hover:bg-zinc-900"
+                      className="group rounded-xl border border-zinc-800 bg-zinc-900/40 p-3 text-left transition hover:-translate-y-0.5 hover:border-primary/60 hover:bg-zinc-900"
                     >
-                      <div className="flex items-center gap-2 text-xs font-medium text-zinc-400 group-hover:text-indigo-300">
-                        <span className="text-base" aria-hidden>
-                          {s.icon}
-                        </span>
+                      <div className="flex items-center gap-2 text-xs font-medium text-zinc-400 group-hover:text-primary-soft">
+                        <EngineIcon engine={s.engine} size="sm" />
                         {ENGINE_LABELS[s.engine]}
                       </div>
                       <div className="mt-1.5 text-sm leading-snug text-zinc-200">{s.text}</div>
@@ -710,11 +707,17 @@ export function Flash({
                     onClick={() => setChoice(c)}
                     className={`shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-xs transition disabled:cursor-not-allowed disabled:opacity-50 ${
                       choice === c
-                        ? "bg-gradient-to-r from-indigo-600 to-fuchsia-600 text-white shadow"
+                        ? "bg-brand text-white shadow shadow-primary/20 ring-1 ring-inset ring-primary-soft/30"
                         : "border border-zinc-800 text-zinc-400 enabled:hover:border-zinc-600 enabled:hover:text-zinc-200"
                     }`}
                   >
-                    {c === "auto" ? "⚡ Auto" : ENGINE_LABELS[c]}
+                    {c === "auto" ? (
+                      <span className="inline-flex items-center gap-1">
+                        <BoltIcon className={`h-3 w-3 ${choice === c ? "text-gold" : ""}`} /> Auto
+                      </span>
+                    ) : (
+                      ENGINE_LABELS[c]
+                    )}
                     {soon && <span className="ml-1 text-[10px] text-zinc-500">soon</span>}
                   </button>
                 );
@@ -727,7 +730,7 @@ export function Flash({
                   id="model"
                   value={models[choice] ?? ""}
                   onChange={(e) => setModels((all) => ({ ...all, [choice]: e.target.value || undefined }))}
-                  className="rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-1 text-zinc-200 outline-none focus:border-indigo-500"
+                  className="rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-1 text-zinc-200 outline-none focus:border-primary"
                 >
                   <option value="">⚡ Best for each request</option>
                   {me.models
@@ -749,7 +752,7 @@ export function Flash({
                 e.preventDefault();
                 send(input);
               }}
-              className="rounded-2xl border border-zinc-800 bg-zinc-900 p-2 shadow-xl shadow-black/30 transition focus-within:border-indigo-500/70"
+              className="rounded-2xl border border-zinc-800 bg-zinc-900 p-2 shadow-xl shadow-black/30 transition focus-within:border-primary/70"
             >
               {attachment && (
                 <div className="mb-1 ml-1 inline-flex items-center gap-2 rounded-lg bg-zinc-800 px-3 py-1 text-xs text-zinc-200">
@@ -809,7 +812,7 @@ export function Flash({
                   <button
                     type="submit"
                     disabled={!input.trim() && !attachment}
-                    className="rounded-xl bg-gradient-to-r from-indigo-600 to-fuchsia-600 px-4 py-2 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-40"
+                    className="rounded-xl bg-brand px-4 py-2 text-sm font-medium text-white shadow-md shadow-primary/20 transition hover:brightness-110 disabled:opacity-40"
                   >
                     Send
                   </button>

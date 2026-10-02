@@ -14,7 +14,7 @@ export function IntervalToggle({ value, onChange }: { value: Interval; onChange:
       type="button"
       onClick={() => onChange(v)}
       aria-pressed={value === v}
-      className={`rounded-full px-3 py-1.5 text-sm transition ${value === v ? "bg-white font-medium text-zinc-900" : "text-zinc-400 hover:text-zinc-100"}`}
+      className={`rounded-full px-3 py-1.5 text-sm transition ${value === v ? "bg-primary-strong font-medium text-white" : "text-zinc-400 hover:text-zinc-100"}`}
     >
       {label}
     </button>
@@ -23,7 +23,7 @@ export function IntervalToggle({ value, onChange }: { value: Interval; onChange:
     <div className="inline-flex items-center gap-1 rounded-full border border-zinc-800 bg-zinc-900/60 p-1">
       {btn("month", "Monthly")}
       {btn("year", "Yearly")}
-      <span className="pr-2 text-xs text-emerald-400">save 20%</span>
+      <span className="pr-2 text-xs text-gold">save 20%</span>
     </div>
   );
 }
@@ -82,14 +82,14 @@ export function PlanCards({
         return (
           <div
             key={p.id}
-            className={`flex flex-col rounded-xl border ${pad} ${popular ? "border-indigo-500/60 bg-indigo-500/5" : "border-zinc-800"}`}
+            className={`flex flex-col rounded-xl border ${pad} ${popular ? "border-gold/60 bg-gold/5 shadow-lg shadow-gold/10" : "border-zinc-800"}`}
           >
             <div className="flex items-baseline justify-between">
               <span className="font-medium">{p.name}</span>
               {comingSoon ? (
                 <span className="text-[10px] uppercase tracking-wide text-zinc-400">Coming soon</span>
               ) : (
-                popular && <span className="text-[10px] uppercase tracking-wide text-indigo-300">Popular</span>
+                popular && <span className="rounded-full bg-gold/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gold">Popular</span>
               )}
             </div>
             <div className="mt-1 flex items-baseline gap-1">
@@ -110,8 +110,8 @@ export function PlanCards({
               disabled={isCurrent || (busy ?? null) !== null || (comingSoon && !onFree)}
               className={`mt-auto rounded-lg py-2 text-sm font-medium disabled:opacity-60 ${
                 popular
-                  ? "bg-gradient-to-r from-indigo-600 to-fuchsia-600 text-white hover:brightness-110"
-                  : "bg-white text-zinc-900 hover:bg-zinc-200"
+                  ? "bg-gold-brand text-zinc-950 hover:brightness-105"
+                  : "bg-brand text-white hover:brightness-110"
               }`}
             >
               {isCurrent

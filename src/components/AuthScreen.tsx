@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { api } from "@/lib/store";
+import { LogoMark } from "@/app/brand";
 
 const FEATURES = [
   "🛠️ Build and publish apps",
@@ -59,9 +60,9 @@ export function AuthScreen({
   }
 
   const input =
-    "w-full rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2.5 outline-none transition focus:border-indigo-500";
+    "w-full rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2.5 outline-none transition focus:border-primary";
   return (
-    <div className="flex min-h-full items-center justify-center bg-[radial-gradient(ellipse_at_top,rgba(99,102,241,0.18),transparent_60%)] px-4 py-10">
+    <div className="flex min-h-full items-center justify-center bg-[radial-gradient(ellipse_at_top,rgba(16,185,129,0.2),transparent_60%)] px-4 py-10">
       <div className="grid w-full max-w-4xl items-center gap-10 md:grid-cols-2">
         <div>
           {onBack && (
@@ -72,9 +73,7 @@ export function AuthScreen({
               ← Back to home
             </button>
           )}
-          <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 via-fuchsia-500 to-pink-500 text-2xl shadow-lg shadow-fuchsia-500/20">
-            ⚡
-          </div>
+          <LogoMark size={56} className="mb-5" />
           <h1 className="text-4xl font-semibold tracking-tight">Flash AI</h1>
           <p className="mt-3 text-lg text-zinc-400">
             One AI for everything. Ask once, and Flash picks the best AI for the
@@ -203,7 +202,7 @@ export function AuthScreen({
           )}
           <button
             disabled={busy}
-            className="mt-5 w-full rounded-xl bg-gradient-to-r from-indigo-600 to-fuchsia-600 py-2.5 font-medium text-white transition hover:brightness-110 disabled:opacity-50"
+            className="mt-5 w-full rounded-xl bg-brand py-2.5 font-medium text-white transition hover:brightness-110 disabled:opacity-50"
           >
             {busy
               ? "One moment…"
@@ -221,7 +220,7 @@ export function AuthScreen({
                 : "Remembered it?"}{" "}
             <button
               type="button"
-              className="text-indigo-400 hover:underline"
+              className="text-primary hover:underline"
               onClick={() => {
                 setMode(mode === "login" ? "signup" : "login");
                 setError("");

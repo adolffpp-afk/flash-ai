@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!-- Concept C: "Bolt F". A hexagonal emerald gem whose gold bolt doubles as the letter F
+       (two forward bars plus a strike), with a red notch cut at the base like an ignition point. -->
+  <defs>
+    <linearGradient id="hex" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0f9a6a"/>
+      <stop offset="1" stop-color="#053b2b"/>
+    </linearGradient>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff3b0"/>
+      <stop offset="0.5" stop-color="#f5c542"/>
+      <stop offset="1" stop-color="#f08c00"/>
+    </linearGradient>
+    <linearGradient id="w" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#fde68a"/>
+      <stop offset="1" stop-color="#f59e0b"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="#060d0a"/>
+  <g transform="translate(256 200)">
+    <path d="M0 -150 130 -75v150L0 150 -130 75v-150z" fill="url(#hex)" stroke="#34d399" stroke-opacity="0.4" stroke-width="5" stroke-linejoin="round"/>
+    <!-- F built from a slanted stem that ends in a bolt tip, plus two forward bars -->
+    <path d="M-30 -96h118l-14 36H-37z" fill="url(#g)"/>
+    <path d="M-16 -26h80l-13 34H-23z" fill="url(#g)"/>
+    <path d="M-30 -96h40L-22 60l-34 52 6-56z" fill="url(#g)"/>
+    <path d="M-20 140 0 114 20 140z" fill="#ff4545"/>
+  </g>
+  <text x="256" y="455" text-anchor="middle" font-family="Geist, Inter, system-ui, -apple-system, Segoe UI, Arial, sans-serif" font-size="64" font-weight="700" letter-spacing="-2" fill="#e9efeb">Flash <tspan fill="url(#w)">AI</tspan></text>
+</svg>

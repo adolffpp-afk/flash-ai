@@ -21,7 +21,7 @@ export function VerifyBanner({ email, free, failed = false }: { email: string; f
   }
 
   return (
-    <div role="status" className="rounded-xl border border-indigo-500/40 bg-indigo-500/10 px-4 py-3 text-sm text-indigo-100">
+    <div role="status" className="rounded-xl border border-primary/40 bg-primary/10 px-4 py-3 text-sm text-zinc-100">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <span className="flex-1">
           Confirm your email to get your {free} free credits.{" "}
@@ -36,12 +36,12 @@ export function VerifyBanner({ email, free, failed = false }: { email: string; f
         <button
           onClick={resend}
           disabled={state.busy}
-          className="rounded-lg border border-indigo-400/40 px-3 py-1 text-xs hover:bg-indigo-500/20 disabled:opacity-50"
+          className="rounded-lg border border-primary/50 px-3 py-1 text-xs hover:bg-primary/20 disabled:opacity-50"
         >
           {state.busy ? "Sending…" : "Send again"}
         </button>
       </div>
-      {state.message && <p className="mt-2 text-xs text-indigo-200">{state.message}</p>}
+      {state.message && <p className="mt-2 text-xs text-primary-soft">{state.message}</p>}
       {state.devLink && (
         <a href={state.devLink} className="mt-1 block text-xs text-emerald-300 underline">
           Demo mode: open the confirmation link

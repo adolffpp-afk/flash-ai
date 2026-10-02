@@ -78,9 +78,9 @@ export function AppPreview({
     >
       <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800 px-3 py-2 text-xs text-zinc-400">
         <span className="flex gap-1" aria-hidden>
-          <span className="h-2.5 w-2.5 rounded-full bg-red-400/70" />
-          <span className="h-2.5 w-2.5 rounded-full bg-amber-400/70" />
-          <span className="h-2.5 w-2.5 rounded-full bg-emerald-400/70" />
+          <span className="h-2.5 w-2.5 rounded-full bg-spark/80" />
+          <span className="h-2.5 w-2.5 rounded-full bg-gold/80" />
+          <span className="h-2.5 w-2.5 rounded-full bg-primary/80" />
         </span>
         <span className="ml-1 min-w-0 flex-1 truncate font-medium text-zinc-200">{app.title}</span>
         {/* On a phone the buttons wrap below the title and show icons only. */}
@@ -92,7 +92,7 @@ export function AppPreview({
                 role="tab"
                 aria-selected={view === v}
                 onClick={() => setView(v)}
-                className={`px-2 py-1 capitalize ${view === v ? "bg-zinc-800 text-zinc-100" : ""}`}
+                className={`px-2 py-1 capitalize ${view === v ? "bg-primary/15 text-primary-soft" : ""}`}
               >
                 {v}
               </button>
@@ -107,7 +107,7 @@ export function AppPreview({
             </span>
             <span className="hidden sm:inline">{full ? "Exit full screen" : "Full screen"}</span>
           </button>
-          <button className={`${btn} text-indigo-400`} onClick={download} aria-label="Download">
+          <button className={`${btn} text-primary`} onClick={download} aria-label="Download">
             <span className="sm:hidden" aria-hidden>
               ⬇
             </span>
@@ -115,7 +115,7 @@ export function AppPreview({
           </button>
           {onPublished && (
             <button
-              className="ml-1 rounded-md bg-gradient-to-r from-indigo-600 to-fuchsia-600 px-2.5 py-1 font-medium text-white hover:brightness-110 disabled:opacity-50"
+              className="ml-1 rounded-md bg-brand px-2.5 py-1 font-medium text-white hover:brightness-110 disabled:opacity-50"
               onClick={publish}
               disabled={publishing}
             >
@@ -131,7 +131,7 @@ export function AppPreview({
           ) : (
             <>
               <span className="text-emerald-300">Live at</span>
-              <a href={link} target="_blank" rel="noreferrer" className="min-w-0 truncate text-indigo-300 hover:underline">
+              <a href={link} target="_blank" rel="noreferrer" className="min-w-0 truncate text-primary-soft hover:underline">
                 {link}
               </a>
               <button className={btn} onClick={copyLink}>

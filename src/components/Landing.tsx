@@ -4,22 +4,24 @@ import { useEffect, useState } from "react";
 import { ENGINES, ENGINE_LABELS, type Engine } from "@/lib/types";
 import { api, type Pricing } from "@/lib/store";
 import { IntervalToggle, PlanCards, type Interval } from "./PlanCards";
+import { EngineIcon } from "./EngineIcon";
+import { Logo, LogoMark } from "@/app/brand";
 
 const money = (cents: number) => `$${(cents / 100).toFixed(cents % 100 ? 2 : 0)}`;
 
-const ENGINE_COPY: Record<Engine, { icon: string; text: string }> = {
-  app: { icon: "🛠️", text: "Describe an app and get a working one, with a live preview, its own database and one-click publishing." },
-  slides: { icon: "🖥️", text: "A polished presentation from one sentence. Click or swipe through it, then download it." },
-  text: { icon: "✍️", text: "Emails, posts, plans and answers, written in your voice and remembering what matters to you." },
-  search: { icon: "🔎", text: "Up-to-date answers from the web, with the sources linked so you can check them." },
-  code: { icon: "💻", text: "Write, explain and fix code in any language, with copy and download buttons." },
-  translate: { icon: "🌍", text: "Natural translations that keep your tone, in dozens of languages." },
-  docs: { icon: "📊", text: "Budgets, tables, resumes and reports, ready to download as spreadsheets and documents." },
-  image: { icon: "🎨", text: "Logos, posters and lifelike photos from the best image models." },
-  video: { icon: "🎬", text: "Short cinematic clips, including video with sound, speech and music." },
-  voice: { icon: "🔊", text: "Natural-sounding voiceovers for any text." },
-  music: { icon: "🎵", text: "Jingles, beats and full songs with sung lyrics." },
-  transcribe: { icon: "📝", text: "Clean transcripts from any recording or video." },
+const ENGINE_COPY: Record<Engine, { text: string }> = {
+  app: { text: "Describe an app and get a working one, with a live preview, its own database and one-click publishing." },
+  slides: { text: "A polished presentation from one sentence. Click or swipe through it, then download it." },
+  text: { text: "Emails, posts, plans and answers, written in your voice and remembering what matters to you." },
+  search: { text: "Up-to-date answers from the web, with the sources linked so you can check them." },
+  code: { text: "Write, explain and fix code in any language, with copy and download buttons." },
+  translate: { text: "Natural translations that keep your tone, in dozens of languages." },
+  docs: { text: "Budgets, tables, resumes and reports, ready to download as spreadsheets and documents." },
+  image: { text: "Logos, posters and lifelike photos from the best image models." },
+  video: { text: "Short cinematic clips, including video with sound, speech and music." },
+  voice: { text: "Natural-sounding voiceovers for any text." },
+  music: { text: "Jingles, beats and full songs with sung lyrics." },
+  transcribe: { text: "Clean transcripts from any recording or video." },
 };
 
 const STEPS = [
@@ -105,15 +107,15 @@ export function Landing({
   // Until the prices load, plans are assumed to be on sale so nothing flickers to "coming soon".
   const canBuy = !pricing || pricing.paymentsEnabled || pricing.testPurchases;
 
+  // The main call to action is gold, so it is the one thing on the page that pulls the eye.
   const cta =
-    "rounded-xl bg-gradient-to-r from-indigo-600 to-fuchsia-600 px-5 py-3 font-medium text-white shadow-lg shadow-fuchsia-500/20 transition hover:brightness-110";
+    "rounded-xl bg-gold-brand px-6 py-3 font-semibold text-zinc-950 shadow-lg shadow-gold/25 ring-1 ring-gold-soft/60 transition hover:brightness-105 hover:shadow-gold/40";
   return (
     <div className="h-full overflow-y-auto bg-zinc-950 text-zinc-100">
       <header className="sticky top-0 z-10 border-b border-zinc-900 bg-zinc-950/80 backdrop-blur">
         <nav className="mx-auto flex max-w-6xl items-center gap-6 px-4 py-3">
-          <a href="#" className="flex items-center gap-2 font-semibold">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-pink-500">⚡</span>
-            Flash AI
+          <a href="#" aria-label="Flash AI home">
+            <Logo size={32} />
           </a>
           <div className="hidden gap-5 text-sm text-zinc-400 sm:flex">
             <a href="#features" className="hover:text-zinc-100">Features</a>
@@ -124,7 +126,7 @@ export function Landing({
             <button onClick={() => onStart("login")} className="rounded-lg px-3 py-2 text-zinc-300 hover:text-white">
               Sign in
             </button>
-            <button onClick={() => onStart("signup")} className="rounded-lg bg-white px-3 py-2 font-medium text-zinc-900 hover:bg-zinc-200">
+            <button onClick={() => onStart("signup")} className="rounded-lg bg-brand px-3 py-2 font-medium text-white transition hover:brightness-110">
               Get started
             </button>
           </div>
@@ -132,15 +134,23 @@ export function Landing({
       </header>
 
       <section className="relative overflow-hidden">
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(99,102,241,0.25),transparent_60%)]" />
-        <div className="relative mx-auto max-w-4xl px-4 pb-16 pt-16 text-center sm:pt-24">
-          <p className="mx-auto inline-flex rounded-full border border-zinc-800 bg-zinc-900/60 px-3 py-1 text-xs text-zinc-300">
+        {/* Emerald glow, a gold core and one small red spark: the brand in light. */}
+        <div aria-hidden className="pointer-events-none absolute inset-0">
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(16,185,129,0.28),transparent_60%)]" />
+          <div className="absolute left-1/2 top-24 h-72 w-72 -translate-x-1/2 rounded-full bg-gold/20 blur-[100px] sm:h-96 sm:w-96" />
+          <div className="absolute right-[12%] top-32 h-40 w-40 rounded-full bg-spark/20 blur-[80px]" />
+          <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:48px_48px] [mask-image:radial-gradient(ellipse_at_top,black,transparent_70%)]" />
+        </div>
+        <div className="relative mx-auto max-w-4xl px-4 pb-16 pt-12 text-center sm:pt-20">
+          <LogoMark size={72} className="mx-auto mb-6 drop-shadow-[0_8px_32px_rgba(245,197,66,0.35)]" />
+          <p className="mx-auto flex w-fit items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs text-primary-soft">
+            <span className="h-1.5 w-1.5 rounded-full bg-spark shadow-[0_0_8px_2px_rgba(255,69,69,0.6)]" />
             {liveCount ? `${liveCount} AI tools` : "AI tools"} · one app · one bill
           </p>
-          <h1 className="mt-6 bg-gradient-to-b from-white to-zinc-400 bg-clip-text text-4xl font-semibold tracking-tight text-transparent sm:text-6xl">
-            One AI for everything
+          <h1 className="mt-6 text-4xl font-semibold tracking-tight text-white sm:text-6xl">
+            One AI for <span className="text-gold-gradient">everything</span>
           </h1>
-          <p className="mx-auto mt-5 max-w-2xl text-lg text-zinc-400">
+          <p className="mx-auto mt-5 max-w-2xl text-lg text-zinc-300">
             Build and publish apps, make slides, write, research, code and translate
             {liveMedia.length ? `, and create ${join(liveMedia)}` : ""}. Ask once, and Flash picks the best AI for the
             job.
@@ -149,23 +159,23 @@ export function Landing({
             <button onClick={() => onStart("signup")} className={cta}>
               Start free{free ? ` with ${free} credits` : ""}
             </button>
-            <a href="#features" className="rounded-xl border border-zinc-800 px-5 py-3 text-zinc-200 hover:bg-zinc-900">
+            <a href="#features" className="rounded-xl border border-zinc-700 bg-zinc-950/40 px-5 py-3 text-zinc-100 transition hover:border-primary/60 hover:bg-zinc-900">
               See what it can do
             </a>
           </div>
-          <p className="mt-3 text-xs text-zinc-500">No card needed. Free credits every month.</p>
+          <p className="mt-3 text-xs text-zinc-400">No card needed. Free credits every month.</p>
 
-          <div className="mx-auto mt-12 max-w-2xl rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4 text-left shadow-2xl shadow-black/40">
+          <div className="mx-auto mt-12 max-w-2xl rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4 text-left shadow-2xl shadow-primary/10 ring-1 ring-white/5 backdrop-blur">
             <div className="flex justify-end">
-              <div className="rounded-2xl rounded-br-md bg-indigo-600 px-4 py-2 text-sm">
+              <div className="rounded-2xl rounded-br-md bg-primary-strong px-4 py-2 text-sm text-white">
                 Build a booking page for my hair salon in Lagos
               </div>
             </div>
             <div className="mt-3 flex gap-3">
-              <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-pink-500 text-xs">⚡</span>
+              <LogoMark size={28} />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap gap-2 text-xs">
-                  <span className="rounded-full border border-zinc-700 px-2 py-0.5 text-zinc-300">App Builder</span>
+                  <span className="rounded-full border border-gold/30 bg-gold/10 px-2 py-0.5 text-gold">App Builder</span>
                   <span className="text-zinc-500">You asked for an app.</span>
                 </div>
                 <div className="mt-2 overflow-hidden rounded-xl border border-zinc-800 bg-white text-zinc-900">
@@ -184,7 +194,7 @@ export function Landing({
                   </div>
                 </div>
                 <div className="mt-2 flex gap-2 text-xs">
-                  <span className="rounded-md bg-gradient-to-r from-indigo-600 to-fuchsia-600 px-2 py-1 text-white">Publish</span>
+                  <span className="rounded-md bg-brand px-2 py-1 text-white">Publish</span>
                   <span className="rounded-md border border-zinc-800 px-2 py-1 text-zinc-400">Download</span>
                 </div>
               </div>
@@ -201,9 +211,12 @@ export function Landing({
         </p>
         <div className="mt-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {ENGINES.map((e) => (
-            <div key={e} className={`rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 ${isLive(e) ? "" : "opacity-60"}`}>
-              <div className="flex items-center gap-2 font-medium">
-                <span aria-hidden>{ENGINE_COPY[e].icon}</span>
+            <div
+              key={e}
+              className={`rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 transition ${isLive(e) ? "hover:-translate-y-0.5 hover:border-primary/40 hover:bg-zinc-900/70" : "opacity-60"}`}
+            >
+              <div className="flex items-center gap-3 font-medium">
+                <EngineIcon engine={e} />
                 {ENGINE_LABELS[e]}
                 {!isLive(e) && (
                   <span className="ml-auto rounded-full border border-zinc-700 px-2 py-0.5 text-[10px] font-normal uppercase tracking-wide text-zinc-400">
@@ -211,7 +224,7 @@ export function Landing({
                   </span>
                 )}
               </div>
-              <p className="mt-1.5 text-sm text-zinc-400">{ENGINE_COPY[e].text}</p>
+              <p className="mt-2.5 text-sm text-zinc-400">{ENGINE_COPY[e].text}</p>
             </div>
           ))}
         </div>
@@ -221,7 +234,7 @@ export function Landing({
         <div className="mx-auto grid max-w-6xl gap-6 px-4 py-14 sm:grid-cols-3">
           {STEPS.map((s, i) => (
             <div key={s.title}>
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-500/15 text-sm font-semibold text-indigo-300">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gold/15 text-sm font-semibold text-gold ring-1 ring-inset ring-gold/30">
                 {i + 1}
               </div>
               <h3 className="mt-3 font-medium">{s.title}</h3>
@@ -285,7 +298,7 @@ export function Landing({
             <details key={f.q} className="group px-5 py-4">
               <summary className="flex cursor-pointer list-none items-center justify-between font-medium">
                 {f.q}
-                <span className="text-zinc-500 transition group-open:rotate-45">+</span>
+                <span className="text-gold transition group-open:rotate-45">+</span>
               </summary>
               <p className="mt-2 text-sm text-zinc-400">{f.a}</p>
             </details>

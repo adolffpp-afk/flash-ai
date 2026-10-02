@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ENGINE_LABELS, type Engine } from "@/lib/types";
 import { api } from "@/lib/store";
+import { LogoMark } from "@/app/brand";
 
 type Stats = {
   days: number;
@@ -132,7 +133,7 @@ function CostChart({ series }: { series: Stats["series"] }) {
             aria-label={`${day(s.day)}: ${usd(s.costCents)}, ${s.requests} requests`}
           >
             <div
-              className={`w-full rounded-t-[4px] ${hover === i ? "bg-indigo-300" : "bg-indigo-500"}`}
+              className={`w-full rounded-t-[4px] ${hover === i ? "bg-gold" : "bg-primary"}`}
               style={{ height: s.costCents ? `${Math.max(2, (s.costCents / max) * 100)}%` : 0 }}
             />
           </div>
@@ -165,7 +166,7 @@ export function AdminDashboard() {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 bg-zinc-950 text-zinc-300">
         <p>{error}</p>
-        <Link href="/" className="text-sm text-indigo-300 hover:underline">
+        <Link href="/" className="text-sm text-primary-soft hover:underline">
           Back to Flash
         </Link>
       </div>
@@ -180,7 +181,7 @@ export function AdminDashboard() {
       <div className="mx-auto max-w-6xl px-4 py-6">
         <div className="flex flex-wrap items-center gap-3">
           <Link href="/" className="flex items-center gap-2 font-semibold">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-pink-500">⚡</span>
+            <LogoMark size={32} />
             Flash dashboard
           </Link>
           <div className="ml-auto flex rounded-lg border border-zinc-800 text-sm" role="radiogroup" aria-label="Time range">

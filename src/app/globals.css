@@ -6,9 +6,71 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/*
+ * Flash design tokens. Emerald is the primary colour, gold the accent (highlights, the recommended
+ * plan, the hero call to action) and red the energetic spark, used sparingly and for errors.
+ * Keep in step with BRAND in src/app/brand.tsx.
+ */
+@theme {
+  --color-ink: #060d0a;
+  --color-primary: #10b981;
+  --color-primary-soft: #6ee7b7;
+  --color-primary-strong: #047857;
+  --color-primary-deep: #064e3b;
+  --color-gold: #f5c542;
+  --color-gold-soft: #fde68a;
+  --color-gold-strong: #f59e0b;
+  --color-spark: #ff4545;
+  --color-spark-soft: #ff8a80;
+
+  /*
+   * The neutrals carry a faint green tint so the dark surfaces feel rich rather than flat grey.
+   * Contrast (WCAG AA): zinc-400 on zinc-950 is 7.9:1, zinc-500 on zinc-950 is 5.3:1.
+   */
+  --color-zinc-50: #f5f8f6;
+  --color-zinc-100: #e9efeb;
+  --color-zinc-200: #d3ddd7;
+  --color-zinc-300: #b6c5bc;
+  --color-zinc-400: #94a89c;
+  --color-zinc-500: #76897e;
+  --color-zinc-600: #53645a;
+  --color-zinc-700: #34443b;
+  --color-zinc-800: #1f2c25;
+  --color-zinc-900: #111b16;
+  --color-zinc-950: #060d0a;
+}
+
+/* Primary buttons: deep emerald, white text (5.5:1). */
+@utility bg-brand {
+  background-image: linear-gradient(135deg, #047857, #0f766e);
+}
+
+/* Accent buttons: gold, near-black text (11:1). */
+@utility bg-gold-brand {
+  background-image: linear-gradient(135deg, #fde68a, #f5c542 45%, #f59e0b);
+}
+
+/* Gold text, for the wordmark and highlights. */
+@utility text-gold-gradient {
+  background-image: linear-gradient(90deg, #fde68a, #f5c542 50%, #f59e0b);
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
 html,
 body {
   height: 100%;
-  background: #09090b;
-  color: #f4f4f5;
+  background: var(--color-ink);
+  color: var(--color-zinc-100);
+}
+
+/* A visible, on-brand focus ring for keyboard users. */
+:focus-visible {
+  outline: 2px solid var(--color-gold);
+  outline-offset: 2px;
+}
+
+::selection {
+  background: rgb(16 185 129 / 0.35);
 }
