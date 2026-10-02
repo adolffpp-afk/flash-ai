@@ -17,7 +17,7 @@ const CHOICES: Choice[] = ["auto", ...ENGINES];
 const ACCEPT =
   "image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,text/markdown,text/csv,.md,.csv,.txt,.json," +
   "audio/*,video/mp4,video/webm,video/quicktime";
-const MAX_FILE_MB = 25;
+const MAX_FILE_MB = 3;
 
 const SUGGESTIONS: { icon: string; engine: Engine; text: string }[] = [
   { icon: "🛠️", engine: "app", text: "Build a habit tracker app with streaks and a weekly chart" },

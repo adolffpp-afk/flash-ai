@@ -87,7 +87,7 @@ Features:
 - **Projects**: separate chat histories, saved to your account.
 - **Memory**: a short note about you that Flash uses in every answer.
 - **Files**: attach a PDF, image, CSV or text file to ask about it, or an audio or
-  video file to transcribe (up to 25 MB).
+  video file to transcribe (up to 3 MB on Vercel Hobby).
 - **Downloads**: spreadsheets, documents, code, images, video and audio all download
   with one click.
 - **Demo mode**: every engine works without keys, so you can try the app first.
@@ -110,6 +110,12 @@ in the project folder.
 The easiest host is [Vercel](https://vercel.com): import the repository, add the same
 keys under **Settings → Environment Variables**, and deploy. Any Node.js host works
 (`npm run build && npm start`).
+
+**Deploying on Vercel:** import the GitHub repo in Vercel (it detects Next.js), then add the
+environment variables from `.env.example` under Settings → Environment Variables. On the
+Hobby plan a request may run for 300 seconds and send at most 4.5 MB, so files are capped at
+3 MB; long video jobs may need Vercel Pro (raise `maxDuration` in `src/app/api/chat/route.ts`
+to 800).
 
 Serverless hosts like Vercel can't keep a local database file, so set `DATABASE_URL`
 and `DATABASE_AUTH_TOKEN` to a hosted libSQL database (Turso has a free tier). To take

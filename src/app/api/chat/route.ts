@@ -36,9 +36,11 @@ import { MEDIA_ENGINES, modelCredits, pickModel, videoSeconds, type MediaEngine,
 import { demoReply } from "@/lib/engines/demo.ts";
 import { streamBuild } from "@/lib/engines/builder.ts";
 
-export const maxDuration = 800;
+// Vercel Hobby allows 300 seconds; on Vercel Pro this can go up to 800 for long video jobs.
+export const maxDuration = 300;
 
-const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
+// Vercel caps a request at 4.5 MB, and a file grows by a third when sent as base64.
+const MAX_ATTACHMENT_BYTES = 3 * 1024 * 1024;
 
 type ChatRequest = {
   messages: ChatTurn[];
@@ -248,7 +250,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "The last message must be from the user." }, { status: 400 });
   }
   if (last.attachment && (last.attachment.data.length * 3) / 4 > MAX_ATTACHMENT_BYTES) {
-    return Response.json({ error: "Files must be 25 MB or smaller." }, { status: 413 });
+    return Response.json({ error: "Files must be 3 MB or smaller." }, { status: 413 });
   }
 
   const previous = body.previous && (ENGINES as readonly string[]).includes(body.previous) ? body.previous : undefined;
