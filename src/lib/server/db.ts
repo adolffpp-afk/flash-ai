@@ -101,6 +101,16 @@ const SCHEMA = [
     updated_at INTEGER NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS subscriptions_user ON subscriptions(user_id, paid_until)`,
+  // Free-lane use per provider per UTC day, kept under each provider's free limit.
+  `CREATE TABLE IF NOT EXISTS free_quota (
+    day TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    requests INTEGER NOT NULL DEFAULT 0,
+    tokens INTEGER NOT NULL DEFAULT 0,
+    neurons REAL NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, provider)
+  )`,
+  `CREATE INDEX IF NOT EXISTS usage_user_time ON usage(user_id, created_at)`,
   `CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
   `CREATE INDEX IF NOT EXISTS site_records_lookup ON site_records(site_slug, collection, created_at)`,
 ];

@@ -11,7 +11,10 @@ import {
   streamText,
   type Budget,
   type Meter,
+  type WritingMode,
 } from "@/lib/engines/claude.ts";
+import { freeChatConfigured, freeEligible, freeImage, freeImageConfigured, streamFreeChat } from "@/lib/engines/free.ts";
+import { freeLeft, recordFree, reserveFree, reserveFreeImage } from "@/lib/server/free.ts";
 import {
   composeMusic,
   downloadVideo,
@@ -202,6 +205,33 @@ async function* run(
   }
 }
 
+/** The free lane: open-source models on free tiers, for users who are out of credits. */
+async function* runFree(
+  lane: "chat" | "image",
+  engine: Engine,
+  history: ChatTurn[],
+  preferences: string,
+  store: Store,
+  used: { provider: string; model: string },
+): AsyncGenerator<StreamEvent> {
+  const last = history[history.length - 1];
+  if (lane === "image") {
+    if (!(await reserveFreeImage())) {
+      throw new Error("Today's free images are used up across Flash. They reset tomorrow, or you can get more credits.");
+    }
+    used.provider = "cloudflare";
+    used.model = "flux-1-schnell";
+    yield { type: "status", message: "Painting your image with FLUX.1 schnell (free)…" };
+    const image = await freeImage(last.content);
+    yield { type: "image", url: await store(image, "flash-image.jpg"), prompt: last.content };
+    return;
+  }
+  yield* streamFreeChat(history, preferences, engine as WritingMode, reserveFree, recordFree, (label, provider) => {
+    used.provider = provider;
+    used.model = label;
+  });
+}
+
 export async function POST(request: Request) {
   const user = await getUser(request);
   if (!user) return unauthorized();
@@ -231,8 +261,12 @@ export async function POST(request: Request) {
   const spend: { provider: string; model: string; cents: number }[] = [];
   const meter: Meter = (provider, model, cents) => spend.push({ provider, model, cents });
 
+  await ensureMonthlyCredits(user.id);
+  const available = await balance(user.id);
+
   // When no keyword rule fits, a small, fast model reads the request and picks the engine.
-  if (!override && auto.guessed && !last.attachment && claudeConfigured()) {
+  // Skipped for users out of credits, so the free lane costs Flash nothing.
+  if (!override && auto.guessed && !last.attachment && claudeConfigured() && available >= 5) {
     const guess = await classifyRequest(last.content, meter);
     if (guess && guess !== "text" && guess !== "transcribe") {
       engine = guess;
@@ -247,8 +281,6 @@ export async function POST(request: Request) {
   // length: Flash holds up to a limit, then keeps only what the reply really cost.
   const live = isMedia(engine) ? Boolean(model) : configured(engine);
   const metered = live && !isMedia(engine) && engine !== "voice" && engine !== "transcribe";
-  await ensureMonthlyCredits(user.id);
-  const available = await balance(user.id);
   let held = 0;
   let needed = 0;
   let budget = NO_BUDGET;
@@ -264,11 +296,35 @@ export async function POST(request: Request) {
       budget = { maxTokens: hold.maxTokens, capCents: hold.capCents };
     }
   }
+  // Out of credits: chat-style requests and images fall back to free open-source models,
+  // up to a daily allowance per user.
+  let free: "chat" | "image" | null = null;
+  if (live && available < needed) {
+    const lane = freeEligible(engine, last);
+    if (lane) {
+      if ((await freeLeft(user.id, lane)) <= 0) {
+        return Response.json(
+          {
+            error: `You've used today's free ${lane === "image" ? "images" : "messages"} and you have ${available} credits. Free use resets tomorrow, or get more credits now.`,
+            code: "out_of_credits",
+            needed,
+          },
+          { status: 402 },
+        );
+      }
+      free = lane;
+      held = needed = 0;
+      budget = NO_BUDGET;
+    }
+  }
+  const freeUse = { provider: "", model: "" };
   const chargeId = held ? await charge(user.id, held, `${engine} request`) : 0;
   if (chargeId === null) {
     return Response.json(
       {
-        error: `This needs ${metered ? "at least " : ""}${needed} credits and you have ${available}.`,
+        error:
+          `This needs ${metered ? "at least " : ""}${needed} credits and you have ${available}.` +
+          (freeChatConfigured() ? " Free models still answer chat, writing, code and translation" + (freeImageConfigured() ? ", and make images." : ".") : ""),
         code: "out_of_credits",
         needed,
       },
@@ -299,14 +355,19 @@ export async function POST(request: Request) {
         engine,
         reason,
         demo: !live,
-        cost: metered ? 0 : held,
-        ...(model && { model: model.label, modelWhy: picked!.why }),
+        cost: metered && !free ? 0 : held,
+        ...(free
+          ? { free: true, model: free === "image" ? "FLUX.1 schnell" : "Open-source model", modelWhy: "You're out of credits, so Flash used a free model." }
+          : model && { model: model.label, modelWhy: picked!.why }),
       });
       let ok = true;
       let failure = "";
       let written = 0;
       try {
-        for await (const event of run(engine, history, preferences, store, model, meter, budget)) {
+        const events = free
+          ? runFree(free, engine, history, preferences, store, freeUse)
+          : run(engine, history, preferences, store, model, meter, budget);
+        for await (const event of events) {
           if (cancelled || request.signal.aborted) break;
           if (event.type === "text") written += event.delta.length;
           send(event);
@@ -319,7 +380,7 @@ export async function POST(request: Request) {
       const costCents = spend.reduce((sum, s) => sum + s.cents, 0);
       // A failed request costs nothing. A stopped reply is charged what it used, or a typical reply.
       let credits = held;
-      if (!ok) credits = 0;
+      if (!ok || free) credits = 0;
       else if (metered) {
         // A stopped reply has no usage report: charge the larger of a typical reply and an
         // estimate from what was already sent (about 3 characters per token, doubled for thinking,
@@ -334,8 +395,8 @@ export async function POST(request: Request) {
         await logUsage({
           userId: user.id,
           engine,
-          model: model?.id ?? main?.model ?? "",
-          provider: model?.provider ?? main?.provider ?? "",
+          model: free ? freeUse.model : (model?.id ?? main?.model ?? ""),
+          provider: free ? freeUse.provider : (model?.provider ?? main?.provider ?? ""),
           credits,
           costCents,
           ok,
@@ -343,7 +404,7 @@ export async function POST(request: Request) {
       }
       if (!ok) send({ type: "error", message: `${failure}${held ? " Your credits were refunded." : ""}` });
       if (cancelled) return;
-      if (metered && ok) send({ type: "cost", credits });
+      if (metered && ok && !free) send({ type: "cost", credits });
       send({ type: "done" });
       controller.close();
     },

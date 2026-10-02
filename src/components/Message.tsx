@@ -151,7 +151,18 @@ export function Message({
               </span>
             )}
             {!!m.cost && <span className="text-zinc-500">⚡ {m.cost} credits</span>}
+            {m.free && <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-emerald-300">free</span>}
           </div>
+        )}
+        {m.free && !m.pending && (
+          <p className="mb-1 text-xs text-zinc-500">
+            You&apos;re out of credits, so a free open-source model answered.{" "}
+            {onBuyCredits && (
+              <button onClick={onBuyCredits} className="text-indigo-300 underline-offset-2 hover:underline">
+                Get credits for the best models
+              </button>
+            )}
+          </p>
         )}
         {m.content && (
           <div className="prose prose-invert max-w-none break-words prose-p:my-2 prose-pre:bg-zinc-900">
@@ -236,7 +247,7 @@ export function Message({
           <div className="mt-2 rounded-xl border border-indigo-500/40 bg-gradient-to-br from-indigo-500/15 to-fuchsia-500/10 p-4 text-sm">
             <p className="font-medium text-zinc-100">You&apos;re out of credits for this one</p>
             <p className="mt-1 text-zinc-300">
-              {m.error} Top up to keep going, or wait for your free monthly credits. Text replies cost the least.
+              {m.error} Pick a plan or top up to keep going, or wait for your free monthly credits.
             </p>
             {onBuyCredits && (
               <button

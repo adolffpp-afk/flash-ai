@@ -51,7 +51,17 @@ export type Source = { title: string; url: string };
 
 // One line of the NDJSON stream sent from /api/chat to the browser.
 export type StreamEvent =
-  | { type: "route"; engine: Engine; reason: string; demo: boolean; cost: number; model?: string; modelWhy?: string }
+  | {
+      type: "route";
+      engine: Engine;
+      reason: string;
+      demo: boolean;
+      cost: number;
+      model?: string;
+      modelWhy?: string;
+      // Answered by a free open-source model because the user is out of credits.
+      free?: boolean;
+    }
   | { type: "text"; delta: string }
   // What a reply charged by length really cost, sent when it finishes.
   | { type: "cost"; credits: number }

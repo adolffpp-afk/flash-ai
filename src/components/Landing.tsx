@@ -46,6 +46,10 @@ const FAQ = [
     a: "No. The free plan gives you credits every month. Plans give you more credits each month for less per credit, and you can cancel any time. You can also buy one-off top-ups. Unused plan credits carry over, and bought credits don't expire.",
   },
   {
+    q: "What happens when my credits run out?",
+    a: "Chat, writing, code and translation keep working on free open-source models, with a daily allowance, and you can make a few free images a day. App building, video, music, voice and web research need credits.",
+  },
+  {
     q: "Can I change or cancel my plan?",
     a: "Yes. Cancel from the credits panel and your plan runs to the end of the period you paid for. Switching to another plan starts a new month that day, and you keep the credits you already have.",
   },

@@ -100,7 +100,7 @@ const MODE_PROMPTS: Record<WritingMode, string> = {
     "When analysing an attached file, lead with the key findings and the numbers behind them.",
 };
 
-function system(preferences: string, mode: WritingMode = "text"): string {
+export function system(preferences: string, mode: WritingMode = "text"): string {
   const prefs = preferences.trim();
   const parts = [BASE_SYSTEM, MODE_PROMPTS[mode]];
   if (prefs) parts.push(`What the user told Flash to remember about them:\n${prefs}`);

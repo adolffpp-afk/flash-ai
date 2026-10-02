@@ -38,7 +38,7 @@ type Status = Record<Engine, boolean>;
 function applyEvent(m: UIMessage, e: StreamEvent): UIMessage {
   switch (e.type) {
     case "route":
-      return { ...m, engine: e.engine, reason: e.reason, demo: e.demo, cost: e.cost, model: e.model, modelWhy: e.modelWhy };
+      return { ...m, engine: e.engine, reason: e.reason, demo: e.demo, cost: e.cost, model: e.model, modelWhy: e.modelWhy, free: e.free };
     case "text":
       return m.app ? { ...m, after: (m.after ?? "") + e.delta } : { ...m, content: m.content + e.delta };
     case "status":

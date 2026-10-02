@@ -36,7 +36,15 @@ type Stats = {
 };
 
 const RANGES = [7, 30, 90];
-const PROVIDERS: Record<string, string> = { anthropic: "Anthropic", openai: "OpenAI", elevenlabs: "ElevenLabs", fal: "fal.ai" };
+const PROVIDERS: Record<string, string> = {
+  anthropic: "Anthropic",
+  openai: "OpenAI",
+  elevenlabs: "ElevenLabs",
+  fal: "fal.ai",
+  groq: "Groq (free)",
+  openrouter: "OpenRouter (free)",
+  cloudflare: "Cloudflare (free)",
+};
 
 const usd = (cents: number) =>
   `${cents < 0 ? "-" : ""}$${(Math.abs(cents) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;

@@ -57,6 +57,12 @@ export function PlanCards({
           <li>✓ Try every tool</li>
           <li>✓ Publish apps</li>
           <li>✓ Tops up on the 1st</li>
+          {pricing.freeLane.chats > 0 && (
+            <li>
+              ✓ Then {pricing.freeLane.chats} free chats
+              {pricing.freeLane.images ? ` and ${pricing.freeLane.images} images` : ""} a day on open-source models
+            </li>
+          )}
         </ul>
         {onFree ? (
           <button onClick={onFree} className="mt-auto rounded-lg border border-zinc-700 py-2 text-sm hover:bg-zinc-900">

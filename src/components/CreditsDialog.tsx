@@ -168,6 +168,13 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
           <p className="mt-3 text-xs text-zinc-500">Payments switch on once a Stripe key is added.</p>
         )}
 
+        {me.freeLane.chats > 0 && (
+          <p className="mt-4 rounded-lg border border-emerald-900/60 bg-emerald-950/30 px-3 py-2 text-xs text-emerald-200">
+            Out of credits? Chat, writing, code and translation keep working on free open-source models,{" "}
+            {me.freeLane.chats} a day{me.freeLane.images ? `, plus ${me.freeLane.images} free images` : ""}.
+          </p>
+        )}
+
         <h3 className="mt-6 text-sm font-medium text-zinc-300">What things cost</h3>
         <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-3">
           {ENGINES.map((e) => (

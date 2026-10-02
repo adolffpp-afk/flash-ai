@@ -62,6 +62,12 @@ Features:
   if the buyer uses every credit, after AI cost and Stripe fees; `test/pricing.test.ts`
   checks this and the owner dashboard shows the margin per plan. Plans live in
   `src/lib/credits.ts`.
+- **Free lane when credits run out**: with the optional free keys (Groq, OpenRouter,
+  Cloudflare Workers AI), users who are out of credits keep chatting, writing, coding and
+  translating on open-source models (GPT-OSS 120B, Llama 3.3 70B), and get a few free
+  FLUX.1 schnell images a day. Each user gets a daily allowance, and Flash stops below each
+  provider's free limit, so the free lane costs nothing. Apps, video, music, voice and web
+  research stay on credits. See `src/lib/engines/free.ts`.
 - **Model mix**: Claude Opus 5.5 builds apps, slides and code; Claude Sonnet 5.5 handles
   everyday chat, writing, research and translation; Claude Haiku 4.5 picks the engine
   for requests the keyword rules can't place. Override with `FLASH_BUILD_MODEL`,

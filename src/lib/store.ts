@@ -11,6 +11,7 @@ export type UIMessage = {
   cost?: number;
   model?: string;
   modelWhy?: string;
+  free?: boolean;
   images?: { url: string; prompt: string }[];
   videos?: { url: string; prompt: string }[];
   audio?: string;
@@ -43,6 +44,7 @@ export type Pricing = {
     features: string[];
   }[];
   freeMonthly: number;
+  freeLane: { chats: number; images: number };
   paymentsEnabled: boolean;
   models: { id: string; engine: Engine; label: string; credits: number; blurb: string; live: boolean }[];
 };
