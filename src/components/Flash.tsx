@@ -78,6 +78,7 @@ function readFile(file: File): Promise<Attachment> {
 export function Flash() {
   const [me, setMe] = useState<Me | null>(null);
   const [signedOut, setSignedOut] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   // Signed-out visitors see the landing page until they choose to sign up or sign in.
   const [authMode, setAuthMode] = useState<"signup" | "login" | null>(null);
   const [showCredits, setShowCredits] = useState(false);
@@ -108,9 +109,11 @@ export function Flash() {
     try {
       const data = await api<Me>("/api/me");
       setMe(data);
+      setLoadError(false);
       return data;
     } catch (err) {
       if ((err as { status?: number }).status === 401) setSignedOut(true);
+      else setLoadError(true);
       return null;
     }
   }
@@ -397,6 +400,22 @@ export function Flash() {
       <AuthScreen key={authMode} initialMode={authMode} onDone={start} onBack={() => setAuthMode(null)} />
     ) : (
       <Landing onStart={setAuthMode} />
+    );
+  }
+  if (!me && loadError) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center text-sm text-zinc-400">
+        <p>Flash couldn&apos;t load your account. Please try again in a moment.</p>
+        <button
+          onClick={() => {
+            setLoadError(false);
+            start();
+          }}
+          className="rounded-lg border border-zinc-700 px-3 py-1.5 text-zinc-100 hover:bg-zinc-900"
+        >
+          Try again
+        </button>
+      </div>
     );
   }
   if (!me) {
