@@ -39,7 +39,7 @@ export async function* streamBuild(
     max_tokens: 64000,
     betas: ["server-side-fallback-2026-07-01"],
     fallbacks: "default",
-    output_config: { effort: "high" },
+    output_config: { effort: "xhigh" },
     system: prefs ? `${PROMPTS[kind]}\n\nAbout the user:\n${prefs}` : PROMPTS[kind],
     messages: toMessages(history),
   });

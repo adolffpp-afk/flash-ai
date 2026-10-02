@@ -14,11 +14,11 @@ an image, or speech, sends it to the right engine, and keeps the result in a pro
 | Code          | Writing, explaining and fixing code               | Claude                           | `ANTHROPIC_API_KEY`  |
 | Translate     | Translation between languages                     | Claude                           | `ANTHROPIC_API_KEY`  |
 | Docs & Sheets | Spreadsheets (download as CSV), letters, reports  | Claude                           | `ANTHROPIC_API_KEY`  |
-| Image         | Pictures, logos, illustrations                    | OpenAI `gpt-image-1`             | `OPENAI_API_KEY`     |
-| Video         | 8 second video clips                              | OpenAI Sora (`sora-2`)           | `OPENAI_API_KEY`     |
-| Voice         | Reading text aloud                                | ElevenLabs text to speech        | `ELEVENLABS_API_KEY` |
-| Music         | 30 second songs, jingles and beats                | ElevenLabs Music                 | `ELEVENLABS_API_KEY` |
-| Transcribe    | Turning audio or video files into text            | ElevenLabs Scribe                | `ELEVENLABS_API_KEY` |
+| Image         | Pictures, logos, illustrations                    | OpenAI `gpt-image-2.5-sunburst`           | `OPENAI_API_KEY`     |
+| Video         | 8 second video clips                              | OpenAI Sora (`sora-2-pro`)         | `OPENAI_API_KEY`     |
+| Voice         | Reading text aloud                                | ElevenLabs `eleven_v4`          | `ELEVENLABS_API_KEY` |
+| Music         | 30 second songs, jingles and beats                | ElevenLabs `music_v2_5`          | `ELEVENLABS_API_KEY` |
+| Transcribe    | Turning audio or video files into text            | ElevenLabs `scribe_v2`           | `ELEVENLABS_API_KEY` |
 
 Three keys switch on all twelve engines. Claude also sharpens image, video and music
 requests into detailed prompts before they are sent.

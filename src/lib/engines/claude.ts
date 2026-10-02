@@ -86,7 +86,7 @@ export async function* streamText(
     max_tokens: 64000,
     betas: ["server-side-fallback-2026-07-01"],
     fallbacks: "default",
-    output_config: { effort: mode === "code" ? "high" : "medium" },
+    output_config: { effort: mode === "code" ? "xhigh" : "high" },
     system: system(preferences, mode),
     messages: toMessages(history),
   });

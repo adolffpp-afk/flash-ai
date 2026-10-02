@@ -130,16 +130,32 @@ export async function POST(request: Request) {
   const reason = override ? "You picked this engine." : auto.reason;
 
   const encoder = new TextEncoder();
+  // Set when the browser stops reading (the user pressed Stop), so the engine stops too.
+  let cancelled = false;
   const stream = new ReadableStream<Uint8Array>({
+    cancel() {
+      cancelled = true;
+    },
     async start(controller) {
-      const send = (e: StreamEvent) => controller.enqueue(encoder.encode(JSON.stringify(e) + "\n"));
+      const send = (e: StreamEvent) => {
+        if (cancelled) return;
+        try {
+          controller.enqueue(encoder.encode(JSON.stringify(e) + "\n"));
+        } catch {
+          cancelled = true;
+        }
+      };
       send({ type: "route", engine, reason, demo: !configured(engine) });
       try {
-        for await (const event of run(engine, history, body.preferences ?? "")) send(event);
+        for await (const event of run(engine, history, body.preferences ?? "")) {
+          if (cancelled || request.signal.aborted) return;
+          send(event);
+        }
       } catch (err) {
         console.error(`[flash] ${engine} engine failed`, err);
         send({ type: "error", message: err instanceof Error ? err.message : "Something went wrong." });
       }
+      if (cancelled) return;
       send({ type: "done" });
       controller.close();
     },

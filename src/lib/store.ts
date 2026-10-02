@@ -19,6 +19,7 @@ export type UIMessage = {
   sources?: Source[];
   error?: string;
   pending?: boolean;
+  stopped?: boolean;
 };
 
 export type Project = { id: string; name: string; updatedAt: number; messages: UIMessage[] };

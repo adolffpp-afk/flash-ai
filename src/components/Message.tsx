@@ -77,7 +77,39 @@ const markdownComponents: Components = {
   },
 };
 
-export function Message({ m }: { m: UIMessage }) {
+function plainText(m: UIMessage): string {
+  return [m.content, m.after].filter(Boolean).join("\n\n").trim();
+}
+
+function Actions({ m, onRetry }: { m: UIMessage; onRetry?: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const text = plainText(m);
+  if (m.pending || (!text && !onRetry)) return null;
+  const btn = "rounded-md px-2 py-1 hover:bg-zinc-800 hover:text-zinc-200";
+  return (
+    <div className="mt-2 flex gap-1 text-xs text-zinc-500">
+      {text && (
+        <button
+          className={btn}
+          onClick={() => {
+            navigator.clipboard?.writeText(text);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          }}
+        >
+          {copied ? "Copied" : "Copy"}
+        </button>
+      )}
+      {onRetry && (
+        <button className={btn} onClick={onRetry}>
+          ↻ Retry
+        </button>
+      )}
+    </div>
+  );
+}
+
+export function Message({ m, onRetry }: { m: UIMessage; onRetry?: () => void }) {
   if (m.role === "user") {
     return (
       <div className="flex justify-end">
@@ -183,11 +215,13 @@ export function Message({ m }: { m: UIMessage }) {
             ))}
           </div>
         )}
+        {m.stopped && <p className="mt-2 text-xs text-zinc-500">Stopped.</p>}
         {m.error && (
           <div className="mt-2 rounded-lg border border-red-900 bg-red-950/50 px-3 py-2 text-sm text-red-300">
             {m.error}
           </div>
         )}
+        <Actions m={m} onRetry={onRetry} />
       </div>
     </div>
   );

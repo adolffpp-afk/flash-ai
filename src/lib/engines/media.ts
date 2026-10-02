@@ -1,8 +1,8 @@
-export const IMAGE_MODEL = process.env.FLASH_IMAGE_MODEL || "gpt-image-1";
-export const VIDEO_MODEL = process.env.FLASH_VIDEO_MODEL || "sora-2";
+export const IMAGE_MODEL = process.env.FLASH_IMAGE_MODEL || "gpt-image-2.5-sunburst";
+export const VIDEO_MODEL = process.env.FLASH_VIDEO_MODEL || "sora-2-pro";
 export const VOICE_ID = process.env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM";
-export const VOICE_MODEL = process.env.ELEVENLABS_MODEL || "eleven_multilingual_v2";
-export const MUSIC_MODEL = process.env.ELEVENLABS_MUSIC_MODEL || "music_v1";
+export const VOICE_MODEL = process.env.ELEVENLABS_MODEL || "eleven_v4";
+export const MUSIC_MODEL = process.env.ELEVENLABS_MUSIC_MODEL || "music_v2_5";
 export const TRANSCRIBE_MODEL = process.env.ELEVENLABS_STT_MODEL || "scribe_v2";
 
 export const openaiConfigured = () => Boolean(process.env.OPENAI_API_KEY);
@@ -25,7 +25,7 @@ export async function generateImage(prompt: string): Promise<string> {
   const res = await fetch(`${OPENAI}/images/generations`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...openaiHeaders() },
-    body: JSON.stringify({ model: IMAGE_MODEL, prompt, size: "1024x1024", n: 1 }),
+    body: JSON.stringify({ model: IMAGE_MODEL, prompt, size: process.env.FLASH_IMAGE_SIZE || "1024x1024", n: 1 }),
   });
   if (!res.ok) throw await failure(res, "The image service");
   const json = (await res.json()) as { data?: { b64_json?: string; url?: string }[] };
@@ -75,7 +75,7 @@ export async function synthesizeSpeech(text: string): Promise<string> {
   const res = await fetch(`${ELEVEN}/text-to-speech/${VOICE_ID}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "audio/mpeg", ...elevenHeaders() },
-    body: JSON.stringify({ text: text.slice(0, 5000), model_id: VOICE_MODEL }),
+    body: JSON.stringify({ text: text.slice(0, 10000), model_id: VOICE_MODEL }),
   });
   if (!res.ok) throw await failure(res, "The voice service");
   return audioToDataUrl(res);
