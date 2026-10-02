@@ -73,6 +73,7 @@ export async function recordPayment(p: {
   periodEnd: number;
   ref: string;
   test: boolean;
+  paymentIntent?: string | null;
 }): Promise<boolean> {
   const plan = planById(p.planId);
   if (!plan) return false;
@@ -86,8 +87,10 @@ export async function recordPayment(p: {
       p.periodEnd, p.test ? 1 : 0, t, t],
   );
   await run(
-    "INSERT OR IGNORE INTO purchases (user_id, pack, credits, amount_cents, test, ref, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    [p.userId, `plan:${plan.id}:${p.interval}`, plan.credits, p.amountCents, p.test ? 1 : 0, p.ref, t],
+    `INSERT OR IGNORE INTO purchases (user_id, pack, credits, amount_cents, test, ref, payment_intent, subscription, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [p.userId, `plan:${plan.id}:${p.interval}`, plan.credits, p.amountCents, p.test ? 1 : 0, p.ref,
+      p.paymentIntent ?? null, p.subscriptionId, t],
   );
   const sub = await one<Subscription>("SELECT * FROM subscriptions WHERE id = ?", [p.subscriptionId]);
   if (sub) await grantPlanCredits(sub);

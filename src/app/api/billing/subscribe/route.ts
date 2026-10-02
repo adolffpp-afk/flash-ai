@@ -1,4 +1,4 @@
-import { getUser, unauthorized } from "@/lib/server/auth.ts";
+import { appUrl, getUser, unauthorized } from "@/lib/server/auth.ts";
 import { one } from "@/lib/server/db.ts";
 import { randomId } from "@/lib/server/ids.ts";
 import { createSubscriptionCheckout, demoPurchases, paymentsEnabled } from "@/lib/server/stripe.ts";
@@ -58,7 +58,7 @@ export async function POST(request: Request) {
       interval,
       user,
       customer?.customer ?? null,
-      new URL(request.url).origin,
+      appUrl(request),
     );
     return Response.json({ url });
   } catch (err) {

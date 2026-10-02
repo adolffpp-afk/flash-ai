@@ -38,7 +38,19 @@ export function claudeCostCents(model: string, usage: ClaudeUsage): number {
 
 // ElevenLabs voice and transcription, in cents.
 export const voiceCostCents = (characters: number) => (characters / 1000) * 2.2;
-export const TRANSCRIBE_COST_CENTS = 1;
+// Voice reads at most this many characters, and is priced on the same text.
+export const MAX_SPEECH_CHARS = 10000;
+
+/*
+ * Transcription is billed per minute of audio, which Flash can't measure before sending the
+ * file. So it is priced as if the file were the longest recording its size could hold: at 8 kbps
+ * (1,000 bytes a second, below common speech codecs), at Scribe's $0.40 an hour. A 3 MB file
+ * is priced as 52 minutes; a normal 128 kbps MP3 pays for more than it uses, but never less.
+ */
+const TRANSCRIBE_CENTS_PER_MINUTE = 40 / 60;
+const MIN_AUDIO_BYTES_PER_SECOND = 1000;
+export const transcribeCostCents = (bytes: number) =>
+  Math.max(1, (bytes / MIN_AUDIO_BYTES_PER_SECOND / 60) * TRANSCRIBE_CENTS_PER_MINUTE);
 
 /*
  * Claude engines are charged by length. Flash holds up to this many credits while it writes
@@ -64,7 +76,8 @@ export const TYPICAL_CREDITS: Partial<Record<Engine, number>> = {
   app: 120,
   slides: 100,
   voice: 3,
-  transcribe: 3,
+  // A 500 KB recording (see transcribeCostCents).
+  transcribe: 15,
 };
 
 export const FREE_MONTHLY_CREDITS = Number(process.env.FLASH_FREE_CREDITS ?? 200);
@@ -158,13 +171,15 @@ const SEARCH_RESULT_TOKENS = 6000;
 
 const priceOf = (model: string) => CLAUDE_PRICES[model] ?? CLAUDE_PRICES["claude-opus-5-5"];
 
+/** What reading the input once costs, in cents. Claude bills this even when a reply is stopped. */
+export const readCostCents = (model: string, inputTokens: number) => (inputTokens * priceOf(model).input) / 1e6;
+
 /** Worst-case input cost of one request, in cents (search re-reads its context per tool call). */
 export function inputCostCents(engine: Engine, model: string, inputTokens: number): number {
-  const price = priceOf(model);
-  if (engine !== "search") return (inputTokens * price.input) / 1e6;
+  if (engine !== "search") return readCostCents(model, inputTokens);
   let tokens = inputTokens;
   for (let i = 1; i <= SEARCH_CALLS; i++) tokens += inputTokens + i * SEARCH_RESULT_TOKENS;
-  return (tokens * price.input) / 1e6 + 3 * WEB_SEARCH_CENTS;
+  return readCostCents(model, tokens) + 3 * WEB_SEARCH_CENTS;
 }
 
 /** Most output tokens a reply can write while costing no more than its held credits pay for. */
@@ -184,4 +199,39 @@ export function planHold(engine: Engine, model: string, inputTokens: number, ava
   const limit = Math.ceil(inputCents * MARKUP * SAFETY) + (CREDIT_LIMITS[engine] ?? 30);
   const held = Math.max(needed, Math.min(limit, available));
   return { needed, held, maxTokens: outputBudget(model, held, inputCents), capCents: held / MARKUP / SAFETY };
+}
+
+/*
+ * What a request is finally charged, never more than was held. A finished request pays its
+ * provider cost. A stopped Claude reply has no usage report, so it pays for reading the input
+ * (Claude bills it in full) plus an estimate of what was written, and at least a typical reply.
+ * A failed request pays only for provider work that really ran, so Flash never pays for it.
+ */
+export function finalCredits(r: {
+  held: number;
+  ok: boolean;
+  stopped: boolean;
+  // A Claude engine charged by length.
+  metered: boolean;
+  // What metered provider calls cost Flash, in cents.
+  costCents: number;
+  // What reading the input once costs (readCostCents), for a reply that never reported usage.
+  inputCents: number;
+  // Characters of reply already sent.
+  written: number;
+  typical: number;
+}): number {
+  if (r.held <= 0) return 0;
+  // About 3 characters per token, doubled for thinking, at Opus's output price of 2,000¢ per million tokens.
+  const writtenCents = (((r.written / 3) * 2 * 2000) / 1e6);
+  if (!r.ok) {
+    // A Claude call that already sent text was billed for its input and output too.
+    const incurred = r.costCents + (r.metered && r.written > 0 ? r.inputCents + writtenCents : 0);
+    return incurred > 0 ? Math.min(r.held, creditsFor(incurred)) : 0;
+  }
+  if (!r.metered) return r.held;
+  if (r.stopped) {
+    return Math.min(r.held, Math.max(r.typical, creditsFor(r.costCents + r.inputCents + writtenCents)));
+  }
+  return Math.min(r.held, creditsFor(r.costCents));
 }

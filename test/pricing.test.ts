@@ -10,9 +10,12 @@ import {
   TYPICAL_CREDITS,
   claudeCostCents,
   creditsFor,
+  finalCredits,
   inputCostCents,
   planHold,
   planPrice,
+  readCostCents,
+  transcribeCostCents,
   worstCaseProfitCents,
 } from "../src/lib/credits.ts";
 import type { Engine } from "../src/lib/types.ts";
@@ -116,4 +119,39 @@ test("long conversations hold more credits", () => {
   const long = planHold("text", "claude-sonnet-5-5", 150000, 1e6);
   assert.ok(long.held > short.held);
   assert.ok(long.maxTokens >= 1500);
+});
+
+test("a stopped reply pays at least for reading its input, never more than was held", () => {
+  const inputCents = readCostCents("claude-opus-5-5", 100000); // 40¢ of input
+  const base = { held: 400, ok: true, stopped: true, metered: true, costCents: 0, inputCents, written: 0, typical: 4 };
+  assert.equal(finalCredits(base), creditsFor(inputCents));
+  assert.ok(finalCredits({ ...base, written: 3000 }) > creditsFor(inputCents), "plus what it wrote");
+  assert.equal(finalCredits({ ...base, held: 50 }), 50, "capped at the hold");
+  assert.equal(finalCredits({ ...base, inputCents: 0 }), 4, "at least a typical reply");
+  // A finished reply pays its real cost.
+  assert.equal(finalCredits({ ...base, stopped: false, costCents: 10 }), creditsFor(10));
+});
+
+test("a failed request pays only for provider work that ran", () => {
+  const base = { held: 100, ok: false, stopped: false, metered: false, costCents: 0, inputCents: 5, written: 0, typical: 4 };
+  assert.equal(finalCredits(base), 0, "nothing ran: full refund");
+  assert.equal(finalCredits({ ...base, costCents: 0.2 }), creditsFor(0.2), "the prompt rewrite ran");
+  assert.equal(finalCredits({ ...base, costCents: 1000 }), 100, "never more than held");
+  // A Claude reply that broke after writing was billed for its input and output.
+  assert.equal(finalCredits({ ...base, metered: true, written: 300 }), creditsFor(5 + (100 * 2 * 2000) / 1e6));
+  // Media that finished is charged in full.
+  assert.equal(finalCredits({ ...base, ok: true }), 100);
+});
+
+test("transcription is priced for the longest recording a file could hold", () => {
+  const cheapestCentsPerCredit = Math.min(
+    ...CREDIT_PACKS.map((p) => p.priceCents / p.credits),
+    ...PLANS.map((p) => p.yearlyPriceCents / p.credits),
+  );
+  for (const bytes of [1000, 500 * 1024, 3 * 1024 * 1024]) {
+    // Worst case: 8 kbps audio at $0.40 an hour.
+    const worstCents = Math.max(1, (bytes / 1000 / 60) * (40 / 60));
+    assert.ok(creditsFor(transcribeCostCents(bytes)) * cheapestCentsPerCredit > worstCents, `${bytes} bytes`);
+  }
+  assert.ok(transcribeCostCents(3 * 1024 * 1024) > transcribeCostCents(1024 * 1024));
 });

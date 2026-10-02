@@ -62,3 +62,41 @@ test("an ended plan stops adding credits but keeps the ones given", async () => 
   assert.equal(await activeSubscription("u1"), null);
   assert.equal(await balance("u1"), 3000);
 });
+
+const { addPurchase, clawBack, findPurchase } = await import("../src/lib/server/credits.ts");
+
+test("a refunded pack takes back its share of credits, once, never below zero", async () => {
+  await user("r1");
+  await addPurchase("r1", "starter", "stripe:cs_1", "pi_1");
+  const p = (await findPurchase({ paymentIntent: "pi_1" }))!;
+  assert.equal(p.credits, 500);
+  // Half refunded, then the same webhook again.
+  assert.equal(await clawBack(p, 0.5, "ch_1", "stripe-refund:ch_1:250", "Payment refunded"), 250);
+  assert.equal(await clawBack(p, 0.5, "ch_1", "stripe-refund:ch_1:250", "Payment refunded"), 0);
+  assert.equal(await balance("r1"), 250);
+  // The rest refunded later takes only the rest.
+  assert.equal(await clawBack(p, 1, "ch_1", "stripe-refund:ch_1:500", "Payment refunded"), 250);
+  // A dispute of the same charge takes nothing more.
+  assert.equal(await clawBack(p, 1, "ch_1", "stripe-dispute:dp_1:ch_1", "Payment disputed"), 0);
+  assert.equal(await balance("r1"), 0);
+
+  // Credits already spent: the balance stops at zero.
+  await addPurchase("r1", "starter", "stripe:cs_2", "pi_2");
+  await run("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES ('r1', -400, 'spent', 0)");
+  const p2 = (await findPurchase({ paymentIntent: "pi_2" }))!;
+  assert.equal(await clawBack(p2, 1, "ch_2", "stripe-dispute:dp_2:ch_2", "Payment disputed"), 100);
+  assert.equal(await balance("r1"), 0);
+});
+
+test("a refunded plan payment is found by its invoice and takes back that month's credits", async () => {
+  await user("r2");
+  const start = Date.now() - DAY;
+  await recordPayment({
+    subscriptionId: "sub_r2", userId: "r2", planId: "pro", interval: "month", customer: "cus_r2",
+    amountCents: 2500, periodStart: start, periodEnd: addMonths(start, 1), ref: "stripe-invoice:in_r2", test: false,
+  });
+  const p = (await findPurchase({ paymentIntent: "pi_unknown", ref: "stripe-invoice:in_r2" }))!;
+  assert.equal(p.subscription, "sub_r2");
+  assert.equal(await clawBack(p, 1, "ch_r2", "stripe-refund:ch_r2:2500", "Payment refunded"), 3000);
+  assert.equal(await balance("r2"), 0);
+});

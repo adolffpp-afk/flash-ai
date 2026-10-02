@@ -85,7 +85,7 @@ export async function refund(userId: string, amount: number, reason: string): Pr
 }
 
 /** Adds a purchased pack once per payment reference (webhooks can be delivered twice). */
-export async function addPurchase(userId: string, packId: string, ref: string): Promise<boolean> {
+export async function addPurchase(userId: string, packId: string, ref: string, paymentIntent: string | null = null): Promise<boolean> {
   const pack = CREDIT_PACKS.find((p) => p.id === packId);
   if (!pack) return false;
   const r = await run(
@@ -94,10 +94,63 @@ export async function addPurchase(userId: string, packId: string, ref: string): 
   );
   if (r.rowsAffected !== 1) return false;
   await run(
-    "INSERT OR IGNORE INTO purchases (user_id, pack, credits, amount_cents, test, ref, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    [userId, pack.id, pack.credits, pack.priceCents, ref.startsWith("stripe:") ? 0 : 1, ref, now()],
+    "INSERT OR IGNORE INTO purchases (user_id, pack, credits, amount_cents, test, ref, payment_intent, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    [userId, pack.id, pack.credits, pack.priceCents, ref.startsWith("stripe:") ? 0 : 1, ref, paymentIntent, now()],
   );
   return true;
+}
+
+export type Purchase = {
+  user_id: string;
+  // A pack id, or plan:<plan>:<interval>.
+  pack: string;
+  credits: number;
+  ref: string;
+  subscription: string | null;
+  created_at: number;
+};
+
+/** The purchase a payment paid for, by its payment intent or by its own reference. */
+export async function findPurchase(by: { paymentIntent?: string | null; ref?: string | null }): Promise<Purchase | null> {
+  const cols = "user_id, pack, credits, ref, subscription, created_at";
+  if (by.paymentIntent) {
+    const row = await one<Purchase>(`SELECT ${cols} FROM purchases WHERE payment_intent = ?`, [by.paymentIntent]);
+    if (row) return row;
+  }
+  return by.ref ? one<Purchase>(`SELECT ${cols} FROM purchases WHERE ref = ?`, [by.ref]) : null;
+}
+
+/** The credits a purchase has given so far: a pack's credits, or each month a plan payment paid for. */
+async function grantedFor(p: Purchase): Promise<number> {
+  if (!p.pack.startsWith("plan:")) return p.credits;
+  if (!p.pack.endsWith(":year") || !p.subscription) return p.credits;
+  // A yearly payment gives credits month by month, so count the months given since it was paid.
+  const row = await one<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM credit_ledger WHERE ref LIKE ? AND created_at >= ? AND amount > 0",
+    [`plan:${p.subscription}:%`, p.created_at],
+  );
+  return p.credits * Math.min(12, Math.max(1, Number(row?.n ?? 0)));
+}
+
+/**
+ * Takes back the credits a refunded or disputed payment gave: share (0 to 1) of them, minus
+ * what was already taken back for the same charge. The balance can reach 0 but never goes
+ * below it. Safe to run twice: ref is unique, and earlier take-backs for the charge are counted.
+ * Returns the credits taken.
+ */
+export async function clawBack(p: Purchase, share: number, charge: string, ref: string, reason: string): Promise<number> {
+  const target = Math.round((await grantedFor(p)) * Math.min(1, Math.max(0, share)));
+  const taken = await one<{ total: number }>(
+    "SELECT COALESCE(-SUM(amount), 0) AS total FROM credit_ledger WHERE user_id = ? AND (ref LIKE ? OR ref LIKE ?)",
+    [p.user_id, `stripe-refund:${charge}:%`, `stripe-dispute:%:${charge}`],
+  );
+  const amount = Math.min(target - Number(taken?.total ?? 0), await balance(p.user_id));
+  if (amount <= 0) return 0;
+  const r = await run(
+    "INSERT OR IGNORE INTO credit_ledger (user_id, amount, reason, ref, created_at) VALUES (?, ?, ?, ?, ?)",
+    [p.user_id, -amount, reason, ref, now()],
+  );
+  return r.rowsAffected === 1 ? amount : 0;
 }
 
 export async function recentActivity(userId: string, limit = 20) {

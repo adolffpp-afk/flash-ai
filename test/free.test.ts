@@ -6,7 +6,10 @@ process.env.GROQ_API_KEY = "g";
 process.env.CLOUDFLARE_API_TOKEN = "c";
 process.env.CLOUDFLARE_ACCOUNT_ID = "acct";
 const { freeEligible, CLOUDFLARE_DAILY_NEURONS, FLUX_SCHNELL_NEURONS } = await import("../src/lib/engines/free.ts");
-const { reserveFree, reserveFreeImage, recordFree } = await import("../src/lib/server/free.ts");
+const { reserveFree, reserveFreeImage, recordFree, reserveFreeUser, releaseFreeUser, freeLeft } = await import(
+  "../src/lib/server/free.ts"
+);
+const { FREE_DAILY_IMAGES } = await import("../src/lib/engines/free.ts");
 
 const turn = (content: string, mediaType?: string) => ({
   role: "user" as const,
@@ -40,4 +43,15 @@ test("free images stop before Cloudflare's free neurons run out", async () => {
   assert.ok(images * FLUX_SCHNELL_NEURONS <= 10000, "within the 10,000 free neurons a day");
   // Chat on Cloudflare is blocked too once the neurons are used up.
   assert.equal(await reserveFree("cloudflare", { requests: Infinity, tokens: Infinity }), false);
+});
+
+test("each user's free requests are reserved up front, so parallel ones can't pass the cap", async () => {
+  const tries = await Promise.all(Array.from({ length: FREE_DAILY_IMAGES + 3 }, () => reserveFreeUser("u1", "image")));
+  assert.equal(tries.filter(Boolean).length, FREE_DAILY_IMAGES);
+  assert.equal(await freeLeft("u1", "image"), 0);
+  // A failed request gives its slot back.
+  await releaseFreeUser("u1", "image");
+  assert.equal(await freeLeft("u1", "image"), 1);
+  assert.equal(await reserveFreeUser("u1", "image"), true);
+  assert.equal(await reserveFreeUser("u2", "image"), true, "other users have their own");
 });

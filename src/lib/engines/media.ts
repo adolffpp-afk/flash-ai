@@ -1,4 +1,5 @@
-import { FriendlyError } from "./errors.ts";
+import { FriendlyError, MEDIA_WAIT_MS, JobAbandoned } from "./errors.ts";
+import { MAX_SPEECH_CHARS } from "../credits.ts";
 
 export const IMAGE_MODEL = process.env.FLASH_IMAGE_MODEL || "gpt-image-2.5-sunburst";
 export const VIDEO_MODEL = process.env.FLASH_VIDEO_MODEL || "sora-2-pro";
@@ -55,9 +56,16 @@ export async function generateVideo(prompt: string, onProgress: (pct: number) =>
   });
   if (!res.ok) throw await failure(res, "The video service");
   let job = (await res.json()) as { id: string; status: string; progress?: number; error?: { message?: string } };
-  const deadline = Date.now() + 9 * 60 * 1000;
+  // Leaves time to download the video before the request's time limit.
+  const deadline = Date.now() + MEDIA_WAIT_MS - 30_000;
   while (job.status === "queued" || job.status === "in_progress") {
-    if (Date.now() > deadline) throw new FriendlyError("The video is taking too long. Please try again.");
+    if (Date.now() > deadline) {
+      // A queued job can still be deleted before it runs; a running one will be billed anyway.
+      if (job.status === "queued") {
+        await fetch(`${OPENAI}/videos/${job.id}`, { method: "DELETE", headers: openaiHeaders() }).catch(() => {});
+      }
+      throw new JobAbandoned("The video is taking too long, so Flash stopped waiting. Please try again.", job.status !== "queued");
+    }
     await sleep(5000);
     const poll = await fetch(`${OPENAI}/videos/${job.id}`, { headers: openaiHeaders() });
     if (!poll.ok) throw await failure(poll, "The video service");
@@ -70,7 +78,10 @@ export async function generateVideo(prompt: string, onProgress: (pct: number) =>
 
 /** Downloads a finished Sora video. */
 export async function downloadVideo(id: string): Promise<Media> {
-  const res = await fetch(`${OPENAI}/videos/${encodeURIComponent(id)}/content`, { headers: openaiHeaders() });
+  const res = await fetch(`${OPENAI}/videos/${encodeURIComponent(id)}/content`, {
+    headers: openaiHeaders(),
+    signal: AbortSignal.timeout(25_000),
+  });
   if (!res.ok) throw await failure(res, "The video service");
   return { data: Buffer.from(await res.arrayBuffer()), mime: "video/mp4" };
 }
@@ -84,7 +95,7 @@ export async function synthesizeSpeech(text: string): Promise<Media> {
   const res = await fetch(`${ELEVEN}/text-to-speech/${VOICE_ID}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "audio/mpeg", ...elevenHeaders() },
-    body: JSON.stringify({ text: text.slice(0, 10000), model_id: VOICE_MODEL }),
+    body: JSON.stringify({ text: text.slice(0, MAX_SPEECH_CHARS), model_id: VOICE_MODEL }),
   });
   if (!res.ok) throw await failure(res, "The voice service");
   return audio(res);

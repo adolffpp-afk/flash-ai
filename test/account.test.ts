@@ -46,3 +46,19 @@ test("free credits wait for a confirmed email; links work once", async () => {
   assert.equal(await redeemToken(first, "reset"), null);
   assert.equal(await redeemToken(second, "reset"), "u1");
 });
+
+test("admins must have confirmed their email; links use FLASH_APP_URL when set", async () => {
+  process.env.FLASH_ADMIN_EMAILS = "Owner@x.io";
+  const { isAdmin, appUrl } = await import("../src/lib/server/auth.ts");
+  const owner = { id: "o", email: "owner@x.io", name: "", preferences: "", created_at: 0, last_free_grant: 0, verified_at: 0 };
+  assert.equal(isAdmin(owner), false, "an unconfirmed sign-up with the owner's address isn't admin");
+  assert.equal(isAdmin({ ...owner, verified_at: 1 }), true);
+  assert.equal(isAdmin({ ...owner, email: "other@x.io", verified_at: 1 }), false);
+
+  const request = new Request("http://evil.example/api/auth/signup");
+  delete process.env.FLASH_APP_URL;
+  assert.equal(appUrl(request), "http://evil.example");
+  process.env.FLASH_APP_URL = "https://flash-app.dev/";
+  assert.equal(appUrl(request), "https://flash-app.dev");
+  delete process.env.FLASH_APP_URL;
+});

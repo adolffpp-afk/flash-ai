@@ -64,7 +64,6 @@ export async function createSubscriptionCheckout(
     "subscription_data[metadata][user]": user.id,
     "subscription_data[metadata][plan]": plan.id,
     "subscription_data[metadata][interval]": interval,
-    allow_promotion_codes: "true",
     success_url: `${origin}/?purchase=subscribed`,
     cancel_url: `${origin}/?purchase=cancelled`,
   });
@@ -73,6 +72,18 @@ export async function createSubscriptionCheckout(
   const json = await stripe<{ url?: string }>("POST", "/checkout/sessions", form);
   if (!json.url) throw new Error("Stripe didn't return a checkout link");
   return json.url;
+}
+
+/**
+ * The invoice a payment paid, for refunds and disputes of plan payments. Newer Stripe API
+ * versions no longer put the invoice on the charge, so this asks Stripe's invoice payments list.
+ */
+export async function invoiceForPaymentIntent(paymentIntent: string): Promise<string | null> {
+  const json = await stripe<{ data?: { invoice?: string }[] }>(
+    "GET",
+    `/invoice_payments?${new URLSearchParams({ "payment[type]": "payment_intent", "payment[payment_intent]": paymentIntent, limit: "1" })}`,
+  );
+  return json.data?.[0]?.invoice ?? null;
 }
 
 /** Ends a Stripe subscription now, without a refund (used when a subscriber switches plans). */

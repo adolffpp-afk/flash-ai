@@ -1,4 +1,4 @@
-import { createSession, hashPassword, isSecure } from "@/lib/server/auth.ts";
+import { appUrl, createSession, hashPassword, isSecure } from "@/lib/server/auth.ts";
 import { backfillEmailKeys, emailKey, sendVerification } from "@/lib/server/account.ts";
 import { ensureMonthlyCredits } from "@/lib/server/credits.ts";
 import { one, run, now } from "@/lib/server/db.ts";
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
   await ensureMonthlyCredits(id);
   // The account works even if the email can't be sent; the banner asks the user to send it again.
   let emailFailed = false;
-  const devLink = await sendVerification({ id, email }, new URL(request.url).origin).catch((err) => {
+  const devLink = await sendVerification({ id, email }, appUrl(request)).catch((err) => {
     console.error("[flash] verification email failed", err);
     emailFailed = true;
     return undefined;

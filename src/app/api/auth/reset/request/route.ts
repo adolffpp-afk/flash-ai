@@ -1,4 +1,5 @@
 import { sendReset } from "@/lib/server/account.ts";
+import { appUrl } from "@/lib/server/auth.ts";
 import { emailEnabled, demoEmails } from "@/lib/server/email.ts";
 import { one } from "@/lib/server/db.ts";
 import { clientIp, overLimit } from "@/lib/server/limits.ts";
@@ -22,7 +23,7 @@ export async function POST(request: Request) {
   let devLink: string | undefined;
   if (user) {
     try {
-      devLink = await sendReset(user, new URL(request.url).origin);
+      devLink = await sendReset(user, appUrl(request));
     } catch (err) {
       console.error("[flash] reset email failed", err);
     }

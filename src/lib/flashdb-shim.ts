@@ -16,7 +16,16 @@ export function flashDbShim(endpoint: string | null): string {
     return json;
   }
   window.flashDB = {
-    async list(collection) { return (await call("GET", { collection })).records; },
+    async list(collection) {
+      // The server answers in pages of up to 2 MB; follow the cursor to get every record.
+      let page = await call("GET", { collection });
+      const records = page.records;
+      for (let i = 0; page.more && page.cursor && i < 50; i++) {
+        page = await call("GET", { collection, cursor: page.cursor });
+        records.push(...page.records);
+      }
+      return records;
+    },
     async add(collection, data) { return (await call("POST", null, { collection, data })).record; },
     async update(collection, id, data) { return (await call("PATCH", null, { collection, id, data })).record; },
     async remove(collection, id) { await call("DELETE", { collection, id }); },

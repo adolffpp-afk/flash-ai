@@ -127,6 +127,14 @@ const SCHEMA = [
   )`,
   `CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
   `CREATE INDEX IF NOT EXISTS site_records_lookup ON site_records(site_slug, collection, created_at)`,
+  // Free-lane requests per user per UTC day, reserved before each request so parallel ones can't pass the cap.
+  `CREATE TABLE IF NOT EXISTS free_user_quota (
+    day TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    used INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, user_id, kind)
+  )`,
 ];
 
 let client: Client | null = null;
@@ -137,6 +145,9 @@ const MIGRATIONS = [
   "ALTER TABLE users ADD COLUMN verified_at INTEGER NOT NULL DEFAULT 0",
   // The email with Gmail-style dots and +tags removed, so one inbox can't farm free credits.
   "ALTER TABLE users ADD COLUMN email_key TEXT NOT NULL DEFAULT ''",
+  // What a purchase was paid with, so a refund or dispute of that payment can take its credits back.
+  "ALTER TABLE purchases ADD COLUMN payment_intent TEXT",
+  "ALTER TABLE purchases ADD COLUMN subscription TEXT",
 ];
 
 async function init(c: Client) {
@@ -144,6 +155,7 @@ async function init(c: Client) {
   await c.batch(SCHEMA, "write");
   for (const sql of MIGRATIONS) await c.execute(sql).catch(() => {});
   await c.execute("CREATE INDEX IF NOT EXISTS users_email_key ON users(email_key)");
+  await c.execute("CREATE INDEX IF NOT EXISTS purchases_payment_intent ON purchases(payment_intent)");
 }
 
 /** Returns the database client, creating the tables on first use. */

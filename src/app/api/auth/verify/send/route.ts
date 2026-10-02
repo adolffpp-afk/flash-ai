@@ -1,4 +1,4 @@
-import { getUser, unauthorized } from "@/lib/server/auth.ts";
+import { appUrl, getUser, unauthorized } from "@/lib/server/auth.ts";
 import { isVerified, sendVerification } from "@/lib/server/account.ts";
 import { verificationRequired } from "@/lib/server/email.ts";
 import { overLimit } from "@/lib/server/limits.ts";
@@ -12,7 +12,7 @@ export async function POST(request: Request) {
     return Response.json({ error: "We've sent a few already. Check your spam folder, or try again in an hour." }, { status: 429 });
   }
   try {
-    const devLink = await sendVerification(user, new URL(request.url).origin);
+    const devLink = await sendVerification(user, appUrl(request));
     return Response.json({ ok: true, devLink });
   } catch (err) {
     console.error("[flash] verification email failed", err);
