@@ -98,6 +98,7 @@ export function Flash({
   const [loadError, setLoadError] = useState(false);
   // Signed-out visitors see the landing page until they choose to sign up or sign in.
   const [authMode, setAuthMode] = useState<"signup" | "login" | null>(null);
+  const [authError, setAuthError] = useState("");
   const [showCredits, setShowCredits] = useState(false);
   const [notice, setNotice] = useState("");
   // Set when sign-up couldn't send the confirmation email, so the banner asks to send it again.
@@ -172,6 +173,13 @@ export function Flash({
             ? "Welcome to your new plan! This month's credits are on their way."
             : "Checkout was cancelled. No charge was made.",
       );
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+    // A "Continue with …" sign-in that didn't finish comes back here to say why.
+    const authErr = params.get("auth_error");
+    if (authErr) {
+      setAuthError(authErr);
+      setAuthMode("login");
       window.history.replaceState(null, "", window.location.pathname);
     }
     const verified = params.get("verified");
@@ -447,11 +455,15 @@ export function Flash({
       <AuthScreen
         key={authMode}
         initialMode={authMode}
+        initialError={authError}
         onDone={(result) => {
           setEmailFailed(Boolean(result?.emailFailed));
           start();
         }}
-        onBack={() => setAuthMode(null)}
+        onBack={() => {
+          setAuthMode(null);
+          setAuthError("");
+        }}
       />
     ) : (
       <Landing onStart={setAuthMode} status={status} initialPricing={pricing} />

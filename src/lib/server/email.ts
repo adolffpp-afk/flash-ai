@@ -1,5 +1,5 @@
 /*
- * Sends account emails (verification and password reset) through Resend when RESEND_API_KEY is
+ * Sends account emails (verification, password reset and sign-in links) through Resend when RESEND_API_KEY is
  * set. Without it, email verification is off and password reset is unavailable, unless
  * FLASH_DEMO_EMAILS=true, which shows the link on screen for testing (never in production).
  */
@@ -39,6 +39,16 @@ export const EMAILS = {
       link,
     ),
     text: `Reset your Flash AI password (the link works for one hour):\n${link}\n\nIf you didn't ask for this, ignore this email.`,
+  }),
+  signin: (link: string) => ({
+    subject: "Your Flash AI sign-in link",
+    html: layout(
+      "Sign in to Flash AI",
+      "Use this button to sign in. It works once, for the next 15 minutes.",
+      "Sign in",
+      link,
+    ),
+    text: `Sign in to Flash AI (the link works once, for 15 minutes):\n${link}\n\nIf you didn't ask for this, ignore this email.`,
   }),
 };
 

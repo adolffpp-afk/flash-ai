@@ -67,6 +67,9 @@ Features:
   (which signs out every other device), and Gmail-style aliases (dots, +tags) count as one
   inbox, so free credits can't be farmed. Sign-ups, sign-ins and emails are rate limited in
   the database, so the limits hold across server instances.
+- **More ways to sign in**: "Email me a sign-in link" (one use, 15 minutes) works whenever
+  emails do, and "Continue with Google / GitHub / Microsoft" appear once their keys are set
+  (see `docs/sign-in-setup.md`). Accounts are matched by provider-confirmed email.
 - **Free lane when credits run out**: with the optional free keys (Groq, OpenRouter,
   Cloudflare Workers AI), users who are out of credits keep chatting, writing, coding and
   translating on open-source models (GPT-OSS 120B, Llama 3.3 70B), and get a few free

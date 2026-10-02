@@ -1,9 +1,8 @@
 import { appUrl, createSession, hashPassword, isSecure } from "@/lib/server/auth.ts";
 import { backfillEmailKeys, emailKey, sendVerification } from "@/lib/server/account.ts";
-import { ensureMonthlyCredits } from "@/lib/server/credits.ts";
-import { one, run, now } from "@/lib/server/db.ts";
-import { randomId } from "@/lib/server/ids.ts";
+import { one } from "@/lib/server/db.ts";
 import { clientIp, overLimit } from "@/lib/server/limits.ts";
+import { createUser } from "@/lib/server/users.ts";
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -23,16 +22,7 @@ export async function POST(request: Request) {
   if (await one("SELECT 1 FROM users WHERE email = ? OR email_key = ?", [email, key])) {
     return Response.json({ error: "An account with this email already exists. Sign in instead." }, { status: 409 });
   }
-  const id = randomId();
-  await run("INSERT INTO users (id, email, email_key, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)", [
-    id,
-    email,
-    key,
-    name || email.split("@")[0],
-    await hashPassword(password),
-    now(),
-  ]);
-  await ensureMonthlyCredits(id);
+  const id = await createUser({ email, name, passwordHash: await hashPassword(password), request });
   // The account works even if the email can't be sent; the banner asks the user to send it again.
   let emailFailed = false;
   const devLink = await sendVerification({ id, email }, appUrl(request)).catch((err) => {
