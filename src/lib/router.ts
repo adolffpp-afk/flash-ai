@@ -1,6 +1,6 @@
 import type { Engine } from "./types.ts";
 
-export type RouteDecision = { engine: Engine; reason: string };
+export type RouteDecision = { engine: Engine; reason: string; guessed?: boolean };
 
 const LANGUAGES =
   "english|french|spanish|portuguese|german|italian|dutch|arabic|chinese|mandarin|japanese|korean|hindi|russian|turkish|swahili|yoruba|igbo|hausa|zulu|amharic|polish|greek|hebrew|vietnamese|thai|indonesian|creole";
@@ -137,7 +137,8 @@ function routeOne(message: string, attachmentType?: string): RouteDecision {
       ? { engine: "docs", reason: "A spreadsheet is attached." }
       : { engine: "text", reason: "A file is attached, so the writing model reads it." };
   }
-  return { engine: "text", reason: "Writing and reasoning task." };
+  // No rule matched: the caller may ask a small model to decide.
+  return { engine: "text", reason: "Writing and reasoning task.", guessed: true };
 }
 
 /** Strips the instruction part of a voice request, keeping the words to speak. */

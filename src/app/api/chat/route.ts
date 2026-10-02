@@ -1,6 +1,6 @@
 import { route, textToSpeak } from "@/lib/router.ts";
 import { ENGINES, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types.ts";
-import { claudeConfigured, improvePrompt, streamSearch, streamText } from "@/lib/engines/claude.ts";
+import { classifyRequest, claudeConfigured, improvePrompt, streamSearch, streamText, type Meter } from "@/lib/engines/claude.ts";
 import {
   composeMusic,
   downloadVideo,
@@ -13,11 +13,11 @@ import {
   type Media,
 } from "@/lib/engines/media.ts";
 import { getUser, unauthorized } from "@/lib/server/auth.ts";
-import { balance, charge, ensureMonthlyCredits, refund } from "@/lib/server/credits.ts";
+import { balance, charge, ensureMonthlyCredits, logUsage, settle } from "@/lib/server/credits.ts";
 import { saveFile } from "@/lib/server/files.ts";
-import { CREDIT_COSTS } from "@/lib/credits.ts";
+import { CREDIT_LIMITS, TRANSCRIBE_COST_CENTS, TYPICAL_CREDITS, creditsFor, voiceCostCents } from "@/lib/credits.ts";
 import { falConfigured, falGenerate } from "@/lib/engines/fal.ts";
-import { MEDIA_ENGINES, pickModel, requestedSeconds, type MediaEngine, type ModelInfo, type Provider } from "@/lib/models.ts";
+import { MEDIA_ENGINES, modelCredits, pickModel, videoSeconds, type MediaEngine, type ModelInfo, type Provider } from "@/lib/models.ts";
 import { demoReply } from "@/lib/engines/demo.ts";
 import { streamBuild } from "@/lib/engines/builder.ts";
 
@@ -76,7 +76,7 @@ function falInput(model: ModelInfo, prompt: string, request: string): Record<str
     case "veo-3.1":
       return { prompt, duration: "8s", aspect_ratio: "16:9", generate_audio: true };
     case "kling-3":
-      return { prompt, duration: String(requestedSeconds(request, 3, 15, 10)), aspect_ratio: "16:9" };
+      return { prompt, duration: String(videoSeconds(request)), aspect_ratio: "16:9" };
     case "minimax-music":
       // MiniMax writes the lyrics itself when none are given.
       return { prompt: prompt.slice(0, 2000).padEnd(10, "."), lyrics_optimizer: true };
@@ -86,8 +86,12 @@ function falInput(model: ModelInfo, prompt: string, request: string): Record<str
 }
 
 /** Uses Claude to sharpen a media prompt when a Claude key exists, else sends the request as written. */
-const sharpen = (kind: "image" | "video" | "music", request: string) =>
-  claudeConfigured() ? improvePrompt(kind, request) : Promise.resolve(request);
+const sharpen = (kind: "image" | "video" | "music", request: string, meter: Meter) =>
+  claudeConfigured() ? improvePrompt(kind, request, meter) : Promise.resolve(request);
+
+/** What a media request on this model cost Flash, in cents. */
+const mediaCents = (model: ModelInfo, request: string) =>
+  typeof model.costCents === "function" ? model.costCents(request) : model.costCents;
 
 type Store = (media: Media, name: string) => Promise<string>;
 
@@ -97,6 +101,7 @@ async function* run(
   preferences: string,
   store: Store,
   model: ModelInfo | null,
+  meter: Meter,
 ): AsyncGenerator<StreamEvent> {
   const last = history[history.length - 1];
   if (isMedia(engine) ? !model : !configured(engine)) {
@@ -108,17 +113,17 @@ async function* run(
     case "code":
     case "translate":
     case "docs":
-      yield* streamText(history, preferences, engine);
+      yield* streamText(history, preferences, engine, meter);
       return;
     case "search":
-      yield* streamSearch(history, preferences);
+      yield* streamSearch(history, preferences, meter);
       return;
     case "app":
     case "slides":
-      yield* streamBuild(history, preferences, engine);
+      yield* streamBuild(history, preferences, engine, meter);
       return;
     case "image": {
-      const prompt = await sharpen("image", last.content);
+      const prompt = await sharpen("image", last.content, meter);
       yield { type: "status", message: `Painting your image with ${model!.label}…` };
       const image =
         model!.provider === "fal"
@@ -126,11 +131,12 @@ async function* run(
               falGenerate(model!.endpoint!, falInput(model!, prompt, last.content), (m) => report(`${m}…`)),
             )
           : await generateImage(prompt);
+      meter(model!.provider, model!.id, mediaCents(model!, last.content));
       yield { type: "image", url: await store(image, "flash-image.png"), prompt };
       return;
     }
     case "video": {
-      const prompt = await sharpen("video", last.content);
+      const prompt = await sharpen("video", last.content, meter);
       yield { type: "status", message: `Filming your video with ${model!.label}. This usually takes one to three minutes…` };
       let video: Media;
       if (model!.provider === "fal") {
@@ -144,17 +150,20 @@ async function* run(
         yield { type: "status", message: "Saving your video…" };
         video = await downloadVideo(id);
       }
+      meter(model!.provider, model!.id, mediaCents(model!, last.content));
       yield { type: "video", url: await store(video, "flash-video.mp4"), prompt };
       return;
     }
     case "voice": {
       const words = textToSpeak(last.content);
       yield { type: "text", delta: `Here is "${words.length > 80 ? words.slice(0, 80) + "…" : words}" read aloud.` };
-      yield { type: "audio", url: await store(await synthesizeSpeech(words), "flash-voice.mp3"), label: "flash-voice.mp3" };
+      const speech = await synthesizeSpeech(words);
+      meter("elevenlabs", "voice", voiceCostCents(words.length));
+      yield { type: "audio", url: await store(speech, "flash-voice.mp3"), label: "flash-voice.mp3" };
       return;
     }
     case "music": {
-      const prompt = await sharpen("music", last.content);
+      const prompt = await sharpen("music", last.content, meter);
       yield { type: "status", message: `Composing your track with ${model!.label}…` };
       yield { type: "text", delta: `**Track brief:** ${prompt}` };
       const track =
@@ -163,6 +172,7 @@ async function* run(
               falGenerate(model!.endpoint!, falInput(model!, prompt, last.content), (m) => report(`Composing… ${m.toLowerCase()}`)),
             )
           : await composeMusic(prompt);
+      meter(model!.provider, model!.id, mediaCents(model!, last.content));
       yield { type: "audio", url: await store(track, "flash-music.mp3"), label: "flash-music.mp3" };
       return;
     }
@@ -173,6 +183,7 @@ async function* run(
       }
       yield { type: "status", message: `Transcribing ${last.attachment.name}…` };
       const text = await transcribe(last.attachment);
+      meter("elevenlabs", "transcribe", TRANSCRIBE_COST_CENTS);
       yield { type: "text", delta: `**Transcript of ${last.attachment.name}**\n\n${text}` };
       return;
     }
@@ -201,26 +212,52 @@ export async function POST(request: Request) {
   const auto = route(last.content, last.attachment?.mediaType, previous);
   const override =
     body.engine && body.engine !== "auto" && (ENGINES as readonly string[]).includes(body.engine) ? body.engine : null;
-  const engine = override ?? auto.engine;
+  let engine = override ?? auto.engine;
+  let reason = override ? "You picked this engine." : auto.reason;
+
+  // Everything this request spends with AI providers, for credits and the owner dashboard.
+  const spend: { provider: string; model: string; cents: number }[] = [];
+  const meter: Meter = (provider, model, cents) => spend.push({ provider, model, cents });
+
+  // When no keyword rule fits, a small, fast model reads the request and picks the engine.
+  if (!override && auto.guessed && !last.attachment && claudeConfigured()) {
+    const guess = await classifyRequest(last.content, meter);
+    if (guess && guess !== "text" && guess !== "transcribe") {
+      engine = guess;
+      reason = "Flash's router read your request.";
+    }
+  }
+
   const picked = isMedia(engine) ? pickModel(engine, last.content, providers(), body.model) : null;
   const model = picked?.model ?? null;
-  const reason = override ? "You picked this engine." : auto.reason;
 
-  // Demo replies are free; live engines cost credits, refunded if the engine fails.
+  // Demo replies are free. Media has a fixed price per model. Claude engines are charged by
+  // length: Flash holds up to a limit, then keeps only what the reply really cost.
   const live = isMedia(engine) ? Boolean(model) : configured(engine);
-  const cost = live ? (model?.credits ?? CREDIT_COSTS[engine]) : 0;
-  if (cost) {
-    await ensureMonthlyCredits(user.id);
-    if (!(await charge(user.id, cost, `${engine} request`))) {
-      return Response.json(
-        {
-          error: `This needs ${cost} credits and you have ${await balance(user.id)}.`,
-          code: "out_of_credits",
-          needed: cost,
-        },
-        { status: 402 },
-      );
+  const metered = live && !isMedia(engine) && engine !== "voice" && engine !== "transcribe";
+  await ensureMonthlyCredits(user.id);
+  const available = await balance(user.id);
+  let held = 0;
+  let needed = 0;
+  if (live) {
+    if (model) held = needed = modelCredits(model, last.content);
+    else if (engine === "voice") held = needed = creditsFor(voiceCostCents(textToSpeak(last.content).length));
+    else if (engine === "transcribe") held = needed = creditsFor(TRANSCRIBE_COST_CENTS);
+    else {
+      needed = Math.max(1, Math.ceil((TYPICAL_CREDITS[engine] ?? 4) / 2));
+      held = Math.max(needed, Math.min(CREDIT_LIMITS[engine] ?? 30, available));
     }
+  }
+  const chargeId = held ? await charge(user.id, held, `${engine} request`) : 0;
+  if (chargeId === null) {
+    return Response.json(
+      {
+        error: `This needs ${metered ? "at least " : ""}${needed} credits and you have ${available}.`,
+        code: "out_of_credits",
+        needed,
+      },
+      { status: 402 },
+    );
   }
   const store: Store = (media, name) => saveFile(user.id, media.mime, name, media.data);
   const preferences = body.preferences ?? user.preferences;
@@ -246,23 +283,45 @@ export async function POST(request: Request) {
         engine,
         reason,
         demo: !live,
-        cost,
+        cost: metered ? 0 : held,
         ...(model && { model: model.label, modelWhy: picked!.why }),
       });
+      let ok = true;
+      let failure = "";
       try {
-        for await (const event of run(engine, history, preferences, store, model)) {
-          if (cancelled || request.signal.aborted) return;
+        for await (const event of run(engine, history, preferences, store, model, meter)) {
+          if (cancelled || request.signal.aborted) break;
           send(event);
         }
       } catch (err) {
         console.error(`[flash] ${engine} engine failed`, err);
-        await refund(user.id, cost, `Refund: ${engine} request failed`);
-        send({
-          type: "error",
-          message: `${err instanceof Error ? err.message : "Something went wrong."}${cost ? " Your credits were refunded." : ""}`,
-        });
+        ok = false;
+        failure = err instanceof Error ? err.message : "Something went wrong.";
       }
+      const costCents = spend.reduce((sum, s) => sum + s.cents, 0);
+      // A failed request costs nothing. A stopped reply is charged what it used, or a typical reply.
+      let credits = held;
+      if (!ok) credits = 0;
+      else if (metered) {
+        const used = spend.length ? creditsFor(costCents) : (TYPICAL_CREDITS[engine] ?? 4);
+        credits = Math.min(held, used);
+      }
+      await settle(chargeId, credits);
+      if (live) {
+        const main = spend.at(-1);
+        await logUsage({
+          userId: user.id,
+          engine,
+          model: model?.id ?? main?.model ?? "",
+          provider: model?.provider ?? main?.provider ?? "",
+          credits,
+          costCents,
+          ok,
+        }).catch((err) => console.error("[flash] usage log failed", err));
+      }
+      if (!ok) send({ type: "error", message: `${failure}${held ? " Your credits were refunded." : ""}` });
       if (cancelled) return;
+      if (metered && ok) send({ type: "cost", credits });
       send({ type: "done" });
       controller.close();
     },

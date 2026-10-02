@@ -1,7 +1,23 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { ChatTurn, Source, StreamEvent } from "../types.ts";
+import { ENGINES, type ChatTurn, type Engine, type Source, type StreamEvent } from "../types.ts";
+import { claudeCostCents } from "../credits.ts";
 
-export const TEXT_MODEL = process.env.FLASH_TEXT_MODEL || "claude-opus-5-5";
+/*
+ * Flash uses three Claude models, to keep quality high where it shows and costs low elsewhere:
+ * Opus for building apps, slides and code; Sonnet for everyday chat, writing, research and
+ * translation; Haiku for tiny behind-the-scenes jobs like deciding which engine a request needs.
+ * FLASH_TEXT_MODEL, if set, overrides the first two (for example to run everything on Opus).
+ */
+export const BUILD_MODEL = process.env.FLASH_BUILD_MODEL || process.env.FLASH_TEXT_MODEL || "claude-opus-5-5";
+export const CHAT_MODEL = process.env.FLASH_CHAT_MODEL || process.env.FLASH_TEXT_MODEL || "claude-sonnet-5-5";
+export const ROUTER_MODEL = process.env.FLASH_ROUTER_MODEL || "claude-haiku-4-5";
+
+/** Records what an AI call cost Flash, for credits and the owner dashboard. */
+export type Meter = (provider: "anthropic" | "openai" | "elevenlabs" | "fal", model: string, costCents: number) => void;
+export const noMeter: Meter = () => {};
+
+export const meterClaude = (meter: Meter, message: Anthropic.Beta.BetaMessage) =>
+  meter("anthropic", message.model, claudeCostCents(message.model, message.usage));
 
 const BASE_SYSTEM =
   "You are Flash, a helpful all-in-one AI assistant. Answer directly and clearly. " +
@@ -80,13 +96,15 @@ export async function* streamText(
   history: ChatTurn[],
   preferences: string,
   mode: WritingMode = "text",
+  meter: Meter = noMeter,
 ): AsyncGenerator<StreamEvent> {
   const stream = getClient().beta.messages.stream({
-    model: TEXT_MODEL,
+    model: mode === "code" ? BUILD_MODEL : CHAT_MODEL,
     max_tokens: 64000,
     betas: ["server-side-fallback-2026-07-01"],
     fallbacks: "default",
-    output_config: { effort: mode === "code" ? "xhigh" : "high" },
+    // Sonnet at medium effort writes well for chat; code on Opus gets more thought.
+    output_config: { effort: mode === "code" ? "high" : "medium" },
     system: system(preferences, mode),
     messages: toMessages(history),
   });
@@ -96,17 +114,22 @@ export async function* streamText(
     }
   }
   const final = await stream.finalMessage();
+  meterClaude(meter, final);
   if (final.stop_reason === "refusal") yield refusalMessage();
 }
 
 /** Research: Claude with server-side web search and page reading, returning the answer and its sources. */
-export async function* streamSearch(history: ChatTurn[], preferences: string): AsyncGenerator<StreamEvent> {
+export async function* streamSearch(
+  history: ChatTurn[],
+  preferences: string,
+  meter: Meter = noMeter,
+): AsyncGenerator<StreamEvent> {
   const messages = toMessages(history);
   const sources = new Map<string, Source>();
   // pause_turn means the server paused a long search loop; resend to let it continue.
   for (let round = 0; round < 4; round++) {
     const stream = getClient().beta.messages.stream({
-      model: TEXT_MODEL,
+      model: CHAT_MODEL,
       max_tokens: 64000,
       betas: ["server-side-fallback-2026-07-01"],
       fallbacks: "default",
@@ -126,6 +149,7 @@ export async function* streamSearch(history: ChatTurn[], preferences: string): A
       }
     }
     const final = await stream.finalMessage();
+    meterClaude(meter, final);
     for (const block of final.content) {
       if (block.type === "web_search_tool_result" && Array.isArray(block.content)) {
         for (const r of block.content) {
@@ -160,9 +184,13 @@ const PROMPT_REWRITERS = {
 };
 
 /** Turns a short media request into a detailed prompt for the image, video or music model. */
-export async function improvePrompt(kind: keyof typeof PROMPT_REWRITERS, request: string): Promise<string> {
+export async function improvePrompt(
+  kind: keyof typeof PROMPT_REWRITERS,
+  request: string,
+  meter: Meter = noMeter,
+): Promise<string> {
   const res = await getClient().beta.messages.create({
-    model: TEXT_MODEL,
+    model: CHAT_MODEL,
     max_tokens: 2000,
     betas: ["server-side-fallback-2026-07-01"],
     fallbacks: "default",
@@ -170,7 +198,49 @@ export async function improvePrompt(kind: keyof typeof PROMPT_REWRITERS, request
     system: `${PROMPT_REWRITERS[kind]} Reply with the prompt only.`,
     messages: [{ role: "user", content: request }],
   });
+  meterClaude(meter, res);
   if (res.stop_reason === "refusal") return request;
   const text = res.content.find((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text");
   return text?.text.trim() || request;
+}
+
+const ENGINE_GUIDE: Record<Engine, string> = {
+  text: "general questions, advice, explanations, writing, emails, brainstorming",
+  app: "build a working web app, website, tool, game, dashboard or landing page",
+  slides: "make a presentation or slide deck",
+  search: "needs current or recent information from the web: news, prices, schedules, latest releases",
+  code: "write, fix or explain program code",
+  translate: "translate text into another language",
+  docs: "make a spreadsheet, table, budget, resume, report or formal document",
+  image: "make a picture, drawing, logo, illustration or photo",
+  video: "make a video clip",
+  voice: "read text aloud as speech",
+  music: "compose music, a song, jingle or beat",
+  transcribe: "turn a recording into text",
+};
+
+/**
+ * Asks Haiku which engine fits a request the keyword rules couldn't place.
+ * Returns null on any doubt or error, so the caller keeps its default.
+ */
+export async function classifyRequest(message: string, meter: Meter = noMeter): Promise<Engine | null> {
+  try {
+    const res = await getClient().messages.create(
+      {
+        model: ROUTER_MODEL,
+        max_tokens: 10,
+        system:
+          "Pick the one tool that best fits the user's request. Reply with the tool name only.\n\n" +
+          ENGINES.map((e) => `${e}: ${ENGINE_GUIDE[e]}`).join("\n"),
+        messages: [{ role: "user", content: message.slice(0, 2000) }],
+      },
+      { timeout: 4000, maxRetries: 0 },
+    );
+    meter("anthropic", res.model, claudeCostCents(res.model, res.usage));
+    const text = res.content.find((b) => b.type === "text");
+    const word = text?.type === "text" ? text.text.trim().toLowerCase().replace(/[^a-z]/g, "") : "";
+    return (ENGINES as readonly string[]).includes(word) ? (word as Engine) : null;
+  } catch {
+    return null;
+  }
 }

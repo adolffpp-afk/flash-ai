@@ -29,15 +29,20 @@ export type UIMessage = {
 export type ProjectSummary = { id: string; name: string; updated_at: number };
 export type Project = ProjectSummary & { messages: UIMessage[] };
 
-export type Me = {
-  user: { id: string; email: string; name: string; preferences: string };
-  credits: number;
-  activity: { amount: number; reason: string; created_at: number }[];
+export type Pricing = {
   costs: Record<Engine, number>;
+  limits: Partial<Record<Engine, number>>;
   packs: { id: string; name: string; credits: number; priceCents: number; blurb: string }[];
   freeMonthly: number;
   paymentsEnabled: boolean;
   models: { id: string; engine: Engine; label: string; credits: number; blurb: string; live: boolean }[];
+};
+
+export type Me = Pricing & {
+  user: { id: string; email: string; name: string; preferences: string };
+  isAdmin: boolean;
+  credits: number;
+  activity: { amount: number; reason: string; created_at: number }[];
 };
 
 export const newId = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);

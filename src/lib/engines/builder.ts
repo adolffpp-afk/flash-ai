@@ -1,4 +1,4 @@
-import { getClient, TEXT_MODEL, toMessages } from "./claude.ts";
+import { BUILD_MODEL, getClient, meterClaude, noMeter, toMessages, type Meter } from "./claude.ts";
 import { htmlTitle, splitBuild } from "../build-parse.ts";
 import type { ChatTurn, StreamEvent } from "../types.ts";
 
@@ -33,14 +33,15 @@ export async function* streamBuild(
   history: ChatTurn[],
   preferences: string,
   kind: "app" | "slides",
+  meter: Meter = noMeter,
 ): AsyncGenerator<StreamEvent> {
   const prefs = preferences.trim();
   const stream = getClient().beta.messages.stream({
-    model: TEXT_MODEL,
+    model: BUILD_MODEL,
     max_tokens: 64000,
     betas: ["server-side-fallback-2026-07-01"],
     fallbacks: "default",
-    output_config: { effort: "xhigh" },
+    output_config: { effort: "high" },
     system: prefs ? `${PROMPTS[kind]}\n\nAbout the user:\n${prefs}` : PROMPTS[kind],
     messages: toMessages(history),
   });
@@ -69,6 +70,7 @@ export async function* streamBuild(
     }
   }
   const final = await stream.finalMessage();
+  meterClaude(meter, final);
   if (final.stop_reason === "refusal") {
     yield { type: "text", delta: "\n\nFlash couldn't build that." };
     return;

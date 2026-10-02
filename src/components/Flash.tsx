@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Message } from "./Message";
 import { AuthScreen } from "./AuthScreen";
+import { Landing } from "./Landing";
 import { CreditsDialog } from "./CreditsDialog";
 import { ENGINES, ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types";
 import { api, newId, type Me, type ProjectSummary, type UIMessage } from "@/lib/store";
@@ -42,6 +43,8 @@ function applyEvent(m: UIMessage, e: StreamEvent): UIMessage {
       return m.app ? { ...m, after: (m.after ?? "") + e.delta } : { ...m, content: m.content + e.delta };
     case "status":
       return { ...m, status: e.message };
+    case "cost":
+      return { ...m, cost: e.credits };
     case "image":
       return { ...m, status: undefined, images: [...(m.images ?? []), { url: e.url, prompt: e.prompt }] };
     case "video":
@@ -74,6 +77,8 @@ function readFile(file: File): Promise<Attachment> {
 export function Flash() {
   const [me, setMe] = useState<Me | null>(null);
   const [signedOut, setSignedOut] = useState(false);
+  // Signed-out visitors see the landing page until they choose to sign up or sign in.
+  const [authMode, setAuthMode] = useState<"signup" | "login" | null>(null);
   const [showCredits, setShowCredits] = useState(false);
   const [notice, setNotice] = useState("");
   const [projects, setProjects] = useState<Project[]>([]);
@@ -236,6 +241,7 @@ export function Flash() {
     setProjects([]);
     setActiveId("");
     filesRef.current.clear();
+    setAuthMode(null);
     setSignedOut(true);
   }
 
@@ -367,7 +373,13 @@ export function Flash() {
   const sorted = [...projects].sort((a, b) => b.updated_at - a.updated_at);
   const demoAll = status && !Object.values(status).some(Boolean);
 
-  if (signedOut) return <AuthScreen onDone={start} />;
+  if (signedOut) {
+    return authMode ? (
+      <AuthScreen key={authMode} initialMode={authMode} onDone={start} onBack={() => setAuthMode(null)} />
+    ) : (
+      <Landing onStart={setAuthMode} />
+    );
+  }
   if (!me) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -459,6 +471,11 @@ export function Flash() {
             <span className="min-w-0 flex-1 truncate text-zinc-300" title={me.user.email}>
               {me.user.name || me.user.email}
             </span>
+            {me.isAdmin && (
+              <a href="/admin" className="text-xs text-indigo-300 hover:text-indigo-200">
+                Dashboard
+              </a>
+            )}
             <button onClick={signOut} className="text-xs text-zinc-500 hover:text-zinc-200">
               Sign out
             </button>

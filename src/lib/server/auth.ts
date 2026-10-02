@@ -84,3 +84,12 @@ export function tooManyAttempts(key: string): boolean {
   entry.count += 1;
   return entry.count > 10;
 }
+
+/** The owner and anyone else listed in FLASH_ADMIN_EMAILS (comma separated) can open /admin. */
+export function isAdmin(user: User): boolean {
+  const admins = (process.env.FLASH_ADMIN_EMAILS ?? "")
+    .split(",")
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
+  return admins.includes(user.email.toLowerCase());
+}

@@ -1,11 +1,7 @@
-import { getUser, unauthorized } from "@/lib/server/auth.ts";
+import { getUser, isAdmin, unauthorized } from "@/lib/server/auth.ts";
 import { balance, ensureMonthlyCredits, recentActivity } from "@/lib/server/credits.ts";
 import { run } from "@/lib/server/db.ts";
-import { CREDIT_COSTS, CREDIT_PACKS, FREE_MONTHLY_CREDITS } from "@/lib/credits.ts";
-import { paymentsEnabled } from "@/lib/server/stripe.ts";
-import { MODELS } from "@/lib/models.ts";
-import { elevenConfigured, openaiConfigured } from "@/lib/engines/media.ts";
-import { falConfigured } from "@/lib/engines/fal.ts";
+import { pricingInfo } from "@/lib/server/pricing.ts";
 
 export const dynamic = "force-dynamic";
 
@@ -15,20 +11,10 @@ export async function GET(request: Request) {
   await ensureMonthlyCredits(user.id);
   return Response.json({
     user: { id: user.id, email: user.email, name: user.name, preferences: user.preferences },
+    isAdmin: isAdmin(user),
     credits: await balance(user.id),
     activity: await recentActivity(user.id),
-    costs: CREDIT_COSTS,
-    packs: CREDIT_PACKS,
-    freeMonthly: FREE_MONTHLY_CREDITS,
-    paymentsEnabled: paymentsEnabled(),
-    models: MODELS.map((m) => ({
-      id: m.id,
-      engine: m.engine,
-      label: m.label,
-      credits: m.credits,
-      blurb: m.blurb,
-      live: { openai: openaiConfigured(), elevenlabs: elevenConfigured(), fal: falConfigured() }[m.provider],
-    })),
+    ...pricingInfo(),
   });
 }
 

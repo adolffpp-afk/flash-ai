@@ -6,6 +6,7 @@ import { api, type Me } from "@/lib/store";
 
 /** One price, or a range when an engine's models cost different amounts. */
 function costLabel(me: Me, engine: Engine): string {
+  if (me.limits[engine]) return `~${me.costs[engine]}`;
   const all = me.models.filter((m) => m.engine === engine);
   const live = all.filter((m) => m.live);
   const prices = (live.length ? live : all).map((m) => m.credits);
@@ -98,6 +99,10 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
             </div>
           ))}
         </div>
+        <p className="mt-2 text-xs text-zinc-500">
+          Writing, research, code, apps and slides are charged by length (~ is a typical request), and never more
+          than {me.limits.text} credits for a chat reply or {me.limits.app} for an app. Failed requests are free.
+        </p>
 
         <h3 className="mt-6 text-sm font-medium text-zinc-300">Image, video and music models</h3>
         <ul className="mt-2 divide-y divide-zinc-900 text-sm">

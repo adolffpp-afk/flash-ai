@@ -22,16 +22,41 @@ export async function ensureMonthlyCredits(userId: string): Promise<void> {
   );
 }
 
-/** Takes credits only if the balance covers them. Returns false when it doesn't. */
-export async function charge(userId: string, amount: number, reason: string): Promise<boolean> {
-  if (amount <= 0) return true;
+/**
+ * Takes credits only if the balance covers them. Returns the ledger entry's id, or null when
+ * the balance is too low. Pass the id to settle() to lower the charge once the real cost is known.
+ */
+export async function charge(userId: string, amount: number, reason: string): Promise<number | null> {
+  if (amount <= 0) return 0;
   const r = await run(
     `INSERT INTO credit_ledger (user_id, amount, reason, created_at)
      SELECT ?, ?, ?, ?
      WHERE (SELECT COALESCE(SUM(amount), 0) FROM credit_ledger WHERE user_id = ?) >= ?`,
     [userId, -amount, reason, now(), userId, amount],
   );
-  return r.rowsAffected === 1;
+  return r.rowsAffected === 1 ? Number(r.lastInsertRowid) : null;
+}
+
+/** Lowers a held charge to what the request really used (never raises it). */
+export async function settle(chargeId: number, used: number): Promise<void> {
+  if (!chargeId) return;
+  await run("UPDATE credit_ledger SET amount = MAX(amount, ?) WHERE id = ?", [-Math.max(0, used), chargeId]);
+}
+
+/** Logs one request for the owner dashboard. */
+export async function logUsage(entry: {
+  userId: string;
+  engine: string;
+  model: string;
+  provider: string;
+  credits: number;
+  costCents: number;
+  ok: boolean;
+}): Promise<void> {
+  await run(
+    "INSERT INTO usage (user_id, engine, model, provider, credits, cost_cents, ok, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    [entry.userId, entry.engine, entry.model, entry.provider, entry.credits, entry.costCents, entry.ok ? 1 : 0, now()],
+  );
 }
 
 export async function refund(userId: string, amount: number, reason: string): Promise<void> {
@@ -52,7 +77,12 @@ export async function addPurchase(userId: string, packId: string, ref: string): 
     "INSERT OR IGNORE INTO credit_ledger (user_id, amount, reason, ref, created_at) VALUES (?, ?, ?, ?, ?)",
     [userId, pack.credits, `Bought ${pack.name} pack`, ref, now()],
   );
-  return r.rowsAffected === 1;
+  if (r.rowsAffected !== 1) return false;
+  await run(
+    "INSERT OR IGNORE INTO purchases (user_id, pack, credits, amount_cents, test, ref, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    [userId, pack.id, pack.credits, pack.priceCents, ref.startsWith("stripe:") ? 0 : 1, ref, now()],
+  );
+  return true;
 }
 
 export async function recentActivity(userId: string, limit = 20) {

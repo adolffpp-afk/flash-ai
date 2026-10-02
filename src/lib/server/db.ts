@@ -61,6 +61,28 @@ const SCHEMA = [
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    engine TEXT NOT NULL,
+    model TEXT NOT NULL DEFAULT '',
+    provider TEXT NOT NULL DEFAULT '',
+    credits INTEGER NOT NULL,
+    cost_cents REAL NOT NULL,
+    ok INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS usage_time ON usage(created_at)`,
+  `CREATE TABLE IF NOT EXISTS purchases (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    pack TEXT NOT NULL,
+    credits INTEGER NOT NULL,
+    amount_cents INTEGER NOT NULL,
+    test INTEGER NOT NULL,
+    ref TEXT NOT NULL UNIQUE,
+    created_at INTEGER NOT NULL
+  )`,
   `CREATE INDEX IF NOT EXISTS site_records_lookup ON site_records(site_slug, collection, created_at)`,
 ];
 

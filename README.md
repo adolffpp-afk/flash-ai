@@ -48,10 +48,23 @@ Features:
   everyone who uses them; the preview inside Flash uses a throwaway in-memory copy.
 - **Accounts**: sign up with email and password. Projects, memory and files are saved
   to your account, so they follow you to any device.
-- **Credits**: each request costs credits (text 1, app 10, video 40, music 15, and so on;
-  see `src/lib/credits.ts`). Everyone gets free credits each month and can buy packs
-  through Stripe. When a request needs more credits than you have, Flash says so and
-  offers a top-up. Failed requests are refunded, and demo replies are free.
+- **Credits that follow real costs**: one credit is worth one cent at the Starter price,
+  and each request costs what Flash pays the AI provider times a markup (2.5 by default,
+  `FLASH_MARKUP`). Image, video and music have a fixed price per model. Writing, research,
+  code, apps and slides are charged by length: Flash holds up to a limit, then keeps only
+  what the reply used. Everyone gets free credits each month and can buy packs through
+  Stripe. Failed requests are free, and demo replies cost nothing. Provider prices live in
+  `src/lib/credits.ts` and `src/lib/models.ts`, checked on 2026-10-02.
+- **Model mix**: Claude Opus 5.5 builds apps, slides and code; Claude Sonnet 5.5 handles
+  everyday chat, writing, research and translation; Claude Haiku 4.5 picks the engine
+  for requests the keyword rules can't place. Override with `FLASH_BUILD_MODEL`,
+  `FLASH_CHAT_MODEL`, `FLASH_ROUTER_MODEL`, or `FLASH_TEXT_MODEL` for both.
+- **Landing page** for signed-out visitors, with features, pricing and FAQ, plus draft
+  **terms of service** (`/terms`) and **privacy policy** (`/privacy`). Have a lawyer
+  review both before taking payments, and set `FLASH_CONTACT_EMAIL`.
+- **Owner dashboard** at `/admin` for the emails in `FLASH_ADMIN_EMAILS`: revenue, AI
+  provider cost, gross profit, users, requests, cost per day, and breakdowns by tool,
+  provider, model and user.
 - **Auto routing** with a manual override for every engine.
 - **Projects**: separate chat histories, saved to your account.
 - **Memory**: a short note about you that Flash uses in every answer.
@@ -108,7 +121,10 @@ src/
   app/api/files/[id]        generated images, video and audio
   app/api/sites/*, app/p/   publishing and flashDB for published apps
   lib/server/               database, auth, credits, Stripe
-  lib/credits.ts            what each engine costs, free credits, packs
+  lib/credits.ts            provider prices, markup, length limits, free credits, packs
+  components/Landing.tsx    public landing page
+  app/terms, app/privacy    draft legal pages
+  app/admin, api/admin      owner dashboard
   lib/flashdb-shim.ts       the window.flashDB script injected into apps
   lib/models.ts             image, video and music models and how Flash picks one
   lib/engines/fal.ts        fal.ai queue client
@@ -125,7 +141,7 @@ and one case in `app/api/chat/route.ts`.
 ## Checks
 
 ```bash
-npm test        # routing, model picking, webhook signatures, flashDB
+npm test        # routing, model picking, pricing, webhook signatures, flashDB
 npm run lint
 npm run build
 ```

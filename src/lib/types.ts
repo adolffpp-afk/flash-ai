@@ -53,6 +53,8 @@ export type Source = { title: string; url: string };
 export type StreamEvent =
   | { type: "route"; engine: Engine; reason: string; demo: boolean; cost: number; model?: string; modelWhy?: string }
   | { type: "text"; delta: string }
+  // What a reply charged by length really cost, sent when it finishes.
+  | { type: "cost"; credits: number }
   | { type: "status"; message: string }
   | { type: "image"; url: string; prompt: string }
   | { type: "video"; url: string; prompt: string }
