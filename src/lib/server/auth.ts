@@ -49,7 +49,7 @@ export function clearSessionCookie(): string {
   return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
 }
 
-function readCookie(request: Request, name: string): string | null {
+export function readCookie(request: Request, name: string): string | null {
   const header = request.headers.get("cookie") ?? "";
   for (const part of header.split(";")) {
     const [k, ...v] = part.trim().split("=");

@@ -135,6 +135,23 @@ const SCHEMA = [
     used INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (day, user_id, kind)
   )`,
+  // Google, GitHub and Microsoft accounts linked to a Flash account. subject is the provider's id for the person.
+  `CREATE TABLE IF NOT EXISTS identities (
+    provider TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (provider, subject)
+  )`,
+  `CREATE INDEX IF NOT EXISTS identities_user ON identities(user_id)`,
+  // Emailed sign-in links (15 minutes, one use). Keyed by email so they work before an account exists.
+  `CREATE TABLE IF NOT EXISTS sign_in_links (
+    token_hash TEXT PRIMARY KEY,
+    email TEXT NOT NULL,
+    next TEXT NOT NULL DEFAULT '/',
+    expires_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  )`,
 ];
 
 let client: Client | null = null;
