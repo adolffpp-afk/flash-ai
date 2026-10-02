@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import type { CreditPack } from "../credits.ts";
+import { planPrice, type CreditPack, type Interval, type Plan } from "../credits.ts";
+import { one, run } from "./db.ts";
 
 const STRIPE_API = process.env.STRIPE_API_BASE || "https://api.stripe.com/v1";
 
@@ -7,12 +8,28 @@ export const paymentsEnabled = () => Boolean(process.env.STRIPE_SECRET_KEY);
 // Lets you test the buy flow before Stripe is set up. Never turn this on for real users.
 export const demoPurchases = () => !paymentsEnabled() && process.env.FLASH_DEMO_PURCHASES === "true";
 
+async function stripe<T>(method: string, path: string, form?: URLSearchParams): Promise<T> {
+  const res = await fetch(`${STRIPE_API}${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: form,
+  });
+  const json = (await res.json()) as T & { error?: { message?: string } };
+  if (!res.ok) throw new Error(json.error?.message ?? `Stripe returned ${res.status}`);
+  return json;
+}
+
+const currency = () => process.env.FLASH_CURRENCY || "usd";
+
 /** Creates a Stripe Checkout page for a credit pack and returns its URL. */
 export async function createCheckout(pack: CreditPack, userId: string, email: string, origin: string): Promise<string> {
   const form = new URLSearchParams({
     mode: "payment",
     "line_items[0][quantity]": "1",
-    "line_items[0][price_data][currency]": process.env.FLASH_CURRENCY || "usd",
+    "line_items[0][price_data][currency]": currency(),
     "line_items[0][price_data][unit_amount]": String(pack.priceCents),
     "line_items[0][price_data][product_data][name]": `Flash AI ${pack.name}: ${pack.credits.toLocaleString("en-US")} credits`,
     customer_email: email,
@@ -22,16 +39,79 @@ export async function createCheckout(pack: CreditPack, userId: string, email: st
     success_url: `${origin}/?purchase=success`,
     cancel_url: `${origin}/?purchase=cancelled`,
   });
-  const res = await fetch(`${STRIPE_API}/checkout/sessions`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: form,
+  const json = await stripe<{ url?: string }>("POST", "/checkout/sessions", form);
+  if (!json.url) throw new Error("Stripe didn't return a checkout link");
+  return json.url;
+}
+
+/** Creates a Stripe Checkout page that starts a monthly or yearly plan, and returns its URL. */
+export async function createSubscriptionCheckout(
+  plan: Plan,
+  interval: Interval,
+  user: { id: string; email: string },
+  customer: string | null,
+  origin: string,
+): Promise<string> {
+  const form = new URLSearchParams({
+    mode: "subscription",
+    "line_items[0][quantity]": "1",
+    "line_items[0][price_data][currency]": currency(),
+    "line_items[0][price_data][unit_amount]": String(planPrice(plan, interval)),
+    "line_items[0][price_data][recurring][interval]": interval,
+    "line_items[0][price_data][product_data][name]": `Flash AI ${plan.name}: ${plan.credits.toLocaleString("en-US")} credits a month`,
+    client_reference_id: user.id,
+    // Copied onto every invoice, so the webhook knows whose plan each payment is for.
+    "subscription_data[metadata][user]": user.id,
+    "subscription_data[metadata][plan]": plan.id,
+    "subscription_data[metadata][interval]": interval,
+    allow_promotion_codes: "true",
+    success_url: `${origin}/?purchase=subscribed`,
+    cancel_url: `${origin}/?purchase=cancelled`,
   });
-  const json = (await res.json()) as { url?: string; error?: { message?: string } };
-  if (!res.ok || !json.url) throw new Error(json.error?.message ?? `Stripe returned ${res.status}`);
+  if (customer) form.set("customer", customer);
+  else form.set("customer_email", user.email);
+  const json = await stripe<{ url?: string }>("POST", "/checkout/sessions", form);
+  if (!json.url) throw new Error("Stripe didn't return a checkout link");
+  return json.url;
+}
+
+/** Ends a Stripe subscription now, without a refund (used when a subscriber switches plans). */
+export async function cancelStripeSubscription(id: string): Promise<void> {
+  await stripe("DELETE", `/subscriptions/${encodeURIComponent(id)}`);
+}
+
+/*
+ * The billing portal lets subscribers update their card, see invoices and cancel at the end of
+ * the period. Plan changes inside the portal are off: they would prorate refunds for credits
+ * already used. Switching plans goes through a new checkout instead.
+ */
+async function portalConfiguration(): Promise<string> {
+  if (process.env.STRIPE_PORTAL_CONFIGURATION) return process.env.STRIPE_PORTAL_CONFIGURATION;
+  const saved = await one<{ value: string }>("SELECT value FROM settings WHERE key = 'stripe_portal_configuration'");
+  if (saved) return saved.value;
+  const config = await stripe<{ id: string }>(
+    "POST",
+    "/billing_portal/configurations",
+    new URLSearchParams({
+      "features[invoice_history][enabled]": "true",
+      "features[payment_method_update][enabled]": "true",
+      "features[subscription_cancel][enabled]": "true",
+      "features[subscription_cancel][mode]": "at_period_end",
+      "features[subscription_cancel][proration_behavior]": "none",
+      "features[subscription_update][enabled]": "false",
+    }),
+  );
+  await run("INSERT OR REPLACE INTO settings (key, value) VALUES ('stripe_portal_configuration', ?)", [config.id]);
+  return config.id;
+}
+
+/** Opens Stripe's billing portal for a customer and returns its URL. */
+export async function createPortalSession(customer: string, origin: string): Promise<string> {
+  const json = await stripe<{ url: string }>(
+    "POST",
+    "/billing_portal/sessions",
+    new URLSearchParams({ customer, return_url: `${origin}/`, configuration: await portalConfiguration() }),
+  );
   return json.url;
 }
 

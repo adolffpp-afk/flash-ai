@@ -83,6 +83,25 @@ const SCHEMA = [
     ref TEXT NOT NULL UNIQUE,
     created_at INTEGER NOT NULL
   )`,
+  // Monthly plans. paid_until is how far the subscriber has paid; credits arrive once a month
+  // from anchor (the subscription's start) for as long as that month began before paid_until.
+  `CREATE TABLE IF NOT EXISTS subscriptions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    plan TEXT NOT NULL,
+    interval TEXT NOT NULL,
+    status TEXT NOT NULL,
+    cancel_at_period_end INTEGER NOT NULL DEFAULT 0,
+    customer TEXT,
+    amount_cents INTEGER NOT NULL,
+    anchor INTEGER NOT NULL,
+    paid_until INTEGER NOT NULL,
+    test INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS subscriptions_user ON subscriptions(user_id, paid_until)`,
+  `CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
   `CREATE INDEX IF NOT EXISTS site_records_lookup ON site_records(site_slug, collection, created_at)`,
 ];
 

@@ -51,10 +51,17 @@ Features:
 - **Credits that follow real costs**: one credit is worth one cent at the Starter price,
   and each request costs what Flash pays the AI provider times a markup (2.5 by default,
   `FLASH_MARKUP`). Image, video and music have a fixed price per model. Writing, research,
-  code, apps and slides are charged by length: Flash holds up to a limit, then keeps only
-  what the reply used. Everyone gets free credits each month and can buy packs through
-  Stripe. Failed requests are free, and demo replies cost nothing. Provider prices live in
+  code, apps and slides are charged by length: Flash holds credits for the reply, caps the
+  reply's length at what those credits pay for (so no request can cost more than it
+  earns), then keeps only what the reply used. Everyone gets free credits each month. Failed requests are free, and demo replies cost nothing. Provider prices live in
   `src/lib/credits.ts` and `src/lib/models.ts`, checked on 2026-10-02.
+- **Plans like Lovable and Emergent**: Free (200 credits a month), Pro ($25, 3,000 credits),
+  Power ($50, 6,500) and Max ($200, 28,000), 20% off when paid yearly, plus one-off
+  top-ups (500 for $5, 2,200 for $20, 5,800 for $50). Credits arrive every month, yearly
+  plans included, and unused credits carry over. Every plan and top-up makes a profit even
+  if the buyer uses every credit, after AI cost and Stripe fees; `test/pricing.test.ts`
+  checks this and the owner dashboard shows the margin per plan. Plans live in
+  `src/lib/credits.ts`.
 - **Model mix**: Claude Opus 5.5 builds apps, slides and code; Claude Sonnet 5.5 handles
   everyday chat, writing, research and translation; Claude Haiku 4.5 picks the engine
   for requests the keyword rules can't place. Override with `FLASH_BUILD_MODEL`,
@@ -96,7 +103,11 @@ keys under **Settings → Environment Variables**, and deploy. Any Node.js host 
 Serverless hosts like Vercel can't keep a local database file, so set `DATABASE_URL`
 and `DATABASE_AUTH_TOKEN` to a hosted libSQL database (Turso has a free tier). To take
 payments, add `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` and point a Stripe webhook
-at `/api/billing/webhook` for the `checkout.session.completed` event.
+at `/api/billing/webhook` for the `checkout.session.completed`, `invoice.paid`,
+`customer.subscription.updated` and `customer.subscription.deleted` events. The billing
+portal (card, invoices, cancel at period end) is set up automatically on first use, with
+plan changes switched off; switching plans goes through a new checkout and starts a new
+month, so a switch can never refund credits already used.
 
 Published apps run under a sandbox header that blocks them from reading Flash's cookies,
 but they are served from the same domain. For a public launch, serve `/p/*` from a
@@ -149,6 +160,5 @@ npm run build
 ## Not in this version yet
 
 Multi-file projects, sign-in inside built apps (flashDB data is shared by everyone who
-uses a published app), custom domains, password reset and email verification, monthly
-subscriptions (credits are bought in packs), a mobile app, team workspaces, real .xlsx
+uses a published app), custom domains, password reset and email verification, a mobile app, team workspaces, real .xlsx
 and .docx files, video longer than 8 seconds, and an LLM-based router.

@@ -1,5 +1,6 @@
 import { getUser, isAdmin, unauthorized } from "@/lib/server/auth.ts";
 import { all, one } from "@/lib/server/db.ts";
+import { CREDIT_PACKS, MARKUP, PLANS, paymentFeeCents, planPrice, worstCaseProfitCents } from "@/lib/credits.ts";
 
 export const dynamic = "force-dynamic";
 
@@ -65,6 +66,42 @@ export async function GET(request: Request) {
     "SELECT email, name, created_at FROM users ORDER BY created_at DESC LIMIT 10",
   );
 
+  // Paid-up subscriptions right now, by plan and billing period. MRR counts yearly plans per month.
+  const subs = await all<{ plan: string; interval: string; test: number; count: number; amount: number }>(
+    `SELECT plan, interval, test, COUNT(*) AS count, COALESCE(SUM(amount_cents), 0) AS amount
+     FROM subscriptions WHERE paid_until > ? GROUP BY plan, interval, test`,
+    [Date.now()],
+  );
+  const monthly = (r: { interval: string; amount: number }) => (r.interval === "year" ? n(r.amount) / 12 : n(r.amount));
+  const paidSubs = subs.filter((r) => !n(r.test));
+  // Worst case for each plan and pack: the buyer uses every credit.
+  const planEconomics = [
+    ...PLANS.flatMap((p) =>
+      (["month", "year"] as const).map((interval) => {
+        const price = planPrice(p, interval);
+        const months = interval === "year" ? 12 : 1;
+        return {
+          name: `${p.name} (${interval === "year" ? "yearly" : "monthly"})`,
+          priceCents: price / months,
+          credits: p.credits,
+          costCents: p.credits / MARKUP,
+          feeCents: paymentFeeCents(price, true) / months,
+          profitCents: worstCaseProfitCents(price, p.credits, true, months),
+          subscribers: n(paidSubs.find((r) => r.plan === p.id && r.interval === interval)?.count),
+        };
+      }),
+    ),
+    ...CREDIT_PACKS.map((p) => ({
+      name: `${p.name} top-up`,
+      priceCents: p.priceCents,
+      credits: p.credits,
+      costCents: p.credits / MARKUP,
+      feeCents: paymentFeeCents(p.priceCents, false),
+      profitCents: worstCaseProfitCents(p.priceCents, p.credits, false),
+      subscribers: null,
+    })),
+  ];
+
   // One row per day in the range, so quiet days show as zero.
   const firstDay = Math.floor(since / DAY) + 1;
   const lastDay = Math.floor(Date.now() / DAY);
@@ -90,5 +127,9 @@ export async function GET(request: Request) {
     series,
     topUsers: topUsers.map((r) => ({ email: r.email, requests: n(r.requests), credits: n(r.credits), costCents: n(r.cost) })),
     signups,
+    subscribers: paidSubs.reduce((sum, r) => sum + n(r.count), 0),
+    testSubscribers: subs.filter((r) => n(r.test)).reduce((sum, r) => sum + n(r.count), 0),
+    mrrCents: paidSubs.reduce((sum, r) => sum + monthly(r), 0),
+    planEconomics,
   });
 }

@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { ENGINES, type ChatTurn, type Engine, type Source, type StreamEvent } from "../types.ts";
-import { claudeCostCents } from "../credits.ts";
+import { CLAUDE_PRICES, MAX_OUTPUT_TOKENS, claudeCostCents, inputCostCents } from "../credits.ts";
 
 /*
  * Flash uses three Claude models, to keep quality high where it shows and costs low elsewhere:
@@ -15,6 +15,26 @@ export const ROUTER_MODEL = process.env.FLASH_ROUTER_MODEL || "claude-haiku-4-5"
 /** Records what an AI call cost Flash, for credits and the owner dashboard. */
 export type Meter = (provider: "anthropic" | "openai" | "elevenlabs" | "fal", model: string, costCents: number) => void;
 export const noMeter: Meter = () => {};
+
+/** The most a reply may spend: an output token cap, and a cost cap in cents for multi-step replies. */
+export type Budget = { maxTokens: number; capCents: number };
+export const NO_BUDGET: Budget = { maxTokens: MAX_OUTPUT_TOKENS, capCents: Infinity };
+
+/** The Claude model an engine runs on. */
+export const modelForEngine = (engine: Engine) =>
+  engine === "app" || engine === "slides" || engine === "code" ? BUILD_MODEL : CHAT_MODEL;
+
+/** Counts the tokens a conversation will cost to read, plus room for system prompts and tools. */
+export async function countInputTokens(model: string, history: ChatTurn[]): Promise<number> {
+  const messages = toMessages(history);
+  try {
+    const res = await getClient().beta.messages.countTokens({ model, messages });
+    return res.input_tokens + 3000;
+  } catch {
+    // Counting failed: estimate on the high side (about 2.5 characters per token).
+    return Math.ceil(JSON.stringify(messages).length / 2.5) + 3000;
+  }
+}
 
 export const meterClaude = (meter: Meter, message: Anthropic.Beta.BetaMessage) =>
   meter("anthropic", message.model, claudeCostCents(message.model, message.usage));
@@ -97,10 +117,11 @@ export async function* streamText(
   preferences: string,
   mode: WritingMode = "text",
   meter: Meter = noMeter,
+  budget: Budget = NO_BUDGET,
 ): AsyncGenerator<StreamEvent> {
   const stream = getClient().beta.messages.stream({
     model: mode === "code" ? BUILD_MODEL : CHAT_MODEL,
-    max_tokens: 64000,
+    max_tokens: budget.maxTokens,
     betas: ["server-side-fallback-2026-07-01"],
     fallbacks: "default",
     // Sonnet at medium effort writes well for chat; code on Opus gets more thought.
@@ -116,6 +137,17 @@ export async function* streamText(
   const final = await stream.finalMessage();
   meterClaude(meter, final);
   if (final.stop_reason === "refusal") yield refusalMessage();
+  if (final.stop_reason === "max_tokens") yield lengthNote(budget);
+}
+
+function lengthNote(budget: Budget): StreamEvent {
+  return {
+    type: "text",
+    delta:
+      budget.maxTokens < MAX_OUTPUT_TOKENS
+        ? "\n\n_Flash stopped here because the reply reached what your credits cover. Ask it to continue._"
+        : "\n\n_Flash stopped here because the reply reached its length limit. Ask it to continue._",
+  };
 }
 
 /** Research: Claude with server-side web search and page reading, returning the answer and its sources. */
@@ -123,14 +155,17 @@ export async function* streamSearch(
   history: ChatTurn[],
   preferences: string,
   meter: Meter = noMeter,
+  budget: Budget = NO_BUDGET,
 ): AsyncGenerator<StreamEvent> {
   const messages = toMessages(history);
   const sources = new Map<string, Source>();
+  let spent = 0;
+  let maxTokens = budget.maxTokens;
   // pause_turn means the server paused a long search loop; resend to let it continue.
   for (let round = 0; round < 4; round++) {
     const stream = getClient().beta.messages.stream({
       model: CHAT_MODEL,
-      max_tokens: 64000,
+      max_tokens: maxTokens,
       betas: ["server-side-fallback-2026-07-01"],
       fallbacks: "default",
       output_config: { effort: "medium" },
@@ -138,8 +173,8 @@ export async function* streamSearch(
         system(preferences) +
         "\n\nSearch the web for current facts, read any page the user links, and keep the answer concise.",
       tools: [
-        { type: "web_search_20260209", name: "web_search", max_uses: 5 },
-        { type: "web_fetch_20260209", name: "web_fetch", max_uses: 3 },
+        { type: "web_search_20260209", name: "web_search", max_uses: 3 },
+        { type: "web_fetch_20260209", name: "web_fetch", max_uses: 2, max_content_tokens: 6000 },
       ],
       messages,
     });
@@ -150,6 +185,7 @@ export async function* streamSearch(
     }
     const final = await stream.finalMessage();
     meterClaude(meter, final);
+    spent += claudeCostCents(final.model, final.usage);
     for (const block of final.content) {
       if (block.type === "web_search_tool_result" && Array.isArray(block.content)) {
         for (const r of block.content) {
@@ -167,7 +203,13 @@ export async function* streamSearch(
       yield refusalMessage();
       break;
     }
+    if (final.stop_reason === "max_tokens") yield lengthNote(budget);
     if (final.stop_reason !== "pause_turn") break;
+    // Keep searching only while the credits held for this request still cover another round.
+    const nextInput = final.usage.input_tokens + final.usage.output_tokens;
+    const left = budget.capCents - spent - inputCostCents("search", CHAT_MODEL, nextInput);
+    maxTokens = Math.min(MAX_OUTPUT_TOKENS, Math.floor((left * 1e6) / (CLAUDE_PRICES[CHAT_MODEL] ?? CLAUDE_PRICES["claude-opus-5-5"]).output));
+    if (!(maxTokens >= 2000)) break;
     messages.push({ role: "assistant", content: final.content });
   }
   if (sources.size) yield { type: "sources", items: [...sources.values()].slice(0, 8) };

@@ -28,7 +28,31 @@ export default function Terms() {
       <ul>
         <li>Requests use credits. The cost of a request is shown in the app and may change as provider prices change.</li>
         <li>Free credits are added each month and do not carry over beyond the monthly allowance.</li>
-        <li>Purchased credits do not expire while your account is open. They have no cash value and cannot be transferred.</li>
+        <li>
+          Purchased credits, including plan credits, do not expire while your account is open. They have no cash value
+          and cannot be transferred.
+        </li>
+        <li>
+          Plans are subscriptions that renew automatically each month or year at the price shown when you subscribe,
+          until you cancel. Each plan adds its credits once a month, including yearly plans. Unused plan credits carry
+          over.
+        </li>
+        <li>
+          You can cancel at any time from the credits panel. Your plan keeps running, and keeps adding its monthly
+          credits, until the end of the period you paid for. We do not give partial refunds for the rest of a period.
+        </li>
+        <li>
+          Switching to a different plan starts a new billing period on the day you switch, at the new price. Your
+          previous plan ends that day without a partial refund, and you keep all credits already added.
+        </li>
+        <li>
+          If we change a plan&apos;s price, we will tell you before your next renewal, and the new price applies from
+          that renewal.
+        </li>
+        <li>
+          A long reply stops when it reaches what your credits cover. You can buy more credits and ask Flash to
+          continue.
+        </li>
         <li>
           Credits used by a request that fails are returned automatically. Other purchases are non-refundable, except
           where the law requires otherwise. Contact us if you were charged in error.

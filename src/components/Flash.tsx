@@ -135,7 +135,13 @@ export function Flash() {
     const params = new URLSearchParams(window.location.search);
     const purchase = params.get("purchase");
     if (purchase) {
-      setNotice(purchase === "success" ? "Thanks! Your credits were added." : "Checkout was cancelled. No charge was made.");
+      setNotice(
+        purchase === "success"
+          ? "Thanks! Your credits were added."
+          : purchase === "subscribed"
+            ? "Welcome to your new plan! This month's credits are on their way."
+            : "Checkout was cancelled. No charge was made.",
+      );
       window.history.replaceState(null, "", window.location.pathname);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

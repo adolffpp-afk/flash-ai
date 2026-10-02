@@ -1,5 +1,6 @@
 import { CREDIT_PACKS, FREE_MONTHLY_CREDITS } from "../credits.ts";
 import { all, one, run, now } from "./db.ts";
+import { activeSubscription, grantPlanCredits } from "./subscriptions.ts";
 
 export async function balance(userId: string): Promise<number> {
   const row = await one<{ total: number }>(
@@ -11,8 +12,16 @@ export async function balance(userId: string): Promise<number> {
 
 const monthKey = (t = new Date()) => `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, "0")}`;
 
-/** Tops the free allowance back up once per calendar month (never takes credits away). */
+/**
+ * Gives subscribers this month's plan credits, or tops the free allowance back up once per
+ * calendar month for everyone else (never takes credits away).
+ */
 export async function ensureMonthlyCredits(userId: string): Promise<void> {
+  const sub = await activeSubscription(userId);
+  if (sub) {
+    await grantPlanCredits(sub);
+    return;
+  }
   const ref = `free:${userId}:${monthKey()}`;
   if (await one("SELECT 1 FROM credit_ledger WHERE ref = ?", [ref])) return;
   const topUp = Math.max(0, FREE_MONTHLY_CREDITS - (await balance(userId)));

@@ -21,6 +21,18 @@ type Stats = {
   series: { day: number; requests: number; costCents: number }[];
   topUsers: { email: string; requests: number; credits: number; costCents: number }[];
   signups: { email: string; name: string; created_at: number }[];
+  subscribers: number;
+  testSubscribers: number;
+  mrrCents: number;
+  planEconomics: {
+    name: string;
+    priceCents: number;
+    credits: number;
+    costCents: number;
+    feeCents: number;
+    profitCents: number;
+    subscribers: number | null;
+  }[];
 };
 
 const RANGES = [7, 30, 90];
@@ -182,7 +194,17 @@ export function AdminDashboard() {
           <p className="mt-10 text-zinc-500">Loading…</p>
         ) : (
           <>
-            <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-5">
+              <Tile
+                label="Monthly recurring revenue"
+                value={usd(stats.mrrCents)}
+                note="Yearly plans counted per month"
+              />
+              <Tile
+                label="Subscribers"
+                value={num(stats.subscribers)}
+                note={stats.testSubscribers ? `${num(stats.testSubscribers)} test plans` : "Paid-up plans right now"}
+              />
               <Tile
                 label="Revenue"
                 value={usd(stats.revenueCents)}
@@ -220,6 +242,26 @@ export function AdminDashboard() {
             <div className="mt-4">
               <Panel title="AI cost per day">
                 <CostChart series={stats.series} />
+              </Panel>
+            </div>
+
+            <div className="mt-4">
+              <Panel
+                title="Plans and top-ups"
+                note="Profit per month if the buyer uses every credit (the worst case), after AI cost and Stripe fees"
+              >
+                <Table
+                  head={["Plan", "Price", "Credits", "Max AI cost", "Fees", "Min profit", "Subs"]}
+                  rows={stats.planEconomics.map((r) => [
+                    r.name,
+                    usd(r.priceCents),
+                    num(r.credits),
+                    usd(r.costCents),
+                    usd(r.feeCents),
+                    `${usd(r.profitCents)} (${Math.round((r.profitCents / r.priceCents) * 100)}%)`,
+                    r.subscribers === null ? "–" : num(r.subscribers),
+                  ])}
+                />
               </Panel>
             </div>
 

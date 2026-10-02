@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { ENGINES, ENGINE_LABELS, type Engine } from "@/lib/types";
 import { api, type Pricing } from "@/lib/store";
+import { IntervalToggle, PlanCards, type Interval } from "./PlanCards";
 
 const money = (cents: number) => `$${(cents / 100).toFixed(cents % 100 ? 2 : 0)}`;
 
@@ -41,8 +42,12 @@ const FAQ = [
     a: "Every account gets free credits each month. Each request uses credits based on what it costs to make: a short chat answer uses a few, an app or a video uses more. You always see the cost on each reply, and failed requests are free.",
   },
   {
-    q: "Is it a subscription?",
-    a: "No. You buy credit packs when you need them, and your free credits top up every month. Bought credits don't expire.",
+    q: "Do I need a subscription?",
+    a: "No. The free plan gives you credits every month. Plans give you more credits each month for less per credit, and you can cancel any time. You can also buy one-off top-ups. Unused plan credits carry over, and bought credits don't expire.",
+  },
+  {
+    q: "Can I change or cancel my plan?",
+    a: "Yes. Cancel from the credits panel and your plan runs to the end of the period you paid for. Switching to another plan starts a new month that day, and you keep the credits you already have.",
   },
   {
     q: "Which AI models does Flash use?",
@@ -60,6 +65,7 @@ const FAQ = [
 
 export function Landing({ onStart }: { onStart: (mode: "signup" | "login") => void }) {
   const [pricing, setPricing] = useState<Pricing | null>(null);
+  const [billing, setBilling] = useState<Interval>("month");
   useEffect(() => {
     api<Pricing>("/api/pricing").then(setPricing).catch(() => {});
   }, []);
@@ -186,41 +192,26 @@ export function Landing({ onStart }: { onStart: (mode: "signup" | "login") => vo
       </section>
 
       <section id="pricing" className="mx-auto max-w-5xl scroll-mt-16 px-4 py-16">
-        <h2 className="text-center text-3xl font-semibold tracking-tight">Simple, pay-as-you-go pricing</h2>
+        <h2 className="text-center text-3xl font-semibold tracking-tight">Plans for every maker</h2>
         <p className="mx-auto mt-3 max-w-2xl text-center text-zinc-400">
-          Start free. Buy credits only when you need more. No subscription, and bought credits never expire.
+          Start free. Upgrade for more monthly credits, or top up any time. Cancel whenever you like, and unused
+          credits carry over.
         </p>
-        <div className="mt-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="flex flex-col rounded-xl border border-zinc-800 p-5">
-            <div className="font-medium">Free</div>
-            <div className="mt-1 text-3xl font-semibold">$0</div>
-            <div className="text-sm text-zinc-400">{free ?? "…"} credits every month</div>
-            <p className="mb-4 mt-2 text-xs text-zinc-500">Try every tool. Tops up on the 1st.</p>
-            <button onClick={() => onStart("signup")} className="mt-auto rounded-lg border border-zinc-700 py-2 text-sm hover:bg-zinc-900">
-              Start free
-            </button>
-          </div>
-          {(pricing?.packs ?? []).map((p, i) => (
-            <div
-              key={p.id}
-              className={`flex flex-col rounded-xl border p-5 ${i === 1 ? "border-indigo-500/60 bg-indigo-500/5" : "border-zinc-800"}`}
-            >
-              <div className="flex items-baseline justify-between">
-                <span className="font-medium">{p.name}</span>
-                {i === 1 && <span className="text-[10px] uppercase tracking-wide text-indigo-300">Popular</span>}
-              </div>
-              <div className="mt-1 text-3xl font-semibold">{money(p.priceCents)}</div>
-              <div className="text-sm text-zinc-400">{p.credits.toLocaleString("en-US")} credits</div>
-              <p className="mb-4 mt-2 text-xs text-zinc-500">{p.blurb}</p>
-              <button
-                onClick={() => onStart("signup")}
-                className="mt-auto rounded-lg bg-gradient-to-r from-indigo-600 to-fuchsia-600 py-2 text-sm font-medium text-white hover:brightness-110"
-              >
-                Get {p.name}
-              </button>
-            </div>
-          ))}
+        <div className="mt-6 flex justify-center">
+          <IntervalToggle value={billing} onChange={setBilling} />
         </div>
+        {pricing && (
+          <div className="mt-8">
+            <PlanCards pricing={pricing} interval={billing} onFree={() => onStart("signup")} onPick={() => onStart("signup")} />
+          </div>
+        )}
+        {pricing && (
+          <p className="mt-4 text-center text-sm text-zinc-400">
+            Need more? Top up any time:{" "}
+            {pricing.packs.map((p) => `${p.credits.toLocaleString("en-US")} credits for ${money(p.priceCents)}`).join(" · ")}.
+            Bought credits never expire.
+          </p>
+        )}
         {pricing && (
           <div className="mt-8 rounded-xl border border-zinc-800 p-5">
             <h3 className="text-sm font-medium text-zinc-300">Typical credits per request</h3>

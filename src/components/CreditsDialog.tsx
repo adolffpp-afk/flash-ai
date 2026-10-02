@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ENGINES, ENGINE_LABELS, type Engine } from "@/lib/types";
 import { api, type Me } from "@/lib/store";
+import { IntervalToggle, PlanCards, type Interval } from "./PlanCards";
 
 /** One price, or a range when an engine's models cost different amounts. */
 function costLabel(me: Me, engine: Engine): string {
@@ -16,10 +17,50 @@ function costLabel(me: Me, engine: Engine): string {
 }
 
 const money = (cents: number) => `$${(cents / 100).toFixed(cents % 100 ? 2 : 0)}`;
+const day = (t: number) => new Date(t).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
 
 export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () => void; onChanged: () => void }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState("");
+  const [billing, setBilling] = useState<Interval>(me.plan?.interval ?? "month");
+  const plan = me.plan;
+
+  async function subscribe(planId: string) {
+    setBusy(planId);
+    setMessage("");
+    try {
+      const res = await api<{ url?: string; demo?: boolean }>("/api/billing/subscribe", {
+        method: "POST",
+        json: { plan: planId, interval: billing },
+      });
+      if (res.url) window.location.assign(res.url);
+      else if (res.demo) {
+        setMessage("Test plan started (demo purchases are on). Its credits were added.");
+        onChanged();
+      }
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Couldn't start checkout.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function manage() {
+    setBusy("manage");
+    setMessage("");
+    try {
+      const res = await api<{ url?: string; demo?: boolean; renews?: boolean }>("/api/billing/portal", { method: "POST" });
+      if (res.url) window.location.assign(res.url);
+      else if (res.demo) {
+        setMessage(res.renews ? "Your test plan will renew again." : "Your test plan is cancelled. It runs to the end of the period.");
+        onChanged();
+      }
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Couldn't open billing.");
+    } finally {
+      setBusy(null);
+    }
+  }
 
   async function buy(pack: string) {
     setBusy(pack);
@@ -43,7 +84,7 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
       <div
         role="dialog"
         aria-label="Credits"
-        className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-t-2xl border border-zinc-800 bg-zinc-950 p-6 sm:rounded-2xl"
+        className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-t-2xl border border-zinc-800 bg-zinc-950 p-6 sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between">
@@ -52,16 +93,53 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
             <p className="text-4xl font-semibold tracking-tight">
               {me.credits.toLocaleString("en-US")} <span className="text-lg font-normal text-zinc-400">credits</span>
             </p>
-            <p className="mt-1 text-xs text-zinc-500">
-              Free plan tops you back up to {me.freeMonthly} credits at the start of each month.
-            </p>
+            {plan ? (
+              <p className="mt-1 text-xs text-zinc-400">
+                <span className="font-medium text-zinc-200">{plan.name} plan</span>
+                {plan.interval === "year" ? ", billed yearly" : ""} · {plan.credits.toLocaleString("en-US")} credits a month
+                {plan.nextCredits < plan.paidUntil
+                  ? ` · next credits ${day(plan.nextCredits)}`
+                  : plan.renews
+                    ? ` · renews ${day(plan.paidUntil)}`
+                    : ` · ends ${day(plan.paidUntil)}`}
+                {plan.test && <span className="ml-1 text-amber-400/80">(test)</span>}
+              </p>
+            ) : (
+              <p className="mt-1 text-xs text-zinc-500">
+                Free plan tops you back up to {me.freeMonthly} credits at the start of each month.
+              </p>
+            )}
           </div>
           <button onClick={onClose} className="rounded-lg p-2 text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100" aria-label="Close">
             ✕
           </button>
         </div>
 
-        <h3 className="mt-6 text-sm font-medium text-zinc-300">Buy credits</h3>
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+          <h3 className="text-sm font-medium text-zinc-300">Plans</h3>
+          <div className="flex items-center gap-2">
+            {plan && (
+              <button
+                onClick={manage}
+                disabled={busy !== null}
+                className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-900 disabled:opacity-50"
+              >
+                {busy === "manage" ? "Opening…" : plan.test ? (plan.renews ? "Cancel plan" : "Resume plan") : "Manage billing"}
+              </button>
+            )}
+            <IntervalToggle value={billing} onChange={setBilling} />
+          </div>
+        </div>
+        <div className="mt-3">
+          <PlanCards pricing={me} interval={billing} current={plan} busy={busy} onPick={subscribe} compact />
+        </div>
+        {plan && (
+          <p className="mt-2 text-xs text-zinc-500">
+            Switching plans starts a new month today at the new price. You keep every credit you already have.
+          </p>
+        )}
+
+        <h3 className="mt-6 text-sm font-medium text-zinc-300">Top up</h3>
         <div className="mt-2 grid gap-2 sm:grid-cols-3">
           {me.packs.map((p, i) => (
             <div
@@ -100,8 +178,8 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
           ))}
         </div>
         <p className="mt-2 text-xs text-zinc-500">
-          Writing, research, code, apps and slides are charged by length (~ is a typical request), and never more
-          than {me.limits.text} credits for a chat reply or {me.limits.app} for an app. Failed requests are free.
+          Writing, research, code, apps and slides are charged by length (~ is a typical request). A reply stops at
+          what your credits cover, and long conversations cost a little more to read. Failed requests are free.
         </p>
 
         <h3 className="mt-6 text-sm font-medium text-zinc-300">Image, video and music models</h3>

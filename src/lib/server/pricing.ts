@@ -1,4 +1,4 @@
-import { CREDIT_LIMITS, CREDIT_PACKS, FREE_MONTHLY_CREDITS, TYPICAL_CREDITS } from "../credits.ts";
+import { CREDIT_LIMITS, CREDIT_PACKS, FREE_MONTHLY_CREDITS, PLANS, TYPICAL_CREDITS } from "../credits.ts";
 import { MODELS, modelCredits } from "../models.ts";
 import { ENGINES, type Engine } from "../types.ts";
 import { elevenConfigured, openaiConfigured } from "../engines/media.ts";
@@ -18,6 +18,7 @@ export function pricingInfo() {
     ) as Record<Engine, number>,
     limits: CREDIT_LIMITS,
     packs: CREDIT_PACKS,
+    plans: PLANS,
     freeMonthly: FREE_MONTHLY_CREDITS,
     paymentsEnabled: paymentsEnabled(),
     models: MODELS.map((m) => ({

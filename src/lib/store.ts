@@ -33,6 +33,15 @@ export type Pricing = {
   costs: Record<Engine, number>;
   limits: Partial<Record<Engine, number>>;
   packs: { id: string; name: string; credits: number; priceCents: number; blurb: string }[];
+  plans: {
+    id: string;
+    name: string;
+    priceCents: number;
+    yearlyPriceCents: number;
+    credits: number;
+    blurb: string;
+    features: string[];
+  }[];
   freeMonthly: number;
   paymentsEnabled: boolean;
   models: { id: string; engine: Engine; label: string; credits: number; blurb: string; live: boolean }[];
@@ -42,6 +51,16 @@ export type Me = Pricing & {
   user: { id: string; email: string; name: string; preferences: string };
   isAdmin: boolean;
   credits: number;
+  plan: {
+    id: string;
+    name: string;
+    interval: "month" | "year";
+    credits: number;
+    nextCredits: number;
+    renews: boolean;
+    paidUntil: number;
+    test: boolean;
+  } | null;
   activity: { amount: number; reason: string; created_at: number }[];
 };
 

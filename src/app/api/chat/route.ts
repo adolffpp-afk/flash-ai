@@ -1,6 +1,17 @@
 import { route, textToSpeak } from "@/lib/router.ts";
 import { ENGINES, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types.ts";
-import { classifyRequest, claudeConfigured, improvePrompt, streamSearch, streamText, type Meter } from "@/lib/engines/claude.ts";
+import {
+  NO_BUDGET,
+  classifyRequest,
+  claudeConfigured,
+  countInputTokens,
+  improvePrompt,
+  modelForEngine,
+  streamSearch,
+  streamText,
+  type Budget,
+  type Meter,
+} from "@/lib/engines/claude.ts";
 import {
   composeMusic,
   downloadVideo,
@@ -15,7 +26,7 @@ import {
 import { getUser, unauthorized } from "@/lib/server/auth.ts";
 import { balance, charge, ensureMonthlyCredits, logUsage, settle } from "@/lib/server/credits.ts";
 import { saveFile } from "@/lib/server/files.ts";
-import { CREDIT_LIMITS, TRANSCRIBE_COST_CENTS, TYPICAL_CREDITS, creditsFor, voiceCostCents } from "@/lib/credits.ts";
+import { MARKUP, TRANSCRIBE_COST_CENTS, TYPICAL_CREDITS, creditsFor, planHold, voiceCostCents } from "@/lib/credits.ts";
 import { falConfigured, falGenerate } from "@/lib/engines/fal.ts";
 import { MEDIA_ENGINES, modelCredits, pickModel, videoSeconds, type MediaEngine, type ModelInfo, type Provider } from "@/lib/models.ts";
 import { demoReply } from "@/lib/engines/demo.ts";
@@ -102,6 +113,7 @@ async function* run(
   store: Store,
   model: ModelInfo | null,
   meter: Meter,
+  budget: Budget,
 ): AsyncGenerator<StreamEvent> {
   const last = history[history.length - 1];
   if (isMedia(engine) ? !model : !configured(engine)) {
@@ -113,14 +125,14 @@ async function* run(
     case "code":
     case "translate":
     case "docs":
-      yield* streamText(history, preferences, engine, meter);
+      yield* streamText(history, preferences, engine, meter, budget);
       return;
     case "search":
-      yield* streamSearch(history, preferences, meter);
+      yield* streamSearch(history, preferences, meter, budget);
       return;
     case "app":
     case "slides":
-      yield* streamBuild(history, preferences, engine, meter);
+      yield* streamBuild(history, preferences, engine, meter, budget);
       return;
     case "image": {
       const prompt = await sharpen("image", last.content, meter);
@@ -239,13 +251,17 @@ export async function POST(request: Request) {
   const available = await balance(user.id);
   let held = 0;
   let needed = 0;
+  let budget = NO_BUDGET;
   if (live) {
     if (model) held = needed = modelCredits(model, last.content);
     else if (engine === "voice") held = needed = creditsFor(voiceCostCents(textToSpeak(last.content).length));
     else if (engine === "transcribe") held = needed = creditsFor(TRANSCRIBE_COST_CENTS);
     else {
-      needed = Math.max(1, Math.ceil((TYPICAL_CREDITS[engine] ?? 4) / 2));
-      held = Math.max(needed, Math.min(CREDIT_LIMITS[engine] ?? 30, available));
+      // The reply may only spend what the held credits pay for, so no request runs at a loss.
+      const claudeModel = modelForEngine(engine);
+      const hold = planHold(engine, claudeModel, await countInputTokens(claudeModel, history), available);
+      ({ needed, held } = hold);
+      budget = { maxTokens: hold.maxTokens, capCents: hold.capCents };
     }
   }
   const chargeId = held ? await charge(user.id, held, `${engine} request`) : 0;
@@ -288,9 +304,11 @@ export async function POST(request: Request) {
       });
       let ok = true;
       let failure = "";
+      let written = 0;
       try {
-        for await (const event of run(engine, history, preferences, store, model, meter)) {
+        for await (const event of run(engine, history, preferences, store, model, meter, budget)) {
           if (cancelled || request.signal.aborted) break;
+          if (event.type === "text") written += event.delta.length;
           send(event);
         }
       } catch (err) {
@@ -303,7 +321,11 @@ export async function POST(request: Request) {
       let credits = held;
       if (!ok) credits = 0;
       else if (metered) {
-        const used = spend.length ? creditsFor(costCents) : (TYPICAL_CREDITS[engine] ?? 4);
+        // A stopped reply has no usage report: charge the larger of a typical reply and an
+        // estimate from what was already sent (about 3 characters per token, doubled for thinking,
+        // at Opus's output price of 2,000¢ per million tokens).
+        const estimate = Math.ceil((((written / 3) * 2 * 2000) / 1e6) * MARKUP);
+        const used = spend.length ? creditsFor(costCents) : Math.max(TYPICAL_CREDITS[engine] ?? 4, estimate);
         credits = Math.min(held, used);
       }
       await settle(chargeId, credits);

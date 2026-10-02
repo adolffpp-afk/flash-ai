@@ -1,4 +1,5 @@
-import { BUILD_MODEL, getClient, meterClaude, noMeter, toMessages, type Meter } from "./claude.ts";
+import { BUILD_MODEL, NO_BUDGET, getClient, meterClaude, noMeter, toMessages, type Budget, type Meter } from "./claude.ts";
+import { MAX_OUTPUT_TOKENS } from "../credits.ts";
 import { htmlTitle, splitBuild } from "../build-parse.ts";
 import type { ChatTurn, StreamEvent } from "../types.ts";
 
@@ -34,11 +35,12 @@ export async function* streamBuild(
   preferences: string,
   kind: "app" | "slides",
   meter: Meter = noMeter,
+  budget: Budget = NO_BUDGET,
 ): AsyncGenerator<StreamEvent> {
   const prefs = preferences.trim();
   const stream = getClient().beta.messages.stream({
     model: BUILD_MODEL,
-    max_tokens: 64000,
+    max_tokens: budget.maxTokens,
     betas: ["server-side-fallback-2026-07-01"],
     fallbacks: "default",
     output_config: { effort: "high" },
@@ -79,7 +81,13 @@ export async function* streamBuild(
   if (part.before.length > sentBefore) yield { type: "text", delta: part.before.slice(sentBefore) };
   if (!part.html || part.open) {
     if (final.stop_reason === "max_tokens") {
-      yield { type: "error", message: "The app was too large to finish in one go. Try asking for a simpler first version." };
+      yield {
+        type: "error",
+        message:
+          budget.maxTokens < MAX_OUTPUT_TOKENS
+            ? "Your credits ran out before this was finished. Add credits, or ask for a simpler first version."
+            : "The app was too large to finish in one go. Try asking for a simpler first version.",
+      };
     } else if (!part.html) {
       return;
     }
