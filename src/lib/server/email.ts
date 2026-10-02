@@ -24,7 +24,20 @@ function layout(heading: string, body: string, button: string, link: string): st
 </div></body></html>`;
 }
 
+const escapeHtml = (s: string) =>
+  s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
+
 export const EMAILS = {
+  teamInvite: (inviter: string, link: string) => ({
+    subject: `${inviter.slice(0, 60)} invited you to their Flash AI team`,
+    html: layout(
+      "Join a team on Flash AI",
+      `${escapeHtml(inviter.slice(0, 80))} invited you to their Business team. You'll share the team's monthly credits; your projects stay private. The link works for 14 days.`,
+      "Join the team",
+      link,
+    ),
+    text: `${inviter.slice(0, 80)} invited you to their Flash AI Business team (the link works for 14 days):\n${link}\n\nIf you don't know them, ignore this email.`,
+  }),
   verify: (link: string) => ({
     subject: "Confirm your email for Flash AI",
     html: layout("Confirm your email", "Confirm your email to get your free monthly credits.", "Confirm email", link),

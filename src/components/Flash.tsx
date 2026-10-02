@@ -6,6 +6,7 @@ import { AuthScreen } from "./AuthScreen";
 import { Landing } from "./Landing";
 import { VerifyBanner } from "./VerifyBanner";
 import { CreditsDialog } from "./CreditsDialog";
+import { InviteDialog } from "./InviteFriends";
 import { ENGINES, ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types";
 import { api, newId, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
 
@@ -18,6 +19,25 @@ const ACCEPT =
   "image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,text/markdown,text/csv,.md,.csv,.txt,.json," +
   "audio/*,video/mp4,video/webm,video/quicktime";
 const MAX_FILE_MB = 3;
+// A team invitation opened before signing in waits here until the account loads.
+const INVITE_KEY = "flash_invite";
+const storage = {
+  get: (key: string) => {
+    try {
+      return localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  },
+  set: (key: string, value: string | null) => {
+    try {
+      if (value === null) localStorage.removeItem(key);
+      else localStorage.setItem(key, value);
+    } catch {
+      // Storage blocked: the invitation link can be opened again after signing in.
+    }
+  },
+};
 // What the image, video, music and voice engines make, for the welcome text.
 const MEDIA_WORDS: [Engine, string][] = [
   ["image", "images"],
@@ -99,6 +119,7 @@ export function Flash({
   // Signed-out visitors see the landing page until they choose to sign up or sign in.
   const [authMode, setAuthMode] = useState<"signup" | "login" | null>(null);
   const [showCredits, setShowCredits] = useState(false);
+  const [showInvite, setShowInvite] = useState(false);
   const [notice, setNotice] = useState("");
   // Set when sign-up couldn't send the confirmation email, so the banner asks to send it again.
   const [emailFailed, setEmailFailed] = useState(false);
@@ -137,10 +158,27 @@ export function Flash({
     }
   }
 
+  /** Joins the team from a saved invitation link, once signed in. */
+  async function acceptInvite() {
+    const token = storage.get(INVITE_KEY);
+    if (!token) return;
+    try {
+      await api("/api/team/accept", { method: "POST", json: { token } });
+      storage.set(INVITE_KEY, null);
+      setNotice("You joined the team. Your requests now use the team's shared credits.");
+      await refreshMe();
+    } catch (err) {
+      // An unconfirmed email can try again after confirming; any other answer is final.
+      if ((err as { code?: string }).code !== "unverified") storage.set(INVITE_KEY, null);
+      setNotice(err instanceof Error ? err.message : "Couldn't join the team.");
+    }
+  }
+
   async function start() {
     const data = await refreshMe();
     if (!data) return;
     setSignedOut(false);
+    acceptInvite();
     setPreferences(data.user.preferences);
     try {
       let { projects: list } = await api<{ projects: ProjectSummary[] }>("/api/projects");
@@ -163,6 +201,17 @@ export function Flash({
         .catch(() => {});
     }
     const params = new URLSearchParams(window.location.search);
+    // A referral link: the code waits in a cookie until sign-up (30 days).
+    const ref = params.get("ref");
+    if (ref && /^[A-Za-z0-9_-]{4,32}$/.test(ref)) {
+      document.cookie = `flash_ref=${ref}; Path=/; Max-Age=${30 * 24 * 3600}; SameSite=Lax`;
+    }
+    const invite = params.get("invite");
+    if (invite) {
+      storage.set(INVITE_KEY, invite);
+      if (!signedIn) setNotice("Sign in or create an account with the invited email to join the team.");
+    }
+    if (ref || invite) window.history.replaceState(null, "", window.location.pathname);
     const purchase = params.get("purchase");
     if (purchase) {
       setNotice(
@@ -542,6 +591,12 @@ export function Flash({
             rows={3}
             className="mt-1 w-full resize-none rounded-lg border border-zinc-800 bg-zinc-900 p-2 text-sm outline-none focus:border-indigo-500"
           />
+          <button
+            onClick={() => setShowInvite(true)}
+            className="mt-2 w-full rounded-lg px-2 py-1.5 text-left text-xs text-zinc-400 hover:bg-zinc-900 hover:text-zinc-200"
+          >
+            🎁 Invite friends, earn credits
+          </button>
           {status && (
             <details className="mt-2 text-xs text-zinc-400">
               <summary className="cursor-pointer select-none hover:text-zinc-200">
@@ -618,6 +673,7 @@ export function Flash({
           </button>
         </header>
         {showCredits && <CreditsDialog me={me} onClose={() => setShowCredits(false)} onChanged={refreshMe} />}
+        {showInvite && <InviteDialog me={me} onClose={() => setShowInvite(false)} />}
 
         <div className="flex-1 overflow-y-auto">
           <div className="mx-auto max-w-3xl space-y-6 px-4 py-6">

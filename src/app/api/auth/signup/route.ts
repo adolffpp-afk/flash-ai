@@ -1,9 +1,10 @@
-import { appUrl, createSession, hashPassword, isSecure } from "@/lib/server/auth.ts";
+import { appUrl, createSession, hashPassword, isSecure, readCookie } from "@/lib/server/auth.ts";
 import { backfillEmailKeys, emailKey, sendVerification } from "@/lib/server/account.ts";
 import { ensureMonthlyCredits } from "@/lib/server/credits.ts";
 import { one, run, now } from "@/lib/server/db.ts";
 import { randomId } from "@/lib/server/ids.ts";
 import { clientIp, overLimit } from "@/lib/server/limits.ts";
+import { REF_COOKIE, referrerFor } from "@/lib/server/referrals.ts";
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -24,14 +25,12 @@ export async function POST(request: Request) {
     return Response.json({ error: "An account with this email already exists. Sign in instead." }, { status: 409 });
   }
   const id = randomId();
-  await run("INSERT INTO users (id, email, email_key, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)", [
-    id,
-    email,
-    key,
-    name || email.split("@")[0],
-    await hashPassword(password),
-    now(),
-  ]);
+  // The referral link's code, kept in a cookie since the visitor landed. Never the same inbox.
+  const referrer = await referrerFor(readCookie(request, REF_COOKIE), key);
+  await run(
+    "INSERT INTO users (id, email, email_key, name, password_hash, created_at, referred_by) VALUES (?, ?, ?, ?, ?, ?, ?)",
+    [id, email, key, name || email.split("@")[0], await hashPassword(password), now(), referrer],
+  );
   await ensureMonthlyCredits(id);
   // The account works even if the email can't be sent; the banner asks the user to send it again.
   let emailFailed = false;
@@ -40,6 +39,8 @@ export async function POST(request: Request) {
     emailFailed = true;
     return undefined;
   });
-  const cookie = await createSession(id, isSecure(request));
-  return Response.json({ ok: true, devLink, emailFailed }, { headers: { "Set-Cookie": cookie } });
+  const headers = new Headers();
+  headers.append("Set-Cookie", await createSession(id, isSecure(request)));
+  headers.append("Set-Cookie", `${REF_COOKIE}=; Path=/; SameSite=Lax; Max-Age=0`);
+  return Response.json({ ok: true, devLink, emailFailed }, { headers });
 }

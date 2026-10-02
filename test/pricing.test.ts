@@ -7,6 +7,9 @@ import {
   MARKUP,
   MAX_OUTPUT_TOKENS,
   PLANS,
+  REFERRAL_FRIEND_SHARE,
+  REFERRAL_REFERRER_CAP,
+  REFERRAL_REFERRER_SHARE,
   TYPICAL_CREDITS,
   claudeCostCents,
   creditsFor,
@@ -15,6 +18,7 @@ import {
   planHold,
   planPrice,
   readCostCents,
+  referralBonus,
   transcribeCostCents,
   worstCaseProfitCents,
 } from "../src/lib/credits.ts";
@@ -86,7 +90,8 @@ test("every plan and pack makes a profit even if every credit is used", () => {
 test("plans give more credits per dollar than top-ups, and bigger plans give more", () => {
   const bestPack = Math.max(...CREDIT_PACKS.map((p) => p.credits / p.priceCents));
   let last = 0;
-  for (const p of PLANS) {
+  // Team plans are checked against Max below.
+  for (const p of PLANS.filter((p) => !p.seats)) {
     const perDollar = p.credits / p.priceCents;
     assert.ok(perDollar > bestPack, p.id);
     assert.ok(perDollar > last, p.id);
@@ -154,4 +159,71 @@ test("transcription is priced for the longest recording a file could hold", () =
     assert.ok(creditsFor(transcribeCostCents(bytes)) * cheapestCentsPerCredit > worstCents, `${bytes} bytes`);
   }
   assert.ok(transcribeCostCents(3 * 1024 * 1024) > transcribeCostCents(1024 * 1024));
+});
+
+/*
+ * Business (team) plan and referral bonuses. The worst case for a team plan is the same as for
+ * any plan, because members only spend the owner's pool: seats add people, never credits.
+ */
+const business = PLANS.find((p) => p.id === "business")!;
+const max = PLANS.find((p) => p.id === "max")!;
+const margin = (price: number, credits: number, months: number) =>
+  worstCaseProfitCents(price, credits, true, months) / (price / months);
+
+test("Business is a team plan priced at $99 a month, 20% off yearly", () => {
+  assert.equal(business.seats, 5);
+  assert.equal(business.priceCents, 9900);
+  assert.equal(business.yearlyPriceCents, Math.round(9900 * 0.8));
+});
+
+test("Business gives no more credits per dollar than Max, so its worst-case margin is at least Max's", () => {
+  assert.ok(business.credits / business.priceCents <= max.credits / max.priceCents);
+  assert.ok(business.credits / business.yearlyPriceCents <= max.credits / max.yearlyPriceCents);
+  for (const interval of ["month", "year"] as const) {
+    const months = interval === "year" ? 12 : 1;
+    const b = margin(planPrice(business, interval), business.credits, months);
+    const m = margin(planPrice(max, interval), max.credits, months);
+    assert.ok(b >= m, `${interval}: Business ${b} vs Max ${m}`);
+    // Profitable even if the whole pool is used every month: at least 25% after fees.
+    assert.ok(b > 0.25, `${interval}: ${b}`);
+  }
+});
+
+test("referral bonuses are a share of the credits bought, the referrer's capped", () => {
+  assert.deepEqual(referralBonus(500), {
+    friend: Math.round(500 * REFERRAL_FRIEND_SHARE),
+    referrer: Math.round(500 * REFERRAL_REFERRER_SHARE),
+  });
+  assert.equal(referralBonus(1_000_000).referrer, REFERRAL_REFERRER_CAP);
+});
+
+test("every pack and plan stays profitable with both referral bonuses on its first payment", () => {
+  // The first payment earns the bonuses: its credits plus both bonuses, all used. A plan's
+  // bonus is on one month's credits; a yearly payment pays for 12 months of credits.
+  const firstPayments = [
+    ...CREDIT_PACKS.map((p) => ({ id: p.id, price: p.priceCents, credits: p.credits, months: 1, subscription: false })),
+    ...PLANS.flatMap((p) =>
+      (["month", "year"] as const).map((interval) => ({
+        id: `${p.id} ${interval}`,
+        price: planPrice(p, interval),
+        credits: p.credits,
+        months: interval === "year" ? 12 : 1,
+        subscription: true,
+      })),
+    ),
+  ];
+  for (const f of firstPayments) {
+    const bonus = referralBonus(f.credits);
+    const profit =
+      worstCaseProfitCents(f.price, f.credits * f.months, f.subscription) - (bonus.friend + bonus.referrer) / MARKUP;
+    assert.ok(profit > f.price * 0.2, `${f.id}: ${profit}¢ on ${f.price}¢`);
+    // Still profitable with foreign-card fees (about 2.5% more).
+    assert.ok(profit - f.price * 0.025 > 0, `${f.id} with foreign cards`);
+  }
+  // The smallest pack spelled out: $5 for 500 credits, +100 for the friend and +100 for the
+  // referrer costs Flash at most 280¢, against 455.5¢ left after Stripe's fee.
+  const starter = CREDIT_PACKS.find((p) => p.id === "starter")!;
+  const bonus = referralBonus(starter.credits);
+  assert.deepEqual(bonus, { friend: 100, referrer: 100 });
+  assert.ok(starter.priceCents - (starter.priceCents * 0.029 + 30) - (starter.credits + 200) / MARKUP > 0);
 });

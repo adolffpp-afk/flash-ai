@@ -29,7 +29,7 @@ import {
   type Media,
 } from "@/lib/engines/media.ts";
 import { getUser, unauthorized } from "@/lib/server/auth.ts";
-import { balance, charge, ensureMonthlyCredits, logUsage, settle } from "@/lib/server/credits.ts";
+import { charge, ensureMonthlyCredits, logUsage, settle, spendable } from "@/lib/server/credits.ts";
 import { saveFile } from "@/lib/server/files.ts";
 import {
   MAX_SPEECH_CHARS,
@@ -329,7 +329,9 @@ export async function POST(request: Request) {
   const meter: Meter = (provider, model, cents) => spend.push({ provider, model, cents });
 
   await ensureMonthlyCredits(user.id);
-  const available = await balance(user.id);
+  // A team member spends the shared pool first. One ledger pays for each request, so the hold
+  // is sized to the larger balance.
+  const available = (await spendable(user.id)).largest;
 
   // When no keyword rule fits, a small, fast model reads the request and picks the engine.
   // Skipped for users out of credits, so the free lane costs Flash nothing.

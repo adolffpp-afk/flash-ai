@@ -105,6 +105,8 @@ export type Plan = {
   credits: number; // per month
   blurb: string;
   features: string[];
+  // Team plans: how many people (the owner included) share the plan's monthly credits.
+  seats?: number;
 };
 
 export const PLANS: Plan[] = [
@@ -135,11 +137,44 @@ export const PLANS: Plan[] = [
     blurb: "For studios and heavy app building",
     features: ["28,000 credits a month", "About 230 apps or 7,000 chats", "Writing, research, code, apps and slides", "Unused credits carry over"],
   },
+  /*
+   * Business: one owner pays and up to 5 people (the owner included) spend one shared monthly
+   * pool. Credits per dollar are below Max's (13,500 / $99 = 136 per dollar vs Max's 140), so
+   * its worst-case margin is at least Max's, monthly and yearly. Seats don't add credits.
+   */
+  {
+    id: "business",
+    name: "Business",
+    priceCents: 9900,
+    yearlyPriceCents: 7920,
+    credits: 13500,
+    blurb: "For teams: one bill, one shared credit pool",
+    features: ["13,500 shared credits a month", "Up to 5 people, the owner included", "Owner invites and removes members", "Each member's projects stay private"],
+    seats: 5,
+  },
 ];
 
 export type Interval = "month" | "year";
 export const planPrice = (plan: Plan, interval: Interval) =>
   interval === "year" ? plan.yearlyPriceCents * 12 : plan.priceCents;
+
+/*
+ * Referrals. When a referred friend makes their first real payment, the friend gets
+ * REFERRAL_FRIEND_SHARE more credits on top of it and the referrer gets REFERRAL_REFERRER_SHARE
+ * of the credits bought, up to REFERRAL_REFERRER_CAP. For a plan, "credits bought" is one
+ * month's credits, even when the first payment is yearly. test/pricing.test.ts checks that every
+ * pack and plan, with both bonuses, still makes a profit if every credit is used.
+ */
+export const REFERRAL_FRIEND_SHARE = 0.2;
+export const REFERRAL_REFERRER_SHARE = 0.2;
+export const REFERRAL_REFERRER_CAP = 2000;
+
+export function referralBonus(credits: number) {
+  return {
+    friend: Math.round(credits * REFERRAL_FRIEND_SHARE),
+    referrer: Math.min(REFERRAL_REFERRER_CAP, Math.round(credits * REFERRAL_REFERRER_SHARE)),
+  };
+}
 
 // Stripe's card fee (2.9% + 30¢) plus 0.7% for Stripe Billing on subscriptions.
 export const paymentFeeCents = (amountCents: number, subscription: boolean) =>
