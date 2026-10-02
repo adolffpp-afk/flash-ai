@@ -3,13 +3,19 @@ import { ENGINES, type ChatTurn, type Engine, type StreamEvent } from "@/lib/typ
 import { claudeConfigured, improvePrompt, streamSearch, streamText } from "@/lib/engines/claude.ts";
 import {
   composeMusic,
+  downloadVideo,
   elevenConfigured,
   generateImage,
   generateVideo,
   openaiConfigured,
   synthesizeSpeech,
   transcribe,
+  type Media,
 } from "@/lib/engines/media.ts";
+import { getUser, unauthorized } from "@/lib/server/auth.ts";
+import { balance, charge, ensureMonthlyCredits, refund } from "@/lib/server/credits.ts";
+import { saveFile } from "@/lib/server/files.ts";
+import { CREDIT_COSTS } from "@/lib/credits.ts";
 import { demoReply } from "@/lib/engines/demo.ts";
 import { streamBuild } from "@/lib/engines/builder.ts";
 
@@ -35,7 +41,14 @@ function configured(engine: Engine): boolean {
 const sharpen = (kind: "image" | "video" | "music", request: string) =>
   claudeConfigured() ? improvePrompt(kind, request) : Promise.resolve(request);
 
-async function* run(engine: Engine, history: ChatTurn[], preferences: string): AsyncGenerator<StreamEvent> {
+type Store = (media: Media, name: string) => Promise<string>;
+
+async function* run(
+  engine: Engine,
+  history: ChatTurn[],
+  preferences: string,
+  store: Store,
+): AsyncGenerator<StreamEvent> {
   const last = history[history.length - 1];
   if (!configured(engine)) {
     yield* demoReply(engine, last.content);
@@ -58,7 +71,7 @@ async function* run(engine: Engine, history: ChatTurn[], preferences: string): A
     case "image": {
       const prompt = await sharpen("image", last.content);
       yield { type: "status", message: "Painting your image…" };
-      yield { type: "image", url: await generateImage(prompt), prompt };
+      yield { type: "image", url: await store(await generateImage(prompt), "flash-image.png"), prompt };
       return;
     }
     case "video": {
@@ -77,20 +90,22 @@ async function* run(engine: Engine, history: ChatTurn[], preferences: string): A
           yield { type: "status", message: `Filming your video… ${pct}%` };
         }
       }
-      yield { type: "video", url: `/api/video/${await job}`, prompt };
+      const id = await job;
+      yield { type: "status", message: "Saving your video…" };
+      yield { type: "video", url: await store(await downloadVideo(id), "flash-video.mp4"), prompt };
       return;
     }
     case "voice": {
       const words = textToSpeak(last.content);
       yield { type: "text", delta: `Here is "${words.length > 80 ? words.slice(0, 80) + "…" : words}" read aloud.` };
-      yield { type: "audio", url: await synthesizeSpeech(words), label: "flash-voice.mp3" };
+      yield { type: "audio", url: await store(await synthesizeSpeech(words), "flash-voice.mp3"), label: "flash-voice.mp3" };
       return;
     }
     case "music": {
       const prompt = await sharpen("music", last.content);
       yield { type: "status", message: "Composing a 30 second track…" };
       yield { type: "text", delta: `**Track brief:** ${prompt}` };
-      yield { type: "audio", url: await composeMusic(prompt), label: "flash-music.mp3" };
+      yield { type: "audio", url: await store(await composeMusic(prompt), "flash-music.mp3"), label: "flash-music.mp3" };
       return;
     }
     case "transcribe": {
@@ -107,6 +122,8 @@ async function* run(engine: Engine, history: ChatTurn[], preferences: string): A
 }
 
 export async function POST(request: Request) {
+  const user = await getUser(request);
+  if (!user) return unauthorized();
   let body: ChatRequest;
   try {
     body = (await request.json()) as ChatRequest;
@@ -129,6 +146,25 @@ export async function POST(request: Request) {
   const engine = override ?? auto.engine;
   const reason = override ? "You picked this engine." : auto.reason;
 
+  // Demo replies are free; live engines cost credits, refunded if the engine fails.
+  const live = configured(engine);
+  const cost = live ? CREDIT_COSTS[engine] : 0;
+  if (cost) {
+    await ensureMonthlyCredits(user.id);
+    if (!(await charge(user.id, cost, `${engine} request`))) {
+      return Response.json(
+        {
+          error: `This needs ${cost} credits and you have ${await balance(user.id)}.`,
+          code: "out_of_credits",
+          needed: cost,
+        },
+        { status: 402 },
+      );
+    }
+  }
+  const store: Store = (media, name) => saveFile(user.id, media.mime, name, media.data);
+  const preferences = body.preferences ?? user.preferences;
+
   const encoder = new TextEncoder();
   // Set when the browser stops reading (the user pressed Stop), so the engine stops too.
   let cancelled = false;
@@ -145,15 +181,19 @@ export async function POST(request: Request) {
           cancelled = true;
         }
       };
-      send({ type: "route", engine, reason, demo: !configured(engine) });
+      send({ type: "route", engine, reason, demo: !live, cost });
       try {
-        for await (const event of run(engine, history, body.preferences ?? "")) {
+        for await (const event of run(engine, history, preferences, store)) {
           if (cancelled || request.signal.aborted) return;
           send(event);
         }
       } catch (err) {
         console.error(`[flash] ${engine} engine failed`, err);
-        send({ type: "error", message: err instanceof Error ? err.message : "Something went wrong." });
+        await refund(user.id, cost, `Refund: ${engine} request failed`);
+        send({
+          type: "error",
+          message: `${err instanceof Error ? err.message : "Something went wrong."}${cost ? " Your credits were refunded." : ""}`,
+        });
       }
       if (cancelled) return;
       send({ type: "done" });

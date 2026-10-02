@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { BuiltApp } from "@/lib/types";
+import { api } from "@/lib/store";
+import { flashDbShim, injectHead } from "@/lib/flashdb-shim";
 
 // No allow-same-origin: generated code can't read Flash's storage or cookies.
 const SANDBOX = "allow-scripts allow-forms allow-modals allow-popups allow-pointer-lock allow-downloads";
@@ -10,10 +12,46 @@ function slug(title: string): string {
   return title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "flash-app";
 }
 
-export function AppPreview({ app }: { app: BuiltApp }) {
+export function AppPreview({
+  app,
+  onPublished,
+}: {
+  app: BuiltApp & { slug?: string };
+  onPublished?: (slug: string) => void;
+}) {
   const [view, setView] = useState<"preview" | "code">("preview");
   const [full, setFull] = useState(false);
   const [reload, setReload] = useState(0);
+  const [publishing, setPublishing] = useState(false);
+  const [published, setPublished] = useState("");
+  const [publishError, setPublishError] = useState("");
+  const [copied, setCopied] = useState(false);
+  // The preview gets an in-memory flashDB, so trying an app never touches the published app's data.
+  const previewHtml = useMemo(() => injectHead(app.html, flashDbShim(null)), [app.html]);
+  const link = app.slug && typeof window !== "undefined" ? `${window.location.origin}/p/${app.slug}` : "";
+
+  async function publish() {
+    setPublishing(true);
+    setPublishError("");
+    try {
+      const res = await api<{ slug: string }>("/api/sites", {
+        method: "POST",
+        json: { html: app.html, title: app.title, slug: app.slug },
+      });
+      onPublished?.(res.slug);
+      setPublished(res.slug);
+    } catch (err) {
+      setPublishError(err instanceof Error ? err.message : "Couldn't publish.");
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  async function copyLink() {
+    await navigator.clipboard.writeText(link);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
 
   useEffect(() => {
     if (!full) return;
@@ -68,13 +106,39 @@ export function AppPreview({ app }: { app: BuiltApp }) {
           <button className={`${btn} text-indigo-400`} onClick={download}>
             Download
           </button>
+          {onPublished && (
+            <button
+              className="ml-1 rounded-md bg-gradient-to-r from-indigo-600 to-fuchsia-600 px-2.5 py-1 font-medium text-white hover:brightness-110 disabled:opacity-50"
+              onClick={publish}
+              disabled={publishing}
+            >
+              {publishing ? "Publishing…" : app.slug ? (published === app.slug ? "Published ✓" : "Update") : "Publish"}
+            </button>
+          )}
         </div>
       </div>
+      {(link || publishError) && (
+        <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800 bg-zinc-950/60 px-3 py-2 text-xs">
+          {publishError ? (
+            <span className="text-red-300">{publishError}</span>
+          ) : (
+            <>
+              <span className="text-emerald-300">Live at</span>
+              <a href={link} target="_blank" rel="noreferrer" className="min-w-0 truncate text-indigo-300 hover:underline">
+                {link}
+              </a>
+              <button className={btn} onClick={copyLink}>
+                {copied ? "Copied" : "Copy link"}
+              </button>
+            </>
+          )}
+        </div>
+      )}
       {view === "preview" ? (
         <iframe
           key={reload}
           title={app.title}
-          srcDoc={app.html}
+          srcDoc={previewHtml}
           sandbox={SANDBOX}
           className={`w-full bg-white ${full ? "flex-1" : app.kind === "slides" ? "aspect-video" : "h-[560px]"}`}
         />

@@ -8,75 +8,44 @@ export type UIMessage = {
   engine?: Engine;
   reason?: string;
   demo?: boolean;
+  cost?: number;
   images?: { url: string; prompt: string }[];
   videos?: { url: string; prompt: string }[];
   audio?: string;
   audioLabel?: string;
-  status?: string;
-  app?: BuiltApp;
-  // Text that arrived after the app, shown below its preview.
-  after?: string;
   sources?: Source[];
   error?: string;
+  errorCode?: string;
   pending?: boolean;
   stopped?: boolean;
+  status?: string;
+  app?: BuiltApp & { slug?: string };
+  // Text that arrived after the app, shown below its preview.
+  after?: string;
 };
 
-export type Project = { id: string; name: string; updatedAt: number; messages: UIMessage[] };
+export type ProjectSummary = { id: string; name: string; updated_at: number };
+export type Project = ProjectSummary & { messages: UIMessage[] };
 
-const PROJECTS_KEY = "flash.projects.v1";
-const PREFS_KEY = "flash.preferences.v1";
+export type Me = {
+  user: { id: string; email: string; name: string; preferences: string };
+  credits: number;
+  activity: { amount: number; reason: string; created_at: number }[];
+  costs: Record<Engine, number>;
+  packs: { id: string; name: string; credits: number; priceCents: number; blurb: string }[];
+  freeMonthly: number;
+  paymentsEnabled: boolean;
+};
 
 export const newId = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 
-export function newProject(name = "New project"): Project {
-  return { id: newId(), name, updatedAt: Date.now(), messages: [] };
-}
-
-export function loadProjects(): Project[] {
-  try {
-    const raw = localStorage.getItem(PROJECTS_KEY);
-    const list = raw ? (JSON.parse(raw) as Project[]) : [];
-    return list.map((p) => ({ ...p, messages: p.messages.map((m) => ({ ...m, pending: false })) }));
-  } catch {
-    return [];
-  }
-}
-
-function stripMedia(projects: Project[]): Project[] {
-  return projects.map((p) => ({
-    ...p,
-    messages: p.messages.map((m) => ({
-      ...m,
-      images: m.images?.map((i) => (i.url.startsWith("data:") ? { ...i, url: "" } : i)),
-      audio: m.audio?.startsWith("data:") ? "" : m.audio,
-    })),
-  }));
-}
-
-/** Saves projects; if the browser's storage is full, keeps the text and drops generated media. */
-export function saveProjects(projects: Project[]): void {
-  try {
-    localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
-  } catch {
-    try {
-      localStorage.setItem(PROJECTS_KEY, JSON.stringify(stripMedia(projects)));
-    } catch {
-      // Storage unavailable (private window); the session still works in memory.
-    }
-  }
-}
-
-export function loadPreferences(): string {
-  try {
-    return localStorage.getItem(PREFS_KEY) ?? "";
-  } catch {
-    return "";
-  }
-}
-
-export function savePreferences(value: string): void {
-  try {
-    localStorage.setItem(PREFS_KEY, value);
-  } catch {}
+export async function api<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {
+  const res = await fetch(path, {
+    ...init,
+    headers: init?.json !== undefined ? { "Content-Type": "application/json" } : init?.headers,
+    body: init?.json !== undefined ? JSON.stringify(init.json) : init?.body,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(data.error ?? `Request failed (${res.status})`), { status: res.status });
+  return data as T;
 }

@@ -9,7 +9,8 @@ const SHARED_RULES = `Output format, always:
 
 Technical rules:
 - It runs in a sandboxed iframe: no server, no build step. You may load libraries only from https://cdn.jsdelivr.net, https://unpkg.com or https://cdnjs.cloudflare.com (for example Tailwind via https://cdn.tailwindcss.com is also allowed, Chart.js, Alpine.js, React UMD with Babel standalone).
-- Wrap every localStorage call in try/catch and keep working in memory if it throws.
+- To save data (tasks, sign-ups, scores, orders, posts), use the built-in database instead of localStorage. It is always available as window.flashDB, with async methods: flashDB.list(collection) returns an array of records; flashDB.add(collection, object) returns the new record with an id and createdAt; flashDB.update(collection, id, partialObject) returns the updated record; flashDB.remove(collection, id). Collection names are letters, digits, - or _. Data is shared by everyone who uses the published app, so never store passwords or private data in it. Load data on start, show a loading state, and handle errors with a friendly message.
+- Never use localStorage, sessionStorage or cookies: they are blocked where the app runs.
 - Use realistic sample data so the result looks alive on first load. Make it responsive and polished.
 - If the request changes an existing app from earlier in the conversation, start from that app's latest code and keep everything the user did not ask to change.`;
 

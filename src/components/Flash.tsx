@@ -2,17 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Message } from "./Message";
+import { AuthScreen } from "./AuthScreen";
+import { CreditsDialog } from "./CreditsDialog";
 import { ENGINES, ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types";
-import {
-  loadPreferences,
-  loadProjects,
-  newId,
-  newProject,
-  savePreferences,
-  saveProjects,
-  type Project,
-  type UIMessage,
-} from "@/lib/store";
+import { api, newId, type Me, type ProjectSummary, type UIMessage } from "@/lib/store";
+
+// A project's messages are loaded the first time it is opened.
+type Project = ProjectSummary & { messages?: UIMessage[] };
 
 type Choice = Engine | "auto";
 const CHOICES: Choice[] = ["auto", ...ENGINES];
@@ -41,7 +37,7 @@ type Status = Record<Engine, boolean>;
 function applyEvent(m: UIMessage, e: StreamEvent): UIMessage {
   switch (e.type) {
     case "route":
-      return { ...m, engine: e.engine, reason: e.reason, demo: e.demo };
+      return { ...m, engine: e.engine, reason: e.reason, demo: e.demo, cost: e.cost };
     case "text":
       return m.app ? { ...m, after: (m.after ?? "") + e.delta } : { ...m, content: m.content + e.delta };
     case "status":
@@ -76,6 +72,10 @@ function readFile(file: File): Promise<Attachment> {
 }
 
 export function Flash() {
+  const [me, setMe] = useState<Me | null>(null);
+  const [signedOut, setSignedOut] = useState(false);
+  const [showCredits, setShowCredits] = useState(false);
+  const [notice, setNotice] = useState("");
   const [projects, setProjects] = useState<Project[]>([]);
   const [activeId, setActiveId] = useState<string>("");
   const [preferences, setPreferences] = useState("");
@@ -85,37 +85,76 @@ export function Flash() {
   const [attachment, setAttachment] = useState<Attachment | null>(null);
   const [busy, setBusy] = useState(false);
   const [sidebar, setSidebar] = useState(false);
-  const [loaded, setLoaded] = useState(false);
   const [dragging, setDragging] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
-  // Attachments stay in memory only (too large for browser storage), keyed by user message id, for Retry.
+  // Attachments stay in memory only (too large to save), keyed by user message id, for Retry.
   const filesRef = useRef(new Map<string, Attachment>());
+  // Projects whose messages changed and still need saving to the server.
+  const dirtyRef = useRef(new Set<string>());
+  const prefsTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  async function refreshMe() {
+    try {
+      const data = await api<Me>("/api/me");
+      setMe(data);
+      return data;
+    } catch (err) {
+      if ((err as { status?: number }).status === 401) setSignedOut(true);
+      return null;
+    }
+  }
+
+  async function start() {
+    const data = await refreshMe();
+    if (!data) return;
+    setSignedOut(false);
+    setPreferences(data.user.preferences);
+    let { projects: list } = await api<{ projects: ProjectSummary[] }>("/api/projects");
+    if (!list.length) list = [(await api<{ project: ProjectSummary }>("/api/projects", { method: "POST", json: { name: "My first project" } })).project];
+    setProjects(list);
+    await openProject(list[0].id);
+  }
 
   useEffect(() => {
-    const saved = loadProjects();
-    const list = saved.length ? saved : [newProject("My first project")];
-    // Reading localStorage must wait for the browser, so this sync runs once after mount.
-    setProjects(list);
-    setActiveId(list[0].id);
-    setPreferences(loadPreferences());
-    setLoaded(true);
+    // Loading the account must wait for the browser, so this runs once after mount.
+    start();
     fetch("/api/status")
       .then((r) => r.json())
       .then(setStatus)
       .catch(() => {});
+    const params = new URLSearchParams(window.location.search);
+    const purchase = params.get("purchase");
+    if (purchase) {
+      setNotice(purchase === "success" ? "Thanks! Your credits were added." : "Checkout was cancelled. No charge was made.");
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Saves changed projects shortly after a reply finishes.
   useEffect(() => {
-    if (loaded) saveProjects(projects);
-  }, [projects, loaded]);
+    if (busy || !dirtyRef.current.size) return;
+    const timer = setTimeout(() => {
+      for (const id of dirtyRef.current) {
+        const p = projects.find((x) => x.id === id);
+        dirtyRef.current.delete(id);
+        if (!p?.messages) continue;
+        const messages = p.messages.map((m) => ({ ...m, pending: undefined, status: undefined }));
+        api(`/api/projects/${id}`, { method: "PUT", json: { name: p.name, messages } }).catch((err) =>
+          setNotice(err instanceof Error ? err.message : "Couldn't save your project."),
+        );
+      }
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [projects, busy]);
 
   const active = projects.find((p) => p.id === activeId);
 
   useEffect(() => {
-    if (active?.messages.length) bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    if (active?.messages?.length) bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [active?.messages]);
 
   useEffect(() => {
@@ -125,62 +164,105 @@ export function Flash() {
     el.style.height = `${Math.min(el.scrollHeight, 192)}px`;
   }, [input]);
 
+  async function openProject(id: string) {
+    setActiveId(id);
+    setSidebar(false);
+    if (projects.find((p) => p.id === id)?.messages) return;
+    try {
+      const { project } = await api<{ project: Project }>(`/api/projects/${id}`);
+      setProjects((list) => list.map((p) => (p.id === id ? { ...p, messages: p.messages ?? project.messages } : p)));
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Couldn't open that project.");
+    }
+  }
+
   function updateProject(id: string, fn: (p: Project) => Project) {
+    dirtyRef.current.add(id);
     setProjects((list) => list.map((p) => (p.id === id ? fn(p) : p)));
   }
 
   function updateMessage(projectId: string, messageId: string, fn: (m: UIMessage) => UIMessage) {
     updateProject(projectId, (p) => ({
       ...p,
-      updatedAt: Date.now(),
-      messages: p.messages.map((m) => (m.id === messageId ? fn(m) : m)),
+      updated_at: Date.now(),
+      messages: (p.messages ?? []).map((m) => (m.id === messageId ? fn(m) : m)),
     }));
   }
 
-  function createProject() {
-    const p = newProject();
-    setProjects((list) => [p, ...list]);
-    setActiveId(p.id);
-    setSidebar(false);
+  async function createProject() {
+    try {
+      const { project } = await api<{ project: ProjectSummary }>("/api/projects", { method: "POST", json: {} });
+      setProjects((list) => [{ ...project, messages: [] }, ...list]);
+      setActiveId(project.id);
+      setSidebar(false);
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : "Couldn't create a project.");
+    }
   }
 
-  function deleteProject(id: string) {
+  async function deleteProject(id: string) {
     if (!confirm("Delete this project and its history?")) return;
-    setProjects((list) => {
-      const rest = list.filter((p) => p.id !== id);
-      const next = rest.length ? rest : [newProject("My first project")];
-      if (id === activeId) setActiveId(next[0].id);
-      return next;
-    });
+    dirtyRef.current.delete(id);
+    await api(`/api/projects/${id}`, { method: "DELETE" }).catch(() => {});
+    const rest = projects.filter((p) => p.id !== id);
+    if (!rest.length) {
+      setProjects([]);
+      await start();
+      return;
+    }
+    setProjects(rest);
+    if (id === activeId) openProject(rest[0].id);
   }
 
   function renameProject(id: string) {
     const current = projects.find((p) => p.id === id);
     const name = prompt("Project name", current?.name)?.trim();
-    if (name) updateProject(id, (p) => ({ ...p, name }));
+    if (!name) return;
+    setProjects((list) => list.map((p) => (p.id === id ? { ...p, name } : p)));
+    api(`/api/projects/${id}`, { method: "PUT", json: { name } }).catch(() => {});
+  }
+
+  function changePreferences(value: string) {
+    setPreferences(value);
+    clearTimeout(prefsTimer.current);
+    prefsTimer.current = setTimeout(() => api("/api/me", { method: "PATCH", json: { preferences: value } }).catch(() => {}), 600);
+  }
+
+  async function signOut() {
+    await api("/api/auth/logout", { method: "POST" }).catch(() => {});
+    setMe(null);
+    setProjects([]);
+    setActiveId("");
+    filesRef.current.clear();
+    setSignedOut(true);
+  }
+
+  function setAppSlug(messageId: string, slug: string) {
+    if (active) updateMessage(active.id, messageId, (m) => (m.app ? { ...m, app: { ...m.app, slug } } : m));
   }
 
   async function send(text: string) {
-    if (!active || busy) return;
+    if (!active?.messages || busy) return;
     const content = text.trim();
     if (!content && !attachment) return;
     const userMsg: UIMessage = { id: newId(), role: "user", content, attachmentName: attachment?.name };
     if (attachment) filesRef.current.set(userMsg.id, attachment);
     updateProject(active.id, (p) => ({
       ...p,
-      name: p.messages.length === 0 && p.name === "New project" ? content.slice(0, 40) || p.name : p.name,
+      name: !p.messages?.length && p.name === "New project" ? content.slice(0, 40) || p.name : p.name,
     }));
     setInput("");
     setAttachment(null);
-    await respond(active, active.messages, userMsg);
+    await respond(active, active.messages ?? [], userMsg);
   }
 
   /** Answers the last user message again, replacing the reply after it. */
   async function retry() {
-    if (!active || busy) return;
-    const lastUser = active.messages.findLastIndex((m) => m.role === "user");
+    const messages = active?.messages;
+    if (!active || !messages || busy) return;
+    const lastUser = messages.findLastIndex((m) => m.role === "user");
     if (lastUser === -1) return;
-    await respond(active, active.messages.slice(0, lastUser), active.messages[lastUser]);
+    await respond(active, messages.slice(0, lastUser), messages[lastUser]);
   }
 
   function stop() {
@@ -206,7 +288,7 @@ export function Flash() {
       { role: "user", content: userMsg.content, attachment: file },
     ];
 
-    updateProject(projectId, (p) => ({ ...p, updatedAt: Date.now(), messages: [...earlier, userMsg, reply] }));
+    updateProject(projectId, (p) => ({ ...p, updated_at: Date.now(), messages: [...earlier, userMsg, reply] }));
     setBusy(true);
     const controller = new AbortController();
     abortRef.current = controller;
@@ -220,7 +302,8 @@ export function Flash() {
       });
       if (!res.ok || !res.body) {
         const err = await res.json().catch(() => ({ error: `Request failed (${res.status})` }));
-        throw new Error(err.error);
+        if (res.status === 401) setSignedOut(true);
+        throw Object.assign(new Error(err.error), { code: err.code as string | undefined });
       }
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -242,10 +325,15 @@ export function Flash() {
       updateMessage(projectId, reply.id, (m) =>
         aborted
           ? { ...m, stopped: true }
-          : { ...m, error: err instanceof Error ? err.message : "Something went wrong." },
+          : {
+              ...m,
+              error: err instanceof Error ? err.message : "Something went wrong.",
+              errorCode: (err as { code?: string }).code,
+            },
       );
     } finally {
       updateMessage(projectId, reply.id, (m) => ({ ...m, pending: false, status: undefined }));
+      refreshMe();
       abortRef.current = null;
       setBusy(false);
       inputRef.current?.focus();
@@ -268,8 +356,17 @@ export function Flash() {
     attach(file);
   }
 
-  const sorted = [...projects].sort((a, b) => b.updatedAt - a.updatedAt);
+  const sorted = [...projects].sort((a, b) => b.updated_at - a.updated_at);
   const demoAll = status && !Object.values(status).some(Boolean);
+
+  if (signedOut) return <AuthScreen onDone={start} />;
+  if (!me) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <span className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-700 border-t-indigo-400" aria-label="Loading" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full">
@@ -300,13 +397,7 @@ export function Flash() {
               key={p.id}
               className={`group flex items-center rounded-lg text-sm ${p.id === activeId ? "bg-zinc-800" : "hover:bg-zinc-900"}`}
             >
-              <button
-                className="min-w-0 flex-1 truncate px-3 py-2 text-left"
-                onClick={() => {
-                  setActiveId(p.id);
-                  setSidebar(false);
-                }}
-              >
+              <button className="min-w-0 flex-1 truncate px-3 py-2 text-left" onClick={() => openProject(p.id)}>
                 {p.name}
               </button>
               <button
@@ -333,10 +424,7 @@ export function Flash() {
           <textarea
             id="prefs"
             value={preferences}
-            onChange={(e) => {
-              setPreferences(e.target.value);
-              savePreferences(e.target.value);
-            }}
+            onChange={(e) => changePreferences(e.target.value)}
             placeholder="e.g. I run a small bakery in Lagos. Keep answers short."
             rows={3}
             className="mt-1 w-full resize-none rounded-lg border border-zinc-800 bg-zinc-900 p-2 text-sm outline-none focus:border-indigo-500"
@@ -356,6 +444,17 @@ export function Flash() {
               </div>
             </details>
           )}
+          <div className="mt-3 flex items-center gap-2 border-t border-zinc-800 pt-3 text-sm">
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-xs uppercase">
+              {(me.user.name || me.user.email)[0]}
+            </span>
+            <span className="min-w-0 flex-1 truncate text-zinc-300" title={me.user.email}>
+              {me.user.name || me.user.email}
+            </span>
+            <button onClick={signOut} className="text-xs text-zinc-500 hover:text-zinc-200">
+              Sign out
+            </button>
+          </div>
         </div>
       </aside>
 
@@ -386,17 +485,36 @@ export function Flash() {
           <button className="text-zinc-400 md:hidden" onClick={() => setSidebar(true)} aria-label="Open menu">
             ☰
           </button>
-          <h1 className="truncate font-medium">{active?.name ?? "Flash AI"}</h1>
+          <h1 className="min-w-0 flex-1 truncate font-medium">{active?.name ?? "Flash AI"}</h1>
+          <button
+            onClick={() => setShowCredits(true)}
+            className={`shrink-0 rounded-full border px-3 py-1 text-xs font-medium transition hover:bg-zinc-900 ${
+              me.credits < 10 ? "border-amber-500/50 text-amber-300" : "border-zinc-700 text-zinc-200"
+            }`}
+            title="Credits: see costs and top up"
+          >
+            ⚡ {me.credits.toLocaleString()} credits
+          </button>
         </header>
+        {showCredits && <CreditsDialog me={me} onClose={() => setShowCredits(false)} onChanged={refreshMe} />}
 
         <div className="flex-1 overflow-y-auto">
           <div className="mx-auto max-w-3xl space-y-6 px-4 py-6">
-            {demoAll && (
-              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-                Flash is running in demo mode. Add your API keys to <code>.env.local</code> to switch on real answers.
+            {notice && (
+              <div className="flex items-start gap-3 rounded-xl border border-indigo-500/30 bg-indigo-500/10 px-4 py-3 text-sm text-indigo-100">
+                <span className="flex-1">{notice}</span>
+                <button onClick={() => setNotice("")} aria-label="Dismiss" className="text-indigo-300 hover:text-white">
+                  ✕
+                </button>
               </div>
             )}
-            {active && active.messages.length === 0 && (
+            {demoAll && (
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+                Flash is running in demo mode, so nothing uses credits yet. Add your API keys to <code>.env.local</code> to
+                switch on real answers.
+              </div>
+            )}
+            {active?.messages && active.messages.length === 0 && (
               <div className="pt-6 text-center sm:pt-12">
                 <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 via-fuchsia-500 to-pink-500 text-3xl shadow-lg shadow-fuchsia-500/20">
                   ⚡
@@ -427,13 +545,13 @@ export function Flash() {
                 </div>
               </div>
             )}
-            {active?.messages.map((m, i) => (
+            {active?.messages?.map((m, i, all) => (
               <Message
                 key={m.id}
                 m={m}
-                onRetry={
-                  i === active.messages.length - 1 && m.role === "assistant" && !m.pending && !busy ? retry : undefined
-                }
+                onRetry={i === all.length - 1 && m.role === "assistant" && !m.pending && !busy ? retry : undefined}
+                onBuyCredits={() => setShowCredits(true)}
+                onPublished={(slug) => setAppSlug(m.id, slug)}
               />
             ))}
             <div ref={bottomRef} />

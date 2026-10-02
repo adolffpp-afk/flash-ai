@@ -20,8 +20,10 @@ async function failure(res: Response, service: string): Promise<Error> {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Generates one image with OpenAI and returns it as a data URL. */
-export async function generateImage(prompt: string): Promise<string> {
+export type Media = { data: Buffer; mime: string };
+
+/** Generates one image with OpenAI. */
+export async function generateImage(prompt: string): Promise<Media> {
   const res = await fetch(`${OPENAI}/images/generations`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...openaiHeaders() },
@@ -30,14 +32,18 @@ export async function generateImage(prompt: string): Promise<string> {
   if (!res.ok) throw await failure(res, "The image service");
   const json = (await res.json()) as { data?: { b64_json?: string; url?: string }[] };
   const item = json.data?.[0];
-  if (item?.b64_json) return `data:image/png;base64,${item.b64_json}`;
-  if (item?.url) return item.url;
+  if (item?.b64_json) return { data: Buffer.from(item.b64_json, "base64"), mime: "image/png" };
+  if (item?.url) {
+    const img = await fetch(item.url);
+    if (!img.ok) throw await failure(img, "The image service");
+    return { data: Buffer.from(await img.arrayBuffer()), mime: img.headers.get("content-type") ?? "image/png" };
+  }
   throw new Error("The image service returned no image.");
 }
 
 /**
  * Starts a Sora video job and waits for it, reporting progress through onProgress.
- * Returns the video id; the finished file is served by /api/video/[id].
+ * Returns the video id; download it with downloadVideo before it expires (about an hour).
  */
 export async function generateVideo(prompt: string, onProgress: (pct: number) => void): Promise<string> {
   const res = await fetch(`${OPENAI}/videos`, {
@@ -60,36 +66,37 @@ export async function generateVideo(prompt: string, onProgress: (pct: number) =>
   return job.id;
 }
 
-/** Fetches a finished Sora video as a response body (used by the /api/video proxy). */
-export async function fetchVideo(id: string): Promise<Response> {
-  return fetch(`${OPENAI}/videos/${encodeURIComponent(id)}/content`, { headers: openaiHeaders() });
+/** Downloads a finished Sora video. */
+export async function downloadVideo(id: string): Promise<Media> {
+  const res = await fetch(`${OPENAI}/videos/${encodeURIComponent(id)}/content`, { headers: openaiHeaders() });
+  if (!res.ok) throw await failure(res, "The video service");
+  return { data: Buffer.from(await res.arrayBuffer()), mime: "video/mp4" };
 }
 
-async function audioToDataUrl(res: Response): Promise<string> {
-  const audio = Buffer.from(await res.arrayBuffer()).toString("base64");
-  return `data:audio/mpeg;base64,${audio}`;
+async function audio(res: Response): Promise<Media> {
+  return { data: Buffer.from(await res.arrayBuffer()), mime: "audio/mpeg" };
 }
 
-/** Speaks the text with ElevenLabs and returns an MP3 data URL. */
-export async function synthesizeSpeech(text: string): Promise<string> {
+/** Speaks the text with ElevenLabs as MP3. */
+export async function synthesizeSpeech(text: string): Promise<Media> {
   const res = await fetch(`${ELEVEN}/text-to-speech/${VOICE_ID}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "audio/mpeg", ...elevenHeaders() },
     body: JSON.stringify({ text: text.slice(0, 10000), model_id: VOICE_MODEL }),
   });
   if (!res.ok) throw await failure(res, "The voice service");
-  return audioToDataUrl(res);
+  return audio(res);
 }
 
-/** Composes a 30 second track with ElevenLabs Music and returns an MP3 data URL. */
-export async function composeMusic(prompt: string, seconds = 30): Promise<string> {
+/** Composes a 30 second MP3 track with ElevenLabs Music. */
+export async function composeMusic(prompt: string, seconds = 30): Promise<Media> {
   const res = await fetch(`${ELEVEN}/music?output_format=mp3_44100_128`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...elevenHeaders() },
     body: JSON.stringify({ prompt: prompt.slice(0, 4000), music_length_ms: seconds * 1000, model_id: MUSIC_MODEL }),
   });
   if (!res.ok) throw await failure(res, "The music service");
-  return audioToDataUrl(res);
+  return audio(res);
 }
 
 /** Transcribes an audio or video file with ElevenLabs Scribe. */

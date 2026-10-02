@@ -51,7 +51,7 @@ export type Source = { title: string; url: string };
 
 // One line of the NDJSON stream sent from /api/chat to the browser.
 export type StreamEvent =
-  | { type: "route"; engine: Engine; reason: string; demo: boolean }
+  | { type: "route"; engine: Engine; reason: string; demo: boolean; cost: number }
   | { type: "text"; delta: string }
   | { type: "status"; message: string }
   | { type: "image"; url: string; prompt: string }

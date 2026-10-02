@@ -109,7 +109,17 @@ function Actions({ m, onRetry }: { m: UIMessage; onRetry?: () => void }) {
   );
 }
 
-export function Message({ m, onRetry }: { m: UIMessage; onRetry?: () => void }) {
+export function Message({
+  m,
+  onRetry,
+  onBuyCredits,
+  onPublished,
+}: {
+  m: UIMessage;
+  onRetry?: () => void;
+  onBuyCredits?: () => void;
+  onPublished?: (slug: string) => void;
+}) {
   if (m.role === "user") {
     return (
       <div className="flex justify-end">
@@ -135,6 +145,7 @@ export function Message({ m, onRetry }: { m: UIMessage; onRetry?: () => void }) 
             </span>
             <span>{m.reason}</span>
             {m.demo && <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-300">demo</span>}
+            {!!m.cost && <span className="text-zinc-500">⚡ {m.cost} credits</span>}
           </div>
         )}
         {m.content && (
@@ -173,7 +184,7 @@ export function Message({ m, onRetry }: { m: UIMessage; onRetry?: () => void }) 
             <p key={i} className="mt-2 text-xs text-zinc-500">Image not kept (browser storage was full).</p>
           ),
         )}
-        {m.app && <AppPreview app={m.app} />}
+        {m.app && <AppPreview app={m.app} onPublished={onPublished} />}
         {m.after?.trim() && (
           <div className="prose prose-invert mt-3 max-w-none break-words prose-p:my-2">
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
@@ -216,10 +227,27 @@ export function Message({ m, onRetry }: { m: UIMessage; onRetry?: () => void }) 
           </div>
         )}
         {m.stopped && <p className="mt-2 text-xs text-zinc-500">Stopped.</p>}
-        {m.error && (
-          <div className="mt-2 rounded-lg border border-red-900 bg-red-950/50 px-3 py-2 text-sm text-red-300">
-            {m.error}
+        {m.error && m.errorCode === "out_of_credits" ? (
+          <div className="mt-2 rounded-xl border border-indigo-500/40 bg-gradient-to-br from-indigo-500/15 to-fuchsia-500/10 p-4 text-sm">
+            <p className="font-medium text-zinc-100">You&apos;re out of credits for this one</p>
+            <p className="mt-1 text-zinc-300">
+              {m.error} Top up to keep going, or wait for your free monthly credits. Text replies cost the least.
+            </p>
+            {onBuyCredits && (
+              <button
+                onClick={onBuyCredits}
+                className="mt-3 rounded-lg bg-gradient-to-r from-indigo-600 to-fuchsia-600 px-3 py-1.5 text-sm font-medium text-white hover:brightness-110"
+              >
+                Get more credits
+              </button>
+            )}
           </div>
+        ) : (
+          m.error && (
+            <div className="mt-2 rounded-lg border border-red-900 bg-red-950/50 px-3 py-2 text-sm text-red-300">
+              {m.error}
+            </div>
+          )
         )}
         <Actions m={m} onRetry={onRetry} />
       </div>
