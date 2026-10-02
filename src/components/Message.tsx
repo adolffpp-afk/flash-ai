@@ -145,6 +145,11 @@ export function Message({
             </span>
             <span>{m.reason}</span>
             {m.demo && <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-300">demo</span>}
+            {m.model && (
+              <span className="rounded-full bg-indigo-500/15 px-2 py-0.5 text-indigo-200" title={`Picked because: ${m.modelWhy ?? ""}`}>
+                {m.model}
+              </span>
+            )}
             {!!m.cost && <span className="text-zinc-500">⚡ {m.cost} credits</span>}
           </div>
         )}

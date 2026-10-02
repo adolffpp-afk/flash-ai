@@ -37,7 +37,7 @@ type Status = Record<Engine, boolean>;
 function applyEvent(m: UIMessage, e: StreamEvent): UIMessage {
   switch (e.type) {
     case "route":
-      return { ...m, engine: e.engine, reason: e.reason, demo: e.demo, cost: e.cost };
+      return { ...m, engine: e.engine, reason: e.reason, demo: e.demo, cost: e.cost, model: e.model, modelWhy: e.modelWhy };
     case "text":
       return m.app ? { ...m, after: (m.after ?? "") + e.delta } : { ...m, content: m.content + e.delta };
     case "status":
@@ -82,6 +82,8 @@ export function Flash() {
   const [status, setStatus] = useState<Status | null>(null);
   const [input, setInput] = useState("");
   const [choice, setChoice] = useState<Choice>("auto");
+  // Image, video and music model picked per engine; missing means Flash picks.
+  const [models, setModels] = useState<Partial<Record<Engine, string>>>({});
   const [attachment, setAttachment] = useState<Attachment | null>(null);
   const [busy, setBusy] = useState(false);
   const [sidebar, setSidebar] = useState(false);
@@ -297,7 +299,13 @@ export function Flash() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: history, engine: choice, preferences, previous }),
+        body: JSON.stringify({
+          messages: history,
+          engine: choice,
+          preferences,
+          previous,
+          model: choice === "auto" ? undefined : models[choice],
+        }),
         signal: controller.signal,
       });
       if (!res.ok || !res.body) {
@@ -583,6 +591,30 @@ export function Flash() {
                 </button>
               ))}
             </div>
+            {choice !== "auto" && me.models.some((x) => x.engine === choice) && (
+              <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-zinc-400">
+                <label htmlFor="model">Model</label>
+                <select
+                  id="model"
+                  value={models[choice] ?? ""}
+                  onChange={(e) => setModels((all) => ({ ...all, [choice]: e.target.value || undefined }))}
+                  className="rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-1 text-zinc-200 outline-none focus:border-indigo-500"
+                >
+                  <option value="">⚡ Best for each request</option>
+                  {me.models
+                    .filter((x) => x.engine === choice)
+                    .map((x) => (
+                      <option key={x.id} value={x.id} disabled={!x.live}>
+                        {x.label} · {x.credits} credits{x.live ? "" : " (not set up)"}
+                      </option>
+                    ))}
+                </select>
+                <span className="hidden truncate sm:inline">
+                  {me.models.find((x) => x.id === models[choice])?.blurb ??
+                    "Flash matches each request to the model that suits it."}
+                </span>
+              </div>
+            )}
             <form
               onSubmit={(e) => {
                 e.preventDefault();

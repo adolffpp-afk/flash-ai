@@ -1,8 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { ENGINES, ENGINE_LABELS } from "@/lib/types";
+import { ENGINES, ENGINE_LABELS, type Engine } from "@/lib/types";
 import { api, type Me } from "@/lib/store";
+
+/** One price, or a range when an engine's models cost different amounts. */
+function costLabel(me: Me, engine: Engine): string {
+  const all = me.models.filter((m) => m.engine === engine);
+  const live = all.filter((m) => m.live);
+  const prices = (live.length ? live : all).map((m) => m.credits);
+  if (!prices.length) return String(me.costs[engine]);
+  const [lo, hi] = [Math.min(...prices), Math.max(...prices)];
+  return lo === hi ? String(lo) : `${lo}–${hi}`;
+}
 
 const money = (cents: number) => `$${(cents / 100).toFixed(cents % 100 ? 2 : 0)}`;
 
@@ -84,10 +94,24 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
           {ENGINES.map((e) => (
             <div key={e} className="flex justify-between border-b border-zinc-900 py-1">
               <span className="text-zinc-400">{ENGINE_LABELS[e]}</span>
-              <span>{me.costs[e]}</span>
+              <span>{costLabel(me, e)}</span>
             </div>
           ))}
         </div>
+
+        <h3 className="mt-6 text-sm font-medium text-zinc-300">Image, video and music models</h3>
+        <ul className="mt-2 divide-y divide-zinc-900 text-sm">
+          {me.models.map((m) => (
+            <li key={m.id} className="flex items-baseline gap-3 py-1.5">
+              <span className="w-40 shrink-0 text-zinc-200">{m.label}</span>
+              <span className="min-w-0 flex-1 text-xs text-zinc-500">
+                {m.blurb}
+                {!m.live && <span className="ml-1 text-amber-400/80">(not set up)</span>}
+              </span>
+              <span className="shrink-0">{m.credits}</span>
+            </li>
+          ))}
+        </ul>
 
         {me.activity.length > 0 && (
           <>

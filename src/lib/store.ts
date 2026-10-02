@@ -9,6 +9,8 @@ export type UIMessage = {
   reason?: string;
   demo?: boolean;
   cost?: number;
+  model?: string;
+  modelWhy?: string;
   images?: { url: string; prompt: string }[];
   videos?: { url: string; prompt: string }[];
   audio?: string;
@@ -35,6 +37,7 @@ export type Me = {
   packs: { id: string; name: string; credits: number; priceCents: number; blurb: string }[];
   freeMonthly: number;
   paymentsEnabled: boolean;
+  models: { id: string; engine: Engine; label: string; credits: number; blurb: string; live: boolean }[];
 };
 
 export const newId = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);

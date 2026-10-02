@@ -20,7 +20,20 @@ an image, or speech, sends it to the right engine, and keeps the result in a pro
 | Music         | 30 second songs, jingles and beats                | ElevenLabs `music_v2_5`          | `ELEVENLABS_API_KEY` |
 | Transcribe    | Turning audio or video files into text            | ElevenLabs `scribe_v2`           | `ELEVENLABS_API_KEY` |
 
-Three keys switch on all twelve engines. Claude also sharpens image, video and music
+Three keys switch on all twelve engines. An optional fourth key, `FAL_KEY` from
+[fal.ai](https://fal.ai), adds more models, and Flash picks the best one for each request:
+
+| Model             | Engine | Picked for                               | Credits |
+| ----------------- | ------ | ---------------------------------------- | ------- |
+| FLUX.2 Pro        | Image  | Lifelike photos, portraits, product shots | 5       |
+| Veo 3.1           | Video  | Video with sound, speech and music        | 50      |
+| Kling 3 Turbo Pro | Video  | Longer clips, up to 15 seconds            | 45      |
+| MiniMax Music 2.6 | Music  | Full songs with sung lyrics               | 15      |
+
+Everything else stays on the defaults above. Users can also choose a model themselves
+from the Model menu under the engine buttons. With only a fal key, fal covers image,
+video and music on its own. To add another fal model, add an entry to
+`src/lib/models.ts` and its input shape to `falInput` in `app/api/chat/route.ts`. Claude also sharpens image, video and music
 requests into detailed prompts before they are sent.
 
 Features:
@@ -97,6 +110,8 @@ src/
   lib/server/               database, auth, credits, Stripe
   lib/credits.ts            what each engine costs, free credits, packs
   lib/flashdb-shim.ts       the window.flashDB script injected into apps
+  lib/models.ts             image, video and music models and how Flash picks one
+  lib/engines/fal.ts        fal.ai queue client
   components/AppPreview.tsx sandboxed live preview for built apps and decks
   lib/engines/builder.ts    App Builder and Slides
   lib/engines/claude.ts     writing, code, translation, docs, research
@@ -110,7 +125,7 @@ and one case in `app/api/chat/route.ts`.
 ## Checks
 
 ```bash
-npm test        # routing, webhook signatures, flashDB
+npm test        # routing, model picking, webhook signatures, flashDB
 npm run lint
 npm run build
 ```

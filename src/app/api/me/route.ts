@@ -3,6 +3,9 @@ import { balance, ensureMonthlyCredits, recentActivity } from "@/lib/server/cred
 import { run } from "@/lib/server/db.ts";
 import { CREDIT_COSTS, CREDIT_PACKS, FREE_MONTHLY_CREDITS } from "@/lib/credits.ts";
 import { paymentsEnabled } from "@/lib/server/stripe.ts";
+import { MODELS } from "@/lib/models.ts";
+import { elevenConfigured, openaiConfigured } from "@/lib/engines/media.ts";
+import { falConfigured } from "@/lib/engines/fal.ts";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +21,14 @@ export async function GET(request: Request) {
     packs: CREDIT_PACKS,
     freeMonthly: FREE_MONTHLY_CREDITS,
     paymentsEnabled: paymentsEnabled(),
+    models: MODELS.map((m) => ({
+      id: m.id,
+      engine: m.engine,
+      label: m.label,
+      credits: m.credits,
+      blurb: m.blurb,
+      live: { openai: openaiConfigured(), elevenlabs: elevenConfigured(), fal: falConfigured() }[m.provider],
+    })),
   });
 }
 

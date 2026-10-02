@@ -16,6 +16,8 @@ import { getUser, unauthorized } from "@/lib/server/auth.ts";
 import { balance, charge, ensureMonthlyCredits, refund } from "@/lib/server/credits.ts";
 import { saveFile } from "@/lib/server/files.ts";
 import { CREDIT_COSTS } from "@/lib/credits.ts";
+import { falConfigured, falGenerate } from "@/lib/engines/fal.ts";
+import { MEDIA_ENGINES, pickModel, requestedSeconds, type MediaEngine, type ModelInfo, type Provider } from "@/lib/models.ts";
 import { demoReply } from "@/lib/engines/demo.ts";
 import { streamBuild } from "@/lib/engines/builder.ts";
 
@@ -29,12 +31,58 @@ type ChatRequest = {
   preferences?: string;
   // The engine that produced the previous reply, so follow-ups can edit an app.
   previous?: Engine;
+  // An image, video or music model the user picked; otherwise Flash picks one.
+  model?: string;
 };
 
+function providers(): Set<Provider> {
+  const set = new Set<Provider>();
+  if (openaiConfigured()) set.add("openai");
+  if (elevenConfigured()) set.add("elevenlabs");
+  if (falConfigured()) set.add("fal");
+  return set;
+}
+
+const isMedia = (engine: Engine): engine is MediaEngine => (MEDIA_ENGINES as Engine[]).includes(engine);
+
 function configured(engine: Engine): boolean {
-  if (engine === "image" || engine === "video") return openaiConfigured();
-  if (engine === "voice" || engine === "music" || engine === "transcribe") return elevenConfigured();
+  if (engine === "voice" || engine === "transcribe") return elevenConfigured();
   return claudeConfigured();
+}
+
+/** Runs a slow job, relaying its progress messages as status events every few seconds. */
+async function* withProgress<T>(
+  job: (report: (message: string) => void) => Promise<T>,
+): AsyncGenerator<StreamEvent, T> {
+  let latest = "";
+  let reported = "";
+  let finished = false;
+  const work = job((message) => (latest = message)).finally(() => (finished = true));
+  while (!finished) {
+    await Promise.race([work.catch(() => {}), new Promise((r) => setTimeout(r, 3000))]);
+    if (latest && latest !== reported) {
+      reported = latest;
+      yield { type: "status", message: latest };
+    }
+  }
+  return work;
+}
+
+/** Builds the fal.ai input for a model from the user's request. */
+function falInput(model: ModelInfo, prompt: string, request: string): Record<string, unknown> {
+  switch (model.id) {
+    case "flux-2-pro":
+      return { prompt, image_size: "landscape_4_3", output_format: "png" };
+    case "veo-3.1":
+      return { prompt, duration: "8s", aspect_ratio: "16:9", generate_audio: true };
+    case "kling-3":
+      return { prompt, duration: String(requestedSeconds(request, 3, 15, 10)), aspect_ratio: "16:9" };
+    case "minimax-music":
+      // MiniMax writes the lyrics itself when none are given.
+      return { prompt: prompt.slice(0, 2000).padEnd(10, "."), lyrics_optimizer: true };
+    default:
+      return { prompt };
+  }
 }
 
 /** Uses Claude to sharpen a media prompt when a Claude key exists, else sends the request as written. */
@@ -48,9 +96,10 @@ async function* run(
   history: ChatTurn[],
   preferences: string,
   store: Store,
+  model: ModelInfo | null,
 ): AsyncGenerator<StreamEvent> {
   const last = history[history.length - 1];
-  if (!configured(engine)) {
+  if (isMedia(engine) ? !model : !configured(engine)) {
     yield* demoReply(engine, last.content);
     return;
   }
@@ -70,29 +119,32 @@ async function* run(
       return;
     case "image": {
       const prompt = await sharpen("image", last.content);
-      yield { type: "status", message: "Painting your image…" };
-      yield { type: "image", url: await store(await generateImage(prompt), "flash-image.png"), prompt };
+      yield { type: "status", message: `Painting your image with ${model!.label}…` };
+      const image =
+        model!.provider === "fal"
+          ? yield* withProgress((report) =>
+              falGenerate(model!.endpoint!, falInput(model!, prompt, last.content), (m) => report(`${m}…`)),
+            )
+          : await generateImage(prompt);
+      yield { type: "image", url: await store(image, "flash-image.png"), prompt };
       return;
     }
     case "video": {
       const prompt = await sharpen("video", last.content);
-      yield { type: "status", message: "Filming your video. This usually takes one to three minutes…" };
-      // Progress arrives through a callback, so it is collected and reported every few seconds.
-      const updates: number[] = [];
-      let finished = false;
-      const job = generateVideo(prompt, (pct) => updates.push(pct)).finally(() => (finished = true));
-      let reported = 0;
-      while (!finished) {
-        await Promise.race([job.catch(() => {}), new Promise((r) => setTimeout(r, 3000))]);
-        const pct = updates.at(-1) ?? 0;
-        if (pct > reported) {
-          reported = pct;
-          yield { type: "status", message: `Filming your video… ${pct}%` };
-        }
+      yield { type: "status", message: `Filming your video with ${model!.label}. This usually takes one to three minutes…` };
+      let video: Media;
+      if (model!.provider === "fal") {
+        video = yield* withProgress((report) =>
+          falGenerate(model!.endpoint!, falInput(model!, prompt, last.content), (m) => report(`Filming your video… ${m.toLowerCase()}`)),
+        );
+      } else {
+        const id = yield* withProgress((report) =>
+          generateVideo(prompt, (pct) => pct && report(`Filming your video… ${pct}%`)),
+        );
+        yield { type: "status", message: "Saving your video…" };
+        video = await downloadVideo(id);
       }
-      const id = await job;
-      yield { type: "status", message: "Saving your video…" };
-      yield { type: "video", url: await store(await downloadVideo(id), "flash-video.mp4"), prompt };
+      yield { type: "video", url: await store(video, "flash-video.mp4"), prompt };
       return;
     }
     case "voice": {
@@ -103,9 +155,15 @@ async function* run(
     }
     case "music": {
       const prompt = await sharpen("music", last.content);
-      yield { type: "status", message: "Composing a 30 second track…" };
+      yield { type: "status", message: `Composing your track with ${model!.label}…` };
       yield { type: "text", delta: `**Track brief:** ${prompt}` };
-      yield { type: "audio", url: await store(await composeMusic(prompt), "flash-music.mp3"), label: "flash-music.mp3" };
+      const track =
+        model!.provider === "fal"
+          ? yield* withProgress((report) =>
+              falGenerate(model!.endpoint!, falInput(model!, prompt, last.content), (m) => report(`Composing… ${m.toLowerCase()}`)),
+            )
+          : await composeMusic(prompt);
+      yield { type: "audio", url: await store(track, "flash-music.mp3"), label: "flash-music.mp3" };
       return;
     }
     case "transcribe": {
@@ -144,11 +202,13 @@ export async function POST(request: Request) {
   const override =
     body.engine && body.engine !== "auto" && (ENGINES as readonly string[]).includes(body.engine) ? body.engine : null;
   const engine = override ?? auto.engine;
+  const picked = isMedia(engine) ? pickModel(engine, last.content, providers(), body.model) : null;
+  const model = picked?.model ?? null;
   const reason = override ? "You picked this engine." : auto.reason;
 
   // Demo replies are free; live engines cost credits, refunded if the engine fails.
-  const live = configured(engine);
-  const cost = live ? CREDIT_COSTS[engine] : 0;
+  const live = isMedia(engine) ? Boolean(model) : configured(engine);
+  const cost = live ? (model?.credits ?? CREDIT_COSTS[engine]) : 0;
   if (cost) {
     await ensureMonthlyCredits(user.id);
     if (!(await charge(user.id, cost, `${engine} request`))) {
@@ -181,9 +241,16 @@ export async function POST(request: Request) {
           cancelled = true;
         }
       };
-      send({ type: "route", engine, reason, demo: !live, cost });
+      send({
+        type: "route",
+        engine,
+        reason,
+        demo: !live,
+        cost,
+        ...(model && { model: model.label, modelWhy: picked!.why }),
+      });
       try {
-        for await (const event of run(engine, history, preferences, store)) {
+        for await (const event of run(engine, history, preferences, store, model)) {
           if (cancelled || request.signal.aborted) return;
           send(event);
         }
