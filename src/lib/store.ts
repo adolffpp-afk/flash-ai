@@ -9,7 +9,10 @@ export type UIMessage = {
   reason?: string;
   demo?: boolean;
   images?: { url: string; prompt: string }[];
+  videos?: { url: string; prompt: string }[];
   audio?: string;
+  audioLabel?: string;
+  status?: string;
   sources?: Source[];
   error?: string;
   pending?: boolean;

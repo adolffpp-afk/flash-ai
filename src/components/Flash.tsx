@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Message } from "./Message";
-import { ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types";
+import { ENGINES, ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types";
 import {
   loadPreferences,
   loadProjects,
@@ -15,14 +15,23 @@ import {
 } from "@/lib/store";
 
 type Choice = Engine | "auto";
-const CHOICES: Choice[] = ["auto", "text", "search", "image", "voice"];
-const ACCEPT = "image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,text/markdown,text/csv,.md,.csv,.txt";
+const CHOICES: Choice[] = ["auto", ...ENGINES];
+const ACCEPT =
+  "image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,text/markdown,text/csv,.md,.csv,.txt,.json," +
+  "audio/*,video/mp4,video/webm,video/quicktime";
+const MAX_FILE_MB = 25;
 
 const SUGGESTIONS = [
-  "Write a friendly email asking my landlord to fix the heater",
-  "What's the latest news in AI this week?",
-  "Draw a minimalist logo for a coffee shop called Flash Brew",
-  "Read this aloud: Welcome to Flash, your all-in-one AI.",
+  { icon: "✍️", text: "Write a friendly email asking my landlord to fix the heater" },
+  { icon: "🔎", text: "What's the latest news in AI this week?" },
+  { icon: "💻", text: "Write a Python function that checks if a number is prime" },
+  { icon: "🌍", text: "Translate 'Welcome to our shop' into French, Spanish and Yoruba" },
+  { icon: "📊", text: "Create a monthly budget spreadsheet for a family of four" },
+  { icon: "🎨", text: "Draw a minimalist logo for a coffee shop called Flash Brew" },
+  { icon: "🎬", text: "Make a video of ocean waves at sunset, slow drone shot" },
+  { icon: "🎵", text: "Compose an upbeat jingle for a bakery ad" },
+  { icon: "🔊", text: "Read this aloud: Welcome to Flash, your all-in-one AI." },
+  { icon: "📝", text: "Transcribe a recording (attach an audio file)" },
 ];
 
 type Status = Record<Engine, boolean>;
@@ -74,7 +83,7 @@ export function Flash() {
   const active = projects.find((p) => p.id === activeId);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    if (active?.messages.length) bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [active?.messages]);
 
   function updateProject(id: string, fn: (p: Project) => Project) {
@@ -163,16 +172,20 @@ export function Flash() {
                 return { ...m, engine: e.engine, reason: e.reason, demo: e.demo };
               case "text":
                 return { ...m, content: m.content + e.delta };
+              case "status":
+                return { ...m, status: e.message };
               case "image":
-                return { ...m, images: [...(m.images ?? []), { url: e.url, prompt: e.prompt }] };
+                return { ...m, status: undefined, images: [...(m.images ?? []), { url: e.url, prompt: e.prompt }] };
+              case "video":
+                return { ...m, status: undefined, videos: [...(m.videos ?? []), { url: e.url, prompt: e.prompt }] };
               case "audio":
-                return { ...m, audio: e.url };
+                return { ...m, status: undefined, audio: e.url, audioLabel: e.label };
               case "sources":
                 return { ...m, sources: e.items };
               case "error":
                 return { ...m, error: e.message };
               case "done":
-                return { ...m, pending: false };
+                return { ...m, pending: false, status: undefined };
             }
           });
         }
@@ -183,7 +196,7 @@ export function Flash() {
         error: err instanceof Error ? err.message : "Something went wrong.",
       }));
     } finally {
-      updateMessage(projectId, reply.id, (m) => ({ ...m, pending: false }));
+      updateMessage(projectId, reply.id, (m) => ({ ...m, pending: false, status: undefined }));
       setBusy(false);
     }
   }
@@ -192,8 +205,8 @@ export function Flash() {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    if (file.size > 10 * 1024 * 1024) {
-      alert("Files must be 10 MB or smaller.");
+    if (file.size > MAX_FILE_MB * 1024 * 1024) {
+      alert(`Files must be ${MAX_FILE_MB} MB or smaller.`);
       return;
     }
     setAttachment(await readFile(file));
@@ -274,7 +287,7 @@ export function Flash() {
           />
           {status && (
             <div className="mt-2 grid grid-cols-2 gap-1 text-xs text-zinc-400">
-              {(Object.keys(ENGINE_LABELS) as Engine[]).map((e) => (
+              {ENGINES.map((e) => (
                 <span key={e} className="flex items-center gap-1.5">
                   <span className={`h-1.5 w-1.5 rounded-full ${status[e] ? "bg-emerald-400" : "bg-amber-400"}`} />
                   {ENGINE_LABELS[e]} {status[e] ? "live" : "demo"}
@@ -307,15 +320,20 @@ export function Flash() {
                   ⚡
                 </div>
                 <h2 className="text-2xl font-semibold">What can Flash do for you?</h2>
-                <p className="mt-2 text-zinc-400">Ask anything. Flash picks the best AI for the job.</p>
+                <p className="mt-2 text-zinc-400">
+                  Write, research, code, translate, build sheets, and make images, video, music and voice.
+                  <br />
+                  Ask anything. Flash picks the best AI for the job.
+                </p>
                 <div className="mt-8 grid gap-2 sm:grid-cols-2">
                   {SUGGESTIONS.map((s) => (
                     <button
-                      key={s}
-                      onClick={() => send(s)}
-                      className="rounded-xl border border-zinc-800 p-3 text-left text-sm text-zinc-300 hover:border-indigo-500 hover:bg-zinc-900"
+                      key={s.text}
+                      onClick={() => (s.icon === "📝" ? fileRef.current?.click() : send(s.text))}
+                      className="flex gap-2 rounded-xl border border-zinc-800 p-3 text-left text-sm text-zinc-300 hover:border-indigo-500 hover:bg-zinc-900"
                     >
-                      {s}
+                      <span aria-hidden>{s.icon}</span>
+                      <span>{s.text}</span>
                     </button>
                   ))}
                 </div>
@@ -329,14 +347,14 @@ export function Flash() {
         {/* Composer */}
         <div className="border-t border-zinc-800 px-4 pb-4 pt-3">
           <div className="mx-auto max-w-3xl">
-            <div className="mb-2 flex flex-wrap gap-1.5" role="radiogroup" aria-label="Engine">
+            <div className="-mx-1 mb-2 flex gap-1.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none]" role="radiogroup" aria-label="Engine">
               {CHOICES.map((c) => (
                 <button
                   key={c}
                   role="radio"
                   aria-checked={choice === c}
                   onClick={() => setChoice(c)}
-                  className={`rounded-full px-3 py-1 text-xs ${
+                  className={`shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-xs ${
                     choice === c ? "bg-indigo-600 text-white" : "border border-zinc-800 text-zinc-400 hover:text-zinc-200"
                   }`}
                 >

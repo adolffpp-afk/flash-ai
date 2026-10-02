@@ -1,9 +1,24 @@
 import { claudeConfigured } from "@/lib/engines/claude.ts";
-import { imageConfigured, voiceConfigured } from "@/lib/engines/media.ts";
+import { elevenConfigured, openaiConfigured } from "@/lib/engines/media.ts";
+import type { Engine } from "@/lib/types.ts";
 
 export const dynamic = "force-dynamic";
 
 export function GET() {
   const claude = claudeConfigured();
-  return Response.json({ text: claude, search: claude, image: imageConfigured(), voice: voiceConfigured() });
+  const openai = openaiConfigured();
+  const eleven = elevenConfigured();
+  const status: Record<Engine, boolean> = {
+    text: claude,
+    search: claude,
+    code: claude,
+    translate: claude,
+    docs: claude,
+    image: openai,
+    video: openai,
+    voice: eleven,
+    music: eleven,
+    transcribe: eleven,
+  };
+  return Response.json(status);
 }

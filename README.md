@@ -5,19 +5,31 @@ One assistant that routes every request to the best AI engine.
 Type what you want. Flash decides whether it is a writing task, a research question,
 an image, or speech, sends it to the right engine, and keeps the result in a project.
 
-| Engine   | Used for                                   | Provider                          |
-| -------- | ------------------------------------------ | --------------------------------- |
-| Write    | Writing, reasoning, questions about files  | Anthropic Claude                  |
-| Research | Current facts with cited sources           | Anthropic Claude + web search     |
-| Image    | Pictures, logos, illustrations             | OpenAI image model                |
-| Voice    | Reading text aloud                         | ElevenLabs                        |
+| Engine        | Used for                                          | Provider                         | Key                  |
+| ------------- | ------------------------------------------------- | -------------------------------- | -------------------- |
+| Write         | Writing, reasoning, questions about files         | Anthropic Claude                 | `ANTHROPIC_API_KEY`  |
+| Research      | Current facts with sources; reads links you paste | Claude + web search / web fetch  | `ANTHROPIC_API_KEY`  |
+| Code          | Writing, explaining and fixing code               | Claude                           | `ANTHROPIC_API_KEY`  |
+| Translate     | Translation between languages                     | Claude                           | `ANTHROPIC_API_KEY`  |
+| Docs & Sheets | Spreadsheets (download as CSV), letters, reports  | Claude                           | `ANTHROPIC_API_KEY`  |
+| Image         | Pictures, logos, illustrations                    | OpenAI `gpt-image-1`             | `OPENAI_API_KEY`     |
+| Video         | 8 second video clips                              | OpenAI Sora (`sora-2`)           | `OPENAI_API_KEY`     |
+| Voice         | Reading text aloud                                | ElevenLabs text to speech        | `ELEVENLABS_API_KEY` |
+| Music         | 30 second songs, jingles and beats                | ElevenLabs Music                 | `ELEVENLABS_API_KEY` |
+| Transcribe    | Turning audio or video files into text            | ElevenLabs Scribe                | `ELEVENLABS_API_KEY` |
 
-Features in this first version:
+Three keys switch on all ten engines. Claude also sharpens image, video and music
+requests into detailed prompts before they are sent.
 
-- **Auto routing** with a manual override (Auto / Write / Research / Image / Voice).
+Features:
+
+- **Auto routing** with a manual override for every engine.
 - **Projects**: separate chat histories, saved in the browser.
 - **Memory**: a short note about you that Flash uses in every answer.
-- **Files**: attach a PDF, image, or text file and ask about it (up to 10 MB).
+- **Files**: attach a PDF, image, CSV or text file to ask about it, or an audio or
+  video file to transcribe (up to 25 MB).
+- **Downloads**: spreadsheets, documents, code, images, video and audio all download
+  with one click.
 - **Demo mode**: every engine works without keys, so you can try the app first.
 
 ## Run it
@@ -38,6 +50,9 @@ The easiest host is [Vercel](https://vercel.com): import the repository, add the
 keys under **Settings → Environment Variables**, and deploy. Any Node.js host works
 (`npm run build && npm start`).
 
+On Vercel, uploads are capped at about 4.5 MB per request, and video generation needs
+long-running functions (the Pro plan), because a clip can take a few minutes.
+
 ## How it works
 
 ```
@@ -48,8 +63,9 @@ src/
   app/api/chat/route.ts     picks the engine and streams the reply (NDJSON)
   app/api/status/route.ts   which engines have keys
   lib/router.ts             the routing rules
-  lib/engines/claude.ts     writing and research
-  lib/engines/media.ts      images and voice
+  app/api/video/[id]/route.ts  streams finished videos without exposing the key
+  lib/engines/claude.ts     writing, code, translation, docs, research
+  lib/engines/media.ts      images, video, voice, music, transcription
   lib/engines/demo.ts       demo replies when a key is missing
 ```
 
@@ -66,5 +82,6 @@ npm run build
 
 ## Not in this version yet
 
-User accounts and paid credits, video generation, mobile app, team workspaces,
-and an LLM-based router. See the product plan for the roadmap.
+User accounts and paid credits, a mobile app, team workspaces, real .xlsx and .docx
+files, video longer than 8 seconds, and an LLM-based router. Generated videos expire
+about an hour after they are made, so download the ones you want to keep. See the product plan for the roadmap.
