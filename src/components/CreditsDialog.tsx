@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { ENGINES, ENGINE_LABELS, type Engine } from "@/lib/types";
 import { api, type Me } from "@/lib/store";
 import { IntervalToggle, PlanCards, type Interval } from "./PlanCards";
+import { InviteFriends } from "./InviteFriends";
+import { TeamPanel } from "./TeamPanel";
 
 /** One price, or a range when an engine's models cost different amounts. */
 function costLabel(me: Me, engine: Engine): string {
@@ -107,6 +109,12 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
               <span className="text-gold-gradient">{me.credits.toLocaleString("en-US")}</span>{" "}
               <span className="text-lg font-normal text-zinc-400">credits</span>
             </p>
+            {me.teamCredits !== null && (
+              <p className="mt-1 text-xs text-zinc-400">
+                {me.teamCredits.toLocaleString("en-US")} from your team&apos;s shared pool,{" "}
+                {(me.credits - me.teamCredits).toLocaleString("en-US")} your own
+              </p>
+            )}
             {plan ? (
               <p className="mt-1 text-xs text-zinc-400">
                 <span className="font-medium text-zinc-200">{plan.name} plan</span>
@@ -153,6 +161,15 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
           </p>
         )}
 
+        {me.team && (
+          <>
+            <h3 className="mt-6 text-sm font-medium text-zinc-300">Team</h3>
+            <div className="mt-2">
+              <TeamPanel me={me} onChanged={onChanged} />
+            </div>
+          </>
+        )}
+
         <h3 className="mt-6 text-sm font-medium text-zinc-300">Top up</h3>
         <div className="mt-2 grid gap-2 sm:grid-cols-3">
           {me.packs.map((p, i) => (
@@ -190,6 +207,11 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
             {me.freeLane.chats} a day{me.freeLane.images ? `, plus ${me.freeLane.images} free images` : ""}.
           </p>
         )}
+
+        <h3 className="mt-6 text-sm font-medium text-zinc-300">Invite friends</h3>
+        <div className="mt-2">
+          <InviteFriends referral={me.referral} />
+        </div>
 
         <h3 className="mt-6 text-sm font-medium text-zinc-300">What things cost</h3>
         <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-3">

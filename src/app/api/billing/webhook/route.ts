@@ -9,6 +9,7 @@ import {
   setCancelAtPeriodEnd,
 } from "@/lib/server/subscriptions.ts";
 import { planPrice } from "@/lib/credits.ts";
+import { reverseReferral, rewardReferral } from "@/lib/server/referrals.ts";
 
 type Meta = { user?: string; plan?: string; interval?: string; pack?: string };
 type SubscriptionDetails = { subscription?: string; metadata?: Meta | null };
@@ -64,6 +65,7 @@ async function invoicePaid(invoice: Invoice) {
     console.warn(`[flash] invoice ${invoice.id} paid ${invoice.amount_paid} for ${plan}/${interval}: no credits given`);
     return;
   }
+  const ref = `stripe-invoice:${invoice.id}`;
   await recordPayment({
     subscriptionId,
     userId: user,
@@ -73,10 +75,12 @@ async function invoicePaid(invoice: Invoice) {
     amountCents: invoice.amount_paid,
     periodStart: period.start * 1000,
     periodEnd: period.end * 1000,
-    ref: `stripe-invoice:${invoice.id}`,
+    ref,
     test: false,
     paymentIntent: invoice.payment_intent ?? invoice.payments?.data?.[0]?.payment?.payment_intent ?? null,
   });
+  // A referred subscriber's first payment gives the referral bonuses (once; the referrer's after 30 days).
+  await rewardReferral(ref);
   // A new plan replaces the old one. The old one ends now with no refund; its credits stay.
   if (invoice.billing_reason === "subscription_create") {
     for (const old of await otherSubscriptions(user, subscriptionId)) {
@@ -115,6 +119,8 @@ async function reversePayment(
     return;
   }
   await clawBack(purchase, share, charge, ref, reason);
+  // Referral bonuses that payment earned go back in the same share (a pending one is cancelled).
+  await reverseReferral(purchase, share, ref, reason);
   if (share >= 1 && purchase.subscription) {
     await cancelStripeSubscription(purchase.subscription).catch((err) => console.error("[flash] cancel failed", err));
     await endSubscription(purchase.subscription);
@@ -141,7 +147,10 @@ export async function POST(request: Request) {
       // Credit packs. Plans are handled by invoice.paid.
       const { user, pack } = object.metadata ?? {};
       if (object.mode !== "subscription" && object.payment_status === "paid" && user && pack) {
-        await addPurchase(user, pack, `stripe:${object.id}`, object.payment_intent ?? null);
+        const ref = `stripe:${object.id}`;
+        await addPurchase(user, pack, ref, object.payment_intent ?? null);
+        // A referred buyer's first payment gives the referral bonuses (once; the referrer's after 30 days).
+        await rewardReferral(ref);
       }
       break;
     }

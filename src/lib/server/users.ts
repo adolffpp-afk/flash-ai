@@ -1,7 +1,9 @@
 import { emailKey } from "./account.ts";
+import { readCookie } from "./auth.ts";
 import { ensureMonthlyCredits } from "./credits.ts";
 import { run, now } from "./db.ts";
 import { randomId } from "./ids.ts";
+import { REF_COOKIE, referrerFor } from "./referrals.ts";
 
 export type NewUser = {
   email: string;
@@ -21,10 +23,14 @@ export type NewUser = {
 export async function createUser(user: NewUser): Promise<string> {
   const id = randomId();
   const email = user.email.trim().toLowerCase();
+  const key = emailKey(email);
   const t = now();
+  // The referral link's code, kept in a cookie since the visitor landed. Never the same inbox.
+  const referrer = user.request ? await referrerFor(readCookie(user.request, REF_COOKIE), key) : null;
   await run(
-    "INSERT INTO users (id, email, email_key, name, password_hash, created_at, verified_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    [id, email, emailKey(email), user.name?.trim().slice(0, 80) || email.split("@")[0], user.passwordHash, t, user.verified ? t : 0],
+    `INSERT INTO users (id, email, email_key, name, password_hash, created_at, verified_at, referred_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, email, key, user.name?.trim().slice(0, 80) || email.split("@")[0], user.passwordHash, t, user.verified ? t : 0, referrer],
   );
   await ensureMonthlyCredits(id);
   return id;

@@ -2,6 +2,7 @@ import { appUrl, createSession, hashPassword, isSecure } from "@/lib/server/auth
 import { backfillEmailKeys, emailKey, sendVerification } from "@/lib/server/account.ts";
 import { one } from "@/lib/server/db.ts";
 import { clientIp, overLimit } from "@/lib/server/limits.ts";
+import { CLEAR_REF_COOKIE } from "@/lib/server/referrals.ts";
 import { createUser } from "@/lib/server/users.ts";
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -22,6 +23,7 @@ export async function POST(request: Request) {
   if (await one("SELECT 1 FROM users WHERE email = ? OR email_key = ?", [email, key])) {
     return Response.json({ error: "An account with this email already exists. Sign in instead." }, { status: 409 });
   }
+  // createUser() records who referred them from the referral cookie (never the same inbox).
   const id = await createUser({ email, name, passwordHash: await hashPassword(password), request });
   // The account works even if the email can't be sent; the banner asks the user to send it again.
   let emailFailed = false;
@@ -30,6 +32,8 @@ export async function POST(request: Request) {
     emailFailed = true;
     return undefined;
   });
-  const cookie = await createSession(id, isSecure(request));
-  return Response.json({ ok: true, devLink, emailFailed }, { headers: { "Set-Cookie": cookie } });
+  const headers = new Headers();
+  headers.append("Set-Cookie", await createSession(id, isSecure(request)));
+  headers.append("Set-Cookie", CLEAR_REF_COOKIE);
+  return Response.json({ ok: true, devLink, emailFailed }, { headers });
 }

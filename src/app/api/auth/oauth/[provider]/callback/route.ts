@@ -1,6 +1,7 @@
 import { appUrl, createSession, isSecure, readCookie } from "@/lib/server/auth.ts";
 import { clientIp, overLimit } from "@/lib/server/limits.ts";
 import { OAUTH_COOKIE, PROVIDERS, checkState, clearStateCookie, fetchProfile, isProvider } from "@/lib/server/oauth.ts";
+import { CLEAR_REF_COOKIE } from "@/lib/server/referrals.ts";
 import { signInWithProvider } from "@/lib/server/signin.ts";
 
 /** Where Google, GitHub and Microsoft send people back after they sign in there. */
@@ -35,6 +36,8 @@ export async function GET(request: Request, ctx: RouteContext<"/api/auth/oauth/[
     const result = await signInWithProvider(profile, request);
     if (!result.ok) return fail(result.code, `email ${result.code === "unverified" ? "not confirmed" : "missing"} at provider`);
     cookies.push(await createSession(result.userId, isSecure(request)));
+    // A new account has used the referral code (if any); it never applies twice.
+    if (result.created) cookies.push(CLEAR_REF_COOKIE);
     return go(saved.next);
   } catch (err) {
     return fail("failed", err instanceof Error ? err.message : "unknown error");

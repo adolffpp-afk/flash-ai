@@ -42,6 +42,8 @@ export type Pricing = {
     credits: number;
     blurb: string;
     features: string[];
+    // Team plans: people who share the monthly credits, the owner included.
+    seats?: number;
   }[];
   freeMonthly: number;
   freeLane: { chats: number; images: number };
@@ -66,7 +68,33 @@ export type Me = Pricing & {
     test: boolean;
   } | null;
   activity: { amount: number; reason: string; created_at: number }[];
+  // A team member's shared pool balance (included in credits), or null.
+  teamCredits: number | null;
+  team: TeamInfo;
+  referral: {
+    link: string;
+    joined: number;
+    rewarded: number;
+    earned: number;
+    // The referrer's bonuses still waiting out pendingDays after the friend's payment.
+    pending: { credits: number; availableAt: number }[];
+    friendShare: number;
+    referrerShare: number;
+    referrerCap: number;
+    pendingDays: number;
+  };
 };
+
+export type TeamInfo =
+  | {
+      role: "owner";
+      active: boolean;
+      seats: number;
+      members: { id: string; name: string; email: string; joined_at: number; used: number }[];
+      invites: { id: string; email: string; expires_at: number }[];
+    }
+  | { role: "member"; active: boolean; owner: string }
+  | null;
 
 export const newId = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 
@@ -77,6 +105,8 @@ export async function api<T>(path: string, init?: RequestInit & { json?: unknown
     body: init?.json !== undefined ? JSON.stringify(init.json) : init?.body,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw Object.assign(new Error(data.error ?? `Request failed (${res.status})`), { status: res.status });
+  if (!res.ok) {
+    throw Object.assign(new Error(data.error ?? `Request failed (${res.status})`), { status: res.status, code: data.code });
+  }
   return data as T;
 }

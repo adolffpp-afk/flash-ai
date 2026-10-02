@@ -151,3 +151,24 @@ test("sign-in links work once, expire after 15 minutes, and a newer link replace
   assert.ok(Number((await userRow(id))!.verified_at) > 0, "opening the link confirms the email");
   assert.equal(await signInWithEmail("link+tag@x.io"), id, "an alias of the same inbox is the same account");
 });
+
+test("a referral cookie is recorded on every way of signing up, never for the referrer's own inbox", async () => {
+  const { referralCode } = await import("../src/lib/server/referrals.ts");
+  const referrer = await createUser({ email: "host.person@gmail.com", passwordHash: "scrypt$x$y", verified: true });
+  const code = await referralCode(referrer);
+  const req = new Request("https://www.flash-app.dev/", { headers: { cookie: `a=1; flash_ref=${code}` } });
+  const referredBy = async (id: string) =>
+    (await one<{ referred_by: string | null }>("SELECT referred_by FROM users WHERE id = ?", [id]))!.referred_by;
+
+  assert.equal(await referredBy(await createUser({ email: "pw@x.io", passwordHash: "scrypt$x$y", request: req })), referrer, "password");
+  const oauthNew = await signInWithProvider(
+    { provider: "github", subject: "h-ref", email: "gh@x.io", emailVerified: true, name: "" },
+    req,
+  );
+  assert.ok(oauthNew.ok && oauthNew.created);
+  assert.equal(await referredBy(oauthNew.ok ? oauthNew.userId : ""), referrer, "OAuth");
+  assert.equal(await referredBy(await signInWithEmail("mail@x.io", req)), referrer, "email link");
+  // The same Gmail inbox (dots, +tag) can't refer itself, whichever way it signs up.
+  assert.equal(await referredBy(await signInWithEmail("hostperson+2@gmail.com", req)), null);
+  assert.equal(await referredBy(await createUser({ email: "plain@x.io", passwordHash: "" })), null, "no cookie");
+});

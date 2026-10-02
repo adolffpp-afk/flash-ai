@@ -1,5 +1,6 @@
 import { appUrl, createSession, isSecure } from "@/lib/server/auth.ts";
 import { clientIp, overLimit } from "@/lib/server/limits.ts";
+import { CLEAR_REF_COOKIE } from "@/lib/server/referrals.ts";
 import { redeemSignInLink, signInWithEmail } from "@/lib/server/signin.ts";
 
 /**
@@ -22,5 +23,9 @@ export async function POST(request: Request) {
   }
   const userId = await signInWithEmail(link.email, request);
   const cookie = await createSession(userId, isSecure(request));
-  return Response.json({ ok: true, next: link.next }, { headers: { "Set-Cookie": cookie } });
+  const headers = new Headers();
+  headers.append("Set-Cookie", cookie);
+  // Signed in, so a referral code (used if this made the account) is no longer needed.
+  headers.append("Set-Cookie", CLEAR_REF_COOKIE);
+  return Response.json({ ok: true, next: link.next }, { headers });
 }
