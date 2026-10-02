@@ -11,7 +11,7 @@ const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"] as co
 type ImageType = (typeof IMAGE_TYPES)[number];
 
 let client: Anthropic | null = null;
-function getClient(): Anthropic {
+export function getClient(): Anthropic {
   client ??= new Anthropic();
   return client;
 }
@@ -36,10 +36,14 @@ function toContent(turn: ChatTurn): string | Anthropic.Beta.BetaContentBlockPara
   return blocks;
 }
 
-function toMessages(history: ChatTurn[]): Anthropic.Beta.BetaMessageParam[] {
+function assistantContent(t: ChatTurn): string {
+  return t.app ? `${t.content}\n\n\`\`\`html\n${t.app}\n\`\`\`` : t.content;
+}
+
+export function toMessages(history: ChatTurn[]): Anthropic.Beta.BetaMessageParam[] {
   return history
-    .filter((t) => t.content.trim() || t.attachment)
-    .map((t) => ({ role: t.role, content: t.role === "user" ? toContent(t) : t.content }));
+    .filter((t) => t.content.trim() || t.attachment || t.app)
+    .map((t) => ({ role: t.role, content: t.role === "user" ? toContent(t) : assistantContent(t) }));
 }
 
 export type WritingMode = "text" | "code" | "translate" | "docs";

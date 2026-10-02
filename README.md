@@ -8,6 +8,8 @@ an image, or speech, sends it to the right engine, and keeps the result in a pro
 | Engine        | Used for                                          | Provider                         | Key                  |
 | ------------- | ------------------------------------------------- | -------------------------------- | -------------------- |
 | Write         | Writing, reasoning, questions about files         | Anthropic Claude                 | `ANTHROPIC_API_KEY`  |
+| App Builder   | Working web apps, sites, games and dashboards     | Claude                           | `ANTHROPIC_API_KEY`  |
+| Slides        | Presentation decks you click or swipe through     | Claude                           | `ANTHROPIC_API_KEY`  |
 | Research      | Current facts with sources; reads links you paste | Claude + web search / web fetch  | `ANTHROPIC_API_KEY`  |
 | Code          | Writing, explaining and fixing code               | Claude                           | `ANTHROPIC_API_KEY`  |
 | Translate     | Translation between languages                     | Claude                           | `ANTHROPIC_API_KEY`  |
@@ -18,11 +20,15 @@ an image, or speech, sends it to the right engine, and keeps the result in a pro
 | Music         | 30 second songs, jingles and beats                | ElevenLabs Music                 | `ELEVENLABS_API_KEY` |
 | Transcribe    | Turning audio or video files into text            | ElevenLabs Scribe                | `ELEVENLABS_API_KEY` |
 
-Three keys switch on all ten engines. Claude also sharpens image, video and music
+Three keys switch on all twelve engines. Claude also sharpens image, video and music
 requests into detailed prompts before they are sent.
 
 Features:
 
+- **App Builder** (like Lovable, Bolt, Base44 or Replit Agent): describe an app and get a
+  working one with a live preview. Keep chatting to change it ("add a dark mode"), switch
+  to the code view, open it full screen, or download it as a single HTML file you can
+  host anywhere (Netlify Drop, GitHub Pages, Vercel).
 - **Auto routing** with a manual override for every engine.
 - **Projects**: separate chat histories, saved in the browser.
 - **Memory**: a short note about you that Flash uses in every answer.
@@ -64,6 +70,8 @@ src/
   app/api/status/route.ts   which engines have keys
   lib/router.ts             the routing rules
   app/api/video/[id]/route.ts  streams finished videos without exposing the key
+  components/AppPreview.tsx sandboxed live preview for built apps and decks
+  lib/engines/builder.ts    App Builder and Slides
   lib/engines/claude.ts     writing, code, translation, docs, research
   lib/engines/media.ts      images, video, voice, music, transcription
   lib/engines/demo.ts       demo replies when a key is missing
@@ -82,6 +90,8 @@ npm run build
 
 ## Not in this version yet
 
-User accounts and paid credits, a mobile app, team workspaces, real .xlsx and .docx
+One-click publishing of built apps, apps with their own database, sign-in or backend
+(today they are front-end only and keep data in the browser), multi-file projects,
+user accounts and paid credits, a mobile app, team workspaces, real .xlsx and .docx
 files, video longer than 8 seconds, and an LLM-based router. Generated videos expire
 about an hour after they are made, so download the ones you want to keep. See the product plan for the roadmap.

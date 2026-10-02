@@ -22,6 +22,8 @@ const ACCEPT =
 const MAX_FILE_MB = 25;
 
 const SUGGESTIONS = [
+  { icon: "🛠️", text: "Build a habit tracker app with streaks and a weekly chart" },
+  { icon: "🖥️", text: "Make a presentation about the future of solar energy in Africa" },
   { icon: "✍️", text: "Write a friendly email asking my landlord to fix the heater" },
   { icon: "🔎", text: "What's the latest news in AI this week?" },
   { icon: "💻", text: "Write a Python function that checks if a number is prime" },
@@ -129,8 +131,13 @@ export function Flash() {
     const userMsg: UIMessage = { id: newId(), role: "user", content, attachmentName: attachment?.name };
     const reply: UIMessage = { id: newId(), role: "assistant", content: "", pending: true };
 
+    // Only the most recent app's code is sent back, so edits build on it without resending every version.
+    const lastAppId = [...active.messages].reverse().find((m) => m.app)?.id;
+    const previous = [...active.messages].reverse().find((m) => m.role === "assistant" && m.engine)?.engine;
     const history: ChatTurn[] = [
-      ...active.messages.filter((m) => !m.error || m.content).map((m) => ({ role: m.role, content: m.content })),
+      ...active.messages
+        .filter((m) => !m.error || m.content || m.app)
+        .map((m) => ({ role: m.role, content: m.content + (m.after ?? ""), app: m.id === lastAppId ? m.app?.html : undefined })),
       { role: "user", content, attachment: attachment ?? undefined },
     ];
 
@@ -148,7 +155,7 @@ export function Flash() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: history, engine: choice, preferences }),
+        body: JSON.stringify({ messages: history, engine: choice, preferences, previous }),
       });
       if (!res.ok || !res.body) {
         const err = await res.json().catch(() => ({ error: `Request failed (${res.status})` }));
@@ -171,7 +178,7 @@ export function Flash() {
               case "route":
                 return { ...m, engine: e.engine, reason: e.reason, demo: e.demo };
               case "text":
-                return { ...m, content: m.content + e.delta };
+                return m.app ? { ...m, after: (m.after ?? "") + e.delta } : { ...m, content: m.content + e.delta };
               case "status":
                 return { ...m, status: e.message };
               case "image":
@@ -180,6 +187,8 @@ export function Flash() {
                 return { ...m, status: undefined, videos: [...(m.videos ?? []), { url: e.url, prompt: e.prompt }] };
               case "audio":
                 return { ...m, status: undefined, audio: e.url, audioLabel: e.label };
+              case "app":
+                return { ...m, status: undefined, app: e.app };
               case "sources":
                 return { ...m, sources: e.items };
               case "error":
@@ -321,7 +330,8 @@ export function Flash() {
                 </div>
                 <h2 className="text-2xl font-semibold">What can Flash do for you?</h2>
                 <p className="mt-2 text-zinc-400">
-                  Write, research, code, translate, build sheets, and make images, video, music and voice.
+                  Build apps and slides, write, research, code, translate, make spreadsheets, and create images,
+                  video, music and voice.
                   <br />
                   Ask anything. Flash picks the best AI for the job.
                 </p>

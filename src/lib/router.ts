@@ -5,7 +5,7 @@ export type RouteDecision = { engine: Engine; reason: string };
 const LANGUAGES =
   "english|french|spanish|portuguese|german|italian|dutch|arabic|chinese|mandarin|japanese|korean|hindi|russian|turkish|swahili|yoruba|igbo|hausa|zulu|amharic|polish|greek|hebrew|vietnamese|thai|indonesian|creole";
 
-type Rule = { engine: Engine; reason: string; patterns: RegExp[] };
+type Rule = { engine: Engine; reason: string; patterns: RegExp[]; unless?: RegExp };
 
 // Checked in order: the most specific outputs first, plain writing last.
 const RULES: Rule[] = [
@@ -22,6 +22,19 @@ const RULES: Rule[] = [
       new RegExp(`\\b(say|write|put|convert)\\b.{0,60}\\b(in|into|to)\\s+(${LANGUAGES})\\b`, "i"),
       new RegExp(`\\bhow do (you|i) say\\b.{0,60}\\bin\\s+(${LANGUAGES})\\b`, "i"),
     ],
+  },
+  {
+    engine: "slides",
+    reason: "You asked for a slide deck.",
+    patterns: [/\b(presentation|slide ?deck|slideshow|slides|pitch deck|keynote|powerpoint)s?\b/i],
+  },
+  {
+    engine: "app",
+    reason: "You asked Flash to build an app.",
+    patterns: [
+      /\b(build|create|make|generate|design|develop|prototype|code up|spin up)\b.{0,50}\b(app|application|web ?app|website|web ?site|site|landing page|home ?page|dashboard|portfolio|game|calculator|tracker|planner|online store|shop|quiz|timer|clone|crm|saas|mvp|prototype|booking system|to-?do list)s?\b/i,
+    ],
+    unless: /\b(spreadsheet|excel|csv|logo|icon|poster|song|jingle|video clip)\b/i,
   },
   {
     engine: "video",
@@ -93,15 +106,30 @@ const RULES: Rule[] = [
 const AUDIO_TYPE = /^(audio|video)\//;
 const SHEET_TYPE = /(csv|spreadsheet|excel)/i;
 
-/** Picks the engine for a request with deterministic keyword rules. */
-export function route(message: string, attachmentType?: string): RouteDecision {
+// Engines whose answers are general enough that a follow-up may really be an edit to the last build.
+const GENERAL: Engine[] = ["text", "code", "docs"];
+
+/**
+ * Picks the engine for a request with deterministic keyword rules. When the previous
+ * reply was an app or deck, a general follow-up ("make the header blue") edits it.
+ */
+export function route(message: string, attachmentType?: string, previous?: Engine): RouteDecision {
+  const decision = routeOne(message, attachmentType);
+  if ((previous === "app" || previous === "slides") && GENERAL.includes(decision.engine) && !attachmentType) {
+    return { engine: previous, reason: previous === "app" ? "Updating your app." : "Updating your slides." };
+  }
+  return decision;
+}
+
+function routeOne(message: string, attachmentType?: string): RouteDecision {
   const text = message.trim();
   if (attachmentType && AUDIO_TYPE.test(attachmentType)) {
     return { engine: "transcribe", reason: "An audio or video file is attached, so Flash transcribes it." };
   }
   for (const rule of RULES) {
     // An attached file is read by a text engine, so media-making rules don't apply to it.
-    if (attachmentType && ["video", "music", "image", "voice", "search"].includes(rule.engine)) continue;
+    if (attachmentType && ["video", "music", "image", "voice", "search", "app", "slides"].includes(rule.engine)) continue;
+    if (rule.unless?.test(text)) continue;
     if (rule.patterns.some((p) => p.test(text))) return { engine: rule.engine, reason: rule.reason };
   }
   if (attachmentType) {

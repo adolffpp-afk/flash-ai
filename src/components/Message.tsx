@@ -5,6 +5,7 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ENGINE_LABELS } from "@/lib/types";
 import type { UIMessage } from "@/lib/store";
+import { AppPreview } from "./AppPreview";
 
 const EXTENSIONS: Record<string, string> = {
   csv: "csv",
@@ -139,6 +140,14 @@ export function Message({ m }: { m: UIMessage }) {
           ) : (
             <p key={i} className="mt-2 text-xs text-zinc-500">Image not kept (browser storage was full).</p>
           ),
+        )}
+        {m.app && <AppPreview app={m.app} />}
+        {m.after?.trim() && (
+          <div className="prose prose-invert mt-3 max-w-none break-words prose-p:my-2">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+              {m.after}
+            </ReactMarkdown>
+          </div>
         )}
         {m.videos?.map((v, i) => (
           <figure key={i} className="mt-2">

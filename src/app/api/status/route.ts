@@ -19,6 +19,8 @@ export function GET() {
     voice: eleven,
     music: eleven,
     transcribe: eleven,
+    app: claude,
+    slides: claude,
   };
   return Response.json(status);
 }

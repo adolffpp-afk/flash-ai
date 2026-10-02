@@ -11,12 +11,19 @@ import {
   transcribe,
 } from "@/lib/engines/media.ts";
 import { demoReply } from "@/lib/engines/demo.ts";
+import { streamBuild } from "@/lib/engines/builder.ts";
 
 export const maxDuration = 800;
 
 const MAX_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 
-type ChatRequest = { messages: ChatTurn[]; engine?: Engine | "auto"; preferences?: string };
+type ChatRequest = {
+  messages: ChatTurn[];
+  engine?: Engine | "auto";
+  preferences?: string;
+  // The engine that produced the previous reply, so follow-ups can edit an app.
+  previous?: Engine;
+};
 
 function configured(engine: Engine): boolean {
   if (engine === "image" || engine === "video") return openaiConfigured();
@@ -43,6 +50,10 @@ async function* run(engine: Engine, history: ChatTurn[], preferences: string): A
       return;
     case "search":
       yield* streamSearch(history, preferences);
+      return;
+    case "app":
+    case "slides":
+      yield* streamBuild(history, preferences, engine);
       return;
     case "image": {
       const prompt = await sharpen("image", last.content);
@@ -111,7 +122,8 @@ export async function POST(request: Request) {
     return Response.json({ error: "Files must be 25 MB or smaller." }, { status: 413 });
   }
 
-  const auto = route(last.content, last.attachment?.mediaType);
+  const previous = body.previous && (ENGINES as readonly string[]).includes(body.previous) ? body.previous : undefined;
+  const auto = route(last.content, last.attachment?.mediaType, previous);
   const override =
     body.engine && body.engine !== "auto" && (ENGINES as readonly string[]).includes(body.engine) ? body.engine : null;
   const engine = override ?? auto.engine;

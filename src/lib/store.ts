@@ -1,4 +1,4 @@
-import type { Engine, Source } from "./types";
+import type { BuiltApp, Engine, Source } from "./types";
 
 export type UIMessage = {
   id: string;
@@ -13,6 +13,9 @@ export type UIMessage = {
   audio?: string;
   audioLabel?: string;
   status?: string;
+  app?: BuiltApp;
+  // Text that arrived after the app, shown below its preview.
+  after?: string;
   sources?: Source[];
   error?: string;
   pending?: boolean;

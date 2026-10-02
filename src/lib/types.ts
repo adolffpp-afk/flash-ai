@@ -1,5 +1,7 @@
 export const ENGINES = [
   "text",
+  "app",
+  "slides",
   "search",
   "code",
   "translate",
@@ -24,6 +26,8 @@ export const ENGINE_LABELS: Record<Engine, string> = {
   voice: "Voice",
   music: "Music",
   transcribe: "Transcribe",
+  app: "App Builder",
+  slides: "Slides",
 };
 
 export type Attachment = {
@@ -37,7 +41,11 @@ export type ChatTurn = {
   role: "user" | "assistant";
   content: string;
   attachment?: Attachment;
+  // Full HTML of an app or deck Flash built in this assistant turn, so follow-ups can edit it.
+  app?: string;
 };
+
+export type BuiltApp = { title: string; html: string; kind: "app" | "slides" };
 
 export type Source = { title: string; url: string };
 
@@ -50,5 +58,6 @@ export type StreamEvent =
   | { type: "video"; url: string; prompt: string }
   | { type: "audio"; url: string; label?: string }
   | { type: "sources"; items: Source[] }
+  | { type: "app"; app: BuiltApp }
   | { type: "error"; message: string }
   | { type: "done" };

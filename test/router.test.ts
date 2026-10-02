@@ -30,6 +30,16 @@ const cases: [string, string][] = [
   ["Write a cover letter for a barista job", "docs"],
   ["Make a table comparing iPhone and Pixel", "docs"],
   ["Transcribe this interview", "transcribe"],
+  ["Build a todo app with categories and due dates", "app"],
+  ["Make a landing page for my bakery", "app"],
+  ["Create a website like Airbnb for renting cars", "app"],
+  ["Make a snake game", "app"],
+  ["Build a video game where you dodge asteroids", "app"],
+  ["Create a dashboard to track my sales", "app"],
+  ["Create a budget tracker spreadsheet", "docs"],
+  ["Make a presentation about climate change", "slides"],
+  ["Create a pitch deck for my startup", "slides"],
+  ["Design a logo for my app", "image"],
 ];
 
 for (const [msg, engine] of cases) {
@@ -48,6 +58,16 @@ test("a PDF goes to a text engine even if the message mentions a picture", () =>
 
 test("a CSV goes to docs and sheets", () => {
   assert.equal(route("What stands out here?", "text/csv").engine, "docs");
+});
+
+test("a general follow-up after an app edits the app", () => {
+  assert.equal(route("Make the header blue and add a dark mode", undefined, "app").engine, "app");
+  assert.equal(route("Add a slide about costs", undefined, "slides").engine, "slides");
+});
+
+test("a clear new request after an app goes to its own engine", () => {
+  assert.equal(route("Draw a logo for it", undefined, "app").engine, "image");
+  assert.equal(route("What's the latest news on AI?", undefined, "app").engine, "search");
 });
 
 test("textToSpeak pulls out the words to say", () => {
