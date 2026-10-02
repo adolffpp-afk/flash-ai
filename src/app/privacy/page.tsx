@@ -35,9 +35,10 @@ export default function Privacy() {
         <li>OpenAI (images and video)</li>
         <li>ElevenLabs (voice, music and transcription)</li>
         <li>fal.ai and the model makers it serves (additional image, video and music models)</li>
+        <li>Groq, OpenRouter and Cloudflare (free open-source models, used when you are out of credits)</li>
       </ul>
       <p>
-        We also use Stripe for payments and a database and hosting provider to store your data. Each provider processes
+        We also use Stripe for payments, Resend to send account emails (email confirmation and password reset), and a database and hosting provider to store your data. Each provider processes
         data under its own terms and privacy policy. Some are based in the United States, so your data may be processed
         outside your country.
       </p>

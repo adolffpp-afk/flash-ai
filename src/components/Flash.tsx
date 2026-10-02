@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Message } from "./Message";
 import { AuthScreen } from "./AuthScreen";
 import { Landing } from "./Landing";
+import { VerifyBanner } from "./VerifyBanner";
 import { CreditsDialog } from "./CreditsDialog";
 import { ENGINES, ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types";
 import { api, newId, type Me, type ProjectSummary, type UIMessage } from "@/lib/store";
@@ -141,6 +142,18 @@ export function Flash() {
           : purchase === "subscribed"
             ? "Welcome to your new plan! This month's credits are on their way."
             : "Checkout was cancelled. No charge was made.",
+      );
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+    const verified = params.get("verified");
+    const reset = params.get("reset");
+    if (verified || reset) {
+      setNotice(
+        reset
+          ? "Your password was changed. You're signed in."
+          : verified === "1"
+            ? "Email confirmed. Your free credits were added."
+            : "That confirmation link has expired or was already used. Send a new one from the banner.",
       );
       window.history.replaceState(null, "", window.location.pathname);
     }
@@ -539,6 +552,7 @@ export function Flash() {
                 </button>
               </div>
             )}
+            {me && !me.verified && <VerifyBanner email={me.user.email} free={me.freeMonthly} />}
             {demoAll && (
               <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
                 Flash is running in demo mode, so nothing uses credits yet. Add your API keys to <code>.env.local</code> to

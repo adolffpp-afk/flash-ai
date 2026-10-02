@@ -62,6 +62,11 @@ Features:
   if the buyer uses every credit, after AI cost and Stripe fees; `test/pricing.test.ts`
   checks this and the owner dashboard shows the margin per plan. Plans live in
   `src/lib/credits.ts`.
+- **Account safety**: with `RESEND_API_KEY`, new accounts confirm their email before they
+  get free credits or free daily messages, "Forgot password" sends a one-hour reset link
+  (which signs out every other device), and Gmail-style aliases (dots, +tags) count as one
+  inbox, so free credits can't be farmed. Sign-ups, sign-ins and emails are rate limited in
+  the database, so the limits hold across server instances.
 - **Free lane when credits run out**: with the optional free keys (Groq, OpenRouter,
   Cloudflare Workers AI), users who are out of credits keep chatting, writing, coding and
   translating on open-source models (GPT-OSS 120B, Llama 3.3 70B), and get a few free
@@ -166,5 +171,5 @@ npm run build
 ## Not in this version yet
 
 Multi-file projects, sign-in inside built apps (flashDB data is shared by everyone who
-uses a published app), custom domains, password reset and email verification, a mobile app, team workspaces, real .xlsx
+uses a published app), custom domains, a mobile app, team workspaces, real .xlsx
 and .docx files, video longer than 8 seconds, and an LLM-based router.

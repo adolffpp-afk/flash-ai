@@ -3,6 +3,7 @@ import { balance, ensureMonthlyCredits, recentActivity } from "@/lib/server/cred
 import { run } from "@/lib/server/db.ts";
 import { pricingInfo } from "@/lib/server/pricing.ts";
 import { planSummary } from "@/lib/server/subscriptions.ts";
+import { isVerified } from "@/lib/server/account.ts";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,7 @@ export async function GET(request: Request) {
   return Response.json({
     user: { id: user.id, email: user.email, name: user.name, preferences: user.preferences },
     isAdmin: isAdmin(user),
+    verified: isVerified(user),
     credits: await balance(user.id),
     plan: await planSummary(user.id),
     activity: await recentActivity(user.id),

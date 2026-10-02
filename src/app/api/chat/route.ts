@@ -15,6 +15,7 @@ import {
 } from "@/lib/engines/claude.ts";
 import { freeChatConfigured, freeEligible, freeImage, freeImageConfigured, streamFreeChat } from "@/lib/engines/free.ts";
 import { freeLeft, recordFree, reserveFree, reserveFreeImage } from "@/lib/server/free.ts";
+import { isVerified } from "@/lib/server/account.ts";
 import {
   composeMusic,
   downloadVideo,
@@ -299,7 +300,8 @@ export async function POST(request: Request) {
   // Out of credits: chat-style requests and images fall back to free open-source models,
   // up to a daily allowance per user.
   let free: "chat" | "image" | null = null;
-  if (live && available < needed) {
+  const verified = isVerified(user);
+  if (live && available < needed && verified) {
     const lane = freeEligible(engine, last);
     if (lane) {
       if ((await freeLeft(user.id, lane)) <= 0) {
@@ -324,7 +326,10 @@ export async function POST(request: Request) {
       {
         error:
           `This needs ${metered ? "at least " : ""}${needed} credits and you have ${available}.` +
-          (freeChatConfigured() ? " Free models still answer chat, writing, code and translation" + (freeImageConfigured() ? ", and make images." : ".") : ""),
+          (!verified
+            ? " Confirm your email to get your free credits and free daily messages."
+            : "") +
+          (verified && freeChatConfigured() ? " Free models still answer chat, writing, code and translation" + (freeImageConfigured() ? ", and make images." : ".") : ""),
         code: "out_of_credits",
         needed,
       },

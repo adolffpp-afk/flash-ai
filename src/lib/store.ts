@@ -52,6 +52,7 @@ export type Pricing = {
 export type Me = Pricing & {
   user: { id: string; email: string; name: string; preferences: string };
   isAdmin: boolean;
+  verified: boolean;
   credits: number;
   plan: {
     id: string;

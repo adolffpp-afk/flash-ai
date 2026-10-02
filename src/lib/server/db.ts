@@ -111,6 +111,20 @@ const SCHEMA = [
     PRIMARY KEY (day, provider)
   )`,
   `CREATE INDEX IF NOT EXISTS usage_user_time ON usage(user_id, created_at)`,
+  // One-time links for email verification and password reset (only hashes are stored).
+  `CREATE TABLE IF NOT EXISTS email_tokens (
+    token_hash TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  )`,
+  // Attempt counters for sign-in, sign-up and emails, shared by every server instance.
+  `CREATE TABLE IF NOT EXISTS rate_limits (
+    key TEXT PRIMARY KEY,
+    count INTEGER NOT NULL,
+    reset_at INTEGER NOT NULL
+  )`,
   `CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
   `CREATE INDEX IF NOT EXISTS site_records_lookup ON site_records(site_slug, collection, created_at)`,
 ];
@@ -118,9 +132,18 @@ const SCHEMA = [
 let client: Client | null = null;
 let ready: Promise<void> | null = null;
 
+// Columns added after launch; ALTER fails harmlessly when the column already exists.
+const MIGRATIONS = [
+  "ALTER TABLE users ADD COLUMN verified_at INTEGER NOT NULL DEFAULT 0",
+  // The email with Gmail-style dots and +tags removed, so one inbox can't farm free credits.
+  "ALTER TABLE users ADD COLUMN email_key TEXT NOT NULL DEFAULT ''",
+];
+
 async function init(c: Client) {
   await c.execute("PRAGMA foreign_keys = ON");
   await c.batch(SCHEMA, "write");
+  for (const sql of MIGRATIONS) await c.execute(sql).catch(() => {});
+  await c.execute("CREATE INDEX IF NOT EXISTS users_email_key ON users(email_key)");
 }
 
 /** Returns the database client, creating the tables on first use. */

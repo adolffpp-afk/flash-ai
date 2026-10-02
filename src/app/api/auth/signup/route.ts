@@ -1,7 +1,9 @@
-import { createSession, hashPassword, isSecure, tooManyAttempts } from "@/lib/server/auth.ts";
+import { createSession, hashPassword, isSecure } from "@/lib/server/auth.ts";
+import { backfillEmailKeys, emailKey, sendVerification } from "@/lib/server/account.ts";
 import { ensureMonthlyCredits } from "@/lib/server/credits.ts";
 import { one, run, now } from "@/lib/server/db.ts";
 import { randomId } from "@/lib/server/ids.ts";
+import { clientIp, overLimit } from "@/lib/server/limits.ts";
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -12,21 +14,30 @@ export async function POST(request: Request) {
   const name = (body.name ?? "").trim().slice(0, 80);
   if (!EMAIL.test(email)) return Response.json({ error: "Enter a valid email address." }, { status: 400 });
   if (password.length < 8) return Response.json({ error: "Use a password of at least 8 characters." }, { status: 400 });
-  if (tooManyAttempts(`signup:${request.headers.get("x-forwarded-for") ?? "local"}`)) {
-    return Response.json({ error: "Too many attempts. Try again in a few minutes." }, { status: 429 });
+  // A few sign-ups per network per hour is plenty for real people and slows account farming.
+  if (await overLimit(`signup:${clientIp(request)}`, 5, 3600_000)) {
+    return Response.json({ error: "Too many new accounts from here. Try again in an hour." }, { status: 429 });
   }
-  if (await one("SELECT 1 FROM users WHERE email = ?", [email])) {
+  await backfillEmailKeys();
+  const key = emailKey(email);
+  if (await one("SELECT 1 FROM users WHERE email = ? OR email_key = ?", [email, key])) {
     return Response.json({ error: "An account with this email already exists. Sign in instead." }, { status: 409 });
   }
   const id = randomId();
-  await run("INSERT INTO users (id, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?)", [
+  await run("INSERT INTO users (id, email, email_key, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)", [
     id,
     email,
+    key,
     name || email.split("@")[0],
     await hashPassword(password),
     now(),
   ]);
   await ensureMonthlyCredits(id);
+  // The account works even if the email can't be sent; the user can ask for it again.
+  const devLink = await sendVerification({ id, email }, new URL(request.url).origin).catch((err) => {
+    console.error("[flash] verification email failed", err);
+    return undefined;
+  });
   const cookie = await createSession(id, isSecure(request));
-  return Response.json({ ok: true }, { headers: { "Set-Cookie": cookie } });
+  return Response.json({ ok: true, devLink }, { headers: { "Set-Cookie": cookie } });
 }

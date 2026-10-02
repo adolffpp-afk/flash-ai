@@ -8,7 +8,15 @@ const scryptAsync = promisify(scrypt) as (pw: string, salt: Buffer, len: number)
 export const SESSION_COOKIE = "flash_session";
 const SESSION_DAYS = 30;
 
-export type User = { id: string; email: string; name: string; preferences: string; created_at: number; last_free_grant: number };
+export type User = {
+  id: string;
+  email: string;
+  name: string;
+  preferences: string;
+  created_at: number;
+  last_free_grant: number;
+  verified_at: number;
+};
 
 export async function hashPassword(password: string): Promise<string> {
   const salt = randomBytes(16);
@@ -53,7 +61,7 @@ export async function getUser(request: Request): Promise<User | null> {
   const token = readCookie(request, SESSION_COOKIE);
   if (!token) return null;
   return one<User>(
-    `SELECT u.id, u.email, u.name, u.preferences, u.created_at, u.last_free_grant
+    `SELECT u.id, u.email, u.name, u.preferences, u.created_at, u.last_free_grant, u.verified_at
      FROM sessions s JOIN users u ON u.id = s.user_id
      WHERE s.token_hash = ? AND s.expires_at > ?`,
     [sha256(token), now()],
@@ -70,19 +78,6 @@ export const isSecure = (request: Request) =>
 
 export function unauthorized(): Response {
   return Response.json({ error: "Please sign in.", code: "signed_out" }, { status: 401 });
-}
-
-// Small in-memory limiter for sign-in attempts (per instance; enough to slow guessing).
-const attempts = new Map<string, { count: number; until: number }>();
-export function tooManyAttempts(key: string): boolean {
-  const entry = attempts.get(key);
-  const t = now();
-  if (!entry || entry.until < t) {
-    attempts.set(key, { count: 1, until: t + 15 * 60 * 1000 });
-    return false;
-  }
-  entry.count += 1;
-  return entry.count > 10;
 }
 
 /** The owner and anyone else listed in FLASH_ADMIN_EMAILS (comma separated) can open /admin. */

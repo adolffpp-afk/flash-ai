@@ -1,6 +1,7 @@
 import { CREDIT_PACKS, FREE_MONTHLY_CREDITS } from "../credits.ts";
 import { all, one, run, now } from "./db.ts";
 import { activeSubscription, grantPlanCredits } from "./subscriptions.ts";
+import { verificationRequired } from "./email.ts";
 
 export async function balance(userId: string): Promise<number> {
   const row = await one<{ total: number }>(
@@ -21,6 +22,11 @@ export async function ensureMonthlyCredits(userId: string): Promise<void> {
   if (sub) {
     await grantPlanCredits(sub);
     return;
+  }
+  // Free credits go only to confirmed emails, so throwaway accounts can't farm them.
+  if (verificationRequired()) {
+    const user = await one<{ verified_at: number }>("SELECT verified_at FROM users WHERE id = ?", [userId]);
+    if (!Number(user?.verified_at)) return;
   }
   const ref = `free:${userId}:${monthKey()}`;
   if (await one("SELECT 1 FROM credit_ledger WHERE ref = ?", [ref])) return;
