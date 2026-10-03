@@ -141,7 +141,7 @@ export function Landing({
           <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:56px_56px] [mask-image:radial-gradient(ellipse_at_top,black,transparent_65%)]" />
         </div>
         <div className="relative mx-auto max-w-3xl px-4 pb-24 pt-16 text-center sm:px-6 sm:pt-28">
-          <LogoMark size={56} className="mx-auto mb-8" />
+          <LogoMark size={76} className="mx-auto mb-8" />
           <p className="mx-auto flex w-fit items-center gap-2 rounded-full border border-white/8 bg-white/[0.03] px-3 py-1 text-xs text-zinc-300">
             <span className="h-1.5 w-1.5 rounded-full bg-spark" />
             {liveCount ? `${liveCount} AI tools` : "AI tools"} · one app · one bill

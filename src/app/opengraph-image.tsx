@@ -21,10 +21,13 @@ export default function OpengraphImage() {
           color: "white",
         }}
       >
-        <BrandMark size={180} />
+        <BrandMark size={200} />
         <div style={{ display: "flex", marginTop: 36, fontSize: 96, fontWeight: 700, letterSpacing: -2 }}>
           <span>Flash</span>
           <span style={{ marginLeft: 24, backgroundImage: HOLO, backgroundClip: "text", color: "transparent" }}>AI</span>
+          <svg width="28" height="28" viewBox="0 0 16 16" style={{ marginLeft: 6, marginTop: 14 }}>
+            <path d="M8 0l1.9 6.1L16 8l-6.1 1.9L8 16l-1.9-6.1L0 8l6.1-1.9z" fill={BRAND.spark} />
+          </svg>
         </div>
         <div style={{ marginTop: 12, fontSize: 40, color: "#b6c5bc" }}>One AI for everything</div>
         <div style={{ display: "flex", marginTop: 36, width: 220, height: 6, borderRadius: 3, background: `linear-gradient(90deg, ${BRAND.emerald}, ${BRAND.holoMint}, ${BRAND.holoLavender}, ${BRAND.holoRose}, ${BRAND.gold}, ${BRAND.spark})` }} />

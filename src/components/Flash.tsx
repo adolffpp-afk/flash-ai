@@ -709,7 +709,7 @@ export function Flash({
             )}
             {active?.messages && active.messages.length === 0 && (
               <div className="pt-6 text-center sm:pt-12">
-                <LogoMark size={52} className="mx-auto mb-6" />
+                <LogoMark size={64} className="mx-auto mb-6" />
                 <h2 className="text-2xl font-medium tracking-[-0.03em] text-white sm:text-[1.75rem]">
                   One AI for <span className="text-holo">everything</span>
                 </h2>

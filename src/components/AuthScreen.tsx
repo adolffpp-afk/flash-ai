@@ -135,7 +135,7 @@ export function AuthScreen({
               ← Back to home
             </button>
           )}
-          <LogoMark size={44} className="mb-6" />
+          <LogoMark size={56} className="mb-6" />
           <h1 className="text-3xl font-medium tracking-[-0.03em]">
             Flash <span className="text-holo">AI</span>
           </h1>
