@@ -182,9 +182,10 @@ export function referralBonus(credits: number) {
   };
 }
 
-// Stripe's card fee (2.9% + 30¢) plus 0.7% for Stripe Billing on subscriptions.
+// Stripe's card fee (2.9% + 30¢), plus 0.7% for Stripe Billing on subscriptions, 2% to convert
+// US-dollar charges into the account's Canadian-dollar payouts, and 7¢ for Radar fraud screening.
 export const paymentFeeCents = (amountCents: number, subscription: boolean) =>
-  amountCents * (subscription ? 0.036 : 0.029) + 30;
+  amountCents * ((subscription ? 0.036 : 0.029) + 0.02) + 30 + 7;
 
 /** Profit per month if every credit is used, in cents: the worst case for Flash. */
 export function worstCaseProfitCents(priceCents: number, credits: number, subscription: boolean, months = 1) {
