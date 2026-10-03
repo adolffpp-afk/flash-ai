@@ -548,10 +548,10 @@ export function Flash({
     <div className="flex h-full">
       {/* Sidebar */}
       <aside
-        className={`${sidebar ? "flex" : "hidden"} fixed inset-0 z-20 w-full flex-col border-r border-zinc-800 bg-zinc-950 md:static md:flex md:w-72`}
+        className={`${sidebar ? "flex" : "hidden"} fixed inset-0 z-20 w-full flex-col border-r border-white/6 bg-zinc-950 md:static md:flex md:w-64`}
       >
         <div className="flex items-center justify-between p-4">
-          <Logo size={32} className="text-lg" />
+          <Logo size={28} className="text-[15px]" />
           <button className="text-zinc-400 md:hidden" onClick={() => setSidebar(false)} aria-label="Close menu">
             ✕
           </button>
@@ -559,7 +559,7 @@ export function Flash({
         <div className="px-3">
           <button
             onClick={createProject}
-            className="w-full rounded-lg border border-zinc-800 px-3 py-2 text-left text-sm hover:bg-zinc-900"
+            className="h-9 w-full rounded-lg border border-white/8 px-3 text-left text-sm text-zinc-200 transition hover:bg-white/[0.04]"
           >
             + New project
           </button>
@@ -568,9 +568,9 @@ export function Flash({
           {sorted.map((p) => (
             <div
               key={p.id}
-              className={`group flex items-center rounded-lg text-sm ${p.id === activeId ? "bg-zinc-800" : "hover:bg-zinc-900"}`}
+              className={`group flex items-center rounded-lg text-sm ${p.id === activeId ? "bg-white/[0.06] text-white" : "text-zinc-300 hover:bg-white/[0.03]"}`}
             >
-              <button className="min-w-0 flex-1 truncate px-3 py-2 text-left" onClick={() => openProject(p.id)}>
+              <button className="min-w-0 flex-1 truncate px-3 py-1.5 text-left" onClick={() => openProject(p.id)}>
                 {p.name}
               </button>
               <button
@@ -590,7 +590,7 @@ export function Flash({
             </div>
           ))}
         </nav>
-        <div className="border-t border-zinc-800 p-3">
+        <div className="border-t border-white/6 p-3">
           <label className="text-xs font-medium text-zinc-400" htmlFor="prefs">
             Memory: what Flash should know about you
           </label>
@@ -600,11 +600,11 @@ export function Flash({
             onChange={(e) => changePreferences(e.target.value)}
             placeholder="e.g. I run a small bakery in Toronto. Keep answers short."
             rows={3}
-            className="mt-1 w-full resize-none rounded-lg border border-zinc-800 bg-zinc-900 p-2 text-sm outline-none focus:border-primary"
+            className="mt-1 w-full resize-none rounded-lg border border-white/8 bg-white/[0.03] p-2 text-sm outline-none placeholder:text-zinc-500 focus:border-primary/70"
           />
           <button
             onClick={() => setShowInvite(true)}
-            className="mt-2 w-full rounded-lg border border-gold/20 bg-gold/5 px-2 py-1.5 text-left text-xs text-gold-soft hover:bg-gold/10 hover:text-gold"
+            className="mt-2 w-full rounded-lg border border-white/8 px-2 py-1.5 text-left text-xs text-gold-soft transition hover:bg-white/[0.04] hover:text-gold"
           >
             🎁 Invite friends, earn credits
           </button>
@@ -626,7 +626,7 @@ export function Flash({
               </div>
             </details>
           )}
-          <div className="mt-3 flex items-center gap-2 border-t border-zinc-800 pt-3 text-sm">
+          <div className="mt-3 flex items-center gap-2 border-t border-white/6 pt-3 text-sm">
             <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-xs uppercase">
               {(me.user.name || me.user.email)[0]}
             </span>
@@ -668,17 +668,17 @@ export function Flash({
             Drop a file for Flash to read, analyse or transcribe
           </div>
         )}
-        <header className="flex items-center gap-3 border-b border-zinc-800/80 bg-zinc-950/80 px-4 py-3 backdrop-blur">
+        <header className="flex h-14 items-center gap-3 border-b border-white/6 bg-zinc-950/70 px-4 backdrop-blur-md">
           <button className="text-zinc-400 md:hidden" onClick={() => setSidebar(true)} aria-label="Open menu">
             ☰
           </button>
-          <h1 className="min-w-0 flex-1 truncate font-medium">{active?.name ?? "Flash AI"}</h1>
+          <h1 className="min-w-0 flex-1 truncate text-sm text-zinc-200">{active?.name ?? "Flash AI"}</h1>
           <button
             onClick={() => setShowCredits(true)}
-            className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-3 py-1 text-xs font-medium transition ${
+            className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-3 py-1 text-xs transition ${
               me.credits < 10
                 ? "border-spark/50 bg-spark/10 text-spark-soft hover:bg-spark/20"
-                : "border-gold/40 bg-gold/10 text-gold-soft hover:bg-gold/20"
+                : "border-white/10 text-zinc-200 hover:bg-white/[0.04]"
             }`}
             title="Credits: see costs and top up"
           >
@@ -709,8 +709,8 @@ export function Flash({
             )}
             {active?.messages && active.messages.length === 0 && (
               <div className="pt-6 text-center sm:pt-12">
-                <LogoMark size={64} className="mx-auto mb-5 drop-shadow-[0_8px_28px_rgba(245,197,66,0.3)]" />
-                <h2 className="text-3xl font-semibold tracking-tight text-white">
+                <LogoMark size={52} className="mx-auto mb-6" />
+                <h2 className="text-2xl font-medium tracking-[-0.03em] text-white sm:text-[1.75rem]">
                   One AI for <span className="text-holo">everything</span>
                 </h2>
                 <p className="mx-auto mt-3 max-w-lg text-zinc-400">
@@ -718,14 +718,14 @@ export function Flash({
                   {makes.length ? `, and create ${makes.slice(0, -1).join(", ")}${makes.length > 1 ? " and " : ""}${makes.at(-1)}` : ""}.
                   Ask anything and Flash picks the best AI for the job.
                 </p>
-                <div className="mt-8 grid grid-cols-1 gap-2 text-left sm:grid-cols-2 lg:grid-cols-3">
+                <div className="mt-10 grid grid-cols-1 gap-2 text-left sm:grid-cols-2 lg:grid-cols-3">
                   {SUGGESTIONS.filter((s) => isLive(s.engine)).map((s) => (
                     <button
                       key={s.text}
                       onClick={() => (s.engine === "transcribe" ? fileRef.current?.click() : send(s.text))}
-                      className="group rounded-xl border border-zinc-800 bg-zinc-900/40 p-3 text-left transition hover:-translate-y-0.5 hover:border-primary/60 hover:bg-zinc-900"
+                      className="group rounded-xl border border-white/6 bg-white/[0.02] p-3.5 text-left transition hover:border-white/12 hover:bg-white/[0.04]"
                     >
-                      <div className="flex items-center gap-2 text-xs font-medium text-zinc-400 group-hover:text-primary-soft">
+                      <div className="flex items-center gap-2 text-xs text-zinc-400 group-hover:text-primary-soft">
                         <EngineIcon engine={s.engine} size="sm" />
                         {ENGINE_LABELS[s.engine]}
                       </div>
@@ -775,8 +775,8 @@ export function Flash({
                     onClick={() => setChoice(c)}
                     className={`shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-xs transition disabled:cursor-not-allowed disabled:opacity-50 ${
                       choice === c
-                        ? "bg-brand text-white shadow shadow-primary/20 ring-1 ring-inset ring-primary-soft/30"
-                        : "border border-zinc-800 text-zinc-400 enabled:hover:border-zinc-600 enabled:hover:text-zinc-200"
+                        ? "bg-brand text-white"
+                        : "border border-white/8 text-zinc-400 enabled:hover:border-white/15 enabled:hover:text-zinc-200"
                     }`}
                   >
                     {c === "auto" ? (
@@ -820,7 +820,7 @@ export function Flash({
                 e.preventDefault();
                 send(input);
               }}
-              className="rounded-2xl border border-zinc-800 bg-zinc-900 p-2 shadow-xl shadow-black/30 transition focus-within:border-primary/70"
+              className="rounded-2xl border border-white/10 bg-zinc-900/60 p-2 transition focus-within:border-primary/50"
             >
               {attachment && (
                 <div className="mb-1 ml-1 inline-flex items-center gap-2 rounded-lg bg-zinc-800 px-3 py-1 text-xs text-zinc-200">
@@ -872,7 +872,7 @@ export function Flash({
                   <button
                     type="button"
                     onClick={stop}
-                    className="rounded-xl border border-zinc-700 px-4 py-2 text-sm font-medium text-zinc-200 hover:bg-zinc-800"
+                    className="h-9 rounded-lg border border-white/10 px-4 text-sm text-zinc-200 hover:bg-white/[0.05]"
                   >
                     ■ Stop
                   </button>
@@ -880,7 +880,7 @@ export function Flash({
                   <button
                     type="submit"
                     disabled={!input.trim() && !attachment}
-                    className="rounded-xl bg-brand px-4 py-2 text-sm font-medium text-white shadow-md shadow-primary/20 transition hover:brightness-110 disabled:opacity-40"
+                    className="h-9 rounded-lg bg-brand px-4 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-40"
                   >
                     Send
                   </button>

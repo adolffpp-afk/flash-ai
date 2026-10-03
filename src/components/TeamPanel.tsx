@@ -76,19 +76,19 @@ export function TeamPanel({ me, onChanged }: { me: Me; onChanged: () => void }) 
             onChange={(e) => setEmail(e.target.value)}
             placeholder="teammate@company.com"
             aria-label="Teammate's email"
-            className="min-w-0 flex-1 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm outline-none focus:border-primary"
+            className="h-9 min-w-0 flex-1 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm outline-none focus:border-primary/70"
           />
           <button
             type="submit"
             disabled={busy !== null || used >= team.seats}
-            className="shrink-0 rounded-lg bg-brand px-3 py-2 text-sm font-medium text-white hover:brightness-110 disabled:opacity-50"
+            className="h-9 shrink-0 rounded-lg bg-brand px-4 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-50"
           >
             {busy === "invite" ? "Sending…" : "Invite"}
           </button>
         </form>
       )}
       {(team.members.length > 0 || team.invites.length > 0) && (
-        <ul className="mt-3 divide-y divide-zinc-900">
+        <ul className="mt-3 divide-y divide-white/5">
           {team.members.map((m) => (
             <li key={m.id} className="flex items-center gap-3 py-1.5">
               <span className="min-w-0 flex-1 truncate text-zinc-200" title={m.email}>

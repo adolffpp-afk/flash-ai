@@ -34,11 +34,11 @@ export function InviteFriends({ referral }: { referral: Me["referral"] }) {
           value={referral.link}
           onFocus={(e) => e.currentTarget.select()}
           aria-label="Your invite link"
-          className="min-w-0 flex-1 rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2 text-sm text-zinc-200 outline-none focus:border-primary"
+          className="h-9 min-w-0 flex-1 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-zinc-200 outline-none focus:border-primary/70"
         />
         <button
           onClick={copy}
-          className="shrink-0 rounded-lg bg-brand px-3 py-2 text-sm font-medium text-white hover:brightness-110"
+          className="h-9 shrink-0 rounded-lg bg-brand px-4 text-sm font-medium text-white transition hover:brightness-110"
         >
           {copied ? "Copied" : "Copy"}
         </button>
@@ -82,12 +82,12 @@ export function InviteDialog({ me, onClose }: { me: Me; onClose: () => void }) {
         role="dialog"
         aria-modal="true"
         aria-label="Invite friends"
-        className="w-full max-w-lg rounded-t-2xl border border-zinc-800 bg-zinc-950 p-6 sm:rounded-2xl"
+        className="w-full max-w-lg rounded-t-2xl border border-white/8 bg-zinc-950 p-6 sm:rounded-2xl sm:p-7"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-start justify-between">
-          <h2 className="text-lg font-semibold">Invite friends</h2>
-          <button ref={closeRef} onClick={onClose} className="rounded-lg p-2 text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100" aria-label="Close">
+          <h2 className="text-lg font-medium tracking-tight">Invite friends</h2>
+          <button ref={closeRef} onClick={onClose} className="rounded-full p-2 text-zinc-400 transition hover:bg-white/[0.06] hover:text-zinc-100" aria-label="Close">
             ✕
           </button>
         </div>

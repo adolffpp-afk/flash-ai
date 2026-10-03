@@ -122,10 +122,10 @@ export function AuthScreen({
   }
 
   const input =
-    "w-full rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2.5 outline-none transition focus:border-primary";
+    "h-10 w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm outline-none transition placeholder:text-zinc-500 focus:border-primary/70 focus:bg-white/[0.05]";
   return (
-    <div className="flex min-h-full items-center justify-center bg-[radial-gradient(ellipse_at_top,rgba(16,185,129,0.2),transparent_60%)] px-4 py-10">
-      <div className="grid w-full max-w-4xl items-center gap-10 md:grid-cols-2">
+    <div className="flex min-h-full items-center justify-center bg-[radial-gradient(ellipse_at_top,rgba(16,185,129,0.12),transparent_60%)] px-4 py-12">
+      <div className="grid w-full max-w-4xl items-center gap-12 md:grid-cols-2 md:gap-16">
         <div>
           {onBack && (
             <button
@@ -135,11 +135,11 @@ export function AuthScreen({
               ← Back to home
             </button>
           )}
-          <LogoMark size={56} className="mb-5" />
-          <h1 className="text-4xl font-semibold tracking-tight">
+          <LogoMark size={44} className="mb-6" />
+          <h1 className="text-3xl font-medium tracking-[-0.03em]">
             Flash <span className="text-holo">AI</span>
           </h1>
-          <p className="mt-3 text-lg text-zinc-400">
+          <p className="mt-3 max-w-sm leading-relaxed text-zinc-400">
             One AI for everything. Ask once, and Flash picks the best AI for the
             job.
           </p>
@@ -147,7 +147,7 @@ export function AuthScreen({
             {FEATURES.map((f) => (
               <span
                 key={f}
-                className="rounded-full border border-zinc-800 bg-zinc-900/60 px-3 py-1 text-xs text-zinc-300"
+                className="rounded-full border border-white/8 px-3 py-1 text-xs text-zinc-400"
               >
                 {f}
               </span>
@@ -156,9 +156,9 @@ export function AuthScreen({
         </div>
         <form
           onSubmit={submit}
-          className="rounded-2xl border border-zinc-800 bg-zinc-950/80 p-6 shadow-2xl shadow-black/40"
+          className="rounded-2xl border border-white/8 bg-zinc-950/70 p-6 backdrop-blur sm:p-8"
         >
-          <h2 className="text-xl font-semibold">
+          <h2 className="text-lg font-medium tracking-tight">
             {mode === "signup"
               ? "Create your account"
               : mode === "login"
@@ -183,7 +183,7 @@ export function AuthScreen({
                   key={id}
                   href={`/api/auth/oauth/${id}`}
                   aria-label={`Continue with ${PROVIDER_NAMES[id]}`}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900 py-2.5 text-sm font-medium transition hover:border-zinc-700 hover:bg-zinc-800"
+                  className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] text-sm text-zinc-200 transition hover:border-white/15 hover:bg-white/[0.06]"
                 >
                   <ProviderIcon id={id} />
                   Continue with {PROVIDER_NAMES[id]}
@@ -194,7 +194,7 @@ export function AuthScreen({
                 <button
                   type="button"
                   onClick={() => switchMode("link")}
-                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-zinc-800 bg-zinc-900 py-2.5 text-sm font-medium transition hover:border-zinc-700 hover:bg-zinc-800"
+                  className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] text-sm text-zinc-200 transition hover:border-white/15 hover:bg-white/[0.06]"
                 >
                   <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
                     <rect x="3" y="5" width="18" height="14" rx="2" />
@@ -206,7 +206,7 @@ export function AuthScreen({
               {!options.providers.length && <OrDivider />}
             </div>
           )}
-          <div className="mt-5 space-y-3">
+          <div className="mt-6 space-y-3">
             {mode === "signup" && (
               <input
                 className={input}
@@ -300,7 +300,7 @@ export function AuthScreen({
           )}
           <button
             disabled={busy}
-            className="mt-5 w-full rounded-xl bg-brand py-2.5 font-medium text-white transition hover:brightness-110 disabled:opacity-50"
+            className="mt-6 h-10 w-full rounded-lg bg-brand text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-50"
           >
             {busy
               ? "One moment…"
@@ -312,7 +312,7 @@ export function AuthScreen({
                     ? "Send sign-in link"
                     : "Send reset link"}
           </button>
-          <p className="mt-4 text-center text-sm text-zinc-400">
+          <p className="mt-5 text-center text-sm text-zinc-400">
             {mode === "signup"
               ? "Already have an account?"
               : mode === "login"
@@ -337,9 +337,9 @@ export function AuthScreen({
 function OrDivider() {
   return (
     <div role="separator" aria-label="or" className="flex items-center gap-3 py-1 text-xs text-zinc-500">
-      <span className="h-px flex-1 bg-zinc-800" />
+      <span className="h-px flex-1 bg-white/8" />
       or
-      <span className="h-px flex-1 bg-zinc-800" />
+      <span className="h-px flex-1 bg-white/8" />
     </div>
   );
 }

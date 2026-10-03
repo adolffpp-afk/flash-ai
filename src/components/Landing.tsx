@@ -109,24 +109,24 @@ export function Landing({
 
   // The main call to action is holographic, so it is the one thing on the page that pulls the eye.
   const cta =
-    "rounded-xl bg-holo px-6 py-3 font-semibold text-zinc-950 shadow-lg shadow-holo-lavender/25 ring-1 ring-white/60 transition hover:brightness-105 hover:shadow-holo-rose/40";
+    "inline-flex h-11 items-center rounded-full bg-holo px-6 text-sm font-medium text-zinc-950 shadow-[0_6px_24px_-8px_rgba(188,196,246,0.45)] ring-1 ring-inset ring-white/50 transition hover:brightness-105";
   return (
     <div className="h-full overflow-y-auto bg-zinc-950 text-zinc-100">
-      <header className="sticky top-0 z-10 border-b border-zinc-900 bg-zinc-950/80 backdrop-blur">
-        <nav className="mx-auto flex max-w-6xl items-center gap-6 px-4 py-3">
+      <header className="sticky top-0 z-10 border-b border-white/6 bg-zinc-950/70 backdrop-blur-md">
+        <nav className="mx-auto flex h-14 max-w-6xl items-center gap-8 px-4 sm:px-6">
           <a href="#" aria-label="Flash AI home">
-            <Logo size={32} />
+            <Logo size={28} className="text-[15px]" />
           </a>
-          <div className="hidden gap-5 text-sm text-zinc-400 sm:flex">
+          <div className="hidden gap-6 text-sm text-zinc-400 sm:flex">
             <a href="#features" className="hover:text-zinc-100">Features</a>
             <a href="#pricing" className="hover:text-zinc-100">Pricing</a>
             <a href="#faq" className="hover:text-zinc-100">FAQ</a>
           </div>
           <div className="ml-auto flex items-center gap-2 text-sm">
-            <button onClick={() => onStart("login")} className="rounded-lg px-3 py-2 text-zinc-300 hover:text-white">
+            <button onClick={() => onStart("login")} className="h-9 rounded-full px-3 text-zinc-300 transition hover:text-white">
               Sign in
             </button>
-            <button onClick={() => onStart("signup")} className="rounded-lg bg-brand px-3 py-2 font-medium text-white transition hover:brightness-110">
+            <button onClick={() => onStart("signup")} className="h-9 rounded-full bg-brand px-4 font-medium text-white transition hover:brightness-110">
               Get started
             </button>
           </div>
@@ -134,40 +134,37 @@ export function Landing({
       </header>
 
       <section className="relative overflow-hidden">
-        {/* Emerald glow, a gold core with a holographic halo and one small red spark: the brand in light. */}
+        {/* A quiet emerald wash with a faint holographic halo: light, not a light show. */}
         <div aria-hidden className="pointer-events-none absolute inset-0">
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(16,185,129,0.28),transparent_60%)]" />
-          <div className="absolute left-1/2 top-24 h-72 w-72 -translate-x-1/2 rounded-full bg-gold/20 blur-[100px] sm:h-96 sm:w-96" />
-          <div className="absolute left-[14%] top-40 h-48 w-48 rounded-full bg-holo-lavender/15 blur-[90px]" />
-          <div className="absolute right-[24%] top-56 h-40 w-40 rounded-full bg-holo-rose/10 blur-[90px]" />
-          <div className="absolute right-[12%] top-32 h-40 w-40 rounded-full bg-spark/20 blur-[80px]" />
-          <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:48px_48px] [mask-image:radial-gradient(ellipse_at_top,black,transparent_70%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(16,185,129,0.16),transparent_60%)]" />
+          <div className="absolute left-1/2 top-28 h-72 w-[36rem] max-w-full -translate-x-1/2 rounded-full bg-holo-lavender/8 blur-[110px]" />
+          <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:56px_56px] [mask-image:radial-gradient(ellipse_at_top,black,transparent_65%)]" />
         </div>
-        <div className="relative mx-auto max-w-4xl px-4 pb-16 pt-12 text-center sm:pt-20">
-          <LogoMark size={72} className="mx-auto mb-6 drop-shadow-[0_8px_32px_rgba(188,196,246,0.35)]" />
-          <p className="mx-auto flex w-fit items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs text-primary-soft">
-            <span className="h-1.5 w-1.5 rounded-full bg-spark shadow-[0_0_8px_2px_rgba(255,69,69,0.6)]" />
+        <div className="relative mx-auto max-w-3xl px-4 pb-24 pt-16 text-center sm:px-6 sm:pt-28">
+          <LogoMark size={56} className="mx-auto mb-8" />
+          <p className="mx-auto flex w-fit items-center gap-2 rounded-full border border-white/8 bg-white/[0.03] px-3 py-1 text-xs text-zinc-300">
+            <span className="h-1.5 w-1.5 rounded-full bg-spark" />
             {liveCount ? `${liveCount} AI tools` : "AI tools"} · one app · one bill
           </p>
-          <h1 className="mt-6 text-4xl font-semibold tracking-tight text-white sm:text-6xl">
+          <h1 className="mt-6 text-4xl font-medium leading-[1.08] tracking-[-0.035em] text-white sm:text-[3.5rem]">
             One AI for <span className="text-holo">everything</span>
           </h1>
-          <p className="mx-auto mt-5 max-w-2xl text-lg text-zinc-300">
+          <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-zinc-400 sm:text-lg">
             Build and publish apps, make slides, write, research, code and translate
             {liveMedia.length ? `, and create ${join(liveMedia)}` : ""}. Ask once, and Flash picks the best AI for the
             job.
           </p>
-          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
+          <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
             <button onClick={() => onStart("signup")} className={cta}>
               Start free{free ? ` with ${free} credits` : ""}
             </button>
-            <a href="#features" className="rounded-xl border border-zinc-700 bg-zinc-950/40 px-5 py-3 text-zinc-100 transition hover:border-primary/60 hover:bg-zinc-900">
+            <a href="#features" className="inline-flex h-11 items-center rounded-full border border-white/10 px-6 text-sm text-zinc-200 transition hover:border-white/20 hover:bg-white/[0.04]">
               See what it can do
             </a>
           </div>
-          <p className="mt-3 text-xs text-zinc-400">No card needed. Free credits every month.</p>
+          <p className="mt-4 text-xs text-zinc-500">No card needed. Free credits every month.</p>
 
-          <div className="mx-auto mt-12 max-w-2xl rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4 text-left shadow-2xl shadow-primary/10 ring-1 ring-white/5 backdrop-blur">
+          <div className="mx-auto mt-16 max-w-2xl rounded-2xl border border-white/8 bg-zinc-900/50 p-4 text-left shadow-[0_24px_60px_-30px_rgba(0,0,0,0.8)] backdrop-blur sm:p-5">
             <div className="flex justify-end">
               <div className="rounded-2xl rounded-br-md bg-primary-strong px-4 py-2 text-sm text-white">
                 Build a booking page for my hair salon in Toronto
@@ -177,10 +174,10 @@ export function Landing({
               <LogoMark size={28} />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap gap-2 text-xs">
-                  <span className="rounded-full border border-gold/30 bg-gold/10 px-2 py-0.5 text-gold">App Builder</span>
+                  <span className="rounded-full border border-white/10 px-2 py-0.5 text-zinc-300">App Builder</span>
                   <span className="text-zinc-500">You asked for an app.</span>
                 </div>
-                <div className="mt-2 overflow-hidden rounded-xl border border-zinc-800 bg-white text-zinc-900">
+                <div className="mt-2 overflow-hidden rounded-xl bg-white text-zinc-900">
                   <div className="bg-gradient-to-r from-rose-100 to-amber-50 px-4 py-3">
                     <div className="text-sm font-semibold">Elaia Hair Studio</div>
                     <div className="text-xs text-zinc-600">Book your next appointment</div>
@@ -197,7 +194,7 @@ export function Landing({
                 </div>
                 <div className="mt-2 flex gap-2 text-xs">
                   <span className="rounded-md bg-brand px-2 py-1 text-white">Publish</span>
-                  <span className="rounded-md border border-zinc-800 px-2 py-1 text-zinc-400">Download</span>
+                  <span className="rounded-md border border-white/10 px-2 py-1 text-zinc-400">Download</span>
                 </div>
               </div>
             </div>
@@ -205,55 +202,55 @@ export function Landing({
         </div>
       </section>
 
-      <section id="features" className="mx-auto max-w-6xl scroll-mt-16 px-4 py-16">
-        <h2 className="text-center text-3xl font-semibold tracking-tight">Everything you&apos;d use five AI apps for</h2>
-        <p className="mx-auto mt-3 max-w-2xl text-center text-zinc-400">
+      <section id="features" className="mx-auto max-w-6xl scroll-mt-16 px-4 py-24 sm:px-6">
+        <h2 className="text-center text-2xl font-medium tracking-[-0.025em] sm:text-[2rem]">Everything you&apos;d use five AI apps for</h2>
+        <p className="mx-auto mt-4 max-w-xl text-center text-zinc-400">
           A chatbot, an app builder, a slide maker and a research assistant, in one place with one account.
           {soonMedia.length ? ` ${join(soonMedia).replace(/^./, (c) => c.toUpperCase())} ${soonMedia.length > 1 ? "are" : "is"} coming soon.` : ""}
         </p>
-        <div className="mt-10 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-12 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {ENGINES.map((e) => (
             <div
               key={e}
-              className={`rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 transition ${isLive(e) ? "hover:-translate-y-0.5 hover:border-primary/40 hover:bg-zinc-900/70" : "opacity-60"}`}
+              className={`rounded-xl border border-white/6 bg-white/[0.02] p-5 transition ${isLive(e) ? "hover:border-white/12 hover:bg-white/[0.035]" : "opacity-60"}`}
             >
-              <div className="flex items-center gap-3 font-medium">
+              <div className="flex items-center gap-3 text-[15px] font-medium text-zinc-100">
                 <EngineIcon engine={e} />
                 {ENGINE_LABELS[e]}
                 {!isLive(e) && (
-                  <span className="ml-auto rounded-full border border-zinc-700 px-2 py-0.5 text-[10px] font-normal uppercase tracking-wide text-zinc-400">
+                  <span className="ml-auto rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-normal uppercase tracking-wide text-zinc-400">
                     Coming soon
                   </span>
                 )}
               </div>
-              <p className="mt-2.5 text-sm text-zinc-400">{ENGINE_COPY[e].text}</p>
+              <p className="mt-2.5 text-sm leading-relaxed text-zinc-400">{ENGINE_COPY[e].text}</p>
             </div>
           ))}
         </div>
       </section>
 
-      <section className="border-y border-zinc-900 bg-zinc-900/30">
-        <div className="mx-auto grid max-w-6xl gap-6 px-4 py-14 sm:grid-cols-3">
+      <section className="border-y border-white/6">
+        <div className="mx-auto grid max-w-6xl gap-10 px-4 py-20 sm:grid-cols-3 sm:px-6">
           {STEPS.map((s, i) => (
             <div key={s.title}>
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gold/15 text-sm font-semibold text-gold ring-1 ring-inset ring-gold/30">
+              <div className="flex h-7 w-7 items-center justify-center rounded-full text-xs font-medium text-gold ring-1 ring-inset ring-gold/30">
                 {i + 1}
               </div>
               <h3 className="mt-3 font-medium">{s.title}</h3>
-              <p className="mt-1 text-sm text-zinc-400">{s.text}</p>
+              <p className="mt-1.5 text-sm leading-relaxed text-zinc-400">{s.text}</p>
             </div>
           ))}
         </div>
       </section>
 
-      <section id="pricing" className="mx-auto max-w-5xl scroll-mt-16 px-4 py-16">
-        <h2 className="text-center text-3xl font-semibold tracking-tight">Plans for every maker</h2>
-        <p className="mx-auto mt-3 max-w-2xl text-center text-zinc-400">
+      <section id="pricing" className="mx-auto max-w-5xl scroll-mt-16 px-4 py-24 sm:px-6">
+        <h2 className="text-center text-2xl font-medium tracking-[-0.025em] sm:text-[2rem]">Plans for every maker</h2>
+        <p className="mx-auto mt-4 max-w-xl text-center text-zinc-400">
           {canBuy
             ? "Start free. Upgrade for more monthly credits, or top up any time. Cancel whenever you like, and unused credits carry over."
             : "Start free with credits every month. Paid plans and top-ups are coming soon."}
         </p>
-        <div className="mt-6 flex justify-center">
+        <div className="mt-8 flex justify-center">
           <IntervalToggle value={billing} onChange={setBilling} />
         </div>
         {pricing && (
@@ -275,13 +272,13 @@ export function Landing({
           </p>
         )}
         {pricing && (
-          <div className="mt-8 rounded-xl border border-zinc-800 p-5">
+          <div className="mt-10 rounded-xl border border-white/6 p-5 sm:p-6">
             <h3 className="text-sm font-medium text-zinc-300">Typical credits per request</h3>
             <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-3 lg:grid-cols-4">
               {ENGINES.map((e) => (
-                <div key={e} className="flex justify-between border-b border-zinc-900 py-1">
+                <div key={e} className="flex justify-between border-b border-white/5 py-1.5">
                   <span className="text-zinc-400">{ENGINE_LABELS[e]}</span>
-                  <span>{isLive(e) ? `${pricing.limits[e] ? "~" : "from "}${pricing.costs[e]}` : <span className="text-zinc-500">soon</span>}</span>
+                  <span className="text-zinc-300">{isLive(e) ? `${pricing.limits[e] ? "~" : "from "}${pricing.costs[e]}` : <span className="text-zinc-500">soon</span>}</span>
                 </div>
               ))}
             </div>
@@ -293,28 +290,28 @@ export function Landing({
         )}
       </section>
 
-      <section id="faq" className="mx-auto max-w-3xl scroll-mt-16 px-4 pb-16">
-        <h2 className="text-center text-3xl font-semibold tracking-tight">Questions</h2>
-        <div className="mt-8 divide-y divide-zinc-900 rounded-xl border border-zinc-800">
+      <section id="faq" className="mx-auto max-w-3xl scroll-mt-16 px-4 pb-24 sm:px-6">
+        <h2 className="text-center text-2xl font-medium tracking-[-0.025em] sm:text-[2rem]">Questions</h2>
+        <div className="mt-10 divide-y divide-white/6 rounded-xl border border-white/6">
           {faq(liveMedia, soonMedia, canBuy).map((f) => (
             <details key={f.q} className="group px-5 py-4">
-              <summary className="flex cursor-pointer list-none items-center justify-between font-medium">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-[15px] text-zinc-100">
                 {f.q}
-                <span className="text-gold transition group-open:rotate-45">+</span>
+                <span className="text-lg font-light text-zinc-500 transition group-open:rotate-45">+</span>
               </summary>
-              <p className="mt-2 text-sm text-zinc-400">{f.a}</p>
+              <p className="mt-2 text-sm leading-relaxed text-zinc-400">{f.a}</p>
             </details>
           ))}
         </div>
-        <div className="mt-12 text-center">
+        <div className="mt-16 text-center">
           <button onClick={() => onStart("signup")} className={cta}>
             Try Flash free
           </button>
         </div>
       </section>
 
-      <footer className="border-t border-zinc-900">
-        <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-6 text-sm text-zinc-500 sm:flex-row sm:items-center">
+      <footer className="border-t border-white/6">
+        <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-8 sm:px-6 text-sm text-zinc-500 sm:flex-row sm:items-center">
           <span>© {new Date().getFullYear()} Flash AI</span>
           <div className="flex gap-4 sm:ml-auto">
             <a href="/terms" className="hover:text-zinc-200">Terms</a>
