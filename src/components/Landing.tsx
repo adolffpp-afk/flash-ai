@@ -107,9 +107,9 @@ export function Landing({
   // Until the prices load, plans are assumed to be on sale so nothing flickers to "coming soon".
   const canBuy = !pricing || pricing.paymentsEnabled || pricing.testPurchases;
 
-  // The main call to action is gold, so it is the one thing on the page that pulls the eye.
+  // The main call to action is holographic, so it is the one thing on the page that pulls the eye.
   const cta =
-    "rounded-xl bg-gold-brand px-6 py-3 font-semibold text-zinc-950 shadow-lg shadow-gold/25 ring-1 ring-gold-soft/60 transition hover:brightness-105 hover:shadow-gold/40";
+    "rounded-xl bg-holo px-6 py-3 font-semibold text-zinc-950 shadow-lg shadow-holo-lavender/25 ring-1 ring-white/60 transition hover:brightness-105 hover:shadow-holo-rose/40";
   return (
     <div className="h-full overflow-y-auto bg-zinc-950 text-zinc-100">
       <header className="sticky top-0 z-10 border-b border-zinc-900 bg-zinc-950/80 backdrop-blur">
@@ -134,21 +134,23 @@ export function Landing({
       </header>
 
       <section className="relative overflow-hidden">
-        {/* Emerald glow, a gold core and one small red spark: the brand in light. */}
+        {/* Emerald glow, a gold core with a holographic halo and one small red spark: the brand in light. */}
         <div aria-hidden className="pointer-events-none absolute inset-0">
           <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(16,185,129,0.28),transparent_60%)]" />
           <div className="absolute left-1/2 top-24 h-72 w-72 -translate-x-1/2 rounded-full bg-gold/20 blur-[100px] sm:h-96 sm:w-96" />
+          <div className="absolute left-[14%] top-40 h-48 w-48 rounded-full bg-holo-lavender/15 blur-[90px]" />
+          <div className="absolute right-[24%] top-56 h-40 w-40 rounded-full bg-holo-rose/10 blur-[90px]" />
           <div className="absolute right-[12%] top-32 h-40 w-40 rounded-full bg-spark/20 blur-[80px]" />
           <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.03)_1px,transparent_1px)] bg-[size:48px_48px] [mask-image:radial-gradient(ellipse_at_top,black,transparent_70%)]" />
         </div>
         <div className="relative mx-auto max-w-4xl px-4 pb-16 pt-12 text-center sm:pt-20">
-          <LogoMark size={72} className="mx-auto mb-6 drop-shadow-[0_8px_32px_rgba(245,197,66,0.35)]" />
+          <LogoMark size={72} className="mx-auto mb-6 drop-shadow-[0_8px_32px_rgba(188,196,246,0.35)]" />
           <p className="mx-auto flex w-fit items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-3 py-1 text-xs text-primary-soft">
             <span className="h-1.5 w-1.5 rounded-full bg-spark shadow-[0_0_8px_2px_rgba(255,69,69,0.6)]" />
             {liveCount ? `${liveCount} AI tools` : "AI tools"} · one app · one bill
           </p>
           <h1 className="mt-6 text-4xl font-semibold tracking-tight text-white sm:text-6xl">
-            One AI for <span className="text-gold-gradient">everything</span>
+            One AI for <span className="text-holo">everything</span>
           </h1>
           <p className="mx-auto mt-5 max-w-2xl text-lg text-zinc-300">
             Build and publish apps, make slides, write, research, code and translate
@@ -168,7 +170,7 @@ export function Landing({
           <div className="mx-auto mt-12 max-w-2xl rounded-2xl border border-zinc-800 bg-zinc-900/70 p-4 text-left shadow-2xl shadow-primary/10 ring-1 ring-white/5 backdrop-blur">
             <div className="flex justify-end">
               <div className="rounded-2xl rounded-br-md bg-primary-strong px-4 py-2 text-sm text-white">
-                Build a booking page for my hair salon in Lagos
+                Build a booking page for my hair salon in Toronto
               </div>
             </div>
             <div className="mt-3 flex gap-3">
@@ -180,7 +182,7 @@ export function Landing({
                 </div>
                 <div className="mt-2 overflow-hidden rounded-xl border border-zinc-800 bg-white text-zinc-900">
                   <div className="bg-gradient-to-r from-rose-100 to-amber-50 px-4 py-3">
-                    <div className="text-sm font-semibold">Adé Hair Studio</div>
+                    <div className="text-sm font-semibold">Elaia Hair Studio</div>
                     <div className="text-xs text-zinc-600">Book your next appointment</div>
                   </div>
                   <div className="grid grid-cols-3 gap-2 p-3 text-xs">

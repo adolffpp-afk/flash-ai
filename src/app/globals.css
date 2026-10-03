@@ -7,8 +7,9 @@
 }
 
 /*
- * Flash design tokens. Emerald is the primary colour, gold the accent (highlights, the recommended
- * plan, the hero call to action) and red the energetic spark, used sparingly and for errors.
+ * Flash design tokens. Emerald is the primary colour, gold the warm accent, red the energetic spark
+ * (used sparingly and for errors) and a holographic sheen the premium accent (the logo bolt, the
+ * wordmark, the hero highlight and call to action, the recommended plans).
  * Keep in step with BRAND in src/app/brand.tsx.
  */
 @theme {
@@ -22,6 +23,16 @@
   --color-gold-strong: #f59e0b;
   --color-spark: #ff4545;
   --color-spark-soft: #ff8a80;
+
+  /*
+   * Holographic accent, from a pearly silver card with a rainbow sheen. Used for the premium touches
+   * (logo bolt, wordmark, hero highlight, hero call to action, recommended plans), never for body text.
+   */
+  --color-holo-silver: #e4e8ee;
+  --color-holo-rose: #f5b6cf;
+  --color-holo-peach: #f6d39e;
+  --color-holo-lavender: #bcc4f6;
+  --color-holo-mint: #a5eadb;
 
   /*
    * The neutrals carry a faint green tint so the dark surfaces feel rich rather than flat grey.
@@ -56,6 +67,77 @@
   background-clip: text;
   -webkit-background-clip: text;
   color: transparent;
+}
+
+/*
+ * Holographic utilities. Every stop is a light pastel: on the zinc-950 base the darkest stop
+ * (lavender) is 11.6:1, and zinc-950 text on the bg-holo fill runs from 11.6:1 (lavender) to 17.2:1 (pearl).
+ */
+@utility text-holo {
+  background-image: linear-gradient(100deg, #e4e8ee, #f5b6cf 22%, #f6d39e 42%, #bcc4f6 62%, #a5eadb 80%, #e4e8ee);
+  background-size: 200% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  animation: holo-shift 9s ease-in-out infinite alternate;
+}
+
+/* Premium buttons: a pearly iridescent fill. Pair with text-zinc-950. */
+@utility bg-holo {
+  background-image:
+    linear-gradient(180deg, rgb(255 255 255 / 0.35), transparent 55%),
+    linear-gradient(115deg, #eef0f4, #f5b6cf 25%, #f6d39e 45%, #bcc4f6 68%, #a5eadb 88%, #eef0f4);
+  background-size: 100% 100%, 200% 100%;
+  animation: holo-shift-fill 9s ease-in-out infinite alternate;
+}
+
+/*
+ * An iridescent 1px border for highlighted cards. Use with `border` (the border itself turns
+ * transparent and a masked gradient is drawn over it, so it works on any background).
+ */
+@utility border-holo {
+  position: relative;
+  border-color: transparent;
+  &::before {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    padding: 1px;
+    border-radius: inherit;
+    /* Slightly deeper stops than the fill, so a 1px line still reads as colour rather than white. */
+    background: linear-gradient(135deg, #d5dbe4, #f0a3c3 22%, #f2c47f 44%, #a3aef2 66%, #84dcc8 86%, #d5dbe4);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+}
+
+/* The slow sheen across holographic surfaces, like tilting the card. */
+@keyframes holo-shift {
+  from {
+    background-position: 0% 50%;
+  }
+  to {
+    background-position: 100% 50%;
+  }
+}
+
+/* The same sheen for bg-holo, which keeps its pearly top highlight still. */
+@keyframes holo-shift-fill {
+  from {
+    background-position: 0% 0%, 0% 50%;
+  }
+  to {
+    background-position: 0% 0%, 100% 50%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .text-holo,
+  .bg-holo {
+    animation: none;
+  }
 }
 
 html,

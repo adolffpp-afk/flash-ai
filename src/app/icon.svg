@@ -5,14 +5,16 @@
       <stop offset="0.55" stop-color="#064e3b"/>
       <stop offset="1" stop-color="#04291e"/>
     </linearGradient>
-    <linearGradient id="b" x1="0.3" y1="0" x2="0.7" y2="1">
-      <stop offset="0" stop-color="#fff3b0"/>
-      <stop offset="0.45" stop-color="#f5c542"/>
-      <stop offset="1" stop-color="#f08c00"/>
+    <linearGradient id="b" x1="0.15" y1="0.05" x2="0.85" y2="0.95">
+      <stop offset="0" stop-color="#f7f8fb"/>
+      <stop offset="0.22" stop-color="#f5b6cf"/>
+      <stop offset="0.45" stop-color="#f6d39e"/>
+      <stop offset="0.7" stop-color="#bcc4f6"/>
+      <stop offset="1" stop-color="#a5eadb"/>
     </linearGradient>
   </defs>
   <rect width="64" height="64" rx="15" fill="url(#t)"/>
   <rect x="1" y="1" width="62" height="62" rx="14" fill="none" stroke="#34d399" stroke-opacity="0.35" stroke-width="1.5"/>
-  <path d="M37 6 14 36h14.5L24 58l27-32H36.5z" fill="url(#b)" stroke="#7a4a00" stroke-opacity="0.45" stroke-width="1" stroke-linejoin="round"/>
+  <path d="M37 6 14 36h14.5L24 58l27-32H36.5z" fill="url(#b)" stroke="#ffffff" stroke-opacity="0.7" stroke-width="1" stroke-linejoin="round"/>
   <path d="M51 5.5l2.1 5.4 5.4 2.1-5.4 2.1L51 20.5l-2.1-5.4-5.4-2.1 5.4-2.1z" fill="#ff4545"/>
 </svg>

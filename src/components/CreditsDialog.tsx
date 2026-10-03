@@ -175,11 +175,11 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
           {me.packs.map((p, i) => (
             <div
               key={p.id}
-              className={`flex flex-col rounded-xl border p-4 ${i === 1 ? "border-gold/60 bg-gold/5 shadow-lg shadow-gold/10" : "border-zinc-800"}`}
+              className={`flex flex-col rounded-xl border p-4 ${i === 1 ? "border-holo bg-holo-lavender/5 shadow-lg shadow-holo-lavender/10" : "border-zinc-800"}`}
             >
               <div className="flex items-baseline justify-between">
                 <span className="font-medium">{p.name}</span>
-                {i === 1 && <span className="rounded-full bg-gold/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gold">Popular</span>}
+                {i === 1 && <span className="rounded-full bg-holo px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-950">Popular</span>}
               </div>
               <div className="mt-1 text-2xl font-semibold">{money(p.priceCents)}</div>
               <div className="text-sm text-zinc-400">{p.credits.toLocaleString("en-US")} credits</div>

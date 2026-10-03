@@ -1,7 +1,8 @@
 import { useId } from "react";
 
 /*
- * The Flash brand: a gold bolt on a deep emerald tile, with a small red spark. One drawing serves the
+ * The Flash brand: a holographic bolt (pearly silver with a rose, peach-gold, lavender and mint sheen)
+ * on a deep emerald tile, with a small red spark. One drawing serves the
  * favicon, the in-app logo and the generated images (app icon, social preview), so they always match.
  * It is plain SVG, so the generated images don't need to download an emoji font.
  */
@@ -14,7 +15,15 @@ export const BRAND = {
   gold: "#f5c542",
   amber: "#f59e0b",
   spark: "#ff4545",
+  holoSilver: "#e4e8ee",
+  holoRose: "#f5b6cf",
+  holoPeach: "#f6d39e",
+  holoLavender: "#bcc4f6",
+  holoMint: "#a5eadb",
 } as const;
+
+// The holographic sheen as a CSS background, for places the utilities in globals.css can't reach.
+export const HOLO = `linear-gradient(100deg, ${BRAND.holoSilver}, ${BRAND.holoRose} 22%, ${BRAND.holoPeach} 42%, ${BRAND.holoLavender} 62%, ${BRAND.holoMint} 80%, ${BRAND.holoSilver})`;
 
 // The tile behind the bolt, as a CSS background.
 export const GRADIENT = "linear-gradient(135deg, #0b8a5f, #064e3b 55%, #04291e)";
@@ -35,17 +44,19 @@ export function BrandMark({ size, id = "flash", tile = true }: { size: number; i
           <stop offset="0.55" stopColor="#064e3b" />
           <stop offset="1" stopColor="#04291e" />
         </linearGradient>
-        <linearGradient id={`${id}-bolt`} x1="0.3" y1="0" x2="0.7" y2="1">
-          <stop offset="0" stopColor="#fff3b0" />
-          <stop offset="0.45" stopColor="#f5c542" />
-          <stop offset="1" stopColor="#f08c00" />
+        <linearGradient id={`${id}-bolt`} x1="0.15" y1="0.05" x2="0.85" y2="0.95">
+          <stop offset="0" stopColor="#f7f8fb" />
+          <stop offset="0.22" stopColor="#f5b6cf" />
+          <stop offset="0.45" stopColor="#f6d39e" />
+          <stop offset="0.7" stopColor="#bcc4f6" />
+          <stop offset="1" stopColor="#a5eadb" />
         </linearGradient>
       </defs>
       {tile && <rect width="64" height="64" rx="15" fill={`url(#${id}-tile)`} />}
       {tile && (
         <rect x="1" y="1" width="62" height="62" rx="14" fill="none" stroke="#34d399" strokeOpacity="0.35" strokeWidth="1.5" />
       )}
-      <path d={BOLT} fill={`url(#${id}-bolt)`} stroke="#7a4a00" strokeOpacity="0.45" strokeWidth="1" strokeLinejoin="round" />
+      <path d={BOLT} fill={`url(#${id}-bolt)`} stroke="#ffffff" strokeOpacity="0.7" strokeWidth="1" strokeLinejoin="round" />
       <path d={SPARK} fill={BRAND.spark} />
     </svg>
   );
@@ -67,7 +78,7 @@ export function Logo({ size = 32, className = "" }: { size?: number; className?:
     <span className={`inline-flex items-center gap-2 font-semibold tracking-tight ${className}`}>
       <LogoMark size={size} />
       <span>
-        Flash <span className="text-gold-gradient">AI</span>
+        Flash <span className="text-holo">AI</span>
       </span>
     </span>
   );

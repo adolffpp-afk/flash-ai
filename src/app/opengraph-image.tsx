@@ -1,5 +1,5 @@
 import { ImageResponse } from "next/og";
-import { BRAND, BrandMark } from "./brand";
+import { BRAND, BrandMark, HOLO } from "./brand";
 
 // The preview shown when a Flash link is shared. Twitter uses it too.
 export const alt = "Flash AI: one AI for everything";
@@ -24,10 +24,10 @@ export default function OpengraphImage() {
         <BrandMark size={180} />
         <div style={{ display: "flex", marginTop: 36, fontSize: 96, fontWeight: 700, letterSpacing: -2 }}>
           <span>Flash</span>
-          <span style={{ marginLeft: 24, color: BRAND.gold }}>AI</span>
+          <span style={{ marginLeft: 24, backgroundImage: HOLO, backgroundClip: "text", color: "transparent" }}>AI</span>
         </div>
         <div style={{ marginTop: 12, fontSize: 40, color: "#b6c5bc" }}>One AI for everything</div>
-        <div style={{ display: "flex", marginTop: 36, width: 220, height: 6, borderRadius: 3, background: `linear-gradient(90deg, ${BRAND.emerald}, ${BRAND.gold}, ${BRAND.spark})` }} />
+        <div style={{ display: "flex", marginTop: 36, width: 220, height: 6, borderRadius: 3, background: `linear-gradient(90deg, ${BRAND.emerald}, ${BRAND.holoMint}, ${BRAND.holoLavender}, ${BRAND.holoRose}, ${BRAND.gold}, ${BRAND.spark})` }} />
       </div>
     ),
     size,

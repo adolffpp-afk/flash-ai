@@ -136,7 +136,9 @@ export function AuthScreen({
             </button>
           )}
           <LogoMark size={56} className="mb-5" />
-          <h1 className="text-4xl font-semibold tracking-tight">Flash AI</h1>
+          <h1 className="text-4xl font-semibold tracking-tight">
+            Flash <span className="text-holo">AI</span>
+          </h1>
           <p className="mt-3 text-lg text-zinc-400">
             One AI for everything. Ask once, and Flash picks the best AI for the
             job.

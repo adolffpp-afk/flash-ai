@@ -58,7 +58,7 @@ export function PlanCards({
         disabled={isCurrent || (busy ?? null) !== null || (comingSoon && !onFree)}
         className={`mt-auto rounded-lg py-2 text-sm font-medium disabled:opacity-60 ${
           popular
-            ? "bg-gold-brand text-zinc-950 hover:brightness-105"
+            ? "bg-holo text-zinc-950 hover:brightness-105"
             : "bg-brand text-white hover:brightness-110"
         }`}
       >
@@ -122,14 +122,14 @@ export function PlanCards({
           return (
             <div
               key={p.id}
-              className={`flex flex-col rounded-xl border ${pad} ${popular ? "border-gold/60 bg-gold/5 shadow-lg shadow-gold/10" : "border-zinc-800"}`}
+              className={`flex flex-col rounded-xl border ${pad} ${popular ? "border-holo bg-holo-lavender/5 shadow-lg shadow-holo-lavender/10" : "border-zinc-800"}`}
             >
               <div className="flex items-baseline justify-between">
                 <span className="font-medium">{p.name}</span>
                 {comingSoon ? (
                   <span className="text-[10px] uppercase tracking-wide text-zinc-400">Coming soon</span>
                 ) : (
-                  popular && <span className="rounded-full bg-gold/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gold">Popular</span>
+                  popular && <span className="rounded-full bg-holo px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-950">Popular</span>
                 )}
               </div>
               {price(p)}
@@ -145,7 +145,7 @@ export function PlanCards({
         })}
       </div>
       {teamPlans.map((p) => (
-        <div key={p.id} className={`mt-3 flex flex-col gap-4 rounded-xl border border-primary/30 bg-primary-deep/10 sm:flex-row sm:items-center ${pad}`}>
+        <div key={p.id} className={`mt-3 flex flex-col gap-4 rounded-xl border border-holo bg-primary-deep/10 sm:flex-row sm:items-center ${pad}`}>
           <div className="sm:w-56 sm:shrink-0">
             <div className="flex items-baseline gap-2">
               <span className="font-medium">{p.name}</span>

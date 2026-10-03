@@ -598,7 +598,7 @@ export function Flash({
             id="prefs"
             value={preferences}
             onChange={(e) => changePreferences(e.target.value)}
-            placeholder="e.g. I run a small bakery in Lagos. Keep answers short."
+            placeholder="e.g. I run a small bakery in Toronto. Keep answers short."
             rows={3}
             className="mt-1 w-full resize-none rounded-lg border border-zinc-800 bg-zinc-900 p-2 text-sm outline-none focus:border-primary"
           />
@@ -711,7 +711,7 @@ export function Flash({
               <div className="pt-6 text-center sm:pt-12">
                 <LogoMark size={64} className="mx-auto mb-5 drop-shadow-[0_8px_28px_rgba(245,197,66,0.3)]" />
                 <h2 className="text-3xl font-semibold tracking-tight text-white">
-                  One AI for <span className="text-gold-gradient">everything</span>
+                  One AI for <span className="text-holo">everything</span>
                 </h2>
                 <p className="mx-auto mt-3 max-w-lg text-zinc-400">
                   Build apps, make slides, write, research, code, translate and crunch spreadsheets
