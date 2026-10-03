@@ -26,6 +26,12 @@ The deck must: show one 16:9 slide at a time, scaled to fit the window; move wit
 ${SHARED_RULES}`,
 };
 
+/** The system prompt for building an app or deck, with what the user asked Flash to remember. */
+export function buildSystem(kind: "app" | "slides", preferences: string): string {
+  const prefs = preferences.trim();
+  return prefs ? `${PROMPTS[kind]}\n\nAbout the user:\n${prefs}` : PROMPTS[kind];
+}
+
 /**
  * Builds or edits an app or slide deck. Prose streams as text; the HTML is collected
  * and sent once as an "app" event, with line-count progress while it is being written.
@@ -37,14 +43,13 @@ export async function* streamBuild(
   meter: Meter = noMeter,
   budget: Budget = NO_BUDGET,
 ): AsyncGenerator<StreamEvent> {
-  const prefs = preferences.trim();
   const stream = getClient().beta.messages.stream({
     model: BUILD_MODEL,
     max_tokens: budget.maxTokens,
     betas: ["server-side-fallback-2026-07-01"],
     fallbacks: "default",
     output_config: { effort: "high" },
-    system: prefs ? `${PROMPTS[kind]}\n\nAbout the user:\n${prefs}` : PROMPTS[kind],
+    system: buildSystem(kind, preferences),
     messages: toMessages(history),
   });
 

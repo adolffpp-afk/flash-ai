@@ -4,7 +4,7 @@ import { ENGINES, type Engine } from "../types.ts";
 import { elevenConfigured, openaiConfigured } from "../engines/media.ts";
 import { falConfigured } from "../engines/fal.ts";
 import { FREE_DAILY_CHATS, FREE_DAILY_IMAGES, freeChatConfigured, freeImageConfigured } from "../engines/free.ts";
-import { paymentsEnabled } from "./stripe.ts";
+import { demoPurchases, paymentsEnabled } from "./stripe.ts";
 
 /** Prices, packs and models, shared by the public pricing section and the signed-in credits panel. */
 export function pricingInfo() {
@@ -27,6 +27,8 @@ export function pricingInfo() {
       images: freeImageConfigured() ? FREE_DAILY_IMAGES : 0,
     },
     paymentsEnabled: paymentsEnabled(),
+    // FLASH_DEMO_PURCHASES: test purchases without Stripe, for local testing only.
+    testPurchases: demoPurchases(),
     models: MODELS.map((m) => ({
       id: m.id,
       engine: m.engine,

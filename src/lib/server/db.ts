@@ -127,6 +127,70 @@ const SCHEMA = [
   )`,
   `CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
   `CREATE INDEX IF NOT EXISTS site_records_lookup ON site_records(site_slug, collection, created_at)`,
+  // Free-lane requests per user per UTC day, reserved before each request so parallel ones can't pass the cap.
+  `CREATE TABLE IF NOT EXISTS free_user_quota (
+    day TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    used INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (day, user_id, kind)
+  )`,
+  // Google, GitHub and Microsoft accounts linked to a Flash account. subject is the provider's id for the person.
+  `CREATE TABLE IF NOT EXISTS identities (
+    provider TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (provider, subject)
+  )`,
+  `CREATE INDEX IF NOT EXISTS identities_user ON identities(user_id)`,
+  // Emailed sign-in links (15 minutes, one use). Keyed by email so they work before an account exists.
+  `CREATE TABLE IF NOT EXISTS sign_in_links (
+    token_hash TEXT PRIMARY KEY,
+    email TEXT NOT NULL,
+    next TEXT NOT NULL DEFAULT '/',
+    expires_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  )`,
+  // Referral bonuses, one per referred friend, given on the friend's first real payment. The
+  // friend's bonus is credited at once; the referrer's waits until referrer_available_at and is
+  // cancelled (cancelled_at) if that payment is refunded or disputed before then.
+  `CREATE TABLE IF NOT EXISTS referral_rewards (
+    friend_id TEXT PRIMARY KEY,
+    referrer_id TEXT NOT NULL,
+    purchase_ref TEXT NOT NULL,
+    friend_credits INTEGER NOT NULL,
+    referrer_credits INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    referrer_available_at INTEGER NOT NULL DEFAULT 0,
+    cancelled_at INTEGER NOT NULL DEFAULT 0
+  )`,
+  `CREATE INDEX IF NOT EXISTS referral_rewards_referrer ON referral_rewards(referrer_id)`,
+  `CREATE INDEX IF NOT EXISTS referral_rewards_purchase ON referral_rewards(purchase_ref)`,
+  // Business plan teams. The owner's credit balance is the team's shared pool while the owner
+  // has a paid-up team plan. A user belongs to at most one team.
+  `CREATE TABLE IF NOT EXISTS teams (
+    id TEXT PRIMARY KEY,
+    owner_id TEXT NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS team_members (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    joined_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS team_members_team ON team_members(team_id)`,
+  // Email invitations to a team (only the link's hash is stored).
+  `CREATE TABLE IF NOT EXISTS team_invites (
+    id TEXT PRIMARY KEY,
+    token_hash TEXT NOT NULL UNIQUE,
+    team_id TEXT NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    email TEXT NOT NULL,
+    email_key TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS team_invites_team ON team_invites(team_id)`,
 ];
 
 let client: Client | null = null;
@@ -137,6 +201,17 @@ const MIGRATIONS = [
   "ALTER TABLE users ADD COLUMN verified_at INTEGER NOT NULL DEFAULT 0",
   // The email with Gmail-style dots and +tags removed, so one inbox can't farm free credits.
   "ALTER TABLE users ADD COLUMN email_key TEXT NOT NULL DEFAULT ''",
+  // What a purchase was paid with, so a refund or dispute of that payment can take its credits back.
+  "ALTER TABLE purchases ADD COLUMN payment_intent TEXT",
+  "ALTER TABLE purchases ADD COLUMN subscription TEXT",
+  // Each user's referral code, and the user who referred them (set once, at sign-up).
+  "ALTER TABLE users ADD COLUMN ref_code TEXT",
+  "ALTER TABLE users ADD COLUMN referred_by TEXT",
+  // The referrer's bonus waits 30 days (see referrals.ts).
+  "ALTER TABLE referral_rewards ADD COLUMN referrer_available_at INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE referral_rewards ADD COLUMN cancelled_at INTEGER NOT NULL DEFAULT 0",
+  // Who spent a charge, when a team member spends the owner's shared pool.
+  "ALTER TABLE credit_ledger ADD COLUMN actor TEXT",
 ];
 
 async function init(c: Client) {
@@ -144,6 +219,10 @@ async function init(c: Client) {
   await c.batch(SCHEMA, "write");
   for (const sql of MIGRATIONS) await c.execute(sql).catch(() => {});
   await c.execute("CREATE INDEX IF NOT EXISTS users_email_key ON users(email_key)");
+  await c.execute("CREATE INDEX IF NOT EXISTS purchases_payment_intent ON purchases(payment_intent)");
+  await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_ref_code ON users(ref_code) WHERE ref_code IS NOT NULL");
+  await c.execute("CREATE INDEX IF NOT EXISTS users_referred_by ON users(referred_by)");
+  await c.execute("CREATE INDEX IF NOT EXISTS credit_ledger_actor ON credit_ledger(actor)");
 }
 
 /** Returns the database client, creating the tables on first use. */

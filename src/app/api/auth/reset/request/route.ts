@@ -1,4 +1,5 @@
 import { sendReset } from "@/lib/server/account.ts";
+import { appUrl } from "@/lib/server/auth.ts";
 import { emailEnabled, demoEmails } from "@/lib/server/email.ts";
 import { one } from "@/lib/server/db.ts";
 import { clientIp, overLimit } from "@/lib/server/limits.ts";
@@ -9,7 +10,7 @@ const HOUR = 3600_000;
 export async function POST(request: Request) {
   if (!emailEnabled() && !demoEmails()) {
     return Response.json(
-      { error: "Password reset isn't switched on yet. Contact the site owner for help." },
+      { error: `Password reset isn't available right now. Email ${process.env.FLASH_CONTACT_EMAIL || "support@flash-app.dev"} for help.` },
       { status: 503 },
     );
   }
@@ -22,7 +23,7 @@ export async function POST(request: Request) {
   let devLink: string | undefined;
   if (user) {
     try {
-      devLink = await sendReset(user, new URL(request.url).origin);
+      devLink = await sendReset(user, appUrl(request));
     } catch (err) {
       console.error("[flash] reset email failed", err);
     }

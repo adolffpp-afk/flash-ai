@@ -1,4 +1,4 @@
-import { getUser, unauthorized } from "@/lib/server/auth.ts";
+import { appUrl, getUser, unauthorized } from "@/lib/server/auth.ts";
 import { createPortalSession, demoPurchases } from "@/lib/server/stripe.ts";
 import { activeSubscription, setCancelAtPeriodEnd } from "@/lib/server/subscriptions.ts";
 
@@ -15,7 +15,7 @@ export async function POST(request: Request) {
   }
   if (!sub.customer) return Response.json({ error: "This plan has no billing account." }, { status: 404 });
   try {
-    return Response.json({ url: await createPortalSession(sub.customer, new URL(request.url).origin) });
+    return Response.json({ url: await createPortalSession(sub.customer, appUrl(request)) });
   } catch (err) {
     console.error("[flash] billing portal failed", err);
     return Response.json({ error: "Couldn't open billing. Please try again." }, { status: 502 });

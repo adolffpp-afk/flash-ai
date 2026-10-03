@@ -1,4 +1,4 @@
-import { getUser, unauthorized } from "@/lib/server/auth.ts";
+import { appUrl, getUser, unauthorized } from "@/lib/server/auth.ts";
 import { one } from "@/lib/server/db.ts";
 import { randomId } from "@/lib/server/ids.ts";
 import { createSubscriptionCheckout, demoPurchases, paymentsEnabled } from "@/lib/server/stripe.ts";
@@ -46,10 +46,7 @@ export async function POST(request: Request) {
     return Response.json({ demo: true });
   }
   if (!paymentsEnabled()) {
-    return Response.json(
-      { error: "Payments aren't switched on yet. Add a Stripe key to turn on plans." },
-      { status: 503 },
-    );
+    return Response.json({ error: "Paid plans and top-ups are coming soon." }, { status: 503 });
   }
   try {
     const customer = await one<{ customer: string }>(
@@ -61,7 +58,7 @@ export async function POST(request: Request) {
       interval,
       user,
       customer?.customer ?? null,
-      new URL(request.url).origin,
+      appUrl(request),
     );
     return Response.json({ url });
   } catch (err) {

@@ -50,3 +50,18 @@ test("in-memory flashDB: add, list, update, remove", async () => {
   await db.remove("todos", a.id);
   assert.equal(JSON.stringify((await db.list("todos")).map((r) => r.text)), '["eggs"]');
 });
+
+test("published flashDB.list follows the cursor until every page is read", async () => {
+  const code = flashDbShim("/api/sites/x/data").replace(/^<script>|<\/script>$/g, "");
+  const pages: Record<string, object> = {
+    "": { records: [{ id: "a" }, { id: "b" }], more: true, cursor: "1:b" },
+    "1:b": { records: [{ id: "c" }], more: false },
+  };
+  const fetch = async (url: string) => {
+    const cursor = new URL(url, "http://h").searchParams.get("cursor") ?? "";
+    return { ok: true, json: async () => pages[cursor] };
+  };
+  const window: { flashDB?: { list(c: string): Promise<{ id: string }[]> } } = {};
+  vm.runInNewContext(code, { window, fetch, URLSearchParams });
+  assert.deepEqual((await window.flashDB!.list("todos")).map((r) => r.id), ["a", "b", "c"]);
+});

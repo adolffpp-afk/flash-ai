@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm";
 import { ENGINE_LABELS } from "@/lib/types";
 import type { UIMessage } from "@/lib/store";
 import { AppPreview } from "./AppPreview";
+import { BoltIcon, LogoMark } from "@/app/brand";
 
 const EXTENSIONS: Record<string, string> = {
   csv: "csv",
@@ -51,7 +52,7 @@ function CodeBlock({ lang, text }: { lang: string; text: string }) {
           >
             {copied ? "Copied" : "Copy"}
           </button>
-          <button onClick={download} className="text-indigo-400 hover:text-indigo-300">
+          <button onClick={download} className="text-primary hover:text-primary-soft">
             {DOWNLOAD_LABEL[ext] ?? "Download"}
           </button>
         </span>
@@ -76,6 +77,13 @@ const markdownComponents: Components = {
     );
   },
 };
+
+/** A download name for an image: data URLs carry their type, and saved files are named by the server. */
+function imageFileName(url: string): string {
+  const type = /^data:image\/([\w+.-]+)/.exec(url)?.[1];
+  if (!type) return "";
+  return `flash-image.${type === "jpeg" ? "jpg" : type === "svg+xml" ? "svg" : type}`;
+}
 
 function plainText(m: UIMessage): string {
   return [m.content, m.after].filter(Boolean).join("\n\n").trim();
@@ -114,18 +122,21 @@ export function Message({
   onRetry,
   onBuyCredits,
   onPublished,
+  paymentsOn = true,
 }: {
   m: UIMessage;
   onRetry?: () => void;
   onBuyCredits?: () => void;
+  // False while plans and top-ups aren't on sale yet, so the copy doesn't offer them.
+  paymentsOn?: boolean;
   onPublished?: (slug: string) => void;
 }) {
   if (m.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[85%] rounded-2xl rounded-br-md bg-indigo-600 px-4 py-2.5 text-white">
+        <div className="max-w-[85%] rounded-2xl rounded-br-md bg-primary-strong px-4 py-2.5 text-white">
           {m.attachmentName && (
-            <div className="mb-1 text-xs text-indigo-100">📎 {m.attachmentName}</div>
+            <div className="mb-1 text-xs text-white/80">📎 {m.attachmentName}</div>
           )}
           <p className="whitespace-pre-wrap break-words">{m.content}</p>
         </div>
@@ -134,9 +145,7 @@ export function Message({
   }
   return (
     <div className="flex gap-3">
-      <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-pink-500 text-sm">
-        ⚡
-      </div>
+      <LogoMark size={32} className="mt-1" />
       <div className="min-w-0 flex-1">
         {m.engine && (
           <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-zinc-400">
@@ -144,13 +153,17 @@ export function Message({
               {ENGINE_LABELS[m.engine]}
             </span>
             <span>{m.reason}</span>
-            {m.demo && <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-amber-300">demo</span>}
+            {m.demo && <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-zinc-300">coming soon</span>}
             {m.model && (
-              <span className="rounded-full bg-indigo-500/15 px-2 py-0.5 text-indigo-200" title={`Picked because: ${m.modelWhy ?? ""}`}>
+              <span className="rounded-full bg-primary/15 px-2 py-0.5 text-primary-soft" title={`Picked because: ${m.modelWhy ?? ""}`}>
                 {m.model}
               </span>
             )}
-            {!!m.cost && <span className="text-zinc-500">⚡ {m.cost} credits</span>}
+            {!!m.cost && (
+              <span className="inline-flex items-center gap-1 text-zinc-500">
+                <BoltIcon className="h-3 w-3 text-gold/80" /> {m.cost} credits
+              </span>
+            )}
             {m.free && <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-emerald-300">free</span>}
           </div>
         )}
@@ -158,8 +171,8 @@ export function Message({
           <p className="mb-1 text-xs text-zinc-500">
             You&apos;re out of credits, so a free open-source model answered.{" "}
             {onBuyCredits && (
-              <button onClick={onBuyCredits} className="text-indigo-300 underline-offset-2 hover:underline">
-                Get credits for the best models
+              <button onClick={onBuyCredits} className="text-primary-soft underline-offset-2 hover:underline">
+                {paymentsOn ? "Get credits for the best models" : "See your credits"}
               </button>
             )}
           </p>
@@ -172,8 +185,8 @@ export function Message({
           </div>
         )}
         {m.status && (
-          <div className="mt-2 flex items-center gap-2 text-sm text-zinc-400">
-            <span className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-600 border-t-indigo-400" />
+          <div role="status" className="mt-2 flex items-center gap-2 text-sm text-zinc-400">
+            <span className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-600 border-t-gold" />
             {m.status}
           </div>
         )}
@@ -191,7 +204,7 @@ export function Message({
               <img src={img.url} alt={img.prompt} className="max-h-[512px] rounded-xl border border-zinc-800" />
               <figcaption className="mt-1 flex gap-3 text-xs text-zinc-500">
                 <span className="line-clamp-2">{img.prompt}</span>
-                <a href={img.url} download="flash-image.png" className="shrink-0 text-indigo-400 hover:underline">
+                <a href={img.url} download={imageFileName(img.url)} className="shrink-0 text-primary hover:underline">
                   Download
                 </a>
               </figcaption>
@@ -213,7 +226,7 @@ export function Message({
             <video controls src={v.url} className="w-full max-w-2xl rounded-xl border border-zinc-800" />
             <figcaption className="mt-1 flex gap-3 text-xs text-zinc-500">
               <span className="line-clamp-2">{v.prompt}</span>
-              <a href={v.url} download="flash-video.mp4" className="shrink-0 text-indigo-400 hover:underline">
+              <a href={v.url} download="flash-video.mp4" className="shrink-0 text-primary hover:underline">
                 Download
               </a>
             </figcaption>
@@ -222,7 +235,7 @@ export function Message({
         {m.audio && (
           <div className="mt-2 flex items-center gap-3">
             <audio controls src={m.audio} className="w-full max-w-md" />
-            <a href={m.audio} download={m.audioLabel ?? "flash-audio.mp3"} className="text-xs text-indigo-400 hover:underline">
+            <a href={m.audio} download={m.audioLabel ?? "flash-audio.mp3"} className="text-xs text-primary hover:underline">
               Download
             </a>
           </div>
@@ -235,7 +248,7 @@ export function Message({
                 href={s.url}
                 target="_blank"
                 rel="noreferrer"
-                className="max-w-[16rem] truncate rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-xs text-zinc-300 hover:border-indigo-500"
+                className="max-w-[16rem] truncate rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-xs text-zinc-300 hover:border-primary"
               >
                 {i + 1}. {s.title || new URL(s.url).hostname}
               </a>
@@ -244,23 +257,26 @@ export function Message({
         )}
         {m.stopped && <p className="mt-2 text-xs text-zinc-500">Stopped.</p>}
         {m.error && m.errorCode === "out_of_credits" ? (
-          <div className="mt-2 rounded-xl border border-indigo-500/40 bg-gradient-to-br from-indigo-500/15 to-fuchsia-500/10 p-4 text-sm">
+          <div role="status" className="mt-2 rounded-xl border border-gold/40 bg-gradient-to-br from-gold/15 to-primary/10 p-4 text-sm">
             <p className="font-medium text-zinc-100">You&apos;re out of credits for this one</p>
             <p className="mt-1 text-zinc-300">
-              {m.error} Pick a plan or top up to keep going, or wait for your free monthly credits.
+              {m.error}{" "}
+              {paymentsOn
+                ? "Pick a plan or top up to keep going, or wait for your free monthly credits."
+                : "Your free credits refill on the 1st of each month."}
             </p>
             {onBuyCredits && (
               <button
                 onClick={onBuyCredits}
-                className="mt-3 rounded-lg bg-gradient-to-r from-indigo-600 to-fuchsia-600 px-3 py-1.5 text-sm font-medium text-white hover:brightness-110"
+                className="mt-3 rounded-lg bg-gold-brand px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:brightness-105"
               >
-                Get more credits
+                {paymentsOn ? "Get more credits" : "See your credits"}
               </button>
             )}
           </div>
         ) : (
           m.error && (
-            <div className="mt-2 rounded-lg border border-red-900 bg-red-950/50 px-3 py-2 text-sm text-red-300">
+            <div role="status" className="mt-2 rounded-lg border border-red-900 bg-red-950/50 px-3 py-2 text-sm text-red-300">
               {m.error}
             </div>
           )

@@ -38,7 +38,19 @@ export function claudeCostCents(model: string, usage: ClaudeUsage): number {
 
 // ElevenLabs voice and transcription, in cents.
 export const voiceCostCents = (characters: number) => (characters / 1000) * 2.2;
-export const TRANSCRIBE_COST_CENTS = 1;
+// Voice reads at most this many characters, and is priced on the same text.
+export const MAX_SPEECH_CHARS = 10000;
+
+/*
+ * Transcription is billed per minute of audio, which Flash can't measure before sending the
+ * file. So it is priced as if the file were the longest recording its size could hold: at 8 kbps
+ * (1,000 bytes a second, below common speech codecs), at Scribe's $0.40 an hour. A 3 MB file
+ * is priced as 52 minutes; a normal 128 kbps MP3 pays for more than it uses, but never less.
+ */
+const TRANSCRIBE_CENTS_PER_MINUTE = 40 / 60;
+const MIN_AUDIO_BYTES_PER_SECOND = 1000;
+export const transcribeCostCents = (bytes: number) =>
+  Math.max(1, (bytes / MIN_AUDIO_BYTES_PER_SECOND / 60) * TRANSCRIBE_CENTS_PER_MINUTE);
 
 /*
  * Claude engines are charged by length. Flash holds up to this many credits while it writes
@@ -64,7 +76,8 @@ export const TYPICAL_CREDITS: Partial<Record<Engine, number>> = {
   app: 120,
   slides: 100,
   voice: 3,
-  transcribe: 3,
+  // A 500 KB recording (see transcribeCostCents).
+  transcribe: 15,
 };
 
 export const FREE_MONTHLY_CREDITS = Number(process.env.FLASH_FREE_CREDITS ?? 200);
@@ -74,8 +87,8 @@ export type CreditPack = { id: string; name: string; credits: number; priceCents
 // One-off top-ups. Plans give more credits per dollar, like Lovable's and Emergent's.
 export const CREDIT_PACKS: CreditPack[] = [
   { id: "starter", name: "Starter", credits: 500, priceCents: 500, blurb: "About 120 chats or 4 apps" },
-  { id: "creator", name: "Creator", credits: 2200, priceCents: 2000, blurb: "Apps, images and music for a busy week" },
-  { id: "studio", name: "Studio", credits: 5800, priceCents: 5000, blurb: "Heavy app building and video" },
+  { id: "creator", name: "Creator", credits: 2200, priceCents: 2000, blurb: "Apps, slides and research for a busy week" },
+  { id: "studio", name: "Studio", credits: 5800, priceCents: 5000, blurb: "Heavy app building" },
 ];
 
 /*
@@ -92,6 +105,8 @@ export type Plan = {
   credits: number; // per month
   blurb: string;
   features: string[];
+  // Team plans: how many people (the owner included) share the plan's monthly credits.
+  seats?: number;
 };
 
 export const PLANS: Plan[] = [
@@ -102,7 +117,7 @@ export const PLANS: Plan[] = [
     yearlyPriceCents: 2000,
     credits: 3000,
     blurb: "For makers who build every week",
-    features: ["3,000 credits a month", "About 25 apps or 700 chats", "Every model, including video", "Unused credits carry over"],
+    features: ["3,000 credits a month", "About 25 apps or 700 chats", "Writing, research, code, apps and slides", "Unused credits carry over"],
   },
   {
     id: "power",
@@ -110,8 +125,8 @@ export const PLANS: Plan[] = [
     priceCents: 5000,
     yearlyPriceCents: 4000,
     credits: 6500,
-    blurb: "For daily building, images and music",
-    features: ["6,500 credits a month", "About 55 apps or 1,600 chats", "Every model, including video", "Unused credits carry over"],
+    blurb: "For daily building and research",
+    features: ["6,500 credits a month", "About 55 apps or 1,600 chats", "Writing, research, code, apps and slides", "Unused credits carry over"],
   },
   {
     id: "max",
@@ -119,14 +134,53 @@ export const PLANS: Plan[] = [
     priceCents: 20000,
     yearlyPriceCents: 16000,
     credits: 28000,
-    blurb: "For studios and heavy video work",
-    features: ["28,000 credits a month", "About 35 Veo videos or 230 apps", "Every model, including video", "Unused credits carry over"],
+    blurb: "For studios and heavy app building",
+    features: ["28,000 credits a month", "About 230 apps or 7,000 chats", "Writing, research, code, apps and slides", "Unused credits carry over"],
+  },
+  /*
+   * Business: one owner pays and up to 5 people (the owner included) spend one shared monthly
+   * pool. Credits per dollar are below Max's (13,500 / $99 = 136 per dollar vs Max's 140), so
+   * its worst-case margin is at least Max's, monthly and yearly. Seats don't add credits.
+   */
+  {
+    id: "business",
+    name: "Business",
+    priceCents: 9900,
+    yearlyPriceCents: 7920,
+    credits: 13500,
+    blurb: "For teams: one bill, one shared credit pool",
+    features: ["13,500 shared credits a month", "Up to 5 people, the owner included", "Owner invites and removes members", "Each member's projects stay private"],
+    seats: 5,
   },
 ];
 
 export type Interval = "month" | "year";
 export const planPrice = (plan: Plan, interval: Interval) =>
   interval === "year" ? plan.yearlyPriceCents * 12 : plan.priceCents;
+
+/*
+ * Referrals. When a referred friend makes their first real payment, the friend gets
+ * REFERRAL_FRIEND_SHARE more credits on top of it and the referrer gets REFERRAL_REFERRER_SHARE
+ * of the credits bought, up to REFERRAL_REFERRER_CAP. For a plan, "credits bought" is one
+ * month's credits, even when the first payment is yearly. test/pricing.test.ts checks that every
+ * pack and plan, with both bonuses, still makes a profit if every credit is used.
+ *
+ * The friend's bonus is part of their own purchase and is taken back with it on a refund. The
+ * referrer's bonus can't be taken back once spent, so it stays pending for
+ * REFERRAL_PENDING_DAYS after the friend's payment and is cancelled if that payment is refunded
+ * or disputed first: a refunded payment never pays for a referrer's credits.
+ */
+export const REFERRAL_PENDING_DAYS = 30;
+export const REFERRAL_FRIEND_SHARE = 0.2;
+export const REFERRAL_REFERRER_SHARE = 0.2;
+export const REFERRAL_REFERRER_CAP = 2000;
+
+export function referralBonus(credits: number) {
+  return {
+    friend: Math.round(credits * REFERRAL_FRIEND_SHARE),
+    referrer: Math.min(REFERRAL_REFERRER_CAP, Math.round(credits * REFERRAL_REFERRER_SHARE)),
+  };
+}
 
 // Stripe's card fee (2.9% + 30¢) plus 0.7% for Stripe Billing on subscriptions.
 export const paymentFeeCents = (amountCents: number, subscription: boolean) =>
@@ -158,13 +212,15 @@ const SEARCH_RESULT_TOKENS = 6000;
 
 const priceOf = (model: string) => CLAUDE_PRICES[model] ?? CLAUDE_PRICES["claude-opus-5-5"];
 
+/** What reading the input once costs, in cents. Claude bills this even when a reply is stopped. */
+export const readCostCents = (model: string, inputTokens: number) => (inputTokens * priceOf(model).input) / 1e6;
+
 /** Worst-case input cost of one request, in cents (search re-reads its context per tool call). */
 export function inputCostCents(engine: Engine, model: string, inputTokens: number): number {
-  const price = priceOf(model);
-  if (engine !== "search") return (inputTokens * price.input) / 1e6;
+  if (engine !== "search") return readCostCents(model, inputTokens);
   let tokens = inputTokens;
   for (let i = 1; i <= SEARCH_CALLS; i++) tokens += inputTokens + i * SEARCH_RESULT_TOKENS;
-  return (tokens * price.input) / 1e6 + 3 * WEB_SEARCH_CENTS;
+  return readCostCents(model, tokens) + 3 * WEB_SEARCH_CENTS;
 }
 
 /** Most output tokens a reply can write while costing no more than its held credits pay for. */
@@ -184,4 +240,39 @@ export function planHold(engine: Engine, model: string, inputTokens: number, ava
   const limit = Math.ceil(inputCents * MARKUP * SAFETY) + (CREDIT_LIMITS[engine] ?? 30);
   const held = Math.max(needed, Math.min(limit, available));
   return { needed, held, maxTokens: outputBudget(model, held, inputCents), capCents: held / MARKUP / SAFETY };
+}
+
+/*
+ * What a request is finally charged, never more than was held. A finished request pays its
+ * provider cost. A stopped Claude reply has no usage report, so it pays for reading the input
+ * (Claude bills it in full) plus an estimate of what was written, and at least a typical reply.
+ * A failed request pays only for provider work that really ran, so Flash never pays for it.
+ */
+export function finalCredits(r: {
+  held: number;
+  ok: boolean;
+  stopped: boolean;
+  // A Claude engine charged by length.
+  metered: boolean;
+  // What metered provider calls cost Flash, in cents.
+  costCents: number;
+  // What reading the input once costs (readCostCents), for a reply that never reported usage.
+  inputCents: number;
+  // Characters of reply already sent.
+  written: number;
+  typical: number;
+}): number {
+  if (r.held <= 0) return 0;
+  // About 3 characters per token, doubled for thinking, at Opus's output price of 2,000¢ per million tokens.
+  const writtenCents = (((r.written / 3) * 2 * 2000) / 1e6);
+  if (!r.ok) {
+    // A Claude call that already sent text was billed for its input and output too.
+    const incurred = r.costCents + (r.metered && r.written > 0 ? r.inputCents + writtenCents : 0);
+    return incurred > 0 ? Math.min(r.held, creditsFor(incurred)) : 0;
+  }
+  if (!r.metered) return r.held;
+  if (r.stopped) {
+    return Math.min(r.held, Math.max(r.typical, creditsFor(r.costCents + r.inputCents + writtenCents)));
+  }
+  return Math.min(r.held, creditsFor(r.costCents));
 }

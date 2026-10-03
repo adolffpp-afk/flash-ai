@@ -2,6 +2,7 @@ import { scrypt, randomBytes, timingSafeEqual } from "node:crypto";
 import { promisify } from "node:util";
 import { one, run, now } from "./db.ts";
 import { randomId, sha256 } from "./ids.ts";
+import { isVerified } from "./account.ts";
 
 const scryptAsync = promisify(scrypt) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>;
 
@@ -48,7 +49,7 @@ export function clearSessionCookie(): string {
   return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
 }
 
-function readCookie(request: Request, name: string): string | null {
+export function readCookie(request: Request, name: string): string | null {
   const header = request.headers.get("cookie") ?? "";
   for (const part of header.split(";")) {
     const [k, ...v] = part.trim().split("=");
@@ -80,11 +81,23 @@ export function unauthorized(): Response {
   return Response.json({ error: "Please sign in.", code: "signed_out" }, { status: 401 });
 }
 
-/** The owner and anyone else listed in FLASH_ADMIN_EMAILS (comma separated) can open /admin. */
+/**
+ * The owner and anyone else listed in FLASH_ADMIN_EMAILS (comma separated) can open /admin,
+ * once they have confirmed the address (so nobody can sign up with it first and get in).
+ */
 export function isAdmin(user: User): boolean {
   const admins = (process.env.FLASH_ADMIN_EMAILS ?? "")
     .split(",")
     .map((e) => e.trim().toLowerCase())
     .filter(Boolean);
-  return admins.includes(user.email.toLowerCase());
+  return admins.includes(user.email.toLowerCase()) && isVerified(user);
+}
+
+/**
+ * The site's address for links in emails and Stripe redirects: FLASH_APP_URL when set, so a
+ * spoofed Host header can't point them elsewhere, else the address the request came to.
+ */
+export function appUrl(request: Request): string {
+  const configured = process.env.FLASH_APP_URL?.trim().replace(/\/+$/, "");
+  return configured || new URL(request.url).origin;
 }

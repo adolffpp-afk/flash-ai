@@ -1,5 +1,5 @@
 import { route, textToSpeak } from "@/lib/router.ts";
-import { ENGINES, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types.ts";
+import { ENGINES, ENGINE_LABELS, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types.ts";
 import {
   NO_BUDGET,
   classifyRequest,
@@ -9,12 +9,13 @@ import {
   modelForEngine,
   streamSearch,
   streamText,
+  system,
   type Budget,
   type Meter,
   type WritingMode,
 } from "@/lib/engines/claude.ts";
 import { freeChatConfigured, freeEligible, freeImage, freeImageConfigured, streamFreeChat } from "@/lib/engines/free.ts";
-import { freeLeft, recordFree, reserveFree, reserveFreeImage } from "@/lib/server/free.ts";
+import { recordFree, releaseFreeUser, reserveFree, reserveFreeImage, reserveFreeUser } from "@/lib/server/free.ts";
 import { isVerified } from "@/lib/server/account.ts";
 import {
   composeMusic,
@@ -28,19 +29,33 @@ import {
   type Media,
 } from "@/lib/engines/media.ts";
 import { getUser, unauthorized } from "@/lib/server/auth.ts";
-import { balance, charge, ensureMonthlyCredits, logUsage, settle } from "@/lib/server/credits.ts";
+import { charge, ensureMonthlyCredits, logUsage, settle, spendable } from "@/lib/server/credits.ts";
 import { saveFile } from "@/lib/server/files.ts";
-import { MARKUP, TRANSCRIBE_COST_CENTS, TYPICAL_CREDITS, creditsFor, planHold, voiceCostCents } from "@/lib/credits.ts";
+import {
+  MAX_SPEECH_CHARS,
+  TYPICAL_CREDITS,
+  creditsFor,
+  finalCredits,
+  planHold,
+  readCostCents,
+  transcribeCostCents,
+  voiceCostCents,
+} from "@/lib/credits.ts";
 import { falConfigured, falGenerate } from "@/lib/engines/fal.ts";
 import { MEDIA_ENGINES, modelCredits, pickModel, videoSeconds, type MediaEngine, type ModelInfo, type Provider } from "@/lib/models.ts";
-import { demoReply } from "@/lib/engines/demo.ts";
-import { streamBuild } from "@/lib/engines/builder.ts";
+import { unavailableReply } from "@/lib/engines/demo.ts";
+import { FriendlyError, JobAbandoned } from "@/lib/engines/errors.ts";
+import { buildSystem, streamBuild } from "@/lib/engines/builder.ts";
 
 // Vercel Hobby allows 300 seconds; on Vercel Pro this can go up to 800 for long video jobs.
 export const maxDuration = 300;
 
 // Vercel caps a request at 4.5 MB, and a file grows by a third when sent as base64.
 const MAX_ATTACHMENT_BYTES = 3 * 1024 * 1024;
+// A message longer than this (about 25,000 words) is almost certainly pasted by mistake.
+const MAX_MESSAGE_CHARS = 100_000;
+// The same limit as saved preferences (PATCH /api/me).
+const MAX_PREFERENCES_CHARS = 2000;
 
 type ChatRequest = {
   messages: ChatTurn[];
@@ -104,13 +119,34 @@ function falInput(model: ModelInfo, prompt: string, request: string): Record<str
 
 /** Uses Claude to sharpen a media prompt when a Claude key exists, else sends the request as written. */
 const sharpen = (kind: "image" | "video" | "music", request: string, meter: Meter) =>
-  claudeConfigured() ? improvePrompt(kind, request, meter) : Promise.resolve(request);
+  claudeConfigured() ? improvePrompt(kind, request, meter).catch(() => request) : Promise.resolve(request);
+
+/** The bytes in a base64 attachment. */
+const attachmentBytes = (a: { data: string }) => (a.data.length * 3) / 4;
+
+/** The voice engine speaks at most MAX_SPEECH_CHARS, and is priced on exactly that text. */
+const spokenText = (message: string) => textToSpeak(message).slice(0, MAX_SPEECH_CHARS);
+
+/** The system prompt a Claude engine sends, so the credit hold counts it too. */
+function systemFor(engine: Engine, preferences: string): string {
+  if (engine === "app" || engine === "slides") return buildSystem(engine, preferences);
+  return system(preferences, engine === "code" || engine === "translate" || engine === "docs" ? engine : "text");
+}
 
 /** What a media request on this model cost Flash, in cents. */
 const mediaCents = (model: ModelInfo, request: string) =>
   typeof model.costCents === "function" ? model.costCents(request) : model.costCents;
 
 type Store = (media: Media, name: string) => Promise<string>;
+
+const EXTENSIONS: Record<string, string> = { jpeg: "jpg", mpeg: "mp3", "svg+xml": "svg", quicktime: "mov" };
+
+/** "flash-image.png" becomes "flash-image.jpg" when the image is really a JPEG. */
+function withExtension(name: string, mime: string): string {
+  const subtype = mime.split("/")[1]?.split(";")[0].trim().toLowerCase();
+  if (!subtype || !/^[\w.+-]+$/.test(subtype)) return name;
+  return name.replace(/\.\w+$/, "") + "." + (EXTENSIONS[subtype] ?? subtype);
+}
 
 async function* run(
   engine: Engine,
@@ -123,9 +159,14 @@ async function* run(
 ): AsyncGenerator<StreamEvent> {
   const last = history[history.length - 1];
   if (isMedia(engine) ? !model : !configured(engine)) {
-    yield* demoReply(engine, last.content);
+    yield* unavailableReply(engine);
     return;
   }
+  // A media job the provider bills even though it ended without a result is charged too.
+  const billIfAbandoned = (err: unknown): never => {
+    if (err instanceof JobAbandoned && err.billed) meter(model!.provider, model!.id, mediaCents(model!, last.content));
+    throw err;
+  };
   switch (engine) {
     case "text":
     case "code":
@@ -146,7 +187,9 @@ async function* run(
       const image =
         model!.provider === "fal"
           ? yield* withProgress((report) =>
-              falGenerate(model!.endpoint!, falInput(model!, prompt, last.content), (m) => report(`${m}…`)),
+              falGenerate(model!.endpoint!, falInput(model!, prompt, last.content), (m) => report(`${m}…`)).catch(
+                billIfAbandoned,
+              ),
             )
           : await generateImage(prompt);
       meter(model!.provider, model!.id, mediaCents(model!, last.content));
@@ -159,21 +202,26 @@ async function* run(
       let video: Media;
       if (model!.provider === "fal") {
         video = yield* withProgress((report) =>
-          falGenerate(model!.endpoint!, falInput(model!, prompt, last.content), (m) => report(`Filming your video… ${m.toLowerCase()}`)),
+          falGenerate(model!.endpoint!, falInput(model!, prompt, last.content), (m) =>
+            report(`Filming your video… ${m.toLowerCase()}`),
+          ).catch(billIfAbandoned),
         );
       } else {
         const id = yield* withProgress((report) =>
-          generateVideo(prompt, (pct) => pct && report(`Filming your video… ${pct}%`)),
+          generateVideo(prompt, (pct) => pct && report(`Filming your video… ${pct}%`)).catch(billIfAbandoned),
         );
         yield { type: "status", message: "Saving your video…" };
-        video = await downloadVideo(id);
+        video = await downloadVideo(id).catch((err) => {
+          console.error("[flash] video download failed", err);
+          return billIfAbandoned(new JobAbandoned("Flash couldn't fetch the video. Please try again.", true));
+        });
       }
       meter(model!.provider, model!.id, mediaCents(model!, last.content));
       yield { type: "video", url: await store(video, "flash-video.mp4"), prompt };
       return;
     }
     case "voice": {
-      const words = textToSpeak(last.content);
+      const words = spokenText(last.content);
       yield { type: "text", delta: `Here is "${words.length > 80 ? words.slice(0, 80) + "…" : words}" read aloud.` };
       const speech = await synthesizeSpeech(words);
       meter("elevenlabs", "voice", voiceCostCents(words.length));
@@ -187,7 +235,9 @@ async function* run(
       const track =
         model!.provider === "fal"
           ? yield* withProgress((report) =>
-              falGenerate(model!.endpoint!, falInput(model!, prompt, last.content), (m) => report(`Composing… ${m.toLowerCase()}`)),
+              falGenerate(model!.endpoint!, falInput(model!, prompt, last.content), (m) =>
+                report(`Composing… ${m.toLowerCase()}`),
+              ).catch(billIfAbandoned),
             )
           : await composeMusic(prompt);
       meter(model!.provider, model!.id, mediaCents(model!, last.content));
@@ -201,7 +251,7 @@ async function* run(
       }
       yield { type: "status", message: `Transcribing ${last.attachment.name}…` };
       const text = await transcribe(last.attachment);
-      meter("elevenlabs", "transcribe", TRANSCRIBE_COST_CENTS);
+      meter("elevenlabs", "transcribe", transcribeCostCents(attachmentBytes(last.attachment)));
       yield { type: "text", delta: `**Transcript of ${last.attachment.name}**\n\n${text}` };
       return;
     }
@@ -220,7 +270,7 @@ async function* runFree(
   const last = history[history.length - 1];
   if (lane === "image") {
     if (!(await reserveFreeImage())) {
-      throw new Error("Today's free images are used up across Flash. They reset tomorrow, or you can get more credits.");
+      throw new FriendlyError("Today's free images are used up across Flash. They reset tomorrow, or you can get more credits.");
     }
     used.provider = "cloudflare";
     used.model = "flux-1-schnell";
@@ -233,6 +283,14 @@ async function* runFree(
     used.provider = provider;
     used.model = label;
   });
+}
+
+/** What the error message says about credits after a failed request. */
+function refundNote(held: number, credits: number): string {
+  if (!held) return "";
+  if (!credits) return " Your credits were refunded.";
+  if (credits >= held) return ` The AI provider charged for the work already done, so this used ${credits} credits.`;
+  return ` Your credits were partly refunded: ${credits} paid for the work already done.`;
 }
 
 export async function POST(request: Request) {
@@ -249,8 +307,14 @@ export async function POST(request: Request) {
   if (!last || last.role !== "user") {
     return Response.json({ error: "The last message must be from the user." }, { status: 400 });
   }
-  if (last.attachment && (last.attachment.data.length * 3) / 4 > MAX_ATTACHMENT_BYTES) {
+  if (last.attachment && attachmentBytes(last.attachment) > MAX_ATTACHMENT_BYTES) {
     return Response.json({ error: "Files must be 3 MB or smaller." }, { status: 413 });
+  }
+  if (typeof last.content !== "string" || last.content.length > MAX_MESSAGE_CHARS) {
+    return Response.json(
+      { error: "This message is too long. Send a shorter one, or attach the text as a file." },
+      { status: 413 },
+    );
   }
 
   const previous = body.previous && (ENGINES as readonly string[]).includes(body.previous) ? body.previous : undefined;
@@ -265,13 +329,17 @@ export async function POST(request: Request) {
   const meter: Meter = (provider, model, cents) => spend.push({ provider, model, cents });
 
   await ensureMonthlyCredits(user.id);
-  const available = await balance(user.id);
+  // A team member spends the shared pool first. One ledger pays for each request, so the hold
+  // is sized to the larger balance.
+  const available = (await spendable(user.id)).largest;
 
   // When no keyword rule fits, a small, fast model reads the request and picks the engine.
   // Skipped for users out of credits, so the free lane costs Flash nothing.
   if (!override && auto.guessed && !last.attachment && claudeConfigured() && available >= 5) {
     const guess = await classifyRequest(last.content, meter);
-    if (guess && guess !== "text" && guess !== "transcribe") {
+    // A guess is only a guess, so it never sends a request to an engine that isn't available yet.
+    const ready = (e: Engine) => (isMedia(e) ? Boolean(pickModel(e, last.content, providers())) : configured(e));
+    if (guess && guess !== "text" && guess !== "transcribe" && ready(guess)) {
       engine = guess;
       reason = "Flash's router read your request.";
     }
@@ -280,23 +348,33 @@ export async function POST(request: Request) {
   const picked = isMedia(engine) ? pickModel(engine, last.content, providers(), body.model) : null;
   const model = picked?.model ?? null;
 
-  // Demo replies are free. Media has a fixed price per model. Claude engines are charged by
+  // Engines that aren't available yet reply for free. Media has a fixed price per model. Claude engines are charged by
   // length: Flash holds up to a limit, then keeps only what the reply really cost.
   const live = isMedia(engine) ? Boolean(model) : configured(engine);
   const metered = live && !isMedia(engine) && engine !== "voice" && engine !== "transcribe";
+  const preferences = (typeof body.preferences === "string" ? body.preferences : user.preferences).slice(
+    0,
+    MAX_PREFERENCES_CHARS,
+  );
   let held = 0;
   let needed = 0;
   let budget = NO_BUDGET;
+  // What reading the input once costs, charged even when the user stops the reply.
+  let inputCents = 0;
   if (live) {
     if (model) held = needed = modelCredits(model, last.content);
-    else if (engine === "voice") held = needed = creditsFor(voiceCostCents(textToSpeak(last.content).length));
-    else if (engine === "transcribe") held = needed = creditsFor(TRANSCRIBE_COST_CENTS);
-    else {
+    else if (engine === "voice") held = needed = creditsFor(voiceCostCents(spokenText(last.content).length));
+    else if (engine === "transcribe") {
+      // Priced by file size (see transcribeCostCents); with no file, the engine just asks for one.
+      held = needed = last.attachment ? creditsFor(transcribeCostCents(attachmentBytes(last.attachment))) : 0;
+    } else {
       // The reply may only spend what the held credits pay for, so no request runs at a loss.
       const claudeModel = modelForEngine(engine);
-      const hold = planHold(engine, claudeModel, await countInputTokens(claudeModel, history), available);
+      const inputTokens = await countInputTokens(claudeModel, history, systemFor(engine, preferences));
+      const hold = planHold(engine, claudeModel, inputTokens, available);
       ({ needed, held } = hold);
       budget = { maxTokens: hold.maxTokens, capCents: hold.capCents };
+      inputCents = readCostCents(claudeModel, inputTokens);
     }
   }
   // Out of credits: chat-style requests and images fall back to free open-source models,
@@ -306,7 +384,7 @@ export async function POST(request: Request) {
   if (live && available < needed && verified) {
     const lane = freeEligible(engine, last);
     if (lane) {
-      if ((await freeLeft(user.id, lane)) <= 0) {
+      if (!(await reserveFreeUser(user.id, lane))) {
         return Response.json(
           {
             error: `You've used today's free ${lane === "image" ? "images" : "messages"} and you have ${available} credits. Free use resets tomorrow, or get more credits now.`,
@@ -338,8 +416,8 @@ export async function POST(request: Request) {
       { status: 402 },
     );
   }
-  const store: Store = (media, name) => saveFile(user.id, media.mime, name, media.data);
-  const preferences = body.preferences ?? user.preferences;
+  // Saved files take the extension of what the provider really sent, so downloads open correctly.
+  const store: Store = (media, name) => saveFile(user.id, media.mime, withExtension(name, media.mime), media.data);
 
   const encoder = new TextEncoder();
   // Set when the browser stops reading (the user pressed Stop), so the engine stops too.
@@ -368,6 +446,7 @@ export async function POST(request: Request) {
           : model && { model: model.label, modelWhy: picked!.why }),
       });
       let ok = true;
+      let stopped = false;
       let failure = "";
       let written = 0;
       try {
@@ -375,28 +454,31 @@ export async function POST(request: Request) {
           ? runFree(free, engine, history, preferences, store, freeUse)
           : run(engine, history, preferences, store, model, meter, budget);
         for await (const event of events) {
-          if (cancelled || request.signal.aborted) break;
+          if (cancelled || request.signal.aborted) {
+            stopped = true;
+            break;
+          }
           if (event.type === "text") written += event.delta.length;
           send(event);
         }
       } catch (err) {
         console.error(`[flash] ${engine} engine failed`, err);
         ok = false;
-        failure = err instanceof Error ? err.message : "Something went wrong.";
+        // Provider errors can hold raw responses, so only messages written for the user are shown.
+        failure =
+          err instanceof FriendlyError
+            ? err.message
+            : `${engine === "text" ? "Flash" : ENGINE_LABELS[engine]} is busy right now. Please try again in a moment.`;
       }
       const costCents = spend.reduce((sum, s) => sum + s.cents, 0);
-      // A failed request costs nothing. A stopped reply is charged what it used, or a typical reply.
-      let credits = held;
-      if (!ok || free) credits = 0;
-      else if (metered) {
-        // A stopped reply has no usage report: charge the larger of a typical reply and an
-        // estimate from what was already sent (about 3 characters per token, doubled for thinking,
-        // at Opus's output price of 2,000¢ per million tokens).
-        const estimate = Math.ceil((((written / 3) * 2 * 2000) / 1e6) * MARKUP);
-        const used = spend.length ? creditsFor(costCents) : Math.max(TYPICAL_CREDITS[engine] ?? 4, estimate);
-        credits = Math.min(held, used);
-      }
+      // A failed request costs only the provider work that really ran. A stopped reply is
+      // charged for reading its input and what it wrote, or a typical reply. The free lane is free.
+      const credits = free
+        ? 0
+        : finalCredits({ held, ok, stopped, metered, costCents, inputCents, written, typical: TYPICAL_CREDITS[engine] ?? 4 });
       await settle(chargeId, credits);
+      // A free request that failed doesn't use up one of the user's free requests for today.
+      if (free && !ok) await releaseFreeUser(user.id, free).catch((err) => console.error("[flash] free release failed", err));
       if (live) {
         const main = spend.at(-1);
         await logUsage({
@@ -409,7 +491,7 @@ export async function POST(request: Request) {
           ok,
         }).catch((err) => console.error("[flash] usage log failed", err));
       }
-      if (!ok) send({ type: "error", message: `${failure}${held ? " Your credits were refunded." : ""}` });
+      if (!ok) send({ type: "error", message: failure + refundNote(held, credits) });
       if (cancelled) return;
       if (metered && ok && !free) send({ type: "cost", credits });
       send({ type: "done" });

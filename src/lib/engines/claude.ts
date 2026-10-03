@@ -24,15 +24,15 @@ export const NO_BUDGET: Budget = { maxTokens: MAX_OUTPUT_TOKENS, capCents: Infin
 export const modelForEngine = (engine: Engine) =>
   engine === "app" || engine === "slides" || engine === "code" ? BUILD_MODEL : CHAT_MODEL;
 
-/** Counts the tokens a conversation will cost to read, plus room for system prompts and tools. */
-export async function countInputTokens(model: string, history: ChatTurn[]): Promise<number> {
+/** Counts the tokens a conversation and its system prompt will cost to read, plus room for tools. */
+export async function countInputTokens(model: string, history: ChatTurn[], systemPrompt = ""): Promise<number> {
   const messages = toMessages(history);
   try {
-    const res = await getClient().beta.messages.countTokens({ model, messages });
+    const res = await getClient().beta.messages.countTokens({ model, messages, ...(systemPrompt && { system: systemPrompt }) });
     return res.input_tokens + 3000;
   } catch {
     // Counting failed: estimate on the high side (about 2.5 characters per token).
-    return Math.ceil(JSON.stringify(messages).length / 2.5) + 3000;
+    return Math.ceil((JSON.stringify(messages).length + systemPrompt.length) / 2.5) + 3000;
   }
 }
 
@@ -231,15 +231,19 @@ export async function improvePrompt(
   request: string,
   meter: Meter = noMeter,
 ): Promise<string> {
-  const res = await getClient().beta.messages.create({
-    model: CHAT_MODEL,
-    max_tokens: 2000,
-    betas: ["server-side-fallback-2026-07-01"],
-    fallbacks: "default",
-    output_config: { effort: "low" },
-    system: `${PROMPT_REWRITERS[kind]} Reply with the prompt only.`,
-    messages: [{ role: "user", content: request }],
-  });
+  const res = await getClient().beta.messages.create(
+    {
+      model: CHAT_MODEL,
+      max_tokens: 2000,
+      betas: ["server-side-fallback-2026-07-01"],
+      fallbacks: "default",
+      output_config: { effort: "low" },
+      system: `${PROMPT_REWRITERS[kind]} Reply with the prompt only.`,
+      messages: [{ role: "user", content: request.slice(0, 2000) }],
+    },
+    // Kept short so a slow rewrite can't eat the time a video needs.
+    { timeout: 15_000, maxRetries: 0 },
+  );
   meterClaude(meter, res);
   if (res.stop_reason === "refusal") return request;
   const text = res.content.find((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text");

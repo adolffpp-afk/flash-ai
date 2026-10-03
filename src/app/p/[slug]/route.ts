@@ -3,6 +3,8 @@ import { flashDbShim, injectHead } from "@/lib/flashdb-shim.ts";
 
 // Published apps are served with a CSP sandbox, which gives them their own opaque origin:
 // they can't read Flash's cookies or call Flash's private APIs, only the public flashDB endpoint.
+// They still share Flash's domain (phishing pages would too), so publishing needs a confirmed
+// email and is rate limited. TODO: serve them from a separate domain once one is bought.
 const SANDBOX_CSP = "sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads allow-pointer-lock";
 
 export async function GET(_request: Request, ctx: RouteContext<"/p/[slug]">) {

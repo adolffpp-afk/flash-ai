@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { COMPANY, CONTACT, LegalPage } from "@/components/LegalPage";
 
-export const metadata: Metadata = { title: "Privacy Policy · Flash AI" };
+export const metadata: Metadata = { title: "Privacy Policy" };
 
 export default function Privacy() {
   return (
@@ -15,7 +15,7 @@ export default function Privacy() {
         <li><strong>Account details:</strong> your name, email address and a scrambled (hashed) version of your password.</li>
         <li><strong>Your content:</strong> the messages, files and memory notes you send, and what Flash makes for you, saved in your projects.</li>
         <li><strong>Published apps:</strong> the apps you publish and the data their users save in them.</li>
-        <li><strong>Usage and billing:</strong> which tools you use, credits spent, and purchases. Card payments are handled by Stripe; we never see your full card number.</li>
+        <li><strong>Usage and billing:</strong> which tools you use, credits spent, and purchases. When paid plans are available, card payments are handled by Stripe; we never see your full card number.</li>
         <li><strong>Technical data:</strong> a sign-in cookie that keeps you logged in, and standard server logs.</li>
       </ul>
 
@@ -32,13 +32,13 @@ export default function Privacy() {
       <p>To answer a request, Flash sends it (including any attached file) to the AI provider that handles it:</p>
       <ul>
         <li>Anthropic (writing, research, code, apps, slides, translation)</li>
-        <li>OpenAI (images and video)</li>
-        <li>ElevenLabs (voice, music and transcription)</li>
-        <li>fal.ai and the model makers it serves (additional image, video and music models)</li>
         <li>Groq, OpenRouter and Cloudflare (free open-source models, used when you are out of credits)</li>
+        <li>OpenAI (images and video, when those features are available)</li>
+        <li>ElevenLabs (voice, music and transcription, when those features are available)</li>
+        <li>fal.ai and the model makers it serves (image, video and music models, when those features are available)</li>
       </ul>
       <p>
-        We also use Stripe for payments, Resend to send account emails (email confirmation and password reset), and a database and hosting provider to store your data. Each provider processes
+        We also use Stripe for payments (when paid plans are available), Resend to send account emails (email confirmation and password reset), and a database and hosting provider to store your data. Each provider processes
         data under its own terms and privacy policy. Some are based in the United States, so your data may be processed
         outside your country.
       </p>

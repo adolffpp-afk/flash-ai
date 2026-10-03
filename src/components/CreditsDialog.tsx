@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ENGINES, ENGINE_LABELS, type Engine } from "@/lib/types";
 import { api, type Me } from "@/lib/store";
 import { IntervalToggle, PlanCards, type Interval } from "./PlanCards";
+import { InviteFriends } from "./InviteFriends";
+import { TeamPanel } from "./TeamPanel";
 
 /** One price, or a range when an engine's models cost different amounts. */
 function costLabel(me: Me, engine: Engine): string {
@@ -24,6 +26,18 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
   const [message, setMessage] = useState("");
   const [billing, setBilling] = useState<Interval>(me.plan?.interval ?? "month");
   const plan = me.plan;
+  // Plans and top-ups can't be bought until payments are switched on.
+  const canBuy = me.paymentsEnabled || me.testPurchases;
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  // Runs once on open: focus starts on Close, and Escape closes the dialog.
+  useEffect(() => {
+    closeRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function subscribe(planId: string) {
     setBusy(planId);
@@ -83,16 +97,24 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
     <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-4" onClick={onClose}>
       <div
         role="dialog"
+        aria-modal="true"
         aria-label="Credits"
-        className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-t-2xl border border-zinc-800 bg-zinc-950 p-6 sm:rounded-2xl"
+        className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-t-2xl border border-white/8 bg-zinc-950 p-6 sm:rounded-2xl sm:p-8"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between">
           <div>
             <p className="text-sm text-zinc-400">Your balance</p>
-            <p className="text-4xl font-semibold tracking-tight">
-              {me.credits.toLocaleString("en-US")} <span className="text-lg font-normal text-zinc-400">credits</span>
+            <p className="text-3xl font-medium tracking-tight">
+              <span className="text-gold-gradient">{me.credits.toLocaleString("en-US")}</span>{" "}
+              <span className="text-base font-normal text-zinc-400">credits</span>
             </p>
+            {me.teamCredits !== null && (
+              <p className="mt-1 text-xs text-zinc-400">
+                {me.teamCredits.toLocaleString("en-US")} from your team&apos;s shared pool,{" "}
+                {(me.credits - me.teamCredits).toLocaleString("en-US")} your own
+              </p>
+            )}
             {plan ? (
               <p className="mt-1 text-xs text-zinc-400">
                 <span className="font-medium text-zinc-200">{plan.name} plan</span>
@@ -110,19 +132,19 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
               </p>
             )}
           </div>
-          <button onClick={onClose} className="rounded-lg p-2 text-zinc-400 hover:bg-zinc-900 hover:text-zinc-100" aria-label="Close">
+          <button ref={closeRef} onClick={onClose} className="rounded-full p-2 text-zinc-400 transition hover:bg-white/[0.06] hover:text-zinc-100" aria-label="Close">
             ✕
           </button>
         </div>
 
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-sm font-medium text-zinc-300">Plans</h3>
+        <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
+          <h3 className="text-xs font-medium uppercase tracking-wider text-zinc-500">Plans</h3>
           <div className="flex items-center gap-2">
             {plan && (
               <button
                 onClick={manage}
                 disabled={busy !== null}
-                className="rounded-lg border border-zinc-700 px-3 py-1.5 text-xs text-zinc-200 hover:bg-zinc-900 disabled:opacity-50"
+                className="h-8 rounded-full border border-white/10 px-3 text-xs text-zinc-200 transition hover:bg-white/[0.04] disabled:opacity-50"
               >
                 {busy === "manage" ? "Opening…" : plan.test ? (plan.renews ? "Cancel plan" : "Resume plan") : "Manage billing"}
               </button>
@@ -131,7 +153,7 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
           </div>
         </div>
         <div className="mt-3">
-          <PlanCards pricing={me} interval={billing} current={plan} busy={busy} onPick={subscribe} compact />
+          <PlanCards pricing={me} interval={billing} current={plan} busy={busy} onPick={subscribe} comingSoon={!canBuy} compact />
         </div>
         {plan && (
           <p className="mt-2 text-xs text-zinc-500">
@@ -139,46 +161,62 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
           </p>
         )}
 
-        <h3 className="mt-6 text-sm font-medium text-zinc-300">Top up</h3>
-        <div className="mt-2 grid gap-2 sm:grid-cols-3">
+        {me.team && (
+          <>
+            <h3 className="mt-10 text-xs font-medium uppercase tracking-wider text-zinc-500">Team</h3>
+            <div className="mt-2">
+              <TeamPanel me={me} onChanged={onChanged} />
+            </div>
+          </>
+        )}
+
+        <h3 className="mt-10 text-xs font-medium uppercase tracking-wider text-zinc-500">Top up</h3>
+        <div className="mt-3 grid gap-3 sm:grid-cols-3">
           {me.packs.map((p, i) => (
             <div
               key={p.id}
-              className={`flex flex-col rounded-xl border p-4 ${i === 1 ? "border-indigo-500/60 bg-indigo-500/5" : "border-zinc-800"}`}
+              className={`flex flex-col rounded-xl border p-5 ${i === 1 ? "border-white/15 bg-white/[0.025]" : "border-white/8"}`}
             >
               <div className="flex items-baseline justify-between">
                 <span className="font-medium">{p.name}</span>
-                {i === 1 && <span className="text-[10px] uppercase tracking-wide text-indigo-300">Popular</span>}
+                {i === 1 && <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-400">Popular</span>}
               </div>
-              <div className="mt-1 text-2xl font-semibold">{money(p.priceCents)}</div>
+              <div className="mt-1 text-2xl font-medium tracking-tight">{money(p.priceCents)}</div>
               <div className="text-sm text-zinc-400">{p.credits.toLocaleString("en-US")} credits</div>
               <p className="mb-3 mt-2 text-xs text-zinc-500">{p.blurb}</p>
               <button
                 onClick={() => buy(p.id)}
-                disabled={busy !== null}
-                className="mt-auto w-full rounded-lg bg-gradient-to-r from-indigo-600 to-fuchsia-600 py-2 text-sm font-medium text-white hover:brightness-110 disabled:opacity-50"
+                disabled={busy !== null || !canBuy}
+                className="mt-auto h-9 w-full rounded-full bg-brand text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-50"
               >
-                {busy === p.id ? "Opening…" : "Buy"}
+                {!canBuy ? "Coming soon" : busy === p.id ? "Opening…" : "Buy"}
               </button>
             </div>
           ))}
         </div>
         {message && <p className="mt-3 text-sm text-amber-300">{message}</p>}
-        {!me.paymentsEnabled && !message && (
-          <p className="mt-3 text-xs text-zinc-500">Payments switch on once a Stripe key is added.</p>
+        {!canBuy && !message && (
+          <p className="mt-3 text-xs text-zinc-500">
+            Paid plans and top-ups are coming soon. Your free credits refill on the 1st of each month.
+          </p>
         )}
 
         {me.freeLane.chats > 0 && (
-          <p className="mt-4 rounded-lg border border-emerald-900/60 bg-emerald-950/30 px-3 py-2 text-xs text-emerald-200">
+          <p className="mt-4 rounded-lg border border-primary/15 bg-primary/[0.05] px-3 py-2 text-xs text-emerald-200">
             Out of credits? Chat, writing, code and translation keep working on free open-source models,{" "}
             {me.freeLane.chats} a day{me.freeLane.images ? `, plus ${me.freeLane.images} free images` : ""}.
           </p>
         )}
 
-        <h3 className="mt-6 text-sm font-medium text-zinc-300">What things cost</h3>
+        <h3 className="mt-10 text-xs font-medium uppercase tracking-wider text-zinc-500">Invite friends</h3>
+        <div className="mt-2">
+          <InviteFriends referral={me.referral} />
+        </div>
+
+        <h3 className="mt-10 text-xs font-medium uppercase tracking-wider text-zinc-500">What things cost</h3>
         <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-3">
           {ENGINES.map((e) => (
-            <div key={e} className="flex justify-between border-b border-zinc-900 py-1">
+            <div key={e} className="flex justify-between border-b border-white/5 py-1.5">
               <span className="text-zinc-400">{ENGINE_LABELS[e]}</span>
               <span>{costLabel(me, e)}</span>
             </div>
@@ -189,14 +227,14 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
           what your credits cover, and long conversations cost a little more to read. Failed requests are free.
         </p>
 
-        <h3 className="mt-6 text-sm font-medium text-zinc-300">Image, video and music models</h3>
-        <ul className="mt-2 divide-y divide-zinc-900 text-sm">
+        <h3 className="mt-10 text-xs font-medium uppercase tracking-wider text-zinc-500">Image, video and music models</h3>
+        <ul className="mt-2 divide-y divide-white/5 text-sm">
           {me.models.map((m) => (
             <li key={m.id} className="flex items-baseline gap-3 py-1.5">
               <span className="w-40 shrink-0 text-zinc-200">{m.label}</span>
               <span className="min-w-0 flex-1 text-xs text-zinc-500">
                 {m.blurb}
-                {!m.live && <span className="ml-1 text-amber-400/80">(not set up)</span>}
+                {!m.live && <span className="ml-1 text-zinc-400">(coming soon)</span>}
               </span>
               <span className="shrink-0">{m.credits}</span>
             </li>
@@ -205,8 +243,8 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
 
         {me.activity.length > 0 && (
           <>
-            <h3 className="mt-6 text-sm font-medium text-zinc-300">Recent activity</h3>
-            <ul className="mt-2 divide-y divide-zinc-900 text-sm">
+            <h3 className="mt-10 text-xs font-medium uppercase tracking-wider text-zinc-500">Recent activity</h3>
+            <ul className="mt-2 divide-y divide-white/5 text-sm">
               {me.activity.map((a, i) => (
                 <li key={i} className="flex justify-between py-1.5">
                   <span className="text-zinc-400">

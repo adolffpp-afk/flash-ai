@@ -17,7 +17,7 @@ test("requests that fit a fal model go to it", () => {
   assert.equal(pick("image", "A photorealistic portrait of an old fisherman"), "flux-2-pro");
   assert.equal(pick("video", "A chef talking to the camera about pasta, with sound"), "veo-3.1");
   assert.equal(pick("video", "A 12 second clip of a train crossing a bridge"), "kling-3");
-  assert.equal(pick("music", "A pop song with lyrics about Lagos"), "minimax-music");
+  assert.equal(pick("music", "A pop song with lyrics about Toronto"), "minimax-music");
 });
 
 test("fal models are skipped without a fal key", () => {
