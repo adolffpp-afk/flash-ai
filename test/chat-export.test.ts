@@ -32,3 +32,12 @@ test("download file names come from the project name", () => {
   assert.equal(chatFileName("Café ☕ menu"), "Café-menu.html");
   assert.equal(chatFileName("???"), "flash-chat.html");
 });
+
+test("one answer becomes a print page named after it", async () => {
+  const { answerDocument } = await import("../src/lib/chat-export.ts");
+  const page = answerDocument("Bakery <plan>", "<h1>Bakery plan</h1><table><tr><td>Rent</td></tr></table>", "October 4, 2026");
+  assert.match(page, /<title>Bakery &lt;plan&gt;<\/title>/);
+  assert.match(page, /<h1>Bakery plan<\/h1><table>/);
+  assert.match(page, /@page \{ margin: 18mm 16mm; \}/);
+  assert.match(page, /Made with Flash AI · October 4, 2026/);
+});

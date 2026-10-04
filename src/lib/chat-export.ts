@@ -1,5 +1,33 @@
 import type { UIMessage } from "./store.ts";
 
+// Shared by the downloaded chat and the printed answer: light, readable and print-friendly.
+const STYLE = `  :root { --ink: #16201c; --muted: #5d6b65; --line: #dde5e1; --accent: #0f7a5a; --you: #eef6f2; }
+  body { margin: 0; background: #fff; color: var(--ink); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 40px 20px 64px; }
+  header { border-bottom: 2px solid var(--accent); padding-bottom: 12px; margin-bottom: 28px; }
+  header h1 { margin: 0; font-size: 28px; line-height: 1.25; }
+  header p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
+  section { margin: 0 0 24px; break-inside: avoid-page; }
+  section h2 { margin: 0 0 6px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+  section h2 span { color: var(--muted); letter-spacing: 0; text-transform: none; font-weight: 400; }
+  .you { background: var(--you); border-radius: 12px; padding: 12px 16px; }
+  .you .said { margin: 0; white-space: normal; }
+  .file, .note { color: var(--muted); font-size: 14px; }
+  .file { margin: 0 0 4px; }
+  img { max-width: 100%; border-radius: 10px; border: 1px solid var(--line); }
+  figure { margin: 12px 0; }
+  figcaption { color: var(--muted); font-size: 13px; margin-top: 4px; }
+  a { color: var(--accent); }
+  pre { background: #f4f7f5; border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; font-size: 14px; }
+  code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .92em; }
+  table { border-collapse: collapse; display: block; overflow-x: auto; }
+  th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
+  blockquote { margin: 0; padding-left: 14px; border-left: 3px solid var(--line); color: var(--muted); }
+  footer { margin-top: 40px; color: var(--muted); font-size: 13px; }
+  @page { margin: 18mm 16mm; }
+  @media print { main { padding: 0; } }
+`;
+
 const esc = (text: string) =>
   text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
@@ -61,36 +89,36 @@ export function chatDocument(
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(name)} · Flash AI</title>
 <style>
-  :root { --ink: #16201c; --muted: #5d6b65; --line: #dde5e1; --accent: #0f7a5a; --you: #eef6f2; }
-  body { margin: 0; background: #fff; color: var(--ink); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  main { max-width: 760px; margin: 0 auto; padding: 40px 20px 64px; }
-  header { border-bottom: 2px solid var(--accent); padding-bottom: 12px; margin-bottom: 28px; }
-  header h1 { margin: 0; font-size: 28px; line-height: 1.25; }
-  header p { margin: 4px 0 0; color: var(--muted); font-size: 14px; }
-  section { margin: 0 0 24px; break-inside: avoid-page; }
-  section h2 { margin: 0 0 6px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
-  section h2 span { color: var(--muted); letter-spacing: 0; text-transform: none; font-weight: 400; }
-  .you { background: var(--you); border-radius: 12px; padding: 12px 16px; }
-  .you .said { margin: 0; white-space: normal; }
-  .file, .note { color: var(--muted); font-size: 14px; }
-  .file { margin: 0 0 4px; }
-  img { max-width: 100%; border-radius: 10px; border: 1px solid var(--line); }
-  figure { margin: 12px 0; }
-  figcaption { color: var(--muted); font-size: 13px; margin-top: 4px; }
-  a { color: var(--accent); }
-  pre { background: #f4f7f5; border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; font-size: 14px; }
-  code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .92em; }
-  table { border-collapse: collapse; display: block; overflow-x: auto; }
-  th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; }
-  blockquote { margin: 0; padding-left: 14px; border-left: 3px solid var(--line); color: var(--muted); }
-  footer { margin-top: 40px; color: var(--muted); font-size: 13px; }
-</style>
+${STYLE}</style>
 </head>
 <body>
 <main>
 <header><h1>${esc(name)}</h1><p>A chat with Flash AI · ${esc(opts.date)}</p></header>
 ${parts}
 <footer>Made with Flash AI · <a href="https://www.flash-app.dev">flash-app.dev</a></footer>
+</main>
+</body>
+</html>
+`;
+}
+
+/**
+ * One answer as a page to print or save as PDF: `title` heads it and names the PDF, `html` is the
+ * answer already turned from Markdown into HTML.
+ */
+export function answerDocument(title: string, html: string, date: string): string {
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>${esc(title)}</title>
+<style>
+${STYLE}</style>
+</head>
+<body>
+<main>
+${html}
+<footer>Made with Flash AI · ${esc(date)}</footer>
 </main>
 </body>
 </html>
