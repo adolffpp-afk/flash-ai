@@ -23,6 +23,7 @@ export async function makeMovie(
   seconds: number,
   meter: Meter,
   onProgress: (message: string) => void,
+  aspect = "16:9",
 ): Promise<Media> {
   const end = Date.now() + MOVIE_WAIT_MS;
   const clipCents = CLIP_CENTS_PER_SECOND * seconds;
@@ -35,7 +36,7 @@ export async function makeMovie(
       try {
         const { result } = await falRun(
           endpoint,
-          { prompt, duration: String(seconds), aspect_ratio: "16:9" },
+          { prompt, duration: String(seconds), aspect_ratio: aspect },
           () => {},
           // Leaves time to join the clips and save the movie.
           end - Date.now() - 120_000,

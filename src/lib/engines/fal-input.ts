@@ -1,14 +1,42 @@
 import { animateSeconds, videoSeconds, wantsSound, type ModelInfo } from "../models.ts";
 
+export type Shape = "tall" | "portrait" | "square" | "wide";
+
+/** The shape a request asks for (a phone story, a square post, a wide banner), or null for the usual 4:3 or 16:9. */
+export function shapeOf(request: string): Shape | null {
+  if (/\b(9 ?[:x/] ?16|vertical|(instagram|insta|ig|facebook|whatsapp|snapchat) stor(y|ies)|stor(y|ies) (format|size)|reels?|tik ?tok|youtube shorts|phone (wallpaper|screen|background)|lock ?screen)\b/i.test(request)) return "tall";
+  if (/\b(3 ?[:x/] ?4|4 ?[:x/] ?5|portrait (format|mode|orientation)|poster|flyer|pinterest|book cover)\b/i.test(request)) return "portrait";
+  if (/\b(1 ?[:x/] ?1|square|profile (picture|photo|pic)|avatar|instagram post|album cover|logo|icon)\b/i.test(request)) return "square";
+  if (/\b(16 ?[:x/] ?9|widescreen|wide (format|shot|image|picture|photo|banner)|panoram\w*|banner|header|thumbnail|cover photo|desktop (wallpaper|background)|landscape (format|mode|orientation))\b/i.test(request)) return "wide";
+  return null;
+}
+
+// Every size stays under one megapixel, so a picture costs the same 3 cents whatever its shape.
+const IMAGE_SIZES: Record<Shape, { width: number; height: number }> = {
+  tall: { width: 720, height: 1280 },
+  portrait: { width: 768, height: 1024 },
+  square: { width: 992, height: 992 },
+  wide: { width: 1280, height: 720 },
+};
+
+/** The video aspect ratio for a request. Veo makes only wide and tall videos. */
+export function videoAspect(request: string, square = true): "16:9" | "9:16" | "1:1" {
+  const shape = shapeOf(request);
+  if (shape === "tall" || shape === "portrait") return "9:16";
+  return shape === "square" && square ? "1:1" : "16:9";
+}
+
 /** Builds the fal.ai input for a model from the user's request. */
 export function falInput(model: ModelInfo, prompt: string, request: string): Record<string, unknown> {
   switch (model.id) {
-    case "flux-2-pro":
-      return { prompt, image_size: "landscape_4_3", output_format: "png" };
+    case "flux-2-pro": {
+      const shape = shapeOf(request);
+      return { prompt, image_size: shape ? IMAGE_SIZES[shape] : "landscape_4_3", output_format: "png" };
+    }
     case "veo-3.1":
-      return { prompt, duration: "8s", aspect_ratio: "16:9", generate_audio: true };
+      return { prompt, duration: "8s", aspect_ratio: videoAspect(request, false), generate_audio: true };
     case "kling-3":
-      return { prompt, duration: String(videoSeconds(request)), aspect_ratio: "16:9" };
+      return { prompt, duration: String(videoSeconds(request)), aspect_ratio: videoAspect(request) };
     case "minimax-music":
       // MiniMax writes the lyrics itself when none are given.
       return { prompt: prompt.slice(0, 2000).padEnd(10, "."), lyrics_optimizer: true };
