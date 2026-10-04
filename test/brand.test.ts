@@ -54,3 +54,15 @@ test("the brand kit is saved with a public logo link, kept or replaced", async (
   assert.equal((await getBrand("u1", "https://flash.test")).logo, "");
   assert.ok(await publicFile(link));
 });
+
+test("only the newest logos stay stored", async () => {
+  const { KEPT_LOGOS } = await import("../src/lib/server/brand.ts");
+  const { all } = await import("../src/lib/server/db.ts");
+  await run("INSERT INTO users (id, email, name, password_hash, created_at) VALUES ('u2', 'd@e.f', 'D', 'x', 0)");
+  for (let i = 0; i < KEPT_LOGOS + 3; i++) await saveBrand("u2", { name: "Shop" }, { mediaType: "image/png", data: PNG });
+  const logos = await all("SELECT id FROM files WHERE user_id = 'u2'");
+  assert.equal(logos.length, KEPT_LOGOS);
+  assert.equal((await all("SELECT id FROM public_files WHERE user_id = 'u2'")).length, KEPT_LOGOS);
+  const current = (await getBrand("u2", "")).logo.split("/f/")[1];
+  assert.ok(await publicFile(current), "the logo in use is kept");
+});
