@@ -5,7 +5,7 @@ import { recordVisit } from "@/lib/server/visits.ts";
 
 export async function GET(request: Request, ctx: RouteContext<"/p/[slug]">) {
   const { slug } = await ctx.params;
-  const page = await serveSite(slug);
+  const page = await serveSite(slug, `${new URL(request.url).origin}/p/${slug}`);
   if (page.ok) after(async () => recordVisit(slug, request, (await getUser(request).catch(() => null))?.id));
   return page;
 }

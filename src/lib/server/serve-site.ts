@@ -1,5 +1,7 @@
 import { one } from "./db.ts";
 import { flashDbShim, injectHead } from "../flashdb-shim.ts";
+import { hasOwnPreview, previewTags, sitePreview } from "../site-preview.ts";
+import { SITE_URL } from "../../app/site.ts";
 
 // Published apps are served with a CSP sandbox, which gives them their own opaque origin:
 // they can't read Flash's cookies or call Flash's private APIs, only the public flashDB endpoint.
@@ -7,8 +9,11 @@ import { flashDbShim, injectHead } from "../flashdb-shim.ts";
 // email and is rate limited. TODO: serve them from a separate domain once one is bought.
 const SANDBOX_CSP = "sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads allow-pointer-lock";
 
-/** A published app's page, with flashDB set up to talk to its own data, inbox and shop. */
-export async function serveSite(slug: string | null): Promise<Response> {
+/**
+ * A published app's page, with flashDB set up to talk to its own data, inbox and shop, and a share
+ * card for its address (pageUrl) unless the site has its own.
+ */
+export async function serveSite(slug: string | null, pageUrl?: string): Promise<Response> {
   const site = slug ? await one<{ html: string }>("SELECT html FROM sites WHERE slug = ?", [slug]) : null;
   if (!slug || !site) {
     return new Response("<!doctype html><title>Not found</title><p style='font-family:sans-serif'>This app doesn't exist or was unpublished.</p>", {
@@ -16,7 +21,11 @@ export async function serveSite(slug: string | null): Promise<Response> {
       headers: { "Content-Type": "text/html; charset=utf-8" },
     });
   }
-  const html = injectHead(site.html, flashDbShim(
+  const card =
+    pageUrl && !hasOwnPreview(site.html)
+      ? previewTags(sitePreview(site.html), pageUrl, `${(process.env.FLASH_APP_URL || SITE_URL).replace(/\/$/, "")}/p/${slug}/card`)
+      : "";
+  const html = injectHead(site.html, card + flashDbShim(
     `/api/sites/${slug}/data`,
     `/api/sites/${slug}/inbox`,
     `/api/sites/${slug}/shop`,
