@@ -9,6 +9,7 @@ import { CreditsDialog } from "./CreditsDialog";
 import { InviteDialog } from "./InviteFriends";
 import { InstallApp, InstallPopup } from "./InstallApp";
 import { ShareDialog } from "./ShareDialog";
+import { DownloadChat } from "./DownloadChat";
 import { Creations } from "./Creations";
 import { ENGINES, ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types";
 import { api, newId, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
@@ -813,6 +814,7 @@ export function Flash({
             ☰
           </button>
           <h1 className="min-w-0 flex-1 truncate text-sm text-zinc-200">{active?.name ?? "Flash AI"}</h1>
+          {active?.messages?.some((m) => !m.pending) && <DownloadChat project={active} disabled={busy} />}
           {active?.messages?.some((m) => !m.pending) && (
             <button
               onClick={() => setShowShare(true)}
