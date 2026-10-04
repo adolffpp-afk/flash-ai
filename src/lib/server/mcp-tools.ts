@@ -1,7 +1,8 @@
 import { creditsFor, MAX_SPEECH_CHARS, voiceCostCents } from "../credits.ts";
 import { MODELS, modelCredits, pickModel, type MediaEngine, type ModelInfo, type Provider } from "../models.ts";
 import { falConfigured, falGenerate } from "../engines/fal.ts";
-import { falInput } from "../engines/fal-input.ts";
+import { falEditInput, falInput } from "../engines/fal-input.ts";
+import { imageDimensions, MAX_EDIT_PIXELS } from "../imageSize.ts";
 import {
   composeMusic,
   downloadVideo,
@@ -16,7 +17,7 @@ import {
 import { FriendlyError, JobAbandoned } from "../engines/errors.ts";
 import { charge, ensureMonthlyCredits, logUsage, settle, spendable } from "./credits.ts";
 import { saveFile } from "./files.ts";
-import { publicFileLink } from "./connector.ts";
+import { publicFile, publicFileLink } from "./connector.ts";
 import type { User } from "./auth.ts";
 
 /** The tools the Flash connector offers, in MCP's shapes (the 2025-06-18 specification). */
@@ -126,6 +127,27 @@ export const tools = () => [
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   },
+  ...(["remove-bg", "upscale"] as const).map((id) => {
+    const model = MODELS.find((m) => m.id === id)!;
+    return {
+      name: id === "remove-bg" ? "flash_remove_background" : "flash_upscale_image",
+      title: id === "remove-bg" ? "Remove a photo's background with Flash" : "Upscale a photo with Flash",
+      description:
+        (id === "remove-bg"
+          ? "Cuts the subject out of a photo and returns it on a transparent background (PNG)."
+          : "Makes a photo sharper and up to 4 times bigger (longest side up to 4,096 pixels).") +
+        ` Costs ${modelCredits(model)} Flash credits. Give a Flash file link (from another Flash tool) as image_url, or the photo itself as image_base64. ` +
+        "PNG, JPEG or WebP, up to 2048 × 2048 pixels.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          image_url: { type: "string", description: "A Flash file link, like https://www.flash-app.dev/f/…" },
+          image_base64: { type: "string", description: "The photo as base64 (PNG, JPEG or WebP), when there is no Flash link." },
+        },
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    };
+  }).filter(() => falConfigured()),
   {
     name: "flash_check_credits",
     title: "Check Flash credits",
@@ -267,6 +289,58 @@ async function speak(args: Args, ctx: ToolContext): Promise<ToolResult> {
   };
 }
 
+const PHOTO_TYPES: Record<string, string> = { "89504e47": "image/png", ffd8ff: "image/jpeg", "52494646": "image/webp" };
+const photoType = (data: Buffer) =>
+  Object.entries(PHOTO_TYPES).find(([magic]) => data.subarray(0, magic.length / 2).toString("hex") === magic)?.[1] ?? null;
+
+/** The photo a tool was given: one of the user's own Flash links, or the image itself. */
+async function photoArg(args: Args, ctx: ToolContext): Promise<{ data: Buffer; mime: string } | string> {
+  const url = str(args.image_url);
+  let data: Buffer;
+  if (url) {
+    const id = url.match(/\/f\/([\w-]+)$/)?.[1];
+    const file = id && url.startsWith(`${ctx.origin}/f/`) ? await publicFile(id) : null;
+    if (!file || file.user_id !== ctx.user.id) return "image_url must be a Flash file link from this account. Otherwise send the photo as image_base64.";
+    data = Buffer.from(file.data);
+  } else {
+    const b64 = str(args.image_base64).replace(/^data:[^,]*,/, "");
+    if (!b64) return "Give the photo as image_url (a Flash link) or image_base64.";
+    data = Buffer.from(b64, "base64");
+  }
+  const mime = photoType(data);
+  const size = imageDimensions(data);
+  if (!mime || !size) return "Flash can work on PNG, JPEG and WebP photos.";
+  if (size.width * size.height > MAX_EDIT_PIXELS) return "That photo is too big. Flash works on photos up to 2048 × 2048 pixels.";
+  return { data, mime };
+}
+
+async function photoTool(id: "remove-bg" | "upscale", args: Args, ctx: ToolContext): Promise<ToolResult> {
+  const model = MODELS.find((m) => m.id === id)!;
+  if (!providers().has(model.provider)) return failed(`Flash's ${model.label} isn't available yet.`);
+  const photo = await photoArg(args, ctx);
+  if (typeof photo === "string") return failed(photo);
+  const credits = modelCredits(model);
+  ctx.progress(`Starting ${model.label} (${credits} credits)…`);
+  const input = falEditInput(model, `data:${photo.mime};base64,${photo.data.toString("base64")}`, imageDimensions(photo.data), "");
+  const result = await paid(
+    ctx,
+    { engine: "image", model: model.id, provider: model.provider, credits, costCents: costOf(model, "") },
+    () => falGenerate(model.endpoint!, input, (m) => ctx.progress(m)),
+    `flash-${id}`,
+  );
+  if ("content" in result) return result;
+  const content: ToolContent[] = [];
+  if (result.media.data.length <= INLINE_IMAGE_BYTES) {
+    content.push({ type: "image", data: result.media.data.toString("base64"), mimeType: result.media.mime });
+  }
+  content.push({
+    type: "text",
+    text: `Done with ${model.label} on Flash for ${result.credits} credits. ${await balanceLine(ctx)}\nLink (anyone with it can open the file): ${result.url}`,
+  });
+  content.push({ type: "resource_link", uri: result.url, name: `flash-${id}.${extFor(result.media.mime, "image")}`, mimeType: result.media.mime });
+  return { content };
+}
+
 /** Runs one tool. Unknown tools return null (a protocol error, not a tool error). */
 export async function callTool(name: string, args: Args, ctx: ToolContext): Promise<ToolResult | null> {
   switch (name) {
@@ -278,6 +352,10 @@ export async function callTool(name: string, args: Args, ctx: ToolContext): Prom
       return media("music", args, ctx);
     case "flash_speak":
       return speak(args, ctx);
+    case "flash_remove_background":
+      return photoTool("remove-bg", args, ctx);
+    case "flash_upscale_image":
+      return photoTool("upscale", args, ctx);
     case "flash_check_credits": {
       await ensureMonthlyCredits(ctx.user.id);
       const { total, pool } = await spendable(ctx.user.id);

@@ -78,7 +78,7 @@ test("an app that asks for a secret must send it", async () => {
 
 test("the tools list only set-up models and never the Movie maker", () => {
   const list = tools();
-  assert.deepEqual(list.map((t) => t.name), ["flash_create_image", "flash_create_video", "flash_create_music", "flash_speak", "flash_check_credits"]);
+  assert.deepEqual(list.map((t) => t.name), ["flash_create_image", "flash_create_video", "flash_create_music", "flash_speak", "flash_remove_background", "flash_upscale_image", "flash_check_credits"]);
   const video = list.find((t) => t.name === "flash_create_video")!;
   const models = (video.inputSchema.properties as { model: { enum: string[] } }).model.enum;
   assert.deepEqual(models, ["veo-3.1", "kling-3"]);
@@ -147,4 +147,36 @@ test("unknown tools and models are refused", async () => {
   assert.equal(r.isError, true);
   const credits = (await callTool("flash_check_credits", {}, ctx("u2")))!;
   assert.match((credits.content[0] as { text: string }).text, /has \d+ Flash credits/);
+});
+
+test("photo tools take the user's own Flash links or a photo, and charge 5 credits", async () => {
+  const png = Buffer.alloc(24);
+  png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+  png.writeUInt32BE(1000, 16);
+  png.writeUInt32BE(500, 20);
+  const before = await balance("u2");
+  const calls = fakeFal();
+  const sent: unknown[] = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    if (init?.method === "POST") sent.push(JSON.parse(String(init.body)));
+    return realFetch(input, init);
+  }) as typeof fetch;
+  const up = (await callTool("flash_upscale_image", { image_base64: png.toString("base64") }, ctx("u2")))!;
+  assert.equal(up.isError, undefined);
+  assert.ok(calls.some((x) => x.includes("fal-ai/seedvr/upscale/image")));
+  assert.equal((sent[0] as { upscale_factor: number }).upscale_factor, 4, "1000 px long side → 4×, at most 4,096 px");
+  assert.equal(before - (await balance("u2")), 5);
+
+  // Its result link can go straight into the background remover.
+  const link = (up.content.find((x) => x.type === "resource_link") as { uri: string }).uri;
+  const cut = (await callTool("flash_remove_background", { image_url: link }, ctx("u2")))!;
+  assert.match((cut.content[0] as { text?: string }).text ?? "", /PNG, JPEG and WebP/, "the fake upscale returned no real photo");
+  const someoneElse = (await callTool("flash_remove_background", { image_url: link }, ctx("u1")))!;
+  assert.match((someoneElse.content[0] as { text: string }).text, /from this account/);
+  const big = Buffer.from(png);
+  big.writeUInt32BE(5000, 16);
+  big.writeUInt32BE(3000, 20);
+  const tooBig = (await callTool("flash_remove_background", { image_base64: big.toString("base64") }, ctx("u2")))!;
+  assert.match((tooBig.content[0] as { text: string }).text, /too big/);
 });

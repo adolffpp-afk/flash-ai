@@ -15,6 +15,8 @@ const TOOLS = [
   ["Create a video", "Clips with sound from Veo 3.1, or up to 15 seconds with Kling 3."],
   ["Create music", "Instrumentals or full songs with sung lyrics."],
   ["Read text aloud", "Natural voice-overs as MP3."],
+  ["Remove a background", "Cuts out the subject on a transparent background."],
+  ["Upscale a photo", "Sharper and up to 4 times bigger."],
   ["Check credits", "How many Flash credits you have left."],
 ];
 

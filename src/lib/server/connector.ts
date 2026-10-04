@@ -178,8 +178,8 @@ export async function publicFileLink(userId: string, fileUrl: string): Promise<s
 }
 
 export async function publicFile(id: string) {
-  return one<{ mime: string; name: string; data: ArrayBuffer }>(
-    `SELECT f.mime, f.name, f.data FROM public_files p JOIN files f ON f.id = p.file_id AND f.user_id = p.user_id WHERE p.id = ?`,
+  return one<{ mime: string; name: string; data: ArrayBuffer; user_id: string }>(
+    `SELECT f.mime, f.name, f.data, p.user_id FROM public_files p JOIN files f ON f.id = p.file_id AND f.user_id = p.user_id WHERE p.id = ?`,
     [id],
   );
 }

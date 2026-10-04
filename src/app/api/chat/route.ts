@@ -50,7 +50,7 @@ import { unavailableReply } from "@/lib/engines/demo.ts";
 import { FriendlyError, JobAbandoned } from "@/lib/engines/errors.ts";
 import { buildSystem, streamBuild } from "@/lib/engines/builder.ts";
 import { makeMovie } from "@/lib/engines/movie.ts";
-import { falInput } from "@/lib/engines/fal-input.ts";
+import { falEditInput, falInput } from "@/lib/engines/fal-input.ts";
 
 // Vercel Pro allows up to 800 seconds, which the Movie maker needs (scenes, filming and joining).
 export const maxDuration = 800;
@@ -108,16 +108,6 @@ async function* withProgress<T>(
 /** Uses Claude to sharpen a media prompt when a Claude key exists, else sends the request as written. */
 const sharpen = (kind: "image" | "video" | "music", request: string, meter: Meter) =>
   claudeConfigured() ? improvePrompt(kind, request, meter).catch(() => request) : Promise.resolve(request);
-
-/** The edited photo keeps the original's size, within the 512 to 2048 pixels the model makes. */
-function editOutputSize(base64: string): { width: number; height: number } | undefined {
-  const size = imageDimensions(Buffer.from(base64, "base64"));
-  if (!size) return undefined;
-  const scale = Math.max(1, 512 / Math.min(size.width, size.height));
-  const width = Math.min(2048, Math.round(size.width * scale));
-  const height = Math.min(2048, Math.round(size.height * scale));
-  return { width, height };
-}
 
 /** The bytes in a base64 attachment. */
 const attachmentBytes = (a: { data: string }) => (a.data.length * 3) / 4;
@@ -189,22 +179,17 @@ async function* run(
     case "image": {
       if (model!.edits) {
         const photo = last.attachment!;
-        yield { type: "status", message: `Editing your photo with ${model!.label}…` };
+        yield { type: "status", message: `Working on your photo with ${model!.label}…` };
         const edited = yield* withProgress((report) =>
           falGenerate(
             model!.endpoint!,
-            {
-              prompt: last.content,
-              image_urls: [`data:${photo.mediaType};base64,${photo.data}`],
-              // The same size as the photo (checked to be at most 2048 × 2048 before credits were held).
-              image_size: editOutputSize(photo.data),
-              output_format: "png",
-            },
+            // The photo was checked to be at most 2048 × 2048 before credits were held.
+            falEditInput(model!, `data:${photo.mediaType};base64,${photo.data}`, imageDimensions(Buffer.from(photo.data, "base64")), last.content),
             (m) => report(`${m}…`),
           ).catch(billIfAbandoned),
         );
         meter(model!.provider, model!.id, mediaCents(model!, last.content));
-        yield { type: "image", url: await store(edited, "flash-edit.png"), prompt: last.content };
+        yield { type: "image", url: await store(edited, `flash-${model!.id === "flux-2-edit" ? "edit" : model!.id}.png`), prompt: last.content };
         return;
       }
       const prompt = await sharpen("image", last.content, meter);

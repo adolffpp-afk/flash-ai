@@ -112,6 +112,12 @@ function applyEvent(m: UIMessage, e: StreamEvent): UIMessage {
  * Phone photos are often larger than Flash accepts, so photos over 2048 pixels or 3 MB are
  * scaled down in the browser first. Anything that can't be read is left as it is.
  */
+// One-tap actions for an attached photo; the router sends each to the matching photo model.
+const PHOTO_ACTIONS = [
+  { label: "✂️ Remove background", prompt: "Remove the background" },
+  { label: "🔍 Upscale", prompt: "Upscale this photo and make it sharper" },
+];
+
 async function shrinkPhoto(file: File): Promise<File> {
   if (!/^image\/(png|jpeg|webp)$/.test(file.type)) return file;
   try {
@@ -861,6 +867,20 @@ export function Flash({
                   >
                     ✕
                   </button>
+                </div>
+              )}
+              {attachment && /^image\/(png|jpeg|webp)$/.test(attachment.mediaType) && isLive("image") && !busy && (
+                <div className="mb-1 ml-2 mt-1 inline-flex flex-wrap gap-1.5">
+                  {PHOTO_ACTIONS.map((a) => (
+                    <button
+                      key={a.label}
+                      type="button"
+                      onClick={() => send(a.prompt)}
+                      className="rounded-full border border-white/10 px-3 py-1 text-xs text-zinc-300 transition hover:border-primary/50 hover:text-zinc-100"
+                    >
+                      {a.label}
+                    </button>
+                  ))}
                 </div>
               )}
               <input ref={fileRef} type="file" accept={ACCEPT} hidden onChange={onFile} />
