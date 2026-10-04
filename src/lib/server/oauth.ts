@@ -69,7 +69,8 @@ export function safeNext(next: string | null | undefined): string {
   if (!next || !next.startsWith("/") || next.startsWith("//") || next.includes("\\")) return "/";
   // Control characters could turn the path into something a browser reads differently.
   if ([...next].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)) return "/";
-  return next.slice(0, 500);
+  // Long enough for a connector's sign-in page, which carries its OAuth request in the query.
+  return next.slice(0, 2000);
 }
 
 const b64url = (buf: Buffer) => buf.toString("base64url");

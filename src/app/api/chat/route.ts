@@ -45,11 +45,12 @@ import {
   voiceCostCents,
 } from "@/lib/credits.ts";
 import { falConfigured, falGenerate } from "@/lib/engines/fal.ts";
-import { MEDIA_ENGINES, modelCredits, movieScenes, movieSeconds, pickModel, videoSeconds, type MediaEngine, type ModelInfo, type Provider } from "@/lib/models.ts";
+import { MEDIA_ENGINES, modelCredits, movieScenes, movieSeconds, pickModel, type MediaEngine, type ModelInfo, type Provider } from "@/lib/models.ts";
 import { unavailableReply } from "@/lib/engines/demo.ts";
 import { FriendlyError, JobAbandoned } from "@/lib/engines/errors.ts";
 import { buildSystem, streamBuild } from "@/lib/engines/builder.ts";
 import { makeMovie } from "@/lib/engines/movie.ts";
+import { falInput } from "@/lib/engines/fal-input.ts";
 
 // Vercel Pro allows up to 800 seconds, which the Movie maker needs (scenes, filming and joining).
 export const maxDuration = 800;
@@ -102,23 +103,6 @@ async function* withProgress<T>(
     }
   }
   return work;
-}
-
-/** Builds the fal.ai input for a model from the user's request. */
-function falInput(model: ModelInfo, prompt: string, request: string): Record<string, unknown> {
-  switch (model.id) {
-    case "flux-2-pro":
-      return { prompt, image_size: "landscape_4_3", output_format: "png" };
-    case "veo-3.1":
-      return { prompt, duration: "8s", aspect_ratio: "16:9", generate_audio: true };
-    case "kling-3":
-      return { prompt, duration: String(videoSeconds(request)), aspect_ratio: "16:9" };
-    case "minimax-music":
-      // MiniMax writes the lyrics itself when none are given.
-      return { prompt: prompt.slice(0, 2000).padEnd(10, "."), lyrics_optimizer: true };
-    default:
-      return { prompt };
-  }
 }
 
 /** Uses Claude to sharpen a media prompt when a Claude key exists, else sends the request as written. */

@@ -59,7 +59,11 @@ export function readCookie(request: Request, name: string): string | null {
 }
 
 export async function getUser(request: Request): Promise<User | null> {
-  const token = readCookie(request, SESSION_COOKIE);
+  return userForSession(readCookie(request, SESSION_COOKIE));
+}
+
+/** The signed-in user for a session cookie's value, for pages that read cookies directly. */
+export async function userForSession(token: string | null | undefined): Promise<User | null> {
   if (!token) return null;
   return one<User>(
     `SELECT u.id, u.email, u.name, u.preferences, u.created_at, u.last_free_grant, u.verified_at

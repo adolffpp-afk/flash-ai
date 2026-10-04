@@ -6,6 +6,7 @@ import { api, type Me } from "@/lib/store";
 import { IntervalToggle, PlanCards, type Interval } from "./PlanCards";
 import { InviteFriends } from "./InviteFriends";
 import { TeamPanel } from "./TeamPanel";
+import { ConnectedApps } from "./ConnectedApps";
 
 /** One price, or a range when an engine's models cost different amounts. */
 function costLabel(me: Me, engine: Engine): string {
@@ -211,6 +212,11 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
         <h3 className="mt-10 text-xs font-medium uppercase tracking-wider text-zinc-500">Invite friends</h3>
         <div className="mt-2">
           <InviteFriends referral={me.referral} />
+        </div>
+
+        <h3 className="mt-10 text-xs font-medium uppercase tracking-wider text-zinc-500">Connected apps</h3>
+        <div className="mt-2">
+          <ConnectedApps />
         </div>
 
         <h3 className="mt-10 text-xs font-medium uppercase tracking-wider text-zinc-500">What things cost</h3>
