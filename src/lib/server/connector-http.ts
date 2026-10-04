@@ -64,3 +64,16 @@ export function needsSignIn(request: Request, error?: "invalid_token"): Response
     { "WWW-Authenticate": `Bearer resource_metadata="${meta}"${error ? `, error="${error}"` : ""}` },
   );
 }
+
+/** Whether a form's Origin header is this site (by the configured address or the host it was sent to). */
+export function sameSite(from: string | null, request: Request, origin: string): boolean {
+  if (!from || from === "null") return true;
+  let host: string;
+  try {
+    host = new URL(from).host;
+  } catch {
+    return false;
+  }
+  const hosts = [new URL(origin).host, new URL(request.url).host, request.headers.get("x-forwarded-host"), request.headers.get("host")];
+  return hosts.includes(host);
+}
