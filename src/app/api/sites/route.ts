@@ -1,13 +1,14 @@
 import { getUser, unauthorized } from "@/lib/server/auth.ts";
 import { run } from "@/lib/server/db.ts";
-import { listSites, publishSite } from "@/lib/server/sites.ts";
+import { publishSite } from "@/lib/server/sites.ts";
+import { sitesWithMessages } from "@/lib/server/inbox.ts";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const user = await getUser(request);
   if (!user) return unauthorized();
-  return Response.json({ sites: await listSites(user.id) });
+  return Response.json({ sites: await sitesWithMessages(user.id) });
 }
 
 /** Publishes an app, or updates an already published one when its slug is passed. */

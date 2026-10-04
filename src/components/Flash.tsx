@@ -11,6 +11,7 @@ import { InstallApp, InstallPopup } from "./InstallApp";
 import { ShareDialog } from "./ShareDialog";
 import { DownloadChat } from "./DownloadChat";
 import { Creations } from "./Creations";
+import { MyApps } from "./MyApps";
 import { ENGINES, ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types";
 import { api, newId, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
 import type { ChatHit } from "@/lib/server/search";
@@ -202,6 +203,7 @@ export function Flash({
   const [chatHits, setChatHits] = useState<ChatHit[]>([]);
   const [showShare, setShowShare] = useState(false);
   const [showCreations, setShowCreations] = useState(false);
+  const [showApps, setShowApps] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   // Attachments stay in memory only (too large to save), keyed by user message id, for Retry.
@@ -277,6 +279,11 @@ export function Flash({
       if (!signedIn) setNotice("Sign in or create an account with the invited email to join the team.");
     }
     if (ref || invite) window.history.replaceState(null, "", window.location.pathname);
+    // The link in a "new message from your site" email.
+    if (params.get("apps")) {
+      setShowApps(true);
+      window.history.replaceState(null, "", window.location.pathname);
+    }
     const purchase = params.get("purchase");
     if (purchase) {
       setNotice(
@@ -704,6 +711,15 @@ export function Flash({
           >
             🖼️ My creations
           </button>
+          <button
+            onClick={() => {
+              setShowApps(true);
+              setSidebar(false);
+            }}
+            className="mt-0.5 h-9 w-full rounded-lg px-3 text-left text-sm text-zinc-300 transition hover:bg-white/[0.04] hover:text-white"
+          >
+            🌐 My websites &amp; apps
+          </button>
         </div>
         {projects.length > 1 && (
           <div className="mt-3 px-3">
@@ -885,6 +901,7 @@ export function Flash({
             <BoltIcon className="h-3.5 w-3.5 text-gold" /> {me.credits.toLocaleString()} credits
           </button>
         </header>
+        {showApps && <MyApps onClose={() => setShowApps(false)} />}
         {showCreations && (
           <Creations
             onClose={() => setShowCreations(false)}

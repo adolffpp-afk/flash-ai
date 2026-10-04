@@ -38,6 +38,16 @@ export const EMAILS = {
     ),
     text: `${inviter.slice(0, 80)} invited you to their Flash AI Business team (the link works for 14 days):\n${link}\n\nIf you don't know them, ignore this email.`,
   }),
+  siteMessage: (site: string, preview: string, link: string) => ({
+    subject: `New message from your site ${site.slice(0, 60)}`,
+    html: layout(
+      `New message on ${escapeHtml(site.slice(0, 80))}`,
+      `Someone sent a form on your Flash site:<br><br><span style="color:#18181b;white-space:pre-wrap">${escapeHtml(preview)}</span>`,
+      "Read it in Flash",
+      link,
+    ),
+    text: `Someone sent a form on your Flash site ${site.slice(0, 80)}:\n\n${preview}\n\nRead your messages: ${link}`,
+  }),
   verify: (link: string) => ({
     subject: "Confirm your email for Flash AI",
     html: layout("Confirm your email", "Confirm your email to get your free monthly credits.", "Confirm email", link),
