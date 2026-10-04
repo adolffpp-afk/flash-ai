@@ -18,7 +18,7 @@ const sizeLabel = (bytes: number) =>
 const dateLabel = (t: number) => new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
 /** My creations: every picture, video and sound Flash made, to view, download or delete. */
-export function Creations({ onClose }: { onClose: () => void }) {
+export function Creations({ onClose, onUseImage }: { onClose: () => void; onUseImage?: (url: string) => void }) {
   const [kind, setKind] = useState<Kind>("all");
   const [files, setFiles] = useState<FileSummary[] | null>(null);
   const [more, setMore] = useState(false);
@@ -161,6 +161,16 @@ export function Creations({ onClose }: { onClose: () => void }) {
                           </>
                         ) : (
                           <>
+                            {onUseImage && f.mime.startsWith("image/") && (
+                              <button
+                                onClick={() => onUseImage(url)}
+                                className="text-primary hover:text-primary-soft"
+                                aria-label={`Edit or animate ${f.name}`}
+                                title="Edit or animate"
+                              >
+                                ✏️
+                              </button>
+                            )}
                             <a href={url} download={f.name} className="text-primary hover:text-primary-soft">
                               Download
                             </a>
