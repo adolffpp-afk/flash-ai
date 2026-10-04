@@ -1,4 +1,4 @@
-import { run, one, now } from "./db.ts";
+import { all, run, one, now } from "./db.ts";
 import { randomId } from "./ids.ts";
 
 /** Stores generated media for a user and returns the URL that serves it. */
@@ -52,4 +52,26 @@ export function fileResponse(
     });
   }
   return new Response(bytes, { headers: { ...headers, "Content-Length": String(total) } });
+}
+
+export type FileKind = "image" | "video" | "audio";
+export type FileSummary = { id: string; mime: string; name: string; size: number; created_at: number };
+
+/** The files Flash made for a user, newest first, a page at a time (pass the oldest created_at seen as before). */
+export async function listFiles(userId: string, kind?: FileKind, before?: number, limit = 24): Promise<FileSummary[]> {
+  const rows = await all<FileSummary>(
+    `SELECT id, mime, name, LENGTH(data) AS size, created_at FROM files
+     WHERE user_id = ? AND (? IS NULL OR mime LIKE ?) AND created_at < ?
+     ORDER BY created_at DESC LIMIT ?`,
+    [userId, kind ?? null, `${kind ?? ""}/%`, before ?? Number.MAX_SAFE_INTEGER, Math.min(60, Math.max(1, limit))],
+  );
+  return rows.map((r) => ({ ...r, size: Number(r.size), created_at: Number(r.created_at) }));
+}
+
+/** Deletes one of a user's files, and every public link to it. */
+export async function deleteFile(userId: string, id: string): Promise<boolean> {
+  const r = await run("DELETE FROM files WHERE id = ? AND user_id = ?", [id, userId]);
+  if (!r.rowsAffected) return false;
+  await run("DELETE FROM public_files WHERE file_id = ? AND user_id = ?", [id, userId]);
+  return true;
 }

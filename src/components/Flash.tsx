@@ -9,6 +9,7 @@ import { CreditsDialog } from "./CreditsDialog";
 import { InviteDialog } from "./InviteFriends";
 import { InstallApp, InstallPopup } from "./InstallApp";
 import { ShareDialog } from "./ShareDialog";
+import { Creations } from "./Creations";
 import { ENGINES, ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types";
 import { api, newId, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
 import { BoltIcon, Logo, LogoMark } from "@/app/brand";
@@ -187,6 +188,7 @@ export function Flash({
   const cameraRef = useRef<HTMLInputElement>(null);
   const [projectQuery, setProjectQuery] = useState("");
   const [showShare, setShowShare] = useState(false);
+  const [showCreations, setShowCreations] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   // Attachments stay in memory only (too large to save), keyed by user message id, for Retry.
@@ -627,6 +629,15 @@ export function Flash({
           >
             + New project
           </button>
+          <button
+            onClick={() => {
+              setShowCreations(true);
+              setSidebar(false);
+            }}
+            className="mt-1.5 h-9 w-full rounded-lg px-3 text-left text-sm text-zinc-300 transition hover:bg-white/[0.04] hover:text-white"
+          >
+            🖼️ My creations
+          </button>
         </div>
         {projects.length > 3 && (
           <div className="mt-3 px-3">
@@ -776,6 +787,7 @@ export function Flash({
             <BoltIcon className="h-3.5 w-3.5 text-gold" /> {me.credits.toLocaleString()} credits
           </button>
         </header>
+        {showCreations && <Creations onClose={() => setShowCreations(false)} />}
         {showCredits && <CreditsDialog me={me} onClose={() => setShowCredits(false)} onChanged={refreshMe} />}
         {showInvite && <InviteDialog me={me} onClose={() => setShowInvite(false)} />}
         <InstallPopup />
