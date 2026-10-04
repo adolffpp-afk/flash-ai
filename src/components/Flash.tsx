@@ -799,7 +799,19 @@ export function Flash({
             <BoltIcon className="h-3.5 w-3.5 text-gold" /> {me.credits.toLocaleString()} credits
           </button>
         </header>
-        {showCreations && <Creations onClose={() => setShowCreations(false)} />}
+        {showCreations && (
+          <Creations
+            onClose={() => setShowCreations(false)}
+            onUseImage={
+              busy
+                ? undefined
+                : (url) => {
+                    setShowCreations(false);
+                    editImage(url);
+                  }
+            }
+          />
+        )}
         {showCredits && <CreditsDialog me={me} onClose={() => setShowCredits(false)} onChanged={refreshMe} />}
         {showInvite && <InviteDialog me={me} onClose={() => setShowInvite(false)} />}
         <InstallPopup />
