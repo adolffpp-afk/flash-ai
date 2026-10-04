@@ -25,7 +25,7 @@ function appHost(uri: string): string {
 }
 
 const CAN = [
-  "Make images, videos, music and voice with your Flash credits",
+  "Make and edit images, videos, music and voice with your Flash credits",
   "Publish web apps on your Flash account",
   "See how many credits you have left",
 ];
