@@ -8,6 +8,7 @@ import { VerifyBanner } from "./VerifyBanner";
 import { CreditsDialog } from "./CreditsDialog";
 import { InviteDialog } from "./InviteFriends";
 import { InstallApp, InstallPopup } from "./InstallApp";
+import { ShareDialog } from "./ShareDialog";
 import { ENGINES, ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types";
 import { api, newId, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
 import { BoltIcon, Logo, LogoMark } from "@/app/brand";
@@ -178,6 +179,7 @@ export function Flash({
   const fileRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const [projectQuery, setProjectQuery] = useState("");
+  const [showShare, setShowShare] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   // Attachments stay in memory only (too large to save), keyed by user message id, for Retry.
@@ -737,6 +739,19 @@ export function Flash({
             ☰
           </button>
           <h1 className="min-w-0 flex-1 truncate text-sm text-zinc-200">{active?.name ?? "Flash AI"}</h1>
+          {active?.messages?.some((m) => !m.pending) && (
+            <button
+              onClick={() => setShowShare(true)}
+              disabled={busy}
+              title="Share a link to this chat"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 px-3 py-1 text-xs text-zinc-200 transition hover:bg-white/[0.05] disabled:opacity-40"
+            >
+              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M12 15V3 M7 8l5-5 5 5 M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" />
+              </svg>
+              Share
+            </button>
+          )}
           <button
             onClick={() => setShowCredits(true)}
             className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-3 py-1 text-xs transition ${
@@ -752,6 +767,7 @@ export function Flash({
         {showCredits && <CreditsDialog me={me} onClose={() => setShowCredits(false)} onChanged={refreshMe} />}
         {showInvite && <InviteDialog me={me} onClose={() => setShowInvite(false)} />}
         <InstallPopup />
+      {showShare && active && <ShareDialog project={active} onClose={() => setShowShare(false)} />}
 
         <div className="flex-1 overflow-y-auto">
           <div className="mx-auto max-w-3xl space-y-6 px-4 py-6">

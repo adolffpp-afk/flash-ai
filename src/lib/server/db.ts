@@ -191,6 +191,16 @@ const SCHEMA = [
     created_at INTEGER NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS team_invites_team ON team_invites(team_id)`,
+  // Read-only links to a chat as it was when shared. messages is a cleaned copy (see shares.ts).
+  `CREATE TABLE IF NOT EXISTS shares (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    project_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    messages TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS shares_user ON shares(user_id, project_id)`,
 ];
 
 let client: Client | null = null;
