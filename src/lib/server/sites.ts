@@ -60,3 +60,14 @@ export async function publishSite(user: User, input: { html?: unknown; title?: u
   ]);
   return { slug: fresh, url: `/p/${fresh}` };
 }
+
+/** The owner's chat that built a site: the newest project with a reply published as it, if any. */
+export async function projectForSite(userId: string, slug: string): Promise<string | null> {
+  if (!/^[a-z0-9-]{1,64}$/.test(slug)) return null;
+  // Published replies keep their site's slug in the saved messages (see AppPreview).
+  const row = await one<{ id: string }>(
+    "SELECT id FROM projects WHERE user_id = ? AND instr(messages, ?) > 0 ORDER BY updated_at DESC LIMIT 1",
+    [userId, `"slug":"${slug}"`],
+  );
+  return row?.id ?? null;
+}

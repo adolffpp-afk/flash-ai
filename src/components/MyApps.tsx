@@ -21,7 +21,7 @@ const dayLabel = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateStrin
 const fieldText = (v: unknown) => (typeof v === "string" ? v : JSON.stringify(v));
 
 /** My websites and apps: every published app, its link, and the forms visitors sent to it. */
-export function MyApps({ onClose }: { onClose: () => void }) {
+export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (projectId: string) => void }) {
   const [sites, setSites] = useState<Site[] | null>(null);
   const [open, setOpen] = useState<Site | null>(null);
   const [view, setView] = useState<"messages" | "domains" | "payments" | "visits">("messages");
@@ -147,6 +147,17 @@ export function MyApps({ onClose }: { onClose: () => void }) {
       setShop((s) => s && { ...s, products: s.products.filter((p) => p.id !== product.id) });
     } catch {
       setError("Couldn't remove that item. Please try again.");
+    }
+  }
+
+  async function editSite(site: Site) {
+    if (!onEdit) return;
+    setError("");
+    try {
+      const { project } = await api<{ project: string }>(`/api/sites/${site.slug}/project`);
+      onEdit(project);
+    } catch {
+      setError(`Couldn't find the chat that built "${site.title}". It may have been deleted, or the site was published from another app.`);
     }
   }
 
@@ -534,6 +545,11 @@ export function MyApps({ onClose }: { onClose: () => void }) {
                     </div>
                   ) : (
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                      {onEdit && (
+                        <button onClick={() => editSite(s)} className="text-zinc-200 hover:text-white" title="Open the chat that built this site">
+                          ✏️ Edit
+                        </button>
+                      )}
                       <button onClick={() => showMessages(s)} className="text-zinc-200 hover:text-white">
                         ✉️ Messages{s.messages ? ` (${s.messages})` : ""}
                         {s.unread > 0 && <span className="ml-1.5 rounded-full bg-primary px-1.5 py-0.5 text-[10px] text-white">{s.unread} new</span>}

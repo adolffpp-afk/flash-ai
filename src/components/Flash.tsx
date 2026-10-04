@@ -901,7 +901,16 @@ export function Flash({
             <BoltIcon className="h-3.5 w-3.5 text-gold" /> {me.credits.toLocaleString()} credits
           </button>
         </header>
-        {showApps && <MyApps onClose={() => setShowApps(false)} />}
+        {showApps && (
+          <MyApps
+            onClose={() => setShowApps(false)}
+            onEdit={(id) => {
+              setShowApps(false);
+              setNotice("Ask for your changes here, then press Update site under the new version.");
+              openProject(id);
+            }}
+          />
+        )}
         {showCreations && (
           <Creations
             onClose={() => setShowCreations(false)}
