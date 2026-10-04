@@ -12,6 +12,7 @@ import { ShareDialog } from "./ShareDialog";
 import { DownloadChat } from "./DownloadChat";
 import { Creations } from "./Creations";
 import { MyApps } from "./MyApps";
+import { OFFICE_TYPES, officeKind, officeText } from "@/lib/office";
 import { ENGINES, ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types";
 import { api, newId, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
 import type { ChatHit } from "@/lib/server/search";
@@ -34,8 +35,11 @@ const skipsCostCheck = () => {
 
 const ACCEPT =
   "image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,text/markdown,text/csv,.md,.csv,.txt,.json," +
-  "audio/*,video/mp4,video/webm,video/quicktime";
+  "audio/*,video/mp4,video/webm,video/quicktime,.docx,.xlsx,.pptx," +
+  Object.keys(OFFICE_TYPES).join(",");
 const MAX_FILE_MB = 3;
+// Word, Excel and PowerPoint files are read in the browser and only their text is sent.
+const MAX_OFFICE_MB = 20;
 
 /** "Adolff" from "Adolff Pierre", or from adolff.p@example.com when no name was given. */
 function firstName(user: { name: string; email: string }): string {
@@ -147,6 +151,27 @@ async function shrinkPhoto(file: File): Promise<File> {
     return blob ? new File([blob], file.name.replace(/\.\w+$/, "") + ".jpg", { type: "image/jpeg" }) : file;
   } catch {
     return file;
+  }
+}
+
+const inflateRaw = async (data: Uint8Array) =>
+  new Uint8Array(await new Response(new Blob([data as BlobPart]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer());
+
+function toBase64(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(binary);
+}
+
+/** A Word, Excel or PowerPoint file as a text attachment, or an error to show. */
+async function readOffice(file: File, kind: "docx" | "xlsx" | "pptx"): Promise<Attachment | string> {
+  if (file.size > MAX_OFFICE_MB * 1024 * 1024) return `Word, Excel and PowerPoint files must be ${MAX_OFFICE_MB} MB or smaller.`;
+  try {
+    const text = await officeText(new Uint8Array(await file.arrayBuffer()), kind, inflateRaw);
+    return { name: file.name, mediaType: "text/plain", data: toBase64(text) };
+  } catch {
+    return `Couldn't read the text in ${file.name}. If it's an older .doc, .xls or .ppt file, save it as .docx, .xlsx or .pptx first.`;
   }
 }
 
@@ -598,6 +623,16 @@ export function Flash({
 
   async function attach(file: File | undefined) {
     if (!file) return;
+    const office = officeKind(file.name, file.type);
+    if (office) {
+      const read = await readOffice(file, office);
+      if (typeof read === "string") setNotice(read);
+      else {
+        setAttachment(read);
+        inputRef.current?.focus();
+      }
+      return;
+    }
     file = await shrinkPhoto(file);
     if (file.size > MAX_FILE_MB * 1024 * 1024) {
       alert(`Files must be ${MAX_FILE_MB} MB or smaller.`);
