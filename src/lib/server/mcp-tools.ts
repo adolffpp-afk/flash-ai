@@ -17,6 +17,7 @@ import {
 import { FriendlyError, JobAbandoned } from "../engines/errors.ts";
 import { charge, ensureMonthlyCredits, logUsage, settle, spendable } from "./credits.ts";
 import { saveFile } from "./files.ts";
+import { listSites, publishSite } from "./sites.ts";
 import { publicFile, publicFileLink } from "./connector.ts";
 import type { User } from "./auth.ts";
 
@@ -148,6 +149,34 @@ export const tools = () => [
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     };
   }).filter(() => falConfigured()),
+  {
+    name: "flash_publish_app",
+    title: "Publish a web app on Flash",
+    description:
+      "Publishes a single-file HTML app (HTML, CSS and JavaScript in one page) at a public Flash address anyone can open, and returns the link. Free: uses no credits. " +
+      "To update an app published before, pass its slug and it keeps the same address. " +
+      "The app can save shared data with the built-in database window.flashDB (always available, all methods async): " +
+      "flashDB.list(collection) returns an array of records; flashDB.add(collection, object) returns the new record with id and createdAt; " +
+      "flashDB.update(collection, id, partialObject); flashDB.remove(collection, id). Collection names use letters, digits, - or _. " +
+      "Data is shared by everyone who opens the app, so never store passwords or private data. External scripts may load from CDNs. Up to 2 MB; up to 20 apps per account.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        html: { type: "string", description: "The whole app as one HTML document." },
+        title: { type: "string", description: "A short name for the app.", maxLength: 100 },
+        slug: { type: "string", description: "To update an existing app: its slug (from an earlier publish or flash_list_apps)." },
+      },
+      required: ["html", "title"],
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+  },
+  {
+    name: "flash_list_apps",
+    title: "List published Flash apps",
+    description: "Lists the apps this Flash account has published, with their slugs and links.",
+    inputSchema: { type: "object", properties: {} },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  },
   {
     name: "flash_check_credits",
     title: "Check Flash credits",
@@ -356,6 +385,18 @@ export async function callTool(name: string, args: Args, ctx: ToolContext): Prom
       return photoTool("remove-bg", args, ctx);
     case "flash_upscale_image":
       return photoTool("upscale", args, ctx);
+    case "flash_publish_app": {
+      const result = await publishSite(ctx.user, args);
+      if ("error" in result) {
+        return failed(result.code === "unverified" ? `The user needs to confirm their email in Flash (${ctx.origin}) before publishing apps.` : result.error);
+      }
+      return text(`Published "${str(args.title) || "My app"}" at ${ctx.origin}${result.url} (slug: ${result.slug}). Anyone with the link can open it. Free, no credits used.`);
+    }
+    case "flash_list_apps": {
+      const sites = await listSites(ctx.user.id);
+      if (!sites.length) return text("No published apps yet.");
+      return text(sites.map((x) => `${x.title}: ${ctx.origin}/p/${x.slug} (slug: ${x.slug})`).join("\n"));
+    }
     case "flash_check_credits": {
       await ensureMonthlyCredits(ctx.user.id);
       const { total, pool } = await spendable(ctx.user.id);
