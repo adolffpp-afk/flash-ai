@@ -1,5 +1,6 @@
 import { FriendlyError, MEDIA_WAIT_MS, JobAbandoned } from "./errors.ts";
 import { MAX_SPEECH_CHARS } from "../credits.ts";
+import { falConfigured, falGenerate, falRun } from "./fal.ts";
 
 export const IMAGE_MODEL = process.env.FLASH_IMAGE_MODEL || "gpt-image-2.5-sunburst";
 export const VIDEO_MODEL = process.env.FLASH_VIDEO_MODEL || "sora-2-pro";
@@ -10,6 +11,13 @@ export const TRANSCRIBE_MODEL = process.env.ELEVENLABS_STT_MODEL || "scribe_v2";
 
 export const openaiConfigured = () => Boolean(process.env.OPENAI_API_KEY);
 export const elevenConfigured = () => Boolean(process.env.ELEVENLABS_API_KEY);
+
+// Voice and transcription use ElevenLabs directly when it has a key, otherwise the same ElevenLabs
+// models through fal.ai.
+const FAL_VOICE = process.env.FAL_VOICE_ENDPOINT || "fal-ai/elevenlabs/tts/turbo-v2.5";
+const FAL_TRANSCRIBE = process.env.FAL_TRANSCRIBE_ENDPOINT || "fal-ai/elevenlabs/speech-to-text/scribe-v2";
+export const speechProvider = (): "elevenlabs" | "fal" | null =>
+  elevenConfigured() ? "elevenlabs" : falConfigured() ? "fal" : null;
 
 const OPENAI = process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
 const ELEVEN = process.env.ELEVENLABS_BASE_URL || "https://api.elevenlabs.io/v1";
@@ -92,6 +100,7 @@ async function audio(res: Response): Promise<Media> {
 
 /** Speaks the text with ElevenLabs as MP3. */
 export async function synthesizeSpeech(text: string): Promise<Media> {
+  if (!elevenConfigured()) return falGenerate(FAL_VOICE, { text: text.slice(0, MAX_SPEECH_CHARS) });
   const res = await fetch(`${ELEVEN}/text-to-speech/${VOICE_ID}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "audio/mpeg", ...elevenHeaders() },
@@ -114,6 +123,12 @@ export async function composeMusic(prompt: string, seconds = 30): Promise<Media>
 
 /** Transcribes an audio or video file with ElevenLabs Scribe. */
 export async function transcribe(file: { name: string; mediaType: string; data: string }): Promise<string> {
+  if (!elevenConfigured()) {
+    // Files are at most 3 MB, small enough to send inline as a data URI.
+    const { result } = await falRun(FAL_TRANSCRIBE, { audio_url: `data:${file.mediaType};base64,${file.data}` });
+    const text = (result as { text?: string } | null)?.text?.trim();
+    return text || "(No speech found in this file.)";
+  }
   const form = new FormData();
   form.append("model_id", TRANSCRIBE_MODEL);
   form.append("file", new Blob([Buffer.from(file.data, "base64")], { type: file.mediaType }), file.name);

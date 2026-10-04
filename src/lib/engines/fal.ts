@@ -28,16 +28,16 @@ export function findFile(result: unknown): FileRef | null {
 }
 
 /**
- * Runs a fal model through its queue and downloads the result, all within timeoutMs so the
+ * Runs a fal model through its queue and returns its JSON result, all within timeoutMs so the
  * request always ends in time to settle credits.
  * onProgress receives short updates ("In line…", "Working…") while it waits.
  */
-export async function falGenerate(
+export async function falRun(
   endpoint: string,
   input: Record<string, unknown>,
   onProgress: (message: string) => void = () => {},
   timeoutMs = MEDIA_WAIT_MS,
-): Promise<Media> {
+): Promise<{ result: unknown; end: number }> {
   const end = Date.now() + timeoutMs;
   const submit = await fetch(`${FAL_QUEUE}/${endpoint}`, {
     method: "POST",
@@ -63,27 +63,47 @@ export async function falGenerate(
     if (status.status === "COMPLETED") break;
     queued = status.status === "IN_QUEUE";
     onProgress(queued ? `In line (position ${(status.queue_position ?? 0) + 1})` : "Working");
-    await sleep(3000);
+    await sleep(queued ? 3000 : 1500);
   }
 
-  // The job is finished and billed from here on, even if fetching the file fails.
+  // The job is finished and billed from here on, even if fetching the result fails.
   try {
-    const left = () => AbortSignal.timeout(Math.max(1000, end - Date.now()));
-    const res = await fetch(job.response_url, { headers: headers(), signal: left() });
+    const res = await fetch(job.response_url, { headers: headers(), signal: timeLeft(end) });
     if (!res.ok) throw await failure(res);
-    const file = findFile(await res.json());
+    return { result: await res.json(), end };
+  } catch (err) {
+    throw billed(err);
+  }
+}
+
+const timeLeft = (end: number) => AbortSignal.timeout(Math.max(1000, end - Date.now()));
+
+function billed(err: unknown): JobAbandoned {
+  console.error("[flash] fal result failed", err);
+  return new JobAbandoned(
+    err instanceof FriendlyError ? err.message : "Flash couldn't fetch the result. Please try again.",
+    true,
+  );
+}
+
+/** Runs a fal model that makes a file (an image, video or audio) and downloads the file. */
+export async function falGenerate(
+  endpoint: string,
+  input: Record<string, unknown>,
+  onProgress: (message: string) => void = () => {},
+  timeoutMs = MEDIA_WAIT_MS,
+): Promise<Media> {
+  const { result, end } = await falRun(endpoint, input, onProgress, timeoutMs);
+  try {
+    const file = findFile(result);
     if (!file) throw new FriendlyError("The model finished but sent nothing back. Please try again.");
-    const download = await fetch(file.url, { signal: left() });
+    const download = await fetch(file.url, { signal: timeLeft(end) });
     if (!download.ok) throw await failure(download);
     return {
       data: Buffer.from(await download.arrayBuffer()),
       mime: file.content_type || download.headers.get("content-type") || "application/octet-stream",
     };
   } catch (err) {
-    console.error("[flash] fal result failed", err);
-    throw new JobAbandoned(
-      err instanceof FriendlyError ? err.message : "Flash couldn't fetch the result. Please try again.",
-      true,
-    );
+    throw billed(err);
   }
 }

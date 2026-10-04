@@ -35,7 +35,7 @@ export default function Privacy() {
         <li>Groq, OpenRouter and Cloudflare (free open-source models, used when you are out of credits)</li>
         <li>OpenAI (images and video, when those features are available)</li>
         <li>ElevenLabs (voice, music and transcription, when those features are available)</li>
-        <li>fal.ai and the model makers it serves (image, video and music models, when those features are available)</li>
+        <li>fal.ai and the model makers it serves (image, video, music, voice and transcription models, when those features are available)</li>
       </ul>
       <p>
         We also use Stripe for payments (when paid plans are available), Resend to send account emails (email confirmation and password reset), and a database and hosting provider to store your data. Each provider processes

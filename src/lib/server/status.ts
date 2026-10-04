@@ -17,9 +17,9 @@ export function engineStatus(): Record<Engine, boolean> {
     docs: claude,
     image: openai || fal,
     video: openai || fal,
-    voice: eleven,
+    voice: eleven || fal,
     music: eleven || fal,
-    transcribe: eleven,
+    transcribe: eleven || fal,
     app: claude,
     slides: claude,
   };
