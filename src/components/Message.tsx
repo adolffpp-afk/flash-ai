@@ -9,6 +9,13 @@ import { AppPreview } from "./AppPreview";
 import { speakable } from "@/lib/speech";
 import { BoltIcon, LogoMark } from "@/app/brand";
 
+export type Reshape = "tall" | "square" | "wide";
+const RESHAPES: [Reshape, string][] = [
+  ["tall", "Tall"],
+  ["square", "Square"],
+  ["wide", "Wide"],
+];
+
 const EXTENSIONS: Record<string, string> = {
   csv: "csv",
   markdown: "md",
@@ -222,6 +229,7 @@ export function Message({
   onBuyCredits,
   onPublished,
   onUseImage,
+  onReshape,
   paymentsOn = true,
 }: {
   m: UIMessage;
@@ -234,6 +242,8 @@ export function Message({
   onPublished?: (slug: string) => void;
   // Attaches a picture from this reply to the composer, to edit or animate it next.
   onUseImage?: (url: string) => void;
+  // Makes this reply's picture again in another shape.
+  onReshape?: (prompt: string, shape: Reshape) => void;
 }) {
   if (m.role === "user") return <UserMessage m={m} onEdit={onEdit} />;
   return (
@@ -306,6 +316,21 @@ export function Message({
                   </button>
                 )}
               </figcaption>
+              {onReshape && img.prompt && (
+                <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
+                  <span className="text-zinc-500">Remake as</span>
+                  {RESHAPES.map(([shape, label]) => (
+                    <button
+                      key={shape}
+                      onClick={() => onReshape(img.prompt, shape)}
+                      className="rounded-full border border-white/10 px-2.5 py-0.5 text-zinc-300 transition hover:border-primary/40 hover:text-primary-soft"
+                      title={`Make this picture again, ${label.toLowerCase()}. Uses credits like a new picture.`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
             </figure>
           ) : (
             <p key={i} className="mt-2 text-xs text-zinc-500">Image not kept (browser storage was full).</p>
