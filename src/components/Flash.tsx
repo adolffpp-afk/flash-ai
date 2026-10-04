@@ -21,6 +21,16 @@ import { MicButton, PlusMenu, SendButton, ToolPicker, type Choice } from "./Comp
 // A project's messages are loaded the first time it is opened.
 type Project = ProjectSummary & { messages?: UIMessage[] };
 
+// Set on this device when the user says not to ask before costly requests again.
+const SKIP_COST_CHECK = "flash:skip-cost-check";
+const skipsCostCheck = () => {
+  try {
+    return localStorage.getItem(SKIP_COST_CHECK) === "1";
+  } catch {
+    return false;
+  }
+};
+
 const ACCEPT =
   "image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,text/markdown,text/csv,.md,.csv,.txt,.json," +
   "audio/*,video/mp4,video/webm,video/quicktime";
@@ -452,12 +462,22 @@ export function Flash({
   }
 
   /** Answers the last user message again, replacing the reply after it. */
-  async function retry() {
+  async function retry(confirmed = false) {
     const messages = active?.messages;
     if (!active || !messages || busy) return;
     const lastUser = messages.findLastIndex((m) => m.role === "user");
     if (lastUser === -1) return;
-    await respond(active, messages.slice(0, lastUser), messages[lastUser]);
+    await respond(active, messages.slice(0, lastUser), messages[lastUser], confirmed);
+  }
+
+  /** Agrees to a costly request's price and runs it; "always" stops asking on this device. */
+  function confirmCost(always: boolean) {
+    if (always) {
+      try {
+        localStorage.setItem(SKIP_COST_CHECK, "1");
+      } catch {}
+    }
+    retry(true);
   }
 
   /** Replaces the latest message with an edited one and asks again; the old reply is dropped. */
@@ -473,7 +493,7 @@ export function Flash({
     abortRef.current?.abort();
   }
 
-  async function respond(project: Project, earlier: UIMessage[], userMsg: UIMessage) {
+  async function respond(project: Project, earlier: UIMessage[], userMsg: UIMessage, confirmed = false) {
     const projectId = project.id;
     const reply: UIMessage = { id: newId(), role: "assistant", content: "", pending: true };
     const file = filesRef.current.get(userMsg.id);
@@ -507,6 +527,7 @@ export function Flash({
           preferences,
           previous,
           model: choice === "auto" ? undefined : models[choice],
+          confirmed: confirmed || skipsCostCheck(),
         }),
         signal: controller.signal,
       });
@@ -937,7 +958,8 @@ export function Flash({
               <Message
                 key={m.id}
                 m={m}
-                onRetry={i === all.length - 1 && m.role === "assistant" && !m.pending && !busy ? retry : undefined}
+                onRetry={i === all.length - 1 && m.role === "assistant" && !m.pending && !busy ? () => retry() : undefined}
+                onConfirmCost={i === all.length - 1 && !busy ? confirmCost : undefined}
                 onEdit={m.role === "user" && !busy && i === all.findLastIndex((x) => x.role === "user") ? editLast : undefined}
                 onBuyCredits={() => setShowCredits(true)}
                 paymentsOn={me.paymentsEnabled || me.testPurchases}

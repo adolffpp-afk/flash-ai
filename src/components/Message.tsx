@@ -230,6 +230,7 @@ export function Message({
   onPublished,
   onUseImage,
   onReshape,
+  onConfirmCost,
   paymentsOn = true,
 }: {
   m: UIMessage;
@@ -244,6 +245,8 @@ export function Message({
   onUseImage?: (url: string) => void;
   // Makes this reply's picture again in another shape.
   onReshape?: (prompt: string, shape: Reshape) => void;
+  // Runs a costly request after the user agrees to its price; true also stops asking on this device.
+  onConfirmCost?: (always: boolean) => void;
 }) {
   if (m.role === "user") return <UserMessage m={m} onEdit={onEdit} />;
   return (
@@ -379,7 +382,27 @@ export function Message({
           </div>
         )}
         {m.stopped && <p className="mt-2 text-xs text-zinc-500">Stopped.</p>}
-        {m.error && m.errorCode === "out_of_credits" ? (
+        {m.error && m.errorCode === "confirm_cost" ? (
+          <div role="status" className="mt-2 rounded-xl border border-primary/30 bg-primary/[0.06] p-4 text-sm">
+            <p className="font-medium text-zinc-100">Check the price first</p>
+            <p className="mt-1 text-zinc-300">{m.error}</p>
+            {onConfirmCost ? (
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <button
+                  onClick={() => onConfirmCost(false)}
+                  className="rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-white transition hover:brightness-110"
+                >
+                  Go ahead
+                </button>
+                <button onClick={() => onConfirmCost(true)} className="text-xs text-zinc-400 hover:text-zinc-200 hover:underline">
+                  Go ahead, and don&apos;t ask again
+                </button>
+              </div>
+            ) : (
+              <p className="mt-2 text-xs text-zinc-500">Not made. Nothing was charged.</p>
+            )}
+          </div>
+        ) : m.error && m.errorCode === "out_of_credits" ? (
           <div role="status" className="mt-2 rounded-xl border border-gold/40 bg-gradient-to-br from-gold/15 to-primary/10 p-4 text-sm">
             <p className="font-medium text-zinc-100">You&apos;re out of credits for this one</p>
             <p className="mt-1 text-zinc-300">
@@ -404,7 +427,7 @@ export function Message({
             </div>
           )
         )}
-        <Actions m={m} onRetry={onRetry} />
+        <Actions m={m} onRetry={m.errorCode === "confirm_cost" ? undefined : onRetry} />
       </div>
     </div>
   );
