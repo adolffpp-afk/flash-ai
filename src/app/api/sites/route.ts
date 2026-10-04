@@ -1,7 +1,8 @@
 import { getUser, unauthorized } from "@/lib/server/auth.ts";
 import { run } from "@/lib/server/db.ts";
 import { publishSite } from "@/lib/server/sites.ts";
-import { sitesWithMessages } from "@/lib/server/inbox.ts";
+import { ownsSite, sitesWithMessages } from "@/lib/server/inbox.ts";
+import { domainsForSite, removeDomain } from "@/lib/server/domains.ts";
 
 export const dynamic = "force-dynamic";
 
@@ -27,6 +28,8 @@ export async function DELETE(request: Request) {
   const user = await getUser(request);
   if (!user) return unauthorized();
   const slug = new URL(request.url).searchParams.get("slug") ?? "";
+  // Its domains leave Vercel too, before the site (and their rows) go.
+  if (await ownsSite(user.id, slug)) for (const domain of await domainsForSite(slug)) await removeDomain(domain);
   await run("DELETE FROM sites WHERE slug = ? AND user_id = ?", [slug, user.id]);
   return Response.json({ ok: true });
 }

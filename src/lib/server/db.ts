@@ -71,6 +71,14 @@ const SCHEMA = [
     read_at INTEGER NOT NULL DEFAULT 0
   )`,
   `CREATE INDEX IF NOT EXISTS site_messages_site ON site_messages(site_slug, created_at)`,
+  // Custom domains that show a published site (see domains.ts and proxy.ts).
+  `CREATE TABLE IF NOT EXISTS site_domains (
+    domain TEXT PRIMARY KEY,
+    site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS site_domains_site ON site_domains(site_slug)`,
   `CREATE TABLE IF NOT EXISTS usage (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL,
