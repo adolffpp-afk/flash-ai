@@ -19,6 +19,8 @@ export type ModelInfo = {
   match?: RegExp;
   // Only used when picked or matched, never as the engine's default.
   notDefault?: boolean;
+  // Edits an attached photo instead of making a new image. Used only when a photo is attached.
+  edits?: boolean;
 };
 
 /**
@@ -56,6 +58,17 @@ export const MODELS: ModelInfo[] = [
     endpoint: "fal-ai/kling-video/v3/turbo/pro/text-to-video",
     notDefault: true,
     match: /\b(short film|movie|mini[- ]?movie|trailer|film (with|in) (several|multiple|\d+|[a-z]+) scenes)\b/i,
+  },
+  {
+    id: "flux-2-edit",
+    engine: "image",
+    label: "FLUX.2 Edit",
+    provider: "fal",
+    // $0.008 per megapixel in and out; photos are at most 2048 × 2048 (4.2 MP) each way.
+    costCents: 7,
+    blurb: "Edits your photo: backgrounds, styles, fixes and more",
+    endpoint: "fal-ai/flux-2/turbo/edit",
+    edits: true,
   },
   {
     id: "sora-2-pro",
@@ -142,8 +155,10 @@ export function pickModel(
   message: string,
   available: ReadonlySet<Provider>,
   requested?: string,
+  // A photo is attached to edit, so only editing models apply (and none of the others).
+  editing = false,
 ): { model: ModelInfo; why: string } | null {
-  const ready = MODELS.filter((m) => m.engine === engine && available.has(m.provider));
+  const ready = MODELS.filter((m) => m.engine === engine && available.has(m.provider) && Boolean(m.edits) === editing);
   const chosen = ready.find((m) => m.id === requested);
   if (chosen) return { model: chosen, why: "you picked it" };
   const matched = ready.find((m) => m.match?.test(message));

@@ -105,6 +105,13 @@ const RULES: Rule[] = [
 
 const AUDIO_TYPE = /^(audio|video)\//;
 const SHEET_TYPE = /(csv|spreadsheet|excel)/i;
+// Photos Flash can edit.
+export const EDITABLE_TYPE = /^image\/(png|jpeg|webp)$/;
+// Questions about a photo, which the writing model answers.
+const ABOUT_PHOTO = /^\s*(what|who|where|why|which|when|how (many|much|old)|describe|explain|tell me|read|is|are|does|do)\b/i;
+// Asking to change an attached photo, rather than asking about it.
+const EDIT_REQUEST =
+  /\b(edit|retouch|remove|erase|replace|swap|add|put|change|turn (it|this|me|us|them|him|her)|make (it|this|me|us|them|him|her|the)|transform|convert|restore|colou?ri[sz]e|enhance|upscale|sharpen|blur|background|cartoon\w*|anime|pixar|ghibli|sketch|painting|style|filter|headshot|brighter|darker)\b/i;
 
 // Engines whose answers are general enough that a follow-up may really be an edit to the last build.
 const GENERAL: Engine[] = ["text", "code", "docs"];
@@ -125,6 +132,9 @@ function routeOne(message: string, attachmentType?: string): RouteDecision {
   const text = message.trim();
   if (attachmentType && AUDIO_TYPE.test(attachmentType)) {
     return { engine: "transcribe", reason: "An audio or video file is attached, so Flash transcribes it." };
+  }
+  if (attachmentType && EDITABLE_TYPE.test(attachmentType) && EDIT_REQUEST.test(text) && !ABOUT_PHOTO.test(text)) {
+    return { engine: "image", reason: "A photo is attached and you asked to change it." };
   }
   for (const rule of RULES) {
     // An attached file is read by a text engine, so media-making rules don't apply to it.

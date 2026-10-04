@@ -60,7 +60,8 @@ const MEDIA_WORDS: [Engine, string][] = [
   ["voice", "voice"],
 ];
 
-const SUGGESTIONS: { engine: Engine; text: string }[] = [
+// attach: the card opens the file picker instead of sending its text.
+const SUGGESTIONS: { engine: Engine; text: string; attach?: boolean }[] = [
   { engine: "app", text: "Build a habit tracker app with streaks and a weekly chart" },
   { engine: "slides", text: "Make a presentation about the future of solar energy in Africa" },
   { engine: "text", text: "Write a friendly email asking my landlord to fix the heater" },
@@ -70,10 +71,11 @@ const SUGGESTIONS: { engine: Engine; text: string }[] = [
   { engine: "docs", text: "Create a monthly budget spreadsheet for a family of four" },
   { engine: "image", text: "Draw a minimalist logo for a coffee shop called Flash Brew" },
   { engine: "video", text: "Make a video of ocean waves at sunset, slow drone shot" },
+  { engine: "image", text: "Attach a photo and say what to change: remove the background, make it a cartoon", attach: true },
   { engine: "video", text: "Make a 1 minute movie about a girl who finds a dragon egg" },
   { engine: "music", text: "Compose an upbeat jingle for a bakery ad" },
   { engine: "voice", text: "Read this aloud: Welcome to Flash, your all-in-one AI." },
-  { engine: "transcribe", text: "Attach a recording and get a clean transcript" },
+  { engine: "transcribe", text: "Attach a recording and get a clean transcript", attach: true },
 ];
 
 export type Status = Record<Engine, boolean>;
@@ -102,6 +104,27 @@ function applyEvent(m: UIMessage, e: StreamEvent): UIMessage {
       return { ...m, error: e.message };
     case "done":
       return { ...m, pending: false, status: undefined };
+  }
+}
+
+/**
+ * Phone photos are often larger than Flash accepts, so photos over 2048 pixels or 3 MB are
+ * scaled down in the browser first. Anything that can't be read is left as it is.
+ */
+async function shrinkPhoto(file: File): Promise<File> {
+  if (!/^image\/(png|jpeg|webp)$/.test(file.type)) return file;
+  try {
+    const bitmap = await createImageBitmap(file);
+    const scale = Math.min(1, 2048 / Math.max(bitmap.width, bitmap.height));
+    if (scale === 1 && file.size <= MAX_FILE_MB * 1024 * 1024) return file;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.round(bitmap.width * scale);
+    canvas.height = Math.round(bitmap.height * scale);
+    canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, "image/jpeg", 0.9));
+    return blob ? new File([blob], file.name.replace(/\.\w+$/, "") + ".jpg", { type: "image/jpeg" }) : file;
+  } catch {
+    return file;
   }
 }
 
@@ -499,6 +522,7 @@ export function Flash({
 
   async function attach(file: File | undefined) {
     if (!file) return;
+    file = await shrinkPhoto(file);
     if (file.size > MAX_FILE_MB * 1024 * 1024) {
       alert(`Files must be ${MAX_FILE_MB} MB or smaller.`);
       return;
@@ -767,7 +791,7 @@ export function Flash({
                   {SUGGESTIONS.filter((s) => isLive(s.engine)).map((s) => (
                     <button
                       key={s.text}
-                      onClick={() => (s.engine === "transcribe" ? fileRef.current?.click() : send(s.text))}
+                      onClick={() => (s.attach ? fileRef.current?.click() : send(s.text))}
                       className="group rounded-xl border border-white/6 bg-white/[0.02] p-3.5 text-left transition hover:border-white/12 hover:bg-white/[0.04]"
                     >
                       <div className="flex items-center gap-2 text-xs text-zinc-400 group-hover:text-primary-soft">

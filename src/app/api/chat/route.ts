@@ -1,4 +1,5 @@
-import { route, textToSpeak } from "@/lib/router.ts";
+import { EDITABLE_TYPE, route, textToSpeak } from "@/lib/router.ts";
+import { MAX_EDIT_PIXELS, imageDimensions } from "@/lib/imageSize.ts";
 import { ENGINES, ENGINE_LABELS, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types.ts";
 import {
   NO_BUDGET,
@@ -124,6 +125,16 @@ function falInput(model: ModelInfo, prompt: string, request: string): Record<str
 const sharpen = (kind: "image" | "video" | "music", request: string, meter: Meter) =>
   claudeConfigured() ? improvePrompt(kind, request, meter).catch(() => request) : Promise.resolve(request);
 
+/** The edited photo keeps the original's size, within the 512 to 2048 pixels the model makes. */
+function editOutputSize(base64: string): { width: number; height: number } | undefined {
+  const size = imageDimensions(Buffer.from(base64, "base64"));
+  if (!size) return undefined;
+  const scale = Math.max(1, 512 / Math.min(size.width, size.height));
+  const width = Math.min(2048, Math.round(size.width * scale));
+  const height = Math.min(2048, Math.round(size.height * scale));
+  return { width, height };
+}
+
 /** The bytes in a base64 attachment. */
 const attachmentBytes = (a: { data: string }) => (a.data.length * 3) / 4;
 
@@ -192,6 +203,26 @@ async function* run(
       yield* streamBuild(history, preferences, engine, meter, budget);
       return;
     case "image": {
+      if (model!.edits) {
+        const photo = last.attachment!;
+        yield { type: "status", message: `Editing your photo with ${model!.label}…` };
+        const edited = yield* withProgress((report) =>
+          falGenerate(
+            model!.endpoint!,
+            {
+              prompt: last.content,
+              image_urls: [`data:${photo.mediaType};base64,${photo.data}`],
+              // The same size as the photo (checked to be at most 2048 × 2048 before credits were held).
+              image_size: editOutputSize(photo.data),
+              output_format: "png",
+            },
+            (m) => report(`${m}…`),
+          ).catch(billIfAbandoned),
+        );
+        meter(model!.provider, model!.id, mediaCents(model!, last.content));
+        yield { type: "image", url: await store(edited, "flash-edit.png"), prompt: last.content };
+        return;
+      }
       const prompt = await sharpen("image", last.content, meter);
       yield { type: "status", message: `Painting your image with ${model!.label}…` };
       const image =
@@ -375,7 +406,18 @@ export async function POST(request: Request) {
     }
   }
 
-  const picked = isMedia(engine) ? pickModel(engine, last.content, providers(), body.model) : null;
+  // An image request with a photo attached edits the photo.
+  const editing = engine === "image" && Boolean(last.attachment && EDITABLE_TYPE.test(last.attachment.mediaType));
+  if (editing) {
+    const editSize = imageDimensions(Buffer.from(last.attachment!.data, "base64"));
+    if (!editSize || editSize.width * editSize.height > MAX_EDIT_PIXELS) {
+      return Response.json(
+        { error: "Flash can edit PNG, JPEG and WebP photos up to 2048 × 2048 pixels. Try a smaller photo." },
+        { status: 400 },
+      );
+    }
+  }
+  const picked = isMedia(engine) ? pickModel(engine, last.content, providers(), body.model, editing) : null;
   const model = picked?.model ?? null;
 
   // Engines that aren't available yet reply for free. Media has a fixed price per model. Claude engines are charged by
