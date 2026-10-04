@@ -228,6 +228,7 @@ export function Message({
   onEdit,
   onBuyCredits,
   onPublished,
+  publishedEarlier,
   onUseImage,
   onReshape,
   onConfirmCost,
@@ -241,6 +242,8 @@ export function Message({
   // False while plans and top-ups aren't on sale yet, so the copy doesn't offer them.
   paymentsOn?: boolean;
   onPublished?: (slug: string) => void;
+  // The site an earlier version of this app in the same project was published as, so Publish updates it.
+  publishedEarlier?: string;
   // Attaches a picture from this reply to the composer, to edit or animate it next.
   onUseImage?: (url: string) => void;
   // Makes this reply's picture again in another shape.
@@ -339,7 +342,7 @@ export function Message({
             <p key={i} className="mt-2 text-xs text-zinc-500">Image not kept (browser storage was full).</p>
           ),
         )}
-        {m.app && <AppPreview app={m.app} onPublished={onPublished} />}
+        {m.app && <AppPreview app={m.app} onPublished={onPublished} publishedEarlier={publishedEarlier} />}
         {m.after?.trim() && (
           <div className="prose prose-invert mt-3 max-w-none break-words prose-p:my-2">
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
