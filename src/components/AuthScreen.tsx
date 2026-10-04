@@ -124,7 +124,7 @@ export function AuthScreen({
   const input =
     "h-10 w-full rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm outline-none transition placeholder:text-zinc-500 focus:border-primary/70 focus:bg-white/[0.05]";
   return (
-    <div className="flex min-h-full items-center justify-center bg-[radial-gradient(ellipse_at_top,rgba(16,185,129,0.12),transparent_60%)] px-4 py-12">
+    <div className="flex min-h-full items-center justify-center bg-[radial-gradient(ellipse_at_top,rgba(188,196,246,0.35),transparent_60%)] px-4 py-12">
       <div className="grid w-full max-w-4xl items-center gap-12 md:grid-cols-2 md:gap-16">
         <div>
           {onBack && (

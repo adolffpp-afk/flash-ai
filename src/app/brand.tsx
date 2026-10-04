@@ -11,6 +11,8 @@ import { useId } from "react";
 // Brand colours, mirrored by the CSS tokens in globals.css (for places CSS can't reach, like ImageResponse).
 export const BRAND = {
   ink: "#060d0a",
+  // The light page behind the app since the pearl look.
+  pearl: "#f2f3f6",
   emerald: "#10b981",
   emeraldDeep: "#064e3b",
   gold: "#f5c542",

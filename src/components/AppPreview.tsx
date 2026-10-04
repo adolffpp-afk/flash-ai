@@ -147,7 +147,7 @@ export function AppPreview({
           title={app.title}
           srcDoc={previewHtml}
           sandbox={SANDBOX}
-          className={`w-full bg-white ${full ? "flex-1" : app.kind === "slides" ? "aspect-video" : "h-[560px]"}`}
+          className={`w-full bg-[#fff] ${full ? "flex-1" : app.kind === "slides" ? "aspect-video" : "h-[560px]"}`}
         />
       ) : (
         <pre

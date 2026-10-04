@@ -110,7 +110,7 @@ export function Landing({
 
   // The main call to action is holographic, so it is the one thing on the page that pulls the eye.
   const cta =
-    "inline-flex h-11 items-center rounded-full bg-holo px-6 text-sm font-medium text-zinc-950 shadow-[0_6px_24px_-8px_rgba(188,196,246,0.45)] ring-1 ring-inset ring-white/50 transition hover:brightness-105";
+    "inline-flex h-11 items-center rounded-full bg-holo px-6 text-sm font-medium text-white shadow-[0_8px_28px_-10px_rgba(106,115,220,0.45)] ring-1 ring-inset ring-black/5 transition hover:brightness-105";
   return (
     <div className="h-full overflow-y-auto bg-zinc-950 text-zinc-100">
       <header className="sticky top-0 z-10 border-b border-white/6 bg-zinc-950/70 backdrop-blur-md">
@@ -138,9 +138,9 @@ export function Landing({
       <section className="relative overflow-hidden">
         {/* A quiet emerald wash with a faint holographic halo: light, not a light show. */}
         <div aria-hidden className="pointer-events-none absolute inset-0">
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(16,185,129,0.16),transparent_60%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(188,196,246,0.35),transparent_60%)]" />
           <div className="absolute left-1/2 top-28 h-72 w-[36rem] max-w-full -translate-x-1/2 rounded-full bg-holo-lavender/8 blur-[110px]" />
-          <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:56px_56px] [mask-image:radial-gradient(ellipse_at_top,black,transparent_65%)]" />
+          <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(21,23,28,0.035)_1px,transparent_1px),linear-gradient(to_bottom,rgba(21,23,28,0.035)_1px,transparent_1px)] bg-[size:56px_56px] [mask-image:radial-gradient(ellipse_at_top,black,transparent_65%)]" />
         </div>
         <div className="relative mx-auto max-w-3xl px-4 pb-24 pt-16 text-center sm:px-6 sm:pt-28">
           <LogoMark size={76} className="mx-auto mb-8" />
@@ -166,7 +166,7 @@ export function Landing({
           </div>
           <p className="mt-4 text-xs text-zinc-500">No card needed. Free credits every month.</p>
 
-          <div className="mx-auto mt-16 max-w-2xl rounded-2xl border border-white/8 bg-zinc-900/50 p-4 text-left shadow-[0_24px_60px_-30px_rgba(0,0,0,0.8)] backdrop-blur sm:p-5">
+          <div className="mx-auto mt-16 max-w-2xl rounded-2xl border border-white/8 bg-zinc-900/50 p-4 text-left shadow-[0_24px_60px_-30px_rgba(40,44,70,0.35)] backdrop-blur sm:p-5">
             <div className="flex justify-end">
               <div className="rounded-2xl rounded-br-md bg-primary-strong px-4 py-2 text-sm text-white">
                 Build a booking page for my hair salon in Toronto
@@ -179,7 +179,7 @@ export function Landing({
                   <span className="rounded-full border border-white/10 px-2 py-0.5 text-zinc-300">App Builder</span>
                   <span className="text-zinc-500">You asked for an app.</span>
                 </div>
-                <div className="mt-2 overflow-hidden rounded-xl bg-white text-zinc-900">
+                <div className="mt-2 overflow-hidden rounded-xl bg-[#fff] text-[#1b1e24]">
                   <div className="bg-gradient-to-r from-rose-100 to-amber-50 px-4 py-3">
                     <div className="text-sm font-semibold">Elaia Hair Studio</div>
                     <div className="text-xs text-zinc-600">Book your next appointment</div>
@@ -191,7 +191,7 @@ export function Landing({
                   </div>
                   <div className="flex items-center justify-between border-t border-zinc-100 px-3 py-2 text-xs">
                     <span className="text-zinc-500">Saturday, 10:30</span>
-                    <span className="rounded-md bg-zinc-900 px-2 py-1 text-white">Book</span>
+                    <span className="rounded-md bg-[#1b1e24] px-2 py-1 text-[#fff]">Book</span>
                   </div>
                 </div>
                 <div className="mt-2 flex gap-2 text-xs">

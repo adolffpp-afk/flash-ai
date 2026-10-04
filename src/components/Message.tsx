@@ -268,7 +268,7 @@ export function Message({
             {onBuyCredits && (
               <button
                 onClick={onBuyCredits}
-                className="mt-3 rounded-lg bg-gold-brand px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:brightness-105"
+                className="mt-3 rounded-lg bg-gold-brand px-3 py-1.5 text-sm font-semibold text-[#1b1e24] hover:brightness-105"
               >
                 {paymentsOn ? "Get more credits" : "See your credits"}
               </button>
