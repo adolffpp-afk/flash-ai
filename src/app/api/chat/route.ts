@@ -50,6 +50,7 @@ import { unavailableReply } from "@/lib/engines/demo.ts";
 import { FriendlyError, JobAbandoned } from "@/lib/engines/errors.ts";
 import { buildSystem, streamBuild } from "@/lib/engines/builder.ts";
 import { makeMovie } from "@/lib/engines/movie.ts";
+import { DEFAULT_VOICE, pickVoice } from "@/lib/voices.ts";
 import { falEditInput, falInput, videoAspect } from "@/lib/engines/fal-input.ts";
 
 // Vercel Pro allows up to 800 seconds, which the Movie maker needs (scenes, filming and joining).
@@ -264,9 +265,17 @@ async function* run(
     }
     case "voice": {
       const words = spokenText(last.content);
-      yield { type: "text", delta: `Here is "${words.length > 80 ? words.slice(0, 80) + "…" : words}" read aloud.` };
+      const { voice, speed } = pickVoice(last.content);
+      const named = speechProvider() === "fal";
+      yield {
+        type: "text",
+        delta:
+          `Here is "${words.length > 80 ? words.slice(0, 80) + "…" : words}" read aloud` +
+          (named ? ` by ${voice.name}, a ${voice.about}.` : ".") +
+          (named && voice === DEFAULT_VOICE ? ` For another voice, ask for one, like "in a deep British man's voice".` : ""),
+      };
       const voiceCents = voiceCostCents(words.length);
-      const speech = await synthesizeSpeech(words).catch(billSpeech("voice", voiceCents));
+      const speech = await synthesizeSpeech(words, { voice: voice.name, speed }).catch(billSpeech("voice", voiceCents));
       meter(speechProvider()!, "voice", voiceCents);
       yield { type: "audio", url: await store(speech, "flash-voice.mp3"), label: "flash-voice.mp3" };
       return;

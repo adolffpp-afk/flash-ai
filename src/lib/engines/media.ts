@@ -99,8 +99,10 @@ async function audio(res: Response): Promise<Media> {
 }
 
 /** Speaks the text with ElevenLabs as MP3. */
-export async function synthesizeSpeech(text: string): Promise<Media> {
-  if (!elevenConfigured()) return falGenerate(FAL_VOICE, { text: text.slice(0, MAX_SPEECH_CHARS) });
+export async function synthesizeSpeech(text: string, how?: { voice: string; speed: number }): Promise<Media> {
+  if (!elevenConfigured()) {
+    return falGenerate(FAL_VOICE, { text: text.slice(0, MAX_SPEECH_CHARS), ...(how && { voice: how.voice, speed: how.speed }) });
+  }
   const res = await fetch(`${ELEVEN}/text-to-speech/${VOICE_ID}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "audio/mpeg", ...elevenHeaders() },
