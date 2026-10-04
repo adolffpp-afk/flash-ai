@@ -1,6 +1,6 @@
 "use client";
 
-import { isValidElement, useEffect, useState, type ReactNode } from "react";
+import { createElement, isValidElement, useEffect, useState, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ENGINE_LABELS } from "@/lib/types";
@@ -10,6 +10,7 @@ import { speakable } from "@/lib/speech";
 import { BoltIcon, LogoMark } from "@/app/brand";
 import { wordDocument, wordFileName } from "@/lib/word-export";
 import { excelWorkbook, tablesIn } from "@/lib/excel-export";
+import { answerDocument } from "@/lib/chat-export";
 
 export type Reshape = "tall" | "square" | "wide";
 const RESHAPES: [Reshape, string][] = [
@@ -109,6 +110,28 @@ function download(bytes: Uint8Array, type: string, name: string) {
 const saveAsWord = (text: string) =>
   download(wordDocument(text), "application/vnd.openxmlformats-officedocument.wordprocessingml.document", wordFileName(text));
 
+/**
+ * Opens the browser's print window for a reply, laid out as a clean page: "Save as PDF" there
+ * makes the PDF, named after the reply's first line.
+ */
+async function saveAsPdf(text: string) {
+  const { renderToStaticMarkup } = await import("react-dom/server");
+  const html = renderToStaticMarkup(createElement(ReactMarkdown, { remarkPlugins: [remarkGfm] }, text));
+  const date = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+  const frame = Object.assign(document.createElement("iframe"), {
+    srcdoc: answerDocument(wordFileName(text).replace(/\.docx$/, ""), html, date),
+    title: "Print",
+  });
+  frame.style.cssText = "position:fixed;width:0;height:0;border:0;right:0;bottom:0";
+  frame.onload = () => {
+    frame.contentWindow?.focus();
+    frame.contentWindow?.print();
+    // The print window has closed by the time print() returns in most browsers.
+    setTimeout(() => frame.remove(), 60_000);
+  };
+  document.body.appendChild(frame);
+}
+
 /** Downloads a reply's tables as an Excel workbook, one sheet per table. */
 const saveAsExcel = (text: string) =>
   download(
@@ -166,6 +189,11 @@ function Actions({ m, onRetry }: { m: UIMessage; onRetry?: () => void }) {
       {text && !m.app && (
         <button className={btn} onClick={() => saveAsWord(text)} title="Download this answer as a Word document">
           ⬇ Word
+        </button>
+      )}
+      {text && !m.app && (
+        <button className={btn} onClick={() => saveAsPdf(text)} title="Print this answer or save it as a PDF">
+          ⬇ PDF
         </button>
       )}
       {text && !m.app && tablesIn(text).length > 0 && (
