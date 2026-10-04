@@ -78,7 +78,7 @@ test("an app that asks for a secret must send it", async () => {
 
 test("the tools list only set-up models and never the Movie maker", () => {
   const list = tools();
-  assert.deepEqual(list.map((t) => t.name), ["flash_create_image", "flash_create_video", "flash_create_music", "flash_speak", "flash_remove_background", "flash_upscale_image", "flash_check_credits"]);
+  assert.deepEqual(list.map((t) => t.name), ["flash_create_image", "flash_create_video", "flash_create_music", "flash_speak", "flash_remove_background", "flash_upscale_image", "flash_publish_app", "flash_list_apps", "flash_check_credits"]);
   const video = list.find((t) => t.name === "flash_create_video")!;
   const models = (video.inputSchema.properties as { model: { enum: string[] } }).model.enum;
   assert.deepEqual(models, ["veo-3.1", "kling-3"]);
@@ -179,4 +179,28 @@ test("photo tools take the user's own Flash links or a photo, and charge 5 credi
   big.writeUInt32BE(3000, 20);
   const tooBig = (await callTool("flash_remove_background", { image_base64: big.toString("base64") }, ctx("u2")))!;
   assert.match((tooBig.content[0] as { text: string }).text, /too big/);
+});
+
+test("apps can be published and updated through the connector for free", async () => {
+  const before = await balance("u2");
+  const first = (await callTool("flash_publish_app", { html: "<h1>Hi</h1>", title: "Tip Calculator" }, ctx("u2")))!;
+  const text = (first.content[0] as { text: string }).text;
+  const slug = text.match(/slug: ([\w-]+)/)![1];
+  assert.match(text, /^Published "Tip Calculator" at https:\/\/www\.flash-app\.dev\/p\/tip-calculator-/);
+  const again = (await callTool("flash_publish_app", { html: "<h1>Hi 2</h1>", title: "Tip Calculator", slug }, ctx("u2")))!;
+  assert.match((again.content[0] as { text: string }).text, new RegExp(`slug: ${slug}`), "an update keeps the address");
+  assert.equal((await one<{ html: string }>("SELECT html FROM sites WHERE slug = ?", [slug]))?.html, "<h1>Hi 2</h1>");
+  assert.equal(await balance("u2"), before, "publishing is free");
+  const list = (await callTool("flash_list_apps", {}, ctx("u2")))!;
+  assert.match((list.content[0] as { text: string }).text, new RegExp(slug));
+
+  // Someone else's slug makes a new app rather than changing theirs.
+  const other = (await callTool("flash_publish_app", { html: "x", title: "Mine", slug }, ctx("u1")))!;
+  assert.doesNotMatch((other.content[0] as { text: string }).text, new RegExp(`slug: ${slug}\\)`));
+  const unverified = { ...ctx("u2"), user: { ...ctx("u2").user, verified_at: 0 } };
+  process.env.FLASH_DEMO_EMAILS = "true"; // so email confirmation is required, as in production
+  const blocked = (await callTool("flash_publish_app", { html: "x", title: "T" }, unverified))!;
+  delete process.env.FLASH_DEMO_EMAILS;
+  assert.equal(blocked.isError, true);
+  assert.match((blocked.content[0] as { text: string }).text, /confirm their email/);
 });
