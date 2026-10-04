@@ -308,6 +308,17 @@ const SCHEMA = [
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     created_at INTEGER NOT NULL
   )`,
+  // One brand kit per user (see brand.ts). The logo is a file, shared through a public link.
+  `CREATE TABLE IF NOT EXISTS brand_kits (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL DEFAULT '',
+    tagline TEXT NOT NULL DEFAULT '',
+    voice TEXT NOT NULL DEFAULT '',
+    colors TEXT NOT NULL DEFAULT '[]',
+    logo_file TEXT NOT NULL DEFAULT '',
+    logo_link TEXT NOT NULL DEFAULT '',
+    updated_at INTEGER NOT NULL
+  )`,
 ];
 
 let client: Client | null = null;

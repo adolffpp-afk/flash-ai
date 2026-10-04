@@ -233,6 +233,8 @@ export async function improvePrompt(
   kind: keyof typeof PROMPT_REWRITERS,
   request: string,
   meter: Meter = noMeter,
+  // The user's brand kit, for the rewriter to use when the request is for their business.
+  brand = "",
 ): Promise<string> {
   const res = await getClient().beta.messages.create(
     {
@@ -241,7 +243,7 @@ export async function improvePrompt(
       betas: ["server-side-fallback-2026-07-01"],
       fallbacks: "default",
       output_config: { effort: "low" },
-      system: `${PROMPT_REWRITERS[kind]} Reply with the prompt only.`,
+      system: `${PROMPT_REWRITERS[kind]} Reply with the prompt only.${brand ? `\n\n${brand}` : ""}`,
       messages: [{ role: "user", content: request.slice(0, 2000) }],
     },
     // Kept short so a slow rewrite can't eat the time a video needs.

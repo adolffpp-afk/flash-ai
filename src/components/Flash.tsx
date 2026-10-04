@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Message, type Reshape } from "./Message";
 import { AuthScreen } from "./AuthScreen";
 import { Landing } from "./Landing";
@@ -11,6 +11,7 @@ import { InstallApp, InstallPopup } from "./InstallApp";
 import { ShareDialog } from "./ShareDialog";
 import { DownloadChat } from "./DownloadChat";
 import { ProjectInstructions } from "./ProjectInstructions";
+import { BrandKit } from "./BrandKit";
 import { Creations } from "./Creations";
 import { MyApps } from "./MyApps";
 import { OFFICE_TYPES, officeKind, officeText } from "@/lib/office";
@@ -255,6 +256,7 @@ export function Flash({
   const [chatHits, setChatHits] = useState<ChatHit[]>([]);
   const [showShare, setShowShare] = useState(false);
   const [showInstructions, setShowInstructions] = useState(false);
+  const [showBrand, setShowBrand] = useState(false);
   const [showCreations, setShowCreations] = useState(false);
   const [showApps, setShowApps] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -654,6 +656,8 @@ export function Flash({
     }
   }
 
+  const closeBrand = useCallback(() => setShowBrand(false), []);
+
   /** Adds a read file to the ones waiting to be sent, or says why it can't be added. */
   function addFile(file: Attachment) {
     const added = addAttachment(filesNow.current, file);
@@ -811,6 +815,15 @@ export function Flash({
             className="mt-0.5 h-9 w-full rounded-lg px-3 text-left text-sm text-zinc-300 transition hover:bg-white/[0.04] hover:text-white"
           >
             🌐 My websites &amp; apps
+          </button>
+          <button
+            onClick={() => {
+              setShowBrand(true);
+              setSidebar(false);
+            }}
+            className="mt-0.5 h-9 w-full rounded-lg px-3 text-left text-sm text-zinc-300 transition hover:bg-white/[0.04] hover:text-white"
+          >
+            🎨 Brand kit
           </button>
         </div>
         {projects.length > 1 && (
@@ -1032,6 +1045,7 @@ export function Flash({
         {showInvite && <InviteDialog me={me} onClose={() => setShowInvite(false)} />}
         <InstallPopup />
       {showShare && active && <ShareDialog project={active} onClose={() => setShowShare(false)} />}
+      {showBrand && <BrandKit onClose={closeBrand} onSaved={setNotice} />}
       {showInstructions && active && (
         <ProjectInstructions
           project={active}
