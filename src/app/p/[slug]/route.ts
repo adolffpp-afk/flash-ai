@@ -16,7 +16,7 @@ export async function GET(_request: Request, ctx: RouteContext<"/p/[slug]">) {
       headers: { "Content-Type": "text/html; charset=utf-8" },
     });
   }
-  const html = injectHead(site.html, flashDbShim(`/api/sites/${slug}/data`));
+  const html = injectHead(site.html, flashDbShim(`/api/sites/${slug}/data`, `/api/sites/${slug}/inbox`));
   return new Response(html, {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
