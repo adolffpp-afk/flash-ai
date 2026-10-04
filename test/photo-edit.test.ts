@@ -68,3 +68,17 @@ test("photo tools never run at a loss", () => {
     assert.ok(Math.max(w, h) * f <= 4096 && f >= 1 && f <= 4, `${w}×${h} → ${f}`);
   }
 });
+
+test("asking to animate an attached photo makes a video from it", () => {
+  const fal = new Set(["fal"] as const);
+  assert.equal(route("Animate this photo with natural, gentle motion", "image/jpeg").engine, "video");
+  assert.equal(route("bring it to life", "image/png").engine, "video");
+  assert.equal(route("make her smile and wave", "image/png").engine, "video");
+  assert.equal(route("remove the background", "image/png").engine, "image");
+  assert.equal(pickModel("video", "animate this", fal, undefined, true)?.model.id, "kling-3-animate");
+  assert.notEqual(pickModel("video", "a cat runs", fal)?.model.id, "kling-3-animate", "never for new videos");
+  const animate = MODELS.find((m) => m.id === "kling-3-animate")!;
+  assert.equal(modelCredits(animate, "animate this"), 140, "5 s silent at $0.112/s, with the markup");
+  assert.equal(modelCredits(animate, "animate this with ocean sound, 10 seconds"), 420);
+  assert.equal(modelCredits(animate, "animate this, no sound"), 140);
+});

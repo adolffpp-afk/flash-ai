@@ -1,4 +1,4 @@
-import { videoSeconds, type ModelInfo } from "../models.ts";
+import { animateSeconds, videoSeconds, wantsSound, type ModelInfo } from "../models.ts";
 
 /** Builds the fal.ai input for a model from the user's request. */
 export function falInput(model: ModelInfo, prompt: string, request: string): Record<string, unknown> {
@@ -33,6 +33,13 @@ export function falEditInput(
   switch (model.id) {
     case "remove-bg":
       return { image_url: imageUrl };
+    case "kling-3-animate":
+      return {
+        start_image_url: imageUrl,
+        prompt: request.slice(0, 2500) || "Bring this photo to life with natural, gentle motion.",
+        duration: String(animateSeconds(request)),
+        generate_audio: wantsSound(request),
+      };
     case "upscale": {
       const long = Math.max(size?.width ?? 2048, size?.height ?? 2048);
       const factor = Math.min(4, Math.max(1, Math.floor((UPSCALE_MAX_SIDE / long) * 100) / 100));

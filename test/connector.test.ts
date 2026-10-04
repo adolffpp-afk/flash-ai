@@ -78,7 +78,7 @@ test("an app that asks for a secret must send it", async () => {
 
 test("the tools list only set-up models and never the Movie maker", () => {
   const list = tools();
-  assert.deepEqual(list.map((t) => t.name), ["flash_create_image", "flash_create_video", "flash_create_music", "flash_speak", "flash_remove_background", "flash_upscale_image", "flash_publish_app", "flash_list_apps", "flash_check_credits"]);
+  assert.deepEqual(list.map((t) => t.name), ["flash_create_image", "flash_create_video", "flash_create_music", "flash_speak", "flash_remove_background", "flash_upscale_image", "flash_animate_photo", "flash_publish_app", "flash_list_apps", "flash_check_credits"]);
   const video = list.find((t) => t.name === "flash_create_video")!;
   const models = (video.inputSchema.properties as { model: { enum: string[] } }).model.enum;
   assert.deepEqual(models, ["veo-3.1", "kling-3"]);
@@ -203,4 +203,31 @@ test("apps can be published and updated through the connector for free", async (
   delete process.env.FLASH_DEMO_EMAILS;
   assert.equal(blocked.isError, true);
   assert.match((blocked.content[0] as { text: string }).text, /confirm their email/);
+});
+
+test("animating a photo charges by length, and sound only when asked", async () => {
+  await run("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES ('u2', 1000, 'test top-up', 0)");
+  const png = Buffer.alloc(24);
+  png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+  png.writeUInt32BE(800, 16);
+  png.writeUInt32BE(600, 20);
+  fakeFal();
+  const sent: Record<string, unknown>[] = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    if (init?.method === "POST") sent.push(JSON.parse(String(init.body)));
+    return realFetch(input, init);
+  }) as typeof fetch;
+  let before = await balance("u2");
+  const quiet = (await callTool("flash_animate_photo", { image_base64: png.toString("base64"), prompt: "the waves roll in, soft music" }, ctx("u2")))!;
+  assert.equal(quiet.isError, undefined);
+  assert.equal(before - (await balance("u2")), 140, "5 seconds without sound");
+  assert.equal(sent[0].generate_audio, false, "music in the motion text doesn't switch sound on");
+  assert.equal(sent[0].duration, "5");
+
+  before = await balance("u2");
+  await callTool("flash_animate_photo", { image_base64: png.toString("base64"), seconds: 10, sound: true }, ctx("u2"));
+  assert.equal(before - (await balance("u2")), 420, "10 seconds with sound");
+  assert.equal(sent[1].generate_audio, true);
+  assert.equal(sent[1].duration, "10");
 });

@@ -149,6 +149,28 @@ export const tools = () => [
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     };
   }).filter(() => falConfigured()),
+  ...[MODELS.find((m) => m.id === "kling-3-animate")!]
+    .filter((m) => providers().has(m.provider))
+    .map((m) => ({
+      name: "flash_animate_photo",
+      title: "Animate a photo with Flash",
+      description:
+        "Turns a photo into a short video (MP4) with Kling 3 Pro and returns a link. Takes one to three minutes. " +
+        `Costs ${creditsFor(11.2)} Flash credits per second without sound, ${creditsFor(16.8)} with sound (a 5 second clip: ${modelCredits(m, "5 seconds")} credits, ` +
+        `or ${modelCredits(m, "5 seconds with sound")} with sound). Tell the user the price first. ` +
+        "Give a Flash file link (from another Flash tool) as image_url, or the photo itself as image_base64. PNG, JPEG or WebP, up to 2048 × 2048 pixels.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          image_url: { type: "string", description: "A Flash file link, like https://www.flash-app.dev/f/…" },
+          image_base64: { type: "string", description: "The photo as base64 (PNG, JPEG or WebP), when there is no Flash link." },
+          prompt: { type: "string", description: "The motion: what moves and how, camera movement, mood.", maxLength: 2500 },
+          seconds: { type: "integer", minimum: 3, maximum: 15, description: "Length in seconds (default 5)." },
+          sound: { type: "boolean", description: "Add sound (ambience, speech, music). Costs more. Default false." },
+        },
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    })),
   {
     name: "flash_publish_app",
     title: "Publish a web app on Flash",
@@ -343,6 +365,33 @@ async function photoArg(args: Args, ctx: ToolContext): Promise<{ data: Buffer; m
   return { data, mime };
 }
 
+async function animateTool(args: Args, ctx: ToolContext): Promise<ToolResult> {
+  const model = MODELS.find((m) => m.id === "kling-3-animate")!;
+  if (!providers().has(model.provider)) return failed("Flash's photo animation isn't available yet.");
+  const photo = await photoArg(args, ctx);
+  if (typeof photo === "string") return failed(photo);
+  const seconds = typeof args.seconds === "number" ? Math.min(15, Math.max(3, Math.round(args.seconds))) : 5;
+  const motion = str(args.prompt).slice(0, 2500) || "Bring this photo to life with natural, gentle motion.";
+  // Priced and sent exactly as the chat would read it: the length, and sound only when asked for.
+  const request = `${motion.replace(/\b(sound|audio|music|voice|noise|silent)\b/gi, "")}\n${seconds} seconds${args.sound === true ? " with sound" : ""}`;
+  const credits = modelCredits(model, request);
+  ctx.progress(`Starting ${model.label} (${credits} credits)…`);
+  const input = { ...falEditInput(model, `data:${photo.mime};base64,${photo.data.toString("base64")}`, null, request), prompt: motion };
+  const result = await paid(
+    ctx,
+    { engine: "video", model: model.id, provider: model.provider, credits, costCents: costOf(model, request) },
+    () => falGenerate(model.endpoint!, input, (m) => ctx.progress(m)),
+    "flash-animated",
+  );
+  if ("content" in result) return result;
+  return {
+    content: [
+      { type: "text", text: `Animated with ${model.label} on Flash for ${result.credits} credits. ${await balanceLine(ctx)}\nLink (anyone with it can open the video): ${result.url}` },
+      { type: "resource_link", uri: result.url, name: "flash-animated.mp4", mimeType: result.media.mime },
+    ],
+  };
+}
+
 async function photoTool(id: "remove-bg" | "upscale", args: Args, ctx: ToolContext): Promise<ToolResult> {
   const model = MODELS.find((m) => m.id === id)!;
   if (!providers().has(model.provider)) return failed(`Flash's ${model.label} isn't available yet.`);
@@ -385,6 +434,8 @@ export async function callTool(name: string, args: Args, ctx: ToolContext): Prom
       return photoTool("remove-bg", args, ctx);
     case "flash_upscale_image":
       return photoTool("upscale", args, ctx);
+    case "flash_animate_photo":
+      return animateTool(args, ctx);
     case "flash_publish_app": {
       const result = await publishSite(ctx.user, args);
       if ("error" in result) {

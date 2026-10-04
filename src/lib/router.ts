@@ -113,6 +113,10 @@ const ABOUT_PHOTO = /^\s*(what|who|where|why|which|when|how (many|much|old)|desc
 const EDIT_REQUEST =
   /\b(edit|retouch|remove|erase|replace|swap|add|put|change|turn (it|this|me|us|them|him|her)|make (it|this|me|us|them|him|her|the)|transform|convert|restore|colou?ri[sz]e|enhance|upscale|sharpen|blur|background|cartoon\w*|anime|pixar|ghibli|sketch|painting|style|filter|headshot|brighter|darker)\b/i;
 
+// Asking for an attached photo to move: it becomes a video.
+const ANIMATE_REQUEST =
+  /\b(animate\w*|bring (it|this|her|him|them|the \w+) to life|come alive|make (it|this|them|her|him|the \w+) (move|moving|walk|dance|talk|blink|smile and wave)|into an? (video|clip|animation)|video (of|from) (it|this)|moving (photo|picture|image)|live photo|cinemagraph)\b/i;
+
 // Engines whose answers are general enough that a follow-up may really be an edit to the last build.
 const GENERAL: Engine[] = ["text", "code", "docs"];
 
@@ -132,6 +136,9 @@ function routeOne(message: string, attachmentType?: string): RouteDecision {
   const text = message.trim();
   if (attachmentType && AUDIO_TYPE.test(attachmentType)) {
     return { engine: "transcribe", reason: "An audio or video file is attached, so Flash transcribes it." };
+  }
+  if (attachmentType && EDITABLE_TYPE.test(attachmentType) && ANIMATE_REQUEST.test(text) && !ABOUT_PHOTO.test(text)) {
+    return { engine: "video", reason: "A photo is attached and you asked to bring it to life." };
   }
   if (attachmentType && EDITABLE_TYPE.test(attachmentType) && EDIT_REQUEST.test(text) && !ABOUT_PHOTO.test(text)) {
     return { engine: "image", reason: "A photo is attached and you asked to change it." };

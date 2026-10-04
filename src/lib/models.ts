@@ -99,6 +99,17 @@ export const MODELS: ModelInfo[] = [
     edits: true,
   },
   {
+    // Brings an attached photo to life. Sound only when the request asks for it, since it costs half as much again.
+    id: "kling-3-animate",
+    engine: "video",
+    label: "Kling 3 Pro (animate photo)",
+    provider: "fal",
+    costCents: (request) => animateSeconds(request) * (wantsSound(request) ? 16.8 : 11.2),
+    blurb: "Turns your photo into a short video, with sound if you ask",
+    endpoint: "fal-ai/kling-video/v3/pro/image-to-video",
+    edits: true,
+  },
+  {
     id: "sora-2-pro",
     engine: "video",
     label: "Sora 2 Pro",
@@ -145,6 +156,14 @@ export const MODELS: ModelInfo[] = [
     match: /\b(lyrics|vocals?|sing\w*|sung|singer|rap\w*|choir|song with words)\b/i,
   },
 ];
+
+/** Seconds an animated photo lasts (3 to 15, default 5). */
+export const animateSeconds = (request: string) => requestedSeconds(request, 3, 15, 5);
+
+/** Whether a video request asks for sound. */
+export const wantsSound = (request: string) =>
+  /\b(sound|audio|dialogue|talking|speaking|says?|saying|voice|narrat\w*|music|singing|noise|ambien\w*)\b/i.test(request) &&
+  !/\b(no|without|silent|mute\w*)\s+(sound|audio|music)\b|\bsilent\b/i.test(request);
 
 /** Seconds of video a Kling request asks for (3 to 15, default 10). */
 export const videoSeconds = (request: string) => requestedSeconds(request, 3, 15, 10);
