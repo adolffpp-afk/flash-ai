@@ -390,6 +390,17 @@ export function Flash({
     if (id === activeId) openProject(rest[0].id);
   }
 
+  function togglePin(id: string) {
+    const current = projects.find((p) => p.id === id);
+    if (!current) return;
+    const pinned = !current.pinned;
+    setProjects((list) => list.map((p) => (p.id === id ? { ...p, pinned } : p)));
+    api(`/api/projects/${id}`, { method: "PUT", json: { pinned } }).catch(() => {
+      setProjects((list) => list.map((p) => (p.id === id ? { ...p, pinned: !pinned } : p)));
+      setNotice("Couldn't pin that project. Please try again.");
+    });
+  }
+
   function renameProject(id: string) {
     const current = projects.find((p) => p.id === id);
     const name = prompt("Project name", current?.name)?.trim();
@@ -593,7 +604,7 @@ export function Flash({
 
   const sorted = [...projects]
     .filter((p) => !projectQuery.trim() || p.name.toLowerCase().includes(projectQuery.trim().toLowerCase()))
-    .sort((a, b) => b.updated_at - a.updated_at);
+    .sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || b.updated_at - a.updated_at);
   const inChats = projectQuery.trim().length >= 2 ? chatHits.filter((h) => h.snippet && !sorted.some((p) => p.id === h.id)) : [];
   // Engines whose AI provider isn't set up yet show as coming soon, and light up once /api/status says so.
   const isLive = (e: Engine) => !status || status[e];
@@ -693,7 +704,20 @@ export function Flash({
               className={`group flex items-center rounded-lg text-sm ${p.id === activeId ? "bg-white/[0.06] text-white" : "text-zinc-300 hover:bg-white/[0.03]"}`}
             >
               <button className="min-w-0 flex-1 truncate px-3 py-1.5 text-left" onClick={() => openProject(p.id)}>
+                {p.pinned && (
+                  <span className="mr-1.5 text-[11px]" aria-label="Pinned">
+                    📌
+                  </span>
+                )}
                 {p.name}
+              </button>
+              <button
+                className="px-1 text-zinc-500 hover:text-zinc-200 focus:opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
+                onClick={() => togglePin(p.id)}
+                aria-label={p.pinned ? "Unpin project" : "Pin project"}
+                title={p.pinned ? "Unpin" : "Pin to the top"}
+              >
+                {p.pinned ? "⊘" : "📌"}
               </button>
               <button
                 className="px-1 text-zinc-500 hover:text-zinc-200 focus:opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"

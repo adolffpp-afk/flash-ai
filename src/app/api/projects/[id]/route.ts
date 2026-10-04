@@ -19,9 +19,18 @@ export async function PUT(request: Request, ctx: RouteContext<"/api/projects/[id
   const user = await getUser(request);
   if (!user) return unauthorized();
   const { id } = await ctx.params;
-  const body = (await request.json().catch(() => ({}))) as { name?: string; messages?: unknown[] };
-  const sets: string[] = ["updated_at = ?"];
-  const args: (string | number)[] = [now()];
+  const body = (await request.json().catch(() => ({}))) as { name?: string; messages?: unknown[]; pinned?: boolean };
+  const sets: string[] = [];
+  const args: (string | number)[] = [];
+  // Pinning alone doesn't count as an update, so the project keeps its place in time.
+  if (typeof body.pinned === "boolean") {
+    sets.push("pinned = ?");
+    args.push(body.pinned ? 1 : 0);
+  }
+  if (body.name !== undefined || body.messages !== undefined || !sets.length) {
+    sets.push("updated_at = ?");
+    args.push(now());
+  }
   if (typeof body.name === "string" && body.name.trim()) {
     sets.push("name = ?");
     args.push(body.name.trim().slice(0, 80));
