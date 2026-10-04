@@ -4,6 +4,9 @@ export type Shape = "tall" | "portrait" | "square" | "wide";
 
 /** The shape a request asks for (a phone story, a square post, a wide banner), or null for the usual 4:3 or 16:9. */
 export function shapeOf(request: string): Shape | null {
+  // A ratio said outright wins over words like "poster" or "logo" in the description.
+  const ratio = request.match(/\b(9 ?[:x/] ?16|3 ?[:x/] ?4|4 ?[:x/] ?5|1 ?[:x/] ?1|16 ?[:x/] ?9)\b/)?.[1].replace(/\D+/, ":");
+  if (ratio) return ({ "9:16": "tall", "3:4": "portrait", "4:5": "portrait", "1:1": "square", "16:9": "wide" } as const)[ratio] ?? null;
   if (/\b(9 ?[:x/] ?16|vertical|(instagram|insta|ig|facebook|whatsapp|snapchat) stor(y|ies)|stor(y|ies) (format|size)|reels?|tik ?tok|youtube shorts|phone (wallpaper|screen|background)|lock ?screen)\b/i.test(request)) return "tall";
   if (/\b(3 ?[:x/] ?4|4 ?[:x/] ?5|portrait (format|mode|orientation)|poster|flyer|pinterest|book cover)\b/i.test(request)) return "portrait";
   if (/\b(1 ?[:x/] ?1|square|profile (picture|photo|pic)|avatar|instagram post|album cover|logo|icon)\b/i.test(request)) return "square";

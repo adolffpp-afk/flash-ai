@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Message } from "./Message";
+import { Message, type Reshape } from "./Message";
 import { AuthScreen } from "./AuthScreen";
 import { Landing } from "./Landing";
 import { VerifyBanner } from "./VerifyBanner";
@@ -536,6 +536,12 @@ export function Flash({
     }
   }
 
+  /** Makes a picture again in another shape (the shape words are read by the image engine). */
+  function reshape(prompt: string, shape: Reshape) {
+    const how = { tall: "tall vertical 9:16", square: "square 1:1", wide: "wide 16:9" }[shape];
+    send(`Make a ${how} picture of this: ${prompt}`);
+  }
+
   /** Puts a picture Flash made into the composer, so the photo buttons and edits apply to it. */
   async function editImage(url: string) {
     try {
@@ -878,6 +884,7 @@ export function Flash({
                 paymentsOn={me.paymentsEnabled || me.testPurchases}
                 onPublished={(slug) => setAppSlug(m.id, slug)}
                 onUseImage={busy ? undefined : editImage}
+                onReshape={busy || attachment || all[i - 1]?.attachmentName ? undefined : reshape}
               />
             ))}
             <div ref={bottomRef} />

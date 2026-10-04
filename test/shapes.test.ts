@@ -13,6 +13,11 @@ test("requests pick a picture shape from plain words", () => {
   assert.equal(shapeOf("profile picture of a smiling cat, 1:1"), "square");
   assert.equal(shapeOf("A YouTube thumbnail about cooking"), "wide");
   assert.equal(shapeOf("A banner for my shop, 16:9"), "wide");
+  // A ratio said outright wins, as in Flash's "Remake as" buttons.
+  assert.equal(shapeOf("Make a square 1:1 picture of this: a vintage travel poster of Lisbon"), "square");
+  assert.equal(shapeOf("Make a tall vertical 9:16 picture of this: a logo"), "tall");
+  assert.equal(shapeOf("Make a wide 16:9 picture of this: an avatar"), "wide");
+  assert.equal(shapeOf("ratio 16 x 9"), "wide");
   // Ordinary words that aren't about shape leave the usual 4:3.
   assert.equal(shapeOf("A tall man telling a story to a wide-eyed child"), null);
   assert.equal(shapeOf("A portrait of an old fisherman"), null);
