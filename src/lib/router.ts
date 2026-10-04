@@ -70,6 +70,8 @@ const RULES: Rule[] = [
       /\b(text to speech|tts|voiceover|voice over|voice-over)\b/i,
       /\b(turn|convert|make)\b.{0,40}\b(into|to|as)\b.{0,10}\b(audio|speech|voice|mp3)\b/i,
       /^(say|speak|narrate)\b/i,
+      /\b(read|say|speak|narrate)\b.{0,40}\b(voice|accent)\b/i,
+      /^(please\s+)?read\b.{0,30}\b(slowly|quickly|fast|calmly)\b/i,
     ],
   },
   {

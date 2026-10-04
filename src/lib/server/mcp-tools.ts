@@ -2,6 +2,7 @@ import { creditsFor, MAX_SPEECH_CHARS, voiceCostCents } from "../credits.ts";
 import { MODELS, modelCredits, pickModel, type MediaEngine, type ModelInfo, type Provider } from "../models.ts";
 import { falConfigured, falGenerate } from "../engines/fal.ts";
 import { falEditInput, falInput } from "../engines/fal-input.ts";
+import { DEFAULT_VOICE, VOICES } from "../voices.ts";
 import { imageDimensions, MAX_EDIT_PIXELS } from "../imageSize.ts";
 import {
   composeMusic,
@@ -125,7 +126,15 @@ export const tools = () => [
       `Up to ${MAX_SPOKEN.toLocaleString("en-US")} characters.`,
     inputSchema: {
       type: "object",
-      properties: { text: { type: "string", description: "The exact words to say.", maxLength: MAX_SPOKEN } },
+      properties: {
+        text: { type: "string", description: "The exact words to say.", maxLength: MAX_SPOKEN },
+        voice: {
+          type: "string",
+          enum: VOICES.map((x) => x.name),
+          description: `Who reads it (default ${DEFAULT_VOICE.name}). ${VOICES.map((x) => `${x.name}: ${x.about}`).join("; ")}.`,
+        },
+        speed: { type: "number", minimum: 0.7, maximum: 1.2, description: "Reading speed, 0.7 to 1.2 (default 1)." },
+      },
       required: ["text"],
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
@@ -352,11 +361,18 @@ async function speak(args: Args, ctx: ToolContext): Promise<ToolResult> {
   if (!provider) return failed("Flash's voice isn't available yet.");
   const cents = voiceCostCents(words.length);
   const credits = creditsFor(cents);
-  const result = await paid(ctx, { engine: "voice", model: "voice", provider, credits, costCents: cents }, () => synthesizeSpeech(words), "flash-voice");
+  const voice = VOICES.find((x) => x.name === str(args.voice)) ?? DEFAULT_VOICE;
+  const speed = typeof args.speed === "number" ? Math.min(1.2, Math.max(0.7, args.speed)) : 1;
+  const result = await paid(
+    ctx,
+    { engine: "voice", model: "voice", provider, credits, costCents: cents },
+    () => synthesizeSpeech(words, { voice: voice.name, speed }),
+    "flash-voice",
+  );
   if ("content" in result) return result;
   return {
     content: [
-      { type: "text", text: `Spoken by Flash for ${result.credits} credits. ${await balanceLine(ctx)}\nLink: ${result.url}` },
+      { type: "text", text: `Spoken by Flash${provider === "fal" ? ` in ${voice.name}'s voice` : ""} for ${result.credits} credits. ${await balanceLine(ctx)}\nLink: ${result.url}` },
       { type: "resource_link", uri: result.url, name: "flash-voice.mp3", mimeType: result.media.mime },
     ],
   };
