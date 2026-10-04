@@ -18,6 +18,8 @@ import {
 } from "@/lib/engines/claude.ts";
 import { checkFiles } from "@/lib/attachments.ts";
 import { withInstructions } from "@/lib/project-instructions.ts";
+import { brandForMedia, withBrand } from "@/lib/brand.ts";
+import { getBrand } from "@/lib/server/brand.ts";
 import { one } from "@/lib/server/db.ts";
 import {
   FREE_CHAT_ENGINES,
@@ -44,7 +46,7 @@ import {
   transcribe,
   type Media,
 } from "@/lib/engines/media.ts";
-import { getUser, unauthorized } from "@/lib/server/auth.ts";
+import { appUrl, getUser, unauthorized } from "@/lib/server/auth.ts";
 import { charge, ensureMonthlyCredits, logUsage, settle, spendable } from "@/lib/server/credits.ts";
 import { saveFile } from "@/lib/server/files.ts";
 import {
@@ -129,8 +131,8 @@ async function* withProgress<T>(
 }
 
 /** Uses Claude to sharpen a media prompt when a Claude key exists, else sends the request as written. */
-const sharpen = (kind: "image" | "video" | "music", request: string, meter: Meter) =>
-  claudeConfigured() ? improvePrompt(kind, request, meter).catch(() => request) : Promise.resolve(request);
+const sharpen = (kind: "image" | "video" | "music", request: string, meter: Meter, brand = "") =>
+  claudeConfigured() ? improvePrompt(kind, request, meter, brand).catch(() => request) : Promise.resolve(request);
 
 /** The bytes in a base64 attachment. */
 const attachmentBytes = (a: { data: string }) => (a.data.length * 3) / 4;
@@ -167,6 +169,8 @@ async function* run(
   model: ModelInfo | null,
   meter: Meter,
   budget: Budget,
+  // The brand kit for the picture and video prompt writer, or "".
+  brandNote = "",
 ): AsyncGenerator<StreamEvent> {
   const last = history[history.length - 1];
   if (isMedia(engine) ? !model : !configured(engine)) {
@@ -215,7 +219,7 @@ async function* run(
         yield { type: "image", url: await store(edited, `flash-${model!.id === "flux-2-edit" ? "edit" : model!.id}.png`), prompt: last.content };
         return;
       }
-      const prompt = await sharpen("image", last.content, meter);
+      const prompt = await sharpen("image", last.content, meter, brandNote);
       yield { type: "status", message: `Painting your image with ${model!.label}…` };
       const image =
         model!.provider === "fal"
@@ -262,7 +266,7 @@ async function* run(
         yield { type: "video", url: await store(movie, "flash-movie.mp4"), prompt: last.content };
         return;
       }
-      const prompt = await sharpen("video", last.content, meter);
+      const prompt = await sharpen("video", last.content, meter, brandNote);
       yield { type: "status", message: `Filming your video with ${model!.label}. This usually takes one to three minutes…` };
       let video: Media;
       if (model!.provider === "fal") {
@@ -463,9 +467,13 @@ export async function POST(request: Request) {
     typeof body.projectId === "string"
       ? await one<{ instructions: string }>("SELECT instructions FROM projects WHERE id = ? AND user_id = ?", [body.projectId, user.id])
       : null;
-  const preferences = withInstructions(
-    (typeof body.preferences === "string" ? body.preferences : user.preferences).slice(0, MAX_PREFERENCES_CHARS),
-    project?.instructions ?? "",
+  const brand = await getBrand(user.id, appUrl(request));
+  const preferences = withBrand(
+    withInstructions(
+      (typeof body.preferences === "string" ? body.preferences : user.preferences).slice(0, MAX_PREFERENCES_CHARS),
+      project?.instructions ?? "",
+    ),
+    brand,
   );
   let held = 0;
   let needed = 0;
@@ -578,7 +586,7 @@ export async function POST(request: Request) {
       try {
         const events = free
           ? runFree(free, engine, history, preferences, store, freeUse)
-          : run(engine, history, preferences, store, model, meter, budget);
+          : run(engine, history, preferences, store, model, meter, budget, brandForMedia(brand));
         for await (const event of events) {
           if (cancelled || request.signal.aborted) {
             stopped = true;

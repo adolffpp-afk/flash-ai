@@ -61,7 +61,7 @@ export type FileSummary = { id: string; mime: string; name: string; size: number
 export async function listFiles(userId: string, kind?: FileKind, before?: number, limit = 24): Promise<FileSummary[]> {
   const rows = await all<FileSummary>(
     `SELECT id, mime, name, LENGTH(data) AS size, created_at FROM files
-     WHERE user_id = ? AND (? IS NULL OR mime LIKE ?) AND created_at < ?
+     WHERE user_id = ? AND (? IS NULL OR mime LIKE ?) AND created_at < ? AND name NOT LIKE 'brand-logo.%'
      ORDER BY created_at DESC LIMIT ?`,
     [userId, kind ?? null, `${kind ?? ""}/%`, before ?? Number.MAX_SAFE_INTEGER, Math.min(60, Math.max(1, limit))],
   );
