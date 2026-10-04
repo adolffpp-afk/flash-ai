@@ -15,9 +15,12 @@ function slug(title: string): string {
 export function AppPreview({
   app,
   onPublished,
+  publishedEarlier,
 }: {
   app: BuiltApp & { slug?: string };
   onPublished?: (slug: string) => void;
+  // Set when an earlier version of this app was published: Publish then updates that site.
+  publishedEarlier?: string;
 }) {
   const [view, setView] = useState<"preview" | "code">("preview");
   const [full, setFull] = useState(false);
@@ -30,13 +33,16 @@ export function AppPreview({
   const previewHtml = useMemo(() => injectHead(app.html, flashDbShim(null)), [app.html]);
   const link = app.slug && typeof window !== "undefined" ? `${window.location.origin}/p/${app.slug}` : "";
 
-  async function publish() {
+  // A new version of an already published app updates the same site, so its link, domain and prices stay.
+  const target = app.slug ?? publishedEarlier;
+
+  async function publish(asNew = false) {
     setPublishing(true);
     setPublishError("");
     try {
       const res = await api<{ slug: string }>("/api/sites", {
         method: "POST",
-        json: { html: app.html, title: app.title, slug: app.slug },
+        json: { html: app.html, title: app.title, slug: asNew ? undefined : target },
       });
       onPublished?.(res.slug);
       setPublished(res.slug);
@@ -113,13 +119,27 @@ export function AppPreview({
             </span>
             <span className="hidden sm:inline">Download</span>
           </button>
+          {onPublished && !app.slug && publishedEarlier && (
+            <button className={btn} onClick={() => publish(true)} disabled={publishing} title="Publish this version as a separate site">
+              Publish as new
+            </button>
+          )}
           {onPublished && (
             <button
               className="ml-1 rounded-md bg-brand px-2.5 py-1 font-medium text-white hover:brightness-110 disabled:opacity-50"
-              onClick={publish}
+              onClick={() => publish()}
               disabled={publishing}
+              title={!app.slug && publishedEarlier ? "Replace the published site with this version" : undefined}
             >
-              {publishing ? "Publishing…" : app.slug ? (published === app.slug ? "Published ✓" : "Update") : "Publish"}
+              {publishing
+                ? "Publishing…"
+                : app.slug
+                  ? published === app.slug
+                    ? "Published ✓"
+                    : "Update"
+                  : publishedEarlier
+                    ? "Update site"
+                    : "Publish"}
             </button>
           )}
         </div>

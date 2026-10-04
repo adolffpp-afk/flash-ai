@@ -981,6 +981,7 @@ export function Flash({
                 onBuyCredits={() => setShowCredits(true)}
                 paymentsOn={me.paymentsEnabled || me.testPurchases}
                 onPublished={(slug) => setAppSlug(m.id, slug)}
+                publishedEarlier={m.app && !m.app.slug ? all.slice(0, i).findLast((x) => x.app?.slug)?.app?.slug : undefined}
                 onUseImage={busy ? undefined : editImage}
                 onReshape={busy || attachment || all[i - 1]?.attachmentName ? undefined : reshape}
               />
