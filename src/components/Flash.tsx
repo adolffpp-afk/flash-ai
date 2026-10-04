@@ -13,6 +13,7 @@ import { DownloadChat } from "./DownloadChat";
 import { Creations } from "./Creations";
 import { MyApps } from "./MyApps";
 import { OFFICE_TYPES, officeKind, officeText } from "@/lib/office";
+import { MAX_PDF_MB, pdfText } from "@/lib/pdf-text";
 import { ENGINES, ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types";
 import { api, newId, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
 import type { ChatHit } from "@/lib/server/search";
@@ -172,6 +173,23 @@ async function readOffice(file: File, kind: "docx" | "xlsx" | "pptx"): Promise<A
     return { name: file.name, mediaType: "text/plain", data: toBase64(text) };
   } catch {
     return `Couldn't read the text in ${file.name}. If it's an older .doc, .xls or .ppt file, save it as .docx, .xlsx or .pptx first.`;
+  }
+}
+
+/** A big PDF as a text attachment, read in the browser, or an error to show. */
+async function readPdf(file: File): Promise<Attachment | string> {
+  if (file.size > MAX_PDF_MB * 1024 * 1024) return `PDFs must be ${MAX_PDF_MB} MB or smaller.`;
+  try {
+    const pdfjs = await import("pdfjs-dist");
+    if (!pdfjs.GlobalWorkerOptions.workerPort) {
+      pdfjs.GlobalWorkerOptions.workerPort = new Worker(new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url), { type: "module" });
+    }
+    const text = await pdfText(new Uint8Array(await file.arrayBuffer()), pdfjs);
+    return { name: file.name, mediaType: "text/plain", data: toBase64(text) };
+  } catch (e) {
+    return e instanceof Error && e.message === "no text found"
+      ? `${file.name} looks like scanned pages with no text to read. Attach a smaller copy (under ${MAX_FILE_MB} MB) or photos of the pages instead.`
+      : `Couldn't read ${file.name}. Try saving it again as a PDF and attaching that.`;
   }
 }
 
@@ -632,6 +650,18 @@ export function Flash({
       const read = await readOffice(file, office);
       if (typeof read === "string") setNotice(read);
       else {
+        setAttachment(read);
+        inputRef.current?.focus();
+      }
+      return;
+    }
+    // Small PDFs go whole, so Flash sees their pictures too; bigger ones send only their text.
+    if ((file.type === "application/pdf" || /\.pdf$/i.test(file.name)) && file.size > MAX_FILE_MB * 1024 * 1024) {
+      setNotice(`Reading ${file.name}…`);
+      const read = await readPdf(file);
+      if (typeof read === "string") setNotice(read);
+      else {
+        setNotice("");
         setAttachment(read);
         inputRef.current?.focus();
       }
