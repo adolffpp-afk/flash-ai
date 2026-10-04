@@ -27,7 +27,7 @@ export type UIMessage = {
   after?: string;
 };
 
-export type ProjectSummary = { id: string; name: string; updated_at: number };
+export type ProjectSummary = { id: string; name: string; updated_at: number; pinned?: boolean };
 export type Project = ProjectSummary & { messages: UIMessage[] };
 
 export type Pricing = {

@@ -7,11 +7,11 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request) {
   const user = await getUser(request);
   if (!user) return unauthorized();
-  const projects = await all<{ id: string; name: string; updated_at: number }>(
-    "SELECT id, name, updated_at FROM projects WHERE user_id = ? ORDER BY updated_at DESC LIMIT 200",
+  const rows = await all<{ id: string; name: string; updated_at: number; pinned: number }>(
+    "SELECT id, name, updated_at, pinned FROM projects WHERE user_id = ? ORDER BY pinned DESC, updated_at DESC LIMIT 200",
     [user.id],
   );
-  return Response.json({ projects });
+  return Response.json({ projects: rows.map((p) => ({ ...p, pinned: Boolean(p.pinned) })) });
 }
 
 export async function POST(request: Request) {

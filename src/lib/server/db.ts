@@ -254,6 +254,8 @@ const MIGRATIONS = [
   "ALTER TABLE referral_rewards ADD COLUMN cancelled_at INTEGER NOT NULL DEFAULT 0",
   // Who spent a charge, when a team member spends the owner's shared pool.
   "ALTER TABLE credit_ledger ADD COLUMN actor TEXT",
+  // Pinned projects stay at the top of the sidebar.
+  "ALTER TABLE projects ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0",
 ];
 
 async function init(c: Client) {
