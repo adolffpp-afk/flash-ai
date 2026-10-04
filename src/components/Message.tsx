@@ -9,6 +9,7 @@ import { AppPreview } from "./AppPreview";
 import { speakable } from "@/lib/speech";
 import { BoltIcon, LogoMark } from "@/app/brand";
 import { wordDocument, wordFileName } from "@/lib/word-export";
+import { excelWorkbook, tablesIn } from "@/lib/excel-export";
 
 export type Reshape = "tall" | "square" | "wide";
 const RESHAPES: [Reshape, string][] = [
@@ -98,15 +99,23 @@ function plainText(m: UIMessage): string {
   return [m.content, m.after].filter(Boolean).join("\n\n").trim();
 }
 
-/** Downloads a reply as a Word document, made in the browser. */
-function saveAsWord(text: string) {
-  const url = URL.createObjectURL(
-    new Blob([wordDocument(text) as BlobPart], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }),
-  );
-  const a = Object.assign(document.createElement("a"), { href: url, download: wordFileName(text) });
-  a.click();
+function download(bytes: Uint8Array, type: string, name: string) {
+  const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type }));
+  Object.assign(document.createElement("a"), { href: url, download: name }).click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
+
+/** Downloads a reply as a Word document, made in the browser. */
+const saveAsWord = (text: string) =>
+  download(wordDocument(text), "application/vnd.openxmlformats-officedocument.wordprocessingml.document", wordFileName(text));
+
+/** Downloads a reply's tables as an Excel workbook, one sheet per table. */
+const saveAsExcel = (text: string) =>
+  download(
+    excelWorkbook(tablesIn(text)),
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    wordFileName(text).replace(/\.docx$/, ".xlsx"),
+  );
 
 /** Reads a reply aloud with the device's own voice, which is free and needs no credits. */
 function ReadAloud({ text, className }: { text: string; className: string }) {
@@ -157,6 +166,11 @@ function Actions({ m, onRetry }: { m: UIMessage; onRetry?: () => void }) {
       {text && !m.app && (
         <button className={btn} onClick={() => saveAsWord(text)} title="Download this answer as a Word document">
           ⬇ Word
+        </button>
+      )}
+      {text && !m.app && tablesIn(text).length > 0 && (
+        <button className={btn} onClick={() => saveAsExcel(text)} title="Download this answer's tables as an Excel spreadsheet">
+          ⬇ Excel
         </button>
       )}
       {onRetry && (
