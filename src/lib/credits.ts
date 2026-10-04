@@ -36,18 +36,20 @@ export function claudeCostCents(model: string, usage: ClaudeUsage): number {
   return (input * price.input + usage.output_tokens * price.output) / 1e6 + searches * WEB_SEARCH_CENTS;
 }
 
-// ElevenLabs voice and transcription, in cents.
-export const voiceCostCents = (characters: number) => (characters / 1000) * 2.2;
+// ElevenLabs voice and transcription, in cents. Both are priced at the dearer of the two ways Flash
+// reaches them: fal.ai's Turbo v2.5 voice ($0.05 per 1,000 characters, ElevenLabs direct is about
+// $0.022) and fal.ai's Scribe v2 ($0.008 a minute, ElevenLabs direct is $0.40 an hour).
+export const voiceCostCents = (characters: number) => (characters / 1000) * 5;
 // Voice reads at most this many characters, and is priced on the same text.
 export const MAX_SPEECH_CHARS = 10000;
 
 /*
  * Transcription is billed per minute of audio, which Flash can't measure before sending the
  * file. So it is priced as if the file were the longest recording its size could hold: at 8 kbps
- * (1,000 bytes a second, below common speech codecs), at Scribe's $0.40 an hour. A 3 MB file
+ * (1,000 bytes a second, below common speech codecs), at Scribe's $0.008 a minute. A 3 MB file
  * is priced as 52 minutes; a normal 128 kbps MP3 pays for more than it uses, but never less.
  */
-const TRANSCRIBE_CENTS_PER_MINUTE = 40 / 60;
+const TRANSCRIBE_CENTS_PER_MINUTE = 0.8;
 const MIN_AUDIO_BYTES_PER_SECOND = 1000;
 export const transcribeCostCents = (bytes: number) =>
   Math.max(1, (bytes / MIN_AUDIO_BYTES_PER_SECOND / 60) * TRANSCRIBE_CENTS_PER_MINUTE);
@@ -75,9 +77,9 @@ export const TYPICAL_CREDITS: Partial<Record<Engine, number>> = {
   code: 25,
   app: 120,
   slides: 100,
-  voice: 3,
+  voice: 4,
   // A 500 KB recording (see transcribeCostCents).
-  transcribe: 15,
+  transcribe: 18,
 };
 
 export const FREE_MONTHLY_CREDITS = Number(process.env.FLASH_FREE_CREDITS ?? 200);

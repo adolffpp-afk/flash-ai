@@ -24,6 +24,7 @@ import {
   generateImage,
   generateVideo,
   openaiConfigured,
+  speechProvider,
   synthesizeSpeech,
   transcribe,
   type Media,
@@ -78,7 +79,7 @@ function providers(): Set<Provider> {
 const isMedia = (engine: Engine): engine is MediaEngine => (MEDIA_ENGINES as Engine[]).includes(engine);
 
 function configured(engine: Engine): boolean {
-  if (engine === "voice" || engine === "transcribe") return elevenConfigured();
+  if (engine === "voice" || engine === "transcribe") return Boolean(speechProvider());
   return claudeConfigured();
 }
 
@@ -167,6 +168,13 @@ async function* run(
     if (err instanceof JobAbandoned && err.billed) meter(model!.provider, model!.id, mediaCents(model!, last.content));
     throw err;
   };
+  // The same for voice and transcription, which have no model entry.
+  const billSpeech =
+    (job: string, cents: number) =>
+    (err: unknown): never => {
+      if (err instanceof JobAbandoned && err.billed) meter(speechProvider()!, job, cents);
+      throw err;
+    };
   switch (engine) {
     case "text":
     case "code":
@@ -223,8 +231,9 @@ async function* run(
     case "voice": {
       const words = spokenText(last.content);
       yield { type: "text", delta: `Here is "${words.length > 80 ? words.slice(0, 80) + "…" : words}" read aloud.` };
-      const speech = await synthesizeSpeech(words);
-      meter("elevenlabs", "voice", voiceCostCents(words.length));
+      const voiceCents = voiceCostCents(words.length);
+      const speech = await synthesizeSpeech(words).catch(billSpeech("voice", voiceCents));
+      meter(speechProvider()!, "voice", voiceCents);
       yield { type: "audio", url: await store(speech, "flash-voice.mp3"), label: "flash-voice.mp3" };
       return;
     }
@@ -250,8 +259,9 @@ async function* run(
         return;
       }
       yield { type: "status", message: `Transcribing ${last.attachment.name}…` };
-      const text = await transcribe(last.attachment);
-      meter("elevenlabs", "transcribe", transcribeCostCents(attachmentBytes(last.attachment)));
+      const transcribeCents = transcribeCostCents(attachmentBytes(last.attachment));
+      const text = await transcribe(last.attachment).catch(billSpeech("transcribe", transcribeCents));
+      meter(speechProvider()!, "transcribe", transcribeCents);
       yield { type: "text", delta: `**Transcript of ${last.attachment.name}**\n\n${text}` };
       return;
     }

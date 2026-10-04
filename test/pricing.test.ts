@@ -154,8 +154,8 @@ test("transcription is priced for the longest recording a file could hold", () =
     ...PLANS.map((p) => p.yearlyPriceCents / p.credits),
   );
   for (const bytes of [1000, 500 * 1024, 3 * 1024 * 1024]) {
-    // Worst case: 8 kbps audio at $0.40 an hour.
-    const worstCents = Math.max(1, (bytes / 1000 / 60) * (40 / 60));
+    // Worst case: 8 kbps audio at fal.ai's $0.008 a minute (ElevenLabs direct is $0.40 an hour).
+    const worstCents = Math.max(1, (bytes / 1000 / 60) * 0.8);
     assert.ok(creditsFor(transcribeCostCents(bytes)) * cheapestCentsPerCredit > worstCents, `${bytes} bytes`);
   }
   assert.ok(transcribeCostCents(3 * 1024 * 1024) > transcribeCostCents(1024 * 1024));
