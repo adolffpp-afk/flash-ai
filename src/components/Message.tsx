@@ -8,6 +8,7 @@ import type { UIMessage } from "@/lib/store";
 import { AppPreview } from "./AppPreview";
 import { speakable } from "@/lib/speech";
 import { BoltIcon, LogoMark } from "@/app/brand";
+import { wordDocument, wordFileName } from "@/lib/word-export";
 
 export type Reshape = "tall" | "square" | "wide";
 const RESHAPES: [Reshape, string][] = [
@@ -97,6 +98,16 @@ function plainText(m: UIMessage): string {
   return [m.content, m.after].filter(Boolean).join("\n\n").trim();
 }
 
+/** Downloads a reply as a Word document, made in the browser. */
+function saveAsWord(text: string) {
+  const url = URL.createObjectURL(
+    new Blob([wordDocument(text) as BlobPart], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }),
+  );
+  const a = Object.assign(document.createElement("a"), { href: url, download: wordFileName(text) });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 /** Reads a reply aloud with the device's own voice, which is free and needs no credits. */
 function ReadAloud({ text, className }: { text: string; className: string }) {
   const [speaking, setSpeaking] = useState(false);
@@ -143,6 +154,11 @@ function Actions({ m, onRetry }: { m: UIMessage; onRetry?: () => void }) {
         </button>
       )}
       {text && <ReadAloud text={text} className={btn} />}
+      {text && !m.app && (
+        <button className={btn} onClick={() => saveAsWord(text)} title="Download this answer as a Word document">
+          ⬇ Word
+        </button>
+      )}
       {onRetry && (
         <button className={btn} onClick={onRetry}>
           ↻ Retry
