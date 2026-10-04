@@ -151,10 +151,15 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-/* A visible, on-brand focus ring for keyboard users. */
-:focus-visible {
-  outline: 2px solid var(--color-gold);
-  outline-offset: 2px;
+/*
+ * A visible, on-brand focus ring for keyboard users. It sits in the base layer so a text box with
+ * outline-none (which shows focus with its own border instead) doesn't get a gold box while typing.
+ */
+@layer base {
+  :focus-visible {
+    outline: 2px solid var(--color-gold);
+    outline-offset: 2px;
+  }
 }
 
 ::selection {
