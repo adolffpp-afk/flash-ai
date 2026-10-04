@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { imageDimensions } from "../src/lib/imageSize.ts";
 import { route } from "../src/lib/router.ts";
 import { MODELS, pickModel, modelCredits } from "../src/lib/models.ts";
+import { falEditInput } from "../src/lib/engines/fal-input.ts";
 
 const png = (w: number, h: number) => {
   const b = new Uint8Array(24);
@@ -38,4 +39,32 @@ test("editing uses only the editing model, and making new images never does", ()
   // At most 2048 × 2048 in and out at $0.008 a megapixel, with the markup: never at a loss.
   const edit = MODELS.find((m) => m.id === "flux-2-edit")!;
   assert.ok(modelCredits(edit) >= Math.ceil(((2 * 2048 * 2048) / 1e6) * 0.8 * 2.5));
+});
+
+test("background removal and upscaling get their own cheaper models; other edits don't", () => {
+  const fal = new Set(["fal"] as const);
+  const pick = (t: string) => pickModel("image", t, fal, undefined, true)?.model.id;
+  assert.equal(pick("Remove the background"), "remove-bg");
+  assert.equal(pick("make the background transparent"), "remove-bg");
+  assert.equal(pick("cut out the person"), "remove-bg");
+  assert.equal(pick("replace the background with a beach"), "flux-2-edit");
+  assert.equal(pick("Upscale this photo and make it sharper"), "upscale");
+  assert.equal(pick("make it HD"), "upscale");
+  assert.equal(pick("enhance the colours"), "flux-2-edit");
+  assert.equal(pick("make it a cartoon"), "flux-2-edit");
+  // Making new images never uses them.
+  assert.notEqual(pickModel("image", "a transparent glass, upscale look", fal)?.model.id, "upscale");
+  assert.equal(route("Upscale this photo and make it sharper", "image/jpeg").engine, "image");
+});
+
+test("photo tools never run at a loss", () => {
+  const credits = (id: string) => modelCredits(MODELS.find((m) => m.id === id)!);
+  assert.ok(credits("remove-bg") >= Math.ceil(1.8 * 2.5), "Bria is $0.018 a photo");
+  // The longest output side is 4,096 px, so at most 16.8 MP at $0.001 each.
+  assert.ok(credits("upscale") >= Math.ceil(((4096 * 4096) / 1e6) * 0.1 * 2.5));
+  const up = MODELS.find((m) => m.id === "upscale")!;
+  for (const [w, h] of [[2048, 2048], [512, 300], [4000, 1000], [100, 100]]) {
+    const { upscale_factor: f } = falEditInput(up, "x", { width: w, height: h }, "") as { upscale_factor: number };
+    assert.ok(Math.max(w, h) * f <= 4096 && f >= 1 && f <= 4, `${w}×${h} → ${f}`);
+  }
 });

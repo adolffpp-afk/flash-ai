@@ -60,6 +60,34 @@ export const MODELS: ModelInfo[] = [
     match: /\b(short film|movie|mini[- ]?movie|trailer|film (with|in) (several|multiple|\d+|[a-z]+) scenes)\b/i,
   },
   {
+    id: "remove-bg",
+    engine: "image",
+    label: "Background remover",
+    provider: "fal",
+    costCents: 2, // Bria RMBG 2.0, $0.018 a photo
+    blurb: "Cuts out the subject on a transparent background",
+    endpoint: "fal-ai/bria/background/remove",
+    edits: true,
+    notDefault: true,
+    // Taking the background away, but not swapping it for something else (that's an edit).
+    match:
+      /^(?![\s\S]*\b(replace|swap|change|add|put|with|into|instead|new)\b)[\s\S]*(\b(remove|erase|delete|cut out|get rid of|take out|drop|no)\b[\s\S]{0,30}\bbackground\b|\btransparent\b|\bcut ?out\b|\bbackground[\s-]*(free|less)\b)/i,
+  },
+  {
+    id: "upscale",
+    engine: "image",
+    label: "Upscaler",
+    provider: "fal",
+    // SeedVR2 at $0.001 per output megapixel; the long side is at most 4,096 pixels (16.8 MP).
+    costCents: 2,
+    blurb: "Makes a photo sharper and up to 4 times bigger",
+    endpoint: "fal-ai/seedvr/upscale/image",
+    edits: true,
+    notDefault: true,
+    match:
+      /^(?![\s\S]*\b(remove|replace|swap|add|put|change|style|cartoon\w*|anime|sketch|painting|background|colou?rs?|light\w*|skin|smile)\b)[\s\S]*\b(upscale\w*|enhance|sharpen\w*|sharper|crisper|clearer|unblur|de-?blur|hd|4k|high[- ]?res\w*|higher[- ]res\w*|(higher|better|more) (resolution|quality)|bigger|larger|enlarge|increase (the )?(resolution|size|quality)|improve (the )?quality)\b/i,
+  },
+  {
     id: "flux-2-edit",
     engine: "image",
     label: "FLUX.2 Edit",
