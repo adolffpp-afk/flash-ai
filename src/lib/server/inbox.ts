@@ -64,12 +64,12 @@ export async function ownsSite(userId: string, slug: string): Promise<boolean> {
 }
 
 /** A site's messages, newest first, and marks them read. */
-export async function readMessages(slug: string): Promise<SiteMessage[]> {
+export async function readMessages(slug: string, markRead = true): Promise<SiteMessage[]> {
   const rows = await all<{ id: string; form: string; data: string; created_at: number; read_at: number }>(
     "SELECT id, form, data, created_at, read_at FROM site_messages WHERE site_slug = ? ORDER BY created_at DESC LIMIT 500",
     [slug],
   );
-  await run("UPDATE site_messages SET read_at = ? WHERE site_slug = ? AND read_at = 0", [now(), slug]);
+  if (markRead) await run("UPDATE site_messages SET read_at = ? WHERE site_slug = ? AND read_at = 0", [now(), slug]);
   return rows.map((r) => ({ id: r.id, form: r.form, data: JSON.parse(r.data), createdAt: Number(r.created_at), read: Boolean(r.read_at) }));
 }
 
@@ -95,4 +95,20 @@ export async function sitesWithMessages(userId: string) {
     unread: Number(r.unread),
     views: Number(r.views),
   }));
+}
+
+/** A site's form messages as spreadsheet rows: date, form, then one column per field name. */
+export function messageRows(messages: SiteMessage[]): unknown[][] {
+  const fields = [...new Set(messages.flatMap((m) => Object.keys(m.data)))].slice(0, 50);
+  return [
+    ["Date", "Form", ...fields],
+    ...messages.map((m) => [
+      new Date(m.createdAt).toISOString().slice(0, 16).replace("T", " "),
+      m.form,
+      ...fields.map((f) => {
+        const v = m.data[f];
+        return typeof v === "string" || v === undefined ? v : JSON.stringify(v);
+      }),
+    ]),
+  ];
 }

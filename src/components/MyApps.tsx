@@ -12,7 +12,7 @@ type Domains = { available: boolean; allowed: boolean; domains: DomainInfo[] };
 type Seller = { connected: boolean; ready: boolean; currency: string; country: string };
 type Payments = { available: boolean; allowed: boolean; seller: Seller };
 type Product = { id: string; name: string; label: string; delivery: boolean };
-type Order = { id: string; item: string; quantity: number; total: string; email: string; name: string; address: string; createdAt: number };
+type Order = { id: string; item: string; quantity: number; total: string; email: string; name: string; address: string; createdAt: number; done: boolean };
 type Shop = { products: Product[]; unpriced: string[]; orders: Order[] };
 
 const dateLabel = (t: number) =>
@@ -170,6 +170,18 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
       setVisits(await api<Visits>(`/api/sites/${site.slug}/visits`));
     } catch {
       setError("Couldn't load the visitor stats. Please try again.");
+    }
+  }
+
+  async function markOrder(order: Order) {
+    if (!open) return;
+    const done = !order.done;
+    setShop((s) => s && { ...s, orders: s.orders.map((o) => (o.id === order.id ? { ...o, done } : o)) });
+    try {
+      await api(`/api/sites/${open.slug}/orders`, { method: "PATCH", json: { id: order.id, done } });
+    } catch {
+      setShop((s) => s && { ...s, orders: s.orders.map((o) => (o.id === order.id ? { ...o, done: order.done } : o)) });
+      setError("Couldn't update that order. Please try again.");
     }
   }
 
@@ -367,19 +379,38 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
                   </form>
                 </section>
                 <section>
-                  <h3 className="mb-2 text-sm font-medium text-zinc-200">Orders</h3>
+                  <div className="mb-2 flex items-center gap-3">
+                    <h3 className="text-sm font-medium text-zinc-200">
+                      Orders
+                      {shop.orders.some((o) => !o.done) && (
+                        <span className="ml-2 text-xs font-normal text-gold-soft">{shop.orders.filter((o) => !o.done).length} to handle</span>
+                      )}
+                    </h3>
+                    {shop.orders.length > 0 && (
+                      <a href={`/api/sites/${open.slug}/orders`} download className="ml-auto text-xs text-primary-soft hover:underline">
+                        ⬇ Download (CSV)
+                      </a>
+                    )}
+                  </div>
                   {shop.orders.length === 0 ? (
                     <p className="text-sm text-zinc-500">No orders yet. You get an email for each one.</p>
                   ) : (
                     <ul className="space-y-2">
                       {shop.orders.map((o) => (
-                        <li key={o.id} className="rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 text-sm">
+                        <li key={o.id} className={`rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 text-sm ${o.done ? "opacity-60" : ""}`}>
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                            <span className="text-zinc-100">
+                            <span className={o.done ? "text-zinc-400 line-through" : "text-zinc-100"}>
                               {o.quantity} × {o.item}
                             </span>
                             <span className="tabular-nums text-primary-soft">{o.total}</span>
                             <span className="ml-auto text-xs text-zinc-500">{dateLabel(o.createdAt)}</span>
+                            <button
+                              onClick={() => markOrder(o)}
+                              className={`rounded-md border px-2 py-0.5 text-xs ${o.done ? "border-white/10 text-zinc-400 hover:text-zinc-100" : "border-primary/40 text-primary-soft hover:bg-primary/10"}`}
+                              title={o.done ? "Mark as not handled yet" : "Mark as sent or picked up"}
+                            >
+                              {o.done ? "✓ Done" : "Mark done"}
+                            </button>
                           </div>
                           <p className="mt-1 break-words text-xs text-zinc-400">
                             {[o.name, o.email, o.address].filter(Boolean).join(" · ")}
@@ -491,6 +522,11 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
               </p>
             ) : (
               <ul className="space-y-3">
+                <li className="flex justify-end">
+                  <a href={`/api/sites/${open.slug}/inbox?format=csv`} download className="text-xs text-primary-soft hover:underline">
+                    ⬇ Download all (CSV)
+                  </a>
+                </li>
                 {messages.map((m) => (
                   <li key={m.id} className="rounded-xl border border-white/8 bg-white/[0.02] p-4">
                     <div className="mb-2 flex items-center gap-2 text-xs text-zinc-500">

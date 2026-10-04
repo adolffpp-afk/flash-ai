@@ -322,6 +322,8 @@ const MIGRATIONS = [
   "ALTER TABLE credit_ledger ADD COLUMN actor TEXT",
   // Pinned projects stay at the top of the sidebar.
   "ALTER TABLE projects ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0",
+  // When the site's owner marked an order as handled (sent, picked up), or 0.
+  "ALTER TABLE site_orders ADD COLUMN done_at INTEGER NOT NULL DEFAULT 0",
 ];
 
 async function init(c: Client) {

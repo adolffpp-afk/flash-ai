@@ -153,6 +153,7 @@ test("a seller connects Stripe, prices items, and buyers pay through Checkout", 
     name: "Ana",
     address: "",
     createdAt: 0,
+    done: false,
   });
 
   // Unpublishing a site takes its items and orders with it.
