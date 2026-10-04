@@ -5,6 +5,7 @@ import { ENGINES, ENGINE_LABELS, type Engine } from "@/lib/types";
 import { api, type Pricing } from "@/lib/store";
 import { IntervalToggle, PlanCards, type Interval } from "./PlanCards";
 import { EngineIcon } from "./EngineIcon";
+import { InstallApp } from "./InstallApp";
 import { Logo, LogoMark } from "@/app/brand";
 
 const money = (cents: number) => `$${(cents / 100).toFixed(cents % 100 ? 2 : 0)}`;
@@ -123,6 +124,7 @@ export function Landing({
             <a href="#faq" className="hover:text-zinc-100">FAQ</a>
           </div>
           <div className="ml-auto flex items-center gap-2 text-sm">
+            <InstallApp className="hidden h-9 items-center gap-1.5 rounded-full px-3 text-zinc-300 transition hover:text-white sm:flex" />
             <button onClick={() => onStart("login")} className="h-9 rounded-full px-3 text-zinc-300 transition hover:text-white">
               Sign in
             </button>
@@ -317,6 +319,7 @@ export function Landing({
             <a href="/terms" className="hover:text-zinc-200">Terms</a>
             <a href="/privacy" className="hover:text-zinc-200">Privacy</a>
             <a href="#pricing" className="hover:text-zinc-200">Pricing</a>
+            <InstallApp className="flex items-center gap-1.5 hover:text-zinc-200" />
           </div>
         </div>
       </footer>

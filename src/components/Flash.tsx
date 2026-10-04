@@ -7,6 +7,7 @@ import { Landing } from "./Landing";
 import { VerifyBanner } from "./VerifyBanner";
 import { CreditsDialog } from "./CreditsDialog";
 import { InviteDialog } from "./InviteFriends";
+import { InstallApp, InstallPopup } from "./InstallApp";
 import { ENGINES, ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types";
 import { api, newId, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
 import { BoltIcon, Logo, LogoMark } from "@/app/brand";
@@ -608,6 +609,7 @@ export function Flash({
           >
             🎁 Invite friends, earn credits
           </button>
+          <InstallApp className="mt-2 flex w-full items-center gap-2 rounded-lg border border-white/8 px-2 py-1.5 text-left text-xs text-zinc-300 transition hover:bg-white/[0.04] hover:text-white" />
           {status && (
             <details className="mt-2 text-xs text-zinc-400">
               <summary className="cursor-pointer select-none hover:text-zinc-200">
@@ -687,6 +689,7 @@ export function Flash({
         </header>
         {showCredits && <CreditsDialog me={me} onClose={() => setShowCredits(false)} onChanged={refreshMe} />}
         {showInvite && <InviteDialog me={me} onClose={() => setShowInvite(false)} />}
+        <InstallPopup />
 
         <div className="flex-1 overflow-y-auto">
           <div className="mx-auto max-w-3xl space-y-6 px-4 py-6">
