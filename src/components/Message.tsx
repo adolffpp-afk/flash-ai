@@ -10,6 +10,7 @@ import { speakable } from "@/lib/speech";
 import { BoltIcon, LogoMark } from "@/app/brand";
 import { wordDocument, wordFileName } from "@/lib/word-export";
 import { excelWorkbook, tablesIn } from "@/lib/excel-export";
+import { slidesDeck } from "@/lib/slides-export";
 import { answerDocument } from "@/lib/chat-export";
 
 export type Reshape = "tall" | "square" | "wide";
@@ -140,6 +141,16 @@ const saveAsExcel = (text: string) =>
     wordFileName(text).replace(/\.docx$/, ".xlsx"),
   );
 
+/** Downloads a reply as a PowerPoint deck: a title slide, then a slide per heading. */
+const saveAsSlides = (text: string) => {
+  const name = wordFileName(text).replace(/\.docx$/, "");
+  const date = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+  download(slidesDeck(text, name, `Made with Flash AI · ${date}`), "application/vnd.openxmlformats-officedocument.presentationml.presentation", `${name}.pptx`);
+};
+
+// Answers with headings or lists make a deck; a few plain sentences don't.
+const hasStructure = (text: string) => /^(#{1,3}\s|\s*[-*+]\s|\s*\d+[.)]\s|\|)/m.test(text);
+
 /** Reads a reply aloud with the device's own voice, which is free and needs no credits. */
 function ReadAloud({ text, className }: { text: string; className: string }) {
   const [speaking, setSpeaking] = useState(false);
@@ -199,6 +210,11 @@ function Actions({ m, onRetry }: { m: UIMessage; onRetry?: () => void }) {
       {text && !m.app && tablesIn(text).length > 0 && (
         <button className={btn} onClick={() => saveAsExcel(text)} title="Download this answer's tables as an Excel spreadsheet">
           ⬇ Excel
+        </button>
+      )}
+      {text && !m.app && hasStructure(text) && (
+        <button className={btn} onClick={() => saveAsSlides(text)} title="Download this answer as a PowerPoint deck">
+          ⬇ PowerPoint
         </button>
       )}
       {onRetry && (
