@@ -15,6 +15,7 @@ export default function Privacy() {
         <li><strong>Account details:</strong> your name, email address and a scrambled (hashed) version of your password.</li>
         <li><strong>Your content:</strong> the messages, files and memory notes you send, and what Flash makes for you, saved in your projects.</li>
         <li><strong>Published apps:</strong> the apps you publish and the data their users save in them.</li>
+        <li><strong>Shared chats:</strong> when you share a chat, a copy of it (with its pictures, videos and audio) is visible to anyone with the link until you stop sharing it.</li>
         <li><strong>Usage and billing:</strong> which tools you use, credits spent, and purchases. When paid plans are available, card payments are handled by Stripe; we never see your full card number.</li>
         <li><strong>Technical data:</strong> a sign-in cookie that keeps you logged in, and standard server logs.</li>
       </ul>
