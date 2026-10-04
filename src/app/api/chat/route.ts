@@ -10,6 +10,7 @@ import {
   streamSearch,
   streamText,
   system,
+  writeScenes,
   type Budget,
   type Meter,
   type WritingMode,
@@ -43,13 +44,14 @@ import {
   voiceCostCents,
 } from "@/lib/credits.ts";
 import { falConfigured, falGenerate } from "@/lib/engines/fal.ts";
-import { MEDIA_ENGINES, modelCredits, pickModel, videoSeconds, type MediaEngine, type ModelInfo, type Provider } from "@/lib/models.ts";
+import { MEDIA_ENGINES, modelCredits, movieScenes, movieSeconds, pickModel, videoSeconds, type MediaEngine, type ModelInfo, type Provider } from "@/lib/models.ts";
 import { unavailableReply } from "@/lib/engines/demo.ts";
 import { FriendlyError, JobAbandoned } from "@/lib/engines/errors.ts";
 import { buildSystem, streamBuild } from "@/lib/engines/builder.ts";
+import { makeMovie } from "@/lib/engines/movie.ts";
 
-// Vercel Hobby allows 300 seconds; on Vercel Pro this can go up to 800 for long video jobs.
-export const maxDuration = 300;
+// Vercel Pro allows up to 800 seconds, which the Movie maker needs (scenes, filming and joining).
+export const maxDuration = 800;
 
 // Vercel caps a request at 4.5 MB, and a file grows by a third when sent as base64.
 const MAX_ATTACHMENT_BYTES = 3 * 1024 * 1024;
@@ -205,6 +207,24 @@ async function* run(
       return;
     }
     case "video": {
+      if (model!.id === "movie") {
+        const { scenes: count, seconds } = movieScenes(movieSeconds(last.content));
+        yield { type: "status", message: `Writing ${count} scenes for your movie…` };
+        const scenes = claudeConfigured()
+          ? await writeScenes(last.content, count, seconds, meter).catch((err) => {
+              console.error("[flash] scene writing failed", err);
+              throw new FriendlyError("Flash couldn't write the scenes for this movie. Nothing was filmed. Please try again.");
+            })
+          : Array.from({ length: count }, (_, i) => `Scene ${i + 1} of ${count}: ${last.content}`);
+        yield {
+          type: "text",
+          delta: `**Your movie, in ${scenes.length} scenes:**\n\n${scenes.map((s, i) => `${i + 1}. ${s}`).join("\n")}`,
+        };
+        yield { type: "status", message: "Filming every scene at once. This usually takes three to eight minutes…" };
+        const movie = yield* withProgress((report) => makeMovie(model!.endpoint!, scenes, seconds, meter, report));
+        yield { type: "video", url: await store(movie, "flash-movie.mp4"), prompt: last.content };
+        return;
+      }
       const prompt = await sharpen("video", last.content, meter);
       yield { type: "status", message: `Filming your video with ${model!.label}. This usually takes one to three minutes…` };
       let video: Media;

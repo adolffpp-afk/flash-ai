@@ -70,6 +70,7 @@ const SUGGESTIONS: { engine: Engine; text: string }[] = [
   { engine: "docs", text: "Create a monthly budget spreadsheet for a family of four" },
   { engine: "image", text: "Draw a minimalist logo for a coffee shop called Flash Brew" },
   { engine: "video", text: "Make a video of ocean waves at sunset, slow drone shot" },
+  { engine: "video", text: "Make a 1 minute movie about a girl who finds a dragon egg" },
   { engine: "music", text: "Compose an upbeat jingle for a bakery ad" },
   { engine: "voice", text: "Read this aloud: Welcome to Flash, your all-in-one AI." },
   { engine: "transcribe", text: "Attach a recording and get a clean transcript" },

@@ -17,6 +17,8 @@ export type ModelInfo = {
   endpoint?: string;
   // Requests that match are sent to this model when Flash picks automatically.
   match?: RegExp;
+  // Only used when picked or matched, never as the engine's default.
+  notDefault?: boolean;
 };
 
 /**
@@ -41,6 +43,19 @@ export const MODELS: ModelInfo[] = [
     blurb: "Lifelike photos, portraits and product shots",
     endpoint: "fal-ai/flux-2-pro",
     match: /\b(photo\w*|realistic|lifelike|portrait|headshot|product shot|cinematic|35 ?mm|dslr)\b/i,
+  },
+  {
+    // Not a single model: Claude writes the scenes, Kling films each one, and fal's ffmpeg joins them.
+    id: "movie",
+    engine: "video",
+    label: "Movie maker",
+    provider: "fal",
+    // Every scene at Kling's $0.14 a second, plus 2 cents for writing the scenes and joining the clips.
+    costCents: (request) => 14 * movieSeconds(request) + 2,
+    blurb: "A short film: Flash writes the scenes, films each one and joins them",
+    endpoint: "fal-ai/kling-video/v3/turbo/pro/text-to-video",
+    notDefault: true,
+    match: /\b(short film|movie|mini[- ]?movie|trailer|film (with|in) (several|multiple|\d+|[a-z]+) scenes)\b/i,
   },
   {
     id: "sora-2-pro",
@@ -93,6 +108,23 @@ export const MODELS: ModelInfo[] = [
 /** Seconds of video a Kling request asks for (3 to 15, default 10). */
 export const videoSeconds = (request: string) => requestedSeconds(request, 3, 15, 10);
 
+/**
+ * A movie's length in seconds (20 to 90, default 40), from "a 1 minute movie" or "a 30 second film".
+ * It is filmed as scenes of about 10 seconds; the cost is the total of the scenes as filmed.
+ */
+export function movieSeconds(request: string): number {
+  const minutes = Number(request.match(/\b(\d{1,2}(?:\.\d)?|one|two)[\s-]*(?:min|mins|minutes?)\b/i)?.[1]?.replace(/^one$/i, "1").replace(/^two$/i, "2"));
+  const asked = minutes ? minutes * 60 : requestedSeconds(request, 20, 90, 40);
+  const { scenes, seconds } = movieScenes(Math.min(90, Math.max(20, asked)));
+  return scenes * seconds;
+}
+
+/** How a movie of this length is split: scenes of 5 to 15 seconds, about 10 each. */
+export function movieScenes(total: number): { scenes: number; seconds: number } {
+  const scenes = Math.max(2, Math.round(total / 10));
+  return { scenes, seconds: Math.min(15, Math.max(5, Math.round(total / scenes))) };
+}
+
 /** Credits a request on this model costs the user. */
 export function modelCredits(model: ModelInfo, request = ""): number {
   return creditsFor(typeof model.costCents === "function" ? model.costCents(request) : model.costCents);
@@ -116,7 +148,8 @@ export function pickModel(
   if (chosen) return { model: chosen, why: "you picked it" };
   const matched = ready.find((m) => m.match?.test(message));
   if (matched) return { model: matched, why: matched.blurb.toLowerCase() };
-  return ready[0] ? { model: ready[0], why: "the default" } : null;
+  const fallback = ready.find((m) => !m.notDefault);
+  return fallback ? { model: fallback, why: "the default" } : null;
 }
 
 /** Seconds asked for in a video request ("a 12 second clip"), clamped to what a model allows. */

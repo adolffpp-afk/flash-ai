@@ -250,6 +250,46 @@ export async function improvePrompt(
   return text?.text.trim() || request;
 }
 
+/**
+ * Splits a movie idea into scene prompts for a text-to-video model. Each scene repeats the full
+ * description of the characters and setting, because every clip is filmed separately.
+ */
+export async function writeScenes(request: string, scenes: number, seconds: number, meter: Meter = noMeter): Promise<string[]> {
+  const res = await getClient().beta.messages.create(
+    {
+      model: CHAT_MODEL,
+      max_tokens: 4000,
+      betas: ["server-side-fallback-2026-07-01"],
+      fallbacks: "default",
+      output_config: { effort: "low" },
+      system:
+        `You are a film director. Turn the user's idea into a short film of exactly ${scenes} scenes, ` +
+        `each about ${seconds} seconds, that tell the story from beginning to end. Write each scene as one prompt ` +
+        "for a text-to-video model, under 90 words: the action, the camera movement, the lighting and the style. " +
+        "Every clip is filmed separately, so describe the main characters (age, face, hair, clothes) and the setting " +
+        "in the same exact words in every scene, and keep one visual style throughout. " +
+        "Reply with a JSON array of strings only.",
+      messages: [{ role: "user", content: request.slice(0, 3000) }],
+    },
+    { timeout: 30_000, maxRetries: 0 },
+  );
+  meterClaude(meter, res);
+  const text = res.content.find((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")?.text ?? "";
+  return parseScenes(text, scenes);
+}
+
+/** Reads the scene list from a reply, which may come wrapped in a code fence. */
+export function parseScenes(text: string, scenes: number): string[] {
+  const json = text.slice(text.indexOf("["), text.lastIndexOf("]") + 1);
+  try {
+    const list = (JSON.parse(json) as unknown[]).filter((x): x is string => typeof x === "string" && x.trim() !== "");
+    if (list.length >= 1) return list.slice(0, scenes).map((x) => x.trim());
+  } catch {
+    // Falls through to the error below.
+  }
+  throw new Error("The scene writer didn't return a scene list.");
+}
+
 const ENGINE_GUIDE: Record<Engine, string> = {
   text: "general questions, advice, explanations, writing, emails, brainstorming",
   app: "build a working web app, website, tool, game, dashboard or landing page",
