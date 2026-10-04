@@ -623,6 +623,10 @@ export function Flash({
 
   async function attach(file: File | undefined) {
     if (!file) return;
+    if (/\.(doc|xls|ppt)$/i.test(file.name)) {
+      setNotice(`${file.name} is an older Office file. Save it as .docx, .xlsx or .pptx first, then attach it.`);
+      return;
+    }
     const office = officeKind(file.name, file.type);
     if (office) {
       const read = await readOffice(file, office);
