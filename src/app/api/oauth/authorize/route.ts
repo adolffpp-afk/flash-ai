@@ -1,14 +1,15 @@
 import { appUrl, getUser } from "@/lib/server/auth.ts";
 import { checkAuthorize, createCode, redirectWith } from "@/lib/server/connector.ts";
+import { sameSite } from "@/lib/server/connector-http.ts";
 
 const see = (location: string) => new Response(null, { status: 303, headers: { Location: location } });
 
 /** The user's answer on the "Connect to Flash" page: allow sends the app a one-time code. */
 export async function POST(request: Request) {
   const origin = appUrl(request);
-  // Only Flash's own page may answer (the session cookie is SameSite=Lax as well).
-  const from = request.headers.get("origin");
-  if (from && from !== origin && from !== new URL(request.url).origin) return new Response("Forbidden", { status: 403 });
+  // Only Flash's own page may answer. A browser that hides the origin sends "null"; that is safe
+  // because the SameSite=Lax session cookie never comes with another site's form.
+  if (!sameSite(request.headers.get("origin"), request, origin)) return new Response("Forbidden", { status: 403 });
   const form = await request.formData();
   const params = Object.fromEntries([...form.entries()].map(([k, v]) => [k, String(v)]));
   const user = await getUser(request);
