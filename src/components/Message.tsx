@@ -1,11 +1,12 @@
 "use client";
 
-import { isValidElement, useState, type ReactNode } from "react";
+import { isValidElement, useEffect, useState, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ENGINE_LABELS } from "@/lib/types";
 import type { UIMessage } from "@/lib/store";
 import { AppPreview } from "./AppPreview";
+import { speakable } from "@/lib/speech";
 import { BoltIcon, LogoMark } from "@/app/brand";
 
 const EXTENSIONS: Record<string, string> = {
@@ -89,13 +90,39 @@ function plainText(m: UIMessage): string {
   return [m.content, m.after].filter(Boolean).join("\n\n").trim();
 }
 
+/** Reads a reply aloud with the device's own voice, which is free and needs no credits. */
+function ReadAloud({ text, className }: { text: string; className: string }) {
+  const [speaking, setSpeaking] = useState(false);
+  // Stop talking when the message leaves the screen (a new project, sign-out).
+  useEffect(() => () => void (speaking && window.speechSynthesis?.cancel()), [speaking]);
+  if (typeof window === "undefined" || !("speechSynthesis" in window)) return null;
+  return (
+    <button
+      className={className}
+      aria-pressed={speaking}
+      onClick={() => {
+        const synth = window.speechSynthesis;
+        synth.cancel();
+        if (speaking) return setSpeaking(false);
+        const say = new SpeechSynthesisUtterance(speakable(text));
+        say.lang = navigator.language || "en-US";
+        say.onend = say.onerror = () => setSpeaking(false);
+        synth.speak(say);
+        setSpeaking(true);
+      }}
+    >
+      {speaking ? "■ Stop reading" : "🔊 Read aloud"}
+    </button>
+  );
+}
+
 function Actions({ m, onRetry }: { m: UIMessage; onRetry?: () => void }) {
   const [copied, setCopied] = useState(false);
   const text = plainText(m);
   if (m.pending || (!text && !onRetry)) return null;
   const btn = "rounded-md px-2 py-1 hover:bg-zinc-800 hover:text-zinc-200";
   return (
-    <div className="mt-2 flex gap-1 text-xs text-zinc-500">
+    <div className="mt-2 flex flex-wrap gap-1 text-xs text-zinc-500">
       {text && (
         <button
           className={btn}
@@ -108,6 +135,7 @@ function Actions({ m, onRetry }: { m: UIMessage; onRetry?: () => void }) {
           {copied ? "Copied" : "Copy"}
         </button>
       )}
+      {text && <ReadAloud text={text} className={btn} />}
       {onRetry && (
         <button className={btn} onClick={onRetry}>
           ↻ Retry
@@ -117,32 +145,94 @@ function Actions({ m, onRetry }: { m: UIMessage; onRetry?: () => void }) {
   );
 }
 
+/** The user's own message, which can be edited and sent again when it is the latest one. */
+function UserMessage({ m, onEdit }: { m: UIMessage; onEdit?: (text: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(m.content);
+  const [copied, setCopied] = useState(false);
+  const btn = "rounded-md px-2 py-1 hover:bg-zinc-800 hover:text-zinc-200";
+  if (editing && onEdit) {
+    const save = () => {
+      if (!draft.trim()) return;
+      setEditing(false);
+      if (draft.trim() !== m.content.trim()) onEdit(draft.trim());
+    };
+    return (
+      <div className="flex justify-end">
+        <div className="w-full max-w-[85%] rounded-2xl border border-white/10 bg-zinc-900 p-2">
+          <textarea
+            autoFocus
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                save();
+              } else if (e.key === "Escape") setEditing(false);
+            }}
+            rows={Math.min(8, Math.max(2, draft.split("\n").length))}
+            aria-label="Edit your message"
+            className="w-full resize-none bg-transparent px-2 py-1 text-zinc-100 outline-none"
+          />
+          <div className="flex justify-end gap-2 text-sm">
+            <button onClick={() => (setEditing(false), setDraft(m.content))} className="rounded-lg px-3 py-1.5 text-zinc-300 hover:bg-white/[0.05]">
+              Cancel
+            </button>
+            <button onClick={save} disabled={!draft.trim()} className="rounded-lg bg-brand px-3 py-1.5 font-medium text-white hover:brightness-110 disabled:opacity-40">
+              Send
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <div className="group flex flex-col items-end">
+      <div className="max-w-[85%] rounded-2xl rounded-br-md bg-primary-strong px-4 py-2.5 text-white">
+        {m.attachmentName && <div className="mb-1 text-xs text-white/80">📎 {m.attachmentName}</div>}
+        <p className="whitespace-pre-wrap break-words">{m.content}</p>
+      </div>
+      {m.content && (
+        <div className="mt-1 flex gap-1 text-xs text-zinc-500 transition md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
+          <button
+            className={btn}
+            onClick={() => {
+              navigator.clipboard?.writeText(m.content);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            }}
+          >
+            {copied ? "Copied" : "Copy"}
+          </button>
+          {onEdit && (
+            <button className={btn} onClick={() => (setDraft(m.content), setEditing(true))}>
+              ✎ Edit
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Message({
   m,
   onRetry,
+  onEdit,
   onBuyCredits,
   onPublished,
   paymentsOn = true,
 }: {
   m: UIMessage;
   onRetry?: () => void;
+  // Edits the user's latest message and asks again.
+  onEdit?: (text: string) => void;
   onBuyCredits?: () => void;
   // False while plans and top-ups aren't on sale yet, so the copy doesn't offer them.
   paymentsOn?: boolean;
   onPublished?: (slug: string) => void;
 }) {
-  if (m.role === "user") {
-    return (
-      <div className="flex justify-end">
-        <div className="max-w-[85%] rounded-2xl rounded-br-md bg-primary-strong px-4 py-2.5 text-white">
-          {m.attachmentName && (
-            <div className="mb-1 text-xs text-white/80">📎 {m.attachmentName}</div>
-          )}
-          <p className="whitespace-pre-wrap break-words">{m.content}</p>
-        </div>
-      </div>
-    );
-  }
+  if (m.role === "user") return <UserMessage m={m} onEdit={onEdit} />;
   return (
     <div className="flex gap-3">
       <LogoMark size={32} className="mt-1" />

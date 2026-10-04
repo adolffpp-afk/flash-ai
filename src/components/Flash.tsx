@@ -153,6 +153,7 @@ export function Flash({
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
+  const [projectQuery, setProjectQuery] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   // Attachments stay in memory only (too large to save), keyed by user message id, for Retry.
@@ -405,6 +406,15 @@ export function Flash({
     await respond(active, messages.slice(0, lastUser), messages[lastUser]);
   }
 
+  /** Replaces the latest message with an edited one and asks again; the old reply is dropped. */
+  async function editLast(text: string) {
+    const messages = active?.messages;
+    if (!active || !messages || busy) return;
+    const lastUser = messages.findLastIndex((m) => m.role === "user");
+    if (lastUser === -1) return;
+    await respond(active, messages.slice(0, lastUser), { ...messages[lastUser], content: text });
+  }
+
   function stop() {
     abortRef.current?.abort();
   }
@@ -507,7 +517,9 @@ export function Flash({
     attach(file);
   }
 
-  const sorted = [...projects].sort((a, b) => b.updated_at - a.updated_at);
+  const sorted = [...projects]
+    .filter((p) => !projectQuery.trim() || p.name.toLowerCase().includes(projectQuery.trim().toLowerCase()))
+    .sort((a, b) => b.updated_at - a.updated_at);
   // Engines whose AI provider isn't set up yet show as coming soon, and light up once /api/status says so.
   const isLive = (e: Engine) => !status || status[e];
   const liveCount = ENGINES.filter(isLive).length;
@@ -577,7 +589,20 @@ export function Flash({
             + New project
           </button>
         </div>
+        {projects.length > 3 && (
+          <div className="mt-3 px-3">
+            <input
+              type="search"
+              value={projectQuery}
+              onChange={(e) => setProjectQuery(e.target.value)}
+              placeholder="Search projects"
+              aria-label="Search projects"
+              className="h-9 w-full rounded-lg border border-white/8 bg-white/[0.03] px-3 text-sm text-zinc-200 outline-none placeholder:text-zinc-500 focus:border-primary/70"
+            />
+          </div>
+        )}
         <nav className="mt-3 flex-1 space-y-0.5 overflow-y-auto px-3">
+          {projectQuery.trim() && !sorted.length && <p className="px-2 py-1.5 text-xs text-zinc-500">No projects match.</p>}
           {sorted.map((p) => (
             <div
               key={p.id}
@@ -759,6 +784,7 @@ export function Flash({
                 key={m.id}
                 m={m}
                 onRetry={i === all.length - 1 && m.role === "assistant" && !m.pending && !busy ? retry : undefined}
+                onEdit={m.role === "user" && !busy && i === all.findLastIndex((x) => x.role === "user") ? editLast : undefined}
                 onBuyCredits={() => setShowCredits(true)}
                 paymentsOn={me.paymentsEnabled || me.testPurchases}
                 onPublished={(slug) => setAppSlug(m.id, slug)}
