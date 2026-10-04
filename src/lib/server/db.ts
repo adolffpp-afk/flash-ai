@@ -79,6 +79,21 @@ const SCHEMA = [
     created_at INTEGER NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS site_domains_site ON site_domains(site_slug)`,
+  // Visits to published sites (see visits.ts): page loads per day and source, and a daily list of
+  // anonymous visitor fingerprints (no cookies, deleted after a month) to count people, not loads.
+  `CREATE TABLE IF NOT EXISTS site_visits (
+    site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
+    day TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT '',
+    views INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (site_slug, day, source)
+  )`,
+  `CREATE TABLE IF NOT EXISTS site_visitors (
+    site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
+    day TEXT NOT NULL,
+    visitor TEXT NOT NULL,
+    PRIMARY KEY (site_slug, day, visitor)
+  )`,
   // Selling from published sites (see shop.ts): each seller's own Stripe account, the items a
   // site sells with their prices, and the orders paid.
   `CREATE TABLE IF NOT EXISTS seller_accounts (

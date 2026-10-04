@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/store";
 import { SELLER_COUNTRIES } from "@/lib/shop";
 
-type Site = { slug: string; title: string; updated_at: number; messages: number; unread: number };
+type Site = { slug: string; title: string; updated_at: number; messages: number; unread: number; views: number };
+type Visits = { days: { day: string; views: number; visitors: number }[]; views: number; visitors: number; sources: { source: string; views: number }[] };
 type SiteMessage = { id: string; form: string; data: Record<string, unknown>; createdAt: number; read: boolean };
 type DomainInfo = { domain: string; connected: boolean; records: { type: string; name: string; value: string }[] };
 type Domains = { available: boolean; allowed: boolean; domains: DomainInfo[] };
@@ -16,13 +17,15 @@ type Shop = { products: Product[]; unpriced: string[]; orders: Order[] };
 
 const dateLabel = (t: number) =>
   new Date(t).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+const dayLabel = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 const fieldText = (v: unknown) => (typeof v === "string" ? v : JSON.stringify(v));
 
 /** My websites and apps: every published app, its link, and the forms visitors sent to it. */
 export function MyApps({ onClose }: { onClose: () => void }) {
   const [sites, setSites] = useState<Site[] | null>(null);
   const [open, setOpen] = useState<Site | null>(null);
-  const [view, setView] = useState<"messages" | "domains" | "payments">("messages");
+  const [view, setView] = useState<"messages" | "domains" | "payments" | "visits">("messages");
+  const [visits, setVisits] = useState<Visits | null>(null);
   const [payments, setPayments] = useState<Payments | null>(null);
   const [shop, setShop] = useState<Shop | null>(null);
   const [country, setCountry] = useState("CA");
@@ -147,6 +150,18 @@ export function MyApps({ onClose }: { onClose: () => void }) {
     }
   }
 
+  async function showVisits(site: Site) {
+    setOpen(site);
+    setView("visits");
+    setVisits(null);
+    setError("");
+    try {
+      setVisits(await api<Visits>(`/api/sites/${site.slug}/visits`));
+    } catch {
+      setError("Couldn't load the visitor stats. Please try again.");
+    }
+  }
+
   async function showMessages(site: Site) {
     setOpen(site);
     setView("messages");
@@ -199,7 +214,7 @@ export function MyApps({ onClose }: { onClose: () => void }) {
             </button>
           )}
           <h2 className="min-w-0 flex-1 truncate text-lg font-medium tracking-tight">
-            {open ? `${{ domains: "Domain", payments: "Payments", messages: "Messages" }[view]} · ${open.title}` : "My websites and apps"}
+            {open ? `${{ domains: "Domain", payments: "Payments", messages: "Messages", visits: "Visitors" }[view]} · ${open.title}` : "My websites and apps"}
           </h2>
           <button
             ref={closeRef}
@@ -213,7 +228,13 @@ export function MyApps({ onClose }: { onClose: () => void }) {
 
         <div className="flex-1 overflow-y-auto p-4 sm:p-5">
           {error && <p role="alert" className="mb-3 text-sm text-red-400">{error}</p>}
-          {open && view === "payments" ? (
+          {open && view === "visits" ? (
+            visits === null ? (
+              !error && <p className="text-sm text-zinc-500">Loading…</p>
+            ) : (
+              <VisitsView visits={visits} />
+            )
+          ) : open && view === "payments" ? (
             payments === null ? (
               !error && <p className="text-sm text-zinc-500">Loading…</p>
             ) : !payments.available ? (
@@ -512,10 +533,13 @@ export function MyApps({ onClose }: { onClose: () => void }) {
                       </button>
                     </div>
                   ) : (
-                    <div className="flex items-center gap-3 text-xs">
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
                       <button onClick={() => showMessages(s)} className="text-zinc-200 hover:text-white">
                         ✉️ Messages{s.messages ? ` (${s.messages})` : ""}
                         {s.unread > 0 && <span className="ml-1.5 rounded-full bg-primary px-1.5 py-0.5 text-[10px] text-white">{s.unread} new</span>}
+                      </button>
+                      <button onClick={() => showVisits(s)} className="text-zinc-200 hover:text-white" title="Visits in the last 30 days">
+                        📈 Visitors{s.views ? ` (${s.views.toLocaleString("en-US")})` : ""}
                       </button>
                       <button onClick={() => showDomains(s)} className="text-zinc-200 hover:text-white">
                         🔗 Domain
@@ -534,6 +558,67 @@ export function MyApps({ onClose }: { onClose: () => void }) {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** A site's last 30 days: totals, a bar per day, and the websites visitors came from. */
+function VisitsView({ visits }: { visits: Visits }) {
+  if (visits.views === 0) {
+    return (
+      <p className="mx-auto mt-16 max-w-sm text-center text-sm text-zinc-500">
+        No visitors yet. Share your site&apos;s link and each visit shows up here. Your own visits while signed in to Flash
+        aren&apos;t counted.
+      </p>
+    );
+  }
+  const top = Math.max(...visits.days.map((d) => d.views));
+  const today = visits.days[visits.days.length - 1];
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-3 gap-3">
+        {[
+          ["Visits", visits.views],
+          ["Visitors", visits.visitors],
+          ["Today", today.views],
+        ].map(([label, n]) => (
+          <div key={label} className="rounded-xl border border-white/8 bg-white/[0.02] p-3">
+            <p className="text-xs text-zinc-500">{label}</p>
+            <p className="mt-1 text-2xl font-medium tabular-nums text-zinc-100">{Number(n).toLocaleString("en-US")}</p>
+          </div>
+        ))}
+      </div>
+      <div>
+        <p className="mb-2 text-xs text-zinc-500">Visits per day, last 30 days</p>
+        <div className="flex h-32 items-end gap-[3px]" role="img" aria-label={`${visits.views} visits in the last 30 days`}>
+          {visits.days.map((d) => (
+            <div
+              key={d.day}
+              title={`${dayLabel(d.day)}: ${d.views} visits, ${d.visitors} visitors`}
+              className="min-w-0 flex-1 rounded-t-sm bg-primary/70 hover:bg-primary"
+              style={{ height: d.views ? `${Math.max(4, (d.views / top) * 100)}%` : "2px", opacity: d.views ? 1 : 0.25 }}
+            />
+          ))}
+        </div>
+        <div className="mt-1 flex justify-between text-[11px] text-zinc-500">
+          <span>{dayLabel(visits.days[0].day)}</span>
+          <span>Today</span>
+        </div>
+      </div>
+      <div>
+        <p className="mb-2 text-xs text-zinc-500">Where visitors came from</p>
+        <ul className="divide-y divide-white/6 rounded-xl border border-white/8">
+          {visits.sources.map((s) => (
+            <li key={s.source} className="flex items-center justify-between px-4 py-2 text-sm">
+              <span className="min-w-0 truncate text-zinc-200">{s.source || "Direct (typed, bookmarked or shared in a message)"}</span>
+              <span className="tabular-nums text-zinc-400">{s.views.toLocaleString("en-US")}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+      <p className="text-xs text-zinc-500">
+        Counted without cookies. Visitors are people counted once a day; robots and your own visits are left out.
+      </p>
     </div>
   );
 }
