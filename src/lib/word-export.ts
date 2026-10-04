@@ -73,7 +73,7 @@ export function markdownToWordXml(markdown: string): string {
       continue;
     }
     // Tables: a header row, a |---| line, then rows.
-    if (trimmed.startsWith("|") && /^\s*\|?\s*:?-{3,}/.test(lines[i + 1] ?? "")) {
+    if (trimmed.startsWith("|") && /^\s*\|?\s*:?-+:?\s*\|/.test(lines[i + 1] ?? "")) {
       const rows = [cells(line)];
       i += 2;
       while (i < lines.length && lines[i].trim().startsWith("|")) rows.push(cells(lines[i++]));
