@@ -63,6 +63,7 @@ export function AuthScreen({
   initialMode = "signup",
   initialError,
   onBack,
+  next,
 }: {
   // Sign-up says when the confirmation email couldn't be sent.
   onDone: (result?: { emailFailed?: boolean }) => void;
@@ -70,6 +71,8 @@ export function AuthScreen({
   // An auth_error code from a "Continue with …" sign-in that didn't finish.
   initialError?: string;
   onBack?: () => void;
+  // Where to return after a "Continue with …" or email-link sign-in (a path on this site).
+  next?: string;
 }) {
   const [mode, setMode] = useState<"signup" | "login" | "forgot" | "link">(initialMode);
   const [sent, setSent] = useState<{ devLink?: string } | null>(null);
@@ -103,7 +106,7 @@ export function AuthScreen({
         setSent(
           await api<{ devLink?: string }>(mode === "link" ? "/api/auth/email-link/request" : "/api/auth/reset/request", {
             method: "POST",
-            json: { email },
+            json: { email, next },
           }),
         );
         return;
@@ -181,7 +184,7 @@ export function AuthScreen({
               {options.providers.map((id) => (
                 <a
                   key={id}
-                  href={`/api/auth/oauth/${id}`}
+                  href={`/api/auth/oauth/${id}${next ? `?next=${encodeURIComponent(next)}` : ""}`}
                   aria-label={`Continue with ${PROVIDER_NAMES[id]}`}
                   className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] text-sm text-zinc-200 transition hover:border-white/15 hover:bg-white/[0.06]"
                 >

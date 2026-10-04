@@ -266,6 +266,11 @@ export function Flash({
       );
       window.history.replaceState(null, "", window.location.pathname);
     }
+    // A connected app (see /connector) links here to get more credits.
+    if (params.get("credits") && signedIn) {
+      setShowCredits(true);
+      window.history.replaceState(null, "", window.location.pathname);
+    }
     // A "Continue with …" sign-in that didn't finish comes back here to say why.
     const authErr = params.get("auth_error");
     if (authErr) {
