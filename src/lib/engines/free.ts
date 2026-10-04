@@ -76,14 +76,33 @@ export const freeImageConfigured = () => Boolean(cloudflareKey());
 // What each user gets per day once their credits run out.
 export const FREE_DAILY_CHATS = num("FLASH_FREE_DAILY_CHATS", 25);
 export const FREE_DAILY_IMAGES = num("FLASH_FREE_DAILY_IMAGES", 3);
+export const FREE_DAILY_TRANSCRIPTS = num("FLASH_FREE_DAILY_TRANSCRIPTS", 3);
+
+// Groq's free tier limits Whisper by requests and seconds of audio a day (2,000 and 28,800 in
+// the lowest figures published). Flash stops well below both; check the Groq console's limits page.
+export const GROQ_AUDIO_DAILY_REQUESTS = num("FLASH_GROQ_AUDIO_DAILY_REQUESTS", 1500);
+export const GROQ_AUDIO_DAILY_SECONDS = num("FLASH_GROQ_AUDIO_DAILY_SECONDS", 20000);
+// Groq counts every request as at least 10 seconds.
+export const MIN_AUDIO_SECONDS = 10;
+// Formats Whisper on Groq reads.
+const FREE_AUDIO_TYPE = /^(audio\/(mpeg|mp3|mp4|m4a|x-m4a|aac|wav|x-wav|wave|ogg|opus|webm|flac|x-flac)|video\/(mp4|webm|mpeg))$/;
+export const freeTranscribeConfigured = () => Boolean(env("GROQ_API_KEY"));
 // Free replies stay short so the daily token allowance goes further.
 const FREE_MAX_TOKENS = 4000;
 
 export const FREE_CHAT_ENGINES: Engine[] = ["text", "translate", "code", "docs"];
 
-/** Whether a request can use the free lane: chat-style engines or images, with no file or a text file. */
-export function freeEligible(engine: Engine, last: ChatTurn): "chat" | "image" | null {
+export type FreeLane = "chat" | "image" | "transcribe";
+
+/**
+ * Whether a request can use the free lane: chat-style engines or images with no file or text
+ * files, or transcribing one audio or video file.
+ */
+export function freeEligible(engine: Engine, last: ChatTurn): FreeLane | null {
   const a = last.attachment;
+  if (engine === "transcribe") {
+    return a && !last.more?.length && FREE_AUDIO_TYPE.test(a.mediaType) && freeTranscribeConfigured() ? "transcribe" : null;
+  }
   const files = a ? [a, ...(last.more ?? [])] : [];
   if (files.some((f) => !f.mediaType.startsWith("text/") && f.mediaType !== "application/json")) return null;
   if (engine === "image" && !a) return freeImageConfigured() ? "image" : null;
@@ -212,4 +231,21 @@ export async function freeImage(prompt: string): Promise<Media> {
     throw new Error(json.errors?.[0]?.message ?? `The free image model returned ${res.status}`);
   }
   return { data: Buffer.from(json.result.image, "base64"), mime: "image/jpeg" };
+}
+
+/** A transcript from Whisper on Groq's free tier, with the audio's length in seconds. */
+export async function freeTranscribe(file: { name: string; mediaType: string; data: string }): Promise<{ text: string; seconds: number }> {
+  const form = new FormData();
+  form.append("model", env("FLASH_FREE_WHISPER_MODEL") ?? "whisper-large-v3-turbo");
+  form.append("response_format", "verbose_json");
+  form.append("file", new Blob([Buffer.from(file.data, "base64")], { type: file.mediaType }), file.name);
+  const res = await fetch(`${env("GROQ_BASE_URL") ?? "https://api.groq.com/openai/v1"}/audio/transcriptions`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env("GROQ_API_KEY")}` },
+    body: form,
+    signal: AbortSignal.timeout(120_000),
+  });
+  const json = (await res.json().catch(() => ({}))) as { text?: string; duration?: number; error?: { message?: string } };
+  if (!res.ok) throw new Error(json.error?.message ?? `The free transcription model returned ${res.status}`);
+  return { text: json.text?.trim() || "(No speech found in this file.)", seconds: Math.max(MIN_AUDIO_SECONDS, Math.ceil(json.duration ?? 0)) };
 }

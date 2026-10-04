@@ -46,7 +46,7 @@ export type Pricing = {
     seats?: number;
   }[];
   freeMonthly: number;
-  freeLane: { chats: number; images: number };
+  freeLane: { chats: number; images: number; transcripts?: number };
   paymentsEnabled: boolean;
   testPurchases: boolean;
   models: { id: string; engine: Engine; label: string; credits: number; blurb: string; live: boolean }[];

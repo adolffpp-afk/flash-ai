@@ -59,3 +59,45 @@ test("each user's free requests are reserved up front, so parallel ones can't pa
   assert.equal(await reserveFreeUser("u1", "image"), true);
   assert.equal(await reserveFreeUser("u2", "image"), true, "other users have their own");
 });
+
+test("one audio or video file can be transcribed for free with Whisper", async () => {
+  assert.equal(freeEligible("transcribe", turn("", "audio/mpeg")), "transcribe");
+  assert.equal(freeEligible("transcribe", turn("", "video/mp4")), "transcribe");
+  assert.equal(freeEligible("transcribe", turn("", "video/quicktime")), null, "Whisper on Groq can't read .mov");
+  assert.equal(freeEligible("transcribe", turn("")), null);
+  const two = { ...turn("", "audio/mpeg"), more: [{ name: "b", mediaType: "audio/mpeg", data: "" }] };
+  assert.equal(freeEligible("transcribe", two), null);
+  assert.equal(freeEligible("text", turn("", "audio/mpeg")), null);
+});
+
+test("free transcripts stop at each user's and Flash's daily allowance", async () => {
+  const { reserveFreeAudio, recordFreeAudio } = await import("../src/lib/server/free.ts");
+  const { FREE_DAILY_TRANSCRIPTS, GROQ_AUDIO_DAILY_SECONDS } = await import("../src/lib/engines/free.ts");
+  for (let i = 0; i < FREE_DAILY_TRANSCRIPTS; i++) assert.equal(await reserveFreeUser("listener", "transcribe"), true);
+  assert.equal(await reserveFreeUser("listener", "transcribe"), false);
+  assert.equal(await freeLeft("listener", "chat"), 25, "transcripts don't use up chats");
+  assert.equal(await reserveFreeAudio(), true);
+  await recordFreeAudio(GROQ_AUDIO_DAILY_SECONDS - 500);
+  assert.equal(await reserveFreeAudio(), false, "no room left for another recording");
+});
+
+test("the free transcript comes from Groq with the audio's length", async () => {
+  const { createServer } = await import("node:http");
+  let seen = "";
+  const server = createServer((req, res) => {
+    let body = "";
+    req.on("data", (c) => (body += c));
+    req.on("end", () => {
+      seen = `${req.url} ${req.headers.authorization} ${body.includes("whisper-large-v3-turbo")} ${body.includes('filename="talk.mp3"')}`;
+      res.end(JSON.stringify({ text: " Hello bakery. ", duration: 3.2 }));
+    });
+  }).listen(0);
+  await new Promise((r) => server.once("listening", r));
+  process.env.GROQ_BASE_URL = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const { freeTranscribe } = await import("../src/lib/engines/free.ts");
+  const result = await freeTranscribe({ name: "talk.mp3", mediaType: "audio/mpeg", data: Buffer.from("ID3").toString("base64") });
+  server.close();
+  delete process.env.GROQ_BASE_URL;
+  assert.equal(seen, "/audio/transcriptions Bearer g true true");
+  assert.deepEqual(result, { text: "Hello bakery.", seconds: 10 }, "Groq counts at least 10 seconds");
+});
