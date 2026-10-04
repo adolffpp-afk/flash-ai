@@ -10,6 +10,7 @@ import { InviteDialog } from "./InviteFriends";
 import { InstallApp, InstallPopup } from "./InstallApp";
 import { ShareDialog } from "./ShareDialog";
 import { DownloadChat } from "./DownloadChat";
+import { ProjectInstructions } from "./ProjectInstructions";
 import { Creations } from "./Creations";
 import { MyApps } from "./MyApps";
 import { OFFICE_TYPES, officeKind, officeText } from "@/lib/office";
@@ -253,6 +254,7 @@ export function Flash({
   const [projectQuery, setProjectQuery] = useState("");
   const [chatHits, setChatHits] = useState<ChatHit[]>([]);
   const [showShare, setShowShare] = useState(false);
+  const [showInstructions, setShowInstructions] = useState(false);
   const [showCreations, setShowCreations] = useState(false);
   const [showApps, setShowApps] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -409,7 +411,9 @@ export function Flash({
     if (projects.find((p) => p.id === id)?.messages) return;
     try {
       const { project } = await api<{ project: Project }>(`/api/projects/${id}`);
-      setProjects((list) => list.map((p) => (p.id === id ? { ...p, messages: p.messages ?? project.messages } : p)));
+      setProjects((list) =>
+        list.map((p) => (p.id === id ? { ...p, messages: p.messages ?? project.messages, instructions: project.instructions ?? "" } : p)),
+      );
     } catch {
       setNotice("Couldn't open that project. Pick it again in the sidebar to try again.");
     }
@@ -586,6 +590,7 @@ export function Flash({
           previous,
           model: choice === "auto" ? undefined : models[choice],
           confirmed: confirmed || skipsCostCheck(),
+          projectId,
         }),
         signal: controller.signal,
       });
@@ -960,6 +965,20 @@ export function Flash({
             ☰
           </button>
           <h1 className="min-w-0 flex-1 truncate text-sm text-zinc-200">{active?.name ?? "Flash AI"}</h1>
+          {active?.messages && (
+            <button
+              onClick={() => setShowInstructions(true)}
+              title={active.instructions ? `Instructions: ${active.instructions.slice(0, 120)}` : "Tell Flash how to answer in this project"}
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition ${
+                active.instructions ? "border-primary/40 bg-primary/10 text-primary-soft hover:bg-primary/20" : "border-white/10 text-zinc-200 hover:bg-white/[0.05]"
+              }`}
+            >
+              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <path d="M4 6h16 M4 12h10 M4 18h7 M17 15l2 2 4-4" />
+              </svg>
+              <span className="hidden sm:inline">{active.instructions ? "Instructions on" : "Instructions"}</span>
+            </button>
+          )}
           {active?.messages?.some((m) => !m.pending) && <DownloadChat project={active} disabled={busy} />}
           {active?.messages?.some((m) => !m.pending) && (
             <button
@@ -1013,6 +1032,13 @@ export function Flash({
         {showInvite && <InviteDialog me={me} onClose={() => setShowInvite(false)} />}
         <InstallPopup />
       {showShare && active && <ShareDialog project={active} onClose={() => setShowShare(false)} />}
+      {showInstructions && active && (
+        <ProjectInstructions
+          project={active}
+          onSaved={(instructions) => setProjects((list) => list.map((p) => (p.id === active.id ? { ...p, instructions } : p)))}
+          onClose={() => setShowInstructions(false)}
+        />
+      )}
 
         <div className="flex-1 overflow-y-auto">
           <div className="mx-auto max-w-3xl space-y-6 px-4 py-6">

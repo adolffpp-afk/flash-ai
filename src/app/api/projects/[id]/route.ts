@@ -1,5 +1,6 @@
 import { getUser, unauthorized } from "@/lib/server/auth.ts";
 import { one, run, now } from "@/lib/server/db.ts";
+import { cleanInstructions } from "@/lib/project-instructions.ts";
 
 const MAX_MESSAGES_BYTES = 8 * 1024 * 1024;
 
@@ -7,8 +8,8 @@ export async function GET(request: Request, ctx: RouteContext<"/api/projects/[id
   const user = await getUser(request);
   if (!user) return unauthorized();
   const { id } = await ctx.params;
-  const row = await one<{ id: string; name: string; messages: string; updated_at: number }>(
-    "SELECT id, name, messages, updated_at FROM projects WHERE id = ? AND user_id = ?",
+  const row = await one<{ id: string; name: string; messages: string; updated_at: number; instructions: string }>(
+    "SELECT id, name, messages, updated_at, instructions FROM projects WHERE id = ? AND user_id = ?",
     [id, user.id],
   );
   if (!row) return Response.json({ error: "Not found" }, { status: 404 });
@@ -19,13 +20,22 @@ export async function PUT(request: Request, ctx: RouteContext<"/api/projects/[id
   const user = await getUser(request);
   if (!user) return unauthorized();
   const { id } = await ctx.params;
-  const body = (await request.json().catch(() => ({}))) as { name?: string; messages?: unknown[]; pinned?: boolean };
+  const body = (await request.json().catch(() => ({}))) as {
+    name?: string;
+    messages?: unknown[];
+    pinned?: boolean;
+    instructions?: string;
+  };
   const sets: string[] = [];
   const args: (string | number)[] = [];
-  // Pinning alone doesn't count as an update, so the project keeps its place in time.
+  // Pinning or changing instructions alone doesn't count as an update, so the project keeps its place in time.
   if (typeof body.pinned === "boolean") {
     sets.push("pinned = ?");
     args.push(body.pinned ? 1 : 0);
+  }
+  if (typeof body.instructions === "string") {
+    sets.push("instructions = ?");
+    args.push(cleanInstructions(body.instructions));
   }
   if (body.name !== undefined || body.messages !== undefined || !sets.length) {
     sets.push("updated_at = ?");

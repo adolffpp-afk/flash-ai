@@ -17,6 +17,8 @@ import {
   type WritingMode,
 } from "@/lib/engines/claude.ts";
 import { checkFiles } from "@/lib/attachments.ts";
+import { withInstructions } from "@/lib/project-instructions.ts";
+import { one } from "@/lib/server/db.ts";
 import { FREE_CHAT_ENGINES, freeChatConfigured, freeEligible, freeImage, freeImageConfigured, streamFreeChat } from "@/lib/engines/free.ts";
 import { recordFree, releaseFreeUser, reserveFree, reserveFreeImage, reserveFreeUser } from "@/lib/server/free.ts";
 import { isVerified } from "@/lib/server/account.ts";
@@ -76,6 +78,8 @@ type ChatRequest = {
   model?: string;
   // The user already agreed to this request's price (see CONFIRM_CREDITS).
   confirmed?: boolean;
+  // The project this chat is in, for its instructions.
+  projectId?: string;
 };
 
 /** Requests that cost at least this many credits wait for the user to agree to the price first. */
@@ -432,9 +436,13 @@ export async function POST(request: Request) {
   // length: Flash holds up to a limit, then keeps only what the reply really cost.
   const live = isMedia(engine) ? Boolean(model) : configured(engine);
   const metered = live && !isMedia(engine) && engine !== "voice" && engine !== "transcribe";
-  const preferences = (typeof body.preferences === "string" ? body.preferences : user.preferences).slice(
-    0,
-    MAX_PREFERENCES_CHARS,
+  const project =
+    typeof body.projectId === "string"
+      ? await one<{ instructions: string }>("SELECT instructions FROM projects WHERE id = ? AND user_id = ?", [body.projectId, user.id])
+      : null;
+  const preferences = withInstructions(
+    (typeof body.preferences === "string" ? body.preferences : user.preferences).slice(0, MAX_PREFERENCES_CHARS),
+    project?.instructions ?? "",
   );
   let held = 0;
   let needed = 0;
