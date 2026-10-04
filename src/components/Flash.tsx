@@ -536,6 +536,18 @@ export function Flash({
     }
   }
 
+  /** Puts a picture Flash made into the composer, so the photo buttons and edits apply to it. */
+  async function editImage(url: string) {
+    try {
+      const blob = await (await fetch(url)).blob();
+      const ext = blob.type.split("/")[1]?.replace("jpeg", "jpg") || "png";
+      await attach(new File([blob], `flash-picture.${ext}`, { type: blob.type || "image/png" }));
+      setInput("");
+    } catch {
+      setNotice("Couldn't open that picture. Download it and attach it with the + button instead.");
+    }
+  }
+
   async function attach(file: File | undefined) {
     if (!file) return;
     file = await shrinkPhoto(file);
@@ -853,6 +865,7 @@ export function Flash({
                 onBuyCredits={() => setShowCredits(true)}
                 paymentsOn={me.paymentsEnabled || me.testPurchases}
                 onPublished={(slug) => setAppSlug(m.id, slug)}
+                onUseImage={busy ? undefined : editImage}
               />
             ))}
             <div ref={bottomRef} />
@@ -916,7 +929,13 @@ export function Flash({
                   }
                 }}
                 rows={1}
-                placeholder={choice === "auto" ? "Ask Flash anything…" : `Ask ${ENGINE_LABELS[choice]}…`}
+                placeholder={
+                  attachment && /^image\//.test(attachment.mediaType)
+                    ? "Say what to change, or tap a button above…"
+                    : choice === "auto"
+                      ? "Ask Flash anything…"
+                      : `Ask ${ENGINE_LABELS[choice]}…`
+                }
                 className="block max-h-48 min-h-[44px] w-full resize-none bg-transparent px-2.5 pb-1 pt-2 text-[15px] outline-none placeholder:text-zinc-500"
                 aria-label="Message"
               />

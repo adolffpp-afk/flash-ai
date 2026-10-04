@@ -221,6 +221,7 @@ export function Message({
   onEdit,
   onBuyCredits,
   onPublished,
+  onUseImage,
   paymentsOn = true,
 }: {
   m: UIMessage;
@@ -231,6 +232,8 @@ export function Message({
   // False while plans and top-ups aren't on sale yet, so the copy doesn't offer them.
   paymentsOn?: boolean;
   onPublished?: (slug: string) => void;
+  // Attaches a picture from this reply to the composer, to edit or animate it next.
+  onUseImage?: (url: string) => void;
 }) {
   if (m.role === "user") return <UserMessage m={m} onEdit={onEdit} />;
   return (
@@ -297,6 +300,11 @@ export function Message({
                 <a href={img.url} download={imageFileName(img.url)} className="shrink-0 text-primary hover:underline">
                   Download
                 </a>
+                {onUseImage && (
+                  <button onClick={() => onUseImage(img.url)} className="shrink-0 text-primary hover:underline">
+                    ✏️ Edit or animate
+                  </button>
+                )}
               </figcaption>
             </figure>
           ) : (
