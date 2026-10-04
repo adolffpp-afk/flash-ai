@@ -12,6 +12,7 @@ import { ShareDialog } from "./ShareDialog";
 import { Creations } from "./Creations";
 import { ENGINES, ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types";
 import { api, newId, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
+import type { ChatHit } from "@/lib/server/search";
 import { BoltIcon, Logo, LogoMark } from "@/app/brand";
 import { EngineIcon } from "./EngineIcon";
 import { MicButton, PlusMenu, SendButton, ToolPicker, type Choice } from "./ComposerTools";
@@ -187,6 +188,7 @@ export function Flash({
   const fileRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const [projectQuery, setProjectQuery] = useState("");
+  const [chatHits, setChatHits] = useState<ChatHit[]>([]);
   const [showShare, setShowShare] = useState(false);
   const [showCreations, setShowCreations] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -576,9 +578,22 @@ export function Flash({
     attach(file);
   }
 
+  // Looks inside the chats too, a moment after typing stops.
+  useEffect(() => {
+    const q = projectQuery.trim();
+    if (q.length < 2) return;
+    const timer = setTimeout(() => {
+      api<{ results: ChatHit[] }>(`/api/projects/search?q=${encodeURIComponent(q)}`)
+        .then(({ results }) => setChatHits(results))
+        .catch(() => setChatHits([]));
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [projectQuery]);
+
   const sorted = [...projects]
     .filter((p) => !projectQuery.trim() || p.name.toLowerCase().includes(projectQuery.trim().toLowerCase()))
     .sort((a, b) => b.updated_at - a.updated_at);
+  const inChats = projectQuery.trim().length >= 2 ? chatHits.filter((h) => h.snippet && !sorted.some((p) => p.id === h.id)) : [];
   // Engines whose AI provider isn't set up yet show as coming soon, and light up once /api/status says so.
   const isLive = (e: Engine) => !status || status[e];
   const liveCount = ENGINES.filter(isLive).length;
@@ -657,20 +672,20 @@ export function Flash({
             🖼️ My creations
           </button>
         </div>
-        {projects.length > 3 && (
+        {projects.length > 1 && (
           <div className="mt-3 px-3">
             <input
               type="search"
               value={projectQuery}
               onChange={(e) => setProjectQuery(e.target.value)}
-              placeholder="Search projects"
-              aria-label="Search projects"
+              placeholder="Search projects and chats"
+              aria-label="Search projects and chats"
               className="h-9 w-full rounded-lg border border-white/8 bg-white/[0.03] px-3 text-sm text-zinc-200 outline-none placeholder:text-zinc-500 focus:border-primary/70"
             />
           </div>
         )}
         <nav className="mt-3 flex-1 space-y-0.5 overflow-y-auto px-3">
-          {projectQuery.trim() && !sorted.length && <p className="px-2 py-1.5 text-xs text-zinc-500">No projects match.</p>}
+          {projectQuery.trim() && !sorted.length && !inChats.length && <p className="px-2 py-1.5 text-xs text-zinc-500">Nothing matches.</p>}
           {sorted.map((p) => (
             <div
               key={p.id}
@@ -695,6 +710,24 @@ export function Flash({
               </button>
             </div>
           ))}
+          {inChats.length > 0 && (
+            <>
+              <p className="px-2 pt-3 pb-1 text-xs font-medium text-zinc-500">In your chats</p>
+              {inChats.map((h) => (
+                <button
+                  key={h.id}
+                  onClick={() => openProject(h.id)}
+                  className={`block w-full rounded-lg px-3 py-1.5 text-left text-sm transition ${h.id === activeId ? "bg-white/[0.06]" : "hover:bg-white/[0.03]"}`}
+                >
+                  <span className="block truncate text-zinc-200">{h.name}</span>
+                  <span className="line-clamp-2 text-xs text-zinc-500">
+                    {h.role === "user" ? "You: " : "Flash: "}
+                    {h.snippet}
+                  </span>
+                </button>
+              ))}
+            </>
+          )}
         </nav>
         <div className="border-t border-white/6 p-3">
           <label className="text-xs font-medium text-zinc-400" htmlFor="prefs">
