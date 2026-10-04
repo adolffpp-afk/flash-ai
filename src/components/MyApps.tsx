@@ -5,6 +5,8 @@ import { api } from "@/lib/store";
 
 type Site = { slug: string; title: string; updated_at: number; messages: number; unread: number };
 type SiteMessage = { id: string; form: string; data: Record<string, unknown>; createdAt: number; read: boolean };
+type DomainInfo = { domain: string; connected: boolean; records: { type: string; name: string; value: string }[] };
+type Domains = { available: boolean; allowed: boolean; domains: DomainInfo[] };
 
 const dateLabel = (t: number) =>
   new Date(t).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
@@ -14,6 +16,10 @@ const fieldText = (v: unknown) => (typeof v === "string" ? v : JSON.stringify(v)
 export function MyApps({ onClose }: { onClose: () => void }) {
   const [sites, setSites] = useState<Site[] | null>(null);
   const [open, setOpen] = useState<Site | null>(null);
+  const [view, setView] = useState<"messages" | "domains">("messages");
+  const [domains, setDomains] = useState<Domains | null>(null);
+  const [newDomain, setNewDomain] = useState("");
+  const [adding, setAdding] = useState(false);
   const [messages, setMessages] = useState<SiteMessage[] | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -35,8 +41,46 @@ export function MyApps({ onClose }: { onClose: () => void }) {
       });
   }, []);
 
+  async function showDomains(site: Site) {
+    setOpen(site);
+    setView("domains");
+    setDomains(null);
+    setError("");
+    try {
+      setDomains(await api<Domains>(`/api/sites/${site.slug}/domains`));
+    } catch {
+      setError("Couldn't load the domains. Please try again.");
+    }
+  }
+
+  async function connectDomain(e: React.FormEvent) {
+    e.preventDefault();
+    if (!open || !newDomain.trim()) return;
+    setAdding(true);
+    setError("");
+    try {
+      const { domain } = await api<{ domain: DomainInfo }>(`/api/sites/${open.slug}/domains`, { method: "POST", json: { domain: newDomain } });
+      setDomains((d) => d && { ...d, domains: [...d.domains.filter((x) => x.domain !== domain.domain), domain] });
+      setNewDomain("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't connect that domain.");
+    }
+    setAdding(false);
+  }
+
+  async function disconnectDomain(domain: string) {
+    if (!open) return;
+    try {
+      await api(`/api/sites/${open.slug}/domains?domain=${encodeURIComponent(domain)}`, { method: "DELETE" });
+      setDomains((d) => d && { ...d, domains: d.domains.filter((x) => x.domain !== domain) });
+    } catch {
+      setError("Couldn't remove that domain. Please try again.");
+    }
+  }
+
   async function showMessages(site: Site) {
     setOpen(site);
+    setView("messages");
     setMessages(null);
     setConfirming(null);
     try {
@@ -86,7 +130,7 @@ export function MyApps({ onClose }: { onClose: () => void }) {
             </button>
           )}
           <h2 className="min-w-0 flex-1 truncate text-lg font-medium tracking-tight">
-            {open ? `Messages · ${open.title}` : "My websites and apps"}
+            {open ? `${view === "domains" ? "Domain" : "Messages"} · ${open.title}` : "My websites and apps"}
           </h2>
           <button
             ref={closeRef}
@@ -100,7 +144,89 @@ export function MyApps({ onClose }: { onClose: () => void }) {
 
         <div className="flex-1 overflow-y-auto p-4 sm:p-5">
           {error && <p role="alert" className="mb-3 text-sm text-red-400">{error}</p>}
-          {open ? (
+          {open && view === "domains" ? (
+            domains === null ? (
+              !error && <p className="text-sm text-zinc-500">Loading…</p>
+            ) : !domains.available ? (
+              <p className="mx-auto mt-16 max-w-sm text-center text-sm text-zinc-500">Custom domains are coming soon.</p>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-sm text-zinc-400">
+                  Show this site on your own address, like yourbakery.com. Buy the domain anywhere (GoDaddy, Namecheap…),
+                  connect it here, then add the record Flash shows at your domain provider. It can take up to a few hours to
+                  start working.
+                </p>
+                {domains.domains.map((d) => (
+                  <div key={d.domain} className="rounded-xl border border-white/8 bg-white/[0.02] p-4">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <a href={`https://${d.domain}`} target="_blank" rel="noreferrer" className="font-medium text-zinc-100 hover:underline">
+                        {d.domain}
+                      </a>
+                      <span className={`text-xs ${d.connected ? "text-primary-soft" : "text-gold-soft"}`}>
+                        {d.connected ? "✓ Connected" : "Waiting for the DNS record"}
+                      </span>
+                      <span className="ml-auto flex gap-3 text-xs">
+                        {!d.connected && (
+                          <button onClick={() => showDomains(open)} className="text-zinc-300 hover:text-white">
+                            Check again
+                          </button>
+                        )}
+                        <button onClick={() => disconnectDomain(d.domain)} className="text-zinc-500 hover:text-red-400">
+                          Remove
+                        </button>
+                      </span>
+                    </div>
+                    {!d.connected && d.records.length > 0 && (
+                      <div className="mt-3 overflow-x-auto">
+                        <p className="mb-2 text-xs text-zinc-400">At your domain provider, open the DNS settings and add:</p>
+                        <table className="w-full text-left text-xs">
+                          <thead className="text-zinc-500">
+                            <tr>
+                              <th className="py-1 pr-4 font-normal">Type</th>
+                              <th className="py-1 pr-4 font-normal">Name</th>
+                              <th className="py-1 font-normal">Value</th>
+                            </tr>
+                          </thead>
+                          <tbody className="font-mono text-zinc-200">
+                            {d.records.map((r) => (
+                              <tr key={r.type + r.name + r.value}>
+                                <td className="py-1 pr-4">{r.type}</td>
+                                <td className="py-1 pr-4">{r.name}</td>
+                                <td className="select-all break-all py-1">{r.value}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        <p className="mt-2 text-xs text-zinc-500">If a record with the same type and name is already there, edit it instead.</p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {domains.allowed ? (
+                  <form onSubmit={connectDomain} className="flex gap-2">
+                    <input
+                      value={newDomain}
+                      onChange={(e) => setNewDomain(e.target.value)}
+                      placeholder="yourbakery.com"
+                      aria-label="Domain"
+                      className="h-10 min-w-0 flex-1 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-zinc-200 outline-none focus:border-primary/70"
+                    />
+                    <button
+                      disabled={adding || !newDomain.trim()}
+                      className="h-10 shrink-0 rounded-lg bg-brand px-4 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-50"
+                    >
+                      {adding ? "Connecting…" : "Connect"}
+                    </button>
+                  </form>
+                ) : (
+                  <p className="text-sm text-gold-soft">Custom domains come with a paid plan. Pick one under your credits to connect a domain.</p>
+                )}
+                {domains.allowed && domains.domains.length > 0 && !domains.domains.some((d) => d.domain.startsWith("www.")) && (
+                  <p className="text-xs text-zinc-500">Tip: connect the www. version too, so both addresses work.</p>
+                )}
+              </div>
+            )
+          ) : open ? (
             messages === null ? (
               <p className="text-sm text-zinc-500">Loading…</p>
             ) : messages.length === 0 ? (
@@ -167,6 +293,9 @@ export function MyApps({ onClose }: { onClose: () => void }) {
                       <button onClick={() => showMessages(s)} className="text-zinc-200 hover:text-white">
                         ✉️ Messages{s.messages ? ` (${s.messages})` : ""}
                         {s.unread > 0 && <span className="ml-1.5 rounded-full bg-primary px-1.5 py-0.5 text-[10px] text-white">{s.unread} new</span>}
+                      </button>
+                      <button onClick={() => showDomains(s)} className="text-zinc-200 hover:text-white">
+                        🔗 Domain
                       </button>
                       <button onClick={() => setConfirming(s.slug)} className="text-zinc-500 hover:text-red-400">
                         Unpublish
