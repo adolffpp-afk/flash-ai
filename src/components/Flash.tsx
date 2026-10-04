@@ -21,6 +21,18 @@ const ACCEPT =
   "image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,text/markdown,text/csv,.md,.csv,.txt,.json," +
   "audio/*,video/mp4,video/webm,video/quicktime";
 const MAX_FILE_MB = 3;
+
+/** "Adolff" from "Adolff Pierre", or from adolff.p@example.com when no name was given. */
+function firstName(user: { name: string; email: string }): string {
+  const name = user.name.trim().split(/\s+/)[0] || user.email.split("@")[0].split(/[._+-]/)[0];
+  return name ? name[0].toUpperCase() + name.slice(1) : "there";
+}
+
+/** Good morning, afternoon or evening, by the visitor's own clock. */
+function greeting(): string {
+  const hour = new Date().getHours();
+  return hour < 5 ? "Good evening" : hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+}
 // A team invitation opened before signing in waits here until the account loads.
 const INVITE_KEY = "flash_invite";
 const storage = {
@@ -713,10 +725,14 @@ export function Flash({
             {active?.messages && active.messages.length === 0 && (
               <div className="pt-6 text-center sm:pt-12">
                 <LogoMark size={64} className="mx-auto mb-6" />
-                <h2 className="text-2xl font-medium tracking-[-0.03em] text-white sm:text-[1.75rem]">
-                  One AI for <span className="text-holo">everything</span>
+                <p className="text-sm font-medium uppercase tracking-[0.2em] text-zinc-500">{greeting()}</p>
+                <h2 className="mt-2 text-4xl font-medium tracking-[-0.04em] text-white sm:text-5xl">
+                  Welcome, <span className="text-holo">{firstName(me.user)}</span>
                 </h2>
-                <p className="mx-auto mt-3 max-w-lg text-zinc-400">
+                <p className="mt-3 text-lg font-medium tracking-[-0.01em] text-zinc-300 sm:text-xl">
+                  Think it. <span className="text-holo">Flash it.</span>
+                </p>
+                <p className="mx-auto mt-4 max-w-lg text-zinc-400">
                   Build apps, make slides, write, research, code, translate and crunch spreadsheets
                   {makes.length ? `, and create ${makes.slice(0, -1).join(", ")}${makes.length > 1 ? " and " : ""}${makes.at(-1)}` : ""}.
                   Ask anything and Flash picks the best AI for the job.
