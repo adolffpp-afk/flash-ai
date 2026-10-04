@@ -1,7 +1,10 @@
 import { EMPTY_BRAND, LOGO_TYPES, MAX_LOGO_BYTES, cleanBrand, type BrandKit } from "../brand.ts";
-import { one, run, now } from "./db.ts";
+import { all, one, run, now } from "./db.ts";
 import { saveFile } from "./files.ts";
 import { publicFileLink } from "./connector.ts";
+
+// Old logos are kept so sites published with them keep showing them, up to this many per user.
+export const KEPT_LOGOS = 5;
 
 type Row = { name: string; tagline: string; voice: string; colors: string; logo_file: string; logo_link: string };
 
@@ -44,6 +47,15 @@ export async function saveBrand(userId: string, input: unknown, logo: LogoUpload
       const url = await saveFile(userId, logo.mediaType, `brand-logo.${ext}`, Buffer.from(logo.data, "base64"));
       logoFile = url.split("/").pop()!;
       logoLink = (await publicFileLink(userId, url)) ?? "";
+      // Only the newest few logos stay stored, so replacing it again and again can't fill the database.
+      const extra = await all<{ id: string }>(
+        "SELECT id FROM files WHERE user_id = ? AND name LIKE 'brand-logo.%' ORDER BY created_at DESC, rowid DESC LIMIT -1 OFFSET ?",
+        [userId, KEPT_LOGOS],
+      );
+      for (const { id } of extra) {
+        await run("DELETE FROM files WHERE id = ? AND user_id = ?", [id, userId]);
+        await run("DELETE FROM public_files WHERE file_id = ? AND user_id = ?", [id, userId]);
+      }
     }
   }
   await run(
