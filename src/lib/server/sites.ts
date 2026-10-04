@@ -8,6 +8,8 @@ export const MAX_HTML = 2 * 1024 * 1024;
 // Published apps are public pages on Flash's domain, so publishing is limited to slow abuse.
 export const MAX_SITES_PER_USER = 20;
 const HOUR = 3600_000;
+// Earlier versions kept per site, newest first; older ones are deleted.
+export const MAX_VERSIONS = 10;
 
 function makeSlug(title: string): string {
   const base = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 32) || "app";
@@ -34,6 +36,7 @@ export async function publishSite(user: User, input: { html?: unknown; title?: u
 
   if (slug) {
     if (await overLimit(`republish:${user.id}`, 60, HOUR)) return { error: "Too many updates. Try again in an hour.", status: 429 };
+    await saveVersion(slug, user.id, html);
     const r = await run("UPDATE sites SET html = ?, title = ?, updated_at = ? WHERE slug = ? AND user_id = ?", [
       html,
       title,
@@ -70,4 +73,61 @@ export async function projectForSite(userId: string, slug: string): Promise<stri
     [userId, `"slug":"${slug}"`],
   );
   return row?.id ?? null;
+}
+
+/**
+ * Keeps the site as it is now as an earlier version, before it's replaced by `next`. Nothing is
+ * kept when the site isn't the user's or wouldn't change.
+ */
+async function saveVersion(slug: string, userId: string, next: string): Promise<void> {
+  const current = await one<{ title: string; html: string; updated_at: number }>(
+    "SELECT title, html, updated_at FROM sites WHERE slug = ? AND user_id = ?",
+    [slug, userId],
+  );
+  if (!current || current.html === next) return;
+  await run("INSERT INTO site_versions (id, site_slug, title, html, created_at) VALUES (?, ?, ?, ?, ?)", [
+    randomId(),
+    slug,
+    current.title,
+    current.html,
+    Number(current.updated_at),
+  ]);
+  await run(
+    `DELETE FROM site_versions WHERE site_slug = ? AND id NOT IN
+       (SELECT id FROM site_versions WHERE site_slug = ? ORDER BY created_at DESC, rowid DESC LIMIT ?)`,
+    [slug, slug, MAX_VERSIONS],
+  );
+}
+
+export type SiteVersion = { id: string; title: string; createdAt: number; size: number };
+
+/** A site's earlier versions, newest first, with when each went live. */
+export async function listVersions(slug: string): Promise<SiteVersion[]> {
+  const rows = await all<{ id: string; title: string; created_at: number; size: number }>(
+    "SELECT id, title, created_at, length(html) AS size FROM site_versions WHERE site_slug = ? ORDER BY created_at DESC, rowid DESC",
+    [slug],
+  );
+  return rows.map((r) => ({ id: r.id, title: r.title, createdAt: Number(r.created_at), size: Number(r.size) }));
+}
+
+/** One earlier version's page, for its owner to look at before bringing it back. */
+export async function versionHtml(slug: string, id: string): Promise<string | null> {
+  return (await one<{ html: string }>("SELECT html FROM site_versions WHERE site_slug = ? AND id = ?", [slug, id]))?.html ?? null;
+}
+
+/** Puts an earlier version live again. The version it replaces is kept, so this can be undone. */
+export async function restoreVersion(userId: string, slug: string, id: string): Promise<boolean> {
+  const version = await one<{ title: string; html: string }>("SELECT title, html FROM site_versions WHERE site_slug = ? AND id = ?", [slug, id]);
+  if (!version) return false;
+  await saveVersion(slug, userId, version.html);
+  const r = await run("UPDATE sites SET html = ?, title = ?, updated_at = ? WHERE slug = ? AND user_id = ?", [
+    version.html,
+    version.title,
+    now(),
+    slug,
+    userId,
+  ]);
+  // It's live now, so it leaves the list; the version it replaced took its place there.
+  if (r.rowsAffected) await run("DELETE FROM site_versions WHERE site_slug = ? AND id = ?", [slug, id]);
+  return r.rowsAffected > 0;
 }

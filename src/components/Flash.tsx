@@ -813,9 +813,7 @@ export function Flash({
           {status && (
             <details className="mt-2 text-xs text-zinc-400">
               <summary className="cursor-pointer select-none hover:text-zinc-200">
-                {liveCount === ENGINES.length
-                  ? `All ${liveCount} tools ready`
-                  : `${liveCount} tools ready · ${ENGINES.length - liveCount} coming soon`}
+                {liveCount === ENGINES.length ? "✨ What Flash can do" : `✨ What Flash can do · ${ENGINES.length - liveCount} coming soon`}
               </summary>
               <div className="mt-2 grid grid-cols-2 gap-1">
                 {ENGINES.map((e) => (
