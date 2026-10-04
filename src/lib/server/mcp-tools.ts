@@ -149,6 +149,26 @@ export const tools = () => [
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     };
   }).filter(() => falConfigured()),
+  ...[MODELS.find((m) => m.id === "flux-2-edit")!]
+    .filter((m) => providers().has(m.provider))
+    .map((m) => ({
+      name: "flash_edit_photo",
+      title: "Edit a photo with Flash",
+      description:
+        "Changes a photo from a written instruction with FLUX.2 Edit (swap the background, change the style, add or remove things, fix lighting) and returns the new image with a link. " +
+        `Costs ${modelCredits(m)} Flash credits. Give a Flash file link (from another Flash tool) as image_url, or the photo itself as image_base64. ` +
+        "PNG, JPEG or WebP, up to 2048 × 2048 pixels.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          image_url: { type: "string", description: "A Flash file link, like https://www.flash-app.dev/f/…" },
+          image_base64: { type: "string", description: "The photo as base64 (PNG, JPEG or WebP), when there is no Flash link." },
+          prompt: { type: "string", description: "What to change, in plain words.", maxLength: 2500 },
+        },
+        required: ["prompt"],
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    })),
   ...[MODELS.find((m) => m.id === "kling-3-animate")!]
     .filter((m) => providers().has(m.provider))
     .map((m) => ({
@@ -392,19 +412,22 @@ async function animateTool(args: Args, ctx: ToolContext): Promise<ToolResult> {
   };
 }
 
-async function photoTool(id: "remove-bg" | "upscale", args: Args, ctx: ToolContext): Promise<ToolResult> {
+async function photoTool(id: "remove-bg" | "upscale" | "flux-2-edit", args: Args, ctx: ToolContext): Promise<ToolResult> {
   const model = MODELS.find((m) => m.id === id)!;
   if (!providers().has(model.provider)) return failed(`Flash's ${model.label} isn't available yet.`);
+  const request = id === "flux-2-edit" ? str(args.prompt).slice(0, 2500) : "";
+  if (id === "flux-2-edit" && !request) return failed("Say what to change in the photo as prompt.");
   const photo = await photoArg(args, ctx);
   if (typeof photo === "string") return failed(photo);
-  const credits = modelCredits(model);
+  const name = `flash-${id === "flux-2-edit" ? "edited" : id}`;
+  const credits = modelCredits(model, request);
   ctx.progress(`Starting ${model.label} (${credits} credits)…`);
-  const input = falEditInput(model, `data:${photo.mime};base64,${photo.data.toString("base64")}`, imageDimensions(photo.data), "");
+  const input = falEditInput(model, `data:${photo.mime};base64,${photo.data.toString("base64")}`, imageDimensions(photo.data), request);
   const result = await paid(
     ctx,
-    { engine: "image", model: model.id, provider: model.provider, credits, costCents: costOf(model, "") },
+    { engine: "image", model: model.id, provider: model.provider, credits, costCents: costOf(model, request) },
     () => falGenerate(model.endpoint!, input, (m) => ctx.progress(m)),
-    `flash-${id}`,
+    name,
   );
   if ("content" in result) return result;
   const content: ToolContent[] = [];
@@ -415,7 +438,7 @@ async function photoTool(id: "remove-bg" | "upscale", args: Args, ctx: ToolConte
     type: "text",
     text: `Done with ${model.label} on Flash for ${result.credits} credits. ${await balanceLine(ctx)}\nLink (anyone with it can open the file): ${result.url}`,
   });
-  content.push({ type: "resource_link", uri: result.url, name: `flash-${id}.${extFor(result.media.mime, "image")}`, mimeType: result.media.mime });
+  content.push({ type: "resource_link", uri: result.url, name: `${name}.${extFor(result.media.mime, "image")}`, mimeType: result.media.mime });
   return { content };
 }
 
@@ -434,6 +457,8 @@ export async function callTool(name: string, args: Args, ctx: ToolContext): Prom
       return photoTool("remove-bg", args, ctx);
     case "flash_upscale_image":
       return photoTool("upscale", args, ctx);
+    case "flash_edit_photo":
+      return photoTool("flux-2-edit", args, ctx);
     case "flash_animate_photo":
       return animateTool(args, ctx);
     case "flash_publish_app": {
