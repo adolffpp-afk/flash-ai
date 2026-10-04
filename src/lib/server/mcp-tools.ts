@@ -70,11 +70,12 @@ export const tools = () => [
     title: "Create an image with Flash",
     description:
       "Makes one image from a description with Flash AI's image models and returns it with a link. Uses the user's Flash credits. " +
-      `Models: ${priceList("image")}. Leave model out and Flash picks the best fit.`,
+      `Models: ${priceList("image")}. Leave model out and Flash picks the best fit. ` +
+      "Pictures are 4:3 unless the prompt asks for another shape: vertical or 9:16 (phone stories), 3:4 or poster, square or 1:1, wide or 16:9 (banners).",
     inputSchema: {
       type: "object",
       properties: {
-        prompt: { type: "string", description: "What the image should show: subject, style, lighting, framing.", maxLength: MAX_PROMPT },
+        prompt: { type: "string", description: "What the image should show: subject, style, lighting, framing, and shape if not 4:3.", maxLength: MAX_PROMPT },
         model: { type: "string", enum: offered("image").map((m) => m.id) },
       },
       required: ["prompt"],
@@ -87,7 +88,8 @@ export const tools = () => [
     description:
       "Films a short video clip from a description with Flash AI's video models and returns a link to the MP4. Takes one to three minutes. " +
       `Uses the user's Flash credits. Models: ${priceList("video")} (Kling is priced at 10 seconds; it costs ${creditsFor(14)} credits a second). ` +
-      "Leave model out and Flash picks: Veo when the clip needs sound or speech, Kling for longer clips.",
+      "Leave model out and Flash picks: Veo when the clip needs sound or speech, Kling for longer clips. " +
+      "Videos are wide (16:9) unless the prompt asks for vertical (9:16, for phones) or, with Kling, square (1:1).",
     inputSchema: {
       type: "object",
       properties: {

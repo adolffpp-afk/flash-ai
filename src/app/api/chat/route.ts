@@ -50,7 +50,7 @@ import { unavailableReply } from "@/lib/engines/demo.ts";
 import { FriendlyError, JobAbandoned } from "@/lib/engines/errors.ts";
 import { buildSystem, streamBuild } from "@/lib/engines/builder.ts";
 import { makeMovie } from "@/lib/engines/movie.ts";
-import { falEditInput, falInput } from "@/lib/engines/fal-input.ts";
+import { falEditInput, falInput, videoAspect } from "@/lib/engines/fal-input.ts";
 
 // Vercel Pro allows up to 800 seconds, which the Movie maker needs (scenes, filming and joining).
 export const maxDuration = 800;
@@ -235,7 +235,7 @@ async function* run(
           delta: `**Your movie, in ${scenes.length} scenes:**\n\n${scenes.map((s, i) => `${i + 1}. ${s}`).join("\n")}`,
         };
         yield { type: "status", message: "Filming every scene at once. This usually takes three to eight minutes…" };
-        const movie = yield* withProgress((report) => makeMovie(model!.endpoint!, scenes, seconds, meter, report));
+        const movie = yield* withProgress((report) => makeMovie(model!.endpoint!, scenes, seconds, meter, report, videoAspect(last.content)));
         yield { type: "video", url: await store(movie, "flash-movie.mp4"), prompt: last.content };
         return;
       }
