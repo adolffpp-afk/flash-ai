@@ -1,6 +1,8 @@
 import { appUrl, getUser, unauthorized } from "@/lib/server/auth.ts";
 import { clientIp } from "@/lib/server/limits.ts";
-import { deleteMessage, ownsSite, readMessages, receiveMessage } from "@/lib/server/inbox.ts";
+import { deleteMessage, messageRows, ownsSite, readMessages, receiveMessage } from "@/lib/server/inbox.ts";
+import { one } from "@/lib/server/db.ts";
+import { csvName, toCsv } from "@/lib/csv.ts";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +32,17 @@ export async function GET(request: Request, ctx: RouteContext<"/api/sites/[slug]
   if (!user) return unauthorized();
   const { slug } = await ctx.params;
   if (!(await ownsSite(user.id, slug))) return Response.json({ error: "Not found" }, { status: 404 });
+  // ?format=csv downloads them as a spreadsheet file, leaving new ones marked new.
+  if (new URL(request.url).searchParams.get("format") === "csv") {
+    const site = await one<{ title: string }>("SELECT title FROM sites WHERE slug = ?", [slug]);
+    return new Response(toCsv(messageRows(await readMessages(slug, false))), {
+      headers: {
+        "Content-Type": "text/csv; charset=utf-8",
+        "Content-Disposition": `attachment; filename="${csvName(site?.title ?? "", "messages")}"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  }
   return Response.json({ messages: await readMessages(slug) });
 }
 

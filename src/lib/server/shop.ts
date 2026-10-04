@@ -318,7 +318,17 @@ export async function finishCheckout(slug: string, sessionId: string, back: unkn
   return { page, paid: true };
 }
 
-export type Order = { id: string; item: string; quantity: number; total: string; email: string; name: string; address: string; createdAt: number };
+export type Order = {
+  id: string;
+  item: string;
+  quantity: number;
+  total: string;
+  email: string;
+  name: string;
+  address: string;
+  createdAt: number;
+  done: boolean;
+};
 
 /**
  * The site's orders, newest first. Recent paid checkouts are fetched from Stripe first, so orders
@@ -348,6 +358,7 @@ export async function listOrders(userId: string, slug: string): Promise<Order[]>
     name: string;
     address: string;
     created_at: number;
+    done_at: number;
   }>("SELECT * FROM site_orders WHERE site_slug = ? ORDER BY created_at DESC LIMIT 500", [slug]);
   return rows.map((r) => ({
     id: r.session_id,
@@ -358,5 +369,12 @@ export async function listOrders(userId: string, slug: string): Promise<Order[]>
     name: r.name,
     address: r.address,
     createdAt: Number(r.created_at),
+    done: Boolean(Number(r.done_at)),
   }));
+}
+
+/** Marks an order as handled (sent or picked up), or not. False if the site has no such order. */
+export async function markOrder(slug: string, id: string, done: boolean): Promise<boolean> {
+  const res = await run("UPDATE site_orders SET done_at = ? WHERE site_slug = ? AND session_id = ?", [done ? now() : 0, slug, id]);
+  return res.rowsAffected > 0;
 }
