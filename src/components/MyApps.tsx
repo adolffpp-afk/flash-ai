@@ -5,6 +5,7 @@ import { api } from "@/lib/store";
 import { SELLER_COUNTRIES } from "@/lib/shop";
 
 type Site = { slug: string; title: string; updated_at: number; messages: number; unread: number; views: number };
+type Version = { id: string; title: string; createdAt: number; size: number };
 type Visits = { days: { day: string; views: number; visitors: number }[]; views: number; visitors: number; sources: { source: string; views: number }[] };
 type SiteMessage = { id: string; form: string; data: Record<string, unknown>; createdAt: number; read: boolean };
 type DomainInfo = { domain: string; connected: boolean; records: { type: string; name: string; value: string }[] };
@@ -24,7 +25,10 @@ const fieldText = (v: unknown) => (typeof v === "string" ? v : JSON.stringify(v)
 export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (projectId: string) => void }) {
   const [sites, setSites] = useState<Site[] | null>(null);
   const [open, setOpen] = useState<Site | null>(null);
-  const [view, setView] = useState<"messages" | "domains" | "payments" | "visits">("messages");
+  const [view, setView] = useState<"messages" | "domains" | "payments" | "visits" | "history">("messages");
+  const [versions, setVersions] = useState<Version[] | null>(null);
+  const [restoring, setRestoring] = useState<string | null>(null);
+  const [restored, setRestored] = useState(false);
   const [visits, setVisits] = useState<Visits | null>(null);
   const [payments, setPayments] = useState<Payments | null>(null);
   const [shop, setShop] = useState<Shop | null>(null);
@@ -161,6 +165,35 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
     }
   }
 
+  async function showHistory(site: Site) {
+    setOpen(site);
+    setView("history");
+    setVersions(null);
+    setRestoring(null);
+    setRestored(false);
+    setError("");
+    try {
+      setVersions((await api<{ versions: Version[] }>(`/api/sites/${site.slug}/versions`)).versions);
+    } catch {
+      setError("Couldn't load the earlier versions. Please try again.");
+    }
+  }
+
+  async function restore(id: string) {
+    if (!open) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api(`/api/sites/${open.slug}/versions`, { method: "POST", json: { id } });
+      setVersions((await api<{ versions: Version[] }>(`/api/sites/${open.slug}/versions`)).versions);
+      setRestored(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't bring that version back.");
+    }
+    setRestoring(null);
+    setBusy(false);
+  }
+
   async function showVisits(site: Site) {
     setOpen(site);
     setView("visits");
@@ -237,7 +270,7 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
             </button>
           )}
           <h2 className="min-w-0 flex-1 truncate text-lg font-medium tracking-tight">
-            {open ? `${{ domains: "Domain", payments: "Payments", messages: "Messages", visits: "Visitors" }[view]} · ${open.title}` : "My websites and apps"}
+            {open ? `${{ domains: "Domain", payments: "Payments", messages: "Messages", visits: "Visitors", history: "History" }[view]} · ${open.title}` : "My websites and apps"}
           </h2>
           <button
             ref={closeRef}
@@ -251,7 +284,60 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
 
         <div className="flex-1 overflow-y-auto p-4 sm:p-5">
           {error && <p role="alert" className="mb-3 text-sm text-red-400">{error}</p>}
-          {open && view === "visits" ? (
+          {open && view === "history" ? (
+            versions === null ? (
+              !error && <p className="text-sm text-zinc-500">Loading…</p>
+            ) : (
+              <div className="space-y-4">
+                <p className="text-sm text-zinc-400">
+                  Each time you update this site, the version it replaces is kept here (the last 10). Bring one back if an
+                  update went wrong. Its data, messages and orders stay as they are.
+                </p>
+                {restored && (
+                  <p className="text-sm text-primary-soft">
+                    ✓ That version is live again.{" "}
+                    <a href={`/p/${open.slug}`} target="_blank" rel="noreferrer" className="underline">
+                      Open the site ↗
+                    </a>
+                  </p>
+                )}
+                {versions.length === 0 ? (
+                  <p className="text-sm text-zinc-500">No earlier versions yet. They appear here after your next update.</p>
+                ) : (
+                  <ul className="space-y-2">
+                    {versions.map((v) => (
+                      <li key={v.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 text-sm">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-zinc-100">Published {dateLabel(v.createdAt)}</p>
+                          <p className="truncate text-xs text-zinc-500">{v.title}</p>
+                        </div>
+                        {restoring === v.id ? (
+                          <span className="flex items-center gap-3 text-xs">
+                            <span className="text-zinc-400">Put this version live?</span>
+                            <button onClick={() => restore(v.id)} disabled={busy} className="text-primary-soft hover:text-white disabled:opacity-50">
+                              {busy ? "Bringing back…" : "Yes, bring it back"}
+                            </button>
+                            <button onClick={() => setRestoring(null)} className="text-zinc-400 hover:text-zinc-100">
+                              Cancel
+                            </button>
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-3 text-xs">
+                            <a href={`/api/sites/${open.slug}/versions?view=${v.id}`} target="_blank" rel="noreferrer" className="text-zinc-300 hover:text-white">
+                              View ↗
+                            </a>
+                            <button onClick={() => setRestoring(v.id)} className="rounded-md border border-primary/40 px-2 py-0.5 text-primary-soft hover:bg-primary/10">
+                              Bring back
+                            </button>
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )
+          ) : open && view === "visits" ? (
             visits === null ? (
               !error && <p className="text-sm text-zinc-500">Loading…</p>
             ) : (
@@ -598,6 +684,9 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
                       </button>
                       <button onClick={() => showPayments(s)} className="text-zinc-200 hover:text-white">
                         💳 Payments
+                      </button>
+                      <button onClick={() => showHistory(s)} className="text-zinc-200 hover:text-white" title="Earlier versions of this site">
+                        🕘 History
                       </button>
                       <button onClick={() => setConfirming(s.slug)} className="text-zinc-500 hover:text-red-400">
                         Unpublish

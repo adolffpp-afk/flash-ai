@@ -79,6 +79,15 @@ const SCHEMA = [
     created_at INTEGER NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS site_domains_site ON site_domains(site_slug)`,
+  // Earlier versions of a published site, saved each time it's updated (see sites.ts).
+  `CREATE TABLE IF NOT EXISTS site_versions (
+    id TEXT PRIMARY KEY,
+    site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    html TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS site_versions_site ON site_versions(site_slug, created_at)`,
   // Visits to published sites (see visits.ts): page loads per day and source, and a daily list of
   // anonymous visitor fingerprints (no cookies, deleted after a month) to count people, not loads.
   `CREATE TABLE IF NOT EXISTS site_visits (
