@@ -71,7 +71,12 @@ type ChatRequest = {
   previous?: Engine;
   // An image, video or music model the user picked; otherwise Flash picks one.
   model?: string;
+  // The user already agreed to this request's price (see CONFIRM_CREDITS).
+  confirmed?: boolean;
 };
+
+/** Requests that cost at least this many credits wait for the user to agree to the price first. */
+const CONFIRM_CREDITS = 50;
 
 function providers(): Set<Provider> {
   const set = new Set<Provider>();
@@ -462,6 +467,17 @@ export async function POST(request: Request) {
       held = needed = 0;
       budget = NO_BUDGET;
     }
+  }
+  if (model && !free && needed >= CONFIRM_CREDITS && available >= needed && body.confirmed !== true) {
+    const what = engine === "video" ? (model.id === "movie" ? "movie" : "video") : engine === "music" ? "track" : engine;
+    return Response.json(
+      {
+        error: `This ${model.label} ${what} uses ${needed.toLocaleString("en-US")} credits. You have ${available.toLocaleString("en-US")}.`,
+        code: "confirm_cost",
+        needed,
+      },
+      { status: 409 },
+    );
   }
   const freeUse = { provider: "", model: "" };
   const chargeId = held ? await charge(user.id, held, `${engine} request`) : 0;
