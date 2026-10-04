@@ -60,6 +60,9 @@ export async function sellerStatus(userId: string): Promise<SellerStatus> {
   return status;
 }
 
+/** Stripe's own reason, shown to Flash's admins only, so a setup problem can be fixed without reading server logs. */
+const stripeReason = (user: User, err: unknown) => (isAdmin(user) && err instanceof Error ? ` Stripe says: ${err.message}` : "");
+
 /** Stripe's sign-up page for the seller's account, creating the account the first time. */
 export async function sellerOnboardingLink(user: User, country: unknown, origin: string): Promise<{ url: string } | { error: string; status: number }> {
   if (!sellingAvailable()) return { error: "Selling isn't switched on yet.", status: 503 };
@@ -68,7 +71,7 @@ export async function sellerOnboardingLink(user: User, country: unknown, origin:
   if (!row) {
     const code = SELLER_COUNTRIES.find(([c]) => c === country)?.[0];
     if (!code) return { error: "Pick the country your business is in.", status: 400 };
-    if (await overLimit(`seller-create:${user.id}`, 3, 24 * HOUR)) return { error: "Too many tries today. Please try again tomorrow.", status: 429 };
+    if (await overLimit(`seller-create:${user.id}`, 10, 24 * HOUR)) return { error: "Too many tries today. Please try again tomorrow.", status: 429 };
     try {
       const account = await stripe<{ id: string; default_currency?: string }>(
         "POST",
@@ -93,7 +96,7 @@ export async function sellerOnboardingLink(user: User, country: unknown, origin:
       row = { stripe_account: account.id, country: code, currency: account.default_currency ?? "", ready: 0 };
     } catch (err) {
       console.error("[flash] stripe seller account failed", err);
-      return { error: "Couldn't start the Stripe sign-up. Please try again later.", status: 502 };
+      return { error: `Couldn't start the Stripe sign-up. Please try again later.${stripeReason(user, err)}`, status: 502 };
     }
   }
   try {
@@ -111,7 +114,7 @@ export async function sellerOnboardingLink(user: User, country: unknown, origin:
     return { url: link.url };
   } catch (err) {
     console.error("[flash] stripe account link failed", err);
-    return { error: "Couldn't open the Stripe sign-up. Please try again later.", status: 502 };
+    return { error: `Couldn't open the Stripe sign-up. Please try again later.${stripeReason(user, err)}`, status: 502 };
   }
 }
 

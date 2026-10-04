@@ -90,6 +90,12 @@ test("a seller connects Stripe, prices items, and buyers pay through Checkout", 
   const noCountry = await shop.sellerOnboardingLink(owner, "XX", origin);
   assert.equal("status" in noCountry && noCountry.status, 400);
 
+  const working = globalThis.fetch;
+  globalThis.fetch = (async () => Response.json({ error: { message: "Please review the responsibilities of managing losses." } }, { status: 400 })) as typeof fetch;
+  const refused = await shop.sellerOnboardingLink(owner, "CA", origin);
+  assert.match("error" in refused ? refused.error : "", /Stripe says: Please review the responsibilities/, "admins see Stripe's reason");
+  globalThis.fetch = working;
+
   const link = await shop.sellerOnboardingLink(owner, "CA", origin);
   assert.deepEqual(link, { url: "https://connect.stripe.com/setup/x" });
   const created = calls.find((c) => c.path === "/accounts")!;
