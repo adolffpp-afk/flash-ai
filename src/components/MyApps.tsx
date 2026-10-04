@@ -2,11 +2,17 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/store";
+import { SELLER_COUNTRIES } from "@/lib/shop";
 
 type Site = { slug: string; title: string; updated_at: number; messages: number; unread: number };
 type SiteMessage = { id: string; form: string; data: Record<string, unknown>; createdAt: number; read: boolean };
 type DomainInfo = { domain: string; connected: boolean; records: { type: string; name: string; value: string }[] };
 type Domains = { available: boolean; allowed: boolean; domains: DomainInfo[] };
+type Seller = { connected: boolean; ready: boolean; currency: string; country: string };
+type Payments = { available: boolean; allowed: boolean; seller: Seller };
+type Product = { id: string; name: string; label: string; delivery: boolean };
+type Order = { id: string; item: string; quantity: number; total: string; email: string; name: string; address: string; createdAt: number };
+type Shop = { products: Product[]; unpriced: string[]; orders: Order[] };
 
 const dateLabel = (t: number) =>
   new Date(t).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
@@ -16,7 +22,12 @@ const fieldText = (v: unknown) => (typeof v === "string" ? v : JSON.stringify(v)
 export function MyApps({ onClose }: { onClose: () => void }) {
   const [sites, setSites] = useState<Site[] | null>(null);
   const [open, setOpen] = useState<Site | null>(null);
-  const [view, setView] = useState<"messages" | "domains">("messages");
+  const [view, setView] = useState<"messages" | "domains" | "payments">("messages");
+  const [payments, setPayments] = useState<Payments | null>(null);
+  const [shop, setShop] = useState<Shop | null>(null);
+  const [country, setCountry] = useState("CA");
+  const [item, setItem] = useState({ name: "", price: "", delivery: false });
+  const [busy, setBusy] = useState(false);
   const [domains, setDomains] = useState<Domains | null>(null);
   const [newDomain, setNewDomain] = useState("");
   const [adding, setAdding] = useState(false);
@@ -78,6 +89,64 @@ export function MyApps({ onClose }: { onClose: () => void }) {
     }
   }
 
+  async function showPayments(site: Site) {
+    setOpen(site);
+    setView("payments");
+    setPayments(null);
+    setShop(null);
+    setError("");
+    try {
+      const status = await api<Payments>("/api/payments");
+      setPayments(status);
+      if (status.seller.ready) setShop(await api<Shop>(`/api/sites/${site.slug}/products`));
+    } catch {
+      setError("Couldn't load payments. Please try again.");
+    }
+  }
+
+  async function connectStripe() {
+    setBusy(true);
+    setError("");
+    try {
+      const { url } = await api<{ url: string }>("/api/payments", { method: "POST", json: { country } });
+      window.location.href = url;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't open Stripe.");
+      setBusy(false);
+    }
+  }
+
+  async function saveItem(e: React.FormEvent) {
+    e.preventDefault();
+    if (!open) return;
+    setBusy(true);
+    setError("");
+    try {
+      const { product } = await api<{ product: Product }>(`/api/sites/${open.slug}/products`, { method: "POST", json: item });
+      setShop((s) =>
+        s && {
+          ...s,
+          products: [...s.products.filter((p) => p.id !== product.id), product],
+          unpriced: s.unpriced.filter((n) => n.toLowerCase() !== product.name.toLowerCase()),
+        },
+      );
+      setItem({ name: "", price: "", delivery: false });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't save that item.");
+    }
+    setBusy(false);
+  }
+
+  async function removeItem(product: Product) {
+    if (!open) return;
+    try {
+      await api(`/api/sites/${open.slug}/products?id=${encodeURIComponent(product.id)}`, { method: "DELETE" });
+      setShop((s) => s && { ...s, products: s.products.filter((p) => p.id !== product.id) });
+    } catch {
+      setError("Couldn't remove that item. Please try again.");
+    }
+  }
+
   async function showMessages(site: Site) {
     setOpen(site);
     setView("messages");
@@ -130,7 +199,7 @@ export function MyApps({ onClose }: { onClose: () => void }) {
             </button>
           )}
           <h2 className="min-w-0 flex-1 truncate text-lg font-medium tracking-tight">
-            {open ? `${view === "domains" ? "Domain" : "Messages"} · ${open.title}` : "My websites and apps"}
+            {open ? `${{ domains: "Domain", payments: "Payments", messages: "Messages" }[view]} · ${open.title}` : "My websites and apps"}
           </h2>
           <button
             ref={closeRef}
@@ -144,7 +213,161 @@ export function MyApps({ onClose }: { onClose: () => void }) {
 
         <div className="flex-1 overflow-y-auto p-4 sm:p-5">
           {error && <p role="alert" className="mb-3 text-sm text-red-400">{error}</p>}
-          {open && view === "domains" ? (
+          {open && view === "payments" ? (
+            payments === null ? (
+              !error && <p className="text-sm text-zinc-500">Loading…</p>
+            ) : !payments.available ? (
+              <p className="mx-auto mt-16 max-w-sm text-center text-sm text-zinc-500">Payments are coming soon.</p>
+            ) : !payments.allowed ? (
+              <p className="text-sm text-gold-soft">Selling from your sites comes with a paid plan. Pick one under your credits to start.</p>
+            ) : !payments.seller.ready ? (
+              <div className="space-y-4">
+                <p className="text-sm text-zinc-400">
+                  Let visitors pay on this site with card, Apple Pay or Google Pay. The money goes straight to your own Stripe
+                  account; Flash keeps 2% of each sale and Stripe takes its usual card fee.
+                </p>
+                {payments.seller.connected ? (
+                  <p className="text-sm text-gold-soft">
+                    Stripe still needs a few details before you can take payments. Finish the sign-up, then come back here.
+                  </p>
+                ) : (
+                  <label className="block text-sm text-zinc-300">
+                    Your business is in
+                    <select
+                      value={country}
+                      onChange={(e) => setCountry(e.target.value)}
+                      className="ml-2 h-9 rounded-lg border border-white/10 bg-zinc-900 px-2 text-sm text-zinc-200 outline-none focus:border-primary/70"
+                    >
+                      {SELLER_COUNTRIES.map(([code, name]) => (
+                        <option key={code} value={code}>
+                          {name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <button
+                  onClick={connectStripe}
+                  disabled={busy}
+                  className="h-10 rounded-lg bg-brand px-4 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-50"
+                >
+                  {busy ? "Opening Stripe…" : payments.seller.connected ? "Finish Stripe sign-up" : "Connect Stripe"}
+                </button>
+                <p className="text-xs text-zinc-500">
+                  Stripe asks for your name, address and bank account so it can send you the money. Already have Stripe? Sign in
+                  with it on the next page.
+                </p>
+              </div>
+            ) : shop === null ? (
+              !error && <p className="text-sm text-zinc-500">Loading…</p>
+            ) : (
+              <div className="space-y-6">
+                <p className="text-sm text-zinc-400">
+                  Set a price for each item this site sells. Buyers pay with Stripe and the money goes to your Stripe account
+                  (Flash keeps 2%). Ask Flash to add buy buttons to your site, then publish it again.
+                </p>
+                <section>
+                  <h3 className="mb-2 text-sm font-medium text-zinc-200">For sale</h3>
+                  {shop.products.length === 0 ? (
+                    <p className="text-sm text-zinc-500">Nothing priced yet.</p>
+                  ) : (
+                    <ul className="divide-y divide-white/6 rounded-xl border border-white/8">
+                      {shop.products.map((p) => (
+                        <li key={p.id} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+                          <span className="min-w-0 flex-1 truncate text-zinc-100">{p.name}</span>
+                          {p.delivery && <span className="text-xs text-zinc-500">🚚 delivery</span>}
+                          <span className="tabular-nums text-zinc-200">{p.label}</span>
+                          <button
+                            onClick={() => setItem({ name: p.name, price: "", delivery: p.delivery })}
+                            className="text-xs text-zinc-400 hover:text-white"
+                          >
+                            Change
+                          </button>
+                          <button onClick={() => removeItem(p)} className="text-xs text-zinc-500 hover:text-red-400">
+                            Remove
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {shop.unpriced.length > 0 && (
+                    <div className="mt-3 text-sm">
+                      <p className="mb-1.5 text-xs text-gold-soft">Your site has buy buttons for these, but they have no price yet:</p>
+                      <div className="flex flex-wrap gap-2">
+                        {shop.unpriced.map((name) => (
+                          <button
+                            key={name}
+                            onClick={() => setItem((i) => ({ ...i, name }))}
+                            className="rounded-full border border-white/10 px-3 py-1 text-xs text-zinc-200 hover:border-primary/60"
+                          >
+                            + {name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <form onSubmit={saveItem} className="mt-3 flex flex-wrap items-center gap-2">
+                    <input
+                      value={item.name}
+                      onChange={(e) => setItem({ ...item, name: e.target.value })}
+                      placeholder="Item name, as on your site"
+                      aria-label="Item name"
+                      className="h-10 min-w-0 flex-[2_1_12rem] rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-zinc-200 outline-none focus:border-primary/70"
+                    />
+                    <input
+                      value={item.price}
+                      onChange={(e) => setItem({ ...item, price: e.target.value })}
+                      placeholder={`Price (${payments.seller.currency.toUpperCase()})`}
+                      aria-label="Price"
+                      inputMode="decimal"
+                      className="h-10 w-32 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-zinc-200 outline-none focus:border-primary/70"
+                    />
+                    <label className="flex items-center gap-1.5 text-xs text-zinc-400">
+                      <input type="checkbox" checked={item.delivery} onChange={(e) => setItem({ ...item, delivery: e.target.checked })} />
+                      Ask for a delivery address
+                    </label>
+                    <button
+                      disabled={busy || !item.name.trim() || !item.price.trim()}
+                      className="h-10 shrink-0 rounded-lg bg-brand px-4 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-50"
+                    >
+                      Save
+                    </button>
+                  </form>
+                </section>
+                <section>
+                  <h3 className="mb-2 text-sm font-medium text-zinc-200">Orders</h3>
+                  {shop.orders.length === 0 ? (
+                    <p className="text-sm text-zinc-500">No orders yet. You get an email for each one.</p>
+                  ) : (
+                    <ul className="space-y-2">
+                      {shop.orders.map((o) => (
+                        <li key={o.id} className="rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 text-sm">
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                            <span className="text-zinc-100">
+                              {o.quantity} × {o.item}
+                            </span>
+                            <span className="tabular-nums text-primary-soft">{o.total}</span>
+                            <span className="ml-auto text-xs text-zinc-500">{dateLabel(o.createdAt)}</span>
+                          </div>
+                          <p className="mt-1 break-words text-xs text-zinc-400">
+                            {[o.name, o.email, o.address].filter(Boolean).join(" · ")}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <a
+                    href="https://dashboard.stripe.com/payments"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-3 inline-block text-xs text-primary-soft hover:underline"
+                  >
+                    Refunds and payouts are in your Stripe dashboard ↗
+                  </a>
+                </section>
+              </div>
+            )
+          ) : open && view === "domains" ? (
             domains === null ? (
               !error && <p className="text-sm text-zinc-500">Loading…</p>
             ) : !domains.available ? (
@@ -296,6 +519,9 @@ export function MyApps({ onClose }: { onClose: () => void }) {
                       </button>
                       <button onClick={() => showDomains(s)} className="text-zinc-200 hover:text-white">
                         🔗 Domain
+                      </button>
+                      <button onClick={() => showPayments(s)} className="text-zinc-200 hover:text-white">
+                        💳 Payments
                       </button>
                       <button onClick={() => setConfirming(s.slug)} className="text-zinc-500 hover:text-red-400">
                         Unpublish

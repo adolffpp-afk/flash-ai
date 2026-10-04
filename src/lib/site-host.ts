@@ -1,7 +1,7 @@
 // Flash's own addresses; any other host is a custom domain showing a published site.
 const OWN_HOST = /(^|\.)flash-app\.dev$|\.vercel\.app$|^localhost$|^127\.0\.0\.1$|^\[::1\]$/;
-// What a site on its own domain may call: its flashDB data and its form inbox.
-const SITE_API = /^\/api\/sites\/[\w-]+\/(data|inbox)$/;
+// What a site on its own domain may call: its flashDB data, its form inbox and its shop.
+const SITE_API = /^\/api\/sites\/[\w-]+\/(data|inbox|shop)$/;
 
 export type HostRoute = { pass: true } | { rewrite: string } | { redirect: "/" } | { notFound: true };
 

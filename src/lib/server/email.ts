@@ -48,6 +48,16 @@ export const EMAILS = {
     ),
     text: `Someone sent a form on your Flash site ${site.slice(0, 80)}:\n\n${preview}\n\nRead your messages: ${link}`,
   }),
+  siteOrder: (site: string, summary: string, link: string) => ({
+    subject: `New order on your site ${site.slice(0, 60)}`,
+    html: layout(
+      `New order on ${escapeHtml(site.slice(0, 80))}`,
+      `Someone paid on your Flash site:<br><br><span style="color:#18181b;white-space:pre-wrap">${escapeHtml(summary)}</span><br><br>The money is in your Stripe account.`,
+      "See your orders",
+      link,
+    ),
+    text: `Someone paid on your Flash site ${site.slice(0, 80)}:\n\n${summary}\n\nThe money is in your Stripe account. See your orders: ${link}`,
+  }),
   verify: (link: string) => ({
     subject: "Confirm your email for Flash AI",
     html: layout("Confirm your email", "Confirm your email to get your free monthly credits.", "Confirm email", link),
