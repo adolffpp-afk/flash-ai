@@ -207,6 +207,20 @@ async function* run(
       return;
     }
     case "video": {
+      if (model!.edits) {
+        const photo = last.attachment!;
+        yield { type: "status", message: `Bringing your photo to life with ${model!.label}. This usually takes one to three minutes…` };
+        const clip = yield* withProgress((report) =>
+          falGenerate(
+            model!.endpoint!,
+            falEditInput(model!, `data:${photo.mediaType};base64,${photo.data}`, null, last.content),
+            (m) => report(`Animating… ${m.toLowerCase()}`),
+          ).catch(billIfAbandoned),
+        );
+        meter(model!.provider, model!.id, mediaCents(model!, last.content));
+        yield { type: "video", url: await store(clip, "flash-animated.mp4"), prompt: last.content };
+        return;
+      }
       if (model!.id === "movie") {
         const { scenes: count, seconds } = movieScenes(movieSeconds(last.content));
         yield { type: "status", message: `Writing ${count} scenes for your movie…` };
@@ -375,8 +389,8 @@ export async function POST(request: Request) {
     }
   }
 
-  // An image request with a photo attached edits the photo.
-  const editing = engine === "image" && Boolean(last.attachment && EDITABLE_TYPE.test(last.attachment.mediaType));
+  // An image request with a photo attached edits it; a video request animates it.
+  const editing = (engine === "image" || engine === "video") && Boolean(last.attachment && EDITABLE_TYPE.test(last.attachment.mediaType));
   if (editing) {
     const editSize = imageDimensions(Buffer.from(last.attachment!.data, "base64"));
     if (!editSize || editSize.width * editSize.height > MAX_EDIT_PIXELS) {

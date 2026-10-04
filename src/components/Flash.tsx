@@ -113,9 +113,10 @@ function applyEvent(m: UIMessage, e: StreamEvent): UIMessage {
  * scaled down in the browser first. Anything that can't be read is left as it is.
  */
 // One-tap actions for an attached photo; the router sends each to the matching photo model.
-const PHOTO_ACTIONS = [
-  { label: "✂️ Remove background", prompt: "Remove the background" },
-  { label: "🔍 Upscale", prompt: "Upscale this photo and make it sharper" },
+const PHOTO_ACTIONS: { label: string; prompt: string; engine: Engine }[] = [
+  { label: "✂️ Remove background", prompt: "Remove the background", engine: "image" },
+  { label: "🔍 Upscale", prompt: "Upscale this photo and make it sharper", engine: "image" },
+  { label: "🎬 Animate", prompt: "Animate this photo with natural, gentle motion", engine: "video" },
 ];
 
 async function shrinkPhoto(file: File): Promise<File> {
@@ -869,9 +870,9 @@ export function Flash({
                   </button>
                 </div>
               )}
-              {attachment && /^image\/(png|jpeg|webp)$/.test(attachment.mediaType) && isLive("image") && !busy && (
+              {attachment && /^image\/(png|jpeg|webp)$/.test(attachment.mediaType) && !busy && (
                 <div className="mb-1 ml-2 mt-1 inline-flex flex-wrap gap-1.5">
-                  {PHOTO_ACTIONS.map((a) => (
+                  {PHOTO_ACTIONS.filter((a) => isLive(a.engine)).map((a) => (
                     <button
                       key={a.label}
                       type="button"

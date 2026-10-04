@@ -17,6 +17,7 @@ const TOOLS = [
   ["Read text aloud", "Natural voice-overs as MP3."],
   ["Remove a background", "Cuts out the subject on a transparent background."],
   ["Upscale a photo", "Sharper and up to 4 times bigger."],
+  ["Animate a photo", "Turns a still photo into a short video, with sound if you like."],
   ["Publish an app", "Puts an app the AI writes live on a Flash web address, with its own database. Free."],
   ["Check credits", "How many Flash credits you have left."],
 ];
