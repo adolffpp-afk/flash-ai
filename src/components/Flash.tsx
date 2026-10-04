@@ -12,12 +12,11 @@ import { ENGINES, ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, ty
 import { api, newId, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
 import { BoltIcon, Logo, LogoMark } from "@/app/brand";
 import { EngineIcon } from "./EngineIcon";
+import { MicButton, PlusMenu, SendButton, ToolPicker, type Choice } from "./ComposerTools";
 
 // A project's messages are loaded the first time it is opened.
 type Project = ProjectSummary & { messages?: UIMessage[] };
 
-type Choice = Engine | "auto";
-const CHOICES: Choice[] = ["auto", ...ENGINES];
 const ACCEPT =
   "image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,text/markdown,text/csv,.md,.csv,.txt,.json," +
   "audio/*,video/mp4,video/webm,video/quicktime";
@@ -141,6 +140,7 @@ export function Flash({
   const [dragging, setDragging] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   // Attachments stay in memory only (too large to save), keyed by user message id, for Retry.
@@ -755,78 +755,15 @@ export function Flash({
         {/* Composer */}
         <div className="px-4 pb-4 pt-2">
           <div className="mx-auto max-w-3xl">
-            <div
-              className="-mx-1 mb-2 flex gap-1.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none]"
-              role="radiogroup"
-              aria-label="Engine"
-            >
-              {CHOICES.map((c) => {
-                const soon = c !== "auto" && !isLive(c);
-                return (
-                  <button
-                    key={c}
-                    role="radio"
-                    aria-checked={choice === c}
-                    disabled={soon}
-                    title={
-                      c === "auto"
-                        ? "Flash picks the best engine for each message"
-                        : soon
-                          ? `${ENGINE_LABELS[c]} is coming soon`
-                          : `Always use ${ENGINE_LABELS[c]}`
-                    }
-                    onClick={() => setChoice(c)}
-                    className={`shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-xs transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                      choice === c
-                        ? "bg-brand text-white"
-                        : "border border-white/8 text-zinc-400 enabled:hover:border-white/15 enabled:hover:text-zinc-200"
-                    }`}
-                  >
-                    {c === "auto" ? (
-                      <span className="inline-flex items-center gap-1">
-                        <BoltIcon className={`h-3 w-3 ${choice === c ? "text-gold" : ""}`} /> Auto
-                      </span>
-                    ) : (
-                      ENGINE_LABELS[c]
-                    )}
-                    {soon && <span className="ml-1 text-[10px] text-zinc-500">soon</span>}
-                  </button>
-                );
-              })}
-            </div>
-            {choice !== "auto" && me.models.some((x) => x.engine === choice && x.live) && (
-              <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-zinc-400">
-                <label htmlFor="model">Model</label>
-                <select
-                  id="model"
-                  value={models[choice] ?? ""}
-                  onChange={(e) => setModels((all) => ({ ...all, [choice]: e.target.value || undefined }))}
-                  className="rounded-lg border border-zinc-800 bg-zinc-900 px-2 py-1 text-zinc-200 outline-none focus:border-primary"
-                >
-                  <option value="">⚡ Best for each request</option>
-                  {me.models
-                    .filter((x) => x.engine === choice)
-                    .map((x) => (
-                      <option key={x.id} value={x.id} disabled={!x.live}>
-                        {x.label} · {x.credits} credits{x.live ? "" : " (coming soon)"}
-                      </option>
-                    ))}
-                </select>
-                <span className="hidden truncate sm:inline">
-                  {me.models.find((x) => x.id === models[choice])?.blurb ??
-                    "Flash matches each request to the model that suits it."}
-                </span>
-              </div>
-            )}
             <form
               onSubmit={(e) => {
                 e.preventDefault();
                 send(input);
               }}
-              className="rounded-2xl border border-white/10 bg-zinc-900/60 p-2 transition focus-within:border-primary/50"
+              className="rounded-[28px] border border-white/10 bg-zinc-900/70 p-2.5 shadow-lg shadow-black/20 transition focus-within:border-white/20"
             >
               {attachment && (
-                <div className="mb-1 ml-1 inline-flex items-center gap-2 rounded-lg bg-zinc-800 px-3 py-1 text-xs text-zinc-200">
+                <div className="mb-1 ml-2 mt-1 inline-flex items-center gap-2 rounded-lg bg-zinc-800 px-3 py-1 text-xs text-zinc-200">
                   📎 {attachment.name}
                   <button
                     type="button"
@@ -838,56 +775,51 @@ export function Flash({
                   </button>
                 </div>
               )}
-              <div className="flex items-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => fileRef.current?.click()}
-                  className="rounded-lg p-2 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
-                  aria-label="Attach a file"
-                  title="Attach a PDF, image, spreadsheet, text, audio or video file"
-                >
-                  📎
-                </button>
-                <input ref={fileRef} type="file" accept={ACCEPT} hidden onChange={onFile} />
-                <textarea
-                  ref={inputRef}
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onPaste={(e) => {
-                    const file = [...e.clipboardData.files][0];
-                    if (file) {
-                      e.preventDefault();
-                      attach(file);
-                    }
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                      e.preventDefault();
-                      send(input);
-                    }
-                  }}
-                  rows={1}
-                  placeholder={choice === "auto" ? "Ask Flash anything…" : `Ask ${ENGINE_LABELS[choice]}…`}
-                  className="max-h-48 min-h-[40px] flex-1 resize-none bg-transparent px-1 py-2 outline-none placeholder:text-zinc-500"
-                  aria-label="Message"
+              <input ref={fileRef} type="file" accept={ACCEPT} hidden onChange={onFile} />
+              <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={onFile} />
+              <textarea
+                ref={inputRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onPaste={(e) => {
+                  const file = [...e.clipboardData.files][0];
+                  if (file) {
+                    e.preventDefault();
+                    attach(file);
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                    e.preventDefault();
+                    send(input);
+                  }
+                }}
+                rows={1}
+                placeholder={choice === "auto" ? "Ask Flash anything…" : `Ask ${ENGINE_LABELS[choice]}…`}
+                className="block max-h-48 min-h-[44px] w-full resize-none bg-transparent px-2.5 pb-1 pt-2 text-[15px] outline-none placeholder:text-zinc-500"
+                aria-label="Message"
+              />
+              <div className="mt-1 flex items-center gap-2">
+                <PlusMenu onFiles={() => fileRef.current?.click()} onCamera={() => cameraRef.current?.click()} />
+                <ToolPicker
+                  choice={choice}
+                  setChoice={setChoice}
+                  isLive={isLive}
+                  models={me.models}
+                  model={choice === "auto" ? undefined : models[choice]}
+                  setModel={(engine, id) => setModels((all) => ({ ...all, [engine]: id }))}
                 />
-                {busy ? (
-                  <button
-                    type="button"
-                    onClick={stop}
-                    className="h-9 rounded-lg border border-white/10 px-4 text-sm text-zinc-200 hover:bg-white/[0.05]"
-                  >
-                    ■ Stop
-                  </button>
-                ) : (
-                  <button
-                    type="submit"
-                    disabled={!input.trim() && !attachment}
-                    className="h-9 rounded-lg bg-brand px-4 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-40"
-                  >
-                    Send
-                  </button>
-                )}
+                <div className="ml-auto flex items-center gap-2">
+                  <MicButton
+                    disabled={busy}
+                    onText={(text) => {
+                      setInput((v) => (v.trim() ? `${v.trimEnd()} ${text}` : text));
+                      inputRef.current?.focus();
+                    }}
+                    onRecording={(file) => attach(file)}
+                  />
+                  <SendButton busy={busy} onStop={stop} disabled={!input.trim() && !attachment} />
+                </div>
               </div>
             </form>
             <p className="mt-2 hidden text-center text-xs text-zinc-600 sm:block">
