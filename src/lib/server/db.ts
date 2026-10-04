@@ -79,6 +79,39 @@ const SCHEMA = [
     created_at INTEGER NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS site_domains_site ON site_domains(site_slug)`,
+  // Selling from published sites (see shop.ts): each seller's own Stripe account, the items a
+  // site sells with their prices, and the orders paid.
+  `CREATE TABLE IF NOT EXISTS seller_accounts (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    stripe_account TEXT NOT NULL UNIQUE,
+    country TEXT NOT NULL DEFAULT '',
+    currency TEXT NOT NULL DEFAULT '',
+    ready INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS site_products (
+    id TEXT PRIMARY KEY,
+    site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
+    name TEXT NOT NULL COLLATE NOCASE,
+    price INTEGER NOT NULL,
+    currency TEXT NOT NULL,
+    delivery INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    UNIQUE (site_slug, name)
+  )`,
+  `CREATE TABLE IF NOT EXISTS site_orders (
+    session_id TEXT PRIMARY KEY,
+    site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
+    item TEXT NOT NULL,
+    quantity INTEGER NOT NULL,
+    amount INTEGER NOT NULL,
+    currency TEXT NOT NULL,
+    email TEXT NOT NULL DEFAULT '',
+    name TEXT NOT NULL DEFAULT '',
+    address TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS site_orders_site ON site_orders(site_slug, created_at)`,
   `CREATE TABLE IF NOT EXISTS usage (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL,

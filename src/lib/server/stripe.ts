@@ -8,12 +8,14 @@ export const paymentsEnabled = () => Boolean(process.env.STRIPE_SECRET_KEY);
 // Lets you test the buy flow before Stripe is set up. Never turn this on for real users.
 export const demoPurchases = () => !paymentsEnabled() && process.env.FLASH_DEMO_PURCHASES === "true";
 
-async function stripe<T>(method: string, path: string, form?: URLSearchParams): Promise<T> {
+/** Calls Stripe's API; `account` acts on a connected seller's account (see shop.ts). */
+export async function stripe<T>(method: string, path: string, form?: URLSearchParams, account?: string): Promise<T> {
   const res = await fetch(`${STRIPE_API}${path}`, {
     method,
     headers: {
       Authorization: `Bearer ${process.env.STRIPE_SECRET_KEY}`,
       "Content-Type": "application/x-www-form-urlencoded",
+      ...(account ? { "Stripe-Account": account } : {}),
     },
     body: form,
   });
