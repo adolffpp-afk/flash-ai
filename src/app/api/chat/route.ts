@@ -19,8 +19,18 @@ import {
 import { checkFiles } from "@/lib/attachments.ts";
 import { withInstructions } from "@/lib/project-instructions.ts";
 import { one } from "@/lib/server/db.ts";
-import { FREE_CHAT_ENGINES, freeChatConfigured, freeEligible, freeImage, freeImageConfigured, streamFreeChat } from "@/lib/engines/free.ts";
-import { recordFree, releaseFreeUser, reserveFree, reserveFreeImage, reserveFreeUser } from "@/lib/server/free.ts";
+import {
+  FREE_CHAT_ENGINES,
+  freeChatConfigured,
+  freeEligible,
+  freeImage,
+  freeImageConfigured,
+  freeTranscribe,
+  freeTranscribeConfigured,
+  streamFreeChat,
+  type FreeLane,
+} from "@/lib/engines/free.ts";
+import { recordFree, recordFreeAudio, releaseFreeUser, reserveFree, reserveFreeAudio, reserveFreeImage, reserveFreeUser } from "@/lib/server/free.ts";
 import { isVerified } from "@/lib/server/account.ts";
 import {
   composeMusic,
@@ -325,7 +335,7 @@ async function* run(
 
 /** The free lane: open-source models on free tiers, for users who are out of credits. */
 async function* runFree(
-  lane: "chat" | "image",
+  lane: FreeLane,
   engine: Engine,
   history: ChatTurn[],
   preferences: string,
@@ -342,6 +352,19 @@ async function* runFree(
     yield { type: "status", message: "Painting your image with FLUX.1 schnell (free)…" };
     const image = await freeImage(last.content);
     yield { type: "image", url: await store(image, "flash-image.jpg"), prompt: last.content };
+    return;
+  }
+  if (lane === "transcribe") {
+    const file = last.attachment!;
+    if (!(await reserveFreeAudio())) {
+      throw new FriendlyError("Today's free transcripts are used up across Flash. They reset tomorrow, or you can get more credits.");
+    }
+    used.provider = "groq";
+    used.model = "whisper-large-v3-turbo";
+    yield { type: "status", message: `Transcribing ${file.name} with Whisper (free)…` };
+    const { text, seconds } = await freeTranscribe(file);
+    await recordFreeAudio(seconds);
+    yield { type: "text", delta: `**Transcript of ${file.name}**\n\n${text}` };
     return;
   }
   yield* streamFreeChat(history, preferences, engine as WritingMode, reserveFree, recordFree, (label, provider) => {
@@ -467,7 +490,7 @@ export async function POST(request: Request) {
   }
   // Out of credits: chat-style requests and images fall back to free open-source models,
   // up to a daily allowance per user.
-  let free: "chat" | "image" | null = null;
+  let free: FreeLane | null = null;
   const verified = isVerified(user);
   if (live && available < needed && verified) {
     const lane = freeEligible(engine, last);
@@ -475,7 +498,7 @@ export async function POST(request: Request) {
       if (!(await reserveFreeUser(user.id, lane))) {
         return Response.json(
           {
-            error: `You've used today's free ${lane === "image" ? "images" : "messages"} and you have ${available} credits. Free use resets tomorrow, or get more credits now.`,
+            error: `You've used today's free ${lane === "image" ? "images" : lane === "transcribe" ? "transcripts" : "messages"} and you have ${available} credits. Free use resets tomorrow, or get more credits now.`,
             code: "out_of_credits",
             needed,
           },
@@ -508,7 +531,11 @@ export async function POST(request: Request) {
           (!verified
             ? " Confirm your email to get your free credits and free daily messages."
             : "") +
-          (verified && freeChatConfigured() ? " Free models still answer chat, writing, code and translation" + (freeImageConfigured() ? ", and make images." : ".") : ""),
+          (verified && freeChatConfigured()
+            ? " Free models still answer chat, writing, code and translation" +
+              (freeImageConfigured() ? ", make images" : "") +
+              (freeTranscribeConfigured() ? ", and transcribe short recordings." : ".")
+            : ""),
         code: "out_of_credits",
         needed,
       },
@@ -541,7 +568,7 @@ export async function POST(request: Request) {
         demo: !live,
         cost: metered && !free ? 0 : held,
         ...(free
-          ? { free: true, model: free === "image" ? "FLUX.1 schnell" : "Open-source model", modelWhy: "You're out of credits, so Flash used a free model." }
+          ? { free: true, model: free === "image" ? "FLUX.1 schnell" : free === "transcribe" ? "Whisper" : "Open-source model", modelWhy: "You're out of credits, so Flash used a free model." }
           : model && { model: model.label, modelWhy: picked!.why }),
       });
       let ok = true;
