@@ -14,6 +14,7 @@ import { Creations } from "./Creations";
 import { MyApps } from "./MyApps";
 import { OFFICE_TYPES, officeKind, officeText } from "@/lib/office";
 import { MAX_PDF_MB, pdfText } from "@/lib/pdf-text";
+import { addAttachment } from "@/lib/attachments";
 import { ENGINES, ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types";
 import { api, newId, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
 import type { ChatHit } from "@/lib/server/search";
@@ -235,7 +236,14 @@ export function Flash({
   const [choice, setChoice] = useState<Choice>("auto");
   // Image, video and music model picked per engine; missing means Flash picks.
   const [models, setModels] = useState<Partial<Record<Engine, string>>>({});
-  const [attachment, setAttachment] = useState<Attachment | null>(null);
+  // Files waiting to be sent with the next message; the first is the main one.
+  const [files, setFilesState] = useState<Attachment[]>([]);
+  const filesNow = useRef<Attachment[]>([]);
+  const setFiles = (next: Attachment[]) => {
+    filesNow.current = next;
+    setFilesState(next);
+  };
+  const attachment = files[0] ?? null;
   const [busy, setBusy] = useState(false);
   const [sidebar, setSidebar] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -250,7 +258,7 @@ export function Flash({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   // Attachments stay in memory only (too large to save), keyed by user message id, for Retry.
-  const filesRef = useRef(new Map<string, Attachment>());
+  const filesRef = useRef(new Map<string, Attachment[]>());
   // Projects whose messages changed and still need saving to the server.
   const dirtyRef = useRef(new Set<string>());
   const prefsTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -500,14 +508,14 @@ export function Flash({
     }
     const content = text.trim();
     if (!content && !attachment) return;
-    const userMsg: UIMessage = { id: newId(), role: "user", content, attachmentName: attachment?.name };
-    if (attachment) filesRef.current.set(userMsg.id, attachment);
+    const userMsg: UIMessage = { id: newId(), role: "user", content, attachmentName: files.map((f) => f.name).join(", ") || undefined };
+    if (files.length) filesRef.current.set(userMsg.id, files);
     updateProject(active.id, (p) => ({
       ...p,
       name: !p.messages?.length && p.name === "New project" ? content.slice(0, 40) || p.name : p.name,
     }));
     setInput("");
-    setAttachment(null);
+    setFiles([]);
     await respond(active, active.messages ?? [], userMsg);
   }
 
@@ -546,7 +554,7 @@ export function Flash({
   async function respond(project: Project, earlier: UIMessage[], userMsg: UIMessage, confirmed = false) {
     const projectId = project.id;
     const reply: UIMessage = { id: newId(), role: "assistant", content: "", pending: true };
-    const file = filesRef.current.get(userMsg.id);
+    const sent = filesRef.current.get(userMsg.id) ?? [];
 
     // Only the most recent app's code is sent back, so edits build on it without resending every version.
     const lastAppId = [...earlier].reverse().find((m) => m.app)?.id;
@@ -559,7 +567,7 @@ export function Flash({
           content: m.content + (m.after ?? ""),
           app: m.id === lastAppId ? m.app?.html : undefined,
         })),
-      { role: "user", content: userMsg.content, attachment: file },
+      { role: "user", content: userMsg.content, attachment: sent[0], more: sent.length > 1 ? sent.slice(1) : undefined },
     ];
 
     updateProject(projectId, (p) => ({ ...p, updated_at: Date.now(), messages: [...earlier, userMsg, reply] }));
@@ -632,11 +640,26 @@ export function Flash({
     try {
       const blob = await (await fetch(url)).blob();
       const ext = blob.type.split("/")[1]?.replace("jpeg", "jpg") || "png";
+      // The picture replaces any files waiting, so the photo buttons apply to it.
+      setFiles([]);
       await attach(new File([blob], `flash-picture.${ext}`, { type: blob.type || "image/png" }));
       setInput("");
     } catch {
       setNotice("Couldn't open that picture. Download it and attach it with the + button instead.");
     }
+  }
+
+  /** Adds a read file to the ones waiting to be sent, or says why it can't be added. */
+  function addFile(file: Attachment) {
+    const added = addAttachment(filesNow.current, file);
+    if ("error" in added) return setNotice(added.error);
+    setFiles(added.files);
+    inputRef.current?.focus();
+  }
+
+  /** Reads and adds files one after another, so each one's checks see the ones before it. */
+  async function attachAll(list: FileList | File[] | null | undefined) {
+    for (const file of [...(list ?? [])]) await attach(file);
   }
 
   async function attach(file: File | undefined) {
@@ -649,10 +672,7 @@ export function Flash({
     if (office) {
       const read = await readOffice(file, office);
       if (typeof read === "string") setNotice(read);
-      else {
-        setAttachment(read);
-        inputRef.current?.focus();
-      }
+      else addFile(read);
       return;
     }
     // Small PDFs go whole, so Flash sees their pictures too; bigger ones send only their text.
@@ -662,8 +682,7 @@ export function Flash({
       if (typeof read === "string") setNotice(read);
       else {
         setNotice("");
-        setAttachment(read);
-        inputRef.current?.focus();
+        addFile(read);
       }
       return;
     }
@@ -677,14 +696,13 @@ export function Flash({
       setNotice("Transcribing audio and video isn't available yet. It's coming soon.");
       return;
     }
-    setAttachment(await readFile(file));
-    inputRef.current?.focus();
+    addFile(await readFile(file));
   }
 
   function onFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
+    const list = [...(e.target.files ?? [])];
     e.target.value = "";
-    attach(file);
+    attachAll(list);
   }
 
   // Looks inside the chats too, a moment after typing stops.
@@ -929,7 +947,7 @@ export function Flash({
         onDrop={(e) => {
           e.preventDefault();
           setDragging(false);
-          attach(e.dataTransfer.files[0]);
+          attachAll(e.dataTransfer.files);
         }}
       >
         {dragging && (
@@ -1076,20 +1094,24 @@ export function Flash({
               }}
               className="rounded-[28px] border border-white/10 bg-zinc-900/70 p-2.5 shadow-lg shadow-black/20 transition focus-within:border-white/20"
             >
-              {attachment && (
-                <div className="mb-1 ml-2 mt-1 inline-flex items-center gap-2 rounded-lg bg-zinc-800 px-3 py-1 text-xs text-zinc-200">
-                  📎 {attachment.name}
-                  <button
-                    type="button"
-                    onClick={() => setAttachment(null)}
-                    aria-label="Remove file"
-                    className="text-zinc-400 hover:text-zinc-100"
-                  >
-                    ✕
-                  </button>
+              {files.length > 0 && (
+                <div className="mb-1 ml-2 mt-1 flex flex-wrap gap-1.5">
+                  {files.map((f) => (
+                    <div key={f.name} className="inline-flex max-w-full items-center gap-2 rounded-lg bg-zinc-800 px-3 py-1 text-xs text-zinc-200">
+                      <span className="truncate">📎 {f.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => setFiles(filesNow.current.filter((x) => x !== f))}
+                        aria-label={`Remove ${f.name}`}
+                        className="text-zinc-400 hover:text-zinc-100"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
                 </div>
               )}
-              {attachment && /^image\/(png|jpeg|webp)$/.test(attachment.mediaType) && !busy && (
+              {files.length === 1 && attachment && /^image\/(png|jpeg|webp)$/.test(attachment.mediaType) && !busy && (
                 <div className="mb-1 ml-2 mt-1 inline-flex flex-wrap gap-1.5">
                   {PHOTO_ACTIONS.filter((a) => isLive(a.engine)).map((a) => (
                     <button
@@ -1103,17 +1125,17 @@ export function Flash({
                   ))}
                 </div>
               )}
-              <input ref={fileRef} type="file" accept={ACCEPT} hidden onChange={onFile} />
+              <input ref={fileRef} type="file" accept={ACCEPT} multiple hidden onChange={onFile} />
               <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={onFile} />
               <textarea
                 ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onPaste={(e) => {
-                  const file = [...e.clipboardData.files][0];
-                  if (file) {
+                  const pasted = [...e.clipboardData.files];
+                  if (pasted.length) {
                     e.preventDefault();
-                    attach(file);
+                    attachAll(pasted);
                   }
                 }}
                 onKeyDown={(e) => {
@@ -1124,7 +1146,7 @@ export function Flash({
                 }}
                 rows={1}
                 placeholder={
-                  attachment && /^image\//.test(attachment.mediaType)
+                  files.length === 1 && /^image\//.test(files[0].mediaType)
                     ? "Say what to change, or tap a button above…"
                     : choice === "auto"
                       ? "Ask Flash anything…"

@@ -84,7 +84,8 @@ export const FREE_CHAT_ENGINES: Engine[] = ["text", "translate", "code", "docs"]
 /** Whether a request can use the free lane: chat-style engines or images, with no file or a text file. */
 export function freeEligible(engine: Engine, last: ChatTurn): "chat" | "image" | null {
   const a = last.attachment;
-  if (a && !a.mediaType.startsWith("text/") && a.mediaType !== "application/json") return null;
+  const files = a ? [a, ...(last.more ?? [])] : [];
+  if (files.some((f) => !f.mediaType.startsWith("text/") && f.mediaType !== "application/json")) return null;
   if (engine === "image" && !a) return freeImageConfigured() ? "image" : null;
   if (FREE_CHAT_ENGINES.includes(engine)) return freeChatConfigured() ? "chat" : null;
   return null;
@@ -96,8 +97,11 @@ function toMessages(history: ChatTurn[], preferences: string, mode: WritingMode)
   const turns = history.slice(-10).map((t): Message => {
     let content = t.content;
     if (t.attachment) {
-      const text = Buffer.from(t.attachment.data, "base64").toString("utf8").slice(0, 20000);
-      content = `File "${t.attachment.name}":\n${text}\n\n${content || "Please look at this file."}`;
+      const files = [t.attachment, ...(t.more ?? [])];
+      // The free models read less, so several files share the same room as one.
+      const room = Math.floor(20000 / files.length);
+      const texts = files.map((f) => `File "${f.name}":\n${Buffer.from(f.data, "base64").toString("utf8").slice(0, room)}`);
+      content = `${texts.join("\n\n")}\n\n${content || (files.length > 1 ? "Please look at these files." : "Please look at this file.")}`;
     }
     if (t.app) content += "\n\n(An app was built here.)";
     return { role: t.role, content: content.slice(0, 24000) };

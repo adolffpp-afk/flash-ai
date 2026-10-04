@@ -1,5 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { ENGINES, type ChatTurn, type Engine, type Source, type StreamEvent } from "../types.ts";
+import { ENGINES, type Attachment, type ChatTurn, type Engine, type Source, type StreamEvent } from "../types.ts";
 import { CLAUDE_PRICES, MAX_OUTPUT_TOKENS, claudeCostCents, inputCostCents } from "../credits.ts";
 
 /*
@@ -56,20 +56,23 @@ export function claudeConfigured(): boolean {
   return Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
 }
 
-function toContent(turn: ChatTurn): string | Anthropic.Beta.BetaContentBlockParam[] {
-  const a = turn.attachment;
-  if (!a) return turn.content;
-  const blocks: Anthropic.Beta.BetaContentBlockParam[] = [];
+function fileBlock(a: Attachment): Anthropic.Beta.BetaContentBlockParam {
   if ((IMAGE_TYPES as readonly string[]).includes(a.mediaType)) {
-    blocks.push({ type: "image", source: { type: "base64", media_type: a.mediaType as ImageType, data: a.data } });
-  } else if (a.mediaType === "application/pdf") {
-    blocks.push({ type: "document", title: a.name, source: { type: "base64", media_type: "application/pdf", data: a.data } });
-  } else {
-    const text = Buffer.from(a.data, "base64").toString("utf8");
-    blocks.push({ type: "document", title: a.name, source: { type: "text", media_type: "text/plain", data: text } });
+    return { type: "image", source: { type: "base64", media_type: a.mediaType as ImageType, data: a.data } };
   }
-  blocks.push({ type: "text", text: turn.content || "Please look at this file." });
-  return blocks;
+  if (a.mediaType === "application/pdf") {
+    return { type: "document", title: a.name, source: { type: "base64", media_type: "application/pdf", data: a.data } };
+  }
+  const text = Buffer.from(a.data, "base64").toString("utf8");
+  return { type: "document", title: a.name, source: { type: "text", media_type: "text/plain", data: text } };
+}
+
+function toContent(turn: ChatTurn): string | Anthropic.Beta.BetaContentBlockParam[] {
+  if (!turn.attachment) return turn.content;
+  const files = [turn.attachment, ...(turn.more ?? [])];
+  // Pictures have no title, so several are named in the text to tell them apart.
+  const named = files.length > 1 ? `Attached files, in order: ${files.map((f) => f.name).join(", ")}.\n\n` : "";
+  return [...files.map(fileBlock), { type: "text", text: named + (turn.content || (files.length > 1 ? "Please look at these files." : "Please look at this file.")) }];
 }
 
 function assistantContent(t: ChatTurn): string {

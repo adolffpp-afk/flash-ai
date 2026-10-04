@@ -41,6 +41,8 @@ export type ChatTurn = {
   role: "user" | "assistant";
   content: string;
   attachment?: Attachment;
+  // More files sent with the first one (see attachments.ts).
+  more?: Attachment[];
   // Full HTML of an app or deck Flash built in this assistant turn, so follow-ups can edit it.
   app?: string;
 };

@@ -26,6 +26,10 @@ test("only chat-style requests and plain images use the free lane", () => {
   }
   // Free models can't read images or PDFs.
   assert.equal(freeEligible("text", turn("what is this", "image/png")), null);
+  // Several files: all must be text.
+  const two = (type: string) => ({ ...turn("compare", "text/plain"), more: [{ name: "g", mediaType: type, data: "" }] });
+  assert.equal(freeEligible("text", two("text/csv")), "chat");
+  assert.equal(freeEligible("text", two("application/pdf")), null);
 });
 
 test("each provider stops at its daily cap", async () => {

@@ -16,7 +16,8 @@ import {
   type Meter,
   type WritingMode,
 } from "@/lib/engines/claude.ts";
-import { freeChatConfigured, freeEligible, freeImage, freeImageConfigured, streamFreeChat } from "@/lib/engines/free.ts";
+import { checkFiles } from "@/lib/attachments.ts";
+import { FREE_CHAT_ENGINES, freeChatConfigured, freeEligible, freeImage, freeImageConfigured, streamFreeChat } from "@/lib/engines/free.ts";
 import { recordFree, releaseFreeUser, reserveFree, reserveFreeImage, reserveFreeUser } from "@/lib/server/free.ts";
 import { isVerified } from "@/lib/server/account.ts";
 import {
@@ -58,6 +59,8 @@ export const maxDuration = 800;
 
 // Vercel caps a request at 4.5 MB, and a file grows by a third when sent as base64.
 const MAX_ATTACHMENT_BYTES = 3 * 1024 * 1024;
+// The engines that can read several files at once.
+const WRITING_ENGINES: Engine[] = FREE_CHAT_ENGINES;
 // A message longer than this (about 25,000 words) is almost certainly pasted by mistake.
 const MAX_MESSAGE_CHARS = 100_000;
 // The same limit as saved preferences (PATCH /api/me).
@@ -368,6 +371,9 @@ export async function POST(request: Request) {
   if (last.attachment && attachmentBytes(last.attachment) > MAX_ATTACHMENT_BYTES) {
     return Response.json({ error: "Files must be 3 MB or smaller." }, { status: 413 });
   }
+  const filesProblem = checkFiles(last.attachment, last.more);
+  if (filesProblem) return Response.json({ error: filesProblem }, { status: 413 });
+  const severalFiles = Boolean(last.more?.length);
   if (typeof last.content !== "string" || last.content.length > MAX_MESSAGE_CHARS) {
     return Response.json(
       { error: "This message is too long. Send a shorter one, or attach the text as a file." },
@@ -381,6 +387,11 @@ export async function POST(request: Request) {
     body.engine && body.engine !== "auto" && (ENGINES as readonly string[]).includes(body.engine) ? body.engine : null;
   let engine = override ?? auto.engine;
   let reason = override ? "You picked this engine." : auto.reason;
+  // Several files are read and compared by the writing engines; media tools take one file.
+  if (severalFiles && !WRITING_ENGINES.includes(engine)) {
+    engine = "docs";
+    reason = "Flash reads several files together.";
+  }
 
   // Everything this request spends with AI providers, for credits and the owner dashboard.
   const spend: { provider: string; model: string; cents: number }[] = [];
