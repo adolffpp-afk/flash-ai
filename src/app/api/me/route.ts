@@ -1,6 +1,6 @@
 import { appUrl, getUser, isAdmin, unauthorized } from "@/lib/server/auth.ts";
 import { ensureMonthlyCredits, recentActivity, spendable } from "@/lib/server/credits.ts";
-import { run } from "@/lib/server/db.ts";
+import { one, run } from "@/lib/server/db.ts";
 import { pricingInfo } from "@/lib/server/pricing.ts";
 import { planSummary } from "@/lib/server/subscriptions.ts";
 import { isVerified } from "@/lib/server/account.ts";
@@ -23,6 +23,8 @@ export async function GET(request: Request) {
   const { code, ...referrals } = await referralStats(user.id);
   return Response.json({
     user: { id: user.id, email: user.email, name: user.name, preferences: user.preferences },
+    // Accounts made with Google or an email link have no password until they set one.
+    hasPassword: Boolean((await one<{ p: string }>("SELECT password_hash AS p FROM users WHERE id = ?", [user.id]))?.p),
     isAdmin: isAdmin(user),
     verified: isVerified(user),
     // Everything the user can spend, a team's shared pool included.
