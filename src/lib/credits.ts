@@ -246,6 +246,30 @@ export function planHold(engine: Engine, model: string, inputTokens: number, ava
 }
 
 /*
+ * The companion (see companion.ts) answers in up to COMPANION_STEPS calls when it looks things
+ * up, and each call re-reads everything before it plus what the last one wrote and found
+ * (COMPANION_TOOL_TOKENS at most per step). It needs credits for one call and holds enough for
+ * all of them when the user has them; it stops looking things up when the next call wouldn't fit.
+ */
+export const COMPANION_STEPS = 4;
+export const COMPANION_MAX_TOKENS = 800;
+export const COMPANION_TOOL_TOKENS = 2000;
+
+/** Worst-case cost of one companion call, in cents. */
+export const companionStepCents = (model: string, inputTokens: number) =>
+  (inputTokens * priceOf(model).input + COMPANION_MAX_TOKENS * priceOf(model).output) / 1e6;
+
+export function companionHold(model: string, inputTokens: number, available: number) {
+  const needed = Math.ceil(companionStepCents(model, inputTokens) * MARKUP * SAFETY) + 1;
+  let allCents = 0;
+  for (let step = 0, tokens = inputTokens; step < COMPANION_STEPS; step++, tokens += COMPANION_MAX_TOKENS + COMPANION_TOOL_TOKENS) {
+    allCents += companionStepCents(model, tokens);
+  }
+  const held = Math.max(needed, Math.min(Math.ceil(allCents * MARKUP * SAFETY) + 1, available));
+  return { needed, held, capCents: held / MARKUP / SAFETY };
+}
+
+/*
  * What a request is finally charged, never more than was held. A finished request pays its
  * provider cost. A stopped Claude reply has no usage report, so it pays for reading the input
  * (Claude bills it in full) plus an estimate of what was written, and at least a typical reply.

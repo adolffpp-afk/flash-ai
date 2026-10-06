@@ -13,10 +13,12 @@ import { DownloadChat } from "./DownloadChat";
 import { ProjectInstructions } from "./ProjectInstructions";
 import { Settings, SKIP_COST_CHECK, type SettingsTab } from "./Settings";
 import { Creations } from "./Creations";
+import { Companion } from "./Companion";
 import { MyApps } from "./MyApps";
 import { OFFICE_TYPES, officeKind, officeText } from "@/lib/office";
 import { MAX_PDF_MB, pdfText } from "@/lib/pdf-text";
 import { addAttachment } from "@/lib/attachments";
+import { MAX_QUEUE, recentTurns, type CompanionContext } from "@/lib/companion";
 import { ENGINES, ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types";
 import { api, newId, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
 import type { ChatHit } from "@/lib/server/search";
@@ -245,6 +247,16 @@ export function Flash({
   };
   const attachment = files[0] ?? null;
   const [busy, setBusy] = useState(false);
+  const [companion, setCompanion] = useState(false);
+  // Requests the companion lined up, run in this chat one after another once it's free.
+  const [queue, setQueueState] = useState<string[]>([]);
+  const queueNow = useRef<string[]>([]);
+  const setQueue = (next: string[]) => {
+    queueNow.current = next;
+    setQueueState(next);
+  };
+  // What the running request was asked to do, and when it started, for the companion.
+  const jobRef = useRef<{ request: string; startedAt: number } | null>(null);
   const [sidebar, setSidebar] = useState(false);
   const [dragging, setDragging] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -576,6 +588,7 @@ export function Flash({
     ];
 
     updateProject(projectId, (p) => ({ ...p, updated_at: Date.now(), messages: [...earlier, userMsg, reply] }));
+    jobRef.current = { request: userMsg.content, startedAt: Date.now() };
     setBusy(true);
     const controller = new AbortController();
     abortRef.current = controller;
@@ -630,10 +643,72 @@ export function Flash({
       updateMessage(projectId, reply.id, (m) => ({ ...m, pending: false, status: undefined }));
       refreshMe();
       abortRef.current = null;
+      jobRef.current = null;
       setBusy(false);
       inputRef.current?.focus();
     }
   }
+
+  /** Runs each request the companion lined up, as soon as the chat is free. */
+  useEffect(() => {
+    if (busy || !queue.length || !active?.messages) return;
+    const [next, ...rest] = queue;
+    setQueue(rest);
+    send(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy, queue, active?.id, active?.messages]);
+
+  /** Adds a request the companion suggested to Next up, and opens the chat it will run in. */
+  const queueRequest = useCallback(
+    (request: string) => {
+      const list = queueNow.current;
+      if (list.length >= MAX_QUEUE) {
+        setNotice(`Next up is full at ${MAX_QUEUE} requests. They run one after another, then you can add more.`);
+        return;
+      }
+      if (!list.includes(request)) setQueue([...list, request]);
+    },
+    [],
+  );
+
+  /** What the companion is told about the user's work when they ask it something. */
+  const companionContext = useCallback(
+    (): CompanionContext => {
+      const running = active?.messages?.at(-1);
+      const job = jobRef.current;
+      return {
+        project: active?.name,
+        ...(job && {
+          job: {
+            engine: running?.engine,
+            model: running?.model,
+            status: running?.status,
+            seconds: Math.round((Date.now() - job.startedAt) / 1000),
+            request: job.request,
+          },
+        }),
+        recent: recentTurns(active?.messages ?? []),
+        queue: queueNow.current,
+      };
+    },
+    [active?.name, active?.messages],
+  );
+
+  /** Opens whatever page the companion was asked to open. */
+  const openCompanionPage = useCallback(
+    (page: string) => {
+      const tabs = ["memory", "brand", "plan", "apps", "preferences", "account"];
+      if (page === "settings") setSettingsTab("profile");
+      else if (tabs.includes(page)) setSettingsTab(page as SettingsTab);
+      else if (page === "credits") setShowCredits(true);
+      else if (page === "invite") setShowInvite(true);
+      else if (page === "creations") setShowCreations(true);
+      else if (page === "websites") setShowApps(true);
+      else if (page === "instructions") setShowInstructions(true);
+      setSidebar(false);
+    },
+    [],
+  );
 
   /** Makes a picture again in another shape (the shape words are read by the image engine). */
   function reshape(prompt: string, shape: Reshape) {
@@ -1143,6 +1218,29 @@ export function Flash({
         {/* Composer */}
         <div className="px-4 pb-4 pt-2">
           <div className="mx-auto max-w-3xl">
+            {queue.length > 0 && (
+              <div className="mb-2 rounded-2xl border border-white/8 bg-white/[0.02] px-3 py-2">
+                <p className="text-xs font-medium text-zinc-400">
+                  Next up · {queue.length} {queue.length === 1 ? "request" : "requests"} {busy ? "waiting for this one to finish" : "starting now"}
+                </p>
+                <ul className="mt-1.5 space-y-1">
+                  {queue.map((q, i) => (
+                    <li key={`${i}-${q}`} className="flex items-start gap-2 text-sm text-zinc-200">
+                      <span className="mt-0.5 shrink-0 text-xs text-zinc-500">{i + 1}.</span>
+                      <span className="min-w-0 flex-1 truncate">{q}</span>
+                      <button
+                        type="button"
+                        onClick={() => setQueue(queueNow.current.filter((_, at) => at !== i))}
+                        aria-label={`Remove "${q}" from Next up`}
+                        className="shrink-0 text-zinc-500 hover:text-red-400"
+                      >
+                        ✕
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -1240,6 +1338,17 @@ export function Flash({
           </div>
         </div>
       </main>
+
+      <Companion
+        open={companion}
+        onOpen={() => setCompanion(true)}
+        onClose={() => setCompanion(false)}
+        context={companionContext}
+        onQueue={queueRequest}
+        onPage={openCompanionPage}
+        onCost={refreshMe}
+        running={busy ? { engine: active?.messages?.at(-1)?.engine, status: active?.messages?.at(-1)?.status } : null}
+      />
     </div>
   );
 }
