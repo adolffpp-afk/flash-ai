@@ -346,6 +346,9 @@ const MIGRATIONS = [
   "ALTER TABLE projects ADD COLUMN instructions TEXT NOT NULL DEFAULT ''",
   // When the site's owner marked an order as handled (sent, picked up), or 0.
   "ALTER TABLE site_orders ADD COLUMN done_at INTEGER NOT NULL DEFAULT 0",
+  // Settings > General: what Flash should call the user, and what best describes their work.
+  "ALTER TABLE users ADD COLUMN nickname TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE users ADD COLUMN work TEXT NOT NULL DEFAULT ''",
 ];
 
 async function init(c: Client) {

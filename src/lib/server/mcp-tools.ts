@@ -21,6 +21,7 @@ import { saveFile } from "./files.ts";
 import { listSites, publishSite } from "./sites.ts";
 import { publicFile, publicFileLink } from "./connector.ts";
 import type { User } from "./auth.ts";
+import { fullName } from "../names.ts";
 
 /** The tools the Flash connector offers, in MCP's shapes (the 2025-06-18 specification). */
 
@@ -498,7 +499,7 @@ export async function callTool(name: string, args: Args, ctx: ToolContext): Prom
       await ensureMonthlyCredits(ctx.user.id);
       const { total, pool } = await spendable(ctx.user.id);
       return text(
-        `${ctx.user.name || ctx.user.email} has ${total.toLocaleString("en-US")} Flash credits` +
+        `${fullName(ctx.user)} has ${total.toLocaleString("en-US")} Flash credits` +
           (pool !== null ? ` (${pool.toLocaleString("en-US")} of them in their team's shared pool)` : "") +
           `. More credits: ${ctx.origin}/?credits=1`,
       );

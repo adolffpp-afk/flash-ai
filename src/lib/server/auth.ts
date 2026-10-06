@@ -13,6 +13,9 @@ export type User = {
   id: string;
   email: string;
   name: string;
+  // What Flash calls the user, and their work (Settings > General); empty until they fill them in.
+  nickname?: string;
+  work?: string;
   preferences: string;
   created_at: number;
   last_free_grant: number;
@@ -66,7 +69,7 @@ export async function getUser(request: Request): Promise<User | null> {
 export async function userForSession(token: string | null | undefined): Promise<User | null> {
   if (!token) return null;
   return one<User>(
-    `SELECT u.id, u.email, u.name, u.preferences, u.created_at, u.last_free_grant, u.verified_at
+    `SELECT u.id, u.email, u.name, u.nickname, u.work, u.preferences, u.created_at, u.last_free_grant, u.verified_at
      FROM sessions s JOIN users u ON u.id = s.user_id
      WHERE s.token_hash = ? AND s.expires_at > ?`,
     [sha256(token), now()],

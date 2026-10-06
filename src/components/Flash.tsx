@@ -7,11 +7,12 @@ import { Landing } from "./Landing";
 import { VerifyBanner } from "./VerifyBanner";
 import { CreditsDialog } from "./CreditsDialog";
 import { InviteDialog } from "./InviteFriends";
-import { InstallApp, InstallPopup } from "./InstallApp";
+import { InstallPopup } from "./InstallApp";
 import { ShareDialog } from "./ShareDialog";
 import { DownloadChat } from "./DownloadChat";
 import { ProjectInstructions } from "./ProjectInstructions";
-import { Settings, SKIP_COST_CHECK, type SettingsTab } from "./Settings";
+import { Settings, SKIP_COST_CHECK, settingsTabFor, type SettingsTab } from "./Settings";
+import { AccountMenu } from "./AccountMenu";
 import { Creations } from "./Creations";
 import { Companion } from "./Companion";
 import { Templates } from "./Templates";
@@ -28,6 +29,8 @@ import { BoltIcon, Logo, LogoMark } from "@/app/brand";
 import { EngineIcon } from "./EngineIcon";
 import { MicButton, PlusMenu, SendButton, ToolPicker, type Choice } from "./ComposerTools";
 import { photoActionsFor } from "@/lib/photo-actions";
+import { firstName } from "@/lib/names";
+import { applyAppearance, notifiesWhenDone, readSetting } from "@/lib/device-settings";
 
 // A project's messages are loaded the first time it is opened.
 type Project = ProjectSummary & { messages?: UIMessage[] };
@@ -56,12 +59,6 @@ const ACCEPT =
 const MAX_FILE_MB = 3;
 // Word, Excel and PowerPoint files are read in the browser and only their text is sent.
 const MAX_OFFICE_MB = 20;
-
-/** "Adolff" from "Adolff Pierre", or from adolff.p@example.com when no name was given. */
-function firstName(user: { name: string; email: string }): string {
-  const name = user.name.trim().split(/\s+/)[0] || user.email.split("@")[0].split(/[._+-]/)[0];
-  return name ? name[0].toUpperCase() + name.slice(1) : "there";
-}
 
 /** Good morning, afternoon or evening, by the visitor's own clock. */
 function greeting(): string {
@@ -256,6 +253,10 @@ export function Flash({
   const attachment = files[0] ?? null;
   const [busy, setBusy] = useState(false);
   const [companion, setCompanion] = useState(false);
+  // The Ask Flash button can be hidden in Settings > Capabilities (read after mount: it lives on the device).
+  const [hideCompanion, setHideCompanion] = useState(false);
+  // "Good morning, Adolff! Welcome back." for a few seconds after signing in or opening Flash.
+  const [welcome, setWelcome] = useState("");
   // Requests the companion lined up, each run in the chat it was asked about, one after another.
   const [queue, setQueueState] = useState<Queued[]>([]);
   const queueNow = useRef<Queued[]>([]);
@@ -331,9 +332,11 @@ export function Flash({
     setPreferences(data.user.preferences);
     try {
       let { projects: list } = await api<{ projects: ProjectSummary[] }>("/api/projects");
-      if (!list.length) list = [(await api<{ project: ProjectSummary }>("/api/projects", { method: "POST", json: { name: "My first project" } })).project];
+      const firstVisit = !list.length;
+      if (firstVisit) list = [(await api<{ project: ProjectSummary }>("/api/projects", { method: "POST", json: { name: "My first project" } })).project];
       setProjects(list);
       await openProject(list[0].id);
+      setWelcome(firstVisit ? `Welcome to Flash, ${firstName(data.user)}!` : `${greeting()}, ${firstName(data.user)}! Welcome back.`);
     } catch {
       setMe(null);
       setLoadError(true);
@@ -403,6 +406,19 @@ export function Flash({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Settings kept on this device: the chat font and text size, and whether Ask Flash shows.
+  useEffect(() => {
+    applyAppearance();
+    setHideCompanion(readSetting("hideCompanion") === "1");
+  }, []);
+
+  // The welcome greeting fades after a few seconds.
+  useEffect(() => {
+    if (!welcome) return;
+    const timer = setTimeout(() => setWelcome(""), 6000);
+    return () => clearTimeout(timer);
+  }, [welcome]);
 
   // Saves changed projects shortly after a reply finishes.
   useEffect(() => {
@@ -554,8 +570,9 @@ export function Flash({
     prefsTimer.current = setTimeout(() => api("/api/me", { method: "PATCH", json: { preferences: value } }).catch(() => {}), 600);
   }
 
-  async function signOut() {
-    await api("/api/auth/logout", { method: "POST" }).catch(() => {});
+  // everywhere: Settings already signed out every device, this one included.
+  async function signOut(everywhere = false) {
+    if (!everywhere) await api("/api/auth/logout", { method: "POST" }).catch(() => {});
     // Nothing of this account keeps running, or runs later for whoever signs in next.
     abortRef.current?.abort();
     jobRef.current = null;
@@ -564,6 +581,7 @@ export function Flash({
     setMe(null);
     setProjects([]);
     setActiveId("");
+    setWelcome("");
     filesRef.current.clear();
     setAuthMode(null);
     setSignedOut(true);
@@ -631,8 +649,18 @@ export function Flash({
     abortRef.current?.abort();
   }
 
+  /** A notification when a long request ends while Flash is in the background (Settings > General). */
+  function notifyDone(request: string, ok: boolean, startedAt: number) {
+    if (!notifiesWhenDone() || !document.hidden || Date.now() - startedAt < 8000) return;
+    try {
+      const body = request.length > 90 ? `${request.slice(0, 90)}…` : request;
+      new Notification(ok ? "Flash is done" : "Flash stopped", { body: body || "Your request", icon: "/app-icon/192", tag: "flash-done" });
+    } catch {}
+  }
+
   async function respond(project: Project, earlier: UIMessage[], userMsg: UIMessage, confirmed = false) {
     const projectId = project.id;
+    const startedAt = Date.now();
     const reply: UIMessage = { id: newId(), role: "assistant", content: "", pending: true };
     const sent = filesRef.current.get(userMsg.id) ?? [];
     // A template's request always goes to its own engine, and one the companion lined up to Auto
@@ -668,7 +696,8 @@ export function Flash({
         body: JSON.stringify({
           messages: history,
           engine,
-          preferences,
+          // Memory can be turned off in Settings > Capabilities (on this device).
+          preferences: readSetting("memoryOff") === "1" ? "" : preferences,
           previous,
           model: userMsg.template?.model ?? (engine === "auto" ? undefined : models[engine]),
           template: userMsg.template?.name,
@@ -718,6 +747,7 @@ export function Flash({
       // A request that failed, was stopped or waits for its price to be confirmed holds Next up,
       // so nothing runs on top of it until the user says so.
       if (!finished && queueNow.current.length) setQueuePaused(true);
+      notifyDone(userMsg.content, finished, startedAt);
       setRunningIn("");
       setBusy(false);
       if (!typingElsewhere(inputRef.current)) inputRef.current?.focus();
@@ -794,9 +824,8 @@ export function Flash({
   /** Opens whatever page the companion was asked to open. */
   const openCompanionPage = useCallback(
     (page: string) => {
-      const tabs = ["memory", "brand", "plan", "apps", "preferences", "account"];
-      if (page === "settings") setSettingsTab("profile");
-      else if (tabs.includes(page)) setSettingsTab(page as SettingsTab);
+      const tabs = ["settings", "profile", "general", "memory", "account", "privacy", "billing", "plan", "usage", "capabilities", "preferences", "brand", "connectors", "apps"];
+      if (tabs.includes(page)) setSettingsTab(settingsTabFor(page));
       else if (page === "credits") setShowCredits(true);
       else if (page === "invite") setShowInvite(true);
       else if (page === "creations") setShowCreations(true);
@@ -1087,7 +1116,6 @@ export function Flash({
           >
             🎁 Invite friends, earn credits
           </button>
-          <InstallApp className="mt-2 flex w-full items-center gap-2 rounded-lg border border-white/8 px-2 py-1.5 text-left text-xs text-zinc-300 transition hover:bg-white/[0.04] hover:text-white" />
           {status && (
             <details className="mt-2 text-xs text-zinc-400">
               <summary className="cursor-pointer select-none hover:text-zinc-200">
@@ -1104,29 +1132,26 @@ export function Flash({
               </div>
             </details>
           )}
-          <div className="mt-3 flex items-center gap-2 border-t border-white/6 pt-3 text-sm">
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-zinc-800 text-xs uppercase">
-              {(me.user.name || me.user.email)[0]}
-            </span>
-            <span className="min-w-0 flex-1 truncate text-zinc-300" title={me.user.email}>
-              {me.user.name || me.user.email}
-            </span>
-            {me.isAdmin && (
-              <a href="/admin" className="text-xs text-primary-soft hover:text-white">
-                Dashboard
-              </a>
-            )}
-            <button
-              onClick={() => {
-                setSettingsTab("profile");
-                setSidebar(false);
-              }}
-              className="rounded-md px-1.5 py-0.5 text-xs text-zinc-400 hover:bg-white/[0.05] hover:text-zinc-100"
-              title="Settings: profile, memory, brand kit, plan, connected apps"
-            >
-              ⚙️ Settings
-            </button>
-          </div>
+          <AccountMenu
+            me={me}
+            onSettings={() => {
+              setSettingsTab("general");
+              setSidebar(false);
+            }}
+            onHelp={() => {
+              setCompanion(true);
+              setSidebar(false);
+            }}
+            onPlan={() => {
+              setShowCredits(true);
+              setSidebar(false);
+            }}
+            onInvite={() => {
+              setShowInvite(true);
+              setSidebar(false);
+            }}
+            onSignOut={() => signOut()}
+          />
         </div>
       </aside>
 
@@ -1148,6 +1173,15 @@ export function Flash({
           attachAll(e.dataTransfer.files);
         }}
       >
+        {/* The welcome screen already greets the user, so this only shows over a chat with messages. */}
+        {welcome && Boolean(active?.messages?.length) && (
+          <div
+            role="status"
+            className="pointer-events-none absolute left-1/2 top-16 z-20 max-w-[calc(100%-2rem)] -translate-x-1/2 rounded-full border border-primary/30 bg-zinc-900/95 px-4 py-2 text-sm text-zinc-100 shadow-xl backdrop-blur"
+          >
+            👋 {welcome}
+          </div>
+        )}
         {dragging && (
           <div className="pointer-events-none absolute inset-3 z-30 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary bg-primary/10 text-lg font-medium text-primary-soft">
             Drop a file for Flash to read, analyse or transcribe
@@ -1178,12 +1212,13 @@ export function Flash({
               onClick={() => setShowShare(true)}
               disabled={busy}
               title="Share a link to this chat"
+              aria-label="Share"
               className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 px-3 py-1 text-xs text-zinc-200 transition hover:bg-white/[0.05] disabled:opacity-40"
             >
               <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                 <path d="M12 15V3 M7 8l5-5 5 5 M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" />
               </svg>
-              Share
+              <span className="hidden sm:inline">Share</span>
             </button>
           )}
           <button
@@ -1243,7 +1278,7 @@ export function Flash({
           preferences={preferences}
           initialTab={settingsTab}
           onPreferences={changePreferences}
-          onNameChanged={(name) => setMe((m) => (m ? { ...m, user: { ...m.user, name } } : m))}
+          onProfileChanged={(profile) => setMe((m) => (m ? { ...m, user: { ...m.user, ...profile } } : m))}
           onOpenCredits={() => {
             setSettingsTab(null);
             setShowCredits(true);
@@ -1252,10 +1287,11 @@ export function Flash({
             setSettingsTab(null);
             setShowInvite(true);
           }}
-          onSignOut={() => {
+          onSignOut={(everywhere) => {
             setSettingsTab(null);
-            signOut();
+            signOut(everywhere);
           }}
+          onCompanionShown={(shown) => setHideCompanion(!shown)}
           onClose={closeSettings}
         />
       )}
@@ -1517,6 +1553,7 @@ export function Flash({
         </div>
       </main>
 
+      {(!hideCompanion || companion) && (
       <Companion
         open={companion}
         onOpen={() => setCompanion(true)}
@@ -1527,6 +1564,7 @@ export function Flash({
         onCost={refreshMe}
         running={busy ? { engine: runningMsg?.engine, status: runningMsg?.status } : null}
       />
+      )}
     </div>
   );
 }

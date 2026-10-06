@@ -61,7 +61,8 @@ function Popover({
     };
   }, [open]);
   return (
-    <div ref={ref} className="relative">
+    // min-w-0 lets the tool picker shrink (its label truncates) when larger text makes the row tight.
+    <div ref={ref} className="relative min-w-0">
       {button(open, () => setOpen((o) => !o))}
       {open && (
         <div

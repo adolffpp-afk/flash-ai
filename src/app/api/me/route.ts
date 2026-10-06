@@ -6,6 +6,7 @@ import { planSummary } from "@/lib/server/subscriptions.ts";
 import { isVerified } from "@/lib/server/account.ts";
 import { referralStats } from "@/lib/server/referrals.ts";
 import { teamSummary } from "@/lib/server/teams.ts";
+import { WORK_OPTIONS } from "@/lib/names.ts";
 import {
   REFERRAL_FRIEND_SHARE,
   REFERRAL_PENDING_DAYS,
@@ -22,7 +23,7 @@ export async function GET(request: Request) {
   const credits = await spendable(user.id);
   const { code, ...referrals } = await referralStats(user.id);
   return Response.json({
-    user: { id: user.id, email: user.email, name: user.name, preferences: user.preferences },
+    user: { id: user.id, email: user.email, name: user.name, nickname: user.nickname ?? "", work: user.work ?? "", preferences: user.preferences },
     // Accounts made with Google or an email link have no password until they set one.
     hasPassword: Boolean((await one<{ p: string }>("SELECT password_hash AS p FROM users WHERE id = ?", [user.id]))?.p),
     isAdmin: isAdmin(user),
@@ -48,12 +49,18 @@ export async function GET(request: Request) {
 export async function PATCH(request: Request) {
   const user = await getUser(request);
   if (!user) return unauthorized();
-  const body = (await request.json().catch(() => ({}))) as { name?: string; preferences?: string };
+  const body = (await request.json().catch(() => ({}))) as { name?: string; nickname?: string; work?: string; preferences?: string };
   if (typeof body.preferences === "string") {
     await run("UPDATE users SET preferences = ? WHERE id = ?", [body.preferences.slice(0, 2000), user.id]);
   }
   if (typeof body.name === "string" && body.name.trim()) {
     await run("UPDATE users SET name = ? WHERE id = ?", [body.name.trim().slice(0, 80), user.id]);
+  }
+  if (typeof body.nickname === "string") {
+    await run("UPDATE users SET nickname = ? WHERE id = ?", [body.nickname.trim().slice(0, 40), user.id]);
+  }
+  if (typeof body.work === "string" && (body.work === "" || (WORK_OPTIONS as readonly string[]).includes(body.work))) {
+    await run("UPDATE users SET work = ? WHERE id = ?", [body.work, user.id]);
   }
   return Response.json({ ok: true });
 }

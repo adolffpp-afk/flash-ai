@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { api, type Me } from "@/lib/store";
+import { fullName } from "@/lib/names";
 
 /**
  * Business plan team. The owner invites and removes people and sees what each used this month;
@@ -92,7 +93,7 @@ export function TeamPanel({ me, onChanged }: { me: Me; onChanged: () => void }) 
           {team.members.map((m) => (
             <li key={m.id} className="flex items-center gap-3 py-1.5">
               <span className="min-w-0 flex-1 truncate text-zinc-200" title={m.email}>
-                {m.name || m.email}
+                {fullName(m)}
               </span>
               <span className="shrink-0 text-xs text-zinc-500">{m.used.toLocaleString("en-US")} credits this month</span>
               <button

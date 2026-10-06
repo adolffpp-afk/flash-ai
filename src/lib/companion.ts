@@ -10,12 +10,14 @@ import { ENGINE_LABELS, type Engine } from "./types.ts";
 /** Pages the companion can open for the user, with how they're named in replies. */
 export const COMPANION_PAGES = {
   settings: "Settings",
-  memory: "Settings › Memory",
-  brand: "Brand kit",
-  plan: "Settings › Plan & credits",
-  apps: "Settings › Connected apps",
-  preferences: "Settings › Preferences",
+  memory: "Settings › General (what Flash knows about you)",
   account: "Settings › Account",
+  privacy: "Settings › Privacy",
+  billing: "Settings › Billing",
+  usage: "Settings › Usage",
+  capabilities: "Settings › Capabilities",
+  brand: "Brand kit",
+  connectors: "Settings › Connectors",
   credits: "Credits and prices",
   invite: "Invite friends",
   creations: "My creations",
@@ -191,9 +193,10 @@ const FEATURES = `- Write: emails, essays, posts, stories, answers to anything.
 - Files: attach up to 5 files at once (3 MB together); PDFs up to 30 MB; Word, Excel and PowerPoint files up to 20 MB.
 - Under each answer: Copy, Read aloud (free), download as Word, PDF, Excel (for tables) or PowerPoint, Edit the last message, Retry.`;
 
-const PLACES = `- Sidebar: + New project, 🖼️ My creations (everything Flash made), 🌐 My websites & apps (published sites, inbox, orders, visitors, history), 📋 Templates (business plan, pitch deck, invoice, quote, resume, cover letter, menu, flyer, social post pack, product description, business website; invoices and quotes are free with exact totals), 🎨 Brand kit, search inside chats, pin (📌), rename and delete chats, 🎁 Invite friends (earn credits), Install app, ⚙️ Settings.
+const PLACES = `- Sidebar: + New project, 🖼️ My creations (everything Flash made), 🌐 My websites & apps (published sites, inbox, orders, visitors, history), 📋 Templates (business plan, pitch deck, invoice, quote, resume, cover letter, menu, flyer, social post pack, product description, business website; invoices and quotes are free with exact totals), 🎨 Brand kit, search inside chats, pin (📌), rename and delete chats, 🎁 Invite friends (earn credits), and the user's name (account menu with Settings).
 - Top of a chat: Instructions (how Flash answers in this project only), Download (the whole chat as a page), Share (a read-only link), and the credits button (prices and top-ups).
-- Settings: Profile (name, password), Memory (what Flash knows about the user in every chat), Brand kit (logo, colours, tone, used in pictures, videos, sites and posts), Plan & credits, Connected apps (Claude and other apps using Flash with the user's credits; how-to at /connector), Preferences (ask before requests of 50 credits or more, install the app), Account (sign out; to delete the account, email support@flash-app.dev).`;
+- The user's name at the bottom of the sidebar opens the account menu: Settings, Get help (opens this chat), Upgrade plan, Invite friends, Install app, Learn more, Log out.
+- Settings: General (full name, what Flash should call them, their work, what Flash should know about them in every chat, notifications when a long request finishes, chat font and text size, read-aloud voice and speed, install the app), Account (email, password, log out, log out of all devices, account ID; to delete the account, email support@flash-app.dev), Privacy (export all their data, shared chat links and stopping them), Billing (plan, buy credits, payment method and invoices, invite friends), Usage (credits used this month by tool, free use left today, recent activity), Capabilities (use memory in chats, ask before requests of 50 credits or more, show the Ask Flash button), Brand kit (logo, colours, tone, used in pictures, videos, sites and posts), Connectors (Claude and other apps using Flash with the user's credits; how-to at /connector).`;
 
 export type CompanionFacts = {
   name: string;

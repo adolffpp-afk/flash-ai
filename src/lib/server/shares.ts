@@ -88,3 +88,18 @@ export async function sharedFile(shareId: string, fileId: string) {
   );
   return shown ? readFile(fileId, share.user_id) : null;
 }
+
+/** Every chat link the user has shared, newest first (Settings > Privacy). */
+export async function listShares(userId: string): Promise<{ id: string; projectId: string; title: string; createdAt: number }[]> {
+  const rows = await all<{ id: string; project_id: string; title: string; created_at: number }>(
+    "SELECT id, project_id, title, created_at FROM shares WHERE user_id = ? ORDER BY created_at DESC LIMIT 200",
+    [userId],
+  );
+  return rows.map((r) => ({ id: r.id, projectId: r.project_id, title: r.title, createdAt: Number(r.created_at) }));
+}
+
+/** Stops one shared link. Returns false when it isn't the user's. */
+export async function deleteShare(userId: string, id: string): Promise<boolean> {
+  const r = await run("DELETE FROM shares WHERE id = ? AND user_id = ?", [id, userId]);
+  return r.rowsAffected === 1;
+}
