@@ -31,6 +31,20 @@ const STYLE = `  :root { --ink: #16201c; --muted: #5d6b65; --line: #dde5e1; --ac
 const esc = (text: string) =>
   text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
+/**
+ * A reply's text for downloads. Documents Flash used to wrap in a ```markdown block come out as
+ * the document itself, so Word, PDF and PowerPoint show the formatting instead of raw code.
+ */
+export function documentText(text: string): string {
+  const blocks = [...text.matchAll(/^```(?:markdown|md)[ \t]*\n([\s\S]*?)\n```[ \t]*$/gm)];
+  if (blocks.length !== 1) return text;
+  const [block, inner] = blocks[0];
+  // Only a whole document is unwrapped. A short Markdown example inside an answer ("this is how a
+  // table is written"), or a block holding code fences of its own, stays as code.
+  if (/^```/m.test(inner) || text.length - block.length > 300) return text;
+  return text.replace(block, () => inner);
+}
+
 /** A file name for the downloaded chat, from the project's name. */
 export function chatFileName(name: string): string {
   const base = name.replace(/[^\p{L}\p{N} _-]+/gu, "").trim().replace(/\s+/g, "-").slice(0, 60);

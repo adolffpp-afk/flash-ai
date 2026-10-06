@@ -112,7 +112,7 @@ export function freeEligible(engine: Engine, last: ChatTurn): FreeLane | null {
 
 type Message = { role: "system" | "user" | "assistant"; content: string };
 
-function toMessages(history: ChatTurn[], preferences: string, mode: WritingMode): Message[] {
+function toMessages(history: ChatTurn[], preferences: string, mode: WritingMode, systemPrompt?: string): Message[] {
   const turns = history.slice(-10).map((t): Message => {
     let content = t.content;
     if (t.attachment) {
@@ -125,7 +125,7 @@ function toMessages(history: ChatTurn[], preferences: string, mode: WritingMode)
     if (t.app) content += "\n\n(An app was built here.)";
     return { role: t.role, content: content.slice(0, 24000) };
   });
-  return [{ role: "system", content: system(preferences, mode) }, ...turns.filter((t) => t.content.trim())];
+  return [{ role: "system", content: systemPrompt ?? system(preferences, mode) }, ...turns.filter((t) => t.content.trim())];
 }
 
 /** Gate that reserves a provider for one request, or says no when it is over its daily cap. */
@@ -141,8 +141,10 @@ export async function* streamFreeChat(
   reserve: Reserve,
   record: RecordUse,
   onModel: (label: string, provider: FreeProvider) => void,
+  // Replaces Flash's usual instructions, for the companion.
+  systemPrompt?: string,
 ): AsyncGenerator<StreamEvent> {
-  const messages = toMessages(history, preferences, mode);
+  const messages = toMessages(history, preferences, mode, systemPrompt);
   let lastError = "";
   for (const p of CHAT_PROVIDERS) {
     const key = p.key();

@@ -99,8 +99,14 @@ const MODE_PROMPTS: Record<WritingMode, string> = {
     "You are acting as a document and spreadsheet specialist. When the user wants a spreadsheet or table data, " +
     "return it as a fenced ```csv code block with a header row (the app turns it into a downloadable file), " +
     "plus a short Markdown table preview if it has 15 rows or fewer. When they want a document (letter, resume, " +
-    "report, proposal), write it in full as a fenced ```markdown code block so it can be downloaded. " +
-    "When analysing an attached file, lead with the key findings and the numbers behind them.",
+    "report, proposal), write the whole document as formatted Markdown, not inside a code block: the app offers " +
+    "Word, PDF and PowerPoint downloads under every answer. " +
+    "When analysing an attached file, lead with the key findings and the numbers behind them. " +
+    "When reading text from photos or scans (receipts, menus, notes, letters, signs): copy the words exactly as " +
+    "written, in their own language, keeping spelling, numbers and line breaks; write [unclear] for anything you " +
+    "can't read and never guess a number. For receipts, invoices, menus, price lists and anything in rows, also give " +
+    "the rows as a spreadsheet, with amounts as plain numbers and the currency in its own column. Copy totals as " +
+    "printed and only work out new totals when asked.",
 };
 
 export function system(preferences: string, mode: WritingMode = "text"): string {

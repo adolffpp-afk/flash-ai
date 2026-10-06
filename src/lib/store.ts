@@ -1,10 +1,19 @@
 import type { BuiltApp, Engine, Source } from "./types";
+import type { Post } from "./post-pack";
 
 export type UIMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
   attachmentName?: string;
+  // A request made from a template: the engine it goes to, the template's name, and its model if it needs one.
+  template?: { engine: Engine; name: string; model?: string };
+  // A request the companion lined up: it goes to Auto, whatever tool is picked in the composer.
+  queued?: boolean;
+  // Sent by a one-tap button (like "Copy the text" under a photo): it goes to Auto too.
+  auto?: boolean;
+  // An invoice or quote built in the browser: exact and free, so it is never sent to the AI again.
+  local?: boolean;
   engine?: Engine;
   reason?: string;
   demo?: boolean;
@@ -12,8 +21,10 @@ export type UIMessage = {
   model?: string;
   modelWhy?: string;
   free?: boolean;
-  images?: { url: string; prompt: string }[];
+  images?: { url: string; prompt: string; label?: string }[];
   videos?: { url: string; prompt: string }[];
+  // A social post pack's posts, for their Copy buttons.
+  posts?: Post[];
   audio?: string;
   audioLabel?: string;
   sources?: Source[];
@@ -32,6 +43,8 @@ export type Project = ProjectSummary & { messages: UIMessage[] };
 
 export type Pricing = {
   costs: Record<Engine, number>;
+  // Typical credits for each written template, by id.
+  templates?: Record<string, number>;
   limits: Partial<Record<Engine, number>>;
   packs: { id: string; name: string; credits: number; priceCents: number; blurb: string }[];
   plans: {

@@ -1,4 +1,4 @@
-import { animateSeconds, videoSeconds, wantsSound, type ModelInfo } from "../models.ts";
+import { PACK_VIDEO_SECONDS, animateSeconds, videoSeconds, wantsSound, type ModelInfo } from "../models.ts";
 
 export type Shape = "tall" | "portrait" | "square" | "wide";
 
@@ -21,6 +21,17 @@ const IMAGE_SIZES: Record<Shape, { width: number; height: number }> = {
   square: { width: 992, height: 992 },
   wide: { width: 1280, height: 720 },
 };
+
+/** A social post pack's picture in one of its shapes: square for feeds, tall for TikTok, Reels and Stories. */
+export const packImageInput = (prompt: string, shape: "square" | "tall") => ({ prompt, image_size: IMAGE_SIZES[shape], output_format: "png" });
+
+/** A post pack's short silent video, made from its tall picture so the two match. */
+export const packVideoInput = (imageUrl: string, motion: string) => ({
+  start_image_url: imageUrl,
+  prompt: motion.slice(0, 2500) || "Gentle, natural motion with a slow camera push in.",
+  duration: String(PACK_VIDEO_SECONDS),
+  generate_audio: false,
+});
 
 /** The video aspect ratio for a request. Veo makes only wide and tall videos. */
 export function videoAspect(request: string, square = true): "16:9" | "9:16" | "1:1" {

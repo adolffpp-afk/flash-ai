@@ -21,7 +21,34 @@ export type ModelInfo = {
   notDefault?: boolean;
   // Edits an attached photo instead of making a new image. Used only when a photo is attached.
   edits?: boolean;
+  // Runs several steps in a chat (writing, then filming or painting), so apps and the connector never get it.
+  chatOnly?: boolean;
 };
+
+const PLATFORM = "(?:instagram|insta|ig|tik ?tok|facebook|fb)";
+const PLATFORM_LIST = `${PLATFORM}(?:,? (?:and |& |\\+ )?${PLATFORM})+`;
+
+/**
+ * Asking for a social post pack: "a social media pack", or posts for two or more of Instagram, TikTok
+ * and Facebook. Not "content pack" or "marketing kit", which often mean something else.
+ */
+export const POST_PACK_REQUEST = new RegExp(
+  `\\b(?:(?:social[- ]?media|social|posts?)[- ]?(?:posts? )?(?:pack|kit|bundle)s?\\b|posts? for ${PLATFORM_LIST}\\b|${PLATFORM_LIST} posts?\\b)`,
+  "i",
+);
+
+/** Whether a post pack request asks for the short video too ("with a video", "for Reels"). */
+export const packWantsVideo = (request: string) =>
+  /\b(videos?|reels?|clips?|animation)\b/i.test(request) &&
+  !/\b(no|without|skip|minus|not)\s+(a\s+|the\s+|any\s+)?(videos?|reels?|clips?|animation)\b|\b(pictures?|photos?|images?) only\b/i.test(request);
+
+// What a social post pack costs Flash, in cents: writing the posts (held to this by the writer),
+// two FLUX.2 Pro pictures, and a silent 5 second Kling 3 Pro video made from the tall picture.
+export const PACK_WRITING_CENTS = 5;
+export const PACK_IMAGE_CENTS = 3;
+export const PACK_VIDEO_SECONDS = 5;
+export const PACK_VIDEO_CENTS = 56; // 5 seconds at 11.2 cents a second
+export const PACK_VIDEO_ENDPOINT = "fal-ai/kling-video/v3/pro/image-to-video";
 
 /**
  * Image, video and music models Flash can use. For each engine the first model whose
@@ -35,6 +62,21 @@ export const MODELS: ModelInfo[] = [
     provider: "openai",
     costCents: 10, // about 3,300 output tokens at $30 per million
     blurb: "Best with words in the picture: logos, posters, menus",
+  },
+  {
+    // Not a single model: Claude writes the posts, FLUX.2 Pro paints a square and a tall picture,
+    // and Kling animates the tall one when a video is asked for. Listed first so "photo" in a
+    // pack request doesn't send it to a single picture.
+    id: "post-pack",
+    engine: "image",
+    label: "Social post pack",
+    provider: "fal",
+    costCents: (request) => PACK_WRITING_CENTS + 2 * PACK_IMAGE_CENTS + (packWantsVideo(request) ? PACK_VIDEO_CENTS : 0),
+    blurb: "Posts, hashtags and pictures for Instagram, TikTok and Facebook, with a video if you ask",
+    endpoint: "fal-ai/flux-2-pro",
+    notDefault: true,
+    chatOnly: true,
+    match: POST_PACK_REQUEST,
   },
   {
     id: "flux-2-pro",
@@ -57,6 +99,7 @@ export const MODELS: ModelInfo[] = [
     blurb: "A short film: Flash writes the scenes, films each one and joins them",
     endpoint: "fal-ai/kling-video/v3/turbo/pro/text-to-video",
     notDefault: true,
+    chatOnly: true,
     match: /\b(short film|movie|mini[- ]?movie|trailer|film (with|in) (several|multiple|\d+|[a-z]+) scenes)\b/i,
   },
   {

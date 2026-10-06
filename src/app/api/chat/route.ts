@@ -60,13 +60,29 @@ import {
   voiceCostCents,
 } from "@/lib/credits.ts";
 import { falConfigured, falGenerate } from "@/lib/engines/fal.ts";
-import { MEDIA_ENGINES, modelCredits, movieScenes, movieSeconds, pickModel, type MediaEngine, type ModelInfo, type Provider } from "@/lib/models.ts";
+import {
+  MEDIA_ENGINES,
+  PACK_IMAGE_CENTS,
+  PACK_VIDEO_CENTS,
+  PACK_VIDEO_ENDPOINT,
+  PACK_VIDEO_SECONDS,
+  modelCredits,
+  movieScenes,
+  movieSeconds,
+  packWantsVideo,
+  pickModel,
+  type MediaEngine,
+  type ModelInfo,
+  type Provider,
+} from "@/lib/models.ts";
 import { unavailableReply } from "@/lib/engines/demo.ts";
 import { FriendlyError, JobAbandoned } from "@/lib/engines/errors.ts";
 import { buildSystem, streamBuild } from "@/lib/engines/builder.ts";
 import { makeMovie } from "@/lib/engines/movie.ts";
 import { DEFAULT_VOICE, pickVoice } from "@/lib/voices.ts";
-import { falEditInput, falInput, videoAspect } from "@/lib/engines/fal-input.ts";
+import { falEditInput, falInput, packImageInput, packVideoInput, videoAspect } from "@/lib/engines/fal-input.ts";
+import { writePack } from "@/lib/engines/post-pack.ts";
+import { packMarkdown } from "@/lib/post-pack.ts";
 
 // Vercel Pro allows up to 800 seconds, which the Movie maker needs (scenes, filming and joining).
 export const maxDuration = 800;
@@ -92,6 +108,8 @@ type ChatRequest = {
   confirmed?: boolean;
   // The project this chat is in, for its instructions.
   projectId?: string;
+  // The template the request was made from, named in the reply's header.
+  template?: string;
 };
 
 /** Requests that cost at least this many credits wait for the user to agree to the price first. */
@@ -161,6 +179,83 @@ function withExtension(name: string, mime: string): string {
   return name.replace(/\.\w+$/, "") + "." + (EXTENSIONS[subtype] ?? subtype);
 }
 
+/**
+ * A social post pack: Claude writes the three posts and the picture, FLUX.2 Pro paints it square
+ * and tall at once, and Kling animates the tall one when a video was asked for. Each part is
+ * metered as it finishes, so a pack that fails part way costs only what was really made.
+ */
+async function* postPack(
+  request: string,
+  about: string,
+  brandNote: string,
+  model: ModelInfo,
+  store: Store,
+  meter: Meter,
+): AsyncGenerator<StreamEvent> {
+  if (!claudeConfigured()) throw new FriendlyError("Social post packs aren't available yet. Please try again later.");
+  yield { type: "status", message: "Writing your posts and hashtags…" };
+  const pack = await writePack(request, about, meter, brandNote).catch((err) => {
+    if (err instanceof FriendlyError) throw err;
+    console.error("[flash] post pack writing failed", err);
+    throw new FriendlyError("Flash couldn't write the posts this time. Please try again.");
+  });
+  const video = packWantsVideo(request);
+  yield {
+    type: "text",
+    delta:
+      packMarkdown(pack.posts) +
+      "\n\n**Pictures:** square for Instagram and Facebook posts, tall for TikTok, Reels and Stories." +
+      (video
+        ? ` The ${PACK_VIDEO_SECONDS} second video is silent, so you can add a trending sound in TikTok or Instagram.`
+        : ` For a ${PACK_VIDEO_SECONDS} second video too, ask for "a social post pack with a video".`),
+  };
+  yield { type: "posts", posts: pack.posts };
+
+  yield { type: "status", message: "Painting a square and a tall picture with FLUX.2 Pro…" };
+  const billPicture = (err: unknown): never => {
+    if (err instanceof JobAbandoned && err.billed) meter("fal", "flux-2-pro", PACK_IMAGE_CENTS);
+    throw err;
+  };
+  const shapes = ["square", "tall"] as const;
+  const labels = { square: "Square, for posts", tall: "Tall, for TikTok, Reels and Stories" };
+  const pictures = yield* withProgress((report) =>
+    Promise.allSettled(
+      shapes.map((shape) =>
+        falGenerate(model.endpoint!, packImageInput(pack.picture, shape), (m) => report(`Painting your pictures… ${m.toLowerCase()}`)).then(
+          (image) => (meter("fal", "flux-2-pro", PACK_IMAGE_CENTS), image),
+          billPicture,
+        ),
+      ),
+    ),
+  );
+  for (const [i, result] of pictures.entries()) {
+    if (result.status !== "fulfilled") continue;
+    yield { type: "image", url: await store(result.value, `flash-post-${shapes[i]}.png`), prompt: pack.picture, label: labels[shapes[i]] };
+  }
+  const failed = pictures.findIndex((r) => r.status === "rejected");
+  if (failed !== -1) {
+    console.error(`[flash] post pack ${shapes[failed]} picture failed`, (pictures[failed] as PromiseRejectedResult).reason);
+    throw new FriendlyError(`The ${shapes[failed]} picture didn't come out, but your posts are ready above. Please try again for the pictures.`);
+  }
+  const tall = pictures[1].status === "fulfilled" ? pictures[1].value : null;
+  if (!video || !tall) return;
+
+  yield { type: "status", message: `Filming a ${PACK_VIDEO_SECONDS} second video from the tall picture. This usually takes one to three minutes…` };
+  const clip = yield* withProgress((report) =>
+    falGenerate(
+      PACK_VIDEO_ENDPOINT,
+      packVideoInput(`data:${tall.mime};base64,${tall.data.toString("base64")}`, pack.motion),
+      (m) => report(`Filming your video… ${m.toLowerCase()}`),
+    ).catch((err) => {
+      if (err instanceof JobAbandoned && err.billed) meter("fal", "kling-3-animate", PACK_VIDEO_CENTS);
+      console.error("[flash] post pack video failed", err);
+      throw new FriendlyError("The video didn't come out, but your posts and pictures are ready above.");
+    }),
+  );
+  meter("fal", "kling-3-animate", PACK_VIDEO_CENTS);
+  yield { type: "video", url: await store(clip, "flash-post-video.mp4"), prompt: pack.motion || pack.picture };
+}
+
 async function* run(
   engine: Engine,
   history: ChatTurn[],
@@ -217,6 +312,10 @@ async function* run(
         );
         meter(model!.provider, model!.id, mediaCents(model!, last.content));
         yield { type: "image", url: await store(edited, `flash-${model!.id === "flux-2-edit" ? "edit" : model!.id}.png`), prompt: last.content };
+        return;
+      }
+      if (model!.id === "post-pack") {
+        yield* postPack(last.content, preferences, brandNote, model!, store, meter);
         return;
       }
       const prompt = await sharpen("image", last.content, meter, brandNote);
@@ -417,7 +516,11 @@ export async function POST(request: Request) {
   const override =
     body.engine && body.engine !== "auto" && (ENGINES as readonly string[]).includes(body.engine) ? body.engine : null;
   let engine = override ?? auto.engine;
-  let reason = override ? "You picked this engine." : auto.reason;
+  let reason = override
+    ? typeof body.template === "string" && body.template.trim()
+      ? `Made from the ${body.template.trim().slice(0, 40)} template.`
+      : "You picked this engine."
+    : auto.reason;
   // Several files are read and compared by the writing engines; media tools take one file.
   if (severalFiles && !WRITING_ENGINES.includes(engine)) {
     engine = "docs";
@@ -501,7 +604,8 @@ export async function POST(request: Request) {
   let free: FreeLane | null = null;
   const verified = isVerified(user);
   if (live && available < needed && verified) {
-    const lane = freeEligible(engine, last);
+    // A post pack has no free version: one free picture isn't what was asked for.
+    const lane = model?.id === "post-pack" ? null : freeEligible(engine, last);
     if (lane) {
       if (!(await reserveFreeUser(user.id, lane))) {
         return Response.json(
@@ -519,10 +623,13 @@ export async function POST(request: Request) {
     }
   }
   if (model && !free && needed >= CONFIRM_CREDITS && available >= needed && body.confirmed !== true) {
-    const what = engine === "video" ? (model.id === "movie" ? "movie" : "video") : engine === "music" ? "track" : engine;
+    const what =
+      model.id === "post-pack"
+        ? "social post pack with a video"
+        : `${model.label} ${engine === "video" ? (model.id === "movie" ? "movie" : "video") : engine === "music" ? "track" : engine}`;
     return Response.json(
       {
-        error: `This ${model.label} ${what} uses ${needed.toLocaleString("en-US")} credits. You have ${available.toLocaleString("en-US")}.`,
+        error: `This ${what} uses ${needed.toLocaleString("en-US")} credits. You have ${available.toLocaleString("en-US")}.`,
         code: "confirm_cost",
         needed,
       },

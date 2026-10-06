@@ -13,19 +13,33 @@ import { DownloadChat } from "./DownloadChat";
 import { ProjectInstructions } from "./ProjectInstructions";
 import { Settings, SKIP_COST_CHECK, type SettingsTab } from "./Settings";
 import { Creations } from "./Creations";
+import { Companion } from "./Companion";
+import { Templates } from "./Templates";
 import { MyApps } from "./MyApps";
 import { OFFICE_TYPES, officeKind, officeText } from "@/lib/office";
 import { MAX_PDF_MB, pdfText } from "@/lib/pdf-text";
 import { addAttachment } from "@/lib/attachments";
+import { MAX_QUEUE, recentTurns, type CompanionContext } from "@/lib/companion";
+import { TEMPLATES, type Template, type TemplateValues } from "@/lib/templates";
 import { ENGINES, ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types";
 import { api, newId, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
 import type { ChatHit } from "@/lib/server/search";
 import { BoltIcon, Logo, LogoMark } from "@/app/brand";
 import { EngineIcon } from "./EngineIcon";
 import { MicButton, PlusMenu, SendButton, ToolPicker, type Choice } from "./ComposerTools";
+import { photoActionsFor } from "@/lib/photo-actions";
 
 // A project's messages are loaded the first time it is opened.
 type Project = ProjectSummary & { messages?: UIMessage[] };
+// A request the companion lined up, for the chat it was asked about. "waiting" ones need the user's OK first.
+type Queued = { id: string; request: string; projectId: string; waiting?: boolean };
+
+/** Whether the user is typing somewhere else, so finishing a job doesn't pull them away. */
+function typingElsewhere(own: Element | null): boolean {
+  const el = document.activeElement as HTMLElement | null;
+  if (!el || el === document.body || el === own) return false;
+  return el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName);
+}
 
 const skipsCostCheck = () => {
   try {
@@ -93,6 +107,7 @@ const SUGGESTIONS: { engine: Engine; text: string; attach?: boolean }[] = [
   { engine: "image", text: "Draw a minimalist logo for a coffee shop called Flash Brew" },
   { engine: "video", text: "Make a video of ocean waves at sunset, slow drone shot" },
   { engine: "image", text: "Attach a photo and say what to change: remove the background, make it a cartoon", attach: true },
+  { engine: "docs", text: "Snap a receipt, menu or handwritten note and turn it into text or a spreadsheet", attach: true },
   { engine: "video", text: "Make a 1 minute movie about a girl who finds a dragon egg" },
   { engine: "music", text: "Compose an upbeat jingle for a bakery ad" },
   { engine: "voice", text: "Read this aloud: Welcome to Flash, your all-in-one AI." },
@@ -112,7 +127,7 @@ function applyEvent(m: UIMessage, e: StreamEvent): UIMessage {
     case "cost":
       return { ...m, cost: e.credits };
     case "image":
-      return { ...m, status: undefined, images: [...(m.images ?? []), { url: e.url, prompt: e.prompt }] };
+      return { ...m, status: undefined, images: [...(m.images ?? []), { url: e.url, prompt: e.prompt, ...(e.label && { label: e.label }) }] };
     case "video":
       return { ...m, status: undefined, videos: [...(m.videos ?? []), { url: e.url, prompt: e.prompt }] };
     case "audio":
@@ -121,6 +136,8 @@ function applyEvent(m: UIMessage, e: StreamEvent): UIMessage {
       return { ...m, status: undefined, app: e.app };
     case "sources":
       return { ...m, sources: e.items };
+    case "posts":
+      return { ...m, posts: e.posts };
     case "error":
       return { ...m, error: e.message };
     case "done":
@@ -132,13 +149,6 @@ function applyEvent(m: UIMessage, e: StreamEvent): UIMessage {
  * Phone photos are often larger than Flash accepts, so photos over 2048 pixels or 3 MB are
  * scaled down in the browser first. Anything that can't be read is left as it is.
  */
-// One-tap actions for an attached photo; the router sends each to the matching photo model.
-const PHOTO_ACTIONS: { label: string; prompt: string; engine: Engine }[] = [
-  { label: "✂️ Remove background", prompt: "Remove the background", engine: "image" },
-  { label: "🔍 Upscale", prompt: "Upscale this photo and make it sharper", engine: "image" },
-  { label: "🎬 Animate", prompt: "Animate this photo with natural, gentle motion", engine: "video" },
-];
-
 async function shrinkPhoto(file: File): Promise<File> {
   if (!/^image\/(png|jpeg|webp)$/.test(file.type)) return file;
   try {
@@ -245,6 +255,22 @@ export function Flash({
   };
   const attachment = files[0] ?? null;
   const [busy, setBusy] = useState(false);
+  const [companion, setCompanion] = useState(false);
+  // Requests the companion lined up, each run in the chat it was asked about, one after another.
+  const [queue, setQueueState] = useState<Queued[]>([]);
+  const queueNow = useRef<Queued[]>([]);
+  // Next up waits after a request fails, is stopped or needs its price confirmed, until Resume.
+  const [queuePaused, setQueuePaused] = useState(false);
+  const setQueue = (next: Queued[]) => {
+    queueNow.current = next;
+    setQueueState(next);
+    // An emptied list starts afresh: whatever is added next isn't held by an old pause.
+    if (!next.length) setQueuePaused(false);
+  };
+  // The chat a request is running in right now, which may not be the open one.
+  const [runningIn, setRunningIn] = useState("");
+  // What the running request was asked to do, where, and when it started, for the companion.
+  const jobRef = useRef<{ request: string; startedAt: number; projectId: string } | null>(null);
   const [sidebar, setSidebar] = useState(false);
   const [dragging, setDragging] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -257,6 +283,8 @@ export function Flash({
   // The Settings tab to show, or null when Settings is closed.
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
   const [showCreations, setShowCreations] = useState(false);
+  // The templates window: "" shows them all, a template's id opens its form.
+  const [templates, setTemplates] = useState<string | null>(null);
   const [showApps, setShowApps] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -394,6 +422,7 @@ export function Flash({
   }, [projects, busy]);
 
   const active = projects.find((p) => p.id === activeId);
+  const runningMsg = runningIn ? projects.find((p) => p.id === runningIn)?.messages?.at(-1) : undefined;
 
   useEffect(() => {
     if (active?.messages?.length) bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -433,15 +462,49 @@ export function Flash({
     }));
   }
 
-  async function createProject() {
+  async function createProject(): Promise<Project | null> {
     try {
       const { project } = await api<{ project: ProjectSummary }>("/api/projects", { method: "POST", json: {} });
-      setProjects((list) => [{ ...project, messages: [] }, ...list]);
+      const created: Project = { ...project, messages: [] };
+      setProjects((list) => [created, ...list]);
       setActiveId(project.id);
       setSidebar(false);
+      return created;
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "Couldn't create a project.");
+      return null;
     }
+  }
+
+  /**
+   * Makes a template in its own chat (the open one, if it's still empty), and closes the templates
+   * once it's there. Invoices and quotes arrive finished and free, even while Flash works on
+   * something else; everything else is sent to the template's engine. False when it couldn't start.
+   */
+  async function makeTemplate(t: Template, values: TemplateValues, document?: string): Promise<boolean> {
+    if (t.engine === "local" ? !document : busy) return false;
+    const empty = active?.messages && !active.messages.length && active.id !== runningIn ? active : null;
+    const project = empty ?? (await createProject());
+    if (!project) return false;
+    setTemplates(null);
+    const name = t.title(values).slice(0, 60);
+    const ask: UIMessage = { id: newId(), role: "user", content: t.request(values) };
+    if (t.engine === "local") {
+      const made: UIMessage = {
+        id: newId(),
+        role: "assistant",
+        content: document ?? "",
+        engine: "docs",
+        reason: `Made from the ${t.name} template. The totals are worked out exactly, and it's free.`,
+        cost: 0,
+        local: true,
+      };
+      updateProject(project.id, (p) => ({ ...p, name, updated_at: Date.now(), messages: [...(p.messages ?? []), { ...ask, local: true }, made] }));
+      return true;
+    }
+    updateProject(project.id, (p) => ({ ...p, name }));
+    void respond(project, [], { ...ask, template: { engine: t.engine, name: t.name, model: t.model } });
+    return true;
   }
 
   async function deleteProject(id: string) {
@@ -493,6 +556,11 @@ export function Flash({
 
   async function signOut() {
     await api("/api/auth/logout", { method: "POST" }).catch(() => {});
+    // Nothing of this account keeps running, or runs later for whoever signs in next.
+    abortRef.current?.abort();
+    jobRef.current = null;
+    setQueue([]);
+    setQueuePaused(false);
     setMe(null);
     setProjects([]);
     setActiveId("");
@@ -505,7 +573,8 @@ export function Flash({
     if (active) updateMessage(active.id, messageId, (m) => (m.app ? { ...m, app: { ...m.app, slug } } : m));
   }
 
-  async function send(text: string) {
+  // auto: a one-tap button that knows its job, so it goes to Auto whatever tool is picked.
+  async function send(text: string, auto = false) {
     if (busy) return;
     if (!active?.messages) {
       if (active) setNotice("This project didn't load. Pick it again in the sidebar.");
@@ -513,7 +582,13 @@ export function Flash({
     }
     const content = text.trim();
     if (!content && !attachment) return;
-    const userMsg: UIMessage = { id: newId(), role: "user", content, attachmentName: files.map((f) => f.name).join(", ") || undefined };
+    const userMsg: UIMessage = {
+      id: newId(),
+      role: "user",
+      content,
+      attachmentName: files.map((f) => f.name).join(", ") || undefined,
+      ...(auto && { auto: true }),
+    };
     if (files.length) filesRef.current.set(userMsg.id, files);
     updateProject(active.id, (p) => ({
       ...p,
@@ -560,6 +635,9 @@ export function Flash({
     const projectId = project.id;
     const reply: UIMessage = { id: newId(), role: "assistant", content: "", pending: true };
     const sent = filesRef.current.get(userMsg.id) ?? [];
+    // A template's request always goes to its own engine, and one the companion lined up to Auto
+    // (the tool picked in the composer was for something else); anything else to the one picked.
+    const engine = userMsg.template?.engine ?? (userMsg.queued || userMsg.auto ? "auto" : choice);
 
     // Only the most recent app's code is sent back, so edits build on it without resending every version.
     const lastAppId = [...earlier].reverse().find((m) => m.app)?.id;
@@ -576,9 +654,12 @@ export function Flash({
     ];
 
     updateProject(projectId, (p) => ({ ...p, updated_at: Date.now(), messages: [...earlier, userMsg, reply] }));
+    jobRef.current = { request: userMsg.content, startedAt: Date.now(), projectId };
+    setRunningIn(projectId);
     setBusy(true);
     const controller = new AbortController();
     abortRef.current = controller;
+    let finished = true;
 
     try {
       const res = await fetch("/api/chat", {
@@ -586,10 +667,11 @@ export function Flash({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: history,
-          engine: choice,
+          engine,
           preferences,
           previous,
-          model: choice === "auto" ? undefined : models[choice],
+          model: userMsg.template?.model ?? (engine === "auto" ? undefined : models[engine]),
+          template: userMsg.template?.name,
           confirmed: confirmed || skipsCostCheck(),
           projectId,
         }),
@@ -612,10 +694,12 @@ export function Flash({
         for (const line of lines) {
           if (!line.trim()) continue;
           const e = JSON.parse(line) as StreamEvent;
+          if (e.type === "error") finished = false;
           updateMessage(projectId, reply.id, (m) => applyEvent(m, e));
         }
       }
     } catch (err) {
+      finished = false;
       const aborted = controller.signal.aborted;
       updateMessage(projectId, reply.id, (m) =>
         aborted
@@ -630,10 +714,99 @@ export function Flash({
       updateMessage(projectId, reply.id, (m) => ({ ...m, pending: false, status: undefined }));
       refreshMe();
       abortRef.current = null;
+      jobRef.current = null;
+      // A request that failed, was stopped or waits for its price to be confirmed holds Next up,
+      // so nothing runs on top of it until the user says so.
+      if (!finished && queueNow.current.length) setQueuePaused(true);
+      setRunningIn("");
       setBusy(false);
-      inputRef.current?.focus();
+      if (!typingElsewhere(inputRef.current)) inputRef.current?.focus();
     }
   }
+
+  /**
+   * Runs each request the companion lined up, as soon as Flash is free, in the chat it was asked
+   * about (even if another chat is open now). It never takes the composer's text or files.
+   */
+  useEffect(() => {
+    if (busy || queuePaused || !queue.length || queue[0].waiting) return;
+    const [next, ...rest] = queue;
+    setQueue(rest);
+    const project = projects.find((p) => p.id === next.projectId);
+    if (!project?.messages) {
+      setNotice(`"${next.request.slice(0, 60)}" didn't run: its chat couldn't be found.`);
+      return;
+    }
+    updateProject(project.id, (p) => ({
+      ...p,
+      name: !p.messages?.length && p.name === "New project" ? next.request.slice(0, 40) : p.name,
+    }));
+    respond(project, project.messages, { id: newId(), role: "user", content: next.request, queued: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy, queuePaused, queue, projects]);
+
+  /**
+   * Adds a request the companion lined up to Next up, for the chat Flash is working in (or the
+   * open one). "waiting" requests only run once the user presses Run.
+   */
+  const queueRequest = useCallback(
+    (request: string, waiting = false) => {
+      const projectId = jobRef.current?.projectId ?? activeId;
+      if (!projectId) return;
+      const list = queueNow.current;
+      if (list.some((q) => q.request === request && q.projectId === projectId)) return;
+      if (list.length >= MAX_QUEUE) {
+        setNotice(`Next up is full at ${MAX_QUEUE} requests. They run one after another, then you can add more.`);
+        return;
+      }
+      setQueue([...list, { id: newId(), request, projectId, waiting }]);
+    },
+    [activeId],
+  );
+
+  /** What the companion is told about the user's work when they ask it something. */
+  const companionContext = useCallback(
+    (): CompanionContext => {
+      const job = jobRef.current;
+      // While a job runs, the companion hears about the chat it runs in, even if another one is open.
+      const chat = (job && projects.find((p) => p.id === job.projectId)) || active;
+      const running = chat?.messages?.at(-1);
+      const now = new Date();
+      return {
+        project: chat?.name,
+        today: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`,
+        ...(job && {
+          job: {
+            engine: running?.engine,
+            model: running?.model,
+            status: running?.status,
+            seconds: Math.round((Date.now() - job.startedAt) / 1000),
+            request: job.request,
+          },
+        }),
+        recent: recentTurns(chat?.messages ?? []),
+        queue: queueNow.current.map((q) => q.request),
+      };
+    },
+    [active, projects],
+  );
+
+  /** Opens whatever page the companion was asked to open. */
+  const openCompanionPage = useCallback(
+    (page: string) => {
+      const tabs = ["memory", "brand", "plan", "apps", "preferences", "account"];
+      if (page === "settings") setSettingsTab("profile");
+      else if (tabs.includes(page)) setSettingsTab(page as SettingsTab);
+      else if (page === "credits") setShowCredits(true);
+      else if (page === "invite") setShowInvite(true);
+      else if (page === "creations") setShowCreations(true);
+      else if (page === "websites") setShowApps(true);
+      else if (page === "instructions") setShowInstructions(true);
+      else if (page === "templates") setTemplates("");
+      setSidebar(false);
+    },
+    [],
+  );
 
   /** Makes a picture again in another shape (the shape words are read by the image engine). */
   function reshape(prompt: string, shape: Reshape) {
@@ -656,6 +829,7 @@ export function Flash({
   }
 
   const closeSettings = useCallback(() => setSettingsTab(null), []);
+  const closeTemplates = useCallback(() => setTemplates(null), []);
 
   /** Adds a read file to the ones waiting to be sent, or says why it can't be added. */
   function addFile(file: Attachment) {
@@ -731,6 +905,8 @@ export function Flash({
   const inChats = projectQuery.trim().length >= 2 ? chatHits.filter((h) => h.snippet && !sorted.some((p) => p.id === h.id)) : [];
   // Engines whose AI provider isn't set up yet show as coming soon, and light up once /api/status says so.
   const isLive = (e: Engine) => !status || status[e];
+  // The one-tap buttons for attached photos (Copy the text, Remove background…).
+  const photoActions = photoActionsFor(files.map((f) => f.mediaType), isLive);
   const liveCount = ENGINES.filter(isLive).length;
   const allOff = status && !liveCount;
   const makes = MEDIA_WORDS.filter(([e]) => isLive(e)).map(([, word]) => word);
@@ -814,6 +990,15 @@ export function Flash({
             className="mt-0.5 h-9 w-full rounded-lg px-3 text-left text-sm text-zinc-300 transition hover:bg-white/[0.04] hover:text-white"
           >
             🌐 My websites &amp; apps
+          </button>
+          <button
+            onClick={() => {
+              setTemplates("");
+              setSidebar(false);
+            }}
+            className="mt-0.5 h-9 w-full rounded-lg px-3 text-left text-sm text-zinc-300 transition hover:bg-white/[0.04] hover:text-white"
+          >
+            📋 Templates
           </button>
           <button
             onClick={() => {
@@ -1036,6 +1221,18 @@ export function Flash({
             }
           />
         )}
+        {templates !== null && (
+          <Templates
+            userId={me.user.id}
+            costs={me.costs}
+            written={me.templates}
+            initialId={templates || undefined}
+            isLive={isLive}
+            busy={busy}
+            onMake={makeTemplate}
+            onClose={closeTemplates}
+          />
+        )}
         {showCredits && <CreditsDialog me={me} onClose={() => setShowCredits(false)} onChanged={refreshMe} />}
         {showInvite && <InviteDialog me={me} onClose={() => setShowInvite(false)} />}
         <InstallPopup />
@@ -1104,7 +1301,26 @@ export function Flash({
                   {makes.length ? `, and create ${makes.slice(0, -1).join(", ")}${makes.length > 1 ? " and " : ""}${makes.at(-1)}` : ""}.
                   Ask anything and Flash picks the best AI for the job.
                 </p>
-                <div className="mt-10 grid grid-cols-1 gap-2 text-left sm:grid-cols-2 lg:grid-cols-3">
+                <div className="mt-8 flex flex-wrap items-center justify-center gap-2" aria-label="Start from a template">
+                  {TEMPLATES.filter((t) => ["business-plan", "resume", "social-pack", "flyer", "invoice"].includes(t.id))
+                    .filter((t) => t.engine === "local" || isLive(t.engine))
+                    .map((t) => (
+                      <button
+                        key={t.id}
+                        onClick={() => setTemplates(t.id)}
+                        className="rounded-full border border-white/10 px-3.5 py-1.5 text-sm text-zinc-200 transition hover:border-primary/50 hover:bg-white/[0.04]"
+                      >
+                        <span aria-hidden>{t.icon}</span> {t.name}
+                      </button>
+                    ))}
+                  <button
+                    onClick={() => setTemplates("")}
+                    className="rounded-full px-3 py-1.5 text-sm text-primary-soft transition hover:text-white"
+                  >
+                    All templates →
+                  </button>
+                </div>
+                <div className="mt-8 grid grid-cols-1 gap-2 text-left sm:grid-cols-2 lg:grid-cols-3">
                   {SUGGESTIONS.filter((s) => isLive(s.engine)).map((s) => (
                     <button
                       key={s.text}
@@ -1125,9 +1341,9 @@ export function Flash({
               <Message
                 key={m.id}
                 m={m}
-                onRetry={i === all.length - 1 && m.role === "assistant" && !m.pending && !busy ? () => retry() : undefined}
+                onRetry={i === all.length - 1 && m.role === "assistant" && !m.pending && !m.local && !busy ? () => retry() : undefined}
                 onConfirmCost={i === all.length - 1 && !busy ? confirmCost : undefined}
-                onEdit={m.role === "user" && !busy && i === all.findLastIndex((x) => x.role === "user") ? editLast : undefined}
+                onEdit={m.role === "user" && !m.local && !busy && i === all.findLastIndex((x) => x.role === "user") ? editLast : undefined}
                 onBuyCredits={() => setShowCredits(true)}
                 paymentsOn={me.paymentsEnabled || me.testPurchases}
                 onPublished={(slug) => setAppSlug(m.id, slug)}
@@ -1143,6 +1359,64 @@ export function Flash({
         {/* Composer */}
         <div className="px-4 pb-4 pt-2">
           <div className="mx-auto max-w-3xl">
+            {queue.length > 0 && (
+              <div className="mb-2 rounded-2xl border border-white/8 bg-white/[0.02] px-3 py-2">
+                <div className="flex items-center gap-2">
+                  <p className="min-w-0 flex-1 text-xs font-medium text-zinc-400">
+                    Next up · {queue.length} {queue.length === 1 ? "request" : "requests"}{" "}
+                    {queuePaused
+                      ? "paused, because the last request didn't finish"
+                      : queue[0].waiting
+                        ? "waiting for your OK"
+                        : busy
+                          ? "waiting for this one to finish"
+                          : "starting now"}
+                  </p>
+                  {queuePaused && (
+                    <button
+                      type="button"
+                      onClick={() => setQueuePaused(false)}
+                      aria-label="Resume Next up"
+                      className="shrink-0 rounded-full bg-primary/20 px-2.5 py-0.5 text-xs text-primary-soft hover:bg-primary/30"
+                    >
+                      Resume
+                    </button>
+                  )}
+                </div>
+                <ul className="mt-1.5 space-y-1">
+                  {queue.map((q, i) => {
+                    const elsewhere = q.projectId !== activeId ? projects.find((p) => p.id === q.projectId)?.name : undefined;
+                    return (
+                      <li key={q.id} className="flex items-start gap-2 text-sm text-zinc-200">
+                        <span className="mt-0.5 shrink-0 text-xs text-zinc-500">{i + 1}.</span>
+                        <span className="min-w-0 flex-1 truncate">
+                          {q.request}
+                          {elsewhere && <span className="text-xs text-zinc-500"> · in {elsewhere}</span>}
+                        </span>
+                        {q.waiting && (
+                          <button
+                            type="button"
+                            onClick={() => setQueue(queueNow.current.map((x) => (x.id === q.id ? { ...x, waiting: false } : x)))}
+                            aria-label={`Run "${q.request}"`}
+                            className="shrink-0 rounded-full bg-primary/20 px-2 text-xs leading-5 text-primary-soft hover:bg-primary/30"
+                          >
+                            Run
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setQueue(queueNow.current.filter((x) => x.id !== q.id))}
+                          aria-label={`Remove "${q.request}" from Next up`}
+                          className="shrink-0 text-zinc-500 hover:text-red-400"
+                        >
+                          ✕
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            )}
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -1167,13 +1441,13 @@ export function Flash({
                   ))}
                 </div>
               )}
-              {files.length === 1 && attachment && /^image\/(png|jpeg|webp)$/.test(attachment.mediaType) && !busy && (
+              {photoActions.length > 0 && !busy && (
                 <div className="mb-1 ml-2 mt-1 inline-flex flex-wrap gap-1.5">
-                  {PHOTO_ACTIONS.filter((a) => isLive(a.engine)).map((a) => (
+                  {photoActions.map((a) => (
                     <button
                       key={a.label}
                       type="button"
-                      onClick={() => send(a.prompt)}
+                      onClick={() => send(files.length > 1 ? a.several! : a.prompt, true)}
                       className="rounded-full border border-white/10 px-3 py-1 text-xs text-zinc-300 transition hover:border-primary/50 hover:text-zinc-100"
                     >
                       {a.label}
@@ -1202,8 +1476,10 @@ export function Flash({
                 }}
                 rows={1}
                 placeholder={
-                  files.length === 1 && /^image\//.test(files[0].mediaType)
-                    ? "Say what to change, or tap a button above…"
+                  photoActions.length
+                    ? files.length > 1
+                      ? "Ask about these photos, or tap a button above…"
+                      : "Ask about it, say what to change, or tap a button above…"
                     : choice === "auto"
                       ? "Ask Flash anything…"
                       : `Ask ${ENGINE_LABELS[choice]}…`
@@ -1240,6 +1516,17 @@ export function Flash({
           </div>
         </div>
       </main>
+
+      <Companion
+        open={companion}
+        onOpen={() => setCompanion(true)}
+        onClose={() => setCompanion(false)}
+        context={companionContext}
+        onQueue={queueRequest}
+        onPage={openCompanionPage}
+        onCost={refreshMe}
+        running={busy ? { engine: runningMsg?.engine, status: runningMsg?.status } : null}
+      />
     </div>
   );
 }

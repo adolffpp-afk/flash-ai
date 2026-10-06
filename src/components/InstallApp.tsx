@@ -116,10 +116,11 @@ export function InstallPopup() {
   return (
     <>
       {show && (
+        // On a computer it sits above the companion's Ask Flash button, so both can be clicked.
         <div
           role="dialog"
           aria-label="Install Flash AI"
-          className="fixed inset-x-3 bottom-3 z-30 flex items-center gap-3 rounded-2xl border border-white/10 bg-zinc-950/95 p-4 text-zinc-100 shadow-2xl backdrop-blur-md sm:inset-x-auto sm:right-4 sm:bottom-4 sm:w-96"
+          className="fixed inset-x-3 bottom-3 z-30 flex items-center gap-3 rounded-2xl border border-white/10 bg-zinc-950/95 p-4 text-zinc-100 shadow-2xl backdrop-blur-md sm:inset-x-auto sm:right-4 sm:bottom-20 sm:w-96"
         >
           <BrandMark size={44} id="flash-install" tile ring={false} />
           <div className="min-w-0 flex-1">

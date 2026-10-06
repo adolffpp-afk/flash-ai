@@ -45,14 +45,17 @@ function providers(): Set<Provider> {
   return set;
 }
 
-/** The models an app may ask for: no photo editing (it needs a photo) and no Movie maker (it runs longer than apps wait). */
+/**
+ * The models an app may ask for: no photo editing (it needs a photo), and none that only run in a
+ * chat, like the Movie maker (it runs longer than apps wait) or the post pack (it makes several files).
+ */
 const offered = (engine: MediaEngine) =>
-  MODELS.filter((m) => m.engine === engine && !m.edits && m.id !== "movie" && providers().has(m.provider));
+  MODELS.filter((m) => m.engine === engine && !m.edits && !m.chatOnly && providers().has(m.provider));
 
-/** The model for a request, like the chat picks it, never the Movie maker. */
+/** The model for a request, like the chat picks it, never one that only runs in a chat. */
 function chooseModel(engine: MediaEngine, request: string, requested?: string): ModelInfo | null {
   const picked = pickModel(engine, request, providers(), requested)?.model;
-  if (picked?.id !== "movie") return picked ?? null;
+  if (!picked?.chatOnly) return picked ?? null;
   return pickModel(engine, "", providers())?.model ?? null;
 }
 
