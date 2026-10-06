@@ -12,6 +12,7 @@ import { wordDocument, wordFileName } from "@/lib/word-export";
 import { excelWorkbook, tablesIn } from "@/lib/excel-export";
 import { slidesDeck } from "@/lib/slides-export";
 import { answerDocument, documentText } from "@/lib/chat-export";
+import { postText, type Post } from "@/lib/post-pack";
 
 export type Reshape = "tall" | "square" | "wide";
 const RESHAPES: [Reshape, string][] = [
@@ -174,6 +175,35 @@ function ReadAloud({ text, className }: { text: string; className: string }) {
     >
       {speaking ? "■ Stop reading" : "🔊 Read aloud"}
     </button>
+  );
+}
+
+/** A social post pack's Copy buttons: each network's caption with its hashtags, ready to paste. */
+function PostCopies({ posts }: { posts: Post[] }) {
+  const [copied, setCopied] = useState("");
+  const copy = (post: Post) => {
+    navigator.clipboard
+      ?.writeText(postText(post))
+      .then(() => {
+        setCopied(post.platform);
+        setTimeout(() => setCopied((c) => (c === post.platform ? "" : c)), 1500);
+      })
+      .catch(() => setCopied(""));
+  };
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs" aria-label="Copy a post">
+      <span className="text-zinc-500">Copy the post for</span>
+      {posts.map((p) => (
+        <button
+          key={p.platform}
+          onClick={() => copy(p)}
+          className="rounded-full border border-white/10 px-2.5 py-0.5 text-zinc-300 transition hover:border-primary/40 hover:text-primary-soft"
+          title={`Copy the ${p.platform} caption and hashtags`}
+        >
+          {copied === p.platform ? "Copied ✓" : p.platform}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -368,6 +398,7 @@ export function Message({
             </ReactMarkdown>
           </div>
         )}
+        {m.posts && m.posts.length > 0 && <PostCopies posts={m.posts} />}
         {m.status && (
           <div role="status" className="mt-2 flex items-center gap-2 text-sm text-zinc-400">
             <span className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-600 border-t-gold" />
@@ -381,42 +412,46 @@ export function Message({
             <span className="h-2 w-2 animate-bounce rounded-full bg-zinc-500 [animation-delay:300ms]" />
           </div>
         )}
-        {m.images?.map((img, i) =>
-          img.url ? (
-            <figure key={i} className="mt-2">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={img.url} alt={img.prompt} className="max-h-[512px] rounded-xl border border-zinc-800" />
-              <figcaption className="mt-1 flex gap-3 text-xs text-zinc-500">
-                <span className="line-clamp-2">{img.prompt}</span>
-                <a href={img.url} download={imageFileName(img.url)} className="shrink-0 text-primary hover:underline">
-                  Download
-                </a>
-                {onUseImage && (
-                  <button onClick={() => onUseImage(img.url)} className="shrink-0 text-primary hover:underline">
-                    ✏️ Edit or animate
-                  </button>
-                )}
-              </figcaption>
-              {onReshape && img.prompt && (
-                <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
-                  <span className="text-zinc-500">Remake as</span>
-                  {RESHAPES.map(([shape, label]) => (
-                    <button
-                      key={shape}
-                      onClick={() => onReshape(img.prompt, shape)}
-                      className="rounded-full border border-white/10 px-2.5 py-0.5 text-zinc-300 transition hover:border-primary/40 hover:text-primary-soft"
-                      title={`Make this picture again, ${label.toLowerCase()}. Uses credits like a new picture.`}
-                    >
-                      {label}
+        {/* Pictures that come together (a post pack's square and tall one) sit side by side. */}
+        <div className={m.images?.some((img) => img.label) ? "flex flex-wrap items-start gap-3" : undefined}>
+          {m.images?.map((img, i) =>
+            img.url ? (
+              <figure key={i} className="mt-2">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={img.url} alt={img.label ?? img.prompt} className={`${img.label ? "max-h-[380px]" : "max-h-[512px]"} rounded-xl border border-zinc-800`} />
+                {/* A labelled picture's caption wraps to the picture's width (w-0 min-w-full), so two fit side by side. */}
+                <figcaption className={`mt-1 flex text-xs text-zinc-500 ${img.label ? "w-0 min-w-full flex-wrap gap-x-3 gap-y-0.5" : "gap-3"}`}>
+                  <span className={img.label ? "text-zinc-400" : "line-clamp-2"}>{img.label ?? img.prompt}</span>
+                  <a href={img.url} download={imageFileName(img.url)} className="shrink-0 whitespace-nowrap text-primary hover:underline">
+                    Download
+                  </a>
+                  {onUseImage && (
+                    <button onClick={() => onUseImage(img.url)} className="shrink-0 whitespace-nowrap text-primary hover:underline">
+                      ✏️ Edit or animate
                     </button>
-                  ))}
-                </div>
-              )}
-            </figure>
-          ) : (
-            <p key={i} className="mt-2 text-xs text-zinc-500">Image not kept (browser storage was full).</p>
-          ),
-        )}
+                  )}
+                </figcaption>
+                {onReshape && img.prompt && !img.label && (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
+                    <span className="text-zinc-500">Remake as</span>
+                    {RESHAPES.map(([shape, label]) => (
+                      <button
+                        key={shape}
+                        onClick={() => onReshape(img.prompt, shape)}
+                        className="rounded-full border border-white/10 px-2.5 py-0.5 text-zinc-300 transition hover:border-primary/40 hover:text-primary-soft"
+                        title={`Make this picture again, ${label.toLowerCase()}. Uses credits like a new picture.`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </figure>
+            ) : (
+              <p key={i} className="mt-2 text-xs text-zinc-500">Image not kept (browser storage was full).</p>
+            ),
+          )}
+        </div>
         {m.app && <AppPreview app={m.app} onPublished={onPublished} publishedEarlier={publishedEarlier} />}
         {m.after?.trim() && (
           <div className="prose prose-invert mt-3 max-w-none break-words prose-p:my-2">
@@ -427,7 +462,12 @@ export function Message({
         )}
         {m.videos?.map((v, i) => (
           <figure key={i} className="mt-2">
-            <video controls src={v.url} className="w-full max-w-2xl rounded-xl border border-zinc-800" />
+            <video
+              controls
+              src={v.url}
+              // A post pack's video is tall, so it keeps its own width instead of filling a wide black box.
+              className={`${m.posts ? "max-h-[480px] w-auto max-w-full" : "max-h-[512px] w-full max-w-2xl"} rounded-xl border border-zinc-800 bg-black`}
+            />
             <figcaption className="mt-1 flex gap-3 text-xs text-zinc-500">
               <span className="line-clamp-2">{v.prompt}</span>
               <a href={v.url} download="flash-video.mp4" className="shrink-0 text-primary hover:underline">

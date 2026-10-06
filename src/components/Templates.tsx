@@ -7,8 +7,10 @@ import {
   CATEGORIES,
   TEMPLATES,
   billMarkdown,
+  defaultValues,
   formatMinor,
   missingField,
+  modelTemplateCents,
   nextNumber,
   templateById,
   workOutBill,
@@ -74,8 +76,18 @@ const input =
   "mt-1 block w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-primary/60";
 
 /** What making a template costs, as shown on its card: the server's price for written ones when it sent one. */
-function priceLabel(t: Template, costs: Partial<Record<Engine, number>>, written?: Record<string, number>): string {
+function priceLabel(t: Template, costs: Partial<Record<Engine, number>>, written?: Record<string, number>, values?: TemplateValues): string {
   if (t.engine === "local") return "Free";
+  if (t.model) {
+    // A fixed price, or two when a choice in the form (like adding a video) costs more.
+    const base = written?.[t.id];
+    const dearer = written?.[`${t.id}:with`];
+    if (!base) return "";
+    if (!dearer) return `${base.toLocaleString("en-US")} credits`;
+    if (!values) return `From ${base.toLocaleString("en-US")} credits`;
+    const pricier = modelTemplateCents(t, values) > modelTemplateCents(t, defaultValues(t));
+    return `${(pricier ? dearer : base).toLocaleString("en-US")} credits`;
+  }
   const credits = t.answerTokens ? (written?.[t.id] ?? writingCredits(t.answerTokens)) : costs[t.engine];
   return credits ? `About ${credits.toLocaleString("en-US")} credits` : "";
 }
@@ -332,7 +344,7 @@ export function Templates({
               ) : (
                 <p className="min-w-0 flex-1 text-xs text-zinc-500">
                   {total ? `Total ${total} · ` : ""}
-                  {priceLabel(template, costs, written)} · opens in its own chat
+                  {priceLabel(template, costs, written, values)} · opens in its own chat
                 </p>
               )}
               <button

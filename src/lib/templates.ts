@@ -1,5 +1,6 @@
 import type { Engine } from "./types.ts";
 import { CLAUDE_PRICES, MARKUP } from "./credits.ts";
+import { PACK_VIDEO_SECONDS, modelById } from "./models.ts";
 
 /*
  * Ready-made templates: a short form for a common job (a business plan, a resume, an invoice),
@@ -36,6 +37,8 @@ export type Template = {
   blurb: string;
   // The engine the request goes to, or "local" for documents made in the browser for free.
   engine: Engine | "local";
+  // The image or video model it needs, when the engine's usual pick won't do.
+  model?: string;
   fields: Field[];
   // The new chat's name.
   title: (v: TemplateValues) => string;
@@ -531,6 +534,30 @@ export const TEMPLATES: Template[] = [
       "layout with plenty of space, easy to read from a distance, and no other text.",
   },
   {
+    id: "social-pack",
+    name: "Social post pack",
+    icon: "📱",
+    category: "Marketing",
+    blurb: "Posts and hashtags for Instagram, TikTok and Facebook, with a square and a tall picture, and a video if you like.",
+    engine: "image",
+    model: "post-pack",
+    fields: [
+      BUSINESS,
+      { key: "about", label: "What to post about", type: "textarea", placeholder: "Our new honey oat loaf, $8, this weekend only", required: true, max: 600 },
+      { key: "action", label: "What people should do", placeholder: "Order at goldencrumb.ca, or visit us on King St", max: 150 },
+      TONE,
+      { key: "video", label: "Video", type: "select", options: ["Pictures only", `Pictures and a ${PACK_VIDEO_SECONDS} second video`] },
+    ],
+    title: (v) => `Posts: ${clean(v.text.about).split("\n")[0].slice(0, 40)}`,
+    request: (v) =>
+      `Make a social post pack for ${clean(v.text.business)} about: ${clean(v.text.about)}\n\n` +
+      details(v, [
+        ["action", "What people should do"],
+        ["tone", "Tone"],
+      ]) +
+      (clean(v.text.video).includes("video") ? "\n\nWith a short video." : "\n\nPictures only, no video."),
+  },
+  {
     id: "product-description",
     name: "Product description",
     icon: "🏷️",
@@ -606,7 +633,37 @@ export function writingCredits(answerTokens: number, model = "claude-sonnet-5-5"
   return Math.ceil(((answerTokens * price.output + 3000 * price.input) / 1e6) * markup);
 }
 
-/** The typical price of each written template, by id. The server works these out with its real model and markup. */
-export function templateCredits(model?: string, markup?: number): Record<string, number> {
-  return Object.fromEntries(TEMPLATES.filter((t) => t.answerTokens).map((t) => [t.id, writingCredits(t.answerTokens!, model, markup)]));
+/** What a template that needs a particular model costs Flash, in cents, for these details. */
+export function modelTemplateCents(t: Template, v: TemplateValues): number {
+  const m = modelById(t.model);
+  if (!m) return 0;
+  return typeof m.costCents === "function" ? m.costCents(t.request(v)) : m.costCents;
+}
+
+/** A template's form as it first opens: every choice on its first option. */
+export const defaultValues = (t: Template): TemplateValues => ({
+  text: Object.fromEntries(t.fields.filter((f) => f.type === "select").map((f) => [f.key, f.options?.[0] ?? ""])),
+  items: [],
+});
+
+/**
+ * The typical price of each template, by id. The server works these out with its real model and
+ * markup. A template with a choice that costs more (the post pack's video) also has "<id>:with",
+ * its price with the dearest choice.
+ */
+export function templateCredits(model?: string, markup = MARKUP): Record<string, number> {
+  const prices: Record<string, number> = {};
+  const credits = (cents: number) => Math.max(1, Math.ceil(cents * markup));
+  for (const t of TEMPLATES) {
+    if (t.answerTokens) prices[t.id] = writingCredits(t.answerTokens, model, markup);
+    if (!t.model) continue;
+    const base = defaultValues(t);
+    prices[t.id] = credits(modelTemplateCents(t, base));
+    const choices = t.fields
+      .filter((f) => f.type === "select")
+      .flatMap((f) => (f.options ?? []).map((o) => modelTemplateCents(t, { ...base, text: { ...base.text, [f.key]: o } })));
+    const most = credits(Math.max(0, ...choices));
+    if (most > prices[t.id]) prices[`${t.id}:with`] = most;
+  }
+  return prices;
 }

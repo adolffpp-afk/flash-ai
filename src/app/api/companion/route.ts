@@ -74,7 +74,12 @@ export async function POST(request: Request) {
         label: m.label,
         engine: m.engine,
         credits: m.credits,
-        blurb: m.id === "movie" ? `${m.blurb}; the price shown is for 40 seconds, longer movies cost more` : m.blurb,
+        blurb:
+          m.id === "movie"
+            ? `${m.blurb}; the price shown is for 40 seconds, longer movies cost more`
+            : m.id === "post-pack" && pricing.templates["social-pack:with"]
+              ? `${m.blurb}; ${pricing.templates["social-pack:with"]} credits with the video`
+              : m.blurb,
       })),
     freeLane: { chats: pricing.freeLane.chats, images: pricing.freeLane.images, transcripts: pricing.freeLane.transcripts ?? 0 },
     context,

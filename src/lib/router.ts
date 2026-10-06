@@ -1,4 +1,5 @@
 import type { Engine } from "./types.ts";
+import { POST_PACK_REQUEST } from "./models.ts";
 
 export type RouteDecision = { engine: Engine; reason: string; guessed?: boolean };
 
@@ -22,6 +23,12 @@ const RULES: Rule[] = [
       new RegExp(`\\b(say|write|put|convert)\\b.{0,60}\\b(in|into|to)\\s+(${LANGUAGES})\\b`, "i"),
       new RegExp(`\\bhow do (you|i) say\\b.{0,60}\\bin\\s+(${LANGUAGES})\\b`, "i"),
     ],
+  },
+  {
+    // Before video and app, which "with a video" or "for my website" would match too.
+    engine: "image",
+    reason: "You asked for a social post pack.",
+    patterns: [POST_PACK_REQUEST],
   },
   {
     engine: "slides",

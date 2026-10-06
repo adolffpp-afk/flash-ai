@@ -1,3 +1,5 @@
+import type { Post } from "./post-pack.ts";
+
 export const ENGINES = [
   "text",
   "app",
@@ -68,10 +70,13 @@ export type StreamEvent =
   // What a reply charged by length really cost, sent when it finishes.
   | { type: "cost"; credits: number }
   | { type: "status"; message: string }
-  | { type: "image"; url: string; prompt: string }
+  // label names a picture that comes with others, like a post pack's "Square" and "Tall".
+  | { type: "image"; url: string; prompt: string; label?: string }
   | { type: "video"; url: string; prompt: string }
   | { type: "audio"; url: string; label?: string }
   | { type: "sources"; items: Source[] }
+  // A social post pack's posts, each ready to copy.
+  | { type: "posts"; posts: Post[] }
   | { type: "app"; app: BuiltApp }
   | { type: "error"; message: string }
   | { type: "done" };

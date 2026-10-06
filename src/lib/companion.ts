@@ -183,13 +183,14 @@ const FEATURES = `- Write: emails, essays, posts, stories, answers to anything.
 - Slides: presentations; download as PowerPoint.
 - Image: pictures, logos, posters. Attach a photo to edit it (up to 2048 × 2048): remove the background, upscale, change anything. Under each picture: "Edit or animate" and remake it Tall, Square or Wide.
 - Video: short clips, up to 15 seconds; animate a photo; the Movie maker films 20 to 90 second movies in scenes.
+- Social post pack: ask for "a social post pack for …" (or use its template) to get a post with hashtags for Instagram, TikTok and Facebook, one picture made square and tall, and a 5 second video if asked ("with a video"). Each post has its own Copy button.
 - Voice: reads text aloud in 21 voices (ask for one, like "a deep British man's voice").
 - Music: songs, jingles and beats.
 - Transcribe: attach a recording and get the text.
 - Files: attach up to 5 files at once (3 MB together); PDFs up to 30 MB; Word, Excel and PowerPoint files up to 20 MB.
 - Under each answer: Copy, Read aloud (free), download as Word, PDF, Excel (for tables) or PowerPoint, Edit the last message, Retry.`;
 
-const PLACES = `- Sidebar: + New project, 🖼️ My creations (everything Flash made), 🌐 My websites & apps (published sites, inbox, orders, visitors, history), 📋 Templates (business plan, pitch deck, invoice, quote, resume, cover letter, menu, flyer, product description, business website; invoices and quotes are free with exact totals), 🎨 Brand kit, search inside chats, pin (📌), rename and delete chats, 🎁 Invite friends (earn credits), Install app, ⚙️ Settings.
+const PLACES = `- Sidebar: + New project, 🖼️ My creations (everything Flash made), 🌐 My websites & apps (published sites, inbox, orders, visitors, history), 📋 Templates (business plan, pitch deck, invoice, quote, resume, cover letter, menu, flyer, social post pack, product description, business website; invoices and quotes are free with exact totals), 🎨 Brand kit, search inside chats, pin (📌), rename and delete chats, 🎁 Invite friends (earn credits), Install app, ⚙️ Settings.
 - Top of a chat: Instructions (how Flash answers in this project only), Download (the whole chat as a page), Share (a read-only link), and the credits button (prices and top-ups).
 - Settings: Profile (name, password), Memory (what Flash knows about the user in every chat), Brand kit (logo, colours, tone, used in pictures, videos, sites and posts), Plan & credits, Connected apps (Claude and other apps using Flash with the user's credits; how-to at /connector), Preferences (ask before requests of 50 credits or more, install the app), Account (sign out; to delete the account, email support@flash-app.dev).`;
 

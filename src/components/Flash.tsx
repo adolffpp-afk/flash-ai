@@ -125,7 +125,7 @@ function applyEvent(m: UIMessage, e: StreamEvent): UIMessage {
     case "cost":
       return { ...m, cost: e.credits };
     case "image":
-      return { ...m, status: undefined, images: [...(m.images ?? []), { url: e.url, prompt: e.prompt }] };
+      return { ...m, status: undefined, images: [...(m.images ?? []), { url: e.url, prompt: e.prompt, ...(e.label && { label: e.label }) }] };
     case "video":
       return { ...m, status: undefined, videos: [...(m.videos ?? []), { url: e.url, prompt: e.prompt }] };
     case "audio":
@@ -134,6 +134,8 @@ function applyEvent(m: UIMessage, e: StreamEvent): UIMessage {
       return { ...m, status: undefined, app: e.app };
     case "sources":
       return { ...m, sources: e.items };
+    case "posts":
+      return { ...m, posts: e.posts };
     case "error":
       return { ...m, error: e.message };
     case "done":
@@ -506,7 +508,7 @@ export function Flash({
       return true;
     }
     updateProject(project.id, (p) => ({ ...p, name }));
-    void respond(project, [], { ...ask, template: { engine: t.engine, name: t.name } });
+    void respond(project, [], { ...ask, template: { engine: t.engine, name: t.name, model: t.model } });
     return true;
   }
 
@@ -666,7 +668,7 @@ export function Flash({
           engine,
           preferences,
           previous,
-          model: engine === "auto" ? undefined : models[engine],
+          model: userMsg.template?.model ?? (engine === "auto" ? undefined : models[engine]),
           template: userMsg.template?.name,
           confirmed: confirmed || skipsCostCheck(),
           projectId,
@@ -1296,7 +1298,7 @@ export function Flash({
                   Ask anything and Flash picks the best AI for the job.
                 </p>
                 <div className="mt-8 flex flex-wrap items-center justify-center gap-2" aria-label="Start from a template">
-                  {TEMPLATES.filter((t) => ["business-plan", "resume", "menu", "flyer", "invoice"].includes(t.id))
+                  {TEMPLATES.filter((t) => ["business-plan", "resume", "social-pack", "flyer", "invoice"].includes(t.id))
                     .filter((t) => t.engine === "local" || isLive(t.engine))
                     .map((t) => (
                       <button
