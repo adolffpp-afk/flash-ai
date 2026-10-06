@@ -5,6 +5,8 @@ export type UIMessage = {
   role: "user" | "assistant";
   content: string;
   attachmentName?: string;
+  // A request made from a template: the engine it goes to and the template's name.
+  template?: { engine: Engine; name: string };
   engine?: Engine;
   reason?: string;
   demo?: boolean;

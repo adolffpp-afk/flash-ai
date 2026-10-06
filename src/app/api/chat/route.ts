@@ -92,6 +92,8 @@ type ChatRequest = {
   confirmed?: boolean;
   // The project this chat is in, for its instructions.
   projectId?: string;
+  // The template the request was made from, named in the reply's header.
+  template?: string;
 };
 
 /** Requests that cost at least this many credits wait for the user to agree to the price first. */
@@ -417,7 +419,11 @@ export async function POST(request: Request) {
   const override =
     body.engine && body.engine !== "auto" && (ENGINES as readonly string[]).includes(body.engine) ? body.engine : null;
   let engine = override ?? auto.engine;
-  let reason = override ? "You picked this engine." : auto.reason;
+  let reason = override
+    ? typeof body.template === "string" && body.template.trim()
+      ? `Made from the ${body.template.trim().slice(0, 40)} template.`
+      : "You picked this engine."
+    : auto.reason;
   // Several files are read and compared by the writing engines; media tools take one file.
   if (severalFiles && !WRITING_ENGINES.includes(engine)) {
     engine = "docs";

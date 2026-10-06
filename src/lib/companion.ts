@@ -20,6 +20,7 @@ export const COMPANION_PAGES = {
   invite: "Invite friends",
   creations: "My creations",
   websites: "My websites & apps",
+  templates: "Templates",
   instructions: "this project's Instructions",
 } as const;
 export type CompanionPage = keyof typeof COMPANION_PAGES;
@@ -184,7 +185,7 @@ const FEATURES = `- Write: emails, essays, posts, stories, answers to anything.
 - Files: attach up to 5 files at once (3 MB together); PDFs up to 30 MB; Word, Excel and PowerPoint files up to 20 MB.
 - Under each answer: Copy, Read aloud (free), download as Word, PDF, Excel (for tables) or PowerPoint, Edit the last message, Retry.`;
 
-const PLACES = `- Sidebar: + New project, 🖼️ My creations (everything Flash made), 🌐 My websites & apps (published sites, inbox, orders, visitors, history), 🎨 Brand kit, search inside chats, pin (📌), rename and delete chats, 🎁 Invite friends (earn credits), Install app, ⚙️ Settings.
+const PLACES = `- Sidebar: + New project, 🖼️ My creations (everything Flash made), 🌐 My websites & apps (published sites, inbox, orders, visitors, history), 📋 Templates (business plan, pitch deck, invoice, quote, resume, cover letter, menu, flyer, product description, business website; invoices and quotes are free with exact totals), 🎨 Brand kit, search inside chats, pin (📌), rename and delete chats, 🎁 Invite friends (earn credits), Install app, ⚙️ Settings.
 - Top of a chat: Instructions (how Flash answers in this project only), Download (the whole chat as a page), Share (a read-only link), and the credits button (prices and top-ups).
 - Settings: Profile (name, password), Memory (what Flash knows about the user in every chat), Brand kit (logo, colours, tone, used in pictures, videos, sites and posts), Plan & credits, Connected apps (Claude and other apps using Flash with the user's credits; how-to at /connector), Preferences (ask before requests of 50 credits or more, install the app), Account (sign out; to delete the account, email support@flash-app.dev).`;
 

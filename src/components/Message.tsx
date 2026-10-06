@@ -11,7 +11,7 @@ import { BoltIcon, LogoMark } from "@/app/brand";
 import { wordDocument, wordFileName } from "@/lib/word-export";
 import { excelWorkbook, tablesIn } from "@/lib/excel-export";
 import { slidesDeck } from "@/lib/slides-export";
-import { answerDocument } from "@/lib/chat-export";
+import { answerDocument, documentText } from "@/lib/chat-export";
 
 export type Reshape = "tall" | "square" | "wide";
 const RESHAPES: [Reshape, string][] = [
@@ -180,6 +180,7 @@ function ReadAloud({ text, className }: { text: string; className: string }) {
 function Actions({ m, onRetry }: { m: UIMessage; onRetry?: () => void }) {
   const [copied, setCopied] = useState(false);
   const text = plainText(m);
+  const doc = documentText(text);
   if (m.pending || (!text && !onRetry)) return null;
   const btn = "rounded-md px-2 py-1 hover:bg-zinc-800 hover:text-zinc-200";
   return (
@@ -198,22 +199,22 @@ function Actions({ m, onRetry }: { m: UIMessage; onRetry?: () => void }) {
       )}
       {text && <ReadAloud text={text} className={btn} />}
       {text && !m.app && (
-        <button className={btn} onClick={() => saveAsWord(text)} title="Download this answer as a Word document">
+        <button className={btn} onClick={() => saveAsWord(doc)} title="Download this answer as a Word document">
           ⬇ Word
         </button>
       )}
       {text && !m.app && (
-        <button className={btn} onClick={() => saveAsPdf(text)} title="Print this answer or save it as a PDF">
+        <button className={btn} onClick={() => saveAsPdf(doc)} title="Print this answer or save it as a PDF">
           ⬇ PDF
         </button>
       )}
-      {text && !m.app && tablesIn(text).length > 0 && (
-        <button className={btn} onClick={() => saveAsExcel(text)} title="Download this answer's tables as an Excel spreadsheet">
+      {text && !m.app && tablesIn(doc).length > 0 && (
+        <button className={btn} onClick={() => saveAsExcel(doc)} title="Download this answer's tables as an Excel spreadsheet">
           ⬇ Excel
         </button>
       )}
-      {text && !m.app && hasStructure(text) && (
-        <button className={btn} onClick={() => saveAsSlides(text)} title="Download this answer as a PowerPoint deck">
+      {text && !m.app && hasStructure(doc) && (
+        <button className={btn} onClick={() => saveAsSlides(doc)} title="Download this answer as a PowerPoint deck">
           ⬇ PowerPoint
         </button>
       )}

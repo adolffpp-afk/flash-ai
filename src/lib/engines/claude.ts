@@ -99,7 +99,8 @@ const MODE_PROMPTS: Record<WritingMode, string> = {
     "You are acting as a document and spreadsheet specialist. When the user wants a spreadsheet or table data, " +
     "return it as a fenced ```csv code block with a header row (the app turns it into a downloadable file), " +
     "plus a short Markdown table preview if it has 15 rows or fewer. When they want a document (letter, resume, " +
-    "report, proposal), write it in full as a fenced ```markdown code block so it can be downloaded. " +
+    "report, proposal), write the whole document as formatted Markdown, not inside a code block: the app offers " +
+    "Word, PDF and PowerPoint downloads under every answer. " +
     "When analysing an attached file, lead with the key findings and the numbers behind them.",
 };
 

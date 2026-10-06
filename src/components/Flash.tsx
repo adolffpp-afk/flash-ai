@@ -14,11 +14,13 @@ import { ProjectInstructions } from "./ProjectInstructions";
 import { Settings, SKIP_COST_CHECK, type SettingsTab } from "./Settings";
 import { Creations } from "./Creations";
 import { Companion } from "./Companion";
+import { Templates } from "./Templates";
 import { MyApps } from "./MyApps";
 import { OFFICE_TYPES, officeKind, officeText } from "@/lib/office";
 import { MAX_PDF_MB, pdfText } from "@/lib/pdf-text";
 import { addAttachment } from "@/lib/attachments";
 import { MAX_QUEUE, recentTurns, type CompanionContext } from "@/lib/companion";
+import { TEMPLATES, type Template, type TemplateValues } from "@/lib/templates";
 import { ENGINES, ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types";
 import { api, newId, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
 import type { ChatHit } from "@/lib/server/search";
@@ -269,6 +271,8 @@ export function Flash({
   // The Settings tab to show, or null when Settings is closed.
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
   const [showCreations, setShowCreations] = useState(false);
+  // The templates window: "" shows them all, a template's id opens its form.
+  const [templates, setTemplates] = useState<string | null>(null);
   const [showApps, setShowApps] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -445,15 +449,49 @@ export function Flash({
     }));
   }
 
-  async function createProject() {
+  async function createProject(): Promise<Project | null> {
     try {
       const { project } = await api<{ project: ProjectSummary }>("/api/projects", { method: "POST", json: {} });
-      setProjects((list) => [{ ...project, messages: [] }, ...list]);
+      const created: Project = { ...project, messages: [] };
+      setProjects((list) => [created, ...list]);
       setActiveId(project.id);
       setSidebar(false);
+      return created;
     } catch (err) {
       setNotice(err instanceof Error ? err.message : "Couldn't create a project.");
+      return null;
     }
+  }
+
+  /**
+   * Makes a template in its own chat (the open one, if it's still empty). Invoices and quotes
+   * arrive finished and free; everything else is sent to the template's engine.
+   */
+  async function makeTemplate(t: Template, values: TemplateValues, document?: string) {
+    setTemplates(null);
+    if (busy) {
+      setNotice("Flash is still working on something. Try the template again when it finishes.");
+      return;
+    }
+    const project = active?.messages && !active.messages.length ? active : await createProject();
+    if (!project) return;
+    const name = t.title(values).slice(0, 60);
+    const ask: UIMessage = { id: newId(), role: "user", content: t.request(values) };
+    if (t.engine === "local" && document) {
+      const made: UIMessage = {
+        id: newId(),
+        role: "assistant",
+        content: document,
+        engine: "docs",
+        reason: `Made from the ${t.name} template. The totals are worked out exactly, and it's free.`,
+        cost: 0,
+      };
+      updateProject(project.id, (p) => ({ ...p, name, updated_at: Date.now(), messages: [...(p.messages ?? []), ask, made] }));
+      return;
+    }
+    if (t.engine === "local") return;
+    updateProject(project.id, (p) => ({ ...p, name }));
+    await respond(project, [], { ...ask, template: { engine: t.engine, name: t.name } });
   }
 
   async function deleteProject(id: string) {
@@ -572,6 +610,8 @@ export function Flash({
     const projectId = project.id;
     const reply: UIMessage = { id: newId(), role: "assistant", content: "", pending: true };
     const sent = filesRef.current.get(userMsg.id) ?? [];
+    // A template's request always goes to its own engine; anything else to the one picked.
+    const engine = userMsg.template?.engine ?? choice;
 
     // Only the most recent app's code is sent back, so edits build on it without resending every version.
     const lastAppId = [...earlier].reverse().find((m) => m.app)?.id;
@@ -599,10 +639,11 @@ export function Flash({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: history,
-          engine: choice,
+          engine,
           preferences,
           previous,
-          model: choice === "auto" ? undefined : models[choice],
+          model: engine === "auto" ? undefined : models[engine],
+          template: userMsg.template?.name,
           confirmed: confirmed || skipsCostCheck(),
           projectId,
         }),
@@ -705,6 +746,7 @@ export function Flash({
       else if (page === "creations") setShowCreations(true);
       else if (page === "websites") setShowApps(true);
       else if (page === "instructions") setShowInstructions(true);
+      else if (page === "templates") setTemplates("");
       setSidebar(false);
     },
     [],
@@ -731,6 +773,7 @@ export function Flash({
   }
 
   const closeSettings = useCallback(() => setSettingsTab(null), []);
+  const closeTemplates = useCallback(() => setTemplates(null), []);
 
   /** Adds a read file to the ones waiting to be sent, or says why it can't be added. */
   function addFile(file: Attachment) {
@@ -889,6 +932,15 @@ export function Flash({
             className="mt-0.5 h-9 w-full rounded-lg px-3 text-left text-sm text-zinc-300 transition hover:bg-white/[0.04] hover:text-white"
           >
             🌐 My websites &amp; apps
+          </button>
+          <button
+            onClick={() => {
+              setTemplates("");
+              setSidebar(false);
+            }}
+            className="mt-0.5 h-9 w-full rounded-lg px-3 text-left text-sm text-zinc-300 transition hover:bg-white/[0.04] hover:text-white"
+          >
+            📋 Templates
           </button>
           <button
             onClick={() => {
@@ -1111,6 +1163,15 @@ export function Flash({
             }
           />
         )}
+        {templates !== null && (
+          <Templates
+            costs={me.costs}
+            initialId={templates || undefined}
+            isLive={isLive}
+            onMake={makeTemplate}
+            onClose={closeTemplates}
+          />
+        )}
         {showCredits && <CreditsDialog me={me} onClose={() => setShowCredits(false)} onChanged={refreshMe} />}
         {showInvite && <InviteDialog me={me} onClose={() => setShowInvite(false)} />}
         <InstallPopup />
@@ -1179,7 +1240,26 @@ export function Flash({
                   {makes.length ? `, and create ${makes.slice(0, -1).join(", ")}${makes.length > 1 ? " and " : ""}${makes.at(-1)}` : ""}.
                   Ask anything and Flash picks the best AI for the job.
                 </p>
-                <div className="mt-10 grid grid-cols-1 gap-2 text-left sm:grid-cols-2 lg:grid-cols-3">
+                <div className="mt-8 flex flex-wrap items-center justify-center gap-2" aria-label="Start from a template">
+                  {TEMPLATES.filter((t) => ["business-plan", "resume", "menu", "flyer", "invoice"].includes(t.id))
+                    .filter((t) => t.engine === "local" || isLive(t.engine))
+                    .map((t) => (
+                      <button
+                        key={t.id}
+                        onClick={() => setTemplates(t.id)}
+                        className="rounded-full border border-white/10 px-3.5 py-1.5 text-sm text-zinc-200 transition hover:border-primary/50 hover:bg-white/[0.04]"
+                      >
+                        <span aria-hidden>{t.icon}</span> {t.name}
+                      </button>
+                    ))}
+                  <button
+                    onClick={() => setTemplates("")}
+                    className="rounded-full px-3 py-1.5 text-sm text-primary-soft transition hover:text-white"
+                  >
+                    All templates →
+                  </button>
+                </div>
+                <div className="mt-8 grid grid-cols-1 gap-2 text-left sm:grid-cols-2 lg:grid-cols-3">
                   {SUGGESTIONS.filter((s) => isLive(s.engine)).map((s) => (
                     <button
                       key={s.text}
