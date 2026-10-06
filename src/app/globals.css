@@ -165,3 +165,15 @@ body {
 ::selection {
   background: rgb(16 185 129 / 0.35);
 }
+
+/* Settings > General > Appearance, kept on the device (see src/lib/device-settings.ts). */
+html[data-size="large"] {
+  font-size: 112.5%;
+}
+html[data-font="system"] body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+html[data-font="readable"] body {
+  font-family: Verdana, "Atkinson Hyperlegible", Tahoma, "DejaVu Sans", sans-serif;
+  letter-spacing: 0.01em;
+}

@@ -24,6 +24,7 @@ import {
   type CompanionTurn,
 } from "@/lib/companion.ts";
 import { ENGINES } from "@/lib/types.ts";
+import { firstName } from "@/lib/names.ts";
 
 export const maxDuration = 60;
 
@@ -63,7 +64,8 @@ export async function POST(request: Request) {
   const facts = {
     // The user's own date when the app sent it, else the server's (UTC).
     today: context.today ?? new Date().toISOString().slice(0, 10),
-    name: user.name,
+    // What the user asked to be called (Settings > General), never an email address.
+    name: firstName(user),
     credits: shownCredits,
     plan: plan?.name ?? null,
     live: ENGINES.filter((e) => status[e]),

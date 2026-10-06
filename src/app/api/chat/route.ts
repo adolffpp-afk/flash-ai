@@ -18,6 +18,7 @@ import {
 } from "@/lib/engines/claude.ts";
 import { checkFiles } from "@/lib/attachments.ts";
 import { withInstructions } from "@/lib/project-instructions.ts";
+import { profileNote } from "@/lib/names.ts";
 import { brandForMedia, withBrand } from "@/lib/brand.ts";
 import { getBrand } from "@/lib/server/brand.ts";
 import { one } from "@/lib/server/db.ts";
@@ -571,11 +572,10 @@ export async function POST(request: Request) {
       ? await one<{ instructions: string }>("SELECT instructions FROM projects WHERE id = ? AND user_id = ?", [body.projectId, user.id])
       : null;
   const brand = await getBrand(user.id, appUrl(request));
+  // What the user asked to be called and their work (Settings > General), then their memory.
+  const memory = (typeof body.preferences === "string" ? body.preferences : user.preferences).slice(0, MAX_PREFERENCES_CHARS);
   const preferences = withBrand(
-    withInstructions(
-      (typeof body.preferences === "string" ? body.preferences : user.preferences).slice(0, MAX_PREFERENCES_CHARS),
-      project?.instructions ?? "",
-    ),
+    withInstructions([profileNote(user), memory].filter((p) => p.trim()).join("\n"), project?.instructions ?? ""),
     brand,
   );
   let held = 0;

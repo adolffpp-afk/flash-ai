@@ -13,6 +13,7 @@ import { csvRows, excelWorkbook, tablesIn } from "@/lib/excel-export";
 import { slidesDeck } from "@/lib/slides-export";
 import { answerDocument, documentText } from "@/lib/chat-export";
 import { postText, type Post } from "@/lib/post-pack";
+import { readAloudVoice } from "@/lib/device-settings";
 
 export type Reshape = "tall" | "square" | "wide";
 const RESHAPES: [Reshape, string][] = [
@@ -177,7 +178,11 @@ function ReadAloud({ text, className }: { text: string; className: string }) {
         synth.cancel();
         if (speaking) return setSpeaking(false);
         const say = new SpeechSynthesisUtterance(speakable(text));
-        say.lang = navigator.language || "en-US";
+        // The voice and speed picked in Settings > General.
+        const { voice, rate } = readAloudVoice();
+        if (voice) say.voice = voice;
+        say.rate = rate;
+        say.lang = voice?.lang || navigator.language || "en-US";
         say.onend = say.onerror = () => setSpeaking(false);
         synth.speak(say);
         setSpeaking(true);

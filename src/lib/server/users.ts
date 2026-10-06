@@ -1,3 +1,4 @@
+import { looksLikeEmail, nameFromEmail } from "../names.ts";
 import { emailKey } from "./account.ts";
 import { readCookie } from "./auth.ts";
 import { ensureMonthlyCredits } from "./credits.ts";
@@ -16,6 +17,12 @@ export type NewUser = {
   request?: Request;
 };
 
+/** The name a new account starts with: the one given, else one made from the email (never the address itself). */
+export function newName(given: string | undefined, email: string): string {
+  const name = given?.trim().slice(0, 80) ?? "";
+  return name && !looksLikeEmail(name) ? name : nameFromEmail(email);
+}
+
 /**
  * Creates an account and gives it this month's free credits. Every way of signing up comes
  * through here, so anything that should happen to new accounts belongs in this function.
@@ -30,7 +37,7 @@ export async function createUser(user: NewUser): Promise<string> {
   await run(
     `INSERT INTO users (id, email, email_key, name, password_hash, created_at, verified_at, referred_by)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [id, email, key, user.name?.trim().slice(0, 80) || email.split("@")[0], user.passwordHash, t, user.verified ? t : 0, referrer],
+    [id, email, key, newName(user.name, email), user.passwordHash, t, user.verified ? t : 0, referrer],
   );
   await ensureMonthlyCredits(id);
   return id;

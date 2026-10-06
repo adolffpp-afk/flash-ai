@@ -3,6 +3,7 @@ import { randomId, sha256 } from "./ids.ts";
 import { emailKey, isVerified } from "./account.ts";
 import { EMAILS, demoEmails, sendEmail } from "./email.ts";
 import { activeSubscription, planById, type Subscription } from "./subscriptions.ts";
+import { fullName } from "../names.ts";
 
 /*
  * Business plan teams. The owner pays, and the owner's credit balance is the team's shared pool:
@@ -89,7 +90,7 @@ export async function inviteMember(
     [randomId(), sha256(token), team.id, email, key, now() + INVITE_DAYS * 24 * 3600_000, now()],
   );
   const link = `${origin}/?invite=${token}`;
-  await sendEmail(email, EMAILS.teamInvite((owner.name || owner.email).replace(/\s+/g, " "), link));
+  await sendEmail(email, EMAILS.teamInvite(fullName(owner).replace(/\s+/g, " "), link));
   return demoEmails() ? link : undefined;
 }
 
