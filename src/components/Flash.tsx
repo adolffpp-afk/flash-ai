@@ -27,6 +27,7 @@ import type { ChatHit } from "@/lib/server/search";
 import { BoltIcon, Logo, LogoMark } from "@/app/brand";
 import { EngineIcon } from "./EngineIcon";
 import { MicButton, PlusMenu, SendButton, ToolPicker, type Choice } from "./ComposerTools";
+import { photoActionsFor } from "@/lib/photo-actions";
 
 // A project's messages are loaded the first time it is opened.
 type Project = ProjectSummary & { messages?: UIMessage[] };
@@ -106,6 +107,7 @@ const SUGGESTIONS: { engine: Engine; text: string; attach?: boolean }[] = [
   { engine: "image", text: "Draw a minimalist logo for a coffee shop called Flash Brew" },
   { engine: "video", text: "Make a video of ocean waves at sunset, slow drone shot" },
   { engine: "image", text: "Attach a photo and say what to change: remove the background, make it a cartoon", attach: true },
+  { engine: "docs", text: "Snap a receipt, menu or handwritten note and turn it into text or a spreadsheet", attach: true },
   { engine: "video", text: "Make a 1 minute movie about a girl who finds a dragon egg" },
   { engine: "music", text: "Compose an upbeat jingle for a bakery ad" },
   { engine: "voice", text: "Read this aloud: Welcome to Flash, your all-in-one AI." },
@@ -147,13 +149,6 @@ function applyEvent(m: UIMessage, e: StreamEvent): UIMessage {
  * Phone photos are often larger than Flash accepts, so photos over 2048 pixels or 3 MB are
  * scaled down in the browser first. Anything that can't be read is left as it is.
  */
-// One-tap actions for an attached photo; the router sends each to the matching photo model.
-const PHOTO_ACTIONS: { label: string; prompt: string; engine: Engine }[] = [
-  { label: "✂️ Remove background", prompt: "Remove the background", engine: "image" },
-  { label: "🔍 Upscale", prompt: "Upscale this photo and make it sharper", engine: "image" },
-  { label: "🎬 Animate", prompt: "Animate this photo with natural, gentle motion", engine: "video" },
-];
-
 async function shrinkPhoto(file: File): Promise<File> {
   if (!/^image\/(png|jpeg|webp)$/.test(file.type)) return file;
   try {
@@ -578,7 +573,8 @@ export function Flash({
     if (active) updateMessage(active.id, messageId, (m) => (m.app ? { ...m, app: { ...m.app, slug } } : m));
   }
 
-  async function send(text: string) {
+  // auto: a one-tap button that knows its job, so it goes to Auto whatever tool is picked.
+  async function send(text: string, auto = false) {
     if (busy) return;
     if (!active?.messages) {
       if (active) setNotice("This project didn't load. Pick it again in the sidebar.");
@@ -586,7 +582,13 @@ export function Flash({
     }
     const content = text.trim();
     if (!content && !attachment) return;
-    const userMsg: UIMessage = { id: newId(), role: "user", content, attachmentName: files.map((f) => f.name).join(", ") || undefined };
+    const userMsg: UIMessage = {
+      id: newId(),
+      role: "user",
+      content,
+      attachmentName: files.map((f) => f.name).join(", ") || undefined,
+      ...(auto && { auto: true }),
+    };
     if (files.length) filesRef.current.set(userMsg.id, files);
     updateProject(active.id, (p) => ({
       ...p,
@@ -635,7 +637,7 @@ export function Flash({
     const sent = filesRef.current.get(userMsg.id) ?? [];
     // A template's request always goes to its own engine, and one the companion lined up to Auto
     // (the tool picked in the composer was for something else); anything else to the one picked.
-    const engine = userMsg.template?.engine ?? (userMsg.queued ? "auto" : choice);
+    const engine = userMsg.template?.engine ?? (userMsg.queued || userMsg.auto ? "auto" : choice);
 
     // Only the most recent app's code is sent back, so edits build on it without resending every version.
     const lastAppId = [...earlier].reverse().find((m) => m.app)?.id;
@@ -903,6 +905,8 @@ export function Flash({
   const inChats = projectQuery.trim().length >= 2 ? chatHits.filter((h) => h.snippet && !sorted.some((p) => p.id === h.id)) : [];
   // Engines whose AI provider isn't set up yet show as coming soon, and light up once /api/status says so.
   const isLive = (e: Engine) => !status || status[e];
+  // The one-tap buttons for attached photos (Copy the text, Remove background…).
+  const photoActions = photoActionsFor(files.map((f) => f.mediaType), isLive);
   const liveCount = ENGINES.filter(isLive).length;
   const allOff = status && !liveCount;
   const makes = MEDIA_WORDS.filter(([e]) => isLive(e)).map(([, word]) => word);
@@ -1437,13 +1441,13 @@ export function Flash({
                   ))}
                 </div>
               )}
-              {files.length === 1 && attachment && /^image\/(png|jpeg|webp)$/.test(attachment.mediaType) && !busy && (
+              {photoActions.length > 0 && !busy && (
                 <div className="mb-1 ml-2 mt-1 inline-flex flex-wrap gap-1.5">
-                  {PHOTO_ACTIONS.filter((a) => isLive(a.engine)).map((a) => (
+                  {photoActions.map((a) => (
                     <button
                       key={a.label}
                       type="button"
-                      onClick={() => send(a.prompt)}
+                      onClick={() => send(files.length > 1 ? a.several! : a.prompt, true)}
                       className="rounded-full border border-white/10 px-3 py-1 text-xs text-zinc-300 transition hover:border-primary/50 hover:text-zinc-100"
                     >
                       {a.label}
@@ -1472,8 +1476,10 @@ export function Flash({
                 }}
                 rows={1}
                 placeholder={
-                  files.length === 1 && /^image\//.test(files[0].mediaType)
-                    ? "Say what to change, or tap a button above…"
+                  photoActions.length
+                    ? files.length > 1
+                      ? "Ask about these photos, or tap a button above…"
+                      : "Ask about it, say what to change, or tap a button above…"
                     : choice === "auto"
                       ? "Ask Flash anything…"
                       : `Ask ${ENGINE_LABELS[choice]}…`

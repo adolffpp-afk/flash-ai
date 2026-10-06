@@ -13,6 +13,44 @@ const cells = (line: string) =>
     .split("|")
     .map((c) => c.trim().replace(/\*\*|__|`/g, ""));
 
+/**
+ * The rows of a CSV block, as Flash writes them for spreadsheets: commas between cells, quotes
+ * around cells that hold commas, quotes or line breaks, and "" for a quote inside one.
+ */
+export function csvRows(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+  const endCell = () => {
+    row.push(cell.trim());
+    cell = "";
+  };
+  const endRow = () => {
+    endCell();
+    if (row.some((c) => c)) rows.push(row);
+    row = [];
+  };
+  const src = text.replace(/\r\n?/g, "\n");
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (quoted) {
+      if (ch === '"' && src[i + 1] === '"') {
+        cell += '"';
+        i++;
+      } else if (ch === '"') quoted = false;
+      else cell += ch;
+    } else if (ch === '"' && !cell.trim()) {
+      quoted = true;
+      cell = "";
+    } else if (ch === ",") endCell();
+    else if (ch === "\n") endRow();
+    else cell += ch;
+  }
+  endRow();
+  return rows;
+}
+
 /** The Markdown tables in a reply, each named after the heading above it. */
 export function tablesIn(markdown: string): Table[] {
   const lines = markdown.replace(/\r\n?/g, "\n").split("\n");

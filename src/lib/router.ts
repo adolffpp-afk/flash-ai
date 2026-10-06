@@ -116,11 +116,25 @@ const AUDIO_TYPE = /^(audio|video)\//;
 const SHEET_TYPE = /(csv|spreadsheet|excel)/i;
 // Photos Flash can edit.
 export const EDITABLE_TYPE = /^image\/(png|jpeg|webp)$/;
+// Pictures Claude can read.
+const PHOTO_TYPE = /^image\/(png|jpeg|gif|webp)$/;
 // Questions about a photo, which the writing model answers.
 const ABOUT_PHOTO = /^\s*(what|who|where|why|which|when|how (many|much|old)|describe|explain|tell me|read|is|are|does|do)\b/i;
 // Asking to change an attached photo, rather than asking about it.
 const EDIT_REQUEST =
   /\b(edit|retouch|remove|erase|replace|swap|add|put|change|turn (it|this|me|us|them|him|her)|make (it|this|me|us|them|him|her|the)|transform|convert|restore|colou?ri[sz]e|enhance|upscale|sharpen|blur|background|cartoon\w*|anime|pixar|ghibli|sketch|painting|style|filter|headshot|brighter|darker)\b/i;
+
+// Asking for the words in a photo (a receipt, a menu, a handwritten note) as text or a spreadsheet,
+// rather than to change the picture: "copy the text", "turn this into a spreadsheet", "transcribe it".
+const READ_TEXT = new RegExp(
+  [
+    String.raw`\b(ocr|transcribe|transcription)\b`,
+    String.raw`\b(read|copy|extract|type (out|up)|write (out|down)|pull( out)?|grab|scan|digiti[sz]e|list)\b[\s\S]{0,40}\b(text|words|writing|handwriting|numbers|prices|items|amounts|totals?|receipts?|notes?|menus?|pages?|documents?|letters?|tables?)\b`,
+    String.raw`\b(into|to|as)\s+(an?\s+)?(spreadsheet|excel( sheet)?|google sheets?|csv|table|plain text|text|word( document)?|document|list)\b`,
+    String.raw`\b(spreadsheet|excel|csv|google sheets?)\b`,
+  ].join("|"),
+  "i",
+);
 
 // Asking for an attached photo to move: it becomes a video.
 const ANIMATE_REQUEST =
@@ -145,6 +159,11 @@ function routeOne(message: string, attachmentType?: string): RouteDecision {
   const text = message.trim();
   if (attachmentType && AUDIO_TYPE.test(attachmentType)) {
     return { engine: "transcribe", reason: "An audio or video file is attached, so Flash transcribes it." };
+  }
+  // Reading a photo's text goes to Docs & Sheets, which gives tables as spreadsheets. Checked first, since
+  // "turn this into a spreadsheet" would otherwise read as a photo edit.
+  if (attachmentType && PHOTO_TYPE.test(attachmentType) && READ_TEXT.test(text)) {
+    return { engine: "docs", reason: "Flash reads the text in your photo." };
   }
   if (attachmentType && EDITABLE_TYPE.test(attachmentType) && ANIMATE_REQUEST.test(text) && !ABOUT_PHOTO.test(text)) {
     return { engine: "video", reason: "A photo is attached and you asked to bring it to life." };

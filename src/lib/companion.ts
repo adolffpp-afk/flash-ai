@@ -187,6 +187,7 @@ const FEATURES = `- Write: emails, essays, posts, stories, answers to anything.
 - Voice: reads text aloud in 21 voices (ask for one, like "a deep British man's voice").
 - Music: songs, jingles and beats.
 - Transcribe: attach a recording and get the text.
+- Read text in photos: attach or snap up to 5 photos (receipts, menus, handwritten notes, signs) and tap "Copy the text" or "Make a spreadsheet", or just ask; tables download as Excel.
 - Files: attach up to 5 files at once (3 MB together); PDFs up to 30 MB; Word, Excel and PowerPoint files up to 20 MB.
 - Under each answer: Copy, Read aloud (free), download as Word, PDF, Excel (for tables) or PowerPoint, Edit the last message, Retry.`;
 

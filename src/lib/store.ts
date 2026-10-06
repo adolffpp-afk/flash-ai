@@ -10,6 +10,8 @@ export type UIMessage = {
   template?: { engine: Engine; name: string; model?: string };
   // A request the companion lined up: it goes to Auto, whatever tool is picked in the composer.
   queued?: boolean;
+  // Sent by a one-tap button (like "Copy the text" under a photo): it goes to Auto too.
+  auto?: boolean;
   // An invoice or quote built in the browser: exact and free, so it is never sent to the AI again.
   local?: boolean;
   engine?: Engine;

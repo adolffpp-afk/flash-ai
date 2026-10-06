@@ -9,7 +9,7 @@ import { AppPreview } from "./AppPreview";
 import { speakable } from "@/lib/speech";
 import { BoltIcon, LogoMark } from "@/app/brand";
 import { wordDocument, wordFileName } from "@/lib/word-export";
-import { excelWorkbook, tablesIn } from "@/lib/excel-export";
+import { csvRows, excelWorkbook, tablesIn } from "@/lib/excel-export";
 import { slidesDeck } from "@/lib/slides-export";
 import { answerDocument, documentText } from "@/lib/chat-export";
 import { postText, type Post } from "@/lib/post-pack";
@@ -39,12 +39,13 @@ const EXTENSIONS: Record<string, string> = {
   sh: "sh",
 };
 const MIME: Record<string, string> = { csv: "text/csv", md: "text/markdown", json: "application/json", html: "text/html" };
+const XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const DOWNLOAD_LABEL: Record<string, string> = { csv: "Download spreadsheet (.csv)", md: "Download document (.md)" };
 
 function CodeBlock({ lang, text }: { lang: string; text: string }) {
   const [copied, setCopied] = useState(false);
   const ext = EXTENSIONS[lang] ?? "txt";
-  const download = () => {
+  const downloadText = () => {
     const url = URL.createObjectURL(new Blob([text], { type: MIME[ext] ?? "text/plain" }));
     const a = Object.assign(document.createElement("a"), { href: url, download: `flash-${Date.now()}.${ext}` });
     a.click();
@@ -54,7 +55,7 @@ function CodeBlock({ lang, text }: { lang: string; text: string }) {
     <div className="not-prose my-3 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900">
       <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-1.5 text-xs text-zinc-400">
         <span>{lang || "text"}</span>
-        <span className="flex gap-3">
+        <span className="flex flex-wrap justify-end gap-x-3 gap-y-1">
           <button
             onClick={() => {
               navigator.clipboard?.writeText(text);
@@ -65,9 +66,18 @@ function CodeBlock({ lang, text }: { lang: string; text: string }) {
           >
             {copied ? "Copied" : "Copy"}
           </button>
-          <button onClick={download} className="text-primary hover:text-primary-soft">
+          <button onClick={downloadText} className="text-primary hover:text-primary-soft">
             {DOWNLOAD_LABEL[ext] ?? "Download"}
           </button>
+          {ext === "csv" && (
+            // The same rows as an Excel workbook, with amounts as real numbers.
+            <button
+              onClick={() => download(excelWorkbook([{ name: "Sheet1", rows: csvRows(text) }]), XLSX_TYPE, `flash-${Date.now()}.xlsx`)}
+              className="text-primary hover:text-primary-soft"
+            >
+              Excel (.xlsx)
+            </button>
+          )}
         </span>
       </div>
       <pre className="max-h-[480px] overflow-auto p-3 font-mono text-sm leading-relaxed text-zinc-200">{text}</pre>
@@ -138,7 +148,7 @@ async function saveAsPdf(text: string) {
 const saveAsExcel = (text: string) =>
   download(
     excelWorkbook(tablesIn(text)),
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    XLSX_TYPE,
     wordFileName(text).replace(/\.docx$/, ".xlsx"),
   );
 
