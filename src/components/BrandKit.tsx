@@ -8,8 +8,8 @@ const field =
   "mt-1 block w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-primary/60";
 const label = "block text-xs font-medium text-zinc-400";
 
-/** The brand kit: saved once, used by Flash for sites, decks, posts and pictures for the business. */
-export function BrandKit({ onClose, onSaved }: { onClose: () => void; onSaved: (message: string) => void }) {
+/** The brand kit form (in Settings): saved once, used by Flash for sites, decks, posts and pictures. */
+export function BrandKitForm({ onSaved }: { onSaved: (message: string) => void }) {
   const [kit, setKit] = useState<Kit | null>(null);
   // A new logo to upload, "remove", or null to keep the saved one.
   const [logo, setLogo] = useState<{ mediaType: string; data: string; preview: string } | "remove" | null>(null);
@@ -20,10 +20,7 @@ export function BrandKit({ onClose, onSaved }: { onClose: () => void; onSaved: (
     api<{ brand: Kit }>("/api/brand")
       .then(({ brand }) => setKit(brand))
       .catch(() => setKit(EMPTY_BRAND));
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, []);
 
   function pickLogo(file: File | undefined) {
     if (!file) return;
@@ -47,33 +44,22 @@ export function BrandKit({ onClose, onSaved }: { onClose: () => void; onSaved: (
         ...kit,
         ...(logo === "remove" ? { logo: null } : logo ? { logo: { mediaType: logo.mediaType, data: logo.data } } : { logo: undefined }),
       };
-      await api("/api/brand", { method: "PUT", json: body });
+      const { brand } = await api<{ brand: Kit }>("/api/brand", { method: "PUT", json: body });
+      setKit(brand);
+      setLogo(null);
       onSaved("Brand kit saved. Flash will use it for your websites, slides, posts and pictures.");
-      onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't save. Please try again.");
-      setSaving(false);
     }
+    setSaving(false);
   }
 
   const set = (part: Partial<Kit>) => setKit((k) => (k ? { ...k, ...part } : k));
   const logoSrc = logo === "remove" ? "" : logo ? logo.preview : kit?.logo;
 
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/60 p-0 backdrop-blur-sm sm:items-center sm:p-4" onClick={onClose}>
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Brand kit"
-        className="max-h-[92dvh] w-full max-w-lg overflow-y-auto rounded-t-2xl border border-white/8 bg-zinc-950 p-6 text-zinc-100 sm:rounded-2xl sm:p-7"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="mb-2 flex items-start justify-between gap-3">
-          <h2 className="text-lg font-medium tracking-tight">🎨 Brand kit</h2>
-          <button onClick={onClose} className="rounded-full p-2 text-zinc-400 transition hover:bg-white/[0.06] hover:text-zinc-100" aria-label="Close">
-            ✕
-          </button>
-        </div>
+    <div>
+      <div>
         <p className="text-sm text-zinc-400">Save your business&apos;s look once. Flash uses it for your websites, slides, posts, flyers and pictures.</p>
         {!kit ? (
           <p className="mt-6 text-sm text-zinc-500">Loading…</p>

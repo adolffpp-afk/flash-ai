@@ -11,7 +11,7 @@ import { InstallApp, InstallPopup } from "./InstallApp";
 import { ShareDialog } from "./ShareDialog";
 import { DownloadChat } from "./DownloadChat";
 import { ProjectInstructions } from "./ProjectInstructions";
-import { BrandKit } from "./BrandKit";
+import { Settings, SKIP_COST_CHECK, type SettingsTab } from "./Settings";
 import { Creations } from "./Creations";
 import { MyApps } from "./MyApps";
 import { OFFICE_TYPES, officeKind, officeText } from "@/lib/office";
@@ -27,8 +27,6 @@ import { MicButton, PlusMenu, SendButton, ToolPicker, type Choice } from "./Comp
 // A project's messages are loaded the first time it is opened.
 type Project = ProjectSummary & { messages?: UIMessage[] };
 
-// Set on this device when the user says not to ask before costly requests again.
-const SKIP_COST_CHECK = "flash:skip-cost-check";
 const skipsCostCheck = () => {
   try {
     return localStorage.getItem(SKIP_COST_CHECK) === "1";
@@ -256,7 +254,8 @@ export function Flash({
   const [chatHits, setChatHits] = useState<ChatHit[]>([]);
   const [showShare, setShowShare] = useState(false);
   const [showInstructions, setShowInstructions] = useState(false);
-  const [showBrand, setShowBrand] = useState(false);
+  // The Settings tab to show, or null when Settings is closed.
+  const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
   const [showCreations, setShowCreations] = useState(false);
   const [showApps, setShowApps] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -656,7 +655,7 @@ export function Flash({
     }
   }
 
-  const closeBrand = useCallback(() => setShowBrand(false), []);
+  const closeSettings = useCallback(() => setSettingsTab(null), []);
 
   /** Adds a read file to the ones waiting to be sent, or says why it can't be added. */
   function addFile(file: Attachment) {
@@ -818,7 +817,7 @@ export function Flash({
           </button>
           <button
             onClick={() => {
-              setShowBrand(true);
+              setSettingsTab("brand");
               setSidebar(false);
             }}
             className="mt-0.5 h-9 w-full rounded-lg px-3 text-left text-sm text-zinc-300 transition hover:bg-white/[0.04] hover:text-white"
@@ -897,20 +896,9 @@ export function Flash({
           )}
         </nav>
         <div className="border-t border-white/6 p-3">
-          <label className="text-xs font-medium text-zinc-400" htmlFor="prefs">
-            Memory: what Flash should know about you
-          </label>
-          <textarea
-            id="prefs"
-            value={preferences}
-            onChange={(e) => changePreferences(e.target.value)}
-            placeholder="e.g. I run a small bakery in Toronto. Keep answers short."
-            rows={3}
-            className="mt-1 w-full resize-none rounded-lg border border-white/8 bg-white/[0.03] p-2 text-sm outline-none placeholder:text-zinc-500 focus:border-primary/70"
-          />
           <button
             onClick={() => setShowInvite(true)}
-            className="mt-2 w-full rounded-lg border border-white/8 px-2 py-1.5 text-left text-xs text-gold-soft transition hover:bg-white/[0.04] hover:text-gold"
+            className="w-full rounded-lg border border-white/8 px-2 py-1.5 text-left text-xs text-gold-soft transition hover:bg-white/[0.04] hover:text-gold"
           >
             🎁 Invite friends, earn credits
           </button>
@@ -943,8 +931,15 @@ export function Flash({
                 Dashboard
               </a>
             )}
-            <button onClick={signOut} className="text-xs text-zinc-500 hover:text-zinc-200">
-              Sign out
+            <button
+              onClick={() => {
+                setSettingsTab("profile");
+                setSidebar(false);
+              }}
+              className="rounded-md px-1.5 py-0.5 text-xs text-zinc-400 hover:bg-white/[0.05] hover:text-zinc-100"
+              title="Settings: profile, memory, brand kit, plan, connected apps"
+            >
+              ⚙️ Settings
             </button>
           </div>
         </div>
@@ -1045,7 +1040,28 @@ export function Flash({
         {showInvite && <InviteDialog me={me} onClose={() => setShowInvite(false)} />}
         <InstallPopup />
       {showShare && active && <ShareDialog project={active} onClose={() => setShowShare(false)} />}
-      {showBrand && <BrandKit onClose={closeBrand} onSaved={setNotice} />}
+      {settingsTab && me && (
+        <Settings
+          me={me}
+          preferences={preferences}
+          initialTab={settingsTab}
+          onPreferences={changePreferences}
+          onNameChanged={(name) => setMe((m) => (m ? { ...m, user: { ...m.user, name } } : m))}
+          onOpenCredits={() => {
+            setSettingsTab(null);
+            setShowCredits(true);
+          }}
+          onOpenInvite={() => {
+            setSettingsTab(null);
+            setShowInvite(true);
+          }}
+          onSignOut={() => {
+            setSettingsTab(null);
+            signOut();
+          }}
+          onClose={closeSettings}
+        />
+      )}
       {showInstructions && active && (
         <ProjectInstructions
           project={active}
