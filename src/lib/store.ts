@@ -7,6 +7,10 @@ export type UIMessage = {
   attachmentName?: string;
   // A request made from a template: the engine it goes to and the template's name.
   template?: { engine: Engine; name: string };
+  // A request the companion lined up: it goes to Auto, whatever tool is picked in the composer.
+  queued?: boolean;
+  // An invoice or quote built in the browser: exact and free, so it is never sent to the AI again.
+  local?: boolean;
   engine?: Engine;
   reason?: string;
   demo?: boolean;
@@ -34,6 +38,8 @@ export type Project = ProjectSummary & { messages: UIMessage[] };
 
 export type Pricing = {
   costs: Record<Engine, number>;
+  // Typical credits for each written template, by id.
+  templates?: Record<string, number>;
   limits: Partial<Record<Engine, number>>;
   packs: { id: string; name: string; credits: number; priceCents: number; blurb: string }[];
   plans: {

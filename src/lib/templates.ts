@@ -86,18 +86,123 @@ export function decimalsOf(currency: string): number {
   }
 }
 
+// BigInt constants (the build targets browsers older than BigInt literals).
+const ZERO = BigInt(0);
+const ONE = BigInt(1);
+const TWO = BigInt(2);
+const TEN = BigInt(10);
+const HUNDRED = BigInt(100);
+
+/** An exact decimal number: its digits as a whole number, and how many of them come after the point (12.50 is 1250n, 2). */
+export type Decimal = { digits: bigint; scale: number };
+
+// Currency words and abbreviations people type around amounts: "CAD 14", "Rs. 500", "R$ 80", "14 dollars".
+const MONEY_WORDS = new Set([
+  ...CURRENCIES.map((c) => c.toLowerCase()),
+  ...["rs", "ksh", "sh", "r", "us", "ca", "c", "a", "au", "gh", "cfa", "fcfa", "f", "fr", "dollar", "dollars", "euro", "euros"],
+  ...["naira", "cedi", "cedis", "rand", "rupee", "rupees", "yen", "pound", "pounds", "real", "reais", "peso", "pesos", "shilling", "shillings", "francs"],
+]);
+
+/** What may stand around the number: known currency words (with an abbreviation dot) and currency symbols. */
+function moneyMarks(text: string, extra: RegExp): boolean {
+  const words = text.match(/\p{L}+/gu) ?? [];
+  if (words.some((w) => !MONEY_WORDS.has(w.toLowerCase()))) return false;
+  return text.replace(/\p{L}+\.?/gu, "").replace(/\p{Sc}/gu, "").replace(extra, "") === "";
+}
+
+// Currencies whose countries often group thousands with dots (1.200 is twelve hundred reais).
+const DOT_GROUPS = new Set(["EUR", "BRL", "XOF", "XAF"]);
+
+/**
+ * A typed amount, quantity or rate as an exact decimal: "1,200.50", "$8", "8,50", "Rs. 4,500", "1 250,00", "9.975%".
+ * Null when it isn't clearly one number, like "2k" (a letter that isn't a currency). "1.200" reads as 1.2,
+ * except with a currency whose countries group thousands with dots, where it could be either and is refused.
+ */
+export function parseDecimal(text: string, currency = ""): Decimal | null {
+  // Spaces and apostrophes group thousands in many countries.
+  const s = text.trim().replace(/[\s\u00a0\u202f'’]/g, "");
+  const first = s.search(/\d/);
+  if (first === -1) return null;
+  const last = s.length - 1 - [...s].reverse().findIndex((ch) => /\d/.test(ch));
+  let before = s.slice(0, first);
+  const core = s.slice(first, last + 1);
+  const after = s.slice(last + 1);
+  // A mark right before the digits is a decimal point (".5", "$.50"), unless it ends a word like "Rs.".
+  const leading = /[.,]$/.test(before) && !/\p{L}[.,]$/u.test(before);
+  if (leading) before = before.slice(0, -1);
+  const negative = (before.match(/-/g) ?? []).length;
+  if (negative > 1 || !moneyMarks(before, /[-+]/g) || !moneyMarks(after, /^[.,]?%?[.,]?$/)) return null;
+  if (!/^\d[\d.,]*$/.test(core)) return null;
+
+  const grouped = (str: string, sep: string) => new RegExp(`^\\d{1,3}(\\${sep}\\d{3})+$`).test(str);
+  let whole = core;
+  let frac = "";
+  const dots = core.split(".").length - 1;
+  const commas = core.split(",").length - 1;
+  if (leading) {
+    if (dots || commas) return null;
+    whole = "0";
+    frac = core;
+  } else if (dots && commas) {
+    // "1,200.50" and "1.200,50": the last mark is the decimal point, the other one groups thousands.
+    const point = core.lastIndexOf(".") > core.lastIndexOf(",") ? "." : ",";
+    const group = point === "." ? "," : ".";
+    if (core.split(point).length > 2) return null;
+    [whole, frac] = core.split(point);
+    if (!grouped(whole, group)) return null;
+    whole = whole.split(group).join("");
+  } else if (dots + commas > 1) {
+    const sep = dots ? "." : ",";
+    if (!grouped(core, sep)) return null;
+    whole = core.split(sep).join("");
+  } else if (dots + commas === 1) {
+    const sep = dots ? "." : ",";
+    [whole, frac] = core.split(sep);
+    if (frac.length === 3 && /^[1-9]\d{0,2}$/.test(whole)) {
+      // "1,200" groups thousands. "1.200" is 1.2, unless the currency's countries write 1200 that way.
+      if (sep === ",") {
+        whole += frac;
+        frac = "";
+      } else if (DOT_GROUPS.has(currency.toUpperCase())) return null;
+    }
+  }
+  if (!/^\d*$/.test(frac) || frac.length > 6 || (whole + frac).replace(/^0+/, "").length > 15) return null;
+  const digits = BigInt(whole + frac || "0");
+  return { digits: negative ? -digits : digits, scale: frac.length };
+}
+
 /** A typed amount or quantity as a number: "1,200.50", "$8", "8,50", "2.5". NaN when it isn't one. */
 export function parseAmount(text: string): number {
-  let t = text.trim().replace(/[\s$€£¥₦₵₹]|[a-z]/gi, "");
-  // "8,50" uses a decimal comma; "1,200" and "1,200.50" use commas between thousands.
-  t = /^-?\d+,\d{1,2}$/.test(t) ? t.replace(",", ".") : t.replace(/,(?=\d{3}(\D|$))/g, "");
-  if (!/^-?(\d+(\.\d+)?|\.\d+)$/.test(t)) return NaN;
-  return Number(t);
+  const d = parseDecimal(text);
+  return d ? Number(d.digits) / 10 ** d.scale : NaN;
+}
+
+/** n ÷ 10^places, rounded half away from zero, the way money is rounded on paper. */
+function shift(n: bigint, places: number): bigint {
+  if (places <= 0) return n * TEN ** BigInt(-places);
+  const d = TEN ** BigInt(places);
+  const q = n / d;
+  const r = n % d;
+  if ((r < ZERO ? -r : r) * TWO >= d) return q + (n < ZERO ? -ONE : ONE);
+  return q;
+}
+
+/** An exact decimal written out with thousands commas and at least `decimals` decimals: 1,234.50. */
+export function formatDecimal(d: Decimal, decimals: number): string {
+  let { digits, scale } = d;
+  if (scale < decimals) {
+    digits *= TEN ** BigInt(decimals - scale);
+    scale = decimals;
+  }
+  const negative = digits < ZERO;
+  const text = (negative ? -digits : digits).toString().padStart(scale + 1, "0");
+  const whole = text.slice(0, text.length - scale).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return `${negative ? "-" : ""}${whole}${scale ? `.${text.slice(text.length - scale)}` : ""}`;
 }
 
 /** Minor units (cents) shown as "1,234.50" in the currency's own number of decimals. */
 export function formatMinor(minor: number, decimals: number): string {
-  return (minor / 10 ** decimals).toLocaleString("en-US", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+  return formatDecimal({ digits: BigInt(minor), scale: decimals }, decimals);
 }
 
 /** "2026-10-06" as "October 6, 2026", read as a calendar date wherever the user is. */
@@ -116,49 +221,60 @@ export function nextNumber(previous: string): string {
 }
 
 export type Bill = {
-  lines: { description: string; quantity: number; unitMinor: number; amountMinor: number }[];
+  // Quantities and unit prices are shown as typed (a price of 0.125 stays 0.125); amounts are in minor units.
+  lines: { description: string; quantity: string; unitPrice: string; amountMinor: number }[];
   subtotalMinor: number;
-  taxes: { name: string; rate: number; minor: number }[];
+  taxes: { name: string; rate: string; minor: number }[];
   totalMinor: number;
   decimals: number;
 };
 
+// Above this (a hundred billion in dollars) a line can't be held exactly as a number any more.
+const TOO_LARGE = TEN ** BigInt(13);
+
 /** Works out an invoice's lines, taxes and total exactly, in whole minor units, or says what's wrong. */
 export function workOutBill(items: LineItem[], currency: string, taxes: { name: string; rate: string }[]): Bill | { error: string } {
   const decimals = decimalsOf(currency);
-  const unit = 10 ** decimals;
   const lines: Bill["lines"] = [];
+  let subtotal = ZERO;
   for (const [i, item] of items.entries()) {
     const description = item.description.trim();
     if (!description && !item.price.trim()) continue;
     if (!description) return { error: `Item ${i + 1} needs a description.` };
-    const quantity = item.quantity.trim() ? parseAmount(item.quantity) : 1;
-    if (!Number.isFinite(quantity) || quantity <= 0) return { error: `The quantity for "${description}" isn't a number above 0.` };
-    const price = parseAmount(item.price);
-    if (!Number.isFinite(price)) return { error: `The price for "${description}" isn't a number.` };
-    const unitMinor = Math.round(price * unit);
-    // Rounded once per line, the way it's printed, so the lines add up to the subtotal.
-    lines.push({ description, quantity, unitMinor, amountMinor: Math.round(quantity * unitMinor) });
+    const quantity = item.quantity.trim() ? parseDecimal(item.quantity, currency) : { digits: ONE, scale: 0 };
+    if (!quantity || quantity.digits <= ZERO) return { error: `The quantity for "${description}" isn't a number above 0. Write it like 3 or 2.5.` };
+    const price = parseDecimal(item.price, currency);
+    if (!price) return { error: `The price for "${description}" isn't clear. Write it like 1200 or 12.50.` };
+    // Quantity × price, exactly, rounded once to the cent, the way the line is printed.
+    const amount = shift(quantity.digits * price.digits * TEN ** BigInt(decimals), quantity.scale + price.scale);
+    if ((amount < ZERO ? -amount : amount) >= TOO_LARGE) return { error: `The amount for "${description}" is too large.` };
+    subtotal += amount;
+    lines.push({ description, quantity: formatDecimal(quantity, 0), unitPrice: formatDecimal(price, decimals), amountMinor: Number(amount) });
   }
   if (!lines.length) return { error: "Add at least one item with a price." };
-  const subtotalMinor = lines.reduce((n, l) => n + l.amountMinor, 0);
+  if (subtotal < ZERO) return { error: "The items add up to less than zero. Check the discount lines." };
+  if (subtotal >= TOO_LARGE) return { error: "The total is too large." };
   const taxLines: Bill["taxes"] = [];
+  let total = subtotal;
   for (const t of taxes) {
     if (!t.rate.trim()) continue;
-    const rate = parseAmount(t.rate.replace("%", ""));
-    if (!Number.isFinite(rate) || rate < 0 || rate > 100) return { error: `The tax rate "${t.rate}" isn't a percentage between 0 and 100.` };
-    if (rate === 0) continue;
+    // A rate never groups thousands, so Quebec's 9.975% reads the same whatever the currency.
+    const rate = parseDecimal(t.rate);
+    if (!rate || rate.digits < ZERO || rate.digits > HUNDRED * TEN ** BigInt(rate.scale)) {
+      return { error: `The tax rate "${t.rate}" isn't a percentage between 0 and 100.` };
+    }
+    if (rate.digits === ZERO) continue;
     // Each tax is on the subtotal (like GST and QST in Canada), rounded to the cent.
-    taxLines.push({ name: t.name.trim() || "Tax", rate, minor: Math.round((subtotalMinor * rate) / 100) });
+    const minor = shift(subtotal * rate.digits, rate.scale + 2);
+    total += minor;
+    taxLines.push({ name: t.name.trim() || "Tax", rate: formatDecimal(rate, 0), minor: Number(minor) });
   }
-  const totalMinor = subtotalMinor + taxLines.reduce((n, t) => n + t.minor, 0);
-  return { lines, subtotalMinor, taxes: taxLines, totalMinor, decimals };
+  return { lines, subtotalMinor: Number(subtotal), taxes: taxLines, totalMinor: Number(total), decimals };
 }
 
 // Table cells can't hold a "|", which every exporter reads as a column break.
 const cell = (s: string) => s.replace(/\|/g, "/").replace(/\n+/g, " ");
 const block = (s: string) => clean(s).split("\n").map((l) => cell(l.trim())).filter(Boolean).join("  \n");
-const qty = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 3 });
 
 /** An invoice or quote as a Markdown document, with every number already worked out. */
 export function billMarkdown(kind: "invoice" | "quote", v: TemplateValues): string | { error: string } {
@@ -193,9 +309,9 @@ export function billMarkdown(kind: "invoice" | "quote", v: TemplateValues): stri
     "",
     `| Item | Quantity | Unit price (${currency}) | Amount (${currency}) |`,
     "|---|---:|---:|---:|",
-    ...bill.lines.map((l) => `| ${cell(l.description)} | ${qty(l.quantity)} | ${money(l.unitMinor)} | ${money(l.amountMinor)} |`),
+    ...bill.lines.map((l) => `| ${cell(l.description)} | ${l.quantity} | ${l.unitPrice} | ${money(l.amountMinor)} |`),
     `| **Subtotal** | | | **${money(bill.subtotalMinor)}** |`,
-    ...bill.taxes.map((x) => `| ${cell(x.name)} (${qty(x.rate)}%) | | | ${money(x.minor)} |`),
+    ...bill.taxes.map((x) => `| ${cell(x.name)} (${x.rate}%) | | | ${money(x.minor)} |`),
     `| **${kind === "invoice" ? "Total due" : "Total"}** | | | **${money(bill.totalMinor)}** |`,
   );
   if (clean(t.notes)) out.push("", block(t.notes));
@@ -454,7 +570,7 @@ export const TEMPLATES: Template[] = [
       BUSINESS,
       { key: "offer", label: "What you do", type: "textarea", placeholder: "Sourdough bread, pastries and coffee", required: true, max: 600 },
       CITY,
-      { key: "contact", label: "Contact details", placeholder: "Phone, email, address, hours", remember: true, max: 300 },
+      { key: "siteContact", label: "Contact details", placeholder: "Phone, email, address, hours", remember: true, max: 300 },
       { key: "pages", label: "Pages", placeholder: "Home, Menu, About, Contact", max: 200 },
       TONE,
     ],
@@ -464,7 +580,7 @@ export const TEMPLATES: Template[] = [
       details(v, [
         ["offer", "What we do"],
         ["city", "Where"],
-        ["contact", "Contact details"],
+        ["siteContact", "Contact details"],
         ["tone", "Tone"],
       ]) +
       `\n\nPages: ${clean(v.text.pages) || "Home, About, Services, Contact"}. Include a contact form that sends ` +
@@ -485,7 +601,12 @@ export function missingField(t: Template, v: TemplateValues): string {
 }
 
 /** About what a written template costs: its answer at the writing model's price, plus reading the request. */
-export function writingCredits(answerTokens: number): number {
-  const price = CLAUDE_PRICES["claude-sonnet-5-5"];
-  return Math.ceil(((answerTokens * price.output + 3000 * price.input) / 1e6) * MARKUP);
+export function writingCredits(answerTokens: number, model = "claude-sonnet-5-5", markup = MARKUP): number {
+  const price = CLAUDE_PRICES[model] ?? CLAUDE_PRICES["claude-sonnet-5-5"];
+  return Math.ceil(((answerTokens * price.output + 3000 * price.input) / 1e6) * markup);
+}
+
+/** The typical price of each written template, by id. The server works these out with its real model and markup. */
+export function templateCredits(model?: string, markup?: number): Record<string, number> {
+  return Object.fromEntries(TEMPLATES.filter((t) => t.answerTokens).map((t) => [t.id, writingCredits(t.answerTokens!, model, markup)]));
 }

@@ -1,4 +1,6 @@
 import { CREDIT_LIMITS, CREDIT_PACKS, FREE_MONTHLY_CREDITS, PLANS, TYPICAL_CREDITS } from "../credits.ts";
+import { templateCredits } from "../templates.ts";
+import { CHAT_MODEL } from "../engines/claude.ts";
 import { MODELS, modelCredits } from "../models.ts";
 import { ENGINES, type Engine } from "../types.ts";
 import { elevenConfigured, openaiConfigured } from "../engines/media.ts";
@@ -24,6 +26,8 @@ export function pricingInfo() {
         TYPICAL_CREDITS[e] ?? Math.min(...MODELS.filter((m) => m.engine === e).map((m) => modelCredits(m))),
       ]),
     ) as Record<Engine, number>,
+    // Typical credits for each written template, priced with the model and markup really in use.
+    templates: templateCredits(CHAT_MODEL),
     limits: CREDIT_LIMITS,
     packs: CREDIT_PACKS,
     plans: PLANS,

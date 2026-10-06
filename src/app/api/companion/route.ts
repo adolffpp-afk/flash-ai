@@ -9,11 +9,12 @@ import { recordFree, releaseFreeUser, reserveFree, reserveFreeUser } from "@/lib
 import { chatsSummary, creationsSummary, spendingSummary, websitesSummary } from "@/lib/server/companion.ts";
 import { claudeConfigured, type Meter } from "@/lib/engines/claude.ts";
 import { freeChatConfigured, streamFreeChat } from "@/lib/engines/free.ts";
-import { COMPANION_MODEL, streamCompanion, type ToolRunner } from "@/lib/engines/companion.ts";
+import { COMPANION_MODEL, countCompanionTokens, streamCompanion, type ToolRunner } from "@/lib/engines/companion.ts";
 import { FriendlyError } from "@/lib/engines/errors.ts";
 import { companionHold, finalCredits, readCostCents } from "@/lib/credits.ts";
 import {
   COMPANION_PAGES,
+  MAX_QUEUE,
   MAX_QUEUED_PER_ANSWER,
   cleanContext,
   cleanTurns,
@@ -52,16 +53,19 @@ export async function POST(request: Request) {
   }
 
   await ensureMonthlyCredits(user.id);
-  const available = (await spendable(user.id)).largest;
+  // The largest single balance pays (requests are charged to one account); the total is what the app shows.
+  const { largest: available, total: shownCredits } = await spendable(user.id);
   const status = engineStatus();
   const pricing = pricingInfo();
   const plan = await planSummary(user.id);
   const base = appUrl(request);
+  const context = cleanContext(body?.context);
   const facts = {
+    // The user's own date when the app sent it, else the server's (UTC).
+    today: context.today ?? new Date().toISOString().slice(0, 10),
     name: user.name,
-    credits: available,
+    credits: shownCredits,
     plan: plan?.name ?? null,
-    today: new Date().toISOString().slice(0, 10),
     live: ENGINES.filter((e) => status[e]),
     costs: pricing.costs,
     models: pricing.models
@@ -73,11 +77,10 @@ export async function POST(request: Request) {
         blurb: m.id === "movie" ? `${m.blurb}; the price shown is for 40 seconds, longer movies cost more` : m.blurb,
       })),
     freeLane: { chats: pricing.freeLane.chats, images: pricing.freeLane.images, transcripts: pricing.freeLane.transcripts ?? 0 },
-    context: cleanContext(body?.context),
+    context,
   };
   const system = companionSystem({ ...facts, tools: true });
-  // Estimated on the high side (about 2.5 characters a token), plus the tool definitions.
-  const inputTokens = Math.ceil((system.length + turns.reduce((n, t) => n + t.content.length, 0)) / 2.5) + 1500;
+  const inputTokens = claudeConfigured() ? await countCompanionTokens(turns, system) : 0;
   const hold = companionHold(COMPANION_MODEL, inputTokens, available);
 
   // Out of credits (or no Claude key): a free open-source model answers, without tools, and it
@@ -113,13 +116,26 @@ export async function POST(request: Request) {
 
   const spend: number[] = [];
   const meter: Meter = (_provider, _model, cents) => spend.push(cents);
+  const lined = [...(context.queue ?? [])];
   let queued = 0;
+  // Set once a lookup has returned stored text (chat snippets, file names): requests added after
+  // that wait for the user to press Run, so nothing written there can start paid work by itself.
+  let readStored = false;
   const runTool: ToolRunner = async (name, input) => {
     switch (name) {
       case "do_next": {
         const text = typeof input.request === "string" ? input.request.trim().slice(0, 2000) : "";
         if (!text) return { result: "No request was given." };
-        if (++queued > MAX_QUEUED_PER_ANSWER) return { result: `Only ${MAX_QUEUED_PER_ANSWER} requests can be added at once.` };
+        if (lined.includes(text)) return { result: "That request is already in Next up." };
+        if (lined.length >= MAX_QUEUE) return { result: `Next up is full (${MAX_QUEUE} requests). Nothing was added; tell the user.` };
+        if (++queued > MAX_QUEUED_PER_ANSWER) return { result: `Only ${MAX_QUEUED_PER_ANSWER} requests can be added at once. Nothing more was added.` };
+        lined.push(text);
+        if (readStored) {
+          return {
+            result: "Added to Next up, waiting for the user to press Run next to it (requests added after a lookup always wait).",
+            action: { kind: "queue", request: text, waiting: true },
+          };
+        }
         return {
           result: facts.context.job
             ? "Added to Next up. It runs in the user's chat when the current job finishes."
@@ -133,11 +149,13 @@ export async function POST(request: Request) {
       case "my_websites":
         return { result: await websitesSummary(user.id, base), status: "Checking your websites…" };
       case "my_creations":
+        readStored = true;
         return { result: await creationsSummary(user.id, base), status: "Looking at your creations…" };
       case "my_spending":
         return { result: await spendingSummary(user.id), status: "Adding up your credits…" };
       case "search_chats": {
         const query = typeof input.query === "string" ? input.query : "";
+        readStored = true;
         return { result: await chatsSummary(user.id, query), status: "Searching your chats…" };
       }
       default:

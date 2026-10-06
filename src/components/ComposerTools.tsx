@@ -338,14 +338,28 @@ export function MicButton({
   );
 }
 
-/** The round send button, which becomes a stop button while Flash replies. */
+/**
+ * The round send button, which becomes a stop button while Flash replies. They're separate
+ * elements (the keys): stopping re-renders at once, and a reused element would turn into the send
+ * button mid-click and send whatever is typed in the composer.
+ */
 export function SendButton({ busy, disabled, onStop }: { busy: boolean; disabled: boolean; onStop: () => void }) {
   return busy ? (
-    <button type="button" onClick={onStop} aria-label="Stop" title="Stop" className={`${round} bg-zinc-100 text-zinc-900 hover:bg-white`}>
+    <button
+      key="stop"
+      type="button"
+      onClick={(e) => {
+        e.preventDefault();
+        onStop();
+      }}
+      aria-label="Stop"
+      title="Stop"
+      className={`${round} bg-zinc-100 text-zinc-900 hover:bg-white`}
+    >
       <span className="h-3.5 w-3.5 rounded-[3px] bg-current" />
     </button>
   ) : (
-    <button type="submit" disabled={disabled} aria-label="Send" title="Send" className={`${round} bg-zinc-100 text-zinc-900 hover:bg-white`}>
+    <button key="send" type="submit" disabled={disabled} aria-label="Send" title="Send" className={`${round} bg-zinc-100 text-zinc-900 hover:bg-white`}>
       <Icon d="M12 19V5 M6 11l6-6 6 6" className="h-5 w-5" />
     </button>
   );

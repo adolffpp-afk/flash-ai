@@ -30,6 +30,15 @@ import { MicButton, PlusMenu, SendButton, ToolPicker, type Choice } from "./Comp
 
 // A project's messages are loaded the first time it is opened.
 type Project = ProjectSummary & { messages?: UIMessage[] };
+// A request the companion lined up, for the chat it was asked about. "waiting" ones need the user's OK first.
+type Queued = { id: string; request: string; projectId: string; waiting?: boolean };
+
+/** Whether the user is typing somewhere else, so finishing a job doesn't pull them away. */
+function typingElsewhere(own: Element | null): boolean {
+  const el = document.activeElement as HTMLElement | null;
+  if (!el || el === document.body || el === own) return false;
+  return el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName);
+}
 
 const skipsCostCheck = () => {
   try {
@@ -250,15 +259,21 @@ export function Flash({
   const attachment = files[0] ?? null;
   const [busy, setBusy] = useState(false);
   const [companion, setCompanion] = useState(false);
-  // Requests the companion lined up, run in this chat one after another once it's free.
-  const [queue, setQueueState] = useState<string[]>([]);
-  const queueNow = useRef<string[]>([]);
-  const setQueue = (next: string[]) => {
+  // Requests the companion lined up, each run in the chat it was asked about, one after another.
+  const [queue, setQueueState] = useState<Queued[]>([]);
+  const queueNow = useRef<Queued[]>([]);
+  // Next up waits after a request fails, is stopped or needs its price confirmed, until Resume.
+  const [queuePaused, setQueuePaused] = useState(false);
+  const setQueue = (next: Queued[]) => {
     queueNow.current = next;
     setQueueState(next);
+    // An emptied list starts afresh: whatever is added next isn't held by an old pause.
+    if (!next.length) setQueuePaused(false);
   };
-  // What the running request was asked to do, and when it started, for the companion.
-  const jobRef = useRef<{ request: string; startedAt: number } | null>(null);
+  // The chat a request is running in right now, which may not be the open one.
+  const [runningIn, setRunningIn] = useState("");
+  // What the running request was asked to do, where, and when it started, for the companion.
+  const jobRef = useRef<{ request: string; startedAt: number; projectId: string } | null>(null);
   const [sidebar, setSidebar] = useState(false);
   const [dragging, setDragging] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -410,6 +425,7 @@ export function Flash({
   }, [projects, busy]);
 
   const active = projects.find((p) => p.id === activeId);
+  const runningMsg = runningIn ? projects.find((p) => p.id === runningIn)?.messages?.at(-1) : undefined;
 
   useEffect(() => {
     if (active?.messages?.length) bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -464,34 +480,34 @@ export function Flash({
   }
 
   /**
-   * Makes a template in its own chat (the open one, if it's still empty). Invoices and quotes
-   * arrive finished and free; everything else is sent to the template's engine.
+   * Makes a template in its own chat (the open one, if it's still empty), and closes the templates
+   * once it's there. Invoices and quotes arrive finished and free, even while Flash works on
+   * something else; everything else is sent to the template's engine. False when it couldn't start.
    */
-  async function makeTemplate(t: Template, values: TemplateValues, document?: string) {
+  async function makeTemplate(t: Template, values: TemplateValues, document?: string): Promise<boolean> {
+    if (t.engine === "local" ? !document : busy) return false;
+    const empty = active?.messages && !active.messages.length && active.id !== runningIn ? active : null;
+    const project = empty ?? (await createProject());
+    if (!project) return false;
     setTemplates(null);
-    if (busy) {
-      setNotice("Flash is still working on something. Try the template again when it finishes.");
-      return;
-    }
-    const project = active?.messages && !active.messages.length ? active : await createProject();
-    if (!project) return;
     const name = t.title(values).slice(0, 60);
     const ask: UIMessage = { id: newId(), role: "user", content: t.request(values) };
-    if (t.engine === "local" && document) {
+    if (t.engine === "local") {
       const made: UIMessage = {
         id: newId(),
         role: "assistant",
-        content: document,
+        content: document ?? "",
         engine: "docs",
         reason: `Made from the ${t.name} template. The totals are worked out exactly, and it's free.`,
         cost: 0,
+        local: true,
       };
-      updateProject(project.id, (p) => ({ ...p, name, updated_at: Date.now(), messages: [...(p.messages ?? []), ask, made] }));
-      return;
+      updateProject(project.id, (p) => ({ ...p, name, updated_at: Date.now(), messages: [...(p.messages ?? []), { ...ask, local: true }, made] }));
+      return true;
     }
-    if (t.engine === "local") return;
     updateProject(project.id, (p) => ({ ...p, name }));
-    await respond(project, [], { ...ask, template: { engine: t.engine, name: t.name } });
+    void respond(project, [], { ...ask, template: { engine: t.engine, name: t.name } });
+    return true;
   }
 
   async function deleteProject(id: string) {
@@ -543,6 +559,11 @@ export function Flash({
 
   async function signOut() {
     await api("/api/auth/logout", { method: "POST" }).catch(() => {});
+    // Nothing of this account keeps running, or runs later for whoever signs in next.
+    abortRef.current?.abort();
+    jobRef.current = null;
+    setQueue([]);
+    setQueuePaused(false);
     setMe(null);
     setProjects([]);
     setActiveId("");
@@ -610,8 +631,9 @@ export function Flash({
     const projectId = project.id;
     const reply: UIMessage = { id: newId(), role: "assistant", content: "", pending: true };
     const sent = filesRef.current.get(userMsg.id) ?? [];
-    // A template's request always goes to its own engine; anything else to the one picked.
-    const engine = userMsg.template?.engine ?? choice;
+    // A template's request always goes to its own engine, and one the companion lined up to Auto
+    // (the tool picked in the composer was for something else); anything else to the one picked.
+    const engine = userMsg.template?.engine ?? (userMsg.queued ? "auto" : choice);
 
     // Only the most recent app's code is sent back, so edits build on it without resending every version.
     const lastAppId = [...earlier].reverse().find((m) => m.app)?.id;
@@ -628,10 +650,12 @@ export function Flash({
     ];
 
     updateProject(projectId, (p) => ({ ...p, updated_at: Date.now(), messages: [...earlier, userMsg, reply] }));
-    jobRef.current = { request: userMsg.content, startedAt: Date.now() };
+    jobRef.current = { request: userMsg.content, startedAt: Date.now(), projectId };
+    setRunningIn(projectId);
     setBusy(true);
     const controller = new AbortController();
     abortRef.current = controller;
+    let finished = true;
 
     try {
       const res = await fetch("/api/chat", {
@@ -666,10 +690,12 @@ export function Flash({
         for (const line of lines) {
           if (!line.trim()) continue;
           const e = JSON.parse(line) as StreamEvent;
+          if (e.type === "error") finished = false;
           updateMessage(projectId, reply.id, (m) => applyEvent(m, e));
         }
       }
     } catch (err) {
+      finished = false;
       const aborted = controller.signal.aborted;
       updateMessage(projectId, reply.id, (m) =>
         aborted
@@ -685,40 +711,66 @@ export function Flash({
       refreshMe();
       abortRef.current = null;
       jobRef.current = null;
+      // A request that failed, was stopped or waits for its price to be confirmed holds Next up,
+      // so nothing runs on top of it until the user says so.
+      if (!finished && queueNow.current.length) setQueuePaused(true);
+      setRunningIn("");
       setBusy(false);
-      inputRef.current?.focus();
+      if (!typingElsewhere(inputRef.current)) inputRef.current?.focus();
     }
   }
 
-  /** Runs each request the companion lined up, as soon as the chat is free. */
+  /**
+   * Runs each request the companion lined up, as soon as Flash is free, in the chat it was asked
+   * about (even if another chat is open now). It never takes the composer's text or files.
+   */
   useEffect(() => {
-    if (busy || !queue.length || !active?.messages) return;
+    if (busy || queuePaused || !queue.length || queue[0].waiting) return;
     const [next, ...rest] = queue;
     setQueue(rest);
-    send(next);
+    const project = projects.find((p) => p.id === next.projectId);
+    if (!project?.messages) {
+      setNotice(`"${next.request.slice(0, 60)}" didn't run: its chat couldn't be found.`);
+      return;
+    }
+    updateProject(project.id, (p) => ({
+      ...p,
+      name: !p.messages?.length && p.name === "New project" ? next.request.slice(0, 40) : p.name,
+    }));
+    respond(project, project.messages, { id: newId(), role: "user", content: next.request, queued: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [busy, queue, active?.id, active?.messages]);
+  }, [busy, queuePaused, queue, projects]);
 
-  /** Adds a request the companion suggested to Next up, and opens the chat it will run in. */
+  /**
+   * Adds a request the companion lined up to Next up, for the chat Flash is working in (or the
+   * open one). "waiting" requests only run once the user presses Run.
+   */
   const queueRequest = useCallback(
-    (request: string) => {
+    (request: string, waiting = false) => {
+      const projectId = jobRef.current?.projectId ?? activeId;
+      if (!projectId) return;
       const list = queueNow.current;
+      if (list.some((q) => q.request === request && q.projectId === projectId)) return;
       if (list.length >= MAX_QUEUE) {
         setNotice(`Next up is full at ${MAX_QUEUE} requests. They run one after another, then you can add more.`);
         return;
       }
-      if (!list.includes(request)) setQueue([...list, request]);
+      setQueue([...list, { id: newId(), request, projectId, waiting }]);
     },
-    [],
+    [activeId],
   );
 
   /** What the companion is told about the user's work when they ask it something. */
   const companionContext = useCallback(
     (): CompanionContext => {
-      const running = active?.messages?.at(-1);
       const job = jobRef.current;
+      // While a job runs, the companion hears about the chat it runs in, even if another one is open.
+      const chat = (job && projects.find((p) => p.id === job.projectId)) || active;
+      const running = chat?.messages?.at(-1);
+      const now = new Date();
       return {
-        project: active?.name,
+        project: chat?.name,
+        today: `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`,
         ...(job && {
           job: {
             engine: running?.engine,
@@ -728,11 +780,11 @@ export function Flash({
             request: job.request,
           },
         }),
-        recent: recentTurns(active?.messages ?? []),
-        queue: queueNow.current,
+        recent: recentTurns(chat?.messages ?? []),
+        queue: queueNow.current.map((q) => q.request),
       };
     },
-    [active?.name, active?.messages],
+    [active, projects],
   );
 
   /** Opens whatever page the companion was asked to open. */
@@ -1165,9 +1217,12 @@ export function Flash({
         )}
         {templates !== null && (
           <Templates
+            userId={me.user.id}
             costs={me.costs}
+            written={me.templates}
             initialId={templates || undefined}
             isLive={isLive}
+            busy={busy}
             onMake={makeTemplate}
             onClose={closeTemplates}
           />
@@ -1280,9 +1335,9 @@ export function Flash({
               <Message
                 key={m.id}
                 m={m}
-                onRetry={i === all.length - 1 && m.role === "assistant" && !m.pending && !busy ? () => retry() : undefined}
+                onRetry={i === all.length - 1 && m.role === "assistant" && !m.pending && !m.local && !busy ? () => retry() : undefined}
                 onConfirmCost={i === all.length - 1 && !busy ? confirmCost : undefined}
-                onEdit={m.role === "user" && !busy && i === all.findLastIndex((x) => x.role === "user") ? editLast : undefined}
+                onEdit={m.role === "user" && !m.local && !busy && i === all.findLastIndex((x) => x.role === "user") ? editLast : undefined}
                 onBuyCredits={() => setShowCredits(true)}
                 paymentsOn={me.paymentsEnabled || me.testPurchases}
                 onPublished={(slug) => setAppSlug(m.id, slug)}
@@ -1300,24 +1355,59 @@ export function Flash({
           <div className="mx-auto max-w-3xl">
             {queue.length > 0 && (
               <div className="mb-2 rounded-2xl border border-white/8 bg-white/[0.02] px-3 py-2">
-                <p className="text-xs font-medium text-zinc-400">
-                  Next up · {queue.length} {queue.length === 1 ? "request" : "requests"} {busy ? "waiting for this one to finish" : "starting now"}
-                </p>
+                <div className="flex items-center gap-2">
+                  <p className="min-w-0 flex-1 text-xs font-medium text-zinc-400">
+                    Next up · {queue.length} {queue.length === 1 ? "request" : "requests"}{" "}
+                    {queuePaused
+                      ? "paused, because the last request didn't finish"
+                      : queue[0].waiting
+                        ? "waiting for your OK"
+                        : busy
+                          ? "waiting for this one to finish"
+                          : "starting now"}
+                  </p>
+                  {queuePaused && (
+                    <button
+                      type="button"
+                      onClick={() => setQueuePaused(false)}
+                      aria-label="Resume Next up"
+                      className="shrink-0 rounded-full bg-primary/20 px-2.5 py-0.5 text-xs text-primary-soft hover:bg-primary/30"
+                    >
+                      Resume
+                    </button>
+                  )}
+                </div>
                 <ul className="mt-1.5 space-y-1">
-                  {queue.map((q, i) => (
-                    <li key={`${i}-${q}`} className="flex items-start gap-2 text-sm text-zinc-200">
-                      <span className="mt-0.5 shrink-0 text-xs text-zinc-500">{i + 1}.</span>
-                      <span className="min-w-0 flex-1 truncate">{q}</span>
-                      <button
-                        type="button"
-                        onClick={() => setQueue(queueNow.current.filter((_, at) => at !== i))}
-                        aria-label={`Remove "${q}" from Next up`}
-                        className="shrink-0 text-zinc-500 hover:text-red-400"
-                      >
-                        ✕
-                      </button>
-                    </li>
-                  ))}
+                  {queue.map((q, i) => {
+                    const elsewhere = q.projectId !== activeId ? projects.find((p) => p.id === q.projectId)?.name : undefined;
+                    return (
+                      <li key={q.id} className="flex items-start gap-2 text-sm text-zinc-200">
+                        <span className="mt-0.5 shrink-0 text-xs text-zinc-500">{i + 1}.</span>
+                        <span className="min-w-0 flex-1 truncate">
+                          {q.request}
+                          {elsewhere && <span className="text-xs text-zinc-500"> · in {elsewhere}</span>}
+                        </span>
+                        {q.waiting && (
+                          <button
+                            type="button"
+                            onClick={() => setQueue(queueNow.current.map((x) => (x.id === q.id ? { ...x, waiting: false } : x)))}
+                            aria-label={`Run "${q.request}"`}
+                            className="shrink-0 rounded-full bg-primary/20 px-2 text-xs leading-5 text-primary-soft hover:bg-primary/30"
+                          >
+                            Run
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setQueue(queueNow.current.filter((x) => x.id !== q.id))}
+                          aria-label={`Remove "${q.request}" from Next up`}
+                          className="shrink-0 text-zinc-500 hover:text-red-400"
+                        >
+                          ✕
+                        </button>
+                      </li>
+                    );
+                  })}
                 </ul>
               </div>
             )}
@@ -1427,7 +1517,7 @@ export function Flash({
         onQueue={queueRequest}
         onPage={openCompanionPage}
         onCost={refreshMe}
-        running={busy ? { engine: active?.messages?.at(-1)?.engine, status: active?.messages?.at(-1)?.status } : null}
+        running={busy ? { engine: runningMsg?.engine, status: runningMsg?.status } : null}
       />
     </div>
   );

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { LogoMark } from "@/app/brand";
 import { ENGINE_LABELS } from "@/lib/types";
@@ -16,6 +16,17 @@ const STARTERS = [
   "How are my websites doing?",
   "What have I spent credits on?",
 ];
+
+// Links open in a new tab, so the job running in the chat isn't lost. Pictures aren't shown at all:
+// a picture loads by itself, which would let a crafted answer send what it knows to another site.
+const markdown: Components = {
+  a: ({ href, children }) => (
+    <a href={href} target="_blank" rel="noreferrer">
+      {children}
+    </a>
+  ),
+  img: () => null,
+};
 
 /** The questions offered while a job is running, which are the ones people actually ask then. */
 const BUSY_STARTERS = ["How long will this take?", "What will this cost me?", "What should I ask for next?"];
@@ -40,7 +51,8 @@ export function Companion({
   onClose: () => void;
   // Read when a question is sent, so the companion sees what is happening right then.
   context: () => CompanionContext;
-  onQueue: (request: string) => void;
+  // "waiting" requests need the user to press Run in Next up.
+  onQueue: (request: string, waiting?: boolean) => void;
   onPage: (page: string) => void;
   // A finished answer may have changed the user's credits.
   onCost: () => void;
@@ -76,7 +88,10 @@ export function Companion({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
-  // Stops the answer if the panel closes mid-reply, so nothing keeps spending.
+  // Closing the panel stops the answer, so nothing keeps spending and nothing it asked for still happens.
+  useEffect(() => {
+    if (!open) abort.current?.abort();
+  }, [open]);
   useEffect(() => () => abort.current?.abort(), []);
 
   async function ask(text: string) {
@@ -116,6 +131,7 @@ export function Companion({
         const rows = buffer.split("\n");
         buffer = rows.pop() ?? "";
         for (const row of rows) {
+          if (controller.signal.aborted) break;
           if (!row.trim()) continue;
           const event = JSON.parse(row) as CompanionEvent;
           if (event.type === "text") patch((l) => ({ ...l, content: l.content + event.delta }));
@@ -134,12 +150,14 @@ export function Companion({
       setStatus("");
       setBusy(false);
       abort.current = null;
-      field.current?.focus();
+      // Back to the question box, unless the user is typing somewhere else by now.
+      const el = document.activeElement as HTMLElement | null;
+      if (!el || el === document.body || !/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) field.current?.focus();
     }
   }
 
   function act(action: CompanionAction) {
-    if (action.kind === "queue") onQueue(action.request);
+    if (action.kind === "queue") onQueue(action.request, action.waiting);
     else onPage(action.page);
   }
 
@@ -206,8 +224,12 @@ export function Companion({
             <div key={l.id} className={`mr-2 text-sm leading-relaxed ${l.error ? "text-red-400" : "text-zinc-200"}`}>
               {l.content ? (
                 <div className="prose prose-sm prose-invert max-w-none prose-p:my-1.5 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0.5">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>{l.content}</ReactMarkdown>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdown}>
+                    {l.content}
+                  </ReactMarkdown>
                 </div>
+              ) : !l.pending ? (
+                <span className="text-zinc-500">Stopped.</span>
               ) : (
                 <span className="inline-flex items-center gap-2 text-zinc-400">
                   <span className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-700 border-t-gold" aria-hidden />
@@ -244,9 +266,14 @@ export function Companion({
             className="max-h-24 min-h-[24px] flex-1 resize-none bg-transparent px-1.5 py-1 text-sm outline-none placeholder:text-zinc-500"
           />
           {busy ? (
+            // Its own element (the key), so stopping can't turn it into the send button mid-click.
             <button
+              key="stop"
               type="button"
-              onClick={() => abort.current?.abort()}
+              onClick={(e) => {
+                e.preventDefault();
+                abort.current?.abort();
+              }}
               aria-label="Stop"
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-900"
             >
@@ -254,6 +281,7 @@ export function Companion({
             </button>
           ) : (
             <button
+              key="send"
               type="submit"
               disabled={!input.trim()}
               aria-label="Send to companion"

@@ -19,24 +19,25 @@ import {
   type TemplateValues,
 } from "@/lib/templates";
 
-// Field values worth offering again (business name, address, taxes), and the last invoice and quote numbers.
-const MEMORY = "flash:template-memory";
+// Field values worth offering again (business name, address, taxes), and the last invoice and quote
+// numbers, kept per account so whoever signs in next on this browser never sees them.
+const memoryKey = (userId: string) => `flash:template-memory:${userId}`;
 
-function recall(): Record<string, string> {
+function recall(userId: string): Record<string, string> {
   try {
-    const saved = JSON.parse(localStorage.getItem(MEMORY) ?? "{}");
+    const saved = JSON.parse(localStorage.getItem(memoryKey(userId)) ?? "{}");
     return saved && typeof saved === "object" ? saved : {};
   } catch {
     return {};
   }
 }
 
-function remember(t: Template, v: TemplateValues) {
+function remember(userId: string, t: Template, v: TemplateValues) {
   try {
-    const memory = recall();
+    const memory = recall(userId);
     for (const f of t.fields) if (f.remember && v.text[f.key]?.trim()) memory[f.key] = v.text[f.key].trim();
     if (t.engine === "local" && v.text.number?.trim()) memory[`number:${t.id}`] = v.text.number.trim();
-    localStorage.setItem(MEMORY, JSON.stringify(memory));
+    localStorage.setItem(memoryKey(userId), JSON.stringify(memory));
   } catch {
     // Storage blocked: the form simply starts empty next time.
   }
@@ -52,8 +53,8 @@ function dayFromToday(days: number): string {
 const EMPTY_ITEM: LineItem = { description: "", quantity: "1", price: "" };
 
 /** A template's form, filled with what the user typed last time and sensible defaults. */
-function startValues(t: Template, brandName: string): TemplateValues {
-  const memory = recall();
+function startValues(userId: string, t: Template, brandName: string): TemplateValues {
+  const memory = recall(userId);
   const text: Record<string, string> = {};
   for (const f of t.fields) {
     if (f.type === "select") text[f.key] = f.options?.[0] ?? "";
@@ -72,48 +73,64 @@ function startValues(t: Template, brandName: string): TemplateValues {
 const input =
   "mt-1 block w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-primary/60";
 
-/** What making a template costs, as shown on its card. */
-function priceLabel(t: Template, costs: Partial<Record<Engine, number>>): string {
+/** What making a template costs, as shown on its card: the server's price for written ones when it sent one. */
+function priceLabel(t: Template, costs: Partial<Record<Engine, number>>, written?: Record<string, number>): string {
   if (t.engine === "local") return "Free";
-  const credits = t.answerTokens ? writingCredits(t.answerTokens) : costs[t.engine];
+  const credits = t.answerTokens ? (written?.[t.id] ?? writingCredits(t.answerTokens)) : costs[t.engine];
   return credits ? `About ${credits.toLocaleString("en-US")} credits` : "";
 }
 
 /** Ready-made templates: pick one, fill in a short form, and Flash makes the rest. */
 export function Templates({
+  userId,
   costs,
+  written,
   initialId,
   isLive,
+  busy,
   onMake,
   onClose,
 }: {
+  userId: string;
   costs: Partial<Record<Engine, number>>;
+  // Typical credits for each written template, from the server.
+  written?: Record<string, number>;
   initialId?: string;
   isLive: (engine: Engine) => boolean;
-  // A free document made right here comes with its finished text.
-  onMake: (t: Template, values: TemplateValues, document?: string) => void;
+  // Flash is working in a chat, so only the free documents made right here can start now.
+  busy: boolean;
+  // A free document made right here comes with its finished text. Resolves true once it's made.
+  onMake: (t: Template, values: TemplateValues, document?: string) => Promise<boolean>;
   onClose: () => void;
 }) {
   const [template, setTemplate] = useState<Template | null>(() => (initialId ? (templateById(initialId) ?? null) : null));
   const [values, setValues] = useState<TemplateValues>(() => {
     const t = initialId ? templateById(initialId) : undefined;
-    return t ? startValues(t, "") : { text: {}, items: [] };
+    return t ? startValues(userId, t, "") : { text: {}, items: [] };
   });
+  const [making, setMaking] = useState(false);
   const [error, setError] = useState("");
   // The brand kit's business name fills in "Business name" when nothing was typed before.
   const [brandName, setBrandName] = useState("");
   const closeRef = useRef<HTMLButtonElement>(null);
+
+  // The template picked right now, for the brand kit's name arriving after it was picked.
+  const templateNow = useRef(template);
+  const pick = (t: Template | null) => {
+    templateNow.current = t;
+    setTemplate(t);
+  };
 
   useEffect(() => {
     api<{ brand: { name: string } }>("/api/brand")
       .then(({ brand }) => {
         const name = brand.name.trim();
         setBrandName(name);
-        if (name) setValues((v) => (v.text.business || !template?.fields.some((f) => f.key === "business") ? v : { ...v, text: { ...v.text, business: name } }));
+        if (name && templateNow.current?.fields.some((f) => f.key === "business")) {
+          setValues((v) => (v.text.business ? v : { ...v, text: { ...v.text, business: name } }));
+        }
       })
       .catch(() => {});
-    // Only once, when the templates open.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -124,8 +141,8 @@ export function Templates({
   }, [onClose]);
 
   function open(t: Template) {
-    setTemplate(t);
-    setValues(startValues(t, brandName));
+    pick(t);
+    setValues(startValues(userId, t, brandName));
     setError("");
   }
 
@@ -133,8 +150,8 @@ export function Templates({
   const setItem = (i: number, change: Partial<LineItem>) =>
     setValues((v) => ({ ...v, items: v.items.map((item, at) => (at === i ? { ...item, ...change } : item)) }));
 
-  function make() {
-    if (!template) return;
+  async function make() {
+    if (!template || making) return;
     const missing = missingField(template, values);
     if (missing) return setError(`Fill in "${missing}" first.`);
     let document: string | undefined;
@@ -142,9 +159,17 @@ export function Templates({
       const made = billMarkdown(template.id === "invoice" ? "invoice" : "quote", values);
       if (typeof made !== "string") return setError(made.error);
       document = made;
+    } else if (busy) {
+      // The form stays as it is, so nothing typed is lost.
+      return setError("Flash is still working on something. Make this when it finishes; your details stay here.");
     }
-    remember(template, values);
-    onMake(template, values, document);
+    setError("");
+    setMaking(true);
+    const made = await onMake(template, values, document).catch(() => false);
+    setMaking(false);
+    // Remembered (and the invoice number used up) only once it was really made.
+    if (made) remember(userId, template, values);
+    else setError("Couldn't make it. Please try again.");
   }
 
   // A live total while an invoice or quote is filled in, so mistakes show before it's made.
@@ -248,7 +273,7 @@ export function Templates({
       >
         <div className="flex items-center gap-3 border-b border-white/6 px-5 py-4">
           {template && (
-            <button onClick={() => setTemplate(null)} className="rounded-full p-1.5 text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100" aria-label="All templates">
+            <button onClick={() => pick(null)} className="rounded-full p-1.5 text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100" aria-label="All templates">
               ←
             </button>
           )}
@@ -279,7 +304,7 @@ export function Templates({
                           {t.name}
                         </span>
                         <span className="mt-1 block text-xs leading-snug text-zinc-400">{t.blurb}</span>
-                        <span className="mt-2 block text-xs text-zinc-500">{live ? priceLabel(t, costs) : "Coming soon"}</span>
+                        <span className="mt-2 block text-xs text-zinc-500">{live ? priceLabel(t, costs, written) : "Coming soon"}</span>
                       </button>
                     );
                   })}
@@ -307,11 +332,15 @@ export function Templates({
               ) : (
                 <p className="min-w-0 flex-1 text-xs text-zinc-500">
                   {total ? `Total ${total} · ` : ""}
-                  {priceLabel(template, costs)} · opens in its own chat
+                  {priceLabel(template, costs, written)} · opens in its own chat
                 </p>
               )}
-              <button type="submit" className="rounded-full bg-primary px-5 py-2 text-sm font-medium text-white transition hover:brightness-110">
-                Make it
+              <button
+                type="submit"
+                disabled={making}
+                className="rounded-full bg-primary px-5 py-2 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-60"
+              >
+                {making ? "Making…" : "Make it"}
               </button>
             </div>
           </form>

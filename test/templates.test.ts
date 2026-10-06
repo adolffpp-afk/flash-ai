@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   TEMPLATES,
   billMarkdown,
+  parseDecimal,
+  templateCredits,
   decimalsOf,
   longDate,
   missingField,
@@ -32,6 +34,47 @@ test("amounts are read the way people type them", () => {
   assert.ok(Number.isNaN(parseAmount("abc")));
   assert.ok(Number.isNaN(parseAmount("1.2.3")));
   assert.ok(Number.isNaN(parseAmount("")));
+  // Currency words with an abbreviation dot, and spaces between thousands.
+  assert.equal(parseAmount("Rs. 4,500"), 4500);
+  assert.equal(parseAmount("Ksh.1,000"), 1000);
+  assert.equal(parseAmount("R$ 80,00"), 80);
+  assert.equal(parseAmount("1 250,00"), 1250);
+  assert.equal(parseAmount("1.200,50"), 1200.5);
+  assert.equal(parseAmount("14 dollars"), 14);
+  assert.equal(parseAmount(".5"), 0.5);
+  assert.equal(parseAmount("0.125"), 0.125);
+  // Never guessed: "2k" isn't a currency.
+  assert.ok(Number.isNaN(parseAmount("2k")));
+  assert.ok(Number.isNaN(parseAmount("1.5K")));
+  // "1.459" is a price per litre in dollars, but in reais or euros "1.200" may be twelve hundred, so it's refused there.
+  assert.deepEqual(parseDecimal("1.459", "CAD"), { digits: BigInt(1459), scale: 3 });
+  assert.equal(parseDecimal("R$ 1.200", "BRL"), null);
+  assert.deepEqual(parseDecimal("R$ 1.200,00", "BRL"), { digits: BigInt(120000), scale: 2 });
+  assert.deepEqual(parseDecimal("9.975%"), { digits: BigInt(9975), scale: 3 });
+});
+
+test("prices below a cent and hours with decimals are multiplied exactly, then rounded once", () => {
+  const line = (quantity: string, price: string) => {
+    const bill = workOutBill([{ description: "x", quantity, price }], "CAD", []);
+    assert.ok(!("error" in bill), `${quantity} × ${price}`);
+    return bill;
+  };
+  assert.equal(line("5000", "0.125").totalMinor, 62500, "5,000 words at 12.5¢ is 625.00, not 650.00");
+  assert.equal(line("1000", "0.035").totalMinor, 3500);
+  assert.equal(line("40", "1.459").totalMinor, 5836);
+  assert.equal(line("1.15", "17.50").totalMinor, 2013, "20.125 rounds up to 20.13");
+  assert.equal(line("4.35", "65.50").totalMinor, 28493);
+  assert.equal(line("0.29", "0.50").totalMinor, 15);
+  const shown = line("5000", "0.125");
+  assert.deepEqual(shown.lines[0], { description: "x", quantity: "5,000", unitPrice: "0.125", amountMinor: 62500 });
+  assert.match((workOutBill([{ description: "x", quantity: "1", price: "2k" }], "CAD", []) as { error: string }).error, /price for "x" isn't clear/);
+  const reais = workOutBill([{ description: "Bolo", quantity: "1", price: "1.200" }], "BRL", []);
+  assert.match((reais as { error: string }).error, /Write it like 1200 or 12\.50/);
+  // A rate reads the same in any currency.
+  const euros = workOutBill([{ description: "x", quantity: "1", price: "100" }], "EUR", [{ name: "TVA", rate: "5.500" }]);
+  assert.equal((euros as { totalMinor: number }).totalMinor, 10550);
+  const discount = workOutBill([{ description: "Cake", quantity: "1", price: "5" }, { description: "Discount", quantity: "1", price: "-9" }], "CAD", []);
+  assert.match((discount as { error: string }).error, /less than zero/);
 });
 
 test("invoice totals are worked out exactly, in cents, with two taxes on the subtotal", () => {
@@ -184,6 +227,10 @@ test("template requests carry only what was filled in, and ask Flash not to make
 test("a written template's price estimate follows the real prices", () => {
   const price = CLAUDE_PRICES["claude-sonnet-5-5"];
   assert.equal(writingCredits(6000), Math.ceil(((6000 * price.output + 3000 * price.input) / 1e6) * MARKUP));
+  // The server prices them with the model and markup really in use.
+  const opus = CLAUDE_PRICES["claude-opus-5-5"];
+  assert.equal(templateCredits("claude-opus-5-5", 3)["resume"], Math.ceil(((1500 * opus.output + 3000 * opus.input) / 1e6) * 3));
+  assert.equal(templateCredits()["invoice"], undefined, "free templates have no price");
   // A business plan stays well inside what a Docs & Sheets reply may hold (60 credits plus its input).
   assert.ok(writingCredits(templateById("business-plan")!.answerTokens!) < 60);
 });
@@ -193,6 +240,10 @@ test("documents come out of their code block for Word, PDF and PowerPoint, and D
   assert.equal(documentText(reply), "Here is your resume:\n\n# Ada Lovelace\n\n- Baker\n\nGood luck!");
   const code = "```python\nprint(1)\n```";
   assert.equal(documentText(code), code, "real code stays code");
+  const lesson = `${"A table in Markdown is written with pipes and dashes between the header and the rows. ".repeat(4)}\n\n\`\`\`md\n| a | b |\n|---|---|\n| 1 | 2 |\n\`\`\`\n\nThat's all there is to it.`;
+  assert.equal(documentText(lesson), lesson, "an example inside an explanation stays an example");
+  const readme = "```markdown\n# App\n\n```bash\nnpm i\n```\n\nThen run it.\n```";
+  assert.equal(documentText(readme), readme, "a block with its own code fences is left alone");
   assert.doesNotMatch(system("", "docs"), /fenced ```markdown/);
   assert.match(system("", "docs"), /not inside a code block/);
   assert.match(system("", "docs"), /```csv/, "spreadsheets still come as CSV blocks");

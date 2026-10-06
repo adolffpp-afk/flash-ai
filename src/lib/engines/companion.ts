@@ -6,8 +6,24 @@ import { COMPANION_PAGES, type CompanionAction, type CompanionEvent, type Compan
 // The companion answers on Haiku: quick, and a typical answer costs about 2 credits.
 export const COMPANION_MODEL = process.env.FLASH_COMPANION_MODEL || ROUTER_MODEL;
 
-// A tool's answer is cut to about COMPANION_TOOL_TOKENS (about 2.5 characters a token), as the hold assumes.
+// A tool's answer is cut to about COMPANION_TOOL_TOKENS, as the hold assumes.
 const MAX_TOOL_CHARS = COMPANION_TOOL_TOKENS * 2;
+
+/**
+ * Tokens a text can take at most, without asking Claude: about 2.5 English characters a token,
+ * and a whole token for every byte of anything else (Chinese or Arabic text, emoji), since a
+ * token never covers less than a byte. Used when counting fails, and for tool answers.
+ */
+export function tokensAtMost(text: string): number {
+  let ascii = 0;
+  let other = 0;
+  for (const ch of text) {
+    const code = ch.codePointAt(0) ?? 0;
+    if (code < 0x80) ascii++;
+    else other += code < 0x800 ? 2 : code < 0x10000 ? 3 : 4;
+  }
+  return Math.ceil(ascii / 2.5) + other;
+}
 
 export const COMPANION_TOOLS: Anthropic.Tool[] = [
   {
@@ -51,6 +67,17 @@ export const COMPANION_TOOLS: Anthropic.Tool[] = [
     input_schema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
   },
 ];
+
+/** The input tokens of the companion's first call, tools included, counted by Claude (or estimated on the high side). */
+export async function countCompanionTokens(turns: CompanionTurn[], systemPrompt: string, model = COMPANION_MODEL): Promise<number> {
+  const messages = turns.map((t) => ({ role: t.role, content: t.content }));
+  try {
+    const res = await getClient().messages.countTokens({ model, system: systemPrompt, messages, tools: COMPANION_TOOLS });
+    return res.input_tokens;
+  } catch {
+    return tokensAtMost(systemPrompt + turns.map((t) => t.content).join("")) + tokensAtMost(JSON.stringify(COMPANION_TOOLS)) + 100;
+  }
+}
 
 /** What running a tool gives back: text for the model, and an action for the app, if any. */
 export type ToolOutcome = { result: string; action?: CompanionAction; status?: string };
@@ -114,7 +141,7 @@ export async function* streamCompanion(
     messages.push({ role: "assistant", content: final.content }, { role: "user", content: results });
     // The next call re-reads everything so far, plus what the tools returned.
     const nextInput =
-      final.usage.input_tokens + final.usage.output_tokens + Math.ceil(results.reduce((n, r) => n + String(r.content).length, 0) / 2);
+      final.usage.input_tokens + final.usage.output_tokens + results.reduce((n, r) => n + tokensAtMost(String(r.content)), 0);
     if (step === COMPANION_STEPS - 1 || spent + companionStepCents(model, nextInput) > capCents) {
       yield { type: "text", delta: (wrote ? "\n\n" : "") + "That's as far as this answer can go. Ask again to continue." };
       return;
