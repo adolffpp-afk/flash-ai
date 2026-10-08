@@ -123,13 +123,16 @@ export async function composeMusic(prompt: string, seconds = 30): Promise<Media>
   return audio(res);
 }
 
+/** What a transcript says when a file has no speech in it. */
+export const NO_SPEECH = "(No speech found in this file.)";
+
 /** Transcribes an audio or video file with ElevenLabs Scribe. */
 export async function transcribe(file: { name: string; mediaType: string; data: string }): Promise<string> {
   if (!elevenConfigured()) {
     // Files are at most 3 MB, small enough to send inline as a data URI.
     const { result } = await falRun(FAL_TRANSCRIBE, { audio_url: `data:${file.mediaType};base64,${file.data}` });
     const text = (result as { text?: string } | null)?.text?.trim();
-    return text || "(No speech found in this file.)";
+    return text || NO_SPEECH;
   }
   const form = new FormData();
   form.append("model_id", TRANSCRIBE_MODEL);
@@ -137,5 +140,5 @@ export async function transcribe(file: { name: string; mediaType: string; data: 
   const res = await fetch(`${ELEVEN}/speech-to-text`, { method: "POST", headers: elevenHeaders(), body: form });
   if (!res.ok) throw await failure(res, "The transcription service");
   const json = (await res.json()) as { text?: string; language_code?: string };
-  return json.text?.trim() || "(No speech found in this file.)";
+  return json.text?.trim() || NO_SPEECH;
 }

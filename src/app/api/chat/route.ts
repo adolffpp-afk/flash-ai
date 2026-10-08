@@ -19,6 +19,7 @@ import {
 import { checkFiles } from "@/lib/attachments.ts";
 import { withInstructions } from "@/lib/project-instructions.ts";
 import { profileNote } from "@/lib/names.ts";
+import { withVoiceStyle } from "@/lib/voice-chat.ts";
 import { brandForMedia, withBrand } from "@/lib/brand.ts";
 import { getBrand } from "@/lib/server/brand.ts";
 import { one } from "@/lib/server/db.ts";
@@ -111,6 +112,8 @@ type ChatRequest = {
   projectId?: string;
   // The template the request was made from, named in the reply's header.
   template?: string;
+  // Said out loud in a voice conversation: the writing engines answer in a few spoken sentences.
+  voice?: boolean;
 };
 
 /** Requests that cost at least this many credits wait for the user to agree to the price first. */
@@ -574,9 +577,10 @@ export async function POST(request: Request) {
   const brand = await getBrand(user.id, appUrl(request));
   // What the user asked to be called and their work (Settings > General), then their memory.
   const memory = (typeof body.preferences === "string" ? body.preferences : user.preferences).slice(0, MAX_PREFERENCES_CHARS);
-  const preferences = withBrand(
-    withInstructions([profileNote(user), memory].filter((p) => p.trim()).join("\n"), project?.instructions ?? ""),
-    brand,
+  const preferences = withVoiceStyle(
+    withBrand(withInstructions([profileNote(user), memory].filter((p) => p.trim()).join("\n"), project?.instructions ?? ""), brand),
+    engine,
+    body.voice,
   );
   let held = 0;
   let needed = 0;

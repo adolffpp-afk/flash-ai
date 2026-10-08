@@ -27,7 +27,10 @@ import { api, newId, type Me, type Pricing, type ProjectSummary, type UIMessage 
 import type { ChatHit } from "@/lib/server/search";
 import { BoltIcon, Logo, LogoMark } from "@/app/brand";
 import { EngineIcon } from "./EngineIcon";
-import { MicButton, PlusMenu, SendButton, ToolPicker, type Choice } from "./ComposerTools";
+import { MicButton, PlusMenu, SendButton, TalkButton, ToolPicker, type Choice } from "./ComposerTools";
+import { VoiceMode, type VoiceAnswer } from "./VoiceMode";
+import { useWakeWord } from "./useWakeWord";
+import { voiceReply } from "@/lib/voice-chat";
 import { photoActionsFor } from "@/lib/photo-actions";
 import { firstName } from "@/lib/names";
 import { applyAppearance, notifiesWhenDone, readSetting } from "@/lib/device-settings";
@@ -257,6 +260,11 @@ export function Flash({
   const [hideCompanion, setHideCompanion] = useState(false);
   // "Good morning, Adolff! Welcome back." for a few seconds after signing in or opening Flash.
   const [welcome, setWelcome] = useState("");
+  // A voice conversation, docked where the message box is; woke when "Hey Flash" opened it.
+  const [voice, setVoice] = useState<{ woke: boolean; first?: string } | null>(null);
+  // "Hey Flash" is on for this device (Settings > General > Voice), and whether the mic button is listening.
+  const [wakeOn, setWakeOn] = useState(false);
+  const [dictating, setDictating] = useState(false);
   // Requests the companion lined up, each run in the chat it was asked about, one after another.
   const [queue, setQueueState] = useState<Queued[]>([]);
   const queueNow = useRef<Queued[]>([]);
@@ -411,7 +419,13 @@ export function Flash({
   useEffect(() => {
     applyAppearance();
     setHideCompanion(readSetting("hideCompanion") === "1");
+    setWakeOn(readSetting("wakeWord") === "1");
   }, []);
+
+  // "Hey Flash" listens while Flash is open, except while the mic button or a conversation is listening.
+  const wakeState = useWakeWord(wakeOn && !voice && !dictating && Boolean(me) && !signedOut, (rest) =>
+    setVoice({ woke: true, first: rest }),
+  );
 
   // The welcome greeting fades after a few seconds.
   useEffect(() => {
@@ -617,13 +631,13 @@ export function Flash({
     await respond(active, active.messages ?? [], userMsg);
   }
 
-  /** Answers the last user message again, replacing the reply after it. */
-  async function retry(confirmed = false) {
+  /** Answers the last user message again, replacing the reply after it. Returns the new reply. */
+  async function retry(confirmed = false): Promise<UIMessage | null> {
     const messages = active?.messages;
-    if (!active || !messages || busy) return;
+    if (!active || !messages || busy) return null;
     const lastUser = messages.findLastIndex((m) => m.role === "user");
-    if (lastUser === -1) return;
-    await respond(active, messages.slice(0, lastUser), messages[lastUser], confirmed);
+    if (lastUser === -1) return null;
+    return respond(active, messages.slice(0, lastUser), messages[lastUser], confirmed);
   }
 
   /** Agrees to a costly request's price and runs it; "always" stops asking on this device. */
@@ -658,10 +672,12 @@ export function Flash({
     } catch {}
   }
 
-  async function respond(project: Project, earlier: UIMessage[], userMsg: UIMessage, confirmed = false) {
+  /** Sends a request and streams the reply into the chat. Returns the finished reply (for voice conversations). */
+  async function respond(project: Project, earlier: UIMessage[], userMsg: UIMessage, confirmed = false): Promise<UIMessage> {
     const projectId = project.id;
     const startedAt = Date.now();
     const reply: UIMessage = { id: newId(), role: "assistant", content: "", pending: true };
+    let final = reply;
     const sent = filesRef.current.get(userMsg.id) ?? [];
     // A template's request always goes to its own engine, and one the companion lined up to Auto
     // (the tool picked in the composer was for something else); anything else to the one picked.
@@ -703,6 +719,7 @@ export function Flash({
           template: userMsg.template?.name,
           confirmed: confirmed || skipsCostCheck(),
           projectId,
+          ...(userMsg.voice && { voice: true }),
         }),
         signal: controller.signal,
       });
@@ -724,6 +741,7 @@ export function Flash({
           if (!line.trim()) continue;
           const e = JSON.parse(line) as StreamEvent;
           if (e.type === "error") finished = false;
+          final = applyEvent(final, e);
           updateMessage(projectId, reply.id, (m) => applyEvent(m, e));
         }
       }
@@ -739,6 +757,9 @@ export function Flash({
               errorCode: (err as { code?: string }).code,
             },
       );
+      final = aborted
+        ? { ...final, stopped: true }
+        : { ...final, error: err instanceof Error ? err.message : "Something went wrong.", errorCode: (err as { code?: string }).code };
     } finally {
       updateMessage(projectId, reply.id, (m) => ({ ...m, pending: false, status: undefined }));
       refreshMe();
@@ -752,6 +773,24 @@ export function Flash({
       setBusy(false);
       if (!typingElsewhere(inputRef.current)) inputRef.current?.focus();
     }
+    return { ...final, pending: false, status: undefined };
+  }
+
+  /** One turn of a voice conversation: sends what was said to the open chat, on Auto, and says the answer. */
+  async function talk(text: string): Promise<VoiceAnswer> {
+    if (!active?.messages) return { say: "Open a chat first, then talk to me again.", confirm: false };
+    updateProject(active.id, (p) => ({
+      ...p,
+      name: !p.messages?.length && p.name === "New project" ? text.slice(0, 40) || p.name : p.name,
+    }));
+    const reply = await respond(active, active.messages, { id: newId(), role: "user", content: text, auto: true, voice: true });
+    return voiceReply(reply);
+  }
+
+  /** "Yes" to a costly request asked for by voice: runs it, like Go ahead. */
+  async function confirmByVoice(): Promise<VoiceAnswer> {
+    const reply = await retry(true);
+    return reply ? voiceReply(reply) : { say: "There's nothing waiting to go ahead.", confirm: false };
   }
 
   /**
@@ -1292,6 +1331,7 @@ export function Flash({
             signOut(everywhere);
           }}
           onCompanionShown={(shown) => setHideCompanion(!shown)}
+          onWakeWord={setWakeOn}
           onClose={closeSettings}
         />
       )}
@@ -1453,99 +1493,114 @@ export function Flash({
                 </ul>
               </div>
             )}
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                send(input);
-              }}
-              className="rounded-[28px] border border-white/10 bg-zinc-900/70 p-2.5 shadow-lg shadow-black/20 transition focus-within:border-white/20"
-            >
-              {files.length > 0 && (
-                <div className="mb-1 ml-2 mt-1 flex flex-wrap gap-1.5">
-                  {files.map((f) => (
-                    <div key={f.name} className="inline-flex max-w-full items-center gap-2 rounded-lg bg-zinc-800 px-3 py-1 text-xs text-zinc-200">
-                      <span className="truncate">📎 {f.name}</span>
-                      <button
-                        type="button"
-                        onClick={() => setFiles(filesNow.current.filter((x) => x !== f))}
-                        aria-label={`Remove ${f.name}`}
-                        className="text-zinc-400 hover:text-zinc-100"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {photoActions.length > 0 && !busy && (
-                <div className="mb-1 ml-2 mt-1 inline-flex flex-wrap gap-1.5">
-                  {photoActions.map((a) => (
-                    <button
-                      key={a.label}
-                      type="button"
-                      onClick={() => send(files.length > 1 ? a.several! : a.prompt, true)}
-                      className="rounded-full border border-white/10 px-3 py-1 text-xs text-zinc-300 transition hover:border-primary/50 hover:text-zinc-100"
-                    >
-                      {a.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <input ref={fileRef} type="file" accept={ACCEPT} multiple hidden onChange={onFile} />
-              <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={onFile} />
-              <textarea
-                ref={inputRef}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onPaste={(e) => {
-                  const pasted = [...e.clipboardData.files];
-                  if (pasted.length) {
-                    e.preventDefault();
-                    attachAll(pasted);
-                  }
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                    e.preventDefault();
-                    send(input);
-                  }
-                }}
-                rows={1}
-                placeholder={
-                  photoActions.length
-                    ? files.length > 1
-                      ? "Ask about these photos, or tap a button above…"
-                      : "Ask about it, say what to change, or tap a button above…"
-                    : choice === "auto"
-                      ? "Ask Flash anything…"
-                      : `Ask ${ENGINE_LABELS[choice]}…`
-                }
-                className="block max-h-48 min-h-[44px] w-full resize-none bg-transparent px-2.5 pb-1 pt-2 text-[15px] outline-none placeholder:text-zinc-500"
-                aria-label="Message"
+            {voice ? (
+              <VoiceMode
+                name={firstName(me.user)}
+                woke={voice.woke}
+                first={voice.first}
+                busy={busy}
+                ask={talk}
+                confirm={confirmByVoice}
+                onStop={stop}
+                onClose={() => setVoice(null)}
               />
-              <div className="mt-1 flex items-center gap-2">
-                <PlusMenu onFiles={() => fileRef.current?.click()} onCamera={() => cameraRef.current?.click()} />
-                <ToolPicker
-                  choice={choice}
-                  setChoice={setChoice}
-                  isLive={isLive}
-                  models={me.models}
-                  model={choice === "auto" ? undefined : models[choice]}
-                  setModel={(engine, id) => setModels((all) => ({ ...all, [engine]: id }))}
+            ) : (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  send(input);
+                }}
+                className="rounded-[28px] border border-white/10 bg-zinc-900/70 p-2.5 shadow-lg shadow-black/20 transition focus-within:border-white/20"
+              >
+                {files.length > 0 && (
+                  <div className="mb-1 ml-2 mt-1 flex flex-wrap gap-1.5">
+                    {files.map((f) => (
+                      <div key={f.name} className="inline-flex max-w-full items-center gap-2 rounded-lg bg-zinc-800 px-3 py-1 text-xs text-zinc-200">
+                        <span className="truncate">📎 {f.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => setFiles(filesNow.current.filter((x) => x !== f))}
+                          aria-label={`Remove ${f.name}`}
+                          className="text-zinc-400 hover:text-zinc-100"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {photoActions.length > 0 && !busy && (
+                  <div className="mb-1 ml-2 mt-1 inline-flex flex-wrap gap-1.5">
+                    {photoActions.map((a) => (
+                      <button
+                        key={a.label}
+                        type="button"
+                        onClick={() => send(files.length > 1 ? a.several! : a.prompt, true)}
+                        className="rounded-full border border-white/10 px-3 py-1 text-xs text-zinc-300 transition hover:border-primary/50 hover:text-zinc-100"
+                      >
+                        {a.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <input ref={fileRef} type="file" accept={ACCEPT} multiple hidden onChange={onFile} />
+                <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={onFile} />
+                <textarea
+                  ref={inputRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  onPaste={(e) => {
+                    const pasted = [...e.clipboardData.files];
+                    if (pasted.length) {
+                      e.preventDefault();
+                      attachAll(pasted);
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                      e.preventDefault();
+                      send(input);
+                    }
+                  }}
+                  rows={1}
+                  placeholder={
+                    photoActions.length
+                      ? files.length > 1
+                        ? "Ask about these photos, or tap a button above…"
+                        : "Ask about it, say what to change, or tap a button above…"
+                      : choice === "auto"
+                        ? "Ask Flash anything…"
+                        : `Ask ${ENGINE_LABELS[choice]}…`
+                  }
+                  className="block max-h-48 min-h-[44px] w-full resize-none bg-transparent px-2.5 pb-1 pt-2 text-[15px] outline-none placeholder:text-zinc-500"
+                  aria-label="Message"
                 />
-                <div className="ml-auto flex items-center gap-2">
-                  <MicButton
-                    disabled={busy}
-                    onText={(text) => {
-                      setInput((v) => (v.trim() ? `${v.trimEnd()} ${text}` : text));
-                      inputRef.current?.focus();
-                    }}
-                    onRecording={(file) => attach(file)}
+                <div className="mt-1 flex items-center gap-2">
+                  <PlusMenu onFiles={() => fileRef.current?.click()} onCamera={() => cameraRef.current?.click()} />
+                  <ToolPicker
+                    choice={choice}
+                    setChoice={setChoice}
+                    isLive={isLive}
+                    models={me.models}
+                    model={choice === "auto" ? undefined : models[choice]}
+                    setModel={(engine, id) => setModels((all) => ({ ...all, [engine]: id }))}
                   />
-                  <SendButton busy={busy} onStop={stop} disabled={!input.trim() && !attachment} />
+                  <div className="ml-auto flex items-center gap-2">
+                    <MicButton
+                      disabled={busy}
+                      onText={(text) => {
+                        setInput((v) => (v.trim() ? `${v.trimEnd()} ${text}` : text));
+                        inputRef.current?.focus();
+                      }}
+                      onRecording={(file) => attach(file)}
+                      onListening={setDictating}
+                    />
+                    <TalkButton onTalk={() => setVoice({ woke: false })} waking={wakeState === "listening"} />
+                    <SendButton busy={busy} onStop={stop} disabled={!input.trim() && !attachment} />
+                  </div>
                 </div>
-              </div>
-            </form>
+              </form>
+            )}
             <p className="mt-2 hidden text-center text-xs text-zinc-600 sm:block">
               Enter to send · Shift + Enter for a new line · drop or paste files anywhere
             </p>
