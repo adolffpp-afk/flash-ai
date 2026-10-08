@@ -5,7 +5,7 @@ export const metadata: Metadata = { title: "Privacy Policy" };
 
 export default function Privacy() {
   return (
-    <LegalPage title="Privacy Policy" updated="October 6, 2026">
+    <LegalPage title="Privacy Policy" updated="October 8, 2026">
       <p>
         This policy explains what {COMPANY} collects when you use Flash AI, why, and the choices you have.
       </p>
@@ -14,7 +14,7 @@ export default function Privacy() {
       <ul>
         <li><strong>Account details:</strong> your name, email address and a scrambled (hashed) version of your password.</li>
         <li><strong>Your content:</strong> the messages, files and memory notes you send, and what Flash makes for you, saved in your projects.</li>
-        <li><strong>Published apps:</strong> the apps you publish and the data their users save in them.</li>
+        <li><strong>Published apps:</strong> the apps you publish and the data their users save in them. If your app has sign-in, Flash keeps each member&apos;s email address, their name if they give one, a scrambled (hashed) version of their password and the data they save in your app. You can see your members, remove them, and download the list in My websites &amp; apps; unpublishing an app deletes them with it. Those accounts belong to your app alone: they are not Flash accounts, and they work on no other app.</li>
         <li><strong>Shared chats:</strong> when you share a chat, a copy of it (with its pictures, videos and audio) is visible to anyone with the link until you stop sharing it.</li>
         <li><strong>Connected apps:</strong> when you connect Flash to another app (like Claude or ChatGPT), that app sends Flash the requests it makes for you, and Flash keeps what it makes in your account. Each file gets a hard-to-guess link that the app, and anyone it is shared with, can open. The app can&apos;t see your chats or projects, and you can disconnect it at any time.</li>
         <li><strong>Voice conversations:</strong> when you talk with Flash, what you say is turned into text and saved in the chat like a typed message, and answers are read aloud by your device. In Chrome, Edge and Safari your browser turns speech into text (using its maker&apos;s speech service); in other browsers Flash sends each recorded turn to its transcription provider and keeps only the text. If you turn on &ldquo;Hey Flash&rdquo;, your browser listens while Flash is open, and Flash only gets what you say after &ldquo;Hey Flash&rdquo;.</li>

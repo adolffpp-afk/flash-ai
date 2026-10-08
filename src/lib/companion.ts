@@ -182,6 +182,7 @@ const FEATURES = `- Write: emails, essays, posts, stories, answers to anything.
 - Translate: any language.
 - Docs & Sheets: spreadsheets, budgets, resumes, reports. Tables download as Excel.
 - App Builder: websites, apps, games and landing pages, with several pages. Attach a screenshot, a photo of a sketch or a design and say "build this" to get it as working code. Publish gives a link at /p/<name>. Published sites can collect form messages in a private inbox, show visitor stats, keep the last 10 versions (History) and be updated in place (Update site). Paid plans can sell with Stripe (Payments) and use their own domain (up to 5).
+- Apps can have their own members: ask for "sign in" or "accounts" and people using the published app can sign up with an email and password, each with their own private data (their orders, notes, favourites), which nobody else can see. The app's owner sees how many members it has in 🌐 My websites & apps.
 - Above every app Flash builds: Preview and Code (change the code by hand and Save), ◎ Select (click a part of the app, then say what to change), Restart, Full screen, Download (the page on its own, or a project folder to keep coding in Cursor or VS Code), and Publish. When the app hits an error, a "Fix it" button asks Flash to repair it.
 - Slides: presentations; download as PowerPoint.
 - Image: pictures, logos, posters. Attach a photo to edit it (up to 2048 × 2048): remove the background, upscale, change anything. Under each picture: "Edit or animate" and remake it Tall, Square or Wide.
