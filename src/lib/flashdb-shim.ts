@@ -16,6 +16,8 @@ export const MEMORY_DB = `
     async update(collection, rid, data) { const r = col(collection).find((x) => x.id === rid); if (!r) throw new Error("Record not found"); Object.assign(r, clone(data), { id: rid }); return clone(r); },
     async remove(collection, rid) { store[collection] = col(collection).filter((x) => x.id !== rid); },
     async send(form, data) { console.info("flashDB.send: nothing was really sent (this is a stand-in)", form, clone(data)); return true; },
+    // In the preview the file stays in this page, so file screens can be tried before publishing.
+    async upload(file) { return { url: URL.createObjectURL(file), name: file.name, size: file.size }; },
     paid: false,
     async items() { return []; },
     async buy() { throw new Error("Payments work once the site is published and its owner sets the prices in Flash."); },
@@ -25,6 +27,13 @@ export const MEMORY_DB = `
     async add(collection, data) { return window.flashDB.add("mine:" + collection, data); },
     async update(collection, rid, data) { return window.flashDB.update("mine:" + collection, rid, data); },
     async remove(collection, rid) { return window.flashDB.remove("mine:" + collection, rid); },
+  };
+  // The real AI answers once the app is published and its owner turns it on.
+  window.flashAI = {
+    async ask(prompt) {
+      console.info("flashAI.ask (preview)", prompt);
+      return "This is an example answer. Once this app is published and its owner turns the AI on in Flash, a real answer appears here.";
+    },
   };
   // Signing in works once the app is published; here it pretends, so the screens can be tried out.
   window.flashAuth = {
@@ -53,6 +62,8 @@ export function flashDbShim(
   auth: string | null = null,
   mine: string | null = null,
   visitor: Visitor = null,
+  ai: string | null = null,
+  files: string | null = null,
 ): string {
   const remote = `
   const base = ${JSON.stringify(endpoint)};
@@ -60,6 +71,8 @@ export function flashDbShim(
   const shop = ${JSON.stringify(shop)};
   const authUrl = ${JSON.stringify(auth)};
   const mineUrl = ${JSON.stringify(mine)};
+  const aiUrl = ${JSON.stringify(ai)};
+  const filesUrl = ${JSON.stringify(files)};
   const me = ${JSON.stringify(visitor?.user ?? null)};
   const key = ${JSON.stringify(visitor?.token ?? "")};
   let paid = false;
@@ -97,6 +110,15 @@ export function flashDbShim(
     async add(collection, data) { return (await call("POST", null, { collection, data })).record; },
     async update(collection, id, data) { return (await call("PATCH", null, { collection, id, data })).record; },
     async remove(collection, id) { await call("DELETE", { collection, id }); },
+    // Takes a file someone picked in the app and returns { url, name, size }; save the url in a record.
+    async upload(file) {
+      const body = new FormData();
+      body.append("file", file);
+      const res = await fetch(filesUrl, { method: "POST", headers: key ? { Authorization: "Bearer " + key } : undefined, body });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "That file couldn't be sent.");
+      return json;
+    },
     // Sends a form privately to the site's owner, who reads it in Flash and gets an email.
     async send(form, data) {
       const res = await fetch(inbox, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ form, data }) });
@@ -147,6 +169,20 @@ export function flashDbShim(
     async add(collection, data) { return (await mineCall("POST", null, { collection, data })).record; },
     async update(collection, id, data) { return (await mineCall("PATCH", null, { collection, id, data })).record; },
     async remove(collection, id) { await mineCall("DELETE", { collection, id }); },
+  };
+
+  // The app's own assistant. Its owner pays for it with their Flash credits and can switch it off,
+  // so an answer may come back as an error with a message to show.
+  window.flashAI = {
+    async ask(prompt, options) {
+      const res = await fetch(aiUrl, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: String(prompt == null ? "" : prompt), instructions: (options && options.instructions) || "" }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || "The AI couldn't answer that.");
+      return json.text;
+    },
   };
 
   // Signing in sends an ordinary form, because an app can't keep a cookie any other way. The page

@@ -6,6 +6,9 @@ import { SELLER_COUNTRIES } from "@/lib/shop";
 
 type Site = { slug: string; title: string; updated_at: number; messages: number; unread: number; views: number; members: number };
 type Member = { id: string; email: string; name: string; createdAt: number };
+type Ai = { enabled: boolean; dailyCredits: number; usedToday: number; askedToday: number };
+type Upload = { id: string; name: string; mime: string; size: number; createdAt: number; url: string };
+type Uploads = { files: Upload[]; use: { files: number; bytes: number; maxFiles: number; maxBytes: number } };
 type Version = { id: string; title: string; createdAt: number; size: number };
 type Visits = { days: { day: string; views: number; visitors: number }[]; views: number; visitors: number; sources: { source: string; views: number }[] };
 type SiteMessage = { id: string; form: string; data: Record<string, unknown>; createdAt: number; read: boolean };
@@ -21,13 +24,16 @@ const dateLabel = (t: number) =>
   new Date(t).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 const dayLabel = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 const fieldText = (v: unknown) => (typeof v === "string" ? v : JSON.stringify(v));
+const sizeLabel = (bytes: number) => (bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
 
 /** My websites and apps: every published app, its link, and the forms visitors sent to it. */
 export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (projectId: string) => void }) {
   const [sites, setSites] = useState<Site[] | null>(null);
   const [open, setOpen] = useState<Site | null>(null);
-  const [view, setView] = useState<"messages" | "domains" | "payments" | "visits" | "history" | "members">("messages");
+  const [view, setView] = useState<"messages" | "domains" | "payments" | "visits" | "history" | "members" | "ai" | "files">("messages");
   const [members, setMembers] = useState<Member[] | null>(null);
+  const [ai, setAi] = useState<Ai | null>(null);
+  const [uploads, setUploads] = useState<Uploads | null>(null);
   const [versions, setVersions] = useState<Version[] | null>(null);
   const [restoring, setRestoring] = useState<string | null>(null);
   const [restored, setRestored] = useState(false);
@@ -248,6 +254,55 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
     }
   }
 
+  async function showAi(site: Site) {
+    setOpen(site);
+    setView("ai");
+    setAi(null);
+    setError("");
+    try {
+      setAi(await api<Ai>(`/api/sites/${site.slug}/ai`));
+    } catch {
+      setError("Couldn't load the AI settings. Please try again.");
+    }
+  }
+
+  async function saveAi(change: Partial<Ai>) {
+    if (!open || !ai) return;
+    const before = ai;
+    setAi({ ...ai, ...change });
+    try {
+      setAi(await api<Ai>(`/api/sites/${open.slug}/ai`, { method: "PATCH", json: change }));
+    } catch {
+      setAi(before);
+      setError("Couldn't save that. Please try again.");
+    }
+  }
+
+  async function showFiles(site: Site) {
+    setOpen(site);
+    setView("files");
+    setUploads(null);
+    setError("");
+    try {
+      setUploads(await api<Uploads>(`/api/sites/${site.slug}/files`));
+    } catch {
+      setError("Couldn't load this app's files. Please try again.");
+    }
+  }
+
+  async function removeUpload(file: Upload) {
+    if (!open || !uploads) return;
+    try {
+      await api(`/api/sites/${open.slug}/files?id=${encodeURIComponent(file.id)}`, { method: "DELETE" });
+      setUploads({
+        files: uploads.files.filter((f) => f.id !== file.id),
+        use: { ...uploads.use, files: uploads.use.files - 1, bytes: uploads.use.bytes - file.size },
+      });
+    } catch {
+      setError("Couldn't delete that file. Please try again.");
+    }
+  }
+
   async function removeMember(member: Member) {
     if (!open) return;
     try {
@@ -297,7 +352,7 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
           )}
           <h2 className="min-w-0 flex-1 truncate text-lg font-medium tracking-tight">
             {open
-              ? `${{ domains: "Domain", payments: "Payments", messages: "Messages", visits: "Visitors", history: "History", members: "Members" }[view]} · ${open.title}`
+              ? `${{ domains: "Domain", payments: "Payments", messages: "Messages", visits: "Visitors", history: "History", members: "Members", ai: "AI", files: "Files" }[view]} · ${open.title}`
               : "My websites and apps"}
           </h2>
           <button
@@ -363,6 +418,81 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
                     ))}
                   </ul>
                 )}
+              </div>
+            )
+          ) : open && view === "files" ? (
+            uploads === null ? (
+              !error && <p className="text-sm text-zinc-500">Loading…</p>
+            ) : uploads.files.length === 0 ? (
+              <p className="mx-auto mt-16 max-w-sm text-center text-sm text-zinc-500">
+                No files yet. When your app lets people send a photo, a PDF or a document, what they send shows up here.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                <li className="text-xs text-zinc-500">
+                  {uploads.use.files} {uploads.use.files === 1 ? "file" : "files"}, {sizeLabel(uploads.use.bytes)} of{" "}
+                  {sizeLabel(uploads.use.maxBytes)} used.
+                </li>
+                {uploads.files.map((f) => (
+                  <li key={f.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 text-sm">
+                    <a href={f.url} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate text-primary-soft hover:underline">
+                      {f.name}
+                    </a>
+                    <span className="text-xs text-zinc-500">{sizeLabel(f.size)}</span>
+                    <span className="text-xs text-zinc-500">{dateLabel(f.createdAt)}</span>
+                    <button onClick={() => removeUpload(f)} className="text-xs text-zinc-500 hover:text-red-400" aria-label={`Delete ${f.name}`}>
+                      🗑
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )
+          ) : open && view === "ai" ? (
+            ai === null ? (
+              !error && <p className="text-sm text-zinc-500">Loading…</p>
+            ) : (
+              <div className="space-y-5">
+                <p className="text-sm text-zinc-400">
+                  Apps you build can answer questions, write and sort things out with AI. You pay for it with your Flash
+                  credits, so it stays off until you turn it on, and it never spends more in a day than you allow here.
+                </p>
+                <label className="flex items-center gap-3 rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={ai.enabled}
+                    onChange={(e) => saveAi({ enabled: e.target.checked })}
+                    className="h-4 w-4 accent-emerald-500"
+                  />
+                  <span className="flex-1 text-zinc-100">Let this app use AI</span>
+                  <span className="text-xs text-zinc-500">{ai.enabled ? "On" : "Off"}</span>
+                </label>
+                <label className="block rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 text-sm">
+                  <span className="block text-zinc-100">Credits it may use in a day</span>
+                  <span className="mt-1 block text-xs text-zinc-500">
+                    About {Math.max(1, Math.floor(ai.dailyCredits / 2))} answers a day. It stops until tomorrow when it
+                    reaches this.
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={5000}
+                    step={10}
+                    defaultValue={ai.dailyCredits}
+                    onBlur={(e) => {
+                      const value = Number(e.target.value);
+                      if (Number.isFinite(value) && value !== ai.dailyCredits) saveAi({ dailyCredits: value });
+                    }}
+                    className="mt-2 w-32 rounded-lg border border-white/10 bg-zinc-900 px-3 py-1.5 text-zinc-100 outline-none focus:border-primary/50"
+                  />
+                </label>
+                <p className="text-sm text-zinc-400">
+                  Today: {ai.askedToday.toLocaleString("en-US")} {ai.askedToday === 1 ? "question" : "questions"},{" "}
+                  {ai.usedToday.toLocaleString("en-US")} of {ai.dailyCredits.toLocaleString("en-US")} credits used.
+                </p>
+                <p className="text-xs text-zinc-500">
+                  Anyone using your app can ask it, so keep the daily limit at what you&apos;re happy to spend. Ask Flash to
+                  &ldquo;add an AI helper to this app&rdquo; to put it in the app itself.
+                </p>
               </div>
             )
           ) : open && view === "members" ? (
@@ -738,6 +868,12 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
                       </button>
                       <button onClick={() => showVisits(s)} className="text-zinc-200 hover:text-white" title="Visits in the last 30 days">
                         📈 Visitors{s.views ? ` (${s.views.toLocaleString("en-US")})` : ""}
+                      </button>
+                      <button onClick={() => showFiles(s)} className="text-zinc-200 hover:text-white" title="Files people sent to this app">
+                        📁 Files
+                      </button>
+                      <button onClick={() => showAi(s)} className="text-zinc-200 hover:text-white" title="Let this app use AI, and set what it may spend">
+                        🤖 AI
                       </button>
                       <button onClick={() => showMembers(s)} className="text-zinc-200 hover:text-white" title="People signed up to this app">
                         👤 Members{s.members ? ` (${s.members.toLocaleString("en-US")})` : ""}

@@ -42,6 +42,8 @@ export async function serveSite(slug: string | null, pageUrl?: string, request?:
     `/api/sites/${slug}/auth`,
     `/api/sites/${slug}/mine`,
     visitor,
+    `/api/sites/${slug}/ai`,
+    `/api/sites/${slug}/files`,
   ));
   return new Response(html, {
     headers: {
