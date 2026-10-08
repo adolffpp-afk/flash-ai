@@ -1,4 +1,4 @@
-import { EDITABLE_TYPE, route, textToSpeak } from "@/lib/router.ts";
+import { EDITABLE_TYPE, fixesPictureText, route, textToSpeak } from "@/lib/router.ts";
 import { MAX_EDIT_PIXELS, imageDimensions } from "@/lib/imageSize.ts";
 import { ENGINES, ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types.ts";
 import {
@@ -580,6 +580,11 @@ export async function POST(request: Request) {
     }
   }
 
+  // "Fix the spelling" sent with the picture above fixes the words in that picture. With a photo the
+  // user attached, the same words are about the photo's own text, so they get words.
+  if (!override && body.pictureAbove === true && last.attachment && EDITABLE_TYPE.test(last.attachment.mediaType) && fixesPictureText(last.content)) {
+    engine = "image";
+  }
   // An image request with a photo attached edits it; a video request animates it.
   const editing = (engine === "image" || engine === "video") && Boolean(last.attachment && EDITABLE_TYPE.test(last.attachment.mediaType));
   if (editing && body.pictureAbove === true) reason = engine === "video" ? "Bringing the picture above to life." : "Changing the picture above.";
