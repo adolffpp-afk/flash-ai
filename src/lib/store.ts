@@ -72,7 +72,8 @@ export type Pricing = {
 };
 
 export type Me = Pricing & {
-  user: { id: string; email: string; name: string; nickname?: string; work?: string; preferences: string };
+  // language: the one Flash answers in (see languages.ts), "" for Automatic.
+  user: { id: string; email: string; name: string; nickname?: string; work?: string; language?: string; preferences: string };
   hasPassword?: boolean;
   isAdmin: boolean;
   verified: boolean;

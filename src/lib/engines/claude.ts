@@ -239,7 +239,8 @@ export async function improvePrompt(
   kind: keyof typeof PROMPT_REWRITERS,
   request: string,
   meter: Meter = noMeter,
-  // The user's brand kit, for the rewriter to use when the request is for their business.
+  // The user's brand kit, for the rewriter to use when the request is for their business, and the
+  // language of any words in the picture (see pictureWordsNote).
   brand = "",
 ): Promise<string> {
   const res = await getClient().beta.messages.create(

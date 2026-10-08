@@ -2,6 +2,7 @@
  * Settings kept on this device (in the browser's storage), like Claude's appearance and voice
  * settings. Storage can be blocked (private windows), so every read falls back to the default.
  */
+import { voiceFor } from "./languages.ts";
 
 export const DEVICE_KEYS = {
   // Set when the user says not to ask before costly requests.
@@ -63,12 +64,17 @@ export function applyAppearance(font = readSetting("font"), size = readSetting("
   else delete root.dataset.size;
 }
 
-/** The read-aloud voice and speed picked in Settings > General, for speechSynthesis. */
-export function readAloudVoice(): { voice: SpeechSynthesisVoice | null; rate: number } {
+/**
+ * The read-aloud voice and speed picked in Settings > General, for speechSynthesis. With lang (a
+ * voice conversation in the language picked in Settings), a voice for that language when the
+ * picked one speaks another.
+ */
+export function readAloudVoice(lang = ""): { voice: SpeechSynthesisVoice | null; rate: number } {
   const uri = readSetting("voice");
   const voices = typeof window !== "undefined" && "speechSynthesis" in window ? window.speechSynthesis.getVoices() : [];
   const rate = Number(readSetting("voiceRate")) || 1;
-  return { voice: (uri && voices.find((v) => v.voiceURI === uri)) || null, rate: Math.min(2, Math.max(0.5, rate)) };
+  const picked = (uri && voices.find((v) => v.voiceURI === uri)) || null;
+  return { voice: voiceFor(voices, lang, picked), rate: Math.min(2, Math.max(0.5, rate)) };
 }
 
 /** Whether to show a notification when a long request finishes while Flash is in the background. */

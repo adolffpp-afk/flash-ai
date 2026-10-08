@@ -7,6 +7,7 @@ import { isVerified } from "@/lib/server/account.ts";
 import { referralStats } from "@/lib/server/referrals.ts";
 import { teamSummary } from "@/lib/server/teams.ts";
 import { WORK_OPTIONS } from "@/lib/names.ts";
+import { isLanguage } from "@/lib/languages.ts";
 import {
   REFERRAL_FRIEND_SHARE,
   REFERRAL_PENDING_DAYS,
@@ -23,7 +24,7 @@ export async function GET(request: Request) {
   const credits = await spendable(user.id);
   const { code, ...referrals } = await referralStats(user.id);
   return Response.json({
-    user: { id: user.id, email: user.email, name: user.name, nickname: user.nickname ?? "", work: user.work ?? "", preferences: user.preferences },
+    user: { id: user.id, email: user.email, name: user.name, nickname: user.nickname ?? "", work: user.work ?? "", language: user.language ?? "", preferences: user.preferences },
     // Accounts made with Google or an email link have no password until they set one.
     hasPassword: Boolean((await one<{ p: string }>("SELECT password_hash AS p FROM users WHERE id = ?", [user.id]))?.p),
     isAdmin: isAdmin(user),
@@ -49,7 +50,7 @@ export async function GET(request: Request) {
 export async function PATCH(request: Request) {
   const user = await getUser(request);
   if (!user) return unauthorized();
-  const body = (await request.json().catch(() => ({}))) as { name?: string; nickname?: string; work?: string; preferences?: string };
+  const body = (await request.json().catch(() => ({}))) as { name?: string; nickname?: string; work?: string; language?: string; preferences?: string };
   if (typeof body.preferences === "string") {
     await run("UPDATE users SET preferences = ? WHERE id = ?", [body.preferences.slice(0, 2000), user.id]);
   }
@@ -61,6 +62,10 @@ export async function PATCH(request: Request) {
   }
   if (typeof body.work === "string" && (body.work === "" || (WORK_OPTIONS as readonly string[]).includes(body.work))) {
     await run("UPDATE users SET work = ? WHERE id = ?", [body.work, user.id]);
+  }
+  // Only a listed language (or "" for Automatic): it goes into Flash's instructions.
+  if (isLanguage(body.language)) {
+    await run("UPDATE users SET language = ? WHERE id = ?", [body.language, user.id]);
   }
   return Response.json({ ok: true });
 }

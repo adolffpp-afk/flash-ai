@@ -66,6 +66,8 @@ export async function POST(request: Request) {
     today: context.today ?? new Date().toISOString().slice(0, 10),
     // What the user asked to be called (Settings > General), never an email address.
     name: firstName(user),
+    // The language the companion answers in (Settings > General), "" for the one the user writes in.
+    language: user.language ?? "",
     credits: shownCredits,
     plan: plan?.name ?? null,
     live: ENGINES.filter((e) => status[e]),

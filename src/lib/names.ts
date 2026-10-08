@@ -2,6 +2,8 @@
  * How Flash names people. Accounts made with an email link have no name, and some older ones
  * saved the whole email address as the name, so an email never shows where a name should.
  */
+import { languageNote } from "./languages.ts";
+import type { Engine } from "./types.ts";
 
 export type Named = { name: string; email: string; nickname?: string };
 
@@ -54,13 +56,16 @@ export const WORK_OPTIONS = [
 
 /**
  * A line for Flash's instructions about who it is talking to, from Settings. Empty when the person
- * filled in nothing. The name comes from the account, so it is quoted and kept short.
+ * filled in nothing. The name comes from the account, so it is quoted and kept short. The language
+ * sentence depends on the engine (see languageNote).
  */
-export function profileNote(user: Named & { work?: string }): string {
+export function profileNote(user: Named & { work?: string; language?: string }, engine?: Engine): string {
   const parts: string[] = [];
   const call = user.nickname?.trim();
   if (call && !looksLikeEmail(call)) parts.push(`Call the user "${call.slice(0, 40)}" when you use their name.`);
   const work = user.work?.trim();
   if (work && (WORK_OPTIONS as readonly string[]).includes(work) && work !== "Other") parts.push(`Their work: ${work}.`);
+  const language = languageNote(user.language, engine);
+  if (language) parts.push(language);
   return parts.join(" ");
 }

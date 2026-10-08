@@ -19,6 +19,7 @@ import {
 import { checkFiles } from "@/lib/attachments.ts";
 import { withInstructions } from "@/lib/project-instructions.ts";
 import { profileNote } from "@/lib/names.ts";
+import { pictureWordsNote } from "@/lib/languages.ts";
 import { withVoiceStyle } from "@/lib/voice-chat.ts";
 import { brandForMedia, withBrand } from "@/lib/brand.ts";
 import { getBrand } from "@/lib/server/brand.ts";
@@ -272,7 +273,7 @@ async function* run(
   model: ModelInfo | null,
   meter: Meter,
   budget: Budget,
-  // The brand kit for the picture and video prompt writer, or "".
+  // The brand kit and the language of words in pictures, for the picture and video prompt writer, or "".
   brandNote = "",
 ): AsyncGenerator<StreamEvent> {
   const last = history[history.length - 1];
@@ -592,13 +593,15 @@ export async function POST(request: Request) {
       ? await one<{ instructions: string }>("SELECT instructions FROM projects WHERE id = ? AND user_id = ?", [body.projectId, user.id])
       : null;
   const brand = await getBrand(user.id, appUrl(request));
-  // What the user asked to be called and their work (Settings > General), then their memory.
+  // What the user asked to be called, their work and their language (Settings > General), then their memory.
   const memory = (typeof body.preferences === "string" ? body.preferences : user.preferences).slice(0, MAX_PREFERENCES_CHARS);
   const preferences = withVoiceStyle(
-    withBrand(withInstructions([profileNote(user), memory].filter((p) => p.trim()).join("\n"), project?.instructions ?? ""), brand),
+    withBrand(withInstructions([profileNote(user, engine), memory].filter((p) => p.trim()).join("\n"), project?.instructions ?? ""), brand),
     engine,
     body.voice,
   );
+  // For the picture and video prompt writer: the brand kit, and the language of words in pictures.
+  const mediaNotes = [brandForMedia(brand), pictureWordsNote(user.language)].filter(Boolean).join("\n\n");
   let held = 0;
   let needed = 0;
   let budget = NO_BUDGET;
@@ -713,7 +716,7 @@ export async function POST(request: Request) {
       try {
         const events = free
           ? runFree(free, engine, history, preferences, store, freeUse)
-          : run(engine, history, preferences, store, model, meter, budget, brandForMedia(brand));
+          : run(engine, history, preferences, store, model, meter, budget, mediaNotes);
         for await (const event of events) {
           if (cancelled || request.signal.aborted) {
             stopped = true;

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { hasBuiltInRecognition, micBlocked, newRecognition, releaseMic, takeMic } from "@/lib/listen";
 import { isGoodbye, isNo, isYes, speechChunks } from "@/lib/voice-chat";
 import { readAloudVoice } from "@/lib/device-settings";
+import { speechLang } from "@/lib/languages";
 
 /** What Flash says after a request, and whether it asked to go ahead with a costly one. */
 export type VoiceAnswer = { say: string; confirm: boolean };
@@ -29,6 +30,8 @@ const MIC_BLOCKED = "Allow the microphone for Flash in your browser, then tap th
 
 type VoiceProps = {
   name: string;
+  // The language picked in Settings > General; Flash listens and speaks in it. "" or missing: the browser's.
+  language?: string;
   // Words said right after "Hey Flash", asked at once.
   first?: string;
   // Opened by "Hey Flash" (Flash answers "Yes?") rather than the Talk button.
@@ -51,14 +54,17 @@ type Screen = {
   props: () => VoiceProps;
 };
 
-/** Reads text aloud with the voice picked in Settings, a piece at a time. */
-function speakPieces(text: string): SpeechSynthesisUtterance[] {
-  const { voice, rate } = readAloudVoice();
+/** What the conversation listens and speaks in: the language picked in Settings, or "" for the browser's. */
+const talkingIn = (language = "") => speechLang(language, navigator.language);
+
+/** Reads text aloud with the voice picked in Settings (or one for lang), a piece at a time. */
+function speakPieces(text: string, lang: string): SpeechSynthesisUtterance[] {
+  const { voice, rate } = readAloudVoice(lang);
   return speechChunks(text).map((piece) => {
     const u = new SpeechSynthesisUtterance(piece);
     if (voice) u.voice = voice;
     u.rate = rate;
-    u.lang = voice?.lang || navigator.language || "en-US";
+    u.lang = voice?.lang || lang || navigator.language || "en-US";
     return u;
   });
 }
@@ -170,7 +176,7 @@ class Conversation {
     const synth = typeof window !== "undefined" ? window.speechSynthesis : undefined;
     if (!synth) return Promise.resolve();
     synth.cancel();
-    const pieces = speakPieces(text);
+    const pieces = speakPieces(text, talkingIn(this.screen.props().language));
     return new Promise((resolve) => {
       let next = 0;
       let current = -1;
@@ -209,7 +215,7 @@ class Conversation {
   /** Listens for one thing said. "" when nothing was said; null when stopped (paused or closed). */
   private hearBuiltIn(): Promise<string | null> {
     return new Promise((resolve) => {
-      const rec = newRecognition();
+      const rec = newRecognition(talkingIn(this.screen.props().language));
       if (!rec) return resolve(null);
       rec.continuous = false;
       rec.interimResults = true;
@@ -393,7 +399,7 @@ export function VoiceMode(props: VoiceProps) {
     const text = silent;
     setSilent("");
     window.speechSynthesis.cancel();
-    for (const u of speakPieces(text)) window.speechSynthesis.speak(u);
+    for (const u of speakPieces(text, talkingIn(props.language))) window.speechSynthesis.speak(u);
   }
 
   const circle =

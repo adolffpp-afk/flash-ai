@@ -4,6 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { api, type Me } from "@/lib/store";
 import { ENGINE_LABELS, type Engine } from "@/lib/types";
 import { WORK_OPTIONS, firstName, fullName, initials } from "@/lib/names";
+import { AUTOMATIC_LANGUAGE, LANGUAGES } from "@/lib/languages";
 import {
   DEVICE_KEYS,
   FONTS,
@@ -138,7 +139,7 @@ export function Settings({
   preferences: string;
   initialTab?: SettingsTab;
   onPreferences: (value: string) => void;
-  onProfileChanged: (user: { name: string; nickname: string; work: string }) => void;
+  onProfileChanged: (user: { name: string; nickname: string; work: string; language: string }) => void;
   onOpenCredits: () => void;
   onOpenInvite: () => void;
   // everywhere: every device was signed out, this one included.
@@ -269,12 +270,13 @@ function General({
 }: Shared & {
   preferences: string;
   onPreferences: (value: string) => void;
-  onProfileChanged: (user: { name: string; nickname: string; work: string }) => void;
+  onProfileChanged: (user: { name: string; nickname: string; work: string; language: string }) => void;
   onWakeWord?: (on: boolean) => void;
 }) {
   const [name, setName] = useState(fullName(me.user));
   const [nickname, setNickname] = useState(me.user.nickname ?? "");
   const [work, setWork] = useState(me.user.work ?? "");
+  const [language, setLanguage] = useState(me.user.language ?? "");
   const [notify, setNotify] = useDeviceSetting("notifyDone");
   const [font, setFont] = useDeviceSetting("font");
   const [size, setSize] = useDeviceSetting("textSize");
@@ -294,10 +296,14 @@ function General({
     return () => window.speechSynthesis.removeEventListener("voiceschanged", load);
   }, [speech]);
 
-  const changed = name.trim() !== fullName(me.user) || nickname.trim() !== (me.user.nickname ?? "") || work !== (me.user.work ?? "");
+  const changed =
+    name.trim() !== fullName(me.user) ||
+    nickname.trim() !== (me.user.nickname ?? "") ||
+    work !== (me.user.work ?? "") ||
+    language !== (me.user.language ?? "");
   const save = () =>
     attempt(async () => {
-      const profile = { name: name.trim() || fullName(me.user), nickname: nickname.trim(), work };
+      const profile = { name: name.trim() || fullName(me.user), nickname: nickname.trim(), work, language };
       await api("/api/me", { method: "PATCH", json: profile });
       onProfileChanged(profile);
       return "Profile saved.";
@@ -379,6 +385,22 @@ function General({
             ))}
           </select>
         </label>
+        <div>
+          <label className={label}>
+            Language
+            <select className={field} value={language} onChange={(e) => setLanguage(e.target.value)} aria-describedby="language-hint">
+              <option value="">{AUTOMATIC_LANGUAGE}</option>
+              {LANGUAGES.map((l) => (
+                <option key={l.id} value={l.id} lang={l.id}>
+                  {l.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p id="language-hint" className={`mt-1 ${hint}`}>
+            Flash answers, writes and builds in this language.
+          </p>
+        </div>
         <div>
           <button className={primary} disabled={busy || !changed} onClick={save}>
             Save

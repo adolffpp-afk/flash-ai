@@ -1534,6 +1534,7 @@ export function Flash({
             {voice ? (
               <VoiceMode
                 name={firstName(me.user)}
+                language={me.user.language}
                 woke={voice.woke}
                 first={voice.first}
                 busy={busy}
