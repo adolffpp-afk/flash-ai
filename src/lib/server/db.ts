@@ -86,6 +86,33 @@ const SCHEMA = [
     expires_at INTEGER NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS site_page_tokens_expiry ON site_page_tokens(expires_at)`,
+  // AI inside a published app (see site-ai.ts): off until its owner turns it on, with a daily
+  // budget in credits and what it has used today.
+  `CREATE TABLE IF NOT EXISTS site_ai (
+    site_slug TEXT PRIMARY KEY REFERENCES sites(slug) ON DELETE CASCADE,
+    enabled INTEGER NOT NULL DEFAULT 0,
+    daily_credits INTEGER NOT NULL DEFAULT 100,
+    updated_at INTEGER NOT NULL
+  )`,
+  // Files people send to a published app (see site-files.ts).
+  `CREATE TABLE IF NOT EXISTS site_uploads (
+    id TEXT PRIMARY KEY,
+    site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
+    owner TEXT NOT NULL DEFAULT '',
+    mime TEXT NOT NULL,
+    name TEXT NOT NULL,
+    data BLOB NOT NULL,
+    size INTEGER NOT NULL,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS site_uploads_site ON site_uploads(site_slug, created_at)`,
+  `CREATE TABLE IF NOT EXISTS site_ai_usage (
+    site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
+    day TEXT NOT NULL,
+    credits INTEGER NOT NULL DEFAULT 0,
+    requests INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (site_slug, day)
+  )`,
   // Form messages sent to a site's owner through flashDB.send: private, unlike site_records.
   `CREATE TABLE IF NOT EXISTS site_messages (
     id TEXT PRIMARY KEY,
