@@ -32,6 +32,7 @@ import { VoiceMode, type VoiceAnswer } from "./VoiceMode";
 import { useWakeWord } from "./useWakeWord";
 import { voiceReply } from "@/lib/voice-chat";
 import { photoActionsFor } from "@/lib/photo-actions";
+import { pickedContext, type PickedElement } from "@/lib/preview-bridge";
 import { firstName } from "@/lib/names";
 import { applyAppearance, notifiesWhenDone, readSetting } from "@/lib/device-settings";
 
@@ -204,6 +205,12 @@ async function readPdf(file: File): Promise<Attachment | string> {
   }
 }
 
+/** A message as the AI reads it: with text that came after an app, and the part of the app it's about. */
+function turnText(m: UIMessage): string {
+  const text = m.content + (m.after ?? "");
+  return m.picked ? `${text}\n\n${m.picked.context}` : text;
+}
+
 function readFile(file: File): Promise<Attachment> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -243,6 +250,8 @@ export function Flash({
   const [preferences, setPreferences] = useState("");
   const [status, setStatus] = useState<Status | null>(initialStatus ?? null);
   const [input, setInput] = useState("");
+  // A part of the latest app the user picked in its preview; the next message says what to change about it.
+  const [picked, setPicked] = useState<{ projectId: string; kind: "app" | "slides"; label: string; context: string } | null>(null);
   const [choice, setChoice] = useState<Choice>("auto");
   // Image, video and music model picked per engine; missing means Flash picks.
   const [models, setModels] = useState<Partial<Record<Engine, string>>>({});
@@ -605,6 +614,24 @@ export function Flash({
     if (active) updateMessage(active.id, messageId, (m) => (m.app ? { ...m, app: { ...m.app, slug } } : m));
   }
 
+  /** Saves code the user changed by hand as that version's code, so Flash builds on it next. */
+  function editAppCode(messageId: string, html: string) {
+    if (active) updateMessage(active.id, messageId, (m) => (m.app ? { ...m, app: { ...m.app, html } } : m));
+  }
+
+  /** Asks the builder to fix what went wrong in the latest app's preview. */
+  async function fixApp(kind: "app" | "slides", request: string) {
+    if (!active?.messages || busy) return;
+    await respond(active, active.messages, { id: newId(), role: "user", content: request, build: kind });
+  }
+
+  /** Puts a part picked in the latest app's preview above the message box, to say what to change. */
+  function pickApp(kind: "app" | "slides", part: PickedElement) {
+    if (!active) return;
+    setPicked({ projectId: active.id, kind, label: part.label, context: pickedContext(part) });
+    inputRef.current?.focus();
+  }
+
   // auto: a one-tap button that knows its job, so it goes to Auto whatever tool is picked.
   async function send(text: string, auto = false) {
     if (busy) return;
@@ -614,13 +641,16 @@ export function Flash({
     }
     const content = text.trim();
     if (!content && !attachment) return;
+    const part = picked?.projectId === active.id ? picked : null;
     const userMsg: UIMessage = {
       id: newId(),
       role: "user",
       content,
       attachmentName: files.map((f) => f.name).join(", ") || undefined,
       ...(auto && { auto: true }),
+      ...(part && { build: part.kind, picked: { label: part.label, context: part.context } }),
     };
+    setPicked(null);
     if (files.length) filesRef.current.set(userMsg.id, files);
     updateProject(active.id, (p) => ({
       ...p,
@@ -681,7 +711,7 @@ export function Flash({
     const sent = filesRef.current.get(userMsg.id) ?? [];
     // A template's request always goes to its own engine, and one the companion lined up to Auto
     // (the tool picked in the composer was for something else); anything else to the one picked.
-    const engine = userMsg.template?.engine ?? (userMsg.queued || userMsg.auto ? "auto" : choice);
+    const engine = userMsg.template?.engine ?? userMsg.build ?? (userMsg.queued || userMsg.auto ? "auto" : choice);
 
     // Only the most recent app's code is sent back, so edits build on it without resending every version.
     const lastAppId = [...earlier].reverse().find((m) => m.app)?.id;
@@ -691,10 +721,10 @@ export function Flash({
         .filter((m) => !m.error || m.content || m.app)
         .map((m) => ({
           role: m.role,
-          content: m.content + (m.after ?? ""),
+          content: turnText(m),
           app: m.id === lastAppId ? m.app?.html : undefined,
         })),
-      { role: "user", content: userMsg.content, attachment: sent[0], more: sent.length > 1 ? sent.slice(1) : undefined },
+      { role: "user", content: turnText(userMsg), attachment: sent[0], more: sent.length > 1 ? sent.slice(1) : undefined },
     ];
 
     updateProject(projectId, (p) => ({ ...p, updated_at: Date.now(), messages: [...earlier, userMsg, reply] }));
@@ -720,6 +750,7 @@ export function Flash({
           confirmed: confirmed || skipsCostCheck(),
           projectId,
           ...(userMsg.voice && { voice: true }),
+          ...(userMsg.build && { build: true }),
         }),
         signal: controller.signal,
       });
@@ -975,6 +1006,9 @@ export function Flash({
   const isLive = (e: Engine) => !status || status[e];
   // The one-tap buttons for attached photos (Copy the text, Remove background…).
   const photoActions = photoActionsFor(files.map((f) => f.mediaType), isLive);
+  const pickedNow = picked && picked.projectId === active?.id ? picked : null;
+  // Flash builds on the most recent app in the chat.
+  const lastAppId = active?.messages?.findLast((m) => m.app)?.id;
   const liveCount = ENGINES.filter(isLive).length;
   const allOff = status && !liveCount;
   const makes = MEDIA_WORDS.filter(([e]) => isLive(e)).map(([, word]) => word);
@@ -1426,6 +1460,10 @@ export function Flash({
                 publishedEarlier={m.app && !m.app.slug ? all.slice(0, i).findLast((x) => x.app?.slug)?.app?.slug : undefined}
                 onUseImage={busy ? undefined : editImage}
                 onReshape={busy || attachment || all[i - 1]?.attachmentName ? undefined : reshape}
+                onEditApp={m.app && !m.pending ? (html) => editAppCode(m.id, html) : undefined}
+                // Flash builds on the latest app, so fixes and picked parts are for that one.
+                onFixApp={m.app && !m.pending && !busy && m.id === lastAppId ? (request) => fixApp(m.app!.kind, request) : undefined}
+                onPickApp={m.app && !m.pending && m.id === lastAppId ? (part) => pickApp(m.app!.kind, part) : undefined}
               />
             ))}
             <div ref={bottomRef} />
@@ -1512,6 +1550,14 @@ export function Flash({
                 }}
                 className="rounded-[28px] border border-white/10 bg-zinc-900/70 p-2.5 shadow-lg shadow-black/20 transition focus-within:border-white/20"
               >
+                {pickedNow && (
+                  <div className="mb-1 ml-2 mt-1 inline-flex max-w-full items-center gap-2 rounded-lg bg-primary/15 px-3 py-1 text-xs text-primary-soft">
+                    <span className="truncate">◎ Changing the {pickedNow.label}</span>
+                    <button type="button" onClick={() => setPicked(null)} aria-label="Don't change this part" className="text-primary-soft/70 hover:text-zinc-100">
+                      ✕
+                    </button>
+                  </div>
+                )}
                 {files.length > 0 && (
                   <div className="mb-1 ml-2 mt-1 flex flex-wrap gap-1.5">
                     {files.map((f) => (
@@ -1564,7 +1610,9 @@ export function Flash({
                   }}
                   rows={1}
                   placeholder={
-                    photoActions.length
+                    pickedNow
+                      ? "Say what to change about it…"
+                      : photoActions.length
                       ? files.length > 1
                         ? "Ask about these photos, or tap a button above…"
                         : "Ask about it, say what to change, or tap a button above…"

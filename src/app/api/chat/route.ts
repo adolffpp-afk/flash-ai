@@ -93,6 +93,8 @@ export const maxDuration = 800;
 const MAX_ATTACHMENT_BYTES = 3 * 1024 * 1024;
 // The engines that can read several files at once.
 const WRITING_ENGINES: Engine[] = FREE_CHAT_ENGINES;
+// Pictures Claude can look at, so the builder can work from screenshots and sketches.
+const PICTURE_TYPE = /^image\/(png|jpeg|gif|webp)$/;
 // A message longer than this (about 25,000 words) is almost certainly pasted by mistake.
 const MAX_MESSAGE_CHARS = 100_000;
 // The same limit as saved preferences (PATCH /api/me).
@@ -114,6 +116,8 @@ type ChatRequest = {
   template?: string;
   // Said out loud in a voice conversation: the writing engines answer in a few spoken sentences.
   voice?: boolean;
+  // A change to the latest app from its preview (Fix it, or a part the user picked).
+  build?: boolean;
 };
 
 /** Requests that cost at least this many credits wait for the user to agree to the price first. */
@@ -523,10 +527,17 @@ export async function POST(request: Request) {
   let reason = override
     ? typeof body.template === "string" && body.template.trim()
       ? `Made from the ${body.template.trim().slice(0, 40)} template.`
-      : "You picked this engine."
+      : body.build === true && (override === "app" || override === "slides")
+        ? override === "app"
+          ? "Updating your app."
+          : "Updating your slides."
+        : "You picked this engine."
     : auto.reason;
-  // Several files are read and compared by the writing engines; media tools take one file.
-  if (severalFiles && !WRITING_ENGINES.includes(engine)) {
+  // Several files are read and compared by the writing engines; media tools take one file. The
+  // builder reads several pictures too, so a few screens can be built in one go.
+  const allPictures = [last.attachment, ...(last.more ?? [])].every((f) => f && PICTURE_TYPE.test(f.mediaType));
+  const builds = engine === "app" || engine === "slides";
+  if (severalFiles && !WRITING_ENGINES.includes(engine) && !(builds && allPictures)) {
     engine = "docs";
     reason = "Flash reads several files together.";
   }

@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm";
 import { ENGINE_LABELS } from "@/lib/types";
 import type { UIMessage } from "@/lib/store";
 import { AppPreview } from "./AppPreview";
+import type { PickedElement } from "@/lib/preview-bridge";
 import { speakable } from "@/lib/speech";
 import { BoltIcon, LogoMark } from "@/app/brand";
 import { wordDocument, wordFileName } from "@/lib/word-export";
@@ -317,6 +318,7 @@ function UserMessage({ m, onEdit }: { m: UIMessage; onEdit?: (text: string) => v
     <div className="group flex flex-col items-end">
       <div className="max-w-[85%] rounded-2xl rounded-br-md bg-primary-strong px-4 py-2.5 text-white">
         {m.attachmentName && <div className="mb-1 text-xs text-white/80">📎 {m.attachmentName}</div>}
+        {m.picked && <div className="mb-1 text-xs text-white/80">◎ {m.picked.label}</div>}
         <p className="whitespace-pre-wrap break-words">{m.content}</p>
       </div>
       {m.content && (
@@ -352,6 +354,9 @@ export function Message({
   onUseImage,
   onReshape,
   onConfirmCost,
+  onEditApp,
+  onFixApp,
+  onPickApp,
   paymentsOn = true,
 }: {
   m: UIMessage;
@@ -370,6 +375,10 @@ export function Message({
   onReshape?: (prompt: string, shape: Reshape) => void;
   // Runs a costly request after the user agrees to its price; true also stops asking on this device.
   onConfirmCost?: (always: boolean) => void;
+  // For a built app: saves code changed by hand, asks Flash to fix the preview's errors, and picks a part to change.
+  onEditApp?: (html: string) => void;
+  onFixApp?: (request: string) => void;
+  onPickApp?: (picked: PickedElement) => void;
 }) {
   if (m.role === "user") return <UserMessage m={m} onEdit={onEdit} />;
   return (
@@ -467,7 +476,16 @@ export function Message({
             ),
           )}
         </div>
-        {m.app && <AppPreview app={m.app} onPublished={onPublished} publishedEarlier={publishedEarlier} />}
+        {m.app && (
+          <AppPreview
+            app={m.app}
+            onPublished={onPublished}
+            publishedEarlier={publishedEarlier}
+            onEditCode={onEditApp}
+            onFix={onFixApp}
+            onPick={onPickApp}
+          />
+        )}
         {m.after?.trim() && (
           <div className="prose prose-invert mt-3 max-w-none break-words prose-p:my-2">
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
