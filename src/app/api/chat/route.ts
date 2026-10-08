@@ -1,6 +1,6 @@
 import { EDITABLE_TYPE, route, textToSpeak } from "@/lib/router.ts";
 import { MAX_EDIT_PIXELS, imageDimensions } from "@/lib/imageSize.ts";
-import { ENGINES, ENGINE_LABELS, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types.ts";
+import { ENGINES, ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types.ts";
 import {
   NO_BUDGET,
   classifyRequest,
@@ -69,7 +69,9 @@ import {
   PACK_VIDEO_CENTS,
   PACK_VIDEO_ENDPOINT,
   PACK_VIDEO_SECONDS,
+  MAX_EDIT_PHOTOS,
   modelCredits,
+  requestCents,
   movieScenes,
   movieSeconds,
   packWantsVideo,
@@ -175,9 +177,8 @@ function systemFor(engine: Engine, preferences: string, history: ChatTurn[]): st
   return system(preferences, engine === "code" || engine === "translate" || engine === "docs" ? engine : "text");
 }
 
-/** What a media request on this model cost Flash, in cents. */
-const mediaCents = (model: ModelInfo, request: string) =>
-  typeof model.costCents === "function" ? model.costCents(request) : model.costCents;
+/** What a media request on this model cost Flash, in cents, with the number of photos it was given. */
+const mediaCents = (model: ModelInfo, request: string, photos = 1) => requestCents(model, request, photos);
 
 type Store = (media: Media, name: string) => Promise<string>;
 
@@ -312,16 +313,19 @@ async function* run(
     case "image": {
       if (model!.edits) {
         const photo = last.attachment!;
-        yield { type: "status", message: `Working on your photo with ${model!.label}…` };
+        // Photos after the first are combined with it; only FLUX.2 Edit is given more than one.
+        const more = model!.id === "flux-2-edit" ? (last.more ?? []).slice(0, MAX_EDIT_PHOTOS - 1) : [];
+        const dataUrl = (f: Attachment) => `data:${f.mediaType};base64,${f.data}`;
+        yield { type: "status", message: more.length ? `Combining your photos with ${model!.label}…` : `Working on your photo with ${model!.label}…` };
         const edited = yield* withProgress((report) =>
           falGenerate(
             model!.endpoint!,
-            // The photo was checked to be at most 2048 × 2048 before credits were held.
-            falEditInput(model!, `data:${photo.mediaType};base64,${photo.data}`, imageDimensions(Buffer.from(photo.data, "base64")), last.content),
+            // Each photo was checked to be at most 2048 × 2048 before credits were held.
+            falEditInput(model!, dataUrl(photo), imageDimensions(Buffer.from(photo.data, "base64")), last.content, more.map(dataUrl)),
             (m) => report(`${m}…`),
           ).catch(billIfAbandoned),
         );
-        meter(model!.provider, model!.id, mediaCents(model!, last.content));
+        meter(model!.provider, model!.id, mediaCents(model!, last.content, 1 + more.length));
         yield { type: "image", url: await store(edited, `flash-${model!.id === "flux-2-edit" ? "edit" : model!.id}.png`), prompt: last.content };
         return;
       }
@@ -540,7 +544,11 @@ export async function POST(request: Request) {
   // builder reads several pictures too, so a few screens can be built in one go.
   const allPictures = [last.attachment, ...(last.more ?? [])].every((f) => f && PICTURE_TYPE.test(f.mediaType));
   const builds = engine === "app" || engine === "slides";
-  if (severalFiles && !WRITING_ENGINES.includes(engine) && !(builds && allPictures)) {
+  // Several photos and a change asked for are combined into one picture: "put me and my dog on a beach".
+  const photos = last.attachment ? [last.attachment, ...(last.more ?? [])] : [];
+  const combines =
+    engine === "image" && severalFiles && photos.length <= MAX_EDIT_PHOTOS && photos.every((f) => EDITABLE_TYPE.test(f.mediaType));
+  if (severalFiles && !WRITING_ENGINES.includes(engine) && !(builds && allPictures) && !combines) {
     engine = "docs";
     reason = "Flash reads several files together.";
   }
@@ -575,8 +583,8 @@ export async function POST(request: Request) {
   // An image request with a photo attached edits it; a video request animates it.
   const editing = (engine === "image" || engine === "video") && Boolean(last.attachment && EDITABLE_TYPE.test(last.attachment.mediaType));
   if (editing && body.pictureAbove === true) reason = engine === "video" ? "Bringing the picture above to life." : "Changing the picture above.";
-  if (editing) {
-    const editSize = imageDimensions(Buffer.from(last.attachment!.data, "base64"));
+  for (const photo of editing ? (combines ? photos : [last.attachment!]) : []) {
+    const editSize = imageDimensions(Buffer.from(photo.data, "base64"));
     if (!editSize || editSize.width * editSize.height > MAX_EDIT_PIXELS) {
       return Response.json(
         { error: "Flash can edit PNG, JPEG and WebP photos up to 2048 × 2048 pixels. Try a smaller photo." },
@@ -584,7 +592,9 @@ export async function POST(request: Request) {
       );
     }
   }
-  const picked = isMedia(engine) ? pickModel(engine, last.content, providers(), body.model, editing) : null;
+  if (combines) reason = `Flash combines your ${photos.length} photos into one picture.`;
+  // Only FLUX.2 Edit takes several photos at once; the other photo tools work on one.
+  const picked = isMedia(engine) ? pickModel(engine, last.content, providers(), combines ? "flux-2-edit" : body.model, editing) : null;
   const model = picked?.model ?? null;
 
   // Engines that aren't available yet reply for free. Media has a fixed price per model. Claude engines are charged by
@@ -611,7 +621,7 @@ export async function POST(request: Request) {
   // What reading the input once costs, charged even when the user stops the reply.
   let inputCents = 0;
   if (live) {
-    if (model) held = needed = modelCredits(model, last.content);
+    if (model) held = needed = modelCredits(model, last.content, combines ? photos.length : 1);
     else if (engine === "voice") held = needed = creditsFor(voiceCostCents(spokenText(last.content).length));
     else if (engine === "transcribe") {
       // Priced by file size (see transcribeCostCents); with no file, the engine just asks for one.

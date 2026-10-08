@@ -1669,7 +1669,7 @@ export function Flash({
                       ? "Say what to change about it…"
                       : photoActions.length
                       ? files.length > 1
-                        ? "Ask about these photos, or tap a button above…"
+                        ? "Ask about these photos, or say how to combine them…"
                         : "Ask about it, say what to change, or tap a button above…"
                       : above && changesPictures(choice)
                         ? "Say what to change in the picture, or ask anything…"

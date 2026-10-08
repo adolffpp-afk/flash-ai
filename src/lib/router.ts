@@ -129,6 +129,8 @@ const EDIT_REQUEST = new RegExp(
     String.raw`\bfix (this|the|my) (photo|picture|image|pic|selfie)\b`,
     String.raw`\b(turn|make) (it|this|that|me|us|them|him|her|the|my|his|their)\b`,
     String.raw`\b(make|create|turn|design)\b[\s\S]{0,40}\b(from|out of|using|based on) (it|this|that|the (picture|image|photo|pic))\b`,
+    // Several photos made into one: "combine these", "me and my dog together on a beach".
+    String.raw`\b(combine|merge|blend|together|in (one|the same) (photo|picture|image|scene|shot))\b`,
     String.raw`\bgive (him|her|them|the \w+)\b`,
     String.raw`\blet (me|him|her|them|us) (be|have|wear|look|hold|stand|sit)\b`,
     String.raw`\b(wear|wears|wearing|dressed (up )?(as|in)|should (be|have|look|wear|hold))\b`,
