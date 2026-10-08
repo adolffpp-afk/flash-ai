@@ -187,7 +187,7 @@ const FEATURES = `- Write: emails, essays, posts, stories, answers to anything.
 - Apps can have their own members: ask for "sign in" or "accounts" and people using the published app can sign up with an email and password, each with their own private data (their orders, notes, favourites), which nobody else can see. The app's owner sees how many members it has in 🌐 My websites & apps.
 - Above every app Flash builds: Preview and Code (change the code by hand and Save), ◎ Select (click a part of the app, then say what to change), Restart, Full screen, Download (the page on its own, or a project folder to keep coding in Cursor or VS Code), and Publish. When the app hits an error, a "Fix it" button asks Flash to repair it.
 - Slides: presentations; download as PowerPoint.
-- Image: pictures, logos, posters. Attach a photo to edit it (up to 2048 × 2048): remove the background, upscale, change anything. Under each picture: "Edit or animate" and remake it Tall, Square or Wide.
+- Image: pictures, logos, posters. Attach a photo to edit it (up to 2048 × 2048): remove the background, upscale, change anything. Right after Flash makes a picture, just say what to change ("make it darker", "add a hat") and Flash changes that picture. Under each picture: "Edit or animate" and remake it Tall, Square or Wide.
 - Video: short clips, up to 15 seconds; animate a photo; the Movie maker films 20 to 90 second movies in scenes.
 - Social post pack: ask for "a social post pack for …" (or use its template) to get a post with hashtags for Instagram, TikTok and Facebook, one picture made square and tall, and a 5 second video if asked ("with a video"). Each post has its own Copy button.
 - Voice: reads text aloud in 21 voices (ask for one, like "a deep British man's voice").

@@ -33,6 +33,7 @@ import { useWakeWord } from "./useWakeWord";
 import { voiceReply } from "@/lib/voice-chat";
 import { photoActionsFor } from "@/lib/photo-actions";
 import { pickedContext, type PickedElement } from "@/lib/preview-bridge";
+import { pictureFollowUp } from "@/lib/router";
 import { firstName } from "@/lib/names";
 import { applyAppearance, notifiesWhenDone, readSetting } from "@/lib/device-settings";
 
@@ -167,6 +168,15 @@ async function shrinkPhoto(file: File): Promise<File> {
   }
 }
 
+/** Tools that change a picture: a follow-up like "make it darker" goes with the picture above only to these. */
+const changesPictures = (choice: Choice) => choice === "auto" || choice === "image" || choice === "video";
+
+/** The picture Flash made in its last reply, when there is exactly one, for follow-ups like "add a hat". */
+function pictureAbove(messages: UIMessage[] | undefined): string | null {
+  const last = messages?.findLast((m) => m.role === "assistant");
+  return last && !last.pending && !last.error && last.images?.length === 1 ? last.images[0].url : null;
+}
+
 const inflateRaw = async (data: Uint8Array) =>
   new Uint8Array(await new Response(new Blob([data as BlobPart]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer());
 
@@ -223,6 +233,20 @@ function readFile(file: File): Promise<Attachment> {
   });
 }
 
+/** The picture above, ready to send with a follow-up, scaled down the way an attached photo is. */
+async function pictureAttachment(url: string): Promise<Attachment | null> {
+  try {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    if (!res.ok || !/^image\//.test(blob.type)) return null;
+    const ext = blob.type.split("/")[1].replace("jpeg", "jpg");
+    const file = await shrinkPhoto(new File([blob], `picture-above.${ext}`, { type: blob.type }));
+    return file.size <= MAX_FILE_MB * 1024 * 1024 ? await readFile(file) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function Flash({
   signedIn = true,
   initialStatus,
@@ -253,6 +277,8 @@ export function Flash({
   // A part of the latest app the user picked in its preview; the next message says what to change about it.
   const [picked, setPicked] = useState<{ projectId: string; kind: "app" | "slides"; label: string; context: string } | null>(null);
   const [choice, setChoice] = useState<Choice>("auto");
+  // The picture above that the user said not to change (the ✕ on "Changing the picture above").
+  const [keepPicture, setKeepPicture] = useState<string | null>(null);
   // Image, video and music model picked per engine; missing means Flash picks.
   const [models, setModels] = useState<Partial<Record<Engine, string>>>({});
   // Files waiting to be sent with the next message; the first is the main one.
@@ -642,16 +668,25 @@ export function Flash({
     const content = text.trim();
     if (!content && !attachment) return;
     const part = picked?.projectId === active.id ? picked : null;
+    // "Make it darker" right after a picture changes that picture, the way ChatGPT does.
+    const above = pictureAbove(active.messages);
+    const picture =
+      above && above !== keepPicture && !files.length && !part && !auto && changesPictures(choice) && pictureFollowUp(content)
+        ? await pictureAttachment(above)
+        : null;
+    const sending = picture ? [picture] : files;
     const userMsg: UIMessage = {
       id: newId(),
       role: "user",
       content,
-      attachmentName: files.map((f) => f.name).join(", ") || undefined,
+      attachmentName: picture ? "The picture above" : files.map((f) => f.name).join(", ") || undefined,
+      ...(picture && { pictureAbove: true }),
       ...(auto && { auto: true }),
       ...(part && { build: part.kind, picked: { label: part.label, context: part.context } }),
     };
     setPicked(null);
-    if (files.length) filesRef.current.set(userMsg.id, files);
+    setKeepPicture(null);
+    if (sending.length) filesRef.current.set(userMsg.id, sending);
     updateProject(active.id, (p) => ({
       ...p,
       name: !p.messages?.length && p.name === "New project" ? content.slice(0, 40) || p.name : p.name,
@@ -751,6 +786,7 @@ export function Flash({
           projectId,
           ...(userMsg.voice && { voice: true }),
           ...(userMsg.build && { build: true }),
+          ...(userMsg.pictureAbove && { pictureAbove: true }),
         }),
         signal: controller.signal,
       });
@@ -1007,6 +1043,10 @@ export function Flash({
   // The one-tap buttons for attached photos (Copy the text, Remove background…).
   const photoActions = photoActionsFor(files.map((f) => f.mediaType), isLive);
   const pickedNow = picked && picked.projectId === active?.id ? picked : null;
+  // What's typed reads as a change to the picture Flash just made, so the picture goes with it.
+  const above = pictureAbove(active?.messages);
+  const changingPicture =
+    Boolean(above) && above !== keepPicture && !files.length && !pickedNow && changesPictures(choice) && pictureFollowUp(input);
   // Flash builds on the most recent app in the chat.
   const lastAppId = active?.messages?.findLast((m) => m.app)?.id;
   const liveCount = ENGINES.filter(isLive).length;
@@ -1559,6 +1599,20 @@ export function Flash({
                     </button>
                   </div>
                 )}
+                {changingPicture && (
+                  <div className="mb-1 ml-2 mt-1 inline-flex max-w-full items-center gap-2 rounded-lg bg-primary/15 px-3 py-1 text-xs text-primary-soft">
+                    <span className="truncate">✏️ Changing the picture above</span>
+                    <button
+                      type="button"
+                      onClick={() => setKeepPicture(above)}
+                      aria-label="Don't change the picture above"
+                      title="Make a new picture instead"
+                      className="text-primary-soft/70 hover:text-zinc-100"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
                 {files.length > 0 && (
                   <div className="mb-1 ml-2 mt-1 flex flex-wrap gap-1.5">
                     {files.map((f) => (
@@ -1617,7 +1671,9 @@ export function Flash({
                       ? files.length > 1
                         ? "Ask about these photos, or tap a button above…"
                         : "Ask about it, say what to change, or tap a button above…"
-                      : choice === "auto"
+                      : above && changesPictures(choice)
+                        ? "Say what to change in the picture, or ask anything…"
+                        : choice === "auto"
                         ? "Ask Flash anything…"
                         : `Ask ${ENGINE_LABELS[choice]}…`
                   }

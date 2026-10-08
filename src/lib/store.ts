@@ -20,6 +20,8 @@ export type UIMessage = {
   build?: "app" | "slides";
   // The part of the app the user picked in the preview: its name for the chat, and what the builder is told.
   picked?: { label: string; context: string };
+  // Sent with the picture from Flash's last reply, as a follow-up like "make it darker".
+  pictureAbove?: boolean;
   engine?: Engine;
   reason?: string;
   demo?: boolean;

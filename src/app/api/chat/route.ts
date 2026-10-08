@@ -119,6 +119,8 @@ type ChatRequest = {
   voice?: boolean;
   // A change to the latest app from its preview (Fix it, or a part the user picked).
   build?: boolean;
+  // The attached picture is the one Flash made in its last reply, sent with a follow-up like "make it darker".
+  pictureAbove?: boolean;
 };
 
 /** Requests that cost at least this many credits wait for the user to agree to the price first. */
@@ -572,6 +574,7 @@ export async function POST(request: Request) {
 
   // An image request with a photo attached edits it; a video request animates it.
   const editing = (engine === "image" || engine === "video") && Boolean(last.attachment && EDITABLE_TYPE.test(last.attachment.mediaType));
+  if (editing && body.pictureAbove === true) reason = engine === "video" ? "Bringing the picture above to life." : "Changing the picture above.";
   if (editing) {
     const editSize = imageDimensions(Buffer.from(last.attachment!.data, "base64"));
     if (!editSize || editSize.width * editSize.height > MAX_EDIT_PIXELS) {

@@ -120,9 +120,38 @@ export const EDITABLE_TYPE = /^image\/(png|jpeg|webp)$/;
 const PHOTO_TYPE = /^image\/(png|jpeg|gif|webp)$/;
 // Questions about a photo, which the writing model answers.
 const ABOUT_PHOTO = /^\s*(what|who|where|why|which|when|how (many|much|old)|describe|explain|tell me|read|is|are|does|do)\b/i;
-// Asking to change an attached photo, rather than asking about it.
-const EDIT_REQUEST =
-  /\b(edit|retouch|remove|erase|replace|swap|add|put|change|turn (it|this|me|us|them|him|her)|make (it|this|me|us|them|him|her|the)|transform|convert|restore|colou?ri[sz]e|enhance|upscale|sharpen|blur|background|cartoon\w*|anime|pixar|ghibli|sketch|painting|style|filter|headshot|brighter|darker)\b/i;
+// Asking to change an attached photo, rather than asking about it, in the everyday words people
+// use with ChatGPT: "give him sunglasses", "fix the lighting", "he should be wearing a suit".
+const EDIT_REQUEST = new RegExp(
+  [
+    String.raw`\b(edit|retouch|photoshop|remove|erase|delete|replace|swap|add(?! up\b)|put|place|change|transform|convert|restore|colou?ri[sz]e|recolou?r|enhance|upscale|sharpen|blur|brighten|darken|lighten|relight|crop|zoom (in|out)|dye)\b`,
+    String.raw`\bfix (the|its|his|her|their) (lighting|light|colou?rs?|exposure|contrast|white balance|red ?eyes?|shadows?|glare|blur|skin|teeth|hair|background)\b`,
+    String.raw`\bfix (this|the|my) (photo|picture|image|pic|selfie)\b`,
+    String.raw`\b(turn|make) (it|this|that|me|us|them|him|her|the|my|his|their)\b`,
+    String.raw`\b(make|create|turn|design)\b[\s\S]{0,40}\b(from|out of|using|based on) (it|this|that|the (picture|image|photo|pic))\b`,
+    String.raw`\bgive (him|her|them|the \w+)\b`,
+    String.raw`\blet (me|him|her|them|us) (be|have|wear|look|hold|stand|sit)\b`,
+    String.raw`\b(wear|wears|wearing|dressed (up )?(as|in)|should (be|have|look|wear|hold))\b`,
+    String.raw`\b(background|cartoon\w*|anime|pixar|ghibli|sketch|painting|watercolou?r|oil paint\w*|pencil drawing|comic book|pixel art|black (and|&) white|sepia|vintage look|cinematic|style|filter|headshot|passport photo|profile (picture|photo)|brighter|darker|lighter|warmer|cooler|older|younger|smiling|haircut|hairstyle)\b`,
+    // A short follow-up that only makes sense about a picture: "more red", "less busy", "without the text".
+    String.raw`^\s*(now |and |also |but |ok,? |okay,? )?(a bit |a little |slightly |much |even |way )?((more|less)(?! than\b)|bigger|smaller|without)\b`,
+  ].join("|"),
+  "i",
+);
+
+// Asking for a new picture after one Flash made ("another one", "draw me a dragon"), rather than a
+// change to that one. A request that points back at the picture ("a poster from it") is a change.
+const NEW_PICTURE = new RegExp(
+  [
+    String.raw`\b(new|another|different|second|separate|fresh)\b[\s\S]{0,30}\b(picture|image|photo|pic|drawing|painting|logo|poster|one|version|design)s?\b`,
+    String.raw`\b(try again|regenerate|redo|re-?roll|start over|from scratch|variations?|more like (this|it))\b`,
+    String.raw`\b(make|create|generate|draw|design|paint|give) (me |us )?(a|an|some|\d+)\b(?![\s\S]*\b(from|of|with|using|based on) (it|this|that|the (picture|image|photo|pic|one))\b)`,
+  ].join("|"),
+  "i",
+);
+
+// Engines a request goes to on its own words, whatever picture came before: "make it into a song".
+const NOT_ABOUT_THE_PICTURE: Engine[] = ["app", "slides", "music", "voice", "search", "transcribe", "translate", "code"];
 
 // A screenshot, sketch or design photo to rebuild as a working app or website, rather than a
 // picture to change. Checked before the photo-editing rules, which "turn this into…" also matches.
@@ -151,7 +180,20 @@ const READ_TEXT = new RegExp(
 
 // Asking for an attached photo to move: it becomes a video.
 const ANIMATE_REQUEST =
-  /\b(animate\w*|bring (it|this|her|him|them|the \w+) to life|come alive|make (it|this|them|her|him|the \w+) (move|moving|walk|dance|talk|blink|smile and wave)|into an? (video|clip|animation)|video (of|from) (it|this)|moving (photo|picture|image)|live photo|cinemagraph)\b/i;
+  /\b(animate\w*|bring (it|this|her|him|them|the \w+) to life|come alive|make (it|this|them|her|him|the \w+) (move|moving|walk|dance|talk|blink|smile and wave)|(make|turn) (it|this|them|her|him) (into )?an? (video|clip|animation)|into an? (video|clip|animation)|video (of|from) (it|this)|moving (photo|picture|image)|live photo|cinemagraph)\b/i;
+
+/**
+ * Whether a message, sent with nothing attached right after Flash made a picture, asks to change
+ * that picture ("make it darker", "add a hat", "now put him on a beach") or to bring it to life.
+ * When it does, the picture goes with the message, so it's edited the way an attached photo is.
+ */
+export function pictureFollowUp(message: string): boolean {
+  const text = message.trim();
+  if (!text || ABOUT_PHOTO.test(text) || NEW_PICTURE.test(text)) return false;
+  if (NOT_ABOUT_THE_PICTURE.includes(routeOne(text).engine)) return false;
+  const withPicture = routeOne(text, "image/png").engine;
+  return withPicture === "image" || withPicture === "video";
+}
 
 // Engines whose answers are general enough that a follow-up may really be an edit to the last build.
 const GENERAL: Engine[] = ["text", "code", "docs"];
