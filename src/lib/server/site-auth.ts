@@ -70,28 +70,51 @@ export async function visitorForSession(slug: string, token: string | null | und
   );
 }
 
-/** A key for one page load, which the app's own requests carry. */
-export async function newPageToken(visitorId: string, slug: string): Promise<string> {
+/** A key for one page load, which the app's own requests carry, made from the visitor's sign-in. */
+export async function newPageToken(visitorId: string, slug: string, sessionToken: string): Promise<string> {
   const token = randomId(24);
   await run("DELETE FROM site_page_tokens WHERE expires_at < ?", [now()]);
-  await run("INSERT INTO site_page_tokens (token_hash, site_user_id, site_slug, expires_at) VALUES (?, ?, ?, ?)", [
+  await run("INSERT INTO site_page_tokens (token_hash, site_user_id, site_slug, expires_at, session_hash) VALUES (?, ?, ?, ?, ?)", [
     sha256(token),
     visitorId,
     slug,
     now() + PAGE_TOKEN_MINUTES * MINUTE,
+    sha256(sessionToken),
   ]);
   return token;
 }
 
-/** The visitor a page key stands for, for the private data API. */
+/** The visitor a page key stands for, for the private data API, while the sign-in it came from lasts. */
 export async function visitorForPageToken(slug: string, header: string | null): Promise<SiteVisitor | null> {
   const token = header?.match(/^Bearer\s+(\S+)$/i)?.[1];
   if (!token) return null;
   return one<SiteVisitor>(
     `SELECT u.id, u.email, u.name FROM site_page_tokens t JOIN site_users u ON u.id = t.site_user_id
-     WHERE t.token_hash = ? AND t.site_slug = ? AND t.expires_at > ?`,
-    [sha256(token), slug, now()],
+     WHERE t.token_hash = ? AND t.site_slug = ? AND t.expires_at > ?
+       AND (t.session_hash = '' OR EXISTS (SELECT 1 FROM site_sessions s WHERE s.token_hash = t.session_hash AND s.expires_at > ?))`,
+    [sha256(token), slug, now(), now()],
   );
+}
+
+/**
+ * Ends a sign-in. On an app's page on Flash the sign-in cookie only goes to the app's own pages,
+ * not to this address, so the page sends its key and the sign-in is found from that.
+ */
+async function endSession(slug: string, cookieToken: string | null, pageToken: string): Promise<void> {
+  const hashes = new Set<string>();
+  if (cookieToken) hashes.add(sha256(cookieToken));
+  if (pageToken) {
+    const page = await one<{ session_hash: string }>(
+      "SELECT session_hash FROM site_page_tokens WHERE token_hash = ? AND site_slug = ?",
+      [sha256(pageToken), slug],
+    );
+    if (page?.session_hash) hashes.add(page.session_hash);
+  }
+  for (const hash of hashes) {
+    await run("DELETE FROM site_sessions WHERE token_hash = ? AND site_slug = ?", [hash, slug]);
+    await run("DELETE FROM site_page_tokens WHERE session_hash = ? AND site_slug = ?", [hash, slug]);
+  }
+  if (pageToken) await run("DELETE FROM site_page_tokens WHERE token_hash = ? AND site_slug = ?", [sha256(pageToken), slug]);
 }
 
 export type AuthAction = "signup" | "signin" | "signout";
@@ -107,7 +130,8 @@ const outcome = (result: string): AuthOutcome => ({ result });
 export async function siteAuth(
   slug: string,
   action: string,
-  form: { email?: string; password?: string; name?: string },
+  // page is the key of the page the visitor signs out from.
+  form: { email?: string; password?: string; name?: string; page?: string },
   ip: string,
   path: string,
   secure: boolean,
@@ -115,7 +139,7 @@ export async function siteAuth(
 ): Promise<AuthOutcome> {
   if (!(await one("SELECT 1 FROM sites WHERE slug = ?", [slug]))) return outcome("no-app");
   if (action === "signout") {
-    if (cookieToken) await run("DELETE FROM site_sessions WHERE token_hash = ?", [sha256(cookieToken)]);
+    await endSession(slug, cookieToken, form.page ?? "");
     return { result: "signed-out", cookie: clearSessionCookie(path) };
   }
   if (action !== "signup" && action !== "signin") return outcome("unknown");

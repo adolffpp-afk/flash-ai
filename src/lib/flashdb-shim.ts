@@ -226,7 +226,7 @@ export function flashDbShim(
     signedOut: authResult === "signed-out",
     signUp(email, password, name) { return go("signup", { email: email, password: password, name: name }); },
     signIn(email, password) { return go("signin", { email: email, password: password }); },
-    signOut() { return go("signout", {}); },
+    signOut() { return go("signout", { page: key }); },
   };
 
   function ready(fn) { if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", fn); else fn(); }

@@ -30,8 +30,9 @@ export async function serveSite(slug: string | null, pageUrl?: string, request?:
   // Who is signed in to this app, if anyone, with a key that works on this page for a couple of
   // hours. The session cookie itself never reaches the app's own code.
   let visitor: Visitor = null;
-  const who = request ? await visitorForSession(slug, readCookie(request, SITE_COOKIE)) : null;
-  if (who) visitor = { user: who, token: await newPageToken(who.id, slug) };
+  const session = request ? readCookie(request, SITE_COOKIE) : null;
+  const who = await visitorForSession(slug, session);
+  if (who && session) visitor = { user: who, token: await newPageToken(who.id, slug, session) };
 
   const html = injectHead(site.html, card + flashDbShim(
     `/api/sites/${slug}/data`,

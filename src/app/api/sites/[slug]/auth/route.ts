@@ -27,7 +27,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug
   const { result, cookie } = await siteAuth(
     slug,
     field("action"),
-    { email: field("email"), password: field("password"), name: field("name") },
+    { email: field("email"), password: field("password"), name: field("name"), page: field("page") },
     clientIp(request),
     back,
     isSecure(request),

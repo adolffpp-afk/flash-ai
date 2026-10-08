@@ -68,6 +68,23 @@ test("signing out ends that session and clears the cookie", async () => {
   assert.equal(await visitorForSession("shop", token(session.cookie)), null);
 });
 
+test("signing out from an app's page on Flash, where the cookie isn't sent, still ends the sign-in", async () => {
+  const session = token((await signIn("shop", "ann@example.com", "longenough1", "3.3.3.4")).cookie);
+  const annId = (await visitorForSession("shop", session))!.id;
+  const key = await newPageToken(annId, "shop", session);
+  const other = await newPageToken(annId, "shop", session);
+  // A key from another app ends nothing here.
+  await siteAuth("other", "signout", { page: key }, "3.3.3.4", "/p/other", true, null);
+  assert.ok(await visitorForSession("shop", session));
+  assert.ok(await visitorForPageToken("shop", `Bearer ${key}`));
+
+  const out = await siteAuth("shop", "signout", { page: key }, "3.3.3.4", "/p/shop", true, null);
+  assert.equal(out.result, "signed-out");
+  assert.equal(await visitorForSession("shop", session), null, "the saved sign-in is gone");
+  assert.equal(await visitorForPageToken("shop", `Bearer ${key}`), null);
+  assert.equal(await visitorForPageToken("shop", `Bearer ${other}`), null, "and every page key made from it");
+});
+
 test("each person's own records are theirs alone, and the app's shared ones stay shared", async () => {
   const ann = (await signIn("shop", "ann@example.com", "longenough1", "4.4.4.4"))!;
   const annId = (await visitorForSession("shop", token(ann.cookie)))!.id;
@@ -97,7 +114,8 @@ test("each person's own records are theirs alone, and the app's shared ones stay
 
 test("the key put into a page works for that app only, and dies with the person", async () => {
   const bobId = (await listSiteUsers("shop")).find((m) => m.email === "bob@example.com")!.id;
-  const key = await newPageToken(bobId, "shop");
+  const bobSession = token((await signIn("shop", "bob@example.com", "longenough1", "6.6.6.6")).cookie);
+  const key = await newPageToken(bobId, "shop", bobSession);
   assert.equal((await visitorForPageToken("shop", `Bearer ${key}`))?.email, "bob@example.com");
   assert.equal(await visitorForPageToken("shop", `Bearer ${key}x`), null);
   assert.equal(await visitorForPageToken("other", `Bearer ${key}`), null, "not on another app");
@@ -110,7 +128,7 @@ test("the key put into a page works for that app only, and dies with the person"
   // The owner removes Bob: his sign-in, his key and his private records all go.
   assert.equal(await removeSiteUser("shop", bobId), true);
   assert.equal(await removeSiteUser("shop", bobId), false);
-  assert.equal(await visitorForPageToken("shop", `Bearer ${await newPageToken(bobId, "shop").catch(() => "")}`), null);
+  assert.equal(await visitorForPageToken("shop", `Bearer ${await newPageToken(bobId, "shop", bobSession).catch(() => "")}`), null);
   const left = await one<{ n: number }>("SELECT COUNT(*) AS n FROM site_records WHERE site_slug = 'shop' AND owner = ?", [bobId]);
   assert.equal(Number(left?.n), 0);
 });
