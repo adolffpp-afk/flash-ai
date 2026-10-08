@@ -13,6 +13,8 @@ export const DEVICE_KEYS = {
   voiceRate: "flash:voice-rate",
   memoryOff: "flash:memory-off",
   hideCompanion: "flash:hide-companion",
+  // Listen for "Hey Flash" while Flash is open (Settings > General > Voice).
+  wakeWord: "flash:wake-word",
 } as const;
 
 export type DeviceKey = keyof typeof DEVICE_KEYS;

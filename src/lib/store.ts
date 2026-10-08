@@ -14,6 +14,8 @@ export type UIMessage = {
   auto?: boolean;
   // An invoice or quote built in the browser: exact and free, so it is never sent to the AI again.
   local?: boolean;
+  // Said out loud in a voice conversation, so the answer comes back in a few spoken sentences.
+  voice?: boolean;
   engine?: Engine;
   reason?: string;
   demo?: boolean;

@@ -5,6 +5,7 @@ import { ENGINES, ENGINE_LABELS, type Engine } from "@/lib/types";
 import type { Me } from "@/lib/store";
 import { BoltIcon } from "@/app/brand";
 import { EngineIcon } from "./EngineIcon";
+import { micBlocked, newRecognition, releaseMic, takeMic } from "@/lib/listen";
 
 export type Choice = Engine | "auto";
 
@@ -228,23 +229,6 @@ export function ToolPicker({
   );
 }
 
-type Recognition = {
-  lang: string;
-  continuous: boolean;
-  interimResults: boolean;
-  start: () => void;
-  stop: () => void;
-  onresult: ((e: { resultIndex: number; results: ArrayLike<{ isFinal: boolean; 0: { transcript: string } }> }) => void) | null;
-  onend: (() => void) | null;
-  onerror: ((e: { error: string }) => void) | null;
-};
-
-function recognition(): Recognition | null {
-  const w = window as unknown as Record<string, (new () => Recognition) | undefined>;
-  const Ctor = w.SpeechRecognition ?? w.webkitSpeechRecognition;
-  return Ctor ? new Ctor() : null;
-}
-
 /**
  * The mic: speak and your words appear in the message box. Browsers without speech recognition
  * (Firefox) record a clip instead and attach it, which Flash transcribes.
@@ -252,22 +236,29 @@ function recognition(): Recognition | null {
 export function MicButton({
   onText,
   onRecording,
+  onListening,
   disabled,
 }: {
   onText: (text: string) => void;
   onRecording: (file: File) => void;
+  // Tells Flash the mic is in use, so the "Hey Flash" listener waits.
+  onListening?: (on: boolean) => void;
   disabled?: boolean;
 }) {
   const [listening, setListening] = useState(false);
   const [error, setError] = useState("");
   const stopRef = useRef<(() => void) | null>(null);
   useEffect(() => () => stopRef.current?.(), []);
+  const listen = (on: boolean) => {
+    setListening(on);
+    onListening?.(on);
+    if (!on) releaseMic("dictation");
+  };
 
   async function start() {
     setError("");
-    const rec = recognition();
+    const rec = newRecognition();
     if (rec) {
-      rec.lang = navigator.language || "en-US";
       rec.continuous = true;
       rec.interimResults = false;
       rec.onresult = (e) => {
@@ -276,16 +267,17 @@ export function MicButton({
         }
       };
       rec.onerror = (e) => {
-        if (e.error === "not-allowed" || e.error === "service-not-allowed") setError("Allow the microphone to talk to Flash.");
+        if (micBlocked(e.error)) setError("Allow the microphone to talk to Flash.");
         else if (e.error !== "no-speech" && e.error !== "aborted") setError("Flash couldn't hear that. Please try again.");
       };
       rec.onend = () => {
         stopRef.current = null;
-        setListening(false);
+        listen(false);
       };
       stopRef.current = () => rec.stop();
+      takeMic("dictation", () => rec.abort());
+      listen(true);
       rec.start();
-      setListening(true);
       return;
     }
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
@@ -302,14 +294,15 @@ export function MicButton({
       recorder.onstop = () => {
         stream.getTracks().forEach((t) => t.stop());
         stopRef.current = null;
-        setListening(false);
+        listen(false);
         const type = (recorder.mimeType || "audio/webm").split(";")[0];
         const ext = type.split("/")[1] === "mp4" ? "m4a" : type.split("/")[1];
         if (chunks.length) onRecording(new File(chunks, `recording.${ext}`, { type }));
       };
       stopRef.current = () => recorder.state !== "inactive" && recorder.stop();
+      takeMic("dictation", () => recorder.state !== "inactive" && recorder.stop());
       recorder.start();
-      setListening(true);
+      listen(true);
     } catch {
       setError("Allow the microphone to talk to Flash.");
     }
@@ -362,6 +355,23 @@ export function SendButton({ busy, disabled, onStop }: { busy: boolean; disabled
   ) : (
     <button key="send" type="submit" disabled={disabled} aria-label="Send" title="Send" className={`${round} bg-zinc-100 text-zinc-900 hover:bg-white`}>
       <Icon d="M12 19V5 M6 11l6-6 6 6" className="h-5 w-5" />
+    </button>
+  );
+}
+
+/** Starts a voice conversation. The dot shows that Flash is listening for "Hey Flash". */
+export function TalkButton({ onTalk, waking, disabled }: { onTalk: () => void; waking: boolean; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onTalk}
+      disabled={disabled}
+      aria-label="Talk with Flash"
+      title={waking ? 'Talk with Flash. Flash is also listening for "Hey Flash".' : "Talk with Flash: a voice conversation"}
+      className={`${round} relative bg-white/[0.06] text-zinc-200 hover:bg-white/[0.1]`}
+    >
+      <Icon d="M4 10v4 M8 7v10 M12 4v16 M16 7v10 M20 10v4" />
+      {waking && <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-primary ring-2 ring-zinc-900" aria-hidden />}
     </button>
   );
 }

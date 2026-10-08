@@ -19,6 +19,7 @@ import { BrandKitForm } from "./BrandKit";
 import { ConnectedApps } from "./ConnectedApps";
 import { InstallApp } from "./InstallApp";
 import { SETTINGS_TABS, type SettingsTab } from "@/lib/settings-tabs";
+import { hasBuiltInRecognition } from "@/lib/listen";
 
 export { settingsTabFor, type SettingsTab } from "@/lib/settings-tabs";
 
@@ -130,6 +131,7 @@ export function Settings({
   onOpenInvite,
   onSignOut,
   onCompanionShown,
+  onWakeWord,
   onClose,
 }: {
   me: Me;
@@ -143,6 +145,8 @@ export function Settings({
   onSignOut: (everywhere?: boolean) => void;
   // The Ask Flash button was turned on or off in Capabilities.
   onCompanionShown: (shown: boolean) => void;
+  // "Hey Flash" was turned on or off in General > Voice.
+  onWakeWord?: (on: boolean) => void;
   onClose: () => void;
 }) {
   const [tab, setTab] = useState<SettingsTab>(initialTab);
@@ -208,7 +212,9 @@ export function Settings({
           </nav>
           <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-5 sm:p-8">
             <div className="flex max-w-2xl flex-col gap-8">
-              {tab === "general" && <General {...shared} preferences={preferences} onPreferences={onPreferences} onProfileChanged={onProfileChanged} />}
+              {tab === "general" && (
+                <General {...shared} preferences={preferences} onPreferences={onPreferences} onProfileChanged={onProfileChanged} onWakeWord={onWakeWord} />
+              )}
               {tab === "account" && <Account {...shared} onSignOut={onSignOut} />}
               {tab === "privacy" && <Privacy {...shared} preferences={preferences} />}
               {tab === "billing" && <Billing {...shared} onOpenCredits={onOpenCredits} onOpenInvite={onOpenInvite} />}
@@ -259,10 +265,12 @@ function General({
   preferences,
   onPreferences,
   onProfileChanged,
+  onWakeWord,
 }: Shared & {
   preferences: string;
   onPreferences: (value: string) => void;
   onProfileChanged: (user: { name: string; nickname: string; work: string }) => void;
+  onWakeWord?: (on: boolean) => void;
 }) {
   const [name, setName] = useState(fullName(me.user));
   const [nickname, setNickname] = useState(me.user.nickname ?? "");
@@ -274,6 +282,8 @@ function General({
   const [rate, setRate] = useDeviceSetting("voiceRate");
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
   const speech = typeof window !== "undefined" && "speechSynthesis" in window;
+  const [wake, setWake] = useDeviceSetting("wakeWord");
+  const [canWake] = useState(hasBuiltInRecognition);
 
   // Voices load after the page in some browsers.
   useEffect(() => {
@@ -301,6 +311,24 @@ function General({
     const allowed = Notification.permission === "granted" || (await Notification.requestPermission()) === "granted";
     if (allowed) setNotify("1");
     else setMessage({ text: "Notifications are blocked for Flash. Allow them in your browser's site settings, then try again.", ok: false });
+  }
+
+  /** Turns "Hey Flash" on (after the browser allows the microphone) or off, on this device. */
+  async function toggleWake(on: boolean) {
+    if (!on) {
+      setWake("");
+      onWakeWord?.(false);
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream.getTracks().forEach((t) => t.stop());
+    } catch {
+      return setMessage({ text: 'Flash needs the microphone to hear "Hey Flash". Allow it in your browser\'s site settings, then try again.', ok: false });
+    }
+    setWake("1");
+    onWakeWord?.(true);
+    setMessage({ text: 'Say "Hey Flash" any time Flash is open.', ok: true });
   }
 
   function tryVoice() {
@@ -405,6 +433,25 @@ function General({
       </Section>
 
       <Section title="Voice">
+        <Row
+          title="Talk with &ldquo;Hey Flash&rdquo;"
+          about={
+            canWake ? (
+              <>
+                While Flash is open, say &ldquo;Hey Flash&rdquo; and talk with it, hands free. Your browser does the listening: Chrome and Edge send
+                the sound to Google&apos;s or Microsoft&apos;s speech service to understand it, and Flash only gets what you say after &ldquo;Hey
+                Flash&rdquo;. A green dot on the Talk button shows it&apos;s listening. Saved on this device.
+              </>
+            ) : (
+              <>
+                This browser can&apos;t listen for &ldquo;Hey Flash&rdquo;. It works in Chrome, Edge and Safari. Here, press the Talk button next to
+                the mic to start a voice conversation.
+              </>
+            )
+          }
+        >
+          {canWake ? <Toggle on={wake === "1"} onChange={toggleWake} label="Listen for Hey Flash" /> : <span className={hint}>Not in this browser</span>}
+        </Row>
         {speech ? (
           <>
             <Row title="Read-aloud voice" about="The voice 🔊 Read aloud uses. Read aloud is free; the voices come with your device.">
