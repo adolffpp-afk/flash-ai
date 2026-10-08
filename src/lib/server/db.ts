@@ -401,6 +401,8 @@ const MIGRATIONS = [
   // Settings > General: what Flash should call the user, and what best describes their work.
   "ALTER TABLE users ADD COLUMN nickname TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE users ADD COLUMN work TEXT NOT NULL DEFAULT ''",
+  // The language Flash answers in (see languages.ts); empty means the language the user writes in.
+  "ALTER TABLE users ADD COLUMN language TEXT NOT NULL DEFAULT ''",
   // Whose record this is, when an app keeps private data for each person signed in to it.
   // Empty means the record is shared by everyone using the app, as before.
   "ALTER TABLE site_records ADD COLUMN owner TEXT NOT NULL DEFAULT ''",

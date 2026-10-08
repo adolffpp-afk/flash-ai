@@ -143,7 +143,7 @@ export async function refreshTokens(refresh: string, clientId: string): Promise<
 export async function tokenUser(access: string | null | undefined): Promise<{ user: User; clientId: string } | null> {
   if (!access) return null;
   const row = await one<User & { client_id: string }>(
-    `SELECT u.id, u.email, u.name, u.nickname, u.work, u.preferences, u.created_at, u.last_free_grant, u.verified_at, t.client_id
+    `SELECT u.id, u.email, u.name, u.nickname, u.work, u.language, u.preferences, u.created_at, u.last_free_grant, u.verified_at, t.client_id
      FROM oauth_tokens t JOIN users u ON u.id = t.user_id
      WHERE t.token_hash = ? AND t.kind = 'access' AND t.expires_at > ?`,
     [sha256(access), now()],

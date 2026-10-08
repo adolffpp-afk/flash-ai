@@ -25,7 +25,8 @@ export function packMaxTokens(inputTokens: number): number {
 export function packSystem(about: string): string {
   const parts = [
     "You write social media posts for small businesses and creators. From the user's request, write one post each " +
-      "for Instagram, TikTok and Facebook, in the same language as the request, and describe one picture for all three.\n" +
+      "for Instagram, TikTok and Facebook, in the same language as the request (or the one the notes below ask Flash to " +
+      "answer in), and describe one picture for all three.\n" +
       "- Instagram: a hook in the first line, 60 to 150 words, a few fitting emoji and a call to action; 8 to 15 hashtags.\n" +
       "- TikTok: one to three short, punchy lines, under 150 characters; 3 to 5 hashtags.\n" +
       "- Facebook: friendly and conversational, 40 to 120 words, with a clear call to action; 1 to 3 hashtags.\n" +

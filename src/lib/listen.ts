@@ -29,11 +29,12 @@ function ctor(): RecognitionCtor | undefined {
 /** Whether this browser can turn speech into text by itself (Firefox can't). */
 export const hasBuiltInRecognition = () => Boolean(ctor());
 
-export function newRecognition(): Recognition | null {
+/** A recognizer for lang (a voice conversation in the language picked in Settings), else the browser's language. */
+export function newRecognition(lang = ""): Recognition | null {
   const C = ctor();
   if (!C) return null;
   const rec = new C();
-  rec.lang = navigator.language || "en-US";
+  rec.lang = lang || navigator.language || "en-US";
   return rec;
 }
 

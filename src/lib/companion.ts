@@ -1,4 +1,5 @@
 import { ENGINE_LABELS, type Engine } from "./types.ts";
+import { languageNote } from "./languages.ts";
 
 /*
  * The Flash companion: a small helper beside the chat that the user can talk to at any time,
@@ -200,7 +201,7 @@ const PLACES = `- Sidebar: + New project, 🖼️ My creations (everything Flash
 - Message box: + (attach files or take a photo), the tool picker (Auto or a tool), the mic (speak instead of typing), and the Talk button (a live voice conversation: Flash listens, answers out loud, and everything said stays in the chat; say "bye" or press End to finish. In Chrome, Edge and Safari listening is free; in other browsers like Firefox, Flash writes down each thing said for about 3 credits). "Hey Flash" starts a conversation hands free while Flash is open; turn it on in Settings > General > Voice (Chrome, Edge and Safari only).
 - Top of a chat: Instructions (how Flash answers in this project only), Download (the whole chat as a page), Share (a read-only link), and the credits button (prices and top-ups).
 - The user's name at the bottom of the sidebar opens the account menu: Settings, Get help (opens this chat), Upgrade plan, Invite friends, Install app, Learn more, Log out.
-- Settings: General (full name, what Flash should call them, their work, what Flash should know about them in every chat, notifications when a long request finishes, chat font and text size, "Hey Flash", read-aloud voice and speed, install the app), Account (email, password, log out, log out of all devices, account ID; to delete the account, email support@flash-app.dev), Privacy (export all their data, shared chat links and stopping them), Billing (plan, buy credits, payment method and invoices, invite friends), Usage (credits used this month by tool, free use left today, recent activity), Capabilities (use memory in chats, ask before requests of 50 credits or more, show the Ask Flash button), Brand kit (logo, colours, tone, used in pictures, videos, sites and posts), Connectors (Claude and other apps using Flash with the user's credits; how-to at /connector).`;
+- Settings: General (full name, what Flash should call them, their work, the language Flash answers, writes and builds in (Automatic follows the language they write in), what Flash should know about them in every chat, notifications when a long request finishes, chat font and text size, "Hey Flash", read-aloud voice and speed, install the app), Account (email, password, log out, log out of all devices, account ID; to delete the account, email support@flash-app.dev), Privacy (export all their data, shared chat links and stopping them), Billing (plan, buy credits, payment method and invoices, invite friends), Usage (credits used this month by tool, free use left today, recent activity), Capabilities (use memory in chats, ask before requests of 50 credits or more, show the Ask Flash button), Brand kit (logo, colours, tone, used in pictures, videos, sites and posts), Connectors (Claude and other apps using Flash with the user's credits; how-to at /connector).`;
 
 export type CompanionFacts = {
   name: string;
@@ -217,6 +218,8 @@ export type CompanionFacts = {
   context: CompanionContext;
   // Whether the companion can use tools (the free models can't).
   tools: boolean;
+  // The language picked in Settings > General (see languages.ts); "" or missing for Automatic.
+  language?: string;
 };
 
 // Chat text can't close the <work> fence: its angle brackets are swapped for look-alikes, so no
@@ -241,12 +244,14 @@ export function companionSystem(f: CompanionFacts): string {
   if (c.recent?.length) {
     work.push("Latest messages in that chat:\n" + c.recent.map((t) => `${t.role === "user" ? "User" : "Flash"}: ${t.content}`).join("\n"));
   }
+  const language = languageNote(f.language);
 
   return [
     "You are the Flash companion, a quick helper beside the user's chat in Flash AI (flash-app.dev), an all-in-one AI app. " +
       "The user can talk to you at any time, even while Flash is still working on something in their chat. " +
       "Answer in a few short sentences, in plain friendly words, in the user's language. Use Markdown only for short lists. " +
-      "You can also help with anything else they ask: ideas, captions, quick questions.",
+      "You can also help with anything else they ask: ideas, captions, quick questions." +
+      (language ? ` ${language}` : ""),
     "Be accurate. Use the facts below for anything about Flash or the user's account. When you don't know something, say so; " +
       "never invent a feature, a price, a number or a result. Say times and prices are typical, not promised.",
     `The user: ${f.name || "(no name given)"}. Credits: ${f.credits.toLocaleString("en-US")}. Plan: ${f.plan ?? "Free"}. Today is ${f.today}. ` +
