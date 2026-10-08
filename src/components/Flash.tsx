@@ -756,7 +756,11 @@ export function Flash({
       if (!url) filesRef.current.delete(old.id);
       edited = withPicture({ ...edited, attachmentName: undefined }, url);
     }
-    await respond(active, earlier, edited);
+    // When nothing could be sent, the edited words go back in the box rather than being lost.
+    await respond(active, earlier, edited, false, (stopped, why) => {
+      setInput((typed) => (typed.trim() ? typed : text));
+      if (!stopped) setNotice(why);
+    });
   }
 
   function stop() {
@@ -783,7 +787,7 @@ export function Flash({
     earlier: UIMessage[],
     userMsg: UIMessage,
     confirmed = false,
-    unsent?: (stopped: boolean) => void,
+    unsent?: (stopped: boolean, why: string) => void,
   ): Promise<UIMessage | null> {
     // One request at a time: Flash shows it's busy and Stop works from the first tap.
     if (runningRef.current) return null;
@@ -813,7 +817,7 @@ export function Flash({
       setBusy(false);
       // Like a request that failed or was stopped, this holds Next up until the user says so.
       if (queueNow.current.length) setQueuePaused(true);
-      if (unsent) unsent(stopped);
+      if (unsent) unsent(stopped, missing);
       else if (!stopped) setNotice(missing);
       return { ...reply, pending: false, ...(stopped ? { stopped: true } : { error: missing }) };
     }
@@ -955,7 +959,12 @@ export function Flash({
     }));
     // A queued "make it darker" right after a picture changes that picture, as when it's typed.
     const ask: UIMessage = { id: newId(), role: "user", content: next.request, queued: true };
-    respond(project, project.messages, withPicture(ask, followUpPicture(project.messages, next.request, "auto")));
+    // When nothing could be sent, the request goes back to the front of Next up, paused, to Resume later.
+    respond(project, project.messages, withPicture(ask, followUpPicture(project.messages, next.request, "auto")), false, (stopped, why) => {
+      setQueue([next, ...queueNow.current]);
+      setQueuePaused(true);
+      if (!stopped) setNotice(why);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [busy, queuePaused, queue, projects]);
 

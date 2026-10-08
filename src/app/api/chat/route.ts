@@ -4,6 +4,7 @@ import { ENGINES, ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, ty
 import {
   NO_BUDGET,
   classifyRequest,
+  pictureRequest,
   claudeConfigured,
   countInputTokens,
   improvePrompt,
@@ -585,8 +586,23 @@ export async function POST(request: Request) {
   if (!override && body.pictureAbove === true && last.attachment && EDITABLE_TYPE.test(last.attachment.mediaType) && fixesPictureText(last.content)) {
     engine = "image";
   }
+  // The keyword rules can't tell every "make it darker" from "great edit!" or "change it back", and a change
+  // costs credits, so a small model checks the request first. Words about the picture get an answer in
+  // words; a different picture is made fresh. Once the user has agreed to a price, the check isn't asked again.
+  let fresh = false;
+  const wouldEdit = (engine === "image" || engine === "video") && Boolean(last.attachment && EDITABLE_TYPE.test(last.attachment.mediaType));
+  if (wouldEdit && !override && body.confirmed !== true && claudeConfigured() && available >= 5) {
+    const asked = await pictureRequest(last.content, body.pictureAbove === true, meter);
+    if (asked === "other") {
+      engine = severalFiles ? "docs" : "text";
+      reason = body.pictureAbove === true ? "Flash answers about the picture above." : "A photo is attached, so the writing model reads it.";
+    } else if (asked === "new" && body.pictureAbove === true) {
+      fresh = true;
+      reason = "Flash makes a new picture.";
+    }
+  }
   // An image request with a photo attached edits it; a video request animates it.
-  const editing = (engine === "image" || engine === "video") && Boolean(last.attachment && EDITABLE_TYPE.test(last.attachment.mediaType));
+  const editing = !fresh && (engine === "image" || engine === "video") && Boolean(last.attachment && EDITABLE_TYPE.test(last.attachment.mediaType));
   if (editing && body.pictureAbove === true) reason = engine === "video" ? "Bringing the picture above to life." : "Changing the picture above.";
   for (const photo of editing ? (combines ? photos : [last.attachment!]) : []) {
     const editSize = imageDimensions(Buffer.from(photo.data, "base64"));
@@ -597,7 +613,7 @@ export async function POST(request: Request) {
       );
     }
   }
-  if (combines) reason = `Flash combines your ${photos.length} photos into one picture.`;
+  if (combines && editing) reason = `Flash combines your ${photos.length} photos into one picture.`;
   // Only FLUX.2 Edit takes several photos at once; the other photo tools work on one.
   const picked = isMedia(engine) ? pickModel(engine, last.content, providers(), combines ? "flux-2-edit" : body.model, editing) : null;
   const model = picked?.model ?? null;

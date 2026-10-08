@@ -198,3 +198,114 @@ test("with a photo attached, questions, sums, advice and writing jobs still get 
     assert.equal(route(ask, "image/jpeg").engine, "image", ask);
   }
 });
+
+test("undoing, saying no, sharing, sound and account asks after a picture don't pay for an edit", () => {
+  for (const ask of [
+    "change it back",
+    "make it like before",
+    "undo the last edit",
+    "great edit!",
+    "love the crop",
+    "it's perfect, don't change anything",
+    "I didn't ask you to change the background",
+    "it’s perfect, don’t change anything",
+    "didn’t you add a hat?",
+    "wait why did you add a hat",
+    "a little too dark but I love it",
+    "put it on whatsapp",
+    "add it to my album",
+    "delete the last one",
+    "add some background music",
+    "change your voice",
+    "add 100 credits to my account",
+    "change my password",
+    "switch to french",
+    "teach me to remove the background",
+    "steps to remove the background in photoshop",
+    "change of plans",
+  ]) {
+    assert.equal(pictureFollowUp(ask), false, ask);
+  }
+  for (const ask of [
+    "change it back to blue",
+    "put the hat back on",
+    "don't touch her face, just make the sky pink",
+    "make it darker but don't change her face",
+    "ok but make it darker",
+    "it's too dark",
+    "put it on a beach",
+    "add music notes around her",
+    "edit the background",
+  ]) {
+    assert.equal(pictureFollowUp(ask), true, ask);
+  }
+});
+
+test("more everyday ways to ask for a change after a picture change it, and motion makes a video", () => {
+  for (const ask of [
+    "the sky should be pink",
+    "needs more contrast",
+    "in paris",
+    "at the beach",
+    "christmas version",
+    "red please",
+    "blue dress",
+    "maybe a bit darker",
+    "full body",
+    "close-up",
+    "I want it brighter",
+    "I'd like a red background",
+    "no hat",
+    "take the hat off",
+    "would you mind adding a hat",
+    "his hand looks weird, fix it",
+    "you forgot the dog",
+    "smiling please",
+    "too much red",
+    "background white",
+    "claymation",
+    "as a superhero",
+  ]) {
+    assert.equal(pictureFollowUp(ask), true, ask);
+  }
+  for (const ask of ["add some motion", "make it come to life", "make a gif of it", "turn it into a reel"]) {
+    assert.equal(route(ask, "image/png").engine, "video", ask);
+  }
+  assert.equal(route("add some motion blur", "image/png").engine, "image");
+  for (const ask of ["no thanks", "no change", "take the day off", "zoom meeting at 5", "show more of the code", "the email should be warmer"]) {
+    assert.equal(pictureFollowUp(ask), false, ask);
+  }
+});
+
+test("a very long message is checked quickly", () => {
+  const long = "ok, ".repeat(25_000);
+  const started = performance.now();
+  pictureFollowUp(long);
+  route(long, "image/png");
+  assert.ok(performance.now() - started < 500, "well under a second");
+});
+
+test("questions, shared moments and everyday problems in an attached photo get words, not an edit", () => {
+  for (const ask of [
+    "could the rash be eczema?",
+    "can the shelf hold a TV?",
+    "our family together at Christmas, write a caption",
+    "my baby smiling for the first time",
+    "new haircut!",
+    "I love this place, plan a trip here",
+    "best way to get rid of this mold?",
+    "move the meeting up an hour",
+    "my son dressed as a pirate, so cute",
+    "my cat is too fat, diet plan please",
+  ]) {
+    const engine = route(ask, "image/jpeg").engine;
+    assert.ok(engine !== "image" && engine !== "video", `${ask} → ${engine}`);
+  }
+  assert.equal(route("turn me into a movie star", "image/jpeg").engine, "image", "a still picture, not a video");
+  for (const ask of ["and a recipe", "a haiku instead", "make it my profile pic", "put it in my portfolio"]) {
+    assert.equal(pictureFollowUp(ask), false, ask);
+  }
+  for (const ask of ["can the sky be pink", "can the dog hold a sign", "me and my sister together at the Eiffel Tower", "get rid of the people", "move the cat to the left", "paint the walls blue"]) {
+    assert.ok(["image", "video"].includes(route(ask, "image/jpeg").engine), ask);
+  }
+});

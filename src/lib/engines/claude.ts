@@ -342,3 +342,35 @@ export async function classifyRequest(message: string, meter: Meter = noMeter): 
     return null;
   }
 }
+
+export type PictureRequest = "change" | "new" | "other";
+
+/**
+ * Asks Haiku whether a message sent with a picture asks for a changed version of it ("change"), for a
+ * different picture ("new"), or for something else: thanks, a question, undoing a change, words taken
+ * from the picture ("other"). The keyword rules can't know every way people say these, and a change
+ * costs credits. Returns null on any doubt or error, so the caller keeps the rules' answer.
+ */
+export async function pictureRequest(message: string, above: boolean, meter: Meter = noMeter): Promise<PictureRequest | null> {
+  try {
+    const res = await getClient().messages.create(
+      {
+        model: ROUTER_MODEL,
+        max_tokens: 5,
+        system:
+          `A user of Flash, an AI app, sent a message with a picture: ${above ? "the picture Flash just made for them, shown right above the message" : "a photo they attached"}. Reply with one word:\n` +
+          "change: the message asks Flash for a changed version of that picture: edit it, fix it, restyle or recolour it, add or remove something, change its background, size or shape, put words on it, combine it, or animate it into a video.\n" +
+          "new: it asks for a different picture that doesn't start from this one.\n" +
+          "other: anything else: praise or thanks, a question about the picture or how it was made, an opinion, a complaint, saying not to change something, undoing a change or going back to an earlier picture, writing or numbers taken from the picture (a caption, post, description, notes, answers, sums, a rewrite of text shown in it), sharing, saving or deleting it, music or sound, or their account, credits or settings.",
+        messages: [{ role: "user", content: message.slice(0, 2000) }],
+      },
+      { timeout: 4000, maxRetries: 0 },
+    );
+    meter("anthropic", res.model, claudeCostCents(res.model, res.usage));
+    const text = res.content.find((b) => b.type === "text");
+    const word = text?.type === "text" ? text.text.trim().toLowerCase().replace(/[^a-z]/g, "") : "";
+    return word === "change" || word === "new" || word === "other" ? word : null;
+  } catch {
+    return null;
+  }
+}
