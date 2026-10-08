@@ -16,6 +16,10 @@ export type UIMessage = {
   local?: boolean;
   // Said out loud in a voice conversation, so the answer comes back in a few spoken sentences.
   voice?: boolean;
+  // A change to the latest app or deck (Fix it, or a part picked in its preview): it goes to the builder.
+  build?: "app" | "slides";
+  // The part of the app the user picked in the preview: its name for the chat, and what the builder is told.
+  picked?: { label: string; context: string };
   engine?: Engine;
   reason?: string;
   demo?: boolean;

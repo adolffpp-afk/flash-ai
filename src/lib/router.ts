@@ -124,6 +124,19 @@ const ABOUT_PHOTO = /^\s*(what|who|where|why|which|when|how (many|much|old)|desc
 const EDIT_REQUEST =
   /\b(edit|retouch|remove|erase|replace|swap|add|put|change|turn (it|this|me|us|them|him|her)|make (it|this|me|us|them|him|her|the)|transform|convert|restore|colou?ri[sz]e|enhance|upscale|sharpen|blur|background|cartoon\w*|anime|pixar|ghibli|sketch|painting|style|filter|headshot|brighter|darker)\b/i;
 
+// A screenshot, sketch or design photo to rebuild as a working app or website, rather than a
+// picture to change. Checked before the photo-editing rules, which "turn this into…" also matches.
+const BUILD_FROM_PHOTO = new RegExp(
+  [
+    String.raw`\b(build|make|create|code|turn|convert|recreate|replicate|clone|copy|rebuild|redesign|design|develop|prototype)\b[\s\S]{0,60}\b(web ?app|application|app|web ?site|website|site|web ?page|landing page|home ?page|page|dashboard|html|working code|code|online (store|shop)|prototype)s?\b`,
+    String.raw`\b(screenshot|screen shot|sketch|drawing|mock-?up|wireframe|design|figma)\b[\s\S]{0,40}\b(into|to|as)\b[\s\S]{0,30}\b(app|site|website|page|html|code)s?\b`,
+  ].join("|"),
+  "i",
+);
+// The same, for a slide deck made from what's in the picture.
+const DECK_FROM_PHOTO =
+  /\b(build|make|create|turn|convert|recreate|design|write|put|into)\b[\s\S]{0,40}\b(presentation|slide ?deck|slideshow|slides|pitch deck|powerpoint)s?\b/i;
+
 // Asking for the words in a photo (a receipt, a menu, a handwritten note) as text or a spreadsheet,
 // rather than to change the picture: "copy the text", "turn this into a spreadsheet", "transcribe it".
 const READ_TEXT = new RegExp(
@@ -164,6 +177,11 @@ function routeOne(message: string, attachmentType?: string): RouteDecision {
   // "turn this into a spreadsheet" would otherwise read as a photo edit.
   if (attachmentType && PHOTO_TYPE.test(attachmentType) && READ_TEXT.test(text)) {
     return { engine: "docs", reason: "Flash reads the text in your photo." };
+  }
+  // A picture of a screen, a sketch or a design, to rebuild as something that works.
+  if (attachmentType && PHOTO_TYPE.test(attachmentType) && !ABOUT_PHOTO.test(text)) {
+    if (DECK_FROM_PHOTO.test(text)) return { engine: "slides", reason: "Flash builds a deck from your picture." };
+    if (BUILD_FROM_PHOTO.test(text)) return { engine: "app", reason: "Flash builds this from your picture." };
   }
   if (attachmentType && EDITABLE_TYPE.test(attachmentType) && ANIMATE_REQUEST.test(text) && !ABOUT_PHOTO.test(text)) {
     return { engine: "video", reason: "A photo is attached and you asked to bring it to life." };

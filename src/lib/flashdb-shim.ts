@@ -3,6 +3,24 @@
  * Published apps store records on the Flash server (shared by everyone who uses the app);
  * the preview inside Flash keeps them in memory so trying an app never touches real data.
  */
+
+/** flashDB kept in memory: for trying an app in Flash's preview, or running a downloaded app anywhere. */
+export const MEMORY_DB = `
+  const store = {};
+  const id = () => Math.random().toString(36).slice(2, 12);
+  const col = (c) => (store[c] = store[c] || []);
+  const clone = (x) => JSON.parse(JSON.stringify(x));
+  window.flashDB = {
+    async list(collection) { return clone(col(collection)); },
+    async add(collection, data) { const r = { ...clone(data), id: id(), createdAt: Date.now() }; col(collection).push(r); return clone(r); },
+    async update(collection, rid, data) { const r = col(collection).find((x) => x.id === rid); if (!r) throw new Error("Record not found"); Object.assign(r, clone(data), { id: rid }); return clone(r); },
+    async remove(collection, rid) { store[collection] = col(collection).filter((x) => x.id !== rid); },
+    async send(form, data) { console.info("flashDB.send: nothing was really sent (this is a stand-in)", form, clone(data)); return true; },
+    paid: false,
+    async items() { return []; },
+    async buy() { throw new Error("Payments work once the site is published and its owner sets the prices in Flash."); },
+  };`;
+
 export function flashDbShim(endpoint: string | null, inbox: string | null = null, shop: string | null = null, fillPrices = false): string {
   const remote = `
   const base = ${JSON.stringify(endpoint)};
@@ -91,22 +109,8 @@ export function flashDbShim(endpoint: string | null, inbox: string | null = null
       new MutationObserver(function () { fill(document); }).observe(document.body, { childList: true, subtree: true });
     }).catch(function () {});
   });`;
-  const memory = `
-  const store = {};
-  const id = () => Math.random().toString(36).slice(2, 12);
-  const col = (c) => (store[c] = store[c] || []);
-  const clone = (x) => JSON.parse(JSON.stringify(x));
-  window.flashDB = {
-    async list(collection) { return clone(col(collection)); },
-    async add(collection, data) { const r = { ...clone(data), id: id(), createdAt: Date.now() }; col(collection).push(r); return clone(r); },
-    async update(collection, rid, data) { const r = col(collection).find((x) => x.id === rid); if (!r) throw new Error("Record not found"); Object.assign(r, clone(data), { id: rid }); return clone(r); },
-    async remove(collection, rid) { store[collection] = col(collection).filter((x) => x.id !== rid); },
-    async send(form, data) { console.info("flashDB.send (preview: not sent)", form, clone(data)); return true; },
-    paid: false,
-    async items() { return []; },
-    async buy() { throw new Error("Payments work once the site is published and its owner sets the prices in Flash."); },
-  };`;
-  return `<script>(function(){${endpoint ? remote : memory}})();</script>`;
+
+  return `<script>(function(){${endpoint ? remote : MEMORY_DB}})();</script>`;
 }
 
 /** Puts a script at the top of an HTML document so it runs before the app's own code. */
