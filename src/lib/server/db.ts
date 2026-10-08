@@ -404,6 +404,10 @@ const MIGRATIONS = [
   // Whose record this is, when an app keeps private data for each person signed in to it.
   // Empty means the record is shared by everyone using the app, as before.
   "ALTER TABLE site_records ADD COLUMN owner TEXT NOT NULL DEFAULT ''",
+  // The sign-in a page key was made from, so signing out ends both. Empty for keys made before.
+  "ALTER TABLE site_page_tokens ADD COLUMN session_hash TEXT NOT NULL DEFAULT ''",
+  // Whether people using a published app may send it files. Off until its owner turns it on.
+  "ALTER TABLE sites ADD COLUMN uploads_on INTEGER NOT NULL DEFAULT 0",
 ];
 
 async function init(c: Client) {

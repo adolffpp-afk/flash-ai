@@ -36,7 +36,7 @@ process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${(server.address() as Addres
 
 const { run, one } = await import("../src/lib/server/db.ts");
 const { askSiteAi, aiSettings, saveAiSettings, worstCaseCredits } = await import("../src/lib/server/site-ai.ts");
-const { saveUpload, listUploads, deleteUpload, cleanName, uploadUse } = await import("../src/lib/server/site-files.ts");
+const { saveUpload, listUploads, deleteUpload, cleanName, uploadUse, setUploadsOn, uploadsOn } = await import("../src/lib/server/site-files.ts");
 const { flashDbShim } = await import("../src/lib/flashdb-shim.ts");
 
 const balance = async () =>
@@ -107,6 +107,15 @@ test("an owner with no credits gets a message the app can show", async () => {
   assert.equal(broke.status, 402);
   assert.match((broke.body as { error: string }).error, /out of credits/);
   assert.equal((await aiSettings("shop")).usedToday, used, "a reserve that wasn't spent is given back");
+});
+
+test("an app takes files only once its owner turns that on", async () => {
+  assert.equal(await uploadsOn("shop"), false);
+  const off = await saveUpload("shop", { name: "a.png", type: "image/png", bytes: Buffer.alloc(10) }, "");
+  assert.equal(off.status, 403);
+  assert.match((off.body as { error: string }).error, /isn't taking files yet/);
+  assert.equal((await listUploads("shop")).length, 0, "nothing was kept");
+  assert.equal(await setUploadsOn("shop", true), true);
 });
 
 test("apps take pictures, PDFs and text files, and nothing that runs", async () => {

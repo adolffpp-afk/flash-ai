@@ -1,7 +1,8 @@
 /*
  * Files people send to a published app: a photo with a review, a CV with an application, a picture
  * for a listing. The app calls flashDB.upload(file) and gets back a link it can show or save in a
- * record. The files belong to the app, so unpublishing it takes them with it.
+ * record. The files belong to the app, so unpublishing it takes them with it. Anyone with a file's
+ * link can open it, so an app takes files only once its owner turns that on.
  */
 import { all, one, run, now } from "./db.ts";
 import { randomId } from "./ids.ts";
@@ -47,7 +48,11 @@ export async function saveUpload(
   if (!TYPES[file.type]) return fail("Apps can take pictures, PDFs and text files.", 415);
   if (!file.bytes.length) return fail("That file is empty.", 400);
   if (file.bytes.length > MAX_UPLOAD_BYTES) return fail("Files must be 5 MB or smaller.", 413);
-  if (!(await one("SELECT 1 FROM sites WHERE slug = ?", [slug]))) return fail("App not found.", 404);
+  const site = await one<{ uploads_on: number }>("SELECT uploads_on FROM sites WHERE slug = ?", [slug]);
+  if (!site) return fail("App not found.", 404);
+  if (!Number(site.uploads_on)) {
+    return fail("This app isn't taking files yet. Its owner can turn that on in Flash, in My websites & apps > Files.", 403);
+  }
   const use = await one<{ n: number; bytes: number }>(
     "SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS bytes FROM site_uploads WHERE site_slug = ?",
     [slug],
@@ -93,6 +98,17 @@ export async function listUploads(slug: string, limit = 200): Promise<UploadSumm
     createdAt: Number(r.created_at),
     url: `/api/sites/${slug}/files/${r.id}`,
   }));
+}
+
+/** Whether the app takes files from the people using it. */
+export async function uploadsOn(slug: string): Promise<boolean> {
+  return Boolean(Number((await one<{ uploads_on: number }>("SELECT uploads_on FROM sites WHERE slug = ?", [slug]))?.uploads_on));
+}
+
+/** The owner lets the app take files, or stops it. Files already sent stay until deleted. */
+export async function setUploadsOn(slug: string, on: boolean): Promise<boolean> {
+  await run("UPDATE sites SET uploads_on = ? WHERE slug = ?", [on ? 1 : 0, slug]);
+  return uploadsOn(slug);
 }
 
 export async function deleteUpload(slug: string, id: string): Promise<boolean> {

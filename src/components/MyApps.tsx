@@ -8,7 +8,7 @@ type Site = { slug: string; title: string; updated_at: number; messages: number;
 type Member = { id: string; email: string; name: string; createdAt: number };
 type Ai = { enabled: boolean; dailyCredits: number; usedToday: number; askedToday: number };
 type Upload = { id: string; name: string; mime: string; size: number; createdAt: number; url: string };
-type Uploads = { files: Upload[]; use: { files: number; bytes: number; maxFiles: number; maxBytes: number } };
+type Uploads = { files: Upload[]; use: { files: number; bytes: number; maxFiles: number; maxBytes: number }; enabled: boolean };
 type Version = { id: string; title: string; createdAt: number; size: number };
 type Visits = { days: { day: string; views: number; visitors: number }[]; views: number; visitors: number; sources: { source: string; views: number }[] };
 type SiteMessage = { id: string; form: string; data: Record<string, unknown>; createdAt: number; read: boolean };
@@ -290,11 +290,26 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
     }
   }
 
+  /** Lets the app take files from the people using it, or stops it. */
+  async function saveUploadsOn(enabled: boolean) {
+    if (!open || !uploads) return;
+    const before = uploads;
+    setUploads({ ...uploads, enabled });
+    try {
+      const saved = await api<{ enabled: boolean }>(`/api/sites/${open.slug}/files`, { method: "PATCH", json: { enabled } });
+      setUploads((u) => (u ? { ...u, enabled: saved.enabled } : u));
+    } catch {
+      setUploads(before);
+      setError("Couldn't save that. Please try again.");
+    }
+  }
+
   async function removeUpload(file: Upload) {
     if (!open || !uploads) return;
     try {
       await api(`/api/sites/${open.slug}/files?id=${encodeURIComponent(file.id)}`, { method: "DELETE" });
       setUploads({
+        ...uploads,
         files: uploads.files.filter((f) => f.id !== file.id),
         use: { ...uploads.use, files: uploads.use.files - 1, bytes: uploads.use.bytes - file.size },
       });
@@ -423,29 +438,48 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
           ) : open && view === "files" ? (
             uploads === null ? (
               !error && <p className="text-sm text-zinc-500">Loading…</p>
-            ) : uploads.files.length === 0 ? (
-              <p className="mx-auto mt-16 max-w-sm text-center text-sm text-zinc-500">
-                No files yet. When your app lets people send a photo, a PDF or a document, what they send shows up here.
-              </p>
             ) : (
-              <ul className="space-y-2">
-                <li className="text-xs text-zinc-500">
-                  {uploads.use.files} {uploads.use.files === 1 ? "file" : "files"}, {sizeLabel(uploads.use.bytes)} of{" "}
-                  {sizeLabel(uploads.use.maxBytes)} used.
-                </li>
-                {uploads.files.map((f) => (
-                  <li key={f.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 text-sm">
-                    <a href={f.url} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate text-primary-soft hover:underline">
-                      {f.name}
-                    </a>
-                    <span className="text-xs text-zinc-500">{sizeLabel(f.size)}</span>
-                    <span className="text-xs text-zinc-500">{dateLabel(f.createdAt)}</span>
-                    <button onClick={() => removeUpload(f)} className="text-xs text-zinc-500 hover:text-red-400" aria-label={`Delete ${f.name}`}>
-                      🗑
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              <div className="space-y-4">
+                <label className="flex items-center gap-3 rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={uploads.enabled}
+                    onChange={(e) => saveUploadsOn(e.target.checked)}
+                    className="h-4 w-4 accent-emerald-500"
+                  />
+                  <span className="flex-1">
+                    <span className="block text-zinc-100">Let people send files to this app</span>
+                    <span className="mt-0.5 block text-xs text-zinc-500">
+                      Photos, PDFs and text files up to 5 MB. Anyone with a file&apos;s link can open it.
+                    </span>
+                  </span>
+                  <span className="text-xs text-zinc-500">{uploads.enabled ? "On" : "Off"}</span>
+                </label>
+                {uploads.files.length === 0 ? (
+                  <p className="mx-auto mt-12 max-w-sm text-center text-sm text-zinc-500">
+                    No files yet. When your app lets people send a photo, a PDF or a document, what they send shows up here.
+                  </p>
+                ) : (
+                  <ul className="space-y-2">
+                    <li className="text-xs text-zinc-500">
+                      {uploads.use.files} {uploads.use.files === 1 ? "file" : "files"}, {sizeLabel(uploads.use.bytes)} of{" "}
+                      {sizeLabel(uploads.use.maxBytes)} used.
+                    </li>
+                    {uploads.files.map((f) => (
+                      <li key={f.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 text-sm">
+                        <a href={f.url} target="_blank" rel="noreferrer" className="min-w-0 flex-1 truncate text-primary-soft hover:underline">
+                          {f.name}
+                        </a>
+                        <span className="text-xs text-zinc-500">{sizeLabel(f.size)}</span>
+                        <span className="text-xs text-zinc-500">{dateLabel(f.createdAt)}</span>
+                        <button onClick={() => removeUpload(f)} className="text-xs text-zinc-500 hover:text-red-400" aria-label={`Delete ${f.name}`}>
+                          🗑
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
             )
           ) : open && view === "ai" ? (
             ai === null ? (
