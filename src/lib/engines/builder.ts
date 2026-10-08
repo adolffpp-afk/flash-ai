@@ -1,11 +1,12 @@
 import { BUILD_MODEL, NO_BUDGET, getClient, meterClaude, noMeter, toMessages, type Budget, type Meter } from "./claude.ts";
-import { MAX_OUTPUT_TOKENS } from "../credits.ts";
+import { CLAUDE_PRICES, MAX_OUTPUT_TOKENS, claudeCostCents, inputCostCents } from "../credits.ts";
 import { htmlTitle, splitBuild } from "../build-parse.ts";
+import { applyEdits, hasPieces, piecesIn, splitEdits, type Edit } from "../edit-blocks.ts";
 import type { ChatTurn, StreamEvent } from "../types.ts";
 
 const SHARED_RULES = `Output format, always:
 1. One or two sentences saying what you built or changed.
-2. The COMPLETE file in a single \`\`\`html code block: one self-contained HTML document with a <title>, inline <style> and <script>. Never send a partial file or a diff, even for a small edit.
+2. The COMPLETE file in a single \`\`\`html code block: one self-contained HTML document with a <title>, inline <style> and <script>. Never send a partial file or a diff, unless a "Changing a few places" section below says you may.
 3. Optionally, up to three short bullet ideas for what to add next.
 
 Technical rules:
@@ -36,6 +37,32 @@ Design, so the result looks professionally made:
 - Respect prefers-reduced-motion: keep animation short, and skip it when the user asked for less.
 - Show an empty state, a loading state and a friendly error message wherever data is loaded or saved.`;
 
+/**
+ * How a small change is sent: only the lines that change, so the answer comes back in seconds
+ * instead of a minute. Only offered once there is an app in the conversation to change.
+ */
+export const EDIT_RULES = `Changing a few places (this replaces point 2 above when the change is small):
+- The app is already in this conversation. When the change touches only a few spots (wording, a colour, one function, a new button), do NOT send the whole file. Send the changed pieces instead, in one \`\`\`flash-edit code block, after your sentence:
+
+\`\`\`flash-edit
+<<<<<<< FIND
+(the lines exactly as they are in the file now)
+=======
+(the lines that replace them)
+>>>>>>> REPLACE
+<<<<<<< FIND
+(another spot, if you need one)
+=======
+(what replaces it)
+>>>>>>> REPLACE
+\`\`\`
+
+- Copy the FIND lines exactly from the newest version of the file in this conversation, including their indentation, and take enough lines that they appear only once. Never invent lines you haven't seen.
+- To add something new, FIND a line that is already there and REPLACE it with itself plus the new lines.
+- To delete something, REPLACE it with nothing (an empty line between ======= and >>>>>>>).
+- Use as many pieces as the change needs, in one block, and change nothing you weren't asked to.
+- Send the complete \`\`\`html file instead, and no flash-edit block, when the change is big (a new page, a redesign, a rewrite), when it touches most of the file, or when you can't quote the current lines exactly. Never send both in one answer.`;
+
 /** How a website with several pages fits in the one file: hash routes, so every page has its own link. */
 export const SITE_RULES = `Websites with several pages:
 - When the request is a website (a business, restaurant, shop, portfolio, event, school, clinic, church, club and so on) or names pages, make a multi-page site: usually 3 to 6 pages such as Home, About, Services or Menu, Gallery and Contact. Apps and tools stay single-screen unless pages help.
@@ -59,10 +86,40 @@ The deck must: show one 16:9 slide at a time, scaled to fit the window; move wit
 ${SHARED_RULES}`,
 };
 
-/** The system prompt for building an app or deck, with what the user asked Flash to remember. */
-export function buildSystem(kind: "app" | "slides", preferences: string): string {
+/**
+ * The system prompt for building an app or deck, with what the user asked Flash to remember.
+ * `canEdit` adds the rules for sending only the changed lines, which only make sense once there
+ * is an app in the conversation to change.
+ */
+export function buildSystem(kind: "app" | "slides", preferences: string, canEdit = false): string {
   const prefs = preferences.trim();
-  return prefs ? `${PROMPTS[kind]}\n\nAbout the user:\n${prefs}` : PROMPTS[kind];
+  const parts = [PROMPTS[kind]];
+  if (canEdit) parts.push(EDIT_RULES);
+  if (prefs) parts.push(`About the user:\n${prefs}`);
+  return parts.join("\n\n");
+}
+
+/** Asked for when a change couldn't be fitted to the file: the whole thing, once, instead. */
+const WHOLE_FILE_AGAIN =
+  "Those changed pieces couldn't be used: the FIND lines weren't found exactly, matched more than one " +
+  "place, or a piece wasn't complete. Make the same change again, but send the COMPLETE file in one ```html code block " +
+  "this time, with no flash-edit block. Start from the newest version of the file in this conversation " +
+  "and keep everything else exactly as it is.";
+
+const NO_FIT = "Flash couldn't fit that change into your app. Try again, or say exactly which part to change.";
+
+/** A whole HTML file, as opposed to a snippet quoted in an answer. */
+const isDocument = (code: string) => /<!doctype html|<html[\s>]|<body[\s>]/i.test(code);
+
+/** Room left for thinking when the whole file is asked for again. */
+const THINKING_ROOM = 4200;
+
+/** The newest version of the app in the conversation, which a small change is applied to. */
+export function latestApp(history: ChatTurn[]): string | null {
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].role === "assistant" && history[i].app) return history[i].app ?? null;
+  }
+  return null;
 }
 
 /**
@@ -76,63 +133,154 @@ export async function* streamBuild(
   meter: Meter = noMeter,
   budget: Budget = NO_BUDGET,
 ): AsyncGenerator<StreamEvent> {
-  const stream = getClient().beta.messages.stream({
-    model: BUILD_MODEL,
-    max_tokens: budget.maxTokens,
-    betas: ["server-side-fallback-2026-07-01"],
-    fallbacks: "default",
-    output_config: { effort: "high" },
-    system: buildSystem(kind, preferences),
-    messages: toMessages(history),
+  const noun = kind === "app" ? "app" : "slides";
+  const fallback = kind === "app" ? "Your app" : "Your slides";
+  const tooLong = (): StreamEvent => ({
+    type: "error",
+    message:
+      budget.maxTokens < MAX_OUTPUT_TOKENS
+        ? "Your credits ran out before this was finished. Add credits, or ask for a simpler first version."
+        : "The app was too large to finish in one go. Try asking for a simpler first version.",
   });
 
-  const noun = kind === "app" ? "app" : "slides";
-  let text = "";
-  let sentBefore = 0;
-  let lastLines = 0;
-  yield { type: "status", message: kind === "app" ? "Designing your app…" : "Designing your deck…" };
-  for await (const event of stream) {
-    if (event.type !== "content_block_delta" || event.delta.type !== "text_delta") continue;
-    text += event.delta.text;
-    const part = splitBuild(text);
-    // Stream the opening sentences as they arrive, holding back a possible partial ``` fence.
-    const safe = part.html === null ? part.before.replace(/`{1,3}[^`]*$/, "") : part.before;
-    if (safe.length > sentBefore) {
-      yield { type: "text", delta: safe.slice(sentBefore) };
-      sentBefore = safe.length;
-    }
-    if (part.html !== null) {
-      const lines = part.html.split("\n").length;
-      if (lines - lastLines >= 25) {
-        lastLines = lines;
-        yield { type: "status", message: `Writing your ${noun}… ${lines} lines` };
+  const base = latestApp(history);
+  let messages = toMessages(history);
+  // Small changes come back as pieces; if they don't fit the file, the whole file is asked for once.
+  let canEdit = base !== null;
+  let maxTokens = budget.maxTokens;
+  let spent = 0;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    // On the second go the opening sentence has already been said, so only the file is wanted.
+    const quiet = attempt > 0;
+    // Said before the call starts, so pressing Stop here never leaves a call running.
+    yield {
+      type: "status",
+      message: quiet
+        ? `Writing your ${noun}…`
+        : base
+          ? `Changing your ${noun}…`
+          : kind === "app"
+            ? "Designing your app…"
+            : "Designing your deck…",
+    };
+    const stream = getClient().beta.messages.stream({
+      model: BUILD_MODEL,
+      max_tokens: maxTokens,
+      betas: ["server-side-fallback-2026-07-01"],
+      fallbacks: "default",
+      output_config: { effort: "high" },
+      system: buildSystem(kind, preferences, canEdit),
+      messages,
+    });
+
+    let text = "";
+    let sentBefore = 0;
+    let lastLines = 0;
+    let lastPieces = 0;
+    let editAt = -1;
+    for await (const event of stream) {
+      if (event.type !== "content_block_delta" || event.delta.type !== "text_delta") continue;
+      text += event.delta.text;
+      const part = splitBuild(text);
+      if (canEdit && part.html === null && editAt === -1) editAt = text.search(/```flash-edit/i);
+      // Stream the opening sentences as they arrive, holding back a possible partial ``` fence.
+      const prose = editAt !== -1 ? text.slice(0, editAt) : part.html !== null ? part.before : part.before.replace(/`{1,3}[^`]*$/, "");
+      if (!quiet && prose.length > sentBefore) {
+        yield { type: "text", delta: prose.slice(sentBefore) };
+        sentBefore = prose.length;
+      }
+      if (part.html !== null && editAt === -1) {
+        const lines = part.html.split("\n").length;
+        if (lines - lastLines >= 25) {
+          lastLines = lines;
+          yield { type: "status", message: `Writing your ${noun}… ${lines} lines` };
+        }
+      } else if (editAt !== -1) {
+        const pieces = splitEdits(text).edits.length;
+        if (pieces > lastPieces) {
+          lastPieces = pieces;
+          yield { type: "status", message: pieces === 1 ? `Changing 1 place in your ${noun}…` : `Changing ${pieces} places in your ${noun}…` };
+        }
       }
     }
-  }
-  const final = await stream.finalMessage();
-  meterClaude(meter, final);
-  if (final.stop_reason === "refusal") {
-    yield { type: "text", delta: "\n\nFlash couldn't build that." };
-    return;
-  }
-  const part = splitBuild(text);
-  if (part.before.length > sentBefore) yield { type: "text", delta: part.before.slice(sentBefore) };
-  if (!part.html || part.open) {
-    if (final.stop_reason === "max_tokens") {
-      yield {
-        type: "error",
-        message:
-          budget.maxTokens < MAX_OUTPUT_TOKENS
-            ? "Your credits ran out before this was finished. Add credits, or ask for a simpler first version."
-            : "The app was too large to finish in one go. Try asking for a simpler first version.",
-      };
-    } else if (!part.html) {
+    const final = await stream.finalMessage();
+    meterClaude(meter, final);
+    spent += claudeCostCents(final.model, final.usage);
+    if (final.stop_reason === "refusal") {
+      yield { type: "text", delta: "\n\nFlash couldn't build that." };
       return;
     }
+    const cut = final.stop_reason === "max_tokens";
+    const change = splitEdits(text);
+    // The file, if one came: looked for outside the pieces, so code inside them is never taken for it.
+    const rest = change.before + change.after;
+    const part = splitBuild(rest);
+    let html = part.html;
+    let edits: Edit[] = base ? change.edits : [];
+    let broken = base ? change.broken : 0;
+    let pieced = base !== null && change.found;
+    if (base && html !== null && hasPieces(html)) {
+      // Pieces sent in an ```html block are still pieces, never the app.
+      const inner = piecesIn(html);
+      edits = [...edits, ...inner.edits];
+      broken += inner.broken;
+      pieced = true;
+      html = null;
+    } else if (base && html !== null && !isDocument(html)) {
+      // A snippet quoted in the answer would replace the whole app with a few lines.
+      html = null;
+    }
+
+    if (pieced && html === null) {
+      const before = change.found ? change.before : part.before;
+      if (!quiet && before.length > sentBefore) yield { type: "text", delta: before.slice(sentBefore) };
+      // Half a change would break the app, so a piece that can't be read whole stops all of them.
+      const made = !cut && !broken && edits.length ? applyEdits(base!, edits) : null;
+      if (made && !made.failed.length) {
+        yield { type: "app", app: { title: htmlTitle(made.html, fallback), html: made.html, kind } };
+        const after = (change.found ? change.after : part.after).trim();
+        if (after) yield { type: "text", delta: `\n\n${after}` };
+        return;
+      }
+      if (cut) {
+        yield tooLong();
+        return;
+      }
+      if (quiet) {
+        yield { type: "error", message: NO_FIT };
+        return;
+      }
+      // The whole file is asked for only while the credits held for this request still pay for
+      // reading everything again and writing all of it, so a retry never runs at a loss.
+      const usage = final.usage;
+      const reread = usage.input_tokens + (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + usage.output_tokens + 200;
+      const left = budget.capCents - spent - inputCostCents(kind, BUILD_MODEL, reread);
+      const price = CLAUDE_PRICES[BUILD_MODEL] ?? CLAUDE_PRICES["claude-opus-5-5"];
+      maxTokens = Math.min(budget.maxTokens, Math.floor((left * 1e6) / price.output));
+      if (!(maxTokens >= Math.ceil(base!.length / 3) + THINKING_ROOM)) {
+        yield { type: "error", message: NO_FIT };
+        return;
+      }
+      messages = [...messages, { role: "assistant", content: text }, { role: "user", content: WHOLE_FILE_AGAIN }];
+      canEdit = false;
+      continue;
+    }
+    // Pieces sent next to a whole file are left out: the whole file is the change. Without a
+    // file, the answer is words, and a snippet quoted in it stays in them.
+    const words = html === null ? rest : part.before;
+    if (!quiet && words.length > sentBefore) yield { type: "text", delta: words.slice(sentBefore) };
+    if (html === null) {
+      if (cut) yield tooLong();
+      else if (quiet) yield { type: "error", message: NO_FIT };
+      return;
+    }
+    if (part.open && cut) {
+      yield tooLong();
+      // A half-written file never replaces an app that works.
+      if (base || quiet) return;
+    }
+    yield { type: "app", app: { title: htmlTitle(html, fallback), html, kind } };
+    if (part.after.trim()) yield { type: "text", delta: `\n\n${part.after.trim()}` };
+    return;
   }
-  if (part.html) {
-    const fallback = kind === "app" ? "Your app" : "Your slides";
-    yield { type: "app", app: { title: htmlTitle(part.html, fallback), html: part.html, kind } };
-  }
-  if (part.after.trim()) yield { type: "text", delta: `\n\n${part.after.trim()}` };
 }
