@@ -79,7 +79,7 @@ import {
 } from "@/lib/models.ts";
 import { unavailableReply } from "@/lib/engines/demo.ts";
 import { FriendlyError, JobAbandoned } from "@/lib/engines/errors.ts";
-import { buildSystem, streamBuild } from "@/lib/engines/builder.ts";
+import { buildSystem, latestApp, streamBuild } from "@/lib/engines/builder.ts";
 import { makeMovie } from "@/lib/engines/movie.ts";
 import { DEFAULT_VOICE, pickVoice } from "@/lib/voices.ts";
 import { falEditInput, falInput, packImageInput, packVideoInput, videoAspect } from "@/lib/engines/fal-input.ts";
@@ -167,8 +167,8 @@ const attachmentBytes = (a: { data: string }) => (a.data.length * 3) / 4;
 const spokenText = (message: string) => textToSpeak(message).slice(0, MAX_SPEECH_CHARS);
 
 /** The system prompt a Claude engine sends, so the credit hold counts it too. */
-function systemFor(engine: Engine, preferences: string): string {
-  if (engine === "app" || engine === "slides") return buildSystem(engine, preferences);
+function systemFor(engine: Engine, preferences: string, history: ChatTurn[]): string {
+  if (engine === "app" || engine === "slides") return buildSystem(engine, preferences, latestApp(history) !== null);
   return system(preferences, engine === "code" || engine === "translate" || engine === "docs" ? engine : "text");
 }
 
@@ -544,7 +544,13 @@ export async function POST(request: Request) {
 
   // Everything this request spends with AI providers, for credits and the owner dashboard.
   const spend: { provider: string; model: string; cents: number }[] = [];
-  const meter: Meter = (provider, model, cents) => spend.push({ provider, model, cents });
+  // Characters of reply sent since the last Claude call was paid for, so a call that fails
+  // after them isn't billed for words an earlier call already paid for.
+  let written = 0;
+  const meter: Meter = (provider, model, cents) => {
+    spend.push({ provider, model, cents });
+    if (provider === "anthropic") written = 0;
+  };
 
   await ensureMonthlyCredits(user.id);
   // A team member spends the shared pool first. One ledger pays for each request, so the hold
@@ -607,7 +613,7 @@ export async function POST(request: Request) {
     } else {
       // The reply may only spend what the held credits pay for, so no request runs at a loss.
       const claudeModel = modelForEngine(engine);
-      const inputTokens = await countInputTokens(claudeModel, history, systemFor(engine, preferences));
+      const inputTokens = await countInputTokens(claudeModel, history, systemFor(engine, preferences, history));
       const hold = planHold(engine, claudeModel, inputTokens, available);
       ({ needed, held } = hold);
       budget = { maxTokens: hold.maxTokens, capCents: hold.capCents };
@@ -704,7 +710,6 @@ export async function POST(request: Request) {
       let ok = true;
       let stopped = false;
       let failure = "";
-      let written = 0;
       try {
         const events = free
           ? runFree(free, engine, history, preferences, store, freeUse)
