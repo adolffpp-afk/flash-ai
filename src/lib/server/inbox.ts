@@ -80,11 +80,12 @@ export async function deleteMessage(slug: string, id: string): Promise<void> {
 /** The user's published sites with how many messages each has, and how many are unread. */
 export async function sitesWithMessages(userId: string) {
   const since = new Date(Date.now() - 29 * 86_400_000).toISOString().slice(0, 10);
-  const rows = await all<{ slug: string; title: string; updated_at: number; messages: number; unread: number; views: number }>(
+  const rows = await all<{ slug: string; title: string; updated_at: number; messages: number; unread: number; views: number; members: number }>(
     `SELECT s.slug, s.title, s.updated_at,
             (SELECT COUNT(*) FROM site_messages m WHERE m.site_slug = s.slug) AS messages,
             (SELECT COUNT(*) FROM site_messages m WHERE m.site_slug = s.slug AND m.read_at = 0) AS unread,
-            (SELECT COALESCE(SUM(v.views), 0) FROM site_visits v WHERE v.site_slug = s.slug AND v.day >= ?) AS views
+            (SELECT COALESCE(SUM(v.views), 0) FROM site_visits v WHERE v.site_slug = s.slug AND v.day >= ?) AS views,
+            (SELECT COUNT(*) FROM site_users u WHERE u.site_slug = s.slug) AS members
      FROM sites s WHERE s.user_id = ? ORDER BY s.updated_at DESC`,
     [since, userId],
   );
@@ -94,6 +95,7 @@ export async function sitesWithMessages(userId: string) {
     messages: Number(r.messages),
     unread: Number(r.unread),
     views: Number(r.views),
+    members: Number(r.members),
   }));
 }
 

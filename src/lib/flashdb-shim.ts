@@ -19,18 +19,60 @@ export const MEMORY_DB = `
     paid: false,
     async items() { return []; },
     async buy() { throw new Error("Payments work once the site is published and its owner sets the prices in Flash."); },
+  };
+  window.flashDB.mine = {
+    async list(collection) { return clone(col("mine:" + collection)); },
+    async add(collection, data) { return window.flashDB.add("mine:" + collection, data); },
+    async update(collection, rid, data) { return window.flashDB.update("mine:" + collection, rid, data); },
+    async remove(collection, rid) { return window.flashDB.remove("mine:" + collection, rid); },
+  };
+  // Signing in works once the app is published; here it pretends, so the screens can be tried out.
+  window.flashAuth = {
+    user: null,
+    signedIn: false,
+    error: "",
+    signedOut: false,
+    async signUp(email, password, name) { return window.flashAuth.signIn(email, password, name); },
+    async signIn(email, password, name) {
+      window.flashAuth.user = { id: "preview-user", email: String(email || "you@example.com"), name: String(name || "") };
+      window.flashAuth.signedIn = true;
+      console.info("flashAuth: pretend sign-in (this works for real once the app is published)");
+      return true;
+    },
+    async signOut() { window.flashAuth.user = null; window.flashAuth.signedIn = false; return true; },
   };`;
 
-export function flashDbShim(endpoint: string | null, inbox: string | null = null, shop: string | null = null, fillPrices = false): string {
+/** The person signed in to a published app right now, and the key this page's requests carry. */
+export type Visitor = { user: { id: string; email: string; name: string }; token: string } | null;
+
+export function flashDbShim(
+  endpoint: string | null,
+  inbox: string | null = null,
+  shop: string | null = null,
+  fillPrices = false,
+  auth: string | null = null,
+  mine: string | null = null,
+  visitor: Visitor = null,
+): string {
   const remote = `
   const base = ${JSON.stringify(endpoint)};
   const inbox = ${JSON.stringify(inbox)};
   const shop = ${JSON.stringify(shop)};
+  const authUrl = ${JSON.stringify(auth)};
+  const mineUrl = ${JSON.stringify(mine)};
+  const me = ${JSON.stringify(visitor?.user ?? null)};
+  const key = ${JSON.stringify(visitor?.token ?? "")};
   let paid = false;
+  let authResult = "";
   try {
     const url = new URL(location.href);
     paid = url.searchParams.get("flash_paid") === "1";
-    if (paid) { url.searchParams.delete("flash_paid"); history.replaceState(null, "", url.toString()); }
+    authResult = url.searchParams.get("flash_auth") || "";
+    if (paid || authResult) {
+      url.searchParams.delete("flash_paid");
+      url.searchParams.delete("flash_auth");
+      history.replaceState(null, "", url.toString());
+    }
   } catch (e) {}
   async function call(method, query, body) {
     const res = await fetch(base + (query ? "?" + new URLSearchParams(query) : ""), {
@@ -82,6 +124,75 @@ export function flashDbShim(endpoint: string | null, inbox: string | null = null
       return new Promise(() => {});
     },
   };
+  // Each signed-in person's own records: nobody else, not even the app's other users, can read them.
+  async function mineCall(method, query, body) {
+    if (!me) throw new Error("Sign in first to use your own data.");
+    const headers = { Authorization: "Bearer " + key };
+    if (body) headers["Content-Type"] = "application/json";
+    const res = await fetch(mineUrl + (query ? "?" + new URLSearchParams(query) : ""), { method, headers, body: body ? JSON.stringify(body) : undefined });
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || "flashDB request failed");
+    return json;
+  }
+  window.flashDB.mine = {
+    async list(collection) {
+      let page = await mineCall("GET", { collection });
+      const records = page.records;
+      for (let i = 0; page.more && page.cursor && i < 50; i++) {
+        page = await mineCall("GET", { collection, cursor: page.cursor });
+        records.push(...page.records);
+      }
+      return records;
+    },
+    async add(collection, data) { return (await mineCall("POST", null, { collection, data })).record; },
+    async update(collection, id, data) { return (await mineCall("PATCH", null, { collection, id, data })).record; },
+    async remove(collection, id) { await mineCall("DELETE", { collection, id }); },
+  };
+
+  // Signing in sends an ordinary form, because an app can't keep a cookie any other way. The page
+  // reloads signed in, or with flashAuth.error set.
+  const REASONS = {
+    "bad-email": "Please enter a real email address.",
+    "short-password": "Your password needs at least 8 characters.",
+    "long-password": "That password is too long.",
+    taken: "That email already has an account here. Sign in instead.",
+    wrong: "That email and password don't match.",
+    "too-many": "Too many tries. Please wait a few minutes.",
+    full: "This app can't take more sign-ups.",
+    "no-app": "This app isn't published any more.",
+    unknown: "Something went wrong. Please try again.",
+  };
+  function go(action, fields) {
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = authUrl;
+    form.style.display = "none";
+    const add = (name, value) => {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = name;
+      input.value = value == null ? "" : String(value);
+      form.appendChild(input);
+    };
+    add("action", action);
+    for (const name in fields) add(name, fields[name]);
+    document.body.appendChild(form);
+    form.submit();
+    // The page is leaving; nothing after this runs.
+    return new Promise(function () {});
+  }
+  window.flashAuth = {
+    // The person using the app right now, or null: { id, email, name }.
+    user: me,
+    signedIn: Boolean(me),
+    // Why the last try didn't work, in words you can show. Empty when all is well.
+    error: authResult && authResult !== "ok" && authResult !== "signed-out" ? (REASONS[authResult] || REASONS.unknown) : "",
+    signedOut: authResult === "signed-out",
+    signUp(email, password, name) { return go("signup", { email: email, password: password, name: name }); },
+    signIn(email, password) { return go("signin", { email: email, password: password }); },
+    signOut() { return go("signout", {}); },
+  };
+
   function ready(fn) { if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", fn); else fn(); }
   if (paid || ${fillPrices}) ready(function () {
     if (paid) {

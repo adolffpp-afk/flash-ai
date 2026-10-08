@@ -61,6 +61,31 @@ const SCHEMA = [
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   )`,
+  // The people who signed up to a published app, with their own private records (see site-auth.ts).
+  `CREATE TABLE IF NOT EXISTS site_users (
+    id TEXT PRIMARY KEY,
+    site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
+    email TEXT NOT NULL COLLATE NOCASE,
+    name TEXT NOT NULL DEFAULT '',
+    password_hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS site_users_email ON site_users(site_slug, email)`,
+  `CREATE TABLE IF NOT EXISTS site_sessions (
+    token_hash TEXT PRIMARY KEY,
+    site_user_id TEXT NOT NULL REFERENCES site_users(id) ON DELETE CASCADE,
+    site_slug TEXT NOT NULL,
+    expires_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS site_sessions_user ON site_sessions(site_user_id)`,
+  // Short-lived keys put into one page load, which an app's own requests carry.
+  `CREATE TABLE IF NOT EXISTS site_page_tokens (
+    token_hash TEXT PRIMARY KEY,
+    site_user_id TEXT NOT NULL REFERENCES site_users(id) ON DELETE CASCADE,
+    site_slug TEXT NOT NULL,
+    expires_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS site_page_tokens_expiry ON site_page_tokens(expires_at)`,
   // Form messages sent to a site's owner through flashDB.send: private, unlike site_records.
   `CREATE TABLE IF NOT EXISTS site_messages (
     id TEXT PRIMARY KEY,
@@ -349,6 +374,9 @@ const MIGRATIONS = [
   // Settings > General: what Flash should call the user, and what best describes their work.
   "ALTER TABLE users ADD COLUMN nickname TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE users ADD COLUMN work TEXT NOT NULL DEFAULT ''",
+  // Whose record this is, when an app keeps private data for each person signed in to it.
+  // Empty means the record is shared by everyone using the app, as before.
+  "ALTER TABLE site_records ADD COLUMN owner TEXT NOT NULL DEFAULT ''",
 ];
 
 async function init(c: Client) {
@@ -360,6 +388,7 @@ async function init(c: Client) {
   await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_ref_code ON users(ref_code) WHERE ref_code IS NOT NULL");
   await c.execute("CREATE INDEX IF NOT EXISTS users_referred_by ON users(referred_by)");
   await c.execute("CREATE INDEX IF NOT EXISTS credit_ledger_actor ON credit_ledger(actor)");
+  await c.execute("CREATE INDEX IF NOT EXISTS site_records_owner ON site_records(site_slug, owner, collection, created_at)");
 }
 
 /** Returns the database client, creating the tables on first use. */

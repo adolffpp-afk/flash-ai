@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/store";
 import { SELLER_COUNTRIES } from "@/lib/shop";
 
-type Site = { slug: string; title: string; updated_at: number; messages: number; unread: number; views: number };
+type Site = { slug: string; title: string; updated_at: number; messages: number; unread: number; views: number; members: number };
+type Member = { id: string; email: string; name: string; createdAt: number };
 type Version = { id: string; title: string; createdAt: number; size: number };
 type Visits = { days: { day: string; views: number; visitors: number }[]; views: number; visitors: number; sources: { source: string; views: number }[] };
 type SiteMessage = { id: string; form: string; data: Record<string, unknown>; createdAt: number; read: boolean };
@@ -25,7 +26,8 @@ const fieldText = (v: unknown) => (typeof v === "string" ? v : JSON.stringify(v)
 export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (projectId: string) => void }) {
   const [sites, setSites] = useState<Site[] | null>(null);
   const [open, setOpen] = useState<Site | null>(null);
-  const [view, setView] = useState<"messages" | "domains" | "payments" | "visits" | "history">("messages");
+  const [view, setView] = useState<"messages" | "domains" | "payments" | "visits" | "history" | "members">("messages");
+  const [members, setMembers] = useState<Member[] | null>(null);
   const [versions, setVersions] = useState<Version[] | null>(null);
   const [restoring, setRestoring] = useState<string | null>(null);
   const [restored, setRestored] = useState(false);
@@ -233,6 +235,30 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
     }
   }
 
+  async function showMembers(site: Site) {
+    setOpen(site);
+    setView("members");
+    setMembers(null);
+    setError("");
+    try {
+      setMembers((await api<{ members: Member[] }>(`/api/sites/${site.slug}/members`)).members);
+    } catch {
+      setError("Couldn't load the members. Please try again.");
+      setMembers([]);
+    }
+  }
+
+  async function removeMember(member: Member) {
+    if (!open) return;
+    try {
+      await api(`/api/sites/${open.slug}/members?id=${encodeURIComponent(member.id)}`, { method: "DELETE" });
+      setMembers((list) => list?.filter((m) => m.id !== member.id) ?? null);
+      setSites((all) => all?.map((s) => (s.slug === open.slug ? { ...s, members: Math.max(0, s.members - 1) } : s)) ?? null);
+    } catch {
+      setError("Couldn't remove that member. Please try again.");
+    }
+  }
+
   async function deleteMessage(id: string) {
     if (!open) return;
     try {
@@ -270,7 +296,9 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
             </button>
           )}
           <h2 className="min-w-0 flex-1 truncate text-lg font-medium tracking-tight">
-            {open ? `${{ domains: "Domain", payments: "Payments", messages: "Messages", visits: "Visitors", history: "History" }[view]} · ${open.title}` : "My websites and apps"}
+            {open
+              ? `${{ domains: "Domain", payments: "Payments", messages: "Messages", visits: "Visitors", history: "History", members: "Members" }[view]} · ${open.title}`
+              : "My websites and apps"}
           </h2>
           <button
             ref={closeRef}
@@ -336,6 +364,38 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
                   </ul>
                 )}
               </div>
+            )
+          ) : open && view === "members" ? (
+            members === null ? (
+              !error && <p className="text-sm text-zinc-500">Loading…</p>
+            ) : members.length === 0 ? (
+              <p className="mx-auto mt-16 max-w-sm text-center text-sm text-zinc-500">
+                Nobody has signed up to this app yet. Ask Flash to add sign-in to an app, and the people who join show up
+                here. Each of them gets their own private data, which only they can see.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                <li className="flex items-center gap-3 text-xs text-zinc-500">
+                  <span className="flex-1">
+                    {members.length.toLocaleString("en-US")} {members.length === 1 ? "person has" : "people have"} signed up.
+                  </span>
+                  <a href={`/api/sites/${open.slug}/members?format=csv`} download className="text-primary-soft hover:underline">
+                    ⬇ Download all (CSV)
+                  </a>
+                </li>
+                {members.map((m) => (
+                  <li key={m.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 text-sm">
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-zinc-100">{m.name || m.email}</p>
+                      {m.name && <p className="truncate text-xs text-zinc-500">{m.email}</p>}
+                    </div>
+                    <span className="text-xs text-zinc-500">Joined {dateLabel(m.createdAt)}</span>
+                    <button onClick={() => removeMember(m)} className="text-xs text-zinc-500 hover:text-red-400" title="Remove this person and their private data">
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
             )
           ) : open && view === "visits" ? (
             visits === null ? (
@@ -678,6 +738,9 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
                       </button>
                       <button onClick={() => showVisits(s)} className="text-zinc-200 hover:text-white" title="Visits in the last 30 days">
                         📈 Visitors{s.views ? ` (${s.views.toLocaleString("en-US")})` : ""}
+                      </button>
+                      <button onClick={() => showMembers(s)} className="text-zinc-200 hover:text-white" title="People signed up to this app">
+                        👤 Members{s.members ? ` (${s.members.toLocaleString("en-US")})` : ""}
                       </button>
                       <button onClick={() => showDomains(s)} className="text-zinc-200 hover:text-white">
                         🔗 Domain
