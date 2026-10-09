@@ -31,7 +31,7 @@ export function firstName(user: Named): string {
   if (asked && !looksLikeEmail(asked)) return asked;
   const name = user.name.trim();
   const first = name && !looksLikeEmail(name) ? name.split(/\s+/)[0] : nameFromEmail(user.email);
-  return first ? capitalize(first) : "there";
+  return first ? capitalize(first) : msg("there");
 }
 
 /** Initials for the round badge: "AP" for Adolff Pierre, "A" for adolff@example.com. */

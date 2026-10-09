@@ -1,4 +1,5 @@
 import type { Engine } from "./types.ts";
+import { msg } from "./i18n.ts";
 
 /*
  * How Flash prices requests.
@@ -96,13 +97,14 @@ export const TYPICAL_CREDITS: Partial<Record<Engine, number>> = {
 
 export const FREE_MONTHLY_CREDITS = Number(process.env.FLASH_FREE_CREDITS ?? 200);
 
+// Blurbs and features are marked msg("…") and shown in the user's language with t(…); names stay as they are.
 export type CreditPack = { id: string; name: string; credits: number; priceCents: number; blurb: string };
 
 // One-off top-ups. Plans give more credits per dollar, like Lovable's and Emergent's.
 export const CREDIT_PACKS: CreditPack[] = [
-  { id: "starter", name: "Starter", credits: 500, priceCents: 500, blurb: "About 120 chats or 4 apps" },
-  { id: "creator", name: "Creator", credits: 2200, priceCents: 2000, blurb: "Apps, slides and research for a busy week" },
-  { id: "studio", name: "Studio", credits: 5800, priceCents: 5000, blurb: "Heavy app building" },
+  { id: "starter", name: "Starter", credits: 500, priceCents: 500, blurb: msg("About 120 chats or 4 apps") },
+  { id: "creator", name: "Creator", credits: 2200, priceCents: 2000, blurb: msg("Apps, slides and research for a busy week") },
+  { id: "studio", name: "Studio", credits: 5800, priceCents: 5000, blurb: msg("Heavy app building") },
 ];
 
 /*
@@ -130,8 +132,8 @@ export const PLANS: Plan[] = [
     priceCents: 2500,
     yearlyPriceCents: 2000,
     credits: 3000,
-    blurb: "For makers who build every week",
-    features: ["3,000 credits a month", "About 25 apps or 700 chats", "Writing, research, code, apps and slides", "Unused credits carry over"],
+    blurb: msg("For makers who build every week"),
+    features: [msg("3,000 credits a month"), msg("About 25 apps or 700 chats"), msg("Writing, research, code, apps and slides"), msg("Unused credits carry over")],
   },
   {
     id: "power",
@@ -139,8 +141,8 @@ export const PLANS: Plan[] = [
     priceCents: 5000,
     yearlyPriceCents: 4000,
     credits: 6500,
-    blurb: "For daily building and research",
-    features: ["6,500 credits a month", "About 55 apps or 1,600 chats", "Writing, research, code, apps and slides", "Unused credits carry over"],
+    blurb: msg("For daily building and research"),
+    features: [msg("6,500 credits a month"), msg("About 55 apps or 1,600 chats"), msg("Writing, research, code, apps and slides"), msg("Unused credits carry over")],
   },
   {
     id: "max",
@@ -148,8 +150,8 @@ export const PLANS: Plan[] = [
     priceCents: 20000,
     yearlyPriceCents: 16000,
     credits: 28000,
-    blurb: "For studios and heavy app building",
-    features: ["28,000 credits a month", "About 230 apps or 7,000 chats", "Writing, research, code, apps and slides", "Unused credits carry over"],
+    blurb: msg("For studios and heavy app building"),
+    features: [msg("28,000 credits a month"), msg("About 230 apps or 7,000 chats"), msg("Writing, research, code, apps and slides"), msg("Unused credits carry over")],
   },
   /*
    * Business: one owner pays and up to 5 people (the owner included) spend one shared monthly
@@ -162,8 +164,8 @@ export const PLANS: Plan[] = [
     priceCents: 9900,
     yearlyPriceCents: 7920,
     credits: 13500,
-    blurb: "For teams: one bill, one shared credit pool",
-    features: ["13,500 shared credits a month", "Up to 5 people, the owner included", "Owner invites and removes members", "Each member's projects stay private"],
+    blurb: msg("For teams: one bill, one shared credit pool"),
+    features: [msg("13,500 shared credits a month"), msg("Up to 5 people, the owner included"), msg("Owner invites and removes members"), msg("Each member's projects stay private")],
     seats: 5,
   },
 ];

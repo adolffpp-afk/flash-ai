@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { BrandMark } from "@/app/brand";
 import { INSTALL_STEPS, installPlatform, type InstallPlatform } from "@/lib/install";
+import { useT } from "@/lib/use-t";
 
 // Chrome's install prompt, which isn't in the DOM types yet.
 type InstallPromptEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: "accepted" | "dismissed" }> };
@@ -71,13 +72,14 @@ const DownloadIcon = () => (
 
 /** An "Install app" button, hidden inside the installed app. */
 export function InstallApp({ className = "" }: { className?: string }) {
+  const t = useT();
   const { available, install, dialog } = useInstall();
   if (!available) return null;
   return (
     <>
       <button onClick={install} className={className}>
         <DownloadIcon />
-        Install app
+        {t("Install app")}
       </button>
       {dialog}
     </>
@@ -92,6 +94,7 @@ const ASK_AGAIN_AFTER = 7 * 24 * 60 * 60 * 1000;
  * own install offer. "Not now" hides it for a week; inside the installed app it never shows.
  */
 export function InstallPopup() {
+  const t = useT();
   const { available, install, dialog } = useInstall();
   const [show, setShow] = useState(false);
 
@@ -124,7 +127,7 @@ export function InstallPopup() {
         // On a computer it drops in at the top right, under the top bar, near where the browser offers installs; on a phone it sits at the bottom.
         <div
           role="dialog"
-          aria-label="Install Flash AI"
+          aria-label={t("Install Flash AI")}
           className="glass-raised fixed inset-x-3 bottom-3 z-50 rounded-2xl p-4 text-zinc-100 sm:inset-x-auto sm:bottom-auto sm:right-4 sm:top-20 sm:w-[23rem]"
         >
           <div className="flex items-start gap-3">
@@ -132,16 +135,16 @@ export function InstallPopup() {
               <BrandMark size={34} id="flash-install" ring={false} />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-[15px] font-semibold">Install Flash AI</p>
-              <p className="mt-0.5 text-[13px] leading-snug text-zinc-400">Open Flash from your taskbar, dock or home screen, in its own window.</p>
+              <p className="text-[15px] font-semibold">{t("Install Flash AI")}</p>
+              <p className="mt-0.5 text-[13px] leading-snug text-zinc-400">{t("Open Flash from your taskbar, dock or home screen, in its own window.")}</p>
             </div>
-            <button onClick={close} aria-label="Close" className="-mr-1 -mt-1 rounded-full p-1.5 text-zinc-500 transition hover:bg-white/[0.06] hover:text-zinc-200">
+            <button onClick={close} aria-label={t("Close")} className="-mr-1 -mt-1 rounded-full p-1.5 text-zinc-500 transition hover:bg-white/[0.06] hover:text-zinc-200">
               ✕
             </button>
           </div>
           <div className="mt-3 flex justify-end gap-2">
             <button onClick={close} className="h-9 rounded-xl px-3 text-sm text-zinc-400 transition hover:bg-white/[0.05] hover:text-zinc-200">
-              Not now
+              {t("Not now")}
             </button>
             <button
               onClick={() => {
@@ -151,7 +154,7 @@ export function InstallPopup() {
               className="flex h-9 items-center gap-1.5 rounded-xl bg-brand px-4 text-sm font-semibold text-on-brand transition hover:brightness-110"
             >
               <DownloadIcon />
-              Install
+              {t("Install")}
             </button>
           </div>
         </div>
@@ -162,6 +165,7 @@ export function InstallPopup() {
 }
 
 function InstallHelp({ platform, onClose }: { platform: InstallPlatform; onClose: () => void }) {
+  const t = useT();
   const closeRef = useRef<HTMLButtonElement>(null);
 
   // Runs once on open: focus starts on Close, and Escape closes the dialog.
@@ -178,22 +182,22 @@ function InstallHelp({ platform, onClose }: { platform: InstallPlatform; onClose
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Install Flash AI"
+        aria-label={t("Install Flash AI")}
         className="w-full max-w-md rounded-t-2xl border border-white/8 bg-zinc-950 p-6 text-zinc-100 sm:rounded-2xl sm:p-7"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-start justify-between">
-          <h2 className="text-lg font-medium tracking-tight">Install Flash AI</h2>
-          <button ref={closeRef} onClick={onClose} className="rounded-full p-2 text-zinc-400 transition hover:bg-white/[0.06] hover:text-zinc-100" aria-label="Close">
+          <h2 className="text-lg font-medium tracking-tight">{t("Install Flash AI")}</h2>
+          <button ref={closeRef} onClick={onClose} className="rounded-full p-2 text-zinc-400 transition hover:bg-white/[0.06] hover:text-zinc-100" aria-label={t("Close")}>
             ✕
           </button>
         </div>
-        <p className="text-sm text-zinc-400">Get Flash on your home screen or desktop, in its own window, with no app store needed.</p>
+        <p className="text-sm text-zinc-400">{t("Get Flash on your home screen or desktop, in its own window, with no app store needed.")}</p>
         <ol className="mt-4 space-y-2 text-sm text-zinc-200">
           {INSTALL_STEPS[platform].map((step, i) => (
             <li key={i} className="flex gap-3">
               <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-primary/20 text-xs text-primary-soft">{i + 1}</span>
-              {step}
+              {t(step)}
             </li>
           ))}
         </ol>

@@ -41,7 +41,8 @@ import { firstName } from "@/lib/names";
 import { timeAgo } from "@/lib/when";
 import { applyAppearance, applyTheme, notifiesWhenDone, readSetting, writeSetting } from "@/lib/device-settings";
 import { LEVEL_ENGINES, isLevel, type Level } from "@/lib/levels";
-import { showLanguage, useT } from "@/lib/use-t";
+import { showLanguage, tNow, useT } from "@/lib/use-t";
+import { msg, type Translate } from "@/lib/i18n";
 
 // A project's messages are loaded the first time it is opened.
 type Project = ProjectSummary & { messages?: UIMessage[] };
@@ -162,19 +163,19 @@ function toBase64(text: string): string {
 }
 
 /** A Word, Excel or PowerPoint file as a text attachment, or an error to show. */
-async function readOffice(file: File, kind: "docx" | "xlsx" | "pptx"): Promise<Attachment | string> {
-  if (file.size > MAX_OFFICE_MB * 1024 * 1024) return `Word, Excel and PowerPoint files must be ${MAX_OFFICE_MB} MB or smaller.`;
+async function readOffice(file: File, kind: "docx" | "xlsx" | "pptx", t: Translate): Promise<Attachment | string> {
+  if (file.size > MAX_OFFICE_MB * 1024 * 1024) return t("Word, Excel and PowerPoint files must be {size} MB or smaller.", { size: MAX_OFFICE_MB });
   try {
     const text = await officeText(new Uint8Array(await file.arrayBuffer()), kind, inflateRaw);
     return { name: file.name, mediaType: "text/plain", data: toBase64(text) };
   } catch {
-    return `Couldn't read the text in ${file.name}. If it's an older .doc, .xls or .ppt file, save it as .docx, .xlsx or .pptx first.`;
+    return t("Couldn't read the text in {name}. If it's an older .doc, .xls or .ppt file, save it as .docx, .xlsx or .pptx first.", { name: file.name });
   }
 }
 
 /** A big PDF as a text attachment, read in the browser, or an error to show. */
-async function readPdf(file: File): Promise<Attachment | string> {
-  if (file.size > MAX_PDF_MB * 1024 * 1024) return `PDFs must be ${MAX_PDF_MB} MB or smaller.`;
+async function readPdf(file: File, t: Translate): Promise<Attachment | string> {
+  if (file.size > MAX_PDF_MB * 1024 * 1024) return t("PDFs must be {size} MB or smaller.", { size: MAX_PDF_MB });
   try {
     const pdfjs = await import("pdfjs-dist");
     if (!pdfjs.GlobalWorkerOptions.workerPort) {
@@ -184,8 +185,11 @@ async function readPdf(file: File): Promise<Attachment | string> {
     return { name: file.name, mediaType: "text/plain", data: toBase64(text) };
   } catch (e) {
     return e instanceof Error && e.message === "no text found"
-      ? `${file.name} looks like scanned pages with no text to read. Attach a smaller copy (under ${MAX_FILE_MB} MB) or photos of the pages instead.`
-      : `Couldn't read ${file.name}. Try saving it again as a PDF and attaching that.`;
+      ? t("{name} looks like scanned pages with no text to read. Attach a smaller copy (under {size} MB) or photos of the pages instead.", {
+          name: file.name,
+          size: MAX_FILE_MB,
+        })
+      : t("Couldn't read {name}. Try saving it again as a PDF and attaching that.", { name: file.name });
   }
 }
 
@@ -217,13 +221,13 @@ function followUpPicture(messages: UIMessage[] | undefined, text: string, tool: 
   return above && above !== keep && changesPictures(tool) && pictureFollowUp(text) ? above : null;
 }
 
-/** A request going with the picture above, when there is one to go with. */
+/** A request going with the picture above, when there is one to go with. Saved in English, translated where it's shown. */
 const withPicture = (m: UIMessage, url: string | null): UIMessage =>
-  url ? { ...m, attachmentName: "The picture above", pictureAbove: url } : m;
+  url ? { ...m, attachmentName: msg("The picture above"), pictureAbove: url } : m;
 
 // Nothing is sent without the files a request goes with: the words alone would make something else.
-const NO_PICTURE = "Couldn't open the picture above, so nothing was sent and no credits were used. Try again in a moment.";
-const NO_FILES = "Attached files aren't kept once Flash is reloaded, so nothing was sent. Attach them again and send your message.";
+const NO_PICTURE = msg("Couldn't open the picture above, so nothing was sent and no credits were used. Try again in a moment.");
+const NO_FILES = msg("Attached files aren't kept once Flash is reloaded, so nothing was sent. Attach them again and send your message.");
 
 /** The picture above, ready to send with a follow-up, scaled down the way an attached photo is. */
 async function pictureAttachment(url: string, signal?: AbortSignal): Promise<Attachment | null> {
@@ -371,12 +375,12 @@ export function Flash({
     try {
       await api("/api/team/accept", { method: "POST", json: { token } });
       storage.set(INVITE_KEY, null);
-      setNotice("You joined the team. Your requests now use the team's shared credits.");
+      setNotice(t("You joined the team. Your requests now use the team's shared credits."));
       await refreshMe();
     } catch (err) {
       // An unconfirmed email can try again after confirming; any other answer is final.
       if ((err as { code?: string }).code !== "unverified") storage.set(INVITE_KEY, null);
-      setNotice(err instanceof Error ? err.message : "Couldn't join the team.");
+      setNotice(err instanceof Error ? err.message : t("Couldn't join the team."));
     }
   }
 
@@ -421,7 +425,7 @@ export function Flash({
     const invite = params.get("invite");
     if (invite) {
       storage.set(INVITE_KEY, invite);
-      if (!signedIn) setNotice("Sign in or create an account with the invited email to join the team.");
+      if (!signedIn) setNotice(t("Sign in or create an account with the invited email to join the team."));
     }
     if (ref || invite) window.history.replaceState(null, "", window.location.pathname);
     // The link in a "new message from your site" email.
@@ -433,10 +437,10 @@ export function Flash({
     if (purchase) {
       setNotice(
         purchase === "success"
-          ? "Thanks! Your credits were added."
+          ? t("Thanks! Your credits were added.")
           : purchase === "subscribed"
-            ? "Welcome to your new plan! This month's credits are on their way."
-            : "Checkout was cancelled. No charge was made.",
+            ? t("Welcome to your new plan! This month's credits are on their way.")
+            : t("Checkout was cancelled. No charge was made."),
       );
       window.history.replaceState(null, "", window.location.pathname);
     }
@@ -457,10 +461,10 @@ export function Flash({
     if (verified || reset) {
       setNotice(
         reset
-          ? "Your password was changed. You're signed in."
+          ? t("Your password was changed. You're signed in.")
           : verified === "1"
-            ? "Email confirmed. Your free credits were added."
-            : "That confirmation link has expired or was already used. Send a new one from the banner.",
+            ? t("Email confirmed. Your free credits were added.")
+            : t("That confirmation link has expired or was already used. Send a new one from the banner."),
       );
       window.history.replaceState(null, "", window.location.pathname);
     }
@@ -523,7 +527,7 @@ export function Flash({
         if (!p?.messages) continue;
         const messages = p.messages.map((m) => ({ ...m, pending: undefined, status: undefined }));
         api(`/api/projects/${id}`, { method: "PUT", json: { name: p.name, messages } }).catch((err) =>
-          setNotice(err instanceof Error ? err.message : "Couldn't save your project."),
+          setNotice(err instanceof Error ? err.message : tNow("Couldn't save your project.")),
         );
       }
     }, 600);
@@ -531,6 +535,8 @@ export function Flash({
   }, [projects, busy]);
 
   const active = projects.find((p) => p.id === activeId);
+  // A chat is saved as "New project" until its first message names it; that name is shown translated.
+  const projectName = (name: string) => (name === "New project" ? t("New project") : name);
   const runningMsg = runningIn ? projects.find((p) => p.id === runningIn)?.messages?.at(-1) : undefined;
 
   useEffect(() => {
@@ -554,7 +560,7 @@ export function Flash({
         list.map((p) => (p.id === id ? { ...p, messages: p.messages ?? project.messages, instructions: project.instructions ?? "" } : p)),
       );
     } catch {
-      setNotice("Couldn't open that project. Pick it again in the sidebar to try again.");
+      setNotice(t("Couldn't open that project. Pick it again in the sidebar to try again."));
     }
   }
 
@@ -580,7 +586,7 @@ export function Flash({
       setSidebar(false);
       return created;
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : "Couldn't create a project.");
+      setNotice(err instanceof Error ? err.message : tNow("Couldn't create a project."));
       return null;
     }
   }
@@ -634,21 +640,21 @@ export function Flash({
    * once it's there. Invoices and quotes arrive finished and free, even while Flash works on
    * something else; everything else is sent to the template's engine. False when it couldn't start.
    */
-  async function makeTemplate(t: Template, values: TemplateValues, document?: string): Promise<boolean> {
-    if (t.engine === "local" ? !document : busy || runningRef.current) return false;
+  async function makeTemplate(template: Template, values: TemplateValues, document?: string): Promise<boolean> {
+    if (template.engine === "local" ? !document : busy || runningRef.current) return false;
     const empty = active?.messages && !active.messages.length && active.id !== runningIn ? active : null;
     const project = empty ?? (await createProject());
     if (!project) return false;
     setTemplates(null);
-    const name = t.title(values).slice(0, 60);
-    const ask: UIMessage = { id: newId(), role: "user", content: t.request(values) };
-    if (t.engine === "local") {
+    const name = template.title(values, t).slice(0, 60);
+    const ask: UIMessage = { id: newId(), role: "user", content: template.request(values) };
+    if (template.engine === "local") {
       const made: UIMessage = {
         id: newId(),
         role: "assistant",
         content: document ?? "",
         engine: "docs",
-        reason: `Made from the ${t.name} template. The totals are worked out exactly, and it's free.`,
+        reason: t("Made from the {name} template. The totals are worked out exactly, and it's free.", { name: t(template.name) }),
         cost: 0,
         local: true,
       };
@@ -656,16 +662,16 @@ export function Flash({
       return true;
     }
     updateProject(project.id, (p) => ({ ...p, name }));
-    void respond(project, [], { ...ask, template: { engine: t.engine, name: t.name, model: t.model } });
+    void respond(project, [], { ...ask, template: { engine: template.engine, name: template.name, model: template.model } });
     return true;
   }
 
   async function deleteProject(id: string) {
-    if (!confirm("Delete this project and its history?")) return;
+    if (!confirm(t("Delete this project and its history?"))) return;
     try {
       await api(`/api/projects/${id}`, { method: "DELETE" });
     } catch {
-      setNotice("Couldn't delete that project. Please try again.");
+      setNotice(t("Couldn't delete that project. Please try again."));
       return;
     }
     dirtyRef.current.delete(id);
@@ -680,18 +686,18 @@ export function Flash({
     setProjects((list) => list.map((p) => (p.id === id ? { ...p, pinned } : p)));
     api(`/api/projects/${id}`, { method: "PUT", json: { pinned } }).catch(() => {
       setProjects((list) => list.map((p) => (p.id === id ? { ...p, pinned: !pinned } : p)));
-      setNotice("Couldn't pin that project. Please try again.");
+      setNotice(t("Couldn't pin that project. Please try again."));
     });
   }
 
   function renameProject(id: string) {
     const current = projects.find((p) => p.id === id);
-    const name = prompt("Project name", current?.name)?.trim();
+    const name = prompt(t("Project name"), current?.name)?.trim();
     if (!name || !current) return;
     setProjects((list) => list.map((p) => (p.id === id ? { ...p, name } : p)));
     api(`/api/projects/${id}`, { method: "PUT", json: { name } }).catch(() => {
       setProjects((list) => list.map((p) => (p.id === id ? { ...p, name: current.name } : p)));
-      setNotice("Couldn't rename that project. Please try again.");
+      setNotice(t("Couldn't rename that project. Please try again."));
     });
   }
 
@@ -760,7 +766,7 @@ export function Flash({
     const chat = await ensureChat();
     if (!chat) return;
     if (!chat.messages) {
-      setNotice("This project didn't load. Pick it again in the sidebar.");
+      setNotice(t("This project didn't load. Pick it again in the sidebar."));
       return;
     }
     const part = picked?.projectId === chat.id ? picked : null;
@@ -791,7 +797,7 @@ export function Flash({
       // The picture above couldn't be opened (or Stop was pressed while it loaded), so nothing was
       // sent: the words go back in the box and the user decides.
       setInput((typed) => (typed.trim() ? typed : text));
-      if (!stopped) setNotice("Couldn't open the picture above. Tap ✕ to make a new picture instead.");
+      if (!stopped) setNotice(t("Couldn't open the picture above. Tap ✕ to make a new picture instead."));
     });
   }
 
@@ -846,7 +852,7 @@ export function Flash({
     if (!notifiesWhenDone() || !document.hidden || Date.now() - startedAt < 8000) return;
     try {
       const body = request.length > 90 ? `${request.slice(0, 90)}…` : request;
-      new Notification(ok ? "Flash is done" : "Flash stopped", { body: body || "Your request", icon: "/app-icon/192", tag: "flash-done" });
+      new Notification(ok ? t("Flash is done") : t("Flash stopped"), { body: body || t("Your request"), icon: "/app-icon/192", tag: "flash-done" });
     } catch {}
   }
 
@@ -881,9 +887,9 @@ export function Flash({
     if (!sent.length && userMsg.pictureAbove) {
       const url = typeof userMsg.pictureAbove === "string" ? userMsg.pictureAbove : pictureAbove(earlier);
       const picture = url ? await pictureAttachment(url, controller.signal) : null;
-      if (!picture) missing = NO_PICTURE;
+      if (!picture) missing = t(NO_PICTURE);
       else if (!controller.signal.aborted) filesRef.current.set(userMsg.id, (sent = [picture]));
-    } else if (!sent.length && userMsg.attachmentName) missing = NO_FILES;
+    } else if (!sent.length && userMsg.attachmentName) missing = t(NO_FILES);
     if (missing || controller.signal.aborted) {
       const stopped = controller.signal.aborted;
       if (abortRef.current === controller) abortRef.current = null;
@@ -942,7 +948,7 @@ export function Flash({
         signal: controller.signal,
       });
       if (!res.ok || !res.body) {
-        const err = await res.json().catch(() => ({ error: `Request failed (${res.status})` }));
+        const err = await res.json().catch(() => ({ error: t("Request failed ({status})", { status: res.status }) }));
         if (res.status === 401) setSignedOut(true);
         throw Object.assign(new Error(err.error), { code: err.code as string | undefined });
       }
@@ -971,13 +977,13 @@ export function Flash({
           ? { ...m, stopped: true }
           : {
               ...m,
-              error: err instanceof Error ? err.message : "Something went wrong.",
+              error: err instanceof Error ? err.message : t("Something went wrong."),
               errorCode: (err as { code?: string }).code,
             },
       );
       final = aborted
         ? { ...final, stopped: true }
-        : { ...final, error: err instanceof Error ? err.message : "Something went wrong.", errorCode: (err as { code?: string }).code };
+        : { ...final, error: err instanceof Error ? err.message : t("Something went wrong."), errorCode: (err as { code?: string }).code };
     } finally {
       updateMessage(projectId, reply.id, (m) => ({ ...m, pending: false, status: undefined }));
       refreshMe();
@@ -997,11 +1003,11 @@ export function Flash({
 
   /** One turn of a voice conversation: sends what was said to the open chat, on Auto, and says the answer. */
   async function talk(text: string): Promise<VoiceAnswer> {
-    const stillWorking = { say: "I'm still working on your last request. Ask me again when it's done.", confirm: false };
+    const stillWorking = { say: t("I'm still working on your last request. Ask me again when it's done."), confirm: false };
     if (busy || runningRef.current) return stillWorking;
     // Talking from Home starts a new chat, as typing does.
     const chat = await ensureChat();
-    if (!chat?.messages) return { say: "Open a chat first, then talk to me again.", confirm: false };
+    if (!chat?.messages) return { say: t("Open a chat first, then talk to me again."), confirm: false };
     updateProject(chat.id, (p) => ({
       ...p,
       name: !p.messages?.length && p.name === "New project" ? text.slice(0, 40) || p.name : p.name,
@@ -1009,13 +1015,13 @@ export function Flash({
     // "Make it darker" said right after a picture changes that picture, as when it's typed.
     const ask: UIMessage = { id: newId(), role: "user", content: text, auto: true, voice: true };
     const reply = await respond(chat, chat.messages, withPicture(ask, followUpPicture(chat.messages, text, "auto")));
-    return reply ? voiceReply(reply) : stillWorking;
+    return reply ? voiceReply(reply, t) : stillWorking;
   }
 
   /** "Yes" to a costly request asked for by voice: runs it, like Go ahead. */
   async function confirmByVoice(): Promise<VoiceAnswer> {
     const reply = await retry(true);
-    return reply ? voiceReply(reply) : { say: "There's nothing waiting to go ahead.", confirm: false };
+    return reply ? voiceReply(reply, t) : { say: t("There's nothing waiting to go ahead."), confirm: false };
   }
 
   /**
@@ -1028,7 +1034,7 @@ export function Flash({
     setQueue(rest);
     const project = projects.find((p) => p.id === next.projectId);
     if (!project?.messages) {
-      setNotice(`"${next.request.slice(0, 60)}" didn't run: its chat couldn't be found.`);
+      setNotice(t("\"{request}\" didn't run: its chat couldn't be found.", { request: next.request.slice(0, 60) }));
       return;
     }
     updateProject(project.id, (p) => ({
@@ -1058,12 +1064,12 @@ export function Flash({
       const list = queueNow.current;
       if (list.some((q) => q.request === request && q.projectId === projectId)) return;
       if (list.length >= MAX_QUEUE) {
-        setNotice(`Next up is full at ${MAX_QUEUE} requests. They run one after another, then you can add more.`);
+        setNotice(t("Next up is full at {count} requests. They run one after another, then you can add more.", { count: MAX_QUEUE }));
         return;
       }
       setQueue([...list, { id: newId(), request, projectId, waiting }]);
     },
-    [activeId],
+    [activeId, t],
   );
 
   /** What the companion is told about the user's work when they ask it something. */
@@ -1175,7 +1181,7 @@ export function Flash({
       await attach(new File([blob], `flash-picture.${ext}`, { type: blob.type || "image/png" }));
       setInput("");
     } catch {
-      setNotice("Couldn't open that picture. Download it and attach it with the + button instead.");
+      setNotice(t("Couldn't open that picture. Download it and attach it with the + button instead."));
     }
   }
 
@@ -1184,7 +1190,7 @@ export function Flash({
 
   /** Adds a read file to the ones waiting to be sent, or says why it can't be added. */
   function addFile(file: Attachment) {
-    const added = addAttachment(filesNow.current, file);
+    const added = addAttachment(filesNow.current, file, t);
     if ("error" in added) return setNotice(added.error);
     setFiles(added.files);
     inputRef.current?.focus();
@@ -1198,20 +1204,20 @@ export function Flash({
   async function attach(file: File | undefined) {
     if (!file) return;
     if (/\.(doc|xls|ppt)$/i.test(file.name)) {
-      setNotice(`${file.name} is an older Office file. Save it as .docx, .xlsx or .pptx first, then attach it.`);
+      setNotice(t("{name} is an older Office file. Save it as .docx, .xlsx or .pptx first, then attach it.", { name: file.name }));
       return;
     }
     const office = officeKind(file.name, file.type);
     if (office) {
-      const read = await readOffice(file, office);
+      const read = await readOffice(file, office, t);
       if (typeof read === "string") setNotice(read);
       else addFile(read);
       return;
     }
     // Small PDFs go whole, so Flash sees their pictures too; bigger ones send only their text.
     if ((file.type === "application/pdf" || /\.pdf$/i.test(file.name)) && file.size > MAX_FILE_MB * 1024 * 1024) {
-      setNotice(`Reading ${file.name}…`);
-      const read = await readPdf(file);
+      setNotice(t("Reading {name}…", { name: file.name }));
+      const read = await readPdf(file, t);
       if (typeof read === "string") setNotice(read);
       else {
         setNotice("");
@@ -1221,12 +1227,12 @@ export function Flash({
     }
     file = await shrinkPhoto(file);
     if (file.size > MAX_FILE_MB * 1024 * 1024) {
-      alert(`Files must be ${MAX_FILE_MB} MB or smaller.`);
+      alert(t("Files must be {size} MB or smaller.", { size: MAX_FILE_MB }));
       return;
     }
     // Audio and video files go to Transcribe, so say so up front when it isn't available yet.
     if (/^(audio|video)\//.test(file.type) && status && !status.transcribe) {
-      setNotice("Transcribing audio and video isn't available yet. It's coming soon.");
+      setNotice(t("Transcribing audio and video isn't available yet. It's coming soon."));
       return;
     }
     addFile(await readFile(file));
@@ -1267,7 +1273,8 @@ export function Flash({
   const toolHits = findFeatures(query, undefined, t)
     .filter((f) => (f.soon || featureReady(f, setup)) && (install.available || !isInstall(f)))
     .slice(0, 6);
-  const promptHits = query ? TEMPLATES.filter((t) => t.name.toLowerCase().includes(query)) : [];
+  // A prompt is found by its name in English or in the language Flash is shown in.
+  const promptHits = query ? TEMPLATES.filter((template) => [template.name, t(template.name)].some((n) => n.toLowerCase().includes(query))) : [];
   // The one-tap buttons for attached photos (Copy the text, Remove background…).
   const photoActions = photoActionsFor(files.map((f) => f.mediaType), isLive);
   const pickedNow = picked && picked.projectId === active?.id ? picked : null;
@@ -1304,7 +1311,7 @@ export function Flash({
   if (!me && loadError) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 px-4 text-center text-sm text-zinc-400">
-        <p>Flash couldn&apos;t load your account. Please try again in a moment.</p>
+        <p>{t("Flash couldn't load your account. Please try again in a moment.")}</p>
         <button
           onClick={() => {
             setLoadError(false);
@@ -1312,7 +1319,7 @@ export function Flash({
           }}
           className="rounded-lg border border-zinc-700 px-3 py-1.5 text-zinc-100 hover:bg-zinc-900"
         >
-          Try again
+          {t("Try again")}
         </button>
       </div>
     );
@@ -1320,7 +1327,7 @@ export function Flash({
   if (!me) {
     return (
       <div className="flex h-full items-center justify-center">
-        <span className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-700 border-t-gold" aria-label="Loading" />
+        <span className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-700 border-t-gold" aria-label={t("Loading")} />
       </div>
     );
   }
@@ -1333,23 +1340,30 @@ export function Flash({
     <div className="mb-2 rounded-2xl border border-white/8 bg-white/[0.02] px-3 py-2">
       <div className="flex items-center gap-2">
         <p className="min-w-0 flex-1 text-xs font-medium text-zinc-400">
-          Next up · {queue.length} {queue.length === 1 ? "request" : "requests"}{" "}
           {queuePaused
-            ? "paused, because the last request didn't finish"
+            ? queue.length === 1
+              ? t("Next up · 1 request paused, because the last request didn't finish")
+              : t("Next up · {count} requests paused, because the last request didn't finish", { count: queue.length.toLocaleString(t.locale) })
             : queue[0].waiting
-              ? "waiting for your OK"
+              ? queue.length === 1
+                ? t("Next up · 1 request waiting for your OK")
+                : t("Next up · {count} requests waiting for your OK", { count: queue.length.toLocaleString(t.locale) })
               : busy
-                ? "waiting for this one to finish"
-                : "starting now"}
+                ? queue.length === 1
+                  ? t("Next up · 1 request waiting for this one to finish")
+                  : t("Next up · {count} requests waiting for this one to finish", { count: queue.length.toLocaleString(t.locale) })
+                : queue.length === 1
+                  ? t("Next up · 1 request starting now")
+                  : t("Next up · {count} requests starting now", { count: queue.length.toLocaleString(t.locale) })}
         </p>
         {queuePaused && (
           <button
             type="button"
             onClick={() => setQueuePaused(false)}
-            aria-label="Resume Next up"
+            aria-label={t("Resume Next up")}
             className="shrink-0 rounded-full bg-primary/20 px-2.5 py-0.5 text-xs text-primary-soft hover:bg-primary/30"
           >
-            Resume
+            {t("Resume")}
           </button>
         )}
       </div>
@@ -1361,22 +1375,22 @@ export function Flash({
               <span className="mt-0.5 shrink-0 text-xs text-zinc-500">{i + 1}.</span>
               <span className="min-w-0 flex-1 truncate">
                 {q.request}
-                {elsewhere && <span className="text-xs text-zinc-500"> · in {elsewhere}</span>}
+                {elsewhere && <span className="text-xs text-zinc-500"> · {t("in {name}", { name: projectName(elsewhere) })}</span>}
               </span>
               {q.waiting && (
                 <button
                   type="button"
                   onClick={() => setQueue(queueNow.current.map((x) => (x.id === q.id ? { ...x, waiting: false } : x)))}
-                  aria-label={`Run "${q.request}"`}
+                  aria-label={t('Run "{request}"', { request: q.request })}
                   className="shrink-0 rounded-full bg-primary/20 px-2 text-xs leading-5 text-primary-soft hover:bg-primary/30"
                 >
-                  Run
+                  {t("Run")}
                 </button>
               )}
               <button
                 type="button"
                 onClick={() => setQueue(queueNow.current.filter((x) => x.id !== q.id))}
-                aria-label={`Remove "${q.request}" from Next up`}
+                aria-label={t('Remove "{request}" from Next up', { request: q.request })}
                 className="shrink-0 text-zinc-500 hover:text-red-400"
               >
                 ✕
@@ -1422,21 +1436,21 @@ export function Flash({
       rows={1}
       placeholder={
         pickedNow
-          ? "Say what to change about it…"
+          ? t("Say what to change about it…")
           : photoActions.length
           ? files.length > 1
-            ? "Ask about these photos, or say how to combine them…"
-            : "Ask about it, say what to change, or tap a button above…"
+            ? t("Ask about these photos, or say how to combine them…")
+            : t("Ask about it, say what to change, or tap a button above…")
           : above && changesPictures(choice)
-            ? "Say what to change in the picture, or ask anything…"
+            ? t("Say what to change in the picture, or ask anything…")
             : choice === "auto"
             ? isHome
-              ? "Ask anything, create anything…"
-              : "Ask Flash anything…"
-            : `Ask ${ENGINE_LABELS[choice]}…`
+              ? t("Ask anything, create anything…")
+              : t("Ask Flash anything…")
+            : t("Ask {tool}…", { tool: t(ENGINE_LABELS[choice]) })
       }
       className={`block max-h-48 min-h-[44px] w-full resize-none bg-transparent text-[15px] outline-none placeholder:text-zinc-200 light:placeholder:text-zinc-500 ${isHome ? "min-w-0 flex-1 px-1.5 py-[11px] placeholder-shown:overflow-hidden placeholder-shown:whitespace-nowrap" : "px-2.5 pb-1 pt-2"}`}
-      aria-label="Message"
+      aria-label={t("Message")}
     />
   );
   const form = (
@@ -1449,20 +1463,20 @@ export function Flash({
     >
       {pickedNow && (
         <div className="mb-1 ml-2 mt-1 inline-flex max-w-full items-center gap-2 rounded-lg bg-primary/15 px-3 py-1 text-xs text-primary-soft">
-          <span className="truncate">◎ Changing the {pickedNow.label}</span>
-          <button type="button" onClick={() => setPicked(null)} aria-label="Don't change this part" className="text-primary-soft/70 hover:text-zinc-100">
+          <span className="truncate">◎ {t("Changing the {part}", { part: pickedNow.label })}</span>
+          <button type="button" onClick={() => setPicked(null)} aria-label={t("Don't change this part")} className="text-primary-soft/70 hover:text-zinc-100">
             ✕
           </button>
         </div>
       )}
       {changingPicture && (
         <div className="mb-1 ml-2 mt-1 inline-flex max-w-full items-center gap-2 rounded-lg bg-primary/15 px-3 py-1 text-xs text-primary-soft">
-          <span className="truncate">✏️ Changing the picture above</span>
+          <span className="truncate">✏️ {t("Changing the picture above")}</span>
           <button
             type="button"
             onClick={() => setKeepPicture(above)}
-            aria-label="Don't change the picture above"
-            title="Make a new picture instead"
+            aria-label={t("Don't change the picture above")}
+            title={t("Make a new picture instead")}
             className="text-primary-soft/70 hover:text-zinc-100"
           >
             ✕
@@ -1477,7 +1491,7 @@ export function Flash({
               <button
                 type="button"
                 onClick={() => setFiles(filesNow.current.filter((x) => x !== f))}
-                aria-label={`Remove ${f.name}`}
+                aria-label={t("Remove {name}", { name: f.name })}
                 className="text-zinc-400 hover:text-zinc-100"
               >
                 ✕
@@ -1495,7 +1509,7 @@ export function Flash({
               onClick={() => send(files.length > 1 ? a.several! : a.prompt, true)}
               className="rounded-full border border-white/10 px-3 py-1 text-xs text-zinc-300 transition hover:border-primary/50 hover:text-zinc-100"
             >
-              {a.label}
+              {t(a.label)}
             </button>
           ))}
         </div>
@@ -1604,7 +1618,7 @@ export function Flash({
         className={`${sidebar ? "flex" : "hidden"} fixed inset-0 z-[35] w-full flex-col overflow-y-auto bg-zinc-950 md:static md:m-3 md:mr-0 md:flex md:w-[256px] md:shrink-0 md:rounded-[26px] md:bg-transparent md:glass`}
       >
         <div className="flex items-start justify-between px-5 pb-1 pt-6">
-          <button onClick={goHome} className="flex items-center gap-2 text-left" aria-label="Flash AI, home">
+          <button onClick={goHome} className="flex items-center gap-2 text-left" aria-label={t("Flash AI, home")}>
             <span className="-ml-1 [filter:drop-shadow(0_4px_10px_rgb(91_140_246/0.35))]">
               <BrandMark size={56} id="flash-side" ring={false} vivid />
             </span>
@@ -1612,39 +1626,39 @@ export function Flash({
               <span className="block whitespace-nowrap text-[28px] font-bold leading-none tracking-tight text-white">
                 FLASH <span className="font-light">AI</span>
               </span>
-              <span className="mt-1.5 block whitespace-nowrap text-[11.5px] text-zinc-400">One App. Infinite Possibilities.</span>
+              <span className="mt-1.5 block whitespace-nowrap text-[11.5px] text-zinc-400">{t("One App. Infinite Possibilities.")}</span>
             </span>
           </button>
-          <button className="mt-1 text-zinc-400 md:hidden" onClick={() => setSidebar(false)} aria-label="Close menu">
+          <button className="mt-1 text-zinc-400 md:hidden" onClick={() => setSidebar(false)} aria-label={t("Close menu")}>
             ✕
           </button>
         </div>
         <nav aria-label="Flash" className="mt-7 space-y-1.5 px-3">
-          {navItem("Home", ICONS.home, isHome, goHome)}
-          {navItem("AI Chat", ICONS.chat, !isHome, openChats)}
-          {navItem("Create", ICONS.create, false, () => setTemplates(""))}
-          {navItem("Voice", ICONS.voice, Boolean(voice), () => setVoice({ woke: false }), true)}
-          {navItem("Images", ICONS.images, false, () => setShowCreations("image"))}
-          {navItem("Workspace", ICONS.workspace, false, () => setShowApps(true))}
-          {navItem("Automations", ICONS.bolt, false, () => setShowAutomations(true), false, false, "Soon")}
+          {navItem(t("Home"), ICONS.home, isHome, goHome)}
+          {navItem(t("AI Chat"), ICONS.chat, !isHome, openChats)}
+          {navItem(t("Create"), ICONS.create, false, () => setTemplates(""))}
+          {navItem(t("Voice"), ICONS.voice, Boolean(voice), () => setVoice({ woke: false }), true)}
+          {navItem(t("Images"), ICONS.images, false, () => setShowCreations("image"))}
+          {navItem(t("Workspace"), ICONS.workspace, false, () => setShowApps(true))}
+          {navItem(t("Automations"), ICONS.bolt, false, () => setShowAutomations(true), false, false, t("Soon"))}
         </nav>
         <div className="mx-5 my-4 border-t border-white/[0.07]" />
-        <nav aria-label="Library and settings" className="space-y-1 px-3">
-          {navItem("Library", ICONS.library, false, () => setShowCreations("all"), false, true)}
-          {navItem("Brand Hub", ICONS.brand, false, () => setSettingsTab("brand"), false, true)}
-          {navItem("Settings", ICONS.settings, false, () => setSettingsTab("general"), false, true)}
+        <nav aria-label={t("Library and settings")} className="space-y-1 px-3">
+          {navItem(t("Library"), ICONS.library, false, () => setShowCreations("all"), false, true)}
+          {navItem(t("Brand Hub"), ICONS.brand, false, () => setSettingsTab("brand"), false, true)}
+          {navItem(t("Settings"), ICONS.settings, false, () => setSettingsTab("general"), false, true)}
         </nav>
         {/* Home lists the chats itself, so on a computer its sidebar stays as calm as the menu above. */}
         {isHome && <div className="hidden md:block md:flex-1" />}
         <div className={`mt-4 flex items-center justify-between px-5 ${isHome ? "md:hidden" : ""}`}>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Chats</p>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">{t("Chats")}</p>
           <button
             onClick={() => {
               goHome();
               pickTool("auto");
             }}
-            aria-label="New chat"
-            title="New chat"
+            aria-label={t("New chat")}
+            title={t("New chat")}
             className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-white/[0.06] hover:text-white"
           >
             <Icon d={ICONS.plus} className="h-4 w-4" strokeWidth={2} />
@@ -1657,14 +1671,14 @@ export function Flash({
               type="search"
               value={projectQuery}
               onChange={(e) => setProjectQuery(e.target.value)}
-              placeholder="Search chats"
-              aria-label="Search projects and chats"
+              placeholder={t("Search chats")}
+              aria-label={t("Search projects and chats")}
               className="h-9 w-full rounded-xl border border-white/8 bg-white/[0.03] px-3 text-sm text-zinc-200 outline-none placeholder:text-zinc-500 focus:border-primary/70"
             />
           </div>
         )}
-        <nav aria-label="Chats" className={`mt-1.5 shrink-0 space-y-0.5 px-3 md:min-h-[7.5rem] md:flex-1 md:shrink md:overflow-y-auto ${isHome ? "md:hidden" : ""}`}>
-          {projectQuery.trim() && !sorted.length && !inChats.length && <p className="px-2 py-1.5 text-xs text-zinc-500">Nothing matches.</p>}
+        <nav aria-label={t("Chats")} className={`mt-1.5 shrink-0 space-y-0.5 px-3 md:min-h-[7.5rem] md:flex-1 md:shrink md:overflow-y-auto ${isHome ? "md:hidden" : ""}`}>
+          {projectQuery.trim() && !sorted.length && !inChats.length && <p className="px-2 py-1.5 text-xs text-zinc-500">{t("Nothing matches.")}</p>}
           {sorted.map((p) => (
             <div
               key={p.id}
@@ -1672,31 +1686,31 @@ export function Flash({
             >
               <button className="min-w-0 flex-1 truncate px-3 py-1.5 text-left" onClick={() => openProject(p.id)}>
                 {p.pinned && (
-                  <span className="mr-1.5 text-[11px]" aria-label="Pinned">
+                  <span className="mr-1.5 text-[11px]" aria-label={t("Pinned")}>
                     📌
                   </span>
                 )}
-                {p.name}
+                {projectName(p.name)}
               </button>
               <button
                 className="px-1 text-zinc-500 hover:text-zinc-200 md:hidden md:group-focus-within:block md:group-hover:block"
                 onClick={() => togglePin(p.id)}
-                aria-label={p.pinned ? "Unpin project" : "Pin project"}
-                title={p.pinned ? "Unpin" : "Pin to the top"}
+                aria-label={p.pinned ? t("Unpin project") : t("Pin project")}
+                title={p.pinned ? t("Unpin") : t("Pin to the top")}
               >
                 {p.pinned ? "⊘" : "📌"}
               </button>
               <button
                 className="px-1 text-zinc-500 hover:text-zinc-200 md:hidden md:group-focus-within:block md:group-hover:block"
                 onClick={() => renameProject(p.id)}
-                aria-label="Rename project"
+                aria-label={t("Rename project")}
               >
                 ✎
               </button>
               <button
                 className="px-2 text-zinc-500 hover:text-red-400 md:hidden md:group-focus-within:block md:group-hover:block"
                 onClick={() => deleteProject(p.id)}
-                aria-label="Delete project"
+                aria-label={t("Delete project")}
               >
                 🗑
               </button>
@@ -1704,17 +1718,16 @@ export function Flash({
           ))}
           {inChats.length > 0 && (
             <>
-              <p className="px-2 pt-3 pb-1 text-xs font-medium text-zinc-500">In your chats</p>
+              <p className="px-2 pt-3 pb-1 text-xs font-medium text-zinc-500">{t("In your chats")}</p>
               {inChats.map((h) => (
                 <button
                   key={h.id}
                   onClick={() => openProject(h.id)}
                   className={`block w-full rounded-lg px-3 py-1.5 text-left text-sm transition ${h.id === activeId ? "bg-white/[0.06]" : "hover:bg-white/[0.03]"}`}
                 >
-                  <span className="block truncate text-zinc-200">{h.name}</span>
+                  <span className="block truncate text-zinc-200">{projectName(h.name)}</span>
                   <span className="line-clamp-2 text-xs text-zinc-500">
-                    {h.role === "user" ? "You: " : "Flash: "}
-                    {h.snippet}
+                    {h.role === "user" ? t("You: {text}", { text: h.snippet }) : t("Flash: {text}", { text: h.snippet })}
                   </span>
                 </button>
               ))}
@@ -1727,9 +1740,9 @@ export function Flash({
               <div className="pointer-events-none absolute inset-0 bg-iris-wash" />
               <div className="relative">
                 <p className="flex items-center gap-2 font-semibold text-white">
-                  <span aria-hidden>👑</span> Upgrade to Pro
+                  <span aria-hidden>👑</span> {t("Upgrade to Pro")}
                 </p>
-                <p className="mt-0.5 text-[13px] text-zinc-400">More power. More possibilities.</p>
+                <p className="mt-0.5 text-[13px] text-zinc-400">{t("More power. More possibilities.")}</p>
                 <button
                   onClick={() => {
                     setShowCredits(true);
@@ -1737,7 +1750,7 @@ export function Flash({
                   }}
                   className="mt-3 inline-flex h-9 items-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-on-brand transition hover:brightness-110"
                 >
-                  Get Started <Icon d={ICONS.arrow} className="h-4 w-4" />
+                  {t("Get Started")} <Icon d={ICONS.arrow} className="h-4 w-4" />
                 </button>
               </div>
             </div>
@@ -1746,19 +1759,22 @@ export function Flash({
             onClick={() => setShowInvite(true)}
             className={`w-full rounded-lg px-2 py-1 text-left text-xs text-gold-soft transition hover:bg-white/[0.04] hover:text-gold ${isHome ? "md:hidden" : ""}`}
           >
-            🎁 Invite friends, earn credits
+            🎁 {t("Invite friends, earn credits")}
           </button>
           {status && (
             <details className={`px-2 text-xs text-zinc-400 ${isHome ? "md:hidden" : ""}`}>
               <summary className="cursor-pointer select-none hover:text-zinc-200">
-                {liveCount === ENGINES.length ? "✨ What Flash can do" : `✨ What Flash can do · ${ENGINES.length - liveCount} coming soon`}
+                ✨{" "}
+                {liveCount === ENGINES.length
+                  ? t("What Flash can do")
+                  : t("What Flash can do · {count} coming soon", { count: (ENGINES.length - liveCount).toLocaleString(t.locale) })}
               </summary>
               <div className="mt-2 grid max-h-36 grid-cols-2 gap-1 overflow-y-auto">
                 {ENGINES.map((e) => (
                   <span key={e} className="flex items-center gap-1.5">
                     <span className={`h-1.5 w-1.5 rounded-full ${status[e] ? "bg-emerald-400" : "bg-zinc-600"}`} />
-                    {ENGINE_LABELS[e]}
-                    {!status[e] && <span className="text-zinc-500">coming soon</span>}
+                    {t(ENGINE_LABELS[e])}
+                    {!status[e] && <span className="text-zinc-500">{t("coming soon")}</span>}
                   </span>
                 ))}
               </div>
@@ -1788,20 +1804,20 @@ export function Flash({
       >
         {dragging && (
           <div className="pointer-events-none absolute inset-3 z-30 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary bg-primary/10 text-lg font-medium text-primary-soft">
-            Drop a file for Flash to read, analyse or transcribe
+            {t("Drop a file for Flash to read, analyse or transcribe")}
           </div>
         )}
         <header className={`flex h-16 shrink-0 items-center gap-2 px-4 sm:gap-3 md:h-[76px] md:px-6 ${isHome ? "mx-auto w-full max-w-[1600px] lg:px-8" : ""}`}>
           <button
             className="-ml-1.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-300 hover:bg-white/[0.05] md:hidden"
             onClick={() => setSidebar(true)}
-            aria-label="Open menu"
+            aria-label={t("Open menu")}
           >
             <Icon d="M4 7h16 M4 12h16 M4 17h16" />
           </button>
           {isHome ? (
             <>
-              <button onClick={goHome} className="shrink-0 md:hidden" aria-label="Flash AI, home">
+              <button onClick={goHome} className="shrink-0 md:hidden" aria-label={t("Flash AI, home")}>
                 <BrandMark size={32} id="flash-top" ring={false} />
               </button>
               <div ref={searchBoxRef} className="relative hidden min-w-0 max-w-2xl flex-[3] md:block @min-[1100px]/main:max-w-[760px]">
@@ -1815,8 +1831,8 @@ export function Flash({
                     setSearchOpen(true);
                   }}
                   onFocus={() => setSearchOpen(true)}
-                  placeholder="Search anything... chats, projects, prompts or tools"
-                  aria-label="Search your chats, projects, prompts and tools"
+                  placeholder={t("Search anything... chats, projects, prompts or tools")}
+                  aria-label={t("Search your chats, projects, prompts and tools")}
                   className="glass h-12 w-full rounded-2xl pl-12 pr-4 text-[15px] text-zinc-100 shadow-none outline-none placeholder:text-zinc-400 focus:border-primary/50 @min-[700px]/main:pr-16 @min-[1100px]/main:h-[52px]"
                 />
                 <kbd className="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 rounded-md border border-white/10 bg-white/[0.04] px-1.5 py-0.5 font-sans text-[11px] text-zinc-400 @min-[700px]/main:block">
@@ -1825,9 +1841,9 @@ export function Flash({
                 {searchOpen && (
                   <div className="absolute left-0 right-0 top-full z-40 mt-2 max-h-[60vh] overflow-y-auto rounded-2xl border border-white/10 bg-zinc-900 p-1.5 shadow-2xl light:shadow-black/10">
                     {!projectQuery.trim() && sorted.length > 0 && (
-                      <p className="px-3 pb-1 pt-1.5 text-xs font-medium text-zinc-500">{searchOpen === "all" ? "All chats" : "Recent chats"}</p>
+                      <p className="px-3 pb-1 pt-1.5 text-xs font-medium text-zinc-500">{searchOpen === "all" ? t("All chats") : t("Recent chats")}</p>
                     )}
-                    {toolHits.length > 0 && <p className="px-3 pb-1 pt-1.5 text-xs font-medium text-zinc-500">Tools</p>}
+                    {toolHits.length > 0 && <p className="px-3 pb-1 pt-1.5 text-xs font-medium text-zinc-500">{t("Tools")}</p>}
                     {toolHits.map((f) => (
                       <button
                         key={f.title}
@@ -1838,27 +1854,27 @@ export function Flash({
                         className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06]"
                       >
                         <Icon d={ICONS[f.icon]} className="h-4 w-4 shrink-0 text-zinc-400" />
-                        <span className="min-w-0 flex-1 truncate">{f.title}</span>
-                        {f.soon && <span className="shrink-0 text-xs text-zinc-500">Coming soon</span>}
+                        <span className="min-w-0 flex-1 truncate">{t(f.title)}</span>
+                        {f.soon && <span className="shrink-0 text-xs text-zinc-500">{t("Coming soon")}</span>}
                       </button>
                     ))}
-                    {promptHits.length > 0 && <p className="px-3 pb-1 pt-1.5 text-xs font-medium text-zinc-500">Prompts</p>}
-                    {promptHits.map((t) => (
+                    {promptHits.length > 0 && <p className="px-3 pb-1 pt-1.5 text-xs font-medium text-zinc-500">{t("Prompts")}</p>}
+                    {promptHits.map((template) => (
                       <button
-                        key={t.id}
+                        key={template.id}
                         onClick={() => {
                           setSearchOpen(false);
                           setProjectQuery("");
-                          setTemplates(t.id);
+                          setTemplates(template.id);
                         }}
                         className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06]"
                       >
                         <Icon d={ICONS.template} className="h-4 w-4 shrink-0 text-zinc-500" />
-                        <span className="min-w-0 flex-1 truncate">{t.name}</span>
+                        <span className="min-w-0 flex-1 truncate">{t(template.name)}</span>
                       </button>
                     ))}
                     {(toolHits.length > 0 || promptHits.length > 0) && sorted.length > 0 && (
-                      <p className="px-3 pb-1 pt-1.5 text-xs font-medium text-zinc-500">Chats</p>
+                      <p className="px-3 pb-1 pt-1.5 text-xs font-medium text-zinc-500">{t("Chats")}</p>
                     )}
                     {(searchOpen === "all" || projectQuery.trim() ? sorted : sorted.slice(0, 10)).map((p) => (
                       <button
@@ -1867,30 +1883,29 @@ export function Flash({
                         className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06]"
                       >
                         <Icon d={ICONS.chat} className="h-4 w-4 shrink-0 text-zinc-500" />
-                        <span className="min-w-0 flex-1 truncate">{p.name}</span>
-                        <span className="shrink-0 text-xs text-zinc-500">{timeAgo(p.updated_at)}</span>
+                        <span className="min-w-0 flex-1 truncate">{projectName(p.name)}</span>
+                        <span className="shrink-0 text-xs text-zinc-500">{timeAgo(p.updated_at, Date.now(), t.locale)}</span>
                       </button>
                     ))}
                     {inChats.length > 0 && (
                       <>
-                        <p className="px-3 pb-1 pt-2 text-xs font-medium text-zinc-500">In your chats</p>
+                        <p className="px-3 pb-1 pt-2 text-xs font-medium text-zinc-500">{t("In your chats")}</p>
                         {inChats.map((h) => (
                           <button
                             key={h.id}
                             onClick={() => openFromSearch(h.id)}
                             className="block w-full rounded-xl px-3 py-2 text-left text-sm transition hover:bg-white/[0.06]"
                           >
-                            <span className="block truncate text-zinc-200">{h.name}</span>
+                            <span className="block truncate text-zinc-200">{projectName(h.name)}</span>
                             <span className="line-clamp-2 text-xs text-zinc-500">
-                              {h.role === "user" ? "You: " : "Flash: "}
-                              {h.snippet}
+                              {h.role === "user" ? t("You: {text}", { text: h.snippet }) : t("Flash: {text}", { text: h.snippet })}
                             </span>
                           </button>
                         ))}
                       </>
                     )}
                     {!sorted.length && !inChats.length && !toolHits.length && !promptHits.length && (
-                      <p className="px-3 py-2 text-sm text-zinc-500">{projectQuery.trim() ? "Nothing matches." : "Your chats will show here."}</p>
+                      <p className="px-3 py-2 text-sm text-zinc-500">{projectQuery.trim() ? t("Nothing matches.") : t("Your chats will show here.")}</p>
                     )}
                   </div>
                 )}
@@ -1898,12 +1913,16 @@ export function Flash({
               <div className="min-w-0 flex-1" />
             </>
           ) : (
-            <h1 className="min-w-0 flex-1 truncate text-[15px] font-medium text-zinc-100">{active?.name ?? "Flash AI"}</h1>
+            <h1 className="min-w-0 flex-1 truncate text-[15px] font-medium text-zinc-100">{active ? projectName(active.name) : "Flash AI"}</h1>
           )}
           {active?.messages && (
             <button
               onClick={() => setShowInstructions(true)}
-              title={active.instructions ? `Instructions: ${active.instructions.slice(0, 120)}` : "Tell Flash how to answer in this project"}
+              title={
+                active.instructions
+                  ? t("Instructions: {text}", { text: active.instructions.slice(0, 120) })
+                  : t("Tell Flash how to answer in this project")
+              }
               className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs transition ${
                 active.instructions ? "border-primary/40 bg-primary/10 text-primary-soft hover:bg-primary/20" : "border-white/10 text-zinc-200 hover:bg-white/[0.05]"
               }`}
@@ -1911,7 +1930,7 @@ export function Flash({
               <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                 <path d="M4 6h16 M4 12h10 M4 18h7 M17 15l2 2 4-4" />
               </svg>
-              <span className="hidden sm:inline">{active.instructions ? "Instructions on" : "Instructions"}</span>
+              <span className="hidden sm:inline">{active.instructions ? t("Instructions on") : t("Instructions")}</span>
             </button>
           )}
           {active?.messages?.some((m) => !m.pending) && <DownloadChat project={active} disabled={busy} />}
@@ -1919,14 +1938,14 @@ export function Flash({
             <button
               onClick={() => setShowShare(true)}
               disabled={busy}
-              title="Share a link to this chat"
-              aria-label="Share"
+              title={t("Share a link to this chat")}
+              aria-label={t("Share")}
               className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-white/10 px-3 py-1 text-xs text-zinc-200 transition hover:bg-white/[0.05] disabled:opacity-40"
             >
               <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                 <path d="M12 15V3 M7 8l5-5 5 5 M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" />
               </svg>
-              <span className="hidden sm:inline">Share</span>
+              <span className="hidden sm:inline">{t("Share")}</span>
             </button>
           )}
           <button
@@ -1937,10 +1956,10 @@ export function Flash({
                 ? "border-spark/50 bg-spark/10 text-spark-soft hover:bg-spark/20"
                 : "glass text-zinc-100 shadow-none hover:brightness-110"
             }`}
-            title="Credits: see costs and top up"
+            title={t("Credits: see costs and top up")}
           >
-            <BoltIcon className="h-3.5 w-3.5 text-gold" /> {me.credits.toLocaleString()}
-            <span className="hidden @min-[900px]/main:inline">credits</span>
+            <BoltIcon className="h-3.5 w-3.5 text-gold" /> {me.credits.toLocaleString(t.locale)}
+            <span className="hidden @min-[900px]/main:inline">{t("credits")}</span>
           </button>
           {isHome && <Bell me={me} onSites={() => setShowApps(true)} onCredits={() => setShowCredits(true)} />}
           <AccountMenu
@@ -1959,7 +1978,7 @@ export function Flash({
             onClose={() => setShowApps(false)}
             onEdit={(id) => {
               setShowApps(false);
-              setNotice("Ask for your changes here, then press Update site under the new version.");
+              setNotice(t("Ask for your changes here, then press Update site under the new version."));
               openProject(id);
             }}
           />
@@ -2037,7 +2056,7 @@ export function Flash({
                 className="flex items-start gap-3 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm text-zinc-100"
               >
                 <span className="flex-1">{notice}</span>
-                <button onClick={() => setNotice("")} aria-label="Dismiss" className="text-primary-soft hover:text-white">
+                <button onClick={() => setNotice("")} aria-label={t("Dismiss")} className="text-primary-soft hover:text-white">
                   ✕
                 </button>
               </div>
@@ -2045,7 +2064,7 @@ export function Flash({
             {me && !me.verified && <VerifyBanner email={me.user.email} free={me.freeMonthly} failed={emailFailed} />}
             {allOff && (
               <div role="status" className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
-                Flash is taking a short break, so answers are paused and nothing uses credits. Please check back soon.
+                {t("Flash is taking a short break, so answers are paused and nothing uses credits. Please check back soon.")}
               </div>
             )}
             </div>
@@ -2123,7 +2142,7 @@ export function Flash({
               {voicePanel || form}
               {!voice && (
                 <p className="mt-2 hidden text-center text-xs text-zinc-500 sm:block">
-                  Enter to send · Shift + Enter for a new line · drop or paste files anywhere
+                  {t("Enter to send · Shift + Enter for a new line · drop or paste files anywhere")}
                 </p>
               )}
             </div>

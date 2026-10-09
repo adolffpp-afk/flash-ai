@@ -1,5 +1,6 @@
 import { getUser, unauthorized } from "@/lib/server/auth.ts";
 import { deleteFile, fileResponse, readFile } from "@/lib/server/files.ts";
+import { translatorFor } from "@/lib/server/i18n.ts";
 
 export async function GET(request: Request, ctx: RouteContext<"/api/files/[id]">) {
   const user = await getUser(request);
@@ -15,6 +16,9 @@ export async function DELETE(request: Request, ctx: RouteContext<"/api/files/[id
   const user = await getUser(request);
   if (!user) return unauthorized();
   const { id } = await ctx.params;
-  if (!(await deleteFile(user.id, id))) return Response.json({ error: "Not found" }, { status: 404 });
+  if (!(await deleteFile(user.id, id))) {
+    const t = await translatorFor(request, user.language);
+    return Response.json({ error: t("Not found") }, { status: 404 });
+  }
   return Response.json({ ok: true });
 }

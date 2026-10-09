@@ -2,6 +2,7 @@
  * Settings kept on this device (in the browser's storage), like Claude's appearance and voice
  * settings. Storage can be blocked (private windows), so every read falls back to the default.
  */
+import { msg } from "./i18n.ts";
 import { voiceFor } from "./languages.ts";
 
 export const DEVICE_KEYS = {
@@ -58,29 +59,29 @@ export function onSettingChange(callback: () => void): () => void {
 
 // Light is the default: Flash opens bright and iridescent unless Dark (or a dark device, with Match device) is picked.
 export const THEMES = [
-  ["", "Light", "Bright and iridescent"],
-  ["dark", "Dark", "Frosted glass at night"],
-  ["system", "Match device", "Follows your device's light or dark setting"],
+  ["", msg("Light"), msg("Bright and iridescent")],
+  ["dark", msg("Dark"), msg("Frosted glass at night")],
+  ["system", msg("Match device"), msg("Follows your device's light or dark setting")],
 ] as const;
 export type Theme = (typeof THEMES)[number][0];
 
 export const FONTS = [
-  ["", "Default", "Flash's own typeface"],
-  ["system", "System", "Your device's typeface"],
-  ["readable", "Readable", "Wide, open letters that are easier to tell apart"],
+  ["", msg("Default"), msg("Flash's own typeface")],
+  ["system", msg("System"), msg("Your device's typeface")],
+  ["readable", msg("Readable"), msg("Wide, open letters that are easier to tell apart")],
 ] as const;
 export type Font = (typeof FONTS)[number][0];
 
 export const TEXT_SIZES = [
-  ["", "Default"],
-  ["large", "Large"],
+  ["", msg("Default")],
+  ["large", msg("Large")],
 ] as const;
 
 export const VOICE_RATES = [
-  ["0.8", "Slower"],
-  ["", "Normal"],
-  ["1.25", "Faster"],
-  ["1.5", "Fastest"],
+  ["0.8", msg("Slower")],
+  ["", msg("Normal")],
+  ["1.25", msg("Faster")],
+  ["1.5", msg("Fastest")],
 ] as const;
 
 /** Puts the chosen typeface and text size on the page (see globals.css). */

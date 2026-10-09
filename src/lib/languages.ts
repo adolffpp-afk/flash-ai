@@ -16,8 +16,10 @@ export type Language = {
   speech: string;
 };
 
-// How Settings shows Automatic, which is saved as "".
-export const AUTOMATIC_LANGUAGE = "Automatic (the language you write in)";
+// How Settings shows Automatic, which is saved as "". Shown with t(). It's marked with a copy of
+// i18n.ts's msg(): i18n.ts imports this file, so its own msg isn't defined yet when this line runs.
+const msg = <T extends string>(text: T): T => text;
+export const AUTOMATIC_LANGUAGE = msg("Automatic (the language you write in)");
 
 export const LANGUAGES: readonly Language[] = [
   { id: "en", label: "English", name: "English", speech: "en-US" },

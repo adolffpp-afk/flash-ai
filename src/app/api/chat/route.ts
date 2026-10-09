@@ -52,9 +52,12 @@ import {
   speechProvider,
   synthesizeSpeech,
   transcribe,
+  NO_SPEECH,
   type Media,
 } from "@/lib/engines/media.ts";
 import { appUrl, getUser, unauthorized } from "@/lib/server/auth.ts";
+import { translatorFor } from "@/lib/server/i18n.ts";
+import { english, msg, type Translate } from "@/lib/i18n.ts";
 import { charge, ensureMonthlyCredits, logUsage, settle, spendable } from "@/lib/server/credits.ts";
 import { saveFile } from "@/lib/server/files.ts";
 import {
@@ -68,7 +71,7 @@ import {
   transcribeCostCents,
   voiceCostCents,
 } from "@/lib/credits.ts";
-import { falConfigured, falGenerate } from "@/lib/engines/fal.ts";
+import { falConfigured, falGenerate, type FalProgress } from "@/lib/engines/fal.ts";
 import {
   MEDIA_ENGINES,
   PACK_IMAGE_CENTS,
@@ -169,9 +172,22 @@ async function* withProgress<T>(
   return work;
 }
 
+/**
+ * Reports a fal job's progress in the user's language: working while it runs, waiting with its
+ * place in line ({position}) while it waits. Both are marked msg("…") where they're passed.
+ */
+const falReport =
+  (t: Translate, report: (message: string) => void, working: string, waiting: string) =>
+  (_english: string, { position }: FalProgress) =>
+    report(position === null ? t(working) : t(waiting, { position }));
+
 /** Uses Claude to sharpen a media prompt when a Claude key exists, else sends the request as written. */
 const sharpen = (kind: "image" | "video" | "music", request: string, meter: Meter, brand = "") =>
   claudeConfigured() ? improvePrompt(kind, request, meter, brand).catch(() => request) : Promise.resolve(request);
+
+/** A transcript under its heading, with Flash's own words in the user's language. */
+const transcript = (name: string, text: string, t: Translate) =>
+  `**${t("Transcript of {name}", { name })}**\n\n${text === NO_SPEECH ? t(NO_SPEECH) : text}`;
 
 /** The bytes in a base64 attachment. */
 const attachmentBytes = (a: { data: string }) => (a.data.length * 3) / 4;
@@ -211,43 +227,49 @@ async function* postPack(
   model: ModelInfo,
   store: Store,
   meter: Meter,
+  t: Translate,
 ): AsyncGenerator<StreamEvent> {
-  if (!claudeConfigured()) throw new FriendlyError("Social post packs aren't available yet. Please try again later.");
-  yield { type: "status", message: "Writing your posts and hashtags…" };
+  if (!claudeConfigured()) throw new FriendlyError(msg("Social post packs aren't available yet. Please try again later."));
+  yield { type: "status", message: t("Writing your posts and hashtags…") };
   const pack = await writePack(request, about, meter, brandNote).catch((err) => {
     if (err instanceof FriendlyError) throw err;
     console.error("[flash] post pack writing failed", err);
-    throw new FriendlyError("Flash couldn't write the posts this time. Please try again.");
+    throw new FriendlyError(msg("Flash couldn't write the posts this time. Please try again."));
   });
   const video = packWantsVideo(request);
+  const seconds = { seconds: PACK_VIDEO_SECONDS };
   yield {
     type: "text",
     delta:
       packMarkdown(pack.posts) +
-      "\n\n**Pictures:** square for Instagram and Facebook posts, tall for TikTok, Reels and Stories." +
+      "\n\n" +
+      t("**Pictures:** square for Instagram and Facebook posts, tall for TikTok, Reels and Stories.") +
+      " " +
       (video
-        ? ` The ${PACK_VIDEO_SECONDS} second video is silent, so you can add a trending sound in TikTok or Instagram.`
-        : ` For a ${PACK_VIDEO_SECONDS} second video too, ask for "a social post pack with a video".`),
+        ? t("The {seconds} second video is silent, so you can add a trending sound in TikTok or Instagram.", seconds)
+        : t('For a {seconds} second video too, ask for "a social post pack with a video".', seconds)),
   };
   yield { type: "posts", posts: pack.posts };
 
-  yield { type: "status", message: "Painting a square and a tall picture with FLUX.2 Pro…" };
+  yield { type: "status", message: t("Painting a square and a tall picture with FLUX.2 Pro…") };
   const billPicture = (err: unknown): never => {
     if (err instanceof JobAbandoned && err.billed) meter("fal", "flux-2-pro", PACK_IMAGE_CENTS);
     throw err;
   };
   const shapes = ["square", "tall"] as const;
-  const labels = { square: "Square, for posts", tall: "Tall, for TikTok, Reels and Stories" };
-  const pictures = yield* withProgress((report) =>
-    Promise.allSettled(
+  // Kept in English, as the picture's label in the chat, and shown in the user's language there.
+  const labels = { square: msg("Square, for posts"), tall: msg("Tall, for TikTok, Reels and Stories") };
+  const pictures = yield* withProgress((report) => {
+    const painting = falReport(t, report, msg("Painting your pictures… working"), msg("Painting your pictures… in line (position {position})"));
+    return Promise.allSettled(
       shapes.map((shape) =>
-        falGenerate(model.endpoint!, packImageInput(pack.picture, shape), (m) => report(`Painting your pictures… ${m.toLowerCase()}`)).then(
+        falGenerate(model.endpoint!, packImageInput(pack.picture, shape), painting).then(
           (image) => (meter("fal", "flux-2-pro", PACK_IMAGE_CENTS), image),
           billPicture,
         ),
       ),
-    ),
-  );
+    );
+  });
   for (const [i, result] of pictures.entries()) {
     if (result.status !== "fulfilled") continue;
     yield { type: "image", url: await store(result.value, `flash-post-${shapes[i]}.png`), prompt: pack.picture, label: labels[shapes[i]] };
@@ -255,21 +277,25 @@ async function* postPack(
   const failed = pictures.findIndex((r) => r.status === "rejected");
   if (failed !== -1) {
     console.error(`[flash] post pack ${shapes[failed]} picture failed`, (pictures[failed] as PromiseRejectedResult).reason);
-    throw new FriendlyError(`The ${shapes[failed]} picture didn't come out, but your posts are ready above. Please try again for the pictures.`);
+    throw new FriendlyError(
+      shapes[failed] === "square"
+        ? msg("The square picture didn't come out, but your posts are ready above. Please try again for the pictures.")
+        : msg("The tall picture didn't come out, but your posts are ready above. Please try again for the pictures."),
+    );
   }
   const tall = pictures[1].status === "fulfilled" ? pictures[1].value : null;
   if (!video || !tall) return;
 
-  yield { type: "status", message: `Filming a ${PACK_VIDEO_SECONDS} second video from the tall picture. This usually takes one to three minutes…` };
+  yield { type: "status", message: t("Filming a {seconds} second video from the tall picture. This usually takes one to three minutes…", seconds) };
   const clip = yield* withProgress((report) =>
     falGenerate(
       PACK_VIDEO_ENDPOINT,
       packVideoInput(`data:${tall.mime};base64,${tall.data.toString("base64")}`, pack.motion),
-      (m) => report(`Filming your video… ${m.toLowerCase()}`),
+      falReport(t, report, msg("Filming your video… working"), msg("Filming your video… in line (position {position})")),
     ).catch((err) => {
       if (err instanceof JobAbandoned && err.billed) meter("fal", "kling-3-animate", PACK_VIDEO_CENTS);
       console.error("[flash] post pack video failed", err);
-      throw new FriendlyError("The video didn't come out, but your posts and pictures are ready above.");
+      throw new FriendlyError(msg("The video didn't come out, but your posts and pictures are ready above."));
     }),
   );
   meter("fal", "kling-3-animate", PACK_VIDEO_CENTS);
@@ -289,10 +315,12 @@ async function* run(
   // The level a Claude engine runs on, and what to do when it steps down to another.
   choice: ClaudeChoice | null = null,
   onStepDown: (choice: ClaudeChoice) => void = () => {},
+  // The language Flash's own words (progress, notes, errors) are in.
+  t: Translate & { language?: string } = english,
 ): AsyncGenerator<StreamEvent> {
   const last = history[history.length - 1];
   if (isMedia(engine) ? !model : !configured(engine)) {
-    yield* unavailableReply(engine);
+    yield* unavailableReply(engine, t);
     return;
   }
   // A media job the provider bills even though it ended without a result is charged too.
@@ -312,14 +340,14 @@ async function* run(
     case "code":
     case "translate":
     case "docs":
-      yield* withStepDown(choice ?? claudeChoice(engine, "ascend"), (c) => streamText(history, preferences, engine, meter, budget, c), onStepDown);
+      yield* withStepDown(choice ?? claudeChoice(engine, "ascend"), (c) => streamText(history, preferences, engine, meter, budget, c, t), onStepDown, t);
       return;
     case "search":
-      yield* withStepDown(choice ?? claudeChoice(engine, "ascend"), (c) => streamSearch(history, preferences, meter, budget, c), onStepDown);
+      yield* withStepDown(choice ?? claudeChoice(engine, "ascend"), (c) => streamSearch(history, preferences, meter, budget, c, t), onStepDown, t);
       return;
     case "app":
     case "slides":
-      yield* withStepDown(choice ?? claudeChoice(engine, "vision"), (c) => streamBuild(history, preferences, engine, meter, budget, c), onStepDown);
+      yield* withStepDown(choice ?? claudeChoice(engine, "vision"), (c) => streamBuild(history, preferences, engine, meter, budget, c, t), onStepDown, t);
       return;
     case "image": {
       if (model!.edits) {
@@ -327,13 +355,14 @@ async function* run(
         // Photos after the first are combined with it; only FLUX.2 Edit is given more than one.
         const more = model!.id === "flux-2-edit" ? (last.more ?? []).slice(0, MAX_EDIT_PHOTOS - 1) : [];
         const dataUrl = (f: Attachment) => `data:${f.mediaType};base64,${f.data}`;
-        yield { type: "status", message: more.length ? `Combining your photos with ${model!.label}…` : `Working on your photo with ${model!.label}…` };
+        const label = { model: model!.label };
+        yield { type: "status", message: more.length ? t("Combining your photos with {model}…", label) : t("Working on your photo with {model}…", label) };
         const edited = yield* withProgress((report) =>
           falGenerate(
             model!.endpoint!,
             // Each photo was checked to be at most 2048 × 2048 before credits were held.
             falEditInput(model!, dataUrl(photo), imageDimensions(Buffer.from(photo.data, "base64")), last.content, more.map(dataUrl)),
-            (m) => report(`${m}…`),
+            falReport(t, report, msg("Working…"), msg("In line (position {position})…")),
           ).catch(billIfAbandoned),
         );
         meter(model!.provider, model!.id, mediaCents(model!, last.content, 1 + more.length));
@@ -341,17 +370,19 @@ async function* run(
         return;
       }
       if (model!.id === "post-pack") {
-        yield* postPack(last.content, preferences, brandNote, model!, store, meter);
+        yield* postPack(last.content, preferences, brandNote, model!, store, meter, t);
         return;
       }
       const prompt = await sharpen("image", last.content, meter, brandNote);
-      yield { type: "status", message: `Painting your image with ${model!.label}…` };
+      yield { type: "status", message: t("Painting your image with {model}…", { model: model!.label }) };
       const image =
         model!.provider === "fal"
           ? yield* withProgress((report) =>
-              falGenerate(model!.endpoint!, falInput(model!, prompt, last.content), (m) => report(`${m}…`)).catch(
-                billIfAbandoned,
-              ),
+              falGenerate(
+                model!.endpoint!,
+                falInput(model!, prompt, last.content),
+                falReport(t, report, msg("Working…"), msg("In line (position {position})…")),
+              ).catch(billIfAbandoned),
             )
           : await generateImage(prompt);
       meter(model!.provider, model!.id, mediaCents(model!, last.content));
@@ -361,12 +392,12 @@ async function* run(
     case "video": {
       if (model!.edits) {
         const photo = last.attachment!;
-        yield { type: "status", message: `Bringing your photo to life with ${model!.label}. This usually takes one to three minutes…` };
+        yield { type: "status", message: t("Bringing your photo to life with {model}. This usually takes one to three minutes…", { model: model!.label }) };
         const clip = yield* withProgress((report) =>
           falGenerate(
             model!.endpoint!,
             falEditInput(model!, `data:${photo.mediaType};base64,${photo.data}`, null, last.content),
-            (m) => report(`Animating… ${m.toLowerCase()}`),
+            falReport(t, report, msg("Animating… working"), msg("Animating… in line (position {position})")),
           ).catch(billIfAbandoned),
         );
         meter(model!.provider, model!.id, mediaCents(model!, last.content));
@@ -375,39 +406,42 @@ async function* run(
       }
       if (model!.id === "movie") {
         const { scenes: count, seconds } = movieScenes(movieSeconds(last.content));
-        yield { type: "status", message: `Writing ${count} scenes for your movie…` };
+        yield { type: "status", message: t("Writing {count} scenes for your movie…", { count }) };
         const scenes = claudeConfigured()
           ? await writeScenes(last.content, count, seconds, meter).catch((err) => {
               console.error("[flash] scene writing failed", err);
-              throw new FriendlyError("Flash couldn't write the scenes for this movie. Nothing was filmed. Please try again.");
+              throw new FriendlyError(msg("Flash couldn't write the scenes for this movie. Nothing was filmed. Please try again."));
             })
-          : Array.from({ length: count }, (_, i) => `Scene ${i + 1} of ${count}: ${last.content}`);
+          : // Prompts for the video model, so in English.
+            Array.from({ length: count }, (_, i) => `Scene ${i + 1} of ${count}: ${last.content}`);
         yield {
           type: "text",
-          delta: `**Your movie, in ${scenes.length} scenes:**\n\n${scenes.map((s, i) => `${i + 1}. ${s}`).join("\n")}`,
+          delta: `**${t("Your movie, in {count} scenes:", { count: scenes.length })}**\n\n${scenes.map((s, i) => `${i + 1}. ${s}`).join("\n")}`,
         };
-        yield { type: "status", message: "Filming every scene at once. This usually takes three to eight minutes…" };
-        const movie = yield* withProgress((report) => makeMovie(model!.endpoint!, scenes, seconds, meter, report, videoAspect(last.content)));
+        yield { type: "status", message: t("Filming every scene at once. This usually takes three to eight minutes…") };
+        const movie = yield* withProgress((report) => makeMovie(model!.endpoint!, scenes, seconds, meter, report, videoAspect(last.content), t));
         yield { type: "video", url: await store(movie, "flash-movie.mp4"), prompt: last.content };
         return;
       }
       const prompt = await sharpen("video", last.content, meter, brandNote);
-      yield { type: "status", message: `Filming your video with ${model!.label}. This usually takes one to three minutes…` };
+      yield { type: "status", message: t("Filming your video with {model}. This usually takes one to three minutes…", { model: model!.label }) };
       let video: Media;
       if (model!.provider === "fal") {
         video = yield* withProgress((report) =>
-          falGenerate(model!.endpoint!, falInput(model!, prompt, last.content), (m) =>
-            report(`Filming your video… ${m.toLowerCase()}`),
+          falGenerate(
+            model!.endpoint!,
+            falInput(model!, prompt, last.content),
+            falReport(t, report, msg("Filming your video… working"), msg("Filming your video… in line (position {position})")),
           ).catch(billIfAbandoned),
         );
       } else {
         const id = yield* withProgress((report) =>
-          generateVideo(prompt, (pct) => pct && report(`Filming your video… ${pct}%`)).catch(billIfAbandoned),
+          generateVideo(prompt, (pct) => pct && report(t("Filming your video… {percent}%", { percent: pct }))).catch(billIfAbandoned),
         );
-        yield { type: "status", message: "Saving your video…" };
+        yield { type: "status", message: t("Saving your video…") };
         video = await downloadVideo(id).catch((err) => {
           console.error("[flash] video download failed", err);
-          return billIfAbandoned(new JobAbandoned("Flash couldn't fetch the video. Please try again.", true));
+          return billIfAbandoned(new JobAbandoned(msg("Flash couldn't fetch the video. Please try again."), true));
         });
       }
       meter(model!.provider, model!.id, mediaCents(model!, last.content));
@@ -418,12 +452,17 @@ async function* run(
       const words = spokenText(last.content);
       const { voice, speed } = pickVoice(last.content);
       const named = speechProvider() === "fal";
+      const quoted = words.length > 80 ? words.slice(0, 80) + "…" : words;
       yield {
         type: "text",
         delta:
-          `Here is "${words.length > 80 ? words.slice(0, 80) + "…" : words}" read aloud` +
-          (named ? ` by ${voice.name}, a ${voice.about}.` : ".") +
-          (named && voice === DEFAULT_VOICE ? ` For another voice, ask for one, like "in a deep British man's voice".` : ""),
+          (named
+            ? (t.language ?? "en") === "en"
+              ? t('Here is "{words}" read aloud by {voice}, a {about}.', { words: quoted, voice: voice.name, about: voice.about })
+              : // The voice's description is built from English words, so other languages leave it out.
+                t('Here is "{words}" read aloud by {voice}.', { words: quoted, voice: voice.name })
+            : t('Here is "{words}" read aloud.', { words: quoted })) +
+          (named && voice === DEFAULT_VOICE ? " " + t('For another voice, ask for one, like "in a deep British man\'s voice".') : ""),
       };
       const voiceCents = voiceCostCents(words.length);
       const speech = await synthesizeSpeech(words, { voice: voice.name, speed }).catch(billSpeech("voice", voiceCents));
@@ -433,13 +472,15 @@ async function* run(
     }
     case "music": {
       const prompt = await sharpen("music", last.content, meter);
-      yield { type: "status", message: `Composing your track with ${model!.label}…` };
-      yield { type: "text", delta: `**Track brief:** ${prompt}` };
+      yield { type: "status", message: t("Composing your track with {model}…", { model: model!.label }) };
+      yield { type: "text", delta: `**${t("Track brief:")}** ${prompt}` };
       const track =
         model!.provider === "fal"
           ? yield* withProgress((report) =>
-              falGenerate(model!.endpoint!, falInput(model!, prompt, last.content), (m) =>
-                report(`Composing… ${m.toLowerCase()}`),
+              falGenerate(
+                model!.endpoint!,
+                falInput(model!, prompt, last.content),
+                falReport(t, report, msg("Composing… working"), msg("Composing… in line (position {position})")),
               ).catch(billIfAbandoned),
             )
           : await composeMusic(prompt);
@@ -449,14 +490,14 @@ async function* run(
     }
     case "transcribe": {
       if (!last.attachment) {
-        yield { type: "text", delta: "Attach an audio or video file with the 📎 button and Flash will transcribe it." };
+        yield { type: "text", delta: t("Attach an audio or video file with the 📎 button and Flash will transcribe it.") };
         return;
       }
-      yield { type: "status", message: `Transcribing ${last.attachment.name}…` };
+      yield { type: "status", message: t("Transcribing {name}…", { name: last.attachment.name }) };
       const transcribeCents = transcribeCostCents(attachmentBytes(last.attachment));
       const text = await transcribe(last.attachment).catch(billSpeech("transcribe", transcribeCents));
       meter(speechProvider()!, "transcribe", transcribeCents);
-      yield { type: "text", delta: `**Transcript of ${last.attachment.name}**\n\n${text}` };
+      yield { type: "text", delta: transcript(last.attachment.name, text, t) };
       return;
     }
   }
@@ -472,15 +513,16 @@ async function* runFree(
   used: { provider: string; model: string },
   // Where the user is, for free models that may only answer some countries.
   country = "",
+  t: Translate = english,
 ): AsyncGenerator<StreamEvent> {
   const last = history[history.length - 1];
   if (lane === "image") {
     if (!(await reserveFreeImage())) {
-      throw new FriendlyError("Today's free images are used up across Flash. They reset tomorrow, or you can get more credits.");
+      throw new FriendlyError(msg("Today's free images are used up across Flash. They reset tomorrow, or you can get more credits."));
     }
     used.provider = "cloudflare";
     used.model = "flux-1-schnell";
-    yield { type: "status", message: "Painting your image with FLUX.1 schnell (free)…" };
+    yield { type: "status", message: t("Painting your image with FLUX.1 schnell (free)…") };
     const image = await freeImage(last.content);
     yield { type: "image", url: await store(image, "flash-image.jpg"), prompt: last.content };
     return;
@@ -488,14 +530,14 @@ async function* runFree(
   if (lane === "transcribe") {
     const file = last.attachment!;
     if (!(await reserveFreeAudio())) {
-      throw new FriendlyError("Today's free transcripts are used up across Flash. They reset tomorrow, or you can get more credits.");
+      throw new FriendlyError(msg("Today's free transcripts are used up across Flash. They reset tomorrow, or you can get more credits."));
     }
     used.provider = "groq";
     used.model = "whisper-large-v3-turbo";
-    yield { type: "status", message: `Transcribing ${file.name} with Whisper (free)…` };
+    yield { type: "status", message: t("Transcribing {name} with Whisper (free)…", { name: file.name }) };
     const { text, seconds } = await freeTranscribe(file);
     await recordFreeAudio(seconds);
-    yield { type: "text", delta: `**Transcript of ${file.name}**\n\n${text}` };
+    yield { type: "text", delta: transcript(file.name, text, t) };
     return;
   }
   yield* streamFreeChat(history, preferences, engine as WritingMode, reserveFree, recordFree, (label, provider) => {
@@ -504,37 +546,49 @@ async function* runFree(
   }, undefined, country);
 }
 
-/** What the error message says about credits after a failed request. */
-function refundNote(held: number, credits: number): string {
+/** What the error message says about credits after a failed request, after a space. */
+function refundNote(held: number, credits: number, t: Translate): string {
   if (!held) return "";
-  if (!credits) return " Your credits were refunded.";
-  if (credits >= held) return ` The AI provider charged for the work already done, so this used ${credits} credits.`;
-  return ` Your credits were partly refunded: ${credits} paid for the work already done.`;
+  if (!credits) return " " + t("Your credits were refunded.");
+  if (credits >= held) return " " + t("The AI provider charged for the work already done, so this used {credits} credits.", { credits });
+  return " " + t("Your credits were partly refunded: {credits} paid for the work already done.", { credits });
+}
+
+/** Why a picture, video or music model was picked (see pickModel), in the user's language. */
+function pickedWhy({ model, why }: { model: ModelInfo; why: string }, t: Translate): string {
+  if (why === "you picked it") return t("you picked it");
+  if (why === "the default") return t("the default");
+  // The model's blurb: lowercased in English (as pickModel gives it), as the table writes it in another language.
+  const blurb = t(model.blurb);
+  return blurb === model.blurb ? why : blurb;
 }
 
 export async function POST(request: Request) {
   const user = await getUser(request);
   if (!user) return unauthorized();
+  // Flash's own words in the reply (errors, why an engine and a level were picked, progress) are in
+  // the language Flash is shown in. The answers themselves follow the user's language setting.
+  const t = await translatorFor(request, user.language);
   let body: ChatRequest;
   try {
     body = (await request.json()) as ChatRequest;
   } catch {
-    return Response.json({ error: "Invalid JSON" }, { status: 400 });
+    return Response.json({ error: t("Invalid JSON") }, { status: 400 });
   }
   const history = (body.messages ?? []).slice(-30);
   const last = history[history.length - 1];
   if (!last || last.role !== "user") {
-    return Response.json({ error: "The last message must be from the user." }, { status: 400 });
+    return Response.json({ error: t("The last message must be from the user.") }, { status: 400 });
   }
   if (last.attachment && attachmentBytes(last.attachment) > MAX_ATTACHMENT_BYTES) {
-    return Response.json({ error: "Files must be 3 MB or smaller." }, { status: 413 });
+    return Response.json({ error: t("Files must be 3 MB or smaller.") }, { status: 413 });
   }
-  const filesProblem = checkFiles(last.attachment, last.more);
+  const filesProblem = checkFiles(last.attachment, last.more, t);
   if (filesProblem) return Response.json({ error: filesProblem }, { status: 413 });
   const severalFiles = Boolean(last.more?.length);
   if (typeof last.content !== "string" || last.content.length > MAX_MESSAGE_CHARS) {
     return Response.json(
-      { error: "This message is too long. Send a shorter one, or attach the text as a file." },
+      { error: t("This message is too long. Send a shorter one, or attach the text as a file.") },
       { status: 413 },
     );
   }
@@ -544,15 +598,16 @@ export async function POST(request: Request) {
   const override =
     body.engine && body.engine !== "auto" && (ENGINES as readonly string[]).includes(body.engine) ? body.engine : null;
   let engine = override ?? auto.engine;
+  // Why this engine answers, in the user's language.
   let reason = override
     ? typeof body.template === "string" && body.template.trim()
-      ? `Made from the ${body.template.trim().slice(0, 40)} template.`
+      ? t("Made from the {template} template.", { template: body.template.trim().slice(0, 40) })
       : body.build === true && (override === "app" || override === "slides")
         ? override === "app"
-          ? "Updating your app."
-          : "Updating your slides."
-        : "You picked this engine."
-    : auto.reason;
+          ? t("Updating your app.")
+          : t("Updating your slides.")
+        : t("You picked this engine.")
+    : t(auto.reason);
   // Several files are read and compared by the writing engines; media tools take one file. The
   // builder reads several pictures too, so a few screens can be built in one go.
   const allPictures = [last.attachment, ...(last.more ?? [])].every((f) => f && PICTURE_TYPE.test(f.mediaType));
@@ -563,7 +618,7 @@ export async function POST(request: Request) {
     engine === "image" && severalFiles && photos.length <= MAX_EDIT_PHOTOS && photos.every((f) => EDITABLE_TYPE.test(f.mediaType));
   if (severalFiles && !WRITING_ENGINES.includes(engine) && !(builds && allPictures) && !combines) {
     engine = "docs";
-    reason = "Flash reads several files together.";
+    reason = t("Flash reads several files together.");
   }
 
   // Everything this request spends with AI providers, for credits and the owner dashboard.
@@ -589,7 +644,7 @@ export async function POST(request: Request) {
     const ready = (e: Engine) => (isMedia(e) ? Boolean(pickModel(e, last.content, providers())) : configured(e));
     if (guess && guess !== "text" && guess !== "transcribe" && ready(guess)) {
       engine = guess;
-      reason = "Flash's router read your request.";
+      reason = t("Flash's router read your request.");
     }
   }
 
@@ -607,25 +662,25 @@ export async function POST(request: Request) {
     const asked = await pictureRequest(last.content, body.pictureAbove === true, meter);
     if (asked === "other") {
       engine = severalFiles ? "docs" : "text";
-      reason = body.pictureAbove === true ? "Flash answers about the picture above." : "A photo is attached, so the writing model reads it.";
+      reason = body.pictureAbove === true ? t("Flash answers about the picture above.") : t("A photo is attached, so the writing model reads it.");
     } else if (asked === "new" && body.pictureAbove === true) {
       fresh = true;
-      reason = "Flash makes a new picture.";
+      reason = t("Flash makes a new picture.");
     }
   }
   // An image request with a photo attached edits it; a video request animates it.
   const editing = !fresh && (engine === "image" || engine === "video") && Boolean(last.attachment && EDITABLE_TYPE.test(last.attachment.mediaType));
-  if (editing && body.pictureAbove === true) reason = engine === "video" ? "Bringing the picture above to life." : "Changing the picture above.";
+  if (editing && body.pictureAbove === true) reason = engine === "video" ? t("Bringing the picture above to life.") : t("Changing the picture above.");
   for (const photo of editing ? (combines ? photos : [last.attachment!]) : []) {
     const editSize = imageDimensions(Buffer.from(photo.data, "base64"));
     if (!editSize || editSize.width * editSize.height > MAX_EDIT_PIXELS) {
       return Response.json(
-        { error: "Flash can edit PNG, JPEG and WebP photos up to 2048 × 2048 pixels. Try a smaller photo." },
+        { error: t("Flash can edit PNG, JPEG and WebP photos up to 2048 × 2048 pixels. Try a smaller photo.") },
         { status: 400 },
       );
     }
   }
-  if (combines && editing) reason = `Flash combines your ${photos.length} photos into one picture.`;
+  if (combines && editing) reason = t("Flash combines your {count} photos into one picture.", { count: photos.length });
   // Only FLUX.2 Edit takes several photos at once; the other photo tools work on one.
   const picked = isMedia(engine) ? pickModel(engine, last.content, providers(), combines ? "flux-2-edit" : body.model, editing) : null;
   const model = picked?.model ?? null;
@@ -678,15 +733,23 @@ export async function POST(request: Request) {
       };
       let planned = await plan(wanted ?? autoPick.level);
       levelWhy = !wanted
-        ? autoPick.why
+        ? t(autoPick.why)
         : planned.choice.level === wanted
-          ? `You picked ${levelName(wanted)}.`
-          : `Research runs on ${levelName(planned.choice.level)} or above, so it answered instead of ${levelName(wanted)}.`;
+          ? t("You picked {level}.", { level: levelName(wanted) })
+          : t("Research runs on {level} or above, so it answered instead of {picked}.", {
+              level: levelName(planned.choice.level),
+              picked: levelName(wanted),
+            });
       // Not enough credits for the level picked: Auto's level answers when the user has enough for that.
       if (wanted && wanted !== autoPick.level && available < planned.hold.needed) {
         const instead = await plan(autoPick.level);
         if (available >= instead.hold.needed) {
-          levelWhy = `${levelName(wanted)} needs ${planned.hold.needed} credits for this and you have ${available}, so ${levelName(autoPick.level)} answered.`;
+          levelWhy = t("{picked} needs {credits} credits for this and you have {available}, so {level} answered.", {
+            picked: levelName(wanted),
+            credits: planned.hold.needed,
+            available,
+            level: levelName(autoPick.level),
+          });
           planned = instead;
         }
       }
@@ -707,9 +770,15 @@ export async function POST(request: Request) {
     const lane = model?.id === "post-pack" ? null : freeEligible(engine, last);
     if (lane) {
       if (!(await reserveFreeUser(user.id, lane))) {
+        const left = { credits: available };
         return Response.json(
           {
-            error: `You've used today's free ${lane === "image" ? "images" : lane === "transcribe" ? "transcripts" : "messages"} and you have ${available} credits. Free use resets tomorrow, or get more credits now.`,
+            error:
+              lane === "image"
+                ? t("You've used today's free images and you have {credits} credits. Free use resets tomorrow, or get more credits now.", left)
+                : lane === "transcribe"
+                  ? t("You've used today's free transcripts and you have {credits} credits. Free use resets tomorrow, or get more credits now.", left)
+                  : t("You've used today's free messages and you have {credits} credits. Free use resets tomorrow, or get more credits now.", left),
             code: "out_of_credits",
             needed,
           },
@@ -722,39 +791,40 @@ export async function POST(request: Request) {
     }
   }
   if (model && !free && needed >= CONFIRM_CREDITS && available >= needed && body.confirmed !== true) {
-    const what =
+    // The price question, which a voice conversation also reads out.
+    const price = { model: model.label, credits: needed.toLocaleString(t.locale), available: available.toLocaleString(t.locale) };
+    const error =
       model.id === "post-pack"
-        ? "social post pack with a video"
-        : `${model.label} ${engine === "video" ? (model.id === "movie" ? "movie" : "video") : engine === "music" ? "track" : engine}`;
-    return Response.json(
-      {
-        error: `This ${what} uses ${needed.toLocaleString("en-US")} credits. You have ${available.toLocaleString("en-US")}.`,
-        code: "confirm_cost",
-        needed,
-      },
-      { status: 409 },
-    );
+        ? t("This social post pack with a video uses {credits} credits. You have {available}.", price)
+        : engine === "video"
+          ? model.id === "movie"
+            ? t("This {model} movie uses {credits} credits. You have {available}.", price)
+            : t("This {model} video uses {credits} credits. You have {available}.", price)
+          : engine === "music"
+            ? t("This {model} track uses {credits} credits. You have {available}.", price)
+            : t("This {model} image uses {credits} credits. You have {available}.", price);
+    return Response.json({ error, code: "confirm_cost", needed }, { status: 409 });
   }
   const freeUse = { provider: "", model: "" };
   const chargeId = held ? await charge(user.id, held, `${engine} request`) : 0;
   if (chargeId === null) {
-    return Response.json(
-      {
-        error:
-          `This needs ${metered ? "at least " : ""}${needed} credits and you have ${available}.` +
-          (!verified
-            ? " Confirm your email to get your free credits and free daily messages."
-            : "") +
-          (verified && freeChatConfigured()
-            ? " Free models still answer chat, writing, code and translation" +
-              (freeImageConfigured() ? ", make images" : "") +
-              (freeTranscribeConfigured() ? ", and transcribe short recordings." : ".")
-            : ""),
-        code: "out_of_credits",
-        needed,
-      },
-      { status: 402 },
-    );
+    const counts = { needed, available };
+    const notes = [
+      metered ? t("This needs at least {needed} credits and you have {available}.", counts) : t("This needs {needed} credits and you have {available}.", counts),
+    ];
+    if (!verified) notes.push(t("Confirm your email to get your free credits and free daily messages."));
+    if (verified && freeChatConfigured()) {
+      notes.push(
+        freeImageConfigured()
+          ? freeTranscribeConfigured()
+            ? t("Free models still answer chat, writing, code and translation, make images, and transcribe short recordings.")
+            : t("Free models still answer chat, writing, code and translation, make images.")
+          : freeTranscribeConfigured()
+            ? t("Free models still answer chat, writing, code and translation, and transcribe short recordings.")
+            : t("Free models still answer chat, writing, code and translation."),
+      );
+    }
+    return Response.json({ error: notes.join(" "), code: "out_of_credits", needed }, { status: 402 });
   }
   // Saved files take the extension of what the provider really sent, so downloads open correctly.
   const store: Store = (media, name) => saveFile(user.id, media.mime, withExtension(name, media.mime), media.data);
@@ -782,15 +852,23 @@ export async function POST(request: Request) {
         demo: !live,
         cost: metered && !free ? 0 : held,
         ...(free
-          ? { free: true, model: free === "image" ? "FLUX.1 schnell" : free === "transcribe" ? "Whisper" : "Free model", modelWhy: "You're out of credits, so Flash used a free model." }
+          ? {
+              free: true,
+              model: free === "image" ? "FLUX.1 schnell" : free === "transcribe" ? "Whisper" : t("Free model"),
+              modelWhy: t("You're out of credits, so Flash used a free model."),
+            }
           : model
-            ? { model: model.label, modelWhy: picked!.why }
-            : claudeRun && { model: levelName(claudeRun.level), modelWhy: levelWhy }),
+            ? { model: model.label, modelWhy: pickedWhy(picked!, t) }
+            : // The level's name stays as it is: the browser matches it to the level's sign.
+              claudeRun && { model: levelName(claudeRun.level), modelWhy: levelWhy }),
       };
       send(routed);
       // The reply's header names the level that really answered.
       const steppedDown = (choice: ClaudeChoice) => {
-        if (claudeRun) send({ ...routed, model: levelName(choice.level), modelWhy: `${levelName(claudeRun.level)} was busy, so ${levelName(choice.level)} answered.` });
+        if (claudeRun) {
+          const modelWhy = t("{level} was busy, so {instead} answered.", { level: levelName(claudeRun.level), instead: levelName(choice.level) });
+          send({ ...routed, model: levelName(choice.level), modelWhy });
+        }
         claudeRun = choice;
       };
       let ok = true;
@@ -798,8 +876,8 @@ export async function POST(request: Request) {
       let failure = "";
       try {
         const events = free
-          ? runFree(free, engine, history, preferences, store, freeUse, countryOf(request))
-          : run(engine, history, preferences, store, model, meter, budget, mediaNotes, claudeRun, steppedDown);
+          ? runFree(free, engine, history, preferences, store, freeUse, countryOf(request), t)
+          : run(engine, history, preferences, store, model, meter, budget, mediaNotes, claudeRun, steppedDown, t);
         for await (const event of events) {
           if (cancelled || request.signal.aborted) {
             stopped = true;
@@ -814,8 +892,10 @@ export async function POST(request: Request) {
         // Provider errors can hold raw responses, so only messages written for the user are shown.
         failure =
           err instanceof FriendlyError
-            ? err.message
-            : `${engine === "text" ? "Flash" : ENGINE_LABELS[engine]} is busy right now. Please try again in a moment.`;
+            ? err.in(t)
+            : engine === "text"
+              ? t("Flash is busy right now. Please try again in a moment.")
+              : t("{engine} is busy right now. Please try again in a moment.", { engine: t(ENGINE_LABELS[engine]) });
       }
       const costCents = spend.reduce((sum, s) => sum + s.cents, 0);
       // A failed request costs only the provider work that really ran. A stopped reply is
@@ -849,7 +929,7 @@ export async function POST(request: Request) {
           ok,
         }).catch((err) => console.error("[flash] usage log failed", err));
       }
-      if (!ok) send({ type: "error", message: failure + refundNote(held, credits) });
+      if (!ok) send({ type: "error", message: failure + refundNote(held, credits, t) });
       if (cancelled) return;
       if (metered && ok && !free) send({ type: "cost", credits });
       send({ type: "done" });

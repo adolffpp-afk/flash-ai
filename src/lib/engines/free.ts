@@ -1,6 +1,7 @@
 import type { ChatTurn, Engine, StreamEvent } from "../types.ts";
 import { system, type WritingMode } from "./claude.ts";
-import type { Media } from "./media.ts";
+import { NO_SPEECH, type Media } from "./media.ts";
+import { msg } from "../i18n.ts";
 import { FriendlyError } from "./errors.ts";
 
 /*
@@ -314,8 +315,8 @@ export async function* streamFreeChat(
   }
   throw new FriendlyError(
     lastError
-      ? "The free models are busy right now. Please try again in a minute, or get more credits."
-      : "Today's free messages are used up across Flash. They reset tomorrow, or you can get more credits.",
+      ? msg("The free models are busy right now. Please try again in a minute, or get more credits.")
+      : msg("Today's free messages are used up across Flash. They reset tomorrow, or you can get more credits."),
   );
 }
 
@@ -348,5 +349,5 @@ export async function freeTranscribe(file: { name: string; mediaType: string; da
   });
   const json = (await res.json().catch(() => ({}))) as { text?: string; duration?: number; error?: { message?: string } };
   if (!res.ok) throw new Error(json.error?.message ?? `The free transcription model returned ${res.status}`);
-  return { text: json.text?.trim() || "(No speech found in this file.)", seconds: Math.max(MIN_AUDIO_SECONDS, Math.ceil(json.duration ?? 0)) };
+  return { text: json.text?.trim() || NO_SPEECH, seconds: Math.max(MIN_AUDIO_SECONDS, Math.ceil(json.duration ?? 0)) };
 }

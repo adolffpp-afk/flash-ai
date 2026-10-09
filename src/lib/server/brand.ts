@@ -2,6 +2,7 @@ import { EMPTY_BRAND, LOGO_TYPES, MAX_LOGO_BYTES, cleanBrand, type BrandKit } fr
 import { all, one, run, now } from "./db.ts";
 import { saveFile } from "./files.ts";
 import { publicFileLink } from "./connector.ts";
+import { english, type Translate } from "../i18n.ts";
 
 // Old logos are kept so sites published with them keep showing them, up to this many per user.
 export const KEPT_LOGOS = 5;
@@ -21,10 +22,10 @@ export async function getBrand(userId: string, base: string): Promise<BrandKit> 
 
 export type LogoUpload = { mediaType: string; data: string };
 
-/** Why a logo can't be used, or null. */
-export function logoProblem(logo: LogoUpload): string | null {
-  if (!LOGO_TYPES.includes(logo.mediaType)) return "The logo must be a PNG, JPEG or WebP picture.";
-  if (typeof logo.data !== "string" || (logo.data.length * 3) / 4 > MAX_LOGO_BYTES) return "The logo must be 1 MB or smaller.";
+/** Why a logo can't be used, worded with `t`, or null. */
+export function logoProblem(logo: LogoUpload, t: Translate = english): string | null {
+  if (!LOGO_TYPES.includes(logo.mediaType)) return t("The logo must be a PNG, JPEG or WebP picture.");
+  if (typeof logo.data !== "string" || (logo.data.length * 3) / 4 > MAX_LOGO_BYTES) return t("The logo must be 1 MB or smaller.");
   return null;
 }
 

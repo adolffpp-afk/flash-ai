@@ -1,3 +1,4 @@
+import { english, type Translate } from "./i18n.ts";
 import type { UIMessage } from "./store.ts";
 
 // Shared by the downloaded chat and the printed answer: light, readable and print-friendly.
@@ -31,6 +32,9 @@ const STYLE = `  :root { --ink: #16201c; --muted: #5d6b65; --line: #dde5e1; --ac
 const esc = (text: string) =>
   text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
+/** A translated phrase as HTML, with its {blanks} filled by HTML (links) that is already safe. */
+const fillHtml = (text: string, parts: Record<string, string>) => esc(text).replace(/\{(\w+)\}/g, (all, name: string) => parts[name] ?? all);
+
 /**
  * A reply's text for downloads. Documents Flash used to wrap in a ```markdown block come out as
  * the document itself, so Word, PDF and PowerPoint show the formatting instead of raw code.
@@ -59,14 +63,23 @@ export function chatFileName(name: string): string {
 export function chatDocument(
   name: string,
   messages: UIMessage[],
-  opts: { markdown: (text: string) => string; picture: (url: string) => string | null; link: (url: string) => string; date: string },
+  opts: {
+    markdown: (text: string) => string;
+    picture: (url: string) => string | null;
+    link: (url: string) => string;
+    date: string;
+    // Flash's own words on the page, in the language Flash is shown in.
+    t?: Translate;
+    lang?: string;
+  },
 ): string {
+  const t = opts.t ?? english;
   const parts = messages
     .filter((m) => !m.pending)
     .map((m) => {
       if (m.role === "user") {
-        const file = m.attachmentName ? `<p class="file">📎 ${esc(m.attachmentName)}</p>` : "";
-        return `<section class="you"><h2>You</h2>${file}<p class="said">${esc(m.content).replace(/\n/g, "<br>")}</p></section>`;
+        const file = m.attachmentName ? `<p class="file">📎 ${esc(t(m.attachmentName))}</p>` : "";
+        return `<section class="you"><h2>${esc(t("You"))}</h2>${file}<p class="said">${esc(m.content).replace(/\n/g, "<br>")}</p></section>`;
       }
       const body: string[] = [];
       if (m.content.trim()) body.push(opts.markdown(m.content));
@@ -75,20 +88,26 @@ export function chatDocument(
         body.push(
           src
             ? `<figure><img src="${src}" alt="${esc(img.prompt)}"><figcaption>${esc(img.prompt)}</figcaption></figure>`
-            : `<p class="note">Picture: ${esc(img.prompt)}</p>`,
+            : `<p class="note">${esc(t("Picture: {prompt}", { prompt: img.prompt }))}</p>`,
         );
       }
       for (const v of m.videos ?? []) {
-        body.push(`<p class="note">🎬 Video: <a href="${esc(opts.link(v.url))}">${esc(v.prompt)}</a> (opens in Flash)</p>`);
+        const link = `<a href="${esc(opts.link(v.url))}">${esc(v.prompt)}</a>`;
+        body.push(`<p class="note">🎬 ${fillHtml(t("Video: {link} (opens in Flash)"), { link })}</p>`);
       }
-      if (m.audio) body.push(`<p class="note">🎵 <a href="${esc(opts.link(m.audio))}">${esc(m.audioLabel || "Audio")}</a> (opens in Flash)</p>`);
+      if (m.audio) {
+        const link = `<a href="${esc(opts.link(m.audio))}">${esc(m.audioLabel || t("Audio"))}</a>`;
+        body.push(`<p class="note">🎵 ${fillHtml(t("{link} (opens in Flash)"), { link })}</p>`);
+      }
       if (m.app) {
-        const where = m.app.slug ? ` <a href="${esc(opts.link(`/p/${m.app.slug}`))}">Open it</a>` : "";
-        body.push(`<p class="note">${m.app.kind === "slides" ? "🖥️ Slides" : "🧩 App"}: ${esc(m.app.title)}.${where}</p>`);
+        const where = m.app.slug ? ` <a href="${esc(opts.link(`/p/${m.app.slug}`))}">${esc(t("Open it"))}</a>` : "";
+        const made = m.app.kind === "slides" ? t("Slides: {title}.", { title: m.app.title }) : t("App: {title}.", { title: m.app.title });
+        body.push(`<p class="note">${m.app.kind === "slides" ? "🖥️" : "🧩"} ${esc(made)}${where}</p>`);
       }
       if (m.after?.trim()) body.push(opts.markdown(m.after));
       if (m.sources?.length) {
-        body.push(`<p class="note">Sources: ${m.sources.map((s) => `<a href="${esc(s.url)}">${esc(s.title)}</a>`).join(" · ")}</p>`);
+        const links = m.sources.map((s) => `<a href="${esc(s.url)}">${esc(s.title)}</a>`).join(" · ");
+        body.push(`<p class="note">${fillHtml(t("Sources: {links}"), { links })}</p>`);
       }
       if (m.error) body.push(`<p class="note">${esc(m.error)}</p>`);
       if (!body.length) return "";
@@ -97,7 +116,7 @@ export function chatDocument(
     .join("\n");
 
   return `<!doctype html>
-<html lang="en">
+<html lang="${esc(opts.lang ?? "en")}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -107,9 +126,9 @@ ${STYLE}</style>
 </head>
 <body>
 <main>
-<header><h1>${esc(name)}</h1><p>A chat with Flash AI · ${esc(opts.date)}</p></header>
+<header><h1>${esc(name)}</h1><p>${esc(t("A chat with Flash AI · {date}", { date: opts.date }))}</p></header>
 ${parts}
-<footer>Made with Flash AI · <a href="https://www.flash-app.dev">flash-app.dev</a></footer>
+<footer>${esc(t("Made with Flash AI"))} · <a href="https://www.flash-app.dev">flash-app.dev</a></footer>
 </main>
 </body>
 </html>
@@ -120,9 +139,9 @@ ${parts}
  * One answer as a page to print or save as PDF: `title` heads it and names the PDF, `html` is the
  * answer already turned from Markdown into HTML.
  */
-export function answerDocument(title: string, html: string, date: string): string {
+export function answerDocument(title: string, html: string, date: string, t: Translate = english, lang = "en"): string {
   return `<!doctype html>
-<html lang="en">
+<html lang="${esc(lang)}">
 <head>
 <meta charset="utf-8">
 <title>${esc(title)}</title>
@@ -132,7 +151,7 @@ ${STYLE}</style>
 <body>
 <main>
 ${html}
-<footer>Made with Flash AI · ${esc(date)}</footer>
+<footer>${esc(t("Made with Flash AI · {date}", { date }))}</footer>
 </main>
 </body>
 </html>

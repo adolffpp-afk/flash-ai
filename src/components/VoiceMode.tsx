@@ -2,9 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { hasBuiltInRecognition, micBlocked, newRecognition, releaseMic, takeMic } from "@/lib/listen";
-import { isGoodbye, isNo, isYes, speechChunks } from "@/lib/voice-chat";
+import { GOODBYE_WORDS, NO_WORDS, YES_WORDS, isGoodbye, isNo, isYes, speechChunks } from "@/lib/voice-chat";
 import { readAloudVoice } from "@/lib/device-settings";
 import { speechLang } from "@/lib/languages";
+import { msg } from "@/lib/i18n";
+import { tNow, useT } from "@/lib/use-t";
 
 /** What Flash says after a request, and whether it asked to go ahead with a costly one. */
 export type VoiceAnswer = { say: string; confirm: boolean };
@@ -12,11 +14,11 @@ export type VoiceAnswer = { say: string; confirm: boolean };
 type Phase = "starting" | "listening" | "thinking" | "speaking" | "paused";
 
 const LABELS: Record<Phase, string> = {
-  starting: "Starting…",
-  listening: "Listening…",
-  thinking: "Thinking…",
-  speaking: "Speaking…",
-  paused: "Paused",
+  starting: msg("Starting…"),
+  listening: msg("Listening…"),
+  thinking: msg("Thinking…"),
+  speaking: msg("Speaking…"),
+  paused: msg("Paused"),
 };
 
 // After this long with nothing said, Flash stops listening until the user taps the circle.
@@ -26,7 +28,7 @@ const QUIET_MS = 60_000;
 const END_SILENCE_MS = 1200;
 const NO_SPEECH_MS = 12_000;
 const MAX_TURN_MS = 30_000;
-const MIC_BLOCKED = "Allow the microphone for Flash in your browser, then tap the circle.";
+const MIC_BLOCKED = msg("Allow the microphone for Flash in your browser, then tap the circle.");
 
 type VoiceProps = {
   name: string;
@@ -71,7 +73,8 @@ function speakPieces(text: string, lang: string): SpeechSynthesisUtterance[] {
 
 /**
  * One voice conversation: listen, send what was heard to the chat, say the answer, listen again,
- * until it is stopped. Lives outside React so its timers and callbacks aren't tied to renders.
+ * until it is stopped. Lives outside React so its timers and callbacks aren't tied to renders; what
+ * it says and shows is in the language Flash is shown in at that moment (tNow).
  */
 class Conversation {
   private alive = true;
@@ -98,7 +101,7 @@ class Conversation {
     let pending = p().first?.trim() ?? "";
     let confirming = false;
     this.heardAt = Date.now();
-    if (!pending) await this.say(p().woke ? `Yes, ${p().name}?` : `Hi ${p().name}. What can I do for you?`);
+    if (!pending) await this.say(p().woke ? tNow("Yes, {name}?", { name: p().name }) : tNow("Hi {name}. What can I do for you?", { name: p().name }));
     while (this.alive) {
       if (this.paused) {
         this.show("paused");
@@ -121,17 +124,17 @@ class Conversation {
       }
       this.heardAt = Date.now();
       this.screen.you(heard);
-      if (isGoodbye(heard)) {
-        await this.say(`Bye, ${p().name}.`);
+      if (isGoodbye(heard, tNow(GOODBYE_WORDS))) {
+        await this.say(tNow("Bye, {name}.", { name: p().name }));
         if (this.alive) p().onClose();
         return;
       }
       this.show("thinking");
       this.screen.flash("");
       let answer: VoiceAnswer;
-      if (confirming && isYes(heard)) answer = await p().confirm();
-      else if (confirming && isNo(heard)) answer = { say: "Okay, I won't make it.", confirm: false };
-      else if (p().busy) answer = { say: "I'm still working on your last request. Ask me again when it's done.", confirm: false };
+      if (confirming && isYes(heard, tNow(YES_WORDS))) answer = await p().confirm();
+      else if (confirming && isNo(heard, tNow(NO_WORDS))) answer = { say: tNow("Okay, I won't make it."), confirm: false };
+      else if (p().busy) answer = { say: tNow("I'm still working on your last request. Ask me again when it's done."), confirm: false };
       else answer = await p().ask(heard);
       confirming = answer.confirm;
       if (!this.alive) return;
@@ -239,7 +242,7 @@ class Conversation {
       };
       rec.onerror = (e) => {
         if (micBlocked(e.error)) {
-          this.screen.problem(MIC_BLOCKED);
+          this.screen.problem(tNow(MIC_BLOCKED));
           this.paused = true;
           stopped = true;
         }
@@ -268,7 +271,7 @@ class Conversation {
       this.audio = { stream, context: new AudioContext() };
       return this.audio;
     } catch {
-      this.screen.problem(MIC_BLOCKED);
+      this.screen.problem(tNow(MIC_BLOCKED));
       this.paused = true;
       return null;
     }
@@ -277,7 +280,7 @@ class Conversation {
   /** Records one turn, ending it after a pause, and has Flash write down what was said. */
   private async hearRecorded(): Promise<string | null> {
     if (typeof MediaRecorder === "undefined" || !navigator.mediaDevices?.getUserMedia) {
-      this.screen.problem("This browser can't use the microphone.");
+      this.screen.problem(tNow("This browser can't use the microphone."));
       this.paused = true;
       return null;
     }
@@ -345,7 +348,7 @@ class Conversation {
       const res = await fetch("/api/voice/hear", { method: "POST", headers: { "Content-Type": type }, body: new Blob(chunks, { type }) });
       const data = (await res.json().catch(() => ({}))) as { text?: string; error?: string };
       if (!res.ok) {
-        this.screen.problem(data.error ?? "Flash couldn't hear that. Please try again.");
+        this.screen.problem(data.error ?? tNow("Flash couldn't hear that. Please try again."));
         // Out of credits or not available: stop listening rather than fail every turn.
         if (res.status === 402 || res.status === 503) this.paused = true;
         return "";
@@ -353,7 +356,7 @@ class Conversation {
       this.screen.problem("");
       return (data.text ?? "").trim();
     } catch {
-      this.screen.problem("Flash couldn't hear that. Check your connection.");
+      this.screen.problem(tNow("Flash couldn't hear that. Check your connection."));
       return "";
     }
   }
@@ -365,6 +368,7 @@ class Conversation {
  * Chrome, Edge and Safari; elsewhere each turn is recorded and Flash writes it down.
  */
 export function VoiceMode(props: VoiceProps) {
+  const t = useT();
   const [phase, setPhase] = useState<Phase>("starting");
   const [you, setYou] = useState("");
   const [flash, setFlash] = useState("");
@@ -415,10 +419,10 @@ export function VoiceMode(props: VoiceProps) {
           ? "bg-primary/20 ring-2 ring-primary/40 motion-safe:animate-spin [border-top-color:transparent]"
           : "bg-zinc-700/60 ring-2 ring-white/10";
   const circleLabel =
-    phase === "speaking" ? "Interrupt Flash" : phase === "paused" ? "Start listening" : phase === "listening" ? "Pause listening" : LABELS[phase];
+    phase === "speaking" ? t("Interrupt Flash") : phase === "paused" ? t("Start listening") : phase === "listening" ? t("Pause listening") : t(LABELS[phase]);
 
   return (
-    <section aria-label="Voice conversation" className="rounded-3xl border border-primary/25 bg-zinc-900/90 p-3 shadow-2xl sm:p-4">
+    <section aria-label={t("Voice conversation")} className="rounded-3xl border border-primary/25 bg-zinc-900/90 p-3 shadow-2xl sm:p-4">
       <div className="flex items-center gap-3 sm:gap-4">
         <button
           type="button"
@@ -432,37 +436,37 @@ export function VoiceMode(props: VoiceProps) {
         </button>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-zinc-100" aria-live="polite">
-            {LABELS[phase]}
-            {phase === "paused" && <span className="font-normal text-zinc-400"> · tap the circle to talk</span>}
+            {t(LABELS[phase])}
+            {phase === "paused" && <span className="font-normal text-zinc-400"> · {t("tap the circle to talk")}</span>}
           </p>
           {you && (
             <p className="truncate text-xs text-zinc-400" title={you}>
-              You: {you}
+              {t("You: {words}", { words: you })}
             </p>
           )}
           {flash && (
             <p className="line-clamp-2 text-xs text-zinc-300" title={flash}>
-              Flash: {flash}
+              {t("Flash: {words}", { words: flash })}
             </p>
           )}
         </div>
         {phase === "thinking" && props.busy && (
           <button type="button" onClick={props.onStop} className="shrink-0 rounded-full border border-white/10 px-3 py-1.5 text-xs text-zinc-200 hover:bg-white/[0.06]">
-            Stop
+            {t("Stop")}
           </button>
         )}
         <button
           type="button"
           onClick={props.onClose}
           className="shrink-0 rounded-full bg-zinc-100 px-3 py-1.5 text-xs font-medium text-zinc-900 hover:bg-white"
-          aria-label="End voice conversation"
+          aria-label={t("End voice conversation")}
         >
-          End
+          {t("End")}
         </button>
       </div>
       {silent && (
         <button type="button" onClick={hearAgain} className="mt-2 text-xs text-primary-soft hover:underline">
-          🔊 Tap to hear Flash
+          🔊 {t("Tap to hear Flash")}
         </button>
       )}
       {problem && (
@@ -472,11 +476,12 @@ export function VoiceMode(props: VoiceProps) {
       )}
       {!builtIn && (
         <p className="mt-2 text-xs text-zinc-500">
-          This browser can&apos;t understand speech by itself, so Flash listens for you: about 3 credits each time you speak. In Chrome, Edge or
-          Safari, listening is free.
+          {t(
+            "This browser can't understand speech by itself, so Flash listens for you: about 3 credits each time you speak. In Chrome, Edge or Safari, listening is free.",
+          )}
         </p>
       )}
-      <p className="mt-1 hidden text-xs text-zinc-600 sm:block">Say &ldquo;bye&rdquo; or press End to finish. Everything said stays in this chat.</p>
+      <p className="mt-1 hidden text-xs text-zinc-600 sm:block">{t("Say “bye” or press End to finish. Everything said stays in this chat.")}</p>
     </section>
   );
 }

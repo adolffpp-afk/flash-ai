@@ -1,3 +1,4 @@
+import { msg } from "../i18n.ts";
 import { FriendlyError, MEDIA_WAIT_MS, JobAbandoned } from "./errors.ts";
 import { MAX_SPEECH_CHARS } from "../credits.ts";
 import { falConfigured, falGenerate, falRun } from "./fal.ts";
@@ -49,7 +50,7 @@ export async function generateImage(prompt: string): Promise<Media> {
     if (!img.ok) throw await failure(img, "The image service");
     return { data: Buffer.from(await img.arrayBuffer()), mime: img.headers.get("content-type") ?? "image/png" };
   }
-  throw new FriendlyError("The image service sent no image back. Please try again.");
+  throw new FriendlyError(msg("The image service sent no image back. Please try again."));
 }
 
 /**
@@ -72,7 +73,7 @@ export async function generateVideo(prompt: string, onProgress: (pct: number) =>
       if (job.status === "queued") {
         await fetch(`${OPENAI}/videos/${job.id}`, { method: "DELETE", headers: openaiHeaders() }).catch(() => {});
       }
-      throw new JobAbandoned("The video is taking too long, so Flash stopped waiting. Please try again.", job.status !== "queued");
+      throw new JobAbandoned(msg("The video is taking too long, so Flash stopped waiting. Please try again."), job.status !== "queued");
     }
     await sleep(5000);
     const poll = await fetch(`${OPENAI}/videos/${job.id}`, { headers: openaiHeaders() });
@@ -123,8 +124,8 @@ export async function composeMusic(prompt: string, seconds = 30): Promise<Media>
   return audio(res);
 }
 
-/** What a transcript says when a file has no speech in it. */
-export const NO_SPEECH = "(No speech found in this file.)";
+/** What a transcript says when a file has no speech in it. Compared as it is, so it's translated where it's shown. */
+export const NO_SPEECH = msg("(No speech found in this file.)");
 
 /** Transcribes an audio or video file with ElevenLabs Scribe. */
 export async function transcribe(file: { name: string; mediaType: string; data: string }): Promise<string> {

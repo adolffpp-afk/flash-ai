@@ -11,6 +11,8 @@ import type { FeatureAction } from "@/lib/features";
 import type { Level } from "@/lib/levels";
 import type { Choice } from "./ComposerTools";
 import { onSettingChange, readSetting } from "@/lib/device-settings";
+import { msg } from "@/lib/i18n";
+import { useT } from "@/lib/use-t";
 import { EngineIcon } from "./EngineIcon";
 import { Everything } from "./Everything";
 
@@ -136,13 +138,17 @@ export function Orb({ className = "" }: { className?: string }) {
 
 /** "Good afternoon, Adolff" over "Friday • Oct 9, 2026 • Your workspace is ready". */
 export function Greeting({ me, className = "" }: { me: Me; className?: string }) {
+  const t = useT();
   const now = new Date();
+  const name = firstName(me.user);
+  const hello = t(greeting(now));
   return (
     <div className={`min-w-0 ${className}`}>
       <h2 className="truncate text-[26px] font-semibold tracking-[-0.02em] text-white sm:text-[30px]">
-        {greeting(now)}, {firstName(me.user)}
+        {/* firstName gives "there" when there's no name to use: a whole phrase, so it reads naturally in each language. */}
+        {name === "there" ? t("{greeting}, there", { greeting: hello }) : t("{greeting}, {name}", { greeting: hello, name })}
       </h2>
-      <p className="mt-1 truncate text-[15px] text-zinc-400">{dateLine(now)}</p>
+      <p className="mt-1 truncate text-[15px] text-zinc-400">{dateLine(now, t.locale, t("Your workspace is ready"))}</p>
     </div>
   );
 }
@@ -164,10 +170,11 @@ function Card({ title, action, children, className = "" }: { title: string; acti
   );
 }
 
-function ViewAll({ onClick, label = "View all" }: { onClick: () => void; label?: string }) {
+function ViewAll({ onClick, label }: { onClick: () => void; label?: string }) {
+  const t = useT();
   return (
     <button onClick={onClick} className="inline-flex shrink-0 items-center gap-1 text-sm text-primary-soft transition hover:text-white">
-      {label} <Icon d={ICONS.arrow} className="h-3.5 w-3.5" />
+      {label ?? t("View all")} <Icon d={ICONS.arrow} className="h-3.5 w-3.5" />
     </button>
   );
 }
@@ -229,6 +236,7 @@ export function Home({
   shortcuts: boolean;
   paymentsOn: boolean;
 }) {
+  const t = useT();
   const [recent, setRecent] = useState<RecentChat[] | null>(null);
   const [sites, setSites] = useState<Site[] | null>(null);
   const [usage, setUsage] = useState<Usage | null>(null);
@@ -265,45 +273,45 @@ export function Home({
   const inTeam = me.teamCredits !== null;
   const free = !me.plan && !inTeam;
   const allowance = me.plan?.credits ?? me.freeMonthly;
-  const planLabel = me.plan ? `${me.plan.name} plan` : inTeam ? "Team plan" : "Free plan";
+  const planLabel = me.plan ? t("{plan} plan", { plan: me.plan.name }) : inTeam ? t("Team plan") : t("Free plan");
   // Packs, rewards, rollover and team credits can take the balance past the monthly amount.
   const overAllowance = me.credits > allowance;
 
   const chips: { label: string; d: string; hue: string; run: () => void; live: boolean }[] = [
-    { label: "Deep Research", d: ICONS.search, hue: "text-violet-300 light:text-violet-600", run: () => onTool("search"), live: isLive("search") },
-    { label: "Create Image", d: ICONS.image, hue: "text-teal-300 light:text-teal-600", run: () => onTool("image"), live: isLive("image") },
-    { label: "Generate Video", d: ICONS.video, hue: "text-rose-300 light:text-rose-600", run: () => onTool("video"), live: isLive("video") },
-    { label: "Analyze File", d: ICONS.file, hue: "text-sky-300 light:text-sky-600", run: onAttach, live: true },
+    { label: msg("Deep Research"), d: ICONS.search, hue: "text-violet-300 light:text-violet-600", run: () => onTool("search"), live: isLive("search") },
+    { label: msg("Create Image"), d: ICONS.image, hue: "text-teal-300 light:text-teal-600", run: () => onTool("image"), live: isLive("image") },
+    { label: msg("Generate Video"), d: ICONS.video, hue: "text-rose-300 light:text-rose-600", run: () => onTool("video"), live: isLive("video") },
+    { label: msg("Analyze File"), d: ICONS.file, hue: "text-sky-300 light:text-sky-600", run: onAttach, live: true },
   ];
   // Everything else Flash makes, under More.
   const more: { label: string; d: string; run: () => void; live: boolean }[] = [
-    { label: "Build an App", d: ICONS.app, run: () => onTool("app"), live: isLive("app") },
-    { label: "Make Slides", d: ICONS.template, run: () => onTool("slides"), live: isLive("slides") },
-    { label: "Write Code", d: ICONS.code, run: () => onTool("code"), live: isLive("code") },
-    { label: "Docs & Sheets", d: ICONS.file, run: () => onTool("docs"), live: isLive("docs") },
-    { label: "Make Music", d: ICONS.voice, run: () => onTool("music"), live: isLive("music") },
-    { label: "Voice-over", d: ICONS.voice, run: () => onTool("voice"), live: isLive("voice") },
-    { label: "Transcribe", d: ICONS.file, run: () => onTool("transcribe"), live: isLive("transcribe") },
-    { label: "Translate", d: ICONS.globe, run: () => onTool("translate"), live: isLive("translate") },
-    { label: "Start from a template", d: ICONS.template, run: onTemplates, live: true },
+    { label: msg("Build an App"), d: ICONS.app, run: () => onTool("app"), live: isLive("app") },
+    { label: msg("Make Slides"), d: ICONS.template, run: () => onTool("slides"), live: isLive("slides") },
+    { label: msg("Write Code"), d: ICONS.code, run: () => onTool("code"), live: isLive("code") },
+    { label: msg("Docs & Sheets"), d: ICONS.file, run: () => onTool("docs"), live: isLive("docs") },
+    { label: msg("Make Music"), d: ICONS.voice, run: () => onTool("music"), live: isLive("music") },
+    { label: msg("Voice-over"), d: ICONS.voice, run: () => onTool("voice"), live: isLive("voice") },
+    { label: msg("Transcribe"), d: ICONS.file, run: () => onTool("transcribe"), live: isLive("transcribe") },
+    { label: msg("Translate"), d: ICONS.globe, run: () => onTool("translate"), live: isLive("translate") },
+    { label: msg("Start from a template"), d: ICONS.template, run: onTemplates, live: true },
   ];
 
   const tools: { title: string; about: string; d: string; hue: Hue; run: () => void; live: boolean }[] = [
-    { title: "AI Chat", about: "Get instant answers and deep insights", d: ICONS.chat, hue: "blue", run: () => onTool("auto"), live: true },
-    { title: "Voice", about: "Talk, transcribe and create with voice", d: ICONS.voice, hue: "teal", run: onTalk, live: true },
-    { title: "Image", about: "Generate and edit stunning visuals", d: ICONS.image, hue: "orange", run: () => onTool("image"), live: isLive("image") },
-    { title: "Code", about: "Build, debug and ship faster", d: ICONS.code, hue: "violet", run: () => onTool("code"), live: isLive("code") },
-    { title: "Research", about: "Deep research and credible sources", d: ICONS.search, hue: "pink", run: () => onTool("search"), live: isLive("search") },
+    { title: msg("AI Chat"), about: msg("Get instant answers and deep insights"), d: ICONS.chat, hue: "blue", run: () => onTool("auto"), live: true },
+    { title: msg("Voice"), about: msg("Talk, transcribe and create with voice"), d: ICONS.voice, hue: "teal", run: onTalk, live: true },
+    { title: msg("Image"), about: msg("Generate and edit stunning visuals"), d: ICONS.image, hue: "orange", run: () => onTool("image"), live: isLive("image") },
+    { title: msg("Code"), about: msg("Build, debug and ship faster"), d: ICONS.code, hue: "violet", run: () => onTool("code"), live: isLive("code") },
+    { title: msg("Research"), about: msg("Deep research and credible sources"), d: ICONS.search, hue: "pink", run: () => onTool("search"), live: isLive("search") },
   ];
 
   // Each with a key that opens it on Home, pressed on its own while not typing (see the effect below).
   const quick: { label: string; key: string; d: string; run: () => void; live: boolean }[] = [
-    { label: "New Chat", key: "N", d: ICONS.chat, run: () => onTool("auto"), live: true },
-    { label: "Talk with Flash", key: "V", d: ICONS.voice, run: onTalk, live: true },
-    { label: "Generate Image", key: "I", d: ICONS.image, run: () => onTool("image"), live: isLive("image") },
-    { label: "Create Document", key: "D", d: ICONS.file, run: () => onTool("docs"), live: isLive("docs") },
-    { label: "Build an App", key: "B", d: ICONS.app, run: () => onTool("app"), live: isLive("app") },
-    { label: "Start from a Template", key: "T", d: ICONS.template, run: onTemplates, live: true },
+    { label: msg("New Chat"), key: "N", d: ICONS.chat, run: () => onTool("auto"), live: true },
+    { label: msg("Talk with Flash"), key: "V", d: ICONS.voice, run: onTalk, live: true },
+    { label: msg("Generate Image"), key: "I", d: ICONS.image, run: () => onTool("image"), live: isLive("image") },
+    { label: msg("Create Document"), key: "D", d: ICONS.file, run: () => onTool("docs"), live: isLive("docs") },
+    { label: msg("Build an App"), key: "B", d: ICONS.app, run: () => onTool("app"), live: isLive("app") },
+    { label: msg("Start from a Template"), key: "T", d: ICONS.template, run: onTemplates, live: true },
   ];
   // The keys can be turned off in Settings > General > Keyboard.
   const keysOff = useSyncExternalStore(onSettingChange, () => readSetting("homeKeysOff") === "1", () => false);
@@ -335,13 +343,20 @@ export function Home({
   // This month's credits by kind of work: words (chats, research, code, apps), pictures and video, sound, and files and docs.
   const kindOf = (engine: string) =>
     ["image", "video"].includes(engine) ? "visual" : ["voice", "music", "transcribe"].includes(engine) ? "audio" : engine === "docs" ? "files" : "words";
-  const spent = (kind: string) => (usage?.tools ?? []).filter((t) => kindOf(t.engine) === kind).reduce((sum, t) => sum + t.credits, 0);
+  const spent = (kind: string) => (usage?.tools ?? []).filter((u) => kindOf(u.engine) === kind).reduce((sum, u) => sum + u.credits, 0);
   const rows = [
-    { label: "AI Messages", d: ICONS.chat, credits: spent("words") },
-    { label: "Images & Video", d: ICONS.image, credits: spent("visual") },
-    { label: "Voice & Audio", d: ICONS.voice, credits: spent("audio") },
-    { label: "Files & Docs", d: ICONS.file, credits: spent("files") },
+    { label: msg("AI Messages"), d: ICONS.chat, credits: spent("words") },
+    { label: msg("Images & Video"), d: ICONS.image, credits: spent("visual") },
+    { label: msg("Voice & Audio"), d: ICONS.voice, credits: spent("audio") },
+    { label: msg("Files & Docs"), d: ICONS.file, credits: spent("files") },
   ];
+  // Under a site's name: new form messages or visits, then when it last changed, as one phrase.
+  const siteLine = (s: Site) => {
+    const ago = shortAgo(s.updated_at, now.getTime(), t.locale);
+    if (s.unread) return s.unread === 1 ? t("1 new message · Updated {ago}", { ago }) : t("{count} new messages · Updated {ago}", { count: s.unread.toLocaleString(t.locale), ago });
+    if (s.views) return s.views === 1 ? t("1 visit · Updated {ago}", { ago }) : t("{count} visits · Updated {ago}", { count: s.views.toLocaleString(t.locale), ago });
+    return t("Updated {ago}", { ago });
+  };
 
   return (
     <div className="mx-auto w-full max-w-[1600px] px-4 pb-10 pt-4 sm:px-6 sm:pt-6 lg:px-8">
@@ -360,15 +375,15 @@ export function Home({
                 <p className="text-[13px] font-semibold uppercase tracking-[0.34em] text-zinc-300">Flash AI</p>
                 {/* Two lines whatever the width: the type scales with the hero, and each phrase stays whole. */}
                 <h1 className="mt-3 text-[clamp(32px,9.5cqw,48px)] font-bold leading-[1] tracking-[-0.035em] text-white @min-[640px]/hero:text-[clamp(40px,6.5cqw,66px)]">
-                  <span className="whitespace-nowrap">What will you</span> <span className="whitespace-nowrap text-iris">create today?</span>
+                  {t.node("What will you {create}", { create: <span className="whitespace-nowrap text-iris">{t("create today?")}</span> })}
                 </h1>
-                <p className="mt-4 text-[15px] text-zinc-400 sm:text-[17px]">Chat, create, generate, analyze, and build — all in one place.</p>
+                <p className="mt-4 text-[15px] text-zinc-400 sm:text-[17px]">{t("Chat, create, generate, analyze, and build — all in one place.")}</p>
               </div>
               <div className="relative z-10 min-w-0 @min-[640px]/hero:col-start-2 @min-[760px]/hero:-ml-[20%]">
                 {composer}
                 <div
                   className="mt-3 flex flex-wrap gap-2 @min-[640px]/hero:gap-2.5 @min-[640px]/hero:px-1"
-                  aria-label="Quick starts"
+                  aria-label={t("Quick starts")}
                 >
                   {chips
                     .filter((c) => c.live)
@@ -379,7 +394,7 @@ export function Home({
                         className="glass inline-flex h-[34px] shrink-0 items-center gap-1.5 rounded-full px-3 text-[12.5px] text-zinc-200 shadow-none transition hover:text-white hover:brightness-110"
                       >
                         <Icon d={c.d} className={`h-4 w-4 ${c.hue}`} />
-                        {c.label}
+                        {t(c.label)}
                       </button>
                     ))}
                   <div ref={menu === "more" ? menuRef : undefined} className="relative shrink-0">
@@ -389,10 +404,10 @@ export function Home({
                       aria-haspopup="menu"
                       className="glass inline-flex h-[34px] items-center gap-1.5 rounded-full px-3 text-[12.5px] text-zinc-200 shadow-none transition hover:text-white hover:brightness-110"
                     >
-                      More <Icon d={ICONS.down} className="h-3.5 w-3.5 text-zinc-400" />
+                      {t("More")} <Icon d={ICONS.down} className="h-3.5 w-3.5 text-zinc-400" />
                     </button>
                     {menu === "more" && (
-                      <div ref={showWhole} role="menu" aria-label="More tools" className="absolute right-0 top-full z-30 mt-2 w-56 rounded-2xl border border-white/10 bg-zinc-900 p-1.5 shadow-2xl light:shadow-black/10">
+                      <div ref={showWhole} role="menu" aria-label={t("More tools")} className="absolute right-0 top-full z-30 mt-2 w-56 rounded-2xl border border-white/10 bg-zinc-900 p-1.5 shadow-2xl light:shadow-black/10">
                         {more
                           .filter((m) => m.live)
                           .map((m) => (
@@ -406,7 +421,7 @@ export function Home({
                               className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06]"
                             >
                               <Icon d={m.d} className="h-[18px] w-[18px] text-zinc-400" />
-                              {m.label}
+                              {t(m.label)}
                             </button>
                           ))}
                       </div>
@@ -421,18 +436,18 @@ export function Home({
           {/* On a phone a lone last card takes the whole row. */}
           <div className="grid grid-cols-2 gap-3 @min-[520px]/left:grid-cols-3 @min-[680px]/left:grid-cols-5 @max-[520px]/left:[&>:last-child:nth-child(odd)]:col-span-2">
             {tools
-              .filter((t) => t.live)
-              .map((t) => (
+              .filter((tool) => tool.live)
+              .map((tool) => (
                 <button
-                  key={t.title}
-                  onClick={t.run}
+                  key={tool.title}
+                  onClick={tool.run}
                   className="glass group flex min-w-0 flex-col items-start gap-3 rounded-3xl p-3.5 text-left transition hover:-translate-y-0.5 hover:brightness-110 sm:p-4"
                 >
-                  <Tile d={t.d} hue={t.hue} />
+                  <Tile d={tool.d} hue={tool.hue} />
                   <span className="flex w-full min-w-0 items-center gap-1.5">
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[17px] font-semibold tracking-tight text-white">{t.title}</span>
-                      <span className="mt-0.5 line-clamp-2 text-[13px] leading-snug text-zinc-400">{t.about}</span>
+                      <span className="block truncate text-[17px] font-semibold tracking-tight text-white">{t(tool.title)}</span>
+                      <span className="mt-0.5 line-clamp-2 text-[13px] leading-snug text-zinc-400">{t(tool.about)}</span>
                     </span>
                     {/* Only when the cards are wide enough to keep their names whole beside it. */}
                     <Icon d={ICONS.chevron} className="hidden h-4 w-4 shrink-0 text-zinc-500 transition group-hover:translate-x-0.5 group-hover:text-zinc-200 @max-[519px]/left:block @min-[860px]/left:block" />
@@ -442,11 +457,11 @@ export function Home({
           </div>
 
           <div className="grid gap-5 @min-[700px]/left:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
-            <Card title="Recent Conversations" action={chats.length ? <ViewAll onClick={onViewChats} /> : undefined}>
+            <Card title={t("Recent Conversations")} action={chats.length ? <ViewAll onClick={onViewChats} /> : undefined}>
               {!recent ? (
-                <p className="py-6 text-center text-sm text-zinc-500">Loading…</p>
+                <p className="py-6 text-center text-sm text-zinc-500">{t("Loading…")}</p>
               ) : !chats.length ? (
-                <p className="py-6 text-center text-sm text-zinc-400">Your chats will show here. Ask Flash anything above to start one.</p>
+                <p className="py-6 text-center text-sm text-zinc-400">{t("Your chats will show here. Ask Flash anything above to start one.")}</p>
               ) : (
                 <ul className="-mx-1 divide-y divide-white/[0.06]">
                   {chats.slice(0, 5).map((c) => (
@@ -458,15 +473,15 @@ export function Home({
                           <Tile d={ICONS.chat} hue="blue" size="sm" />
                         )}
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[15px] font-medium text-zinc-100">{c.name}</span>
+                          <span className="block truncate text-[15px] font-medium text-zinc-100">{c.name === "New project" ? t("New project") : c.name}</span>
                           {c.preview && <span className="block truncate text-[13px] text-zinc-500">{c.preview}</span>}
                         </span>
-                        <span className="hidden shrink-0 text-xs text-zinc-400 sm:block">{timeAgo(c.updatedAt, now.getTime())}</span>
+                        <span className="hidden shrink-0 text-xs text-zinc-400 sm:block">{timeAgo(c.updatedAt, now.getTime(), t.locale)}</span>
                       </button>
                       <div ref={menu === c.id ? menuRef : undefined} className="relative">
                         <button
                           onClick={() => setMenu(menu === c.id ? "" : c.id)}
-                          aria-label={`More for ${c.name}`}
+                          aria-label={t("More for {name}", { name: c.name })}
                           aria-expanded={menu === c.id}
                           className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-white/[0.06] hover:text-zinc-200"
                         >
@@ -475,9 +490,9 @@ export function Home({
                         {menu === c.id && (
                           <div ref={showWhole} role="menu" className="absolute right-0 top-full z-30 mt-1 w-40 rounded-xl border border-white/10 bg-zinc-900 p-1 shadow-xl">
                             {[
-                              [c.pinned ? "Unpin" : "Pin to the top", () => onPin(c.id)],
-                              ["Rename", () => onRename(c.id)],
-                              ["Delete", () => onDelete(c.id)],
+                              [c.pinned ? msg("Unpin") : msg("Pin to the top"), () => onPin(c.id)],
+                              [msg("Rename"), () => onRename(c.id)],
+                              [msg("Delete"), () => onDelete(c.id)],
                             ].map(([label, run]) => (
                               <button
                                 key={label as string}
@@ -488,7 +503,7 @@ export function Home({
                                 }}
                                 className={`block w-full rounded-lg px-3 py-1.5 text-left text-sm transition hover:bg-white/[0.06] ${label === "Delete" ? "text-red-400" : "text-zinc-200"}`}
                               >
-                                {label as string}
+                                {t(label as string)}
                               </button>
                             ))}
                           </div>
@@ -500,9 +515,9 @@ export function Home({
               )}
             </Card>
 
-            <Card title="Your Workspace" action={sites?.length ? <ViewAll onClick={onApps} /> : undefined}>
+            <Card title={t("Your Workspace")} action={sites?.length ? <ViewAll onClick={onApps} /> : undefined}>
               {!sites ? (
-                <p className="py-6 text-center text-sm text-zinc-500">Loading…</p>
+                <p className="py-6 text-center text-sm text-zinc-500">{t("Loading…")}</p>
               ) : (
                 <div className="grid grid-cols-2 gap-3">
                   {sites.slice(0, 4).map((s, i) => (
@@ -515,19 +530,14 @@ export function Home({
                         <span className="w-full min-w-0">
                           <span className="block truncate text-sm font-semibold text-zinc-100">{s.title || s.slug}</span>
                           <span className="block truncate text-xs text-zinc-400">
-                            {s.unread
-                              ? `${s.unread} new ${s.unread === 1 ? "message" : "messages"} · `
-                              : s.views
-                                ? `${s.views.toLocaleString()} ${s.views === 1 ? "visit" : "visits"} · `
-                                : ""}
-                            Updated {shortAgo(s.updated_at, now.getTime())}
+                            {siteLine(s)}
                           </span>
                         </span>
                       </button>
                       <div ref={menu === `site:${s.slug}` ? menuRef : undefined} className="absolute right-1.5 top-1.5">
                         <button
                           onClick={() => setMenu(menu === `site:${s.slug}` ? "" : `site:${s.slug}`)}
-                          aria-label={`More for ${s.title || s.slug}`}
+                          aria-label={t("More for {name}", { name: s.title || s.slug })}
                           aria-expanded={menu === `site:${s.slug}`}
                           className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-white/[0.08] hover:text-zinc-200"
                         >
@@ -543,7 +553,7 @@ export function Home({
                               onClick={() => setMenu("")}
                               className="block w-full rounded-lg px-3 py-1.5 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06]"
                             >
-                              Visit site
+                              {t("Visit site")}
                             </a>
                             <button
                               role="menuitem"
@@ -553,7 +563,7 @@ export function Home({
                               }}
                               className="block w-full rounded-lg px-3 py-1.5 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06]"
                             >
-                              Open My websites
+                              {t("Open My websites")}
                             </button>
                           </div>
                         )}
@@ -562,23 +572,23 @@ export function Home({
                   ))}
                   {sites.length < 4 &&
                     [
-                      { title: "Build a website", about: "Publish in one click", d: ICONS.globe, run: () => onTool("app"), live: isLive("app") },
-                      { title: "Make slides", about: "From one sentence", d: ICONS.template, run: () => onTool("slides"), live: isLive("slides") },
-                      { title: "Create an image", about: "Logos, posters and photos", d: ICONS.image, run: () => onTool("image"), live: isLive("image") },
-                      { title: "Use a template", about: "Plans, invoices, resumes", d: ICONS.file, run: onTemplates, live: true },
+                      { title: msg("Build a website"), about: msg("Publish in one click"), d: ICONS.globe, run: () => onTool("app"), live: isLive("app") },
+                      { title: msg("Make slides"), about: msg("From one sentence"), d: ICONS.template, run: () => onTool("slides"), live: isLive("slides") },
+                      { title: msg("Create an image"), about: msg("Logos, posters and photos"), d: ICONS.image, run: () => onTool("image"), live: isLive("image") },
+                      { title: msg("Use a template"), about: msg("Plans, invoices, resumes"), d: ICONS.file, run: onTemplates, live: true },
                     ]
-                      .filter((t) => t.live)
+                      .filter((tile) => tile.live)
                       .slice(0, 4 - sites.length)
-                      .map((t, i) => (
+                      .map((tile, i) => (
                         <button
-                          key={t.title}
-                          onClick={t.run}
+                          key={tile.title}
+                          onClick={tile.run}
                           className={`flex min-w-0 flex-col items-start gap-3 rounded-2xl border border-dashed border-white/15 bg-gradient-to-br p-3.5 text-left transition hover:brightness-110 ${TILES[(sites.length + i) % TILES.length]}`}
                         >
-                          <Icon d={t.d} className="h-5 w-5 text-violet-300 light:text-violet-600" />
+                          <Icon d={tile.d} className="h-5 w-5 text-violet-300 light:text-violet-600" />
                           <span className="w-full min-w-0">
-                            <span className="block truncate text-sm font-semibold text-zinc-100">{t.title}</span>
-                            <span className="block truncate text-xs text-zinc-400">{t.about}</span>
+                            <span className="block truncate text-sm font-semibold text-zinc-100">{t(tile.title)}</span>
+                            <span className="block truncate text-xs text-zinc-400">{t(tile.about)}</span>
                           </span>
                         </button>
                       ))}
@@ -591,10 +601,10 @@ export function Home({
         {/* Beside the main column when there's room; below it, side by side, when there isn't. */}
         <aside
           className="grid min-w-0 content-start gap-5 grid-cols-[repeat(auto-fit,minmax(min(100%,280px),1fr))] @min-[1100px]/main:grid-cols-1"
-          aria-label="Your plan and quick tools"
+          aria-label={t("Your plan and quick tools")}
         >
           <Card
-            title="Usage & Plan"
+            title={t("Usage & Plan")}
             action={
               <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-gold/15 px-2.5 py-1 text-xs font-medium text-gold-soft light:bg-amber-50">
                 <span aria-hidden>👑</span> {planLabel}
@@ -602,20 +612,21 @@ export function Home({
             }
           >
             <p className="-mt-1 mb-4 text-sm text-zinc-400">
-              {me.credits < 10 ? "You're running low on credits." : "Your AI creativity engine is running strong."}{" "}
+              {me.credits < 10 ? t("You're running low on credits.") : t("Your AI creativity engine is running strong.")}{" "}
               <span className="tabular-nums text-zinc-200">
-                {me.credits.toLocaleString()}
-                {!overAllowance && ` of ${allowance.toLocaleString()}`} credits left.
+                {overAllowance
+                  ? t("{count} credits left.", { count: me.credits.toLocaleString(t.locale) })
+                  : t("{count} of {total} credits left.", { count: me.credits.toLocaleString(t.locale), total: allowance.toLocaleString(t.locale) })}
               </span>
             </p>
-            <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.16em] text-zinc-500">Used this month</p>
+            <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.16em] text-zinc-500">{t("Used this month")}</p>
             <ul className="space-y-4">
               {rows.map((r, i) => (
                 <li key={r.label}>
                   <div className="flex items-center gap-2.5 text-sm">
                     <Icon d={r.d} className={`h-[18px] w-[18px] shrink-0 ${ROW_ICONS[i]}`} />
-                    <span className="min-w-0 flex-1 truncate text-zinc-200">{r.label}</span>
-                    <span className="shrink-0 tabular-nums text-zinc-400">{usage ? `${r.credits.toLocaleString()} credits` : "…"}</span>
+                    <span className="min-w-0 flex-1 truncate text-zinc-200">{t(r.label)}</span>
+                    <span className="shrink-0 tabular-nums text-zinc-400">{usage ? t("{count} credits", { count: r.credits.toLocaleString(t.locale) }) : "…"}</span>
                   </div>
                   <div className="ml-7 mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.08]">
                     {r.credits > 0 && (
@@ -626,7 +637,7 @@ export function Home({
               ))}
             </ul>
             <button onClick={onUsage} className="mt-4 inline-flex items-center gap-1 text-sm text-primary-soft transition hover:text-white">
-              See all usage <Icon d={ICONS.arrow} className="h-3.5 w-3.5" />
+              {t("See all usage")} <Icon d={ICONS.arrow} className="h-3.5 w-3.5" />
             </button>
           </Card>
 
@@ -635,18 +646,18 @@ export function Home({
               <div className="pointer-events-none absolute inset-0 bg-iris-wash opacity-90" />
               <div className="relative">
                 <h3 className="flex items-center gap-2 text-[17px] font-semibold tracking-tight text-white">
-                  <span aria-hidden>🌟</span> Unlock More with Flash Pro
+                  <span aria-hidden>🌟</span> {t("Unlock More with Flash Pro")}
                 </h3>
-                <p className="mt-1.5 text-sm text-zinc-300">3,000 credits a month for apps, slides, research and more. Unused credits carry over.</p>
+                <p className="mt-1.5 text-sm text-zinc-300">{t("3,000 credits a month for apps, slides, research and more. Unused credits carry over.")}</p>
                 <button onClick={onPlans} className="mt-4 inline-flex h-10 items-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-on-brand transition hover:brightness-110">
-                  Upgrade Now <Icon d={ICONS.arrow} className="h-4 w-4" />
+                  {t("Upgrade Now")} <Icon d={ICONS.arrow} className="h-4 w-4" />
                 </button>
               </div>
             </section>
           )}
 
-          <Card title="Quick Tools" action={<Icon d={ICONS.sliders} className="h-5 w-5 text-zinc-500" />}>
-            {!keysOff && <p className="-mt-1 mb-2 hidden text-xs text-zinc-500 pointer-fine:block">Press a key on Home to open a tool.</p>}
+          <Card title={t("Quick Tools")} action={<Icon d={ICONS.sliders} className="h-5 w-5 text-zinc-500" />}>
+            {!keysOff && <p className="-mt-1 mb-2 hidden text-xs text-zinc-500 pointer-fine:block">{t("Press a key on Home to open a tool.")}</p>}
             <ul className="-mx-1">
               {quick
                 .filter((q) => q.live)
@@ -658,7 +669,7 @@ export function Home({
                       className="flex w-full items-center gap-3 rounded-xl px-2 py-2.5 text-left text-[15px] text-zinc-200 transition hover:bg-white/[0.05] hover:text-white"
                     >
                       <Icon d={q.d} className="h-5 w-5 text-zinc-400" />
-                      <span className="flex-1">{q.label}</span>
+                      <span className="flex-1">{t(q.label)}</span>
                       {/* The key on computers; a phone has none, so it gets the arrow. */}
                       {keysOff ? (
                         <Icon d={ICONS.chevron} className="h-4 w-4 text-zinc-600" />

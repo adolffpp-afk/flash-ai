@@ -2,6 +2,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { ENGINES, type Attachment, type ChatTurn, type Engine, type Source, type StreamEvent } from "../types.ts";
 import { levelName, type ModelLevel } from "../levels.ts";
 import { MAX_OUTPUT_TOKENS, claudeCostCents, claudePrice, inputCostCents } from "../credits.ts";
+import { english, type Translate } from "../i18n.ts";
 
 /*
  * Flash uses three Claude models, to keep quality high where it shows and costs low elsewhere:
@@ -58,11 +59,13 @@ const UNAVAILABLE = new Set([403, 404, 429, 503, 529]);
 /**
  * Runs a Claude engine on a choice, and on its step-down when the model can't take the request
  * before anything was written. Nothing is billed for a request the model never started.
+ * t says the step-down in the user's language.
  */
 export async function* withStepDown(
   choice: ClaudeChoice,
   engine: (choice: ClaudeChoice) => AsyncGenerator<StreamEvent>,
   onStepDown: (choice: ClaudeChoice) => void = () => {},
+  t: Translate = english,
 ): AsyncGenerator<StreamEvent> {
   let started = false;
   try {
@@ -74,8 +77,11 @@ export async function* withStepDown(
     if (started || !choice.stepDown || !(err instanceof Anthropic.APIError && UNAVAILABLE.has(Number(err.status)))) throw err;
     console.error(`[flash] ${choice.model} unavailable (${err.status}), stepping down to ${choice.stepDown.model}`);
     onStepDown(choice.stepDown);
-    yield { type: "status", message: `${levelName(choice.level)} is busy right now, so ${levelName(choice.stepDown.level)} is answering…` };
-    yield* withStepDown(choice.stepDown, engine, onStepDown);
+    yield {
+      type: "status",
+      message: t("{level} is busy right now, so {instead} is answering…", { level: levelName(choice.level), instead: levelName(choice.stepDown.level) }),
+    };
+    yield* withStepDown(choice.stepDown, engine, onStepDown, t);
   }
 }
 
@@ -185,8 +191,8 @@ export function system(preferences: string, mode: WritingMode = "text"): string 
   return parts.filter(Boolean).join("\n\n");
 }
 
-function refusalMessage(): StreamEvent {
-  return { type: "text", delta: "\n\nFlash couldn't help with that request." };
+function refusalMessage(t: Translate): StreamEvent {
+  return { type: "text", delta: "\n\n" + t("Flash couldn't help with that request.") };
 }
 
 /** Writing, code, translation, documents and file questions: streams Claude's reply token by token. */
@@ -198,6 +204,8 @@ export async function* streamText(
   budget: Budget = NO_BUDGET,
   // The level's model and effort; by default Ascend at medium effort, and Vision thinking harder for code.
   choice: ClaudeChoice = defaultChoice(mode),
+  // The language Flash's own notes (not the reply) are in.
+  t: Translate = english,
 ): AsyncGenerator<StreamEvent> {
   const stream = getClient().beta.messages.stream({
     ...choiceParams(choice),
@@ -212,18 +220,16 @@ export async function* streamText(
   }
   const final = await stream.finalMessage();
   meterClaude(meter, final);
-  if (final.stop_reason === "refusal") yield refusalMessage();
-  if (final.stop_reason === "max_tokens") yield lengthNote(budget);
+  if (final.stop_reason === "refusal") yield refusalMessage(t);
+  if (final.stop_reason === "max_tokens") yield lengthNote(budget, t);
 }
 
-function lengthNote(budget: Budget): StreamEvent {
-  return {
-    type: "text",
-    delta:
-      budget.maxTokens < MAX_OUTPUT_TOKENS
-        ? "\n\n_Flash stopped here because the reply reached what your credits cover. Ask it to continue._"
-        : "\n\n_Flash stopped here because the reply reached its length limit. Ask it to continue._",
-  };
+function lengthNote(budget: Budget, t: Translate): StreamEvent {
+  const note =
+    budget.maxTokens < MAX_OUTPUT_TOKENS
+      ? t("Flash stopped here because the reply reached what your credits cover. Ask it to continue.")
+      : t("Flash stopped here because the reply reached its length limit. Ask it to continue.");
+  return { type: "text", delta: `\n\n_${note}_` };
 }
 
 /** Research: Claude with server-side web search and page reading, returning the answer and its sources. */
@@ -233,6 +239,8 @@ export async function* streamSearch(
   meter: Meter = noMeter,
   budget: Budget = NO_BUDGET,
   choice: ClaudeChoice = defaultChoice("search"),
+  // The language Flash's own notes (not the answer) are in.
+  t: Translate = english,
 ): AsyncGenerator<StreamEvent> {
   const messages = toMessages(history);
   const sources = new Map<string, Source>();
@@ -274,10 +282,10 @@ export async function* streamSearch(
       }
     }
     if (final.stop_reason === "refusal") {
-      yield refusalMessage();
+      yield refusalMessage(t);
       break;
     }
-    if (final.stop_reason === "max_tokens") yield lengthNote(budget);
+    if (final.stop_reason === "max_tokens") yield lengthNote(budget, t);
     if (final.stop_reason !== "pause_turn") break;
     // Keep searching only while the credits held for this request still cover another round.
     const nextInput = final.usage.input_tokens + final.usage.output_tokens;

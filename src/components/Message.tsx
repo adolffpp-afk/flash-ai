@@ -17,12 +17,15 @@ import { answerDocument, documentText } from "@/lib/chat-export";
 import { postText, type Post } from "@/lib/post-pack";
 import { readAloudVoice } from "@/lib/device-settings";
 import { speechLang } from "@/lib/languages";
+import { msg } from "@/lib/i18n";
+import { useT, type T } from "@/lib/use-t";
 
 export type Reshape = "tall" | "square" | "wide";
-const RESHAPES: [Reshape, string][] = [
-  ["tall", "Tall"],
-  ["square", "Square"],
-  ["wide", "Wide"],
+// Each shape's button, and what it says on hover.
+const RESHAPES: [Reshape, string, string][] = [
+  ["tall", msg("Tall"), msg("Make this picture again, tall. Uses credits like a new picture.")],
+  ["square", msg("Square"), msg("Make this picture again, square. Uses credits like a new picture.")],
+  ["wide", msg("Wide"), msg("Make this picture again, wide. Uses credits like a new picture.")],
 ];
 
 const EXTENSIONS: Record<string, string> = {
@@ -44,9 +47,10 @@ const EXTENSIONS: Record<string, string> = {
 };
 const MIME: Record<string, string> = { csv: "text/csv", md: "text/markdown", json: "application/json", html: "text/html" };
 const XLSX_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-const DOWNLOAD_LABEL: Record<string, string> = { csv: "Download spreadsheet (.csv)", md: "Download document (.md)" };
+const DOWNLOAD_LABEL: Record<string, string> = { csv: msg("Download spreadsheet (.csv)"), md: msg("Download document (.md)") };
 
 function CodeBlock({ lang, text }: { lang: string; text: string }) {
+  const t = useT();
   const [copied, setCopied] = useState(false);
   const ext = EXTENSIONS[lang] ?? "txt";
   const downloadText = () => {
@@ -68,10 +72,10 @@ function CodeBlock({ lang, text }: { lang: string; text: string }) {
             }}
             className="hover:text-zinc-100"
           >
-            {copied ? "Copied" : "Copy"}
+            {copied ? t("Copied") : t("Copy")}
           </button>
           <button onClick={downloadText} className="text-primary hover:text-primary-soft">
-            {DOWNLOAD_LABEL[ext] ?? "Download"}
+            {DOWNLOAD_LABEL[ext] ? t(DOWNLOAD_LABEL[ext]) : t("Download")}
           </button>
           {ext === "csv" && (
             // The same rows as an Excel workbook, with amounts as real numbers.
@@ -130,13 +134,13 @@ const saveAsWord = (text: string) =>
  * Opens the browser's print window for a reply, laid out as a clean page: "Save as PDF" there
  * makes the PDF, named after the reply's first line.
  */
-async function saveAsPdf(text: string) {
+async function saveAsPdf(text: string, t: T) {
   const { renderToStaticMarkup } = await import("react-dom/server");
   const html = renderToStaticMarkup(createElement(ReactMarkdown, { remarkPlugins: [remarkGfm] }, text));
-  const date = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+  const date = new Date().toLocaleDateString(t.locale, { month: "long", day: "numeric", year: "numeric" });
   const frame = Object.assign(document.createElement("iframe"), {
-    srcdoc: answerDocument(wordFileName(text).replace(/\.docx$/, ""), html, date),
-    title: "Print",
+    srcdoc: answerDocument(wordFileName(text).replace(/\.docx$/, ""), html, date, t, t.language),
+    title: t("Print"),
   });
   frame.style.cssText = "position:fixed;width:0;height:0;border:0;right:0;bottom:0";
   frame.onload = () => {
@@ -157,10 +161,10 @@ const saveAsExcel = (text: string) =>
   );
 
 /** Downloads a reply as a PowerPoint deck: a title slide, then a slide per heading. */
-const saveAsSlides = (text: string) => {
+const saveAsSlides = (text: string, t: T) => {
   const name = wordFileName(text).replace(/\.docx$/, "");
-  const date = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
-  download(slidesDeck(text, name, `Made with Flash AI · ${date}`), "application/vnd.openxmlformats-officedocument.presentationml.presentation", `${name}.pptx`);
+  const date = new Date().toLocaleDateString(t.locale, { month: "long", day: "numeric", year: "numeric" });
+  download(slidesDeck(text, name, t("Made with Flash AI · {date}", { date })), "application/vnd.openxmlformats-officedocument.presentationml.presentation", `${name}.pptx`);
 };
 
 // Answers with headings or lists make a deck; a few plain sentences don't.
@@ -171,6 +175,7 @@ const noChanges = () => () => {};
 /** Reads a reply aloud with the device's own voice, which is free and needs no credits. */
 // language: the one picked in Settings > General, which answers are written in; "" for the browser's.
 function ReadAloud({ text, className, language = "" }: { text: string; className: string; language?: string }) {
+  const t = useT();
   const [speaking, setSpeaking] = useState(false);
   // Known only in the browser: the server (a shared chat) and the first render in the browser say no, so both match.
   const canSpeak = useSyncExternalStore(noChanges, () => "speechSynthesis" in window, () => false);
@@ -197,13 +202,14 @@ function ReadAloud({ text, className, language = "" }: { text: string; className
         setSpeaking(true);
       }}
     >
-      {speaking ? "■ Stop reading" : "🔊 Read aloud"}
+      {speaking ? <>■ {t("Stop reading")}</> : <>🔊 {t("Read aloud")}</>}
     </button>
   );
 }
 
 /** A social post pack's Copy buttons: each network's caption with its hashtags, ready to paste. */
 function PostCopies({ posts }: { posts: Post[] }) {
+  const t = useT();
   const [copied, setCopied] = useState("");
   const copy = (post: Post) => {
     navigator.clipboard
@@ -215,16 +221,16 @@ function PostCopies({ posts }: { posts: Post[] }) {
       .catch(() => setCopied(""));
   };
   return (
-    <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs" aria-label="Copy a post">
-      <span className="text-zinc-500">Copy the post for</span>
+    <div className="mt-3 flex flex-wrap items-center gap-1.5 text-xs" aria-label={t("Copy a post")}>
+      <span className="text-zinc-500">{t("Copy the post for")}</span>
       {posts.map((p) => (
         <button
           key={p.platform}
           onClick={() => copy(p)}
           className="rounded-full border border-white/10 px-2.5 py-0.5 text-zinc-300 transition hover:border-primary/40 hover:text-primary-soft"
-          title={`Copy the ${p.platform} caption and hashtags`}
+          title={t("Copy the {network} caption and hashtags", { network: p.platform })}
         >
-          {copied === p.platform ? "Copied ✓" : p.platform}
+          {copied === p.platform ? <>{t("Copied")} ✓</> : p.platform}
         </button>
       ))}
     </div>
@@ -232,6 +238,7 @@ function PostCopies({ posts }: { posts: Post[] }) {
 }
 
 function Actions({ m, onRetry, language }: { m: UIMessage; onRetry?: () => void; language?: string }) {
+  const t = useT();
   const [copied, setCopied] = useState(false);
   const text = plainText(m);
   const doc = documentText(text);
@@ -248,33 +255,33 @@ function Actions({ m, onRetry, language }: { m: UIMessage; onRetry?: () => void;
             setTimeout(() => setCopied(false), 1500);
           }}
         >
-          {copied ? "Copied" : "Copy"}
+          {copied ? t("Copied") : t("Copy")}
         </button>
       )}
       {text && <ReadAloud text={text} className={btn} language={language} />}
       {text && !m.app && (
-        <button className={btn} onClick={() => saveAsWord(doc)} title="Download this answer as a Word document">
+        <button className={btn} onClick={() => saveAsWord(doc)} title={t("Download this answer as a Word document")}>
           ⬇ Word
         </button>
       )}
       {text && !m.app && (
-        <button className={btn} onClick={() => saveAsPdf(doc)} title="Print this answer or save it as a PDF">
+        <button className={btn} onClick={() => saveAsPdf(doc, t)} title={t("Print this answer or save it as a PDF")}>
           ⬇ PDF
         </button>
       )}
       {text && !m.app && tablesIn(doc).length > 0 && (
-        <button className={btn} onClick={() => saveAsExcel(doc)} title="Download this answer's tables as an Excel spreadsheet">
+        <button className={btn} onClick={() => saveAsExcel(doc)} title={t("Download this answer's tables as an Excel spreadsheet")}>
           ⬇ Excel
         </button>
       )}
       {text && !m.app && hasStructure(doc) && (
-        <button className={btn} onClick={() => saveAsSlides(doc)} title="Download this answer as a PowerPoint deck">
+        <button className={btn} onClick={() => saveAsSlides(doc, t)} title={t("Download this answer as a PowerPoint deck")}>
           ⬇ PowerPoint
         </button>
       )}
       {onRetry && (
         <button className={btn} onClick={onRetry}>
-          ↻ Retry
+          ↻ {t("Retry")}
         </button>
       )}
     </div>
@@ -283,6 +290,7 @@ function Actions({ m, onRetry, language }: { m: UIMessage; onRetry?: () => void;
 
 /** The user's own message, which can be edited and sent again when it is the latest one. */
 function UserMessage({ m, onEdit }: { m: UIMessage; onEdit?: (text: string) => void }) {
+  const t = useT();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(m.content);
   const [copied, setCopied] = useState(false);
@@ -307,15 +315,15 @@ function UserMessage({ m, onEdit }: { m: UIMessage; onEdit?: (text: string) => v
               } else if (e.key === "Escape") setEditing(false);
             }}
             rows={Math.min(8, Math.max(2, draft.split("\n").length))}
-            aria-label="Edit your message"
+            aria-label={t("Edit your message")}
             className="w-full resize-none bg-transparent px-2 py-1 text-zinc-100 outline-none"
           />
           <div className="flex justify-end gap-2 text-sm">
             <button onClick={() => (setEditing(false), setDraft(m.content))} className="rounded-lg px-3 py-1.5 text-zinc-300 hover:bg-white/[0.05]">
-              Cancel
+              {t("Cancel")}
             </button>
             <button onClick={save} disabled={!draft.trim()} className="rounded-lg bg-brand px-3 py-1.5 font-medium text-on-brand hover:brightness-110 disabled:opacity-40">
-              Send
+              {t("Send")}
             </button>
           </div>
         </div>
@@ -325,7 +333,7 @@ function UserMessage({ m, onEdit }: { m: UIMessage; onEdit?: (text: string) => v
   return (
     <div className="group flex flex-col items-end">
       <div className="max-w-[85%] rounded-2xl rounded-br-md border border-white/10 bg-zinc-800 px-4 py-2.5 text-zinc-50">
-        {m.attachmentName && <div className="mb-1 text-xs text-white/80">📎 {m.attachmentName}</div>}
+        {m.attachmentName && <div className="mb-1 text-xs text-white/80">📎 {t(m.attachmentName)}</div>}
         {m.picked && <div className="mb-1 text-xs text-white/80">◎ {m.picked.label}</div>}
         <p className="whitespace-pre-wrap break-words">{m.content}</p>
       </div>
@@ -339,11 +347,11 @@ function UserMessage({ m, onEdit }: { m: UIMessage; onEdit?: (text: string) => v
               setTimeout(() => setCopied(false), 1500);
             }}
           >
-            {copied ? "Copied" : "Copy"}
+            {copied ? t("Copied") : t("Copy")}
           </button>
           {onEdit && (
             <button className={btn} onClick={() => (setDraft(m.content), setEditing(true))}>
-              ✎ Edit
+              ✎ {t("Edit")}
             </button>
           )}
         </div>
@@ -391,6 +399,7 @@ export function Message({
   onFixApp?: (request: string) => void;
   onPickApp?: (picked: PickedElement) => void;
 }) {
+  const t = useT();
   if (m.role === "user") return <UserMessage m={m} onEdit={onEdit} />;
   return (
     <div className="flex gap-3">
@@ -399,30 +408,32 @@ export function Message({
         {m.engine && (
           <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-zinc-400">
             <span className="rounded-full border border-zinc-700 px-2 py-0.5 text-zinc-300">
-              {ENGINE_LABELS[m.engine]}
+              {t(ENGINE_LABELS[m.engine])}
             </span>
-            <span>{m.reason}</span>
-            {m.demo && <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-zinc-300">coming soon</span>}
+            {/* Older chats saved the reason in English; a newer one may already be in the user's language. */}
+            <span>{m.reason && t(m.reason)}</span>
+            {m.demo && <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-zinc-300">{t("coming soon")}</span>}
             {m.model && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-primary-soft" title={`Picked because: ${m.modelWhy ?? ""}`}>
+              <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-primary-soft" title={t("Picked because: {why}", { why: m.modelWhy ? t(m.modelWhy) : "" })}>
                 <LevelSign name={m.model} className="h-3.5 w-3.5" />
                 {m.model}
               </span>
             )}
             {!!m.cost && (
               <span className="inline-flex items-center gap-1 text-zinc-500">
-                <BoltIcon className="h-3 w-3 text-gold/80" /> {m.cost} credits
+                <BoltIcon className="h-3 w-3 text-gold/80" />{" "}
+                {m.cost === 1 ? t("1 credit") : t("{count} credits", { count: m.cost.toLocaleString(t.locale) })}
               </span>
             )}
-            {m.free && <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-emerald-300">free</span>}
+            {m.free && <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-emerald-300">{t("free")}</span>}
           </div>
         )}
         {m.free && !m.pending && (
           <p className="mb-1 text-xs text-zinc-500">
-            You&apos;re out of credits, so a free model answered.{" "}
+            {t("You're out of credits, so a free model answered.")}{" "}
             {onBuyCredits && (
               <button onClick={onBuyCredits} className="text-primary-soft underline-offset-2 hover:underline">
-                {paymentsOn ? "Get credits for the best models" : "See your credits"}
+                {paymentsOn ? t("Get credits for the best models") : t("See your credits")}
               </button>
             )}
           </p>
@@ -442,7 +453,7 @@ export function Message({
           </div>
         )}
         {m.pending && !m.status && !m.content && !m.images?.length && (
-          <div className="flex gap-1 py-3" aria-label="Thinking">
+          <div className="flex gap-1 py-3" aria-label={t("Thinking")}>
             <span className="h-2 w-2 animate-bounce rounded-full bg-zinc-500" />
             <span className="h-2 w-2 animate-bounce rounded-full bg-zinc-500 [animation-delay:150ms]" />
             <span className="h-2 w-2 animate-bounce rounded-full bg-zinc-500 [animation-delay:300ms]" />
@@ -454,37 +465,39 @@ export function Message({
             img.url ? (
               <figure key={i} className="mt-2">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={img.url} alt={img.label ?? img.prompt} className={`${img.label ? "max-h-[380px]" : "max-h-[512px]"} rounded-xl border border-zinc-800`} />
+                <img src={img.url} alt={img.label ? t(img.label) : img.prompt} className={`${img.label ? "max-h-[380px]" : "max-h-[512px]"} rounded-xl border border-zinc-800`} />
                 {/* A labelled picture's caption wraps to the picture's width (w-0 min-w-full), so two fit side by side. */}
                 <figcaption className={`mt-1 flex text-xs text-zinc-500 ${img.label ? "w-0 min-w-full flex-wrap gap-x-3 gap-y-0.5" : "gap-3"}`}>
-                  <span className={img.label ? "text-zinc-400" : "line-clamp-2"}>{img.label ?? img.prompt}</span>
+                  <span className={img.label ? "text-zinc-400" : "line-clamp-2"}>{img.label ? t(img.label) : img.prompt}</span>
                   <a href={img.url} download={imageFileName(img.url)} className="shrink-0 whitespace-nowrap text-primary hover:underline">
-                    Download
+                    {t("Download")}
                   </a>
                   {onUseImage && (
                     <button onClick={() => onUseImage(img.url)} className="shrink-0 whitespace-nowrap text-primary hover:underline">
-                      ✏️ Edit or animate
+                      ✏️ {t("Edit or animate")}
                     </button>
                   )}
                 </figcaption>
                 {onReshape && img.prompt && !img.label && (
                   <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
-                    <span className="text-zinc-500">Remake as</span>
-                    {RESHAPES.map(([shape, label]) => (
+                    <span className="text-zinc-500">{t("Remake as")}</span>
+                    {RESHAPES.map(([shape, label, title]) => (
                       <button
                         key={shape}
                         onClick={() => onReshape(img.prompt, shape)}
                         className="rounded-full border border-white/10 px-2.5 py-0.5 text-zinc-300 transition hover:border-primary/40 hover:text-primary-soft"
-                        title={`Make this picture again, ${label.toLowerCase()}. Uses credits like a new picture.`}
+                        title={t(title)}
                       >
-                        {label}
+                        {t(label)}
                       </button>
                     ))}
                   </div>
                 )}
               </figure>
             ) : (
-              <p key={i} className="mt-2 text-xs text-zinc-500">Image not kept (browser storage was full).</p>
+              <p key={i} className="mt-2 text-xs text-zinc-500">
+                {t("Image not kept (browser storage was full).")}
+              </p>
             ),
           )}
         </div>
@@ -516,7 +529,7 @@ export function Message({
             <figcaption className="mt-1 flex gap-3 text-xs text-zinc-500">
               <span className="line-clamp-2">{v.prompt}</span>
               <a href={v.url} download="flash-video.mp4" className="shrink-0 text-primary hover:underline">
-                Download
+                {t("Download")}
               </a>
             </figcaption>
           </figure>
@@ -525,7 +538,7 @@ export function Message({
           <div className="mt-2 flex items-center gap-3">
             <audio controls src={m.audio} className="w-full max-w-md" />
             <a href={m.audio} download={m.audioLabel ?? "flash-audio.mp3"} className="text-xs text-primary hover:underline">
-              Download
+              {t("Download")}
             </a>
           </div>
         )}
@@ -544,10 +557,10 @@ export function Message({
             ))}
           </div>
         )}
-        {m.stopped && <p className="mt-2 text-xs text-zinc-500">Stopped.</p>}
+        {m.stopped && <p className="mt-2 text-xs text-zinc-500">{t("Stopped.")}</p>}
         {m.error && m.errorCode === "confirm_cost" ? (
           <div role="status" className="mt-2 rounded-xl border border-primary/30 bg-primary/[0.06] p-4 text-sm">
-            <p className="font-medium text-zinc-100">Check the price first</p>
+            <p className="font-medium text-zinc-100">{t("Check the price first")}</p>
             <p className="mt-1 text-zinc-300">{m.error}</p>
             {onConfirmCost ? (
               <div className="mt-3 flex flex-wrap items-center gap-3">
@@ -555,31 +568,31 @@ export function Message({
                   onClick={() => onConfirmCost(false)}
                   className="rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-on-brand transition hover:brightness-110"
                 >
-                  Go ahead
+                  {t("Go ahead")}
                 </button>
                 <button onClick={() => onConfirmCost(true)} className="text-xs text-zinc-400 hover:text-zinc-200 hover:underline">
-                  Go ahead, and don&apos;t ask again
+                  {t("Go ahead, and don't ask again")}
                 </button>
               </div>
             ) : (
-              <p className="mt-2 text-xs text-zinc-500">Not made. Nothing was charged.</p>
+              <p className="mt-2 text-xs text-zinc-500">{t("Not made. Nothing was charged.")}</p>
             )}
           </div>
         ) : m.error && m.errorCode === "out_of_credits" ? (
           <div role="status" className="mt-2 rounded-xl border border-gold/40 bg-gradient-to-br from-gold/15 to-primary/10 p-4 text-sm">
-            <p className="font-medium text-zinc-100">You&apos;re out of credits for this one</p>
+            <p className="font-medium text-zinc-100">{t("You're out of credits for this one")}</p>
             <p className="mt-1 text-zinc-300">
               {m.error}{" "}
               {paymentsOn
-                ? "Pick a plan or top up to keep going, or wait for your free monthly credits."
-                : "Your free credits refill on the 1st of each month."}
+                ? t("Pick a plan or top up to keep going, or wait for your free monthly credits.")
+                : t("Your free credits refill on the 1st of each month.")}
             </p>
             {onBuyCredits && (
               <button
                 onClick={onBuyCredits}
                 className="mt-3 rounded-lg bg-gold-brand px-3 py-1.5 text-sm font-semibold text-night hover:brightness-105"
               >
-                {paymentsOn ? "Get more credits" : "See your credits"}
+                {paymentsOn ? t("Get more credits") : t("See your credits")}
               </button>
             )}
           </div>

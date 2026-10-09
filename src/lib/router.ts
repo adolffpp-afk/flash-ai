@@ -1,6 +1,8 @@
 import type { Engine } from "./types.ts";
+import { msg } from "./i18n.ts";
 import { POST_PACK_REQUEST } from "./models.ts";
 
+// reason is marked msg("…") here and shown in the user's language with t(reason).
 export type RouteDecision = { engine: Engine; reason: string; guessed?: boolean };
 
 const LANGUAGES =
@@ -12,12 +14,12 @@ type Rule = { engine: Engine; reason: string; patterns: RegExp[]; unless?: RegEx
 const RULES: Rule[] = [
   {
     engine: "transcribe",
-    reason: "You asked for a transcript.",
+    reason: msg("You asked for a transcript."),
     patterns: [/\b(transcribe|transcription|transcript)\b/i, /\bspeech to text\b/i],
   },
   {
     engine: "translate",
-    reason: "You asked for a translation.",
+    reason: msg("You asked for a translation."),
     patterns: [
       /\btranslat(e|ion)\b/i,
       new RegExp(`\\b(say|write|put|convert)\\b.{0,60}\\b(in|into|to)\\s+(${LANGUAGES})\\b`, "i"),
@@ -27,17 +29,17 @@ const RULES: Rule[] = [
   {
     // Before video and app, which "with a video" or "for my website" would match too.
     engine: "image",
-    reason: "You asked for a social post pack.",
+    reason: msg("You asked for a social post pack."),
     patterns: [POST_PACK_REQUEST],
   },
   {
     engine: "slides",
-    reason: "You asked for a slide deck.",
+    reason: msg("You asked for a slide deck."),
     patterns: [/\b(presentation|slide ?deck|slideshow|slides|pitch deck|keynote|powerpoint)s?\b/i],
   },
   {
     engine: "app",
-    reason: "You asked Flash to build an app.",
+    reason: msg("You asked Flash to build an app."),
     patterns: [
       /\b(build|create|make|generate|design|develop|prototype|code up|spin up)\b.{0,50}\b(app|application|web ?app|website|web ?site|site|landing page|home ?page|dashboard|portfolio|game|calculator|tracker|planner|online store|shop|quiz|timer|clone|crm|saas|mvp|prototype|booking system|to-?do list)s?\b/i,
     ],
@@ -45,7 +47,7 @@ const RULES: Rule[] = [
   },
   {
     engine: "video",
-    reason: "You asked for a video.",
+    reason: msg("You asked for a video."),
     patterns: [
       /\b(generate|create|make|produce|render|animate)\b.{0,40}\b(video|clip|animation|footage|film|reel|trailer)s?\b/i,
       /\b(video|clip|animation) of\b/i,
@@ -54,7 +56,7 @@ const RULES: Rule[] = [
   },
   {
     engine: "music",
-    reason: "You asked for music.",
+    reason: msg("You asked for music."),
     patterns: [
       /\b(compose|generate|create|make|produce|write)\b.{0,40}\b(song|music|melody|beat|jingle|soundtrack|tune|instrumental|track)s?\b/i,
       /\b(song|music|beat|jingle|soundtrack) (about|for|with)\b/i,
@@ -62,7 +64,7 @@ const RULES: Rule[] = [
   },
   {
     engine: "image",
-    reason: "You asked for a picture.",
+    reason: msg("You asked for a picture."),
     patterns: [
       /\b(draw|paint|sketch|illustrate)\b/i,
       /\b(generate|create|make|design|give me|render)\b.{0,40}\b(image|picture|photo|illustration|logo|poster|icon|artwork|wallpaper|drawing|banner|thumbnail)s?\b/i,
@@ -71,7 +73,7 @@ const RULES: Rule[] = [
   },
   {
     engine: "voice",
-    reason: "You asked for spoken audio.",
+    reason: msg("You asked for spoken audio."),
     patterns: [
       /\b(read|say|speak|narrate)\b.{0,30}\b(aloud|out loud)\b/i,
       /\b(text to speech|tts|voiceover|voice over|voice-over)\b/i,
@@ -83,7 +85,7 @@ const RULES: Rule[] = [
   },
   {
     engine: "code",
-    reason: "This is a programming task.",
+    reason: msg("This is a programming task."),
     patterns: [
       /```/,
       /\b(python|javascript|typescript|java|c\+\+|c#|golang|rust|php|ruby|kotlin|swift|sql|html|css|bash|regex|react|node\.?js|django|flask)\b/i,
@@ -92,7 +94,7 @@ const RULES: Rule[] = [
   },
   {
     engine: "docs",
-    reason: "This is document or spreadsheet work.",
+    reason: msg("This is document or spreadsheet work."),
     patterns: [
       /\b(spreadsheet|excel|google sheets?|csv|table|budget|invoice|pivot|formula)s?\b/i,
       /\b(resume|cv|cover letter|report|proposal|contract|memo|business plan|meeting notes|agenda|outline|template)s?\b/i,
@@ -101,7 +103,7 @@ const RULES: Rule[] = [
   },
   {
     engine: "search",
-    reason: "This needs fresh information from the web.",
+    reason: msg("This needs fresh information from the web."),
     patterns: [
       /https?:\/\/\S+/i,
       /\b(latest|today|tonight|yesterday|this week|this month|right now|currently|current|recent|breaking)\b/i,
@@ -349,7 +351,7 @@ const GENERAL: Engine[] = ["text", "code", "docs"];
 export function route(message: string, attachmentType?: string, previous?: Engine): RouteDecision {
   const decision = routeOne(message, attachmentType);
   if ((previous === "app" || previous === "slides") && GENERAL.includes(decision.engine) && !attachmentType) {
-    return { engine: previous, reason: previous === "app" ? "Updating your app." : "Updating your slides." };
+    return { engine: previous, reason: previous === "app" ? msg("Updating your app.") : msg("Updating your slides.") };
   }
   return decision;
 }
@@ -357,20 +359,20 @@ export function route(message: string, attachmentType?: string, previous?: Engin
 function routeOne(message: string, attachmentType?: string): RouteDecision {
   const text = straight(message);
   if (attachmentType && AUDIO_TYPE.test(attachmentType)) {
-    return { engine: "transcribe", reason: "An audio or video file is attached, so Flash transcribes it." };
+    return { engine: "transcribe", reason: msg("An audio or video file is attached, so Flash transcribes it.") };
   }
   // Reading a photo's text goes to Docs & Sheets, which gives tables as spreadsheets. Checked first, since
   // "turn this into a spreadsheet" would otherwise read as a photo edit.
   if (attachmentType && PHOTO_TYPE.test(attachmentType) && READ_TEXT.test(text)) {
-    return { engine: "docs", reason: "Flash reads the text in your photo." };
+    return { engine: "docs", reason: msg("Flash reads the text in your photo.") };
   }
   // A picture of a screen, a sketch or a design, to rebuild as something that works.
   if (attachmentType && PHOTO_TYPE.test(attachmentType) && !ABOUT_PHOTO.test(text)) {
-    if (DECK_FROM_PHOTO.test(text)) return { engine: "slides", reason: "Flash builds a deck from your picture." };
-    if (BUILD_FROM_PHOTO.test(text)) return { engine: "app", reason: "Flash builds this from your picture." };
+    if (DECK_FROM_PHOTO.test(text)) return { engine: "slides", reason: msg("Flash builds a deck from your picture.") };
+    if (BUILD_FROM_PHOTO.test(text)) return { engine: "app", reason: msg("Flash builds this from your picture.") };
   }
   if (attachmentType && EDITABLE_TYPE.test(attachmentType) && ANIMATE_REQUEST.test(text) && !ABOUT_PHOTO.test(text)) {
-    return { engine: "video", reason: "A photo is attached and you asked to bring it to life." };
+    return { engine: "video", reason: msg("A photo is attached and you asked to bring it to life.") };
   }
   if (
     attachmentType &&
@@ -381,7 +383,7 @@ function routeOne(message: string, attachmentType?: string): RouteDecision {
     !NOT_A_CHANGE.test(text) &&
     (ASKS_EDIT.test(text) || !ADVICE.test(text))
   ) {
-    return { engine: "image", reason: "A photo is attached and you asked to change it." };
+    return { engine: "image", reason: msg("A photo is attached and you asked to change it.") };
   }
   for (const rule of RULES) {
     // An attached file is read by a text engine, so media-making rules don't apply to it.
@@ -391,11 +393,11 @@ function routeOne(message: string, attachmentType?: string): RouteDecision {
   }
   if (attachmentType) {
     return SHEET_TYPE.test(attachmentType)
-      ? { engine: "docs", reason: "A spreadsheet is attached." }
-      : { engine: "text", reason: "A file is attached, so the writing model reads it." };
+      ? { engine: "docs", reason: msg("A spreadsheet is attached.") }
+      : { engine: "text", reason: msg("A file is attached, so the writing model reads it.") };
   }
   // No rule matched: the caller may ask a small model to decide.
-  return { engine: "text", reason: "Writing and reasoning task.", guessed: true };
+  return { engine: "text", reason: msg("Writing and reasoning task."), guessed: true };
 }
 
 /** Strips the instruction part of a voice request, keeping the words to speak. */

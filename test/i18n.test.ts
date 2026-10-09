@@ -47,7 +47,7 @@ test("every language Flash offers has a table, and English is the source", () =>
     if (id === "en") assert.ok(!existsSync(`${root}src/lib/i18n/en.json`));
     else assert.ok(existsSync(`${root}src/lib/i18n/${id}.json`), id);
   }
-  const loaders = readFileSync(`${root}src/lib/use-t.ts`, "utf8");
+  const loaders = readFileSync(`${root}src/lib/i18n-tables.ts`, "utf8");
   for (const { id } of LANGUAGES.filter((l) => l.id !== "en")) assert.ok(loaders.includes(`import("./i18n/${id}.json")`), `${id} loads`);
 });
 
@@ -71,4 +71,15 @@ test("the search finds a feature by its name in the language Flash is shown in",
   const t = (text: string) => translate({ "Remove Background": "Supprimer l'arrière-plan" }, text);
   assert.deepEqual(findFeatures("arrière", undefined, t).map((f) => f.title), ["Remove Background"]);
   assert.deepEqual(findFeatures("background", undefined, t).map((f) => f.title), ["Remove Background"], "English still works");
+});
+
+test("the server answers in the account's language, else the browser's, else English", async () => {
+  const { acceptLanguages, translatorFor } = await import("../src/lib/server/i18n.ts");
+  assert.deepEqual(acceptLanguages("fr-CA,fr;q=0.9,en;q=0.8"), ["fr-CA", "fr", "en"]);
+  assert.deepEqual(acceptLanguages("en;q=0.5, de"), ["de", "en"]);
+  assert.deepEqual(acceptLanguages("*, es;q=0"), []);
+  assert.deepEqual(acceptLanguages(null), []);
+  const plain = await translatorFor(new Request("http://flash.test/"));
+  assert.equal(plain.language, "en");
+  assert.equal(plain("{count} left", { count: 2 }), "2 left");
 });
