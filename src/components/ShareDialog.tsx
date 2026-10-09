@@ -94,7 +94,7 @@ export function ShareDialog({
                 <button
                   onClick={copy}
                   disabled={!url}
-                  className="h-10 shrink-0 rounded-lg bg-brand px-4 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-50"
+                  className="h-10 shrink-0 rounded-lg bg-brand px-4 text-sm font-medium text-on-brand transition hover:brightness-110 disabled:opacity-50"
                 >
                   {copied ? "Copied" : "Copy link"}
                 </button>

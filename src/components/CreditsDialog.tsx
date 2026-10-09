@@ -188,7 +188,7 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
               <button
                 onClick={() => buy(p.id)}
                 disabled={busy !== null || !canBuy}
-                className="mt-auto h-9 w-full rounded-full bg-brand text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-50"
+                className="mt-auto h-9 w-full rounded-full bg-brand text-sm font-medium text-on-brand transition hover:brightness-110 disabled:opacity-50"
               >
                 {!canBuy ? "Coming soon" : busy === p.id ? "Opening…" : "Buy"}
               </button>

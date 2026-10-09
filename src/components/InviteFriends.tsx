@@ -38,7 +38,7 @@ export function InviteFriends({ referral }: { referral: Me["referral"] }) {
         />
         <button
           onClick={copy}
-          className="h-9 shrink-0 rounded-lg bg-brand px-4 text-sm font-medium text-white transition hover:brightness-110"
+          className="h-9 shrink-0 rounded-lg bg-brand px-4 text-sm font-medium text-on-brand transition hover:brightness-110"
         >
           {copied ? "Copied" : "Copy"}
         </button>
@@ -51,7 +51,7 @@ export function InviteFriends({ referral }: { referral: Me["referral"] }) {
         <ul className="mt-2 space-y-1 text-xs">
           {referral.pending.map((p, i) => (
             <li key={i} className="flex items-center gap-2 text-zinc-400">
-              <span className="rounded-full bg-gold/15 px-2 py-0.5 font-medium text-gold">
+              <span className="rounded-full bg-gold/15 px-2 py-0.5 font-medium text-gold light:text-gold-soft">
                 +{p.credits.toLocaleString("en-US")}
               </span>
               pending, available on {dateLabel(p.availableAt)}

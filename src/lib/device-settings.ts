@@ -8,6 +8,8 @@ export const DEVICE_KEYS = {
   // Set when the user says not to ask before costly requests.
   skipCostCheck: "flash:skip-cost-check",
   notifyDone: "flash:notify-done",
+  // Dark (the default), light, or "system" to follow the device (Settings > General > Appearance).
+  theme: "flash:theme",
   font: "flash:font",
   textSize: "flash:text-size",
   voice: "flash:voice",
@@ -38,6 +40,13 @@ export function writeSetting(key: DeviceKey, value: string): void {
   } catch {}
 }
 
+export const THEMES = [
+  ["", "Dark", "Frosted glass at night"],
+  ["light", "Light", "Bright and iridescent"],
+  ["system", "Match device", "Follows your device's light or dark setting"],
+] as const;
+export type Theme = (typeof THEMES)[number][0];
+
 export const FONTS = [
   ["", "Default", "Flash's own typeface"],
   ["system", "System", "Your device's typeface"],
@@ -64,6 +73,37 @@ export function applyAppearance(font = readSetting("font"), size = readSetting("
   else delete root.dataset.font;
   if (size) root.dataset.size = size;
   else delete root.dataset.size;
+}
+
+/**
+ * The theme the page shows now: "light" for Light, or for Match device on a light device. The same
+ * rule runs before the page paints (THEME_SCRIPT in src/app/layout.tsx), so Flash never flashes dark.
+ */
+export function themeFor(theme: string, prefersLight: boolean): "light" | "dark" {
+  return theme === "light" || (theme === "system" && prefersLight) ? "light" : "dark";
+}
+
+// The browser's bar colour (theme-color) for each theme: the page colour, so phones show no dark strip over a light page.
+export const BAR_COLORS = { dark: "#0a0c10", light: "#f4f5f9" } as const;
+
+// The same choice as themeFor, run in <head> before the page paints (see layout.tsx), so a light
+// theme never shows dark first.
+export const THEME_SCRIPT = `try{var t=localStorage.getItem(${JSON.stringify(DEVICE_KEYS.theme)});if(t==="light"||(t==="system"&&matchMedia("(prefers-color-scheme: light)").matches)){document.documentElement.dataset.theme="light";var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content",${JSON.stringify(BAR_COLORS.light)})}}catch(e){}`;
+
+let followingDevice = false;
+
+/** Puts the chosen theme on the page (see globals.css), and keeps Match device in step with the device. */
+export function applyTheme(theme = readSetting("theme")): void {
+  const light = window.matchMedia?.("(prefers-color-scheme: light)");
+  const root = document.documentElement;
+  const chosen = themeFor(theme, Boolean(light?.matches));
+  if (chosen === "light") root.dataset.theme = "light";
+  else delete root.dataset.theme;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", BAR_COLORS[chosen]);
+  if (theme === "system" && light && !followingDevice) {
+    followingDevice = true;
+    light.addEventListener("change", () => readSetting("theme") === "system" && applyTheme("system"));
+  }
 }
 
 /**

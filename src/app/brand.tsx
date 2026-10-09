@@ -99,7 +99,8 @@ export function LogoMark({ size = 32, className = "" }: { size?: number; classNa
   // The ring and spark are too fine to read in a small mark, so small marks show the F alone.
   const large = size >= 40;
   return (
-    <span className={`flex w-fit shrink-0 ${className}`}>
+    // By day a faint navy edge keeps the pastel mark from fading into the light page.
+    <span className={`flex w-fit shrink-0 light:[filter:drop-shadow(0_1px_1.5px_rgb(16_22_48/0.35))] ${className}`}>
       <BrandMark size={size} id={id} ring={large} small={!large} />
     </span>
   );

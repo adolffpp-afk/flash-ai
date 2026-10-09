@@ -1,6 +1,6 @@
 "use client";
 
-import { createElement, isValidElement, useEffect, useState, type ReactNode } from "react";
+import { createElement, isValidElement, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ENGINE_LABELS } from "@/lib/types";
@@ -54,7 +54,7 @@ function CodeBlock({ lang, text }: { lang: string; text: string }) {
     URL.revokeObjectURL(url);
   };
   return (
-    <div className="not-prose my-3 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900">
+    <div className="not-prose code-dark my-3 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900">
       <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-1.5 text-xs text-zinc-400">
         <span>{lang || "text"}</span>
         <span className="flex flex-wrap justify-end gap-x-3 gap-y-1">
@@ -164,12 +164,16 @@ const saveAsSlides = (text: string) => {
 // Answers with headings or lists make a deck; a few plain sentences don't.
 const hasStructure = (text: string) => /^(#{1,3}\s|\s*[-*+]\s|\s*\d+[.)]\s|\|)/m.test(text);
 
+const noChanges = () => () => {};
+
 /** Reads a reply aloud with the device's own voice, which is free and needs no credits. */
 function ReadAloud({ text, className }: { text: string; className: string }) {
   const [speaking, setSpeaking] = useState(false);
+  // Known only in the browser: the server (a shared chat) and the first render in the browser say no, so both match.
+  const canSpeak = useSyncExternalStore(noChanges, () => "speechSynthesis" in window, () => false);
   // Stop talking when the message leaves the screen (a new project, sign-out).
   useEffect(() => () => void (speaking && window.speechSynthesis?.cancel()), [speaking]);
-  if (typeof window === "undefined" || !("speechSynthesis" in window)) return null;
+  if (!canSpeak) return null;
   return (
     <button
       className={className}
@@ -306,7 +310,7 @@ function UserMessage({ m, onEdit }: { m: UIMessage; onEdit?: (text: string) => v
             <button onClick={() => (setEditing(false), setDraft(m.content))} className="rounded-lg px-3 py-1.5 text-zinc-300 hover:bg-white/[0.05]">
               Cancel
             </button>
-            <button onClick={save} disabled={!draft.trim()} className="rounded-lg bg-brand px-3 py-1.5 font-medium text-white hover:brightness-110 disabled:opacity-40">
+            <button onClick={save} disabled={!draft.trim()} className="rounded-lg bg-brand px-3 py-1.5 font-medium text-on-brand hover:brightness-110 disabled:opacity-40">
               Send
             </button>
           </div>
@@ -316,7 +320,7 @@ function UserMessage({ m, onEdit }: { m: UIMessage; onEdit?: (text: string) => v
   }
   return (
     <div className="group flex flex-col items-end">
-      <div className="max-w-[85%] rounded-2xl rounded-br-md bg-primary-strong px-4 py-2.5 text-white">
+      <div className="max-w-[85%] rounded-2xl rounded-br-md border border-white/10 bg-zinc-800 px-4 py-2.5 text-zinc-50">
         {m.attachmentName && <div className="mb-1 text-xs text-white/80">📎 {m.attachmentName}</div>}
         {m.picked && <div className="mb-1 text-xs text-white/80">◎ {m.picked.label}</div>}
         <p className="whitespace-pre-wrap break-words">{m.content}</p>
@@ -541,7 +545,7 @@ export function Message({
               <div className="mt-3 flex flex-wrap items-center gap-3">
                 <button
                   onClick={() => onConfirmCost(false)}
-                  className="rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-white transition hover:brightness-110"
+                  className="rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-on-brand transition hover:brightness-110"
                 >
                   Go ahead
                 </button>
@@ -565,7 +569,7 @@ export function Message({
             {onBuyCredits && (
               <button
                 onClick={onBuyCredits}
-                className="mt-3 rounded-lg bg-gold-brand px-3 py-1.5 text-sm font-semibold text-zinc-950 hover:brightness-105"
+                className="mt-3 rounded-lg bg-gold-brand px-3 py-1.5 text-sm font-semibold text-night hover:brightness-105"
               >
                 {paymentsOn ? "Get more credits" : "See your credits"}
               </button>

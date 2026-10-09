@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { BrandMark } from "@/app/brand";
 import { INSTALL_STEPS, installPlatform, type InstallPlatform } from "@/lib/install";
 
@@ -56,7 +57,8 @@ function useInstall() {
     setHelp(installPlatform(navigator.userAgent, navigator.maxTouchPoints));
   }
 
-  const dialog = help && <InstallHelp platform={help} onClose={() => setHelp(null)} />;
+  // In a portal, so it covers the whole page even when opened from inside a menu.
+  const dialog = help && createPortal(<InstallHelp platform={help} onClose={() => setHelp(null)} />, document.body);
   return { available, install, dialog };
 }
 
@@ -133,7 +135,7 @@ export function InstallPopup() {
                 close();
                 install();
               }}
-              className="flex h-8 items-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-medium text-white transition hover:brightness-110"
+              className="flex h-8 items-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-medium text-on-brand transition hover:brightness-110"
             >
               <DownloadIcon />
               Install

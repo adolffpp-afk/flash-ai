@@ -47,7 +47,8 @@ export type UIMessage = {
   after?: string;
 };
 
-export type ProjectSummary = { id: string; name: string; updated_at: number; pinned?: boolean; instructions?: string };
+// empty: no messages yet (from the list, before the chat itself loads).
+export type ProjectSummary = { id: string; name: string; updated_at: number; pinned?: boolean; instructions?: string; empty?: boolean };
 export type Project = ProjectSummary & { messages: UIMessage[] };
 
 export type Pricing = {

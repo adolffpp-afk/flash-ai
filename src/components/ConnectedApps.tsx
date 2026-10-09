@@ -53,7 +53,7 @@ export function ConnectedApps() {
         />
         <button
           onClick={copy}
-          className="h-9 shrink-0 rounded-lg bg-brand px-4 text-sm font-medium text-white transition hover:brightness-110"
+          className="h-9 shrink-0 rounded-lg bg-brand px-4 text-sm font-medium text-on-brand transition hover:brightness-110"
         >
           {copied ? "Copied" : "Copy"}
         </button>

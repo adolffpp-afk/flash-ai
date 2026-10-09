@@ -95,7 +95,7 @@ export function ProjectInstructions({
           <button
             onClick={() => save(text)}
             disabled={saving || text.trim() === (project.instructions ?? "")}
-            className="rounded-full bg-primary px-5 py-2 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-40"
+            className="rounded-full bg-brand px-5 py-2 text-sm font-medium text-on-brand transition hover:brightness-110 disabled:opacity-40"
           >
             {saving ? "Saving…" : "Save"}
           </button>

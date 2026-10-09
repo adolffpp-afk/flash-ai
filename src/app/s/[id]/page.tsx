@@ -33,7 +33,7 @@ export default async function SharedChat({ params }: Props) {
         <span className="hidden min-w-0 flex-1 truncate text-sm text-zinc-400 sm:block">{share.title}</span>
         <a
           href={start}
-          className="ml-auto h-9 shrink-0 rounded-full bg-brand px-4 text-sm font-medium leading-9 text-white transition hover:brightness-110"
+          className="ml-auto h-9 shrink-0 rounded-full bg-brand px-4 text-sm font-medium leading-9 text-on-brand transition hover:brightness-110"
         >
           Try Flash free
         </a>
@@ -54,7 +54,7 @@ export default async function SharedChat({ params }: Props) {
           </p>
           <a
             href={start}
-            className="mt-4 inline-flex h-10 items-center rounded-full bg-holo px-5 text-sm font-medium text-zinc-950 transition hover:brightness-105"
+            className="mt-4 inline-flex h-10 items-center rounded-full bg-holo px-5 text-sm font-medium text-night transition hover:brightness-105"
           >
             Try Flash free
           </a>

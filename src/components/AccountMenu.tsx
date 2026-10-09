@@ -8,11 +8,12 @@ import { InstallApp } from "./InstallApp";
 const item = "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06]";
 
 /**
- * The name at the bottom of the sidebar, which opens the account menu like Claude's:
- * Settings, help, plan, invite, install, learn more and log out.
+ * The account button at the top right (or the bottom of a sidebar, placement "up"), which opens
+ * the account menu like Claude's: Settings, help, plan, invite, install, learn more and log out.
  */
 export function AccountMenu({
   me,
+  placement = "up",
   onSettings,
   onHelp,
   onPlan,
@@ -20,6 +21,7 @@ export function AccountMenu({
   onSignOut,
 }: {
   me: Me;
+  placement?: "up" | "down";
   onSettings: () => void;
   onHelp: () => void;
   onPlan: () => void;
@@ -53,11 +55,18 @@ export function AccountMenu({
     fn();
   };
   const plan = me.plan ? `${me.plan.name} plan` : "Free plan";
+  const down = placement === "down";
 
   return (
-    <div ref={box} className="relative mt-3 border-t border-white/6 pt-3">
+    <div ref={box} className={down ? "relative shrink-0" : "relative mt-3 border-t border-white/6 pt-3"}>
       {open && (
-        <div role="menu" aria-label="Account" className="absolute bottom-full left-0 right-0 z-30 mb-2 rounded-xl border border-white/10 bg-zinc-900 p-1.5 shadow-2xl">
+        <div
+          role="menu"
+          aria-label="Account"
+          className={`absolute z-30 rounded-xl border border-white/10 bg-zinc-900 p-1.5 shadow-2xl light:shadow-black/10 ${
+            down ? "right-0 top-full mt-2 w-64" : "bottom-full left-0 right-0 mb-2"
+          }`}
+        >
           <p className="truncate px-3 pb-1.5 pt-1 text-xs text-zinc-500" title={me.user.email}>
             {me.user.email}
           </p>
@@ -106,18 +115,27 @@ export function AccountMenu({
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="flex w-full items-center gap-2.5 rounded-lg px-1.5 py-1.5 text-left transition hover:bg-white/[0.05]"
+        className={
+          down
+            ? "glass flex h-12 items-center gap-2.5 rounded-2xl p-1 shadow-none transition hover:brightness-110 @min-[900px]/main:pr-3"
+            : "flex w-full items-center gap-2.5 rounded-lg px-1.5 py-1.5 text-left transition hover:bg-white/[0.05]"
+        }
         title="Account and settings"
       >
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary-deep text-xs font-medium text-primary-soft">
+        <span
+          className={`flex shrink-0 items-center justify-center rounded-full font-medium ${
+            down ? "h-10 w-10 bg-[linear-gradient(140deg,#3ee0c3,#7c6cf0_70%,#c084fc)] text-sm text-night" : "h-8 w-8 bg-primary-deep text-xs text-primary-soft"
+          }`}
+        >
           {initials(me.user)}
         </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm text-zinc-200">{fullName(me.user)}</span>
+        {/* In the top bar the name shows when there's room beside the search (see Flash.tsx's main container). */}
+        <span className={`min-w-0 text-left ${down ? "hidden @min-[900px]/main:block" : "flex-1"}`}>
+          <span className="block max-w-[10rem] truncate text-sm font-medium text-zinc-100">{fullName(me.user)}</span>
           <span className="block truncate text-xs text-zinc-500">{plan}</span>
         </span>
-        <span className="text-zinc-500" aria-hidden>
-          ⌃
+        <span className={`text-zinc-500 ${down ? "hidden @min-[900px]/main:block" : ""}`} aria-hidden>
+          {down ? "⌄" : "⌃"}
         </span>
       </button>
     </div>

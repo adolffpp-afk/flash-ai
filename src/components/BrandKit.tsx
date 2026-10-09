@@ -68,7 +68,7 @@ export function BrandKitForm({ onSaved }: { onSaved: (message: string) => void }
             <div>
               <span className={label}>Logo</span>
               <div className="mt-1 flex items-center gap-3">
-                <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-white">
+                <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-paper">
                   {logoSrc ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={logoSrc} alt="Your logo" className="max-h-full max-w-full object-contain" />
@@ -143,7 +143,7 @@ export function BrandKitForm({ onSaved }: { onSaved: (message: string) => void }
           <button
             onClick={save}
             disabled={!kit || saving}
-            className="rounded-full bg-primary px-5 py-2 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-40"
+            className="rounded-full bg-brand px-5 py-2 text-sm font-medium text-on-brand transition hover:brightness-110 disabled:opacity-40"
           >
             {saving ? "Saving…" : "Save"}
           </button>

@@ -82,7 +82,7 @@ export function TeamPanel({ me, onChanged }: { me: Me; onChanged: () => void }) 
           <button
             type="submit"
             disabled={busy !== null || used >= team.seats}
-            className="h-9 shrink-0 rounded-lg bg-brand px-4 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-50"
+            className="h-9 shrink-0 rounded-lg bg-brand px-4 text-sm font-medium text-on-brand transition hover:brightness-110 disabled:opacity-50"
           >
             {busy === "invite" ? "Sending…" : "Invite"}
           </button>

@@ -384,8 +384,12 @@ export function VoiceMode(props: VoiceProps) {
       builtIn,
     );
     conversation.current = c;
-    void c.run();
-    return () => c.stop();
+    // Started a moment later, so React's mount-twice check in development doesn't ask "Hey Flash, …" twice.
+    const start = setTimeout(() => void c.run(), 0);
+    return () => {
+      clearTimeout(start);
+      c.stop();
+    };
   }, [builtIn]);
 
   useEffect(() => {

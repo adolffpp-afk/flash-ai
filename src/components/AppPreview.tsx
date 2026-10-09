@@ -36,7 +36,7 @@ function CodeEditor({ html, full, onSave }: { html: string; full: boolean; onSav
             Undo changes
           </button>
           <button
-            className="rounded-md bg-brand px-2.5 py-1 font-medium text-white hover:brightness-110 disabled:opacity-40"
+            className="rounded-md bg-brand px-2.5 py-1 font-medium text-on-brand hover:brightness-110 disabled:opacity-40"
             disabled={!changed || !draft.trim()}
             onClick={() => onSave(draft)}
           >
@@ -290,7 +290,7 @@ export function AppPreview({
           )}
           {onPublished && (
             <button
-              className="ml-1 rounded-md bg-brand px-2.5 py-1 font-medium text-white hover:brightness-110 disabled:opacity-50"
+              className="ml-1 rounded-md bg-brand px-2.5 py-1 font-medium text-on-brand hover:brightness-110 disabled:opacity-50"
               onClick={() => publish()}
               disabled={publishing}
               title={!app.slug && publishedEarlier ? "Replace the published site with this version" : undefined}
@@ -341,7 +341,7 @@ export function AppPreview({
           </span>
           {onFix && (
             <button
-              className="shrink-0 rounded-md bg-brand px-2.5 py-1 font-medium text-white hover:brightness-110"
+              className="shrink-0 rounded-md bg-brand px-2.5 py-1 font-medium text-on-brand hover:brightness-110"
               onClick={() => onFix(fixRequest(shownErrors, app.html))}
             >
               Fix it
@@ -359,7 +359,7 @@ export function AppPreview({
         srcDoc={previewHtml}
         sandbox={SANDBOX}
         hidden={view !== "preview"}
-        className={`w-full bg-white ${pane}`}
+        className={`w-full bg-paper ${pane}`}
       />
       {/* Kept open once shown, so unsaved changes survive a look at the preview. */}
       {(view === "code" || codeShown) && (
