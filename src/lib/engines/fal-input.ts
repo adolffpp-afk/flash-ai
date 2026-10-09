@@ -1,4 +1,4 @@
-import { PACK_VIDEO_SECONDS, animateSeconds, videoSeconds, wantsSound, type ModelInfo } from "../models.ts";
+import { MAX_EDIT_PHOTOS, PACK_VIDEO_SECONDS, animateSeconds, videoSeconds, wantsSound, type ModelInfo } from "../models.ts";
 
 export type Shape = "tall" | "portrait" | "square" | "wide";
 
@@ -71,6 +71,8 @@ export function falEditInput(
   imageUrl: string,
   size: { width: number; height: number } | null,
   request: string,
+  // More photos to combine with the first, for models that take several.
+  more: string[] = [],
 ): Record<string, unknown> {
   switch (model.id) {
     case "remove-bg":
@@ -94,7 +96,7 @@ export function falEditInput(
         const scale = Math.max(1, 512 / Math.min(size.width, size.height));
         image_size = { width: Math.min(2048, Math.round(size.width * scale)), height: Math.min(2048, Math.round(size.height * scale)) };
       }
-      return { prompt: request, image_urls: [imageUrl], image_size, output_format: "png" };
+      return { prompt: request, image_urls: [imageUrl, ...more].slice(0, MAX_EDIT_PHOTOS), image_size, output_format: "png" };
     }
   }
 }

@@ -33,6 +33,7 @@ import { useWakeWord } from "./useWakeWord";
 import { voiceReply } from "@/lib/voice-chat";
 import { photoActionsFor } from "@/lib/photo-actions";
 import { pickedContext, type PickedElement } from "@/lib/preview-bridge";
+import { pictureFollowUp } from "@/lib/router";
 import { firstName } from "@/lib/names";
 import { applyAppearance, notifiesWhenDone, readSetting } from "@/lib/device-settings";
 
@@ -167,6 +168,15 @@ async function shrinkPhoto(file: File): Promise<File> {
   }
 }
 
+/** Tools that change a picture: a follow-up like "make it darker" goes with the picture above only to these. */
+const changesPictures = (choice: Choice) => choice === "auto" || choice === "image" || choice === "video";
+
+/** The picture Flash made in its last reply, when there is exactly one, for follow-ups like "add a hat". */
+function pictureAbove(messages: UIMessage[] | undefined): string | null {
+  const last = messages?.findLast((m) => m.role === "assistant");
+  return last && !last.pending && !last.error && last.images?.length === 1 ? last.images[0].url : null;
+}
+
 const inflateRaw = async (data: Uint8Array) =>
   new Uint8Array(await new Response(new Blob([data as BlobPart]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer());
 
@@ -223,6 +233,38 @@ function readFile(file: File): Promise<Attachment> {
   });
 }
 
+/**
+ * The picture above that a request goes with, by the same rule wherever it's sent from (typed,
+ * Next up, Talk or an edited message): Flash's last reply is one picture, the words read as a change
+ * to it ("make it darker"), the tool can change pictures, and the user didn't tap ✕ to keep it.
+ */
+function followUpPicture(messages: UIMessage[] | undefined, text: string, tool: Choice, keep: string | null = null): string | null {
+  const above = pictureAbove(messages);
+  return above && above !== keep && changesPictures(tool) && pictureFollowUp(text) ? above : null;
+}
+
+/** A request going with the picture above, when there is one to go with. */
+const withPicture = (m: UIMessage, url: string | null): UIMessage =>
+  url ? { ...m, attachmentName: "The picture above", pictureAbove: url } : m;
+
+// Nothing is sent without the files a request goes with: the words alone would make something else.
+const NO_PICTURE = "Couldn't open the picture above, so nothing was sent and no credits were used. Try again in a moment.";
+const NO_FILES = "Attached files aren't kept once Flash is reloaded, so nothing was sent. Attach them again and send your message.";
+
+/** The picture above, ready to send with a follow-up, scaled down the way an attached photo is. */
+async function pictureAttachment(url: string, signal?: AbortSignal): Promise<Attachment | null> {
+  try {
+    const res = await fetch(url, { signal });
+    const blob = await res.blob();
+    if (!res.ok || !/^image\//.test(blob.type)) return null;
+    const ext = blob.type.split("/")[1].replace("jpeg", "jpg");
+    const file = await shrinkPhoto(new File([blob], `picture-above.${ext}`, { type: blob.type }));
+    return file.size <= MAX_FILE_MB * 1024 * 1024 ? await readFile(file) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function Flash({
   signedIn = true,
   initialStatus,
@@ -253,6 +295,8 @@ export function Flash({
   // A part of the latest app the user picked in its preview; the next message says what to change about it.
   const [picked, setPicked] = useState<{ projectId: string; kind: "app" | "slides"; label: string; context: string } | null>(null);
   const [choice, setChoice] = useState<Choice>("auto");
+  // The picture above that the user said not to change (the ✕ on "Changing the picture above").
+  const [keepPicture, setKeepPicture] = useState<string | null>(null);
   // Image, video and music model picked per engine; missing means Flash picks.
   const [models, setModels] = useState<Partial<Record<Engine, string>>>({});
   // Files waiting to be sent with the next message; the first is the main one.
@@ -306,6 +350,9 @@ export function Flash({
   const [showApps, setShowApps] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  // A request is starting or running. Set at once, before busy shows or the picture above loads,
+  // so a second Enter or tap in the meantime does nothing.
+  const runningRef = useRef(false);
   // Attachments stay in memory only (too large to save), keyed by user message id, for Retry.
   const filesRef = useRef(new Map<string, Attachment[]>());
   // Projects whose messages changed and still need saving to the server.
@@ -521,7 +568,7 @@ export function Flash({
    * something else; everything else is sent to the template's engine. False when it couldn't start.
    */
   async function makeTemplate(t: Template, values: TemplateValues, document?: string): Promise<boolean> {
-    if (t.engine === "local" ? !document : busy) return false;
+    if (t.engine === "local" ? !document : busy || runningRef.current) return false;
     const empty = active?.messages && !active.messages.length && active.id !== runningIn ? active : null;
     const project = empty ?? (await createProject());
     if (!project) return false;
@@ -621,7 +668,7 @@ export function Flash({
 
   /** Asks the builder to fix what went wrong in the latest app's preview. */
   async function fixApp(kind: "app" | "slides", request: string) {
-    if (!active?.messages || busy) return;
+    if (!active?.messages || busy || runningRef.current) return;
     await respond(active, active.messages, { id: newId(), role: "user", content: request, build: kind });
   }
 
@@ -633,8 +680,9 @@ export function Flash({
   }
 
   // auto: a one-tap button that knows its job, so it goes to Auto whatever tool is picked.
-  async function send(text: string, auto = false) {
-    if (busy) return;
+  // fresh: asks for a new picture (Tall, Square, Wide), so it never goes with the picture above.
+  async function send(text: string, auto = false, fresh = false) {
+    if (busy || runningRef.current) return;
     if (!active?.messages) {
       if (active) setNotice("This project didn't load. Pick it again in the sidebar.");
       return;
@@ -642,15 +690,22 @@ export function Flash({
     const content = text.trim();
     if (!content && !attachment) return;
     const part = picked?.projectId === active.id ? picked : null;
-    const userMsg: UIMessage = {
-      id: newId(),
-      role: "user",
-      content,
-      attachmentName: files.map((f) => f.name).join(", ") || undefined,
-      ...(auto && { auto: true }),
-      ...(part && { build: part.kind, picked: { label: part.label, context: part.context } }),
-    };
+    // "Make it darker" right after a picture changes that picture, the way ChatGPT does.
+    const above = !files.length && !part && !auto && !fresh ? followUpPicture(active.messages, content, choice, keepPicture) : null;
+    const userMsg = withPicture(
+      {
+        id: newId(),
+        role: "user",
+        content,
+        attachmentName: files.map((f) => f.name).join(", ") || undefined,
+        ...(auto && { auto: true }),
+        ...(part && { build: part.kind, picked: { label: part.label, context: part.context } }),
+      },
+      above,
+    );
+    // The box is cleared at once, so nothing typed or attached while the picture above loads is lost.
     setPicked(null);
+    setKeepPicture(null);
     if (files.length) filesRef.current.set(userMsg.id, files);
     updateProject(active.id, (p) => ({
       ...p,
@@ -658,13 +713,18 @@ export function Flash({
     }));
     setInput("");
     setFiles([]);
-    await respond(active, active.messages ?? [], userMsg);
+    await respond(active, active.messages, userMsg, false, (stopped) => {
+      // The picture above couldn't be opened (or Stop was pressed while it loaded), so nothing was
+      // sent: the words go back in the box and the user decides.
+      setInput((typed) => (typed.trim() ? typed : text));
+      if (!stopped) setNotice("Couldn't open the picture above. Tap ✕ to make a new picture instead.");
+    });
   }
 
   /** Answers the last user message again, replacing the reply after it. Returns the new reply. */
   async function retry(confirmed = false): Promise<UIMessage | null> {
     const messages = active?.messages;
-    if (!active || !messages || busy) return null;
+    if (!active || !messages || busy || runningRef.current) return null;
     const lastUser = messages.findLastIndex((m) => m.role === "user");
     if (lastUser === -1) return null;
     return respond(active, messages.slice(0, lastUser), messages[lastUser], confirmed);
@@ -683,10 +743,24 @@ export function Flash({
   /** Replaces the latest message with an edited one and asks again; the old reply is dropped. */
   async function editLast(text: string) {
     const messages = active?.messages;
-    if (!active || !messages || busy) return;
+    if (!active || !messages || busy || runningRef.current) return;
     const lastUser = messages.findLastIndex((m) => m.role === "user");
     if (lastUser === -1) return;
-    await respond(active, messages.slice(0, lastUser), { ...messages[lastUser], content: text });
+    const earlier = messages.slice(0, lastUser);
+    const { pictureAbove: had, ...old } = messages[lastUser];
+    let edited: UIMessage = { ...old, content: text };
+    // The new words decide whether it goes with the picture above, as when typing. Files sent with
+    // it stay, and a change the user sent without the picture (the ✕) doesn't gain it.
+    if (had || (!old.attachmentName && !old.build && !old.template && !pictureFollowUp(old.content))) {
+      const url = followUpPicture(earlier, text, old.queued || old.auto ? "auto" : choice);
+      if (!url) filesRef.current.delete(old.id);
+      edited = withPicture({ ...edited, attachmentName: undefined }, url);
+    }
+    // When nothing could be sent, the edited words go back in the box rather than being lost.
+    await respond(active, earlier, edited, false, (stopped, why) => {
+      setInput((typed) => (typed.trim() ? typed : text));
+      if (!stopped) setNotice(why);
+    });
   }
 
   function stop() {
@@ -702,13 +776,51 @@ export function Flash({
     } catch {}
   }
 
-  /** Sends a request and streams the reply into the chat. Returns the finished reply (for voice conversations). */
-  async function respond(project: Project, earlier: UIMessage[], userMsg: UIMessage, confirmed = false): Promise<UIMessage> {
+  /**
+   * Sends a request and streams the reply into the chat. Returns the finished reply (for voice
+   * conversations), or null while another request is starting. When nothing could be sent (Stop
+   * while the picture above loaded, or its files are gone) the chat stays as it was, unsent is
+   * called (or a notice says why) and the returned reply says why.
+   */
+  async function respond(
+    project: Project,
+    earlier: UIMessage[],
+    userMsg: UIMessage,
+    confirmed = false,
+    unsent?: (stopped: boolean, why: string) => void,
+  ): Promise<UIMessage | null> {
+    // One request at a time: Flash shows it's busy and Stop works from the first tap.
+    if (runningRef.current) return null;
+    runningRef.current = true;
+    setBusy(true);
+    const controller = new AbortController();
+    abortRef.current = controller;
     const projectId = project.id;
     const startedAt = Date.now();
     const reply: UIMessage = { id: newId(), role: "assistant", content: "", pending: true };
     let final = reply;
-    const sent = filesRef.current.get(userMsg.id) ?? [];
+    let sent = filesRef.current.get(userMsg.id) ?? [];
+    // Attachments stay in memory only, so after a reload (Retry, Go ahead, Edit) the picture above is
+    // fetched again from the chat. Without it, or other files sent before, nothing is sent, so a price
+    // already agreed can't change.
+    let missing = "";
+    if (!sent.length && userMsg.pictureAbove) {
+      const url = typeof userMsg.pictureAbove === "string" ? userMsg.pictureAbove : pictureAbove(earlier);
+      const picture = url ? await pictureAttachment(url, controller.signal) : null;
+      if (!picture) missing = NO_PICTURE;
+      else if (!controller.signal.aborted) filesRef.current.set(userMsg.id, (sent = [picture]));
+    } else if (!sent.length && userMsg.attachmentName) missing = NO_FILES;
+    if (missing || controller.signal.aborted) {
+      const stopped = controller.signal.aborted;
+      if (abortRef.current === controller) abortRef.current = null;
+      runningRef.current = false;
+      setBusy(false);
+      // Like a request that failed or was stopped, this holds Next up until the user says so.
+      if (queueNow.current.length) setQueuePaused(true);
+      if (unsent) unsent(stopped, missing);
+      else if (!stopped) setNotice(missing);
+      return { ...reply, pending: false, ...(stopped ? { stopped: true } : { error: missing }) };
+    }
     // A template's request always goes to its own engine, and one the companion lined up to Auto
     // (the tool picked in the composer was for something else); anything else to the one picked.
     const engine = userMsg.template?.engine ?? userMsg.build ?? (userMsg.queued || userMsg.auto ? "auto" : choice);
@@ -730,9 +842,6 @@ export function Flash({
     updateProject(projectId, (p) => ({ ...p, updated_at: Date.now(), messages: [...earlier, userMsg, reply] }));
     jobRef.current = { request: userMsg.content, startedAt: Date.now(), projectId };
     setRunningIn(projectId);
-    setBusy(true);
-    const controller = new AbortController();
-    abortRef.current = controller;
     let finished = true;
 
     try {
@@ -751,6 +860,8 @@ export function Flash({
           projectId,
           ...(userMsg.voice && { voice: true }),
           ...(userMsg.build && { build: true }),
+          // The server only needs to know it's the picture above, for the reason it shows.
+          ...(userMsg.pictureAbove ? { pictureAbove: true } : {}),
         }),
         signal: controller.signal,
       });
@@ -795,6 +906,7 @@ export function Flash({
       updateMessage(projectId, reply.id, (m) => ({ ...m, pending: false, status: undefined }));
       refreshMe();
       abortRef.current = null;
+      runningRef.current = false;
       jobRef.current = null;
       // A request that failed, was stopped or waits for its price to be confirmed holds Next up,
       // so nothing runs on top of it until the user says so.
@@ -810,12 +922,16 @@ export function Flash({
   /** One turn of a voice conversation: sends what was said to the open chat, on Auto, and says the answer. */
   async function talk(text: string): Promise<VoiceAnswer> {
     if (!active?.messages) return { say: "Open a chat first, then talk to me again.", confirm: false };
+    const stillWorking = { say: "I'm still working on your last request. Ask me again when it's done.", confirm: false };
+    if (busy || runningRef.current) return stillWorking;
     updateProject(active.id, (p) => ({
       ...p,
       name: !p.messages?.length && p.name === "New project" ? text.slice(0, 40) || p.name : p.name,
     }));
-    const reply = await respond(active, active.messages, { id: newId(), role: "user", content: text, auto: true, voice: true });
-    return voiceReply(reply);
+    // "Make it darker" said right after a picture changes that picture, as when it's typed.
+    const ask: UIMessage = { id: newId(), role: "user", content: text, auto: true, voice: true };
+    const reply = await respond(active, active.messages, withPicture(ask, followUpPicture(active.messages, text, "auto")));
+    return reply ? voiceReply(reply) : stillWorking;
   }
 
   /** "Yes" to a costly request asked for by voice: runs it, like Go ahead. */
@@ -829,7 +945,7 @@ export function Flash({
    * about (even if another chat is open now). It never takes the composer's text or files.
    */
   useEffect(() => {
-    if (busy || queuePaused || !queue.length || queue[0].waiting) return;
+    if (busy || runningRef.current || queuePaused || !queue.length || queue[0].waiting) return;
     const [next, ...rest] = queue;
     setQueue(rest);
     const project = projects.find((p) => p.id === next.projectId);
@@ -841,7 +957,14 @@ export function Flash({
       ...p,
       name: !p.messages?.length && p.name === "New project" ? next.request.slice(0, 40) : p.name,
     }));
-    respond(project, project.messages, { id: newId(), role: "user", content: next.request, queued: true });
+    // A queued "make it darker" right after a picture changes that picture, as when it's typed.
+    const ask: UIMessage = { id: newId(), role: "user", content: next.request, queued: true };
+    // When nothing could be sent, the request goes back to the front of Next up, paused, to Resume later.
+    respond(project, project.messages, withPicture(ask, followUpPicture(project.messages, next.request, "auto")), false, (stopped, why) => {
+      setQueue([next, ...queueNow.current]);
+      setQueuePaused(true);
+      if (!stopped) setNotice(why);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [busy, queuePaused, queue, projects]);
 
@@ -907,10 +1030,13 @@ export function Flash({
     [],
   );
 
-  /** Makes a picture again in another shape (the shape words are read by the image engine). */
+  /**
+   * Makes a picture again in another shape (the shape words are read by the image engine). It's a
+   * new picture of the prompt, so it never goes with the picture above: an edit keeps the old shape.
+   */
   function reshape(prompt: string, shape: Reshape) {
     const how = { tall: "tall vertical 9:16", square: "square 1:1", wide: "wide 16:9" }[shape];
-    send(`Make a ${how} picture of this: ${prompt}`);
+    send(`Make a ${how} picture of this: ${prompt}`, false, true);
   }
 
   /** Puts a picture Flash made into the composer, so the photo buttons and edits apply to it. */
@@ -1007,6 +1133,9 @@ export function Flash({
   // The one-tap buttons for attached photos (Copy the text, Remove background…).
   const photoActions = photoActionsFor(files.map((f) => f.mediaType), isLive);
   const pickedNow = picked && picked.projectId === active?.id ? picked : null;
+  // What's typed reads as a change to the picture Flash just made, so the picture goes with it.
+  const above = pictureAbove(active?.messages);
+  const changingPicture = !files.length && !pickedNow && Boolean(followUpPicture(active?.messages, input, choice, keepPicture));
   // Flash builds on the most recent app in the chat.
   const lastAppId = active?.messages?.findLast((m) => m.app)?.id;
   const liveCount = ENGINES.filter(isLive).length;
@@ -1559,6 +1688,20 @@ export function Flash({
                     </button>
                   </div>
                 )}
+                {changingPicture && (
+                  <div className="mb-1 ml-2 mt-1 inline-flex max-w-full items-center gap-2 rounded-lg bg-primary/15 px-3 py-1 text-xs text-primary-soft">
+                    <span className="truncate">✏️ Changing the picture above</span>
+                    <button
+                      type="button"
+                      onClick={() => setKeepPicture(above)}
+                      aria-label="Don't change the picture above"
+                      title="Make a new picture instead"
+                      className="text-primary-soft/70 hover:text-zinc-100"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )}
                 {files.length > 0 && (
                   <div className="mb-1 ml-2 mt-1 flex flex-wrap gap-1.5">
                     {files.map((f) => (
@@ -1615,9 +1758,11 @@ export function Flash({
                       ? "Say what to change about it…"
                       : photoActions.length
                       ? files.length > 1
-                        ? "Ask about these photos, or tap a button above…"
+                        ? "Ask about these photos, or say how to combine them…"
                         : "Ask about it, say what to change, or tap a button above…"
-                      : choice === "auto"
+                      : above && changesPictures(choice)
+                        ? "Say what to change in the picture, or ask anything…"
+                        : choice === "auto"
                         ? "Ask Flash anything…"
                         : `Ask ${ENGINE_LABELS[choice]}…`
                   }

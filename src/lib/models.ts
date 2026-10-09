@@ -228,9 +228,21 @@ export function movieScenes(total: number): { scenes: number; seconds: number } 
   return { scenes, seconds: Math.min(15, Math.max(5, Math.round(total / scenes))) };
 }
 
+// FLUX.2 Edit can combine several photos ("put me and my dog on a beach") and reads at most 4.
+export const MAX_EDIT_PHOTOS = 4;
+// Each photo after the first adds up to 4.2 megapixels read, at $0.008 a megapixel.
+const EXTRA_PHOTO_CENTS = 3.5;
+
+/** What a request on this model costs Flash, in cents; a photo edit costs more for each extra photo. */
+export function requestCents(model: ModelInfo, request = "", photos = 1): number {
+  const cents = typeof model.costCents === "function" ? model.costCents(request) : model.costCents;
+  const extra = Math.min(Math.max(photos, 1), MAX_EDIT_PHOTOS) - 1;
+  return model.id === "flux-2-edit" ? cents + extra * EXTRA_PHOTO_CENTS : cents;
+}
+
 /** Credits a request on this model costs the user. */
-export function modelCredits(model: ModelInfo, request = ""): number {
-  return creditsFor(typeof model.costCents === "function" ? model.costCents(request) : model.costCents);
+export function modelCredits(model: ModelInfo, request = "", photos = 1): number {
+  return creditsFor(requestCents(model, request, photos));
 }
 
 export const modelById = (id: string | undefined) => MODELS.find((m) => m.id === id);
