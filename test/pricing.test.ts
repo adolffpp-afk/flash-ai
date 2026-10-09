@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   CLAUDE_PRICES,
+  claudePrice,
   CREDIT_LIMITS,
   CREDIT_PACKS,
   MARKUP,
@@ -108,7 +109,7 @@ test("a Claude reply can never cost more than the credits held for it", () => {
           const hold = planHold(engine, model, inputTokens, available);
           assert.ok(hold.held >= hold.needed);
           assert.ok(hold.maxTokens > 0 && hold.maxTokens <= MAX_OUTPUT_TOKENS);
-          const worst = inputCostCents(engine, model, inputTokens) + (hold.maxTokens * CLAUDE_PRICES[model].output) / 1e6;
+          const worst = inputCostCents(engine, model, inputTokens) + (hold.maxTokens * claudePrice(model, inputTokens).output) / 1e6;
           // Credits held are worth at least cost x MARKUP, and the reply can't spend more than that.
           assert.ok(worst * MARKUP <= hold.held, `${engine} ${model} ${inputTokens}: ${worst}¢ vs ${hold.held} credits`);
           // The cost cap leaves room for a fallback model up to 25% pricier.

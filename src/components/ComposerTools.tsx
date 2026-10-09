@@ -6,6 +6,7 @@ import type { Me } from "@/lib/store";
 import { BoltIcon } from "@/app/brand";
 import { EngineIcon } from "./EngineIcon";
 import { micBlocked, newRecognition, releaseMic, takeMic } from "@/lib/listen";
+import { LEVELS, type Level } from "@/lib/levels";
 
 export type Choice = Engine | "auto";
 
@@ -42,11 +43,14 @@ function Popover({
   children,
   label,
   align = "left",
+  phoneWide = false,
 }: {
   button: (open: boolean, toggle: () => void) => ReactNode;
   children: (close: () => void) => ReactNode;
   label: string;
   align?: "left" | "right";
+  // On phones the menu opens from the message box's edge instead of the button, so it stays on screen.
+  phoneWide?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -63,13 +67,13 @@ function Popover({
   }, [open]);
   return (
     // min-w-0 lets the tool picker shrink (its label truncates) when larger text makes the row tight.
-    <div ref={ref} className="relative min-w-0">
+    <div ref={ref} className={`min-w-0 ${phoneWide ? "sm:relative" : "relative"}`}>
       {button(open, () => setOpen((o) => !o))}
       {open && (
         <div
           role="menu"
           aria-label={label}
-          className={`absolute bottom-full z-30 mb-2 max-h-[min(70vh,520px)] w-72 overflow-y-auto rounded-2xl border border-white/10 bg-zinc-900 p-1.5 shadow-2xl shadow-black/50 ${
+          className={`absolute bottom-full z-40 mb-2 max-h-[min(70vh,520px)] w-72 overflow-y-auto rounded-2xl border border-white/10 bg-zinc-900 p-1.5 shadow-2xl shadow-black/50 ${
             align === "left" ? "left-0" : "right-0"
           }`}
         >
@@ -151,11 +155,11 @@ export function ToolPicker({
           onClick={toggle}
           aria-expanded={open}
           title="Choose a tool"
-          className={`inline-flex h-10 min-w-0 items-center gap-1.5 rounded-full bg-white/[0.06] px-4 text-sm text-zinc-100 transition hover:bg-white/[0.1] ${open ? "bg-white/[0.12]" : ""}`}
+          className={`inline-flex h-10 min-w-0 items-center gap-1.5 rounded-full bg-white/[0.06] px-3 text-sm sm:px-4 text-zinc-100 transition hover:bg-white/[0.1] ${open ? "bg-white/[0.12]" : ""}`}
         >
           {choice === "auto" ? <BoltIcon className="h-3.5 w-3.5 text-gold" /> : null}
           <span className="truncate">{choice === "auto" ? "Auto" : ENGINE_LABELS[choice]}</span>
-          <span className="truncate text-zinc-400">{picked ? picked.label : choice === "auto" ? "Best tool" : ""}</span>
+          <span className={`truncate text-zinc-400 ${picked ? "" : "hidden sm:inline"}`}>{picked ? picked.label : choice === "auto" ? "Best tool" : ""}</span>
           <Icon d="M7 10l5 5 5-5" className="h-4 w-4 shrink-0 text-zinc-500" />
         </button>
       )}
@@ -223,6 +227,92 @@ export function ToolPicker({
               {choice === e && check}
             </button>
           ))}
+        </>
+      )}
+    </Popover>
+  );
+}
+
+// How many of the four bars each level fills; Auto shows them all, in gold.
+const BARS: Record<Level, number> = { auto: 4, sonic: 1, ascend: 2, vision: 3, ultra: 4 };
+
+/** Rising bars, filled up to the level: one for Sonic up to four for Summit. */
+function LevelBars({ level, className = "h-4 w-4" }: { level: Level; className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" className={className} aria-hidden>
+      {[0, 1, 2, 3].map((i) => (
+        <rect
+          key={i}
+          x={1 + i * 3.75}
+          y={11 - i * 3}
+          width="2.5"
+          height={4 + i * 3}
+          rx="1"
+          fill="currentColor"
+          opacity={i < BARS[level] ? 1 : 0.25}
+        />
+      ))}
+    </svg>
+  );
+}
+
+/**
+ * Flash's level of intelligence for writing, research and building: Auto, or one of the four
+ * levels. Pictures, video, music and voice have their own models, so it hides for those tools.
+ */
+export function LevelPicker({ level, setLevel }: { level: Level; setLevel: (level: Level) => void }) {
+  const current = LEVELS.find((l) => l.id === level) ?? LEVELS[0];
+  const check = <Icon d="M5 12l5 5 9-10" className="ml-auto h-4 w-4 shrink-0 text-primary-soft" />;
+  return (
+    <Popover
+      label="Intelligence level"
+      align="right"
+      phoneWide
+      button={(open, toggle) => (
+        <button
+          type="button"
+          onClick={toggle}
+          aria-expanded={open}
+          aria-label={`Intelligence level: ${current.name}`}
+          title="Choose Flash's level of intelligence"
+          // On phones only the bars show, so the message box keeps room for the tool picker.
+          className={`inline-flex h-10 w-10 shrink-0 items-center justify-center gap-1.5 rounded-full text-sm text-zinc-200 transition hover:bg-white/[0.06] sm:w-auto sm:px-3 ${open ? "bg-white/[0.08]" : ""}`}
+        >
+          <LevelBars level={current.id} className={`h-4 w-4 ${current.id === "auto" ? "text-gold" : "text-primary-soft"}`} />
+          <span className="hidden sm:inline">{current.short}</span>
+          <Icon d="M7 10l5 5 5-5" className="hidden h-4 w-4 text-zinc-500 sm:block" />
+        </button>
+      )}
+    >
+      {(close) => (
+        <>
+          <p className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wider text-zinc-500">Intelligence</p>
+          {LEVELS.map((l) => (
+            <button
+              key={l.id}
+              type="button"
+              role="menuitemradio"
+              aria-checked={level === l.id}
+              className={item}
+              onClick={() => (setLevel(l.id), close())}
+            >
+              <span
+                className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md ring-1 ring-inset ${
+                  l.id === "auto" ? "bg-gold/15 text-gold ring-gold/30" : "bg-primary/10 text-primary-soft ring-primary/25"
+                }`}
+              >
+                <LevelBars level={l.id} className="h-3.5 w-3.5" />
+              </span>
+              <span className="min-w-0">
+                {l.name}
+                <span className="block text-xs text-zinc-500">{l.blurb}</span>
+              </span>
+              {level === l.id && check}
+            </button>
+          ))}
+          <p className="px-2.5 pb-1.5 pt-2 text-xs leading-relaxed text-zinc-500">
+            Credits follow what each answer really costs. Pictures, video, music and voice use their own models.
+          </p>
         </>
       )}
     </Popover>

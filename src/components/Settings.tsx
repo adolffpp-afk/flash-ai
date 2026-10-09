@@ -831,7 +831,7 @@ function UsageTab({ me, onOpenCredits }: Shared & { onOpenCredits: () => void })
       </Section>
       {usage && (me.freeLane.chats > 0 || me.freeLane.images > 0) && (
         <Section title="Free use today">
-          <p className={hint}>When your credits run out, free open-source models still answer, up to a daily limit.</p>
+          <p className={hint}>When your credits run out, free models still answer, up to a daily limit.</p>
           <ul className="flex flex-col gap-1 text-sm text-zinc-300">
             {me.freeLane.chats > 0 && (
               <li>

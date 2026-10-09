@@ -12,7 +12,7 @@ import {
   type Provider,
 } from "../src/lib/models.ts";
 import { MAX_POST_CHARS, cleanHashtag, packMarkdown, parsePack, postText } from "../src/lib/post-pack.ts";
-import { packMaxTokens, packSystem } from "../src/lib/engines/post-pack.ts";
+import { DEAREST, packMaxTokens, packSystem } from "../src/lib/engines/post-pack.ts";
 import { packImageInput, packVideoInput } from "../src/lib/engines/fal-input.ts";
 import { tokensAtMost } from "../src/lib/engines/companion.ts";
 import { CLAUDE_PRICES, MARKUP } from "../src/lib/credits.ts";
@@ -76,7 +76,9 @@ test("a pack's price covers writing, two pictures and the video at a margin", ()
 });
 
 test("the writer can never spend more than the writing part of the price", () => {
-  const dearest = { input: Math.max(...Object.values(CLAUDE_PRICES).map((p) => p.input)), output: Math.max(...Object.values(CLAUDE_PRICES).map((p) => p.output)) };
+  const dearest = DEAREST;
+  // At least the price of the model the writer runs on, and of every model it could fall back to.
+  for (const model of ["claude-sonnet-5-5", "claude-opus-5-5"]) assert.ok(CLAUDE_PRICES[model].output <= dearest.output && CLAUDE_PRICES[model].input <= dearest.input);
   for (const input of [200, 1500, 4000, 8000]) {
     const out = packMaxTokens(input);
     const cents = (input * dearest.input + out * dearest.output) / 1e6;

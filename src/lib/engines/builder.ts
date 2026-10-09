@@ -1,5 +1,5 @@
-import { BUILD_MODEL, NO_BUDGET, getClient, meterClaude, noMeter, toMessages, type Budget, type Meter } from "./claude.ts";
-import { CLAUDE_PRICES, MAX_OUTPUT_TOKENS, claudeCostCents, inputCostCents } from "../credits.ts";
+import { NO_BUDGET, choiceParams, defaultChoice, getClient, meterClaude, noMeter, toMessages, type Budget, type ClaudeChoice, type Meter } from "./claude.ts";
+import { MAX_OUTPUT_TOKENS, claudeCostCents, claudePrice, inputCostCents } from "../credits.ts";
 import { htmlTitle, splitBuild } from "../build-parse.ts";
 import { applyEdits, hasPieces, piecesIn, splitEdits, type Edit } from "../edit-blocks.ts";
 import type { ChatTurn, StreamEvent } from "../types.ts";
@@ -132,6 +132,8 @@ export async function* streamBuild(
   kind: "app" | "slides",
   meter: Meter = noMeter,
   budget: Budget = NO_BUDGET,
+  // The level's model and effort; Vision at high effort by default.
+  choice: ClaudeChoice = defaultChoice(kind),
 ): AsyncGenerator<StreamEvent> {
   const noun = kind === "app" ? "app" : "slides";
   const fallback = kind === "app" ? "Your app" : "Your slides";
@@ -164,11 +166,8 @@ export async function* streamBuild(
             : "Designing your deck…",
     };
     const stream = getClient().beta.messages.stream({
-      model: BUILD_MODEL,
+      ...choiceParams(choice),
       max_tokens: maxTokens,
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
-      output_config: { effort: "high" },
       system: buildSystem(kind, preferences, canEdit),
       messages,
     });
@@ -254,9 +253,8 @@ export async function* streamBuild(
       // reading everything again and writing all of it, so a retry never runs at a loss.
       const usage = final.usage;
       const reread = usage.input_tokens + (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + usage.output_tokens + 200;
-      const left = budget.capCents - spent - inputCostCents(kind, BUILD_MODEL, reread);
-      const price = CLAUDE_PRICES[BUILD_MODEL] ?? CLAUDE_PRICES["claude-opus-5-5"];
-      maxTokens = Math.min(budget.maxTokens, Math.floor((left * 1e6) / price.output));
+      const left = budget.capCents - spent - inputCostCents(kind, choice.model, reread);
+      maxTokens = Math.min(budget.maxTokens, Math.floor((left * 1e6) / claudePrice(choice.model, reread).output));
       if (!(maxTokens >= Math.ceil(base!.length / 3) + THINKING_ROOM)) {
         yield { type: "error", message: NO_FIT };
         return;

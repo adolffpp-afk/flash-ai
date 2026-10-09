@@ -102,7 +102,7 @@ export function PlanCards({
               <li>
                 ✓ Then {pricing.freeLane.chats} free chats
                 {pricing.freeLane.images ? `${pricing.freeLane.transcripts ? "," : " and"} ${pricing.freeLane.images} images` : ""}
-                {pricing.freeLane.transcripts ? ` and ${pricing.freeLane.transcripts} transcripts` : ""} a day on open-source models
+                {pricing.freeLane.transcripts ? ` and ${pricing.freeLane.transcripts} transcripts` : ""} a day on free models
               </li>
             )}
           </ul>

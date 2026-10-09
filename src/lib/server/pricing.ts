@@ -32,7 +32,7 @@ export function pricingInfo() {
     packs: CREDIT_PACKS,
     plans: PLANS,
     freeMonthly: FREE_MONTHLY_CREDITS,
-    // Free open-source models once credits run out, per user per day.
+    // Free models once credits run out, per user per day.
     freeLane: {
       chats: freeChatConfigured() ? FREE_DAILY_CHATS : 0,
       images: freeImageConfigured() ? FREE_DAILY_IMAGES : 0,

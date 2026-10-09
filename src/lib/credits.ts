@@ -11,12 +11,23 @@ export const MARKUP = Number(process.env.FLASH_MARKUP ?? 2.5);
 
 export const creditsFor = (costCents: number) => Math.max(1, Math.ceil(costCents * MARKUP));
 
-// Claude, in US cents per million tokens.
-export const CLAUDE_PRICES: Record<string, { input: number; output: number }> = {
+type Price = { input: number; output: number };
+
+// Claude, in US cents per million tokens. Haiku 5.5 costs five times more once a prompt is over
+// 100,000 tokens.
+export const CLAUDE_PRICES: Record<string, Price & { long?: Price & { over: number } }> = {
+  "claude-fable-5-1": { input: 1000, output: 5000 },
   "claude-opus-5-5": { input: 400, output: 2000 },
   "claude-sonnet-5-5": { input: 200, output: 1000 },
+  "claude-haiku-5-5": { input: 10, output: 50, long: { over: 100_000, input: 50, output: 250 } },
   "claude-haiku-4-5": { input: 100, output: 500 },
 };
+
+/** A model's price for a prompt of this many tokens. Unknown models are priced as Opus to stay safe. */
+export function claudePrice(model: string, promptTokens = 0): Price {
+  const price = CLAUDE_PRICES[model] ?? CLAUDE_PRICES["claude-opus-5-5"];
+  return price.long && promptTokens > price.long.over ? price.long : price;
+}
 const WEB_SEARCH_CENTS = 1;
 
 export type ClaudeUsage = {
@@ -29,7 +40,8 @@ export type ClaudeUsage = {
 
 /** What one Claude call cost Flash, in cents. Unknown models are priced as Opus to stay safe. */
 export function claudeCostCents(model: string, usage: ClaudeUsage): number {
-  const price = CLAUDE_PRICES[model] ?? CLAUDE_PRICES["claude-opus-5-5"];
+  const prompt = usage.input_tokens + (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0);
+  const price = claudePrice(model, prompt);
   const input =
     usage.input_tokens + (usage.cache_creation_input_tokens ?? 0) * 1.25 + (usage.cache_read_input_tokens ?? 0) * 0.1;
   const searches = usage.server_tool_use?.web_search_requests ?? 0;
@@ -213,10 +225,8 @@ export const MIN_OUTPUT_TOKENS: Partial<Record<Engine, number>> = {
 const SEARCH_CALLS = 5;
 const SEARCH_RESULT_TOKENS = 6000;
 
-const priceOf = (model: string) => CLAUDE_PRICES[model] ?? CLAUDE_PRICES["claude-opus-5-5"];
-
 /** What reading the input once costs, in cents. Claude bills this even when a reply is stopped. */
-export const readCostCents = (model: string, inputTokens: number) => (inputTokens * priceOf(model).input) / 1e6;
+export const readCostCents = (model: string, inputTokens: number) => (inputTokens * claudePrice(model, inputTokens).input) / 1e6;
 
 /** Worst-case input cost of one request, in cents (search re-reads its context per tool call). */
 export function inputCostCents(engine: Engine, model: string, inputTokens: number): number {
@@ -227,22 +237,24 @@ export function inputCostCents(engine: Engine, model: string, inputTokens: numbe
 }
 
 /** Most output tokens a reply can write while costing no more than its held credits pay for. */
-export function outputBudget(model: string, heldCredits: number, inputCents: number): number {
+export function outputBudget(model: string, heldCredits: number, inputCents: number, inputTokens = 0): number {
   const spendable = heldCredits / MARKUP / SAFETY - inputCents;
-  return Math.min(MAX_OUTPUT_TOKENS, Math.floor((spendable * 1e6) / priceOf(model).output));
+  return Math.min(MAX_OUTPUT_TOKENS, Math.floor((spendable * 1e6) / claudePrice(model, inputTokens).output));
 }
 
 /**
  * How many credits a Claude request needs at least, and how many to hold. Long conversations
  * cost more to read, so the hold grows with the input on top of the engine's reply allowance.
+ * scale grows that allowance for a level whose model costs more than the engine's usual one, so
+ * a Summit reply has room for as many words as a Vision or Ascend one.
  */
-export function planHold(engine: Engine, model: string, inputTokens: number, available: number) {
+export function planHold(engine: Engine, model: string, inputTokens: number, available: number, scale = 1) {
   const inputCents = inputCostCents(engine, model, inputTokens);
-  const minOutputCents = ((MIN_OUTPUT_TOKENS[engine] ?? 1500) * priceOf(model).output) / 1e6;
+  const minOutputCents = ((MIN_OUTPUT_TOKENS[engine] ?? 1500) * claudePrice(model, inputTokens).output) / 1e6;
   const needed = Math.ceil((inputCents + minOutputCents) * MARKUP * SAFETY) + 1;
-  const limit = Math.ceil(inputCents * MARKUP * SAFETY) + (CREDIT_LIMITS[engine] ?? 30);
+  const limit = Math.ceil(inputCents * MARKUP * SAFETY) + Math.ceil((CREDIT_LIMITS[engine] ?? 30) * Math.max(1, scale));
   const held = Math.max(needed, Math.min(limit, available));
-  return { needed, held, maxTokens: outputBudget(model, held, inputCents), capCents: held / MARKUP / SAFETY };
+  return { needed, held, maxTokens: outputBudget(model, held, inputCents, inputTokens), capCents: held / MARKUP / SAFETY };
 }
 
 /*
@@ -257,7 +269,7 @@ export const COMPANION_TOOL_TOKENS = 2000;
 
 /** Worst-case cost of one companion call, in cents. */
 export const companionStepCents = (model: string, inputTokens: number) =>
-  (inputTokens * priceOf(model).input + COMPANION_MAX_TOKENS * priceOf(model).output) / 1e6;
+  (inputTokens * claudePrice(model, inputTokens).input + COMPANION_MAX_TOKENS * claudePrice(model, inputTokens).output) / 1e6;
 
 export function companionHold(model: string, inputTokens: number, available: number) {
   const needed = Math.ceil(companionStepCents(model, inputTokens) * MARKUP * SAFETY) + 1;
@@ -288,10 +300,12 @@ export function finalCredits(r: {
   // Characters of reply already sent.
   written: number;
   typical: number;
+  // The model's output price in cents per million tokens; Opus's by default.
+  outputPrice?: number;
 }): number {
   if (r.held <= 0) return 0;
-  // About 3 characters per token, doubled for thinking, at Opus's output price of 2,000¢ per million tokens.
-  const writtenCents = (((r.written / 3) * 2 * 2000) / 1e6);
+  // About 3 characters per token, doubled for thinking, at the model's output price.
+  const writtenCents = (((r.written / 3) * 2 * (r.outputPrice ?? 2000)) / 1e6);
   if (!r.ok) {
     // A Claude call that already sent text was billed for its input and output too.
     const incurred = r.costCents + (r.metered && r.written > 0 ? r.inputCents + writtenCents : 0);

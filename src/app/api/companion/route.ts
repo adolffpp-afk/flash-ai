@@ -5,7 +5,7 @@ import { overLimit } from "@/lib/server/limits.ts";
 import { pricingInfo } from "@/lib/server/pricing.ts";
 import { planSummary } from "@/lib/server/subscriptions.ts";
 import { engineStatus } from "@/lib/server/status.ts";
-import { recordFree, releaseFreeUser, reserveFree, reserveFreeUser } from "@/lib/server/free.ts";
+import { countryOf, recordFree, releaseFreeUser, reserveFree, reserveFreeUser } from "@/lib/server/free.ts";
 import { chatsSummary, creationsSummary, spendingSummary, websitesSummary } from "@/lib/server/companion.ts";
 import { claudeConfigured, type Meter } from "@/lib/engines/claude.ts";
 import { freeChatConfigured, streamFreeChat } from "@/lib/engines/free.ts";
@@ -37,8 +37,9 @@ async function* freeAnswer(
   turns: CompanionTurn[],
   systemPrompt: string,
   onModel: (label: string, provider: string) => void,
+  country: string,
 ): AsyncGenerator<CompanionEvent> {
-  for await (const e of streamFreeChat(turns, "", "text", reserveFree, recordFree, onModel, systemPrompt)) {
+  for await (const e of streamFreeChat(turns, "", "text", reserveFree, recordFree, onModel, systemPrompt, country)) {
     if (e.type === "text") yield e;
   }
 }
@@ -92,7 +93,7 @@ export async function POST(request: Request) {
   const inputTokens = claudeConfigured() ? await countCompanionTokens(turns, system) : 0;
   const hold = companionHold(COMPANION_MODEL, inputTokens, available);
 
-  // Out of credits (or no Claude key): a free open-source model answers, without tools, and it
+  // Out of credits (or no Claude key): a free model answers, without tools, and it
   // counts as one of the user's free messages for today.
   let free = false;
   if (!claudeConfigured() && !freeChatConfigured()) {
@@ -194,10 +195,15 @@ export async function POST(request: Request) {
       let written = 0;
       try {
         const events = free
-          ? freeAnswer(turns, companionSystem({ ...facts, tools: false }), (label, provider) => {
-              used.provider = provider;
-              used.model = label;
-            })
+          ? freeAnswer(
+              turns,
+              companionSystem({ ...facts, tools: false }),
+              (label, provider) => {
+                used.provider = provider;
+                used.model = label;
+              },
+              countryOf(request),
+            )
           : streamCompanion(turns, system, runTool, meter, hold.capCents);
         for await (const event of events) {
           if (cancelled || request.signal.aborted) {

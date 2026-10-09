@@ -63,7 +63,7 @@ export type StreamEvent =
       cost: number;
       model?: string;
       modelWhy?: string;
-      // Answered by a free open-source model because the user is out of credits.
+      // Answered by a free model because the user is out of credits.
       free?: boolean;
     }
   | { type: "text"; delta: string }

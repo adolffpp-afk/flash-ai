@@ -204,7 +204,7 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
 
         {me.freeLane.chats > 0 && (
           <p className="mt-4 rounded-lg border border-primary/15 bg-primary/[0.05] px-3 py-2 text-xs text-emerald-200">
-            Out of credits? Chat, writing, code and translation keep working on free open-source models,{" "}
+            Out of credits? Chat, writing, code and translation keep working on free models,{" "}
             {me.freeLane.chats} a day{me.freeLane.images ? `, plus ${me.freeLane.images} free images` : ""}
             {me.freeLane.transcripts ? ` and ${me.freeLane.transcripts} free transcripts` : ""}.
           </p>

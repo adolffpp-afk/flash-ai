@@ -2,12 +2,13 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { CHAT_MODEL, getClient, meterClaude, noMeter, type Meter } from "./claude.ts";
 import { tokensAtMost } from "./companion.ts";
 import { FriendlyError } from "./errors.ts";
-import { CLAUDE_PRICES } from "../credits.ts";
+import { claudePrice } from "../credits.ts";
 import { PACK_VIDEO_SECONDS, PACK_WRITING_CENTS } from "../models.ts";
 import { parsePack, type Pack } from "../post-pack.ts";
 
-// Writing may fall back to another Claude model, so it is held to its budget at the dearest price.
-const DEAREST = Object.values(CLAUDE_PRICES).reduce((a, p) => ({ input: Math.max(a.input, p.input), output: Math.max(a.output, p.output) }));
+// Writing may fall back to another Claude model, so it is held to its budget at Opus's price, the
+// dearest a chat request is answered at (Summit's model is only used when someone picks it).
+export const DEAREST = claudePrice("claude-opus-5-5");
 
 // Enough for three posts in any language; a shorter allowance than this can't fit them.
 const MAX_PACK_TOKENS = 3000;
