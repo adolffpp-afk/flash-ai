@@ -73,7 +73,7 @@ function Popover({
         <div
           role="menu"
           aria-label={label}
-          className={`absolute bottom-full z-30 mb-2 max-h-[min(70vh,520px)] w-72 overflow-y-auto rounded-2xl border border-white/10 bg-zinc-900 p-1.5 shadow-2xl shadow-black/50 ${
+          className={`absolute bottom-full z-40 mb-2 max-h-[min(70vh,520px)] w-72 overflow-y-auto rounded-2xl border border-white/10 bg-zinc-900 p-1.5 shadow-2xl shadow-black/50 ${
             align === "left" ? "left-0" : "right-0"
           }`}
         >
