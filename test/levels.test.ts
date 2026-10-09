@@ -92,6 +92,8 @@ test("each level runs on its own model, and Summit steps down to Vision", () => 
   assert.equal(claudeChoice("app", "vision").effort, "high");
   assert.equal(claudeChoice("text", "ultra").stepDown?.model, "claude-opus-5-5");
   assert.equal(claudeChoice("text", "vision").stepDown, undefined);
+  // Research needs web tools Haiku doesn't have, so Sonic researches on Ascend.
+  assert.deepEqual([claudeChoice("search", "sonic").level, claudeChoice("search", "sonic").model], ["ascend", "claude-sonnet-5-5"]);
   // Without a level, engines run as they did before levels: Opus for building and code, Sonnet for the rest.
   assert.equal(defaultChoice("app").model, "claude-opus-5-5");
   assert.equal(defaultChoice("code").model, "claude-opus-5-5");

@@ -33,8 +33,10 @@ export type ClaudeChoice = { level: ModelLevel; model: string; effort: Effort; s
 /**
  * What a level runs on for an engine. Building and code get more thought, Sonic answers at low
  * effort for speed, and Summit steps down to Vision when its model is busy or not available.
+ * Research runs on Ascend or above: Sonic's model doesn't have the web tools research uses.
  */
 export function claudeChoice(engine: Engine, level: ModelLevel): ClaudeChoice {
+  if (engine === "search" && level === "sonic") return claudeChoice(engine, "ascend");
   const effort: Effort = level === "sonic" ? "low" : engine === "app" || engine === "slides" || engine === "code" ? "high" : "medium";
   return { level, model: LEVEL_MODELS[level], effort, ...(level === "ultra" && { stepDown: claudeChoice(engine, "vision") }) };
 }

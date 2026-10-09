@@ -677,7 +677,11 @@ export async function POST(request: Request) {
         return { choice, scale, inputTokens, hold: planHold(engine, choice.model, inputTokens, available, scale) };
       };
       let planned = await plan(wanted ?? autoPick.level);
-      levelWhy = wanted ? `You picked ${levelName(wanted)}.` : autoPick.why;
+      levelWhy = !wanted
+        ? autoPick.why
+        : planned.choice.level === wanted
+          ? `You picked ${levelName(wanted)}.`
+          : `Research runs on ${levelName(planned.choice.level)} or above, so it answered instead of ${levelName(wanted)}.`;
       // Not enough credits for the level picked: Auto's level answers when the user has enough for that.
       if (wanted && wanted !== autoPick.level && available < planned.hold.needed) {
         const instead = await plan(autoPick.level);
