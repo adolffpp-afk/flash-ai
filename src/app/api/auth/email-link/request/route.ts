@@ -21,7 +21,7 @@ export async function POST(request: Request) {
   }
   const link = `${appUrl(request)}/signin?token=${await createSignInLink(email, safeNext(body.next))}`;
   try {
-    await sendEmail(email, EMAILS.signin(link));
+    await sendEmail(email, EMAILS.signin(link), "account");
   } catch (err) {
     console.error("[flash] sign-in link email failed", err instanceof Error ? err.message : err);
     return Response.json({ error: "Couldn't send the email. Please try again." }, { status: 502 });

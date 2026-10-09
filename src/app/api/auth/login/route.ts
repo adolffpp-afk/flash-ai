@@ -1,4 +1,4 @@
-import { createSession, isSecure, verifyPassword } from "@/lib/server/auth.ts";
+import { createSession, fromOwnPage, isSecure, verifyPassword } from "@/lib/server/auth.ts";
 import { one } from "@/lib/server/db.ts";
 import { clearLimit, clientIp, overLimit } from "@/lib/server/limits.ts";
 import { PROVIDERS, isProvider } from "@/lib/server/oauth.ts";
@@ -7,6 +7,8 @@ import { linkedProviders } from "@/lib/server/signin.ts";
 const WINDOW = 15 * 60 * 1000;
 
 export async function POST(request: Request) {
+  // Only Flash's own sign-in page may sign someone in (see fromOwnPage).
+  if (!fromOwnPage(request)) return Response.json({ error: "Please sign in on Flash's own page." }, { status: 403 });
   const body = (await request.json().catch(() => ({}))) as { email?: string; password?: string };
   const email = (body.email ?? "").trim().toLowerCase();
   // Slows password guessing on one account, and one network trying many accounts.

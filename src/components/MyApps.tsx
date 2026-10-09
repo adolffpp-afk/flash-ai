@@ -12,7 +12,8 @@ type Uploads = { files: Upload[]; use: { files: number; bytes: number; maxFiles:
 type Version = { id: string; title: string; createdAt: number; size: number };
 type Visits = { days: { day: string; views: number; visitors: number }[]; views: number; visitors: number; sources: { source: string; views: number }[] };
 type SiteMessage = { id: string; form: string; data: Record<string, unknown>; createdAt: number; read: boolean };
-type DomainInfo = { domain: string; connected: boolean; records: { type: string; name: string; value: string }[] };
+// needsProof: not added yet, waiting for the TXT record that shows the domain is the user's.
+type DomainInfo = { domain: string; connected: boolean; records: { type: string; name: string; value: string }[]; needsProof?: boolean };
 type Domains = { available: boolean; allowed: boolean; domains: DomainInfo[] };
 type Seller = { connected: boolean; ready: boolean; currency: string; country: string };
 type Payments = { available: boolean; allowed: boolean; seller: Seller };
@@ -68,12 +69,15 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
   }, []);
 
   async function showDomains(site: Site) {
+    // Domains waiting for proof aren't saved yet, so they stay listed while this app is open.
+    const waiting = open?.slug === site.slug ? (domains?.domains.filter((d) => d.needsProof) ?? []) : [];
     setOpen(site);
     setView("domains");
     setDomains(null);
     setError("");
     try {
-      setDomains(await api<Domains>(`/api/sites/${site.slug}/domains`));
+      const loaded = await api<Domains>(`/api/sites/${site.slug}/domains`);
+      setDomains({ ...loaded, domains: [...loaded.domains, ...waiting.filter((w) => !loaded.domains.some((d) => d.domain === w.domain))] });
     } catch {
       setError("Couldn't load the domains. Please try again.");
     }
@@ -81,13 +85,19 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
 
   async function connectDomain(e: React.FormEvent) {
     e.preventDefault();
-    if (!open || !newDomain.trim()) return;
+    if (newDomain.trim()) await tryDomain(newDomain);
+  }
+
+  /** Connects a domain, or looks again for the record that shows it's the user's. */
+  async function tryDomain(name: string, again = false) {
+    if (!open) return;
     setAdding(true);
     setError("");
     try {
-      const { domain } = await api<{ domain: DomainInfo }>(`/api/sites/${open.slug}/domains`, { method: "POST", json: { domain: newDomain } });
+      const { domain } = await api<{ domain: DomainInfo }>(`/api/sites/${open.slug}/domains`, { method: "POST", json: { domain: name } });
       setDomains((d) => d && { ...d, domains: [...d.domains.filter((x) => x.domain !== domain.domain), domain] });
-      setNewDomain("");
+      if (!again) setNewDomain("");
+      if (again && domain.needsProof) setError("Flash can't see that record yet. It usually shows up a few minutes after you add it, sometimes up to an hour.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't connect that domain.");
     }
@@ -749,8 +759,8 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
               <div className="space-y-4">
                 <p className="text-sm text-zinc-400">
                   Show this site on your own address, like yourbakery.com. Buy the domain anywhere (GoDaddy, Namecheap…),
-                  connect it here, then add the record Flash shows at your domain provider. It can take up to a few hours to
-                  start working.
+                  connect it here, then add the records Flash shows at your domain provider: first one that shows the domain
+                  is yours, then one that points it to your site. It can take up to a few hours to start working.
                 </p>
                 {domains.domains.map((d) => (
                   <div key={d.domain} className="rounded-xl border border-white/8 bg-white/[0.02] p-4">
@@ -759,11 +769,15 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
                         {d.domain}
                       </a>
                       <span className={`text-xs ${d.connected ? "text-primary-soft" : "text-gold-soft"}`}>
-                        {d.connected ? "✓ Connected" : "Waiting for the DNS record"}
+                        {d.connected ? "✓ Connected" : d.needsProof ? "Waiting for proof it's yours" : "Waiting for the DNS record"}
                       </span>
                       <span className="ml-auto flex gap-3 text-xs">
                         {!d.connected && (
-                          <button onClick={() => showDomains(open)} className="text-zinc-300 hover:text-white">
+                          <button
+                            onClick={() => (d.needsProof ? tryDomain(d.domain, true) : showDomains(open))}
+                            disabled={adding}
+                            className="text-zinc-300 hover:text-white disabled:opacity-50"
+                          >
                             Check again
                           </button>
                         )}
@@ -774,7 +788,11 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
                     </div>
                     {!d.connected && d.records.length > 0 && (
                       <div className="mt-3 overflow-x-auto">
-                        <p className="mb-2 text-xs text-zinc-400">At your domain provider, open the DNS settings and add:</p>
+                        <p className="mb-2 text-xs text-zinc-400">
+                          {d.needsProof
+                            ? "To show this domain is yours, open its DNS settings at your domain provider and add this record, then press Check again. Flash connects the domain once it sees the record."
+                            : "At your domain provider, open the DNS settings and add:"}
+                        </p>
                         <table className="w-full text-left text-xs">
                           <thead className="text-zinc-500">
                             <tr>

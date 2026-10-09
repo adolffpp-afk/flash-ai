@@ -1,4 +1,4 @@
-import { appUrl, createSession, isSecure } from "@/lib/server/auth.ts";
+import { createSession, fromOwnPage, isSecure } from "@/lib/server/auth.ts";
 import { clientIp, overLimit } from "@/lib/server/limits.ts";
 import { CLEAR_REF_COOKIE } from "@/lib/server/referrals.ts";
 import { redeemSignInLink, signInWithEmail } from "@/lib/server/signin.ts";
@@ -9,10 +9,7 @@ import { redeemSignInLink, signInWithEmail } from "@/lib/server/signin.ts";
  */
 export async function POST(request: Request) {
   // Only this site's own page may use a link, so another site can't sign a visitor into its account.
-  const origin = request.headers.get("origin");
-  if (origin && origin !== appUrl(request) && origin !== new URL(request.url).origin) {
-    return Response.json({ error: "Open the link from your email again." }, { status: 403 });
-  }
+  if (!fromOwnPage(request)) return Response.json({ error: "Open the link from your email again." }, { status: 403 });
   if (await overLimit(`link-use:${clientIp(request)}`, 30, 15 * 60_000)) {
     return Response.json({ error: "Too many attempts. Try again in 15 minutes." }, { status: 429 });
   }

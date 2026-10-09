@@ -311,7 +311,8 @@ export async function finishCheckout(slug: string, sessionId: string, back: unkn
     ]
       .filter(Boolean)
       .join("\n");
-    await sendEmail(shop.email, EMAILS.siteOrder(shop.title, summary, `${appOrigin}/?apps=1`)).catch((err) =>
+    // Orders aren't held to the owner's cap for form messages (see EMAIL_BUDGET), only the day's budget.
+    await sendEmail(shop.email, EMAILS.siteOrder(shop.title, summary, `${appOrigin}/?apps=1`), "other").catch((err) =>
       console.error("[flash] order email failed", err),
     );
   }

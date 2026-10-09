@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api, type UIMessage } from "@/lib/store";
+import { PROJECT_TOO_LARGE } from "@/lib/project-size";
 
 /**
  * Makes a read-only link to the chat as it is now, with Copy and Stop sharing. The project is
@@ -31,7 +32,8 @@ export function ShareDialog({
         const res = await api<{ url: string }>(`/api/projects/${project.id}/share`, { method: "POST" });
         setUrl(res.url);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Couldn't make a link. Please try again.");
+        // Over 4.5 MB, Vercel refuses the save before Flash can say why.
+        setError((err as { status?: number } | null)?.status === 413 ? PROJECT_TOO_LARGE : err instanceof Error ? err.message : "Couldn't make a link. Please try again.");
       }
     })();
     return () => window.removeEventListener("keydown", onKey);

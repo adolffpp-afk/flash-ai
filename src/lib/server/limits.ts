@@ -1,17 +1,17 @@
 import { one, run, now } from "./db.ts";
 
 /**
- * Counts an attempt against key and says whether it is over max within the window. Stored in
- * the database so every server instance shares the count.
+ * Counts an attempt (or several at once, like a batch of calls) against key and says whether it
+ * is over max within the window. Stored in the database so every server instance shares the count.
  */
-export async function overLimit(key: string, max: number, windowMs: number): Promise<boolean> {
+export async function overLimit(key: string, max: number, windowMs: number, attempts = 1): Promise<boolean> {
   const t = now();
   await run(
-    `INSERT INTO rate_limits (key, count, reset_at) VALUES (?, 1, ?)
+    `INSERT INTO rate_limits (key, count, reset_at) VALUES (?, ?, ?)
      ON CONFLICT(key) DO UPDATE SET
-       count = CASE WHEN reset_at < ? THEN 1 ELSE count + 1 END,
+       count = CASE WHEN reset_at < ? THEN ? ELSE count + ? END,
        reset_at = CASE WHEN reset_at < ? THEN ? ELSE reset_at END`,
-    [key, t + windowMs, t, t, t + windowMs],
+    [key, attempts, t + windowMs, t, attempts, attempts, t, t + windowMs],
   );
   const row = await one<{ count: number }>("SELECT count FROM rate_limits WHERE key = ?", [key]);
   return Number(row?.count ?? 0) > max;
