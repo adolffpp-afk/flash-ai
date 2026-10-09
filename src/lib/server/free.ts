@@ -11,7 +11,7 @@ import {
 } from "../engines/free.ts";
 import { one, run } from "./db.ts";
 
-export const FREE_PROVIDERS: FreeProvider[] = ["groq", "gemini", "openrouter", "cloudflare"];
+export const FREE_PROVIDERS: FreeProvider[] = ["groq", "gemini", "openrouter", "cloudflare", "mistral"];
 
 /** The user's country from Vercel's location header (two letters), or "" when it's unknown. */
 export const countryOf = (request: Request) => (request.headers.get("x-vercel-ip-country") ?? "").toUpperCase();

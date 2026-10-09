@@ -43,8 +43,10 @@ const PROVIDERS: Record<string, string> = {
   elevenlabs: "ElevenLabs",
   fal: "fal.ai",
   groq: "Groq (free)",
+  gemini: "Gemini (free)",
   openrouter: "OpenRouter (free)",
   cloudflare: "Cloudflare (free)",
+  mistral: "Mistral (free)",
 };
 
 const usd = (cents: number) =>

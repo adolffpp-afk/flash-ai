@@ -106,8 +106,8 @@ test("a busy Gemini hands the request to the next free model", async () => {
 });
 
 test("Gemini comes after Groq, and its usage has its own daily row", () => {
-  assert.deepEqual(CHAT_PROVIDERS.map((p) => p.id), ["groq", "gemini", "openrouter", "cloudflare"]);
-  assert.deepEqual(FREE_PROVIDERS, ["groq", "gemini", "openrouter", "cloudflare"]);
+  assert.deepEqual(CHAT_PROVIDERS.map((p) => p.id), ["groq", "gemini", "openrouter", "cloudflare", "mistral"]);
+  assert.deepEqual(FREE_PROVIDERS, ["groq", "gemini", "openrouter", "cloudflare", "mistral"]);
   assert.equal(countryOf(new Request("http://x", { headers: { "x-vercel-ip-country": "ca" } })), "CA");
   assert.equal(countryOf(new Request("http://x")), "");
 });
