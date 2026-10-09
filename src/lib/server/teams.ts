@@ -85,12 +85,17 @@ export async function inviteMember(
     throw new TeamError(`Your plan has ${plan.seats} seats, the owner included. Remove someone first.`, 409);
   }
   const token = randomId(32);
+  const inviteId = randomId();
   await run(
     "INSERT INTO team_invites (id, token_hash, team_id, email, email_key, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    [randomId(), sha256(token), team.id, email, key, now() + INVITE_DAYS * 24 * 3600_000, now()],
+    [inviteId, sha256(token), team.id, email, key, now() + INVITE_DAYS * 24 * 3600_000, now()],
   );
   const link = `${origin}/?invite=${token}`;
-  await sendEmail(email, EMAILS.teamInvite(fullName(owner).replace(/\s+/g, " "), link));
+  if (!(await sendEmail(email, EMAILS.teamInvite(fullName(owner).replace(/\s+/g, " "), link), "other"))) {
+    // Nobody got the link, so the invitation shouldn't hold a seat.
+    await run("DELETE FROM team_invites WHERE id = ?", [inviteId]);
+    throw new TeamError("Flash has sent all the emails it can today. Please send the invitation again tomorrow.", 429);
+  }
   return demoEmails() ? link : undefined;
 }
 

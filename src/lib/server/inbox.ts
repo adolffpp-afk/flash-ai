@@ -22,7 +22,8 @@ function preview(data: Record<string, unknown>): string {
 
 /**
  * Saves a form a visitor sent from a published site, for its owner only, and emails the owner
- * (at most 20 emails per site a day). Visitors are limited per address and per site.
+ * (at most 20 emails per site a day, and EMAIL_BUDGET.perOwner across all of one owner's apps).
+ * Visitors are limited per address and per site.
  */
 export async function receiveMessage(
   slug: string,
@@ -39,8 +40,8 @@ export async function receiveMessage(
   if ((await overLimit(`inbox-ip:${ip}`, 10, HOUR)) || (await overLimit(`inbox-site:${slug}`, 300, DAY))) {
     return { error: "Too many messages. Please try again later.", status: 429 };
   }
-  const site = await one<{ title: string; email: string }>(
-    "SELECT s.title, u.email FROM sites s JOIN users u ON u.id = s.user_id WHERE s.slug = ?",
+  const site = await one<{ title: string; email: string; user_id: string }>(
+    "SELECT s.title, u.email, s.user_id FROM sites s JOIN users u ON u.id = s.user_id WHERE s.slug = ?",
     [slug],
   );
   if (!site) return { error: "Site not found.", status: 404 };
@@ -51,7 +52,9 @@ export async function receiveMessage(
     [slug, slug, MAX_MESSAGES_PER_SITE],
   );
   if (!(await overLimit(`inbox-mail:${slug}`, 20, DAY))) {
-    await sendEmail(site.email, EMAILS.siteMessage(site.title, preview(data as Record<string, unknown>), `${origin}/?apps=1`)).catch((err) =>
+    // Also limited per owner, and by the day's email budget (see email.ts).
+    const email = EMAILS.siteMessage(site.title, preview(data as Record<string, unknown>), `${origin}/?apps=1`);
+    await sendEmail(site.email, email, { owner: site.user_id }).catch((err) =>
       console.error("[flash] site message email failed", err),
     );
   }

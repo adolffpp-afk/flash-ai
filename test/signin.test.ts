@@ -172,3 +172,48 @@ test("a referral cookie is recorded on every way of signing up, never for the re
   assert.equal(await referredBy(await signInWithEmail("hostperson+2@gmail.com", req)), null);
   assert.equal(await referredBy(await createUser({ email: "plain@x.io", passwordHash: "" })), null, "no cookie");
 });
+
+test("signing in only works from Flash's own pages, sent as JSON", async () => {
+  const { fromOwnPage } = await import("../src/lib/server/auth.ts");
+  const post = (headers: Record<string, string>, url = "https://www.flash-app.dev/api/auth/login") =>
+    new Request(url, { method: "POST", headers, body: "{}" });
+  const json = { "content-type": "application/json" };
+
+  // Flash's own sign-in, sign-up, reset and email-link pages, in a tab or the installed app (the same site).
+  assert.equal(fromOwnPage(post({ ...json, origin: "https://www.flash-app.dev", "sec-fetch-site": "same-origin" })), true);
+  assert.equal(fromOwnPage(post({ "content-type": "application/json; charset=utf-8", origin: "https://www.flash-app.dev" })), true);
+  // Behind a proxy that passes the public host along, or at the configured address.
+  assert.equal(fromOwnPage(post({ ...json, origin: "https://flash.example.org", host: "flash.example.org" }, "http://10.0.0.5:3000/api/auth/login")), true);
+  process.env.FLASH_APP_URL = "https://app.example.org";
+  assert.equal(fromOwnPage(post({ ...json, origin: "https://app.example.org" }, "http://10.0.0.5:3000/api/auth/login")), true);
+  delete process.env.FLASH_APP_URL;
+  // Not a browser at all, so not a visitor another site could use.
+  assert.equal(fromOwnPage(post(json)), true);
+
+  // A form on another site can only send plain text or form fields, never JSON.
+  assert.equal(fromOwnPage(post({ "content-type": "text/plain", origin: "https://evil.example" })), false);
+  assert.equal(fromOwnPage(post({ origin: "https://www.flash-app.dev" })), false, "a plain-text body, even from Flash");
+  assert.equal(fromOwnPage(post({ "content-type": "application/x-www-form-urlencoded" })), false);
+  // Another site, a look-alike address, or a published app (its sealed-off origin is "null").
+  assert.equal(fromOwnPage(post({ ...json, origin: "https://evil.example" })), false);
+  assert.equal(fromOwnPage(post({ ...json, origin: "https://www.flash-app.dev.evil.example" })), false);
+  assert.equal(fromOwnPage(post({ ...json, origin: "null" })), false);
+  assert.equal(fromOwnPage(post({ ...json, "sec-fetch-site": "cross-site" })), false);
+});
+
+test("the sign-in and sign-up forms send JSON", async () => {
+  const { api } = await import("../src/lib/store.ts");
+  const realFetch = globalThis.fetch;
+  let sent: Headers | undefined;
+  globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+    sent = new Headers(init?.headers);
+    return Response.json({ ok: true });
+  }) as typeof fetch;
+  try {
+    // As AuthScreen, ResetForm and SignInLink call it.
+    await api("/api/auth/login", { method: "POST", json: { email: "a@x.io", password: "secret123" } });
+    assert.equal(sent?.get("content-type"), "application/json");
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});

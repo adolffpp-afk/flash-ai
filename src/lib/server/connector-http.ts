@@ -1,4 +1,5 @@
 import { appUrl } from "./auth.ts";
+import { overLimit } from "./limits.ts";
 
 /**
  * HTTP pieces of the Flash connector. The connector's endpoints use tokens, never cookies, so
@@ -23,6 +24,18 @@ export const oauthError = (error: string, description: string, status = 400) =>
   json({ error, error_description: description }, status);
 
 export const mcpUrl = (request: Request) => `${appUrl(request)}/mcp`;
+
+// Tool calls one user's connected apps may make in an hour.
+const CALLS_PER_HOUR = 60;
+
+/**
+ * Whether a request's tool calls go over the user's hourly limit. Each call in a batch counts, so
+ * a batch can't do more than the same calls sent one at a time.
+ */
+export async function tooManyCalls(userId: string, messages: { method?: unknown }[]): Promise<boolean> {
+  const calls = messages.filter((m) => m.method === "tools/call").length;
+  return calls > 0 && (await overLimit(`mcp:${userId}`, CALLS_PER_HOUR, 3600_000, calls));
+}
 
 /** How an app finds Flash's sign-in (RFC 8414). */
 export function authorizationServerMetadata(request: Request) {

@@ -25,6 +25,7 @@ import { MAX_QUEUE, recentTurns, type CompanionContext } from "@/lib/companion";
 import { TEMPLATES, type Template, type TemplateValues } from "@/lib/templates";
 import { ENGINES, ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types";
 import { api, newId, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
+import { PROJECT_TOO_LARGE } from "@/lib/project-size";
 import type { ChatHit } from "@/lib/server/search";
 import { BoltIcon, BrandMark } from "@/app/brand";
 import { Home, ICONS, Icon } from "./Home";
@@ -513,7 +514,8 @@ export function Flash({
         if (!p?.messages) continue;
         const messages = p.messages.map((m) => ({ ...m, pending: undefined, status: undefined }));
         api(`/api/projects/${id}`, { method: "PUT", json: { name: p.name, messages } }).catch((err) =>
-          setNotice(err instanceof Error ? err.message : "Couldn't save your project."),
+          // Over 4.5 MB, Vercel refuses the save before Flash can say why.
+          setNotice(err?.status === 413 ? PROJECT_TOO_LARGE : err instanceof Error ? err.message : "Couldn't save your project."),
         );
       }
     }, 600);
