@@ -73,7 +73,7 @@ const faq = (live: string[], soon: string[], canBuy: boolean) => [
   },
   {
     q: "Which AI models does Flash use?",
-    a: "Leading models from Anthropic (Claude), plus free open-source models from Groq, OpenRouter and Cloudflare. Flash picks one for each request, or you can choose yourself.",
+    a: "Flash has four levels of intelligence, all on Anthropic's Claude: Flash Sonic for quick answers, Flash Ascend for everyday work, Flash Vision for apps and code, and Flash Ultra for the hardest work. On Auto, Flash picks the level for each request, or you can choose yourself. When your credits run out, free open-source models from Groq, OpenRouter and Cloudflare keep answering.",
   },
   {
     q: "Who owns what I make?",

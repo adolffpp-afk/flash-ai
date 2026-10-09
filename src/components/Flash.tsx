@@ -27,7 +27,7 @@ import { api, newId, type Me, type Pricing, type ProjectSummary, type UIMessage 
 import type { ChatHit } from "@/lib/server/search";
 import { BoltIcon, Logo, LogoMark } from "@/app/brand";
 import { EngineIcon } from "./EngineIcon";
-import { MicButton, PlusMenu, SendButton, TalkButton, ToolPicker, type Choice } from "./ComposerTools";
+import { LevelPicker, MicButton, PlusMenu, SendButton, TalkButton, ToolPicker, type Choice } from "./ComposerTools";
 import { VoiceMode, type VoiceAnswer } from "./VoiceMode";
 import { useWakeWord } from "./useWakeWord";
 import { voiceReply } from "@/lib/voice-chat";
@@ -35,7 +35,8 @@ import { photoActionsFor } from "@/lib/photo-actions";
 import { pickedContext, type PickedElement } from "@/lib/preview-bridge";
 import { pictureFollowUp } from "@/lib/router";
 import { firstName } from "@/lib/names";
-import { applyAppearance, notifiesWhenDone, readSetting } from "@/lib/device-settings";
+import { applyAppearance, notifiesWhenDone, readSetting, writeSetting } from "@/lib/device-settings";
+import { LEVEL_ENGINES, isLevel, type Level } from "@/lib/levels";
 
 // A project's messages are loaded the first time it is opened.
 type Project = ProjectSummary & { messages?: UIMessage[] };
@@ -317,6 +318,12 @@ export function Flash({
   const [voice, setVoice] = useState<{ woke: boolean; first?: string } | null>(null);
   // "Hey Flash" is on for this device (Settings > General > Voice), and whether the mic button is listening.
   const [wakeOn, setWakeOn] = useState(false);
+  // Flash's level of intelligence, kept on this device (see levels.ts).
+  const [level, setLevelState] = useState<Level>("auto");
+  const setLevel = (next: Level) => {
+    setLevelState(next);
+    writeSetting("level", next === "auto" ? "" : next);
+  };
   const [dictating, setDictating] = useState(false);
   // Requests the companion lined up, each run in the chat it was asked about, one after another.
   const [queue, setQueueState] = useState<Queued[]>([]);
@@ -476,6 +483,8 @@ export function Flash({
     applyAppearance();
     setHideCompanion(readSetting("hideCompanion") === "1");
     setWakeOn(readSetting("wakeWord") === "1");
+    const saved = readSetting("level");
+    if (isLevel(saved)) setLevelState(saved);
   }, []);
 
   // "Hey Flash" listens while Flash is open, except while the mic button or a conversation is listening.
@@ -854,6 +863,8 @@ export function Flash({
           // Memory can be turned off in Settings > Capabilities (on this device).
           preferences: readSetting("memoryOff") === "1" ? "" : preferences,
           previous,
+          // Read when sent, so a queued request uses the level picked by then.
+          ...(isLevel(readSetting("level")) && { level: readSetting("level") }),
           model: userMsg.template?.model ?? (engine === "auto" ? undefined : models[engine]),
           template: userMsg.template?.name,
           confirmed: confirmed || skipsCostCheck(),
@@ -1780,6 +1791,7 @@ export function Flash({
                     setModel={(engine, id) => setModels((all) => ({ ...all, [engine]: id }))}
                   />
                   <div className="ml-auto flex items-center gap-2">
+                    {(choice === "auto" || LEVEL_ENGINES.includes(choice)) && <LevelPicker level={level} setLevel={setLevel} />}
                     <MicButton
                       disabled={busy}
                       onText={(text) => {

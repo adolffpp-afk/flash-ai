@@ -3,20 +3,24 @@ import { MAX_EDIT_PIXELS, imageDimensions } from "@/lib/imageSize.ts";
 import { ENGINES, ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types.ts";
 import {
   NO_BUDGET,
+  claudeChoice,
   classifyRequest,
+  defaultChoice,
   pictureRequest,
   claudeConfigured,
   countInputTokens,
   improvePrompt,
-  modelForEngine,
   streamSearch,
   streamText,
   system,
+  withStepDown,
   writeScenes,
   type Budget,
+  type ClaudeChoice,
   type Meter,
   type WritingMode,
 } from "@/lib/engines/claude.ts";
+import { autoLevel, isLevel, levelName, type ModelLevel } from "@/lib/levels.ts";
 import { checkFiles } from "@/lib/attachments.ts";
 import { withInstructions } from "@/lib/project-instructions.ts";
 import { profileNote } from "@/lib/names.ts";
@@ -56,6 +60,7 @@ import { saveFile } from "@/lib/server/files.ts";
 import {
   MAX_SPEECH_CHARS,
   TYPICAL_CREDITS,
+  claudePrice,
   creditsFor,
   finalCredits,
   planHold,
@@ -124,6 +129,8 @@ type ChatRequest = {
   build?: boolean;
   // The attached picture is the one Flash made in its last reply, sent with a follow-up like "make it darker".
   pictureAbove?: boolean;
+  // Flash's level of intelligence for writing, research and building (see levels.ts); Auto when missing.
+  level?: string;
 };
 
 /** Requests that cost at least this many credits wait for the user to agree to the price first. */
@@ -279,6 +286,9 @@ async function* run(
   budget: Budget,
   // The brand kit and the language of words in pictures, for the picture and video prompt writer, or "".
   brandNote = "",
+  // The level a Claude engine runs on, and what to do when it steps down to another.
+  choice: ClaudeChoice | null = null,
+  onStepDown: (choice: ClaudeChoice) => void = () => {},
 ): AsyncGenerator<StreamEvent> {
   const last = history[history.length - 1];
   if (isMedia(engine) ? !model : !configured(engine)) {
@@ -302,14 +312,14 @@ async function* run(
     case "code":
     case "translate":
     case "docs":
-      yield* streamText(history, preferences, engine, meter, budget);
+      yield* withStepDown(choice ?? claudeChoice(engine, "ascend"), (c) => streamText(history, preferences, engine, meter, budget, c), onStepDown);
       return;
     case "search":
-      yield* streamSearch(history, preferences, meter, budget);
+      yield* withStepDown(choice ?? claudeChoice(engine, "ascend"), (c) => streamSearch(history, preferences, meter, budget, c), onStepDown);
       return;
     case "app":
     case "slides":
-      yield* streamBuild(history, preferences, engine, meter, budget);
+      yield* withStepDown(choice ?? claudeChoice(engine, "vision"), (c) => streamBuild(history, preferences, engine, meter, budget, c), onStepDown);
       return;
     case "image": {
       if (model!.edits) {
@@ -641,6 +651,10 @@ export async function POST(request: Request) {
   let budget = NO_BUDGET;
   // What reading the input once costs, charged even when the user stops the reply.
   let inputCents = 0;
+  // The level a Claude engine runs on, why, and how its model's price compares with the engine's usual one.
+  let claudeRun: ClaudeChoice | null = null;
+  let levelWhy = "";
+  let levelScale = 1;
   if (live) {
     if (model) held = needed = modelCredits(model, last.content, combines ? photos.length : 1);
     else if (engine === "voice") held = needed = creditsFor(voiceCostCents(spokenText(last.content).length));
@@ -648,13 +662,34 @@ export async function POST(request: Request) {
       // Priced by file size (see transcribeCostCents); with no file, the engine just asks for one.
       held = needed = last.attachment ? creditsFor(transcribeCostCents(attachmentBytes(last.attachment))) : 0;
     } else {
+      // The level the user picked, or the one Auto picks for this request (see levels.ts).
+      const files = last.attachment ? 1 + (last.more?.length ?? 0) : 0;
+      const autoPick = autoLevel(engine, last.content, { files, voice: body.voice === true });
+      const wanted = isLevel(body.level) && body.level !== "auto" ? body.level : null;
+      const systemText = systemFor(engine, preferences, history);
       // The reply may only spend what the held credits pay for, so no request runs at a loss.
-      const claudeModel = modelForEngine(engine);
-      const inputTokens = await countInputTokens(claudeModel, history, systemFor(engine, preferences, history));
-      const hold = planHold(engine, claudeModel, inputTokens, available);
+      const plan = async (level: ModelLevel) => {
+        const choice = claudeChoice(engine, level);
+        const inputTokens = await countInputTokens(choice.model, history, systemText);
+        const scale = claudePrice(choice.model, inputTokens).output / claudePrice(defaultChoice(engine).model, inputTokens).output;
+        return { choice, scale, inputTokens, hold: planHold(engine, choice.model, inputTokens, available, scale) };
+      };
+      let planned = await plan(wanted ?? autoPick.level);
+      levelWhy = wanted ? `You picked ${levelName(wanted)}.` : autoPick.why;
+      // Not enough credits for the level picked: Auto's level answers when the user has enough for that.
+      if (wanted && wanted !== autoPick.level && available < planned.hold.needed) {
+        const instead = await plan(autoPick.level);
+        if (available >= instead.hold.needed) {
+          levelWhy = `${levelName(wanted)} needs ${planned.hold.needed} credits for this and you have ${available}, so ${levelName(autoPick.level)} answered.`;
+          planned = instead;
+        }
+      }
+      const { hold } = planned;
       ({ needed, held } = hold);
       budget = { maxTokens: hold.maxTokens, capCents: hold.capCents };
-      inputCents = readCostCents(claudeModel, inputTokens);
+      inputCents = readCostCents(planned.choice.model, planned.inputTokens);
+      claudeRun = planned.choice;
+      levelScale = planned.scale;
     }
   }
   // Out of credits: chat-style requests and images fall back to free open-source models,
@@ -742,7 +777,9 @@ export async function POST(request: Request) {
         cost: metered && !free ? 0 : held,
         ...(free
           ? { free: true, model: free === "image" ? "FLUX.1 schnell" : free === "transcribe" ? "Whisper" : "Open-source model", modelWhy: "You're out of credits, so Flash used a free model." }
-          : model && { model: model.label, modelWhy: picked!.why }),
+          : model
+            ? { model: model.label, modelWhy: picked!.why }
+            : claudeRun && { model: levelName(claudeRun.level), modelWhy: levelWhy }),
       });
       let ok = true;
       let stopped = false;
@@ -750,7 +787,7 @@ export async function POST(request: Request) {
       try {
         const events = free
           ? runFree(free, engine, history, preferences, store, freeUse)
-          : run(engine, history, preferences, store, model, meter, budget, mediaNotes);
+          : run(engine, history, preferences, store, model, meter, budget, mediaNotes, claudeRun, (c) => (claudeRun = c));
         for await (const event of events) {
           if (cancelled || request.signal.aborted) {
             stopped = true;
@@ -773,7 +810,18 @@ export async function POST(request: Request) {
       // charged for reading its input and what it wrote, or a typical reply. The free lane is free.
       const credits = free
         ? 0
-        : finalCredits({ held, ok, stopped, metered, costCents, inputCents, written, typical: TYPICAL_CREDITS[engine] ?? 4 });
+        : finalCredits({
+            held,
+            ok,
+            stopped,
+            metered,
+            costCents,
+            inputCents,
+            written,
+            // A typical reply on this level: a fraction of the usual on Sonic, more on Ultra.
+            typical: Math.max(1, Math.round((TYPICAL_CREDITS[engine] ?? 4) * levelScale)),
+            outputPrice: claudeRun ? claudePrice(claudeRun.model).output : undefined,
+          });
       await settle(chargeId, credits);
       // A free request that failed doesn't use up one of the user's free requests for today.
       if (free && !ok) await releaseFreeUser(user.id, free).catch((err) => console.error("[flash] free release failed", err));

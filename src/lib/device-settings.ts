@@ -16,6 +16,8 @@ export const DEVICE_KEYS = {
   hideCompanion: "flash:hide-companion",
   // Listen for "Hey Flash" while Flash is open (Settings > General > Voice).
   wakeWord: "flash:wake-word",
+  // The level of intelligence picked in the message box (see levels.ts); empty for Auto.
+  level: "flash:level",
 } as const;
 
 export type DeviceKey = keyof typeof DEVICE_KEYS;

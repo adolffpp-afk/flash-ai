@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { ENGINES, type Attachment, type ChatTurn, type Engine, type Source, type StreamEvent } from "../types.ts";
-import { CLAUDE_PRICES, MAX_OUTPUT_TOKENS, claudeCostCents, inputCostCents } from "../credits.ts";
+import { levelName, type ModelLevel } from "../levels.ts";
+import { MAX_OUTPUT_TOKENS, claudeCostCents, claudePrice, inputCostCents } from "../credits.ts";
 
 /*
  * Flash uses three Claude models, to keep quality high where it shows and costs low elsewhere:
@@ -11,6 +12,70 @@ import { CLAUDE_PRICES, MAX_OUTPUT_TOKENS, claudeCostCents, inputCostCents } fro
 export const BUILD_MODEL = process.env.FLASH_BUILD_MODEL || process.env.FLASH_TEXT_MODEL || "claude-opus-5-5";
 export const CHAT_MODEL = process.env.FLASH_CHAT_MODEL || process.env.FLASH_TEXT_MODEL || "claude-sonnet-5-5";
 export const ROUTER_MODEL = process.env.FLASH_ROUTER_MODEL || "claude-haiku-4-5";
+
+/*
+ * The model behind each of Flash's levels (see levels.ts). Ascend and Vision are the chat and
+ * build models above, so Auto keeps the quality people had before levels; Sonic and Ultra add a
+ * faster, cheaper model and the most capable one.
+ */
+export const LEVEL_MODELS: Record<ModelLevel, string> = {
+  sonic: process.env.FLASH_SONIC_MODEL || "claude-haiku-5-5",
+  ascend: CHAT_MODEL,
+  vision: BUILD_MODEL,
+  ultra: process.env.FLASH_ULTRA_MODEL || "claude-fable-5-1",
+};
+
+type Effort = "low" | "medium" | "high";
+
+/** The model and effort one Claude request runs on, and the level to move to if that model can't answer. */
+export type ClaudeChoice = { level: ModelLevel; model: string; effort: Effort; stepDown?: ClaudeChoice };
+
+/**
+ * What a level runs on for an engine. Building and code get more thought, Sonic answers at low
+ * effort for speed, and Ultra steps down to Vision when its model is busy or not available.
+ */
+export function claudeChoice(engine: Engine, level: ModelLevel): ClaudeChoice {
+  const effort: Effort = level === "sonic" ? "low" : engine === "app" || engine === "slides" || engine === "code" ? "high" : "medium";
+  return { level, model: LEVEL_MODELS[level], effort, ...(level === "ultra" && { stepDown: claudeChoice(engine, "vision") }) };
+}
+
+/** The level an engine ran on before levels existed: Vision for building and code, Ascend for the rest. */
+export const defaultChoice = (engine: Engine) =>
+  claudeChoice(engine, engine === "app" || engine === "slides" || engine === "code" ? "vision" : "ascend");
+
+// Haiku has no server-side fallback, and sending one is an error.
+const fallbackFor = (model: string) =>
+  /haiku/.test(model) ? {} : { betas: ["server-side-fallback-2026-07-01"] as Anthropic.AnthropicBeta[], fallbacks: "default" as const };
+
+/** The request settings a choice needs: its model, its effort, and a refusal fallback where the model has one. */
+export const choiceParams = (choice: ClaudeChoice) => ({ model: choice.model, output_config: { effort: choice.effort }, ...fallbackFor(choice.model) });
+
+// Not found, no access yet, rate limited or overloaded: another model can still answer.
+const UNAVAILABLE = new Set([403, 404, 429, 503, 529]);
+
+/**
+ * Runs a Claude engine on a choice, and on its step-down when the model can't take the request
+ * before anything was written. Nothing is billed for a request the model never started.
+ */
+export async function* withStepDown(
+  choice: ClaudeChoice,
+  engine: (choice: ClaudeChoice) => AsyncGenerator<StreamEvent>,
+  onStepDown: (choice: ClaudeChoice) => void = () => {},
+): AsyncGenerator<StreamEvent> {
+  let started = false;
+  try {
+    for await (const event of engine(choice)) {
+      if (event.type !== "status") started = true;
+      yield event;
+    }
+  } catch (err) {
+    if (started || !choice.stepDown || !(err instanceof Anthropic.APIError && UNAVAILABLE.has(Number(err.status)))) throw err;
+    console.error(`[flash] ${choice.model} unavailable (${err.status}), stepping down to ${choice.stepDown.model}`);
+    onStepDown(choice.stepDown);
+    yield { type: "status", message: `${levelName(choice.level)} is busy right now, so ${levelName(choice.stepDown.level)} is answering…` };
+    yield* withStepDown(choice.stepDown, engine, onStepDown);
+  }
+}
 
 /** Records what an AI call cost Flash, for credits and the owner dashboard. */
 export type Meter = (provider: "anthropic" | "openai" | "elevenlabs" | "fal", model: string, costCents: number) => void;
@@ -127,14 +192,12 @@ export async function* streamText(
   mode: WritingMode = "text",
   meter: Meter = noMeter,
   budget: Budget = NO_BUDGET,
+  // The level's model and effort; by default Ascend at medium effort, and Vision thinking harder for code.
+  choice: ClaudeChoice = defaultChoice(mode),
 ): AsyncGenerator<StreamEvent> {
   const stream = getClient().beta.messages.stream({
-    model: mode === "code" ? BUILD_MODEL : CHAT_MODEL,
+    ...choiceParams(choice),
     max_tokens: budget.maxTokens,
-    betas: ["server-side-fallback-2026-07-01"],
-    fallbacks: "default",
-    // Sonnet at medium effort writes well for chat; code on Opus gets more thought.
-    output_config: { effort: mode === "code" ? "high" : "medium" },
     system: system(preferences, mode),
     messages: toMessages(history),
   });
@@ -165,6 +228,7 @@ export async function* streamSearch(
   preferences: string,
   meter: Meter = noMeter,
   budget: Budget = NO_BUDGET,
+  choice: ClaudeChoice = defaultChoice("search"),
 ): AsyncGenerator<StreamEvent> {
   const messages = toMessages(history);
   const sources = new Map<string, Source>();
@@ -173,11 +237,8 @@ export async function* streamSearch(
   // pause_turn means the server paused a long search loop; resend to let it continue.
   for (let round = 0; round < 4; round++) {
     const stream = getClient().beta.messages.stream({
-      model: CHAT_MODEL,
+      ...choiceParams(choice),
       max_tokens: maxTokens,
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
-      output_config: { effort: "medium" },
       system:
         system(preferences) +
         "\n\nSearch the web for current facts, read any page the user links, and keep the answer concise.",
@@ -216,8 +277,8 @@ export async function* streamSearch(
     if (final.stop_reason !== "pause_turn") break;
     // Keep searching only while the credits held for this request still cover another round.
     const nextInput = final.usage.input_tokens + final.usage.output_tokens;
-    const left = budget.capCents - spent - inputCostCents("search", CHAT_MODEL, nextInput);
-    maxTokens = Math.min(MAX_OUTPUT_TOKENS, Math.floor((left * 1e6) / (CLAUDE_PRICES[CHAT_MODEL] ?? CLAUDE_PRICES["claude-opus-5-5"]).output));
+    const left = budget.capCents - spent - inputCostCents("search", choice.model, nextInput);
+    maxTokens = Math.min(MAX_OUTPUT_TOKENS, Math.floor((left * 1e6) / claudePrice(choice.model, nextInput).output));
     if (!(maxTokens >= 2000)) break;
     messages.push({ role: "assistant", content: final.content });
   }
