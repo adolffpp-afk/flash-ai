@@ -2,6 +2,7 @@
  * How Flash names people. Accounts made with an email link have no name, and some older ones
  * saved the whole email address as the name, so an email never shows where a name should.
  */
+import { msg } from "./i18n.ts";
 import { languageNote } from "./languages.ts";
 import type { Engine } from "./types.ts";
 
@@ -42,16 +43,16 @@ export function initials(user: Named): string {
 
 // "What best describes your work?" in Settings, like Claude's.
 export const WORK_OPTIONS = [
-  "Small business owner",
-  "Creator or influencer",
-  "Marketing or sales",
-  "Student",
-  "Teacher or trainer",
-  "Software developer",
-  "Designer",
-  "Writer or editor",
-  "Consultant or freelancer",
-  "Other",
+  msg("Small business owner"),
+  msg("Creator or influencer"),
+  msg("Marketing or sales"),
+  msg("Student"),
+  msg("Teacher or trainer"),
+  msg("Software developer"),
+  msg("Designer"),
+  msg("Writer or editor"),
+  msg("Consultant or freelancer"),
+  msg("Other"),
 ] as const;
 
 /**

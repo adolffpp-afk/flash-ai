@@ -51,6 +51,10 @@ export async function PATCH(request: Request) {
   const user = await getUser(request);
   if (!user) return unauthorized();
   const body = (await request.json().catch(() => ({}))) as { name?: string; nickname?: string; work?: string; language?: string; preferences?: string };
+  // A language that isn't on the list is refused before anything saves, so "ok" always means saved.
+  if (body.language !== undefined && !isLanguage(body.language)) {
+    return Response.json({ error: "Pick a language from the list." }, { status: 400 });
+  }
   if (typeof body.preferences === "string") {
     await run("UPDATE users SET preferences = ? WHERE id = ?", [body.preferences.slice(0, 2000), user.id]);
   }

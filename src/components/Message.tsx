@@ -16,6 +16,7 @@ import { slidesDeck } from "@/lib/slides-export";
 import { answerDocument, documentText } from "@/lib/chat-export";
 import { postText, type Post } from "@/lib/post-pack";
 import { readAloudVoice } from "@/lib/device-settings";
+import { speechLang } from "@/lib/languages";
 
 export type Reshape = "tall" | "square" | "wide";
 const RESHAPES: [Reshape, string][] = [
@@ -168,7 +169,8 @@ const hasStructure = (text: string) => /^(#{1,3}\s|\s*[-*+]\s|\s*\d+[.)]\s|\|)/m
 const noChanges = () => () => {};
 
 /** Reads a reply aloud with the device's own voice, which is free and needs no credits. */
-function ReadAloud({ text, className }: { text: string; className: string }) {
+// language: the one picked in Settings > General, which answers are written in; "" for the browser's.
+function ReadAloud({ text, className, language = "" }: { text: string; className: string; language?: string }) {
   const [speaking, setSpeaking] = useState(false);
   // Known only in the browser: the server (a shared chat) and the first render in the browser say no, so both match.
   const canSpeak = useSyncExternalStore(noChanges, () => "speechSynthesis" in window, () => false);
@@ -184,11 +186,12 @@ function ReadAloud({ text, className }: { text: string; className: string }) {
         synth.cancel();
         if (speaking) return setSpeaking(false);
         const say = new SpeechSynthesisUtterance(speakable(text));
-        // The voice and speed picked in Settings > General.
-        const { voice, rate } = readAloudVoice();
+        // The voice and speed picked in Settings > General, in the language the answer is written in.
+        const lang = speechLang(language, navigator.language);
+        const { voice, rate } = readAloudVoice(lang);
         if (voice) say.voice = voice;
         say.rate = rate;
-        say.lang = voice?.lang || navigator.language || "en-US";
+        say.lang = voice?.lang || lang || navigator.language || "en-US";
         say.onend = say.onerror = () => setSpeaking(false);
         synth.speak(say);
         setSpeaking(true);
@@ -228,7 +231,7 @@ function PostCopies({ posts }: { posts: Post[] }) {
   );
 }
 
-function Actions({ m, onRetry }: { m: UIMessage; onRetry?: () => void }) {
+function Actions({ m, onRetry, language }: { m: UIMessage; onRetry?: () => void; language?: string }) {
   const [copied, setCopied] = useState(false);
   const text = plainText(m);
   const doc = documentText(text);
@@ -248,7 +251,7 @@ function Actions({ m, onRetry }: { m: UIMessage; onRetry?: () => void }) {
           {copied ? "Copied" : "Copy"}
         </button>
       )}
-      {text && <ReadAloud text={text} className={btn} />}
+      {text && <ReadAloud text={text} className={btn} language={language} />}
       {text && !m.app && (
         <button className={btn} onClick={() => saveAsWord(doc)} title="Download this answer as a Word document">
           ⬇ Word
@@ -363,8 +366,11 @@ export function Message({
   onFixApp,
   onPickApp,
   paymentsOn = true,
+  language,
 }: {
   m: UIMessage;
+  // The language picked in Settings > General, for Read aloud.
+  language?: string;
   onRetry?: () => void;
   // Edits the user's latest message and asks again.
   onEdit?: (text: string) => void;
@@ -584,7 +590,7 @@ export function Message({
             </div>
           )
         )}
-        <Actions m={m} onRetry={m.errorCode === "confirm_cost" ? undefined : onRetry} />
+        <Actions m={m} onRetry={m.errorCode === "confirm_cost" ? undefined : onRetry} language={language} />
       </div>
     </div>
   );

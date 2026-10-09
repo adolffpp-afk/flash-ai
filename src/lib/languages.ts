@@ -1,7 +1,7 @@
 /*
  * The language Flash answers in (Settings > General). "" is Automatic: Flash answers in the
  * language the user writes in, as it always has. Only the languages listed here are ever saved.
- * Flash's own buttons and menus stay in English for now.
+ * Flash's own buttons and menus are shown in it too (see i18n.ts).
  */
 import type { Engine } from "./types.ts";
 

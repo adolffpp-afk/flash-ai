@@ -4,7 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { api, type Me } from "@/lib/store";
 import { ENGINE_LABELS, type Engine } from "@/lib/types";
 import { WORK_OPTIONS, firstName, fullName, initials } from "@/lib/names";
-import { AUTOMATIC_LANGUAGE, LANGUAGES } from "@/lib/languages";
+import { AUTOMATIC_LANGUAGE, LANGUAGES, speechLang } from "@/lib/languages";
 import {
   DEVICE_KEYS,
   FONTS,
@@ -279,6 +279,8 @@ function General({
   const [nickname, setNickname] = useState(me.user.nickname ?? "");
   const [work, setWork] = useState(me.user.work ?? "");
   const [language, setLanguage] = useState(me.user.language ?? "");
+  // What happened to the language just picked, shown right under the menu.
+  const [languageSaved, setLanguageSaved] = useState<{ text: string; ok: boolean } | null>(null);
   const [notify, setNotify] = useDeviceSetting("notifyDone");
   const [theme, setTheme] = useDeviceSetting("theme");
   const [font, setFont] = useDeviceSetting("font");
@@ -303,8 +305,7 @@ function General({
   const changed =
     name.trim() !== fullName(me.user) ||
     nickname.trim() !== (me.user.nickname ?? "") ||
-    work !== (me.user.work ?? "") ||
-    language !== (me.user.language ?? "");
+    work !== (me.user.work ?? "");
   const save = () =>
     attempt(async () => {
       const profile = { name: name.trim() || fullName(me.user), nickname: nickname.trim(), work, language };
@@ -312,6 +313,26 @@ function General({
       onProfileChanged(profile);
       return "Profile saved.";
     });
+
+  /** The language saves the moment it is picked, like the theme, and says so under the menu. */
+  async function pickLanguage(value: string) {
+    const before = language;
+    setLanguage(value);
+    setLanguageSaved(null);
+    try {
+      await api("/api/me", { method: "PATCH", json: { language: value } });
+      onProfileChanged({ name: me.user.name, nickname: me.user.nickname ?? "", work: me.user.work ?? "", language: value });
+      setLanguageSaved({
+        text: value
+          ? "Saved. Flash is now in this language, and answers in it from your next message."
+          : "Saved. Flash's menus follow your browser's language, and it answers in the language you write in.",
+        ok: true,
+      });
+    } catch {
+      setLanguage(before);
+      setLanguageSaved({ text: "Flash couldn't save the language. Please try again.", ok: false });
+    }
+  }
 
   async function toggleNotify(on: boolean) {
     if (!on) return setNotify("");
@@ -345,15 +366,20 @@ function General({
     const synth = window.speechSynthesis;
     synth.cancel();
     const say = new SpeechSynthesisUtterance(`Hi ${firstName({ ...me.user, nickname })}, this is how Flash reads answers aloud.`);
-    const picked = readAloudVoice();
+    // Answers come in the language picked above, so the voice is tried in it too.
+    const tag = speechLang(language, navigator.language);
+    const picked = readAloudVoice(tag);
     if (picked.voice) say.voice = picked.voice;
     say.rate = picked.rate;
-    say.lang = picked.voice?.lang || navigator.language || "en-US";
+    say.lang = picked.voice?.lang || tag || navigator.language || "en-US";
     synth.speak(say);
   }
 
-  // Voices in the user's own language first, then the rest.
-  const lang = (typeof navigator !== "undefined" ? navigator.language : "en").slice(0, 2);
+  // Voices in the language Flash answers in (else the browser's) first, then the rest.
+  const browser = typeof navigator !== "undefined" ? navigator.language : "en";
+  const lang = (speechLang(language, browser) || browser).toLowerCase().split(/[-_]/)[0];
+  // No voice on this device speaks the language picked, so reading aloud would use another language's voice.
+  const noVoice = speech && voices.length > 0 && Boolean(speechLang(language)) && !voices.some((v) => v.lang.toLowerCase().startsWith(lang));
   const sorted = [...voices].sort((a, b) => Number(b.lang.startsWith(lang)) - Number(a.lang.startsWith(lang)) || a.name.localeCompare(b.name));
 
   return (
@@ -392,7 +418,7 @@ function General({
         <div>
           <label className={label}>
             Language
-            <select className={field} value={language} onChange={(e) => setLanguage(e.target.value)} aria-describedby="language-hint">
+            <select className={field} value={language} onChange={(e) => void pickLanguage(e.target.value)} aria-describedby="language-hint">
               <option value="">{AUTOMATIC_LANGUAGE}</option>
               {LANGUAGES.map((l) => (
                 <option key={l.id} value={l.id} lang={l.id}>
@@ -402,8 +428,13 @@ function General({
             </select>
           </label>
           <p id="language-hint" className={`mt-1 ${hint}`}>
-            Flash answers, writes and builds in this language.
+            Flash&apos;s menus and buttons, and what it answers, writes and builds, are in this language. It saves as soon as you pick it.
           </p>
+          {languageSaved && (
+            <p role="status" className={`mt-1 text-xs ${languageSaved.ok ? "text-emerald-300" : "text-red-400"}`}>
+              {languageSaved.text}
+            </p>
+          )}
         </div>
         <div>
           <button className={primary} disabled={busy || !changed} onClick={save}>
@@ -507,6 +538,12 @@ function General({
                 ))}
               </select>
             </Row>
+            {noVoice && (
+              <p className={hint}>
+                This device has no voice for the language Flash answers in, so answers are read with another language&apos;s voice. Add one in your
+                computer&apos;s speech or language settings, then reopen Flash.
+              </p>
+            )}
             <Row title="Speed">
               <Choices name="Read-aloud speed" value={rate} options={VOICE_RATES} onChange={setRate} />
             </Row>

@@ -41,6 +41,7 @@ import { firstName } from "@/lib/names";
 import { timeAgo } from "@/lib/when";
 import { applyAppearance, applyTheme, notifiesWhenDone, readSetting, writeSetting } from "@/lib/device-settings";
 import { LEVEL_ENGINES, isLevel, type Level } from "@/lib/levels";
+import { showLanguage, useT } from "@/lib/use-t";
 
 // A project's messages are loaded the first time it is opened.
 type Project = ProjectSummary & { messages?: UIMessage[] };
@@ -250,6 +251,7 @@ export function Flash({
   pricing?: Pricing;
 }) {
   const [me, setMe] = useState<Me | null>(null);
+  const t = useT();
   const [signedOut, setSignedOut] = useState(!signedIn);
   const [loadError, setLoadError] = useState(false);
   // Signed-out visitors see the landing page until they choose to sign up or sign in.
@@ -350,6 +352,8 @@ export function Flash({
   async function refreshMe() {
     try {
       const data = await api<Me>("/api/me");
+      // Flash's own words switch to the account's language before its first screen shows.
+      await showLanguage(data.user.language);
       setMe(data);
       setLoadError(false);
       return data;
@@ -392,6 +396,12 @@ export function Flash({
       setLoadError(true);
     }
   }
+
+  // The language picked in Settings, or null when signed out (Flash's signed-out pages are in English).
+  const savedLanguage = me ? (me.user.language ?? "") : null;
+  useEffect(() => {
+    void showLanguage(savedLanguage ?? "en");
+  }, [savedLanguage]);
 
   useEffect(() => {
     // Loading the account must wait for the browser, so this runs once after mount.
@@ -1254,7 +1264,7 @@ export function Flash({
     payments: Boolean(me?.paymentsEnabled),
     domains: Boolean(me?.domainsEnabled),
   };
-  const toolHits = findFeatures(query)
+  const toolHits = findFeatures(query, undefined, t)
     .filter((f) => (f.soon || featureReady(f, setup)) && (install.available || !isInstall(f)))
     .slice(0, 6);
   const promptHits = query ? TEMPLATES.filter((t) => t.name.toLowerCase().includes(query)) : [];
@@ -2090,6 +2100,7 @@ export function Flash({
                   onEdit={m.role === "user" && !m.local && !busy && i === all.findLastIndex((x) => x.role === "user") ? editLast : undefined}
                   onBuyCredits={() => setShowCredits(true)}
                   paymentsOn={me.paymentsEnabled || me.testPurchases}
+                  language={me.user.language}
                   onPublished={(slug) => setAppSlug(m.id, slug)}
                   publishedEarlier={m.app && !m.app.slug ? all.slice(0, i).findLast((x) => x.app?.slug)?.app?.slug : undefined}
                   onUseImage={busy ? undefined : editImage}

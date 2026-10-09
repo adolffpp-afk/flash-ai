@@ -161,7 +161,8 @@ const MODE_PROMPTS: Record<WritingMode, string> = {
     "with the language named, then a short explanation. Point out bugs and edge cases.",
   translate:
     "You are acting as a professional translator. Give the translation first, keeping tone and meaning. " +
-    "If the target language is unclear, translate into English. Add a short note only for idioms or ambiguity.",
+    "If the target language is unclear, use the language named under \"About the user\" below, else English. " +
+    "Add a short note only for idioms or ambiguity.",
   docs:
     "You are acting as a document and spreadsheet specialist. When the user wants a spreadsheet or table data, " +
     "return it as a fenced ```csv code block with a header row (the app turns it into a downloadable file), " +
@@ -179,7 +180,8 @@ const MODE_PROMPTS: Record<WritingMode, string> = {
 export function system(preferences: string, mode: WritingMode = "text"): string {
   const prefs = preferences.trim();
   const parts = [BASE_SYSTEM, MODE_PROMPTS[mode]];
-  if (prefs) parts.push(`What the user told Flash to remember about them:\n${prefs}`);
+  // Settings > General (the language to answer in, what to call them) comes first, then their memory.
+  if (prefs) parts.push(`About the user, from their settings and what they asked Flash to remember. Follow their language setting in every answer:\n${prefs}`);
   return parts.filter(Boolean).join("\n\n");
 }
 

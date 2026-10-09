@@ -1,3 +1,4 @@
+import { english, msg, type Translate } from "./i18n.ts";
 import type { Engine } from "./types.ts";
 
 /*
@@ -8,7 +9,7 @@ import type { Engine } from "./types.ts";
 
 export type FeatureGroup = "Chat & research" | "Create" | "Build" | "Files" | "Voice" | "Workspace";
 
-export const FEATURE_GROUPS: FeatureGroup[] = ["Chat & research", "Create", "Build", "Files", "Voice", "Workspace"];
+export const FEATURE_GROUPS: FeatureGroup[] = [msg("Chat & research"), msg("Create"), msg("Build"), msg("Files"), msg("Voice"), msg("Workspace")];
 
 /** Places a feature opens, besides a tool in the message box. Flash.tsx's openFeature handles each. */
 export const FEATURE_PAGES = [
@@ -61,62 +62,62 @@ export type Feature = {
 
 export const FEATURES: Feature[] = [
   // Chat & research
-  { title: "AI Chat", about: "Ask anything. Flash picks the right tool", group: "Chat & research", icon: "chat", action: { tool: "auto" } },
-  { title: "Write", about: "Emails, posts, plans and stories", group: "Chat & research", icon: "pen", action: { tool: "text" }, needs: "text", also: "email letter essay blog" },
-  { title: "Deep Research", about: "Searches the web and cites its sources", group: "Chat & research", icon: "search", action: { tool: "search" }, needs: "search", also: "web sources" },
-  { title: "Translate", about: "Natural translations, any language", group: "Chat & research", icon: "translate", action: { tool: "translate" }, needs: "translate" },
-  { title: "Search Your Chats", about: "Find a chat by its name or what was said", group: "Chat & research", icon: "search", action: { open: "chats" } },
-  { title: "Ask Flash", about: "A helper beside you that answers and lines up requests", group: "Chat & research", icon: "sparkle", action: { open: "companion" }, also: "companion help" },
+  { title: msg("AI Chat"), about: msg("Ask anything. Flash picks the right tool"), group: "Chat & research", icon: "chat", action: { tool: "auto" } },
+  { title: msg("Write"), about: msg("Emails, posts, plans and stories"), group: "Chat & research", icon: "pen", action: { tool: "text" }, needs: "text", also: "email letter essay blog" },
+  { title: msg("Deep Research"), about: msg("Searches the web and cites its sources"), group: "Chat & research", icon: "search", action: { tool: "search" }, needs: "search", also: "web sources" },
+  { title: msg("Translate"), about: msg("Natural translations, any language"), group: "Chat & research", icon: "translate", action: { tool: "translate" }, needs: "translate" },
+  { title: msg("Search Your Chats"), about: msg("Find a chat by its name or what was said"), group: "Chat & research", icon: "search", action: { open: "chats" } },
+  { title: msg("Ask Flash"), about: msg("A helper beside you that answers and lines up requests"), group: "Chat & research", icon: "sparkle", action: { open: "companion" }, also: "companion help" },
 
   // Create
-  { title: "Image", about: "Pictures, logos and posters from a sentence", group: "Create", icon: "image", action: { tool: "image" }, needs: "image", also: "picture photo logo poster" },
-  { title: "Edit a Photo", about: "Attach a photo, then say what to change", group: "Create", icon: "wand", action: { open: "attach" }, needs: "image", model: "flux-2-edit", also: "picture" },
-  { title: "Combine Photos", about: "Attach up to 4 photos and mix them into one", group: "Create", icon: "layers", action: { open: "attach" }, needs: "image", model: "flux-2-edit", also: "merge" },
-  { title: "Remove Background", about: "Attach a photo for a clean cut-out", group: "Create", icon: "scissors", action: { open: "attach" }, needs: "image", model: "remove-bg", also: "transparent cutout" },
-  { title: "Upscale", about: "Attach a photo to make it sharper and bigger", group: "Create", icon: "expand", action: { open: "attach" }, needs: "image", model: "upscale", also: "enhance sharpen" },
-  { title: "Animate a Photo", about: "Attach a photo and watch it move", group: "Create", icon: "video", action: { open: "attach" }, needs: "video", model: "kling-3-animate" },
-  { title: "Video", about: "Short clips with sound from a sentence", group: "Create", icon: "video", action: { tool: "video" }, needs: "video", also: "clip" },
-  { title: "Movie Maker", about: "Flash writes the scenes, films them and joins them", group: "Create", icon: "film", action: { open: "movie" }, needs: "video", model: "movie", also: "film short" },
-  { title: "Music", about: "Songs with lyrics, or instrumentals", group: "Create", icon: "music", action: { tool: "music" }, needs: "music", also: "song" },
-  { title: "Social Post Pack", about: "Captions, hashtags and pictures for three networks", group: "Create", icon: "megaphone", action: { open: "template:social-pack" }, needs: "image", model: "post-pack", also: "instagram tiktok facebook" },
-  { title: "Slides", about: "A presentation from one sentence", group: "Create", icon: "slides", action: { tool: "slides" }, needs: "slides", also: "presentation deck powerpoint" },
-  { title: "Templates", about: "Business plans, invoices, resumes, menus and more", group: "Create", icon: "template", action: { open: "templates" }, also: "prompts invoice resume" },
+  { title: msg("Image"), about: msg("Pictures, logos and posters from a sentence"), group: "Create", icon: "image", action: { tool: "image" }, needs: "image", also: "picture photo logo poster" },
+  { title: msg("Edit a Photo"), about: msg("Attach a photo, then say what to change"), group: "Create", icon: "wand", action: { open: "attach" }, needs: "image", model: "flux-2-edit", also: "picture" },
+  { title: msg("Combine Photos"), about: msg("Attach up to 4 photos and mix them into one"), group: "Create", icon: "layers", action: { open: "attach" }, needs: "image", model: "flux-2-edit", also: "merge" },
+  { title: msg("Remove Background"), about: msg("Attach a photo for a clean cut-out"), group: "Create", icon: "scissors", action: { open: "attach" }, needs: "image", model: "remove-bg", also: "transparent cutout" },
+  { title: msg("Upscale"), about: msg("Attach a photo to make it sharper and bigger"), group: "Create", icon: "expand", action: { open: "attach" }, needs: "image", model: "upscale", also: "enhance sharpen" },
+  { title: msg("Animate a Photo"), about: msg("Attach a photo and watch it move"), group: "Create", icon: "video", action: { open: "attach" }, needs: "video", model: "kling-3-animate" },
+  { title: msg("Video"), about: msg("Short clips with sound from a sentence"), group: "Create", icon: "video", action: { tool: "video" }, needs: "video", also: "clip" },
+  { title: msg("Movie Maker"), about: msg("Flash writes the scenes, films them and joins them"), group: "Create", icon: "film", action: { open: "movie" }, needs: "video", model: "movie", also: "film short" },
+  { title: msg("Music"), about: msg("Songs with lyrics, or instrumentals"), group: "Create", icon: "music", action: { tool: "music" }, needs: "music", also: "song" },
+  { title: msg("Social Post Pack"), about: msg("Captions, hashtags and pictures for three networks"), group: "Create", icon: "megaphone", action: { open: "template:social-pack" }, needs: "image", model: "post-pack", also: "instagram tiktok facebook" },
+  { title: msg("Slides"), about: msg("A presentation from one sentence"), group: "Create", icon: "slides", action: { tool: "slides" }, needs: "slides", also: "presentation deck powerpoint" },
+  { title: msg("Templates"), about: msg("Business plans, invoices, resumes, menus and more"), group: "Create", icon: "template", action: { open: "templates" }, also: "prompts invoice resume" },
 
   // Build
-  { title: "App & Website Builder", about: "Working apps and sites from a sentence", group: "Build", icon: "app", action: { tool: "app" }, needs: "app", also: "website site" },
-  { title: "Build From a Picture", about: "Attach a screenshot or sketch to turn it into an app", group: "Build", icon: "images", action: { open: "build-from-picture" }, needs: "app" },
-  { title: "Code", about: "Write, explain and fix code", group: "Build", icon: "code", action: { tool: "code" }, needs: "code" },
-  { title: "My Websites", about: "Your published sites, updated in one click", group: "Build", icon: "globe", action: { open: "websites" }, also: "apps publish" },
-  { title: "Form Inbox", about: "Messages people send through your sites", group: "Build", icon: "inbox", action: { open: "websites" }, also: "messages contact" },
-  { title: "Visitor Stats", about: "Who visits your sites, without cookies", group: "Build", icon: "chart", action: { open: "websites" }, also: "analytics" },
-  { title: "Your Own Domain", about: "Put a site on a domain you own", group: "Build", icon: "link", action: { open: "websites" }, setup: "domains", paid: true },
-  { title: "Sell on Your Site", about: "Take payments with Stripe", group: "Build", icon: "card", action: { open: "websites" }, setup: "payments", paid: true, also: "shop payments" },
-  { title: "Sign-in, AI and Uploads", about: "Ask the builder to add members, AI or file uploads to an app", group: "Build", icon: "users", action: { tool: "app" }, needs: "app", also: "login members" },
+  { title: msg("App & Website Builder"), about: msg("Working apps and sites from a sentence"), group: "Build", icon: "app", action: { tool: "app" }, needs: "app", also: "website site" },
+  { title: msg("Build From a Picture"), about: msg("Attach a screenshot or sketch to turn it into an app"), group: "Build", icon: "images", action: { open: "build-from-picture" }, needs: "app" },
+  { title: msg("Code"), about: msg("Write, explain and fix code"), group: "Build", icon: "code", action: { tool: "code" }, needs: "code" },
+  { title: msg("My Websites"), about: msg("Your published sites, updated in one click"), group: "Build", icon: "globe", action: { open: "websites" }, also: "apps publish" },
+  { title: msg("Form Inbox"), about: msg("Messages people send through your sites"), group: "Build", icon: "inbox", action: { open: "websites" }, also: "messages contact" },
+  { title: msg("Visitor Stats"), about: msg("Who visits your sites, without cookies"), group: "Build", icon: "chart", action: { open: "websites" }, also: "analytics" },
+  { title: msg("Your Own Domain"), about: msg("Put a site on a domain you own"), group: "Build", icon: "link", action: { open: "websites" }, setup: "domains", paid: true },
+  { title: msg("Sell on Your Site"), about: msg("Take payments with Stripe"), group: "Build", icon: "card", action: { open: "websites" }, setup: "payments", paid: true, also: "shop payments" },
+  { title: msg("Sign-in, AI and Uploads"), about: msg("Ask the builder to add members, AI or file uploads to an app"), group: "Build", icon: "users", action: { tool: "app" }, needs: "app", also: "login members" },
 
   // Files
-  { title: "Analyze Files", about: "PDF, Word, Excel and PowerPoint, up to 5 at once", group: "Files", icon: "paperclip", action: { open: "attach" }, also: "pdf docx xlsx pptx upload" },
-  { title: "Read Text in Photos", about: "Attach photos to copy their text or make a spreadsheet", group: "Files", icon: "scan", action: { open: "attach" }, needs: "docs", also: "receipt ocr" },
-  { title: "Docs & Sheets", about: "Reports, tables and spreadsheets", group: "Files", icon: "file", action: { tool: "docs" }, needs: "docs", also: "document spreadsheet excel" },
-  { title: "Save Answers", about: "Word, Excel, PDF or PowerPoint, from the buttons under any answer", group: "Files", icon: "download", action: { open: "chats" }, also: "export download" },
-  { title: "Share or Download a Chat", about: "A read-only link, or the chat as a web page", group: "Files", icon: "share", action: { open: "chats" }, also: "link" },
-  { title: "My Creations", about: "Every picture, video and sound you've made", group: "Files", icon: "library", action: { open: "creations" }, also: "library gallery" },
+  { title: msg("Analyze Files"), about: msg("PDF, Word, Excel and PowerPoint, up to 5 at once"), group: "Files", icon: "paperclip", action: { open: "attach" }, also: "pdf docx xlsx pptx upload" },
+  { title: msg("Read Text in Photos"), about: msg("Attach photos to copy their text or make a spreadsheet"), group: "Files", icon: "scan", action: { open: "attach" }, needs: "docs", also: "receipt ocr" },
+  { title: msg("Docs & Sheets"), about: msg("Reports, tables and spreadsheets"), group: "Files", icon: "file", action: { tool: "docs" }, needs: "docs", also: "document spreadsheet excel" },
+  { title: msg("Save Answers"), about: msg("Word, Excel, PDF or PowerPoint, from the buttons under any answer"), group: "Files", icon: "download", action: { open: "chats" }, also: "export download" },
+  { title: msg("Share or Download a Chat"), about: msg("A read-only link, or the chat as a web page"), group: "Files", icon: "share", action: { open: "chats" }, also: "link" },
+  { title: msg("My Creations"), about: msg("Every picture, video and sound you've made"), group: "Files", icon: "library", action: { open: "creations" }, also: "library gallery" },
 
   // Voice
-  { title: "Talk with Flash", about: "A live voice conversation", group: "Voice", icon: "voice", action: { open: "talk" }, also: "voice mode speak" },
-  { title: "Hey Flash", about: "Wake Flash with your voice in Chrome, Edge or Safari", group: "Voice", icon: "radio", action: { open: "general" }, also: "wake word" },
-  { title: "Voice-over", about: "Your text read aloud, as an audio file", group: "Voice", icon: "speaker", action: { tool: "voice" }, needs: "voice", also: "narration" },
-  { title: "Transcribe", about: "Recordings and meetings into text", group: "Voice", icon: "lines", action: { tool: "transcribe" }, needs: "transcribe", also: "audio meeting" },
-  { title: "Read Aloud", about: "Hear any answer, free. Pick the voice in Settings", group: "Voice", icon: "headphones", action: { open: "general" } },
+  { title: msg("Talk with Flash"), about: msg("A live voice conversation"), group: "Voice", icon: "voice", action: { open: "talk" }, also: "voice mode speak" },
+  { title: msg("Hey Flash"), about: msg("Wake Flash with your voice in Chrome, Edge or Safari"), group: "Voice", icon: "radio", action: { open: "general" }, also: "wake word" },
+  { title: msg("Voice-over"), about: msg("Your text read aloud, as an audio file"), group: "Voice", icon: "speaker", action: { tool: "voice" }, needs: "voice", also: "narration" },
+  { title: msg("Transcribe"), about: msg("Recordings and meetings into text"), group: "Voice", icon: "lines", action: { tool: "transcribe" }, needs: "transcribe", also: "audio meeting" },
+  { title: msg("Read Aloud"), about: msg("Hear any answer, free. Pick the voice in Settings"), group: "Voice", icon: "headphones", action: { open: "general" } },
 
   // Workspace
-  { title: "Brand Kit", about: "Your logo, colours and tone in what Flash makes", group: "Workspace", icon: "brand", action: { open: "brand" }, also: "brand hub logo" },
-  { title: "Memory", about: "What Flash should know about you", group: "Workspace", icon: "bookmark", action: { open: "memory" } },
-  { title: "Language", about: "The language Flash answers and builds in", group: "Workspace", icon: "globe", action: { open: "general" } },
-  { title: "Flash in Claude and ChatGPT", about: "Use Flash's tools from other AI apps", group: "Workspace", icon: "plug", action: { href: "/connector" }, also: "connector mcp cursor" },
-  { title: "Install Flash", about: "Its own window and icon on your computer or phone", group: "Workspace", icon: "install", action: { open: "install" }, also: "app download" },
-  { title: "Plans & Credits", about: "Your plan, credit packs and top-ups", group: "Workspace", icon: "star", action: { open: "credits" }, also: "upgrade billing" },
-  { title: "Invite Friends", about: "You both get credits after their first payment", group: "Workspace", icon: "gift", action: { open: "invite" }, also: "referral" },
-  { title: "Automations", about: "Jobs Flash runs on a schedule", group: "Workspace", icon: "bolt", action: { open: "automations" }, soon: true, also: "schedule" },
+  { title: msg("Brand Kit"), about: msg("Your logo, colours and tone in what Flash makes"), group: "Workspace", icon: "brand", action: { open: "brand" }, also: "brand hub logo" },
+  { title: msg("Memory"), about: msg("What Flash should know about you"), group: "Workspace", icon: "bookmark", action: { open: "memory" } },
+  { title: msg("Language"), about: msg("The language Flash answers and builds in"), group: "Workspace", icon: "globe", action: { open: "general" } },
+  { title: msg("Flash in Claude and ChatGPT"), about: msg("Use Flash's tools from other AI apps"), group: "Workspace", icon: "plug", action: { href: "/connector" }, also: "connector mcp cursor" },
+  { title: msg("Install Flash"), about: msg("Its own window and icon on your computer or phone"), group: "Workspace", icon: "install", action: { open: "install" }, also: "app download" },
+  { title: msg("Plans & Credits"), about: msg("Your plan, credit packs and top-ups"), group: "Workspace", icon: "star", action: { open: "credits" }, also: "upgrade billing" },
+  { title: msg("Invite Friends"), about: msg("You both get credits after their first payment"), group: "Workspace", icon: "gift", action: { open: "invite" }, also: "referral" },
+  { title: msg("Automations"), about: msg("Jobs Flash runs on a schedule"), group: "Workspace", icon: "bolt", action: { open: "automations" }, soon: true, also: "schedule" },
 ];
 
 /** What's set up on this server: tools, models, Stripe payments and custom domains. */
@@ -133,9 +134,9 @@ export function featureReady(f: Feature, on: FeatureSetup): boolean {
 /** The install feature, shown only where Flash can still be installed. */
 export const isInstall = (f: Feature) => "open" in f.action && f.action.open === "install";
 
-/** The features whose names (or other words for them) contain what was typed. */
-export function findFeatures(query: string, features: Feature[] = FEATURES): Feature[] {
+/** The features whose names (in English or the language Flash is shown in, t) or other words for them contain what was typed. */
+export function findFeatures(query: string, features: Feature[] = FEATURES, t: Translate = english): Feature[] {
   const q = query.trim().toLowerCase();
   if (!q) return [];
-  return features.filter((f) => `${f.title} ${f.also ?? ""}`.toLowerCase().includes(q));
+  return features.filter((f) => `${f.title} ${t(f.title)} ${f.also ?? ""}`.toLowerCase().includes(q));
 }
