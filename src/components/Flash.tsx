@@ -21,13 +21,13 @@ import { OFFICE_TYPES, officeKind, officeText } from "@/lib/office";
 import { MAX_PDF_MB, pdfText } from "@/lib/pdf-text";
 import { addAttachment } from "@/lib/attachments";
 import { MAX_QUEUE, recentTurns, type CompanionContext } from "@/lib/companion";
-import { TEMPLATES, type Template, type TemplateValues } from "@/lib/templates";
+import type { Template, TemplateValues } from "@/lib/templates";
 import { ENGINES, ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types";
 import { api, newId, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
 import type { ChatHit } from "@/lib/server/search";
-import { BoltIcon, Logo, LogoMark } from "@/app/brand";
-import { EngineIcon } from "./EngineIcon";
-import { LevelPicker, MicButton, PlusMenu, SendButton, TalkButton, ToolPicker, type Choice } from "./ComposerTools";
+import { BoltIcon, BrandMark } from "@/app/brand";
+import { Greeting, Home, ICONS, Icon } from "./Home";
+import { LevelPicker, MenusOpenDown, MicButton, PlusMenu, SendButton, TalkButton, ToolPicker, type Choice } from "./ComposerTools";
 import { VoiceMode, type VoiceAnswer } from "./VoiceMode";
 import { useWakeWord } from "./useWakeWord";
 import { voiceReply } from "@/lib/voice-chat";
@@ -35,7 +35,8 @@ import { photoActionsFor } from "@/lib/photo-actions";
 import { pickedContext, type PickedElement } from "@/lib/preview-bridge";
 import { pictureFollowUp } from "@/lib/router";
 import { firstName } from "@/lib/names";
-import { applyAppearance, notifiesWhenDone, readSetting, writeSetting } from "@/lib/device-settings";
+import { timeAgo } from "@/lib/when";
+import { applyAppearance, applyTheme, notifiesWhenDone, readSetting, writeSetting } from "@/lib/device-settings";
 import { LEVEL_ENGINES, isLevel, type Level } from "@/lib/levels";
 
 // A project's messages are loaded the first time it is opened.
@@ -66,11 +67,6 @@ const MAX_FILE_MB = 3;
 // Word, Excel and PowerPoint files are read in the browser and only their text is sent.
 const MAX_OFFICE_MB = 20;
 
-/** Good morning, afternoon or evening, by the visitor's own clock. */
-function greeting(): string {
-  const hour = new Date().getHours();
-  return hour < 5 ? "Good evening" : hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
-}
 // A team invitation opened before signing in waits here until the account loads.
 const INVITE_KEY = "flash_invite";
 const storage = {
@@ -90,33 +86,6 @@ const storage = {
     }
   },
 };
-// What the image, video, music and voice engines make, for the welcome text.
-const MEDIA_WORDS: [Engine, string][] = [
-  ["image", "images"],
-  ["video", "video"],
-  ["music", "music"],
-  ["voice", "voice"],
-];
-
-// attach: the card opens the file picker instead of sending its text.
-const SUGGESTIONS: { engine: Engine; text: string; attach?: boolean }[] = [
-  { engine: "app", text: "Build a habit tracker app with streaks and a weekly chart" },
-  { engine: "slides", text: "Make a presentation about the future of solar energy in Africa" },
-  { engine: "text", text: "Write a friendly email asking my landlord to fix the heater" },
-  { engine: "search", text: "What's the latest news in AI this week?" },
-  { engine: "code", text: "Write a Python function that checks if a number is prime" },
-  { engine: "translate", text: "Translate 'Welcome to our shop' into French, Spanish and Yoruba" },
-  { engine: "docs", text: "Create a monthly budget spreadsheet for a family of four" },
-  { engine: "image", text: "Draw a minimalist logo for a coffee shop called Flash Brew" },
-  { engine: "video", text: "Make a video of ocean waves at sunset, slow drone shot" },
-  { engine: "image", text: "Attach a photo and say what to change: remove the background, make it a cartoon", attach: true },
-  { engine: "docs", text: "Snap a receipt, menu or handwritten note and turn it into text or a spreadsheet", attach: true },
-  { engine: "video", text: "Make a 1 minute movie about a girl who finds a dragon egg" },
-  { engine: "music", text: "Compose an upbeat jingle for a bakery ad" },
-  { engine: "voice", text: "Read this aloud: Welcome to Flash, your all-in-one AI." },
-  { engine: "transcribe", text: "Attach a recording and get a clean transcript", attach: true },
-];
-
 export type Status = Record<Engine, boolean>;
 
 function applyEvent(m: UIMessage, e: StreamEvent): UIMessage {
@@ -312,8 +281,6 @@ export function Flash({
   const [companion, setCompanion] = useState(false);
   // The Ask Flash button can be hidden in Settings > Capabilities (read after mount: it lives on the device).
   const [hideCompanion, setHideCompanion] = useState(false);
-  // "Good morning, Adolff! Welcome back." for a few seconds after signing in or opening Flash.
-  const [welcome, setWelcome] = useState("");
   // A voice conversation, docked where the message box is; woke when "Hey Flash" opened it.
   const [voice, setVoice] = useState<{ woke: boolean; first?: string } | null>(null);
   // "Hey Flash" is on for this device (Settings > General > Voice), and whether the mic button is listening.
@@ -346,6 +313,14 @@ export function Flash({
   const fileRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const [projectQuery, setProjectQuery] = useState("");
+  // The search box at the top of Home, its list of matches, and the sidebar's (on phones and in chats).
+  // "all" when opened from Home's View all, which lists every chat instead of the latest 10.
+  const [searchOpen, setSearchOpen] = useState<boolean | "all">(false);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const searchBoxRef = useRef<HTMLDivElement>(null);
+  const sideSearchRef = useRef<HTMLInputElement>(null);
+  // Macs show ⌘ K for search, other computers Ctrl K (read after mount).
+  const [mac, setMac] = useState(false);
   const [chatHits, setChatHits] = useState<ChatHit[]>([]);
   const [showShare, setShowShare] = useState(false);
   const [showInstructions, setShowInstructions] = useState(false);
@@ -402,12 +377,10 @@ export function Flash({
     acceptInvite();
     setPreferences(data.user.preferences);
     try {
-      let { projects: list } = await api<{ projects: ProjectSummary[] }>("/api/projects");
-      const firstVisit = !list.length;
-      if (firstVisit) list = [(await api<{ project: ProjectSummary }>("/api/projects", { method: "POST", json: { name: "My first project" } })).project];
+      // Flash opens on Home, which greets the user and lists their latest chats.
+      const { projects: list } = await api<{ projects: ProjectSummary[] }>("/api/projects");
       setProjects(list);
-      await openProject(list[0].id);
-      setWelcome(firstVisit ? `Welcome to Flash, ${firstName(data.user)}!` : `${greeting()}, ${firstName(data.user)}! Welcome back.`);
+      setActiveId("");
     } catch {
       setMe(null);
       setLoadError(true);
@@ -481,23 +454,48 @@ export function Flash({
   // Settings kept on this device: the chat font and text size, and whether Ask Flash shows.
   useEffect(() => {
     applyAppearance();
+    applyTheme();
     setHideCompanion(readSetting("hideCompanion") === "1");
     setWakeOn(readSetting("wakeWord") === "1");
     const saved = readSetting("level");
     if (isLevel(saved)) setLevelState(saved);
   }, []);
 
+  // ⌘ K or Ctrl K jumps to search: the box at the top of Home, or the sidebar's elsewhere.
+  useEffect(() => {
+    const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+    setMac(isMac);
+    const onKey = (e: KeyboardEvent) => {
+      // Cmd on a Mac (Ctrl K there deletes to the end of the line), and never from behind an open dialog.
+      if (!(isMac ? e.metaKey : e.ctrlKey) || e.key.toLowerCase() !== "k" || e.defaultPrevented) return;
+      if (document.querySelector('[aria-modal="true"]')) return;
+      e.preventDefault();
+      if (searchRef.current?.offsetParent) return searchRef.current.focus();
+      if (!sideSearchRef.current?.offsetParent) setSidebar(true);
+      setTimeout(() => sideSearchRef.current?.focus(), 50);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+
+  // The search list closes on Escape or a click elsewhere.
+  useEffect(() => {
+    if (!searchOpen) return;
+    const close = (e: PointerEvent | KeyboardEvent) => {
+      if (e instanceof KeyboardEvent ? e.key === "Escape" : !searchBoxRef.current?.contains(e.target as Node)) setSearchOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", close);
+    };
+  }, [searchOpen]);
+
   // "Hey Flash" listens while Flash is open, except while the mic button or a conversation is listening.
   const wakeState = useWakeWord(wakeOn && !voice && !dictating && Boolean(me) && !signedOut, (rest) =>
     setVoice({ woke: true, first: rest }),
   );
-
-  // The welcome greeting fades after a few seconds.
-  useEffect(() => {
-    if (!welcome) return;
-    const timer = setTimeout(() => setWelcome(""), 6000);
-    return () => clearTimeout(timer);
-  }, [welcome]);
 
   // Saves changed projects shortly after a reply finishes.
   useEffect(() => {
@@ -571,6 +569,45 @@ export function Flash({
     }
   }
 
+  /** Back to Home; the next message starts a new chat. */
+  function goHome() {
+    setActiveId("");
+    setSidebar(false);
+  }
+
+  /** AI Chat in the sidebar: the latest chat, or the message box on Home when there's none yet. */
+  function openChats() {
+    if (active?.messages?.length) return;
+    // Skips chats with nothing in them yet (the loaded messages say, else the list's empty flag).
+    const latest = [...projects].filter((p) => (p.messages ? p.messages.length > 0 : !p.empty)).sort((a, b) => b.updated_at - a.updated_at)[0];
+    if (latest) openProject(latest.id);
+    else pickTool("auto");
+  }
+
+  /** Picks a tool in the message box and puts the cursor there, as Home's tool buttons do. */
+  function pickTool(next: Choice) {
+    setVoice(null);
+    setChoice(next);
+    requestAnimationFrame(() => {
+      inputRef.current?.focus({ preventScroll: true });
+      inputRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+    });
+  }
+
+  /** Home's View all: the search list on computers, the sidebar on phones. */
+  function viewAllChats() {
+    if (searchRef.current?.offsetParent) {
+      searchRef.current.focus();
+      setSearchOpen("all");
+    } else setSidebar(true);
+  }
+
+  function openFromSearch(id: string) {
+    setSearchOpen(false);
+    setProjectQuery("");
+    openProject(id);
+  }
+
   /**
    * Makes a template in its own chat (the open one, if it's still empty), and closes the templates
    * once it's there. Invoices and quotes arrive finished and free, even while Flash works on
@@ -611,14 +648,8 @@ export function Flash({
       return;
     }
     dirtyRef.current.delete(id);
-    const rest = projects.filter((p) => p.id !== id);
-    if (!rest.length) {
-      setProjects([]);
-      await start();
-      return;
-    }
-    setProjects(rest);
-    if (id === activeId) openProject(rest[0].id);
+    setProjects((list) => list.filter((p) => p.id !== id));
+    if (id === activeId) setActiveId("");
   }
 
   function togglePin(id: string) {
@@ -660,7 +691,6 @@ export function Flash({
     setMe(null);
     setProjects([]);
     setActiveId("");
-    setWelcome("");
     filesRef.current.clear();
     setAuthMode(null);
     setSignedOut(true);
@@ -688,19 +718,33 @@ export function Flash({
     inputRef.current?.focus();
   }
 
+  /**
+   * The open chat, or on Home a new one for the first message. Nothing else can start while it's
+   * being made, so a second Enter doesn't make a second chat.
+   */
+  async function ensureChat(): Promise<Project | null> {
+    if (active) return active;
+    runningRef.current = true;
+    const made = await createProject();
+    runningRef.current = false;
+    return made;
+  }
+
   // auto: a one-tap button that knows its job, so it goes to Auto whatever tool is picked.
   // fresh: asks for a new picture (Tall, Square, Wide), so it never goes with the picture above.
   async function send(text: string, auto = false, fresh = false) {
     if (busy || runningRef.current) return;
-    if (!active?.messages) {
-      if (active) setNotice("This project didn't load. Pick it again in the sidebar.");
-      return;
-    }
     const content = text.trim();
     if (!content && !attachment) return;
-    const part = picked?.projectId === active.id ? picked : null;
+    const chat = await ensureChat();
+    if (!chat) return;
+    if (!chat.messages) {
+      setNotice("This project didn't load. Pick it again in the sidebar.");
+      return;
+    }
+    const part = picked?.projectId === chat.id ? picked : null;
     // "Make it darker" right after a picture changes that picture, the way ChatGPT does.
-    const above = !files.length && !part && !auto && !fresh ? followUpPicture(active.messages, content, choice, keepPicture) : null;
+    const above = !files.length && !part && !auto && !fresh ? followUpPicture(chat.messages, content, choice, keepPicture) : null;
     const userMsg = withPicture(
       {
         id: newId(),
@@ -716,13 +760,13 @@ export function Flash({
     setPicked(null);
     setKeepPicture(null);
     if (files.length) filesRef.current.set(userMsg.id, files);
-    updateProject(active.id, (p) => ({
+    updateProject(chat.id, (p) => ({
       ...p,
       name: !p.messages?.length && p.name === "New project" ? content.slice(0, 40) || p.name : p.name,
     }));
     setInput("");
     setFiles([]);
-    await respond(active, active.messages, userMsg, false, (stopped) => {
+    await respond(chat, chat.messages, userMsg, false, (stopped) => {
       // The picture above couldn't be opened (or Stop was pressed while it loaded), so nothing was
       // sent: the words go back in the box and the user decides.
       setInput((typed) => (typed.trim() ? typed : text));
@@ -932,16 +976,18 @@ export function Flash({
 
   /** One turn of a voice conversation: sends what was said to the open chat, on Auto, and says the answer. */
   async function talk(text: string): Promise<VoiceAnswer> {
-    if (!active?.messages) return { say: "Open a chat first, then talk to me again.", confirm: false };
     const stillWorking = { say: "I'm still working on your last request. Ask me again when it's done.", confirm: false };
     if (busy || runningRef.current) return stillWorking;
-    updateProject(active.id, (p) => ({
+    // Talking from Home starts a new chat, as typing does.
+    const chat = await ensureChat();
+    if (!chat?.messages) return { say: "Open a chat first, then talk to me again.", confirm: false };
+    updateProject(chat.id, (p) => ({
       ...p,
       name: !p.messages?.length && p.name === "New project" ? text.slice(0, 40) || p.name : p.name,
     }));
     // "Make it darker" said right after a picture changes that picture, as when it's typed.
     const ask: UIMessage = { id: newId(), role: "user", content: text, auto: true, voice: true };
-    const reply = await respond(active, active.messages, withPicture(ask, followUpPicture(active.messages, text, "auto")));
+    const reply = await respond(chat, chat.messages, withPicture(ask, followUpPicture(chat.messages, text, "auto")));
     return reply ? voiceReply(reply) : stillWorking;
   }
 
@@ -984,8 +1030,9 @@ export function Flash({
    * open one). "waiting" requests only run once the user presses Run.
    */
   const queueRequest = useCallback(
-    (request: string, waiting = false) => {
-      const projectId = jobRef.current?.projectId ?? activeId;
+    async (request: string, waiting = false) => {
+      // On Home no chat is open yet, so the request starts a new one (createProject says if that fails).
+      const projectId = jobRef.current?.projectId || activeId || (await createProject())?.id;
       if (!projectId) return;
       const list = queueNow.current;
       if (list.some((q) => q.request === request && q.projectId === projectId)) return;
@@ -1151,7 +1198,6 @@ export function Flash({
   const lastAppId = active?.messages?.findLast((m) => m.app)?.id;
   const liveCount = ENGINES.filter(isLive).length;
   const allOff = status && !liveCount;
-  const makes = MEDIA_WORDS.filter(([e]) => isLive(e)).map(([, word]) => word);
 
   if (signedOut) {
     return authMode ? (
@@ -1196,75 +1242,291 @@ export function Flash({
     );
   }
 
+  // Home shows until the open chat has messages: on a fresh start, after Home or New chat, and while a first message is on its way.
+  const isHome = !active || active.messages?.length === 0;
+  // Next up, the message box and the voice panel. The voice panel always sits in the bottom bar, so
+  // starting a conversation on Home and getting the first answer (which opens the chat) never restarts it.
+  const queueList = queue.length > 0 && (
+    <div className="mb-2 rounded-2xl border border-white/8 bg-white/[0.02] px-3 py-2">
+      <div className="flex items-center gap-2">
+        <p className="min-w-0 flex-1 text-xs font-medium text-zinc-400">
+          Next up · {queue.length} {queue.length === 1 ? "request" : "requests"}{" "}
+          {queuePaused
+            ? "paused, because the last request didn't finish"
+            : queue[0].waiting
+              ? "waiting for your OK"
+              : busy
+                ? "waiting for this one to finish"
+                : "starting now"}
+        </p>
+        {queuePaused && (
+          <button
+            type="button"
+            onClick={() => setQueuePaused(false)}
+            aria-label="Resume Next up"
+            className="shrink-0 rounded-full bg-primary/20 px-2.5 py-0.5 text-xs text-primary-soft hover:bg-primary/30"
+          >
+            Resume
+          </button>
+        )}
+      </div>
+      <ul className="mt-1.5 space-y-1">
+        {queue.map((q, i) => {
+          const elsewhere = q.projectId !== activeId ? projects.find((p) => p.id === q.projectId)?.name : undefined;
+          return (
+            <li key={q.id} className="flex items-start gap-2 text-sm text-zinc-200">
+              <span className="mt-0.5 shrink-0 text-xs text-zinc-500">{i + 1}.</span>
+              <span className="min-w-0 flex-1 truncate">
+                {q.request}
+                {elsewhere && <span className="text-xs text-zinc-500"> · in {elsewhere}</span>}
+              </span>
+              {q.waiting && (
+                <button
+                  type="button"
+                  onClick={() => setQueue(queueNow.current.map((x) => (x.id === q.id ? { ...x, waiting: false } : x)))}
+                  aria-label={`Run "${q.request}"`}
+                  className="shrink-0 rounded-full bg-primary/20 px-2 text-xs leading-5 text-primary-soft hover:bg-primary/30"
+                >
+                  Run
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setQueue(queueNow.current.filter((x) => x.id !== q.id))}
+                aria-label={`Remove "${q.request}" from Next up`}
+                className="shrink-0 text-zinc-500 hover:text-red-400"
+              >
+                ✕
+              </button>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+  const voicePanel = voice && (
+    <VoiceMode
+      name={firstName(me.user)}
+      language={me.user.language}
+      woke={voice.woke}
+      first={voice.first}
+      busy={busy}
+      ask={talk}
+      confirm={confirmByVoice}
+      onStop={stop}
+      onClose={() => setVoice(null)}
+    />
+  );
+  const form = (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        send(input);
+      }}
+      className="glass-raised @container/composer relative z-10 rounded-[26px] p-2.5 transition focus-within:border-white/25 has-[[role=menu]]:z-40"
+    >
+      {pickedNow && (
+        <div className="mb-1 ml-2 mt-1 inline-flex max-w-full items-center gap-2 rounded-lg bg-primary/15 px-3 py-1 text-xs text-primary-soft">
+          <span className="truncate">◎ Changing the {pickedNow.label}</span>
+          <button type="button" onClick={() => setPicked(null)} aria-label="Don't change this part" className="text-primary-soft/70 hover:text-zinc-100">
+            ✕
+          </button>
+        </div>
+      )}
+      {changingPicture && (
+        <div className="mb-1 ml-2 mt-1 inline-flex max-w-full items-center gap-2 rounded-lg bg-primary/15 px-3 py-1 text-xs text-primary-soft">
+          <span className="truncate">✏️ Changing the picture above</span>
+          <button
+            type="button"
+            onClick={() => setKeepPicture(above)}
+            aria-label="Don't change the picture above"
+            title="Make a new picture instead"
+            className="text-primary-soft/70 hover:text-zinc-100"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+      {files.length > 0 && (
+        <div className="mb-1 ml-2 mt-1 flex flex-wrap gap-1.5">
+          {files.map((f) => (
+            <div key={f.name} className="inline-flex max-w-full items-center gap-2 rounded-lg bg-zinc-800 px-3 py-1 text-xs text-zinc-200">
+              <span className="truncate">📎 {f.name}</span>
+              <button
+                type="button"
+                onClick={() => setFiles(filesNow.current.filter((x) => x !== f))}
+                aria-label={`Remove ${f.name}`}
+                className="text-zinc-400 hover:text-zinc-100"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {photoActions.length > 0 && !busy && (
+        <div className="mb-1 ml-2 mt-1 inline-flex flex-wrap gap-1.5">
+          {photoActions.map((a) => (
+            <button
+              key={a.label}
+              type="button"
+              onClick={() => send(files.length > 1 ? a.several! : a.prompt, true)}
+              className="rounded-full border border-white/10 px-3 py-1 text-xs text-zinc-300 transition hover:border-primary/50 hover:text-zinc-100"
+            >
+              {a.label}
+            </button>
+          ))}
+        </div>
+      )}
+      <textarea
+        ref={inputRef}
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onPaste={(e) => {
+          const pasted = [...e.clipboardData.files];
+          if (pasted.length) {
+            e.preventDefault();
+            attachAll(pasted);
+          }
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+            e.preventDefault();
+            send(input);
+          }
+        }}
+        rows={1}
+        placeholder={
+          pickedNow
+            ? "Say what to change about it…"
+            : photoActions.length
+            ? files.length > 1
+              ? "Ask about these photos, or say how to combine them…"
+              : "Ask about it, say what to change, or tap a button above…"
+            : above && changesPictures(choice)
+              ? "Say what to change in the picture, or ask anything…"
+              : choice === "auto"
+              ? isHome
+                ? "Ask anything, create anything…"
+                : "Ask Flash anything…"
+              : `Ask ${ENGINE_LABELS[choice]}…`
+        }
+        className="block max-h-48 min-h-[44px] w-full resize-none bg-transparent px-2.5 pb-1 pt-2 text-[15px] outline-none placeholder:text-zinc-200 light:placeholder:text-zinc-500"
+        aria-label="Message"
+      />
+      <div className="mt-1 flex items-center gap-2">
+        <PlusMenu onFiles={() => fileRef.current?.click()} onCamera={() => cameraRef.current?.click()} />
+        <ToolPicker
+          choice={choice}
+          setChoice={setChoice}
+          isLive={isLive}
+          models={me.models}
+          model={choice === "auto" ? undefined : models[choice]}
+          setModel={(engine, id) => setModels((all) => ({ ...all, [engine]: id }))}
+        />
+        <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
+          {(choice === "auto" || LEVEL_ENGINES.includes(choice)) && <LevelPicker level={level} setLevel={setLevel} />}
+          <MicButton
+            disabled={busy}
+            onText={(text) => {
+              setInput((v) => (v.trim() ? `${v.trimEnd()} ${text}` : text));
+              inputRef.current?.focus();
+            }}
+            onRecording={(file) => attach(file)}
+            onListening={setDictating}
+          />
+          <TalkButton onTalk={() => setVoice({ woke: false })} waking={wakeState === "listening"} />
+          <SendButton busy={busy} onStop={stop} disabled={!input.trim() && !attachment} />
+        </div>
+      </div>
+    </form>
+  );
+  // A page (Home, AI Chat) is marked as the current one; a panel that opens over it (Voice) as pressed.
+  const navItem = (label: string, d: string, on: boolean, run: () => void, panel = false) => (
+    <button
+      key={label}
+      onClick={() => {
+        run();
+        setSidebar(false);
+      }}
+      aria-current={on && !panel ? "page" : undefined}
+      aria-pressed={panel ? on : undefined}
+      className={`flex h-11 w-full items-center gap-3.5 rounded-2xl px-3.5 text-left text-[15px] transition ${
+        on && !panel
+          ? "bg-nav-active font-semibold text-white"
+          : on
+            ? "bg-white/[0.06] font-semibold text-white"
+            : "text-zinc-300 hover:bg-white/[0.05] hover:text-white"
+      }`}
+    >
+      <Icon d={d} className="h-[22px] w-[22px] shrink-0" />
+      {label}
+    </button>
+  );
+
   return (
     <div className="flex h-full">
       {/* Sidebar */}
       <aside
-        className={`${sidebar ? "flex" : "hidden"} fixed inset-0 z-20 w-full flex-col border-r border-white/6 bg-zinc-950 md:static md:flex md:w-64`}
+        className={`${sidebar ? "flex" : "hidden"} fixed inset-0 z-[35] w-full flex-col overflow-y-auto bg-zinc-950 md:static md:m-3 md:mr-0 md:flex md:w-[248px] md:shrink-0 md:rounded-[26px] md:bg-transparent md:glass`}
       >
-        <div className="flex items-center justify-between p-4">
-          <Logo size={28} className="text-[15px]" />
-          <button className="text-zinc-400 md:hidden" onClick={() => setSidebar(false)} aria-label="Close menu">
+        <div className="flex items-start justify-between px-5 pb-1 pt-5">
+          <button onClick={goHome} className="flex items-center gap-2.5 text-left" aria-label="Flash AI, home">
+            <span className="light:[filter:drop-shadow(0_1px_1.5px_rgb(16_22_48/0.35))]">
+              <BrandMark size={40} id="flash-side" ring={false} />
+            </span>
+            <span>
+              <span className="block text-[20px] font-bold leading-none tracking-tight text-white">
+                FLASH <span className="font-light">AI</span>
+              </span>
+              <span className="mt-1.5 block text-[11px] text-zinc-400">One app. Infinite possibilities.</span>
+            </span>
+          </button>
+          <button className="mt-1 text-zinc-400 md:hidden" onClick={() => setSidebar(false)} aria-label="Close menu">
             ✕
           </button>
         </div>
-        <div className="px-3">
-          <button
-            onClick={createProject}
-            className="h-9 w-full rounded-lg border border-white/8 px-3 text-left text-sm text-zinc-200 transition hover:bg-white/[0.04]"
-          >
-            + New project
-          </button>
-          <button
-            onClick={() => {
-              setShowCreations(true);
-              setSidebar(false);
-            }}
-            className="mt-1.5 h-9 w-full rounded-lg px-3 text-left text-sm text-zinc-300 transition hover:bg-white/[0.04] hover:text-white"
-          >
-            🖼️ My creations
-          </button>
-          <button
-            onClick={() => {
-              setShowApps(true);
-              setSidebar(false);
-            }}
-            className="mt-0.5 h-9 w-full rounded-lg px-3 text-left text-sm text-zinc-300 transition hover:bg-white/[0.04] hover:text-white"
-          >
-            🌐 My websites &amp; apps
-          </button>
+        <nav aria-label="Flash" className="mt-4 space-y-1 px-3">
+          {navItem("Home", ICONS.home, isHome, goHome)}
+          {navItem("AI Chat", ICONS.chat, !isHome, openChats)}
+          {navItem("Create", ICONS.create, false, () => setTemplates(""))}
+          {navItem("Voice", ICONS.voice, Boolean(voice), () => setVoice({ woke: false }), true)}
+          {navItem("Images", ICONS.images, false, () => setShowCreations(true))}
+          {navItem("Workspace", ICONS.workspace, false, () => setShowApps(true))}
+        </nav>
+        <div className="mx-5 my-3 border-t border-white/[0.07]" />
+        <nav aria-label="Brand and settings" className="space-y-1 px-3">
+          {navItem("Brand Hub", ICONS.brand, false, () => setSettingsTab("brand"))}
+          {navItem("Settings", ICONS.settings, false, () => setSettingsTab("general"))}
+        </nav>
+        <div className="mt-4 flex items-center justify-between px-5">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Chats</p>
           <button
             onClick={() => {
-              setTemplates("");
-              setSidebar(false);
+              goHome();
+              pickTool("auto");
             }}
-            className="mt-0.5 h-9 w-full rounded-lg px-3 text-left text-sm text-zinc-300 transition hover:bg-white/[0.04] hover:text-white"
+            aria-label="New chat"
+            title="New chat"
+            className="flex h-7 w-7 items-center justify-center rounded-lg text-zinc-400 transition hover:bg-white/[0.06] hover:text-white"
           >
-            📋 Templates
-          </button>
-          <button
-            onClick={() => {
-              setSettingsTab("brand");
-              setSidebar(false);
-            }}
-            className="mt-0.5 h-9 w-full rounded-lg px-3 text-left text-sm text-zinc-300 transition hover:bg-white/[0.04] hover:text-white"
-          >
-            🎨 Brand kit
+            <Icon d={ICONS.plus} className="h-4 w-4" strokeWidth={2} />
           </button>
         </div>
         {projects.length > 1 && (
-          <div className="mt-3 px-3">
+          <div className={`mt-2 px-3 ${isHome ? "md:hidden" : ""}`}>
             <input
+              ref={sideSearchRef}
               type="search"
               value={projectQuery}
               onChange={(e) => setProjectQuery(e.target.value)}
-              placeholder="Search projects and chats"
+              placeholder="Search chats"
               aria-label="Search projects and chats"
-              className="h-9 w-full rounded-lg border border-white/8 bg-white/[0.03] px-3 text-sm text-zinc-200 outline-none placeholder:text-zinc-500 focus:border-primary/70"
+              className="h-9 w-full rounded-xl border border-white/8 bg-white/[0.03] px-3 text-sm text-zinc-200 outline-none placeholder:text-zinc-500 focus:border-primary/70"
             />
           </div>
         )}
-        <nav className="mt-3 flex-1 space-y-0.5 overflow-y-auto px-3">
+        <nav aria-label="Chats" className="mt-1.5 shrink-0 space-y-0.5 px-3 md:min-h-[7.5rem] md:flex-1 md:shrink md:overflow-y-auto">
           {projectQuery.trim() && !sorted.length && !inChats.length && <p className="px-2 py-1.5 text-xs text-zinc-500">Nothing matches.</p>}
           {sorted.map((p) => (
             <div
@@ -1280,7 +1542,7 @@ export function Flash({
                 {p.name}
               </button>
               <button
-                className="px-1 text-zinc-500 hover:text-zinc-200 focus:opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
+                className="px-1 text-zinc-500 hover:text-zinc-200 md:hidden md:group-focus-within:block md:group-hover:block"
                 onClick={() => togglePin(p.id)}
                 aria-label={p.pinned ? "Unpin project" : "Pin project"}
                 title={p.pinned ? "Unpin" : "Pin to the top"}
@@ -1288,14 +1550,14 @@ export function Flash({
                 {p.pinned ? "⊘" : "📌"}
               </button>
               <button
-                className="px-1 text-zinc-500 hover:text-zinc-200 focus:opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
+                className="px-1 text-zinc-500 hover:text-zinc-200 md:hidden md:group-focus-within:block md:group-hover:block"
                 onClick={() => renameProject(p.id)}
                 aria-label="Rename project"
               >
                 ✎
               </button>
               <button
-                className="px-2 text-zinc-500 hover:text-red-400 focus:opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus:opacity-100"
+                className="px-2 text-zinc-500 hover:text-red-400 md:hidden md:group-focus-within:block md:group-hover:block"
                 onClick={() => deleteProject(p.id)}
                 aria-label="Delete project"
               >
@@ -1322,19 +1584,39 @@ export function Flash({
             </>
           )}
         </nav>
-        <div className="border-t border-white/6 p-3">
+        <div className="space-y-2 p-3">
+          {!me.plan && (me.paymentsEnabled || me.testPurchases) && (
+            <div className="relative overflow-hidden rounded-2xl border border-white/10 p-4">
+              <div className="pointer-events-none absolute inset-0 bg-iris-wash" />
+              <div className="relative">
+                <p className="flex items-center gap-2 font-semibold text-white">
+                  <span aria-hidden>👑</span> Upgrade to Pro
+                </p>
+                <p className="mt-0.5 text-[13px] text-zinc-400">More power. More possibilities.</p>
+                <button
+                  onClick={() => {
+                    setShowCredits(true);
+                    setSidebar(false);
+                  }}
+                  className="mt-3 inline-flex h-9 items-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-on-brand transition hover:brightness-110"
+                >
+                  Get started <Icon d={ICONS.arrow} className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+          )}
           <button
             onClick={() => setShowInvite(true)}
-            className="w-full rounded-lg border border-white/8 px-2 py-1.5 text-left text-xs text-gold-soft transition hover:bg-white/[0.04] hover:text-gold"
+            className="w-full rounded-lg px-2 py-1 text-left text-xs text-gold-soft transition hover:bg-white/[0.04] hover:text-gold"
           >
             🎁 Invite friends, earn credits
           </button>
           {status && (
-            <details className="mt-2 text-xs text-zinc-400">
+            <details className="px-2 text-xs text-zinc-400">
               <summary className="cursor-pointer select-none hover:text-zinc-200">
                 {liveCount === ENGINES.length ? "✨ What Flash can do" : `✨ What Flash can do · ${ENGINES.length - liveCount} coming soon`}
               </summary>
-              <div className="mt-2 grid grid-cols-2 gap-1">
+              <div className="mt-2 grid max-h-36 grid-cols-2 gap-1 overflow-y-auto">
                 {ENGINES.map((e) => (
                   <span key={e} className="flex items-center gap-1.5">
                     <span className={`h-1.5 w-1.5 rounded-full ${status[e] ? "bg-emerald-400" : "bg-zinc-600"}`} />
@@ -1345,32 +1627,13 @@ export function Flash({
               </div>
             </details>
           )}
-          <AccountMenu
-            me={me}
-            onSettings={() => {
-              setSettingsTab("general");
-              setSidebar(false);
-            }}
-            onHelp={() => {
-              setCompanion(true);
-              setSidebar(false);
-            }}
-            onPlan={() => {
-              setShowCredits(true);
-              setSidebar(false);
-            }}
-            onInvite={() => {
-              setShowInvite(true);
-              setSidebar(false);
-            }}
-            onSignOut={() => signOut()}
-          />
         </div>
       </aside>
 
       {/* Main */}
       <main
-        className="relative flex min-w-0 flex-1 flex-col"
+        // An open menu lifts the whole column above the Ask Flash bubble (Home's scroller is its own layer).
+        className="@container/main relative flex min-w-0 flex-1 flex-col has-[[role=menu]]:z-40"
         onDragOver={(e) => {
           if (e.dataTransfer.types.includes("Files")) {
             e.preventDefault();
@@ -1386,25 +1649,89 @@ export function Flash({
           attachAll(e.dataTransfer.files);
         }}
       >
-        {/* The welcome screen already greets the user, so this only shows over a chat with messages. */}
-        {welcome && Boolean(active?.messages?.length) && (
-          <div
-            role="status"
-            className="pointer-events-none absolute left-1/2 top-16 z-20 max-w-[calc(100%-2rem)] -translate-x-1/2 rounded-full border border-primary/30 bg-zinc-900/95 px-4 py-2 text-sm text-zinc-100 shadow-xl backdrop-blur"
-          >
-            👋 {welcome}
-          </div>
-        )}
         {dragging && (
           <div className="pointer-events-none absolute inset-3 z-30 flex items-center justify-center rounded-2xl border-2 border-dashed border-primary bg-primary/10 text-lg font-medium text-primary-soft">
             Drop a file for Flash to read, analyse or transcribe
           </div>
         )}
-        <header className="flex h-14 items-center gap-3 border-b border-white/6 bg-zinc-950/70 px-4 backdrop-blur-md">
-          <button className="text-zinc-400 md:hidden" onClick={() => setSidebar(true)} aria-label="Open menu">
-            ☰
+        <header className={`flex h-16 shrink-0 items-center gap-2 px-4 sm:gap-3 md:h-[76px] md:px-6 ${isHome ? "mx-auto w-full max-w-[1600px] lg:px-8 @min-[1100px]/main:h-[96px]" : ""}`}>
+          <button
+            className="-ml-1.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-300 hover:bg-white/[0.05] md:hidden"
+            onClick={() => setSidebar(true)}
+            aria-label="Open menu"
+          >
+            <Icon d="M4 7h16 M4 12h16 M4 17h16" />
           </button>
-          <h1 className="min-w-0 flex-1 truncate text-sm text-zinc-200">{active?.name ?? "Flash AI"}</h1>
+          {isHome ? (
+            <>
+              <button onClick={goHome} className="shrink-0 md:hidden" aria-label="Flash AI, home">
+                <BrandMark size={32} id="flash-top" ring={false} />
+              </button>
+              <Greeting me={me} className="hidden shrink @min-[1100px]/main:block" />
+              <div className="hidden min-w-0 flex-1 @min-[1100px]/main:block" />
+              <div ref={searchBoxRef} className="relative hidden min-w-0 max-w-2xl flex-[3] md:block @min-[1100px]/main:min-w-[300px] @min-[1100px]/main:max-w-[420px] @min-[1100px]/main:flex-[4]">
+                <Icon d={ICONS.search} className="pointer-events-none absolute left-4 top-1/2 z-10 h-5 w-5 -translate-y-1/2 text-zinc-400" />
+                <input
+                  ref={searchRef}
+                  type="search"
+                  value={projectQuery}
+                  onChange={(e) => {
+                    setProjectQuery(e.target.value);
+                    setSearchOpen(true);
+                  }}
+                  onFocus={() => setSearchOpen(true)}
+                  placeholder="Search your chats and projects"
+                  aria-label="Search your chats and projects"
+                  className="glass h-12 w-full rounded-2xl pl-12 pr-4 text-[15px] text-zinc-100 shadow-none outline-none placeholder:text-zinc-400 focus:border-primary/50 @min-[700px]/main:pr-16"
+                />
+                <kbd className="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 rounded-md border border-white/10 bg-white/[0.04] px-1.5 py-0.5 font-sans text-[11px] text-zinc-400 @min-[700px]/main:block">
+                  {mac ? "⌘ K" : "Ctrl K"}
+                </kbd>
+                {searchOpen && (
+                  <div className="absolute left-0 right-0 top-full z-40 mt-2 max-h-[60vh] overflow-y-auto rounded-2xl border border-white/10 bg-zinc-900 p-1.5 shadow-2xl light:shadow-black/10">
+                    {!projectQuery.trim() && sorted.length > 0 && (
+                      <p className="px-3 pb-1 pt-1.5 text-xs font-medium text-zinc-500">{searchOpen === "all" ? "All chats" : "Recent chats"}</p>
+                    )}
+                    {(searchOpen === "all" || projectQuery.trim() ? sorted : sorted.slice(0, 10)).map((p) => (
+                      <button
+                        key={p.id}
+                        onClick={() => openFromSearch(p.id)}
+                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06]"
+                      >
+                        <Icon d={ICONS.chat} className="h-4 w-4 shrink-0 text-zinc-500" />
+                        <span className="min-w-0 flex-1 truncate">{p.name}</span>
+                        <span className="shrink-0 text-xs text-zinc-500">{timeAgo(p.updated_at)}</span>
+                      </button>
+                    ))}
+                    {inChats.length > 0 && (
+                      <>
+                        <p className="px-3 pb-1 pt-2 text-xs font-medium text-zinc-500">In your chats</p>
+                        {inChats.map((h) => (
+                          <button
+                            key={h.id}
+                            onClick={() => openFromSearch(h.id)}
+                            className="block w-full rounded-xl px-3 py-2 text-left text-sm transition hover:bg-white/[0.06]"
+                          >
+                            <span className="block truncate text-zinc-200">{h.name}</span>
+                            <span className="line-clamp-2 text-xs text-zinc-500">
+                              {h.role === "user" ? "You: " : "Flash: "}
+                              {h.snippet}
+                            </span>
+                          </button>
+                        ))}
+                      </>
+                    )}
+                    {!sorted.length && !inChats.length && (
+                      <p className="px-3 py-2 text-sm text-zinc-500">{projectQuery.trim() ? "Nothing matches." : "Your chats will show here."}</p>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="min-w-0 flex-1 @min-[1100px]/main:hidden" />
+            </>
+          ) : (
+            <h1 className="min-w-0 flex-1 truncate text-[15px] font-medium text-zinc-100">{active?.name ?? "Flash AI"}</h1>
+          )}
           {active?.messages && (
             <button
               onClick={() => setShowInstructions(true)}
@@ -1436,15 +1763,26 @@ export function Flash({
           )}
           <button
             onClick={() => setShowCredits(true)}
-            className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-3 py-1 text-xs transition ${
+            // In a chat on a phone the chat's name needs the room, so the balance shows only when it runs low.
+            className={`${isHome || me.credits < 10 ? "inline-flex" : "hidden sm:inline-flex"} h-10 shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-[13px] transition ${
               me.credits < 10
                 ? "border-spark/50 bg-spark/10 text-spark-soft hover:bg-spark/20"
-                : "border-white/10 text-zinc-200 hover:bg-white/[0.04]"
+                : "glass text-zinc-100 shadow-none hover:brightness-110"
             }`}
             title="Credits: see costs and top up"
           >
-            <BoltIcon className="h-3.5 w-3.5 text-gold" /> {me.credits.toLocaleString()} credits
+            <BoltIcon className="h-3.5 w-3.5 text-gold" /> {me.credits.toLocaleString()}
+            <span className="hidden @min-[900px]/main:inline">credits</span>
           </button>
+          <AccountMenu
+            me={me}
+            placement="down"
+            onSettings={() => setSettingsTab("general")}
+            onHelp={() => setCompanion(true)}
+            onPlan={() => setShowCredits(true)}
+            onInvite={() => setShowInvite(true)}
+            onSignOut={() => signOut()}
+          />
         </header>
         {showApps && (
           <MyApps
@@ -1517,8 +1855,9 @@ export function Flash({
         />
       )}
 
-        <div className="flex-1 overflow-y-auto">
-          <div className="mx-auto max-w-3xl space-y-6 px-4 py-6">
+        <div className={`min-h-0 flex-1 overflow-y-auto ${isHome ? "[mask-image:linear-gradient(to_bottom,transparent,#000_16px)]" : ""}`}>
+          {(notice || !me.verified || allOff) && (
+            <div className={`mx-auto space-y-3 px-4 pt-2 ${isHome ? "max-w-[1600px] sm:px-6 lg:px-8" : "max-w-3xl"}`}>
             {notice && (
               <div
                 role="status"
@@ -1536,282 +1875,80 @@ export function Flash({
                 Flash is taking a short break, so answers are paused and nothing uses credits. Please check back soon.
               </div>
             )}
-            {active?.messages && active.messages.length === 0 && (
-              <div className="pt-6 text-center sm:pt-12">
-                <LogoMark size={64} className="mx-auto mb-6" />
-                <p className="text-sm font-medium uppercase tracking-[0.2em] text-zinc-500">{greeting()}</p>
-                <h2 className="mt-2 text-4xl font-medium tracking-[-0.04em] text-white sm:text-5xl">
-                  Welcome, <span className="text-holo">{firstName(me.user)}</span>
-                </h2>
-                <p className="mt-3 text-lg font-medium tracking-[-0.01em] text-zinc-300 sm:text-xl">
-                  Think it. <span className="text-holo">Flash it.</span>
-                </p>
-                <p className="mx-auto mt-4 max-w-lg text-zinc-400">
-                  Build apps, make slides, write, research, code, translate and crunch spreadsheets
-                  {makes.length ? `, and create ${makes.slice(0, -1).join(", ")}${makes.length > 1 ? " and " : ""}${makes.at(-1)}` : ""}.
-                  Ask anything and Flash picks the best AI for the job.
-                </p>
-                <div className="mt-8 flex flex-wrap items-center justify-center gap-2" aria-label="Start from a template">
-                  {TEMPLATES.filter((t) => ["business-plan", "resume", "social-pack", "flyer", "invoice"].includes(t.id))
-                    .filter((t) => t.engine === "local" || isLive(t.engine))
-                    .map((t) => (
-                      <button
-                        key={t.id}
-                        onClick={() => setTemplates(t.id)}
-                        className="rounded-full border border-white/10 px-3.5 py-1.5 text-sm text-zinc-200 transition hover:border-primary/50 hover:bg-white/[0.04]"
-                      >
-                        <span aria-hidden>{t.icon}</span> {t.name}
-                      </button>
-                    ))}
-                  <button
-                    onClick={() => setTemplates("")}
-                    className="rounded-full px-3 py-1.5 text-sm text-primary-soft transition hover:text-white"
-                  >
-                    All templates →
-                  </button>
-                </div>
-                <div className="mt-8 grid grid-cols-1 gap-2 text-left sm:grid-cols-2 lg:grid-cols-3">
-                  {SUGGESTIONS.filter((s) => isLive(s.engine)).map((s) => (
-                    <button
-                      key={s.text}
-                      onClick={() => (s.attach ? fileRef.current?.click() : send(s.text))}
-                      className="group rounded-xl border border-white/6 bg-white/[0.02] p-3.5 text-left transition hover:border-white/12 hover:bg-white/[0.04]"
-                    >
-                      <div className="flex items-center gap-2 text-xs text-zinc-400 group-hover:text-primary-soft">
-                        <EngineIcon engine={s.engine} size="sm" />
-                        {ENGINE_LABELS[s.engine]}
-                      </div>
-                      <div className="mt-1.5 text-sm leading-snug text-zinc-200">{s.text}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-            {active?.messages?.map((m, i, all) => (
-              <Message
-                key={m.id}
-                m={m}
-                onRetry={i === all.length - 1 && m.role === "assistant" && !m.pending && !m.local && !busy ? () => retry() : undefined}
-                onConfirmCost={i === all.length - 1 && !busy ? confirmCost : undefined}
-                onEdit={m.role === "user" && !m.local && !busy && i === all.findLastIndex((x) => x.role === "user") ? editLast : undefined}
-                onBuyCredits={() => setShowCredits(true)}
-                paymentsOn={me.paymentsEnabled || me.testPurchases}
-                onPublished={(slug) => setAppSlug(m.id, slug)}
-                publishedEarlier={m.app && !m.app.slug ? all.slice(0, i).findLast((x) => x.app?.slug)?.app?.slug : undefined}
-                onUseImage={busy ? undefined : editImage}
-                onReshape={busy || attachment || all[i - 1]?.attachmentName ? undefined : reshape}
-                onEditApp={m.app && !m.pending ? (html) => editAppCode(m.id, html) : undefined}
-                // Flash builds on the latest app, so fixes and picked parts are for that one.
-                onFixApp={m.app && !m.pending && !busy && m.id === lastAppId ? (request) => fixApp(m.app!.kind, request) : undefined}
-                onPickApp={m.app && !m.pending && m.id === lastAppId ? (part) => pickApp(m.app!.kind, part) : undefined}
-              />
-            ))}
-            <div ref={bottomRef} />
-          </div>
+            </div>
+          )}
+          {isHome ? (
+            <Home
+              me={me}
+              composer={
+                voice ? null : (
+                  <MenusOpenDown.Provider value>
+                    {queueList}
+                    {form}
+                  </MenusOpenDown.Provider>
+                )
+              }
+              isLive={isLive}
+              projects={projects}
+              onTool={pickTool}
+              onAttach={() => {
+                setVoice(null);
+                fileRef.current?.click();
+              }}
+              onTalk={() => setVoice({ woke: false })}
+              onOpenChat={openProject}
+              onViewChats={viewAllChats}
+              onPin={togglePin}
+              onRename={renameProject}
+              onDelete={deleteProject}
+              onApps={() => setShowApps(true)}
+              onTemplates={() => setTemplates("")}
+              onUsage={() => setSettingsTab("usage")}
+              onPlans={() => setShowCredits(true)}
+              paymentsOn={me.paymentsEnabled || me.testPurchases}
+            />
+          ) : (
+            <div className="mx-auto max-w-3xl space-y-6 px-4 py-6">
+              {active?.messages?.map((m, i, all) => (
+                <Message
+                  key={m.id}
+                  m={m}
+                  onRetry={i === all.length - 1 && m.role === "assistant" && !m.pending && !m.local && !busy ? () => retry() : undefined}
+                  onConfirmCost={i === all.length - 1 && !busy ? confirmCost : undefined}
+                  onEdit={m.role === "user" && !m.local && !busy && i === all.findLastIndex((x) => x.role === "user") ? editLast : undefined}
+                  onBuyCredits={() => setShowCredits(true)}
+                  paymentsOn={me.paymentsEnabled || me.testPurchases}
+                  onPublished={(slug) => setAppSlug(m.id, slug)}
+                  publishedEarlier={m.app && !m.app.slug ? all.slice(0, i).findLast((x) => x.app?.slug)?.app?.slug : undefined}
+                  onUseImage={busy ? undefined : editImage}
+                  onReshape={busy || attachment || all[i - 1]?.attachmentName ? undefined : reshape}
+                  onEditApp={m.app && !m.pending ? (html) => editAppCode(m.id, html) : undefined}
+                  // Flash builds on the latest app, so fixes and picked parts are for that one.
+                  onFixApp={m.app && !m.pending && !busy && m.id === lastAppId ? (request) => fixApp(m.app!.kind, request) : undefined}
+                  onPickApp={m.app && !m.pending && m.id === lastAppId ? (part) => pickApp(m.app!.kind, part) : undefined}
+                />
+              ))}
+              <div ref={bottomRef} />
+            </div>
+          )}
         </div>
 
-        {/* Composer */}
-        <div className="px-4 pb-4 pt-2">
-          <div className="mx-auto max-w-3xl">
-            {queue.length > 0 && (
-              <div className="mb-2 rounded-2xl border border-white/8 bg-white/[0.02] px-3 py-2">
-                <div className="flex items-center gap-2">
-                  <p className="min-w-0 flex-1 text-xs font-medium text-zinc-400">
-                    Next up · {queue.length} {queue.length === 1 ? "request" : "requests"}{" "}
-                    {queuePaused
-                      ? "paused, because the last request didn't finish"
-                      : queue[0].waiting
-                        ? "waiting for your OK"
-                        : busy
-                          ? "waiting for this one to finish"
-                          : "starting now"}
-                  </p>
-                  {queuePaused && (
-                    <button
-                      type="button"
-                      onClick={() => setQueuePaused(false)}
-                      aria-label="Resume Next up"
-                      className="shrink-0 rounded-full bg-primary/20 px-2.5 py-0.5 text-xs text-primary-soft hover:bg-primary/30"
-                    >
-                      Resume
-                    </button>
-                  )}
-                </div>
-                <ul className="mt-1.5 space-y-1">
-                  {queue.map((q, i) => {
-                    const elsewhere = q.projectId !== activeId ? projects.find((p) => p.id === q.projectId)?.name : undefined;
-                    return (
-                      <li key={q.id} className="flex items-start gap-2 text-sm text-zinc-200">
-                        <span className="mt-0.5 shrink-0 text-xs text-zinc-500">{i + 1}.</span>
-                        <span className="min-w-0 flex-1 truncate">
-                          {q.request}
-                          {elsewhere && <span className="text-xs text-zinc-500"> · in {elsewhere}</span>}
-                        </span>
-                        {q.waiting && (
-                          <button
-                            type="button"
-                            onClick={() => setQueue(queueNow.current.map((x) => (x.id === q.id ? { ...x, waiting: false } : x)))}
-                            aria-label={`Run "${q.request}"`}
-                            className="shrink-0 rounded-full bg-primary/20 px-2 text-xs leading-5 text-primary-soft hover:bg-primary/30"
-                          >
-                            Run
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => setQueue(queueNow.current.filter((x) => x.id !== q.id))}
-                          aria-label={`Remove "${q.request}" from Next up`}
-                          className="shrink-0 text-zinc-500 hover:text-red-400"
-                        >
-                          ✕
-                        </button>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </div>
-            )}
-            {voice ? (
-              <VoiceMode
-                name={firstName(me.user)}
-                language={me.user.language}
-                woke={voice.woke}
-                first={voice.first}
-                busy={busy}
-                ask={talk}
-                confirm={confirmByVoice}
-                onStop={stop}
-                onClose={() => setVoice(null)}
-              />
-            ) : (
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  send(input);
-                }}
-                className="relative rounded-[28px] border border-white/10 bg-zinc-900/70 p-2.5 shadow-lg shadow-black/20 transition focus-within:border-white/20"
-              >
-                {pickedNow && (
-                  <div className="mb-1 ml-2 mt-1 inline-flex max-w-full items-center gap-2 rounded-lg bg-primary/15 px-3 py-1 text-xs text-primary-soft">
-                    <span className="truncate">◎ Changing the {pickedNow.label}</span>
-                    <button type="button" onClick={() => setPicked(null)} aria-label="Don't change this part" className="text-primary-soft/70 hover:text-zinc-100">
-                      ✕
-                    </button>
-                  </div>
-                )}
-                {changingPicture && (
-                  <div className="mb-1 ml-2 mt-1 inline-flex max-w-full items-center gap-2 rounded-lg bg-primary/15 px-3 py-1 text-xs text-primary-soft">
-                    <span className="truncate">✏️ Changing the picture above</span>
-                    <button
-                      type="button"
-                      onClick={() => setKeepPicture(above)}
-                      aria-label="Don't change the picture above"
-                      title="Make a new picture instead"
-                      className="text-primary-soft/70 hover:text-zinc-100"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                )}
-                {files.length > 0 && (
-                  <div className="mb-1 ml-2 mt-1 flex flex-wrap gap-1.5">
-                    {files.map((f) => (
-                      <div key={f.name} className="inline-flex max-w-full items-center gap-2 rounded-lg bg-zinc-800 px-3 py-1 text-xs text-zinc-200">
-                        <span className="truncate">📎 {f.name}</span>
-                        <button
-                          type="button"
-                          onClick={() => setFiles(filesNow.current.filter((x) => x !== f))}
-                          aria-label={`Remove ${f.name}`}
-                          className="text-zinc-400 hover:text-zinc-100"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {photoActions.length > 0 && !busy && (
-                  <div className="mb-1 ml-2 mt-1 inline-flex flex-wrap gap-1.5">
-                    {photoActions.map((a) => (
-                      <button
-                        key={a.label}
-                        type="button"
-                        onClick={() => send(files.length > 1 ? a.several! : a.prompt, true)}
-                        className="rounded-full border border-white/10 px-3 py-1 text-xs text-zinc-300 transition hover:border-primary/50 hover:text-zinc-100"
-                      >
-                        {a.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <input ref={fileRef} type="file" accept={ACCEPT} multiple hidden onChange={onFile} />
-                <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={onFile} />
-                <textarea
-                  ref={inputRef}
-                  value={input}
-                  onChange={(e) => setInput(e.target.value)}
-                  onPaste={(e) => {
-                    const pasted = [...e.clipboardData.files];
-                    if (pasted.length) {
-                      e.preventDefault();
-                      attachAll(pasted);
-                    }
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                      e.preventDefault();
-                      send(input);
-                    }
-                  }}
-                  rows={1}
-                  placeholder={
-                    pickedNow
-                      ? "Say what to change about it…"
-                      : photoActions.length
-                      ? files.length > 1
-                        ? "Ask about these photos, or say how to combine them…"
-                        : "Ask about it, say what to change, or tap a button above…"
-                      : above && changesPictures(choice)
-                        ? "Say what to change in the picture, or ask anything…"
-                        : choice === "auto"
-                        ? "Ask Flash anything…"
-                        : `Ask ${ENGINE_LABELS[choice]}…`
-                  }
-                  className="block max-h-48 min-h-[44px] w-full resize-none bg-transparent px-2.5 pb-1 pt-2 text-[15px] outline-none placeholder:text-zinc-500"
-                  aria-label="Message"
-                />
-                <div className="mt-1 flex items-center gap-2">
-                  <PlusMenu onFiles={() => fileRef.current?.click()} onCamera={() => cameraRef.current?.click()} />
-                  <ToolPicker
-                    choice={choice}
-                    setChoice={setChoice}
-                    isLive={isLive}
-                    models={me.models}
-                    model={choice === "auto" ? undefined : models[choice]}
-                    setModel={(engine, id) => setModels((all) => ({ ...all, [engine]: id }))}
-                  />
-                  <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
-                    {(choice === "auto" || LEVEL_ENGINES.includes(choice)) && <LevelPicker level={level} setLevel={setLevel} />}
-                    <MicButton
-                      disabled={busy}
-                      onText={(text) => {
-                        setInput((v) => (v.trim() ? `${v.trimEnd()} ${text}` : text));
-                        inputRef.current?.focus();
-                      }}
-                      onRecording={(file) => attach(file)}
-                      onListening={setDictating}
-                    />
-                    <TalkButton onTalk={() => setVoice({ woke: false })} waking={wakeState === "listening"} />
-                    <SendButton busy={busy} onStop={stop} disabled={!input.trim() && !attachment} />
-                  </div>
-                </div>
-              </form>
-            )}
-            <p className="mt-2 hidden text-center text-xs text-zinc-600 sm:block">
-              Enter to send · Shift + Enter for a new line · drop or paste files anywhere
-            </p>
+        {(!isHome || voice) && (
+          <div className="px-4 pb-4 pt-2">
+            <div className="mx-auto max-w-3xl">
+              {queueList}
+              {voicePanel || form}
+              {!voice && (
+                <p className="mt-2 hidden text-center text-xs text-zinc-500 sm:block">
+                  Enter to send · Shift + Enter for a new line · drop or paste files anywhere
+                </p>
+              )}
+            </div>
           </div>
-        </div>
+        )}
+        {/* Outside the message box, so Add files works while the voice panel shows too. */}
+        <input ref={fileRef} type="file" accept={ACCEPT} multiple hidden onChange={onFile} />
+        <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={onFile} />
       </main>
 
       {(!hideCompanion || companion) && (

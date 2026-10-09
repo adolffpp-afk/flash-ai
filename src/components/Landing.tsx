@@ -110,7 +110,7 @@ export function Landing({
 
   // The main call to action is holographic, so it is the one thing on the page that pulls the eye.
   const cta =
-    "inline-flex h-11 items-center rounded-full bg-holo px-6 text-sm font-medium text-zinc-950 shadow-[0_6px_24px_-8px_rgba(188,196,246,0.45)] ring-1 ring-inset ring-white/50 transition hover:brightness-105";
+    "inline-flex h-11 items-center rounded-full bg-holo px-6 text-sm font-medium text-night shadow-[0_6px_24px_-8px_rgba(188,196,246,0.45)] ring-1 ring-inset ring-paper/50 transition hover:brightness-105";
   return (
     <div className="h-full overflow-y-auto bg-zinc-950 text-zinc-100">
       <header className="sticky top-0 z-10 border-b border-white/6 bg-zinc-950/70 backdrop-blur-md">
@@ -128,7 +128,7 @@ export function Landing({
             <button onClick={() => onStart("login")} className="h-9 rounded-full px-3 text-zinc-300 transition hover:text-white">
               Sign in
             </button>
-            <button onClick={() => onStart("signup")} className="h-9 rounded-full bg-brand px-4 font-medium text-white transition hover:brightness-110">
+            <button onClick={() => onStart("signup")} className="h-9 rounded-full bg-brand px-4 font-medium text-on-brand transition hover:brightness-110">
               Get started
             </button>
           </div>
@@ -166,9 +166,9 @@ export function Landing({
           </div>
           <p className="mt-4 text-xs text-zinc-500">No card needed. Free credits every month.</p>
 
-          <div className="mx-auto mt-16 max-w-2xl rounded-2xl border border-white/8 bg-zinc-900/50 p-4 text-left shadow-[0_24px_60px_-30px_rgba(0,0,0,0.8)] backdrop-blur sm:p-5">
+          <div className="mx-auto mt-16 max-w-2xl rounded-2xl border border-white/8 bg-zinc-900/50 p-4 text-left shadow-[var(--glass-shadow)] backdrop-blur sm:p-5">
             <div className="flex justify-end">
-              <div className="rounded-2xl rounded-br-md bg-primary-strong px-4 py-2 text-sm text-white">
+              <div className="rounded-2xl rounded-br-md border border-white/10 bg-zinc-800 px-4 py-2 text-sm text-zinc-50">
                 Build a booking page for my hair salon in Toronto
               </div>
             </div>
@@ -179,23 +179,23 @@ export function Landing({
                   <span className="rounded-full border border-white/10 px-2 py-0.5 text-zinc-300">App Builder</span>
                   <span className="text-zinc-500">You asked for an app.</span>
                 </div>
-                <div className="mt-2 overflow-hidden rounded-xl bg-white text-zinc-900">
+                <div className="mt-2 overflow-hidden rounded-xl bg-paper text-night">
                   <div className="bg-gradient-to-r from-rose-100 to-amber-50 px-4 py-3">
                     <div className="text-sm font-semibold">Elaia Hair Studio</div>
-                    <div className="text-xs text-zinc-600">Book your next appointment</div>
+                    <div className="text-xs text-[#52525b]">Book your next appointment</div>
                   </div>
                   <div className="grid grid-cols-3 gap-2 p-3 text-xs">
                     {["Braids · 2h", "Cut · 45m", "Colour · 1h30"].map((s) => (
-                      <div key={s} className="rounded-lg border border-zinc-200 p-2 text-center">{s}</div>
+                      <div key={s} className="rounded-lg border border-[#e4e4e7] p-2 text-center">{s}</div>
                     ))}
                   </div>
-                  <div className="flex items-center justify-between border-t border-zinc-100 px-3 py-2 text-xs">
-                    <span className="text-zinc-500">Saturday, 10:30</span>
-                    <span className="rounded-md bg-zinc-900 px-2 py-1 text-white">Book</span>
+                  <div className="flex items-center justify-between border-t border-[#f1f1f4] px-3 py-2 text-xs">
+                    <span className="text-[#71717a]">Saturday, 10:30</span>
+                    <span className="rounded-md bg-night px-2 py-1 text-paper">Book</span>
                   </div>
                 </div>
                 <div className="mt-2 flex gap-2 text-xs">
-                  <span className="rounded-md bg-brand px-2 py-1 text-white">Publish</span>
+                  <span className="rounded-md bg-brand px-2 py-1 text-on-brand">Publish</span>
                   <span className="rounded-md border border-white/10 px-2 py-1 text-zinc-400">Download</span>
                 </div>
               </div>

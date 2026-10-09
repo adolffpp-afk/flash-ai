@@ -167,7 +167,7 @@ export function Companion({
         onClick={onOpen}
         aria-label="Ask Flash"
         title="Ask the companion anything, even while Flash is working"
-        className="fixed bottom-36 right-4 z-30 inline-flex items-center gap-2 rounded-full border border-primary/40 bg-zinc-900/90 px-3.5 py-2 text-sm text-zinc-100 shadow-lg shadow-black/40 backdrop-blur transition hover:border-primary hover:bg-zinc-900 sm:bottom-6"
+        className="fixed bottom-36 right-4 z-30 inline-flex items-center gap-2 rounded-full border border-primary/40 bg-zinc-900/90 px-3.5 py-2 text-sm text-zinc-100 shadow-lg shadow-black/40 backdrop-blur transition hover:border-primary hover:bg-zinc-900 sm:bottom-6 light:border-transparent light:bg-brand light:text-on-brand light:shadow-black/15"
       >
         <LogoMark size={18} />
         <span className="hidden sm:inline">Ask Flash</span>

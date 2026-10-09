@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { ENGINES, ENGINE_LABELS, type Engine } from "@/lib/types";
 import type { Me } from "@/lib/store";
 import { BoltIcon } from "@/app/brand";
@@ -26,8 +26,9 @@ const HINTS: Record<Engine, string> = {
   slides: "A presentation from one sentence",
 };
 
+// A little smaller in a narrow message box (a phone, or beside Ask Flash), so the tool picker keeps its name.
 const round =
-  "inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition disabled:cursor-not-allowed disabled:opacity-40";
+  "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition disabled:cursor-not-allowed disabled:opacity-40 @min-[380px]/composer:h-10 @min-[380px]/composer:w-10";
 
 function Icon({ d, className = "h-5 w-5" }: { d: string; className?: string }) {
   return (
@@ -37,13 +38,20 @@ function Icon({ d, className = "h-5 w-5" }: { d: string; className?: string }) {
   );
 }
 
-/** A menu that opens above its button and closes on Escape or a click elsewhere. */
+/**
+ * Whether the message box's menus open below their buttons. The box sits at the bottom of a chat,
+ * so menus open upward there; on Home it sits near the top, where an upward menu would be cut off.
+ */
+export const MenusOpenDown = createContext(false);
+
+/** A menu that opens above its button (below it on Home) and closes on Escape or a click elsewhere. */
 function Popover({
   button,
   children,
   label,
   align = "left",
   phoneWide = false,
+  shrink = false,
 }: {
   button: (open: boolean, toggle: () => void) => ReactNode;
   children: (close: () => void) => ReactNode;
@@ -51,9 +59,16 @@ function Popover({
   align?: "left" | "right";
   // On phones the menu opens from the message box's edge instead of the button, so it stays on screen.
   phoneWide?: boolean;
+  // Lets the button shrink (its label truncates) when the row is tight; the others keep their size.
+  shrink?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const down = useContext(MenusOpenDown);
   const ref = useRef<HTMLDivElement>(null);
+  // Opening downwards (the message box on Home), the page scrolls just enough to show the whole menu.
+  const showWhole = useCallback((menu: HTMLDivElement | null) => {
+    if (down) menu?.scrollIntoView({ block: "nearest" });
+  }, [down]);
   useEffect(() => {
     if (!open) return;
     const outside = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
@@ -66,14 +81,16 @@ function Popover({
     };
   }, [open]);
   return (
-    // min-w-0 lets the tool picker shrink (its label truncates) when larger text makes the row tight.
-    <div ref={ref} className={`min-w-0 ${phoneWide ? "sm:relative" : "relative"}`}>
+    <div ref={ref} className={`${shrink ? "min-w-0" : "shrink-0"} ${phoneWide ? "sm:relative" : "relative"}`}>
       {button(open, () => setOpen((o) => !o))}
       {open && (
         <div
           role="menu"
           aria-label={label}
-          className={`absolute bottom-full z-40 mb-2 max-h-[min(70vh,520px)] w-72 overflow-y-auto rounded-2xl border border-white/10 bg-zinc-900 p-1.5 shadow-2xl shadow-black/50 ${
+          ref={showWhole}
+          className={`absolute z-40 w-72 overflow-y-auto rounded-2xl border border-white/10 bg-zinc-900 p-1.5 shadow-2xl shadow-black/50 light:shadow-black/10 ${
+            down ? "top-full mt-2 max-h-[min(60vh,520px)]" : "bottom-full mb-2 max-h-[min(70vh,520px)]"
+          } ${
             align === "left" ? "left-0" : "right-0"
           }`}
         >
@@ -149,18 +166,19 @@ export function ToolPicker({
   return (
     <Popover
       label="Tools"
+      shrink
       button={(open, toggle) => (
         <button
           type="button"
           onClick={toggle}
           aria-expanded={open}
           title="Choose a tool"
-          className={`inline-flex h-10 min-w-0 items-center gap-1.5 rounded-full bg-white/[0.06] px-3 text-sm sm:px-4 text-zinc-100 transition hover:bg-white/[0.1] ${open ? "bg-white/[0.12]" : ""}`}
+          className={`inline-flex h-9 max-w-full min-w-0 items-center gap-1.5 overflow-hidden rounded-full bg-white/[0.06] px-3 text-sm text-zinc-100 transition hover:bg-white/[0.1] @min-[380px]/composer:h-10 @min-[440px]/composer:px-4 ${open ? "bg-white/[0.12]" : ""}`}
         >
-          {choice === "auto" ? <BoltIcon className="h-3.5 w-3.5 text-gold" /> : null}
+          {choice === "auto" ? <BoltIcon className="h-3.5 w-3.5 shrink-0 text-gold" /> : null}
           <span className="truncate">{choice === "auto" ? "Auto" : ENGINE_LABELS[choice]}</span>
-          <span className={`truncate text-zinc-400 ${picked ? "" : "hidden sm:inline"}`}>{picked ? picked.label : choice === "auto" ? "Best tool" : ""}</span>
-          <Icon d="M7 10l5 5 5-5" className="h-4 w-4 shrink-0 text-zinc-500" />
+          <span className={`min-w-0 truncate text-zinc-300 light:text-zinc-500 ${picked ? "" : "hidden @min-[440px]/composer:inline"}`}>{picked ? picked.label : choice === "auto" ? "Best tool" : ""}</span>
+          <Icon d="M7 10l5 5 5-5" className="hidden h-4 w-4 shrink-0 text-zinc-500 @min-[380px]/composer:block" />
         </button>
       )}
     >
@@ -275,12 +293,12 @@ export function LevelPicker({ level, setLevel }: { level: Level; setLevel: (leve
           aria-expanded={open}
           aria-label={`Intelligence level: ${current.name}`}
           title="Choose Flash's level of intelligence"
-          // On phones only the bars show, so the message box keeps room for the tool picker.
-          className={`inline-flex h-10 w-10 shrink-0 items-center justify-center gap-1.5 rounded-full text-sm text-zinc-200 transition hover:bg-white/[0.06] sm:w-auto sm:px-3 ${open ? "bg-white/[0.08]" : ""}`}
+          // In a narrow message box only the bars show, so it keeps room for the tool picker.
+          className={`inline-flex h-9 w-9 shrink-0 items-center justify-center gap-1.5 rounded-full text-sm text-zinc-200 transition hover:bg-white/[0.06] @min-[380px]/composer:h-10 @min-[380px]/composer:w-10 @min-[440px]/composer:w-auto @min-[440px]/composer:px-3 ${open ? "bg-white/[0.08]" : ""}`}
         >
-          <LevelBars level={current.id} className={`h-4 w-4 ${current.id === "auto" ? "text-gold" : "text-primary-soft"}`} />
-          <span className="hidden sm:inline">{current.short}</span>
-          <Icon d="M7 10l5 5 5-5" className="hidden h-4 w-4 text-zinc-500 sm:block" />
+          <LevelBars level={current.id} className={`h-4 w-4 shrink-0 ${current.id === "auto" ? "text-gold" : "text-primary-soft"}`} />
+          <span className="hidden @min-[440px]/composer:inline">{current.short}</span>
+          <Icon d="M7 10l5 5 5-5" className="hidden h-4 w-4 text-zinc-500 @min-[440px]/composer:block" />
         </button>
       )}
     >
@@ -443,7 +461,15 @@ export function SendButton({ busy, disabled, onStop }: { busy: boolean; disabled
       <span className="h-3.5 w-3.5 rounded-[3px] bg-current" />
     </button>
   ) : (
-    <button key="send" type="submit" disabled={disabled} aria-label="Send" title="Send" className={`${round} bg-zinc-100 text-zinc-900 hover:bg-white`}>
+    <button
+      key="send"
+      type="submit"
+      disabled={disabled}
+      aria-label="Send"
+      title="Send"
+      // Still the brand colours while there's nothing to send, only softer.
+      className={`${round.replace("disabled:opacity-40", "disabled:opacity-60")} bg-send text-on-brand shadow-[0_8px_20px_-10px_rgb(139_92_246/0.8)] hover:brightness-110 disabled:saturate-[.8]`}
+    >
       <Icon d="M12 19V5 M6 11l6-6 6 6" className="h-5 w-5" />
     </button>
   );

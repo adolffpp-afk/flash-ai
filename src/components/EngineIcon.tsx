@@ -16,25 +16,25 @@ const PATHS: Record<Engine, string> = {
   transcribe: "M6 3h9l4 4v14H6z M9 11h7 M9 15h7 M9 7h3",
 };
 
-// Emerald and gold alternate; red is kept for a couple of the media engines so it stays a spark.
-const TONE: Record<Engine, "emerald" | "gold" | "spark"> = {
-  app: "gold",
-  slides: "emerald",
-  text: "gold",
-  search: "emerald",
-  code: "gold",
-  translate: "emerald",
-  docs: "gold",
-  image: "emerald",
+// Teal and lavender alternate, like the brand gradient; red is kept for a couple of the media engines so it stays a spark.
+const TONE: Record<Engine, "teal" | "violet" | "spark"> = {
+  app: "violet",
+  slides: "teal",
+  text: "violet",
+  search: "teal",
+  code: "violet",
+  translate: "teal",
+  docs: "violet",
+  image: "teal",
   video: "spark",
-  voice: "emerald",
+  voice: "teal",
   music: "spark",
-  transcribe: "gold",
+  transcribe: "violet",
 };
 
 const TONE_CLASS = {
-  emerald: "bg-primary/15 text-primary-soft ring-primary/30",
-  gold: "bg-gold/15 text-gold ring-gold/30",
+  teal: "bg-primary/15 text-primary-soft ring-primary/30",
+  violet: "bg-violet/15 text-violet-soft ring-violet/30",
   spark: "bg-spark/15 text-spark-soft ring-spark/30",
 };
 

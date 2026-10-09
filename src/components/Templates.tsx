@@ -350,7 +350,7 @@ export function Templates({
               <button
                 type="submit"
                 disabled={making}
-                className="rounded-full bg-primary px-5 py-2 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-60"
+                className="rounded-full bg-brand px-5 py-2 text-sm font-medium text-on-brand transition hover:brightness-110 disabled:opacity-60"
               >
                 {making ? "Making…" : "Make it"}
               </button>

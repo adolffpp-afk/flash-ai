@@ -28,7 +28,7 @@ export function SignInLink({ token }: { token: string }) {
 
   return (
     <div className="flex min-h-full items-center justify-center px-4 py-16">
-      <form onSubmit={submit} className="w-full max-w-sm rounded-2xl border border-zinc-800 bg-zinc-950/80 p-6 shadow-2xl shadow-black/40">
+      <form onSubmit={submit} className="w-full max-w-sm rounded-2xl border border-zinc-800 bg-zinc-950/80 p-6 shadow-[var(--glass-shadow)]">
         <LogoMark size={44} className="mb-4" />
         <h1 className="text-xl font-semibold">Sign in to Flash AI</h1>
         {token ? (
@@ -42,7 +42,7 @@ export function SignInLink({ token }: { token: string }) {
             <button
               disabled={busy}
               autoFocus
-              className="mt-5 w-full rounded-xl bg-brand py-2.5 font-medium text-white transition hover:brightness-110 disabled:opacity-50"
+              className="mt-5 w-full rounded-xl bg-brand py-2.5 font-medium text-on-brand transition hover:brightness-110 disabled:opacity-50"
             >
               {busy ? "One moment…" : "Sign in"}
             </button>

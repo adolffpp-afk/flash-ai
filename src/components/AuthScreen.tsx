@@ -303,7 +303,7 @@ export function AuthScreen({
           )}
           <button
             disabled={busy}
-            className="mt-6 h-10 w-full rounded-lg bg-brand text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-50"
+            className="mt-6 h-10 w-full rounded-lg bg-brand text-sm font-medium text-on-brand transition hover:brightness-110 disabled:opacity-50"
           >
             {busy
               ? "One moment…"

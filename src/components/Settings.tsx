@@ -9,8 +9,10 @@ import {
   DEVICE_KEYS,
   FONTS,
   TEXT_SIZES,
+  THEMES,
   VOICE_RATES,
   applyAppearance,
+  applyTheme,
   readAloudVoice,
   readSetting,
   writeSetting,
@@ -33,7 +35,7 @@ const field =
 const label = "block text-sm text-zinc-300";
 const hint = "text-xs text-zinc-500";
 const button = "rounded-lg border border-white/10 px-3.5 py-1.5 text-sm text-zinc-200 transition hover:bg-white/[0.05] disabled:opacity-40";
-const primary = "rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-40";
+const primary = "rounded-lg bg-brand px-4 py-1.5 text-sm font-medium text-on-brand transition hover:brightness-110 disabled:opacity-40";
 const danger = "rounded-lg border border-red-500/40 px-3.5 py-1.5 text-sm text-red-300 transition hover:bg-red-500/10 disabled:opacity-40";
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -68,7 +70,7 @@ function Toggle({ on, onChange, label: name }: { on: boolean; onChange: (on: boo
       onClick={() => onChange(!on)}
       className={`relative h-6 w-11 rounded-full transition ${on ? "bg-primary" : "bg-zinc-700"}`}
     >
-      <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${on ? "left-[22px]" : "left-0.5"}`} />
+      <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-paper shadow transition-all ${on ? "left-[22px]" : "left-0.5"}`} />
     </button>
   );
 }
@@ -278,6 +280,7 @@ function General({
   const [work, setWork] = useState(me.user.work ?? "");
   const [language, setLanguage] = useState(me.user.language ?? "");
   const [notify, setNotify] = useDeviceSetting("notifyDone");
+  const [theme, setTheme] = useDeviceSetting("theme");
   const [font, setFont] = useDeviceSetting("font");
   const [size, setSize] = useDeviceSetting("textSize");
   const [voice, setVoice] = useDeviceSetting("voice");
@@ -430,6 +433,17 @@ function General({
       </Section>
 
       <Section title="Appearance">
+        <Row title="Theme" about="Saved on this device.">
+          <Choices
+            name="Theme"
+            value={theme}
+            options={THEMES}
+            onChange={(v) => {
+              setTheme(v);
+              applyTheme(v);
+            }}
+          />
+        </Row>
         <Row title="Chat font" about="Saved on this device.">
           <Choices
             name="Chat font"

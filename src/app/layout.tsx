@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { BAR_COLORS, THEME_SCRIPT } from "@/lib/device-settings";
+import { ThemeSync } from "@/components/ThemeSync";
 import { SITE_URL } from "./site";
 import "./globals.css";
 
@@ -17,12 +19,18 @@ export const metadata: Metadata = {
   twitter: { card: "summary_large_image" },
 };
 
-export const viewport: Viewport = { themeColor: "#060d0a" };
+export const viewport: Viewport = { themeColor: BAR_COLORS.dark };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
-      <body className="h-full font-sans">{children}</body>
+    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
+      <body className="h-full font-sans">
+        {children}
+        <ThemeSync />
+      </body>
     </html>
   );
 }

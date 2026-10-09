@@ -104,7 +104,7 @@ export default async function Authorize({ searchParams }: Props) {
               <button
                 name="decision"
                 value="allow"
-                className="h-10 flex-1 rounded-lg bg-brand text-sm font-medium text-white transition hover:brightness-110"
+                className="h-10 flex-1 rounded-lg bg-brand text-sm font-medium text-on-brand transition hover:brightness-110"
               >
                 Allow
               </button>

@@ -603,7 +603,7 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
                 <button
                   onClick={connectStripe}
                   disabled={busy}
-                  className="h-10 rounded-lg bg-brand px-4 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-50"
+                  className="h-10 rounded-lg bg-brand px-4 text-sm font-medium text-on-brand transition hover:brightness-110 disabled:opacity-50"
                 >
                   {busy ? "Opening Stripe…" : payments.seller.connected ? "Finish Stripe sign-up" : "Connect Stripe"}
                 </button>
@@ -682,7 +682,7 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
                     </label>
                     <button
                       disabled={busy || !item.name.trim() || !item.price.trim()}
-                      className="h-10 shrink-0 rounded-lg bg-brand px-4 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-50"
+                      className="h-10 shrink-0 rounded-lg bg-brand px-4 text-sm font-medium text-on-brand transition hover:brightness-110 disabled:opacity-50"
                     >
                       Save
                     </button>
@@ -809,7 +809,7 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
                     />
                     <button
                       disabled={adding || !newDomain.trim()}
-                      className="h-10 shrink-0 rounded-lg bg-brand px-4 text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-50"
+                      className="h-10 shrink-0 rounded-lg bg-brand px-4 text-sm font-medium text-on-brand transition hover:brightness-110 disabled:opacity-50"
                     >
                       {adding ? "Connecting…" : "Connect"}
                     </button>
@@ -873,7 +873,7 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
             <ul className="space-y-2">
               {sites.map((s) => (
                 <li key={s.slug} className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3">
-                  <div className="min-w-0 flex-1">
+                  <div className="min-w-0 flex-[1_1_14rem]">
                     <p className="truncate font-medium text-zinc-100">{s.title}</p>
                     <a href={`/p/${s.slug}`} target="_blank" rel="noreferrer" className="block truncate text-xs text-primary-soft hover:underline">
                       {typeof window !== "undefined" ? window.location.host : ""}/p/{s.slug}
@@ -898,7 +898,7 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
                       )}
                       <button onClick={() => showMessages(s)} className="text-zinc-200 hover:text-white">
                         ✉️ Messages{s.messages ? ` (${s.messages})` : ""}
-                        {s.unread > 0 && <span className="ml-1.5 rounded-full bg-primary px-1.5 py-0.5 text-[10px] text-white">{s.unread} new</span>}
+                        {s.unread > 0 && <span className="ml-1.5 rounded-full bg-brand px-1.5 py-0.5 text-[10px] text-on-brand">{s.unread} new</span>}
                       </button>
                       <button onClick={() => showVisits(s)} className="text-zinc-200 hover:text-white" title="Visits in the last 30 days">
                         📈 Visitors{s.views ? ` (${s.views.toLocaleString("en-US")})` : ""}

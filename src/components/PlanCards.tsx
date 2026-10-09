@@ -56,7 +56,7 @@ export function PlanCards({
       <button
         onClick={() => (comingSoon ? onFree?.() : onPick(p.id))}
         disabled={isCurrent || (busy ?? null) !== null || (comingSoon && !onFree)}
-        className="mt-auto h-9 rounded-full bg-brand text-sm font-medium text-white transition hover:brightness-110 disabled:opacity-60"
+        className="mt-auto h-9 rounded-full bg-brand text-sm font-medium text-on-brand transition hover:brightness-110 disabled:opacity-60"
       >
         {isCurrent
           ? "Current plan"
