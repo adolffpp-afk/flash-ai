@@ -1221,7 +1221,10 @@ export function Flash({
         }}
       />
     ) : (
-      <Landing onStart={setAuthMode} status={status} initialPricing={pricing} />
+      <>
+        <Landing onStart={setAuthMode} status={status} initialPricing={pricing} />
+        <InstallPopup />
+      </>
     );
   }
   if (!me && loadError) {
