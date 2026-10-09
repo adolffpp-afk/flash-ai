@@ -16,7 +16,7 @@ const installed = () =>
  * `install` opens the browser's own install prompt; in Safari, Firefox and the rest it shows that
  * browser's steps. `available` is false inside the installed app.
  */
-function useInstall() {
+export function useInstall() {
   const [prompt, setPrompt] = useState<InstallPromptEvent | null>(null);
   const [available, setAvailable] = useState(false);
   const [help, setHelp] = useState<InstallPlatform | null>(null);

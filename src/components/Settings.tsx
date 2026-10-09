@@ -283,6 +283,7 @@ function General({
   const [theme, setTheme] = useDeviceSetting("theme");
   const [font, setFont] = useDeviceSetting("font");
   const [size, setSize] = useDeviceSetting("textSize");
+  const [keysOff, setKeysOff] = useDeviceSetting("homeKeysOff");
   const [voice, setVoice] = useDeviceSetting("voice");
   const [rate, setRate] = useDeviceSetting("voiceRate");
   const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -465,6 +466,12 @@ function General({
               applyAppearance(font, v);
             }}
           />
+        </Row>
+      </Section>
+
+      <Section title="Keyboard">
+        <Row title="Shortcuts on Home" about="Press N, V, I, D, B or T on Home to open a Quick Tool, when you're not typing. Saved on this device.">
+          <Toggle on={keysOff !== "1"} onChange={(on) => setKeysOff(on ? "" : "1")} label="Use single-key shortcuts" />
         </Row>
       </Section>
 

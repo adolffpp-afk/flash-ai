@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm";
 import { ENGINE_LABELS } from "@/lib/types";
 import type { UIMessage } from "@/lib/store";
 import { AppPreview } from "./AppPreview";
+import { LevelSign } from "./LevelIcon";
 import type { PickedElement } from "@/lib/preview-bridge";
 import { speakable } from "@/lib/speech";
 import { BoltIcon, LogoMark } from "@/app/brand";
@@ -397,7 +398,8 @@ export function Message({
             <span>{m.reason}</span>
             {m.demo && <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-zinc-300">coming soon</span>}
             {m.model && (
-              <span className="rounded-full bg-primary/15 px-2 py-0.5 text-primary-soft" title={`Picked because: ${m.modelWhy ?? ""}`}>
+              <span className="inline-flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-primary-soft" title={`Picked because: ${m.modelWhy ?? ""}`}>
+                <LevelSign name={m.model} className="h-3.5 w-3.5" />
                 {m.model}
               </span>
             )}

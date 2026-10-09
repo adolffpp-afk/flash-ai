@@ -14,6 +14,7 @@ import {
   freeTranscribeConfigured,
 } from "../engines/free.ts";
 import { demoPurchases, paymentsEnabled } from "./stripe.ts";
+import { domainsConfigured } from "./domains.ts";
 
 /** Prices, packs and models, shared by the public pricing section and the signed-in credits panel. */
 export function pricingInfo() {
@@ -39,6 +40,8 @@ export function pricingInfo() {
       transcripts: freeTranscribeConfigured() ? FREE_DAILY_TRANSCRIPTS : 0,
     },
     paymentsEnabled: paymentsEnabled(),
+    // Custom domains for published sites (Vercel's API is set up).
+    domainsEnabled: domainsConfigured(),
     // FLASH_DEMO_PURCHASES: test purchases without Stripe, for local testing only.
     testPurchases: demoPurchases(),
     models: MODELS.map((m) => ({

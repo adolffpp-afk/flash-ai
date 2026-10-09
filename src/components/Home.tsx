@@ -1,14 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { BrandMark, Sparkle } from "@/app/brand";
 import { api, type Me, type ProjectSummary } from "@/lib/store";
 import { ENGINE_LABELS, type Engine } from "@/lib/types";
 import { firstName } from "@/lib/names";
 import { dateLine, greeting, shortAgo, timeAgo } from "@/lib/when";
 import type { RecentChat } from "@/lib/server/recent";
+import type { FeatureAction } from "@/lib/features";
+import type { Level } from "@/lib/levels";
 import type { Choice } from "./ComposerTools";
+import { onSettingChange, readSetting } from "@/lib/device-settings";
 import { EngineIcon } from "./EngineIcon";
+import { Everything } from "./Everything";
 
 type Site = { slug: string; title: string; updated_at: number; views: number; messages: number; unread: number };
 type Usage = { tools: { engine: string; credits: number; requests: number }[]; total: number };
@@ -41,6 +45,34 @@ export const ICONS = {
   sparkle: "M12 4l1.6 4.4L18 10l-4.4 1.6L12 16l-1.6-4.4L6 10l4.4-1.6z",
   library: "M3.5 6.5a1 1 0 0 1 1-1h5l2 2.5h8a1 1 0 0 1 1 1v9.5a1 1 0 0 1-1 1h-15a1 1 0 0 1-1-1z",
   bell: "M6 16.5V11a6 6 0 1 1 12 0v5.5l1.5 2h-15z M10 20.5a2 2 0 0 0 4 0",
+  bolt: "M13 2.5 4.5 13.5H11l-1 8 8.5-11H12z",
+  pen: "M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16z M13.5 6.5l4 4",
+  translate: "M4 5h9 M8.5 3v2 M6 5c.8 3.4 3.2 6 6 7.5 M11 5c-.8 3.4-3.2 6-6 7.5 M13 21l4-9 4 9 M14.5 18h5",
+  wand: "M5 19 16 8 M14 6l2 2 M18 3v3 M16.5 4.5h3 M8 4v2 M7 5h2 M19 13v2 M18 14h2",
+  layers: "M12 3.5 3 8.5l9 5 9-5z M3 12.5l9 5 9-5 M3 16.5l9 5 9-5",
+  scissors: "M9 6a3 3 0 1 1-6 0a3 3 0 1 1 6 0z M9 18a3 3 0 1 1-6 0a3 3 0 1 1 6 0z M8.5 7.8 20 17 M8.5 16.2 20 7",
+  expand: "M15 3h6v6 M9 21H3v-6 M21 3l-7 7 M3 21l7-7",
+  film: "M3.5 4.5h17v15h-17z M7.5 4.5v15 M16.5 4.5v15 M3.5 9h4 M3.5 15h4 M16.5 9h4 M16.5 15h4",
+  music: "M9 18V5l11-2v13 M9 18a3 3 0 1 1-6 0a3 3 0 1 1 6 0z M20 16a3 3 0 1 1-6 0a3 3 0 1 1 6 0z",
+  megaphone: "M3.5 10v4a1 1 0 0 0 1 1H7l7 4V5L7 9H4.5a1 1 0 0 0-1 1z M17.5 9a4 4 0 0 1 0 6 M7 15l1.5 5",
+  slides: "M3.5 4.5h17v11h-17z M12 15.5v4 M8 20h8 M7.5 12l3-3 2 2 3.5-3.5",
+  inbox: "M3.5 13.5 6 5h12l2.5 8.5v5a1 1 0 0 1-1 1h-15a1 1 0 0 1-1-1z M3.5 13.5h5l1.5 2.5h4l1.5-2.5h5",
+  chart: "M5 20v-6 M10 20V9 M15 20V4 M20 20v-9",
+  link: "M10 14a4.5 4.5 0 0 0 6.4 0l3-3a4.5 4.5 0 0 0-6.4-6.4l-1 1 M14 10a4.5 4.5 0 0 0-6.4 0l-3 3a4.5 4.5 0 0 0 6.4 6.4l1-1",
+  card: "M3 6h18v12H3z M3 10h18 M7 15h3",
+  users: "M9 11a3.5 3.5 0 1 0 0-7a3.5 3.5 0 0 0 0 7z M2.5 20a6.5 6.5 0 0 1 13 0 M16 4.3a3.5 3.5 0 0 1 0 6.4 M18 14.2a6.5 6.5 0 0 1 3.5 5.8",
+  scan: "M4 8V5a1 1 0 0 1 1-1h3 M16 4h3a1 1 0 0 1 1 1v3 M20 16v3a1 1 0 0 1-1 1h-3 M8 20H5a1 1 0 0 1-1-1v-3 M8 9h8 M8 12h8 M8 15h5",
+  download: "M12 4v11 M7 10l5 5 5-5 M4.5 19.5h15",
+  radio: "M12 12h.01 M8.5 8.5a5 5 0 0 0 0 7 M15.5 8.5a5 5 0 0 1 0 7 M5.6 5.6a9 9 0 0 0 0 12.8 M18.4 5.6a9 9 0 0 1 0 12.8",
+  speaker: "M4 9.5v5h3.5L12 18.5v-13L7.5 9.5z M15.5 9a4 4 0 0 1 0 6 M18 6.5a7.5 7.5 0 0 1 0 11",
+  lines: "M4 6h16 M4 10h16 M4 14h10 M4 18h7",
+  headphones: "M4 15v-3a8 8 0 0 1 16 0v3 M4 15a2 2 0 0 1 2-2h1v7H6a2 2 0 0 1-2-2z M20 15a2 2 0 0 0-2-2h-1v7h1a2 2 0 0 0 2-2z",
+  bookmark: "M6 4h12v16l-6-4-6 4z",
+  share: "M12 15V3 M7 8l5-5 5 5 M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7",
+  plug: "M9 2.5v5 M15 2.5v5 M6.5 7.5h11v3a5.5 5.5 0 0 1-11 0z M12 16v5.5",
+  install: "M4 4.5h16v11H4z M12 7.5v5 M9.5 10l2.5 2.5 2.5-2.5 M8 19.5h8",
+  star: "M12 3l2.5 5 5.5.8-4 3.9.9 5.5L12 15.6 7.1 18.2 8 12.7 4 8.8l5.5-.8z",
+  gift: "M4 10h16v10H4z M3 6.5h18V10H3z M12 6.5V20 M12 6.5C10.5 3 7 3 7 5s3 1.5 5 1.5c2 0 5 .5 5-1.5s-3.5-2-5 1.5",
   paperclip: "M20.5 11.5l-8.2 8.2a5.3 5.3 0 0 1-7.5-7.5l8.2-8.2a3.5 3.5 0 0 1 5 5l-8.2 8.2a1.8 1.8 0 0 1-2.5-2.5l7.6-7.6",
 } as const;
 
@@ -61,11 +93,11 @@ const HUES = {
   pink: "bg-fuchsia-400/15 text-fuchsia-300 ring-fuchsia-300/20 light:bg-fuchsia-100 light:text-fuchsia-600 light:ring-fuchsia-200",
   rose: "bg-rose-400/15 text-rose-300 ring-rose-300/20 light:bg-rose-100 light:text-rose-600 light:ring-rose-200",
 } as const;
-type Hue = keyof typeof HUES;
+export type Hue = keyof typeof HUES;
 
-// The bars in Usage & Plan, and their icons' colours: blue words, teal pictures, rose sound.
-const BARS = ["bg-sky-400 light:bg-sky-500", "bg-sky-400 light:bg-blue-500", "bg-teal-400 light:bg-emerald-500", "bg-rose-400 light:bg-rose-500"];
-const ROW_ICONS = ["text-sky-400 light:text-blue-500", "text-teal-400 light:text-emerald-500", "text-rose-400 light:text-rose-500"];
+// The bars in Usage & Plan, and their icons' colours: blue words, teal pictures, rose sound, violet files.
+const BARS = ["bg-sky-400 light:bg-blue-500", "bg-teal-400 light:bg-emerald-500", "bg-rose-400 light:bg-rose-500", "bg-violet-400 light:bg-violet-500"];
+const ROW_ICONS = ["text-sky-400 light:text-blue-500", "text-teal-400 light:text-emerald-500", "text-rose-400 light:text-rose-500", "text-violet-400 light:text-violet-500"];
 
 // The pastel washes on the Your workspace tiles.
 const TILES = [
@@ -75,7 +107,7 @@ const TILES = [
   "from-orange-400/15 to-rose-400/10 light:from-orange-50 light:to-rose-100",
 ];
 
-function Tile({ d, hue, size = "md" }: { d: string; hue: Hue; size?: "sm" | "md" }) {
+export function Tile({ d, hue, size = "md" }: { d: string; hue: Hue; size?: "sm" | "md" }) {
   const box = size === "sm" ? "h-9 w-9 rounded-xl" : "h-12 w-12 rounded-2xl";
   return (
     <span className={`inline-flex shrink-0 items-center justify-center ring-1 ring-inset ${box} ${HUES[hue]}`} aria-hidden>
@@ -162,6 +194,11 @@ export function Home({
   onTemplates,
   onUsage,
   onPlans,
+  onFeature,
+  level,
+  onLevel,
+  installable,
+  shortcuts,
   paymentsOn,
 }: {
   me: Me;
@@ -183,6 +220,13 @@ export function Home({
   onTemplates: () => void;
   onUsage: () => void;
   onPlans: () => void;
+  // Opens a feature from "Everything Flash can do".
+  onFeature: (action: FeatureAction) => void;
+  level: Level;
+  onLevel: (level: Level) => void;
+  installable: boolean;
+  // Off during a voice conversation, so a key pressed then doesn't end it.
+  shortcuts: boolean;
   paymentsOn: boolean;
 }) {
   const [recent, setRecent] = useState<RecentChat[] | null>(null);
@@ -252,33 +296,57 @@ export function Home({
     { title: "Research", about: "Deep research and credible sources", d: ICONS.search, hue: "pink", run: () => onTool("search"), live: isLive("search") },
   ];
 
-  const quick: { label: string; d: string; run: () => void; live: boolean }[] = [
-    { label: "New Chat", d: ICONS.chat, run: () => onTool("auto"), live: true },
-    { label: "Talk with Flash", d: ICONS.voice, run: onTalk, live: true },
-    { label: "Generate Image", d: ICONS.image, run: () => onTool("image"), live: isLive("image") },
-    { label: "Create Document", d: ICONS.file, run: () => onTool("docs"), live: isLive("docs") },
-    { label: "Build an App", d: ICONS.app, run: () => onTool("app"), live: isLive("app") },
-    { label: "Start from a Template", d: ICONS.template, run: onTemplates, live: true },
+  // Each with a key that opens it on Home, pressed on its own while not typing (see the effect below).
+  const quick: { label: string; key: string; d: string; run: () => void; live: boolean }[] = [
+    { label: "New Chat", key: "N", d: ICONS.chat, run: () => onTool("auto"), live: true },
+    { label: "Talk with Flash", key: "V", d: ICONS.voice, run: onTalk, live: true },
+    { label: "Generate Image", key: "I", d: ICONS.image, run: () => onTool("image"), live: isLive("image") },
+    { label: "Create Document", key: "D", d: ICONS.file, run: () => onTool("docs"), live: isLive("docs") },
+    { label: "Build an App", key: "B", d: ICONS.app, run: () => onTool("app"), live: isLive("app") },
+    { label: "Start from a Template", key: "T", d: ICONS.template, run: onTemplates, live: true },
   ];
+  // The keys can be turned off in Settings > General > Keyboard.
+  const keysOff = useSyncExternalStore(onSettingChange, () => readSetting("homeKeysOff") === "1", () => false);
+  const pressed = useEffectEvent((e: KeyboardEvent) => {
+    if (!shortcuts || keysOff) return;
+    const tool = quick.find((q) => q.live && q.key === e.key.toUpperCase());
+    if (!tool) return;
+    e.preventDefault();
+    tool.run();
+  });
+  // Quick Tools' keys: a letter on its own, never while typing, with a menu or a modal dialog open, or
+  // with Ctrl, ⌘ or Alt held, so the browser's own shortcuts and typing in the message box are untouched.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || e.defaultPrevented) return;
+      const at = e.target instanceof Element ? e.target : null;
+      if (at?.closest("input, textarea, select, [contenteditable]") || document.querySelector('[aria-modal="true"], [role="menu"]')) return;
+      pressed(e);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
 
   // Renamed chats show their new name, and deleted ones go.
   const chats = (recent ?? []).flatMap((c) => {
     const p = projects.find((x) => x.id === c.id);
     return p ? [{ ...c, name: p.name, pinned: Boolean(p.pinned) }] : [];
   });
-  // This month's credits by kind of work: words (chats, research, code, docs, apps), pictures and video, and sound.
-  const kindOf = (engine: string) => (["image", "video"].includes(engine) ? "visual" : ["voice", "music", "transcribe"].includes(engine) ? "audio" : "words");
+  // This month's credits by kind of work: words (chats, research, code, apps), pictures and video, sound, and files and docs.
+  const kindOf = (engine: string) =>
+    ["image", "video"].includes(engine) ? "visual" : ["voice", "music", "transcribe"].includes(engine) ? "audio" : engine === "docs" ? "files" : "words";
   const spent = (kind: string) => (usage?.tools ?? []).filter((t) => kindOf(t.engine) === kind).reduce((sum, t) => sum + t.credits, 0);
   const rows = [
     { label: "AI Messages", d: ICONS.chat, credits: spent("words") },
     { label: "Images & Video", d: ICONS.image, credits: spent("visual") },
     { label: "Voice & Audio", d: ICONS.voice, credits: spent("audio") },
+    { label: "Files & Docs", d: ICONS.file, credits: spent("files") },
   ];
 
   return (
     <div className="mx-auto w-full max-w-[1600px] px-4 pb-10 pt-4 sm:px-6 sm:pt-6 lg:px-8">
-      {/* When there's room, the greeting sits in the top bar instead (see Flash.tsx). */}
-      <Greeting me={me} className="mb-5 sm:mb-6 @min-[1100px]/main:hidden" />
+      {/* When there's room, the greeting sits in the account button in the top bar instead (see AccountMenu.tsx). */}
+      <Greeting me={me} className="mb-5 sm:mb-6 @min-[900px]/main:hidden" />
 
       {/* Sized by the space beside the sidebar (and the companion, when it's open), not the screen. */}
       <div className="grid gap-5 @min-[1100px]/main:grid-cols-[minmax(0,1fr)_300px] @min-[1180px]/main:grid-cols-[minmax(0,1fr)_320px] @min-[1500px]/main:grid-cols-[minmax(0,1fr)_360px]">
@@ -438,24 +506,59 @@ export function Home({
               ) : (
                 <div className="grid grid-cols-2 gap-3">
                   {sites.slice(0, 4).map((s, i) => (
-                    <button
-                      key={s.slug}
-                      onClick={onApps}
-                      className={`flex min-w-0 flex-col items-start gap-3 rounded-2xl border border-white/[0.08] bg-gradient-to-br p-3.5 text-left transition hover:brightness-110 ${TILES[i % TILES.length]}`}
-                    >
-                      <Icon d={ICONS.globe} className="h-5 w-5 text-sky-300 light:text-sky-600" />
-                      <span className="w-full min-w-0">
-                        <span className="block truncate text-sm font-semibold text-zinc-100">{s.title || s.slug}</span>
-                        <span className="block truncate text-xs text-zinc-400">
-                          {s.unread
-                            ? `${s.unread} new ${s.unread === 1 ? "message" : "messages"} · `
-                            : s.views
-                              ? `${s.views.toLocaleString()} ${s.views === 1 ? "visit" : "visits"} · `
-                              : ""}
-                          Updated {shortAgo(s.updated_at, now.getTime())}
+                    <div key={s.slug} className="relative min-w-0 has-[[role=menu]]:z-20">
+                      <button
+                        onClick={onApps}
+                        className={`flex h-full w-full min-w-0 flex-col items-start gap-3 rounded-2xl border border-white/[0.08] bg-gradient-to-br p-3.5 text-left transition hover:brightness-110 ${TILES[i % TILES.length]}`}
+                      >
+                        <Icon d={ICONS.globe} className="h-5 w-5 text-sky-300 light:text-sky-600" />
+                        <span className="w-full min-w-0">
+                          <span className="block truncate text-sm font-semibold text-zinc-100">{s.title || s.slug}</span>
+                          <span className="block truncate text-xs text-zinc-400">
+                            {s.unread
+                              ? `${s.unread} new ${s.unread === 1 ? "message" : "messages"} · `
+                              : s.views
+                                ? `${s.views.toLocaleString()} ${s.views === 1 ? "visit" : "visits"} · `
+                                : ""}
+                            Updated {shortAgo(s.updated_at, now.getTime())}
+                          </span>
                         </span>
-                      </span>
-                    </button>
+                      </button>
+                      <div ref={menu === `site:${s.slug}` ? menuRef : undefined} className="absolute right-1.5 top-1.5">
+                        <button
+                          onClick={() => setMenu(menu === `site:${s.slug}` ? "" : `site:${s.slug}`)}
+                          aria-label={`More for ${s.title || s.slug}`}
+                          aria-expanded={menu === `site:${s.slug}`}
+                          className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-500 transition hover:bg-white/[0.08] hover:text-zinc-200"
+                        >
+                          <Icon d={ICONS.dots} className="h-5 w-5" strokeWidth={2.6} />
+                        </button>
+                        {menu === `site:${s.slug}` && (
+                          <div ref={showWhole} role="menu" className="absolute right-0 top-full z-30 mt-1 w-48 rounded-xl border border-white/10 bg-zinc-900 p-1 shadow-xl">
+                            <a
+                              role="menuitem"
+                              href={`/p/${s.slug}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={() => setMenu("")}
+                              className="block w-full rounded-lg px-3 py-1.5 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06]"
+                            >
+                              Visit site
+                            </a>
+                            <button
+                              role="menuitem"
+                              onClick={() => {
+                                setMenu("");
+                                onApps();
+                              }}
+                              className="block w-full rounded-lg px-3 py-1.5 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06]"
+                            >
+                              Open My websites
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   ))}
                   {sites.length < 4 &&
                     [
@@ -499,22 +602,14 @@ export function Home({
             }
           >
             <p className="-mt-1 mb-4 text-sm text-zinc-400">
-              {me.credits < 10 ? "You're running low on credits." : "Your AI creativity engine is running strong."}
+              {me.credits < 10 ? "You're running low on credits." : "Your AI creativity engine is running strong."}{" "}
+              <span className="tabular-nums text-zinc-200">
+                {me.credits.toLocaleString()}
+                {!overAllowance && ` of ${allowance.toLocaleString()}`} credits left.
+              </span>
             </p>
+            <p className="mb-3 text-[11px] font-medium uppercase tracking-[0.16em] text-zinc-500">Used this month</p>
             <ul className="space-y-4">
-              <li>
-                <div className="flex items-center gap-2.5 text-sm">
-                  <Icon d={ICONS.sparkle} className="h-[18px] w-[18px] text-gold" />
-                  <span className="flex-1 text-zinc-200">Credits left</span>
-                  <span className="tabular-nums text-zinc-400">
-                    {me.credits.toLocaleString()}
-                    {!overAllowance && ` / ${allowance.toLocaleString()}`}
-                  </span>
-                </div>
-                <div className="ml-7 mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.08]">
-                  <div className="h-full rounded-full bg-gradient-to-r from-teal-400 to-violet-400 light:from-sky-500 light:to-violet-500" style={{ width: `${Math.min(100, Math.max(3, (me.credits / Math.max(1, allowance)) * 100))}%` }} />
-                </div>
-              </li>
               {rows.map((r, i) => (
                 <li key={r.label}>
                   <div className="flex items-center gap-2.5 text-sm">
@@ -524,7 +619,7 @@ export function Home({
                   </div>
                   <div className="ml-7 mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.08]">
                     {r.credits > 0 && (
-                      <div className={`h-full rounded-full ${BARS[i + 1]}`} style={{ width: `${Math.min(100, Math.max(3, (r.credits / Math.max(1, allowance)) * 100))}%` }} />
+                      <div className={`h-full rounded-full ${BARS[i]}`} style={{ width: `${Math.min(100, Math.max(3, (r.credits / Math.max(1, allowance)) * 100))}%` }} />
                     )}
                   </div>
                 </li>
@@ -551,21 +646,40 @@ export function Home({
           )}
 
           <Card title="Quick Tools" action={<Icon d={ICONS.sliders} className="h-5 w-5 text-zinc-500" />}>
+            {!keysOff && <p className="-mt-1 mb-2 hidden text-xs text-zinc-500 pointer-fine:block">Press a key on Home to open a tool.</p>}
             <ul className="-mx-1">
               {quick
                 .filter((q) => q.live)
                 .map((q) => (
                   <li key={q.label}>
-                    <button onClick={q.run} className="flex w-full items-center gap-3 rounded-xl px-2 py-2.5 text-left text-[15px] text-zinc-200 transition hover:bg-white/[0.05] hover:text-white">
+                    <button
+                      onClick={q.run}
+                      aria-keyshortcuts={keysOff ? undefined : q.key}
+                      className="flex w-full items-center gap-3 rounded-xl px-2 py-2.5 text-left text-[15px] text-zinc-200 transition hover:bg-white/[0.05] hover:text-white"
+                    >
                       <Icon d={q.d} className="h-5 w-5 text-zinc-400" />
                       <span className="flex-1">{q.label}</span>
-                      <Icon d={ICONS.chevron} className="h-4 w-4 text-zinc-600" />
+                      {/* The key on computers; a phone has none, so it gets the arrow. */}
+                      {keysOff ? (
+                        <Icon d={ICONS.chevron} className="h-4 w-4 text-zinc-600" />
+                      ) : (
+                        <>
+                          <kbd className="hidden h-6 min-w-6 items-center justify-center rounded-md border border-white/10 bg-white/[0.04] px-1.5 font-sans text-[11.5px] text-zinc-400 pointer-fine:inline-flex">
+                            {q.key}
+                          </kbd>
+                          <Icon d={ICONS.chevron} className="h-4 w-4 text-zinc-600 pointer-fine:hidden" />
+                        </>
+                      )}
                     </button>
                   </li>
                 ))}
             </ul>
           </Card>
         </aside>
+      </div>
+
+      <div className="mt-5">
+        <Everything me={me} isLive={isLive} level={level} onLevel={onLevel} onFeature={onFeature} installable={installable} />
       </div>
     </div>
   );

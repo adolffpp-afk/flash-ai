@@ -7,6 +7,7 @@ import { BoltIcon } from "@/app/brand";
 import { EngineIcon } from "./EngineIcon";
 import { micBlocked, newRecognition, releaseMic, takeMic } from "@/lib/listen";
 import { LEVELS, type Level } from "@/lib/levels";
+import { LEVEL_HUES, LevelIcon } from "./LevelIcon";
 
 export type Choice = Engine | "auto";
 
@@ -273,29 +274,6 @@ export function ToolPicker({
   );
 }
 
-// How many of the four bars each level fills; Auto shows them all, in gold.
-const BARS: Record<Level, number> = { auto: 4, sonic: 1, ascend: 2, vision: 3, ultra: 4 };
-
-/** Rising bars, filled up to the level: one for Sonic up to four for Summit. */
-function LevelBars({ level, className = "h-4 w-4" }: { level: Level; className?: string }) {
-  return (
-    <svg viewBox="0 0 16 16" className={className} aria-hidden>
-      {[0, 1, 2, 3].map((i) => (
-        <rect
-          key={i}
-          x={1 + i * 3.75}
-          y={11 - i * 3}
-          width="2.5"
-          height={4 + i * 3}
-          rx="1"
-          fill="currentColor"
-          opacity={i < BARS[level] ? 1 : 0.25}
-        />
-      ))}
-    </svg>
-  );
-}
-
 /**
  * Flash's level of intelligence for writing, research and building: Auto, or one of the four
  * levels. Pictures, video, music and voice have their own models, so it hides for those tools.
@@ -315,11 +293,11 @@ export function LevelPicker({ level, setLevel, compact = false }: { level: Level
           aria-expanded={open}
           aria-label={`Intelligence level: ${current.name}`}
           title="Choose Flash's level of intelligence"
-          // In a narrow message box only the bars show, so it keeps room for the tool picker.
-          // On Home's one-line box the bars always show alone, like the paperclip and mic beside them.
+          // In a narrow message box only the level's sign shows, so it keeps room for the tool picker.
+          // On Home's one-line box the sign always shows alone, like the paperclip and mic beside them.
           className={`inline-flex h-9 w-9 shrink-0 items-center justify-center gap-1.5 rounded-full text-sm text-zinc-200 transition hover:bg-white/[0.06] @min-[380px]/composer:h-10 @min-[380px]/composer:w-10 ${compact ? "" : "@min-[440px]/composer:w-auto @min-[440px]/composer:px-3"} ${open ? "bg-white/[0.08]" : ""}`}
         >
-          <LevelBars level={current.id} className={`h-4 w-4 shrink-0 ${current.id === "auto" ? "text-gold" : "text-primary-soft"}`} />
+          <LevelIcon level={current.id} className={`h-[18px] w-[18px] shrink-0 ${LEVEL_HUES[current.id].text}`} />
           {!compact && <span className="hidden @min-[440px]/composer:inline">{current.short}</span>}
           {!compact && <Icon d="M7 10l5 5 5-5" className="hidden h-4 w-4 text-zinc-500 @min-[440px]/composer:block" />}
         </button>
@@ -337,12 +315,8 @@ export function LevelPicker({ level, setLevel, compact = false }: { level: Level
               className={item}
               onClick={() => (setLevel(l.id), close())}
             >
-              <span
-                className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md ring-1 ring-inset ${
-                  l.id === "auto" ? "bg-gold/15 text-gold ring-gold/30" : "bg-primary/10 text-primary-soft ring-primary/25"
-                }`}
-              >
-                <LevelBars level={l.id} className="h-3.5 w-3.5" />
+              <span className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ring-1 ring-inset ${LEVEL_HUES[l.id].tile}`}>
+                <LevelIcon level={l.id} className="h-4 w-4" />
               </span>
               <span className="min-w-0">
                 {l.name}
