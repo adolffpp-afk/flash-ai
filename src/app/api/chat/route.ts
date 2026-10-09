@@ -769,7 +769,7 @@ export async function POST(request: Request) {
           cancelled = true;
         }
       };
-      send({
+      const routed: StreamEvent = {
         type: "route",
         engine,
         reason,
@@ -780,14 +780,20 @@ export async function POST(request: Request) {
           : model
             ? { model: model.label, modelWhy: picked!.why }
             : claudeRun && { model: levelName(claudeRun.level), modelWhy: levelWhy }),
-      });
+      };
+      send(routed);
+      // The reply's header names the level that really answered.
+      const steppedDown = (choice: ClaudeChoice) => {
+        if (claudeRun) send({ ...routed, model: levelName(choice.level), modelWhy: `${levelName(claudeRun.level)} was busy, so ${levelName(choice.level)} answered.` });
+        claudeRun = choice;
+      };
       let ok = true;
       let stopped = false;
       let failure = "";
       try {
         const events = free
           ? runFree(free, engine, history, preferences, store, freeUse)
-          : run(engine, history, preferences, store, model, meter, budget, mediaNotes, claudeRun, (c) => (claudeRun = c));
+          : run(engine, history, preferences, store, model, meter, budget, mediaNotes, claudeRun, steppedDown);
         for await (const event of events) {
           if (cancelled || request.signal.aborted) {
             stopped = true;
