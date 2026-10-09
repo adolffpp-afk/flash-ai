@@ -11,7 +11,10 @@ import {
 } from "../engines/free.ts";
 import { one, run } from "./db.ts";
 
-export const FREE_PROVIDERS: FreeProvider[] = ["groq", "openrouter", "cloudflare"];
+export const FREE_PROVIDERS: FreeProvider[] = ["groq", "gemini", "openrouter", "cloudflare"];
+
+/** The user's country from Vercel's location header (two letters), or "" when it's unknown. */
+export const countryOf = (request: Request) => (request.headers.get("x-vercel-ip-country") ?? "").toUpperCase();
 
 const day = (t = Date.now()) => new Date(t).toISOString().slice(0, 10);
 // SQLite can't bind Infinity.

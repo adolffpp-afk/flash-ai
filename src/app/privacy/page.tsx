@@ -5,7 +5,7 @@ export const metadata: Metadata = { title: "Privacy Policy" };
 
 export default function Privacy() {
   return (
-    <LegalPage title="Privacy Policy" updated="October 8, 2026">
+    <LegalPage title="Privacy Policy" updated="October 9, 2026">
       <p>
         This policy explains what {COMPANY} collects when you use Flash AI, why, and the choices you have.
       </p>
@@ -35,7 +35,12 @@ export default function Privacy() {
       <p>To answer a request, Flash sends it (including any attached file) to the AI provider that handles it:</p>
       <ul>
         <li>Anthropic (writing, research, code, apps, slides, translation)</li>
-        <li>Groq, OpenRouter and Cloudflare (free open-source models, used when you are out of credits)</li>
+        <li>
+          Groq, Google (Gemini), OpenRouter and Cloudflare (free models, used when you are out of credits). Google may
+          use messages its free Gemini models answer to improve its products, and its human reviewers may read them, so
+          don&apos;t share personal or sensitive information in chats on free models. Free Gemini models never answer
+          people in the European Economic Area, the UK or Switzerland.
+        </li>
         <li>OpenAI (images and video, when those features are available)</li>
         <li>ElevenLabs (voice, music and transcription, when those features are available)</li>
         <li>fal.ai and the model makers it serves (image, video, music, voice and transcription models, when those features are available)</li>
@@ -65,7 +70,7 @@ export default function Privacy() {
       </p>
 
       <h2>Children</h2>
-      <p>Flash is not meant for children under 16, and we don&apos;t knowingly collect their data.</p>
+      <p>Flash is only for people aged 18 and over, and we don&apos;t knowingly collect data from anyone younger.</p>
 
       <h2>Changes</h2>
       <p>We&apos;ll post updates here and tell you about important changes by email or in the app.</p>

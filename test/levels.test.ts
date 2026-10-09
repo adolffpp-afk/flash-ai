@@ -50,7 +50,7 @@ const drain = async (gen: AsyncGenerator<unknown>) => {
   for await (const event of gen) void event;
 };
 
-test("Auto keeps building on Vision, answers quick questions on Sonic, and never picks Ultra on its own", () => {
+test("Auto keeps building on Vision, answers quick questions on Sonic, and never picks Summit on its own", () => {
   const quick = ["hi", "thanks!", "What's the capital of France?", "how many ounces in a cup", "who won the 2022 world cup?"];
   for (const m of quick) assert.equal(autoLevel("text", m).level, "sonic", m);
   const everyday = [
@@ -75,13 +75,13 @@ test("Auto keeps building on Vision, answers quick questions on Sonic, and never
 });
 
 test("each level has a name, and only the five levels are accepted from a request", () => {
-  assert.deepEqual(LEVELS.map((l) => l.name), ["Auto", "Flash Sonic", "Flash Ascend", "Flash Vision", "Flash Ultra"]);
-  assert.equal(levelName("ultra"), "Flash Ultra");
+  assert.deepEqual(LEVELS.map((l) => l.name), ["Auto", "Flash Sonic", "Flash Ascend", "Flash Vision", "Flash Summit"]);
+  assert.equal(levelName("ultra"), "Flash Summit");
   for (const ok of ["auto", "sonic", "ascend", "vision", "ultra"]) assert.ok(isLevel(ok));
   for (const bad of ["", "max", "claude-fable-5-1", null, 3, "Sonic"]) assert.ok(!isLevel(bad), String(bad));
 });
 
-test("each level runs on its own model, and Ultra steps down to Vision", () => {
+test("each level runs on its own model, and Summit steps down to Vision", () => {
   assert.deepEqual(
     (["sonic", "ascend", "vision", "ultra"] as const).map((l) => claudeChoice("text", l).model),
     ["claude-haiku-5-5", "claude-sonnet-5-5", "claude-opus-5-5", "claude-fable-5-1"],
@@ -114,7 +114,7 @@ test("Sonic asks Haiku with no refusal fallback, which Haiku doesn't have; the o
   assert.deepEqual([sent[2].model, sent[2].effort], ["claude-sonnet-5-5", "medium"]);
 });
 
-test("when Ultra's model can't take a request, Vision answers it, and only Vision's answer is paid for", async () => {
+test("when Summit's model can't take a request, Vision answers it, and only Vision's answer is paid for", async () => {
   for (const status of [404, 403]) {
     down.set("claude-fable-5-1", status);
     sent.length = 0;
@@ -126,7 +126,7 @@ test("when Ultra's model can't take a request, Vision answers it, and only Visio
     for await (const e of withStepDown(choice, run, (c) => stepped.push(c.level))) events.push(e as Event);
     assert.deepEqual(sent.map((s) => s.model), ["claude-fable-5-1", "claude-opus-5-5"]);
     assert.equal(events[0].type, "status");
-    assert.equal(events[0].message, "Flash Ultra is busy right now, so Flash Vision is answering…");
+    assert.equal(events[0].message, "Flash Summit is busy right now, so Flash Vision is answering…");
     assert.equal(events.filter((e) => e.type === "text").map((e) => e.delta).join(""), "Hello from claude-opus-5-5");
     assert.deepEqual(stepped, ["vision"]);
     assert.deepEqual(costs.map((c) => c.model), ["claude-opus-5-5"]);
@@ -168,7 +168,7 @@ test("Haiku 5.5 is priced by the size of the prompt, and pricier levels hold mor
       }
     }
   }
-  // Ultra on a chat may hold up to five times the usual allowance, so its answers aren't cut short.
+  // Summit on a chat may hold up to five times the usual allowance, so its answers aren't cut short.
   const usual = planHold("text", "claude-sonnet-5-5", 1000, 1e6);
   const ultra = planHold("text", "claude-fable-5-1", 1000, 1e6, 5);
   assert.ok(ultra.held >= usual.held * 4, `${ultra.held} vs ${usual.held}`);

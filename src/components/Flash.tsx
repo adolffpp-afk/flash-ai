@@ -1689,7 +1689,7 @@ export function Flash({
                   e.preventDefault();
                   send(input);
                 }}
-                className="rounded-[28px] border border-white/10 bg-zinc-900/70 p-2.5 shadow-lg shadow-black/20 transition focus-within:border-white/20"
+                className="relative rounded-[28px] border border-white/10 bg-zinc-900/70 p-2.5 shadow-lg shadow-black/20 transition focus-within:border-white/20"
               >
                 {pickedNow && (
                   <div className="mb-1 ml-2 mt-1 inline-flex max-w-full items-center gap-2 rounded-lg bg-primary/15 px-3 py-1 text-xs text-primary-soft">
@@ -1790,7 +1790,7 @@ export function Flash({
                     model={choice === "auto" ? undefined : models[choice]}
                     setModel={(engine, id) => setModels((all) => ({ ...all, [engine]: id }))}
                   />
-                  <div className="ml-auto flex items-center gap-2">
+                  <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
                     {(choice === "auto" || LEVEL_ENGINES.includes(choice)) && <LevelPicker level={level} setLevel={setLevel} />}
                     <MicButton
                       disabled={busy}

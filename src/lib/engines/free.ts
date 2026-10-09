@@ -4,13 +4,13 @@ import type { Media } from "./media.ts";
 import { FriendlyError } from "./errors.ts";
 
 /*
- * The free lane: open-source models on providers' free tiers, used when a user has run out of
+ * The free lane: models on providers' free tiers (mostly open-source), used when a user has run out of
  * credits. Flash pays nothing for these. Each provider has a daily cap set below its free limit
  * (checked 2026-10-02), so a free request can never turn into a bill. Providers are tried in
  * order; one that is busy or over its cap is skipped.
  */
 
-export type FreeProvider = "groq" | "openrouter" | "cloudflare";
+export type FreeProvider = "groq" | "gemini" | "openrouter" | "cloudflare";
 
 type ChatProvider = {
   id: FreeProvider;
@@ -21,6 +21,10 @@ type ChatProvider = {
   // Requests and tokens per day Flash allows itself on this provider (under the free limit).
   dailyRequests: number;
   dailyTokens: number;
+  // The request and reply shape: OpenAI-style chat completions (the default), or Gemini's own.
+  format?: "openai" | "gemini";
+  // Whether the provider's terms let it answer someone in this country (a two-letter code, "" when unknown).
+  serves?: (country: string) => boolean;
 };
 
 const env = (name: string) => process.env[name] || undefined;
@@ -39,6 +43,28 @@ const CF_CHAT_NEURONS = { input: 31818 / 1e6, output: 68182 / 1e6 };
 export const cloudflareChatNeurons = (input: number, output: number) =>
   input * CF_CHAT_NEURONS.input + output * CF_CHAT_NEURONS.output;
 
+/*
+ * Gemini's free tier may only answer people outside the European Economic Area, the UK and
+ * Switzerland, in the countries where Google offers it, and not in apps for anyone under 18
+ * (Gemini API Additional Terms, checked 2026-10-09). Google may use free-tier messages to improve
+ * its products, and human reviewers may read them; Flash's privacy policy says so.
+ */
+const GEMINI_FREE_BLOCKED = new Set(
+  [
+    // The European Economic Area, then the UK and Switzerland.
+    "AT BE BG HR CY CZ DK EE FI FR DE GR HU IE IT LV LT LU MT NL PL PT RO SK SI ES SE IS LI NO",
+    "GB CH",
+    // Where Google doesn't offer the Gemini API.
+    "CN HK MO RU BY IR KP SY CU",
+  ]
+    .join(" ")
+    .split(" "),
+);
+// Unknown countries are left out: the free tier is only used where it's clearly allowed.
+export const geminiFreeServes = (country: string) => /^[A-Z]{2}$/.test(country) && !GEMINI_FREE_BLOCKED.has(country);
+
+const geminiModel = () => env("FLASH_FREE_GEMINI_MODEL") ?? "gemini-3.5-flash-lite";
+
 export const CHAT_PROVIDERS: ChatProvider[] = [
   {
     id: "groq",
@@ -48,6 +74,19 @@ export const CHAT_PROVIDERS: ChatProvider[] = [
     model: () => env("FLASH_FREE_GROQ_MODEL") ?? "openai/gpt-oss-120b",
     dailyRequests: num("FLASH_GROQ_DAILY_REQUESTS", 900),
     dailyTokens: num("FLASH_GROQ_DAILY_TOKENS", 180000),
+  },
+  {
+    id: "gemini",
+    label: "Gemini Flash-Lite",
+    // Gemini's own endpoint: keys made in AI Studio since May 2026 don't always work on its OpenAI-style one.
+    url: () => `${env("GEMINI_BASE_URL") ?? "https://generativelanguage.googleapis.com/v1beta"}/models/${geminiModel()}:streamGenerateContent?alt=sse`,
+    key: () => env("GEMINI_API_KEY"),
+    model: geminiModel,
+    // 500 a day and 15 a minute on the free tier (AI Studio's rate limits page shows a project's own).
+    dailyRequests: num("FLASH_GEMINI_DAILY_REQUESTS", 450),
+    dailyTokens: Infinity,
+    format: "gemini",
+    serves: geminiFreeServes,
   },
   {
     id: "openrouter",
@@ -112,6 +151,53 @@ export function freeEligible(engine: Engine, last: ChatTurn): FreeLane | null {
 
 type Message = { role: "system" | "user" | "assistant"; content: string };
 
+/** The request body for a provider: OpenAI-style, or Gemini's contents with the system prompt apart. */
+function requestBody(p: ChatProvider, messages: Message[]): string {
+  if (p.format === "gemini") {
+    const [first, ...rest] = messages;
+    return JSON.stringify({
+      systemInstruction: { parts: [{ text: first.content }] },
+      contents: rest.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] })),
+      generationConfig: { maxOutputTokens: FREE_MAX_TOKENS },
+    });
+  }
+  return JSON.stringify({ model: p.model(), messages, stream: true, max_tokens: FREE_MAX_TOKENS, stream_options: { include_usage: true } });
+}
+
+const requestHeaders = (p: ChatProvider, key: string): Record<string, string> =>
+  p.format === "gemini"
+    ? { "x-goog-api-key": key, "Content-Type": "application/json" }
+    : { Authorization: `Bearer ${key}`, "Content-Type": "application/json" };
+
+type Chunk = { text: string; input?: number; output?: number };
+
+/** The words and token counts in one streamed event, from either reply shape. */
+function readChunk(p: ChatProvider, data: string): Chunk | null {
+  try {
+    if (p.format === "gemini") {
+      const json = JSON.parse(data) as {
+        candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] } }[];
+        usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number };
+      };
+      const parts = json.candidates?.[0]?.content?.parts ?? [];
+      const usage = json.usageMetadata;
+      return {
+        // Thinking stays out of the answer.
+        text: parts.filter((part) => !part.thought).map((part) => part.text ?? "").join(""),
+        input: usage?.promptTokenCount,
+        output: usage ? (usage.candidatesTokenCount ?? 0) + (usage.thoughtsTokenCount ?? 0) : undefined,
+      };
+    }
+    const json = JSON.parse(data) as {
+      choices?: { delta?: { content?: string | null } }[];
+      usage?: { prompt_tokens?: number; completion_tokens?: number } | null;
+    };
+    return { text: json.choices?.[0]?.delta?.content ?? "", input: json.usage?.prompt_tokens, output: json.usage?.completion_tokens };
+  } catch {
+    return null;
+  }
+}
+
 function toMessages(history: ChatTurn[], preferences: string, mode: WritingMode, systemPrompt?: string): Message[] {
   const turns = history.slice(-10).map((t): Message => {
     let content = t.content;
@@ -143,25 +229,22 @@ export async function* streamFreeChat(
   onModel: (label: string, provider: FreeProvider) => void,
   // Replaces Flash's usual instructions, for the companion.
   systemPrompt?: string,
+  // Where the user is (two letters, from the host), for providers that may only answer some countries.
+  country = "",
 ): AsyncGenerator<StreamEvent> {
   const messages = toMessages(history, preferences, mode, systemPrompt);
   let lastError = "";
   for (const p of CHAT_PROVIDERS) {
     const key = p.key();
     if (!key) continue;
+    if (p.serves && !p.serves(country.toUpperCase())) continue;
     if (!(await reserve(p.id, { requests: p.dailyRequests, tokens: p.dailyTokens }))) continue;
     let res: Response;
     try {
       res = await fetch(p.url(), {
         method: "POST",
-        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: p.model(),
-          messages,
-          stream: true,
-          max_tokens: FREE_MAX_TOKENS,
-          stream_options: { include_usage: true },
-        }),
+        headers: requestHeaders(p, key),
+        body: requestBody(p, messages),
         signal: AbortSignal.timeout(120_000),
       });
     } catch (err) {
@@ -187,24 +270,14 @@ export async function* streamFreeChat(
       for (const line of lines) {
         const data = line.trim().replace(/^data:\s*/, "");
         if (!data || data === "[DONE]" || !line.trim().startsWith("data:")) continue;
-        let json: {
-          choices?: { delta?: { content?: string | null } }[];
-          usage?: { prompt_tokens?: number; completion_tokens?: number } | null;
-        };
-        try {
-          json = JSON.parse(data);
-        } catch {
-          continue;
+        const chunk = readChunk(p, data);
+        if (!chunk) continue;
+        if (chunk.text) {
+          chars += chunk.text.length;
+          yield { type: "text", delta: chunk.text };
         }
-        const delta = json.choices?.[0]?.delta?.content;
-        if (delta) {
-          chars += delta.length;
-          yield { type: "text", delta };
-        }
-        if (json.usage) {
-          input = json.usage.prompt_tokens ?? input;
-          output = json.usage.completion_tokens ?? output;
-        }
+        input = chunk.input ?? input;
+        output = chunk.output ?? output;
       }
     }
     // Without a usage report, estimate on the high side.

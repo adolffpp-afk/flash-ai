@@ -43,11 +43,14 @@ function Popover({
   children,
   label,
   align = "left",
+  phoneWide = false,
 }: {
   button: (open: boolean, toggle: () => void) => ReactNode;
   children: (close: () => void) => ReactNode;
   label: string;
   align?: "left" | "right";
+  // On phones the menu opens from the message box's edge instead of the button, so it stays on screen.
+  phoneWide?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -64,7 +67,7 @@ function Popover({
   }, [open]);
   return (
     // min-w-0 lets the tool picker shrink (its label truncates) when larger text makes the row tight.
-    <div ref={ref} className="relative min-w-0">
+    <div ref={ref} className={`min-w-0 ${phoneWide ? "sm:relative" : "relative"}`}>
       {button(open, () => setOpen((o) => !o))}
       {open && (
         <div
@@ -152,11 +155,11 @@ export function ToolPicker({
           onClick={toggle}
           aria-expanded={open}
           title="Choose a tool"
-          className={`inline-flex h-10 min-w-0 items-center gap-1.5 rounded-full bg-white/[0.06] px-4 text-sm text-zinc-100 transition hover:bg-white/[0.1] ${open ? "bg-white/[0.12]" : ""}`}
+          className={`inline-flex h-10 min-w-0 items-center gap-1.5 rounded-full bg-white/[0.06] px-3 text-sm sm:px-4 text-zinc-100 transition hover:bg-white/[0.1] ${open ? "bg-white/[0.12]" : ""}`}
         >
           {choice === "auto" ? <BoltIcon className="h-3.5 w-3.5 text-gold" /> : null}
           <span className="truncate">{choice === "auto" ? "Auto" : ENGINE_LABELS[choice]}</span>
-          <span className="truncate text-zinc-400">{picked ? picked.label : choice === "auto" ? "Best tool" : ""}</span>
+          <span className={`truncate text-zinc-400 ${picked ? "" : "hidden sm:inline"}`}>{picked ? picked.label : choice === "auto" ? "Best tool" : ""}</span>
           <Icon d="M7 10l5 5 5-5" className="h-4 w-4 shrink-0 text-zinc-500" />
         </button>
       )}
@@ -230,11 +233,11 @@ export function ToolPicker({
   );
 }
 
-// How many of the four bars each level fills; Auto shows Flash's bolt instead.
-const BARS: Record<Exclude<Level, "auto">, number> = { sonic: 1, ascend: 2, vision: 3, ultra: 4 };
+// How many of the four bars each level fills; Auto shows them all, in gold.
+const BARS: Record<Level, number> = { auto: 4, sonic: 1, ascend: 2, vision: 3, ultra: 4 };
 
-/** Rising bars, filled up to the level: one for Sonic up to four for Ultra. */
-function LevelBars({ level, className = "h-4 w-4" }: { level: Exclude<Level, "auto">; className?: string }) {
+/** Rising bars, filled up to the level: one for Sonic up to four for Summit. */
+function LevelBars({ level, className = "h-4 w-4" }: { level: Level; className?: string }) {
   return (
     <svg viewBox="0 0 16 16" className={className} aria-hidden>
       {[0, 1, 2, 3].map((i) => (
@@ -253,10 +256,6 @@ function LevelBars({ level, className = "h-4 w-4" }: { level: Exclude<Level, "au
   );
 }
 
-function LevelIcon({ level, className }: { level: Level; className?: string }) {
-  return level === "auto" ? <BoltIcon className={className ?? "h-3.5 w-3.5"} /> : <LevelBars level={level} className={className} />;
-}
-
 /**
  * Flash's level of intelligence for writing, research and building: Auto, or one of the four
  * levels. Pictures, video, music and voice have their own models, so it hides for those tools.
@@ -268,6 +267,7 @@ export function LevelPicker({ level, setLevel }: { level: Level; setLevel: (leve
     <Popover
       label="Intelligence level"
       align="right"
+      phoneWide
       button={(open, toggle) => (
         <button
           type="button"
@@ -275,10 +275,11 @@ export function LevelPicker({ level, setLevel }: { level: Level; setLevel: (leve
           aria-expanded={open}
           aria-label={`Intelligence level: ${current.name}`}
           title="Choose Flash's level of intelligence"
-          className={`inline-flex h-10 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-sm text-zinc-200 transition hover:bg-white/[0.06] sm:px-3 ${open ? "bg-white/[0.08]" : ""}`}
+          // On phones only the bars show, so the message box keeps room for the tool picker.
+          className={`inline-flex h-10 w-10 shrink-0 items-center justify-center gap-1.5 rounded-full text-sm text-zinc-200 transition hover:bg-white/[0.06] sm:w-auto sm:px-3 ${open ? "bg-white/[0.08]" : ""}`}
         >
-          <LevelIcon level={current.id} className={current.id === "auto" ? "h-3.5 w-3.5 text-gold" : "h-4 w-4 text-primary-soft"} />
-          <span>{current.short}</span>
+          <LevelBars level={current.id} className={`h-4 w-4 ${current.id === "auto" ? "text-gold" : "text-primary-soft"}`} />
+          <span className="hidden sm:inline">{current.short}</span>
           <Icon d="M7 10l5 5 5-5" className="hidden h-4 w-4 text-zinc-500 sm:block" />
         </button>
       )}
@@ -300,7 +301,7 @@ export function LevelPicker({ level, setLevel }: { level: Level; setLevel: (leve
                   l.id === "auto" ? "bg-gold/15 text-gold ring-gold/30" : "bg-primary/10 text-primary-soft ring-primary/25"
                 }`}
               >
-                <LevelIcon level={l.id} className="h-3.5 w-3.5" />
+                <LevelBars level={l.id} className="h-3.5 w-3.5" />
               </span>
               <span className="min-w-0">
                 {l.name}

@@ -246,7 +246,7 @@ export function outputBudget(model: string, heldCredits: number, inputCents: num
  * How many credits a Claude request needs at least, and how many to hold. Long conversations
  * cost more to read, so the hold grows with the input on top of the engine's reply allowance.
  * scale grows that allowance for a level whose model costs more than the engine's usual one, so
- * an Ultra reply has room for as many words as a Vision or Ascend one.
+ * a Summit reply has room for as many words as a Vision or Ascend one.
  */
 export function planHold(engine: Engine, model: string, inputTokens: number, available: number, scale = 1) {
   const inputCents = inputCostCents(engine, model, inputTokens);

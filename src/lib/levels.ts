@@ -4,7 +4,7 @@ import type { Engine } from "./types.ts";
  * Flash's levels of intelligence: one workspace, four levels, and Auto, which picks the level for
  * each request so people who'd rather not choose get the right mix of quality, speed and cost.
  * Each level runs on a Claude model (see LEVEL_MODELS in engines/claude.ts), and credits follow
- * what the model really costs, so a quick answer on Sonic uses a fraction of an Ultra one.
+ * what the model really costs, so a quick answer on Sonic uses a fraction of a Summit one.
  * The names still need a trademark lawyer's clearance before Flash is marketed widely.
  */
 export const LEVELS = [
@@ -12,7 +12,8 @@ export const LEVELS = [
   { id: "sonic", name: "Flash Sonic", short: "Sonic", blurb: "Fastest, and lightest on credits. For quick answers" },
   { id: "ascend", name: "Flash Ascend", short: "Ascend", blurb: "Smart and quick. For everyday writing and research" },
   { id: "vision", name: "Flash Vision", short: "Vision", blurb: "Thinks deeper. For apps, code and hard problems" },
-  { id: "ultra", name: "Flash Ultra", short: "Ultra", blurb: "Flash's most capable level, for the hardest work. Uses more credits" },
+  // The top level keeps the id "ultra"; "Flash Ultra" was renamed because it echoes Google's Gemini Ultra and AI Ultra.
+  { id: "ultra", name: "Flash Summit", short: "Summit", blurb: "Flash's most capable level, for the hardest work. Uses more credits" },
 ] as const;
 
 export type Level = (typeof LEVELS)[number]["id"];
@@ -36,7 +37,7 @@ const QUICK_CHARS = 140;
 /**
  * The level Auto picks for a request, and why. Building and code think deeper; voice
  * conversations and quick questions get the fastest answer; everything else is everyday work.
- * Ultra is never picked automatically: it costs the most, so it's the user's call.
+ * Summit is never picked automatically: it costs the most, so it's the user's call.
  */
 export function autoLevel(
   engine: Engine,

@@ -40,7 +40,7 @@ import {
   streamFreeChat,
   type FreeLane,
 } from "@/lib/engines/free.ts";
-import { recordFree, recordFreeAudio, releaseFreeUser, reserveFree, reserveFreeAudio, reserveFreeImage, reserveFreeUser } from "@/lib/server/free.ts";
+import { countryOf, recordFree, recordFreeAudio, releaseFreeUser, reserveFree, reserveFreeAudio, reserveFreeImage, reserveFreeUser } from "@/lib/server/free.ts";
 import { isVerified } from "@/lib/server/account.ts";
 import {
   composeMusic,
@@ -462,7 +462,7 @@ async function* run(
   }
 }
 
-/** The free lane: open-source models on free tiers, for users who are out of credits. */
+/** The free lane: models on providers' free tiers, for users who are out of credits. */
 async function* runFree(
   lane: FreeLane,
   engine: Engine,
@@ -470,6 +470,8 @@ async function* runFree(
   preferences: string,
   store: Store,
   used: { provider: string; model: string },
+  // Where the user is, for free models that may only answer some countries.
+  country = "",
 ): AsyncGenerator<StreamEvent> {
   const last = history[history.length - 1];
   if (lane === "image") {
@@ -499,7 +501,7 @@ async function* runFree(
   yield* streamFreeChat(history, preferences, engine as WritingMode, reserveFree, recordFree, (label, provider) => {
     used.provider = provider;
     used.model = label;
-  });
+  }, undefined, country);
 }
 
 /** What the error message says about credits after a failed request. */
@@ -692,7 +694,7 @@ export async function POST(request: Request) {
       levelScale = planned.scale;
     }
   }
-  // Out of credits: chat-style requests and images fall back to free open-source models,
+  // Out of credits: chat-style requests and images fall back to free models,
   // up to a daily allowance per user.
   let free: FreeLane | null = null;
   const verified = isVerified(user);
@@ -776,7 +778,7 @@ export async function POST(request: Request) {
         demo: !live,
         cost: metered && !free ? 0 : held,
         ...(free
-          ? { free: true, model: free === "image" ? "FLUX.1 schnell" : free === "transcribe" ? "Whisper" : "Open-source model", modelWhy: "You're out of credits, so Flash used a free model." }
+          ? { free: true, model: free === "image" ? "FLUX.1 schnell" : free === "transcribe" ? "Whisper" : "Free model", modelWhy: "You're out of credits, so Flash used a free model." }
           : model
             ? { model: model.label, modelWhy: picked!.why }
             : claudeRun && { model: levelName(claudeRun.level), modelWhy: levelWhy }),
@@ -792,7 +794,7 @@ export async function POST(request: Request) {
       let failure = "";
       try {
         const events = free
-          ? runFree(free, engine, history, preferences, store, freeUse)
+          ? runFree(free, engine, history, preferences, store, freeUse, countryOf(request))
           : run(engine, history, preferences, store, model, meter, budget, mediaNotes, claudeRun, steppedDown);
         for await (const event of events) {
           if (cancelled || request.signal.aborted) {
@@ -824,7 +826,7 @@ export async function POST(request: Request) {
             costCents,
             inputCents,
             written,
-            // A typical reply on this level: a fraction of the usual on Sonic, more on Ultra.
+            // A typical reply on this level: a fraction of the usual on Sonic, more on Summit.
             typical: Math.max(1, Math.round((TYPICAL_CREDITS[engine] ?? 4) * levelScale)),
             outputPrice: claudeRun ? claudePrice(claudeRun.model).output : undefined,
           });

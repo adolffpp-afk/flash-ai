@@ -15,7 +15,7 @@ export const ROUTER_MODEL = process.env.FLASH_ROUTER_MODEL || "claude-haiku-4-5"
 
 /*
  * The model behind each of Flash's levels (see levels.ts). Ascend and Vision are the chat and
- * build models above, so Auto keeps the quality people had before levels; Sonic and Ultra add a
+ * build models above, so Auto keeps the quality people had before levels; Sonic and Summit add a
  * faster, cheaper model and the most capable one.
  */
 export const LEVEL_MODELS: Record<ModelLevel, string> = {
@@ -32,7 +32,7 @@ export type ClaudeChoice = { level: ModelLevel; model: string; effort: Effort; s
 
 /**
  * What a level runs on for an engine. Building and code get more thought, Sonic answers at low
- * effort for speed, and Ultra steps down to Vision when its model is busy or not available.
+ * effort for speed, and Summit steps down to Vision when its model is busy or not available.
  */
 export function claudeChoice(engine: Engine, level: ModelLevel): ClaudeChoice {
   const effort: Effort = level === "sonic" ? "low" : engine === "app" || engine === "slides" || engine === "code" ? "high" : "medium";

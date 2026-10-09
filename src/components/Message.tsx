@@ -407,7 +407,7 @@ export function Message({
         )}
         {m.free && !m.pending && (
           <p className="mb-1 text-xs text-zinc-500">
-            You&apos;re out of credits, so a free open-source model answered.{" "}
+            You&apos;re out of credits, so a free model answered.{" "}
             {onBuyCredits && (
               <button onClick={onBuyCredits} className="text-primary-soft underline-offset-2 hover:underline">
                 {paymentsOn ? "Get credits for the best models" : "See your credits"}

@@ -7,7 +7,7 @@ import { PACK_VIDEO_SECONDS, PACK_WRITING_CENTS } from "../models.ts";
 import { parsePack, type Pack } from "../post-pack.ts";
 
 // Writing may fall back to another Claude model, so it is held to its budget at Opus's price, the
-// dearest a chat request is answered at (Ultra's model is only used when someone picks it).
+// dearest a chat request is answered at (Summit's model is only used when someone picks it).
 export const DEAREST = claudePrice("claude-opus-5-5");
 
 // Enough for three posts in any language; a shorter allowance than this can't fit them.

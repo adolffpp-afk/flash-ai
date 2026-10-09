@@ -5,7 +5,7 @@ export const metadata: Metadata = { title: "Terms of Service" };
 
 export default function Terms() {
   return (
-    <LegalPage title="Terms of Service" updated="October 2, 2026">
+    <LegalPage title="Terms of Service" updated="October 9, 2026">
       <p>
         These terms are an agreement between you and {COMPANY} (&quot;Flash&quot;, &quot;we&quot;) for your use of the
         Flash AI website and app (the &quot;Service&quot;). By creating an account or using the Service you accept them.
@@ -13,15 +13,15 @@ export default function Terms() {
 
       <h2>1. Your account</h2>
       <p>
-        You must be at least 16 years old, or the age of digital consent where you live, to use Flash. Give accurate
+        You must be at least 18 years old to use Flash. Give accurate
         details, keep your password private, and tell us at <a href={`mailto:${CONTACT}`}>{CONTACT}</a> if you think
         someone else has used your account. You are responsible for what happens under your account.
       </p>
 
       <h2>2. What Flash does</h2>
       <p>
-        Flash sends your requests to third-party AI providers (such as Anthropic, and Groq, OpenRouter and Cloudflare
-        for free open-source models) and returns their results. Features, models and providers may change over time.
+        Flash sends your requests to third-party AI providers (such as Anthropic, and Groq, Google, OpenRouter and
+        Cloudflare for free models) and returns their results. Features, models and providers may change over time.
       </p>
 
       <h2>3. Credits and payments</h2>
