@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { Me } from "@/lib/store";
-import { fullName, initials } from "@/lib/names";
+import { firstName, fullName, initials } from "@/lib/names";
+import { greeting } from "@/lib/when";
 import { InstallApp } from "./InstallApp";
 
 const item = "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06]";
@@ -14,6 +15,7 @@ const item = "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text
 export function AccountMenu({
   me,
   placement = "up",
+  greet = false,
   onSettings,
   onHelp,
   onPlan,
@@ -22,6 +24,8 @@ export function AccountMenu({
 }: {
   me: Me;
   placement?: "up" | "down";
+  // On Home the button greets them: "Good evening," over their first name.
+  greet?: boolean;
   onSettings: () => void;
   onHelp: () => void;
   onPlan: () => void;
@@ -131,8 +135,17 @@ export function AccountMenu({
         </span>
         {/* In the top bar the name shows when there's room beside the search (see Flash.tsx's main container). */}
         <span className={`min-w-0 text-left ${down ? "hidden @min-[900px]/main:block" : "flex-1"}`}>
-          <span className="block max-w-[10rem] truncate text-sm font-medium text-zinc-100">{fullName(me.user)}</span>
-          <span className="block truncate text-xs text-zinc-500">{plan}</span>
+          {greet ? (
+            <>
+              <span className="block truncate text-xs text-zinc-400">{greeting(new Date())},</span>
+              <span className="block max-w-[10rem] truncate text-[15px] font-semibold leading-tight text-zinc-100">{firstName(me.user)}</span>
+            </>
+          ) : (
+            <>
+              <span className="block max-w-[10rem] truncate text-sm font-medium text-zinc-100">{fullName(me.user)}</span>
+              <span className="block truncate text-xs text-zinc-500">{plan}</span>
+            </>
+          )}
         </span>
         <span className={`text-zinc-500 ${down ? "hidden @min-[900px]/main:block" : ""}`} aria-hidden>
           {down ? "⌄" : "⌃"}

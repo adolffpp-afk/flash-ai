@@ -71,6 +71,7 @@ export type Pricing = {
   freeMonthly: number;
   freeLane: { chats: number; images: number; transcripts?: number };
   paymentsEnabled: boolean;
+  domainsEnabled: boolean;
   testPurchases: boolean;
   models: { id: string; engine: Engine; label: string; credits: number; blurb: string; live: boolean }[];
 };

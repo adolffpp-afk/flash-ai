@@ -8,7 +8,7 @@ export const DEVICE_KEYS = {
   // Set when the user says not to ask before costly requests.
   skipCostCheck: "flash:skip-cost-check",
   notifyDone: "flash:notify-done",
-  // Dark (the default), light, or "system" to follow the device (Settings > General > Appearance).
+  // "" for light (the default), "dark", or "system" to follow the device (Settings > General > Appearance).
   theme: "flash:theme",
   font: "flash:font",
   textSize: "flash:text-size",
@@ -20,6 +20,8 @@ export const DEVICE_KEYS = {
   wakeWord: "flash:wake-word",
   // The level of intelligence picked in the message box (see levels.ts); empty for Auto.
   level: "flash:level",
+  // "1" turns off Home's single-key shortcuts for Quick Tools (Settings > General > Keyboard).
+  homeKeysOff: "flash:home-keys-off",
 } as const;
 
 export type DeviceKey = keyof typeof DEVICE_KEYS;
@@ -32,12 +34,26 @@ export function readSetting(key: DeviceKey): string {
   }
 }
 
+const CHANGED = "flash:setting";
+
 /** Saves a setting; "" removes it, so it goes back to the default. */
 export function writeSetting(key: DeviceKey, value: string): void {
   try {
     if (value) localStorage.setItem(DEVICE_KEYS[key], value);
     else localStorage.removeItem(DEVICE_KEYS[key]);
   } catch {}
+  // Tells what's on screen, like Home's keys, that a setting changed here or in another tab.
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(CHANGED));
+}
+
+/** Calls back when a setting changes on this page or in another tab, for useSyncExternalStore. */
+export function onSettingChange(callback: () => void): () => void {
+  window.addEventListener(CHANGED, callback);
+  window.addEventListener("storage", callback);
+  return () => {
+    window.removeEventListener(CHANGED, callback);
+    window.removeEventListener("storage", callback);
+  };
 }
 
 // Light is the default: Flash opens bright and iridescent unless Dark (or a dark device, with Match device) is picked.

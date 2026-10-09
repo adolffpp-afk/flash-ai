@@ -7,12 +7,13 @@ import { Landing } from "./Landing";
 import { VerifyBanner } from "./VerifyBanner";
 import { CreditsDialog } from "./CreditsDialog";
 import { InviteDialog } from "./InviteFriends";
-import { InstallPopup } from "./InstallApp";
+import { InstallPopup, useInstall } from "./InstallApp";
 import { ShareDialog } from "./ShareDialog";
 import { DownloadChat } from "./DownloadChat";
 import { ProjectInstructions } from "./ProjectInstructions";
 import { Settings, SKIP_COST_CHECK, settingsTabFor, type SettingsTab } from "./Settings";
 import { AccountMenu } from "./AccountMenu";
+import { Automations } from "./Automations";
 import { Creations } from "./Creations";
 import { Companion } from "./Companion";
 import { Templates } from "./Templates";
@@ -26,14 +27,14 @@ import { ENGINES, ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, ty
 import { api, newId, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
 import type { ChatHit } from "@/lib/server/search";
 import { BoltIcon, BrandMark } from "@/app/brand";
-import { Greeting, Home, ICONS, Icon } from "./Home";
+import { Home, ICONS, Icon } from "./Home";
 import { Bell } from "./Bell";
-import { EngineIcon } from "./EngineIcon";
 import { LevelPicker, MenusOpenDown, MicButton, PlusMenu, SendButton, TalkButton, ToolPicker, type Choice } from "./ComposerTools";
 import { VoiceMode, type VoiceAnswer } from "./VoiceMode";
 import { useWakeWord } from "./useWakeWord";
 import { voiceReply } from "@/lib/voice-chat";
 import { photoActionsFor } from "@/lib/photo-actions";
+import { featureReady, findFeatures, isInstall, type FeatureAction, type FeatureSetup } from "@/lib/features";
 import { pickedContext, type PickedElement } from "@/lib/preview-bridge";
 import { pictureFollowUp } from "@/lib/router";
 import { firstName } from "@/lib/names";
@@ -281,6 +282,8 @@ export function Flash({
   const attachment = files[0] ?? null;
   const [busy, setBusy] = useState(false);
   const [companion, setCompanion] = useState(false);
+  // Installing Flash from "Everything Flash can do" or the search; nothing to install inside the installed app.
+  const install = useInstall();
   // The Ask Flash button can be hidden in Settings > Capabilities (read after mount: it lives on the device).
   const [hideCompanion, setHideCompanion] = useState(false);
   // A voice conversation, docked where the message box is; woke when "Hey Flash" opened it.
@@ -329,6 +332,7 @@ export function Flash({
   // The Settings tab to show, or null when Settings is closed.
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
   const [showCreations, setShowCreations] = useState<"" | "all" | "image">("");
+  const [showAutomations, setShowAutomations] = useState(false);
   // The templates window: "" shows them all, a template's id opens its form.
   const [templates, setTemplates] = useState<string | null>(null);
   const [showApps, setShowApps] = useState(false);
@@ -590,11 +594,16 @@ export function Flash({
   function pickTool(next: Choice) {
     setVoice(null);
     setChoice(next);
+    // The Movie maker is only for its own button; any other way into Video makes a clip.
+    if (next === "video") setModels((all) => (all.video === "movie" ? { ...all, video: undefined } : all));
     requestAnimationFrame(() => {
       inputRef.current?.focus({ preventScroll: true });
       inputRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
     });
   }
+
+  /** Puts the cursor back in the message box after a pick in one of its menus, so typing goes there. */
+  const refocus = () => requestAnimationFrame(() => inputRef.current?.focus({ preventScroll: true }));
 
   /** Home's View all: the search list on computers, the sidebar on phones. */
   function viewAllChats() {
@@ -1090,6 +1099,53 @@ export function Flash({
     [],
   );
 
+  /** Opens a feature from Home's "Everything Flash can do" or the search in the top bar. */
+  function openFeature(action: FeatureAction) {
+    setSearchOpen(false);
+    if ("tool" in action) return pickTool(action.tool);
+    if ("href" in action) return window.location.assign(action.href);
+    const page = action.open;
+    switch (page) {
+      case "attach":
+        // Auto, so the file and the words pick the tool, not whatever was picked before.
+        pickTool("auto");
+        return fileRef.current?.click();
+      case "build-from-picture":
+        // A screenshot or sketch goes to the App Builder.
+        pickTool("app");
+        return fileRef.current?.click();
+      case "talk":
+        return setVoice({ woke: false });
+      case "chats":
+        return viewAllChats();
+      case "movie":
+        pickTool("video");
+        return setModels((all) => ({ ...all, video: "movie" }));
+      case "companion":
+        return setCompanion(true);
+      case "automations":
+        return setShowAutomations(true);
+      case "install":
+        return install.install();
+      case "template:social-pack":
+        return setTemplates("social-pack");
+      case "templates":
+      case "websites":
+      case "creations":
+      case "brand":
+      case "memory":
+      case "general":
+      case "credits":
+      case "invite":
+        return openCompanionPage(page);
+      default: {
+        // A new page in features.ts needs a case here.
+        const missing: never = page;
+        return missing;
+      }
+    }
+  }
+
   /**
    * Makes a picture again in another shape (the shape words are read by the image engine). It's a
    * new picture of the prompt, so it never goes with the picture above: an edit keeps the old shape.
@@ -1190,9 +1246,17 @@ export function Flash({
   const inChats = projectQuery.trim().length >= 2 ? chatHits.filter((h) => h.snippet && !sorted.some((p) => p.id === h.id)) : [];
   // Engines whose AI provider isn't set up yet show as coming soon, and light up once /api/status says so.
   const isLive = (e: Engine) => !status || status[e];
-  // The search on Home also finds tools ("image") and ready-made prompts ("invoice").
+  // The search on Home also finds what Flash can do ("remove background") and ready-made prompts ("invoice").
   const query = projectQuery.trim().toLowerCase();
-  const toolHits = query ? ENGINES.filter((e) => isLive(e) && ENGINE_LABELS[e].toLowerCase().includes(query)) : [];
+  const setup: FeatureSetup = {
+    isLive,
+    modelLive: (id) => Boolean(me?.models.find((m) => m.id === id)?.live),
+    payments: Boolean(me?.paymentsEnabled),
+    domains: Boolean(me?.domainsEnabled),
+  };
+  const toolHits = findFeatures(query)
+    .filter((f) => (f.soon || featureReady(f, setup)) && (install.available || !isInstall(f)))
+    .slice(0, 6);
   const promptHits = query ? TEMPLATES.filter((t) => t.name.toLowerCase().includes(query)) : [];
   // The one-tap buttons for attached photos (Copy the text, Remove background…).
   const photoActions = photoActionsFor(files.map((f) => f.mediaType), isLive);
@@ -1429,14 +1493,26 @@ export function Flash({
           <ToolPicker
             compact
             choice={choice}
-            setChoice={setChoice}
+            setChoice={(next) => {
+              setChoice(next);
+              refocus();
+            }}
             isLive={isLive}
             models={me.models}
             model={choice === "auto" ? undefined : models[choice]}
             setModel={(engine, id) => setModels((all) => ({ ...all, [engine]: id }))}
           />
           {messageBox}
-          {(choice === "auto" || LEVEL_ENGINES.includes(choice)) && <LevelPicker compact level={level} setLevel={setLevel} />}
+          {(choice === "auto" || LEVEL_ENGINES.includes(choice)) && (
+            <LevelPicker
+              compact
+              level={level}
+              setLevel={(next) => {
+                setLevel(next);
+                refocus();
+              }}
+            />
+          )}
           <PlusMenu plain onFiles={() => fileRef.current?.click()} onCamera={() => cameraRef.current?.click()} />
           <MicButton
             plain
@@ -1483,7 +1559,7 @@ export function Flash({
     </form>
   );
   // A page (Home, AI Chat) is marked as the current one; a panel that opens over it (Voice) as pressed.
-  const navItem = (label: string, d: string, on: boolean, run: () => void, panel = false, muted = false) => (
+  const navItem = (label: string, d: string, on: boolean, run: () => void, panel = false, muted = false, badge = "") => (
     <button
       key={label}
       onClick={() => {
@@ -1504,6 +1580,7 @@ export function Flash({
     >
       <Icon d={d} className="h-6 w-6 shrink-0" />
       {label}
+      {badge && <span className="ml-auto rounded-full bg-white/[0.07] px-2 py-0.5 text-[11px] font-medium text-zinc-400">{badge}</span>}
     </button>
   );
 
@@ -1536,6 +1613,7 @@ export function Flash({
           {navItem("Voice", ICONS.voice, Boolean(voice), () => setVoice({ woke: false }), true)}
           {navItem("Images", ICONS.images, false, () => setShowCreations("image"))}
           {navItem("Workspace", ICONS.workspace, false, () => setShowApps(true))}
+          {navItem("Automations", ICONS.bolt, false, () => setShowAutomations(true), false, false, "Soon")}
         </nav>
         <div className="mx-5 my-4 border-t border-white/[0.07]" />
         <nav aria-label="Library and settings" className="space-y-1 px-3">
@@ -1700,7 +1778,7 @@ export function Flash({
             Drop a file for Flash to read, analyse or transcribe
           </div>
         )}
-        <header className={`flex h-16 shrink-0 items-center gap-2 px-4 sm:gap-3 md:h-[76px] md:px-6 ${isHome ? "mx-auto w-full max-w-[1600px] lg:px-8 @min-[1100px]/main:h-[96px]" : ""}`}>
+        <header className={`flex h-16 shrink-0 items-center gap-2 px-4 sm:gap-3 md:h-[76px] md:px-6 ${isHome ? "mx-auto w-full max-w-[1600px] lg:px-8" : ""}`}>
           <button
             className="-ml-1.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-zinc-300 hover:bg-white/[0.05] md:hidden"
             onClick={() => setSidebar(true)}
@@ -1713,9 +1791,7 @@ export function Flash({
               <button onClick={goHome} className="shrink-0 md:hidden" aria-label="Flash AI, home">
                 <BrandMark size={32} id="flash-top" ring={false} />
               </button>
-              <Greeting me={me} className="hidden shrink @min-[1100px]/main:block" />
-              <div className="hidden min-w-0 flex-1 @min-[1100px]/main:block" />
-              <div ref={searchBoxRef} className="relative hidden min-w-0 max-w-2xl flex-[3] md:block @min-[1100px]/main:min-w-[300px] @min-[1100px]/main:max-w-[560px] @min-[1100px]/main:flex-[5]">
+              <div ref={searchBoxRef} className="relative hidden min-w-0 max-w-2xl flex-[3] md:block @min-[1100px]/main:max-w-[760px]">
                 <Icon d={ICONS.search} className="pointer-events-none absolute left-4 top-1/2 z-10 h-5 w-5 -translate-y-1/2 text-zinc-400" />
                 <input
                   ref={searchRef}
@@ -1739,18 +1815,18 @@ export function Flash({
                       <p className="px-3 pb-1 pt-1.5 text-xs font-medium text-zinc-500">{searchOpen === "all" ? "All chats" : "Recent chats"}</p>
                     )}
                     {toolHits.length > 0 && <p className="px-3 pb-1 pt-1.5 text-xs font-medium text-zinc-500">Tools</p>}
-                    {toolHits.map((e) => (
+                    {toolHits.map((f) => (
                       <button
-                        key={e}
+                        key={f.title}
                         onClick={() => {
-                          setSearchOpen(false);
                           setProjectQuery("");
-                          pickTool(e);
+                          openFeature(f.action);
                         }}
                         className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06]"
                       >
-                        <EngineIcon engine={e} size="sm" />
-                        <span className="min-w-0 flex-1 truncate">{ENGINE_LABELS[e]}</span>
+                        <Icon d={ICONS[f.icon]} className="h-4 w-4 shrink-0 text-zinc-400" />
+                        <span className="min-w-0 flex-1 truncate">{f.title}</span>
+                        {f.soon && <span className="shrink-0 text-xs text-zinc-500">Coming soon</span>}
                       </button>
                     ))}
                     {promptHits.length > 0 && <p className="px-3 pb-1 pt-1.5 text-xs font-medium text-zinc-500">Prompts</p>}
@@ -1806,7 +1882,7 @@ export function Flash({
                   </div>
                 )}
               </div>
-              <div className="min-w-0 flex-1 @min-[1100px]/main:hidden" />
+              <div className="min-w-0 flex-1" />
             </>
           ) : (
             <h1 className="min-w-0 flex-1 truncate text-[15px] font-medium text-zinc-100">{active?.name ?? "Flash AI"}</h1>
@@ -1857,6 +1933,7 @@ export function Flash({
           <AccountMenu
             me={me}
             placement="down"
+            greet={isHome}
             onSettings={() => setSettingsTab("general")}
             onHelp={() => setCompanion(true)}
             onPlan={() => setShowCredits(true)}
@@ -1874,6 +1951,7 @@ export function Flash({
             }}
           />
         )}
+        {showAutomations && <Automations onTemplates={() => setTemplates("")} onClose={() => setShowAutomations(false)} />}
         {showCreations && (
           <Creations
             start={showCreations}
@@ -1903,6 +1981,7 @@ export function Flash({
         {showCredits && <CreditsDialog me={me} onClose={() => setShowCredits(false)} onChanged={refreshMe} />}
         {showInvite && <InviteDialog me={me} onClose={() => setShowInvite(false)} />}
         <InstallPopup />
+        {install.dialog}
       {showShare && active && <ShareDialog project={active} onClose={() => setShowShare(false)} />}
       {settingsTab && me && (
         <Settings
@@ -1986,6 +2065,15 @@ export function Flash({
               onTemplates={() => setTemplates("")}
               onUsage={() => setSettingsTab("usage")}
               onPlans={() => setShowCredits(true)}
+              onFeature={openFeature}
+              level={level}
+              onLevel={(next) => {
+                setLevel(next);
+                // A level is for writing, research and building, so a picture or sound tool gives way to Auto.
+                if (choice !== "auto" && !LEVEL_ENGINES.includes(choice)) setChoice("auto");
+              }}
+              installable={install.available}
+              shortcuts={!voice}
               paymentsOn={me.paymentsEnabled || me.testPurchases}
             />
           ) : (
