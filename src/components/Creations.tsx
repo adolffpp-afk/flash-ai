@@ -18,8 +18,8 @@ const sizeLabel = (bytes: number) =>
 const dateLabel = (t: number) => new Date(t).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
 /** My creations: every picture, video and sound Flash made, to view, download or delete. */
-export function Creations({ onClose, onUseImage }: { onClose: () => void; onUseImage?: (url: string) => void }) {
-  const [kind, setKind] = useState<Kind>("all");
+export function Creations({ start = "all", onClose, onUseImage }: { start?: Kind; onClose: () => void; onUseImage?: (url: string) => void }) {
+  const [kind, setKind] = useState<Kind>(start);
   const [files, setFiles] = useState<FileSummary[] | null>(null);
   const [more, setMore] = useState(false);
   const [confirming, setConfirming] = useState<string | null>(null);
@@ -48,7 +48,7 @@ export function Creations({ onClose, onUseImage }: { onClose: () => void; onUseI
   }, [onClose]);
 
   useEffect(() => {
-    api<{ files: FileSummary[] }>("/api/files")
+    api<{ files: FileSummary[] }>(start === "all" ? "/api/files" : `/api/files?kind=${start}`)
       .then(({ files: page }) => {
         setFiles(page);
         setMore(page.length === 24);
@@ -57,6 +57,8 @@ export function Creations({ onClose, onUseImage }: { onClose: () => void; onUseI
         setError("Couldn't load your creations. Please try again.");
         setFiles([]);
       });
+    // Only the tab it opened on; picking another tab loads that one.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function pick(k: Kind) {

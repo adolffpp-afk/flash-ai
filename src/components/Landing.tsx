@@ -6,7 +6,8 @@ import { api, type Pricing } from "@/lib/store";
 import { IntervalToggle, PlanCards, type Interval } from "./PlanCards";
 import { EngineIcon } from "./EngineIcon";
 import { InstallApp } from "./InstallApp";
-import { Logo, LogoMark } from "@/app/brand";
+import { BrandMark } from "@/app/brand";
+import { Orb } from "./Home";
 
 const money = (cents: number) => `$${(cents / 100).toFixed(cents % 100 ? 2 : 0)}`;
 
@@ -108,15 +109,21 @@ export function Landing({
   // Until the prices load, plans are assumed to be on sale so nothing flickers to "coming soon".
   const canBuy = !pricing || pricing.paymentsEnabled || pricing.testPurchases;
 
-  // The main call to action is holographic, so it is the one thing on the page that pulls the eye.
+  // The main call to action, in the same colours as the app's main buttons.
   const cta =
-    "inline-flex h-11 items-center rounded-full bg-holo px-6 text-sm font-medium text-night shadow-[0_6px_24px_-8px_rgba(188,196,246,0.45)] ring-1 ring-inset ring-paper/50 transition hover:brightness-105";
+    "inline-flex h-12 items-center gap-2 rounded-full bg-brand px-7 text-[15px] font-semibold text-on-brand shadow-[0_10px_30px_-12px_rgb(91_140_246/0.6)] transition hover:brightness-110";
   return (
-    <div className="h-full overflow-y-auto bg-zinc-950 text-zinc-100">
-      <header className="sticky top-0 z-10 border-b border-white/6 bg-zinc-950/70 backdrop-blur-md">
-        <nav className="mx-auto flex h-14 max-w-6xl items-center gap-8 px-4 sm:px-6">
-          <a href="#" aria-label="Flash AI home">
-            <Logo size={28} className="text-[15px]" />
+    // No background of its own: the app's page glow (iridescent by day, Nova glass at night) shows through.
+    <div className="h-full overflow-y-auto text-zinc-100">
+      <header className="sticky top-0 z-10 border-b border-white/6 bg-zinc-950/60 backdrop-blur-xl">
+        <nav className="mx-auto flex h-16 max-w-6xl items-center gap-8 px-4 sm:px-6">
+          <a href="#" aria-label="Flash AI home" className="flex items-center gap-1.5">
+            <span className="[filter:drop-shadow(0_3px_8px_rgb(91_140_246/0.35))]">
+              <BrandMark size={34} id="flash-landing" ring={false} vivid />
+            </span>
+            <span className="whitespace-nowrap text-[19px] font-bold leading-none tracking-tight text-white">
+              FLASH <span className="font-light">AI</span>
+            </span>
           </a>
           <div className="hidden gap-6 text-sm text-zinc-400 sm:flex">
             <a href="#features" className="hover:text-zinc-100">Features</a>
@@ -136,20 +143,20 @@ export function Landing({
       </header>
 
       <section className="relative overflow-hidden">
-        {/* A quiet emerald wash with a faint holographic halo: light, not a light show. */}
+        {/* The iridescent wash of Home's hero: cyan, violet and pink light behind the orb. */}
         <div aria-hidden className="pointer-events-none absolute inset-0">
-          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(16,185,129,0.16),transparent_60%)]" />
-          <div className="absolute left-1/2 top-28 h-72 w-[36rem] max-w-full -translate-x-1/2 rounded-full bg-holo-lavender/8 blur-[110px]" />
-          <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:56px_56px] [mask-image:radial-gradient(ellipse_at_top,black,transparent_65%)]" />
+          <div className="absolute inset-x-0 top-0 h-[42rem] bg-iris-wash opacity-80 [mask-image:linear-gradient(to_bottom,black_55%,transparent)]" />
+          <div className="absolute left-[12%] top-24 h-72 w-72 rounded-full bg-cyan-300/20 blur-[110px] light:bg-cyan-200/50" />
+          <div className="absolute right-[12%] top-40 h-72 w-72 rounded-full bg-fuchsia-300/15 blur-[110px] light:bg-pink-200/50" />
         </div>
-        <div className="relative mx-auto max-w-3xl px-4 pb-24 pt-16 text-center sm:px-6 sm:pt-28">
-          <LogoMark size={76} className="mx-auto mb-8" />
-          <p className="mx-auto flex w-fit items-center gap-2 rounded-full border border-white/8 bg-white/[0.03] px-3 py-1 text-xs text-zinc-300">
+        <div className="relative mx-auto max-w-3xl px-4 pb-24 pt-14 text-center sm:px-6 sm:pt-20">
+          <Orb className="mx-auto mb-10 w-36 sm:w-48" />
+          <p className="glass mx-auto flex w-fit items-center gap-2 rounded-full px-3.5 py-1.5 text-xs text-zinc-300 shadow-none">
             <span className="h-1.5 w-1.5 rounded-full bg-spark" />
             {liveCount ? `${liveCount} AI tools` : "AI tools"} · one app · one bill
           </p>
-          <h1 className="mt-6 text-4xl font-medium leading-[1.08] tracking-[-0.035em] text-white sm:text-[3.5rem]">
-            One AI for <span className="text-holo">everything</span>
+          <h1 className="mt-6 text-[2.6rem] font-bold leading-[1.04] tracking-[-0.04em] text-white sm:text-[4.25rem]">
+            One AI for <span className="text-iris">everything</span>
           </h1>
           <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-zinc-400 sm:text-lg">
             Build and publish apps, make slides, write, research, code and translate
@@ -160,20 +167,20 @@ export function Landing({
             <button onClick={() => onStart("signup")} className={cta}>
               Start free{free ? ` with ${free} credits` : ""}
             </button>
-            <a href="#features" className="inline-flex h-11 items-center rounded-full border border-white/10 px-6 text-sm text-zinc-200 transition hover:border-white/20 hover:bg-white/[0.04]">
+            <a href="#features" className="glass inline-flex h-12 items-center rounded-full px-7 text-[15px] text-zinc-200 shadow-none transition hover:brightness-110">
               See what it can do
             </a>
           </div>
           <p className="mt-4 text-xs text-zinc-500">No card needed. Free credits every month.</p>
 
-          <div className="mx-auto mt-16 max-w-2xl rounded-2xl border border-white/8 bg-zinc-900/50 p-4 text-left shadow-[var(--glass-shadow)] backdrop-blur sm:p-5">
+          <div className="glass-raised mx-auto mt-16 max-w-2xl rounded-[28px] p-4 text-left sm:p-5">
             <div className="flex justify-end">
               <div className="rounded-2xl rounded-br-md border border-white/10 bg-zinc-800 px-4 py-2 text-sm text-zinc-50">
                 Build a booking page for my hair salon in Toronto
               </div>
             </div>
             <div className="mt-3 flex gap-3">
-              <LogoMark size={28} />
+              <BrandMark size={28} id="flash-demo" ring={false} vivid />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap gap-2 text-xs">
                   <span className="rounded-full border border-white/10 px-2 py-0.5 text-zinc-300">App Builder</span>
@@ -214,7 +221,7 @@ export function Landing({
           {ENGINES.map((e) => (
             <div
               key={e}
-              className={`rounded-xl border border-white/6 bg-white/[0.02] p-5 transition ${isLive(e) ? "hover:border-white/12 hover:bg-white/[0.035]" : "opacity-60"}`}
+              className={`glass rounded-3xl p-5 shadow-none transition ${isLive(e) ? "hover:-translate-y-0.5 hover:brightness-110" : "opacity-60"}`}
             >
               <div className="flex items-center gap-3 text-[15px] font-medium text-zinc-100">
                 <EngineIcon engine={e} />
@@ -274,7 +281,7 @@ export function Landing({
           </p>
         )}
         {pricing && (
-          <div className="mt-10 rounded-xl border border-white/6 p-5 sm:p-6">
+          <div className="glass mt-10 rounded-3xl p-5 shadow-none sm:p-6">
             <h3 className="text-sm font-medium text-zinc-300">Typical credits per request</h3>
             <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-3 lg:grid-cols-4">
               {ENGINES.map((e) => (
@@ -294,7 +301,7 @@ export function Landing({
 
       <section id="faq" className="mx-auto max-w-3xl scroll-mt-16 px-4 pb-24 sm:px-6">
         <h2 className="text-center text-2xl font-medium tracking-[-0.025em] sm:text-[2rem]">Questions</h2>
-        <div className="mt-10 divide-y divide-white/6 rounded-xl border border-white/6">
+        <div className="glass mt-10 divide-y divide-white/6 rounded-3xl shadow-none">
           {faq(liveMedia, soonMedia, canBuy).map((f) => (
             <details key={f.q} className="group px-5 py-4">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-[15px] text-zinc-100">

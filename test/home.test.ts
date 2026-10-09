@@ -37,20 +37,20 @@ test("times ago read naturally, and older ones show the date", () => {
   );
 });
 
-test("the theme is dark unless light is picked, or Match device is on a light device", () => {
-  assert.equal(themeFor("", true), "dark");
-  assert.equal(themeFor("", false), "dark");
-  assert.equal(themeFor("light", false), "light");
+test("the theme is light unless Dark is picked, or Match device is on a dark device", () => {
+  assert.equal(themeFor("", true), "light");
+  assert.equal(themeFor("", false), "light", "no choice yet is light, whatever the device");
+  assert.equal(themeFor("dark", true), "dark");
   assert.equal(themeFor("system", true), "light");
   assert.equal(themeFor("system", false), "dark");
-  assert.equal(themeFor("anything else", true), "dark");
+  assert.equal(themeFor("anything else", false), "light");
 });
 
 test("the script that runs before the page paints picks the same theme as Settings", () => {
-  for (const saved of [null, "", "light", "system", "dark"]) {
+  for (const saved of [null, "", "light", "system", "dark", "something old"]) {
     for (const prefersLight of [true, false]) {
       const root: { dataset: Record<string, string> } = { dataset: {} };
-      const bar = { content: BAR_COLORS.dark as string, setAttribute: (_: string, v: string) => void (bar.content = v) };
+      const bar = { content: BAR_COLORS.light as string, setAttribute: (_: string, v: string) => void (bar.content = v) };
       const document = { documentElement: root, querySelector: (q: string) => (q === 'meta[name="theme-color"]' ? bar : null) };
       const localStorage = { getItem: (key: string) => (key === "flash:theme" ? saved : null) };
       const matchMedia = (q: string) => ({ matches: q === "(prefers-color-scheme: light)" && prefersLight });
@@ -61,15 +61,16 @@ test("the script that runs before the page paints picks the same theme as Settin
       assert.equal(bar.content, BAR_COLORS[theme]);
     }
   }
-  // Blocked storage (a private window) leaves the page dark instead of breaking it.
+  // Blocked storage (a private window) reads as no choice: the page is light, and nothing breaks.
   const root = { dataset: {} as Record<string, string> };
   const blocked = {
     getItem: () => {
       throw new Error("denied");
     },
   };
-  assert.doesNotThrow(() => new Function("localStorage", "matchMedia", "document", THEME_SCRIPT)(blocked, () => ({ matches: true }), { documentElement: root }));
-  assert.equal(root.dataset.theme, undefined);
+  const page = { documentElement: root, querySelector: () => null };
+  assert.doesNotThrow(() => new Function("localStorage", "matchMedia", "document", THEME_SCRIPT)(blocked, () => ({ matches: false }), page));
+  assert.equal(root.dataset.theme, "light");
 });
 
 test("Recent conversations lists the user's own chats with messages, newest first, with the last tool and a clean preview", async () => {

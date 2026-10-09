@@ -40,9 +40,10 @@ export function writeSetting(key: DeviceKey, value: string): void {
   } catch {}
 }
 
+// Light is the default: Flash opens bright and iridescent unless Dark (or a dark device, with Match device) is picked.
 export const THEMES = [
-  ["", "Dark", "Frosted glass at night"],
-  ["light", "Light", "Bright and iridescent"],
+  ["", "Light", "Bright and iridescent"],
+  ["dark", "Dark", "Frosted glass at night"],
   ["system", "Match device", "Follows your device's light or dark setting"],
 ] as const;
 export type Theme = (typeof THEMES)[number][0];
@@ -76,19 +77,20 @@ export function applyAppearance(font = readSetting("font"), size = readSetting("
 }
 
 /**
- * The theme the page shows now: "light" for Light, or for Match device on a light device. The same
- * rule runs before the page paints (THEME_SCRIPT in src/app/layout.tsx), so Flash never flashes dark.
+ * The theme the page shows now: "dark" for Dark, or for Match device on a dark device; otherwise
+ * light. The same rule runs before the page paints (THEME_SCRIPT in src/app/layout.tsx), so Flash
+ * never shows the wrong theme first.
  */
 export function themeFor(theme: string, prefersLight: boolean): "light" | "dark" {
-  return theme === "light" || (theme === "system" && prefersLight) ? "light" : "dark";
+  return theme === "dark" || (theme === "system" && !prefersLight) ? "dark" : "light";
 }
 
 // The browser's bar colour (theme-color) for each theme: the page colour, so phones show no dark strip over a light page.
 export const BAR_COLORS = { dark: "#0a0c10", light: "#f4f5f9" } as const;
 
-// The same choice as themeFor, run in <head> before the page paints (see layout.tsx), so a light
-// theme never shows dark first.
-export const THEME_SCRIPT = `try{var t=localStorage.getItem(${JSON.stringify(DEVICE_KEYS.theme)});if(t==="light"||(t==="system"&&matchMedia("(prefers-color-scheme: light)").matches)){document.documentElement.dataset.theme="light";var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content",${JSON.stringify(BAR_COLORS.light)})}}catch(e){}`;
+// The same choice as themeFor, run in <head> before the page paints (see layout.tsx). Blocked
+// storage (a private window) reads as no choice, so the page is light.
+export const THEME_SCRIPT = `try{var t=null;try{t=localStorage.getItem(${JSON.stringify(DEVICE_KEYS.theme)})}catch(e){}var d=t==="dark"||(t==="system"&&!matchMedia("(prefers-color-scheme: light)").matches);if(!d)document.documentElement.dataset.theme="light";var m=document.querySelector('meta[name="theme-color"]');if(m)m.setAttribute("content",d?${JSON.stringify(BAR_COLORS.dark)}:${JSON.stringify(BAR_COLORS.light)})}catch(e){}`;
 
 let followingDevice = false;
 

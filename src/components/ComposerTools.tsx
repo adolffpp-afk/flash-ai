@@ -104,11 +104,12 @@ function Popover({
 const item =
   "flex w-full items-center gap-3 rounded-xl px-2.5 py-2 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06] disabled:cursor-not-allowed disabled:opacity-45";
 
-/** The + button: add a file, or take a photo on phones. */
-export function PlusMenu({ onFiles, onCamera }: { onFiles: () => void; onCamera: () => void }) {
+/** The + button: add a file, or take a photo on phones. `plain` makes it a paperclip with no background (Home). */
+export function PlusMenu({ onFiles, onCamera, plain = false }: { onFiles: () => void; onCamera: () => void; plain?: boolean }) {
   return (
     <Popover
       label="Add"
+      align={plain ? "right" : "left"}
       button={(open, toggle) => (
         <button
           type="button"
@@ -116,9 +117,13 @@ export function PlusMenu({ onFiles, onCamera }: { onFiles: () => void; onCamera:
           aria-expanded={open}
           aria-label="Add files and more"
           title="Add files and more"
-          className={`${round} bg-white/[0.06] text-zinc-200 hover:bg-white/[0.1] ${open ? "bg-white/[0.12]" : ""}`}
+          className={`${round} ${plain ? "text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100" : "bg-white/[0.06] text-zinc-200 hover:bg-white/[0.1]"} ${open ? "bg-white/[0.12]" : ""}`}
         >
-          <Icon d="M12 5v14 M5 12h14" className={`h-5 w-5 transition ${open ? "rotate-45" : ""}`} />
+          {plain ? (
+            <Icon d="M21 11.5l-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6l8-8" className="h-5 w-5" />
+          ) : (
+            <Icon d="M12 5v14 M5 12h14" className={`h-5 w-5 transition ${open ? "rotate-45" : ""}`} />
+          )}
         </button>
       )}
     >
@@ -152,6 +157,7 @@ export function ToolPicker({
   models,
   model,
   setModel,
+  compact = false,
 }: {
   choice: Choice;
   setChoice: (c: Choice) => void;
@@ -159,6 +165,8 @@ export function ToolPicker({
   models: Me["models"];
   model: string | undefined;
   setModel: (engine: Engine, id: string | undefined) => void;
+  // A sparkle at the start of Home's one-line message box; a picked tool shows its name beside it.
+  compact?: boolean;
 }) {
   const options = choice === "auto" ? [] : models.filter((m) => m.engine === choice);
   const picked = options.find((m) => m.id === model);
@@ -167,7 +175,20 @@ export function ToolPicker({
     <Popover
       label="Tools"
       shrink
-      button={(open, toggle) => (
+      button={(open, toggle) =>
+        compact ? (
+          <button
+            type="button"
+            onClick={toggle}
+            aria-expanded={open}
+            aria-label={`Choose a tool: ${choice === "auto" ? "Auto" : ENGINE_LABELS[choice]}`}
+            title="Choose a tool"
+            className={`inline-flex h-11 max-w-full min-w-0 items-center gap-1.5 overflow-hidden rounded-[14px] text-sm text-zinc-100 transition hover:bg-white/[0.06] ${choice === "auto" ? "w-11 justify-center" : "px-3"} ${open ? "bg-white/[0.08]" : ""}`}
+          >
+            <Icon d="M12 3.5l1.9 5.1 5.1 1.9-5.1 1.9-1.9 5.1-1.9-5.1-5.1-1.9 5.1-1.9z M18.5 15l.6 1.6 1.6.6-1.6.6-.6 1.6-.6-1.6-1.6-.6 1.6-.6z" className="h-[22px] w-[22px] shrink-0 text-violet-400 light:text-violet-500" />
+            {choice !== "auto" && <span className="truncate">{ENGINE_LABELS[choice]}</span>}
+          </button>
+        ) : (
         <button
           type="button"
           onClick={toggle}
@@ -180,7 +201,8 @@ export function ToolPicker({
           <span className={`min-w-0 truncate text-zinc-300 light:text-zinc-500 ${picked ? "" : "hidden @min-[440px]/composer:inline"}`}>{picked ? picked.label : choice === "auto" ? "Best tool" : ""}</span>
           <Icon d="M7 10l5 5 5-5" className="hidden h-4 w-4 shrink-0 text-zinc-500 @min-[380px]/composer:block" />
         </button>
-      )}
+        )
+      }
     >
       {(close) => (
         <>
@@ -278,7 +300,7 @@ function LevelBars({ level, className = "h-4 w-4" }: { level: Level; className?:
  * Flash's level of intelligence for writing, research and building: Auto, or one of the four
  * levels. Pictures, video, music and voice have their own models, so it hides for those tools.
  */
-export function LevelPicker({ level, setLevel }: { level: Level; setLevel: (level: Level) => void }) {
+export function LevelPicker({ level, setLevel, compact = false }: { level: Level; setLevel: (level: Level) => void; compact?: boolean }) {
   const current = LEVELS.find((l) => l.id === level) ?? LEVELS[0];
   const check = <Icon d="M5 12l5 5 9-10" className="ml-auto h-4 w-4 shrink-0 text-primary-soft" />;
   return (
@@ -294,11 +316,12 @@ export function LevelPicker({ level, setLevel }: { level: Level; setLevel: (leve
           aria-label={`Intelligence level: ${current.name}`}
           title="Choose Flash's level of intelligence"
           // In a narrow message box only the bars show, so it keeps room for the tool picker.
-          className={`inline-flex h-9 w-9 shrink-0 items-center justify-center gap-1.5 rounded-full text-sm text-zinc-200 transition hover:bg-white/[0.06] @min-[380px]/composer:h-10 @min-[380px]/composer:w-10 @min-[440px]/composer:w-auto @min-[440px]/composer:px-3 ${open ? "bg-white/[0.08]" : ""}`}
+          // On Home's one-line box the bars always show alone, like the paperclip and mic beside them.
+          className={`inline-flex h-9 w-9 shrink-0 items-center justify-center gap-1.5 rounded-full text-sm text-zinc-200 transition hover:bg-white/[0.06] @min-[380px]/composer:h-10 @min-[380px]/composer:w-10 ${compact ? "" : "@min-[440px]/composer:w-auto @min-[440px]/composer:px-3"} ${open ? "bg-white/[0.08]" : ""}`}
         >
           <LevelBars level={current.id} className={`h-4 w-4 shrink-0 ${current.id === "auto" ? "text-gold" : "text-primary-soft"}`} />
-          <span className="hidden @min-[440px]/composer:inline">{current.short}</span>
-          <Icon d="M7 10l5 5 5-5" className="hidden h-4 w-4 text-zinc-500 @min-[440px]/composer:block" />
+          {!compact && <span className="hidden @min-[440px]/composer:inline">{current.short}</span>}
+          {!compact && <Icon d="M7 10l5 5 5-5" className="hidden h-4 w-4 text-zinc-500 @min-[440px]/composer:block" />}
         </button>
       )}
     >
@@ -346,12 +369,14 @@ export function MicButton({
   onRecording,
   onListening,
   disabled,
+  plain = false,
 }: {
   onText: (text: string) => void;
   onRecording: (file: File) => void;
   // Tells Flash the mic is in use, so the "Hey Flash" listener waits.
   onListening?: (on: boolean) => void;
   disabled?: boolean;
+  plain?: boolean;
 }) {
   const [listening, setListening] = useState(false);
   const [error, setError] = useState("");
@@ -426,7 +451,11 @@ export function MicButton({
         aria-label={listening ? "Stop listening" : "Talk"}
         title={listening ? "Stop listening" : "Talk instead of typing"}
         className={`${round} ${
-          listening ? "animate-pulse bg-spark/20 text-spark-soft ring-1 ring-spark/40" : "bg-white/[0.06] text-zinc-200 hover:bg-white/[0.1]"
+          listening
+            ? "animate-pulse bg-spark/20 text-spark-soft ring-1 ring-spark/40"
+            : plain
+              ? "text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100"
+              : "bg-white/[0.06] text-zinc-200 hover:bg-white/[0.1]"
         }`}
       >
         <Icon d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3z M5 11a7 7 0 0 0 14 0 M12 18v3" />
@@ -445,7 +474,8 @@ export function MicButton({
  * elements (the keys): stopping re-renders at once, and a reused element would turn into the send
  * button mid-click and send whatever is typed in the composer.
  */
-export function SendButton({ busy, disabled, onStop }: { busy: boolean; disabled: boolean; onStop: () => void }) {
+export function SendButton({ busy, disabled, onStop, square = false }: { busy: boolean; disabled: boolean; onStop: () => void; square?: boolean }) {
+  const shape = square ? "inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] transition disabled:cursor-not-allowed disabled:opacity-60" : round;
   return busy ? (
     <button
       key="stop"
@@ -456,7 +486,7 @@ export function SendButton({ busy, disabled, onStop }: { busy: boolean; disabled
       }}
       aria-label="Stop"
       title="Stop"
-      className={`${round} bg-zinc-100 text-zinc-900 hover:bg-white`}
+      className={`${shape} bg-zinc-100 text-zinc-900 hover:bg-white`}
     >
       <span className="h-3.5 w-3.5 rounded-[3px] bg-current" />
     </button>
@@ -468,9 +498,9 @@ export function SendButton({ busy, disabled, onStop }: { busy: boolean; disabled
       aria-label="Send"
       title="Send"
       // Still the brand colours while there's nothing to send, only softer.
-      className={`${round.replace("disabled:opacity-40", "disabled:opacity-60")} bg-send text-on-brand shadow-[0_8px_20px_-10px_rgb(139_92_246/0.8)] hover:brightness-110 disabled:saturate-[.8]`}
+      className={`${shape.replace("disabled:opacity-40", "disabled:opacity-60")} bg-send text-on-brand shadow-[0_8px_20px_-10px_rgb(139_92_246/0.8)] hover:brightness-110 disabled:saturate-[.8]`}
     >
-      <Icon d="M12 19V5 M6 11l6-6 6 6" className="h-5 w-5" />
+      <Icon d={square ? "M7 17L17 7 M8.5 7H17v8.5" : "M12 19V5 M6 11l6-6 6 6"} className="h-5 w-5" />
     </button>
   );
 }
