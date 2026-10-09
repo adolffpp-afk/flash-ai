@@ -41,7 +41,8 @@ const PLACE_SMALL = "translate(32 32.5) scale(1.12) translate(-35.5 -32.5)";
 /**
  * The logo mark. `id` keeps the gradient ids unique when several marks share a page. `ring` draws the
  * thin glowing ring (too fine below about 40px); `tile` puts it on a dark emerald square, for icons;
- * `small` drops the spark and enlarges the F so it still reads at 16px.
+ * `small` drops the spark and enlarges the F so it still reads at 16px; `vivid` paints the F in the
+ * iridescent cyan, blue, violet and pink of Home (the sidebar logo and the orb).
  */
 export function BrandMark({
   size,
@@ -49,25 +50,36 @@ export function BrandMark({
   ring = true,
   tile = false,
   small = false,
+  vivid = false,
 }: {
   size: number;
   id?: string;
   ring?: boolean;
   tile?: boolean;
   small?: boolean;
+  vivid?: boolean;
 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden="true" focusable="false">
       <defs>
-        <linearGradient id={`${id}-f`} x1="0.05" y1="0.75" x2="1" y2="0.05">
-          <stop offset="0" stopColor="#f5c542" />
-          <stop offset="0.35" stopColor="#f6d39e" />
-          <stop offset="0.7" stopColor="#f5b6cf" />
-          <stop offset="1" stopColor="#e4c8f2" />
-        </linearGradient>
+        {vivid ? (
+          <linearGradient id={`${id}-f`} x1="0.85" y1="0" x2="0.2" y2="1">
+            <stop offset="0" stopColor="#5eeaf4" />
+            <stop offset="0.32" stopColor="#5b8cf6" />
+            <stop offset="0.62" stopColor="#9b6cf4" />
+            <stop offset="1" stopColor="#f472b6" />
+          </linearGradient>
+        ) : (
+          <linearGradient id={`${id}-f`} x1="0.05" y1="0.75" x2="1" y2="0.05">
+            <stop offset="0" stopColor="#f5c542" />
+            <stop offset="0.35" stopColor="#f6d39e" />
+            <stop offset="0.7" stopColor="#f5b6cf" />
+            <stop offset="1" stopColor="#e4c8f2" />
+          </linearGradient>
+        )}
         <linearGradient id={`${id}-arm`} x1="0" y1="0" x2="1" y2="0.6">
-          <stop offset="0" stopColor="#bcc4f6" />
-          <stop offset="1" stopColor="#a5eadb" />
+          <stop offset="0" stopColor={vivid ? "#f9a8d4" : "#bcc4f6"} />
+          <stop offset="1" stopColor={vivid ? "#fcd34d" : "#a5eadb"} />
         </linearGradient>
         <linearGradient id={`${id}-ring`} x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" stopColor="#34d399" />

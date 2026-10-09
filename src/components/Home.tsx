@@ -39,6 +39,8 @@ export const ICONS = {
   dots: "M6 12h.01 M12 12h.01 M18 12h.01",
   sliders: "M4 7h10 M18 7h2 M4 17h4 M12 17h8 M16 5v4 M10 15v4",
   sparkle: "M12 4l1.6 4.4L18 10l-4.4 1.6L12 16l-1.6-4.4L6 10l4.4-1.6z",
+  library: "M3.5 6.5a1 1 0 0 1 1-1h5l2 2.5h8a1 1 0 0 1 1 1v9.5a1 1 0 0 1-1 1h-15a1 1 0 0 1-1-1z",
+  bell: "M6 16.5V11a6 6 0 1 1 12 0v5.5l1.5 2h-15z M10 20.5a2 2 0 0 0 4 0",
   paperclip: "M20.5 11.5l-8.2 8.2a5.3 5.3 0 0 1-7.5-7.5l8.2-8.2a3.5 3.5 0 0 1 5 5l-8.2 8.2a1.8 1.8 0 0 1-2.5-2.5l7.6-7.6",
 } as const;
 
@@ -61,8 +63,9 @@ const HUES = {
 } as const;
 type Hue = keyof typeof HUES;
 
-// The bars in Usage & Plan, in the same order of colours.
-const BARS = ["bg-sky-400 light:bg-sky-500", "bg-teal-400 light:bg-teal-500", "bg-rose-400 light:bg-rose-500", "bg-violet-400 light:bg-violet-500"];
+// The bars in Usage & Plan, and their icons' colours: blue words, teal pictures, rose sound.
+const BARS = ["bg-sky-400 light:bg-sky-500", "bg-sky-400 light:bg-blue-500", "bg-teal-400 light:bg-emerald-500", "bg-rose-400 light:bg-rose-500"];
+const ROW_ICONS = ["text-sky-400 light:text-blue-500", "text-teal-400 light:text-emerald-500", "text-rose-400 light:text-rose-500"];
 
 // The pastel washes on the Your workspace tiles.
 const TILES = [
@@ -82,19 +85,19 @@ function Tile({ d, hue, size = "md" }: { d: string; hue: Hue; size?: "sm" | "md"
 }
 
 /** The F-bolt floating in an iridescent glass sphere, with a few sparkles around it (see .flash-orb in globals.css). */
-function Orb({ className = "" }: { className?: string }) {
+export function Orb({ className = "" }: { className?: string }) {
   return (
     <div className={`relative ${className}`} aria-hidden>
       <div className="flash-orb w-full">
-        <div className="absolute inset-0 flex items-center justify-center [filter:drop-shadow(0_0_22px_rgb(94_234_212/0.45))] light:[filter:drop-shadow(0_10px_18px_rgb(16_22_48/0.28))]">
-          <span className="block w-[62%] [&>svg]:h-auto [&>svg]:w-full">
-            <BrandMark size={256} id="flash-orb" ring={false} />
+        <div className="absolute inset-0 flex items-center justify-center [filter:drop-shadow(0_0_22px_rgb(94_234_212/0.45))] light:[filter:drop-shadow(0_0_18px_rgb(91_140_246/0.45))]">
+          <span className="block w-[70%] [&>svg]:h-auto [&>svg]:w-full">
+            <BrandMark size={256} id="flash-orb" ring={false} vivid />
           </span>
         </div>
       </div>
-      <Sparkle className="absolute -left-1 top-[12%] h-5 w-5 text-white/80 light:text-violet-300" />
+      <Sparkle className="absolute -left-1 top-[12%] h-5 w-5 text-white/80 light:text-paper light:[filter:drop-shadow(0_0_5px_rgb(139_92_246/0.9))]" />
       <Sparkle className="absolute right-[2%] top-[4%] h-3 w-3 text-teal-200/80 light:text-sky-300" />
-      <Sparkle className="absolute bottom-[10%] right-[-2%] h-4 w-4 text-violet-200/80 light:text-pink-300" />
+      <Sparkle className="absolute bottom-[4%] left-[8%] h-4 w-4 text-violet-200/80 light:text-pink-300" />
     </div>
   );
 }
@@ -223,28 +226,39 @@ export function Home({
   const overAllowance = me.credits > allowance;
 
   const chips: { label: string; d: string; hue: string; run: () => void; live: boolean }[] = [
-    { label: "Research", d: ICONS.search, hue: "text-violet-300 light:text-violet-600", run: () => onTool("search"), live: isLive("search") },
+    { label: "Deep Research", d: ICONS.search, hue: "text-violet-300 light:text-violet-600", run: () => onTool("search"), live: isLive("search") },
     { label: "Create Image", d: ICONS.image, hue: "text-teal-300 light:text-teal-600", run: () => onTool("image"), live: isLive("image") },
     { label: "Generate Video", d: ICONS.video, hue: "text-rose-300 light:text-rose-600", run: () => onTool("video"), live: isLive("video") },
     { label: "Analyze File", d: ICONS.file, hue: "text-sky-300 light:text-sky-600", run: onAttach, live: true },
-    { label: "Build an App", d: ICONS.app, hue: "text-orange-300 light:text-orange-600", run: () => onTool("app"), live: isLive("app") },
+  ];
+  // Everything else Flash makes, under More.
+  const more: { label: string; d: string; run: () => void; live: boolean }[] = [
+    { label: "Build an App", d: ICONS.app, run: () => onTool("app"), live: isLive("app") },
+    { label: "Make Slides", d: ICONS.template, run: () => onTool("slides"), live: isLive("slides") },
+    { label: "Write Code", d: ICONS.code, run: () => onTool("code"), live: isLive("code") },
+    { label: "Docs & Sheets", d: ICONS.file, run: () => onTool("docs"), live: isLive("docs") },
+    { label: "Make Music", d: ICONS.voice, run: () => onTool("music"), live: isLive("music") },
+    { label: "Voice-over", d: ICONS.voice, run: () => onTool("voice"), live: isLive("voice") },
+    { label: "Transcribe", d: ICONS.file, run: () => onTool("transcribe"), live: isLive("transcribe") },
+    { label: "Translate", d: ICONS.globe, run: () => onTool("translate"), live: isLive("translate") },
+    { label: "Start from a template", d: ICONS.template, run: onTemplates, live: true },
   ];
 
   const tools: { title: string; about: string; d: string; hue: Hue; run: () => void; live: boolean }[] = [
-    { title: "AI Chat", about: "Instant answers and insights", d: ICONS.chat, hue: "blue", run: () => onTool("auto"), live: true },
-    { title: "Voice", about: "Talk and transcribe", d: ICONS.voice, hue: "teal", run: onTalk, live: true },
-    { title: "Image", about: "Generate and edit visuals", d: ICONS.image, hue: "orange", run: () => onTool("image"), live: isLive("image") },
-    { title: "Code", about: "Build, debug and ship", d: ICONS.code, hue: "violet", run: () => onTool("code"), live: isLive("code") },
-    { title: "Research", about: "Up-to-date answers with sources", d: ICONS.search, hue: "pink", run: () => onTool("search"), live: isLive("search") },
+    { title: "AI Chat", about: "Get instant answers and deep insights", d: ICONS.chat, hue: "blue", run: () => onTool("auto"), live: true },
+    { title: "Voice", about: "Talk, transcribe and create with voice", d: ICONS.voice, hue: "teal", run: onTalk, live: true },
+    { title: "Image", about: "Generate and edit stunning visuals", d: ICONS.image, hue: "orange", run: () => onTool("image"), live: isLive("image") },
+    { title: "Code", about: "Build, debug and ship faster", d: ICONS.code, hue: "violet", run: () => onTool("code"), live: isLive("code") },
+    { title: "Research", about: "Deep research and credible sources", d: ICONS.search, hue: "pink", run: () => onTool("search"), live: isLive("search") },
   ];
 
   const quick: { label: string; d: string; run: () => void; live: boolean }[] = [
-    { label: "New chat", d: ICONS.chat, run: () => onTool("auto"), live: true },
+    { label: "New Chat", d: ICONS.chat, run: () => onTool("auto"), live: true },
     { label: "Talk with Flash", d: ICONS.voice, run: onTalk, live: true },
-    { label: "Generate image", d: ICONS.image, run: () => onTool("image"), live: isLive("image") },
-    { label: "Create document", d: ICONS.file, run: () => onTool("docs"), live: isLive("docs") },
-    { label: "Build an app", d: ICONS.app, run: () => onTool("app"), live: isLive("app") },
-    { label: "Start from a template", d: ICONS.template, run: onTemplates, live: true },
+    { label: "Generate Image", d: ICONS.image, run: () => onTool("image"), live: isLive("image") },
+    { label: "Create Document", d: ICONS.file, run: () => onTool("docs"), live: isLive("docs") },
+    { label: "Build an App", d: ICONS.app, run: () => onTool("app"), live: isLive("app") },
+    { label: "Start from a Template", d: ICONS.template, run: onTemplates, live: true },
   ];
 
   // Renamed chats show their new name, and deleted ones go.
@@ -252,7 +266,14 @@ export function Home({
     const p = projects.find((x) => x.id === c.id);
     return p ? [{ ...c, name: p.name, pinned: Boolean(p.pinned) }] : [];
   });
-  const used = usage ? [...usage.tools].sort((a, b) => b.credits - a.credits).slice(0, 3) : [];
+  // This month's credits by kind of work: words (chats, research, code, docs, apps), pictures and video, and sound.
+  const kindOf = (engine: string) => (["image", "video"].includes(engine) ? "visual" : ["voice", "music", "transcribe"].includes(engine) ? "audio" : "words");
+  const spent = (kind: string) => (usage?.tools ?? []).filter((t) => kindOf(t.engine) === kind).reduce((sum, t) => sum + t.credits, 0);
+  const rows = [
+    { label: "AI Messages", d: ICONS.chat, credits: spent("words") },
+    { label: "Images & Video", d: ICONS.image, credits: spent("visual") },
+    { label: "Voice & Audio", d: ICONS.voice, credits: spent("audio") },
+  ];
 
   return (
     <div className="mx-auto w-full max-w-[1600px] px-4 pb-10 pt-4 sm:px-6 sm:pt-6 lg:px-8">
@@ -265,20 +286,20 @@ export function Home({
           {/* Hero: the orb beside the question, and the message box under both, as wide as it can be. */}
           <section className="@container/hero glass-raised relative z-10 rounded-[28px] has-[[role=menu]]:z-40">
             <div className="pointer-events-none absolute inset-0 rounded-[28px] bg-iris-wash" />
-            <div className="relative grid items-center gap-x-6 gap-y-5 p-4 sm:p-8 @min-[640px]/hero:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)] @min-[640px]/hero:gap-y-6 lg:px-9 lg:pt-9">
-              <Orb className="mx-auto w-28 sm:w-36 @min-[640px]/hero:w-full @min-[640px]/hero:max-w-[230px]" />
+            <div className="relative grid items-center gap-x-6 gap-y-5 p-4 sm:p-8 @min-[640px]/hero:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] @min-[640px]/hero:gap-y-6 @min-[640px]/hero:px-9 @min-[640px]/hero:pb-6 @min-[640px]/hero:pt-12">
+              <Orb className="mx-auto w-28 sm:w-36 @min-[640px]/hero:row-span-2 @min-[640px]/hero:w-[86%] @min-[640px]/hero:max-w-[260px] @min-[640px]/hero:-translate-y-3" />
               <div className="min-w-0">
-                <p className="text-xs font-semibold uppercase tracking-[0.34em] text-zinc-300">Flash AI</p>
+                <p className="text-[13px] font-semibold uppercase tracking-[0.34em] text-zinc-300">Flash AI</p>
                 {/* Two lines whatever the width: the type scales with the hero, and each phrase stays whole. */}
-                <h1 className="mt-3 text-[clamp(32px,9.5cqw,48px)] font-bold leading-[1.04] tracking-[-0.035em] text-white @min-[640px]/hero:text-[clamp(40px,6.8cqw,58px)]">
+                <h1 className="mt-3 text-[clamp(32px,9.5cqw,48px)] font-bold leading-[1] tracking-[-0.035em] text-white @min-[640px]/hero:text-[clamp(40px,6.5cqw,66px)]">
                   <span className="whitespace-nowrap">What will you</span> <span className="whitespace-nowrap text-iris">create today?</span>
                 </h1>
-                <p className="mt-3 text-[15px] text-zinc-400 sm:text-lg">Chat, create, generate, analyze and build: all in one place.</p>
+                <p className="mt-4 text-[15px] text-zinc-400 sm:text-[17px]">Chat, create, generate, analyze, and build — all in one place.</p>
               </div>
-              <div className="min-w-0 @min-[640px]/hero:col-span-2 @min-[760px]/hero:pl-[10%] @min-[1100px]/hero:pl-[16%]">
+              <div className="relative z-10 min-w-0 @min-[640px]/hero:col-start-2 @min-[760px]/hero:-ml-[20%]">
                 {composer}
                 <div
-                  className="mt-3 flex gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none] @min-[640px]/hero:flex-wrap @min-[640px]/hero:overflow-visible"
+                  className="mt-3 flex flex-wrap gap-2 @min-[640px]/hero:gap-2.5 @min-[640px]/hero:px-1"
                   aria-label="Quick starts"
                 >
                   {chips
@@ -287,12 +308,42 @@ export function Home({
                       <button
                         key={c.label}
                         onClick={c.run}
-                        className="glass inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-[12.5px] text-zinc-200 shadow-none transition hover:text-white hover:brightness-110"
+                        className="glass inline-flex h-[34px] shrink-0 items-center gap-1.5 rounded-full px-3 text-[12.5px] text-zinc-200 shadow-none transition hover:text-white hover:brightness-110"
                       >
-                        <Icon d={c.d} className={`h-3.5 w-3.5 ${c.hue}`} />
+                        <Icon d={c.d} className={`h-4 w-4 ${c.hue}`} />
                         {c.label}
                       </button>
                     ))}
+                  <div ref={menu === "more" ? menuRef : undefined} className="relative shrink-0">
+                    <button
+                      onClick={() => setMenu(menu === "more" ? "" : "more")}
+                      aria-expanded={menu === "more"}
+                      aria-haspopup="menu"
+                      className="glass inline-flex h-[34px] items-center gap-1.5 rounded-full px-3 text-[12.5px] text-zinc-200 shadow-none transition hover:text-white hover:brightness-110"
+                    >
+                      More <Icon d={ICONS.down} className="h-3.5 w-3.5 text-zinc-400" />
+                    </button>
+                    {menu === "more" && (
+                      <div ref={showWhole} role="menu" aria-label="More tools" className="absolute right-0 top-full z-30 mt-2 w-56 rounded-2xl border border-white/10 bg-zinc-900 p-1.5 shadow-2xl light:shadow-black/10">
+                        {more
+                          .filter((m) => m.live)
+                          .map((m) => (
+                            <button
+                              key={m.label}
+                              role="menuitem"
+                              onClick={() => {
+                                setMenu("");
+                                m.run();
+                              }}
+                              className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06]"
+                            >
+                              <Icon d={m.d} className="h-[18px] w-[18px] text-zinc-400" />
+                              {m.label}
+                            </button>
+                          ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -310,19 +361,20 @@ export function Home({
                   className="glass group flex min-w-0 flex-col items-start gap-3 rounded-3xl p-3.5 text-left transition hover:-translate-y-0.5 hover:brightness-110 sm:p-4"
                 >
                   <Tile d={t.d} hue={t.hue} />
-                  <span className="block w-full min-w-0">
-                    <span className="flex items-center gap-1">
-                      <span className="min-w-0 flex-1 truncate text-[17px] font-semibold tracking-tight text-white">{t.title}</span>
-                      <Icon d={ICONS.chevron} className="h-4 w-4 shrink-0 text-zinc-500 transition group-hover:translate-x-0.5 group-hover:text-zinc-200" />
+                  <span className="flex w-full min-w-0 items-center gap-1.5">
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[17px] font-semibold tracking-tight text-white">{t.title}</span>
+                      <span className="mt-0.5 line-clamp-2 text-[13px] leading-snug text-zinc-400">{t.about}</span>
                     </span>
-                    <span className="mt-0.5 line-clamp-2 text-[13px] leading-snug text-zinc-400">{t.about}</span>
+                    {/* Only when the cards are wide enough to keep their names whole beside it. */}
+                    <Icon d={ICONS.chevron} className="hidden h-4 w-4 shrink-0 text-zinc-500 transition group-hover:translate-x-0.5 group-hover:text-zinc-200 @max-[519px]/left:block @min-[860px]/left:block" />
                   </span>
                 </button>
               ))}
           </div>
 
           <div className="grid gap-5 @min-[700px]/left:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
-            <Card title="Recent conversations" action={chats.length ? <ViewAll onClick={onViewChats} /> : undefined}>
+            <Card title="Recent Conversations" action={chats.length ? <ViewAll onClick={onViewChats} /> : undefined}>
               {!recent ? (
                 <p className="py-6 text-center text-sm text-zinc-500">Loading…</p>
               ) : !chats.length ? (
@@ -380,7 +432,7 @@ export function Home({
               )}
             </Card>
 
-            <Card title="Your workspace" action={sites?.length ? <ViewAll onClick={onApps} /> : undefined}>
+            <Card title="Your Workspace" action={sites?.length ? <ViewAll onClick={onApps} /> : undefined}>
               {!sites ? (
                 <p className="py-6 text-center text-sm text-zinc-500">Loading…</p>
               ) : (
@@ -394,27 +446,31 @@ export function Home({
                       <Icon d={ICONS.globe} className="h-5 w-5 text-sky-300 light:text-sky-600" />
                       <span className="w-full min-w-0">
                         <span className="block truncate text-sm font-semibold text-zinc-100">{s.title || s.slug}</span>
-                        {(s.unread > 0 || s.views > 0) && (
-                          <span className="block truncate text-xs text-zinc-400">
-                            {s.unread ? `${s.unread} new ${s.unread === 1 ? "message" : "messages"}` : `${s.views.toLocaleString()} ${s.views === 1 ? "visit" : "visits"}`}
-                          </span>
-                        )}
-                        <span className="block truncate text-xs text-zinc-400">Updated {shortAgo(s.updated_at, now.getTime())}</span>
+                        <span className="block truncate text-xs text-zinc-400">
+                          {s.unread
+                            ? `${s.unread} new ${s.unread === 1 ? "message" : "messages"} · `
+                            : s.views
+                              ? `${s.views.toLocaleString()} ${s.views === 1 ? "visit" : "visits"} · `
+                              : ""}
+                          Updated {shortAgo(s.updated_at, now.getTime())}
+                        </span>
                       </span>
                     </button>
                   ))}
-                  {sites.length < 2 &&
+                  {sites.length < 4 &&
                     [
                       { title: "Build a website", about: "Publish in one click", d: ICONS.globe, run: () => onTool("app"), live: isLive("app") },
                       { title: "Make slides", about: "From one sentence", d: ICONS.template, run: () => onTool("slides"), live: isLive("slides") },
+                      { title: "Create an image", about: "Logos, posters and photos", d: ICONS.image, run: () => onTool("image"), live: isLive("image") },
+                      { title: "Use a template", about: "Plans, invoices, resumes", d: ICONS.file, run: onTemplates, live: true },
                     ]
                       .filter((t) => t.live)
-                      .slice(0, 2 - sites.length)
+                      .slice(0, 4 - sites.length)
                       .map((t, i) => (
                         <button
                           key={t.title}
                           onClick={t.run}
-                          className={`flex min-w-0 flex-col items-start gap-3 rounded-2xl border border-dashed border-white/15 bg-gradient-to-br p-3.5 text-left transition hover:brightness-110 ${TILES[(i + 1) % TILES.length]}`}
+                          className={`flex min-w-0 flex-col items-start gap-3 rounded-2xl border border-dashed border-white/15 bg-gradient-to-br p-3.5 text-left transition hover:brightness-110 ${TILES[(sites.length + i) % TILES.length]}`}
                         >
                           <Icon d={t.d} className="h-5 w-5 text-violet-300 light:text-violet-600" />
                           <span className="w-full min-w-0">
@@ -459,22 +515,21 @@ export function Home({
                   <div className="h-full rounded-full bg-gradient-to-r from-teal-400 to-violet-400 light:from-sky-500 light:to-violet-500" style={{ width: `${Math.min(100, Math.max(3, (me.credits / Math.max(1, allowance)) * 100))}%` }} />
                 </div>
               </li>
-              {used.map((t, i) => (
-                <li key={t.engine}>
+              {rows.map((r, i) => (
+                <li key={r.label}>
                   <div className="flex items-center gap-2.5 text-sm">
-                    <span className="w-[18px] shrink-0 text-center text-zinc-400">
-                      {t.engine in ENGINE_LABELS ? <EngineGlyph engine={t.engine as Engine} /> : <Icon d={ICONS.chat} className="h-[18px] w-[18px]" />}
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-zinc-200">{t.engine === "companion" ? "Ask Flash" : (ENGINE_LABELS[t.engine as Engine] ?? t.engine)}</span>
-                    <span className="shrink-0 tabular-nums text-zinc-400">{t.credits.toLocaleString()} credits</span>
+                    <Icon d={r.d} className={`h-[18px] w-[18px] shrink-0 ${ROW_ICONS[i]}`} />
+                    <span className="min-w-0 flex-1 truncate text-zinc-200">{r.label}</span>
+                    <span className="shrink-0 tabular-nums text-zinc-400">{usage ? `${r.credits.toLocaleString()} credits` : "…"}</span>
                   </div>
                   <div className="ml-7 mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.08]">
-                    <div className={`h-full rounded-full ${BARS[(i + 1) % BARS.length]}`} style={{ width: `${Math.min(100, Math.max(3, (t.credits / Math.max(1, allowance)) * 100))}%` }} />
+                    {r.credits > 0 && (
+                      <div className={`h-full rounded-full ${BARS[i + 1]}`} style={{ width: `${Math.min(100, Math.max(3, (r.credits / Math.max(1, allowance)) * 100))}%` }} />
+                    )}
                   </div>
                 </li>
               ))}
             </ul>
-            {usage && !used.length && <p className="mt-4 text-sm text-zinc-500">Nothing used yet this month.</p>}
             <button onClick={onUsage} className="mt-4 inline-flex items-center gap-1 text-sm text-primary-soft transition hover:text-white">
               See all usage <Icon d={ICONS.arrow} className="h-3.5 w-3.5" />
             </button>
@@ -485,17 +540,17 @@ export function Home({
               <div className="pointer-events-none absolute inset-0 bg-iris-wash opacity-90" />
               <div className="relative">
                 <h3 className="flex items-center gap-2 text-[17px] font-semibold tracking-tight text-white">
-                  <span aria-hidden>🌟</span> Unlock more with Flash Pro
+                  <span aria-hidden>🌟</span> Unlock More with Flash Pro
                 </h3>
                 <p className="mt-1.5 text-sm text-zinc-300">3,000 credits a month for apps, slides, research and more. Unused credits carry over.</p>
                 <button onClick={onPlans} className="mt-4 inline-flex h-10 items-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-on-brand transition hover:brightness-110">
-                  Upgrade now <Icon d={ICONS.arrow} className="h-4 w-4" />
+                  Upgrade Now <Icon d={ICONS.arrow} className="h-4 w-4" />
                 </button>
               </div>
             </section>
           )}
 
-          <Card title="Quick tools" action={<Icon d={ICONS.sliders} className="h-5 w-5 text-zinc-500" />}>
+          <Card title="Quick Tools" action={<Icon d={ICONS.sliders} className="h-5 w-5 text-zinc-500" />}>
             <ul className="-mx-1">
               {quick
                 .filter((q) => q.live)
@@ -514,23 +569,4 @@ export function Home({
       </div>
     </div>
   );
-}
-
-/** An engine's icon alone, without its tile, for the usage list. */
-function EngineGlyph({ engine }: { engine: Engine }) {
-  const d: Partial<Record<Engine, string>> = {
-    text: ICONS.chat,
-    search: ICONS.search,
-    code: ICONS.code,
-    image: ICONS.image,
-    video: ICONS.video,
-    voice: ICONS.voice,
-    app: ICONS.app,
-    docs: ICONS.file,
-    slides: ICONS.template,
-    music: ICONS.voice,
-    transcribe: ICONS.file,
-    translate: ICONS.globe,
-  };
-  return <Icon d={d[engine] ?? ICONS.chat} className="inline h-[18px] w-[18px]" />;
 }

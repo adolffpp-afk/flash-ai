@@ -21,12 +21,14 @@ import { OFFICE_TYPES, officeKind, officeText } from "@/lib/office";
 import { MAX_PDF_MB, pdfText } from "@/lib/pdf-text";
 import { addAttachment } from "@/lib/attachments";
 import { MAX_QUEUE, recentTurns, type CompanionContext } from "@/lib/companion";
-import type { Template, TemplateValues } from "@/lib/templates";
+import { TEMPLATES, type Template, type TemplateValues } from "@/lib/templates";
 import { ENGINES, ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types";
 import { api, newId, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
 import type { ChatHit } from "@/lib/server/search";
 import { BoltIcon, BrandMark } from "@/app/brand";
 import { Greeting, Home, ICONS, Icon } from "./Home";
+import { Bell } from "./Bell";
+import { EngineIcon } from "./EngineIcon";
 import { LevelPicker, MenusOpenDown, MicButton, PlusMenu, SendButton, TalkButton, ToolPicker, type Choice } from "./ComposerTools";
 import { VoiceMode, type VoiceAnswer } from "./VoiceMode";
 import { useWakeWord } from "./useWakeWord";
@@ -326,7 +328,7 @@ export function Flash({
   const [showInstructions, setShowInstructions] = useState(false);
   // The Settings tab to show, or null when Settings is closed.
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(null);
-  const [showCreations, setShowCreations] = useState(false);
+  const [showCreations, setShowCreations] = useState<"" | "all" | "image">("");
   // The templates window: "" shows them all, a template's id opens its form.
   const [templates, setTemplates] = useState<string | null>(null);
   const [showApps, setShowApps] = useState(false);
@@ -1079,7 +1081,7 @@ export function Flash({
       if (tabs.includes(page)) setSettingsTab(settingsTabFor(page));
       else if (page === "credits") setShowCredits(true);
       else if (page === "invite") setShowInvite(true);
-      else if (page === "creations") setShowCreations(true);
+      else if (page === "creations") setShowCreations("all");
       else if (page === "websites") setShowApps(true);
       else if (page === "instructions") setShowInstructions(true);
       else if (page === "templates") setTemplates("");
@@ -1188,6 +1190,10 @@ export function Flash({
   const inChats = projectQuery.trim().length >= 2 ? chatHits.filter((h) => h.snippet && !sorted.some((p) => p.id === h.id)) : [];
   // Engines whose AI provider isn't set up yet show as coming soon, and light up once /api/status says so.
   const isLive = (e: Engine) => !status || status[e];
+  // The search on Home also finds tools ("image") and ready-made prompts ("invoice").
+  const query = projectQuery.trim().toLowerCase();
+  const toolHits = query ? ENGINES.filter((e) => isLive(e) && ENGINE_LABELS[e].toLowerCase().includes(query)) : [];
+  const promptHits = query ? TEMPLATES.filter((t) => t.name.toLowerCase().includes(query)) : [];
   // The one-tap buttons for attached photos (Copy the text, Remove background…).
   const photoActions = photoActionsFor(files.map((f) => f.mediaType), isLive);
   const pickedNow = picked && picked.projectId === active?.id ? picked : null;
@@ -1317,13 +1323,52 @@ export function Flash({
       onClose={() => setVoice(null)}
     />
   );
+  // The words of the message, shared by Home's one-line box and the chat's two-row one.
+  const messageBox = (
+    <textarea
+      ref={inputRef}
+      value={input}
+      onChange={(e) => setInput(e.target.value)}
+      onPaste={(e) => {
+        const pasted = [...e.clipboardData.files];
+        if (pasted.length) {
+          e.preventDefault();
+          attachAll(pasted);
+        }
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+          e.preventDefault();
+          send(input);
+        }
+      }}
+      rows={1}
+      placeholder={
+        pickedNow
+          ? "Say what to change about it…"
+          : photoActions.length
+          ? files.length > 1
+            ? "Ask about these photos, or say how to combine them…"
+            : "Ask about it, say what to change, or tap a button above…"
+          : above && changesPictures(choice)
+            ? "Say what to change in the picture, or ask anything…"
+            : choice === "auto"
+            ? isHome
+              ? "Ask anything, create anything…"
+              : "Ask Flash anything…"
+            : `Ask ${ENGINE_LABELS[choice]}…`
+      }
+      className={`block max-h-48 min-h-[44px] w-full resize-none bg-transparent text-[15px] outline-none placeholder:text-zinc-200 light:placeholder:text-zinc-500 ${isHome ? "min-w-0 flex-1 px-1.5 py-[11px] placeholder-shown:overflow-hidden placeholder-shown:whitespace-nowrap" : "px-2.5 pb-1 pt-2"}`}
+      aria-label="Message"
+    />
+  );
   const form = (
     <form
       onSubmit={(e) => {
         e.preventDefault();
         send(input);
       }}
-      className="glass-raised @container/composer relative z-10 rounded-[26px] p-2.5 transition focus-within:border-white/25 has-[[role=menu]]:z-40"
+      className={`glass-raised @container/composer relative z-10 transition focus-within:border-white/25 has-[[role=menu]]:z-40 ${isHome ? "rounded-[20px] p-1.5" : "rounded-[26px] p-2.5"}`}
     >
       {pickedNow && (
         <div className="mb-1 ml-2 mt-1 inline-flex max-w-full items-center gap-2 rounded-lg bg-primary/15 px-3 py-1 text-xs text-primary-soft">
@@ -1378,55 +1423,23 @@ export function Flash({
           ))}
         </div>
       )}
-      <textarea
-        ref={inputRef}
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        onPaste={(e) => {
-          const pasted = [...e.clipboardData.files];
-          if (pasted.length) {
-            e.preventDefault();
-            attachAll(pasted);
-          }
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-            e.preventDefault();
-            send(input);
-          }
-        }}
-        rows={1}
-        placeholder={
-          pickedNow
-            ? "Say what to change about it…"
-            : photoActions.length
-            ? files.length > 1
-              ? "Ask about these photos, or say how to combine them…"
-              : "Ask about it, say what to change, or tap a button above…"
-            : above && changesPictures(choice)
-              ? "Say what to change in the picture, or ask anything…"
-              : choice === "auto"
-              ? isHome
-                ? "Ask anything, create anything…"
-                : "Ask Flash anything…"
-              : `Ask ${ENGINE_LABELS[choice]}…`
-        }
-        className="block max-h-48 min-h-[44px] w-full resize-none bg-transparent px-2.5 pb-1 pt-2 text-[15px] outline-none placeholder:text-zinc-200 light:placeholder:text-zinc-500"
-        aria-label="Message"
-      />
-      <div className="mt-1 flex items-center gap-2">
-        <PlusMenu onFiles={() => fileRef.current?.click()} onCamera={() => cameraRef.current?.click()} />
-        <ToolPicker
-          choice={choice}
-          setChoice={setChoice}
-          isLive={isLive}
-          models={me.models}
-          model={choice === "auto" ? undefined : models[choice]}
-          setModel={(engine, id) => setModels((all) => ({ ...all, [engine]: id }))}
-        />
-        <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
-          {(choice === "auto" || LEVEL_ENGINES.includes(choice)) && <LevelPicker level={level} setLevel={setLevel} />}
+      {isHome ? (
+        // Home: one line, like a search box: the tool sparkle, the words, then add, talk and send.
+        <div className="flex items-end gap-1">
+          <ToolPicker
+            compact
+            choice={choice}
+            setChoice={setChoice}
+            isLive={isLive}
+            models={me.models}
+            model={choice === "auto" ? undefined : models[choice]}
+            setModel={(engine, id) => setModels((all) => ({ ...all, [engine]: id }))}
+          />
+          {messageBox}
+          {(choice === "auto" || LEVEL_ENGINES.includes(choice)) && <LevelPicker compact level={level} setLevel={setLevel} />}
+          <PlusMenu plain onFiles={() => fileRef.current?.click()} onCamera={() => cameraRef.current?.click()} />
           <MicButton
+            plain
             disabled={busy}
             onText={(text) => {
               setInput((v) => (v.trim() ? `${v.trimEnd()} ${text}` : text));
@@ -1435,14 +1448,42 @@ export function Flash({
             onRecording={(file) => attach(file)}
             onListening={setDictating}
           />
-          <TalkButton onTalk={() => setVoice({ woke: false })} waking={wakeState === "listening"} />
-          <SendButton busy={busy} onStop={stop} disabled={!input.trim() && !attachment} />
+          <SendButton square busy={busy} onStop={stop} disabled={!input.trim() && !attachment} />
         </div>
-      </div>
+      ) : (
+        <>
+          {messageBox}
+          <div className="mt-1 flex items-center gap-2">
+            <PlusMenu onFiles={() => fileRef.current?.click()} onCamera={() => cameraRef.current?.click()} />
+            <ToolPicker
+              choice={choice}
+              setChoice={setChoice}
+              isLive={isLive}
+              models={me.models}
+              model={choice === "auto" ? undefined : models[choice]}
+              setModel={(engine, id) => setModels((all) => ({ ...all, [engine]: id }))}
+            />
+            <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
+              {(choice === "auto" || LEVEL_ENGINES.includes(choice)) && <LevelPicker level={level} setLevel={setLevel} />}
+              <MicButton
+                disabled={busy}
+                onText={(text) => {
+                  setInput((v) => (v.trim() ? `${v.trimEnd()} ${text}` : text));
+                  inputRef.current?.focus();
+                }}
+                onRecording={(file) => attach(file)}
+                onListening={setDictating}
+              />
+              <TalkButton onTalk={() => setVoice({ woke: false })} waking={wakeState === "listening"} />
+              <SendButton busy={busy} onStop={stop} disabled={!input.trim() && !attachment} />
+            </div>
+          </div>
+        </>
+      )}
     </form>
   );
   // A page (Home, AI Chat) is marked as the current one; a panel that opens over it (Voice) as pressed.
-  const navItem = (label: string, d: string, on: boolean, run: () => void, panel = false) => (
+  const navItem = (label: string, d: string, on: boolean, run: () => void, panel = false, muted = false) => (
     <button
       key={label}
       onClick={() => {
@@ -1451,15 +1492,17 @@ export function Flash({
       }}
       aria-current={on && !panel ? "page" : undefined}
       aria-pressed={panel ? on : undefined}
-      className={`flex h-11 w-full items-center gap-3.5 rounded-2xl px-3.5 text-left text-[15px] transition ${
+      className={`flex h-12 w-full items-center gap-4 rounded-2xl px-4 text-left text-[16px] transition ${
         on && !panel
           ? "bg-nav-active font-semibold text-white"
           : on
             ? "bg-white/[0.06] font-semibold text-white"
-            : "text-zinc-300 hover:bg-white/[0.05] hover:text-white"
+            : muted
+              ? "text-zinc-400 hover:bg-white/[0.05] hover:text-white"
+              : "text-zinc-300 hover:bg-white/[0.05] hover:text-white"
       }`}
     >
-      <Icon d={d} className="h-[22px] w-[22px] shrink-0" />
+      <Icon d={d} className="h-6 w-6 shrink-0" />
       {label}
     </button>
   );
@@ -1468,38 +1511,41 @@ export function Flash({
     <div className="flex h-full">
       {/* Sidebar */}
       <aside
-        className={`${sidebar ? "flex" : "hidden"} fixed inset-0 z-[35] w-full flex-col overflow-y-auto bg-zinc-950 md:static md:m-3 md:mr-0 md:flex md:w-[248px] md:shrink-0 md:rounded-[26px] md:bg-transparent md:glass`}
+        className={`${sidebar ? "flex" : "hidden"} fixed inset-0 z-[35] w-full flex-col overflow-y-auto bg-zinc-950 md:static md:m-3 md:mr-0 md:flex md:w-[256px] md:shrink-0 md:rounded-[26px] md:bg-transparent md:glass`}
       >
-        <div className="flex items-start justify-between px-5 pb-1 pt-5">
-          <button onClick={goHome} className="flex items-center gap-2.5 text-left" aria-label="Flash AI, home">
-            <span className="light:[filter:drop-shadow(0_1px_1.5px_rgb(16_22_48/0.35))]">
-              <BrandMark size={40} id="flash-side" ring={false} />
+        <div className="flex items-start justify-between px-5 pb-1 pt-6">
+          <button onClick={goHome} className="flex items-center gap-2 text-left" aria-label="Flash AI, home">
+            <span className="-ml-1 [filter:drop-shadow(0_4px_10px_rgb(91_140_246/0.35))]">
+              <BrandMark size={56} id="flash-side" ring={false} vivid />
             </span>
             <span>
-              <span className="block text-[20px] font-bold leading-none tracking-tight text-white">
+              <span className="block whitespace-nowrap text-[28px] font-bold leading-none tracking-tight text-white">
                 FLASH <span className="font-light">AI</span>
               </span>
-              <span className="mt-1.5 block text-[11px] text-zinc-400">One app. Infinite possibilities.</span>
+              <span className="mt-1.5 block whitespace-nowrap text-[11.5px] text-zinc-400">One App. Infinite Possibilities.</span>
             </span>
           </button>
           <button className="mt-1 text-zinc-400 md:hidden" onClick={() => setSidebar(false)} aria-label="Close menu">
             ✕
           </button>
         </div>
-        <nav aria-label="Flash" className="mt-4 space-y-1 px-3">
+        <nav aria-label="Flash" className="mt-7 space-y-1.5 px-3">
           {navItem("Home", ICONS.home, isHome, goHome)}
           {navItem("AI Chat", ICONS.chat, !isHome, openChats)}
           {navItem("Create", ICONS.create, false, () => setTemplates(""))}
           {navItem("Voice", ICONS.voice, Boolean(voice), () => setVoice({ woke: false }), true)}
-          {navItem("Images", ICONS.images, false, () => setShowCreations(true))}
+          {navItem("Images", ICONS.images, false, () => setShowCreations("image"))}
           {navItem("Workspace", ICONS.workspace, false, () => setShowApps(true))}
         </nav>
-        <div className="mx-5 my-3 border-t border-white/[0.07]" />
-        <nav aria-label="Brand and settings" className="space-y-1 px-3">
-          {navItem("Brand Hub", ICONS.brand, false, () => setSettingsTab("brand"))}
-          {navItem("Settings", ICONS.settings, false, () => setSettingsTab("general"))}
+        <div className="mx-5 my-4 border-t border-white/[0.07]" />
+        <nav aria-label="Library and settings" className="space-y-1 px-3">
+          {navItem("Library", ICONS.library, false, () => setShowCreations("all"), false, true)}
+          {navItem("Brand Hub", ICONS.brand, false, () => setSettingsTab("brand"), false, true)}
+          {navItem("Settings", ICONS.settings, false, () => setSettingsTab("general"), false, true)}
         </nav>
-        <div className="mt-4 flex items-center justify-between px-5">
+        {/* Home lists the chats itself, so on a computer its sidebar stays as calm as the menu above. */}
+        {isHome && <div className="hidden md:block md:flex-1" />}
+        <div className={`mt-4 flex items-center justify-between px-5 ${isHome ? "md:hidden" : ""}`}>
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-500">Chats</p>
           <button
             onClick={() => {
@@ -1526,7 +1572,7 @@ export function Flash({
             />
           </div>
         )}
-        <nav aria-label="Chats" className="mt-1.5 shrink-0 space-y-0.5 px-3 md:min-h-[7.5rem] md:flex-1 md:shrink md:overflow-y-auto">
+        <nav aria-label="Chats" className={`mt-1.5 shrink-0 space-y-0.5 px-3 md:min-h-[7.5rem] md:flex-1 md:shrink md:overflow-y-auto ${isHome ? "md:hidden" : ""}`}>
           {projectQuery.trim() && !sorted.length && !inChats.length && <p className="px-2 py-1.5 text-xs text-zinc-500">Nothing matches.</p>}
           {sorted.map((p) => (
             <div
@@ -1600,19 +1646,19 @@ export function Flash({
                   }}
                   className="mt-3 inline-flex h-9 items-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-on-brand transition hover:brightness-110"
                 >
-                  Get started <Icon d={ICONS.arrow} className="h-4 w-4" />
+                  Get Started <Icon d={ICONS.arrow} className="h-4 w-4" />
                 </button>
               </div>
             </div>
           )}
           <button
             onClick={() => setShowInvite(true)}
-            className="w-full rounded-lg px-2 py-1 text-left text-xs text-gold-soft transition hover:bg-white/[0.04] hover:text-gold"
+            className={`w-full rounded-lg px-2 py-1 text-left text-xs text-gold-soft transition hover:bg-white/[0.04] hover:text-gold ${isHome ? "md:hidden" : ""}`}
           >
             🎁 Invite friends, earn credits
           </button>
           {status && (
-            <details className="px-2 text-xs text-zinc-400">
+            <details className={`px-2 text-xs text-zinc-400 ${isHome ? "md:hidden" : ""}`}>
               <summary className="cursor-pointer select-none hover:text-zinc-200">
                 {liveCount === ENGINES.length ? "✨ What Flash can do" : `✨ What Flash can do · ${ENGINES.length - liveCount} coming soon`}
               </summary>
@@ -1669,7 +1715,7 @@ export function Flash({
               </button>
               <Greeting me={me} className="hidden shrink @min-[1100px]/main:block" />
               <div className="hidden min-w-0 flex-1 @min-[1100px]/main:block" />
-              <div ref={searchBoxRef} className="relative hidden min-w-0 max-w-2xl flex-[3] md:block @min-[1100px]/main:min-w-[300px] @min-[1100px]/main:max-w-[420px] @min-[1100px]/main:flex-[4]">
+              <div ref={searchBoxRef} className="relative hidden min-w-0 max-w-2xl flex-[3] md:block @min-[1100px]/main:min-w-[300px] @min-[1100px]/main:max-w-[560px] @min-[1100px]/main:flex-[5]">
                 <Icon d={ICONS.search} className="pointer-events-none absolute left-4 top-1/2 z-10 h-5 w-5 -translate-y-1/2 text-zinc-400" />
                 <input
                   ref={searchRef}
@@ -1680,9 +1726,9 @@ export function Flash({
                     setSearchOpen(true);
                   }}
                   onFocus={() => setSearchOpen(true)}
-                  placeholder="Search your chats and projects"
-                  aria-label="Search your chats and projects"
-                  className="glass h-12 w-full rounded-2xl pl-12 pr-4 text-[15px] text-zinc-100 shadow-none outline-none placeholder:text-zinc-400 focus:border-primary/50 @min-[700px]/main:pr-16"
+                  placeholder="Search anything... chats, projects, prompts or tools"
+                  aria-label="Search your chats, projects, prompts and tools"
+                  className="glass h-12 w-full rounded-2xl pl-12 pr-4 text-[15px] text-zinc-100 shadow-none outline-none placeholder:text-zinc-400 focus:border-primary/50 @min-[700px]/main:pr-16 @min-[1100px]/main:h-[52px]"
                 />
                 <kbd className="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 rounded-md border border-white/10 bg-white/[0.04] px-1.5 py-0.5 font-sans text-[11px] text-zinc-400 @min-[700px]/main:block">
                   {mac ? "⌘ K" : "Ctrl K"}
@@ -1691,6 +1737,39 @@ export function Flash({
                   <div className="absolute left-0 right-0 top-full z-40 mt-2 max-h-[60vh] overflow-y-auto rounded-2xl border border-white/10 bg-zinc-900 p-1.5 shadow-2xl light:shadow-black/10">
                     {!projectQuery.trim() && sorted.length > 0 && (
                       <p className="px-3 pb-1 pt-1.5 text-xs font-medium text-zinc-500">{searchOpen === "all" ? "All chats" : "Recent chats"}</p>
+                    )}
+                    {toolHits.length > 0 && <p className="px-3 pb-1 pt-1.5 text-xs font-medium text-zinc-500">Tools</p>}
+                    {toolHits.map((e) => (
+                      <button
+                        key={e}
+                        onClick={() => {
+                          setSearchOpen(false);
+                          setProjectQuery("");
+                          pickTool(e);
+                        }}
+                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06]"
+                      >
+                        <EngineIcon engine={e} size="sm" />
+                        <span className="min-w-0 flex-1 truncate">{ENGINE_LABELS[e]}</span>
+                      </button>
+                    ))}
+                    {promptHits.length > 0 && <p className="px-3 pb-1 pt-1.5 text-xs font-medium text-zinc-500">Prompts</p>}
+                    {promptHits.map((t) => (
+                      <button
+                        key={t.id}
+                        onClick={() => {
+                          setSearchOpen(false);
+                          setProjectQuery("");
+                          setTemplates(t.id);
+                        }}
+                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06]"
+                      >
+                        <Icon d={ICONS.template} className="h-4 w-4 shrink-0 text-zinc-500" />
+                        <span className="min-w-0 flex-1 truncate">{t.name}</span>
+                      </button>
+                    ))}
+                    {(toolHits.length > 0 || promptHits.length > 0) && sorted.length > 0 && (
+                      <p className="px-3 pb-1 pt-1.5 text-xs font-medium text-zinc-500">Chats</p>
                     )}
                     {(searchOpen === "all" || projectQuery.trim() ? sorted : sorted.slice(0, 10)).map((p) => (
                       <button
@@ -1721,7 +1800,7 @@ export function Flash({
                         ))}
                       </>
                     )}
-                    {!sorted.length && !inChats.length && (
+                    {!sorted.length && !inChats.length && !toolHits.length && !promptHits.length && (
                       <p className="px-3 py-2 text-sm text-zinc-500">{projectQuery.trim() ? "Nothing matches." : "Your chats will show here."}</p>
                     )}
                   </div>
@@ -1764,7 +1843,7 @@ export function Flash({
           <button
             onClick={() => setShowCredits(true)}
             // In a chat on a phone the chat's name needs the room, so the balance shows only when it runs low.
-            className={`${isHome || me.credits < 10 ? "inline-flex" : "hidden sm:inline-flex"} h-10 shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-[13px] transition ${
+            className={`${isHome ? "inline-flex @min-[1100px]/main:hidden" : me.credits < 10 ? "inline-flex" : "hidden sm:inline-flex"} h-10 shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-[13px] transition ${
               me.credits < 10
                 ? "border-spark/50 bg-spark/10 text-spark-soft hover:bg-spark/20"
                 : "glass text-zinc-100 shadow-none hover:brightness-110"
@@ -1774,6 +1853,7 @@ export function Flash({
             <BoltIcon className="h-3.5 w-3.5 text-gold" /> {me.credits.toLocaleString()}
             <span className="hidden @min-[900px]/main:inline">credits</span>
           </button>
+          {isHome && <Bell me={me} onSites={() => setShowApps(true)} onCredits={() => setShowCredits(true)} />}
           <AccountMenu
             me={me}
             placement="down"
@@ -1796,12 +1876,13 @@ export function Flash({
         )}
         {showCreations && (
           <Creations
-            onClose={() => setShowCreations(false)}
+            start={showCreations}
+            onClose={() => setShowCreations("")}
             onUseImage={
               busy
                 ? undefined
                 : (url) => {
-                    setShowCreations(false);
+                    setShowCreations("");
                     editImage(url);
                   }
             }
