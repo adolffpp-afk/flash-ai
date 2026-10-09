@@ -20,8 +20,8 @@ export default function Terms() {
 
       <h2>2. What Flash does</h2>
       <p>
-        Flash sends your requests to third-party AI providers (such as Anthropic, and Groq, Google, OpenRouter and
-        Cloudflare for free models) and returns their results. Features, models and providers may change over time.
+        Flash sends your requests to third-party AI providers (such as Anthropic, and Groq, Google, OpenRouter,
+        Cloudflare and Mistral for free models) and returns their results. Features, models and providers may change over time.
       </p>
 
       <h2>3. Credits and payments</h2>

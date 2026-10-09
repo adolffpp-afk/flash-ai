@@ -36,10 +36,11 @@ export default function Privacy() {
       <ul>
         <li>Anthropic (writing, research, code, apps, slides, translation)</li>
         <li>
-          Groq, Google (Gemini), OpenRouter and Cloudflare (free models, used when you are out of credits). Google may
+          Groq, Google (Gemini), OpenRouter, Cloudflare and Mistral (free models, used when you are out of credits). Google may
           use messages its free Gemini models answer to improve its products, and its human reviewers may read them, so
           don&apos;t share personal or sensitive information in chats on free models. Free Gemini models never answer
-          people in the European Economic Area, the UK or Switzerland.
+          people in the European Economic Area, the UK or Switzerland. Flash&apos;s Mistral account is set so Mistral
+          doesn&apos;t use these messages to train its models.
         </li>
         <li>OpenAI (images and video, when those features are available)</li>
         <li>ElevenLabs (voice, music and transcription, when those features are available)</li>

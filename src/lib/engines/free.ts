@@ -10,7 +10,7 @@ import { FriendlyError } from "./errors.ts";
  * order; one that is busy or over its cap is skipped.
  */
 
-export type FreeProvider = "groq" | "gemini" | "openrouter" | "cloudflare";
+export type FreeProvider = "groq" | "gemini" | "openrouter" | "cloudflare" | "mistral";
 
 type ChatProvider = {
   id: FreeProvider;
@@ -23,6 +23,8 @@ type ChatProvider = {
   dailyTokens: number;
   // The request and reply shape: OpenAI-style chat completions (the default), or Gemini's own.
   format?: "openai" | "gemini";
+  // Whether to ask for token counts with stream_options (OpenAI-style providers that accept it).
+  streamOptions?: boolean;
   // Whether the provider's terms let it answer someone in this country (a two-letter code, "" when unknown).
   serves?: (country: string) => boolean;
 };
@@ -107,6 +109,24 @@ export const CHAT_PROVIDERS: ChatProvider[] = [
     dailyRequests: Infinity,
     dailyTokens: Infinity,
   },
+  /*
+   * Mistral's free plan, the last backup (checked 2026-10-09). Its terms allow apps with real users,
+   * but Mistral calls the free plan "intended for evaluation and prototyping" and may limit it, so it
+   * only answers when the others are busy. Free requests may train Mistral's models unless training
+   * is switched off in Mistral's admin panel (Privacy), which is done before the key is made. The
+   * plan takes no card, so it can't bill; Flash stays far under its published limits (1 request a second).
+   */
+  {
+    id: "mistral",
+    label: "Mistral Small",
+    url: () => `${env("MISTRAL_BASE_URL") ?? "https://api.mistral.ai/v1"}/chat/completions`,
+    key: () => env("MISTRAL_API_KEY"),
+    model: () => env("FLASH_FREE_MISTRAL_MODEL") ?? "mistral-small-latest",
+    dailyRequests: num("FLASH_MISTRAL_DAILY_REQUESTS", 500),
+    dailyTokens: num("FLASH_MISTRAL_DAILY_TOKENS", 2_000_000),
+    // Mistral's API doesn't list stream_options, so it isn't sent; the last chunk carries the token counts.
+    streamOptions: false,
+  },
 ];
 
 export const freeChatConfigured = () => CHAT_PROVIDERS.some((p) => p.key());
@@ -161,7 +181,13 @@ function requestBody(p: ChatProvider, messages: Message[]): string {
       generationConfig: { maxOutputTokens: FREE_MAX_TOKENS },
     });
   }
-  return JSON.stringify({ model: p.model(), messages, stream: true, max_tokens: FREE_MAX_TOKENS, stream_options: { include_usage: true } });
+  return JSON.stringify({
+    model: p.model(),
+    messages,
+    stream: true,
+    max_tokens: FREE_MAX_TOKENS,
+    ...(p.streamOptions !== false && { stream_options: { include_usage: true } }),
+  });
 }
 
 const requestHeaders = (p: ChatProvider, key: string): Record<string, string> =>
