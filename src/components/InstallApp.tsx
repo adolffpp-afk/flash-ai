@@ -85,9 +85,12 @@ export function InstallApp({ className = "" }: { className?: string }) {
 }
 
 const DISMISSED_KEY = "flash-install-dismissed";
-const ASK_AGAIN_AFTER = 14 * 24 * 60 * 60 * 1000;
+const ASK_AGAIN_AFTER = 7 * 24 * 60 * 60 * 1000;
 
-/** After signing in, a small card suggests installing Flash. "Not now" hides it for two weeks. */
+/**
+ * When Flash opens in a browser (signed in or not), a card offers to install it, like the browser's
+ * own install offer. "Not now" hides it for a week; inside the installed app it never shows.
+ */
 export function InstallPopup() {
   const { available, install, dialog } = useInstall();
   const [show, setShow] = useState(false);
@@ -100,8 +103,8 @@ export function InstallPopup() {
       // Storage blocked: ask every visit.
     }
     if (Date.now() - dismissedAt < ASK_AGAIN_AFTER) return;
-    // A moment after the app opens, so it doesn't cover the first thing they see.
-    const timer = setTimeout(() => setShow(true), 2500);
+    // A moment after Flash opens, so it doesn't cover the first thing they see.
+    const timer = setTimeout(() => setShow(true), 2000);
     return () => clearTimeout(timer);
   }, []);
 
@@ -118,30 +121,37 @@ export function InstallPopup() {
   return (
     <>
       {show && (
-        // On a computer it sits above the companion's Ask Flash button, so both can be clicked.
+        // On a computer it drops in at the top right, under the top bar, near where the browser offers installs; on a phone it sits at the bottom.
         <div
           role="dialog"
           aria-label="Install Flash AI"
-          className="fixed inset-x-3 bottom-3 z-30 flex items-center gap-3 rounded-2xl border border-white/10 bg-zinc-950/95 p-4 text-zinc-100 shadow-2xl backdrop-blur-md sm:inset-x-auto sm:right-4 sm:bottom-20 sm:w-96"
+          className="glass-raised fixed inset-x-3 bottom-3 z-50 rounded-2xl p-4 text-zinc-100 sm:inset-x-auto sm:bottom-auto sm:right-4 sm:top-20 sm:w-[23rem]"
         >
-          <BrandMark size={44} id="flash-install" tile ring={false} />
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium">Get the Flash AI app</p>
-            <p className="text-xs text-zinc-400">One tap from your home screen or desktop.</p>
+          <div className="flex items-start gap-3">
+            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-zinc-900 ring-1 ring-white/10">
+              <BrandMark size={34} id="flash-install" ring={false} />
+            </span>
+            <div className="min-w-0 flex-1">
+              <p className="text-[15px] font-semibold">Install Flash AI</p>
+              <p className="mt-0.5 text-[13px] leading-snug text-zinc-400">Open Flash from your taskbar, dock or home screen, in its own window.</p>
+            </div>
+            <button onClick={close} aria-label="Close" className="-mr-1 -mt-1 rounded-full p-1.5 text-zinc-500 transition hover:bg-white/[0.06] hover:text-zinc-200">
+              ✕
+            </button>
           </div>
-          <div className="flex shrink-0 flex-col gap-1">
+          <div className="mt-3 flex justify-end gap-2">
+            <button onClick={close} className="h-9 rounded-xl px-3 text-sm text-zinc-400 transition hover:bg-white/[0.05] hover:text-zinc-200">
+              Not now
+            </button>
             <button
               onClick={() => {
                 close();
                 install();
               }}
-              className="flex h-8 items-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-medium text-on-brand transition hover:brightness-110"
+              className="flex h-9 items-center gap-1.5 rounded-xl bg-brand px-4 text-sm font-semibold text-on-brand transition hover:brightness-110"
             >
               <DownloadIcon />
               Install
-            </button>
-            <button onClick={close} className="h-6 text-xs text-zinc-500 hover:text-zinc-200">
-              Not now
             </button>
           </div>
         </div>
