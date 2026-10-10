@@ -101,7 +101,15 @@ class Conversation {
     let pending = p().first?.trim() ?? "";
     let confirming = false;
     this.heardAt = Date.now();
-    if (!pending) await this.say(p().woke ? tNow("Yes, {name}?", { name: p().name }) : tNow("Hi {name}. What can I do for you?", { name: p().name }));
+    // "there" means Flash has no name for them: the greeting goes without one, which reads naturally in every language.
+    const named = p().name !== "there";
+    if (!pending) {
+      await this.say(
+        p().woke
+          ? named ? tNow("Yes, {name}?", { name: p().name }) : tNow("Yes?")
+          : named ? tNow("Hi {name}. What can I do for you?", { name: p().name }) : tNow("Hi. What can I do for you?"),
+      );
+    }
     while (this.alive) {
       if (this.paused) {
         this.show("paused");
@@ -125,7 +133,7 @@ class Conversation {
       this.heardAt = Date.now();
       this.screen.you(heard);
       if (isGoodbye(heard, tNow(GOODBYE_WORDS))) {
-        await this.say(tNow("Bye, {name}.", { name: p().name }));
+        await this.say(named ? tNow("Bye, {name}.", { name: p().name }) : tNow("Bye."));
         if (this.alive) p().onClose();
         return;
       }

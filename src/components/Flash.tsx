@@ -1363,7 +1363,8 @@ export function Flash({
             aria-label={t("Resume Next up")}
             className="shrink-0 rounded-full bg-primary/20 px-2.5 py-0.5 text-xs text-primary-soft hover:bg-primary/30"
           >
-            {t("Resume")}
+            {/* Not "Resume": that's also the CV template's name, and other languages need two words. */}
+            {t("Continue")}
           </button>
         )}
       </div>

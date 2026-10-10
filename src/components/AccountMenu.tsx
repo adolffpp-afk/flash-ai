@@ -141,8 +141,15 @@ export function AccountMenu({
         <span className={`min-w-0 text-left ${down ? "hidden @min-[900px]/main:block" : "flex-1"}`}>
           {greet ? (
             <>
-              <span className="block truncate text-xs text-zinc-400">{t(greeting(new Date()))},</span>
-              <span className="block max-w-[10rem] truncate text-[15px] font-semibold leading-tight text-zinc-100">{called === "there" ? t("there") : called}</span>
+              {called === "there" ? (
+                // No name to use: the greeting on its own reads naturally in every language.
+                <span className="block max-w-[10rem] truncate text-[15px] font-semibold leading-tight text-zinc-100">{t(greeting(new Date()))}</span>
+              ) : (
+                <>
+                  <span className="block truncate text-xs text-zinc-400">{t(greeting(new Date()))},</span>
+                  <span className="block max-w-[10rem] truncate text-[15px] font-semibold leading-tight text-zinc-100">{called}</span>
+                </>
+              )}
             </>
           ) : (
             <>
