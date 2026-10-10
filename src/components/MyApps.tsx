@@ -5,6 +5,7 @@ import { api } from "@/lib/store";
 import { SELLER_COUNTRIES } from "@/lib/shop";
 import { DATA_RULES, DEFAULT_KEY, RULE_TEXT, blockProblem, type DataRule, type DataSummary, type RuleSource } from "@/lib/data-rules";
 import { msg } from "@/lib/i18n";
+import { inOrder } from "@/lib/in-order";
 import { tNow, useT, type T } from "@/lib/use-t";
 
 type Site = { slug: string; title: string; updated_at: number; messages: number; unread: number; views: number; members: number; openData?: boolean };
@@ -95,6 +96,18 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
   const closeRef = useRef<HTMLButtonElement>(null);
   // Counts the Data view's loads, so only the newest one's answer is shown.
   const dataLoads = useRef(0);
+  // The rules chosen in the Data view reach the server one at a time for each app, and the view shows
+  // what the server holds after the last one, or after one fails (see in-order.ts).
+  const [ruleSaves] = useState(() =>
+    inOrder<AppData>({
+      reload: (slug) => api<AppData>(`/api/sites/${slug}/records`),
+      show: (slug, saved) => {
+        setAppData((cur) => (cur?.slug === slug ? saved && { slug, data: saved } : cur));
+        if (saved) setSites((all) => all?.map((s) => (s.slug === slug ? { ...s, openData: isOpen(saved) } : s)) ?? null);
+      },
+      failed: () => setError(tNow("Couldn't save that choice. Please try again.")),
+    }),
+  );
 
   useEffect(() => {
     closeRef.current?.focus();
@@ -380,6 +393,8 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
     setRecords(null);
     setError("");
     try {
+      // After this app's rule changes still on their way, so what loads has them.
+      await ruleSaves.settled(site.slug);
       const data = await api<AppData>(`/api/sites/${site.slug}/records`);
       if (asked === dataLoads.current) setAppData({ slug: site.slug, data });
     } catch {
@@ -387,22 +402,18 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
     }
   }
 
-  /** Who may change a collection ("*" for anything else). null goes back to the app's choice. */
-  async function chooseDataRule(collection: string, rule: DataRule | null) {
+  /**
+   * Who may change a collection ("*" for anything else). null goes back to the app's choice. The
+   * choice shows at once, and what the server saved replaces it once every change is answered.
+   */
+  function chooseDataRule(collection: string, rule: DataRule | null) {
     if (!appData) return;
-    const { slug, data: before } = appData;
+    const { slug } = appData;
     // Each change applies only while the same app is shown.
     const forThisApp = (change: (data: AppData) => AppData) => setAppData((cur) => (cur?.slug === slug ? { slug, data: change(cur.data) } : cur));
     if (collection === DEFAULT_KEY) forThisApp((d) => ({ ...d, fallback: rule }));
     else if (rule) forThisApp((d) => ({ ...d, collections: d.collections.map((c) => (c.name === collection ? { ...c, rule, source: "you" } : c)) }));
-    try {
-      const saved = await api<AppData>(`/api/sites/${slug}/records`, { method: "PATCH", json: { collection, rule } });
-      forThisApp(() => saved);
-      setSites((all) => all?.map((s) => (s.slug === slug ? { ...s, openData: isOpen(saved) } : s)) ?? null);
-    } catch {
-      forThisApp(() => before);
-      setError(t("Couldn't save that choice. Please try again."));
-    }
+    void ruleSaves.save(slug, () => api<AppData>(`/api/sites/${slug}/records`, { method: "PATCH", json: { collection, rule } }));
   }
 
   async function showRecords(collection: string) {
