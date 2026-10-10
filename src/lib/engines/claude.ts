@@ -611,18 +611,28 @@ const CHECK_TOKENS = 10;
 /** The most classifyRequest can cost, in cents. */
 export const ROUTER_MAX_CENTS = callMaxCents(HELPER_MODEL, ROUTER_SYSTEM.length + CHECK_MESSAGE_CHARS, CHECK_TOKENS);
 
+// How much of Flash's own question the router reads with a "yes" (see classifyRequest).
+const OFFER_CHARS = 200;
+
 /**
  * Asks Haiku which engine fits a request the keyword rules couldn't place. about: the app or deck
- * Flash just built in this chat, when the request was said about it ("it's too dark"). timeoutMs is
- * shorter for someone talking, who waits in silence.
+ * Flash just built in this chat, when the request was said about it ("it's too dark"); offer: the
+ * question Flash's last reply ended on, which a "yes" may answer ("Want me to add a dark mode?").
+ * timeoutMs is shorter for someone talking, who waits in silence.
  * Returns null on any doubt or error, so the caller keeps its default.
  */
-export async function classifyRequest(message: string, meter: Meter = noMeter, { timeoutMs = 4000, about }: { timeoutMs?: number; about?: Engine } = {}): Promise<Engine | null> {
+export async function classifyRequest(
+  message: string,
+  meter: Meter = noMeter,
+  { timeoutMs = 4000, about, offer }: { timeoutMs?: number; about?: Engine; offer?: string } = {},
+): Promise<Engine | null> {
+  const build = about === "app" || about === "slides";
   const system =
     ROUTER_SYSTEM +
-    (about === "app" || about === "slides"
+    (build
       ? `\n\nFlash just made ${about === "app" ? "an app" : "a slide deck"} for this user, and they said this about it. ` +
-        `Reply ${about} only if they ask for it to be changed, fixed or added to; reply text for thanks, questions and anything else.`
+        `Reply ${about} only if they ask for it to be changed, fixed or added to; reply text for thanks, questions and anything else.` +
+        (offer ? ` Flash's last words to them were: "${offer.slice(-OFFER_CHARS)}" A yes to an offer to change it is a change.` : "")
       : "");
   try {
     const res = await getClient()
@@ -658,8 +668,8 @@ const PICK_ORDER: Engine[] = ["video", "music", "image", "voice", "app", "slides
  * engine they didn't ask for because the router's pick was too dear. plan prices a request on an
  * engine (with extraCents more for helpers still to run); ready says whether an engine is set up.
  * may says which engines the guess may move the request to: any but text and transcribing unless
- * the caller says otherwise (a voice conversation's, see takesGuess in router.ts). timeoutMs and
- * about are passed on to classifyRequest.
+ * the caller says otherwise (a voice conversation's, see takesGuess in router.ts). timeoutMs, about
+ * and offer are passed on to classifyRequest.
  */
 export async function guessEngine<P extends { live: boolean; needed: number }>(
   message: string,
@@ -672,7 +682,8 @@ export async function guessEngine<P extends { live: boolean; needed: number }>(
     may = (e: Engine) => e !== "text" && e !== "transcribe",
     timeoutMs,
     about,
-  }: { may?: (engine: Engine) => boolean; timeoutMs?: number; about?: Engine } = {},
+    offer,
+  }: { may?: (engine: Engine) => boolean; timeoutMs?: number; about?: Engine; offer?: string } = {},
 ): Promise<{ engine: Engine; plan: P; guessed: boolean }> {
   const kept = async () => ({ engine, plan: await plan(engine), guessed: false });
   const asRouted = await plan(engine, ROUTER_MAX_CENTS);
@@ -692,7 +703,7 @@ export async function guessEngine<P extends { live: boolean; needed: number }>(
   for (const e of priced) if (!(await affordable(e))) return kept();
   const rest = await Promise.all(picks.filter((e) => !priced.includes(e)).map(affordable));
   if (rest.includes(false)) return kept();
-  const guess = await classifyRequest(message, meter, { timeoutMs, about });
+  const guess = await classifyRequest(message, meter, { timeoutMs, about, offer });
   if (guess && picks.includes(guess)) {
     const picked = await plan(guess);
     if (picked.live && available >= picked.needed) return { engine: guess, plan: picked, guessed: true };

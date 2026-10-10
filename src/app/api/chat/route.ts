@@ -254,6 +254,13 @@ function toTranscribe(a: Attachment): Attachment {
 /** What transcribing a file costs: its measured length, and at least what its size could hold. */
 const transcriptCents = (a: { data: string }) => transcribeCostCents(attachmentBytes(a), recordingSeconds(a));
 
+/** The question Flash's last reply ended on, which a spoken "yes" may answer: "Want me to add a dark mode?" */
+function offered(history: ChatTurn[]): string | undefined {
+  const reply = history.at(-2);
+  if (reply?.role !== "assistant" || typeof reply.content !== "string") return undefined;
+  return reply.content.trim().slice(-300).match(/[^.!?\n]+\?$/)?.[0].trim();
+}
+
 /** The voice engine speaks at most MAX_SPEECH_CHARS, and is priced on exactly that text. */
 const spokenText = (message: string) => textToSpeak(message).slice(0, MAX_SPEECH_CHARS);
 
@@ -918,17 +925,22 @@ export async function POST(request: Request) {
   let plan: Awaited<ReturnType<typeof planFor>>;
   if (!override && !decided && (auto.guessed || recheck) && !last.attachment && claudeConfigured()) {
     const ready = (e: Engine) => (isMedia(e) ? Boolean(pickModel(e, last.content, providers())) : configured(e));
-    // A spoken turn about an app or deck the rules couldn't place: the guess knows about the build.
+    // A spoken turn about an app or deck the rules couldn't place: the guess knows about the build,
+    // and the question Flash asked before it, which a "yes" may answer.
     const about = auto.guessed ? auto.about : undefined;
+    const offer = spoken && about ? offered(history) : undefined;
     // Where the guess may move it (see takesGuess). A spoken request checked again, or one about a
-    // build, only moves between the engines that answer in words, or to that build.
+    // build, only moves between the engines that answer in words, or to that build, or to what the
+    // rules would have made of spoken talk that mentioned it (maybe).
     const answers = recheck || auto.answersOnly === true;
-    const may = (e: Engine) => takesGuess(e, engine, last.content, { spoken, recheck: answers, about });
+    const maybe = auto.guessed ? auto.maybe : undefined;
+    const may = (e: Engine) => takesGuess(e, engine, last.content, { spoken, recheck: answers, about, maybe });
     // Someone talking is waiting in silence, so the router gets less time to think.
     const routed = await guessEngine(last.content, engine, available, (e, extraCents) => planFor(e, false, extraCents), ready, meter, {
       may,
       timeoutMs: spoken ? 1500 : 4000,
       about,
+      offer,
     });
     if (routed.guessed) {
       engine = routed.engine;

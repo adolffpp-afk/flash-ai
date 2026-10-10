@@ -85,13 +85,12 @@ test("in a voice conversation, talk about how Flash speaks is answered, and audi
     assert.deepEqual([spoken.engine, spoken.reason, spoken.guessed], ["text", "Flash answers in the conversation.", undefined], m);
   }
   for (const m of [
-    "Read this aloud as an mp3",
     "Read this aloud: Welcome to Flash AI",
     'Say "good morning everyone"',
     "Turn this poem into audio",
     "Convert my notes into speech",
-    "Read this in a British accent",
     "Say happy birthday in a deep voice",
+    "Make a voiceover of happy birthday in a British accent",
   ]) {
     assert.equal(route(m, undefined, undefined, { spoken: true }).engine, "voice", m);
   }
@@ -103,6 +102,15 @@ test("in a voice conversation, talk about how Flash speaks is answered, and audi
     "read the rest of the speech aloud",
     "read the file out loud",
     "Say good night at 9:30.",
+    // "This" is what was said before, which a voice-over can't read: it would say "in a British accent".
+    "Read this in a British accent",
+    "Read this aloud as an mp3",
+    "can you speak with a british accent",
+    "speak with a deeper voice",
+    "talk like a pirate",
+    "use a deeper voice",
+    "change your voice",
+    "I love your voice",
   ]) {
     assert.ok(!wantsAudioFile(m), m);
     assert.equal(route(m, undefined, undefined, { spoken: true }).engine, "text", m);
@@ -236,5 +244,110 @@ test("the router's guess: typed requests as before; spoken ones aren't made into
   for (const g of ["text", "translate", "docs", "search"] as const) assert.ok(takesGuess(g, "code", "What's the function of the liver?", recheck), g);
   for (const g of ["code", "app", "slides", "image", "video", "music", "voice", "transcribe"] as const) {
     assert.ok(!takesGuess(g, "code", "What's the function of the liver?", recheck), g);
+  }
+});
+
+test("spoken changes asked as a question, or after wait or never mind, still change the build", () => {
+  for (const m of [
+    "Is it possible to add a dark mode?",
+    "Would it be possible to add a footer?",
+    "Do you think you could make the header bigger?",
+    "Are you able to make it darker?",
+    "Why don't you make the button blue?",
+    "When I click the button nothing happens.",
+    "I'd like to see a bigger logo.",
+    "wait, make the button blue",
+    "hold on, add a footer",
+    "oh wait, can you make the title bigger",
+    "I see, now add a footer",
+    "never mind, change it back",
+    "sorry, make the title smaller",
+    "fix my app",
+  ]) {
+    assert.equal(spokenFollowUp(m), "change", m);
+    assert.equal(route(m, undefined, "app", { spoken: true }).engine, "app", m);
+  }
+  assert.equal(route("Is it possible to add a slide about costs?", undefined, "slides", { spoken: true }).engine, "slides");
+  // A yes may answer Flash's own offer to change it, and a question about changing it may be one: the guess reads them.
+  for (const m of ["Yes.", "Yes please.", "Sure, go ahead.", "Go ahead", "What about a dark mode?", "How do I change the font?"]) {
+    assert.equal(spokenFollowUp(m), "unclear", m);
+    assert.deepEqual(route(m, undefined, "app", { spoken: true }).about, "app", m);
+  }
+  for (const m of ["wait", "hold on a second", "never mind", "I see the problem", "okay", "wait for it"]) assert.equal(spokenFollowUp(m), "talk", m);
+});
+
+test("spoken navigation, Flash's voice and the user's account don't rebuild the app or deck", () => {
+  for (const m of [
+    "Show the next slide.",
+    "Can you show the second slide",
+    "switch to the next slide",
+    "go back to the first slide",
+    "Turn the page.",
+    "can you make it louder",
+    "make it quieter",
+    "change the voice",
+    "use a different voice",
+    "change my password",
+    "delete my account",
+    "update my email address",
+  ]) {
+    assert.equal(spokenFollowUp(m), "talk", m);
+    assert.notEqual(route(m, undefined, "slides", { spoken: true }).engine, "slides", m);
+  }
+  // Looking around, a speed that may be the game's, or fixing something that isn't the build: the guess decides.
+  for (const m of ["show the chart again", "Bring up the menu.", "Try the login.", "let's try the dark mode", "make it slower", "fix my sleep schedule"]) {
+    assert.equal(spokenFollowUp(m), "unclear", m);
+    assert.equal(route(m, undefined, "app", { spoken: true }).guessed, true, m);
+  }
+  // Saying how still changes it.
+  for (const m of ["show the price in euros", "turn the header green", "turn off the dark mode", "move the chart to the next slide", "try a darker font"]) {
+    assert.equal(spokenFollowUp(m), "change", m);
+  }
+  // Typed, the same words change the deck, as before.
+  assert.equal(route("Show the next slide", undefined, "slides").engine, "slides");
+});
+
+test("spoken talk that mentions something to make is answered in words unless the guess reads an ask", () => {
+  for (const [m, made] of [
+    ["how do I make a website?", "app"],
+    ["how do I build an app", "app"],
+    ["I have a presentation tomorrow and I'm nervous", "slides"],
+    ["what's that song about?", "music"],
+    ["what is a good beat for running", "music"],
+    ["I like to draw in my free time", "image"],
+    ["my daughter loves to paint, what should I get her", "image"],
+    ["I saw a picture of my grandma yesterday", "image"],
+    ["did you draw that", "image"],
+    ["okay so I watched a video of a cat on youtube", "video"],
+  ] as const) {
+    assert.equal(route(m).engine, made, `typed: ${m}`);
+    const r = route(m, undefined, undefined, { spoken: true });
+    assert.deepEqual([r.engine, r.guessed, r.answersOnly, r.maybe], ["text", true, true, made], m);
+    // The guess may still make it, or answer in words, but not make something else.
+    const asked = { spoken: true, recheck: true, maybe: r.maybe };
+    assert.ok(takesGuess(made, "text", m, asked) && takesGuess("search", "text", m, asked), m);
+    for (const g of ["app", "slides", "image", "video", "music", "voice"] as const) if (g !== made) assert.ok(!takesGuess(g, "text", m, asked), `${m}: ${g}`);
+  }
+  // Asked for, it's made as before.
+  for (const [m, made] of [
+    ["draw a cat", "image"],
+    ["can you draw a cat", "image"],
+    ["I'd like a song about my dog", "music"],
+    ["make a video of a dog surfing", "video"],
+    ["build me a website for my bakery", "app"],
+  ] as const) {
+    assert.equal(route(m, undefined, undefined, { spoken: true }).engine, made, m);
+  }
+});
+
+test("spoken small talk about today isn't a web search; today's news and weather are", () => {
+  for (const m of ["How are you today?", "I'm feeling sad today", "what are you doing right now", "I'm so tired today", "what should I cook tonight"]) {
+    assert.equal(route(m).engine, "search", `typed: ${m}`);
+    const r = route(m, undefined, undefined, { spoken: true });
+    // Answered in words: the guess may still search, when the user can pay for that.
+    assert.deepEqual([r.engine, r.guessed, r.answersOnly], ["text", true, true], m);
+  }
+  for (const m of ["what's the news today", "what's the weather like today", "is the pharmacy open right now", "who won the game last night", "what's the latest on the election"]) {
+    assert.equal(route(m, undefined, undefined, { spoken: true }).engine, "search", m);
   }
 });
