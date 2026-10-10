@@ -22,7 +22,7 @@ export async function usageSummary(userId: string, at = new Date()): Promise<Usa
   const since = monthStart(at);
   const rows = await all<{ engine: string; credits: number; requests: number }>(
     `SELECT engine, COALESCE(SUM(credits), 0) AS credits, COUNT(*) AS requests
-     FROM usage WHERE user_id = ? AND created_at >= ? GROUP BY engine ORDER BY credits DESC, requests DESC`,
+     FROM usage WHERE user_id = ? AND created_at >= ? AND part = 0 GROUP BY engine ORDER BY credits DESC, requests DESC`,
     [userId, since],
   );
   const tools = rows.map((r) => ({ engine: r.engine, credits: Number(r.credits), requests: Number(r.requests) }));

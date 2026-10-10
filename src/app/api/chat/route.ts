@@ -1242,6 +1242,7 @@ export async function POST(request: Request) {
         credits,
         costCents,
         ok,
+        parts: spend,
       }).catch((err) => console.error("[flash] usage log failed", err));
     }
     if (stopped && halt === "deadline") send({ type: "text", delta: "\n\n" + t("Flash ran out of time here. Ask it to continue.") });

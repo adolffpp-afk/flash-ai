@@ -18,7 +18,7 @@ import { english, type Translate } from "../i18n.ts";
 
 const HOUR = 3_600_000;
 /** Flash's share of each sale, in basis points (200 = 2%). */
-const feeBps = () => Number(process.env.FLASH_SALE_FEE_BPS ?? 200);
+export const feeBps = () => Number(process.env.FLASH_SALE_FEE_BPS ?? 200);
 
 export const sellingAvailable = paymentsEnabled;
 
