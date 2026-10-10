@@ -109,7 +109,13 @@ export async function settledCharge(userId: string, chargeId: number): Promise<n
   return row && Number(row.settled_at) ? -Number(row.amount) : null;
 }
 
-/** Logs one request for the owner dashboard. */
+export type UsagePart = { provider: string; model: string; cents: number };
+
+/**
+ * Logs one request for the owner dashboard. parts lists what each provider cost on the way (a
+ * Claude helper that planned a picture, say): every provider and model other than the main one
+ * gets its own row, so the dashboard shows each provider's bill, and the main row keeps the rest.
+ */
 export async function logUsage(entry: {
   userId: string;
   engine: string;
@@ -118,11 +124,22 @@ export async function logUsage(entry: {
   credits: number;
   costCents: number;
   ok: boolean;
+  parts?: UsagePart[];
 }): Promise<void> {
-  await run(
-    "INSERT INTO usage (user_id, engine, model, provider, credits, cost_cents, ok, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-    [entry.userId, entry.engine, entry.model, entry.provider, entry.credits, entry.costCents, entry.ok ? 1 : 0, now()],
-  );
+  const others = new Map<string, UsagePart>();
+  for (const p of entry.parts ?? []) {
+    if (!p.cents || (p.provider === entry.provider && p.model === entry.model)) continue;
+    const key = `${p.provider}\n${p.model}`;
+    const seen = others.get(key);
+    others.set(key, { ...p, cents: (seen?.cents ?? 0) + p.cents });
+  }
+  const helpers = [...others.values()];
+  const mainCents = Math.max(0, entry.costCents - helpers.reduce((sum, p) => sum + p.cents, 0));
+  const at = now();
+  const insert = "INSERT INTO usage (user_id, engine, model, provider, credits, cost_cents, ok, part, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+  const ok = entry.ok ? 1 : 0;
+  await run(insert, [entry.userId, entry.engine, entry.model, entry.provider, entry.credits, mainCents, ok, 0, at]);
+  for (const p of helpers) await run(insert, [entry.userId, entry.engine, p.model, p.provider, 0, p.cents, ok, 1, at]);
 }
 
 export async function refund(userId: string, amount: number, reason: string): Promise<void> {
@@ -159,11 +176,13 @@ export type Purchase = {
   ref: string;
   subscription: string | null;
   created_at: number;
+  // 1 for a Stripe test-mode or demo payment.
+  test?: number;
 };
 
 /** The purchase a payment paid for, by its payment intent or by its own reference. */
 export async function findPurchase(by: { paymentIntent?: string | null; ref?: string | null }): Promise<Purchase | null> {
-  const cols = "user_id, pack, credits, ref, subscription, created_at";
+  const cols = "user_id, pack, credits, ref, subscription, created_at, test";
   if (by.paymentIntent) {
     const row = await one<Purchase>(`SELECT ${cols} FROM purchases WHERE payment_intent = ?`, [by.paymentIntent]);
     if (row) return row;
@@ -202,6 +221,24 @@ export async function clawBack(p: Purchase, share: number, charge: string, ref: 
     [p.user_id, -amount, reason, ref, now()],
   );
   return r.rowsAffected === 1 ? amount : 0;
+}
+
+/**
+ * Records money that went back to a buyer, for the owner's net profit: total is how much of the
+ * charge has gone back so far (Stripe's amount_refunded, or the disputed amount), and each event
+ * (ref) is counted once, adding only what it newly took back.
+ */
+export async function recordReversal(p: Purchase, kind: "refund" | "dispute", charge: string, total: number, ref: string) {
+  const before = await one<{ total: number }>(
+    "SELECT COALESCE(MAX(total_cents), 0) AS total FROM payment_reversals WHERE charge = ? AND kind = ?",
+    [charge, kind],
+  );
+  const amount = Math.max(0, Math.round(total) - Number(before?.total ?? 0));
+  await run(
+    `INSERT OR IGNORE INTO payment_reversals (ref, charge, kind, total_cents, amount_cents, test, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [ref, charge, kind, Math.max(Math.round(total), Number(before?.total ?? 0)), amount, Number(p.test ?? 0) ? 1 : 0, now()],
+  );
 }
 
 /** The latest credit changes: the user's own and what they spent from a team pool (owners see who spent it). */

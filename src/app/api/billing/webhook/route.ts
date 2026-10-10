@@ -1,4 +1,4 @@
-import { addPurchase, clawBack, findPurchase } from "@/lib/server/credits.ts";
+import { addPurchase, clawBack, findPurchase, recordReversal } from "@/lib/server/credits.ts";
 import { cancelStripeSubscription, invoiceForPaymentIntent, verifyWebhook } from "@/lib/server/stripe.ts";
 import {
   endSubscription,
@@ -36,7 +36,7 @@ type Charge = {
   // Only on API versions before 2025-03-31.
   invoice?: string | null;
 };
-type Dispute = { id: string; charge: string; payment_intent?: string | null };
+type Dispute = { id: string; charge: string; amount?: number; payment_intent?: string | null };
 type StripeEvent = {
   type: string;
   data: {
@@ -113,12 +113,14 @@ async function reversePayment(
   share: number,
   ref: string,
   reason: string,
+  money: { kind: "refund" | "dispute"; total: number },
 ) {
   const purchase = await purchaseFor(paymentIntent, invoice);
   if (!purchase) {
     console.warn(`[flash] ${ref}: no purchase found for charge ${charge}`);
     return;
   }
+  await recordReversal(purchase, money.kind, charge, money.total, ref);
   await clawBack(purchase, share, charge, ref, reason);
   // Referral bonuses that payment earned go back in the same share (a pending one is cancelled).
   await reverseReferral(purchase, share, ref, reason);
@@ -167,13 +169,15 @@ export async function POST(request: Request) {
       const share = charge.refunded ? 1 : charge.amount ? charge.amount_refunded / charge.amount : 0;
       // Each partial refund has its own amount_refunded, so a later one takes back the rest.
       await reversePayment(charge.id, charge.payment_intent, charge.invoice, share,
-        `stripe-refund:${charge.id}:${charge.amount_refunded}`, "Payment refunded");
+        `stripe-refund:${charge.id}:${charge.amount_refunded}`, "Payment refunded",
+        { kind: "refund", total: charge.amount_refunded });
       break;
     }
     case "charge.dispute.created": {
       const dispute = object as unknown as Dispute;
       await reversePayment(dispute.charge, dispute.payment_intent, null, 1,
-        `stripe-dispute:${dispute.id}:${dispute.charge}`, "Payment disputed");
+        `stripe-dispute:${dispute.id}:${dispute.charge}`, "Payment disputed",
+        { kind: "dispute", total: dispute.amount ?? 0 });
       break;
     }
   }

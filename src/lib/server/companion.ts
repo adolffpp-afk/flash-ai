@@ -66,7 +66,7 @@ export async function spendingSummary(userId: string, at = Date.now()): Promise<
   const rows = await all<{ engine: string; n: number; credits: number; week: number }>(
     `SELECT engine, COUNT(*) AS n, SUM(credits) AS credits,
        SUM(CASE WHEN created_at >= ? THEN credits ELSE 0 END) AS week
-     FROM usage WHERE user_id = ? AND created_at >= ? GROUP BY engine ORDER BY credits DESC`,
+     FROM usage WHERE user_id = ? AND created_at >= ? AND part = 0 GROUP BY engine ORDER BY credits DESC`,
     [at - 7 * DAY, userId, at - 30 * DAY],
   );
   if (!rows.length) return "The user hasn't used any credits in the last 30 days.";
