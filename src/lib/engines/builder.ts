@@ -134,6 +134,12 @@ const isDocument = (code: string) => /<!doctype html|<html[\s>]|<body[\s>]/i.tes
 /** Room left for thinking when the whole file is asked for again. */
 const THINKING_ROOM = 4200;
 
+// Slower than Claude writes a file, so a whole file asked for again is only started when it can be
+// finished before the request's time runs out: one cut off there would be paid for and not delivered.
+const SLOW_TOKENS_PER_SECOND = 50;
+
+const TOO_LARGE = msg("The app was too large to finish in one go. Try asking for a simpler first version.");
+
 /** The newest version of the app in the conversation, which a small change is applied to. */
 export function latestApp(history: ChatTurn[]): string | null {
   for (let i = history.length - 1; i >= 0; i--) {
@@ -156,7 +162,7 @@ export async function* streamBuild(
   choice: ClaudeChoice = defaultChoice(kind),
   // The language Flash's own words (progress, notes, errors) are in.
   t: Translate = english,
-  { signal, running }: Watch = {},
+  { signal, running, endsAt }: Watch = {},
 ): AsyncGenerator<StreamEvent> {
   const app = kind === "app";
   // The title when the file has none. It names the published site and its downloads, so it stays in English.
@@ -165,7 +171,7 @@ export async function* streamBuild(
     type: "error",
     message: budget.byCredits
       ? t("Your credits ran out before this was finished. Add credits, or ask for a simpler first version.")
-      : t("The app was too large to finish in one go. Try asking for a simpler first version."),
+      : t(TOO_LARGE),
   });
   const noFit = (): StreamEvent => ({ type: "error", message: t(NO_FIT) });
 
@@ -209,41 +215,54 @@ export async function* streamBuild(
     let lastLines = 0;
     let lastPieces = 0;
     let editAt = -1;
-    for await (const event of stream) {
-      running?.see(event);
-      if (event.type !== "content_block_delta" || event.delta.type !== "text_delta") continue;
-      text += event.delta.text;
-      const part = splitBuild(text);
-      if (canEdit && part.html === null && editAt === -1) editAt = text.search(/```flash-edit/i);
-      // Stream the opening sentences as they arrive, holding back a possible partial ``` fence.
-      const prose = editAt !== -1 ? text.slice(0, editAt) : part.html !== null ? part.before : part.before.replace(/`{1,3}[^`]*$/, "");
-      if (!quiet && prose.length > sentBefore) {
-        yield { type: "text", delta: prose.slice(sentBefore) };
-        sentBefore = prose.length;
-      }
-      if (part.html !== null && editAt === -1) {
-        const lines = part.html.split("\n").length;
-        if (lines - lastLines >= 25) {
-          lastLines = lines;
-          yield { type: "status", message: app ? t("Writing your app… {lines} lines", { lines }) : t("Writing your slides… {lines} lines", { lines }) };
+    let final: Awaited<ReturnType<typeof stream.finalMessage>>;
+    try {
+      for await (const event of stream) {
+        running?.see(event);
+        if (event.type !== "content_block_delta" || event.delta.type !== "text_delta") continue;
+        text += event.delta.text;
+        const part = splitBuild(text);
+        if (canEdit && part.html === null && editAt === -1) editAt = text.search(/```flash-edit/i);
+        // Stream the opening sentences as they arrive, holding back a possible partial ``` fence.
+        const prose = editAt !== -1 ? text.slice(0, editAt) : part.html !== null ? part.before : part.before.replace(/`{1,3}[^`]*$/, "");
+        if (!quiet && prose.length > sentBefore) {
+          yield { type: "text", delta: prose.slice(sentBefore) };
+          sentBefore = prose.length;
         }
-      } else if (editAt !== -1) {
-        const pieces = splitEdits(text).edits.length;
-        if (pieces > lastPieces) {
-          lastPieces = pieces;
-          const message =
-            pieces === 1
-              ? app
-                ? t("Changing 1 place in your app…")
-                : t("Changing 1 place in your slides…")
-              : app
-                ? t("Changing {count} places in your app…", { count: pieces })
-                : t("Changing {count} places in your slides…", { count: pieces });
-          yield { type: "status", message };
+        if (part.html !== null && editAt === -1) {
+          const lines = part.html.split("\n").length;
+          if (lines - lastLines >= 25) {
+            lastLines = lines;
+            yield { type: "status", message: app ? t("Writing your app… {lines} lines", { lines }) : t("Writing your slides… {lines} lines", { lines }) };
+          }
+        } else if (editAt !== -1) {
+          const pieces = splitEdits(text).edits.length;
+          if (pieces > lastPieces) {
+            lastPieces = pieces;
+            const message =
+              pieces === 1
+                ? app
+                  ? t("Changing 1 place in your app…")
+                  : t("Changing 1 place in your slides…")
+                : app
+                  ? t("Changing {count} places in your app…", { count: pieces })
+                  : t("Changing {count} places in your slides…", { count: pieces });
+            yield { type: "status", message };
+          }
         }
       }
+      final = await stream.finalMessage();
+    } catch (err) {
+      // The request's time ran out on a first build: what was written is kept, as when a build
+      // reaches its length limit, and the call (which has no usage report) is paid from its estimate.
+      const kept = signal?.reason === "deadline" && !base && !quiet && running ? splitBuild(text).html : null;
+      if (!kept) throw err;
+      meter("anthropic", choice.model, running!.soFar);
+      running!.end();
+      yield { type: "error", message: t(TOO_LARGE) };
+      yield { type: "app", app: { title: htmlTitle(kept, fallback), html: kept, kind } };
+      return;
     }
-    const final = await stream.finalMessage();
     spent += meterClaude(meter, final, choice.model, running);
     if (final.stop_reason === "refusal") {
       yield { type: "text", delta: "\n\n" + t("Flash couldn't build that.") };
@@ -294,7 +313,10 @@ export async function* streamBuild(
       const usage = final.usage;
       const reread = usage.input_tokens + (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + usage.output_tokens + 200;
       maxTokens = Math.min(budget.maxTokens, tokensWithin(kind, choice.model, reread, budget.capCents - spent, usesFallback(choice)));
-      if (!(maxTokens >= Math.ceil(base!.length / 3) + THINKING_ROOM)) {
+      const whole = Math.ceil(base!.length / 3) + THINKING_ROOM;
+      // ...and only while there's time to write it all.
+      const late = endsAt !== undefined && Date.now() + (whole / SLOW_TOKENS_PER_SECOND) * 1000 > endsAt;
+      if (!(maxTokens >= whole) || late) {
         yield noFit();
         return;
       }

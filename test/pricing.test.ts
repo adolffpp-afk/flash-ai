@@ -248,13 +248,21 @@ test("long conversations hold more credits", () => {
   assert.ok(long.maxTokens >= 1500);
 });
 
-test("a stopped reply pays for what its call cost so far, at least a typical reply, never more than was held", () => {
+test("a stopped reply pays for what its call cost so far, never more than was held", () => {
   const base = { held: 400, ok: true, stopped: true, metered: true, costCents: 0, pendingCents: 40, typical: 4 };
   assert.equal(finalCredits(base), creditsFor(40));
   // Calls that finished before it (a search round, a builder's first try) are paid in full too.
   assert.equal(finalCredits({ ...base, costCents: 25 }), creditsFor(65));
   assert.equal(finalCredits({ ...base, held: 50 }), 50, "capped at the hold");
-  assert.equal(finalCredits({ ...base, pendingCents: 0 }), 4, "at least a typical reply");
+  // Stopped before Claude started on it: nothing, not a typical reply.
+  assert.equal(finalCredits({ ...base, pendingCents: 0 }), 0);
+  // Only the router ran.
+  assert.equal(finalCredits({ ...base, pendingCents: 0, costCents: 0.05 }), creditsFor(0.05));
+  // An app edit on Vision stopped 2 seconds in: its input (13.2¢) and 2 seconds of thinking, not the
+  // 120-credit typical app (it costs 48 credits finished).
+  const early = 13.2 + (400 * 2500) / 1e6;
+  assert.equal(finalCredits({ ...base, held: 444, typical: 120, pendingCents: early }), creditsFor(early));
+  assert.ok(creditsFor(early) < 48);
   // A finished reply pays its real cost.
   assert.equal(finalCredits({ ...base, stopped: false, costCents: 10 }), creditsFor(10));
   // Without an estimate from the stream (the companion): reading the input, plus what it wrote.

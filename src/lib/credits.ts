@@ -430,9 +430,10 @@ export function companionHold(model: string, inputTokens: number, available: num
 /*
  * What a request is finally charged, never more than was held. A finished request pays its
  * provider cost. A stopped Claude reply has no usage report, so it pays for what the call in
- * progress had cost so far (estimated from its stream, see Running in engines/claude.ts), and at
- * least a typical reply. A failed request pays only for provider work that really ran, so Flash
- * never pays for it.
+ * progress had cost so far (estimated from its stream, see Running in engines/claude.ts): nothing
+ * more, so a reply stopped early never costs more than it would have finished, and nothing at all
+ * when Claude never started on it. A failed request pays only for provider work that really ran,
+ * so Flash never pays for it.
  *
  * A priced job (a picture, video, track, speech or transcript) pays its listed price, which includes
  * its Claude helpers (see CHECK_ALLOWANCE_CENTS). Stopped or closed, it pays for the provider jobs
@@ -451,7 +452,8 @@ export function finalCredits(r: {
   // 0 when Claude never started it, since Claude bills nothing then.
   pendingCents?: number;
   // Without pendingCents (the companion): what reading the input once costs (readCostCents), and the
-  // characters of reply already sent at the model's output price (Opus's by default).
+  // characters of reply already sent at the model's output price (Opus's by default), and at least
+  // a typical reply when stopped (typical), as that estimate doesn't see thinking.
   inputCents?: number;
   written?: number;
   outputPrice?: number;
@@ -479,9 +481,12 @@ export function finalCredits(r: {
     const incurred = helperCents + Math.max(startedCents, r.costCents - helperCents);
     return incurred > 0 ? Math.min(r.held, creditsFor(incurred)) : 0;
   }
+  if (r.stopped && r.pendingCents === undefined) {
+    return Math.min(r.held, Math.max(r.typical, creditsFor(r.costCents + (r.inputCents ?? 0) + writtenCents)));
+  }
   if (r.stopped) {
-    const pending = r.pendingCents ?? (r.inputCents ?? 0) + writtenCents;
-    return Math.min(r.held, Math.max(r.typical, creditsFor(r.costCents + pending)));
+    const incurred = r.costCents + (r.pendingCents ?? 0);
+    return incurred > 0 ? Math.min(r.held, creditsFor(incurred)) : 0;
   }
   return Math.min(r.held, creditsFor(r.costCents));
 }

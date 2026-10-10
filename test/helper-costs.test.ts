@@ -278,7 +278,8 @@ test("a reply stopped after a refusal fallback took over pays for both reads, an
   // Before, only one read and the words were counted.
   assert.ok(running.soFar > readCostCents("claude-sonnet-5-5", 1000) * 2);
   const stopped = finalCredits({ held: 100, ok: true, stopped: true, metered: true, costCents: 0, pendingCents: running.soFar, typical: 4 });
-  assert.equal(stopped, Math.max(4, creditsFor(expected)));
+  // What it cost so far, not a typical reply.
+  assert.equal(stopped, creditsFor(expected));
   // Finished, the same reply is metered from its usage, and the estimate is spent.
   const done = new Running();
   for await (const e of streamText([{ role: "user", content: "hi" }], "", "text", meter, undefined, claudeChoice("text", "ascend"), undefined, { running: done })) void e;
