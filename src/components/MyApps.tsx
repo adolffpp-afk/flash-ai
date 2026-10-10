@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/store";
 import { SELLER_COUNTRIES } from "@/lib/shop";
-import { DATA_RULES, DEFAULT_KEY, RULE_TEXT, blockProblem, type DataRule, type DataSummary, type RuleSource } from "@/lib/data-rules";
+import { DATA_RULES, DEFAULT_KEY, RULE_TEXT, blockProblem, dataLine, type DataRule, type DataSummary, type RuleSource } from "@/lib/data-rules";
 import { msg } from "@/lib/i18n";
 import { inOrder } from "@/lib/in-order";
 import { tNow, useT, type T } from "@/lib/use-t";
@@ -81,7 +81,8 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
   const [uploads, setUploads] = useState<Uploads | null>(null);
   const [versions, setVersions] = useState<Version[] | null>(null);
   const [restoring, setRestoring] = useState<string | null>(null);
-  const [restored, setRestored] = useState(false);
+  // The version brought back, with what that changed for who may see or change the app's data.
+  const [restored, setRestored] = useState<{ data?: DataSummary } | null>(null);
   const [visits, setVisits] = useState<Visits | null>(null);
   const [payments, setPayments] = useState<Payments | null>(null);
   const [shop, setShop] = useState<Shop | null>(null);
@@ -246,7 +247,7 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
     setView("history");
     setVersions(null);
     setRestoring(null);
-    setRestored(false);
+    setRestored(null);
     setError("");
     try {
       setVersions((await api<{ versions: Version[] }>(`/api/sites/${site.slug}/versions`)).versions);
@@ -260,9 +261,9 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
     setBusy(true);
     setError("");
     try {
-      await api(`/api/sites/${open.slug}/versions`, { method: "POST", json: { id } });
+      const { data } = await api<{ data?: DataSummary }>(`/api/sites/${open.slug}/versions`, { method: "POST", json: { id } });
       setVersions((await api<{ versions: Version[] }>(`/api/sites/${open.slug}/versions`)).versions);
-      setRestored(true);
+      setRestored({ data });
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Couldn't bring that version back."));
     }
@@ -595,7 +596,7 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
               <div className="space-y-4">
                 <p className="text-sm text-zinc-400">
                   {t(
-                    "Each time you update this site, the version it replaces is kept here (the last 10). Bring one back if an update went wrong. Its data, messages and orders stay as they are.",
+                    "Each time you update this site, the version it replaces is kept here (the last 10). Bring one back if an update went wrong. Its data, messages and orders stay as they are, but who can see or change that data follows the version you bring back.",
                   )}
                 </p>
                 {restored && (
@@ -604,6 +605,11 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
                     <a href={`/p/${open.slug}`} target="_blank" rel="noreferrer" className="underline">
                       {t("Open the site")} ↗
                     </a>
+                  </p>
+                )}
+                {restored?.data && dataLine(restored.data, 8, t) && (
+                  <p role="status" className="text-sm text-zinc-400">
+                    {dataLine(restored.data, 8, t)}
                   </p>
                 )}
                 {versions.length === 0 ? (
@@ -1228,7 +1234,7 @@ function DataView({
       </p>
       {data.bad && (
         <p role="status" className="rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 text-sm text-gold-soft">
-          ⚠ {blockProblem(data.bad, t)} {t("To fix it, open the chat that built this app and ask Flash to fix its flash-data block.")}
+          ⚠ {blockProblem(data.bad, t, data.fallback)} {t("To fix it, open the chat that built this app and ask Flash to fix its flash-data block.")}
         </p>
       )}
       {data.collections.length === 0 ? (

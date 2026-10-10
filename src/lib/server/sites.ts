@@ -88,7 +88,8 @@ export async function listSites(userId: string) {
   );
 }
 
-export type PublishResult = { slug: string; url: string; data?: DataSummary } | { error: string; status: number; code?: string };
+export type Published = { slug: string; url: string; data?: DataSummary };
+export type PublishResult = Published | { error: string; status: number; code?: string };
 
 /**
  * The published site, with who may change its data (see data-rules.ts). before is who could change
@@ -99,7 +100,7 @@ export type PublishResult = { slug: string; url: string; data?: DataSummary } | 
  * now can only read because the new page's flash-data block doesn't name them, are listed as
  * closed. The publish has happened even if that can't be read.
  */
-async function published(slug: string, before: DataSummary | null = null): Promise<PublishResult> {
+async function published(slug: string, before: DataSummary | null = null): Promise<Published> {
   const data = await dataSummary(slug).catch(() => null);
   if (data && before) {
     const ruleBefore = (name: string) => before.collections.find((c) => c.name === name)?.rule ?? before.other;
@@ -215,10 +216,15 @@ export async function versionHtml(slug: string, id: string): Promise<string | nu
   return (await one<{ html: string }>("SELECT html FROM site_versions WHERE site_slug = ? AND id = ?", [slug, id]))?.html ?? null;
 }
 
-/** Puts an earlier version live again. The version it replaces is kept, so this can be undone. */
-export async function restoreVersion(userId: string, slug: string, id: string): Promise<boolean> {
+/**
+ * Puts an earlier version live again, with what that changes for who may see or change its data,
+ * as publishing says it, or null when there is no such version of the user's site. The version it
+ * replaces is kept, so this can be undone.
+ */
+export async function restoreVersion(userId: string, slug: string, id: string): Promise<Published | null> {
   const version = await one<{ title: string; html: string }>("SELECT title, html FROM site_versions WHERE site_slug = ? AND id = ?", [slug, id]);
-  if (!version) return false;
+  if (!version) return null;
+  const before = (await one("SELECT 1 FROM sites WHERE slug = ? AND user_id = ?", [slug, userId])) ? await dataSummary(slug).catch(() => null) : null;
   await saveVersion(slug, userId, version.html);
   const r = await run("UPDATE sites SET html = ?, title = ?, updated_at = ?, data_rules = ? WHERE slug = ? AND user_id = ?", [
     version.html,
@@ -228,7 +234,8 @@ export async function restoreVersion(userId: string, slug: string, id: string): 
     slug,
     userId,
   ]);
+  if (!r.rowsAffected) return null;
   // It's live now, so it leaves the list; the version it replaced took its place there.
-  if (r.rowsAffected) await run("DELETE FROM site_versions WHERE site_slug = ? AND id = ?", [slug, id]);
-  return r.rowsAffected > 0;
+  await run("DELETE FROM site_versions WHERE site_slug = ? AND id = ?", [slug, id]);
+  return published(slug, before);
 }

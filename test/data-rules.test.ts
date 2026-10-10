@@ -138,8 +138,20 @@ test("the app's flash-data block is read, and anything Flash can't use in it is 
   const wrongs = computeRules(block(JSON.stringify(Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`c${i}`, "write"])))));
   assert.equal(wrongs.bad?.names.length, 12);
   assert.match(blockProblem(wrongs.bad), /\(c0, c1, c2, c3, c4, c5, c6, c7, c8, c9, …\)/);
-  assert.deepEqual(declaredRules(block(`{"a":"read"}`) + block(`{"a":"open","b":"open"}`)), { a: "read" }, "the first block wins");
   assert.deepEqual(declaredRules(`<script data-id="flash-data">{"a":"open"}</script>`), {}, "only the id itself counts");
+  // A page with more than one block: Flash can't tell which is meant (an old one left above a new
+  // one, or kept in a comment), so it uses none, and says so. The same block twice is one block.
+  for (const html of [
+    block(`{"signups":"add"}`) + block(`{"signups":"private"}`),
+    `<!-- ${block(`{"signups":"add"}`)} -->` + block(`{"signups":"private"}`),
+    block(`{"signups":"private"}`) + block(`{oops`),
+    block(`{"signups":"private"}`) + block(`{"signups":"add"}`, 'type="text/json" id="flash-data"'),
+    block(`{"signups":"private"}`) + `<script type="application/json" id="flash-data">{"signups":"add"}`,
+  ]) {
+    assert.deepEqual(computeRules(html + code), { v: 1, guess: "read", app: {}, block: true, bad: { why: "several", names: [] }, code: ["a"] }, html);
+  }
+  assert.deepEqual(computeRules(block(`{"a":"read"}`) + "<p>hi</p>" + block(` {"a":"read"}\n`)), { v: 1, guess: "read", app: { a: "read" }, block: true });
+  assert.match(blockProblem({ why: "several", names: [] }), /^Flash couldn't read this app's flash-data block because the page has more than one\. Until it's fixed/);
 
   // A script that only shares the id isn't rules: code, or the app's own data (rules are words).
   for (const other of [
@@ -161,6 +173,21 @@ test("the app's flash-data block is read, and anything Flash can't use in it is 
   started = Date.now();
   computeRules((block(`["${"<script id=flash-data>".repeat(170)}"]`) + "\n").repeat(500));
   assert.ok(Date.now() - started < 1000, "many blocks of the app's own data");
+  // A 2 MB page full of flash-data tags, closed or not, is read in one pass, well under a second.
+  const page = (tag: string, end = "") => tag.repeat(Math.floor((2 * 1024 * 1024 - end.length) / tag.length)) + end;
+  for (const [what, html] of [
+    ["code tags never closed", page(`<script type="module" id="flash-data">`)],
+    ["code tags with a src", page(`<script id="flash-data" src=a>`)],
+    ["code tags closed once at the end", page(`<script type="module" id="flash-data">`, "</script>")],
+    ["long code tags", page(`<script type="module" id="flash-data">${"x".repeat(5000)}</script>`)],
+    ["code tags inside code tags", page(`<script type="module" id="flash-data">${"<script type=module id=flash-data>".repeat(115)}</script>`)],
+    ["blocks of the app's own data", page(`<script type="application/json" id="flash-data">[{"q":"${"x".repeat(3000)}"}]</script>`)],
+    ["blocks never closed", page(`<script id="flash-data">`)],
+  ]) {
+    started = Date.now();
+    computeRules(html);
+    assert.ok(Date.now() - started < 400, `${what}: ${Date.now() - started} ms`);
+  }
   // A collection called __proto__ is just a name.
   assert.equal(Object.getPrototypeOf(declaredRules(block(`{"__proto__":"open"}`))), Object.prototype);
 });
@@ -189,6 +216,17 @@ test("a block written another way never lets visitors see what it marks as priva
     assert.deepEqual(computeRules(block(`{"signups":"private"}`, attrs) + code).app, { signups: "private" }, attrs);
   }
   assert.equal(computeRules(block(`const x = 1;`.repeat(500), 'type="module" id="flash-data"') + code).block, undefined, "however long");
+  // Rules written as code in a tag meant for code aren't skipped: Flash couldn't read them, so
+  // visitors can't add sign-ups for anyone to see, and the owner is told.
+  for (const [text, attrs] of [
+    [`{signups: "private", menu: "read"}`, 'type="text/javascript" id="flash-data"'],
+    [`window.rules = {"signups":"private"}`, 'type="module" id="flash-data"'],
+    [`const rules = { signups: 'Private' };`, 'type="text/babel" id="flash-data"'],
+    [`{"signups":"private",}; // rules`, 'id="flash-data" src="/rules.js"'],
+  ]) {
+    const computed = computeRules(block(text, attrs) + code);
+    assert.deepEqual([computed.block, computed.bad, visitorsAdd(computed)], [true, { why: "json", names: [] }, false], text);
+  }
 
   // Shapes Flash can't use leave what they name, and everything else, read-only for visitors, so no
   // sign-up can be added for them to see, and the owner is told.
@@ -221,6 +259,34 @@ test("a block written another way never lets visitors see what it marks as priva
   assert.equal(visitorsSee(computeRules(block(`{"signups":"private"}`) + code)), false);
 });
 
+test("a stray code tag or long code never hides rules: visitors can't add, private stays private, the owner is told", () => {
+  const code = `<script>if (flashDB.isOwner) flashDB.remove("menu", id); flashDB.add("signups", s)</script>`;
+  const rules = block(`{"signups":"private","menu":"read"}`);
+  const filler = `<p>${"Fresh bread every morning. ".repeat(200)}</p>`;
+  const before = computeRules(rules + code);
+  const rule = (computed: ReturnType<typeof computeRules>) => effectiveRule(computed, null, null, "signups").rule;
+  const check = (html: string, label: string) => {
+    const computed = computeRules(html);
+    assert.ok(computed.bad, `the owner is told: ${label}`);
+    assert.equal(can(rule(computed), "add", ANYONE), false, label);
+    // Published over the version that had the block, sign-ups stay private.
+    assert.equal(rule(keepPrivate(computed, before)), "private", label);
+  };
+  // A code tag left in a comment, an attribute or a textarea, more than 4 KB above the real block.
+  for (const stray of [
+    `<!-- old: <script type="module" id="flash-data"> -->`,
+    `<div title='<script type="module" id="flash-data">'></div>`,
+    `<textarea><script id="flash-data" src="rules.js"></textarea>`,
+  ]) {
+    check(stray + filler + rules + code, stray);
+  }
+  // Rules written as code in a script over 4 KB long.
+  check(`<script type="module" id="flash-data">// app\n${"const a = 1;\n".repeat(400)}const RULES = {signups: "private", menu: "read"};</script>` + code, "long code");
+  // Long real code that happens to use the id is still skipped.
+  const app = `<script type="module" id="flash-data">${'flashDB.list("menu").then(show);\n'.repeat(200)}</script>` + code;
+  assert.equal(computeRules(app).block, undefined);
+});
+
 test("an update whose block Flash can't use keeps private what only the owner could see", () => {
   const before = computeRules(block(`{"signups":"private","menu":"read","reviews":"add"}`));
   // Nothing at all could be read: what was private stays so, the rest is read-only for visitors,
@@ -249,6 +315,23 @@ test("an update whose block Flash can't use keeps private what only the owner co
   assert.deepEqual(effectiveRule(typoed, null, "private", "signups"), { rule: "private", source: "default" });
   assert.deepEqual(effectiveRule(typoed, null, "private", "menu"), { rule: "read", source: "app" });
   assert.deepEqual(effectiveRule(typoed, null, "open", "signups"), { rule: "read", source: "app" }, "never more open");
+  // But what visitors could see by name before they still see, read-only: the owner's default for
+  // anything else doesn't hide it from them while the block can't be used.
+  const cafe = computeRules(block(`{"menu":"read","reviews":"add","orders":"private"}`));
+  const yours = { "*": "private" as const };
+  for (const json of [`{'menu':'read','reviews':'add','orders':'private'}`, `{"menu":"read","reviews":"Add!","orders":"private"}`]) {
+    const kept = keepPrivate(computeRules(block(json)), cafe, yours);
+    const rules = ["menu", "reviews", "orders", "tips"].map((name) => effectiveRule(kept, null, "private", name));
+    assert.deepEqual(rules.map((r) => r.rule), ["read", "read", "private", "private"], json);
+    assert.deepEqual([rules[0].source, rules[1].source], ["app", "app"], json);
+    assert.deepEqual(parseComputed(JSON.stringify(kept)), kept, "and that is saved");
+  }
+  // What only the owner's default kept from visitors before stays private, even once that default goes.
+  const hidden = keepPrivate(computeRules(block(`{oops`)), typoed, yours);
+  assert.deepEqual([effectiveRule(hidden, null, "private", "signups").rule, effectiveRule(hidden, null, null, "signups")], ["private", { rule: "private", source: "app" }]);
+  assert.deepEqual(effectiveRule(hidden, null, "private", "menu"), { rule: "read", source: "app" });
+  // So does what the app kept private while the owner chose otherwise.
+  assert.equal(keepPrivate(computeRules(block(`{oops`)), cafe, { orders: "add" }).app.orders, "private");
   // Never more open, and nothing changes on a first publish or for a block Flash could use.
   assert.deepEqual(keepPrivate(computeRules(block(`{oops`)), null), computeRules(block(`{oops`)));
   const fine = computeRules(block(`{"menu":"read"}`));
@@ -297,6 +380,17 @@ test("the owner's choice beats the app's, which beats the owner's default, which
   assert.equal(
     blockProblem({ why: "entries", names: ["tips", "n"] }),
     "Flash couldn't use part of this app's flash-data block (tips, n). Until it's fixed, visitors can see those collections, even ones it marks as private, but can't add to them or change them. Those only you could see before stay private.",
+  );
+  assert.equal(blockProblem({ why: "entries", names: ["tips", "n"] }, undefined, "open"), blockProblem({ why: "entries", names: ["tips", "n"] }), "a default that doesn't hide them changes nothing");
+  // When the owner chose a default for anything else, the warning says what it does.
+  assert.equal(
+    dataLine({ collections: [], other: "private", fallback: "private", bad: { why: "json", names: [] } }).split(" Who can")[0],
+    "Flash couldn't read this app's flash-data block because it isn't valid JSON. Until it's fixed, visitors can still see the collections the block named before, even ones it now marks as private, but can't add to them or change them. Collections only you could see before stay private, and anything else follows your default: only you can see it.",
+  );
+  assert.match(blockProblem({ why: "long", names: [] }, undefined, "add"), /and anything else follows your default: visitors can add\.$/);
+  assert.equal(
+    blockProblem({ why: "entries", names: ["reviews"] }, undefined, "private"),
+    "Flash couldn't use part of this app's flash-data block (reviews). Until it's fixed, visitors can still see those they could see before, but can't add to them or change them. The others are private, as your default says: visitors can add to them, but only you can see them.",
   );
   assert.equal(
     dataLine({ collections: [{ name: "todos", rule: "read", source: "block" }], other: "read", closed: ["todos"] }),

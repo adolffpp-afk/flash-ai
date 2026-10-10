@@ -78,7 +78,7 @@ const asBefore = (computed: ComputedRules): ComputedRules => ({ ...computed, gue
 /**
  * The rules to save with a new page for an app (slug null for a new app), as sites.data_rules. When
  * Flash can't use (all of) the new page's flash-data block, what only the owner could see stays
- * private (see keepPrivate). An app that was kept open because code Flash can't see uses its
+ * private, by the page's rules or the owner's own (see keepPrivate). An app that was kept open because code Flash can't see uses its
  * records (or would have been, made before rules and not used since) stays open while the new page
  * still has neither a flash-data block nor flashDB code of its own.
  */
@@ -87,7 +87,7 @@ export async function rulesForPage(slug: string | null, html: string): Promise<s
   if (slug && (computed.bad || unseenCode(html, computed))) {
     const saved = await one<{ data_rules: string }>("SELECT data_rules FROM sites WHERE slug = ?", [slug]);
     const before = parseComputed(saved?.data_rules);
-    if (computed.bad) return JSON.stringify(keepPrivate(computed, before));
+    if (computed.bad) return JSON.stringify(keepPrivate(computed, before, await chosenRules(slug)));
     if (before ? before.fromRecords : saved && (await hasShared(slug))) return JSON.stringify(asBefore(computed));
   }
   return JSON.stringify(computed);
@@ -297,14 +297,19 @@ export async function removeRecord(slug: string, collection: string, id: string,
   return { status: 200, body: { ok: true } };
 }
 
+/** The rules an app's owner chose in Flash, with "*" for anything else. */
+async function chosenRules(slug: string): Promise<Record<string, DataRule>> {
+  const rows = await all<{ collection: string; rule: string }>("SELECT collection, rule FROM site_collection_rules WHERE site_slug = ?", [slug]);
+  return Object.fromEntries(rows.filter((r) => isDataRule(r.rule)).map((r) => [r.collection, r.rule as DataRule]));
+}
+
 /** An app's rules: what its page says, and what its owner chose (with "*" for anything else). */
 async function siteRules(slug: string): Promise<{ computed: ComputedRules; chosen: Record<string, DataRule> } | null> {
   const site = await one<{ data_rules: string }>("SELECT data_rules FROM sites WHERE slug = ?", [slug]);
   if (!site) return null;
   const computed = parseComputed(site.data_rules) ?? (await refreshRules(slug));
   if (!computed) return null;
-  const rows = await all<{ collection: string; rule: string }>("SELECT collection, rule FROM site_collection_rules WHERE site_slug = ?", [slug]);
-  return { computed, chosen: Object.fromEntries(rows.filter((r) => isDataRule(r.rule)).map((r) => [r.collection, r.rule as DataRule])) };
+  return { computed, chosen: await chosenRules(slug) };
 }
 
 export type SharedCollection = { name: string; count: number; lastAdded: number; rule: DataRule; source: RuleSource; personal: string[] };
@@ -361,7 +366,8 @@ const namedBy = (computed: ComputedRules, chosen: Record<string, DataRule>) => [
 
 /**
  * What publishing reports: the rule of each collection the app, its code, the owner or its records
- * name, of anything else, and what Flash couldn't use in the app's flash-data block.
+ * name, of anything else (and the owner's own default for it), and what Flash couldn't use in the
+ * app's flash-data block.
  */
 export async function dataSummary(slug: string): Promise<DataSummary | null> {
   const rules = await siteRules(slug);
@@ -372,6 +378,7 @@ export async function dataSummary(slug: string): Promise<DataSummary | null> {
   return {
     collections: names.map((name) => ({ name, ...effectiveRule(computed, chosen[name], chosen[DEFAULT_KEY], name) })),
     other: chosen[DEFAULT_KEY] ?? computed.guess,
+    ...(chosen[DEFAULT_KEY] && { fallback: chosen[DEFAULT_KEY] }),
     ...(computed.bad && { bad: computed.bad }),
   };
 }
