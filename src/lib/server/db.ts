@@ -257,6 +257,18 @@ const SCHEMA = [
     neurons REAL NOT NULL DEFAULT 0,
     PRIMARY KEY (day, provider)
   )`,
+  // MET Norway forecasts, shared by every user in the same ~1 km cell. MET's terms: don't ask again
+  // before Expires, and revalidate with If-Modified-Since (see server/weather.ts).
+  `CREATE TABLE IF NOT EXISTS weather_cache (
+    cell TEXT PRIMARY KEY,
+    series TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    last_modified TEXT NOT NULL DEFAULT '',
+    fetched_at INTEGER NOT NULL
+  )`,
+  // Lets the prune read only the old rows: Turso bills rows read.
+  `CREATE INDEX IF NOT EXISTS weather_cache_fetched ON weather_cache(fetched_at)`,
   `CREATE INDEX IF NOT EXISTS usage_user_time ON usage(user_id, created_at)`,
   // One-time links for email verification and password reset (only hashes are stored).
   `CREATE TABLE IF NOT EXISTS email_tokens (
