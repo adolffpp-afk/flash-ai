@@ -348,6 +348,11 @@ export const RESEARCH_PLAN: ToolPlan = { results: [6000, 6000, 6000, 6000, 6000]
 export const QUICK_RESEARCH_PLAN: ToolPlan = { results: [6000, 6000], searches: 1 };
 /** A plan with the forecast's rounds too. */
 export const withWeather = (plan: ToolPlan): ToolPlan => ({ results: [...WEATHER_PLAN.results, ...plan.results], searches: plan.searches });
+/** Research's plan: quick (one search and one page) or full, with the forecast's rounds when get_weather is attached. */
+export const researchPlan = (quick: boolean, weather: boolean): ToolPlan => {
+  const plan = quick ? QUICK_RESEARCH_PLAN : RESEARCH_PLAN;
+  return weather ? withWeather(plan) : plan;
+};
 /** The plan an engine has when none is given: Research searches, the others use no tools. */
 const planOf = (engine: Engine, plan?: ToolPlan) => plan ?? (engine === "search" ? RESEARCH_PLAN : NO_TOOLS);
 

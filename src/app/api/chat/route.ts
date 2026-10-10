@@ -306,7 +306,7 @@ const spokenText = (message: string) => textToSpeak(message).slice(0, MAX_SPEECH
  * user's date, time and rough place, taken once so every call in the request sends the same words.
  * build is the builders' note, without the clock; free is the free models' (see otherToolsLine).
  */
-type Prompting = { system: SystemOptions; free: SystemOptions; build: string };
+type Prompting = { system: SystemOptions; free: SystemOptions; build: string; where?: Where };
 
 function promptingFor(where: Where, now: Date): Prompting {
   const status = engineStatus();
@@ -315,6 +315,7 @@ function promptingFor(where: Where, now: Date): Prompting {
     system: { tools: otherToolsLine(status), context },
     free: { tools: otherToolsLine(status, true), context },
     build: contextNote(where, now, { clock: false }),
+    where,
   };
 }
 
@@ -503,7 +504,7 @@ async function* run(
     case "search":
       yield* withStepDown(
         choice ?? claudeChoice(engine, "ascend"),
-        (c) => streamSearch(history, preferences, meter, budget, c, t, watch, { system: prompting.system }),
+        (c) => streamSearch(history, preferences, meter, budget, c, t, watch, { system: prompting.system, where: prompting.where }),
         onStepDown,
         t,
       );

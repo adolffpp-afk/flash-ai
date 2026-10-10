@@ -4,15 +4,21 @@ import { levelName, type ModelLevel } from "../levels.ts";
 import {
   CLAUDE_PRICES,
   MAX_OUTPUT_TOKENS,
+  WEATHER_RESULT_TOKENS,
   WEB_SEARCH_CENTS,
   callMaxCents,
   claudeCostCents,
   claudePrice,
   fallbackModel,
   readCostCents,
+  researchPlan,
   tokensWithin,
+  type ToolPlan,
 } from "../credits.ts";
 import { english, type Translate } from "../i18n.ts";
+import { MAX_FORECASTS, TOO_MANY, WEATHER_ROUNDS, WEATHER_TOOL, type WeatherTool } from "../weather.ts";
+import { tokensAtMost } from "../tokens.ts";
+import type { Where } from "../context-note.ts";
 
 /*
  * Flash uses three Claude models, to keep quality high where it shows and costs low elsewhere:
@@ -483,7 +489,74 @@ function refusalMessage(t: Translate): StreamEvent {
   return { type: "text", delta: "\n\n" + t("Flash couldn't help with that request.") };
 }
 
-/** Writing, code, translation, documents and file questions: streams Claude's reply token by token. */
+/**
+ * What a reply with tools may use besides its system prompt: get_weather (weather), and onUsed,
+ * called once when a forecast first comes back with data, so the reply's header can say why.
+ */
+export type ReplyOptions = { system?: SystemOptions; weather?: WeatherTool; onUsed?: () => void };
+
+// A tool round is followed by another call only when the credits held still pay for this much of it.
+const MIN_ROUND_TOKENS = 300;
+
+/** Everything a call read: its input, cache reads and writes included. */
+const inputOf = (u: Anthropic.Beta.BetaUsage) => u.input_tokens + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
+
+/** The forecast rounds a reply may still ask for after `rounds`, for the credits the next call must leave for them. */
+const weatherLeft = (rounds: number): ToolPlan => ({ results: Array(Math.max(0, WEATHER_ROUNDS - rounds)).fill(WEATHER_RESULT_TOKENS), searches: 0 });
+
+/**
+ * A call that failed after an earlier call of the same reply was paid for isn't retried on another
+ * level (see withStepDown), which would start the reply again with all of its credits.
+ */
+function afterSpending(err: unknown): unknown {
+  if (!(err instanceof Anthropic.APIError) || err instanceof Anthropic.APIUserAbortError) return err;
+  return new Error(`Claude failed part way through a reply: ${err.message}`, { cause: err });
+}
+
+/** A reply's forecasts so far: tool rounds, calls, and whether any came back with data. */
+type WeatherState = { rounds: number; calls: number; used: boolean };
+
+/**
+ * Runs the get_weather calls of a turn that stopped for them (parallel calls together, at most
+ * MAX_FORECASTS in a reply), saying what it checks, and returns their results, in order, for one user
+ * message, with about how many tokens they add.
+ */
+async function* weatherRound(
+  final: Anthropic.Beta.BetaMessage,
+  tool: WeatherTool,
+  state: WeatherState,
+  onUsed?: () => void,
+): AsyncGenerator<StreamEvent, { results: Anthropic.Beta.BetaToolResultBlockParam[]; tokens: number }> {
+  const calls = final.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use");
+  for (const call of calls) if (call.name === WEATHER_TOOL.name) yield { type: "status", message: tool.status(call.input) };
+  const answers = await Promise.all(
+    calls.map((call) => {
+      if (call.name !== WEATHER_TOOL.name) return { text: `There is no tool called ${call.name}.`, isError: true, used: false };
+      return state.calls++ < MAX_FORECASTS ? tool.run(call.input) : { text: TOO_MANY, isError: true, used: false };
+    }),
+  );
+  // The answer is written next: the progress line goes.
+  yield { type: "status", message: "" };
+  state.rounds++;
+  if (!state.used && answers.some((a) => a.used)) {
+    state.used = true;
+    onUsed?.();
+  }
+  const results = calls.map((call, i) => ({
+    type: "tool_result" as const,
+    tool_use_id: call.id,
+    content: answers[i].text,
+    ...(answers[i].isError && { is_error: true }),
+  }));
+  return { results, tokens: answers.reduce((sum, a) => sum + tokensAtMost(a.text) + 50, 0) };
+}
+
+/**
+ * Writing, code, translation, documents and file questions: streams Claude's reply token by token.
+ * With o.weather, Claude may ask for live forecasts (see weather.ts): their results go back to it,
+ * appended to the conversation as they are, for up to WEATHER_ROUNDS rounds, each paid for within
+ * the credits held, and MET Norway is credited under the answer.
+ */
 export async function* streamText(
   history: ChatTurn[],
   preferences: string,
@@ -495,29 +568,62 @@ export async function* streamText(
   // The language Flash's own notes (not the reply) are in.
   t: Translate = english,
   { signal, running }: Watch = {},
-  // The rest of the system prompt: the tools line, the context note (see system).
-  o: { system?: SystemOptions } = {},
+  // The rest of the system prompt (the tools line, the context note; see system) and the tools.
+  o: ReplyOptions = {},
 ): AsyncGenerator<StreamEvent> {
-  running?.begin(choice.model, budget.maxTokens);
-  const stream = getClient().beta.messages.stream(
-    {
-      ...choiceParams(choice),
-      max_tokens: budget.maxTokens,
-      system: system(preferences, mode, o.system),
-      messages: toMessages(history),
-    },
-    { signal },
-  );
-  for await (const event of stream) {
-    running?.see(event);
-    if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-      yield { type: "text", delta: event.delta.text };
+  const tool = o.weather;
+  // The same words in every call of the reply, so the hold counted them and Claude's thinking stays valid.
+  const instructions = system(preferences, mode, { ...o.system, weather: Boolean(tool) });
+  const messages = toMessages(history);
+  const state: WeatherState = { rounds: 0, calls: 0, used: false };
+  let maxTokens = budget.maxTokens;
+  let spent = 0;
+  try {
+    for (;;) {
+      running?.begin(choice.model, maxTokens);
+      const stream = getClient().beta.messages.stream(
+        {
+          ...choiceParams(choice),
+          max_tokens: maxTokens,
+          system: instructions,
+          messages,
+          // The last round can't ask for more, so the reply always ends in words.
+          ...(tool && { tools: [WEATHER_TOOL], tool_choice: { type: state.rounds >= WEATHER_ROUNDS ? ("none" as const) : ("auto" as const) } }),
+        },
+        { signal },
+      );
+      for await (const event of stream) {
+        running?.see(event);
+        if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+          yield { type: "text", delta: event.delta.text };
+        }
+      }
+      const final = await stream.finalMessage();
+      spent += meterClaude(meter, final, choice.model, running);
+      // A turn cut off or declined never runs the tools it asked for.
+      if (final.stop_reason === "refusal") {
+        yield refusalMessage(t);
+        break;
+      }
+      if (final.stop_reason === "max_tokens") {
+        yield lengthNote(budget, t);
+        break;
+      }
+      if (!tool || final.stop_reason !== "tool_use") break;
+      const round = yield* weatherRound(final, tool, state, o.onUsed);
+      messages.push({ role: "assistant", content: final.content }, { role: "user", content: round.results });
+      // The next call reads everything again with the forecasts, and writes only what the credits held still pay for.
+      const nextInput = inputOf(final.usage) + final.usage.output_tokens + round.tokens;
+      maxTokens = Math.min(budget.maxTokens, tokensWithin(mode, choice.model, nextInput, budget.capCents - spent, usesFallback(choice), weatherLeft(state.rounds)));
+      if (!(maxTokens >= MIN_ROUND_TOKENS)) {
+        yield lengthNote(budget, t);
+        break;
+      }
     }
+  } catch (err) {
+    throw spent > 0 ? afterSpending(err) : err;
   }
-  const final = await stream.finalMessage();
-  meterClaude(meter, final, choice.model, running);
-  if (final.stop_reason === "refusal") yield refusalMessage(t);
-  if (final.stop_reason === "max_tokens") yield lengthNote(budget, t);
+  if (state.used) yield { type: "sources", items: tool!.sources };
 }
 
 function lengthNote(budget: Budget, t: Translate): StreamEvent {
@@ -527,7 +633,31 @@ function lengthNote(budget: Budget, t: Translate): StreamEvent {
   return { type: "text", delta: `\n\n_${note}_` };
 }
 
-/** Research: Claude with server-side web search and page reading, returning the answer and its sources. */
+/** Research's options: quick asks for one search and one page (see researchPlan), where is the user's rough place. */
+export type ResearchOptions = ReplyOptions & { quick?: boolean; where?: Where };
+
+/** Where the user is, for web search, from the checked values only (see where.ts), or undefined when nothing is known. */
+export function searchLocation(where?: Where): Anthropic.Beta.BetaUserLocation | undefined {
+  if (!where) return undefined;
+  const place = {
+    ...(where.city && { city: where.city }),
+    ...(where.country && { country: where.country }),
+    // UTC is what an unknown zone falls back to, so it says nothing about the user.
+    ...(where.timeZone && where.timeZone !== "UTC" && { timezone: where.timeZone }),
+  };
+  return Object.keys(place).length ? { type: "approximate", ...place } : undefined;
+}
+
+/** The page reader for a model: Summit's Fable 5.1 has its own version. */
+const webFetch = (model: string, uses: number): Anthropic.Beta.BetaToolUnion =>
+  /^claude-fable-5-1/.test(model)
+    ? { type: "web_fetch_20260318", name: "web_fetch", max_uses: uses, max_content_tokens: 6000 }
+    : { type: "web_fetch_20260209", name: "web_fetch", max_uses: uses, max_content_tokens: 6000 };
+
+/**
+ * Research: Claude with server-side web search and page reading, returning the answer and one list of
+ * sources: the links it cited first, then the others it read, and MET Norway when a forecast was used.
+ */
 export async function* streamSearch(
   history: ChatTurn[],
   preferences: string,
@@ -537,62 +667,107 @@ export async function* streamSearch(
   // The language Flash's own notes (not the answer) are in.
   t: Translate = english,
   { signal, running }: Watch = {},
-  o: { system?: SystemOptions } = {},
+  o: ResearchOptions = {},
 ): AsyncGenerator<StreamEvent> {
+  const tool = o.weather;
+  const quick = Boolean(o.quick);
+  const plan = researchPlan(quick, Boolean(tool));
+  const instructions = system(preferences, "search", { ...o.system, quick, weather: Boolean(tool) });
   const messages = toMessages(history);
-  const sources = new Map<string, Source>();
+  const cited = new Map<string, Source>();
+  const read = new Map<string, Source>();
+  const state: WeatherState = { rounds: 0, calls: 0, used: false };
+  let location = searchLocation(o.where);
+  const tools = () => [
+    { type: "web_search_20260209" as const, name: "web_search" as const, max_uses: quick ? 1 : 3, ...(location && { user_location: location }) },
+    webFetch(choice.model, quick ? 1 : 2),
+    ...(tool ? [WEATHER_TOOL] : []),
+  ];
   let spent = 0;
   let maxTokens = budget.maxTokens;
-  // pause_turn means the server paused a long search loop; resend to let it continue.
-  for (let round = 0; round < 4; round++) {
-    running?.begin(choice.model, maxTokens);
-    const stream = getClient().beta.messages.stream(
-      {
-        ...choiceParams(choice),
-        max_tokens: maxTokens,
-        system: system(preferences, "search", o.system),
-        tools: [
-          { type: "web_search_20260209", name: "web_search", max_uses: 3 },
-          { type: "web_fetch_20260209", name: "web_fetch", max_uses: 2, max_content_tokens: 6000 },
-        ],
-        messages,
-      },
-      { signal },
-    );
-    for await (const event of stream) {
-      running?.see(event);
-      if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-        yield { type: "text", delta: event.delta.text };
-      }
-    }
-    const final = await stream.finalMessage();
-    spent += meterClaude(meter, final, choice.model, running);
-    for (const block of final.content) {
-      if (block.type === "web_search_tool_result" && Array.isArray(block.content)) {
-        for (const r of block.content) {
-          if (r.type === "web_search_result" && !sources.has(r.url)) {
-            sources.set(r.url, { title: r.title, url: r.url });
+  try {
+    // pause_turn means the server paused a long search loop, and tool_use that Claude asked for a
+    // forecast; either way the turn goes back to Claude, as it is, to carry on.
+    for (let call = 0; call < 4 + WEATHER_ROUNDS; call++) {
+      running?.begin(choice.model, maxTokens);
+      const stream = getClient().beta.messages.stream(
+        {
+          ...choiceParams(choice),
+          max_tokens: maxTokens,
+          system: instructions,
+          tools: tools(),
+          ...(tool && state.rounds >= WEATHER_ROUNDS && { tool_choice: { type: "none" as const } }),
+          messages,
+        },
+        { signal },
+      );
+      let wrote = false;
+      try {
+        for await (const event of stream) {
+          running?.see(event);
+          if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+            wrote = true;
+            yield { type: "text", delta: event.delta.text };
           }
         }
+      } catch (err) {
+        // A location the search tool doesn't take: once, without it, before anything was written.
+        if (err instanceof Anthropic.BadRequestError && location && !wrote && call === 0) {
+          console.error("[flash] web search refused the user's location, searching without it", err.message);
+          location = undefined;
+          call--;
+          continue;
+        }
+        throw err;
       }
-      if (block.type === "web_fetch_tool_result" && block.content.type === "web_fetch_result") {
-        const url = block.content.url;
-        if (!sources.has(url)) sources.set(url, { title: block.content.content.title ?? url, url });
+      const final = await stream.finalMessage();
+      spent += meterClaude(meter, final, choice.model, running);
+      for (const block of final.content) {
+        if (block.type === "text") {
+          for (const c of block.citations ?? []) {
+            if (c.type === "web_search_result_location" && !cited.has(c.url)) cited.set(c.url, { title: c.title ?? c.url, url: c.url });
+          }
+        }
+        if (block.type === "web_search_tool_result" && Array.isArray(block.content)) {
+          for (const r of block.content) {
+            if (r.type === "web_search_result" && !read.has(r.url)) read.set(r.url, { title: r.title, url: r.url });
+          }
+        }
+        if (block.type === "web_fetch_tool_result" && block.content.type === "web_fetch_result") {
+          const url = block.content.url;
+          if (!read.has(url)) read.set(url, { title: block.content.content.title ?? url, url });
+        }
+      }
+      if (final.stop_reason === "refusal") {
+        yield refusalMessage(t);
+        break;
+      }
+      if (final.stop_reason === "max_tokens") {
+        yield lengthNote(budget, t);
+        break;
+      }
+      const forecasts = tool && final.stop_reason === "tool_use";
+      if (final.stop_reason !== "pause_turn" && !forecasts) break;
+      const round = forecasts ? yield* weatherRound(final, tool, state, o.onUsed) : null;
+      messages.push({ role: "assistant", content: final.content });
+      if (round) messages.push({ role: "user", content: round.results });
+      // Keep going only while the credits held for this request still cover another call: it reads
+      // everything again, what the searches found and the forecasts included.
+      const found = final.content.filter((b) => b.type === "web_search_tool_result" || b.type === "web_fetch_tool_result");
+      const nextInput = inputOf(final.usage) + final.usage.output_tokens + tokensAtMost(JSON.stringify(found)) + (round?.tokens ?? 0);
+      maxTokens = Math.min(budget.maxTokens, tokensWithin("search", choice.model, nextInput, budget.capCents - spent, usesFallback(choice), plan));
+      if (!(maxTokens >= (round ? MIN_ROUND_TOKENS : 2000))) {
+        if (round) yield lengthNote(budget, t);
+        break;
       }
     }
-    if (final.stop_reason === "refusal") {
-      yield refusalMessage(t);
-      break;
-    }
-    if (final.stop_reason === "max_tokens") yield lengthNote(budget, t);
-    if (final.stop_reason !== "pause_turn") break;
-    // Keep searching only while the credits held for this request still cover another round.
-    const nextInput = final.usage.input_tokens + final.usage.output_tokens;
-    maxTokens = tokensWithin("search", choice.model, nextInput, budget.capCents - spent, usesFallback(choice));
-    if (!(maxTokens >= 2000)) break;
-    messages.push({ role: "assistant", content: final.content });
+  } catch (err) {
+    throw spent > 0 ? afterSpending(err) : err;
   }
-  if (sources.size) yield { type: "sources", items: [...sources.values()].slice(0, 8) };
+  // One list, sent once: the browser keeps only the last one a reply sends.
+  const web = [...cited.values(), ...[...read.values()].filter((s) => !cited.has(s.url))];
+  const items = state.used ? [...web.slice(0, 6), ...tool!.sources] : web.slice(0, 8);
+  if (items.length) yield { type: "sources", items };
 }
 
 const PROMPT_REWRITERS = {
