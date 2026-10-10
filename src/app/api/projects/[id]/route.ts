@@ -1,8 +1,8 @@
 import { getUser, unauthorized } from "@/lib/server/auth.ts";
 import { one, run, now } from "@/lib/server/db.ts";
 import { cleanInstructions } from "@/lib/project-instructions.ts";
-
-const MAX_MESSAGES_BYTES = 8 * 1024 * 1024;
+import { translatorFor } from "@/lib/server/i18n.ts";
+import { PROJECT_TOO_LARGE, projectTooLarge } from "@/lib/project-size.ts";
 
 export async function GET(request: Request, ctx: RouteContext<"/api/projects/[id]">) {
   const user = await getUser(request);
@@ -12,13 +12,17 @@ export async function GET(request: Request, ctx: RouteContext<"/api/projects/[id
     "SELECT id, name, messages, updated_at, instructions FROM projects WHERE id = ? AND user_id = ?",
     [id, user.id],
   );
-  if (!row) return Response.json({ error: "Not found" }, { status: 404 });
+  if (!row) {
+    const t = await translatorFor(request, user.language);
+    return Response.json({ error: t("Not found") }, { status: 404 });
+  }
   return Response.json({ project: { ...row, messages: JSON.parse(row.messages) } });
 }
 
 export async function PUT(request: Request, ctx: RouteContext<"/api/projects/[id]">) {
   const user = await getUser(request);
   if (!user) return unauthorized();
+  const t = await translatorFor(request, user.language);
   const { id } = await ctx.params;
   const body = (await request.json().catch(() => ({}))) as {
     name?: string;
@@ -47,14 +51,12 @@ export async function PUT(request: Request, ctx: RouteContext<"/api/projects/[id
   }
   if (Array.isArray(body.messages)) {
     const json = JSON.stringify(body.messages);
-    if (json.length > MAX_MESSAGES_BYTES) {
-      return Response.json({ error: "This project is too large to save. Start a new project." }, { status: 413 });
-    }
+    if (projectTooLarge(json)) return Response.json({ error: t(PROJECT_TOO_LARGE) }, { status: 413 });
     sets.push("messages = ?");
     args.push(json);
   }
   const r = await run(`UPDATE projects SET ${sets.join(", ")} WHERE id = ? AND user_id = ?`, [...args, id, user.id]);
-  if (!r.rowsAffected) return Response.json({ error: "Not found" }, { status: 404 });
+  if (!r.rowsAffected) return Response.json({ error: t("Not found") }, { status: 404 });
   return Response.json({ ok: true });
 }
 

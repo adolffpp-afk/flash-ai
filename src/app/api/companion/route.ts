@@ -1,4 +1,5 @@
 import { appUrl, getUser, unauthorized } from "@/lib/server/auth.ts";
+import { translatorFor } from "@/lib/server/i18n.ts";
 import { charge, ensureMonthlyCredits, logUsage, settle, spendable } from "@/lib/server/credits.ts";
 import { isVerified } from "@/lib/server/account.ts";
 import { overLimit } from "@/lib/server/limits.ts";
@@ -47,11 +48,13 @@ async function* freeAnswer(
 export async function POST(request: Request) {
   const user = await getUser(request);
   if (!user) return unauthorized();
+  // The companion's own words (errors, what it's looking up) are in the language Flash is shown in; its answers follow its instructions.
+  const t = await translatorFor(request, user.language);
   const body = (await request.json().catch(() => null)) as { messages?: unknown; context?: unknown } | null;
   const turns = cleanTurns(body?.messages);
-  if (!turns) return Response.json({ error: "The last message must be from the user." }, { status: 400 });
+  if (!turns) return Response.json({ error: t("The last message must be from the user.") }, { status: 400 });
   if (await overLimit(`companion:${user.id}`, 40, WINDOW)) {
-    return Response.json({ error: "That's a lot of questions at once. Try again in a few minutes." }, { status: 429 });
+    return Response.json({ error: t("That's a lot of questions at once. Try again in a few minutes.") }, { status: 429 });
   }
 
   await ensureMonthlyCredits(user.id);
@@ -97,15 +100,15 @@ export async function POST(request: Request) {
   // counts as one of the user's free messages for today.
   let free = false;
   if (!claudeConfigured() && !freeChatConfigured()) {
-    return Response.json({ error: "The companion isn't available yet." }, { status: 503 });
+    return Response.json({ error: t("The companion isn't available yet.") }, { status: 503 });
   }
   if (!claudeConfigured() || available < hold.needed) {
     if (!isVerified(user) || !freeChatConfigured()) {
       return Response.json(
         {
           error: !isVerified(user)
-            ? "The companion needs a few credits. Confirm your email to get your free credits."
-            : "The companion needs a few credits. Get more credits to keep asking.",
+            ? t("The companion needs a few credits. Confirm your email to get your free credits.")
+            : t("The companion needs a few credits. Get more credits to keep asking."),
           code: "out_of_credits",
         },
         { status: 402 },
@@ -113,7 +116,7 @@ export async function POST(request: Request) {
     }
     if (!(await reserveFreeUser(user.id, "chat"))) {
       return Response.json(
-        { error: "You've used today's free messages. They reset tomorrow, or get more credits now.", code: "out_of_credits" },
+        { error: t("You've used today's free messages. They reset tomorrow, or get more credits now."), code: "out_of_credits" },
         { status: 402 },
       );
     }
@@ -121,7 +124,7 @@ export async function POST(request: Request) {
   }
   const chargeId = free ? 0 : await charge(user.id, hold.held, "Companion");
   if (chargeId === null) {
-    return Response.json({ error: "The companion needs a few credits. Get more credits to keep asking.", code: "out_of_credits" }, { status: 402 });
+    return Response.json({ error: t("The companion needs a few credits. Get more credits to keep asking."), code: "out_of_credits" }, { status: 402 });
   }
 
   const spend: number[] = [];
@@ -157,16 +160,16 @@ export async function POST(request: Request) {
         if (!isCompanionPage(input.page)) return { result: "There's no such page." };
         return { result: `Opened ${COMPANION_PAGES[input.page]} for the user.`, action: { kind: "open", page: input.page } };
       case "my_websites":
-        return { result: await websitesSummary(user.id, base), status: "Checking your websites…" };
+        return { result: await websitesSummary(user.id, base), status: t("Checking your websites…") };
       case "my_creations":
         readStored = true;
-        return { result: await creationsSummary(user.id, base), status: "Looking at your creations…" };
+        return { result: await creationsSummary(user.id, base), status: t("Looking at your creations…") };
       case "my_spending":
-        return { result: await spendingSummary(user.id), status: "Adding up your credits…" };
+        return { result: await spendingSummary(user.id), status: t("Adding up your credits…") };
       case "search_chats": {
         const query = typeof input.query === "string" ? input.query : "";
         readStored = true;
-        return { result: await chatsSummary(user.id, query), status: "Searching your chats…" };
+        return { result: await chatsSummary(user.id, query), status: t("Searching your chats…") };
       }
       default:
         return { result: "That tool doesn't exist." };
@@ -204,7 +207,7 @@ export async function POST(request: Request) {
               },
               countryOf(request),
             )
-          : streamCompanion(turns, system, runTool, meter, hold.capCents);
+          : streamCompanion(turns, system, runTool, meter, hold.capCents, COMPANION_MODEL, t);
         for await (const event of events) {
           if (cancelled || request.signal.aborted) {
             stopped = true;
@@ -216,7 +219,7 @@ export async function POST(request: Request) {
       } catch (err) {
         console.error("[flash] companion failed", err);
         ok = false;
-        failure = err instanceof FriendlyError ? err.message : "The companion is busy right now. Please try again in a moment.";
+        failure = err instanceof FriendlyError ? err.in(t) : t("The companion is busy right now. Please try again in a moment.");
       }
       const costCents = spend.reduce((n, c) => n + c, 0);
       const credits = free
@@ -236,7 +239,7 @@ export async function POST(request: Request) {
       await logUsage({ userId: user.id, engine: "companion", model: used.model, provider: used.provider, credits, costCents, ok }).catch((err) =>
         console.error("[flash] usage log failed", err),
       );
-      if (!ok) send({ type: "error", message: failure + (credits ? ` This used ${credits} credits for the work already done.` : "") });
+      if (!ok) send({ type: "error", message: failure + (credits ? " " + t("This used {credits} credits for the work already done.", { credits }) : "") });
       if (cancelled) return;
       if (ok) send({ type: "cost", credits, ...(free && { free: true }) });
       send({ type: "done" });

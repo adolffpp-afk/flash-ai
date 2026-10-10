@@ -5,6 +5,7 @@ import { LEVELS, type Level } from "@/lib/levels";
 import type { Me } from "@/lib/store";
 import type { Engine } from "@/lib/types";
 import { ICONS, Tile, type Hue } from "./Home";
+import { useT } from "@/lib/use-t";
 import { LEVEL_HUES, LevelIcon } from "./LevelIcon";
 
 const GROUP_HUES: Record<FeatureGroup, Hue> = {
@@ -37,6 +38,7 @@ export function Everything({
   // False inside the installed app, where there's nothing to install.
   installable: boolean;
 }) {
+  const t = useT();
   // As the server decides for custom domains and selling: a paid plan of their own, or an admin.
   const free = !me.plan && !me.isAdmin;
   const live = (f: Feature) =>
@@ -54,25 +56,25 @@ export function Everything({
       <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-4">
         <div className="min-w-0">
           <h3 id="everything-title" className="text-[19px] font-semibold tracking-tight text-white">
-            Everything Flash can do
+            {t("Everything Flash can do")}
           </h3>
-          <p className="mt-1 text-sm text-zinc-400">{ready} tools in one place. Pick one to start.</p>
+          <p className="mt-1 text-sm text-zinc-400">{t("{count} tools in one place. Pick one to start.", { count: ready })}</p>
         </div>
         <div className="min-w-0">
-          <p className="mb-1.5 text-[11px] font-medium uppercase tracking-[0.18em] text-zinc-500">Levels of intelligence</p>
-          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Levels of intelligence">
+          <p className="mb-1.5 text-[11px] font-medium uppercase tracking-[0.18em] text-zinc-500">{t("Levels of intelligence")}</p>
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label={t("Levels of intelligence")}>
             {LEVELS.map((l) => (
               <button
                 key={l.id}
                 onClick={() => onLevel(l.id)}
                 aria-pressed={level === l.id}
-                title={l.blurb}
+                title={t(l.blurb)}
                 className={`inline-flex h-9 items-center gap-1.5 rounded-full px-3 text-[13px] ring-1 ring-inset transition ${
                   level === l.id ? `${LEVEL_HUES[l.id].tile} font-medium` : "text-zinc-300 ring-white/10 hover:bg-white/[0.05] hover:text-white"
                 }`}
               >
                 <LevelIcon level={l.id} className={`h-4 w-4 ${LEVEL_HUES[l.id].text}`} />
-                {l.short}
+                {t(l.short)}
               </button>
             ))}
           </div>
@@ -84,7 +86,7 @@ export function Everything({
           const items = shown.filter((f) => f.group === group);
           return (
             <div key={group} className="mb-5 break-inside-avoid">
-              <h4 className="mb-1 px-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">{group}</h4>
+              <h4 className="mb-1 px-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-zinc-500">{t(group)}</h4>
               <ul>
                 {items.map((f) => {
                   const on = live(f);
@@ -100,15 +102,15 @@ export function Everything({
                           <Tile d={ICONS[f.icon]} hue={GROUP_HUES[group]} size="sm" />
                         </span>
                         <span className="min-w-0 flex-1">
-                          <span className={`block truncate text-[14.5px] font-medium ${on ? "text-zinc-100" : "text-zinc-400"}`}>{f.title}</span>
-                          <span className="block truncate text-[12.5px] text-zinc-500" title={f.about}>
-                            {f.about}
+                          <span className={`block truncate text-[14.5px] font-medium ${on ? "text-zinc-100" : "text-zinc-400"}`}>{t(f.title)}</span>
+                          <span className="block truncate text-[12.5px] text-zinc-500" title={t(f.about)}>
+                            {t(f.about)}
                           </span>
                         </span>
                         {!on ? (
-                          <span className="shrink-0 rounded-full bg-white/[0.07] px-2 py-0.5 text-[11px] font-medium text-zinc-400">Coming soon</span>
+                          <span className="shrink-0 rounded-full bg-white/[0.07] px-2 py-0.5 text-[11px] font-medium text-zinc-400">{t("Coming soon")}</span>
                         ) : f.paid && free ? (
-                          <span className="shrink-0 rounded-full bg-gold/15 px-2 py-0.5 text-[11px] font-medium text-gold-soft light:bg-amber-50">Paid plans</span>
+                          <span className="shrink-0 rounded-full bg-gold/15 px-2 py-0.5 text-[11px] font-medium text-gold-soft light:bg-amber-50">{t("Paid plans")}</span>
                         ) : null}
                       </button>
                     </li>

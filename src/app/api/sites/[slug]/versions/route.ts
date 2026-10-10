@@ -1,4 +1,5 @@
 import { getUser, unauthorized } from "@/lib/server/auth.ts";
+import { translatorFor } from "@/lib/server/i18n.ts";
 import { ownsSite } from "@/lib/server/inbox.ts";
 import { listVersions, restoreVersion, versionHtml } from "@/lib/server/sites.ts";
 import { flashDbShim, injectHead } from "@/lib/flashdb-shim.ts";
@@ -12,12 +13,13 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request, ctx: RouteContext<"/api/sites/[slug]/versions">) {
   const user = await getUser(request);
   if (!user) return unauthorized();
+  const t = await translatorFor(request, user.language);
   const { slug } = await ctx.params;
-  if (!(await ownsSite(user.id, slug))) return Response.json({ error: "Not found" }, { status: 404 });
+  if (!(await ownsSite(user.id, slug))) return Response.json({ error: t("Not found") }, { status: 404 });
   const view = new URL(request.url).searchParams.get("view");
   if (view) {
     const html = await versionHtml(slug, view);
-    if (html === null) return new Response("This version was deleted.", { status: 404 });
+    if (html === null) return new Response(t("This version was deleted."), { status: 404 });
     return new Response(injectHead(html, flashDbShim(null)), {
       headers: {
         "Content-Type": "text/html; charset=utf-8",
@@ -34,11 +36,12 @@ export async function GET(request: Request, ctx: RouteContext<"/api/sites/[slug]
 export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug]/versions">) {
   const user = await getUser(request);
   if (!user) return unauthorized();
+  const t = await translatorFor(request, user.language);
   const { slug } = await ctx.params;
-  if (!(await ownsSite(user.id, slug))) return Response.json({ error: "Not found" }, { status: 404 });
+  if (!(await ownsSite(user.id, slug))) return Response.json({ error: t("Not found") }, { status: 404 });
   const { id } = (await request.json().catch(() => ({}))) as { id?: unknown };
   if (typeof id !== "string" || !(await restoreVersion(user.id, slug, id))) {
-    return Response.json({ error: "That version was deleted." }, { status: 404 });
+    return Response.json({ error: t("That version was deleted.") }, { status: 404 });
   }
   return Response.json({ ok: true });
 }

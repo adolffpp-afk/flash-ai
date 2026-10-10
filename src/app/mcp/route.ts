@@ -1,8 +1,7 @@
 import { appUrl } from "@/lib/server/auth.ts";
 import { getClient, tokenUser } from "@/lib/server/connector.ts";
-import { CORS, json, needsSignIn, preflight } from "@/lib/server/connector-http.ts";
+import { CORS, json, needsSignIn, preflight, tooManyCalls } from "@/lib/server/connector-http.ts";
 import { callTool, tools, type ToolContext } from "@/lib/server/mcp-tools.ts";
-import { overLimit } from "@/lib/server/limits.ts";
 
 // Videos take a few minutes (each media job stops waiting after 240 seconds).
 export const maxDuration = 300;
@@ -68,8 +67,7 @@ export async function POST(request: Request) {
     return json(rpcError(null, -32600, "Send a JSON-RPC message."), 400);
   }
   const app = (await getClient(signedIn.clientId))?.name ?? "a connected app";
-  const calls = messages.filter((m) => m.method === "tools/call").length;
-  if (calls && (await overLimit(`mcp:${signedIn.user.id}`, 60, 3600_000))) {
+  if (await tooManyCalls(signedIn.user.id, messages)) {
     return json(rpcError(messages[0].id, -32000, "Too many Flash requests this hour. Please wait a little."), 429);
   }
 

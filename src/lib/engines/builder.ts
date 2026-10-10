@@ -3,6 +3,7 @@ import { MAX_OUTPUT_TOKENS, tokensWithin } from "../credits.ts";
 import { htmlTitle, splitBuild } from "../build-parse.ts";
 import { applyEdits, hasPieces, piecesIn, splitEdits, type Edit } from "../edit-blocks.ts";
 import type { ChatTurn, StreamEvent } from "../types.ts";
+import { english, msg, type Translate } from "../i18n.ts";
 
 const SHARED_RULES = `Output format, always:
 1. One or two sentences saying what you built or changed.
@@ -106,7 +107,7 @@ const WHOLE_FILE_AGAIN =
   "this time, with no flash-edit block. Start from the newest version of the file in this conversation " +
   "and keep everything else exactly as it is.";
 
-const NO_FIT = "Flash couldn't fit that change into your app. Try again, or say exactly which part to change.";
+const NO_FIT = msg("Flash couldn't fit that change into your app. Try again, or say exactly which part to change.");
 
 /** A whole HTML file, as opposed to a snippet quoted in an answer. */
 const isDocument = (code: string) => /<!doctype html|<html[\s>]|<body[\s>]/i.test(code);
@@ -134,16 +135,20 @@ export async function* streamBuild(
   budget: Budget = NO_BUDGET,
   // The level's model and effort; Vision at high effort by default.
   choice: ClaudeChoice = defaultChoice(kind),
+  // The language Flash's own words (progress, notes, errors) are in.
+  t: Translate = english,
 ): AsyncGenerator<StreamEvent> {
-  const noun = kind === "app" ? "app" : "slides";
-  const fallback = kind === "app" ? "Your app" : "Your slides";
+  const app = kind === "app";
+  // The title when the file has none. It names the published site and its downloads, so it stays in English.
+  const fallback = app ? "Your app" : "Your slides";
   const tooLong = (): StreamEvent => ({
     type: "error",
     message:
       budget.maxTokens < MAX_OUTPUT_TOKENS
-        ? "Your credits ran out before this was finished. Add credits, or ask for a simpler first version."
-        : "The app was too large to finish in one go. Try asking for a simpler first version.",
+        ? t("Your credits ran out before this was finished. Add credits, or ask for a simpler first version.")
+        : t("The app was too large to finish in one go. Try asking for a simpler first version."),
   });
+  const noFit = (): StreamEvent => ({ type: "error", message: t(NO_FIT) });
 
   const base = latestApp(history);
   let messages = toMessages(history);
@@ -158,12 +163,16 @@ export async function* streamBuild(
     yield {
       type: "status",
       message: quiet
-        ? `Writing your ${noun}…`
+        ? app
+          ? t("Writing your app…")
+          : t("Writing your slides…")
         : base
-          ? `Changing your ${noun}…`
-          : kind === "app"
-            ? "Designing your app…"
-            : "Designing your deck…",
+          ? app
+            ? t("Changing your app…")
+            : t("Changing your slides…")
+          : app
+            ? t("Designing your app…")
+            : t("Designing your deck…"),
     };
     const stream = getClient().beta.messages.stream({
       ...choiceParams(choice),
@@ -192,20 +201,28 @@ export async function* streamBuild(
         const lines = part.html.split("\n").length;
         if (lines - lastLines >= 25) {
           lastLines = lines;
-          yield { type: "status", message: `Writing your ${noun}… ${lines} lines` };
+          yield { type: "status", message: app ? t("Writing your app… {lines} lines", { lines }) : t("Writing your slides… {lines} lines", { lines }) };
         }
       } else if (editAt !== -1) {
         const pieces = splitEdits(text).edits.length;
         if (pieces > lastPieces) {
           lastPieces = pieces;
-          yield { type: "status", message: pieces === 1 ? `Changing 1 place in your ${noun}…` : `Changing ${pieces} places in your ${noun}…` };
+          const message =
+            pieces === 1
+              ? app
+                ? t("Changing 1 place in your app…")
+                : t("Changing 1 place in your slides…")
+              : app
+                ? t("Changing {count} places in your app…", { count: pieces })
+                : t("Changing {count} places in your slides…", { count: pieces });
+          yield { type: "status", message };
         }
       }
     }
     const final = await stream.finalMessage();
     spent += meterClaude(meter, final, choice.model);
     if (final.stop_reason === "refusal") {
-      yield { type: "text", delta: "\n\nFlash couldn't build that." };
+      yield { type: "text", delta: "\n\n" + t("Flash couldn't build that.") };
       return;
     }
     const cut = final.stop_reason === "max_tokens";
@@ -245,7 +262,7 @@ export async function* streamBuild(
         return;
       }
       if (quiet) {
-        yield { type: "error", message: NO_FIT };
+        yield noFit();
         return;
       }
       // The whole file is asked for only while the credits held for this request still pay for
@@ -254,7 +271,7 @@ export async function* streamBuild(
       const reread = usage.input_tokens + (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + usage.output_tokens + 200;
       maxTokens = Math.min(budget.maxTokens, tokensWithin(kind, choice.model, reread, budget.capCents - spent, usesFallback(choice)));
       if (!(maxTokens >= Math.ceil(base!.length / 3) + THINKING_ROOM)) {
-        yield { type: "error", message: NO_FIT };
+        yield noFit();
         return;
       }
       messages = [...messages, { role: "assistant", content: text }, { role: "user", content: WHOLE_FILE_AGAIN }];
@@ -267,7 +284,7 @@ export async function* streamBuild(
     if (!quiet && words.length > sentBefore) yield { type: "text", delta: words.slice(sentBefore) };
     if (html === null) {
       if (cut) yield tooLong();
-      else if (quiet) yield { type: "error", message: NO_FIT };
+      else if (quiet) yield noFit();
       return;
     }
     if (part.open && cut) {

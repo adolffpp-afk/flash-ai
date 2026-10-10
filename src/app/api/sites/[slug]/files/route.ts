@@ -1,4 +1,5 @@
 import { getUser, unauthorized } from "@/lib/server/auth.ts";
+import { translatorFor } from "@/lib/server/i18n.ts";
 import { clientIp, overLimit } from "@/lib/server/limits.ts";
 import { ownsSite } from "@/lib/server/inbox.ts";
 import { deleteUpload, listUploads, saveUpload, setUploadsOn, uploadsOn, uploadUse, MAX_UPLOAD_BYTES } from "@/lib/server/site-files.ts";
@@ -44,8 +45,9 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug
 export async function GET(request: Request, ctx: RouteContext<"/api/sites/[slug]/files">) {
   const user = await getUser(request);
   if (!user) return unauthorized();
+  const t = await translatorFor(request, user.language);
   const { slug } = await ctx.params;
-  if (!(await ownsSite(user.id, slug))) return Response.json({ error: "Not found" }, { status: 404 });
+  if (!(await ownsSite(user.id, slug))) return Response.json({ error: t("Not found") }, { status: 404 });
   return Response.json({ files: await listUploads(slug), use: await uploadUse(slug), enabled: await uploadsOn(slug) });
 }
 
@@ -53,18 +55,20 @@ export async function GET(request: Request, ctx: RouteContext<"/api/sites/[slug]
 export async function PATCH(request: Request, ctx: RouteContext<"/api/sites/[slug]/files">) {
   const user = await getUser(request);
   if (!user) return unauthorized();
+  const t = await translatorFor(request, user.language);
   const { slug } = await ctx.params;
-  if (!(await ownsSite(user.id, slug))) return Response.json({ error: "Not found" }, { status: 404 });
+  if (!(await ownsSite(user.id, slug))) return Response.json({ error: t("Not found") }, { status: 404 });
   const body = (await request.json().catch(() => ({}))) as { enabled?: unknown };
-  if (typeof body.enabled !== "boolean") return Response.json({ error: "Say whether it's on." }, { status: 400 });
+  if (typeof body.enabled !== "boolean") return Response.json({ error: t("Say whether it's on.") }, { status: 400 });
   return Response.json({ enabled: await setUploadsOn(slug, body.enabled) });
 }
 
 export async function DELETE(request: Request, ctx: RouteContext<"/api/sites/[slug]/files">) {
   const user = await getUser(request);
   if (!user) return unauthorized();
+  const t = await translatorFor(request, user.language);
   const { slug } = await ctx.params;
-  if (!(await ownsSite(user.id, slug))) return Response.json({ error: "Not found" }, { status: 404 });
+  if (!(await ownsSite(user.id, slug))) return Response.json({ error: t("Not found") }, { status: 404 });
   const id = new URL(request.url).searchParams.get("id") ?? "";
   return Response.json({ ok: await deleteUpload(slug, id) });
 }

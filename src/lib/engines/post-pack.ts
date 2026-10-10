@@ -2,6 +2,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { CHAT_MODEL, choiceParams, getClient, meterClaude, noMeter, type Meter } from "./claude.ts";
 import { tokensAtMost } from "./companion.ts";
 import { FriendlyError } from "./errors.ts";
+import { msg } from "../i18n.ts";
 import { callCost, claudePrice } from "../credits.ts";
 import { PACK_VIDEO_SECONDS, PACK_WRITING_CENTS } from "../models.ts";
 import { parsePack, type Pack } from "../post-pack.ts";
@@ -78,7 +79,7 @@ export async function writePack(request: string, about: string, meter: Meter = n
     maxTokens = await allowance(system, messages, asked);
   }
   if (maxTokens < MIN_PACK_TOKENS) {
-    throw new FriendlyError("This request is too long for a post pack. Shorten it and try again.");
+    throw new FriendlyError(msg("This request is too long for a post pack. Shorten it and try again."));
   }
   const res = await getClient().beta.messages.create(
     {
@@ -91,9 +92,9 @@ export async function writePack(request: string, about: string, meter: Meter = n
     { timeout: 45_000, maxRetries: 0 },
   );
   meterClaude(meter, res, CHAT_MODEL);
-  if (res.stop_reason === "refusal") throw new FriendlyError("Flash can't make posts for that request.");
+  if (res.stop_reason === "refusal") throw new FriendlyError(msg("Flash can't make posts for that request."));
   const text = res.content.find((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")?.text ?? "";
   const pack = parsePack(text);
-  if (!pack) throw new FriendlyError("Flash couldn't write the posts this time. Please try again.");
+  if (!pack) throw new FriendlyError(msg("Flash couldn't write the posts this time. Please try again."));
   return { ...pack, picture: pack.picture || request.slice(0, 1500) };
 }

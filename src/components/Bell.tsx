@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type Me } from "@/lib/store";
 import { shortAgo } from "@/lib/when";
+import { useT } from "@/lib/use-t";
 import { ICONS, Icon } from "./Home";
 
 type Site = { slug: string; title: string; unread: number };
@@ -24,6 +25,7 @@ function seenAt(): number {
  * running low, and credits added lately. The dot shows while there's something they haven't seen.
  */
 export function Bell({ me, onSites, onCredits }: { me: Me; onSites: () => void; onCredits: () => void }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [sites, setSites] = useState<Site[]>([]);
   const [seen, setSeen] = useState(Number.POSITIVE_INFINITY);
@@ -89,25 +91,25 @@ export function Bell({ me, onSites, onCredits }: { me: Me; onSites: () => void; 
         onClick={toggle}
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label={fresh ? "Notifications: something new" : "Notifications"}
-        title="Notifications"
+        aria-label={fresh ? t("Notifications: something new") : t("Notifications")}
+        title={t("Notifications")}
         className="glass relative flex h-12 w-12 items-center justify-center rounded-full text-zinc-200 shadow-none transition hover:brightness-110 hover:text-white @min-[1100px]/main:h-[52px] @min-[1100px]/main:w-[52px]"
       >
         <Icon d={ICONS.bell} className="h-[22px] w-[22px]" />
         {fresh && <span className="absolute right-3 top-3 h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-zinc-950" aria-hidden />}
       </button>
       {open && (
-        <div role="menu" aria-label="Notifications" className="absolute right-0 top-full z-30 mt-2 w-80 rounded-2xl border border-white/10 bg-zinc-900 p-1.5 shadow-2xl light:shadow-black/10">
-          <p className="px-3 pb-1 pt-2 text-xs font-medium uppercase tracking-wider text-zinc-500">Notifications</p>
-          {empty && <p className="px-3 py-4 text-sm text-zinc-400">You&apos;re all caught up.</p>}
+        <div role="menu" aria-label={t("Notifications")} className="absolute right-0 top-full z-30 mt-2 w-80 rounded-2xl border border-white/10 bg-zinc-900 p-1.5 shadow-2xl light:shadow-black/10">
+          <p className="px-3 pb-1 pt-2 text-xs font-medium uppercase tracking-wider text-zinc-500">{t("Notifications")}</p>
+          {empty && <p className="px-3 py-4 text-sm text-zinc-400">{t("You're all caught up.")}</p>}
           {unread.map((s) => (
             <button key={s.slug} role="menuitem" onClick={pick(onSites)} className={row}>
               <Icon d={ICONS.chat} className="mt-0.5 h-[18px] w-[18px] shrink-0 text-sky-400 light:text-sky-600" />
               <span className="min-w-0 flex-1">
                 <span className="block text-zinc-100">
-                  {s.unread} new {s.unread === 1 ? "message" : "messages"}
+                  {s.unread === 1 ? t("1 new message") : t("{count} new messages", { count: s.unread.toLocaleString(t.locale) })}
                 </span>
-                <span className="block truncate text-xs text-zinc-500">From your site {s.title || s.slug}</span>
+                <span className="block truncate text-xs text-zinc-500">{t("From your site {name}", { name: s.title || s.slug })}</span>
               </span>
             </button>
           ))}
@@ -115,8 +117,8 @@ export function Bell({ me, onSites, onCredits }: { me: Me; onSites: () => void; 
             <button role="menuitem" onClick={pick(onCredits)} className={row}>
               <Icon d={ICONS.sparkle} className="mt-0.5 h-[18px] w-[18px] shrink-0 text-gold" />
               <span className="min-w-0 flex-1">
-                <span className="block text-zinc-100">You&apos;re running low on credits</span>
-                <span className="block text-xs text-zinc-500">{me.credits.toLocaleString()} left. Top up or pick a plan.</span>
+                <span className="block text-zinc-100">{t("You're running low on credits")}</span>
+                <span className="block text-xs text-zinc-500">{t("{count} left. Top up or pick a plan.", { count: me.credits.toLocaleString(t.locale) })}</span>
               </span>
             </button>
           )}
@@ -124,10 +126,10 @@ export function Bell({ me, onSites, onCredits }: { me: Me; onSites: () => void; 
             <button key={`${a.created_at}-${i}`} role="menuitem" onClick={pick(onCredits)} className={row}>
               <Icon d={ICONS.plus} className="mt-0.5 h-[18px] w-[18px] shrink-0 text-emerald-500" />
               <span className="min-w-0 flex-1">
-                <span className="block text-zinc-100">+{a.amount.toLocaleString()} credits</span>
+                <span className="block text-zinc-100">{t("+{count} credits", { count: a.amount.toLocaleString(t.locale) })}</span>
                 <span className="block truncate text-xs text-zinc-500">{a.reason}</span>
               </span>
-              <span className="shrink-0 text-xs text-zinc-500">{shortAgo(a.created_at, now)}</span>
+              <span className="shrink-0 text-xs text-zinc-500">{shortAgo(a.created_at, now, t.locale)}</span>
             </button>
           ))}
         </div>

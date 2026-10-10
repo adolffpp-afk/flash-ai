@@ -1,9 +1,57 @@
+import { now } from "./db.ts";
+import { overLimit } from "./limits.ts";
+
 /*
  * Sends account emails (verification, password reset and sign-in links) through Resend when RESEND_API_KEY is
  * set. Without it, email verification is off and password reset is unavailable, unless
  * FLASH_DEMO_EMAILS=true, which shows the link on screen for testing (never in production).
  */
 const RESEND_API = process.env.RESEND_BASE_URL || "https://api.resend.com";
+
+/*
+ * How many emails Flash sends a day. Resend's free plan sends 100 a day (3,000 a month), shared by
+ * every email Flash sends, so published apps' form messages must never use up what sign-in links,
+ * email confirmations and password resets need. On a bigger Resend plan, raise the numbers here.
+ */
+export const EMAIL_BUDGET = {
+  // Everything Flash may send in a day (counted from midnight UTC): the email provider's allowance.
+  perDay: 100,
+  // Always left for sign-in links, email confirmations and password resets: other emails (app
+  // form messages, orders, team invites) stop once only this many of the day's emails are left.
+  keptForAccounts: 60,
+  // Form messages one person's apps may email them in a day, across all their apps. Every message
+  // is still saved in My websites & apps.
+  perOwner: 10,
+};
+
+const DAY = 86_400_000;
+
+/**
+ * What an email is, which decides whether today's budget lets it go out:
+ * - "account": sign-in links, email confirmations and password resets. Always sent.
+ * - "other": team invitations and shop orders, sent while the day's budget lasts. Each needs a
+ *   paid plan or a real payment, so nobody can send many for free.
+ * - { owner }: a published app's form message to the user who owns the app. Anyone can send
+ *   forms, so these also stop at the owner's own daily cap.
+ */
+export type EmailKind = "account" | "other" | { owner: string };
+
+/** Whether today's budget lets an email of this kind go out, counting it when it does. */
+async function withinBudget(kind: EmailKind): Promise<boolean> {
+  const today = `email-day:${new Date(now()).toISOString().slice(0, 10)}`;
+  if (kind === "account") {
+    // Never held back, so nobody is locked out, but counted so other emails leave room for these.
+    await overLimit(today, Infinity, DAY);
+    return true;
+  }
+  // Checked first, so one person's busy apps can't use up everyone else's share.
+  if (typeof kind === "object" && (await overLimit(`email-owner:${kind.owner}`, EMAIL_BUDGET.perOwner, DAY))) return false;
+  if (await overLimit(today, EMAIL_BUDGET.perDay - EMAIL_BUDGET.keptForAccounts, DAY)) {
+    console.warn("[flash] today's emails for apps and invites are used up; raise EMAIL_BUDGET in email.ts on a bigger email plan");
+    return false;
+  }
+  return true;
+}
 
 export const emailEnabled = () => Boolean(process.env.RESEND_API_KEY);
 export const demoEmails = () => !emailEnabled() && process.env.FLASH_DEMO_EMAILS === "true";
@@ -85,9 +133,13 @@ export const EMAILS = {
   }),
 };
 
-/** Sends one email. Returns the link instead when demo emails are on. */
-export async function sendEmail(to: string, message: { subject: string; html: string; text: string }): Promise<void> {
-  if (!emailEnabled()) return;
+/**
+ * Sends one email, when today's budget allows its kind (see EMAIL_BUDGET). Returns false when the
+ * budget held it back; account emails never are. With email off, nothing is sent.
+ */
+export async function sendEmail(to: string, message: { subject: string; html: string; text: string }, kind: EmailKind): Promise<boolean> {
+  if (!emailEnabled()) return true;
+  if (!(await withinBudget(kind))) return false;
   const res = await fetch(`${RESEND_API}/emails`, {
     method: "POST",
     headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
@@ -95,4 +147,5 @@ export async function sendEmail(to: string, message: { subject: string; html: st
     signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) throw new Error(`Email provider returned ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  return true;
 }

@@ -1,5 +1,6 @@
 import type { BuiltApp, Engine, Source } from "./types";
 import type { Post } from "./post-pack";
+import { tNow } from "./use-t.ts";
 
 export type UIMessage = {
   id: string;
@@ -132,7 +133,8 @@ export async function api<T>(path: string, init?: RequestInit & { json?: unknown
   });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw Object.assign(new Error(data.error ?? `Request failed (${res.status})`), { status: res.status, code: data.code });
+    // The server's message comes in the language Flash is shown in; this one is for a reply with none (a proxy's error page).
+    throw Object.assign(new Error(data.error ?? tNow("Request failed ({status})", { status: res.status })), { status: res.status, code: data.code });
   }
   return data as T;
 }

@@ -1,4 +1,5 @@
 import { getUser, unauthorized } from "@/lib/server/auth.ts";
+import { translatorFor } from "@/lib/server/i18n.ts";
 import { ownsSite } from "@/lib/server/inbox.ts";
 import { one } from "@/lib/server/db.ts";
 import { listSiteUsers, removeSiteUser } from "@/lib/server/site-auth.ts";
@@ -10,13 +11,14 @@ export const dynamic = "force-dynamic";
 export async function GET(request: Request, ctx: RouteContext<"/api/sites/[slug]/members">) {
   const user = await getUser(request);
   if (!user) return unauthorized();
+  const t = await translatorFor(request, user.language);
   const { slug } = await ctx.params;
-  if (!(await ownsSite(user.id, slug))) return Response.json({ error: "Not found" }, { status: 404 });
+  if (!(await ownsSite(user.id, slug))) return Response.json({ error: t("Not found") }, { status: 404 });
   const members = await listSiteUsers(slug);
   if (new URL(request.url).searchParams.get("format") === "csv") {
     const site = await one<{ title: string }>("SELECT title FROM sites WHERE slug = ?", [slug]);
     const rows = [
-      ["Joined", "Email", "Name"],
+      [t("Joined"), t("Email"), t("Name")],
       ...members.map((m) => [new Date(m.createdAt).toISOString().slice(0, 16).replace("T", " "), m.email, m.name]),
     ];
     return new Response(toCsv(rows), {
@@ -34,8 +36,9 @@ export async function GET(request: Request, ctx: RouteContext<"/api/sites/[slug]
 export async function DELETE(request: Request, ctx: RouteContext<"/api/sites/[slug]/members">) {
   const user = await getUser(request);
   if (!user) return unauthorized();
+  const t = await translatorFor(request, user.language);
   const { slug } = await ctx.params;
-  if (!(await ownsSite(user.id, slug))) return Response.json({ error: "Not found" }, { status: 404 });
+  if (!(await ownsSite(user.id, slug))) return Response.json({ error: t("Not found") }, { status: 404 });
   const id = new URL(request.url).searchParams.get("id") ?? "";
   return Response.json({ ok: await removeSiteUser(slug, id) });
 }

@@ -6,6 +6,7 @@ import { api } from "@/lib/store";
 import { flashDbShim, injectHead } from "@/lib/flashdb-shim";
 import { appSlug, projectZip } from "@/lib/app-project";
 import { PREVIEW_BRIDGE, fixRequest, friendlyError, isPreviewMessage, linesIn, type PickedElement, type PreviewError } from "@/lib/preview-bridge";
+import { useT } from "@/lib/use-t";
 
 // No allow-same-origin: generated code can't read Flash's storage or cookies.
 const SANDBOX = "allow-scripts allow-forms allow-modals allow-popups allow-pointer-lock allow-downloads";
@@ -24,6 +25,7 @@ function save(name: string, data: BlobPart, type: string) {
 
 /** The app's code, editable when onSave is given. Remounted (with a fresh draft) when the code changes. */
 function CodeEditor({ html, full, onSave }: { html: string; full: boolean; onSave?: (html: string) => void }) {
+  const t = useT();
   const [draft, setDraft] = useState(html);
   const changed = draft !== html;
   const btn = "rounded-md px-2 py-1 hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-40 disabled:hover:bg-transparent";
@@ -31,16 +33,16 @@ function CodeEditor({ html, full, onSave }: { html: string; full: boolean; onSav
     <div className={`flex flex-col ${full ? "min-h-0 flex-1" : "h-[560px]"}`}>
       {onSave && (
         <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800 px-3 py-1.5 text-xs text-zinc-400">
-          <span className="min-w-0 flex-1">{changed ? "You have unsaved changes." : "Change the code here, then save to see it."}</span>
+          <span className="min-w-0 flex-1">{changed ? t("You have unsaved changes.") : t("Change the code here, then save to see it.")}</span>
           <button className={btn} disabled={!changed} onClick={() => setDraft(html)}>
-            Undo changes
+            {t("Undo changes")}
           </button>
           <button
             className="rounded-md bg-brand px-2.5 py-1 font-medium text-on-brand hover:brightness-110 disabled:opacity-40"
             disabled={!changed || !draft.trim()}
             onClick={() => onSave(draft)}
           >
-            Save
+            {t("Save")}
           </button>
         </div>
       )}
@@ -68,7 +70,7 @@ function CodeEditor({ html, full, onSave }: { html: string; full: boolean; onSav
         autoCapitalize="off"
         autoCorrect="off"
         wrap="off"
-        aria-label="App code"
+        aria-label={t("App code")}
         className="min-h-0 w-full flex-1 resize-none bg-zinc-950/40 p-3 font-mono text-xs leading-relaxed text-zinc-300 outline-none"
       />
     </div>
@@ -94,6 +96,7 @@ export function AppPreview({
   // Hands a part of the app the user clicked to the message box, to say what to change.
   onPick?: (picked: PickedElement) => void;
 }) {
+  const t = useT();
   const [view, setView] = useState<"preview" | "code">("preview");
   const [codeShown, setCodeShown] = useState(false);
   const [full, setFull] = useState(false);
@@ -110,6 +113,11 @@ export function AppPreview({
   const previewHtml = useMemo(() => injectHead(app.html, PREVIEW_HEAD), [app.html]);
   const link = app.slug && typeof window !== "undefined" ? `${window.location.origin}/p/${app.slug}` : "";
   const shownErrors = errors.html === app.html && !errors.hidden ? errors.list : [];
+  // The browser's own error messages stay as they are; Flash's explanation of one is translated.
+  const explain = (message: string) => {
+    const friendly = friendlyError(message);
+    return friendly === message ? message : t(friendly);
+  };
 
   // A new version of an already published app updates the same site, so its link, domain and prices stay.
   const target = app.slug ?? publishedEarlier;
@@ -173,7 +181,7 @@ export function AppPreview({
       onPublished?.(res.slug);
       setPublishedHtml(app.html);
     } catch (err) {
-      setPublishError(err instanceof Error ? err.message : "Couldn't publish.");
+      setPublishError(err instanceof Error ? err.message : t("Couldn't publish."));
     } finally {
       setPublishing(false);
     }
@@ -232,9 +240,9 @@ export function AppPreview({
                   setView(v);
                   if (v === "code") setCodeShown(true);
                 }}
-                className={`px-2 py-1 capitalize ${view === v ? "bg-primary/15 text-primary-soft" : ""}`}
+                className={`px-2 py-1 ${view === v ? "bg-primary/15 text-primary-soft" : ""}`}
               >
-                {v}
+                {v === "preview" ? t("Preview") : t("Code")}
               </button>
             ))}
           </div>
@@ -243,49 +251,49 @@ export function AppPreview({
               className={`${btn} ${picking ? "bg-primary/15 text-primary-soft" : ""}`}
               onClick={() => choose(!picking)}
               aria-pressed={picking}
-              aria-label="Select a part to change"
-              title="Click a part of your app, then say what to change"
+              aria-label={t("Select a part to change")}
+              title={t("Click a part of your app, then say what to change")}
             >
               <span aria-hidden>◎</span>
-              <span className="hidden sm:inline"> Select</span>
+              <span className="hidden sm:inline"> {t("Select")}</span>
             </button>
           )}
-          <button className={btn} onClick={restart} aria-label="Restart app" title="Restart">
+          <button className={btn} onClick={restart} aria-label={t("Restart app")} title={t("Restart")}>
             ↻
           </button>
-          <button className={btn} onClick={() => setFull((f) => !f)} aria-label={full ? "Exit full screen" : "Full screen"}>
+          <button className={btn} onClick={() => setFull((f) => !f)} aria-label={full ? t("Exit full screen") : t("Full screen")}>
             <span className="sm:hidden" aria-hidden>
               {full ? "✕" : "⤢"}
             </span>
-            <span className="hidden sm:inline">{full ? "Exit full screen" : "Full screen"}</span>
+            <span className="hidden sm:inline">{full ? t("Exit full screen") : t("Full screen")}</span>
           </button>
           <div className="relative">
-            <button className={`${btn} text-primary`} onClick={() => setMenu((m) => !m)} aria-expanded={menu} aria-haspopup="menu" aria-label="Download">
+            <button className={`${btn} text-primary`} onClick={() => setMenu((m) => !m)} aria-expanded={menu} aria-haspopup="menu" aria-label={t("Download")}>
               <span className="sm:hidden" aria-hidden>
                 ⬇
               </span>
-              <span className="hidden sm:inline">Download ▾</span>
+              <span className="hidden sm:inline">{t("Download")} ▾</span>
             </button>
             {menu && (
               <>
                 {/* A tap anywhere else closes the menu. */}
-                <button type="button" aria-label="Close the download menu" className="fixed inset-0 z-10 cursor-default" onClick={() => setMenu(false)} />
+                <button type="button" aria-label={t("Close the download menu")} className="fixed inset-0 z-10 cursor-default" onClick={() => setMenu(false)} />
                 <div role="menu" className="absolute right-0 top-full z-20 mt-1 w-64 overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900 shadow-xl">
                   <button role="menuitem" className="block w-full px-3 py-2 text-left hover:bg-zinc-800" onClick={() => download("html")}>
-                    <span className="block text-zinc-100">Web page (.html)</span>
-                    <span className="block text-zinc-500">One file that opens in any browser.</span>
+                    <span className="block text-zinc-100">{t("Web page (.html)")}</span>
+                    <span className="block text-zinc-500">{t("One file that opens in any browser.")}</span>
                   </button>
                   <button role="menuitem" className="block w-full px-3 py-2 text-left hover:bg-zinc-800" onClick={() => download("project")}>
-                    <span className="block text-zinc-100">Project folder (.zip)</span>
-                    <span className="block text-zinc-500">To keep coding in Cursor or VS Code.</span>
+                    <span className="block text-zinc-100">{t("Project folder (.zip)")}</span>
+                    <span className="block text-zinc-500">{t("To keep coding in Cursor or VS Code.")}</span>
                   </button>
                 </div>
               </>
             )}
           </div>
           {onPublished && !app.slug && publishedEarlier && (
-            <button className={btn} onClick={() => publish(true)} disabled={publishing} title="Publish this version as a separate site">
-              Publish as new
+            <button className={btn} onClick={() => publish(true)} disabled={publishing} title={t("Publish this version as a separate site")}>
+              {t("Publish as new")}
             </button>
           )}
           {onPublished && (
@@ -293,17 +301,17 @@ export function AppPreview({
               className="ml-1 rounded-md bg-brand px-2.5 py-1 font-medium text-on-brand hover:brightness-110 disabled:opacity-50"
               onClick={() => publish()}
               disabled={publishing}
-              title={!app.slug && publishedEarlier ? "Replace the published site with this version" : undefined}
+              title={!app.slug && publishedEarlier ? t("Replace the published site with this version") : undefined}
             >
               {publishing
-                ? "Publishing…"
+                ? t("Publishing…")
                 : app.slug
                   ? publishedHtml === app.html
-                    ? "Published ✓"
-                    : "Update"
+                    ? t("Published ✓")
+                    : t("Update")
                   : publishedEarlier
-                    ? "Update site"
-                    : "Publish"}
+                    ? t("Update site")
+                    : t("Publish")}
             </button>
           )}
         </div>
@@ -314,12 +322,17 @@ export function AppPreview({
             <span className="text-red-300">{publishError}</span>
           ) : (
             <>
-              <span className="text-emerald-300">Live at</span>
-              <a href={link} target="_blank" rel="noreferrer" className="min-w-0 truncate text-primary-soft hover:underline">
-                {link}
-              </a>
+              <span className="flex min-w-0 items-center gap-2 text-emerald-300">
+                {t.node("Live at {link}", {
+                  link: (
+                    <a href={link} target="_blank" rel="noreferrer" className="min-w-0 truncate text-primary-soft hover:underline">
+                      {link}
+                    </a>
+                  ),
+                })}
+              </span>
               <button className={btn} onClick={copyLink}>
-                {copied ? "Copied" : "Copy link"}
+                {copied ? t("Copied") : t("Copy link")}
               </button>
             </>
           )}
@@ -327,27 +340,34 @@ export function AppPreview({
       )}
       {picking && (
         <div role="status" className="flex items-center gap-2 border-b border-primary/20 bg-primary/10 px-3 py-2 text-xs text-primary-soft">
-          <span className="min-w-0 flex-1">Click the part of your app you want to change.</span>
+          <span className="min-w-0 flex-1">{t("Click the part of your app you want to change.")}</span>
           <button className={btn} onClick={() => choose(false)}>
-            Cancel
+            {t("Cancel")}
           </button>
         </div>
       )}
       {shownErrors.length > 0 && view === "preview" && !picking && (
         <div role="alert" className="flex items-center gap-2 border-b border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-200">
-          <span className="min-w-0 flex-1 truncate" title={shownErrors.map((e) => friendlyError(e.message)).join("\n")}>
-            ⚠ This app hit an error: {friendlyError(shownErrors[0].message)}
-            {shownErrors.length > 1 && ` (and ${shownErrors.length - 1} more)`}
+          <span className="min-w-0 flex-1 truncate" title={shownErrors.map((e) => explain(e.message)).join("\n")}>
+            ⚠{" "}
+            {shownErrors.length === 1
+              ? t("This app hit an error: {error}", { error: explain(shownErrors[0].message) })
+              : shownErrors.length === 2
+                ? t("This app hit an error: {error} (and 1 more)", { error: explain(shownErrors[0].message) })
+                : t("This app hit an error: {error} (and {count} more)", {
+                    error: explain(shownErrors[0].message),
+                    count: (shownErrors.length - 1).toLocaleString(t.locale),
+                  })}
           </span>
           {onFix && (
             <button
               className="shrink-0 rounded-md bg-brand px-2.5 py-1 font-medium text-on-brand hover:brightness-110"
               onClick={() => onFix(fixRequest(shownErrors, app.html))}
             >
-              Fix it
+              {t("Fix it")}
             </button>
           )}
-          <button className={`${btn} shrink-0`} onClick={() => setErrors({ ...errors, hidden: true })} aria-label="Hide the error">
+          <button className={`${btn} shrink-0`} onClick={() => setErrors({ ...errors, hidden: true })} aria-label={t("Hide the error")}>
             ✕
           </button>
         </div>

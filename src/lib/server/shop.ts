@@ -7,6 +7,7 @@ import { randomId } from "./ids.ts";
 import { overLimit } from "./limits.ts";
 import { EMAILS, sendEmail } from "./email.ts";
 import { MAX_QUANTITY, MIN_PRICE, SELLER_COUNTRIES, cleanItemName, formatMoney, safeReturn, saleFee, toMinor } from "../shop.ts";
+import { english, type Translate } from "../i18n.ts";
 
 /*
  * Selling from published sites. Each seller connects their own Stripe account (a Standard-style
@@ -61,17 +62,25 @@ export async function sellerStatus(userId: string): Promise<SellerStatus> {
 }
 
 /** Stripe's own reason, shown to Flash's admins only, so a setup problem can be fixed without reading server logs. */
-const stripeReason = (user: User, err: unknown) => (isAdmin(user) && err instanceof Error ? ` Stripe says: ${err.message}` : "");
+const stripeReason = (user: User, err: unknown) => (isAdmin(user) && err instanceof Error ? err.message : null);
 
-/** Stripe's sign-up page for the seller's account, creating the account the first time. */
-export async function sellerOnboardingLink(user: User, country: unknown, origin: string): Promise<{ url: string } | { error: string; status: number }> {
-  if (!sellingAvailable()) return { error: "Selling isn't switched on yet.", status: 503 };
-  if (!(await canSell(user))) return { error: "Selling comes with a paid plan.", status: 402 };
+/**
+ * Stripe's sign-up page for the seller's account, creating the account the first time. `t` words
+ * the reasons it can't, for the seller in Flash.
+ */
+export async function sellerOnboardingLink(
+  user: User,
+  country: unknown,
+  origin: string,
+  t: Translate = english,
+): Promise<{ url: string } | { error: string; status: number }> {
+  if (!sellingAvailable()) return { error: t("Selling isn't switched on yet."), status: 503 };
+  if (!(await canSell(user))) return { error: t("Selling comes with a paid plan."), status: 402 };
   let row = await sellerRow(user.id);
   if (!row) {
     const code = SELLER_COUNTRIES.find(([c]) => c === country)?.[0];
-    if (!code) return { error: "Pick the country your business is in.", status: 400 };
-    if (await overLimit(`seller-create:${user.id}`, 10, 24 * HOUR)) return { error: "Too many tries today. Please try again tomorrow.", status: 429 };
+    if (!code) return { error: t("Pick the country your business is in."), status: 400 };
+    if (await overLimit(`seller-create:${user.id}`, 10, 24 * HOUR)) return { error: t("Too many tries today. Please try again tomorrow."), status: 429 };
     try {
       const account = await stripe<{ id: string; default_currency?: string }>(
         "POST",
@@ -96,7 +105,14 @@ export async function sellerOnboardingLink(user: User, country: unknown, origin:
       row = { stripe_account: account.id, country: code, currency: account.default_currency ?? "", ready: 0 };
     } catch (err) {
       console.error("[flash] stripe seller account failed", err);
-      return { error: `Couldn't start the Stripe sign-up. Please try again later.${stripeReason(user, err)}`, status: 502 };
+      const reason = stripeReason(user, err);
+      return {
+        error:
+          reason === null
+            ? t("Couldn't start the Stripe sign-up. Please try again later.")
+            : t("Couldn't start the Stripe sign-up. Please try again later. Stripe says: {reason}", { reason }),
+        status: 502,
+      };
     }
   }
   try {
@@ -114,7 +130,14 @@ export async function sellerOnboardingLink(user: User, country: unknown, origin:
     return { url: link.url };
   } catch (err) {
     console.error("[flash] stripe account link failed", err);
-    return { error: `Couldn't open the Stripe sign-up. Please try again later.${stripeReason(user, err)}`, status: 502 };
+    const reason = stripeReason(user, err);
+    return {
+      error:
+        reason === null
+          ? t("Couldn't open the Stripe sign-up. Please try again later.")
+          : t("Couldn't open the Stripe sign-up. Please try again later. Stripe says: {reason}", { reason }),
+      status: 502,
+    };
   }
 }
 
@@ -135,23 +158,24 @@ export async function listProducts(slug: string): Promise<Product[]> {
   }));
 }
 
-/** Adds an item for sale on the site, or changes the price of one with the same name. */
+/** Adds an item for sale on the site, or changes the price of one with the same name. `t` words the reasons it can't. */
 export async function saveProduct(
   user: User,
   slug: string,
   input: { name?: unknown; price?: unknown; delivery?: unknown },
+  t: Translate = english,
 ): Promise<Product | { error: string; status: number }> {
   const seller = await sellerStatus(user.id);
-  if (!seller.ready || !seller.currency) return { error: "Connect your Stripe account first.", status: 409 };
+  if (!seller.ready || !seller.currency) return { error: t("Connect your Stripe account first."), status: 409 };
   const name = cleanItemName(input.name);
-  if (!name) return { error: "Give the item a name (up to 80 characters).", status: 400 };
+  if (!name) return { error: t("Give the item a name (up to 80 characters)."), status: 400 };
   const price = toMinor(String(input.price ?? ""), seller.currency);
   if (price === null || price < MIN_PRICE) {
-    return { error: `Type a price of at least ${formatMoney(MIN_PRICE, seller.currency)}, like 12.50.`, status: 400 };
+    return { error: t("Type a price of at least {price}, like 12.50.", { price: formatMoney(MIN_PRICE, seller.currency) }), status: 400 };
   }
   const count = await one<{ n: number }>("SELECT COUNT(*) AS n FROM site_products WHERE site_slug = ?", [slug]);
   const existing = await one<{ id: string }>("SELECT id FROM site_products WHERE site_slug = ? AND name = ?", [slug, name]);
-  if (!existing && Number(count?.n ?? 0) >= 200) return { error: "A site can sell up to 200 items.", status: 409 };
+  if (!existing && Number(count?.n ?? 0) >= 200) return { error: t("A site can sell up to 200 items."), status: 409 };
   const id = existing?.id ?? randomId();
   await run(
     `INSERT INTO site_products (id, site_slug, name, price, currency, delivery, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -311,7 +335,8 @@ export async function finishCheckout(slug: string, sessionId: string, back: unkn
     ]
       .filter(Boolean)
       .join("\n");
-    await sendEmail(shop.email, EMAILS.siteOrder(shop.title, summary, `${appOrigin}/?apps=1`)).catch((err) =>
+    // Orders aren't held to the owner's cap for form messages (see EMAIL_BUDGET), only the day's budget.
+    await sendEmail(shop.email, EMAILS.siteOrder(shop.title, summary, `${appOrigin}/?apps=1`), "other").catch((err) =>
       console.error("[flash] order email failed", err),
     );
   }

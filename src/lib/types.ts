@@ -1,3 +1,4 @@
+import { msg } from "./i18n.ts";
 import type { Post } from "./post-pack.ts";
 
 export const ENGINES = [
@@ -18,18 +19,18 @@ export const ENGINES = [
 export type Engine = (typeof ENGINES)[number];
 
 export const ENGINE_LABELS: Record<Engine, string> = {
-  text: "Write",
-  search: "Research",
-  code: "Code",
-  translate: "Translate",
-  docs: "Docs & Sheets",
-  image: "Image",
-  video: "Video",
-  voice: "Voice",
-  music: "Music",
-  transcribe: "Transcribe",
-  app: "App Builder",
-  slides: "Slides",
+  text: msg("Write"),
+  search: msg("Research"),
+  code: msg("Code"),
+  translate: msg("Translate"),
+  docs: msg("Docs & Sheets"),
+  image: msg("Image"),
+  video: msg("Video"),
+  voice: msg("Voice"),
+  music: msg("Music"),
+  transcribe: msg("Transcribe"),
+  app: msg("App Builder"),
+  slides: msg("Slides"),
 };
 
 export type Attachment = {

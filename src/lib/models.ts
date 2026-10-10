@@ -1,3 +1,4 @@
+import { msg } from "./i18n.ts";
 import type { Engine } from "./types.ts";
 import { creditsFor } from "./credits.ts";
 
@@ -61,7 +62,7 @@ export const MODELS: ModelInfo[] = [
     label: "GPT Image",
     provider: "openai",
     costCents: 10, // about 3,300 output tokens at $30 per million
-    blurb: "Best with words in the picture: logos, posters, menus",
+    blurb: msg("Best with words in the picture: logos, posters, menus"),
     // Three times FLUX.2 Pro's price, so adding an OpenAI key never makes it the default.
     notDefault: true,
   },
@@ -74,7 +75,7 @@ export const MODELS: ModelInfo[] = [
     label: "Social post pack",
     provider: "fal",
     costCents: (request) => PACK_WRITING_CENTS + 2 * PACK_IMAGE_CENTS + (packWantsVideo(request) ? PACK_VIDEO_CENTS : 0),
-    blurb: "Posts, hashtags and pictures for Instagram, TikTok and Facebook, with a video if you ask",
+    blurb: msg("Posts, hashtags and pictures for Instagram, TikTok and Facebook, with a video if you ask"),
     endpoint: "fal-ai/flux-2-pro",
     notDefault: true,
     chatOnly: true,
@@ -86,7 +87,7 @@ export const MODELS: ModelInfo[] = [
     label: "FLUX.2 Pro",
     provider: "fal",
     costCents: 3, // $0.03 per megapixel
-    blurb: "Lifelike photos, portraits and product shots",
+    blurb: msg("Lifelike photos, portraits and product shots"),
     endpoint: "fal-ai/flux-2-pro",
     match: /\b(photo\w*|realistic|lifelike|portrait|headshot|product shot|cinematic|35 ?mm|dslr)\b/i,
   },
@@ -98,7 +99,7 @@ export const MODELS: ModelInfo[] = [
     provider: "fal",
     // Every scene at Kling's $0.14 a second, plus 2 cents for writing the scenes and joining the clips.
     costCents: (request) => 14 * movieSeconds(request) + 2,
-    blurb: "A short film: Flash writes the scenes, films each one and joins them",
+    blurb: msg("A short film: Flash writes the scenes, films each one and joins them"),
     endpoint: "fal-ai/kling-video/v3/turbo/pro/text-to-video",
     notDefault: true,
     chatOnly: true,
@@ -110,7 +111,7 @@ export const MODELS: ModelInfo[] = [
     label: "Background remover",
     provider: "fal",
     costCents: 2, // Bria RMBG 2.0, $0.018 a photo
-    blurb: "Cuts out the subject on a transparent background",
+    blurb: msg("Cuts out the subject on a transparent background"),
     endpoint: "fal-ai/bria/background/remove",
     edits: true,
     notDefault: true,
@@ -125,7 +126,7 @@ export const MODELS: ModelInfo[] = [
     provider: "fal",
     // SeedVR2 at $0.001 per output megapixel; the long side is at most 4,096 pixels (16.8 MP).
     costCents: 2,
-    blurb: "Makes a photo sharper and up to 4 times bigger",
+    blurb: msg("Makes a photo sharper and up to 4 times bigger"),
     endpoint: "fal-ai/seedvr/upscale/image",
     edits: true,
     notDefault: true,
@@ -139,7 +140,7 @@ export const MODELS: ModelInfo[] = [
     provider: "fal",
     // $0.008 per megapixel in and out; photos are at most 2048 × 2048 (4.2 MP) each way.
     costCents: 7,
-    blurb: "Edits your photo: backgrounds, styles, fixes and more",
+    blurb: msg("Edits your photo: backgrounds, styles, fixes and more"),
     endpoint: "fal-ai/flux-2/turbo/edit",
     edits: true,
   },
@@ -150,7 +151,7 @@ export const MODELS: ModelInfo[] = [
     label: "Kling 3 Pro (animate photo)",
     provider: "fal",
     costCents: (request) => animateSeconds(request) * (wantsSound(request) ? 16.8 : 11.2),
-    blurb: "Turns your photo into a short video, with sound if you ask",
+    blurb: msg("Turns your photo into a short video, with sound if you ask"),
     endpoint: "fal-ai/kling-video/v3/pro/image-to-video",
     edits: true,
   },
@@ -160,7 +161,7 @@ export const MODELS: ModelInfo[] = [
     label: "Sora 2 Pro",
     provider: "openai",
     costCents: 240, // 8 seconds at $0.30 a second
-    blurb: "Polished 8 second clips",
+    blurb: msg("Polished 8 second clips"),
   },
   {
     id: "veo-3.1",
@@ -168,7 +169,7 @@ export const MODELS: ModelInfo[] = [
     label: "Veo 3.1",
     provider: "fal",
     costCents: 320, // 8 seconds with sound at $0.40 a second
-    blurb: "Video with sound: speech, music and effects",
+    blurb: msg("Video with sound: speech, music and effects"),
     endpoint: "fal-ai/veo3.1",
     match: /\b(sound|audio|dialogue|talking|speaking|says?|saying|voice|narrat\w*|music|singing|noise)\b/i,
   },
@@ -178,7 +179,7 @@ export const MODELS: ModelInfo[] = [
     label: "Kling 3 Turbo Pro",
     provider: "fal",
     costCents: (request) => 14 * videoSeconds(request), // $0.14 a second
-    blurb: "Longer 1080p clips, up to 15 seconds",
+    blurb: msg("Longer 1080p clips, up to 15 seconds"),
     endpoint: "fal-ai/kling-video/v3/turbo/pro/text-to-video",
     match: /\b(9|1[0-5])[\s-]*(s|secs?|seconds?)\b|\blong(er)?\s+(video|clip|shot)\b/i,
   },
@@ -188,7 +189,7 @@ export const MODELS: ModelInfo[] = [
     label: "ElevenLabs Music",
     provider: "elevenlabs",
     costCents: 7.5, // 30 seconds at $0.15 a minute
-    blurb: "Instrumentals, jingles and beats",
+    blurb: msg("Instrumentals, jingles and beats"),
   },
   {
     id: "minimax-music",
@@ -196,7 +197,7 @@ export const MODELS: ModelInfo[] = [
     label: "MiniMax Music 2.6",
     provider: "fal",
     costCents: 15, // $0.15 a song
-    blurb: "Full songs with sung lyrics",
+    blurb: msg("Full songs with sung lyrics"),
     endpoint: "fal-ai/minimax-music/v2.6",
     match: /\b(lyrics|vocals?|sing\w*|sung|singer|rap\w*|choir|song with words)\b/i,
   },

@@ -4,6 +4,7 @@ import { emailKey, isVerified } from "./account.ts";
 import { EMAILS, demoEmails, sendEmail } from "./email.ts";
 import { activeSubscription, planById, type Subscription } from "./subscriptions.ts";
 import { fullName } from "../names.ts";
+import { english, type Translate } from "../i18n.ts";
 
 /*
  * Business plan teams. The owner pays, and the owner's credit balance is the team's shared pool:
@@ -58,19 +59,20 @@ async function seatsUsed(teamId: string): Promise<number> {
   return 1 + Number(row?.members ?? 0) + Number(row?.invites ?? 0);
 }
 
-/** Emails an invitation to join the owner's team. In demo mode the link is returned. */
+/** Emails an invitation to join the owner's team. In demo mode the link is returned. `t` words the reasons it can't. */
 export async function inviteMember(
   owner: { id: string; email: string; name: string },
   email: string,
   origin: string,
+  t: Translate = english,
 ): Promise<string | undefined> {
   const sub = await ownTeamPlan(owner.id);
   const plan = sub && planById(sub.plan);
-  if (!plan?.seats) throw new TeamError("Inviting people needs an active Business plan.", 403);
+  if (!plan?.seats) throw new TeamError(t("Inviting people needs an active Business plan."), 403);
   email = email.trim().toLowerCase();
-  if (!EMAIL.test(email)) throw new TeamError("Enter a valid email address.");
+  if (!EMAIL.test(email)) throw new TeamError(t("Enter a valid email address."));
   const key = emailKey(email);
-  if (key === emailKey(owner.email)) throw new TeamError("You're already on your team.");
+  if (key === emailKey(owner.email)) throw new TeamError(t("You're already on your team."));
 
   await run("INSERT OR IGNORE INTO teams (id, owner_id, created_at) VALUES (?, ?, ?)", [randomId(), owner.id, now()]);
   const team = (await teamOf(owner.id))!;
@@ -78,26 +80,32 @@ export async function inviteMember(
     "SELECT 1 FROM team_members m JOIN users u ON u.id = m.user_id WHERE m.team_id = ? AND u.email_key = ?",
     [team.id, key],
   );
-  if (member) throw new TeamError("That person is already on your team.", 409);
+  if (member) throw new TeamError(t("That person is already on your team."), 409);
   // A new invite to the same address replaces the old one.
   await run("DELETE FROM team_invites WHERE team_id = ? AND email_key = ?", [team.id, key]);
   if ((await seatsUsed(team.id)) >= plan.seats) {
-    throw new TeamError(`Your plan has ${plan.seats} seats, the owner included. Remove someone first.`, 409);
+    throw new TeamError(t("Your plan has {seats} seats, the owner included. Remove someone first.", { seats: plan.seats }), 409);
   }
   const token = randomId(32);
+  const inviteId = randomId();
   await run(
     "INSERT INTO team_invites (id, token_hash, team_id, email, email_key, expires_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-    [randomId(), sha256(token), team.id, email, key, now() + INVITE_DAYS * 24 * 3600_000, now()],
+    [inviteId, sha256(token), team.id, email, key, now() + INVITE_DAYS * 24 * 3600_000, now()],
   );
   const link = `${origin}/?invite=${token}`;
-  await sendEmail(email, EMAILS.teamInvite(fullName(owner).replace(/\s+/g, " "), link));
+  if (!(await sendEmail(email, EMAILS.teamInvite(fullName(owner).replace(/\s+/g, " "), link), "other"))) {
+    // Nobody got the link, so the invitation shouldn't hold a seat.
+    await run("DELETE FROM team_invites WHERE id = ?", [inviteId]);
+    throw new TeamError(t("Flash has sent all the emails it can today. Please send the invitation again tomorrow."), 429);
+  }
   return demoEmails() ? link : undefined;
 }
 
-/** Joins the team an invitation is for. The invite only works for the address it was sent to. */
+/** Joins the team an invitation is for. The invite only works for the address it was sent to. `t` words the reasons it can't. */
 export async function acceptInvite(
   user: { id: string; email: string; verified_at?: number | null },
   token: string,
+  t: Translate = english,
 ): Promise<void> {
   const invite = token
     ? await one<{ id: string; team_id: string; email_key: string; owner_id: string }>(
@@ -106,36 +114,40 @@ export async function acceptInvite(
         [sha256(token), now()],
       )
     : null;
-  if (!invite) throw new TeamError("This invitation has expired or was already used.", 404);
+  if (!invite) throw new TeamError(t("This invitation has expired or was already used."), 404);
   if (invite.email_key !== emailKey(user.email)) {
-    throw new TeamError("This invitation was sent to a different email address. Sign in with that address.", 403);
+    throw new TeamError(t("This invitation was sent to a different email address. Sign in with that address."), 403);
   }
-  if (!isVerified(user)) throw new TeamError("Confirm your email first, then open the invitation again.", 403, "unverified");
-  if (invite.owner_id === user.id) throw new TeamError("You own this team.", 409);
-  if (await ownTeamPlan(user.id)) throw new TeamError("You have your own Business plan, so you can't join another team.", 409);
+  if (!isVerified(user)) throw new TeamError(t("Confirm your email first, then open the invitation again."), 403, "unverified");
+  if (invite.owner_id === user.id) throw new TeamError(t("You own this team."), 409);
+  if (await ownTeamPlan(user.id)) throw new TeamError(t("You have your own Business plan, so you can't join another team."), 409);
   if (await one("SELECT 1 FROM team_members WHERE user_id = ?", [user.id])) {
-    throw new TeamError("You're already on a team. Leave it first.", 409);
+    throw new TeamError(t("You're already on a team. Leave it first."), 409);
   }
   const plan = planById((await ownTeamPlan(invite.owner_id))?.plan);
-  if (!plan?.seats) throw new TeamError("This team's Business plan isn't active.", 409);
+  if (!plan?.seats) throw new TeamError(t("This team's Business plan isn't active."), 409);
   // This invite's seat becomes the member's, so count members only. The check and the insert are one statement.
   const r = await run(
     `INSERT OR IGNORE INTO team_members (user_id, team_id, joined_at)
      SELECT ?, ?, ? WHERE (SELECT COUNT(*) FROM team_members WHERE team_id = ?) < ?`,
     [user.id, invite.team_id, now(), invite.team_id, plan.seats - 1],
   );
-  if (r.rowsAffected !== 1) throw new TeamError("This team is full.", 409);
+  if (r.rowsAffected !== 1) throw new TeamError(t("This team is full."), 409);
   await run("DELETE FROM team_invites WHERE id = ?", [invite.id]);
 }
 
-/** The owner removes a member or cancels an invitation. Members can remove themselves (leave). */
-export async function removeFromTeam(actorId: string, target: { userId?: string; inviteId?: string }): Promise<void> {
+/** The owner removes a member or cancels an invitation. Members can remove themselves (leave). `t` words why it can't. */
+export async function removeFromTeam(
+  actorId: string,
+  target: { userId?: string; inviteId?: string },
+  t: Translate = english,
+): Promise<void> {
   if (target.userId && target.userId === actorId) {
     await run("DELETE FROM team_members WHERE user_id = ?", [actorId]);
     return;
   }
   const team = await teamOf(actorId);
-  if (!team) throw new TeamError("Only the team's owner can do this.", 403);
+  if (!team) throw new TeamError(t("Only the team's owner can do this."), 403);
   if (target.userId) await run("DELETE FROM team_members WHERE user_id = ? AND team_id = ?", [target.userId, team.id]);
   if (target.inviteId) await run("DELETE FROM team_invites WHERE id = ? AND team_id = ?", [target.inviteId, team.id]);
 }

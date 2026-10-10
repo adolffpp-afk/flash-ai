@@ -3,6 +3,7 @@
 import { createElement, useState } from "react";
 import type { UIMessage } from "@/lib/store";
 import { chatDocument, chatFileName } from "@/lib/chat-export";
+import { useT } from "@/lib/use-t";
 
 // Pictures are put inside the page so it works offline; past this much, later ones become captions.
 const MAX_PICTURE_BYTES = 40 * 1024 * 1024;
@@ -18,6 +19,7 @@ async function asDataUrl(blob: Blob): Promise<string> {
 
 /** Downloads the chat as a web page with its pictures, to keep, print to PDF or send on. */
 export function DownloadChat({ project, disabled }: { project: { name: string; messages?: UIMessage[] }; disabled?: boolean }) {
+  const t = useT();
   const [working, setWorking] = useState(false);
 
   async function download() {
@@ -46,7 +48,9 @@ export function DownloadChat({ project, disabled }: { project: { name: string; m
         markdown: (text) => renderToStaticMarkup(createElement(ReactMarkdown, { remarkPlugins: [remarkGfm] }, text)),
         picture: (url) => pictures.get(url) ?? null,
         link: (url) => new URL(url, window.location.origin).href,
-        date: new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }),
+        date: new Date().toLocaleDateString(t.locale, { month: "long", day: "numeric", year: "numeric" }),
+        t,
+        lang: t.language,
       });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(new Blob([html], { type: "text/html" }));
@@ -62,8 +66,8 @@ export function DownloadChat({ project, disabled }: { project: { name: string; m
     <button
       onClick={download}
       disabled={disabled || working}
-      title="Download this chat as a page you can keep, print or send"
-      aria-label="Download this chat"
+      title={t("Download this chat as a page you can keep, print or send")}
+      aria-label={t("Download this chat")}
       className="inline-flex h-[26px] w-[30px] shrink-0 items-center justify-center rounded-full border border-white/10 text-zinc-200 transition hover:bg-white/[0.05] disabled:opacity-40"
     >
       {working ? (

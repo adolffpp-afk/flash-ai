@@ -6,15 +6,17 @@ import remarkGfm from "remark-gfm";
 import { LogoMark } from "@/app/brand";
 import { ENGINE_LABELS } from "@/lib/types";
 import { newId } from "@/lib/store";
+import { msg } from "@/lib/i18n";
+import { useT } from "@/lib/use-t";
 import type { CompanionAction, CompanionContext, CompanionEvent, CompanionTurn } from "@/lib/companion";
 
 type Line = CompanionTurn & { id: string; pending?: boolean; error?: boolean };
 
 const STARTERS = [
-  "What can Flash do?",
-  "How long will this take?",
-  "How are my websites doing?",
-  "What have I spent credits on?",
+  msg("What can Flash do?"),
+  msg("How long will this take?"),
+  msg("How are my websites doing?"),
+  msg("What have I spent credits on?"),
 ];
 
 // Links open in a new tab, so the job running in the chat isn't lost. Pictures aren't shown at all:
@@ -29,7 +31,7 @@ const markdown: Components = {
 };
 
 /** The questions offered while a job is running, which are the ones people actually ask then. */
-const BUSY_STARTERS = ["How long will this take?", "What will this cost me?", "What should I ask for next?"];
+const BUSY_STARTERS = [msg("How long will this take?"), msg("What will this cost me?"), msg("What should I ask for next?")];
 
 /**
  * The Flash companion: a side panel the user can talk to at any time, including while Flash is
@@ -59,6 +61,7 @@ export function Companion({
   // What Flash is doing in the chat right now, for the line at the top of the panel.
   running: { engine?: string; status?: string } | null;
 }) {
+  const t = useT();
   const [lines, setLines] = useState<Line[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -119,7 +122,7 @@ export function Companion({
       });
       if (!res.ok || !res.body) {
         const data = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(data.error ?? `Something went wrong (${res.status}).`);
+        throw new Error(data.error ?? t("Something went wrong ({status}).", { status: res.status }));
       }
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -143,7 +146,7 @@ export function Companion({
       }
     } catch (err) {
       if (!controller.signal.aborted) {
-        patch((l) => ({ ...l, content: err instanceof Error ? err.message : "Something went wrong.", error: true }));
+        patch((l) => ({ ...l, content: err instanceof Error ? err.message : t("Something went wrong."), error: true }));
       }
     } finally {
       patch((l) => ({ ...l, pending: false }));
@@ -165,35 +168,40 @@ export function Companion({
     return (
       <button
         onClick={onOpen}
-        aria-label="Ask Flash"
-        title="Ask the companion anything, even while Flash is working"
-        className="fixed bottom-36 right-4 z-30 inline-flex items-center gap-2 rounded-full border border-primary/40 bg-zinc-900/90 px-3.5 py-2 text-sm text-zinc-100 shadow-lg shadow-black/40 backdrop-blur transition hover:border-primary hover:bg-zinc-900 sm:bottom-6 light:border-transparent light:bg-brand light:text-on-brand light:shadow-black/15"
+        aria-label={t("Ask Flash")}
+        title={t("Ask the companion anything, even while Flash is working")}
+        className="fixed bottom-36 end-4 z-30 inline-flex items-center gap-2 rounded-full border border-primary/40 bg-zinc-900/90 px-3.5 py-2 text-sm text-zinc-100 shadow-lg shadow-black/40 backdrop-blur transition hover:border-primary hover:bg-zinc-900 sm:bottom-6 light:border-transparent light:bg-brand light:text-on-brand light:shadow-black/15"
       >
         <LogoMark size={18} />
-        <span className="hidden sm:inline">Ask Flash</span>
+        <span className="hidden sm:inline">{t("Ask Flash")}</span>
         {running && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" aria-hidden />}
       </button>
     );
   }
 
   const starters = running ? BUSY_STARTERS : STARTERS;
+  const engine = running?.engine ? ENGINE_LABELS[running.engine as keyof typeof ENGINE_LABELS] : undefined;
+  // English names the tool in lowercase ("your image"); other languages keep the tool's name as their table writes it.
+  const tool = engine ? (t.language === "en" ? engine.toLowerCase() : t(engine)) : "";
   return (
     // On a phone it slides up over the chat; on a wider screen it sits beside it, so the chat stays usable.
     <aside
-      className="fixed inset-x-0 bottom-0 z-30 flex h-[70dvh] flex-col border-t border-white/10 bg-zinc-950/95 backdrop-blur sm:static sm:z-0 sm:h-full sm:w-[22rem] sm:shrink-0 sm:border-l sm:border-t-0 sm:bg-zinc-950/60 sm:backdrop-blur-none"
-      aria-label="Flash companion"
+      className="fixed inset-x-0 bottom-0 z-30 flex h-[70dvh] flex-col border-t border-white/10 bg-zinc-950/95 backdrop-blur sm:static sm:z-0 sm:h-full sm:w-[22rem] sm:shrink-0 sm:border-s sm:border-t-0 sm:bg-zinc-950/60 sm:backdrop-blur-none"
+      aria-label={t("Flash companion")}
     >
       <div className="flex items-center gap-2 border-b border-white/6 px-4 py-3">
         <LogoMark size={20} />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-zinc-100">Companion</p>
+          <p className="text-sm font-medium text-zinc-100">{t("Companion")}</p>
           <p className="truncate text-xs text-zinc-500">
             {running
-              ? `Flash is working on your ${running.engine ? (ENGINE_LABELS[running.engine as keyof typeof ENGINE_LABELS] ?? "request").toLowerCase() : "request"} — ask me anything meanwhile`
-              : "Ask about Flash, your work, or what to make next"}
+              ? tool
+                ? t("Flash is working on your {tool} — ask me anything meanwhile", { tool })
+                : t("Flash is working on your request — ask me anything meanwhile")
+              : t("Ask about Flash, your work, or what to make next")}
           </p>
         </div>
-        <button onClick={onClose} aria-label="Close companion" className="rounded-full p-1.5 text-zinc-400 transition hover:bg-white/[0.06] hover:text-zinc-100">
+        <button onClick={onClose} aria-label={t("Close companion")} className="rounded-full p-1.5 text-zinc-400 transition hover:bg-white/[0.06] hover:text-zinc-100">
           ✕
         </button>
       </div>
@@ -202,15 +210,15 @@ export function Companion({
         {lines.length === 0 && (
           <div className="space-y-2">
             <p className="text-sm text-zinc-400">
-              I know how Flash works and what you&apos;ve made here. I can also line up your next request while something is running.
+              {t("I know how Flash works and what you've made here. I can also line up your next request while something is running.")}
             </p>
             {starters.map((s) => (
               <button
                 key={s}
-                onClick={() => ask(s)}
+                onClick={() => ask(t(s))}
                 className="block w-full rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2 text-left text-sm text-zinc-200 transition hover:border-white/15 hover:bg-white/[0.05]"
               >
-                {s}
+                {t(s)}
               </button>
             ))}
           </div>
@@ -229,11 +237,11 @@ export function Companion({
                   </ReactMarkdown>
                 </div>
               ) : !l.pending ? (
-                <span className="text-zinc-500">Stopped.</span>
+                <span className="text-zinc-500">{t("Stopped.")}</span>
               ) : (
                 <span className="inline-flex items-center gap-2 text-zinc-400">
                   <span className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-700 border-t-gold" aria-hidden />
-                  {status || "Thinking…"}
+                  {status || t("Thinking…")}
                 </span>
               )}
             </div>
@@ -251,6 +259,7 @@ export function Companion({
       >
         <div className="flex items-end gap-2 rounded-2xl border border-white/10 bg-zinc-900/70 p-2 focus-within:border-white/20">
           <textarea
+            dir="auto"
             ref={field}
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -261,8 +270,8 @@ export function Companion({
               }
             }}
             rows={1}
-            placeholder="Ask the companion…"
-            aria-label="Ask the companion"
+            placeholder={t("Ask the companion…")}
+            aria-label={t("Ask the companion")}
             className="max-h-24 min-h-[24px] flex-1 resize-none bg-transparent px-1.5 py-1 text-sm outline-none placeholder:text-zinc-500"
           />
           {busy ? (
@@ -274,7 +283,7 @@ export function Companion({
                 e.preventDefault();
                 abort.current?.abort();
               }}
-              aria-label="Stop"
+              aria-label={t("Stop")}
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-900"
             >
               <span className="h-3 w-3 rounded-[2px] bg-current" />
@@ -284,7 +293,7 @@ export function Companion({
               key="send"
               type="submit"
               disabled={!input.trim()}
-              aria-label="Send to companion"
+              aria-label={t("Send to companion")}
               className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-zinc-100 text-zinc-900 disabled:opacity-40"
             >
               <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -293,7 +302,7 @@ export function Companion({
             </button>
           )}
         </div>
-        <p className="mt-1.5 px-1 text-[11px] text-zinc-600">A few credits per answer. Free models answer when your credits run out.</p>
+        <p className="mt-1.5 px-1 text-[11px] text-zinc-600">{t("A few credits per answer. Free models answer when your credits run out.")}</p>
       </form>
     </aside>
   );
