@@ -953,6 +953,7 @@
  "Request failed ({status})": "Помилка запиту ({status})",
  "Requests use the team's shared credits first ({count} left), then your own.": "Спершу запити оплачуються зі спільних кредитів команди (залишилося: {count}), потім — з ваших власних.",
  "Research": "Дослідження",
+ "Research needs credits, so a free model answered without searching the web.": "Для дослідження потрібні кредити, тому відповіла безкоштовна модель без пошуку в інтернеті.",
  "Research runs on {level} or above, so it answered instead of {picked}.": "Дослідження доступні з рівня {level}, тому замість {picked} відповів він.",
  "Response completions": "Готові відповіді",
  "Restart": "Перезапустити",

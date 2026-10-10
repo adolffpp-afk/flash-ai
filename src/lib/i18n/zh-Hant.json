@@ -953,6 +953,7 @@
  "Request failed ({status})": "要求失敗（{status}）",
  "Requests use the team's shared credits first ({count} left), then your own.": "要求會先使用團隊的共用點數（剩餘 {count} 點），再使用你自己的點數。",
  "Research": "研究",
+ "Research needs credits, so a free model answered without searching the web.": "研究需要點數，因此改由免費模型回答，沒有搜尋網路。",
  "Research runs on {level} or above, so it answered instead of {picked}.": "研究功能需要 {level} 或更高等級，因此改由它代替 {picked} 回答。",
  "Response completions": "回覆完成",
  "Restart": "重新啟動",

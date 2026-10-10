@@ -953,6 +953,7 @@
  "Request failed ({status})": "Cererea a eșuat ({status})",
  "Requests use the team's shared credits first ({count} left), then your own.": "Cererile folosesc întâi creditele comune ale echipei (au rămas {count}), apoi pe ale tale.",
  "Research": "Cercetare",
+ "Research needs credits, so a free model answered without searching the web.": "Cercetarea are nevoie de credite, așa că a răspuns un model gratuit, fără să caute pe web.",
  "Research runs on {level} or above, so it answered instead of {picked}.": "Cercetarea rulează pe {level} sau mai sus, așa că a răspuns acest nivel în locul lui {picked}.",
  "Response completions": "Răspunsuri finalizate",
  "Restart": "Repornește",

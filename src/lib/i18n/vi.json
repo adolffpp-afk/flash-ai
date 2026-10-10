@@ -953,6 +953,7 @@
  "Request failed ({status})": "Yêu cầu thất bại ({status})",
  "Requests use the team's shared credits first ({count} left), then your own.": "Yêu cầu sẽ dùng tín dụng chung của nhóm trước (còn {count}), sau đó mới dùng tín dụng của bạn.",
  "Research": "Nghiên cứu",
+ "Research needs credits, so a free model answered without searching the web.": "Nghiên cứu cần tín dụng, nên một mô hình miễn phí đã trả lời mà không tìm trên web.",
  "Research runs on {level} or above, so it answered instead of {picked}.": "Nghiên cứu chạy trên {level} trở lên, nên cấp độ này đã trả lời thay cho {picked}.",
  "Response completions": "Khi có câu trả lời",
  "Restart": "Khởi động lại",

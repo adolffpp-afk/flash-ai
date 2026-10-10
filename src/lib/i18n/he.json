@@ -953,6 +953,7 @@
  "Request failed ({status})": "הבקשה נכשלה ({status})",
  "Requests use the team's shared credits first ({count} left), then your own.": "הבקשות משתמשות קודם בקרדיטים המשותפים של הצוות (נשארו {count}), ואחר כך בקרדיטים שלך.",
  "Research": "מחקר",
+ "Research needs credits, so a free model answered without searching the web.": "מחקר דורש קרדיטים, ולכן מודל חינמי ענה בלי לחפש ברשת.",
  "Research runs on {level} or above, so it answered instead of {picked}.": "מחקר פועל ברמת {level} ומעלה, ולכן הרמה הזו ענתה במקום {picked}.",
  "Response completions": "סיום תשובות",
  "Restart": "הפעלה מחדש",

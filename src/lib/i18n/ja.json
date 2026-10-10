@@ -953,6 +953,7 @@
  "Request failed ({status})": "リクエストに失敗しました（{status}）",
  "Requests use the team's shared credits first ({count} left), then your own.": "リクエストには、まずチームの共有クレジット（残り{count}）が使われ、その後あなた自身のクレジットが使われます。",
  "Research": "リサーチ",
+ "Research needs credits, so a free model answered without searching the web.": "リサーチにはクレジットが必要なため、無料モデルがウェブ検索なしで回答しました。",
  "Research runs on {level} or above, so it answered instead of {picked}.": "リサーチは{level}以上で動作するため、{picked}の代わりにこちらが回答しました。",
  "Response completions": "回答の完了",
  "Restart": "再起動",

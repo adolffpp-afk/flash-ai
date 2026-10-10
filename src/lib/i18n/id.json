@@ -953,6 +953,7 @@
  "Request failed ({status})": "Permintaan gagal ({status})",
  "Requests use the team's shared credits first ({count} left), then your own.": "Permintaan memakai kredit bersama tim terlebih dahulu (sisa {count}), lalu kredit Anda sendiri.",
  "Research": "Riset",
+ "Research needs credits, so a free model answered without searching the web.": "Riset memerlukan kredit, jadi model gratis menjawab tanpa mencari di web.",
  "Research runs on {level} or above, so it answered instead of {picked}.": "Riset berjalan di {level} atau lebih tinggi, jadi level itu yang menjawab, bukan {picked}.",
  "Response completions": "Respons selesai",
  "Restart": "Mulai ulang",

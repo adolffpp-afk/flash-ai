@@ -953,6 +953,7 @@
  "Request failed ({status})": "İstek başarısız oldu ({status})",
  "Requests use the team's shared credits first ({count} left), then your own.": "İstekler önce ekibin ortak kredilerini ({count} kaldı), ardından seninkileri kullanır.",
  "Research": "Araştırma",
+ "Research needs credits, so a free model answered without searching the web.": "Araştırma kredi gerektirir; bu yüzden ücretsiz bir model web'de arama yapmadan yanıtladı.",
  "Research runs on {level} or above, so it answered instead of {picked}.": "Araştırma {level} ve üzeri seviyelerde çalışır, bu yüzden {picked} yerine bu seviye yanıtladı.",
  "Response completions": "Tamamlanan yanıtlar",
  "Restart": "Yeniden başlat",

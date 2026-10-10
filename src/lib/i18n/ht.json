@@ -953,6 +953,7 @@
  "Request failed ({status})": "Demann nan echwe ({status})",
  "Requests use the team's shared credits first ({count} left), then your own.": "Demann yo sèvi ak kredi ekip la pataje yo an premye (rete {count}), apre sa ak pa w yo.",
  "Research": "Rechèch",
+ "Research needs credits, so a free model answered without searching the web.": "Rechèch bezwen kredi, kidonk yon modèl IA gratis reponn san li pa chèche sou entènèt.",
  "Research runs on {level} or above, so it answered instead of {picked}.": "Rechèch mache sou {level} oswa pi wo, se poutèt sa se li ki reponn olye {picked}.",
  "Response completions": "Repons ki fini",
  "Restart": "Rekòmanse",

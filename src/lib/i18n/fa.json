@@ -953,6 +953,7 @@
  "Request failed ({status})": "درخواست ناموفق بود ({status})",
  "Requests use the team's shared credits first ({count} left), then your own.": "درخواست‌ها اول از اعتبار مشترک تیم استفاده می‌کنند ({count} باقی مانده)، سپس از اعتبار خودتان.",
  "Research": "پژوهش",
+ "Research needs credits, so a free model answered without searching the web.": "پژوهش به اعتبار نیاز دارد، برای همین یک مدل رایگان بدون جستجو در وب پاسخ داد.",
  "Research runs on {level} or above, so it answered instead of {picked}.": "پژوهش فقط با {level} یا بالاتر انجام می‌شود، پس این سطح به‌جای {picked} پاسخ داد.",
  "Response completions": "اتمام پاسخ‌ها",
  "Restart": "راه‌اندازی دوباره",

@@ -953,6 +953,7 @@
  "Request failed ({status})": "คำขอล้มเหลว ({status})",
  "Requests use the team's shared credits first ({count} left), then your own.": "คำขอจะใช้เครดิตกองกลางของทีมก่อน (เหลือ {count}) จากนั้นจึงใช้เครดิตของคุณเอง",
  "Research": "ค้นคว้า",
+ "Research needs credits, so a free model answered without searching the web.": "การค้นคว้าต้องใช้เครดิต โมเดลฟรีจึงตอบโดยไม่ได้ค้นหาบนเว็บ",
  "Research runs on {level} or above, so it answered instead of {picked}.": "การค้นคว้าใช้ระดับ {level} ขึ้นไป จึงให้ระดับนี้ตอบแทน {picked}",
  "Response completions": "เมื่อคำตอบเสร็จ",
  "Restart": "รีสตาร์ต",

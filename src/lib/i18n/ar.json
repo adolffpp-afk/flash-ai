@@ -953,6 +953,7 @@
  "Request failed ({status})": "فشل الطلب ({status})",
  "Requests use the team's shared credits first ({count} left), then your own.": "تستخدم الطلبات رصيد الفريق المشترك أولًا (المتبقي {count})، ثم رصيدك الخاص.",
  "Research": "البحث",
+ "Research needs credits, so a free model answered without searching the web.": "يحتاج البحث إلى رصيد، لذا أجاب نموذج مجاني دون البحث في الويب.",
  "Research runs on {level} or above, so it answered instead of {picked}.": "يعمل البحث على مستوى {level} أو أعلى، لذا أجاب بدلًا من {picked}.",
  "Response completions": "اكتمال الردود",
  "Restart": "إعادة التشغيل",

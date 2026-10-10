@@ -756,6 +756,8 @@ async function* runFree(
   audio: { reserved?: number } = {},
   // The free models' tools line and the context note (see promptingFor).
   system: SystemOptions = {},
+  // The live forecast, what to do once it's used, and the language the user's answers are set to.
+  chat: { weather?: WeatherTool; onUsed?: () => void; language?: string } = {},
 ): AsyncGenerator<StreamEvent> {
   const last = history[history.length - 1];
   if (lane === "image") {
@@ -795,7 +797,7 @@ async function* runFree(
       used.provider = provider;
       used.model = label;
     },
-    { country, system },
+    { country, system, ...chat },
   );
 }
 
@@ -1229,6 +1231,11 @@ export async function POST(request: Request) {
       free = lane;
       held = needed = 0;
       budget = NO_BUDGET;
+      // A free model can't search, so the header doesn't say Research.
+      if (engine === "search") {
+        engine = "text";
+        reason = t("Research needs credits, so a free model answered without searching the web.");
+      }
     }
   }
   // Agreed to: every price, or the price asked, for this model at no more than those credits (see consents).
@@ -1398,8 +1405,13 @@ export async function POST(request: Request) {
     let stopped = false;
     let failure = "";
     let error: unknown;
+    // A free reply gets the forecast whenever it's asked for or a weather word is in the message: it costs nothing.
+    const freeWeather = free === "chat" && toolsFor(engine).weather;
     const events = free
-      ? runFree(free, engine, history, preferences, store, freeUse, where.country ?? "", t, freeAudio, prompting.free)
+      ? runFree(free, engine, history, preferences, store, freeUse, where.country ?? "", t, freeAudio, prompting.free, {
+          ...(freeWeather && { weather: weatherTool(where, t), onUsed: forecastUsed }),
+          language: user.language ?? "",
+        })
       : run(engine, history, preferences, store, model, meter, budget, mediaNotes, claudeRun, steppedDown, track, t, prompting, {
           ...(tools.weather && { weather: weatherTool(where, t), onUsed: forecastUsed }),
           quick: tools.quick,

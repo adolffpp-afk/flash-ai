@@ -953,6 +953,7 @@
  "Request failed ({status})": "درخواست ناکام ہو گئی ({status})",
  "Requests use the team's shared credits first ({count} left), then your own.": "درخواستیں پہلے ٹیم کے مشترکہ کریڈٹس استعمال کرتی ہیں ({count} باقی)، پھر آپ کے اپنے۔",
  "Research": "ریسرچ",
+ "Research needs credits, so a free model answered without searching the web.": "ریسرچ کے لیے کریڈٹس درکار ہیں، اس لیے مفت ماڈل نے ویب پر تلاش کیے بغیر جواب دیا۔",
  "Research runs on {level} or above, so it answered instead of {picked}.": "ریسرچ {level} یا اس سے اوپر پر چلتی ہے، اس لیے {picked} کی بجائے اس سطح نے جواب دیا۔",
  "Response completions": "جواب مکمل ہونے پر",
  "Restart": "دوبارہ شروع کریں",

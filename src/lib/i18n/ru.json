@@ -953,6 +953,7 @@
  "Request failed ({status})": "Ошибка запроса ({status})",
  "Requests use the team's shared credits first ({count} left), then your own.": "Сначала запросы оплачиваются из общих кредитов команды (осталось: {count}), затем — из ваших собственных.",
  "Research": "Исследование",
+ "Research needs credits, so a free model answered without searching the web.": "Для исследования нужны кредиты, поэтому ответила бесплатная модель без поиска в интернете.",
  "Research runs on {level} or above, so it answered instead of {picked}.": "Исследования доступны с уровня {level}, поэтому вместо {picked} ответил он.",
  "Response completions": "Готовые ответы",
  "Restart": "Перезапустить",

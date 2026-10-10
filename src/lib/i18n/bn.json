@@ -953,6 +953,7 @@
  "Request failed ({status})": "অনুরোধ ব্যর্থ হয়েছে ({status})",
  "Requests use the team's shared credits first ({count} left), then your own.": "অনুরোধে আগে টিমের শেয়ারড ক্রেডিট খরচ হয় ({count} বাকি), তারপর আপনার নিজের।",
  "Research": "রিসার্চ",
+ "Research needs credits, so a free model answered without searching the web.": "রিসার্চের জন্য ক্রেডিট লাগে, তাই একটি ফ্রি মডেল ওয়েবে না খুঁজেই উত্তর দিয়েছে।",
  "Research runs on {level} or above, so it answered instead of {picked}.": "রিসার্চ চলে {level} বা তার ওপরের লেভেলে, তাই {picked}-এর বদলে এটি উত্তর দিয়েছে।",
  "Response completions": "উত্তর শেষ হলে",
  "Restart": "রিস্টার্ট",

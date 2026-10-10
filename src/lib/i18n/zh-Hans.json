@@ -953,6 +953,7 @@
  "Request failed ({status})": "请求失败（{status}）",
  "Requests use the team's shared credits first ({count} left), then your own.": "请求会先使用团队共享积分（剩余 {count}），然后再使用你自己的积分。",
  "Research": "研究",
+ "Research needs credits, so a free model answered without searching the web.": "研究需要积分，因此由免费模型回答，没有搜索网络。",
  "Research runs on {level} or above, so it answered instead of {picked}.": "研究功能需要 {level} 或更高级别，因此由它代替 {picked} 回答。",
  "Response completions": "回复完成",
  "Restart": "重新启动",

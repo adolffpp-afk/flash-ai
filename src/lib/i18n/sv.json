@@ -953,6 +953,7 @@
  "Request failed ({status})": "Förfrågan misslyckades ({status})",
  "Requests use the team's shared credits first ({count} left), then your own.": "Förfrågningar använder först teamets gemensamma krediter ({count} kvar) och sedan dina egna.",
  "Research": "Efterforskning",
+ "Research needs credits, so a free model answered without searching the web.": "Efterforskning kräver krediter, så en gratismodell svarade utan att söka på webben.",
  "Research runs on {level} or above, so it answered instead of {picked}.": "Efterforskning körs på {level} eller högre, så den nivån svarade i stället för {picked}.",
  "Response completions": "Färdiga svar",
  "Restart": "Starta om",

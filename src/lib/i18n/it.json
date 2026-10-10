@@ -953,6 +953,7 @@
  "Request failed ({status})": "Richiesta non riuscita ({status})",
  "Requests use the team's shared credits first ({count} left), then your own.": "Le richieste usano prima i crediti condivisi del team (ne restano {count}), poi i tuoi.",
  "Research": "Ricerca",
+ "Research needs credits, so a free model answered without searching the web.": "La Ricerca richiede crediti, quindi ha risposto un modello gratuito senza cercare sul web.",
  "Research runs on {level} or above, so it answered instead of {picked}.": "La ricerca funziona da {level} in su, quindi ha risposto questo livello al posto di {picked}.",
  "Response completions": "Risposte completate",
  "Restart": "Riavvia",

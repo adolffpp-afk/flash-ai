@@ -953,6 +953,7 @@
  "Request failed ({status})": "Το αίτημα απέτυχε ({status})",
  "Requests use the team's shared credits first ({count} left), then your own.": "Τα αιτήματα χρησιμοποιούν πρώτα τις κοινές πιστώσεις της ομάδας (απομένουν {count}) και μετά τις δικές σου.",
  "Research": "Έρευνα",
+ "Research needs credits, so a free model answered without searching the web.": "Η Έρευνα χρειάζεται πιστώσεις, οπότε απάντησε ένα δωρεάν μοντέλο χωρίς αναζήτηση στο διαδίκτυο.",
  "Research runs on {level} or above, so it answered instead of {picked}.": "Η έρευνα λειτουργεί από το {level} και πάνω, οπότε απάντησε αυτό αντί για το {picked}.",
  "Response completions": "Ολοκλήρωση απαντήσεων",
  "Restart": "Επανεκκίνηση",

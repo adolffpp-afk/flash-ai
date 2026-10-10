@@ -953,6 +953,7 @@
  "Request failed ({status})": "Verzoek mislukt ({status})",
  "Requests use the team's shared credits first ({count} left), then your own.": "Verzoeken gebruiken eerst de gedeelde credits van het team (nog {count} over), daarna je eigen credits.",
  "Research": "Onderzoek",
+ "Research needs credits, so a free model answered without searching the web.": "Onderzoek kost credits, dus een gratis model heeft geantwoord zonder op het web te zoeken.",
  "Research runs on {level} or above, so it answered instead of {picked}.": "Onderzoek werkt vanaf {level}, dus dat niveau heeft geantwoord in plaats van {picked}.",
  "Response completions": "Voltooide antwoorden",
  "Restart": "Opnieuw starten",

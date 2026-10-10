@@ -953,6 +953,7 @@
  "Request failed ({status})": "अनुरोध नाकाम रहा ({status})",
  "Requests use the team's shared credits first ({count} left), then your own.": "अनुरोध पहले टीम के शेयर्ड क्रेडिट इस्तेमाल करते हैं ({count} बचे), फिर आपके अपने।",
  "Research": "रिसर्च",
+ "Research needs credits, so a free model answered without searching the web.": "रिसर्च के लिए क्रेडिट चाहिए, इसलिए फ़्री मॉडल ने वेब पर खोजे बिना जवाब दिया।",
  "Research runs on {level} or above, so it answered instead of {picked}.": "रिसर्च {level} या उससे ऊपर के लेवल पर चलती है, इसलिए {picked} की जगह उस लेवल ने जवाब दिया।",
  "Response completions": "जवाब पूरा होने पर",
  "Restart": "रीस्टार्ट करें",

@@ -953,6 +953,7 @@
  "Request failed ({status})": "Pumalya ang request ({status})",
  "Requests use the team's shared credits first ({count} left), then your own.": "Unang ginagamit ng mga request ang shared credits ng team ({count} ang natitira), saka ang sa iyo.",
  "Research": "Research",
+ "Research needs credits, so a free model answered without searching the web.": "Kailangan ng credits ang Research, kaya isang libreng model ang sumagot nang hindi naghahanap sa web.",
  "Research runs on {level} or above, so it answered instead of {picked}.": "Gumagana ang research sa {level} o mas mataas, kaya iyon ang sumagot sa halip na {picked}.",
  "Response completions": "Tapos na mga sagot",
  "Restart": "I-restart",

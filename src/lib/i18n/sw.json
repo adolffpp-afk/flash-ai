@@ -953,6 +953,7 @@
  "Request failed ({status})": "Ombi limeshindwa ({status})",
  "Requests use the team's shared credits first ({count} left), then your own.": "Maombi hutumia krediti za pamoja za timu kwanza (zimebaki {count}), kisha zako mwenyewe.",
  "Research": "Utafiti",
+ "Research needs credits, so a free model answered without searching the web.": "Utafiti unahitaji krediti, kwa hiyo modeli ya bure imejibu bila kutafuta mtandaoni.",
  "Research runs on {level} or above, so it answered instead of {picked}.": "Utafiti unahitaji {level} au zaidi, kwa hiyo ndiyo iliyojibu badala ya {picked}.",
  "Response completions": "Majibu yaliyokamilika",
  "Restart": "Anzisha upya",

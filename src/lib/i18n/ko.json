@@ -953,6 +953,7 @@
  "Request failed ({status})": "요청 실패({status})",
  "Requests use the team's shared credits first ({count} left), then your own.": "요청에는 팀 공유 크레딧이 먼저 사용되고({count} 남음) 그다음 내 크레딧이 사용돼요.",
  "Research": "리서치",
+ "Research needs credits, so a free model answered without searching the web.": "리서치에는 크레딧이 필요해서 무료 모델이 웹 검색 없이 답했어요.",
  "Research runs on {level} or above, so it answered instead of {picked}.": "리서치는 {level} 이상에서 실행되기 때문에 {picked} 대신 이 레벨이 답했어요.",
  "Response completions": "응답 완료",
  "Restart": "다시 시작",
