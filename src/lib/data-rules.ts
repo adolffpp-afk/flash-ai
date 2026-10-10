@@ -326,10 +326,12 @@ export function keepPrivate(computed: ComputedRules, before: ComputedRules | nul
   const set: string[] = guess === computed.guess ? [] : [DEFAULT_KEY];
   for (const name of new Set([...Object.keys(before.app), ...bad.names])) {
     if (!COLLECTION.test(name) || named(name)) continue;
-    if (effectiveRule(before, null, null, name).rule === "private") app[name] = "private";
-    // While everything else stays private, what visitors could see by name before they still see, read-only.
-    else if (guess === "private" && !Object.hasOwn(app, name)) app[name] = "read";
-    else continue;
+    // What only the owner could see stays so. While the block can't be read at all, or everything
+    // else stays private, what visitors could see by name they still see, read-only, whatever the
+    // owner's default for anything else.
+    const rule = effectiveRule(before, null, null, name).rule === "private" ? "private" : bad.why !== "entries" || guess === "private" ? "read" : null;
+    if (!rule || app[name] === rule) continue;
+    app[name] = rule;
     set.push(name);
   }
   const names = bad.why === "entries" ? [...new Set([...bad.names, ...set])] : bad.names;

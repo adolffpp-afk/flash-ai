@@ -223,9 +223,12 @@ test("a block written another way never lets visitors see what it marks as priva
 
 test("an update whose block Flash can't use keeps private what only the owner could see", () => {
   const before = computeRules(block(`{"signups":"private","menu":"read","reviews":"add"}`));
-  // Nothing at all could be read: what was private stays so, the rest is read-only for visitors.
+  // Nothing at all could be read: what was private stays so, the rest is read-only for visitors,
+  // even when the owner's default for anything else lets visitors change things.
   const broken = keepPrivate(computeRules(block(`{signups: "private", menu: "read"}`)), before);
-  assert.deepEqual([broken.app, broken.guess, broken.bad?.why], [{ signups: "private" }, "read", "json"]);
+  assert.deepEqual([broken.app, broken.guess, broken.bad], [{ signups: "private", menu: "read", reviews: "read" }, "read", { why: "json", names: [] }]);
+  assert.deepEqual(effectiveRule(broken, null, "open", "menu"), { rule: "read", source: "app" });
+  assert.deepEqual(effectiveRule(broken, null, "open", "signups"), { rule: "private", source: "app" });
   // Part of it couldn't be used: only that part keeps what it was, and what the block says plainly stands.
   const part = keepPrivate(computeRules(block(`{"signups":{"rule":"private"},"menu":"add","reviews":"read"}`)), before);
   assert.deepEqual([part.app, part.bad], [{ signups: "private", menu: "add", reviews: "read" }, { why: "entries", names: ["signups"] }]);
