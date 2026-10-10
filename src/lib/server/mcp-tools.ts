@@ -1,4 +1,4 @@
-import { creditsFor, MAX_SPEECH_CHARS, voiceCostCents } from "../credits.ts";
+import { creditsFor, MAX_SPEECH_CHARS, voiceCostCents, voiceCredits } from "../credits.ts";
 import { MODELS, modelCredits, pickModel, type MediaEngine, type ModelInfo, type Provider } from "../models.ts";
 import { falConfigured, falGenerate } from "../engines/fal.ts";
 import { falEditInput, falInput } from "../engines/fal-input.ts";
@@ -66,6 +66,9 @@ const priceList = (engine: MediaEngine, example = "") =>
     .map((m) => `${m.id} (${m.label}, ${modelCredits(m, example)} credits): ${m.blurb}`)
     .join("; ");
 
+/** What Kling 3 charges for a clip this long, as the chat charges it. */
+const klingCredits = (length: string) => modelCredits(MODELS.find((m) => m.id === "kling-3")!, length);
+
 const text = (s: string): ToolResult => ({ content: [{ type: "text", text: s }] });
 const failed = (s: string): ToolResult => ({ content: [{ type: "text", text: s }], isError: true });
 
@@ -93,7 +96,7 @@ export const tools = () => [
     title: "Create a video with Flash",
     description:
       "Films a short video clip from a description with Flash AI's video models and returns a link to the MP4. Takes one to three minutes. " +
-      `Uses the user's Flash credits. Models: ${priceList("video")} (Kling is priced at 10 seconds; it costs ${creditsFor(14)} credits a second). ` +
+      `Uses the user's Flash credits. Models: ${priceList("video")} (Kling is priced at 10 seconds; it costs about ${creditsFor(14)} credits a second: ${klingCredits("5 seconds")} for 5 seconds, ${klingCredits("15 seconds")} for 15). ` +
       "Leave model out and Flash picks: Veo when the clip needs sound or speech, Kling for longer clips. " +
       "Videos are wide (16:9) unless the prompt asks for vertical (9:16, for phones) or, with Kling, square (1:1).",
     inputSchema: {
@@ -127,7 +130,7 @@ export const tools = () => [
     name: "flash_speak",
     title: "Read text aloud with Flash",
     description:
-      `Turns text into natural speech (an MP3 voice-over) and returns a link. Uses the user's Flash credits: about ${creditsFor(voiceCostCents(1000))} credits per 1,000 characters. ` +
+      `Turns text into natural speech (an MP3 voice-over) and returns a link. Uses the user's Flash credits: about ${voiceCredits(1000)} credits per 1,000 characters. ` +
       `Up to ${MAX_SPOKEN.toLocaleString("en-US")} characters.`,
     inputSchema: {
       type: "object",
@@ -192,7 +195,7 @@ export const tools = () => [
       title: "Animate a photo with Flash",
       description:
         "Turns a photo into a short video (MP4) with Kling 3 Pro and returns a link. Takes one to three minutes. " +
-        `Costs ${creditsFor(11.2)} Flash credits per second without sound, ${creditsFor(16.8)} with sound (a 5 second clip: ${modelCredits(m, "5 seconds")} credits, ` +
+        `Costs about ${creditsFor(11.2)} Flash credits per second without sound, ${creditsFor(16.8)} with sound (a 5 second clip: ${modelCredits(m, "5 seconds")} credits, ` +
         `or ${modelCredits(m, "5 seconds with sound")} with sound). Tell the user the price first. ` +
         "Give a Flash file link (from another Flash tool) as image_url, or the photo itself as image_base64. PNG, JPEG or WebP, up to 2048 × 2048 pixels.",
       inputSchema: {
@@ -370,7 +373,7 @@ async function speak(args: Args, ctx: ToolContext): Promise<ToolResult> {
   const provider = speechProvider();
   if (!provider) return failed("Flash's voice isn't available yet.");
   const cents = voiceCostCents(words.length);
-  const credits = creditsFor(cents);
+  const credits = voiceCredits(words.length);
   const voice = VOICES.find((x) => x.name === str(args.voice)) ?? DEFAULT_VOICE;
   const speed = typeof args.speed === "number" ? Math.min(1.2, Math.max(0.7, args.speed)) : 1;
   const result = await paid(

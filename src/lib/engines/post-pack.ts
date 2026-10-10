@@ -1,14 +1,14 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import { CHAT_MODEL, getClient, meterClaude, noMeter, type Meter } from "./claude.ts";
+import { CHAT_MODEL, choiceParams, getClient, meterClaude, meterLost, noMeter, type Meter } from "./claude.ts";
 import { tokensAtMost } from "./companion.ts";
 import { FriendlyError } from "./errors.ts";
 import { msg } from "../i18n.ts";
-import { claudePrice } from "../credits.ts";
+import { callCost, claudePrice } from "../credits.ts";
 import { PACK_VIDEO_SECONDS, PACK_WRITING_CENTS } from "../models.ts";
 import { parsePack, type Pack } from "../post-pack.ts";
 
-// Writing may fall back to another Claude model, so it is held to its budget at Opus's price, the
-// dearest a chat request is answered at (Summit's model is only used when someone picks it).
+// Writing is held to its budget at no less than Opus's price, the dearest a chat request is
+// answered at (Summit's model is only used when someone picks it).
 export const DEAREST = claudePrice("claude-opus-5-5");
 
 // Enough for three posts in any language; a shorter allowance than this can't fit them.
@@ -17,10 +17,14 @@ const MIN_PACK_TOKENS = 1000;
 // Saved memory (2,000), project instructions (4,000) and the brand kit, with room to spare.
 const MAX_ABOUT_CHARS = 8000;
 
-/** The most the writer may write so that reading inputTokens and writing stay within PACK_WRITING_CENTS. */
+/**
+ * The most the writer may write so that reading inputTokens and writing stay within PACK_WRITING_CENTS,
+ * even when the writer's model declines and its refusal fallback writes the posts: both are billed.
+ */
 export function packMaxTokens(inputTokens: number): number {
-  const left = PACK_WRITING_CENTS - (inputTokens * DEAREST.input) / 1e6;
-  return Math.max(0, Math.min(MAX_PACK_TOKENS, Math.floor((left * 1e6) / DEAREST.output)));
+  const worst = callCost("text", CHAT_MODEL, inputTokens);
+  const left = PACK_WRITING_CENTS - Math.max(worst.inputCents, (inputTokens * DEAREST.input) / 1e6);
+  return Math.max(0, Math.min(MAX_PACK_TOKENS, Math.floor((left * 1e6) / Math.max(worst.outputPrice, DEAREST.output))));
 }
 
 /** The writer's instructions, with what Flash knows about the user (their brand kit included). */
@@ -77,19 +81,20 @@ export async function writePack(request: string, about: string, meter: Meter = n
   if (maxTokens < MIN_PACK_TOKENS) {
     throw new FriendlyError(msg("This request is too long for a post pack. Shorten it and try again."));
   }
-  const res = await getClient().beta.messages.create(
-    {
-      model: CHAT_MODEL,
-      max_tokens: maxTokens,
-      betas: ["server-side-fallback-2026-07-01"],
-      fallbacks: "default",
-      output_config: { effort: "low" },
-      system,
-      messages,
-    },
-    { timeout: 45_000, maxRetries: 0 },
-  );
-  meterClaude(meter, res);
+  const res = await getClient()
+    .beta.messages.create(
+      {
+        // A refusal fallback only where packMaxTokens counted one (see FALLBACKS in credits.ts).
+        ...choiceParams({ level: "ascend", model: CHAT_MODEL, effort: "low" }),
+        max_tokens: maxTokens,
+        system,
+        messages,
+      },
+      { timeout: 45_000, maxRetries: 0 },
+    )
+    // Timed out or cut off, the writing may still have run: it is paid for at its most.
+    .catch((err: unknown) => meterLost(err, meter, PACK_WRITING_CENTS, CHAT_MODEL));
+  meterClaude(meter, res, CHAT_MODEL);
   if (res.stop_reason === "refusal") throw new FriendlyError(msg("Flash can't make posts for that request."));
   const text = res.content.find((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")?.text ?? "";
   const pack = parsePack(text);

@@ -15,7 +15,8 @@ import { MAX_POST_CHARS, cleanHashtag, packMarkdown, parsePack, postText } from 
 import { DEAREST, packMaxTokens, packSystem } from "../src/lib/engines/post-pack.ts";
 import { packImageInput, packVideoInput } from "../src/lib/engines/fal-input.ts";
 import { tokensAtMost } from "../src/lib/engines/companion.ts";
-import { CLAUDE_PRICES, MARKUP } from "../src/lib/credits.ts";
+import { CHECK_ALLOWANCE_CENTS, CLAUDE_PRICES, FALLBACKS, MARKUP, claudePrice } from "../src/lib/credits.ts";
+import { CHAT_MODEL } from "../src/lib/engines/claude.ts";
 import { TEMPLATES, defaultValues, templateById, templateCredits, type TemplateValues } from "../src/lib/templates.ts";
 
 const fal = new Set<Provider>(["fal"]);
@@ -83,8 +84,13 @@ test("the writer can never spend more than the writing part of the price", () =>
     const out = packMaxTokens(input);
     const cents = (input * dearest.input + out * dearest.output) / 1e6;
     assert.ok(cents <= PACK_WRITING_CENTS + 1e-9, `${input} tokens in costs ${cents}`);
+    // The writer declines, and its refusal fallback reads it all again and writes the posts: both are billed.
+    const first = claudePrice(CHAT_MODEL);
+    const backup = claudePrice(FALLBACKS[CHAT_MODEL]);
+    const both = (input * first.input + out * first.output + (input + out) * backup.input + out * backup.output) / 1e6;
+    assert.ok(both <= PACK_WRITING_CENTS + 1e-9, `${input} tokens in, declined and written again, costs ${both}`);
   }
-  assert.equal(packMaxTokens(1500), 2200, "room for three posts with a normal request");
+  assert.equal(packMaxTokens(1500), 2000, "room for three posts with a normal request");
   assert.equal(packMaxTokens(20_000), 0);
   // The longest saved details (memory, project instructions and brand kit) are cut, so a pack still fits.
   const system = packSystem("x".repeat(20_000));
@@ -149,7 +155,11 @@ test("the post pack template asks for a pack, with a video only when picked, and
   const prices = templateCredits(undefined, 2.5);
   assert.equal(prices["social-pack"], 28);
   assert.equal(prices["social-pack:with"], 168);
-  assert.equal(templateCredits(undefined, 3)["social-pack"], Math.ceil(11 * 3), "priced at the markup in use");
+  // The prices the template shows are the ones a request for the pack is held and charged.
+  const pack = modelById("post-pack")!;
+  assert.equal(prices["social-pack"], modelCredits(pack, ask));
+  assert.equal(prices["social-pack:with"], modelCredits(pack, withVideo));
+  assert.equal(templateCredits(undefined, 3)["social-pack"], Math.ceil((11 + CHECK_ALLOWANCE_CENTS) * 3), "priced at the markup in use");
   // Only templates with a pricier choice get a second price.
   assert.deepEqual(Object.keys(prices).filter((k) => k.endsWith(":with")), ["social-pack:with"]);
   assert.ok(TEMPLATES.every((t) => !t.model || modelById(t.model)), "template models exist");

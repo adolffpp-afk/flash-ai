@@ -1,6 +1,6 @@
 import { msg } from "./i18n.ts";
 import type { Engine } from "./types.ts";
-import { creditsFor } from "./credits.ts";
+import { CHECK_ALLOWANCE_CENTS, WRITER_ALLOWANCE_CENTS, creditsFor } from "./credits.ts";
 
 export type Provider = "openai" | "elevenlabs" | "fal";
 export type MediaEngine = Extract<Engine, "image" | "video" | "music">;
@@ -54,16 +54,9 @@ export const PACK_VIDEO_ENDPOINT = "fal-ai/kling-video/v3/pro/image-to-video";
 /**
  * Image, video and music models Flash can use. For each engine the first model whose
  * provider has a key is the default; a model with `match` wins when the request fits it.
+ * Cheaper models come first, so a dearer one is the default only when nothing cheaper is set up.
  */
 export const MODELS: ModelInfo[] = [
-  {
-    id: "gpt-image",
-    engine: "image",
-    label: "GPT Image",
-    provider: "openai",
-    costCents: 10, // about 3,300 output tokens at $30 per million
-    blurb: msg("Best with words in the picture: logos, posters, menus"),
-  },
   {
     // Not a single model: Claude writes the posts, FLUX.2 Pro paints a square and a tall picture,
     // and Kling animates the tall one when a video is asked for. Listed first so "photo" in a
@@ -90,12 +83,22 @@ export const MODELS: ModelInfo[] = [
     match: /\b(photo\w*|realistic|lifelike|portrait|headshot|product shot|cinematic|35 ?mm|dslr)\b/i,
   },
   {
+    id: "gpt-image",
+    engine: "image",
+    label: "GPT Image",
+    provider: "openai",
+    costCents: 10, // about 3,300 output tokens at $30 per million
+    blurb: msg("Best with words in the picture: logos, posters, menus"),
+    // After FLUX.2 Pro, a third of its price: the default only when fal.ai isn't set up.
+  },
+  {
     // Not a single model: Claude writes the scenes, Kling films each one, and fal's ffmpeg joins them.
     id: "movie",
     engine: "video",
     label: "Movie maker",
     provider: "fal",
-    // Every scene at Kling's $0.14 a second, plus 2 cents for writing the scenes and joining the clips.
+    // Every scene at Kling's $0.14 a second, plus 2 cents for writing the scenes and joining the clips
+    // (MOVIE_EXTRA_CENTS in engines/movie.ts), which pays for the router too.
     costCents: (request) => 14 * movieSeconds(request) + 2,
     blurb: msg("A short film: Flash writes the scenes, films each one and joins them"),
     endpoint: "fal-ai/kling-video/v3/turbo/pro/text-to-video",
@@ -108,7 +111,7 @@ export const MODELS: ModelInfo[] = [
     engine: "image",
     label: "Background remover",
     provider: "fal",
-    costCents: 2, // Bria RMBG 2.0, $0.018 a photo
+    costCents: 1.8, // Bria RMBG 2.0, $0.018 a photo
     blurb: msg("Cuts out the subject on a transparent background"),
     endpoint: "fal-ai/bria/background/remove",
     edits: true,
@@ -123,7 +126,7 @@ export const MODELS: ModelInfo[] = [
     label: "Upscaler",
     provider: "fal",
     // SeedVR2 at $0.001 per output megapixel; the long side is at most 4,096 pixels (16.8 MP).
-    costCents: 2,
+    costCents: 1.68,
     blurb: msg("Makes a photo sharper and up to 4 times bigger"),
     endpoint: "fal-ai/seedvr/upscale/image",
     edits: true,
@@ -213,13 +216,18 @@ export const wantsSound = (request: string) =>
 export const videoSeconds = (request: string) => requestedSeconds(request, 3, 15, 10);
 
 /**
- * A movie's length in seconds (20 to 90, default 40), from "a 1 minute movie" or "a 30 second film".
- * It is filmed as scenes of about 10 seconds; the cost is the total of the scenes as filmed.
+ * How a movie is filmed: its scenes and their length, from "a 1 minute movie" or "a 30 second film"
+ * (20 to 90 seconds, default 40). The price and the filming both come from this one split.
  */
-export function movieSeconds(request: string): number {
+export function movieSplit(request: string): { scenes: number; seconds: number } {
   const minutes = Number(request.match(/\b(\d{1,2}(?:\.\d)?|one|two)[\s-]*(?:min|mins|minutes?)\b/i)?.[1]?.replace(/^one$/i, "1").replace(/^two$/i, "2"));
   const asked = minutes ? minutes * 60 : requestedSeconds(request, 20, 90, 40);
-  const { scenes, seconds } = movieScenes(Math.min(90, Math.max(20, asked)));
+  return movieScenes(Math.min(90, Math.max(20, asked)));
+}
+
+/** A movie's length in seconds as filmed: its scenes of about 10 seconds each. */
+export function movieSeconds(request: string): number {
+  const { scenes, seconds } = movieSplit(request);
   return scenes * seconds;
 }
 
@@ -241,9 +249,23 @@ export function requestCents(model: ModelInfo, request = "", photos = 1): number
   return model.id === "flux-2-edit" ? cents + extra * EXTRA_PHOTO_CENTS : cents;
 }
 
-/** Credits a request on this model costs the user. */
+/** Whether a model's request is rewritten by the prompt writer first: new pictures, videos and tracks. */
+export const writesPrompt = (model: ModelInfo) => !model.edits && model.id !== "post-pack" && model.id !== "movie";
+
+/**
+ * What Claude helpers may cost for a request on this model, in cents, which its price includes (see
+ * CHECK_ALLOWANCE_CENTS): the router or the picture check, and the prompt writer when it writes one.
+ * A movie's price already pays for its helpers in the part set aside for writing.
+ */
+export const helperAllowanceCents = (model: ModelInfo) =>
+  model.id === "movie" ? 0 : CHECK_ALLOWANCE_CENTS + (writesPrompt(model) ? WRITER_ALLOWANCE_CENTS : 0);
+
+/**
+ * Credits a request on this model costs the user: the price listed in the model picker, the Credits
+ * dialog, the pricing page and Flash's tools for other apps, and the price held and charged.
+ */
 export function modelCredits(model: ModelInfo, request = "", photos = 1): number {
-  return creditsFor(requestCents(model, request, photos));
+  return creditsFor(requestCents(model, request, photos) + helperAllowanceCents(model));
 }
 
 export const modelById = (id: string | undefined) => MODELS.find((m) => m.id === id);

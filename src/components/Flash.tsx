@@ -97,7 +97,7 @@ export type Status = Record<Engine, boolean>;
 function applyEvent(m: UIMessage, e: StreamEvent): UIMessage {
   switch (e.type) {
     case "route":
-      return { ...m, engine: e.engine, reason: e.reason, demo: e.demo, cost: e.cost, model: e.model, modelWhy: e.modelWhy, free: e.free };
+      return { ...m, engine: e.engine, reason: e.reason, demo: e.demo, cost: e.cost, model: e.model, modelWhy: e.modelWhy, free: e.free, charge: e.charge };
     case "text":
       return m.app ? { ...m, after: (m.after ?? "") + e.delta } : { ...m, content: m.content + e.delta };
     case "status":
@@ -803,13 +803,17 @@ export function Flash({
     });
   }
 
-  /** Answers the last user message again, replacing the reply after it. Returns the new reply. */
+  /**
+   * Answers the last user message again, replacing the reply after it. Returns the new reply. Go ahead
+   * (confirmed) sends back what Flash decided before asking, so the price agreed is the price paid.
+   */
   async function retry(confirmed = false): Promise<UIMessage | null> {
     const messages = active?.messages;
     if (!active || !messages || busy || runningRef.current) return null;
     const lastUser = messages.findLastIndex((m) => m.role === "user");
     if (lastUser === -1) return null;
-    return respond(active, messages.slice(0, lastUser), messages[lastUser], confirmed);
+    const decided = confirmed ? messages[lastUser + 1]?.decided : undefined;
+    return respond(active, messages.slice(0, lastUser), messages[lastUser], confirmed, undefined, decided);
   }
 
   /** Agrees to a costly request's price and runs it; "always" stops asking on this device. */
@@ -849,6 +853,23 @@ export function Flash({
     abortRef.current?.abort();
   }
 
+  /**
+   * A stopped reply pays only for the work already done, which the server settles just after Stop.
+   * Its header shows nothing until then, and then what it really cost.
+   */
+  async function showSettledCost(projectId: string, replyId: string, charge: number) {
+    // Up to about a minute: a stopped request waits for a writer that was still running (see the chat route).
+    for (const wait of [500, 1500, 3000, 6000, 15000, 30000]) {
+      await new Promise((r) => setTimeout(r, wait));
+      const { credits } = await api<{ credits: number | null }>(`/api/me/charge?id=${charge}`).catch(() => ({ credits: null }));
+      if (credits !== null) {
+        updateMessage(projectId, replyId, (m) => ({ ...m, cost: credits }));
+        refreshMe();
+        return;
+      }
+    }
+  }
+
   /** A notification when a long request ends while Flash is in the background (Settings > General). */
   function notifyDone(request: string, ok: boolean, startedAt: number) {
     if (!notifiesWhenDone() || !document.hidden || Date.now() - startedAt < 8000) return;
@@ -870,6 +891,8 @@ export function Flash({
     userMsg: UIMessage,
     confirmed = false,
     unsent?: (stopped: boolean, why: string) => void,
+    // What Flash decided before asking for the price, sent back with Go ahead (see retry).
+    decided?: UIMessage["decided"],
   ): Promise<UIMessage | null> {
     // One request at a time: Flash shows it's busy and Stop works from the first tap.
     if (runningRef.current) return null;
@@ -941,6 +964,7 @@ export function Flash({
           model: userMsg.template?.model ?? (engine === "auto" ? undefined : models[engine]),
           template: userMsg.template?.name,
           confirmed: confirmed || skipsCostCheck(),
+          ...(confirmed && decided && { decided }),
           projectId,
           ...(userMsg.voice && { voice: true }),
           ...(userMsg.build && { build: true }),
@@ -952,7 +976,7 @@ export function Flash({
       if (!res.ok || !res.body) {
         const err = await res.json().catch(() => ({ error: t("Request failed ({status})", { status: res.status }) }));
         if (res.status === 401) setSignedOut(true);
-        throw Object.assign(new Error(err.error), { code: err.code as string | undefined });
+        throw Object.assign(new Error(err.error), { code: err.code as string | undefined, decided: err.decided as UIMessage["decided"] });
       }
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -974,18 +998,26 @@ export function Flash({
     } catch (err) {
       finished = false;
       const aborted = controller.signal.aborted;
+      // A stopped reply's price is shown once the server has settled it (see showSettledCost).
       updateMessage(projectId, reply.id, (m) =>
         aborted
-          ? { ...m, stopped: true }
+          ? { ...m, stopped: true, cost: undefined }
           : {
               ...m,
               error: err instanceof Error ? err.message : t("Something went wrong."),
               errorCode: (err as { code?: string }).code,
+              decided: (err as { decided?: UIMessage["decided"] }).decided,
             },
       );
       final = aborted
-        ? { ...final, stopped: true }
-        : { ...final, error: err instanceof Error ? err.message : t("Something went wrong."), errorCode: (err as { code?: string }).code };
+        ? { ...final, stopped: true, cost: undefined }
+        : {
+            ...final,
+            error: err instanceof Error ? err.message : t("Something went wrong."),
+            errorCode: (err as { code?: string }).code,
+            decided: (err as { decided?: UIMessage["decided"] }).decided,
+          };
+      if (aborted && final.charge) void showSettledCost(projectId, reply.id, final.charge);
     } finally {
       updateMessage(projectId, reply.id, (m) => ({ ...m, pending: false, status: undefined }));
       refreshMe();

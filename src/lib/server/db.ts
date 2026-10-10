@@ -449,6 +449,8 @@ const MIGRATIONS = [
   "ALTER TABLE site_records ADD COLUMN author TEXT NOT NULL DEFAULT ''",
   // The address an Open as owner code works at (see site_owner_codes), for tables made before it.
   "ALTER TABLE site_owner_codes ADD COLUMN host TEXT NOT NULL DEFAULT ''",
+  // When a held charge was settled to what the request really cost, or 0 while it runs.
+  "ALTER TABLE credit_ledger ADD COLUMN settled_at INTEGER NOT NULL DEFAULT 0",
 ];
 
 async function init(c: Client) {
