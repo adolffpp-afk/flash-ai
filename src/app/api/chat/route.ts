@@ -113,6 +113,7 @@ import { DEFAULT_VOICE, pickVoice } from "@/lib/voices.ts";
 import { falEditInput, falInput, packImageInput, packVideoInput, videoAspect } from "@/lib/engines/fal-input.ts";
 import { writePack } from "@/lib/engines/post-pack.ts";
 import { packMarkdown } from "@/lib/post-pack.ts";
+import { CONFIRM_CREDITS, consents, decidedFor, type Decided } from "@/lib/price-question.ts";
 
 // Vercel Pro allows up to 800 seconds, which the Movie maker needs (scenes, filming and joining).
 export const maxDuration = 800;
@@ -154,32 +155,6 @@ type ChatRequest = {
   // With confirmed: what was decided and priced before the price was asked (see Decided), sent back as it came.
   decided?: Decided;
 };
-
-/**
- * What the router and the picture check decided for a request before Flash asked the user to agree
- * to its price (see CONFIRM_CREDITS): the engine, and whether the picture above is made fresh. The
- * request the user agrees to uses it instead of asking them again, so the engine and the price can't
- * change after the user agreed, and the helpers that decided are paid for by that request (its price
- * includes them, see CHECK_ALLOWANCE_CENTS). It only picks what the user could pick themselves.
- * model and credits are the price asked: the request runs on that model, and only at no more than
- * those credits, or the user is asked about the new price.
- */
-type Decided = { engine: Engine; fresh?: boolean; model?: string; credits?: number };
-
-/**
- * What the user said yes to (see Decided), or null when there's none, or it was for another tool
- * than the one picked now. Chats saved before prices were kept with it send no model or credits.
- */
-function decidedFor(body: ChatRequest, override: Engine | null): Decided | null {
-  const d = body.decided;
-  if (body.confirmed !== true || !d || !(ENGINES as readonly string[]).includes(d.engine)) return null;
-  if (override && d.engine !== override) return null;
-  const priced = typeof d.model === "string" && typeof d.credits === "number" && Number.isFinite(d.credits) && d.credits > 0;
-  return { engine: d.engine, fresh: d.fresh === true, ...(priced && { model: d.model, credits: d.credits }) };
-}
-
-/** Requests that cost at least this many credits wait for the user to agree to the price first. */
-const CONFIRM_CREDITS = 50;
 
 function providers(): Set<Provider> {
   const set = new Set<Provider>();
@@ -976,11 +951,8 @@ export async function POST(request: Request) {
       budget = NO_BUDGET;
     }
   }
-  // Agreed to: every price, or the price asked, for this model at no more than those credits. A yes to
-  // a price asked for another tool than the one picked now (see decidedFor) is asked about again.
-  const consented =
-    body.confirmed === true && (decided ? !decided.model || (model?.id === decided.model && needed <= (decided.credits ?? 0)) : !body.decided);
-  if (model && !free && needed >= CONFIRM_CREDITS && available >= needed && !consented) {
+  // Agreed to: every price, or the price asked, for this model at no more than those credits (see consents).
+  if (model && !free && needed >= CONFIRM_CREDITS && available >= needed && !consents(body, decided, model.id, needed)) {
     // The price question, which a voice conversation also reads out.
     const price = { model: model.label, credits: needed.toLocaleString(t.locale), available: available.toLocaleString(t.locale) };
     const error =

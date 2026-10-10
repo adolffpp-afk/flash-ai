@@ -34,6 +34,7 @@ import { LevelPicker, MenusOpenDown, MicButton, PlusMenu, SendButton, TalkButton
 import { VoiceMode, type VoiceAnswer } from "./VoiceMode";
 import { useWakeWord } from "./useWakeWord";
 import { voiceReply, type VoiceMessage } from "@/lib/voice-chat";
+import { priceWaiting } from "@/lib/price-question";
 import { photoActionsFor } from "@/lib/photo-actions";
 import { featureReady, findFeatures, isInstall, type FeatureAction, type FeatureSetup } from "@/lib/features";
 import { pickedContext, type PickedElement } from "@/lib/preview-bridge";
@@ -813,6 +814,8 @@ export function Flash({
     if (!active || !messages || busy || runningRef.current) return null;
     const lastUser = messages.findLastIndex((m) => m.role === "user");
     if (lastUser === -1) return null;
+    // A yes only goes ahead with a price question still waiting, never with whatever was asked last.
+    if (confirmed && !priceWaiting(messages)) return null;
     const decided = confirmed ? messages[lastUser + 1]?.decided : undefined;
     return respond(active, messages.slice(0, lastUser), messages[lastUser], confirmed, undefined, decided);
   }
@@ -1058,13 +1061,25 @@ export function Flash({
     // "Make it darker" said right after a picture changes that picture, as when it's typed.
     const ask: UIMessage = { id: newId(), role: "user", content: text, auto: true, voice: true };
     const reply = await respond(chat, chat.messages, withPicture(ask, followUpPicture(chat.messages, text, "auto")), false, undefined, undefined, early);
-    return reply ? voiceReply(reply, t) : stillWorking;
+    return reply ? spokenAnswer(chat.id, reply) : stillWorking;
   }
 
-  /** "Yes" to a costly request asked for by voice: runs it, like Go ahead. */
-  async function confirmByVoice(): Promise<VoiceAnswer> {
+  /** What Flash says after a reply in a voice conversation, with the price question it asks, if any. */
+  function spokenAnswer(chat: string, reply: UIMessage): VoiceAnswer {
+    const answer = voiceReply(reply, t);
+    return answer.confirm ? { ...answer, asked: { chat, reply: reply.id } } : answer;
+  }
+
+  /**
+   * "Yes" to a costly request asked for by voice: runs it, like Go ahead. Only the price question
+   * the conversation asked (asked), still waiting in the open chat, goes ahead: not one answered with
+   * the button since, nor whatever was asked last in another chat.
+   */
+  async function confirmByVoice(asked?: VoiceAnswer["asked"]): Promise<VoiceAnswer> {
+    const nothing = { say: t("There's nothing waiting to go ahead."), confirm: false };
+    if (!asked || !active || active.id !== asked.chat || !priceWaiting(active.messages ?? [], asked.reply)) return nothing;
     const reply = await retry(true);
-    return reply ? voiceReply(reply, t) : { say: t("There's nothing waiting to go ahead."), confirm: false };
+    return reply ? spokenAnswer(active.id, reply) : nothing;
   }
 
   /**

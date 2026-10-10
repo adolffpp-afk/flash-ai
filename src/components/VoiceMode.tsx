@@ -27,8 +27,11 @@ import { speechLang } from "@/lib/languages";
 import { msg } from "@/lib/i18n";
 import { tNow, useT } from "@/lib/use-t";
 
-/** What Flash says after a request, whether it asked to go ahead with a costly one, and whether the request was stopped. */
-export type VoiceAnswer = { say: string; confirm: boolean; stopped?: boolean };
+/**
+ * What Flash says after a request, whether it asked to go ahead with a costly one (and which: the
+ * chat and the reply that asked), and whether the request was stopped.
+ */
+export type VoiceAnswer = { say: string; confirm: boolean; stopped?: boolean; asked?: { chat: string; reply: string } };
 
 type Phase = "starting" | "listening" | "thinking" | "speaking" | "paused";
 
@@ -55,7 +58,8 @@ type VoiceProps = {
   busy: boolean;
   // early is called as the reply is written, so its first sentences are said before it's done.
   ask: (text: string, early?: (partial: VoiceMessage) => void) => Promise<VoiceAnswer>;
-  confirm: () => Promise<VoiceAnswer>;
+  // A yes to the price question asked (see VoiceAnswer).
+  confirm: (asked?: VoiceAnswer["asked"]) => Promise<VoiceAnswer>;
   onStop: () => void;
   onClose: () => void;
 };
@@ -124,6 +128,8 @@ class Conversation {
     const p = this.screen.props;
     let pending = p().first?.trim() ?? "";
     let confirming = false;
+    // The price question waiting for a yes or no.
+    let asked: VoiceAnswer["asked"];
     let lastAnswer = "";
     // "Um…" or "What…" said before a pause, kept to go with the words that follow it.
     let held = "";
@@ -212,14 +218,15 @@ class Conversation {
       };
       const reply = confirming ? confirmReply(heard, { yes: tNow(YES_WORDS), no: tNow(NO_WORDS), unsure: tNow(UNSURE_WORDS), sounds, polite }) : null;
       let answer: VoiceAnswer;
-      if (reply === "yes") answer = await p().confirm();
+      if (reply === "yes") answer = await p().confirm(asked);
       else if (reply === "no") answer = { say: tNow("Okay, I won't make it."), confirm: false };
       // Thinking out loud ("hmm", "how much?"): the costly request is still waiting, so Flash asks again instead of dropping it.
-      else if (reply === "unsure") answer = { say: lastAnswer, confirm: true };
+      else if (reply === "unsure") answer = { say: lastAnswer, confirm: true, asked };
       else if (p().busy) answer = { say: tNow("I'm still working on your last request. Ask me again when it's done."), confirm: false };
       else answer = await p().ask(heard, early);
       answered = true;
       confirming = answer.confirm;
+      asked = answer.confirm ? answer.asked : undefined;
       // A request stopped part way: "say that again" says what was said of it, not "Stopped.".
       lastAnswer = answer.stopped ? said || lastAnswer : answer.say;
       await saying;
