@@ -8,6 +8,7 @@ const { siteAuth, visitorForSession, newPageToken, visitorForPageToken, listSite
   await import("../src/lib/server/site-auth.ts");
 const { listRecords, addRecord, patchRecord, removeRecord } = await import("../src/lib/server/site-data.ts");
 const { flashDbShim } = await import("../src/lib/flashdb-shim.ts");
+const { OWNER } = await import("../src/lib/data-rules.ts");
 const { routeHost } = await import("../src/lib/site-host.ts");
 
 const token = (cookie?: string) => cookie?.split("=")[1].split(";")[0] ?? "";
@@ -93,7 +94,8 @@ test("each person's own records are theirs alone, and the app's shared ones stay
 
   await addRecord("shop", "orders", { item: "Bread" }, annId);
   await addRecord("shop", "orders", { item: "Cake" }, bobId);
-  await addRecord("shop", "menu", { item: "Bread", price: 8 }, "");
+  // The app's page has no flashDB code, so only its owner adds to its shared data.
+  await addRecord("shop", "menu", { item: "Bread", price: 8 }, "", OWNER);
 
   const annSees = (await listRecords("shop", "orders", "", annId)).body as { records: { item: string }[] };
   assert.deepEqual(annSees.records.map((r) => r.item), ["Bread"]);
