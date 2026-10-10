@@ -85,6 +85,34 @@ export async function falRun(
 
 const timeLeft = (end: number) => AbortSignal.timeout(Math.max(1000, end - Date.now()));
 
+// fal's synchronous endpoint answers on the same request, with no queue to poll (polling adds 1.5
+// to 3 seconds). For short jobs someone is waiting on, like a spoken turn. Never used in place of a
+// FAL_BASE_URL that points elsewhere (a test double or a proxy): set FAL_SYNC_URL too for that.
+const falSync = () => process.env.FAL_SYNC_URL || (process.env.FAL_BASE_URL ? "" : "https://fal.run");
+export const falSyncConfigured = () => Boolean(falSync());
+
+/** Runs a short fal job and returns its JSON result. A job that timed out may have run, so it counts as billed. */
+export async function falRunNow(endpoint: string, input: Record<string, unknown>, timeoutMs = 20_000): Promise<unknown> {
+  let res: Response;
+  try {
+    res = await fetch(`${falSync()}/${endpoint}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...headers() },
+      body: JSON.stringify(input),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (err) {
+    if (err instanceof Error && err.name === "TimeoutError") throw new JobAbandoned(msg("This is taking too long, so Flash stopped waiting. Please try again."), true);
+    throw err;
+  }
+  if (!res.ok) throw await failure(res);
+  try {
+    return await res.json();
+  } catch (err) {
+    throw billed(err);
+  }
+}
+
 function billed(err: unknown): JobAbandoned {
   console.error("[flash] fal result failed", err);
   return err instanceof FriendlyError

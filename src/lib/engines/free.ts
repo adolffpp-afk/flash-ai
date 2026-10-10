@@ -137,6 +137,8 @@ export const freeImageConfigured = () => Boolean(cloudflareKey());
 export const FREE_DAILY_CHATS = num("FLASH_FREE_DAILY_CHATS", 25);
 export const FREE_DAILY_IMAGES = num("FLASH_FREE_DAILY_IMAGES", 3);
 export const FREE_DAILY_TRANSCRIPTS = num("FLASH_FREE_DAILY_TRANSCRIPTS", 3);
+// Spoken turns a day in browsers that can't recognise speech (Firefox). Groq counts each as 10 seconds.
+export const FREE_DAILY_VOICE_TURNS = num("FLASH_FREE_DAILY_VOICE_TURNS", 40);
 
 // Groq's free tier limits Whisper by requests and seconds of audio a day (2,000 and 28,800 in
 // the lowest figures published). Flash stops well below both; check the Groq console's limits page.
@@ -152,7 +154,7 @@ const FREE_MAX_TOKENS = 4000;
 
 export const FREE_CHAT_ENGINES: Engine[] = ["text", "translate", "code", "docs"];
 
-export type FreeLane = "chat" | "image" | "transcribe";
+export type FreeLane = "chat" | "image" | "transcribe" | "voice";
 
 /**
  * Whether a request can use the free lane: chat-style engines or images with no file or text
@@ -350,4 +352,29 @@ export async function freeTranscribe(file: { name: string; mediaType: string; da
   const json = (await res.json().catch(() => ({}))) as { text?: string; duration?: number; error?: { message?: string } };
   if (!res.ok) throw new Error(json.error?.message ?? `The free transcription model returned ${res.status}`);
   return { text: json.text?.trim() || NO_SPEECH, seconds: Math.max(MIN_AUDIO_SECONDS, Math.ceil(json.duration ?? 0)) };
+}
+
+/**
+ * One spoken turn from Whisper large-v3 on Groq's free tier (more accurate than turbo, and as free),
+ * with the length Groq counts. Whisper writes "Thank you." or "Merci." over silence; a stretch it
+ * thinks has no speech and isn't sure of is dropped, as Whisper's own transcriber does.
+ */
+export async function freeHear(file: { name: string; mediaType: string; data: string }): Promise<{ text: string; seconds: number }> {
+  const form = new FormData();
+  form.append("model", env("FLASH_FREE_VOICE_MODEL") ?? "whisper-large-v3");
+  form.append("response_format", "verbose_json");
+  form.append("temperature", "0");
+  form.append("file", new Blob([Buffer.from(file.data, "base64")], { type: file.mediaType }), file.name);
+  const res = await fetch(`${env("GROQ_BASE_URL") ?? "https://api.groq.com/openai/v1"}/audio/transcriptions`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${env("GROQ_API_KEY")}` },
+    body: form,
+    signal: AbortSignal.timeout(20_000),
+  });
+  type Segment = { text?: string; no_speech_prob?: number; avg_logprob?: number };
+  const json = (await res.json().catch(() => ({}))) as { text?: string; duration?: number; segments?: Segment[]; error?: { message?: string } };
+  if (!res.ok) throw new Error(json.error?.message ?? `The free transcription model returned ${res.status}`);
+  const silent = (s: Segment) => (s.no_speech_prob ?? 0) > 0.6 && (s.avg_logprob ?? 0) < -1;
+  const text = json.segments ? json.segments.filter((s) => !silent(s)).map((s) => s.text ?? "").join("") : (json.text ?? "");
+  return { text: text.trim(), seconds: Math.max(MIN_AUDIO_SECONDS, Math.ceil(json.duration ?? 0)) };
 }

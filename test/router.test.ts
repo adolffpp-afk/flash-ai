@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { route, textToSpeak } from "../src/lib/router.ts";
+import { checksSpoken, route, takesGuess, textToSpeak } from "../src/lib/router.ts";
 
 const cases: [string, string][] = [
   ["Write a short poem about the ocean", "text"],
@@ -73,4 +73,51 @@ test("a clear new request after an app goes to its own engine", () => {
 test("textToSpeak pulls out the words to say", () => {
   assert.equal(textToSpeak('Say "good morning everyone"'), "good morning everyone");
   assert.equal(textToSpeak("Read this aloud: Welcome to Flash AI"), "Welcome to Flash AI");
+});
+
+test("in a voice conversation, talk about how Flash speaks is answered, and audio asked for is still made", () => {
+  for (const m of ["Say that again", "Speak slower", "Can you read that out loud", "Narrate what you see"]) {
+    assert.equal(route(m).engine, "voice", `typed: ${m}`);
+    const spoken = route(m, undefined, undefined, { spoken: true });
+    assert.deepEqual([spoken.engine, spoken.reason, spoken.guessed], ["text", "Flash answers in the conversation.", undefined], m);
+  }
+  for (const m of [
+    "Read this aloud as an mp3",
+    "Read this aloud: Welcome to Flash AI",
+    'Say "good morning everyone"',
+    "Turn this poem into audio",
+    "Convert my notes into speech",
+    "Read this in a British accent",
+    "Say happy birthday in a deep voice",
+  ]) {
+    assert.equal(route(m, undefined, undefined, { spoken: true }).engine, "voice", m);
+  }
+});
+
+test("after an app, a spoken follow-up edits it only when it asks for a change; typed ones as before", () => {
+  for (const m of ["Thank you.", "How does it work?", "show me how it works", "let me think", "What's the function of the liver?"]) {
+    assert.equal(route(m, undefined, "app").engine, "app", `typed: ${m}`);
+    assert.notEqual(route(m, undefined, "app", { spoken: true }).engine, "app", m);
+  }
+  for (const m of ["Make the button blue", "Can you add a contact page", "Let's add a footer", "change the title to Bakery"]) {
+    assert.equal(route(m, undefined, "app", { spoken: true }).engine, "app", m);
+  }
+  assert.equal(route("Now add a slide about costs", undefined, "slides", { spoken: true }).engine, "slides");
+});
+
+test("the router's guess: typed requests as before; spoken ones aren't made into builds, prices or voice-overs by it", () => {
+  // Typed: a guess moves a request off text to anything but transcribing.
+  for (const g of ["image", "video", "app", "voice", "search", "code"] as const) assert.ok(takesGuess(g, "text", "Speak slower"), g);
+  assert.ok(!takesGuess("text", "text", "Hello") && !takesGuess("transcribe", "text", "Hello"));
+  // Spoken: "speak slower" isn't a voice-over, an mp3 is.
+  assert.ok(!takesGuess("voice", "text", "Speak slower", { spoken: true }));
+  assert.ok(takesGuess("voice", "text", "Make it an mp3", { spoken: true }));
+  // Spoken code, docs and search are checked again, and only move between the engines that answer in words.
+  assert.ok(checksSpoken("code") && checksSpoken("docs") && checksSpoken("search"));
+  assert.ok(!checksSpoken("text") && !checksSpoken("image") && !checksSpoken("app"));
+  const recheck = { spoken: true, recheck: true };
+  for (const g of ["text", "translate", "docs", "search"] as const) assert.ok(takesGuess(g, "code", "What's the function of the liver?", recheck), g);
+  for (const g of ["code", "app", "slides", "image", "video", "music", "voice", "transcribe"] as const) {
+    assert.ok(!takesGuess(g, "code", "What's the function of the liver?", recheck), g);
+  }
 });

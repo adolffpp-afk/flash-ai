@@ -1,4 +1,5 @@
 import { getUser, unauthorized } from "@/lib/server/auth.ts";
+import { isVerified } from "@/lib/server/account.ts";
 import { translatorFor } from "@/lib/server/i18n.ts";
 import { hearTurn, MAX_HEAR_BYTES, tooLongToHear } from "@/lib/server/voice.ts";
 
@@ -14,6 +15,12 @@ export async function POST(request: Request) {
     const { status, body } = tooLongToHear(t);
     return Response.json(body, { status });
   }
-  const { status, body } = await hearTurn(user.id, request.headers.get("content-type") ?? "", Buffer.from(await request.arrayBuffer()), t);
+  const { status, body } = await hearTurn(
+    user.id,
+    request.headers.get("content-type") ?? "",
+    Buffer.from(await request.arrayBuffer()),
+    { verified: isVerified(user) },
+    t,
+  );
   return Response.json(body, { status });
 }

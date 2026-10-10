@@ -344,16 +344,56 @@ export const fixesPictureText = (message: string) => FIX_PICTURE_TEXT.test(strai
 // Engines whose answers are general enough that a follow-up may really be an edit to the last build.
 const GENERAL: Engine[] = ["text", "code", "docs"];
 
+// A follow-up that asks for a change: "make the button blue", "now add a page", "can you fix the menu".
+// Not "show me how it works" or "let me think", which are talk.
+const ASKS_CHANGE =
+  /^\s*(?:(?:ok(?:ay)?|now|and|also|then|please|can you|could you|would you|will you|great|nice|so|i want you to|i'd like you to)\W+)*(?:make|change|add|remove|delete|move|put|turn|fix|update|use|set|rename|replace|show(?! me\b)|hide|swap|resize|center|centre|align|give(?! me\b)|let'?s|let us|edit|redo|rewrite|insert|include)\b/i;
+
+// Words to read out (in quotes or after a colon), a file, an accent or a voice: audio to make.
+const AUDIO_FILE = /["“:]|\b(voice-?\s?over|mp3|audio|recording|file|speech|tts|accent|voice)\b/i;
+/**
+ * Whether a request the voice rules matched asks for an audio file. In a voice conversation "say
+ * that again" or "speak slower" is talk, which Flash answers in the conversation.
+ */
+export const wantsAudioFile = (message: string) => AUDIO_FILE.test(message);
+
 /**
  * Picks the engine for a request with deterministic keyword rules. When the previous
- * reply was an app or deck, a general follow-up ("make the header blue") edits it.
+ * reply was an app or deck, a general follow-up ("make the header blue") edits it. Said in a voice
+ * conversation (spoken), "thank you" or "how does it work?" is talk, so only a change edits it,
+ * and only an ask for an audio file makes one.
  */
-export function route(message: string, attachmentType?: string, previous?: Engine): RouteDecision {
+export function route(message: string, attachmentType?: string, previous?: Engine, { spoken = false } = {}): RouteDecision {
   const decision = routeOne(message, attachmentType);
-  if ((previous === "app" || previous === "slides") && GENERAL.includes(decision.engine) && !attachmentType) {
+  const edits = !spoken || ASKS_CHANGE.test(straight(message));
+  if ((previous === "app" || previous === "slides") && GENERAL.includes(decision.engine) && !attachmentType && edits) {
     return { engine: previous, reason: previous === "app" ? msg("Updating your app.") : msg("Updating your slides.") };
   }
+  if (spoken && decision.engine === "voice" && !wantsAudioFile(message)) {
+    return { engine: "text", reason: msg("Flash answers in the conversation.") };
+  }
   return decision;
+}
+
+// The engines that answer in words.
+const ANSWER_ENGINES: Engine[] = ["text", "translate", "code", "docs", "search"];
+
+/**
+ * Whether the router checks a spoken request again: questions often hold words the keyword rules
+ * take for work ("the function of the liver" isn't code, "how are you today" needs no web search).
+ */
+export const checksSpoken = (engine: Engine) => engine === "code" || engine === "docs" || engine === "search";
+
+/**
+ * Whether the router's guess replaces the engine picked so far. A guess moves a request away from
+ * text (the rules' default) but never to transcribing, and never makes a spoken "say it slower"
+ * into a voice-over. A spoken request checked again (recheck) only moves between the engines that
+ * answer in words, so a guess never turns it into a build or something with a price to agree to.
+ */
+export function takesGuess(guess: Engine, engine: Engine, message: string, { spoken = false, recheck = false } = {}): boolean {
+  if (guess === engine) return false;
+  if (recheck) return ANSWER_ENGINES.includes(guess);
+  return guess !== "text" && guess !== "transcribe" && !(spoken && guess === "voice" && !wantsAudioFile(message));
 }
 
 function routeOne(message: string, attachmentType?: string): RouteDecision {

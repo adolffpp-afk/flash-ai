@@ -394,7 +394,7 @@ const ENGINE_GUIDE: Record<Engine, string> = {
  * Asks Haiku which engine fits a request the keyword rules couldn't place.
  * Returns null on any doubt or error, so the caller keeps its default.
  */
-export async function classifyRequest(message: string, meter: Meter = noMeter): Promise<Engine | null> {
+export async function classifyRequest(message: string, meter: Meter = noMeter, timeoutMs = 4000): Promise<Engine | null> {
   try {
     const res = await getClient().messages.create(
       {
@@ -405,7 +405,7 @@ export async function classifyRequest(message: string, meter: Meter = noMeter): 
           ENGINES.map((e) => `${e}: ${ENGINE_GUIDE[e]}`).join("\n"),
         messages: [{ role: "user", content: message.slice(0, 2000) }],
       },
-      { timeout: 4000, maxRetries: 0 },
+      { timeout: timeoutMs, maxRetries: 0 },
     );
     meter("anthropic", res.model, claudeCostCents(res.model, res.usage));
     const text = res.content.find((b) => b.type === "text");

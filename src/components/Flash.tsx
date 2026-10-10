@@ -32,7 +32,7 @@ import { Bell } from "./Bell";
 import { LevelPicker, MenusOpenDown, MicButton, PlusMenu, SendButton, TalkButton, ToolPicker, type Choice } from "./ComposerTools";
 import { VoiceMode, type VoiceAnswer } from "./VoiceMode";
 import { useWakeWord } from "./useWakeWord";
-import { voiceReply } from "@/lib/voice-chat";
+import { voiceReply, type VoiceMessage } from "@/lib/voice-chat";
 import { photoActionsFor } from "@/lib/photo-actions";
 import { featureReady, findFeatures, isInstall, type FeatureAction, type FeatureSetup } from "@/lib/features";
 import { pickedContext, type PickedElement } from "@/lib/preview-bridge";
@@ -868,6 +868,8 @@ export function Flash({
     userMsg: UIMessage,
     confirmed = false,
     unsent?: (stopped: boolean, why: string) => void,
+    // Sees the reply as it's written (a voice conversation starts saying it).
+    progress?: (reply: UIMessage) => void,
   ): Promise<UIMessage | null> {
     // One request at a time: Flash shows it's busy and Stop works from the first tap.
     if (runningRef.current) return null;
@@ -967,6 +969,7 @@ export function Flash({
           if (e.type === "error") finished = false;
           final = applyEvent(final, e);
           updateMessage(projectId, reply.id, (m) => applyEvent(m, e));
+          if (e.type === "text") progress?.(final);
         }
       }
     } catch (err) {
@@ -1002,7 +1005,7 @@ export function Flash({
   }
 
   /** One turn of a voice conversation: sends what was said to the open chat, on Auto, and says the answer. */
-  async function talk(text: string): Promise<VoiceAnswer> {
+  async function talk(text: string, early?: (partial: VoiceMessage) => void): Promise<VoiceAnswer> {
     const stillWorking = { say: t("I'm still working on your last request. Ask me again when it's done."), confirm: false };
     if (busy || runningRef.current) return stillWorking;
     // Talking from Home starts a new chat, as typing does.
@@ -1014,7 +1017,7 @@ export function Flash({
     }));
     // "Make it darker" said right after a picture changes that picture, as when it's typed.
     const ask: UIMessage = { id: newId(), role: "user", content: text, auto: true, voice: true };
-    const reply = await respond(chat, chat.messages, withPicture(ask, followUpPicture(chat.messages, text, "auto")));
+    const reply = await respond(chat, chat.messages, withPicture(ask, followUpPicture(chat.messages, text, "auto")), false, undefined, early);
     return reply ? voiceReply(reply, t) : stillWorking;
   }
 

@@ -4,6 +4,7 @@ import {
   FREE_DAILY_CHATS,
   FREE_DAILY_IMAGES,
   FREE_DAILY_TRANSCRIPTS,
+  FREE_DAILY_VOICE_TURNS,
   GROQ_AUDIO_DAILY_REQUESTS,
   GROQ_AUDIO_DAILY_SECONDS,
   type FreeLane,
@@ -58,15 +59,18 @@ export async function reserveFreeImage(): Promise<boolean> {
 // Room kept for one recording when taking a free transcript: 3 MB is at most about 10 minutes of speech.
 const AUDIO_SECONDS_RESERVE = 600;
 
-/** Takes one transcript from Groq's free Whisper allowance, or returns false when today's is used up. */
-export async function reserveFreeAudio(): Promise<boolean> {
+/**
+ * Takes one transcript from Groq's free Whisper allowance, or returns false when today's is used up.
+ * reserve is the most audio it can hold in seconds (a spoken turn: 30).
+ */
+export async function reserveFreeAudio(reserve = AUDIO_SECONDS_RESERVE): Promise<boolean> {
   const d = day();
   await run("INSERT OR IGNORE INTO free_quota (day, provider) VALUES (?, 'groq-audio')", [d]);
   // For Whisper, "tokens" counts seconds of audio.
   const r = await run(
     `UPDATE free_quota SET requests = requests + 1
      WHERE day = ? AND provider = 'groq-audio' AND requests < ? AND tokens + ? <= ?`,
-    [d, GROQ_AUDIO_DAILY_REQUESTS, AUDIO_SECONDS_RESERVE, GROQ_AUDIO_DAILY_SECONDS],
+    [d, GROQ_AUDIO_DAILY_REQUESTS, reserve, GROQ_AUDIO_DAILY_SECONDS],
   );
   return r.rowsAffected === 1;
 }
@@ -75,7 +79,13 @@ export async function recordFreeAudio(seconds: number): Promise<void> {
   await run("UPDATE free_quota SET tokens = tokens + ? WHERE day = ? AND provider = 'groq-audio'", [Math.ceil(seconds), day()]);
 }
 
-const userLimit = (kind: FreeLane) => (kind === "image" ? FREE_DAILY_IMAGES : kind === "transcribe" ? FREE_DAILY_TRANSCRIPTS : FREE_DAILY_CHATS);
+const USER_LIMITS: Record<FreeLane, number> = {
+  chat: FREE_DAILY_CHATS,
+  image: FREE_DAILY_IMAGES,
+  transcribe: FREE_DAILY_TRANSCRIPTS,
+  voice: FREE_DAILY_VOICE_TURNS,
+};
+const userLimit = (kind: FreeLane) => USER_LIMITS[kind];
 
 /** Free requests this user has left today. */
 export async function freeLeft(userId: string, kind: FreeLane): Promise<number> {

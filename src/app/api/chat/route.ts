@@ -1,4 +1,4 @@
-import { EDITABLE_TYPE, fixesPictureText, route, textToSpeak } from "@/lib/router.ts";
+import { EDITABLE_TYPE, checksSpoken, fixesPictureText, route, takesGuess, textToSpeak } from "@/lib/router.ts";
 import { MAX_EDIT_PIXELS, imageDimensions } from "@/lib/imageSize.ts";
 import { ENGINES, ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types.ts";
 import {
@@ -594,7 +594,8 @@ export async function POST(request: Request) {
   }
 
   const previous = body.previous && (ENGINES as readonly string[]).includes(body.previous) ? body.previous : undefined;
-  const auto = route(last.content, last.attachment?.mediaType, previous);
+  const spoken = body.voice === true;
+  const auto = route(last.content, last.attachment?.mediaType, previous, { spoken });
   const override =
     body.engine && body.engine !== "auto" && (ENGINES as readonly string[]).includes(body.engine) ? body.engine : null;
   let engine = override ?? auto.engine;
@@ -638,11 +639,14 @@ export async function POST(request: Request) {
 
   // When no keyword rule fits, a small, fast model reads the request and picks the engine.
   // Skipped for users out of credits, so the free lane costs Flash nothing.
-  if (!override && auto.guessed && !last.attachment && claudeConfigured() && available >= 5) {
-    const guess = await classifyRequest(last.content, meter);
+  // In a voice conversation it also checks requests the rules sent to code, docs or search (see checksSpoken).
+  const recheck = !override && spoken && checksSpoken(engine);
+  if (!override && (auto.guessed || recheck) && !last.attachment && claudeConfigured() && available >= 5) {
+    // Someone talking is waiting in silence, so the router gets less time to think.
+    const guess = await classifyRequest(last.content, meter, spoken ? 1500 : 4000);
     // A guess is only a guess, so it never sends a request to an engine that isn't available yet.
     const ready = (e: Engine) => (isMedia(e) ? Boolean(pickModel(e, last.content, providers())) : configured(e));
-    if (guess && guess !== "text" && guess !== "transcribe" && ready(guess)) {
+    if (guess && takesGuess(guess, engine, last.content, { spoken, recheck }) && ready(guess)) {
       engine = guess;
       reason = t("Flash's router read your request.");
     }
