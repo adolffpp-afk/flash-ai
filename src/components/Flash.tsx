@@ -1692,9 +1692,9 @@ export function Flash({
               key={p.id}
               className={`group flex items-center rounded-lg text-sm ${p.id === activeId ? "bg-white/[0.06] text-white" : "text-zinc-300 hover:bg-white/[0.03]"}`}
             >
-              <button className="min-w-0 flex-1 truncate px-3 py-1.5 text-left" onClick={() => openProject(p.id)}>
+              <button className="min-w-0 flex-1 truncate px-3 py-1.5 text-start" onClick={() => openProject(p.id)}>
                 {p.pinned && (
-                  <span className="mr-1.5 text-[11px]" aria-label={t("Pinned")}>
+                  <span className="me-1.5 text-[11px]" aria-label={t("Pinned")}>
                     📌
                   </span>
                 )}
@@ -1891,7 +1891,7 @@ export function Flash({
                         className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06]"
                       >
                         <Icon d={ICONS.chat} className="h-4 w-4 shrink-0 text-zinc-500" />
-                        <span className="min-w-0 flex-1 truncate">{projectName(p.name)}</span>
+                        <span dir="auto" className="min-w-0 flex-1 truncate">{projectName(p.name)}</span>
                         <span className="shrink-0 text-xs text-zinc-500">{timeAgo(p.updated_at, Date.now(), t.locale)}</span>
                       </button>
                     ))}
@@ -1921,7 +1921,7 @@ export function Flash({
               <div className="min-w-0 flex-1" />
             </>
           ) : (
-            <h1 className="min-w-0 flex-1 truncate text-[15px] font-medium text-zinc-100">{active ? projectName(active.name) : "Flash AI"}</h1>
+            <h1 dir="auto" className="min-w-0 flex-1 truncate text-[15px] font-medium text-zinc-100">{active ? projectName(active.name) : "Flash AI"}</h1>
           )}
           {active?.messages && (
             <button
