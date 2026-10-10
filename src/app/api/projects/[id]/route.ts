@@ -2,9 +2,8 @@ import { getUser, unauthorized } from "@/lib/server/auth.ts";
 import { one, run, now } from "@/lib/server/db.ts";
 import { cleanInstructions } from "@/lib/project-instructions.ts";
 import { translatorFor } from "@/lib/server/i18n.ts";
+import { PROJECT_TOO_LARGE, projectTooLarge } from "@/lib/project-size.ts";
 import { unfinished } from "@/lib/server/turns.ts";
-
-const MAX_MESSAGES_BYTES = 8 * 1024 * 1024;
 
 export async function GET(request: Request, ctx: RouteContext<"/api/projects/[id]">) {
   const user = await getUser(request);
@@ -53,9 +52,7 @@ export async function PUT(request: Request, ctx: RouteContext<"/api/projects/[id
   }
   if (Array.isArray(body.messages)) {
     const json = JSON.stringify(body.messages);
-    if (json.length > MAX_MESSAGES_BYTES) {
-      return Response.json({ error: t("This project is too large to save. Start a new project.") }, { status: 413 });
-    }
+    if (projectTooLarge(json)) return Response.json({ error: t(PROJECT_TOO_LARGE) }, { status: 413 });
     // Raised by every write of messages, so the chat route's own saving never overwrites this (see turns.ts).
     sets.push("messages = ?", "version = version + 1");
     args.push(json);

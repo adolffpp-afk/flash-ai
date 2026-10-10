@@ -1,6 +1,6 @@
 import type { BuiltApp, Engine, Source } from "./types";
 import type { Post } from "./post-pack";
-import { tNow } from "./use-t";
+import { tNow } from "./use-t.ts";
 
 export type UIMessage = {
   id: string;
@@ -40,6 +40,10 @@ export type UIMessage = {
   sources?: Source[];
   error?: string;
   errorCode?: string;
+  // A request waiting for its price to be agreed: what Flash decided for it, sent back with Go ahead.
+  decided?: { engine: Engine; fresh?: boolean };
+  // The id of the credits held for the request, so a stopped reply can show what it really cost.
+  charge?: number;
   pending?: boolean;
   // When the server started on a reply it saved as pending, so a reply its server never finished
   // stops showing as in progress (see turns.ts).

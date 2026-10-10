@@ -26,6 +26,7 @@ import { TEMPLATES, type Template, type TemplateValues } from "@/lib/templates";
 import { ENGINES, ENGINE_LABELS, STOPPABLE_ENGINES, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types";
 import { applyEvent } from "@/lib/apply-event";
 import { api, newId, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
+import { PROJECT_TOO_LARGE } from "@/lib/project-size";
 import type { ChatHit } from "@/lib/server/search";
 import { BoltIcon, BrandMark } from "@/app/brand";
 import { Home, ICONS, Icon } from "./Home";
@@ -508,7 +509,8 @@ export function Flash({
         if (!p?.messages) continue;
         const messages = p.messages.map((m) => ({ ...m, pending: undefined, status: undefined }));
         api(`/api/projects/${id}`, { method: "PUT", json: { name: p.name, messages } }).catch((err) =>
-          setNotice(err instanceof Error ? err.message : tNow("Couldn't save your project.")),
+          // Over 4.5 MB, Vercel refuses the save before Flash can say why.
+          setNotice(err?.status === 413 ? tNow(PROJECT_TOO_LARGE) : err instanceof Error ? err.message : tNow("Couldn't save your project.")),
         );
       }
     }, 600);
@@ -855,13 +857,17 @@ export function Flash({
     });
   }
 
-  /** Answers the last user message again, replacing the reply after it. Returns the new reply. */
+  /**
+   * Answers the last user message again, replacing the reply after it. Returns the new reply. Go ahead
+   * (confirmed) sends back what Flash decided before asking, so the price agreed is the price paid.
+   */
   async function retry(confirmed = false): Promise<UIMessage | null> {
     const messages = active?.messages;
     if (!active || !messages || busy || runningRef.current) return null;
     const lastUser = messages.findLastIndex((m) => m.role === "user");
     if (lastUser === -1) return null;
-    return respond(active, messages.slice(0, lastUser), messages[lastUser], confirmed);
+    const decided = confirmed ? messages[lastUser + 1]?.decided : undefined;
+    return respond(active, messages.slice(0, lastUser), messages[lastUser], confirmed, undefined, decided);
   }
 
   /** Agrees to a costly request's price and runs it; "always" stops asking on this device. */
@@ -904,6 +910,23 @@ export function Flash({
     abortRef.current?.abort();
   }
 
+  /**
+   * A stopped reply pays only for the work already done, which the server settles just after Stop.
+   * Its header shows nothing until then, and then what it really cost.
+   */
+  async function showSettledCost(projectId: string, replyId: string, charge: number) {
+    // Up to about a minute: a stopped request waits for a writer that was still running (see the chat route).
+    for (const wait of [500, 1500, 3000, 6000, 15000, 30000]) {
+      await new Promise((r) => setTimeout(r, wait));
+      const { credits } = await api<{ credits: number | null }>(`/api/me/charge?id=${charge}`).catch(() => ({ credits: null }));
+      if (credits !== null) {
+        updateMessage(projectId, replyId, (m) => ({ ...m, cost: credits }));
+        refreshMe();
+        return;
+      }
+    }
+  }
+
   /** A notification when a long request ends while Flash is in the background (Settings > General). */
   function notifyDone(request: string, ok: boolean, startedAt: number) {
     if (!notifiesWhenDone() || !document.hidden || Date.now() - startedAt < 8000) return;
@@ -925,6 +948,8 @@ export function Flash({
     userMsg: UIMessage,
     confirmed = false,
     unsent?: (stopped: boolean, why: string) => void,
+    // What Flash decided before asking for the price, sent back with Go ahead (see retry).
+    decided?: UIMessage["decided"],
   ): Promise<UIMessage | null> {
     // One request at a time: Flash shows it's busy and Stop works from the first tap.
     if (runningRef.current) return null;
@@ -1002,6 +1027,7 @@ export function Flash({
           model: userMsg.template?.model ?? (engine === "auto" ? undefined : models[engine]),
           template: userMsg.template?.name,
           confirmed: confirmed || skipsCostCheck(),
+          ...(confirmed && decided && { decided }),
           projectId,
           ...(userMsg.voice && { voice: true }),
           ...(userMsg.build && { build: true }),
@@ -1017,7 +1043,7 @@ export function Flash({
       if (!res.ok || !res.body) {
         const err = await res.json().catch(() => ({ error: t("Request failed ({status})", { status: res.status }) }));
         if (res.status === 401) setSignedOut(true);
-        throw Object.assign(new Error(err.error), { code: err.code as string | undefined });
+        throw Object.assign(new Error(err.error), { code: err.code as string | undefined, decided: err.decided as UIMessage["decided"] });
       }
       accepted = true;
       const reader = res.body.getReader();
@@ -1050,14 +1076,21 @@ export function Flash({
       const writing = Boolean(final.engine && STOPPABLE_ENGINES.includes(final.engine));
       onServer = accepted && !(aborted && writing);
       const status = t(aborted && final.engine ? FINISHING_AFTER_STOP : STILL_WORKING);
+      // A stopped reply's price is shown once the server has settled it (see showSettledCost).
       const outcome = (m: UIMessage): UIMessage =>
         onServer
           ? { ...m, status }
           : aborted
-            ? { ...m, stopped: true }
-            : { ...m, error: err instanceof Error ? err.message : t("Something went wrong."), errorCode: (err as { code?: string }).code };
+            ? { ...m, stopped: true, cost: undefined }
+            : {
+                ...m,
+                error: err instanceof Error ? err.message : t("Something went wrong."),
+                errorCode: (err as { code?: string }).code,
+                decided: (err as { decided?: UIMessage["decided"] }).decided,
+              };
       updateMessage(projectId, reply.id, outcome);
       final = outcome(final);
+      if (aborted && !onServer && final.charge) void showSettledCost(projectId, reply.id, final.charge);
     } finally {
       if (!onServer) updateMessage(projectId, reply.id, (m) => ({ ...m, pending: false, status: undefined }));
       refreshMe();
@@ -1439,7 +1472,8 @@ export function Flash({
             aria-label={t("Resume Next up")}
             className="shrink-0 rounded-full bg-primary/20 px-2.5 py-0.5 text-xs text-primary-soft hover:bg-primary/30"
           >
-            {t("Resume")}
+            {/* Not "Resume": that's also the CV template's name, and other languages need two words. */}
+            {t("Continue")}
           </button>
         )}
       </div>
@@ -1493,6 +1527,7 @@ export function Flash({
   // The words of the message, shared by Home's one-line box and the chat's two-row one.
   const messageBox = (
     <textarea
+      dir="auto"
       ref={inputRef}
       value={input}
       onChange={(e) => setInput(e.target.value)}
@@ -1671,7 +1706,7 @@ export function Flash({
       }}
       aria-current={on && !panel ? "page" : undefined}
       aria-pressed={panel ? on : undefined}
-      className={`flex h-12 w-full items-center gap-4 rounded-2xl px-4 text-left text-[16px] transition ${
+      className={`flex h-12 w-full items-center gap-4 rounded-2xl px-4 text-start text-[16px] transition ${
         on && !panel
           ? "bg-nav-active font-semibold text-white"
           : on
@@ -1682,8 +1717,11 @@ export function Flash({
       }`}
     >
       <Icon d={d} className="h-6 w-6 shrink-0" />
-      {label}
-      {badge && <span className="ml-auto rounded-full bg-white/[0.07] px-2 py-0.5 text-[11px] font-medium text-zinc-400">{badge}</span>}
+      {/* Long names wrap to two lines; next to a badge they're cut short instead, and shown in full on hover. */}
+      <span className={`min-w-0 ${badge ? "truncate" : "leading-tight"}`} title={badge ? label : undefined}>
+        {label}
+      </span>
+      {badge && <span className="ms-auto shrink-0 rounded-full bg-white/[0.07] px-2 py-0.5 text-[11px] font-medium text-zinc-400">{badge}</span>}
     </button>
   );
 
@@ -1691,18 +1729,19 @@ export function Flash({
     <div className="flex h-full">
       {/* Sidebar */}
       <aside
-        className={`${sidebar ? "flex" : "hidden"} fixed inset-0 z-[35] w-full flex-col overflow-y-auto bg-zinc-950 md:static md:m-3 md:mr-0 md:flex md:w-[256px] md:shrink-0 md:rounded-[26px] md:bg-transparent md:glass`}
+        className={`${sidebar ? "flex" : "hidden"} fixed inset-0 z-[35] w-full flex-col overflow-y-auto bg-zinc-950 md:static md:m-3 md:me-0 md:flex md:w-[256px] md:shrink-0 md:rounded-[26px] md:bg-transparent md:glass`}
       >
         <div className="flex items-start justify-between px-5 pb-1 pt-6">
           <button onClick={goHome} className="flex items-center gap-2 text-left" aria-label={t("Flash AI, home")}>
             <span className="-ml-1 [filter:drop-shadow(0_4px_10px_rgb(91_140_246/0.35))]">
               <BrandMark size={56} id="flash-side" ring={false} vivid />
             </span>
-            <span>
+            <span className="min-w-0">
               <span className="block whitespace-nowrap text-[28px] font-bold leading-none tracking-tight text-white">
                 FLASH <span className="font-light">AI</span>
               </span>
-              <span className="mt-1.5 block whitespace-nowrap text-[11.5px] text-zinc-400">{t("One App. Infinite Possibilities.")}</span>
+              {/* Other languages need more room than the English, so the line may wrap. */}
+              <span className="mt-1.5 block text-[11.5px] leading-snug text-zinc-400">{t("One App. Infinite Possibilities.")}</span>
             </span>
           </button>
           <button className="mt-1 text-zinc-400 md:hidden" onClick={() => setSidebar(false)} aria-label={t("Close menu")}>
@@ -1760,9 +1799,9 @@ export function Flash({
               key={p.id}
               className={`group flex items-center rounded-lg text-sm ${p.id === activeId ? "bg-white/[0.06] text-white" : "text-zinc-300 hover:bg-white/[0.03]"}`}
             >
-              <button className="min-w-0 flex-1 truncate px-3 py-1.5 text-left" onClick={() => openProject(p.id)}>
+              <button className="min-w-0 flex-1 truncate px-3 py-1.5 text-start" onClick={() => openProject(p.id)}>
                 {p.pinned && (
-                  <span className="mr-1.5 text-[11px]" aria-label={t("Pinned")}>
+                  <span className="me-1.5 text-[11px]" aria-label={t("Pinned")}>
                     📌
                   </span>
                 )}
@@ -1833,7 +1872,7 @@ export function Flash({
           )}
           <button
             onClick={() => setShowInvite(true)}
-            className={`w-full rounded-lg px-2 py-1 text-left text-xs text-gold-soft transition hover:bg-white/[0.04] hover:text-gold ${isHome ? "md:hidden" : ""}`}
+            className={`w-full rounded-lg px-2 py-1 text-start text-xs text-gold-soft transition hover:bg-white/[0.04] hover:text-gold ${isHome ? "md:hidden" : ""}`}
           >
             🎁 {t("Invite friends, earn credits")}
           </button>
@@ -1959,7 +1998,7 @@ export function Flash({
                         className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06]"
                       >
                         <Icon d={ICONS.chat} className="h-4 w-4 shrink-0 text-zinc-500" />
-                        <span className="min-w-0 flex-1 truncate">{projectName(p.name)}</span>
+                        <span dir="auto" className="min-w-0 flex-1 truncate">{projectName(p.name)}</span>
                         <span className="shrink-0 text-xs text-zinc-500">{timeAgo(p.updated_at, Date.now(), t.locale)}</span>
                       </button>
                     ))}
@@ -1989,7 +2028,7 @@ export function Flash({
               <div className="min-w-0 flex-1" />
             </>
           ) : (
-            <h1 className="min-w-0 flex-1 truncate text-[15px] font-medium text-zinc-100">{active ? projectName(active.name) : "Flash AI"}</h1>
+            <h1 dir="auto" className="min-w-0 flex-1 truncate text-[15px] font-medium text-zinc-100">{active ? projectName(active.name) : "Flash AI"}</h1>
           )}
           {active?.messages && (
             <button

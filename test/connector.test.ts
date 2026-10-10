@@ -83,6 +83,10 @@ test("the tools list only set-up models and never the Movie maker", () => {
   const models = (video.inputSchema.properties as { model: { enum: string[] } }).model.enum;
   assert.deepEqual(models, ["veo-3.1", "kling-3"]);
   assert.doesNotMatch(video.description, /sora/i);
+  // The prices the tools give are the ones they charge.
+  assert.match(video.description, /176 for 5 seconds, 526 for 15/);
+  assert.match(list.find((t) => t.name === "flash_speak")!.description, /about 13 credits per 1,000 characters/);
+  assert.match(list.find((t) => t.name === "flash_animate_photo")!.description, /a 5 second clip: 141 credits, or 211 with sound/);
 });
 
 /** Pretends to be fal.ai: every job finishes and returns a tiny file, or fails when asked. */
@@ -136,7 +140,7 @@ test("a failed job costs nothing, and too few credits makes nothing", async () =
   const calls = fakeFal();
   const poor = (await callTool("flash_create_video", { prompt: "a fox runs", seconds: 15 }, ctx("u2")))!;
   assert.equal(poor.isError, true);
-  assert.match((poor.content[0] as { text: string }).text, /needs 525 Flash credits/);
+  assert.match((poor.content[0] as { text: string }).text, /needs 526 Flash credits/);
   assert.equal(calls.length, 0, "nothing was sent to fal");
   assert.equal(await balance("u2"), before);
 });
@@ -250,13 +254,27 @@ test("animating a photo charges by length, and sound only when asked", async () 
   let before = await balance("u2");
   const quiet = (await callTool("flash_animate_photo", { image_base64: png.toString("base64"), prompt: "the waves roll in, soft music" }, ctx("u2")))!;
   assert.equal(quiet.isError, undefined);
-  assert.equal(before - (await balance("u2")), 140, "5 seconds without sound");
+  assert.equal(before - (await balance("u2")), 141, "5 seconds without sound, and the picture check its price includes");
   assert.equal(sent[0].generate_audio, false, "music in the motion text doesn't switch sound on");
   assert.equal(sent[0].duration, "5");
 
   before = await balance("u2");
   await callTool("flash_animate_photo", { image_base64: png.toString("base64"), seconds: 10, sound: true }, ctx("u2"));
-  assert.equal(before - (await balance("u2")), 420, "10 seconds with sound");
+  assert.equal(before - (await balance("u2")), 421, "10 seconds with sound");
   assert.equal(sent[1].generate_audio, true);
   assert.equal(sent[1].duration, "10");
+});
+
+test("each tool call in a batch counts against the hourly limit", async () => {
+  const { tooManyCalls } = await import("../src/lib/server/connector-http.ts");
+  const call = { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "flash_check_credits" } };
+  // Listing tools and pinging aren't tool calls, so they never count.
+  assert.equal(await tooManyCalls("batcher", [{ method: "tools/list" }, { method: "ping" }]), false);
+  // A batch over the hourly limit is refused whole.
+  assert.equal(await tooManyCalls("batcher", Array(61).fill(call)), true);
+  // One at a time, 60 an hour go through, then the 61st waits, and a batch adds up the same way.
+  assert.equal(await tooManyCalls("single", [call]), false);
+  assert.equal(await tooManyCalls("single", Array(58).fill(call)), false);
+  assert.equal(await tooManyCalls("single", [call, { method: "tools/list" }]), false, "the 60th");
+  assert.equal(await tooManyCalls("single", [call]), true, "the 61st");
 });

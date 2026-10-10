@@ -1,4 +1,4 @@
-import { appUrl, createSession, hashPassword, isSecure } from "@/lib/server/auth.ts";
+import { appUrl, createSession, fromOwnPage, hashPassword, isSecure } from "@/lib/server/auth.ts";
 import { backfillEmailKeys, emailKey, sendVerification } from "@/lib/server/account.ts";
 import { one } from "@/lib/server/db.ts";
 import { clientIp, overLimit } from "@/lib/server/limits.ts";
@@ -8,6 +8,8 @@ import { createUser } from "@/lib/server/users.ts";
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function POST(request: Request) {
+  // Only Flash's own sign-up page may make an account and sign into it (see fromOwnPage).
+  if (!fromOwnPage(request)) return Response.json({ error: "Please create your account on Flash's own page." }, { status: 403 });
   const body = (await request.json().catch(() => ({}))) as { email?: string; password?: string; name?: string };
   const email = (body.email ?? "").trim().toLowerCase();
   const password = body.password ?? "";

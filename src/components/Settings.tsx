@@ -417,7 +417,7 @@ function General({
               className={field}
               value={nickname}
               maxLength={40}
-              placeholder={suggested === "there" ? t("there") : suggested}
+              placeholder={suggested === "there" ? t("Your name") : suggested}
               onChange={(e) => setNickname(e.target.value)}
             />
           </label>

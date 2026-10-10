@@ -418,6 +418,8 @@ const MIGRATIONS = [
   "ALTER TABLE site_page_tokens ADD COLUMN session_hash TEXT NOT NULL DEFAULT ''",
   // Whether people using a published app may send it files. Off until its owner turns it on.
   "ALTER TABLE sites ADD COLUMN uploads_on INTEGER NOT NULL DEFAULT 0",
+  // When a held charge was settled to what the request really cost, or 0 while it runs.
+  "ALTER TABLE credit_ledger ADD COLUMN settled_at INTEGER NOT NULL DEFAULT 0",
   // Counts every write of a project's messages, so the server saving a reply never overwrites
   // a change saved since it read them (see turns.ts).
   "ALTER TABLE projects ADD COLUMN version INTEGER NOT NULL DEFAULT 0",

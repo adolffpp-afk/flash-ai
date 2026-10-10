@@ -39,6 +39,7 @@ test("Flash shows the language picked in Settings, else the browser's when Flash
   assert.equal(uiLanguage("French", ["it"]), "it", "a value not on the list counts as Automatic");
   assert.equal(localeOf("fr"), "fr-FR");
   assert.equal(localeOf("ht"), "fr-HT", "browsers have no Haitian Creole dates");
+  assert.match(new Date(2026, 9, 10).toLocaleDateString(localeOf("ar"), { month: "long" }), /أكتوبر/, "Arabic dates are Gregorian");
   assert.equal(localeOf("en"), "en-US");
 });
 
@@ -64,6 +65,14 @@ test("each table has only phrases Flash shows, with the same blanks", () => {
       assert.equal(typeof translated, "string", `${id}: "${english}"`);
       assert.deepEqual(blanksIn(translated), blanksIn(english), `${id}: "${english}" keeps its blanks`);
     }
+  }
+});
+
+test("every table translates every phrase Flash shows", () => {
+  for (const { id } of LANGUAGES.filter((l) => l.id !== "en")) {
+    const table = tableOf(id);
+    const missing = phrases.filter((p) => !table[p]?.trim());
+    assert.deepEqual(missing.slice(0, 5), [], `${id}: ${missing.length} phrases still in English`);
   }
 });
 

@@ -7,8 +7,8 @@ const all = new Set<Provider>(["openai", "elevenlabs", "fal"]);
 const pick = (engine: "image" | "video" | "music", msg: string, set = all, requested?: string) =>
   pickModel(engine, msg, set, requested)?.model.id ?? null;
 
-test("defaults stay on the original three providers", () => {
-  assert.equal(pick("image", "Draw a logo for a coffee shop"), "gpt-image");
+test("defaults stay on the original three providers, with the cheaper FLUX.2 Pro ahead of GPT Image", () => {
+  assert.equal(pick("image", "Draw a logo for a coffee shop"), "flux-2-pro");
   assert.equal(pick("video", "A video of ocean waves at sunset"), "sora-2-pro");
   assert.equal(pick("music", "An upbeat jingle for a bakery"), "eleven-music");
 });
@@ -22,7 +22,9 @@ test("requests that fit a fal model go to it", () => {
 
 test("fal models are skipped without a fal key", () => {
   const noFal = new Set<Provider>(["openai", "elevenlabs"]);
+  // GPT Image makes the pictures when it is the only image model set up.
   assert.equal(pick("image", "A realistic photo of a cat", noFal), "gpt-image");
+  assert.equal(pick("image", "A realistic photo of a cat", noFal, "gpt-image"), "gpt-image");
   assert.equal(pick("music", "A song with vocals", noFal), "eleven-music");
 });
 
@@ -33,6 +35,16 @@ test("fal alone covers image, video and music", () => {
   assert.equal(pick("music", "A calm beat", onlyFal), "minimax-music");
 });
 
+test("with fal.ai set up, GPT Image is only used when picked; with OpenAI alone, it makes every picture", () => {
+  for (const msg of ["Draw a logo for a coffee shop", "A poster with the words OPEN LATE", "A cat"]) {
+    assert.notEqual(pick("image", msg), "gpt-image");
+    assert.notEqual(pick("image", msg, new Set<Provider>(["fal", "openai"])), "gpt-image");
+    assert.equal(pick("image", msg, new Set<Provider>(["openai"])), "gpt-image");
+  }
+  // Still a post pack when one is asked for and fal.ai is there to paint it.
+  assert.equal(pick("image", "a social media pack for my bakery"), "post-pack");
+});
+
 test("no provider means demo mode", () => {
   assert.equal(pick("video", "Waves", new Set()), null);
 });
@@ -40,7 +52,8 @@ test("no provider means demo mode", () => {
 test("a model the user picked wins, if it is set up", () => {
   assert.equal(pick("video", "Waves at sunset", all, "kling-3"), "kling-3");
   assert.equal(pick("video", "Waves at sunset", new Set<Provider>(["openai"]), "kling-3"), "sora-2-pro");
-  assert.equal(pick("image", "A logo", all, "veo-3.1"), "gpt-image");
+  assert.equal(pick("image", "A logo", all, "veo-3.1"), "flux-2-pro");
+  assert.equal(pick("image", "A logo", all, "gpt-image"), "gpt-image");
 });
 
 test("requestedSeconds reads and clamps durations", () => {

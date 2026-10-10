@@ -78,7 +78,7 @@ test("asking to animate an attached photo makes a video from it", () => {
   assert.equal(pickModel("video", "animate this", fal, undefined, true)?.model.id, "kling-3-animate");
   assert.notEqual(pickModel("video", "a cat runs", fal)?.model.id, "kling-3-animate", "never for new videos");
   const animate = MODELS.find((m) => m.id === "kling-3-animate")!;
-  assert.equal(modelCredits(animate, "animate this"), 140, "5 s silent at $0.112/s, with the markup");
-  assert.equal(modelCredits(animate, "animate this with ocean sound, 10 seconds"), 420);
-  assert.equal(modelCredits(animate, "animate this, no sound"), 140);
+  assert.equal(modelCredits(animate, "animate this"), 141, "5 s silent at $0.112/s and the picture check, with the markup");
+  assert.equal(modelCredits(animate, "animate this with ocean sound, 10 seconds"), 421);
+  assert.equal(modelCredits(animate, "animate this, no sound"), 141);
 });

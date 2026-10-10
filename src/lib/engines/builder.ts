@@ -1,5 +1,18 @@
-import { NO_BUDGET, choiceParams, defaultChoice, getClient, meterClaude, noMeter, toMessages, type Budget, type ClaudeChoice, type Meter } from "./claude.ts";
-import { MAX_OUTPUT_TOKENS, claudeCostCents, claudePrice, inputCostCents } from "../credits.ts";
+import {
+  NO_BUDGET,
+  choiceParams,
+  defaultChoice,
+  getClient,
+  meterClaude,
+  noMeter,
+  toMessages,
+  usesFallback,
+  type Budget,
+  type ClaudeChoice,
+  type Meter,
+  type Watch,
+} from "./claude.ts";
+import { tokensWithin } from "../credits.ts";
 import { htmlTitle, splitBuild } from "../build-parse.ts";
 import { applyEdits, hasPieces, piecesIn, splitEdits, type Edit } from "../edit-blocks.ts";
 import type { ChatTurn, StreamEvent } from "../types.ts";
@@ -137,19 +150,16 @@ export async function* streamBuild(
   choice: ClaudeChoice = defaultChoice(kind),
   // The language Flash's own words (progress, notes, errors) are in.
   t: Translate = english,
-  // Told the length of all the model writes, the code too, which is sent only once it's whole, so
-  // a build that's stopped or fails part way is charged for what was written (see finalCredits).
-  wrote: (chars: number) => void = () => {},
+  { signal, running }: Watch = {},
 ): AsyncGenerator<StreamEvent> {
   const app = kind === "app";
   // The title when the file has none. It names the published site and its downloads, so it stays in English.
   const fallback = app ? "Your app" : "Your slides";
   const tooLong = (): StreamEvent => ({
     type: "error",
-    message:
-      budget.maxTokens < MAX_OUTPUT_TOKENS
-        ? t("Your credits ran out before this was finished. Add credits, or ask for a simpler first version.")
-        : t("The app was too large to finish in one go. Try asking for a simpler first version."),
+    message: budget.byCredits
+      ? t("Your credits ran out before this was finished. Add credits, or ask for a simpler first version.")
+      : t("The app was too large to finish in one go. Try asking for a simpler first version."),
   });
   const noFit = (): StreamEvent => ({ type: "error", message: t(NO_FIT) });
 
@@ -177,12 +187,16 @@ export async function* streamBuild(
             ? t("Designing your app…")
             : t("Designing your deck…"),
     };
-    const stream = getClient().beta.messages.stream({
-      ...choiceParams(choice),
-      max_tokens: maxTokens,
-      system: buildSystem(kind, preferences, canEdit),
-      messages,
-    });
+    running?.begin(choice.model, maxTokens);
+    const stream = getClient().beta.messages.stream(
+      {
+        ...choiceParams(choice),
+        max_tokens: maxTokens,
+        system: buildSystem(kind, preferences, canEdit),
+        messages,
+      },
+      { signal },
+    );
 
     let text = "";
     let sentBefore = 0;
@@ -190,9 +204,9 @@ export async function* streamBuild(
     let lastPieces = 0;
     let editAt = -1;
     for await (const event of stream) {
+      running?.see(event);
       if (event.type !== "content_block_delta" || event.delta.type !== "text_delta") continue;
       text += event.delta.text;
-      wrote(event.delta.text.length);
       const part = splitBuild(text);
       if (canEdit && part.html === null && editAt === -1) editAt = text.search(/```flash-edit/i);
       // Stream the opening sentences as they arrive, holding back a possible partial ``` fence.
@@ -224,8 +238,7 @@ export async function* streamBuild(
       }
     }
     const final = await stream.finalMessage();
-    meterClaude(meter, final);
-    spent += claudeCostCents(final.model, final.usage);
+    spent += meterClaude(meter, final, choice.model, running);
     if (final.stop_reason === "refusal") {
       yield { type: "text", delta: "\n\n" + t("Flash couldn't build that.") };
       return;
@@ -274,8 +287,7 @@ export async function* streamBuild(
       // reading everything again and writing all of it, so a retry never runs at a loss.
       const usage = final.usage;
       const reread = usage.input_tokens + (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + usage.output_tokens + 200;
-      const left = budget.capCents - spent - inputCostCents(kind, choice.model, reread);
-      maxTokens = Math.min(budget.maxTokens, Math.floor((left * 1e6) / claudePrice(choice.model, reread).output));
+      maxTokens = Math.min(budget.maxTokens, tokensWithin(kind, choice.model, reread, budget.capCents - spent, usesFallback(choice)));
       if (!(maxTokens >= Math.ceil(base!.length / 3) + THINKING_ROOM)) {
         yield noFit();
         return;

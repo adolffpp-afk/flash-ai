@@ -35,7 +35,7 @@ process.env.FAL_KEY = "k";
 process.env.FAL_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 const { makeMovie } = await import("../src/lib/engines/movie.ts");
 const { parseScenes } = await import("../src/lib/engines/claude.ts");
-const { MODELS, movieSeconds, movieScenes, modelCredits, pickModel } = await import("../src/lib/models.ts");
+const { MODELS, movieSeconds, movieScenes, movieSplit, modelCredits, pickModel, requestCents } = await import("../src/lib/models.ts");
 
 test("a movie's length and scenes come from the request", () => {
   assert.equal(movieSeconds("make a movie about a lost cat"), 40);
@@ -46,6 +46,25 @@ test("a movie's length and scenes come from the request", () => {
   const movie = MODELS.find((m) => m.id === "movie")!;
   // Every scene at Kling's price, with the markup, so a movie never runs at a loss.
   assert.ok(modelCredits(movie, "a 1 minute movie") >= Math.ceil((60 * 14 + 2) * 2.5));
+});
+
+test("a movie is priced on exactly the scenes it films, at every length", () => {
+  const movie = MODELS.find((m) => m.id === "movie")!;
+  const asks = [
+    ...Array.from({ length: 80 }, (_, i) => `a ${i + 20} second movie about a lighthouse`),
+    ...["0.5", "0.9", "1", "1.1", "1.4", "1.5", "one", "two"].map((n) => `a ${n} minute movie`),
+    "make a movie about a lost cat",
+  ];
+  for (const ask of asks) {
+    // What run() films is this split, as it is, and the price is that many seconds of Kling plus the writing.
+    const { scenes, seconds } = movieSplit(ask);
+    assert.equal(movieSeconds(ask), scenes * seconds, ask);
+    assert.equal(requestCents(movie, ask), 14 * scenes * seconds + 2, ask);
+    assert.ok(scenes >= 2 && seconds >= 5 && seconds <= 15, ask);
+  }
+  // The cases the review found: 75 seconds was priced as 72 and filmed as 70; 74 was priced as 77 and filmed as 80.
+  assert.deepEqual(movieSplit("a 75 second movie"), movieScenes(75));
+  assert.equal(requestCents(movie, "a 74 second movie"), 14 * movieSeconds("a 74 second movie") + 2);
 });
 
 test("only movie requests go to the Movie maker, and it is never the default", () => {
