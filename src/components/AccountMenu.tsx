@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Me } from "@/lib/store";
 import { firstName, fullName, initials } from "@/lib/names";
 import { greeting } from "@/lib/when";
+import { useT } from "@/lib/use-t";
 import { InstallApp } from "./InstallApp";
 
 const item = "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-zinc-200 transition hover:bg-white/[0.06]";
@@ -32,6 +33,7 @@ export function AccountMenu({
   onInvite: () => void;
   onSignOut: () => void;
 }) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const [more, setMore] = useState(false);
   const box = useRef<HTMLDivElement>(null);
@@ -58,7 +60,9 @@ export function AccountMenu({
     setMore(false);
     fn();
   };
-  const plan = me.plan ? `${me.plan.name} plan` : "Free plan";
+  const plan = me.plan ? t("{plan} plan", { plan: me.plan.name }) : t("Free plan");
+  // firstName gives "there" when there's no name to use.
+  const called = firstName(me.user);
   const down = placement === "down";
 
   return (
@@ -66,7 +70,7 @@ export function AccountMenu({
       {open && (
         <div
           role="menu"
-          aria-label="Account"
+          aria-label={t("Account")}
           className={`absolute z-30 rounded-xl border border-white/10 bg-zinc-900 p-1.5 shadow-2xl light:shadow-black/10 ${
             down ? "right-0 top-full mt-2 w-64" : "bottom-full left-0 right-0 mb-2"
           }`}
@@ -75,43 +79,43 @@ export function AccountMenu({
             {me.user.email}
           </p>
           <button role="menuitem" className={item} onClick={pick(onSettings)}>
-            <span aria-hidden>⚙️</span> Settings
+            <span aria-hidden>⚙️</span> {t("Settings")}
           </button>
           <button role="menuitem" className={item} onClick={pick(onHelp)}>
-            <span aria-hidden>💬</span> Get help
+            <span aria-hidden>💬</span> {t("Get help")}
           </button>
           <div className="my-1 border-t border-white/8" />
           <button role="menuitem" className={item} onClick={pick(onPlan)}>
-            <span aria-hidden>⚡</span> {me.plan ? "Manage plan & credits" : "Upgrade plan"}
+            <span aria-hidden>⚡</span> {me.plan ? t("Manage plan & credits") : t("Upgrade plan")}
           </button>
           <button role="menuitem" className={item} onClick={pick(onInvite)}>
-            <span aria-hidden>🎁</span> Invite friends, earn credits
+            <span aria-hidden>🎁</span> {t("Invite friends, earn credits")}
           </button>
           <InstallApp className={`${item} [&>svg]:h-4 [&>svg]:w-4`} />
           {me.isAdmin && (
             <a role="menuitem" href="/admin" className={item}>
-              <span aria-hidden>📈</span> Owner dashboard
+              <span aria-hidden>📈</span> {t("Owner dashboard")}
             </a>
           )}
           <button role="menuitem" aria-expanded={more} className={item} onClick={() => setMore((m) => !m)}>
-            <span aria-hidden>📖</span> Learn more <span className="ml-auto text-zinc-500">{more ? "▾" : "▸"}</span>
+            <span aria-hidden>📖</span> {t("Learn more")} <span className="ml-auto text-zinc-500">{more ? "▾" : "▸"}</span>
           </button>
           {more && (
             <div className="ml-7 flex flex-col">
               <a role="menuitem" href="/connector" className={item}>
-                Use Flash in Claude or ChatGPT
+                {t("Use Flash in Claude or ChatGPT")}
               </a>
               <a role="menuitem" href="/terms" target="_blank" rel="noreferrer" className={item}>
-                Terms of Service
+                {t("Terms of Service")}
               </a>
               <a role="menuitem" href="/privacy" target="_blank" rel="noreferrer" className={item}>
-                Privacy Policy
+                {t("Privacy Policy")}
               </a>
             </div>
           )}
           <div className="my-1 border-t border-white/8" />
           <button role="menuitem" className={item} onClick={pick(onSignOut)}>
-            <span aria-hidden>↪</span> Log out
+            <span aria-hidden>↪</span> {t("Log out")}
           </button>
         </div>
       )}
@@ -124,7 +128,7 @@ export function AccountMenu({
             ? "glass flex h-12 items-center gap-2.5 rounded-2xl p-1 shadow-none transition hover:brightness-110 @min-[900px]/main:pr-3"
             : "flex w-full items-center gap-2.5 rounded-lg px-1.5 py-1.5 text-left transition hover:bg-white/[0.05]"
         }
-        title="Account and settings"
+        title={t("Account and settings")}
       >
         <span
           className={`flex shrink-0 items-center justify-center rounded-full font-medium ${
@@ -137,8 +141,15 @@ export function AccountMenu({
         <span className={`min-w-0 text-left ${down ? "hidden @min-[900px]/main:block" : "flex-1"}`}>
           {greet ? (
             <>
-              <span className="block truncate text-xs text-zinc-400">{greeting(new Date())},</span>
-              <span className="block max-w-[10rem] truncate text-[15px] font-semibold leading-tight text-zinc-100">{firstName(me.user)}</span>
+              {called === "there" ? (
+                // No name to use: the greeting on its own reads naturally in every language.
+                <span className="block max-w-[10rem] truncate text-[15px] font-semibold leading-tight text-zinc-100">{t(greeting(new Date()))}</span>
+              ) : (
+                <>
+                  <span className="block truncate text-xs text-zinc-400">{t(greeting(new Date()))},</span>
+                  <span className="block max-w-[10rem] truncate text-[15px] font-semibold leading-tight text-zinc-100">{called}</span>
+                </>
+              )}
             </>
           ) : (
             <>

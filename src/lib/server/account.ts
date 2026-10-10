@@ -51,13 +51,13 @@ export async function redeemToken(token: string, kind: TokenKind): Promise<strin
 export async function sendVerification(user: { id: string; email: string }, origin: string): Promise<string | undefined> {
   if (!verificationRequired()) return undefined;
   const link = `${origin}/api/auth/verify?token=${await createToken(user.id, "verify")}`;
-  await sendEmail(user.email, EMAILS.verify(link));
+  await sendEmail(user.email, EMAILS.verify(link), "account");
   return demoEmails() ? link : undefined;
 }
 
 export async function sendReset(user: { id: string; email: string }, origin: string): Promise<string | undefined> {
   const link = `${origin}/reset?token=${await createToken(user.id, "reset")}`;
-  await sendEmail(user.email, EMAILS.reset(link));
+  await sendEmail(user.email, EMAILS.reset(link), "account");
   return demoEmails() ? link : undefined;
 }
 

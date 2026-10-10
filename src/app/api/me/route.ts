@@ -8,6 +8,7 @@ import { referralStats } from "@/lib/server/referrals.ts";
 import { teamSummary } from "@/lib/server/teams.ts";
 import { WORK_OPTIONS } from "@/lib/names.ts";
 import { isLanguage } from "@/lib/languages.ts";
+import { translatorFor } from "@/lib/server/i18n.ts";
 import {
   REFERRAL_FRIEND_SHARE,
   REFERRAL_PENDING_DAYS,
@@ -51,6 +52,11 @@ export async function PATCH(request: Request) {
   const user = await getUser(request);
   if (!user) return unauthorized();
   const body = (await request.json().catch(() => ({}))) as { name?: string; nickname?: string; work?: string; language?: string; preferences?: string };
+  // A language that isn't on the list is refused before anything saves, so "ok" always means saved.
+  if (body.language !== undefined && !isLanguage(body.language)) {
+    const t = await translatorFor(request, user.language);
+    return Response.json({ error: t("Pick a language from the list.") }, { status: 400 });
+  }
   if (typeof body.preferences === "string") {
     await run("UPDATE users SET preferences = ? WHERE id = ?", [body.preferences.slice(0, 2000), user.id]);
   }

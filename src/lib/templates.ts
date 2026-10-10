@@ -1,11 +1,16 @@
 import type { Engine } from "./types.ts";
 import { CLAUDE_PRICES, MARKUP } from "./credits.ts";
+import { english, msg, type Blanks, type Translate } from "./i18n.ts";
 import { PACK_VIDEO_SECONDS, modelById } from "./models.ts";
 
 /*
  * Ready-made templates: a short form for a common job (a business plan, a resume, an invoice),
  * turned into a complete, well-made request for the right engine. Invoices and quotes are made
  * right here instead, with the totals worked out exactly, so they are free and never miscounted.
+ *
+ * What the Templates window shows (names, blurbs, labels, placeholders, choices) is marked msg()
+ * and translated where it's shown. The requests stay in English: the engines answer in the user's
+ * language anyway, and the choices picked go into them as written here.
  */
 
 export type LineItem = { description: string; quantity: string; price: string };
@@ -18,6 +23,8 @@ export type Field = {
   placeholder?: string;
   required?: boolean;
   options?: string[];
+  // How a choice with a number in it is shown: its phrase, with the number in a blank (see choiceLabel).
+  shown?: Record<string, { text: string; blanks: Blanks }>;
   // Kept on this device and offered again next time, in any template that asks for it.
   remember?: boolean;
   // Most characters accepted.
@@ -27,7 +34,7 @@ export type Field = {
 export type TemplateValues = { text: Record<string, string>; items: LineItem[] };
 
 export type Category = "Business" | "Career" | "Food & shop" | "Marketing";
-export const CATEGORIES: Category[] = ["Business", "Career", "Food & shop", "Marketing"];
+export const CATEGORIES: Category[] = [msg("Business"), msg("Career"), msg("Food & shop"), msg("Marketing")];
 
 export type Template = {
   id: string;
@@ -40,8 +47,8 @@ export type Template = {
   // The image or video model it needs, when the engine's usual pick won't do.
   model?: string;
   fields: Field[];
-  // The new chat's name.
-  title: (v: TemplateValues) => string;
+  // The new chat's name, in the language Flash is shown in (English without t).
+  title: (v: TemplateValues, t?: Translate) => string;
   // The request sent to the engine, written the way a person would ask (they can edit it later).
   request: (v: TemplateValues) => string;
   // About how many tokens the answer is, to estimate its price for writing engines.
@@ -50,13 +57,13 @@ export type Template = {
 
 // --- Shared fields and wording -------------------------------------------------------------
 
-const BUSINESS: Field = { key: "business", label: "Business name", placeholder: "Golden Crumb Bakery", required: true, remember: true, max: 80 };
-const CITY: Field = { key: "city", label: "Where", placeholder: "Toronto, or online", remember: true, max: 80 };
+const BUSINESS: Field = { key: "business", label: msg("Business name"), placeholder: msg("Golden Crumb Bakery"), required: true, remember: true, max: 80 };
+const CITY: Field = { key: "city", label: msg("Where"), placeholder: msg("Toronto, or online"), remember: true, max: 80 };
 const TONE: Field = {
   key: "tone",
-  label: "Tone",
+  label: msg("Tone"),
   type: "select",
-  options: ["Friendly", "Professional", "Premium", "Playful", "Bold"],
+  options: [msg("Friendly"), msg("Professional"), msg("Premium"), msg("Playful"), msg("Bold")],
 };
 
 const clean = (s: string | undefined) => (s ?? "").trim();
@@ -208,11 +215,11 @@ export function formatMinor(minor: number, decimals: number): string {
   return formatDecimal({ digits: BigInt(minor), scale: decimals }, decimals);
 }
 
-/** "2026-10-06" as "October 6, 2026", read as a calendar date wherever the user is. */
-export function longDate(iso: string): string {
+/** "2026-10-06" as "October 6, 2026" (in the locale given), read as a calendar date wherever the user is. */
+export function longDate(iso: string, locale = "en-US"): string {
   const d = new Date(`${iso}T00:00:00Z`);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(iso) || Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
+  return d.toLocaleDateString(locale, { month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
 }
 
 /** The number after this one, keeping its letters and zeros: INV-007 → INV-008, 2026-099 → 2026-100. */
@@ -235,42 +242,42 @@ export type Bill = {
 // Above this (a hundred billion in dollars) a line can't be held exactly as a number any more.
 const TOO_LARGE = TEN ** BigInt(13);
 
-/** Works out an invoice's lines, taxes and total exactly, in whole minor units, or says what's wrong. */
-export function workOutBill(items: LineItem[], currency: string, taxes: { name: string; rate: string }[]): Bill | { error: string } {
+/** Works out an invoice's lines, taxes and total exactly, in whole minor units, or says what's wrong (in t's language). */
+export function workOutBill(items: LineItem[], currency: string, taxes: { name: string; rate: string }[], t: Translate = english): Bill | { error: string } {
   const decimals = decimalsOf(currency);
   const lines: Bill["lines"] = [];
   let subtotal = ZERO;
   for (const [i, item] of items.entries()) {
     const description = item.description.trim();
     if (!description && !item.price.trim()) continue;
-    if (!description) return { error: `Item ${i + 1} needs a description.` };
+    if (!description) return { error: t("Item {number} needs a description.", { number: i + 1 }) };
     const quantity = item.quantity.trim() ? parseDecimal(item.quantity, currency) : { digits: ONE, scale: 0 };
-    if (!quantity || quantity.digits <= ZERO) return { error: `The quantity for "${description}" isn't a number above 0. Write it like 3 or 2.5.` };
+    if (!quantity || quantity.digits <= ZERO) return { error: t('The quantity for "{item}" isn\'t a number above 0. Write it like 3 or 2.5.', { item: description }) };
     const price = parseDecimal(item.price, currency);
-    if (!price) return { error: `The price for "${description}" isn't clear. Write it like 1200 or 12.50.` };
+    if (!price) return { error: t('The price for "{item}" isn\'t clear. Write it like 1200 or 12.50.', { item: description }) };
     // Quantity × price, exactly, rounded once to the cent, the way the line is printed.
     const amount = shift(quantity.digits * price.digits * TEN ** BigInt(decimals), quantity.scale + price.scale);
-    if ((amount < ZERO ? -amount : amount) >= TOO_LARGE) return { error: `The amount for "${description}" is too large.` };
+    if ((amount < ZERO ? -amount : amount) >= TOO_LARGE) return { error: t('The amount for "{item}" is too large.', { item: description }) };
     subtotal += amount;
     lines.push({ description, quantity: formatDecimal(quantity, 0), unitPrice: formatDecimal(price, decimals), amountMinor: Number(amount) });
   }
-  if (!lines.length) return { error: "Add at least one item with a price." };
-  if (subtotal < ZERO) return { error: "The items add up to less than zero. Check the discount lines." };
-  if (subtotal >= TOO_LARGE) return { error: "The total is too large." };
+  if (!lines.length) return { error: t("Add at least one item with a price.") };
+  if (subtotal < ZERO) return { error: t("The items add up to less than zero. Check the discount lines.") };
+  if (subtotal >= TOO_LARGE) return { error: t("The total is too large.") };
   const taxLines: Bill["taxes"] = [];
   let total = subtotal;
-  for (const t of taxes) {
-    if (!t.rate.trim()) continue;
+  for (const tax of taxes) {
+    if (!tax.rate.trim()) continue;
     // A rate never groups thousands, so Quebec's 9.975% reads the same whatever the currency.
-    const rate = parseDecimal(t.rate);
+    const rate = parseDecimal(tax.rate);
     if (!rate || rate.digits < ZERO || rate.digits > HUNDRED * TEN ** BigInt(rate.scale)) {
-      return { error: `The tax rate "${t.rate}" isn't a percentage between 0 and 100.` };
+      return { error: t('The tax rate "{rate}" isn\'t a percentage between 0 and 100.', { rate: tax.rate }) };
     }
     if (rate.digits === ZERO) continue;
     // Each tax is on the subtotal (like GST and QST in Canada), rounded to the cent.
     const minor = shift(subtotal * rate.digits, rate.scale + 2);
     total += minor;
-    taxLines.push({ name: t.name.trim() || "Tax", rate: formatDecimal(rate, 0), minor: Number(minor) });
+    taxLines.push({ name: tax.name.trim() || t("Tax"), rate: formatDecimal(rate, 0), minor: Number(minor) });
   }
   return { lines, subtotalMinor: Number(subtotal), taxes: taxLines, totalMinor: Number(total), decimals };
 }
@@ -279,86 +286,112 @@ export function workOutBill(items: LineItem[], currency: string, taxes: { name: 
 const cell = (s: string) => s.replace(/\|/g, "/").replace(/\n+/g, " ");
 const block = (s: string) => clean(s).split("\n").map((l) => cell(l.trim())).filter(Boolean).join("  \n");
 
-/** An invoice or quote as a Markdown document, with every number already worked out. */
-export function billMarkdown(kind: "invoice" | "quote", v: TemplateValues): string | { error: string } {
-  const t = v.text;
-  const currency = CURRENCIES.includes(clean(t.currency)) ? clean(t.currency) : "CAD";
-  if (!clean(t.business)) return { error: "Add your business name." };
-  if (!clean(t.client)) return { error: `Add who the ${kind} is for.` };
-  const bill = workOutBill(v.items, currency, [
-    { name: t.tax1Name ?? "", rate: t.tax1Rate ?? "" },
-    { name: t.tax2Name ?? "", rate: t.tax2Rate ?? "" },
-  ]);
+/**
+ * An invoice or quote as a Markdown document, with every number already worked out, written in t's
+ * language with its dates in that locale (English by default).
+ */
+export function billMarkdown(kind: "invoice" | "quote", v: TemplateValues, t: Translate = english, locale = "en-US"): string | { error: string } {
+  const text = v.text;
+  const invoice = kind === "invoice";
+  const currency = CURRENCIES.includes(clean(text.currency)) ? clean(text.currency) : "CAD";
+  if (!clean(text.business)) return { error: t("Add your business name.") };
+  if (!clean(text.client)) return { error: invoice ? t("Add who the invoice is for.") : t("Add who the quote is for.") };
+  const bill = workOutBill(
+    v.items,
+    currency,
+    [
+      { name: text.tax1Name ?? "", rate: text.tax1Rate ?? "" },
+      { name: text.tax2Name ?? "", rate: text.tax2Rate ?? "" },
+    ],
+    t,
+  );
   if ("error" in bill) return bill;
   const money = (minor: number) => formatMinor(minor, bill.decimals);
-  const title = kind === "invoice" ? "Invoice" : "Quote";
-  const number = clean(t.number);
+  const number = clean(text.number);
+  const heading = number
+    ? invoice
+      ? t("Invoice {number}", { number: cell(number) })
+      : t("Quote {number}", { number: cell(number) })
+    : invoice
+      ? t("Invoice")
+      : t("Quote");
   const dates: [string, string][] = [
-    [`${title} date`, t.date ? longDate(t.date) : ""],
-    [kind === "invoice" ? "Due date" : "Valid until", t.due ? longDate(t.due) : ""],
+    [invoice ? t("Invoice date") : t("Quote date"), text.date ? longDate(text.date, locale) : ""],
+    [invoice ? t("Due date") : t("Valid until"), text.due ? longDate(text.due, locale) : ""],
   ];
-  const out: string[] = [`# ${title}${number ? ` ${cell(number)}` : ""}`, ""];
+  const out: string[] = [`# ${heading}`, ""];
   // A name, then its details on the lines below it (two spaces end a line in Markdown).
   const party = (label: string, name: string, more: string | undefined) =>
     `**${label}:** ${cell(clean(name))}` + (clean(more) ? `  \n${block(more ?? "")}` : "");
-  out.push(party("From", t.business, t.yourDetails));
-  out.push("", party(kind === "invoice" ? "Bill to" : "For", t.client, t.clientDetails));
+  out.push(party(t("From"), text.business, text.yourDetails));
+  out.push("", party(invoice ? t("Bill to") : t("For"), text.client, text.clientDetails));
   const facts = [
     ...dates.filter(([, d]) => d),
-    [kind === "invoice" ? "Amount due" : "Quote total", `${currency} ${money(bill.totalMinor)}`],
+    [invoice ? t("Amount due") : t("Quote total"), `${currency} ${money(bill.totalMinor)}`],
   ];
   out.push("", facts.map(([label, d]) => `**${label}:** ${d}`).join("  \n"));
   out.push(
     "",
-    `| Item | Quantity | Unit price (${currency}) | Amount (${currency}) |`,
+    `| ${t("Item")} | ${t("Quantity")} | ${t("Unit price ({currency})", { currency })} | ${t("Amount ({currency})", { currency })} |`,
     "|---|---:|---:|---:|",
     ...bill.lines.map((l) => `| ${cell(l.description)} | ${l.quantity} | ${l.unitPrice} | ${money(l.amountMinor)} |`),
-    `| **Subtotal** | | | **${money(bill.subtotalMinor)}** |`,
+    `| **${t("Subtotal")}** | | | **${money(bill.subtotalMinor)}** |`,
     ...bill.taxes.map((x) => `| ${cell(x.name)} (${x.rate}%) | | | ${money(x.minor)} |`),
-    `| **${kind === "invoice" ? "Total due" : "Total"}** | | | **${money(bill.totalMinor)}** |`,
+    `| **${invoice ? t("Total due") : t("Total")}** | | | **${money(bill.totalMinor)}** |`,
   );
-  if (clean(t.notes)) out.push("", block(t.notes));
-  out.push("", kind === "invoice" ? "Thank you for your business!" : "To accept this quote, reply to say yes or sign and return it.");
+  if (clean(text.notes)) out.push("", block(text.notes));
+  out.push("", invoice ? t("Thank you for your business!") : t("To accept this quote, reply to say yes or sign and return it."));
   return out.join("\n");
 }
 
+// Invoice and quote numbers, tax rates and currency codes are shown as they are.
 const BILL_FIELDS = (kind: "invoice" | "quote"): Field[] => [
   BUSINESS,
-  { key: "yourDetails", label: "Your details", type: "textarea", placeholder: "Address, email, phone, tax number", remember: true, max: 400 },
-  { key: "client", label: kind === "invoice" ? "Bill to" : "Quote for", placeholder: "Maple Café", required: true, max: 80 },
-  { key: "clientDetails", label: "Their details", type: "textarea", placeholder: "Address, email", max: 400 },
-  { key: "number", label: kind === "invoice" ? "Invoice number" : "Quote number", placeholder: kind === "invoice" ? "INV-001" : "Q-001", max: 40 },
-  { key: "date", label: kind === "invoice" ? "Invoice date" : "Quote date", type: "date" },
-  { key: "due", label: kind === "invoice" ? "Due date" : "Valid until", type: "date" },
-  { key: "currency", label: "Currency", type: "select", options: CURRENCIES, remember: true },
-  { key: "items", label: "Items", type: "items", required: true },
-  { key: "tax1Name", label: "Tax", placeholder: "HST, GST, VAT", remember: true, max: 30 },
-  { key: "tax1Rate", label: "Tax rate (%)", placeholder: "13", remember: true, max: 8 },
-  { key: "tax2Name", label: "Second tax (optional)", placeholder: "QST", remember: true, max: 30 },
-  { key: "tax2Rate", label: "Second tax rate (%)", placeholder: "9.975", remember: true, max: 8 },
-  { key: "notes", label: kind === "invoice" ? "Payment details and notes" : "Notes", type: "textarea", placeholder: kind === "invoice" ? "Pay by e-Transfer to hello@goldencrumb.ca within 14 days" : "Delivery included. Prices valid for 30 days.", remember: kind === "invoice", max: 600 },
+  { key: "yourDetails", label: msg("Your details"), type: "textarea", placeholder: msg("Address, email, phone, tax number"), remember: true, max: 400 },
+  { key: "client", label: kind === "invoice" ? msg("Bill to") : msg("Quote for"), placeholder: msg("Maple Café"), required: true, max: 80 },
+  { key: "clientDetails", label: msg("Their details"), type: "textarea", placeholder: msg("Address, email"), max: 400 },
+  { key: "number", label: kind === "invoice" ? msg("Invoice number") : msg("Quote number"), placeholder: kind === "invoice" ? "INV-001" : "Q-001", max: 40 },
+  { key: "date", label: kind === "invoice" ? msg("Invoice date") : msg("Quote date"), type: "date" },
+  { key: "due", label: kind === "invoice" ? msg("Due date") : msg("Valid until"), type: "date" },
+  { key: "currency", label: msg("Currency"), type: "select", options: CURRENCIES, remember: true },
+  { key: "items", label: msg("Items"), type: "items", required: true },
+  { key: "tax1Name", label: msg("Tax"), placeholder: msg("HST, GST, VAT"), remember: true, max: 30 },
+  { key: "tax1Rate", label: msg("Tax rate (%)"), placeholder: "13", remember: true, max: 8 },
+  { key: "tax2Name", label: msg("Second tax (optional)"), placeholder: msg("QST"), remember: true, max: 30 },
+  { key: "tax2Rate", label: msg("Second tax rate (%)"), placeholder: "9.975", remember: true, max: 8 },
+  {
+    key: "notes",
+    label: kind === "invoice" ? msg("Payment details and notes") : msg("Notes"),
+    type: "textarea",
+    placeholder: kind === "invoice" ? msg("Pay by e-Transfer to hello@goldencrumb.ca within 14 days") : msg("Delivery included. Prices valid for 30 days."),
+    remember: kind === "invoice",
+    max: 600,
+  },
 ];
 
 // --- The templates ---------------------------------------------------------------------------
 
+// The post pack's video choice, as it goes in the request; it's shown as its phrase in `shown`.
+const WITH_VIDEO = `Pictures and a ${PACK_VIDEO_SECONDS} second video`;
+
 export const TEMPLATES: Template[] = [
   {
     id: "business-plan",
-    name: "Business plan",
+    name: msg("Business plan"),
     icon: "📈",
     category: "Business",
-    blurb: "A full plan with market, marketing, money forecast and risks.",
+    blurb: msg("A full plan with market, marketing, money forecast and risks."),
     engine: "docs",
     answerTokens: 6000,
     fields: [
       BUSINESS,
-      { key: "offer", label: "What you sell or do", type: "textarea", placeholder: "Sourdough bread, pastries and coffee, baked fresh every morning", required: true, max: 600 },
+      { key: "offer", label: msg("What you sell or do"), type: "textarea", placeholder: msg("Sourdough bread, pastries and coffee, baked fresh every morning"), required: true, max: 600 },
       CITY,
-      { key: "customers", label: "Who your customers are", placeholder: "Office workers and families nearby", max: 300 },
-      { key: "budget", label: "Start-up money", placeholder: "$40,000 savings + $20,000 loan", max: 200 },
-      { key: "goals", label: "Goals for the first year", type: "textarea", placeholder: "Break even by month 8, open a second stall", max: 600 },
+      { key: "customers", label: msg("Who your customers are"), placeholder: msg("Office workers and families nearby"), max: 300 },
+      { key: "budget", label: msg("Start-up money"), placeholder: msg("$40,000 savings + $20,000 loan"), max: 200 },
+      { key: "goals", label: msg("Goals for the first year"), type: "textarea", placeholder: msg("Break even by month 8, open a second stall"), max: 600 },
     ],
-    title: (v) => `Business plan: ${clean(v.text.business)}`,
+    title: (v, t = english) => t("Business plan: {business}", { business: clean(v.text.business) }),
     request: (v) =>
       `Write a complete business plan for ${clean(v.text.business)}.\n\n` +
       details(v, [
@@ -377,21 +410,21 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "pitch-deck",
-    name: "Pitch deck",
+    name: msg("Pitch deck"),
     icon: "🎤",
     category: "Business",
-    blurb: "A 10-slide investor deck you can present or download.",
+    blurb: msg("A 10-slide investor deck you can present or download."),
     engine: "slides",
     fields: [
       BUSINESS,
-      { key: "idea", label: "The idea in one sentence", placeholder: "Fresh bread delivered to offices before 9 am", required: true, max: 200 },
-      { key: "problem", label: "The problem you solve", type: "textarea", max: 400 },
-      { key: "customers", label: "Who pays you, and how", type: "textarea", placeholder: "Offices pay a monthly subscription", max: 400 },
-      { key: "traction", label: "Results so far", placeholder: "12 offices, $4,000 a month", max: 300 },
-      { key: "team", label: "Team", placeholder: "Ada (baker, 10 years), Ben (sales)", max: 300 },
-      { key: "ask", label: "What you're asking for", placeholder: "$150,000 for a second oven and a van", max: 200 },
+      { key: "idea", label: msg("The idea in one sentence"), placeholder: msg("Fresh bread delivered to offices before 9 am"), required: true, max: 200 },
+      { key: "problem", label: msg("The problem you solve"), type: "textarea", max: 400 },
+      { key: "customers", label: msg("Who pays you, and how"), type: "textarea", placeholder: msg("Offices pay a monthly subscription"), max: 400 },
+      { key: "traction", label: msg("Results so far"), placeholder: msg("12 offices, $4,000 a month"), max: 300 },
+      { key: "team", label: msg("Team"), placeholder: msg("Ada (baker, 10 years), Ben (sales)"), max: 300 },
+      { key: "ask", label: msg("What you're asking for"), placeholder: msg("$150,000 for a second oven and a van"), max: 200 },
     ],
-    title: (v) => `Pitch deck: ${clean(v.text.business)}`,
+    title: (v, t = english) => t("Pitch deck: {business}", { business: clean(v.text.business) }),
     request: (v) =>
       `Make a 10-slide investor pitch deck for ${clean(v.text.business)}.\n\n` +
       details(v, [
@@ -407,43 +440,43 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "invoice",
-    name: "Invoice",
+    name: msg("Invoice"),
     icon: "🧾",
     category: "Business",
-    blurb: "Totals and taxes worked out exactly. Free, and ready for PDF, Word or Excel.",
+    blurb: msg("Totals and taxes worked out exactly. Free, and ready for PDF, Word or Excel."),
     engine: "local",
     fields: BILL_FIELDS("invoice"),
-    title: (v) => `Invoice ${clean(v.text.number)} for ${clean(v.text.client)}`.replace(/\s+/g, " "),
+    title: (v, t = english) => t("Invoice {number} for {client}", { number: clean(v.text.number), client: clean(v.text.client) }).replace(/\s+/g, " "),
     request: (v) => `Invoice ${clean(v.text.number)} for ${clean(v.text.client)}`.replace(/\s+/g, " "),
   },
   {
     id: "quote",
-    name: "Quote",
+    name: msg("Quote"),
     icon: "📝",
     category: "Business",
-    blurb: "A price quote or estimate with exact totals. Free.",
+    blurb: msg("A price quote or estimate with exact totals. Free."),
     engine: "local",
     fields: BILL_FIELDS("quote"),
-    title: (v) => `Quote ${clean(v.text.number)} for ${clean(v.text.client)}`.replace(/\s+/g, " "),
+    title: (v, t = english) => t("Quote {number} for {client}", { number: clean(v.text.number), client: clean(v.text.client) }).replace(/\s+/g, " "),
     request: (v) => `Quote ${clean(v.text.number)} for ${clean(v.text.client)}`.replace(/\s+/g, " "),
   },
   {
     id: "resume",
-    name: "Resume",
+    name: msg("Resume"),
     icon: "📄",
     category: "Career",
-    blurb: "A one-page resume aimed at the job you want.",
+    blurb: msg("A one-page resume aimed at the job you want."),
     engine: "docs",
     answerTokens: 1500,
     fields: [
-      { key: "name", label: "Your name", required: true, remember: true, max: 80 },
-      { key: "role", label: "The job you want", placeholder: "Head baker", required: true, max: 120 },
-      { key: "contact", label: "Contact", placeholder: "Email, phone, city, LinkedIn", remember: true, max: 300 },
-      { key: "experience", label: "Experience", type: "textarea", placeholder: "Job title, employer, dates, and what you did, one job per line", required: true, max: 3000 },
-      { key: "education", label: "Education", type: "textarea", placeholder: "Diploma, school, year", max: 1000 },
-      { key: "skills", label: "Skills and languages", placeholder: "Sourdough, pastry, food safety, French", max: 500 },
+      { key: "name", label: msg("Your name"), required: true, remember: true, max: 80 },
+      { key: "role", label: msg("The job you want"), placeholder: msg("Head baker"), required: true, max: 120 },
+      { key: "contact", label: msg("Contact"), placeholder: msg("Email, phone, city, LinkedIn"), remember: true, max: 300 },
+      { key: "experience", label: msg("Experience"), type: "textarea", placeholder: msg("Job title, employer, dates, and what you did, one job per line"), required: true, max: 3000 },
+      { key: "education", label: msg("Education"), type: "textarea", placeholder: msg("Diploma, school, year"), max: 1000 },
+      { key: "skills", label: msg("Skills and languages"), placeholder: msg("Sourdough, pastry, food safety, French"), max: 500 },
     ],
-    title: (v) => `Resume: ${clean(v.text.name)}`,
+    title: (v, t = english) => t("Resume: {name}", { name: clean(v.text.name) }),
     request: (v) =>
       `Write a one-page resume for ${clean(v.text.name)}, aimed at a ${clean(v.text.role)} job.\n\n` +
       details(v, [
@@ -460,20 +493,20 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "cover-letter",
-    name: "Cover letter",
+    name: msg("Cover letter"),
     icon: "✉️",
     category: "Career",
-    blurb: "A short, specific letter for one job.",
+    blurb: msg("A short, specific letter for one job."),
     engine: "docs",
     answerTokens: 700,
     fields: [
-      { key: "name", label: "Your name", required: true, remember: true, max: 80 },
-      { key: "role", label: "The job", placeholder: "Head baker", required: true, max: 120 },
-      { key: "company", label: "Company", placeholder: "Maple Café", required: true, max: 120 },
-      { key: "highlights", label: "Why you're a good fit", type: "textarea", placeholder: "8 years baking, ran a team of 4, love their sourdough", max: 1500 },
-      { key: "ad", label: "The job ad (optional)", type: "textarea", placeholder: "Paste the job ad here", max: 4000 },
+      { key: "name", label: msg("Your name"), required: true, remember: true, max: 80 },
+      { key: "role", label: msg("The job"), placeholder: msg("Head baker"), required: true, max: 120 },
+      { key: "company", label: msg("Company"), placeholder: msg("Maple Café"), required: true, max: 120 },
+      { key: "highlights", label: msg("Why you're a good fit"), type: "textarea", placeholder: msg("8 years baking, ran a team of 4, love their sourdough"), max: 1500 },
+      { key: "ad", label: msg("The job ad (optional)"), type: "textarea", placeholder: msg("Paste the job ad here"), max: 4000 },
     ],
-    title: (v) => `Cover letter: ${clean(v.text.role)} at ${clean(v.text.company)}`,
+    title: (v, t = english) => t("Cover letter: {role} at {company}", { role: clean(v.text.role), company: clean(v.text.company) }),
     request: (v) =>
       `Write a cover letter from ${clean(v.text.name)} for the ${clean(v.text.role)} job at ${clean(v.text.company)}.\n\n` +
       details(v, [
@@ -486,19 +519,19 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "menu",
-    name: "Menu",
+    name: msg("Menu"),
     icon: "🍽️",
     category: "Food & shop",
-    blurb: "A printable menu with sections and tasty descriptions.",
+    blurb: msg("A printable menu with sections and tasty descriptions."),
     engine: "docs",
     answerTokens: 1200,
     fields: [
       BUSINESS,
-      { key: "food", label: "Kind of food", placeholder: "French bakery and café", max: 120 },
-      { key: "dishes", label: "Dishes and prices", type: "textarea", placeholder: "Croissant 3.50\nPain au chocolat 4\nLatte 5.25", required: true, max: 4000 },
-      { key: "info", label: "Hours, address and other info", type: "textarea", placeholder: "Open 7 am to 4 pm, 123 Queen St. Vegan options marked (V).", max: 600 },
+      { key: "food", label: msg("Kind of food"), placeholder: msg("French bakery and café"), max: 120 },
+      { key: "dishes", label: msg("Dishes and prices"), type: "textarea", placeholder: msg("Croissant 3.50\nPain au chocolat 4\nLatte 5.25"), required: true, max: 4000 },
+      { key: "info", label: msg("Hours, address and other info"), type: "textarea", placeholder: msg("Open 7 am to 4 pm, 123 Queen St. Vegan options marked (V)."), max: 600 },
     ],
-    title: (v) => `Menu: ${clean(v.text.business)}`,
+    title: (v, t = english) => t("Menu: {business}", { business: clean(v.text.business) }),
     request: (v) =>
       `Write the menu for ${clean(v.text.business)}.\n\n` +
       details(v, [
@@ -514,18 +547,18 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "flyer",
-    name: "Flyer",
+    name: msg("Flyer"),
     icon: "📣",
     category: "Marketing",
-    blurb: "A tall printable flyer or poster, in your brand colours.",
+    blurb: msg("A tall printable flyer or poster, in your brand colours."),
     engine: "image",
     fields: [
       BUSINESS,
-      { key: "headline", label: "Headline", placeholder: "Grand opening!", required: true, max: 40 },
-      { key: "details", label: "Details", placeholder: "Saturday Oct 12, 9 am · free coffee", max: 90 },
-      { key: "look", label: "Look", type: "select", options: ["Bold and colourful", "Elegant", "Minimal", "Fun and playful", "Warm and cosy"] },
+      { key: "headline", label: msg("Headline"), placeholder: msg("Grand opening!"), required: true, max: 40 },
+      { key: "details", label: msg("Details"), placeholder: msg("Saturday Oct 12, 9 am · free coffee"), max: 90 },
+      { key: "look", label: msg("Look"), type: "select", options: [msg("Bold and colourful"), msg("Elegant"), msg("Minimal"), msg("Fun and playful"), msg("Warm and cosy")] },
     ],
-    title: (v) => `Flyer: ${clean(v.text.headline)}`,
+    title: (v, t = english) => t("Flyer: {headline}", { headline: clean(v.text.headline) }),
     request: (v) =>
       `A tall vertical printable flyer for ${clean(v.text.business)}, with the headline "${clean(v.text.headline)}" ` +
       `in big clear letters` +
@@ -535,20 +568,26 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "social-pack",
-    name: "Social post pack",
+    name: msg("Social post pack"),
     icon: "📱",
     category: "Marketing",
-    blurb: "Posts and hashtags for Instagram, TikTok and Facebook, with a square and a tall picture, and a video if you like.",
+    blurb: msg("Posts and hashtags for Instagram, TikTok and Facebook, with a square and a tall picture, and a video if you like."),
     engine: "image",
     model: "post-pack",
     fields: [
       BUSINESS,
-      { key: "about", label: "What to post about", type: "textarea", placeholder: "Our new honey oat loaf, $8, this weekend only", required: true, max: 600 },
-      { key: "action", label: "What people should do", placeholder: "Order at goldencrumb.ca, or visit us on King St", max: 150 },
+      { key: "about", label: msg("What to post about"), type: "textarea", placeholder: msg("Our new honey oat loaf, $8, this weekend only"), required: true, max: 600 },
+      { key: "action", label: msg("What people should do"), placeholder: msg("Order at goldencrumb.ca, or visit us on King St"), max: 150 },
       TONE,
-      { key: "video", label: "Video", type: "select", options: ["Pictures only", `Pictures and a ${PACK_VIDEO_SECONDS} second video`] },
+      {
+        key: "video",
+        label: msg("Video"),
+        type: "select",
+        options: [msg("Pictures only"), WITH_VIDEO],
+        shown: { [WITH_VIDEO]: { text: msg("Pictures and a {seconds} second video"), blanks: { seconds: PACK_VIDEO_SECONDS } } },
+      },
     ],
-    title: (v) => `Posts: ${clean(v.text.about).split("\n")[0].slice(0, 40)}`,
+    title: (v, t = english) => t("Posts: {about}", { about: clean(v.text.about).split("\n")[0].slice(0, 40) }),
     request: (v) =>
       `Make a social post pack for ${clean(v.text.business)} about: ${clean(v.text.about)}\n\n` +
       details(v, [
@@ -559,20 +598,20 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "product-description",
-    name: "Product description",
+    name: msg("Product description"),
     icon: "🏷️",
     category: "Marketing",
-    blurb: "A tagline, short and long descriptions, and SEO text.",
+    blurb: msg("A tagline, short and long descriptions, and SEO text."),
     engine: "docs",
     answerTokens: 800,
     fields: [
-      { key: "product", label: "Product", placeholder: "Honey oat sourdough loaf", required: true, max: 120 },
-      { key: "features", label: "What it is and what's special", type: "textarea", placeholder: "Baked overnight, local honey, 800 g, keeps 4 days", required: true, max: 1500 },
-      { key: "audience", label: "Who it's for", placeholder: "Families who want healthier bread", max: 200 },
+      { key: "product", label: msg("Product"), placeholder: msg("Honey oat sourdough loaf"), required: true, max: 120 },
+      { key: "features", label: msg("What it is and what's special"), type: "textarea", placeholder: msg("Baked overnight, local honey, 800 g, keeps 4 days"), required: true, max: 1500 },
+      { key: "audience", label: msg("Who it's for"), placeholder: msg("Families who want healthier bread"), max: 200 },
       TONE,
-      { key: "where", label: "Where it's sold", type: "select", options: ["Online shop", "Amazon", "Etsy", "Instagram", "Shop shelf or menu"] },
+      { key: "where", label: msg("Where it's sold"), type: "select", options: [msg("Online shop"), "Amazon", "Etsy", "Instagram", msg("Shop shelf or menu")] },
     ],
-    title: (v) => `Product text: ${clean(v.text.product)}`,
+    title: (v, t = english) => t("Product text: {product}", { product: clean(v.text.product) }),
     request: (v) =>
       `Write product descriptions for ${clean(v.text.product)}.\n\n` +
       details(v, [
@@ -588,20 +627,20 @@ export const TEMPLATES: Template[] = [
   },
   {
     id: "website",
-    name: "Business website",
+    name: msg("Business website"),
     icon: "🌐",
     category: "Marketing",
-    blurb: "A multi-page site with a contact form, ready to publish.",
+    blurb: msg("A multi-page site with a contact form, ready to publish."),
     engine: "app",
     fields: [
       BUSINESS,
-      { key: "offer", label: "What you do", type: "textarea", placeholder: "Sourdough bread, pastries and coffee", required: true, max: 600 },
+      { key: "offer", label: msg("What you do"), type: "textarea", placeholder: msg("Sourdough bread, pastries and coffee"), required: true, max: 600 },
       CITY,
-      { key: "siteContact", label: "Contact details", placeholder: "Phone, email, address, hours", remember: true, max: 300 },
-      { key: "pages", label: "Pages", placeholder: "Home, Menu, About, Contact", max: 200 },
+      { key: "siteContact", label: msg("Contact details"), placeholder: msg("Phone, email, address, hours"), remember: true, max: 300 },
+      { key: "pages", label: msg("Pages"), placeholder: msg("Home, Menu, About, Contact"), max: 200 },
       TONE,
     ],
-    title: (v) => `Website: ${clean(v.text.business)}`,
+    title: (v, t = english) => t("Website: {business}", { business: clean(v.text.business) }),
     request: (v) =>
       `Build a website for ${clean(v.text.business)}.\n\n` +
       details(v, [
@@ -618,7 +657,13 @@ export const TEMPLATES: Template[] = [
 
 export const templateById = (id: string) => TEMPLATES.find((t) => t.id === id);
 
-/** The fields a template needs filled in before it can be made, or "" when it's ready. */
+/** A choice as the form shows it, in t's language; the choice itself goes in the request as written. */
+export function choiceLabel(f: Field, choice: string, t: Translate): string {
+  const shown = f.shown?.[choice];
+  return shown ? t(shown.text, shown.blanks) : t(choice);
+}
+
+/** The label of the first field a template needs filled in before it can be made (to show with t()), or "" when it's ready. */
 export function missingField(t: Template, v: TemplateValues): string {
   for (const f of t.fields) {
     if (!f.required) continue;

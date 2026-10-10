@@ -1,8 +1,26 @@
+import { fill, type Blanks, type Translate } from "../i18n.ts";
+
 /**
- * An error whose message was written for the user, so the chat shows it as it is. Any other
- * error may hold a provider's raw response, so the chat logs it and shows a short note instead.
+ * An error whose message was written for the user, so the chat shows it as it is, in the user's
+ * language (err.in(t)). Any other error may hold a provider's raw response, so the chat logs it
+ * and shows a short note instead. The phrase is marked msg("…") where it's thrown; err.message is
+ * the English, for logs and the connector.
  */
-export class FriendlyError extends Error {}
+export class FriendlyError extends Error {
+  /** The message as written, with {blanks} for the words that change. */
+  readonly phrase: string;
+  readonly blanks?: Blanks;
+  constructor(phrase: string, blanks?: Blanks) {
+    super(fill(phrase, blanks));
+    this.phrase = phrase;
+    this.blanks = blanks;
+  }
+
+  /** The message in the language t speaks. */
+  in(t: Translate): string {
+    return t(this.phrase, this.blanks);
+  }
+}
 
 /**
  * A media job that ended without a result: Flash stopped waiting (so the request ends inside
@@ -11,8 +29,8 @@ export class FriendlyError extends Error {}
  */
 export class JobAbandoned extends FriendlyError {
   readonly billed: boolean;
-  constructor(message: string, billed: boolean) {
-    super(message);
+  constructor(phrase: string, billed: boolean, blanks?: Blanks) {
+    super(phrase, blanks);
     this.billed = billed;
   }
 }

@@ -1,3 +1,4 @@
+import { msg } from "./i18n.ts";
 import type { Engine } from "./types.ts";
 
 /*
@@ -8,12 +9,12 @@ import type { Engine } from "./types.ts";
  * The names still need a trademark lawyer's clearance before Flash is marketed widely.
  */
 export const LEVELS = [
-  { id: "auto", name: "Auto", short: "Auto", blurb: "Flash picks the level for each request" },
-  { id: "sonic", name: "Flash Sonic", short: "Sonic", blurb: "Fastest, and lightest on credits. For quick answers" },
-  { id: "ascend", name: "Flash Ascend", short: "Ascend", blurb: "Smart and quick. For everyday writing and research" },
-  { id: "vision", name: "Flash Vision", short: "Vision", blurb: "Thinks deeper. For apps, code and hard problems" },
+  { id: "auto", name: "Auto", short: msg("Auto"), blurb: msg("Flash picks the level for each request") },
+  { id: "sonic", name: "Flash Sonic", short: "Sonic", blurb: msg("Fastest, and lightest on credits. For quick answers") },
+  { id: "ascend", name: "Flash Ascend", short: "Ascend", blurb: msg("Smart and quick. For everyday writing and research") },
+  { id: "vision", name: "Flash Vision", short: "Vision", blurb: msg("Thinks deeper. For apps, code and hard problems") },
   // The top level keeps the id "ultra"; "Flash Ultra" was renamed because it echoes Google's Gemini Ultra and AI Ultra.
-  { id: "ultra", name: "Flash Summit", short: "Summit", blurb: "Flash's most capable level, for the hardest work. Uses more credits" },
+  { id: "ultra", name: "Flash Summit", short: "Summit", blurb: msg("Flash's most capable level, for the hardest work. Uses more credits") },
 ] as const;
 
 export type Level = (typeof LEVELS)[number]["id"];
@@ -45,14 +46,14 @@ export function autoLevel(
   { files = 0, voice = false }: { files?: number; voice?: boolean } = {},
 ): { level: ModelLevel; why: string } {
   if (engine === "app" || engine === "slides" || engine === "code") {
-    return { level: "vision", why: "Building and code get Flash Vision's deeper thinking." };
+    return { level: "vision", why: msg("Building and code get Flash Vision's deeper thinking.") };
   }
-  if (DEEP.test(message)) return { level: "vision", why: "You asked for careful thinking, so Flash Vision answers." };
-  if (engine !== "text" || files > 0) return { level: "ascend", why: "Everyday work runs on Flash Ascend." };
-  if (voice) return { level: "sonic", why: "Spoken answers come fastest from Flash Sonic." };
+  if (DEEP.test(message)) return { level: "vision", why: msg("You asked for careful thinking, so Flash Vision answers.") };
+  if (engine !== "text" || files > 0) return { level: "ascend", why: msg("Everyday work runs on Flash Ascend.") };
+  if (voice) return { level: "sonic", why: msg("Spoken answers come fastest from Flash Sonic.") };
   const text = message.trim();
   if (text.length <= QUICK_CHARS && !WORK.test(text)) {
-    return { level: "sonic", why: "A quick question gets Flash Sonic's fast answer." };
+    return { level: "sonic", why: msg("A quick question gets Flash Sonic's fast answer.") };
   }
-  return { level: "ascend", why: "Everyday work runs on Flash Ascend." };
+  return { level: "ascend", why: msg("Everyday work runs on Flash Ascend.") };
 }

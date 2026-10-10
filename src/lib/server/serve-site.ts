@@ -1,8 +1,9 @@
 import { one } from "./db.ts";
-import { flashDbShim, injectHead, type Visitor } from "../flashdb-shim.ts";
+import { flashDbShim, injectHead, type OwnerView, type Visitor } from "../flashdb-shim.ts";
 import { SITE_COOKIE, newPageToken, visitorForSession } from "./site-auth.ts";
 import { SESSION_COOKIE, readCookie, userForSession } from "./auth.ts";
 import { newOwnerKey } from "./site-owner.ts";
+import { translatorFor } from "./i18n.ts";
 import { hasOwnPreview, previewTags, sitePreview } from "../site-preview.ts";
 import { SITE_URL } from "../../app/site.ts";
 
@@ -36,12 +37,23 @@ export async function serveSite(slug: string | null, pageUrl?: string, request?:
   if (who && session) visitor = { user: who, token: await newPageToken(who.id, slug, session) };
   // The app's owner, signed in to Flash, gets a key to change its shared data from the app itself.
   // Only Flash's own address gets their sign-in cookie, so this never happens on a custom domain.
-  let ownerKey: string | null = null;
+  let owner: OwnerView = null;
   const flashSession = request ? readCookie(request, SESSION_COOKIE) : null;
-  if (flashSession) {
+  if (request && flashSession) {
     try {
       const user = await userForSession(flashSession);
-      if (user && user.id === site.user_id) ownerKey = await newOwnerKey(slug, user.id, flashSession);
+      const key = user && user.id === site.user_id ? await newOwnerKey(slug, user.id, flashSession) : null;
+      if (user && key) {
+        // What the page tells the owner is in Flash's language for them.
+        const t = await translatorFor(request, user.language);
+        owner = {
+          key,
+          note: t(
+            "Owner view: you can change this app's data here. Visitors can only do what you allow in Flash › My websites & apps › Data. To see it as a visitor, use a private window.",
+          ),
+          ended: t("Your owner view has ended. Reload the page to keep changing this app's data."),
+        };
+      }
     } catch (err) {
       // The page still works, just without owner mode.
       console.error("[flash] owner key failed", err);
@@ -59,7 +71,7 @@ export async function serveSite(slug: string | null, pageUrl?: string, request?:
     visitor,
     `/api/sites/${slug}/ai`,
     `/api/sites/${slug}/files`,
-    ownerKey,
+    owner,
   ));
   return new Response(html, {
     headers: {

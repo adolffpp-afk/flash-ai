@@ -180,7 +180,7 @@ test("read-only collections: visitors read, only the owner adds", async () => {
   // After the byte-order mark Excel needs, a header row from the newest record's fields.
   assert.equal(all.csv.charCodeAt(0), 0xfeff);
   assert.equal(all.csv.slice(1).split("\r\n")[0], "Added,dish,note,price,id");
-  const cut = await sharedCsv(slug, "menu", 700);
+  const cut = await sharedCsv(slug, "menu", undefined, 700);
   assert.deepEqual([cut.included, cut.total], [2, 6]);
   assert.ok(Buffer.byteLength(cut.csv) <= 700);
   assert.match(cut.csv, /Dish 4/);
@@ -324,7 +324,8 @@ test("the published flashDB sends the right key and says who is looking", async 
     const script = { removed: false, remove() { script.removed = true; } };
     const document = { readyState: "complete", createElement: element, body: { appendChild() {} }, currentScript: script };
     const window: { flashDB?: { isOwner: boolean; list(c: string): Promise<unknown[]>; remove(c: string, id: string): Promise<void> } } = {};
-    const code = flashDbShim("/api/sites/x/data", "/in", "/shop", false, "/auth", "/mine", visitor, "/ai", "/files", ownerKey).replace(/^<script>|<\/script>$/g, "");
+    const owner = ownerKey ? { key: ownerKey, note: "Owner view", ended: "Your owner view has ended. Reload the page." } : null;
+    const code = flashDbShim("/api/sites/x/data", "/in", "/shop", false, "/auth", "/mine", visitor, "/ai", "/files", owner).replace(/^<script>|<\/script>$/g, "");
     vm.runInNewContext(code, { window, fetch, document, setTimeout: () => 0, URLSearchParams });
     return { db: window.flashDB!, sent, script };
   };

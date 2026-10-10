@@ -2,6 +2,7 @@
  * How Flash names people. Accounts made with an email link have no name, and some older ones
  * saved the whole email address as the name, so an email never shows where a name should.
  */
+import { msg } from "./i18n.ts";
 import { languageNote } from "./languages.ts";
 import type { Engine } from "./types.ts";
 
@@ -30,7 +31,7 @@ export function firstName(user: Named): string {
   if (asked && !looksLikeEmail(asked)) return asked;
   const name = user.name.trim();
   const first = name && !looksLikeEmail(name) ? name.split(/\s+/)[0] : nameFromEmail(user.email);
-  return first ? capitalize(first) : "there";
+  return first ? capitalize(first) : msg("there");
 }
 
 /** Initials for the round badge: "AP" for Adolff Pierre, "A" for adolff@example.com. */
@@ -42,16 +43,16 @@ export function initials(user: Named): string {
 
 // "What best describes your work?" in Settings, like Claude's.
 export const WORK_OPTIONS = [
-  "Small business owner",
-  "Creator or influencer",
-  "Marketing or sales",
-  "Student",
-  "Teacher or trainer",
-  "Software developer",
-  "Designer",
-  "Writer or editor",
-  "Consultant or freelancer",
-  "Other",
+  msg("Small business owner"),
+  msg("Creator or influencer"),
+  msg("Marketing or sales"),
+  msg("Student"),
+  msg("Teacher or trainer"),
+  msg("Software developer"),
+  msg("Designer"),
+  msg("Writer or editor"),
+  msg("Consultant or freelancer"),
+  msg("Other"),
 ] as const;
 
 /**

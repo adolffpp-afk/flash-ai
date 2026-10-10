@@ -5,6 +5,7 @@
  * owner can choose them in Flash, and apps made before rules existed get a guess from their code.
  * Pure, with no server imports: the server, My websites & apps and the tests all use it.
  */
+import { english, msg, type Translate } from "./i18n.ts";
 
 export const COLLECTION = /^[A-Za-z0-9_-]{1,40}$/;
 export const DATA_RULES = ["read", "add", "own", "private", "open"] as const;
@@ -138,30 +139,33 @@ export function anyOpen(computed: ComputedRules, chosen: Record<string, DataRule
   return (chosen[DEFAULT_KEY] ?? computed.guess) === "open";
 }
 
+// Words for the owner, in Flash: translated where they're shown, with t().
 export const RULE_TEXT: Record<DataRule, { label: string; help: string }> = {
-  read: { label: "Only you can add or change it", help: "Visitors see it. Good for menus, products, posts and prices." },
+  read: { label: msg("Only you can add or change it"), help: msg("Visitors see it. Good for menus, products, posts and prices.") },
   add: {
-    label: "Visitors can add",
-    help: "Anyone can add. Only you, or the signed-in person who added a record, can change or delete it. Good for reviews, comments and scores.",
+    label: msg("Visitors can add"),
+    help: msg(
+      "Anyone can add. Only you, or the signed-in person who added a record, can change or delete it. Good for reviews, comments and scores.",
+    ),
   },
   own: {
-    label: "Signed-in people manage their own",
-    help: "Visitors see it. People signed in to your app can add, and change or delete what they added.",
+    label: msg("Signed-in people manage their own"),
+    help: msg("Visitors see it. People signed in to your app can add, and change or delete what they added."),
   },
-  private: { label: "Only you can see it", help: "Visitors can add, but only you can read it. Good for sign-ups and requests." },
+  private: { label: msg("Only you can see it"), help: msg("Visitors can add, but only you can read it. Good for sign-ups and requests.") },
   open: {
-    label: "Anyone can change anything",
-    help: "Anyone can add, change or delete every record, even without your app's buttons. Use only for a list a group edits together.",
+    label: msg("Anyone can change anything"),
+    help: msg("Anyone can add, change or delete every record, even without your app's buttons. Use only for a list a group edits together."),
   },
 };
 
 /** One-line summaries, for the line shown after publishing. */
 export const RULE_SHORT: Record<DataRule, string> = {
-  read: "only you",
-  add: "visitors can add",
-  own: "signed-in people manage their own",
-  private: "only you can see it",
-  open: "anyone can change anything",
+  read: msg("only you"),
+  add: msg("visitors can add"),
+  own: msg("signed-in people manage their own"),
+  private: msg("only you can see it"),
+  open: msg("anyone can change anything"),
 };
 
 /** What publishing reports about the app's data: each named collection's rule, and the rule for anything else. */
@@ -169,14 +173,14 @@ export type DataSummary = { collections: { name: string; rule: DataRule; source:
 
 /**
  * "Who can change this app's data: menu — only you · reviews — visitors can add · anything else — only you. …"
- * Empty for an app that keeps no shared data of its own, like a plain website.
+ * Empty for an app that keeps no shared data of its own, like a plain website. t words it for the owner.
  */
-export function dataLine(data: DataSummary, shown = 8): string {
+export function dataLine(data: DataSummary, shown = 8, t: Translate = english): string {
   if (!data.collections.length && data.other === "read") return "";
-  const parts = data.collections.slice(0, shown).map((c) => `${c.name} — ${RULE_SHORT[c.rule]}`);
-  if (data.collections.length > shown) parts.push(`${data.collections.length - shown} more`);
-  parts.push(`anything else — ${RULE_SHORT[data.other]}`);
-  return `Who can change this app's data: ${parts.join(" · ")}. Change it in My websites & apps › Data.`;
+  const parts = data.collections.slice(0, shown).map((c) => t("{collection} — {rule}", { collection: c.name, rule: t(RULE_SHORT[c.rule]) }));
+  if (data.collections.length > shown) parts.push(t("{count} more", { count: data.collections.length - shown }));
+  parts.push(t("anything else — {rule}", { rule: t(RULE_SHORT[data.other]) }));
+  return t("Who can change this app's data: {rules}. Change it in My websites & apps › Data.", { rules: parts.join(" · ") });
 }
 
 // Field names that usually hold personal details. Short ones must be a whole word, so "hotel" isn't a phone.

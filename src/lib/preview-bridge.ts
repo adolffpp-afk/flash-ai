@@ -3,6 +3,7 @@
  * part of the page the user clicked while choosing what to change. Only the preview gets this
  * script; published apps never do.
  */
+import { msg } from "./i18n.ts";
 
 /** A message from the preview to Flash. */
 export type PreviewMessage =
@@ -123,7 +124,7 @@ export const linesIn = (snippet: string) => snippet.split("\n").length - 1;
 /** An error in words the user and the builder can act on. */
 export function friendlyError(message: string): string {
   if (/localStorage|sessionStorage|indexedDB|document is sandboxed/i.test(message)) {
-    return "This app saves data in the browser's own storage, which apps on Flash can't use. Use the built-in database (flashDB) instead.";
+    return msg("This app saves data in the browser's own storage, which apps on Flash can't use. Use the built-in database (flashDB) instead.");
   }
   return message;
 }

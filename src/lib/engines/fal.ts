@@ -1,4 +1,5 @@
 import type { Media } from "./media.ts";
+import { msg } from "../i18n.ts";
 import { FriendlyError, MEDIA_WAIT_MS, JobAbandoned } from "./errors.ts";
 
 // fal.ai runs hundreds of image, video and music models behind one key and one queue API.
@@ -27,6 +28,11 @@ export function findFile(result: unknown): FileRef | null {
   return null;
 }
 
+/** Where a job is: its place in line (1 is next) while it waits, or null once it's working. */
+export type FalProgress = { position: number | null };
+/** Short English updates ("In line (position 2)", "Working"), and where the job is, to say it in the user's language. */
+export type OnFalProgress = (message: string, progress: FalProgress) => void;
+
 /**
  * Runs a fal model through its queue and returns its JSON result, all within timeoutMs so the
  * request always ends in time to settle credits.
@@ -35,7 +41,7 @@ export function findFile(result: unknown): FileRef | null {
 export async function falRun(
   endpoint: string,
   input: Record<string, unknown>,
-  onProgress: (message: string) => void = () => {},
+  onProgress: OnFalProgress = () => {},
   timeoutMs = MEDIA_WAIT_MS,
 ): Promise<{ result: unknown; end: number }> {
   const end = Date.now() + timeoutMs;
@@ -55,14 +61,15 @@ export async function falRun(
     if (Date.now() > deadline) {
       // A job still in line can be cancelled; one already running will be billed anyway.
       if (queued && job.cancel_url) await fetch(job.cancel_url, { method: "PUT", headers: headers() }).catch(() => {});
-      throw new JobAbandoned("This is taking too long, so Flash stopped waiting. Please try again.", !queued);
+      throw new JobAbandoned(msg("This is taking too long, so Flash stopped waiting. Please try again."), !queued);
     }
     const poll = await fetch(job.status_url, { headers: headers(), signal: AbortSignal.timeout(15_000) });
     if (!poll.ok) throw await failure(poll);
     const status = (await poll.json()) as { status: string; queue_position?: number };
     if (status.status === "COMPLETED") break;
     queued = status.status === "IN_QUEUE";
-    onProgress(queued ? `In line (position ${(status.queue_position ?? 0) + 1})` : "Working");
+    const position = queued ? (status.queue_position ?? 0) + 1 : null;
+    onProgress(position === null ? "Working" : `In line (position ${position})`, { position });
     await sleep(queued ? 3000 : 1500);
   }
 
@@ -80,23 +87,22 @@ const timeLeft = (end: number) => AbortSignal.timeout(Math.max(1000, end - Date.
 
 function billed(err: unknown): JobAbandoned {
   console.error("[flash] fal result failed", err);
-  return new JobAbandoned(
-    err instanceof FriendlyError ? err.message : "Flash couldn't fetch the result. Please try again.",
-    true,
-  );
+  return err instanceof FriendlyError
+    ? new JobAbandoned(err.phrase, true, err.blanks)
+    : new JobAbandoned(msg("Flash couldn't fetch the result. Please try again."), true);
 }
 
 /** Runs a fal model that makes a file (an image, video or audio) and downloads the file. */
 export async function falGenerate(
   endpoint: string,
   input: Record<string, unknown>,
-  onProgress: (message: string) => void = () => {},
+  onProgress: OnFalProgress = () => {},
   timeoutMs = MEDIA_WAIT_MS,
 ): Promise<Media> {
   const { result, end } = await falRun(endpoint, input, onProgress, timeoutMs);
   try {
     const file = findFile(result);
-    if (!file) throw new FriendlyError("The model finished but sent nothing back. Please try again.");
+    if (!file) throw new FriendlyError(msg("The model finished but sent nothing back. Please try again."));
     const download = await fetch(file.url, { signal: timeLeft(end) });
     if (!download.ok) throw await failure(download);
     return {

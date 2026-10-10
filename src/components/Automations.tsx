@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { useT } from "@/lib/use-t";
 import { ICONS, Icon } from "./Home";
 
 /**
@@ -8,6 +9,7 @@ import { ICONS, Icon } from "./Home";
  * and points to what does the same work in one go today.
  */
 export function Automations({ onTemplates, onClose }: { onTemplates: () => void; onClose: () => void }) {
+  const t = useT();
   const closeRef = useRef<HTMLButtonElement>(null);
   // Into the dialog once when it opens (not on every render, which would pull the cursor back).
   useEffect(() => {
@@ -32,21 +34,22 @@ export function Automations({ onTemplates, onClose }: { onTemplates: () => void;
           <span className="inline-flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-400/15 text-amber-300 ring-1 ring-inset ring-amber-300/25 light:bg-amber-50 light:text-amber-600 light:ring-amber-200">
             <Icon d={ICONS.bolt} className="h-6 w-6" />
           </span>
-          <button ref={closeRef} onClick={onClose} className="rounded-full p-2 text-zinc-400 transition hover:bg-white/[0.06] hover:text-zinc-100" aria-label="Close">
+          <button ref={closeRef} onClick={onClose} className="rounded-full p-2 text-zinc-400 transition hover:bg-white/[0.06] hover:text-zinc-100" aria-label={t("Close")}>
             ✕
           </button>
         </div>
         <h2 id="automations-title" className="flex flex-wrap items-center gap-2 text-xl font-semibold tracking-tight">
-          Automations <span className="rounded-full bg-white/[0.08] px-2.5 py-0.5 text-xs font-medium text-zinc-300">Coming soon</span>
+          {t("Automations")} <span className="rounded-full bg-white/[0.08] px-2.5 py-0.5 text-xs font-medium text-zinc-300">{t("Coming soon")}</span>
         </h2>
         <p className="mt-2 text-sm leading-relaxed text-zinc-400">
-          Flash can&apos;t run jobs on a schedule yet. When Automations arrive, you&apos;ll set up a job once, like a weekly sales summary or a daily social
-          post, and Flash will do it on time without being asked.
+          {t(
+            "Flash can't run jobs on a schedule yet. When Automations arrive, you'll set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.",
+          )}
         </p>
-        <p className="mt-3 text-sm leading-relaxed text-zinc-400">Until then, a template does the same work in one go whenever you need it.</p>
+        <p className="mt-3 text-sm leading-relaxed text-zinc-400">{t("Until then, a template does the same work in one go whenever you need it.")}</p>
         <div className="mt-6 flex justify-end gap-2">
           <button onClick={onClose} className="rounded-full px-4 py-2 text-sm text-zinc-400 transition hover:text-zinc-100">
-            Close
+            {t("Close")}
           </button>
           <button
             onClick={() => {
@@ -55,7 +58,7 @@ export function Automations({ onTemplates, onClose }: { onTemplates: () => void;
             }}
             className="rounded-full bg-brand px-5 py-2 text-sm font-medium text-on-brand transition hover:brightness-110"
           >
-            Browse templates
+            {t("Browse templates")}
           </button>
         </div>
       </div>

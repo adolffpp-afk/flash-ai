@@ -2,39 +2,40 @@
  * Selling from a published site: prices, item names and return links. No server code here, so
  * the tests and the browser can use it too (the server side is src/lib/server/shop.ts).
  */
+import { msg } from "./i18n.ts";
 
 // Currencies without cents, where Stripe counts whole units.
 const ZERO_DECIMAL = new Set(["bif", "clp", "djf", "gnf", "jpy", "kmf", "krw", "mga", "pyg", "rwf", "ugx", "vnd", "vuv", "xaf", "xof", "xpf"]);
 
-/** Countries a seller can open a Stripe account in, shown when they start selling. */
+/** Countries a seller can open a Stripe account in, shown when they start selling (names translated where shown). */
 export const SELLER_COUNTRIES: [string, string][] = [
-  ["CA", "Canada"],
-  ["US", "United States"],
-  ["GB", "United Kingdom"],
-  ["FR", "France"],
-  ["BE", "Belgium"],
-  ["CH", "Switzerland"],
-  ["DE", "Germany"],
-  ["ES", "Spain"],
-  ["IT", "Italy"],
-  ["NL", "Netherlands"],
-  ["IE", "Ireland"],
-  ["PT", "Portugal"],
-  ["LU", "Luxembourg"],
-  ["AT", "Austria"],
-  ["SE", "Sweden"],
-  ["NO", "Norway"],
-  ["DK", "Denmark"],
-  ["FI", "Finland"],
-  ["PL", "Poland"],
-  ["AU", "Australia"],
-  ["NZ", "New Zealand"],
-  ["SG", "Singapore"],
-  ["HK", "Hong Kong"],
-  ["JP", "Japan"],
-  ["MX", "Mexico"],
-  ["BR", "Brazil"],
-  ["AE", "United Arab Emirates"],
+  ["CA", msg("Canada")],
+  ["US", msg("United States")],
+  ["GB", msg("United Kingdom")],
+  ["FR", msg("France")],
+  ["BE", msg("Belgium")],
+  ["CH", msg("Switzerland")],
+  ["DE", msg("Germany")],
+  ["ES", msg("Spain")],
+  ["IT", msg("Italy")],
+  ["NL", msg("Netherlands")],
+  ["IE", msg("Ireland")],
+  ["PT", msg("Portugal")],
+  ["LU", msg("Luxembourg")],
+  ["AT", msg("Austria")],
+  ["SE", msg("Sweden")],
+  ["NO", msg("Norway")],
+  ["DK", msg("Denmark")],
+  ["FI", msg("Finland")],
+  ["PL", msg("Poland")],
+  ["AU", msg("Australia")],
+  ["NZ", msg("New Zealand")],
+  ["SG", msg("Singapore")],
+  ["HK", msg("Hong Kong")],
+  ["JP", msg("Japan")],
+  ["MX", msg("Mexico")],
+  ["BR", msg("Brazil")],
+  ["AE", msg("United Arab Emirates")],
 ];
 
 export const MAX_ITEM_NAME = 80;

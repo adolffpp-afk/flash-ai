@@ -56,6 +56,9 @@ export const MEMORY_DB = `
 /** The person signed in to a published app right now, and the key this page's requests carry. */
 export type Visitor = { user: { id: string; email: string; name: string }; token: string } | null;
 
+/** The owner's key for a page Flash serves to the app's owner (see site-owner.ts), with what the page tells them, in their language. */
+export type OwnerView = { key: string; note: string; ended: string } | null;
+
 /** A value written into the page's script. "<" is escaped, so a name with </script> in it can't end the script. */
 const js = (value: unknown) => JSON.stringify(value).replace(/</g, "\\u003c");
 
@@ -70,7 +73,7 @@ export function flashDbShim(
   ai: string | null = null,
   files: string | null = null,
   // Set only on a page served to the app's owner while signed in to Flash (see site-owner.ts).
-  ownerKey: string | null = null,
+  owner: OwnerView = null,
 ): string {
   const remote = `
   const base = ${js(endpoint)};
@@ -82,7 +85,7 @@ export function flashDbShim(
   const filesUrl = ${js(files)};
   const me = ${js(visitor?.user ?? null)};
   const key = ${js(visitor?.token ?? "")};
-  const ownerKey = ${js(ownerKey ?? "")};
+  const ownerKey = ${js(owner?.key ?? "")};
   // The owner's key stays inside this script: it keeps its own fetch, and on the owner's page it
   // leaves the page once it has run, so code that gets into the page later can't read the key.
   const send = fetch;
@@ -110,7 +113,7 @@ export function flashDbShim(
     const json = await res.json().catch(() => ({}));
     if (!res.ok) {
       // The owner's key lasts two hours and ends with their Flash sign-in.
-      if (ownerKey && res.status === 403) throw new Error("Your owner view has ended. Reload the page to keep changing this app's data.");
+      if (ownerKey && res.status === 403) throw new Error(${js(owner?.ended ?? "")});
       throw new Error(json.error || "flashDB request failed");
     }
     return json;
@@ -254,7 +257,7 @@ export function flashDbShim(
   if (ownerKey) ready(function () {
     const note = document.createElement("div");
     note.setAttribute("role", "status");
-    note.textContent = "Owner view: you can change this app's data here. Visitors can only do what you allow in Flash \u203a My websites & apps \u203a Data. To see it as a visitor, use a private window.";
+    note.textContent = ${js(owner?.note ?? "")};
     note.style.cssText = "position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483647;max-width:min(560px,calc(100% - 32px));padding:12px 18px;border-radius:12px;background:#1e1b4b;color:#fff;font:500 14px/1.45 system-ui,sans-serif;box-shadow:0 8px 30px rgba(0,0,0,.25);cursor:pointer";
     note.onclick = function () { note.remove(); };
     document.body.appendChild(note);

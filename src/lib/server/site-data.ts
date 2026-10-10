@@ -10,6 +10,7 @@
 import { all, one, run, now } from "./db.ts";
 import { randomId } from "./ids.ts";
 import { toCsv } from "../csv.ts";
+import { english, type Translate } from "../i18n.ts";
 import {
   ANYONE,
   COLLECTION,
@@ -342,14 +343,19 @@ export async function newestShared(slug: string, collection: string, limit = 100
  * For the owner: a collection as a CSV file, newest first. A response can't be much over 4 MB, so
  * the rows stop before maxBytes, and included says how many made it.
  */
-export async function sharedCsv(slug: string, collection: string, maxBytes = 4_000_000): Promise<{ csv: string; included: number; total: number }> {
+export async function sharedCsv(
+  slug: string,
+  collection: string,
+  t: Translate = english,
+  maxBytes = 4_000_000,
+): Promise<{ csv: string; included: number; total: number }> {
   const rows = await all<Row>(
     "SELECT id, data, created_at, updated_at FROM site_records WHERE site_slug = ? AND collection = ? AND owner = '' ORDER BY created_at DESC, id DESC",
     [slug, collection],
   );
   const records = rows.map((r) => ({ id: r.id, createdAt: Number(r.created_at), data: JSON.parse(r.data) as Record<string, unknown> }));
   const fields = [...new Set(records.flatMap((r) => Object.keys(r.data)))].slice(0, 50);
-  const header = ["Added", ...fields, "id"];
+  const header = [t("Added"), ...fields, "id"];
   const cell = (v: unknown) => (typeof v === "string" || v === undefined ? v : JSON.stringify(v));
   const lines: unknown[][] = [];
   let bytes = Buffer.byteLength(toCsv([header]));

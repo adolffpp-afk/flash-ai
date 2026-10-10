@@ -2,6 +2,7 @@ import type { Media } from "./media.ts";
 import type { Meter } from "./claude.ts";
 import { falGenerate, falRun, findFile } from "./fal.ts";
 import { FriendlyError, JobAbandoned } from "./errors.ts";
+import { english, msg, type Translate } from "../i18n.ts";
 
 const MERGE = process.env.FAL_MERGE_ENDPOINT || "fal-ai/ffmpeg-api/merge-videos";
 // Kling 3 Turbo Pro, $0.14 a second (see the movie entry in src/lib/models.ts).
@@ -24,11 +25,13 @@ export async function makeMovie(
   meter: Meter,
   onProgress: (message: string) => void,
   aspect = "16:9",
+  // The language progress is reported in.
+  t: Translate = english,
 ): Promise<Media> {
   const end = Date.now() + MOVIE_WAIT_MS;
   const clipCents = CLIP_CENTS_PER_SECOND * seconds;
   let done = 0;
-  const report = () => onProgress(`Filming your movie… ${done} of ${scenes.length} scenes done`);
+  const report = () => onProgress(t("Filming your movie… {done} of {count} scenes done", { done, count: scenes.length }));
   report();
 
   const results = await Promise.allSettled(
@@ -57,12 +60,12 @@ export async function makeMovie(
   if (failed) {
     console.error("[flash] movie scene failed", failed.reason);
     throw new FriendlyError(
-      `${results.length - done} of ${scenes.length} scenes couldn't be filmed, so the movie wasn't finished. ` +
-        "You only pay for the scenes that were filmed. Please try again.",
+      msg("{failed} of {count} scenes couldn't be filmed, so the movie wasn't finished. You only pay for the scenes that were filmed. Please try again."),
+      { failed: results.length - done, count: scenes.length },
     );
   }
 
-  onProgress("Joining the scenes into one movie…");
+  onProgress(t("Joining the scenes into one movie…"));
   const urls = results.map((r) => (r as PromiseFulfilledResult<string>).value);
   const movie = await falGenerate(MERGE, { video_urls: urls }, () => {}, Math.max(30_000, end - Date.now()));
   meter("fal", "movie-join", 0);
