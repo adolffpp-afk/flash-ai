@@ -57,15 +57,17 @@ export const voiceCostCents = (characters: number) => (characters / 1000) * 5;
 export const MAX_SPEECH_CHARS = 10000;
 
 /*
- * Transcription is billed per minute of audio, which Flash can't measure before sending the
- * file. So it is priced as if the file were the longest recording its size could hold: at 8 kbps
- * (1,000 bytes a second, below common speech codecs), at Scribe's $0.008 a minute. A 3 MB file
- * is priced as 52 minutes; a normal 128 kbps MP3 pays for more than it uses, but never less.
+ * Transcription is billed per minute of audio, at Scribe's $0.008 a minute. Opus can hold an hour in
+ * under a megabyte, so a recording Flash can read (Opus in Ogg or WebM, or WAV: see
+ * server/audio-length.ts) is priced on its seconds, the longer of what it plays and what it says it
+ * lasts. Every file is also priced as at least the longest recording its size holds at 8 kbps
+ * (1,000 bytes a second, below common speech codecs): a 3 MB file pays for 52 minutes, and a
+ * normal 128 kbps MP3 pays for more than it uses. Formats Flash can't read have only that floor.
  */
 const TRANSCRIBE_CENTS_PER_MINUTE = 0.8;
 const MIN_AUDIO_BYTES_PER_SECOND = 1000;
-export const transcribeCostCents = (bytes: number) =>
-  Math.max(1, (bytes / MIN_AUDIO_BYTES_PER_SECOND / 60) * TRANSCRIBE_CENTS_PER_MINUTE);
+export const transcribeCostCents = (bytes: number, seconds = 0) =>
+  Math.max(1, (Math.max(bytes / MIN_AUDIO_BYTES_PER_SECOND, seconds) / 60) * TRANSCRIBE_CENTS_PER_MINUTE);
 
 /*
  * Claude engines are charged by length. Flash holds up to this many credits while it writes

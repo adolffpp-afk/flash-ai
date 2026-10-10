@@ -19,7 +19,8 @@ export async function POST(request: Request) {
     user.id,
     request.headers.get("content-type") ?? "",
     Buffer.from(await request.arrayBuffer()),
-    { verified: isVerified(user) },
+    // A turn still waiting in line is cancelled, and costs nothing, once the browser stops waiting for it.
+    { verified: isVerified(user), signal: request.signal },
     t,
   );
   return Response.json(body, { status });

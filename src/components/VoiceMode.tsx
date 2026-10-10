@@ -391,8 +391,9 @@ class Conversation {
       const data = (await res.json().catch(() => ({}))) as { text?: string; error?: string };
       if (!res.ok) {
         this.screen.problem(data.error ?? tNow("Flash couldn't hear that. Please try again."));
-        // Out of credits or not available: stop listening rather than fail every turn.
-        if (res.status === 402 || res.status === 503) this.paused = true;
+        // Out of credits, or not available (or not for what this browser records): stop listening
+        // rather than fail every turn.
+        if (res.status === 402 || res.status === 415 || res.status === 503) this.paused = true;
         return "";
       }
       this.screen.problem("");

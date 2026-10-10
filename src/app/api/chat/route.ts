@@ -31,6 +31,7 @@ import { getBrand } from "@/lib/server/brand.ts";
 import { one } from "@/lib/server/db.ts";
 import {
   FREE_CHAT_ENGINES,
+  MIN_AUDIO_SECONDS,
   freeChatConfigured,
   freeEligible,
   freeImage,
@@ -40,7 +41,19 @@ import {
   streamFreeChat,
   type FreeLane,
 } from "@/lib/engines/free.ts";
-import { countryOf, recordFree, recordFreeAudio, releaseFreeUser, reserveFree, reserveFreeAudio, reserveFreeImage, reserveFreeUser } from "@/lib/server/free.ts";
+import {
+  AUDIO_SECONDS_RESERVE,
+  countryOf,
+  freeAudioFailed,
+  recordFree,
+  recordFreeAudio,
+  releaseFreeUser,
+  reserveFree,
+  reserveFreeAudio,
+  reserveFreeImage,
+  reserveFreeUser,
+} from "@/lib/server/free.ts";
+import { audioLength, billableSeconds } from "@/lib/server/audio-length.ts";
 import { isVerified } from "@/lib/server/account.ts";
 import {
   composeMusic,
@@ -191,6 +204,15 @@ const transcript = (name: string, text: string, t: Translate) =>
 
 /** The bytes in a base64 attachment. */
 const attachmentBytes = (a: { data: string }) => (a.data.length * 3) / 4;
+
+/** How long a recording plays, when Flash can measure it (see audio-length.ts); 0 when it can't. */
+function recordingSeconds(a: { data: string }): number {
+  const length = audioLength(Buffer.from(a.data, "base64"));
+  return length ? billableSeconds(length) : 0;
+}
+
+/** What transcribing a file costs: its measured length, and at least what its size could hold. */
+const transcriptCents = (a: { data: string }) => transcribeCostCents(attachmentBytes(a), recordingSeconds(a));
 
 /** The voice engine speaks at most MAX_SPEECH_CHARS, and is priced on exactly that text. */
 const spokenText = (message: string) => textToSpeak(message).slice(0, MAX_SPEECH_CHARS);
@@ -494,7 +516,7 @@ async function* run(
         return;
       }
       yield { type: "status", message: t("Transcribing {name}…", { name: last.attachment.name }) };
-      const transcribeCents = transcribeCostCents(attachmentBytes(last.attachment));
+      const transcribeCents = transcriptCents(last.attachment);
       const text = await transcribe(last.attachment).catch(billSpeech("transcribe", transcribeCents));
       meter(speechProvider()!, "transcribe", transcribeCents);
       yield { type: "text", delta: transcript(last.attachment.name, text, t) };
@@ -514,6 +536,8 @@ async function* runFree(
   // Where the user is, for free models that may only answer some countries.
   country = "",
   t: Translate = english,
+  // Seconds of Groq's free audio held for a transcript, set once they're taken.
+  audio: { reserved?: number } = {},
 ): AsyncGenerator<StreamEvent> {
   const last = history[history.length - 1];
   if (lane === "image") {
@@ -529,14 +553,18 @@ async function* runFree(
   }
   if (lane === "transcribe") {
     const file = last.attachment!;
-    if (!(await reserveFreeAudio())) {
+    // Groq counts at least 10 seconds a file; one Flash can't measure holds room for a long recording.
+    const seconds = recordingSeconds(file);
+    const reserve = seconds ? Math.max(MIN_AUDIO_SECONDS, Math.ceil(seconds)) : AUDIO_SECONDS_RESERVE;
+    if (!(await reserveFreeAudio(reserve))) {
       throw new FriendlyError(msg("Today's free transcripts are used up across Flash. They reset tomorrow, or you can get more credits."));
     }
+    audio.reserved = reserve;
     used.provider = "groq";
     used.model = "whisper-large-v3-turbo";
     yield { type: "status", message: t("Transcribing {name} with Whisper (free)…", { name: file.name }) };
-    const { text, seconds } = await freeTranscribe(file);
-    await recordFreeAudio(seconds);
+    const { text, seconds: counted } = await freeTranscribe(file);
+    await recordFreeAudio(counted, reserve);
     yield { type: "text", delta: transcript(file.name, text, t) };
     return;
   }
@@ -720,8 +748,8 @@ export async function POST(request: Request) {
     if (model) held = needed = modelCredits(model, last.content, combines ? photos.length : 1);
     else if (engine === "voice") held = needed = creditsFor(voiceCostCents(spokenText(last.content).length));
     else if (engine === "transcribe") {
-      // Priced by file size (see transcribeCostCents); with no file, the engine just asks for one.
-      held = needed = last.attachment ? creditsFor(transcribeCostCents(attachmentBytes(last.attachment))) : 0;
+      // Priced on the recording's length (see transcribeCostCents); with no file, the engine just asks for one.
+      held = needed = last.attachment ? creditsFor(transcriptCents(last.attachment)) : 0;
     } else {
       // The level the user picked, or the one Auto picks for this request (see levels.ts).
       const files = last.attachment ? 1 + (last.more?.length ?? 0) : 0;
@@ -810,6 +838,7 @@ export async function POST(request: Request) {
     return Response.json({ error, code: "confirm_cost", needed }, { status: 409 });
   }
   const freeUse = { provider: "", model: "" };
+  const freeAudio: { reserved?: number } = {};
   const chargeId = held ? await charge(user.id, held, `${engine} request`) : 0;
   if (chargeId === null) {
     const counts = { needed, available };
@@ -878,9 +907,10 @@ export async function POST(request: Request) {
       let ok = true;
       let stopped = false;
       let failure = "";
+      let error: unknown;
       try {
         const events = free
-          ? runFree(free, engine, history, preferences, store, freeUse, countryOf(request), t)
+          ? runFree(free, engine, history, preferences, store, freeUse, countryOf(request), t, freeAudio)
           : run(engine, history, preferences, store, model, meter, budget, mediaNotes, claudeRun, steppedDown, t);
         for await (const event of events) {
           if (cancelled || request.signal.aborted) {
@@ -893,6 +923,7 @@ export async function POST(request: Request) {
       } catch (err) {
         console.error(`[flash] ${engine} engine failed`, err);
         ok = false;
+        error = err;
         // Provider errors can hold raw responses, so only messages written for the user are shown.
         failure =
           err instanceof FriendlyError
@@ -919,8 +950,14 @@ export async function POST(request: Request) {
             outputPrice: claudeRun ? claudePrice(claudeRun.model).output : undefined,
           });
       await settle(chargeId, credits);
-      // A free request that failed doesn't use up one of the user's free requests for today.
-      if (free && !ok) await releaseFreeUser(user.id, free).catch((err) => console.error("[flash] free release failed", err));
+      // A free request that failed doesn't use up one of the user's free requests for today, except a
+      // transcript Groq was sent, which gives back what freeAudioFailed says.
+      if (free && !ok) {
+        await (free === "transcribe" && freeAudio.reserved !== undefined
+          ? freeAudioFailed(user.id, free, freeAudio.reserved, error)
+          : releaseFreeUser(user.id, free)
+        ).catch((err) => console.error("[flash] free release failed", err));
+      }
       if (live) {
         const main = spend.at(-1);
         await logUsage({

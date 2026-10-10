@@ -137,7 +137,7 @@ export const freeImageConfigured = () => Boolean(cloudflareKey());
 export const FREE_DAILY_CHATS = num("FLASH_FREE_DAILY_CHATS", 25);
 export const FREE_DAILY_IMAGES = num("FLASH_FREE_DAILY_IMAGES", 3);
 export const FREE_DAILY_TRANSCRIPTS = num("FLASH_FREE_DAILY_TRANSCRIPTS", 3);
-// Spoken turns a day in browsers that can't recognise speech (Firefox). Groq counts each as 10 seconds.
+// Spoken turns a day in browsers that can't recognise speech (Firefox). Groq counts each as at least 10 seconds.
 export const FREE_DAILY_VOICE_TURNS = num("FLASH_FREE_DAILY_VOICE_TURNS", 40);
 
 // Groq's free tier limits Whisper by requests and seconds of audio a day (2,000 and 28,800 in
@@ -337,6 +337,15 @@ export async function freeImage(prompt: string): Promise<Media> {
   return { data: Buffer.from(json.result.image, "base64"), mime: "image/jpeg" };
 }
 
+/** Groq answered a free transcript with an error (status), so it didn't transcribe the file. */
+export class FreeRefused extends Error {
+  readonly status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
 /** A transcript from Whisper on Groq's free tier, with the audio's length in seconds. */
 export async function freeTranscribe(file: { name: string; mediaType: string; data: string }): Promise<{ text: string; seconds: number }> {
   const form = new FormData();
@@ -350,7 +359,7 @@ export async function freeTranscribe(file: { name: string; mediaType: string; da
     signal: AbortSignal.timeout(120_000),
   });
   const json = (await res.json().catch(() => ({}))) as { text?: string; duration?: number; error?: { message?: string } };
-  if (!res.ok) throw new Error(json.error?.message ?? `The free transcription model returned ${res.status}`);
+  if (!res.ok) throw new FreeRefused(json.error?.message ?? `The free transcription model returned ${res.status}`, res.status);
   return { text: json.text?.trim() || NO_SPEECH, seconds: Math.max(MIN_AUDIO_SECONDS, Math.ceil(json.duration ?? 0)) };
 }
 
@@ -373,7 +382,7 @@ export async function freeHear(file: { name: string; mediaType: string; data: st
   });
   type Segment = { text?: string; no_speech_prob?: number; avg_logprob?: number };
   const json = (await res.json().catch(() => ({}))) as { text?: string; duration?: number; segments?: Segment[]; error?: { message?: string } };
-  if (!res.ok) throw new Error(json.error?.message ?? `The free transcription model returned ${res.status}`);
+  if (!res.ok) throw new FreeRefused(json.error?.message ?? `The free transcription model returned ${res.status}`, res.status);
   const silent = (s: Segment) => (s.no_speech_prob ?? 0) > 0.6 && (s.avg_logprob ?? 0) < -1;
   const text = json.segments ? json.segments.filter((s) => !silent(s)).map((s) => s.text ?? "").join("") : (json.text ?? "");
   return { text: text.trim(), seconds: Math.max(MIN_AUDIO_SECONDS, Math.ceil(json.duration ?? 0)) };

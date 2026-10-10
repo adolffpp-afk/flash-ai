@@ -73,12 +73,48 @@ test("one audio or video file can be transcribed for free with Whisper", async (
 test("free transcripts stop at each user's and Flash's daily allowance", async () => {
   const { reserveFreeAudio, recordFreeAudio } = await import("../src/lib/server/free.ts");
   const { FREE_DAILY_TRANSCRIPTS, GROQ_AUDIO_DAILY_SECONDS } = await import("../src/lib/engines/free.ts");
+  const { one } = await import("../src/lib/server/db.ts");
+  const seconds = async () => Number((await one<{ s: number }>("SELECT tokens AS s FROM free_quota WHERE provider = 'groq-audio'"))?.s ?? 0);
   for (let i = 0; i < FREE_DAILY_TRANSCRIPTS; i++) assert.equal(await reserveFreeUser("listener", "transcribe"), true);
   assert.equal(await reserveFreeUser("listener", "transcribe"), false);
   assert.equal(await freeLeft("listener", "chat"), 25, "transcripts don't use up chats");
-  assert.equal(await reserveFreeAudio(), true);
-  await recordFreeAudio(GROQ_AUDIO_DAILY_SECONDS - 500);
-  assert.equal(await reserveFreeAudio(), false, "no room left for another recording");
+  // A recording's seconds are taken with its request, so recordings sent at once can't all fit in
+  // the room left for one.
+  const tries = await Promise.all(Array.from({ length: 30 }, () => reserveFreeAudio(1000)));
+  assert.equal(tries.filter(Boolean).length, GROQ_AUDIO_DAILY_SECONDS / 1000);
+  assert.equal(await seconds(), GROQ_AUDIO_DAILY_SECONDS);
+  assert.equal(await reserveFreeAudio(10), false, "no room left for another recording");
+  // What Groq counted replaces what was held.
+  await recordFreeAudio(400, 1000);
+  assert.equal(await seconds(), GROQ_AUDIO_DAILY_SECONDS - 600);
+  assert.equal(await reserveFreeAudio(600), true);
+  assert.equal(await reserveFreeAudio(1), false);
+});
+
+test("a free transcript that failed: what Groq refused goes back to everyone, the user's turn only when Groq broke", async () => {
+  const { reserveFreeAudio, freeAudioFailed } = await import("../src/lib/server/free.ts");
+  const { FreeRefused } = await import("../src/lib/engines/free.ts");
+  const { one, run } = await import("../src/lib/server/db.ts");
+  await run("UPDATE free_quota SET requests = 0, tokens = 0 WHERE provider = 'groq-audio'");
+  const quota = async () => ({ ...(await one<{ requests: number; tokens: number }>("SELECT requests, tokens FROM free_quota WHERE provider = 'groq-audio'")) });
+  const attempt = async (err: unknown) => {
+    assert.equal(await reserveFreeUser("caller", "voice"), true);
+    assert.equal(await reserveFreeAudio(30), true);
+    await freeAudioFailed("caller", "voice", 30, err);
+  };
+  // A file Groq refused: the shared request and seconds come back; the user's turn stays used.
+  await attempt(new FreeRefused("could not process file", 400));
+  assert.deepEqual(await quota(), { requests: 0, tokens: 0 });
+  assert.equal(await freeLeft("caller", "voice"), 39);
+  // Groq broke or was busy: the user's turn comes back as well.
+  await attempt(new FreeRefused("over capacity", 503));
+  await attempt(new FreeRefused("rate limited", 429));
+  assert.deepEqual(await quota(), { requests: 0, tokens: 0 });
+  assert.equal(await freeLeft("caller", "voice"), 39);
+  // No answer (a timeout): Groq may have heard it, so everything stays used.
+  await attempt(new Error("The operation was aborted due to timeout"));
+  assert.deepEqual(await quota(), { requests: 1, tokens: 30 });
+  assert.equal(await freeLeft("caller", "voice"), 38);
 });
 
 test("the free transcript comes from Groq with the audio's length", async () => {

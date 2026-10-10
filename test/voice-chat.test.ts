@@ -2,9 +2,11 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { OPUS_120MS, oggOpus, opusSpeech, wav } from "./audio-files.ts";
 
-// A stand-in for fal.ai's transcription: "silence" has no words, "broken" never starts, and
-// "lost" runs (so fal bills it) but its result can't be fetched.
+// A stand-in for fal.ai's transcription, told what to do by a word in the recording (see rec):
+// "silence" has no words, "broken" never starts, and "lost" runs (so fal bills it) but its result
+// can't be fetched.
 const heard: string[] = [];
 // Where each request went: a spoken turn skips the queue only when fal's synchronous endpoint is set.
 const asked: string[] = [];
@@ -17,6 +19,8 @@ const server = createServer((req, res) => {
     const json = (v: unknown, code = 200) => res.writeHead(code, { "Content-Type": "application/json" }).end(JSON.stringify(v));
     // Whisper on Groq: "Thank you." over the silence before the words, as Whisper does.
     if (req.url === "/groq/audio/transcriptions") {
+      if (raw.includes("kind:refused")) return json({ error: { message: "could not process file" } }, 400);
+      if (raw.includes("kind:down")) return json({ error: { message: "over capacity" } }, 503);
       return json({
         text: " Thank you. Hello there",
         duration: 2.1,
@@ -30,7 +34,8 @@ const server = createServer((req, res) => {
       const input = JSON.parse(raw);
       const audio = String(input.audio_url ?? "");
       heard.push(audio);
-      const kind = Buffer.from(audio.split(",")[1] ?? "", "base64").toString();
+      const bytes = Buffer.from(audio.split(",")[1] ?? "", "base64").toString("latin1");
+      const kind = ["silence", "broken", "lost", "coughs"].find((k) => bytes.includes(`kind:${k}`)) ?? "words";
       if (kind === "broken") return json({ detail: "down" }, 500);
       // A spoken turn goes to fal's synchronous endpoint and asks for words only.
       if (req.url!.startsWith("/sync/")) {
@@ -277,6 +282,8 @@ test("voice requests get spoken answers from the writing engines only", () => {
 
 // A user with some credits hears turns (added in the first test: top-level awaits here would end the file's tests early).
 const balance = async () => Number((await one<{ c: number }>("SELECT COALESCE(SUM(amount), 0) AS c FROM credit_ledger WHERE user_id = 'v1'"))?.c);
+// A recorded turn as Firefox makes it: Opus in Ogg, with a word for the stand-ins in its tags.
+const rec = (kind = "words", seconds = 8) => oggOpus(opusSpeech(seconds), { vendor: `kind:${kind}` });
 const turn = async (body: Buffer, type = "audio/ogg") => {
   const r = await hearTurn("v1", type, body);
   return { status: r.status, json: async () => r.body };
@@ -284,7 +291,7 @@ const turn = async (body: Buffer, type = "audio/ogg") => {
 
 test("Firefox turns: a recording comes back as words and costs a few credits", async () => {
   await run("INSERT INTO users (id, email, password_hash, created_at, verified_at) VALUES ('v1', 'v1@x.io', '', 0, 0)");
-  const res = await turn(Buffer.from("hello"));
+  const res = await turn(rec());
   assert.equal(res.status, 200);
   const data = (await res.json()) as { text: string; credits: number };
   assert.equal(data.text, "What's on my calendar today?");
@@ -296,47 +303,86 @@ test("Firefox turns: a recording comes back as words and costs a few credits", a
 });
 
 test("silence is no words; a turn that never started is free, one fal ran is paid", async () => {
-  const quiet = await turn(Buffer.from("silence"));
+  const quiet = await turn(rec("silence"));
   assert.deepEqual(await quiet.json(), { text: "", credits: 3 });
   assert.equal(await balance(), 194);
   // A cough is heard as no words, so nothing is asked.
-  assert.deepEqual(await (await turn(Buffer.from("coughs"))).json(), { text: "", credits: 3 });
+  assert.deepEqual(await (await turn(rec("coughs"))).json(), { text: "", credits: 3 });
   assert.equal(await balance(), 191);
-  const failed = await turn(Buffer.from("broken"));
+  const failed = await turn(rec("broken"));
   assert.equal(failed.status, 502);
   assert.equal(await balance(), 191, "refunded");
-  const lost = await turn(Buffer.from("lost"));
+  const lost = await turn(rec("lost"));
   assert.equal(lost.status, 502);
   assert.equal(await balance(), 188, "fal charged for the work");
 });
 
+test("a turn is priced and limited by how long it plays, not by its size", async () => {
+  const before = await balance();
+  const sent = heard.length;
+  // An hour of sound packed into about 60 KB, whose pages claim no time at all: never heard, never charged.
+  const hour = oggOpus(Array.from({ length: 30_000 }, () => Uint8Array.of(OPUS_120MS)), { granule: () => 0 });
+  assert.ok(hour.length < 70_000);
+  assert.equal((await turn(hour)).status, 413);
+  // Two seconds that say they last an hour are priced as an hour, so they're refused too.
+  assert.equal((await turn(oggOpus(opusSpeech(2), { granule: () => 48000 * 3600 }))).status, 413);
+  // Files Flash can't measure: an Ogg header over noise, MP4, MP3.
+  for (const [body, type] of [
+    [Buffer.concat([Buffer.from("OggS"), Buffer.alloc(5000, 7)]), "audio/ogg"],
+    [Buffer.from("\0\0\0\x20ftypM4A \0\0\0\0"), "audio/mp4"],
+    [Buffer.from("ID3\x04\0\0\0\0\0\0"), "audio/mpeg"],
+  ] as const) {
+    const r = await turn(body, type);
+    assert.equal(r.status, 415, type);
+    assert.match(((await r.json()) as { error: string }).error, /Chrome, Edge or Safari/);
+  }
+  assert.equal(await balance(), before, "nothing charged");
+  assert.equal(heard.length, sent, "nothing sent to be transcribed");
+  // The longest turn the panel records, and a WAV, cost what any other turn does.
+  assert.deepEqual(await (await turn(rec("words", 45))).json(), { text: "What's on my calendar today?", credits: 3 });
+  assert.equal((await turn(wav({ data: Buffer.alloc(32_000) }), "audio/wav")).status, 200);
+  assert.equal(await balance(), before - 6);
+});
+
 test("hearing refuses non-audio, huge files and empty wallets", async () => {
-  assert.equal((await turn(Buffer.from("hello"), "text/plain")).status, 415);
-  assert.equal((await turn(Buffer.from("hello"), "audio/webm;codecs=opus")).status, 200, "codec details are fine");
+  assert.equal((await turn(rec(), "text/plain")).status, 415);
+  assert.equal((await turn(rec(), "audio/webm;codecs=opus")).status, 200, "codec details are fine");
   assert.equal((await turn(Buffer.alloc(1_000_001))).status, 413);
   assert.deepEqual(await (await turn(Buffer.alloc(0))).json(), { text: "" });
   // Spent everything (the month's free credits were already given, so none come back).
   await run("UPDATE credit_ledger SET amount = 0 WHERE user_id = 'v1'");
-  const broke = await turn(Buffer.from("hello"));
+  const broke = await turn(rec());
   assert.equal(broke.status, 402);
   assert.match(((await broke.json()) as { error: string }).error, /Chrome, Edge or Safari/);
 });
 
 test("out of credits, a confirmed user is heard for free, without what Whisper makes up over silence", async () => {
   await run("INSERT INTO users (id, email, password_hash, created_at, verified_at) VALUES ('v2', 'v2@x.io', '', 0, 1)");
-  await hearTurn("v2", "audio/ogg", Buffer.from("hello"), { verified: true });
+  await hearTurn("v2", "audio/ogg", rec(), { verified: true });
   await run("UPDATE credit_ledger SET amount = 0 WHERE user_id = 'v2'");
-  const free = await hearTurn("v2", "audio/ogg", Buffer.from("hello"), { verified: true });
+  const quota = async () => ({ ...(await one<{ requests: number; tokens: number }>("SELECT requests, tokens FROM free_quota WHERE provider = 'groq-audio'")) });
+  const used = async () => Number((await one<{ n: number }>("SELECT used AS n FROM free_user_quota WHERE user_id = 'v2' AND kind = 'voice'"))?.n ?? 0);
+  const free = await hearTurn("v2", "audio/ogg", rec(), { verified: true });
   assert.equal(free.status, 200);
   assert.deepEqual(free.body, { text: "Hello there", credits: 0, free: true });
+  // Groq counted the turn as 10 seconds, at least what it counts for any file.
+  assert.deepEqual(await quota(), { requests: 1, tokens: 10 });
   // Not confirmed: no free turns.
-  assert.equal((await hearTurn("v2", "audio/ogg", Buffer.from("hello"))).status, 402);
-  // A recording longer than the voice panel makes isn't heard for free, so nobody can spend the
-  // free audio every user shares in one go.
-  const seconds = async () => Number((await one<{ s: number }>("SELECT tokens AS s FROM free_quota WHERE provider = 'groq-audio'"))?.s ?? 0);
-  const before = await seconds();
-  assert.equal((await hearTurn("v2", "audio/ogg", Buffer.alloc(200_000, 1), { verified: true })).status, 402);
-  assert.equal(await seconds(), before);
+  assert.equal((await hearTurn("v2", "audio/ogg", rec())).status, 402);
+  // A recording longer than the voice panel makes isn't heard at all, so nobody can spend the free
+  // audio every user shares in one go.
+  assert.equal((await hearTurn("v2", "audio/ogg", rec("words", 51), { verified: true })).status, 413);
+  assert.deepEqual(await quota(), { requests: 1, tokens: 10 });
+  // Groq refused the file: the shared allowance gets its request and seconds back, but the user's
+  // free turn stays used, so bad files can't be sent over and over.
+  const turns = await used();
+  assert.equal((await hearTurn("v2", "audio/ogg", rec("refused", 30), { verified: true })).status, 502);
+  assert.deepEqual(await quota(), { requests: 1, tokens: 10 });
+  assert.equal(await used(), turns + 1);
+  // Groq itself failed: the user gets the turn back too.
+  assert.equal((await hearTurn("v2", "audio/ogg", rec("down", 30), { verified: true })).status, 502);
+  assert.deepEqual(await quota(), { requests: 1, tokens: 10 });
+  assert.equal(await used(), turns + 1);
 });
 
 test("with a fal stand-in and no synchronous endpoint set, a turn goes through the stand-in's queue, not to fal.run", async () => {
@@ -345,7 +391,7 @@ test("with a fal stand-in and no synchronous endpoint set, a turn goes through t
   try {
     await run("INSERT INTO users (id, email, password_hash, created_at, verified_at) VALUES ('v3', 'v3@x.io', '', 0, 0)");
     asked.length = 0;
-    const r = await hearTurn("v3", "audio/ogg", Buffer.from("hello"));
+    const r = await hearTurn("v3", "audio/ogg", rec());
     assert.deepEqual(r.body, { text: "What's on my calendar today?", credits: 3 });
     assert.ok(asked.length && asked.every((url) => !url.startsWith("/sync/")), asked.join(" "));
   } finally {

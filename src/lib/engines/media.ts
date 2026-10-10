@@ -127,15 +127,27 @@ export async function composeMusic(prompt: string, seconds = 30): Promise<Media>
 /** What a transcript says when a file has no speech in it. Compared as it is, so it's translated where it's shown. */
 export const NO_SPEECH = msg("(No speech found in this file.)");
 
+// A spoken turn gives up waiting on fal's queue in time to answer before the browser's own 30-second
+// wait ends: a job still in line by then is cancelled, so it costs nothing.
+const TURN_WAIT_MS = 22_000;
+
 /**
  * Transcribes an audio or video file with ElevenLabs Scribe. A spoken turn (turn: true) is waited
- * on, so it skips fal's queue, and only words are written down: no "(laughs)" or "(music)".
+ * on, so it skips fal's queue, and only words are written down: no "(laughs)" or "(music)". signal
+ * stops a turn still in fal's queue once nobody is waiting for it.
  */
-export async function transcribe(file: { name: string; mediaType: string; data: string }, { turn = false } = {}): Promise<string> {
+export async function transcribe(
+  file: { name: string; mediaType: string; data: string },
+  { turn = false, signal }: { turn?: boolean; signal?: AbortSignal } = {},
+): Promise<string> {
   if (!elevenConfigured()) {
     // Files are at most 3 MB, small enough to send inline as a data URI.
     const input = { audio_url: `data:${file.mediaType};base64,${file.data}`, ...(turn && { tag_audio_events: false, diarize: false }) };
-    const result = turn && falSyncConfigured() ? await falRunNow(FAL_TRANSCRIBE, input) : (await falRun(FAL_TRANSCRIBE, input)).result;
+    const result =
+      turn && falSyncConfigured()
+        ? await falRunNow(FAL_TRANSCRIBE, input)
+        : // A transcript is a few words, so a turn keeps only a few seconds for fetching it.
+          (await falRun(FAL_TRANSCRIBE, input, undefined, turn ? TURN_WAIT_MS : undefined, turn ? { reserveMs: 4000, signal } : {})).result;
     const text = (result as { text?: string } | null)?.text?.trim();
     return text || NO_SPEECH;
   }

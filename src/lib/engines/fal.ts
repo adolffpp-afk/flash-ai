@@ -36,29 +36,33 @@ export type OnFalProgress = (message: string, progress: FalProgress) => void;
 /**
  * Runs a fal model through its queue and returns its JSON result, all within timeoutMs so the
  * request always ends in time to settle credits.
- * onProgress receives short updates ("In line…", "Working…") while it waits.
+ * onProgress receives short updates ("In line…", "Working…") while it waits. reserveMs is kept at the
+ * end for fetching the result (a file to download needs the default 30 seconds; a transcript, a few).
+ * signal stops waiting early, when nobody is waiting for the result any more.
  */
 export async function falRun(
   endpoint: string,
   input: Record<string, unknown>,
   onProgress: OnFalProgress = () => {},
   timeoutMs = MEDIA_WAIT_MS,
+  { reserveMs = 30_000, signal }: { reserveMs?: number; signal?: AbortSignal } = {},
 ): Promise<{ result: unknown; end: number }> {
   const end = Date.now() + timeoutMs;
   const submit = await fetch(`${FAL_QUEUE}/${endpoint}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...headers() },
     body: JSON.stringify(input),
+    // Not stopped by signal: a job fal took is cancelled in the loop below, which a cut-off submit can't do.
     signal: AbortSignal.timeout(30_000),
   });
   if (!submit.ok) throw await failure(submit);
   const job = (await submit.json()) as { status_url: string; response_url: string; cancel_url?: string };
 
   // Leaves time to fetch and download the result.
-  const deadline = end - 30_000;
+  const deadline = end - reserveMs;
   let queued = true;
   for (;;) {
-    if (Date.now() > deadline) {
+    if (Date.now() > deadline || signal?.aborted) {
       // A job still in line can be cancelled; one already running will be billed anyway.
       if (queued && job.cancel_url) await fetch(job.cancel_url, { method: "PUT", headers: headers() }).catch(() => {});
       throw new JobAbandoned(msg("This is taking too long, so Flash stopped waiting. Please try again."), !queued);

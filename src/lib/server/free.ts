@@ -7,6 +7,7 @@ import {
   FREE_DAILY_VOICE_TURNS,
   GROQ_AUDIO_DAILY_REQUESTS,
   GROQ_AUDIO_DAILY_SECONDS,
+  FreeRefused,
   type FreeLane,
   type FreeProvider,
 } from "../engines/free.ts";
@@ -56,27 +57,51 @@ export async function reserveFreeImage(): Promise<boolean> {
   return r.rowsAffected === 1;
 }
 
-// Room kept for one recording when taking a free transcript: 3 MB is at most about 10 minutes of speech.
-const AUDIO_SECONDS_RESERVE = 600;
+// Seconds held for a recording Flash can't measure (see audio-length.ts): 3 MB is about 10 minutes of speech.
+export const AUDIO_SECONDS_RESERVE = 600;
 
 /**
- * Takes one transcript from Groq's free Whisper allowance, or returns false when today's is used up.
- * reserve is the most audio it can hold in seconds (a spoken turn: 30).
+ * Takes one transcript and reserve seconds of audio from Groq's free Whisper allowance, or returns
+ * false when today's is used up. Both are taken in one statement, so requests sent at the same
+ * time can't all fit in the room left for one. recordFreeAudio settles the seconds Groq counted.
  */
 export async function reserveFreeAudio(reserve = AUDIO_SECONDS_RESERVE): Promise<boolean> {
   const d = day();
+  const seconds = Math.ceil(reserve);
   await run("INSERT OR IGNORE INTO free_quota (day, provider) VALUES (?, 'groq-audio')", [d]);
   // For Whisper, "tokens" counts seconds of audio.
   const r = await run(
-    `UPDATE free_quota SET requests = requests + 1
+    `UPDATE free_quota SET requests = requests + 1, tokens = tokens + ?
      WHERE day = ? AND provider = 'groq-audio' AND requests < ? AND tokens + ? <= ?`,
-    [d, GROQ_AUDIO_DAILY_REQUESTS, reserve, GROQ_AUDIO_DAILY_SECONDS],
+    [seconds, d, GROQ_AUDIO_DAILY_REQUESTS, seconds, GROQ_AUDIO_DAILY_SECONDS],
   );
   return r.rowsAffected === 1;
 }
 
-export async function recordFreeAudio(seconds: number): Promise<void> {
-  await run("UPDATE free_quota SET tokens = tokens + ? WHERE day = ? AND provider = 'groq-audio'", [Math.ceil(seconds), day()]);
+/** Replaces the seconds reserved for a free transcript with the seconds Groq counted. */
+export async function recordFreeAudio(seconds: number, reserved = 0): Promise<void> {
+  await run("UPDATE free_quota SET tokens = MAX(0, tokens + ?) WHERE day = ? AND provider = 'groq-audio'", [
+    Math.ceil(seconds) - Math.ceil(reserved),
+    day(),
+  ]);
+}
+
+/**
+ * After a free transcript failed. When Groq answered with an error it never transcribed the file,
+ * so the request and seconds it held go back to the allowance every user shares; when it may have
+ * (it timed out, or the connection broke), they stay used. The user's own free turn goes back only
+ * when Groq itself failed (a 5xx or a 429), not when it refused the file, so nobody can send bad
+ * files over and over for free.
+ */
+export async function freeAudioFailed(userId: string, kind: FreeLane, reserved: number, err: unknown): Promise<void> {
+  const status = err instanceof FreeRefused ? err.status : 0;
+  if (status) {
+    await run("UPDATE free_quota SET requests = MAX(0, requests - 1), tokens = MAX(0, tokens - ?) WHERE day = ? AND provider = 'groq-audio'", [
+      Math.ceil(reserved),
+      day(),
+    ]);
+  }
+  if (status >= 500 || status === 429) await releaseFreeUser(userId, kind);
 }
 
 const USER_LIMITS: Record<FreeLane, number> = {
