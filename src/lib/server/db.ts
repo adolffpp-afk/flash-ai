@@ -424,6 +424,16 @@ const SCHEMA = [
     logo_link TEXT NOT NULL DEFAULT '',
     updated_at INTEGER NOT NULL
   )`,
+  // Stop pressed on a chat reply, by the reply's id. The request answering it may be running on
+  // another server instance, so it looks here every second or two (see stops.ts).
+  `CREATE TABLE IF NOT EXISTS chat_stops (
+    user_id TEXT NOT NULL,
+    reply_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (user_id, reply_id)
+  )`,
+  // Old Stops are cleared by time on every Stop (see stops.ts).
+  `CREATE INDEX IF NOT EXISTS chat_stops_time ON chat_stops(created_at)`,
 ];
 
 let client: Client | null = null;
@@ -471,6 +481,9 @@ const MIGRATIONS = [
   "ALTER TABLE site_owner_codes ADD COLUMN host TEXT NOT NULL DEFAULT ''",
   // When a held charge was settled to what the request really cost, or 0 while it runs.
   "ALTER TABLE credit_ledger ADD COLUMN settled_at INTEGER NOT NULL DEFAULT 0",
+  // Counts every write of a project's messages, so the server saving a reply never overwrites
+  // a change saved since it read them (see turns.ts).
+  "ALTER TABLE projects ADD COLUMN version INTEGER NOT NULL DEFAULT 0",
   // 1 for a row that only carries what another provider cost in the same request (a helper),
   // so request counts skip it. Its credits are 0; the request's main row (0) has them.
   "ALTER TABLE usage ADD COLUMN part INTEGER NOT NULL DEFAULT 0",
