@@ -1198,10 +1198,10 @@ function DataView({
   const other = data.fallback ?? data.guess;
   const otherSource: RuleSource = data.fallback ? "you" : data.block ? "block" : "guess";
   const link = "text-primary-soft hover:underline";
-  // Where a rule comes from, or that it's read-only because Flash couldn't use that part of the app's block.
+  // Where a rule comes from, or that Flash set it because it couldn't use that part of the app's block.
   const sourceText = (name: string, source: RuleSource) =>
     (source === "app" || source === "block") && data.bad && (data.bad.why !== "entries" || data.bad.names.includes(name))
-      ? t("Read-only for visitors until your app's flash-data block is fixed")
+      ? t("Set by Flash until your app's flash-data block is fixed")
       : t(SOURCE_TEXT[source]);
   return (
     <div className="space-y-4">

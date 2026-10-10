@@ -20,6 +20,7 @@ import {
   computeRules,
   effectiveRule,
   isDataRule,
+  keepPrivate,
   looksPersonal,
   parseComputed,
   refusal,
@@ -75,16 +76,18 @@ const hasShared = async (slug: string) => Boolean(await one("SELECT 1 FROM site_
 const asBefore = (computed: ComputedRules): ComputedRules => ({ ...computed, guess: "open", fromRecords: true });
 
 /**
- * The rules to save with a new page for an app (slug null for a new app), as sites.data_rules. An
- * app that was kept open because code Flash can't see uses its records (or would have been, made
- * before rules and not used since) stays open while the new page still has neither a flash-data
- * block nor flashDB code of its own.
+ * The rules to save with a new page for an app (slug null for a new app), as sites.data_rules. When
+ * Flash can't use (all of) the new page's flash-data block, what only the owner could see stays
+ * private (see keepPrivate). An app that was kept open because code Flash can't see uses its
+ * records (or would have been, made before rules and not used since) stays open while the new page
+ * still has neither a flash-data block nor flashDB code of its own.
  */
 export async function rulesForPage(slug: string | null, html: string): Promise<string> {
   const computed = computeRules(html);
-  if (slug && unseenCode(html, computed)) {
+  if (slug && (computed.bad || unseenCode(html, computed))) {
     const saved = await one<{ data_rules: string }>("SELECT data_rules FROM sites WHERE slug = ?", [slug]);
     const before = parseComputed(saved?.data_rules);
+    if (computed.bad) return JSON.stringify(keepPrivate(computed, before));
     if (before ? before.fromRecords : saved && (await hasShared(slug))) return JSON.stringify(asBefore(computed));
   }
   return JSON.stringify(computed);

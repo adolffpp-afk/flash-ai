@@ -92,22 +92,25 @@ export type PublishResult = { slug: string; url: string; data?: DataSummary } | 
 
 /**
  * The published site, with who may change its data (see data-rules.ts). before is who could change
- * it before this update. Collections only the owner could see, and visitors can see now because
- * the new page doesn't name them as private, are listed as exposed; collections visitors could add
- * to or change, and now can only read because the new page's flash-data block doesn't name them,
- * as closed. The publish has happened even if that can't be read.
+ * it before this update. Collections only the owner could see, and visitors can see now, are listed
+ * as exposed, whatever made them visible: the new page's block naming them with another rule, its
+ * "*" or Flash's guess, or the owner's default for anything else. Only the owner's own choice for
+ * a collection in Flash isn't, as they chose it. Collections visitors could add to or change, and
+ * now can only read because the new page's flash-data block doesn't name them, are listed as
+ * closed. The publish has happened even if that can't be read.
  */
 async function published(slug: string, before: DataSummary | null = null): Promise<PublishResult> {
   const data = await dataSummary(slug).catch(() => null);
   if (data && before) {
     const ruleBefore = (name: string) => before.collections.find((c) => c.name === name)?.rule ?? before.other;
-    // Only what the page decides counts: a rule the owner chose in Flash stays what they chose.
     const wasPrivate = (name: string) => before.collections.some((c) => c.name === name && c.rule === "private");
-    const exposed = data.collections.filter((c) => (c.source === "block" || c.source === "guess") && c.rule !== "private" && wasPrivate(c.name));
+    const exposed = data.collections.filter((c) => c.source !== "you" && c.rule !== "private" && wasPrivate(c.name));
     if (exposed.length) data.exposed = exposed.map((c) => c.name);
-    const closed = data.collections
-      .filter((c) => c.source === "block" && c.rule === "read" && ruleBefore(c.name) !== "read" && !wasPrivate(c.name))
-      .map((c) => c.name);
+    // When the block can't be read at all, what that means for visitors is said already (see blockProblem).
+    const unreadable = data.bad && data.bad.why !== "entries";
+    const closed = unreadable
+      ? []
+      : data.collections.filter((c) => c.source === "block" && c.rule === "read" && ruleBefore(c.name) !== "read" && !wasPrivate(c.name)).map((c) => c.name);
     if (closed.length) data.closed = closed;
   }
   return { slug, url: `/p/${slug}`, ...(data && { data }) };

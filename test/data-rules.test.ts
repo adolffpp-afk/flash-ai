@@ -5,7 +5,6 @@ import {
   OWNER,
   OWNER_IN_APP,
   DATA_RULES,
-  MAX_DECLARED,
   anyOpen,
   blockProblem,
   can,
@@ -15,6 +14,7 @@ import {
   declaredRules,
   effectiveRule,
   guessRule,
+  keepPrivate,
   looksPersonal,
   parseComputed,
   refusal,
@@ -129,9 +129,15 @@ test("the app's flash-data block is read, and anything Flash can't use in it is 
   assert.deepEqual(computeRules(block(`{"*":"write"}`)).bad, { why: "entries", names: ["*"] });
   assert.equal(computeRules(block(`{"*":"write"}`)).guess, "read", "a bad default is read-only");
 
-  const many = Object.fromEntries(Array.from({ length: 60 }, (_, i) => [`c${i}`, "add"]));
-  assert.equal(Object.keys(declaredRules(block(JSON.stringify(many)))).length, MAX_DECLARED, "at most 50 entries");
-  assert.equal(computeRules(block(JSON.stringify(many))).bad?.names.length, 10);
+  // However many collections a block names, each gets its own rule: past 50, a private one is still
+  // private, and "*" doesn't reach it.
+  const many = computeRules(block(JSON.stringify({ ...Object.fromEntries(Array.from({ length: 60 }, (_, i) => [`c${i}`, "read"])), signups: "private", "*": "open" })));
+  assert.deepEqual([Object.keys(many.app).length, many.app.signups, many.guess, many.bad], [61, "private", "open", undefined]);
+  assert.equal(can(effectiveRule(many, null, null, "signups").rule, "read", ANYONE), false);
+  // Every name Flash couldn't use is kept, and the owner is shown the first ten.
+  const wrongs = computeRules(block(JSON.stringify(Object.fromEntries(Array.from({ length: 12 }, (_, i) => [`c${i}`, "write"])))));
+  assert.equal(wrongs.bad?.names.length, 12);
+  assert.match(blockProblem(wrongs.bad), /\(c0, c1, c2, c3, c4, c5, c6, c7, c8, c9, …\)/);
   assert.deepEqual(declaredRules(block(`{"a":"read"}`) + block(`{"a":"open","b":"open"}`)), { a: "read" }, "the first block wins");
   assert.deepEqual(declaredRules(`<script data-id="flash-data">{"a":"open"}</script>`), {}, "only the id itself counts");
 
@@ -157,6 +163,86 @@ test("the app's flash-data block is read, and anything Flash can't use in it is 
   assert.ok(Date.now() - started < 1000, "many blocks of the app's own data");
   // A collection called __proto__ is just a name.
   assert.equal(Object.getPrototypeOf(declaredRules(block(`{"__proto__":"open"}`))), Object.prototype);
+});
+
+test("a block written another way never lets visitors see what it marks as private, and the owner is told", () => {
+  // Without a block, this code would let visitors add sign-ups, and so read them.
+  const code = `<script>if (flashDB.isOwner) flashDB.remove("menu", id); flashDB.add("signups", s); flashDB.update("tasks", id, {})</script>`;
+  assert.equal(computeRules(code).guess, "add");
+  const visitorsSee = (computed: ReturnType<typeof computeRules>) => can(effectiveRule(computed, null, null, "signups").rule, "read", ANYONE);
+  const visitorsAdd = (computed: ReturnType<typeof computeRules>) => can(effectiveRule(computed, null, null, "signups").rule, "add", ANYONE);
+
+  // A block of any type but code's is read as rules, and rule words count in any case, with spaces around them.
+  for (const type of ["text/json", "application/ld+json", "application/x-json", "text/plain", "", "application/json; charset=utf-8"]) {
+    const computed = computeRules(block(`{"signups":"private","menu":"read"}`, `type="${type}" id="flash-data"`) + code);
+    assert.deepEqual([computed.app, computed.guess, computed.bad], [{ signups: "private", menu: "read" }, "read", undefined], type);
+  }
+  assert.deepEqual(computeRules(block(`{"signups":" Private","menu":"READ","*":"Add "}`)), {
+    v: 1,
+    guess: "add",
+    app: { signups: "private", menu: "read" },
+    block: true,
+  });
+  // Only real code that happens to use the id is skipped.
+  for (const attrs of ['type="text/javascript" id="flash-data"', 'type="module" id="flash-data"', 'type="text/babel" id="flash-data"', 'id="flash-data" src="/rules.js"']) {
+    assert.equal(computeRules(block(`{"signups":"private"}`, attrs) + code).block, undefined, attrs);
+  }
+
+  // Shapes Flash can't use leave what they name, and everything else, read-only for visitors, so no
+  // sign-up can be added for them to see, and the owner is told.
+  for (const json of [
+    `{"signups":{"rule":"private"}}`,
+    `{"collections":{"menu":"read","signups":"private"}}`,
+    `{"signups":["private"]}`,
+    `{"signups":null,"menu":1}`,
+    `{"rules":[{"collection":"signups","rule":"private"}]}`,
+    `{"private":["signups"],"read":["menu"]}`,
+    `{"items":[{"status":"open"}]}`,
+    `[{"collection":"signups","rule":"private"}]`,
+    `["private"]`,
+    `{'signups':'private','menu':'read'}`,
+    `{signups: "private"}`,
+    `{"signups": "private" "menu": "read"}`,
+  ]) {
+    const computed = computeRules(block(json) + code);
+    assert.equal(computed.block, true, json);
+    assert.ok(computed.bad, json);
+    assert.equal(computed.guess, "read", json);
+    assert.equal(visitorsAdd(computed), false, json);
+    assert.equal(effectiveRule(computed, null, null, "tasks").rule, "read", json);
+    assert.notEqual(blockProblem(computed.bad), "", json);
+  }
+  assert.deepEqual(computeRules(block(`{"signups":{"rule":"private"},"menu":"read"}`)).bad, { why: "entries", names: ["signups"] });
+  assert.deepEqual(computeRules(block(`[{"collection":"signups","rule":"private"}]`)).bad, { why: "shape", names: [] });
+  // Records with no rule word in them are still the app's own data.
+  assert.equal(computeRules(block(`{"cards":[{"q":"2+2"},{"q":"3+3"}],"count":2}`) + code).guess, "add");
+  assert.equal(visitorsSee(computeRules(block(`{"signups":"private"}`) + code)), false);
+});
+
+test("an update whose block Flash can't use keeps private what only the owner could see", () => {
+  const before = computeRules(block(`{"signups":"private","menu":"read","reviews":"add"}`));
+  // Nothing at all could be read: what was private stays so, the rest is read-only for visitors.
+  const broken = keepPrivate(computeRules(block(`{signups: "private", menu: "read"}`)), before);
+  assert.deepEqual([broken.app, broken.guess, broken.bad?.why], [{ signups: "private" }, "read", "json"]);
+  // Part of it couldn't be used: only that part keeps what it was, and what the block says plainly stands.
+  const part = keepPrivate(computeRules(block(`{"signups":{"rule":"private"},"menu":"add","reviews":"read"}`)), before);
+  assert.deepEqual([part.app, part.bad], [{ signups: "private", menu: "add", reviews: "read" }, { why: "entries", names: ["signups"] }]);
+  // A collection the block may name in the part Flash couldn't use stays private too, and the owner is told.
+  const nested = keepPrivate(computeRules(block(`{"collections":{"signups":"private","menu":"read"}}`)), before);
+  assert.deepEqual([nested.app, nested.guess, nested.bad], [{ collections: "read", signups: "private" }, "read", { why: "entries", names: ["collections", "signups"] }]);
+  const opened = keepPrivate(computeRules(block(`{"signups":"read","x y":"add"}`)), before);
+  assert.equal(opened.app.signups, "read", "a rule the block names plainly is the app's choice");
+  assert.deepEqual(opened.bad, { why: "entries", names: ["x y"] });
+  // A "*" that kept everything else private keeps doing so; what visitors saw by name they still see.
+  const starred = computeRules(block(`{"*":"private","menu":"read"}`));
+  const lost = keepPrivate(computeRules(block(`{"*":"private" "menu":"read"}`)), starred);
+  assert.deepEqual([lost.guess, lost.app], ["private", { menu: "read" }]);
+  const typo = keepPrivate(computeRules(block(`{"*":"Privat","menu":"read"}`)), starred);
+  assert.deepEqual([typo.guess, typo.app, typo.bad], ["private", { menu: "read" }, { why: "entries", names: ["*"] }]);
+  // Never more open, and nothing changes on a first publish or for a block Flash could use.
+  assert.deepEqual(keepPrivate(computeRules(block(`{oops`)), null), computeRules(block(`{oops`)));
+  const fine = computeRules(block(`{"menu":"read"}`));
+  assert.equal(keepPrivate(fine, before), fine);
 });
 
 test("the owner's choice beats the app's, which beats the owner's default, which beats the guess", () => {
@@ -189,22 +275,22 @@ test("the owner's choice beats the app's, which beats the owner's default, which
 
   assert.equal(
     dataLine({ collections: [{ name: "menu", rule: "read", source: "app" }, { name: "reviews", rule: "add", source: "app" }], other: "read" }),
-    "Who can change this app's data: menu — only you · reviews — visitors can add · anything else — only you. Change it in My websites & apps › Data.",
+    "Who can change this app's data: menu — visitors can see it, only you change it · reviews — visitors can add · anything else — visitors can see it, only you change it. Change it in My websites & apps › Data.",
   );
   assert.equal(dataLine({ collections: [], other: "read" }), "", "nothing to say for a plain website");
   assert.match(dataLine({ collections: [], other: "open" }), /anything else — anyone can change anything/);
   // What Flash couldn't use, and what an update closed, come first, even for an app with nothing else to say.
   assert.equal(
     dataLine({ collections: [], other: "read", bad: { why: "json", names: [] } }),
-    "Flash couldn't read this app's flash-data block because it isn't valid JSON, so visitors can only read its data until it's fixed.",
+    "Flash couldn't read this app's flash-data block because it isn't valid JSON. Until it's fixed, visitors can see this app's data, even collections the block marks as private, but can't add to it or change it. Collections only you could see before stay private.",
   );
   assert.equal(
     blockProblem({ why: "entries", names: ["tips", "n"] }),
-    "Flash couldn't use part of this app's flash-data block (tips, n), so those collections are read-only for visitors until it's fixed.",
+    "Flash couldn't use part of this app's flash-data block (tips, n). Until it's fixed, visitors can see those collections, even ones it marks as private, but can't add to them or change them. Those only you could see before stay private.",
   );
   assert.equal(
     dataLine({ collections: [{ name: "todos", rule: "read", source: "block" }], other: "read", closed: ["todos"] }),
-    "Visitors can no longer add to or change todos, because your app's flash-data block doesn't name it. Who can change this app's data: todos — only you · anything else — only you. Change it in My websites & apps › Data.",
+    "Visitors can no longer add to or change todos, because your app's flash-data block doesn't name it. Who can change this app's data: todos — visitors can see it, only you change it · anything else — visitors can see it, only you change it. Change it in My websites & apps › Data.",
   );
   assert.match(dataLine({ collections: [], other: "read", closed: ["a", "b"] }), /^Visitors can no longer add to or change a, b, because your app's flash-data block doesn't name them\.$/);
   assert.equal(

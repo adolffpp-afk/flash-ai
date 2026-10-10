@@ -643,6 +643,97 @@ test("an update that no longer names a private collection tells the owner visito
   assert.equal(fourth.data.exposed, undefined);
 });
 
+test("an update that lets visitors see a private collection says so, whatever in the page did it", async () => {
+  const code = `<script>flashDB.add("signups", s); flashDB.list("menu")</script>`;
+  const v1 = flashData({ signups: "private", menu: "read" }) + code;
+  const slug = await publish(v1, "Sign-ups");
+  await addRecord(slug, "signups", { email: "a@b.c", phone: "555" }, "", ANYONE);
+  const update = async (html: string) => {
+    await run("DELETE FROM rate_limits");
+    const result = await publishSite(owner, { html, title: "Sign-ups", slug });
+    assert.ok("data" in result && result.data);
+    return result.data;
+  };
+  // The block names it with another rule.
+  for (const rule of ["add", "read", "open"]) {
+    const data = await update(flashData({ signups: rule, menu: "read" }) + code);
+    assert.deepEqual(data.exposed, ["signups"], rule);
+    assert.equal((await listRecords(slug, "signups", "", "", ANYONE)).status, 200);
+    await update(v1);
+  }
+  // The read-only line doesn't read as private.
+  const read = await update(flashData({ signups: "read" }) + code);
+  assert.match(dataLine(read), /^Visitors can now see signups, which only you could see before\. .*signups — visitors can see it, only you change it/);
+  await update(v1);
+  // The owner's default for anything else is "add", and the block no longer names it.
+  assert.equal(await chooseRule(slug, "*", "add"), true);
+  assert.deepEqual((await update(flashData({ menu: "read" }) + code)).exposed, ["signups"]);
+  await update(v1);
+  // The owner's default is "Only you can see it", and the block now names it as read-only.
+  assert.equal(await chooseRule(slug, "*", "private"), true);
+  await update(flashData({ menu: "read" }) + code);
+  assert.deepEqual((await update(flashData({ menu: "read", signups: "read" }) + code)).exposed, ["signups"]);
+  assert.equal(await chooseRule(slug, "*", null), true);
+  // The block's own "*" kept it private, and the block now names it.
+  await update(flashData({ "*": "private", menu: "read" }) + code);
+  assert.equal((await listRecords(slug, "signups", "", "", ANYONE)).status, 403);
+  assert.deepEqual((await update(flashData({ "*": "private", menu: "read", signups: "add" }) + code)).exposed, ["signups"]);
+  // Only the owner's own choice for the collection in Flash goes unsaid.
+  await update(v1);
+  assert.equal(await chooseRule(slug, "signups", "add"), true);
+  assert.equal((await update(flashData({ menu: "read" }) + code)).exposed, undefined);
+  // Each owner has room for 20 apps, and the tests publish more.
+  assert.equal(await unpublishSite("owner", slug), true);
+});
+
+test("an update whose block Flash can't use never shows visitors what only the owner could see", async () => {
+  const code = `<script>if (flashDB.isOwner) flashDB.remove("menu", id); flashDB.add("signups", s); flashDB.list("menu")</script>`;
+  const v1 = flashData({ signups: "private", menu: "read" }) + code;
+  const slug = await publish(v1, "Club");
+  await addRecord(slug, "signups", { email: "a@b.c", phone: "555" }, "", ANYONE);
+  const block = (text: string, type = "application/json") => `<script type="${type}" id="flash-data">${text}</script>`;
+  for (const [text, type] of [
+    [`{"signups":"Private","menu":"read"}`, "application/json"],
+    [`{"signups":"private","menu":"read"}`, "text/json"],
+    [`{signups: "private", menu: "read"}`, "application/json"],
+    [`{'signups':'private'}`, "application/json"],
+    [`{"signups":{"rule":"private"},"menu":"read"}`, "application/json"],
+    [`{"collections":{"signups":"private","menu":"read"}}`, "application/json"],
+    [`{"rules":[{"collection":"signups","rule":"private"}]}`, "application/json"],
+    [`{"menu":"read","pad":"${"x".repeat(4096)}"}`, "application/json"],
+  ]) {
+    await run("DELETE FROM rate_limits");
+    const result = await publishSite(owner, { html: block(text, type) + code, title: "Club", slug });
+    assert.ok("data" in result && result.data);
+    assert.equal((await listRecords(slug, "signups", "", "", ANYONE)).status, 403, text);
+    assert.equal((await collectionRule(slug, "signups"))?.rule, "private", text);
+    assert.equal(result.data.exposed, undefined, text);
+    // And the owner is told when Flash couldn't use the block, in words that say visitors can see its data.
+    if (result.data.bad) assert.match(dataLine(result.data), /visitors can see/, text);
+    // It stays so through another update Flash can't use either.
+    await publishSite(owner, { html: block(text, type) + code + "<p>again</p>", title: "Club", slug });
+    assert.equal((await listRecords(slug, "signups", "", "", ANYONE)).status, 403, `${text} again`);
+    await publishSite(owner, { html: v1, title: "Club", slug });
+  }
+  // On a first publish nothing could be kept private yet, and visitors can't add sign-ups to see.
+  const fresh = await publish(block(`{signups: "private"}`) + code, "New club");
+  assert.deepEqual(await addRecord(fresh, "signups", { email: "x@y.z" }, "", ANYONE), { status: 403, body: { error: "Only this app's owner can change this." } });
+  assert.equal(records(await listRecords(fresh, "signups", "", "", OWNER)).length, 0);
+  // A text/json block works from the start.
+  const typed = await publish(block(`{"signups":"private"}`, "text/json") + code, "Typed club");
+  assert.equal((await addRecord(typed, "signups", { email: "x@y.z" }, "", ANYONE)).status, 201);
+  assert.equal((await listRecords(typed, "signups", "", "", ANYONE)).status, 403);
+  // Restoring an earlier version Flash can't use keeps it private too.
+  let broken = "";
+  await publishSite(owner, { html: block(`{oops`) + code, title: "Club", slug });
+  await publishSite(owner, { html: v1, title: "Club", slug });
+  for (const v of await listVersions(slug)) if ((await versionHtml(slug, v.id)) === block(`{oops`) + code) broken = v.id;
+  assert.ok(broken);
+  assert.equal(await restoreVersion("owner", slug, broken), true);
+  assert.equal((await listRecords(slug, "signups", "", "", ANYONE)).status, 403);
+  for (const app of [slug, fresh, typed]) assert.equal(await unpublishSite("owner", app), true);
+});
+
 test("an app made before rules whose code Flash can't see keeps working while it has records", async () => {
   // Its code comes from a script elsewhere, so its page never says flashDB.
   const html = `<script src="https://cdn.jsdelivr.net/gh/me/guestbook@1/app.js"></script>`;

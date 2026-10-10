@@ -11,6 +11,11 @@ export const COLLECTION = /^[A-Za-z0-9_-]{1,40}$/;
 export const DATA_RULES = ["read", "add", "own", "private", "open"] as const;
 export type DataRule = (typeof DATA_RULES)[number];
 export const isDataRule = (v: unknown): v is DataRule => typeof v === "string" && (DATA_RULES as readonly string[]).includes(v);
+/** The rule a word in an app's block names, in any case and with spaces around it ("Private " is "private"), or null. */
+const ruleWord = (v: unknown): DataRule | null => {
+  const word = typeof v === "string" ? v.trim().toLowerCase() : "";
+  return isDataRule(word) ? word : null;
+};
 
 /**
  * Who is asking: anyone at all, someone signed in to the app, the app's owner in Flash (My websites
@@ -36,7 +41,8 @@ export type ComputedRules = {
   // The page has a flash-data block.
   block?: true;
   // What Flash couldn't use in the block, with the names it couldn't use: those are read-only for
-  // visitors, and so is everything when the block couldn't be read at all.
+  // visitors, and so is everything when the block couldn't be read at all, except what only the
+  // owner could see before (see keepPrivate).
   bad?: { why: BlockProblem; names: string[] };
   // The guess is "open" only because the app, made before rules, keeps records that code Flash
   // can't see wrote (a script from elsewhere), so it keeps working until its page names its rules.
@@ -154,24 +160,35 @@ function looseJson(text: string): unknown {
 
 type Block = { found: false } | { found: true; value: Record<string, unknown> } | { found: true; problem: Exclude<BlockProblem, "entries"> };
 
-/**
- * Whether a script tagged id="flash-data" holds something other than rules: code (a src, or a type
- * other than JSON), or the app's own data that happens to use the id, like a list of cards or
- * {"cards":[…]}. Rules are words, so an object with no word in it isn't rules; an empty one is.
- */
-const notRules = (attributes: string) => {
-  const type = attributes.match(/(?:^|\s)type\s*=\s*["']?([^\s"'>]*)/i)?.[1];
-  return /(?:^|\s)src\s*=/i.test(attributes) || (type !== undefined && type.split(";")[0].toLowerCase() !== "application/json");
+// Types a browser runs as code (or Babel does, in the page). A script with one of them, or with a src
+// and no type, is code that happens to use the id, not rules.
+const CODE_TYPE = /^(module|text\/(babel|jsx|typescript)|(text|application)\/(x-)?(java|ecma|j|live)script[\d.]*)$/;
+const isCode = (attributes: string) => {
+  const type = (attributes.match(/(?:^|\s)type\s*=\s*["']?([^\s"'>]*)/i)?.[1] ?? "").split(";")[0].toLowerCase();
+  return CODE_TYPE.test(type) || (type === "" && /(?:^|\s)src\s*=/i.test(attributes));
 };
+const isObject = (v: unknown): v is object => !!v && typeof v === "object";
+// Records, as an app keeps them: a list of objects, or an empty list.
+const isRecords = (v: unknown) => Array.isArray(v) && v.every((x) => isObject(x) && !Array.isArray(x));
+// Whether a rule word is in the first few levels of a value, as a key or a value: rules written another way.
+const hasRuleWord = (v: unknown, depth = 3): boolean =>
+  ruleWord(v) !== null || (depth > 0 && isObject(v) && Object.entries(v).some(([k, x]) => ruleWord(k) !== null || hasRuleWord(x, depth - 1)));
+/**
+ * Whether a block tagged id="flash-data" holds the app's own data rather than rules: records
+ * ([{…}]), or records by name ({"cards":[…],"count":1}), with no word in them that could be a rule.
+ * Anything else is read as rules, so a slip like {"signups":{"rule":"private"}} leaves collections
+ * read-only and tells the owner, rather than being skipped for a guess from the code.
+ */
 const appsOwnData = (value: unknown) =>
-  Array.isArray(value) || (!!value && typeof value === "object" && Object.keys(value).length > 0 && !Object.values(value).some((v) => typeof v === "string"));
+  !hasRuleWord(value) &&
+  (isRecords(value) || (isObject(value) && Object.values(value).some(isRecords) && !Object.values(value).some((v) => typeof v === "string")));
 
 /** The first <script id="flash-data"> block of rules: none, its object, or why it can't be used. */
 function dataBlock(html: string): Block {
   // Each tag is read only up to its first 300 characters, so a page of any shape is read quickly.
   const tags = /<script\b([^<>]{0,300})>/gi;
   for (let tag; (tag = tags.exec(html)); ) {
-    if (!/(?:^|\s)id\s*=\s*(["']?)flash-data\1(?:\s|\/|$)/i.test(tag[1]) || notRules(tag[1])) continue;
+    if (!/(?:^|\s)id\s*=\s*(["']?)flash-data\1(?:\s|\/|$)/i.test(tag[1]) || isCode(tag[1])) continue;
     const start = tag.index + tag[0].length;
     const close = /<\/script/gi;
     close.lastIndex = start;
@@ -194,7 +211,7 @@ function dataBlock(html: string): Block {
       tags.lastIndex = end;
       continue;
     }
-    return value && typeof value === "object" ? { found: true, value: value as Record<string, unknown> } : { found: true, problem: "shape" };
+    return isObject(value) && !Array.isArray(value) ? { found: true, value: value as Record<string, unknown> } : { found: true, problem: "shape" };
   }
   return { found: false };
 }
@@ -205,9 +222,8 @@ export function declaredRules(html: string): Record<string, DataRule> {
 }
 
 /** Only real collection names with real rules. fromEntries, so even a collection called __proto__ is just a name. */
-function validRules(value: object, max = Infinity): Record<string, DataRule> {
-  const entries = Object.entries(value).filter((e): e is [string, DataRule] => COLLECTION.test(e[0]) && isDataRule(e[1]));
-  return Object.fromEntries(entries.slice(0, max));
+function validRules(value: object): Record<string, DataRule> {
+  return Object.fromEntries(Object.entries(value).filter((e): e is [string, DataRule] => COLLECTION.test(e[0]) && isDataRule(e[1])));
 }
 
 /**
@@ -224,16 +240,19 @@ export function computeRules(html: string): ComputedRules {
   const app: [string, DataRule][] = [];
   const wrong: string[] = [];
   let guess: DataRule = "read";
-  for (const [name, rule] of Object.entries(block.value)) {
-    if (name === DEFAULT_KEY && isDataRule(rule)) guess = rule;
-    else if (!COLLECTION.test(name) || app.length >= MAX_DECLARED) wrong.push(name);
+  for (const [name, value] of Object.entries(block.value)) {
+    // "Private", or "private " with a space, is private: what the app meant is plain.
+    const rule = ruleWord(value);
+    if (name === DEFAULT_KEY && rule) guess = rule;
+    else if (!COLLECTION.test(name)) wrong.push(name);
     else {
       // A collection whose rule can't be read is read-only, so a "*" can't open it by mistake.
-      app.push([name, isDataRule(rule) ? rule : "read"]);
-      if (!isDataRule(rule)) wrong.push(name);
+      app.push([name, rule ?? "read"]);
+      if (!rule) wrong.push(name);
     }
   }
-  const bad = wrong.length ? { bad: { why: "entries" as const, names: wrong.slice(0, 10).map((n) => n.slice(0, 40)) } } : {};
+  // Every name is kept, so each one Flash couldn't use is known; the owner is shown the first few.
+  const bad = wrong.length ? { bad: { why: "entries" as const, names: wrong.map((n) => n.slice(0, 40)) } } : {};
   return { v: 1, guess, app: Object.fromEntries(app), block: true, ...bad, ...known };
 }
 
@@ -276,6 +295,34 @@ export function effectiveRule(
   return { rule: computed.guess, source: computed.block ? "block" : "guess" };
 }
 
+/**
+ * The rules for a new page whose block Flash couldn't use, or couldn't use all of, with each
+ * collection the page before it kept private still private unless the new block plainly names its
+ * rule. Flash can't tell what the rest of the block means for it (it may be in the part Flash
+ * couldn't use), and read-only would show visitors what only the owner could see. Nothing is made
+ * more open. The names Flash set this way join the ones it couldn't use, so the owner is told.
+ */
+export function keepPrivate(computed: ComputedRules, before: ComputedRules | null): ComputedRules {
+  const bad = computed.bad;
+  if (!bad || !before) return computed;
+  // Whether the new block names a collection with a rule Flash can use.
+  const named = (name: string) => Object.hasOwn(computed.app, name) && !bad.names.includes(name);
+  // Without a "*" Flash can use (one saying "read" can't be told from none), everything else stays private if it was.
+  const guess = before.guess === "private" && computed.guess === "read" ? "private" : computed.guess;
+  const app = { ...computed.app };
+  const set: string[] = guess === computed.guess ? [] : [DEFAULT_KEY];
+  for (const name of new Set([...Object.keys(before.app), ...bad.names])) {
+    if (!COLLECTION.test(name) || named(name)) continue;
+    if (effectiveRule(before, null, null, name).rule === "private") app[name] = "private";
+    // While everything else stays private, what visitors could see by name before they still see, read-only.
+    else if (guess === "private" && !Object.hasOwn(app, name)) app[name] = "read";
+    else continue;
+    set.push(name);
+  }
+  const names = bad.why === "entries" ? [...new Set([...bad.names, ...set])] : bad.names;
+  return { ...computed, app, guess, bad: { why: bad.why, names } };
+}
+
 /** Whether anyone at all could change or delete some of the app's data. chosen holds the owner's rules, "*" included. */
 export function anyOpen(computed: ComputedRules, chosen: Record<string, DataRule>): boolean {
   const names = new Set([...Object.keys(computed.app), ...Object.keys(chosen)].filter((n) => n !== DEFAULT_KEY));
@@ -305,7 +352,7 @@ export const RULE_TEXT: Record<DataRule, { label: string; help: string }> = {
 
 /** One-line summaries, for the line shown after publishing. */
 export const RULE_SHORT: Record<DataRule, string> = {
-  read: msg("only you"),
+  read: msg("visitors can see it, only you change it"),
   add: msg("visitors can add"),
   own: msg("signed-in people manage their own"),
   private: msg("only you can see it"),
@@ -315,8 +362,8 @@ export const RULE_SHORT: Record<DataRule, string> = {
 /**
  * What publishing reports about the app's data: each collection's rule, the rule for anything else,
  * what Flash couldn't use in the app's flash-data block, the collections only the owner could see
- * that visitors can see after this update because its page no longer names them as private
- * (exposed), and the ones it left read-only for visitors because the block doesn't name them (closed).
+ * that visitors can see after this update, unless the owner chose that in Flash (exposed), and the
+ * ones it left read-only for visitors because the block doesn't name them (closed).
  */
 export type DataSummary = {
   collections: { name: string; rule: DataRule; source: RuleSource }[];
@@ -327,25 +374,30 @@ export type DataSummary = {
 };
 
 const BAD_TEXT: Record<Exclude<BlockProblem, "entries">, string> = {
-  long: msg("Flash couldn't read this app's flash-data block because it's too long, so visitors can only read its data until it's fixed."),
-  unclosed: msg("Flash couldn't read this app's flash-data block because it has no </script>, so visitors can only read its data until it's fixed."),
-  json: msg("Flash couldn't read this app's flash-data block because it isn't valid JSON, so visitors can only read its data until it's fixed."),
-  shape: msg(
-    "Flash couldn't read this app's flash-data block because it isn't a list of collections and rules, so visitors can only read its data until it's fixed.",
-  ),
+  long: msg("Flash couldn't read this app's flash-data block because it's too long."),
+  unclosed: msg("Flash couldn't read this app's flash-data block because it has no </script>."),
+  json: msg("Flash couldn't read this app's flash-data block because it isn't valid JSON."),
+  shape: msg("Flash couldn't read this app's flash-data block because it isn't a list of collections and rules."),
 };
 
-/** What's wrong with the app's flash-data block, in words for the owner, or "". */
+/** What's wrong with the app's flash-data block, and what visitors can do with its data until it's fixed, in words for the owner, or "". */
 export function blockProblem(bad: DataSummary["bad"], t: Translate = english): string {
   if (!bad) return "";
-  if (bad.why !== "entries") return t(BAD_TEXT[bad.why]);
-  return t("Flash couldn't use part of this app's flash-data block ({names}), so those collections are read-only for visitors until it's fixed.", {
-    names: bad.names.join(", "),
-  });
+  if (bad.why !== "entries") {
+    return [
+      t(BAD_TEXT[bad.why]),
+      t("Until it's fixed, visitors can see this app's data, even collections the block marks as private, but can't add to it or change it."),
+      t("Collections only you could see before stay private."),
+    ].join(" ");
+  }
+  return t(
+    "Flash couldn't use part of this app's flash-data block ({names}). Until it's fixed, visitors can see those collections, even ones it marks as private, but can't add to them or change them. Those only you could see before stay private.",
+    { names: bad.names.slice(0, 10).join(", ") + (bad.names.length > 10 ? ", …" : "") },
+  );
 }
 
 /**
- * "Who can change this app's data: menu — only you · reviews — visitors can add · anything else — only you. …",
+ * "Who can change this app's data: menu — visitors can see it, only you change it · reviews — visitors can add · …",
  * after what's wrong with the app's block and what this update showed visitors or closed, if
  * anything. Empty for an app that keeps no shared data of its own, like a plain website. t words it
  * for the owner.
