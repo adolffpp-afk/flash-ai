@@ -129,6 +129,8 @@ test("the helpers run on Haiku 5.5 without thinking or a refusal fallback, and w
 test("each helper costs at most its known worst case, a small part of a cent", async () => {
   const checks: [number, () => Promise<unknown>][] = [
     [ROUTER_MAX_CENTS, () => classifyRequest(longest, meter)],
+    // Told about the app and the question Flash asked, the router reads less of the message.
+    [ROUTER_MAX_CENTS, () => classifyRequest(longest, meter, { about: "app", offer: `${longest}?` })],
     [PICTURE_CHECK_MAX_CENTS, () => pictureRequest(longest, true, meter)],
     [PICTURE_CHECK_MAX_CENTS, () => pictureRequest(longest, false, meter)],
     [PROMPT_WRITER_MAX_CENTS, () => improvePrompt("video", longest, meter, longest)],
@@ -146,6 +148,14 @@ test("each helper costs at most its known worst case, a small part of a cent", a
   assert.ok(PROMPT_WRITER_MAX_CENTS <= WRITER_ALLOWANCE_CENTS);
   // The scene writer and the router fit in the part of a movie's price set aside for writing and joining.
   assert.ok(SCENE_WRITER_MAX_CENTS + CHECK_ALLOWANCE_CENTS <= MOVIE_EXTRA_CENTS);
+});
+
+test("a spoken yes after an app goes to the router with the question Flash asked", async () => {
+  sent.length = 0;
+  await classifyRequest("Yes please.", undefined, { about: "app", offer: "Want me to add a dark mode?" });
+  await classifyRequest("Yes please.");
+  assert.ok(String(sent[0].body.system).includes('"Want me to add a dark mode?"'));
+  assert.ok(!String(sent[1].body.system).includes("Want me"));
 });
 
 test("a helper whose connection drops is paid for at its most, since Claude may have run it", async () => {

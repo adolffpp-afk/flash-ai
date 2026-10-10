@@ -1,7 +1,7 @@
 import { msg } from "../i18n.ts";
 import { FriendlyError, MEDIA_WAIT_MS, JobAbandoned } from "./errors.ts";
 import { MAX_SPEECH_CHARS } from "../credits.ts";
-import { falConfigured, falGenerate, falRun } from "./fal.ts";
+import { falConfigured, falGenerate, falRun, falRunNow, falSyncConfigured } from "./fal.ts";
 
 export const IMAGE_MODEL = process.env.FLASH_IMAGE_MODEL || "gpt-image-2.5-sunburst";
 export const VIDEO_MODEL = process.env.FLASH_VIDEO_MODEL || "sora-2-pro";
@@ -127,18 +127,43 @@ export async function composeMusic(prompt: string, seconds = 30): Promise<Media>
 /** What a transcript says when a file has no speech in it. Compared as it is, so it's translated where it's shown. */
 export const NO_SPEECH = msg("(No speech found in this file.)");
 
-/** Transcribes an audio or video file with ElevenLabs Scribe. */
-export async function transcribe(file: { name: string; mediaType: string; data: string }): Promise<string> {
+// A spoken turn gives up waiting on fal's queue in time to answer before the browser's own 30-second
+// wait ends: a job still in line by then is cancelled, so it costs nothing.
+const TURN_WAIT_MS = 22_000;
+
+/**
+ * Transcribes an audio or video file with ElevenLabs Scribe. A spoken turn (turn: true) is waited
+ * on, so it skips fal's queue, and only words are written down: no "(laughs)" or "(music)". signal
+ * stops a turn still in fal's queue once nobody is waiting for it.
+ */
+export async function transcribe(
+  file: { name: string; mediaType: string; data: string },
+  { turn = false, signal }: { turn?: boolean; signal?: AbortSignal } = {},
+): Promise<string> {
   if (!elevenConfigured()) {
     // Files are at most 3 MB, small enough to send inline as a data URI.
-    const { result } = await falRun(FAL_TRANSCRIBE, { audio_url: `data:${file.mediaType};base64,${file.data}` });
+    const input = { audio_url: `data:${file.mediaType};base64,${file.data}`, ...(turn && { tag_audio_events: false, diarize: false }) };
+    const result =
+      turn && falSyncConfigured()
+        ? await falRunNow(FAL_TRANSCRIBE, input)
+        : // A transcript is a few words, so a turn keeps only a few seconds for fetching it.
+          (await falRun(FAL_TRANSCRIBE, input, undefined, turn ? TURN_WAIT_MS : undefined, turn ? { reserveMs: 4000, signal } : {})).result;
     const text = (result as { text?: string } | null)?.text?.trim();
     return text || NO_SPEECH;
   }
   const form = new FormData();
   form.append("model_id", TRANSCRIBE_MODEL);
+  if (turn) form.append("tag_audio_events", "false");
   form.append("file", new Blob([Buffer.from(file.data, "base64")], { type: file.mediaType }), file.name);
-  const res = await fetch(`${ELEVEN}/speech-to-text`, { method: "POST", headers: elevenHeaders(), body: form });
+  // A spoken turn is waited on; a turn that timed out may have run, so it counts as billed.
+  const res = await fetch(`${ELEVEN}/speech-to-text`, { method: "POST", headers: elevenHeaders(), body: form, ...(turn && { signal: AbortSignal.timeout(20_000) }) }).catch(
+    (err) => {
+      if (turn && err instanceof Error && err.name === "TimeoutError") {
+        throw new JobAbandoned(msg("This is taking too long, so Flash stopped waiting. Please try again."), true);
+      }
+      throw err;
+    },
+  );
   if (!res.ok) throw await failure(res, "The transcription service");
   const json = (await res.json()) as { text?: string; language_code?: string };
   return json.text?.trim() || NO_SPEECH;

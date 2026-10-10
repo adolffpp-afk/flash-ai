@@ -1,4 +1,4 @@
-import { EDITABLE_TYPE, fixesPictureText, route, textToSpeak } from "@/lib/router.ts";
+import { EDITABLE_TYPE, checksSpoken, fixesPictureText, route, takesGuess, textToSpeak } from "@/lib/router.ts";
 import { MAX_EDIT_PIXELS, imageDimensions } from "@/lib/imageSize.ts";
 import { ENGINES, ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types.ts";
 import {
@@ -34,6 +34,7 @@ import { getBrand } from "@/lib/server/brand.ts";
 import { one } from "@/lib/server/db.ts";
 import {
   FREE_CHAT_ENGINES,
+  MIN_AUDIO_SECONDS,
   freeChatConfigured,
   freeEligible,
   freeImage,
@@ -43,7 +44,18 @@ import {
   streamFreeChat,
   type FreeLane,
 } from "@/lib/engines/free.ts";
-import { countryOf, recordFree, recordFreeAudio, releaseFreeUser, reserveFree, reserveFreeAudio, reserveFreeImage, reserveFreeUser } from "@/lib/server/free.ts";
+import {
+  countryOf,
+  freeAudioFailed,
+  recordFree,
+  recordFreeAudio,
+  releaseFreeUser,
+  reserveFree,
+  reserveFreeAudio,
+  reserveFreeImage,
+  reserveFreeUser,
+} from "@/lib/server/free.ts";
+import { billableSeconds, measureAudio, type MeasuredAudio } from "@/lib/server/audio-length.ts";
 import { isVerified } from "@/lib/server/account.ts";
 import {
   composeMusic,
@@ -100,6 +112,7 @@ import { DEFAULT_VOICE, pickVoice } from "@/lib/voices.ts";
 import { falEditInput, falInput, packImageInput, packVideoInput, videoAspect } from "@/lib/engines/fal-input.ts";
 import { writePack } from "@/lib/engines/post-pack.ts";
 import { packMarkdown } from "@/lib/post-pack.ts";
+import { CONFIRM_CREDITS, consents, decidedFor, type Decided } from "@/lib/price-question.ts";
 
 // Vercel Pro allows up to 800 seconds, which the Movie maker needs (scenes, filming and joining).
 export const maxDuration = 800;
@@ -123,7 +136,8 @@ type ChatRequest = {
   previous?: Engine;
   // An image, video or music model the user picked; otherwise Flash picks one.
   model?: string;
-  // The user already agreed to this request's price (see CONFIRM_CREDITS).
+  // The user agreed to this request's price (Go ahead, or yes in a voice conversation, with decided),
+  // or to every price (Go ahead with "always", on their device). See CONFIRM_CREDITS.
   confirmed?: boolean;
   // The project this chat is in, for its instructions.
   projectId?: string;
@@ -137,21 +151,9 @@ type ChatRequest = {
   pictureAbove?: boolean;
   // Flash's level of intelligence for writing, research and building (see levels.ts); Auto when missing.
   level?: string;
-  // With confirmed: what was decided before the price was asked (see Decided), sent back as it came.
+  // With confirmed: what was decided and priced before the price was asked (see Decided), sent back as it came.
   decided?: Decided;
 };
-
-/**
- * What the router and the picture check decided for a request before Flash asked the user to agree
- * to its price (see CONFIRM_CREDITS): the engine, and whether the picture above is made fresh. The
- * request the user agrees to uses it instead of asking them again, so the engine and the price can't
- * change after the user agreed, and the helpers that decided are paid for by that request (its price
- * includes them, see CHECK_ALLOWANCE_CENTS). It only picks what the user could pick themselves.
- */
-type Decided = { engine: Engine; fresh?: boolean };
-
-/** Requests that cost at least this many credits wait for the user to agree to the price first. */
-const CONFIRM_CREDITS = 50;
 
 function providers(): Set<Provider> {
   const set = new Set<Provider>();
@@ -222,6 +224,42 @@ const transcript = (name: string, text: string, t: Translate) =>
 
 /** The bytes in a base64 attachment. */
 const attachmentBytes = (a: { data: string }) => (a.data.length * 3) / 4;
+
+// Each attachment is measured once, however often it's priced and sent.
+const measuredFiles = new WeakMap<{ data: string }, MeasuredAudio | null>();
+
+/** A recording measured (see audio-length.ts), or null when Flash can't read how long it plays. */
+function measured(a: { data: string }): MeasuredAudio | null {
+  if (!measuredFiles.has(a)) measuredFiles.set(a, measureAudio(Buffer.from(a.data, "base64")));
+  return measuredFiles.get(a)!;
+}
+
+/** How long a recording plays, when Flash can measure it; 0 when it can't. */
+function recordingSeconds(a: { data: string }): number {
+  const m = measured(a);
+  return m ? billableSeconds(m.length) : 0;
+}
+
+/**
+ * The file to send to be transcribed: the clean copy of exactly what Flash measured, so nothing
+ * hidden in the file is heard and billed. Files Flash can't measure are refused before this.
+ */
+function toTranscribe(a: Attachment): Attachment {
+  const m = measured(a);
+  if (!m) return a;
+  const { data, mediaType, extension } = m.file;
+  return { name: `${a.name.replace(/\.[^.]*$/, "")}.${extension}`, mediaType, data: data.toString("base64") };
+}
+
+/** What transcribing a file costs: its measured length, and at least what its size could hold. */
+const transcriptCents = (a: { data: string }) => transcribeCostCents(attachmentBytes(a), recordingSeconds(a));
+
+/** The question Flash's last reply ended on, which a spoken "yes" may answer: "Want me to add a dark mode?" */
+function offered(history: ChatTurn[]): string | undefined {
+  const reply = history.at(-2);
+  if (reply?.role !== "assistant" || typeof reply.content !== "string") return undefined;
+  return reply.content.trim().slice(-300).match(/[^.!?\n]+\?$/)?.[0].trim();
+}
 
 /** The voice engine speaks at most MAX_SPEECH_CHARS, and is priced on exactly that text. */
 const spokenText = (message: string) => textToSpeak(message).slice(0, MAX_SPEECH_CHARS);
@@ -546,9 +584,9 @@ async function* run(
         return;
       }
       yield { type: "status", message: t("Transcribing {name}…", { name: last.attachment.name }) };
-      const transcribeCents = transcribeCostCents(attachmentBytes(last.attachment));
+      const transcribeCents = transcriptCents(last.attachment);
       started(transcribeCents);
-      const text = await transcribe(last.attachment).catch(billSpeech("transcribe", transcribeCents));
+      const text = await transcribe(toTranscribe(last.attachment)).catch(billSpeech("transcribe", transcribeCents));
       meter(speechProvider()!, "transcribe", transcribeCents);
       yield { type: "text", delta: transcript(last.attachment.name, text, t) };
       return;
@@ -567,6 +605,8 @@ async function* runFree(
   // Where the user is, for free models that may only answer some countries.
   country = "",
   t: Translate = english,
+  // Seconds of Groq's free audio held for a transcript, set once they're taken.
+  audio: { reserved?: number } = {},
 ): AsyncGenerator<StreamEvent> {
   const last = history[history.length - 1];
   if (lane === "image") {
@@ -582,14 +622,17 @@ async function* runFree(
   }
   if (lane === "transcribe") {
     const file = last.attachment!;
-    if (!(await reserveFreeAudio())) {
+    // Groq counts at least 10 seconds a file.
+    const reserve = Math.max(MIN_AUDIO_SECONDS, Math.ceil(recordingSeconds(file)));
+    if (!(await reserveFreeAudio(reserve))) {
       throw new FriendlyError(msg("Today's free transcripts are used up across Flash. They reset tomorrow, or you can get more credits."));
     }
+    audio.reserved = reserve;
     used.provider = "groq";
     used.model = "whisper-large-v3-turbo";
     yield { type: "status", message: t("Transcribing {name} with Whisper (free)…", { name: file.name }) };
-    const { text, seconds } = await freeTranscribe(file);
-    await recordFreeAudio(seconds);
+    const { text, seconds: counted } = await freeTranscribe(toTranscribe(file));
+    await recordFreeAudio(counted, reserve);
     yield { type: "text", delta: transcript(file.name, text, t) };
     return;
   }
@@ -647,14 +690,12 @@ export async function POST(request: Request) {
   }
 
   const previous = body.previous && (ENGINES as readonly string[]).includes(body.previous) ? body.previous : undefined;
-  const auto = route(last.content, last.attachment?.mediaType, previous);
+  const spoken = body.voice === true;
+  const auto = route(last.content, last.attachment?.mediaType, previous, { spoken });
   const override =
     body.engine && body.engine !== "auto" && (ENGINES as readonly string[]).includes(body.engine) ? body.engine : null;
   // The request the user agreed to the price of: the router and the picture check aren't asked again.
-  const decided: Decided | null =
-    !override && body.confirmed === true && (ENGINES as readonly string[]).includes(body.decided?.engine ?? "")
-      ? { engine: body.decided!.engine, fresh: body.decided!.fresh === true }
-      : null;
+  const decided = decidedFor(body, override);
   let engine = override ?? auto.engine;
   // Why this engine answers, in the user's language.
   let reason = override
@@ -739,8 +780,10 @@ export async function POST(request: Request) {
    */
   const planFor = async (engine: Engine, editing: boolean, extraCents = 0) => {
     const helperCents = helperSpend() + extraCents;
+    // The model whose price was agreed to, while it's still there (otherwise the new price is asked about).
+    const wanted = decided?.engine === engine && decided.model ? decided.model : body.model;
     // Only FLUX.2 Edit takes several photos at once; the other photo tools work on one.
-    const picked = isMedia(engine) ? pickModel(engine, last.content, providers(), combines ? "flux-2-edit" : body.model, editing) : null;
+    const picked = isMedia(engine) ? pickModel(engine, last.content, providers(), combines ? "flux-2-edit" : wanted, editing) : null;
     const model = picked?.model ?? null;
     // Engines that aren't available yet reply for free. Media has a fixed price per model. Claude engines are charged by
     // length: Flash holds up to a limit, then keeps only what the reply really cost.
@@ -763,8 +806,8 @@ export async function POST(request: Request) {
       const count = combines ? photos.length : 1;
       if (model) priceCents = requestCents(model, last.content, count);
       else if (engine === "voice") priceCents = voiceCostCents(spokenText(last.content).length);
-      // Priced by file size (see transcribeCostCents); with no file, the engine just asks for one.
-      else if (engine === "transcribe") priceCents = last.attachment ? transcribeCostCents(attachmentBytes(last.attachment)) : 0;
+      // Priced on the recording's length (see transcribeCostCents); with no file, the engine just asks for one.
+      else if (engine === "transcribe") priceCents = last.attachment ? transcriptCents(last.attachment) : 0;
       if (priceCents !== null) {
         // The listed price, which is what is held and charged. No helper reads a recording first.
         held = needed = !priceCents
@@ -863,13 +906,42 @@ export async function POST(request: Request) {
     return Response.json({ error: t("Flash can edit PNG, JPEG and WebP photos up to 2048 × 2048 pixels. Try a smaller photo.") }, { status: 400 });
   }
   if (combines && editing) reason = t("Flash combines your {count} photos into one picture.", { count: photos.length });
+  // A transcript is priced on how long the recording plays, so one Flash can't measure isn't sent.
+  if (engine === "transcribe" && last.attachment && configured(engine) && !measured(last.attachment)) {
+    return Response.json(
+      {
+        error: t("Flash can't tell how long {name} plays, so it can't transcribe it. Save it as MP3, M4A, WAV or FLAC and send it again.", {
+          name: last.attachment.name,
+        }),
+      },
+      { status: 400 },
+    );
+  }
 
   // When no keyword rule fits, a small, fast model reads the request and picks the engine. It only runs
   // when the request can be paid for on whatever engine it picks, so the free lane costs Flash nothing.
+  // In a voice conversation it also checks requests the rules sent to code, docs or search (see checksSpoken).
+  const recheck = spoken && checksSpoken(engine);
   let plan: Awaited<ReturnType<typeof planFor>>;
-  if (!override && !decided && auto.guessed && !last.attachment && claudeConfigured()) {
+  if (!override && !decided && (auto.guessed || recheck) && !last.attachment && claudeConfigured()) {
     const ready = (e: Engine) => (isMedia(e) ? Boolean(pickModel(e, last.content, providers())) : configured(e));
-    const routed = await guessEngine(last.content, engine, available, (e, extraCents) => planFor(e, false, extraCents), ready, meter);
+    // A spoken turn about an app or deck the rules couldn't place: the guess knows about the build,
+    // and the question Flash asked before it, which a "yes" may answer.
+    const about = auto.guessed ? auto.about : undefined;
+    const offer = spoken && about ? offered(history) : undefined;
+    // Where the guess may move it (see takesGuess). A spoken request checked again, or one about a
+    // build, only moves between the engines that answer in words, or to that build, or to what the
+    // rules would have made of spoken talk that mentioned it (maybe).
+    const answers = recheck || auto.answersOnly === true;
+    const maybe = auto.guessed ? auto.maybe : undefined;
+    const may = (e: Engine) => takesGuess(e, engine, last.content, { spoken, recheck: answers, about, maybe });
+    // Someone talking is waiting in silence, so the router gets less time to think.
+    const routed = await guessEngine(last.content, engine, available, (e, extraCents) => planFor(e, false, extraCents), ready, meter, {
+      may,
+      timeoutMs: spoken ? 1500 : 4000,
+      about,
+      offer,
+    });
     if (routed.guessed) {
       engine = routed.engine;
       reason = t("Flash's router read your request.");
@@ -909,7 +981,8 @@ export async function POST(request: Request) {
       budget = NO_BUDGET;
     }
   }
-  if (model && !free && needed >= CONFIRM_CREDITS && available >= needed && body.confirmed !== true) {
+  // Agreed to: every price, or the price asked, for this model at no more than those credits (see consents).
+  if (model && !free && needed >= CONFIRM_CREDITS && available >= needed && !consents(body, decided, model.id, needed)) {
     // The price question, which a voice conversation also reads out.
     const price = { model: model.label, credits: needed.toLocaleString(t.locale), available: available.toLocaleString(t.locale) };
     const error =
@@ -922,11 +995,12 @@ export async function POST(request: Request) {
           : engine === "music"
             ? t("This {model} track uses {credits} credits. You have {available}.", price)
             : t("This {model} image uses {credits} credits. You have {available}.", price);
-    // What the router and the picture check decided, for the request the user agrees to (see Decided).
-    const settled: Decided = { engine, ...(fresh && { fresh }) };
+    // What the router and the picture check decided, and the price asked, for the request the user agrees to (see Decided).
+    const settled: Decided = { engine, ...(fresh && { fresh }), model: model.id, credits: needed };
     return Response.json({ error, code: "confirm_cost", needed, decided: settled }, { status: 409 });
   }
   const freeUse = { provider: "", model: "" };
+  const freeAudio: { reserved?: number } = {};
   const chargeId = held ? await charge(user.id, held, `${engine} request`) : 0;
   if (chargeId === null) {
     const counts = { needed, available };
@@ -977,6 +1051,8 @@ export async function POST(request: Request) {
         type: "route",
         engine,
         reason,
+        // Talk about an app or deck: the next follow-up may still change it.
+        ...(auto.about && engine !== auto.about && !override && { about: auto.about }),
         demo: !live,
         cost: metered && !free ? 0 : held,
         // So a reply the user stops can show what it really cost once that is settled.
@@ -1004,8 +1080,9 @@ export async function POST(request: Request) {
       let ok = true;
       let stopped = false;
       let failure = "";
+      let error: unknown;
       const events = free
-        ? runFree(free, engine, history, preferences, store, freeUse, countryOf(request), t)
+        ? runFree(free, engine, history, preferences, store, freeUse, countryOf(request), t, freeAudio)
         : run(engine, history, preferences, store, model, meter, budget, mediaNotes, claudeRun, steppedDown, track, t);
       const steps = events[Symbol.asyncIterator]();
       try {
@@ -1033,6 +1110,7 @@ export async function POST(request: Request) {
         else {
           console.error(`[flash] ${engine} engine failed`, err);
           ok = false;
+          error = err;
           // Provider errors can hold raw responses, so only messages written for the user are shown.
           failure =
             err instanceof FriendlyError
@@ -1072,8 +1150,14 @@ export async function POST(request: Request) {
             }),
           });
       await settle(chargeId, credits);
-      // A free request that failed doesn't use up one of the user's free requests for today.
-      if (free && !ok) await releaseFreeUser(user.id, free).catch((err) => console.error("[flash] free release failed", err));
+      // A free request that failed doesn't use up one of the user's free requests for today, except a
+      // transcript Groq was sent, which gives back what freeAudioFailed says.
+      if (free && !ok) {
+        await (free === "transcribe" && freeAudio.reserved !== undefined
+          ? freeAudioFailed(user.id, free, freeAudio.reserved, error)
+          : releaseFreeUser(user.id, free)
+        ).catch((err) => console.error("[flash] free release failed", err));
+      }
       if (live) {
         const main = spend.at(-1);
         await logUsage({
