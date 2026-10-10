@@ -60,7 +60,7 @@ function CodeBlock({ lang, text }: { lang: string; text: string }) {
     URL.revokeObjectURL(url);
   };
   return (
-    <div className="not-prose code-dark my-3 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900">
+    <div dir="ltr" className="not-prose code-dark my-3 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900">
       <div className="flex items-center justify-between border-b border-zinc-800 px-3 py-1.5 text-xs text-zinc-400">
         <span>{lang || "text"}</span>
         <span className="flex flex-wrap justify-end gap-x-3 gap-y-1">
@@ -305,6 +305,7 @@ function UserMessage({ m, onEdit }: { m: UIMessage; onEdit?: (text: string) => v
       <div className="flex justify-end">
         <div className="w-full max-w-[85%] rounded-2xl border border-white/10 bg-zinc-900 p-2">
           <textarea
+            dir="auto"
             autoFocus
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
@@ -335,7 +336,7 @@ function UserMessage({ m, onEdit }: { m: UIMessage; onEdit?: (text: string) => v
       <div className="max-w-[85%] rounded-2xl rounded-br-md border border-white/10 bg-zinc-800 px-4 py-2.5 text-zinc-50">
         {m.attachmentName && <div className="mb-1 text-xs text-white/80">📎 {t(m.attachmentName)}</div>}
         {m.picked && <div className="mb-1 text-xs text-white/80">◎ {m.picked.label}</div>}
-        <p className="whitespace-pre-wrap break-words">{m.content}</p>
+        <p dir="auto" className="whitespace-pre-wrap break-words">{m.content}</p>
       </div>
       {m.content && (
         <div className="mt-1 flex gap-1 text-xs text-zinc-500 transition md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
@@ -439,7 +440,7 @@ export function Message({
           </p>
         )}
         {m.content && (
-          <div className="prose prose-invert max-w-none break-words prose-p:my-2 prose-pre:bg-zinc-900">
+          <div dir="auto" className="prose prose-invert max-w-none break-words prose-p:my-2 prose-pre:bg-zinc-900">
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
               {m.content}
             </ReactMarkdown>
@@ -512,7 +513,7 @@ export function Message({
           />
         )}
         {m.after?.trim() && (
-          <div className="prose prose-invert mt-3 max-w-none break-words prose-p:my-2">
+          <div dir="auto" className="prose prose-invert mt-3 max-w-none break-words prose-p:my-2">
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
               {m.after}
             </ReactMarkdown>

@@ -23,7 +23,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug
   const { slug } = await ctx.params;
   if (!(await ownsSite(user.id, slug))) return Response.json({ error: t("Not found") }, { status: 404 });
   const { domain } = (await request.json().catch(() => ({}))) as { domain?: string };
-  const result = await addDomain(user, slug, String(domain ?? ""), t);
+  const result = await addDomain(user, slug, String(domain ?? ""), undefined, t);
   if ("error" in result) return Response.json({ error: result.error }, { status: result.status });
   return Response.json({ domain: result });
 }

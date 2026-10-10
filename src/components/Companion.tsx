@@ -170,7 +170,7 @@ export function Companion({
         onClick={onOpen}
         aria-label={t("Ask Flash")}
         title={t("Ask the companion anything, even while Flash is working")}
-        className="fixed bottom-36 right-4 z-30 inline-flex items-center gap-2 rounded-full border border-primary/40 bg-zinc-900/90 px-3.5 py-2 text-sm text-zinc-100 shadow-lg shadow-black/40 backdrop-blur transition hover:border-primary hover:bg-zinc-900 sm:bottom-6 light:border-transparent light:bg-brand light:text-on-brand light:shadow-black/15"
+        className="fixed bottom-36 end-4 z-30 inline-flex items-center gap-2 rounded-full border border-primary/40 bg-zinc-900/90 px-3.5 py-2 text-sm text-zinc-100 shadow-lg shadow-black/40 backdrop-blur transition hover:border-primary hover:bg-zinc-900 sm:bottom-6 light:border-transparent light:bg-brand light:text-on-brand light:shadow-black/15"
       >
         <LogoMark size={18} />
         <span className="hidden sm:inline">{t("Ask Flash")}</span>
@@ -186,7 +186,7 @@ export function Companion({
   return (
     // On a phone it slides up over the chat; on a wider screen it sits beside it, so the chat stays usable.
     <aside
-      className="fixed inset-x-0 bottom-0 z-30 flex h-[70dvh] flex-col border-t border-white/10 bg-zinc-950/95 backdrop-blur sm:static sm:z-0 sm:h-full sm:w-[22rem] sm:shrink-0 sm:border-l sm:border-t-0 sm:bg-zinc-950/60 sm:backdrop-blur-none"
+      className="fixed inset-x-0 bottom-0 z-30 flex h-[70dvh] flex-col border-t border-white/10 bg-zinc-950/95 backdrop-blur sm:static sm:z-0 sm:h-full sm:w-[22rem] sm:shrink-0 sm:border-s sm:border-t-0 sm:bg-zinc-950/60 sm:backdrop-blur-none"
       aria-label={t("Flash companion")}
     >
       <div className="flex items-center gap-2 border-b border-white/6 px-4 py-3">
@@ -259,6 +259,7 @@ export function Companion({
       >
         <div className="flex items-end gap-2 rounded-2xl border border-white/10 bg-zinc-900/70 p-2 focus-within:border-white/20">
           <textarea
+            dir="auto"
             ref={field}
             value={input}
             onChange={(e) => setInput(e.target.value)}

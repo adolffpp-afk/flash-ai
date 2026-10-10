@@ -86,6 +86,34 @@ export async function endSession(request: Request): Promise<void> {
 export const isSecure = (request: Request) =>
   new URL(request.url).protocol === "https:" || request.headers.get("x-forwarded-proto") === "https";
 
+/**
+ * Whether a request that signs someone in came from Flash's own pages. Without this another site
+ * (or a published app, which runs in its own sealed-off origin) could post a form that signs the
+ * visitor in to an account the other site controls, and then see what they make there.
+ * Flash's pages always send JSON, which a plain form on another site can't, and browsers say which
+ * site sent a request in the Origin header, which must be this one (as the configured address or
+ * the host the request came to, like Next.js does for server actions). Apps and scripts that send
+ * no Origin at all aren't browsers, so they can't be used against a visitor this way.
+ */
+export function fromOwnPage(request: Request): boolean {
+  const type = (request.headers.get("content-type") ?? "").split(";")[0].trim().toLowerCase();
+  if (type !== "application/json") return false;
+  if (request.headers.get("sec-fetch-site") === "cross-site") return false;
+  const origin = request.headers.get("origin");
+  if (origin === null) return true;
+  // A sealed-off page sends "null", which isn't an address, so it matches nothing.
+  const hostOf = (address: string) => {
+    try {
+      return new URL(address).host;
+    } catch {
+      return null;
+    }
+  };
+  const host = hostOf(origin);
+  const own = [hostOf(appUrl(request)), hostOf(request.url), request.headers.get("x-forwarded-host"), request.headers.get("host")];
+  return Boolean(host) && own.includes(host);
+}
+
 export function unauthorized(): Response {
   return Response.json({ error: "Please sign in.", code: "signed_out" }, { status: 401 });
 }

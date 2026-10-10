@@ -1,5 +1,7 @@
+import { Resolver } from "node:dns/promises";
 import { all, one, run, now } from "./db.ts";
 import { isAdmin, type User } from "./auth.ts";
+import { sha256 } from "./ids.ts";
 import { activeSubscription } from "./subscriptions.ts";
 import { english, type Translate } from "../i18n.ts";
 
@@ -37,6 +39,11 @@ export function isSubdomain(domain: string): boolean {
   return domain.split(".").length > (twoPartEnding ? 3 : 2);
 }
 
+/** The part before the name people buy, as DNS settings ask for it: "shop" for shop.crumb.co.uk, "" for crumb.co.uk. */
+function hostLabel(domain: string): string {
+  return domain.split(".").slice(0, /\.(co|com|org|net|gov|ac|edu)\.[a-z]{2}$/.test(domain) ? -3 : -2).join(".");
+}
+
 /** Custom domains are for paying plans (and Flash's admins), which keeps spammers off them. */
 export async function canUseDomains(user: User): Promise<boolean> {
   return isAdmin(user) || Boolean(await activeSubscription(user.id));
@@ -57,7 +64,39 @@ async function vercel(method: string, path: string, body?: unknown): Promise<{ s
 const project = () => encodeURIComponent(process.env.VERCEL_PROJECT_ID!);
 
 export type DnsRecord = { type: "A" | "CNAME" | "TXT"; name: string; value: string };
-export type DomainStatus = { domain: string; connected: boolean; records: DnsRecord[] };
+// needsProof: Flash is waiting for the _flash TXT record before it adds the domain (see addDomain).
+export type DomainStatus = { domain: string; connected: boolean; records: DnsRecord[]; needsProof?: boolean };
+
+/*
+ * Proof that a domain is the user's: a TXT record named _flash on the domain, holding a value
+ * that is the same for all of one user's domains and different for every user. Only someone who
+ * runs the domain's DNS can add it, so nobody can put their site on a domain that isn't theirs.
+ */
+export const ownershipValue = (userId: string) => `flash-verify=${sha256(`flash-domain:${userId}`).slice(0, 32)}`;
+
+/** The record that proves the user owns the domain, named as the domain's DNS settings expect. */
+export function ownershipRecord(domain: string, userId: string): DnsRecord {
+  const label = hostLabel(domain);
+  return { type: "TXT", name: label ? `_flash.${label}` : "_flash", value: ownershipValue(userId) };
+}
+
+/** Looks up a name's TXT records, each as the pieces DNS returns. */
+export type TxtLookup = (name: string) => Promise<string[][]>;
+
+const lookupTxt: TxtLookup = (name) => {
+  const resolver = new Resolver({ timeout: 2500, tries: 2 });
+  // A DNS server that never answers gives up within seconds, so the request doesn't hang.
+  const timer = setTimeout(() => resolver.cancel(), 6000);
+  return resolver.resolveTxt(name).finally(() => clearTimeout(timer));
+};
+
+/** Whether the domain's _flash TXT record holds this user's value. No record (or no answer) is no proof. */
+export async function provesOwnership(domain: string, userId: string, lookup: TxtLookup = lookupTxt): Promise<boolean> {
+  const records = await lookup(`_flash.${domain}`).catch(() => [] as string[][]);
+  const wanted = ownershipValue(userId);
+  // Some DNS providers keep the quotes people paste around the value.
+  return records.some((pieces) => pieces.join("").trim().replace(/^"|"$/g, "").toLowerCase() === wanted);
+}
 
 /** Where the domain stands on Vercel, and the DNS records still to add when it isn't connected yet. */
 export async function domainStatus(domain: string): Promise<DomainStatus> {
@@ -76,8 +115,7 @@ export async function domainStatus(domain: string): Promise<DomainStatus> {
   if (misconfigured) {
     const top = <T,>(list: unknown) => ((list as { rank: number; value: T }[] | undefined) ?? []).sort((a, b) => a.rank - b.rank)[0]?.value;
     if (isSubdomain(domain)) {
-      const label = domain.split(".").slice(0, /\.(co|com|org|net|gov|ac|edu)\.[a-z]{2}$/.test(domain) ? -3 : -2).join(".");
-      records.push({ type: "CNAME", name: label, value: (top<string>(config.json.recommendedCNAME) || FALLBACK_CNAME).replace(/\.$/, "") });
+      records.push({ type: "CNAME", name: hostLabel(domain), value: (top<string>(config.json.recommendedCNAME) || FALLBACK_CNAME).replace(/\.$/, "") });
     } else {
       records.push({ type: "A", name: "@", value: top<string[]>(config.json.recommendedIPv4)?.[0] || FALLBACK_IP });
     }
@@ -95,13 +133,17 @@ export async function domainsForSite(slug: string): Promise<string[]> {
 }
 
 /**
- * Connects a domain to one of the user's sites. A domain someone else claimed but never pointed
- * at Flash can be taken over, so nobody can hold a business's name hostage.
+ * Connects a domain to one of the user's sites, once its DNS proves it is theirs (see
+ * provesOwnership). Until then it returns the TXT record to add, and nothing is changed. Domains
+ * the user already has (moving one to another of their sites) need no new proof. A domain on
+ * someone else's account moves to whoever proves they run its DNS, so nobody can hold a
+ * business's name hostage, and nobody can take a name that isn't theirs.
  */
 export async function addDomain(
   user: User,
   slug: string,
   input: string,
+  lookup: TxtLookup = lookupTxt,
   t: Translate = english,
 ): Promise<DomainStatus | { error: string; status: number }> {
   if (!domainsConfigured()) return { error: t("Custom domains aren't switched on yet."), status: 503 };
@@ -113,8 +155,8 @@ export async function addDomain(
     return { error: t("You can connect up to {max} domains.", { max: MAX_DOMAINS_PER_USER }), status: 409 };
   }
   const taken = await one<{ user_id: string }>("SELECT user_id FROM site_domains WHERE domain = ?", [domain]);
-  if (taken && taken.user_id !== user.id && (await domainStatus(domain)).connected) {
-    return { error: t("That domain is already connected to another Flash site."), status: 409 };
+  if (taken?.user_id !== user.id && !(await provesOwnership(domain, user.id, lookup))) {
+    return { domain, connected: false, records: [ownershipRecord(domain, user.id)], needsProof: true };
   }
   const added = await vercel("POST", `/v10/projects/${project()}/domains`, { name: domain });
   const code = (added.json.error as { code?: string } | undefined)?.code;

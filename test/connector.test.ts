@@ -260,3 +260,17 @@ test("animating a photo charges by length, and sound only when asked", async () 
   assert.equal(sent[1].generate_audio, true);
   assert.equal(sent[1].duration, "10");
 });
+
+test("each tool call in a batch counts against the hourly limit", async () => {
+  const { tooManyCalls } = await import("../src/lib/server/connector-http.ts");
+  const call = { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "flash_check_credits" } };
+  // Listing tools and pinging aren't tool calls, so they never count.
+  assert.equal(await tooManyCalls("batcher", [{ method: "tools/list" }, { method: "ping" }]), false);
+  // A batch over the hourly limit is refused whole.
+  assert.equal(await tooManyCalls("batcher", Array(61).fill(call)), true);
+  // One at a time, 60 an hour go through, then the 61st waits, and a batch adds up the same way.
+  assert.equal(await tooManyCalls("single", [call]), false);
+  assert.equal(await tooManyCalls("single", Array(58).fill(call)), false);
+  assert.equal(await tooManyCalls("single", [call, { method: "tools/list" }]), false, "the 60th");
+  assert.equal(await tooManyCalls("single", [call]), true, "the 61st");
+});
