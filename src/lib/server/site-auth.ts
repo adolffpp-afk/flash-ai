@@ -49,15 +49,22 @@ export function clearSessionCookie(path: string): string {
   return `${SITE_COOKIE}=; Path=${path}; HttpOnly; SameSite=Lax; Max-Age=0`;
 }
 
-async function startSession(userId: string, slug: string): Promise<string> {
+/** A new sign-in to the app, or null when the app was just unpublished (INSERT … SELECT, so nothing is left behind then). */
+async function startSession(userId: string, slug: string): Promise<string | null> {
   const token = randomId(32);
-  await run("INSERT INTO site_sessions (token_hash, site_user_id, site_slug, expires_at) VALUES (?, ?, ?, ?)", [
+  const r = await run("INSERT INTO site_sessions (token_hash, site_user_id, site_slug, expires_at) SELECT ?, ?, slug, ? FROM sites WHERE slug = ?", [
     sha256(token),
     userId,
-    slug,
     now() + SESSION_DAYS * 24 * 3600 * 1000,
+    slug,
   ]);
-  return token;
+  return r.rowsAffected ? token : null;
+}
+
+/** The answer to a sign-up or sign-in that worked, with its session cookie. */
+async function signedIn(userId: string, slug: string, path: string, secure: boolean): Promise<AuthOutcome> {
+  const token = await startSession(userId, slug);
+  return token ? { result: "ok", cookie: sessionCookie(token, path, secure) } : outcome("no-app");
 }
 
 /** Who a session cookie belongs to on this site, or null. */
@@ -74,12 +81,13 @@ export async function visitorForSession(slug: string, token: string | null | und
 export async function newPageToken(visitorId: string, slug: string, sessionToken: string): Promise<string> {
   const token = randomId(24);
   await run("DELETE FROM site_page_tokens WHERE expires_at < ?", [now()]);
-  await run("INSERT INTO site_page_tokens (token_hash, site_user_id, site_slug, expires_at, session_hash) VALUES (?, ?, ?, ?, ?)", [
+  // INSERT … SELECT, so a page served just as the app is unpublished leaves no key behind.
+  await run("INSERT INTO site_page_tokens (token_hash, site_user_id, site_slug, expires_at, session_hash) SELECT ?, ?, slug, ?, ? FROM sites WHERE slug = ?", [
     sha256(token),
     visitorId,
-    slug,
     now() + PAGE_TOKEN_MINUTES * MINUTE,
     sha256(sessionToken),
+    slug,
   ]);
   return token;
 }
@@ -161,22 +169,24 @@ export async function siteAuth(
     // An account that already exists signs in instead, so nobody is told whether an email is known.
     if (existing) {
       if (!(await verifyPassword(password, existing.password_hash))) return outcome("taken");
-      return { result: "ok", cookie: sessionCookie(await startSession(existing.id, slug), path, secure) };
+      return signedIn(existing.id, slug, path, secure);
     }
     if ((await countSiteUsers(slug)) >= MAX_SITE_USERS) return outcome("full");
     const id = randomId(12);
-    await run("INSERT INTO site_users (id, site_slug, email, name, password_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)", [
+    // INSERT … SELECT, so someone signing up just as the app is unpublished isn't left behind without it.
+    const made = await run("INSERT INTO site_users (id, site_slug, email, name, password_hash, created_at) SELECT ?, slug, ?, ?, ?, ? FROM sites WHERE slug = ?", [
       id,
-      slug,
       email,
       name,
       await hashPassword(password),
       now(),
+      slug,
     ]);
-    return { result: "ok", cookie: sessionCookie(await startSession(id, slug), path, secure) };
+    if (!made.rowsAffected) return outcome("no-app");
+    return signedIn(id, slug, path, secure);
   }
   if (!existing || !(await verifyPassword(password, existing.password_hash))) return outcome("wrong");
-  return { result: "ok", cookie: sessionCookie(await startSession(existing.id, slug), path, secure) };
+  return signedIn(existing.id, slug, path, secure);
 }
 
 /** The owner removes someone from their app: their sign-in and their private records go with them. */

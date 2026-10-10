@@ -218,8 +218,9 @@ export const tools = () => [
       "flashDB.update(collection, id, partialObject); flashDB.remove(collection, id). Collection names use letters, digits, - or _. " +
       "Data is shared by everyone who opens the app, so never store passwords or private data. " +
       'Name who may change each shared collection before </body> with <script type="application/json" id="flash-data">{"menu":"read","reviews":"add"}</script>: ' +
-      "read (only the owner adds or changes), add (anyone adds; a record is changed only by the owner or by whoever added it while signed in), own (signed-in people manage their own), private (anyone adds; only the owner reads) or open (anyone changes anything). " +
-      "Collections it doesn't name are read-only for visitors. flashDB.isOwner is true when the app's owner opens it, so show editing controls only then. " +
+      "read (only the owner adds or changes), add (anyone adds; a record is changed only by the owner or by whoever added it while signed in), own (signed-in people manage their own), private (anyone adds; only the owner reads, in Flash) or open (anyone changes anything). " +
+      "The block must be strict JSON (no comments, no trailing commas). Collections it doesn't name are read-only for visitors, and so is everything while Flash can't read the block; \"*\" sets the rule for every collection it doesn't name (for names made at run time). " +
+      "flashDB.isOwner is true when the app's owner opens it with Open as owner in Flash, so show editing controls only then. " +
       "External scripts may load from CDNs. Up to 2 MB; up to 20 apps per account.",
     inputSchema: {
       type: "object",

@@ -2,6 +2,7 @@ import { getUser, unauthorized } from "@/lib/server/auth.ts";
 import { translatorFor } from "@/lib/server/i18n.ts";
 import { ownsSite } from "@/lib/server/inbox.ts";
 import { one } from "@/lib/server/db.ts";
+import { domainsForSite } from "@/lib/server/domains.ts";
 import { chooseRule, newestShared, removeRecord, sharedCollections, sharedCsv } from "@/lib/server/site-data.ts";
 import { COLLECTION, DEFAULT_KEY, OWNER, isDataRule } from "@/lib/data-rules.ts";
 import { csvName } from "@/lib/csv.ts";
@@ -13,6 +14,12 @@ export const dynamic = "force-dynamic";
 // For the app's owner only, signed in to Flash. Custom domains can't reach this (see site-host.ts).
 
 const notFound = (t: Translate) => Response.json({ error: t("Not found") }, { status: 404 });
+
+/** The app's collections with their rules, and its own domains, where the owner counts as a visitor unless they open it as its owner. */
+async function dataView(slug: string) {
+  const data = await sharedCollections(slug);
+  return data && { ...data, domains: await domainsForSite(slug) };
+}
 
 /**
  * The app's collections with their rules. With ?collection=x, that collection's newest 100 records,
@@ -27,7 +34,7 @@ export async function GET(request: Request, ctx: RouteContext<"/api/sites/[slug]
   const q = new URL(request.url).searchParams;
   const collection = q.get("collection");
   if (collection === null) {
-    const data = await sharedCollections(slug);
+    const data = await dataView(slug);
     return data ? Response.json(data) : notFound(t);
   }
   if (!COLLECTION.test(collection)) return Response.json({ error: t("Invalid collection name.") }, { status: 400 });
@@ -57,7 +64,7 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/sites/[slu
   if ((collection !== DEFAULT_KEY && !COLLECTION.test(collection)) || rule === undefined || !(await chooseRule(slug, collection, rule))) {
     return Response.json({ error: t("Pick one of the choices.") }, { status: 400 });
   }
-  return Response.json(await sharedCollections(slug));
+  return Response.json(await dataView(slug));
 }
 
 /** The owner deletes one shared record. */

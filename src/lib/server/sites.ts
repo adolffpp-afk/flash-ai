@@ -2,7 +2,7 @@ import { all, db, one, run, now } from "./db.ts";
 import { randomId } from "./ids.ts";
 import { isVerified } from "./account.ts";
 import { overLimit } from "./limits.ts";
-import { dataSummary, rulesText } from "./site-data.ts";
+import { dataSummary, rulesForPage } from "./site-data.ts";
 import type { User } from "./auth.ts";
 import type { DataSummary } from "../data-rules.ts";
 import { english, type Translate } from "../i18n.ts";
@@ -21,8 +21,8 @@ function makeSlug(title: string): string {
 
 // Everything kept for a published site, by its slug. Unpublishing deletes all of it: the database
 // doesn't enforce its ON DELETE CASCADE links (Turso runs with foreign keys off), so nothing
-// goes on its own.
-const SITE_TABLES = [
+// goes on its own. A test checks every table with a site_slug column is here.
+export const SITE_TABLES = [
   "site_records",
   "site_users",
   "site_sessions",
@@ -38,10 +38,12 @@ const SITE_TABLES = [
   "site_products",
   "site_orders",
   "site_owner_keys",
+  "site_owner_codes",
   "site_collection_rules",
 ];
 // The ones a new site must never take over from an old site of the same name (records, members,
-// files, messages, orders, history, settings), each looked up by an index on site_slug.
+// files, messages, orders, history, settings, visits and the AI it used today), each looked up by
+// an index on site_slug.
 const INHERITABLE = [
   "site_records",
   "site_users",
@@ -52,6 +54,9 @@ const INHERITABLE = [
   "site_domains",
   "site_versions",
   "site_ai",
+  "site_ai_usage",
+  "site_visits",
+  "site_visitors",
   "site_collection_rules",
 ];
 
@@ -85,9 +90,19 @@ export async function listSites(userId: string) {
 
 export type PublishResult = { slug: string; url: string; data?: DataSummary } | { error: string; status: number; code?: string };
 
-/** The published site, with who may change its data (see data-rules.ts). The publish has happened even if that can't be read. */
-async function published(slug: string): Promise<PublishResult> {
+/**
+ * The published site, with who may change its data (see data-rules.ts). before is who could change
+ * it before this update: collections visitors could add to or change, and now can only read
+ * because the new page's flash-data block doesn't name them, are listed as closed. The publish has
+ * happened even if that can't be read.
+ */
+async function published(slug: string, before: DataSummary | null = null): Promise<PublishResult> {
   const data = await dataSummary(slug).catch(() => null);
+  if (data && before) {
+    const ruleBefore = (name: string) => before.collections.find((c) => c.name === name)?.rule ?? before.other;
+    const closed = data.collections.filter((c) => c.source === "block" && c.rule === "read" && ruleBefore(c.name) !== "read").map((c) => c.name);
+    if (closed.length) data.closed = closed;
+  }
   return { slug, url: `/p/${slug}`, ...(data && { data }) };
 }
 
@@ -106,17 +121,19 @@ export async function publishSite(
 
   if (slug) {
     if (await overLimit(`republish:${user.id}`, 60, HOUR)) return { error: t("Too many updates. Try again in an hour."), status: 429 };
+    // Who could change the app's data before, to say what this update closes.
+    const before = (await one("SELECT 1 FROM sites WHERE slug = ? AND user_id = ?", [slug, user.id])) ? await dataSummary(slug).catch(() => null) : null;
     await saveVersion(slug, user.id, html);
     // The rules the page names are saved with it, so they change together.
     const r = await run("UPDATE sites SET html = ?, title = ?, updated_at = ?, data_rules = ? WHERE slug = ? AND user_id = ?", [
       html,
       title,
       now(),
-      rulesText(html),
+      await rulesForPage(slug, html),
       slug,
       user.id,
     ]);
-    if (r.rowsAffected) return published(slug);
+    if (r.rowsAffected) return published(slug, before);
   }
   const count = await one<{ n: number }>("SELECT COUNT(*) AS n FROM sites WHERE user_id = ?", [user.id]);
   if (Number(count?.n ?? 0) >= MAX_SITES_PER_USER) {
@@ -132,7 +149,7 @@ export async function publishSite(
     html,
     now(),
     now(),
-    rulesText(html),
+    await rulesForPage(null, html),
   ]);
   return published(fresh);
 }
@@ -197,7 +214,7 @@ export async function restoreVersion(userId: string, slug: string, id: string): 
     version.html,
     version.title,
     now(),
-    rulesText(version.html),
+    await rulesForPage(slug, version.html),
     slug,
     userId,
   ]);

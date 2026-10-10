@@ -4,18 +4,29 @@ import vm from "node:vm";
 
 process.env.DATABASE_URL = ":memory:";
 
-const { run, one } = await import("../src/lib/server/db.ts");
+const { run, one, all } = await import("../src/lib/server/db.ts");
 const { sha256 } = await import("../src/lib/server/ids.ts");
 const { createSession } = await import("../src/lib/server/auth.ts");
 const { siteAuth, visitorForSession, newPageToken, SITE_COOKIE } = await import("../src/lib/server/site-auth.ts");
-const { listRecords, addRecord, patchRecord, removeRecord, collectionRule, chooseRule, sharedCollections, newestShared, sharedCsv } =
-  await import("../src/lib/server/site-data.ts");
-const { newOwnerKey, isOwnerKey, callerFor } = await import("../src/lib/server/site-owner.ts");
-const { publishSite, restoreVersion, listVersions, versionHtml, unpublishSite, slugTaken } = await import("../src/lib/server/sites.ts");
-const { saveUpload, readUpload, setUploadsOn } = await import("../src/lib/server/site-files.ts");
+const {
+  listRecords,
+  addRecord,
+  patchRecord,
+  removeRecord,
+  collectionRule,
+  chooseRule,
+  sharedCollections,
+  newestShared,
+  sharedCsv,
+  refreshRules,
+  keepRules,
+} = await import("../src/lib/server/site-data.ts");
+const { newOwnerCode, ownerKeyForCode, isOwnerKey, callerFor } = await import("../src/lib/server/site-owner.ts");
+const { publishSite, restoreVersion, listVersions, versionHtml, unpublishSite, slugTaken, SITE_TABLES } = await import("../src/lib/server/sites.ts");
+const { readUpload } = await import("../src/lib/server/site-files.ts");
 const { serveSite } = await import("../src/lib/server/serve-site.ts");
-const { flashDbShim, MEMORY_DB } = await import("../src/lib/flashdb-shim.ts");
-const { ANYONE, OWNER, computeRules } = await import("../src/lib/data-rules.ts");
+const { flashDbShim, injectHead, MEMORY_DB } = await import("../src/lib/flashdb-shim.ts");
+const { ANYONE, OWNER, OWNER_IN_APP, computeRules } = await import("../src/lib/data-rules.ts");
 const { routeHost } = await import("../src/lib/site-host.ts");
 type Caller = import("../src/lib/data-rules.ts").Caller;
 
@@ -23,8 +34,9 @@ const owner = { id: "owner", email: "o@x.io", name: "", verified_at: 1 } as neve
 await run("INSERT INTO users (id, email, password_hash, created_at, verified_at) VALUES ('owner', 'o@x.io', '', 0, 1), ('other', 'x@x.io', '', 0, 1)");
 
 const flashData = (rules: object) => `<script type="application/json" id="flash-data">${JSON.stringify(rules)}</script>`;
-/** Publishes an app as the owner and returns its slug. */
+/** Publishes an app as the owner and returns its slug. The tests publish more than an hour's worth. */
 async function publish(html: string, title = "App", slug?: string): Promise<string> {
+  await run("DELETE FROM rate_limits");
   const result = await publishSite(owner, { html, title, slug });
   assert.ok("slug" in result, JSON.stringify(result));
   return result.slug;
@@ -45,12 +57,17 @@ async function member(slug: string, email: string, ip: string): Promise<Caller &
 }
 const records = (answer: { body: unknown }) => (answer.body as { records: Record<string, unknown>[] }).records;
 const record = (answer: { body: unknown }) => (answer.body as { record: Record<string, unknown> }).record;
+/** Opens an app as its owner, as Open as owner in Flash does: a one-time code, traded for a key. */
+async function ownerKey(slug: string, session: string): Promise<string> {
+  const code = (await newOwnerCode(slug, "owner", session))!;
+  return (await ownerKeyForCode(slug, code))!.key;
+}
 
 test("the wipe from the audit is refused", async () => {
   const html = `<script>flashDB.list("reviews").then(show); form.onsubmit = () => flashDB.add("reviews", { text: input.value });</script>`;
   const slug = await publish(html, "Reviews");
   const saved = await one<{ data_rules: string }>("SELECT data_rules FROM sites WHERE slug = ?", [slug]);
-  assert.deepEqual(JSON.parse(saved!.data_rules), { v: 1, guess: "add", app: {} }, "the rules are saved with the page");
+  assert.deepEqual(JSON.parse(saved!.data_rules), { v: 1, guess: "add", app: {}, code: ["reviews"] }, "the rules are saved with the page");
 
   const added = await addRecord(slug, "reviews", { text: "Lovely" }, "", ANYONE);
   assert.equal(added.status, 201, "anyone can still add");
@@ -97,10 +114,11 @@ test("signed-in people manage their own records", async () => {
   const added = await addRecord(slug, "posts", { text: "Ann's post", byYou: false, authorId: "bob" }, "", ann);
   assert.equal(added.status, 201);
   assert.equal(record(added).byYou, true);
-  assert.equal(record(added).authorId, undefined, "a forged author is dropped");
+  // The app's own authorId is just the app's data: Flash keeps who added it in a column of its own.
+  assert.equal(record(added).authorId, "bob");
   const id = record(added).id as string;
   const stored = await one<{ data: string; author: string }>("SELECT data, author FROM site_records WHERE id = ?", [id]);
-  assert.deepEqual(JSON.parse(stored!.data), { text: "Ann's post" });
+  assert.deepEqual(JSON.parse(stored!.data), { text: "Ann's post", authorId: "bob" });
   assert.equal(stored!.author, ann.id);
 
   assert.equal(records(await listRecords(slug, "posts", "", "", ann))[0].byYou, true, "Ann sees it's hers");
@@ -124,6 +142,29 @@ test("signed-in people manage their own records", async () => {
   // The owner sees who added what.
   const list = await newestShared(slug, "posts");
   assert.deepEqual(list.map((r) => [r.data, r.addedBy]), [[{ text: "Bob's" }, "bob@example.com"]]);
+});
+
+test("an app made before rules keeps its own authorId, in shared and in each person's own records", async () => {
+  // Like the boards Flash built before: Edit and Delete show where p.authorId is the person's id.
+  await legacySite("board-old", `<script>flashDB.add("posts", { text, authorId: flashAuth.user.id }); flashDB.remove("posts", id); flashDB.mine.add("drafts", d)</script>`);
+  await run("INSERT INTO site_records (id, site_slug, collection, data, created_at, updated_at) VALUES ('old1', 'board-old', 'posts', ?, 1, 1)", [
+    JSON.stringify({ text: "from before", authorId: "u_ann" }),
+  ]);
+  const ann = await member("board-old", "ann@example.com", "9.9.9.1");
+  assert.equal((await collectionRule("board-old", "posts"))?.rule, "open");
+  assert.deepEqual(records(await listRecords("board-old", "posts", "", "", ANYONE)).map((r) => r.authorId), ["u_ann"], "what was there comes back");
+  const added = await addRecord("board-old", "posts", { text: "new", authorId: "u_ann" }, "", ANYONE);
+  assert.equal(record(added).authorId, "u_ann");
+  const id = record(added).id as string;
+  assert.equal(record(await patchRecord("board-old", "posts", id, { text: "edited" }, "", ANYONE)).authorId, "u_ann");
+  assert.deepEqual(records(await listRecords("board-old", "posts", "", "", ann)).map((r) => [r.text, r.authorId]), [
+    ["from before", "u_ann"],
+    ["edited", "u_ann"],
+  ]);
+  assert.deepEqual((await newestShared("board-old", "posts")).map((r) => r.data.authorId), ["u_ann", "u_ann"], "and in the owner's Data view");
+  const mine = await addRecord("board-old", "drafts", { text: "draft", authorId: ann.id }, ann.id);
+  assert.equal(record(mine).authorId, ann.id);
+  assert.equal(records(await listRecords("board-old", "drafts", "", ann.id))[0].authorId, ann.id);
 });
 
 test("private collections take sign-ups but only the owner reads them", async () => {
@@ -187,41 +228,80 @@ test("read-only collections: visitors read, only the owner adds", async () => {
   assert.doesNotMatch(cut.csv, /Dish 0/);
 });
 
-test("owner keys work for one app, and end with the Flash sign-in or after two hours", async () => {
-  const slug = await publish(flashData({ menu: "read" }), "Keys");
+test("Open as owner's code works once for one app, and its key ends with the Flash sign-in or after an hour", async () => {
+  const slug = await publish(flashData({ menu: "read", signups: "private" }), "Keys");
   const otherSlug = await publish("<p>other</p>", "Other");
   const session = cookieToken(await createSession("owner", true));
-  const key = (await newOwnerKey(slug, "owner", session))!;
-  assert.match(key, /^o_/);
+  assert.equal(await newOwnerCode(slug, "other", session), null, "only the app's owner gets one");
+  assert.equal(await newOwnerCode(slug, "owner", ""), null);
+  const tried = (await newOwnerCode(slug, "owner", session))!;
+  assert.equal(await ownerKeyForCode(otherSlug, tried), null, "not for another app");
+  assert.equal(await ownerKeyForCode(slug, tried), null, "and trying it there used it up");
+
+  const code = (await newOwnerCode(slug, "owner", session))!;
+  const made = (await ownerKeyForCode(slug, code))!;
+  assert.match(made.key, /^o_/);
+  assert.equal(made.language, "");
+  assert.equal(await ownerKeyForCode(slug, code), null, "a code works once");
+  const both = await Promise.all([0, 1].map(async () => ownerKeyForCode(slug, (await newOwnerCode(slug, "owner", session))!)));
+  assert.ok(both.every(Boolean), "each code makes its own key");
+  const raced = (await newOwnerCode(slug, "owner", session))!;
+  assert.deepEqual((await Promise.all([ownerKeyForCode(slug, raced), ownerKeyForCode(slug, raced)])).filter(Boolean).length, 1, "two pages racing for one code");
+
+  const key = made.key;
   assert.equal(await isOwnerKey(slug, key), true);
-  assert.deepEqual(await callerFor(slug, `Bearer ${key}`), OWNER);
-  assert.equal((await addRecord(slug, "menu", { dish: "Pie" }, "", await callerFor(slug, `Bearer ${key}`))).status, 201);
+  const caller = await callerFor(slug, `Bearer ${key}`);
+  assert.deepEqual(caller, OWNER_IN_APP);
+  assert.equal((await addRecord(slug, "menu", { dish: "Pie" }, "", caller)).status, 201);
+  // In the app, the owner's key can add to a private collection like anyone, but never read it:
+  // only Flash's Data view can, so a script that gets into the page can't leak the sign-ups.
+  assert.equal((await addRecord(slug, "signups", { email: "a@b.co" }, "", caller)).status, 201);
+  assert.deepEqual(await listRecords(slug, "signups", "", "", caller), {
+    status: 403,
+    body: { error: "You can see this in Flash, in My websites & apps › Data." },
+  });
+  const signup = records(await listRecords(slug, "signups", "", "", OWNER))[0].id as string;
+  assert.equal((await removeRecord(slug, "signups", signup, "", caller)).status, 403);
+  assert.equal((await patchRecord(slug, "signups", signup, { email: "x" }, "", caller)).status, 403);
+  assert.equal(records(await listRecords(slug, "signups", "", "", OWNER)).length, 1);
+
   assert.equal(await isOwnerKey(otherSlug, key), false, "not for another app");
   assert.deepEqual(await callerFor(otherSlug, `Bearer ${key}`), ANYONE);
   assert.deepEqual(await callerFor(slug, key), ANYONE, "a bare key without Bearer is no key");
   assert.deepEqual(await callerFor(slug, null), ANYONE);
-  assert.equal(await newOwnerKey(slug, "other", session), null, "only the app's owner gets one");
-  assert.equal(await newOwnerKey(slug, "owner", ""), null);
-  const stored = await one<{ n: number }>("SELECT COUNT(*) AS n FROM site_owner_keys WHERE token_hash = ?", [key]);
-  assert.equal(Number(stored?.n), 0, "only the key's hash is kept");
+  const kept = await one<{ n: number }>(
+    "SELECT (SELECT COUNT(*) FROM site_owner_keys WHERE token_hash = ?) + (SELECT COUNT(*) FROM site_owner_codes WHERE code_hash = ?) AS n",
+    [key, code],
+  );
+  assert.equal(Number(kept?.n), 0, "only hashes are kept");
 
-  // Signing out of Flash ends it.
+  // A code lasts two minutes.
+  const late = (await newOwnerCode(slug, "owner", session))!;
+  await run("UPDATE site_owner_codes SET expires_at = 1 WHERE code_hash = ?", [sha256(late)]);
+  assert.equal(await ownerKeyForCode(slug, late), null);
+  // Signing out of Flash ends the keys, and the codes not used yet.
+  const pending = (await newOwnerCode(slug, "owner", session))!;
   await run("DELETE FROM sessions WHERE token_hash = ?", [sha256(session)]);
   assert.equal(await isOwnerKey(slug, key), false);
-  // So do two hours.
+  assert.equal(await ownerKeyForCode(slug, pending), null);
+  // So does an hour.
   const session2 = cookieToken(await createSession("owner", true));
-  const key2 = (await newOwnerKey(slug, "owner", session2))!;
+  const key2 = await ownerKey(slug, session2);
   assert.equal(await isOwnerKey(slug, key2), true);
+  const expires = await one<{ at: number }>("SELECT expires_at AS at FROM site_owner_keys WHERE token_hash = ?", [sha256(key2)]);
+  assert.ok(Number(expires!.at) - Date.now() <= 3_600_000);
   await run("UPDATE site_owner_keys SET expires_at = 0 WHERE token_hash = ?", [sha256(key2)]);
   assert.equal(await isOwnerKey(slug, key2), false);
   // At most 20 live keys per app and owner.
-  for (let i = 0; i < 25; i++) await newOwnerKey(slug, "owner", session2);
+  for (let i = 0; i < 25; i++) await ownerKey(slug, session2);
   const live = await one<{ n: number }>("SELECT COUNT(*) AS n FROM site_owner_keys WHERE site_slug = ?", [slug]);
   assert.equal(Number(live?.n), 20);
-  // If the app changes hands or goes, its keys stop working.
-  const key3 = (await newOwnerKey(slug, "owner", session2))!;
+  // If the app changes hands or goes, its codes and keys stop working.
+  const key3 = await ownerKey(slug, session2);
+  const code3 = (await newOwnerCode(slug, "owner", session2))!;
   await run("UPDATE sites SET user_id = 'other' WHERE slug = ?", [slug]);
   assert.equal(await isOwnerKey(slug, key3), false);
+  assert.equal(await ownerKeyForCode(slug, code3), null);
   await run("UPDATE sites SET user_id = 'owner' WHERE slug = ?", [slug]);
   assert.equal(await isOwnerKey(slug, key3), true);
   assert.equal(await unpublishSite("owner", slug), true);
@@ -288,70 +368,121 @@ test("each person's private records are unaffected by data rules", async () => {
   assert.equal(records(await listRecords(slug, "notes", "", ann.id)).length, 0);
 });
 
-test("the published page carries an owner key only for the signed-in owner", async () => {
+test("an app opens as its owner only from Open as owner in Flash, and only once", async () => {
   const slug = await publish(flashData({ menu: "read" }) + "<p>Menu</p>", "Page");
-  const page = (cookie?: string) =>
-    serveSite(slug, `https://x/p/${slug}`, new Request(`https://x/p/${slug}`, cookie ? { headers: { cookie } } : {})).then((r) => r.text());
+  const page = (query = "", headers: Record<string, string> = {}) =>
+    serveSite(slug, `https://flash-app.dev/p/${slug}`, new Request(`https://flash-app.dev/p/${slug}${query}`, { headers: { host: "flash-app.dev", ...headers } })).then(
+      (r) => r.text(),
+    );
   const keyIn = (html: string) => html.match(/const ownerKey = "([^"]*)"/)?.[1];
+  const session = cookieToken(await createSession("owner", true));
+  const theirs = cookieToken(await createSession("other", true));
 
   assert.equal(keyIn(await page()), "", "nobody signed in");
   assert.equal(keyIn(await (await serveSite(slug)).text()), "", "no request at all");
-  const mine = cookieToken(await createSession("owner", true));
-  const theirs = cookieToken(await createSession("other", true));
-  const ownerPage = await page(`flash_session=${mine}`);
+  // The owner opening their app, even signed in to Flash, sees it as visitors do: a script or a
+  // link that gets into the app can't act as them.
+  assert.equal(keyIn(await page("", { cookie: `flash_session=${session}` })), "", "the owner's Flash sign-in alone");
+  assert.equal(keyIn(await page("", { cookie: `flash_session=${theirs}` })), "");
+
+  const code = (await newOwnerCode(slug, "owner", session))!;
+  const ownerPage = await page(`?flash_owner=${code}`, { "sec-fetch-site": "same-origin" });
   const key = keyIn(ownerPage)!;
   assert.match(key, /^o_/);
   assert.equal(await isOwnerKey(slug, key), true);
-  assert.match(ownerPage, /Owner view: you can change this app's data here/);
-  assert.equal(keyIn(await page(`flash_session=${theirs}`)), "", "another Flash user gets none");
-  assert.equal(keyIn(await page(`flash_session=nonsense`)), "");
+  assert.match(ownerPage, /Owner view: you can change this app's data here until you reload or close this page/);
+  // The same address again (a reload, a copied link) shows the app as visitors do, and says why.
+  const again = await page(`?flash_owner=${code}`);
+  assert.equal(keyIn(again), "");
+  assert.match(again, /This owner link has been used already or is too old/);
+  assert.equal(keyIn(await page(`?flash_owner=nonsense`)), "");
+
+  // On Flash's own address the code only works when Flash's own page opened it, not from a link elsewhere.
+  const code2 = (await newOwnerCode(slug, "owner", session))!;
+  assert.equal(keyIn(await page(`?flash_owner=${code2}`, { "sec-fetch-site": "cross-site" })), "");
+  // The app's own domain is always another site to Flash, so there it works, once.
+  await run("INSERT INTO site_domains (domain, site_slug, user_id, created_at) VALUES ('mybakery.com', ?, 'owner', 0)", [slug]);
+  const onDomain = (query: string) =>
+    serveSite(slug, "https://mybakery.com/", new Request(`https://mybakery.com/${query}`, { headers: { host: "mybakery.com", "sec-fetch-site": "cross-site" } })).then((r) =>
+      r.text(),
+    );
+  assert.match(keyIn(await onDomain(`?flash_owner=${code2}`))!, /^o_/);
+  assert.equal(keyIn(await onDomain(`?flash_owner=${code2}`)), "");
   // An app's own sign-in cookie is something else entirely.
-  assert.equal(keyIn(await page(`${SITE_COOKIE}=${mine}`)), "");
-  // The owner's Data view isn't reachable from an app's own domain.
+  assert.equal(keyIn(await page("", { cookie: `${SITE_COOKIE}=${session}` })), "");
+  // The owner's Data view, and Open as owner, aren't reachable from an app's own domain.
   assert.deepEqual(routeHost("mybakery.com", `/api/sites/${slug}/records`, "GET"), { redirect: "/" });
   assert.deepEqual(routeHost("mybakery.com", `/api/sites/${slug}/records`, "PATCH"), { notFound: true });
+  assert.deepEqual(routeHost("mybakery.com", `/api/sites/${slug}/owner`, "POST"), { notFound: true });
 });
 
-test("the published flashDB sends the right key and says who is looking", async () => {
-  type Sent = { url: string; headers: Record<string, string> };
-  const run = (ownerKey: string | null, visitor: { user: { id: string; email: string; name: string }; token: string } | null, status = 200) => {
+test("the published flashDB sends the right key, only to Flash, and says who is looking", async () => {
+  type Init = { method: string; headers: Record<string, string>; body?: unknown };
+  type Sent = { url: string; init: Init };
+  type Db = { isOwner: boolean; list(c: string): Promise<unknown[]>; remove(c: string, id: string): Promise<void>; send(f: string, d: object): Promise<boolean> };
+  const run = (owner: { key: string; note: string; ended: string } | null, visitor: { user: { id: string; email: string; name: string }; token: string } | null, status = 200, refusal = {}) => {
     const sent: Sent[] = [];
-    const fetch = async (url: string, init?: { headers?: Record<string, string> }) => {
-      sent.push({ url, headers: init?.headers ?? {} });
-      return { ok: status < 400, status, json: async () => (status < 400 ? { records: [{ id: "a" }], more: false } : { error: "Only this app's owner can change this." }) };
+    const fetch = async (url: string, init: Init) => {
+      sent.push({ url, init });
+      return {
+        ok: status < 400,
+        status,
+        json: async () => (status < 400 ? { records: [{ id: "a" }], more: false } : { error: "Only this app's owner can change this.", ...refusal }),
+      };
     };
-    const element = () => ({ style: {}, setAttribute() {}, remove() {} });
+    const notes: string[] = [];
+    const element = () => ({ style: {}, textContent: "", setAttribute() {}, remove() {} });
     const script = { removed: false, remove() { script.removed = true; } };
-    const document = { readyState: "complete", createElement: element, body: { appendChild() {} }, currentScript: script };
-    const window: { flashDB?: { isOwner: boolean; list(c: string): Promise<unknown[]>; remove(c: string, id: string): Promise<void> } } = {};
-    const owner = ownerKey ? { key: ownerKey, note: "Owner view", ended: "Your owner view has ended. Reload the page." } : null;
+    const document = { readyState: "complete", createElement: element, body: { appendChild: (n: { textContent: string }) => notes.push(n.textContent) }, currentScript: script };
+    const location = { href: "https://flash.test/p/x?flash_owner=abc&keep=1" };
+    const history = { replaceState: (_s: unknown, _t: string, url: string) => (location.href = url) };
+    const window: { flashDB?: Db } = {};
     const code = flashDbShim("/api/sites/x/data", "/in", "/shop", false, "/auth", "/mine", visitor, "/ai", "/files", owner).replace(/^<script>|<\/script>$/g, "");
-    vm.runInNewContext(code, { window, fetch, document, setTimeout: () => 0, URLSearchParams });
-    return { db: window.flashDB!, sent, script };
+    vm.runInNewContext(code, { window, fetch, document, location, history, setTimeout: () => 0, URL, URLSearchParams });
+    return { db: window.flashDB!, sent, script, notes, location };
   };
   const visitor = { user: { id: "u1", email: "ann@example.com", name: "Ann" }, token: "page-key" };
+  const ownerView = { key: "o_owner", note: "Owner view", ended: "Your owner view has ended. Choose Open as owner again." };
 
-  const asOwner = run("o_owner", visitor);
+  const asOwner = run(ownerView, visitor);
   assert.equal(asOwner.db.isOwner, true);
+  assert.deepEqual(asOwner.notes, ["Owner view"]);
   await asOwner.db.list("menu");
-  assert.equal(asOwner.sent[0].headers.Authorization, "Bearer o_owner", "the owner's key wins on shared data");
+  assert.equal(asOwner.sent[0].init.headers.Authorization, "Bearer o_owner", "the owner's key wins on shared data");
   assert.equal(asOwner.script.removed, true, "the script holding the key leaves the page");
+  assert.equal(asOwner.location.href, "https://flash.test/p/x?keep=1", "the one-time code leaves the address");
+  // Every address was made whole when the page started, so a <base> tag added later can't send the
+  // key elsewhere, and the request's options have no prototype a script could watch them through.
+  assert.equal(asOwner.sent[0].url, "https://flash.test/api/sites/x/data?collection=menu");
+  assert.equal(Object.getPrototypeOf(asOwner.sent[0].init), null);
+  assert.equal(Object.getPrototypeOf(asOwner.sent[0].init.headers), null);
+  await asOwner.db.send("contact", { a: 1 });
+  assert.equal(asOwner.sent[1].url, "https://flash.test/in");
+  assert.equal(asOwner.sent[1].init.headers.Authorization, undefined, "forms carry no key");
 
   const asVisitor = run(null, visitor);
   assert.equal(asVisitor.db.isOwner, false);
   await asVisitor.db.list("menu");
-  assert.equal(asVisitor.sent[0].headers.Authorization, "Bearer page-key");
+  assert.equal(asVisitor.sent[0].init.headers.Authorization, "Bearer page-key");
   assert.equal(asVisitor.script.removed, false, "other pages are left as they were");
+  assert.deepEqual(asVisitor.notes, []);
 
   const anon = run(null, null);
   assert.equal(anon.db.isOwner, false);
   await anon.db.list("menu");
-  assert.equal(anon.sent[0].headers.Authorization, undefined, "no key, no header (and no preflight)");
-  assert.equal(anon.sent[0].headers["Content-Type"], undefined);
+  assert.equal(anon.sent[0].init.headers.Authorization, undefined, "no key, no header (and no preflight)");
+  assert.equal(anon.sent[0].init.headers["Content-Type"], undefined);
 
-  // When the owner's key has ended, the owner is told to reload.
-  await assert.rejects(run("o_old", null, 403).db.remove("menu", "a"), /Reload the page/);
-  await assert.rejects(run(null, null, 403).db.remove("menu", "a"), /Only this app's owner can change this/);
+  // A code that didn't work: the page says so, and is the visitors' page.
+  const used = run({ key: "", note: "This owner link has been used already", ended: "" }, null);
+  assert.equal(used.db.isOwner, false);
+  assert.deepEqual(used.notes, ["This owner link has been used already"]);
+  assert.equal(used.script.removed, false);
+
+  // When the owner's key has ended, the owner is told how to start again; other refusals say what they say.
+  await assert.rejects(run(ownerView, null, 403, { ownerEnded: true }).db.remove("menu", "a"), /Choose Open as owner again/);
+  await assert.rejects(run(ownerView, null, 403).db.remove("menu", "a"), /Only this app's owner can change this/);
+  await assert.rejects(run(null, null, 403, { ownerEnded: true }).db.remove("menu", "a"), /Only this app's owner can change this/);
 
   // Flash's preview, and a downloaded app, treat the person trying it as its owner.
   const memory: { flashDB?: { isOwner: boolean; add(c: string, d: object): Promise<{ byYou?: boolean }> } } = {};
@@ -366,11 +497,11 @@ test("a name with </script> in it can't end the page's script", () => {
   assert.equal(page.indexOf("</script>"), page.length - "</script>".length, "only the shim's own closing tag");
   assert.ok(!page.includes("<!--"));
   const window: { flashAuth?: { user: { name: string } } } = {};
-  vm.runInNewContext(page.replace(/^<script>|<\/script>$/g, ""), { window, URLSearchParams, fetch: () => {} });
+  vm.runInNewContext(page.replace(/^<script>|<\/script>$/g, ""), { window, URLSearchParams, URL, location: { href: "https://x/p/x" }, fetch: () => {} });
   assert.equal(window.flashAuth!.user.name, name, "the name still reads the same");
 });
 
-test("unpublishing takes everything the app kept, even where the database doesn't cascade", async () => {
+test("unpublishing takes everything the app kept, from every table that keeps something for an app", async () => {
   // Turso runs with foreign keys off, so nothing may rely on ON DELETE CASCADE.
   await run("PRAGMA foreign_keys = OFF");
   try {
@@ -381,54 +512,156 @@ test("unpublishing takes everything the app kept, even where the database doesn'
     assert.ok(await one("SELECT 1 FROM site_records WHERE id = 'leak'"));
     assert.equal((await listRecords("leaky", "menu", "", "", OWNER)).status, 404, "and nobody can reach it");
 
+    // Every table with a site_slug column, read from the database itself, so one added later without
+    // being listed in SITE_TABLES fails here.
+    const tables: string[] = [];
+    for (const { name } of await all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")) {
+      const columns = await all<{ name: string }>(`PRAGMA table_info(${name})`);
+      if (columns.some((c) => c.name === "site_slug")) tables.push(name);
+    }
+    assert.deepEqual([...SITE_TABLES].sort(), tables, "unpublishing knows every table that keeps something for an app");
+    /** A row for the app in a table, with something in each column that must have a value. */
+    const seed = async (table: string, slug: string, n = 0) => {
+      const columns = await all<{ name: string; type: string; notnull: number; dflt_value: unknown }>(`PRAGMA table_info(${table})`);
+      const filled = columns.filter((c) => c.name === "site_slug" || (Number(c.notnull) && c.dflt_value === null));
+      const value = (c: { name: string; type: string }) =>
+        c.name === "site_slug" ? slug : /INT/i.test(c.type) ? n + 1 : /BLOB/i.test(c.type) ? Buffer.from("x") : `${table}-${slug}-${c.name}-${n}`;
+      await run(`INSERT INTO ${table} (${filled.map((c) => c.name).join(", ")}) VALUES (${filled.map(() => "?").join(", ")})`, filled.map(value));
+    };
+
     const slug = "gone-app";
     await legacySite(slug, flashData({ menu: "read" }));
-    const ann = await member(slug, "ann@example.com", "8.8.8.8");
-    await addRecord(slug, "menu", { dish: "Soup" }, "", OWNER);
-    await addRecord(slug, "notes", { text: "mine" }, ann.id);
-    await chooseRule(slug, "menu", "add");
-    await newOwnerKey(slug, "owner", cookieToken(await createSession("owner", true)));
-    await setUploadsOn(slug, true);
-    const upload = await saveUpload(slug, { name: "a.txt", type: "text/plain", bytes: Buffer.from("hello") }, "");
-    const fileId = (upload.body as { url: string }).url.split("/").pop()!;
-    assert.ok(await readUpload(slug, fileId));
-    await run("INSERT INTO site_messages (id, site_slug, form, data, created_at) VALUES ('m1', ?, 'contact', '{}', 0)", [slug]);
-    await run("INSERT INTO site_ai (site_slug, enabled, daily_credits, updated_at) VALUES (?, 1, 100, 0)", [slug]);
-    await run("INSERT INTO site_products (id, site_slug, name, price, currency, created_at) VALUES ('p1', ?, 'Soup', 800, 'cad', 0)", [slug]);
-    await run("INSERT INTO site_versions (id, site_slug, title, html, created_at) VALUES ('v1', ?, 'Gone', '<p>', 0)", [slug]);
-    await run("INSERT INTO site_visits (site_slug, day, source, views) VALUES (?, '2026-10-01', '', 3)", [slug]);
+    for (const table of tables) await seed(table, slug);
+    const counts = async () => {
+      const found: Record<string, number> = {};
+      for (const table of tables) found[table] = Number((await one<{ n: number }>(`SELECT COUNT(*) AS n FROM ${table} WHERE site_slug = ?`, [slug]))?.n);
+      return found;
+    };
+    const before = await counts();
+    for (const table of tables) assert.ok(before[table] > 0, table);
 
     assert.equal(await unpublishSite("other", slug), false, "only the owner can");
+    assert.deepEqual(await counts(), before, "and someone else's try takes nothing at all");
     assert.equal(await slugTaken(slug), true);
     assert.equal(await unpublishSite("owner", slug), true);
-    const tables = [
-      "site_records",
-      "site_users",
-      "site_sessions",
-      "site_page_tokens",
-      "site_ai",
-      "site_uploads",
-      "site_messages",
-      "site_versions",
-      "site_visits",
-      "site_products",
-      "site_owner_keys",
-      "site_collection_rules",
-    ];
-    for (const table of tables) {
-      const left = await one<{ n: number }>(`SELECT COUNT(*) AS n FROM ${table} WHERE site_slug = ?`, [slug]);
-      assert.equal(Number(left?.n), 0, table);
-    }
+    for (const [table, n] of Object.entries(await counts())) assert.equal(n, 0, table);
     assert.equal(await slugTaken(slug), false, "the name is free again, with nothing left to inherit");
 
-    // A file left behind by an app unpublished before this fix is no longer served, and its name isn't reused.
+    // What an app unpublished before this fix left behind keeps its name from being reused: its
+    // records, members, files, orders, domains, visits and the AI it used.
+    for (const table of ["site_records", "site_users", "site_uploads", "site_orders", "site_domains", "site_visits", "site_visitors", "site_ai_usage"]) {
+      const old = `old-${table.replace(/_/g, "-")}`;
+      assert.equal(await slugTaken(old), false, old);
+      await seed(table, old);
+      assert.equal(await slugTaken(old), true, old);
+    }
+    // A file left behind is no longer served.
     await run("INSERT INTO site_uploads (id, site_slug, owner, mime, name, data, size, created_at) VALUES ('f1', 'old-app', '', 'text/plain', 'a.txt', x'00', 1, 0)");
     assert.equal(await readUpload("old-app", "f1"), null);
-    assert.equal(await slugTaken("old-app"), true);
-    await run("INSERT INTO site_records (id, site_slug, collection, data, created_at, updated_at) VALUES ('r1', 'old-app-2', 'menu', '{}', 0, 0)");
-    assert.equal(await slugTaken("old-app-2"), true);
     assert.equal(await slugTaken("never-used"), false);
   } finally {
     await run("PRAGMA foreign_keys = ON");
   }
+});
+
+test("rules worked out from an old page never replace the rules a publish just saved", async () => {
+  const v1 = `<script>flashDB.update("todos", id, {})</script>`;
+  const v2 = flashData({ todos: "read" });
+  await legacySite("race", v1);
+  // The refresh reads the old page, then the new page is published with its rules, then the refresh would save.
+  const refreshing = refreshRules("race");
+  const publishing = run("UPDATE sites SET html = ?, updated_at = 5, data_rules = ? WHERE slug = 'race'", [v2, JSON.stringify(computeRules(v2))]);
+  await Promise.all([refreshing, publishing]);
+  const saved = await one<{ data_rules: string }>("SELECT data_rules FROM sites WHERE slug = 'race'");
+  assert.deepEqual(JSON.parse(saved!.data_rules), computeRules(v2));
+  // The same, without relying on the order: rules from a page that was replaced since aren't kept.
+  assert.equal(await keepRules("race", computeRules(v1), 0), false);
+  assert.equal(await keepRules("race", computeRules(v2), 5), true);
+});
+
+test("an app whose block Flash can't read is read-only, and the owner is told why", async () => {
+  const html = `<script type="application/json" id="flash-data">{"menu": "read" "reviews": "add"}</script><script>if (flashDB.isOwner) flashDB.remove("menu", id); flashDB.add("reviews", r)</script>`;
+  await run("DELETE FROM rate_limits");
+  const result = await publishSite(owner, { html, title: "Broken" });
+  assert.ok("data" in result && result.data);
+  assert.deepEqual(result.data.bad, { why: "json", names: [] });
+  const slug = result.slug;
+  assert.equal((await addRecord(slug, "reviews", { text: "hi" }, "", ANYONE)).status, 403, "fails closed");
+  assert.equal((await addRecord(slug, "reviews", { text: "hi" }, "", OWNER)).status, 201);
+  const data = (await sharedCollections(slug))!;
+  assert.deepEqual([data.block, data.bad, data.guess], [true, { why: "json", names: [] }, "read"]);
+  // The collections its code names show in the Data view before they hold anything.
+  assert.deepEqual(
+    data.collections.map((c) => [c.name, c.rule, c.source]),
+    [
+      ["reviews", "read", "block"],
+      ["menu", "read", "block"],
+    ],
+  );
+});
+
+test("an update whose new block leaves out what visitors could change says so", async () => {
+  const v1 = `<script>flashDB.add("tasks", t); flashDB.update("tasks", id, { done: true }); flashDB.add("room-" + room, m)</script>`;
+  const slug = await publish(v1, "Tasks");
+  await addRecord(slug, "room-7", { text: "hi" }, "", ANYONE);
+  const v2 = flashData({ reviews: "add" }) + v1 + `<script>flashDB.add("reviews", r)</script>`;
+  await run("DELETE FROM rate_limits");
+  const second = await publishSite(owner, { html: v2, title: "Tasks", slug });
+  assert.ok("data" in second && second.data);
+  assert.deepEqual(second.data.closed, ["tasks", "room-7"]);
+  assert.equal((await addRecord(slug, "room-7", { text: "x" }, "", ANYONE)).status, 403);
+  // Giving "*" a rule keeps them open, and closes nothing.
+  const v3 = flashData({ reviews: "add", "*": "open" }) + v1;
+  const third = await publishSite(owner, { html: v3, title: "Tasks", slug });
+  assert.ok("data" in third && third.data);
+  assert.equal(third.data.closed, undefined);
+  assert.equal((await addRecord(slug, "room-8", { text: "x" }, "", ANYONE)).status, 201);
+  assert.deepEqual(await collectionRule(slug, "tasks"), { rule: "open", source: "block" });
+});
+
+test("an app made before rules whose code Flash can't see keeps working while it has records", async () => {
+  // Its code comes from a script elsewhere, so its page never says flashDB.
+  const html = `<script src="https://cdn.jsdelivr.net/gh/me/guestbook@1/app.js"></script>`;
+  await legacySite("cdn-book", html);
+  await run("INSERT INTO site_records (id, site_slug, collection, data, created_at, updated_at) VALUES ('g1', 'cdn-book', 'entries', '{}', 1, 1)");
+  assert.equal((await addRecord("cdn-book", "entries", { text: "hi" }, "", ANYONE)).status, 201);
+  assert.equal((await collectionRule("cdn-book", "entries"))?.rule, "open");
+  // Updating it with the same kind of page keeps it so; one with flashDB code of its own is read again.
+  await publish(html + "<p>v2</p>", "Book", "cdn-book");
+  assert.equal((await collectionRule("cdn-book", "entries"))?.rule, "open");
+  await publish(`<script>flashDB.add("entries", e)</script>`, "Book", "cdn-book");
+  assert.equal((await collectionRule("cdn-book", "entries"))?.rule, "add");
+  // An old page that never used its data, and has none, stays read-only.
+  await legacySite("cdn-plain", html);
+  assert.equal((await addRecord("cdn-plain", "entries", { text: "hi" }, "", ANYONE)).status, 403);
+  // Restored to an earlier version before its data was ever used, it's still kept open.
+  await legacySite("cdn-later", html);
+  await run("INSERT INTO site_records (id, site_slug, collection, data, created_at, updated_at) VALUES ('g2', 'cdn-later', 'entries', '{}', 1, 1)");
+  await run("INSERT INTO site_versions (id, site_slug, title, html, created_at) VALUES ('cv1', 'cdn-later', 'Book', ?, 1)", [html + "<p>v0</p>"]);
+  assert.equal(await restoreVersion("owner", "cdn-later", "cv1"), true);
+  assert.equal(JSON.parse((await one<{ data_rules: string }>("SELECT data_rules FROM sites WHERE slug = 'cdn-later'"))!.data_rules).guess, "open");
+});
+
+test("the CSV keeps numbers as numbers", async () => {
+  const slug = await publish(flashData({ places: "read" }), "Map");
+  await addRecord(slug, "places", { lng: -73.98, score: -3, note: "-5", label: "=SUM(A1)" }, "", OWNER);
+  const { csv } = await sharedCsv(slug, "places");
+  const [header, row] = csv.slice(1).split("\r\n");
+  assert.equal(header, "Added,lng,score,note,label,id");
+  assert.deepEqual(row.split(",").slice(1, 5), ["-73.98", "-3", "'-5", "'=SUM(A1)"], "text that looks like a formula still can't run");
+});
+
+test("the shim goes into the head, or right after the doctype when there's no head", () => {
+  const shim = "<script>x</script>";
+  assert.equal(injectHead("<!doctype html><html><head><title>A</title>", shim), `<!doctype html><html><head>${shim}<title>A</title>`);
+  // A page with no <head> but a <header> stays in standards mode.
+  assert.equal(injectHead("<!doctype html><html lang=en><body><header>Hi</header>", shim), `<!doctype html>${shim}<html lang=en><body><header>Hi</header>`);
+  assert.equal(injectHead("\uFEFF <!-- made by Flash --> <!DOCTYPE html><body>", shim), `\uFEFF <!-- made by Flash --> <!DOCTYPE html>${shim}<body>`);
+  assert.equal(injectHead("<p>Hi</p>", shim), `${shim}<p>Hi</p>`, "no doctype at all");
+  assert.equal(injectHead("<!-- never closed <!doctype html>", shim), `${shim}<!-- never closed <!doctype html>`);
+  // A page made to be slow to read is read as quickly as any other.
+  const started = Date.now();
+  injectHead("<!-- a -->".repeat(200_000) + "<p>", shim);
+  injectHead("<!--".repeat(500_000), shim);
+  assert.ok(Date.now() - started < 1000);
 });

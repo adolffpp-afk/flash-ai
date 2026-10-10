@@ -56,8 +56,14 @@ export const MEMORY_DB = `
 /** The person signed in to a published app right now, and the key this page's requests carry. */
 export type Visitor = { user: { id: string; email: string; name: string }; token: string } | null;
 
-/** The owner's key for a page Flash serves to the app's owner (see site-owner.ts), with what the page tells them, in their language. */
+/**
+ * The owner's key for a page opened with Open as owner (see site-owner.ts), with what the page tells
+ * them, in their language. key is "" when the one-time code didn't work: the page only says so.
+ */
 export type OwnerView = { key: string; note: string; ended: string } | null;
+
+/** The address's query parameter carrying the one-time code that opens an app as its owner; the page removes it at once. */
+export const OWNER_CODE_PARAM = "flash_owner";
 
 /** A value written into the page's script. "<" is escaped, so a name with </script> in it can't end the script. */
 const js = (value: unknown) => JSON.stringify(value).replace(/</g, "\\u003c");
@@ -72,54 +78,69 @@ export function flashDbShim(
   visitor: Visitor = null,
   ai: string | null = null,
   files: string | null = null,
-  // Set only on a page served to the app's owner while signed in to Flash (see site-owner.ts).
+  // Set only on a page opened with Open as owner in Flash (see site-owner.ts).
   owner: OwnerView = null,
 ): string {
   const remote = `
-  const base = ${js(endpoint)};
-  const inbox = ${js(inbox)};
-  const shop = ${js(shop)};
-  const authUrl = ${js(auth)};
-  const mineUrl = ${js(mine)};
-  const aiUrl = ${js(ai)};
-  const filesUrl = ${js(files)};
+  // The page's own fetch and tools, kept before the app's code runs, and every address made whole
+  // from the page's own address: markup that gets into the page later (a <base> tag, a changed
+  // fetch) can't send a request, or the key it carries, anywhere else.
+  const send = fetch;
+  const Params = URLSearchParams;
+  const toJson = JSON.stringify;
+  const here = location.href;
+  const whole = (path) => (path ? new URL(path, here).href : path);
+  const base = whole(${js(endpoint)});
+  const inbox = whole(${js(inbox)});
+  const shop = whole(${js(shop)});
+  const authUrl = whole(${js(auth)});
+  const mineUrl = whole(${js(mine)});
+  const aiUrl = whole(${js(ai)});
+  const filesUrl = whole(${js(files)});
   const me = ${js(visitor?.user ?? null)};
   const key = ${js(visitor?.token ?? "")};
   const ownerKey = ${js(owner?.key ?? "")};
-  // The owner's key stays inside this script: it keeps its own fetch, and on the owner's page it
-  // leaves the page once it has run, so code that gets into the page later can't read the key.
-  const send = fetch;
+  const ownerNote = ${js(owner?.note ?? "")};
+  // The script holding the owner's key leaves the page once it has run, so nothing can read the key
+  // from it later. Code that gets into the page can still use flashDB as the owner while this page
+  // is open, so the key can't read collections only the owner sees, and it ends within the hour.
   if (ownerKey && document.currentScript) document.currentScript.remove();
+  // fetch reads its options by name, which code in the page could watch through Object.prototype,
+  // so the options and headers of every request have no prototype at all.
+  function request(url, method, auth, body, type) {
+    const headers = { __proto__: null };
+    if (type) headers["Content-Type"] = type;
+    if (auth) headers.Authorization = "Bearer " + auth;
+    return send(url, { __proto__: null, method: method, headers: headers, body: body });
+  }
   let paid = false;
   let authResult = "";
   try {
-    const url = new URL(location.href);
+    const url = new URL(here);
     paid = url.searchParams.get("flash_paid") === "1";
     authResult = url.searchParams.get("flash_auth") || "";
-    if (paid || authResult) {
+    // The one-time owner code was used up when Flash served this page; it leaves the address too.
+    if (paid || authResult || url.searchParams.has(${js(OWNER_CODE_PARAM)})) {
       url.searchParams.delete("flash_paid");
       url.searchParams.delete("flash_auth");
+      url.searchParams.delete(${js(OWNER_CODE_PARAM)});
       history.replaceState(null, "", url.toString());
     }
   } catch (e) {}
   // The shared data's rules decide who may do what, so requests carry the owner's key, or the
   // signed-in person's, when there is one.
   async function call(method, query, body) {
-    const auth = ownerKey || key;
-    const headers = { ...(body ? { "Content-Type": "application/json" } : {}), ...(auth ? { Authorization: "Bearer " + auth } : {}) };
-    const res = await send(base + (query ? "?" + new URLSearchParams(query) : ""), {
-      method, headers, body: body ? JSON.stringify(body) : undefined,
-    });
+    const res = await request(base + (query ? "?" + new Params(query) : ""), method, ownerKey || key, body ? toJson(body) : undefined, body ? "application/json" : "");
     const json = await res.json().catch(() => ({}));
     if (!res.ok) {
-      // The owner's key lasts two hours and ends with their Flash sign-in.
-      if (ownerKey && res.status === 403) throw new Error(${js(owner?.ended ?? "")});
+      // The owner's key lasts an hour at most, and ends with their Flash sign-in.
+      if (ownerKey && json.ownerEnded) throw new Error(${js(owner?.ended ?? "")});
       throw new Error(json.error || "flashDB request failed");
     }
     return json;
   }
   window.flashDB = {
-    // True on the page Flash serves to the app's owner: show them the buttons to change its data.
+    // True on a page opened with Open as owner in Flash: show the owner the buttons to change its data.
     isOwner: Boolean(ownerKey),
     async list(collection) {
       // The server answers in pages of up to 2 MB; follow the cursor to get every record.
@@ -138,14 +159,14 @@ export function flashDbShim(
     async upload(file) {
       const body = new FormData();
       body.append("file", file);
-      const res = await fetch(filesUrl, { method: "POST", headers: key ? { Authorization: "Bearer " + key } : undefined, body });
+      const res = await request(filesUrl, "POST", key, body, "");
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || "That file couldn't be sent.");
       return json;
     },
     // Sends a form privately to the site's owner, who reads it in Flash and gets an email.
     async send(form, data) {
-      const res = await fetch(inbox, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ form, data }) });
+      const res = await request(inbox, "POST", "", toJson({ form, data }), "application/json");
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || "Sending failed");
       return true;
@@ -154,16 +175,13 @@ export function flashDbShim(
     paid,
     // What the site sells, with prices set by its owner in Flash: [{ name, price }].
     async items() {
-      const res = await fetch(shop);
+      const res = await request(shop, "GET", "", undefined, "");
       const json = await res.json().catch(() => ({}));
       return res.ok ? json.items || [] : [];
     },
     // Opens a secure Stripe checkout for an item the owner priced in Flash.
     async buy(item, options) {
-      const res = await fetch(shop, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ item, quantity: (options && options.quantity) || 1, page: location.href }),
-      });
+      const res = await request(shop, "POST", "", toJson({ item, quantity: (options && options.quantity) || 1, page: location.href }), "application/json");
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.url) throw new Error(json.error || "Couldn't start the payment. Please try again.");
       location.href = json.url;
@@ -173,9 +191,7 @@ export function flashDbShim(
   // Each signed-in person's own records: nobody else, not even the app's other users, can read them.
   async function mineCall(method, query, body) {
     if (!me) throw new Error("Sign in first to use your own data.");
-    const headers = { Authorization: "Bearer " + key };
-    if (body) headers["Content-Type"] = "application/json";
-    const res = await fetch(mineUrl + (query ? "?" + new URLSearchParams(query) : ""), { method, headers, body: body ? JSON.stringify(body) : undefined });
+    const res = await request(mineUrl + (query ? "?" + new Params(query) : ""), method, key, body ? toJson(body) : undefined, body ? "application/json" : "");
     const json = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(json.error || "flashDB request failed");
     return json;
@@ -199,10 +215,7 @@ export function flashDbShim(
   // so an answer may come back as an error with a message to show.
   window.flashAI = {
     async ask(prompt, options) {
-      const res = await fetch(aiUrl, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: String(prompt == null ? "" : prompt), instructions: (options && options.instructions) || "" }),
-      });
+      const res = await request(aiUrl, "POST", "", toJson({ prompt: String(prompt == null ? "" : prompt), instructions: (options && options.instructions) || "" }), "application/json");
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || "The AI couldn't answer that.");
       return json.text;
@@ -254,10 +267,11 @@ export function flashDbShim(
   };
 
   function ready(fn) { if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", fn); else fn(); }
-  if (ownerKey) ready(function () {
+  // Says the page is in owner view, or that the owner link didn't work.
+  if (ownerNote) ready(function () {
     const note = document.createElement("div");
     note.setAttribute("role", "status");
-    note.textContent = ${js(owner?.note ?? "")};
+    note.textContent = ownerNote;
     note.style.cssText = "position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483647;max-width:min(560px,calc(100% - 32px));padding:12px 18px;border-radius:12px;background:#1e1b4b;color:#fff;font:500 14px/1.45 system-ui,sans-serif;box-shadow:0 8px 30px rgba(0,0,0,.25);cursor:pointer";
     note.onclick = function () { note.remove(); };
     document.body.appendChild(note);
@@ -297,9 +311,25 @@ export function flashDbShim(
 export function injectHead(html: string, snippet: string): string {
   // Not <header>, which can come first in a page with no <head>.
   const head = html.match(/<head(?=[\s>])[^>]*>/i);
-  if (head?.index !== undefined) {
-    const at = head.index + head[0].length;
-    return html.slice(0, at) + snippet + html.slice(at);
+  const at = head?.index !== undefined ? head.index + head[0].length : afterDoctype(html);
+  return html.slice(0, at) + snippet + html.slice(at);
+}
+
+/**
+ * Where a page with no <head> can take a script: right after its doctype (and any comments before
+ * it), as before it the page would show in the browser's old "quirks" layout; the browser still
+ * puts the script in the head it makes up. 0 when there's no doctype. Read without a regex, so no
+ * page can make it slow.
+ */
+function afterDoctype(html: string): number {
+  let i = html.charCodeAt(0) === 0xfeff ? 1 : 0;
+  for (;;) {
+    while (i < html.length && /\s/.test(html[i])) i++;
+    if (!html.startsWith("<!--", i)) break;
+    const end = html.indexOf("-->", i + 4);
+    if (end === -1) return 0;
+    i = end + 3;
   }
-  return snippet + html;
+  if (html.slice(i, i + 9).toLowerCase() !== "<!doctype") return 0;
+  return html.indexOf(">", i) + 1;
 }

@@ -44,11 +44,13 @@ const MAX_CHOSEN = 200;
 type Row = { id: string; data: string; created_at: number; updated_at: number; author?: string };
 export type Answer = { status: number; body: unknown };
 
-/** A record as the app sees it. byYou is set only when the person asking added it; Flash sets it, never the app. */
+/**
+ * A record as the app sees it. byYou is set only when the person asking added it; Flash sets it,
+ * never the app. Everything else the app saved comes back as it was, its own authorId included.
+ */
 function toRecord(r: Row, caller: Caller = ANYONE) {
   const data = JSON.parse(r.data);
   delete data.byYou;
-  delete data.authorId;
   const byYou = caller.kind === "visitor" && !!r.author && r.author === caller.id;
   return { ...data, id: r.id, createdAt: r.created_at, updatedAt: r.updated_at, ...(byYou && { byYou: true }) };
 }
@@ -62,8 +64,31 @@ export async function siteExists(slug: string): Promise<boolean> {
   return Boolean(await one("SELECT 1 FROM sites WHERE slug = ?", [slug]));
 }
 
-/** The rules Flash keeps for a page, saved with it in sites.data_rules. */
-export const rulesText = (html: string) => JSON.stringify(computeRules(html));
+/**
+ * Whether a page's rules, worked out from its code, would lock out code Flash can't see: the page
+ * has no flash-data block and no flashDB code of its own (it loads its code from elsewhere), yet
+ * shared records are there for it to use.
+ */
+const unseenCode = (html: string, computed: ComputedRules) => !computed.block && computed.guess === "read" && !/\bflashDB\b/.test(html);
+const hasShared = async (slug: string) => Boolean(await one("SELECT 1 FROM site_records WHERE site_slug = ? AND owner = '' LIMIT 1", [slug]));
+// Such an app made before rules existed keeps working as it did: anyone may change its data, until its page names its rules.
+const asBefore = (computed: ComputedRules): ComputedRules => ({ ...computed, guess: "open", fromRecords: true });
+
+/**
+ * The rules to save with a new page for an app (slug null for a new app), as sites.data_rules. An
+ * app that was kept open because code Flash can't see uses its records (or would have been, made
+ * before rules and not used since) stays open while the new page still has neither a flash-data
+ * block nor flashDB code of its own.
+ */
+export async function rulesForPage(slug: string | null, html: string): Promise<string> {
+  const computed = computeRules(html);
+  if (slug && unseenCode(html, computed)) {
+    const saved = await one<{ data_rules: string }>("SELECT data_rules FROM sites WHERE slug = ?", [slug]);
+    const before = parseComputed(saved?.data_rules);
+    if (before ? before.fromRecords : saved && (await hasShared(slug))) return JSON.stringify(asBefore(computed));
+  }
+  return JSON.stringify(computed);
+}
 
 /**
  * Works out an app's rules from its page again and keeps them. Apps published before rules existed
@@ -72,10 +97,16 @@ export const rulesText = (html: string) => JSON.stringify(computeRules(html));
 export async function refreshRules(slug: string): Promise<ComputedRules | null> {
   const site = await one<{ html: string; updated_at: number }>("SELECT html, updated_at FROM sites WHERE slug = ?", [slug]);
   if (!site) return null;
-  const computed = computeRules(site.html);
-  // Kept only if the page wasn't replaced meanwhile: publishing saves the new page's rules with it.
-  await run("UPDATE sites SET data_rules = ? WHERE slug = ? AND updated_at = ?", [JSON.stringify(computed), slug, site.updated_at]);
+  let computed = computeRules(site.html);
+  if (unseenCode(site.html, computed) && (await hasShared(slug))) computed = asBefore(computed);
+  await keepRules(slug, computed, Number(site.updated_at));
   return computed;
+}
+
+/** Saves rules worked out from the page as it was at seenAt, unless the page was replaced since: publishing saves the new page's rules with it. */
+export async function keepRules(slug: string, computed: ComputedRules, seenAt: number): Promise<boolean> {
+  const r = await run("UPDATE sites SET data_rules = ? WHERE slug = ? AND updated_at = ?", [JSON.stringify(computed), slug, seenAt]);
+  return r.rowsAffected > 0;
 }
 
 /** The rule for one collection of an app's shared data, and where it comes from, or null when there's no such app. */
@@ -131,7 +162,6 @@ function cleanData(data: unknown): string | null {
   delete rest.createdAt;
   delete rest.updatedAt;
   delete rest.byYou;
-  delete rest.authorId;
   const text = JSON.stringify(rest);
   return text.length <= MAX_RECORD_BYTES ? text : null;
 }
@@ -197,10 +227,13 @@ export async function addRecord(slug: string, collection: unknown, data: unknown
   // A shared record remembers who added it when they were signed in, so they can change it later.
   const author = owner === "" && caller.kind === "visitor" ? caller.id : "";
   const row: Row = { id: randomId(9), data: clean, created_at: now(), updated_at: now(), author };
-  await run(
-    "INSERT INTO site_records (id, site_slug, collection, data, created_at, updated_at, owner, author) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-    [row.id, slug, collection, clean, row.created_at, row.updated_at, owner, author],
+  // INSERT … SELECT, so a record sent just as the app is unpublished isn't left behind without it.
+  const r = await run(
+    `INSERT INTO site_records (id, site_slug, collection, data, created_at, updated_at, owner, author)
+     SELECT ?, slug, ?, ?, ?, ?, ?, ? FROM sites WHERE slug = ?`,
+    [row.id, collection, clean, row.created_at, row.updated_at, owner, author, slug],
   );
+  if (!r.rowsAffected) return fail("App not found.", 404);
   return { status: 201, body: { record: toRecord(row, caller) } };
 }
 
@@ -272,12 +305,19 @@ async function siteRules(slug: string): Promise<{ computed: ComputedRules; chose
 }
 
 export type SharedCollection = { name: string; count: number; lastAdded: number; rule: DataRule; source: RuleSource; personal: string[] };
-export type SharedData = { collections: SharedCollection[]; fallback: DataRule | null; guess: DataRule };
+export type SharedData = {
+  collections: SharedCollection[];
+  fallback: DataRule | null;
+  guess: DataRule;
+  // The app has a flash-data block, and what Flash couldn't use in it.
+  block: boolean;
+  bad?: ComputedRules["bad"];
+};
 
 /**
  * For the owner: each collection of shared data with how many records it has, its rule, and the
- * field names of its newest record that look like personal details. Collections the app or the
- * owner named are listed even while empty.
+ * field names of its newest record that look like personal details. Collections the app, its code
+ * or the owner named are listed even while empty.
  */
 export async function sharedCollections(slug: string): Promise<SharedData | null> {
   const rules = await siteRules(slug);
@@ -300,25 +340,36 @@ export async function sharedCollections(slug: string): Promise<SharedData | null
   const keys = new Map<string, string[]>();
   for (const f of fields) keys.set(f.collection, [...(keys.get(f.collection) ?? []), String(f.key)]);
   const seen = new Map(counts.map((c) => [c.collection, c]));
-  const names = [...new Set([...seen.keys(), ...Object.keys(computed.app), ...Object.keys(chosen).filter((n) => n !== DEFAULT_KEY)])];
+  const names = [...new Set([...seen.keys(), ...namedBy(computed, chosen)])];
   const collections = names.map((name) => {
     const { rule, source } = effectiveRule(computed, chosen[name], chosen[DEFAULT_KEY], name);
     const c = seen.get(name);
     return { name, count: Number(c?.n ?? 0), lastAdded: Number(c?.last ?? 0), rule, source, personal: looksPersonal(keys.get(name) ?? []) };
   });
-  return { collections, fallback: chosen[DEFAULT_KEY] ?? null, guess: computed.guess };
+  return { collections, fallback: chosen[DEFAULT_KEY] ?? null, guess: computed.guess, block: Boolean(computed.block), ...(computed.bad && { bad: computed.bad }) };
 }
 
-/** What publishing reports: the rule of each collection the app, the owner or its records name, and of anything else. */
+/** The collections the app's block, its code and the owner name. */
+const namedBy = (computed: ComputedRules, chosen: Record<string, DataRule>) => [
+  ...Object.keys(computed.app),
+  ...(computed.code ?? []),
+  ...Object.keys(chosen).filter((n) => n !== DEFAULT_KEY),
+];
+
+/**
+ * What publishing reports: the rule of each collection the app, its code, the owner or its records
+ * name, of anything else, and what Flash couldn't use in the app's flash-data block.
+ */
 export async function dataSummary(slug: string): Promise<DataSummary | null> {
   const rules = await siteRules(slug);
   if (!rules) return null;
   const { computed, chosen } = rules;
   const used = await all<{ collection: string }>("SELECT DISTINCT collection FROM site_records WHERE site_slug = ? AND owner = '' LIMIT 50", [slug]);
-  const names = [...new Set([...Object.keys(computed.app), ...Object.keys(chosen).filter((n) => n !== DEFAULT_KEY), ...used.map((u) => u.collection)])];
+  const names = [...new Set([...namedBy(computed, chosen), ...used.map((u) => u.collection)])];
   return {
     collections: names.map((name) => ({ name, ...effectiveRule(computed, chosen[name], chosen[DEFAULT_KEY], name) })),
     other: chosen[DEFAULT_KEY] ?? computed.guess,
+    ...(computed.bad && { bad: computed.bad }),
   };
 }
 
@@ -356,7 +407,8 @@ export async function sharedCsv(
   const records = rows.map((r) => ({ id: r.id, createdAt: Number(r.created_at), data: JSON.parse(r.data) as Record<string, unknown> }));
   const fields = [...new Set(records.flatMap((r) => Object.keys(r.data)))].slice(0, 50);
   const header = [t("Added"), ...fields, "id"];
-  const cell = (v: unknown) => (typeof v === "string" || v === undefined ? v : JSON.stringify(v));
+  // Numbers stay numbers, so a spreadsheet can add them up (see toCsv).
+  const cell = (v: unknown) => (typeof v === "string" || typeof v === "number" || v === undefined ? v : JSON.stringify(v));
   const lines: unknown[][] = [];
   let bytes = Buffer.byteLength(toCsv([header]));
   for (const r of records) {

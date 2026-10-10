@@ -3,15 +3,18 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/store";
 import { SELLER_COUNTRIES } from "@/lib/shop";
-import { DATA_RULES, DEFAULT_KEY, RULE_TEXT, type DataRule, type RuleSource } from "@/lib/data-rules";
+import { DATA_RULES, DEFAULT_KEY, RULE_TEXT, blockProblem, type DataRule, type DataSummary, type RuleSource } from "@/lib/data-rules";
 import { msg } from "@/lib/i18n";
 import { tNow, useT, type T } from "@/lib/use-t";
 
 type Site = { slug: string; title: string; updated_at: number; messages: number; unread: number; views: number; members: number; openData?: boolean };
 type DataCollection = { name: string; count: number; lastAdded: number; rule: DataRule; source: RuleSource; personal: string[] };
-type AppData = { collections: DataCollection[]; fallback: DataRule | null; guess: DataRule };
+// block: the app names its rules in a flash-data block; bad: what Flash couldn't use in it. domains: the app's own addresses.
+type AppData = { collections: DataCollection[]; fallback: DataRule | null; guess: DataRule; block: boolean; bad?: DataSummary["bad"]; domains: string[] };
 type DataRecord = { id: string; createdAt: number; addedBy: string; data: Record<string, unknown> };
-type Records = { collection: string; list: DataRecord[] | null; cut: string };
+// The Data view's state carries the app it's for (slug), so a late answer for another app never shows or changes this one.
+type ShownData = { slug: string; data: AppData };
+type Records = { slug: string; collection: string; list: DataRecord[] | null; cut: string };
 type Member = { id: string; email: string; name: string; createdAt: number };
 type Ai = { enabled: boolean; dailyCredits: number; usedToday: number; askedToday: number };
 type Upload = { id: string; name: string; mime: string; size: number; createdAt: number; url: string };
@@ -58,6 +61,7 @@ const SOURCE_TEXT: Record<RuleSource, string> = {
   app: msg("Set by your app"),
   default: msg("Your default"),
   guess: msg("Flash's guess from your app's code"),
+  block: msg("Your app's rule for anything its flash-data block doesn't name"),
 };
 const isOpen = (data: AppData) => data.collections.some((c) => c.rule === "open") || (data.fallback ?? data.guess) === "open";
 
@@ -67,7 +71,7 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
   const [sites, setSites] = useState<Site[] | null>(null);
   const [open, setOpen] = useState<Site | null>(null);
   const [view, setView] = useState<"messages" | "domains" | "payments" | "visits" | "history" | "members" | "ai" | "files" | "data">("messages");
-  const [appData, setAppData] = useState<AppData | null>(null);
+  const [appData, setAppData] = useState<ShownData | null>(null);
   const [records, setRecords] = useState<Records | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [members, setMembers] = useState<Member[] | null>(null);
@@ -89,6 +93,8 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
   const [confirming, setConfirming] = useState<string | null>(null);
   const [error, setError] = useState("");
   const closeRef = useRef<HTMLButtonElement>(null);
+  // Counts the Data view's loads, so only the newest one's answer is shown.
+  const dataLoads = useRef(0);
 
   useEffect(() => {
     closeRef.current?.focus();
@@ -367,56 +373,64 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
   }
 
   async function showData(site: Site) {
+    const asked = ++dataLoads.current;
     setOpen(site);
     setView("data");
     setAppData(null);
     setRecords(null);
     setError("");
     try {
-      setAppData(await api<AppData>(`/api/sites/${site.slug}/records`));
+      const data = await api<AppData>(`/api/sites/${site.slug}/records`);
+      if (asked === dataLoads.current) setAppData({ slug: site.slug, data });
     } catch {
-      setError(t("Flash couldn't load your app's data. Please try again."));
+      if (asked === dataLoads.current) setError(t("Flash couldn't load your app's data. Please try again."));
     }
   }
 
   /** Who may change a collection ("*" for anything else). null goes back to the app's choice. */
   async function chooseDataRule(collection: string, rule: DataRule | null) {
-    if (!open || !appData) return;
-    const before = appData;
-    if (collection === DEFAULT_KEY) setAppData({ ...appData, fallback: rule });
-    else if (rule) {
-      setAppData({ ...appData, collections: appData.collections.map((c) => (c.name === collection ? { ...c, rule, source: "you" } : c)) });
-    }
+    if (!appData) return;
+    const { slug, data: before } = appData;
+    // Each change applies only while the same app is shown.
+    const forThisApp = (change: (data: AppData) => AppData) => setAppData((cur) => (cur?.slug === slug ? { slug, data: change(cur.data) } : cur));
+    if (collection === DEFAULT_KEY) forThisApp((d) => ({ ...d, fallback: rule }));
+    else if (rule) forThisApp((d) => ({ ...d, collections: d.collections.map((c) => (c.name === collection ? { ...c, rule, source: "you" } : c)) }));
     try {
-      const saved = await api<AppData>(`/api/sites/${open.slug}/records`, { method: "PATCH", json: { collection, rule } });
-      setAppData(saved);
-      setSites((all) => all?.map((s) => (s.slug === open.slug ? { ...s, openData: isOpen(saved) } : s)) ?? null);
+      const saved = await api<AppData>(`/api/sites/${slug}/records`, { method: "PATCH", json: { collection, rule } });
+      forThisApp(() => saved);
+      setSites((all) => all?.map((s) => (s.slug === slug ? { ...s, openData: isOpen(saved) } : s)) ?? null);
     } catch {
-      setAppData(before);
+      forThisApp(() => before);
       setError(t("Couldn't save that choice. Please try again."));
     }
   }
 
   async function showRecords(collection: string) {
-    if (!open) return;
-    setRecords({ collection, list: null, cut: "" });
+    if (!appData) return;
+    const { slug } = appData;
+    const asked = ++dataLoads.current;
+    setRecords({ slug, collection, list: null, cut: "" });
     setDeleting(null);
     setError("");
     try {
-      const { records: list } = await api<{ records: DataRecord[] }>(`/api/sites/${open.slug}/records?collection=${encodeURIComponent(collection)}`);
-      setRecords({ collection, list, cut: "" });
+      const { records: list } = await api<{ records: DataRecord[] }>(`/api/sites/${slug}/records?collection=${encodeURIComponent(collection)}`);
+      if (asked === dataLoads.current) setRecords({ slug, collection, list, cut: "" });
     } catch {
-      setError(t("Flash couldn't load your app's data. Please try again."));
+      if (asked === dataLoads.current) setError(t("Flash couldn't load your app's data. Please try again."));
     }
   }
 
   async function deleteRecord(id: string) {
-    if (!open || !records) return;
-    const { collection } = records;
+    if (!records) return;
+    const { slug, collection } = records;
     try {
-      await api(`/api/sites/${open.slug}/records?collection=${encodeURIComponent(collection)}&id=${encodeURIComponent(id)}`, { method: "DELETE" });
-      setRecords((r) => r && { ...r, list: r.list?.filter((x) => x.id !== id) ?? null });
-      setAppData((d) => d && { ...d, collections: d.collections.map((c) => (c.name === collection ? { ...c, count: Math.max(0, c.count - 1) } : c)) });
+      await api(`/api/sites/${slug}/records?collection=${encodeURIComponent(collection)}&id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      setRecords((r) => (r?.slug === slug && r.collection === collection ? { ...r, list: r.list?.filter((x) => x.id !== id) ?? null } : r));
+      setAppData((cur) =>
+        cur?.slug === slug
+          ? { slug, data: { ...cur.data, collections: cur.data.collections.map((c) => (c.name === collection ? { ...c, count: Math.max(0, c.count - 1) } : c)) } }
+          : cur,
+      );
     } catch {
       setError(t("Couldn't delete that record. Please try again."));
     }
@@ -425,10 +439,11 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
 
   /** The whole collection as a CSV file. A very large one is cut to the newest records that fit in 4 MB. */
   async function downloadRecords() {
-    if (!open || !records) return;
+    if (!records) return;
+    const { slug, collection } = records;
     setError("");
     try {
-      const res = await fetch(`/api/sites/${open.slug}/records?collection=${encodeURIComponent(records.collection)}&format=csv`);
+      const res = await fetch(`/api/sites/${slug}/records?collection=${encodeURIComponent(collection)}&format=csv`);
       if (!res.ok) throw new Error();
       const name = res.headers.get("content-disposition")?.match(/filename="([^"]+)"/)?.[1] ?? "data.csv";
       const [included, total] = (res.headers.get("x-flash-truncated") ?? "").split("/").map(Number);
@@ -436,18 +451,41 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
       Object.assign(document.createElement("a"), { href: url, download: name }).click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
       setRecords((r) =>
-        r && {
-          ...r,
-          cut: total
-            ? t("Your download has the newest {included} of {total} records (the file limit is 4 MB).", {
-                included: included.toLocaleString(t.locale),
-                total: total.toLocaleString(t.locale),
-              })
-            : "",
-        },
+        r?.slug === slug && r.collection === collection
+          ? {
+              ...r,
+              cut: total
+                ? t("Your download has the newest {included} of {total} records (the file limit is 4 MB).", {
+                    included: included.toLocaleString(t.locale),
+                    total: total.toLocaleString(t.locale),
+                  })
+                : "",
+            }
+          : r,
       );
     } catch {
       setError(t("Flash couldn't load your app's data. Please try again."));
+    }
+  }
+
+  /**
+   * Opens the app as its owner, on Flash or on one of its own domains: Flash makes a one-time code
+   * and the app's page trades it for the owner's powers (see site-owner.ts). Opening the app any
+   * other way shows it as visitors see it.
+   */
+  async function openAsOwner(slug: string, domain = "") {
+    setError("");
+    // The tab opens now, while the click still counts, so the browser doesn't block it; the app
+    // can't reach back to Flash from it.
+    const tab = window.open("", "_blank");
+    if (tab) tab.opener = null;
+    try {
+      const { url } = await api<{ url: string }>(`/api/sites/${slug}/owner`, { method: "POST", json: domain ? { domain } : {} });
+      if (tab) tab.location.href = url;
+      else window.location.assign(url);
+    } catch (err) {
+      tab?.close();
+      setError(err instanceof Error ? err.message : t("Couldn't open your app as its owner. Please try again."));
     }
   }
 
@@ -520,9 +558,9 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
         <div className="flex-1 overflow-y-auto p-4 sm:p-5">
           {error && <p role="alert" className="mb-3 text-sm text-red-400">{error}</p>}
           {open && view === "data" ? (
-            appData === null ? (
+            appData?.slug !== open.slug ? (
               !error && <p className="text-sm text-zinc-500">{t("Loading…")}</p>
-            ) : records ? (
+            ) : records?.slug === open.slug ? (
               <RecordsView
                 records={records}
                 deleting={deleting}
@@ -532,7 +570,7 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
                 onDelete={deleteRecord}
               />
             ) : (
-              <DataView site={open} data={appData} onChoose={chooseDataRule} onShow={showRecords} />
+              <DataView data={appData.data} onChoose={chooseDataRule} onShow={showRecords} onOpenAsOwner={(domain) => openAsOwner(open.slug, domain)} />
             )
           ) : open && view === "history" ? (
             versions === null ? (
@@ -1103,6 +1141,9 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
                         👤 {t("Members")}
                         {s.members ? <> ({s.members.toLocaleString(t.locale)})</> : null}
                       </button>
+                      <button onClick={() => openAsOwner(s.slug)} className="text-zinc-200 hover:text-white" title={t("Change this app's data from the app itself")}>
+                        🔑 {t("Open as owner")}
+                      </button>
                       <button
                         onClick={() => showData(s)}
                         className="text-zinc-200 hover:text-white"
@@ -1137,20 +1178,22 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
 
 /** An app's shared data: each collection, who may change it, and the owner's default for anything else. */
 function DataView({
-  site,
   data,
   onChoose,
   onShow,
+  onOpenAsOwner,
 }: {
-  site: Site;
   data: AppData;
   onChoose: (collection: string, rule: DataRule | null) => void;
   onShow: (collection: string) => void;
+  // Opens the app as its owner, on Flash ("") or on one of its own domains.
+  onOpenAsOwner: (domain: string) => void;
 }) {
   const t = useT();
   const select = "mt-2 h-9 w-full max-w-xs rounded-lg border border-white/10 bg-zinc-900 px-2 text-sm text-zinc-200 outline-none focus:border-primary/70";
   const other = data.fallback ?? data.guess;
-  const otherSource: RuleSource = data.fallback ? "you" : data.collections.some((c) => c.source === "app") ? "app" : "guess";
+  const otherSource: RuleSource = data.fallback ? "you" : data.block ? "block" : "guess";
+  const link = "text-primary-soft hover:underline";
   return (
     <div className="space-y-4">
       <p className="text-sm text-zinc-400">
@@ -1158,6 +1201,11 @@ function DataView({
           "What your app keeps in its database, and who may change it. Flash checks these rules on every request, so they hold even if someone skips your app's buttons.",
         )}
       </p>
+      {data.bad && (
+        <p role="status" className="rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 text-sm text-gold-soft">
+          ⚠ {blockProblem(data.bad, t)} {t("To fix it, open the chat that built this app and ask Flash to fix its flash-data block.")}
+        </p>
+      )}
       {data.collections.length === 0 ? (
         <p className="py-6 text-center text-sm text-zinc-500">{t("Your app hasn't saved anything yet.")}</p>
       ) : (
@@ -1224,15 +1272,32 @@ function DataView({
         <p className="mt-1 text-xs text-zinc-600">{t(SOURCE_TEXT[otherSource])}</p>
         {other === "open" && <p className="mt-1 text-xs text-gold-soft">⚠ {t("Anyone can change or delete this.")}</p>}
       </div>
-      <p className="text-xs text-zinc-500">
-        {t.node("To change these records yourself, {link} while signed in to Flash. To see it as a visitor, open it in a private window.", {
-          link: (
-            <a href={`/p/${site.slug}`} target="_blank" rel="noreferrer" className="text-primary-soft hover:underline">
-              {t("open your app from here")}
-            </a>
-          ),
-        })}
-      </p>
+      <div className="space-y-1 text-xs text-zinc-500">
+        <p>
+          {t.node(
+            "Opening your app's link shows it as visitors see it, even while you're signed in to Flash. To add, change or delete its data from the app itself, {link}. Collections only you can see show only here.",
+            {
+              link: (
+                <button onClick={() => onOpenAsOwner("")} className={link}>
+                  {t("open it as its owner")}
+                </button>
+              ),
+            },
+          )}
+        </p>
+        {data.domains.map((domain) => (
+          <p key={domain}>
+            {t.node("On {domain} you count as a visitor too, unless you {link}.", {
+              domain: <bdi>{domain}</bdi>,
+              link: (
+                <button onClick={() => onOpenAsOwner(domain)} className={link}>
+                  {t("open it there as its owner")}
+                </button>
+              ),
+            })}
+          </p>
+        ))}
+      </div>
     </div>
   );
 }

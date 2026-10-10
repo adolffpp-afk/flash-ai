@@ -255,7 +255,8 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
   `CREATE INDEX IF NOT EXISTS site_records_lookup ON site_records(site_slug, collection, created_at)`,
   // Keys that let a published app's owner change its shared data from the app itself (see
-  // site-owner.ts). Each is made from the owner's Flash sign-in and ends with it, or after two hours.
+  // site-owner.ts). Each is made from a one-time code below and ends with the owner's Flash sign-in,
+  // or after an hour.
   `CREATE TABLE IF NOT EXISTS site_owner_keys (
     token_hash TEXT PRIMARY KEY,
     site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
@@ -265,6 +266,16 @@ const SCHEMA = [
   )`,
   `CREATE INDEX IF NOT EXISTS site_owner_keys_expiry ON site_owner_keys(expires_at)`,
   `CREATE INDEX IF NOT EXISTS site_owner_keys_site ON site_owner_keys(site_slug, user_id)`,
+  // One-time codes that open an app as its owner, made when they choose Open as owner in Flash.
+  // Each works once, for two minutes, and becomes an owner key when the app's page is served.
+  `CREATE TABLE IF NOT EXISTS site_owner_codes (
+    code_hash TEXT PRIMARY KEY,
+    site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
+    user_id TEXT NOT NULL,
+    session_hash TEXT NOT NULL,
+    expires_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS site_owner_codes_site ON site_owner_codes(site_slug)`,
   // Who may change each collection of an app's shared data, as its owner chose in Flash (see
   // data-rules.ts). collection "*" is the owner's rule for every collection without its own.
   `CREATE TABLE IF NOT EXISTS site_collection_rules (

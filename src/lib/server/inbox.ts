@@ -48,7 +48,15 @@ export async function receiveMessage(
     [slug],
   );
   if (!site) return { error: "Site not found.", status: 404 };
-  await run("INSERT INTO site_messages (id, site_slug, form, data, created_at) VALUES (?, ?, ?, ?, ?)", [randomId(), slug, form, text, now()]);
+  // INSERT … SELECT, so a message sent just as the site is unpublished isn't left behind without it.
+  const saved = await run("INSERT INTO site_messages (id, site_slug, form, data, created_at) SELECT ?, slug, ?, ?, ? FROM sites WHERE slug = ?", [
+    randomId(),
+    form,
+    text,
+    now(),
+    slug,
+  ]);
+  if (!saved.rowsAffected) return { error: "Site not found.", status: 404 };
   await run(
     `DELETE FROM site_messages WHERE site_slug = ? AND id NOT IN
        (SELECT id FROM site_messages WHERE site_slug = ? ORDER BY created_at DESC LIMIT ?)`,
