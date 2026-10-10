@@ -18,7 +18,17 @@ type Stats = {
   orders: number;
   costCents: number;
   byEngine: { engine: string; requests: number; credits: number; costCents: number }[];
-  byProvider: { id: string; provider: string; does: string; free: boolean; setUp: boolean; requests: number; costCents: number }[];
+  byProvider: {
+    id: string;
+    provider: string;
+    does: string;
+    free: boolean;
+    setUp: boolean;
+    // Names of the environment variables Flash can't find for this provider.
+    missing: string[];
+    requests: number;
+    costCents: number;
+  }[];
   byModel: { model: string; provider: string; requests: number; costCents: number }[];
   series: { day: number; requests: number; costCents: number }[];
   topUsers: { email: string; requests: number; credits: number; costCents: number }[];
@@ -457,7 +467,7 @@ export function AdminDashboard() {
           <div className="mt-6 space-y-4">
             <Panel
               title="AI providers"
-              note="Every provider Flash can call, and what to expect on each bill. Uses counts each request a provider worked on, including as a helper."
+              note="Every provider Flash can call, and what to expect on each bill. Uses counts each request a provider worked on, including as a helper. Key names must match exactly in Vercel's Production environment variables, then redeploy."
             >
               <Table
                 head={["Provider", "Billing", "Key", "Uses", "AI cost"]}
@@ -467,7 +477,14 @@ export function AdminDashboard() {
                     {r.does && <div className="text-xs text-zinc-500">{r.does}</div>}
                   </div>,
                   r.free ? "Free tier" : "Pay per use",
-                  r.setUp ? "Set" : <span className="text-zinc-500">Not set</span>,
+                  r.setUp ? (
+                    "Set"
+                  ) : (
+                    <div key="key" className="text-zinc-500">
+                      <div>Not set</div>
+                      <div className="text-xs break-all">Missing {r.missing.join(", ")}</div>
+                    </div>
+                  ),
                   num(r.requests),
                   r.free && !r.costCents ? "Free" : usd(r.costCents),
                 ])}
