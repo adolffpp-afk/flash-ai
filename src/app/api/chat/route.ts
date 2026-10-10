@@ -210,8 +210,11 @@ type Track = {
   repriced: (cents: number) => void;
   // Stops a Claude call as soon as the user presses Stop, and keeps what the call has cost so far.
   watch: Watch;
+  // A Claude helper the job runs (the prompt, scene or post writer), which a request stopped while it
+  // runs waits for, so it is settled once the helper has been metered and pays for it.
+  helper: <T>(call: Promise<T>) => Promise<T>;
 };
-const NO_TRACK: Track = { started: () => {}, repriced: () => {}, watch: {} };
+const NO_TRACK: Track = { started: () => {}, repriced: () => {}, watch: {}, helper: (call) => call };
 
 /** A transcript under its heading, with Flash's own words in the user's language. */
 const transcript = (name: string, text: string, t: Translate) =>
@@ -255,12 +258,12 @@ async function* postPack(
   model: ModelInfo,
   store: Store,
   meter: Meter,
-  started: Started,
+  { started, helper }: Track,
   t: Translate,
 ): AsyncGenerator<StreamEvent> {
   if (!claudeConfigured()) throw new FriendlyError(msg("Social post packs aren't available yet. Please try again later."));
   yield { type: "status", message: t("Writing your posts and hashtags…") };
-  const pack = await writePack(request, about, meter, brandNote).catch((err) => {
+  const pack = await helper(writePack(request, about, meter, brandNote)).catch((err) => {
     if (err instanceof FriendlyError) throw err;
     console.error("[flash] post pack writing failed", err);
     throw new FriendlyError(msg("Flash couldn't write the posts this time. Please try again."));
@@ -352,7 +355,7 @@ async function* run(
   t: Translate & { language?: string } = english,
 ): AsyncGenerator<StreamEvent> {
   const last = history[history.length - 1];
-  const { started, watch } = track;
+  const { started, watch, helper } = track;
   if (isMedia(engine) ? !model : !configured(engine)) {
     yield* unavailableReply(engine, t);
     return;
@@ -410,10 +413,10 @@ async function* run(
         return;
       }
       if (model!.id === "post-pack") {
-        yield* postPack(last.content, preferences, brandNote, model!, store, meter, started, t);
+        yield* postPack(last.content, preferences, brandNote, model!, store, meter, track, t);
         return;
       }
-      const prompt = await sharpen("image", last.content, meter, brandNote);
+      const prompt = await helper(sharpen("image", last.content, meter, brandNote));
       yield { type: "status", message: t("Painting your image with {model}…", { model: model!.label }) };
       started(mediaCents(model!, last.content));
       const image =
@@ -451,7 +454,7 @@ async function* run(
         const { scenes: count, seconds } = movieSplit(last.content);
         yield { type: "status", message: t("Writing {count} scenes for your movie…", { count }) };
         const scenes = claudeConfigured()
-          ? await writeScenes(last.content, count, seconds, meter).catch((err) => {
+          ? await helper(writeScenes(last.content, count, seconds, meter)).catch((err) => {
               console.error("[flash] scene writing failed", err);
               throw new FriendlyError(msg("Flash couldn't write the scenes for this movie. Nothing was filmed. Please try again."));
             })
@@ -469,7 +472,7 @@ async function* run(
         yield { type: "video", url: await store(movie, "flash-movie.mp4"), prompt: last.content };
         return;
       }
-      const prompt = await sharpen("video", last.content, meter, brandNote);
+      const prompt = await helper(sharpen("video", last.content, meter, brandNote));
       yield { type: "status", message: t("Filming your video with {model}. This usually takes one to three minutes…", { model: model!.label }) };
       started(mediaCents(model!, last.content));
       let video: Media;
@@ -519,7 +522,7 @@ async function* run(
       return;
     }
     case "music": {
-      const prompt = await sharpen("music", last.content, meter);
+      const prompt = await helper(sharpen("music", last.content, meter));
       yield { type: "status", message: t("Composing your track with {model}…", { model: model!.label }) };
       yield { type: "text", delta: `**${t("Track brief:")}** ${prompt}` };
       started(mediaCents(model!, last.content));
@@ -686,10 +689,17 @@ export async function POST(request: Request) {
   // Trips when the user presses Stop, so a Claude call stops at once; running is what the call in progress has cost.
   const abort = new AbortController();
   const running = new Running();
+  // The Claude helpers the job is running, which a stopped request waits for (see Track).
+  const helping = new Set<Promise<unknown>>();
   const track: Track = {
     started: (cents) => void (startedCents += cents),
     repriced: (cents) => void (madeCents = cents),
     watch: { signal: abort.signal, running },
+    helper: (call) => {
+      const watched = call.finally(() => helping.delete(watched));
+      helping.add(watched);
+      return watched;
+    },
   };
 
   await ensureMonthlyCredits(user.id);
@@ -943,12 +953,12 @@ export async function POST(request: Request) {
   const encoder = new TextEncoder();
   // Set when the browser stops reading (the user pressed Stop), so the engine stops too.
   let cancelled = false;
-  let onStop = () => {};
-  const stop = new Promise<"stop">((resolve) => (onStop = () => resolve("stop")));
+  // Wakes the request waiting for the engine's next event.
+  let wake = () => {};
   const cancel = () => {
     cancelled = true;
     abort.abort();
-    onStop();
+    wake();
   };
   if (request.signal.aborted) cancel();
   else request.signal.addEventListener("abort", cancel);
@@ -1003,7 +1013,12 @@ export async function POST(request: Request) {
           // Stop ends the request at once, without waiting for the next event: a Claude call is
           // stopped, and a provider job already sent is paid for as sent (see finalCredits).
           const next = steps.next();
-          const step = await Promise.race([next, stop]);
+          const step = cancelled
+            ? "stop"
+            : await new Promise<Awaited<typeof next> | "stop">((resolve, reject) => {
+                wake = () => resolve("stop");
+                next.then(resolve, reject);
+              });
           if (step === "stop") {
             stopped = true;
             next.catch(() => {});
@@ -1027,6 +1042,9 @@ export async function POST(request: Request) {
                 : t("{engine} is busy right now. Please try again in a moment.", { engine: t(ENGINE_LABELS[engine]) });
         }
       }
+      // A helper still running when the user stopped is billed by Claude, so the request waits for it
+      // to be metered (each has a timeout of under a minute) and pays for it.
+      if (stopped) await Promise.allSettled(helping);
       const costCents = spend.reduce((sum, s) => sum + s.cents, 0);
       // The level that answered, after any step-down, sets what a typical reply costs and its prices.
       const answered = claudeRun as ClaudeChoice | null;

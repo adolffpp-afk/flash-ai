@@ -858,7 +858,8 @@ export function Flash({
    * Its header shows nothing until then, and then what it really cost.
    */
   async function showSettledCost(projectId: string, replyId: string, charge: number) {
-    for (const wait of [500, 1500, 3000, 6000]) {
+    // Up to about a minute: a stopped request waits for a writer that was still running (see the chat route).
+    for (const wait of [500, 1500, 3000, 6000, 15000, 30000]) {
       await new Promise((r) => setTimeout(r, wait));
       const { credits } = await api<{ credits: number | null }>(`/api/me/charge?id=${charge}`).catch(() => ({ credits: null }));
       if (credits !== null) {

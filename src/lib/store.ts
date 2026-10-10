@@ -42,7 +42,7 @@ export type UIMessage = {
   errorCode?: string;
   // A request waiting for its price to be agreed: what Flash decided for it, sent back with Go ahead.
   decided?: { engine: Engine; fresh?: boolean };
-  // The credits held for the request, so a stopped reply can show what it really cost.
+  // The id of the credits held for the request, so a stopped reply can show what it really cost.
   charge?: number;
   pending?: boolean;
   stopped?: boolean;

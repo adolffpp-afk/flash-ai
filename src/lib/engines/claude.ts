@@ -568,8 +568,8 @@ export async function writeScenes(request: string, scenes: number, seconds: numb
  * have run, and Claude bills it, so it is metered at the most it can cost before the error goes on.
  * A call Claude refused with an error status never ran, so it costs nothing.
  */
-function meterLost(err: unknown, meter: Meter, mostCents: number): never {
-  if (err instanceof Anthropic.APIConnectionError) meter("anthropic", HELPER_MODEL, mostCents);
+export function meterLost(err: unknown, meter: Meter, mostCents: number, model = HELPER_MODEL): never {
+  if (err instanceof Anthropic.APIConnectionError) meter("anthropic", model, mostCents);
   throw err;
 }
 

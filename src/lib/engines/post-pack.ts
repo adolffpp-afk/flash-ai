@@ -1,5 +1,5 @@
 import type Anthropic from "@anthropic-ai/sdk";
-import { CHAT_MODEL, choiceParams, getClient, meterClaude, noMeter, type Meter } from "./claude.ts";
+import { CHAT_MODEL, choiceParams, getClient, meterClaude, meterLost, noMeter, type Meter } from "./claude.ts";
 import { tokensAtMost } from "./companion.ts";
 import { FriendlyError } from "./errors.ts";
 import { msg } from "../i18n.ts";
@@ -81,16 +81,19 @@ export async function writePack(request: string, about: string, meter: Meter = n
   if (maxTokens < MIN_PACK_TOKENS) {
     throw new FriendlyError(msg("This request is too long for a post pack. Shorten it and try again."));
   }
-  const res = await getClient().beta.messages.create(
-    {
-      // A refusal fallback only where packMaxTokens counted one (see FALLBACKS in credits.ts).
-      ...choiceParams({ level: "ascend", model: CHAT_MODEL, effort: "low" }),
-      max_tokens: maxTokens,
-      system,
-      messages,
-    },
-    { timeout: 45_000, maxRetries: 0 },
-  );
+  const res = await getClient()
+    .beta.messages.create(
+      {
+        // A refusal fallback only where packMaxTokens counted one (see FALLBACKS in credits.ts).
+        ...choiceParams({ level: "ascend", model: CHAT_MODEL, effort: "low" }),
+        max_tokens: maxTokens,
+        system,
+        messages,
+      },
+      { timeout: 45_000, maxRetries: 0 },
+    )
+    // Timed out or cut off, the writing may still have run: it is paid for at its most.
+    .catch((err: unknown) => meterLost(err, meter, PACK_WRITING_CENTS, CHAT_MODEL));
   meterClaude(meter, res, CHAT_MODEL);
   if (res.stop_reason === "refusal") throw new FriendlyError(msg("Flash can't make posts for that request."));
   const text = res.content.find((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")?.text ?? "";

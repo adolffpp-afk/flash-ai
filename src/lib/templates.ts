@@ -1,7 +1,7 @@
 import type { Engine } from "./types.ts";
 import { CLAUDE_PRICES, MARKUP } from "./credits.ts";
 import { english, msg, type Blanks, type Translate } from "./i18n.ts";
-import { PACK_VIDEO_SECONDS, modelById } from "./models.ts";
+import { PACK_VIDEO_SECONDS, helperAllowanceCents, modelById } from "./models.ts";
 
 /*
  * Ready-made templates: a short form for a common job (a business plan, a resume, an invoice),
@@ -694,14 +694,16 @@ export const defaultValues = (t: Template): TemplateValues => ({
 /**
  * The typical price of each template, by id. The server works these out with its real model and
  * markup. A template with a choice that costs more (the post pack's video) also has "<id>:with",
- * its price with the dearest choice.
+ * its price with the dearest choice. A template made with a model is priced like a request on it
+ * (see modelCredits): its price includes the helpers that may run for it.
  */
 export function templateCredits(model?: string, markup = MARKUP): Record<string, number> {
   const prices: Record<string, number> = {};
-  const credits = (cents: number) => Math.max(1, Math.ceil(cents * markup));
   for (const t of TEMPLATES) {
     if (t.answerTokens) prices[t.id] = writingCredits(t.answerTokens, model, markup);
-    if (!t.model) continue;
+    const m = modelById(t.model);
+    if (!m) continue;
+    const credits = (cents: number) => Math.max(1, Math.ceil((cents + helperAllowanceCents(m)) * markup));
     const base = defaultValues(t);
     prices[t.id] = credits(modelTemplateCents(t, base));
     const choices = t.fields

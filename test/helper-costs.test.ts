@@ -91,8 +91,9 @@ const {
 } = await import("../src/lib/engines/claude.ts");
 const { CHECK_ALLOWANCE_CENTS, CREDIT_PACKS, MARKUP, PLANS, WRITER_ALLOWANCE_CENTS, claudeCostCents, creditsFor, finalCredits, readCostCents, voiceCredits } =
   await import("../src/lib/credits.ts");
-const { MODELS, requestCents, modelCredits, writesPrompt } = await import("../src/lib/models.ts");
+const { MODELS, PACK_WRITING_CENTS, requestCents, modelCredits, writesPrompt } = await import("../src/lib/models.ts");
 const { MOVIE_EXTRA_CENTS } = await import("../src/lib/engines/movie.ts");
+const { writePack } = await import("../src/lib/engines/post-pack.ts");
 type Engine = import("../src/lib/types.ts").Engine;
 
 // What a credit is worth at the cheapest plan or pack: Max, billed yearly.
@@ -153,7 +154,9 @@ test("a helper whose connection drops is paid for at its most, since Claude may 
   assert.equal(await pictureRequest("DROP make it darker", true, meter), null);
   await assert.rejects(improvePrompt("image", "DROP a cat", meter));
   await assert.rejects(writeScenes("DROP a movie", 3, 10, meter));
-  assert.deepEqual(costs, [ROUTER_MAX_CENTS, PICTURE_CHECK_MAX_CENTS, PROMPT_WRITER_MAX_CENTS, SCENE_WRITER_MAX_CENTS]);
+  // The post pack's writer too, at the most its writing may cost, which the pack's price includes.
+  await assert.rejects(writePack("DROP a social media pack for my bakery", "", meter));
+  assert.deepEqual(costs, [ROUTER_MAX_CENTS, PICTURE_CHECK_MAX_CENTS, PROMPT_WRITER_MAX_CENTS, SCENE_WRITER_MAX_CENTS, PACK_WRITING_CENTS]);
 });
 
 test("every picture, video, track and voice-over is listed, held and charged at one price that pays for its helpers", () => {
