@@ -115,6 +115,14 @@ test("old rows are pruned at most once an hour on a server", async () => {
   assert.ok(await one("SELECT cell FROM weather_cache WHERE cell = '3.00,3.00'"), "not again within the hour");
   await forecast(12, 12, later + HOUR + MIN, base);
   assert.equal(await one("SELECT cell FROM weather_cache WHERE cell = '3.00,3.00'"), null);
+  // An answer from the cache prunes too, so old places go even when nothing new is fetched.
+  reply = { status: 200, expires: http(later + 10 * HOUR) };
+  await forecast(13, 13, later + HOUR + 2 * MIN, base);
+  await run("INSERT INTO weather_cache (cell, series, updated_at, expires_at, fetched_at) VALUES ('4.00,4.00', '[]', 0, 0, ?)", [later - 3 * 24 * HOUR]);
+  const asked = seen.length;
+  await forecast(13, 13, later + 2 * HOUR + 2 * MIN, base);
+  assert.equal(seen.length, asked, "from the cache");
+  assert.equal(await one("SELECT cell FROM weather_cache WHERE cell = '4.00,4.00'"), null);
 });
 
 test("the tool never throws, says what it's checking, and credits MET", async () => {

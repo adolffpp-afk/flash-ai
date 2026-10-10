@@ -70,6 +70,8 @@ export async function forecast(latitude: number, longitude: number, now = Date.n
   const lat = round2(latitude);
   const lon = round2(longitude);
   const cell = `${lat.toFixed(2)},${lon.toFixed(2)}`;
+  // On every ask, cached or not, so old places go even when nobody new is fetched.
+  await prune(now);
   const row = await one<Row>("SELECT series, updated_at, expires_at, last_modified, fetched_at FROM weather_cache WHERE cell = ?", [cell]).catch(
     (err) => (console.error("[flash] reading weather_cache failed", err), null),
   );
@@ -112,7 +114,6 @@ export async function forecast(latitude: number, longitude: number, now = Date.n
        last_modified = excluded.last_modified, fetched_at = excluded.fetched_at`,
     [cell, JSON.stringify(parsed.series), parsed.updatedAt, expires, res.headers.get("last-modified") ?? "", now],
   ).catch((err) => console.error("[flash] saving to weather_cache failed", err));
-  await prune(now);
   return parsed;
 }
 
