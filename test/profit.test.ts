@@ -11,7 +11,7 @@ const { DISPUTE_FEE_CENTS, addFixedCost, fixedCostOver, fixedCosts, profitReport
   "../src/lib/server/profit.ts"
 );
 const { adminStats } = await import("../src/lib/server/admin-stats.ts");
-const { PROVIDER_LIST, providerSetUp } = await import("../src/lib/providers.ts");
+const { PROVIDER_LIST, missingKeys, providerSetUp } = await import("../src/lib/providers.ts");
 const { MODELS } = await import("../src/lib/models.ts");
 const { FREE_PROVIDERS } = await import("../src/lib/server/free.ts");
 const { paymentFeeCents } = await import("../src/lib/credits.ts");
@@ -36,6 +36,9 @@ test("every provider Flash can call is on the list, with its keys", () => {
   const cloudflare = PROVIDER_LIST.find((p) => p.id === "cloudflare")!;
   assert.equal(providerSetUp(cloudflare, { CLOUDFLARE_API_TOKEN: "x" }), false, "both keys are needed");
   assert.equal(providerSetUp(cloudflare, { CLOUDFLARE_API_TOKEN: "x", CLOUDFLARE_ACCOUNT_ID: "y" }), true);
+  assert.deepEqual(missingKeys(cloudflare, { CLOUDFLARE_ACCOUNT_ID: "y" }), ["CLOUDFLARE_API_TOKEN"], "names the one that's missing");
+  assert.deepEqual(missingKeys(cloudflare, { CLOUDFLARE_ACCOUNT_ID: "y", CLOUDFLARE_API_TOKEN: "" }), ["CLOUDFLARE_API_TOKEN"], "an empty value is missing");
+  assert.deepEqual(missingKeys(anthropic, {}), ["ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN"]);
 });
 
 test("a request that used a helper logs each provider's share, and only one request", async () => {
@@ -159,6 +162,8 @@ test("the dashboard lists every provider, used or not, and counts a request once
   assert.deepEqual([row("anthropic").requests, row("anthropic").costCents], [1, 1]);
   assert.deepEqual([row("groq").requests, row("groq").free, row("groq").setUp], [0, true, true]);
   assert.equal(row("mistral").setUp, false);
+  assert.deepEqual(row("mistral").missing, ["MISTRAL_API_KEY"]);
+  assert.deepEqual(row("groq").missing, []);
   assert.equal(row("someone-new").provider, "someone-new", "a provider Flash doesn't know still shows");
   assert.equal(JSON.stringify(body).includes(process.env.GROQ_API_KEY!), false, "key values never leave the server");
   assert.ok(body.profit && typeof body.profit.netCents === "number");
