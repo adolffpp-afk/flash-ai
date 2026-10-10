@@ -34,9 +34,9 @@ process.env.FAL_KEY = "k";
 process.env.FAL_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 delete process.env.ELEVENLABS_API_KEY;
 
-const { wakeMatch, isYes, isNo, isGoodbye, speechChunks, voiceReply, withVoiceStyle, VOICE_STYLE, MAX_SPOKEN_CHARS } = await import(
-  "../src/lib/voice-chat.ts"
-);
+const { wakeMatch, isYes, isNo, isGoodbye, speechChunks, voiceReply, withVoiceStyle, VOICE_STYLE, MAX_SPOKEN_CHARS, YES_WORDS, NO_WORDS, GOODBYE_WORDS } =
+  await import("../src/lib/voice-chat.ts");
+const { translate } = await import("../src/lib/i18n.ts");
 const { run, one } = await import("../src/lib/server/db.ts");
 const { hearTurn } = await import("../src/lib/server/voice.ts");
 
@@ -57,6 +57,27 @@ test("short answers: yes, no and goodbye", () => {
   for (const n of ["No thanks", "cancel", "never mind", "Don't."]) assert.ok(isNo(n), n);
   for (const b of ["Bye", "goodbye Flash", "OK thanks, that's all", "stop listening", "bye bye", "end the conversation"]) assert.ok(isGoodbye(b), b);
   for (const b of ["say bye to my customers in an email", "what's all this", "stop the video"]) assert.ok(!isGoodbye(b), b);
+});
+
+test("yes, no and goodbye in the language Flash is shown in, as well as in English", () => {
+  const yes = "oui, ouais, d'accord, vas-y, fais-le";
+  const no = "non, annule, pas maintenant, laisse tomber";
+  const bye = "au revoir, salut, c'est tout, arrête d'écouter";
+  for (const y of ["Oui", "D'accord !", "vas-y, s'il te plaît", "Yes", "go ahead"]) assert.ok(isYes(y, yes), y);
+  for (const n of ["ouille", "oui je veux changer la photo avec un ciel bleu et des oiseaux", "non", "maybe later"]) assert.ok(!isYes(n, yes), n);
+  for (const n of ["Non merci", "Annule.", "pas maintenant", "cancel"]) assert.ok(isNo(n, no), n);
+  for (const n of ["nonante", "pas tout de suite"]) assert.ok(!isNo(n, no), n);
+  for (const b of ["Au revoir !", "au revoir Flash", "C'est tout.", "Bye"]) assert.ok(isGoodbye(b, bye), b);
+  for (const b of ["dis au revoir à mes clients", "salut tout le monde"]) assert.ok(!isGoodbye(b, bye), b);
+  // Other scripts: their own commas, marks on letters, and no spaces between words.
+  assert.ok(isYes("はい、お願いします", "はい、うん、お願いします"));
+  assert.ok(isYes("हाँ", "हाँ, ठीक है") && !isYes("है", "हाँ, ठीक है"));
+  assert.ok(!isYes("好的，我想把这张图片改成蓝色的天空，再加上几只飞翔的小鸟和一道彩虹", "好的，是的"));
+  // The English lists change nothing in English.
+  for (const y of ["Yes", "yeah go ahead", "OK.", "Sure, do it"]) assert.ok(isYes(y, YES_WORDS), y);
+  for (const n of ["no", "yes no wait", "maybe later", "yes I want to change the picture to a blue sky with birds"]) assert.ok(!isYes(n, YES_WORDS), n);
+  assert.ok(isNo("never mind", NO_WORDS) && !isNo("not bad", NO_WORDS));
+  assert.ok(isGoodbye("goodbye Flash", GOODBYE_WORDS) && !isGoodbye("stop the video", GOODBYE_WORDS));
 });
 
 test("long answers are spoken in short pieces, without losing a word", () => {
@@ -89,6 +110,23 @@ test("what Flash says back: the answer, made things, prices and errors", () => {
   const long = voiceReply({ content: "This is a sentence that goes on for a while. ".repeat(30) }).say;
   assert.ok(long.length <= MAX_SPOKEN_CHARS + 40);
   assert.ok(long.endsWith("a while. The rest is on your screen."), long);
+});
+
+test("what Flash says back is in the language Flash is shown in", () => {
+  const table = {
+    "Done. It's on your screen.": "Terminé. C'est sur ton écran.",
+    "{cost} Say yes to go ahead, or no to skip it.": "{cost} Dis oui pour continuer, ou non pour passer.",
+    "{answer} The details are on your screen.": "{answer} Les détails sont sur ton écran.",
+  };
+  const fr = (text: string, blanks?: Record<string, string | number>) => translate(table, text, blanks);
+  assert.equal(voiceReply({ content: "" }, fr).say, "Terminé. C'est sur ton écran.");
+  assert.equal(
+    voiceReply({ content: "", error: "Cette vidéo coûte 140 crédits.", errorCode: "confirm_cost" }, fr).say,
+    "Cette vidéo coûte 140 crédits. Dis oui pour continuer, ou non pour passer.",
+  );
+  assert.equal(voiceReply({ content: "Voici :\n\n```py\nprint(1)\n```" }, fr).say, "Voici : Les détails sont sur ton écran.");
+  // A phrase the table lacks is said in English.
+  assert.equal(voiceReply({ content: "", stopped: true }, fr).say, "Stopped.");
 });
 
 test("voice requests get spoken answers from the writing engines only", () => {

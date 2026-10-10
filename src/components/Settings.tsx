@@ -4,7 +4,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { api, type Me } from "@/lib/store";
 import { ENGINE_LABELS, type Engine } from "@/lib/types";
 import { WORK_OPTIONS, firstName, fullName, initials } from "@/lib/names";
-import { AUTOMATIC_LANGUAGE, LANGUAGES } from "@/lib/languages";
+import { AUTOMATIC_LANGUAGE, LANGUAGES, speechLang } from "@/lib/languages";
 import {
   DEVICE_KEYS,
   FONTS,
@@ -23,6 +23,8 @@ import { ConnectedApps } from "./ConnectedApps";
 import { InstallApp } from "./InstallApp";
 import { SETTINGS_TABS, type SettingsTab } from "@/lib/settings-tabs";
 import { hasBuiltInRecognition } from "@/lib/listen";
+import { msg, type Translate } from "@/lib/i18n";
+import { useT } from "@/lib/use-t";
 
 export { settingsTabFor, type SettingsTab } from "@/lib/settings-tabs";
 
@@ -77,6 +79,7 @@ function Toggle({ on, onChange, label: name }: { on: boolean; onChange: (on: boo
 
 /** A small set of choices shown as buttons, like Claude's chat font picker. */
 function Choices<T extends string>({ value, options, onChange, name }: { value: T; options: readonly (readonly [T, string, ...string[]])[]; onChange: (v: T) => void; name: string }) {
+  const t = useT();
   return (
     <div role="radiogroup" aria-label={name} className="flex flex-wrap gap-2">
       {options.map(([id, title, about]) => (
@@ -85,13 +88,13 @@ function Choices<T extends string>({ value, options, onChange, name }: { value: 
           type="button"
           role="radio"
           aria-checked={value === id}
-          title={about}
+          title={about && t(about)}
           onClick={() => onChange(id)}
           className={`rounded-lg border px-3 py-1.5 text-sm transition ${
             value === id ? "border-primary/70 bg-primary/10 text-white" : "border-white/10 text-zinc-300 hover:bg-white/[0.04]"
           }`}
         >
-          {title}
+          {t(title)}
         </button>
       ))}
     </div>
@@ -110,7 +113,7 @@ function useDeviceSetting(key: DeviceKey): [string, (v: string) => void] {
   ];
 }
 
-const date = (t: number) => new Date(t).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+const date = (when: number, locale: string) => new Date(when).toLocaleDateString(locale, { year: "numeric", month: "long", day: "numeric" });
 
 type Usage = {
   since: number;
@@ -121,7 +124,10 @@ type Usage = {
 };
 type Share = { id: string; projectId: string; title: string; createdAt: number };
 
-const toolName = (engine: string) => (engine === "companion" ? "Ask Flash" : (ENGINE_LABELS[engine as Engine] ?? engine));
+const toolName = (engine: string, t: Translate) => {
+  const tool = ENGINE_LABELS[engine as Engine];
+  return engine === "companion" ? t("Ask Flash") : tool ? t(tool) : engine;
+};
 
 /** Everything about the user's account and how Flash works for them, in one place. */
 export function Settings({
@@ -152,6 +158,7 @@ export function Settings({
   onWakeWord?: (on: boolean) => void;
   onClose: () => void;
 }) {
+  const t = useT();
   const [tab, setTab] = useState<SettingsTab>(initialTab);
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -162,8 +169,8 @@ export function Settings({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const show = (t: SettingsTab) => {
-    setTab(t);
+  const show = (id: SettingsTab) => {
+    setTab(id);
     setMessage(null);
   };
 
@@ -173,7 +180,7 @@ export function Settings({
     try {
       setMessage({ text: await work(), ok: true });
     } catch (e) {
-      setMessage({ text: e instanceof Error ? e.message : "Something went wrong. Please try again.", ok: false });
+      setMessage({ text: e instanceof Error ? e.message : t("Something went wrong. Please try again."), ok: false });
     }
     setBusy(false);
   }
@@ -185,20 +192,20 @@ export function Settings({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Settings"
+        aria-label={t("Settings")}
         className="flex h-[94dvh] w-full max-w-4xl flex-col overflow-hidden rounded-t-2xl border border-white/8 bg-zinc-950 text-zinc-100 sm:h-[min(720px,92dvh)] sm:rounded-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-white/6 px-5 py-3">
-          <h2 className="text-lg font-medium tracking-tight">Settings</h2>
-          <button onClick={onClose} className="rounded-full p-2 text-zinc-400 transition hover:bg-white/[0.06] hover:text-zinc-100" aria-label="Close">
+          <h2 className="text-lg font-medium tracking-tight">{t("Settings")}</h2>
+          <button onClick={onClose} className="rounded-full p-2 text-zinc-400 transition hover:bg-white/[0.06] hover:text-zinc-100" aria-label={t("Close")}>
             ✕
           </button>
         </div>
         <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
           <nav
             className="flex shrink-0 gap-1 overflow-x-auto border-b border-white/6 p-2 sm:w-52 sm:flex-col sm:overflow-visible sm:border-b-0 sm:border-r sm:p-3"
-            aria-label="Settings sections"
+            aria-label={t("Settings sections")}
           >
             {SETTINGS_TABS.map(([id, title]) => (
               <button
@@ -209,7 +216,7 @@ export function Settings({
                   tab === id ? "bg-white/[0.08] font-medium text-white" : "text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-100"
                 }`}
               >
-                {title}
+                {t(title)}
               </button>
             ))}
           </nav>
@@ -224,17 +231,17 @@ export function Settings({
               {tab === "usage" && <UsageTab {...shared} onOpenCredits={onOpenCredits} />}
               {tab === "capabilities" && <Capabilities onBrand={() => show("brand")} onCompanionShown={onCompanionShown} />}
               {tab === "brand" && (
-                <Section title="Brand kit">
-                  <p className={hint}>Your logo, colours and tone, used in pictures, posts, websites and documents made for your business.</p>
+                <Section title={t("Brand kit")}>
+                  <p className={hint}>{t("Your logo, colours and tone, used in pictures, posts, websites and documents made for your business.")}</p>
                   <BrandKitForm onSaved={(text) => setMessage({ text, ok: true })} />
                 </Section>
               )}
               {tab === "connectors" && (
-                <Section title="Connectors">
+                <Section title={t("Connectors")}>
                   <p className="text-sm text-zinc-400">
-                    Apps like Claude and ChatGPT can use Flash with your credits.{" "}
+                    {t("Apps like Claude and ChatGPT can use Flash with your credits.")}{" "}
                     <a className="text-primary-soft underline-offset-2 hover:underline" href="/connector">
-                      How to connect one
+                      {t("How to connect one")}
                     </a>
                   </p>
                   <ConnectedApps />
@@ -275,10 +282,14 @@ function General({
   onProfileChanged: (user: { name: string; nickname: string; work: string; language: string }) => void;
   onWakeWord?: (on: boolean) => void;
 }) {
+  const t = useT();
   const [name, setName] = useState(fullName(me.user));
   const [nickname, setNickname] = useState(me.user.nickname ?? "");
   const [work, setWork] = useState(me.user.work ?? "");
   const [language, setLanguage] = useState(me.user.language ?? "");
+  // What happened to the language just picked, shown right under the menu. Kept in English and
+  // translated where it's shown, so it appears in the language Flash switches to.
+  const [languageSaved, setLanguageSaved] = useState<{ text: string; ok: boolean } | null>(null);
   const [notify, setNotify] = useDeviceSetting("notifyDone");
   const [theme, setTheme] = useDeviceSetting("theme");
   const [font, setFont] = useDeviceSetting("font");
@@ -303,24 +314,43 @@ function General({
   const changed =
     name.trim() !== fullName(me.user) ||
     nickname.trim() !== (me.user.nickname ?? "") ||
-    work !== (me.user.work ?? "") ||
-    language !== (me.user.language ?? "");
+    work !== (me.user.work ?? "");
   const save = () =>
     attempt(async () => {
       const profile = { name: name.trim() || fullName(me.user), nickname: nickname.trim(), work, language };
       await api("/api/me", { method: "PATCH", json: profile });
       onProfileChanged(profile);
-      return "Profile saved.";
+      return t("Profile saved.");
     });
+
+  /** The language saves the moment it is picked, like the theme, and says so under the menu. */
+  async function pickLanguage(value: string) {
+    const before = language;
+    setLanguage(value);
+    setLanguageSaved(null);
+    try {
+      await api("/api/me", { method: "PATCH", json: { language: value } });
+      onProfileChanged({ name: me.user.name, nickname: me.user.nickname ?? "", work: me.user.work ?? "", language: value });
+      setLanguageSaved({
+        text: value
+          ? msg("Saved. Flash is now in this language, and answers in it from your next message.")
+          : msg("Saved. Flash's menus follow your browser's language, and it answers in the language you write in."),
+        ok: true,
+      });
+    } catch {
+      setLanguage(before);
+      setLanguageSaved({ text: msg("Flash couldn't save the language. Please try again."), ok: false });
+    }
+  }
 
   async function toggleNotify(on: boolean) {
     if (!on) return setNotify("");
     if (typeof Notification === "undefined") {
-      return setMessage({ text: "This browser can't show notifications.", ok: false });
+      return setMessage({ text: t("This browser can't show notifications."), ok: false });
     }
     const allowed = Notification.permission === "granted" || (await Notification.requestPermission()) === "granted";
     if (allowed) setNotify("1");
-    else setMessage({ text: "Notifications are blocked for Flash. Allow them in your browser's site settings, then try again.", ok: false });
+    else setMessage({ text: t("Notifications are blocked for Flash. Allow them in your browser's site settings, then try again."), ok: false });
   }
 
   /** Turns "Hey Flash" on (after the browser allows the microphone) or off, on this device. */
@@ -332,68 +362,82 @@ function General({
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach((t) => t.stop());
+      stream.getTracks().forEach((track) => track.stop());
     } catch {
-      return setMessage({ text: 'Flash needs the microphone to hear "Hey Flash". Allow it in your browser\'s site settings, then try again.', ok: false });
+      return setMessage({ text: t('Flash needs the microphone to hear "Hey Flash". Allow it in your browser\'s site settings, then try again.'), ok: false });
     }
     setWake("1");
     onWakeWord?.(true);
-    setMessage({ text: 'Say "Hey Flash" any time Flash is open.', ok: true });
+    setMessage({ text: t('Say "Hey Flash" any time Flash is open.'), ok: true });
   }
 
   function tryVoice() {
     const synth = window.speechSynthesis;
     synth.cancel();
-    const say = new SpeechSynthesisUtterance(`Hi ${firstName({ ...me.user, nickname })}, this is how Flash reads answers aloud.`);
-    const picked = readAloudVoice();
+    const called = firstName({ ...me.user, nickname });
+    // firstName gives "there" when there's no name to use: a whole phrase, so it reads naturally in each language.
+    const say = new SpeechSynthesisUtterance(
+      called === "there"
+        ? t("Hi there, this is how Flash reads answers aloud.")
+        : t("Hi {name}, this is how Flash reads answers aloud.", { name: called }),
+    );
+    // Answers come in the language picked above, so the voice is tried in it too.
+    const tag = speechLang(language, navigator.language);
+    const picked = readAloudVoice(tag);
     if (picked.voice) say.voice = picked.voice;
     say.rate = picked.rate;
-    say.lang = picked.voice?.lang || navigator.language || "en-US";
+    say.lang = picked.voice?.lang || tag || navigator.language || "en-US";
     synth.speak(say);
   }
 
-  // Voices in the user's own language first, then the rest.
-  const lang = (typeof navigator !== "undefined" ? navigator.language : "en").slice(0, 2);
+  // What Flash would call them without a nickname; "there" (from firstName) when nothing fits.
+  const suggested = firstName({ ...me.user, name, nickname: "" });
+
+  // Voices in the language Flash answers in (else the browser's) first, then the rest.
+  const browser = typeof navigator !== "undefined" ? navigator.language : "en";
+  const lang = (speechLang(language, browser) || browser).toLowerCase().split(/[-_]/)[0];
+  // No voice on this device speaks the language picked, so reading aloud would use another language's voice.
+  const noVoice = speech && voices.length > 0 && Boolean(speechLang(language)) && !voices.some((v) => v.lang.toLowerCase().startsWith(lang));
   const sorted = [...voices].sort((a, b) => Number(b.lang.startsWith(lang)) - Number(a.lang.startsWith(lang)) || a.name.localeCompare(b.name));
 
   return (
     <>
-      <Section title="Profile">
+      <Section title={t("Profile")}>
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
           <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary-deep text-base font-medium text-primary-soft" aria-hidden>
             {initials({ ...me.user, name })}
           </span>
           <label className={`${label} min-w-0 flex-1`}>
-            Full name
+            {t("Full name")}
             <input className={field} value={name} maxLength={80} onChange={(e) => setName(e.target.value)} autoComplete="name" />
           </label>
           <label className={`${label} min-w-0 flex-1`}>
-            What should Flash call you?
+            {t("What should Flash call you?")}
             <input
               className={field}
               value={nickname}
               maxLength={40}
-              placeholder={firstName({ ...me.user, name, nickname: "" })}
+              placeholder={suggested === "there" ? t("Your name") : suggested}
               onChange={(e) => setNickname(e.target.value)}
             />
           </label>
         </div>
         <label className={label}>
-          What best describes your work?
+          {t("What best describes your work?")}
           <select className={field} value={work} onChange={(e) => setWork(e.target.value)}>
-            <option value="">Choose one</option>
+            <option value="">{t("Choose one")}</option>
             {WORK_OPTIONS.map((w) => (
               <option key={w} value={w}>
-                {w}
+                {t(w)}
               </option>
             ))}
           </select>
         </label>
         <div>
           <label className={label}>
-            Language
-            <select className={field} value={language} onChange={(e) => setLanguage(e.target.value)} aria-describedby="language-hint">
-              <option value="">{AUTOMATIC_LANGUAGE}</option>
+            {t("Language")}
+            <select className={field} value={language} onChange={(e) => void pickLanguage(e.target.value)} aria-describedby="language-hint">
+              <option value="">{t(AUTOMATIC_LANGUAGE)}</option>
               {LANGUAGES.map((l) => (
                 <option key={l.id} value={l.id} lang={l.id}>
                   {l.label}
@@ -402,41 +446,52 @@ function General({
             </select>
           </label>
           <p id="language-hint" className={`mt-1 ${hint}`}>
-            Flash answers, writes and builds in this language.
+            {t("Flash's menus and buttons, and what it answers, writes and builds, are in this language. It saves as soon as you pick it.")}
           </p>
+          {languageSaved && (
+            <p role="status" className={`mt-1 text-xs ${languageSaved.ok ? "text-emerald-300" : "text-red-400"}`}>
+              {t(languageSaved.text)}
+            </p>
+          )}
         </div>
         <div>
           <button className={primary} disabled={busy || !changed} onClick={save}>
-            Save
+            {t("Save")}
           </button>
         </div>
         <label className={label}>
-          What should Flash know about you?
-          <span className={`mt-0.5 block ${hint}`}>Your work, your city, how you like answers. It applies to every chat and saves as you type.</span>
+          {t("What should Flash know about you?")}
+          <span className={`mt-0.5 block ${hint}`}>{t("Your work, your city, how you like answers. It applies to every chat and saves as you type.")}</span>
           <textarea
             className={`${field} resize-y`}
             rows={5}
             maxLength={2000}
             value={preferences}
             onChange={(e) => onPreferences(e.target.value)}
-            placeholder="e.g. I run a small bakery in Toronto. Keep answers short."
+            placeholder={t("e.g. I run a small bakery in Toronto. Keep answers short.")}
           />
         </label>
         <p className={hint}>
-          {preferences.length.toLocaleString()} / 2,000. For one project only, use the Instructions button at the top of that chat.
+          {t("{count} / {max}. For one project only, use the Instructions button at the top of that chat.", {
+            count: preferences.length.toLocaleString(t.locale),
+            max: (2000).toLocaleString(t.locale),
+          })}
         </p>
       </Section>
 
-      <Section title="Notifications">
-        <Row title="Response completions" about="Get a notification on this device when Flash finishes while you're in another tab. Most useful for videos, movies and apps.">
-          <Toggle on={notify === "1"} onChange={toggleNotify} label="Notify me when a response is done" />
+      <Section title={t("Notifications")}>
+        <Row
+          title={t("Response completions")}
+          about={t("Get a notification on this device when Flash finishes while you're in another tab. Most useful for videos, movies and apps.")}
+        >
+          <Toggle on={notify === "1"} onChange={toggleNotify} label={t("Notify me when a response is done")} />
         </Row>
       </Section>
 
-      <Section title="Appearance">
-        <Row title="Theme" about="Saved on this device.">
+      <Section title={t("Appearance")}>
+        <Row title={t("Theme")} about={t("Saved on this device.")}>
           <Choices
-            name="Theme"
+            name={t("Theme")}
             value={theme}
             options={THEMES}
             onChange={(v) => {
@@ -445,9 +500,9 @@ function General({
             }}
           />
         </Row>
-        <Row title="Chat font" about="Saved on this device.">
+        <Row title={t("Chat font")} about={t("Saved on this device.")}>
           <Choices
-            name="Chat font"
+            name={t("Chat font")}
             value={font}
             options={FONTS}
             onChange={(v) => {
@@ -456,9 +511,9 @@ function General({
             }}
           />
         </Row>
-        <Row title="Text size">
+        <Row title={t("Text size")}>
           <Choices
-            name="Text size"
+            name={t("Text size")}
             value={size}
             options={TEXT_SIZES}
             onChange={(v) => {
@@ -469,37 +524,39 @@ function General({
         </Row>
       </Section>
 
-      <Section title="Keyboard">
-        <Row title="Shortcuts on Home" about="Press N, V, I, D, B or T on Home to open a Quick Tool, when you're not typing. Saved on this device.">
-          <Toggle on={keysOff !== "1"} onChange={(on) => setKeysOff(on ? "" : "1")} label="Use single-key shortcuts" />
+      <Section title={t("Keyboard")}>
+        <Row
+          title={t("Shortcuts on Home")}
+          about={t("Press N, V, I, D, B or T on Home to open a Quick Tool, when you're not typing. Saved on this device.")}
+        >
+          <Toggle on={keysOff !== "1"} onChange={(on) => setKeysOff(on ? "" : "1")} label={t("Use single-key shortcuts")} />
         </Row>
       </Section>
 
-      <Section title="Voice">
+      <Section title={t("Voice")}>
         <Row
-          title="Talk with &ldquo;Hey Flash&rdquo;"
+          title={t("Talk with “Hey Flash”")}
           about={
-            canWake ? (
-              <>
-                While Flash is open, say &ldquo;Hey Flash&rdquo; and talk with it, hands free. Your browser does the listening: Chrome and Edge send
-                the sound to Google&apos;s or Microsoft&apos;s speech service to understand it, and Flash only gets what you say after &ldquo;Hey
-                Flash&rdquo;. A green dot on the Talk button shows it&apos;s listening. Saved on this device.
-              </>
-            ) : (
-              <>
-                This browser can&apos;t listen for &ldquo;Hey Flash&rdquo;. It works in Chrome, Edge and Safari. Here, press the Talk button next to
-                the mic to start a voice conversation.
-              </>
-            )
+            canWake
+              ? t(
+                  "While Flash is open, say “Hey Flash” and talk with it, hands free. Your browser does the listening: Chrome and Edge send the sound to Google's or Microsoft's speech service to understand it, and Flash only gets what you say after “Hey Flash”. A green dot on the Talk button shows it's listening. Saved on this device.",
+                )
+              : t(
+                  "This browser can't listen for “Hey Flash”. It works in Chrome, Edge and Safari. Here, press the Talk button next to the mic to start a voice conversation.",
+                )
           }
         >
-          {canWake ? <Toggle on={wake === "1"} onChange={toggleWake} label="Listen for Hey Flash" /> : <span className={hint}>Not in this browser</span>}
+          {canWake ? (
+            <Toggle on={wake === "1"} onChange={toggleWake} label={t("Listen for Hey Flash")} />
+          ) : (
+            <span className={hint}>{t("Not in this browser")}</span>
+          )}
         </Row>
         {speech ? (
           <>
-            <Row title="Read-aloud voice" about="The voice 🔊 Read aloud uses. Read aloud is free; the voices come with your device.">
-              <select className={`${field} mt-0 max-w-[16rem]`} value={voice} onChange={(e) => setVoice(e.target.value)} aria-label="Read-aloud voice">
-                <option value="">Device default</option>
+            <Row title={t("Read-aloud voice")} about={t("The voice 🔊 Read aloud uses. Read aloud is free; the voices come with your device.")}>
+              <select className={`${field} mt-0 max-w-[16rem]`} value={voice} onChange={(e) => setVoice(e.target.value)} aria-label={t("Read-aloud voice")}>
+                <option value="">{t("Device default")}</option>
                 {sorted.map((v) => (
                   <option key={v.voiceURI} value={v.voiceURI}>
                     {v.name} ({v.lang})
@@ -507,22 +564,29 @@ function General({
                 ))}
               </select>
             </Row>
-            <Row title="Speed">
-              <Choices name="Read-aloud speed" value={rate} options={VOICE_RATES} onChange={setRate} />
+            {noVoice && (
+              <p className={hint}>
+                {t(
+                  "This device has no voice for the language Flash answers in, so answers are read with another language's voice. Add one in your computer's speech or language settings, then reopen Flash.",
+                )}
+              </p>
+            )}
+            <Row title={t("Speed")}>
+              <Choices name={t("Read-aloud speed")} value={rate} options={VOICE_RATES} onChange={setRate} />
             </Row>
             <div>
               <button className={button} onClick={tryVoice}>
-                🔊 Try it
+                🔊 {t("Try it")}
               </button>
             </div>
           </>
         ) : (
-          <p className={hint}>This browser can&apos;t read answers aloud.</p>
+          <p className={hint}>{t("This browser can't read answers aloud.")}</p>
         )}
       </Section>
 
-      <Section title="App">
-        <Row title="Install Flash" about="Put Flash on your home screen or desktop and open it like an app.">
+      <Section title={t("App")}>
+        <Row title={t("Install Flash")} about={t("Put Flash on your home screen or desktop and open it like an app.")}>
           <InstallApp className={`${button} inline-flex items-center gap-2`} />
         </Row>
       </Section>
@@ -531,6 +595,7 @@ function General({
 }
 
 function Account({ me, busy, attempt, onSignOut }: Shared & { onSignOut: (everywhere?: boolean) => void }) {
+  const t = useT();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState<"" | "everywhere" | "delete">("");
@@ -541,61 +606,66 @@ function Account({ me, busy, attempt, onSignOut }: Shared & { onSignOut: (everyw
       await api("/api/me/password", { method: "POST", json: { current, next } });
       setCurrent("");
       setNext("");
-      return "Password changed. Your other devices were signed out.";
+      return t("Password changed. Your other devices were signed out.");
     });
 
   const emailLink = () =>
     attempt(async () => {
       await api("/api/auth/reset/request", { method: "POST", json: { email: me.user.email } });
-      return `We sent a link to ${me.user.email}. Open it to set a new password.`;
+      return t("We sent a link to {email}. Open it to set a new password.", { email: me.user.email });
     });
 
   const signOutEverywhere = () =>
     attempt(async () => {
       await api("/api/auth/logout", { method: "POST", json: { everywhere: true } });
       onSignOut(true);
-      return "Signed out everywhere.";
+      return t("Signed out everywhere.");
     });
 
   return (
     <>
-      <Section title="Account">
-        <Row title="Email">
+      <Section title={t("Account")}>
+        <Row title={t("Email")}>
           <span className="text-sm text-zinc-300">{me.user.email}</span>
         </Row>
-        <Row title="Log out" about="Sign out of Flash on this device.">
+        <Row title={t("Log out")} about={t("Sign out of Flash on this device.")}>
           <button className={button} onClick={() => onSignOut()}>
-            Log out
+            {t("Log out")}
           </button>
         </Row>
-        <Row title="Log out of all devices" about="Signs you out everywhere, this device included. Connected apps keep working until you disconnect them.">
+        <Row
+          title={t("Log out of all devices")}
+          about={t("Signs you out everywhere, this device included. Connected apps keep working until you disconnect them.")}
+        >
           {confirm === "everywhere" ? (
             <span className="flex gap-2">
               <button className={danger} disabled={busy} onClick={signOutEverywhere}>
-                Log out everywhere
+                {t("Log out everywhere")}
               </button>
               <button className={button} onClick={() => setConfirm("")}>
-                Cancel
+                {t("Cancel")}
               </button>
             </span>
           ) : (
             <button className={button} onClick={() => setConfirm("everywhere")}>
-              Log out of all devices
+              {t("Log out of all devices")}
             </button>
           )}
         </Row>
-        <Row title="Delete your account" about="Deletes your account, chats, files and websites for good.">
+        <Row title={t("Delete your account")} about={t("Deletes your account, chats, files and websites for good.")}>
           <button className={danger} onClick={() => setConfirm(confirm === "delete" ? "" : "delete")}>
-            Delete account
+            {t("Delete account")}
           </button>
         </Row>
         {confirm === "delete" && (
           <p role="status" className="rounded-lg border border-red-500/30 bg-red-500/[0.06] px-3 py-2 text-sm text-zinc-300">
-            To delete your account and everything in it, email <span className="select-all text-zinc-100">{CONTACT}</span> from {me.user.email}. We
-            confirm by email before anything is deleted.
+            {t.node("To delete your account and everything in it, email {contact} from {email}. We confirm by email before anything is deleted.", {
+              contact: <span className="select-all text-zinc-100">{CONTACT}</span>,
+              email: me.user.email,
+            })}
           </p>
         )}
-        <Row title="Account ID" about="Support may ask for it.">
+        <Row title={t("Account ID")} about={t("Support may ask for it.")}>
           <span className="flex items-center gap-2">
             <code className="select-all rounded bg-white/[0.05] px-2 py-0.5 text-xs text-zinc-300">{me.user.id}</code>
             <button
@@ -610,40 +680,40 @@ function Account({ me, busy, attempt, onSignOut }: Shared & { onSignOut: (everyw
                   .catch(() => {})
               }
             >
-              {copied ? "Copied" : "Copy"}
+              {copied ? t("Copied") : t("Copy")}
             </button>
           </span>
         </Row>
       </Section>
 
-      <Section title="Password">
+      <Section title={t("Password")}>
         {me.hasPassword ? (
           <>
             <label className={label}>
-              Current password
+              {t("Current password")}
               <input className={field} type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
             </label>
             <label className={label}>
-              New password (at least 8 characters)
+              {t("New password (at least 8 characters)")}
               <input className={field} type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} />
             </label>
             <div className="flex flex-wrap items-center gap-3">
               <button className={primary} disabled={busy || !current || next.length < 8} onClick={changePassword}>
-                Change password
+                {t("Change password")}
               </button>
               <button className="text-xs text-zinc-400 hover:text-zinc-100" disabled={busy} onClick={emailLink}>
-                Forgot it? Email me a link
+                {t("Forgot it? Email me a link")}
               </button>
             </div>
           </>
         ) : (
           <>
             <p className="text-sm text-zinc-400">
-              You sign in with Google or an email link, so there&apos;s no password yet. You can add one to sign in with your email and a password too.
+              {t("You sign in with Google or an email link, so there's no password yet. You can add one to sign in with your email and a password too.")}
             </p>
             <div>
               <button className={button} disabled={busy} onClick={emailLink}>
-                Email me a link to set a password
+                {t("Email me a link to set a password")}
               </button>
             </div>
           </>
@@ -661,6 +731,7 @@ function saveFile(text: string, name: string) {
 }
 
 function Privacy({ me, busy, attempt, preferences }: Shared & { preferences: string }) {
+  const t = useT();
   const [shares, setShares] = useState<Share[] | null>(null);
   const [progress, setProgress] = useState("");
 
@@ -675,7 +746,7 @@ function Privacy({ me, busy, attempt, preferences }: Shared & { preferences: str
       const { projects } = await api<{ projects: { id: string; name: string }[] }>("/api/projects");
       const chats = [];
       for (const [i, p] of projects.entries()) {
-        setProgress(`Exporting chat ${i + 1} of ${projects.length}…`);
+        setProgress(t("Exporting chat {number} of {count}…", { number: i + 1, count: projects.length }));
         chats.push((await api<{ project: unknown }>(`/api/projects/${p.id}`)).project);
       }
       setProgress("");
@@ -692,38 +763,42 @@ function Privacy({ me, busy, attempt, preferences }: Shared & { preferences: str
         chats,
       };
       saveFile(JSON.stringify(data, null, 2), `flash-export-${new Date().toISOString().slice(0, 10)}.json`);
-      return `Exported ${chats.length} chat${chats.length === 1 ? "" : "s"}. Check your downloads.`;
+      return chats.length === 1
+        ? t("Exported 1 chat. Check your downloads.")
+        : t("Exported {count} chats. Check your downloads.", { count: chats.length });
     }).finally(() => setProgress(""));
 
   const stop = (id: string) =>
     attempt(async () => {
       await api(`/api/shares?id=${encodeURIComponent(id)}`, { method: "DELETE" });
       setShares((list) => list?.filter((s) => s.id !== id) ?? null);
-      return "That link stopped working.";
+      return t("That link stopped working.");
     });
 
   return (
     <>
-      <Section title="Privacy">
+      <Section title={t("Privacy")}>
         <p className="text-sm text-zinc-300">
-          Flash never uses your chats or files to train AI models. Read how your data is handled in the{" "}
-          <a className="text-primary-soft underline-offset-2 hover:underline" href="/privacy" target="_blank" rel="noreferrer">
-            Privacy Policy
-          </a>
-          .
+          {t.node("Flash never uses your chats or files to train AI models. Read how your data is handled in the {policy}.", {
+            policy: (
+              <a className="text-primary-soft underline-offset-2 hover:underline" href="/privacy" target="_blank" rel="noreferrer">
+                {t("Privacy Policy")}
+              </a>
+            ),
+          })}
         </p>
-        <Row title="Export data" about="Download your chats, memory, brand kit and websites as one file.">
+        <Row title={t("Export data")} about={t("Download your chats, memory, brand kit and websites as one file.")}>
           <button className={button} disabled={busy} onClick={exportData}>
-            {progress || "Export data"}
+            {progress || t("Export data")}
           </button>
         </Row>
       </Section>
-      <Section title="Shared chats">
-        <p className={hint}>Anyone with one of these links can read that chat as it was when you shared it.</p>
+      <Section title={t("Shared chats")}>
+        <p className={hint}>{t("Anyone with one of these links can read that chat as it was when you shared it.")}</p>
         {shares === null ? (
-          <p className={hint}>Loading…</p>
+          <p className={hint}>{t("Loading…")}</p>
         ) : shares.length === 0 ? (
-          <p className="text-sm text-zinc-400">You haven&apos;t shared any chats.</p>
+          <p className="text-sm text-zinc-400">{t("You haven't shared any chats.")}</p>
         ) : (
           <ul className="flex flex-col divide-y divide-white/6 rounded-xl border border-white/8">
             {shares.map((s) => (
@@ -732,10 +807,10 @@ function Privacy({ me, busy, attempt, preferences }: Shared & { preferences: str
                   <a href={`/s/${s.id}`} target="_blank" rel="noreferrer" className="block truncate text-zinc-200 hover:underline">
                     {s.title}
                   </a>
-                  <span className={hint}>Shared {date(s.createdAt)}</span>
+                  <span className={hint}>{t("Shared {date}", { date: date(s.createdAt, t.locale) })}</span>
                 </span>
                 <button className={button} disabled={busy} onClick={() => stop(s.id)}>
-                  Stop sharing
+                  {t("Stop sharing")}
                 </button>
               </li>
             ))}
@@ -747,48 +822,59 @@ function Privacy({ me, busy, attempt, preferences }: Shared & { preferences: str
 }
 
 function Billing({ me, busy, attempt, onOpenCredits, onOpenInvite }: Shared & { onOpenCredits: () => void; onOpenInvite: () => void }) {
+  const t = useT();
   const canManage = Boolean(me.plan && !me.plan.test && me.paymentsEnabled);
   const portal = () =>
     attempt(async () => {
       const res = await api<{ url?: string }>("/api/billing/portal", { method: "POST" });
       if (res.url) window.location.assign(res.url);
-      return "Opening billing…";
+      return t("Opening billing…");
     });
   return (
-    <Section title="Billing">
+    <Section title={t("Billing")}>
       <div className="rounded-xl border border-white/8 bg-white/[0.02] p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-sm text-zinc-400">Your plan</p>
-            <p className="mt-0.5 text-lg font-medium">{me.plan ? `${me.plan.name} plan (${me.plan.interval === "year" ? "yearly" : "monthly"})` : "Free plan"}</p>
+            <p className="text-sm text-zinc-400">{t("Your plan")}</p>
+            <p className="mt-0.5 text-lg font-medium">
+              {me.plan
+                ? me.plan.interval === "year"
+                  ? t("{plan} plan (yearly)", { plan: me.plan.name })
+                  : t("{plan} plan (monthly)", { plan: me.plan.name })
+                : t("Free plan")}
+            </p>
             {me.plan ? (
-              <p className={`mt-1 ${hint}`}>{me.plan.renews ? `Renews, next credits on ${date(me.plan.nextCredits)}` : `Ends on ${date(me.plan.paidUntil)}`}</p>
+              <p className={`mt-1 ${hint}`}>
+                {me.plan.renews
+                  ? t("Renews, next credits on {date}", { date: date(me.plan.nextCredits, t.locale) })
+                  : t("Ends on {date}", { date: date(me.plan.paidUntil, t.locale) })}
+              </p>
             ) : (
-              <p className={`mt-1 ${hint}`}>{me.freeMonthly.toLocaleString()} free credits every month.</p>
+              <p className={`mt-1 ${hint}`}>{t("{count} free credits every month.", { count: me.freeMonthly.toLocaleString(t.locale) })}</p>
             )}
           </div>
           <button className={primary} onClick={onOpenCredits}>
-            {me.plan ? "Adjust plan" : "Upgrade"}
+            {me.plan ? t("Adjust plan") : t("Upgrade")}
           </button>
         </div>
-        <p className="mt-4 text-sm text-zinc-400">Credits</p>
-        <p className="mt-0.5 text-lg font-medium">{me.credits.toLocaleString()}</p>
+        <p className="mt-4 text-sm text-zinc-400">{t("Credits")}</p>
+        <p className="mt-0.5 text-lg font-medium">{me.credits.toLocaleString(t.locale)}</p>
       </div>
       {canManage && (
-        <Row title="Payment method and invoices" about="Update your card, download invoices or cancel, on Stripe's secure page.">
+        <Row title={t("Payment method and invoices")} about={t("Update your card, download invoices or cancel, on Stripe's secure page.")}>
           <button className={button} disabled={busy} onClick={portal}>
-            Manage
+            {t("Manage")}
           </button>
         </Row>
       )}
-      <Row title="Buy credits" about="One-off top-ups that never expire.">
+      <Row title={t("Buy credits")} about={t("One-off top-ups that never expire.")}>
         <button className={button} onClick={onOpenCredits}>
-          Buy credits
+          {t("Buy credits")}
         </button>
       </Row>
-      <Row title="Invite friends" about="You both get credits when they make their first payment.">
+      <Row title={t("Invite friends")} about={t("You both get credits when they make their first payment.")}>
         <button className={button} onClick={onOpenInvite}>
-          🎁 Invite friends
+          🎁 {t("Invite friends")}
         </button>
       </Row>
     </Section>
@@ -796,6 +882,7 @@ function Billing({ me, busy, attempt, onOpenCredits, onOpenInvite }: Shared & { 
 }
 
 function UsageTab({ me, onOpenCredits }: Shared & { onOpenCredits: () => void }) {
+  const t = useT();
   const [usage, setUsage] = useState<Usage | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
@@ -803,46 +890,57 @@ function UsageTab({ me, onOpenCredits }: Shared & { onOpenCredits: () => void })
       .then(setUsage)
       .catch(() => setFailed(true));
   }, []);
-  const most = Math.max(1, ...(usage?.tools.map((t) => t.credits) ?? [1]));
+  const most = Math.max(1, ...(usage?.tools.map((tool) => tool.credits) ?? [1]));
   return (
     <>
-      <Section title="Credits">
+      <Section title={t("Credits")}>
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <p className="text-3xl font-medium tabular-nums">{me.credits.toLocaleString()}</p>
+            <p className="text-3xl font-medium tabular-nums">{me.credits.toLocaleString(t.locale)}</p>
             <p className={hint}>
-              credits left
-              {usage && !me.plan ? ` · free credits refill on ${date(usage.refill)}` : me.plan ? ` · next plan credits on ${date(me.plan.nextCredits)}` : ""}
+              {usage && !me.plan
+                ? t("credits left · free credits refill on {date}", { date: date(usage.refill, t.locale) })
+                : me.plan
+                  ? t("credits left · next plan credits on {date}", { date: date(me.plan.nextCredits, t.locale) })
+                  : t("credits left")}
             </p>
           </div>
           <button className={button} onClick={onOpenCredits}>
-            Get more credits
+            {t("Get more credits")}
           </button>
         </div>
       </Section>
-      <Section title="This month">
+      <Section title={t("This month")}>
         {failed ? (
-          <p className="text-sm text-red-400">Couldn&apos;t load your usage. Please try again.</p>
+          <p className="text-sm text-red-400">{t("Couldn't load your usage. Please try again.")}</p>
         ) : !usage ? (
-          <p className={hint}>Loading…</p>
+          <p className={hint}>{t("Loading…")}</p>
         ) : usage.tools.length === 0 ? (
-          <p className="text-sm text-zinc-400">Nothing used yet this month.</p>
+          <p className="text-sm text-zinc-400">{t("Nothing used yet this month.")}</p>
         ) : (
           <>
             <p className="text-sm text-zinc-300">
-              <span className="font-medium tabular-nums">{usage.total.toLocaleString()}</span> credits used since {date(usage.since)}
+              {t.node("{total} credits used since {date}", {
+                total: <span className="font-medium tabular-nums">{usage.total.toLocaleString(t.locale)}</span>,
+                date: date(usage.since, t.locale),
+              })}
             </p>
             <ul className="flex flex-col gap-3">
-              {usage.tools.map((t) => (
-                <li key={t.engine} className="text-sm">
+              {usage.tools.map((tool) => (
+                <li key={tool.engine} className="text-sm">
                   <div className="flex justify-between gap-3">
-                    <span className="text-zinc-200">{toolName(t.engine)}</span>
+                    <span className="text-zinc-200">{toolName(tool.engine, t)}</span>
                     <span className="tabular-nums text-zinc-400">
-                      {t.credits.toLocaleString()} credits · {t.requests.toLocaleString()} {t.requests === 1 ? "request" : "requests"}
+                      {tool.requests === 1
+                        ? t("{credits} credits · 1 request", { credits: tool.credits.toLocaleString(t.locale) })
+                        : t("{credits} credits · {count} requests", {
+                            credits: tool.credits.toLocaleString(t.locale),
+                            count: tool.requests.toLocaleString(t.locale),
+                          })}
                     </span>
                   </div>
                   <div className="mt-1 h-2 overflow-hidden rounded-full bg-white/[0.06]">
-                    <div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(2, (t.credits / most) * 100)}%` }} />
+                    <div className="h-full rounded-full bg-primary" style={{ width: `${Math.max(2, (tool.credits / most) * 100)}%` }} />
                   </div>
                 </li>
               ))}
@@ -851,36 +949,45 @@ function UsageTab({ me, onOpenCredits }: Shared & { onOpenCredits: () => void })
         )}
       </Section>
       {usage && (me.freeLane.chats > 0 || me.freeLane.images > 0) && (
-        <Section title="Free use today">
-          <p className={hint}>When your credits run out, free models still answer, up to a daily limit.</p>
+        <Section title={t("Free use today")}>
+          <p className={hint}>{t("When your credits run out, free models still answer, up to a daily limit.")}</p>
           <ul className="flex flex-col gap-1 text-sm text-zinc-300">
             {me.freeLane.chats > 0 && (
               <li>
-                Messages: <span className="tabular-nums">{usage.freeLeft.chat ?? me.freeLane.chats}</span> of {me.freeLane.chats} left
+                {t.node("Messages: {left} of {total} left", {
+                  left: <span className="tabular-nums">{usage.freeLeft.chat ?? me.freeLane.chats}</span>,
+                  total: me.freeLane.chats,
+                })}
               </li>
             )}
             {me.freeLane.images > 0 && (
               <li>
-                Images: <span className="tabular-nums">{usage.freeLeft.image ?? me.freeLane.images}</span> of {me.freeLane.images} left
+                {t.node("Images: {left} of {total} left", {
+                  left: <span className="tabular-nums">{usage.freeLeft.image ?? me.freeLane.images}</span>,
+                  total: me.freeLane.images,
+                })}
               </li>
             )}
             {!!me.freeLane.transcripts && (
               <li>
-                Transcripts: <span className="tabular-nums">{usage.freeLeft.transcribe ?? me.freeLane.transcripts}</span> of {me.freeLane.transcripts} left
+                {t.node("Transcripts: {left} of {total} left", {
+                  left: <span className="tabular-nums">{usage.freeLeft.transcribe ?? me.freeLane.transcripts}</span>,
+                  total: me.freeLane.transcripts,
+                })}
               </li>
             )}
           </ul>
         </Section>
       )}
       {me.activity.length > 0 && (
-        <Section title="Recent activity">
+        <Section title={t("Recent activity")}>
           <ul className="flex flex-col divide-y divide-white/6 text-sm">
             {me.activity.slice(0, 12).map((a, i) => (
               <li key={i} className="flex justify-between gap-3 py-1.5">
                 <span className="min-w-0 truncate text-zinc-300">{a.reason}</span>
                 <span className={`shrink-0 tabular-nums ${a.amount < 0 ? "text-zinc-400" : "text-emerald-300"}`}>
                   {a.amount > 0 ? "+" : ""}
-                  {a.amount.toLocaleString()} · {new Date(a.created_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                  {a.amount.toLocaleString(t.locale)} · {new Date(a.created_at).toLocaleDateString(t.locale, { month: "short", day: "numeric" })}
                 </span>
               </li>
             ))}
@@ -892,37 +999,49 @@ function UsageTab({ me, onOpenCredits }: Shared & { onOpenCredits: () => void })
 }
 
 function Capabilities({ onBrand, onCompanionShown }: { onBrand: () => void; onCompanionShown: (shown: boolean) => void }) {
+  const t = useT();
   const [skipCost, setSkipCost] = useDeviceSetting("skipCostCheck");
   const [memoryOff, setMemoryOff] = useDeviceSetting("memoryOff");
   const [hideCompanion, setHideCompanion] = useDeviceSetting("hideCompanion");
   return (
     <>
-      <Section title="Memory">
-        <Row title="Use memory in chats" about="Flash uses what you told it about yourself (in General) in every chat. Project instructions and your brand kit still apply when it's off. Saved on this device.">
-          <Toggle on={memoryOff !== "1"} onChange={(on) => setMemoryOff(on ? "" : "1")} label="Use memory in chats" />
+      <Section title={t("Memory")}>
+        <Row
+          title={t("Use memory in chats")}
+          about={t(
+            "Flash uses what you told it about yourself (in General) in every chat. Project instructions and your brand kit still apply when it's off. Saved on this device.",
+          )}
+        >
+          <Toggle on={memoryOff !== "1"} onChange={(on) => setMemoryOff(on ? "" : "1")} label={t("Use memory in chats")} />
         </Row>
       </Section>
-      <Section title="Spending">
-        <Row title="Ask before costly requests" about="Flash shows the price first for anything that uses 50 credits or more, like videos and movies. Saved on this device.">
-          <Toggle on={skipCost !== "1"} onChange={(on) => setSkipCost(on ? "" : "1")} label="Ask before requests that use 50 credits or more" />
+      <Section title={t("Spending")}>
+        <Row
+          title={t("Ask before costly requests")}
+          about={t("Flash shows the price first for anything that uses 50 credits or more, like videos and movies. Saved on this device.")}
+        >
+          <Toggle on={skipCost !== "1"} onChange={(on) => setSkipCost(on ? "" : "1")} label={t("Ask before requests that use 50 credits or more")} />
         </Row>
       </Section>
-      <Section title="Ask Flash">
-        <Row title="Show the Ask Flash button" about="A chat beside your work for questions about Flash and what it's doing. Saved on this device.">
+      <Section title={t("Ask Flash")}>
+        <Row title={t("Show the Ask Flash button")} about={t("A chat beside your work for questions about Flash and what it's doing. Saved on this device.")}>
           <Toggle
             on={hideCompanion !== "1"}
             onChange={(on) => {
               setHideCompanion(on ? "" : "1");
               onCompanionShown(on);
             }}
-            label="Show the Ask Flash button"
+            label={t("Show the Ask Flash button")}
           />
         </Row>
       </Section>
-      <Section title="Brand kit">
-        <Row title="Your brand in everything Flash makes" about="Your logo, colours and tone, used in pictures, posts, websites and documents for your business.">
+      <Section title={t("Brand kit")}>
+        <Row
+          title={t("Your brand in everything Flash makes")}
+          about={t("Your logo, colours and tone, used in pictures, posts, websites and documents for your business.")}
+        >
           <button className={button} onClick={onBrand}>
-            Edit brand kit
+            {t("Edit brand kit")}
           </button>
         </Row>
       </Section>

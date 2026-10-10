@@ -1,4 +1,5 @@
 import { getUser, unauthorized } from "@/lib/server/auth.ts";
+import { translatorFor } from "@/lib/server/i18n.ts";
 import { run } from "@/lib/server/db.ts";
 import { publishSite } from "@/lib/server/sites.ts";
 import { ownsSite, sitesWithMessages } from "@/lib/server/inbox.ts";
@@ -16,8 +17,9 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const user = await getUser(request);
   if (!user) return unauthorized();
+  const t = await translatorFor(request, user.language);
   const body = (await request.json().catch(() => ({}))) as { html?: string; title?: string; slug?: string };
-  const result = await publishSite(user, body);
+  const result = await publishSite(user, body, t);
   if ("error" in result) {
     return Response.json({ error: result.error, ...(result.code ? { code: result.code } : {}) }, { status: result.status });
   }

@@ -12,19 +12,21 @@ import {
   recordPayment,
 } from "@/lib/server/subscriptions.ts";
 import { planPrice } from "@/lib/credits.ts";
+import { translatorFor } from "@/lib/server/i18n.ts";
 
 /** Starts a plan, or switches to another one. Switching starts a new month today. */
 export async function POST(request: Request) {
   const user = await getUser(request);
   if (!user) return unauthorized();
+  const t = await translatorFor(request, user.language);
   const body = (await request.json().catch(() => ({}))) as { plan?: string; interval?: string };
   const plan = planById(body.plan);
   const interval = body.interval ?? "month";
-  if (!plan || !isInterval(interval)) return Response.json({ error: "Unknown plan." }, { status: 400 });
+  if (!plan || !isInterval(interval)) return Response.json({ error: t("Unknown plan.") }, { status: 400 });
 
   const current = await activeSubscription(user.id);
   if (current && current.plan === plan.id && current.interval === interval) {
-    return Response.json({ error: `You're already on ${plan.name}.` }, { status: 409 });
+    return Response.json({ error: t("You're already on {plan}.", { plan: plan.name }) }, { status: 409 });
   }
 
   if (demoPurchases()) {
@@ -46,7 +48,7 @@ export async function POST(request: Request) {
     return Response.json({ demo: true });
   }
   if (!paymentsEnabled()) {
-    return Response.json({ error: "Paid plans and top-ups are coming soon." }, { status: 503 });
+    return Response.json({ error: t("Paid plans and top-ups are coming soon.") }, { status: 503 });
   }
   try {
     const customer = await one<{ customer: string }>(
@@ -63,6 +65,6 @@ export async function POST(request: Request) {
     return Response.json({ url });
   } catch (err) {
     console.error("[flash] subscription checkout failed", err);
-    return Response.json({ error: "Couldn't open checkout. Please try again." }, { status: 502 });
+    return Response.json({ error: t("Couldn't open checkout. Please try again.") }, { status: 502 });
   }
 }

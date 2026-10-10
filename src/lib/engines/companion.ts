@@ -2,6 +2,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { ROUTER_MODEL, getClient, type Meter } from "./claude.ts";
 import { COMPANION_MAX_TOKENS, COMPANION_STEPS, COMPANION_TOOL_TOKENS, claudeCostCents, companionStepCents } from "../credits.ts";
 import { COMPANION_PAGES, type CompanionAction, type CompanionEvent, type CompanionTurn } from "../companion.ts";
+import { english, type Translate } from "../i18n.ts";
 
 // The companion answers on Haiku: quick, and a typical answer costs about 2 credits.
 export const COMPANION_MODEL = process.env.FLASH_COMPANION_MODEL || ROUTER_MODEL;
@@ -95,6 +96,8 @@ export async function* streamCompanion(
   meter: Meter,
   capCents: number,
   model = COMPANION_MODEL,
+  // The language the companion's own notes (not its answers) are in.
+  t: Translate = english,
 ): AsyncGenerator<CompanionEvent> {
   const messages: Anthropic.MessageParam[] = turns.map((t) => ({ role: t.role, content: t.content }));
   let spent = 0;
@@ -121,7 +124,7 @@ export async function* streamCompanion(
     meter("anthropic", final.model, cents);
     spent += cents;
     if (final.stop_reason === "refusal") {
-      yield { type: "text", delta: "\n\nThe companion can't help with that." };
+      yield { type: "text", delta: "\n\n" + t("The companion can't help with that.") };
       return;
     }
     if (final.stop_reason !== "tool_use" || !runTool) return;
@@ -143,7 +146,7 @@ export async function* streamCompanion(
     const nextInput =
       final.usage.input_tokens + final.usage.output_tokens + results.reduce((n, r) => n + tokensAtMost(String(r.content)), 0);
     if (step === COMPANION_STEPS - 1 || spent + companionStepCents(model, nextInput) > capCents) {
-      yield { type: "text", delta: (wrote ? "\n\n" : "") + "That's as far as this answer can go. Ask again to continue." };
+      yield { type: "text", delta: (wrote ? "\n\n" : "") + t("That's as far as this answer can go. Ask again to continue.") };
       return;
     }
   }

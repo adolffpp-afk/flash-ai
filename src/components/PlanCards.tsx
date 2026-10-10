@@ -1,14 +1,26 @@
 "use client";
 
 import type { Me, Pricing } from "@/lib/store";
+import type { Translate } from "@/lib/i18n";
+import { useT } from "@/lib/use-t";
 
 export type Interval = "month" | "year";
 
 const money = (cents: number) =>
   `$${(cents / 100).toLocaleString("en-US", { minimumFractionDigits: cents % 100 ? 2 : 0, maximumFractionDigits: 2 })}`;
 
+/** The free models' daily allowance once the monthly credits are spent, as one line. */
+function freeLaneLine(t: Translate, lane: Pricing["freeLane"]): string {
+  const blanks = { chats: lane.chats, images: lane.images, transcripts: lane.transcripts ?? 0 };
+  if (lane.images && lane.transcripts) return t("Then {chats} free chats, {images} images and {transcripts} transcripts a day on free models", blanks);
+  if (lane.images) return t("Then {chats} free chats and {images} images a day on free models", blanks);
+  if (lane.transcripts) return t("Then {chats} free chats and {transcripts} transcripts a day on free models", blanks);
+  return t("Then {chats} free chats a day on free models", blanks);
+}
+
 /** Monthly / yearly switch, like Lovable's and Emergent's pricing pages. */
 export function IntervalToggle({ value, onChange }: { value: Interval; onChange: (v: Interval) => void }) {
+  const t = useT();
   const btn = (v: Interval, label: string) => (
     <button
       type="button"
@@ -21,9 +33,9 @@ export function IntervalToggle({ value, onChange }: { value: Interval; onChange:
   );
   return (
     <div className="inline-flex items-center gap-1 rounded-full border border-white/8 p-1">
-      {btn("month", "Monthly")}
-      {btn("year", "Yearly")}
-      <span className="pr-2 text-xs text-gold-soft">save 20%</span>
+      {btn("month", t("Monthly"))}
+      {btn("year", t("Yearly"))}
+      <span className="pr-2 text-xs text-gold-soft">{t("save 20%")}</span>
     </div>
   );
 }
@@ -49,6 +61,7 @@ export function PlanCards({
   comingSoon?: boolean;
   compact?: boolean;
 }) {
+  const t = useT();
   const pad = compact ? "p-5" : "p-6";
   const button = (p: Pricing["plans"][number]) => {
     const isCurrent = current?.id === p.id && current.interval === interval;
@@ -59,16 +72,16 @@ export function PlanCards({
         className="mt-auto h-9 rounded-full bg-brand text-sm font-medium text-on-brand transition hover:brightness-110 disabled:opacity-60"
       >
         {isCurrent
-          ? "Current plan"
+          ? t("Current plan")
           : comingSoon
             ? onFree
-              ? "Start free for now"
-              : "Coming soon"
+              ? t("Start free for now")
+              : t("Coming soon")
             : busy === p.id
-              ? "Opening…"
+              ? t("Opening…")
               : current
-                ? `Switch to ${p.name}`
-                : `Get ${p.name}`}
+                ? t("Switch to {plan}", { plan: p.name })
+                : t("Get {plan}", { plan: p.name })}
       </button>
     );
   };
@@ -78,10 +91,10 @@ export function PlanCards({
       <>
         <div className="mt-1 flex items-baseline gap-1">
           <span className="text-3xl font-medium tracking-tight">{money(monthly)}</span>
-          <span className="text-sm text-zinc-500">/ month</span>
+          <span className="text-sm text-zinc-500">{t("/ month")}</span>
         </div>
         <div className="text-xs text-zinc-500">
-          {interval === "year" ? `${money(monthly * 12)} billed yearly` : "billed monthly"}
+          {interval === "year" ? t("{price} billed yearly", { price: money(monthly * 12) }) : t("billed monthly")}
         </div>
       </>
     );
@@ -91,27 +104,21 @@ export function PlanCards({
     <>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <div className={`flex flex-col rounded-xl border border-white/8 ${pad}`}>
-          <div className="font-medium">Free</div>
+          <div className="font-medium">{t("Free")}</div>
           <div className="mt-1 text-3xl font-medium tracking-tight">$0</div>
-          <div className="text-sm text-zinc-400">{pricing.freeMonthly} credits a month</div>
+          <div className="text-sm text-zinc-400">{t("{count} credits a month", { count: pricing.freeMonthly })}</div>
           <ul className="mb-4 mt-3 space-y-1 text-xs text-zinc-400">
-            <li>✓ Try every live tool</li>
-            <li>✓ Publish apps</li>
-            <li>✓ Tops up on the 1st</li>
-            {pricing.freeLane.chats > 0 && (
-              <li>
-                ✓ Then {pricing.freeLane.chats} free chats
-                {pricing.freeLane.images ? `${pricing.freeLane.transcripts ? "," : " and"} ${pricing.freeLane.images} images` : ""}
-                {pricing.freeLane.transcripts ? ` and ${pricing.freeLane.transcripts} transcripts` : ""} a day on free models
-              </li>
-            )}
+            <li>✓ {t("Try every live tool")}</li>
+            <li>✓ {t("Publish apps")}</li>
+            <li>✓ {t("Tops up on the 1st")}</li>
+            {pricing.freeLane.chats > 0 && <li>✓ {freeLaneLine(t, pricing.freeLane)}</li>}
           </ul>
           {onFree ? (
             <button onClick={onFree} className="mt-auto h-9 rounded-full border border-white/10 text-sm text-zinc-200 transition hover:bg-white/[0.04]">
-              Start free
+              {t("Start free")}
             </button>
           ) : (
-            <div className="mt-auto py-2 text-center text-xs text-zinc-500">{current ? "" : "Your plan"}</div>
+            <div className="mt-auto py-2 text-center text-xs text-zinc-500">{current ? "" : t("Your plan")}</div>
           )}
         </div>
         {pricing.plans.filter((p) => !p.seats).map((p, i) => {
@@ -124,16 +131,16 @@ export function PlanCards({
               <div className="flex items-baseline justify-between">
                 <span className="font-medium">{p.name}</span>
                 {comingSoon ? (
-                  <span className="text-[10px] uppercase tracking-wide text-zinc-400">Coming soon</span>
+                  <span className="text-[10px] uppercase tracking-wide text-zinc-400">{t("Coming soon")}</span>
                 ) : (
-                  popular && <span className="text-[10px] font-medium uppercase tracking-wider text-holo">Popular</span>
+                  popular && <span className="text-[10px] font-medium uppercase tracking-wider text-holo">{t("Popular")}</span>
                 )}
               </div>
               {price(p)}
-              <p className="mt-2 text-xs text-zinc-400">{p.blurb}</p>
+              <p className="mt-2 text-xs text-zinc-400">{t(p.blurb)}</p>
               <ul className="mb-4 mt-3 space-y-1 text-xs text-zinc-300">
                 {p.features.map((f) => (
-                  <li key={f}>✓ {f}</li>
+                  <li key={f}>✓ {t(f)}</li>
                 ))}
               </ul>
               {button(p)}
@@ -146,16 +153,16 @@ export function PlanCards({
           <div className="sm:w-56 sm:shrink-0">
             <div className="flex items-baseline gap-2">
               <span className="font-medium">{p.name}</span>
-              <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary-soft">For teams</span>
-              {comingSoon && <span className="text-[10px] uppercase tracking-wide text-zinc-400">Coming soon</span>}
+              <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-primary-soft">{t("For teams")}</span>
+              {comingSoon && <span className="text-[10px] uppercase tracking-wide text-zinc-400">{t("Coming soon")}</span>}
             </div>
             {price(p)}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-xs text-zinc-400">{p.blurb}</p>
+            <p className="text-xs text-zinc-400">{t(p.blurb)}</p>
             <ul className="mt-2 grid gap-1 text-xs text-zinc-300 sm:grid-cols-2">
               {p.features.map((f) => (
-                <li key={f}>✓ {f}</li>
+                <li key={f}>✓ {t(f)}</li>
               ))}
             </ul>
           </div>

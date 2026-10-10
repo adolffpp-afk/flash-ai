@@ -1,7 +1,7 @@
 /*
  * The language Flash answers in (Settings > General). "" is Automatic: Flash answers in the
  * language the user writes in, as it always has. Only the languages listed here are ever saved.
- * Flash's own buttons and menus stay in English for now.
+ * Flash's own buttons and menus are shown in it too (see i18n.ts).
  */
 import type { Engine } from "./types.ts";
 
@@ -14,10 +14,14 @@ export type Language = {
   name: string;
   // What the browser listens and speaks in during a voice conversation; "" when browsers can't.
   speech: string;
+  // Written right to left, so Flash's layout mirrors when it's shown in this language.
+  rtl?: boolean;
 };
 
-// How Settings shows Automatic, which is saved as "".
-export const AUTOMATIC_LANGUAGE = "Automatic (the language you write in)";
+// How Settings shows Automatic, which is saved as "". Shown with t(). It's marked with a copy of
+// i18n.ts's msg(): i18n.ts imports this file, so its own msg isn't defined yet when this line runs.
+const msg = <T extends string>(text: T): T => text;
+export const AUTOMATIC_LANGUAGE = msg("Automatic (the language you write in)");
 
 export const LANGUAGES: readonly Language[] = [
   { id: "en", label: "English", name: "English", speech: "en-US" },
@@ -31,12 +35,12 @@ export const LANGUAGES: readonly Language[] = [
   { id: "tr", label: "Türkçe (Turkish)", name: "Turkish", speech: "tr-TR" },
   { id: "ru", label: "Русский (Russian)", name: "Russian", speech: "ru-RU" },
   { id: "uk", label: "Українська (Ukrainian)", name: "Ukrainian", speech: "uk-UA" },
-  { id: "ar", label: "العربية (Arabic)", name: "Arabic", speech: "ar-SA" },
-  { id: "he", label: "עברית (Hebrew)", name: "Hebrew", speech: "he-IL" },
-  { id: "fa", label: "فارسی (Persian)", name: "Persian", speech: "fa-IR" },
+  { id: "ar", label: "العربية (Arabic)", name: "Arabic", speech: "ar-SA", rtl: true },
+  { id: "he", label: "עברית (Hebrew)", name: "Hebrew", speech: "he-IL", rtl: true },
+  { id: "fa", label: "فارسی (Persian)", name: "Persian", speech: "fa-IR", rtl: true },
   { id: "hi", label: "हिन्दी (Hindi)", name: "Hindi", speech: "hi-IN" },
   { id: "bn", label: "বাংলা (Bengali)", name: "Bengali", speech: "bn-BD" },
-  { id: "ur", label: "اردو (Urdu)", name: "Urdu", speech: "ur-PK" },
+  { id: "ur", label: "اردو (Urdu)", name: "Urdu", speech: "ur-PK", rtl: true },
   { id: "zh-Hans", label: "中文简体 (Chinese, Simplified)", name: "Simplified Chinese", speech: "zh-CN" },
   { id: "zh-Hant", label: "中文繁體 (Chinese, Traditional)", name: "Traditional Chinese", speech: "zh-TW" },
   { id: "ja", label: "日本語 (Japanese)", name: "Japanese", speech: "ja-JP" },

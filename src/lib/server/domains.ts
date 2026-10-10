@@ -3,6 +3,7 @@ import { all, one, run, now } from "./db.ts";
 import { isAdmin, type User } from "./auth.ts";
 import { sha256 } from "./ids.ts";
 import { activeSubscription } from "./subscriptions.ts";
+import { english, type Translate } from "../i18n.ts";
 
 /*
  * Custom domains for published sites. Flash adds the domain to its own Vercel project, the owner
@@ -143,13 +144,16 @@ export async function addDomain(
   slug: string,
   input: string,
   lookup: TxtLookup = lookupTxt,
+  t: Translate = english,
 ): Promise<DomainStatus | { error: string; status: number }> {
-  if (!domainsConfigured()) return { error: "Custom domains aren't switched on yet.", status: 503 };
-  if (!(await canUseDomains(user))) return { error: "Custom domains come with a paid plan.", status: 402 };
+  if (!domainsConfigured()) return { error: t("Custom domains aren't switched on yet."), status: 503 };
+  if (!(await canUseDomains(user))) return { error: t("Custom domains come with a paid plan."), status: 402 };
   const domain = cleanDomain(input);
-  if (!domain) return { error: "That doesn't look like a domain. Type it like yourbakery.com or shop.yourbakery.com.", status: 400 };
+  if (!domain) return { error: t("That doesn't look like a domain. Type it like yourbakery.com or shop.yourbakery.com."), status: 400 };
   const count = await one<{ n: number }>("SELECT COUNT(*) AS n FROM site_domains WHERE user_id = ?", [user.id]);
-  if (Number(count?.n ?? 0) >= MAX_DOMAINS_PER_USER) return { error: `You can connect up to ${MAX_DOMAINS_PER_USER} domains.`, status: 409 };
+  if (Number(count?.n ?? 0) >= MAX_DOMAINS_PER_USER) {
+    return { error: t("You can connect up to {max} domains.", { max: MAX_DOMAINS_PER_USER }), status: 409 };
+  }
   const taken = await one<{ user_id: string }>("SELECT user_id FROM site_domains WHERE domain = ?", [domain]);
   if (taken?.user_id !== user.id && !(await provesOwnership(domain, user.id, lookup))) {
     return { domain, connected: false, records: [ownershipRecord(domain, user.id)], needsProof: true };
@@ -159,7 +163,10 @@ export async function addDomain(
   if (added.status >= 400 && code !== "domain_already_in_use" && code !== "domain_already_exists") {
     console.error("[flash] vercel add domain failed", added.status, added.json);
     return {
-      error: added.status === 409 ? "That domain is used by another Vercel account. Remove it there first." : "Couldn't connect that domain. Please try again.",
+      error:
+        added.status === 409
+          ? t("That domain is used by another Vercel account. Remove it there first.")
+          : t("Couldn't connect that domain. Please try again."),
       status: added.status === 409 ? 409 : 502,
     };
   }

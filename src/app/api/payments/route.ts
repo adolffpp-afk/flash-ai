@@ -1,5 +1,6 @@
 import { appUrl, getUser, unauthorized } from "@/lib/server/auth.ts";
 import { canSell, sellerOnboardingLink, sellerStatus, sellingAvailable } from "@/lib/server/shop.ts";
+import { translatorFor } from "@/lib/server/i18n.ts";
 
 export const dynamic = "force-dynamic";
 
@@ -19,8 +20,9 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const user = await getUser(request);
   if (!user) return unauthorized();
+  const t = await translatorFor(request, user.language);
   const { country } = (await request.json().catch(() => ({}))) as { country?: string };
-  const result = await sellerOnboardingLink(user, country, appUrl(request));
+  const result = await sellerOnboardingLink(user, country, appUrl(request), t);
   if ("error" in result) return Response.json({ error: result.error }, { status: result.status });
   return Response.json(result);
 }

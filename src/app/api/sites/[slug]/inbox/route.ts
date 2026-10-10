@@ -1,4 +1,5 @@
 import { appUrl, getUser, unauthorized } from "@/lib/server/auth.ts";
+import { translatorFor } from "@/lib/server/i18n.ts";
 import { clientIp } from "@/lib/server/limits.ts";
 import { deleteMessage, messageRows, ownsSite, readMessages, receiveMessage } from "@/lib/server/inbox.ts";
 import { one } from "@/lib/server/db.ts";
@@ -30,12 +31,13 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug
 export async function GET(request: Request, ctx: RouteContext<"/api/sites/[slug]/inbox">) {
   const user = await getUser(request);
   if (!user) return unauthorized();
+  const t = await translatorFor(request, user.language);
   const { slug } = await ctx.params;
-  if (!(await ownsSite(user.id, slug))) return Response.json({ error: "Not found" }, { status: 404 });
+  if (!(await ownsSite(user.id, slug))) return Response.json({ error: t("Not found") }, { status: 404 });
   // ?format=csv downloads them as a spreadsheet file, leaving new ones marked new.
   if (new URL(request.url).searchParams.get("format") === "csv") {
     const site = await one<{ title: string }>("SELECT title FROM sites WHERE slug = ?", [slug]);
-    return new Response(toCsv(messageRows(await readMessages(slug, false))), {
+    return new Response(toCsv(messageRows(await readMessages(slug, false), t)), {
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
         "Content-Disposition": `attachment; filename="${csvName(site?.title ?? "", "messages")}"`,
@@ -49,8 +51,9 @@ export async function GET(request: Request, ctx: RouteContext<"/api/sites/[slug]
 export async function DELETE(request: Request, ctx: RouteContext<"/api/sites/[slug]/inbox">) {
   const user = await getUser(request);
   if (!user) return unauthorized();
+  const t = await translatorFor(request, user.language);
   const { slug } = await ctx.params;
-  if (!(await ownsSite(user.id, slug))) return Response.json({ error: "Not found" }, { status: 404 });
+  if (!(await ownsSite(user.id, slug))) return Response.json({ error: t("Not found") }, { status: 404 });
   await deleteMessage(slug, new URL(request.url).searchParams.get("id") ?? "");
   return Response.json({ ok: true });
 }

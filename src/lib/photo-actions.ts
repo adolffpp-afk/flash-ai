@@ -1,23 +1,25 @@
+import { msg } from "./i18n.ts";
 import type { Engine } from "./types.ts";
 
 // One-tap actions for attached photos; the router sends each to the right tool. Reading text works on
 // several photos at once (a week of receipts, the pages of a note); the others take one photo.
+// The labels are shown with t(); the prompts go to the AI as written.
 export const PHOTO_ACTIONS: { label: string; prompt: string; engine: Engine; several?: string }[] = [
   {
-    label: "📄 Copy the text",
+    label: msg("📄 Copy the text"),
     prompt: "Copy all the text from this photo exactly as written.",
     several: "Copy all the text from these photos exactly as written, photo by photo.",
     engine: "docs",
   },
   {
-    label: "📊 Make a spreadsheet",
+    label: msg("📊 Make a spreadsheet"),
     prompt: "Turn this photo into a spreadsheet: one row per item, with the amounts as numbers.",
     several: "Turn these photos into one spreadsheet: one row per item, with a column for the photo it came from and the amounts as numbers.",
     engine: "docs",
   },
-  { label: "✂️ Remove background", prompt: "Remove the background", engine: "image" },
-  { label: "🔍 Upscale", prompt: "Upscale this photo and make it sharper", engine: "image" },
-  { label: "🎬 Animate", prompt: "Animate this photo with natural, gentle motion", engine: "video" },
+  { label: msg("✂️ Remove background"), prompt: "Remove the background", engine: "image" },
+  { label: msg("🔍 Upscale"), prompt: "Upscale this photo and make it sharper", engine: "image" },
+  { label: msg("🎬 Animate"), prompt: "Animate this photo with natural, gentle motion", engine: "video" },
 ];
 
 // Pictures Claude can read, and photos Flash can edit.

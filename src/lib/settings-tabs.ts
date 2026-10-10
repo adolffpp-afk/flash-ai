@@ -2,17 +2,19 @@
  * Settings' sections, laid out like Claude's: General, Account, Privacy, Billing, Usage,
  * Capabilities and Connectors, plus Flash's own Brand kit.
  */
+import { msg } from "./i18n.ts";
+
 export type SettingsTab = "general" | "account" | "privacy" | "billing" | "usage" | "capabilities" | "brand" | "connectors";
 
 export const SETTINGS_TABS: [SettingsTab, string][] = [
-  ["general", "General"],
-  ["account", "Account"],
-  ["privacy", "Privacy"],
-  ["billing", "Billing"],
-  ["usage", "Usage"],
-  ["capabilities", "Capabilities"],
-  ["brand", "Brand kit"],
-  ["connectors", "Connectors"],
+  ["general", msg("General")],
+  ["account", msg("Account")],
+  ["privacy", msg("Privacy")],
+  ["billing", msg("Billing")],
+  ["usage", msg("Usage")],
+  ["capabilities", msg("Capabilities")],
+  ["brand", msg("Brand kit")],
+  ["connectors", msg("Connectors")],
 ];
 
 // Older names for the sections (the companion opens pages by name), so they still land in the right place.

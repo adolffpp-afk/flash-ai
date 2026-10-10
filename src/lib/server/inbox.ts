@@ -2,6 +2,7 @@ import { all, one, run, now } from "./db.ts";
 import { randomId } from "./ids.ts";
 import { overLimit } from "./limits.ts";
 import { EMAILS, sendEmail } from "./email.ts";
+import { english, type Translate } from "../i18n.ts";
 
 const FORM = /^[A-Za-z0-9_-]{1,40}$/;
 const MAX_MESSAGE_BYTES = 16 * 1024;
@@ -102,11 +103,14 @@ export async function sitesWithMessages(userId: string) {
   }));
 }
 
-/** A site's form messages as spreadsheet rows: date, form, then one column per field name. */
-export function messageRows(messages: SiteMessage[]): unknown[][] {
+/**
+ * A site's form messages as spreadsheet rows: date, form, then one column per field name. `t`
+ * words the first two headings for the owner; the field names are the site's own.
+ */
+export function messageRows(messages: SiteMessage[], t: Translate = english): unknown[][] {
   const fields = [...new Set(messages.flatMap((m) => Object.keys(m.data)))].slice(0, 50);
   return [
-    ["Date", "Form", ...fields],
+    [t("Date"), t("Form"), ...fields],
     ...messages.map((m) => [
       new Date(m.createdAt).toISOString().slice(0, 16).replace("T", " "),
       m.form,

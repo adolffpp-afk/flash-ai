@@ -8,23 +8,25 @@ import { EngineIcon } from "./EngineIcon";
 import { micBlocked, newRecognition, releaseMic, takeMic } from "@/lib/listen";
 import { LEVELS, type Level } from "@/lib/levels";
 import { LEVEL_HUES, LevelIcon } from "./LevelIcon";
+import { msg } from "@/lib/i18n";
+import { useT } from "@/lib/use-t";
 
 export type Choice = Engine | "auto";
 
 // One line per tool in the tool menu.
 const HINTS: Record<Engine, string> = {
-  text: "Emails, posts, plans and answers",
-  search: "Up-to-date answers with sources",
-  code: "Write, explain and fix code",
-  translate: "Natural translations in your tone",
-  docs: "Spreadsheets, tables and reports",
-  image: "Logos, posters and photos",
-  video: "Short clips, with sound",
-  voice: "Read any text aloud",
-  music: "Jingles, beats and songs",
-  transcribe: "Recordings into text",
-  app: "Working apps you can publish",
-  slides: "A presentation from one sentence",
+  text: msg("Emails, posts, plans and answers"),
+  search: msg("Up-to-date answers with sources"),
+  code: msg("Write, explain and fix code"),
+  translate: msg("Natural translations in your tone"),
+  docs: msg("Spreadsheets, tables and reports"),
+  image: msg("Logos, posters and photos"),
+  video: msg("Short clips, with sound"),
+  voice: msg("Read any text aloud"),
+  music: msg("Jingles, beats and songs"),
+  transcribe: msg("Recordings into text"),
+  app: msg("Working apps you can publish"),
+  slides: msg("A presentation from one sentence"),
 };
 
 // A little smaller in a narrow message box (a phone, or beside Ask Flash), so the tool picker keeps its name.
@@ -107,17 +109,18 @@ const item =
 
 /** The + button: add a file, or take a photo on phones. `plain` makes it a paperclip with no background (Home). */
 export function PlusMenu({ onFiles, onCamera, plain = false }: { onFiles: () => void; onCamera: () => void; plain?: boolean }) {
+  const t = useT();
   return (
     <Popover
-      label="Add"
+      label={t("Add")}
       align={plain ? "right" : "left"}
       button={(open, toggle) => (
         <button
           type="button"
           onClick={toggle}
           aria-expanded={open}
-          aria-label="Add files and more"
-          title="Add files and more"
+          aria-label={t("Add files and more")}
+          title={t("Add files and more")}
           className={`${round} ${plain ? "text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100" : "bg-white/[0.06] text-zinc-200 hover:bg-white/[0.1]"} ${open ? "bg-white/[0.12]" : ""}`}
         >
           {plain ? (
@@ -133,15 +136,15 @@ export function PlusMenu({ onFiles, onCamera, plain = false }: { onFiles: () => 
           <button type="button" role="menuitem" className={item} onClick={() => (close(), onFiles())}>
             <Icon d="M21 11.5l-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6l8-8" className="h-5 w-5 text-zinc-400" />
             <span>
-              Add photos & files
-              <span className="block text-xs text-zinc-500">PDF, image, sheet, text, audio or video</span>
+              {t("Add photos & files")}
+              <span className="block text-xs text-zinc-500">{t("PDF, image, sheet, text, audio or video")}</span>
             </span>
           </button>
           <button type="button" role="menuitem" className={item} onClick={() => (close(), onCamera())}>
             <Icon d="M4 8h3l2-3h6l2 3h3v11H4z M15.5 13a3.5 3.5 0 1 1-7 0a3.5 3.5 0 1 1 7 0z" className="h-5 w-5 text-zinc-400" />
             <span>
-              Take a photo
-              <span className="block text-xs text-zinc-500">Uses your camera on phones and tablets</span>
+              {t("Take a photo")}
+              <span className="block text-xs text-zinc-500">{t("Uses your camera on phones and tablets")}</span>
             </span>
           </button>
         </>
@@ -169,12 +172,13 @@ export function ToolPicker({
   // A sparkle at the start of Home's one-line message box; a picked tool shows its name beside it.
   compact?: boolean;
 }) {
+  const t = useT();
   const options = choice === "auto" ? [] : models.filter((m) => m.engine === choice);
   const picked = options.find((m) => m.id === model);
   const check = <Icon d="M5 12l5 5 9-10" className="ml-auto h-4 w-4 text-primary-soft" />;
   return (
     <Popover
-      label="Tools"
+      label={t("Tools")}
       shrink
       button={(open, toggle) =>
         compact ? (
@@ -182,24 +186,24 @@ export function ToolPicker({
             type="button"
             onClick={toggle}
             aria-expanded={open}
-            aria-label={`Choose a tool: ${choice === "auto" ? "Auto" : ENGINE_LABELS[choice]}`}
-            title="Choose a tool"
+            aria-label={t("Choose a tool: {tool}", { tool: choice === "auto" ? t("Auto") : t(ENGINE_LABELS[choice]) })}
+            title={t("Choose a tool")}
             className={`inline-flex h-11 max-w-full min-w-0 items-center gap-1.5 overflow-hidden rounded-[14px] text-sm text-zinc-100 transition hover:bg-white/[0.06] ${choice === "auto" ? "w-11 justify-center" : "px-3"} ${open ? "bg-white/[0.08]" : ""}`}
           >
             <Icon d="M12 3.5l1.9 5.1 5.1 1.9-5.1 1.9-1.9 5.1-1.9-5.1-5.1-1.9 5.1-1.9z M18.5 15l.6 1.6 1.6.6-1.6.6-.6 1.6-.6-1.6-1.6-.6 1.6-.6z" className="h-[22px] w-[22px] shrink-0 text-violet-400 light:text-violet-500" />
-            {choice !== "auto" && <span className="truncate">{ENGINE_LABELS[choice]}</span>}
+            {choice !== "auto" && <span className="truncate">{t(ENGINE_LABELS[choice])}</span>}
           </button>
         ) : (
         <button
           type="button"
           onClick={toggle}
           aria-expanded={open}
-          title="Choose a tool"
+          title={t("Choose a tool")}
           className={`inline-flex h-9 max-w-full min-w-0 items-center gap-1.5 overflow-hidden rounded-full bg-white/[0.06] px-3 text-sm text-zinc-100 transition hover:bg-white/[0.1] @min-[380px]/composer:h-10 @min-[440px]/composer:px-4 ${open ? "bg-white/[0.12]" : ""}`}
         >
           {choice === "auto" ? <BoltIcon className="h-3.5 w-3.5 shrink-0 text-gold" /> : null}
-          <span className="truncate">{choice === "auto" ? "Auto" : ENGINE_LABELS[choice]}</span>
-          <span className={`min-w-0 truncate text-zinc-300 light:text-zinc-500 ${picked ? "" : "hidden @min-[440px]/composer:inline"}`}>{picked ? picked.label : choice === "auto" ? "Best tool" : ""}</span>
+          <span className="truncate">{choice === "auto" ? t("Auto") : t(ENGINE_LABELS[choice])}</span>
+          <span className={`min-w-0 truncate text-zinc-300 light:text-zinc-500 ${picked ? "" : "hidden @min-[440px]/composer:inline"}`}>{picked ? picked.label : choice === "auto" ? t("Best tool") : ""}</span>
           <Icon d="M7 10l5 5 5-5" className="hidden h-4 w-4 shrink-0 text-zinc-500 @min-[380px]/composer:block" />
         </button>
         )
@@ -210,12 +214,12 @@ export function ToolPicker({
           {options.some((m) => m.live) && (
             <>
               <p className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wider text-zinc-500">
-                {ENGINE_LABELS[choice as Engine]} model
+                {t("{tool} model", { tool: t(ENGINE_LABELS[choice as Engine]) })}
               </p>
               <button type="button" role="menuitemradio" aria-checked={!picked} className={item} onClick={() => (setModel(choice as Engine, undefined), close())}>
                 <span>
-                  ⚡ Best for each request
-                  <span className="block text-xs text-zinc-500">Flash matches each request to the right model</span>
+                  ⚡ {t("Best for each request")}
+                  <span className="block text-xs text-zinc-500">{t("Flash matches each request to the right model")}</span>
                 </span>
                 {!picked && check}
               </button>
@@ -230,8 +234,11 @@ export function ToolPicker({
                   onClick={() => (setModel(m.engine, m.id), close())}
                 >
                   <span className="min-w-0">
-                    {m.label} <span className="text-xs text-zinc-500">· {m.credits} credits</span>
-                    <span className="block truncate text-xs text-zinc-500">{m.live ? m.blurb : "Coming soon"}</span>
+                    {m.label}{" "}
+                    <span className="text-xs text-zinc-500">
+                      · {m.credits === 1 ? t("1 credit") : t("{count} credits", { count: m.credits.toLocaleString(t.locale) })}
+                    </span>
+                    <span className="block truncate text-xs text-zinc-500">{m.live ? t(m.blurb) : t("Coming soon")}</span>
                   </span>
                   {picked?.id === m.id && check}
                 </button>
@@ -239,14 +246,14 @@ export function ToolPicker({
               <div className="my-1.5 border-t border-white/8" />
             </>
           )}
-          <p className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wider text-zinc-500">Tool</p>
+          <p className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wider text-zinc-500">{t("Tool")}</p>
           <button type="button" role="menuitemradio" aria-checked={choice === "auto"} className={item} onClick={() => (setChoice("auto"), close())}>
             <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-gold/15 text-gold ring-1 ring-inset ring-gold/30">
               <BoltIcon className="h-3.5 w-3.5" />
             </span>
             <span>
-              Auto
-              <span className="block text-xs text-zinc-500">Flash picks the best tool for each message</span>
+              {t("Auto")}
+              <span className="block text-xs text-zinc-500">{t("Flash picks the best tool for each message")}</span>
             </span>
             {choice === "auto" && check}
           </button>
@@ -262,8 +269,8 @@ export function ToolPicker({
             >
               <EngineIcon engine={e} size="sm" />
               <span>
-                {ENGINE_LABELS[e]}
-                <span className="block text-xs text-zinc-500">{isLive(e) ? HINTS[e] : "Coming soon"}</span>
+                {t(ENGINE_LABELS[e])}
+                <span className="block text-xs text-zinc-500">{isLive(e) ? t(HINTS[e]) : t("Coming soon")}</span>
               </span>
               {choice === e && check}
             </button>
@@ -279,11 +286,12 @@ export function ToolPicker({
  * levels. Pictures, video, music and voice have their own models, so it hides for those tools.
  */
 export function LevelPicker({ level, setLevel, compact = false }: { level: Level; setLevel: (level: Level) => void; compact?: boolean }) {
+  const t = useT();
   const current = LEVELS.find((l) => l.id === level) ?? LEVELS[0];
   const check = <Icon d="M5 12l5 5 9-10" className="ml-auto h-4 w-4 shrink-0 text-primary-soft" />;
   return (
     <Popover
-      label="Intelligence level"
+      label={t("Intelligence level")}
       align="right"
       phoneWide
       button={(open, toggle) => (
@@ -291,21 +299,22 @@ export function LevelPicker({ level, setLevel, compact = false }: { level: Level
           type="button"
           onClick={toggle}
           aria-expanded={open}
-          aria-label={`Intelligence level: ${current.name}`}
-          title="Choose Flash's level of intelligence"
+          // Level names are Flash's own (Flash Sonic…); only Auto is translated.
+          aria-label={t("Intelligence level: {level}", { level: t(current.name) })}
+          title={t("Choose Flash's level of intelligence")}
           // In a narrow message box only the level's sign shows, so it keeps room for the tool picker.
           // On Home's one-line box the sign always shows alone, like the paperclip and mic beside them.
           className={`inline-flex h-9 w-9 shrink-0 items-center justify-center gap-1.5 rounded-full text-sm text-zinc-200 transition hover:bg-white/[0.06] @min-[380px]/composer:h-10 @min-[380px]/composer:w-10 ${compact ? "" : "@min-[440px]/composer:w-auto @min-[440px]/composer:px-3"} ${open ? "bg-white/[0.08]" : ""}`}
         >
           <LevelIcon level={current.id} className={`h-[18px] w-[18px] shrink-0 ${LEVEL_HUES[current.id].text}`} />
-          {!compact && <span className="hidden @min-[440px]/composer:inline">{current.short}</span>}
+          {!compact && <span className="hidden @min-[440px]/composer:inline">{t(current.short)}</span>}
           {!compact && <Icon d="M7 10l5 5 5-5" className="hidden h-4 w-4 text-zinc-500 @min-[440px]/composer:block" />}
         </button>
       )}
     >
       {(close) => (
         <>
-          <p className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wider text-zinc-500">Intelligence</p>
+          <p className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wider text-zinc-500">{t("Intelligence")}</p>
           {LEVELS.map((l) => (
             <button
               key={l.id}
@@ -319,14 +328,14 @@ export function LevelPicker({ level, setLevel, compact = false }: { level: Level
                 <LevelIcon level={l.id} className="h-4 w-4" />
               </span>
               <span className="min-w-0">
-                {l.name}
-                <span className="block text-xs text-zinc-500">{l.blurb}</span>
+                {t(l.name)}
+                <span className="block text-xs text-zinc-500">{t(l.blurb)}</span>
               </span>
               {level === l.id && check}
             </button>
           ))}
           <p className="px-2.5 pb-1.5 pt-2 text-xs leading-relaxed text-zinc-500">
-            Credits follow what each answer really costs. Pictures, video, music and voice use their own models.
+            {t("Credits follow what each answer really costs. Pictures, video, music and voice use their own models.")}
           </p>
         </>
       )}
@@ -352,6 +361,7 @@ export function MicButton({
   disabled?: boolean;
   plain?: boolean;
 }) {
+  const t = useT();
   const [listening, setListening] = useState(false);
   const [error, setError] = useState("");
   const stopRef = useRef<(() => void) | null>(null);
@@ -374,8 +384,8 @@ export function MicButton({
         }
       };
       rec.onerror = (e) => {
-        if (micBlocked(e.error)) setError("Allow the microphone to talk to Flash.");
-        else if (e.error !== "no-speech" && e.error !== "aborted") setError("Flash couldn't hear that. Please try again.");
+        if (micBlocked(e.error)) setError(t("Allow the microphone to talk to Flash."));
+        else if (e.error !== "no-speech" && e.error !== "aborted") setError(t("Flash couldn't hear that. Please try again."));
       };
       rec.onend = () => {
         stopRef.current = null;
@@ -388,18 +398,18 @@ export function MicButton({
       return;
     }
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
-      setError("This browser can't use the microphone.");
+      setError(t("This browser can't use the microphone."));
       return;
     }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       // Formats Flash's transcription accepts, best first.
-      const mime = ["audio/ogg;codecs=opus", "audio/mp4", "audio/webm"].find((t) => MediaRecorder.isTypeSupported(t));
+      const mime = ["audio/ogg;codecs=opus", "audio/mp4", "audio/webm"].find((type) => MediaRecorder.isTypeSupported(type));
       const recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
       const chunks: Blob[] = [];
       recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data);
       recorder.onstop = () => {
-        stream.getTracks().forEach((t) => t.stop());
+        stream.getTracks().forEach((track) => track.stop());
         stopRef.current = null;
         listen(false);
         const type = (recorder.mimeType || "audio/webm").split(";")[0];
@@ -411,7 +421,7 @@ export function MicButton({
       recorder.start();
       listen(true);
     } catch {
-      setError("Allow the microphone to talk to Flash.");
+      setError(t("Allow the microphone to talk to Flash."));
     }
   }
 
@@ -422,8 +432,8 @@ export function MicButton({
         disabled={disabled}
         onClick={() => (listening ? stopRef.current?.() : start())}
         aria-pressed={listening}
-        aria-label={listening ? "Stop listening" : "Talk"}
-        title={listening ? "Stop listening" : "Talk instead of typing"}
+        aria-label={listening ? t("Stop listening") : t("Talk")}
+        title={listening ? t("Stop listening") : t("Talk instead of typing")}
         className={`${round} ${
           listening
             ? "animate-pulse bg-spark/20 text-spark-soft ring-1 ring-spark/40"
@@ -449,6 +459,7 @@ export function MicButton({
  * button mid-click and send whatever is typed in the composer.
  */
 export function SendButton({ busy, disabled, onStop, square = false }: { busy: boolean; disabled: boolean; onStop: () => void; square?: boolean }) {
+  const t = useT();
   const shape = square ? "inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] transition disabled:cursor-not-allowed disabled:opacity-60" : round;
   return busy ? (
     <button
@@ -458,8 +469,8 @@ export function SendButton({ busy, disabled, onStop, square = false }: { busy: b
         e.preventDefault();
         onStop();
       }}
-      aria-label="Stop"
-      title="Stop"
+      aria-label={t("Stop")}
+      title={t("Stop")}
       className={`${shape} bg-zinc-100 text-zinc-900 hover:bg-white`}
     >
       <span className="h-3.5 w-3.5 rounded-[3px] bg-current" />
@@ -469,8 +480,8 @@ export function SendButton({ busy, disabled, onStop, square = false }: { busy: b
       key="send"
       type="submit"
       disabled={disabled}
-      aria-label="Send"
-      title="Send"
+      aria-label={t("Send")}
+      title={t("Send")}
       // Still the brand colours while there's nothing to send, only softer.
       className={`${shape.replace("disabled:opacity-40", "disabled:opacity-60")} bg-send text-on-brand shadow-[0_8px_20px_-10px_rgb(139_92_246/0.8)] hover:brightness-110 disabled:saturate-[.8]`}
     >
@@ -481,13 +492,14 @@ export function SendButton({ busy, disabled, onStop, square = false }: { busy: b
 
 /** Starts a voice conversation. The dot shows that Flash is listening for "Hey Flash". */
 export function TalkButton({ onTalk, waking, disabled }: { onTalk: () => void; waking: boolean; disabled?: boolean }) {
+  const t = useT();
   return (
     <button
       type="button"
       onClick={onTalk}
       disabled={disabled}
-      aria-label="Talk with Flash"
-      title={waking ? 'Talk with Flash. Flash is also listening for "Hey Flash".' : "Talk with Flash: a voice conversation"}
+      aria-label={t("Talk with Flash")}
+      title={waking ? t('Talk with Flash. Flash is also listening for "Hey Flash".') : t("Talk with Flash: a voice conversation")}
       className={`${round} relative bg-white/[0.06] text-zinc-200 hover:bg-white/[0.1]`}
     >
       <Icon d="M4 10v4 M8 7v10 M12 4v16 M16 7v10 M20 10v4" />

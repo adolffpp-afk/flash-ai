@@ -3,11 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/store";
 import { MAX_INSTRUCTIONS } from "@/lib/project-instructions";
+import { msg } from "@/lib/i18n";
+import { useT } from "@/lib/use-t";
 
+const PLACEHOLDER = msg("You are the marketer for my bakery, Golden Crumb, in Montréal. Write warm, short posts.");
+// Buttons under the empty box that fill it in, in the language Flash is shown in.
 const EXAMPLES = [
-  "You are the marketer for my bakery, Golden Crumb, in Montréal. Write warm, short posts.",
-  "Answer in French. Use simple words.",
-  "This project is my novel. Keep the characters and story consistent.",
+  { label: msg("Answer in French"), text: msg("Answer in French. Use simple words.") },
+  { label: msg("This project is my novel"), text: msg("This project is my novel. Keep the characters and story consistent.") },
 ];
 
 /** Instructions Flash follows for every answer in one project. */
@@ -20,6 +23,7 @@ export function ProjectInstructions({
   onSaved: (instructions: string) => void;
   onClose: () => void;
 }) {
+  const t = useT();
   const [text, setText] = useState(project.instructions ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -41,7 +45,7 @@ export function ProjectInstructions({
       onSaved(instructions);
       onClose();
     } catch {
-      setError("Couldn't save. Please try again.");
+      setError(t("Couldn't save. Please try again."));
       setSaving(false);
     }
   }
@@ -51,35 +55,40 @@ export function ProjectInstructions({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Project instructions"
+        aria-label={t("Project instructions")}
         className="w-full max-w-lg rounded-t-2xl border border-white/8 bg-zinc-950 p-6 text-zinc-100 sm:rounded-2xl sm:p-7"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-2 flex items-start justify-between gap-3">
-          <h2 className="min-w-0 text-lg font-medium tracking-tight">Instructions for “{project.name}”</h2>
-          <button onClick={onClose} className="rounded-full p-2 text-zinc-400 transition hover:bg-white/[0.06] hover:text-zinc-100" aria-label="Close">
+          <h2 className="min-w-0 text-lg font-medium tracking-tight">{t("Instructions for “{name}”", { name: project.name })}</h2>
+          <button onClick={onClose} className="rounded-full p-2 text-zinc-400 transition hover:bg-white/[0.06] hover:text-zinc-100" aria-label={t("Close")}>
             ✕
           </button>
         </div>
-        <p className="text-sm text-zinc-400">Flash follows these in every answer in this project. Your other projects aren’t affected.</p>
+        <p className="text-sm text-zinc-400">{t("Flash follows these in every answer in this project. Your other projects aren’t affected.")}</p>
         <textarea
           ref={boxRef}
           value={text}
           onChange={(e) => setText(e.target.value.slice(0, MAX_INSTRUCTIONS))}
           rows={6}
-          placeholder={EXAMPLES[0]}
+          placeholder={t(PLACEHOLDER)}
           className="mt-4 block w-full resize-y rounded-xl border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm outline-none placeholder:text-zinc-600 focus:border-primary/60"
-          aria-label="Instructions"
+          aria-label={t("Instructions")}
         />
         <div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-500">
           <span>
-            {text.length.toLocaleString()} / {MAX_INSTRUCTIONS.toLocaleString()}
+            {text.length.toLocaleString(t.locale)} / {MAX_INSTRUCTIONS.toLocaleString(t.locale)}
           </span>
           {!text && (
             <span className="flex flex-wrap gap-1.5">
-              {EXAMPLES.slice(1).map((e) => (
-                <button key={e} type="button" onClick={() => setText(e)} className="rounded-full border border-white/10 px-2.5 py-0.5 text-zinc-400 hover:text-zinc-100">
-                  {e.split(".")[0]}
+              {EXAMPLES.map((example) => (
+                <button
+                  key={example.text}
+                  type="button"
+                  onClick={() => setText(t(example.text))}
+                  className="rounded-full border border-white/10 px-2.5 py-0.5 text-zinc-400 hover:text-zinc-100"
+                >
+                  {t(example.label)}
                 </button>
               ))}
             </span>
@@ -89,7 +98,7 @@ export function ProjectInstructions({
         <div className="mt-5 flex justify-end gap-2">
           {project.instructions && (
             <button onClick={() => save("")} disabled={saving} className="rounded-full px-4 py-2 text-sm text-zinc-400 hover:text-zinc-100 disabled:opacity-40">
-              Remove
+              {t("Remove")}
             </button>
           )}
           <button
@@ -97,7 +106,7 @@ export function ProjectInstructions({
             disabled={saving || text.trim() === (project.instructions ?? "")}
             className="rounded-full bg-brand px-5 py-2 text-sm font-medium text-on-brand transition hover:brightness-110 disabled:opacity-40"
           >
-            {saving ? "Saving…" : "Save"}
+            {saving ? t("Saving…") : t("Save")}
           </button>
         </div>
       </div>
