@@ -1,6 +1,6 @@
 import type { BuiltApp, Engine, Source } from "./types";
 import type { Post } from "./post-pack";
-import { tNow } from "./use-t";
+import { tNow } from "./use-t.ts";
 
 export type UIMessage = {
   id: string;
