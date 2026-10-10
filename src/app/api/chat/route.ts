@@ -1084,6 +1084,7 @@ export async function POST(request: Request) {
           credits,
           costCents,
           ok,
+          parts: spend,
         }).catch((err) => console.error("[flash] usage log failed", err));
       }
       if (!ok) send({ type: "error", message: failure + refundNote(held, credits, t) });

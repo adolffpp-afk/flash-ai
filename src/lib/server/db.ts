@@ -200,6 +200,26 @@ const SCHEMA = [
     created_at INTEGER NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS usage_time ON usage(created_at)`,
+  // Money that went back to a buyer: a refund (each partial refund adds a row) or a dispute.
+  // total_cents is how much of the charge has gone back so far; amount_cents what this row added.
+  `CREATE TABLE IF NOT EXISTS payment_reversals (
+    ref TEXT PRIMARY KEY,
+    charge TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    total_cents INTEGER NOT NULL,
+    amount_cents INTEGER NOT NULL,
+    test INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS payment_reversals_time ON payment_reversals(created_at)`,
+  // Bills the owner pays every month or year (hosting, database, domain), typed in on the dashboard.
+  `CREATE TABLE IF NOT EXISTS admin_costs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    amount_cents INTEGER NOT NULL,
+    per TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  )`,
   `CREATE TABLE IF NOT EXISTS purchases (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL,
@@ -451,6 +471,9 @@ const MIGRATIONS = [
   "ALTER TABLE site_owner_codes ADD COLUMN host TEXT NOT NULL DEFAULT ''",
   // When a held charge was settled to what the request really cost, or 0 while it runs.
   "ALTER TABLE credit_ledger ADD COLUMN settled_at INTEGER NOT NULL DEFAULT 0",
+  // 1 for a row that only carries what another provider cost in the same request (a helper),
+  // so request counts skip it. Its credits are 0; the request's main row (0) has them.
+  "ALTER TABLE usage ADD COLUMN part INTEGER NOT NULL DEFAULT 0",
 ];
 
 async function init(c: Client) {
