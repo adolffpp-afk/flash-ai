@@ -128,7 +128,7 @@ export function InstallPopup() {
         <div
           role="dialog"
           aria-label={t("Install Flash AI")}
-          className="glass-raised fixed inset-x-3 bottom-3 z-50 rounded-2xl p-4 text-zinc-100 sm:inset-x-auto sm:bottom-auto sm:right-4 sm:top-20 sm:w-[23rem]"
+          className="glass-raised fixed inset-x-3 bottom-3 z-50 rounded-2xl p-4 text-zinc-100 sm:inset-x-auto sm:bottom-auto sm:end-4 sm:top-20 sm:w-[23rem]"
         >
           <div className="flex items-start gap-3">
             <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-zinc-900 ring-1 ring-white/10">

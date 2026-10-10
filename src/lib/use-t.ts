@@ -6,6 +6,7 @@
 import { Fragment, createElement, useMemo, useSyncExternalStore, type ReactNode } from "react";
 import { localeOf, translate, uiLanguage, type Blanks, type Table, type Translate } from "./i18n.ts";
 import { TABLES } from "./i18n-tables.ts";
+import { languageById } from "./languages.ts";
 
 type Shown = { language: string; table: Table | null };
 
@@ -42,8 +43,12 @@ export async function showLanguage(saved: unknown): Promise<void> {
   const next: Shown = table ? { language, table } : ENGLISH;
   if (next.language === shown.language && next.table === shown.table) return;
   shown = next;
-  // Screen readers, spell checkers and fonts follow the page's language. The layout stays left to right.
-  if (typeof document !== "undefined") document.documentElement.lang = next.language;
+  // Screen readers, spell checkers and fonts follow the page's language, and the layout mirrors for
+  // languages written right to left.
+  if (typeof document !== "undefined") {
+    document.documentElement.lang = next.language;
+    document.documentElement.dir = languageById(next.language)?.rtl ? "rtl" : "ltr";
+  }
   for (const listener of listeners) listener();
 }
 

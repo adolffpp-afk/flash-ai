@@ -1420,6 +1420,7 @@ export function Flash({
   // The words of the message, shared by Home's one-line box and the chat's two-row one.
   const messageBox = (
     <textarea
+      dir="auto"
       ref={inputRef}
       value={input}
       onChange={(e) => setInput(e.target.value)}
@@ -1598,7 +1599,7 @@ export function Flash({
       }}
       aria-current={on && !panel ? "page" : undefined}
       aria-pressed={panel ? on : undefined}
-      className={`flex h-12 w-full items-center gap-4 rounded-2xl px-4 text-left text-[16px] transition ${
+      className={`flex h-12 w-full items-center gap-4 rounded-2xl px-4 text-start text-[16px] transition ${
         on && !panel
           ? "bg-nav-active font-semibold text-white"
           : on
@@ -1609,8 +1610,11 @@ export function Flash({
       }`}
     >
       <Icon d={d} className="h-6 w-6 shrink-0" />
-      {label}
-      {badge && <span className="ml-auto rounded-full bg-white/[0.07] px-2 py-0.5 text-[11px] font-medium text-zinc-400">{badge}</span>}
+      {/* Long names wrap to two lines; next to a badge they're cut short instead, and shown in full on hover. */}
+      <span className={`min-w-0 ${badge ? "truncate" : "leading-tight"}`} title={badge ? label : undefined}>
+        {label}
+      </span>
+      {badge && <span className="ms-auto shrink-0 rounded-full bg-white/[0.07] px-2 py-0.5 text-[11px] font-medium text-zinc-400">{badge}</span>}
     </button>
   );
 
@@ -1618,18 +1622,19 @@ export function Flash({
     <div className="flex h-full">
       {/* Sidebar */}
       <aside
-        className={`${sidebar ? "flex" : "hidden"} fixed inset-0 z-[35] w-full flex-col overflow-y-auto bg-zinc-950 md:static md:m-3 md:mr-0 md:flex md:w-[256px] md:shrink-0 md:rounded-[26px] md:bg-transparent md:glass`}
+        className={`${sidebar ? "flex" : "hidden"} fixed inset-0 z-[35] w-full flex-col overflow-y-auto bg-zinc-950 md:static md:m-3 md:me-0 md:flex md:w-[256px] md:shrink-0 md:rounded-[26px] md:bg-transparent md:glass`}
       >
         <div className="flex items-start justify-between px-5 pb-1 pt-6">
           <button onClick={goHome} className="flex items-center gap-2 text-left" aria-label={t("Flash AI, home")}>
             <span className="-ml-1 [filter:drop-shadow(0_4px_10px_rgb(91_140_246/0.35))]">
               <BrandMark size={56} id="flash-side" ring={false} vivid />
             </span>
-            <span>
+            <span className="min-w-0">
               <span className="block whitespace-nowrap text-[28px] font-bold leading-none tracking-tight text-white">
                 FLASH <span className="font-light">AI</span>
               </span>
-              <span className="mt-1.5 block whitespace-nowrap text-[11.5px] text-zinc-400">{t("One App. Infinite Possibilities.")}</span>
+              {/* Other languages need more room than the English, so the line may wrap. */}
+              <span className="mt-1.5 block text-[11.5px] leading-snug text-zinc-400">{t("One App. Infinite Possibilities.")}</span>
             </span>
           </button>
           <button className="mt-1 text-zinc-400 md:hidden" onClick={() => setSidebar(false)} aria-label={t("Close menu")}>
@@ -1760,7 +1765,7 @@ export function Flash({
           )}
           <button
             onClick={() => setShowInvite(true)}
-            className={`w-full rounded-lg px-2 py-1 text-left text-xs text-gold-soft transition hover:bg-white/[0.04] hover:text-gold ${isHome ? "md:hidden" : ""}`}
+            className={`w-full rounded-lg px-2 py-1 text-start text-xs text-gold-soft transition hover:bg-white/[0.04] hover:text-gold ${isHome ? "md:hidden" : ""}`}
           >
             🎁 {t("Invite friends, earn credits")}
           </button>
