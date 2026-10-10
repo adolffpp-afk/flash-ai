@@ -25,8 +25,8 @@ import {
 } from "../src/lib/credits.ts";
 import type { Engine } from "../src/lib/types.ts";
 import { readFileSync } from "node:fs";
-import { audioLength, billableSeconds } from "../src/lib/server/audio-length.ts";
-import { OPUS_120MS, oggOpus, opusSpeech, wav, webm, webmBlock } from "./audio-files.ts";
+import { audioLength, billableSeconds, measureAudio } from "../src/lib/server/audio-length.ts";
+import { OPUS_120MS, hiddenPages, oggOpus, opusSpeech, playedSeconds, wav, webm, webmBlock } from "./audio-files.ts";
 import { MODELS, modelCredits } from "../src/lib/models.ts";
 
 test("credits are the provider cost times the markup, rounded up, at least 1", () => {
@@ -178,11 +178,17 @@ test("transcription is priced on how long a recording plays, which its size does
       clusters: Array.from({ length: 15 }, (_, c) => ({ time: c * 24_000, blocks: Array.from({ length: 200 }, (_, i) => webmBlock(1, i * 120, [Uint8Array.of(OPUS_120MS)])) })),
     }),
     wav: wav({ rate: 100, bits: 8, data: Buffer.alloc(60_000) }),
+    // Twenty minutes hidden inside pages with broken checksums, which some players find and some don't.
+    hidden: hiddenPages(20),
   };
   for (const [name, file] of Object.entries(files)) {
     const length = audioLength(file)!;
     assert.ok(length, name);
     assert.ok(charged(file) >= billCents(Math.max(length.decoded, length.declared)), `${name}: ${charged(file)}¢ for ${JSON.stringify(length)}`);
+    // What's sent to be transcribed is the clean copy, which plays no longer than what was priced.
+    const sent = measureAudio(file)!.file;
+    const plays = sent.mediaType === "audio/ogg" ? playedSeconds(sent.data) : audioLength(sent.data)!.decoded;
+    assert.ok(charged(file) >= billCents(plays), `${name}: ${charged(file)}¢ for ${plays} s sent`);
   }
   assert.ok(audioLength(files.webm)!.decoded >= 360 && audioLength(files.wav)!.decoded >= 600);
   // A file Flash can't measure keeps the floor of 8 kbps (MP3's lowest rate), so a bigger file costs more.

@@ -1,6 +1,6 @@
 import { charge, ensureMonthlyCredits, logUsage, settle } from "./credits.ts";
 import { freeAudioFailed, recordFreeAudio, releaseFreeUser, reserveFreeAudio, reserveFreeUser } from "./free.ts";
-import { audioLength, billableSeconds } from "./audio-length.ts";
+import { billableSeconds, measureAudio, type MeasuredAudio } from "./audio-length.ts";
 import { MIN_AUDIO_SECONDS, freeHear, freeTranscribeConfigured } from "../engines/free.ts";
 import { overLimit } from "./limits.ts";
 import { NO_SPEECH, speechProvider, transcribe } from "../engines/media.ts";
@@ -46,12 +46,13 @@ export async function hearTurn(
   if (!provider) {
     return { status: 503, body: { error: t("Talking with Flash isn't available in this browser yet. Try Chrome, Edge or Safari.") } };
   }
-  // A recording Flash can't measure could hold any amount of audio, so it isn't heard at all.
-  const length = audioLength(data);
-  if (!length) {
+  // A recording Flash can't measure could hold any amount of audio, so it isn't heard at all. One it
+  // can is sent on as the clean copy of what was measured, so nothing hidden in it is heard or billed.
+  const measured = measureAudio(data);
+  if (!measured) {
     return { status: 415, body: { error: t("Talking with Flash isn't available in this browser yet. Try Chrome, Edge or Safari.") } };
   }
-  const seconds = billableSeconds(length);
+  const seconds = billableSeconds(measured.length);
   if (seconds > MAX_HEAR_SECONDS) return tooLongToHear(t);
   // A turn every 15 seconds for ten minutes is already fast talking.
   if (await overLimit(`hear:${userId}`, 40, 10 * 60_000)) {
@@ -64,7 +65,7 @@ export async function hearTurn(
   const chargeId = await charge(userId, credits, "Voice conversation");
   // Out of credits: Whisper on Groq's free tier hears the turn, which costs Flash nothing.
   if (chargeId === null && verified && freeTranscribeConfigured()) {
-    const free = await hearFree(userId, type, data, seconds, t);
+    const free = await hearFree(userId, measured.file, seconds, t);
     if (free) return free;
   }
   if (chargeId === null) {
@@ -80,13 +81,13 @@ export async function hearTurn(
     };
   }
 
-  const ext = type === "audio/mp4" ? "m4a" : type.split("/")[1].replace("x-", "");
+  const { file } = measured;
   let text = "";
   let ok = true;
   // A job the provider never started costs nothing, so neither does the turn.
   let billed = true;
   try {
-    text = await transcribe({ name: `turn.${ext}`, mediaType: type, data: data.toString("base64") }, { turn: true, signal });
+    text = await transcribe({ name: `turn.${file.extension}`, mediaType: file.mediaType, data: file.data.toString("base64") }, { turn: true, signal });
     // A cough or the room is no request: "(coughs)" isn't sent to the chat.
     text = text === NO_SPEECH ? "" : heardWords(text);
   } catch (err) {
@@ -108,7 +109,7 @@ export async function hearTurn(
  * measured seconds come off Groq's daily audio allowance before it's sent, so nobody can spend the
  * free audio every user shares with a recording longer than it looks.
  */
-async function hearFree(userId: string, type: string, data: Buffer, seconds: number, t: Translate): Promise<Reply | null> {
+async function hearFree(userId: string, file: MeasuredAudio["file"], seconds: number, t: Translate): Promise<Reply | null> {
   // Groq counts every request as at least 10 seconds.
   const reserve = Math.max(MIN_AUDIO_SECONDS, Math.ceil(seconds));
   if (!(await reserveFreeUser(userId, "voice"))) return null;
@@ -116,9 +117,8 @@ async function hearFree(userId: string, type: string, data: Buffer, seconds: num
     await releaseFreeUser(userId, "voice");
     return null;
   }
-  const ext = type === "audio/mp4" ? "m4a" : type.split("/")[1].replace("x-", "");
   try {
-    const { text, seconds: counted } = await freeHear({ name: `turn.${ext}`, mediaType: type, data: data.toString("base64") });
+    const { text, seconds: counted } = await freeHear({ name: `turn.${file.extension}`, mediaType: file.mediaType, data: file.data.toString("base64") });
     await recordFreeAudio(counted, reserve);
     await logUsage({ userId, engine: "transcribe", model: "voice conversation (free)", provider: "groq", credits: 0, costCents: 0, ok: true }).catch(() => {});
     return { status: 200, body: { text: heardWords(text), credits: 0, free: true } };

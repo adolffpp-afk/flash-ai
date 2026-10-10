@@ -2,7 +2,7 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { OPUS_120MS, oggOpus, opusSpeech, wav } from "./audio-files.ts";
+import { OPUS_120MS, hiddenPages, oggOpus, opusSpeech, playedSeconds, wav } from "./audio-files.ts";
 
 // A stand-in for fal.ai's transcription, told what to do by a word in the recording (see rec):
 // "silence" has no words, "broken" never starts, and "lost" runs (so fal bills it) but its result
@@ -426,6 +426,15 @@ test("a turn is priced and limited by how long it plays, not by its size", async
   assert.deepEqual(await (await turn(rec("words", 45))).json(), { text: "What's on my calendar today?", credits: 3 });
   assert.equal((await turn(wav({ data: Buffer.alloc(32_000) }), "audio/wav")).status, 200);
   assert.equal(await balance(), before - 6);
+  // Twenty minutes hidden inside pages with broken checksums: what's sent to be heard is the clean
+  // copy of the moment of sound Flash measured and priced, so the hidden minutes are never heard.
+  const hidden = hiddenPages(20);
+  assert.ok(playedSeconds(hidden) >= 1200);
+  assert.equal((await turn(hidden)).status, 200);
+  const sentAudio = Buffer.from(heard.at(-1)!.split(",")[1], "base64");
+  assert.match(heard.at(-1)!, /^data:audio\/ogg;base64,/);
+  assert.ok(playedSeconds(sentAudio) < 1, String(playedSeconds(sentAudio)));
+  assert.equal(await balance(), before - 9);
 });
 
 test("hearing refuses non-audio, huge files and empty wallets", async () => {

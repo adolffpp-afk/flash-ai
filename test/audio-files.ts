@@ -1,7 +1,9 @@
 /*
  * Recordings built byte by byte for the tests: Opus in Ogg and in WebM, and WAV, including forged
- * ones (an hour of sound in a few kilobytes, lengths that lie). Not a test file itself.
+ * ones (an hour of sound in a few kilobytes, lengths that lie, pages hidden in a broken one), and a
+ * player that hears an Ogg file the way libogg and ffmpeg do. Not a test file itself.
  */
+import { opusPacketSamples } from "../src/lib/server/audio-length.ts";
 
 // Ogg's page checksum: CRC-32 with polynomial 0x04c11db7, not reflected.
 const CRC = Array.from({ length: 256 }, (_, i) => {
@@ -169,4 +171,74 @@ export function wav({ tag = 1, channels = 1, rate = 8000, bits = 16, data, dataS
   riff.writeUInt32LE(4 + fmt.length + head.length + data.length, 4);
   riff.write("WAVE", 8);
   return Buffer.concat([riff, fmt, head, data]);
+}
+
+/**
+ * Seconds of Opus a player that checks every page's checksum hears in an Ogg file, as libogg and
+ * ffmpeg do: a page whose checksum is wrong is skipped, and the search for the next page starts
+ * inside it. Each stream's first two packets are its headers.
+ */
+export function playedSeconds(file: Uint8Array): number {
+  const packets = new Map<number, number>();
+  const first = new Map<number, Uint8Array>();
+  let samples = 0;
+  let at = 0;
+  while (at + 27 <= file.length) {
+    if (!(file[at] === 0x4f && file[at + 1] === 0x67 && file[at + 2] === 0x67 && file[at + 3] === 0x53)) {
+      at++;
+      continue;
+    }
+    const segments = file[at + 26];
+    const bodyAt = at + 27 + segments;
+    let size = 0;
+    for (let i = 0; i < segments && at + 27 + i < file.length; i++) size += file[at + 27 + i];
+    if (bodyAt + size > file.length) {
+      at++;
+      continue;
+    }
+    const page = Buffer.from(file.subarray(at, bodyAt + size));
+    const want = page.readUInt32LE(22);
+    page.writeUInt32LE(0, 22);
+    if (crc(page) !== want) {
+      at++;
+      continue;
+    }
+    const serial = page.readUInt32LE(14);
+    let start = bodyAt;
+    let offset = bodyAt;
+    for (let i = 0; i < segments; i++) {
+      const lace = file[at + 27 + i];
+      offset += lace;
+      if (lace === 255) continue;
+      const head = first.get(serial) ?? file.subarray(start, offset);
+      first.delete(serial);
+      const n = packets.get(serial) ?? 0;
+      packets.set(serial, n + 1);
+      if (n >= 2) samples += opusPacketSamples(head);
+      start = offset;
+    }
+    if (start < offset && !first.has(serial)) first.set(serial, file.subarray(start, offset));
+    at = bodyAt + size;
+  }
+  return samples / 48000;
+}
+
+/**
+ * An Ogg Opus file whose real sound hides inside pages with broken checksums: a player that checks
+ * checksums finds pages minutes long within them, while the pages themselves hold one 20 ms packet.
+ */
+export function hiddenPages(minutes: number): Buffer {
+  const pages: Buffer[] = [];
+  let sequence = 2;
+  for (let i = 0; i < Math.ceil((minutes * 60) / (255 * 0.12)); i++) {
+    pages.push(oggPage({ packets: Array.from({ length: 255 }, () => Uint8Array.of(OPUS_120MS)), granule: 0 }, sequence++));
+  }
+  const inner = Buffer.concat(pages);
+  const outer: Buffer[] = [];
+  for (let at = 0; at < inner.length; at += 255 * 254) {
+    const page = oggPage({ packets: [Buffer.concat([Uint8Array.of(OPUS_20MS), inner.subarray(at, at + 255 * 254)])] }, sequence++);
+    page[22] ^= 0xff;
+    outer.push(page);
+  }
+  return Buffer.concat([oggPage({ packets: [opusHead()], flags: 2 }), oggPage({ packets: [opusTags()] }, 1), ...outer]);
 }

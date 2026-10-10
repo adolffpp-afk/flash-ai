@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { audioLength, billableSeconds, opusPacketSamples } from "../src/lib/server/audio-length.ts";
-import { OPUS_120MS, OPUS_20MS, ebml, oggOpus, oggPage, opusHead, opusSpeech, opusTags, wav, webm, webmBlock } from "./audio-files.ts";
+import { audioLength, billableSeconds, measureAudio, opusPacketSamples } from "../src/lib/server/audio-length.ts";
+import { OPUS_120MS, OPUS_20MS, ebml, hiddenPages, oggOpus, oggPage, opusHead, opusSpeech, opusTags, playedSeconds, wav, webm, webmBlock } from "./audio-files.ts";
 
 const fixture = (name: string) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url));
 const near = (actual: number, expected: number, slack = 0.15) => assert.ok(Math.abs(actual - expected) <= slack, `${actual} ≠ ${expected}`);
@@ -122,4 +122,47 @@ test("anything else isn't measured", () => {
   for (const bytes of [Buffer.from("ID3\x04\0\0\0\0\0\0"), Buffer.from("hello"), Buffer.alloc(0), Buffer.from("\0\0\0\x20ftypM4A ")]) {
     assert.equal(audioLength(bytes), null);
   }
+});
+
+test("what's sent on is a clean copy of exactly the sound measured", () => {
+  // Pages hidden inside pages with broken checksums: a player that checks checksums hears twenty
+  // minutes, while the pages a player that doesn't check would read hold a moment of sound.
+  const hidden = hiddenPages(20);
+  assert.ok(hidden.length < 60_000, String(hidden.length));
+  assert.ok(playedSeconds(hidden) >= 1200, String(playedSeconds(hidden)));
+  const forged = measureAudio(hidden)!;
+  assert.ok(billableSeconds(forged.length) < 1);
+  // The copy sent holds only what was priced, for either kind of player.
+  assert.equal(forged.file.mediaType, "audio/ogg");
+  assert.ok(playedSeconds(forged.file.data) <= forged.length.decoded);
+  assert.equal(measureAudio(forged.file.data)!.length.decoded, forged.length.decoded);
+  // Real recordings come through whole: the copy plays as long, and its pages say so.
+  for (const name of ["quiet-2min.ogg", "tone-3s.webm"]) {
+    const m = measureAudio(fixture(name))!;
+    assert.equal(m.file.mediaType, "audio/ogg", name);
+    const copy = measureAudio(m.file.data)!;
+    assert.equal(copy.length.decoded, m.length.decoded, name);
+    near(copy.length.declared, m.length.decoded, 0.03);
+    near(playedSeconds(m.file.data), m.length.decoded, 0.001);
+  }
+  // A packet bigger than a page goes on across pages, and a second stream follows the first.
+  const big = new Uint8Array(70_002);
+  big[0] = (1 << 3) | 3;
+  big[1] = 3;
+  const across = Buffer.concat([
+    oggPage({ packets: [opusHead()], flags: 2 }),
+    oggPage({ packets: [opusTags()] }, 1),
+    oggPage({ packets: [big.subarray(0, 255 * 255)], open: true }, 2),
+    oggPage({ packets: [big.subarray(255 * 255), ...opusSpeech(1)], flags: 1 | 4 }, 3),
+  ]);
+  const two = measureAudio(Buffer.concat([across, oggOpus(opusSpeech(2), { serial: 7 })]))!;
+  near(two.length.decoded, 3.06, 0.001);
+  near(playedSeconds(two.file.data), 3.06, 0.001);
+  assert.equal(measureAudio(two.file.data)!.length.decoded, two.length.decoded);
+  // WAV: the samples the header says it holds, in a plain header.
+  const sound = Buffer.alloc(16_000, 1);
+  const w = measureAudio(Buffer.concat([wav({ data: sound }), Buffer.from("LIST\x04\0\0\0junk")]))!;
+  assert.equal(w.file.mediaType, "audio/wav");
+  assert.deepEqual(w.file.data.subarray(44), sound);
+  assert.deepEqual(measureAudio(w.file.data)!.length, { decoded: 1, declared: 1 });
 });

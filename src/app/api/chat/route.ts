@@ -53,7 +53,7 @@ import {
   reserveFreeImage,
   reserveFreeUser,
 } from "@/lib/server/free.ts";
-import { audioLength, billableSeconds } from "@/lib/server/audio-length.ts";
+import { billableSeconds, measureAudio } from "@/lib/server/audio-length.ts";
 import { isVerified } from "@/lib/server/account.ts";
 import {
   composeMusic,
@@ -221,8 +221,19 @@ const attachmentBytes = (a: { data: string }) => (a.data.length * 3) / 4;
 
 /** How long a recording plays, when Flash can measure it (see audio-length.ts); 0 when it can't. */
 function recordingSeconds(a: { data: string }): number {
-  const length = audioLength(Buffer.from(a.data, "base64"));
-  return length ? billableSeconds(length) : 0;
+  const measured = measureAudio(Buffer.from(a.data, "base64"));
+  return measured ? billableSeconds(measured.length) : 0;
+}
+
+/**
+ * The file to send to be transcribed: for a recording Flash measured, the clean copy of exactly
+ * what it measured (so nothing hidden in the file is heard and billed); any other file as it is.
+ */
+function toTranscribe(a: Attachment): Attachment {
+  const measured = measureAudio(Buffer.from(a.data, "base64"));
+  if (!measured) return a;
+  const { data, mediaType, extension } = measured.file;
+  return { name: `${a.name.replace(/\.[^.]*$/, "")}.${extension}`, mediaType, data: data.toString("base64") };
 }
 
 /** What transcribing a file costs: its measured length, and at least what its size could hold. */
@@ -548,7 +559,7 @@ async function* run(
       }
       yield { type: "status", message: t("Transcribing {name}…", { name: last.attachment.name }) };
       const transcribeCents = transcriptCents(last.attachment);
-      const text = await transcribe(last.attachment).catch(billSpeech("transcribe", transcribeCents));
+      const text = await transcribe(toTranscribe(last.attachment)).catch(billSpeech("transcribe", transcribeCents));
       meter(speechProvider()!, "transcribe", transcribeCents);
       yield { type: "text", delta: transcript(last.attachment.name, text, t) };
       return;
@@ -594,7 +605,7 @@ async function* runFree(
     used.provider = "groq";
     used.model = "whisper-large-v3-turbo";
     yield { type: "status", message: t("Transcribing {name} with Whisper (free)…", { name: file.name }) };
-    const { text, seconds: counted } = await freeTranscribe(file);
+    const { text, seconds: counted } = await freeTranscribe(toTranscribe(file));
     await recordFreeAudio(counted, reserve);
     yield { type: "text", delta: transcript(file.name, text, t) };
     return;
