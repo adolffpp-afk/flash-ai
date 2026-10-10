@@ -35,6 +35,16 @@ export class JobAbandoned extends FriendlyError {
   }
 }
 
+/**
+ * A job taken out of the provider's queue before it ran, because the user pressed Stop (see falRun).
+ * It never ran, so it costs nothing, and the reply ends as stopped rather than failed.
+ */
+export class JobStopped extends Error {
+  constructor() {
+    super("Stopped before the job ran");
+  }
+}
+
 // How long a media job may take in all. Requests stop at 800 seconds (maxDuration in the chat
 // route), and a post pack makes pictures and then a video, so this leaves time for each job, the
 // prompt rewrite, saving the files and settling credits.

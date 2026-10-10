@@ -245,8 +245,12 @@ export class Running {
   }
 }
 
-/** Follows a Claude call as it runs: signal stops it at once (the user pressed Stop), running keeps what it has cost so far. */
-export type Watch = { signal?: AbortSignal; running?: Running };
+/**
+ * Follows a Claude call as it runs: signal stops it at once (the user pressed Stop, or the request's
+ * time ran out, with "deadline" as its reason), running keeps what it has cost so far, and endsAt is
+ * when the request's time runs out.
+ */
+export type Watch = { signal?: AbortSignal; running?: Running; endsAt?: number };
 
 /** The Claude model an engine runs on. */
 export const modelForEngine = (engine: Engine) =>

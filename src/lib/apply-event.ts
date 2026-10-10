@@ -33,5 +33,8 @@ export function applyEvent(m: UIMessage, e: StreamEvent): UIMessage {
       return { ...m, stopped: true };
     case "done":
       return { ...m, pending: false, status: undefined };
+    // An event from a newer server than this page knows is left out, never breaking the reply.
+    default:
+      return m;
   }
 }

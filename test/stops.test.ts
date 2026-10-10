@@ -18,8 +18,21 @@ test("Stop reaches a request running on the same instance at once", async () => 
   assert.equal(stops, 1);
   await requestStop("u1", "r1");
   assert.equal(stops, 1, "heard once");
-  end();
   assert.ok(await one("SELECT 1 FROM chat_stops WHERE user_id = 'u1' AND reply_id = 'r1'"), "recorded for other instances");
+  end();
+  const cleared = async () => !(await one("SELECT 1 FROM chat_stops WHERE user_id = 'u1' AND reply_id = 'r1'"));
+  const deadline = Date.now() + 2000;
+  while (!(await cleared()) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 10));
+  assert.ok(await cleared(), "cleared once its request is over");
+});
+
+test("old Stops are cleared by time, with an index so that stays quick", async () => {
+  const { run, now } = await import("../src/lib/server/db.ts");
+  await run("INSERT INTO chat_stops (user_id, reply_id, created_at) VALUES ('old', 'r', ?)", [now() - 2 * 3600_000]);
+  await requestStop("u9", "r9");
+  assert.equal(await one("SELECT 1 FROM chat_stops WHERE user_id = 'old'"), null);
+  const plan = await one<{ detail: string }>("EXPLAIN QUERY PLAN DELETE FROM chat_stops WHERE created_at < 1");
+  assert.match(plan!.detail, /chat_stops_time/);
 });
 
 test("Stop recorded by another instance is heard from the database", async () => {

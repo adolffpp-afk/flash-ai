@@ -432,6 +432,8 @@ const SCHEMA = [
     created_at INTEGER NOT NULL,
     PRIMARY KEY (user_id, reply_id)
   )`,
+  // Old Stops are cleared by time on every Stop (see stops.ts).
+  `CREATE INDEX IF NOT EXISTS chat_stops_time ON chat_stops(created_at)`,
 ];
 
 let client: Client | null = null;

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import type { UIMessage } from "../src/lib/store.ts";
 
 process.env.DATABASE_URL = ":memory:";
-const { PENDING_LIMIT_MS, changeMessages, cleanUserMessage, placeReply, placeTurn, requestTurn, saveReply, saveTurn, unfinished } = await import(
+const { PENDING_LIMIT_MS, changeMessages, cleanUserMessage, keepRunning, placeReply, placeTurn, requestTurn, saveReply, saveTurn, unfinished } = await import(
   "../src/lib/server/turns.ts"
 );
 const { one, run } = await import("../src/lib/server/db.ts");
@@ -205,4 +205,72 @@ test("a deleted chat or another user's isn't written", async () => {
   assert.equal(await saveTurn("someone-else", "p5", { user: user("u1"), afterId: null, reply: pending("r1") }), false);
   assert.equal(await saveReply("u", "gone", { user: user("u1"), afterId: null, reply: pending("r1") }, answer("r1")), false);
   assert.deepEqual((await saved("p5")).messages, []);
+});
+
+// The browser's save as PUT /api/projects/[id] makes it: its copy, merged with what the server is working on.
+const pageSave = (id: string, messages: UIMessage[]) => changeMessages("u", id, (saved, name) => ({ messages: keepRunning(saved, messages), name }));
+
+test("a save from the page never replaces a reply the server is still working on (Share, a tab that gave up)", async () => {
+  await project("k1", [user("u1"), answer("a1")], "Share");
+  const turn = { user: user("u2"), afterId: "a1", reply: pending("r2") };
+  await saveTurn("u", "k1", turn);
+  // Share saves the page's copy with pending taken off: a partial answer, or an error from a tab that gave up.
+  await pageSave("k1", [user("u1"), answer("a1"), user("u2"), { ...answer("r2", "partial"), error: "Flash couldn't finish this answer." }]);
+  let row = await saved("k1");
+  assert.equal(row.messages[3].pending, true, "still the server's to finish");
+  await saveReply("u", "k1", turn, answer("r2", "FULL ANSWER"));
+  // The page still shows it pending until its next check: its save keeps the finished answer.
+  await pageSave("k1", [user("u1"), { ...answer("a1"), app: { title: "T", html: "<p/>", kind: "app", slug: "mine" } }, user("u2"), { ...pending("r2"), content: "part" }]);
+  row = await saved("k1");
+  assert.equal(row.messages[3].content, "FULL ANSWER");
+  assert.equal(row.messages[1].app?.slug, "mine", "the page's own change is saved");
+  // Once the page has it, its copy is saved as it is.
+  await pageSave("k1", [user("u1"), answer("a1"), user("u2"), answer("r2", "edited")]);
+  assert.equal((await saved("k1")).messages[3].content, "edited");
+});
+
+test("a tab with an older copy can't take out a turn the server is working on", async () => {
+  await project("k2", [user("u1"), answer("a1")], "Two tabs");
+  const turn = { user: user("u2"), afterId: "a1", reply: pending("r2") };
+  await saveTurn("u", "k2", turn);
+  // The laptop's copy is from before the phone asked, with a change of its own.
+  await pageSave("k2", [user("u1"), { ...answer("a1"), content: "a1 edited" }]);
+  let row = await saved("k2");
+  assert.deepEqual(ids(row.messages), ["u1", "a1", "u2", "r2"]);
+  assert.equal(row.messages[1].content, "a1 edited");
+  assert.equal(row.messages[3].pending, true);
+  await saveReply("u", "k2", turn, answer("r2", "kept"));
+  row = await saved("k2");
+  assert.deepEqual(ids(row.messages), ["u1", "a1", "u2", "r2"]);
+  assert.equal(row.messages[3].content, "kept");
+});
+
+test("a save sent just before Retry lands after it without dropping the retried reply", async () => {
+  await project("k3", [user("u1"), answer("a1"), user("u2"), answer("a2")], "Retry race");
+  const retried = { user: user("u2"), afterId: "a1", reply: pending("r3") };
+  await saveTurn("u", "k3", retried);
+  // The autosave of the finished a2, slow on a cold start, arrives now.
+  await pageSave("k3", [user("u1"), answer("a1"), user("u2"), answer("a2")]);
+  assert.deepEqual(ids((await saved("k3")).messages), ["u1", "a1", "u2", "r3"]);
+  assert.equal(await saveReply("u", "k3", retried, answer("r3", "again")), true);
+  assert.deepEqual((await saved("k3")).messages.map((m) => m.content), ["u1", "a1", "u2", "again"]);
+});
+
+test("a pending reply the server hasn't saved stays pending, so its answer can still go in its place", () => {
+  const at = Date.now();
+  const merged = keepRunning([user("u1")], [user("u1"), { id: "r1", role: "assistant", content: "", pending: true }], at);
+  assert.equal(merged[1].pending, true);
+  assert.equal(merged[1].pendingSince, at);
+  // One the server gave up on long ago is saved as the page has it.
+  const dead = { ...pending("r2"), pendingSince: at - PENDING_LIMIT_MS - 1 };
+  assert.equal(keepRunning([user("u2"), dead], [user("u2"), answer("r2", "error copy")], at)[1].content, "error copy");
+  assert.deepEqual(ids(keepRunning([user("u2"), dead], [], at)), [], "and isn't put back");
+});
+
+test("a chat made from a template is named after it, not its request", async () => {
+  await project("k4");
+  const turn = requestTurn({ replyId: "r1", userMessage: { id: "m1", content: "Write a professional cover letter for the job" }, afterId: null, name: "  Cover letter for Acme  " })!;
+  assert.equal(turn.name, "Cover letter for Acme");
+  await saveTurn("u", "k4", turn);
+  assert.equal((await saved("k4")).name, "Cover letter for Acme");
 });

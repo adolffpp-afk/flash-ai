@@ -94,3 +94,10 @@ export type StreamEvent =
  * it's delivered into the chat (see the chat route).
  */
 export const STOPPABLE_ENGINES: readonly Engine[] = ["text", "app", "slides", "search", "code", "translate", "docs"];
+
+/**
+ * How long a reply may show as pending. A request runs for at most 800 seconds (maxDuration in the
+ * chat route), so a reply still pending well after that was never finished: its server stopped (a
+ * deploy, a crash). Until then the page waits for it, and nothing saved over the chat removes it.
+ */
+export const PENDING_LIMIT_MS = 15 * 60_000;

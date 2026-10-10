@@ -29,8 +29,12 @@ export function ShareDialog({
     window.addEventListener("keydown", onKey);
     (async () => {
       try {
-        const messages = (project.messages ?? []).map((m) => ({ ...m, pending: undefined, status: undefined }));
-        await api(`/api/projects/${project.id}`, { method: "PUT", json: { name: project.name, messages } });
+        // While a reply is still being finished, the server has the chat (it saves each turn itself), and
+        // a link leaves out unfinished replies: this copy isn't saved over it.
+        if (!project.messages?.some((m) => m.pending)) {
+          const messages = (project.messages ?? []).map((m) => ({ ...m, pending: undefined, status: undefined }));
+          await api(`/api/projects/${project.id}`, { method: "PUT", json: { name: project.name, messages } });
+        }
         const res = await api<{ url: string }>(`/api/projects/${project.id}/share`, { method: "POST" });
         setUrl(res.url);
       } catch (err) {

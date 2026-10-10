@@ -1,6 +1,6 @@
 import type { Media } from "./media.ts";
 import { msg } from "../i18n.ts";
-import { FriendlyError, MEDIA_WAIT_MS, JobAbandoned } from "./errors.ts";
+import { FriendlyError, MEDIA_WAIT_MS, JobAbandoned, JobStopped } from "./errors.ts";
 
 // fal.ai runs hundreds of image, video and music models behind one key and one queue API.
 const FAL_QUEUE = process.env.FAL_BASE_URL || "https://queue.fal.run";
@@ -8,7 +8,17 @@ const FAL_QUEUE = process.env.FAL_BASE_URL || "https://queue.fal.run";
 export const falConfigured = () => Boolean(process.env.FAL_KEY);
 const headers = () => ({ Authorization: `Key ${process.env.FAL_KEY}` });
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+/** Waits ms, or less when signal trips first. */
+const pause = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    signal?.addEventListener("abort", done, { once: true });
+  });
 
 async function failure(res: Response): Promise<Error> {
   const body = await res.text().catch(() => "");
@@ -39,13 +49,15 @@ export type OnFalProgress = (message: string, progress: FalProgress) => void;
  * onProgress receives short updates ("In line…", "Working…") while it waits. reserveMs is kept at the
  * end for fetching the result (a file to download needs the default 30 seconds; a transcript, a few).
  * signal stops waiting early, when nobody is waiting for the result any more.
+ * stop is the user's Stop: a job still in line is taken out of it and never runs (JobStopped); one
+ * fal has started is billed anyway, so it's finished and its result returned as usual.
  */
 export async function falRun(
   endpoint: string,
   input: Record<string, unknown>,
   onProgress: OnFalProgress = () => {},
   timeoutMs = MEDIA_WAIT_MS,
-  { reserveMs = 30_000, signal }: { reserveMs?: number; signal?: AbortSignal } = {},
+  { reserveMs = 30_000, signal, stop }: { reserveMs?: number; signal?: AbortSignal; stop?: AbortSignal } = {},
 ): Promise<{ result: unknown; end: number }> {
   const end = Date.now() + timeoutMs;
   const submit = await fetch(`${FAL_QUEUE}/${endpoint}`, {
@@ -61,6 +73,7 @@ export async function falRun(
   // Leaves time to fetch and download the result.
   const deadline = end - reserveMs;
   let queued = true;
+  let cancelAsked = false;
   for (;;) {
     if (Date.now() > deadline || signal?.aborted) {
       // A job still in line can be cancelled; one already running will be billed anyway.
@@ -72,9 +85,17 @@ export async function falRun(
     const status = (await poll.json()) as { status: string; queue_position?: number };
     if (status.status === "COMPLETED") break;
     queued = status.status === "IN_QUEUE";
+    // Stop while it waits in line, checked just now: fal takes it out of the line and never runs it.
+    // When the cancel isn't taken (it started meanwhile), it's finished as usual.
+    if (stop?.aborted && queued && !cancelAsked && job.cancel_url) {
+      cancelAsked = true;
+      const cancel = await fetch(job.cancel_url, { method: "PUT", headers: headers(), signal: AbortSignal.timeout(15_000) }).catch(() => null);
+      if (cancel?.ok) throw new JobStopped();
+    }
     const position = queued ? (status.queue_position ?? 0) + 1 : null;
     onProgress(position === null ? "Working" : `In line (position ${position})`, { position });
-    await sleep(queued ? 3000 : 1500);
+    // Stop is acted on at once, while the job may still be in line.
+    await pause(queued ? 3000 : 1500, cancelAsked ? undefined : stop);
   }
 
   // The job is finished and billed from here on, even if fetching the result fails.
@@ -124,14 +145,15 @@ function billed(err: unknown): JobAbandoned {
     : new JobAbandoned(msg("Flash couldn't fetch the result. Please try again."), true);
 }
 
-/** Runs a fal model that makes a file (an image, video or audio) and downloads the file. */
+/** Runs a fal model that makes a file (an image, video or audio) and downloads the file. stop is the user's Stop (see falRun). */
 export async function falGenerate(
   endpoint: string,
   input: Record<string, unknown>,
   onProgress: OnFalProgress = () => {},
   timeoutMs = MEDIA_WAIT_MS,
+  stop?: AbortSignal,
 ): Promise<Media> {
-  const { result, end } = await falRun(endpoint, input, onProgress, timeoutMs);
+  const { result, end } = await falRun(endpoint, input, onProgress, timeoutMs, { stop });
   try {
     const file = findFile(result);
     if (!file) throw new FriendlyError(msg("The model finished but sent nothing back. Please try again."));

@@ -36,7 +36,9 @@ import { brandForMedia, withBrand } from "@/lib/brand.ts";
 import { getBrand } from "@/lib/server/brand.ts";
 import { one } from "@/lib/server/db.ts";
 import { MESSAGE_ID, requestTurn, saveReply, saveTurn } from "@/lib/server/turns.ts";
-import { watchStop } from "@/lib/server/stops.ts";
+import { stopRecorded, watchStop } from "@/lib/server/stops.ts";
+import { readEngine } from "@/lib/server/engine-steps.ts";
+import { PROJECT_FULL, roomForTurn } from "@/lib/project-size.ts";
 import {
   FREE_CHAT_ENGINES,
   MIN_AUDIO_SECONDS,
@@ -110,7 +112,7 @@ import {
   type Provider,
 } from "@/lib/models.ts";
 import { unavailableReply } from "@/lib/engines/demo.ts";
-import { FriendlyError, JobAbandoned } from "@/lib/engines/errors.ts";
+import { FriendlyError, JobAbandoned, JobStopped } from "@/lib/engines/errors.ts";
 import { buildSystem, latestApp, streamBuild } from "@/lib/engines/builder.ts";
 import { CLIP_CENTS_PER_SECOND, MOVIE_EXTRA_CENTS, makeMovie } from "@/lib/engines/movie.ts";
 import { DEFAULT_VOICE, pickVoice } from "@/lib/voices.ts";
@@ -124,6 +126,14 @@ export const maxDuration = 800;
 // Claude replies end as stopped this long after the request started, so they're saved and settled
 // within maxDuration: a Claude stream can't be picked up again in another call.
 const DEADLINE_MS = 760_000;
+// How long a Claude engine told to stop may take to hand over what it finished before (see the work below).
+const DRAIN_MS = 15_000;
+// What a reply says once the user pressed Stop on a picture, video or sound: one not yet being made
+// stops, and one being made is finished, delivered and charged as usual.
+const STOPPING = msg("Stopping…");
+const FINISHING_AFTER_STOP = msg("This was already being made, so Flash is finishing it. It shows here when it's ready.");
+// A build out of time can't be continued: the next request starts it again.
+const BUILD_TOO_LONG = msg("The app was too large to finish in one go. Try asking for a simpler first version.");
 
 // Vercel caps a request at 4.5 MB, and a file grows by a third when sent as base64.
 const MAX_ATTACHMENT_BYTES = 3 * 1024 * 1024;
@@ -166,6 +176,8 @@ type ChatRequest = {
   replyId?: string;
   userMessage?: unknown;
   afterId?: string | null;
+  // What a new chat is called when the browser named it (a template's title), else its first message.
+  name?: string;
 };
 
 function providers(): Set<Provider> {
@@ -220,7 +232,13 @@ type Started = (cents: number) => void;
 /** What run() tells the request as the job goes, and what stops it. */
 type Track = {
   // Called just before each priced provider job is sent, so a stopped request pays for what was sent.
+  // A job taken out of fal's queue on Stop never ran, so its cents are taken back (negative).
   started: Started;
+  // Asked just before each provider job is sent: true when the user pressed Stop, so the job isn't
+  // sent and the reply ends as stopped. A job already sent is finished and charged as usual, unless
+  // it's still in fal's queue: stop tells falRun to take it out (see JobStopped).
+  halted: () => Promise<boolean>;
+  stop?: AbortSignal;
   // A movie filmed with fewer scenes than it was priced for is priced again at what was filmed, in cents.
   repriced: (cents: number) => void;
   // Stops a Claude call as soon as the user presses Stop, and keeps what the call has cost so far.
@@ -229,7 +247,7 @@ type Track = {
   // runs waits for, so it is settled once the helper has been metered and pays for it.
   helper: <T>(call: Promise<T>) => Promise<T>;
 };
-const NO_TRACK: Track = { started: () => {}, repriced: () => {}, watch: {}, helper: (call) => call };
+const NO_TRACK: Track = { started: () => {}, halted: async () => false, repriced: () => {}, watch: {}, helper: (call) => call };
 
 /** A transcript under its heading, with Flash's own words in the user's language. */
 const transcript = (name: string, text: string, t: Translate) =>
@@ -309,7 +327,7 @@ async function* postPack(
   model: ModelInfo,
   store: Store,
   meter: Meter,
-  { started, helper }: Track,
+  { started, helper, halted, stop }: Track,
   t: Translate,
 ): AsyncGenerator<StreamEvent> {
   if (!claudeConfigured()) throw new FriendlyError(msg("Social post packs aren't available yet. Please try again later."));
@@ -342,23 +360,28 @@ async function* postPack(
   const shapes = ["square", "tall"] as const;
   // Kept in English, as the picture's label in the chat, and shown in the user's language there.
   const labels = { square: msg("Square, for posts"), tall: msg("Tall, for TikTok, Reels and Stories") };
+  // Stopped while the posts were written: the posts are ready, and nothing is painted.
+  if (await halted()) return;
   started(shapes.length * PACK_IMAGE_CENTS);
   const pictures = yield* withProgress((report) => {
     const painting = falReport(t, report, msg("Painting your pictures… working"), msg("Painting your pictures… in line (position {position})"));
     return Promise.allSettled(
       shapes.map((shape) =>
-        falGenerate(model.endpoint!, packImageInput(pack.picture, shape), painting).then(
+        falGenerate(model.endpoint!, packImageInput(pack.picture, shape), painting, undefined, stop).then(
           (image) => (meter("fal", "flux-2-pro", PACK_IMAGE_CENTS), image),
           billPicture,
         ),
       ),
     );
   });
+  // A picture still in fal's line when Stop was pressed was taken out of it, and isn't paid for.
+  const unpainted = pictures.filter((r) => r.status === "rejected" && r.reason instanceof JobStopped).length;
+  started(-unpainted * PACK_IMAGE_CENTS);
   for (const [i, result] of pictures.entries()) {
     if (result.status !== "fulfilled") continue;
     yield { type: "image", url: await store(result.value, `flash-post-${shapes[i]}.png`), prompt: pack.picture, label: labels[shapes[i]] };
   }
-  const failed = pictures.findIndex((r) => r.status === "rejected");
+  const failed = pictures.findIndex((r) => r.status === "rejected" && !(r.reason instanceof JobStopped));
   if (failed !== -1) {
     console.error(`[flash] post pack ${shapes[failed]} picture failed`, (pictures[failed] as PromiseRejectedResult).reason);
     throw new FriendlyError(
@@ -367,8 +390,11 @@ async function* postPack(
         : msg("The tall picture didn't come out, but your posts are ready above. Please try again for the pictures."),
     );
   }
+  if (unpainted) throw new JobStopped();
   const tall = pictures[1].status === "fulfilled" ? pictures[1].value : null;
   if (!video || !tall) return;
+  // Stopped while the pictures were painted: they're delivered, and the video isn't filmed.
+  if (await halted()) return;
 
   yield { type: "status", message: t("Filming a {seconds} second video from the tall picture. This usually takes one to three minutes…", seconds) };
   started(PACK_VIDEO_CENTS);
@@ -377,7 +403,13 @@ async function* postPack(
       PACK_VIDEO_ENDPOINT,
       packVideoInput(`data:${tall.mime};base64,${tall.data.toString("base64")}`, pack.motion),
       falReport(t, report, msg("Filming your video… working"), msg("Filming your video… in line (position {position})")),
+      undefined,
+      stop,
     ).catch((err) => {
+      if (err instanceof JobStopped) {
+        started(-PACK_VIDEO_CENTS);
+        throw err;
+      }
       if (err instanceof JobAbandoned && err.billed) meter("fal", "kling-3-animate", PACK_VIDEO_CENTS);
       console.error("[flash] post pack video failed", err);
       throw new FriendlyError(msg("The video didn't come out, but your posts and pictures are ready above."));
@@ -406,7 +438,7 @@ async function* run(
   t: Translate & { language?: string } = english,
 ): AsyncGenerator<StreamEvent> {
   const last = history[history.length - 1];
-  const { started, watch, helper } = track;
+  const { started, watch, helper, halted, stop } = track;
   if (isMedia(engine) ? !model : !configured(engine)) {
     yield* unavailableReply(engine, t);
     return;
@@ -416,6 +448,13 @@ async function* run(
     if (err instanceof JobAbandoned && err.billed) meter(model!.provider, model!.id, mediaCents(model!, last.content));
     throw err;
   };
+  // A job taken out of fal's queue on Stop never ran, so it isn't paid for (see JobStopped).
+  const unqueued =
+    (cents: number) =>
+    (err: unknown): never => {
+      if (err instanceof JobStopped) started(-cents);
+      throw err;
+    };
   // The same for voice and transcription, which have no model entry.
   const billSpeech =
     (job: string, cents: number) =>
@@ -449,15 +488,21 @@ async function* run(
         const more = model!.id === "flux-2-edit" ? (last.more ?? []).slice(0, MAX_EDIT_PHOTOS - 1) : [];
         const dataUrl = (f: Attachment) => `data:${f.mediaType};base64,${f.data}`;
         const label = { model: model!.label };
+        if (await halted()) return;
         yield { type: "status", message: more.length ? t("Combining your photos with {model}…", label) : t("Working on your photo with {model}…", label) };
-        started(mediaCents(model!, last.content, 1 + more.length));
+        const cents = mediaCents(model!, last.content, 1 + more.length);
+        started(cents);
         const edited = yield* withProgress((report) =>
           falGenerate(
             model!.endpoint!,
             // Each photo was checked to be at most 2048 × 2048 before credits were held.
             falEditInput(model!, dataUrl(photo), imageDimensions(Buffer.from(photo.data, "base64")), last.content, more.map(dataUrl)),
             falReport(t, report, msg("Working…"), msg("In line (position {position})…")),
-          ).catch(billIfAbandoned),
+            undefined,
+            stop,
+          )
+            .catch(billIfAbandoned)
+            .catch(unqueued(cents)),
         );
         meter(model!.provider, model!.id, mediaCents(model!, last.content, 1 + more.length));
         yield { type: "image", url: await store(edited, `flash-${model!.id === "flux-2-edit" ? "edit" : model!.id}.png`), prompt: last.content };
@@ -468,6 +513,7 @@ async function* run(
         return;
       }
       const prompt = await helper(sharpen("image", last.content, meter, brandNote));
+      if (await halted()) return;
       yield { type: "status", message: t("Painting your image with {model}…", { model: model!.label }) };
       started(mediaCents(model!, last.content));
       const image =
@@ -477,7 +523,11 @@ async function* run(
                 model!.endpoint!,
                 falInput(model!, prompt, last.content),
                 falReport(t, report, msg("Working…"), msg("In line (position {position})…")),
-              ).catch(billIfAbandoned),
+                undefined,
+                stop,
+              )
+                .catch(billIfAbandoned)
+                .catch(unqueued(mediaCents(model!, last.content))),
             )
           : await generateImage(prompt);
       meter(model!.provider, model!.id, mediaCents(model!, last.content));
@@ -487,6 +537,7 @@ async function* run(
     case "video": {
       if (model!.edits) {
         const photo = last.attachment!;
+        if (await halted()) return;
         yield { type: "status", message: t("Bringing your photo to life with {model}. This usually takes one to three minutes…", { model: model!.label }) };
         started(mediaCents(model!, last.content));
         const clip = yield* withProgress((report) =>
@@ -494,7 +545,11 @@ async function* run(
             model!.endpoint!,
             falEditInput(model!, `data:${photo.mediaType};base64,${photo.data}`, null, last.content),
             falReport(t, report, msg("Animating… working"), msg("Animating… in line (position {position})")),
-          ).catch(billIfAbandoned),
+            undefined,
+            stop,
+          )
+            .catch(billIfAbandoned)
+            .catch(unqueued(mediaCents(model!, last.content))),
         );
         meter(model!.provider, model!.id, mediaCents(model!, last.content));
         yield { type: "video", url: await store(clip, "flash-animated.mp4"), prompt: last.content };
@@ -517,6 +572,8 @@ async function* run(
           type: "text",
           delta: `**${t("Your movie, in {count} scenes:", { count: scenes.length })}**\n\n${scenes.map((s, i) => `${i + 1}. ${s}`).join("\n")}`,
         };
+        // Stopped while the scenes were written: they're shown, and nothing is filmed.
+        if (await halted()) return;
         yield { type: "status", message: t("Filming every scene at once. This usually takes three to eight minutes…") };
         started(scenes.length * seconds * CLIP_CENTS_PER_SECOND);
         const movie = yield* withProgress((report) => makeMovie(model!.endpoint!, scenes, seconds, meter, report, videoAspect(last.content), t));
@@ -524,6 +581,7 @@ async function* run(
         return;
       }
       const prompt = await helper(sharpen("video", last.content, meter, brandNote));
+      if (await halted()) return;
       yield { type: "status", message: t("Filming your video with {model}. This usually takes one to three minutes…", { model: model!.label }) };
       started(mediaCents(model!, last.content));
       let video: Media;
@@ -533,7 +591,11 @@ async function* run(
             model!.endpoint!,
             falInput(model!, prompt, last.content),
             falReport(t, report, msg("Filming your video… working"), msg("Filming your video… in line (position {position})")),
-          ).catch(billIfAbandoned),
+            undefined,
+            stop,
+          )
+            .catch(billIfAbandoned)
+            .catch(unqueued(mediaCents(model!, last.content))),
         );
       } else {
         const id = yield* withProgress((report) =>
@@ -550,6 +612,7 @@ async function* run(
       return;
     }
     case "voice": {
+      if (await halted()) return;
       const words = spokenText(last.content);
       const { voice, speed } = pickVoice(last.content);
       const named = speechProvider() === "fal";
@@ -574,6 +637,7 @@ async function* run(
     }
     case "music": {
       const prompt = await helper(sharpen("music", last.content, meter));
+      if (await halted()) return;
       yield { type: "status", message: t("Composing your track with {model}…", { model: model!.label }) };
       yield { type: "text", delta: `**${t("Track brief:")}** ${prompt}` };
       started(mediaCents(model!, last.content));
@@ -584,7 +648,11 @@ async function* run(
                 model!.endpoint!,
                 falInput(model!, prompt, last.content),
                 falReport(t, report, msg("Composing… working"), msg("Composing… in line (position {position})")),
-              ).catch(billIfAbandoned),
+                undefined,
+                stop,
+              )
+                .catch(billIfAbandoned)
+                .catch(unqueued(mediaCents(model!, last.content))),
             )
           : await composeMusic(prompt);
       meter(model!.provider, model!.id, mediaCents(model!, last.content));
@@ -596,6 +664,7 @@ async function* run(
         yield { type: "text", delta: t("Attach an audio or video file with the 📎 button and Flash will transcribe it.") };
         return;
       }
+      if (await halted()) return;
       yield { type: "status", message: t("Transcribing {name}…", { name: last.attachment.name }) };
       const transcribeCents = transcriptCents(last.attachment);
       started(transcribeCents);
@@ -746,10 +815,25 @@ export async function POST(request: Request) {
   const running = new Running();
   // The Claude helpers the job is running, which a stopped request waits for (see Track).
   const helping = new Set<Promise<unknown>>();
+  // Stop pressed on a picture, video or sound (see halted in Track), and whether it kept a job from being sent.
+  let stopAsked = false;
+  let mediaHalted = false;
+  const mediaStop = new AbortController();
+  const askStop = () => {
+    stopAsked = true;
+    mediaStop.abort();
+  };
   const track: Track = {
     started: (cents) => void (startedCents += cents),
+    // Asked of the database too, for a Stop that reached another server instance since its last look.
+    halted: async () => {
+      if (!stopAsked && replyId && (await stopRecorded(user.id, replyId).catch(() => false))) askStop();
+      if (stopAsked) mediaHalted = true;
+      return stopAsked;
+    },
+    stop: mediaStop.signal,
     repriced: (cents) => void (madeCents = cents),
-    watch: { signal: abort.signal, running },
+    watch: { signal: abort.signal, running, endsAt: startedAt + DEADLINE_MS },
     helper: (call) => {
       const watched = call.finally(() => helping.delete(watched));
       helping.add(watched);
@@ -770,8 +854,20 @@ export async function POST(request: Request) {
 
   const project =
     typeof body.projectId === "string"
-      ? await one<{ instructions: string }>("SELECT instructions FROM projects WHERE id = ? AND user_id = ?", [body.projectId, user.id])
+      ? await one<{ instructions: string; size: number }>(
+          // Its size in bytes, as it's sent when the chat is opened or saved.
+          "SELECT instructions, length(CAST(messages AS BLOB)) AS size FROM projects WHERE id = ? AND user_id = ?",
+          [body.projectId, user.id],
+        )
       : null;
+  // The server saves the turn itself (see turns.ts), so the answer is kept when the page is closed.
+  // A page loaded before this sends no turn, and keeps its answers itself as before.
+  const replyId = typeof body.replyId === "string" && MESSAGE_ID.test(body.replyId) ? body.replyId : null;
+  const turn = project ? requestTurn(body) : null;
+  // A chat too big to open or save again gets no more messages: nothing is run or charged.
+  if (turn && !roomForTurn(Number(project!.size), turn.user, latestApp(history) ?? "")) {
+    return Response.json({ error: t(PROJECT_FULL), code: "project_too_large" }, { status: 413 });
+  }
   const brand = await getBrand(user.id, appUrl(request));
   // What the user asked to be called, their work and their language (Settings > General), then their memory.
   const memory = (typeof body.preferences === "string" ? body.preferences : user.preferences).slice(0, MAX_PREFERENCES_CHARS);
@@ -1038,11 +1134,7 @@ export async function POST(request: Request) {
   // Saved files take the extension of what the provider really sent, so downloads open correctly.
   const store: Store = (media, name) => saveFile(user.id, media.mime, withExtension(name, media.mime), media.data);
 
-  // The server saves the turn itself (see turns.ts), so the answer is kept when the page is closed.
-  // A page loaded before this sends no turn, and keeps its answers itself as before.
-  const replyId = typeof body.replyId === "string" && MESSAGE_ID.test(body.replyId) ? body.replyId : null;
   const projectId = String(body.projectId);
-  const turn = project ? requestTurn(body) : null;
   if (replyId && !turn) console.warn(`[flash] a ${engine} reply can't be saved by the server: its project or message is missing`);
 
   const encoder = new TextEncoder();
@@ -1056,12 +1148,15 @@ export async function POST(request: Request) {
   const stopEngine = (why: "stop" | "deadline") => {
     halt ??= why;
     // A Claude call stops at once, keeping what it has cost so far (see Watch).
-    abort.abort();
+    abort.abort(why);
     wake();
   };
-  // Writing stops at once. A picture, video or sound already being made is billed by its provider,
-  // so it's finished, delivered into the chat and charged as usual.
+  // Writing stops at once. A picture, video or sound not yet sent to its provider isn't made, and
+  // one still in fal's line is taken out of it; one already being made is billed by its provider,
+  // so it's finished, delivered into the chat and charged as usual (see halted in Track).
   const stoppable = STOPPABLE_ENGINES.includes(engine);
+  // Claude engines end at once when told to stop, as their call is cut (see Watch).
+  const drains = metered && !free;
   // A reply the server can't save (from a page loaded before it saved them) is kept only by its
   // page, so leaving the page stops it, as before: a provider job already sent is paid for as sent.
   const pageGone = () => {
@@ -1138,8 +1233,17 @@ export async function POST(request: Request) {
       }
       claudeRun = choice;
     };
-    // Only writing listens for Stop; a picture, video or sound goes on (see stoppable above).
-    const endWatch = replyId && stoppable ? watchStop(user.id, replyId, () => stopEngine("stop")) : () => {};
+    // What a picture, video or sound says once Stop is pressed: stopping, or being finished.
+    const stopNote = () => ({ type: "status" as const, message: t(startedCents > 0 ? FINISHING_AFTER_STOP : STOPPING) });
+    const endWatch = replyId
+      ? watchStop(user.id, replyId, () => {
+          if (stoppable) return stopEngine("stop");
+          // The free lane's picture or transcript costs nothing and is finished.
+          if (stopAsked || free) return;
+          askStop();
+          send(stopNote());
+        })
+      : () => {};
     const deadline = metered && !free ? setTimeout(() => stopEngine("deadline"), startedAt + DEADLINE_MS - Date.now()) : undefined;
     let ok = true;
     let stopped = false;
@@ -1148,29 +1252,20 @@ export async function POST(request: Request) {
     const events = free
       ? runFree(free, engine, history, preferences, store, freeUse, countryOf(request), t, freeAudio)
       : run(engine, history, preferences, store, model, meter, budget, mediaNotes, claudeRun, steppedDown, track, t);
-    const steps = events[Symbol.asyncIterator]();
+    // Stop ends the request at once, without waiting for the next event: a Claude call is stopped,
+    // and a provider job already sent is paid for as sent (see finalCredits). A Claude engine still
+    // hands over what it finished before, and one that came to its end on its own isn't stopped.
     try {
-      for (;;) {
-        // Stop ends the request at once, without waiting for the next event: a Claude call is
-        // stopped, and a provider job already sent is paid for as sent (see finalCredits).
-        const next = steps.next();
-        const step = halt
-          ? "stop"
-          : await new Promise<Awaited<typeof next> | "stop">((resolve, reject) => {
-              wake = () => resolve("stop");
-              next.then(resolve, reject);
-            });
-        if (step === "stop") {
-          stopped = true;
-          next.catch(() => {});
-          steps.return?.(undefined).catch(() => {});
-          break;
-        }
-        if (step.done) break;
-        send(step.value);
-      }
+      const how = await readEngine(
+        events[Symbol.asyncIterator](),
+        // Once Stop is pressed on a picture, video or sound, its progress says what happens to it.
+        (e) => send(stopAsked && e.type === "status" ? stopNote() : e),
+        { halted: () => halt !== null, onWake: (w) => (wake = w), ...(drains && { drainMs: DRAIN_MS }) },
+      );
+      stopped = how === "stopped";
     } catch (err) {
-      if (halt) stopped = true;
+      // A job taken out of fal's queue on Stop never ran (see falRun).
+      if (halt || err instanceof JobStopped) stopped = true;
       else {
         console.error(`[flash] ${engine} engine failed`, err);
         ok = false;
@@ -1186,6 +1281,15 @@ export async function POST(request: Request) {
     }
     clearTimeout(deadline);
     endWatch();
+    // A picture, video or sound Stop kept from being made.
+    if (mediaHalted) stopped = true;
+    // A build out of time can't be continued, so it ends as failed and says why; what it cost so
+    // far is paid, as for any request that failed part way.
+    if (stopped && halt === "deadline" && (engine === "app" || engine === "slides")) {
+      stopped = false;
+      ok = false;
+      failure = t(BUILD_TOO_LONG);
+    }
     // A helper still running when the user stopped is billed by Claude, so the request waits for it
     // to be metered (each has a timeout of under a minute) and pays for it.
     if (stopped) await Promise.allSettled(helping);
@@ -1194,7 +1298,7 @@ export async function POST(request: Request) {
     const answered = claudeRun as ClaudeChoice | null;
     const scale = answered ? claudePrice(answered.model).output / claudePrice(defaultChoice(engine).model).output : 1;
     // A failed request costs only the provider work that really ran. A stopped reply is charged
-    // for what the call had cost so far, or a typical reply. The free lane is free.
+    // for what the call had cost so far. The free lane is free.
     const credits = free
       ? 0
       : finalCredits({
@@ -1247,7 +1351,8 @@ export async function POST(request: Request) {
     }
     if (stopped && halt === "deadline") send({ type: "text", delta: "\n\n" + t("Flash ran out of time here. Ask it to continue.") });
     if (!ok) send({ type: "error", message: failure + refundNote(held, credits, t) });
-    if (stopped) send({ type: "stopped" });
+    // Pages loaded before Stop was saved by the server don't know this event (they always send a replyId).
+    if (stopped && replyId) send({ type: "stopped" });
     // What it cost, which can be less than was held: a reply charged by length or stopped, a movie
     // with fewer scenes, or a request that failed part way.
     if ((metered || priceCents !== null) && !free) send({ type: "cost", credits });

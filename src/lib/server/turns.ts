@@ -1,18 +1,18 @@
 import type { UIMessage } from "../store.ts";
-import { ENGINES, type Engine } from "../types.ts";
+import { ENGINES, PENDING_LIMIT_MS, type Engine } from "../types.ts";
 import { one, run, now } from "./db.ts";
 
 /*
  * The chat route saves each turn itself, so an answer is kept even when the page that asked for it
  * is closed: the user's message and a pending reply when the request starts, the finished reply
  * when it ends. Each is merged into the saved messages by message id, and written only if nothing
- * saved the project since they were read (projects.version, which every write of messages raises),
- * so the browser's own saving and the server's never undo each other.
+ * saved the project since they were read (projects.version, which every write of messages raises).
+ * The browser's own saving (PUT /api/projects/[id]) goes through here too, and keeps the server's
+ * copy of every reply a request is still working on (see keepRunning). Other messages are saved as
+ * the browser sends them, so a tab with an older copy of a chat still saves over finished ones.
  */
 
-// A request runs for at most 800 seconds (maxDuration in the chat route), so a reply still pending
-// well after that was never finished: its server stopped (a deploy, a crash).
-export const PENDING_LIMIT_MS = 15 * 60_000;
+export { PENDING_LIMIT_MS };
 
 // Message ids are made by the browser (newId in store.ts).
 export const MESSAGE_ID = /^[\w-]{1,64}$/;
@@ -20,8 +20,11 @@ export const MESSAGE_ID = /^[\w-]{1,64}$/;
 // The same limit as the chat route's for a message.
 const MAX_CONTENT_CHARS = 100_000;
 
-/** A request's turn: the user's message, the id of the message it follows (null for the first), and the reply. */
-export type Turn = { user: UIMessage; afterId: string | null; reply: UIMessage };
+/**
+ * A request's turn: the user's message, the id of the message it follows (null for the first), and
+ * the reply; name is what a new chat is called (a template's title), when the browser named it.
+ */
+export type Turn = { user: UIMessage; afterId: string | null; reply: UIMessage; name?: string };
 
 const short = (value: unknown, max: number) => (typeof value === "string" && value.length <= max ? value : undefined);
 
@@ -64,12 +67,14 @@ export function cleanUserMessage(raw: unknown): UIMessage | null {
  * them is missing or isn't what the browser makes: a page loaded before the server saved turns sends
  * none, and keeps its answers itself.
  */
-export function requestTurn(body: { replyId?: unknown; userMessage?: unknown; afterId?: unknown }): Turn | null {
+export function requestTurn(body: { replyId?: unknown; userMessage?: unknown; afterId?: unknown; name?: unknown }): Turn | null {
   const replyId = typeof body.replyId === "string" && MESSAGE_ID.test(body.replyId) ? body.replyId : null;
   const user = cleanUserMessage(body.userMessage);
   const afterId = body.afterId === null ? null : typeof body.afterId === "string" && MESSAGE_ID.test(body.afterId) ? body.afterId : undefined;
   if (!replyId || !user || user.id === replyId || afterId === undefined) return null;
-  return { user, afterId, reply: { id: replyId, role: "assistant", content: "", pending: true } };
+  // The same limit as a name saved with PUT /api/projects/[id].
+  const name = typeof body.name === "string" ? body.name.trim().slice(0, 80) : "";
+  return { user, afterId, reply: { id: replyId, role: "assistant", content: "", pending: true }, ...(name && { name }) };
 }
 
 /**
@@ -130,12 +135,13 @@ export async function changeMessages(
 
 /**
  * Saves a request's turn as it starts: the user's message and the pending reply. A chat is called
- * "New project" until its first message names it, as the browser names it.
+ * "New project" until its first message names it, as the browser names it (a template's chat takes
+ * the template's title, which the browser sends).
  */
 export function saveTurn(userId: string, projectId: string, turn: Turn): Promise<boolean> {
   return changeMessages(userId, projectId, (messages, name) => ({
     messages: placeTurn(messages, turn),
-    name: name === "New project" && !messages.length ? turn.user.content.slice(0, 40).trim() || name : name,
+    name: name === "New project" && !messages.length ? turn.name || turn.user.content.slice(0, 40).trim() || name : name,
   }));
 }
 
@@ -145,6 +151,52 @@ export function saveReply(userId: string, projectId: string, turn: Turn, reply: 
     const next = placeReply(messages, turn, reply);
     return next && { messages: next };
   });
+}
+
+/** A reply a request is still working on: pending, and not yet past its request's time (see PENDING_LIMIT_MS). */
+const running = (m: UIMessage, at: number) => Boolean(m.pending) && (m.pendingSince ?? 0) >= at - PENDING_LIMIT_MS;
+
+/**
+ * The messages a browser saves (PUT /api/projects/[id]), with the server's copy of every reply a
+ * request is still working on, which only that request saves:
+ * - a reply the server is still working on is kept as the server has it, whatever the copy says
+ *   (Share, or a tab that gave up on it);
+ * - a reply the browser still shows as pending is kept as the server has it, so a reply the server
+ *   just finished isn't saved over before the page has it;
+ * - a pending reply the server hasn't saved (its request saves it in a moment, or a tab with an
+ *   older copy saved over it) is kept pending, so its request can still put the answer in its place;
+ * - a reply the server is working on that the copy leaves out (a tab with a copy from before it
+ *   started, or a save sent just before Retry) goes back after its message, in place of the
+ *   answer the copy has there, or with its message after the one it followed.
+ * Everything else is saved as the browser sends it.
+ */
+export function keepRunning(saved: UIMessage[], incoming: UIMessage[], at = now()): UIMessage[] {
+  const byId = new Map(saved.map((m) => [m.id, m]));
+  const out = incoming.map((m) => {
+    const kept = byId.get(m.id);
+    if (kept && (running(kept, at) || m.pending)) return kept;
+    if (!kept && m.pending) return { ...m, pendingSince: m.pendingSince ?? at };
+    return m;
+  });
+  const have = new Set(out.map((m) => m.id));
+  saved.forEach((reply, i) => {
+    if (!running(reply, at) || have.has(reply.id)) return;
+    const asked = saved[i - 1]?.role === "user" ? saved[i - 1] : null;
+    const where = asked ? out.findIndex((m) => m.id === asked.id) : -1;
+    if (where !== -1) {
+      // Retry and Edit answer a message again, so the answer after it in the copy is the old one.
+      const old = out[where + 1]?.role === "assistant" && !byId.has(out[where + 1].id) ? 1 : 0;
+      out.splice(where + 1, old, reply);
+    } else {
+      const turn = asked ? [asked, reply] : [reply];
+      const before = saved[i - turn.length];
+      const from = before ? out.findIndex((m) => m.id === before.id) : -1;
+      out.splice(from === -1 ? out.length : from + 1, 0, ...turn);
+      for (const m of turn) have.add(m.id);
+    }
+    have.add(reply.id);
+  });
+  return out;
 }
 
 /** Replies still pending long after their request's time ran out (see PENDING_LIMIT_MS), shown as not finished with note. */

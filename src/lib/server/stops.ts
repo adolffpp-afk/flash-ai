@@ -7,8 +7,9 @@ import { one, run, now } from "./db.ts";
  * database within POLL_MS. A Stop pressed before its request started is still heard.
  */
 const POLL_MS = 1500;
-// Stops older than this are cleared away; no request runs nearly that long.
-const KEEP_MS = 24 * 3600_000;
+// Stops older than this are cleared away: a request runs for at most 800 seconds, and its own Stop
+// is cleared when it ends.
+const KEEP_MS = 3600_000;
 
 type Listeners = Map<string, () => void>;
 // Each route is bundled on its own, so the requests running on this instance are kept on globalThis.
@@ -25,6 +26,11 @@ export async function requestStop(userId: string, replyId: string): Promise<void
   await run("DELETE FROM chat_stops WHERE created_at < ?", [now() - KEEP_MS]);
 }
 
+/** Whether Stop was pressed for this reply, from any server instance. */
+export async function stopRecorded(userId: string, replyId: string): Promise<boolean> {
+  return Boolean(await one("SELECT 1 FROM chat_stops WHERE user_id = ? AND reply_id = ?", [userId, replyId]));
+}
+
 /**
  * Calls onStop once, when Stop is pressed for this reply (or already was). Returns the function that
  * ends the watch, which the request calls when it ends.
@@ -33,19 +39,26 @@ export function watchStop(userId: string, replyId: string, onStop: () => void, p
   const key = keyOf(userId, replyId);
   let over = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const end = () => {
+  const stop = () => {
     over = true;
     clearTimeout(timer);
     if (listeners.get(key) === heard) listeners.delete(key);
   };
   const heard = () => {
     if (over) return;
-    end();
+    stop();
     onStop();
+  };
+  // The request is over: its Stop, if any, is no longer needed.
+  const end = () => {
+    stop();
+    run("DELETE FROM chat_stops WHERE user_id = ? AND reply_id = ?", [userId, replyId]).catch((err) =>
+      console.error("[flash] clearing a Stop failed", err),
+    );
   };
   const check = async () => {
     try {
-      if (await one("SELECT 1 FROM chat_stops WHERE user_id = ? AND reply_id = ?", [userId, replyId])) heard();
+      if (await stopRecorded(userId, replyId)) heard();
     } catch (err) {
       console.error("[flash] checking for Stop failed", err);
     }
