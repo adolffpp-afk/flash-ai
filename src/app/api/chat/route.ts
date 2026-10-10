@@ -87,6 +87,7 @@ import {
 import { falConfigured, falGenerate, type FalProgress } from "@/lib/engines/fal.ts";
 import {
   MEDIA_ENGINES,
+  MODELS,
   PACK_IMAGE_CENTS,
   PACK_VIDEO_CENTS,
   PACK_VIDEO_ENDPOINT,
@@ -133,8 +134,12 @@ type ChatRequest = {
   previous?: Engine;
   // An image, video or music model the user picked; otherwise Flash picks one.
   model?: string;
-  // The user already agreed to this request's price (see CONFIRM_CREDITS).
+  // The user agrees to every price (Go ahead with "always", on their device), or agreed to this
+  // request's in a chat saved before prices were kept with their engine (see CONFIRM_CREDITS).
   confirmed?: boolean;
+  // The price the user said yes to: the engine and model it was for, and its credits. The request
+  // runs on exactly that, and is asked about again if that can't be.
+  agreed?: Agreed;
   // The project this chat is in, for its instructions.
   projectId?: string;
   // The template the request was made from, named in the reply's header.
@@ -151,6 +156,15 @@ type ChatRequest = {
 
 /** Requests that cost at least this many credits wait for the user to agree to the price first. */
 const CONFIRM_CREDITS = 50;
+
+/** A price the user was asked about: the engine and model it's for and its credits (sent back with "yes"). */
+type Agreed = { engine: MediaEngine; model: string; credits: number };
+const agreedPrice = (a: unknown): Agreed | null => {
+  const { engine, model, credits } = (a ?? {}) as Partial<Agreed>;
+  if (typeof engine !== "string" || !(MEDIA_ENGINES as string[]).includes(engine)) return null;
+  if (typeof model !== "string" || typeof credits !== "number" || !Number.isFinite(credits) || credits <= 0) return null;
+  return { engine, model, credits };
+};
 
 function providers(): Set<Provider> {
   const set = new Set<Provider>();
@@ -626,7 +640,9 @@ export async function POST(request: Request) {
   const auto = route(last.content, last.attachment?.mediaType, previous, { spoken });
   const override =
     body.engine && body.engine !== "auto" && (ENGINES as readonly string[]).includes(body.engine) ? body.engine : null;
-  let engine = override ?? auto.engine;
+  // A "yes" to a price runs what was priced, never a fresh guess at the request.
+  const agreed = override ? null : agreedPrice(body.agreed);
+  let engine = override ?? agreed?.engine ?? auto.engine;
   // Why this engine answers, in the user's language.
   let reason = override
     ? typeof body.template === "string" && body.template.trim()
@@ -636,7 +652,9 @@ export async function POST(request: Request) {
           ? t("Updating your app.")
           : t("Updating your slides.")
         : t("You picked this engine.")
-    : t(auto.reason);
+    : agreed && agreed.engine !== auto.engine
+      ? t("Flash's router read your request.")
+      : t(auto.reason);
   // Several files are read and compared by the writing engines; media tools take one file. The
   // builder reads several pictures too, so a few screens can be built in one go.
   const allPictures = [last.attachment, ...(last.more ?? [])].every((f) => f && PICTURE_TYPE.test(f.mediaType));
@@ -669,7 +687,7 @@ export async function POST(request: Request) {
   // Skipped for users out of credits, so the free lane costs Flash nothing.
   // In a voice conversation it also checks requests the rules sent to code, docs or search (see checksSpoken).
   const recheck = !override && spoken && checksSpoken(engine);
-  if (!override && (auto.guessed || recheck) && !last.attachment && claudeConfigured() && available >= 5) {
+  if (!override && !agreed && (auto.guessed || recheck) && !last.attachment && claudeConfigured() && available >= 5) {
     // Someone talking is waiting in silence, so the router gets less time to think.
     const guess = await classifyRequest(last.content, meter, spoken ? 1500 : 4000);
     // A guess is only a guess, so it never sends a request to an engine that isn't available yet.
@@ -682,15 +700,17 @@ export async function POST(request: Request) {
 
   // "Fix the spelling" sent with the picture above fixes the words in that picture. With a photo the
   // user attached, the same words are about the photo's own text, so they get words.
-  if (!override && body.pictureAbove === true && last.attachment && EDITABLE_TYPE.test(last.attachment.mediaType) && fixesPictureText(last.content)) {
+  if (!override && !agreed && body.pictureAbove === true && last.attachment && EDITABLE_TYPE.test(last.attachment.mediaType) && fixesPictureText(last.content)) {
     engine = "image";
   }
   // The keyword rules can't tell every "make it darker" from "great edit!" or "change it back", and a change
   // costs credits, so a small model checks the request first. Words about the picture get an answer in
   // words; a different picture is made fresh. Once the user has agreed to a price, the check isn't asked again.
-  let fresh = false;
   const wouldEdit = (engine === "image" || engine === "video") && Boolean(last.attachment && EDITABLE_TYPE.test(last.attachment.mediaType));
-  if (wouldEdit && !override && body.confirmed !== true && claudeConfigured() && available >= 5) {
+  // A price agreed to was for an edit or for a new picture, as its model says.
+  let fresh = Boolean(agreed && wouldEdit && !MODELS.find((m) => m.id === agreed.model)?.edits);
+  if (fresh && body.pictureAbove === true) reason = t("Flash makes a new picture.");
+  if (wouldEdit && !override && !agreed && body.confirmed !== true && claudeConfigured() && available >= 5) {
     const asked = await pictureRequest(last.content, body.pictureAbove === true, meter);
     if (asked === "other") {
       engine = severalFiles ? "docs" : "text";
@@ -714,7 +734,12 @@ export async function POST(request: Request) {
   }
   if (combines && editing) reason = t("Flash combines your {count} photos into one picture.", { count: photos.length });
   // Only FLUX.2 Edit takes several photos at once; the other photo tools work on one.
-  const picked = isMedia(engine) ? pickModel(engine, last.content, providers(), combines ? "flux-2-edit" : body.model, editing) : null;
+  let picked = isMedia(engine) ? pickModel(engine, last.content, providers(), combines ? "flux-2-edit" : body.model, editing) : null;
+  // The model whose price was agreed to, while it's still there (otherwise the new price is asked about).
+  if (agreed && picked && picked.model.id !== agreed.model) {
+    const kept = pickModel(picked.model.engine, last.content, providers(), agreed.model, editing);
+    if (kept?.model.id === agreed.model) picked = kept;
+  }
   const model = picked?.model ?? null;
 
   // Engines that aren't available yet reply for free. Media has a fixed price per model. Claude engines are charged by
@@ -822,7 +847,9 @@ export async function POST(request: Request) {
       budget = NO_BUDGET;
     }
   }
-  if (model && !free && needed >= CONFIRM_CREDITS && available >= needed && body.confirmed !== true) {
+  // Agreed to: this model at no more than the credits the user said yes to.
+  const consented = body.confirmed === true || Boolean(model && agreed && model.id === agreed.model && needed <= agreed.credits);
+  if (model && !free && needed >= CONFIRM_CREDITS && available >= needed && !consented) {
     // The price question, which a voice conversation also reads out.
     const price = { model: model.label, credits: needed.toLocaleString(t.locale), available: available.toLocaleString(t.locale) };
     const error =
@@ -835,7 +862,8 @@ export async function POST(request: Request) {
           : engine === "music"
             ? t("This {model} track uses {credits} credits. You have {available}.", price)
             : t("This {model} image uses {credits} credits. You have {available}.", price);
-    return Response.json({ error, code: "confirm_cost", needed }, { status: 409 });
+    const asked: Agreed = { engine: model.engine, model: model.id, credits: needed };
+    return Response.json({ error, code: "confirm_cost", needed, agreed: asked }, { status: 409 });
   }
   const freeUse = { provider: "", model: "" };
   const freeAudio: { reserved?: number } = {};

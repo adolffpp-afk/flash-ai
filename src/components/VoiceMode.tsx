@@ -3,9 +3,12 @@
 import { useEffect, useRef, useState } from "react";
 import { hasBuiltInRecognition, micBlocked, newRecognition, releaseMic, takeMic } from "@/lib/listen";
 import {
+  ENDING_WORDS,
   GOODBYE_WORDS,
   NO_WORDS,
+  POLITE_WORDS,
   REPEAT_WORDS,
+  SOUND_WORDS,
   TURN_TICK_MS,
   TurnEnd,
   UNSURE_WORDS,
@@ -13,6 +16,7 @@ import {
   confirmReply,
   isGoodbye,
   isRepeat,
+  onlySounds,
   sayFirst,
   speechChunks,
   type VoiceMessage,
@@ -146,15 +150,19 @@ class Conversation {
         continue;
       }
       this.heardAt = Date.now();
+      // "Um." on its own is someone still thinking, not a request (nor an answer to the price question).
+      const sounds = tNow(SOUND_WORDS);
+      if (onlySounds(heard, sounds)) continue;
+      const polite = tNow(POLITE_WORDS);
       this.hushed = false;
       this.screen.you(heard);
-      if (isGoodbye(heard, tNow(GOODBYE_WORDS))) {
+      if (isGoodbye(heard, tNow(GOODBYE_WORDS), { ending: tNow(ENDING_WORDS), polite, sounds })) {
         await this.say(named ? tNow("Bye, {name}.", { name: p().name }) : tNow("Bye."));
         if (this.alive) p().onClose();
         return;
       }
       // "Say that again" repeats the last answer, as a person would, instead of making a voice-over.
-      if (lastAnswer && isRepeat(heard, tNow(REPEAT_WORDS))) {
+      if (lastAnswer && isRepeat(heard, tNow(REPEAT_WORDS), { sounds, polite })) {
         await this.say(lastAnswer);
         this.heardAt = Date.now();
         continue;
@@ -177,7 +185,7 @@ class Conversation {
             if (!answered && this.alive) this.show("thinking");
           });
       };
-      const reply = confirming ? confirmReply(heard, { yes: tNow(YES_WORDS), no: tNow(NO_WORDS), unsure: tNow(UNSURE_WORDS) }) : null;
+      const reply = confirming ? confirmReply(heard, { yes: tNow(YES_WORDS), no: tNow(NO_WORDS), unsure: tNow(UNSURE_WORDS), sounds, polite }) : null;
       let answer: VoiceAnswer;
       if (reply === "yes") answer = await p().confirm();
       else if (reply === "no") answer = { say: tNow("Okay, I won't make it."), confirm: false };

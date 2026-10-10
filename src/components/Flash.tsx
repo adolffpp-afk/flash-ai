@@ -803,13 +803,18 @@ export function Flash({
     });
   }
 
-  /** Answers the last user message again, replacing the reply after it. Returns the new reply. */
+  /**
+   * Answers the last user message again, replacing the reply after it. Returns the new reply.
+   * confirmed: the user said yes to the price asked, so the request runs on the engine and model
+   * that price was for (or, in chats saved before those were kept, as it's routed now).
+   */
   async function retry(confirmed = false): Promise<UIMessage | null> {
     const messages = active?.messages;
     if (!active || !messages || busy || runningRef.current) return null;
     const lastUser = messages.findLastIndex((m) => m.role === "user");
     if (lastUser === -1) return null;
-    return respond(active, messages.slice(0, lastUser), messages[lastUser], confirmed);
+    const agreed = confirmed ? messages[lastUser + 1]?.agreed : undefined;
+    return respond(active, messages.slice(0, lastUser), messages[lastUser], agreed ?? confirmed);
   }
 
   /** Agrees to a costly request's price and runs it; "always" stops asking on this device. */
@@ -868,7 +873,8 @@ export function Flash({
     project: Project,
     earlier: UIMessage[],
     userMsg: UIMessage,
-    confirmed = false,
+    // true, or the price the user said yes to (see retry).
+    confirmed: boolean | NonNullable<UIMessage["agreed"]> = false,
     unsent?: (stopped: boolean, why: string) => void,
     // Sees the reply as it's written (a voice conversation starts saying it).
     progress?: (reply: UIMessage) => void,
@@ -942,7 +948,8 @@ export function Flash({
           ...(isLevel(readSetting("level")) && { level: readSetting("level") }),
           model: userMsg.template?.model ?? (engine === "auto" ? undefined : models[engine]),
           template: userMsg.template?.name,
-          confirmed: confirmed || skipsCostCheck(),
+          confirmed: confirmed === true || skipsCostCheck(),
+          ...(typeof confirmed === "object" && { agreed: confirmed }),
           projectId,
           ...(userMsg.voice && { voice: true }),
           ...(userMsg.build && { build: true }),
@@ -954,7 +961,7 @@ export function Flash({
       if (!res.ok || !res.body) {
         const err = await res.json().catch(() => ({ error: t("Request failed ({status})", { status: res.status }) }));
         if (res.status === 401) setSignedOut(true);
-        throw Object.assign(new Error(err.error), { code: err.code as string | undefined });
+        throw Object.assign(new Error(err.error), { code: err.code as string | undefined, agreed: err.agreed as UIMessage["agreed"] });
       }
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -984,11 +991,17 @@ export function Flash({
               ...m,
               error: err instanceof Error ? err.message : t("Something went wrong."),
               errorCode: (err as { code?: string }).code,
+              agreed: (err as { agreed?: UIMessage["agreed"] }).agreed,
             },
       );
       final = aborted
         ? { ...final, stopped: true }
-        : { ...final, error: err instanceof Error ? err.message : t("Something went wrong."), errorCode: (err as { code?: string }).code };
+        : {
+            ...final,
+            error: err instanceof Error ? err.message : t("Something went wrong."),
+            errorCode: (err as { code?: string }).code,
+            agreed: (err as { agreed?: UIMessage["agreed"] }).agreed,
+          };
     } finally {
       updateMessage(projectId, reply.id, (m) => ({ ...m, pending: false, status: undefined }));
       refreshMe();

@@ -40,6 +40,8 @@ export type UIMessage = {
   sources?: Source[];
   error?: string;
   errorCode?: string;
+  // The price question's engine, model and credits, sent back when the user says yes so exactly that runs.
+  agreed?: { engine: Engine; model: string; credits: number };
   pending?: boolean;
   stopped?: boolean;
   status?: string;

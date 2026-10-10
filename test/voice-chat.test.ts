@@ -84,8 +84,12 @@ const {
   YES_WORDS,
   NO_WORDS,
   GOODBYE_WORDS,
+  ENDING_WORDS,
   UNSURE_WORDS,
+  SOUND_WORDS,
+  POLITE_WORDS,
   REPEAT_WORDS,
+  onlySounds,
 } = await import("../src/lib/voice-chat.ts");
 const { translate } = await import("../src/lib/i18n.ts");
 const { run, one } = await import("../src/lib/server/db.ts");
@@ -114,7 +118,8 @@ test("yes, no and goodbye in the language Flash is shown in, as well as in Engli
   const yes = "oui, ouais, d'accord, vas-y, fais-le";
   const no = "non, annule, pas maintenant, laisse tomber";
   const bye = "au revoir, salut, c'est tout, arrête d'écouter";
-  for (const y of ["Oui", "D'accord !", "vas-y, s'il te plaît", "Yes", "go ahead"]) assert.ok(isYes(y, yes), y);
+  for (const y of ["Oui", "D'accord !", "Yes", "go ahead"]) assert.ok(isYes(y, yes), y);
+  assert.ok(isYes("vas-y, s'il te plaît", { yes, polite: "s'il te plaît, merci" }));
   for (const n of ["ouille", "oui je veux changer la photo avec un ciel bleu et des oiseaux", "non", "maybe later"]) assert.ok(!isYes(n, yes), n);
   for (const n of ["Non merci", "Annule.", "pas maintenant", "cancel"]) assert.ok(isNo(n, no), n);
   for (const n of ["nonante", "pas tout de suite"]) assert.ok(!isNo(n, no), n);
@@ -138,14 +143,81 @@ test("a reply to the price question: yes, no, or thinking out loud, which keeps 
   // Anything else is a new request.
   for (const r of ["Make a picture of a cat", "Let's go to the beach", "please make it blue", "what's the weather"]) assert.equal(confirmReply(r), null, r);
   // In the language Flash is shown in, as well as in English.
-  const fr = { yes: "oui, d'accord", no: "non, annule", unsure: "euh, attends, je ne sais pas, combien ça coûte" };
+  const fr = { yes: "oui, d'accord", no: "non, annule", unsure: "attends, je ne sais pas, combien ça coûte", sounds: "euh" };
   assert.equal(confirmReply("Euh, oui", fr), "yes");
   assert.equal(confirmReply("Attends", fr), "unsure");
   assert.equal(confirmReply("Combien ça coûte ?", fr), "unsure");
   assert.equal(confirmReply("Fais une photo d'un chat", fr), null);
   // The English lists change nothing in English.
-  const en = { yes: YES_WORDS, no: NO_WORDS, unsure: UNSURE_WORDS };
+  const en = { yes: YES_WORDS, no: NO_WORDS, unsure: UNSURE_WORDS, sounds: SOUND_WORDS, polite: POLITE_WORDS };
   for (const [said, meant] of [["Mm-hmm", "yes"], ["no thanks", "no"], ["hmm", "unsure"], ["Make a cat", null]] as const) assert.equal(confirmReply(said, en), meant, said);
+});
+
+test("a yes to the price question is only consent: putting it off, changing it or a but asks again", () => {
+  const en = { yes: YES_WORDS, no: NO_WORDS, unsure: UNSURE_WORDS, sounds: SOUND_WORDS, polite: POLITE_WORDS };
+  // A wrong yes spends credits, so more than consent asks the price question again.
+  for (const u of [
+    "maybe do it later",
+    "I'm not sure, do it later",
+    "wait, do it with a cat instead",
+    "hmm, sure but cheaper",
+    "do it later",
+    "Do that later.",
+    "okay make it a cat instead",
+    "do that as a picture instead",
+    "certainly, make it 5 seconds",
+    "Okay, wait.",
+    "Okay, how much?",
+    "Sure, after lunch.",
+    "Okay, but that's too expensive.",
+    "Sounds good, but that's too expensive",
+    "Okay, hold on.",
+    "OK, let me think",
+    "Sure, maybe later",
+    "Hmm, how much is it?",
+    "Um, I'm not sure.",
+    "Uh, how much is it?",
+    "okay, um",
+    "yes no wait",
+    "thanks",
+  ]) {
+    assert.equal(confirmReply(u), "unsure", u);
+    assert.equal(confirmReply(u, en), "unsure", u);
+  }
+  for (const y of ["Um, yes please", "Mm-hmm", "Go for it", "okay go ahead", "yes do it", "No problem, go ahead.", "Sure, why not.", "Perfect.", "great, go ahead", "Let's go!", "OK then", "Flash, yes"]) {
+    assert.equal(confirmReply(y, en), "yes", y);
+  }
+  for (const n of ["Nope.", "Maybe later", "No, wait", "forget it", "never mind, too expensive"]) assert.equal(confirmReply(n, en), "no", n);
+  // Not about the question: a new request, as are long replies.
+  for (const r of ["Hmm, what's the weather?", "cool, what's the weather", "Make a picture with no background", "yes I want to change the picture to a blue sky with birds"]) {
+    assert.equal(confirmReply(r, en), null, r);
+  }
+  // "Oui, attends": thinking in the language Flash is shown in.
+  assert.equal(confirmReply("Oui, attends", { yes: "oui", unsure: "attends" }), "unsure");
+});
+
+test("languages written without spaces: an answer runs into the next word, but a letter inside another word isn't one", () => {
+  const zh = { yes: "是, 是的, 好, 好的, 可以, 没问题, 开始吧, 对", no: "不, 不要, 算了", polite: "谢谢" };
+  for (const y of ["好的开始吧", "是的是的", "没问题，开始吧", "可以啊", "好的，谢谢"]) assert.equal(confirmReply(y, zh), "yes", y);
+  for (const n of ["算了吧", "不要"]) assert.equal(confirmReply(n, zh), "no", n);
+  // 好吗 ("okay?") and 好的但是太贵了 ("okay but it's too expensive") ask again; 对不起 ("sorry") and 不错 ("not bad") hold neither 对 nor 不.
+  for (const u of ["好吗", "好的，但是太贵了"]) assert.equal(confirmReply(u, zh), "unsure", u);
+  for (const r of ["对不起", "不错", "好的，我想把这张图片改成蓝色的天空，再加上几只飞翔的小鸟和一道彩虹"]) assert.equal(confirmReply(r, zh), null, r);
+  const th = { yes: "ใช่, ได้, ได้เลย, โอเค, เอาเลย", no: "ไม่, ยกเลิก" };
+  for (const y of ["ได้เลยครับ", "โอเคครับเอาเลย"]) assert.equal(confirmReply(y, th), "yes", y);
+  assert.equal(confirmReply("ไม่ครับ", th), "no");
+  // ได้ยินไหม ("did you hear?") isn't ได้ ("yes"), and ใช่ไหม ("is it?") is a question.
+  assert.equal(confirmReply("ได้ยินไหม", th), null);
+  assert.equal(confirmReply("ใช่ไหม", th), "unsure");
+  // Once "not sure" is translated, ไม่แน่ใจ is heard as that, not as ไม่ ("no").
+  assert.equal(confirmReply("ไม่แน่ใจ", { ...th, unsure: "ไม่แน่ใจ" }), "unsure");
+  const ja = { yes: "はい, うん, お願いします, お願い", no: "いいえ, 結構です" };
+  for (const y of ["はいお願いします", "うんお願い"]) assert.equal(confirmReply(y, ja), "yes", y);
+  assert.equal(confirmReply("いいえ結構です", ja), "no");
+  assert.equal(confirmReply("はいですか", ja), "unsure");
+  // Goodbye and "say that again" too.
+  assert.ok(isGoodbye("再见了", "再见, 拜拜") && !isGoodbye("再见的意思", "再见, 拜拜"));
+  assert.ok(isRepeat("もう一度言ってね", "もう一度言って") && !isRepeat("もう一度言ってみて英語で", "もう一度言って"));
 });
 
 test('"say that again" repeats, and "that\'s it?" is a question, not a goodbye', () => {
@@ -155,6 +227,18 @@ test('"say that again" repeats, and "that\'s it?" is a question, not a goodbye',
   assert.ok(isRepeat("What did you say", REPEAT_WORDS));
   for (const q of ["That's it?", "Okay, that's all?", "C'est tout ?", "就这些？"]) assert.ok(!isGoodbye(q, "c'est tout, 就这些"), q);
   assert.ok(isGoodbye("That's it.") && isGoodbye("C'est tout.", "c'est tout"));
+  // Chrome writes no punctuation, so "that's it" alone may be a question: a goodbye only with a closer.
+  for (const q of ["that's it", "that's all", "okay that's it"]) assert.ok(!isGoodbye(q, GOODBYE_WORDS, { ending: ENDING_WORDS }), q);
+  for (const b of ["that's it thanks", "okay that's all bye", "that's all for now", "thank you that's it", "bye"]) assert.ok(isGoodbye(b, GOODBYE_WORDS, { ending: ENDING_WORDS }), b);
+  const fr = { ending: "c'est tout, ce sera tout", polite: "merci" };
+  assert.ok(!isGoodbye("c'est tout", "au revoir, c'est tout", fr) && isGoodbye("c'est tout merci", "au revoir, c'est tout", fr) && isGoodbye("au revoir", "au revoir, c'est tout", fr));
+  // Sounds and courtesy around "say that again".
+  assert.ok(isRepeat("Um, say that again please", REPEAT_WORDS) && isRepeat("euh, répète", "répète", { sounds: "euh" }));
+});
+
+test('"Um." on its own is someone thinking, not a request', () => {
+  for (const s of ["Um.", "Hmm hmm", "Uhm...", "Errr", "euh"]) assert.ok(onlySounds(s, "hmm, um, uh, euh"), s);
+  for (const s of ["Mm-hmm", "um what", "Um, make a cat", ""]) assert.ok(!onlySounds(s, SOUND_WORDS), s);
 });
 
 test("sounds a transcript marks aren't words", () => {

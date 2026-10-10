@@ -19,28 +19,6 @@ export function wakeMatch(heard: string): { rest: string } | null {
   return { rest: heard.slice(m.index + m[0].length).trim() };
 }
 
-// Words only, lowercase, so "Yes!" and "yes." read the same.
-const plain = (text: string) =>
-  text
-    .toLowerCase()
-    .replace(/[’]/g, "'")
-    .replace(/[^\p{L}\p{M}\p{N}' ]+/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-const YES =
-  /^(?:yes|yeah|yep|yup|sure|ok|okay|alright|all right|go ahead|do it|please do|of course|absolutely|let's do it|go for it|let's go$|proceed|sounds good|do that|confirm(?:ed)?|definitely|certainly|mm+ ?hmm+|uh ?huh|please$)\b/;
-// Thinking out loud while Flash waits for a yes or no.
-const UNSURE = /^(?:h+m+|u+m+|u+h+|e+r+m*|wait|hold on|one sec(?:ond)?|let me think|i don't know|not sure|i'm not sure|maybe|how much(?: is it| does it cost)?|what does it cost)$/;
-const NO = /^(?:no|nope|nah|cancel|don't|do not|never mind|nevermind|not now|skip it|skip)\b/;
-const BYE =
-  /^(?:(?:ok|okay|thanks|thank you|great)\s+)*(?:bye(?: bye)?|goodbye|good bye|stop listening|that's all|that is all|that's it|end (?:the )?(?:call|conversation|chat)|hang up)(?:\s+(?:flash|for now|thanks|thank you))*$/;
-const AGAIN = /^(?:sorry|pardon|what|huh|come again|what did you say|(?:(?:can|could) you )?(?:please )?(?:say|repeat) (?:that|it|this)(?: again)?(?: please)?|repeat(?: that)?(?: please)?)$/;
-// Sounds people make before answering: "hmm, okay", "um, no".
-const FILLER = /^(?:(?:h+m+|u+m+|u+h+|e+r+m*|a+h+|o+h+|well|so) )+/;
-// What was said, and the same without the sounds before it.
-const withoutFiller = (said: string) => [said, said.replace(FILLER, "")];
-
 // Sounds a transcript marks instead of words: "(laughs)", "[music]", "(background noise)".
 const SOUND_TAGS = /\([^()]{1,40}\)|\[[^[\]]{1,40}\]/g;
 
@@ -50,78 +28,259 @@ export function heardWords(transcript: string): string {
   return /[\p{L}\p{N}]/u.test(words) ? words : "";
 }
 
+// Words only, lowercase, so "Yes!" and "yes." read the same.
+const plain = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/[’]/g, "'")
+    .replace(/[^\p{L}\p{M}\p{N}' ]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+// A whole word: not part of a longer one.
+const word = (source: string) => new RegExp(`(?<![\\p{L}\\p{M}\\p{N}'])(?:${source})(?![\\p{L}\\p{M}\\p{N}'])`, "gu");
+// Sounds written however long they were held ("hmmm", "ummm", "Mm-hmm"), as one spelling each.
+const SOUND_SPELLINGS: [RegExp, string][] = [
+  [word("m+ ?h+m+"), "mm hmm"],
+  [word("u+h+ ?h+u+h+"), "uh huh"],
+  [word("h+m+"), "hmm"],
+  [word("m{2,}"), "mm"],
+  [word("u+h*m+"), "um"],
+  [word("u+h+"), "uh"],
+  [word("e+r+m*"), "er"],
+  [word("a+h+"), "ah"],
+  [word("o+h+"), "oh"],
+];
+/** What was said, as plain words with the sounds of thinking spelt one way. */
+const spoken = (text: string) => SOUND_SPELLINGS.reduce((said, [sound, spelling]) => said.replace(sound, spelling), plain(text));
+
+// A list of words split by commas, as plain words. Commas of other scripts (，、،) split it too.
+const wordList = (list = "") => list.split(/[,，、،]/).map(spoken).filter(Boolean);
+
+/*
+ * The short answers Flash understands in English, whatever language it's shown in. Each kind of
+ * answer is also heard in that language, from the translated lists below.
+ */
+const EN = {
+  yes: wordList(
+    "yes, yeah, yep, yup, ya, yea, sure, sure thing, ok, okay, alright, all right, go ahead, go on, go for it, do it, do that, please do, of course, " +
+      "absolutely, let's do it, let's do that, let's do this, proceed, sounds good, that's fine, fine, confirm, confirmed, definitely, certainly, " +
+      "mm hmm, uh huh, no problem, not a problem, no worries, why not, i agree, agreed, you bet, carry on, continue, that works",
+  ),
+  // Yes only with nothing but courtesy after it: "Let's go!", but not "let's go to the beach".
+  alone: wordList("let's go, go"),
+  // Courtesy that's also a yes when said on its own: "Perfect.", "Great, go ahead", but "cool, what's the weather?" is a new request.
+  praise: wordList("perfect, great, cool, good, nice, awesome, excellent"),
+  no: wordList(
+    "no, nope, nah, no no, cancel, don't, do not, don't do it, never mind, nevermind, not now, not yet, not today, skip, skip it, stop, " +
+      "no thanks, no thank you, forget it, maybe later, maybe not, no way, pass, i'll pass, leave it",
+  ),
+  unsure: wordList(
+    "wait, hold on, hang on, one sec, one second, just a sec, just a second, a moment, just a moment, one moment, let me think, let me see, " +
+      "let me check, i'm not sure, i am not sure, not sure, i don't know, don't know, dunno, no idea, i have no idea, maybe, perhaps, i guess, " +
+      "i think so, how much, how much is it, how much does it cost, how much will it cost, what does it cost, what's the price, what is the price, " +
+      "how many credits, too expensive, too much, expensive, that's expensive, that's a lot, cheaper, later",
+  ),
+  sounds: wordList("hmm, mm, um, uh, er, ah, oh, well, so"),
+  // Courtesy around an answer.
+  polite: wordList("please, thanks, thank you, flash, now, then, right away"),
+  // The little words Chinese, Japanese and Thai end a sentence with (not their question words: 吗, 呢, か, ไหม, คะ).
+  particles: wordList("吧, 啊, 呀, 啦, 哦, 喔, 了, ね, よ, です, ครับ, ค่ะ, นะ, จ้ะ, จ้า"),
+  bye: wordList("bye, bye bye, goodbye, good bye, stop listening, end the call, end call, end the conversation, end conversation, end the chat, end chat, hang up"),
+  // "That's it" ends a conversation, or asks "That's it?": a goodbye only with a closer or a full stop.
+  ending: wordList("that's all, that is all, that's it, that'll be all"),
+  closers: wordList("thanks, thank you, for now, flash"),
+  acks: wordList("ok, okay, great, alright, all right, so"),
+};
+
 /*
  * Yes, no, goodbye, "not sure" and "say that again" in the language Flash is shown in, as lists of
  * words split by commas. They're heard as well as the English ones: pass t(YES_WORDS) and so on to
- * isYes, isNo, isGoodbye, isUnsure and isRepeat.
+ * confirmReply, isGoodbye and isRepeat.
  */
 export const YES_WORDS = msg("yes, yeah, sure, okay, go ahead, do it");
 export const NO_WORDS = msg("no, cancel, not now, skip it");
 export const GOODBYE_WORDS = msg("bye, goodbye, that's all, stop listening");
-export const UNSURE_WORDS = msg("hmm, um, wait, hold on, let me think, I'm not sure, maybe, how much is it");
+// Goodbyes that can also be asked ("That's it?"), so they end the conversation only with a closer or a full stop.
+export const ENDING_WORDS = msg("that's all, that's it");
+// Thinking out loud while Flash waits for a yes or no.
+export const UNSURE_WORDS = msg("wait, hold on, let me think, I'm not sure, maybe, how much is it");
+// Sounds people make while they think, which are no answer by themselves.
+export const SOUND_WORDS = msg("hmm, um, uh");
+// Courtesy said with an answer: "yes please", "go ahead, thanks".
+export const POLITE_WORDS = msg("please, thanks, thank you");
 export const REPEAT_WORDS = msg("say that again, repeat that, sorry, pardon, what did you say");
 
-// A translated list's words, as plain words. Commas of other scripts (，、،) split it too.
-const wordList = (list: string) => list.split(/[,，、،]/).map(plain).filter(Boolean);
-// Whether what was said starts with one of the words, as a whole word or phrase.
-const startsWithOne = (said: string, list: string) => wordList(list).some((w) => said === w || said.startsWith(`${w} `));
-// Whether what was said is one of the words and nothing more.
-const isOne = (said: string, list: string) => wordList(list).includes(said);
-
-// Chinese, Japanese and Thai are written without spaces, so there a short answer is a few letters.
+// Chinese, Japanese and Thai are written without spaces between words.
 const UNSPACED = /[\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}\p{sc=Thai}]/u;
-const isShort = (said: string) => said.split(" ").length <= 6 && (!UNSPACED.test(said) || said.replace(/ /g, "").length <= 15);
+const segmenter = typeof Intl !== "undefined" && "Segmenter" in Intl ? new Intl.Segmenter(undefined, { granularity: "word" }) : null;
+
+/** The words of what was said: split at spaces, and where there are none by the browser's dictionary. */
+function wordsOf(said: string): { word: string; at: number }[] {
+  if (!segmenter || !UNSPACED.test(said)) {
+    let at = 0;
+    return said.split(" ").map((w) => ({ word: w, at: (at += w.length + 1) - w.length - 1 }));
+  }
+  return [...segmenter.segment(said)].filter((s) => s.segment.trim()).map((s) => ({ word: s.segment, at: s.index }));
+}
+
+type Kind = "yes" | "alone" | "no" | "unsure" | "sound" | "polite" | "bye" | "ending" | "closer" | "ack" | "again";
+type Phrase = { text: string; kind: Kind };
+
+/** The phrases to listen for, longest first, and the more careful kind first when one is listed twice. */
+function phraseBook(kinds: [Kind, string[]][]): Phrase[] {
+  const order: Kind[] = ["no", "unsure", "sound", "yes", "alone", "polite", "bye", "ending", "closer", "ack", "again"];
+  return kinds
+    .flatMap(([kind, list]) => list.map((text) => ({ text, kind })))
+    .sort((a, b) => b.text.length - a.text.length || order.indexOf(a.kind) - order.indexOf(b.kind));
+}
 
 /**
- * A short "yes" to a question Flash asked (like going ahead with a costly request). words: more
- * ways to say yes, as a translated list (see YES_WORDS).
+ * What was said, read as listed phrases from the start: each must end where a word does, so "oui"
+ * isn't heard in "ouille" nor 对 (yes) in 对不起 (sorry). Where words aren't spaced, a phrase may also
+ * end where another listed one starts (好的好的). Stops at the first words that aren't listed: rest
+ * is what's left, "" when every word was read.
  */
-export const isYes = (heard: string, words = "") => {
-  const p = plain(heard);
-  return withoutFiller(p).some((s) => YES.test(s) || startsWithOne(s, words)) && !/\b(?:no|not|don't)\b/.test(p) && isShort(p);
-};
-/** A short "no"; words: more ways to say it (see NO_WORDS). */
-export const isNo = (heard: string, words = "") => withoutFiller(plain(heard)).some((s) => NO.test(s) || startsWithOne(s, words));
-/**
- * "Hmm", "wait", "how much?": neither yes nor no, so Flash asks again instead of dropping its
- * question. words: more ways to say it, said on their own (see UNSURE_WORDS).
- */
-export const isUnsure = (heard: string, words = "") => {
-  const p = plain(heard);
-  return UNSURE.test(p) || isOne(p, words);
-};
-/**
- * "Say that again", "Sorry?", "What did you say?": Flash says its last answer again, without
- * asking the chat. words: more ways to say it, said on their own (see REPEAT_WORDS).
- */
-export const isRepeat = (heard: string, words = "") => {
-  const p = plain(heard);
-  return AGAIN.test(p) || isOne(p, words);
-};
-/**
- * "Bye", "that's all", "stop listening": ends the conversation. "That's it?" is a question, not a
- * goodbye. words: more ways to say it, said on their own (see GOODBYE_WORDS).
- */
-export const isGoodbye = (heard: string, words = "") => {
-  if (/[?？؟]\s*$/.test(heard)) return false;
-  const p = plain(heard);
-  return BYE.test(p) || wordList(words).some((w) => p === w || p === `${w} flash`);
-};
+function readPhrases(said: string, book: Phrase[]): { phrases: Phrase[]; rest: string } {
+  const words = wordsOf(said);
+  const edges = new Set([said.length, ...words.flatMap((w) => [w.at, w.at + w.word.length])]);
+  const unspaced = (at: number) => UNSPACED.test(said[at - 1] ?? "") && UNSPACED.test(said[at] ?? "");
+  // A listed phrase starting at at, ending at a word's end or, without spaces, where another one starts.
+  const reads = new Map<number, Phrase | null>();
+  const phraseAt = (at: number): Phrase | null => {
+    if (reads.has(at)) return reads.get(at)!;
+    reads.set(at, null);
+    const found =
+      book.find((p) => {
+        if (!said.startsWith(p.text, at)) return false;
+        const end = at + p.text.length;
+        return edges.has(end) || (unspaced(end) && phraseAt(end) !== null);
+      }) ?? null;
+    reads.set(at, found);
+    return found;
+  };
+  const phrases: Phrase[] = [];
+  let at = 0;
+  while (at < said.length) {
+    const p = phraseAt(at);
+    if (!p) break;
+    phrases.push(p);
+    at += p.text.length;
+    if (said[at] === " ") at++;
+  }
+  return { phrases, rest: said.slice(at) };
+}
+
+// A reply this short with more than an answer in it is about the question; a longer one is a new request.
+const SHORT_WORDS = 10;
+
+export type AnswerWords = { yes?: string; no?: string; unsure?: string; sounds?: string; polite?: string };
 
 /**
  * What a reply to Flash's "Say yes to go ahead, or no to skip it" means: "yes", "no", or "unsure"
  * (thinking out loud, so Flash asks again and the costly request keeps waiting). null is anything
- * else: a new request. words: the translated lists, t(YES_WORDS), t(NO_WORDS) and t(UNSURE_WORDS).
+ * else: a new request. A reply is "yes" only when every word of it is consent, courtesy or a sound
+ * of thinking before it: "sure, but cheaper", "do it later" and "okay, wait" are unsure, since a
+ * wrong yes spends the user's credits. words: the translated lists, t(YES_WORDS), t(NO_WORDS),
+ * t(UNSURE_WORDS), t(SOUND_WORDS) and t(POLITE_WORDS).
  */
-export function confirmReply(heard: string, words: { yes?: string; no?: string; unsure?: string } = {}): "yes" | "no" | "unsure" | null {
-  // "Euh, oui": a sound of thinking before the answer, in the language Flash is shown in as in English.
-  const said = plain(heard);
-  const lead = wordList(words.unsure ?? "").find((w) => said.startsWith(`${w} `));
-  const answers = lead ? [heard, said.slice(lead.length + 1)] : [heard];
-  if (answers.some((a) => isYes(a, words.yes))) return "yes";
-  if (answers.some((a) => isNo(a, words.no))) return "no";
-  if (isUnsure(heard, words.unsure)) return "unsure";
-  return null;
+export function confirmReply(heard: string, words: AnswerWords = {}): "yes" | "no" | "unsure" | null {
+  const said = spoken(heard);
+  if (!said) return null;
+  const book = phraseBook([
+    ["yes", [...EN.yes, ...wordList(words.yes)]],
+    ["alone", EN.alone],
+    ["no", [...EN.no, ...wordList(words.no)]],
+    ["unsure", [...EN.unsure, ...wordList(words.unsure)]],
+    ["sound", [...EN.sounds, ...wordList(words.sounds)]],
+    ["polite", [...EN.polite, ...EN.particles, ...EN.praise, ...wordList(words.polite)]],
+  ]);
+  const { phrases, rest } = readPhrases(said, book);
+  // Sounds and courtesy before the answer: "um, yes", "oh no", "please, go ahead".
+  const answer = phrases.findIndex((p) => p.kind !== "sound" && p.kind !== "polite");
+  const first = phrases[answer];
+  // Neither yes nor no in it: a new request, unless it's short and thinks out loud somewhere.
+  if (!first && rest) return hesitates(said, book) ? "unsure" : null;
+  if (first?.kind === "no") return "no";
+  if (first?.kind === "unsure") return "unsure";
+  // After the yes, only more yes and courtesy, and no sound after the last of it ("okay, um" is still thinking).
+  const after = phrases.slice(answer < 0 ? 0 : answer + 1);
+  const consent = !rest && after.every((p) => p.kind === "yes" || p.kind === "alone" || p.kind === "polite" || p.kind === "sound");
+  const last = phrases.filter((p) => p.kind !== "polite").at(-1);
+  if (first?.kind === "alone" && !(consent && after.every((p) => p.kind === "polite"))) return hesitates(said, book) ? "unsure" : null;
+  if (!first) {
+    // Courtesy alone: "please" and "perfect" are a yes, "thanks" or "hmm" no answer yet.
+    return phrases.some((p) => p.text === "please" || EN.praise.includes(p.text)) && phrases.at(-1)?.kind !== "sound" ? "yes" : "unsure";
+  }
+  if (consent && last?.kind !== "sound") return "yes";
+  // A yes with more said ("sure, but cheaper", "do it later"): asked again, unless it's a new request.
+  return wordsOf(said).length <= SHORT_WORDS ? "unsure" : null;
+}
+
+/** Whether a short reply that isn't an answer thinks out loud somewhere: "Make it cheaper, maybe?" */
+function hesitates(said: string, book: Phrase[]): boolean {
+  const words = wordsOf(said);
+  return words.length <= SHORT_WORDS && words.some((w) => readPhrases(said.slice(w.at), book).phrases[0]?.kind === "unsure");
+}
+
+/** A "yes" to a question Flash asked (see confirmReply). words: more ways to say yes (see YES_WORDS), or every list. */
+export const isYes = (heard: string, words: string | AnswerWords = "") => confirmReply(heard, typeof words === "string" ? { yes: words } : words) === "yes";
+/** A "no" (see confirmReply). words: more ways to say it (see NO_WORDS), or every list. */
+export const isNo = (heard: string, words: string | AnswerWords = "") => confirmReply(heard, typeof words === "string" ? { no: words } : words) === "no";
+
+/** Nothing but sounds of thinking ("Um."), which are no request: Flash listens on. sounds: t(SOUND_WORDS). */
+export function onlySounds(heard: string, sounds = ""): boolean {
+  const said = spoken(heard);
+  // Read with the yes words too, so "mm-hmm" is heard as the yes it is.
+  const { phrases, rest } = readPhrases(said, phraseBook([["sound", [...EN.sounds, ...wordList(sounds)]], ["yes", ["mm hmm", "uh huh"]]]));
+  return Boolean(said) && !rest && phrases.every((p) => p.kind === "sound");
+}
+
+// "Say that again", "Can you repeat that please", "Sorry?".
+const AGAIN = /^(?:sorry|pardon|what|huh|come again|what did you say|(?:(?:can|could) you )?(?:please )?(?:say|repeat) (?:that|it|this)(?: again)?(?: please)?|repeat(?: that)?(?: please)?)$/;
+
+/**
+ * "Say that again", "Sorry?", "What did you say?": Flash says its last answer again, without
+ * asking the chat. words: more ways to say it, said on their own or with courtesy (see
+ * REPEAT_WORDS); more: t(SOUND_WORDS) and t(POLITE_WORDS).
+ */
+export function isRepeat(heard: string, words = "", more: { sounds?: string; polite?: string } = {}): boolean {
+  const said = spoken(heard);
+  if (AGAIN.test(said)) return true;
+  const { phrases, rest } = readPhrases(
+    said,
+    phraseBook([
+      ["again", wordList(words)],
+      ["sound", [...EN.sounds, ...wordList(more.sounds)]],
+      ["polite", [...EN.polite, ...EN.particles, ...wordList(more.polite)]],
+    ]),
+  );
+  return !rest && phrases.some((p) => p.kind === "again");
+}
+
+/**
+ * "Bye", "stop listening", "that's all, thanks": ends the conversation. "That's it?" is a question,
+ * not a goodbye, and so is "that's it" heard with no punctuation (Chrome writes none): a goodbye
+ * that can be asked counts only with a closer ("thanks", "bye") or a full stop. words: more ways to
+ * say goodbye (see GOODBYE_WORDS); more: t(ENDING_WORDS), the ones that can be asked, and
+ * t(POLITE_WORDS) and t(SOUND_WORDS).
+ */
+export function isGoodbye(heard: string, words = "", more: { ending?: string; polite?: string; sounds?: string } = {}): boolean {
+  if (/[?？؟]\s*$/.test(heard)) return false;
+  const said = spoken(heard);
+  const ending = [...EN.ending, ...wordList(more.ending)];
+  const { phrases, rest } = readPhrases(
+    said,
+    phraseBook([
+      ["bye", [...EN.bye, ...wordList(words).filter((w) => !ending.includes(w))]],
+      ["ending", ending],
+      ["closer", [...EN.closers, ...wordList(more.polite)]],
+      ["ack", [...EN.acks, ...EN.particles, ...EN.sounds, ...wordList(more.sounds)]],
+    ]),
+  );
+  if (rest || !said) return false;
+  if (phrases.some((p) => p.kind === "bye")) return true;
+  return phrases.some((p) => p.kind === "ending") && (phrases.some((p) => p.kind === "closer") || /[.!。！]\s*$/.test(heard));
 }
 
 // Recording a turn (browsers that can't recognise speech themselves): the microphone's loudness is
