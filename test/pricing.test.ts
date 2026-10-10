@@ -392,8 +392,9 @@ test("referral bonuses are a share of the credits bought, the referrer's capped"
 });
 
 test("every pack and plan stays profitable with both referral bonuses on its first payment", () => {
-  // The first payment earns the bonuses: its credits plus both bonuses, all used. A plan's
-  // bonus is on one month's credits; a yearly payment pays for 12 months of credits.
+  // A plan's first payment earns the bonuses: its credits plus both bonuses, all used. The bonus
+  // is on one month's credits; a yearly payment pays for 12 months of credits. Packs don't earn
+  // them (REFERRAL_EARNS) but are checked too, so letting them earn again stays safe.
   const firstPayments = [
     ...CREDIT_PACKS.map((p) => ({ id: p.id, price: p.priceCents, credits: p.credits, months: 1, subscription: false })),
     ...PLANS.flatMap((p) =>

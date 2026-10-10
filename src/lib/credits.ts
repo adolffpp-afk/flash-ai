@@ -260,11 +260,12 @@ export const planPrice = (plan: Plan, interval: Interval) =>
   interval === "year" ? plan.yearlyPriceCents * 12 : plan.priceCents;
 
 /*
- * Referrals. When a referred friend makes their first real payment, the friend gets
- * REFERRAL_FRIEND_SHARE more credits on top of it and the referrer gets REFERRAL_REFERRER_SHARE
- * of the credits bought, up to REFERRAL_REFERRER_CAP. For a plan, "credits bought" is one
- * month's credits, even when the first payment is yearly. test/pricing.test.ts checks that every
- * pack and plan, with both bonuses, still makes a profit if every credit is used.
+ * Referrals. When a referred friend first pays for a plan that REFERRAL_EARNS counts, the friend
+ * gets REFERRAL_FRIEND_SHARE of one month of that plan's credits on top of it and the referrer
+ * gets REFERRAL_REFERRER_SHARE of it, up to REFERRAL_REFERRER_CAP, even when the payment is
+ * yearly. Credit packs never earn the bonuses, and renewals never earn them again: one reward
+ * per friend. test/pricing.test.ts checks that every pack and plan, with both bonuses, still
+ * makes a profit if every credit is used.
  *
  * The friend's bonus is part of their own purchase and is taken back with it on a refund. The
  * referrer's bonus can't be taken back once spent, so it stays pending for
@@ -275,6 +276,27 @@ export const REFERRAL_PENDING_DAYS = 30;
 export const REFERRAL_FRIEND_SHARE = 0.2;
 export const REFERRAL_REFERRER_SHARE = 0.2;
 export const REFERRAL_REFERRER_CAP = 2000;
+
+/**
+ * Which payments earn the referral bonuses: a friend's first real payment of one of these plans
+ * (ids from PLANS), billed at one of these intervals. Default: every paid plan, monthly or
+ * yearly. To count only some, list them, e.g. Power or Max: plans: ["power", "max"]; Max only:
+ * plans: ["max"]; yearly only: intervals: ["year"]. The rule shown on the Invite friends panel
+ * (InviteFriends.tsx) says "any plan, monthly or yearly", so change it with this.
+ */
+export const REFERRAL_EARNS: { plans: readonly string[]; intervals: readonly Interval[] } = {
+  plans: PLANS.map((p) => p.id),
+  intervals: ["month", "year"],
+};
+
+/**
+ * Whether a purchase earns the referral bonuses, by its purchases.pack value: plans are stored as
+ * "plan:<planId>:<interval>" (subscriptions.ts recordPayment), credit packs by the pack's id.
+ */
+export function earnsReferral(pack: string, rule = REFERRAL_EARNS): boolean {
+  const [kind, planId, interval] = pack.split(":");
+  return kind === "plan" && rule.plans.includes(planId) && rule.intervals.some((i) => i === interval);
+}
 
 export function referralBonus(credits: number) {
   return {

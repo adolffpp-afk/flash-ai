@@ -26,7 +26,7 @@ export function InviteFriends({ referral }: { referral: Me["referral"] }) {
     <div className="rounded-xl border border-zinc-800 p-4">
       <p className="text-sm text-zinc-300">
         {t(
-          "When a friend signs up with your link and makes their first purchase, they get {friend} extra credits right away. You get {share} of the credits they bought (up to {cap}), ready to use {days} days after their payment unless it's refunded.",
+          "When a friend signs up with your link and subscribes to a plan (any plan, monthly or yearly), they get {friend} extra on their plan's first month of credits right away. You get {share} of one month of their plan's credits (up to {cap}), ready to use {days} days after their payment unless it's refunded. Credit packs don't count.",
           {
             friend: pct(referral.friendShare),
             share: pct(referral.referrerShare),
