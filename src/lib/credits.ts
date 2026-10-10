@@ -42,7 +42,7 @@ export function claudePrice(model: string, promptTokens = 0): Price {
   const price = CLAUDE_PRICES[model];
   return price.long && promptTokens > price.long.over ? price.long : price;
 }
-const WEB_SEARCH_CENTS = 1;
+export const WEB_SEARCH_CENTS = 1;
 
 /*
  * A token is never shorter than a byte, and one character of a JavaScript string is at most three
@@ -88,10 +88,11 @@ function tokenCents(model: string, used: ClaudeAttempt): number {
  * What one Claude call cost Flash, in cents: every attempt at its own model's price, plus web
  * searches. model is the model that answered; requested is the one asked for, which prices an
  * attempt that doesn't name its model when it is the dearer of the two. Unknown models are priced
- * at the dearest rates.
+ * at the dearest rates. searched is the searches that returned results in the reply, which counts
+ * a declined attempt's too (the usage only counts the attempt that answered).
  */
-export function claudeCostCents(model: string, usage: ClaudeUsage, requested = model): number {
-  const searches = (usage.server_tool_use?.web_search_requests ?? 0) * WEB_SEARCH_CENTS;
+export function claudeCostCents(model: string, usage: ClaudeUsage, requested = model, searched = 0): number {
+  const searches = Math.max(usage.server_tool_use?.web_search_requests ?? 0, searched) * WEB_SEARCH_CENTS;
   const answered = tokenCents(model, usage);
   const attempts = usage.iterations ?? [];
   if (!attempts.length) return answered + searches;
@@ -118,12 +119,25 @@ export const FALLBACKS: Record<string, string> = {
 /** The model a model falls back to when it declines, or undefined when it has none. */
 export const fallbackModel = (model: string): string | undefined => (Object.hasOwn(FALLBACKS, model) ? FALLBACKS[model] : undefined);
 
+/*
+ * Helper allowances. Before a priced job (a picture, video, track or speech) Flash may ask Haiku about
+ * the request: the router or the picture check (never both: the router only reads messages without a
+ * file, the check only messages with a picture), and for a new picture, video or track the prompt
+ * writer too. A job's price includes the most these can cost, so the price listed is the price held
+ * and charged, whether or not they ran, and never less than they cost. test/helper-costs.test.ts
+ * checks that each helper's most stays within its allowance.
+ */
+export const CHECK_ALLOWANCE_CENTS = 0.06;
+export const WRITER_ALLOWANCE_CENTS = 0.12;
+
 // ElevenLabs voice and transcription, in cents. Both are priced at the dearer of the two ways Flash
 // reaches them: fal.ai's Turbo v2.5 voice ($0.05 per 1,000 characters, ElevenLabs direct is about
 // $0.022) and fal.ai's Scribe v2 ($0.008 a minute, ElevenLabs direct is $0.40 an hour).
 export const voiceCostCents = (characters: number) => (characters / 1000) * 5;
 // Voice reads at most this many characters, and is priced on the same text.
 export const MAX_SPEECH_CHARS = 10000;
+/** Credits for reading this many characters aloud: the voice, and the router that may have picked it. */
+export const voiceCredits = (characters: number) => creditsFor(voiceCostCents(characters) + CHECK_ALLOWANCE_CENTS);
 
 /*
  * Transcription is billed per minute of audio, which Flash can't measure before sending the
@@ -337,29 +351,32 @@ export function tokensWithin(engine: Engine, model: string, inputTokens: number,
  * cost more to read, so the hold grows with the input on top of the engine's reply allowance.
  * scale grows that allowance for a level whose model costs more than the engine's usual one, so
  * a Summit reply has room for as many words as a Vision or Ascend one. spentCents is what helper
- * calls for this request (the router) already cost, which the hold pays for too.
+ * calls for this request (the router) already cost, which the hold pays for too. byCredits says
+ * the user's balance, not the engine's allowance, set how long the reply may be.
  *
  * A model with a refusal fallback gets it only when the user has the credits to hold for both
- * attempts; its allowance grows by what the fallback adds per token, so its replies have as much
- * room as without one. Otherwise the request runs without a fallback.
+ * attempts at the full length the reply would have without one, so a fallback never makes a reply
+ * shorter, and more credits never give a shorter reply. Otherwise the request runs without one.
  */
 export function planHold(engine: Engine, model: string, inputTokens: number, available: number, scale = 1, spentCents = 0) {
-  const plan = (fallback: boolean) => {
-    const cost = callCost(engine, model, inputTokens, fallback);
+  const alone = (() => {
+    const cost = callCost(engine, model, inputTokens, false);
     const fixedCents = cost.inputCents + spentCents;
     const minOutputCents = ((MIN_OUTPUT_TOKENS[engine] ?? 1500) * cost.outputPrice) / 1e6;
     const needed = Math.ceil((fixedCents + minOutputCents) * MARKUP * SAFETY) + 1;
-    const allowance = (CREDIT_LIMITS[engine] ?? 30) * Math.max(1, scale) * (cost.outputPrice / claudePrice(model, inputTokens).output);
-    const limit = Math.ceil(fixedCents * MARKUP * SAFETY) + Math.ceil(allowance);
+    const limit = Math.ceil(fixedCents * MARKUP * SAFETY) + Math.ceil((CREDIT_LIMITS[engine] ?? 30) * Math.max(1, scale));
     const held = Math.max(needed, Math.min(limit, available));
     // What the reply itself may spend, after the helpers.
     const capCents = held / MARKUP / SAFETY - spentCents;
-    return { needed, held, maxTokens: tokensWithin(engine, model, inputTokens, capCents, fallback), capCents, fallback: cost.fallback };
-  };
-  const alone = plan(false);
+    const maxTokens = tokensWithin(engine, model, inputTokens, capCents, false);
+    return { needed, held, maxTokens, capCents, fallback: false, byCredits: held < limit && maxTokens < MAX_OUTPUT_TOKENS };
+  })();
   if (!fallbackModel(model)) return alone;
-  const both = plan(true);
-  return available >= both.needed ? both : alone;
+  // Both attempts, each writing as much as the reply alone may.
+  const both = callCost(engine, model, inputTokens, true);
+  const held = Math.ceil((both.inputCents + spentCents + (alone.maxTokens * both.outputPrice) / 1e6) * MARKUP * SAFETY) + 1;
+  if (alone.byCredits || available < held) return alone;
+  return { ...alone, held, capCents: held / MARKUP / SAFETY - spentCents, fallback: true };
 }
 
 /*
@@ -388,14 +405,15 @@ export function companionHold(model: string, inputTokens: number, available: num
 
 /*
  * What a request is finally charged, never more than was held. A finished request pays its
- * provider cost. A stopped Claude reply has no usage report, so it pays for reading the input
- * (Claude bills it in full) plus an estimate of what was written, and at least a typical reply.
- * A failed request pays only for provider work that really ran, so Flash never pays for it.
+ * provider cost. A stopped Claude reply has no usage report, so it pays for what the call in
+ * progress had cost so far (estimated from its stream, see Running in engines/claude.ts), and at
+ * least a typical reply. A failed request pays only for provider work that really ran, so Flash
+ * never pays for it.
  *
- * A priced job (a picture, video, track, speech or transcript) pays its price plus what its Claude
- * helpers cost (the router, the prompt writer), within the hold. Stopped or closed, it pays for the
- * provider jobs already sent, which the provider bills whether or not anyone waits for them, and the
- * helpers that ran: nothing at all when no provider was called.
+ * A priced job (a picture, video, track, speech or transcript) pays its listed price, which includes
+ * its Claude helpers (see CHECK_ALLOWANCE_CENTS). Stopped or closed, it pays for the provider jobs
+ * already sent, which the provider bills whether or not anyone waits for them, and the helpers that
+ * ran: nothing at all when no provider was called.
  */
 export function finalCredits(r: {
   held: number;
@@ -405,36 +423,41 @@ export function finalCredits(r: {
   metered: boolean;
   // What metered provider calls cost Flash, in cents.
   costCents: number;
-  // What reading the input once costs (readCostCents), for a reply that never reported usage.
-  inputCents: number;
-  // Characters of reply already sent.
-  written: number;
-  typical: number;
-  // The model's output price in cents per million tokens; Opus's by default.
+  // What the Claude call in progress had cost when the reply stopped or failed, from its stream:
+  // 0 when Claude never started it, since Claude bills nothing then.
+  pendingCents?: number;
+  // Without pendingCents (the companion): what reading the input once costs (readCostCents), and the
+  // characters of reply already sent at the model's output price (Opus's by default).
+  inputCents?: number;
+  written?: number;
   outputPrice?: number;
-  // A priced job, all in cents: its price, what Claude helpers cost for it, the part of that the
-  // price already pays for (the writing of a movie's scenes or a pack's posts), and the provider
-  // jobs already sent. Without it, a finished job that isn't metered pays everything held.
-  priced?: { priceCents: number; helperCents: number; includedCents: number; startedCents: number };
+  typical: number;
+  // A priced job: the credits it is priced at as it was made (its listed price, or less for a movie
+  // filmed with fewer scenes), and in cents what Claude helpers cost for it and the provider jobs
+  // already sent. Without it, a finished job that isn't metered pays everything held.
+  priced?: { credits: number; helperCents: number; startedCents: number };
 }): number {
   if (r.held <= 0) return 0;
-  // About 3 characters per token, doubled for thinking, at the model's output price.
-  const writtenCents = (((r.written / 3) * 2 * (r.outputPrice ?? 2000)) / 1e6);
+  const written = r.written ?? 0;
+  // Without an estimate from the stream: about 3 characters per token, doubled for thinking.
+  const writtenCents = ((written / 3) * 2 * (r.outputPrice ?? 2000)) / 1e6;
   if (!r.ok) {
-    // A Claude call that already sent text was billed for its input and output too.
-    const incurred = r.costCents + (r.metered && r.written > 0 ? r.inputCents + writtenCents : 0);
+    // A Claude call that had started was billed for what it read and wrote before it failed.
+    const pending = r.pendingCents ?? (written > 0 ? (r.inputCents ?? 0) + writtenCents : 0);
+    const incurred = r.costCents + (r.metered ? pending : 0);
     return incurred > 0 ? Math.min(r.held, creditsFor(incurred)) : 0;
   }
   if (!r.metered) {
     if (!r.priced) return r.held;
-    const { priceCents, helperCents, includedCents, startedCents } = r.priced;
-    if (!r.stopped) return Math.min(r.held, creditsFor(Math.max(priceCents + helperCents - includedCents, r.costCents)));
+    const { credits, helperCents, startedCents } = r.priced;
+    if (!r.stopped) return Math.min(r.held, credits);
     // Jobs are metered when they finish, so one still running counts from when it was sent.
     const incurred = helperCents + Math.max(startedCents, r.costCents - helperCents);
     return incurred > 0 ? Math.min(r.held, creditsFor(incurred)) : 0;
   }
   if (r.stopped) {
-    return Math.min(r.held, Math.max(r.typical, creditsFor(r.costCents + r.inputCents + writtenCents)));
+    const pending = r.pendingCents ?? (r.inputCents ?? 0) + writtenCents;
+    return Math.min(r.held, Math.max(r.typical, creditsFor(r.costCents + pending)));
   }
   return Math.min(r.held, creditsFor(r.costCents));
 }

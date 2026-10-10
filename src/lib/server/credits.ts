@@ -94,7 +94,19 @@ export async function charge(userId: string, amount: number, reason: string): Pr
 /** Lowers a held charge to what the request really used (never raises it). */
 export async function settle(chargeId: number, used: number): Promise<void> {
   if (!chargeId) return;
-  await run("UPDATE credit_ledger SET amount = MAX(amount, ?) WHERE id = ?", [-Math.max(0, used), chargeId]);
+  await run("UPDATE credit_ledger SET amount = MAX(amount, ?), settled_at = ? WHERE id = ?", [-Math.max(0, used), now(), chargeId]);
+}
+
+/**
+ * What a request the user made was finally charged, in credits, or null while it is still held
+ * (or the charge isn't theirs). A team member's charge on the shared pool is theirs too.
+ */
+export async function settledCharge(userId: string, chargeId: number): Promise<number | null> {
+  const row = await one<{ amount: number; settled_at: number }>(
+    "SELECT amount, settled_at FROM credit_ledger WHERE id = ? AND (user_id = ? OR actor = ?) AND amount <= 0",
+    [chargeId, userId, userId],
+  );
+  return row && Number(row.settled_at) ? -Number(row.amount) : null;
 }
 
 /** Logs one request for the owner dashboard. */

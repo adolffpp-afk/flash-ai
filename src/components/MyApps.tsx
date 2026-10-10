@@ -8,7 +8,8 @@ import { tNow, useT, type T } from "@/lib/use-t";
 
 type Site = { slug: string; title: string; updated_at: number; messages: number; unread: number; views: number; members: number };
 type Member = { id: string; email: string; name: string; createdAt: number };
-type Ai = { enabled: boolean; dailyCredits: number; usedToday: number; askedToday: number };
+// answers: about how many answers the daily budget pays for.
+type Ai = { enabled: boolean; dailyCredits: number; usedToday: number; askedToday: number; answers: number };
 type Upload = { id: string; name: string; mime: string; size: number; createdAt: number; url: string };
 type Uploads = { files: Upload[]; use: { files: number; bytes: number; maxFiles: number; maxBytes: number }; enabled: boolean };
 type Version = { id: string; title: string; createdAt: number; size: number };
@@ -546,11 +547,15 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
                 <label className="block rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 text-sm">
                   <span className="block text-zinc-100">{t("Credits it may use in a day")}</span>
                   <span className="mt-1 block text-xs text-zinc-500">
-                    {t("About {count} answers a day. It stops until tomorrow when it reaches this.", {
-                      count: Math.max(1, Math.floor(ai.dailyCredits / 2)),
-                    })}
+                    {ai.answers === 1
+                      ? t("About 1 answer a day. It stops until tomorrow when it reaches this.")
+                      : t("About {count} answers a day. It stops until tomorrow when it reaches this.", {
+                          count: ai.answers.toLocaleString(t.locale),
+                        })}
                   </span>
                   <input
+                    // Shows the limit as saved, which may be rounded up to the least that answers anything.
+                    key={ai.dailyCredits}
                     type="number"
                     min={0}
                     max={5000}

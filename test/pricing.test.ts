@@ -193,19 +193,49 @@ test("a Claude reply can never cost more than the credits held for it, refusal f
   }
 });
 
-test("a refusal fallback runs only when the credits held pay for both attempts", () => {
+test("a refusal fallback runs only when the credits pay for both attempts at the reply's full length", () => {
   const both = planHold("text", "claude-sonnet-5-5", 1000, 1e6);
   assert.equal(both.fallback, true);
-  // Too few credits for both: the reply runs without a fallback, at the lower price it needs.
-  const alone = planHold("text", "claude-sonnet-5-5", 1000, both.needed - 1);
+  // Too few credits for both: the reply runs without a fallback, as long as the credits allow.
+  const alone = planHold("text", "claude-sonnet-5-5", 1000, both.held - 1);
   assert.equal(alone.fallback, false);
-  assert.ok(alone.needed < both.needed);
+  assert.ok(alone.held < both.held);
   assert.ok(worstReplyCents("text", "claude-sonnet-5-5", 1000, alone.maxTokens, false) * MARKUP <= alone.held);
-  // The fallback doesn't shorten replies: the allowance grows by what it adds.
-  assert.ok(both.maxTokens >= alone.maxTokens);
+  // The fallback never shortens a reply: it only runs once the reply alone has all the room it may have.
+  assert.equal(both.maxTokens, alone.maxTokens);
+  assert.equal(both.needed, alone.needed, "and it never makes a request harder to start");
   // Opus 5.5 and Haiku never get one.
   assert.equal(planHold("text", "claude-opus-5-5", 1000, 1e6).fallback, false);
   assert.equal(planHold("text", "claude-haiku-5-5", 1000, 1e6).fallback, false);
+});
+
+test("more credits never give a shorter reply", () => {
+  for (const engine of ["text", "docs", "search", "code", "app"] as Engine[]) {
+    for (const model of ["claude-sonnet-5-5", "claude-fable-5-1", "claude-opus-5-5"]) {
+      for (const inputTokens of [500, 4000, 20000, 100000]) {
+        let last = 0;
+        for (let available = 0; available <= 1500; available++) {
+          const hold = planHold(engine, model, inputTokens, available);
+          if (available < hold.needed) continue;
+          assert.ok(hold.maxTokens >= last, `${engine} ${model} ${inputTokens}: ${hold.maxTokens} at ${available} credits, ${last} below`);
+          last = hold.maxTokens;
+        }
+      }
+    }
+  }
+  // The cases the review found: research on Ascend at 200 credits, text at 37.
+  const research = (available: number) => planHold("search", "claude-sonnet-5-5", 3200, available);
+  assert.equal(research(200).maxTokens, research(1e6).maxTokens);
+  assert.equal(research(200).fallback, false);
+  assert.ok(planHold("text", "claude-sonnet-5-5", 20000, 37).maxTokens >= planHold("text", "claude-sonnet-5-5", 20000, 30).maxTokens);
+});
+
+test("a reply cut short blames the credits only when they set its length", () => {
+  // A user with few credits: the hold is all they have, below the engine's own limit.
+  assert.equal(planHold("text", "claude-sonnet-5-5", 1000, 10).byCredits, true);
+  // Enough credits: the engine's limit set the length, not the credits.
+  assert.equal(planHold("text", "claude-sonnet-5-5", 1000, 1e6).byCredits, false);
+  assert.equal(planHold("text", "claude-opus-5-5", 1000, 1e6).byCredits, false);
 });
 
 test("long conversations hold more credits", () => {
@@ -215,33 +245,45 @@ test("long conversations hold more credits", () => {
   assert.ok(long.maxTokens >= 1500);
 });
 
-test("a stopped reply pays at least for reading its input, never more than was held", () => {
-  const inputCents = readCostCents("claude-opus-5-5", 100000); // 40¢ of input
-  const base = { held: 400, ok: true, stopped: true, metered: true, costCents: 0, inputCents, written: 0, typical: 4 };
-  assert.equal(finalCredits(base), creditsFor(inputCents));
-  assert.ok(finalCredits({ ...base, written: 3000 }) > creditsFor(inputCents), "plus what it wrote");
+test("a stopped reply pays for what its call cost so far, at least a typical reply, never more than was held", () => {
+  const base = { held: 400, ok: true, stopped: true, metered: true, costCents: 0, pendingCents: 40, typical: 4 };
+  assert.equal(finalCredits(base), creditsFor(40));
+  // Calls that finished before it (a search round, a builder's first try) are paid in full too.
+  assert.equal(finalCredits({ ...base, costCents: 25 }), creditsFor(65));
   assert.equal(finalCredits({ ...base, held: 50 }), 50, "capped at the hold");
-  assert.equal(finalCredits({ ...base, inputCents: 0 }), 4, "at least a typical reply");
+  assert.equal(finalCredits({ ...base, pendingCents: 0 }), 4, "at least a typical reply");
   // A finished reply pays its real cost.
   assert.equal(finalCredits({ ...base, stopped: false, costCents: 10 }), creditsFor(10));
+  // Without an estimate from the stream (the companion): reading the input, plus what it wrote.
+  const inputCents = readCostCents("claude-opus-5-5", 100000); // 40¢ of input
+  const old = { held: 400, ok: true, stopped: true, metered: true, costCents: 0, inputCents, written: 0, typical: 4 };
+  assert.equal(finalCredits(old), creditsFor(inputCents));
+  assert.ok(finalCredits({ ...old, written: 3000 }) > creditsFor(inputCents), "plus what it wrote");
 });
 
 test("a failed request pays only for provider work that ran", () => {
-  const base = { held: 100, ok: false, stopped: false, metered: false, costCents: 0, inputCents: 5, written: 0, typical: 4 };
+  const base = { held: 100, ok: false, stopped: false, metered: false, costCents: 0, pendingCents: 0, typical: 4 };
   assert.equal(finalCredits(base), 0, "nothing ran: full refund");
   assert.equal(finalCredits({ ...base, costCents: 0.2 }), creditsFor(0.2), "the prompt rewrite ran");
   assert.equal(finalCredits({ ...base, costCents: 1000 }), 100, "never more than held");
-  // A Claude reply that broke after writing was billed for its input and output.
-  assert.equal(finalCredits({ ...base, metered: true, written: 300 }), creditsFor(5 + (100 * 2 * 2000) / 1e6));
+  // A Claude call that Claude never started (overloaded, rate limited) costs nothing.
+  assert.equal(finalCredits({ ...base, metered: true }), 0);
+  // One that broke part way was billed for what it read and wrote, words or not.
+  assert.equal(finalCredits({ ...base, metered: true, pendingCents: 12 }), creditsFor(12));
+  assert.equal(finalCredits({ ...base, metered: true, pendingCents: 12, costCents: 3 }), creditsFor(15));
+  // Without an estimate from the stream (the companion): only once it wrote something.
+  const old = { held: 100, ok: false, stopped: false, metered: true, costCents: 0, inputCents: 5, written: 0, typical: 4 };
+  assert.equal(finalCredits(old), 0);
+  assert.equal(finalCredits({ ...old, written: 300 }), creditsFor(5 + (100 * 2 * 2000) / 1e6));
   // Media that finished is charged in full.
   assert.equal(finalCredits({ ...base, ok: true }), 100);
 });
 
-test("a priced job pays its price and its helpers; stopped, only for what was really sent", () => {
-  // A FLUX.2 Pro picture (3 cents) whose hold also covers the router and the prompt writer at their most.
-  const held = creditsFor(3 + 0.1 + 0.2);
-  const job = { held, ok: true, stopped: true, metered: false, costCents: 0, inputCents: 0, written: 0, typical: 4 };
-  const priced = { priceCents: 3, helperCents: 0, includedCents: 0, startedCents: 0 };
+test("a priced job pays its listed price; stopped, only for what was really sent", () => {
+  // A FLUX.2 Pro picture (3 cents) listed at 8 credits, which pays for its helpers too.
+  const held = 8;
+  const job = { held, ok: true, stopped: true, metered: false, costCents: 0, typical: 4 };
+  const priced = { credits: held, helperCents: 0, startedCents: 0 };
   // Stopped before anything was sent to a provider: nothing at all (it used to be the whole hold).
   assert.equal(finalCredits({ ...job, priced }), 0);
   // Stopped after the prompt writer ran, before the picture was sent: just the writer.
@@ -252,13 +294,13 @@ test("a priced job pays its price and its helpers; stopped, only for what was re
   assert.equal(finalCredits({ ...job, costCents: 3.01, priced: { ...priced, helperCents: 0.01, startedCents: 3 } }), creditsFor(3.01));
   // A billed job that cost more than its estimate pays what it cost, never more than was held.
   assert.equal(finalCredits({ ...job, costCents: 99, priced: { ...priced, startedCents: 3 } }), held);
-  // Finished: its price and the helpers, within the hold.
+  // Finished: its listed price, whatever its helpers cost.
   const done = { ...job, stopped: false };
-  assert.equal(finalCredits({ ...done, costCents: 3.05, priced: { ...priced, helperCents: 0.05, startedCents: 3 } }), creditsFor(3.05));
-  assert.ok(creditsFor(3.05) <= held);
-  // A movie's scene writer is part of its price, so it isn't added on top.
-  const movie = { priceCents: 562, helperCents: 0.3, includedCents: 0.3, startedCents: 560 };
-  assert.equal(finalCredits({ ...done, held: creditsFor(562), costCents: 560.3, priced: movie }), creditsFor(562));
+  assert.equal(finalCredits({ ...done, costCents: 3.05, priced: { ...priced, helperCents: 0.05, startedCents: 3 } }), held);
+  assert.equal(finalCredits({ ...done, costCents: 3, priced: { ...priced, startedCents: 3 } }), held);
+  // A movie filmed with fewer scenes than priced pays for what was filmed.
+  const movie = { credits: creditsFor(422), helperCents: 0.3, startedCents: 420 };
+  assert.equal(finalCredits({ ...done, held: creditsFor(562), costCents: 420.3, priced: movie }), creditsFor(422));
   // A job with no price given pays its hold, as before, and the free lane pays nothing.
   assert.equal(finalCredits({ ...done }), held);
   assert.equal(finalCredits({ ...done, held: 0, priced }), 0);

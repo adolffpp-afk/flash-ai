@@ -1,5 +1,18 @@
-import { NO_BUDGET, choiceParams, defaultChoice, getClient, meterClaude, noMeter, toMessages, usesFallback, type Budget, type ClaudeChoice, type Meter } from "./claude.ts";
-import { MAX_OUTPUT_TOKENS, tokensWithin } from "../credits.ts";
+import {
+  NO_BUDGET,
+  choiceParams,
+  defaultChoice,
+  getClient,
+  meterClaude,
+  noMeter,
+  toMessages,
+  usesFallback,
+  type Budget,
+  type ClaudeChoice,
+  type Meter,
+  type Watch,
+} from "./claude.ts";
+import { tokensWithin } from "../credits.ts";
 import { htmlTitle, splitBuild } from "../build-parse.ts";
 import { applyEdits, hasPieces, piecesIn, splitEdits, type Edit } from "../edit-blocks.ts";
 import type { ChatTurn, StreamEvent } from "../types.ts";
@@ -137,16 +150,16 @@ export async function* streamBuild(
   choice: ClaudeChoice = defaultChoice(kind),
   // The language Flash's own words (progress, notes, errors) are in.
   t: Translate = english,
+  { signal, running }: Watch = {},
 ): AsyncGenerator<StreamEvent> {
   const app = kind === "app";
   // The title when the file has none. It names the published site and its downloads, so it stays in English.
   const fallback = app ? "Your app" : "Your slides";
   const tooLong = (): StreamEvent => ({
     type: "error",
-    message:
-      budget.maxTokens < MAX_OUTPUT_TOKENS
-        ? t("Your credits ran out before this was finished. Add credits, or ask for a simpler first version.")
-        : t("The app was too large to finish in one go. Try asking for a simpler first version."),
+    message: budget.byCredits
+      ? t("Your credits ran out before this was finished. Add credits, or ask for a simpler first version.")
+      : t("The app was too large to finish in one go. Try asking for a simpler first version."),
   });
   const noFit = (): StreamEvent => ({ type: "error", message: t(NO_FIT) });
 
@@ -174,12 +187,16 @@ export async function* streamBuild(
             ? t("Designing your app…")
             : t("Designing your deck…"),
     };
-    const stream = getClient().beta.messages.stream({
-      ...choiceParams(choice),
-      max_tokens: maxTokens,
-      system: buildSystem(kind, preferences, canEdit),
-      messages,
-    });
+    running?.begin(choice.model, maxTokens);
+    const stream = getClient().beta.messages.stream(
+      {
+        ...choiceParams(choice),
+        max_tokens: maxTokens,
+        system: buildSystem(kind, preferences, canEdit),
+        messages,
+      },
+      { signal },
+    );
 
     let text = "";
     let sentBefore = 0;
@@ -187,6 +204,7 @@ export async function* streamBuild(
     let lastPieces = 0;
     let editAt = -1;
     for await (const event of stream) {
+      running?.see(event);
       if (event.type !== "content_block_delta" || event.delta.type !== "text_delta") continue;
       text += event.delta.text;
       const part = splitBuild(text);
@@ -220,7 +238,7 @@ export async function* streamBuild(
       }
     }
     const final = await stream.finalMessage();
-    spent += meterClaude(meter, final, choice.model);
+    spent += meterClaude(meter, final, choice.model, running);
     if (final.stop_reason === "refusal") {
       yield { type: "text", delta: "\n\n" + t("Flash couldn't build that.") };
       return;

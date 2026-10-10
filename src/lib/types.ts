@@ -66,6 +66,8 @@ export type StreamEvent =
       modelWhy?: string;
       // Answered by a free model because the user is out of credits.
       free?: boolean;
+      // The credits held for the request, so a reply the user stops can show what it really cost (see /api/me/charge).
+      charge?: number;
     }
   | { type: "text"; delta: string }
   // What a reply charged by length really cost, sent when it finishes.

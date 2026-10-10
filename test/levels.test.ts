@@ -40,8 +40,10 @@ process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${(server.address() as Addres
 
 const { default: Anthropic } = await import("@anthropic-ai/sdk");
 const { LEVELS, autoLevel, isLevel, levelName } = await import("../src/lib/levels.ts");
-const { claudeChoice, defaultChoice, streamText, withStepDown } = await import("../src/lib/engines/claude.ts");
-const { CLAUDE_PRICES, FALLBACKS, MARKUP, claudeCostCents, claudePrice, finalCredits, inputCostCents, planHold } = await import("../src/lib/credits.ts");
+const { Running, claudeChoice, defaultChoice, streamText, withStepDown } = await import("../src/lib/engines/claude.ts");
+const { CLAUDE_PRICES, FALLBACKS, MARKUP, claudeCostCents, claudePrice, finalCredits, inputCostCents, planHold, readCostCents } = await import(
+  "../src/lib/credits.ts"
+);
 
 type Event = { type: string; delta?: string; message?: string };
 const ask = (content: string) => [{ role: "user" as const, content }];
@@ -143,6 +145,20 @@ test("when Summit's model can't take a request, Vision answers it, and only Visi
     assert.deepEqual(costs.map((c) => c.model), ["claude-opus-5-5"]);
   }
   down.clear();
+});
+
+test("a reply stopped after Summit stepped down is charged at the prices of the model that answered", async () => {
+  down.set("claude-fable-5-1", 529);
+  const running = new Running();
+  const choice = claudeChoice("text", "ultra");
+  const run = (c: typeof choice) => streamText(ask("prove it"), "", "text", undefined, undefined, c, undefined, { running });
+  for await (const e of withStepDown(choice, run)) if ((e as Event).type === "text") break;
+  down.clear();
+  // Vision's model read the 1,000 tokens and wrote "Hello from claude-opus-5-5" before Stop, with no padding for tools.
+  const words = "Hello from claude-opus-5-5".length / 3;
+  const expected = readCostCents("claude-opus-5-5", 1000) + (words * claudePrice("claude-opus-5-5").output) / 1e6;
+  assert.ok(Math.abs(running.soFar - expected) < 1e-9, `${running.soFar} vs ${expected}`);
+  assert.ok(running.soFar < readCostCents("claude-fable-5-1", 1000), "not at Summit's price");
 });
 
 test("other errors, levels with nowhere to step down to, and errors after words were sent are not retried", async () => {

@@ -136,7 +136,7 @@ test("a failed job costs nothing, and too few credits makes nothing", async () =
   const calls = fakeFal();
   const poor = (await callTool("flash_create_video", { prompt: "a fox runs", seconds: 15 }, ctx("u2")))!;
   assert.equal(poor.isError, true);
-  assert.match((poor.content[0] as { text: string }).text, /needs 525 Flash credits/);
+  assert.match((poor.content[0] as { text: string }).text, /needs 526 Flash credits/);
   assert.equal(calls.length, 0, "nothing was sent to fal");
   assert.equal(await balance("u2"), before);
 });
@@ -250,13 +250,13 @@ test("animating a photo charges by length, and sound only when asked", async () 
   let before = await balance("u2");
   const quiet = (await callTool("flash_animate_photo", { image_base64: png.toString("base64"), prompt: "the waves roll in, soft music" }, ctx("u2")))!;
   assert.equal(quiet.isError, undefined);
-  assert.equal(before - (await balance("u2")), 140, "5 seconds without sound");
+  assert.equal(before - (await balance("u2")), 141, "5 seconds without sound, and the picture check its price includes");
   assert.equal(sent[0].generate_audio, false, "music in the motion text doesn't switch sound on");
   assert.equal(sent[0].duration, "5");
 
   before = await balance("u2");
   await callTool("flash_animate_photo", { image_base64: png.toString("base64"), seconds: 10, sound: true }, ctx("u2"));
-  assert.equal(before - (await balance("u2")), 420, "10 seconds with sound");
+  assert.equal(before - (await balance("u2")), 421, "10 seconds with sound");
   assert.equal(sent[1].generate_audio, true);
   assert.equal(sent[1].duration, "10");
 });

@@ -7,7 +7,7 @@ const all = new Set<Provider>(["openai", "elevenlabs", "fal"]);
 const pick = (engine: "image" | "video" | "music", msg: string, set = all, requested?: string) =>
   pickModel(engine, msg, set, requested)?.model.id ?? null;
 
-test("defaults stay on the original three providers, except the dearer GPT Image", () => {
+test("defaults stay on the original three providers, with the cheaper FLUX.2 Pro ahead of GPT Image", () => {
   assert.equal(pick("image", "Draw a logo for a coffee shop"), "flux-2-pro");
   assert.equal(pick("video", "A video of ocean waves at sunset"), "sora-2-pro");
   assert.equal(pick("music", "An upbeat jingle for a bakery"), "eleven-music");
@@ -22,7 +22,8 @@ test("requests that fit a fal model go to it", () => {
 
 test("fal models are skipped without a fal key", () => {
   const noFal = new Set<Provider>(["openai", "elevenlabs"]);
-  assert.equal(pick("image", "A realistic photo of a cat", noFal), null);
+  // GPT Image makes the pictures when it is the only image model set up.
+  assert.equal(pick("image", "A realistic photo of a cat", noFal), "gpt-image");
   assert.equal(pick("image", "A realistic photo of a cat", noFal, "gpt-image"), "gpt-image");
   assert.equal(pick("music", "A song with vocals", noFal), "eleven-music");
 });
@@ -34,11 +35,14 @@ test("fal alone covers image, video and music", () => {
   assert.equal(pick("music", "A calm beat", onlyFal), "minimax-music");
 });
 
-test("GPT Image is only used when picked, so an OpenAI key never makes it the default", () => {
+test("with fal.ai set up, GPT Image is only used when picked; with OpenAI alone, it makes every picture", () => {
   for (const msg of ["Draw a logo for a coffee shop", "A poster with the words OPEN LATE", "A cat"]) {
     assert.notEqual(pick("image", msg), "gpt-image");
-    assert.notEqual(pick("image", msg, new Set<Provider>(["openai"])), "gpt-image");
+    assert.notEqual(pick("image", msg, new Set<Provider>(["fal", "openai"])), "gpt-image");
+    assert.equal(pick("image", msg, new Set<Provider>(["openai"])), "gpt-image");
   }
+  // Still a post pack when one is asked for and fal.ai is there to paint it.
+  assert.equal(pick("image", "a social media pack for my bakery"), "post-pack");
 });
 
 test("no provider means demo mode", () => {
