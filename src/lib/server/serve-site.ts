@@ -1,7 +1,8 @@
 import { one } from "./db.ts";
 import { flashDbShim, injectHead, type Visitor } from "../flashdb-shim.ts";
 import { SITE_COOKIE, newPageToken, visitorForSession } from "./site-auth.ts";
-import { readCookie } from "./auth.ts";
+import { SESSION_COOKIE, readCookie, userForSession } from "./auth.ts";
+import { newOwnerKey } from "./site-owner.ts";
 import { hasOwnPreview, previewTags, sitePreview } from "../site-preview.ts";
 import { SITE_URL } from "../../app/site.ts";
 
@@ -16,7 +17,7 @@ const SANDBOX_CSP = "sandbox allow-scripts allow-forms allow-popups allow-modals
  * card for its address (pageUrl) unless the site has its own.
  */
 export async function serveSite(slug: string | null, pageUrl?: string, request?: Request): Promise<Response> {
-  const site = slug ? await one<{ html: string }>("SELECT html FROM sites WHERE slug = ?", [slug]) : null;
+  const site = slug ? await one<{ html: string; user_id: string }>("SELECT html, user_id FROM sites WHERE slug = ?", [slug]) : null;
   if (!slug || !site) {
     return new Response("<!doctype html><title>Not found</title><p style='font-family:sans-serif'>This app doesn't exist or was unpublished.</p>", {
       status: 404,
@@ -33,6 +34,19 @@ export async function serveSite(slug: string | null, pageUrl?: string, request?:
   const session = request ? readCookie(request, SITE_COOKIE) : null;
   const who = await visitorForSession(slug, session);
   if (who && session) visitor = { user: who, token: await newPageToken(who.id, slug, session) };
+  // The app's owner, signed in to Flash, gets a key to change its shared data from the app itself.
+  // Only Flash's own address gets their sign-in cookie, so this never happens on a custom domain.
+  let ownerKey: string | null = null;
+  const flashSession = request ? readCookie(request, SESSION_COOKIE) : null;
+  if (flashSession) {
+    try {
+      const user = await userForSession(flashSession);
+      if (user && user.id === site.user_id) ownerKey = await newOwnerKey(slug, user.id, flashSession);
+    } catch (err) {
+      // The page still works, just without owner mode.
+      console.error("[flash] owner key failed", err);
+    }
+  }
 
   const html = injectHead(site.html, card + flashDbShim(
     `/api/sites/${slug}/data`,
@@ -45,13 +59,14 @@ export async function serveSite(slug: string | null, pageUrl?: string, request?:
     visitor,
     `/api/sites/${slug}/ai`,
     `/api/sites/${slug}/files`,
+    ownerKey,
   ));
   return new Response(html, {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Content-Security-Policy": SANDBOX_CSP,
       "X-Content-Type-Options": "nosniff",
-      // Never kept by a shared cache: the page says who is signed in.
+      // Never kept by a shared cache: the page says who is signed in, and may hold the owner's key.
       "Cache-Control": "no-store, private",
     },
   });

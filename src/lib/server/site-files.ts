@@ -75,9 +75,10 @@ export async function saveUpload(
   return { status: 201, body: { url: `/api/sites/${slug}/files/${id}`, name, size: file.bytes.length } };
 }
 
+/** A file sent to an app, while the app is still published. */
 export async function readUpload(slug: string, id: string) {
   return one<{ mime: string; name: string; data: ArrayBuffer }>(
-    "SELECT mime, name, data FROM site_uploads WHERE site_slug = ? AND id = ?",
+    "SELECT u.mime, u.name, u.data FROM site_uploads u JOIN sites s ON s.slug = u.site_slug WHERE u.site_slug = ? AND u.id = ?",
     [slug, id],
   );
 }

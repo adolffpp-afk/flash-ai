@@ -3,8 +3,13 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/store";
 import { SELLER_COUNTRIES } from "@/lib/shop";
+import { DATA_RULES, DEFAULT_KEY, RULE_TEXT, type DataRule, type RuleSource } from "@/lib/data-rules";
 
-type Site = { slug: string; title: string; updated_at: number; messages: number; unread: number; views: number; members: number };
+type Site = { slug: string; title: string; updated_at: number; messages: number; unread: number; views: number; members: number; openData?: boolean };
+type DataCollection = { name: string; count: number; lastAdded: number; rule: DataRule; source: RuleSource; personal: string[] };
+type AppData = { collections: DataCollection[]; fallback: DataRule | null; guess: DataRule };
+type DataRecord = { id: string; createdAt: number; addedBy: string; data: Record<string, unknown> };
+type Records = { collection: string; list: DataRecord[] | null; cut: string };
 type Member = { id: string; email: string; name: string; createdAt: number };
 type Ai = { enabled: boolean; dailyCredits: number; usedToday: number; askedToday: number };
 type Upload = { id: string; name: string; mime: string; size: number; createdAt: number; url: string };
@@ -25,12 +30,22 @@ const dateLabel = (t: number) =>
 const dayLabel = (day: string) => new Date(`${day}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 const fieldText = (v: unknown) => (typeof v === "string" ? v : JSON.stringify(v));
 const sizeLabel = (bytes: number) => (bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
+const SOURCE_TEXT: Record<RuleSource, string> = {
+  you: "Set by you",
+  app: "Set by your app",
+  default: "Your default",
+  guess: "Flash's guess from your app's code",
+};
+const isOpen = (data: AppData) => data.collections.some((c) => c.rule === "open") || (data.fallback ?? data.guess) === "open";
 
 /** My websites and apps: every published app, its link, and the forms visitors sent to it. */
 export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (projectId: string) => void }) {
   const [sites, setSites] = useState<Site[] | null>(null);
   const [open, setOpen] = useState<Site | null>(null);
-  const [view, setView] = useState<"messages" | "domains" | "payments" | "visits" | "history" | "members" | "ai" | "files">("messages");
+  const [view, setView] = useState<"messages" | "domains" | "payments" | "visits" | "history" | "members" | "ai" | "files" | "data">("messages");
+  const [appData, setAppData] = useState<AppData | null>(null);
+  const [records, setRecords] = useState<Records | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const [members, setMembers] = useState<Member[] | null>(null);
   const [ai, setAi] = useState<Ai | null>(null);
   const [uploads, setUploads] = useState<Uploads | null>(null);
@@ -318,6 +333,86 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
     }
   }
 
+  async function showData(site: Site) {
+    setOpen(site);
+    setView("data");
+    setAppData(null);
+    setRecords(null);
+    setError("");
+    try {
+      setAppData(await api<AppData>(`/api/sites/${site.slug}/records`));
+    } catch {
+      setError("Flash couldn't load your app's data. Please try again.");
+    }
+  }
+
+  /** Who may change a collection ("*" for anything else). null goes back to the app's choice. */
+  async function chooseDataRule(collection: string, rule: DataRule | null) {
+    if (!open || !appData) return;
+    const before = appData;
+    if (collection === DEFAULT_KEY) setAppData({ ...appData, fallback: rule });
+    else if (rule) {
+      setAppData({ ...appData, collections: appData.collections.map((c) => (c.name === collection ? { ...c, rule, source: "you" } : c)) });
+    }
+    try {
+      const saved = await api<AppData>(`/api/sites/${open.slug}/records`, { method: "PATCH", json: { collection, rule } });
+      setAppData(saved);
+      setSites((all) => all?.map((s) => (s.slug === open.slug ? { ...s, openData: isOpen(saved) } : s)) ?? null);
+    } catch {
+      setAppData(before);
+      setError("Couldn't save that choice. Please try again.");
+    }
+  }
+
+  async function showRecords(collection: string) {
+    if (!open) return;
+    setRecords({ collection, list: null, cut: "" });
+    setDeleting(null);
+    setError("");
+    try {
+      const { records: list } = await api<{ records: DataRecord[] }>(`/api/sites/${open.slug}/records?collection=${encodeURIComponent(collection)}`);
+      setRecords({ collection, list, cut: "" });
+    } catch {
+      setError("Flash couldn't load your app's data. Please try again.");
+    }
+  }
+
+  async function deleteRecord(id: string) {
+    if (!open || !records) return;
+    const { collection } = records;
+    try {
+      await api(`/api/sites/${open.slug}/records?collection=${encodeURIComponent(collection)}&id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      setRecords((r) => r && { ...r, list: r.list?.filter((x) => x.id !== id) ?? null });
+      setAppData((d) => d && { ...d, collections: d.collections.map((c) => (c.name === collection ? { ...c, count: Math.max(0, c.count - 1) } : c)) });
+    } catch {
+      setError("Couldn't delete that record. Please try again.");
+    }
+    setDeleting(null);
+  }
+
+  /** The whole collection as a CSV file. A very large one is cut to the newest records that fit in 4 MB. */
+  async function downloadRecords() {
+    if (!open || !records) return;
+    setError("");
+    try {
+      const res = await fetch(`/api/sites/${open.slug}/records?collection=${encodeURIComponent(records.collection)}&format=csv`);
+      if (!res.ok) throw new Error();
+      const name = res.headers.get("content-disposition")?.match(/filename="([^"]+)"/)?.[1] ?? "data.csv";
+      const [included, total] = (res.headers.get("x-flash-truncated") ?? "").split("/").map(Number);
+      const url = URL.createObjectURL(await res.blob());
+      Object.assign(document.createElement("a"), { href: url, download: name }).click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setRecords((r) =>
+        r && {
+          ...r,
+          cut: total ? `Your download has the newest ${included.toLocaleString("en-US")} of ${total.toLocaleString("en-US")} records (the file limit is 4 MB).` : "",
+        },
+      );
+    } catch {
+      setError("Flash couldn't load your app's data. Please try again.");
+    }
+  }
+
   async function removeMember(member: Member) {
     if (!open) return;
     try {
@@ -367,7 +462,7 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
           )}
           <h2 className="min-w-0 flex-1 truncate text-lg font-medium tracking-tight">
             {open
-              ? `${{ domains: "Domain", payments: "Payments", messages: "Messages", visits: "Visitors", history: "History", members: "Members", ai: "AI", files: "Files" }[view]} · ${open.title}`
+              ? `${{ domains: "Domain", payments: "Payments", messages: "Messages", visits: "Visitors", history: "History", members: "Members", ai: "AI", files: "Files", data: "Data" }[view]} · ${open.title}`
               : "My websites and apps"}
           </h2>
           <button
@@ -382,7 +477,22 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
 
         <div className="flex-1 overflow-y-auto p-4 sm:p-5">
           {error && <p role="alert" className="mb-3 text-sm text-red-400">{error}</p>}
-          {open && view === "history" ? (
+          {open && view === "data" ? (
+            appData === null ? (
+              !error && <p className="text-sm text-zinc-500">Loading…</p>
+            ) : records ? (
+              <RecordsView
+                records={records}
+                deleting={deleting}
+                onBack={() => setRecords(null)}
+                onDownload={downloadRecords}
+                onAskDelete={setDeleting}
+                onDelete={deleteRecord}
+              />
+            ) : (
+              <DataView site={open} data={appData} onChoose={chooseDataRule} onShow={showRecords} />
+            )
+          ) : open && view === "history" ? (
             versions === null ? (
               !error && <p className="text-sm text-zinc-500">Loading…</p>
             ) : (
@@ -912,6 +1022,13 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
                       <button onClick={() => showMembers(s)} className="text-zinc-200 hover:text-white" title="People signed up to this app">
                         👤 Members{s.members ? ` (${s.members.toLocaleString("en-US")})` : ""}
                       </button>
+                      <button
+                        onClick={() => showData(s)}
+                        className="text-zinc-200 hover:text-white"
+                        title={s.openData ? "Anyone can change or delete some of this app's data" : "What this app keeps, and who may change it"}
+                      >
+                        🗄️ Data{s.openData && <span className="ml-1 text-gold-soft">⚠</span>}
+                      </button>
                       <button onClick={() => showDomains(s)} className="text-zinc-200 hover:text-white">
                         🔗 Domain
                       </button>
@@ -932,6 +1049,176 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** An app's shared data: each collection, who may change it, and the owner's default for anything else. */
+function DataView({
+  site,
+  data,
+  onChoose,
+  onShow,
+}: {
+  site: Site;
+  data: AppData;
+  onChoose: (collection: string, rule: DataRule | null) => void;
+  onShow: (collection: string) => void;
+}) {
+  const select = "mt-2 h-9 w-full max-w-xs rounded-lg border border-white/10 bg-zinc-900 px-2 text-sm text-zinc-200 outline-none focus:border-primary/70";
+  const other = data.fallback ?? data.guess;
+  const otherSource: RuleSource = data.fallback ? "you" : data.collections.some((c) => c.source === "app") ? "app" : "guess";
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-zinc-400">
+        What your app keeps in its database, and who may change it. Flash checks these rules on every request, so they hold even if
+        someone skips your app&apos;s buttons.
+      </p>
+      {data.collections.length === 0 ? (
+        <p className="py-6 text-center text-sm text-zinc-500">Your app hasn&apos;t saved anything yet.</p>
+      ) : (
+        <ul className="space-y-2">
+          {data.collections.map((c) => (
+            <li key={c.name} className="rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 text-sm">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="min-w-0 flex-1 truncate font-medium text-zinc-100">{c.name}</span>
+                <span className="text-xs text-zinc-500">
+                  {c.count.toLocaleString("en-US")} {c.count === 1 ? "record" : "records"}
+                  {c.lastAdded > 0 && ` · last added ${dateLabel(c.lastAdded)}`}
+                </span>
+                {c.count > 0 && (
+                  <button onClick={() => onShow(c.name)} className="text-xs text-primary-soft hover:underline">
+                    See records
+                  </button>
+                )}
+              </div>
+              <select
+                value={c.rule}
+                onChange={(e) => onChoose(c.name, e.target.value ? (e.target.value as DataRule) : null)}
+                aria-label={`Who may change ${c.name}`}
+                className={select}
+              >
+                {DATA_RULES.map((r) => (
+                  <option key={r} value={r}>
+                    {RULE_TEXT[r].label}
+                  </option>
+                ))}
+                {c.source === "you" && <option value="">Use your app&apos;s choice</option>}
+              </select>
+              <p className="mt-1 text-xs text-zinc-500">{RULE_TEXT[c.rule].help}</p>
+              <p className="mt-1 text-xs text-zinc-600">{SOURCE_TEXT[c.source]}</p>
+              {c.rule === "open" && <p className="mt-1 text-xs text-gold-soft">⚠ Anyone can change or delete this.</p>}
+              {c.personal.length > 0 && c.rule !== "private" && (
+                <p className="mt-1 text-xs text-gold-soft">
+                  ⚠ Looks like personal details ({c.personal.join(", ")}). Anyone can read them. Choose &lsquo;Only you can see it&rsquo;, or
+                  ask Flash to send these privately instead.
+                </p>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 text-sm">
+        <span className="block text-zinc-100">Default for anything else</span>
+        <select
+          value={other}
+          onChange={(e) => onChoose(DEFAULT_KEY, e.target.value ? (e.target.value as DataRule) : null)}
+          aria-label="Who may change anything else"
+          className={select}
+        >
+          {DATA_RULES.map((r) => (
+            <option key={r} value={r}>
+              {RULE_TEXT[r].label}
+            </option>
+          ))}
+          {data.fallback && <option value="">Use your app&apos;s choice</option>}
+        </select>
+        <p className="mt-1 text-xs text-zinc-500">{RULE_TEXT[other].help}</p>
+        <p className="mt-1 text-xs text-zinc-600">{SOURCE_TEXT[otherSource]}</p>
+        {other === "open" && <p className="mt-1 text-xs text-gold-soft">⚠ Anyone can change or delete this.</p>}
+      </div>
+      <p className="text-xs text-zinc-500">
+        To change these records yourself,{" "}
+        <a href={`/p/${site.slug}`} target="_blank" rel="noreferrer" className="text-primary-soft hover:underline">
+          open your app from here
+        </a>{" "}
+        while signed in to Flash. To see it as a visitor, open it in a private window.
+      </p>
+    </div>
+  );
+}
+
+/** One collection's newest 100 records, with Delete, and the whole collection as a CSV file. */
+function RecordsView({
+  records,
+  deleting,
+  onBack,
+  onDownload,
+  onAskDelete,
+  onDelete,
+}: {
+  records: Records;
+  deleting: string | null;
+  onBack: () => void;
+  onDownload: () => void;
+  onAskDelete: (id: string | null) => void;
+  onDelete: (id: string) => void;
+}) {
+  const list = records.list;
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-3 text-xs">
+        <button onClick={onBack} className="text-zinc-400 hover:text-zinc-100">
+          ← All data
+        </button>
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-100">{records.collection}</span>
+        {list && list.length > 0 && (
+          <button onClick={onDownload} className="text-primary-soft hover:underline">
+            ⬇ Download all (CSV)
+          </button>
+        )}
+      </div>
+      {records.cut && <p className="text-xs text-gold-soft">{records.cut}</p>}
+      {list === null ? (
+        <p className="text-sm text-zinc-500">Loading…</p>
+      ) : list.length === 0 ? (
+        <p className="py-6 text-center text-sm text-zinc-500">Your app hasn&apos;t saved anything yet.</p>
+      ) : (
+        <ul className="space-y-2">
+          {list.length >= 100 && <li className="text-xs text-zinc-500">The newest 100. Download all to see every record.</li>}
+          {list.map((r) => (
+            <li key={r.id} className="rounded-xl border border-white/8 bg-white/[0.02] p-4">
+              <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+                <span>{dateLabel(r.createdAt)}</span>
+                {r.addedBy && <span className="truncate">by {r.addedBy}</span>}
+                {deleting === r.id ? (
+                  <span className="ml-auto flex items-center gap-3">
+                    <span className="text-zinc-400">Delete this record? This can&apos;t be undone.</span>
+                    <button onClick={() => onDelete(r.id)} className="text-red-400 hover:text-red-300">
+                      Delete
+                    </button>
+                    <button onClick={() => onAskDelete(null)} className="text-zinc-400 hover:text-zinc-100">
+                      Keep
+                    </button>
+                  </span>
+                ) : (
+                  <button onClick={() => onAskDelete(r.id)} className="ml-auto hover:text-red-400" aria-label="Delete record">
+                    🗑
+                  </button>
+                )}
+              </div>
+              <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+                {Object.entries(r.data).map(([k, v]) => (
+                  <div key={k} className="contents">
+                    <dt className="text-zinc-500">{k}</dt>
+                    <dd className="min-w-0 whitespace-pre-wrap break-words text-zinc-200">{fieldText(v)}</dd>
+                  </div>
+                ))}
+              </dl>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

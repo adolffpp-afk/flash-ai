@@ -1,8 +1,10 @@
-import { all, one, run, now } from "./db.ts";
+import { all, db, one, run, now } from "./db.ts";
 import { randomId } from "./ids.ts";
 import { isVerified } from "./account.ts";
 import { overLimit } from "./limits.ts";
+import { dataSummary, rulesText } from "./site-data.ts";
 import type { User } from "./auth.ts";
+import type { DataSummary } from "../data-rules.ts";
 
 export const MAX_HTML = 2 * 1024 * 1024;
 // Published apps are public pages on Flash's domain, so publishing is limited to slow abuse.
@@ -16,6 +18,63 @@ function makeSlug(title: string): string {
   return `${base}-${randomId(4).toLowerCase().replace(/[^a-z0-9]/g, "x")}`;
 }
 
+// Everything kept for a published site, by its slug. Unpublishing deletes all of it: the database
+// doesn't enforce its ON DELETE CASCADE links (Turso runs with foreign keys off), so nothing
+// goes on its own.
+const SITE_TABLES = [
+  "site_records",
+  "site_users",
+  "site_sessions",
+  "site_page_tokens",
+  "site_ai",
+  "site_ai_usage",
+  "site_uploads",
+  "site_messages",
+  "site_domains",
+  "site_versions",
+  "site_visits",
+  "site_visitors",
+  "site_products",
+  "site_orders",
+  "site_owner_keys",
+  "site_collection_rules",
+];
+// The ones a new site must never take over from an old site of the same name (records, members,
+// files, messages, orders, history, settings), each looked up by an index on site_slug.
+const INHERITABLE = [
+  "site_records",
+  "site_users",
+  "site_uploads",
+  "site_messages",
+  "site_orders",
+  "site_products",
+  "site_domains",
+  "site_versions",
+  "site_ai",
+  "site_collection_rules",
+];
+
+/** Whether a slug is in use, or still has something left from a site unpublished before everything went with it. */
+export async function slugTaken(slug: string): Promise<boolean> {
+  const sql = ["SELECT 1 FROM sites WHERE slug = ?", ...INHERITABLE.map((t) => `SELECT 1 FROM ${t} WHERE site_slug = ?`)].join(" UNION ALL ");
+  return Boolean(await one(`${sql} LIMIT 1`, Array(INHERITABLE.length + 1).fill(slug)));
+}
+
+/** Takes a site offline with everything it kept, in one go. Nothing happens unless it's the user's. */
+export async function unpublishSite(userId: string, slug: string): Promise<boolean> {
+  const owned = "EXISTS (SELECT 1 FROM sites WHERE slug = ? AND user_id = ?)";
+  const results = await (
+    await db()
+  ).batch(
+    [
+      ...SITE_TABLES.map((t) => ({ sql: `DELETE FROM ${t} WHERE site_slug = ? AND ${owned}`, args: [slug, slug, userId] })),
+      { sql: "DELETE FROM sites WHERE slug = ? AND user_id = ?", args: [slug, userId] },
+    ],
+    "write",
+  );
+  return results.at(-1)!.rowsAffected > 0;
+}
+
 export async function listSites(userId: string) {
   return all<{ slug: string; title: string; updated_at: number }>(
     "SELECT slug, title, updated_at FROM sites WHERE user_id = ? ORDER BY updated_at DESC",
@@ -23,7 +82,13 @@ export async function listSites(userId: string) {
   );
 }
 
-export type PublishResult = { slug: string; url: string } | { error: string; status: number; code?: string };
+export type PublishResult = { slug: string; url: string; data?: DataSummary } | { error: string; status: number; code?: string };
+
+/** The published site, with who may change its data (see data-rules.ts). The publish has happened even if that can't be read. */
+async function published(slug: string): Promise<PublishResult> {
+  const data = await dataSummary(slug).catch(() => null);
+  return { slug, url: `/p/${slug}`, ...(data && { data }) };
+}
 
 /** Publishes an app, or updates an already published one when its slug is passed. */
 export async function publishSite(user: User, input: { html?: unknown; title?: unknown; slug?: unknown }): Promise<PublishResult> {
@@ -37,14 +102,16 @@ export async function publishSite(user: User, input: { html?: unknown; title?: u
   if (slug) {
     if (await overLimit(`republish:${user.id}`, 60, HOUR)) return { error: "Too many updates. Try again in an hour.", status: 429 };
     await saveVersion(slug, user.id, html);
-    const r = await run("UPDATE sites SET html = ?, title = ?, updated_at = ? WHERE slug = ? AND user_id = ?", [
+    // The rules the page names are saved with it, so they change together.
+    const r = await run("UPDATE sites SET html = ?, title = ?, updated_at = ?, data_rules = ? WHERE slug = ? AND user_id = ?", [
       html,
       title,
       now(),
+      rulesText(html),
       slug,
       user.id,
     ]);
-    if (r.rowsAffected) return { slug, url: `/p/${slug}` };
+    if (r.rowsAffected) return published(slug);
   }
   const count = await one<{ n: number }>("SELECT COUNT(*) AS n FROM sites WHERE user_id = ?", [user.id]);
   if (Number(count?.n ?? 0) >= MAX_SITES_PER_USER) {
@@ -52,16 +119,17 @@ export async function publishSite(user: User, input: { html?: unknown; title?: u
   }
   if (await overLimit(`publish:${user.id}`, 10, HOUR)) return { error: "You've published a lot this hour. Try again later.", status: 429 };
   let fresh = makeSlug(title);
-  while (await one("SELECT 1 FROM sites WHERE slug = ?", [fresh])) fresh = makeSlug(title);
-  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)", [
+  while (await slugTaken(fresh)) fresh = makeSlug(title);
+  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at, data_rules) VALUES (?, ?, ?, ?, ?, ?, ?)", [
     fresh,
     user.id,
     title,
     html,
     now(),
     now(),
+    rulesText(html),
   ]);
-  return { slug: fresh, url: `/p/${fresh}` };
+  return published(fresh);
 }
 
 /** The owner's chat that built a site: the newest project with a reply published as it, if any. */
@@ -120,10 +188,11 @@ export async function restoreVersion(userId: string, slug: string, id: string): 
   const version = await one<{ title: string; html: string }>("SELECT title, html FROM site_versions WHERE site_slug = ? AND id = ?", [slug, id]);
   if (!version) return false;
   await saveVersion(slug, userId, version.html);
-  const r = await run("UPDATE sites SET html = ?, title = ?, updated_at = ? WHERE slug = ? AND user_id = ?", [
+  const r = await run("UPDATE sites SET html = ?, title = ?, updated_at = ?, data_rules = ? WHERE slug = ? AND user_id = ?", [
     version.html,
     version.title,
     now(),
+    rulesText(version.html),
     slug,
     userId,
   ]);

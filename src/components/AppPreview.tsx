@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { BuiltApp } from "@/lib/types";
 import { api } from "@/lib/store";
 import { flashDbShim, injectHead } from "@/lib/flashdb-shim";
+import { dataLine, type DataSummary } from "@/lib/data-rules";
 import { appSlug, projectZip } from "@/lib/app-project";
 import { PREVIEW_BRIDGE, fixRequest, friendlyError, isPreviewMessage, linesIn, type PickedElement, type PreviewError } from "@/lib/preview-bridge";
 
@@ -101,6 +102,8 @@ export function AppPreview({
   const [publishing, setPublishing] = useState(false);
   const [publishedHtml, setPublishedHtml] = useState("");
   const [publishError, setPublishError] = useState("");
+  // Who may change the published app's data, said once it's published.
+  const [dataNote, setDataNote] = useState("");
   const [copied, setCopied] = useState(false);
   const [menu, setMenu] = useState(false);
   const [picking, setPicking] = useState(false);
@@ -166,12 +169,13 @@ export function AppPreview({
     setPublishing(true);
     setPublishError("");
     try {
-      const res = await api<{ slug: string }>("/api/sites", {
+      const res = await api<{ slug: string; data?: DataSummary }>("/api/sites", {
         method: "POST",
         json: { html: app.html, title: app.title, slug: asNew ? undefined : target },
       });
       onPublished?.(res.slug);
       setPublishedHtml(app.html);
+      setDataNote(res.data ? dataLine(res.data) : "");
     } catch (err) {
       setPublishError(err instanceof Error ? err.message : "Couldn't publish.");
     } finally {
@@ -321,6 +325,7 @@ export function AppPreview({
               <button className={btn} onClick={copyLink}>
                 {copied ? "Copied" : "Copy link"}
               </button>
+              {dataNote && <span className="basis-full text-zinc-400">{dataNote}</span>}
             </>
           )}
         </div>

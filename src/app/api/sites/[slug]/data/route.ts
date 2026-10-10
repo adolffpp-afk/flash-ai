@@ -1,13 +1,16 @@
 import { clientIp, overLimit } from "@/lib/server/limits.ts";
 import { addRecord, listRecords, patchRecord, removeRecord } from "@/lib/server/site-data.ts";
+import { callerFor } from "@/lib/server/site-owner.ts";
 
 // The public data API behind window.flashDB in published apps. Apps run on an opaque origin,
 // so this answers any origin and never uses cookies. These records are shared by everyone using
-// the app; each person's own records are in ./mine.
+// the app; each person's own records are in ./mine. What each caller may do depends on the
+// collection's rule (see data-rules.ts). A request carries the key Flash put into the page, if any:
+// the owner's key, or the key of the person signed in to the app.
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, PATCH, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
 };
 const MINUTE = 60_000;
 // Shared records belong to the app, not to a person.
@@ -32,25 +35,28 @@ export async function GET(request: Request, ctx: RouteContext<"/api/sites/[slug]
   const q = new URL(request.url).searchParams;
   const blocked = await limited(request, slug);
   if (blocked) return blocked;
-  const { status, body } = await listRecords(slug, q.get("collection") ?? "", q.get("cursor") ?? "", SHARED);
+  const caller = await callerFor(slug, request.headers.get("authorization"));
+  const { status, body } = await listRecords(slug, q.get("collection") ?? "", q.get("cursor") ?? "", SHARED, caller);
   return json(body, status);
 }
 
 export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug]/data">) {
   const { slug } = await ctx.params;
-  const body = (await request.json().catch(() => ({}))) as { collection?: unknown; data?: unknown };
   const blocked = await limited(request, slug);
   if (blocked) return blocked;
-  const answer = await addRecord(slug, body.collection, body.data, SHARED);
+  const caller = await callerFor(slug, request.headers.get("authorization"));
+  const body = (await request.json().catch(() => ({}))) as { collection?: unknown; data?: unknown };
+  const answer = await addRecord(slug, body.collection, body.data, SHARED, caller);
   return json(answer.body, answer.status);
 }
 
 export async function PATCH(request: Request, ctx: RouteContext<"/api/sites/[slug]/data">) {
   const { slug } = await ctx.params;
-  const body = (await request.json().catch(() => ({}))) as { collection?: unknown; id?: unknown; data?: unknown };
   const blocked = await limited(request, slug);
   if (blocked) return blocked;
-  const answer = await patchRecord(slug, body.collection, body.id, body.data, SHARED);
+  const caller = await callerFor(slug, request.headers.get("authorization"));
+  const body = (await request.json().catch(() => ({}))) as { collection?: unknown; id?: unknown; data?: unknown };
+  const answer = await patchRecord(slug, body.collection, body.id, body.data, SHARED, caller);
   return json(answer.body, answer.status);
 }
 
@@ -59,6 +65,7 @@ export async function DELETE(request: Request, ctx: RouteContext<"/api/sites/[sl
   const q = new URL(request.url).searchParams;
   const blocked = await limited(request, slug);
   if (blocked) return blocked;
-  const answer = await removeRecord(slug, q.get("collection") ?? "", q.get("id") ?? "", SHARED);
+  const caller = await callerFor(slug, request.headers.get("authorization"));
+  const answer = await removeRecord(slug, q.get("collection") ?? "", q.get("id") ?? "", SHARED, caller);
   return json(answer.body, answer.status);
 }

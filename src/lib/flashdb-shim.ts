@@ -12,7 +12,9 @@ export const MEMORY_DB = `
   const clone = (x) => JSON.parse(JSON.stringify(x));
   window.flashDB = {
     async list(collection) { return clone(col(collection)); },
-    async add(collection, data) { const r = { ...clone(data), id: id(), createdAt: Date.now() }; col(collection).push(r); return clone(r); },
+    // Here the person trying the app is its owner, and added everything.
+    isOwner: true,
+    async add(collection, data) { const r = { ...clone(data), id: id(), createdAt: Date.now(), byYou: true }; col(collection).push(r); return clone(r); },
     async update(collection, rid, data) { const r = col(collection).find((x) => x.id === rid); if (!r) throw new Error("Record not found"); Object.assign(r, clone(data), { id: rid }); return clone(r); },
     async remove(collection, rid) { store[collection] = col(collection).filter((x) => x.id !== rid); },
     async send(form, data) { console.info("flashDB.send: nothing was really sent (this is a stand-in)", form, clone(data)); return true; },
@@ -54,6 +56,9 @@ export const MEMORY_DB = `
 /** The person signed in to a published app right now, and the key this page's requests carry. */
 export type Visitor = { user: { id: string; email: string; name: string }; token: string } | null;
 
+/** A value written into the page's script. "<" is escaped, so a name with </script> in it can't end the script. */
+const js = (value: unknown) => JSON.stringify(value).replace(/</g, "\\u003c");
+
 export function flashDbShim(
   endpoint: string | null,
   inbox: string | null = null,
@@ -64,17 +69,24 @@ export function flashDbShim(
   visitor: Visitor = null,
   ai: string | null = null,
   files: string | null = null,
+  // Set only on a page served to the app's owner while signed in to Flash (see site-owner.ts).
+  ownerKey: string | null = null,
 ): string {
   const remote = `
-  const base = ${JSON.stringify(endpoint)};
-  const inbox = ${JSON.stringify(inbox)};
-  const shop = ${JSON.stringify(shop)};
-  const authUrl = ${JSON.stringify(auth)};
-  const mineUrl = ${JSON.stringify(mine)};
-  const aiUrl = ${JSON.stringify(ai)};
-  const filesUrl = ${JSON.stringify(files)};
-  const me = ${JSON.stringify(visitor?.user ?? null)};
-  const key = ${JSON.stringify(visitor?.token ?? "")};
+  const base = ${js(endpoint)};
+  const inbox = ${js(inbox)};
+  const shop = ${js(shop)};
+  const authUrl = ${js(auth)};
+  const mineUrl = ${js(mine)};
+  const aiUrl = ${js(ai)};
+  const filesUrl = ${js(files)};
+  const me = ${js(visitor?.user ?? null)};
+  const key = ${js(visitor?.token ?? "")};
+  const ownerKey = ${js(ownerKey ?? "")};
+  // The owner's key stays inside this script: it keeps its own fetch, and on the owner's page it
+  // leaves the page once it has run, so code that gets into the page later can't read the key.
+  const send = fetch;
+  if (ownerKey && document.currentScript) document.currentScript.remove();
   let paid = false;
   let authResult = "";
   try {
@@ -87,16 +99,25 @@ export function flashDbShim(
       history.replaceState(null, "", url.toString());
     }
   } catch (e) {}
+  // The shared data's rules decide who may do what, so requests carry the owner's key, or the
+  // signed-in person's, when there is one.
   async function call(method, query, body) {
-    const res = await fetch(base + (query ? "?" + new URLSearchParams(query) : ""), {
-      method, headers: body ? { "Content-Type": "application/json" } : undefined,
-      body: body ? JSON.stringify(body) : undefined,
+    const auth = ownerKey || key;
+    const headers = { ...(body ? { "Content-Type": "application/json" } : {}), ...(auth ? { Authorization: "Bearer " + auth } : {}) };
+    const res = await send(base + (query ? "?" + new URLSearchParams(query) : ""), {
+      method, headers, body: body ? JSON.stringify(body) : undefined,
     });
     const json = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(json.error || "flashDB request failed");
+    if (!res.ok) {
+      // The owner's key lasts two hours and ends with their Flash sign-in.
+      if (ownerKey && res.status === 403) throw new Error("Your owner view has ended. Reload the page to keep changing this app's data.");
+      throw new Error(json.error || "flashDB request failed");
+    }
     return json;
   }
   window.flashDB = {
+    // True on the page Flash serves to the app's owner: show them the buttons to change its data.
+    isOwner: Boolean(ownerKey),
     async list(collection) {
       // The server answers in pages of up to 2 MB; follow the cursor to get every record.
       let page = await call("GET", { collection });
@@ -230,6 +251,15 @@ export function flashDbShim(
   };
 
   function ready(fn) { if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", fn); else fn(); }
+  if (ownerKey) ready(function () {
+    const note = document.createElement("div");
+    note.setAttribute("role", "status");
+    note.textContent = "Owner view: you can change this app's data here. Visitors can only do what you allow in Flash \u203a My websites & apps \u203a Data. To see it as a visitor, use a private window.";
+    note.style.cssText = "position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:2147483647;max-width:min(560px,calc(100% - 32px));padding:12px 18px;border-radius:12px;background:#1e1b4b;color:#fff;font:500 14px/1.45 system-ui,sans-serif;box-shadow:0 8px 30px rgba(0,0,0,.25);cursor:pointer";
+    note.onclick = function () { note.remove(); };
+    document.body.appendChild(note);
+    setTimeout(function () { note.remove(); }, 8000);
+  });
   if (paid || ${fillPrices}) ready(function () {
     if (paid) {
       const note = document.createElement("div");
@@ -262,7 +292,8 @@ export function flashDbShim(
 
 /** Puts a script at the top of an HTML document so it runs before the app's own code. */
 export function injectHead(html: string, snippet: string): string {
-  const head = html.match(/<head[^>]*>/i);
+  // Not <header>, which can come first in a page with no <head>.
+  const head = html.match(/<head(?=[\s>])[^>]*>/i);
   if (head?.index !== undefined) {
     const at = head.index + head[0].length;
     return html.slice(0, at) + snippet + html.slice(at);
