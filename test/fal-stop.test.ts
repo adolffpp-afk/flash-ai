@@ -27,11 +27,12 @@ const server = createServer((req, res) => {
       job.cancelled = job.cancelStatus < 300;
       return json({ status: job.cancelled ? "CANCELLATION_REQUESTED" : "ALREADY_COMPLETED" }, job.cancelStatus);
     }
-    const after = job?.cancelled ? (job.afterCancel ?? "error") : "runs";
+    const after: AfterCancel = job?.cancelled ? (job.afterCancel ?? "error") : "runs";
     if (after === "gone" && (kind === "status" || kind === "result")) return json({ detail: "Request not found" }, 404);
     if (kind === "status") {
       const scripted = job.statuses[Math.min(job.checks++, job.statuses.length - 1)];
-      const status = { error: "COMPLETED", cancelled: "CANCELLED", queued: "IN_QUEUE", runs: scripted }[after];
+      const shown: Record<AfterCancel, string> = { error: "COMPLETED", gone: "", cancelled: "CANCELLED", queued: "IN_QUEUE", runs: scripted };
+      const status = shown[after];
       return json({ status, queue_position: 0 });
     }
     if (kind === "result" && after === "error") return json({ detail: "Request was cancelled" }, 400);
