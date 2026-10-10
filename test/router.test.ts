@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checksSpoken, route, takesGuess, textToSpeak } from "../src/lib/router.ts";
+import { checksSpoken, route, spokenFollowUp, takesGuess, textToSpeak, wantsAudioFile } from "../src/lib/router.ts";
 
 const cases: [string, string][] = [
   ["Write a short poem about the ocean", "text"],
@@ -73,6 +73,9 @@ test("a clear new request after an app goes to its own engine", () => {
 test("textToSpeak pulls out the words to say", () => {
   assert.equal(textToSpeak('Say "good morning everyone"'), "good morning everyone");
   assert.equal(textToSpeak("Read this aloud: Welcome to Flash AI"), "Welcome to Flash AI");
+  // A time's colon isn't where the words start, and "can you" isn't said.
+  assert.equal(textToSpeak("Say good night at 9:30"), "good night at 9:30");
+  assert.equal(textToSpeak("Can you say happy birthday Sam"), "happy birthday Sam");
 });
 
 test("in a voice conversation, talk about how Flash speaks is answered, and audio asked for is still made", () => {
@@ -92,6 +95,31 @@ test("in a voice conversation, talk about how Flash speaks is answered, and audi
   ]) {
     assert.equal(route(m, undefined, undefined, { spoken: true }).engine, "voice", m);
   }
+  // Words that point back at what was said, or only say how to speak, are talk, not a voice-over of them.
+  for (const m of [
+    "say that again in a louder voice",
+    "say it again in a slower voice",
+    "can you speak in a lower voice",
+    "read the rest of the speech aloud",
+    "read the file out loud",
+    "Say good night at 9:30.",
+  ]) {
+    assert.ok(!wantsAudioFile(m), m);
+    assert.equal(route(m, undefined, undefined, { spoken: true }).engine, "text", m);
+  }
+  assert.equal(route("make a voiceover of: hello", undefined, undefined, { spoken: true }).engine, "voice");
+});
+
+test("in a voice conversation, reading out the news, the weather or a price looks it up", () => {
+  for (const m of [
+    "read me the latest news out loud",
+    "can you read the weather forecast out loud",
+    "say the price of bitcoin today",
+    "say what's the weather like in paris right now",
+  ]) {
+    assert.equal(route(m).engine, "voice", `typed: ${m}`);
+    assert.equal(route(m, undefined, undefined, { spoken: true }).engine, "search", m);
+  }
 });
 
 test("after an app, a spoken follow-up edits it only when it asks for a change; typed ones as before", () => {
@@ -103,6 +131,95 @@ test("after an app, a spoken follow-up edits it only when it asks for a change; 
     assert.equal(route(m, undefined, "app", { spoken: true }).engine, "app", m);
   }
   assert.equal(route("Now add a slide about costs", undefined, "slides", { spoken: true }).engine, "slides");
+});
+
+test("spoken changes to a build: with an opener, as a wish, or as a complaint", () => {
+  for (const m of [
+    "yeah make the button blue",
+    "alright now add a footer",
+    "um, make the button blue",
+    "Flash, make the button blue",
+    "can we make the button blue",
+    "could we add a login page",
+    "I want the button to be blue",
+    "I'd like a dark mode",
+    "the button should be blue",
+    "I need a contact form",
+    "dark mode please",
+    "the menu has a bug",
+    "the menu doesn't work",
+    "No, make it red",
+    "Thanks, now add a footer",
+    "Looks great, but make the title bigger",
+    "I think the header should be bigger",
+    "put the logo on the left",
+    "turn the header green",
+    "use a darker font",
+    "set the background to black",
+    "give it a dark mode",
+    "let's make it darker",
+    "move the logo left",
+    "undo",
+  ]) {
+    assert.equal(spokenFollowUp(m), "change", m);
+    assert.equal(route(m, undefined, "app", { spoken: true }).engine, "app", m);
+  }
+});
+
+test("spoken talk after a build is answered in words, and keeps the build for the next follow-up", () => {
+  for (const m of [
+    "Thank you.",
+    "thank you so much",
+    "great job",
+    "okay",
+    "let's take a break",
+    "okay let's go to bed",
+    "okay let's move on",
+    "let's talk about something else",
+    "let's see",
+    "change the subject",
+    "change of plans",
+    "move on",
+    "give us a minute",
+    "give it a second",
+    "can you show how it works",
+    "show us how it works",
+    "put it simply",
+    "make me laugh",
+    "set a timer for five minutes",
+    "now let's do something else",
+    "How do I use it?",
+    "Can I use it on my phone?",
+    "I'd like to know how it works",
+  ]) {
+    assert.equal(spokenFollowUp(m), "talk", m);
+    const r = route(m, undefined, "app", { spoken: true });
+    assert.notEqual(r.engine, "app", m);
+    assert.equal(r.about, "app", m);
+    assert.ok(!r.guessed, m);
+  }
+  // Typed, the same words change the app, as before.
+  assert.equal(route("let's take a break", undefined, "app").engine, "app");
+});
+
+test("unclear spoken follow-ups get the router's guess, which may change the build or answer, nothing else", () => {
+  for (const m of ["Nice layout", "it's too dark", "How about a dark mode?", "Can we use it offline?", "make a plan for my week", "add 2 and 2"]) {
+    const r = route(m, undefined, "app", { spoken: true });
+    assert.deepEqual([r.guessed, r.answersOnly, r.about], [true, true, "app"], m);
+    const asked = { spoken: true, recheck: true, about: r.about };
+    assert.ok(takesGuess("app", r.engine, m, asked), m);
+    for (const g of ["image", "video", "music", "slides", "voice"] as const) assert.ok(!takesGuess(g, r.engine, m, asked), `${m}: ${g}`);
+  }
+});
+
+test("after spoken thanks, the next follow-up, spoken or typed, still changes the app", () => {
+  const thanks = route("Thank you.", undefined, "app", { spoken: true });
+  assert.equal(thanks.engine, "text");
+  // The reply keeps what it was about, and the next request is sent with that.
+  const previous = thanks.about ?? thanks.engine;
+  assert.equal(route("Make the button blue", undefined, previous, { spoken: true }).engine, "app");
+  assert.equal(route("make the button blue", undefined, previous).engine, "app");
+  assert.equal(route("the header should be bigger", undefined, previous, { spoken: true }).engine, "app");
 });
 
 test("the router's guess: typed requests as before; spoken ones aren't made into builds, prices or voice-overs by it", () => {

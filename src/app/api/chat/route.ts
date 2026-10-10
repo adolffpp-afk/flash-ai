@@ -1,4 +1,4 @@
-import { EDITABLE_TYPE, checksSpoken, fixesPictureText, route, takesGuess, textToSpeak } from "@/lib/router.ts";
+import { ANSWER_ENGINES, EDITABLE_TYPE, checksSpoken, fixesPictureText, route, takesGuess, textToSpeak } from "@/lib/router.ts";
 import { MAX_EDIT_PIXELS, imageDimensions } from "@/lib/imageSize.ts";
 import { ENGINES, ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types.ts";
 import {
@@ -230,6 +230,23 @@ const transcriptCents = (a: { data: string }) => transcribeCostCents(attachmentB
 
 /** The voice engine speaks at most MAX_SPEECH_CHARS, and is priced on exactly that text. */
 const spokenText = (message: string) => textToSpeak(message).slice(0, MAX_SPEECH_CHARS);
+
+/**
+ * The fewest credits a request on this engine could need, worked out without asking anyone (a
+ * Claude engine's reply allowance alone, before its input). The router's guess costs Flash a call,
+ * so it's only asked when the user can pay for the request it would move.
+ */
+function leastCredits(engine: Engine, message: string, { voice = false, level }: { voice?: boolean; level?: unknown } = {}): number {
+  if (isMedia(engine)) {
+    const picked = pickModel(engine, message, providers());
+    return picked ? modelCredits(picked.model, message) : Infinity;
+  }
+  if (engine === "voice") return creditsFor(voiceCostCents(spokenText(message).length));
+  if (engine === "transcribe") return 0;
+  const auto = autoLevel(engine, message, { voice }).level;
+  const levels = isLevel(level) && level !== "auto" ? [auto, level] : [auto];
+  return Math.min(...levels.map((l) => planHold(engine, claudeChoice(engine, l).model, 0, 0).needed));
+}
 
 /** The system prompt a Claude engine sends, so the credit hold counts it too. */
 function systemFor(engine: Engine, preferences: string, history: ChatTurn[]): string {
@@ -684,15 +701,23 @@ export async function POST(request: Request) {
   const available = (await spendable(user.id)).largest;
 
   // When no keyword rule fits, a small, fast model reads the request and picks the engine.
-  // Skipped for users out of credits, so the free lane costs Flash nothing.
+  // Skipped for users who can't pay for the request, so the free lane costs Flash nothing.
   // In a voice conversation it also checks requests the rules sent to code, docs or search (see checksSpoken).
   const recheck = !override && spoken && checksSpoken(engine);
-  if (!override && !agreed && (auto.guessed || recheck) && !last.attachment && claudeConfigured() && available >= 5) {
+  const least = (e: Engine) => leastCredits(e, last.content, { voice: spoken, level: body.level });
+  if (!override && !agreed && (auto.guessed || recheck) && !last.attachment && claudeConfigured() && available >= Math.max(5, least(engine))) {
+    // A spoken turn about an app or deck the rules couldn't place: the guess knows about the build.
+    const about = auto.guessed ? auto.about : undefined;
     // Someone talking is waiting in silence, so the router gets less time to think.
-    const guess = await classifyRequest(last.content, meter, spoken ? 1500 : 4000);
+    const guess = await classifyRequest(last.content, meter, spoken ? 1500 : 4000, about);
     // A guess is only a guess, so it never sends a request to an engine that isn't available yet.
     const ready = (e: Engine) => (isMedia(e) ? Boolean(pickModel(e, last.content, providers())) : configured(e));
-    if (guess && takesGuess(guess, engine, last.content, { spoken, recheck }) && ready(guess)) {
+    // A guess between the engines that answer in words moves a request only where the user can pay
+    // for it, so the guess is always paid for. Another guess (a picture, a video) goes where it was
+    // asked, where the user sees its price.
+    const answers = recheck || auto.answersOnly === true;
+    const affordable = (e: Engine) => !(answers || ANSWER_ENGINES.includes(e)) || available >= least(e);
+    if (guess && takesGuess(guess, engine, last.content, { spoken, recheck: answers, about }) && ready(guess) && affordable(guess)) {
       engine = guess;
       reason = t("Flash's router read your request.");
     }
@@ -910,6 +935,8 @@ export async function POST(request: Request) {
         type: "route",
         engine,
         reason,
+        // Talk about an app or deck: the next follow-up may still change it.
+        ...(auto.about && engine !== auto.about && !override && { about: auto.about }),
         demo: !live,
         cost: metered && !free ? 0 : held,
         ...(free

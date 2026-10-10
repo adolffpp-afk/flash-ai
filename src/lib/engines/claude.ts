@@ -391,27 +391,34 @@ const ENGINE_GUIDE: Record<Engine, string> = {
 };
 
 /**
- * Asks Haiku which engine fits a request the keyword rules couldn't place.
+ * Asks Haiku which engine fits a request the keyword rules couldn't place. about: the app or deck
+ * Flash just built in this chat, when the request was said about it ("it's too dark").
  * Returns null on any doubt or error, so the caller keeps its default.
  */
-export async function classifyRequest(message: string, meter: Meter = noMeter, timeoutMs = 4000): Promise<Engine | null> {
+export async function classifyRequest(message: string, meter: Meter = noMeter, timeoutMs = 4000, about?: Engine): Promise<Engine | null> {
+  const system =
+    "Pick the one tool that best fits the user's request. Reply with the tool name only.\n\n" +
+    ENGINES.map((e) => `${e}: ${ENGINE_GUIDE[e]}`).join("\n") +
+    (about === "app" || about === "slides"
+      ? `\n\nFlash just made ${about === "app" ? "an app" : "a slide deck"} for this user, and they said this about it. ` +
+        `Reply ${about} only if they ask for it to be changed, fixed or added to; reply text for thanks, questions and anything else.`
+      : "");
+  const content = message.slice(0, 2000);
   try {
     const res = await getClient().messages.create(
-      {
-        model: ROUTER_MODEL,
-        max_tokens: 10,
-        system:
-          "Pick the one tool that best fits the user's request. Reply with the tool name only.\n\n" +
-          ENGINES.map((e) => `${e}: ${ENGINE_GUIDE[e]}`).join("\n"),
-        messages: [{ role: "user", content: message.slice(0, 2000) }],
-      },
+      { model: ROUTER_MODEL, max_tokens: 10, system, messages: [{ role: "user", content }] },
       { timeout: timeoutMs, maxRetries: 0 },
     );
     meter("anthropic", res.model, claudeCostCents(res.model, res.usage));
     const text = res.content.find((b) => b.type === "text");
     const word = text?.type === "text" ? text.text.trim().toLowerCase().replace(/[^a-z]/g, "") : "";
     return (ENGINES as readonly string[]).includes(word) ? (word as Engine) : null;
-  } catch {
+  } catch (err) {
+    // A call that ran out of time may still be billed for reading the request: about a token for
+    // every three characters, counted so the spend shows on the dashboard and in the request's price.
+    if (err instanceof Anthropic.APIConnectionTimeoutError) {
+      meter("anthropic", ROUTER_MODEL, claudeCostCents(ROUTER_MODEL, { input_tokens: Math.ceil((system.length + content.length) / 3), output_tokens: 0 }));
+    }
     return null;
   }
 }

@@ -97,7 +97,7 @@ export type Status = Record<Engine, boolean>;
 function applyEvent(m: UIMessage, e: StreamEvent): UIMessage {
   switch (e.type) {
     case "route":
-      return { ...m, engine: e.engine, reason: e.reason, demo: e.demo, cost: e.cost, model: e.model, modelWhy: e.modelWhy, free: e.free };
+      return { ...m, engine: e.engine, reason: e.reason, demo: e.demo, cost: e.cost, model: e.model, modelWhy: e.modelWhy, free: e.free, about: e.about };
     case "text":
       return m.app ? { ...m, after: (m.after ?? "") + e.delta } : { ...m, content: m.content + e.delta };
     case "status":
@@ -835,7 +835,8 @@ export function Flash({
     if (lastUser === -1) return;
     const earlier = messages.slice(0, lastUser);
     const { pictureAbove: had, ...old } = messages[lastUser];
-    let edited: UIMessage = { ...old, content: text };
+    // Typed words replace what was heard, so they're routed and answered as typed.
+    let edited: UIMessage = { ...old, content: text, voice: undefined };
     // The new words decide whether it goes with the picture above, as when typing. Files sent with
     // it stay, and a change the user sent without the picture (the ✕) doesn't gain it.
     if (had || (!old.attachmentName && !old.build && !old.template && !pictureFollowUp(old.content))) {
@@ -917,13 +918,17 @@ export function Flash({
 
     // Only the most recent app's code is sent back, so edits build on it without resending every version.
     const lastAppId = [...earlier].reverse().find((m) => m.app)?.id;
-    const previous = [...earlier].reverse().find((m) => m.role === "assistant" && m.engine)?.engine;
+    // A spoken "thanks" after an app is answered in words but is still about the app, so the next
+    // follow-up can change it.
+    const lastReply = [...earlier].reverse().find((m) => m.role === "assistant" && m.engine);
+    const previous = lastReply?.about ?? lastReply?.engine;
     const history: ChatTurn[] = [
       ...earlier
-        .filter((m) => !m.error || m.content || m.app)
+        // A price Flash asked about stays, so "how much was it?" is answered with the real price.
+        .filter((m) => !m.error || m.content || m.app || m.errorCode === "confirm_cost")
         .map((m) => ({
           role: m.role,
-          content: turnText(m),
+          content: m.errorCode === "confirm_cost" && !m.content ? (m.error ?? "") : turnText(m),
           app: m.id === lastAppId ? m.app?.html : undefined,
         })),
       { role: "user", content: turnText(userMsg), attachment: sent[0], more: sent.length > 1 ? sent.slice(1) : undefined },

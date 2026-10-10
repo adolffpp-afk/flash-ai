@@ -2,8 +2,11 @@ import type { Engine } from "./types.ts";
 import { msg } from "./i18n.ts";
 import { POST_PACK_REQUEST } from "./models.ts";
 
-// reason is marked msg("…") here and shown in the user's language with t(reason).
-export type RouteDecision = { engine: Engine; reason: string; guessed?: boolean };
+// reason is marked msg("…") here and shown in the user's language with t(reason). guessed: no rule
+// was sure, so the router's guess may move it (only between the engines that answer in words when
+// answersOnly). about: a spoken turn after an app or deck that didn't change it, kept with the reply
+// so the next follow-up can still change that build.
+export type RouteDecision = { engine: Engine; reason: string; guessed?: boolean; answersOnly?: boolean; about?: Engine };
 
 const LANGUAGES =
   "english|french|spanish|portuguese|german|italian|dutch|arabic|chinese|mandarin|japanese|korean|hindi|russian|turkish|swahili|yoruba|igbo|hausa|zulu|amharic|polish|greek|hebrew|vietnamese|thai|indonesian|creole";
@@ -343,40 +346,126 @@ export const fixesPictureText = (message: string) => FIX_PICTURE_TEXT.test(strai
 
 // Engines whose answers are general enough that a follow-up may really be an edit to the last build.
 const GENERAL: Engine[] = ["text", "code", "docs"];
+// The engines that answer in words.
+export const ANSWER_ENGINES: Engine[] = ["text", "translate", "code", "docs", "search"];
 
-// A follow-up that asks for a change: "make the button blue", "now add a page", "can you fix the menu".
-// Not "show me how it works" or "let me think", which are talk.
-const ASKS_CHANGE =
-  /^\s*(?:(?:ok(?:ay)?|now|and|also|then|please|can you|could you|would you|will you|great|nice|so|i want you to|i'd like you to)\W+)*(?:make|change|add|remove|delete|move|put|turn|fix|update|use|set|rename|replace|show(?! me\b)|hide|swap|resize|center|centre|align|give(?! me\b)|let'?s|let us|edit|redo|rewrite|insert|include)\b/i;
-
-// Words to read out (in quotes or after a colon), a file, an accent or a voice: audio to make.
-const AUDIO_FILE = /["“:]|\b(voice-?\s?over|mp3|audio|recording|file|speech|tts|accent|voice)\b/i;
-/**
- * Whether a request the voice rules matched asks for an audio file. In a voice conversation "say
- * that again" or "speak slower" is talk, which Flash answers in the conversation.
+/*
+ * A spoken follow-up to an app or deck asks for a change ("make the button blue", "can we add a
+ * login page", "the header should be bigger", "the menu has a bug"), is talk ("thank you", "how does
+ * it work?", "let's take a break"), or is unclear, when the router's guess decides. Typed follow-ups
+ * always change the build, as before: the user is looking at it and typing to it.
  */
-export const wantsAudioFile = (message: string) => AUDIO_FILE.test(message);
+// How a spoken request may open before saying what it wants: "yeah, um, Flash, can you …", "thanks,
+// now …", "looks great, but …". Longer phrases first, so "great job" is read as one.
+const SPOKEN_OPENER = new RegExp(
+  String.raw`^(?:(?:thank you(?: so much| very much)?|thanks?(?: a lot| so much)?|cheers|(?:great|good|nice|amazing|awesome) (?:job|work)|well done|good (?:morning|afternoon|evening|night)|no (?:problem|worries)|(?:i )?love it|(?:(?:it|this|that) )?looks? (?:good|great|nice|amazing|awesome|perfect|better)|(?:that's|that is|it's|it is|this is) (?:great|good|perfect|cool|nice|awesome|amazing|fine|better|beautiful|lovely)|yeah|yes|yep|no|nope|nah|ok(?:ay)?|alright|all right|u+m+|u+h+|h+m+|e+r+m*|oh|wow|actually|hey|flash|so|and|but|now|also|then|please|cool|great|nice|perfect|awesome|amazing|excellent|lovely|beautiful|good|well|right|just)\b[\s,.!]*)+`,
+  "i",
+);
+// The ways of asking: "can we …", "let's …", "I'd like you to …", "I think …".
+const SPOKEN_ASK =
+  /^(?:(?:can|could|would|will) (?:you|we)(?: please| maybe| just| also)?|let'?s|let us|(?:i|we)(?: really)?(?: want| need|'d like| would like|'d love| would love)(?: you)? to|i think|i feel like|i guess|how about|maybe|perhaps|please|just|go ahead and)\s+/i;
+// The parts of an app or deck people name when they say what they want changed.
+const PART_NAMES = String.raw`(?:button|header|footer|menu|nav(?:bar|igation)?|logo|title|heading|font|text|colou?r|background|page|section|form|layout|picture|image|photo|icon|link|sidebar|banner|slide|chart|graph|table|list|card|theme|dark mode|light mode|login|log ?in|sign ?up|contact|price|pricing|tab|field|input|search bar|map|gallery|animation|style|design|spacing|margin|padding|border|corner|width|height|home ?page|landing page|checkout|cart|dashboard|score|timer|counter|level|player|bullet|paragraph|caption|subtitle)s?`;
+const BUILD_PART = String.raw`(?:${PART_NAMES}|(?:app|site|website|deck|screen)s?)`;
+const NAMES_PART = new RegExp(String.raw`\b${PART_NAMES}\b`, "i");
+// Verbs that ask for a change, except in the talk they're also used for ("make sense", "change of
+// plans", "add it up", "move on", "make me laugh").
+const STRONG_VERB = String.raw`(?:make(?! (?:sense|sure|(?:me|us) \w+)\b)|change(?! (?:of|my mind|the (?:subject|topic))\b)|add(?! (?:it |that |this |them )?up\b)|remove|delete|update|rename|replace|hide|swap|resize|cent(?:er|re)|align|edit|redo|rewrite|insert|include|fix(?! (?:me|us)\b)|move(?! (?:on|along)\b)|increase|decrease|enlarge|shrink|darken|lighten|undo|revert|restore|get rid of|bring back)`;
+// Verbs that also mean other things ("put it simply", "give us a minute", "set a timer", "use it offline").
+const WEAK_VERB = String.raw`(?:put|turn|use|set|show|give|switch|try|bring|let)(?!\s+(?:me|us)\b)(?!\s+(?:it|this|that) (?:simply|another way|to me)\b)(?!\s+(?:it|us|me|them) a (?:second|sec|minute|moment|break|rest|try|go|shot|thought)\b)(?!\s+(?:a|an|the|my) (?:timer|alarm|reminder)\b)`;
+// A strong verb with the thing it changes, or nothing after it: "make it darker", "fix the menu", "undo".
+const CHANGE_VERB = new RegExp(String.raw`^${STRONG_VERB}(?:$|\s+(?:it|this|that|these|those|the|its|my|our|their|them|everything|all|each|every)\b)`, "i");
+// Any of them, which ask for a change when a part of the build is named: "add a footer", "put the logo on the left".
+const CHANGE_ACTION = new RegExp(String.raw`^(?:${STRONG_VERB}|${WEAK_VERB})\b`, "i");
+// Said as a wish or a complaint: "the button should be blue", "I need a contact form", "it's broken".
+const STATEMENT_CHANGE = new RegExp(
+  [
+    String.raw`^(?:the|my|our|this|that|its|their|all the) (?:\w+ ){0,2}${BUILD_PART} (?:\w+ ){0,2}(?:should|shouldn't|needs?|must|has to|have to|is too|are too|looks? too|isn't|aren't|doesn't|don't|won't|can't|is broken|are broken|has an? (?:bug|error|typo|problem|glitch))\b`,
+    String.raw`^(?:it|this|that|everything|the whole thing) (?:should|needs to|must|has to) (?:be|look|have|say|show)\b`,
+    String.raw`^(?:i|we)(?: really)?(?: want| need|'d like| would like|'d love| would love|'d prefer| would prefer)(?! to (?:know|see|understand|learn|ask|think|talk|go|take|try|stop|hear)\b)\b.*\b${BUILD_PART}\b`,
+    // "dark mode please", "a bigger logo please"
+    String.raw`^(?:an? |some |the )?(?:\w+ ){0,2}${BUILD_PART}(?: too)? please$`,
+    String.raw`\b(?:it|this|that|${BUILD_PART})(?: still)?(?: doesn't| does not| don't| do not| isn't| is not| won't| can't| cannot) (?:work|load|show|open|click|respond|scroll|fit|save)\b`,
+    String.raw`\b(?:it|this|that|${BUILD_PART})(?:'s| is| are| looks| seems)? (?:broken|not working)\b`,
+    String.raw`\b(?:(?:it|this|that|${BUILD_PART}) (?:has|have|has got|got)|there(?:'s| is| are)) (?:a |an |some )?(?:bug|error|typo|glitch|problem)s?\b`,
+  ].join("|"),
+  "i",
+);
+// Talk: questions, and the requests that are about the conversation rather than the build.
+const SPOKEN_TALK = new RegExp(
+  [
+    String.raw`^$`,
+    String.raw`^(?:got it|i see|interesting|not yet|not now|that's (?:it|all)|bye|good ?bye|good ?night|see you)\b`,
+    String.raw`^(?:what|why|who|whom|whose|when|where|which|how|is|are|was|were|does|did|has|have|isn't|aren't|doesn't|didn't|should|shall|am i|may i|can i|could i|do(?! (?:it|this|that|the|a|an|same|something|more|another)\b))\b`,
+    String.raw`^(?:tell (?:me|us)|explain|describe|show (?:me|us|how|what)|let me|talk|say|read|repeat|stop|wait|hold on|hang on|never mind|forget it|take a (?:break|rest|look)|call it a day|go to (?:bed|sleep)|see|set (?:a|an) (?:timer|alarm|reminder)|remind me|change (?:the (?:subject|topic)|of plans|my mind)|move on|do something (?:else|different)|know|understand|learn|hear|think|i'm|i am|you're|you are|we're)\b`,
+    String.raw`^(?:give (?:us|me|it) a (?:second|sec|minute|moment|break|rest|try|go|shot)|put it (?:simply|another way)|make (?:me|us) \w+)\b`,
+    String.raw`^(?:i )?(?:love|like|really like|adore) (?:the|it|this|that|how|your)\b`,
+  ].join("|"),
+  "i",
+);
+
+/** What a spoken follow-up to an app or deck is: an ask for a "change", "talk", or "unclear". */
+export function spokenFollowUp(message: string): "change" | "talk" | "unclear" {
+  let said = straight(message).replace(/[?!.]+$/, "").trim();
+  // Openers, and the ways of asking, as many as were said: "okay so can we just …".
+  for (let before = ""; before !== said; ) {
+    before = said;
+    said = said.replace(SPOKEN_OPENER, "").replace(SPOKEN_ASK, "").trim();
+  }
+  if (CHANGE_VERB.test(said) || (CHANGE_ACTION.test(said) && NAMES_PART.test(said))) return "change";
+  if (SPOKEN_TALK.test(said)) return "talk";
+  return STATEMENT_CHANGE.test(said) ? "change" : "unclear";
+}
+
+// Words to say in quotes or after a colon (not a time's, as in 9:30).
+const QUOTED = /["“][^"”]+["”]/;
+const COLON_WORDS = /(?<!\d):(?!\d)\s*\S/;
+// An audio file asked for by name: "as an mp3", "a voice-over", "turn this into audio".
+const DELIVERABLE = /\b(voice-?\s?over|mp3|tts|text to speech|(into|to|as) (an? )?(audio|speech|recording|sound file))\b/i;
+// How to say the words: "in a British accent", "in a deep voice".
+const STYLE = /\b(accent|voice)\b/i;
+// Words that point back at something said before, which the voice engine can't read: "say that
+// again in a louder voice", "read the rest of the speech aloud".
+const POINTER =
+  /^(?:(?:it|that|this|these|those|again|back|me|us|what you (?:just )?said)\b|(?:the|my|your|our)\s+(?:rest|last|previous|whole|full|speech|file|poem|story|answer|reply|text|message|document|page|list|email|letter|script|paragraph|notes?)\b)|\bagain\b/i;
+// Only how Flash should talk: "can you speak in a lower voice", "talk slower please".
+const SPEAKS_HOW =
+  /^(?:(?:can|could|would|will) you\s+)?(?:please\s+)?(?:speak|talk)(?:\s+(?:a (?:bit|little)\s+)?(?:more\s+)?(?:slowly|quickly|slower|faster|louder|quieter|softer|loudly|softly|quietly|clearly|calmly|normally|up|again|in (?:an? |your |the )?(?:\w+ ){0,2}(?:voice|tone|accent|way)))+(?:\s+please)?[.!?]*$/i;
+/**
+ * Whether a request the voice rules matched asks for an audio file: it holds the words to say (in
+ * quotes or after a colon), or names an audio file or a voice to say new words in. In a voice
+ * conversation "say that again in a louder voice" or "read the rest aloud" is talk, which Flash
+ * answers in the conversation, so it never makes a voice-over of those words.
+ */
+export const wantsAudioFile = (message: string) =>
+  QUOTED.test(message) ||
+  COLON_WORDS.test(message) ||
+  (!POINTER.test(textToSpeak(message)) && !SPEAKS_HOW.test(straight(message)) && (DELIVERABLE.test(message) || STYLE.test(message)));
 
 /**
  * Picks the engine for a request with deterministic keyword rules. When the previous
  * reply was an app or deck, a general follow-up ("make the header blue") edits it. Said in a voice
- * conversation (spoken), "thank you" or "how does it work?" is talk, so only a change edits it,
- * and only an ask for an audio file makes one.
+ * conversation (spoken), "thank you" or "how does it work?" is talk, so only a change edits it (see
+ * spokenFollowUp), and only an ask for an audio file makes one: "read me the news out loud" is
+ * routed as if it were asked, here to search.
  */
 export function route(message: string, attachmentType?: string, previous?: Engine, { spoken = false } = {}): RouteDecision {
-  const decision = routeOne(message, attachmentType);
-  const edits = !spoken || ASKS_CHANGE.test(straight(message));
-  if ((previous === "app" || previous === "slides") && GENERAL.includes(decision.engine) && !attachmentType && edits) {
-    return { engine: previous, reason: previous === "app" ? msg("Updating your app.") : msg("Updating your slides.") };
-  }
+  let decision = routeOne(message, attachmentType);
   if (spoken && decision.engine === "voice" && !wantsAudioFile(message)) {
-    return { engine: "text", reason: msg("Flash answers in the conversation.") };
+    const asked = routeOne(message, attachmentType, { skipVoice: true });
+    decision = ANSWER_ENGINES.includes(asked.engine) && !asked.guessed ? asked : { engine: "text", reason: msg("Flash answers in the conversation.") };
+  }
+  if ((previous === "app" || previous === "slides") && GENERAL.includes(decision.engine) && !attachmentType) {
+    const build = { engine: previous, reason: previous === "app" ? msg("Updating your app.") : msg("Updating your slides.") };
+    if (!spoken) return build;
+    const asks = spokenFollowUp(message);
+    if (asks === "change") return build;
+    // Talk is answered in words; an unclear turn goes to the router's guess, told about the build,
+    // which may answer in words or change the build but never start something else with a price.
+    return asks === "talk" ? { ...decision, guessed: undefined, about: previous } : { ...decision, guessed: true, answersOnly: true, about: previous };
   }
   return decision;
 }
-
-// The engines that answer in words.
-const ANSWER_ENGINES: Engine[] = ["text", "translate", "code", "docs", "search"];
 
 /**
  * Whether the router checks a spoken request again: questions often hold words the keyword rules
@@ -390,13 +479,19 @@ export const checksSpoken = (engine: Engine) => engine === "code" || engine === 
  * into a voice-over. A spoken request checked again (recheck) only moves between the engines that
  * answer in words, so a guess never turns it into a build or something with a price to agree to.
  */
-export function takesGuess(guess: Engine, engine: Engine, message: string, { spoken = false, recheck = false } = {}): boolean {
+export function takesGuess(
+  guess: Engine,
+  engine: Engine,
+  message: string,
+  { spoken = false, recheck = false, about }: { spoken?: boolean; recheck?: boolean; about?: Engine } = {},
+): boolean {
   if (guess === engine) return false;
-  if (recheck) return ANSWER_ENGINES.includes(guess);
+  // A spoken turn about a build may also change that build.
+  if (recheck) return ANSWER_ENGINES.includes(guess) || guess === about;
   return guess !== "text" && guess !== "transcribe" && !(spoken && guess === "voice" && !wantsAudioFile(message));
 }
 
-function routeOne(message: string, attachmentType?: string): RouteDecision {
+function routeOne(message: string, attachmentType?: string, { skipVoice = false } = {}): RouteDecision {
   const text = straight(message);
   if (attachmentType && AUDIO_TYPE.test(attachmentType)) {
     return { engine: "transcribe", reason: msg("An audio or video file is attached, so Flash transcribes it.") };
@@ -428,6 +523,7 @@ function routeOne(message: string, attachmentType?: string): RouteDecision {
   for (const rule of RULES) {
     // An attached file is read by a text engine, so media-making rules don't apply to it.
     if (attachmentType && ["video", "music", "image", "voice", "search", "app", "slides"].includes(rule.engine)) continue;
+    if (skipVoice && rule.engine === "voice") continue;
     if (rule.unless?.test(text)) continue;
     if (rule.patterns.some((p) => p.test(text))) return { engine: rule.engine, reason: rule.reason };
   }
@@ -444,7 +540,8 @@ function routeOne(message: string, attachmentType?: string): RouteDecision {
 export function textToSpeak(message: string): string {
   const quoted = message.match(/["“]([\s\S]+?)["”]/);
   if (quoted) return quoted[1].trim();
-  const afterColon = message.split(":");
-  if (afterColon.length > 1) return afterColon.slice(1).join(":").trim();
-  return message.replace(/^(please\s+)?(say|speak|narrate|read( this)?( aloud| out loud)?)\s*/i, "").trim() || message;
+  // After a colon, but not a time's: "Say good night at 9:30" says all of it.
+  const colon = message.search(/(?<!\d):(?!\d)/);
+  if (colon >= 0 && message.slice(colon + 1).trim()) return message.slice(colon + 1).trim();
+  return message.replace(/^((can|could|would|will) you\s+)?(please\s+)?(say|speak|narrate|read( this)?( aloud| out loud)?)\s*/i, "").trim() || message;
 }

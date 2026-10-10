@@ -25,6 +25,8 @@ export type UIMessage = {
   // link, so Retry and Go ahead can fetch it again after a reload (true in chats saved before links were kept).
   pictureAbove?: boolean | string;
   engine?: Engine;
+  // A spoken reply about the app or deck before it, which the next follow-up may still change.
+  about?: Engine;
   reason?: string;
   demo?: boolean;
   cost?: number;
