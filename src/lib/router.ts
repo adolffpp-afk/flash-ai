@@ -457,8 +457,9 @@ export function spokenFollowUp(message: string): "change" | "talk" | "unclear" {
   if (CHANGE_VERB.test(said) || (CHANGE_ACTION.test(said) && NAMES_PART.test(said) && !LOOKS_AROUND.test(said)) || STATEMENT_CHANGE.test(said)) {
     return "change";
   }
-  // A question or remark that still asks for a change is for the guess to read.
-  if (SPOKEN_TALK.test(said)) return ASKS_INSIDE.test(said) ? "unclear" : "talk";
+  // A question or remark that still asks for a change is for the guess to read. (A turn is a few
+  // sentences at most; reading only so much keeps a long message quick to check.)
+  if (SPOKEN_TALK.test(said)) return ASKS_INSIDE.test(said.slice(0, 500)) ? "unclear" : "talk";
   return "unclear";
 }
 

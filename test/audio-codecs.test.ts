@@ -107,6 +107,23 @@ test("files Flash can't measure aren't transcribed", () => {
   }
 });
 
+test("a forged MP4 whose fragments list millions of empty samples is turned away quickly", () => {
+  const box = (type: string, ...parts: Buffer[]) => {
+    const body = Buffer.concat(parts);
+    const head = Buffer.alloc(8);
+    head.writeUInt32BE(8 + body.length);
+    head.write(type, 4, "latin1");
+    return Buffer.concat([head, body]);
+  };
+  const words = (...values: number[]) => Buffer.concat(values.map((v) => Buffer.from([v >>> 24, (v >> 16) & 255, (v >> 8) & 255, v & 255])));
+  // Track 1, samples of no size by default, in runs that each claim the most samples a file may hold.
+  const moof = box("moof", box("traf", box("tfhd", words(0x020010, 1, 0)), box("trun", words(0, MAX_FRAMES))));
+  const file = Buffer.concat([m4a(aacConfig(Uint8Array.of(0x15, 0x88))!, [Uint8Array.of(1, 2, 3)]), ...Array.from({ length: 1000 }, () => moof)]);
+  const start = performance.now();
+  assert.equal(measureAudio(file), null);
+  assert.ok(performance.now() - start < 1000);
+});
+
 test("a forged file with millions of empty packets is turned away quickly", () => {
   // WebM blocks of 256 empty laced frames, five bytes each.
   const empty = Array.from({ length: 256 }, () => new Uint8Array());

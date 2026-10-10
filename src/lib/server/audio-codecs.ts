@@ -252,9 +252,11 @@ export function mp4Length(data: Uint8Array): MeasuredAudio | null {
 
   const frames: Uint8Array[] = [];
   let ticks = 0;
+  // Samples listed, empty ones too: more than MAX_FRAMES is a forged file, which isn't measured.
+  let samples = 0;
   // Takes size bytes at offset as the next frame; false when the file can't hold it (cut short).
   const take = (offset: number, size: number) => {
-    if (offset + size > data.length || frames.length >= MAX_FRAMES) return false;
+    if (++samples > MAX_FRAMES || offset + size > data.length) return false;
     // An empty sample plays nothing, so it isn't copied.
     if (size) frames.push(data.subarray(offset, offset + size));
     return true;
@@ -294,7 +296,7 @@ export function mp4Length(data: Uint8Array): MeasuredAudio | null {
   for (const moof of top.filter((b) => b.type === "moof")) {
     if (!fragment(data, moof, trackId, trex, take, (t) => (ticks += t))) break;
   }
-  if (!frames.length) return null;
+  if (samples > MAX_FRAMES || !frames.length) return null;
   // What the file says the sound lasts: its sample times, or the track's own length.
   return aacMeasured(config, frames, Math.max(ticks, trackDuration === 0xffffffff ? 0 : trackDuration) / timescale);
 }

@@ -59,8 +59,9 @@ export async function reserveFreeImage(): Promise<boolean> {
 
 /**
  * Takes one transcript and reserve seconds of audio (the recording's measured length, see
- * audio-length.ts) from Groq's free Whisper allowance, or returns false when today's is used up. Both are taken in one statement, so requests sent at the same
- * time can't all fit in the room left for one. recordFreeAudio settles the seconds Groq counted.
+ * audio-length.ts) from Groq's free Whisper allowance, or returns false when today's is used up.
+ * Both are taken in one statement, so requests sent at the same time can't all fit in the room left
+ * for one. recordFreeAudio settles the seconds Groq counted.
  */
 export async function reserveFreeAudio(reserve: number): Promise<boolean> {
   const d = day();
