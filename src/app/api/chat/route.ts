@@ -15,6 +15,7 @@ import {
   claudeConfigured,
   countInputTokens,
   improvePrompt,
+  otherToolsLine,
   streamSearch,
   streamText,
   system,
@@ -23,6 +24,7 @@ import {
   type Budget,
   type ClaudeChoice,
   type Meter,
+  type SystemOptions,
   type Watch,
   type WritingMode,
 } from "@/lib/engines/claude.ts";
@@ -52,7 +54,6 @@ import {
   type FreeLane,
 } from "@/lib/engines/free.ts";
 import {
-  countryOf,
   freeAudioFailed,
   recordFree,
   recordFreeAudio,
@@ -114,6 +115,9 @@ import {
 import { unavailableReply } from "@/lib/engines/demo.ts";
 import { FriendlyError, JobAbandoned, JobStopped } from "@/lib/engines/errors.ts";
 import { buildSystem, latestApp, streamBuild } from "@/lib/engines/builder.ts";
+import { contextNote, type Where } from "@/lib/context-note.ts";
+import { whereFrom } from "@/lib/server/where.ts";
+import { engineStatus } from "@/lib/server/status.ts";
 import { CLIP_CENTS_PER_SECOND, MOVIE_EXTRA_CENTS, makeMovie } from "@/lib/engines/movie.ts";
 import { DEFAULT_VOICE, pickVoice } from "@/lib/voices.ts";
 import { falEditInput, falInput, packImageInput, packVideoInput, videoAspect } from "@/lib/engines/fal-input.ts";
@@ -178,6 +182,8 @@ type ChatRequest = {
   afterId?: string | null;
   // What a new chat is called when the browser named it (a template's title), else its first message.
   name?: string;
+  // The browser's time zone ("Africa/Lagos"), for the date and time in the models' instructions.
+  timeZone?: string;
 };
 
 function providers(): Set<Provider> {
@@ -295,10 +301,28 @@ function offered(history: ChatTurn[]): string | undefined {
 /** The voice engine speaks at most MAX_SPEECH_CHARS, and is priced on exactly that text. */
 const spokenText = (message: string) => textToSpeak(message).slice(0, MAX_SPEECH_CHARS);
 
-/** The system prompt a Claude engine sends, so the credit hold counts it too. */
-function systemFor(engine: Engine, preferences: string, history: ChatTurn[]): string {
-  if (engine === "app" || engine === "slides") return buildSystem(engine, preferences, latestApp(history) !== null);
-  return system(preferences, engine === "code" || engine === "translate" || engine === "docs" ? engine : "text");
+/**
+ * What every system prompt in a request adds to its mode: Flash's other tools that work now, and the
+ * user's date, time and rough place, taken once so every call in the request sends the same words.
+ * build is the builders' note, without the clock; free is the free models' (see otherToolsLine).
+ */
+type Prompting = { system: SystemOptions; free: SystemOptions; build: string };
+
+function promptingFor(where: Where, now: Date): Prompting {
+  const status = engineStatus();
+  const context = contextNote(where, now);
+  return {
+    system: { tools: otherToolsLine(status), context },
+    free: { tools: otherToolsLine(status, true), context },
+    build: contextNote(where, now, { clock: false }),
+  };
+}
+
+/** The system prompt a Claude engine sends, exactly, so the credit hold counts it too. */
+function systemFor(engine: Engine, preferences: string, history: ChatTurn[], prompting: Prompting): string {
+  if (engine === "app" || engine === "slides") return buildSystem(engine, preferences, latestApp(history) !== null, prompting.build);
+  if (engine === "search") return system(preferences, "search", prompting.system);
+  return system(preferences, engine === "code" || engine === "translate" || engine === "docs" ? engine : "text", prompting.system);
 }
 
 /** What a media request on this model cost Flash, in cents, with the number of photos it was given. */
@@ -436,6 +460,8 @@ async function* run(
   track: Track = NO_TRACK,
   // The language Flash's own words (progress, notes, errors) are in.
   t: Translate & { language?: string } = english,
+  // What the system prompt adds to the mode (see promptingFor); systemFor counts the same words.
+  prompting: Prompting = { system: {}, free: {}, build: "" },
 ): AsyncGenerator<StreamEvent> {
   const last = history[history.length - 1];
   const { started, watch, helper, halted, stop } = track;
@@ -469,17 +495,27 @@ async function* run(
     case "docs":
       yield* withStepDown(
         choice ?? claudeChoice(engine, "ascend"),
-        (c) => streamText(history, preferences, engine, meter, budget, c, t, watch),
+        (c) => streamText(history, preferences, engine, meter, budget, c, t, watch, { system: prompting.system }),
         onStepDown,
         t,
       );
       return;
     case "search":
-      yield* withStepDown(choice ?? claudeChoice(engine, "ascend"), (c) => streamSearch(history, preferences, meter, budget, c, t, watch), onStepDown, t);
+      yield* withStepDown(
+        choice ?? claudeChoice(engine, "ascend"),
+        (c) => streamSearch(history, preferences, meter, budget, c, t, watch, { system: prompting.system }),
+        onStepDown,
+        t,
+      );
       return;
     case "app":
     case "slides":
-      yield* withStepDown(choice ?? claudeChoice(engine, "vision"), (c) => streamBuild(history, preferences, engine, meter, budget, c, t, watch), onStepDown, t);
+      yield* withStepDown(
+        choice ?? claudeChoice(engine, "vision"),
+        (c) => streamBuild(history, preferences, engine, meter, budget, c, t, watch, { context: prompting.build }),
+        onStepDown,
+        t,
+      );
       return;
     case "image": {
       if (model!.edits) {
@@ -689,6 +725,8 @@ async function* runFree(
   t: Translate = english,
   // Seconds of Groq's free audio held for a transcript, set once they're taken.
   audio: { reserved?: number } = {},
+  // The free models' tools line and the context note (see promptingFor).
+  system: SystemOptions = {},
 ): AsyncGenerator<StreamEvent> {
   const last = history[history.length - 1];
   if (lane === "image") {
@@ -718,10 +756,18 @@ async function* runFree(
     yield { type: "text", delta: transcript(file.name, text, t) };
     return;
   }
-  yield* streamFreeChat(history, preferences, engine as WritingMode, reserveFree, recordFree, (label, provider) => {
-    used.provider = provider;
-    used.model = label;
-  }, undefined, country);
+  yield* streamFreeChat(
+    history,
+    preferences,
+    engine as WritingMode,
+    reserveFree,
+    recordFree,
+    (label, provider) => {
+      used.provider = provider;
+      used.model = label;
+    },
+    { country, system },
+  );
 }
 
 /** What the error message says about credits after a failed request, after a space. */
@@ -756,6 +802,9 @@ export async function POST(request: Request) {
   }
   const history = (body.messages ?? []).slice(-30);
   const last = history[history.length - 1];
+  // Where and when the user is, taken once, so the hold counts the same instructions the reply sends.
+  const where = whereFrom(request, body.timeZone);
+  const prompting = promptingFor(where, new Date(startedAt));
   if (!last || last.role !== "user") {
     return Response.json({ error: t("The last message must be from the user.") }, { status: 400 });
   }
@@ -932,7 +981,7 @@ export async function POST(request: Request) {
         const files = last.attachment ? 1 + (last.more?.length ?? 0) : 0;
         const autoPick = autoLevel(engine, last.content, { files, voice: body.voice === true });
         const wanted = isLevel(body.level) && body.level !== "auto" ? body.level : null;
-        const systemText = systemFor(engine, preferences, history);
+        const systemText = systemFor(engine, preferences, history, prompting);
         // The reply may only spend what the held credits pay for, so no request runs at a loss.
         const plan = async (level: ModelLevel) => {
           const choice = claudeChoice(engine, level);
@@ -1250,8 +1299,8 @@ export async function POST(request: Request) {
     let failure = "";
     let error: unknown;
     const events = free
-      ? runFree(free, engine, history, preferences, store, freeUse, countryOf(request), t, freeAudio)
-      : run(engine, history, preferences, store, model, meter, budget, mediaNotes, claudeRun, steppedDown, track, t);
+      ? runFree(free, engine, history, preferences, store, freeUse, where.country ?? "", t, freeAudio, prompting.free)
+      : run(engine, history, preferences, store, model, meter, budget, mediaNotes, claudeRun, steppedDown, track, t, prompting);
     // Stop ends the request at once, without waiting for the next event: a Claude call is stopped,
     // and a provider job already sent is paid for as sent (see finalCredits). A Claude engine still
     // hands over what it finished before, and one that came to its end on its own isn't stopped.

@@ -1,5 +1,5 @@
 import type { ChatTurn, Engine, StreamEvent } from "../types.ts";
-import { system, type WritingMode } from "./claude.ts";
+import { system, type SystemOptions, type WritingMode } from "./claude.ts";
 import { NO_SPEECH, type Media } from "./media.ts";
 import { msg } from "../i18n.ts";
 import { FriendlyError } from "./errors.ts";
@@ -227,7 +227,7 @@ function readChunk(p: ChatProvider, data: string): Chunk | null {
   }
 }
 
-function toMessages(history: ChatTurn[], preferences: string, mode: WritingMode, systemPrompt?: string): Message[] {
+function toMessages(history: ChatTurn[], preferences: string, mode: WritingMode, o: FreeChatOptions): Message[] {
   const turns = history.slice(-10).map((t): Message => {
     let content = t.content;
     if (t.attachment) {
@@ -240,13 +240,22 @@ function toMessages(history: ChatTurn[], preferences: string, mode: WritingMode,
     if (t.app) content += "\n\n(An app was built here.)";
     return { role: t.role, content: content.slice(0, 24000) };
   });
-  return [{ role: "system", content: systemPrompt ?? system(preferences, mode) }, ...turns.filter((t) => t.content.trim())];
+  const instructions = o.systemPrompt ?? system(preferences, mode, { ...o.system, web: "free" });
+  return [{ role: "system", content: instructions }, ...turns.filter((t) => t.content.trim())];
 }
 
 /** Gate that reserves a provider for one request, or says no when it is over its daily cap. */
 export type Reserve = (provider: FreeProvider, limits: { requests: number; tokens: number }) => Promise<boolean>;
 /** Records what a free request used: tokens, and Cloudflare neurons. */
 export type RecordUse = (provider: FreeProvider, tokens: number, neurons: number) => Promise<void>;
+
+/**
+ * How a free reply is asked for. systemPrompt replaces Flash's usual instructions (for the
+ * companion); system adds to them (the tools line and the context note; the web line is always the
+ * free models' own); country is where the user is (two letters, from the host), for providers that
+ * may only answer some countries.
+ */
+export type FreeChatOptions = { systemPrompt?: string; system?: Omit<SystemOptions, "web">; country?: string };
 
 /** Streams a reply from the first free provider that is configured, under its cap, and answers. */
 export async function* streamFreeChat(
@@ -256,12 +265,10 @@ export async function* streamFreeChat(
   reserve: Reserve,
   record: RecordUse,
   onModel: (label: string, provider: FreeProvider) => void,
-  // Replaces Flash's usual instructions, for the companion.
-  systemPrompt?: string,
-  // Where the user is (two letters, from the host), for providers that may only answer some countries.
-  country = "",
+  o: FreeChatOptions = {},
 ): AsyncGenerator<StreamEvent> {
-  const messages = toMessages(history, preferences, mode, systemPrompt);
+  const country = o.country ?? "";
+  const messages = toMessages(history, preferences, mode, o);
   let lastError = "";
   for (const p of CHAT_PROVIDERS) {
     const key = p.key();

@@ -51,8 +51,7 @@ async function ask() {
       async (provider, limits) => (reserved.push({ provider, ...limits }), true),
       async (provider, tokens) => void recorded.push({ provider, tokens }),
       (label, provider) => used.push(`${provider}: ${label}`),
-      undefined,
-      "FR",
+      { country: "FR" },
     );
     for await (const e of reply) if (e.type === "text") said += e.delta;
   } catch (err) {

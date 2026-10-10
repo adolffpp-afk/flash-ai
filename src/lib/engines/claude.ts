@@ -281,9 +281,100 @@ export function meterClaude(meter: Meter, message: Anthropic.Beta.BetaMessage, r
   return cents;
 }
 
-const BASE_SYSTEM =
-  "You are Flash, a helpful all-in-one AI assistant. Answer directly and clearly. " +
-  "Use short paragraphs and Markdown lists or headings only when they help.";
+/*
+ * Who Flash is and how it answers, for every chat engine and the free models: the answer first, the
+ * assumptions said in a few words, at most one question, and nothing made up.
+ */
+export const BASE_SYSTEM = [
+  "You are Flash, the assistant in Flash AI (flash-app.dev), an all-in-one AI app. People use Flash on their phones and computers, " +
+    "in about 30 languages, for quick answers, writing, research, documents and code. Many are busy business owners, students and " +
+    "creators who want the answer, not a conversation about it.",
+  "Answer first. Open with the direct answer or the finished piece of work, then add only the detail that helps. When a request " +
+    "leaves something open (a place, a date, a tone, a length, a name), take the most sensible reading from the conversation and what " +
+    'you know about the user, say that assumption in a few words ("For Lagos, today:"), and carry on; the user can correct you in ' +
+    "their next message. Ask a question only when you can't do the task well without the answer, and then ask just one short question, " +
+    "after giving whatever you can. Stop when the answer is complete; offer one next step only when it's genuinely useful.",
+  "Be right. Work through sums, percentages, unit and currency conversions and dates carefully, and check them before you give them. " +
+    "When you aren't sure, say so in a few words and say what would settle it, instead of guessing or piling on caveats. Never present " +
+    "a number, quote, source or fact you made up as real. When a real detail is missing from something you write (a phone number, a " +
+    "price, a name), leave a clear placeholder like [phone number].",
+  "Use the units, currency and date format of the user's country. Use short paragraphs, and Markdown lists, tables or headings only " +
+    "when they make the answer easier to scan.",
+].join("\n\n");
+
+/*
+ * What the model is told about the rest of Flash, built only from the engines that work right now
+ * (engineStatus), so it never names a missing feature or says Flash can't do something it can.
+ */
+const OTHER_TOOL_NAMES: Partial<Record<Engine, string>> = {
+  image: "pictures",
+  video: "videos",
+  music: "music",
+  voice: "voice-overs",
+  app: "apps and websites",
+  slides: "slide decks",
+  transcribe: "transcripts of recordings",
+};
+/** "a, b and c". */
+const listed = (items: string[]) => (items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`);
+
+/** The line about Flash's other tools, from what's live (engineStatus()), or "" when none are. free: for the free models. */
+export function otherToolsLine(status: Partial<Record<Engine, boolean>>, free = false): string {
+  const live = (Object.keys(OTHER_TOOL_NAMES) as Engine[]).filter((e) => status[e]);
+  if (!live.length) return "";
+  const list = listed(live.map((e) => OTHER_TOOL_NAMES[e]!));
+  if (free) return `Flash also makes ${list}, most of them with credits. When the user wants one of these, tell them to ask for it in their own words; never say Flash can't do them.`;
+  const example = status.image ? ' (for example "Make a picture of a red bicycle")' : "";
+  return `Flash also makes ${list}. When the user wants one of these, tell them to ask for it in their own words${example}; Flash switches tools by itself. Never say Flash can't do them.`;
+}
+
+/** What may have changed since the model's training: the weather is listed only when no forecast tool is attached. */
+const changing = (weather: boolean) => (weather ? "" : "the weather, ");
+
+const WEB_LINES = {
+  // Research.
+  search: (weather: boolean) => {
+    const things = `${changing(weather)}news, prices and exchange rates, scores, schedules and opening hours, who holds an office or title, the latest version of anything, and laws and rules`;
+    return (
+      "You can search the web and read web pages. Your training data ends well before today's date. " +
+      `${things[0].toUpperCase()}${things.slice(1)} may have changed since then, so search for those before you answer, even when you feel sure. ` +
+      "Facts that can't change need no search. When the answer depends on where the user is, put their city or country in the search query."
+    );
+  },
+  // Claude without search: Write, Code, Translate, Docs & Sheets.
+  none: (weather: boolean) =>
+    "You can't search the web in this answer. Your training data ends well before today's date, so for anything that may have changed " +
+    `since then (${changing(weather)}news, prices, scores, who holds an office, the latest version of something), give what you know and ` +
+    "roughly when it dates from, and say that Flash's Research can check it live. Never state a current figure as if you had just checked it.",
+  // The free models.
+  free: (weather: boolean) =>
+    "You're answering on Flash's free model, which can't search the web. For anything that changes " +
+    `(${changing(weather)}news, prices, exchange rates, scores, schedules, opening hours, who holds an office now, the latest version of ` +
+    "something), never state a current value as if you had checked it: say in one sentence that the free model can't check live " +
+    "information, give what you know and roughly when it dates from, and say where to check it (the official source). Once in a " +
+    "conversation, you can mention that with credits, Flash's Research checks the web and cites its sources.",
+};
+
+/** For a reply that has the get_weather tool (see weather.ts). */
+export const WEATHER_LINE =
+  "You have a get_weather tool with a live forecast. For any question about the weather now or in the coming days (rain, temperature, " +
+  "wind, what to wear, whether to take an umbrella or go ahead with plans), call it before you answer, instead of saying you can't check, " +
+  'and don\'t ask where: when no place is named, use where the user is (where: "user_location"); for a named place, give its coordinates. ' +
+  "Use the figures exactly as the tool gives them, in its units, and name the place and the day you mean. They are forecasts: for the " +
+  'current hour say "around" or "forecast", never that it was measured. If the tool returns an error, say in one sentence that you ' +
+  "couldn't get the live forecast just now and give no figures; if it says the user's location is unknown, ask which city in one short " +
+  "question. If the forecast shows thunder, heavy rain or snow, strong wind or gusts, or extreme heat or cold, or the user mentions a " +
+  "storm, flood or warning, add one sentence telling them to follow their national weather service's official warnings, which this " +
+  "forecast doesn't include. Flash shows the data source under your answer, so you needn't name it.";
+
+const RESEARCH_PROMPT =
+  "This is a research answer: search the web, and read any page the user links. Answer first, in a sentence or a short list, then the " +
+  "supporting detail; keep the whole answer as short as the question allows. Prefer official and primary sources. When sources disagree, " +
+  "say so, and say which you trust and why. Give the date of anything that changes (\"as of 3 March\"), and name the source of key facts " +
+  "in the text; Flash shows the links under your answer. If what you found doesn't answer the question, say what you found and what's " +
+  "missing instead of filling the gap from memory.";
+// Research's quick plan: one search and one page read.
+const QUICK_RESEARCH = "One good search is enough here: answer as soon as you have what you need.";
 
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"] as const;
 type ImageType = (typeof IMAGE_TYPES)[number];
@@ -332,8 +423,10 @@ export type WritingMode = "text" | "code" | "translate" | "docs";
 const MODE_PROMPTS: Record<WritingMode, string> = {
   text: "",
   code:
-    "You are acting as an expert software engineer. Give working, complete code in fenced code blocks " +
-    "with the language named, then a short explanation. Point out bugs and edge cases.",
+    "You are acting as an expert software engineer. Give working, complete code in fenced code blocks with the language named, then a " +
+    "short explanation. When the language, framework or version isn't stated, use what the conversation points to, else the most common " +
+    "current choice, and name it in one line instead of asking. Libraries change after your training: when it matters, say which version " +
+    "your code is for, and flag any API you're not sure still exists. Point out the bugs and edge cases that matter for this code.",
   translate:
     "You are acting as a professional translator. Give the translation first, keeping tone and meaning. " +
     "If the target language is unclear, use the language named under \"About the user\" below, else English. " +
@@ -344,6 +437,10 @@ const MODE_PROMPTS: Record<WritingMode, string> = {
     "plus a short Markdown table preview if it has 15 rows or fewer. When they want a document (letter, resume, " +
     "report, proposal), write the whole document as formatted Markdown, not inside a code block: the app offers " +
     "Word, PDF and PowerPoint downloads under every answer. " +
+    "When the user hasn't given the details a document needs (a CV with no work history, a letter with no names), write the complete " +
+    "document anyway with clear placeholders in square brackets, like [Company name] or [Start date], and end with one line listing what " +
+    "to fill in. Date letters and documents with today's date. For tables of figures that change (rates, prices, populations), say what " +
+    "date the figures are from. " +
     "When analysing an attached file, lead with the key findings and the numbers behind them. " +
     "When reading text from photos or scans (receipts, menus, notes, letters, signs): copy the words exactly as " +
     "written, in their own language, keeping spelling, numbers and line breaks; write [unclear] for anything you " +
@@ -352,11 +449,33 @@ const MODE_PROMPTS: Record<WritingMode, string> = {
     "printed and only work out new totals when asked.",
 };
 
-export function system(preferences: string, mode: WritingMode = "text"): string {
+/**
+ * What a system prompt says beyond the mode. web: whether the model can search (Research), can't
+ * (the other Claude modes) or is a free model; weather: get_weather is attached; quick: Research's
+ * quick plan; tools: otherToolsLine(engineStatus()), built in route.ts since this file can't import
+ * server code; context: contextNote(where, now).
+ */
+export type SystemOptions = { web?: "search" | "none" | "free"; weather?: boolean; quick?: boolean; tools?: string; context?: string };
+
+/**
+ * A chat engine's system prompt. The text that never changes comes first and the per-minute context
+ * last, so the prompt can be cached later: who Flash is, its other tools, what it can know of today,
+ * the forecast tool, the mode, the user's settings and memory, then their date, time and place.
+ */
+export function system(preferences: string, mode: WritingMode | "search" = "text", o: SystemOptions = {}): string {
   const prefs = preferences.trim();
-  const parts = [BASE_SYSTEM, MODE_PROMPTS[mode]];
+  const weather = Boolean(o.weather);
+  const web = o.web ?? (mode === "search" ? "search" : "none");
+  const parts = [
+    BASE_SYSTEM,
+    o.tools ?? "",
+    WEB_LINES[web](weather),
+    weather ? WEATHER_LINE : "",
+    mode === "search" ? RESEARCH_PROMPT + (o.quick ? ` ${QUICK_RESEARCH}` : "") : MODE_PROMPTS[mode],
+  ];
   // Settings > General (the language to answer in, what to call them) comes first, then their memory.
   if (prefs) parts.push(`About the user, from their settings and what they asked Flash to remember. Follow their language setting in every answer:\n${prefs}`);
+  parts.push(o.context ?? "");
   return parts.filter(Boolean).join("\n\n");
 }
 
@@ -376,13 +495,15 @@ export async function* streamText(
   // The language Flash's own notes (not the reply) are in.
   t: Translate = english,
   { signal, running }: Watch = {},
+  // The rest of the system prompt: the tools line, the context note (see system).
+  o: { system?: SystemOptions } = {},
 ): AsyncGenerator<StreamEvent> {
   running?.begin(choice.model, budget.maxTokens);
   const stream = getClient().beta.messages.stream(
     {
       ...choiceParams(choice),
       max_tokens: budget.maxTokens,
-      system: system(preferences, mode),
+      system: system(preferences, mode, o.system),
       messages: toMessages(history),
     },
     { signal },
@@ -416,6 +537,7 @@ export async function* streamSearch(
   // The language Flash's own notes (not the answer) are in.
   t: Translate = english,
   { signal, running }: Watch = {},
+  o: { system?: SystemOptions } = {},
 ): AsyncGenerator<StreamEvent> {
   const messages = toMessages(history);
   const sources = new Map<string, Source>();
@@ -428,9 +550,7 @@ export async function* streamSearch(
       {
         ...choiceParams(choice),
         max_tokens: maxTokens,
-        system:
-          system(preferences) +
-          "\n\nSearch the web for current facts, read any page the user links, and keep the answer concise.",
+        system: system(preferences, "search", o.system),
         tools: [
           { type: "web_search_20260209", name: "web_search", max_uses: 3 },
           { type: "web_fetch_20260209", name: "web_fetch", max_uses: 2, max_content_tokens: 6000 },

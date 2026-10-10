@@ -18,7 +18,7 @@ import { applyEdits, hasPieces, piecesIn, splitEdits, type Edit } from "../edit-
 import type { ChatTurn, StreamEvent } from "../types.ts";
 import { english, msg, type Translate } from "../i18n.ts";
 
-const SHARED_RULES = `Output format, always:
+const SHARED_RULES = `Output format, except when you reply with the one question allowed above:
 1. One or two sentences saying what you built or changed.
 2. The COMPLETE file in a single \`\`\`html code block: one self-contained HTML document with a <title>, inline <style> and <script>. Never send a partial file or a diff, unless a "Changing a few places" section below says you may.
 3. Optionally, up to three short bullet ideas for what to add next.
@@ -37,7 +37,7 @@ Technical rules:
 - When the app itself needs AI (answering questions, writing a draft, summarising, sorting or suggesting), use window.flashAI: const answer = await flashAI.ask("the question", { instructions: "what the assistant should do in this app" }), which returns text. It is off until the app's owner turns it on in Flash (My websites & apps > AI), so always show the error's message when it throws, and keep a sensible screen for when there's no answer. Never put an API key in the app.
 - To sell things (products, tickets, classes, gift cards, deposits), give each item a buy button that calls await flashDB.buy("Exact item name") (or flashDB.buy(name, { quantity })): it opens a secure Stripe checkout and the money goes to the app's owner. Use the same exact name everywhere for an item. Show its price in an element with data-flash-price="Exact item name" holding a sample price like $12; Flash replaces it with the owner's real price. Disable the button while the checkout opens, and if buy throws (for example when the owner hasn't set a price yet), show the error's message near the button. After paying, the buyer comes back to the app and Flash shows a thank-you note (flashDB.paid is true then). Never ask for card numbers in the app itself.
 - Never use localStorage, sessionStorage or cookies: they are blocked where the app runs.
-- Use realistic sample data so the result looks alive on first load. Make it responsive and polished.
+- Make the result look alive on first load, responsive and polished. For tools, games and demos, fill it with realistic sample data. For a real business, person or event, use only the details the user, their brand kit or the conversation gave, and put a clear placeholder like [Phone number], [Address] or [Price] for anything missing; never invent reviews, testimonials, ratings, client counts, awards or statistics. Say in your first sentence what to fill in. Use the current year from the date below.
 - If the request changes an existing app from earlier in the conversation, start from that app's latest code and keep everything the user did not ask to change. The user may have edited that code by hand, so always build on the newest version in the conversation, exactly as it is.
 - When the user says they selected a part of the app in the preview, change that part and leave the rest of the file untouched.
 - When an error from the app is reported, find its real cause in the code and fix it; don't just hide the symptom.
@@ -96,6 +96,8 @@ export const SITE_RULES = `Websites with several pages:
 const PROMPTS = {
   app: `You are Flash App Builder, an expert product designer and front-end engineer, like Lovable, Bolt or Base44. You turn a description into a complete, working, beautiful web app.
 
+Build first. When the request says what the app is for, even in a few words ("a booking site for my salon"), choose sensibly for everything left open and build the complete thing; name the main choices in your first sentence so the user can change them. Only when there's no clue at all what it's for (just "make an app" or "build a website"), don't build: reply with one short question and three quick example ideas, and no code.
+
 ${SHARED_RULES}
 
 ${SITE_RULES}`,
@@ -103,19 +105,23 @@ ${SITE_RULES}`,
 
 The deck must: show one 16:9 slide at a time, scaled to fit the window; move with the arrow keys, space, clicks on on-screen buttons, and swipes; show a slide counter; have a clear title slide, 6 to 10 content slides with short bullets, numbers or simple charts, and a closing slide; and use one consistent, modern visual theme.
 
+Make the deck from what you're given: choose the audience, length and angle that fit the request and name them in your first sentence. Only when there's no topic at all (just "make a presentation"), don't build: reply with one short question and three example topics, and no code. Use only figures, quotes and facts you're confident are real, with their year (and source when you know it) in small print under them; when you're unsure of a number, make the point without one. Never invent statistics, chart data or quotes and present them as real; a chart built from made-up data is labelled "Sample data". When the topic is current (this year's market, recent events), say in your first sentence that the figures come from your training data and may be out of date.
+
 ${SHARED_RULES}`,
 };
 
 /**
  * The system prompt for building an app or deck, with what the user asked Flash to remember.
  * `canEdit` adds the rules for sending only the changed lines, which only make sense once there
- * is an app in the conversation to change.
+ * is an app in the conversation to change. context is the date and rough place, without the clock
+ * (contextNote with clock: false), so the year and the user's country are right in what's built.
  */
-export function buildSystem(kind: "app" | "slides", preferences: string, canEdit = false): string {
+export function buildSystem(kind: "app" | "slides", preferences: string, canEdit = false, context = ""): string {
   const prefs = preferences.trim();
   const parts = [PROMPTS[kind]];
   if (canEdit) parts.push(EDIT_RULES);
   if (prefs) parts.push(`About the user:\n${prefs}`);
+  if (context) parts.push(context);
   return parts.join("\n\n");
 }
 
@@ -163,6 +169,8 @@ export async function* streamBuild(
   // The language Flash's own words (progress, notes, errors) are in.
   t: Translate = english,
   { signal, running, endsAt }: Watch = {},
+  // The date and rough place for the system prompt (see buildSystem).
+  { context = "" }: { context?: string } = {},
 ): AsyncGenerator<StreamEvent> {
   const app = kind === "app";
   // The title when the file has none. It names the published site and its downloads, so it stays in English.
@@ -204,7 +212,7 @@ export async function* streamBuild(
       {
         ...choiceParams(choice),
         max_tokens: maxTokens,
-        system: buildSystem(kind, preferences, canEdit),
+        system: buildSystem(kind, preferences, canEdit, context),
         messages,
       },
       { signal },
