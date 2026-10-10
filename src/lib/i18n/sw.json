@@ -456,6 +456,7 @@
  "Flash can't make posts for that request.": "Flash haiwezi kuunda machapisho kwa ombi hilo.",
  "Flash can't run jobs on a schedule yet. When Automations arrive, you'll set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Flash bado haiwezi kufanya kazi kwa ratiba. Kazi za kiotomatiki zikija, utaweka kazi mara moja tu, kama muhtasari wa mauzo wa kila wiki au chapisho la kila siku la mitandao ya kijamii, na Flash itaifanya kwa wakati bila kuombwa.",
  "Flash can't see that record yet. It usually shows up a few minutes after you add it, sometimes up to an hour.": "Flash bado haioni rekodi hiyo. Kwa kawaida huonekana dakika chache baada ya kuiongeza, wakati mwingine hadi saa moja.",
+ "Flash can't tell how long {name} plays, so it can't transcribe it. Save it as MP3, M4A, WAV or FLAC and send it again.": "Flash haiwezi kujua {name} inachukua muda gani, kwa hivyo haiwezi kuigeuza kuwa maandishi. Ihifadhi kama MP3, M4A, WAV au FLAC kisha uitume tena.",
  "Flash combines your {count} photos into one picture.": "Flash inaunganisha picha zako {count} kuwa picha moja.",
  "Flash companion": "Msaidizi wa Flash",
  "Flash connector address": "Anwani ya kiunganishi cha Flash",

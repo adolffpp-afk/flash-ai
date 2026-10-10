@@ -456,6 +456,7 @@
  "Flash can't make posts for that request.": "Flash לא יכול ליצור פוסטים לבקשה הזו.",
  "Flash can't run jobs on a schedule yet. When Automations arrive, you'll set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Flash עדיין לא יכול להריץ משימות לפי לוח זמנים. כשהאוטומציות יגיעו, יהיה אפשר להגדיר משימה פעם אחת, כמו סיכום מכירות שבועי או פוסט יומי לרשתות, ו-Flash יבצע אותה בזמן בלי שיצטרכו לבקש.",
  "Flash can't see that record yet. It usually shows up a few minutes after you add it, sometimes up to an hour.": "Flash עדיין לא רואה את הרשומה הזו. בדרך כלל היא מופיעה כמה דקות אחרי שמוסיפים אותה, ולפעמים זה לוקח עד שעה.",
+ "Flash can't tell how long {name} plays, so it can't transcribe it. Save it as MP3, M4A, WAV or FLAC and send it again.": "Flash לא מצליח לדעת כמה זמן נמשך {name}, ולכן לא יכול לתמלל אותו. כדאי לשמור אותו כ-MP3, M4A, WAV או FLAC ולשלוח שוב.",
  "Flash combines your {count} photos into one picture.": "Flash משלב את התמונות שלך ({count}) לתמונה אחת.",
  "Flash companion": "העוזר של Flash",
  "Flash connector address": "כתובת המחבר של Flash",

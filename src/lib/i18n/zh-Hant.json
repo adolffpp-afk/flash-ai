@@ -456,6 +456,7 @@
  "Flash can't make posts for that request.": "Flash 無法為這個要求製作貼文。",
  "Flash can't run jobs on a schedule yet. When Automations arrive, you'll set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Flash 目前還不能依排程執行工作。自動化功能推出後，你只要設定一次工作，例如每週銷售摘要或每日社群貼文，Flash 就會準時完成，不用你再提醒。",
  "Flash can't see that record yet. It usually shows up a few minutes after you add it, sometimes up to an hour.": "Flash 還看不到這筆記錄。記錄通常會在新增後幾分鐘內出現，有時最多需要一小時。",
+ "Flash can't tell how long {name} plays, so it can't transcribe it. Save it as MP3, M4A, WAV or FLAC and send it again.": "Flash 無法判斷 {name} 有多長，所以無法轉成文字。請將它另存為 MP3、M4A、WAV 或 FLAC 後重新傳送。",
  "Flash combines your {count} photos into one picture.": "Flash 會把你的 {count} 張照片合成一張圖片。",
  "Flash companion": "Flash 小幫手",
  "Flash connector address": "Flash 連接器網址",

@@ -456,6 +456,7 @@
  "Flash can't make posts for that request.": "Flash no puede crear publicaciones para esa solicitud.",
  "Flash can't run jobs on a schedule yet. When Automations arrive, you'll set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Flash todavía no puede ejecutar tareas programadas. Cuando lleguen las automatizaciones, configurarás una tarea una sola vez, como un resumen semanal de ventas o una publicación diaria en redes, y Flash la hará a tiempo sin que tengas que pedírselo.",
  "Flash can't see that record yet. It usually shows up a few minutes after you add it, sometimes up to an hour.": "Flash todavía no ve ese registro. Suele aparecer unos minutos después de agregarlo, a veces hasta una hora después.",
+ "Flash can't tell how long {name} plays, so it can't transcribe it. Save it as MP3, M4A, WAV or FLAC and send it again.": "Flash no puede saber cuánto dura {name}, así que no puede transcribirlo. Guárdalo como MP3, M4A, WAV o FLAC y vuelve a enviarlo.",
  "Flash combines your {count} photos into one picture.": "Flash combina tus {count} fotos en una sola imagen.",
  "Flash companion": "Asistente de Flash",
  "Flash connector address": "Dirección del conector de Flash",

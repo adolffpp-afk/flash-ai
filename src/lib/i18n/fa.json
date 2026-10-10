@@ -456,6 +456,7 @@
  "Flash can't make posts for that request.": "Flash نمی‌تواند برای این درخواست پست بسازد.",
  "Flash can't run jobs on a schedule yet. When Automations arrive, you'll set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Flash هنوز نمی‌تواند کارها را طبق برنامهٔ زمانی اجرا کند. وقتی خودکارسازی‌ها بیایند، یک کار را فقط یک بار تنظیم می‌کنید، مثلاً خلاصهٔ هفتگی فروش یا یک پست روزانه در شبکه‌های اجتماعی، و Flash بدون اینکه بخواهید آن را سر وقت انجام می‌دهد.",
  "Flash can't see that record yet. It usually shows up a few minutes after you add it, sometimes up to an hour.": "Flash هنوز این رکورد را نمی‌بیند. معمولاً چند دقیقه بعد از افزودن ظاهر می‌شود، گاهی هم تا یک ساعت طول می‌کشد.",
+ "Flash can't tell how long {name} plays, so it can't transcribe it. Save it as MP3, M4A, WAV or FLAC and send it again.": "Flash نمی‌تواند تشخیص دهد {name} چقدر طول می‌کشد، پس نمی‌تواند متن آن را پیاده کند. آن را با فرمت MP3، M4A، WAV یا FLAC ذخیره کنید و دوباره بفرستید.",
  "Flash combines your {count} photos into one picture.": "Flash {count} عکس شما را در یک تصویر ترکیب می‌کند.",
  "Flash companion": "دستیار Flash",
  "Flash connector address": "نشانی اتصال‌دهندهٔ Flash",

@@ -456,6 +456,7 @@
  "Flash can't make posts for that request.": "そのリクエストでは投稿を作成できません。",
  "Flash can't run jobs on a schedule yet. When Automations arrive, you'll set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Flashはまだスケジュールに沿ってタスクを実行できません。自動化機能が登場したら、毎週の売上まとめや毎日のSNS投稿などのタスクを一度設定するだけで、Flashが指示なしで時間どおりに実行します。",
  "Flash can't see that record yet. It usually shows up a few minutes after you add it, sometimes up to an hour.": "Flashではまだそのレコードを確認できません。通常は追加してから数分で反映されますが、最大1時間ほどかかることもあります。",
+ "Flash can't tell how long {name} plays, so it can't transcribe it. Save it as MP3, M4A, WAV or FLAC and send it again.": "{name} の長さを判別できないため、Flashは文字起こしできません。MP3、M4A、WAV、FLAC のいずれかで保存して、もう一度送信してください。",
  "Flash combines your {count} photos into one picture.": "Flashが{count}枚の写真を1枚の画像に合成します。",
  "Flash companion": "Flashアシスタント",
  "Flash connector address": "Flashコネクタのアドレス",

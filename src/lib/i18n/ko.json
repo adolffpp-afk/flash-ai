@@ -456,6 +456,7 @@
  "Flash can't make posts for that request.": "Flash가 이 요청으로는 게시물을 만들 수 없어요.",
  "Flash can't run jobs on a schedule yet. When Automations arrive, you'll set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Flash는 아직 예약된 작업을 실행할 수 없어요. 자동화 기능이 출시되면 주간 매출 요약이나 매일 올리는 소셜 게시물 같은 작업을 한 번만 설정해 두세요. 요청하지 않아도 Flash가 제시간에 처리해요.",
  "Flash can't see that record yet. It usually shows up a few minutes after you add it, sometimes up to an hour.": "Flash에서 아직 그 레코드가 보이지 않아요. 보통 추가하고 몇 분 후에 나타나지만, 길게는 1시간까지 걸릴 수 있어요.",
+ "Flash can't tell how long {name} plays, so it can't transcribe it. Save it as MP3, M4A, WAV or FLAC and send it again.": "Flash가 {name}의 길이를 알 수 없어 스크립트로 옮길 수 없어요. MP3, M4A, WAV 또는 FLAC으로 저장한 뒤 다시 보내 주세요.",
  "Flash combines your {count} photos into one picture.": "Flash가 사진 {count}장을 이미지 하나로 합쳐요.",
  "Flash companion": "Flash 도우미",
  "Flash connector address": "Flash 커넥터 주소",

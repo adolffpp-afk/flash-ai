@@ -456,6 +456,7 @@
  "Flash can't make posts for that request.": "Flash kan inte skapa inlägg för den förfrågan.",
  "Flash can't run jobs on a schedule yet. When Automations arrive, you'll set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Flash kan inte köra schemalagda uppgifter än. När automatiseringar kommer ställer du in en uppgift en gång, till exempel en veckosammanfattning av försäljningen eller ett dagligt inlägg i sociala medier, så gör Flash den i tid utan att du behöver be om det.",
  "Flash can't see that record yet. It usually shows up a few minutes after you add it, sometimes up to an hour.": "Flash ser inte posten än. Den brukar dyka upp några minuter efter att du har lagt till den, ibland efter upp till en timme.",
+ "Flash can't tell how long {name} plays, so it can't transcribe it. Save it as MP3, M4A, WAV or FLAC and send it again.": "Flash kan inte avgöra hur lång {name} är och kan därför inte transkribera den. Spara den som MP3, M4A, WAV eller FLAC och skicka den igen.",
  "Flash combines your {count} photos into one picture.": "Flash kombinerar dina {count} foton till en bild.",
  "Flash companion": "Flash-assistent",
  "Flash connector address": "Adress till Flash-kopplingen",

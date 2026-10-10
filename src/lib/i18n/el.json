@@ -456,6 +456,7 @@
  "Flash can't make posts for that request.": "Το Flash δεν μπορεί να φτιάξει αναρτήσεις για αυτό το αίτημα.",
  "Flash can't run jobs on a schedule yet. When Automations arrive, you'll set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Το Flash δεν μπορεί ακόμα να εκτελεί εργασίες με χρονοδιάγραμμα. Όταν έρθουν οι αυτοματισμοί, θα ρυθμίζεις μια εργασία μία φορά, όπως μια εβδομαδιαία σύνοψη πωλήσεων ή μια καθημερινή ανάρτηση, και το Flash θα την κάνει στην ώρα της χωρίς να του το ζητήσεις.",
  "Flash can't see that record yet. It usually shows up a few minutes after you add it, sometimes up to an hour.": "Το Flash δεν βλέπει ακόμα αυτή την εγγραφή. Συνήθως εμφανίζεται λίγα λεπτά αφού την προσθέσεις, μερικές φορές έως και σε μία ώρα.",
+ "Flash can't tell how long {name} plays, so it can't transcribe it. Save it as MP3, M4A, WAV or FLAC and send it again.": "Το Flash δεν μπορεί να καταλάβει πόσο διαρκεί το {name}, οπότε δεν μπορεί να το απομαγνητοφωνήσει. Αποθήκευσέ το ως MP3, M4A, WAV ή FLAC και στείλ' το ξανά.",
  "Flash combines your {count} photos into one picture.": "Το Flash συνδυάζει τις {count} φωτογραφίες σου σε μία εικόνα.",
  "Flash companion": "Βοηθός Flash",
  "Flash connector address": "Διεύθυνση σύνδεσης Flash",

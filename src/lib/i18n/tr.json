@@ -456,6 +456,7 @@
  "Flash can't make posts for that request.": "Flash bu istek için gönderi hazırlayamıyor.",
  "Flash can't run jobs on a schedule yet. When Automations arrive, you'll set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Flash henüz zamanlanmış görevleri çalıştıramıyor. Otomasyonlar geldiğinde haftalık satış özeti ya da günlük sosyal medya gönderisi gibi bir görevi bir kez ayarlayacaksın, Flash da sen istemeden onu zamanında yapacak.",
  "Flash can't see that record yet. It usually shows up a few minutes after you add it, sometimes up to an hour.": "Flash bu kaydı henüz göremiyor. Kayıt genellikle ekledikten birkaç dakika sonra görünür, bazen bu bir saati bulabilir.",
+ "Flash can't tell how long {name} plays, so it can't transcribe it. Save it as MP3, M4A, WAV or FLAC and send it again.": "Flash, {name} dosyasının ne kadar sürdüğünü anlayamıyor, bu yüzden onu yazıya dökemiyor. Dosyayı MP3, M4A, WAV veya FLAC olarak kaydedip tekrar gönder.",
  "Flash combines your {count} photos into one picture.": "Flash {count} fotoğrafını tek bir görselde birleştiriyor.",
  "Flash companion": "Flash yardımcısı",
  "Flash connector address": "Flash bağlayıcı adresi",

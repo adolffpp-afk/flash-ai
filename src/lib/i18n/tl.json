@@ -456,6 +456,7 @@
  "Flash can't make posts for that request.": "Hindi makakagawa ang Flash ng mga post para sa request na iyon.",
  "Flash can't run jobs on a schedule yet. When Automations arrive, you'll set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Hindi pa kayang magpatakbo ng Flash ng mga naka-schedule na gawain. Pagdating ng mga Automation, isang beses mo lang ise-set up ang isang gawain, gaya ng lingguhang buod ng benta o araw-araw na social post, at gagawin ito ng Flash sa tamang oras nang hindi na inuutusan.",
  "Flash can't see that record yet. It usually shows up a few minutes after you add it, sometimes up to an hour.": "Hindi pa nakikita ng Flash ang record na iyon. Karaniwan itong lumalabas ilang minuto matapos mo itong idagdag, minsan hanggang isang oras.",
+ "Flash can't tell how long {name} plays, so it can't transcribe it. Save it as MP3, M4A, WAV or FLAC and send it again.": "Hindi matukoy ng Flash kung gaano katagal ang {name}, kaya hindi nito ito ma-transcribe. I-save ito bilang MP3, M4A, WAV o FLAC at ipadala ulit.",
  "Flash combines your {count} photos into one picture.": "Pagsasamahin ng Flash ang {count} larawan mo sa iisang larawan.",
  "Flash companion": "Katuwang ng Flash",
  "Flash connector address": "Address ng Flash connector",

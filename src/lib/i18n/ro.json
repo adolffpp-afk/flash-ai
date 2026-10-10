@@ -456,6 +456,7 @@
  "Flash can't make posts for that request.": "Flash nu poate crea postări pentru această cerere.",
  "Flash can't run jobs on a schedule yet. When Automations arrive, you'll set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Flash nu poate rula încă sarcini programate. Când vor apărea automatizările, vei configura o sarcină o singură dată, cum ar fi un rezumat săptămânal al vânzărilor sau o postare zilnică pe rețelele sociale, iar Flash o va face la timp, fără să i se ceară.",
  "Flash can't see that record yet. It usually shows up a few minutes after you add it, sometimes up to an hour.": "Flash nu vede încă această înregistrare. De obicei apare la câteva minute după ce o adaugi, uneori după cel mult o oră.",
+ "Flash can't tell how long {name} plays, so it can't transcribe it. Save it as MP3, M4A, WAV or FLAC and send it again.": "Flash nu poate afla cât durează {name}, așa că nu îl poate transcrie. Salvează-l ca MP3, M4A, WAV sau FLAC și trimite-l din nou.",
  "Flash combines your {count} photos into one picture.": "Flash îți combină fotografiile ({count}) într-o singură imagine.",
  "Flash companion": "Asistentul Flash",
  "Flash connector address": "Adresa conectorului Flash",

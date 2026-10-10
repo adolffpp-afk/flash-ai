@@ -456,6 +456,7 @@
  "Flash can't make posts for that request.": "এই অনুরোধে Flash পোস্ট বানাতে পারবে না।",
  "Flash can't run jobs on a schedule yet. When Automations arrive, you'll set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Flash এখনও নির্ধারিত সময়ে কাজ চালাতে পারে না। অটোমেশন চালু হলে আপনি একবার একটি কাজ সেট করে দেবেন, যেমন সাপ্তাহিক বিক্রির সারাংশ বা প্রতিদিনের সোশ্যাল পোস্ট, আর Flash না বলতেই সময়মতো সেটি করে দেবে।",
  "Flash can't see that record yet. It usually shows up a few minutes after you add it, sometimes up to an hour.": "Flash এখনো রেকর্ডটি দেখতে পাচ্ছে না। সাধারণত যোগ করার কয়েক মিনিট পরে এটি দেখা যায়, কখনো কখনো এক ঘণ্টা পর্যন্ত লাগে।",
+ "Flash can't tell how long {name} plays, so it can't transcribe it. Save it as MP3, M4A, WAV or FLAC and send it again.": "{name} কতক্ষণ চলে Flash তা বুঝতে পারছে না, তাই এটির ট্রান্সক্রিপ্ট তৈরি করতে পারবে না। এটি MP3, M4A, WAV বা FLAC হিসেবে সেভ করে আবার পাঠান।",
  "Flash combines your {count} photos into one picture.": "Flash আপনার {count}টি ছবি মিলিয়ে একটি ছবি বানায়।",
  "Flash companion": "Flash সহকারী",
  "Flash connector address": "Flash কানেক্টরের ঠিকানা",

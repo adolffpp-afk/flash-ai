@@ -456,6 +456,7 @@
  "Flash can't make posts for that request.": "Flash не может сделать посты по такому запросу.",
  "Flash can't run jobs on a schedule yet. When Automations arrive, you'll set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Flash пока не умеет выполнять задачи по расписанию. Когда появятся автоматизации, вы один раз настроите задачу — например, еженедельную сводку продаж или ежедневный пост в соцсетях, — и Flash будет сам выполнять её вовремя.",
  "Flash can't see that record yet. It usually shows up a few minutes after you add it, sometimes up to an hour.": "Flash пока не видит эту запись. Обычно она появляется через несколько минут после добавления, иногда — в течение часа.",
+ "Flash can't tell how long {name} plays, so it can't transcribe it. Save it as MP3, M4A, WAV or FLAC and send it again.": "Flash не может определить, сколько длится {name}, поэтому не может сделать расшифровку. Сохраните файл в формате MP3, M4A, WAV или FLAC и отправьте снова.",
  "Flash combines your {count} photos into one picture.": "Flash объединяет ваши фото (всего {count}) в одну картинку.",
  "Flash companion": "Помощник Flash",
  "Flash connector address": "Адрес коннектора Flash",

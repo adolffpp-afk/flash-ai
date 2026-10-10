@@ -456,6 +456,7 @@
  "Flash can't make posts for that request.": "لا يستطيع Flash إنشاء منشورات لهذا الطلب.",
  "Flash can't run jobs on a schedule yet. When Automations arrive, you'll set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "لا يستطيع Flash تشغيل المهام وفق جدول زمني بعد. عند وصول الأتمتة، ستُعِدّ المهمة مرة واحدة، مثل ملخص مبيعات أسبوعي أو منشور يومي على مواقع التواصل، وسينفذها Flash في موعدها دون أن تطلب.",
  "Flash can't see that record yet. It usually shows up a few minutes after you add it, sometimes up to an hour.": "لا يرى Flash هذا السجل بعد. يظهر عادةً بعد بضع دقائق من إضافته، وقد يستغرق أحيانًا ما يصل إلى ساعة.",
+ "Flash can't tell how long {name} plays, so it can't transcribe it. Save it as MP3, M4A, WAV or FLAC and send it again.": "لا يستطيع Flash معرفة مدة {name}، لذا لا يمكنه تحويله إلى نص. احفظه بصيغة MP3 أو M4A أو WAV أو FLAC وأرسله مرة أخرى.",
  "Flash combines your {count} photos into one picture.": "يدمج Flash صورك ({count}) في صورة واحدة.",
  "Flash companion": "مساعد Flash",
  "Flash connector address": "عنوان موصِّل Flash",

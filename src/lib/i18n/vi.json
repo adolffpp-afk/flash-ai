@@ -456,6 +456,7 @@
  "Flash can't make posts for that request.": "Flash không thể tạo bài đăng cho yêu cầu đó.",
  "Flash can't run jobs on a schedule yet. When Automations arrive, you'll set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Flash chưa thể chạy công việc theo lịch. Khi có tính năng Tự động hóa, bạn chỉ cần thiết lập công việc một lần, như bản tóm tắt doanh số hằng tuần hay bài đăng mạng xã hội hằng ngày, và Flash sẽ làm đúng giờ mà không cần nhắc.",
  "Flash can't see that record yet. It usually shows up a few minutes after you add it, sometimes up to an hour.": "Flash chưa thấy bản ghi đó. Bản ghi thường xuất hiện vài phút sau khi bạn thêm, đôi khi mất đến một giờ.",
+ "Flash can't tell how long {name} plays, so it can't transcribe it. Save it as MP3, M4A, WAV or FLAC and send it again.": "Flash không xác định được {name} dài bao lâu nên không thể chép lời. Hãy lưu tệp dưới dạng MP3, M4A, WAV hoặc FLAC rồi gửi lại.",
  "Flash combines your {count} photos into one picture.": "Flash ghép {count} ảnh của bạn thành một ảnh.",
  "Flash companion": "Trợ lý Flash",
  "Flash connector address": "Địa chỉ trình kết nối Flash",

@@ -456,6 +456,7 @@
  "Flash can't make posts for that request.": "Flash สร้างโพสต์สำหรับคำขอนั้นไม่ได้",
  "Flash can't run jobs on a schedule yet. When Automations arrive, you'll set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Flash ยังทำงานตามกำหนดเวลาไม่ได้ เมื่อระบบอัตโนมัติมาถึง คุณจะตั้งค่างานได้เพียงครั้งเดียว เช่น สรุปยอดขายรายสัปดาห์หรือโพสต์โซเชียลรายวัน แล้ว Flash จะทำให้ตรงเวลาโดยไม่ต้องสั่ง",
  "Flash can't see that record yet. It usually shows up a few minutes after you add it, sometimes up to an hour.": "Flash ยังมองไม่เห็นเรคคอร์ดนั้น โดยปกติเรคคอร์ดจะปรากฏภายในไม่กี่นาทีหลังจากที่คุณเพิ่ม บางครั้งอาจนานถึงหนึ่งชั่วโมง",
+ "Flash can't tell how long {name} plays, so it can't transcribe it. Save it as MP3, M4A, WAV or FLAC and send it again.": "Flash บอกไม่ได้ว่า {name} ยาวเท่าไร จึงถอดเสียงไม่ได้ บันทึกเป็น MP3, M4A, WAV หรือ FLAC แล้วส่งอีกครั้ง",
  "Flash combines your {count} photos into one picture.": "Flash รวมรูปภาพ {count} รูปของคุณเป็นภาพเดียว",
  "Flash companion": "ผู้ช่วย Flash",
  "Flash connector address": "ที่อยู่ตัวเชื่อมต่อ Flash",

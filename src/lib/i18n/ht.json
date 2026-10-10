@@ -456,6 +456,7 @@
  "Flash can't make posts for that request.": "Flash pa ka fè piblikasyon pou demann sa a.",
  "Flash can't run jobs on a schedule yet. When Automations arrive, you'll set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Flash poko ka fè travay selon yon orè. Lè Otomatizasyon yo rive, w ap mete yon travay an plas yon sèl fwa, tankou yon rezime lavant chak semèn oswa yon piblikasyon chak jou sou rezo sosyal, epi Flash ap fè l alè san w pa bezwen mande l.",
  "Flash can't see that record yet. It usually shows up a few minutes after you add it, sometimes up to an hour.": "Flash poko wè anrejistreman sa a. Anjeneral li parèt kèk minit apre ou fin ajoute l, pafwa li ka pran jiska inèdtan.",
+ "Flash can't tell how long {name} plays, so it can't transcribe it. Save it as MP3, M4A, WAV or FLAC and send it again.": "Flash pa ka konnen konbyen tan {name} dire, kidonk li pa ka transkri l. Anrejistre l an MP3, M4A, WAV oswa FLAC epi voye l ankò.",
  "Flash combines your {count} photos into one picture.": "Flash ap mete {count} foto ou yo ansanm nan yon sèl imaj.",
  "Flash companion": "Asistan Flash",
  "Flash connector address": "Adrès konektè Flash la",
