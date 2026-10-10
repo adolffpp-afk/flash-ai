@@ -57,3 +57,10 @@ export function autoLevel(
   }
   return { level: "ascend", why: msg("Everyday work runs on Flash Ascend.") };
 }
+
+// Sums, units, money and doses, where a quick answer is easily wrong.
+const CAREFUL =
+  /\d\s*([%+\-*/×÷^]|percent|per cent)|\d+(\.\d+)?\s*(°[cf]|km|mi|kg|lbs?|mg|ml|l\b|usd|eur|gbp|ngn|\$|€|£)|\b(calculate|convert|interest|loan|mortgage|tax|dose|dosage|how much is \d)\b/i;
+
+/** Whether a request has numbers to get right, so Sonic thinks at medium effort for it (see claudeChoice). */
+export const needsCare = (message: string) => CAREFUL.test(message);

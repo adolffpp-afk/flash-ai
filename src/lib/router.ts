@@ -1,18 +1,32 @@
 import type { Engine } from "./types.ts";
 import { msg } from "./i18n.ts";
 import { POST_PACK_REQUEST } from "./models.ts";
+import { EDITS_BUILD, asksWeather, weatherQuestion } from "./weather-words.ts";
 
 // reason is marked msg("…") here and shown in the user's language with t(reason). guessed: no rule
 // was sure, so the router's guess may move it (only between the engines that answer in words when
 // answersOnly). about: a spoken turn after an app or deck that didn't change it, kept with the reply
 // so the next follow-up can still change that build. maybe: what the rules would have made of a
 // spoken turn that sounds like talk ("how do I make a website?"), which the guess may still pick.
-export type RouteDecision = { engine: Engine; reason: string; guessed?: boolean; answersOnly?: boolean; about?: Engine; maybe?: Engine };
+// live: answered from the clock or a live forecast (see weather-words.ts); hint: it has a weather word,
+// so the engine that answers may get the forecast tool; captured: a follow-up to an app or deck kept
+// as an edit, which any guess may replace.
+export type RouteDecision = {
+  engine: Engine;
+  reason: string;
+  guessed?: boolean;
+  answersOnly?: boolean;
+  about?: Engine;
+  maybe?: Engine;
+  live?: "weather" | "clock";
+  hint?: "weather";
+  captured?: boolean;
+};
 
 const LANGUAGES =
   "english|french|spanish|portuguese|german|italian|dutch|arabic|chinese|mandarin|japanese|korean|hindi|russian|turkish|swahili|yoruba|igbo|hausa|zulu|amharic|polish|greek|hebrew|vietnamese|thai|indonesian|creole";
 
-type Rule = { engine: Engine; reason: string; patterns: RegExp[]; unless?: RegExp };
+type Rule = { engine: Engine; reason: string; patterns: RegExp[]; unless?: RegExp; test?: (text: string) => boolean; live?: "weather" | "clock" };
 
 // Words about when, which a request for fresh information from the web holds.
 const WHEN = /\b(latest|today|tonight|yesterday|this week|this month|right now|currently|current|recent|breaking)\b/i;
@@ -91,6 +105,25 @@ const RULES: Rule[] = [
     ],
   },
   {
+    // The date and the time: every answer knows them (see context-note.ts), so no search is needed.
+    // Anchored to the end, so "what time is it best to post?" isn't one.
+    engine: "text",
+    live: "clock",
+    reason: msg("Flash answers this from today's date and time."),
+    patterns: [
+      /\bwhat (time|day|date) is it( (now|today|right now|there|in [\p{L} .'-]{2,40}))?\s*[?.!]*\s*$/iu,
+      /\bwhat('?s| is) (today'?s date|the date( today)?|the time( now)?( in [\p{L} .'-]{2,40})?)\s*\??\s*$/iu,
+    ],
+  },
+  {
+    // A precise forecast question (see weather-words.ts): answered in words, with a live forecast.
+    engine: "text",
+    live: "weather",
+    reason: msg("Weather questions are answered from a live forecast."),
+    patterns: [],
+    test: weatherQuestion,
+  },
+  {
     engine: "code",
     reason: msg("This is a programming task."),
     patterns: [
@@ -114,9 +147,15 @@ const RULES: Rule[] = [
     patterns: [
       /https?:\/\/\S+/i,
       WHEN,
-      /\b(news|price of|stock price|exchange rate|weather|score|release date|who won)\b/i,
+      /\b(news|price of|stock price|exchange rate|score|release date|who won)\b/i,
       /\b(search|look up|google|find sources|with sources|cite|citations)\b/i,
       /\b20(2[5-9]|3\d)\b/,
+      // Opening hours, who holds an office now, a crypto price or a currency pair, fixtures, and storms on their way.
+      /\b(open now|opening (hours|times)|closing time|is .{1,40} open (today|now|tomorrow|on \w+day))\b/i,
+      /\bwho is (the )?(current|new) (president|prime minister|ceo|king|queen|chancellor|governor|mayor|pope|champion)\b|\bwho is the (president|prime minister|ceo|chancellor|governor|mayor|pope) of\b/i,
+      /\bhow much is (a |one |1 )?(bitcoin|btc|ethereum|eth)\b|\bhow much is (a |one |1 )?(dollar|euro|pound|naira|cedi|rand|rupee|yen|peso)s? (in|to|against) (naira|cedis?|rand|rupees?|yen|pesos?|dollars?|euros?|pounds?|usd|eur|gbp|ngn|ghs|zar|inr|jpy|kes|shillings?|francs?|cfa|gourdes?|htg)\b/i,
+      /\b(match|football|soccer|premier league|league|cup|game|epl|afcon)\b.{0,40}\b(fixtures?|kick-?off)\b|\b(fixtures?|kick-?off( time)?)\b.{0,40}\b(match|league|cup|game|today|tonight|this weekend|weekend)\b/i,
+      /\b(hurricane|typhoon|cyclone|tornado|tropical storm|flood(s|ing)?|wildfire)s?\b.{0,40}\b(coming|now|today|tonight|tomorrow|this week|update|track|path|landfall|warnings?|watch|evacuat\w*|near|heading|hit|hitting|expected)\b|\b(is|are) there (a |any )?(hurricane|typhoon|cyclone|tornado|tropical storm|flood|wildfire)/i,
     ],
   },
 ];
@@ -537,7 +576,14 @@ export function route(message: string, attachmentType?: string, previous?: Engin
   }
   if ((previous === "app" || previous === "slides") && GENERAL.includes(decision.engine) && !attachmentType) {
     const build = { engine: previous, reason: previous === "app" ? msg("Updating your app.") : msg("Updating your slides.") };
-    if (!spoken) return build;
+    // "Add a weather widget" or "show the temperature in Celsius" still changes it.
+    const edit = EDITS_BUILD.test(message);
+    // A precise weather or clock question is answered, not taken for a change.
+    if (decision.live && !edit) return spoken ? { ...decision, about: previous } : decision;
+    if (!spoken) {
+      // Another weather word: still the change, unless the guess, which sees the build, reads it otherwise.
+      return decision.guessed && !edit && asksWeather(message) ? { ...build, guessed: true, captured: true, hint: "weather" } : build;
+    }
     const asks = spokenFollowUp(message);
     if (asks === "change") return build;
     // Talk is answered in words; an unclear turn goes to the router's guess, told about the build,
@@ -602,11 +648,20 @@ function routeOne(message: string, attachmentType?: string, { skipVoice = false 
     return { engine: "image", reason: msg("A photo is attached and you asked to change it.") };
   }
   for (const rule of RULES) {
-    // An attached file is read by a text engine, so media-making rules don't apply to it.
+    // An attached file is read by a text engine, so media-making rules don't apply to it, and a
+    // question about the file isn't one about the weather or the clock.
     if (attachmentType && ["video", "music", "image", "voice", "search", "app", "slides"].includes(rule.engine)) continue;
+    if (attachmentType && rule.live) continue;
     if (skipVoice && rule.engine === "voice") continue;
     if (rule.unless?.test(text)) continue;
-    if (rule.patterns.some((p) => p.test(text))) return { engine: rule.engine, reason: rule.reason };
+    if (rule.patterns.some((p) => p.test(text)) || rule.test?.(text)) {
+      // A weather word with a word about when ("sunscreen today", "rain this week") isn't a web search:
+      // the guess picks between the forecast and Research.
+      if (rule.engine === "search" && asksWeather(text) && !/https?:\/\//i.test(text)) {
+        return { engine: "text", reason: msg("Writing and reasoning task."), guessed: true, hint: "weather" };
+      }
+      return { engine: rule.engine, reason: rule.reason, ...(rule.live && { live: rule.live }) };
+    }
   }
   if (attachmentType) {
     return SHEET_TYPE.test(attachmentType)
@@ -614,7 +669,7 @@ function routeOne(message: string, attachmentType?: string, { skipVoice = false 
       : { engine: "text", reason: msg("A file is attached, so the writing model reads it.") };
   }
   // No rule matched: the caller may ask a small model to decide.
-  return { engine: "text", reason: msg("Writing and reasoning task."), guessed: true };
+  return { engine: "text", reason: msg("Writing and reasoning task."), guessed: true, ...(asksWeather(text) && { hint: "weather" as const }) };
 }
 
 /** Strips the instruction part of a voice request, keeping the words to speak. */

@@ -55,7 +55,12 @@ const FRAMING_TOKENS = 100;
 
 /** The most a call can cost, in cents, when it reads at most inputChars characters and writes at most maxTokens. */
 export function callMaxCents(model: string, inputChars: number, maxTokens: number): number {
-  const tokens = worstTokens(inputChars) + FRAMING_TOKENS;
+  return tokensMaxCents(model, worstTokens(inputChars), maxTokens);
+}
+
+/** The same for a call that reads at most inputTokens (a text's bytes of UTF-8 bound its tokens), with what wraps them. */
+export function tokensMaxCents(model: string, inputTokens: number, maxTokens: number): number {
+  const tokens = inputTokens + FRAMING_TOKENS;
   const price = claudePrice(model, tokens);
   return (tokens * price.input + maxTokens * price.output) / 1e6;
 }

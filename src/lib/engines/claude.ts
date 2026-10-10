@@ -12,6 +12,7 @@ import {
   fallbackModel,
   readCostCents,
   researchPlan,
+  tokensMaxCents,
   tokensWithin,
   type ToolPlan,
 } from "../credits.ts";
@@ -64,10 +65,13 @@ export type ClaudeChoice = { level: ModelLevel; model: string; effort: Effort; s
  * What a level runs on for an engine. Building and code get more thought, Sonic answers at low
  * effort for speed, and Summit steps down to Vision when its model is busy or not available.
  * Research runs on Ascend or above: Sonic's model doesn't have the web tools research uses.
+ * careful: the request has sums, units or money in it (see needsCare in levels.ts), so Sonic
+ * thinks at medium effort; on Haiku that costs a small part of a credit.
  */
-export function claudeChoice(engine: Engine, level: ModelLevel): ClaudeChoice {
-  if (engine === "search" && level === "sonic") return claudeChoice(engine, "ascend");
-  const effort: Effort = level === "sonic" ? "low" : engine === "app" || engine === "slides" || engine === "code" ? "high" : "medium";
+export function claudeChoice(engine: Engine, level: ModelLevel, { careful = false }: { careful?: boolean } = {}): ClaudeChoice {
+  if (engine === "search" && level === "sonic") return claudeChoice(engine, "ascend", { careful });
+  const effort: Effort =
+    level === "sonic" ? (careful ? "medium" : "low") : engine === "app" || engine === "slides" || engine === "code" ? "high" : "medium";
   return { level, model: LEVEL_MODELS[level], effort, ...(level === "ultra" && { stepDown: claudeChoice(engine, "vision") }) };
 }
 
@@ -884,47 +888,77 @@ export function parseScenes(text: string, scenes: number): string[] {
   throw new Error("The scene writer didn't return a scene list.");
 }
 
-const ENGINE_GUIDE: Record<Engine, string> = {
-  text: "general questions, advice, explanations, writing, emails, brainstorming",
-  app: "build a working web app, website, tool, game, dashboard or landing page",
-  slides: "make a presentation or slide deck",
-  search: "needs current or recent information from the web: news, prices, schedules, latest releases",
-  code: "write, fix or explain program code",
-  translate: "translate text into another language",
-  docs: "make a spreadsheet, table, budget, resume, report or formal document",
-  image: "make a picture, drawing, logo, illustration or photo",
-  video: "make a video clip",
-  voice: "read text aloud as speech",
-  music: "compose music, a song, jingle or beat",
-  transcribe: "turn a recording into text",
-};
+// What each answer the router may give is for, in the order it reads them. weather is Write with a
+// live forecast (see weather.ts); the rest are the engines.
+const ROUTER_GUIDE: [Engine | "weather", string][] = [
+  [
+    "weather",
+    "the weather or forecast for a place, now or in the next days: rain, temperature, wind, snow, storms, humidity, UV, what to wear, whether to take an umbrella or go ahead with plans",
+  ],
+  ["text", "questions about things that don't change, advice, explanations, maths, writing, emails, brainstorming"],
+  [
+    "search",
+    "anything else whose answer depends on today: news, prices and exchange rates, sports scores and fixtures, opening hours, travel and schedules, who currently holds a job or title, the latest version or release of anything, and anything the user asks to look up, check or cite",
+  ],
+  ["app", "build a working web app, website, tool, game, dashboard or landing page"],
+  ["slides", "make a presentation or slide deck"],
+  ["code", "write, fix or explain program code"],
+  ["translate", "translate text into another language"],
+  ["docs", "make a spreadsheet, table, budget, resume, report or formal document"],
+  ["image", "make a picture, drawing, logo, illustration or photo"],
+  ["video", "make a video clip"],
+  ["voice", "read text aloud as speech"],
+  ["music", "compose music, a song, jingle or beat"],
+  ["transcribe", "turn a recording into text"],
+];
 
 const ROUTER_SYSTEM =
-  "Pick the one tool that best fits the user's request. Reply with the tool name only.\n\n" +
-  ENGINES.map((e) => `${e}: ${ENGINE_GUIDE[e]}`).join("\n");
-// The router and the picture check read at most this much of a message, and answer in one word.
-// Each costs at most CHECK_ALLOWANCE_CENTS.
+  "You route messages in Flash, an all-in-one AI app. Pick the one tool that best fits the user's latest message. " +
+  "Messages can be in any language. A short follow-up (\"and tomorrow?\", \"what about Paris?\") continues the earlier message. " +
+  "Reply with the tool name only.\n\n" +
+  ROUTER_GUIDE.map(([answer, what]) => `${answer}: ${what}`).join("\n");
+// The picture check reads at most this much of a message. It and the router answer in one word, and
+// each costs at most CHECK_ALLOWANCE_CENTS.
 const CHECK_MESSAGE_CHARS = 1000;
 const CHECK_TOKENS = 10;
+// The router reads at most ROUTER_BYTES bytes of UTF-8, and no text is fewer tokens than its bytes:
+// its instructions (with the build and the question Flash asked), the earlier message (at most
+// EARLIER_CHARS) and as much of the latest message as fits, up to ROUTER_MESSAGE_CHARS.
+const ROUTER_BYTES = 5600;
+const EARLIER_CHARS = 300;
+const ROUTER_MESSAGE_CHARS = 2000;
 
 /** The most classifyRequest can cost, in cents. */
-export const ROUTER_MAX_CENTS = callMaxCents(HELPER_MODEL, ROUTER_SYSTEM.length + CHECK_MESSAGE_CHARS, CHECK_TOKENS);
+export const ROUTER_MAX_CENTS = tokensMaxCents(HELPER_MODEL, ROUTER_BYTES, CHECK_TOKENS);
 
 // How much of Flash's own question the router reads with a "yes" (see classifyRequest).
 const OFFER_CHARS = 200;
 
+const utf8 = new TextEncoder();
+const utf8Bytes = (text: string) => utf8.encode(text).length;
+/** The longest start of text that is at most n bytes of UTF-8, never cutting a character in two. */
+const firstBytes = (text: string, n: number) => text.slice(0, utf8.encodeInto(text, new Uint8Array(Math.max(0, n))).read);
+
 /**
- * Asks Haiku which engine fits a request the keyword rules couldn't place. about: the app or deck
- * Flash just built in this chat, when the request was said about it ("it's too dark"); offer: the
- * question Flash's last reply ended on, which a "yes" may answer ("Want me to add a dark mode?").
- * timeoutMs is shorter for someone talking, who waits in silence.
+ * Asks Haiku which engine fits a request the keyword rules couldn't place, or "weather" for a
+ * question a live forecast answers. earlier: the user's message before this one, which a short
+ * follow-up continues ("and tomorrow?"); previous: the engine of Flash's last reply. about: the app
+ * or deck Flash just built in this chat, when the request was said about it ("it's too dark");
+ * offer: the question Flash's last reply ended on, which a "yes" may answer ("Want me to add a dark
+ * mode?"). timeoutMs is shorter for someone talking, who waits in silence.
  * Returns null on any doubt or error, so the caller keeps its default.
  */
 export async function classifyRequest(
   message: string,
   meter: Meter = noMeter,
-  { timeoutMs = 4000, about, offer }: { timeoutMs?: number; about?: Engine; offer?: string } = {},
-): Promise<Engine | null> {
+  {
+    timeoutMs = 4000,
+    about,
+    offer,
+    earlier,
+    previous,
+  }: { timeoutMs?: number; about?: Engine; offer?: string; earlier?: string; previous?: Engine } = {},
+): Promise<Engine | "weather" | null> {
   const build = about === "app" || about === "slides";
   const system =
     ROUTER_SYSTEM +
@@ -933,23 +967,26 @@ export async function classifyRequest(
         `Reply ${about} only if they ask for it to be changed, fixed or added to; reply text for thanks, questions and anything else.` +
         (offer ? ` Flash's last words to them were: "${offer.slice(-OFFER_CHARS)}" A yes to an offer to change it is a change.` : "")
       : "");
+  const head = [
+    earlier?.trim() && `Earlier message: ${earlier.trim().slice(0, EARLIER_CHARS)}`,
+    previous && `The previous reply came from: ${previous}`,
+    "Latest message: ",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  // What's left of ROUTER_BYTES is the latest message's, so the call never costs more than ROUTER_MAX_CENTS.
+  const content = head + firstBytes(message.slice(0, ROUTER_MESSAGE_CHARS), ROUTER_BYTES - utf8Bytes(system) - utf8Bytes(head));
   try {
     const res = await getClient()
       .messages.create(
-        {
-          model: HELPER_MODEL,
-          max_tokens: CHECK_TOKENS,
-          ...HELPER_SETTINGS,
-          system,
-          // A longer system prompt reads less of the message, so the call never costs more than ROUTER_MAX_CENTS.
-          messages: [{ role: "user", content: message.slice(0, CHECK_MESSAGE_CHARS - (system.length - ROUTER_SYSTEM.length)) }],
-        },
+        { model: HELPER_MODEL, max_tokens: CHECK_TOKENS, ...HELPER_SETTINGS, system, messages: [{ role: "user", content }] },
         { timeout: timeoutMs, maxRetries: 0 },
       )
       .catch((err: unknown) => meterLost(err, meter, ROUTER_MAX_CENTS));
     meter("anthropic", res.model, claudeCostCents(res.model, res.usage, HELPER_MODEL));
     const text = res.content.find((b) => b.type === "text");
     const word = text?.type === "text" ? text.text.trim().toLowerCase().replace(/[^a-z]/g, "") : "";
+    if (word === "weather") return "weather";
     return (ENGINES as readonly string[]).includes(word) ? (word as Engine) : null;
   } catch {
     return null;
@@ -965,49 +1002,64 @@ const PICK_ORDER: Engine[] = ["video", "music", "image", "voice", "app", "slides
  * the router is always part of a paid request, whatever it picks: a request headed for the free lane
  * or for "you need more credits" never reaches a paid model, and nobody pays for a reply on an
  * engine they didn't ask for because the router's pick was too dear. plan prices a request on an
- * engine (with extraCents more for helpers still to run); ready says whether an engine is set up.
- * may says which engines the guess may move the request to: any but text and transcribing unless
- * the caller says otherwise (a voice conversation's, see takesGuess in router.ts). timeoutMs, about
- * and offer are passed on to classifyRequest.
+ * engine (with extraCents more for helpers still to run, and with the forecast tool when weather);
+ * ready says whether an engine is set up. may says which engines the guess may move the request to:
+ * any but text and transcribing unless the caller says otherwise (a voice conversation's, see
+ * takesGuess in router.ts). weather: the guess may also answer with Write and a live forecast, which
+ * must be paid for too. timeoutMs, about, offer, earlier and previous are passed on to classifyRequest.
+ * answered says the router gave an answer, whether or not it moved the request.
  */
 export async function guessEngine<P extends { live: boolean; needed: number }>(
   message: string,
   engine: Engine,
   available: number,
-  plan: (engine: Engine, extraCents?: number) => Promise<P>,
+  plan: (engine: Engine, extraCents?: number, weather?: boolean) => Promise<P>,
   ready: (engine: Engine) => boolean,
   meter: Meter = noMeter,
   {
     may = (e: Engine) => e !== "text" && e !== "transcribe",
+    weather = false,
     timeoutMs,
     about,
     offer,
-  }: { may?: (engine: Engine) => boolean; timeoutMs?: number; about?: Engine; offer?: string } = {},
-): Promise<{ engine: Engine; plan: P; guessed: boolean }> {
-  const kept = async () => ({ engine, plan: await plan(engine), guessed: false });
+    earlier,
+    previous,
+  }: {
+    may?: (engine: Engine) => boolean;
+    weather?: boolean;
+    timeoutMs?: number;
+    about?: Engine;
+    offer?: string;
+    earlier?: string;
+    previous?: Engine;
+  } = {},
+): Promise<{ engine: Engine; plan: P; guessed: boolean; weather?: true; answered: boolean }> {
+  const kept = async () => ({ engine, plan: await plan(engine), guessed: false, answered: false });
   const asRouted = await plan(engine, ROUTER_MAX_CENTS);
   if (!asRouted.live || available < asRouted.needed) return kept();
   // A guess is only a guess, so it never sends a request to an engine that isn't available yet.
   const picks = ENGINES.filter((e) => e !== engine && may(e) && ready(e));
-  // Nowhere to move it, so the router has nothing to decide.
-  if (!picks.length) return kept();
+  // Nowhere to move it, and no forecast to add, so the router has nothing to decide.
+  if (!picks.length && !weather) return kept();
   const order = (e: Engine) => (PICK_ORDER.includes(e) ? PICK_ORDER.indexOf(e) : -1);
   picks.sort((a, b) => order(a) - order(b));
-  const affordable = async (e: Engine) => {
-    const p = await plan(e, ROUTER_MAX_CENTS);
+  const affordable = async (e: Engine, forecast = false) => {
+    const p = await plan(e, ROUTER_MAX_CENTS, forecast);
     return !p.live || available >= p.needed;
   };
   // Pictures, video, music and voice have fixed prices, so they are checked first, one by one.
   const priced = picks.filter((e) => ["video", "music", "image", "voice"].includes(e));
   for (const e of priced) if (!(await affordable(e))) return kept();
-  const rest = await Promise.all(picks.filter((e) => !priced.includes(e)).map(affordable));
+  const rest = await Promise.all([...picks.filter((e) => !priced.includes(e)).map((e) => affordable(e)), ...(weather ? [affordable("text", true)] : [])]);
   if (rest.includes(false)) return kept();
-  const guess = await classifyRequest(message, meter, { timeoutMs, about, offer });
-  if (guess && picks.includes(guess)) {
-    const picked = await plan(guess);
-    if (picked.live && available >= picked.needed) return { engine: guess, plan: picked, guessed: true };
+  const guess = await classifyRequest(message, meter, { timeoutMs, about, offer, earlier, previous });
+  if (guess === "weather" ? weather : guess && picks.includes(guess)) {
+    const forecast = guess === "weather";
+    const to: Engine = forecast ? "text" : (guess as Engine);
+    const picked = await plan(to, undefined, forecast);
+    if (picked.live && available >= picked.needed) return { engine: to, plan: picked, guessed: true, ...(forecast && { weather: true as const }), answered: true };
   }
-  return { engine, plan: asRouted, guessed: false };
+  return { engine, plan: asRouted, guessed: false, answered: guess !== null };
 }
 
 export type PictureRequest = "change" | "new" | "other";
