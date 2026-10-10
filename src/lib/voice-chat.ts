@@ -236,6 +236,14 @@ export function onlySounds(heard: string, sounds = ""): boolean {
   return Boolean(said) && !rest && phrases.every((p) => p.kind === "sound");
 }
 
+/**
+ * A word or two that trails off before a pause ("What…", "So, um,", "I want—"), as a transcript
+ * writes it: the request is still coming. Chrome writes no punctuation, so there it's never so.
+ */
+export function trailsOff(heard: string): boolean {
+  return /(?:\.{2,}|…|[,،，、]|-+|—)\s*$/.test(heard.trim()) && wordsOf(spoken(heard)).length <= 2;
+}
+
 // "Say that again", "Can you repeat that please", "Sorry?".
 const AGAIN = /^(?:sorry|pardon|what|huh|come again|what did you say|(?:(?:can|could) you )?(?:please )?(?:say|repeat) (?:that|it|this)(?: again)?(?: please)?|repeat(?: that)?(?: please)?)$/;
 
@@ -285,31 +293,58 @@ export function isGoodbye(heard: string, words = "", more: { ending?: string; po
 
 // Recording a turn (browsers that can't recognise speech themselves): the microphone's loudness is
 // read every TURN_TICK_MS. A turn ends after END_SILENCE_MS of silence, gives up when nobody speaks
-// for NO_SPEECH_MS, and never runs longer than MAX_TURN_MS. A voice is louder than MIN_LEVEL (RMS)
-// and three times the room for two ticks in a row; a turn needs MIN_SPEECH_MS of it, so a short
-// "yes" counts and a click doesn't.
+// for NO_SPEECH_MS, and never runs longer than MAX_TURN_MS. A voice is louder than MIN_LEVEL (RMS),
+// three times the quiet room, and ROOM_MARGIN times the talking in the room (a television) for two
+// ticks in a row; a turn needs MIN_SPEECH_MS of it, so a short "yes" counts and a click doesn't.
 export const TURN_TICK_MS = 40;
 const MIN_LEVEL = 0.02;
 const MIN_SPEECH_MS = 120;
 const END_SILENCE_MS = 1200;
+// After a word or a sound ("um…"), someone who isn't answering yes or no may still be finding their words.
+const SHORT_SPEECH_MS = 500;
+const THINKING_SILENCE_MS = 2000;
 const NO_SPEECH_MS = 12_000;
 const MAX_TURN_MS = 30_000;
+// The talking in the room is the loud end (ROOM_SHARE) of what was heard outside a turn in the last
+// ROOM_WINDOW_MS, so a knock is forgotten and a television isn't.
+const ROOM_WINDOW_MS = 2500;
+const ROOM_SHARE = 0.9;
+const ROOM_MARGIN = 1.5;
+// In a turn, a moment this much quieter than the turn's own voice is a pause, whatever else is heard.
+const PAUSE_SHARE = 0.4;
+
+/** The value a share of the way up the sorted values (0.5: the median). */
+const shareOf = (values: number[], share: number) => {
+  const sorted = [...values].sort((a, b) => a - b);
+  return sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * share))] : 0;
+};
 
 /** Hears where one recorded turn ends, from the microphone's loudness a tick at a time. */
 export class TurnEnd {
   // How loud the room is (RMS), learnt from quiet moments and passed from one turn to the next.
   floor: number;
+  // How loud other talking in the room is (a television), passed from one turn to the next.
+  room: number;
   private started: number;
+  private patient: boolean;
   private speechAt = 0;
   private lastVoice = 0;
   // How long the voice has been loud this turn, and for how many ticks in a row.
   private voiced = 0;
   private streak = 0;
+  // What was heard outside a turn lately, and how loud the voice was in this one.
+  private around: number[] = [];
+  private voice: number[] = [];
 
-  /** started: when listening began. floor: the room's level from the turn before (0 when unknown). */
-  constructor(started: number, floor = 0) {
+  /**
+   * started: when listening began. floor and room: the room's levels from the turn before (0 when
+   * unknown). patient: wait longer after only a word or a sound, as when Flash isn't waiting for a yes or no.
+   */
+  constructor(started: number, floor = 0, { room = 0, patient = false }: { room?: number; patient?: boolean } = {}) {
     this.started = started;
     this.floor = floor;
+    this.room = room;
+    this.patient = patient;
   }
 
   /** The level (RMS) heard at now: "spoke" ends the turn with words to hear, "silent" with none; null listens on. */
@@ -319,20 +354,37 @@ export class TurnEnd {
     this.floor = !this.floor
       ? Math.min(level, 0.01)
       : this.floor + (level - this.floor) * (level < this.floor ? 0.3 : this.speechAt ? 0.001 : 0.02);
-    this.streak = level > Math.max(MIN_LEVEL, this.floor * 3) ? this.streak + 1 : 0;
+    const pause = this.speechAt ? PAUSE_SHARE * shareOf(this.voice, 0.5) : 0;
+    const loud = level > Math.max(MIN_LEVEL, this.floor * 3, this.room * ROOM_MARGIN, pause);
+    this.streak = loud ? this.streak + 1 : 0;
+    if (!this.speechAt && !loud) {
+      // Outside a turn, what's heard is the room: a television's talking raises the bar for a voice.
+      this.around.push(level);
+      if (this.around.length > ROOM_WINDOW_MS / TURN_TICK_MS) this.around.shift();
+      const heard = shareOf(this.around, ROOM_SHARE);
+      // Until a moment of the room has been heard, the level from the turn before still counts.
+      this.room = this.around.length * TURN_TICK_MS >= 400 ? heard : Math.max(this.room, heard);
+    }
     // Two loud ticks in a row is a voice; one is a click.
     if (this.streak >= 2) {
       if (!this.speechAt) this.speechAt = now - TURN_TICK_MS;
       this.voiced += this.streak === 2 ? 2 * TURN_TICK_MS : TURN_TICK_MS;
       this.lastVoice = now;
+      this.voice.push(level);
     }
-    if (this.speechAt && now - this.lastVoice > END_SILENCE_MS) {
+    const wait = this.patient && this.voiced < SHORT_SPEECH_MS ? THINKING_SILENCE_MS : END_SILENCE_MS;
+    if (this.speechAt && now - this.lastVoice > wait) {
       if (this.voiced >= MIN_SPEECH_MS) return "spoke";
       // A click or a knock: keep listening.
       this.speechAt = 0;
       this.voiced = 0;
+      this.voice = [];
     } else if (!this.speechAt && now - this.started > NO_SPEECH_MS) return "silent";
-    else if (this.speechAt && now - this.speechAt > MAX_TURN_MS) return "spoke";
+    else if (this.speechAt && now - this.speechAt > MAX_TURN_MS) {
+      // Talking that never pauses is more often a television than a person: the next turn must be louder than it.
+      this.room = Math.max(this.room, shareOf(this.voice, 0.5));
+      return "spoke";
+    }
     return null;
   }
 }
@@ -413,11 +465,11 @@ function madeNote(m: VoiceMessage, t: Translate): string {
  * What Flash says after a request in a voice conversation, in the language t speaks. confirm is
  * true when Flash asked whether to go ahead with a costly request, so a "yes" next runs it.
  */
-export function voiceReply(m: VoiceMessage, t: Translate = english): { say: string; confirm: boolean } {
+export function voiceReply(m: VoiceMessage, t: Translate = english): { say: string; confirm: boolean; stopped?: boolean } {
   // The price question is written by the server.
   if (m.error && m.errorCode === "confirm_cost") return { say: t("{cost} Say yes to go ahead, or no to skip it.", { cost: m.error }), confirm: true };
   if (m.error) return { say: m.error, confirm: false };
-  if (m.stopped) return { say: t("Stopped."), confirm: false };
+  if (m.stopped) return { say: t("Stopped."), confirm: false, stopped: true };
   const written = [m.content, m.after].filter(Boolean).join("\n\n");
   // Code and tables don't read well aloud; they stay on screen.
   const hidden = /```|^\s*\|.*\|\s*$/m.test(written);

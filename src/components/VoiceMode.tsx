@@ -19,6 +19,7 @@ import {
   onlySounds,
   sayFirst,
   speechChunks,
+  trailsOff,
   type VoiceMessage,
 } from "@/lib/voice-chat";
 import { readAloudVoice } from "@/lib/device-settings";
@@ -26,8 +27,8 @@ import { speechLang } from "@/lib/languages";
 import { msg } from "@/lib/i18n";
 import { tNow, useT } from "@/lib/use-t";
 
-/** What Flash says after a request, and whether it asked to go ahead with a costly one. */
-export type VoiceAnswer = { say: string; confirm: boolean };
+/** What Flash says after a request, whether it asked to go ahead with a costly one, and whether the request was stopped. */
+export type VoiceAnswer = { say: string; confirm: boolean; stopped?: boolean };
 
 type Phase = "starting" | "listening" | "thinking" | "speaking" | "paused";
 
@@ -99,10 +100,15 @@ class Conversation {
   private cutSpeech: (() => void) | null = null;
   private audio: { stream: MediaStream; context: AudioContext } | null = null;
   private heardAt = 0;
-  // Set when the user taps the circle to interrupt, so the rest of that answer isn't said.
+  // Set when the user taps the circle to interrupt, or presses Stop, so the rest of that answer isn't said.
   private hushed = false;
-  // How loud the room is (RMS), learnt from quiet moments and kept from one turn to the next (see TurnEnd).
+  // Set when the browser wouldn't speak until the page is tapped, so the whole answer can be heard after.
+  private blocked = false;
+  // "Tap to hear Flash" saying it, while listening waits.
+  private replaying: Promise<void> | null = null;
+  // How loud the room is (RMS), and other talking in it, kept from one turn to the next (see TurnEnd).
   private floor = 0;
+  private room = 0;
 
   constructor(
     private screen: Screen,
@@ -119,15 +125,17 @@ class Conversation {
     let pending = p().first?.trim() ?? "";
     let confirming = false;
     let lastAnswer = "";
+    // "Um…" or "What…" said before a pause, kept to go with the words that follow it.
+    let held = "";
     this.heardAt = Date.now();
     // "there" means Flash has no name for them: the greeting goes without one, which reads naturally in every language.
     const named = p().name !== "there";
     if (!pending) {
-      await this.say(
-        p().woke
-          ? named ? tNow("Yes, {name}?", { name: p().name }) : tNow("Yes?")
-          : named ? tNow("Hi {name}. What can I do for you?", { name: p().name }) : tNow("Hi. What can I do for you?"),
-      );
+      // Kept as the last answer, so "Sorry?" right after it says it again.
+      lastAnswer = p().woke
+        ? named ? tNow("Yes, {name}?", { name: p().name }) : tNow("Yes?")
+        : named ? tNow("Hi {name}. What can I do for you?", { name: p().name }) : tNow("Hi. What can I do for you?");
+      await this.sayAll(lastAnswer);
     }
     while (this.alive) {
       if (this.paused) {
@@ -137,11 +145,15 @@ class Conversation {
         this.heardAt = Date.now();
         continue;
       }
+      if (this.replaying) {
+        await this.replaying;
+        continue;
+      }
       let heard: string | null = pending || null;
       pending = "";
       if (heard === null) {
         this.show("listening");
-        heard = await (this.builtIn ? this.hearBuiltIn() : this.hearRecorded());
+        heard = await (this.builtIn ? this.hearBuiltIn() : this.hearRecorded(!confirming));
       }
       if (!this.alive) return;
       if (heard === null) continue;
@@ -150,25 +162,37 @@ class Conversation {
         continue;
       }
       this.heardAt = Date.now();
-      // "Um." on its own is someone still thinking, not a request (nor an answer to the price question).
+      // "Um." on its own is someone still thinking, not a request (nor an answer to the price question):
+      // Flash listens on, and it goes with what's said next.
       const sounds = tNow(SOUND_WORDS);
-      if (onlySounds(heard, sounds)) continue;
+      if (onlySounds(heard, sounds)) {
+        held = `${held} ${heard}`.trim();
+        continue;
+      }
+      if (held) heard = `${held} ${heard}`;
+      held = "";
       const polite = tNow(POLITE_WORDS);
       this.hushed = false;
       this.screen.you(heard);
       if (isGoodbye(heard, tNow(GOODBYE_WORDS), { ending: tNow(ENDING_WORDS), polite, sounds })) {
-        await this.say(named ? tNow("Bye, {name}.", { name: p().name }) : tNow("Bye."));
+        await this.sayAll(named ? tNow("Bye, {name}.", { name: p().name }) : tNow("Bye."));
         if (this.alive) p().onClose();
         return;
       }
       // "Say that again" repeats the last answer, as a person would, instead of making a voice-over.
       if (lastAnswer && isRepeat(heard, tNow(REPEAT_WORDS), { sounds, polite })) {
-        await this.say(lastAnswer);
+        await this.sayAll(lastAnswer);
         this.heardAt = Date.now();
+        continue;
+      }
+      // "What…" or "So, um," before a long pause: the request is still coming.
+      if (!confirming && trailsOff(heard)) {
+        held = heard;
         continue;
       }
       this.show("thinking");
       this.screen.flash("");
+      this.blocked = false;
       // The first sentences are said while the rest is still being written.
       let said = "";
       let saying = Promise.resolve();
@@ -178,9 +202,10 @@ class Conversation {
         if (first.length <= said.length || !first.startsWith(said)) return;
         const piece = first.slice(said.length).trim();
         said = first;
+        const shown = first;
         // Back to Thinking (with its Stop button) while the rest is still being written.
         saying = saying
-          .then(() => this.say(piece))
+          .then(() => this.say(piece, shown))
           .then(() => {
             if (!answered && this.alive) this.show("thinking");
           });
@@ -195,11 +220,14 @@ class Conversation {
       else answer = await p().ask(heard, early);
       answered = true;
       confirming = answer.confirm;
-      lastAnswer = answer.say;
+      // A request stopped part way: "say that again" says what was said of it, not "Stopped.".
+      lastAnswer = answer.stopped ? said || lastAnswer : answer.say;
       await saying;
       if (!this.alive) return;
       const rest = said && answer.say.startsWith(said) ? answer.say.slice(said.length).trim() : answer.say;
-      if (rest) await this.say(rest);
+      if (rest) await this.say(rest, answer.say);
+      // The whole answer, to hear once the page is tapped, rather than its last piece.
+      if (this.blocked) this.screen.silent(answer.say);
       this.heardAt = Date.now();
     }
   }
@@ -218,11 +246,27 @@ class Conversation {
     releaseMic("voice");
   }
 
+  /** Stop: Flash stops talking at once, and says nothing more of the answer it was giving. */
+  hush() {
+    this.hushed = true;
+    this.cutSpeech?.();
+  }
+
+  /** "Tap to hear Flash": says what the browser wouldn't, while listening waits so Flash doesn't hear itself. */
+  replay(text: string) {
+    if (!this.alive || this.replaying) return;
+    this.cancelHearing?.();
+    this.hushed = false;
+    this.replaying = this.sayAll(text).finally(() => {
+      this.replaying = null;
+      if (this.paused && this.alive) this.show("paused");
+    });
+  }
+
   /** The circle: interrupts Flash while it speaks, pauses listening, or starts it again. */
   tap() {
     if (this.phase === "speaking") {
-      this.hushed = true;
-      this.cutSpeech?.();
+      this.hush();
     } else if (this.phase === "paused") {
       this.paused = false;
       this.screen.problem("");
@@ -234,9 +278,16 @@ class Conversation {
     }
   }
 
-  /** Says text aloud, resolving when it's done or cut off. */
-  private say(text: string): Promise<void> {
-    this.screen.flash(text);
+  /** Says text on its own (a greeting, a goodbye, an answer again), showing it to hear if the browser wouldn't speak. */
+  private async sayAll(text: string) {
+    this.blocked = false;
+    await this.say(text);
+    if (this.blocked) this.screen.silent(text);
+  }
+
+  /** Says text aloud, showing shown (by default the text), resolving when it's done or cut off. */
+  private say(text: string, shown = text): Promise<void> {
+    this.screen.flash(shown);
     if (!this.alive || this.hushed) return Promise.resolve();
     this.show("speaking");
     const synth = typeof window !== "undefined" ? window.speechSynthesis : undefined;
@@ -262,7 +313,7 @@ class Conversation {
         const advance = () => index === current && speakNext();
         u.onend = advance;
         u.onerror = (e) => {
-          if (e.error === "not-allowed") this.screen.silent(text);
+          if (e.error === "not-allowed") this.blocked = true;
           advance();
         };
         // Some browsers never say a piece has ended; move on after a generous wait.
@@ -340,8 +391,11 @@ class Conversation {
     }
   }
 
-  /** Records one turn, ending it after a pause, and has Flash write down what was said. */
-  private async hearRecorded(): Promise<string | null> {
+  /**
+   * Records one turn, ending it after a pause, and has Flash write down what was said. patient: wait
+   * longer after only a word or a sound ("um…"), as when Flash isn't waiting for a yes or no.
+   */
+  private async hearRecorded(patient: boolean): Promise<string | null> {
     if (typeof MediaRecorder === "undefined" || !navigator.mediaDevices?.getUserMedia) {
       this.screen.problem(tNow("This browser can't use the microphone."));
       this.paused = true;
@@ -362,7 +416,7 @@ class Conversation {
 
     const spoke = await new Promise<boolean | null>((resolve) => {
       const samples = new Float32Array(analyser.fftSize);
-      const turn = new TurnEnd(Date.now(), this.floor);
+      const turn = new TurnEnd(Date.now(), this.floor, { room: this.room, patient });
       let settled = false;
       const end = (value: boolean | null) => {
         if (settled) return;
@@ -381,6 +435,7 @@ class Conversation {
         for (const s of samples) sum += s * s;
         const heard = turn.tick(Math.sqrt(sum / samples.length), Date.now());
         this.floor = turn.floor;
+        this.room = turn.room;
         if (heard) end(heard === "spoke");
       }, TURN_TICK_MS);
       this.cancelHearing = () => end(null);
@@ -457,8 +512,7 @@ export function VoiceMode(props: VoiceProps) {
   function hearAgain() {
     const text = silent;
     setSilent("");
-    window.speechSynthesis.cancel();
-    for (const u of speakPieces(text, talkingIn(props.language))) window.speechSynthesis.speak(u);
+    conversation.current?.replay(text);
   }
 
   const circle =
@@ -502,7 +556,15 @@ export function VoiceMode(props: VoiceProps) {
           )}
         </div>
         {(phase === "thinking" || phase === "speaking") && props.busy && (
-          <button type="button" onClick={props.onStop} className="shrink-0 rounded-full border border-white/10 px-3 py-1.5 text-xs text-zinc-200 hover:bg-white/[0.06]">
+          <button
+            type="button"
+            // Flash stops talking at once, as well as stopping the request.
+            onClick={() => {
+              conversation.current?.hush();
+              props.onStop();
+            }}
+            className="shrink-0 rounded-full border border-white/10 px-3 py-1.5 text-xs text-zinc-200 hover:bg-white/[0.06]"
+          >
             {t("Stop")}
           </button>
         )}

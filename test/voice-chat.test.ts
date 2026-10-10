@@ -90,6 +90,7 @@ const {
   POLITE_WORDS,
   REPEAT_WORDS,
   onlySounds,
+  trailsOff,
 } = await import("../src/lib/voice-chat.ts");
 const { translate } = await import("../src/lib/i18n.ts");
 const { run, one } = await import("../src/lib/server/db.ts");
@@ -239,6 +240,15 @@ test('"say that again" repeats, and "that\'s it?" is a question, not a goodbye',
 test('"Um." on its own is someone thinking, not a request', () => {
   for (const s of ["Um.", "Hmm hmm", "Uhm...", "Errr", "euh"]) assert.ok(onlySounds(s, "hmm, um, uh, euh"), s);
   for (const s of ["Mm-hmm", "um what", "Um, make a cat", ""]) assert.ok(!onlySounds(s, SOUND_WORDS), s);
+  // A word or two that trails off before a pause: the request is still coming.
+  for (const s of ["What…", "So,", "Um, so...", "I want—"]) assert.ok(trailsOff(s), s);
+  // Not a whole request, nor what Chrome writes (no punctuation), nor a question.
+  for (const s of ["What?", "what", "Make a picture of a cat...", "So."]) assert.ok(!trailsOff(s), s);
+});
+
+test("a stopped request is said as stopped, and known to be", () => {
+  assert.deepEqual(voiceReply({ content: "Sure. Paris", stopped: true }), { say: "Stopped.", confirm: false, stopped: true });
+  assert.equal(voiceReply({ content: "Sure." }).stopped, undefined);
 });
 
 test("sounds a transcript marks aren't words", () => {
@@ -249,13 +259,13 @@ test("sounds a transcript marks aren't words", () => {
 
 test("where a recorded turn ends, from the microphone's loudness", () => {
   // Ticks through a turn with the level the microphone hears at each moment (ms after listening began).
-  const listen = (level: (ms: number) => number, floor = 0) => {
-    const turn = new TurnEnd(0, floor);
+  const listen = (level: (ms: number) => number, floor = 0, more: { room?: number; patient?: boolean } = {}) => {
+    const turn = new TurnEnd(0, floor, more);
     for (let ms = TURN_TICK_MS; ms <= 40_000; ms += TURN_TICK_MS) {
       const heard = turn.tick(level(ms), ms);
-      if (heard) return { heard, at: ms, floor: turn.floor };
+      if (heard) return { heard, at: ms, floor: turn.floor, room: turn.room };
     }
-    return { heard: null, at: 40_000, floor: turn.floor };
+    return { heard: null, at: 40_000, floor: turn.floor, room: turn.room };
   };
   const room = 0.005;
   const loud = (spans: [number, number][], level = 0.08) => (ms: number) => (spans.some(([a, b]) => ms >= a && ms < b) ? level : room);
@@ -280,6 +290,60 @@ test("where a recorded turn ends, from the microphone's loudness", () => {
   // Someone who never stops is cut off at the cap.
   const endless = listen((ms) => (Math.floor(ms / 120) % 3 ? 0.12 : 0.006));
   assert.deepEqual([endless.heard, endless.at > 29_000 && endless.at <= 30_000 + 5 * TURN_TICK_MS], ["spoke", true], JSON.stringify(endless));
+});
+
+test("a television talking in the room isn't a turn, and doesn't keep the user's turn going", () => {
+  const listen = (level: (ms: number) => number, more: { floor?: number; room?: number; patient?: boolean } = {}) => {
+    const turn = new TurnEnd(0, more.floor ?? 0, more);
+    for (let ms = TURN_TICK_MS; ms <= 40_000; ms += TURN_TICK_MS) {
+      const heard = turn.tick(level(ms), ms);
+      if (heard) return { heard, at: ms, floor: turn.floor, room: turn.room };
+    }
+    return { heard: null, at: 40_000, floor: turn.floor, room: turn.room };
+  };
+  // Speech-like sound at 0.03 for 300 ms, 0.006 between words, on and on.
+  const tv = (ms: number) => (ms % 500 < 300 ? 0.03 : 0.006);
+  const alone = listen(tv);
+  assert.equal(alone.heard, "silent");
+  assert.ok(alone.room >= 0.025, String(alone.room));
+  // The next turn starts knowing the television, and so does a user talking over it.
+  assert.equal(listen(tv, alone).heard, "silent");
+  const over = (start: number, end: number) => (ms: number) => (ms >= start && ms < end ? 0.085 : tv(ms));
+  const spoke = listen(over(1000, 3000));
+  assert.deepEqual([spoke.heard, spoke.at > 3000 && spoke.at <= 3000 + 1300], ["spoke", true], JSON.stringify(spoke));
+  // Even when the user talks straight away, before the television was heard.
+  const straightAway = listen(over(0, 2000));
+  assert.deepEqual([straightAway.heard, straightAway.at <= 2000 + 1300], ["spoke", true], JSON.stringify(straightAway));
+  // A louder television taken for a turn runs to the cap once; after that it's known, and isn't a turn.
+  const louder = (ms: number) => (ms % 500 < 300 ? 0.04 : 0.006);
+  const first = listen(louder);
+  assert.equal(first.heard, "spoke");
+  assert.equal(listen(louder, first).heard, "silent");
+  // And a voice is still heard over it.
+  assert.equal(listen((ms) => (ms >= 1000 && ms < 2500 ? 0.09 : louder(ms)), first).heard, "spoke");
+  // When the television goes off, a soft voice is heard again.
+  assert.equal(listen((ms) => (ms >= 1500 && ms < 3000 ? 0.03 : 0.004), first).heard, "spoke");
+});
+
+test('"um…" and a long pause stay one turn, unless Flash is waiting for a yes or no', () => {
+  const listen = (level: (ms: number) => number, patient: boolean) => {
+    const turn = new TurnEnd(0, 0, { patient });
+    for (let ms = TURN_TICK_MS; ms <= 40_000; ms += TURN_TICK_MS) {
+      const heard = turn.tick(level(ms), ms);
+      if (heard) return { heard, at: ms };
+    }
+    return { heard: null, at: 40_000 };
+  };
+  const loud = (spans: [number, number][]) => (ms: number) => (spans.some(([a, b]) => ms >= a && ms < b) ? 0.08 : 0.005);
+  // "Um" (300 ms), 1.4 seconds of thinking, then the request.
+  const um = loud([[500, 800], [2200, 4200]]);
+  const patient = listen(um, true);
+  assert.deepEqual([patient.heard, patient.at > 4200], ["spoke", true], JSON.stringify(patient));
+  assert.ok(listen(um, false).at < 2200, "waiting for a yes or no, a short answer ends the turn quickly");
+  // A "yes" to the price question still ends the turn soon after.
+  assert.ok(listen(loud([[500, 800]]), false).at <= 2100);
+  // A request said in one go isn't kept waiting.
+  assert.ok(listen(loud([[500, 2500]]), true).at <= 2500 + 1300);
 });
 
 test("replies are said as a voice would: a pause per line, links and emoji left on screen", () => {
