@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   CLAUDE_PRICES,
+  FALLBACKS,
   claudePrice,
   CREDIT_LIMITS,
   CREDIT_PACKS,
@@ -26,6 +27,12 @@ import {
 import type { Engine } from "../src/lib/types.ts";
 import { MODELS, modelCredits } from "../src/lib/models.ts";
 
+// What a credit is worth at the cheapest plan or pack: Max, billed yearly.
+const cheapestCentsPerCredit = Math.min(
+  ...CREDIT_PACKS.map((p) => p.priceCents / p.credits),
+  ...PLANS.map((p) => p.yearlyPriceCents / p.credits),
+);
+
 test("credits are the provider cost times the markup, rounded up, at least 1", () => {
   assert.equal(creditsFor(0), 1);
   assert.equal(creditsFor(1), Math.ceil(MARKUP));
@@ -45,15 +52,60 @@ test("Claude cost uses the model's token prices", () => {
     }),
     40 + 3,
   );
-  // Unknown models are priced as Opus.
-  assert.equal(claudeCostCents("mystery", { input_tokens: 1e6, output_tokens: 0 }), 400);
+  // Unknown models are priced at the dearest rates on the list, so a new model never costs more than it is charged.
+  for (const price of Object.values(CLAUDE_PRICES).flatMap((p) => (p.long ? [p, p.long] : [p]))) {
+    assert.ok(claudePrice("mystery").input >= price.input && claudePrice("mystery").output >= price.output);
+  }
+  assert.equal(claudeCostCents("mystery", { input_tokens: 1e6, output_tokens: 1e6 }), 1000 + 5000);
+});
+
+test("Anthropic's prices stay as listed, with the fallback models added", () => {
+  // In US cents per million tokens of input and output.
+  assert.deepEqual(CLAUDE_PRICES["claude-fable-5-1"], { input: 1000, output: 5000 });
+  assert.deepEqual(CLAUDE_PRICES["claude-opus-5-5"], { input: 400, output: 2000 });
+  assert.deepEqual(CLAUDE_PRICES["claude-sonnet-5-5"], { input: 200, output: 1000 });
+  assert.deepEqual(CLAUDE_PRICES["claude-haiku-5-5"], { input: 10, output: 50, long: { over: 100_000, input: 50, output: 250 } });
+  assert.deepEqual(CLAUDE_PRICES["claude-haiku-4-5"], { input: 100, output: 500 });
+  // Opus 5 and Opus 4.8 cost $5 and $25, more than Opus 5.5.
+  assert.deepEqual(CLAUDE_PRICES["claude-opus-5"], { input: 500, output: 2500 });
+  assert.deepEqual(CLAUDE_PRICES["claude-opus-4-8"], { input: 500, output: 2500 });
+  assert.deepEqual(CLAUDE_PRICES["claude-sonnet-5"], { input: 200, output: 1000 });
+  // Every fallback model has a price, and it is the dearest the model can fall back to.
+  for (const [model, backup] of Object.entries(FALLBACKS)) {
+    assert.ok(Object.hasOwn(CLAUDE_PRICES, model) && Object.hasOwn(CLAUDE_PRICES, backup), model);
+  }
+  assert.ok(CLAUDE_PRICES["claude-opus-4-8"].output <= CLAUDE_PRICES[FALLBACKS["claude-fable-5-1"]].output);
+  // Opus 5.5's fallbacks cost more than it does, so it gets none.
+  assert.equal(FALLBACKS["claude-opus-5-5"], undefined);
+});
+
+test("a declined attempt and its refusal fallback are both paid for, each at its own model's price", () => {
+  // Fable declines after reading 10,000 tokens and writing 2,000; Opus 5 rereads it all and answers.
+  // The usage at the top counts only the answer.
+  const usage = {
+    input_tokens: 12_000,
+    output_tokens: 3_000,
+    iterations: [
+      { model: "claude-fable-5-1", input_tokens: 10_000, output_tokens: 2_000 },
+      { model: "claude-opus-5", input_tokens: 12_000, output_tokens: 3_000 },
+    ],
+  };
+  const fable = (10_000 * 1000 + 2_000 * 5000) / 1e6;
+  const opus5 = (12_000 * 500 + 3_000 * 2500) / 1e6;
+  assert.equal(claudeCostCents("claude-opus-5", usage, "claude-fable-5-1"), fable + opus5);
+  // Before, only the answer was priced, and at Opus 5.5's lower rates: 10.8 cents of 33.5.
+  assert.ok(claudeCostCents("claude-opus-5", usage) > (12_000 * 400 + 3_000 * 2000) / 1e6 * 3);
+  // An attempt that doesn't name its model is priced at the dearer of the model asked for and the one that answered.
+  const unnamed = { ...usage, iterations: [{ input_tokens: 10_000, output_tokens: 2_000 }, usage.iterations[1]] };
+  assert.equal(claudeCostCents("claude-opus-5", unnamed, "claude-fable-5-1"), fable + opus5);
+  // Web searches are counted once, and a call with no attempts listed is priced as before.
+  assert.equal(claudeCostCents("claude-opus-5", { ...usage, server_tool_use: { web_search_requests: 2 } }, "claude-fable-5-1"), fable + opus5 + 2);
+  assert.equal(claudeCostCents("claude-sonnet-5-5", { input_tokens: 1e6, output_tokens: 1e6, iterations: null }), 1200);
+  // Never less than the answer alone.
+  assert.ok(claudeCostCents("claude-opus-5", { ...usage, iterations: [{ model: "claude-haiku-5-5", input_tokens: 1, output_tokens: 1 }] }) >= opus5);
 });
 
 test("every model is priced above what it costs, even at the cheapest plan or pack", () => {
-  const cheapestCentsPerCredit = Math.min(
-    ...CREDIT_PACKS.map((p) => p.priceCents / p.credits),
-    ...PLANS.map((p) => p.yearlyPriceCents / p.credits),
-  );
   for (const m of MODELS) {
     const cost = typeof m.costCents === "function" ? m.costCents("a 15 second clip") : m.costCents;
     const revenue = modelCredits(m, "a 15 second clip") * cheapestCentsPerCredit;
@@ -100,24 +152,60 @@ test("plans give more credits per dollar than top-ups, and bigger plans give mor
   }
 });
 
-test("a Claude reply can never cost more than the credits held for it", () => {
+/*
+ * The most a reply can cost, worked out apart from credits.ts: the model reads the input and writes up
+ * to maxTokens; with a refusal fallback, the fallback model then reads the input again with every
+ * declined word (at each search step), and writes up to maxTokens of its own.
+ */
+function worstReplyCents(engine: Engine, model: string, inputTokens: number, maxTokens: number, fallback: boolean): number {
+  let cents = inputCostCents(engine, model, inputTokens) + (maxTokens * claudePrice(model, inputTokens).output) / 1e6;
+  if (fallback) {
+    const backup = FALLBACKS[model];
+    const steps = engine === "search" ? 6 : 1;
+    cents += inputCostCents(engine, backup, inputTokens);
+    cents += (maxTokens * steps * claudePrice(backup, inputTokens).input + maxTokens * claudePrice(backup, inputTokens).output) / 1e6;
+  }
+  return cents;
+}
+
+test("a Claude reply can never cost more than the credits held for it, refusal fallback included", () => {
   const engines: Engine[] = ["text", "translate", "docs", "search", "code", "app", "slides"];
   for (const engine of engines) {
     for (const model of Object.keys(CLAUDE_PRICES)) {
       for (const inputTokens of [500, 20000, 150000]) {
         for (const available of [0, 50, 100000]) {
-          const hold = planHold(engine, model, inputTokens, available);
-          assert.ok(hold.held >= hold.needed);
-          assert.ok(hold.maxTokens > 0 && hold.maxTokens <= MAX_OUTPUT_TOKENS);
-          const worst = inputCostCents(engine, model, inputTokens) + (hold.maxTokens * claudePrice(model, inputTokens).output) / 1e6;
-          // Credits held are worth at least cost x MARKUP, and the reply can't spend more than that.
-          assert.ok(worst * MARKUP <= hold.held, `${engine} ${model} ${inputTokens}: ${worst}¢ vs ${hold.held} credits`);
-          // The cost cap leaves room for a fallback model up to 25% pricier.
-          assert.ok(hold.capCents * 1.25 * MARKUP <= hold.held + 1e-9);
+          for (const spentCents of [0, 0.2]) {
+            const hold = planHold(engine, model, inputTokens, available, 1, spentCents);
+            assert.ok(hold.held >= hold.needed);
+            assert.ok(hold.maxTokens > 0 && hold.maxTokens <= MAX_OUTPUT_TOKENS);
+            if (hold.fallback) assert.ok(Object.hasOwn(FALLBACKS, model), `${model} gets no fallback`);
+            // The helpers that already ran, and the reply with both attempts at their longest.
+            const worst = spentCents + worstReplyCents(engine, model, inputTokens, hold.maxTokens, hold.fallback);
+            // Credits held are worth at least cost x MARKUP, and the reply can't spend more than that.
+            assert.ok(worst * MARKUP <= hold.held, `${engine} ${model} ${inputTokens}: ${worst}¢ vs ${hold.held} credits`);
+            assert.ok(hold.held * cheapestCentsPerCredit >= worst, `${engine} ${model} ${inputTokens} at the cheapest credit`);
+            // The cost cap leaves a margin on top.
+            assert.ok((hold.capCents + spentCents) * 1.25 * MARKUP <= hold.held + 1e-9);
+          }
         }
       }
     }
   }
+});
+
+test("a refusal fallback runs only when the credits held pay for both attempts", () => {
+  const both = planHold("text", "claude-sonnet-5-5", 1000, 1e6);
+  assert.equal(both.fallback, true);
+  // Too few credits for both: the reply runs without a fallback, at the lower price it needs.
+  const alone = planHold("text", "claude-sonnet-5-5", 1000, both.needed - 1);
+  assert.equal(alone.fallback, false);
+  assert.ok(alone.needed < both.needed);
+  assert.ok(worstReplyCents("text", "claude-sonnet-5-5", 1000, alone.maxTokens, false) * MARKUP <= alone.held);
+  // The fallback doesn't shorten replies: the allowance grows by what it adds.
+  assert.ok(both.maxTokens >= alone.maxTokens);
+  // Opus 5.5 and Haiku never get one.
+  assert.equal(planHold("text", "claude-opus-5-5", 1000, 1e6).fallback, false);
+  assert.equal(planHold("text", "claude-haiku-5-5", 1000, 1e6).fallback, false);
 });
 
 test("long conversations hold more credits", () => {
@@ -149,11 +237,36 @@ test("a failed request pays only for provider work that ran", () => {
   assert.equal(finalCredits({ ...base, ok: true }), 100);
 });
 
+test("a priced job pays its price and its helpers; stopped, only for what was really sent", () => {
+  // A FLUX.2 Pro picture (3 cents) whose hold also covers the router and the prompt writer at their most.
+  const held = creditsFor(3 + 0.1 + 0.2);
+  const job = { held, ok: true, stopped: true, metered: false, costCents: 0, inputCents: 0, written: 0, typical: 4 };
+  const priced = { priceCents: 3, helperCents: 0, includedCents: 0, startedCents: 0 };
+  // Stopped before anything was sent to a provider: nothing at all (it used to be the whole hold).
+  assert.equal(finalCredits({ ...job, priced }), 0);
+  // Stopped after the prompt writer ran, before the picture was sent: just the writer.
+  assert.equal(finalCredits({ ...job, costCents: 0.01, priced: { ...priced, helperCents: 0.01 } }), creditsFor(0.01));
+  // Stopped after the picture was sent: the provider bills it whether or not anyone waits for it.
+  assert.equal(finalCredits({ ...job, costCents: 0.01, priced: { ...priced, helperCents: 0.01, startedCents: 3 } }), creditsFor(3.01));
+  // Stopped after it finished and was metered: counted once.
+  assert.equal(finalCredits({ ...job, costCents: 3.01, priced: { ...priced, helperCents: 0.01, startedCents: 3 } }), creditsFor(3.01));
+  // A billed job that cost more than its estimate pays what it cost, never more than was held.
+  assert.equal(finalCredits({ ...job, costCents: 99, priced: { ...priced, startedCents: 3 } }), held);
+  // Finished: its price and the helpers, within the hold.
+  const done = { ...job, stopped: false };
+  assert.equal(finalCredits({ ...done, costCents: 3.05, priced: { ...priced, helperCents: 0.05, startedCents: 3 } }), creditsFor(3.05));
+  assert.ok(creditsFor(3.05) <= held);
+  // A movie's scene writer is part of its price, so it isn't added on top.
+  const movie = { priceCents: 562, helperCents: 0.3, includedCents: 0.3, startedCents: 560 };
+  assert.equal(finalCredits({ ...done, held: creditsFor(562), costCents: 560.3, priced: movie }), creditsFor(562));
+  // A job with no price given pays its hold, as before, and the free lane pays nothing.
+  assert.equal(finalCredits({ ...done }), held);
+  assert.equal(finalCredits({ ...done, held: 0, priced }), 0);
+  // A failed job pays only the provider work that ran.
+  assert.equal(finalCredits({ ...done, ok: false, costCents: 0.01, priced: { ...priced, helperCents: 0.01 } }), creditsFor(0.01));
+});
+
 test("transcription is priced for the longest recording a file could hold", () => {
-  const cheapestCentsPerCredit = Math.min(
-    ...CREDIT_PACKS.map((p) => p.priceCents / p.credits),
-    ...PLANS.map((p) => p.yearlyPriceCents / p.credits),
-  );
   for (const bytes of [1000, 500 * 1024, 3 * 1024 * 1024]) {
     // Worst case: 8 kbps audio at fal.ai's $0.008 a minute (ElevenLabs direct is $0.40 an hour).
     const worstCents = Math.max(1, (bytes / 1000 / 60) * 0.8);

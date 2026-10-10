@@ -5,7 +5,7 @@ import { FriendlyError, JobAbandoned } from "./errors.ts";
 
 const MERGE = process.env.FAL_MERGE_ENDPOINT || "fal-ai/ffmpeg-api/merge-videos";
 // Kling 3 Turbo Pro, $0.14 a second (see the movie entry in src/lib/models.ts).
-const CLIP_CENTS_PER_SECOND = 14;
+export const CLIP_CENTS_PER_SECOND = 14;
 // Writing the scenes and joining the clips, together.
 export const MOVIE_EXTRA_CENTS = 2;
 

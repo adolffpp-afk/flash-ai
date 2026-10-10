@@ -35,7 +35,8 @@ process.env.ANTHROPIC_API_KEY = "sk-fake";
 process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
 const { run, one } = await import("../src/lib/server/db.ts");
-const { askSiteAi, aiSettings, saveAiSettings, worstCaseCredits } = await import("../src/lib/server/site-ai.ts");
+const { askSiteAi, aiSettings, saveAiSettings, worstCaseCredits, MAX_INSTRUCTIONS_CHARS, MAX_PROMPT_CHARS } = await import("../src/lib/server/site-ai.ts");
+const { CREDIT_PACKS, PLANS, claudeCostCents } = await import("../src/lib/credits.ts");
 const { saveUpload, listUploads, deleteUpload, cleanName, uploadUse, setUploadsOn, uploadsOn } = await import("../src/lib/server/site-files.ts");
 const { flashDbShim } = await import("../src/lib/flashdb-shim.ts");
 
@@ -70,6 +71,17 @@ test("an answer costs the owner credits, and only what it really used", async ()
   const after = await aiSettings("shop");
   assert.equal(after.askedToday, 1);
   assert.equal(after.usedToday, spent, "today's use is what was really spent");
+});
+
+test("the hold covers the longest instructions and question in any language, even at the cheapest credit", async () => {
+  // Three bytes of UTF-8 to a character, every byte a token: the most the longest text can be.
+  await ask("€".repeat(MAX_PROMPT_CHARS + 500), "€".repeat(MAX_INSTRUCTIONS_CHARS + 500));
+  const inputTokens = Buffer.byteLength(sent!.system) + Buffer.byteLength(JSON.parse(sent!.prompt)[0].content);
+  const worst = claudeCostCents("claude-sonnet-5-5", { input_tokens: inputTokens, output_tokens: 700 });
+  const cheapestCentsPerCredit = Math.min(...CREDIT_PACKS.map((p) => p.priceCents / p.credits), ...PLANS.map((p) => p.yearlyPriceCents / p.credits));
+  assert.ok(worstCaseCredits() * cheapestCentsPerCredit >= worst, `${worstCaseCredits()} credits for ${worst}¢`);
+  // It used to hold 3 credits, counting 1,600 tokens of input.
+  assert.ok(worstCaseCredits() > 3);
 });
 
 test("what the app says and what a visitor types are kept apart", async () => {

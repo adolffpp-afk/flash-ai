@@ -1,5 +1,5 @@
-import { NO_BUDGET, choiceParams, defaultChoice, getClient, meterClaude, noMeter, toMessages, type Budget, type ClaudeChoice, type Meter } from "./claude.ts";
-import { MAX_OUTPUT_TOKENS, claudeCostCents, claudePrice, inputCostCents } from "../credits.ts";
+import { NO_BUDGET, choiceParams, defaultChoice, getClient, meterClaude, noMeter, toMessages, usesFallback, type Budget, type ClaudeChoice, type Meter } from "./claude.ts";
+import { MAX_OUTPUT_TOKENS, tokensWithin } from "../credits.ts";
 import { htmlTitle, splitBuild } from "../build-parse.ts";
 import { applyEdits, hasPieces, piecesIn, splitEdits, type Edit } from "../edit-blocks.ts";
 import type { ChatTurn, StreamEvent } from "../types.ts";
@@ -203,8 +203,7 @@ export async function* streamBuild(
       }
     }
     const final = await stream.finalMessage();
-    meterClaude(meter, final);
-    spent += claudeCostCents(final.model, final.usage);
+    spent += meterClaude(meter, final, choice.model);
     if (final.stop_reason === "refusal") {
       yield { type: "text", delta: "\n\nFlash couldn't build that." };
       return;
@@ -253,8 +252,7 @@ export async function* streamBuild(
       // reading everything again and writing all of it, so a retry never runs at a loss.
       const usage = final.usage;
       const reread = usage.input_tokens + (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + usage.output_tokens + 200;
-      const left = budget.capCents - spent - inputCostCents(kind, choice.model, reread);
-      maxTokens = Math.min(budget.maxTokens, Math.floor((left * 1e6) / claudePrice(choice.model, reread).output));
+      maxTokens = Math.min(budget.maxTokens, tokensWithin(kind, choice.model, reread, budget.capCents - spent, usesFallback(choice)));
       if (!(maxTokens >= Math.ceil(base!.length / 3) + THINKING_ROOM)) {
         yield { type: "error", message: NO_FIT };
         return;

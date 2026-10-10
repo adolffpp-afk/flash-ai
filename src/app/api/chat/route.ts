@@ -3,9 +3,11 @@ import { MAX_EDIT_PIXELS, imageDimensions } from "@/lib/imageSize.ts";
 import { ENGINES, ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types.ts";
 import {
   NO_BUDGET,
+  PICTURE_CHECK_MAX_CENTS,
+  PROMPT_WRITER_MAX_CENTS,
   claudeChoice,
-  classifyRequest,
   defaultChoice,
+  guessEngine,
   pictureRequest,
   claudeConfigured,
   countInputTokens,
@@ -76,7 +78,6 @@ import {
   PACK_VIDEO_ENDPOINT,
   PACK_VIDEO_SECONDS,
   MAX_EDIT_PHOTOS,
-  modelCredits,
   requestCents,
   movieScenes,
   movieSeconds,
@@ -89,7 +90,7 @@ import {
 import { unavailableReply } from "@/lib/engines/demo.ts";
 import { FriendlyError, JobAbandoned } from "@/lib/engines/errors.ts";
 import { buildSystem, latestApp, streamBuild } from "@/lib/engines/builder.ts";
-import { makeMovie } from "@/lib/engines/movie.ts";
+import { CLIP_CENTS_PER_SECOND, makeMovie } from "@/lib/engines/movie.ts";
 import { DEFAULT_VOICE, pickVoice } from "@/lib/voices.ts";
 import { falEditInput, falInput, packImageInput, packVideoInput, videoAspect } from "@/lib/engines/fal-input.ts";
 import { writePack } from "@/lib/engines/post-pack.ts";
@@ -173,6 +174,12 @@ async function* withProgress<T>(
 const sharpen = (kind: "image" | "video" | "music", request: string, meter: Meter, brand = "") =>
   claudeConfigured() ? improvePrompt(kind, request, meter, brand).catch(() => request) : Promise.resolve(request);
 
+/** Whether run() sharpens the prompt before this model makes a picture, video or track (see sharpen). */
+const writesPrompt = (model: ModelInfo) => claudeConfigured() && !model.edits && model.id !== "post-pack" && model.id !== "movie";
+
+/** Notes that a priced provider job was sent, with what the provider will bill for it in cents. */
+type Started = (cents: number) => void;
+
 /** The bytes in a base64 attachment. */
 const attachmentBytes = (a: { data: string }) => (a.data.length * 3) / 4;
 
@@ -211,6 +218,7 @@ async function* postPack(
   model: ModelInfo,
   store: Store,
   meter: Meter,
+  started: Started,
 ): AsyncGenerator<StreamEvent> {
   if (!claudeConfigured()) throw new FriendlyError("Social post packs aren't available yet. Please try again later.");
   yield { type: "status", message: "Writing your posts and hashtags…" };
@@ -238,6 +246,7 @@ async function* postPack(
   };
   const shapes = ["square", "tall"] as const;
   const labels = { square: "Square, for posts", tall: "Tall, for TikTok, Reels and Stories" };
+  started(shapes.length * PACK_IMAGE_CENTS);
   const pictures = yield* withProgress((report) =>
     Promise.allSettled(
       shapes.map((shape) =>
@@ -261,6 +270,7 @@ async function* postPack(
   if (!video || !tall) return;
 
   yield { type: "status", message: `Filming a ${PACK_VIDEO_SECONDS} second video from the tall picture. This usually takes one to three minutes…` };
+  started(PACK_VIDEO_CENTS);
   const clip = yield* withProgress((report) =>
     falGenerate(
       PACK_VIDEO_ENDPOINT,
@@ -289,6 +299,8 @@ async function* run(
   // The level a Claude engine runs on, and what to do when it steps down to another.
   choice: ClaudeChoice | null = null,
   onStepDown: (choice: ClaudeChoice) => void = () => {},
+  // Called just before each priced provider job is sent, so a stopped request pays for what was sent.
+  started: Started = () => {},
 ): AsyncGenerator<StreamEvent> {
   const last = history[history.length - 1];
   if (isMedia(engine) ? !model : !configured(engine)) {
@@ -328,6 +340,7 @@ async function* run(
         const more = model!.id === "flux-2-edit" ? (last.more ?? []).slice(0, MAX_EDIT_PHOTOS - 1) : [];
         const dataUrl = (f: Attachment) => `data:${f.mediaType};base64,${f.data}`;
         yield { type: "status", message: more.length ? `Combining your photos with ${model!.label}…` : `Working on your photo with ${model!.label}…` };
+        started(mediaCents(model!, last.content, 1 + more.length));
         const edited = yield* withProgress((report) =>
           falGenerate(
             model!.endpoint!,
@@ -341,11 +354,12 @@ async function* run(
         return;
       }
       if (model!.id === "post-pack") {
-        yield* postPack(last.content, preferences, brandNote, model!, store, meter);
+        yield* postPack(last.content, preferences, brandNote, model!, store, meter, started);
         return;
       }
       const prompt = await sharpen("image", last.content, meter, brandNote);
       yield { type: "status", message: `Painting your image with ${model!.label}…` };
+      started(mediaCents(model!, last.content));
       const image =
         model!.provider === "fal"
           ? yield* withProgress((report) =>
@@ -362,6 +376,7 @@ async function* run(
       if (model!.edits) {
         const photo = last.attachment!;
         yield { type: "status", message: `Bringing your photo to life with ${model!.label}. This usually takes one to three minutes…` };
+        started(mediaCents(model!, last.content));
         const clip = yield* withProgress((report) =>
           falGenerate(
             model!.endpoint!,
@@ -387,12 +402,14 @@ async function* run(
           delta: `**Your movie, in ${scenes.length} scenes:**\n\n${scenes.map((s, i) => `${i + 1}. ${s}`).join("\n")}`,
         };
         yield { type: "status", message: "Filming every scene at once. This usually takes three to eight minutes…" };
+        started(scenes.length * seconds * CLIP_CENTS_PER_SECOND);
         const movie = yield* withProgress((report) => makeMovie(model!.endpoint!, scenes, seconds, meter, report, videoAspect(last.content)));
         yield { type: "video", url: await store(movie, "flash-movie.mp4"), prompt: last.content };
         return;
       }
       const prompt = await sharpen("video", last.content, meter, brandNote);
       yield { type: "status", message: `Filming your video with ${model!.label}. This usually takes one to three minutes…` };
+      started(mediaCents(model!, last.content));
       let video: Media;
       if (model!.provider === "fal") {
         video = yield* withProgress((report) =>
@@ -426,6 +443,7 @@ async function* run(
           (named && voice === DEFAULT_VOICE ? ` For another voice, ask for one, like "in a deep British man's voice".` : ""),
       };
       const voiceCents = voiceCostCents(words.length);
+      started(voiceCents);
       const speech = await synthesizeSpeech(words, { voice: voice.name, speed }).catch(billSpeech("voice", voiceCents));
       meter(speechProvider()!, "voice", voiceCents);
       yield { type: "audio", url: await store(speech, "flash-voice.mp3"), label: "flash-voice.mp3" };
@@ -435,6 +453,7 @@ async function* run(
       const prompt = await sharpen("music", last.content, meter);
       yield { type: "status", message: `Composing your track with ${model!.label}…` };
       yield { type: "text", delta: `**Track brief:** ${prompt}` };
+      started(mediaCents(model!, last.content));
       const track =
         model!.provider === "fal"
           ? yield* withProgress((report) =>
@@ -454,6 +473,7 @@ async function* run(
       }
       yield { type: "status", message: `Transcribing ${last.attachment.name}…` };
       const transcribeCents = transcribeCostCents(attachmentBytes(last.attachment));
+      started(transcribeCents);
       const text = await transcribe(last.attachment).catch(billSpeech("transcribe", transcribeCents));
       meter(speechProvider()!, "transcribe", transcribeCents);
       yield { type: "text", delta: `**Transcript of ${last.attachment.name}**\n\n${text}` };
@@ -575,42 +595,139 @@ export async function POST(request: Request) {
     spend.push({ provider, model, cents });
     if (provider === "anthropic") written = 0;
   };
+  // What the priced provider jobs already sent will cost Flash, in cents, so a stopped job pays for them.
+  let startedCents = 0;
+  const started: Started = (cents) => void (startedCents += cents);
 
   await ensureMonthlyCredits(user.id);
   // A team member spends the shared pool first. One ledger pays for each request, so the hold
   // is sized to the larger balance.
   const available = (await spendable(user.id)).largest;
 
-  // When no keyword rule fits, a small, fast model reads the request and picks the engine.
-  // Skipped for users out of credits, so the free lane costs Flash nothing.
-  if (!override && auto.guessed && !last.attachment && claudeConfigured() && available >= 5) {
-    const guess = await classifyRequest(last.content, meter);
-    // A guess is only a guess, so it never sends a request to an engine that isn't available yet.
-    const ready = (e: Engine) => (isMedia(e) ? Boolean(pickModel(e, last.content, providers())) : configured(e));
-    if (guess && guess !== "text" && guess !== "transcribe" && ready(guess)) {
-      engine = guess;
-      reason = "Flash's router read your request.";
-    }
-  }
-
   // "Fix the spelling" sent with the picture above fixes the words in that picture. With a photo the
   // user attached, the same words are about the photo's own text, so they get words.
   if (!override && body.pictureAbove === true && last.attachment && EDITABLE_TYPE.test(last.attachment.mediaType) && fixesPictureText(last.content)) {
     engine = "image";
   }
+
+  const project =
+    typeof body.projectId === "string"
+      ? await one<{ instructions: string }>("SELECT instructions FROM projects WHERE id = ? AND user_id = ?", [body.projectId, user.id])
+      : null;
+  const brand = await getBrand(user.id, appUrl(request));
+  // What the user asked to be called, their work and their language (Settings > General), then their memory.
+  const memory = (typeof body.preferences === "string" ? body.preferences : user.preferences).slice(0, MAX_PREFERENCES_CHARS);
+  // For the picture and video prompt writer: the brand kit, and the language of words in pictures.
+  const mediaNotes = [brandForMedia(brand), pictureWordsNote(user.language)].filter(Boolean).join("\n\n");
+  // What Claude helpers (the router, the picture check) have cost this request so far, in cents.
+  const helperSpend = () => spend.reduce((sum, s) => sum + (s.provider === "anthropic" ? s.cents : 0), 0);
+  // A conversation's size depends only on the model and the system prompt, so it is counted once.
+  const counts = new Map<string, Promise<number>>();
+  const countOnce = (model: string, systemText: string) => {
+    const key = `${model}\n${systemText}`;
+    if (!counts.has(key)) counts.set(key, countInputTokens(model, history, systemText));
+    return counts.get(key)!;
+  };
+
+  /**
+   * Prices the request on an engine: its model or level, the credits it needs and holds, and what it
+   * may spend. The hold also pays for the helpers that already ran, and extraCents for one still to run.
+   */
+  const planFor = async (engine: Engine, editing: boolean, extraCents = 0) => {
+    const helperCents = helperSpend() + extraCents;
+    // Only FLUX.2 Edit takes several photos at once; the other photo tools work on one.
+    const picked = isMedia(engine) ? pickModel(engine, last.content, providers(), combines ? "flux-2-edit" : body.model, editing) : null;
+    const model = picked?.model ?? null;
+    // Engines that aren't available yet reply for free. Media has a fixed price per model. Claude engines are charged by
+    // length: Flash holds up to a limit, then keeps only what the reply really cost.
+    const live = isMedia(engine) ? Boolean(model) : configured(engine);
+    const metered = live && !isMedia(engine) && engine !== "voice" && engine !== "transcribe";
+    const preferences = withVoiceStyle(
+      withBrand(withInstructions([profileNote(user, engine), memory].filter((p) => p.trim()).join("\n"), project?.instructions ?? ""), brand),
+      engine,
+      body.voice,
+    );
+    let held = 0;
+    let needed = 0;
+    let budget = NO_BUDGET;
+    // What reading the input once costs, charged even when the user stops the reply.
+    let inputCents = 0;
+    // The price of a priced job (a picture, video, track, speech or transcript) in cents; null for a Claude engine.
+    let priceCents: number | null = null;
+    // The level a Claude engine runs on, why, and how its model's price compares with the engine's usual one.
+    let claudeRun: ClaudeChoice | null = null;
+    let levelWhy = "";
+    let levelScale = 1;
+    if (live) {
+      if (model) priceCents = requestCents(model, last.content, combines ? photos.length : 1);
+      else if (engine === "voice") priceCents = voiceCostCents(spokenText(last.content).length);
+      // Priced by file size (see transcribeCostCents); with no file, the engine just asks for one.
+      else if (engine === "transcribe") priceCents = last.attachment ? transcribeCostCents(attachmentBytes(last.attachment)) : 0;
+      if (priceCents !== null) {
+        // The price, the helpers, and the most the prompt writer can cost when it will run.
+        const writer = model && writesPrompt(model) ? PROMPT_WRITER_MAX_CENTS : 0;
+        held = needed = priceCents ? creditsFor(priceCents + helperCents + writer) : 0;
+      } else {
+        // The level the user picked, or the one Auto picks for this request (see levels.ts).
+        const files = last.attachment ? 1 + (last.more?.length ?? 0) : 0;
+        const autoPick = autoLevel(engine, last.content, { files, voice: body.voice === true });
+        const wanted = isLevel(body.level) && body.level !== "auto" ? body.level : null;
+        const systemText = systemFor(engine, preferences, history);
+        // The reply may only spend what the held credits pay for, so no request runs at a loss.
+        const plan = async (level: ModelLevel) => {
+          const choice = claudeChoice(engine, level);
+          const inputTokens = await countOnce(choice.model, systemText);
+          const scale = claudePrice(choice.model, inputTokens).output / claudePrice(defaultChoice(engine).model, inputTokens).output;
+          return { choice, scale, inputTokens, hold: planHold(engine, choice.model, inputTokens, available, scale, helperCents) };
+        };
+        let planned = await plan(wanted ?? autoPick.level);
+        levelWhy = !wanted
+          ? autoPick.why
+          : planned.choice.level === wanted
+            ? `You picked ${levelName(wanted)}.`
+            : `Research runs on ${levelName(planned.choice.level)} or above, so it answered instead of ${levelName(wanted)}.`;
+        // Not enough credits for the level picked: Auto's level answers when the user has enough for that.
+        if (wanted && wanted !== autoPick.level && available < planned.hold.needed) {
+          const instead = await plan(autoPick.level);
+          if (available >= instead.hold.needed) {
+            levelWhy = `${levelName(wanted)} needs ${planned.hold.needed} credits for this and you have ${available}, so ${levelName(autoPick.level)} answered.`;
+            planned = instead;
+          }
+        }
+        const { hold } = planned;
+        ({ needed, held } = hold);
+        budget = { maxTokens: hold.maxTokens, capCents: hold.capCents };
+        inputCents = readCostCents(planned.choice.model, planned.inputTokens);
+        // A refusal fallback only when the hold pays for it (see planHold).
+        claudeRun = { ...planned.choice, fallback: hold.fallback };
+        levelScale = planned.scale;
+      }
+    }
+    return { picked, model, live, metered, preferences, held, needed, budget, inputCents, priceCents, claudeRun, levelWhy, levelScale };
+  };
+
   // The keyword rules can't tell every "make it darker" from "great edit!" or "change it back", and a change
   // costs credits, so a small model checks the request first. Words about the picture get an answer in
   // words; a different picture is made fresh. Once the user has agreed to a price, the check isn't asked again.
   let fresh = false;
   const wouldEdit = (engine === "image" || engine === "video") && Boolean(last.attachment && EDITABLE_TYPE.test(last.attachment.mediaType));
-  if (wouldEdit && !override && body.confirmed !== true && claudeConfigured() && available >= 5) {
-    const asked = await pictureRequest(last.content, body.pictureAbove === true, meter);
-    if (asked === "other") {
-      engine = severalFiles ? "docs" : "text";
-      reason = body.pictureAbove === true ? "Flash answers about the picture above." : "A photo is attached, so the writing model reads it.";
-    } else if (asked === "new" && body.pictureAbove === true) {
-      fresh = true;
-      reason = "Flash makes a new picture.";
+  if (wouldEdit && !override && body.confirmed !== true && claudeConfigured()) {
+    // The check runs only when its answer can be paid for: the change the rules decided on, or an answer
+    // in words. (A request with a picture never goes to the free lane, whose models can't see pictures.)
+    const words: Engine = severalFiles ? "docs" : "text";
+    const payable = async (e: Engine, editing: boolean) => {
+      const p = await planFor(e, editing, PICTURE_CHECK_MAX_CENTS);
+      return p.live && available >= p.needed;
+    };
+    if ((await payable(engine, true)) || (await payable(words, false))) {
+      const asked = await pictureRequest(last.content, body.pictureAbove === true, meter);
+      if (asked === "other") {
+        engine = words;
+        reason = body.pictureAbove === true ? "Flash answers about the picture above." : "A photo is attached, so the writing model reads it.";
+      } else if (asked === "new" && body.pictureAbove === true) {
+        fresh = true;
+        reason = "Flash makes a new picture.";
+      }
     }
   }
   // An image request with a photo attached edits it; a video request animates it.
@@ -626,78 +743,25 @@ export async function POST(request: Request) {
     }
   }
   if (combines && editing) reason = `Flash combines your ${photos.length} photos into one picture.`;
-  // Only FLUX.2 Edit takes several photos at once; the other photo tools work on one.
-  const picked = isMedia(engine) ? pickModel(engine, last.content, providers(), combines ? "flux-2-edit" : body.model, editing) : null;
-  const model = picked?.model ?? null;
 
-  // Engines that aren't available yet reply for free. Media has a fixed price per model. Claude engines are charged by
-  // length: Flash holds up to a limit, then keeps only what the reply really cost.
-  const live = isMedia(engine) ? Boolean(model) : configured(engine);
-  const metered = live && !isMedia(engine) && engine !== "voice" && engine !== "transcribe";
-  const project =
-    typeof body.projectId === "string"
-      ? await one<{ instructions: string }>("SELECT instructions FROM projects WHERE id = ? AND user_id = ?", [body.projectId, user.id])
-      : null;
-  const brand = await getBrand(user.id, appUrl(request));
-  // What the user asked to be called, their work and their language (Settings > General), then their memory.
-  const memory = (typeof body.preferences === "string" ? body.preferences : user.preferences).slice(0, MAX_PREFERENCES_CHARS);
-  const preferences = withVoiceStyle(
-    withBrand(withInstructions([profileNote(user, engine), memory].filter((p) => p.trim()).join("\n"), project?.instructions ?? ""), brand),
-    engine,
-    body.voice,
-  );
-  // For the picture and video prompt writer: the brand kit, and the language of words in pictures.
-  const mediaNotes = [brandForMedia(brand), pictureWordsNote(user.language)].filter(Boolean).join("\n\n");
-  let held = 0;
-  let needed = 0;
-  let budget = NO_BUDGET;
-  // What reading the input once costs, charged even when the user stops the reply.
-  let inputCents = 0;
-  // The level a Claude engine runs on, why, and how its model's price compares with the engine's usual one.
-  let claudeRun: ClaudeChoice | null = null;
-  let levelWhy = "";
-  let levelScale = 1;
-  if (live) {
-    if (model) held = needed = modelCredits(model, last.content, combines ? photos.length : 1);
-    else if (engine === "voice") held = needed = creditsFor(voiceCostCents(spokenText(last.content).length));
-    else if (engine === "transcribe") {
-      // Priced by file size (see transcribeCostCents); with no file, the engine just asks for one.
-      held = needed = last.attachment ? creditsFor(transcribeCostCents(attachmentBytes(last.attachment))) : 0;
-    } else {
-      // The level the user picked, or the one Auto picks for this request (see levels.ts).
-      const files = last.attachment ? 1 + (last.more?.length ?? 0) : 0;
-      const autoPick = autoLevel(engine, last.content, { files, voice: body.voice === true });
-      const wanted = isLevel(body.level) && body.level !== "auto" ? body.level : null;
-      const systemText = systemFor(engine, preferences, history);
-      // The reply may only spend what the held credits pay for, so no request runs at a loss.
-      const plan = async (level: ModelLevel) => {
-        const choice = claudeChoice(engine, level);
-        const inputTokens = await countInputTokens(choice.model, history, systemText);
-        const scale = claudePrice(choice.model, inputTokens).output / claudePrice(defaultChoice(engine).model, inputTokens).output;
-        return { choice, scale, inputTokens, hold: planHold(engine, choice.model, inputTokens, available, scale) };
-      };
-      let planned = await plan(wanted ?? autoPick.level);
-      levelWhy = !wanted
-        ? autoPick.why
-        : planned.choice.level === wanted
-          ? `You picked ${levelName(wanted)}.`
-          : `Research runs on ${levelName(planned.choice.level)} or above, so it answered instead of ${levelName(wanted)}.`;
-      // Not enough credits for the level picked: Auto's level answers when the user has enough for that.
-      if (wanted && wanted !== autoPick.level && available < planned.hold.needed) {
-        const instead = await plan(autoPick.level);
-        if (available >= instead.hold.needed) {
-          levelWhy = `${levelName(wanted)} needs ${planned.hold.needed} credits for this and you have ${available}, so ${levelName(autoPick.level)} answered.`;
-          planned = instead;
-        }
-      }
-      const { hold } = planned;
-      ({ needed, held } = hold);
-      budget = { maxTokens: hold.maxTokens, capCents: hold.capCents };
-      inputCents = readCostCents(planned.choice.model, planned.inputTokens);
-      claudeRun = planned.choice;
-      levelScale = planned.scale;
+  // When no keyword rule fits, a small, fast model reads the request and picks the engine. It only runs,
+  // and its pick is only kept, when the request can be paid for, so the free lane costs Flash nothing.
+  let plan: Awaited<ReturnType<typeof planFor>>;
+  if (!override && auto.guessed && !last.attachment && claudeConfigured()) {
+    const ready = (e: Engine) => (isMedia(e) ? Boolean(pickModel(e, last.content, providers())) : configured(e));
+    const routed = await guessEngine(last.content, engine, available, (e, extraCents) => planFor(e, false, extraCents), ready, meter);
+    if (routed.guessed) {
+      engine = routed.engine;
+      reason = "Flash's router read your request.";
+    } else if (routed.unpaid) {
+      reason = `${ENGINE_LABELS[routed.unpaid.engine]} needs ${routed.unpaid.needed} credits for this and you have ${available}, so Flash answered in words.`;
     }
+    plan = routed.plan;
+  } else {
+    plan = await planFor(engine, editing);
   }
+  const { picked, model, live, metered, preferences, inputCents, priceCents, levelWhy, levelScale } = plan;
+  let { held, needed, budget, claudeRun } = plan;
   // Out of credits: chat-style requests and images fall back to free models,
   // up to a daily allowance per user.
   let free: FreeLane | null = null;
@@ -796,10 +860,12 @@ export async function POST(request: Request) {
       let ok = true;
       let stopped = false;
       let failure = "";
+      // The helpers that ran before the job (the router, the picture check), so the ones it runs itself can be told apart.
+      const helpersBefore = helperSpend();
       try {
         const events = free
           ? runFree(free, engine, history, preferences, store, freeUse, countryOf(request))
-          : run(engine, history, preferences, store, model, meter, budget, mediaNotes, claudeRun, steppedDown);
+          : run(engine, history, preferences, store, model, meter, budget, mediaNotes, claudeRun, steppedDown, started);
         for await (const event of events) {
           if (cancelled || request.signal.aborted) {
             stopped = true;
@@ -833,6 +899,15 @@ export async function POST(request: Request) {
             // A typical reply on this level: a fraction of the usual on Sonic, more on Summit.
             typical: Math.max(1, Math.round((TYPICAL_CREDITS[engine] ?? 4) * levelScale)),
             outputPrice: claudeRun ? claudePrice(claudeRun.model).output : undefined,
+            // The writing for a movie's scenes or a pack's posts is part of its price; the prompt writer isn't.
+            ...(priceCents !== null && {
+              priced: {
+                priceCents,
+                helperCents: helperSpend(),
+                includedCents: model && !writesPrompt(model) ? helperSpend() - helpersBefore : 0,
+                startedCents,
+              },
+            }),
           });
       await settle(chargeId, credits);
       // A free request that failed doesn't use up one of the user's free requests for today.
@@ -851,7 +926,8 @@ export async function POST(request: Request) {
       }
       if (!ok) send({ type: "error", message: failure + refundNote(held, credits) });
       if (cancelled) return;
-      if (metered && ok && !free) send({ type: "cost", credits });
+      // A priced job can cost less than was held (its helpers cost less than their most), so it says what it cost too.
+      if ((metered || priceCents !== null) && ok && !free) send({ type: "cost", credits });
       send({ type: "done" });
       controller.close();
     },

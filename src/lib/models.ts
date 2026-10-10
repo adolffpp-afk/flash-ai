@@ -62,6 +62,8 @@ export const MODELS: ModelInfo[] = [
     provider: "openai",
     costCents: 10, // about 3,300 output tokens at $30 per million
     blurb: "Best with words in the picture: logos, posters, menus",
+    // Three times FLUX.2 Pro's price, so adding an OpenAI key never makes it the default.
+    notDefault: true,
   },
   {
     // Not a single model: Claude writes the posts, FLUX.2 Pro paints a square and a tall picture,
