@@ -564,7 +564,11 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
               <RecordsView
                 records={records}
                 deleting={deleting}
-                onBack={() => setRecords(null)}
+                onBack={() => {
+                  // A list still loading doesn't come back once the owner has left it.
+                  dataLoads.current++;
+                  setRecords(null);
+                }}
                 onDownload={downloadRecords}
                 onAskDelete={setDeleting}
                 onDelete={deleteRecord}
@@ -1194,6 +1198,11 @@ function DataView({
   const other = data.fallback ?? data.guess;
   const otherSource: RuleSource = data.fallback ? "you" : data.block ? "block" : "guess";
   const link = "text-primary-soft hover:underline";
+  // Where a rule comes from, or that it's read-only because Flash couldn't use that part of the app's block.
+  const sourceText = (name: string, source: RuleSource) =>
+    (source === "app" || source === "block") && data.bad && (data.bad.why !== "entries" || data.bad.names.includes(name))
+      ? t("Read-only for visitors until your app's flash-data block is fixed")
+      : t(SOURCE_TEXT[source]);
   return (
     <div className="space-y-4">
       <p className="text-sm text-zinc-400">
@@ -1238,7 +1247,7 @@ function DataView({
                 {c.source === "you" && <option value="">{t("Use your app's choice")}</option>}
               </select>
               <p className="mt-1 text-xs text-zinc-500">{t(RULE_TEXT[c.rule].help)}</p>
-              <p className="mt-1 text-xs text-zinc-600">{t(SOURCE_TEXT[c.source])}</p>
+              <p className="mt-1 text-xs text-zinc-600">{sourceText(c.name, c.source)}</p>
               {c.rule === "open" && <p className="mt-1 text-xs text-gold-soft">⚠ {t("Anyone can change or delete this.")}</p>}
               {c.personal.length > 0 && c.rule !== "private" && (
                 <p className="mt-1 text-xs text-gold-soft">
@@ -1269,7 +1278,7 @@ function DataView({
           {data.fallback && <option value="">{t("Use your app's choice")}</option>}
         </select>
         <p className="mt-1 text-xs text-zinc-500">{t(RULE_TEXT[other].help)}</p>
-        <p className="mt-1 text-xs text-zinc-600">{t(SOURCE_TEXT[otherSource])}</p>
+        <p className="mt-1 text-xs text-zinc-600">{sourceText(DEFAULT_KEY, otherSource)}</p>
         {other === "open" && <p className="mt-1 text-xs text-gold-soft">⚠ {t("Anyone can change or delete this.")}</p>}
       </div>
       <div className="space-y-1 text-xs text-zinc-500">

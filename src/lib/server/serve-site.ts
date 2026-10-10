@@ -75,10 +75,12 @@ async function ownerView(slug: string, request: Request): Promise<OwnerView> {
   const code = new URL(request.url).searchParams.get(OWNER_CODE_PARAM);
   if (!code) return null;
   try {
-    // On Flash's own address the code only ever comes from Flash's own page, never from another site.
+    // On Flash's own address the code only ever comes from Flash's own page (or the address typed
+    // in), never from a link on another site. The app's own domain is always another site to Flash.
     const host = (request.headers.get("host") ?? "").replace(/:\d+$/, "").toLowerCase();
-    const crossSite = request.headers.get("sec-fetch-site") === "cross-site" && isOwnHost(host);
-    const made = crossSite ? null : await ownerKeyForCode(slug, code);
+    const from = request.headers.get("sec-fetch-site");
+    const elsewhere = isOwnHost(host) && from !== null && from !== "same-origin" && from !== "none";
+    const made = elsewhere ? null : await ownerKeyForCode(slug, code);
     // What the page tells the owner is in Flash's language for them.
     const t = await translatorFor(request, made?.language);
     if (!made) {
