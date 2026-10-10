@@ -861,7 +861,8 @@ export async function POST(request: Request) {
   const decided = decidedFor(body, override);
   // The live forecast (see weather-words.ts) is asked for by a precise weather question (firm), by the
   // router's guess, or by a short follow-up to a weather question; a weather word alone (hinted) adds
-  // it only when no guess ran, and never makes a request step down, search less or go free.
+  // it only when no guess ran and the user didn't pick the engine, and never makes a request step
+  // down, search less or go free. On the free lane, where nothing is charged, a weather word is enough.
   const earlier = [...history.slice(0, -1)].reverse().find((turn) => turn.role === "user")?.content;
   const earlierText = typeof earlier === "string" ? earlier : "";
   const followsWeather = auto.guessed === true && !last.attachment && last.content.trim().length <= 60 && weatherQuestion(earlierText);
@@ -872,10 +873,12 @@ export async function POST(request: Request) {
   let guessedWeather = false;
   // A quick question Auto sent to Research gets one search and one page read.
   const quickAsk = !override && last.content.length <= 160 && !/https?:\/\//i.test(last.content) && !DEEP_RESEARCH.test(last.content);
-  // forecast: priced as the router's "weather" answer would be.
-  const toolsFor = (e: Engine, forecast = false): Tools => {
+  // forecast: priced as the router's "weather" answer would be; onFree: for a free model's reply.
+  const toolsFor = (e: Engine, forecast = false, onFree = false): Tools => {
     const asked = firm || guessedWeather || followsWeather || forecast;
-    const weather = WEATHER_ENGINES.includes(e) && (asked || (!guessRan && hinted));
+    // The tool's instructions cost a little to read, so a paid reply the user picked the engine for
+    // ("write a poem about the rain" on Write) doesn't get it for a weather word alone.
+    const weather = WEATHER_ENGINES.includes(e) && (asked || (hinted && (onFree || (!guessRan && !override))));
     const hintOnly = weather && !asked;
     // Research asked about the weather searches quickly: the forecast comes from the tool.
     return { weather, hintOnly, quick: e === "search" && ((weather && !hintOnly) || quickAsk) };
@@ -1406,7 +1409,7 @@ export async function POST(request: Request) {
     let failure = "";
     let error: unknown;
     // A free reply gets the forecast whenever it's asked for or a weather word is in the message: it costs nothing.
-    const freeWeather = free === "chat" && toolsFor(engine).weather;
+    const freeWeather = free === "chat" && toolsFor(engine, false, true).weather;
     const events = free
       ? runFree(free, engine, history, preferences, store, freeUse, where.country ?? "", t, freeAudio, prompting.free, {
           ...(freeWeather && { weather: weatherTool(where, t), onUsed: forecastUsed }),
