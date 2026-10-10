@@ -19,6 +19,7 @@ import { FriendlyError, JobAbandoned } from "../engines/errors.ts";
 import { charge, ensureMonthlyCredits, logUsage, settle, spendable } from "./credits.ts";
 import { saveFile } from "./files.ts";
 import { listSites, publishSite } from "./sites.ts";
+import { dataLine } from "../data-rules.ts";
 import { publicFile, publicFileLink } from "./connector.ts";
 import type { User } from "./auth.ts";
 import { fullName } from "../names.ts";
@@ -218,7 +219,12 @@ export const tools = () => [
       "The app can save shared data with the built-in database window.flashDB (always available, all methods async): " +
       "flashDB.list(collection) returns an array of records; flashDB.add(collection, object) returns the new record with id and createdAt; " +
       "flashDB.update(collection, id, partialObject); flashDB.remove(collection, id). Collection names use letters, digits, - or _. " +
-      "Data is shared by everyone who opens the app, so never store passwords or private data. External scripts may load from CDNs. Up to 2 MB; up to 20 apps per account.",
+      "Data is shared by everyone who opens the app, so never store passwords or private data. " +
+      'Name who may change each shared collection before </body> with <script type="application/json" id="flash-data">{"menu":"read","reviews":"add"}</script>: ' +
+      "read (only the owner adds or changes), add (anyone adds; a record is changed only by the owner or by whoever added it while signed in), own (signed-in people manage their own), private (anyone adds; only the owner reads, in Flash) or open (anyone changes anything). " +
+      "The block must be strict JSON (no comments, no trailing commas). Collections it doesn't name are read-only for visitors, and so is everything while Flash can't read the block; \"*\" sets the rule for every collection it doesn't name (for names made at run time). " +
+      "flashDB.isOwner is true when the app's owner opens it with Open as owner in Flash, so show editing controls only then. " +
+      "External scripts may load from CDNs. Up to 2 MB; up to 20 apps per account.",
     inputSchema: {
       type: "object",
       properties: {
@@ -491,7 +497,12 @@ export async function callTool(name: string, args: Args, ctx: ToolContext): Prom
       if ("error" in result) {
         return failed(result.code === "unverified" ? `The user needs to confirm their email in Flash (${ctx.origin}) before publishing apps.` : result.error);
       }
-      return text(`Published "${str(args.title) || "My app"}" at ${ctx.origin}${result.url} (slug: ${result.slug}). Anyone with the link can open it. Free, no credits used.`);
+      // Who may change the app's data, as the person sees it in Flash after publishing.
+      const rules = result.data ? dataLine(result.data) : "";
+      return text(
+        `Published "${str(args.title) || "My app"}" at ${ctx.origin}${result.url} (slug: ${result.slug}). Anyone with the link can open it. Free, no credits used.` +
+          (rules ? ` ${rules}` : ""),
+      );
     }
     case "flash_list_apps": {
       const sites = await listSites(ctx.user.id);

@@ -3,7 +3,8 @@ export function toCsv(rows: unknown[][]): string {
   const cell = (value: unknown) => {
     let text = value === null || value === undefined ? "" : typeof value === "string" ? value : String(value);
     // A cell starting like a formula could run in a spreadsheet when opened, so it's kept as text.
-    if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
+    // A real number (like -3) always prints as a plain number, which can't be a formula.
+    if (typeof value !== "number" && /^[=+\-@\t\r]/.test(text)) text = `'${text}`;
     return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
   };
   // The byte-order mark makes Excel read accents (Montréal) correctly.

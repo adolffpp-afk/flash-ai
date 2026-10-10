@@ -25,6 +25,8 @@ export type UIMessage = {
   // link, so Retry and Go ahead can fetch it again after a reload (true in chats saved before links were kept).
   pictureAbove?: boolean | string;
   engine?: Engine;
+  // A spoken reply about the app or deck before it, which the next follow-up may still change.
+  about?: Engine;
   reason?: string;
   demo?: boolean;
   cost?: number;
@@ -40,8 +42,9 @@ export type UIMessage = {
   sources?: Source[];
   error?: string;
   errorCode?: string;
-  // A request waiting for its price to be agreed: what Flash decided for it, sent back with Go ahead.
-  decided?: { engine: Engine; fresh?: boolean };
+  // A request waiting for its price to be agreed: what Flash decided for it and the price it asked
+  // (the model and its credits), sent back with Go ahead or a spoken yes so exactly that runs.
+  decided?: { engine: Engine; fresh?: boolean; model?: string; credits?: number };
   // The id of the credits held for the request, so a stopped reply can show what it really cost.
   charge?: number;
   pending?: boolean;

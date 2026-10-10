@@ -93,7 +93,8 @@ export async function saveAiSettings(slug: string, enabled: boolean, dailyCredit
  */
 async function reserveToday(slug: string, credits: number, limit: number): Promise<string | null> {
   const d = day();
-  await run("INSERT OR IGNORE INTO site_ai_usage (site_slug, day, credits, requests) VALUES (?, ?, 0, 0)", [slug, d]);
+  // INSERT … SELECT, so an answer asked for just as the app is unpublished leaves no usage behind.
+  await run("INSERT OR IGNORE INTO site_ai_usage (site_slug, day, credits, requests) SELECT slug, ?, 0, 0 FROM sites WHERE slug = ?", [d, slug]);
   const r = await run(
     "UPDATE site_ai_usage SET credits = credits + ?, requests = requests + 1 WHERE site_slug = ? AND day = ? AND credits + ? <= ?",
     [credits, slug, d, credits, limit],

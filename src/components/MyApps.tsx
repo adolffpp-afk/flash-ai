@@ -3,10 +3,19 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/store";
 import { SELLER_COUNTRIES } from "@/lib/shop";
+import { DATA_RULES, DEFAULT_KEY, RULE_TEXT, blockProblem, type DataRule, type DataSummary, type RuleSource } from "@/lib/data-rules";
 import { msg } from "@/lib/i18n";
+import { inOrder } from "@/lib/in-order";
 import { tNow, useT, type T } from "@/lib/use-t";
 
-type Site = { slug: string; title: string; updated_at: number; messages: number; unread: number; views: number; members: number };
+type Site = { slug: string; title: string; updated_at: number; messages: number; unread: number; views: number; members: number; openData?: boolean };
+type DataCollection = { name: string; count: number; lastAdded: number; rule: DataRule; source: RuleSource; personal: string[] };
+// block: the app names its rules in a flash-data block; bad: what Flash couldn't use in it. domains: the app's own addresses.
+type AppData = { collections: DataCollection[]; fallback: DataRule | null; guess: DataRule; block: boolean; bad?: DataSummary["bad"]; domains: string[] };
+type DataRecord = { id: string; createdAt: number; addedBy: string; data: Record<string, unknown> };
+// The Data view's state carries the app it's for (slug), so a late answer for another app never shows or changes this one.
+type ShownData = { slug: string; data: AppData };
+type Records = { slug: string; collection: string; list: DataRecord[] | null; cut: string };
 type Member = { id: string; email: string; name: string; createdAt: number };
 // answers: about how many answers the daily budget pays for.
 type Ai = { enabled: boolean; dailyCredits: number; usedToday: number; askedToday: number; answers: number };
@@ -47,14 +56,26 @@ const VIEW_TITLES = {
   members: msg("Members"),
   ai: msg("AI"),
   files: msg("Files"),
+  data: msg("Data"),
 };
+const SOURCE_TEXT: Record<RuleSource, string> = {
+  you: msg("Set by you"),
+  app: msg("Set by your app"),
+  default: msg("Your default"),
+  guess: msg("Flash's guess from your app's code"),
+  block: msg("Your app's rule for anything its flash-data block doesn't name"),
+};
+const isOpen = (data: AppData) => data.collections.some((c) => c.rule === "open") || (data.fallback ?? data.guess) === "open";
 
 /** My websites and apps: every published app, its link, and the forms visitors sent to it. */
 export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (projectId: string) => void }) {
   const t = useT();
   const [sites, setSites] = useState<Site[] | null>(null);
   const [open, setOpen] = useState<Site | null>(null);
-  const [view, setView] = useState<"messages" | "domains" | "payments" | "visits" | "history" | "members" | "ai" | "files">("messages");
+  const [view, setView] = useState<"messages" | "domains" | "payments" | "visits" | "history" | "members" | "ai" | "files" | "data">("messages");
+  const [appData, setAppData] = useState<ShownData | null>(null);
+  const [records, setRecords] = useState<Records | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const [members, setMembers] = useState<Member[] | null>(null);
   const [ai, setAi] = useState<Ai | null>(null);
   const [uploads, setUploads] = useState<Uploads | null>(null);
@@ -74,6 +95,20 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
   const [confirming, setConfirming] = useState<string | null>(null);
   const [error, setError] = useState("");
   const closeRef = useRef<HTMLButtonElement>(null);
+  // Counts the Data view's loads, so only the newest one's answer is shown.
+  const dataLoads = useRef(0);
+  // The rules chosen in the Data view reach the server one at a time for each app, and the view shows
+  // what the server holds after the last one, or after one fails (see in-order.ts).
+  const [ruleSaves] = useState(() =>
+    inOrder<AppData>({
+      reload: (slug) => api<AppData>(`/api/sites/${slug}/records`),
+      show: (slug, saved) => {
+        setAppData((cur) => (cur?.slug === slug ? saved && { slug, data: saved } : cur));
+        if (saved) setSites((all) => all?.map((s) => (s.slug === slug ? { ...s, openData: isOpen(saved) } : s)) ?? null);
+      },
+      failed: () => setError(tNow("Couldn't save that choice. Please try again.")),
+    }),
+  );
 
   useEffect(() => {
     closeRef.current?.focus();
@@ -351,6 +386,121 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
     }
   }
 
+  async function showData(site: Site) {
+    const asked = ++dataLoads.current;
+    setOpen(site);
+    setView("data");
+    setAppData(null);
+    setRecords(null);
+    setError("");
+    try {
+      // After this app's rule changes still on their way, so what loads has them.
+      await ruleSaves.settled(site.slug);
+      const data = await api<AppData>(`/api/sites/${site.slug}/records`);
+      if (asked === dataLoads.current) setAppData({ slug: site.slug, data });
+    } catch {
+      if (asked === dataLoads.current) setError(t("Flash couldn't load your app's data. Please try again."));
+    }
+  }
+
+  /**
+   * Who may change a collection ("*" for anything else). null goes back to the app's choice. The
+   * choice shows at once, and what the server saved replaces it once every change is answered.
+   */
+  function chooseDataRule(collection: string, rule: DataRule | null) {
+    if (!appData) return;
+    const { slug } = appData;
+    // Each change applies only while the same app is shown.
+    const forThisApp = (change: (data: AppData) => AppData) => setAppData((cur) => (cur?.slug === slug ? { slug, data: change(cur.data) } : cur));
+    if (collection === DEFAULT_KEY) forThisApp((d) => ({ ...d, fallback: rule }));
+    else if (rule) forThisApp((d) => ({ ...d, collections: d.collections.map((c) => (c.name === collection ? { ...c, rule, source: "you" } : c)) }));
+    void ruleSaves.save(slug, () => api<AppData>(`/api/sites/${slug}/records`, { method: "PATCH", json: { collection, rule } }));
+  }
+
+  async function showRecords(collection: string) {
+    if (!appData) return;
+    const { slug } = appData;
+    const asked = ++dataLoads.current;
+    setRecords({ slug, collection, list: null, cut: "" });
+    setDeleting(null);
+    setError("");
+    try {
+      const { records: list } = await api<{ records: DataRecord[] }>(`/api/sites/${slug}/records?collection=${encodeURIComponent(collection)}`);
+      if (asked === dataLoads.current) setRecords({ slug, collection, list, cut: "" });
+    } catch {
+      if (asked === dataLoads.current) setError(t("Flash couldn't load your app's data. Please try again."));
+    }
+  }
+
+  async function deleteRecord(id: string) {
+    if (!records) return;
+    const { slug, collection } = records;
+    try {
+      await api(`/api/sites/${slug}/records?collection=${encodeURIComponent(collection)}&id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      setRecords((r) => (r?.slug === slug && r.collection === collection ? { ...r, list: r.list?.filter((x) => x.id !== id) ?? null } : r));
+      setAppData((cur) =>
+        cur?.slug === slug
+          ? { slug, data: { ...cur.data, collections: cur.data.collections.map((c) => (c.name === collection ? { ...c, count: Math.max(0, c.count - 1) } : c)) } }
+          : cur,
+      );
+    } catch {
+      setError(t("Couldn't delete that record. Please try again."));
+    }
+    setDeleting(null);
+  }
+
+  /** The whole collection as a CSV file. A very large one is cut to the newest records that fit in 4 MB. */
+  async function downloadRecords() {
+    if (!records) return;
+    const { slug, collection } = records;
+    setError("");
+    try {
+      const res = await fetch(`/api/sites/${slug}/records?collection=${encodeURIComponent(collection)}&format=csv`);
+      if (!res.ok) throw new Error();
+      const name = res.headers.get("content-disposition")?.match(/filename="([^"]+)"/)?.[1] ?? "data.csv";
+      const [included, total] = (res.headers.get("x-flash-truncated") ?? "").split("/").map(Number);
+      const url = URL.createObjectURL(await res.blob());
+      Object.assign(document.createElement("a"), { href: url, download: name }).click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setRecords((r) =>
+        r?.slug === slug && r.collection === collection
+          ? {
+              ...r,
+              cut: total
+                ? t("Your download has the newest {included} of {total} records (the file limit is 4 MB).", {
+                    included: included.toLocaleString(t.locale),
+                    total: total.toLocaleString(t.locale),
+                  })
+                : "",
+            }
+          : r,
+      );
+    } catch {
+      setError(t("Flash couldn't load your app's data. Please try again."));
+    }
+  }
+
+  /**
+   * Opens the app as its owner, on Flash or on one of its own domains: Flash makes a one-time code
+   * and the app's page trades it for the owner's powers (see site-owner.ts). Opening the app any
+   * other way shows it as visitors see it.
+   */
+  async function openAsOwner(slug: string, domain = "") {
+    setError("");
+    // The tab opens now, while the click still counts, so the browser doesn't block it; the app
+    // can't reach back to Flash from it.
+    const tab = window.open("", "_blank");
+    if (tab) tab.opener = null;
+    try {
+      const { url } = await api<{ url: string }>(`/api/sites/${slug}/owner`, { method: "POST", json: domain ? { domain } : {} });
+      if (tab) tab.location.href = url;
+      else window.location.assign(url);
+    } catch (err) {
+      tab?.close();
+      setError(err instanceof Error ? err.message : t("Couldn't open your app as its owner. Please try again."));
+    }
+  }
+
   async function removeMember(member: Member) {
     if (!open) return;
     try {
@@ -419,7 +569,26 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
 
         <div className="flex-1 overflow-y-auto p-4 sm:p-5">
           {error && <p role="alert" className="mb-3 text-sm text-red-400">{error}</p>}
-          {open && view === "history" ? (
+          {open && view === "data" ? (
+            appData?.slug !== open.slug ? (
+              !error && <p className="text-sm text-zinc-500">{t("Loading…")}</p>
+            ) : records?.slug === open.slug ? (
+              <RecordsView
+                records={records}
+                deleting={deleting}
+                onBack={() => {
+                  // A list still loading doesn't come back once the owner has left it.
+                  dataLoads.current++;
+                  setRecords(null);
+                }}
+                onDownload={downloadRecords}
+                onAskDelete={setDeleting}
+                onDelete={deleteRecord}
+              />
+            ) : (
+              <DataView data={appData.data} onChoose={chooseDataRule} onShow={showRecords} onOpenAsOwner={(domain) => openAsOwner(open.slug, domain)} />
+            )
+          ) : open && view === "history" ? (
             versions === null ? (
               !error && <p className="text-sm text-zinc-500">{t("Loading…")}</p>
             ) : (
@@ -992,6 +1161,17 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
                         👤 {t("Members")}
                         {s.members ? <> ({s.members.toLocaleString(t.locale)})</> : null}
                       </button>
+                      <button onClick={() => openAsOwner(s.slug)} className="text-zinc-200 hover:text-white" title={t("Change this app's data from the app itself")}>
+                        🔑 {t("Open as owner")}
+                      </button>
+                      <button
+                        onClick={() => showData(s)}
+                        className="text-zinc-200 hover:text-white"
+                        title={s.openData ? t("Anyone can change or delete some of this app's data") : t("What this app keeps, and who may change it")}
+                      >
+                        🗄️ {t("Data")}
+                        {s.openData && <span className="ms-1 text-gold-soft">⚠</span>}
+                      </button>
                       <button onClick={() => showDomains(s)} className="text-zinc-200 hover:text-white">
                         🔗 {t("Domain")}
                       </button>
@@ -1012,6 +1192,218 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** An app's shared data: each collection, who may change it, and the owner's default for anything else. */
+function DataView({
+  data,
+  onChoose,
+  onShow,
+  onOpenAsOwner,
+}: {
+  data: AppData;
+  onChoose: (collection: string, rule: DataRule | null) => void;
+  onShow: (collection: string) => void;
+  // Opens the app as its owner, on Flash ("") or on one of its own domains.
+  onOpenAsOwner: (domain: string) => void;
+}) {
+  const t = useT();
+  const select = "mt-2 h-9 w-full max-w-xs rounded-lg border border-white/10 bg-zinc-900 px-2 text-sm text-zinc-200 outline-none focus:border-primary/70";
+  const other = data.fallback ?? data.guess;
+  const otherSource: RuleSource = data.fallback ? "you" : data.block ? "block" : "guess";
+  const link = "text-primary-soft hover:underline";
+  // Where a rule comes from, or that Flash set it because it couldn't use that part of the app's block.
+  const sourceText = (name: string, source: RuleSource) =>
+    (source === "app" || source === "block") && data.bad && (data.bad.why !== "entries" || data.bad.names.includes(name))
+      ? t("Set by Flash until your app's flash-data block is fixed")
+      : t(SOURCE_TEXT[source]);
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-zinc-400">
+        {t(
+          "What your app keeps in its database, and who may change it. Flash checks these rules on every request, so they hold even if someone skips your app's buttons.",
+        )}
+      </p>
+      {data.bad && (
+        <p role="status" className="rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 text-sm text-gold-soft">
+          ⚠ {blockProblem(data.bad, t)} {t("To fix it, open the chat that built this app and ask Flash to fix its flash-data block.")}
+        </p>
+      )}
+      {data.collections.length === 0 ? (
+        <p className="py-6 text-center text-sm text-zinc-500">{t("Your app hasn't saved anything yet.")}</p>
+      ) : (
+        <ul className="space-y-2">
+          {data.collections.map((c) => (
+            <li key={c.name} className="rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 text-sm">
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="min-w-0 flex-1 truncate font-medium text-zinc-100">{c.name}</span>
+                <span className="text-xs text-zinc-500">
+                  {c.count === 1 ? t("1 record") : t("{count} records", { count: c.count.toLocaleString(t.locale) })}
+                  {c.lastAdded > 0 && <> · {t("last added {when}", { when: dateLabel(c.lastAdded, t.locale) })}</>}
+                </span>
+                {c.count > 0 && (
+                  <button onClick={() => onShow(c.name)} className="text-xs text-primary-soft hover:underline">
+                    {t("See records")}
+                  </button>
+                )}
+              </div>
+              <select
+                value={c.rule}
+                onChange={(e) => onChoose(c.name, e.target.value ? (e.target.value as DataRule) : null)}
+                aria-label={t("Who may change {collection}", { collection: c.name })}
+                className={select}
+              >
+                {DATA_RULES.map((r) => (
+                  <option key={r} value={r}>
+                    {t(RULE_TEXT[r].label)}
+                  </option>
+                ))}
+                {c.source === "you" && <option value="">{t("Use your app's choice")}</option>}
+              </select>
+              <p className="mt-1 text-xs text-zinc-500">{t(RULE_TEXT[c.rule].help)}</p>
+              <p className="mt-1 text-xs text-zinc-600">{sourceText(c.name, c.source)}</p>
+              {c.rule === "open" && <p className="mt-1 text-xs text-gold-soft">⚠ {t("Anyone can change or delete this.")}</p>}
+              {c.personal.length > 0 && c.rule !== "private" && (
+                <p className="mt-1 text-xs text-gold-soft">
+                  ⚠{" "}
+                  {t(
+                    "Looks like personal details ({fields}). Anyone can read them. Choose ‘Only you can see it’, or ask Flash to send these privately instead.",
+                    { fields: c.personal.join(", ") },
+                  )}
+                </p>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 text-sm">
+        <span className="block text-zinc-100">{t("Default for anything else")}</span>
+        <select
+          value={other}
+          onChange={(e) => onChoose(DEFAULT_KEY, e.target.value ? (e.target.value as DataRule) : null)}
+          aria-label={t("Who may change anything else")}
+          className={select}
+        >
+          {DATA_RULES.map((r) => (
+            <option key={r} value={r}>
+              {t(RULE_TEXT[r].label)}
+            </option>
+          ))}
+          {data.fallback && <option value="">{t("Use your app's choice")}</option>}
+        </select>
+        <p className="mt-1 text-xs text-zinc-500">{t(RULE_TEXT[other].help)}</p>
+        <p className="mt-1 text-xs text-zinc-600">{sourceText(DEFAULT_KEY, otherSource)}</p>
+        {other === "open" && <p className="mt-1 text-xs text-gold-soft">⚠ {t("Anyone can change or delete this.")}</p>}
+      </div>
+      <div className="space-y-1 text-xs text-zinc-500">
+        <p>
+          {t.node(
+            "Opening your app's link shows it as visitors see it, even while you're signed in to Flash. To add, change or delete its data from the app itself, {link}. Collections only you can see show only here.",
+            {
+              link: (
+                <button onClick={() => onOpenAsOwner("")} className={link}>
+                  {t("open it as its owner")}
+                </button>
+              ),
+            },
+          )}
+        </p>
+        {data.domains.map((domain) => (
+          <p key={domain}>
+            {t.node("On {domain} you count as a visitor too, unless you {link}.", {
+              domain: <bdi>{domain}</bdi>,
+              link: (
+                <button onClick={() => onOpenAsOwner(domain)} className={link}>
+                  {t("open it there as its owner")}
+                </button>
+              ),
+            })}
+          </p>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** One collection's newest 100 records, with Delete, and the whole collection as a CSV file. */
+function RecordsView({
+  records,
+  deleting,
+  onBack,
+  onDownload,
+  onAskDelete,
+  onDelete,
+}: {
+  records: Records;
+  deleting: string | null;
+  onBack: () => void;
+  onDownload: () => void;
+  onAskDelete: (id: string | null) => void;
+  onDelete: (id: string) => void;
+}) {
+  const t = useT();
+  const list = records.list;
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-3 text-xs">
+        <button onClick={onBack} className="text-zinc-400 hover:text-zinc-100">
+          <span className="inline-block rtl:-scale-x-100" aria-hidden>
+            ←
+          </span>{" "}
+          {t("All data")}
+        </button>
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-zinc-100">{records.collection}</span>
+        {list && list.length > 0 && (
+          <button onClick={onDownload} className="text-primary-soft hover:underline">
+            ⬇ {t("Download all (CSV)")}
+          </button>
+        )}
+      </div>
+      {records.cut && <p className="text-xs text-gold-soft">{records.cut}</p>}
+      {list === null ? (
+        <p className="text-sm text-zinc-500">{t("Loading…")}</p>
+      ) : list.length === 0 ? (
+        <p className="py-6 text-center text-sm text-zinc-500">{t("Your app hasn't saved anything yet.")}</p>
+      ) : (
+        <ul className="space-y-2">
+          {list.length >= 100 && <li className="text-xs text-zinc-500">{t("The newest 100. Download all to see every record.")}</li>}
+          {list.map((r) => (
+            <li key={r.id} className="rounded-xl border border-white/8 bg-white/[0.02] p-4">
+              <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+                <span>{dateLabel(r.createdAt, t.locale)}</span>
+                {r.addedBy && <span className="truncate">{t("by {email}", { email: r.addedBy })}</span>}
+                {deleting === r.id ? (
+                  <span className="ms-auto flex items-center gap-3">
+                    <span className="text-zinc-400">{t("Delete this record? This can't be undone.")}</span>
+                    <button onClick={() => onDelete(r.id)} className="text-red-400 hover:text-red-300">
+                      {t("Delete")}
+                    </button>
+                    <button onClick={() => onAskDelete(null)} className="text-zinc-400 hover:text-zinc-100">
+                      {t("Keep")}
+                    </button>
+                  </span>
+                ) : (
+                  <button onClick={() => onAskDelete(r.id)} className="ms-auto hover:text-red-400" aria-label={t("Delete record")}>
+                    🗑
+                  </button>
+                )}
+              </div>
+              <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+                {Object.entries(r.data).map(([k, v]) => (
+                  <div key={k} className="contents">
+                    <dt className="text-zinc-500">{k}</dt>
+                    <dd dir="auto" className="min-w-0 whitespace-pre-wrap break-words text-zinc-200">
+                      {fieldText(v)}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

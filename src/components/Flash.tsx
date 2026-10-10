@@ -34,7 +34,8 @@ import { Bell } from "./Bell";
 import { LevelPicker, MenusOpenDown, MicButton, PlusMenu, SendButton, TalkButton, ToolPicker, type Choice } from "./ComposerTools";
 import { VoiceMode, type VoiceAnswer } from "./VoiceMode";
 import { useWakeWord } from "./useWakeWord";
-import { voiceReply } from "@/lib/voice-chat";
+import { voiceReply, type VoiceMessage } from "@/lib/voice-chat";
+import { priceWaiting } from "@/lib/price-question";
 import { photoActionsFor } from "@/lib/photo-actions";
 import { featureReady, findFeatures, isInstall, type FeatureAction, type FeatureSetup } from "@/lib/features";
 import { pickedContext, type PickedElement } from "@/lib/preview-bridge";
@@ -859,13 +860,16 @@ export function Flash({
 
   /**
    * Answers the last user message again, replacing the reply after it. Returns the new reply. Go ahead
-   * (confirmed) sends back what Flash decided before asking, so the price agreed is the price paid.
+   * or a spoken yes (confirmed) sends back what Flash decided and priced before asking, so the request
+   * runs on that engine and model, and the price agreed is the price paid.
    */
   async function retry(confirmed = false): Promise<UIMessage | null> {
     const messages = active?.messages;
     if (!active || !messages || busy || runningRef.current) return null;
     const lastUser = messages.findLastIndex((m) => m.role === "user");
     if (lastUser === -1) return null;
+    // A yes only goes ahead with a price question still waiting, never with whatever was asked last.
+    if (confirmed && !priceWaiting(messages)) return null;
     const decided = confirmed ? messages[lastUser + 1]?.decided : undefined;
     return respond(active, messages.slice(0, lastUser), messages[lastUser], confirmed, undefined, decided);
   }
@@ -888,7 +892,8 @@ export function Flash({
     if (lastUser === -1) return;
     const earlier = messages.slice(0, lastUser);
     const { pictureAbove: had, ...old } = messages[lastUser];
-    let edited: UIMessage = { ...old, content: text };
+    // Typed words replace what was heard, so they're routed and answered as typed.
+    let edited: UIMessage = { ...old, content: text, voice: undefined };
     // The new words decide whether it goes with the picture above, as when typing. Files sent with
     // it stay, and a change the user sent without the picture (the ✕) doesn't gain it.
     if (had || (!old.attachmentName && !old.build && !old.template && !pictureFollowUp(old.content))) {
@@ -950,6 +955,8 @@ export function Flash({
     unsent?: (stopped: boolean, why: string) => void,
     // What Flash decided before asking for the price, sent back with Go ahead (see retry).
     decided?: UIMessage["decided"],
+    // Sees the reply as it's written (a voice conversation starts saying it).
+    progress?: (reply: UIMessage) => void,
   ): Promise<UIMessage | null> {
     // One request at a time: Flash shows it's busy and Stop works from the first tap.
     if (runningRef.current) return null;
@@ -989,13 +996,17 @@ export function Flash({
 
     // Only the most recent app's code is sent back, so edits build on it without resending every version.
     const lastAppId = [...earlier].reverse().find((m) => m.app)?.id;
-    const previous = [...earlier].reverse().find((m) => m.role === "assistant" && m.engine)?.engine;
+    // A spoken "thanks" after an app is answered in words but is still about the app, so the next
+    // follow-up can change it.
+    const lastReply = [...earlier].reverse().find((m) => m.role === "assistant" && m.engine);
+    const previous = lastReply?.about ?? lastReply?.engine;
     const history: ChatTurn[] = [
       ...earlier
-        .filter((m) => !m.error || m.content || m.app)
+        // A price Flash asked about stays, so "how much was it?" is answered with the real price.
+        .filter((m) => !m.error || m.content || m.app || m.errorCode === "confirm_cost")
         .map((m) => ({
           role: m.role,
-          content: turnText(m),
+          content: m.errorCode === "confirm_cost" && !m.content ? (m.error ?? "") : turnText(m),
           app: m.id === lastAppId ? m.app?.html : undefined,
         })),
       { role: "user", content: turnText(userMsg), attachment: sent[0], more: sent.length > 1 ? sent.slice(1) : undefined },
@@ -1063,6 +1074,7 @@ export function Flash({
           if (e.type === "done") ended = true;
           final = applyEvent(final, e);
           updateMessage(projectId, reply.id, (m) => applyEvent(m, e));
+          if (e.type === "text") progress?.(final);
         }
       }
       // The reply stopped arriving before its last line: the connection was cut. Never shown, as the
@@ -1111,7 +1123,7 @@ export function Flash({
   }
 
   /** One turn of a voice conversation: sends what was said to the open chat, on Auto, and says the answer. */
-  async function talk(text: string): Promise<VoiceAnswer> {
+  async function talk(text: string, early?: (partial: VoiceMessage) => void): Promise<VoiceAnswer> {
     const stillWorking = { say: t("I'm still working on your last request. Ask me again when it's done."), confirm: false };
     if (busy || runningRef.current) return stillWorking;
     // Talking from Home starts a new chat, as typing does.
@@ -1123,14 +1135,26 @@ export function Flash({
     }));
     // "Make it darker" said right after a picture changes that picture, as when it's typed.
     const ask: UIMessage = { id: newId(), role: "user", content: text, auto: true, voice: true };
-    const reply = await respond(chat, chat.messages, withPicture(ask, followUpPicture(chat.messages, text, "auto")));
-    return reply ? voiceReply(reply, t) : stillWorking;
+    const reply = await respond(chat, chat.messages, withPicture(ask, followUpPicture(chat.messages, text, "auto")), false, undefined, undefined, early);
+    return reply ? spokenAnswer(chat.id, reply) : stillWorking;
   }
 
-  /** "Yes" to a costly request asked for by voice: runs it, like Go ahead. */
-  async function confirmByVoice(): Promise<VoiceAnswer> {
+  /** What Flash says after a reply in a voice conversation, with the price question it asks, if any. */
+  function spokenAnswer(chat: string, reply: UIMessage): VoiceAnswer {
+    const answer = voiceReply(reply, t);
+    return answer.confirm ? { ...answer, asked: { chat, reply: reply.id } } : answer;
+  }
+
+  /**
+   * "Yes" to a costly request asked for by voice: runs it, like Go ahead. Only the price question
+   * the conversation asked (asked), still waiting in the open chat, goes ahead: not one answered with
+   * the button since, nor whatever was asked last in another chat.
+   */
+  async function confirmByVoice(asked?: VoiceAnswer["asked"]): Promise<VoiceAnswer> {
+    const nothing = { say: t("There's nothing waiting to go ahead."), confirm: false };
+    if (!asked || !active || active.id !== asked.chat || !priceWaiting(active.messages ?? [], asked.reply)) return nothing;
     const reply = await retry(true);
-    return reply ? voiceReply(reply, t) : { say: t("There's nothing waiting to go ahead."), confirm: false };
+    return reply ? spokenAnswer(active.id, reply) : nothing;
   }
 
   /**

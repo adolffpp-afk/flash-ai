@@ -25,6 +25,9 @@ import {
   worstCaseProfitCents,
 } from "../src/lib/credits.ts";
 import type { Engine } from "../src/lib/types.ts";
+import { readFileSync } from "node:fs";
+import { audioLength, billableSeconds, measureAudio } from "../src/lib/server/audio-length.ts";
+import { OPUS_120MS, hiddenPages, oggOpus, opusSpeech, playedSeconds, wav, webm, webmBlock } from "./audio-files.ts";
 import { MODELS, modelCredits } from "../src/lib/models.ts";
 
 // What a credit is worth at the cheapest plan or pack: Max, billed yearly.
@@ -308,13 +311,48 @@ test("a priced job pays its listed price; stopped, only for what was really sent
   assert.equal(finalCredits({ ...done, ok: false, costCents: 0.01, priced: { ...priced, helperCents: 0.01 } }), creditsFor(0.01));
 });
 
-test("transcription is priced for the longest recording a file could hold", () => {
+test("transcription is priced on how long a recording plays, which its size doesn't limit", () => {
+  // What the provider bills: every minute at fal.ai's $0.008 (ElevenLabs direct is $0.40 an hour),
+  // on what it plays or on what the file says it lasts, whichever it goes by.
+  const billCents = (seconds: number) => Math.max(1, (seconds / 60) * 0.8);
+  const charged = (file: Buffer) => {
+    const length = audioLength(file);
+    return creditsFor(transcribeCostCents(file.length, length ? billableSeconds(length) : 0)) * cheapestCentsPerCredit;
+  };
+  // Opus fits an hour into 60 KB (one byte per 120 ms packet), which bytes alone price as a minute.
+  const hour = oggOpus(Array.from({ length: 30_000 }, () => Uint8Array.of(OPUS_120MS)), { granule: () => 0 });
+  assert.ok(creditsFor(transcribeCostCents(hour.length)) * cheapestCentsPerCredit < billCents(3600), "bytes alone lose money");
+  const files = {
+    hour,
+    // Two minutes of quiet at 6 kbps, as ffmpeg writes it.
+    quiet: readFileSync(new URL("./fixtures/quiet-2min.ogg", import.meta.url)),
+    // Two seconds of sound that say they last an hour.
+    claims: oggOpus(opusSpeech(2), { granule: () => 48000 * 3600 }),
+    // Six minutes in WebM, in clusters of 24 seconds.
+    webm: webm({
+      clusters: Array.from({ length: 15 }, (_, c) => ({ time: c * 24_000, blocks: Array.from({ length: 200 }, (_, i) => webmBlock(1, i * 120, [Uint8Array.of(OPUS_120MS)])) })),
+    }),
+    wav: wav({ rate: 100, bits: 8, data: Buffer.alloc(60_000) }),
+    // Twenty minutes hidden inside pages with broken checksums, which some players find and some don't.
+    hidden: hiddenPages(20),
+  };
+  for (const [name, file] of Object.entries(files)) {
+    const length = audioLength(file)!;
+    assert.ok(length, name);
+    assert.ok(charged(file) >= billCents(Math.max(length.decoded, length.declared)), `${name}: ${charged(file)}¢ for ${JSON.stringify(length)}`);
+    // What's sent to be transcribed is the clean copy, which plays no longer than what was priced.
+    const sent = measureAudio(file)!.file;
+    const plays = sent.mediaType === "audio/ogg" ? playedSeconds(sent.data) : audioLength(sent.data)!.decoded;
+    assert.ok(charged(file) >= billCents(plays), `${name}: ${charged(file)}¢ for ${plays} s sent`);
+  }
+  assert.ok(audioLength(files.webm)!.decoded >= 360 && audioLength(files.wav)!.decoded >= 600);
+  // A file Flash can't measure keeps the floor of 8 kbps (MP3's lowest rate), so a bigger file costs more.
   for (const bytes of [1000, 500 * 1024, 3 * 1024 * 1024]) {
-    // Worst case: 8 kbps audio at fal.ai's $0.008 a minute (ElevenLabs direct is $0.40 an hour).
-    const worstCents = Math.max(1, (bytes / 1000 / 60) * 0.8);
-    assert.ok(creditsFor(transcribeCostCents(bytes)) * cheapestCentsPerCredit > worstCents, `${bytes} bytes`);
+    assert.ok(creditsFor(transcribeCostCents(bytes)) * cheapestCentsPerCredit > billCents(bytes / 1000), `${bytes} bytes`);
   }
   assert.ok(transcribeCostCents(3 * 1024 * 1024) > transcribeCostCents(1024 * 1024));
+  // A measured recording is never priced below its size's floor either.
+  assert.equal(transcribeCostCents(600_000, 60), transcribeCostCents(600_000));
 });
 
 /*
@@ -354,8 +392,9 @@ test("referral bonuses are a share of the credits bought, the referrer's capped"
 });
 
 test("every pack and plan stays profitable with both referral bonuses on its first payment", () => {
-  // The first payment earns the bonuses: its credits plus both bonuses, all used. A plan's
-  // bonus is on one month's credits; a yearly payment pays for 12 months of credits.
+  // A plan's first payment earns the bonuses: its credits plus both bonuses, all used. The bonus
+  // is on one month's credits; a yearly payment pays for 12 months of credits. Packs don't earn
+  // them (REFERRAL_EARNS) but are checked too, so letting them earn again stays safe.
   const firstPayments = [
     ...CREDIT_PACKS.map((p) => ({ id: p.id, price: p.priceCents, credits: p.credits, months: 1, subscription: false })),
     ...PLANS.flatMap((p) =>

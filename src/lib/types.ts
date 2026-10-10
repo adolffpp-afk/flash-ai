@@ -66,6 +66,8 @@ export type StreamEvent =
       modelWhy?: string;
       // Answered by a free model because the user is out of credits.
       free?: boolean;
+      // A spoken turn about the app or deck before it that didn't change it (see RouteDecision).
+      about?: Engine;
       // The id of the credits held for the request, so a reply the user stops can show what it really cost (see /api/me/charge).
       charge?: number;
     }

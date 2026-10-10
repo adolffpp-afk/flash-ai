@@ -6,7 +6,7 @@ process.env.VERCEL_API_TOKEN = "t";
 process.env.VERCEL_PROJECT_ID = "flash-ai";
 process.env.FLASH_ADMIN_EMAILS = "owner@x.co";
 const { run } = await import("../src/lib/server/db.ts");
-const { cleanDomain, isSubdomain, addDomain, siteForDomain, removeDomain, domainsForSite, ownershipValue, ownershipRecord, provesOwnership } =
+const { cleanDomain, isSubdomain, addDomain, siteForDomain, removeDomain, domainsForSite, ownershipValue, ownershipRecord, provesOwnership, pointsAtFlash } =
   await import("../src/lib/server/domains.ts");
 const { routeHost } = await import("../src/lib/site-host.ts");
 
@@ -134,4 +134,32 @@ test("custom domains show their site and keep Flash's pages off them", () => {
   assert.deepEqual(routeHost("crumbbakery.com", "/admin", "GET"), { redirect: "/" });
   assert.deepEqual(routeHost("crumbbakery.com", "/api/auth/signin", "POST"), { notFound: true });
   assert.deepEqual(routeHost("flash.example.org", "/admin", "GET", "flash.example.org"), { pass: true }, "FLASH_APP_URL's host is Flash's own");
+});
+
+test("only a domain that leads to Flash now counts as pointing at it", async () => {
+  // What Vercel says about each domain: whether it has it verified, and whether its DNS leads there.
+  const vercel: Record<string, { verified: boolean; misconfigured: boolean } | "down"> = {
+    "crumbbakery.com": { verified: true, misconfigured: false },
+    "lapsed.com": { verified: true, misconfigured: true },
+    "pending.com": { verified: false, misconfigured: false },
+    "flaky.com": "down",
+  };
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input);
+    const domain = Object.keys(vercel).find((d) => url.includes(`/${d}`));
+    const state = domain ? vercel[domain] : undefined;
+    if (state === "down") throw new Error("timeout");
+    if (!state) return Response.json({ error: { code: "not_found" } }, { status: 404 });
+    if (url.includes("/config")) return Response.json({ misconfigured: state.misconfigured });
+    return Response.json({ verified: state.verified });
+  }) as typeof fetch;
+  assert.equal(await pointsAtFlash("crumbbakery.com"), true);
+  assert.equal(await pointsAtFlash("lapsed.com"), false, "its DNS leads somewhere else");
+  assert.equal(await pointsAtFlash("pending.com"), false, "not verified on Vercel yet");
+  assert.equal(await pointsAtFlash("flaky.com"), false, "no answer is no");
+  assert.equal(await pointsAtFlash("gone.com"), false, "Vercel doesn't have it");
+  const token = process.env.VERCEL_API_TOKEN;
+  delete process.env.VERCEL_API_TOKEN;
+  assert.equal(await pointsAtFlash("crumbbakery.com"), false, "without Vercel nothing can be checked");
+  process.env.VERCEL_API_TOKEN = token;
 });

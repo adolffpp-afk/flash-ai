@@ -62,22 +62,19 @@ export async function saveUpload(
   }
   const id = randomId(12);
   const name = cleanName(file.name, file.type);
-  await run("INSERT INTO site_uploads (id, site_slug, owner, mime, name, data, size, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", [
-    id,
-    slug,
-    owner,
-    file.type,
-    name,
-    file.bytes,
-    file.bytes.length,
-    now(),
-  ]);
+  // INSERT … SELECT, so a file sent just as the app is unpublished, or as its owner turns files off, isn't kept.
+  const r = await run(
+    "INSERT INTO site_uploads (id, site_slug, owner, mime, name, data, size, created_at) SELECT ?, slug, ?, ?, ?, ?, ?, ? FROM sites WHERE slug = ? AND uploads_on = 1",
+    [id, owner, file.type, name, file.bytes, file.bytes.length, now(), slug],
+  );
+  if (!r.rowsAffected) return fail("App not found.", 404);
   return { status: 201, body: { url: `/api/sites/${slug}/files/${id}`, name, size: file.bytes.length } };
 }
 
+/** A file sent to an app, while the app is still published. */
 export async function readUpload(slug: string, id: string) {
   return one<{ mime: string; name: string; data: ArrayBuffer }>(
-    "SELECT mime, name, data FROM site_uploads WHERE site_slug = ? AND id = ?",
+    "SELECT u.mime, u.name, u.data FROM site_uploads u JOIN sites s ON s.slug = u.site_slug WHERE u.site_slug = ? AND u.id = ?",
     [slug, id],
   );
 }

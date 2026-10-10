@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { BuiltApp } from "@/lib/types";
 import { api } from "@/lib/store";
 import { flashDbShim, injectHead } from "@/lib/flashdb-shim";
+import { dataLine, type DataSummary } from "@/lib/data-rules";
 import { appSlug, projectZip } from "@/lib/app-project";
 import { PREVIEW_BRIDGE, fixRequest, friendlyError, isPreviewMessage, linesIn, type PickedElement, type PreviewError } from "@/lib/preview-bridge";
 import { useT } from "@/lib/use-t";
@@ -104,6 +105,8 @@ export function AppPreview({
   const [publishing, setPublishing] = useState(false);
   const [publishedHtml, setPublishedHtml] = useState("");
   const [publishError, setPublishError] = useState("");
+  // Who may change the published app's data, said once it's published.
+  const [dataNote, setDataNote] = useState<DataSummary | null>(null);
   const [copied, setCopied] = useState(false);
   const [menu, setMenu] = useState(false);
   const [picking, setPicking] = useState(false);
@@ -113,6 +116,7 @@ export function AppPreview({
   const previewHtml = useMemo(() => injectHead(app.html, PREVIEW_HEAD), [app.html]);
   const link = app.slug && typeof window !== "undefined" ? `${window.location.origin}/p/${app.slug}` : "";
   const shownErrors = errors.html === app.html && !errors.hidden ? errors.list : [];
+  const dataText = dataNote ? dataLine(dataNote, 8, t) : "";
   // The browser's own error messages stay as they are; Flash's explanation of one is translated.
   const explain = (message: string) => {
     const friendly = friendlyError(message);
@@ -174,12 +178,13 @@ export function AppPreview({
     setPublishing(true);
     setPublishError("");
     try {
-      const res = await api<{ slug: string }>("/api/sites", {
+      const res = await api<{ slug: string; data?: DataSummary }>("/api/sites", {
         method: "POST",
         json: { html: app.html, title: app.title, slug: asNew ? undefined : target },
       });
       onPublished?.(res.slug);
       setPublishedHtml(app.html);
+      setDataNote(res.data ?? null);
     } catch (err) {
       setPublishError(err instanceof Error ? err.message : t("Couldn't publish."));
     } finally {
@@ -334,6 +339,7 @@ export function AppPreview({
               <button className={btn} onClick={copyLink}>
                 {copied ? t("Copied") : t("Copy link")}
               </button>
+              {dataText && <span className="basis-full text-zinc-400">{dataText}</span>}
             </>
           )}
         </div>

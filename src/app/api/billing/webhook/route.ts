@@ -79,7 +79,8 @@ async function invoicePaid(invoice: Invoice) {
     test: false,
     paymentIntent: invoice.payment_intent ?? invoice.payments?.data?.[0]?.payment?.payment_intent ?? null,
   });
-  // A referred subscriber's first payment gives the referral bonuses (once; the referrer's after 30 days).
+  // A referred friend's first payment of a plan that counts (REFERRAL_EARNS) gives the referral
+  // bonuses (once; the referrer's after 30 days). Renewals don't.
   await rewardReferral(ref);
   // A new plan replaces the old one. The old one ends now with no refund; its credits stay.
   if (invoice.billing_reason === "subscription_create") {
@@ -144,13 +145,11 @@ export async function POST(request: Request) {
     case "checkout.session.completed":
     // Payment methods that take days (bank debits) complete unpaid and send this once paid.
     case "checkout.session.async_payment_succeeded": {
-      // Credit packs. Plans are handled by invoice.paid.
+      // Credit packs. Plans are handled by invoice.paid. Packs never earn referral bonuses.
       const { user, pack } = object.metadata ?? {};
       if (object.mode !== "subscription" && object.payment_status === "paid" && user && pack) {
         const ref = `stripe:${object.id}`;
         await addPurchase(user, pack, ref, object.payment_intent ?? null);
-        // A referred buyer's first payment gives the referral bonuses (once; the referrer's after 30 days).
-        await rewardReferral(ref);
       }
       break;
     }

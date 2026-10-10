@@ -2,6 +2,8 @@ import { all, one, run, now } from "./db.ts";
 import { randomId } from "./ids.ts";
 import { overLimit } from "./limits.ts";
 import { EMAILS, sendEmail } from "./email.ts";
+import { refreshRules } from "./site-data.ts";
+import { anyOpen, isDataRule, parseComputed, type DataRule } from "../data-rules.ts";
 import { english, type Translate } from "../i18n.ts";
 
 const FORM = /^[A-Za-z0-9_-]{1,40}$/;
@@ -46,7 +48,15 @@ export async function receiveMessage(
     [slug],
   );
   if (!site) return { error: "Site not found.", status: 404 };
-  await run("INSERT INTO site_messages (id, site_slug, form, data, created_at) VALUES (?, ?, ?, ?, ?)", [randomId(), slug, form, text, now()]);
+  // INSERT … SELECT, so a message sent just as the site is unpublished isn't left behind without it.
+  const saved = await run("INSERT INTO site_messages (id, site_slug, form, data, created_at) SELECT ?, slug, ?, ?, ? FROM sites WHERE slug = ?", [
+    randomId(),
+    form,
+    text,
+    now(),
+    slug,
+  ]);
+  if (!saved.rowsAffected) return { error: "Site not found.", status: 404 };
   await run(
     `DELETE FROM site_messages WHERE site_slug = ? AND id NOT IN
        (SELECT id FROM site_messages WHERE site_slug = ? ORDER BY created_at DESC LIMIT ?)`,
@@ -81,11 +91,23 @@ export async function deleteMessage(slug: string, id: string): Promise<void> {
   await run("DELETE FROM site_messages WHERE site_slug = ? AND id = ?", [slug, id]);
 }
 
-/** The user's published sites with how many messages each has, and how many are unread. */
+/**
+ * The user's published sites with how many messages each has, and how many are unread. openData
+ * says anyone at all could change or delete some of a site's data (see data-rules.ts).
+ */
 export async function sitesWithMessages(userId: string) {
   const since = new Date(Date.now() - 29 * 86_400_000).toISOString().slice(0, 10);
-  const rows = await all<{ slug: string; title: string; updated_at: number; messages: number; unread: number; views: number; members: number }>(
-    `SELECT s.slug, s.title, s.updated_at,
+  const rows = await all<{
+    slug: string;
+    title: string;
+    updated_at: number;
+    messages: number;
+    unread: number;
+    views: number;
+    members: number;
+    data_rules: string;
+  }>(
+    `SELECT s.slug, s.title, s.updated_at, s.data_rules,
             (SELECT COUNT(*) FROM site_messages m WHERE m.site_slug = s.slug) AS messages,
             (SELECT COUNT(*) FROM site_messages m WHERE m.site_slug = s.slug AND m.read_at = 0) AS unread,
             (SELECT COALESCE(SUM(v.views), 0) FROM site_visits v WHERE v.site_slug = s.slug AND v.day >= ?) AS views,
@@ -93,14 +115,26 @@ export async function sitesWithMessages(userId: string) {
      FROM sites s WHERE s.user_id = ? ORDER BY s.updated_at DESC`,
     [since, userId],
   );
-  return rows.map((r) => ({
-    ...r,
-    updated_at: Number(r.updated_at),
-    messages: Number(r.messages),
-    unread: Number(r.unread),
-    views: Number(r.views),
-    members: Number(r.members),
-  }));
+  const chosen = await all<{ site_slug: string; collection: string; rule: string }>(
+    "SELECT r.site_slug, r.collection, r.rule FROM site_collection_rules r JOIN sites s ON s.slug = r.site_slug WHERE s.user_id = ?",
+    [userId],
+  );
+  const sites = [];
+  for (const { data_rules, ...r } of rows) {
+    // Sites published before data rules existed get theirs worked out here, once.
+    const computed = parseComputed(data_rules) ?? (await refreshRules(r.slug));
+    const mine: [string, DataRule][] = chosen.filter((c) => c.site_slug === r.slug && isDataRule(c.rule)).map((c) => [c.collection, c.rule as DataRule]);
+    sites.push({
+      ...r,
+      updated_at: Number(r.updated_at),
+      messages: Number(r.messages),
+      unread: Number(r.unread),
+      views: Number(r.views),
+      members: Number(r.members),
+      openData: computed ? anyOpen(computed, Object.fromEntries(mine)) : false,
+    });
+  }
+  return sites;
 }
 
 /**
