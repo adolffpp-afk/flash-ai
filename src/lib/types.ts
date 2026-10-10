@@ -68,6 +68,8 @@ export type StreamEvent =
       free?: boolean;
       // A spoken turn about the app or deck before it that didn't change it (see RouteDecision).
       about?: Engine;
+      // The id of the credits held for the request, so a reply the user stops can show what it really cost (see /api/me/charge).
+      charge?: number;
     }
   | { type: "text"; delta: string }
   // What a reply charged by length really cost, sent when it finishes.

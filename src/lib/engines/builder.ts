@@ -1,5 +1,18 @@
-import { NO_BUDGET, choiceParams, defaultChoice, getClient, meterClaude, noMeter, toMessages, type Budget, type ClaudeChoice, type Meter } from "./claude.ts";
-import { MAX_OUTPUT_TOKENS, claudeCostCents, claudePrice, inputCostCents } from "../credits.ts";
+import {
+  NO_BUDGET,
+  choiceParams,
+  defaultChoice,
+  getClient,
+  meterClaude,
+  noMeter,
+  toMessages,
+  usesFallback,
+  type Budget,
+  type ClaudeChoice,
+  type Meter,
+  type Watch,
+} from "./claude.ts";
+import { tokensWithin } from "../credits.ts";
 import { htmlTitle, splitBuild } from "../build-parse.ts";
 import { applyEdits, hasPieces, piecesIn, splitEdits, type Edit } from "../edit-blocks.ts";
 import type { ChatTurn, StreamEvent } from "../types.ts";
@@ -12,7 +25,12 @@ const SHARED_RULES = `Output format, always:
 
 Technical rules:
 - It runs in a sandboxed iframe: no server, no build step. You may load libraries only from https://cdn.jsdelivr.net, https://unpkg.com or https://cdnjs.cloudflare.com (for example Tailwind via https://cdn.tailwindcss.com is also allowed, Chart.js, Alpine.js, React UMD with Babel standalone).
-- To save data (tasks, sign-ups, scores, orders, posts), use the built-in database instead of localStorage. It is always available as window.flashDB, with async methods: flashDB.list(collection) returns an array of records; flashDB.add(collection, object) returns the new record with an id and createdAt; flashDB.update(collection, id, partialObject) returns the updated record; flashDB.remove(collection, id). Collection names are letters, digits, - or _. Data is shared by everyone who uses the published app, so never store passwords or private data in it. For contact, booking, order and sign-up forms, which hold people's names, emails and phone numbers, use await flashDB.send(formName, fields) instead: it delivers the form privately to the app's owner (they read it in Flash and get an email) and nobody else can read it. Load data on start, show a loading state, and handle errors with a friendly message.
+- To save data (menu items, products, posts, tasks, reviews, scores), use the built-in database instead of localStorage. It is always available as window.flashDB, with async methods: flashDB.list(collection) returns an array of records; flashDB.add(collection, object) returns the new record with an id and createdAt; flashDB.update(collection, id, partialObject) returns the updated record; flashDB.remove(collection, id). Collection names are letters, digits, - or _. Data is shared by everyone who uses the published app, so never store passwords or private data in it. For contact, booking, order and sign-up forms, which hold people's names, emails and phone numbers, use await flashDB.send(formName, fields) instead: it delivers the form privately to the app's owner (they read it in Flash and get an email) and nobody else can read it. Load data on start, show a loading state, and handle errors with a friendly message.
+- Flash's server decides who may change each shared collection, whatever the app's own code does, by one of five rules: "read" (visitors see it; only the owner adds or changes it: menus, products, posts, prices), "add" (anyone adds; only the owner, or the signed-in person who added a record, changes or deletes it: reviews, comments, scores), "own" (visitors see it; people signed in with flashAuth add, and change or delete what they added), "private" (anyone adds; only the owner reads it, in Flash's My websites & apps > Data, never in the app itself) and "open" (anyone adds, changes or deletes anything; only for a list a group edits together). Just before </body>, name every shared collection the app uses with the strictest rule that works, in <script type="application/json" id="flash-data">{"menu": "read", "reviews": "add"}</script>, with an HTML comment right above it giving each rule's meaning in this app in one line. The block is strict JSON: double quotes, no comments and no trailing commas inside it. Collections it doesn't name are read-only for visitors, and so is everything while Flash can't read the block. For collection names made while the app runs (like "room-" + id), use one fixed collection with a field for the room instead, or give "*" the rule for every collection the block doesn't name. flashDB.mine needs no rule.
+- flashDB.isOwner is true only when the app's owner opens it with Open as owner in Flash (and in Flash's preview). Show the controls that add, edit or delete owner-managed data (menu items, products, posts) only when it is true, so the owner manages the content from the app itself and visitors never see them. Seed sample records with flashDB.add only when flashDB.isOwner is true and the collection is empty; otherwise show built-in sample content while a list is empty.
+- A shared record added by the signed-in person using the app has record.byYou set to true: show Edit and Delete on a record only when record.byYou or flashDB.isOwner is true.
+- Personal details (emails, phone numbers, addresses) go through flashDB.send, into flashDB.mine or into a "private" collection, never into a collection visitors can read.
+- Never put typed text or records into innerHTML, insertAdjacentHTML or document.write: set textContent, or pass every value through a small esc() helper first.
 - To let people have their own account in the app (sign up, sign in, their own saved things), use window.flashAuth, which is always there: flashAuth.user is { id, email, name } for the person using the app right now, or null; flashAuth.signedIn says the same as true or false; flashAuth.signUp(email, password, name), flashAuth.signIn(email, password) and flashAuth.signOut() each send the form and reload the page, so write no code after calling them; flashAuth.error holds a message to show when the last try failed (wrong password and so on), and flashAuth.signedOut is true just after signing out. Never store passwords yourself, and never check a password in the app's own code.
 - A signed-in person's own private things (their orders, notes, favourites, progress) go in window.flashDB.mine, which works exactly like flashDB but only for them: flashDB.mine.list, .add, .update, .remove. Nobody else using the app can read them. Everything in plain flashDB is shared by everyone, so put anything personal in flashDB.mine. When the app needs an account, show a sign-in and sign-up form first and the app itself after, and give signed-in people a sign-out button with their name or email.
 - To take a file someone picks in the app (a photo with a review, a CV with an application, a picture for a listing), use const saved = await flashDB.upload(file) with the File from an <input type="file">: it returns { url, name, size }, and you save saved.url in a record with flashDB.add or flashDB.mine.add and show it with <img src=…> or a link. Pictures, PDFs and text files up to 5 MB are allowed. Taking files is off until the app's owner turns it on in Flash (My websites & apps > Files), so always show the error's message when it throws, and never try to read a file in the app and store it as text.
@@ -62,6 +80,7 @@ export const EDIT_RULES = `Changing a few places (this replaces point 2 above wh
 - To add something new, FIND a line that is already there and REPLACE it with itself plus the new lines.
 - To delete something, REPLACE it with nothing (an empty line between ======= and >>>>>>>).
 - Use as many pieces as the change needs, in one block, and change nothing you weren't asked to.
+- When a change adds, renames or removes a shared collection, or changes who may change one, update the flash-data block in the same answer. When the app has no flash-data block yet and you add one, name every collection its code already uses with a rule that still allows what the app does with it, so nothing it does today stops working.
 - Send the complete \`\`\`html file instead, and no flash-edit block, when the change is big (a new page, a redesign, a rewrite), when it touches most of the file, or when you can't quote the current lines exactly. Never send both in one answer.`;
 
 /** How a website with several pages fits in the one file: hash routes, so every page has its own link. */
@@ -137,16 +156,16 @@ export async function* streamBuild(
   choice: ClaudeChoice = defaultChoice(kind),
   // The language Flash's own words (progress, notes, errors) are in.
   t: Translate = english,
+  { signal, running }: Watch = {},
 ): AsyncGenerator<StreamEvent> {
   const app = kind === "app";
   // The title when the file has none. It names the published site and its downloads, so it stays in English.
   const fallback = app ? "Your app" : "Your slides";
   const tooLong = (): StreamEvent => ({
     type: "error",
-    message:
-      budget.maxTokens < MAX_OUTPUT_TOKENS
-        ? t("Your credits ran out before this was finished. Add credits, or ask for a simpler first version.")
-        : t("The app was too large to finish in one go. Try asking for a simpler first version."),
+    message: budget.byCredits
+      ? t("Your credits ran out before this was finished. Add credits, or ask for a simpler first version.")
+      : t("The app was too large to finish in one go. Try asking for a simpler first version."),
   });
   const noFit = (): StreamEvent => ({ type: "error", message: t(NO_FIT) });
 
@@ -174,12 +193,16 @@ export async function* streamBuild(
             ? t("Designing your app…")
             : t("Designing your deck…"),
     };
-    const stream = getClient().beta.messages.stream({
-      ...choiceParams(choice),
-      max_tokens: maxTokens,
-      system: buildSystem(kind, preferences, canEdit),
-      messages,
-    });
+    running?.begin(choice.model, maxTokens);
+    const stream = getClient().beta.messages.stream(
+      {
+        ...choiceParams(choice),
+        max_tokens: maxTokens,
+        system: buildSystem(kind, preferences, canEdit),
+        messages,
+      },
+      { signal },
+    );
 
     let text = "";
     let sentBefore = 0;
@@ -187,6 +210,7 @@ export async function* streamBuild(
     let lastPieces = 0;
     let editAt = -1;
     for await (const event of stream) {
+      running?.see(event);
       if (event.type !== "content_block_delta" || event.delta.type !== "text_delta") continue;
       text += event.delta.text;
       const part = splitBuild(text);
@@ -220,8 +244,7 @@ export async function* streamBuild(
       }
     }
     const final = await stream.finalMessage();
-    meterClaude(meter, final);
-    spent += claudeCostCents(final.model, final.usage);
+    spent += meterClaude(meter, final, choice.model, running);
     if (final.stop_reason === "refusal") {
       yield { type: "text", delta: "\n\n" + t("Flash couldn't build that.") };
       return;
@@ -270,8 +293,7 @@ export async function* streamBuild(
       // reading everything again and writing all of it, so a retry never runs at a loss.
       const usage = final.usage;
       const reread = usage.input_tokens + (usage.cache_creation_input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + usage.output_tokens + 200;
-      const left = budget.capCents - spent - inputCostCents(kind, choice.model, reread);
-      maxTokens = Math.min(budget.maxTokens, Math.floor((left * 1e6) / claudePrice(choice.model, reread).output));
+      maxTokens = Math.min(budget.maxTokens, tokensWithin(kind, choice.model, reread, budget.capCents - spent, usesFallback(choice)));
       if (!(maxTokens >= Math.ceil(base!.length / 3) + THINKING_ROOM)) {
         yield noFit();
         return;

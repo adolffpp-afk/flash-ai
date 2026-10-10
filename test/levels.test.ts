@@ -40,8 +40,10 @@ process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${(server.address() as Addres
 
 const { default: Anthropic } = await import("@anthropic-ai/sdk");
 const { LEVELS, autoLevel, isLevel, levelName } = await import("../src/lib/levels.ts");
-const { claudeChoice, defaultChoice, streamText, withStepDown } = await import("../src/lib/engines/claude.ts");
-const { CLAUDE_PRICES, MARKUP, claudeCostCents, finalCredits, inputCostCents, planHold } = await import("../src/lib/credits.ts");
+const { Running, claudeChoice, defaultChoice, streamText, withStepDown } = await import("../src/lib/engines/claude.ts");
+const { CLAUDE_PRICES, FALLBACKS, MARKUP, claudeCostCents, claudePrice, finalCredits, inputCostCents, planHold, readCostCents } = await import(
+  "../src/lib/credits.ts"
+);
 
 type Event = { type: string; delta?: string; message?: string };
 const ask = (content: string) => [{ role: "user" as const, content }];
@@ -114,6 +116,15 @@ test("Sonic asks Haiku with no refusal fallback, which Haiku doesn't have; the o
   // Called the way it was before levels, it still runs on Sonnet at medium effort.
   await drain(streamText(ask("hi"), "", "text"));
   assert.deepEqual([sent[2].model, sent[2].effort], ["claude-sonnet-5-5", "medium"]);
+  // Vision's fallbacks cost more than it does, so it has none; nor does a reply whose hold can't pay for one.
+  await drain(streamText(ask("hi"), "", "text", undefined, undefined, claudeChoice("text", "vision")));
+  await drain(streamText(ask("hi"), "", "text", undefined, undefined, { ...claudeChoice("text", "ascend"), fallback: false }));
+  await drain(streamText(ask("hi"), "", "text", undefined, undefined, { ...claudeChoice("text", "ascend"), fallback: true }));
+  assert.deepEqual(sent.slice(3).map((s) => [s.model, s.fallbacks ?? "none", /server-side-fallback/.test(s.beta)]), [
+    ["claude-opus-5-5", "none", false],
+    ["claude-sonnet-5-5", "none", false],
+    ["claude-sonnet-5-5", "default", true],
+  ]);
 });
 
 test("when Summit's model can't take a request, Vision answers it, and only Vision's answer is paid for", async () => {
@@ -134,6 +145,20 @@ test("when Summit's model can't take a request, Vision answers it, and only Visi
     assert.deepEqual(costs.map((c) => c.model), ["claude-opus-5-5"]);
   }
   down.clear();
+});
+
+test("a reply stopped after Summit stepped down is charged at the prices of the model that answered", async () => {
+  down.set("claude-fable-5-1", 529);
+  const running = new Running();
+  const choice = claudeChoice("text", "ultra");
+  const run = (c: typeof choice) => streamText(ask("prove it"), "", "text", undefined, undefined, c, undefined, { running });
+  for await (const e of withStepDown(choice, run)) if ((e as Event).type === "text") break;
+  down.clear();
+  // Vision's model read the 1,000 tokens and wrote "Hello from claude-opus-5-5" before Stop, with no padding for tools.
+  const words = "Hello from claude-opus-5-5".length / 3;
+  const expected = readCostCents("claude-opus-5-5", 1000) + (words * claudePrice("claude-opus-5-5").output) / 1e6;
+  assert.ok(Math.abs(running.soFar - expected) < 1e-9, `${running.soFar} vs ${expected}`);
+  assert.ok(running.soFar < readCostCents("claude-fable-5-1", 1000), "not at Summit's price");
 });
 
 test("other errors, levels with nowhere to step down to, and errors after words were sent are not retried", async () => {
@@ -163,7 +188,13 @@ test("Haiku 5.5 is priced by the size of the prompt, and pricier levels hold mor
           for (const available of [0, 60, 1e6]) {
             const hold = planHold(engine, model, inputTokens, available, scale);
             const price = model === "claude-haiku-5-5" && inputTokens > 100_000 ? CLAUDE_PRICES[model].long! : CLAUDE_PRICES[model];
-            const worst = inputCostCents(engine, model, inputTokens) + (hold.maxTokens * price.output) / 1e6;
+            let worst = inputCostCents(engine, model, inputTokens) + (hold.maxTokens * price.output) / 1e6;
+            // A refusal fallback reads everything again, the declined words too (at each search step), and writes its own reply.
+            if (hold.fallback) {
+              const backup = claudePrice(FALLBACKS[model], inputTokens);
+              const steps = engine === "search" ? 6 : 1;
+              worst += inputCostCents(engine, FALLBACKS[model], inputTokens) + (hold.maxTokens * (steps * backup.input + backup.output)) / 1e6;
+            }
             assert.ok(worst * MARKUP <= hold.held + 1e-9, `${engine} ${model} ${inputTokens} x${scale}`);
           }
         }
@@ -171,9 +202,11 @@ test("Haiku 5.5 is priced by the size of the prompt, and pricier levels hold mor
     }
   }
   // Summit on a chat may hold up to five times the usual allowance, so its answers aren't cut short.
+  // Both hold more again for a refusal fallback (Summit's is cheaper than Summit itself, Ascend's isn't).
   const usual = planHold("text", "claude-sonnet-5-5", 1000, 1e6);
   const ultra = planHold("text", "claude-fable-5-1", 1000, 1e6, 5);
-  assert.ok(ultra.held >= usual.held * 4, `${ultra.held} vs ${usual.held}`);
+  assert.ok(usual.fallback && ultra.fallback);
+  assert.ok(ultra.held >= usual.held * 3.5, `${ultra.held} vs ${usual.held}`);
   assert.ok(ultra.maxTokens >= usual.maxTokens * 0.9);
 });
 

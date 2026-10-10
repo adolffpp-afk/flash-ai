@@ -42,8 +42,11 @@ export type UIMessage = {
   sources?: Source[];
   error?: string;
   errorCode?: string;
-  // The price question's engine, model and credits, sent back when the user says yes so exactly that runs.
-  agreed?: { engine: Engine; model: string; credits: number };
+  // A request waiting for its price to be agreed: what Flash decided for it and the price it asked
+  // (the model and its credits), sent back with Go ahead or a spoken yes so exactly that runs.
+  decided?: { engine: Engine; fresh?: boolean; model?: string; credits?: number };
+  // The id of the credits held for the request, so a stopped reply can show what it really cost.
+  charge?: number;
   pending?: boolean;
   stopped?: boolean;
   status?: string;

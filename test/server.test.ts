@@ -62,6 +62,6 @@ test("published flashDB.list follows the cursor until every page is read", async
     return { ok: true, json: async () => pages[cursor] };
   };
   const window: { flashDB?: { list(c: string): Promise<{ id: string }[]> } } = {};
-  vm.runInNewContext(code, { window, fetch, URLSearchParams });
+  vm.runInNewContext(code, { window, fetch, URL, URLSearchParams, location: { href: "http://h/p/x" } });
   assert.deepEqual((await window.flashDB!.list("todos")).map((r) => r.id), ["a", "b", "c"]);
 });
