@@ -116,7 +116,7 @@ export const FEATURES: Feature[] = [
   { title: msg("Flash in Claude and ChatGPT"), about: msg("Use Flash's tools from other AI apps"), group: "Workspace", icon: "plug", action: { href: "/connector" }, also: "connector mcp cursor" },
   { title: msg("Install Flash"), about: msg("Its own window and icon on your computer or phone"), group: "Workspace", icon: "install", action: { open: "install" }, also: "app download" },
   { title: msg("Plans & Credits"), about: msg("Your plan, credit packs and top-ups"), group: "Workspace", icon: "star", action: { open: "credits" }, also: "upgrade billing" },
-  { title: msg("Invite Friends"), about: msg("You both get credits after their first payment"), group: "Workspace", icon: "gift", action: { open: "invite" }, also: "referral" },
+  { title: msg("Invite Friends"), about: msg("You both get credits when they subscribe to a plan"), group: "Workspace", icon: "gift", action: { open: "invite" }, also: "referral" },
   { title: msg("Automations"), about: msg("Jobs Flash runs on a schedule"), group: "Workspace", icon: "bolt", action: { open: "automations" }, soon: true, also: "schedule" },
 ];
 

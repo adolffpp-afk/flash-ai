@@ -872,7 +872,7 @@ function Billing({ me, busy, attempt, onOpenCredits, onOpenInvite }: Shared & { 
           {t("Buy credits")}
         </button>
       </Row>
-      <Row title={t("Invite friends")} about={t("You both get credits when they make their first payment.")}>
+      <Row title={t("Invite friends")} about={t("You both get credits when they subscribe to a plan.")}>
         <button className={button} onClick={onOpenInvite}>
           🎁 {t("Invite friends")}
         </button>
