@@ -8,11 +8,15 @@ import {
   CREDIT_PACKS,
   MARKUP,
   MAX_OUTPUT_TOKENS,
+  NO_TOOLS,
   PLANS,
+  QUICK_RESEARCH_PLAN,
   REFERRAL_FRIEND_SHARE,
   REFERRAL_REFERRER_CAP,
   REFERRAL_REFERRER_SHARE,
+  RESEARCH_PLAN,
   TYPICAL_CREDITS,
+  WEATHER_PLAN,
   claudeCostCents,
   creditsFor,
   finalCredits,
@@ -22,7 +26,9 @@ import {
   readCostCents,
   referralBonus,
   transcribeCostCents,
+  withWeather,
   worstCaseProfitCents,
+  type ToolPlan,
 } from "../src/lib/credits.ts";
 import type { Engine } from "../src/lib/types.ts";
 import { readFileSync } from "node:fs";
@@ -188,6 +194,67 @@ test("a Claude reply can never cost more than the credits held for it, refusal f
             assert.ok(worst * MARKUP <= hold.held, `${engine} ${model} ${inputTokens}: ${worst}¢ vs ${hold.held} credits`);
             assert.ok(hold.held * cheapestCentsPerCredit >= worst, `${engine} ${model} ${inputTokens} at the cheapest credit`);
             // The cost cap leaves a margin on top.
+            assert.ok((hold.capCents + spentCents) * 1.25 * MARKUP <= hold.held + 1e-9);
+          }
+        }
+      }
+    }
+  }
+});
+
+/*
+ * The same, for a reply with tool calls, worked out apart from credits.ts: each tool step reads the
+ * input again plus everything the steps before it added, and with a fallback, the fallback model
+ * reads the declined words again at every step.
+ */
+function worstPlanCents(model: string, inputTokens: number, maxTokens: number, fallback: boolean, plan: ToolPlan): number {
+  const readAll = (m: string) => {
+    let tokens = inputTokens;
+    for (let i = 0; i < plan.results.length; i++) tokens += inputTokens + plan.results.slice(0, i + 1).reduce((a, b) => a + b, 0);
+    return readCostCents(m, tokens);
+  };
+  let cents = readAll(model) + plan.searches + (maxTokens * claudePrice(model, inputTokens).output) / 1e6;
+  if (fallback) {
+    const backup = FALLBACKS[model];
+    const steps = plan.results.length + 1;
+    cents += readAll(backup) + plan.searches;
+    cents += (maxTokens * steps * claudePrice(backup, inputTokens).input + maxTokens * claudePrice(backup, inputTokens).output) / 1e6;
+  }
+  return cents;
+}
+
+test("tool plans: Research's default plan gives today's numbers, and no plan runs at a loss", () => {
+  // The numbers Research had before plans: 89 credits to start on Ascend for a short question.
+  assert.equal(planHold("search", "claude-sonnet-5-5", 4100, 3000).needed, 89);
+  for (const model of Object.keys(CLAUDE_PRICES)) {
+    for (const inputTokens of [3300, 4100, 20000]) {
+      assert.equal(inputCostCents("search", model, inputTokens, RESEARCH_PLAN), inputCostCents("search", model, inputTokens));
+      assert.equal(inputCostCents("text", model, inputTokens, NO_TOOLS), inputCostCents("text", model, inputTokens));
+      assert.deepEqual(planHold("search", model, inputTokens, 500, 1, 0, RESEARCH_PLAN), planHold("search", model, inputTokens, 500));
+    }
+  }
+  // A quick search is cheaper to start, and the forecast adds its rounds to any plan.
+  assert.equal(planHold("search", "claude-sonnet-5-5", 4100, 3000, 1, 0, QUICK_RESEARCH_PLAN).needed, 30);
+  assert.equal(planHold("text", "claude-sonnet-5-5", 4100, 3000, 1, 0, WEATHER_PLAN).needed, 17);
+  assert.equal(planHold("text", "claude-haiku-5-5", 4100, 3000, 0.05, 0, WEATHER_PLAN).needed, 2);
+  assert.deepEqual(withWeather(QUICK_RESEARCH_PLAN), { results: [1500, 1500, 6000, 6000], searches: 1 });
+  const plans: [Engine, ToolPlan][] = [
+    ["text", NO_TOOLS],
+    ["text", WEATHER_PLAN],
+    ["docs", WEATHER_PLAN],
+    ["search", RESEARCH_PLAN],
+    ["search", QUICK_RESEARCH_PLAN],
+    ["search", withWeather(RESEARCH_PLAN)],
+    ["search", withWeather(QUICK_RESEARCH_PLAN)],
+  ];
+  for (const [engine, plan] of plans) {
+    for (const model of Object.keys(CLAUDE_PRICES)) {
+      for (const inputTokens of [4100, 20000, 120000]) {
+        for (const available of [0, 40, 3000, 1e6]) {
+          for (const spentCents of [0, 0.2]) {
+            const hold = planHold(engine, model, inputTokens, available, 1, spentCents, plan);
+            const worst = spentCents + worstPlanCents(model, inputTokens, hold.maxTokens, hold.fallback, plan);
+            assert.ok(worst * MARKUP <= hold.held + 1e-9, `${engine} ${plan.results.length} ${model} ${inputTokens}: ${worst}¢ vs ${hold.held}`);
             assert.ok((hold.capCents + spentCents) * 1.25 * MARKUP <= hold.held + 1e-9);
           }
         }
