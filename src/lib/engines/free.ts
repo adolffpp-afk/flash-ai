@@ -464,7 +464,6 @@ export async function* streamFreeChat(
       // The answer is written next: the progress line goes.
       yield { type: "status", message: "" };
       used = answers.some((a) => a.used);
-      if (used) o.onUsed?.();
       after = toolResults(p, asked, answers);
     }
     const res = await send(p, key, requestBody(p, messages, offer ? { tools: "none", after } : {}), true);
@@ -475,6 +474,8 @@ export async function* streamFreeChat(
       continue;
     }
     if (!offer) onModel(p.label, p.id);
+    // Said once this provider is answering with the forecast, so a backup that answers without it isn't credited.
+    if (used) o.onUsed?.();
     const read = yield* readStream(p, res.body!);
     // Without a usage report, estimate on the high side.
     input += read.input || Math.ceil((JSON.stringify(messages).length + JSON.stringify(after).length) / 3);

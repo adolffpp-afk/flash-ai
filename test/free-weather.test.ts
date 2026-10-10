@@ -16,6 +16,8 @@ type Sent = { host: string; path: string; body: Record<string, unknown> };
 const sent: Sent[] = [];
 // Providers answering 429, and whether a provider asks for the forecast or answers in words at once.
 let busy = new Set<string>();
+// Providers whose streamed answer fails after the first call went through.
+let failsStreaming = new Set<string>();
 let asks = true;
 const sse = (events: object[]) => events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join("") + "data: [DONE]\n\n";
 const PARIS = { where: "named_place", place: "Paris, Île-de-France, France", latitude: 48.85, longitude: 2.35, country: "FR", timezone: "Europe/Paris" };
@@ -34,6 +36,7 @@ globalThis.fetch = (async (url: string, init: RequestInit) => {
   sent.push({ host: u.hostname, path: u.pathname, body });
   const provider = u.hostname.split(".").at(-2)!;
   if (busy.has(provider)) return new Response("{}", { status: 429 });
+  if (body.stream === true && failsStreaming.has(provider)) return new Response("{}", { status: 500 });
   if (provider === "googleapis") {
     if (u.pathname.endsWith(":generateContent")) {
       const content = asks ? GEMINI_TURN : { role: "model", parts: [{ text: "Il fera beau." }] };
@@ -199,6 +202,24 @@ test("Mistral's tool message names the function, as its API asks", async () => {
   assert.deepEqual(sent.map((s) => s.host), ["api.groq.com", "api.mistral.ai", "api.mistral.ai"]);
   const messages = sent[2].body.messages as { role: string; name?: string }[];
   assert.deepEqual(messages.at(-1), { role: "tool", tool_call_id: "call_1", content: "Forecast for Paris: tomorrow 18°C, dry.", name: "get_weather" });
+});
+
+test("when the answer after a forecast fails, the backup that answers without one isn't credited with it", async () => {
+  sent.length = 0;
+  busy = new Set(["mistral"]);
+  failsStreaming = new Set(["groq"]);
+  const tool = forecast();
+  const r = await ask("Will it rain in Paris tomorrow?", { weather: tool, country: "FR" });
+  busy = new Set();
+  failsStreaming = new Set();
+  assert.deepEqual(sent.map((s) => s.host), ["api.groq.com", "api.groq.com", "api.mistral.ai", "openrouter.ai"]);
+  assert.equal(tool.ran.length, 1, "Groq's forecast was fetched");
+  assert.equal(r.said, "Tomorrow in Paris: 18°C, dry.");
+  // OpenRouter answered without it: the header isn't changed and MET isn't credited.
+  assert.equal(r.usedCalls, 0);
+  assert.ok(!r.events.some((e) => e.type === "sources"));
+  // Groq's first call still counts toward its daily tokens.
+  assert.deepEqual(r.recorded, [{ provider: "groq", tokens: 940 }, { provider: "openrouter", tokens: 2015 }]);
 });
 
 test("without the forecast, a free reply is asked as before: one streamed call, one request reserved", async () => {
