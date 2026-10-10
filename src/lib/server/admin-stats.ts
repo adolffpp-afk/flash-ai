@@ -1,6 +1,6 @@
 import { all, one } from "./db.ts";
 import { CREDIT_PACKS, MARKUP, PLANS, paymentFeeCents, planPrice, worstCaseProfitCents } from "../credits.ts";
-import { PROVIDER_LIST, providerName, providerSetUp } from "../providers.ts";
+import { PROVIDER_LIST, missingKeys, providerName } from "../providers.ts";
 import { profitReport } from "./profit.ts";
 import { feeBps } from "./shop.ts";
 
@@ -49,10 +49,13 @@ export async function adminStats(days: number) {
   );
   // Every provider Flash can call, used or not, then any other provider the usage log names.
   const byProvider = [
-    ...PROVIDER_LIST.map((p) => ({ id: p.id, does: p.does, free: p.free, setUp: providerSetUp(p, process.env) })),
+    ...PROVIDER_LIST.map((p) => {
+      const missing = missingKeys(p, process.env);
+      return { id: p.id, does: p.does, free: p.free, setUp: !missing.length, missing };
+    }),
     ...providerUse
       .filter((r) => !PROVIDER_LIST.some((p) => p.id === r.provider))
-      .map((r) => ({ id: r.provider, does: "", free: false, setUp: true })),
+      .map((r) => ({ id: r.provider, does: "", free: false, setUp: true, missing: [] as string[] })),
   ]
     .map((p) => {
       const use = providerUse.find((r) => r.provider === p.id);

@@ -39,6 +39,9 @@ export const PROVIDER_LIST: ProviderInfo[] = [
 /** A provider's name for the dashboard, or its id when Flash doesn't know it. */
 export const providerName = (id: string) => PROVIDER_LIST.find((p) => p.id === id)?.name ?? id;
 
-/** Whether a provider's keys are set in env (names only; values are never read out). */
-export const providerSetUp = (p: ProviderInfo, env: Record<string, string | undefined>) =>
-  p.keys.every((k) => k.split("|").some((name) => Boolean(env[name])));
+/** The names of a provider's keys missing from env, like "CLOUDFLARE_API_TOKEN" (values are never read out). */
+export const missingKeys = (p: ProviderInfo, env: Record<string, string | undefined>) =>
+  p.keys.filter((k) => !k.split("|").some((name) => Boolean(env[name]))).map((k) => k.split("|").join(" or "));
+
+/** Whether all of a provider's keys are set in env. */
+export const providerSetUp = (p: ProviderInfo, env: Record<string, string | undefined>) => missingKeys(p, env).length === 0;
