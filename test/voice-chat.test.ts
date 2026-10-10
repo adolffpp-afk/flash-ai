@@ -91,6 +91,7 @@ const {
   REPEAT_WORDS,
   onlySounds,
   trailsOff,
+  beforeAsking,
 } = await import("../src/lib/voice-chat.ts");
 const { translate } = await import("../src/lib/i18n.ts");
 const { run, one } = await import("../src/lib/server/db.ts");
@@ -560,4 +561,27 @@ test("with a fal stand-in and no synchronous endpoint set, a turn goes through t
   } finally {
     process.env.FAL_SYNC_URL = sync;
   }
+});
+
+test("in a quiet room, a voice that drops part way through a request is still heard to the end", () => {
+  const turn = new TurnEnd(0, 0);
+  // Half a second of a quiet room, "Make a picture of a cat…" at 0.15, then "…wearing a red hat" at 0.05
+  // until 5 s, with a moment of the room between words.
+  const word = (ms: number) => ms % 280 < 200;
+  const level = (ms: number) => (ms < 500 || ms >= 5000 || !word(ms) ? 0.005 : ms < 2000 ? 0.15 : 0.05);
+  let ended = 0;
+  for (let ms = TURN_TICK_MS; ms <= 20_000 && !ended; ms += TURN_TICK_MS) if (turn.tick(level(ms), ms) === "spoke") ended = ms;
+  assert.ok(ended > 5000 && ended <= 5000 + 1300, String(ended));
+});
+
+test('"What…" before a pause waits for the rest; "What?" says the last answer again', () => {
+  const asked = { confirming: false, last: "It's sunny in Paris.", again: REPEAT_WORDS };
+  assert.equal(beforeAsking("What…", asked), "hold");
+  assert.equal(beforeAsking("So, um,", asked), "hold");
+  assert.equal(beforeAsking("What?", asked), "again");
+  assert.equal(beforeAsking("Say that again", asked), "again");
+  assert.equal(beforeAsking("What time is it?", asked), null);
+  // Waiting for a yes or no, nothing is held back.
+  assert.equal(beforeAsking("What…", { ...asked, confirming: true }), "again");
+  assert.equal(beforeAsking("What?", { ...asked, last: "" }), null);
 });

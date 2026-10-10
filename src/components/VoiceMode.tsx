@@ -13,13 +13,12 @@ import {
   TurnEnd,
   UNSURE_WORDS,
   YES_WORDS,
+  beforeAsking,
   confirmReply,
   isGoodbye,
-  isRepeat,
   onlySounds,
   sayFirst,
   speechChunks,
-  trailsOff,
   type VoiceMessage,
 } from "@/lib/voice-chat";
 import { readAloudVoice } from "@/lib/device-settings";
@@ -34,6 +33,8 @@ import { tNow, useT } from "@/lib/use-t";
 export type VoiceAnswer = { say: string; confirm: boolean; stopped?: boolean; asked?: { chat: string; reply: string } };
 
 type Phase = "starting" | "listening" | "thinking" | "speaking" | "paused";
+// "Tap to hear Flash" waits for the turn to be over: it plays while Flash listens or is paused.
+const canReplay = (phase: Phase) => phase === "listening" || phase === "paused";
 
 const LABELS: Record<Phase, string> = {
   starting: msg("Starting…"),
@@ -90,6 +91,10 @@ function speakPieces(text: string, lang: string): SpeechSynthesisUtterance[] {
   });
 }
 
+// How loud the room is (RMS), and other talking in it (see TurnEnd), kept from one conversation to
+// the next while the page is open, so a television heard once isn't taken for the user again.
+const heardRoom = { floor: 0, room: 0 };
+
 /**
  * One voice conversation: listen, send what was heard to the chat, say the answer, listen again,
  * until it is stopped. Lives outside React so its timers and callbacks aren't tied to renders; what
@@ -102,6 +107,8 @@ class Conversation {
   private resume: (() => void) | null = null;
   private cancelHearing: (() => void) | null = null;
   private cutSpeech: (() => void) | null = null;
+  // Stops the upload of a recorded turn when the conversation ends, so it isn't heard or charged.
+  private hearAbort: AbortController | null = null;
   private audio: { stream: MediaStream; context: AudioContext } | null = null;
   private heardAt = 0;
   // Set when the user taps the circle to interrupt, or presses Stop, so the rest of that answer isn't said.
@@ -110,9 +117,6 @@ class Conversation {
   private blocked = false;
   // "Tap to hear Flash" saying it, while listening waits.
   private replaying: Promise<void> | null = null;
-  // How loud the room is (RMS), and other talking in it, kept from one turn to the next (see TurnEnd).
-  private floor = 0;
-  private room = 0;
 
   constructor(
     private screen: Screen,
@@ -185,15 +189,16 @@ class Conversation {
         if (this.alive) p().onClose();
         return;
       }
-      // "Say that again" repeats the last answer, as a person would, instead of making a voice-over.
-      if (lastAnswer && isRepeat(heard, tNow(REPEAT_WORDS), { sounds, polite })) {
-        await this.sayAll(lastAnswer);
-        this.heardAt = Date.now();
+      // "What…" or "So, um," before a long pause: the request is still coming. "Say that again" or
+      // "What?" repeats the last answer, as a person would, instead of making a voice-over.
+      const step = beforeAsking(heard, { confirming, last: lastAnswer, again: tNow(REPEAT_WORDS), sounds, polite });
+      if (step === "hold") {
+        held = heard;
         continue;
       }
-      // "What…" or "So, um," before a long pause: the request is still coming.
-      if (!confirming && trailsOff(heard)) {
-        held = heard;
+      if (step === "again") {
+        await this.sayAll(lastAnswer);
+        this.heardAt = Date.now();
         continue;
       }
       this.show("thinking");
@@ -241,6 +246,7 @@ class Conversation {
 
   stop() {
     this.alive = false;
+    this.hearAbort?.abort();
     this.cancelHearing?.();
     this.cutSpeech?.();
     this.resume?.();
@@ -259,12 +265,18 @@ class Conversation {
     this.cutSpeech?.();
   }
 
-  /** "Tap to hear Flash": says what the browser wouldn't, while listening waits so Flash doesn't hear itself. */
+  /**
+   * "Tap to hear Flash": says what the browser wouldn't, while listening waits so Flash doesn't hear
+   * itself. Only between turns: while Flash thinks or speaks, the answer it's giving comes first.
+   */
   replay(text: string) {
-    if (!this.alive || this.replaying) return;
+    if (!this.alive || this.replaying || !canReplay(this.phase)) return;
     this.cancelHearing?.();
     this.hushed = false;
+    // Whether the answer before was blocked is that answer's to know, not the replay's.
+    const blocked = this.blocked;
     this.replaying = this.sayAll(text).finally(() => {
+      this.blocked = blocked;
       this.replaying = null;
       if (this.paused && this.alive) this.show("paused");
     });
@@ -389,6 +401,11 @@ class Conversation {
     if (this.audio) return this.audio;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+      // Ended while the browser asked for the microphone: it's let go at once.
+      if (!this.alive) {
+        stream.getTracks().forEach((t) => t.stop());
+        return null;
+      }
       this.audio = { stream, context: new AudioContext() };
       return this.audio;
     } catch {
@@ -411,6 +428,7 @@ class Conversation {
     const mic = await this.microphone();
     if (!mic || !this.alive) return null;
     await mic.context.resume().catch(() => {});
+    if (!this.alive) return null;
     const analyser = mic.context.createAnalyser();
     // About 43 ms of sound at 48 kHz, so ticks every 40 ms hear all of it.
     analyser.fftSize = 2048;
@@ -423,7 +441,7 @@ class Conversation {
 
     const spoke = await new Promise<boolean | null>((resolve) => {
       const samples = new Float32Array(analyser.fftSize);
-      const turn = new TurnEnd(Date.now(), this.floor, { room: this.room, patient });
+      const turn = new TurnEnd(Date.now(), heardRoom.floor, { room: heardRoom.room, patient });
       let settled = false;
       const end = (value: boolean | null) => {
         if (settled) return;
@@ -441,8 +459,8 @@ class Conversation {
         let sum = 0;
         for (const s of samples) sum += s * s;
         const heard = turn.tick(Math.sqrt(sum / samples.length), Date.now());
-        this.floor = turn.floor;
-        this.room = turn.room;
+        heardRoom.floor = turn.floor;
+        heardRoom.room = turn.room;
         if (heard) end(heard === "spoke");
       }, TURN_TICK_MS);
       this.cancelHearing = () => end(null);
@@ -455,10 +473,14 @@ class Conversation {
 
     this.show("thinking");
     const type = (recorder.mimeType || "audio/webm").split(";")[0];
+    const abort = new AbortController();
+    this.hearAbort = abort;
+    // A stuck upload or transcription mustn't leave Flash deaf on "Thinking…".
+    const stuck = setTimeout(() => abort.abort(), 30_000);
     try {
-      // A stuck upload or transcription mustn't leave Flash deaf on "Thinking…".
-      const res = await fetch("/api/voice/hear", { method: "POST", headers: { "Content-Type": type }, body: new Blob(chunks, { type }), signal: AbortSignal.timeout(30_000) });
+      const res = await fetch("/api/voice/hear", { method: "POST", headers: { "Content-Type": type }, body: new Blob(chunks, { type }), signal: abort.signal });
       const data = (await res.json().catch(() => ({}))) as { text?: string; error?: string };
+      if (!this.alive) return null;
       if (!res.ok) {
         this.screen.problem(data.error ?? tNow("Flash couldn't hear that. Please try again."));
         // Out of credits, or not available (or not for what this browser records): stop listening
@@ -469,8 +491,12 @@ class Conversation {
       this.screen.problem("");
       return (data.text ?? "").trim();
     } catch {
+      if (!this.alive) return null;
       this.screen.problem(tNow("Flash couldn't hear that. Check your connection."));
       return "";
+    } finally {
+      clearTimeout(stuck);
+      this.hearAbort = null;
     }
   }
 }
@@ -584,7 +610,7 @@ export function VoiceMode(props: VoiceProps) {
           {t("End")}
         </button>
       </div>
-      {silent && (
+      {silent && canReplay(phase) && (
         <button type="button" onClick={hearAgain} className="mt-2 text-xs text-primary-soft hover:underline">
           🔊 {t("Tap to hear Flash")}
         </button>

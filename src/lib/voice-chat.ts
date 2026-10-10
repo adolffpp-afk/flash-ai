@@ -244,6 +244,19 @@ export function trailsOff(heard: string): boolean {
   return /(?:\.{2,}|…|[,،，、]|-+|—)\s*$/.test(heard.trim()) && wordsOf(spoken(heard)).length <= 2;
 }
 
+/**
+ * What a turn heard is before it goes to the chat: "hold" when it trails off ("What…") while Flash
+ * isn't waiting for a yes or no, as more is coming; "again" when it asks for the last answer again
+ * ("What?", "Say that again"); null to ask. again: t(REPEAT_WORDS); more: t(SOUND_WORDS) and t(POLITE_WORDS).
+ */
+export function beforeAsking(
+  heard: string,
+  { confirming, last, again = "", sounds, polite }: { confirming: boolean; last: string; again?: string; sounds?: string; polite?: string },
+): "hold" | "again" | null {
+  if (!confirming && trailsOff(heard)) return "hold";
+  return last && isRepeat(heard, again, { sounds, polite }) ? "again" : null;
+}
+
 // "Say that again", "Can you repeat that please", "Sorry?".
 const AGAIN = /^(?:sorry|pardon|what|huh|come again|what did you say|(?:(?:can|could) you )?(?:please )?(?:say|repeat) (?:that|it|this)(?: again)?(?: please)?|repeat(?: that)?(?: please)?)$/;
 
@@ -310,8 +323,12 @@ const MAX_TURN_MS = 30_000;
 const ROOM_WINDOW_MS = 2500;
 const ROOM_SHARE = 0.9;
 const ROOM_MARGIN = 1.5;
-// In a turn, a moment this much quieter than the turn's own voice is a pause, whatever else is heard.
+// In a turn, a moment this much quieter than the turn's own voice is a pause, whatever else is heard,
+// when there is other talking in the room or nothing is known of it yet. In a room known to be quiet
+// a voice may drop (someone turning their head) and still be heard.
 const PAUSE_SHARE = 0.4;
+// How long the room must be heard before what's heard is known as the room.
+const ROOM_KNOWN_MS = 400;
 
 /** The value a share of the way up the sorted values (0.5: the median). */
 const shareOf = (values: number[], share: number) => {
@@ -327,6 +344,8 @@ export class TurnEnd {
   room: number;
   private started: number;
   private patient: boolean;
+  // Whether the room's talking was measured, here or in a turn before (room above 0).
+  private known: boolean;
   private speechAt = 0;
   private lastVoice = 0;
   // How long the voice has been loud this turn, and for how many ticks in a row.
@@ -345,6 +364,7 @@ export class TurnEnd {
     this.floor = floor;
     this.room = room;
     this.patient = patient;
+    this.known = room > 0;
   }
 
   /** The level (RMS) heard at now: "spoke" ends the turn with words to hear, "silent" with none; null listens on. */
@@ -354,7 +374,7 @@ export class TurnEnd {
     this.floor = !this.floor
       ? Math.min(level, 0.01)
       : this.floor + (level - this.floor) * (level < this.floor ? 0.3 : this.speechAt ? 0.001 : 0.02);
-    const pause = this.speechAt ? PAUSE_SHARE * shareOf(this.voice, 0.5) : 0;
+    const pause = this.speechAt && (!this.known || this.room * ROOM_MARGIN > MIN_LEVEL) ? PAUSE_SHARE * shareOf(this.voice, 0.5) : 0;
     const loud = level > Math.max(MIN_LEVEL, this.floor * 3, this.room * ROOM_MARGIN, pause);
     this.streak = loud ? this.streak + 1 : 0;
     if (!this.speechAt && !loud) {
@@ -363,7 +383,8 @@ export class TurnEnd {
       if (this.around.length > ROOM_WINDOW_MS / TURN_TICK_MS) this.around.shift();
       const heard = shareOf(this.around, ROOM_SHARE);
       // Until a moment of the room has been heard, the level from the turn before still counts.
-      this.room = this.around.length * TURN_TICK_MS >= 400 ? heard : Math.max(this.room, heard);
+      if (this.around.length * TURN_TICK_MS >= ROOM_KNOWN_MS) this.known = true;
+      this.room = this.around.length * TURN_TICK_MS >= ROOM_KNOWN_MS ? heard : Math.max(this.room, heard);
     }
     // Two loud ticks in a row is a voice; one is a click.
     if (this.streak >= 2) {
