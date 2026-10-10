@@ -32,7 +32,7 @@ export async function GET(request: Request, ctx: RouteContext<"/api/sites/[slug]
   return Response.json({ versions: await listVersions(slug) });
 }
 
-/** Puts an earlier version live again. */
+/** Puts an earlier version live again, and says what that changes for who may see or change its data. */
 export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug]/versions">) {
   const user = await getUser(request);
   if (!user) return unauthorized();
@@ -40,8 +40,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug
   const { slug } = await ctx.params;
   if (!(await ownsSite(user.id, slug))) return Response.json({ error: t("Not found") }, { status: 404 });
   const { id } = (await request.json().catch(() => ({}))) as { id?: unknown };
-  if (typeof id !== "string" || !(await restoreVersion(user.id, slug, id))) {
-    return Response.json({ error: t("That version was deleted.") }, { status: 404 });
-  }
-  return Response.json({ ok: true });
+  const restored = typeof id === "string" ? await restoreVersion(user.id, slug, id) : null;
+  if (!restored) return Response.json({ error: t("That version was deleted.") }, { status: 404 });
+  return Response.json({ ok: true, ...(restored.data && { data: restored.data }) });
 }

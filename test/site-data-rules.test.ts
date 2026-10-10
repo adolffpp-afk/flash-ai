@@ -344,7 +344,7 @@ test("the owner's choice survives republishing, and restoring a version recomput
   let v2Id = "";
   for (const v of await listVersions(slug)) if ((await versionHtml(slug, v.id)) === v2) v2Id = v.id;
   assert.ok(v2Id);
-  assert.equal(await restoreVersion("owner", slug, v2Id), true);
+  assert.ok(await restoreVersion("owner", slug, v2Id));
   const saved = await one<{ data_rules: string }>("SELECT data_rules FROM sites WHERE slug = ?", [slug]);
   assert.deepEqual(JSON.parse(saved!.data_rules), computeRules(v2));
   assert.deepEqual(await collectionRule(slug, "reviews"), { rule: "add", source: "app" });
@@ -745,9 +745,83 @@ test("an update whose block Flash can't use never shows visitors what only the o
   await publishSite(owner, { html: v1, title: "Club", slug });
   for (const v of await listVersions(slug)) if ((await versionHtml(slug, v.id)) === block(`{oops`) + code) broken = v.id;
   assert.ok(broken);
-  assert.equal(await restoreVersion("owner", slug, broken), true);
+  assert.ok(await restoreVersion("owner", slug, broken));
   assert.equal((await listRecords(slug, "signups", "", "", ANYONE)).status, 403);
   for (const app of [slug, fresh, typed]) assert.equal(await unpublishSite("owner", app), true);
+});
+
+test("bringing back an earlier version says when visitors can now see a collection that was private", async () => {
+  const code = `<script>if (flashDB.isOwner) flashDB.remove("menu", id); flashDB.add("signups", s)</script>`;
+  const v1 = code + "<p>v1</p>";
+  const slug = await publish(v1, "Club");
+  await publish(flashData({ signups: "private", menu: "read" }) + code, "Club", slug);
+  await addRecord(slug, "signups", { email: "a@b.c", phone: "555" }, "", ANYONE);
+  assert.equal((await listRecords(slug, "signups", "", "", ANYONE)).status, 403);
+  let first = "";
+  for (const v of await listVersions(slug)) if ((await versionHtml(slug, v.id)) === v1) first = v.id;
+  const restored = await restoreVersion("owner", slug, first);
+  assert.ok(restored?.data);
+  assert.deepEqual(restored.data.exposed, ["signups"]);
+  assert.match(dataLine(restored.data), /^Visitors can now see signups, which only you could see before\./);
+  // Bringing back the version that kept it private says nothing of the kind.
+  const again = await restoreVersion("owner", slug, (await listVersions(slug))[0].id);
+  assert.ok(again?.data);
+  assert.equal(again.data.exposed, undefined);
+  assert.equal((await listRecords(slug, "signups", "", "", ANYONE)).status, 403);
+  assert.equal(await restoreVersion("owner", slug, "gone"), null);
+  assert.equal(await unpublishSite("owner", slug), true);
+});
+
+test("while the block can't be used, the owner's default 'Only you can see it' hides nothing visitors could see", async () => {
+  const code = `<script>if (flashDB.isOwner) flashDB.remove("menu", id); flashDB.list("menu"); flashDB.add("reviews", r); flashDB.add("orders", o)</script>`;
+  const v1 = flashData({ menu: "read", reviews: "add", orders: "private" }) + code;
+  const slug = await publish(v1, "Cafe");
+  await addRecord(slug, "menu", { dish: "Soup" }, "", OWNER);
+  await addRecord(slug, "reviews", { text: "Lovely" }, "", ANYONE);
+  await addRecord(slug, "orders", { email: "a@b.c" }, "", ANYONE);
+  assert.equal(await chooseRule(slug, "*", "private"), true);
+  const update = async (html: string) => {
+    await run("DELETE FROM rate_limits");
+    const result = await publishSite(owner, { html, title: "Cafe", slug });
+    assert.ok("data" in result && result.data);
+    return result.data;
+  };
+  const status = async (collection: string) => (await listRecords(slug, collection, "", "", ANYONE)).status;
+  for (const block of [
+    `<script type="application/json" id="flash-data">{'menu':'read','reviews':'add','orders':'private'}</script>`,
+    flashData({ menu: "read", reviews: "Add!", orders: "private" }),
+  ]) {
+    const data = await update(block + code);
+    assert.deepEqual([await status("menu"), await status("reviews"), await status("orders")], [200, 200, 403], block);
+    assert.equal((await addRecord(slug, "reviews", { text: "x" }, "", ANYONE)).status, 403, "read-only until it's fixed");
+    assert.equal(data.exposed, undefined, block);
+    // What the owner is told matches what visitors get.
+    const line = dataLine(data);
+    assert.match(line, /visitors can still see/, block);
+    assert.match(line, /menu — visitors can see it, only you change it · reviews — visitors can see it, only you change it · orders — only you can see it/, block);
+    // Fixing the block brings back what it was, and nothing reads as newly shown.
+    const fixed = await update(v1);
+    assert.equal(fixed.exposed, undefined, block);
+    assert.deepEqual([await status("menu"), await status("reviews"), await status("orders")], [200, 200, 403]);
+  }
+  // A collection only the owner's default kept from visitors stays private through a broken block,
+  // even when the owner drops the default afterwards.
+  await update(flashData({ menu: "read", orders: "privat" }) + code);
+  assert.equal(await status("orders"), 403);
+  await update(`<script type="application/json" id="flash-data">{oops</script>` + code);
+  assert.equal(await status("orders"), 403);
+  assert.equal(await chooseRule(slug, "*", null), true);
+  assert.equal(await status("orders"), 403);
+  assert.equal(await unpublishSite("owner", slug), true);
+});
+
+test("publishing a 2 MB page stays quick", async () => {
+  const html = `<script type="module" id="flash-data">`.repeat(Math.floor((2 * 1024 * 1024 - 100) / 38));
+  const started = Date.now();
+  const slug = await publish(html, "Big");
+  await publish(html + "<p>v2</p>", "Big", slug);
+  assert.ok(Date.now() - started < 1000, `${Date.now() - started} ms`);
+  assert.equal(await unpublishSite("owner", slug), true);
 });
 
 test("an app made before rules whose code Flash can't see keeps working while it has records", async () => {
@@ -769,7 +843,7 @@ test("an app made before rules whose code Flash can't see keeps working while it
   await legacySite("cdn-later", html);
   await run("INSERT INTO site_records (id, site_slug, collection, data, created_at, updated_at) VALUES ('g2', 'cdn-later', 'entries', '{}', 1, 1)");
   await run("INSERT INTO site_versions (id, site_slug, title, html, created_at) VALUES ('cv1', 'cdn-later', 'Book', ?, 1)", [html + "<p>v0</p>"]);
-  assert.equal(await restoreVersion("owner", "cdn-later", "cv1"), true);
+  assert.ok(await restoreVersion("owner", "cdn-later", "cv1"));
   assert.equal(JSON.parse((await one<{ data_rules: string }>("SELECT data_rules FROM sites WHERE slug = 'cdn-later'"))!.data_rules).guess, "open");
 });
 
