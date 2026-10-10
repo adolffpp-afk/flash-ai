@@ -314,13 +314,15 @@ export const RULE_SHORT: Record<DataRule, string> = {
 
 /**
  * What publishing reports about the app's data: each collection's rule, the rule for anything else,
- * what Flash couldn't use in the app's flash-data block, and the collections this update left
- * read-only for visitors because the block doesn't name them (closed).
+ * what Flash couldn't use in the app's flash-data block, the collections only the owner could see
+ * that visitors can see after this update because its page no longer names them as private
+ * (exposed), and the ones it left read-only for visitors because the block doesn't name them (closed).
  */
 export type DataSummary = {
   collections: { name: string; rule: DataRule; source: RuleSource }[];
   other: DataRule;
   bad?: { why: BlockProblem; names: string[] };
+  exposed?: string[];
   closed?: string[];
 };
 
@@ -344,12 +346,23 @@ export function blockProblem(bad: DataSummary["bad"], t: Translate = english): s
 
 /**
  * "Who can change this app's data: menu — only you · reviews — visitors can add · anything else — only you. …",
- * after what's wrong with the app's block and what this update closed, if anything. Empty for an
- * app that keeps no shared data of its own, like a plain website. t words it for the owner.
+ * after what's wrong with the app's block and what this update showed visitors or closed, if
+ * anything. Empty for an app that keeps no shared data of its own, like a plain website. t words it
+ * for the owner.
  */
 export function dataLine(data: DataSummary, shown = 8, t: Translate = english): string {
   const said: string[] = [];
   if (data.bad) said.push(blockProblem(data.bad, t));
+  const exposed = data.exposed ?? [];
+  if (exposed.length === 1) {
+    said.push(t("Visitors can now see {collection}, which only you could see before. To keep it private, choose Only you can see it for it in My websites & apps › Data.", { collection: exposed[0] }));
+  } else if (exposed.length > 1) {
+    said.push(
+      t("Visitors can now see {collections}, which only you could see before. To keep them private, choose Only you can see it for them in My websites & apps › Data.", {
+        collections: exposed.join(", "),
+      }),
+    );
+  }
   const closed = data.closed ?? [];
   if (closed.length === 1) {
     said.push(t("Visitors can no longer add to or change {collection}, because your app's flash-data block doesn't name it.", { collection: closed[0] }));

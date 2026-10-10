@@ -26,7 +26,7 @@ const { publishSite, restoreVersion, listVersions, versionHtml, unpublishSite, s
 const { readUpload } = await import("../src/lib/server/site-files.ts");
 const { serveSite } = await import("../src/lib/server/serve-site.ts");
 const { flashDbShim, injectHead, MEMORY_DB } = await import("../src/lib/flashdb-shim.ts");
-const { ANYONE, OWNER, OWNER_IN_APP, computeRules } = await import("../src/lib/data-rules.ts");
+const { ANYONE, OWNER, OWNER_IN_APP, computeRules, dataLine } = await import("../src/lib/data-rules.ts");
 const { routeHost } = await import("../src/lib/site-host.ts");
 type Caller = import("../src/lib/data-rules.ts").Caller;
 
@@ -617,6 +617,30 @@ test("an update whose new block leaves out what visitors could change says so", 
   assert.equal(third.data.closed, undefined);
   assert.equal((await addRecord(slug, "room-8", { text: "x" }, "", ANYONE)).status, 201);
   assert.deepEqual(await collectionRule(slug, "tasks"), { rule: "open", source: "block" });
+});
+
+test("an update that no longer names a private collection tells the owner visitors can see it now", async () => {
+  const v1 = flashData({ signups: "private", menu: "read" }) + `<script>flashDB.add("signups", s); flashDB.list("menu")</script>`;
+  const slug = await publish(v1, "Club");
+  await addRecord(slug, "signups", { email: "a@b.c" }, "", ANYONE);
+  await run("DELETE FROM rate_limits");
+  // The new block leaves sign-ups out: visitors can read them, and publishing says so (and not that they were closed).
+  const second = await publishSite(owner, { html: flashData({ menu: "read" }) + `<script>flashDB.list("menu")</script>`, title: "Club", slug });
+  assert.ok("data" in second && second.data);
+  assert.deepEqual(second.data.exposed, ["signups"]);
+  assert.equal(second.data.closed, undefined);
+  assert.match(dataLine(second.data), /^Visitors can now see signups, which only you could see before\./);
+  // A page with no block at all says so too.
+  await publishSite(owner, { html: v1, title: "Club", slug });
+  const third = await publishSite(owner, { html: `<script>flashDB.list("signups")</script>`, title: "Club", slug });
+  assert.ok("data" in third && third.data);
+  assert.deepEqual(third.data.exposed, ["signups"]);
+  // The owner's own choice in Flash is theirs: nothing to warn about.
+  await publishSite(owner, { html: v1, title: "Club", slug });
+  assert.equal(await chooseRule(slug, "signups", "read"), true);
+  const fourth = await publishSite(owner, { html: flashData({ menu: "read" }), title: "Club", slug });
+  assert.ok("data" in fourth && fourth.data);
+  assert.equal(fourth.data.exposed, undefined);
 });
 
 test("an app made before rules whose code Flash can't see keeps working while it has records", async () => {

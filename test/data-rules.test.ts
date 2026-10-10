@@ -207,6 +207,11 @@ test("the owner's choice beats the app's, which beats the owner's default, which
     "Visitors can no longer add to or change todos, because your app's flash-data block doesn't name it. Who can change this app's data: todos — only you · anything else — only you. Change it in My websites & apps › Data.",
   );
   assert.match(dataLine({ collections: [], other: "read", closed: ["a", "b"] }), /^Visitors can no longer add to or change a, b, because your app's flash-data block doesn't name them\.$/);
+  assert.equal(
+    dataLine({ collections: [], other: "read", exposed: ["signups"] }),
+    "Visitors can now see signups, which only you could see before. To keep it private, choose Only you can see it for it in My websites & apps › Data.",
+  );
+  assert.match(dataLine({ collections: [], other: "read", exposed: ["a", "b"] }), /^Visitors can now see a, b, which only you could see before\. To keep them private/);
 });
 
 test("an app that declares its data is strict about collections it didn't name, unless it gives them a rule", () => {
