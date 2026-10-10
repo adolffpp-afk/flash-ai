@@ -137,6 +137,9 @@ export async function* streamBuild(
   choice: ClaudeChoice = defaultChoice(kind),
   // The language Flash's own words (progress, notes, errors) are in.
   t: Translate = english,
+  // Told the length of all the model writes, the code too, which is sent only once it's whole, so
+  // a build that's stopped or fails part way is charged for what was written (see finalCredits).
+  wrote: (chars: number) => void = () => {},
 ): AsyncGenerator<StreamEvent> {
   const app = kind === "app";
   // The title when the file has none. It names the published site and its downloads, so it stays in English.
@@ -189,6 +192,7 @@ export async function* streamBuild(
     for await (const event of stream) {
       if (event.type !== "content_block_delta" || event.delta.type !== "text_delta") continue;
       text += event.delta.text;
+      wrote(event.delta.text.length);
       const part = splitBuild(text);
       if (canEdit && part.html === null && editAt === -1) editAt = text.search(/```flash-edit/i);
       // Stream the opening sentences as they arrive, holding back a possible partial ``` fence.

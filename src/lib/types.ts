@@ -80,4 +80,13 @@ export type StreamEvent =
   | { type: "posts"; posts: Post[] }
   | { type: "app"; app: BuiltApp }
   | { type: "error"; message: string }
+  // The reply ended early: the user pressed Stop, or a Claude engine ran out of time.
+  | { type: "stopped" }
   | { type: "done" };
+
+/**
+ * The engines that write their answer as it comes, which Stop ends at once. The others make a
+ * picture, video or sound that the provider bills once it has started, so Stop lets it finish and
+ * it's delivered into the chat (see the chat route).
+ */
+export const STOPPABLE_ENGINES: readonly Engine[] = ["text", "app", "slides", "search", "code", "translate", "docs"];

@@ -2,6 +2,7 @@ import { getUser, unauthorized } from "@/lib/server/auth.ts";
 import { one, run, now } from "@/lib/server/db.ts";
 import { cleanInstructions } from "@/lib/project-instructions.ts";
 import { translatorFor } from "@/lib/server/i18n.ts";
+import { unfinished } from "@/lib/server/turns.ts";
 
 const MAX_MESSAGES_BYTES = 8 * 1024 * 1024;
 
@@ -13,11 +14,11 @@ export async function GET(request: Request, ctx: RouteContext<"/api/projects/[id
     "SELECT id, name, messages, updated_at, instructions FROM projects WHERE id = ? AND user_id = ?",
     [id, user.id],
   );
-  if (!row) {
-    const t = await translatorFor(request, user.language);
-    return Response.json({ error: t("Not found") }, { status: 404 });
-  }
-  return Response.json({ project: { ...row, messages: JSON.parse(row.messages) } });
+  const t = await translatorFor(request, user.language);
+  if (!row) return Response.json({ error: t("Not found") }, { status: 404 });
+  // A reply the server is still finishing shows as pending; one whose server never finished it doesn't.
+  const messages = unfinished(JSON.parse(row.messages), t("Flash couldn't finish this answer. Please try again."));
+  return Response.json({ project: { ...row, messages } });
 }
 
 export async function PUT(request: Request, ctx: RouteContext<"/api/projects/[id]">) {
@@ -55,7 +56,8 @@ export async function PUT(request: Request, ctx: RouteContext<"/api/projects/[id
     if (json.length > MAX_MESSAGES_BYTES) {
       return Response.json({ error: t("This project is too large to save. Start a new project.") }, { status: 413 });
     }
-    sets.push("messages = ?");
+    // Raised by every write of messages, so the chat route's own saving never overwrites this (see turns.ts).
+    sets.push("messages = ?", "version = version + 1");
     args.push(json);
   }
   const r = await run(`UPDATE projects SET ${sets.join(", ")} WHERE id = ? AND user_id = ?`, [...args, id, user.id]);

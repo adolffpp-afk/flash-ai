@@ -23,7 +23,8 @@ import { MAX_PDF_MB, pdfText } from "@/lib/pdf-text";
 import { addAttachment } from "@/lib/attachments";
 import { MAX_QUEUE, recentTurns, type CompanionContext } from "@/lib/companion";
 import { TEMPLATES, type Template, type TemplateValues } from "@/lib/templates";
-import { ENGINES, ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types";
+import { ENGINES, ENGINE_LABELS, STOPPABLE_ENGINES, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types";
+import { applyEvent } from "@/lib/apply-event";
 import { api, newId, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
 import type { ChatHit } from "@/lib/server/search";
 import { BoltIcon, BrandMark } from "@/app/brand";
@@ -92,35 +93,6 @@ const storage = {
   },
 };
 export type Status = Record<Engine, boolean>;
-
-function applyEvent(m: UIMessage, e: StreamEvent): UIMessage {
-  switch (e.type) {
-    case "route":
-      return { ...m, engine: e.engine, reason: e.reason, demo: e.demo, cost: e.cost, model: e.model, modelWhy: e.modelWhy, free: e.free };
-    case "text":
-      return m.app ? { ...m, after: (m.after ?? "") + e.delta } : { ...m, content: m.content + e.delta };
-    case "status":
-      return { ...m, status: e.message };
-    case "cost":
-      return { ...m, cost: e.credits };
-    case "image":
-      return { ...m, status: undefined, images: [...(m.images ?? []), { url: e.url, prompt: e.prompt, ...(e.label && { label: e.label }) }] };
-    case "video":
-      return { ...m, status: undefined, videos: [...(m.videos ?? []), { url: e.url, prompt: e.prompt }] };
-    case "audio":
-      return { ...m, status: undefined, audio: e.url, audioLabel: e.label };
-    case "app":
-      return { ...m, status: undefined, app: e.app };
-    case "sources":
-      return { ...m, sources: e.items };
-    case "posts":
-      return { ...m, posts: e.posts };
-    case "error":
-      return { ...m, error: e.message };
-    case "done":
-      return { ...m, pending: false, status: undefined };
-  }
-}
 
 /**
  * Phone photos are often larger than Flash accepts, so photos over 2048 pixels or 3 MB are
@@ -228,6 +200,10 @@ const withPicture = (m: UIMessage, url: string | null): UIMessage =>
 // Nothing is sent without the files a request goes with: the words alone would make something else.
 const NO_PICTURE = msg("Couldn't open the picture above, so nothing was sent and no credits were used. Try again in a moment.");
 const NO_FILES = msg("Attached files aren't kept once Flash is reloaded, so nothing was sent. Attach them again and send your message.");
+// A reply the server finishes and saves on its own: the page lost its connection, or the chat was opened while it ran.
+const STILL_WORKING = msg("Flash is still finishing this on the server. You can leave this page and come back.");
+// Stop pressed on a picture, video or sound already being made: the provider bills it, so it's finished and delivered.
+const FINISHING_AFTER_STOP = msg("This was already being made, so Flash is finishing it. It shows here when it's ready.");
 
 /** The picture above, ready to send with a follow-up, scaled down the way an attached photo is. */
 async function pictureAttachment(url: string, signal?: AbortSignal): Promise<Attachment | null> {
@@ -314,8 +290,9 @@ export function Flash({
     // An emptied list starts afresh: whatever is added next isn't held by an old pause.
     if (!next.length) setQueuePaused(false);
   };
-  // The chat a request is running in right now, which may not be the open one.
+  // The chat a request is running in right now, which may not be the open one, and the id of its reply.
   const [runningIn, setRunningIn] = useState("");
+  const [runningReply, setRunningReply] = useState("");
   // What the running request was asked to do, where, and when it started, for the companion.
   const jobRef = useRef<{ request: string; startedAt: number; projectId: string } | null>(null);
   const [sidebar, setSidebar] = useState(false);
@@ -351,6 +328,8 @@ export function Flash({
   const filesRef = useRef(new Map<string, Attachment[]>());
   // Projects whose messages changed and still need saving to the server.
   const dirtyRef = useRef(new Set<string>());
+  // When a reply the server was finishing was first found missing from its chat (see the watch below).
+  const missedRef = useRef(new Map<string, number>());
   const prefsTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   async function refreshMe() {
@@ -523,6 +502,8 @@ export function Flash({
     const timer = setTimeout(() => {
       for (const id of dirtyRef.current) {
         const p = projects.find((x) => x.id === id);
+        // A reply the server is still finishing is saved there, so this copy waits until it's here.
+        if (p?.messages?.some((m) => m.pending)) continue;
         dirtyRef.current.delete(id);
         if (!p?.messages) continue;
         const messages = p.messages.map((m) => ({ ...m, pending: undefined, status: undefined }));
@@ -533,6 +514,79 @@ export function Flash({
     }, 600);
     return () => clearTimeout(timer);
   }, [projects, busy]);
+
+  // Replies Flash is finishing on the server, not on this page: its connection was lost, Stop let a
+  // picture finish, or the chat was opened while one ran. Their chats are fetched again every few
+  // seconds while Flash is on screen, and at once when it's back in view or online, until each reply
+  // is saved finished. The request itself is never sent again.
+  const waiting = projects
+    .flatMap((p) => (p.messages ?? []).filter((m) => m.pending && m.id !== runningReply).map((m) => `${p.id}/${m.id}`))
+    .join(" ");
+  useEffect(() => {
+    if (!waiting) return;
+    const replies = waiting.split(" ").map((pair) => pair.split("/"));
+    let checking = false;
+    const check = async () => {
+      if (checking || document.hidden) return;
+      checking = true;
+      let finished = false;
+      for (const chat of new Set(replies.map(([projectId]) => projectId))) {
+        let saved: UIMessage[] = [];
+        let gone = false;
+        try {
+          saved = (await api<{ project: Project }>(`/api/projects/${chat}`)).project.messages ?? [];
+        } catch (err) {
+          // A deleted chat has nothing left to wait for; anything else is tried again.
+          if ((err as { status?: number }).status !== 404) continue;
+          gone = true;
+        }
+        const done = new Map<string, UIMessage | null>();
+        for (const [projectId, id] of replies) {
+          if (projectId !== chat) continue;
+          const reply = saved.find((m) => m.id === id);
+          if (reply?.pending) {
+            missedRef.current.delete(id);
+            continue;
+          }
+          // Missing from its chat: given up a minute after it was first missed, as its request never
+          // saved it (the server puts back a reply that another tab's copy of the chat saved over).
+          if (!reply && !gone) {
+            const since = missedRef.current.get(id) ?? Date.now();
+            missedRef.current.set(id, since);
+            if (Date.now() - since < 60_000) continue;
+          }
+          missedRef.current.delete(id);
+          done.set(id, reply ?? null);
+        }
+        if (!done.size) continue;
+        finished = true;
+        const unfinished = tNow("Flash couldn't finish this answer. Please try again.");
+        setProjects((list) =>
+          list.map((p) =>
+            p.id === chat && p.messages
+              ? { ...p, messages: p.messages.map((m) => (done.has(m.id) ? (done.get(m.id) ?? { ...m, pending: false, status: undefined, error: unfinished }) : m)) }
+              : p,
+          ),
+        );
+      }
+      checking = false;
+      // The credits it used are settled by now.
+      if (finished) refreshMe();
+    };
+    const timer = setInterval(check, 4000);
+    const onVisible = () => {
+      if (!document.hidden) void check();
+    };
+    window.addEventListener("focus", check);
+    window.addEventListener("online", check);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", check);
+      window.removeEventListener("online", check);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [waiting]);
 
   const active = projects.find((p) => p.id === activeId);
   // A chat is saved as "New project" until its first message names it; that name is shown translated.
@@ -556,9 +610,9 @@ export function Flash({
     if (projects.find((p) => p.id === id)?.messages) return;
     try {
       const { project } = await api<{ project: Project }>(`/api/projects/${id}`);
-      setProjects((list) =>
-        list.map((p) => (p.id === id ? { ...p, messages: p.messages ?? project.messages, instructions: project.instructions ?? "" } : p)),
-      );
+      // A reply still pending there is one the server is working on; the watch below shows it once it's done.
+      const messages = project.messages?.map((m) => (m.pending ? { ...m, status: t(STILL_WORKING) } : m));
+      setProjects((list) => list.map((p) => (p.id === id ? { ...p, messages: p.messages ?? messages, instructions: project.instructions ?? "" } : p)));
     } catch {
       setNotice(t("Couldn't open that project. Pick it again in the sidebar to try again."));
     }
@@ -844,6 +898,9 @@ export function Flash({
   }
 
   function stop() {
+    // Leaving the page doesn't stop Flash any more (the server finishes and saves the reply), so
+    // Stop tells the server itself, then stops reading.
+    if (runningReply) api("/api/chat/stop", { method: "POST", json: { replyId: runningReply }, keepalive: true }).catch(() => {});
     abortRef.current?.abort();
   }
 
@@ -922,7 +979,13 @@ export function Flash({
     updateProject(projectId, (p) => ({ ...p, updated_at: Date.now(), messages: [...earlier, userMsg, reply] }));
     jobRef.current = { request: userMsg.content, startedAt: Date.now(), projectId };
     setRunningIn(projectId);
+    setRunningReply(reply.id);
     let finished = true;
+    // Set once the server has the request: from then on it finishes and saves the reply itself,
+    // whatever happens to this page.
+    let accepted = false;
+    // The reply is left to the server, and shows here once it's saved (see the watch above).
+    let onServer = false;
 
     try {
       const res = await fetch("/api/chat", {
@@ -944,6 +1007,10 @@ export function Flash({
           ...(userMsg.build && { build: true }),
           // The server only needs to know it's the picture above, for the reason it shows.
           ...(userMsg.pictureAbove ? { pictureAbove: true } : {}),
+          // The server saves the turn too, so the answer is kept if this page is closed (see turns.ts).
+          replyId: reply.id,
+          userMessage: userMsg,
+          afterId: earlier.at(-1)?.id ?? null,
         }),
         signal: controller.signal,
       });
@@ -952,9 +1019,11 @@ export function Flash({
         if (res.status === 401) setSignedOut(true);
         throw Object.assign(new Error(err.error), { code: err.code as string | undefined });
       }
+      accepted = true;
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      let ended = false;
       for (;;) {
         const { value, done } = await reader.read();
         if (done) break;
@@ -964,28 +1033,33 @@ export function Flash({
         for (const line of lines) {
           if (!line.trim()) continue;
           const e = JSON.parse(line) as StreamEvent;
-          if (e.type === "error") finished = false;
+          if (e.type === "error" || e.type === "stopped") finished = false;
+          if (e.type === "done") ended = true;
           final = applyEvent(final, e);
           updateMessage(projectId, reply.id, (m) => applyEvent(m, e));
         }
       }
+      // The reply stopped arriving before its last line: the connection was cut. Never shown, as the
+      // reply is left to the server below.
+      if (!ended) throw new Error("The reply stopped arriving.");
     } catch (err) {
       finished = false;
       const aborted = controller.signal.aborted;
-      updateMessage(projectId, reply.id, (m) =>
-        aborted
-          ? { ...m, stopped: true }
-          : {
-              ...m,
-              error: err instanceof Error ? err.message : t("Something went wrong."),
-              errorCode: (err as { code?: string }).code,
-            },
-      );
-      final = aborted
-        ? { ...final, stopped: true }
-        : { ...final, error: err instanceof Error ? err.message : t("Something went wrong."), errorCode: (err as { code?: string }).code };
+      // Stop ends writing at once. A picture, video or sound already being made is finished on the
+      // server, and so is any reply whose connection was lost: it shows here once it's saved.
+      const writing = Boolean(final.engine && STOPPABLE_ENGINES.includes(final.engine));
+      onServer = accepted && !(aborted && writing);
+      const status = t(aborted && final.engine ? FINISHING_AFTER_STOP : STILL_WORKING);
+      const outcome = (m: UIMessage): UIMessage =>
+        onServer
+          ? { ...m, status }
+          : aborted
+            ? { ...m, stopped: true }
+            : { ...m, error: err instanceof Error ? err.message : t("Something went wrong."), errorCode: (err as { code?: string }).code };
+      updateMessage(projectId, reply.id, outcome);
+      final = outcome(final);
     } finally {
-      updateMessage(projectId, reply.id, (m) => ({ ...m, pending: false, status: undefined }));
+      if (!onServer) updateMessage(projectId, reply.id, (m) => ({ ...m, pending: false, status: undefined }));
       refreshMe();
       abortRef.current = null;
       runningRef.current = false;
@@ -993,12 +1067,14 @@ export function Flash({
       // A request that failed, was stopped or waits for its price to be confirmed holds Next up,
       // so nothing runs on top of it until the user says so.
       if (!finished && queueNow.current.length) setQueuePaused(true);
-      notifyDone(userMsg.content, finished, startedAt);
+      if (!onServer) notifyDone(userMsg.content, finished, startedAt);
       setRunningIn("");
+      setRunningReply("");
       setBusy(false);
       if (!typingElsewhere(inputRef.current)) inputRef.current?.focus();
     }
-    return { ...final, pending: false, status: undefined };
+    // A reply left to the server says so, as a voice conversation reads it.
+    return { ...final, pending: false, status: undefined, ...(onServer && { error: final.status }) };
   }
 
   /** One turn of a voice conversation: sends what was said to the open chat, on Auto, and says the answer. */
@@ -2116,7 +2192,8 @@ export function Flash({
                   m={m}
                   onRetry={i === all.length - 1 && m.role === "assistant" && !m.pending && !m.local && !busy ? () => retry() : undefined}
                   onConfirmCost={i === all.length - 1 && !busy ? confirmCost : undefined}
-                  onEdit={m.role === "user" && !m.local && !busy && i === all.findLastIndex((x) => x.role === "user") ? editLast : undefined}
+                  // Not while the server is still finishing the reply below it.
+                  onEdit={m.role === "user" && !m.local && !busy && !all[i + 1]?.pending && i === all.findLastIndex((x) => x.role === "user") ? editLast : undefined}
                   onBuyCredits={() => setShowCredits(true)}
                   paymentsOn={me.paymentsEnabled || me.testPurchases}
                   language={me.user.language}

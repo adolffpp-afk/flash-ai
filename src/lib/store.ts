@@ -41,6 +41,9 @@ export type UIMessage = {
   error?: string;
   errorCode?: string;
   pending?: boolean;
+  // When the server started on a reply it saved as pending, so a reply its server never finished
+  // stops showing as in progress (see turns.ts).
+  pendingSince?: number;
   stopped?: boolean;
   status?: string;
   app?: BuiltApp & { slug?: string };

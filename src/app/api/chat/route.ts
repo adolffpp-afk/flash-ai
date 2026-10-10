@@ -1,6 +1,9 @@
+import { after } from "next/server";
 import { EDITABLE_TYPE, fixesPictureText, route, textToSpeak } from "@/lib/router.ts";
 import { MAX_EDIT_PIXELS, imageDimensions } from "@/lib/imageSize.ts";
-import { ENGINES, ENGINE_LABELS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types.ts";
+import { ENGINES, ENGINE_LABELS, STOPPABLE_ENGINES, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types.ts";
+import { applyEvent } from "@/lib/apply-event.ts";
+import type { UIMessage } from "@/lib/store.ts";
 import {
   NO_BUDGET,
   claudeChoice,
@@ -29,6 +32,8 @@ import { withVoiceStyle } from "@/lib/voice-chat.ts";
 import { brandForMedia, withBrand } from "@/lib/brand.ts";
 import { getBrand } from "@/lib/server/brand.ts";
 import { one } from "@/lib/server/db.ts";
+import { MESSAGE_ID, requestTurn, saveReply, saveTurn } from "@/lib/server/turns.ts";
+import { watchStop } from "@/lib/server/stops.ts";
 import {
   FREE_CHAT_ENGINES,
   freeChatConfigured,
@@ -100,6 +105,11 @@ import { packMarkdown } from "@/lib/post-pack.ts";
 
 // Vercel Pro allows up to 800 seconds, which the Movie maker needs (scenes, filming and joining).
 export const maxDuration = 800;
+// Claude replies end as stopped this long after the request started, so they're saved and settled
+// within maxDuration: a Claude stream can't be picked up again in another call.
+const DEADLINE_MS = 760_000;
+// How long a reply stopped there may take to close its engine before it's settled anyway.
+const CLOSE_GRACE_MS = 15_000;
 
 // Vercel caps a request at 4.5 MB, and a file grows by a third when sent as base64.
 const MAX_ATTACHMENT_BYTES = 3 * 1024 * 1024;
@@ -134,6 +144,11 @@ type ChatRequest = {
   pictureAbove?: boolean;
   // Flash's level of intelligence for writing, research and building (see levels.ts); Auto when missing.
   level?: string;
+  // The reply's id and the user's message as the browser made them, and the id of the message they
+  // follow (null for a chat's first), so the server saves the turn itself (see turns.ts).
+  replyId?: string;
+  userMessage?: unknown;
+  afterId?: string | null;
 };
 
 /** Requests that cost at least this many credits wait for the user to agree to the price first. */
@@ -152,6 +167,13 @@ const isMedia = (engine: Engine): engine is MediaEngine => (MEDIA_ENGINES as Eng
 function configured(engine: Engine): boolean {
   if (engine === "voice" || engine === "transcribe") return Boolean(speechProvider());
   return claudeConfigured();
+}
+
+/** Waits for a promise, but no longer than ms. */
+async function atMost(promise: Promise<unknown>, ms: number): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  await Promise.race([promise, new Promise((resolve) => (timer = setTimeout(resolve, Math.max(0, ms))))]);
+  clearTimeout(timer);
 }
 
 /** Runs a slow job, relaying its progress messages as status events every few seconds. */
@@ -317,6 +339,8 @@ async function* run(
   onStepDown: (choice: ClaudeChoice) => void = () => {},
   // The language Flash's own words (progress, notes, errors) are in.
   t: Translate & { language?: string } = english,
+  // Told the length of all the builder writes, its code too (see streamBuild).
+  wrote: (chars: number) => void = () => {},
 ): AsyncGenerator<StreamEvent> {
   const last = history[history.length - 1];
   if (isMedia(engine) ? !model : !configured(engine)) {
@@ -347,7 +371,7 @@ async function* run(
       return;
     case "app":
     case "slides":
-      yield* withStepDown(choice ?? claudeChoice(engine, "vision"), (c) => streamBuild(history, preferences, engine, meter, budget, c, t), onStepDown, t);
+      yield* withStepDown(choice ?? claudeChoice(engine, "vision"), (c) => streamBuild(history, preferences, engine, meter, budget, c, t, wrote), onStepDown, t);
       return;
     case "image": {
       if (model!.edits) {
@@ -564,6 +588,7 @@ function pickedWhy({ model, why }: { model: ModelInfo; why: string }, t: Transla
 }
 
 export async function POST(request: Request) {
+  const startedAt = Date.now();
   const user = await getUser(request);
   if (!user) return unauthorized();
   // Flash's own words in the reply (errors, why an engine and a level were picked, progress) are in
@@ -829,113 +854,216 @@ export async function POST(request: Request) {
   // Saved files take the extension of what the provider really sent, so downloads open correctly.
   const store: Store = (media, name) => saveFile(user.id, media.mime, withExtension(name, media.mime), media.data);
 
+  // The server saves the turn itself (see turns.ts), so the answer is kept when the page is closed.
+  // A page loaded before this sends no turn, and keeps its answers itself as before.
+  const replyId = typeof body.replyId === "string" && MESSAGE_ID.test(body.replyId) ? body.replyId : null;
+  const projectId = String(body.projectId);
+  const turn = project ? requestTurn(body) : null;
+  if (replyId && !turn) console.warn(`[flash] a ${engine} reply can't be saved by the server: its project or message is missing`);
+
   const encoder = new TextEncoder();
-  // Set when the browser stops reading (the user pressed Stop), so the engine stops too.
-  let cancelled = false;
+  // The page reading the reply. When it stops reading (it was closed, its connection was lost, or
+  // Stop) only the reading stops: the work goes on to the end, and is saved and settled.
+  let reader: ReadableStreamDefaultController<Uint8Array> | null = null;
+  // What ends the engine early: Stop (see stops.ts), or a Claude reply's time running out.
+  let halt: "stop" | "deadline" | null = null;
+  // Wakes the work while it waits for the engine's next step.
+  let interrupt = () => {};
+  const stopEngine = (why: "stop" | "deadline") => {
+    halt ??= why;
+    interrupt();
+  };
+  // Writing stops at once. A picture, video or sound already being made is billed by its provider,
+  // so it's finished, delivered into the chat and charged as usual.
+  const stoppable = STOPPABLE_ENGINES.includes(engine);
+  // A reply the server can't save (from a page loaded before it saved them) is kept only by its
+  // page, so leaving the page stops it, as before.
+  const pageGone = () => {
+    if (!turn && stoppable) stopEngine("stop");
+  };
+  const signalAborted = () => {
+    // Logged to confirm what the host does when a page goes away: Vercel tells a request only
+    // with supportsCancellation, which Flash leaves off so the work goes on.
+    console.log(`[flash] chat request.signal aborted after ${Math.round((Date.now() - startedAt) / 1000)} s (${engine}${turn ? ", the reply goes on" : ""})`);
+    pageGone();
+  };
+  if (request.signal.aborted) signalAborted();
+  else request.signal.addEventListener("abort", signalAborted, { once: true });
   const stream = new ReadableStream<Uint8Array>({
-    cancel() {
-      cancelled = true;
+    start(controller) {
+      reader = controller;
     },
-    async start(controller) {
-      const send = (e: StreamEvent) => {
-        if (cancelled) return;
-        try {
-          controller.enqueue(encoder.encode(JSON.stringify(e) + "\n"));
-        } catch {
-          cancelled = true;
-        }
-      };
-      const routed: StreamEvent = {
-        type: "route",
-        engine,
-        reason,
-        demo: !live,
-        cost: metered && !free ? 0 : held,
-        ...(free
-          ? {
-              free: true,
-              model: free === "image" ? "FLUX.1 schnell" : free === "transcribe" ? "Whisper" : t("Free model"),
-              modelWhy: t("You're out of credits, so Flash used a free model."),
-            }
-          : model
-            ? { model: model.label, modelWhy: pickedWhy(picked!, t) }
-            : // The level's name stays as it is: the browser matches it to the level's sign.
-              claudeRun && { model: levelName(claudeRun.level), modelWhy: levelWhy }),
-      };
-      send(routed);
-      // The reply's header names the level that really answered.
-      const steppedDown = (choice: ClaudeChoice) => {
-        if (claudeRun) {
-          const modelWhy = t("{level} was busy, so {instead} answered.", { level: levelName(claudeRun.level), instead: levelName(choice.level) });
-          send({ ...routed, model: levelName(choice.level), modelWhy });
-        }
-        claudeRun = choice;
-      };
-      let ok = true;
-      let stopped = false;
-      let failure = "";
-      try {
-        const events = free
-          ? runFree(free, engine, history, preferences, store, freeUse, countryOf(request), t)
-          : run(engine, history, preferences, store, model, meter, budget, mediaNotes, claudeRun, steppedDown, t);
-        for await (const event of events) {
-          if (cancelled || request.signal.aborted) {
-            stopped = true;
-            break;
-          }
-          if (event.type === "text") written += event.delta.length;
-          send(event);
-        }
-      } catch (err) {
-        console.error(`[flash] ${engine} engine failed`, err);
-        ok = false;
-        // Provider errors can hold raw responses, so only messages written for the user are shown.
-        failure =
-          err instanceof FriendlyError
-            ? err.in(t)
-            : engine === "text"
-              ? t("Flash is busy right now. Please try again in a moment.")
-              : t("{engine} is busy right now. Please try again in a moment.", { engine: t(ENGINE_LABELS[engine]) });
-      }
-      const costCents = spend.reduce((sum, s) => sum + s.cents, 0);
-      // A failed request costs only the provider work that really ran. A stopped reply is
-      // charged for reading its input and what it wrote, or a typical reply. The free lane is free.
-      const credits = free
-        ? 0
-        : finalCredits({
-            held,
-            ok,
-            stopped,
-            metered,
-            costCents,
-            inputCents,
-            written,
-            // A typical reply on this level: a fraction of the usual on Sonic, more on Summit.
-            typical: Math.max(1, Math.round((TYPICAL_CREDITS[engine] ?? 4) * levelScale)),
-            outputPrice: claudeRun ? claudePrice(claudeRun.model).output : undefined,
-          });
-      await settle(chargeId, credits);
-      // A free request that failed doesn't use up one of the user's free requests for today.
-      if (free && !ok) await releaseFreeUser(user.id, free).catch((err) => console.error("[flash] free release failed", err));
-      if (live) {
-        const main = spend.at(-1);
-        await logUsage({
-          userId: user.id,
-          engine,
-          model: free ? freeUse.model : (model?.id ?? main?.model ?? ""),
-          provider: free ? freeUse.provider : (model?.provider ?? main?.provider ?? ""),
-          credits,
-          costCents,
-          ok,
-        }).catch((err) => console.error("[flash] usage log failed", err));
-      }
-      if (!ok) send({ type: "error", message: failure + refundNote(held, credits, t) });
-      if (cancelled) return;
-      if (metered && ok && !free) send({ type: "cost", credits });
-      send({ type: "done" });
-      controller.close();
+    cancel() {
+      // Logged like the abort above, to confirm what the host does when a page goes away.
+      console.log(`[flash] chat response stopped being read after ${Math.round((Date.now() - startedAt) / 1000)} s (${engine})`);
+      reader = null;
+      pageGone();
     },
   });
+  // The reply as the browser builds it from the same events (see apply-event.ts), saved at the end.
+  let reply: UIMessage = turn?.reply ?? { id: "", role: "assistant", content: "", pending: true };
+  const send = (e: StreamEvent) => {
+    reply = applyEvent(reply, e);
+    if (!reader) return;
+    try {
+      reader.enqueue(encoder.encode(JSON.stringify(e) + "\n"));
+    } catch {
+      reader = null;
+    }
+  };
+  // The builder reports everything it writes, its code too, which arrives as one event at the end.
+  const builderCounts = engine === "app" || engine === "slides";
+  const wrote = (chars: number) => {
+    written += chars;
+  };
+  // Claude replies end in time to be saved and settled within maxDuration (see DEADLINE_MS). A reply
+  // stopped near then gets a moment to close its engine, and is settled anyway after that.
+  const closeBy = startedAt + DEADLINE_MS + CLOSE_GRACE_MS;
+
+  // The work runs to the end even when the page goes away (after() keeps the call alive until it's
+  // done); the response only reads from it. It never throws, and settles the credits once.
+  const work = (async () => {
+    const routed: StreamEvent = {
+      type: "route",
+      engine,
+      reason,
+      demo: !live,
+      cost: metered && !free ? 0 : held,
+      ...(free
+        ? {
+            free: true,
+            model: free === "image" ? "FLUX.1 schnell" : free === "transcribe" ? "Whisper" : t("Free model"),
+            modelWhy: t("You're out of credits, so Flash used a free model."),
+          }
+        : model
+          ? { model: model.label, modelWhy: pickedWhy(picked!, t) }
+          : // The level's name stays as it is: the browser matches it to the level's sign.
+            claudeRun && { model: levelName(claudeRun.level), modelWhy: levelWhy }),
+    };
+    send(routed);
+    // Saved at once, so the user's message and the reply in progress are in the chat if the page is closed.
+    const started = turn
+      ? saveTurn(user.id, projectId, { ...turn, reply: { ...reply, pendingSince: startedAt } }).catch((err) => {
+          console.error("[flash] saving the turn failed", err);
+          return false;
+        })
+      : null;
+    // The reply's header names the level that really answered.
+    const steppedDown = (choice: ClaudeChoice) => {
+      if (claudeRun) {
+        const modelWhy = t("{level} was busy, so {instead} answered.", { level: levelName(claudeRun.level), instead: levelName(choice.level) });
+        send({ ...routed, model: levelName(choice.level), modelWhy });
+      }
+      claudeRun = choice;
+    };
+    // Only writing listens for Stop; a picture, video or sound goes on (see stoppable above).
+    const endWatch = replyId && stoppable ? watchStop(user.id, replyId, () => stopEngine("stop")) : () => {};
+    const deadline = metered && !free ? setTimeout(() => stopEngine("deadline"), startedAt + DEADLINE_MS - Date.now()) : undefined;
+    let ok = true;
+    let stopped = false;
+    let failure = "";
+    try {
+      const events = free
+        ? runFree(free, engine, history, preferences, store, freeUse, countryOf(request), t)
+        : run(engine, history, preferences, store, model, meter, budget, mediaNotes, claudeRun, steppedDown, t, wrote);
+      for (;;) {
+        // The engine's next step, or null as soon as it's halted.
+        const next = await new Promise<IteratorResult<StreamEvent> | null>((resolve, reject) => {
+          interrupt = () => resolve(null);
+          if (halt) resolve(null);
+          else events.next().then(resolve, reject);
+        });
+        if (!next || (halt && !next.done)) {
+          stopped = true;
+          // The engine closes at its next step, which ends a Claude call, so nothing more is written
+          // or billed; near the time limit it's settled without waiting longer.
+          await atMost(events.return(undefined).catch(() => {}), closeBy - Date.now());
+          break;
+        }
+        if (next.done) break;
+        const event = next.value;
+        if (event.type === "text" && !builderCounts) written += event.delta.length;
+        send(event);
+      }
+    } catch (err) {
+      console.error(`[flash] ${engine} engine failed`, err);
+      ok = false;
+      // Provider errors can hold raw responses, so only messages written for the user are shown.
+      failure =
+        err instanceof FriendlyError
+          ? err.in(t)
+          : engine === "text"
+            ? t("Flash is busy right now. Please try again in a moment.")
+            : t("{engine} is busy right now. Please try again in a moment.", { engine: t(ENGINE_LABELS[engine]) });
+    }
+    clearTimeout(deadline);
+    endWatch();
+    const costCents = spend.reduce((sum, s) => sum + s.cents, 0);
+    // A failed request costs only the provider work that really ran. A stopped reply is
+    // charged for reading its input and what it wrote, or a typical reply. The free lane is free.
+    const credits = free
+      ? 0
+      : finalCredits({
+          held,
+          ok,
+          stopped,
+          metered,
+          costCents,
+          inputCents,
+          written,
+          // A typical reply on this level: a fraction of the usual on Sonic, more on Summit.
+          typical: Math.max(1, Math.round((TYPICAL_CREDITS[engine] ?? 4) * levelScale)),
+          outputPrice: claudeRun ? claudePrice(claudeRun.model).output : undefined,
+        });
+    // Settled here, once. Trying again after an error is safe: it only lowers the hold to the same amount.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await settle(chargeId, credits);
+        break;
+      } catch (err) {
+        console.error("[flash] settling credits failed", err);
+      }
+    }
+    // A free request that failed doesn't use up one of the user's free requests for today.
+    if (free && !ok) await releaseFreeUser(user.id, free).catch((err) => console.error("[flash] free release failed", err));
+    if (live) {
+      const main = spend.at(-1);
+      await logUsage({
+        userId: user.id,
+        engine,
+        model: free ? freeUse.model : (model?.id ?? main?.model ?? ""),
+        provider: free ? freeUse.provider : (model?.provider ?? main?.provider ?? ""),
+        credits,
+        costCents,
+        ok,
+      }).catch((err) => console.error("[flash] usage log failed", err));
+    }
+    if (stopped && halt === "deadline") send({ type: "text", delta: "\n\n" + t("Flash ran out of time here. Ask it to continue.") });
+    if (!ok) send({ type: "error", message: failure + refundNote(held, credits, t) });
+    if (stopped) send({ type: "stopped" });
+    if (metered && ok && !free) send({ type: "cost", credits });
+    if (turn) {
+      await started;
+      // The finished reply as the browser saves it, in place of the pending one. Saving it again after
+      // an error is safe: it's put in place by its id.
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          await saveReply(user.id, projectId, turn, { ...reply, pending: undefined, status: undefined });
+          break;
+        } catch (err) {
+          console.error("[flash] saving the reply failed", err);
+        }
+      }
+    }
+    send({ type: "done" });
+  })()
+    .catch((err) => console.error("[flash] chat request failed", err))
+    .finally(() => {
+      try {
+        reader?.close();
+      } catch {}
+    });
+  after(work);
   return new Response(stream, {
     headers: { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-store" },
   });

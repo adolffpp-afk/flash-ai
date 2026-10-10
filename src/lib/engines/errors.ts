@@ -35,6 +35,7 @@ export class JobAbandoned extends FriendlyError {
   }
 }
 
-// How long a media job may take in all. Requests stop at 300 seconds (maxDuration in the chat
-// route), so this leaves time for the prompt rewrite, saving the file and settling credits.
+// How long a media job may take in all. Requests stop at 800 seconds (maxDuration in the chat
+// route), and a post pack makes pictures and then a video, so this leaves time for each job, the
+// prompt rewrite, saving the files and settling credits.
 export const MEDIA_WAIT_MS = 240_000;
