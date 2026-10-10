@@ -267,13 +267,15 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS site_owner_keys_expiry ON site_owner_keys(expires_at)`,
   `CREATE INDEX IF NOT EXISTS site_owner_keys_site ON site_owner_keys(site_slug, user_id)`,
   // One-time codes that open an app as its owner, made when they choose Open as owner in Flash.
-  // Each works once, for two minutes, and becomes an owner key when the app's page is served.
+  // Each works once, for two minutes, and becomes an owner key when the app's page is served at
+  // the address it was made for: host is the app's own domain, or "" for Flash's own address.
   `CREATE TABLE IF NOT EXISTS site_owner_codes (
     code_hash TEXT PRIMARY KEY,
     site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
     user_id TEXT NOT NULL,
     session_hash TEXT NOT NULL,
-    expires_at INTEGER NOT NULL
+    expires_at INTEGER NOT NULL,
+    host TEXT NOT NULL DEFAULT ''
   )`,
   `CREATE INDEX IF NOT EXISTS site_owner_codes_site ON site_owner_codes(site_slug)`,
   // Who may change each collection of an app's shared data, as its owner chose in Flash (see
@@ -445,6 +447,8 @@ const MIGRATIONS = [
   "ALTER TABLE sites ADD COLUMN data_rules TEXT NOT NULL DEFAULT ''",
   // The signed-in person who added a shared record, so they alone can change it. Empty for anyone else.
   "ALTER TABLE site_records ADD COLUMN author TEXT NOT NULL DEFAULT ''",
+  // The address an Open as owner code works at (see site_owner_codes), for tables made before it.
+  "ALTER TABLE site_owner_codes ADD COLUMN host TEXT NOT NULL DEFAULT ''",
 ];
 
 async function init(c: Client) {

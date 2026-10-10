@@ -400,14 +400,30 @@ test("an app opens as its owner only from Open as owner in Flash, and only once"
   // On Flash's own address the code only works when Flash's own page opened it, not from a link elsewhere.
   const code2 = (await newOwnerCode(slug, "owner", session))!;
   assert.equal(keyIn(await page(`?flash_owner=${code2}`, { "sec-fetch-site": "cross-site" })), "");
-  // The app's own domain is always another site to Flash, so there it works, once.
+  assert.match(keyIn(await page(`?flash_owner=${code2}`, { "sec-fetch-site": "none" }))!, /^o_/);
+  // The app's own domain is always another site to Flash, so there a code made for it works, once.
   await run("INSERT INTO site_domains (domain, site_slug, user_id, created_at) VALUES ('mybakery.com', ?, 'owner', 0)", [slug]);
-  const onDomain = (query: string) =>
-    serveSite(slug, "https://mybakery.com/", new Request(`https://mybakery.com/${query}`, { headers: { host: "mybakery.com", "sec-fetch-site": "cross-site" } })).then((r) =>
-      r.text(),
-    );
-  assert.match(keyIn(await onDomain(`?flash_owner=${code2}`))!, /^o_/);
-  assert.equal(keyIn(await onDomain(`?flash_owner=${code2}`)), "");
+  const at = (host: string, path: string, query: string, from = "cross-site") =>
+    serveSite(slug, `https://${host}/`, new Request(`https://${host}${path}${query}`, { headers: { host, "sec-fetch-site": from } })).then((r) => r.text());
+  const onDomain = (query: string) => at("mybakery.com", "/", query);
+  const code3 = (await newOwnerCode(slug, "owner", session, "mybakery.com"))!;
+  assert.match(keyIn(await onDomain(`?flash_owner=${code3}`))!, /^o_/);
+  assert.equal(keyIn(await onDomain(`?flash_owner=${code3}`)), "");
+  // A code works only at the address it was made for, and trying it anywhere else uses it up: one
+  // sent to the domain can't be used on Flash's own address (as /d/ or /p/ there) or another domain,
+  // and one made for Flash can't be used on the domain.
+  for (const [where, tried] of [
+    ["Flash's /d/ address", (query: string) => at("flash-app.dev", "/d/mybakery.com", query, "none")],
+    ["Flash's /p/ address", (query: string) => page(query, { "sec-fetch-site": "none" })],
+    ["another domain", (query: string) => at("mybakery.co", "/", query)],
+  ] as const) {
+    const forDomain = (await newOwnerCode(slug, "owner", session, "mybakery.com"))!;
+    assert.equal(keyIn(await tried(`?flash_owner=${forDomain}`)), "", where);
+    assert.equal(keyIn(await onDomain(`?flash_owner=${forDomain}`)), "", `${where}: used up`);
+  }
+  const forFlash = (await newOwnerCode(slug, "owner", session))!;
+  assert.equal(keyIn(await onDomain(`?flash_owner=${forFlash}`)), "");
+  assert.equal(keyIn(await page(`?flash_owner=${forFlash}`, { "sec-fetch-site": "none" })), "", "used up");
   // An app's own sign-in cookie is something else entirely.
   assert.equal(keyIn(await page("", { cookie: `${SITE_COOKIE}=${session}` })), "");
   // The owner's Data view, and Open as owner, aren't reachable from an app's own domain.

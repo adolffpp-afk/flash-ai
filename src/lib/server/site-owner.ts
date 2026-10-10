@@ -5,7 +5,8 @@
  * it, and the page Flash serves for it trades the code for an owner key that the app's data
  * requests carry. Opening the app any other way, even signed in to Flash, shows it as visitors see
  * it, so a link someone sends the owner can't start owner mode. It works on the app's own domain
- * too, where Flash's sign-in cookie never goes.
+ * too, where Flash's sign-in cookie never goes, but only one that points at Flash: each code works
+ * only at the address it was made for, so a code sent to one address can't be used at another.
  *
  * An owner key works for that app's shared data only, and not for its private collections (only
  * Flash's Data view shows those): not for its settings, its AI, money, each person's own records or
@@ -28,9 +29,10 @@ export const OWNER_KEY_PREFIX = "o_";
 
 /**
  * A one-time code that opens the app as its owner, made when they choose Open as owner in Flash, or
- * null when the user doesn't own the app. It ends with their Flash sign-in, like the key it becomes.
+ * null when the user doesn't own the app. It works only at host: the app's own domain it's sent
+ * to, or "" for Flash's own address. It ends with their Flash sign-in, like the key it becomes.
  */
-export async function newOwnerCode(slug: string, userId: string, flashSessionToken: string): Promise<string | null> {
+export async function newOwnerCode(slug: string, userId: string, flashSessionToken: string, host = ""): Promise<string | null> {
   if (!flashSessionToken) return null;
   const code = randomId(24);
   const at = now();
@@ -41,9 +43,9 @@ export async function newOwnerCode(slug: string, userId: string, flashSessionTok
       { sql: "DELETE FROM site_owner_codes WHERE expires_at <= ?", args: [at] },
       {
         // Made only when the app is this user's.
-        sql: `INSERT INTO site_owner_codes (code_hash, site_slug, user_id, session_hash, expires_at)
-              SELECT ?, slug, user_id, ?, ? FROM sites WHERE slug = ? AND user_id = ?`,
-        args: [sha256(code), sha256(flashSessionToken), at + OWNER_CODE_MS, slug, userId],
+        sql: `INSERT INTO site_owner_codes (code_hash, site_slug, user_id, session_hash, expires_at, host)
+              SELECT ?, slug, user_id, ?, ?, ? FROM sites WHERE slug = ? AND user_id = ?`,
+        args: [sha256(code), sha256(flashSessionToken), at + OWNER_CODE_MS, host, slug, userId],
       },
     ],
     "write",
@@ -52,12 +54,13 @@ export async function newOwnerCode(slug: string, userId: string, flashSessionTok
 }
 
 /**
- * Trades a one-time code for an owner key for this app, with the owner's language for what the page
- * tells them, or null when the code is unknown, used, too old, for another app, or its owner has
- * signed out of Flash or no longer owns the app. A code works once, even when two pages race for it:
- * it's used up in the same transaction that makes the key.
+ * Trades a one-time code for an owner key for this app, as its page is served at host (the app's
+ * own domain, or "" for Flash's own address), with the owner's language for what the page tells
+ * them. Null when the code is unknown, used, too old, for another app or another address, or its
+ * owner has signed out of Flash or no longer owns the app. A code works once, even when two pages
+ * race for it, or it's tried at the wrong address: it's used up in the same transaction that makes the key.
  */
-export async function ownerKeyForCode(slug: string, code: string): Promise<{ key: string; language: string } | null> {
+export async function ownerKeyForCode(slug: string, code: string, host = ""): Promise<{ key: string; language: string } | null> {
   if (!code || code.length > 100) return null;
   const key = OWNER_KEY_PREFIX + randomId(24);
   const codeHash = sha256(code);
@@ -72,8 +75,8 @@ export async function ownerKeyForCode(slug: string, code: string): Promise<{ key
               SELECT ?, c.site_slug, c.user_id, c.session_hash, ? FROM site_owner_codes c
               JOIN sites s ON s.slug = c.site_slug AND s.user_id = c.user_id
               JOIN sessions se ON se.token_hash = c.session_hash AND se.user_id = c.user_id AND se.expires_at > ?
-              WHERE c.code_hash = ? AND c.site_slug = ? AND c.expires_at > ?`,
-        args: [keyHash, at + OWNER_KEY_MS, at, codeHash, slug, at],
+              WHERE c.code_hash = ? AND c.site_slug = ? AND c.host = ? AND c.expires_at > ?`,
+        args: [keyHash, at + OWNER_KEY_MS, at, codeHash, slug, host, at],
       },
       { sql: "DELETE FROM site_owner_codes WHERE code_hash = ? OR expires_at <= ?", args: [codeHash, at] },
       { sql: "DELETE FROM site_owner_keys WHERE expires_at <= ?", args: [at] },

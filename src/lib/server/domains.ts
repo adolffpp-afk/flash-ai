@@ -123,6 +123,16 @@ export async function domainStatus(domain: string): Promise<DomainStatus> {
   return { domain, connected: info.status === 200 && info.json.verified !== false && !misconfigured, records };
 }
 
+/**
+ * Whether a domain points at Flash now: Vercel has it for Flash's project, and its DNS leads there.
+ * One that lapsed, or still points at a host it had before, would hand what's sent to it to
+ * someone else.
+ */
+export async function pointsAtFlash(domain: string): Promise<boolean> {
+  if (!domainsConfigured()) return false;
+  return (await domainStatus(domain).catch(() => null))?.connected === true;
+}
+
 /** The site a custom domain shows, if any. */
 export async function siteForDomain(domain: string): Promise<string | null> {
   return (await one<{ slug: string }>("SELECT site_slug AS slug FROM site_domains WHERE domain = ?", [domain]))?.slug ?? null;
