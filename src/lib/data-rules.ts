@@ -235,8 +235,9 @@ function dataBlock(html: string): Block {
     if (end !== -1) tags.lastIndex = end;
     const text = end === -1 || end - start > MAX_BLOCK_CHARS ? null : html.slice(start, end);
     const value = text === null ? NOT_JSON : readJson(text);
-    // Code that happens to use the id is skipped, but not rules put in a tag meant for code.
-    if (value === NOT_JSON && isCode(tag[1]) && !(text !== null && RULE_IN_CODE.test(text))) continue;
+    // Code that happens to use the id is skipped, but not rules put in a tag meant for code, however
+    // long, nor a stray tag (in a comment or an attribute) that runs on over a real block.
+    if (value === NOT_JSON && isCode(tag[1]) && !(end !== -1 && RULE_IN_CODE.test(html.slice(start, end)))) continue;
     // Not rules: the next block is looked for after this one.
     if (value !== NOT_JSON && appsOwnData(value)) continue;
     if (found.found) {

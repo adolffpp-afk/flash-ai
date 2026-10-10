@@ -259,6 +259,34 @@ test("a block written another way never lets visitors see what it marks as priva
   assert.equal(visitorsSee(computeRules(block(`{"signups":"private"}`) + code)), false);
 });
 
+test("a stray code tag or long code never hides rules: visitors can't add, private stays private, the owner is told", () => {
+  const code = `<script>if (flashDB.isOwner) flashDB.remove("menu", id); flashDB.add("signups", s)</script>`;
+  const rules = block(`{"signups":"private","menu":"read"}`);
+  const filler = `<p>${"Fresh bread every morning. ".repeat(200)}</p>`;
+  const before = computeRules(rules + code);
+  const rule = (computed: ReturnType<typeof computeRules>) => effectiveRule(computed, null, null, "signups").rule;
+  const check = (html: string, label: string) => {
+    const computed = computeRules(html);
+    assert.ok(computed.bad, `the owner is told: ${label}`);
+    assert.equal(can(rule(computed), "add", ANYONE), false, label);
+    // Published over the version that had the block, sign-ups stay private.
+    assert.equal(rule(keepPrivate(computed, before)), "private", label);
+  };
+  // A code tag left in a comment, an attribute or a textarea, more than 4 KB above the real block.
+  for (const stray of [
+    `<!-- old: <script type="module" id="flash-data"> -->`,
+    `<div title='<script type="module" id="flash-data">'></div>`,
+    `<textarea><script id="flash-data" src="rules.js"></textarea>`,
+  ]) {
+    check(stray + filler + rules + code, stray);
+  }
+  // Rules written as code in a script over 4 KB long.
+  check(`<script type="module" id="flash-data">// app\n${"const a = 1;\n".repeat(400)}const RULES = {signups: "private", menu: "read"};</script>` + code, "long code");
+  // Long real code that happens to use the id is still skipped.
+  const app = `<script type="module" id="flash-data">${'flashDB.list("menu").then(show);\n'.repeat(200)}</script>` + code;
+  assert.equal(computeRules(app).block, undefined);
+});
+
 test("an update whose block Flash can't use keeps private what only the owner could see", () => {
   const before = computeRules(block(`{"signups":"private","menu":"read","reviews":"add"}`));
   // Nothing at all could be read: what was private stays so, the rest is read-only for visitors,
