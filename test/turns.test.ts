@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import type { UIMessage } from "../src/lib/store.ts";
 
 process.env.DATABASE_URL = ":memory:";
-const { PENDING_LIMIT_MS, changeMessages, cleanUserMessage, keepRunning, placeReply, placeTurn, requestTurn, saveReply, saveTurn, unfinished } = await import(
+const { PENDING_LIMIT_MS, changeMessages, cleanUserMessage, keepRunning, placeReply, placeTurn, requestTurn, saveCopy, saveReply, saveTurn, unfinished } = await import(
   "../src/lib/server/turns.ts"
 );
 const { one, run } = await import("../src/lib/server/db.ts");
@@ -208,7 +208,7 @@ test("a deleted chat or another user's isn't written", async () => {
 });
 
 // The browser's save as PUT /api/projects/[id] makes it: its copy, merged with what the server is working on.
-const pageSave = (id: string, messages: UIMessage[]) => changeMessages("u", id, (saved, name) => ({ messages: keepRunning(saved, messages), name }));
+const pageSave = (id: string, messages: UIMessage[]) => saveCopy("u", id, messages);
 
 test("a save from the page never replaces a reply the server is still working on (Share, a tab that gave up)", async () => {
   await project("k1", [user("u1"), answer("a1")], "Share");
@@ -265,6 +265,26 @@ test("a pending reply the server hasn't saved stays pending, so its answer can s
   const dead = { ...pending("r2"), pendingSince: at - PENDING_LIMIT_MS - 1 };
   assert.equal(keepRunning([user("u2"), dead], [user("u2"), answer("r2", "error copy")], at)[1].content, "error copy");
   assert.deepEqual(ids(keepRunning([user("u2"), dead], [], at)), [], "and isn't put back");
+});
+
+test("a copy can't keep a reply pending past its request's time, whatever time it gives", () => {
+  const at = Date.now();
+  const forever = { id: "r1", role: "assistant" as const, content: "", pending: true, pendingSince: at + 365 * 24 * 3600_000 };
+  const merged = keepRunning([user("u1")], [user("u1"), forever], at);
+  assert.equal(merged[1].pendingSince, at, "the server's clock");
+  assert.deepEqual(ids(keepRunning(merged, [], at + PENDING_LIMIT_MS + 1)), [], "and it isn't put back once that time is up");
+});
+
+test("saves from the page can't grow a chat past the size limit with replies it says are pending", async () => {
+  await project("big1", [], "Big");
+  const big = "x".repeat(400_000);
+  const batch = (tag: string) => Array.from({ length: 10 }, (_, i) => ({ ...pending(`${tag}${i}`), content: big }));
+  const results: string[] = [];
+  for (const tag of ["a", "b", "c", "d"]) results.push(await pageSave("big1", batch(tag)));
+  assert.deepEqual(results, ["saved", "too large", "too large", "too large"]);
+  const row = await one<{ messages: string }>("SELECT messages FROM projects WHERE id = 'big1'");
+  assert.ok(new TextEncoder().encode(row!.messages).length <= 4_400_000);
+  assert.equal(await pageSave("big1", []), "saved", "a copy that fits is still saved");
 });
 
 test("a chat made from a template is named after it, not its request", async () => {

@@ -1,6 +1,7 @@
 import type { UIMessage } from "../store.ts";
 import { ENGINES, PENDING_LIMIT_MS, type Engine } from "../types.ts";
 import { one, run, now } from "./db.ts";
+import { projectTooLarge } from "../project-size.ts";
 
 /*
  * The chat route saves each turn itself, so an answer is kept even when the page that asked for it
@@ -175,7 +176,8 @@ export function keepRunning(saved: UIMessage[], incoming: UIMessage[], at = now(
   const out = incoming.map((m) => {
     const kept = byId.get(m.id);
     if (kept && (running(kept, at) || m.pending)) return kept;
-    if (!kept && m.pending) return { ...m, pendingSince: m.pendingSince ?? at };
+    // The server's clock, never the copy's: a copy can't keep a reply pending for longer than its request's time.
+    if (!kept && m.pending) return { ...m, pendingSince: at };
     return m;
   });
   const have = new Set(out.map((m) => m.id));
@@ -197,6 +199,27 @@ export function keepRunning(saved: UIMessage[], incoming: UIMessage[], at = now(
     have.add(reply.id);
   });
   return out;
+}
+
+/**
+ * Saves a browser's copy of a chat (PUT /api/projects/[id]) with its name, keeping the server's copy
+ * of every reply a request is still working on (see keepRunning). "too large" when the chat as it
+ * would be saved, with those replies, is over the size limit; "not saved" when the chat is gone or
+ * never got its turn.
+ */
+export async function saveCopy(
+  userId: string,
+  projectId: string,
+  incoming: UIMessage[],
+  name?: string,
+): Promise<"saved" | "too large" | "not saved"> {
+  let tooLarge = false;
+  const saved = await changeMessages(userId, projectId, (messages, current) => {
+    const merged = keepRunning(messages, incoming);
+    tooLarge = projectTooLarge(JSON.stringify(merged));
+    return tooLarge ? null : { messages: merged, name: name ?? current };
+  });
+  return saved ? "saved" : tooLarge ? "too large" : "not saved";
 }
 
 /** Replies still pending long after their request's time ran out (see PENDING_LIMIT_MS), shown as not finished with note. */

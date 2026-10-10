@@ -3,7 +3,7 @@ import { one, run, now } from "@/lib/server/db.ts";
 import { cleanInstructions } from "@/lib/project-instructions.ts";
 import { translatorFor } from "@/lib/server/i18n.ts";
 import { PROJECT_TOO_LARGE, projectTooLarge } from "@/lib/project-size.ts";
-import { changeMessages, keepRunning, unfinished } from "@/lib/server/turns.ts";
+import { saveCopy, unfinished } from "@/lib/server/turns.ts";
 import type { UIMessage } from "@/lib/store.ts";
 
 export async function GET(request: Request, ctx: RouteContext<"/api/projects/[id]">) {
@@ -38,9 +38,11 @@ export async function PUT(request: Request, ctx: RouteContext<"/api/projects/[id
     if (projectTooLarge(json)) return Response.json({ error: t(PROJECT_TOO_LARGE) }, { status: 413 });
     const incoming = body.messages.filter((m): m is UIMessage => Boolean(m) && typeof m === "object");
     // Written only if nothing saved the chat since it was read, and never over a reply a request is
-    // still working on: that request saves it (see keepRunning in turns.ts).
-    const saved = await changeMessages(user.id, id, (messages, current) => ({ messages: keepRunning(messages, incoming), name: name ?? current }));
-    if (!saved) {
+    // still working on: that request saves it (see saveCopy in turns.ts). The chat as saved, with
+    // those replies, must fit too.
+    const saved = await saveCopy(user.id, id, incoming, name);
+    if (saved === "too large") return Response.json({ error: t(PROJECT_TOO_LARGE) }, { status: 413 });
+    if (saved === "not saved") {
       const found = await one("SELECT 1 FROM projects WHERE id = ? AND user_id = ?", [id, user.id]);
       return found
         ? Response.json({ error: t("Couldn't save your project.") }, { status: 409 })

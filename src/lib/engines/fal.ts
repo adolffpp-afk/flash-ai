@@ -7,6 +7,8 @@ const FAL_QUEUE = process.env.FAL_BASE_URL || "https://queue.fal.run";
 
 export const falConfigured = () => Boolean(process.env.FAL_KEY);
 const headers = () => ({ Authorization: `Key ${process.env.FAL_KEY}` });
+// How long a job fal took Stop's cancel for may still show in line before it counts as never run.
+const CANCEL_WAIT_MS = 30_000;
 
 /** Waits ms, or less when signal trips first. */
 const pause = (ms: number, signal?: AbortSignal) =>
@@ -74,37 +76,50 @@ export async function falRun(
   const deadline = end - reserveMs;
   let queued = true;
   let cancelAsked = false;
+  // When fal took Stop's cancel. It takes a job still in line out of the line, but one it picked up
+  // a moment before may still run, so the job is watched until fal shows which: one that runs is
+  // finished, delivered and charged as usual.
+  let cancelledAt = 0;
+  const cancel = (timeout?: number) =>
+    fetch(job.cancel_url!, { method: "PUT", headers: headers(), signal: timeout ? AbortSignal.timeout(timeout) : undefined }).catch(() => null);
   for (;;) {
     if (Date.now() > deadline || signal?.aborted) {
       // A job still in line can be cancelled; one already running will be billed anyway.
-      if (queued && job.cancel_url) await fetch(job.cancel_url, { method: "PUT", headers: headers() }).catch(() => {});
+      if (queued && job.cancel_url) await cancel();
       throw new JobAbandoned(msg("This is taking too long, so Flash stopped waiting. Please try again."), !queued);
     }
     const poll = await fetch(job.status_url, { headers: headers(), signal: AbortSignal.timeout(15_000) });
-    if (!poll.ok) throw await failure(poll);
+    // A cancelled job fal no longer has, or shows as anything but waiting, running or done, never ran.
+    if (!poll.ok) throw cancelledAt ? new JobStopped() : await failure(poll);
     const status = (await poll.json()) as { status: string; queue_position?: number };
     if (status.status === "COMPLETED") break;
+    if (cancelledAt && status.status !== "IN_QUEUE" && status.status !== "IN_PROGRESS") throw new JobStopped();
     queued = status.status === "IN_QUEUE";
-    // Stop while it waits in line, checked just now: fal takes it out of the line and never runs it.
-    // When the cancel isn't taken (it started meanwhile), it's finished as usual.
+    if (cancelledAt && queued && Date.now() - cancelledAt > CANCEL_WAIT_MS) {
+      // Still shown in line well after the cancel was taken: asked once more, and it never ran.
+      await cancel(15_000);
+      throw new JobStopped();
+    }
+    // Stop while it waits in line, checked just now. When the cancel isn't taken (it started
+    // meanwhile), it's finished as usual.
     if (stop?.aborted && queued && !cancelAsked && job.cancel_url) {
       cancelAsked = true;
-      const cancel = await fetch(job.cancel_url, { method: "PUT", headers: headers(), signal: AbortSignal.timeout(15_000) }).catch(() => null);
-      if (cancel?.ok) throw new JobStopped();
+      if ((await cancel(15_000))?.ok) cancelledAt = Date.now();
     }
     const position = queued ? (status.queue_position ?? 0) + 1 : null;
     onProgress(position === null ? "Working" : `In line (position ${position})`, { position });
     // Stop is acted on at once, while the job may still be in line.
-    await pause(queued ? 3000 : 1500, cancelAsked ? undefined : stop);
+    await pause(cancelledAt ? 1000 : queued ? 3000 : 1500, cancelAsked ? undefined : stop);
   }
 
-  // The job is finished and billed from here on, even if fetching the result fails.
+  // The job is finished and billed from here on, even if fetching the result fails, unless fal
+  // took Stop's cancel and has no result for it: then it never ran.
   try {
     const res = await fetch(job.response_url, { headers: headers(), signal: timeLeft(end) });
-    if (!res.ok) throw await failure(res);
+    if (!res.ok) throw cancelledAt && res.status >= 400 && res.status < 500 ? new JobStopped() : await failure(res);
     return { result: await res.json(), end };
   } catch (err) {
-    throw billed(err);
+    throw err instanceof JobStopped ? err : billed(err);
   }
 }
 
