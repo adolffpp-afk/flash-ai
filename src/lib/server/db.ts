@@ -312,8 +312,8 @@ const SCHEMA = [
     expires_at INTEGER NOT NULL,
     created_at INTEGER NOT NULL
   )`,
-  // Referral bonuses, one per referred friend, given on the friend's first real payment. The
-  // friend's bonus is credited at once; the referrer's waits until referrer_available_at and is
+  // Referral bonuses, one per referred friend, given on the friend's first real payment of a plan
+  // that counts (REFERRAL_EARNS in credits.ts; credit packs never do). The friend's bonus is credited at once; the referrer's waits until referrer_available_at and is
   // cancelled (cancelled_at) if that payment is refunded or disputed before then.
   `CREATE TABLE IF NOT EXISTS referral_rewards (
     friend_id TEXT PRIMARY KEY,

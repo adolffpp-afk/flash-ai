@@ -1,4 +1,4 @@
-import { REFERRAL_PENDING_DAYS, referralBonus } from "../credits.ts";
+import { REFERRAL_PENDING_DAYS, earnsReferral, referralBonus } from "../credits.ts";
 import { balance, type Purchase } from "./credits.ts";
 import { all, db, one, run, now } from "./db.ts";
 import { randomId } from "./ids.ts";
@@ -6,10 +6,12 @@ import { randomId } from "./ids.ts";
 /*
  * Referral links. A visitor who arrives on /?ref=<code> keeps the code in a cookie, and sign-up
  * records who referred them (once, never the same inbox). Nobody earns anything until the
- * friend's first real payment, so fake accounts are worth nothing. The friend's bonus comes at
- * once; the referrer's is pending for REFERRAL_PENDING_DAYS and becomes spendable only after that
+ * friend first pays for a plan (REFERRAL_EARNS says which plans and intervals count; credit packs
+ * never do), so fake accounts are worth nothing. The friend's bonus comes at once; the
+ * referrer's is pending for REFERRAL_PENDING_DAYS and becomes spendable only after that
  * (releaseReferralBonuses), so a refund or dispute in that time cancels it before it can be spent.
- * The rule and its numbers live in credits.ts (referralBonus), where the pricing tests check them.
+ * The rule and its numbers live in credits.ts (REFERRAL_EARNS, referralBonus), where the pricing
+ * tests check them.
  */
 export const REF_COOKIE = "flash_ref";
 /** Set-Cookie value that forgets the referral code once an account exists. */
@@ -39,19 +41,26 @@ const REFERRER_PREFIX = "referral:referrer:";
 const REFERRER_REF = (friendId: string) => `${REFERRER_PREFIX}${friendId}`;
 
 /**
- * Gives the referral bonuses if this purchase is the referred user's first real (Stripe)
- * payment: the friend's at once, the referrer's as a pending reward that
- * releaseReferralBonuses() credits after REFERRAL_PENDING_DAYS. Safe to run twice: one reward
- * per friend, and every ledger entry has a unique ref. Returns whether bonuses were given.
+ * Gives the referral bonuses if this purchase is the referred user's first real (Stripe) payment
+ * of a plan that counts (earnsReferral; credit packs never do, and packs bought before don't stop
+ * a later plan from earning): the friend's at once, the referrer's as a pending reward that
+ * releaseReferralBonuses() credits after REFERRAL_PENDING_DAYS. Renewals earn nothing more. Safe to
+ * run twice: one reward per friend, and every ledger entry has a unique ref. Returns whether
+ * bonuses were given.
  */
 export async function rewardReferral(purchaseRef: string, at = now()): Promise<boolean> {
-  const p = await one<{ user_id: string; credits: number; test: number; referred_by: string | null; first: number }>(
-    `SELECT p.user_id, p.credits, p.test, u.referred_by,
-       NOT EXISTS (SELECT 1 FROM purchases e WHERE e.user_id = p.user_id AND e.test = 0 AND e.id < p.id) AS first
+  const p = await one<{ id: number; user_id: string; pack: string; credits: number; test: number; referred_by: string | null }>(
+    `SELECT p.id, p.user_id, p.pack, p.credits, p.test, u.referred_by
      FROM purchases p JOIN users u ON u.id = p.user_id WHERE p.ref = ?`,
     [purchaseRef],
   );
-  if (!p || Number(p.test) || !Number(p.first) || !p.referred_by || p.referred_by === p.user_id) return false;
+  if (!p || Number(p.test) || !earnsReferral(p.pack) || !p.referred_by || p.referred_by === p.user_id) return false;
+  // Only the first payment that counts: a renewal, or a later plan, earns nothing.
+  const earlier = await all<{ pack: string }>("SELECT pack FROM purchases WHERE user_id = ? AND test = 0 AND id < ?", [
+    p.user_id,
+    p.id,
+  ]);
+  if (earlier.some((e) => earnsReferral(e.pack))) return false;
   if (!(await one("SELECT 1 FROM users WHERE id = ?", [p.referred_by]))) return false;
   const bonus = referralBonus(Number(p.credits));
   // The friend's bonus goes in only alongside this purchase's reward, in one transaction, and
@@ -67,7 +76,7 @@ export async function rewardReferral(purchaseRef: string, at = now()): Promise<b
       {
         sql: `INSERT OR IGNORE INTO credit_ledger (user_id, amount, reason, ref, created_at) SELECT ?, ?, ?, ?, ?
               WHERE EXISTS (SELECT 1 FROM referral_rewards WHERE friend_id = ? AND purchase_ref = ?)`,
-        args: [p.user_id, bonus.friend, "Referral bonus: extra credits on your first purchase", FRIEND_REF(p.user_id), at,
+        args: [p.user_id, bonus.friend, "Referral bonus: extra credits on your plan", FRIEND_REF(p.user_id), at,
           p.user_id, purchaseRef],
       },
     ],
@@ -94,7 +103,7 @@ export async function releaseReferralBonuses(referrerId: string, at = now()): Pr
     `INSERT OR IGNORE INTO credit_ledger (user_id, amount, reason, ref, created_at)
      SELECT referrer_id, referrer_credits, ?, ? || friend_id, ? FROM referral_rewards
      WHERE referrer_id = ? AND cancelled_at = 0 AND referrer_available_at <= ?`,
-    ["Referral bonus: a friend you invited made their first purchase", REFERRER_PREFIX, at, referrerId, at],
+    ["Referral bonus: a friend you invited subscribed to a plan", REFERRER_PREFIX, at, referrerId, at],
   );
   return r.rowsAffected;
 }
