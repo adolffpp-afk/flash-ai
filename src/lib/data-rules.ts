@@ -355,10 +355,10 @@ export function dataLine(data: DataSummary, shown = 8, t: Translate = english): 
   if (data.bad) said.push(blockProblem(data.bad, t));
   const exposed = data.exposed ?? [];
   if (exposed.length === 1) {
-    said.push(t("Visitors can now see {collection}, which only you could see before. To keep it private, choose Only you can see it for it in My websites & apps › Data.", { collection: exposed[0] }));
+    said.push(t("Visitors can now see {collection}, which only you could see before. To keep it private, choose ‘Only you can see it’ for it in My websites & apps › Data.", { collection: exposed[0] }));
   } else if (exposed.length > 1) {
     said.push(
-      t("Visitors can now see {collections}, which only you could see before. To keep them private, choose Only you can see it for them in My websites & apps › Data.", {
+      t("Visitors can now see {collections}, which only you could see before. To keep them private, choose ‘Only you can see it’ for them in My websites & apps › Data.", {
         collections: exposed.join(", "),
       }),
     );
