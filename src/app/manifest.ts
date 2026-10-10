@@ -13,10 +13,11 @@ export default function manifest(): MetadataRoute.Manifest {
     display: "standalone",
     background_color: BRAND.ink,
     theme_color: BRAND.ink,
+    // "?v=2" is a new address for the new logo, so phones and computers fetch it instead of keeping the old one.
     icons: [
-      { src: "/app-icon/192", sizes: "192x192", type: "image/png", purpose: "any" },
-      { src: "/app-icon/512", sizes: "512x512", type: "image/png", purpose: "any" },
-      { src: "/app-icon/maskable", sizes: "512x512", type: "image/png", purpose: "maskable" },
+      { src: "/app-icon/192?v=2", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/app-icon/512?v=2", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "/app-icon/maskable?v=2", sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
   };
 }

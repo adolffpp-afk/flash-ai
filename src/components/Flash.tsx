@@ -1791,7 +1791,7 @@ export function Flash({
         <div className="flex items-start justify-between px-5 pb-1 pt-6">
           <button onClick={goHome} className="flex items-center gap-2 text-left" aria-label={t("Flash AI, home")}>
             <span className="-ml-1 [filter:drop-shadow(0_4px_10px_rgb(91_140_246/0.35))]">
-              <BrandMark size={56} id="flash-side" ring={false} vivid />
+              <BrandMark size={56} id="flash-side" />
             </span>
             <span className="min-w-0">
               <span className="block whitespace-nowrap text-[28px] font-bold leading-none tracking-tight text-white">
@@ -1990,7 +1990,7 @@ export function Flash({
           {isHome ? (
             <>
               <button onClick={goHome} className="shrink-0 md:hidden" aria-label={t("Flash AI, home")}>
-                <BrandMark size={32} id="flash-top" ring={false} />
+                <BrandMark size={32} id="flash-top" />
               </button>
               <div ref={searchBoxRef} className="relative hidden min-w-0 max-w-2xl flex-[3] md:block @min-[1100px]/main:max-w-[760px]">
                 <Icon d={ICONS.search} className="pointer-events-none absolute left-4 top-1/2 z-10 h-5 w-5 -translate-y-1/2 text-zinc-400" />

@@ -132,7 +132,7 @@ export function InstallPopup() {
         >
           <div className="flex items-start gap-3">
             <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-zinc-900 ring-1 ring-white/10">
-              <BrandMark size={34} id="flash-install" ring={false} />
+              <BrandMark size={34} id="flash-install" />
             </span>
             <div className="min-w-0 flex-1">
               <p className="text-[15px] font-semibold">{t("Install Flash AI")}</p>
