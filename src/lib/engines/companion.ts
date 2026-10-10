@@ -3,28 +3,16 @@ import { ROUTER_MODEL, getClient, type Meter } from "./claude.ts";
 import { COMPANION_MAX_TOKENS, COMPANION_STEPS, COMPANION_TOOL_TOKENS, claudeCostCents, companionStepCents } from "../credits.ts";
 import { COMPANION_PAGES, type CompanionAction, type CompanionEvent, type CompanionTurn } from "../companion.ts";
 import { english, type Translate } from "../i18n.ts";
+import { tokensAtMost } from "../tokens.ts";
+
+// Moved to tokens.ts; still exported here for the code and tests that import it from the companion.
+export { tokensAtMost };
 
 // The companion answers on Haiku: quick, and a typical answer costs about 2 credits.
 export const COMPANION_MODEL = process.env.FLASH_COMPANION_MODEL || ROUTER_MODEL;
 
 // A tool's answer is cut to about COMPANION_TOOL_TOKENS, as the hold assumes.
 const MAX_TOOL_CHARS = COMPANION_TOOL_TOKENS * 2;
-
-/**
- * Tokens a text can take at most, without asking Claude: about 2.5 English characters a token,
- * and a whole token for every byte of anything else (Chinese or Arabic text, emoji), since a
- * token never covers less than a byte. Used when counting fails, and for tool answers.
- */
-export function tokensAtMost(text: string): number {
-  let ascii = 0;
-  let other = 0;
-  for (const ch of text) {
-    const code = ch.codePointAt(0) ?? 0;
-    if (code < 0x80) ascii++;
-    else other += code < 0x800 ? 2 : code < 0x10000 ? 3 : 4;
-  }
-  return Math.ceil(ascii / 2.5) + other;
-}
 
 export const COMPANION_TOOLS: Anthropic.Tool[] = [
   {
