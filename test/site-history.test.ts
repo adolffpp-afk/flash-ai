@@ -26,13 +26,13 @@ test("updating a site keeps the version it replaces, and it can come back", asyn
   await publishSite(stranger, { html: "<p>evil</p>", title: "X", slug });
   assert.equal((await listVersions(slug)).length, 1);
 
-  assert.equal(await restoreVersion("u1", slug, versions[0].id), true);
+  assert.deepEqual(await restoreVersion("u1", slug, versions[0].id), { slug, url: `/p/${slug}`, data: { collections: [], other: "read" } });
   assert.equal(await live(slug), "<p>v1</p>");
   const after = await listVersions(slug);
   assert.equal(after.length, 1, "v1 is live, so only the replaced v2 is listed");
   assert.equal(await versionHtml(slug, after[0].id), "<p>v2</p>", "so the restore can be undone");
-  assert.equal(await restoreVersion("u2", slug, after[0].id), false, "only the owner");
-  assert.equal(await restoreVersion("u1", slug, "nope"), false);
+  assert.equal(await restoreVersion("u2", slug, after[0].id), null, "only the owner");
+  assert.equal(await restoreVersion("u1", slug, "nope"), null);
 
   for (let i = 3; i < 20; i++) await publishSite(owner, { html: `<p>v${i}</p>`, title: "Crumb", slug });
   const kept = await listVersions(slug);
