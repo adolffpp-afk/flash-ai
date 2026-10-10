@@ -1,7 +1,10 @@
 import { one } from "./db.ts";
-import { flashDbShim, injectHead, type Visitor } from "../flashdb-shim.ts";
+import { OWNER_CODE_PARAM, flashDbShim, injectHead, type OwnerView, type Visitor } from "../flashdb-shim.ts";
 import { SITE_COOKIE, newPageToken, visitorForSession } from "./site-auth.ts";
 import { readCookie } from "./auth.ts";
+import { ownerKeyForCode } from "./site-owner.ts";
+import { translatorFor } from "./i18n.ts";
+import { isOwnHost } from "../site-host.ts";
 import { hasOwnPreview, previewTags, sitePreview } from "../site-preview.ts";
 import { SITE_URL } from "../../app/site.ts";
 
@@ -33,6 +36,11 @@ export async function serveSite(slug: string | null, pageUrl?: string, request?:
   const session = request ? readCookie(request, SITE_COOKIE) : null;
   const who = await visitorForSession(slug, session);
   if (who && session) visitor = { user: who, token: await newPageToken(who.id, slug, session) };
+  // Owner mode, when the owner chose Open as owner in Flash: the one-time code in the address
+  // becomes a key to change the app's shared data from the app itself (see site-owner.ts), here or
+  // on the app's own domain. Opening the app any other way, even signed in to Flash, shows it as
+  // visitors see it.
+  const owner = request ? await ownerView(slug, request) : null;
 
   const html = injectHead(site.html, card + flashDbShim(
     `/api/sites/${slug}/data`,
@@ -45,14 +53,53 @@ export async function serveSite(slug: string | null, pageUrl?: string, request?:
     visitor,
     `/api/sites/${slug}/ai`,
     `/api/sites/${slug}/files`,
+    owner,
   ));
   return new Response(html, {
     headers: {
       "Content-Type": "text/html; charset=utf-8",
       "Content-Security-Policy": SANDBOX_CSP,
       "X-Content-Type-Options": "nosniff",
-      // Never kept by a shared cache: the page says who is signed in.
+      // Never kept by a shared cache: the page says who is signed in, and may hold the owner's key.
       "Cache-Control": "no-store, private",
     },
   });
+}
+
+/**
+ * The owner's key for this page and what the page tells them, when its address carries a one-time
+ * code from Flash's Open as owner; null without one. A code that doesn't work (used already, too
+ * old) leaves the page as visitors see it, and says so.
+ */
+async function ownerView(slug: string, request: Request): Promise<OwnerView> {
+  const code = new URL(request.url).searchParams.get(OWNER_CODE_PARAM);
+  if (!code) return null;
+  try {
+    // On Flash's own address the code only ever comes from Flash's own page (or the address typed
+    // in), never from a link on another site. The app's own domain is always another site to Flash.
+    const host = (request.headers.get("host") ?? "").replace(/:\d+$/, "").toLowerCase();
+    const from = request.headers.get("sec-fetch-site");
+    const own = isOwnHost(host);
+    const elsewhere = own && from !== null && from !== "same-origin" && from !== "none";
+    // A code works only at the address it was made for: Flash's own (""), or that one domain.
+    const made = elsewhere ? null : await ownerKeyForCode(slug, code, own ? "" : host);
+    // What the page tells the owner is in Flash's language for them.
+    const t = await translatorFor(request, made?.language);
+    if (!made) {
+      return {
+        key: "",
+        note: t("This owner link has been used already or is too old, so you see the app as visitors do. Choose Open as owner in Flash › My websites & apps again."),
+        ended: "",
+      };
+    }
+    return {
+      key: made.key,
+      note: t("Owner view: you can change this app's data here until you reload or close this page. Visitors can only do what you allow in Flash › My websites & apps › Data."),
+      ended: t("Your owner view has ended. Choose Open as owner in Flash › My websites & apps to keep changing this app's data."),
+    };
+  } catch (err) {
+    // The page still works, just without owner mode.
+    console.error("[flash] owner key failed", err);
+    return null;
+  }
 }
