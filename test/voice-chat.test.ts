@@ -204,6 +204,12 @@ test("languages written without spaces: an answer runs into the next word, but a
   // 好吗 ("okay?") and 好的但是太贵了 ("okay but it's too expensive") ask again; 对不起 ("sorry") and 不错 ("not bad") hold neither 对 nor 不.
   for (const u of ["好吗", "好的，但是太贵了"]) assert.equal(confirmReply(u, zh), "unsure", u);
   for (const r of ["对不起", "不错", "好的，我想把这张图片改成蓝色的天空，再加上几只飞翔的小鸟和一道彩虹"]) assert.equal(confirmReply(r, zh), null, r);
+  // Traditional Chinese: 對不起 ("sorry"), 不錯 ("not bad") and 好像 ("it seems") hold no answer either.
+  const hant = { yes: "是, 是的, 好, 好的, 好啊, 可以, 沒問題, 對, 繼續, 開始吧", no: "不, 不要, 不用, 不用了, 算了, 先不要" };
+  for (const y of ["好啊", "沒問題", "對", "好的開始吧"]) assert.equal(confirmReply(y, hant), "yes", y);
+  for (const n of ["算了吧", "先不要", "不用了，謝謝"]) assert.equal(confirmReply(n, hant), "no", n);
+  assert.equal(confirmReply("好的，但是太貴了", hant), "unsure");
+  for (const r of ["對不起", "不錯", "好像太貴了"]) assert.equal(confirmReply(r, hant), null, r);
   const th = { yes: "ใช่, ได้, ได้เลย, โอเค, เอาเลย", no: "ไม่, ยกเลิก" };
   for (const y of ["ได้เลยครับ", "โอเคครับเอาเลย"]) assert.equal(confirmReply(y, th), "yes", y);
   assert.equal(confirmReply("ไม่ครับ", th), "no");
