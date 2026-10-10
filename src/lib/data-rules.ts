@@ -158,10 +158,24 @@ function looseJson(text: string): unknown {
   return JSON.parse(out);
 }
 
+const NOT_JSON = Symbol("not JSON");
+/** What a block holds, with the slips people make by hand forgiven (see looseJson), or NOT_JSON. */
+function readJson(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    try {
+      return looseJson(text);
+    } catch {
+      return NOT_JSON;
+    }
+  }
+}
+
 type Block = { found: false } | { found: true; value: Record<string, unknown> } | { found: true; problem: Exclude<BlockProblem, "entries"> };
 
 // Types a browser runs as code (or Babel does, in the page). A script with one of them, or with a src
-// and no type, is code that happens to use the id, not rules.
+// and no type, is code that happens to use the id, unless it holds JSON.
 const CODE_TYPE = /^(module|text\/(babel|jsx|typescript)|(text|application)\/(x-)?(java|ecma|j|live)script[\d.]*)$/;
 const isCode = (attributes: string) => {
   const type = (attributes.match(/(?:^|\s)type\s*=\s*["']?([^\s"'>]*)/i)?.[1] ?? "").split(";")[0].toLowerCase();
@@ -188,24 +202,18 @@ function dataBlock(html: string): Block {
   // Each tag is read only up to its first 300 characters, so a page of any shape is read quickly.
   const tags = /<script\b([^<>]{0,300})>/gi;
   for (let tag; (tag = tags.exec(html)); ) {
-    if (!/(?:^|\s)id\s*=\s*(["']?)flash-data\1(?:\s|\/|$)/i.test(tag[1]) || isCode(tag[1])) continue;
+    if (!/(?:^|\s)id\s*=\s*(["']?)flash-data\1(?:\s|\/|$)/i.test(tag[1])) continue;
     const start = tag.index + tag[0].length;
     const close = /<\/script/gi;
     close.lastIndex = start;
     const end = close.exec(html)?.index ?? -1;
+    const text = end === -1 || end - start > MAX_BLOCK_CHARS ? null : html.slice(start, end);
+    const value = text === null ? NOT_JSON : readJson(text);
+    // Code that happens to use the id is skipped, but not rules put in a tag meant for code.
+    if (value === NOT_JSON && isCode(tag[1])) continue;
     if (end === -1) return { found: true, problem: "unclosed" };
-    if (end - start > MAX_BLOCK_CHARS) return { found: true, problem: "long" };
-    const text = html.slice(start, end);
-    let value: unknown;
-    try {
-      value = JSON.parse(text);
-    } catch {
-      try {
-        value = looseJson(text);
-      } catch {
-        return { found: true, problem: "json" };
-      }
-    }
+    if (text === null) return { found: true, problem: "long" };
+    if (value === NOT_JSON) return { found: true, problem: "json" };
     if (appsOwnData(value)) {
       // Not rules: the next block is looked for after this one.
       tags.lastIndex = end;
@@ -281,7 +289,11 @@ export function parseComputed(text: string | null | undefined): ComputedRules | 
   }
 }
 
-/** The rule that applies: the owner's choice, then the app's, then the owner's default, then the app's default or the guess. */
+/**
+ * The rule that applies: the owner's choice, then the app's, then the owner's default, then the
+ * app's default or the guess. A rule Flash put in for the app because it couldn't use that part of
+ * its block gives way to the owner's default when that is "Only you can see it".
+ */
 export function effectiveRule(
   computed: ComputedRules,
   chosen: string | null | undefined,
@@ -290,7 +302,8 @@ export function effectiveRule(
 ): { rule: DataRule; source: RuleSource } {
   if (isDataRule(chosen)) return { rule: chosen, source: "you" };
   const declared = Object.hasOwn(computed.app, collection) ? computed.app[collection] : undefined;
-  if (declared) return { rule: declared, source: "app" };
+  const unusable = computed.bad && (computed.bad.why !== "entries" || computed.bad.names.includes(collection));
+  if (declared && !(unusable && fallback === "private")) return { rule: declared, source: "app" };
   if (isDataRule(fallback)) return { rule: fallback, source: "default" };
   return { rule: computed.guess, source: computed.block ? "block" : "guess" };
 }

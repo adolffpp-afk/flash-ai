@@ -183,10 +183,12 @@ test("a block written another way never lets visitors see what it marks as priva
     app: { signups: "private", menu: "read" },
     block: true,
   });
-  // Only real code that happens to use the id is skipped.
+  // Only real code that happens to use the id is skipped: rules in a tag meant for code are still rules.
   for (const attrs of ['type="text/javascript" id="flash-data"', 'type="module" id="flash-data"', 'type="text/babel" id="flash-data"', 'id="flash-data" src="/rules.js"']) {
-    assert.equal(computeRules(block(`{"signups":"private"}`, attrs) + code).block, undefined, attrs);
+    assert.equal(computeRules(block(`flashDB.list("menu").then(show)`, attrs) + code).block, undefined, attrs);
+    assert.deepEqual(computeRules(block(`{"signups":"private"}`, attrs) + code).app, { signups: "private" }, attrs);
   }
+  assert.equal(computeRules(block(`const x = 1;`.repeat(500), 'type="module" id="flash-data"') + code).block, undefined, "however long");
 
   // Shapes Flash can't use leave what they name, and everything else, read-only for visitors, so no
   // sign-up can be added for them to see, and the owner is told.
@@ -239,6 +241,11 @@ test("an update whose block Flash can't use keeps private what only the owner co
   assert.deepEqual([lost.guess, lost.app], ["private", { menu: "read" }]);
   const typo = keepPrivate(computeRules(block(`{"*":"Privat","menu":"read"}`)), starred);
   assert.deepEqual([typo.guess, typo.app, typo.bad], ["private", { menu: "read" }, { why: "entries", names: ["*"] }]);
+  // The owner's own "Only you can see it" for anything else covers what Flash couldn't use, too.
+  const typoed = computeRules(block(`{"signups":"privat","menu":"read"}`));
+  assert.deepEqual(effectiveRule(typoed, null, "private", "signups"), { rule: "private", source: "default" });
+  assert.deepEqual(effectiveRule(typoed, null, "private", "menu"), { rule: "read", source: "app" });
+  assert.deepEqual(effectiveRule(typoed, null, "open", "signups"), { rule: "read", source: "app" }, "never more open");
   // Never more open, and nothing changes on a first publish or for a block Flash could use.
   assert.deepEqual(keepPrivate(computeRules(block(`{oops`)), null), computeRules(block(`{oops`)));
   const fine = computeRules(block(`{"menu":"read"}`));
