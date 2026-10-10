@@ -2,13 +2,16 @@
  * How long a recording really is, read from the file itself, so transcription is priced on the
  * audio a provider will hear rather than on its size: Opus can fit an hour into less than a
  * megabyte. Reads Opus in Ogg (what Firefox records) and in WebM (Chrome), counting every packet's
- * length from its first byte as a decoder would (RFC 6716 §3.1), and PCM WAV from its header.
- * Every guess leans long, so a forged file is never priced as shorter than what a decoder plays.
+ * length from its first byte as a decoder would (RFC 6716 §3.1), Vorbis in Ogg (each packet as the
+ * longest it can play), and PCM WAV from its header; MP3, AAC (raw, or in M4A, MP4 or MOV) and FLAC
+ * are read in audio-codecs.ts. Every guess leans long, so a forged file is never priced as shorter
+ * than what a decoder plays. Anything else isn't measured, and isn't transcribed.
  *
  * Players differ on broken files (one skips a page whose checksum is wrong and finds pages hidden
  * inside it, another plays it), so what is measured is also what is sent: measureAudio makes a
  * clean copy holding exactly the sound it counted, and only that copy goes to the transcriber.
  */
+import { adtsLength, afterId3, flacLength, isIsoMedia, mp4Length, mpegFrame, mpegLength } from "./audio-codecs.ts";
 
 /** A recording's length in seconds. */
 export type AudioLength = {
@@ -19,13 +22,23 @@ export type AudioLength = {
 };
 
 /** A recording Flash measured, and a copy of it with exactly the sound measured, to send on instead. */
-export type MeasuredAudio = { length: AudioLength; file: { data: Buffer; mediaType: "audio/ogg" | "audio/wav"; extension: "ogg" | "wav" } };
+export type MeasuredAudio = {
+  length: AudioLength;
+  file: {
+    data: Buffer;
+    mediaType: "audio/ogg" | "audio/wav" | "audio/mpeg" | "audio/mp4" | "audio/flac";
+    extension: "ogg" | "wav" | "mp3" | "m4a" | "flac";
+  };
+};
 
 // Opus counts time in samples at 48 kHz whatever it was recorded at.
 const OPUS_RATE = 48_000;
 // No Opus packet plays longer than 120 ms (RFC 6716 §3.2.5). A packet that's empty or claims more
 // is counted as this much, the most a decoder could fill with guessed sound.
 const MAX_PACKET_SAMPLES = 5760;
+// More Opus or Vorbis packets than this in a file of a few megabytes is a forged one (6 kbps Opus,
+// the least there is, fills 3 MB with about 200,000), and isn't measured: each packet takes memory.
+export const MAX_PACKETS = 400_000;
 
 /**
  * How many samples (at 48 kHz) an Opus packet plays, from its TOC byte: the configuration gives each
@@ -48,18 +61,28 @@ const u16 = (data: Uint8Array, at: number) => data[at] | (data[at + 1] << 8);
 const u32 = (data: Uint8Array, at: number) => (data[at] | (data[at + 1] << 8) | (data[at + 2] << 16)) + data[at + 3] * 0x1000000;
 
 /**
- * An Opus recording in Ogg or WebM, or a plain WAV: its length, and a clean copy of it (Opus in Ogg,
- * or WAV) holding exactly the sound counted. null when the file is something else (another codec,
- * another container) or can't be read.
+ * A recording Flash can measure: Opus or Vorbis in Ogg, Opus in WebM, a plain WAV, MP3, AAC (raw, or
+ * in M4A, MP4 or MOV) or FLAC. Its length, and a clean copy of it holding exactly the sound counted.
+ * null when the file is something else (another codec, another container) or can't be read. What
+ * kind of file it is comes from its own bytes, never from the type the browser says it is.
  */
 export function measureAudio(data: Uint8Array): MeasuredAudio | null {
   if (ascii(data, 0, "OggS")) return oggLength(data);
   if (data[0] === 0x1a && data[1] === 0x45 && data[2] === 0xdf && data[3] === 0xa3) return webmLength(data);
   if ((ascii(data, 0, "RIFF") || ascii(data, 0, "RF64") || ascii(data, 0, "BW64")) && ascii(data, 8, "WAVE")) return wavLength(data);
+  if (isIsoMedia(data)) return mp4Length(data);
+  // MP3, raw AAC and FLAC can start with ID3 tags, and MP3 and AAC with a little junk before the first frame.
+  const start = afterId3(data);
+  if (ascii(data, start, "fLaC")) return flacLength(data);
+  for (let at = start; at + 4 <= data.length && at < start + 4096; at++) {
+    if (data[at] !== 0xff) continue;
+    if ((data[at + 1] & 0xf6) === 0xf0) return adtsLength(data);
+    if (mpegFrame(data, at)) return mpegLength(data);
+  }
   return null;
 }
 
-/** The length of an Opus recording in Ogg, WebM or a PCM WAV, or null (see measureAudio). */
+/** The length of a recording Flash can measure, or null (see measureAudio). */
 export const audioLength = (data: Uint8Array): AudioLength | null => measureAudio(data)?.length ?? null;
 
 /** The most seconds a provider can bill for a recording: what it plays or says it lasts, whichever is longer. */
@@ -68,7 +91,20 @@ export const billableSeconds = (length: AudioLength) => Math.max(length.decoded,
 /** One stream of Opus sound: its identification header, its comment header if it had one, and its packets. */
 type OpusTrack = { head: Uint8Array; tags?: Uint8Array; packets: Uint8Array[] };
 
-type OggStream = { track: OpusTrack | null; packets: number; granule: number; preSkip: number; partial: Uint8Array[] | null };
+/**
+ * One stream of Vorbis sound: its three headers, its rate, its long block size, and its audio
+ * packets. A packet plays at most half a long block, which is what each is counted as.
+ */
+type VorbisTrack = { headers: Uint8Array[]; rate: number; long: number; packets: Uint8Array[] };
+
+type OggStream = {
+  track: OpusTrack | null;
+  vorbis: VorbisTrack | null;
+  packets: number;
+  granule: number;
+  preSkip: number;
+  partial: Uint8Array[] | null;
+};
 
 /*
  * Ogg: pages of packets, each page with its stream's serial number and the stream's position in
@@ -78,6 +114,7 @@ type OggStream = { track: OpusTrack | null; packets: number; granule: number; pr
 function oggLength(data: Uint8Array): MeasuredAudio | null {
   const streams = new Map<number, OggStream>();
   let at = 0;
+  let count = 0;
   while (at + 27 <= data.length) {
     if (!ascii(data, at, "OggS") || data[at + 4] !== 0) {
       const next = indexOf(data, OGGS, at + 1);
@@ -100,7 +137,7 @@ function oggLength(data: Uint8Array): MeasuredAudio | null {
     if (!stream) {
       // A stream must open with its first page; one that doesn't can't be told apart from noise.
       if (!(flags & 2)) return null;
-      stream = { track: null, packets: 0, granule: 0, preSkip: 0, partial: null };
+      stream = { track: null, vorbis: null, packets: 0, granule: 0, preSkip: 0, partial: null };
       streams.set(serial, stream);
     }
     // Packets on this page: a lacing value of 255 carries on into the next one, anything less ends
@@ -122,18 +159,27 @@ function oggLength(data: Uint8Array): MeasuredAudio | null {
       }
       const whole = stream.partial ? concat([...stream.partial, piece]) : piece;
       stream.partial = null;
-      if (!packet(stream, whole)) return null;
+      if (++count > MAX_PACKETS || !packet(stream, whole)) return null;
     }
-    if (start < offset && !skipping) stream.partial = [...(stream.partial ?? []), data.subarray(start, offset)];
+    if (start < offset && !skipping) (stream.partial ??= []).push(data.subarray(start, offset));
     // A granule of all ones means no packet ends on this page.
     if (!(granuleLow === 0xffffffff && granuleHigh === 0xffffffff)) {
       stream.granule = Math.max(stream.granule, granuleHigh * 0x100000000 + granuleLow);
     }
     at = offset;
   }
-  // A file with no Opus in it isn't a recording Flash can measure.
+  // A file with no Opus or Vorbis in it isn't a recording Flash can measure, nor is one with both.
   const opus = [...streams.values()].filter((s) => s.track);
-  if (!opus.length) return null;
+  const vorbis = [...streams.values()].filter((s) => s.vorbis);
+  if (opus.length ? vorbis.length : !vorbis.length) return null;
+  if (vorbis.length) {
+    // Each stream's three headers are needed to play it.
+    if (vorbis.some((s) => s.vorbis!.headers.length < 3)) return null;
+    return vorbisMeasured(
+      vorbis.map((s) => s.vorbis!),
+      vorbis.reduce((sum, s) => sum + s.granule / s.vorbis!.rate, 0),
+    );
+  }
   let declared = 0;
   for (const s of opus) declared += Math.max(0, s.granule - s.preSkip);
   return measured(
@@ -157,7 +203,25 @@ function packet(stream: OggStream, bytes: Uint8Array): boolean {
       stream.preSkip = bytes.length >= 12 ? u16(bytes, 10) : 0;
       return true;
     }
+    if (ascii(bytes, 0, "\x01vorbis")) {
+      // Vorbis I: version 0, its channels and rate, and its short and long block sizes (64 to 8192 samples).
+      const short = bytes[28] & 15;
+      const long = bytes[28] >> 4;
+      if (bytes.length < 30 || u32(bytes, 7) !== 0 || !bytes[11] || !u32(bytes, 12) || short < 6 || long > 13 || short > long || !(bytes[29] & 1)) return false;
+      stream.vorbis = { headers: [bytes], rate: u32(bytes, 12), long: 1 << long, packets: [] };
+      return true;
+    }
     return SILENT_CODECS.some((magic) => ascii(bytes, 0, magic));
+  }
+  if (stream.vorbis) {
+    // The comment and setup headers come next, in that order; after them, only audio packets (the
+    // first bit clear) are played.
+    const { headers, packets } = stream.vorbis;
+    if (headers.length < 3) {
+      if (!ascii(bytes, 0, headers.length === 1 ? "\x03vorbis" : "\x05vorbis")) return false;
+      headers.push(bytes);
+    } else if (bytes.length && !(bytes[0] & 1)) packets.push(bytes);
+    return true;
   }
   if (!stream.track) return true;
   // The second Opus packet holds tags; every other is sound.
@@ -234,6 +298,7 @@ type WebmBlock = { track: number; time: number; frames: Uint8Array[]; duration: 
 function webmLength(data: Uint8Array): MeasuredAudio | null {
   const tracks: WebmTrack[] = [];
   const blocks: WebmBlock[] = [];
+  let frames = 0;
   let scale = 1_000_000;
   let infoDuration = 0;
   let clusterTime = 0;
@@ -301,6 +366,8 @@ function webmLength(data: Uint8Array): MeasuredAudio | null {
         // A block cut off at the end of the file is never played; any other that can't be read is a forged file.
         if (!block && end > data.length) break;
         if (!block) return null;
+        frames += block.frames.length;
+        if (frames > MAX_PACKETS) return null;
         blocks.push(block);
         if (id.value === BLOCK && at < groupEnd) group = block;
         break;
@@ -451,10 +518,18 @@ function wavFile(format: { tag: number; channels: number; rate: number; bits: nu
 /** How long the Opus streams play, and the clean copy that plays just that. declared: what the file claimed. */
 function measured(tracks: OpusTrack[], declared: number): MeasuredAudio {
   const samples = tracks.reduce((sum, t) => sum + t.packets.reduce((s, p) => s + opusPacketSamples(p), 0), 0);
+  const streams = tracks.map((t, i) => oggStream([t.head, t.tags ?? OPUS_TAGS], t.packets, opusPacketSamples, t.head.length >= 12 ? u16(t.head, 10) : 0, i + 1));
   return {
     length: { decoded: samples / OPUS_RATE, declared },
-    file: { data: Buffer.concat(tracks.map((t, i) => oggStream(t, i + 1))), mediaType: "audio/ogg", extension: "ogg" },
+    file: { data: Buffer.concat(streams), mediaType: "audio/ogg", extension: "ogg" },
   };
+}
+
+/** How long the Vorbis streams can play at most, and the clean copy holding just their packets. declared: what the file claimed. */
+function vorbisMeasured(tracks: VorbisTrack[], declared: number): MeasuredAudio {
+  const decoded = tracks.reduce((sum, t) => sum + (t.packets.length * t.long) / 2 / t.rate, 0);
+  const streams = tracks.map((t, i) => oggStream(t.headers, t.packets, () => t.long / 2, 0, i + 1));
+  return { length: { decoded, declared }, file: { data: Buffer.concat(streams), mediaType: "audio/ogg", extension: "ogg" } };
 }
 
 /** Opus's identification header for a stream that came without one: no pre-skip, one or two channels. */
@@ -477,38 +552,44 @@ const OPUS_TAGS = (() => {
   return tags;
 })();
 
-/** One Opus stream in Ogg: its two headers on pages of their own, then its packets. */
-function oggStream(track: OpusTrack, serial: number): Buffer {
-  const preSkip = track.head.length >= 12 ? u16(track.head, 10) : 0;
-  const pages = [oggPage([track.head], serial, 0, 2, 0, false), oggPage([track.tags ?? OPUS_TAGS], serial, 1, 0, 0, false)];
-  let position = preSkip;
-  let packets: Uint8Array[] = [];
+/**
+ * One stream in Ogg: its headers, each on pages of its own (the first opening the stream), then its
+ * packets, with granule positions from start counting samplesOf each packet.
+ */
+function oggStream(headers: Uint8Array[], packets: Uint8Array[], samplesOf: (packet: Uint8Array) => number, start: number, serial: number): Buffer {
+  const pages: Buffer[] = [];
+  const page = (list: Uint8Array[], flags: number, granule: number, open = false) =>
+    pages.push(oggPage(list, serial, pages.length, (pages.length ? 0 : 2) | flags, granule, open));
+  let position = start;
+  let batch: Uint8Array[] = [];
   let laces = 0;
-  // A page holds up to 255 lacing values; a longer packet goes on into the pages after.
-  const flush = (last: boolean) => {
-    pages.push(oggPage(packets, serial, pages.length, last ? 4 : 0, position, false));
-    packets = [];
+  const flush = (last: boolean, granule: number) => {
+    page(batch, last ? 4 : 0, granule);
+    batch = [];
     laces = 0;
   };
-  for (const p of track.packets) {
+  // A page holds up to 255 lacing values; a longer packet goes on into the pages after.
+  [...headers, ...packets].forEach((p, i) => {
+    const header = i < headers.length;
     const need = Math.floor(p.length / 255) + 1;
-    if (laces && laces + need > 255) flush(false);
+    if (laces && laces + need > 255) flush(false, position);
+    if (!header) position += samplesOf(p);
     if (need > 255) {
       // Only a packet bigger than a page: its first pieces fill pages of their own.
       let rest = p;
       while (Math.floor(rest.length / 255) + 1 > 255) {
-        pages.push(oggPage([rest.subarray(0, 255 * 255)], serial, pages.length, rest === p ? 0 : 1, -1, true));
+        page([rest.subarray(0, 255 * 255)], rest === p ? 0 : 1, -1, true);
         rest = rest.subarray(255 * 255);
       }
-      position += opusPacketSamples(p);
-      pages.push(oggPage([rest], serial, pages.length, 1, position, false));
-      continue;
+      page([rest], 1, header ? 0 : position);
+      return;
     }
-    packets.push(p);
+    batch.push(p);
     laces += need;
-    position += opusPacketSamples(p);
-  }
-  flush(true);
+    // Headers end their pages, at position 0.
+    if (header) flush(false, 0);
+  });
+  flush(true, position);
   return Buffer.concat(pages);
 }
 

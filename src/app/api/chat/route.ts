@@ -45,7 +45,6 @@ import {
   type FreeLane,
 } from "@/lib/engines/free.ts";
 import {
-  AUDIO_SECONDS_RESERVE,
   countryOf,
   freeAudioFailed,
   recordFree,
@@ -56,7 +55,7 @@ import {
   reserveFreeImage,
   reserveFreeUser,
 } from "@/lib/server/free.ts";
-import { billableSeconds, measureAudio } from "@/lib/server/audio-length.ts";
+import { billableSeconds, measureAudio, type MeasuredAudio } from "@/lib/server/audio-length.ts";
 import { isVerified } from "@/lib/server/account.ts";
 import {
   composeMusic,
@@ -226,20 +225,29 @@ const transcript = (name: string, text: string, t: Translate) =>
 /** The bytes in a base64 attachment. */
 const attachmentBytes = (a: { data: string }) => (a.data.length * 3) / 4;
 
-/** How long a recording plays, when Flash can measure it (see audio-length.ts); 0 when it can't. */
+// Each attachment is measured once, however often it's priced and sent.
+const measuredFiles = new WeakMap<{ data: string }, MeasuredAudio | null>();
+
+/** A recording measured (see audio-length.ts), or null when Flash can't read how long it plays. */
+function measured(a: { data: string }): MeasuredAudio | null {
+  if (!measuredFiles.has(a)) measuredFiles.set(a, measureAudio(Buffer.from(a.data, "base64")));
+  return measuredFiles.get(a)!;
+}
+
+/** How long a recording plays, when Flash can measure it; 0 when it can't. */
 function recordingSeconds(a: { data: string }): number {
-  const measured = measureAudio(Buffer.from(a.data, "base64"));
-  return measured ? billableSeconds(measured.length) : 0;
+  const m = measured(a);
+  return m ? billableSeconds(m.length) : 0;
 }
 
 /**
- * The file to send to be transcribed: for a recording Flash measured, the clean copy of exactly
- * what it measured (so nothing hidden in the file is heard and billed); any other file as it is.
+ * The file to send to be transcribed: the clean copy of exactly what Flash measured, so nothing
+ * hidden in the file is heard and billed. Files Flash can't measure are refused before this.
  */
 function toTranscribe(a: Attachment): Attachment {
-  const measured = measureAudio(Buffer.from(a.data, "base64"));
-  if (!measured) return a;
-  const { data, mediaType, extension } = measured.file;
+  const m = measured(a);
+  if (!m) return a;
+  const { data, mediaType, extension } = m.file;
   return { name: `${a.name.replace(/\.[^.]*$/, "")}.${extension}`, mediaType, data: data.toString("base64") };
 }
 
@@ -607,9 +615,8 @@ async function* runFree(
   }
   if (lane === "transcribe") {
     const file = last.attachment!;
-    // Groq counts at least 10 seconds a file; one Flash can't measure holds room for a long recording.
-    const seconds = recordingSeconds(file);
-    const reserve = seconds ? Math.max(MIN_AUDIO_SECONDS, Math.ceil(seconds)) : AUDIO_SECONDS_RESERVE;
+    // Groq counts at least 10 seconds a file.
+    const reserve = Math.max(MIN_AUDIO_SECONDS, Math.ceil(recordingSeconds(file)));
     if (!(await reserveFreeAudio(reserve))) {
       throw new FriendlyError(msg("Today's free transcripts are used up across Flash. They reset tomorrow, or you can get more credits."));
     }
@@ -892,6 +899,17 @@ export async function POST(request: Request) {
     return Response.json({ error: t("Flash can edit PNG, JPEG and WebP photos up to 2048 × 2048 pixels. Try a smaller photo.") }, { status: 400 });
   }
   if (combines && editing) reason = t("Flash combines your {count} photos into one picture.", { count: photos.length });
+  // A transcript is priced on how long the recording plays, so one Flash can't measure isn't sent.
+  if (engine === "transcribe" && last.attachment && configured(engine) && !measured(last.attachment)) {
+    return Response.json(
+      {
+        error: t("Flash can't tell how long {name} plays, so it can't transcribe it. Save it as MP3, M4A, WAV or FLAC and send it again.", {
+          name: last.attachment.name,
+        }),
+      },
+      { status: 400 },
+    );
+  }
 
   // When no keyword rule fits, a small, fast model reads the request and picks the engine. It only runs
   // when the request can be paid for on whatever engine it picks, so the free lane costs Flash nothing.

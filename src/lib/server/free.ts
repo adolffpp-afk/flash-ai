@@ -57,15 +57,12 @@ export async function reserveFreeImage(): Promise<boolean> {
   return r.rowsAffected === 1;
 }
 
-// Seconds held for a recording Flash can't measure (see audio-length.ts): 3 MB is about 10 minutes of speech.
-export const AUDIO_SECONDS_RESERVE = 600;
-
 /**
- * Takes one transcript and reserve seconds of audio from Groq's free Whisper allowance, or returns
- * false when today's is used up. Both are taken in one statement, so requests sent at the same
+ * Takes one transcript and reserve seconds of audio (the recording's measured length, see
+ * audio-length.ts) from Groq's free Whisper allowance, or returns false when today's is used up. Both are taken in one statement, so requests sent at the same
  * time can't all fit in the room left for one. recordFreeAudio settles the seconds Groq counted.
  */
-export async function reserveFreeAudio(reserve = AUDIO_SECONDS_RESERVE): Promise<boolean> {
+export async function reserveFreeAudio(reserve: number): Promise<boolean> {
   const d = day();
   const seconds = Math.ceil(reserve);
   await run("INSERT OR IGNORE INTO free_quota (day, provider) VALUES (?, 'groq-audio')", [d]);

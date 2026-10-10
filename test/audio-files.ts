@@ -1,7 +1,8 @@
 /*
- * Recordings built byte by byte for the tests: Opus in Ogg and in WebM, and WAV, including forged
- * ones (an hour of sound in a few kilobytes, lengths that lie, pages hidden in a broken one), and a
- * player that hears an Ogg file the way libogg and ffmpeg do. Not a test file itself.
+ * Recordings built byte by byte for the tests: Opus and Vorbis in Ogg, Opus in WebM, WAV, MP3, raw
+ * AAC and FLAC, including forged ones (an hour of sound in a few kilobytes, lengths that lie, pages
+ * hidden in a broken one), and a player that hears an Ogg file the way libogg and ffmpeg do. Not a
+ * test file itself.
  */
 import { opusPacketSamples } from "../src/lib/server/audio-length.ts";
 
@@ -241,4 +242,89 @@ export function hiddenPages(minutes: number): Buffer {
     outer.push(page);
   }
   return Buffer.concat([oggPage({ packets: [opusHead()], flags: 2 }), oggPage({ packets: [opusTags()] }, 1), ...outer]);
+}
+
+/**
+ * An Ogg Vorbis file: its three headers (8 kHz, 256- and 2^long-sample blocks), then the packets
+ * given, which a player takes for sound when their first bit is clear.
+ */
+export function oggVorbis(packets: Uint8Array[], { rate = 8000, long = 13, granule = 0 }: { rate?: number; long?: number; granule?: number } = {}): Buffer {
+  const id = Buffer.alloc(30);
+  id.write("\x01vorbis", 0, "latin1");
+  id[11] = 1;
+  id.writeUInt32LE(rate, 12);
+  id[28] = (long << 4) | 8;
+  id[29] = 1;
+  const comment = Buffer.concat([Buffer.from("\x03vorbis", "latin1"), Buffer.from([5, 0, 0, 0]), Buffer.from("flash"), Buffer.alloc(4), Buffer.from([1])]);
+  const setup = Buffer.concat([Buffer.from("\x05vorbis", "latin1"), Buffer.alloc(20, 0x42)]);
+  const pages = [oggPage({ packets: [id], flags: 2 }), oggPage({ packets: [comment, setup] }, 1)];
+  for (let i = 0; i < packets.length; i += 255) pages.push(oggPage({ packets: packets.slice(i, i + 255), granule }, pages.length));
+  return Buffer.concat(pages);
+}
+
+/** An MPEG-1 Layer III frame at 128 kbps and 44.1 kHz, mono: 417 bytes playing 1,152 samples. */
+export function mp3Frame(note = ""): Buffer {
+  const frame = Buffer.alloc(417);
+  frame.set([0xff, 0xfb, 0x90, 0xc4]);
+  // After the side information, where an encoder writes its Xing or Info frame.
+  frame.write(note, 21, "latin1");
+  return frame;
+}
+
+/** A raw AAC file: an ADTS header (AAC-LC, 8 kHz by default, no checksum) before each payload. */
+export function adts(payloads: Uint8Array[], { rateIndex = 11, channels = 1, blocks = 1 } = {}): Buffer {
+  return Buffer.concat(
+    payloads.flatMap((p) => {
+      const length = p.length + 7;
+      const header = Uint8Array.of(
+        0xff,
+        0xf1,
+        (1 << 6) | (rateIndex << 2) | (channels >> 2),
+        ((channels & 3) << 6) | (length >> 11),
+        (length >> 3) & 0xff,
+        ((length & 7) << 5) | 0x1f,
+        0xfc | (blocks - 1),
+      );
+      return [header, p];
+    }),
+  );
+}
+
+const CRC8 = Array.from({ length: 256 }, (_, i) => {
+  let r = i;
+  for (let j = 0; j < 8; j++) r = r & 0x80 ? ((r << 1) ^ 0x07) & 0xff : (r << 1) & 0xff;
+  return r;
+});
+const CRC16 = Array.from({ length: 256 }, (_, i) => {
+  let r = i << 8;
+  for (let j = 0; j < 8; j++) r = r & 0x8000 ? ((r << 1) ^ 0x8005) & 0xffff : (r << 1) & 0xffff;
+  return r;
+});
+
+/** A frame number as FLAC writes it, like UTF-8. */
+const flacNumber = (n: number) =>
+  n < 0x80 ? [n] : n < 0x800 ? [0xc0 | (n >> 6), 0x80 | (n & 63)] : [0xe0 | (n >> 12), 0x80 | ((n >> 6) & 63), 0x80 | (n & 63)];
+
+/**
+ * A FLAC file of quiet at 8 kHz, 16-bit mono: frames blocks of block samples each (one constant
+ * value per frame, about 14 bytes), with a STREAMINFO claiming claimed samples (the truth by default).
+ */
+export function flac(frames: number, { block = 4096, claimed = frames * block }: { block?: number; claimed?: number } = {}): Buffer {
+  const info = Buffer.alloc(34);
+  info.writeUInt16BE(block, 0);
+  info.writeUInt16BE(block, 2);
+  // Rate (20 bits), channels - 1 (3), bits - 1 (5) and total samples (36).
+  info.writeUInt32BE((8000 << 12) | (0 << 9) | (15 << 4) | Math.floor(claimed / 0x100000000), 10);
+  info.writeUInt32BE(claimed % 0x100000000, 14);
+  const out: Uint8Array[] = [Buffer.from("fLaC"), Uint8Array.of(0x80, 0, 0, 34), info];
+  for (let i = 0; i < frames; i++) {
+    // Block size from the end of the header (7), 8 kHz (4); mono, 16-bit (4).
+    const header = [0xff, 0xf8, 0x74, 0x08, ...flacNumber(i), (block - 1) >> 8, (block - 1) & 0xff];
+    header.push(header.reduce((c, b) => CRC8[c ^ b], 0));
+    // A constant subframe of 0.
+    const frame = [...header, 0x00, 0x00, 0x00];
+    const check = frame.reduce((c, b) => ((c << 8) & 0xffff) ^ CRC16[(c >> 8) ^ b], 0);
+    out.push(Uint8Array.from([...frame, check >> 8, check & 0xff]));
+  }
+  return Buffer.concat(out);
 }

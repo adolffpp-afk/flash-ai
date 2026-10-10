@@ -140,12 +140,12 @@ export const MAX_SPEECH_CHARS = 10000;
 export const voiceCredits = (characters: number) => creditsFor(voiceCostCents(characters) + CHECK_ALLOWANCE_CENTS);
 
 /*
- * Transcription is billed per minute of audio, at Scribe's $0.008 a minute. Opus can hold an hour in
- * under a megabyte, so a recording Flash can read (Opus in Ogg or WebM, or WAV: see
- * server/audio-length.ts) is priced on its seconds, the longer of what it plays and what it says it
- * lasts. Every file is also priced as at least the longest recording its size holds at 8 kbps
- * (1,000 bytes a second, below common speech codecs): a 3 MB file pays for 52 minutes, and a
- * normal 128 kbps MP3 pays for more than it uses. Formats Flash can't read have only that floor.
+ * Transcription is billed per minute of audio, at Scribe's $0.008 a minute. Opus, AAC and FLAC can
+ * hold an hour of quiet in under a megabyte, so a recording is priced on its seconds, the longer of
+ * what it plays and what it says it lasts (see server/audio-length.ts, which reads Opus, Vorbis,
+ * MP3, AAC, FLAC and WAV; files it can't read aren't transcribed). Every file is also priced as at
+ * least the longest recording its size holds at 8 kbps (1,000 bytes a second, below common speech
+ * codecs): a 3 MB file pays for 52 minutes, and a normal 128 kbps MP3 pays for more than it uses.
  */
 const TRANSCRIBE_CENTS_PER_MINUTE = 0.8;
 const MIN_AUDIO_BYTES_PER_SECOND = 1000;
