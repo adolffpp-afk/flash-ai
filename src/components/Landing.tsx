@@ -119,7 +119,7 @@ export function Landing({
         <nav className="mx-auto flex h-16 max-w-6xl items-center gap-8 px-4 sm:px-6">
           <a href="#" aria-label="Flash AI home" className="flex items-center gap-1.5">
             <span className="[filter:drop-shadow(0_3px_8px_rgb(91_140_246/0.35))]">
-              <BrandMark size={34} id="flash-landing" ring={false} vivid />
+              <BrandMark size={34} id="flash-landing" />
             </span>
             <span className="whitespace-nowrap text-[19px] font-bold leading-none tracking-tight text-white">
               FLASH <span className="font-light">AI</span>
@@ -180,7 +180,7 @@ export function Landing({
               </div>
             </div>
             <div className="mt-3 flex gap-3">
-              <BrandMark size={28} id="flash-demo" ring={false} vivid />
+              <BrandMark size={28} id="flash-demo" />
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap gap-2 text-xs">
                   <span className="rounded-full border border-white/10 px-2 py-0.5 text-zinc-300">App Builder</span>
