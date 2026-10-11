@@ -1834,7 +1834,8 @@ export function Flash({
               }}
             />
           )}
-          {connectorsButton}
+          {/* Home's one line is short on room: the plug shows once an account is connected. */}
+          {accounts.length > 0 && connectorsButton}
           <PlusMenu plain onFiles={() => fileRef.current?.click()} onCamera={() => cameraRef.current?.click()} />
           <MicButton
             plain
