@@ -146,3 +146,10 @@ export type ActionCard = {
 /** The ids of connections a chat request may name. */
 export const CONNECTION_ID = /^[\w-]{8,40}$/;
 export const MAX_CONNECTIONS = 20;
+
+/**
+ * The approved results a Continue asks for (the ids of their cards, at most 4): sent with the
+ * request, and kept on its message so Retry sends them again, after a reload too.
+ */
+export const continuedIds = (value: unknown): string[] =>
+  Array.isArray(value) ? [...new Set(value.filter((id): id is string => typeof id === "string" && /^[\w-]{10,40}$/.test(id)))].slice(0, 4) : [];

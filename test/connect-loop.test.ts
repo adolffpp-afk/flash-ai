@@ -93,7 +93,7 @@ const { ConnectError, addConnection, changedTool, chatKit, listConnections, prev
 );
 const { approvedResults, releaseResults } = await import("../src/lib/server/pending-actions.ts");
 const { seal } = await import("../src/lib/server/secret-box.ts");
-const { signInWithEmail } = await import("../src/lib/server/signin.ts");
+const { resetPassword, signInWithEmail } = await import("../src/lib/server/signin.ts");
 const { applyEvent } = await import("../src/lib/apply-event.ts");
 const { readEngine } = await import("../src/lib/server/engine-steps.ts");
 const { all, one, run: sql } = await import("../src/lib/server/db.ts");
@@ -492,6 +492,12 @@ const newUser = async (id: string) => {
   await sql("INSERT INTO users (id, email, name, password_hash, preferences, created_at, last_free_grant) VALUES (?, ?, '', 'x', '', 0, 0)", [id, `${id}@example.com`]);
   return id;
 };
+// What a server the user adds lists, pinned as they saw it.
+const pinsOf = async (url: string, token = "") => {
+  const seen = await previewServer(user, { provider: "custom", url, token });
+  mock.reset();
+  return Object.fromEntries(seen.tools.map((t) => [t.name, t.hash]));
+};
 // A server the user added, pinned as they saw it.
 const addServer = async (userId: string, url: string, label?: string) => {
   const seen = await previewServer(userId, { provider: "custom", url });
@@ -511,18 +517,33 @@ const logged = async <T,>(fn: () => Promise<T>): Promise<{ lines: string; value:
   }
 };
 
-test("#1: claiming an account drops the connections someone else added to it, with what they always allowed and their cards", async () => {
+// Someone signs up with the owner's address and never confirms it. Before confirming was needed to
+// connect accounts (second review #1), they could add a server labelled "Linear" and always allow its tool.
+const squat = async (id: string, email: string) => {
+  await sql("INSERT INTO users (id, email, email_key, name, password_hash, preferences, created_at, last_free_grant, verified_at) VALUES (?, ?, ?, '', 'hash', '', 0, 0, 0)", [id, email, email]);
+  const conn = await addServer(id, `${mock.origin}/mcp`, "Linear");
+  await updateConnection(id, conn, { tool: "echo", trusted: true });
+  const kit = (await chatKit(id, [conn]))!;
+  assert.equal(needsApproval(kit.tools.find((t) => t.tool === "echo")!, []), false);
+  await kit.propose(kit.tools.find((t) => t.tool === "send_note")!, { to: "a@b.c", note: "hi" });
+  await kit.close();
+  return conn;
+};
+// With emails sent (or shown, as here), accounts must be confirmed.
+const confirming = async (fn: () => Promise<void>) => {
   const before = process.env.FLASH_DEMO_EMAILS;
   process.env.FLASH_DEMO_EMAILS = "true";
   try {
-    // Someone signs up with victim@example.com, never confirms it, and adds a server labelled "Linear".
-    await sql("INSERT INTO users (id, email, email_key, name, password_hash, preferences, created_at, last_free_grant, verified_at) VALUES ('acct', 'victim@example.com', 'victim@example.com', '', 'hash', '', 0, 0, 0)");
-    const conn = await addServer("acct", `${mock.origin}/mcp`, "Linear");
-    await updateConnection("acct", conn, { tool: "echo", trusted: true });
-    const kit = (await chatKit("acct", [conn]))!;
-    assert.equal(needsApproval(kit.tools.find((t) => t.tool === "echo")!, []), false);
-    await kit.propose(kit.tools.find((t) => t.tool === "send_note")!, { to: "a@b.c", note: "hi" });
-    await kit.close();
+    await fn();
+  } finally {
+    if (before === undefined) delete process.env.FLASH_DEMO_EMAILS;
+    else process.env.FLASH_DEMO_EMAILS = before;
+  }
+};
+
+test("#1: claiming an account drops the connections someone else added to it, with what they always allowed and their cards", async () => {
+  const conn = await squat("acct", "victim@example.com");
+  await confirming(async () => {
     // The real owner signs in with an emailed link.
     assert.equal(await signInWithEmail("victim@example.com"), "acct");
     assert.equal(await chatKit("acct", [conn]), null, "nothing of the squatter's is used");
@@ -531,10 +552,45 @@ test("#1: claiming an account drops the connections someone else added to it, wi
     assert.equal((await all("SELECT * FROM pending_actions WHERE user_id = 'acct'")).length, 0);
     // Nobody else's are touched.
     assert.ok((await listConnections(user)).some((c) => c.id === linear));
-  } finally {
-    if (before === undefined) delete process.env.FLASH_DEMO_EMAILS;
-    else process.env.FLASH_DEMO_EMAILS = before;
-  }
+  });
+});
+
+test("second review #1: an unconfirmed account can't add an account or always allow a tool, and Forgot password drops what it set up", async () => {
+  const conn = await squat("acct-reset", "owner@example.com");
+  await sql("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ('squatter-session', 'acct-reset', ?)", [Date.now() + 3600_000]);
+  await confirming(async () => {
+    const unverified = (e: unknown) => e instanceof ConnectError && e.code === "unverified";
+    // Servers tried for this user so far (a preview and an add).
+    const tries = async () => Number((await one<{ count: number }>("SELECT count FROM rate_limits WHERE key = 'connect-try:acct-reset'"))?.count ?? 0);
+    const tried = await tries();
+    // Nothing new is looked at, added or trusted while the email isn't confirmed.
+    await assert.rejects(previewServer("acct-reset", { provider: "custom", url: `${mock.origin}/mcp` }), unverified);
+    await assert.rejects(addConnection("acct-reset", { provider: "linear", token: "lin_api_SQUATSQUAT1234" }), unverified);
+    await assert.rejects(updateConnection("acct-reset", conn, { tool: "send_note", trusted: true }), unverified);
+    await assert.rejects(updateConnection("acct-reset", conn, { tool: "echo", review: true, hash: "x" }), unverified);
+    assert.equal(await tries(), tried, "no server was reached");
+    assert.equal((await listConnections("acct-reset")).length, 1);
+    assert.equal((await listConnections("acct-reset"))[0].tools.find((t) => t.name === "send_note")!.trusted, false);
+    // Turning things off still works.
+    await updateConnection("acct-reset", conn, { tool: "echo", trusted: false });
+    await updateConnection("acct-reset", conn, { tool: "echo", enabled: false });
+
+    // The owner takes the account back with Forgot password: what the squatter set up goes with them.
+    await resetPassword("acct-reset", "owners-new-hash");
+    const account = await one<{ password_hash: string; verified_at: number }>("SELECT password_hash, verified_at FROM users WHERE id = 'acct-reset'");
+    assert.equal(account!.password_hash, "owners-new-hash");
+    assert.ok(Number(account!.verified_at) > 0);
+    assert.equal(await chatKit("acct-reset", [conn]), null);
+    assert.deepEqual(await listConnections("acct-reset"), []);
+    assert.equal((await all("SELECT * FROM connection_tools WHERE connection_id = ?", [conn])).length, 0);
+    assert.equal((await all("SELECT * FROM pending_actions WHERE user_id = 'acct-reset'")).length, 0);
+    assert.equal((await all("SELECT * FROM sessions WHERE user_id = 'acct-reset'")).length, 0, "the squatter is signed out");
+    // Confirmed now: the owner can add accounts.
+    const own = (await addConnection("acct-reset", { provider: "linear", token: "lin_api_OWNEROWNER1234" })).id;
+    // A confirmed account's reset keeps its connections.
+    await resetPassword("acct-reset", "another-hash");
+    assert.deepEqual((await listConnections("acct-reset")).map((c) => c.id), [own]);
+  });
 });
 
 test("#2: a server that says its own address back shows none of the key in it, in a reply or on a card", async () => {
@@ -561,26 +617,45 @@ test("#4: an account whose stored key can't be opened asks to be connected again
   const card = await first.propose(first.tools.find((t) => t.tool === "send_note")!, { to: "a@b.c", note: "hi" });
   await first.close();
   const keys = process.env.CONNECTOR_KEYS;
-  const status = async () => (await listConnections(u))[0].status;
-  const reset = () => sql("UPDATE connections SET status = 'ok' WHERE id = ?", [conn]);
+  const shown = async () => (await listConnections(u))[0].status;
+  const stored = async () => (await one<{ status: string }>("SELECT status FROM connections WHERE id = ?", [conn]))!.status;
   // The key that sealed it was replaced.
   process.env.CONNECTOR_KEYS = JSON.stringify({ v1: randomBytes(32).toString("base64") });
   try {
+    assert.equal(await shown(), "needs_reconnect", "Settings says so at once");
     const kit = (await chatKit(u, [conn]))!;
     const checked = await kit.check();
     await kit.close();
-    assert.deepEqual(checked.unreachable, ["Linear"]);
-    assert.equal(await status(), "needs_reconnect", "a chat marks it");
-    await reset();
+    assert.deepEqual(checked.unreachable, ["Linear"], "a chat says it couldn't use it");
     await assert.rejects(changedTool(u, conn, "echo"), (e: unknown) => e instanceof ConnectError && e.code === "auth", "Settings gets a problem in words, not a server error");
-    assert.equal(await status(), "needs_reconnect", "looking at a tool marks it");
-    await reset();
     const done = (await runApproved(u, card.id, card.inputHash))!;
     assert.deepEqual(done, { status: "failed", result: "This account needs to be connected again." });
-    assert.equal(await status(), "needs_reconnect", "an approval marks it");
+    assert.equal(await shown(), "needs_reconnect");
   } finally {
     process.env.CONNECTOR_KEYS = keys;
   }
+  // Second review #3: none of that is stored, so with the key back the account works again.
+  assert.equal(await stored(), "ok");
+  assert.equal(await shown(), "ok");
+  const back = (await chatKit(u, [conn]))!;
+  const checked = await back.check();
+  assert.deepEqual(checked.unreachable, []);
+  assert.equal((await back.run(back.tools.find((t) => t.tool === "echo")!, { text: "back" })).text, "back");
+  await back.close();
+});
+
+test("second review #3: only the account's own server refusing its key marks it to be connected again for good", async () => {
+  const u = await newUser("user-refused");
+  const conn = (await addConnection(u, { provider: "custom", url: `${mock.origin}/secure/mcp`, token: "good-token", pins: await pinsOf(`${mock.origin}/secure/mcp`, "good-token") })).id;
+  const stored = async () => (await one<{ status: string }>("SELECT status FROM connections WHERE id = ?", [conn]))!.status;
+  // The key in the service was deleted: the server answers 401 from now on.
+  await sql("UPDATE connections SET enc_secret = ? WHERE id = ?", [seal("revoked-token", { id: conn, userId: u, provider: "custom", field: "token" }).stored, conn]);
+  const kit = (await chatKit(u, [conn]))!;
+  assert.deepEqual((await kit.check()).unreachable, [new URL(mock.origin).host]);
+  await kit.close();
+  assert.equal(await stored(), "needs_reconnect");
+  assert.equal((await listConnections(u))[0].status, "needs_reconnect");
+  assert.equal(await chatKit(u, [conn]), null, "it isn't used until it is connected again");
 });
 
 test("#5: a redirect to something that isn't an address fails that call only, and no log line holds the server's address", async () => {
@@ -730,7 +805,8 @@ test("#15: Stop ends a step's remaining calls at once: nothing runs or is asked 
         }
       }, (e: unknown) => e instanceof Error && e.name === "AbortError"),
     );
-    assert.deepEqual(afterStop.filter((t) => t !== "status"), [], `${when}: nothing but a progress line after Stop`);
+    // Nothing but a progress line after Stop, and the call that was on its way listed under the reply (second review #4).
+    assert.deepEqual(afterStop.filter((t) => t !== "status"), when === "before" ? [] : ["connector_used"], `${when}: what came after Stop`);
     assert.equal(mock.calls.length, when === "before" ? 0 : 1, `${when}: no call after Stop reached the server`);
     assert.equal(await callsMade(), when === "before" ? 0 : 1, `${when}: no later call counted against the account`);
     assert.equal((await all("SELECT * FROM pending_actions WHERE user_id = ?", [u])).length, 0, `${when}: no card was made`);
@@ -741,6 +817,27 @@ test("#15: Stop ends a step's remaining calls at once: nothing runs or is asked 
     assert.equal(costs.length, 1);
     assert.equal(running.soFar, 0);
   }
+});
+
+test("second review #4: Stop while an always-allowed write is on its way still lists it under the reply", async () => {
+  const u = await newUser("user-stop-write");
+  const conn = await addServer(u, `${mock.origin}/mcp`, "Notes");
+  await updateConnection(u, conn, { tool: "send_note", trusted: true });
+  mock.state.callDelayMs = 800;
+  replies.push({ blocks: [{ type: "tool_use", id: "toolu_1", name: "custom1__send_note", input: { to: "boss@example.com", note: "I quit" } }], stop: "tool_use" });
+  const stop = new AbortController();
+  const kit = (await chatKit(u, [conn], { signal: stop.signal }))!;
+  const events: Event[] = [];
+  await assert.rejects(async () => {
+    for await (const e of streamText(ask("Send my note"), "", "text", undefined, budget, choice, undefined, { signal: stop.signal }, { connect: kit })) {
+      events.push(e as Event);
+      if ((e as Event).type === "status" && (e as Event).message?.startsWith("Using")) setTimeout(() => stop.abort("stop"), 150);
+    }
+  }, (e: unknown) => e instanceof Error && e.name === "AbortError");
+  // The server got the write...
+  assert.deepEqual(mock.calls.map((c) => c.name), ["send_note"]);
+  // ...so the reply (and the chat saved from it) lists it.
+  assert.deepEqual(events.find((e) => e.type === "connector_used")?.items, [{ connection: "Notes", tool: "send_note" }]);
 });
 
 test("#15: a step's own checks: whatever a server does with Stop, no call runs and no card shows after it", async () => {

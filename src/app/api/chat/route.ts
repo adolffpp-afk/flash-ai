@@ -135,6 +135,7 @@ import { WEATHER_TOOL } from "@/lib/weather.ts";
 import { refuseUnpaid, type ConnectorKit } from "@/lib/engines/connect.ts";
 import { chatKit, continuedCalls, requestedConnections } from "@/lib/server/connections.ts";
 import { approvedResults, releaseResults } from "@/lib/server/pending-actions.ts";
+import { continuedIds } from "@/lib/connectors.ts";
 
 // Vercel Pro allows up to 800 seconds, which the Movie maker needs (scenes, filming and joining).
 export const maxDuration = 800;
@@ -1011,10 +1012,17 @@ export async function POST(request: Request) {
   // Results the user approved and asked to continue the answer with (Continue on an action card):
   // their calls go on the reply before and what came back on this message, as tool blocks, so Claude
   // reads them as that account's data, never as the user's words. Marked used once the reply is paid for.
+  const asked = continuedIds(body.actions);
   const continued =
-    kit && Array.isArray(body.actions) && history.length >= 2 && history[history.length - 2].role === "assistant"
-      ? continuedCalls(kit, await approvedResults(user.id, body.actions.filter((id): id is string => typeof id === "string" && /^[\w-]{10,40}$/.test(id))))
-      : [];
+    kit && asked.length && history.length >= 2 && history[history.length - 2].role === "assistant" ? continuedCalls(kit, await approvedResults(user.id, asked)) : [];
+  // A Continue, or its Retry, without any of the results it asks for (used by an answer already,
+  // expired, or their account off here) would be paid for an answer that can't read them: not sent.
+  if (asked.length && !continued.length) {
+    return Response.json(
+      { error: t("The approved results can't be read now (they were already used, they expired, or their account is off in this chat), so nothing was sent and no credits were used."), code: "no_results" },
+      { status: 409 },
+    );
+  }
   if (kit && continued.length) {
     const callId = (id: string) => `toolu_flash_${id}`;
     const before = history.length - 2;

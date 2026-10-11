@@ -59,3 +59,14 @@ test("a link written without a scheme, or whose words only mention its host, sti
   // The ones that already worked still do.
   assert.match(render("[Open](https:evil.example/x)"), /link-host/);
 });
+
+test("second review #2: a look-alike address written as the link's own words still shows the host it really goes to", () => {
+  // "lіnear.app" with a Cyrillic і (U+0456): the browser goes to xn--lnear-n2e.app, not linear.app.
+  for (const text of ["https://lіnear.app/issue/ENG-1?d=SECRET", "[https://lіnear.app/issue/ENG-1](https://lіnear.app/issue/ENG-1?d=SECRET)", "[lіnear.app](https://lіnear.app/x)"]) {
+    assert.match(render(text), /<span class="link-host"> \(xn--lnear-n2e\.app\)<\/span>/, text);
+  }
+  // The real address, and a host written in its own letters, still say it already.
+  assert.doesNotMatch(render("https://linear.app/issue/ENG-1"), /link-host/);
+  assert.doesNotMatch(render("[Linear.app](https://linear.app/x)"), /link-host/);
+  assert.doesNotMatch(render("[xn--lnear-n2e.app](https://lіnear.app/x)"), /link-host/);
+});

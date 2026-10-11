@@ -27,30 +27,45 @@ export async function findAccount(email: string): Promise<Account | null> {
 }
 
 /**
- * The person just proved they own the account's inbox. If the account was never confirmed,
- * whoever created it may not have been them, so the password and sign-ins set up before now are
- * dropped (they can set a password again with "Forgot password"), and so are the connected accounts
- * (Settings > Connectors), with their tools, what was always allowed and the cards still waiting:
- * a server someone else added must never get the owner's tool calls.
+ * What was set up on an account before its owner proved the inbox is theirs, dropped: whoever
+ * created it may not have been them. The password and sign-ins go (they can set a password again
+ * with "Forgot password"), and so do the connected accounts (Settings > Connectors), with their
+ * tools, what was always allowed and the cards still waiting: a server someone else added must never
+ * get the owner's tool calls.
  */
+async function dropUnconfirmed(userId: string): Promise<void> {
+  await run("UPDATE users SET password_hash = '' WHERE id = ?", [userId]);
+  await run("DELETE FROM identities WHERE user_id = ?", [userId]);
+  await endAllSessions(userId);
+  // Each deleted by hand, in one batch (Turso runs with foreign keys off; see removeConnection).
+  await (await db()).batch(
+    [
+      { sql: "DELETE FROM pending_actions WHERE user_id = ?", args: [userId] },
+      { sql: "DELETE FROM connection_tools WHERE connection_id IN (SELECT id FROM connections WHERE user_id = ?)", args: [userId] },
+      { sql: "DELETE FROM connections WHERE user_id = ?", args: [userId] },
+    ],
+    "write",
+  );
+}
+
+/** The person just proved they own the account's inbox. If the account was never confirmed, see dropUnconfirmed. */
 async function claim(account: Account): Promise<void> {
   if (Number(account.verified_at) > 0) return;
-  if (verificationRequired()) {
-    await run("UPDATE users SET password_hash = '' WHERE id = ?", [account.id]);
-    await run("DELETE FROM identities WHERE user_id = ?", [account.id]);
-    await endAllSessions(account.id);
-    // Each deleted by hand, in one batch (Turso runs with foreign keys off; see removeConnection).
-    await (await db()).batch(
-      [
-        { sql: "DELETE FROM pending_actions WHERE user_id = ?", args: [account.id] },
-        { sql: "DELETE FROM connection_tools WHERE connection_id IN (SELECT id FROM connections WHERE user_id = ?)", args: [account.id] },
-        { sql: "DELETE FROM connections WHERE user_id = ?", args: [account.id] },
-      ],
-      "write",
-    );
-  }
+  if (verificationRequired()) await dropUnconfirmed(account.id);
   await markVerified(account.id);
   await ensureMonthlyCredits(account.id);
+}
+
+/**
+ * A new password from a reset link: opening it proved the inbox is theirs, so an account never
+ * confirmed is claimed as with a sign-in link (see dropUnconfirmed), and every device is signed out.
+ */
+export async function resetPassword(userId: string, passwordHash: string): Promise<void> {
+  const account = await one<{ verified_at: number }>("SELECT verified_at FROM users WHERE id = ?", [userId]);
+  if (account && !Number(account.verified_at) && verificationRequired()) await dropUnconfirmed(userId);
+  await run("UPDATE users SET password_hash = ? WHERE id = ?", [passwordHash, userId]);
+  await endAllSessions(userId);
+  await markVerified(userId);
 }
 
 async function link(profile: Profile, userId: string): Promise<void> {

@@ -6,7 +6,8 @@ import { ConnectError, addConnection, listConnections, previewServer, problemTex
 /*
  * The user's connected accounts (Settings > Connectors): GET lists them (never a secret, only its
  * last 4 characters), POST looks at a server's tools ("preview") or adds an account ("add"), DELETE
- * removes one. Until CONNECTOR_KEYS is set nothing can be added (503), and the owner is told why.
+ * removes one. Until CONNECTOR_KEYS is set nothing can be added (503), and the owner is told why; an
+ * account whose email isn't confirmed can't look at or add one either (403, see confirmedOnly).
  */
 
 export async function GET(request: Request) {
@@ -43,7 +44,7 @@ export async function POST(request: Request) {
     return Response.json({ error: t("Unknown action.") }, { status: 400 });
   } catch (err) {
     if (err instanceof ConnectError) {
-      const status = err.code === "limit" ? 429 : err.code === "too_many" || err.code === "changed" ? 409 : 400;
+      const status = err.code === "limit" ? 429 : err.code === "too_many" || err.code === "changed" ? 409 : err.code === "unverified" ? 403 : 400;
       return Response.json({ error: problemText(err.code, t), code: err.code }, { status });
     }
     console.error("[flash] adding a connector failed", err instanceof Error ? err.name : "error");

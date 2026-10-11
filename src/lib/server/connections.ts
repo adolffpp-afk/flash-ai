@@ -1,3 +1,4 @@
+import { isVerified } from "./account.ts";
 import { db, now, one, all, run } from "./db.ts";
 import { randomId } from "./ids.ts";
 import { overLimit } from "./limits.ts";
@@ -6,7 +7,7 @@ import { McpClient, McpError, type McpTool } from "./mcp-client.ts";
 import { checkUrl, mockOrigin, SafeFetchError } from "./safe-fetch.ts";
 import { claimAction, finishAction, proposeAction, type ActionRow } from "./pending-actions.ts";
 import { CONNECTION_ID, MAX_CONNECTIONS, presetById, type ConnectionView, type Preset, type ToolKind, type ToolPreview } from "../connectors.ts";
-import { cleanSchema, cut, stopError, toolName, type ConnectorKit, type ConnectorTool } from "../engines/connect.ts";
+import { StoppedMidCall, cleanSchema, cut, stopError, toolName, type ConnectorKit, type ConnectorTool } from "../engines/connect.ts";
 import { CONNECT_RESULT_TOKENS } from "../credits.ts";
 import { english, msg, type Translate } from "../i18n.ts";
 
@@ -49,7 +50,7 @@ type ToolRow = {
 };
 
 /** Why a connection couldn't be added or used, as a code the routes put in the user's words. */
-export type ConnectProblem = "blocked" | "auth" | "unreachable" | "protocol" | "limit" | "too_many" | "changed" | "no_tools" | "bad_input" | "gone";
+export type ConnectProblem = "blocked" | "auth" | "unreachable" | "protocol" | "limit" | "too_many" | "changed" | "no_tools" | "bad_input" | "gone" | "unverified";
 
 export class ConnectError extends Error {
   code: ConnectProblem;
@@ -82,6 +83,8 @@ export function problemText(code: ConnectProblem, t: Translate): string {
       return t("Fill in the address and the key or token.");
     case "gone":
       return t("That account isn't connected any more.");
+    case "unverified":
+      return t("Confirm your email to connect accounts.");
   }
 }
 
@@ -175,6 +178,21 @@ export function addressSecrets(address: string): string[] {
   return [...new Set(raw.flatMap((s) => [s, decode(s)]))].filter((s) => s.length >= 12);
 }
 
+/**
+ * Whether the row's sealed key and address open with the keys CONNECTOR_KEYS has now. One that
+ * doesn't shows as needing to be connected again, without that being stored: putting the key back
+ * brings the account back (see KeyUnreadable).
+ */
+function opens(row: ConnectionRow): boolean {
+  try {
+    if (row.enc_secret) unseal(row.enc_secret, place(row));
+    if (row.enc_url) unseal(row.enc_url, place(row, "url"));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function view(row: ConnectionRow, tools: ToolRow[]): ConnectionView {
   return {
     id: row.id,
@@ -183,7 +201,7 @@ function view(row: ConnectionRow, tools: ToolRow[]): ConnectionView {
     host: hostOf(serverUrl(row.provider, row.url)),
     custom: !presetById(row.provider),
     last4: row.last4,
-    status: row.status,
+    status: row.status === "ok" && !opens(row) ? "needs_reconnect" : row.status,
     createdAt: Number(row.created_at),
     tools: tools
       .filter((t) => t.connection_id === row.id)
@@ -229,6 +247,16 @@ function target(input: NewConnection): { preset?: Preset; url: string } {
   }
 }
 
+/**
+ * Only an account whose email is confirmed adds a connection or lets a tool run without asking: an
+ * unconfirmed one may not be its owner's, and what it set up would get the owner's tool calls once
+ * they take the account back (see claim in signin.ts).
+ */
+async function confirmedOnly(userId: string) {
+  const user = await one<{ verified_at: number }>("SELECT verified_at FROM users WHERE id = ?", [userId]);
+  if (!user || !isVerified(user)) throw new ConnectError("unverified", "Confirm your email to connect accounts.");
+}
+
 async function tryLimit(userId: string) {
   if (await overLimit(`connect-try:${userId}`, TRIES_PER_HOUR, HOUR)) throw new ConnectError("limit", "Too many attempts. Try again in an hour.");
 }
@@ -236,6 +264,7 @@ async function tryLimit(userId: string) {
 /** Lists a server's tools before it is added, so the user sees its host and every tool first. */
 export async function previewServer(userId: string, input: NewConnection): Promise<{ host: string; tools: ToolPreview[] }> {
   const { preset, url } = target(input);
+  await confirmedOnly(userId);
   await tryLimit(userId);
   const client = new McpClient({ url, token: input.token?.trim() || "" });
   try {
@@ -255,6 +284,7 @@ export async function previewServer(userId: string, input: NewConnection): Promi
  */
 export async function addConnection(userId: string, input: NewConnection & { pins?: Record<string, string> }): Promise<ConnectionView> {
   const { preset, url } = target(input);
+  await confirmedOnly(userId);
   const count = await one<{ n: number }>("SELECT COUNT(*) AS n FROM connections WHERE user_id = ?", [userId]);
   if (Number(count?.n ?? 0) >= MAX_CONNECTIONS) throw new ConnectError("too_many", "You have the most connections Flash keeps. Remove one first.");
   await tryLimit(userId);
@@ -343,10 +373,21 @@ async function owned(userId: string, id: string): Promise<ConnectionRow> {
 type Opened = { client: McpClient; secret: string; parts: string[] };
 
 /**
- * A client for one of the user's connections, with its secret (and a server it added, its whole
- * address) opened. A secret that can't be opened (CONNECTOR_KEYS lost the key that sealed it) is an
- * "auth" problem, so the account is marked to be connected again.
+ * A secret that can't be opened: CONNECTOR_KEYS doesn't have the key that sealed it now. An "auth"
+ * problem for the call, but not stored on the account, since the owner may put the key back (a key
+ * replaced by mistake, or a rollback); until then the account shows as needing to be connected again
+ * (see opens).
  */
+class KeyUnreadable extends McpError {
+  constructor() {
+    super("auth", "The stored key can't be opened.");
+  }
+}
+
+/** The account's own server refused its key (401 or 403): it must be connected again, and that is stored. */
+const refusedKey = (err: unknown) => err instanceof McpError && err.code === "auth" && !(err instanceof KeyUnreadable);
+
+/** A client for one of the user's connections, with its secret (and a server it added, its whole address) opened. */
 function clientFor(row: ConnectionRow, signal?: AbortSignal): Opened {
   let secret: string;
   let url: string;
@@ -354,12 +395,12 @@ function clientFor(row: ConnectionRow, signal?: AbortSignal): Opened {
     secret = row.enc_secret ? unseal(row.enc_secret, place(row)) : "";
     url = row.enc_url ? unseal(row.enc_url, place(row, "url")) : serverUrl(row.provider, row.url);
   } catch {
-    throw new McpError("auth", "The stored key can't be opened.");
+    throw new KeyUnreadable();
   }
   return { client: new McpClient({ url, token: secret, protocol: row.protocol }, { signal }), secret, parts: row.enc_url ? addressSecrets(url) : [] };
 }
 
-/** Marks a connection to be connected again: its server refused its key, or the key can't be opened. */
+/** Marks a connection to be connected again: its server refused its key. */
 const needsReconnect = (id: string) => run("UPDATE connections SET status = 'needs_reconnect' WHERE id = ?", [id]);
 
 /** One tool of a connection as its server lists it now (null when it no longer has it). */
@@ -370,7 +411,7 @@ async function liveTool(userId: string, row: ConnectionRow, name: string): Promi
     client = clientFor(row).client;
     return (await client.listTools()).find((t) => t.name === name) ?? null;
   } catch (err) {
-    if (err instanceof McpError && err.code === "auth") await needsReconnect(row.id);
+    if (refusedKey(err)) await needsReconnect(row.id);
     throw asProblem(err);
   } finally {
     await client?.close();
@@ -405,6 +446,8 @@ export async function updateConnection(
   const preset = presetById(row.provider);
   const tool = await one<ToolRow>("SELECT * FROM connection_tools WHERE connection_id = ? AND name = ?", [id, change.tool]);
   if (!tool) throw new ConnectError("gone", "That tool isn't there any more.");
+  // Trusting a tool, or what its server says it does now, needs a confirmed email; turning things off doesn't.
+  if (change.trusted === true || change.review) await confirmedOnly(userId);
   if (change.review) {
     const current = await liveTool(userId, row, change.tool);
     if (current && current.hash !== change.hash) {
@@ -448,7 +491,8 @@ async function callOn(row: ConnectionRow, opened: Opened, tool: Pick<ToolRow, "n
   } catch (err) {
     if (signal?.aborted) {
       status = "stopped";
-      throw stopError(signal);
+      // It was on its way: its server may have done it, so the reply still lists it (see connectorCalls).
+      throw new StoppedMidCall(stopError(signal));
     }
     if (!(err instanceof McpError)) {
       status = "failed";
@@ -549,7 +593,7 @@ export async function chatKit(userId: string, ids: string[], { replyId = "", sig
           } catch (err) {
             if (signal?.aborted) throw err;
             console.log(`[flash] connector ${row.id} ${row.provider} list ${err instanceof McpError ? err.code : "failed"}`);
-            if (err instanceof McpError && err.code === "auth") await needsReconnect(row.id);
+            if (refusedKey(err)) await needsReconnect(row.id);
             unreachable.push(row.label);
             return [];
           }
@@ -565,7 +609,7 @@ export async function chatKit(userId: string, ids: string[], { replyId = "", sig
         opened = connect(row);
       } catch (err) {
         if (!(err instanceof McpError)) throw err;
-        if (err.code === "auth") await needsReconnect(row.id);
+        if (refusedKey(err)) await needsReconnect(row.id);
         return { text: err.message, isError: true };
       }
       return callOn(row, opened, { name: pinned.tool, schema: pinned.schemaJson }, input, signal);
@@ -604,7 +648,7 @@ const NOT_RUN = {
   reconnect: msg("This account needs to be connected again."),
   failed: msg("The action couldn't run."),
 };
-const PROBLEMS: ConnectProblem[] = ["blocked", "auth", "unreachable", "protocol", "limit", "too_many", "changed", "no_tools", "bad_input", "gone"];
+const PROBLEMS: ConnectProblem[] = ["blocked", "auth", "unreachable", "protocol", "limit", "too_many", "changed", "no_tools", "bad_input", "gone", "unverified"];
 const OWN_WORDS = new Set<string>([...Object.values(NOT_RUN), ...PROBLEMS.map((code) => problemText(code, english))]);
 
 /** A failed action's result for the card: Flash's own reasons in the user's language, a tool's own words as they are. */
@@ -630,7 +674,6 @@ export async function runApproved(userId: string, id: string, hash: string): Pro
   try {
     opened = clientFor(row);
   } catch {
-    await needsReconnect(row.id);
     return fail(NOT_RUN.reconnect);
   }
   try {
@@ -647,7 +690,7 @@ export async function runApproved(userId: string, id: string, hash: string): Pro
   } catch (err) {
     const problem = asProblem(err);
     if (problem instanceof ConnectError) {
-      if (problem.code === "auth") await needsReconnect(row.id);
+      if (refusedKey(err)) await needsReconnect(row.id);
       return fail(problemText(problem.code, english));
     }
     return fail(NOT_RUN.failed);

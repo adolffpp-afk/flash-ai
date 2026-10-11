@@ -133,8 +133,26 @@ export function toolName(prefix: string, tool: string, taken: Set<string>): stri
 export const stopError = (signal: AbortSignal): Error =>
   signal.reason instanceof Error ? signal.reason : new DOMException(String(signal.reason ?? "stopped"), "AbortError");
 
+/**
+ * Stop that came while a call was on its way to its server (see callOn in connections.ts): the server
+ * may have done it, so the reply still lists it as used. `stop` is what the reply ends with (stopError).
+ */
+export class StoppedMidCall extends Error {
+  readonly stop: Error;
+  constructor(stop: Error) {
+    super(stop.message);
+    this.name = "AbortError";
+    this.stop = stop;
+  }
+}
+
 /** A reply's connector calls so far: the accounts read (for the taint rule), and what was used. */
 export type ConnectState = { readFrom: Set<string>; used: ConnectorUse[] };
+
+/** Lists a tool under the reply, once. */
+function markUsed(state: ConnectState, tool: ConnectorTool) {
+  if (!state.used.some((u) => u.connection === tool.connection && u.tool === tool.title)) state.used.push({ connection: tool.connection, tool: tool.title });
+}
 
 const SKIPPED = '{"status":"skipped","reason":"Only 4 tool calls fit in one step. Call this one again in your next step if you still need it."}';
 const WAITING = (title: string) =>
@@ -180,10 +198,18 @@ export async function* connectorCalls(
       continue;
     }
     yield { type: "status", message: t("Using {name}…", { name: `${tool.connection} · ${tool.title}` }) };
-    const result = await kit.run(tool, input, signal);
+    let result: { text: string; isError: boolean };
+    try {
+      result = await kit.run(tool, input, signal);
+    } catch (err) {
+      // Stopped on its way: its server may have done it, so it is listed (a call Stop kept from going isn't).
+      if (!(err instanceof StoppedMidCall)) throw err;
+      markUsed(state, tool);
+      throw err.stop;
+    }
     // Whatever came back, even an error, is the account's data now.
     state.readFrom.add(tool.connectionId);
-    if (!state.used.some((u) => u.connection === tool.connection && u.tool === tool.title)) state.used.push({ connection: tool.connection, tool: tool.title });
+    markUsed(state, tool);
     const text = cut(result.text, share);
     out.set(call.id, { content: JSON.stringify({ source: tool.connection, tool: tool.tool, text }), isError: result.isError });
   }

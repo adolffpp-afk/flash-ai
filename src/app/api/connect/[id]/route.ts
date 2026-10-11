@@ -26,7 +26,8 @@ export async function GET(request: Request, ctx: RouteContext<"/api/connect/[id]
 /**
  * Changes one tool of the user's connections: on or off, always allowed (a server they added only),
  * or a changed tool looked at again (review). Always allowing a tool lets it run without asking, so
- * like an approval it is taken only from Flash's own page, with its exact Origin.
+ * like an approval it is taken only from Flash's own page, with its exact Origin, and only from an
+ * account whose email is confirmed (403, see confirmedOnly).
  */
 export async function PATCH(request: Request, ctx: RouteContext<"/api/connect/[id]">) {
   const user = await getUser(request);
@@ -51,7 +52,8 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/connect/[i
     return Response.json({ connection });
   } catch (err) {
     if (err instanceof ConnectError) {
-      return Response.json({ error: problemText(err.code, t), code: err.code }, { status: err.code === "gone" ? 404 : err.code === "limit" ? 429 : 400 });
+      const status = err.code === "gone" ? 404 : err.code === "limit" ? 429 : err.code === "unverified" ? 403 : 400;
+      return Response.json({ error: problemText(err.code, t), code: err.code }, { status });
     }
     console.error("[flash] changing a connector failed", err instanceof Error ? err.name : "error");
     return Response.json({ error: t("Something went wrong. Please try again.") }, { status: 500 });

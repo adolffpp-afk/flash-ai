@@ -25,6 +25,8 @@ export type UIMessage = {
   // Sent with the picture from Flash's last reply, as a follow-up like "make it darker": that picture's
   // link, so Retry and Go ahead can fetch it again after a reload (true in chats saved before links were kept).
   pictureAbove?: boolean | string;
+  // A Continue on approved cards: their ids, so Retry continues with the same results, after a reload too.
+  continues?: string[];
   engine?: Engine;
   // A spoken reply about the app or deck before it, which the next follow-up may still change.
   about?: Engine;

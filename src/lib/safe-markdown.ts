@@ -44,9 +44,11 @@ export const safeMarkdown: Components = {
   a({ href, children }) {
     const host = linkHost(href);
     const link = createElement("a", { href, target: "_blank", rel: "noreferrer noopener" }, children);
-    // Left out only when the words are that host, or an address on it: words that merely mention it can still hide where a link goes.
+    // Left out only when the words are that host, or an address on it written as the host is: words
+    // that merely mention it can still hide where a link goes, and a look-alike address (a Cyrillic
+    // "і" in "lіnear.app") goes to a host written another way (xn--lnear-n2e.app), which is shown.
     const text = textOf(children).trim().toLowerCase();
-    if (!host || text === host || linkHost(text) === host) return link;
+    if (!host || text === host || (linkHost(text) === host && text.includes(host))) return link;
     return createElement(Fragment, null, link, createElement("span", { className: "link-host" }, ` (${host})`));
   },
 };

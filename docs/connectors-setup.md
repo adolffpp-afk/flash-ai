@@ -21,9 +21,11 @@ needed.
 When the deploy is done, **By provider** no longer lists "Missing CONNECTOR_KEYS", and everyone sees
 Settings > Connectors.
 
-Keep the value somewhere safe (a password manager). If it is lost, every connected account stops
-working: each one is marked "needs to be connected again" the next time it is used, and people have
-to remove and add it again.
+Keep the value somewhere safe (a password manager). While Flash doesn't have the key that sealed an
+account (the value was lost, replaced by mistake, or an older deployment is back), that account shows
+as "needs to be connected again" and isn't used. This isn't stored: put the right key back and
+redeploy, and every account works again. Only if the key is lost for good do people have to remove
+their accounts and add them again. (An account whose own service refuses its key is marked for good.)
 
 ## Change the key (rotation)
 
@@ -38,8 +40,8 @@ the newest version.
    that isn't 32 bytes) so you can fix it. Flash's logs say the same, by name, never the value.
 3. Only drop `v1` once nothing uses it. In the database:
    `SELECT COUNT(*) FROM connections WHERE key_version = 'v1';` must be 0. An account sealed with a
-   dropped version is marked "needs to be connected again" the next time it is used, and stops
-   working until its owner removes it and adds it again.
+   dropped version shows as "needs to be connected again" and stops working until its owner removes
+   it and adds it again, or the version is put back.
 
 ## Try it without real accounts
 

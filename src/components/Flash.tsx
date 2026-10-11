@@ -347,9 +347,6 @@ export function Flash({
   const runningRef = useRef(false);
   // Attachments stay in memory only (too large to save), keyed by user message id, for Retry.
   const filesRef = useRef(new Map<string, Attachment[]>());
-  // The approved connector results a message continues the answer with (Continue on an action card),
-  // kept in memory like its files, so Retry and Go ahead send them again.
-  const continuesRef = useRef(new Map<string, string[]>());
   // Projects whose messages changed and still need saving to the server.
   const dirtyRef = useRef(new Set<string>());
   // When a reply the server was finishing was first found missing from its chat (see the watch below).
@@ -963,8 +960,8 @@ export function Flash({
     const earlier = messages.map((m) =>
       m.id === messageId ? { ...m, actions: m.actions?.map((a) => (ids.includes(a.id) ? { ...a, continued: true } : a)) } : m,
     );
-    const userMsg: UIMessage = { id: newId(), role: "user", content: t("Continue with what came back.") };
-    continuesRef.current.set(userMsg.id, ids);
+    // The ids are kept on the message (and saved with the chat), so Retry and Go ahead send them again, after a reload too.
+    const userMsg: UIMessage = { id: newId(), role: "user", content: t("Continue with what came back."), continues: ids };
     await respond(active, earlier, userMsg);
   }
 
@@ -1115,7 +1112,7 @@ export function Flash({
     // The user's own accounts, only as they turned them on in this chat: never for a request the
     // companion lined up, which they didn't type here.
     const connectorIds = !connectorsOn || userMsg.queued ? [] : (connect?.ids ?? connectorsIn(projectId));
-    const continues = connect?.actions ?? continuesRef.current.get(userMsg.id) ?? [];
+    const continues = connect?.actions ?? userMsg.continues ?? [];
 
     // Only the most recent app's code is sent back, so edits build on it without resending every version.
     const lastAppId = [...earlier].reverse().find((m) => m.app)?.id;
@@ -1177,7 +1174,8 @@ export function Flash({
           // The device's time zone, so answers use the user's own date and time.
           ...(deviceTimeZone() && { timeZone: deviceTimeZone() }),
           ...(connectorIds.length && { connectors: connectorIds }),
-          ...(connectorIds.length && continues.length && { actions: continues }),
+          // Sent even with the accounts off, so the server refuses it rather than answer without the results.
+          ...(continues.length && { actions: continues }),
         }),
         signal: controller.signal,
       });
