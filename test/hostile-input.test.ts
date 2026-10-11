@@ -2,33 +2,48 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import ts from "typescript";
-import { route } from "../src/lib/router.ts";
-import { needsCare } from "../src/lib/levels.ts";
+import { fixesPictureText, followsForecast, pictureFollowUp, route, textToSpeak } from "../src/lib/router.ts";
+import { autoLevel, needsCare } from "../src/lib/levels.ts";
 import { freeFacts } from "../src/lib/free-order.ts";
-import { POST_PACK_REQUEST } from "../src/lib/models.ts";
+import { POST_PACK_REQUEST, movieSplit, pickModel, videoSeconds, wantsSound, type Provider } from "../src/lib/models.ts";
 import { asksWeather, weatherQuestion } from "../src/lib/weather-words.ts";
+import { pickVoice } from "../src/lib/voices.ts";
+import { videoAspect } from "../src/lib/engines/fal-input.ts";
 
-// Every message a person types is read by these checks before anything is charged, so a pattern
-// whose work grows with the square of the message would let one long message hold the server.
-// Each check gets 100,000-character messages built to make a careless pattern retry from every
-// position: long runs of digits and punctuation, long lists of platform names, and every word
-// the patterns themselves look for, repeated.
+// Every message a person sends is read by these checks before anything is charged, so a check
+// whose work grows with the square of the message would let one long message hold the server. The
+// routing checks read a window of the message (see message-window.ts); the ones that read the words
+// to say or film (the voice, the length of a video) read all of it. Each gets 100,000-character
+// messages built to make a careless pattern retry from every position: long runs of digits, spaces
+// and punctuation, lists of platform names, an opening followed by a long run, and every word the
+// patterns themselves look for, repeated. test/hostile-patterns.test.ts runs each pattern on its own.
 const N = 100_000;
-const LIMIT_MS = 50;
+// A pattern that backtracks takes seconds here; a busy test machine takes a few milliseconds.
+const LIMIT_MS = 250;
 
 type Check = [string, (message: string) => unknown];
-const others: Check[] = [
-  ["needsCare", (m) => needsCare(m)],
-  ["freeFacts", (m) => freeFacts({ message: m, inputChars: m.length })],
-  ["post-pack check", (m) => POST_PACK_REQUEST.test(m)],
-  ["asksWeather", (m) => asksWeather(m)],
-  ["weatherQuestion", (m) => weatherQuestion(m)],
-];
+const providers = new Set<Provider>(["fal", "openai", "elevenlabs"]);
 // After an app, route() reads the message exactly as it does otherwise and then reads it again as a
-// possible change, so the two routes after an app also cover the plain ones.
+// possible change, so the routes after an app also cover the plain ones.
 const afterApp: Check[] = [
   ["route after an app", (m) => route(m, undefined, "app")],
   ["spoken route after an app", (m) => route(m, undefined, "app", { spoken: true })],
+  ["route with a photo", (m) => route(m, "image/png")],
+];
+const others: Check[] = [
+  ["needsCare", (m) => needsCare(m)],
+  ["autoLevel", (m) => autoLevel("text", m)],
+  ["freeFacts", (m) => freeFacts({ message: m, inputChars: m.length })],
+  ["post-pack check", (m) => POST_PACK_REQUEST.test(m)],
+  ["pickModel", (m) => [pickModel("image", m, providers), pickModel("video", m, providers), pickModel("music", m, providers)]],
+  ["asksWeather", (m) => asksWeather(m)],
+  ["weatherQuestion", (m) => weatherQuestion(m)],
+  ["followsForecast", (m) => followsForecast({ engine: "search", reason: "" }, m, "Will it rain tomorrow in London?")],
+  ["pictureFollowUp", (m) => pictureFollowUp(m)],
+  ["fixesPictureText", (m) => fixesPictureText(m)],
+  ["textToSpeak", (m) => textToSpeak(m)],
+  ["pickVoice", (m) => pickVoice(m)],
+  ["video length and sound", (m) => [movieSplit(m), videoSeconds(m), wantsSound(m), videoAspect(m)]],
 ];
 const all: Check[] = [
   ["route", (m) => route(m)],
@@ -37,16 +52,17 @@ const all: Check[] = [
   ...others,
 ];
 
-const fill = (unit: string, end = "") => unit.repeat(Math.ceil((N - end.length) / unit.length)).slice(0, N - end.length) + end;
+const fill = (unit: string, end = "", start = "") =>
+  start + unit.repeat(Math.ceil((N - start.length - end.length) / unit.length)).slice(0, N - start.length - end.length) + end;
 
 const time = (f: () => unknown) => {
-  const start = performance.now();
+  const begun = performance.now();
   f();
-  return performance.now() - start;
+  return performance.now() - begun;
 };
 
 // One run, and two more only when the first is over the limit, so a slow moment of the test
-// machine doesn't count; a pattern that backtracks takes seconds here, every time.
+// machine doesn't count.
 function assertFast(message: string, checks = all) {
   for (const [name, check] of checks) {
     let took = time(() => check(message));
@@ -55,7 +71,7 @@ function assertFast(message: string, checks = all) {
   }
 }
 
-test("digit runs, punctuation runs and platform lists of 100,000 characters are read in under 50 ms", () => {
+test("digit runs, punctuation runs, platform lists and openings followed by a long run are read quickly", () => {
   const runs = [
     fill("1"),
     fill("1", " oven"),
@@ -71,6 +87,7 @@ test("digit runs, punctuation runs and platform lists of 100,000 characters are 
     fill(" ", "x"),
     fill(" ", "?"),
     fill("\n"),
+    fill("\t", "x"),
     fill("?"),
     fill("?", "x"),
     fill("!"),
@@ -80,6 +97,9 @@ test("digit runs, punctuation runs and platform lists of 100,000 characters are 
     fill("?!. "),
     fill("? "),
     fill(". ", "x"),
+    fill("“"),
+    fill('"'),
+    fill(":"),
     fill("ig "),
     fill("ig, "),
     fill("ig, ", "posts"),
@@ -103,10 +123,53 @@ test("digit runs, punctuation runs and platform lists of 100,000 characters are 
     fill("😀 "),
     fill("```"),
     fill("http://a.b "),
+    fill("prévisions "),
+    fill("weather in Paris "),
+    fill("is a open "),
+    fill("fixtures ", "", "match "),
+    fill("Aa ", "?", "天"),
+    fill("Aaaa ", "?", "Is it cold in "),
+    fill("? ", "x", "Weather in Aaa "),
+    fill("a", "", "hurricane coming "),
     // The weather words read only the first 2,000 characters: a run of digits there, after the words
     // that check whether a temperature is about the air.
     "what's the temperature today? temperature today, how hot is it today, humidity today, " + "1".repeat(1900) + " oven" + " and more text".repeat(7000),
   ];
+  // An opening a pattern reads from the start, then a long run that can be split many ways.
+  const openings = [
+    "how much is a dollar in naira",
+    "is there a hurricane coming",
+    "how much is bitcoin",
+    "Who is the president of France",
+    "Is the Louvre open tomorrow",
+    "what time is it",
+    "what's the date",
+    "temperature",
+    "hurricane coming",
+    "and",
+    "plus",
+    "disney",
+    "manga",
+    "remove it",
+    "delete it",
+    "fix the text",
+    "and What",
+    "say",
+    "Say “hi",
+  ];
+  for (const opening of openings) {
+    for (const [unit, end] of [
+      [" ", "x"],
+      [" ", "!"],
+      [" ", "?"],
+      ["\t", "x"],
+      ["?", "x"],
+      [".", "x"],
+      ["!", " x"],
+    ]) {
+      runs.push(fill(unit, end, `${opening}${unit === " " || unit === "\t" ? "" : " "}`));
+    }
+  }
   for (const message of runs) assertFast(message);
 });
 
@@ -114,7 +177,7 @@ test("digit runs, punctuation runs and platform lists of 100,000 characters are 
 // source itself (regular expression literals and the String.raw pieces patterns are built from), so
 // a pattern added later is covered without editing this list.
 function patternWords(): string[] {
-  const files = ["router.ts", "weather-words.ts", "free-order.ts", "weather.ts", "context-note.ts", "levels.ts", "models.ts"];
+  const files = ["router.ts", "weather-words.ts", "free-order.ts", "weather.ts", "context-note.ts", "levels.ts", "models.ts", "voices.ts"];
   const words = new Set<string>();
   for (const file of files) {
     const path = new URL(`../src/lib/${file}`, import.meta.url);
@@ -140,7 +203,7 @@ function patternWords(): string[] {
   return [...words];
 }
 
-test("every word the patterns look for, repeated to 100,000 characters, is read in under 50 ms", () => {
+test("every word the patterns look for, repeated to 100,000 characters, is read quickly", () => {
   const words = patternWords();
   assert.ok(words.length > 300, `found ${words.length} words in the patterns`);
   // Each word as written, capitalised, and in a list, so one message tries all three.

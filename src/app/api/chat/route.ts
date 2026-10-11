@@ -136,6 +136,7 @@ import { refuseUnpaid, type ConnectorKit } from "@/lib/engines/connect.ts";
 import { chatKit, continuedCalls, requestedConnections } from "@/lib/server/connections.ts";
 import { approvedResults, releaseResults } from "@/lib/server/pending-actions.ts";
 import { continuedIds } from "@/lib/connectors.ts";
+import { messageWindow } from "@/lib/message-window.ts";
 
 // Vercel Pro allows up to 800 seconds, which the Movie maker needs (scenes, filming and joining).
 export const maxDuration = 800;
@@ -1048,9 +1049,11 @@ export async function POST(request: Request) {
   }
   // A request Auto would send to Research that names one of the accounts turned on is answered with
   // them, in Write: Research has no connectors. The router isn't asked to move it. Each account's name
-  // is looked for once, not once for each of its tools, so a long message is read a few times at most.
+  // is looked for once, not once for each of its tools, in the part of the message the other checks
+  // before the credit check read (see message-window.ts).
+  const said = messageWindow(last.content);
   const namesAccount =
-    Boolean(kit) && !override && !decided && [...new Set(kit!.tools.map((tool) => tool.connection))].some((name) => namesWord(last.content, name));
+    Boolean(kit) && !override && !decided && [...new Set(kit!.tools.map((tool) => tool.connection))].some((name) => namesWord(said, name));
   if (namesAccount && engine === "search") {
     engine = "text";
     reason = t("You named one of your connected accounts, so Flash answers with it.");

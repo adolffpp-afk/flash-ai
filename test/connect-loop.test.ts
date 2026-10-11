@@ -289,6 +289,41 @@ test("every step is checked before it starts: the reply stops when the next one 
   assert.equal(sent[0].max_tokens, Math.min(8000, tokensWithin("text", choice.model, 3000, capCents, true)));
 });
 
+test("a step that would leave less than a full answer's room answers now, with no tools, within what was held", async () => {
+  const costs: number[] = [];
+  const capCents = 20;
+  replies.push(
+    { blocks: [{ type: "tool_use", id: "toolu_1", name: "linear__echo", input: { text: "x" } }], stop: "tool_use" },
+    { blocks: [{ type: "text", text: "It said x." }], stop: "end_turn" },
+  );
+  const kit = (await chatKit(user, [linear]))!;
+  const events: Event[] = [];
+  let room = 0;
+  for await (const e of streamText(ask("Use my accounts"), "", "text", (_p, _m, c) => costs.push(c), { maxTokens: 8000, capCents }, choice, undefined, {}, { connect: kit })) {
+    events.push(e as Event);
+    if ((e as Event).type !== "status" || !(e as Event).message?.startsWith("Using")) continue;
+    // The next step is counted so large that what is left pays for about 900 tokens of answer: more
+    // than a round needs (300), less than an answer in words (MIN_OUTPUT_TOKENS.text, 1,500).
+    const left = capCents - costs.reduce((a, b) => a + b, 0);
+    let lo = 3000;
+    let hi = 5_000_000;
+    while (lo < hi) {
+      const mid = Math.floor((lo + hi) / 2);
+      if (tokensWithin("text", choice.model, mid, left, true) > 900) lo = mid + 1;
+      else hi = mid;
+    }
+    counting = { tokens: lo };
+    room = tokensWithin("text", choice.model, lo, left, true);
+  }
+  assert.ok(room >= 300 && room < 1500, `${room}`);
+  assert.equal(sent.length, 2);
+  // The last call answers with what the tool returned: it can't call again.
+  assert.equal(sent[1].tool_choice?.type, "none");
+  assert.equal(sent[1].max_tokens, room);
+  assert.equal(said(events), "It said x.");
+  assert.ok(costs.reduce((a, b) => a + b, 0) <= capCents);
+});
+
 test("a reply that needs no tool isn't cut short: the first step gets the reply's whole allowance", async () => {
   replies.push({ blocks: [{ type: "text", text: "A long answer." }], stop: "end_turn" });
   await reply([linear], { budget: { maxTokens: 6000, capCents: 100 } });

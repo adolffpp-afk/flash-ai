@@ -2,6 +2,7 @@ import type { Engine } from "./types.ts";
 import { msg } from "./i18n.ts";
 import { POST_PACK_REQUEST } from "./models.ts";
 import { EDITS_BUILD, asksWeather, weatherQuestion } from "./weather-words.ts";
+import { messageWindow } from "./message-window.ts";
 
 // reason is marked msg("…") here and shown in the user's language with t(reason). guessed: no rule
 // was sure, so the router's guess may move it (only between the engines that answer in words when
@@ -32,6 +33,7 @@ type Rule = { engine: Engine; reason: string; patterns: RegExp[]; unless?: RegEx
 
 // Words about when, which a request for fresh information from the web holds.
 const WHEN = /\b(latest|today|tonight|yesterday|this week|this month|right now|currently|current|recent|breaking)\b/i;
+const WHEN_ALL = new RegExp(WHEN.source, "gi");
 
 // Programming: the Code rule's words.
 const CODE_PATTERNS = global([
@@ -54,8 +56,10 @@ const WEATHER_CODE = global([
 function global(patterns: RegExp[]): RegExp[] {
   return patterns.map((p) => new RegExp(p.source, `${p.flags}g`));
 }
-// A letter, mark, digit or underscore in any language: what a word is made of.
-const WORDISH = /[\p{L}\p{M}\p{N}_]/u;
+// A letter, mark, digit or underscore in any language: what a word is made of. Chinese, Japanese,
+// Korean, Thai, Lao, Khmer and Burmese are written without spaces between words, so their letters
+// don't join a word to them ("用Python写", "このコードのbugを").
+const WORDISH = /(?![\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}\p{sc=Hangul}\p{sc=Thai}\p{sc=Lao}\p{sc=Khmer}\p{sc=Myanmar}])[\p{L}\p{M}\p{N}_]/u;
 /**
  * Whether the message holds one of the words (CODE_PATTERNS or WEATHER_CODE). JavaScript's \b only
  * knows English letters, so it takes "Bugün" (today, in Turkish) for "bug": each match is checked
@@ -85,7 +89,7 @@ const MAKES_SOMETHING =
 // A name of one to three words: a place, a shop, an office ("the British Museum", "the senate in Nigeria").
 const NAME = String.raw`[\p{L}\p{N}'&.-]+(?: [\p{L}\p{N}'&.-]+){0,2}`;
 const DAY = String.raw`(?:now|right now|today|tonight|tomorrow|this (?:morning|afternoon|evening|weekend)|on (?:mon|tues|wednes|thurs|fri|satur|sun)days?)`;
-const END = String.raw`\s*\??\s*$`;
+const END = String.raw`\s*(?:\?\s*)?$`;
 /*
  * A whole message that asks for a fact that changes: whether a place is open, who holds an office,
  * what a currency or a coin is worth, a storm on its way. Only the question itself, start to end, so a
@@ -126,10 +130,11 @@ const anyCase = (words: string) => words.replace(/[a-z]/g, (c) => `[${c}${c.toUp
 const SAYS_WHEN = anyCase(
   "(?:today|tonight|tomorrow|now|right now|later(?: today)?|this (?:morning|afternoon|evening|week|weekend)|next week|(?:the |this )?weekend|(?:on )?(?:mon|tues|wednes|thurs|fri|satur|sun)day)",
 );
-const SAYS_WHERE = String.raw`\p{Lu}[\p{L}'.-]*(?: \p{Lu}[\p{L}'.-]*){0,2}`;
+// A capitalised place, but not a word a phone capitalises for you ("Thanks!", "OK", "Great").
+const SAYS_WHERE = String.raw`(?!(?:Thanks|Thank|Thx|Ok|OK|Okay|Great|Perfect|Cool|Nice|Awesome|Yes|Yeah|Yep|No|Nope|Sure|Hi|Hello|Hey|Bye|Wow|Lol|LOL|Noted)(?![\p{L}]))\p{Lu}[\p{L}'.-]*(?: \p{Lu}[\p{L}'.-]*){0,2}`;
 // A follow-up that only says when or where: "tomorrow?", "and in Abuja?", "what about Lagos on Saturday?".
 const WHEN_OR_WHERE = new RegExp(
-  String.raw`^\s*(?:${anyCase("(?:and|or|what about|how about)")} )?(?:${anyCase("(?:for|in|at|on)")} )?(?:${anyCase("the")} )?(?:${SAYS_WHERE}(?: ${SAYS_WHEN})?|${SAYS_WHEN}(?: ${anyCase("(?:in|for|at)")} ${SAYS_WHERE})?)\s*[?.!]?\s*$`,
+  String.raw`^\s*(?:${anyCase("(?:and|or|what about|how about)")} )?(?:${anyCase("(?:for|in|at|on)")} )?(?:${anyCase("the")} )?(?:${SAYS_WHERE}(?: ${SAYS_WHEN})?|${SAYS_WHEN}(?: ${anyCase("(?:in|for|at)")} ${SAYS_WHERE})?)\s*(?:[?.!]\s*)?$`,
   "u",
 );
 
@@ -307,7 +312,7 @@ const CHANGE_PARTS = [
   String.raw`${LEAD}(${SCENE} ?){1,2}(please|pls|instead|too|now|version|scene)?[\s.!]*$`,
   String.raw`${LEAD}(as (an? )?|in )?(night ?time|day ?time|sunset|sunrise|winter|summer|autumn|rainy|snowy|foggy|stormy|cloudy|sunny|realistic|photo-?realistic|hyper-?realistic|3d|b ?& ?w|monochrome|gr[ae]yscale|neon|minimalist|futuristic|retro|square|landscape|portrait|vertical|horizontal|widescreen|(9|16|4|3|2|1|21) ?: ?(9|16|4|3|2|1)|golden hour|${COLOUR})( version| style| look| scene| format| orientation| vibes?| mode| theme| background| lighting)?( please| pls| instead| too)?[\s.!]*$`,
   String.raw`^${NOT_ABOUT_IT}${LEAD}with ((a|an|some|more|his|her|their|no|two|three|four|\d+) \w+( \w+)?|snow|rain|fog|sunglasses|glasses|flowers|stars|fireworks|wings|lights)( too| on (it|him|her|top)| please)?[\s.!]*$`,
-  String.raw`^\s*(and|plus|also)\s+${NOT_ABOUT_IT}(an?|some|more|two|three|\d+)\s+(?!more\b|ones?\b|others?\b)\w+( \w+)?( too| please)?[\s.!]*$`,
+  String.raw`^\s*(and|plus|also)\s+(?!\s)${NOT_ABOUT_IT}(an?|some|more|two|three|\d+)\s+(?!more\b|ones?\b|others?\b)\w+( \w+)?( too| please)?[\s.!]*$`,
   String.raw`^${NOT_ABOUT_IT}${LEAD}(use |try |make it )?((an?|the|some|\d+|two|three) )?(?!(something|anything|one|other one|(the )?(first|second|other|last) one)\b)(\w+ ){0,2}instead( of (an? |the )?\w+)?[\s.!]*$`,
   String.raw`^\s*${NOT_ABOUT_IT}instead of (an? |the )?\w+,? (use |try )?(an? |the |some )?\w+[\s.!]*$`,
   // Edit verbs that need something to act on, so "move on" or "hide the chat" stay words.
@@ -369,7 +374,7 @@ function anyOf(parts: string[]): { test: (text: string) => boolean } {
 const STYLE_WORDS = String.raw`(?<!\b(love|loving|like|nice|great|cool|so|such|beautiful|gorgeous|amazing|my|our)( the| a| an| that| this)? )\b(background|cartoon\w*|anime|pixar|ghibli|sketch|painting|watercolou?r|oil paint\w*|pencil drawing|comic book|pixel art|black (and|&) white|sepia|vintage look|cinematic|style|filter|headshot|passport photo|profile (picture|photo)|brighter|darker|(older|younger)(?! (or|and|than|brother|sister|siblings?|sons?|daughters?|kids?|children|child|cousins?)\b))\b`;
 // A style on its own still asks for it: "pixar style", "in watercolour", "in the style of van gogh".
 const STYLE_ONLY =
-  /^\s*(now |and |but |ok,? )?((in |as |into |like )?(an? )?(cartoon|anime|pixar|disney|dreamworks|simpsons|ghibli|studio ghibli|sketch|pencil sketch|charcoal( drawing)?|line art|watercolou?r|oil painting|pencil drawing|comic( book)?|manga|pixel art|black (and|&) white|sepia|cinematic|vintage|retro|polaroid|film noir|noir|claymation|lego|minecraft|low poly|origami|stained glass|ukiyo-?e|cyberpunk|steampunk|vaporwave|synthwave|pop art|art deco|graffiti|chibi|(19)?\d0'?s|real photo)( style| version| look| lighting| vibes?| aesthetic)?|(like|as|into) (an? )?painting|in the style of (an? )?[\w' .-]{2,40})(,? please)?\s*[.!]*\s*$/i;
+  /^\s*(now |and |but |ok,? )?((in |as |into |like )?(an? )?(cartoon|anime|pixar|disney|dreamworks|simpsons|ghibli|studio ghibli|sketch|pencil sketch|charcoal( drawing)?|line art|watercolou?r|oil painting|pencil drawing|comic( book)?|manga|pixel art|black (and|&) white|sepia|cinematic|vintage|retro|polaroid|film noir|noir|claymation|lego|minecraft|low poly|origami|stained glass|ukiyo-?e|cyberpunk|steampunk|vaporwave|synthwave|pop art|art deco|graffiti|chibi|(19)?\d0'?s|real photo)( style| version| look| lighting| vibes?| aesthetic)?|(like|as|into) (an? )?painting|in the style of (an? )?[\w' .-]{2,40})(,? please)?\s*(?:[.!]+\s*)?$/i;
 // Asking to change an attached photo, rather than asking about it.
 const EDIT_REQUEST = anyOf([...CHANGE_PARTS, STYLE_WORDS, STYLE_ONLY.source]);
 // Asking to change the picture above: the same, without a style word on its own.
@@ -388,7 +393,7 @@ const OTHER_OUTPUT =
 // Doing something with the picture rather than changing it: deleting it, a file format, hashtags.
 const NOT_A_CHANGE = new RegExp(
   [
-    String.raw`^\s*(delete|remove|get rid of) (it|this|that)( (picture|image|photo|pic|one))?\s*[.!]*\s*$`,
+    String.raw`^\s*(delete|remove|get rid of) (it|this|that)( (picture|image|photo|pic|one))?\s*(?:[.!]+\s*)?$`,
     String.raw`\b(make|set|use|put|turn) (it|this|that) (as |into )?(my|our) (\w+ )?(wallpaper|lock ?screen|home ?screen|pfp|profile (pic|picture|photo)|avatar|portfolio|collection|album|story|feed|desktop|fridge|wall)\b|\b(change|replace|update) (my|our) (old )?(\w+ )?(wallpaper|lock ?screen|home ?screen|pfp|profile (pic|picture|photo)|avatar)\b[\s\S]{0,20}\b(to|with) (it|this|that)\b|\b(add|put|place|pin|hang|save) (it|this|that)( up)? (on|to|in|into) (my|our) (\w+ )?(portfolio|collection|album|gallery|story|feed|profile|page|blog|channel|wall|fridge|desktop|drive|folder|camera roll|photos)\b|\b(add|write) (an? |some )?(short |brief |product )?(description|bio)\b`,
     String.raw`^(?![\s\S]*\b(transparent|background|cut-?out)\b)[\s\S]*\b(convert|save|export|turn|make)\b[\s\S]{0,20}\b(a |an |as |to |into )?(pdf|png|jpe?g|svg|webp)\b`,
     String.raw`\b(hashtags?|alt text|caption for|favou?rites?|gallery|download)\b`,
@@ -421,7 +426,7 @@ const NEW_PICTURE = new RegExp(
     String.raw`\b(try again|regenerate|redo|re-?roll|start over|from scratch|variations?)\b`,
     String.raw`^\s*((ok|great|nice|cool|perfect|yes|love it)[,!.]* )?((some|a few|\d+) )?more like (this|that|it|these|those)\b`,
     String.raw`\bsame style,? (but|with) (a|an|some)\b|\b(a|an) \w+( \w+)? in the same style\b`,
-    String.raw`\b(make|create|generate|draw|design|paint|give|do) (me |us )?another( one)?( please)?\s*[!.?]*\s*$`,
+    String.raw`\b(make|create|generate|draw|design|paint|give|do) (me |us )?another( one)?( please)?\s*(?:[!.?]+\s*)?$`,
     String.raw`^\s*(\d+|a few|some) more\b|\bmore (options|versions|of (these|those|them))\b`,
     String.raw`^[\s\S]*\b(make|create|generate|draw|design|paint|give|sketch|illustrate|render) (me |us )?(a|an|some|\d+)\b(?![\s\S]*?\b(make|create|generate|draw|design|paint|give|sketch|illustrate|render) (me |us )?(a|an|some|\d+)\b)(?![\s\S]*\b((from|of|with|using|based on) (it|this|that|the (picture|image|photo|pic|one))\b|on (him|them|it|her(?! (?!please\b)[a-z]))\b|(in|on|to|into) (the|his|her|their|its) (background|foreground|corner|sky)\b))(?!\w* \w+ on (his|her|their|its) (face|head|lips?|nose|cheeks?|chin|forehead|shirt|chest|neck)\b)`,
   ].join("|"),
@@ -473,7 +478,7 @@ const straight = (message: string) => message.trim().replace(/[‘’]/g, "'");
  * When it does, the picture goes with the message, so it's edited the way an attached photo is.
  */
 export function pictureFollowUp(message: string): boolean {
-  const text = straight(message);
+  const text = straight(messageWindow(message));
   if (!text || ABOUT_PHOTO.test(text) || NEW_PICTURE.test(text) || NOT_A_CHANGE.test(text)) return false;
   if (NOT_ABOUT_THE_PICTURE.includes(routeOne(text).engine)) return false;
   if (FIX_PICTURE_TEXT.test(text)) return true;
@@ -484,7 +489,7 @@ export function pictureFollowUp(message: string): boolean {
 }
 
 /** Whether a follow-up sent with the picture above asks to fix the words in it ("fix the spelling"). */
-export const fixesPictureText = (message: string) => FIX_PICTURE_TEXT.test(straight(message));
+export const fixesPictureText = (message: string) => FIX_PICTURE_TEXT.test(straight(messageWindow(message)));
 
 // Engines whose answers are general enough that a follow-up may really be an edit to the last build.
 const GENERAL: Engine[] = ["text", "code", "docs"];
@@ -589,7 +594,7 @@ const asksInside = (said: string) => {
 /** What a spoken follow-up to an app or deck is: an ask for a "change", "talk", or "unclear". */
 export function spokenFollowUp(message: string): "change" | "talk" | "unclear" {
   // The marks at the end, taken from where they start, so a long run of them is quick to strip.
-  const whole = straight(message).replace(/(?<![?!.])[?!.]+$/, "").trim();
+  const whole = straight(messageWindow(message)).replace(/(?<![?!.])[?!.]+$/, "").trim();
   if (AGREES.test(whole)) return "unclear";
   let said = whole;
   // Openers, and the ways of asking, as many as were said: "okay so can we just …".
@@ -628,8 +633,22 @@ const casualWhen = (text: string) => {
   return !FRESH.test(text) && !RULES.some((r) => r.engine === "search" && r.patterns.some((p) => p.test(rest)));
 };
 
-// Words to say in quotes or after a colon (not a time's, as in 9:30).
-const QUOTED = /["“][^"”]+["”]/;
+// Words to say in quotes ("say “good night”"): an opening quote, at least one character with no
+// closing quote among them, and a closing quote. Read once from the start: as one pattern it was
+// retried from every opening quote, which a long run of them made slow.
+function holdsQuote(text: string): boolean {
+  // The first opening quote since the last closing one; a straight quote both closes and opens.
+  let open = -1;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    const closes = c === '"' || c === "”";
+    if (closes && open >= 0 && i - open >= 2) return true;
+    if (closes) open = -1;
+    if ((c === '"' || c === "“") && open < 0) open = i;
+  }
+  return false;
+}
+// Or after a colon (not a time's, as in 9:30).
 const COLON_WORDS = /(?<!\d):(?!\d)\s*\S/;
 // An audio file asked for by name: "as an mp3", "a voice-over", "turn this into audio".
 const DELIVERABLE = /\b(voice-?\s?over|mp3|tts|text to speech|(into|to|as) (an? )?(audio|speech|recording|sound file))\b/i;
@@ -651,13 +670,17 @@ const toSay = (message: string) => straight(message).replace(/^((can|could|would
  * conversation "say that again in a louder voice" or "read the rest aloud" is talk, which Flash
  * answers in the conversation, so it never makes a voice-over of those words.
  */
-export const wantsAudioFile = (message: string) =>
-  QUOTED.test(message) ||
-  COLON_WORDS.test(message) ||
-  (!POINTER.test(textToSpeak(message)) &&
-    !POINTER.test(toSay(message)) &&
-    !SPEAKS_HOW.test(straight(message)) &&
-    (DELIVERABLE.test(message) || STYLE.test(message)));
+export const wantsAudioFile = (whole: string) => {
+  const message = messageWindow(whole);
+  return (
+    holdsQuote(message) ||
+    COLON_WORDS.test(message) ||
+    (!POINTER.test(textToSpeak(message)) &&
+      !POINTER.test(toSay(message)) &&
+      !SPEAKS_HOW.test(straight(message)) &&
+      (DELIVERABLE.test(message) || STYLE.test(message)))
+  );
+};
 
 /**
  * Picks the engine for a request with deterministic keyword rules. When the previous
@@ -668,7 +691,9 @@ export const wantsAudioFile = (message: string) =>
  * day ("how do I make a website?", "how are you today?") is answered in words unless the guess,
  * which may still pick what the rules did, reads it as an ask.
  */
-export function route(message: string, attachmentType?: string, previous?: Engine, { spoken = false } = {}): RouteDecision {
+export function route(whole: string, attachmentType?: string, previous?: Engine, { spoken = false } = {}): RouteDecision {
+  // A long message is read as its start and end (see message-window.ts).
+  const message = messageWindow(whole);
   let decision = routeOne(message, attachmentType);
   if (spoken && decision.engine === "voice" && !wantsAudioFile(message)) {
     const asked = routeOne(message, attachmentType, { skipVoice: true });
@@ -711,8 +736,11 @@ export function route(message: string, attachmentType?: string, previous?: Engin
  * (previous), a bare follow-up that only says when or where ("and in Abuja?") goes on with the
  * forecast, and the build is kept for the next change; anything else is the change, as before.
  */
-export function followsForecast(decision: RouteDecision, message: string, earlier: string, attached = false, previous?: Engine): RouteDecision {
-  if (attached || message.trim().length > 60 || /https?:\/\/|```/i.test(message) || !weatherQuestion(earlier)) return decision;
+export function followsForecast(decision: RouteDecision, whole: string, earlier: string, attached = false, previous?: Engine): RouteDecision {
+  if (attached || whole.trim().length > 60 || !weatherQuestion(earlier)) return decision;
+  // Short once trimmed, but maybe not before: a long run of spaces is read as its start and end.
+  const message = messageWindow(whole);
+  if (/https?:\/\/|```/i.test(message)) return decision;
   const build = previous === "app" || previous === "slides" ? previous : undefined;
   const follows: RouteDecision = { engine: "text", reason: msg("Writing and reasoning task."), guessed: true, hint: "weather", followUp: true, ...(build && { about: build }) };
   if (build && decision.engine === build && !decision.captured && BARE_FOLLOW_UP.test(message) && WHEN_OR_WHERE.test(message) && !EDITS_BUILD.test(message)) return follows;
@@ -783,8 +811,10 @@ function routeOne(message: string, attachmentType?: string, { skipVoice = false 
     if (skipVoice && rule.engine === "voice") continue;
     if ((rule.patterns.some((p) => p.test(text)) || rule.test?.(text)) && !rule.unless?.test(text)) {
       // A weather word with a word about when ("sunscreen today", "rain this week") isn't a web search:
-      // the guess picks between the forecast and Research.
-      if (rule.engine === "search" && asksWeather(text) && !/https?:\/\//i.test(text)) {
+      // the guess picks between the forecast and Research. Only when the word about when is all the
+      // search rule found: a link, a score, a price or a search asked for ("Seattle Storm score
+      // today", "SNOW stock price") is still a web search.
+      if (rule.engine === "search" && asksWeather(text) && !rule.patterns.some((p) => p.test(text.replace(WHEN_ALL, "")))) {
         return { engine: "text", reason: msg("Writing and reasoning task."), guessed: true, hint: "weather" };
       }
       return { engine: rule.engine, reason: rule.reason, ...(rule.live && { live: rule.live }) };
@@ -801,8 +831,11 @@ function routeOne(message: string, attachmentType?: string, { skipVoice = false 
 
 /** Strips the instruction part of a voice request, keeping the words to speak. */
 export function textToSpeak(message: string): string {
-  const quoted = message.match(/["“]([\s\S]+?)["”]/);
-  if (quoted) return quoted[1].trim();
+  // The words between the first opening quote and the next closing one after it. (Found in two steps:
+  // one pattern for both retried from every opening quote, which a long run of them made slow.)
+  const open = message.search(/["“]/);
+  const close = open < 0 ? -1 : message.slice(open + 2).search(/["”]/);
+  if (close >= 0) return message.slice(open + 1, open + 2 + close).trim();
   // After a colon, but not a time's: "Say good night at 9:30" says all of it.
   const colon = message.search(/(?<!\d):(?!\d)/);
   if (colon >= 0 && message.slice(colon + 1).trim()) return message.slice(colon + 1).trim();

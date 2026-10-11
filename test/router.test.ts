@@ -1,8 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { checksSpoken, followsForecast, pictureFollowUp, route, spokenFollowUp, takesGuess, textToSpeak, wantsAudioFile } from "../src/lib/router.ts";
-import { FIRM_MAX_CHARS, asksWeather, weatherQuestion } from "../src/lib/weather-words.ts";
-import { freeFacts } from "../src/lib/free-order.ts";
+import { FIRM_MAX_CHARS, weatherQuestion } from "../src/lib/weather-words.ts";
 import { A, B, C } from "./fixtures/weather-messages.ts";
 
 const cases: [string, string][] = [
@@ -647,40 +646,78 @@ test("after a forecast answered beside an app or deck, a bare follow-up that onl
   }
 });
 
-test("routing and the weather checks stay fast on 100,000-character hostile messages", () => {
-  const N = 100_000;
-  const hostile = [
-    "what time is it " + " ".repeat(N) + "x",
-    "prévisions ".repeat(N / 11),
-    "weather in Paris ".repeat(N / 17),
-    "is a open ".repeat(N / 10),
-    "hurricane coming " + "a".repeat(N),
-    "match " + "fixtures ".repeat(N / 9),
-    "天" + "Aa ".repeat(N / 3) + "?",
-    "Is it cold in " + "Aaaa ".repeat(N / 5) + "?",
-    "temperature " + " ".repeat(N) + "?",
-    "Weather in Aaa " + "? ".repeat(N / 2) + "x",
-  ];
-  // The fastest of three runs, so a slow moment of the test machine doesn't count; a pattern that
-  // backtracks takes seconds here.
-  const fastest = (f: () => unknown) =>
-    Math.min(
-      ...[0, 1, 2].map(() => {
-        const start = performance.now();
-        f();
-        return performance.now() - start;
-      }),
-    );
-  for (const m of hostile) {
-    const label = JSON.stringify(m.slice(0, 24));
-    assert.ok(fastest(() => route(m)) < 80, `route ${label}`);
-    assert.ok(fastest(() => route(m, undefined, "app")) < 80, `route after an app ${label}`);
-    assert.ok(fastest(() => route(m, undefined, "text", { spoken: true })) < 80, `spoken ${label}`);
-    assert.ok(fastest(() => asksWeather(m)) < 20, `asksWeather ${label}`);
-    assert.ok(fastest(() => weatherQuestion(m)) < 20, `weatherQuestion ${label}`);
-    assert.ok(fastest(() => freeFacts({ message: m, inputChars: m.length })) < 20, `freeFacts ${label}`);
-    assert.ok(fastest(() => followsForecast(route("and tonight?"), "and tonight?", m)) < 20, `followsForecast ${label}`);
-  }
+test("a long message is routed by its start and its end, as a request is written", () => {
+  const text = "The committee met on Tuesday and talked for an hour about the garden. ".repeat(200);
+  assert.ok(text.length > 10_000);
+  assert.equal(route(`Translate this into French: ${text}`).engine, "translate");
+  assert.equal(route(`${text}\n\nTranslate all of that into French.`).engine, "translate");
+  assert.equal(route(`Summarise this: ${text}`).engine, route("Summarise this: the committee met on Tuesday.").engine);
+  assert.equal(route(`${text} https://example.com/minutes`).engine, "search");
   // A precise question is short; a long message is never one.
   assert.equal(weatherQuestion("Will it rain tomorrow in London? " + "x".repeat(FIRM_MAX_CHARS)), false);
+  assert.equal(route(`Will it rain tomorrow in London? ${text}`).live, undefined);
+});
+
+test("a web word in a name or a title keeps the message on Research: only a word about now alone goes to the guess", () => {
+  for (const m of [
+    "Who won the Thunder game last night?",
+    "Thunder vs Nuggets score tonight",
+    "Seattle Storm score today",
+    "Snow White box office numbers 2025",
+    "SNOW stock price today",
+    "Purple Rain anniversary edition release date",
+    "Apple revenue forecast 2026",
+    "IMF growth forecast for Nigeria 2026",
+    "Hail Mary movie release date",
+    "Robert Frost poems search",
+    "Who won the Rain or Shine game?",
+    "Lightning vs Thunder score",
+  ]) {
+    assert.equal(route(m).engine, "search", m);
+    assert.equal(route(m, undefined, "text", { spoken: true }).engine, "search", `spoken ${m}`);
+    assert.equal(route(m, undefined, "app").engine, "search", `after an app ${m}`);
+  }
+  for (const m of ["sunscreen today?", "Are flights cancelled at Heathrow today because of the fog?"]) {
+    const r = route(m);
+    assert.deepEqual([r.engine, r.guessed, r.hint], ["text", true, "weather"], m);
+  }
+  assert.equal(route("Is it going to rain today?").live, "weather");
+});
+
+test("code requests in Chinese, Japanese, Korean and Thai go to Code, with no spaces around the code words", () => {
+  for (const m of [
+    "用Python写一个排序算法",
+    "帮我debug这段代码",
+    "这个API怎么调用？",
+    "写一个SQL查询，找出重复的邮箱",
+    "Pythonでリストをソートする方法",
+    "このコードのbugを直して",
+    "Python으로 웹 크롤러 만들어줘",
+    "SQL로 중복 제거하는 방법",
+    "ช่วยdebugโค้ดนี้หน่อย",
+    "JavaScript的闭包是什么？",
+    "React组件怎么传参？",
+    "怎么用Java实现单例模式",
+    "请帮我写一个function",
+  ]) {
+    assert.equal(route(m).engine, "code", m);
+    assert.equal(route(m, undefined, "text", { spoken: true }).engine, "code", `spoken ${m}`);
+  }
+  // Turkish is still read word by word: "Bugün" (today) isn't "bug".
+  assert.equal(route("Bugün ne yapsam?").engine, "text");
+  assert.equal(route("Bugün Python'da bir bug buldum").engine, "code");
+});
+
+test("after a forecast question, a capitalised thanks or hello isn't a place", () => {
+  const earlier = "Will it rain tomorrow in London?";
+  for (const m of ["Thanks!", "Thanks", "Great", "Perfect.", "OK", "Okay", "Cool", "Nice", "Yes", "No", "Sure", "Hi", "Hello", "Wow", "Noted"]) {
+    for (const spoken of [false, true]) {
+      const r = route(m, undefined, "text", { spoken });
+      assert.deepEqual(followsForecast(r, m, earlier), r, `${m} ${spoken}`);
+    }
+  }
+  for (const m of ["Abuja?", "London?", "New York?", "Saturday?", "In Lagos?", "what about Saturday?", "what about Nice?"]) {
+    const r = followsForecast(route(m), m, earlier);
+    assert.deepEqual([r.hint, r.followUp], ["weather", true], m);
+  }
 });

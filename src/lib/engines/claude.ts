@@ -803,9 +803,11 @@ export async function* streamText(
         : inputOf(final.usage) + final.usage.output_tokens + round.tokens;
       const left = budget.capCents - spent;
       maxTokens = Math.min(budget.maxTokens, tokensWithin(mode, choice.model, next!, left, usesFallback(choice), kit ? undefined : weatherLeft(state.rounds)));
-      if (!(maxTokens >= MIN_ROUND_TOKENS)) {
-        // Too little left for another round: one last call answers with what the tools returned. (A step
-        // with connectors is already priced as one call, so for it this is the same check.)
+      if (!(maxTokens >= (MIN_OUTPUT_TOKENS[mode] ?? 1500))) {
+        // Too little left for another round and a full answer: one last call answers with what the tools
+        // returned, with no tools, so it is paid for as a single call. (Room that grew with the credits
+        // held would otherwise give some a shorter answer. A step with connectors is already priced as
+        // one call: for it this only keeps it from calling again when its answer would then have less.)
         answerOnly = true;
         maxTokens = Math.min(budget.maxTokens, tokensWithin(mode, choice.model, next!, left, usesFallback(choice), NO_TOOLS));
       }

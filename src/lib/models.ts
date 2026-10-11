@@ -1,6 +1,7 @@
 import { msg } from "./i18n.ts";
 import type { Engine } from "./types.ts";
 import { CHECK_ALLOWANCE_CENTS, WRITER_ALLOWANCE_CENTS, creditsFor } from "./credits.ts";
+import { messageWindow } from "./message-window.ts";
 
 export type Provider = "openai" | "elevenlabs" | "fal";
 export type MediaEngine = Extract<Engine, "image" | "video" | "music">;
@@ -287,7 +288,9 @@ export function pickModel(
   const ready = MODELS.filter((m) => m.engine === engine && available.has(m.provider) && Boolean(m.edits) === editing);
   const chosen = ready.find((m) => m.id === requested);
   if (chosen) return { model: chosen, why: "you picked it" };
-  const matched = ready.find((m) => m.match?.test(message));
+  // A long message is read as its start and end (see message-window.ts).
+  const said = messageWindow(message);
+  const matched = ready.find((m) => m.match?.test(said));
   if (matched) return { model: matched, why: matched.blurb.toLowerCase() };
   const fallback = ready.find((m) => !m.notDefault);
   return fallback ? { model: fallback, why: "the default" } : null;
