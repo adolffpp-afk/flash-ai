@@ -340,7 +340,7 @@ test("Research that searches and then asks for the forecast in one turn still an
   const results = Array.from({ length: 10 }, (_, i) => ({ type: "web_search_result", url: `https://r${i}.example`, title: `R${i}`, encrypted_content: "x".repeat(4000), page_age: null }));
   const read = 2 * 5500 + 50 + 10 * 1383;
   for (const quick of [true, false]) {
-    for (const available of quick ? [46, 120, 1000] : [113, 260, 1000]) {
+    for (const available of quick ? [46, 56, 120, 200, 1000] : [113, 160, 260, 1000]) {
       replies.length = 0;
       sent.length = 0;
       const hold = planHold("search", "claude-sonnet-5-5", 5500, available, 1, 0.05, researchPlan(quick, true));
@@ -366,9 +366,10 @@ test("Research that searches and then asks for the forecast in one turn still an
       assert.equal(said(events), "Dry tonight, so the concert should go ahead.", label);
       assert.equal(sent.length, 2, label);
       assert.ok(costs.reduce((a, b) => a + b, 0) <= hold.capCents, `${label}: within the cap`);
-      // When what is left can't pay for more searches, the last call answers with no tools.
+      // When what is left can't pay for more searches and a full answer, the last call answers with no
+      // tools, so more credits never mean a shorter answer.
       const last = sent[1] as { tools: unknown[]; tool_choice?: { type: string }; max_tokens: number };
-      assert.ok(last.max_tokens >= 300, label);
+      assert.ok(last.max_tokens >= 2000, `${label}: room for a full answer (${last.max_tokens})`);
       assert.equal(last.tools.length, 3, `${label}: the tools still go with the turn that used them`);
       if (quick && available === 46) assert.deepEqual(last.tool_choice, { type: "none" }, label);
     }
@@ -487,4 +488,50 @@ test("after a refusal fallback part way through, only the answering model's fore
   );
   const plain = blocks.filter((b) => b.type !== "fallback");
   assert.equal(echoedContent(plain), plain);
+});
+
+test("after a refusal fallback, a search filtered by code goes back with its result, and nothing goes back unpaired", () => {
+  const blocks = [
+    { type: "thinking", thinking: "declined", signature: "s" },
+    { type: "server_tool_use", id: "srv_code", name: "code_execution", input: {} },
+    { type: "server_tool_use", id: "srv_ws", name: "web_search", input: {}, caller: { type: "code_execution_20250825", tool_id: "srv_code" } },
+    { type: "web_search_tool_result", tool_use_id: "srv_ws", content: [] },
+    { type: "code_execution_tool_result", tool_use_id: "srv_code", content: {} },
+    { type: "server_tool_use", id: "srv_lost", name: "web_fetch", input: {} },
+    { type: "text", text: "Partial." },
+    { type: "fallback", from: { model: "claude-sonnet-5-5" }, to: { model: "claude-sonnet-5" } },
+    { type: "tool_use", id: "t_fb", name: "get_weather", input: {} },
+  ] as unknown as Parameters<typeof echoedContent>[0];
+  const echoed = echoedContent(blocks);
+  assert.deepEqual(
+    echoed.map((b) => b.type + ("id" in b ? `:${b.id}` : "tool_use_id" in b ? `:${b.tool_use_id}` : "")),
+    ["server_tool_use:srv_code", "server_tool_use:srv_ws", "web_search_tool_result:srv_ws", "code_execution_tool_result:srv_code", "text", "fallback", "tool_use:t_fb"],
+  );
+});
+
+test("after a refusal fallback in Research, the next call is budgeted on the search results the declined model found", async () => {
+  const { tool } = stubTool();
+  const results = Array.from({ length: 10 }, (_, i) => ({ type: "web_search_result", url: `https://f${i}.example`, title: `F${i}`, encrypted_content: "x".repeat(12000), page_age: null }));
+  const search: Block[] = [
+    { type: "server_tool_use", id: "srv_1", name: "web_search", input: { query: "Lagos" } },
+    { type: "web_search_tool_result", tool_use_id: "srv_1", content: results },
+  ];
+  const fallback: Block = { type: "fallback", from: { model: "claude-sonnet-5-5" }, to: { model: "claude-sonnet-5" } };
+  const weather: Block = { type: "tool_use", id: "toolu_1", name: "get_weather", input: { where: "user_location" } };
+  const hold = planHold("search", "claude-sonnet-5-5", 5500, 400, 1, 0.05, researchPlan(true, true));
+  const budget = { maxTokens: hold.maxTokens, capCents: hold.capCents, byCredits: hold.byCredits };
+  // The usage covers only the model that answered (see the API's refusal fallback guidance).
+  const room = async (blocks: Block[]) => {
+    replies.length = 0;
+    sent.length = 0;
+    replies.push({ blocks, stop: "tool_use", usage: { input_tokens: 5510, output_tokens: 100 } }, { blocks: [{ type: "text", text: "Dry." }], stop: "end_turn" });
+    await run(streamSearch(ask("concert tonight in Lagos?"), "", undefined, budget, { ...claudeChoice("search", "ascend"), fallback: hold.fallback }, undefined, {}, { weather: tool, quick: true }));
+    const second = sent[1] as { max_tokens: number; tool_choice?: { type: string } } | undefined;
+    return second ? { tokens: second.max_tokens, answerOnly: second.tool_choice?.type === "none" } : { tokens: 0, answerOnly: true };
+  };
+  // Found before the fallback: the model that answered reads it for the first time on the next call.
+  const declinedFound = await room([...search, { type: "text", text: "Partial " }, fallback, weather]);
+  // Found by the model that answered, before it asked for the forecast: already in its usage.
+  const answeredFound = await room([{ type: "text", text: "Partial " }, fallback, ...search, weather]);
+  assert.ok(declinedFound.tokens < answeredFound.tokens || (declinedFound.answerOnly && !answeredFound.answerOnly), JSON.stringify({ declinedFound, answeredFound }));
 });

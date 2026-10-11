@@ -855,7 +855,7 @@ export async function POST(request: Request) {
   // follows it (see followsForecast).
   const earlier = [...history.slice(0, -1)].reverse().find((turn) => turn.role === "user")?.content;
   const earlierText = typeof earlier === "string" ? earlier : "";
-  const auto = followsForecast(route(last.content, last.attachment?.mediaType, previous, { spoken }), last.content, earlierText, Boolean(last.attachment));
+  const auto = followsForecast(route(last.content, last.attachment?.mediaType, previous, { spoken }), last.content, earlierText, Boolean(last.attachment), previous);
   const override =
     body.engine && body.engine !== "auto" && (ENGINES as readonly string[]).includes(body.engine) ? body.engine : null;
   // The request the user agreed to the price of: the router and the picture check aren't asked again.
