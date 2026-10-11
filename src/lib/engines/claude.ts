@@ -697,9 +697,13 @@ export async function* streamText(
       }
     }
     const tools = [...(tool ? [WEATHER_TOOL] : []), ...connectors.map((c) => c.definition)];
+    // Results continued from an approved card are tool blocks, which need their tools defined even
+    // when none can be used now (their server is unreachable or changed): sent, but not to be called.
+    const earlier = new Set(history.flatMap((turn) => turn.toolCalls?.map((call) => call.name) ?? []));
+    const declared = tools.length ? tools : (kit?.tools ?? []).filter((c) => earlier.has(c.name)).map((c) => c.definition);
     if (kit) {
       // The first step is checked too, with the tools it really has.
-      const first = await nextInput(choice.model, instructions, messages, tools, null, signal);
+      const first = await nextInput(choice.model, instructions, messages, declared, null, signal);
       if (first !== null) maxTokens = Math.min(budget.maxTokens, tokensWithin(mode, choice.model, first, budget.capCents, usesFallback(choice)));
       if (!(maxTokens >= MIN_ROUND_TOKENS)) {
         yield lengthNote(budget, t);
@@ -715,7 +719,7 @@ export async function* streamText(
           system: instructions,
           messages,
           // The last round can't ask for more, so the reply always ends in words.
-          ...(tools.length && { tools, tool_choice: { type: state.rounds >= rounds ? ("none" as const) : ("auto" as const) } }),
+          ...(declared.length && { tools: declared, tool_choice: { type: !tools.length || state.rounds >= rounds ? ("none" as const) : ("auto" as const) } }),
         },
         { signal },
       );

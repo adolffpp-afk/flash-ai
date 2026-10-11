@@ -24,6 +24,7 @@ type ConnectionRow = {
   kind: string;
   label: string;
   url: string;
+  enc_url: string;
   status: "ok" | "needs_reconnect";
   enc_secret: string;
   key_version: string;
@@ -100,7 +101,12 @@ const HOUR = 60 * 60_000;
 const CALLS_PER_HOUR = 120;
 const TRIES_PER_HOUR = 30;
 
-const place = (row: Pick<ConnectionRow, "id" | "user_id" | "provider">): SecretPlace => ({ id: row.id, userId: row.user_id, provider: row.provider, field: "token" });
+const place = (row: Pick<ConnectionRow, "id" | "user_id" | "provider">, field: "token" | "url" = "token"): SecretPlace => ({
+  id: row.id,
+  userId: row.user_id,
+  provider: row.provider,
+  field,
+});
 
 /** The address Flash connects to: a preset's own server (the dev mock's stand-in for it, when on), else the one the user gave. */
 export function serverUrl(provider: string, url: string): string {
@@ -245,13 +251,28 @@ export async function addConnection(userId: string, input: NewConnection & { pin
   const id = randomId(12);
   const label = (preset?.name ?? (input.label?.trim() || hostOf(url))).slice(0, 60);
   const sealed = token ? seal(token, place({ id, user_id: userId, provider: input.provider })) : null;
+  // A server the user added: only its origin is kept as it is, since its path or query may hold a secret.
+  const address = preset ? null : seal(url, place({ id, user_id: userId, provider: input.provider }, "url"));
   const at = now();
   await (await db()).batch(
     [
       {
-        sql: `INSERT INTO connections (id, user_id, provider, kind, label, url, status, enc_secret, key_version, last4, protocol, created_at)
-              VALUES (?, ?, ?, ?, ?, ?, 'ok', ?, ?, ?, ?, ?)`,
-        args: [id, userId, input.provider, preset ? "api_key" : "mcp", label, preset ? preset.url : url, sealed?.stored ?? "", sealed?.version ?? "", lastFour(token), client.protocol, at],
+        sql: `INSERT INTO connections (id, user_id, provider, kind, label, url, enc_url, status, enc_secret, key_version, last4, protocol, created_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?, 'ok', ?, ?, ?, ?, ?)`,
+        args: [
+          id,
+          userId,
+          input.provider,
+          preset ? "api_key" : "mcp",
+          label,
+          preset ? preset.url : new URL(url).origin,
+          address?.stored ?? "",
+          sealed?.stored ?? "",
+          (sealed ?? address)?.version ?? "",
+          lastFour(token),
+          client.protocol,
+          at,
+        ],
       },
       ...tools.map((t, i) => ({
         sql: `INSERT INTO connection_tools (connection_id, name, title, description, schema, hash, kind, enabled, trusted, changed, position)
@@ -290,10 +311,11 @@ async function owned(userId: string, id: string): Promise<ConnectionRow> {
   return row;
 }
 
-/** A client for one of the user's connections, with its secret opened. */
+/** A client for one of the user's connections, with its secret (and a server it added, its whole address) opened. */
 function clientFor(row: ConnectionRow, signal?: AbortSignal): { client: McpClient; secret: string } {
   const secret = row.enc_secret ? unseal(row.enc_secret, place(row)) : "";
-  return { client: new McpClient({ url: serverUrl(row.provider, row.url), token: secret, protocol: row.protocol }, { signal }), secret };
+  const url = row.enc_url ? unseal(row.enc_url, place(row, "url")) : serverUrl(row.provider, row.url);
+  return { client: new McpClient({ url, token: secret, protocol: row.protocol }, { signal }), secret };
 }
 
 /**

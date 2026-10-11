@@ -1027,6 +1027,11 @@ export async function POST(request: Request) {
     };
     // Those accounts' data is in the conversation now (the taint rule, see engines/connect.ts).
     kit.tainted = [...new Set(continued.map(({ row }) => row.connection_id))];
+    // Only an engine with the accounts' tools can read their results (and it's never the free lane).
+    if (!CONNECT_ENGINES.includes(engine)) {
+      engine = "text";
+      reason = t("Writing and reasoning task.");
+    }
   }
   // A request Auto would send to Research that names one of the accounts turned on is answered with
   // them, in Write: Research has no connectors. The router isn't asked to move it.
@@ -1228,7 +1233,7 @@ export async function POST(request: Request) {
   // In a voice conversation it also checks requests the rules sent to code, docs or search (see checksSpoken).
   const recheck = spoken && checksSpoken(engine);
   let plan: Awaited<ReturnType<typeof planFor>>;
-  if (!override && !decided && !namesAccount && (auto.guessed || recheck) && !last.attachment && claudeConfigured()) {
+  if (!override && !decided && !namesAccount && !continued.length && (auto.guessed || recheck) && !last.attachment && claudeConfigured()) {
     const ready = (e: Engine) => (isMedia(e) ? Boolean(pickModel(e, last.content, providers())) : configured(e));
     // A spoken turn about an app or deck the rules couldn't place: the guess knows about the build,
     // and the question Flash asked before it, which a "yes" may answer.

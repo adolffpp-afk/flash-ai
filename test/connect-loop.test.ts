@@ -164,6 +164,30 @@ test("a write waits for a card: nothing reaches the server until the user approv
   assert.equal((await approvedResults(user, [card.id])).length, 0);
 });
 
+test("a reply continued with an approved result reads it as the account's tool result, even when the account can't be reached now", async () => {
+  const history = [
+    { role: "user" as const, content: "Send Sam a note" },
+    { role: "assistant" as const, content: "Approve it below.", toolCalls: [{ id: "toolu_flash_abc", name: "linear__send_note", input: { to: "sam@example.com", note: "Hi" } }] },
+    { role: "user" as const, content: "Continue with what came back.", toolResults: [{ id: "toolu_flash_abc", content: JSON.stringify({ source: "Linear", tool: "send_note", text: "Sent." }) }] },
+  ];
+  const write = async (kit: NonNullable<Awaited<ReturnType<typeof chatKit>>>) =>
+    drain(streamText(history, "", "text", () => {}, budget, choice, undefined, {}, { connect: kit }));
+  replies.push({ blocks: [{ type: "text", text: "It's sent." }], stop: "end_turn" });
+  await write((await chatKit(user, [linear]))!);
+  const [, call, answer] = sent[0].messages as { role: string; content: { type: string; content?: string }[] }[];
+  assert.deepEqual(call.content.map((b) => b.type), ["text", "tool_use"]);
+  assert.equal(answer.content[0].type, "tool_result", "the result comes first, as the account's data");
+  assert.deepEqual(sent[0].tool_choice, { type: "auto" });
+  // The account can't be reached now: its tool is still declared for the blocks above, but can't be called.
+  sent.length = 0;
+  const kit = (await chatKit(user, [linear]))!;
+  kit.check = async () => ({ tools: [], unreachable: ["Linear"], changed: [] });
+  replies.push({ blocks: [{ type: "text", text: "It's sent." }], stop: "end_turn" });
+  await write(kit);
+  assert.deepEqual(sent[0].tools!.map((t) => t.name), ["linear__send_note"]);
+  assert.deepEqual(sent[0].tool_choice, { type: "none" });
+});
+
 test("a result that tells Claude to send something only ever makes a card", async () => {
   replies.push(
     { blocks: [{ type: "tool_use", id: "toolu_1", name: "linear__poisoned", input: {} }], stop: "tool_use" },
@@ -322,6 +346,17 @@ test("someone else's connection is never used, and the free lane refuses connect
   assert.equal(refuseUnpaid(true, 5, 10), true);
   assert.equal(refuseUnpaid(true, 10, 10), false);
   assert.equal(refuseUnpaid(false, 0, 10), false, "without connectors the free lane decides as before");
+});
+
+test("keys and a server's whole address are stored sealed: only an origin and the last 4 characters are kept as they are", async () => {
+  const rows = await all<{ provider: string; url: string; enc_url: string; enc_secret: string; last4: string }>("SELECT * FROM connections WHERE user_id = ?", [user]);
+  const raw = JSON.stringify(rows);
+  assert.ok(!raw.includes("lin_api_SECRETSECRET1234"));
+  const added = rows.find((r) => r.provider === "custom")!;
+  assert.ok(!JSON.stringify(added).includes("/mcp"), "the path of the server the user added isn't kept in clear");
+  assert.equal(added.url, mock.origin);
+  assert.ok(added.enc_url.length > 0);
+  assert.equal(rows.find((r) => r.provider === "linear")!.last4, "1234");
 });
 
 test("the chat ignores connectors while CONNECTOR_KEYS is missing", async () => {

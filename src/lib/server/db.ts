@@ -447,7 +447,9 @@ const SCHEMA = [
   // Old Stops are cleared by time on every Stop (see stops.ts).
   `CREATE INDEX IF NOT EXISTS chat_stops_time ON chat_stops(created_at)`,
   // Connectors: the user's own accounts that replies can use (see connections.ts). The secret is
-  // sealed (secret-box.ts) and only its last 4 characters are kept to show. protocol is the MCP
+  // sealed (secret-box.ts) and only its last 4 characters are kept to show. A server the user added
+  // keeps only its origin in url: its whole address, which may hold a secret too, is sealed in
+  // enc_url. protocol is the MCP
   // version the server answered with. Turso runs with foreign keys off, so a connection's rows are
   // deleted by hand (see removeConnection); the references are there to say what belongs to what.
   `CREATE TABLE IF NOT EXISTS connections (
@@ -457,6 +459,7 @@ const SCHEMA = [
     kind TEXT NOT NULL,
     label TEXT NOT NULL,
     url TEXT NOT NULL,
+    enc_url TEXT NOT NULL DEFAULT '',
     status TEXT NOT NULL DEFAULT 'ok',
     enc_secret TEXT NOT NULL DEFAULT '',
     key_version TEXT NOT NULL DEFAULT '',

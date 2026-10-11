@@ -1,17 +1,21 @@
-import { fromOwnPage, getUser, unauthorized } from "@/lib/server/auth.ts";
+import { appUrl, getUser, unauthorized } from "@/lib/server/auth.ts";
 import { translatorFor } from "@/lib/server/i18n.ts";
 import { connectorsReady } from "@/lib/server/secret-box.ts";
 import { ConnectError, problemText, updateConnection } from "@/lib/server/connections.ts";
+import { approvalAllowed } from "@/lib/server/pending-actions.ts";
 
 /**
  * Changes one tool of the user's connections: on or off, always allowed (a server they added only),
- * or a changed tool looked at again (review).
+ * or a changed tool looked at again (review). Always allowing a tool lets it run without asking, so
+ * like an approval it is taken only from Flash's own page, with its exact Origin.
  */
 export async function PATCH(request: Request, ctx: RouteContext<"/api/connect/[id]">) {
   const user = await getUser(request);
   if (!user) return unauthorized();
   const t = await translatorFor(request, user.language);
-  if (!fromOwnPage(request)) return Response.json({ error: t("Please use Flash's own page.") }, { status: 403 });
+  if (!approvalAllowed(request, [new URL(appUrl(request)).origin, new URL(request.url).origin])) {
+    return Response.json({ error: t("Please use Flash's own page.") }, { status: 403 });
+  }
   if (!connectorsReady()) return Response.json({ error: t("Connectors aren't set up yet.") }, { status: 503 });
   const { id } = await ctx.params;
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
