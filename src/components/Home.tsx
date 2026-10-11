@@ -125,7 +125,7 @@ export function Orb({ className = "" }: { className?: string }) {
       <div className="flash-orb w-full">
         <div className="absolute inset-0 flex items-center justify-center [filter:drop-shadow(0_0_22px_rgb(94_234_212/0.45))] light:[filter:drop-shadow(0_0_18px_rgb(91_140_246/0.45))]">
           <span className="block w-[70%] [&>svg]:h-auto [&>svg]:w-full">
-            <BrandMark size={256} id="flash-orb" ring={false} vivid />
+            <BrandMark size={256} id="flash-orb" />
           </span>
         </div>
       </div>
