@@ -631,7 +631,7 @@
  "Get more credits": "Περισσότερες πιστώσεις",
  "Get {plan}": "Απόκτησε το {plan}",
  "GitHub didn't find that. The repository, branch, file or number may be wrong, or the Flash AI app isn't installed on that repository.": "Το GitHub δεν το βρήκε. Ίσως το αποθετήριο, ο κλάδος, το αρχείο ή ο αριθμός είναι λάθος, ή η εφαρμογή Flash AI δεν είναι εγκατεστημένη σε αυτό το αποθετήριο.",
- "GitHub refused this. The Flash AI app may not have access to that repository: connect GitHub again and pick it.": "Το GitHub το αρνήθηκε. Ίσως η εφαρμογή Flash AI δεν έχει πρόσβαση σε αυτό το αποθετήριο: σύνδεσε ξανά το GitHub και διάλεξέ το.",
+ "GitHub refused this. The Flash AI app may not have access to that repository: add it on GitHub, under Settings > Applications.": "Το GitHub το αρνήθηκε. Ίσως η εφαρμογή Flash AI δεν έχει πρόσβαση σε αυτό το αποθετήριο: πρόσθεσέ το στο GitHub, στο Settings > Applications.",
  "GitHub's rate limit for this account was reached, so Flash didn't try again. Wait a few minutes, then ask again.": "Συμπληρώθηκε το όριο αιτημάτων του GitHub για αυτόν τον λογαριασμό, οπότε το Flash δεν ξαναδοκίμασε. Περίμενε λίγα λεπτά και ρώτα ξανά.",
  "Give the item a name (up to 80 characters).": "Δώσε όνομα στο είδος (έως 80 χαρακτήρες).",
  "Go ahead": "Συνέχεια",

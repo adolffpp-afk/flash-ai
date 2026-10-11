@@ -608,6 +608,8 @@ export async function startMockConnectors(port = 7788) {
         items: [{ name: "app.ts", path: "src/app.ts", repository: { full_name: "octo/hello" }, text_matches: [{ property: "content", fragment: "export const greet" }] }],
       });
     }
+    // octo/site is listed, but the app may not touch it (as when it lacks a permission there).
+    if (/^\/repos\/octo\/site(\/|$)/.test(api)) return ok({ message: "Resource not accessible by integration" }, 403);
     const repo = /^\/repos\/octo\/hello(\/.*)?$/.exec(api);
     if (!repo) return notFound();
     const rest = repo[1] ?? "";

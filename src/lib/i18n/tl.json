@@ -631,7 +631,7 @@
  "Get more credits": "Kumuha ng dagdag na credits",
  "Get {plan}": "Kunin ang {plan}",
  "GitHub didn't find that. The repository, branch, file or number may be wrong, or the Flash AI app isn't installed on that repository.": "Hindi iyon nahanap ng GitHub. Baka mali ang repository, branch, file o numero, o hindi naka-install ang Flash AI app sa repository na iyon.",
- "GitHub refused this. The Flash AI app may not have access to that repository: connect GitHub again and pick it.": "Tinanggihan ito ng GitHub. Baka walang access ang Flash AI app sa repository na iyon: i-connect ulit ang GitHub at piliin iyon.",
+ "GitHub refused this. The Flash AI app may not have access to that repository: add it on GitHub, under Settings > Applications.": "Tinanggihan ito ng GitHub. Baka walang access ang Flash AI app sa repository na iyon: idagdag ito sa GitHub, sa Settings > Applications.",
  "GitHub's rate limit for this account was reached, so Flash didn't try again. Wait a few minutes, then ask again.": "Naabot na ang rate limit ng GitHub para sa account na ito, kaya hindi na sumubok ulit ang Flash. Maghintay ng ilang minuto, saka magtanong ulit.",
  "Give the item a name (up to 80 characters).": "Bigyan ng pangalan ang item (hanggang 80 character).",
  "Go ahead": "Ituloy",

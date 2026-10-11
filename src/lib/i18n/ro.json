@@ -631,7 +631,7 @@
  "Get more credits": "Obține mai multe credite",
  "Get {plan}": "Alege {plan}",
  "GitHub didn't find that. The repository, branch, file or number may be wrong, or the Flash AI app isn't installed on that repository.": "GitHub nu a găsit asta. Depozitul, ramura, fișierul sau numărul poate fi greșit, sau aplicația Flash AI nu este instalată în acel depozit.",
- "GitHub refused this. The Flash AI app may not have access to that repository: connect GitHub again and pick it.": "GitHub a refuzat asta. Este posibil ca aplicația Flash AI să nu aibă acces la acel depozit: reconectează GitHub și alege-l.",
+ "GitHub refused this. The Flash AI app may not have access to that repository: add it on GitHub, under Settings > Applications.": "GitHub a refuzat asta. Este posibil ca aplicația Flash AI să nu aibă acces la acel depozit: adaugă-l pe GitHub, la Settings > Applications.",
  "GitHub's rate limit for this account was reached, so Flash didn't try again. Wait a few minutes, then ask again.": "S-a atins limita de cereri GitHub pentru acest cont, așa că Flash nu a mai încercat. Așteaptă câteva minute, apoi întreabă din nou.",
  "Give the item a name (up to 80 characters).": "Dă-i produsului un nume (cel mult 80 de caractere).",
  "Go ahead": "Continuă",

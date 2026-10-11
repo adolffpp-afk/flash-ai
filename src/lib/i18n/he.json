@@ -631,7 +631,7 @@
  "Get more credits": "השגת קרדיטים נוספים",
  "Get {plan}": "שדרוג ל-{plan}",
  "GitHub didn't find that. The repository, branch, file or number may be wrong, or the Flash AI app isn't installed on that repository.": "GitHub לא מצא את זה. ייתכן שהמאגר, הענף, הקובץ או המספר שגויים, או שהאפליקציה Flash AI לא מותקנת במאגר הזה.",
- "GitHub refused this. The Flash AI app may not have access to that repository: connect GitHub again and pick it.": "GitHub דחה את הבקשה. ייתכן שלאפליקציה Flash AI אין גישה למאגר הזה: יש לחבר מחדש את GitHub ולבחור בו.",
+ "GitHub refused this. The Flash AI app may not have access to that repository: add it on GitHub, under Settings > Applications.": "GitHub דחה את הבקשה. ייתכן שלאפליקציה Flash AI אין גישה למאגר הזה: אפשר להוסיף אותו ב-GitHub, תחת Settings > Applications.",
  "GitHub's rate limit for this account was reached, so Flash didn't try again. Wait a few minutes, then ask again.": "החשבון הגיע למגבלת הבקשות של GitHub, ולכן Flash לא ניסה שוב. אפשר לחכות כמה דקות ואז לשאול שוב.",
  "Give the item a name (up to 80 characters).": "יש לתת לפריט שם (עד 80 תווים).",
  "Go ahead": "המשך",

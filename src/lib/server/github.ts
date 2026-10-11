@@ -280,7 +280,7 @@ export const installationsOf = (resource: string) => resource.split(/\s+/).filte
 export const GITHUB_PROBLEMS = {
   rate: msg("GitHub's rate limit for this account was reached, so Flash didn't try again. Wait a few minutes, then ask again."),
   notFound: msg("GitHub didn't find that. The repository, branch, file or number may be wrong, or the Flash AI app isn't installed on that repository."),
-  refused: msg("GitHub refused this. The Flash AI app may not have access to that repository: connect GitHub again and pick it."),
+  refused: msg("GitHub refused this. The Flash AI app may not have access to that repository: add it on GitHub, under Settings > Applications."),
 };
 
 const REPO = { type: "string", description: "The repository, as owner/name (for example octocat/hello-world)." };
@@ -472,6 +472,8 @@ export class GitHubClient {
   private readonly token: string;
   private readonly installations: string[];
   private readonly signal?: AbortSignal;
+  // When the call being made must be done: every request of one call shares one call's time.
+  private deadline = 0;
 
   constructor(token: string, installations: string[], signal?: AbortSignal) {
     this.token = token;
@@ -486,8 +488,10 @@ export class GitHubClient {
 
   async close(): Promise<void> {}
 
-  /** One request to GitHub's API with the user's token: within the call's time, at most 2 MB, a write never redirected. */
+  /** One request to GitHub's API with the user's token: within what is left of the call's time, at most 2 MB, a write never redirected. */
   private async api(path: string, { method = "GET", body, accept }: { method?: "GET" | "POST"; body?: unknown; accept?: string } = {}): Promise<SafeResponse> {
+    const left = (this.deadline || Date.now() + CALL_TIMEOUT_MS) - Date.now();
+    if (left < 500) throw new McpError("timeout", "GitHub took too long to answer.");
     try {
       return await safeFetch(`${githubApi()}${path}`, {
         method,
@@ -501,7 +505,7 @@ export class GitHubClient {
         ...(body !== undefined && { body: JSON.stringify(body) }),
         accept: ["json"],
         maxBytes: RESULT_BYTES,
-        timeoutMs: CALL_TIMEOUT_MS,
+        timeoutMs: left,
         signal: this.signal,
         ...(method !== "GET" && { followRedirects: false as const }),
       });
@@ -514,6 +518,7 @@ export class GitHubClient {
   }
 
   async callTool(tool: Pick<McpTool, "name">, args: Record<string, unknown>): Promise<ToolOutput> {
+    this.deadline = Date.now() + CALL_TIMEOUT_MS;
     switch (tool.name) {
       case "list_repos":
         return this.listRepos();
@@ -550,7 +555,7 @@ export class GitHubClient {
       const total = Number(field(body, "total_count") ?? 0);
       if (total > (Array.isArray(repos) ? repos.length : 0)) lines.push(`(${total} in all in this installation; the first 100 are listed.)`);
     }
-    if (!lines.length) return problem ?? { text: "No repositories: the Flash AI app isn't installed on any repository the user can reach. They can connect GitHub again to pick some.", isError: false };
+    if (!lines.length) return problem ?? { text: "No repositories: the Flash AI app isn't installed on any repository the user can reach. They can pick some on GitHub, under Settings > Applications.", isError: false };
     return { text: lines.join("\n"), isError: false };
   }
 

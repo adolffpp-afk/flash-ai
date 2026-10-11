@@ -631,7 +631,7 @@
  "Get more credits": "ซื้อเครดิตเพิ่ม",
  "Get {plan}": "รับ {plan}",
  "GitHub didn't find that. The repository, branch, file or number may be wrong, or the Flash AI app isn't installed on that repository.": "GitHub ไม่พบสิ่งนั้น รีโพสิทอรี แบรนช์ ไฟล์ หรือหมายเลขอาจไม่ถูกต้อง หรือแอป Flash AI ไม่ได้ติดตั้งในรีโพสิทอรีนั้น",
- "GitHub refused this. The Flash AI app may not have access to that repository: connect GitHub again and pick it.": "GitHub ปฏิเสธคำขอนี้ แอป Flash AI อาจไม่มีสิทธิ์เข้าถึงรีโพสิทอรีนั้น: เชื่อมต่อ GitHub ใหม่แล้วเลือกรีโพสิทอรีนั้น",
+ "GitHub refused this. The Flash AI app may not have access to that repository: add it on GitHub, under Settings > Applications.": "GitHub ปฏิเสธคำขอนี้ แอป Flash AI อาจไม่มีสิทธิ์เข้าถึงรีโพสิทอรีนั้น: เพิ่มรีโพสิทอรีนั้นบน GitHub ที่ Settings > Applications",
  "GitHub's rate limit for this account was reached, so Flash didn't try again. Wait a few minutes, then ask again.": "บัญชีนี้ใช้คำขอ GitHub ครบตามขีดจำกัดแล้ว Flash จึงไม่ได้ลองอีกครั้ง รอสักครู่แล้วถามอีกครั้ง",
  "Give the item a name (up to 80 characters).": "ตั้งชื่อสินค้า (ไม่เกิน 80 ตัวอักษร)",
  "Go ahead": "ดำเนินการต่อ",

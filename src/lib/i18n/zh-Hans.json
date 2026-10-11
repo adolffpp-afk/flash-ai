@@ -631,7 +631,7 @@
  "Get more credits": "获取更多积分",
  "Get {plan}": "获取 {plan}",
  "GitHub didn't find that. The repository, branch, file or number may be wrong, or the Flash AI app isn't installed on that repository.": "GitHub 没有找到它。可能是仓库、分支、文件或编号有误，或者该仓库没有安装 Flash AI 应用。",
- "GitHub refused this. The Flash AI app may not have access to that repository: connect GitHub again and pick it.": "GitHub 拒绝了此请求。Flash AI 应用可能无权访问该仓库：请重新连接 GitHub 并选择该仓库。",
+ "GitHub refused this. The Flash AI app may not have access to that repository: add it on GitHub, under Settings > Applications.": "GitHub 拒绝了此请求。Flash AI 应用可能无权访问该仓库：请在 GitHub 的 Settings > Applications 中添加该仓库。",
  "GitHub's rate limit for this account was reached, so Flash didn't try again. Wait a few minutes, then ask again.": "此账户已达到 GitHub 的速率限制，因此 Flash 没有重试。请等几分钟后再问一次。",
  "Give the item a name (up to 80 characters).": "请为商品命名（最多 80 个字符）。",
  "Go ahead": "继续",

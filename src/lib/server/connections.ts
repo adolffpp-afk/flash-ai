@@ -1333,10 +1333,9 @@ async function keepSignIn(userId: string, flow: FlowRow, tokens: Tokens): Promis
 }
 
 /**
- * Connect GitHub (see github.ts): installs Flash's GitHub App on the repositories the user picks, at
- * GitHub, then the authorize step signs them in. Reconnect (an account whose sign-in ended) goes to
- * the authorize step at once: the app is installed already. A user keeps one GitHub account here:
- * connecting again updates it (new tokens, and the installations its token sees). Only from a
+ * Connect GitHub, or Reconnect it (see github.ts): GitHub's authorize step, and the app's installation
+ * page after it only when the user's token sees no installation. A user keeps one GitHub account
+ * here: connecting again updates it (new tokens, and the installations its token sees). Only from a
  * confirmed account; costs nothing and calls no model.
  */
 export async function startGithub(userId: string, input: { connectionId?: string }, origin: string): Promise<string> {

@@ -631,7 +631,7 @@
  "Get more credits": "Pran plis kredi",
  "Get {plan}": "Pran {plan}",
  "GitHub didn't find that. The repository, branch, file or number may be wrong, or the Flash AI app isn't installed on that repository.": "GitHub pa jwenn sa. Petèt depo a, branch lan, fichye a oswa nimewo a pa bon, oswa app Flash AI a pa enstale sou depo sa a.",
- "GitHub refused this. The Flash AI app may not have access to that repository: connect GitHub again and pick it.": "GitHub refize sa. Petèt app Flash AI a pa gen aksè nan depo sa a: rekonekte GitHub epi chwazi li.",
+ "GitHub refused this. The Flash AI app may not have access to that repository: add it on GitHub, under Settings > Applications.": "GitHub refize sa. Petèt app Flash AI a pa gen aksè nan depo sa a: ajoute l sou GitHub, nan Settings > Applications.",
  "GitHub's rate limit for this account was reached, so Flash didn't try again. Wait a few minutes, then ask again.": "Kont sa a rive nan limit demann GitHub, kidonk Flash pa eseye ankò. Tann kèk minit, epi mande ankò.",
  "Give the item a name (up to 80 characters).": "Bay atik la yon non (jiska 80 karaktè).",
  "Go ahead": "Kontinye",

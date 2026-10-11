@@ -631,7 +631,7 @@
  "Get more credits": "Dapatkan kredit tambahan",
  "Get {plan}": "Pilih {plan}",
  "GitHub didn't find that. The repository, branch, file or number may be wrong, or the Flash AI app isn't installed on that repository.": "GitHub tidak menemukannya. Repositori, branch, file, atau nomornya mungkin salah, atau aplikasi Flash AI tidak terpasang di repositori itu.",
- "GitHub refused this. The Flash AI app may not have access to that repository: connect GitHub again and pick it.": "GitHub menolaknya. Aplikasi Flash AI mungkin tidak memiliki akses ke repositori itu: hubungkan ulang GitHub dan pilih repositori tersebut.",
+ "GitHub refused this. The Flash AI app may not have access to that repository: add it on GitHub, under Settings > Applications.": "GitHub menolaknya. Aplikasi Flash AI mungkin tidak memiliki akses ke repositori itu: tambahkan di GitHub, di Settings > Applications.",
  "GitHub's rate limit for this account was reached, so Flash didn't try again. Wait a few minutes, then ask again.": "Batas permintaan GitHub untuk akun ini telah tercapai, jadi Flash tidak mencoba lagi. Tunggu beberapa menit, lalu tanyakan lagi.",
  "Give the item a name (up to 80 characters).": "Beri nama produk (maksimal 80 karakter).",
  "Go ahead": "Lanjutkan",

@@ -631,7 +631,7 @@
  "Get more credits": "Daha fazla kredi al",
  "Get {plan}": "{plan} planını al",
  "GitHub didn't find that. The repository, branch, file or number may be wrong, or the Flash AI app isn't installed on that repository.": "GitHub bunu bulamadı. Depo, dal, dosya veya numara yanlış olabilir ya da Flash AI uygulaması o depoda yüklü değil.",
- "GitHub refused this. The Flash AI app may not have access to that repository: connect GitHub again and pick it.": "GitHub bunu reddetti. Flash AI uygulamasının o depoya erişimi olmayabilir: GitHub'ı yeniden bağla ve o depoyu seç.",
+ "GitHub refused this. The Flash AI app may not have access to that repository: add it on GitHub, under Settings > Applications.": "GitHub bunu reddetti. Flash AI uygulamasının o depoya erişimi olmayabilir: o depoyu GitHub'da Settings > Applications altından ekle.",
  "GitHub's rate limit for this account was reached, so Flash didn't try again. Wait a few minutes, then ask again.": "Bu hesap için GitHub'ın istek sınırına ulaşıldı, bu yüzden Flash yeniden denemedi. Birkaç dakika bekle, sonra tekrar sor.",
  "Give the item a name (up to 80 characters).": "Ürüne bir ad ver (en fazla 80 karakter).",
  "Go ahead": "Devam et",

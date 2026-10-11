@@ -21,7 +21,7 @@ import { useT } from "@/lib/use-t";
 type Loaded = { ready: boolean; owner: boolean; github?: boolean; connections: ConnectionView[] };
 type Preview = { host: string; tools: ToolPreview[]; signIn?: { authHost: string; needsClient: boolean; callback: string } };
 
-/** How a sign-in that came back here ended (?connect=…, set by /api/connect/mcp/callback), in the user's words. */
+/** How a sign-in that came back here ended (?connect=…, set by /api/connect/mcp/callback or GitHub's), in the user's words. */
 const OUTCOMES: Record<string, { text: string; ok: boolean }> = {
   ok: { text: msg("Your account is connected."), ok: true },
   review: { text: msg("Look at its tools, then add it."), ok: true },
@@ -34,7 +34,7 @@ const OUTCOMES: Record<string, { text: string; ok: boolean }> = {
 /**
  * Signs in: the server stores the attempt and answers with the service's own sign-in page, which the
  * browser opens. Only a web address is opened (the server allows https only, or the dev stand-in).
- * GitHub has its own start (its app's installation page, or for Reconnect its authorize page).
+ * GitHub has its own start (its authorize page; the app's installation page follows when needed).
  */
 async function signIn(request: Record<string, unknown>, provider = "") {
   const route = provider === "github" ? "/api/connect/github/start" : "/api/connect/mcp/start";

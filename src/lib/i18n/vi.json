@@ -631,7 +631,7 @@
  "Get more credits": "Mua thêm tín dụng",
  "Get {plan}": "Chọn {plan}",
  "GitHub didn't find that. The repository, branch, file or number may be wrong, or the Flash AI app isn't installed on that repository.": "GitHub không tìm thấy mục đó. Có thể kho mã, nhánh, tệp hoặc số bị sai, hoặc ứng dụng Flash AI chưa được cài đặt trên kho mã đó.",
- "GitHub refused this. The Flash AI app may not have access to that repository: connect GitHub again and pick it.": "GitHub đã từ chối yêu cầu này. Có thể ứng dụng Flash AI không có quyền truy cập kho mã đó: hãy kết nối lại GitHub và chọn kho mã đó.",
+ "GitHub refused this. The Flash AI app may not have access to that repository: add it on GitHub, under Settings > Applications.": "GitHub đã từ chối yêu cầu này. Có thể ứng dụng Flash AI không có quyền truy cập kho mã đó: hãy thêm kho mã đó trên GitHub, trong Settings > Applications.",
  "GitHub's rate limit for this account was reached, so Flash didn't try again. Wait a few minutes, then ask again.": "Tài khoản này đã chạm giới hạn yêu cầu của GitHub, nên Flash không thử lại. Hãy đợi vài phút rồi hỏi lại.",
  "Give the item a name (up to 80 characters).": "Đặt tên cho sản phẩm (tối đa 80 ký tự).",
  "Go ahead": "Tiếp tục",

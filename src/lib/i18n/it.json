@@ -631,7 +631,7 @@
  "Get more credits": "Ottieni altri crediti",
  "Get {plan}": "Passa a {plan}",
  "GitHub didn't find that. The repository, branch, file or number may be wrong, or the Flash AI app isn't installed on that repository.": "GitHub non l'ha trovato. Il repository, il branch, il file o il numero potrebbero essere sbagliati, oppure l'app Flash AI non è installata in quel repository.",
- "GitHub refused this. The Flash AI app may not have access to that repository: connect GitHub again and pick it.": "GitHub l'ha rifiutato. L'app Flash AI potrebbe non avere accesso a quel repository: ricollega GitHub e sceglilo.",
+ "GitHub refused this. The Flash AI app may not have access to that repository: add it on GitHub, under Settings > Applications.": "GitHub l'ha rifiutato. L'app Flash AI potrebbe non avere accesso a quel repository: aggiungilo su GitHub, in Settings > Applications.",
  "GitHub's rate limit for this account was reached, so Flash didn't try again. Wait a few minutes, then ask again.": "È stato raggiunto il limite di richieste di GitHub per questo account, quindi Flash non ha riprovato. Aspetta qualche minuto, poi chiedi di nuovo.",
  "Give the item a name (up to 80 characters).": "Dai un nome all'articolo (fino a 80 caratteri).",
  "Go ahead": "Procedi",

@@ -631,7 +631,7 @@
  "Get more credits": "クレジットを追加",
  "Get {plan}": "{plan}を始める",
  "GitHub didn't find that. The repository, branch, file or number may be wrong, or the Flash AI app isn't installed on that repository.": "GitHubで見つかりませんでした。リポジトリ、ブランチ、ファイル、番号のいずれかが間違っているか、そのリポジトリにFlash AIアプリがインストールされていない可能性があります。",
- "GitHub refused this. The Flash AI app may not have access to that repository: connect GitHub again and pick it.": "GitHubに拒否されました。Flash AIアプリがそのリポジトリにアクセスできない可能性があります。GitHubをもう一度接続して、そのリポジトリを選んでください。",
+ "GitHub refused this. The Flash AI app may not have access to that repository: add it on GitHub, under Settings > Applications.": "GitHubに拒否されました。Flash AIアプリがそのリポジトリにアクセスできない可能性があります。GitHubのSettings > Applicationsで、そのリポジトリを追加してください。",
  "GitHub's rate limit for this account was reached, so Flash didn't try again. Wait a few minutes, then ask again.": "このアカウントのGitHubのレート制限に達したため、Flashは再試行しませんでした。数分待ってから、もう一度お尋ねください。",
  "Give the item a name (up to 80 characters).": "商品名を入力してください（80文字まで）。",
  "Go ahead": "続行",

@@ -545,6 +545,9 @@ test("the reads: repositories, files and folders, code search, issues and a pull
   assert.match(pr.text, /From octo:feature into main/);
   assert.match(pr.text, /--- src\/app\.ts \(modified, \+1 -0\)\n@@/);
   assert.equal((await call("read_file", { repo: "octo/elsewhere", path: "x" })).text, GITHUB_PROBLEMS.notFound);
+  // A repository the app may not touch: said plainly, and the sign-in is fine (no Reconnect).
+  assert.deepEqual(await call("list_issues", { repo: "octo/site" }), { text: GITHUB_PROBLEMS.refused, isError: true });
+  assert.equal((await githubRow(user.id))!.status, "ok");
 
   const before = mock.githubLog.calls.length;
   for (const [tool, input] of [

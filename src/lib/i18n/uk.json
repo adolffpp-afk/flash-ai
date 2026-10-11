@@ -631,7 +631,7 @@
  "Get more credits": "Поповнити кредити",
  "Get {plan}": "Підключити {plan}",
  "GitHub didn't find that. The repository, branch, file or number may be wrong, or the Flash AI app isn't installed on that repository.": "GitHub цього не знайшов. Можливо, репозиторій, гілку, файл або номер указано неправильно, або застосунок Flash AI не встановлено в цьому репозиторії.",
- "GitHub refused this. The Flash AI app may not have access to that repository: connect GitHub again and pick it.": "GitHub відхилив це. Можливо, застосунок Flash AI не має доступу до цього репозиторію: перепід’єднайте GitHub і виберіть його.",
+ "GitHub refused this. The Flash AI app may not have access to that repository: add it on GitHub, under Settings > Applications.": "GitHub відхилив це. Можливо, застосунок Flash AI не має доступу до цього репозиторію: додайте його на GitHub у Settings > Applications.",
  "GitHub's rate limit for this account was reached, so Flash didn't try again. Wait a few minutes, then ask again.": "Досягнуто ліміту запитів GitHub для цього акаунта, тому Flash не пробував знову. Зачекайте кілька хвилин, а тоді запитайте ще раз.",
  "Give the item a name (up to 80 characters).": "Укажіть назву товару (до 80 символів).",
  "Go ahead": "Продовжити",

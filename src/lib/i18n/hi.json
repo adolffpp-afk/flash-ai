@@ -631,7 +631,7 @@
  "Get more credits": "और क्रेडिट लें",
  "Get {plan}": "{plan} लें",
  "GitHub didn't find that. The repository, branch, file or number may be wrong, or the Flash AI app isn't installed on that repository.": "GitHub को यह नहीं मिला। हो सकता है रिपॉज़िटरी, ब्रांच, फ़ाइल या नंबर गलत हो, या उस रिपॉज़िटरी में Flash AI ऐप इंस्टॉल न हो।",
- "GitHub refused this. The Flash AI app may not have access to that repository: connect GitHub again and pick it.": "GitHub ने इसे अस्वीकार कर दिया। हो सकता है Flash AI ऐप के पास उस रिपॉज़िटरी का ऐक्सेस न हो: GitHub को फिर से कनेक्ट करें और उसे चुनें।",
+ "GitHub refused this. The Flash AI app may not have access to that repository: add it on GitHub, under Settings > Applications.": "GitHub ने इसे अस्वीकार कर दिया। हो सकता है Flash AI ऐप के पास उस रिपॉज़िटरी का ऐक्सेस न हो: GitHub पर Settings > Applications में जाकर उसे जोड़ें।",
  "GitHub's rate limit for this account was reached, so Flash didn't try again. Wait a few minutes, then ask again.": "इस खाते के लिए GitHub की अनुरोध सीमा पूरी हो गई है, इसलिए Flash ने दोबारा कोशिश नहीं की। कुछ मिनट रुकें, फिर दोबारा पूछें।",
  "Give the item a name (up to 80 characters).": "आइटम का नाम लिखें (80 कैरेक्टर तक)।",
  "Go ahead": "आगे बढ़ें",
