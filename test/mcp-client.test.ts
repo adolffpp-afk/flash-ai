@@ -1,7 +1,8 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { cutText, headerParams, headerValue, LEGACY, McpClient, McpError, MODERN, readTool, toolHash, toolOutput } from "../src/lib/server/mcp-client.ts";
+import { headerParams, headerValue, LEGACY, McpClient, McpError, MODERN, readTool, toolHash, toolOutput } from "../src/lib/server/mcp-client.ts";
 import { tokensAtMost } from "../src/lib/tokens.ts";
+import { cut } from "../src/lib/engines/connect.ts";
 import { POISON, startMockConnectors } from "../scripts/mock-connectors.ts";
 
 let mock: Awaited<ReturnType<typeof startMockConnectors>>;
@@ -120,10 +121,11 @@ test("results become text: pictures and files left out, structured content as JS
   const big = (await client.listTools()).find((t) => t.name === "big")!;
   const out = await client.callTool(big, {});
   assert.ok(out.text.length >= 200_000);
-  const cut = cutText(out.text, 6000, tokensAtMost);
-  assert.ok(tokensAtMost(cut) <= 6000);
-  assert.match(cut, /\[Cut: the rest was too long\.\]$/);
-  assert.equal(cutText("short", 6000, tokensAtMost), "short");
+  const short = cut(out.text, 6000);
+  assert.ok(tokensAtMost(short) <= 6000);
+  assert.match(short, /\[Cut: the rest was too long\.\]$/);
+  assert.equal(cut("short", 6000), "short");
+  assert.ok(tokensAtMost(cut("界".repeat(50_000), 6000)) <= 6000, "text in any script is cut to fit");
   // A poisoned result is only text: what the client does with it is up to the loop (see connect-loop tests).
   const poisoned = (await client.listTools()).find((t) => t.name === "poisoned")!;
   assert.match((await client.callTool(poisoned, {})).text, new RegExp(POISON.slice(0, 20)));

@@ -1,5 +1,6 @@
 import type { BuiltApp, Engine, Source } from "./types";
 import type { Post } from "./post-pack";
+import type { ActionCard, ConnectorUse } from "./connectors";
 import { tNow } from "./use-t.ts";
 
 export type UIMessage = {
@@ -40,6 +41,9 @@ export type UIMessage = {
   audio?: string;
   audioLabel?: string;
   sources?: Source[];
+  // The connected accounts' tools the reply used, and the calls it asked the user to approve.
+  connectors?: ConnectorUse[];
+  actions?: ActionCard[];
   error?: string;
   errorCode?: string;
   // A request waiting for its price to be agreed: what Flash decided for it and the price it asked

@@ -3,6 +3,7 @@ import { ENGINES, type Attachment, type ChatTurn, type Engine, type Source, type
 import { levelName, type ModelLevel } from "../levels.ts";
 import {
   CLAUDE_PRICES,
+  CONNECT_STEPS,
   MAX_OUTPUT_TOKENS,
   WEATHER_RESULT_TOKENS,
   WEB_SEARCH_CENTS,
@@ -14,12 +15,14 @@ import {
   researchPlan,
   tokensMaxCents,
   tokensWithin,
+  worstTokens,
   type ToolPlan,
 } from "../credits.ts";
 import { english, type Translate } from "../i18n.ts";
 import { MAX_FORECASTS, TOO_MANY, WEATHER_ROUNDS, WEATHER_TOOL, type WeatherTool } from "../weather.ts";
 import { tokensAtMost } from "../tokens.ts";
 import type { Where } from "../context-note.ts";
+import { CONNECT_LINE, connectorCalls, type ConnectState, type ConnectorKit, type ConnectorTool } from "./connect.ts";
 
 /*
  * Flash uses three Claude models, to keep quality high where it shows and costs low elsewhere:
@@ -266,15 +269,20 @@ export type Watch = { signal?: AbortSignal; running?: Running; endsAt?: number }
 export const modelForEngine = (engine: Engine) =>
   engine === "app" || engine === "slides" || engine === "code" ? BUILD_MODEL : CHAT_MODEL;
 
-/** Counts the tokens a conversation and its system prompt will cost to read, plus room for tools. */
-export async function countInputTokens(model: string, history: ChatTurn[], systemPrompt = ""): Promise<number> {
+/**
+ * Counts the tokens a conversation and its system prompt will cost to read. With tools (a reply with
+ * connectors) they are counted exactly too; without, 3,000 tokens are added as room for any tool.
+ */
+export async function countInputTokens(model: string, history: ChatTurn[], systemPrompt = "", tools?: Anthropic.Beta.BetaTool[]): Promise<number> {
   const messages = toMessages(history);
+  const withTools = Boolean(tools?.length);
   try {
-    const res = await getClient().beta.messages.countTokens({ model, messages, ...(systemPrompt && { system: systemPrompt }) });
-    return res.input_tokens + 3000;
+    const res = await getClient().beta.messages.countTokens({ model, messages, ...(systemPrompt && { system: systemPrompt }), ...(withTools && { tools }) });
+    return res.input_tokens + (withTools ? 0 : 3000);
   } catch {
-    // Counting failed: estimate on the high side (about 2.5 characters per token).
-    return Math.ceil((JSON.stringify(messages).length + systemPrompt.length) / 2.5) + 3000;
+    // Counting failed: estimate on the high side (about 2.5 characters per token), the tools at the
+    // most they can be. The reply's check before every step counts again (see streamText).
+    return Math.ceil((JSON.stringify(messages).length + systemPrompt.length) / 2.5) + (withTools ? worstTokens(JSON.stringify(tools).length) : 3000);
   }
 }
 
@@ -422,10 +430,23 @@ function assistantContent(t: ChatTurn): string {
   return t.app ? `${t.content}\n\n\`\`\`html\n${t.app}\n\`\`\`` : t.content;
 }
 
+/** A turn's content with the tool blocks the server put on it (see ChatTurn): calls after the words, results before them. */
+function withTools(t: ChatTurn, content: string | Anthropic.Beta.BetaContentBlockParam[]): string | Anthropic.Beta.BetaContentBlockParam[] {
+  const calls = t.role === "assistant" ? (t.toolCalls ?? []) : [];
+  const results = t.role === "user" ? (t.toolResults ?? []) : [];
+  if (!calls.length && !results.length) return content;
+  const blocks: Anthropic.Beta.BetaContentBlockParam[] = typeof content === "string" ? (content.trim() ? [{ type: "text", text: content }] : []) : content;
+  return [
+    ...results.map((r) => ({ type: "tool_result" as const, tool_use_id: r.id, content: r.content, ...(r.isError && { is_error: true }) })),
+    ...blocks,
+    ...calls.map((c) => ({ type: "tool_use" as const, id: c.id, name: c.name, input: c.input })),
+  ];
+}
+
 export function toMessages(history: ChatTurn[]): Anthropic.Beta.BetaMessageParam[] {
   return history
-    .filter((t) => t.content.trim() || t.attachment || t.app)
-    .map((t) => ({ role: t.role, content: t.role === "user" ? toContent(t) : assistantContent(t) }));
+    .filter((t) => t.content.trim() || t.attachment || t.app || t.toolCalls?.length || t.toolResults?.length)
+    .map((t) => ({ role: t.role, content: withTools(t, t.role === "user" ? toContent(t) : assistantContent(t)) }));
 }
 
 export type WritingMode = "text" | "code" | "translate" | "docs";
@@ -465,12 +486,13 @@ const MODE_PROMPTS: Record<WritingMode, string> = {
  * quick plan; tools: otherToolsLine(engineStatus()), built in route.ts since this file can't import
  * server code; context: contextNote(where, now).
  */
-export type SystemOptions = { web?: "search" | "none" | "free"; weather?: boolean; quick?: boolean; tools?: string; context?: string };
+export type SystemOptions = { web?: "search" | "none" | "free"; weather?: boolean; quick?: boolean; tools?: string; context?: string; connect?: boolean };
 
 /**
  * A chat engine's system prompt. The text that never changes comes first and the per-minute context
  * last, so the prompt can be cached later: who Flash is, its other tools, what it can know of today,
- * the forecast tool, the mode, the user's settings and memory, then their date, time and place.
+ * the forecast tool, the connected accounts, the mode, the user's settings and memory, then their
+ * date, time and place.
  */
 export function system(preferences: string, mode: WritingMode | "search" = "text", o: SystemOptions = {}): string {
   const prefs = preferences.trim();
@@ -481,6 +503,7 @@ export function system(preferences: string, mode: WritingMode | "search" = "text
     o.tools ?? "",
     WEB_LINES[web](weather),
     weather ? WEATHER_LINE : "",
+    o.connect ? CONNECT_LINE : "",
     mode === "search" ? RESEARCH_PROMPT + (o.quick ? ` ${QUICK_RESEARCH}` : "") : MODE_PROMPTS[mode],
   ];
   // Settings > General (the language to answer in, what to call them) comes first, then their memory.
@@ -494,10 +517,11 @@ function refusalMessage(t: Translate): StreamEvent {
 }
 
 /**
- * What a reply with tools may use besides its system prompt: get_weather (weather), and onUsed,
- * called once when a forecast first comes back with data, so the reply's header can say why.
+ * What a reply with tools may use besides its system prompt: get_weather (weather), onUsed, called
+ * once when a forecast first comes back with data, so the reply's header can say why, and the user's
+ * connected accounts (connect, Write, Code, Translate and Docs only; see engines/connect.ts).
  */
-export type ReplyOptions = { system?: SystemOptions; weather?: WeatherTool; onUsed?: () => void };
+export type ReplyOptions = { system?: SystemOptions; weather?: WeatherTool; onUsed?: () => void; connect?: ConnectorKit };
 
 // A tool round is followed by another call only when the credits held still pay for this much of it.
 const MIN_ROUND_TOKENS = 300;
@@ -520,46 +544,118 @@ function afterSpending(err: unknown): unknown {
 /** A reply's forecasts so far: tool rounds, calls, and whether any came back with data. */
 type WeatherState = { rounds: number; calls: number; used: boolean };
 
+/** What one round of a reply's tools needs: the forecast and its state, and the connected accounts (see engines/connect.ts). */
+type RoundTools = {
+  weather?: WeatherTool;
+  state: WeatherState;
+  onUsed?: () => void;
+  kit?: ConnectorKit;
+  connectors?: ConnectorTool[];
+  connect?: ConnectState;
+  signal?: AbortSignal;
+  t?: Translate;
+};
+
 /**
- * Runs the get_weather calls of a turn that stopped for them (parallel calls together, at most
- * MAX_FORECASTS in a reply), saying what it checks, and returns their results, in order, for one user
- * message, with about how many tokens they add.
+ * Runs the tool calls of a turn that stopped for them, saying what it checks, and returns their
+ * results, in order, for one user message, with about how many tokens they add (and how many
+ * characters, for the most they can be): the get_weather calls together (at most MAX_FORECASTS in a
+ * reply), then the connector calls in order (see connectorCalls). Each round counts as one.
  */
-async function* weatherRound(
+async function* replyRound(
   final: Anthropic.Beta.BetaMessage,
-  tool: WeatherTool,
-  state: WeatherState,
-  onUsed?: () => void,
-): AsyncGenerator<StreamEvent, { results: Anthropic.Beta.BetaToolResultBlockParam[]; tokens: number }> {
+  r: RoundTools,
+): AsyncGenerator<StreamEvent, { results: Anthropic.Beta.BetaToolResultBlockParam[]; tokens: number; chars: number }> {
+  const { weather: tool, state } = r;
   const calls = final.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use");
-  for (const call of calls) if (call.name === WEATHER_TOOL.name) yield { type: "status", message: tool.status(call.input) };
-  const answers = await Promise.all(
-    calls.map((call) => {
-      if (call.name !== WEATHER_TOOL.name) return { text: `There is no tool called ${call.name}.`, isError: true, used: false };
-      return state.calls++ < MAX_FORECASTS ? tool.run(call.input) : { text: TOO_MANY, isError: true, used: false };
-    }),
+  const isWeather = (call: Anthropic.Beta.BetaToolUseBlock) => Boolean(tool) && call.name === WEATHER_TOOL.name;
+  for (const call of calls) if (isWeather(call)) yield { type: "status", message: tool!.status(call.input) };
+  const forecasts = new Map(
+    await Promise.all(
+      calls.filter(isWeather).map(async (call) => [call.id, state.calls++ < MAX_FORECASTS ? await tool!.run(call.input) : { text: TOO_MANY, isError: true, used: false }] as const),
+    ),
   );
+  const connected =
+    r.kit && r.connectors?.length && r.connect
+      ? yield* connectorCalls(
+          calls.filter((c) => r.connectors!.some((x) => x.name === c.name)),
+          r.connectors,
+          r.kit,
+          r.connect,
+          r.signal,
+          r.t,
+        )
+      : new Map<string, { content: string; isError: boolean }>();
   // The answer is written next: the progress line goes.
   yield { type: "status", message: "" };
   state.rounds++;
-  if (!state.used && answers.some((a) => a.used)) {
+  if (!state.used && [...forecasts.values()].some((a) => a.used)) {
     state.used = true;
-    onUsed?.();
+    r.onUsed?.();
   }
+  const answers = calls.map((call) => {
+    const forecast = forecasts.get(call.id);
+    if (forecast) return { text: forecast.text, isError: forecast.isError };
+    const result = connected.get(call.id);
+    if (result) return { text: result.content, isError: result.isError };
+    return { text: `There is no tool called ${call.name}.`, isError: true };
+  });
   const results = calls.map((call, i) => ({
     type: "tool_result" as const,
     tool_use_id: call.id,
     content: answers[i].text,
     ...(answers[i].isError && { is_error: true }),
   }));
-  return { results, tokens: answers.reduce((sum, a) => sum + tokensAtMost(a.text) + 50, 0) };
+  return {
+    results,
+    tokens: answers.reduce((sum, a) => sum + tokensAtMost(a.text) + 50, 0),
+    chars: answers.reduce((sum, a) => sum + a.text.length + 50, 0),
+  };
 }
+
+/** Research's forecast rounds: replyRound with the forecast alone. */
+const weatherRound = (final: Anthropic.Beta.BetaMessage, tool: WeatherTool, state: WeatherState, onUsed?: () => void) =>
+  replyRound(final, { weather: tool, state, onUsed });
+
+/**
+ * What the next step of a reply with connectors will read, in tokens, before it is sent: counted by
+ * Claude with its tools (counting costs nothing), and never less than what the last call read and
+ * wrote plus what the tools returned, counted high (see tokensAtMost). When counting fails: what the
+ * last call read and wrote, and what the tools returned at the most it can be (3 tokens a character,
+ * see worstTokens), or null for a first step, which keeps the hold's own count.
+ */
+async function nextInput(
+  model: string,
+  system: string,
+  messages: Anthropic.Beta.BetaMessageParam[],
+  tools: Anthropic.Beta.BetaTool[],
+  last: { usage: Anthropic.Beta.BetaUsage; tokens: number; chars: number } | null,
+  signal?: AbortSignal,
+): Promise<number | null> {
+  const read = last ? inputOf(last.usage) + last.usage.output_tokens : 0;
+  try {
+    const res = await getClient().beta.messages.countTokens({ model, system, messages, ...(tools.length && { tools }) }, { signal });
+    return Math.max(res.input_tokens, read + (last?.tokens ?? 0));
+  } catch (err) {
+    if (signal?.aborted) throw err;
+    return last ? read + worstTokens(last.chars) : null;
+  }
+}
+
+/** Ends a reply whose next step the credits held don't pay for, after a tool round. */
+const stoppedLooking = (t: Translate): StreamEvent => ({
+  type: "text",
+  delta: `\n\n_${t("Stopped looking things up: the credits held for this reply are used.")}_`,
+});
 
 /**
  * Writing, code, translation, documents and file questions: streams Claude's reply token by token.
- * With o.weather, Claude may ask for live forecasts (see weather.ts): their results go back to it,
- * appended to the conversation as they are, for up to WEATHER_ROUNDS rounds, each paid for within
- * the credits held, and MET Norway is credited under the answer.
+ * With o.weather, Claude may ask for live forecasts (see weather.ts), and with o.connect it may use
+ * the user's connected accounts (see engines/connect.ts). Their results go back to it, appended to the
+ * conversation, for up to WEATHER_ROUNDS rounds (CONNECT_STEPS − 1 with connectors), and every step is
+ * checked before it starts: it writes only what the credits held still pay for once it has read
+ * everything again, so the reply never costs more than was held. MET Norway is credited under an
+ * answer that used a forecast, and the accounts' tools a reply used are listed under it.
  */
 export async function* streamText(
   history: ChatTurn[],
@@ -576,13 +672,40 @@ export async function* streamText(
   o: ReplyOptions = {},
 ): AsyncGenerator<StreamEvent> {
   const tool = o.weather;
+  const kit = o.connect;
   // The same words in every call of the reply, so the hold counted them and Claude's thinking stays valid.
-  const instructions = system(preferences, mode, { ...o.system, weather: Boolean(tool) });
+  const instructions = system(preferences, mode, { ...o.system, weather: Boolean(tool), connect: Boolean(kit) });
   const messages = toMessages(history);
   const state: WeatherState = { rounds: 0, calls: 0, used: false };
+  const connect: ConnectState = { readFrom: new Set(kit?.tainted ?? []), used: [] };
+  const rounds = kit ? CONNECT_STEPS - 1 : WEATHER_ROUNDS;
   let maxTokens = budget.maxTokens;
   let spent = 0;
   try {
+    // The accounts' tools as their servers list them now: one that changed since the user added it is left out.
+    let connectors: ConnectorTool[] = [];
+    if (kit) {
+      yield { type: "status", message: t("Checking your connected accounts…") };
+      const checked = await kit.check(signal);
+      connectors = checked.tools;
+      yield { type: "status", message: "" };
+      for (const name of checked.unreachable) {
+        yield { type: "text", delta: `_${t("Flash couldn't reach {name} just now, so this answer doesn't use it.", { name })}_\n\n` };
+      }
+      for (const name of checked.changed) {
+        yield { type: "text", delta: `_${t("{name} changed some of its tools since you added it. They're left out until you look at them in Settings > Connectors.", { name })}_\n\n` };
+      }
+    }
+    const tools = [...(tool ? [WEATHER_TOOL] : []), ...connectors.map((c) => c.definition)];
+    if (kit) {
+      // The first step is checked too, with the tools it really has.
+      const first = await nextInput(choice.model, instructions, messages, tools, null, signal);
+      if (first !== null) maxTokens = Math.min(budget.maxTokens, tokensWithin(mode, choice.model, first, budget.capCents, usesFallback(choice)));
+      if (!(maxTokens >= MIN_ROUND_TOKENS)) {
+        yield lengthNote(budget, t);
+        return;
+      }
+    }
     for (;;) {
       running?.begin(choice.model, maxTokens);
       const stream = getClient().beta.messages.stream(
@@ -592,7 +715,7 @@ export async function* streamText(
           system: instructions,
           messages,
           // The last round can't ask for more, so the reply always ends in words.
-          ...(tool && { tools: [WEATHER_TOOL], tool_choice: { type: state.rounds >= WEATHER_ROUNDS ? ("none" as const) : ("auto" as const) } }),
+          ...(tools.length && { tools, tool_choice: { type: state.rounds >= rounds ? ("none" as const) : ("auto" as const) } }),
         },
         { signal },
       );
@@ -613,21 +736,31 @@ export async function* streamText(
         yield lengthNote(budget, t);
         break;
       }
-      if (!tool || final.stop_reason !== "tool_use") break;
-      const round = yield* weatherRound(final, tool, state, o.onUsed);
+      if (!tools.length || final.stop_reason !== "tool_use") break;
+      const round = yield* replyRound(final, { weather: tool, state, onUsed: o.onUsed, kit, connectors, connect, signal, t });
       messages.push({ role: "assistant", content: final.content }, { role: "user", content: round.results });
-      // The next call reads everything again with the forecasts, and writes only what the credits held still pay for.
-      const nextInput = inputOf(final.usage) + final.usage.output_tokens + round.tokens;
-      maxTokens = Math.min(budget.maxTokens, tokensWithin(mode, choice.model, nextInput, budget.capCents - spent, usesFallback(choice), weatherLeft(state.rounds)));
+      // The next call reads everything again with what the tools returned, and writes only what the
+      // credits held still pay for: priced as this one call with connectors, and leaving room for the
+      // forecast's rounds still to come without.
+      const next = kit
+        ? await nextInput(choice.model, instructions, messages, tools, { usage: final.usage, tokens: round.tokens, chars: round.chars }, signal)
+        : inputOf(final.usage) + final.usage.output_tokens + round.tokens;
+      maxTokens = Math.min(
+        budget.maxTokens,
+        tokensWithin(mode, choice.model, next!, budget.capCents - spent, usesFallback(choice), kit ? undefined : weatherLeft(state.rounds)),
+      );
       if (!(maxTokens >= MIN_ROUND_TOKENS)) {
-        yield lengthNote(budget, t);
+        yield kit ? stoppedLooking(t) : lengthNote(budget, t);
         break;
       }
     }
   } catch (err) {
     throw spent > 0 ? afterSpending(err) : err;
+  } finally {
+    await kit?.close();
   }
   if (state.used) yield { type: "sources", items: tool!.sources };
+  if (connect.used.length) yield { type: "connector_used", items: connect.used };
 }
 
 function lengthNote(budget: Budget, t: Translate): StreamEvent {

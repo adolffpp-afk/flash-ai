@@ -408,19 +408,3 @@ export function toolOutput(result: Record<string, unknown>): ToolOutput {
   if (!parts.some((p) => !p.startsWith("[")) && result.structuredContent !== undefined) parts.push(JSON.stringify(result.structuredContent));
   return { text: parts.join("\n\n"), isError: result.isError === true };
 }
-
-/** Cuts text to fit a token allowance (at most tokensAtMost-style: about 2.5 ASCII characters a token, a token a byte otherwise), saying so. */
-export function cutText(text: string, maxTokens: number, tokensOf: (s: string) => number): string {
-  if (tokensOf(text) <= maxTokens) return text;
-  const note = "\n[Cut: the rest was too long.]";
-  let lo = 0;
-  let hi = text.length;
-  while (lo < hi) {
-    const mid = Math.ceil((lo + hi) / 2);
-    if (tokensOf(text.slice(0, mid)) + tokensOf(note) <= maxTokens) lo = mid;
-    else hi = mid - 1;
-  }
-  // Never cut a surrogate pair in two.
-  const end = lo > 0 && /[\ud800-\udbff]/.test(text[lo - 1]) ? lo - 1 : lo;
-  return text.slice(0, end) + note;
-}

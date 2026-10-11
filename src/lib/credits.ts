@@ -341,7 +341,15 @@ export const MIN_OUTPUT_TOKENS: Partial<Record<Engine, number>> = {
  * what the next step reads again (the step re-reads the input and everything added before it).
  * searches are the paid web searches. A reply without tools is one step.
  */
-export type ToolPlan = { results: number[]; searches: number };
+export type ToolPlan = {
+  results: number[];
+  searches: number;
+  // Output the tool steps write before the answer, paid for on top of the reply's allowance.
+  output?: number;
+  // The request needs credits for one step only (its first call), not for every step planned: the
+  // reply stops looking things up when the next step doesn't fit (see planHold).
+  oneStep?: boolean;
+};
 export const NO_TOOLS: ToolPlan = { results: [], searches: 0 };
 // The most a live forecast adds to what Claude reads (see summariseForecast in weather.ts), and the
 // rounds of forecasts a reply may ask for (WEATHER_ROUNDS there).
@@ -358,6 +366,25 @@ export const researchPlan = (quick: boolean, weather: boolean): ToolPlan => {
   const plan = quick ? QUICK_RESEARCH_PLAN : RESEARCH_PLAN;
   return weather ? withWeather(plan) : plan;
 };
+/*
+ * Connectors (see engines/connect.ts): a reply makes up to CONNECT_STEPS model calls, so up to
+ * CONNECT_STEPS − 1 rounds of tool calls and then the answer. Each round runs at most
+ * CONNECT_CALLS_PER_STEP calls (more get a "skipped" error), and what they return together is cut to
+ * about CONNECT_RESULT_TOKENS. The hold plans CONNECT_STEP_OUTPUT of writing for each tool step. That
+ * is a plan, not a cap: each step may write the reply's normal allowance, within what is left of the
+ * hold, and a step that doesn't fit isn't started (see streamText).
+ */
+export const CONNECT_STEPS = 4;
+export const CONNECT_CALLS_PER_STEP = 4;
+export const CONNECT_RESULT_TOKENS = 6000;
+export const CONNECT_STEP_OUTPUT = 1500;
+/** A reply with connectors: each round re-reads what its step wrote and what its tools (and a forecast, with weather) returned. */
+export const connectPlan = (weather: boolean): ToolPlan => ({
+  results: Array<number>(CONNECT_STEPS - 1).fill(CONNECT_STEP_OUTPUT + CONNECT_RESULT_TOKENS + (weather ? WEATHER_RESULT_TOKENS : 0)),
+  searches: 0,
+  output: (CONNECT_STEPS - 1) * CONNECT_STEP_OUTPUT,
+  oneStep: true,
+});
 /** The plan an engine has when none is given: Research searches, the others use no tools. */
 const planOf = (engine: Engine, plan?: ToolPlan) => plan ?? (engine === "search" ? RESEARCH_PLAN : NO_TOOLS);
 
@@ -383,13 +410,15 @@ export function inputCostCents(engine: Engine, model: string, inputTokens: numbe
  * what the declined model wrote (at every tool step).
  */
 export function callCost(engine: Engine, model: string, inputTokens: number, fallback = true, plan?: ToolPlan) {
-  const steps = planOf(engine, plan).results.length + 1;
-  let inputCents = inputCostCents(engine, model, inputTokens, plan);
+  const { results, output = 0 } = planOf(engine, plan);
+  const steps = results.length + 1;
+  // What the tool steps write is fixed too (a plan with connectors).
+  let inputCents = inputCostCents(engine, model, inputTokens, plan) + (output * claudePrice(model, inputTokens).output) / 1e6;
   let outputPrice = claudePrice(model, inputTokens).output;
   const backup = fallback ? fallbackModel(model) : undefined;
   if (backup) {
     const price = claudePrice(backup, inputTokens);
-    inputCents += inputCostCents(engine, backup, inputTokens, plan);
+    inputCents += inputCostCents(engine, backup, inputTokens, plan) + (output * price.output) / 1e6;
     outputPrice += price.output + price.input * steps;
   }
   return { inputCents, outputPrice, fallback: Boolean(backup) };
@@ -414,19 +443,27 @@ export function tokensWithin(engine: Engine, model: string, inputTokens: number,
  * shorter, and more credits never give a shorter reply. Otherwise the request runs without one.
  *
  * plan is the tool calls the reply may make (see ToolPlan); by default Research's searches, and no
- * tools for the other engines.
+ * tools for the other engines. A plan for one step (connectors) needs only what the first call costs,
+ * and holds for every step when the user has the credits; with fewer, the first step may use what is
+ * held, and the reply stops looking things up when the next step doesn't fit.
  */
 export function planHold(engine: Engine, model: string, inputTokens: number, available: number, scale = 1, spentCents = 0, plan?: ToolPlan) {
   const alone = (() => {
     const cost = callCost(engine, model, inputTokens, false, plan);
     const fixedCents = cost.inputCents + spentCents;
-    const minOutputCents = ((MIN_OUTPUT_TOKENS[engine] ?? 1500) * cost.outputPrice) / 1e6;
-    const needed = Math.ceil((fixedCents + minOutputCents) * MARKUP * SAFETY) + 1;
+    const minOutput = MIN_OUTPUT_TOKENS[engine] ?? 1500;
+    const first = plan?.oneStep ? callCost(engine, model, inputTokens, false, NO_TOOLS) : cost;
+    const needed = Math.ceil((first.inputCents + spentCents + (minOutput * first.outputPrice) / 1e6) * MARKUP * SAFETY) + 1;
     const limit = Math.ceil(fixedCents * MARKUP * SAFETY) + Math.ceil((CREDIT_LIMITS[engine] ?? 30) * Math.max(1, scale));
     const held = Math.max(needed, Math.min(limit, available));
     // What the reply itself may spend, after the helpers.
     const capCents = held / MARKUP / SAFETY - spentCents;
-    const maxTokens = tokensWithin(engine, model, inputTokens, capCents, false, plan);
+    let maxTokens = tokensWithin(engine, model, inputTokens, capCents, false, plan);
+    if (plan?.oneStep) {
+      // Each step may write what is held pays for in one call, up to the reply's allowance with every step held.
+      const allowance = Math.max(minOutput, tokensWithin(engine, model, inputTokens, Math.max(needed, limit) / MARKUP / SAFETY - spentCents, false, plan));
+      maxTokens = Math.min(allowance, tokensWithin(engine, model, inputTokens, capCents, false, NO_TOOLS));
+    }
     return { needed, held, maxTokens, capCents, fallback: false, byCredits: held < limit && maxTokens < MAX_OUTPUT_TOKENS };
   })();
   if (!fallbackModel(model)) return alone;

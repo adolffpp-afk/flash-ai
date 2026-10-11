@@ -446,6 +446,62 @@ const SCHEMA = [
   )`,
   // Old Stops are cleared by time on every Stop (see stops.ts).
   `CREATE INDEX IF NOT EXISTS chat_stops_time ON chat_stops(created_at)`,
+  // Connectors: the user's own accounts that replies can use (see connections.ts). The secret is
+  // sealed (secret-box.ts) and only its last 4 characters are kept to show. protocol is the MCP
+  // version the server answered with. Turso runs with foreign keys off, so a connection's rows are
+  // deleted by hand (see removeConnection); the references are there to say what belongs to what.
+  `CREATE TABLE IF NOT EXISTS connections (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    provider TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    label TEXT NOT NULL,
+    url TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'ok',
+    enc_secret TEXT NOT NULL DEFAULT '',
+    key_version TEXT NOT NULL DEFAULT '',
+    last4 TEXT NOT NULL DEFAULT '',
+    protocol TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    last_used_at INTEGER NOT NULL DEFAULT 0
+  )`,
+  `CREATE INDEX IF NOT EXISTS connections_user ON connections(user_id)`,
+  // Each connection's tools as the user saw them when they added it, pinned by a hash of the name,
+  // description and schema; a tool whose hash changes is left out (changed) until they look again.
+  `CREATE TABLE IF NOT EXISTS connection_tools (
+    connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    schema TEXT NOT NULL DEFAULT '{}',
+    hash TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    trusted INTEGER NOT NULL DEFAULT 0,
+    changed INTEGER NOT NULL DEFAULT 0,
+    position INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (connection_id, name)
+  )`,
+  // A tool call waiting for the user to approve it (see pending-actions.ts): single use, bound to its
+  // user and to a hash of its input, and gone 24 hours after it finished.
+  `CREATE TABLE IF NOT EXISTS pending_actions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+    tool TEXT NOT NULL,
+    tool_hash TEXT NOT NULL,
+    input_json TEXT NOT NULL,
+    input_hash TEXT NOT NULL,
+    reply_id TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'pending',
+    result TEXT NOT NULL DEFAULT '',
+    result_error INTEGER NOT NULL DEFAULT 0,
+    used INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL,
+    finished_at INTEGER NOT NULL DEFAULT 0
+  )`,
+  `CREATE INDEX IF NOT EXISTS pending_actions_user ON pending_actions(user_id, created_at)`,
 ];
 
 let client: Client | null = null;

@@ -188,6 +188,8 @@ export function sendTo(url: URL, to: Resolved | null, req: SafeRequest, headers:
       path: url.pathname + url.search,
       headers: { ...headers, "accept-encoding": "identity", ...(req.body !== undefined && { "content-length": String(Buffer.byteLength(req.body)) }) },
       signal,
+      // A new connection every time, never one kept from an earlier request: it goes only to `to`.
+      agent: false,
       ...(to && { lookup }),
     };
     const r = (url.protocol === "https:" ? httpsRequest : httpRequest)(options, (res) => {
@@ -232,7 +234,7 @@ export function sendTo(url: URL, to: Resolved | null, req: SafeRequest, headers:
     r.on("socket", (socket) => {
       const connected = () => clearTimeout(connectTimer);
       if (!socket.connecting) connected();
-      socket.once(url.protocol === "https:" ? "secureConnect" : "connect", connected);
+      else socket.once(url.protocol === "https:" ? "secureConnect" : "connect", connected);
     });
     r.on("close", () => clearTimeout(connectTimer));
     r.on("error", (err) => {
