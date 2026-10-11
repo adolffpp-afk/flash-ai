@@ -1,5 +1,6 @@
 import { msg } from "./i18n.ts";
 import type { Post } from "./post-pack.ts";
+import type { ActionCard, ConnectorUse } from "./connectors.ts";
 
 export const ENGINES = [
   "text",
@@ -48,6 +49,10 @@ export type ChatTurn = {
   more?: Attachment[];
   // Full HTML of an app or deck Flash built in this assistant turn, so follow-ups can edit it.
   app?: string;
+  // Set by the server only, for a reply continued with connector results the user approved: the
+  // calls (on the assistant turn before) and what they returned (on the user's turn), as tool blocks.
+  toolCalls?: { id: string; name: string; input: Record<string, unknown> }[];
+  toolResults?: { id: string; content: string; isError?: boolean }[];
 };
 
 export type BuiltApp = { title: string; html: string; kind: "app" | "slides" };
@@ -80,6 +85,10 @@ export type StreamEvent =
   | { type: "video"; url: string; prompt: string }
   | { type: "audio"; url: string; label?: string }
   | { type: "sources"; items: Source[] }
+  // The connected accounts' tools a reply used (never what they returned), sent once at its end.
+  | { type: "connector_used"; items: ConnectorUse[] }
+  // A connector call waiting for the user to approve it (see pending-actions.ts).
+  | { type: "approve_action"; action: ActionCard }
   // A social post pack's posts, each ready to copy.
   | { type: "posts"; posts: Post[] }
   | { type: "app"; app: BuiltApp }

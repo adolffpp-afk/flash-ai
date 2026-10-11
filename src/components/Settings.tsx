@@ -20,6 +20,7 @@ import {
 } from "@/lib/device-settings";
 import { BrandKitForm } from "./BrandKit";
 import { ConnectedApps } from "./ConnectedApps";
+import { YourConnectors } from "./YourConnectors";
 import { InstallApp } from "./InstallApp";
 import { SETTINGS_TABS, type SettingsTab } from "@/lib/settings-tabs";
 import { hasBuiltInRecognition } from "@/lib/listen";
@@ -237,15 +238,18 @@ export function Settings({
                 </Section>
               )}
               {tab === "connectors" && (
-                <Section title={t("Connectors")}>
-                  <p className="text-sm text-zinc-400">
-                    {t("Apps like Claude and ChatGPT can use Flash with your credits.")}{" "}
-                    <a className="text-primary-soft underline-offset-2 hover:underline" href="/connector">
-                      {t("How to connect one")}
-                    </a>
-                  </p>
-                  <ConnectedApps />
-                </Section>
+                <>
+                  <YourConnectors />
+                  <Section title={t("Use Flash in other apps")}>
+                    <p className="text-sm text-zinc-400">
+                      {t("Apps like Claude and ChatGPT can use Flash with your credits.")}{" "}
+                      <a className="text-primary-soft underline-offset-2 hover:underline" href="/connector">
+                        {t("How to connect one")}
+                      </a>
+                    </p>
+                    <ConnectedApps />
+                  </Section>
+                </>
               )}
               {message && (
                 <p role="status" className={`text-sm ${message.ok ? "text-emerald-300" : "text-red-400"}`}>

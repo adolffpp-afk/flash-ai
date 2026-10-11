@@ -30,6 +30,7 @@ export const FEATURE_PAGES = [
   "general",
   "credits",
   "invite",
+  "connectors",
 ] as const;
 export type FeaturePage = (typeof FEATURE_PAGES)[number];
 
@@ -50,8 +51,9 @@ export type Feature = {
   // The tool it needs, and the model within it when only one model does the job (photo edits are fal's).
   needs?: Engine;
   model?: string;
-  // Needs the server set up for it: Stripe payments, or custom domains on Vercel.
-  setup?: "payments" | "domains";
+  // Needs the server set up for it: Stripe payments, custom domains on Vercel, or the key connectors
+  // are sealed with (CONNECTOR_KEYS). A connectors feature isn't listed at all until it is set up.
+  setup?: "payments" | "domains" | "connectors";
   // Shown as "Paid plans": sites on a free plan can't use it.
   paid?: boolean;
   // Planned, not built: shown as "Coming soon".
@@ -68,6 +70,15 @@ export const FEATURES: Feature[] = [
   { title: msg("Translate"), about: msg("Natural translations, any language"), group: "Chat & research", icon: "translate", action: { tool: "translate" }, needs: "translate" },
   { title: msg("Search Your Chats"), about: msg("Find a chat by its name or what was said"), group: "Chat & research", icon: "search", action: { open: "chats" } },
   { title: msg("Ask Flash"), about: msg("A helper beside you that answers and lines up requests"), group: "Chat & research", icon: "sparkle", action: { open: "companion" }, also: "companion help" },
+  {
+    title: msg("Use Your Accounts in Chat"),
+    about: msg("Linear, Airtable and more, when you turn them on in a chat"),
+    group: "Chat & research",
+    icon: "plug",
+    action: { open: "connectors" },
+    setup: "connectors",
+    also: "connectors mcp linear airtable firecrawl perplexity resend brevo",
+  },
 
   // Create
   { title: msg("Image"), about: msg("Pictures, logos and posters from a sentence"), group: "Create", icon: "image", action: { tool: "image" }, needs: "image", also: "picture photo logo poster" },
@@ -121,7 +132,7 @@ export const FEATURES: Feature[] = [
 ];
 
 /** What's set up on this server: tools, models, Stripe payments and custom domains. */
-export type FeatureSetup = { isLive: (e: Engine) => boolean; modelLive: (id: string) => boolean; payments: boolean; domains: boolean };
+export type FeatureSetup = { isLive: (e: Engine) => boolean; modelLive: (id: string) => boolean; payments: boolean; domains: boolean; connectors: boolean };
 
 /** Whether a feature works now: it's built, and its tool, model and server setup are ready. */
 export function featureReady(f: Feature, on: FeatureSetup): boolean {
@@ -130,6 +141,9 @@ export function featureReady(f: Feature, on: FeatureSetup): boolean {
   if (f.model && !on.modelLive(f.model)) return false;
   return !f.setup || on[f.setup];
 }
+
+/** Whether a feature is left out of the list, not shown as coming: connectors until they're set up. */
+export const hiddenUntilReady = (f: Feature, on: FeatureSetup) => f.setup === "connectors" && !on.connectors;
 
 /** The install feature, shown only where Flash can still be installed. */
 export const isInstall = (f: Feature) => "open" in f.action && f.action.open === "install";

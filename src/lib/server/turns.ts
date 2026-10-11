@@ -1,4 +1,5 @@
 import type { UIMessage } from "../store.ts";
+import { continuedIds } from "../connectors.ts";
 import { ENGINES, PENDING_LIMIT_MS, type Engine } from "../types.ts";
 import { one, run, now } from "./db.ts";
 import { projectTooLarge } from "../project-size.ts";
@@ -59,6 +60,9 @@ export function cleanUserMessage(raw: unknown): UIMessage | null {
   if (m.pictureAbove === true || (typeof m.pictureAbove === "string" && m.pictureAbove)) {
     out.pictureAbove = short(m.pictureAbove, 2000) ?? true;
   }
+  // The approved results a Continue asked for, so Retry asks for them again after a reload.
+  const continues = continuedIds(m.continues);
+  if (continues.length) out.continues = continues;
   return out;
 }
 

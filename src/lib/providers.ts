@@ -45,3 +45,16 @@ export const missingKeys = (p: ProviderInfo, env: Record<string, string | undefi
 
 /** Whether all of a provider's keys are set in env. */
 export const providerSetUp = (p: ProviderInfo, env: Record<string, string | undefined>) => missingKeys(p, env).length === 0;
+
+/**
+ * Connectors (the user's own accounts in chat) aren't an AI provider, but need a key of their own:
+ * CONNECTOR_KEYS, which seals what users connect with (see server/secret-box.ts). Listed on its own
+ * under By provider, with what's missing.
+ */
+export const CONNECTOR_SETUP: ProviderInfo = {
+  id: "connectors",
+  name: "Connectors",
+  does: "Seals the keys and tokens users connect their own accounts with (Settings > Connectors)",
+  free: true,
+  keys: ["CONNECTOR_KEYS"],
+};

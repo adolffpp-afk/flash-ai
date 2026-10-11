@@ -1,5 +1,6 @@
 import type { BuiltApp, Engine, Source } from "./types";
 import type { Post } from "./post-pack";
+import type { ActionCard, ConnectorUse } from "./connectors";
 import { tNow } from "./use-t.ts";
 
 export type UIMessage = {
@@ -24,6 +25,8 @@ export type UIMessage = {
   // Sent with the picture from Flash's last reply, as a follow-up like "make it darker": that picture's
   // link, so Retry and Go ahead can fetch it again after a reload (true in chats saved before links were kept).
   pictureAbove?: boolean | string;
+  // A Continue on approved cards: their ids, so Retry continues with the same results, after a reload too.
+  continues?: string[];
   engine?: Engine;
   // A spoken reply about the app or deck before it, which the next follow-up may still change.
   about?: Engine;
@@ -40,6 +43,9 @@ export type UIMessage = {
   audio?: string;
   audioLabel?: string;
   sources?: Source[];
+  // The connected accounts' tools the reply used, and the calls it asked the user to approve.
+  connectors?: ConnectorUse[];
+  actions?: ActionCard[];
   error?: string;
   errorCode?: string;
   // A request waiting for its price to be agreed: what Flash decided for it and the price it asked
@@ -83,6 +89,8 @@ export type Pricing = {
   freeLane: { chats: number; images: number; transcripts?: number };
   paymentsEnabled: boolean;
   domainsEnabled: boolean;
+  // Connectors are set up on this server (see secret-box.ts).
+  connectorsEnabled?: boolean;
   testPurchases: boolean;
   models: { id: string; engine: Engine; label: string; credits: number; blurb: string; live: boolean }[];
 };

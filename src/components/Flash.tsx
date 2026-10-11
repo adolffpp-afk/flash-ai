@@ -31,7 +31,10 @@ import type { ChatHit } from "@/lib/server/search";
 import { BoltIcon, BrandMark } from "@/app/brand";
 import { Home, ICONS, Icon } from "./Home";
 import { Bell } from "./Bell";
-import { LevelPicker, MenusOpenDown, MicButton, PlusMenu, SendButton, TalkButton, ToolPicker, type Choice } from "./ComposerTools";
+import { ConnectorsButton, LevelPicker, MenusOpenDown, MicButton, PlusMenu, SendButton, TalkButton, ToolPicker, type Choice } from "./ComposerTools";
+import { ConnectorTile } from "./YourConnectors";
+import type { ActionCard, ConnectionView } from "@/lib/connectors";
+import { readChatConnectors, writeChatConnectors } from "@/lib/chat-connectors";
 import { VoiceMode, type VoiceAnswer } from "./VoiceMode";
 import { useWakeWord } from "./useWakeWord";
 import { voiceReply, type VoiceMessage } from "@/lib/voice-chat";
@@ -292,6 +295,10 @@ export function Flash({
     setLevelState(next);
     writeSetting("level", next === "auto" ? "" : next);
   };
+  // The user's connected accounts (Settings > Connectors), once connectors are set up on this server,
+  // and which are on in each chat ("" for the chat a message from Home starts), kept on this device.
+  const [accounts, setAccounts] = useState<ConnectionView[]>([]);
+  const [connectorChoice, setConnectorChoice] = useState<Record<string, string[]>>({});
   const [dictating, setDictating] = useState(false);
   // Requests the companion lined up, each run in the chat it was asked about, one after another.
   const [queue, setQueueState] = useState<Queued[]>([]);
@@ -482,6 +489,20 @@ export function Flash({
     if (isLevel(saved)) setLevelState(saved);
   }, []);
 
+  // The user's connected accounts, for the Connectors button: read again whenever Settings closes.
+  const connectorsOn = Boolean(me?.connectorsEnabled);
+  useEffect(() => {
+    if (!connectorsOn || settingsTab) return;
+    api<{ ready: boolean; connections: ConnectionView[] }>("/api/connect")
+      .then((r) => setAccounts(r.ready ? r.connections : []))
+      .catch(() => {});
+  }, [connectorsOn, settingsTab]);
+
+  // The accounts on in the open chat, as this device kept them.
+  useEffect(() => {
+    if (activeId && !(activeId in connectorChoice)) setConnectorChoice((c) => ({ ...c, [activeId]: readChatConnectors(activeId) }));
+  }, [activeId, connectorChoice]);
+
   // ⌘ K or Ctrl K jumps to search: the box at the top of Home, or the sidebar's elsewhere.
   useEffect(() => {
     const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
@@ -663,6 +684,22 @@ export function Flash({
       updated_at: Date.now(),
       messages: (p.messages ?? []).map((m) => (m.id === messageId ? fn(m) : m)),
     }));
+  }
+
+  /** The accounts on in a chat ("" for the chat a message from Home starts) that can still be used. */
+  const connectorsIn = (projectId: string) =>
+    (connectorChoice[projectId] ?? []).filter((id) => accounts.some((a) => a.id === id && a.status === "ok"));
+
+  /** Turns accounts on or off in the open chat (or for the chat Home's next message starts). */
+  function setConnectorsHere(ids: string[]) {
+    setConnectorChoice((c) => ({ ...c, [activeId]: ids }));
+    if (activeId) writeChatConnectors(activeId, ids);
+  }
+
+  /** A connector card on a reply was answered: its new state is saved with the chat. */
+  function updateCard(messageId: string, card: ActionCard) {
+    if (!active) return;
+    updateMessage(active.id, messageId, (m) => ({ ...m, actions: m.actions?.map((a) => (a.id === card.id ? card : a)) }));
   }
 
   async function createProject(): Promise<Project | null> {
@@ -852,8 +889,14 @@ export function Flash({
     if (busy || runningRef.current) return;
     const content = text.trim();
     if (!content && !attachment) return;
+    // Accounts turned on from Home go with the chat this message starts.
+    const fromHome = active ? undefined : connectorsIn("");
     const chat = await ensureChat();
     if (!chat) return;
+    if (fromHome?.length) {
+      setConnectorChoice((c) => ({ ...c, [chat.id]: fromHome, "": [] }));
+      writeChatConnectors(chat.id, fromHome);
+    }
     if (!chat.messages) {
       setNotice(t("This project didn't load. Pick it again in the sidebar."));
       return;
@@ -882,12 +925,45 @@ export function Flash({
     }));
     setInput("");
     setFiles([]);
-    await respond(chat, chat.messages, userMsg, false, (stopped) => {
-      // The picture above couldn't be opened (or Stop was pressed while it loaded), so nothing was
-      // sent: the words go back in the box and the user decides.
-      setInput((typed) => (typed.trim() ? typed : text));
-      if (!stopped) setNotice(t("Couldn't open the picture above. Tap ✕ to make a new picture instead."));
-    });
+    await respond(
+      chat,
+      chat.messages,
+      userMsg,
+      false,
+      (stopped) => {
+        // The picture above couldn't be opened (or Stop was pressed while it loaded), so nothing was
+        // sent: the words go back in the box and the user decides.
+        setInput((typed) => (typed.trim() ? typed : text));
+        if (!stopped) setNotice(t("Couldn't open the picture above. Tap ✕ to make a new picture instead."));
+      },
+      undefined,
+      undefined,
+      fromHome && { ids: fromHome },
+    );
+  }
+
+  /** Approved cards on a reply that can still write the answer on: done, not yet used, and their account on here. */
+  const continuable = (m: UIMessage, projectId: string) =>
+    (m.actions ?? []).filter((a) => a.status === "done" && !a.continued && connectorsIn(projectId).includes(a.connectionId));
+
+  /**
+   * Continue on an action card: a new message asks Claude to write the answer on with what the
+   * approved calls returned (the server puts them in as that account's tool results). Only on the
+   * latest reply, and paid like any reply.
+   */
+  async function continueWith(messageId: string) {
+    const messages = active?.messages;
+    if (!active || !messages || busy || runningRef.current || messages.at(-1)?.id !== messageId) return;
+    const cards = continuable(messages.at(-1)!, active.id);
+    if (!cards.length) return;
+    const ids = cards.map((a) => a.id);
+    // Marked at once so it can't be sent twice; Retry sends the same results again if this fails.
+    const earlier = messages.map((m) =>
+      m.id === messageId ? { ...m, actions: m.actions?.map((a) => (ids.includes(a.id) ? { ...a, continued: true } : a)) } : m,
+    );
+    // The ids are kept on the message (and saved with the chat), so Retry and Go ahead send them again, after a reload too.
+    const userMsg: UIMessage = { id: newId(), role: "user", content: t("Continue with what came back."), continues: ids };
+    await respond(active, earlier, userMsg);
   }
 
   /**
@@ -993,6 +1069,9 @@ export function Flash({
     decided?: UIMessage["decided"],
     // Sees the reply as it's written (a voice conversation starts saying it).
     progress?: (reply: UIMessage) => void,
+    // The accounts on for this request when the chat is new (else the chat's own), and approved
+    // connector results to continue the answer with (see continueWith).
+    connect?: { ids?: string[]; actions?: string[] },
   ): Promise<UIMessage | null> {
     // One request at a time: Flash shows it's busy and Stop works from the first tap.
     if (runningRef.current) return null;
@@ -1031,6 +1110,10 @@ export function Flash({
     // A template's request always goes to its own engine, and one the companion lined up to Auto
     // (the tool picked in the composer was for something else); anything else to the one picked.
     const engine = userMsg.template?.engine ?? userMsg.build ?? (userMsg.queued || userMsg.auto ? "auto" : choice);
+    // The user's own accounts, only as they turned them on in this chat: never for a request the
+    // companion lined up, which they didn't type here.
+    const connectorIds = !connectorsOn || userMsg.queued ? [] : (connect?.ids ?? connectorsIn(projectId));
+    const continues = connect?.actions ?? userMsg.continues ?? [];
 
     // Only the most recent app's code is sent back, so edits build on it without resending every version.
     const lastAppId = [...earlier].reverse().find((m) => m.app)?.id;
@@ -1091,6 +1174,9 @@ export function Flash({
           ...(!earlier.length && project.name !== "New project" && { name: project.name }),
           // The device's time zone, so answers use the user's own date and time.
           ...(deviceTimeZone() && { timeZone: deviceTimeZone() }),
+          ...(connectorIds.length && { connectors: connectorIds }),
+          // Sent even with the accounts off, so the server refuses it rather than answer without the results.
+          ...(continues.length && { actions: continues }),
         }),
         signal: controller.signal,
       });
@@ -1331,6 +1417,7 @@ export function Flash({
       case "general":
       case "credits":
       case "invite":
+      case "connectors":
         return openCompanionPage(page);
       default: {
         // A new page in features.ts needs a case here.
@@ -1447,6 +1534,7 @@ export function Flash({
     modelLive: (id) => Boolean(me?.models.find((m) => m.id === id)?.live),
     payments: Boolean(me?.paymentsEnabled),
     domains: Boolean(me?.domainsEnabled),
+    connectors: Boolean(me?.connectorsEnabled),
   };
   const toolHits = findFeatures(query, undefined, t)
     .filter((f) => (f.soon || featureReady(f, setup)) && (install.available || !isInstall(f)))
@@ -1512,6 +1600,11 @@ export function Flash({
 
   // Home shows until the open chat has messages: on a fresh start, after Home or New chat, and while a first message is on its way.
   const isHome = !active || active.messages?.length === 0;
+  // The connected accounts on in the open chat (or for the chat Home's next message starts).
+  const connectorsHere = connectorsOn ? connectorsIn(activeId) : [];
+  const connectorsButton = connectorsOn && (
+    <ConnectorsButton accounts={accounts} on={connectorsHere} setOn={setConnectorsHere} onManage={() => setSettingsTab("connectors")} />
+  );
   // Next up, the message box and the voice panel. The voice panel always sits in the bottom bar, so
   // starting a conversation on Home and getting the first answer (which opens the chat) never restarts it.
   const queueList = queue.length > 0 && (
@@ -1680,6 +1773,26 @@ export function Flash({
           ))}
         </div>
       )}
+      {connectorsHere.length > 0 && (
+        <div className="mb-1 ms-2 mt-1 flex flex-wrap gap-1.5">
+          {accounts
+            .filter((a) => connectorsHere.includes(a.id))
+            .map((a) => (
+              <div key={a.id} className="inline-flex max-w-full items-center gap-2 rounded-lg bg-primary/15 py-1 pe-3 ps-1.5 text-xs text-primary-soft">
+                <ConnectorTile provider={a.provider} name={a.label} small />
+                <span className="truncate">{a.label}</span>
+                <button
+                  type="button"
+                  onClick={() => setConnectorsHere(connectorsHere.filter((id) => id !== a.id))}
+                  aria-label={t("Turn off {name} in this chat", { name: a.label })}
+                  className="text-primary-soft/70 hover:text-zinc-100"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+        </div>
+      )}
       {photoActions.length > 0 && !busy && (
         <div className="mb-1 ml-2 mt-1 inline-flex flex-wrap gap-1.5">
           {photoActions.map((a) => (
@@ -1720,6 +1833,8 @@ export function Flash({
               }}
             />
           )}
+          {/* Home's one line is short on room: the plug shows once an account is connected. */}
+          {accounts.length > 0 && connectorsButton}
           <PlusMenu plain onFiles={() => fileRef.current?.click()} onCamera={() => cameraRef.current?.click()} />
           <MicButton
             plain
@@ -1748,6 +1863,7 @@ export function Flash({
             />
             <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
               {(choice === "auto" || LEVEL_ENGINES.includes(choice)) && <LevelPicker level={level} setLevel={setLevel} />}
+              {connectorsButton}
               <MicButton
                 disabled={busy}
                 onText={(text) => {
@@ -2313,6 +2429,10 @@ export function Flash({
                   // Flash builds on the latest app, so fixes and picked parts are for that one.
                   onFixApp={m.app && !m.pending && !busy && m.id === lastAppId ? (request) => fixApp(m.app!.kind, request) : undefined}
                   onPickApp={m.app && !m.pending && m.id === lastAppId ? (part) => pickApp(m.app!.kind, part) : undefined}
+                  onAction={m.actions?.length ? (card) => updateCard(m.id, card) : undefined}
+                  onContinue={
+                    i === all.length - 1 && !m.pending && !busy && active && continuable(m, active.id).length ? () => continueWith(m.id) : undefined
+                  }
                 />
               ))}
               <div ref={bottomRef} />

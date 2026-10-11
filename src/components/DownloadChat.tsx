@@ -4,6 +4,7 @@ import { createElement, useState } from "react";
 import type { UIMessage } from "@/lib/store";
 import { chatDocument, chatFileName } from "@/lib/chat-export";
 import { useT } from "@/lib/use-t";
+import { safeMarkdown } from "@/lib/safe-markdown";
 
 // Pictures are put inside the page so it works offline; past this much, later ones become captions.
 const MAX_PICTURE_BYTES = 40 * 1024 * 1024;
@@ -45,7 +46,7 @@ export function DownloadChat({ project, disabled }: { project: { name: string; m
         }
       }
       const html = chatDocument(project.name, messages, {
-        markdown: (text) => renderToStaticMarkup(createElement(ReactMarkdown, { remarkPlugins: [remarkGfm] }, text)),
+        markdown: (text) => renderToStaticMarkup(createElement(ReactMarkdown, { remarkPlugins: [remarkGfm], components: safeMarkdown }, text)),
         picture: (url) => pictures.get(url) ?? null,
         link: (url) => new URL(url, window.location.origin).href,
         date: new Date().toLocaleDateString(t.locale, { month: "long", day: "numeric", year: "numeric" }),

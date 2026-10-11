@@ -25,6 +25,10 @@ export function applyEvent(m: UIMessage, e: StreamEvent): UIMessage {
       return { ...m, status: undefined, app: e.app };
     case "sources":
       return { ...m, sources: e.items };
+    case "connector_used":
+      return { ...m, connectors: e.items };
+    case "approve_action":
+      return { ...m, actions: [...(m.actions ?? []).filter((a) => a.id !== e.action.id), e.action] };
     case "posts":
       return { ...m, posts: e.posts };
     case "error":

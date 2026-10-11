@@ -1,0 +1,480 @@
+"use client";
+
+import { useEffect, useState, type FormEvent } from "react";
+import { api } from "@/lib/store";
+import { PRESETS, presetById, type ConnectionView, type Preset, type ToolKind, type ToolPreview, type ToolView } from "@/lib/connectors";
+import { useT } from "@/lib/use-t";
+
+/*
+ * Settings > Connectors > Your accounts in Flash: the user's own accounts that replies can use when
+ * connectors are on in a chat (see connectors.ts). The ready-made services take a key or token the
+ * user makes there; "Add your own connector" takes any public https MCP server, shown with its host
+ * and every tool before it is added. Keys are never shown again, only their last 4 characters.
+ * Until CONNECTOR_KEYS is set, users see nothing here, and the owner sees one line saying why.
+ */
+
+type Loaded = { ready: boolean; owner: boolean; connections: ConnectionView[] };
+type Preview = { host: string; tools: ToolPreview[] };
+
+const field =
+  "mt-1 block w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-primary/60";
+const label = "block text-sm text-zinc-300";
+const hint = "text-xs text-zinc-500";
+const button = "rounded-lg border border-white/10 px-3.5 py-1.5 text-sm text-zinc-200 transition hover:bg-white/[0.05] disabled:opacity-40";
+const primary = "rounded-lg bg-brand px-4 py-1.5 text-sm font-medium text-on-brand transition hover:brightness-110 disabled:opacity-40";
+const danger = "rounded-lg border border-red-500/40 px-3.5 py-1.5 text-sm text-red-300 transition hover:bg-red-500/10 disabled:opacity-40";
+const section = "flex flex-col gap-4 border-b border-white/6 pb-8 last:border-0 last:pb-0";
+
+/** A service's letter on its colour (a server the user added gets a plain one): Flash shows no logos from other servers. */
+export function ConnectorTile({ provider, name, small = false }: { provider: string; name: string; small?: boolean }) {
+  const preset = presetById(provider);
+  return (
+    <span
+      aria-hidden
+      style={preset ? { backgroundColor: preset.color } : undefined}
+      className={`inline-flex shrink-0 items-center justify-center rounded-lg font-semibold text-white ${preset ? "" : "bg-zinc-700"} ${small ? "h-5 w-5 text-[11px]" : "h-9 w-9 text-sm"}`}
+    >
+      {(name.trim()[0] ?? "?").toUpperCase()}
+    </span>
+  );
+}
+
+function Switch({ on, onChange, name, disabled }: { on: boolean; onChange: (on: boolean) => void; name: string; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label={name}
+      disabled={disabled}
+      onClick={() => onChange(!on)}
+      className={`relative h-6 w-11 shrink-0 rounded-full transition disabled:opacity-40 ${on ? "bg-primary" : "bg-zinc-700"}`}
+    >
+      <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-paper shadow transition-all ${on ? "start-[22px]" : "start-0.5"}`} />
+    </button>
+  );
+}
+
+export function YourConnectors() {
+  const t = useT();
+  const [data, setData] = useState<Loaded | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  // The service being added: a preset, or a server of the user's own.
+  const [adding, setAdding] = useState<Preset | "custom" | null>(null);
+
+  useEffect(() => {
+    api<Loaded>("/api/connect")
+      .then(setData)
+      .catch(() => setData({ ready: false, owner: false, connections: [] }));
+  }, []);
+
+  async function attempt(work: () => Promise<void>) {
+    setBusy(true);
+    setError("");
+    try {
+      await work();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("Something went wrong. Please try again."));
+    }
+    setBusy(false);
+  }
+
+  const replace = (connection: ConnectionView) =>
+    setData((d) => d && { ...d, connections: d.connections.some((c) => c.id === connection.id) ? d.connections.map((c) => (c.id === connection.id ? connection : c)) : [...d.connections, connection] });
+
+  if (!data) return null;
+  if (!data.ready) {
+    // No fake features: until connectors are set up, only the owner hears about them.
+    if (!data.owner) return null;
+    return (
+      <section className={section}>
+        <h3 className="text-base font-medium text-zinc-100">{t("Your accounts in Flash")}</h3>
+        <p className="text-sm text-zinc-400">
+          {t("Connectors need a key set up first. Make one on the dashboard, under By provider.")}{" "}
+          <a href="/admin" className="text-primary-soft underline-offset-2 hover:underline">
+            {t("Open the dashboard")}
+          </a>
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <section className={section}>
+      <h3 className="text-base font-medium text-zinc-100">{t("Your accounts in Flash")}</h3>
+      <p className="text-sm text-zinc-400">
+        {t(
+          "Turn connectors on in a chat to let Flash use these accounts in Write, Code, Translate and Docs & Sheets. Replies that use them cost credits as usual, and anything that sends or changes something waits for you to approve it.",
+        )}
+      </p>
+      {data.connections.length > 0 && (
+        <ul className="flex flex-col gap-3">
+          {data.connections.map((c) => (
+            <Connection
+              key={c.id}
+              c={c}
+              busy={busy}
+              onChange={(change) =>
+                attempt(async () => {
+                  const { connection } = await api<{ connection: ConnectionView }>(`/api/connect/${c.id}`, { method: "PATCH", json: change });
+                  replace(connection);
+                })
+              }
+              onRemove={() =>
+                attempt(async () => {
+                  await api("/api/connect", { method: "DELETE", json: { id: c.id } });
+                  setData((d) => d && { ...d, connections: d.connections.filter((x) => x.id !== c.id) });
+                })
+              }
+            />
+          ))}
+        </ul>
+      )}
+      {adding === null ? (
+        <>
+          <p className="text-sm text-zinc-300">{t("Add an account")}</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {PRESETS.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => (setError(""), setAdding(p))}
+                className="flex items-start gap-3 rounded-xl border border-zinc-800 p-3 text-start transition hover:border-primary/50 hover:bg-white/[0.03]"
+              >
+                <ConnectorTile provider={p.id} name={p.name} />
+                <span className="min-w-0">
+                  <span className="block text-sm text-zinc-100">{p.name}</span>
+                  <span className={`block ${hint}`}>{t(p.blurb)}</span>
+                </span>
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => (setError(""), setAdding("custom"))}
+              className="flex items-start gap-3 rounded-xl border border-dashed border-zinc-700 p-3 text-start transition hover:border-primary/50 hover:bg-white/[0.03]"
+            >
+              <span aria-hidden className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/[0.06] text-lg text-zinc-300">
+                +
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm text-zinc-100">{t("Add your own connector")}</span>
+                <span className={`block ${hint}`}>{t("Any MCP server at a public https address.")}</span>
+              </span>
+            </button>
+          </div>
+        </>
+      ) : adding === "custom" ? (
+        <AddCustom
+          busy={busy}
+          attempt={attempt}
+          onAdded={(connection) => (replace(connection), setAdding(null))}
+          onCancel={() => (setError(""), setAdding(null))}
+        />
+      ) : (
+        <AddPreset
+          preset={adding}
+          busy={busy}
+          attempt={attempt}
+          onAdded={(connection) => (replace(connection), setAdding(null))}
+          onCancel={() => (setError(""), setAdding(null))}
+        />
+      )}
+      {error && (
+        <p role="alert" className="text-sm text-red-400">
+          {error}
+        </p>
+      )}
+    </section>
+  );
+}
+
+type Change = { tool: string; enabled?: boolean; trusted?: boolean; review?: boolean; hash?: string };
+
+/** One connected account: its host, its key's last 4 characters, and its tools. */
+function Connection({ c, busy, onChange, onRemove }: { c: ConnectionView; busy: boolean; onChange: (change: Change) => void; onRemove: () => void }) {
+  const t = useT();
+  const [removing, setRemoving] = useState(false);
+  return (
+    <li className="rounded-xl border border-zinc-800 p-4">
+      <div className="flex items-center gap-3">
+        <ConnectorTile provider={c.provider} name={c.label} />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm text-zinc-100">{c.label}</p>
+          <p className={`truncate ${hint}`}>
+            <span dir="ltr">{c.host}</span> · {c.last4 ? t("key ending in {last4}", { last4: c.last4 }) : t("no sign-in")}
+          </p>
+        </div>
+        {!removing && (
+          <button type="button" className={button} disabled={busy} onClick={() => setRemoving(true)}>
+            {t("Remove")}
+          </button>
+        )}
+      </div>
+      {removing && (
+        <div className="mt-3 rounded-lg bg-white/[0.03] p-3">
+          <p className="text-sm text-zinc-300">
+            {c.custom
+              ? t("Remove {name} from Flash?", { name: c.label })
+              : t("Remove {name} from Flash? This doesn't delete the key in {name}: delete it there too if you don't need it any more.", { name: c.label })}
+          </p>
+          <div className="mt-2 flex gap-2">
+            <button type="button" className={danger} disabled={busy} onClick={onRemove}>
+              {t("Remove")}
+            </button>
+            <button type="button" className={button} onClick={() => setRemoving(false)}>
+              {t("Cancel")}
+            </button>
+          </div>
+        </div>
+      )}
+      {c.status === "needs_reconnect" && (
+        <p className="mt-2 text-xs text-amber-300">{t("Its key stopped working. Remove this account, then add it again with a new key.")}</p>
+      )}
+      <details className="mt-3">
+        <summary className="cursor-pointer text-xs text-zinc-400 hover:text-zinc-200">{t("Tools ({count})", { count: c.tools.length })}</summary>
+        <ul className="mt-2 divide-y divide-white/6">
+          {c.tools.map((tool) => (
+            <ToolRow
+              key={tool.name}
+              tool={tool}
+              connectionId={c.id}
+              custom={c.custom}
+              busy={busy}
+              onChange={(change) => onChange({ tool: tool.name, ...change })}
+            />
+          ))}
+        </ul>
+      </details>
+    </li>
+  );
+}
+
+/** What a tool does before it runs: a read runs by itself; anything else waits for the user. */
+function kindText(kind: ToolKind, custom: boolean, t: ReturnType<typeof useT>) {
+  if (custom) return t("Asks you each time");
+  return kind === "read" ? t("Reads, runs by itself") : t("Asks you first");
+}
+
+function ToolRow({
+  tool,
+  connectionId,
+  custom,
+  busy,
+  onChange,
+}: {
+  tool: ToolView;
+  connectionId: string;
+  custom: boolean;
+  busy: boolean;
+  onChange: (change: Omit<Change, "tool">) => void;
+}) {
+  const t = useT();
+  // A changed tool as its server lists it now (null: it no longer has it), read before it's used again.
+  const [now, setNow] = useState<ToolPreview | null | undefined>(undefined);
+  const [looking, setLooking] = useState(false);
+  const [lookError, setLookError] = useState("");
+  async function look() {
+    setLooking(true);
+    setLookError("");
+    try {
+      const { tool: live } = await api<{ tool: ToolPreview | null }>(`/api/connect/${connectionId}?tool=${encodeURIComponent(tool.name)}`);
+      setNow(live);
+    } catch (e) {
+      setLookError(e instanceof Error ? e.message : t("Something went wrong. Please try again."));
+    }
+    setLooking(false);
+  }
+  return (
+    <li className="flex items-start gap-3 py-2.5">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm text-zinc-200">
+          {tool.title} <span className={hint}>· {tool.trusted ? t("Always allowed") : kindText(tool.kind, custom, t)}</span>
+        </p>
+        {tool.description && <p className={`mt-0.5 line-clamp-3 ${hint}`}>{tool.description}</p>}
+        {tool.changed ? (
+          <div className="mt-1 text-xs">
+            <p className="text-amber-300">
+              {t("Its server changed this tool since you added it, so Flash leaves it out.")}{" "}
+              {now === undefined && (
+                <button type="button" disabled={busy || looking} onClick={look} className="underline underline-offset-2 hover:text-amber-200">
+                  {looking ? t("Looking…") : t("See what changed")}
+                </button>
+              )}
+            </p>
+            {now === null && (
+              <p className="mt-1.5 text-zinc-400">
+                {t("Its server no longer has this tool.")}{" "}
+                <button type="button" disabled={busy} onClick={() => onChange({ review: true })} className="underline underline-offset-2 hover:text-zinc-200">
+                  {t("Remove it")}
+                </button>
+              </p>
+            )}
+            {now && (
+              <div className="mt-1.5 rounded-lg bg-white/[0.03] p-2.5">
+                <p className="text-zinc-500">{t("What it says now")}</p>
+                <p dir="auto" className="mt-0.5 whitespace-pre-wrap break-words text-zinc-200">
+                  {now.description}
+                </p>
+                <p className="mt-1 text-zinc-500">{kindText(now.kind, custom, t)}</p>
+                <button type="button" disabled={busy} onClick={() => onChange({ review: true, hash: now.hash })} className={`mt-2 ${button}`}>
+                  {t("Use the new version")}
+                </button>
+              </div>
+            )}
+            {lookError && (
+              <p role="alert" className="mt-1 text-red-400">
+                {lookError}
+              </p>
+            )}
+          </div>
+        ) : (
+          custom && (
+            <label className="mt-1 inline-flex items-center gap-2 text-xs text-zinc-400">
+              <input type="checkbox" checked={tool.trusted} disabled={busy} onChange={(e) => onChange({ trusted: e.target.checked })} className="accent-primary" />
+              {t("Always allow this tool")}
+            </label>
+          )
+        )}
+      </div>
+      <Switch on={tool.enabled} disabled={busy} name={t("Use {tool}", { tool: tool.title })} onChange={(enabled) => onChange({ enabled })} />
+    </li>
+  );
+}
+
+type Adding = {
+  busy: boolean;
+  attempt: (work: () => Promise<void>) => Promise<void>;
+  onAdded: (connection: ConnectionView) => void;
+  onCancel: () => void;
+};
+
+/** A ready-made service: its key or token, made in that service, and a link to where. */
+function AddPreset({ preset, busy, attempt, onAdded, onCancel }: Adding & { preset: Preset }) {
+  const t = useT();
+  const [token, setToken] = useState("");
+  const host = new URL(preset.url).host;
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    attempt(async () => {
+      const { connection } = await api<{ connection: ConnectionView }>("/api/connect", { method: "POST", json: { action: "add", provider: preset.id, token } });
+      onAdded(connection);
+    });
+  };
+  return (
+    <form onSubmit={submit} className="flex flex-col gap-3 rounded-xl border border-zinc-800 p-4">
+      <div className="flex items-center gap-3">
+        <ConnectorTile provider={preset.id} name={preset.name} />
+        <div className="min-w-0">
+          <p className="text-sm text-zinc-100">{preset.name}</p>
+          <p className={hint}>{t(preset.blurb)}</p>
+        </div>
+      </div>
+      <label className={label}>
+        {t(preset.keyName)}
+        <input
+          type="password"
+          autoComplete="off"
+          spellCheck={false}
+          value={token}
+          onChange={(e) => setToken(e.target.value)}
+          required
+          dir="ltr"
+          className={field}
+        />
+      </label>
+      <p className={hint}>
+        {t("Flash keeps it encrypted, sends it only to {host}, and never shows it again.", { host })}{" "}
+        <a href={preset.help} target="_blank" rel="noreferrer" className="text-primary-soft underline-offset-2 hover:underline">
+          {t("Where to make one")}
+        </a>
+      </p>
+      <div className="flex gap-2">
+        <button type="submit" className={primary} disabled={busy || !token.trim()}>
+          {busy ? t("Connecting…") : t("Connect")}
+        </button>
+        <button type="button" className={button} onClick={onCancel}>
+          {t("Cancel")}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/**
+ * A server of the user's own: its address and key (or none), then its host and every tool, before
+ * anything is saved. It's added with the tools exactly as shown (see addConnection).
+ */
+function AddCustom({ busy, attempt, onAdded, onCancel }: Adding) {
+  const t = useT();
+  const [url, setUrl] = useState("");
+  const [token, setToken] = useState("");
+  const [name, setName] = useState("");
+  const [preview, setPreview] = useState<Preview | null>(null);
+  const input = { provider: "custom", url: url.trim(), token: token.trim(), label: name.trim() };
+  const look = (e: FormEvent) => {
+    e.preventDefault();
+    attempt(async () => setPreview(await api<Preview>("/api/connect", { method: "POST", json: { action: "preview", ...input } })));
+  };
+  const add = () =>
+    attempt(async () => {
+      const pins = Object.fromEntries(preview!.tools.map((tool) => [tool.name, tool.hash]));
+      const { connection } = await api<{ connection: ConnectionView }>("/api/connect", { method: "POST", json: { action: "add", ...input, pins } });
+      onAdded(connection);
+    });
+  if (preview) {
+    return (
+      <div className="flex flex-col gap-3 rounded-xl border border-zinc-800 p-4">
+        <p className={hint}>{t("Flash will connect to")}</p>
+        <p dir="ltr" className="break-all text-start text-2xl font-semibold text-zinc-100">
+          {preview.host}
+        </p>
+        <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-200">
+          {t("This server receives what Claude sends to its tools.")} {t("Each tool asks you before it runs, until you choose Always allow for it.")}
+        </p>
+        <p className="text-sm text-zinc-300">{t("Tools ({count})", { count: preview.tools.length })}</p>
+        <ul className="max-h-72 divide-y divide-white/6 overflow-y-auto">
+          {preview.tools.map((tool) => (
+            <li key={tool.name} className="py-2">
+              <p className="text-sm text-zinc-200">{tool.title}</p>
+              {tool.description && <p className={`mt-0.5 whitespace-pre-line ${hint}`}>{tool.description}</p>}
+            </li>
+          ))}
+        </ul>
+        <div className="flex gap-2">
+          <button type="button" className={primary} disabled={busy} onClick={add}>
+            {t("Add connector")}
+          </button>
+          <button type="button" className={button} onClick={() => setPreview(null)}>
+            {t("Back")}
+          </button>
+        </div>
+      </div>
+    );
+  }
+  return (
+    <form onSubmit={look} className="flex flex-col gap-3 rounded-xl border border-zinc-800 p-4">
+      <p className="text-sm text-zinc-100">{t("Add your own connector")}</p>
+      <label className={label}>
+        {t("Server address")}
+        <input type="url" inputMode="url" required placeholder="https://" value={url} onChange={(e) => setUrl(e.target.value)} dir="ltr" className={field} />
+      </label>
+      <label className={label}>
+        {t("Key or token (leave empty if it needs no sign-in)")}
+        <input type="password" autoComplete="off" spellCheck={false} value={token} onChange={(e) => setToken(e.target.value)} dir="ltr" className={field} />
+      </label>
+      <label className={label}>
+        {t("Name (optional)")}
+        <input value={name} maxLength={60} onChange={(e) => setName(e.target.value)} className={field} />
+      </label>
+      <div className="flex gap-2">
+        <button type="submit" className={primary} disabled={busy || !url.trim()}>
+          {busy ? t("Looking…") : t("Look at its tools")}
+        </button>
+        <button type="button" className={button} onClick={onCancel}>
+          {t("Cancel")}
+        </button>
+      </div>
+    </form>
+  );
+}

@@ -85,6 +85,16 @@ test("only a user message's own fields are kept, each of a sensible size", () =>
   assert.equal(cleanUserMessage({ id: "m1", content: "hi", pictureAbove: "x".repeat(3000) })?.pictureAbove, true);
 });
 
+test("second review #5: a Continue keeps the cards it continues with, so Retry asks for them again after a reload", () => {
+  const ids = ["act_AAAAAAAAAAAA", "act_BBBBBBBBBBBB"];
+  assert.deepEqual(cleanUserMessage({ id: "m1", content: "Continue with what came back.", continues: ids })?.continues, ids);
+  // Only ids as Flash makes them, each once, at most 4; none at all is left out.
+  const kept = cleanUserMessage({ id: "m1", content: "x", continues: ["../x", 7, "short", ...ids, ids[0], "act_CCCCCCCCCCCC", "act_DDDDDDDDDDDD", "act_EEEEEEEEEEEE"] });
+  assert.deepEqual(kept?.continues, [...ids, "act_CCCCCCCCCCCC", "act_DDDDDDDDDDDD"]);
+  assert.equal("continues" in cleanUserMessage({ id: "m1", content: "x", continues: ["../x"] })!, false);
+  assert.equal("continues" in cleanUserMessage({ id: "m1", content: "x", continues: "act_AAAAAAAAAAAA" })!, false);
+});
+
 test("a request's turn is saved only with a reply id, a user message and the message it follows", () => {
   const userMessage = { id: "m2", role: "user", content: "Hi" };
   assert.deepEqual(requestTurn({ replyId: "r2", userMessage, afterId: "a1" }), {

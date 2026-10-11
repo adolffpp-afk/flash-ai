@@ -91,6 +91,7 @@ import {
   TYPICAL_CREDITS,
   WEATHER_PLAN,
   claudePrice,
+  connectPlan,
   creditsFor,
   finalCredits,
   planHold,
@@ -130,6 +131,12 @@ import { falEditInput, falInput, packImageInput, packVideoInput, videoAspect } f
 import { writePack } from "@/lib/engines/post-pack.ts";
 import { packMarkdown } from "@/lib/post-pack.ts";
 import { CONFIRM_CREDITS, consents, decidedFor, type Decided } from "@/lib/price-question.ts";
+import { WEATHER_TOOL } from "@/lib/weather.ts";
+import { refuseUnpaid, type ConnectorKit } from "@/lib/engines/connect.ts";
+import { chatKit, continuedCalls, requestedConnections } from "@/lib/server/connections.ts";
+import { approvedResults, releaseResults } from "@/lib/server/pending-actions.ts";
+import { continuedIds } from "@/lib/connectors.ts";
+import { messageWindow } from "@/lib/message-window.ts";
 
 // Vercel Pro allows up to 800 seconds, which the Movie maker needs (scenes, filming and joining).
 export const maxDuration = 800;
@@ -190,6 +197,10 @@ type ChatRequest = {
   name?: string;
   // The browser's time zone ("Africa/Lagos"), for the date and time in the models' instructions.
   timeZone?: string;
+  // The user's connected accounts this chat has on (see connectors.ts): only their own are used, and
+  // only while CONNECTOR_KEYS is set. actions: approved connector results to continue the answer with.
+  connectors?: unknown;
+  actions?: unknown;
 };
 
 function providers(): Set<Provider> {
@@ -336,20 +347,28 @@ const DEEP_RESEARCH =
  * weather word asked for it, see weather-words.ts) and, for Research, the quick plan of one search
  * and one page read.
  */
-type Tools = { weather: boolean; hintOnly: boolean; quick: boolean };
+type Tools = { weather: boolean; hintOnly: boolean; quick: boolean; connect?: boolean };
 const NO_EXTRA_TOOLS: Tools = { weather: false, hintOnly: false, quick: false };
+// The engines that use the user's connected accounts when a chat has them on. Research keeps its web
+// search instead (the connector loop has no server tools), and building and media don't use them.
+const CONNECT_ENGINES: Engine[] = ["text", "code", "translate", "docs"];
+/** Whether a message has a name in it as a word of its own, in any script and any case. */
+const namesWord = (message: string, name: string) =>
+  new RegExp(`(^|[^\\p{L}\\p{N}])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^\\p{L}\\p{N}])`, "iu").test(message);
+// What a request with connectors on says when the user can't pay for it: never the free lane.
+const CONNECTORS_NEED_CREDITS = msg("Connectors use credits. Turn them off to keep chatting for free.");
 
 /** The system prompt a Claude engine sends, exactly, so the credit hold counts it too. */
 function systemFor(engine: Engine, preferences: string, history: ChatTurn[], prompting: Prompting, tools: Tools = NO_EXTRA_TOOLS): string {
   if (engine === "app" || engine === "slides") return buildSystem(engine, preferences, latestApp(history) !== null, prompting.build);
   const { weather, quick } = tools;
   if (engine === "search") return system(preferences, "search", { ...prompting.system, weather, quick });
-  return system(preferences, engine === "code" || engine === "translate" || engine === "docs" ? engine : "text", { ...prompting.system, weather });
+  return system(preferences, engine === "code" || engine === "translate" || engine === "docs" ? engine : "text", { ...prompting.system, weather, connect: Boolean(tools.connect) });
 }
 
-/** The tool calls a reply's hold pays for (see ToolPlan): Research's searches, and the forecast's rounds. */
+/** The tool calls a reply's hold pays for (see ToolPlan): Research's searches, the forecast's rounds, and the connectors' steps. */
 const toolPlan = (engine: Engine, tools: Tools): ToolPlan | undefined =>
-  engine === "search" ? researchPlan(tools.quick, tools.weather) : tools.weather ? WEATHER_PLAN : undefined;
+  engine === "search" ? researchPlan(tools.quick, tools.weather) : tools.connect ? connectPlan(tools.weather) : tools.weather ? WEATHER_PLAN : undefined;
 
 /** What a media request on this model cost Flash, in cents, with the number of photos it was given. */
 const mediaCents = (model: ModelInfo, request: string, photos = 1) => requestCents(model, request, photos);
@@ -488,12 +507,13 @@ async function* run(
   t: Translate & { language?: string } = english,
   // What the system prompt adds to the mode (see promptingFor); systemFor counts the same words.
   prompting: Prompting = { system: {}, free: {}, build: "" },
-  // The live forecast for an answer in words, what to do once it's used, and Research's quick plan.
-  tools: { weather?: WeatherTool; onUsed?: () => void; quick?: boolean } = {},
+  // The live forecast for an answer in words, what to do once it's used, Research's quick plan, and the
+  // user's connected accounts for Write, Code, Translate and Docs.
+  tools: { weather?: WeatherTool; onUsed?: () => void; quick?: boolean; connect?: ConnectorKit } = {},
 ): AsyncGenerator<StreamEvent> {
   const last = history[history.length - 1];
   const { started, watch, helper, halted, stop } = track;
-  const { weather, onUsed, quick } = tools;
+  const { weather, onUsed, quick, connect } = tools;
   if (isMedia(engine) ? !model : !configured(engine)) {
     yield* unavailableReply(engine, t);
     return;
@@ -524,7 +544,7 @@ async function* run(
     case "docs":
       yield* withStepDown(
         choice ?? claudeChoice(engine, "ascend"),
-        (c) => streamText(history, preferences, engine, meter, budget, c, t, watch, { system: prompting.system, weather, onUsed }),
+        (c) => streamText(history, preferences, engine, meter, budget, c, t, watch, { system: prompting.system, weather, onUsed, connect }),
         onStepDown,
         t,
       );
@@ -831,7 +851,8 @@ export async function POST(request: Request) {
   } catch {
     return Response.json({ error: t("Invalid JSON") }, { status: 400 });
   }
-  const history = (body.messages ?? []).slice(-30);
+  // Tool blocks are put on turns by the server only (a reply continued with approved results).
+  const history: ChatTurn[] = (Array.isArray(body.messages) ? body.messages : []).slice(-30).map((turn) => ({ ...turn, toolCalls: undefined, toolResults: undefined }));
   const last = history[history.length - 1];
   if (!last || last.role !== "user") {
     return Response.json({ error: t("The last message must be from the user.") }, { status: 400 });
@@ -876,6 +897,9 @@ export async function POST(request: Request) {
   let guessedWeather = false;
   // A quick question Auto sent to Research gets one search and one page read.
   const quickAsk = !override && last.content.length <= 160 && !/https?:\/\//i.test(last.content) && !DEEP_RESEARCH.test(last.content);
+  // The user's connected accounts this chat has on, set below once the request is checked (see chatKit).
+  let kit: ConnectorKit | null = null;
+  const connectsOn = (e: Engine) => Boolean(kit) && CONNECT_ENGINES.includes(e);
   // forecast: priced as the router's "weather" answer would be; onFree: for a free model's reply.
   const toolsFor = (e: Engine, forecast = false, onFree = false): Tools => {
     const asked = firm || guessedWeather || forecast;
@@ -886,7 +910,7 @@ export async function POST(request: Request) {
     const weather = WEATHER_ENGINES.includes(e) && (asked || followUp || (hinted && (onFree || (!guessRan && !override))));
     const hintOnly = weather && !asked;
     // Research asked about the weather searches quickly: the forecast comes from the tool.
-    return { weather, hintOnly, quick: e === "search" && ((weather && !hintOnly) || quickAsk) };
+    return { weather, hintOnly, quick: e === "search" && ((weather && !hintOnly) || quickAsk), connect: connectsOn(e) };
   };
   // Sums, units and money: Sonic thinks harder on them.
   const careful = needsCare(last.content);
@@ -982,6 +1006,58 @@ export async function POST(request: Request) {
   if (turn && !roomForTurn(Number(project!.size), turn.user, latestApp(history) ?? "")) {
     return Response.json({ error: t(PROJECT_FULL), code: "project_too_large" }, { status: 413 });
   }
+  // The connected accounts the chat has on: only the user's own, and only while connectors are set up
+  // (CONNECTOR_KEYS). This reads the database only; their servers are reached when the reply starts.
+  const connectorIds = requestedConnections(body.connectors);
+  kit = connectorIds.length ? await chatKit(user.id, connectorIds, { replyId: replyId ?? "", signal: abort.signal }) : null;
+  // Results the user approved and asked to continue the answer with (Continue on an action card):
+  // their calls go on the reply before and what came back on this message, as tool blocks, so Claude
+  // reads them as that account's data, never as the user's words. Marked used once the reply is paid for.
+  const asked = continuedIds(body.actions);
+  const continued =
+    kit && asked.length && history.length >= 2 && history[history.length - 2].role === "assistant" ? continuedCalls(kit, await approvedResults(user.id, asked)) : [];
+  // A Continue, or its Retry, without any of the results it asks for (used by an answer already,
+  // expired, or their account off here) would be paid for an answer that can't read them: not sent.
+  if (asked.length && !continued.length) {
+    return Response.json(
+      { error: t("The approved results can't be read now (they were already used, they expired, or their account is off in this chat), so nothing was sent and no credits were used."), code: "no_results" },
+      { status: 409 },
+    );
+  }
+  if (kit && continued.length) {
+    const callId = (id: string) => `toolu_flash_${id}`;
+    const before = history.length - 2;
+    history[before] = {
+      ...history[before],
+      toolCalls: continued.map(({ row, tool }) => ({ id: callId(row.id), name: tool.name, input: JSON.parse(row.input_json) as Record<string, unknown> })),
+    };
+    history[history.length - 1] = {
+      ...history[history.length - 1],
+      toolResults: continued.map(({ row, tool }) => ({
+        id: callId(row.id),
+        content: JSON.stringify({ source: tool.connection, tool: tool.tool, text: row.result }),
+        isError: row.result_error === 1,
+      })),
+    };
+    // Those accounts' data is in the conversation now (the taint rule, see engines/connect.ts).
+    kit.tainted = [...new Set(continued.map(({ row }) => row.connection_id))];
+    // Only an engine with the accounts' tools can read their results (and it's never the free lane).
+    if (!CONNECT_ENGINES.includes(engine)) {
+      engine = "text";
+      reason = t("Writing and reasoning task.");
+    }
+  }
+  // A request Auto would send to Research that names one of the accounts turned on is answered with
+  // them, in Write: Research has no connectors. The router isn't asked to move it. Each account's name
+  // is looked for once, not once for each of its tools, in the part of the message the other checks
+  // before the credit check read (see message-window.ts).
+  const said = messageWindow(last.content);
+  const namesAccount =
+    Boolean(kit) && !override && !decided && [...new Set(kit!.tools.map((tool) => tool.connection))].some((name) => namesWord(said, name));
+  if (namesAccount && engine === "search") {
+    engine = "text";
+    reason = t("You named one of your connected accounts, so Flash answers with it.");
+  }
   const brand = await getBrand(user.id, appUrl(request));
   // What the user asked to be called, their work and their language (Settings > General), then their memory.
   const memory = (typeof body.preferences === "string" ? body.preferences : user.preferences).slice(0, MAX_PREFERENCES_CHARS);
@@ -991,11 +1067,14 @@ export async function POST(request: Request) {
   const helperSpend = () => spend.reduce((sum, s) => sum + (s.provider === "anthropic" ? s.cents : 0), 0);
   // A conversation's size depends only on the model and the system prompt, so it is counted once.
   const counts = new Map<string, Promise<number>>();
-  const countOnce = (model: string, systemText: string) => {
-    const key = `${model}\n${systemText}`;
-    if (!counts.has(key)) counts.set(key, countInputTokens(model, history, systemText));
+  // With connectors, the tools the reply may send are counted exactly too.
+  const countOnce = (model: string, systemText: string, tools?: Parameters<typeof countInputTokens>[3]) => {
+    const key = `${model}\n${systemText}\n${tools?.map((tool) => tool.name).join(",") ?? ""}`;
+    if (!counts.has(key)) counts.set(key, countInputTokens(model, history, systemText, tools));
     return counts.get(key)!;
   };
+  /** The tools a reply with connectors sends: the forecast's when it has one, then the accounts'. */
+  const connectTools = (withTools: Tools) => (withTools.connect && kit ? [...(withTools.weather ? [WEATHER_TOOL] : []), ...kit.tools.map((tool) => tool.definition)] : undefined);
 
   /**
    * Prices the request on an engine: its model or level, the credits it needs and holds, and what it
@@ -1051,7 +1130,7 @@ export async function POST(request: Request) {
         // The reply may only spend what the held credits pay for, so no request runs at a loss.
         const plan = async (level: ModelLevel, withTools: Tools) => {
           const choice = claudeChoice(engine, level, { careful });
-          const inputTokens = await countOnce(choice.model, systemFor(engine, preferences, history, prompting, withTools));
+          const inputTokens = await countOnce(choice.model, systemFor(engine, preferences, history, prompting, withTools), connectTools(withTools));
           const scale = claudePrice(choice.model, inputTokens).output / claudePrice(defaultChoice(engine).model, inputTokens).output;
           return { choice, tools: withTools, hold: planHold(engine, choice.model, inputTokens, available, scale, helperCents, toolPlan(engine, withTools)) };
         };
@@ -1096,7 +1175,7 @@ export async function POST(request: Request) {
         // A weather word alone never makes a reply step down, search less or go to the free lane: the
         // forecast is left out instead, and the reply is priced as it was before it.
         if (priced.planned.tools.hintOnly && (priced.fellBack || available < priced.planned.hold.needed)) {
-          priced = await price({ weather: false, hintOnly: false, quick: engine === "search" && quickAsk });
+          priced = await price({ weather: false, hintOnly: false, quick: engine === "search" && quickAsk, connect: connectsOn(engine) });
         }
         const { hold } = priced.planned;
         levelWhy = priced.why;
@@ -1171,7 +1250,7 @@ export async function POST(request: Request) {
   // In a voice conversation it also checks requests the rules sent to code, docs or search (see checksSpoken).
   const recheck = spoken && checksSpoken(engine);
   let plan: Awaited<ReturnType<typeof planFor>>;
-  if (!override && !decided && (auto.guessed || recheck) && !last.attachment && claudeConfigured()) {
+  if (!override && !decided && !namesAccount && !continued.length && (auto.guessed || recheck) && !last.attachment && claudeConfigured()) {
     const ready = (e: Engine) => (isMedia(e) ? Boolean(pickModel(e, last.content, providers())) : configured(e));
     // A spoken turn about an app or deck the rules couldn't place: the guess knows about the build,
     // and the question Flash asked before it, which a "yes" may answer.
@@ -1216,6 +1295,14 @@ export async function POST(request: Request) {
   // up to a daily allowance per user.
   let free: FreeLane | null = null;
   const verified = isVerified(user);
+  // Connectors use credits: a chat with them on never goes to the free lane.
+  if (live && refuseUnpaid(Boolean(tools.connect), available, needed)) {
+    const counts = { needed, available };
+    return Response.json(
+      { error: `${t("This needs at least {needed} credits and you have {available}.", counts)} ${t(CONNECTORS_NEED_CREDITS)}`, code: "out_of_credits", needed },
+      { status: 402 },
+    );
+  }
   if (live && available < needed && verified) {
     // A post pack has no free version: one free picture isn't what was asked for.
     const lane = model?.id === "post-pack" ? null : freeEligible(engine, last);
@@ -1286,6 +1373,9 @@ export async function POST(request: Request) {
     }
     return Response.json({ error: notes.join(" "), code: "out_of_credits", needed }, { status: 402 });
   }
+  // Approved results continued here are used once, now that the reply is paid for (and put back if it
+  // fails or is stopped, so Retry has them again).
+  const taken = continued.length ? (await approvedResults(user.id, continued.map(({ row }) => row.id), { take: true })).map((row) => row.id) : [];
   // Saved files take the extension of what the provider really sent, so downloads open correctly.
   const store: Store = (media, name) => saveFile(user.id, media.mime, withExtension(name, media.mime), media.data);
 
@@ -1423,6 +1513,7 @@ export async function POST(request: Request) {
       : run(engine, history, preferences, store, model, meter, budget, mediaNotes, claudeRun, steppedDown, track, t, prompting, {
           ...(tools.weather && { weather: weatherTool(where, t), onUsed: forecastUsed }),
           quick: tools.quick,
+          ...(tools.connect && kit && { connect: kit }),
         });
     // Stop ends the request at once, without waiting for the next event: a Claude call is stopped,
     // and a provider job already sent is paid for as sent (see finalCredits). A Claude engine still
@@ -1500,6 +1591,8 @@ export async function POST(request: Request) {
         console.error("[flash] settling credits failed", err);
       }
     }
+    // A Continue that failed or was stopped gives its approved results back for Retry.
+    if (taken.length && (!ok || stopped)) await releaseResults(user.id, taken).catch((err) => console.error("[flash] putting back results failed", err instanceof Error ? err.name : "error"));
     // A free request that failed doesn't use up one of the user's free requests for today, except a
     // transcript Groq was sent, which gives back what freeAudioFailed says.
     if (free && !ok) {

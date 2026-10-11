@@ -312,6 +312,11 @@ html[data-theme="light"] .prose {
   --tw-prose-invert-th-borders: var(--color-zinc-700);
   --tw-prose-invert-td-borders: var(--color-zinc-800);
 }
+/* The host a link in an answer goes to (see safe-markdown.ts), quieter than the words. */
+.prose .link-host {
+  font-size: 0.85em;
+  color: var(--color-zinc-500);
+}
 /* Code blocks stay dark in both themes, like an editor. */
 html[data-theme="light"] .prose pre {
   background-color: #171a20;
