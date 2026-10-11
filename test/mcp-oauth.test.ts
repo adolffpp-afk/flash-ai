@@ -514,9 +514,10 @@ test("a refresh seals the tokens with the newest key version, and a preset's row
   }
 });
 
+/** How many of Flash's registrations a key version seals. */
+const regsSealedWith = async (version: string) => Number((await one<{ n: number }>("SELECT COUNT(*) AS n FROM mcp_client_registrations WHERE key_version = ?", [version]))!.n);
+
 test("key rotation reaches Flash's registrations: a secret is sealed again as it is used, so the old version can go", async () => {
-  const { adminStats } = await import("../src/lib/server/admin-stats.ts");
-  const older = async () => (await adminStats(30)).connectors.older.filter((o: { version: string }) => o.version === "v1");
   await sql("DELETE FROM mcp_client_registrations");
   // This server's DCR gives a client secret and a registration token.
   mock.state.oauth.cimd = false;
@@ -536,7 +537,7 @@ test("key rotation reaches Flash's registrations: a secret is sealed again as it
   const v2 = randomBytes(32).toString("base64");
   process.env.CONNECTOR_KEYS = JSON.stringify({ ...JSON.parse(keep), v2 });
   try {
-    assert.ok((await older()).length > 0, "/admin lists what v1 still seals");
+    assert.equal(await regsSealedWith("v1"), 1);
     // A renewal at that server opens the registration: its secret is sealed again with v2.
     const [row] = await connectionsOf(user.id);
     let kit = (await chatKit(user.id, [String(row.id)]))!;
@@ -547,8 +548,7 @@ test("key rotation reaches Flash's registrations: a secret is sealed again as it
     assert.match(reg.enc_client_secret, /^v2:/);
     // The connection moved with its renewal too; nothing is left on v1 for this user and server.
     assert.equal((await connectionsOf(user.id))[0].key_version, "v2");
-    const left = await all<{ n: number }>("SELECT COUNT(*) AS n FROM mcp_client_registrations WHERE key_version = 'v1'");
-    assert.equal(Number(left[0].n), 0);
+    assert.equal(await regsSealedWith("v1"), 0);
 
     // With v1 dropped, signing in and renewing there still work.
     process.env.CONNECTOR_KEYS = JSON.stringify({ v2 });
@@ -561,6 +561,92 @@ test("key rotation reaches Flash's registrations: a secret is sealed again as it
   } finally {
     process.env.CONNECTOR_KEYS = keep;
     // Later tests start from Flash's own registration again (this one is sealed with v2 only).
+    await sql("DELETE FROM mcp_client_registrations");
+  }
+});
+
+test("key rotation reaches registrations nobody uses again: opening /admin seals them again, so the old version can go", async () => {
+  const { adminStats } = await import("../src/lib/server/admin-stats.ts");
+  await sql("DELETE FROM mcp_client_registrations");
+  // A client ID one user typed in, then gave up on: the sign-in never finished.
+  mock.state.oauth.cimd = false;
+  mock.state.oauth.dcr = false;
+  const typer = await account("idle-typed-user");
+  assert.equal((await start(typer, { provider: "custom", url: SERVER, clientId: "pre-client", clientSecret: "pre-secret" })).status, 200);
+  // Flash's registration (with a secret) at a server another user started to sign in to, and left.
+  mock.state.oauth.dcr = true;
+  mock.state.oauth.dcrSecret = true;
+  const leaver = await account("idle-dcr-user");
+  assert.equal((await start(leaver, { provider: "custom", url: SERVER })).status, 200);
+  assert.equal(await regsSealedWith("v1"), 2);
+
+  const keep = process.env.CONNECTOR_KEYS!;
+  process.env.CONNECTOR_KEYS = JSON.stringify({ ...JSON.parse(keep), v2: randomBytes(32).toString("base64") });
+  try {
+    const listed = (await adminStats(30)).connectors.older.find((o: { version: string }) => o.version === "v1");
+    // Only accounts are left on v1 (this file's other tests' connections): no registration.
+    assert.equal(await regsSealedWith("v1"), 0);
+    assert.equal(await regsSealedWith("v2"), 2);
+    const accounts = Number((await one<{ n: number }>("SELECT COUNT(*) AS n FROM connections WHERE key_version = 'v1'"))!.n);
+    assert.equal(listed?.count ?? 0, accounts);
+
+    // With v1 dropped, both secrets still open: Flash's registration signs a third user in...
+    process.env.CONNECTOR_KEYS = JSON.stringify({ v2: JSON.parse(process.env.CONNECTOR_KEYS).v2 });
+    assert.equal(await connect(await account("idle-dcr-next"), { provider: "custom", url: SERVER }), "review");
+    // ...and the typed client signs its user in, once Flash's own registration there is gone.
+    await sql("DELETE FROM mcp_client_registrations WHERE owner_user_id IS NULL");
+    mock.state.oauth.dcr = false;
+    const started = await start(typer, { provider: "custom", url: SERVER });
+    assert.equal(new URL(started.body.url!).searchParams.get("client_id"), "pre-client");
+    assert.equal((await callback(typer, await authorize(started.body.url!))).outcome, "review");
+  } finally {
+    process.env.CONNECTOR_KEYS = keep;
+    await sql("DELETE FROM mcp_client_registrations");
+  }
+});
+
+test("a registration no key opens any more: a typed client ID is asked for again, Flash's own says so, and neither is a 500", async () => {
+  await sql("DELETE FROM mcp_client_registrations");
+  mock.state.oauth.cimd = false;
+  mock.state.oauth.dcr = false;
+  const typer = await account("lost-typed-user");
+  assert.equal((await start(typer, { provider: "custom", url: SERVER, clientId: "pre-client", clientSecret: "pre-secret" })).status, 200);
+  mock.state.oauth.dcr = true;
+  mock.state.oauth.dcrSecret = true;
+  const first = await account("lost-dcr-user");
+  assert.equal((await start(first, { provider: "custom", url: SERVER })).status, 200);
+  const shared = (await one<{ id: string }>("SELECT id FROM mcp_client_registrations WHERE owner_user_id IS NULL"))!.id;
+
+  // v1 is dropped while those still use it.
+  const keep = process.env.CONNECTOR_KEYS!;
+  process.env.CONNECTOR_KEYS = JSON.stringify({ v2: randomBytes(32).toString("base64") });
+  try {
+    const { adminStats } = await import("../src/lib/server/admin-stats.ts");
+    const listed = (await adminStats(30)).connectors.older.find((o: { version: string }) => o.version === "v1");
+    assert.ok(listed && listed.count >= 2, "/admin still lists them, so the owner can put v1 back");
+
+    // Flash's own registration: a clear refusal, in Flash's words.
+    const refused = await logsOf(async () => {
+      const res = await start(await account("lost-dcr-next"), { provider: "custom", url: SERVER });
+      assert.equal(res.status, 503);
+      assert.deepEqual(res.body, { error: "Flash can't open its sign-in details for that server right now. Try again later.", code: "unreadable" });
+    });
+    assert.match(refused, new RegExp(`connector registration ${shared} can't be opened \\(sealed with v1\\)`));
+
+    // The typed client ID: preview asks for it, Connect without it says so, and typing it again works.
+    await sql("DELETE FROM mcp_client_registrations WHERE owner_user_id IS NULL");
+    mock.state.oauth.dcr = false;
+    const preview = await connectRoute.POST(post("/api/connect", typer, { action: "preview", provider: "custom", url: SERVER }));
+    assert.equal(((await preview.json()) as { signIn: { needsClient: boolean } }).signIn.needsClient, true);
+    const asked = await start(typer, { provider: "custom", url: SERVER });
+    assert.equal(asked.status, 400);
+    assert.equal(asked.body.code, "needs_client");
+    const again = await start(typer, { provider: "custom", url: SERVER, clientId: "pre-client", clientSecret: "pre-secret" });
+    assert.equal(again.status, 200);
+    assert.equal((await callback(typer, await authorize(again.body.url!))).outcome, "review");
+    assert.equal(await regsSealedWith("v1"), 0);
+  } finally {
+    process.env.CONNECTOR_KEYS = keep;
     await sql("DELETE FROM mcp_client_registrations");
   }
 });

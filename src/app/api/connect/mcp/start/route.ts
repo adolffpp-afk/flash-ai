@@ -40,7 +40,8 @@ export async function POST(request: Request) {
     return Response.json({ url }, { headers: { "cache-control": "no-store" } });
   } catch (err) {
     if (err instanceof ConnectError) {
-      const status = err.code === "limit" ? 429 : err.code === "too_many" ? 409 : err.code === "unverified" ? 403 : err.code === "gone" ? 404 : 400;
+      const status =
+        err.code === "limit" ? 429 : err.code === "too_many" ? 409 : err.code === "unverified" ? 403 : err.code === "gone" ? 404 : err.code === "unreadable" ? 503 : 400;
       return Response.json({ error: problemText(err.code, t), code: err.code }, { status });
     }
     console.error("[flash] starting a connector sign-in failed", err instanceof Error ? err.name : "error");

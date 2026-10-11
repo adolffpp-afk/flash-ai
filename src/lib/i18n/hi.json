@@ -506,6 +506,7 @@
  "Flash can edit PNG, JPEG and WebP photos up to 2048 × 2048 pixels. Try a smaller photo.": "Flash ज़्यादा से ज़्यादा 2048 × 2048 पिक्सल की PNG, JPEG और WebP फ़ोटो एडिट कर सकता है। कोई छोटी फ़ोटो आज़माएँ।",
  "Flash can only connect to public https addresses.": "Flash सिर्फ़ सार्वजनिक https पतों से कनेक्ट कर सकता है।",
  "Flash can't make posts for that request.": "Flash इस अनुरोध के लिए पोस्ट नहीं बना सकता।",
+ "Flash can't open its sign-in details for that server right now. Try again later.": "Flash अभी उस सर्वर के लिए अपनी साइन-इन जानकारी नहीं खोल सकता। बाद में फिर से कोशिश करें।",
  "Flash can't run jobs on a schedule yet. When Automations arrive, you'll set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Flash अभी शेड्यूल पर काम नहीं चला सकता। जब ऑटोमेशन आएँगे, तो आप कोई काम एक बार सेट करेंगे, जैसे हफ़्ते की सेल्स समरी या रोज़ की सोशल पोस्ट, और Flash बिना कहे उसे समय पर कर देगा।",
  "Flash can't see that record yet. It usually shows up a few minutes after you add it, sometimes up to an hour.": "Flash को अभी यह रिकॉर्ड नहीं दिख रहा। आम तौर पर यह जोड़ने के कुछ मिनट बाद दिखने लगता है, कभी-कभी एक घंटे तक लग जाता है।",
  "Flash can't tell how long {name} plays, so it can't transcribe it. Save it as MP3, M4A, WAV or FLAC and send it again.": "Flash यह पता नहीं लगा पा रहा कि {name} कितनी देर चलती है, इसलिए वह इसे ट्रांसक्राइब नहीं कर सकता। इसे MP3, M4A, WAV या FLAC के रूप में सेव करें और फिर से भेजें।",

@@ -506,6 +506,7 @@
  "Flash can edit PNG, JPEG and WebP photos up to 2048 × 2048 pixels. Try a smaller photo.": "Flash 可以编辑不超过 2048 × 2048 像素的 PNG、JPEG 和 WebP 照片。请换一张小一点的照片。",
  "Flash can only connect to public https addresses.": "Flash 只能连接公开的 https 地址。",
  "Flash can't make posts for that request.": "Flash 无法为这个请求制作帖子。",
+ "Flash can't open its sign-in details for that server right now. Try again later.": "Flash 目前无法打开它为该服务器保存的登录信息，请稍后再试。",
  "Flash can't run jobs on a schedule yet. When Automations arrive, you'll set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Flash 暂时还不能按计划运行任务。自动化功能上线后，你只需设置一次任务，比如每周销售总结或每日社交帖子，Flash 就会准时完成，无需你再提醒。",
  "Flash can't see that record yet. It usually shows up a few minutes after you add it, sometimes up to an hour.": "Flash 还看不到这条记录。记录通常会在添加后几分钟内出现，有时最多需要一小时。",
  "Flash can't tell how long {name} plays, so it can't transcribe it. Save it as MP3, M4A, WAV or FLAC and send it again.": "Flash 无法判断 {name} 有多长，所以无法转写。请将它另存为 MP3、M4A、WAV 或 FLAC 后重新发送。",

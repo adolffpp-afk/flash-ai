@@ -2,6 +2,7 @@ import { all, one } from "./db.ts";
 import { CREDIT_PACKS, MARKUP, PLANS, paymentFeeCents, planPrice, worstCaseProfitCents } from "../credits.ts";
 import { CONNECTOR_SETUP, PROVIDER_LIST, missingKeys, providerName } from "../providers.ts";
 import { connectorsReady, keyVersions } from "./secret-box.ts";
+import { resealRegistrations } from "./mcp-oauth.ts";
 import { profitReport } from "./profit.ts";
 import { feeBps } from "./shop.ts";
 
@@ -130,6 +131,8 @@ export async function adminStats(days: number) {
 
   // What is still sealed with a key version other than the newest: accounts (keys, tokens, addresses)
   // and Flash's registrations at sign-in services. An older version may go once nothing uses it.
+  // Registrations need no one to use them to move to the newest version: they all move here first.
+  await resealRegistrations();
   const sealed = await all<{ version: string; n: number }>(
     `SELECT key_version AS version, COUNT(*) AS n FROM (
        SELECT key_version FROM connections WHERE key_version <> ''

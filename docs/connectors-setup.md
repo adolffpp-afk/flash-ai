@@ -74,12 +74,17 @@ the newest version.
    In the database, both of these must be 0:
    `SELECT COUNT(*) FROM connections WHERE key_version = 'v1';`
    `SELECT COUNT(*) FROM mcp_client_registrations WHERE key_version = 'v1';`
-   A signed-in account moves to the new version by itself the next time its access is renewed
-   while it is used. Flash's registration at a service moves the next time anyone signs in or
-   renews there; a client ID someone typed in moves the next time they use it. One with a key, or a
-   server added by address, keeps `v1` until it is removed and added again. An account sealed with a
-   dropped version shows as "needs to be connected again" and stops working until its owner removes
-   it and adds it again, or the version is put back.
+   Opening /admin after the redeploy moves every one of Flash's registrations, and every client ID
+   someone typed in, to the new version at once, used or not, so they leave that list then. A
+   signed-in account moves to the new version by itself the next time its access is renewed while
+   it is used. One with a key, or a server added by address, keeps `v1` until it is removed and
+   added again. An account sealed with a dropped version shows as "needs to be connected again" and
+   stops working until its owner removes it and adds it again, or the version is put back.
+   If `v1` was dropped too soon, a registration it sealed stays listed. A client ID someone typed in
+   is asked for again when they next connect. Flash's own registration at a service refuses sign-ins
+   there ("Flash can't open its sign-in details for that server right now") until `v1` is put back
+   and /admin opened again; or delete that row from `mcp_client_registrations`, and Flash registers
+   again at the next sign-in there (accounts that signed in through it then need Reconnect).
 
 ## Try it without real accounts
 

@@ -1,4 +1,4 @@
-import { db, now, one, run } from "./db.ts";
+import { all, db, now, one, run } from "./db.ts";
 import { randomId, sha256 } from "./ids.ts";
 import { pkceChallenge } from "./oauth.ts";
 import { checkUrl, mockOrigin, safeFetch, SafeFetchError, type SafeRequest, type SafeResponse } from "./safe-fetch.ts";
@@ -46,6 +46,8 @@ export type OAuthProblem =
   | "iss"
   // A server the user added whose authorization server doesn't say it sends iss: see requireIss.
   | "no_iss"
+  // Flash's registration there holds a secret no key in CONNECTOR_KEYS opens (a version dropped too soon).
+  | "unreadable"
   // The token endpoint refused, or answered with something that isn't a token.
   | "token"
   // The grant is gone (invalid_grant, or the client was refused): the user must sign in again.
@@ -372,28 +374,70 @@ const regPlace = (row: Pick<RegistrationRow, "id" | "owner_user_id">, field: "cl
   field,
 });
 
+/** A registration's secret, opened ("" for a public client); OAuthError "unreadable" when no key opens it. */
+function secretOf(row: RegistrationRow): string {
+  if (!row.enc_client_secret) return "";
+  try {
+    return unseal(row.enc_client_secret, regPlace(row, "client_secret"));
+  } catch {
+    console.error(`[flash] connector registration ${row.id} can't be opened (sealed with ${row.key_version || "no version"})`);
+    throw new OAuthError("unreadable", "That registration's secret can't be opened.");
+  }
+}
+
+/**
+ * Seals a registration's secret again with the newest key version, only if it is still the one read,
+ * so a client ID typed in at the same moment stays.
+ */
+async function sealAgain(row: RegistrationRow, secret: string) {
+  const sealed = seal(secret, regPlace(row, "client_secret"));
+  await run("UPDATE mcp_client_registrations SET enc_client_secret = ?, enc_registration_token = '', key_version = ? WHERE id = ? AND enc_client_secret = ?", [
+    sealed.stored,
+    sealed.version,
+    row.id,
+    row.enc_client_secret,
+  ]);
+}
+
 /**
  * A registration as Flash uses it, with its secret opened. A secret sealed with an older key version
- * is sealed again with the newest one (only if it is still the one read, so a client ID typed in at
- * the same moment stays), so a rotation of CONNECTOR_KEYS reaches registrations as they are used. A
- * row without a secret holds nothing sealed and records no version (rows from before kept a
- * registration token Flash never used: it is dropped).
+ * is sealed again with the newest one, so a rotation of CONNECTOR_KEYS reaches registrations as they
+ * are used (and all of them when /admin is opened: see resealRegistrations). A row without a secret
+ * holds nothing sealed and records no version (rows from before kept a registration token Flash never
+ * used: it is dropped).
  */
 async function opened(row: RegistrationRow): Promise<OAuthClient> {
-  const secret = row.enc_client_secret ? unseal(row.enc_client_secret, regPlace(row, "client_secret")) : "";
+  const secret = secretOf(row);
   const newest = keyVersions().newest;
   if (secret && newest && row.key_version !== newest) {
-    const sealed = seal(secret, regPlace(row, "client_secret"));
-    await run("UPDATE mcp_client_registrations SET enc_client_secret = ?, enc_registration_token = '', key_version = ? WHERE id = ? AND enc_client_secret = ?", [
-      sealed.stored,
-      sealed.version,
-      row.id,
-      row.enc_client_secret,
-    ]);
+    await sealAgain(row, secret);
   } else if (!secret && (row.key_version || row.enc_registration_token)) {
     await run("UPDATE mcp_client_registrations SET enc_registration_token = '', key_version = '' WHERE id = ? AND enc_client_secret = ''", [row.id]);
   }
   return { regId: row.id, clientId: row.client_id, secret, authMethod: row.auth_method, method: row.method };
+}
+
+/**
+ * Moves every registration to the newest key version at once, used or not: a client ID a user typed
+ * in and then gave up on, or Flash's registration at a server nobody signs in to any more, would
+ * otherwise keep an older version in use for good. Run when /admin is opened (see adminStats), so an
+ * older version can go. A secret no key opens is left as it is, and stays listed as still sealed with
+ * its version.
+ */
+export async function resealRegistrations(): Promise<void> {
+  const newest = keyVersions().newest;
+  if (!newest) return;
+  const rows = await all<RegistrationRow>("SELECT * FROM mcp_client_registrations WHERE enc_client_secret <> '' AND key_version <> ?", [newest]);
+  for (const row of rows) {
+    let secret: string;
+    try {
+      secret = secretOf(row);
+    } catch {
+      continue;
+    }
+    await sealAgain(row, secret);
+  }
+  await run("UPDATE mcp_client_registrations SET enc_registration_token = '', key_version = '' WHERE enc_client_secret = '' AND (key_version <> '' OR enc_registration_token <> '')");
 }
 
 /**
@@ -422,9 +466,24 @@ export function typedClient(clientId: unknown, clientSecret: unknown): { clientI
   return { clientId: id, clientSecret: secret };
 }
 
-/** Whether a user can sign in to this authorization server without typing a client ID. */
+/** Whether a key opens a registration's secret (or it has none). */
+function opens(row: RegistrationRow): boolean {
+  try {
+    secretOf(row);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether a user can sign in to this authorization server without typing a client ID. A client ID
+ * they typed before whose secret no key opens any more doesn't count: they are asked for it again.
+ */
 export async function canRegister(userId: string, server: AuthServer, redirectUri: string): Promise<boolean> {
-  return server.cimd || Boolean(server.registrationEndpoint) || Boolean(await sharedRow(server.issuer, redirectUri)) || Boolean(await ownClientRow(userId, server.issuer));
+  if (server.cimd || server.registrationEndpoint || (await sharedRow(server.issuer, redirectUri))) return true;
+  const own = await ownClientRow(userId, server.issuer);
+  return Boolean(own && opens(own));
 }
 
 /**
@@ -435,7 +494,8 @@ export async function canRegister(userId: string, server: AuthServer, redirectUr
  * 4. else Flash's Client ID Metadata Document, when the server takes one;
  * 5. else a new registration by DCR, kept by issuer;
  * 6. else the client ID they typed in for this server before.
- * With none of these, the user must make a client there (needs_client).
+ * With none of these, the user must make a client there (needs_client), as when the secret they typed
+ * before can't be opened any more. Flash's own registration that can't be opened is "unreadable".
  */
 export async function clientAt(
   userId: string,
@@ -445,15 +505,26 @@ export async function clientAt(
   if (typed) return keepTyped(userId, server, typed);
   if (reuse) {
     const row = await one<RegistrationRow>("SELECT * FROM mcp_client_registrations WHERE id = ? AND issuer = ? AND (owner_user_id IS NULL OR owner_user_id = ?)", [reuse, server.issuer, userId]);
-    if (row && (row.owner_user_id || row.redirect_uri === redirectUri)) return opened(row);
+    if (row?.owner_user_id) return openedOwn(row);
+    if (row && row.redirect_uri === redirectUri) return opened(row);
   }
   const shared = await sharedRow(server.issuer, redirectUri);
   if (shared) return opened(shared);
   if (server.cimd) return keepShared(server.issuer, redirectUri, { client_id: cimdUrl(origin), method: "cimd", auth_method: "none" });
   if (server.registrationEndpoint) return register(server, origin, redirectUri, signal);
   const own = await ownClientRow(userId, server.issuer);
-  if (own) return opened(own);
+  if (own) return openedOwn(own);
   throw new OAuthError("needs_client");
+}
+
+/** A client ID the user typed in, or needs_client when its secret can't be opened any more (they type it again). */
+async function openedOwn(row: RegistrationRow): Promise<OAuthClient> {
+  try {
+    return await opened(row);
+  } catch (err) {
+    if (err instanceof OAuthError && err.code === "unreadable") throw new OAuthError("needs_client");
+    throw err;
+  }
 }
 
 /** Keeps a shared registration, or takes the one another request kept first (one per issuer and callback). */

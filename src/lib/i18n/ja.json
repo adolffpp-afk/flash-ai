@@ -506,6 +506,7 @@
  "Flash can edit PNG, JPEG and WebP photos up to 2048 × 2048 pixels. Try a smaller photo.": "Flashで編集できるのは、2048 × 2048ピクセルまでのPNG、JPEG、WebP形式の写真です。もっと小さい写真でお試しください。",
  "Flash can only connect to public https addresses.": "Flashが接続できるのは公開されたhttpsアドレスだけです。",
  "Flash can't make posts for that request.": "そのリクエストでは投稿を作成できません。",
+ "Flash can't open its sign-in details for that server right now. Try again later.": "Flash は現在、そのサーバー用のログイン情報を開けません。後でもう一度お試しください。",
  "Flash can't run jobs on a schedule yet. When Automations arrive, you'll set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Flashはまだスケジュールに沿ってタスクを実行できません。自動化機能が登場したら、毎週の売上まとめや毎日のSNS投稿などのタスクを一度設定するだけで、Flashが指示なしで時間どおりに実行します。",
  "Flash can't see that record yet. It usually shows up a few minutes after you add it, sometimes up to an hour.": "Flashではまだそのレコードを確認できません。通常は追加してから数分で反映されますが、最大1時間ほどかかることもあります。",
  "Flash can't tell how long {name} plays, so it can't transcribe it. Save it as MP3, M4A, WAV or FLAC and send it again.": "{name} の長さを判別できないため、Flashは文字起こしできません。MP3、M4A、WAV、FLAC のいずれかで保存して、もう一度送信してください。",

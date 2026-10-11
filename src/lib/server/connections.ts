@@ -103,7 +103,9 @@ export type ConnectProblem =
   // The server has neither a Client ID Metadata Document nor Dynamic Client Registration.
   | "needs_client"
   // A server the user added whose sign-in doesn't send iss, which Flash needs to know whose code came back.
-  | "no_iss";
+  | "no_iss"
+  // Flash's registration at that server can't be opened (its key version left CONNECTOR_KEYS too soon).
+  | "unreadable";
 
 export class ConnectError extends Error {
   code: ConnectProblem;
@@ -144,6 +146,8 @@ export function problemText(code: ConnectProblem, t: Translate): string {
       return t("This server needs a client ID from its own settings. Fill it in under Advanced.");
     case "no_iss":
       return t("That server's sign-in doesn't identify itself when it sends you back, so Flash can't use it safely.");
+    case "unreadable":
+      return t("Flash can't open its sign-in details for that server right now. Try again later.");
   }
 }
 
@@ -151,7 +155,7 @@ export function problemText(code: ConnectProblem, t: Translate): string {
 function asProblem(err: unknown): unknown {
   if (err instanceof ConnectError) return err;
   if (err instanceof OAuthError) {
-    const code: ConnectProblem = err.code === "needs_client" || err.code === "unreachable" || err.code === "no_iss" ? err.code : "no_signin";
+    const code: ConnectProblem = err.code === "needs_client" || err.code === "unreachable" || err.code === "no_iss" || err.code === "unreadable" ? err.code : "no_signin";
     return new ConnectError(code, err.message);
   }
   if (err instanceof SafeFetchError) return new ConnectError(err.code === "blocked" ? "blocked" : "unreachable", err.message);
@@ -1032,7 +1036,7 @@ const NOT_RUN = {
   failed: msg("The action couldn't run."),
   scope: msg("This needs more access than the account gave Flash. Press Reconnect on this account in Settings > Connectors and allow it, then ask again."),
 };
-const PROBLEMS: ConnectProblem[] = ["blocked", "auth", "unreachable", "protocol", "limit", "too_many", "changed", "no_tools", "bad_input", "gone", "unverified", "no_signin", "needs_client", "no_iss"];
+const PROBLEMS: ConnectProblem[] = ["blocked", "auth", "unreachable", "protocol", "limit", "too_many", "changed", "no_tools", "bad_input", "gone", "unverified", "no_signin", "needs_client", "no_iss", "unreadable"];
 const OWN_WORDS = new Set<string>([...Object.values(NOT_RUN), ...PROBLEMS.map((code) => problemText(code, english))]);
 
 /** A failed action's result for the card: Flash's own reasons in the user's language, a tool's own words as they are. */

@@ -506,6 +506,7 @@
  "Flash can edit PNG, JPEG and WebP photos up to 2048 × 2048 pixels. Try a smaller photo.": "Flash puede editar fotos PNG, JPEG y WebP de hasta 2048 × 2048 píxeles. Prueba con una foto más pequeña.",
  "Flash can only connect to public https addresses.": "Flash solo puede conectarse a direcciones https públicas.",
  "Flash can't make posts for that request.": "Flash no puede crear publicaciones para esa solicitud.",
+ "Flash can't open its sign-in details for that server right now. Try again later.": "Flash no puede abrir sus datos de inicio de sesión para ese servidor en este momento. Inténtalo más tarde.",
  "Flash can't run jobs on a schedule yet. When Automations arrive, you'll set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Flash todavía no puede ejecutar tareas programadas. Cuando lleguen las automatizaciones, configurarás una tarea una sola vez, como un resumen semanal de ventas o una publicación diaria en redes, y Flash la hará a tiempo sin que tengas que pedírselo.",
  "Flash can't see that record yet. It usually shows up a few minutes after you add it, sometimes up to an hour.": "Flash todavía no ve ese registro. Suele aparecer unos minutos después de agregarlo, a veces hasta una hora después.",
  "Flash can't tell how long {name} plays, so it can't transcribe it. Save it as MP3, M4A, WAV or FLAC and send it again.": "Flash no puede saber cuánto dura {name}, así que no puede transcribirlo. Guárdalo como MP3, M4A, WAV o FLAC y vuelve a enviarlo.",

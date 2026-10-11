@@ -506,6 +506,7 @@
  "Flash can edit PNG, JPEG and WebP photos up to 2048 × 2048 pixels. Try a smaller photo.": "Flash редактирует фото в форматах PNG, JPEG и WebP размером до 2048 × 2048 пикселей. Попробуйте фото поменьше.",
  "Flash can only connect to public https addresses.": "Flash может подключаться только к публичным адресам https.",
  "Flash can't make posts for that request.": "Flash не может сделать посты по такому запросу.",
+ "Flash can't open its sign-in details for that server right now. Try again later.": "Flash сейчас не может открыть свои данные для входа на этот сервер. Попробуйте позже.",
  "Flash can't run jobs on a schedule yet. When Automations arrive, you'll set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Flash пока не умеет выполнять задачи по расписанию. Когда появятся автоматизации, вы один раз настроите задачу — например, еженедельную сводку продаж или ежедневный пост в соцсетях, — и Flash будет сам выполнять её вовремя.",
  "Flash can't see that record yet. It usually shows up a few minutes after you add it, sometimes up to an hour.": "Flash пока не видит эту запись. Обычно она появляется через несколько минут после добавления, иногда — в течение часа.",
  "Flash can't tell how long {name} plays, so it can't transcribe it. Save it as MP3, M4A, WAV or FLAC and send it again.": "Flash не может определить, сколько длится {name}, поэтому не может сделать расшифровку. Сохраните файл в формате MP3, M4A, WAV или FLAC и отправьте снова.",

@@ -506,6 +506,7 @@
  "Flash can edit PNG, JPEG and WebP photos up to 2048 × 2048 pixels. Try a smaller photo.": "يمكن لـ Flash تعديل صور PNG وJPEG وWebP حتى 2048 × 2048 بكسل. جرّب صورة أصغر.",
  "Flash can only connect to public https addresses.": "لا يمكن لـ Flash الاتصال إلا بعناوين https عامة.",
  "Flash can't make posts for that request.": "لا يستطيع Flash إنشاء منشورات لهذا الطلب.",
+ "Flash can't open its sign-in details for that server right now. Try again later.": "لا يستطيع Flash فتح بيانات تسجيل الدخول التي يحتفظ بها لهذا الخادم الآن. حاول مرة أخرى لاحقًا.",
  "Flash can't run jobs on a schedule yet. When Automations arrive, you'll set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "لا يستطيع Flash تشغيل المهام وفق جدول زمني بعد. عند وصول الأتمتة، ستُعِدّ المهمة مرة واحدة، مثل ملخص مبيعات أسبوعي أو منشور يومي على مواقع التواصل، وسينفذها Flash في موعدها دون أن تطلب.",
  "Flash can't see that record yet. It usually shows up a few minutes after you add it, sometimes up to an hour.": "لا يرى Flash هذا السجل بعد. يظهر عادةً بعد بضع دقائق من إضافته، وقد يستغرق أحيانًا ما يصل إلى ساعة.",
  "Flash can't tell how long {name} plays, so it can't transcribe it. Save it as MP3, M4A, WAV or FLAC and send it again.": "لا يستطيع Flash معرفة مدة {name}، لذا لا يمكنه تحويله إلى نص. احفظه بصيغة MP3 أو M4A أو WAV أو FLAC وأرسله مرة أخرى.",

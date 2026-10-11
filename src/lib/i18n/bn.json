@@ -506,6 +506,7 @@
  "Flash can edit PNG, JPEG and WebP photos up to 2048 × 2048 pixels. Try a smaller photo.": "Flash সর্বোচ্চ 2048 × 2048 পিক্সেলের PNG, JPEG ও WebP ছবি এডিট করতে পারে। একটি ছোট ছবি দিয়ে চেষ্টা করুন।",
  "Flash can only connect to public https addresses.": "Flash শুধু সর্বজনীন https ঠিকানায় সংযোগ করতে পারে।",
  "Flash can't make posts for that request.": "এই অনুরোধে Flash পোস্ট বানাতে পারবে না।",
+ "Flash can't open its sign-in details for that server right now. Try again later.": "Flash এই মুহূর্তে ওই সার্ভারের জন্য রাখা তার সাইন-ইন তথ্য খুলতে পারছে না। পরে আবার চেষ্টা করুন।",
  "Flash can't run jobs on a schedule yet. When Automations arrive, you'll set up a job once, like a weekly sales summary or a daily social post, and Flash will do it on time without being asked.": "Flash এখনও নির্ধারিত সময়ে কাজ চালাতে পারে না। অটোমেশন চালু হলে আপনি একবার একটি কাজ সেট করে দেবেন, যেমন সাপ্তাহিক বিক্রির সারাংশ বা প্রতিদিনের সোশ্যাল পোস্ট, আর Flash না বলতেই সময়মতো সেটি করে দেবে।",
  "Flash can't see that record yet. It usually shows up a few minutes after you add it, sometimes up to an hour.": "Flash এখনো রেকর্ডটি দেখতে পাচ্ছে না। সাধারণত যোগ করার কয়েক মিনিট পরে এটি দেখা যায়, কখনো কখনো এক ঘণ্টা পর্যন্ত লাগে।",
  "Flash can't tell how long {name} plays, so it can't transcribe it. Save it as MP3, M4A, WAV or FLAC and send it again.": "{name} কতক্ষণ চলে Flash তা বুঝতে পারছে না, তাই এটির ট্রান্সক্রিপ্ট তৈরি করতে পারবে না। এটি MP3, M4A, WAV বা FLAC হিসেবে সেভ করে আবার পাঠান।",
