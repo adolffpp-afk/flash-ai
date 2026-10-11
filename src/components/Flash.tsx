@@ -457,6 +457,8 @@ export function Flash({
       setShowCredits(true);
       window.history.replaceState(null, "", window.location.pathname);
     }
+    // A connector's sign-in comes back here: Settings > Connectors says how it ended (and takes ?connect= out).
+    if (params.get("connect") && signedIn) setSettingsTab("connectors");
     // A "Continue with …" sign-in that didn't finish comes back here to say why.
     const authErr = params.get("auth_error");
     if (authErr) {
@@ -494,7 +496,8 @@ export function Flash({
   useEffect(() => {
     if (!connectorsOn || settingsTab) return;
     api<{ ready: boolean; connections: ConnectionView[] }>("/api/connect")
-      .then((r) => setAccounts(r.ready ? r.connections : []))
+      // A server still waiting to be added (its tools not looked at yet) isn't one a chat can use.
+      .then((r) => setAccounts(r.ready ? r.connections.filter((c) => c.status !== "review") : []))
       .catch(() => {});
   }, [connectorsOn, settingsTab]);
 

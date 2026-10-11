@@ -30,8 +30,9 @@ export async function findAccount(email: string): Promise<Account | null> {
  * What was set up on an account before its owner proved the inbox is theirs, dropped: whoever
  * created it may not have been them. The password and sign-ins go (they can set a password again
  * with "Forgot password"), and so do the connected accounts (Settings > Connectors), with their
- * tools, what was always allowed and the cards still waiting: a server someone else added must never
- * get the owner's tool calls.
+ * tools, what was always allowed and the cards still waiting, the sign-ins under way and any client
+ * ID and secret typed in for a server: a server someone else added must never get the owner's tool
+ * calls, and nobody else's client may sign the owner in.
  */
 async function dropUnconfirmed(userId: string): Promise<void> {
   await run("UPDATE users SET password_hash = '' WHERE id = ?", [userId]);
@@ -43,6 +44,8 @@ async function dropUnconfirmed(userId: string): Promise<void> {
       { sql: "DELETE FROM pending_actions WHERE user_id = ?", args: [userId] },
       { sql: "DELETE FROM connection_tools WHERE connection_id IN (SELECT id FROM connections WHERE user_id = ?)", args: [userId] },
       { sql: "DELETE FROM connections WHERE user_id = ?", args: [userId] },
+      { sql: "DELETE FROM connect_flows WHERE user_id = ?", args: [userId] },
+      { sql: "DELETE FROM mcp_client_registrations WHERE owner_user_id = ?", args: [userId] },
     ],
     "write",
   );

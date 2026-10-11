@@ -398,7 +398,7 @@ export function ConnectorsButton({
                 <ConnectorTile provider={a.provider} name={a.label} />
                 <span className="min-w-0 text-start">
                   <span className="block truncate">{a.label}</span>
-                  <span className="block truncate text-xs text-zinc-500">{a.status === "ok" ? <span dir="ltr">{a.host}</span> : t("Needs a new key")}</span>
+                  <span className="block truncate text-xs text-zinc-500">{a.status === "ok" ? <span dir="ltr">{a.host}</span> : a.signIn ? t("Reconnect in Settings") : t("Needs a new key")}</span>
                 </span>
                 {on.includes(a.id) && check}
               </button>

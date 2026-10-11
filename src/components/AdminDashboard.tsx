@@ -30,7 +30,7 @@ type Stats = {
     costCents: number;
   }[];
   // CONNECTOR_KEYS: whether connectors can be used, and what's missing (never the value).
-  connectors: { setUp: boolean; missing: string[]; newest: string; skipped: { version: string; reason: string }[] };
+  connectors: { setUp: boolean; missing: string[]; newest: string; skipped: { version: string; reason: string }[]; older: { version: string; count: number }[] };
   byModel: { model: string; provider: string; requests: number; costCents: number }[];
   series: { day: number; requests: number; costCents: number }[];
   topUsers: { email: string; requests: number; credits: number; costCents: number }[];
@@ -126,7 +126,7 @@ function Panel({ title, children, note }: { title: string; children: React.React
  * source, shown once to copy into Vercel. It is never sent anywhere; Flash reads it only from its
  * environment, and no page or API ever shows it again.
  */
-function ConnectorKeyMaker({ setUp, missing, newest, skipped }: Stats["connectors"]) {
+function ConnectorKeyMaker({ setUp, missing, newest, skipped, older = [] }: Stats["connectors"]) {
   const [value, setValue] = useState("");
   const [copied, setCopied] = useState(false);
   const make = () => {
@@ -166,11 +166,21 @@ function ConnectorKeyMaker({ setUp, missing, newest, skipped }: Stats["connector
           ))}
         </ul>
       )}
+      {setUp && older.length > 0 && (
+        <ul className="space-y-1 text-xs text-zinc-400">
+          {older.map((o) => (
+            <li key={o.version}>
+              Still sealed with {o.version}: {o.count} {o.count === 1 ? "account or registration" : "accounts and registrations"}. Keep {o.version} in
+              CONNECTOR_KEYS until this is gone.
+            </li>
+          ))}
+        </ul>
+      )}
       {setUp && (
         <p className="text-xs text-zinc-500">
           Keep CONNECTOR_KEYS as it is: every connected account is sealed with it. To change it, make a new key below and add it
           beside the old one as the next version ({"{"}&quot;v1&quot;:&quot;…&quot;,&quot;v2&quot;:&quot;new key&quot;{"}"}), then
-          redeploy. Keep v1 until nothing uses it (see docs/connectors-setup.md).
+          redeploy. Keep v1 until nothing uses it: it is no longer listed here as still sealed (see docs/connectors-setup.md).
         </p>
       )}
       {!value ? (
