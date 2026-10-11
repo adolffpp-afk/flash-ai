@@ -20,6 +20,8 @@ import { speechLang } from "@/lib/languages";
 import { msg } from "@/lib/i18n";
 import { useT, type T } from "@/lib/use-t";
 import { safeMarkdown } from "@/lib/safe-markdown";
+import type { ActionCard as ActionCardData } from "@/lib/connectors";
+import { ActionCard } from "./ActionCard";
 
 export type Reshape = "tall" | "square" | "wide";
 // Each shape's button, and what it says on hover.
@@ -370,6 +372,8 @@ export function Message({
   onEditApp,
   onFixApp,
   onPickApp,
+  onAction,
+  onContinue,
   paymentsOn = true,
   language,
 }: {
@@ -395,6 +399,9 @@ export function Message({
   onEditApp?: (html: string) => void;
   onFixApp?: (request: string) => void;
   onPickApp?: (picked: PickedElement) => void;
+  // A connector call's card was answered (approved, cancelled), and Continue writes on with its result.
+  onAction?: (card: ActionCardData) => void;
+  onContinue?: (card: ActionCardData) => void;
 }) {
   const t = useT();
   if (m.role === "user") return <UserMessage m={m} onEdit={onEdit} />;
@@ -551,6 +558,19 @@ export function Message({
               >
                 {i + 1}. {s.title || new URL(s.url).hostname}
               </a>
+            ))}
+          </div>
+        )}
+        {m.actions?.map((card) => (
+          <ActionCard key={card.id} card={card} onChange={onAction} onContinue={onContinue && (() => onContinue(card))} />
+        ))}
+        {m.connectors && m.connectors.length > 0 && (
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+            <span>{t("Used from your accounts:")}</span>
+            {m.connectors.map((u) => (
+              <span key={`${u.connection}/${u.tool}`} className="max-w-[16rem] truncate rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-zinc-300">
+                {u.connection} · {u.tool}
+              </span>
             ))}
           </div>
         )}

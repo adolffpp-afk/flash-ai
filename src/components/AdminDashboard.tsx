@@ -29,6 +29,8 @@ type Stats = {
     requests: number;
     costCents: number;
   }[];
+  // CONNECTOR_KEYS: whether connectors can be used, and what's missing (never the value).
+  connectors: { setUp: boolean; missing: string[] };
   byModel: { model: string; provider: string; requests: number; costCents: number }[];
   series: { day: number; requests: number; costCents: number }[];
   topUsers: { email: string; requests: number; credits: number; costCents: number }[];
@@ -116,6 +118,90 @@ function Panel({ title, children, note }: { title: string; children: React.React
       {note && <p className="mt-0.5 text-xs text-zinc-500">{note}</p>}
       <div className="mt-3">{children}</div>
     </section>
+  );
+}
+
+/**
+ * Makes a key for CONNECTOR_KEYS in this browser: 32 random bytes from the browser's own random
+ * source, shown once to copy into Vercel. It is never sent anywhere; Flash reads it only from its
+ * environment, and no page or API ever shows it again.
+ */
+function ConnectorKeyMaker({ setUp, missing }: { setUp: boolean; missing: string[] }) {
+  const [value, setValue] = useState("");
+  const [copied, setCopied] = useState(false);
+  const make = () => {
+    const bytes = crypto.getRandomValues(new Uint8Array(32));
+    const key = btoa(Array.from(bytes, (b) => String.fromCharCode(b)).join(""));
+    // A first key is the whole value; a new one for a key already set goes beside it as the next version.
+    setValue(setUp ? key : JSON.stringify({ v1: key }));
+    setCopied(false);
+  };
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+    } catch {
+      // Clipboard blocked: the value is selectable in the box.
+    }
+  };
+  return (
+    <div className="space-y-3 text-sm">
+      <p>
+        {setUp ? (
+          <span className="text-emerald-300">Set. Users can connect their own accounts in Settings &gt; Connectors.</span>
+        ) : (
+          <span className="text-zinc-400">
+            Not set. Missing {missing.join(", ")}. Until it is, users don&apos;t see connectors at all.
+          </span>
+        )}
+      </p>
+      {setUp && (
+        <p className="text-xs text-zinc-500">
+          Keep CONNECTOR_KEYS as it is: every connected account is sealed with it. To change it, make a new key below and add it
+          beside the old one as the next version ({"{"}&quot;v1&quot;:&quot;…&quot;,&quot;v2&quot;:&quot;new key&quot;{"}"}), then
+          redeploy. Keep v1 until nothing uses it (see docs/connectors-setup.md).
+        </p>
+      )}
+      {!value ? (
+        <button
+          onClick={make}
+          className={
+            setUp
+              ? "rounded-lg border border-white/10 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/[0.05]"
+              : "rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:brightness-110"
+          }
+        >
+          {setUp ? "Make a new key version" : "Make a connector key"}
+        </button>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-xs text-zinc-400">
+            Made in this browser and shown only now. Flash never sees it until you add it to Vercel. Keep a copy in your password
+            manager: if it&apos;s lost, everyone has to connect their accounts again.
+          </p>
+          <div className="flex gap-2">
+            <input
+              readOnly
+              value={value}
+              onFocus={(e) => e.currentTarget.select()}
+              aria-label="CONNECTOR_KEYS value"
+              className="h-9 min-w-0 flex-1 rounded-lg border border-white/10 bg-white/[0.03] px-3 font-mono text-xs text-zinc-200 outline-none focus:border-primary/70"
+            />
+            <button onClick={copy} className="h-9 shrink-0 rounded-lg bg-brand px-4 text-sm font-medium text-on-brand hover:brightness-110">
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+        </div>
+      )}
+      {!setUp && (
+        <ol className="list-decimal space-y-1 ps-5 text-xs text-zinc-400">
+          <li>Make the key here and copy it.</li>
+          <li>Open Vercel, then the flash-ai project, then Settings, then Environment Variables.</li>
+          <li>Add CONNECTOR_KEYS with the copied value, marked Sensitive, for Production.</li>
+          <li>Redeploy. Connectors appear for everyone once the new deployment is live.</li>
+        </ol>
+      )}
+    </div>
   );
 }
 
@@ -489,6 +575,9 @@ export function AdminDashboard() {
                   r.free && !r.costCents ? "Free" : usd(r.costCents),
                 ])}
               />
+            </Panel>
+            <Panel title="Connectors" note="Users' own accounts in chat. Their keys and tokens are sealed with CONNECTOR_KEYS.">
+              <ConnectorKeyMaker setUp={stats.connectors.setUp} missing={stats.connectors.missing} />
             </Panel>
             <Panel title="Other bills" note="Payments and the bills you added under Net profit">
               <Table

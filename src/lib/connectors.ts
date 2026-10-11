@@ -120,6 +120,8 @@ export type ConnectorUse = { connection: string; tool: string };
 /** What Flash asks the user to approve, drawn from what Claude asked for, never from Claude's words. */
 export type ActionCard = {
   id: string;
+  // The user's own connection it is for (to always allow its tool from the card).
+  connectionId: string;
   connection: string;
   host: string;
   tool: string;

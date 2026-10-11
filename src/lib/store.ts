@@ -87,6 +87,8 @@ export type Pricing = {
   freeLane: { chats: number; images: number; transcripts?: number };
   paymentsEnabled: boolean;
   domainsEnabled: boolean;
+  // Connectors are set up on this server (see secret-box.ts).
+  connectorsEnabled?: boolean;
   testPurchases: boolean;
   models: { id: string; engine: Engine; label: string; credits: number; blurb: string; live: boolean }[];
 };

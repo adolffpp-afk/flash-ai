@@ -10,6 +10,8 @@ import { LEVELS, type Level } from "@/lib/levels";
 import { LEVEL_HUES, LevelIcon } from "./LevelIcon";
 import { msg } from "@/lib/i18n";
 import { useT } from "@/lib/use-t";
+import type { ConnectionView } from "@/lib/connectors";
+import { ConnectorTile } from "./YourConnectors";
 
 export type Choice = Engine | "auto";
 
@@ -337,6 +339,79 @@ export function LevelPicker({ level, setLevel, compact = false }: { level: Level
           <p className="px-2.5 pb-1.5 pt-2 text-xs leading-relaxed text-zinc-500">
             {t("Credits follow what each answer really costs. Pictures, video, music and voice use their own models.")}
           </p>
+        </>
+      )}
+    </Popover>
+  );
+}
+
+/**
+ * Connectors for this chat: the user's connected accounts (Settings > Connectors), each on or off
+ * here. Nothing is on until the user turns it on, and the choice stays with the chat.
+ */
+export function ConnectorsButton({
+  accounts,
+  on,
+  setOn,
+  onManage,
+}: {
+  accounts: ConnectionView[];
+  on: string[];
+  setOn: (ids: string[]) => void;
+  onManage: () => void;
+}) {
+  const t = useT();
+  const count = accounts.filter((a) => on.includes(a.id)).length;
+  const check = <Icon d="M5 12l5 5 9-10" className="ms-auto h-4 w-4 shrink-0 text-primary-soft" />;
+  return (
+    <Popover
+      label={t("Connectors")}
+      align="right"
+      phoneWide
+      button={(open, toggle) => (
+        <button
+          type="button"
+          onClick={toggle}
+          aria-expanded={open}
+          aria-label={count ? t("Connectors: {count} on", { count }) : t("Connectors")}
+          title={t("Use your connected accounts in this chat")}
+          className={`${round} ${count ? "bg-primary/15 text-primary-soft ring-1 ring-inset ring-primary/40" : "text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100"} ${open ? "bg-white/[0.08]" : ""}`}
+        >
+          <Icon d="M9 3v5 M15 3v5 M6 8h12v3a6 6 0 0 1-12 0z M12 17v4" className="h-[18px] w-[18px]" />
+        </button>
+      )}
+    >
+      {(close) => (
+        <>
+          <p className="px-2.5 pb-1 pt-1.5 text-[11px] font-medium uppercase tracking-wider text-zinc-500">{t("Connectors in this chat")}</p>
+          {accounts.length ? (
+            accounts.map((a) => (
+              <button
+                key={a.id}
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked={on.includes(a.id)}
+                disabled={a.status !== "ok"}
+                className={item}
+                onClick={() => setOn(on.includes(a.id) ? on.filter((id) => id !== a.id) : [...on, a.id])}
+              >
+                <ConnectorTile provider={a.provider} name={a.label} />
+                <span className="min-w-0 text-start">
+                  <span className="block truncate">{a.label}</span>
+                  <span className="block truncate text-xs text-zinc-500">{a.status === "ok" ? <span dir="ltr">{a.host}</span> : t("Needs a new key")}</span>
+                </span>
+                {on.includes(a.id) && check}
+              </button>
+            ))
+          ) : (
+            <p className="px-2.5 py-2 text-sm text-zinc-300">{t("Connect an account in Settings first.")}</p>
+          )}
+          <p className="px-2.5 pb-1.5 pt-2 text-xs leading-relaxed text-zinc-500">
+            {t("Replies that use your accounts cost credits. Anything that sends or changes something waits for your approval.")}
+          </p>
+          <button type="button" role="menuitem" className={item} onClick={() => (close(), onManage())}>
+            {t("Manage connectors")}
+          </button>
         </>
       )}
     </Popover>

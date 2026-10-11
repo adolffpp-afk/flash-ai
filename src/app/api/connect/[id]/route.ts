@@ -4,8 +4,8 @@ import { connectorsReady } from "@/lib/server/secret-box.ts";
 import { ConnectError, problemText, updateConnection } from "@/lib/server/connections.ts";
 
 /**
- * Changes one of the user's connections: a tool on or off, a tool always allowed (a server they added
- * only), a changed tool looked at again (review), or the server's new tools added (refresh).
+ * Changes one tool of the user's connections: on or off, always allowed (a server they added only),
+ * or a changed tool looked at again (review).
  */
 export async function PATCH(request: Request, ctx: RouteContext<"/api/connect/[id]">) {
   const user = await getUser(request);
@@ -16,13 +16,13 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/connect/[i
   const { id } = await ctx.params;
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const flag = (key: string) => (typeof body[key] === "boolean" ? (body[key] as boolean) : undefined);
+  if (typeof body.tool !== "string") return Response.json({ error: t("Unknown action.") }, { status: 400 });
   try {
     const connection = await updateConnection(user.id, id, {
-      tool: typeof body.tool === "string" ? body.tool.slice(0, 128) : undefined,
+      tool: body.tool.slice(0, 128),
       enabled: flag("enabled"),
       trusted: flag("trusted"),
       review: flag("review"),
-      refresh: flag("refresh"),
     });
     return Response.json({ connection });
   } catch (err) {

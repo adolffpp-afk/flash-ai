@@ -1,6 +1,6 @@
 "use client";
 
-import { FEATURES, FEATURE_GROUPS, featureReady, isInstall, type Feature, type FeatureAction, type FeatureGroup } from "@/lib/features";
+import { FEATURES, FEATURE_GROUPS, featureReady, hiddenUntilReady, isInstall, type Feature, type FeatureAction, type FeatureGroup, type FeatureSetup } from "@/lib/features";
 import { LEVELS, type Level } from "@/lib/levels";
 import type { Me } from "@/lib/store";
 import type { Engine } from "@/lib/types";
@@ -41,14 +41,15 @@ export function Everything({
   const t = useT();
   // As the server decides for custom domains and selling: a paid plan of their own, or an admin.
   const free = !me.plan && !me.isAdmin;
-  const live = (f: Feature) =>
-    featureReady(f, {
-      isLive,
-      modelLive: (id) => Boolean(me.models.find((m) => m.id === id)?.live),
-      payments: me.paymentsEnabled,
-      domains: me.domainsEnabled,
-    });
-  const shown = FEATURES.filter((f) => installable || !isInstall(f));
+  const setup: FeatureSetup = {
+    isLive,
+    modelLive: (id) => Boolean(me.models.find((m) => m.id === id)?.live),
+    payments: me.paymentsEnabled,
+    domains: me.domainsEnabled,
+    connectors: Boolean(me.connectorsEnabled),
+  };
+  const live = (f: Feature) => featureReady(f, setup);
+  const shown = FEATURES.filter((f) => (installable || !isInstall(f)) && !hiddenUntilReady(f, setup));
   const ready = shown.filter(live).length;
 
   return (

@@ -299,16 +299,18 @@ function clientFor(row: ConnectionRow, signal?: AbortSignal): { client: McpClien
 /**
  * Changes one tool of a connection: on or off, always allowed (a server the user added only), or
  * looked at again after its server changed it (review: pinned as it is now, and no longer always
- * allowed). refresh lists the server again and adds tools it didn't have before, as the user sees them.
+ * allowed).
  */
 export async function updateConnection(
   userId: string,
   id: string,
-  change: { tool?: string; enabled?: boolean; trusted?: boolean; review?: boolean; refresh?: boolean },
+  change: { tool: string; enabled?: boolean; trusted?: boolean; review?: boolean },
 ): Promise<ConnectionView> {
   const row = await owned(userId, id);
   const preset = presetById(row.provider);
-  if (change.review || change.refresh) {
+  const tool = await one<ToolRow>("SELECT * FROM connection_tools WHERE connection_id = ? AND name = ?", [id, change.tool]);
+  if (!tool) throw new ConnectError("gone", "That tool isn't there any more.");
+  if (change.review) {
     await tryLimit(userId);
     const { client } = clientFor(row);
     let live: McpTool[];
@@ -319,44 +321,21 @@ export async function updateConnection(
     } finally {
       await client.close();
     }
-    const pinned = await all<ToolRow>("SELECT * FROM connection_tools WHERE connection_id = ?", [id]);
-    const writes: { sql: string; args: (string | number)[] }[] = [];
-    if (change.review && change.tool) {
-      const tool = live.find((t) => t.name === change.tool);
-      if (!tool) writes.push({ sql: "DELETE FROM connection_tools WHERE connection_id = ? AND name = ?", args: [id, change.tool] });
-      else {
-        writes.push({
-          sql: "UPDATE connection_tools SET title = ?, description = ?, schema = ?, hash = ?, kind = ?, trusted = 0, changed = 0 WHERE connection_id = ? AND name = ?",
-          args: [tool.title, tool.description, JSON.stringify(tool.inputSchema), tool.hash, kindOf(tool, preset), id, tool.name],
-        });
-      }
+    const current = live.find((t) => t.name === change.tool);
+    if (!current) await run("DELETE FROM connection_tools WHERE connection_id = ? AND name = ?", [id, change.tool]);
+    else {
+      await run(
+        "UPDATE connection_tools SET title = ?, description = ?, schema = ?, hash = ?, kind = ?, trusted = 0, changed = 0 WHERE connection_id = ? AND name = ?",
+        [current.title, current.description, JSON.stringify(current.inputSchema), current.hash, kindOf(current, preset), id, current.name],
+      );
     }
-    if (change.refresh) {
-      let position = Math.max(-1, ...pinned.map((t) => t.position));
-      for (const tool of live) {
-        const was = pinned.find((p) => p.name === tool.name);
-        if (!was) {
-          writes.push({
-            sql: `INSERT OR IGNORE INTO connection_tools (connection_id, name, title, description, schema, hash, kind, enabled, trusted, changed, position)
-                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)`,
-            args: [id, tool.name, tool.title, tool.description, JSON.stringify(tool.inputSchema), tool.hash, kindOf(tool, preset), preset?.costly?.test(tool.name) ? 0 : 1, ++position],
-          });
-        } else if (was.hash !== tool.hash && !was.changed) {
-          writes.push({ sql: "UPDATE connection_tools SET changed = 1 WHERE connection_id = ? AND name = ?", args: [id, tool.name] });
-        }
-      }
-    }
-    if (writes.length) await (await db()).batch(writes, "write");
-  } else if (change.tool) {
-    const tool = await one<ToolRow>("SELECT * FROM connection_tools WHERE connection_id = ? AND name = ?", [id, change.tool]);
-    if (!tool) throw new ConnectError("gone", "That tool isn't there any more.");
-    if (typeof change.enabled === "boolean") {
-      await run("UPDATE connection_tools SET enabled = ? WHERE connection_id = ? AND name = ?", [change.enabled ? 1 : 0, id, change.tool]);
-    }
-    // Only a server the user added asks before every call; a preset's writes always ask.
-    if (typeof change.trusted === "boolean" && !preset) {
-      await run("UPDATE connection_tools SET trusted = ? WHERE connection_id = ? AND name = ? AND changed = 0", [change.trusted ? 1 : 0, id, change.tool]);
-    }
+  }
+  if (typeof change.enabled === "boolean") {
+    await run("UPDATE connection_tools SET enabled = ? WHERE connection_id = ? AND name = ?", [change.enabled ? 1 : 0, id, change.tool]);
+  }
+  // Only a server the user added asks before every call; a preset's writes always ask.
+  if (typeof change.trusted === "boolean" && !preset) {
+    await run("UPDATE connection_tools SET trusted = ? WHERE connection_id = ? AND name = ? AND changed = 0", [change.trusted ? 1 : 0, id, change.tool]);
   }
   return (await listConnections(userId)).find((c) => c.id === id)!;
 }

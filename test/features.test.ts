@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-const { FEATURES, FEATURE_GROUPS, FEATURE_PAGES, featureReady, findFeatures, isInstall } = await import("../src/lib/features.ts");
+const { FEATURES, FEATURE_GROUPS, FEATURE_PAGES, featureReady, findFeatures, hiddenUntilReady, isInstall } = await import("../src/lib/features.ts");
 const { MODELS } = await import("../src/lib/models.ts");
 type FeatureSetup = import("../src/lib/features.ts").FeatureSetup;
 const { ENGINES } = await import("../src/lib/types.ts");
@@ -34,7 +34,7 @@ test("only planned features are marked coming soon, and paid ones are the site a
 
 test("a feature is ready when it's built and its tool, model and server setup are ready", () => {
   const byTitle = (t: string) => FEATURES.find((f) => f.title === t)!;
-  const everything: FeatureSetup = { isLive: () => true, modelLive: () => true, payments: true, domains: true };
+  const everything: FeatureSetup = { isLive: () => true, modelLive: () => true, payments: true, domains: true, connectors: true };
   const ready = (t: string, change: Partial<FeatureSetup> = {}) => featureReady(byTitle(t), { ...everything, ...change });
   assert.equal(ready("AI Chat", { isLive: () => false, modelLive: () => false }), true, "needs nothing");
   assert.equal(ready("Image"), true);
@@ -49,6 +49,12 @@ test("a feature is ready when it's built and its tool, model and server setup ar
   assert.equal(ready("Your Own Domain", { domains: false }), false);
   assert.equal(ready("Your Own Domain", { payments: false }), true);
   assert.equal(ready("Automations"), false, "planned, not built");
+  // Connectors work only once CONNECTOR_KEYS is set, and until then they aren't listed at all.
+  assert.equal(ready("Use Your Accounts in Chat"), true);
+  assert.equal(ready("Use Your Accounts in Chat", { connectors: false }), false);
+  assert.equal(hiddenUntilReady(byTitle("Use Your Accounts in Chat"), { ...everything, connectors: false }), true);
+  assert.equal(hiddenUntilReady(byTitle("Use Your Accounts in Chat"), everything), false);
+  assert.deepEqual(FEATURES.filter((f) => hiddenUntilReady(f, { ...everything, connectors: false })).map((f) => f.title), ["Use Your Accounts in Chat"]);
   // Every model a feature names exists.
   for (const f of FEATURES.filter((f) => f.model)) assert.ok(MODELS.some((m) => m.id === f.model && m.engine === f.needs), f.title);
 });

@@ -69,6 +69,7 @@ export async function proposeAction(a: {
   );
   return {
     id,
+    connectionId: a.connectionId,
     connection: a.connection,
     host: a.host,
     tool: a.tool,
