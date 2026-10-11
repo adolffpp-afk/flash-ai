@@ -1,17 +1,20 @@
+import { translatorFor } from "@/lib/server/i18n.ts";
 import { createSession, fromOwnPage, hashPassword, isSecure } from "@/lib/server/auth.ts";
 import { redeemToken } from "@/lib/server/account.ts";
 import { resetPassword } from "@/lib/server/signin.ts";
 
 /** Sets a new password from a reset link, signs out every other device and signs this one in. */
 export async function POST(request: Request) {
+  // Signed out, so the words follow the browser's language (see server/i18n.ts).
+  const t = await translatorFor(request);
   // This signs in too, so only Flash's own reset page may use it (see fromOwnPage).
-  if (!fromOwnPage(request)) return Response.json({ error: "Open the link from your email again." }, { status: 403 });
+  if (!fromOwnPage(request)) return Response.json({ error: t("Open the link from your email again.") }, { status: 403 });
   const body = (await request.json().catch(() => ({}))) as { token?: string; password?: string };
   const password = body.password ?? "";
-  if (password.length < 8) return Response.json({ error: "Use a password of at least 8 characters." }, { status: 400 });
+  if (password.length < 8) return Response.json({ error: t("Use a password of at least 8 characters.") }, { status: 400 });
   const userId = await redeemToken(body.token ?? "", "reset");
   if (!userId) {
-    return Response.json({ error: "This link has expired or was already used. Ask for a new one." }, { status: 400 });
+    return Response.json({ error: t("This link has expired or was already used. Ask for a new one.") }, { status: 400 });
   }
   // Opening the link proved they own the inbox: what an unconfirmed account had set up goes.
   await resetPassword(userId, await hashPassword(password));

@@ -3,15 +3,17 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/store";
 import { LogoMark } from "@/app/brand";
+import { msg } from "@/lib/i18n";
+import { useT } from "@/lib/use-t";
 
 const FEATURES = [
-  "🛠️ Build and publish apps",
-  "🖥️ Slides",
-  "✍️ Writing",
-  "🔎 Research with sources",
-  "💻 Code",
-  "🌍 Translation",
-  "📊 Docs & sheets",
+  msg("🛠️ Build and publish apps"),
+  msg("🖥️ Slides"),
+  msg("✍️ Writing"),
+  msg("🔎 Research with sources"),
+  msg("💻 Code"),
+  msg("🌍 Translation"),
+  msg("📊 Docs & sheets"),
 ];
 
 type ProviderId = "google" | "github" | "microsoft";
@@ -47,15 +49,16 @@ function ProviderIcon({ id }: { id: ProviderId }) {
 }
 
 // Why a "Continue with …" sign-in came back without signing in (the auth_error in the address).
+// Marked msg() so the tables have them; translated where shown.
 const AUTH_ERRORS: Record<string, string> = {
-  cancelled: "Sign-in was cancelled.",
-  expired: "That sign-in took too long or started in another browser. Please try again.",
+  cancelled: msg("Sign-in was cancelled."),
+  expired: msg("That sign-in took too long or started in another browser. Please try again."),
   unverified:
-    "That account hasn't confirmed its email with the provider, so it can't open the Flash account with the same email. Sign in with your password or an email link instead.",
-  no_email: "That account didn't share an email address. Try another way to sign in.",
-  busy: "Too many attempts. Try again in 15 minutes.",
-  unavailable: "That sign-in option isn't available right now.",
-  failed: "Sign-in didn't work. Please try again.",
+    msg("That account hasn't confirmed its email with the provider, so it can't open the Flash account with the same email. Sign in with your password or an email link instead."),
+  no_email: msg("That account didn't share an email address. Try another way to sign in."),
+  busy: msg("Too many attempts. Try again in 15 minutes."),
+  unavailable: msg("That sign-in option isn't available right now."),
+  failed: msg("Sign-in didn't work. Please try again."),
 };
 
 export function AuthScreen({
@@ -74,6 +77,7 @@ export function AuthScreen({
   // Where to return after a "Continue with …" or email-link sign-in (a path on this site).
   next?: string;
 }) {
+  const t = useT();
   const [mode, setMode] = useState<"signup" | "login" | "forgot" | "link">(initialMode);
   const [sent, setSent] = useState<{ devLink?: string } | null>(null);
   const [name, setName] = useState("");
@@ -118,7 +122,7 @@ export function AuthScreen({
         }),
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(err instanceof Error ? err.message : t("Something went wrong."));
     } finally {
       setBusy(false);
     }
@@ -135,7 +139,7 @@ export function AuthScreen({
               onClick={onBack}
               className="mb-6 text-sm text-zinc-400 hover:text-zinc-100"
             >
-              ← Back to home
+              ← {t("Back to home")}
             </button>
           )}
           <LogoMark size={56} className="mb-6" />
@@ -143,8 +147,7 @@ export function AuthScreen({
             Flash <span className="text-holo">AI</span>
           </h1>
           <p className="mt-3 max-w-sm leading-relaxed text-zinc-400">
-            One AI for everything. Ask once, and Flash picks the best AI for the
-            job.
+            {t("One AI for everything. Ask once, and Flash picks the best AI for the job.")}
           </p>
           <div className="mt-6 flex flex-wrap gap-2">
             {FEATURES.map((f) => (
@@ -152,7 +155,7 @@ export function AuthScreen({
                 key={f}
                 className="rounded-full border border-white/8 px-3 py-1 text-xs text-zinc-400"
               >
-                {f}
+                {t(f)}
               </span>
             ))}
           </div>
@@ -163,21 +166,21 @@ export function AuthScreen({
         >
           <h2 className="text-lg font-medium tracking-tight">
             {mode === "signup"
-              ? "Create your account"
+              ? t("Create your account")
               : mode === "login"
-                ? "Welcome back"
+                ? t("Welcome back")
                 : mode === "link"
-                  ? "Email me a sign-in link"
-                  : "Reset your password"}
+                  ? t("Email me a sign-in link")
+                  : t("Reset your password")}
           </h2>
           <p className="mt-1 text-sm text-zinc-400">
             {mode === "signup"
-              ? "Free credits every month. No card needed."
+              ? t("Free credits every month. No card needed.")
               : mode === "login"
-                ? "Sign in to pick up where you left off."
+                ? t("Sign in to pick up where you left off.")
                 : mode === "link"
-                  ? "We'll email you a link that signs you in, no password needed. It works once, for 15 minutes."
-                  : "Enter your email and we'll send you a link to choose a new password."}
+                  ? t("We'll email you a link that signs you in, no password needed. It works once, for 15 minutes.")
+                  : t("Enter your email and we'll send you a link to choose a new password.")}
           </p>
           {(mode === "signup" || mode === "login") && (options.providers.length > 0 || options.emailLink) && (
             <div className="mt-5 space-y-2">
@@ -185,11 +188,11 @@ export function AuthScreen({
                 <a
                   key={id}
                   href={`/api/auth/oauth/${id}${next ? `?next=${encodeURIComponent(next)}` : ""}`}
-                  aria-label={`Continue with ${PROVIDER_NAMES[id]}`}
+                  aria-label={t("Continue with {provider}", { provider: PROVIDER_NAMES[id] })}
                   className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] text-sm text-zinc-200 transition hover:border-white/15 hover:bg-white/[0.06]"
                 >
                   <ProviderIcon id={id} />
-                  Continue with {PROVIDER_NAMES[id]}
+                  {t("Continue with {provider}", { provider: PROVIDER_NAMES[id] })}
                 </a>
               ))}
               {options.providers.length > 0 && <OrDivider />}
@@ -203,7 +206,7 @@ export function AuthScreen({
                     <rect x="3" y="5" width="18" height="14" rx="2" />
                     <path d="M3 7l9 6 9-6" />
                   </svg>
-                  Email me a sign-in link
+                  {t("Email me a sign-in link")}
                 </button>
               )}
               {!options.providers.length && <OrDivider />}
@@ -213,8 +216,8 @@ export function AuthScreen({
             {mode === "signup" && (
               <input
                 className={input}
-                placeholder="Your name"
-                aria-label="Your name"
+                placeholder={t("Your name")}
+                aria-label={t("Your name")}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 autoComplete="name"
@@ -223,8 +226,8 @@ export function AuthScreen({
             <input
               className={input}
               type="email"
-              placeholder="Email"
-              aria-label="Email"
+              placeholder={t("Email")}
+              aria-label={t("Email")}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               autoComplete="email"
@@ -234,10 +237,8 @@ export function AuthScreen({
               <input
                 className={input}
                 type="password"
-                placeholder={
-                  mode === "signup" ? "Password (8+ characters)" : "Password"
-                }
-                aria-label="Password"
+                placeholder={mode === "signup" ? t("Password (8+ characters)") : t("Password")}
+                aria-label={t("Password")}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 autoComplete={
@@ -254,7 +255,7 @@ export function AuthScreen({
               onClick={() => switchMode("forgot")}
               className="mt-2 text-xs text-zinc-400 hover:text-zinc-100"
             >
-              Forgot password?
+              {t("Forgot password?")}
             </button>
           )}
           {(mode === "forgot" || mode === "link") && sent && (
@@ -263,42 +264,37 @@ export function AuthScreen({
               className="mt-3 rounded-lg border border-emerald-900/60 bg-emerald-950/30 px-3 py-2 text-sm text-emerald-200"
             >
               {mode === "link"
-                ? "Your sign-in link is on its way. Check your inbox and spam folder."
-                : "If an account uses that email, a reset link is on its way. Check your inbox and spam folder."}
+                ? t("Your sign-in link is on its way. Check your inbox and spam folder.")
+                : t("If an account uses that email, a reset link is on its way. Check your inbox and spam folder.")}
               {sent.devLink && (
                 <a
                   href={sent.devLink}
                   className="mt-1 block break-all text-xs text-emerald-300 underline"
                 >
-                  Demo mode: open the {mode === "link" ? "sign-in" : "reset"} link
+                  {mode === "link" ? t("Demo mode: open the sign-in link") : t("Demo mode: open the reset link")}
                 </a>
               )}
             </div>
           )}
           {error && (
             <p role="alert" className="mt-3 text-sm text-red-400">
-              {error}
+              {t(error)}
             </p>
           )}
           {mode === "signup" && (
             <p className="mt-3 text-xs text-zinc-500">
-              By creating an account you agree to the{" "}
-              <a
-                href="/terms"
-                target="_blank"
-                className="text-zinc-300 underline hover:text-white"
-              >
-                Terms
-              </a>{" "}
-              and{" "}
-              <a
-                href="/privacy"
-                target="_blank"
-                className="text-zinc-300 underline hover:text-white"
-              >
-                Privacy Policy
-              </a>
-              .
+              {t.node("By creating an account you agree to the {terms} and {privacy}.", {
+                terms: (
+                  <a href="/terms" target="_blank" className="text-zinc-300 underline hover:text-white">
+                    {t("Terms")}
+                  </a>
+                ),
+                privacy: (
+                  <a href="/privacy" target="_blank" className="text-zinc-300 underline hover:text-white">
+                    {t("Privacy Policy")}
+                  </a>
+                ),
+              })}
             </p>
           )}
           <button
@@ -306,29 +302,29 @@ export function AuthScreen({
             className="mt-6 h-10 w-full rounded-lg bg-brand text-sm font-medium text-on-brand transition hover:brightness-110 disabled:opacity-50"
           >
             {busy
-              ? "One moment…"
+              ? t("One moment…")
               : mode === "signup"
-                ? "Create account"
+                ? t("Create account")
                 : mode === "login"
-                  ? "Sign in"
+                  ? t("Sign in")
                   : mode === "link"
-                    ? "Send sign-in link"
-                    : "Send reset link"}
+                    ? t("Send sign-in link")
+                    : t("Send reset link")}
           </button>
           <p className="mt-5 text-center text-sm text-zinc-400">
             {mode === "signup"
-              ? "Already have an account?"
+              ? t("Already have an account?")
               : mode === "login"
-                ? "New to Flash?"
+                ? t("New to Flash?")
                 : mode === "link"
-                  ? "Prefer a password?"
-                  : "Remembered it?"}{" "}
+                  ? t("Prefer a password?")
+                  : t("Remembered it?")}{" "}
             <button
               type="button"
               className="text-primary hover:underline"
               onClick={() => switchMode(mode === "login" ? "signup" : "login")}
             >
-              {mode === "login" ? "Create an account" : "Sign in"}
+              {mode === "login" ? t("Create an account") : t("Sign in")}
             </button>
           </p>
         </form>
@@ -338,10 +334,11 @@ export function AuthScreen({
 }
 
 function OrDivider() {
+  const t = useT();
   return (
-    <div role="separator" aria-label="or" className="flex items-center gap-3 py-1 text-xs text-zinc-500">
+    <div role="separator" aria-label={t("or")} className="flex items-center gap-3 py-1 text-xs text-zinc-500">
       <span className="h-px flex-1 bg-white/8" />
-      or
+      {t("or")}
       <span className="h-px flex-1 bg-white/8" />
     </div>
   );
