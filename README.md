@@ -7,7 +7,7 @@ an image, or speech, sends it to the right engine, and keeps the result in a pro
 
 | Engine        | Used for                                          | Provider                         | Key                  |
 | ------------- | ------------------------------------------------- | -------------------------------- | -------------------- |
-| Write         | Writing, reasoning, questions about files         | Anthropic Claude                 | `ANTHROPIC_API_KEY`  |
+| Write         | Writing, reasoning, questions about files, weather (live forecast) | Anthropic Claude + MET Norway forecast | `ANTHROPIC_API_KEY`  |
 | App Builder   | Working web apps, sites, games and dashboards     | Claude                           | `ANTHROPIC_API_KEY`  |
 | Slides        | Presentation decks you click or swipe through     | Claude                           | `ANTHROPIC_API_KEY`  |
 | Research      | Current facts with sources; reads links you paste | Claude + web search / web fetch  | `ANTHROPIC_API_KEY`  |
@@ -70,16 +70,31 @@ Features:
 - **More ways to sign in**: "Email me a sign-in link" (one use, 15 minutes) works whenever
   emails do, and "Continue with Google / GitHub / Microsoft" appear once their keys are set
   (see `docs/sign-in-setup.md`). Accounts are matched by provider-confirmed email.
-- **Free lane when credits run out**: with the optional free keys (Groq, OpenRouter,
-  Cloudflare Workers AI), users who are out of credits keep chatting, writing, coding and
-  translating on open-source models (GPT-OSS 120B, Llama 3.3 70B), and get a few free
-  FLUX.1 schnell images a day. Each user gets a daily allowance, and Flash stops below each
-  provider's free limit, so the free lane costs nothing. Apps, video, music, voice and web
-  research stay on credits. See `src/lib/engines/free.ts`.
+- **Free lane when credits run out**: with the optional free keys (Groq, Gemini, OpenRouter,
+  Cloudflare Workers AI, Mistral), users who are out of credits keep chatting, writing, coding
+  and translating on free models (GPT-OSS 120B, Gemini Flash-Lite, Llama 3.3 70B, Mistral
+  Small), and get a few free FLUX.1 schnell images a day. Each user gets a daily allowance,
+  and Flash stops below each provider's free limit, so the free lane costs nothing. The first
+  model asked depends on the request (`src/lib/free-order.ts`): Groq for short questions,
+  sums and code, as it's the fastest; Gemini for long inputs and messages not in English,
+  where its free tier may answer; the others stay backups in the usual order. Weather
+  questions get the live forecast through the models' own function calling (Groq, Gemini and
+  Mistral, asked first for them). Research questions are answered without the web, and the
+  reply says so. Apps, video, music, voice and web research stay on credits. See
+  `src/lib/engines/free.ts`.
+- **Live weather and the date**: every written answer knows the user's date, local time and rough
+  place (from the connection), and weather questions are answered from MET Norway's free
+  forecast (Locationforecast 2.0, no key or account). Flash's server asks MET with the place
+  rounded to about 1 km, honours MET's `Expires`, and keeps forecasts in the database for up
+  to 2 days, shared by everyone in the same place; `FLASH_CONTACT_EMAIL` goes in the
+  User-Agent MET asks for. Answers that use it show "Based on data from MET Norway"
+  (linking to met.no) and "CC BY 4.0": MET's data is CC BY 4.0 and NLOD 2.0, and its terms
+  allow commercial use with that credit. See `src/lib/weather.ts` and
+  `src/lib/server/weather.ts`.
 - **Model mix**: Claude Opus 5.5 builds apps, slides and code; Claude Sonnet 5.5 handles
-  everyday chat, writing, research and translation; Claude Haiku 4.5 picks the engine
-  for requests the keyword rules can't place. Override with `FLASH_BUILD_MODEL`,
-  `FLASH_CHAT_MODEL`, `FLASH_ROUTER_MODEL`, or `FLASH_TEXT_MODEL` for both.
+  everyday chat, writing, research and translation; Claude Haiku 5.5 picks the engine
+  (or the forecast) for requests the keyword rules can't place. Override with
+  `FLASH_BUILD_MODEL`, `FLASH_CHAT_MODEL`, or `FLASH_TEXT_MODEL` for both.
 - **Landing page** for signed-out visitors, with features, pricing and FAQ, plus draft
   **terms of service** (`/terms`) and **privacy policy** (`/privacy`). Have a lawyer
   review both before taking payments, and set `FLASH_CONTACT_EMAIL`.

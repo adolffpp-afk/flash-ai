@@ -1,14 +1,17 @@
 import type { ChatTurn, Engine, StreamEvent } from "../types.ts";
-import { system, type WritingMode } from "./claude.ts";
+import { system, type SystemOptions, type WritingMode } from "./claude.ts";
 import { NO_SPEECH, type Media } from "./media.ts";
 import { msg } from "../i18n.ts";
 import { FriendlyError } from "./errors.ts";
+import { MAX_FORECASTS, TOO_MANY, WEATHER_FUNCTION, type WeatherAnswer, type WeatherTool } from "../weather.ts";
+import { freeFacts, freeOrder } from "../free-order.ts";
 
 /*
  * The free lane: models on providers' free tiers (mostly open-source), used when a user has run out of
  * credits. Flash pays nothing for these. Each provider has a daily cap set below its free limit
  * (checked 2026-10-02), so a free request can never turn into a bill. Providers are tried in
- * order; one that is busy or over its cap is skipped.
+ * order (the first one depends on the request, see free-order.ts); one that is busy or over its cap
+ * is skipped.
  */
 
 export type FreeProvider = "groq" | "gemini" | "openrouter" | "cloudflare" | "mistral";
@@ -16,7 +19,8 @@ export type FreeProvider = "groq" | "gemini" | "openrouter" | "cloudflare" | "mi
 type ChatProvider = {
   id: FreeProvider;
   label: string;
-  url: () => string;
+  // Where to send a request: streamed (the default), or one reply at once (a call that may ask for a tool).
+  url: (stream?: boolean) => string;
   key: () => string | undefined;
   model: () => string;
   // Requests and tokens per day Flash allows itself on this provider (under the free limit).
@@ -28,6 +32,8 @@ type ChatProvider = {
   streamOptions?: boolean;
   // Whether the provider's terms let it answer someone in this country (a two-letter code, "" when unknown).
   serves?: (country: string) => boolean;
+  // Whether its model calls functions, so it may be offered the forecast tool (see weather.ts).
+  tools?: boolean;
 };
 
 const env = (name: string) => process.env[name] || undefined;
@@ -77,12 +83,15 @@ export const CHAT_PROVIDERS: ChatProvider[] = [
     model: () => env("FLASH_FREE_GROQ_MODEL") ?? "openai/gpt-oss-120b",
     dailyRequests: num("FLASH_GROQ_DAILY_REQUESTS", 900),
     dailyTokens: num("FLASH_GROQ_DAILY_TOKENS", 180000),
+    // Groq lists tool use for gpt-oss-120b.
+    tools: true,
   },
   {
     id: "gemini",
     label: "Gemini Flash-Lite",
     // Gemini's own endpoint: keys made in AI Studio since May 2026 don't always work on its OpenAI-style one.
-    url: () => `${env("GEMINI_BASE_URL") ?? "https://generativelanguage.googleapis.com/v1beta"}/models/${geminiModel()}:streamGenerateContent?alt=sse`,
+    url: (stream = true) =>
+      `${env("GEMINI_BASE_URL") ?? "https://generativelanguage.googleapis.com/v1beta"}/models/${geminiModel()}:${stream ? "streamGenerateContent?alt=sse" : "generateContent"}`,
     key: () => env("GEMINI_API_KEY"),
     model: geminiModel,
     // 500 a day and 15 a minute on the free tier (AI Studio's rate limits page shows a project's own).
@@ -90,6 +99,7 @@ export const CHAT_PROVIDERS: ChatProvider[] = [
     dailyTokens: Infinity,
     format: "gemini",
     serves: geminiFreeServes,
+    tools: true,
   },
   {
     id: "openrouter",
@@ -100,6 +110,8 @@ export const CHAT_PROVIDERS: ChatProvider[] = [
     // 50 a day on a free account; set FLASH_OPENROUTER_DAILY_REQUESTS=950 after a $10 top-up.
     dailyRequests: num("FLASH_OPENROUTER_DAILY_REQUESTS", 45),
     dailyTokens: Infinity,
+    // Not checked for the free Llama, so it isn't offered tools.
+    tools: false,
   },
   {
     id: "cloudflare",
@@ -109,6 +121,8 @@ export const CHAT_PROVIDERS: ChatProvider[] = [
     model: () => env("FLASH_FREE_CLOUDFLARE_MODEL") ?? "@cf/openai/gpt-oss-120b",
     dailyRequests: Infinity,
     dailyTokens: Infinity,
+    // Off until a live check shows Workers AI's chat completions take tools for this model.
+    tools: false,
   },
   /*
    * Mistral's free plan, the last backup (checked 2026-10-09). Its terms allow apps with real users,
@@ -127,6 +141,7 @@ export const CHAT_PROVIDERS: ChatProvider[] = [
     dailyTokens: num("FLASH_MISTRAL_DAILY_TOKENS", 2_000_000),
     // Mistral's API doesn't list stream_options, so it isn't sent; the last chunk carries the token counts.
     streamOptions: false,
+    tools: true,
   },
 ];
 
@@ -161,6 +176,8 @@ export type FreeLane = "chat" | "image" | "transcribe" | "voice";
  * files, or transcribing one audio or video file.
  */
 export function freeEligible(engine: Engine, last: ChatTurn): FreeLane | null {
+  // Research is answered in words by a free model, which can't search: the chat route says so.
+  if (engine === "search") return freeEligible("text", last);
   const a = last.attachment;
   if (engine === "transcribe") {
     return a && !last.more?.length && FREE_AUDIO_TYPE.test(a.mediaType) && freeTranscribeConfigured() ? "transcribe" : null;
@@ -174,22 +191,33 @@ export function freeEligible(engine: Engine, last: ChatTurn): FreeLane | null {
 
 type Message = { role: "system" | "user" | "assistant"; content: string };
 
-/** The request body for a provider: OpenAI-style, or Gemini's contents with the system prompt apart. */
-function requestBody(p: ChatProvider, messages: Message[]): string {
+// The forecast tool as each reply shape takes it, and whether a call may use it ("auto") or must answer in words ("none").
+type ToolChoice = "auto" | "none";
+const OPENAI_TOOLS = [{ type: "function", function: WEATHER_FUNCTION }];
+const GEMINI_TOOLS = [{ functionDeclarations: [WEATHER_FUNCTION] }];
+
+/**
+ * The request body for a provider: OpenAI-style, or Gemini's contents with the system prompt apart.
+ * With tools, the forecast tool is sent with that choice, and after holds what the model asked for
+ * and the forecasts it got, in the provider's own shape, after the conversation.
+ */
+function requestBody(p: ChatProvider, messages: Message[], { stream = true, tools, after = [] }: { stream?: boolean; tools?: ToolChoice; after?: object[] } = {}): string {
   if (p.format === "gemini") {
     const [first, ...rest] = messages;
     return JSON.stringify({
       systemInstruction: { parts: [{ text: first.content }] },
-      contents: rest.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] })),
+      contents: [...rest.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] })), ...after],
       generationConfig: { maxOutputTokens: FREE_MAX_TOKENS },
+      ...(tools && { tools: GEMINI_TOOLS, toolConfig: { functionCallingConfig: { mode: tools === "auto" ? "AUTO" : "NONE" } } }),
     });
   }
   return JSON.stringify({
     model: p.model(),
-    messages,
-    stream: true,
+    messages: [...messages, ...after],
+    stream,
     max_tokens: FREE_MAX_TOKENS,
-    ...(p.streamOptions !== false && { stream_options: { include_usage: true } }),
+    ...(stream && p.streamOptions !== false && { stream_options: { include_usage: true } }),
+    ...(tools && { tools: OPENAI_TOOLS, tool_choice: tools }),
   });
 }
 
@@ -200,22 +228,32 @@ const requestHeaders = (p: ChatProvider, key: string): Record<string, string> =>
 
 type Chunk = { text: string; input?: number; output?: number };
 
+type GeminiPart = { text?: string; thought?: boolean; functionCall?: { name?: string; args?: unknown; id?: string } };
+type GeminiReply = {
+  candidates?: { content?: { role?: string; parts?: GeminiPart[] } }[];
+  usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number };
+};
+type OpenAIToolCall = { id?: string; type?: string; function?: { name?: string; arguments?: string } };
+type OpenAIReply = {
+  choices?: { message?: { content?: string | null; tool_calls?: OpenAIToolCall[] } }[];
+  usage?: { prompt_tokens?: number; completion_tokens?: number } | null;
+};
+
+const geminiText = (parts: GeminiPart[]) =>
+  parts
+    .filter((part) => !part.thought)
+    .map((part) => part.text ?? "")
+    .join("");
+const geminiOutput = (usage: GeminiReply["usageMetadata"]) => (usage ? (usage.candidatesTokenCount ?? 0) + (usage.thoughtsTokenCount ?? 0) : undefined);
+
 /** The words and token counts in one streamed event, from either reply shape. */
 function readChunk(p: ChatProvider, data: string): Chunk | null {
   try {
     if (p.format === "gemini") {
-      const json = JSON.parse(data) as {
-        candidates?: { content?: { parts?: { text?: string; thought?: boolean }[] } }[];
-        usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number; thoughtsTokenCount?: number };
-      };
-      const parts = json.candidates?.[0]?.content?.parts ?? [];
+      const json = JSON.parse(data) as GeminiReply;
       const usage = json.usageMetadata;
-      return {
-        // Thinking stays out of the answer.
-        text: parts.filter((part) => !part.thought).map((part) => part.text ?? "").join(""),
-        input: usage?.promptTokenCount,
-        output: usage ? (usage.candidatesTokenCount ?? 0) + (usage.thoughtsTokenCount ?? 0) : undefined,
-      };
+      // Thinking stays out of the answer.
+      return { text: geminiText(json.candidates?.[0]?.content?.parts ?? []), input: usage?.promptTokenCount, output: geminiOutput(usage) };
     }
     const json = JSON.parse(data) as {
       choices?: { delta?: { content?: string | null } }[];
@@ -227,7 +265,8 @@ function readChunk(p: ChatProvider, data: string): Chunk | null {
   }
 }
 
-function toMessages(history: ChatTurn[], preferences: string, mode: WritingMode, systemPrompt?: string): Message[] {
+/** The conversation as the free models read it: the last 10 turns, with text files in them. */
+function toTurns(history: ChatTurn[]): Message[] {
   const turns = history.slice(-10).map((t): Message => {
     let content = t.content;
     if (t.attachment) {
@@ -240,15 +279,126 @@ function toMessages(history: ChatTurn[], preferences: string, mode: WritingMode,
     if (t.app) content += "\n\n(An app was built here.)";
     return { role: t.role, content: content.slice(0, 24000) };
   });
-  return [{ role: "system", content: systemPrompt ?? system(preferences, mode) }, ...turns.filter((t) => t.content.trim())];
+  return turns.filter((t) => t.content.trim());
 }
 
-/** Gate that reserves a provider for one request, or says no when it is over its daily cap. */
-export type Reserve = (provider: FreeProvider, limits: { requests: number; tokens: number }) => Promise<boolean>;
+/** Gate that reserves a provider for a request of count calls, or says no when that would pass its daily cap. */
+export type Reserve = (provider: FreeProvider, limits: { requests: number; tokens: number }, count?: number) => Promise<boolean>;
 /** Records what a free request used: tokens, and Cloudflare neurons. */
 export type RecordUse = (provider: FreeProvider, tokens: number, neurons: number) => Promise<void>;
 
-/** Streams a reply from the first free provider that is configured, under its cap, and answers. */
+/**
+ * How a free reply is asked for. systemPrompt replaces Flash's usual instructions (for the
+ * companion); system adds to them (the tools line and the context note; the web line is always the
+ * free models' own); country is where the user is (two letters, from the host), for providers that
+ * may only answer some countries. weather: the live forecast, offered to the providers that take
+ * tools, and onUsed is called once when a reply used it. language: the language the user's answers
+ * are set to ("" for the one they write in), which helps pick the provider (see free-order.ts).
+ */
+export type FreeChatOptions = {
+  systemPrompt?: string;
+  system?: Omit<SystemOptions, "web" | "weather">;
+  country?: string;
+  weather?: WeatherTool;
+  onUsed?: () => void;
+  language?: string;
+};
+
+/** One reply at once (a call that may ask for the forecast): its words, the calls it asked for, and its tokens. */
+type Asked = { text: string; calls: { id?: string; name: string; input: unknown }[]; after: object; input?: number; output?: number };
+
+function readAsked(p: ChatProvider, json: unknown): Asked {
+  if (p.format === "gemini") {
+    const reply = json as GeminiReply;
+    const content = reply.candidates?.[0]?.content ?? { role: "model", parts: [] };
+    const parts = content.parts ?? [];
+    const calls = parts
+      .filter((part) => part.functionCall)
+      .map((part) => ({ id: part.functionCall!.id, name: part.functionCall!.name ?? "", input: part.functionCall!.args }));
+    // The model's turn goes back exactly as it came, with its thought signatures, for the second call.
+    return { text: geminiText(parts), calls, after: content, input: reply.usageMetadata?.promptTokenCount, output: geminiOutput(reply.usageMetadata) };
+  }
+  const reply = json as OpenAIReply;
+  const message = reply.choices?.[0]?.message ?? {};
+  const toolCalls = message.tool_calls ?? [];
+  const calls = toolCalls.map((c, i) => {
+    let input: unknown = null;
+    try {
+      input = JSON.parse(c.function?.arguments ?? "");
+    } catch {
+      // A broken input: the tool says so, and the model can answer without it.
+    }
+    return { id: c.id ?? `call_${i}`, name: c.function?.name ?? "", input };
+  });
+  return {
+    text: message.content ?? "",
+    calls,
+    after: { role: "assistant", content: message.content ?? "", tool_calls: toolCalls },
+    input: reply.usage?.prompt_tokens ?? undefined,
+    output: reply.usage?.completion_tokens ?? undefined,
+  };
+}
+
+/** The forecasts asked for, in the provider's shape, after the model's own turn. */
+function toolResults(p: ChatProvider, asked: Asked, answers: WeatherAnswer[]): object[] {
+  if (p.format === "gemini") {
+    const parts = asked.calls.map((c, i) => ({
+      functionResponse: { name: c.name, ...(c.id && { id: c.id }), response: { content: answers[i].text } },
+    }));
+    return [asked.after, { role: "user", parts }];
+  }
+  return [
+    asked.after,
+    ...asked.calls.map((c, i) => ({ role: "tool", tool_call_id: c.id, content: answers[i].text, ...(p.id === "mistral" && { name: c.name }) })),
+  ];
+}
+
+/** Reads a streamed reply's words as they come, and returns its token counts and length. */
+async function* readStream(p: ChatProvider, body: ReadableStream<Uint8Array>): AsyncGenerator<StreamEvent, { input: number; output: number; chars: number }> {
+  let input = 0;
+  let output = 0;
+  let chars = 0;
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for await (const chunk of body as unknown as AsyncIterable<Uint8Array>) {
+    buffer += decoder.decode(chunk, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      const data = line.trim().replace(/^data:\s*/, "");
+      if (!data || data === "[DONE]" || !line.trim().startsWith("data:")) continue;
+      const read = readChunk(p, data);
+      if (!read) continue;
+      if (read.text) {
+        chars += read.text.length;
+        yield { type: "text", delta: read.text };
+      }
+      input = read.input ?? input;
+      output = read.output ?? output;
+    }
+  }
+  return { input, output, chars };
+}
+
+/** Sends one request to a provider, or returns why it couldn't answer. */
+async function send(p: ChatProvider, key: string, body: string, stream: boolean): Promise<Response | string> {
+  try {
+    const res = await fetch(p.url(stream), { method: "POST", headers: requestHeaders(p, key), body, signal: AbortSignal.timeout(120_000) });
+    if (res.ok && res.body) return res;
+    // Busy or over the provider's own limit: the next one is tried.
+    await res.body?.cancel().catch(() => {});
+    return `${p.id} returned ${res.status}`;
+  } catch (err) {
+    return err instanceof Error ? err.message : String(err);
+  }
+}
+
+/**
+ * Streams a reply from the first free provider that is configured, under its cap, and answers. With
+ * o.weather, a provider that takes tools is asked once with the forecast tool (one reply at once),
+ * and when it asks for forecasts (at most MAX_FORECASTS), asked again with them to answer in words,
+ * streamed. Both calls are reserved together, so the second can never pass a cap.
+ */
 export async function* streamFreeChat(
   history: ChatTurn[],
   preferences: string,
@@ -256,63 +406,90 @@ export async function* streamFreeChat(
   reserve: Reserve,
   record: RecordUse,
   onModel: (label: string, provider: FreeProvider) => void,
-  // Replaces Flash's usual instructions, for the companion.
-  systemPrompt?: string,
-  // Where the user is (two letters, from the host), for providers that may only answer some countries.
-  country = "",
+  o: FreeChatOptions = {},
 ): AsyncGenerator<StreamEvent> {
-  const messages = toMessages(history, preferences, mode, systemPrompt);
+  const country = o.country ?? "";
+  const turns = toTurns(history);
+  const tool = o.weather;
+  const facts = freeFacts({
+    message: history.at(-1)?.content ?? "",
+    inputChars: turns.reduce((sum, t) => sum + t.content.length, 0),
+    code: mode === "code",
+    language: o.language,
+    weather: Boolean(tool),
+  });
+  const order = freeOrder(
+    facts,
+    CHAT_PROVIDERS.map((p) => p.id),
+    CHAT_PROVIDERS.filter((p) => p.tools).map((p) => p.id),
+  );
   let lastError = "";
-  for (const p of CHAT_PROVIDERS) {
+  for (const id of order) {
+    const p = CHAT_PROVIDERS.find((c) => c.id === id)!;
     const key = p.key();
     if (!key) continue;
     if (p.serves && !p.serves(country.toUpperCase())) continue;
-    if (!(await reserve(p.id, { requests: p.dailyRequests, tokens: p.dailyTokens }))) continue;
-    let res: Response;
-    try {
-      res = await fetch(p.url(), {
-        method: "POST",
-        headers: requestHeaders(p, key),
-        body: requestBody(p, messages),
-        signal: AbortSignal.timeout(120_000),
-      });
-    } catch (err) {
-      lastError = err instanceof Error ? err.message : String(err);
-      continue;
-    }
-    if (!res.ok || !res.body) {
-      // Busy or over the provider's own limit: try the next one.
-      lastError = `${p.id} returned ${res.status}`;
-      await res.body?.cancel().catch(() => {});
-      continue;
-    }
-    onModel(p.label, p.id);
+    const offer = Boolean(tool && p.tools);
+    if (!(await reserve(p.id, { requests: p.dailyRequests, tokens: p.dailyTokens }, offer ? 2 : 1))) continue;
+    // A provider without tools is told it can't check the weather either.
+    const messages: Message[] = [{ role: "system", content: o.systemPrompt ?? system(preferences, mode, { ...o.system, web: "free", weather: offer }) }, ...turns];
     let input = 0;
     let output = 0;
-    let chars = 0;
-    const decoder = new TextDecoder();
-    let buffer = "";
-    for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
-      buffer += decoder.decode(chunk, { stream: true });
-      const lines = buffer.split("\n");
-      buffer = lines.pop() ?? "";
-      for (const line of lines) {
-        const data = line.trim().replace(/^data:\s*/, "");
-        if (!data || data === "[DONE]" || !line.trim().startsWith("data:")) continue;
-        const chunk = readChunk(p, data);
-        if (!chunk) continue;
-        if (chunk.text) {
-          chars += chunk.text.length;
-          yield { type: "text", delta: chunk.text };
-        }
-        input = chunk.input ?? input;
-        output = chunk.output ?? output;
+    let after: object[] = [];
+    let used = false;
+    if (offer) {
+      const first = await send(p, key, requestBody(p, messages, { stream: false, tools: "auto" }), false);
+      const asked = typeof first === "string" ? null : await first.json().then((json) => readAsked(p, json), () => null);
+      if (!asked) {
+        lastError = typeof first === "string" ? first : `${p.id} sent a reply Flash couldn't read`;
+        continue;
       }
+      input += asked.input ?? Math.ceil(JSON.stringify(messages).length / 3);
+      output += asked.output ?? Math.ceil(asked.text.length / 2);
+      // Nothing to say and nothing asked for (Gemini's MALFORMED_FUNCTION_CALL, say): the call counts
+      // toward the provider's day, and the next provider answers.
+      if (!asked.calls.length && !asked.text.trim()) {
+        await record(p.id, input + output, p.id === "cloudflare" ? cloudflareChatNeurons(input, output) : 0);
+        lastError = `${p.id} sent an empty reply`;
+        continue;
+      }
+      onModel(p.label, p.id);
+      if (!asked.calls.length) {
+        // Answered without a forecast: that's the reply.
+        if (asked.text) yield { type: "text", delta: asked.text };
+        await record(p.id, input + output, p.id === "cloudflare" ? cloudflareChatNeurons(input, output) : 0);
+        return;
+      }
+      for (const call of asked.calls) if (call.name === WEATHER_FUNCTION.name) yield { type: "status", message: tool!.status(call.input) };
+      let forecasts = 0;
+      const answers = await Promise.all(
+        asked.calls.map((call) => {
+          if (call.name !== WEATHER_FUNCTION.name) return { text: `There is no tool called ${call.name}.`, isError: true, used: false };
+          return forecasts++ < MAX_FORECASTS ? tool!.run(call.input) : { text: TOO_MANY, isError: true, used: false };
+        }),
+      );
+      // The answer is written next: the progress line goes.
+      yield { type: "status", message: "" };
+      used = answers.some((a) => a.used);
+      after = toolResults(p, asked, answers);
     }
+    const res = await send(p, key, requestBody(p, messages, offer ? { tools: "none", after } : {}), true);
+    if (typeof res === "string") {
+      lastError = res;
+      // The first call is paid for in the provider's daily count all the same.
+      if (offer) await record(p.id, input + output, p.id === "cloudflare" ? cloudflareChatNeurons(input, output) : 0);
+      continue;
+    }
+    if (!offer) onModel(p.label, p.id);
+    // Said once this provider is answering with the forecast, so a backup that answers without it isn't credited.
+    if (used) o.onUsed?.();
+    const read = yield* readStream(p, res.body!);
     // Without a usage report, estimate on the high side.
-    if (!input) input = Math.ceil(JSON.stringify(messages).length / 3);
-    if (!output) output = Math.ceil(chars / 2);
+    input += read.input || Math.ceil((JSON.stringify(messages).length + JSON.stringify(after).length) / 3);
+    output += read.output || Math.ceil(read.chars / 2);
     await record(p.id, input + output, p.id === "cloudflare" ? cloudflareChatNeurons(input, output) : 0);
+    // MET Norway's data is credited under the reply.
+    if (used) yield { type: "sources", items: tool!.sources };
     return;
   }
   throw new FriendlyError(

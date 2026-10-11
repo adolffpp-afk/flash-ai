@@ -524,8 +524,10 @@ const SPOKEN_ENGINES: readonly Engine[] = ["text", "translate", "search"];
 
 export const VOICE_STYLE =
   "This message was spoken in a live voice conversation with Flash, and the reply will be read aloud. " +
-  "Answer the way a person talks: usually one to three short sentences, with no lists, tables, headings, " +
-  "links, code or emoji, unless the user asks for more detail.";
+  "Answer the way a person talks: lead with the answer in one to three short sentences, with no lists, tables, headings, " +
+  "links, code or emoji, unless the user asks for more detail. Put any assumption into the answer itself (\"In Lagos right now " +
+  "it's around 31 degrees and humid\") instead of asking; if you truly need something from the user, ask one short question. " +
+  "Say numbers with their units the way people say them aloud.";
 
 /** Adds the spoken-answer note to a voice request for the engines that write the answer themselves. */
 export function withVoiceStyle(preferences: string, engine: Engine, voice: unknown): string {

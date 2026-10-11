@@ -4,15 +4,24 @@ import { levelName, type ModelLevel } from "../levels.ts";
 import {
   CLAUDE_PRICES,
   MAX_OUTPUT_TOKENS,
+  MIN_OUTPUT_TOKENS,
+  NO_TOOLS,
+  WEATHER_RESULT_TOKENS,
   WEB_SEARCH_CENTS,
   callMaxCents,
   claudeCostCents,
   claudePrice,
   fallbackModel,
   readCostCents,
+  researchPlan,
+  tokensMaxCents,
   tokensWithin,
+  type ToolPlan,
 } from "../credits.ts";
 import { english, type Translate } from "../i18n.ts";
+import { MAX_FORECASTS, TOO_MANY, WEATHER_ROUNDS, WEATHER_TOOL, type WeatherTool } from "../weather.ts";
+import { tokensAtMost } from "../tokens.ts";
+import type { Where } from "../context-note.ts";
 
 /*
  * Flash uses three Claude models, to keep quality high where it shows and costs low elsewhere:
@@ -58,10 +67,13 @@ export type ClaudeChoice = { level: ModelLevel; model: string; effort: Effort; s
  * What a level runs on for an engine. Building and code get more thought, Sonic answers at low
  * effort for speed, and Summit steps down to Vision when its model is busy or not available.
  * Research runs on Ascend or above: Sonic's model doesn't have the web tools research uses.
+ * careful: the request has sums, units or money in it (see needsCare in levels.ts), so Sonic
+ * thinks at medium effort; on Haiku that costs a small part of a credit.
  */
-export function claudeChoice(engine: Engine, level: ModelLevel): ClaudeChoice {
-  if (engine === "search" && level === "sonic") return claudeChoice(engine, "ascend");
-  const effort: Effort = level === "sonic" ? "low" : engine === "app" || engine === "slides" || engine === "code" ? "high" : "medium";
+export function claudeChoice(engine: Engine, level: ModelLevel, { careful = false }: { careful?: boolean } = {}): ClaudeChoice {
+  if (engine === "search" && level === "sonic") return claudeChoice(engine, "ascend", { careful });
+  const effort: Effort =
+    level === "sonic" ? (careful ? "medium" : "low") : engine === "app" || engine === "slides" || engine === "code" ? "high" : "medium";
   return { level, model: LEVEL_MODELS[level], effort, ...(level === "ultra" && { stepDown: claudeChoice(engine, "vision") }) };
 }
 
@@ -281,9 +293,108 @@ export function meterClaude(meter: Meter, message: Anthropic.Beta.BetaMessage, r
   return cents;
 }
 
-const BASE_SYSTEM =
-  "You are Flash, a helpful all-in-one AI assistant. Answer directly and clearly. " +
-  "Use short paragraphs and Markdown lists or headings only when they help.";
+/*
+ * Who Flash is and how it answers, for every chat engine and the free models: the answer first, the
+ * assumptions said in a few words, at most one question, and nothing made up.
+ */
+export const BASE_SYSTEM = [
+  "You are Flash, the assistant in Flash AI (flash-app.dev), an all-in-one AI app. People use Flash on their phones and computers, " +
+    "in about 30 languages, for quick answers, writing, research, documents and code. Many are busy business owners, students and " +
+    "creators who want the answer, not a conversation about it.",
+  "Answer first. Open with the direct answer or the finished piece of work, then add only the detail that helps. When a request " +
+    "leaves something open (a place, a date, a tone, a length, a name), take the most sensible reading from the conversation and what " +
+    'you know about the user, say that assumption in a few words ("For Lagos, today:"), and carry on; the user can correct you in ' +
+    "their next message. Ask a question only when you can't do the task well without the answer, and then ask just one short question, " +
+    "after giving whatever you can. Stop when the answer is complete; offer one next step only when it's genuinely useful.",
+  "Be right. Work through sums, percentages, unit and currency conversions and dates carefully, and check them before you give them. " +
+    "When you aren't sure, say so in a few words and say what would settle it, instead of guessing or piling on caveats. Never present " +
+    "a number, quote, source or fact you made up as real. When a real detail is missing from something you write (a phone number, a " +
+    "price, a name), leave a clear placeholder like [phone number].",
+  "Use the units, currency and date format of the user's country. Use short paragraphs, and Markdown lists, tables or headings only " +
+    "when they make the answer easier to scan.",
+].join("\n\n");
+
+/*
+ * What the model is told about the rest of Flash, built only from the engines that work right now
+ * (engineStatus), so it never names a missing feature or says Flash can't do something it can.
+ */
+const OTHER_TOOL_NAMES: Partial<Record<Engine, string>> = {
+  image: "pictures",
+  video: "videos",
+  music: "music",
+  voice: "voice-overs",
+  app: "apps and websites",
+  slides: "slide decks",
+  transcribe: "transcripts of recordings",
+};
+/** "a, b and c". */
+const listed = (items: string[]) => (items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`);
+
+/**
+ * The line about Flash's other tools, from what's live (engineStatus()), or "" when none are. free: for
+ * the free models. picked: the user picked this tool, so Flash doesn't switch by itself; they pick
+ * another one, or go back to Auto.
+ */
+export function otherToolsLine(status: Partial<Record<Engine, boolean>>, free = false, picked = false): string {
+  const live = (Object.keys(OTHER_TOOL_NAMES) as Engine[]).filter((e) => status[e]);
+  if (!live.length) return "";
+  const list = listed(live.map((e) => OTHER_TOOL_NAMES[e]!));
+  const example = status.image && !free ? ' (for example "Make a picture of a red bicycle")' : "";
+  const makes = free ? `Flash also makes ${list}, most of them with credits.` : `Flash also makes ${list}.`;
+  const when = picked
+    ? "The user picked this tool, so Flash won't switch tools by itself: when they want one of these, tell them to pick it with the tool " +
+      `button by the message box, or to switch back to Auto and ask for it in their own words${example}.`
+    : `When the user wants one of these, tell them to ask for it in their own words${example}${free ? "." : "; Flash switches tools by itself."}`;
+  return `${makes} ${when} Never say Flash can't do them.`;
+}
+
+/** What may have changed since the model's training: the weather is listed only when no forecast tool is attached. */
+const changing = (weather: boolean) => (weather ? "" : "the weather, ");
+
+const WEB_LINES = {
+  // Research.
+  search: (weather: boolean) => {
+    const things = `${changing(weather)}news, prices and exchange rates, scores, schedules and opening hours, who holds an office or title, the latest version of anything, and laws and rules`;
+    return (
+      "You can search the web and read web pages. Your training data ends well before today's date. " +
+      `${things[0].toUpperCase()}${things.slice(1)} may have changed since then, so search for those before you answer, even when you feel sure. ` +
+      "Facts that can't change need no search. When the answer depends on where the user is, put their city or country in the search query."
+    );
+  },
+  // Claude without search: Write, Code, Translate, Docs & Sheets.
+  none: (weather: boolean) =>
+    "You can't search the web in this answer. Your training data ends well before today's date, so for anything that may have changed " +
+    `since then (${changing(weather)}news, prices, scores, who holds an office, the latest version of something), give what you know and ` +
+    "roughly when it dates from, and say that Flash's Research can check it live. Never state a current figure as if you had just checked it.",
+  // The free models.
+  free: (weather: boolean) =>
+    "You're answering on Flash's free model, which can't search the web. For anything that changes " +
+    `(${changing(weather)}news, prices, exchange rates, scores, schedules, opening hours, who holds an office now, the latest version of ` +
+    "something), never state a current value as if you had checked it: say in one sentence that the free model can't check live " +
+    "information, give what you know and roughly when it dates from, and say where to check it (the official source). Once in a " +
+    "conversation, you can mention that with credits, Flash's Research checks the web and cites its sources.",
+};
+
+/** For a reply that has the get_weather tool (see weather.ts). */
+export const WEATHER_LINE =
+  "You have a get_weather tool with a live forecast. For any question about the weather now or in the coming days (rain, temperature, " +
+  "wind, what to wear, whether to take an umbrella or go ahead with plans), call it before you answer, instead of saying you can't check, " +
+  'and don\'t ask where: when no place is named, use where the user is (where: "user_location"); for a named place, give its coordinates. ' +
+  "Use the figures exactly as the tool gives them, in its units, and name the place and the day you mean. They are forecasts: for the " +
+  'current hour say "around" or "forecast", never that it was measured. If the tool returns an error, say in one sentence that you ' +
+  "couldn't get the live forecast just now and give no figures; if it says the user's location is unknown, ask which city in one short " +
+  "question. If the forecast shows thunder, heavy rain or snow, strong wind or gusts, or extreme heat or cold, or the user mentions a " +
+  "storm, flood or warning, add one sentence telling them to follow their national weather service's official warnings, which this " +
+  "forecast doesn't include. Flash shows the data source under your answer, so you needn't name it.";
+
+const RESEARCH_PROMPT =
+  "This is a research answer: search the web, and read any page the user links. Answer first, in a sentence or a short list, then the " +
+  "supporting detail; keep the whole answer as short as the question allows. Prefer official and primary sources. When sources disagree, " +
+  "say so, and say which you trust and why. Give the date of anything that changes (\"as of 3 March\"), and name the source of key facts " +
+  "in the text; Flash shows the links under your answer. If what you found doesn't answer the question, say what you found and what's " +
+  "missing instead of filling the gap from memory.";
+// Research's quick plan: one search and one page read.
+const QUICK_RESEARCH = "One good search is enough here: answer as soon as you have what you need.";
 
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"] as const;
 type ImageType = (typeof IMAGE_TYPES)[number];
@@ -332,8 +443,10 @@ export type WritingMode = "text" | "code" | "translate" | "docs";
 const MODE_PROMPTS: Record<WritingMode, string> = {
   text: "",
   code:
-    "You are acting as an expert software engineer. Give working, complete code in fenced code blocks " +
-    "with the language named, then a short explanation. Point out bugs and edge cases.",
+    "You are acting as an expert software engineer. Give working, complete code in fenced code blocks with the language named, then a " +
+    "short explanation. When the language, framework or version isn't stated, use what the conversation points to, else the most common " +
+    "current choice, and name it in one line instead of asking. Libraries change after your training: when it matters, say which version " +
+    "your code is for, and flag any API you're not sure still exists. Point out the bugs and edge cases that matter for this code.",
   translate:
     "You are acting as a professional translator. Give the translation first, keeping tone and meaning. " +
     "If the target language is unclear, use the language named under \"About the user\" below, else English. " +
@@ -344,6 +457,10 @@ const MODE_PROMPTS: Record<WritingMode, string> = {
     "plus a short Markdown table preview if it has 15 rows or fewer. When they want a document (letter, resume, " +
     "report, proposal), write the whole document as formatted Markdown, not inside a code block: the app offers " +
     "Word, PDF and PowerPoint downloads under every answer. " +
+    "When the user hasn't given the details a document needs (a CV with no work history, a letter with no names), write the complete " +
+    "document anyway with clear placeholders in square brackets, like [Company name] or [Start date], and end with one line listing what " +
+    "to fill in. Date letters and documents with today's date. For tables of figures that change (rates, prices, populations), say what " +
+    "date the figures are from. " +
     "When analysing an attached file, lead with the key findings and the numbers behind them. " +
     "When reading text from photos or scans (receipts, menus, notes, letters, signs): copy the words exactly as " +
     "written, in their own language, keeping spelling, numbers and line breaks; write [unclear] for anything you " +
@@ -352,11 +469,33 @@ const MODE_PROMPTS: Record<WritingMode, string> = {
     "printed and only work out new totals when asked.",
 };
 
-export function system(preferences: string, mode: WritingMode = "text"): string {
+/**
+ * What a system prompt says beyond the mode. web: whether the model can search (Research), can't
+ * (the other Claude modes) or is a free model; weather: get_weather is attached; quick: Research's
+ * quick plan; tools: otherToolsLine(engineStatus()), built in route.ts since this file can't import
+ * server code; context: contextNote(where, now).
+ */
+export type SystemOptions = { web?: "search" | "none" | "free"; weather?: boolean; quick?: boolean; tools?: string; context?: string };
+
+/**
+ * A chat engine's system prompt. The text that never changes comes first and the per-minute context
+ * last, so the prompt can be cached later: who Flash is, its other tools, what it can know of today,
+ * the forecast tool, the mode, the user's settings and memory, then their date, time and place.
+ */
+export function system(preferences: string, mode: WritingMode | "search" = "text", o: SystemOptions = {}): string {
   const prefs = preferences.trim();
-  const parts = [BASE_SYSTEM, MODE_PROMPTS[mode]];
+  const weather = Boolean(o.weather);
+  const web = o.web ?? (mode === "search" ? "search" : "none");
+  const parts = [
+    BASE_SYSTEM,
+    o.tools ?? "",
+    WEB_LINES[web](weather),
+    weather ? WEATHER_LINE : "",
+    mode === "search" ? RESEARCH_PROMPT + (o.quick ? ` ${QUICK_RESEARCH}` : "") : MODE_PROMPTS[mode],
+  ];
   // Settings > General (the language to answer in, what to call them) comes first, then their memory.
   if (prefs) parts.push(`About the user, from their settings and what they asked Flash to remember. Follow their language setting in every answer:\n${prefs}`);
+  parts.push(o.context ?? "");
   return parts.filter(Boolean).join("\n\n");
 }
 
@@ -364,7 +503,92 @@ function refusalMessage(t: Translate): StreamEvent {
   return { type: "text", delta: "\n\n" + t("Flash couldn't help with that request.") };
 }
 
-/** Writing, code, translation, documents and file questions: streams Claude's reply token by token. */
+/**
+ * What a reply with tools may use besides its system prompt: get_weather (weather), and onUsed,
+ * called once when a forecast first comes back with data, so the reply's header can say why.
+ */
+export type ReplyOptions = { system?: SystemOptions; weather?: WeatherTool; onUsed?: () => void };
+
+// A tool round is followed by another call only when the credits held still pay for this much of it.
+const MIN_ROUND_TOKENS = 300;
+
+/** Everything a call read: its input, cache reads and writes included. */
+const inputOf = (u: Anthropic.Beta.BetaUsage) => u.input_tokens + (u.cache_creation_input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0);
+
+/** The forecast rounds a reply may still ask for after `rounds`, for the credits the next call must leave for them. */
+const weatherLeft = (rounds: number): ToolPlan => ({ results: Array(Math.max(0, WEATHER_ROUNDS - rounds)).fill(WEATHER_RESULT_TOKENS), searches: 0 });
+
+/**
+ * A call that failed after an earlier call of the same reply was paid for isn't retried on another
+ * level (see withStepDown), which would start the reply again with all of its credits.
+ */
+function afterSpending(err: unknown): unknown {
+  if (!(err instanceof Anthropic.APIError) || err instanceof Anthropic.APIUserAbortError) return err;
+  return new Error(`Claude failed part way through a reply: ${err.message}`, { cause: err });
+}
+
+/**
+ * A turn's content as it goes back to Claude. After a refusal fallback part way through (a "fallback"
+ * block marks where the next model took over), the declined model's thinking and tool calls before
+ * the last such block are left out, with any server tool call that has no result, so only the model
+ * that answered has its calls run and echoed (see the API's refusal fallback guidance).
+ */
+export function echoedContent(content: Anthropic.Beta.BetaContentBlock[]): Anthropic.Beta.BetaContentBlock[] {
+  const boundary = content.map((b) => b.type).lastIndexOf("fallback");
+  if (boundary < 0) return content;
+  // A server tool's result (a search, a page read, or the code that filters a search) goes back with
+  // its call, and a call goes back only with its result.
+  const isResult = (b: Anthropic.Beta.BetaContentBlock) => b.type.endsWith("_tool_result") && b.type !== "mcp_tool_result";
+  const answered = new Set(content.flatMap((b) => (isResult(b) && "tool_use_id" in b ? [b.tool_use_id] : [])));
+  return content.filter(
+    (b, i) => i >= boundary || b.type === "text" || b.type === "fallback" || isResult(b) || (b.type === "server_tool_use" && answered.has(b.id)),
+  );
+}
+
+/** A reply's forecasts so far: tool rounds, calls, and whether any came back with data. */
+type WeatherState = { rounds: number; calls: number; used: boolean };
+
+/**
+ * Runs the get_weather calls of a turn that stopped for them (parallel calls together, at most
+ * MAX_FORECASTS in a reply), saying what it checks, and returns their results, in order, for one user
+ * message, with about how many tokens they add.
+ */
+async function* weatherRound(
+  content: Anthropic.Beta.BetaContentBlock[],
+  tool: WeatherTool,
+  state: WeatherState,
+  onUsed?: () => void,
+): AsyncGenerator<StreamEvent, { results: Anthropic.Beta.BetaToolResultBlockParam[]; tokens: number }> {
+  const calls = content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use");
+  for (const call of calls) if (call.name === WEATHER_TOOL.name) yield { type: "status", message: tool.status(call.input) };
+  const answers = await Promise.all(
+    calls.map((call) => {
+      if (call.name !== WEATHER_TOOL.name) return { text: `There is no tool called ${call.name}.`, isError: true, used: false };
+      return state.calls++ < MAX_FORECASTS ? tool.run(call.input) : { text: TOO_MANY, isError: true, used: false };
+    }),
+  );
+  // The answer is written next: the progress line goes.
+  yield { type: "status", message: "" };
+  state.rounds++;
+  if (!state.used && answers.some((a) => a.used)) {
+    state.used = true;
+    onUsed?.();
+  }
+  const results = calls.map((call, i) => ({
+    type: "tool_result" as const,
+    tool_use_id: call.id,
+    content: answers[i].text,
+    ...(answers[i].isError && { is_error: true }),
+  }));
+  return { results, tokens: answers.reduce((sum, a) => sum + tokensAtMost(a.text) + 50, 0) };
+}
+
+/**
+ * Writing, code, translation, documents and file questions: streams Claude's reply token by token.
+ * With o.weather, Claude may ask for live forecasts (see weather.ts): their results go back to it,
+ * appended to the conversation as they are, for up to WEATHER_ROUNDS rounds, each paid for within
+ * the credits held, and MET Norway is credited under the answer.
+ */
 export async function* streamText(
   history: ChatTurn[],
   preferences: string,
@@ -376,27 +600,80 @@ export async function* streamText(
   // The language Flash's own notes (not the reply) are in.
   t: Translate = english,
   { signal, running }: Watch = {},
+  // The rest of the system prompt (the tools line, the context note; see system) and the tools.
+  o: ReplyOptions = {},
 ): AsyncGenerator<StreamEvent> {
-  running?.begin(choice.model, budget.maxTokens);
-  const stream = getClient().beta.messages.stream(
-    {
-      ...choiceParams(choice),
-      max_tokens: budget.maxTokens,
-      system: system(preferences, mode),
-      messages: toMessages(history),
-    },
-    { signal },
-  );
-  for await (const event of stream) {
-    running?.see(event);
-    if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-      yield { type: "text", delta: event.delta.text };
+  const tool = o.weather;
+  // The same words in every call of the reply, so the hold counted them and Claude's thinking stays valid.
+  const instructions = system(preferences, mode, { ...o.system, weather: Boolean(tool) });
+  const messages = toMessages(history);
+  const state: WeatherState = { rounds: 0, calls: 0, used: false };
+  let maxTokens = budget.maxTokens;
+  let spent = 0;
+  // Whether any words were sent yet, and whether the next call may only answer (no more forecasts).
+  let wrote = false;
+  let answerOnly = false;
+  try {
+    for (;;) {
+      running?.begin(choice.model, maxTokens);
+      const stream = getClient().beta.messages.stream(
+        {
+          ...choiceParams(choice),
+          max_tokens: maxTokens,
+          system: instructions,
+          messages,
+          // The last round can't ask for more, so the reply always ends in words.
+          ...(tool && { tools: [WEATHER_TOOL], tool_choice: { type: state.rounds >= WEATHER_ROUNDS || answerOnly ? ("none" as const) : ("auto" as const) } }),
+        },
+        { signal },
+      );
+      // Words written before a forecast was asked for end their paragraph; the answer starts a new one.
+      let gap = wrote && state.rounds > 0 ? "\n\n" : "";
+      for await (const event of stream) {
+        running?.see(event);
+        if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+          yield { type: "text", delta: gap + event.delta.text };
+          gap = "";
+          wrote = true;
+        }
+      }
+      const final = await stream.finalMessage();
+      spent += meterClaude(meter, final, choice.model, running);
+      // A turn cut off or declined never runs the tools it asked for.
+      if (final.stop_reason === "refusal") {
+        yield refusalMessage(t);
+        break;
+      }
+      if (final.stop_reason === "max_tokens") {
+        yield lengthNote(budget, t);
+        break;
+      }
+      if (!tool || final.stop_reason !== "tool_use" || answerOnly) break;
+      const content = echoedContent(final.content);
+      const round = yield* weatherRound(content, tool, state, o.onUsed);
+      messages.push({ role: "assistant", content }, { role: "user", content: round.results });
+      // The next call reads everything again with the forecasts, and writes only what the credits held still pay for.
+      const nextInput = inputOf(final.usage) + final.usage.output_tokens + round.tokens;
+      const left = budget.capCents - spent;
+      maxTokens = Math.min(budget.maxTokens, tokensWithin(mode, choice.model, nextInput, left, usesFallback(choice), weatherLeft(state.rounds)));
+      if (!(maxTokens >= (MIN_OUTPUT_TOKENS[mode] ?? 1500))) {
+        // Too little left for another round and a full answer: one last call answers with the forecasts
+        // it has, with no tools, so it is paid for as a single call. (Room that grew with the credits
+        // held would otherwise give some a shorter answer.)
+        answerOnly = true;
+        maxTokens = Math.min(budget.maxTokens, tokensWithin(mode, choice.model, nextInput, left, usesFallback(choice), NO_TOOLS));
+      }
+      if (!(maxTokens >= MIN_ROUND_TOKENS)) {
+        yield lengthNote(budget, t);
+        break;
+      }
     }
+  } catch (err) {
+    // A reply stopped or cut off after a forecast still credits MET Norway for what it showed.
+    if (state.used) yield { type: "sources", items: tool!.sources };
+    throw spent > 0 ? afterSpending(err) : err;
   }
-  const final = await stream.finalMessage();
-  meterClaude(meter, final, choice.model, running);
-  if (final.stop_reason === "refusal") yield refusalMessage(t);
-  if (final.stop_reason === "max_tokens") yield lengthNote(budget, t);
+  if (state.used) yield { type: "sources", items: tool!.sources };
 }
 
 function lengthNote(budget: Budget, t: Translate): StreamEvent {
@@ -406,7 +683,31 @@ function lengthNote(budget: Budget, t: Translate): StreamEvent {
   return { type: "text", delta: `\n\n_${note}_` };
 }
 
-/** Research: Claude with server-side web search and page reading, returning the answer and its sources. */
+/** Research's options: quick asks for one search and one page (see researchPlan), where is the user's rough place. */
+export type ResearchOptions = ReplyOptions & { quick?: boolean; where?: Where };
+
+/** Where the user is, for web search, from the checked values only (see where.ts), or undefined when nothing is known. */
+export function searchLocation(where?: Where): Anthropic.Beta.BetaUserLocation | undefined {
+  if (!where) return undefined;
+  const place = {
+    ...(where.city && { city: where.city }),
+    ...(where.country && { country: where.country }),
+    // UTC is what an unknown zone falls back to, so it says nothing about the user.
+    ...(where.timeZone && where.timeZone !== "UTC" && { timezone: where.timeZone }),
+  };
+  return Object.keys(place).length ? { type: "approximate", ...place } : undefined;
+}
+
+/** The page reader for a model: Summit's Fable 5.1 has its own version. */
+const webFetch = (model: string, uses: number): Anthropic.Beta.BetaToolUnion =>
+  /^claude-fable-5-1/.test(model)
+    ? { type: "web_fetch_20260318", name: "web_fetch", max_uses: uses, max_content_tokens: 6000 }
+    : { type: "web_fetch_20260209", name: "web_fetch", max_uses: uses, max_content_tokens: 6000 };
+
+/**
+ * Research: Claude with server-side web search and page reading, returning the answer and one list of
+ * sources: the links it cited first, then the others it read, and MET Norway when a forecast was used.
+ */
 export async function* streamSearch(
   history: ChatTurn[],
   preferences: string,
@@ -416,63 +717,139 @@ export async function* streamSearch(
   // The language Flash's own notes (not the answer) are in.
   t: Translate = english,
   { signal, running }: Watch = {},
+  o: ResearchOptions = {},
 ): AsyncGenerator<StreamEvent> {
+  const tool = o.weather;
+  const quick = Boolean(o.quick);
+  const plan = researchPlan(quick, Boolean(tool));
+  const instructions = system(preferences, "search", { ...o.system, quick, weather: Boolean(tool) });
   const messages = toMessages(history);
-  const sources = new Map<string, Source>();
+  const cited = new Map<string, Source>();
+  const read = new Map<string, Source>();
+  const state: WeatherState = { rounds: 0, calls: 0, used: false };
+  let location = searchLocation(o.where);
+  const tools = () => [
+    { type: "web_search_20260209" as const, name: "web_search" as const, max_uses: quick ? 1 : 3, ...(location && { user_location: location }) },
+    webFetch(choice.model, quick ? 1 : 2),
+    ...(tool ? [WEATHER_TOOL] : []),
+  ];
   let spent = 0;
   let maxTokens = budget.maxTokens;
-  // pause_turn means the server paused a long search loop; resend to let it continue.
-  for (let round = 0; round < 4; round++) {
-    running?.begin(choice.model, maxTokens);
-    const stream = getClient().beta.messages.stream(
-      {
-        ...choiceParams(choice),
-        max_tokens: maxTokens,
-        system:
-          system(preferences) +
-          "\n\nSearch the web for current facts, read any page the user links, and keep the answer concise.",
-        tools: [
-          { type: "web_search_20260209", name: "web_search", max_uses: 3 },
-          { type: "web_fetch_20260209", name: "web_fetch", max_uses: 2, max_content_tokens: 6000 },
-        ],
-        messages,
-      },
-      { signal },
-    );
-    for await (const event of stream) {
-      running?.see(event);
-      if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-        yield { type: "text", delta: event.delta.text };
-      }
-    }
-    const final = await stream.finalMessage();
-    spent += meterClaude(meter, final, choice.model, running);
-    for (const block of final.content) {
-      if (block.type === "web_search_tool_result" && Array.isArray(block.content)) {
-        for (const r of block.content) {
-          if (r.type === "web_search_result" && !sources.has(r.url)) {
-            sources.set(r.url, { title: r.title, url: r.url });
+  // The sources so far, in one list: the links cited first, then the others read, and MET Norway's credit.
+  const sources = () => {
+    const web = [...cited.values(), ...[...read.values()].filter((s) => !cited.has(s.url))];
+    return state.used ? [...web.slice(0, 6), ...tool!.sources] : web.slice(0, 8);
+  };
+  // Whether any words were sent yet, and whether the next call may only answer (no searches or forecasts).
+  let wroteAny = false;
+  let answerOnly = false;
+  try {
+    // pause_turn means the server paused a long search loop, and tool_use that Claude asked for a
+    // forecast; either way the turn goes back to Claude, as it is, to carry on.
+    for (let call = 0; call < 4 + WEATHER_ROUNDS; call++) {
+      running?.begin(choice.model, maxTokens);
+      const stream = getClient().beta.messages.stream(
+        {
+          ...choiceParams(choice),
+          max_tokens: maxTokens,
+          system: instructions,
+          tools: tools(),
+          // tool_choice none also keeps the web search and page reader from running.
+          ...(((tool && state.rounds >= WEATHER_ROUNDS) || answerOnly) && { tool_choice: { type: "none" as const } }),
+          messages,
+        },
+        { signal },
+      );
+      let wrote = false;
+      // Words written before a forecast was asked for end their paragraph; the answer starts a new one.
+      let gap = wroteAny && state.rounds > 0 ? "\n\n" : "";
+      try {
+        for await (const event of stream) {
+          running?.see(event);
+          if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
+            wrote = wroteAny = true;
+            yield { type: "text", delta: gap + event.delta.text };
+            gap = "";
           }
         }
+      } catch (err) {
+        // A location the search tool doesn't take: once, without it, before anything was written.
+        if (err instanceof Anthropic.BadRequestError && location && !wrote && call === 0) {
+          console.error("[flash] web search refused the user's location, searching without it", err.message);
+          location = undefined;
+          call--;
+          continue;
+        }
+        throw err;
       }
-      if (block.type === "web_fetch_tool_result" && block.content.type === "web_fetch_result") {
-        const url = block.content.url;
-        if (!sources.has(url)) sources.set(url, { title: block.content.content.title ?? url, url });
+      const final = await stream.finalMessage();
+      spent += meterClaude(meter, final, choice.model, running);
+      for (const block of final.content) {
+        if (block.type === "text") {
+          for (const c of block.citations ?? []) {
+            if (c.type === "web_search_result_location" && !cited.has(c.url)) cited.set(c.url, { title: c.title ?? c.url, url: c.url });
+          }
+        }
+        if (block.type === "web_search_tool_result" && Array.isArray(block.content)) {
+          for (const r of block.content) {
+            if (r.type === "web_search_result" && !read.has(r.url)) read.set(r.url, { title: r.title, url: r.url });
+          }
+        }
+        if (block.type === "web_fetch_tool_result" && block.content.type === "web_fetch_result") {
+          const url = block.content.url;
+          if (!read.has(url)) read.set(url, { title: block.content.content.title ?? url, url });
+        }
+      }
+      if (final.stop_reason === "refusal") {
+        yield refusalMessage(t);
+        break;
+      }
+      if (final.stop_reason === "max_tokens") {
+        yield lengthNote(budget, t);
+        break;
+      }
+      const forecasts = tool && final.stop_reason === "tool_use";
+      if ((final.stop_reason !== "pause_turn" && !forecasts) || answerOnly) break;
+      const content = echoedContent(final.content);
+      const round = forecasts ? yield* weatherRound(content, tool, state, o.onUsed) : null;
+      messages.push({ role: "assistant", content });
+      if (round) messages.push({ role: "user", content: round.results });
+      // Keep going only while the credits held for this request still cover another call: it reads
+      // everything again, what the searches found and the forecasts included.
+      // What the searches found and Claude read before its last words or call is in this call's usage
+      // already; what came after (a paused search) it reads for the first time next call.
+      let lastSaid = -1;
+      content.forEach((b, i) => {
+        if (b.type === "text" || b.type === "thinking" || b.type === "tool_use" || b.type === "server_tool_use") lastSaid = i;
+      });
+      // After a refusal fallback, the model that answered never read what the declined one found before
+      // the last fallback block (see echoedContent), so the next call reads that for the first time too.
+      const boundary = content.map((b) => b.type).lastIndexOf("fallback");
+      const found = content.filter((b, i) => (i > lastSaid || i < boundary) && (b.type === "web_search_tool_result" || b.type === "web_fetch_tool_result"));
+      const nextInput = inputOf(final.usage) + final.usage.output_tokens + tokensAtMost(JSON.stringify(found)) + (round?.tokens ?? 0);
+      const left = budget.capCents - spent;
+      maxTokens = Math.min(budget.maxTokens, tokensWithin("search", choice.model, nextInput, left, usesFallback(choice), plan));
+      if (round && !(maxTokens >= (MIN_OUTPUT_TOKENS.search ?? 2000))) {
+        // Too little left for more searches and forecasts after this one, and for a full answer: one last
+        // call answers with what it has, with no tools (tool_choice none), so it is paid for as a single
+        // call. (Room that grew with the credits held would otherwise give some a shorter answer.)
+        answerOnly = true;
+        maxTokens = Math.min(budget.maxTokens, tokensWithin("search", choice.model, nextInput, left, usesFallback(choice), NO_TOOLS));
+      }
+      if (!(maxTokens >= (round ? MIN_ROUND_TOKENS : (MIN_OUTPUT_TOKENS.search ?? 2000)))) {
+        if (round) yield lengthNote(budget, t);
+        break;
       }
     }
-    if (final.stop_reason === "refusal") {
-      yield refusalMessage(t);
-      break;
-    }
-    if (final.stop_reason === "max_tokens") yield lengthNote(budget, t);
-    if (final.stop_reason !== "pause_turn") break;
-    // Keep searching only while the credits held for this request still cover another round.
-    const nextInput = final.usage.input_tokens + final.usage.output_tokens;
-    maxTokens = tokensWithin("search", choice.model, nextInput, budget.capCents - spent, usesFallback(choice));
-    if (!(maxTokens >= 2000)) break;
-    messages.push({ role: "assistant", content: final.content });
+  } catch (err) {
+    // A reply stopped or cut off part way still shows the links it found, and credits MET Norway.
+    const items = sources();
+    if (items.length) yield { type: "sources", items };
+    throw spent > 0 ? afterSpending(err) : err;
   }
-  if (sources.size) yield { type: "sources", items: [...sources.values()].slice(0, 8) };
+  // One list, sent once: the browser keeps only the last one a reply sends.
+  const items = sources();
+  if (items.length) yield { type: "sources", items };
 }
 
 const PROMPT_REWRITERS = {
@@ -589,47 +966,77 @@ export function parseScenes(text: string, scenes: number): string[] {
   throw new Error("The scene writer didn't return a scene list.");
 }
 
-const ENGINE_GUIDE: Record<Engine, string> = {
-  text: "general questions, advice, explanations, writing, emails, brainstorming",
-  app: "build a working web app, website, tool, game, dashboard or landing page",
-  slides: "make a presentation or slide deck",
-  search: "needs current or recent information from the web: news, prices, schedules, latest releases",
-  code: "write, fix or explain program code",
-  translate: "translate text into another language",
-  docs: "make a spreadsheet, table, budget, resume, report or formal document",
-  image: "make a picture, drawing, logo, illustration or photo",
-  video: "make a video clip",
-  voice: "read text aloud as speech",
-  music: "compose music, a song, jingle or beat",
-  transcribe: "turn a recording into text",
-};
+// What each answer the router may give is for, in the order it reads them. weather is Write with a
+// live forecast (see weather.ts); the rest are the engines.
+const ROUTER_GUIDE: [Engine | "weather", string][] = [
+  [
+    "weather",
+    "the weather or forecast for a place, now or in the next days: rain, temperature, wind, snow, storms, humidity, UV, what to wear, whether to take an umbrella or go ahead with plans",
+  ],
+  ["text", "questions about things that don't change, advice, explanations, maths, writing, emails, brainstorming"],
+  [
+    "search",
+    "anything else whose answer depends on today: news, prices and exchange rates, sports scores and fixtures, opening hours, travel and schedules, who currently holds a job or title, the latest version or release of anything, and anything the user asks to look up, check or cite",
+  ],
+  ["app", "build a working web app, website, tool, game, dashboard or landing page"],
+  ["slides", "make a presentation or slide deck"],
+  ["code", "write, fix or explain program code"],
+  ["translate", "translate text into another language"],
+  ["docs", "make a spreadsheet, table, budget, resume, report or formal document"],
+  ["image", "make a picture, drawing, logo, illustration or photo"],
+  ["video", "make a video clip"],
+  ["voice", "read text aloud as speech"],
+  ["music", "compose music, a song, jingle or beat"],
+  ["transcribe", "turn a recording into text"],
+];
 
 const ROUTER_SYSTEM =
-  "Pick the one tool that best fits the user's request. Reply with the tool name only.\n\n" +
-  ENGINES.map((e) => `${e}: ${ENGINE_GUIDE[e]}`).join("\n");
-// The router and the picture check read at most this much of a message, and answer in one word.
-// Each costs at most CHECK_ALLOWANCE_CENTS.
+  "You route messages in Flash, an all-in-one AI app. Pick the one tool that best fits the user's latest message. " +
+  "Messages can be in any language. A short follow-up (\"and tomorrow?\", \"what about Paris?\") continues the earlier message. " +
+  "Reply with the tool name only.\n\n" +
+  ROUTER_GUIDE.map(([answer, what]) => `${answer}: ${what}`).join("\n");
+// The picture check reads at most this much of a message. It and the router answer in one word, and
+// each costs at most CHECK_ALLOWANCE_CENTS.
 const CHECK_MESSAGE_CHARS = 1000;
 const CHECK_TOKENS = 10;
+// The router reads at most ROUTER_BYTES bytes of UTF-8, and no text is fewer tokens than its bytes:
+// its instructions (with the build and the question Flash asked), the earlier message (at most
+// EARLIER_CHARS) and as much of the latest message as fits, up to ROUTER_MESSAGE_CHARS.
+const ROUTER_BYTES = 5600;
+const EARLIER_CHARS = 300;
+const ROUTER_MESSAGE_CHARS = 2000;
 
 /** The most classifyRequest can cost, in cents. */
-export const ROUTER_MAX_CENTS = callMaxCents(HELPER_MODEL, ROUTER_SYSTEM.length + CHECK_MESSAGE_CHARS, CHECK_TOKENS);
+export const ROUTER_MAX_CENTS = tokensMaxCents(HELPER_MODEL, ROUTER_BYTES, CHECK_TOKENS);
 
 // How much of Flash's own question the router reads with a "yes" (see classifyRequest).
 const OFFER_CHARS = 200;
 
+const utf8 = new TextEncoder();
+const utf8Bytes = (text: string) => utf8.encode(text).length;
+/** The longest start of text that is at most n bytes of UTF-8, never cutting a character in two. */
+const firstBytes = (text: string, n: number) => text.slice(0, utf8.encodeInto(text, new Uint8Array(Math.max(0, n))).read);
+
 /**
- * Asks Haiku which engine fits a request the keyword rules couldn't place. about: the app or deck
- * Flash just built in this chat, when the request was said about it ("it's too dark"); offer: the
- * question Flash's last reply ended on, which a "yes" may answer ("Want me to add a dark mode?").
- * timeoutMs is shorter for someone talking, who waits in silence.
+ * Asks Haiku which engine fits a request the keyword rules couldn't place, or "weather" for a
+ * question a live forecast answers. earlier: the user's message before this one, which a short
+ * follow-up continues ("and tomorrow?"); previous: the engine of Flash's last reply. about: the app
+ * or deck Flash just built in this chat, when the request was said about it ("it's too dark");
+ * offer: the question Flash's last reply ended on, which a "yes" may answer ("Want me to add a dark
+ * mode?"). timeoutMs is shorter for someone talking, who waits in silence.
  * Returns null on any doubt or error, so the caller keeps its default.
  */
 export async function classifyRequest(
   message: string,
   meter: Meter = noMeter,
-  { timeoutMs = 4000, about, offer }: { timeoutMs?: number; about?: Engine; offer?: string } = {},
-): Promise<Engine | null> {
+  {
+    timeoutMs = 4000,
+    about,
+    offer,
+    earlier,
+    previous,
+  }: { timeoutMs?: number; about?: Engine; offer?: string; earlier?: string; previous?: Engine } = {},
+): Promise<Engine | "weather" | null> {
   const build = about === "app" || about === "slides";
   const system =
     ROUTER_SYSTEM +
@@ -638,23 +1045,26 @@ export async function classifyRequest(
         `Reply ${about} only if they ask for it to be changed, fixed or added to; reply text for thanks, questions and anything else.` +
         (offer ? ` Flash's last words to them were: "${offer.slice(-OFFER_CHARS)}" A yes to an offer to change it is a change.` : "")
       : "");
+  const head = [
+    earlier?.trim() && `Earlier message: ${earlier.trim().slice(0, EARLIER_CHARS)}`,
+    previous && `The previous reply came from: ${previous}`,
+    "Latest message: ",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  // What's left of ROUTER_BYTES is the latest message's, so the call never costs more than ROUTER_MAX_CENTS.
+  const content = head + firstBytes(message.slice(0, ROUTER_MESSAGE_CHARS), ROUTER_BYTES - utf8Bytes(system) - utf8Bytes(head));
   try {
     const res = await getClient()
       .messages.create(
-        {
-          model: HELPER_MODEL,
-          max_tokens: CHECK_TOKENS,
-          ...HELPER_SETTINGS,
-          system,
-          // A longer system prompt reads less of the message, so the call never costs more than ROUTER_MAX_CENTS.
-          messages: [{ role: "user", content: message.slice(0, CHECK_MESSAGE_CHARS - (system.length - ROUTER_SYSTEM.length)) }],
-        },
+        { model: HELPER_MODEL, max_tokens: CHECK_TOKENS, ...HELPER_SETTINGS, system, messages: [{ role: "user", content }] },
         { timeout: timeoutMs, maxRetries: 0 },
       )
       .catch((err: unknown) => meterLost(err, meter, ROUTER_MAX_CENTS));
     meter("anthropic", res.model, claudeCostCents(res.model, res.usage, HELPER_MODEL));
     const text = res.content.find((b) => b.type === "text");
     const word = text?.type === "text" ? text.text.trim().toLowerCase().replace(/[^a-z]/g, "") : "";
+    if (word === "weather") return "weather";
     return (ENGINES as readonly string[]).includes(word) ? (word as Engine) : null;
   } catch {
     return null;
@@ -670,49 +1080,64 @@ const PICK_ORDER: Engine[] = ["video", "music", "image", "voice", "app", "slides
  * the router is always part of a paid request, whatever it picks: a request headed for the free lane
  * or for "you need more credits" never reaches a paid model, and nobody pays for a reply on an
  * engine they didn't ask for because the router's pick was too dear. plan prices a request on an
- * engine (with extraCents more for helpers still to run); ready says whether an engine is set up.
- * may says which engines the guess may move the request to: any but text and transcribing unless
- * the caller says otherwise (a voice conversation's, see takesGuess in router.ts). timeoutMs, about
- * and offer are passed on to classifyRequest.
+ * engine (with extraCents more for helpers still to run, and with the forecast tool when weather);
+ * ready says whether an engine is set up. may says which engines the guess may move the request to:
+ * any but text and transcribing unless the caller says otherwise (a voice conversation's, see
+ * takesGuess in router.ts). weather: the guess may also answer with Write and a live forecast, which
+ * must be paid for too. timeoutMs, about, offer, earlier and previous are passed on to classifyRequest.
+ * answered says the router gave an answer, whether or not it moved the request.
  */
 export async function guessEngine<P extends { live: boolean; needed: number }>(
   message: string,
   engine: Engine,
   available: number,
-  plan: (engine: Engine, extraCents?: number) => Promise<P>,
+  plan: (engine: Engine, extraCents?: number, weather?: boolean) => Promise<P>,
   ready: (engine: Engine) => boolean,
   meter: Meter = noMeter,
   {
     may = (e: Engine) => e !== "text" && e !== "transcribe",
+    weather = false,
     timeoutMs,
     about,
     offer,
-  }: { may?: (engine: Engine) => boolean; timeoutMs?: number; about?: Engine; offer?: string } = {},
-): Promise<{ engine: Engine; plan: P; guessed: boolean }> {
-  const kept = async () => ({ engine, plan: await plan(engine), guessed: false });
+    earlier,
+    previous,
+  }: {
+    may?: (engine: Engine) => boolean;
+    weather?: boolean;
+    timeoutMs?: number;
+    about?: Engine;
+    offer?: string;
+    earlier?: string;
+    previous?: Engine;
+  } = {},
+): Promise<{ engine: Engine; plan: P; guessed: boolean; weather?: true; answered: boolean }> {
+  const kept = async () => ({ engine, plan: await plan(engine), guessed: false, answered: false });
   const asRouted = await plan(engine, ROUTER_MAX_CENTS);
   if (!asRouted.live || available < asRouted.needed) return kept();
   // A guess is only a guess, so it never sends a request to an engine that isn't available yet.
   const picks = ENGINES.filter((e) => e !== engine && may(e) && ready(e));
-  // Nowhere to move it, so the router has nothing to decide.
-  if (!picks.length) return kept();
+  // Nowhere to move it, and no forecast to add, so the router has nothing to decide.
+  if (!picks.length && !weather) return kept();
   const order = (e: Engine) => (PICK_ORDER.includes(e) ? PICK_ORDER.indexOf(e) : -1);
   picks.sort((a, b) => order(a) - order(b));
-  const affordable = async (e: Engine) => {
-    const p = await plan(e, ROUTER_MAX_CENTS);
+  const affordable = async (e: Engine, forecast = false) => {
+    const p = await plan(e, ROUTER_MAX_CENTS, forecast);
     return !p.live || available >= p.needed;
   };
   // Pictures, video, music and voice have fixed prices, so they are checked first, one by one.
   const priced = picks.filter((e) => ["video", "music", "image", "voice"].includes(e));
   for (const e of priced) if (!(await affordable(e))) return kept();
-  const rest = await Promise.all(picks.filter((e) => !priced.includes(e)).map(affordable));
+  const rest = await Promise.all([...picks.filter((e) => !priced.includes(e)).map((e) => affordable(e)), ...(weather ? [affordable("text", true)] : [])]);
   if (rest.includes(false)) return kept();
-  const guess = await classifyRequest(message, meter, { timeoutMs, about, offer });
-  if (guess && picks.includes(guess)) {
-    const picked = await plan(guess);
-    if (picked.live && available >= picked.needed) return { engine: guess, plan: picked, guessed: true };
+  const guess = await classifyRequest(message, meter, { timeoutMs, about, offer, earlier, previous });
+  if (guess === "weather" ? weather : guess && picks.includes(guess)) {
+    const forecast = guess === "weather";
+    const to: Engine = forecast ? "text" : (guess as Engine);
+    const picked = await plan(to, undefined, forecast);
+    if (picked.live && available >= picked.needed) return { engine: to, plan: picked, guessed: true, ...(forecast && { weather: true as const }), answered: true };
   }
-  return { engine, plan: asRouted, guessed: false };
+  return { engine, plan: asRouted, guessed: false, answered: guess !== null };
 }
 
 export type PictureRequest = "change" | "new" | "other";

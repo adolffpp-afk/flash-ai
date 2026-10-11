@@ -27,7 +27,8 @@ const server = createServer((req, res) => {
   req.on("end", () => {
     const body = JSON.parse(raw) as Body;
     sent.push({ body, beta: String(req.headers["anthropic-beta"] ?? "") });
-    const message = String(body.messages[0].content);
+    // The router's message comes after the earlier message and the previous engine, when it's told them.
+    const message = String(body.messages[0].content).replace(/^[\s\S]*Latest message: /, "");
     // The connection drops after the request was sent: Claude may have run it.
     if (message.startsWith("DROP")) return req.socket.destroy();
     const system = String(body.system ?? "");
@@ -56,7 +57,7 @@ const server = createServer((req, res) => {
       for (const e of events) res.write(`event: ${(e as { type: string }).type}\ndata: ${JSON.stringify(e)}\n\n`);
       return res.end();
     }
-    const text = system.startsWith("Pick the one tool")
+    const text = system.startsWith("You route messages")
       ? (routerAnswers[message] ?? "text")
       : system.includes("Reply with one word")
         ? "change"
@@ -129,8 +130,9 @@ test("the helpers run on Haiku 5.5 without thinking or a refusal fallback, and w
 test("each helper costs at most its known worst case, a small part of a cent", async () => {
   const checks: [number, () => Promise<unknown>][] = [
     [ROUTER_MAX_CENTS, () => classifyRequest(longest, meter)],
-    // Told about the app and the question Flash asked, the router reads less of the message.
+    // Told about the app, the question Flash asked and the earlier message, the router reads less of the latest one.
     [ROUTER_MAX_CENTS, () => classifyRequest(longest, meter, { about: "app", offer: `${longest}?` })],
+    [ROUTER_MAX_CENTS, () => classifyRequest(longest, meter, { about: "slides", offer: `${longest}?`, earlier: longest, previous: "transcribe" })],
     [PICTURE_CHECK_MAX_CENTS, () => pictureRequest(longest, true, meter)],
     [PICTURE_CHECK_MAX_CENTS, () => pictureRequest(longest, false, meter)],
     [PROMPT_WRITER_MAX_CENTS, () => improvePrompt("video", longest, meter, longest)],

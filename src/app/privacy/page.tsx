@@ -5,7 +5,7 @@ export const metadata: Metadata = { title: "Privacy Policy" };
 
 export default function Privacy() {
   return (
-    <LegalPage title="Privacy Policy" updated="October 9, 2026">
+    <LegalPage title="Privacy Policy" updated="October 10, 2026">
       <p>
         This policy explains what {COMPANY} collects when you use Flash AI, why, and the choices you have.
       </p>
@@ -14,6 +14,7 @@ export default function Privacy() {
       <ul>
         <li><strong>Account details:</strong> your name, email address and a scrambled (hashed) version of your password.</li>
         <li><strong>Your content:</strong> the messages, files and memory notes you send, and what Flash makes for you, saved in your projects.</li>
+        <li><strong>Approximate location:</strong> with each chat message, Flash reads the approximate city, country and coordinates of your internet connection, and your device&apos;s time zone, so answers can use your date, local time and weather. These aren&apos;t saved to your account.</li>
         <li><strong>Published apps:</strong> the apps you publish and the data their users save in them. If your app has sign-in, Flash keeps each member&apos;s email address, their name if they give one, a scrambled (hashed) version of their password and the data they save in your app. You can see your members, remove them, and download the list in My websites &amp; apps; unpublishing an app deletes them with it. Those accounts belong to your app alone: they are not Flash accounts, and they work on no other app.</li>
         <li><strong>Shared chats:</strong> when you share a chat, a copy of it (with its pictures, videos and audio) is visible to anyone with the link until you stop sharing it.</li>
         <li><strong>Connected apps:</strong> when you connect Flash to another app (like Claude or ChatGPT), that app sends Flash the requests it makes for you, and Flash keeps what it makes in your account. Each file gets a hard-to-guess link that the app, and anyone it is shared with, can open. The app can&apos;t see your chats or projects, and you can disconnect it at any time.</li>
@@ -47,6 +48,17 @@ export default function Privacy() {
         <li>fal.ai and the model makers it serves (image, video, music, voice and transcription models, when those features are available)</li>
       </ul>
       <p>
+        With each chat request, Flash also tells the AI provider answering it (Anthropic or a free-model provider) your
+        approximate city, country and time zone, taken from your internet connection and device, so the answer fits your
+        date, time and place. Your coordinates aren&apos;t sent to them.
+      </p>
+      <p>
+        For weather questions, Flash&apos;s server asks MET Norway (the Norwegian Meteorological Institute, api.met.no) for
+        the forecast. It sends only the place&apos;s coordinates, rounded to about 1 km: no account, name, IP address or
+        other personal data. Flash keeps each forecast for up to 2 days, stored by place and not by person, and anyone
+        asking about the same place gets the same copy.
+      </p>
+      <p>
         We also use Stripe for payments (when paid plans are available), Resend to send account emails (email confirmation and password reset), and a database and hosting provider to store your data. Each provider processes
         data under its own terms and privacy policy. Some are based in the United States, so your data may be processed
         outside your country.
@@ -55,7 +67,7 @@ export default function Privacy() {
       <h2>How long we keep it</h2>
       <p>
         We keep your account and projects until you delete them or ask us to delete your account. Billing records are
-        kept as long as tax law requires.
+        kept as long as tax law requires. Weather forecasts are kept for up to 2 days.
       </p>
 
       <h2>Your choices and rights</h2>

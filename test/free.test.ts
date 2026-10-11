@@ -10,6 +10,7 @@ const { reserveFree, reserveFreeImage, recordFree, reserveFreeUser, releaseFreeU
   "../src/lib/server/free.ts"
 );
 const { FREE_DAILY_IMAGES } = await import("../src/lib/engines/free.ts");
+const { run } = await import("../src/lib/server/db.ts");
 
 const turn = (content: string, mediaType?: string) => ({
   role: "user" as const,
@@ -21,9 +22,12 @@ test("only chat-style requests and plain images use the free lane", () => {
   assert.equal(freeEligible("text", turn("hi")), "chat");
   assert.equal(freeEligible("code", turn("fix", "text/plain")), "chat");
   assert.equal(freeEligible("image", turn("a cat")), "image");
-  for (const engine of ["app", "slides", "video", "music", "voice", "search", "transcribe"] as const) {
+  for (const engine of ["app", "slides", "video", "music", "voice", "transcribe"] as const) {
     assert.equal(freeEligible(engine, turn("x")), null, engine);
   }
+  // Research is answered in words by a free model, which can't search (the chat route says so).
+  assert.equal(freeEligible("search", turn("who won last night?")), "chat");
+  assert.equal(freeEligible("search", turn("what is this", "image/png")), null);
   // Free models can't read images or PDFs.
   assert.equal(freeEligible("text", turn("what is this", "image/png")), null);
   // Several files: all must be text.
@@ -38,6 +42,23 @@ test("each provider stops at its daily cap", async () => {
   assert.equal(await reserveFree("openrouter", { requests: 5, tokens: Infinity }), true);
   await recordFree("openrouter", 2000, 0);
   assert.equal(await reserveFree("openrouter", { requests: 5, tokens: 1500 }), false, "token cap");
+});
+
+test("a reply that asks for the forecast first reserves both of its calls at once, under the same caps", async () => {
+  const limits = { requests: 900, tokens: Infinity };
+  const day = new Date().toISOString().slice(0, 10);
+  await reserveFree("mistral", limits);
+  await run("UPDATE free_quota SET requests = 899 WHERE day = ? AND provider = 'mistral'", [day]);
+  assert.equal(await reserveFree("mistral", limits, 2), false, "899 of 900: no room for two");
+  await run("UPDATE free_quota SET requests = 898 WHERE day = ? AND provider = 'mistral'", [day]);
+  assert.equal(await reserveFree("mistral", limits, 2), true, "898 of 900: room for two");
+  assert.equal(await reserveFree("mistral", limits), false, "now full");
+  // On Cloudflare, room for two replies' neurons is kept too.
+  await reserveFree("cloudflare", { requests: Infinity, tokens: Infinity });
+  await run("UPDATE free_quota SET neurons = ? WHERE day = ? AND provider = 'cloudflare'", [CLOUDFLARE_DAILY_NEURONS - 500, day]);
+  assert.equal(await reserveFree("cloudflare", { requests: Infinity, tokens: Infinity }, 2), false);
+  assert.equal(await reserveFree("cloudflare", { requests: Infinity, tokens: Infinity }), true);
+  await run("UPDATE free_quota SET neurons = 0, requests = 0 WHERE day = ? AND provider = 'cloudflare'", [day]);
 });
 
 test("free images stop before Cloudflare's free neurons run out", async () => {

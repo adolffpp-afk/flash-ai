@@ -1,5 +1,6 @@
 import { msg } from "./i18n.ts";
 import type { Engine } from "./types.ts";
+import { messageWindow } from "./message-window.ts";
 
 /*
  * Flash's levels of intelligence: one workspace, four levels, and Auto, which picks the level for
@@ -48,7 +49,7 @@ export function autoLevel(
   if (engine === "app" || engine === "slides" || engine === "code") {
     return { level: "vision", why: msg("Building and code get Flash Vision's deeper thinking.") };
   }
-  if (DEEP.test(message)) return { level: "vision", why: msg("You asked for careful thinking, so Flash Vision answers.") };
+  if (DEEP.test(messageWindow(message))) return { level: "vision", why: msg("You asked for careful thinking, so Flash Vision answers.") };
   if (engine !== "text" || files > 0) return { level: "ascend", why: msg("Everyday work runs on Flash Ascend.") };
   if (voice) return { level: "sonic", why: msg("Spoken answers come fastest from Flash Sonic.") };
   const text = message.trim();
@@ -57,3 +58,11 @@ export function autoLevel(
   }
   return { level: "ascend", why: msg("Everyday work runs on Flash Ascend.") };
 }
+
+// Sums, units, money and doses, where a quick answer is easily wrong. A number is read from its first
+// digit only, so a long run of digits is quick to check.
+const CAREFUL =
+  /\d\s*([%+\-*/×÷^]|percent|per cent)|(?<!\d)\d+(\.\d+)?\s*(°[cf]|km|mi|kg|lbs?|mg|ml|l\b|usd|eur|gbp|ngn|\$|€|£)|\b(calculate|convert|interest|loan|mortgage|tax|dose|dosage|how much is \d)\b/i;
+
+/** Whether a request has numbers to get right, so Sonic thinks at medium effort for it (see claudeChoice). */
+export const needsCare = (message: string) => CAREFUL.test(messageWindow(message));

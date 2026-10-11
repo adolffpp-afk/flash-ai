@@ -1,5 +1,8 @@
 import { after } from "next/server";
-import { EDITABLE_TYPE, checksSpoken, fixesPictureText, route, takesGuess, textToSpeak } from "@/lib/router.ts";
+import { EDITABLE_TYPE, checksSpoken, fixesPictureText, followsForecast, route, takesGuess, textToSpeak } from "@/lib/router.ts";
+import { asksWeather } from "@/lib/weather-words.ts";
+import type { WeatherTool } from "@/lib/weather.ts";
+import { weatherTool } from "@/lib/server/weather.ts";
 import { MAX_EDIT_PIXELS, imageDimensions } from "@/lib/imageSize.ts";
 import { ENGINES, ENGINE_LABELS, STOPPABLE_ENGINES, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types.ts";
 import { applyEvent } from "@/lib/apply-event.ts";
@@ -15,6 +18,7 @@ import {
   claudeConfigured,
   countInputTokens,
   improvePrompt,
+  otherToolsLine,
   streamSearch,
   streamText,
   system,
@@ -23,10 +27,11 @@ import {
   type Budget,
   type ClaudeChoice,
   type Meter,
+  type SystemOptions,
   type Watch,
   type WritingMode,
 } from "@/lib/engines/claude.ts";
-import { autoLevel, isLevel, levelName, type ModelLevel } from "@/lib/levels.ts";
+import { autoLevel, isLevel, levelName, needsCare, type ModelLevel } from "@/lib/levels.ts";
 import { checkFiles } from "@/lib/attachments.ts";
 import { withInstructions } from "@/lib/project-instructions.ts";
 import { profileNote } from "@/lib/names.ts";
@@ -52,7 +57,6 @@ import {
   type FreeLane,
 } from "@/lib/engines/free.ts";
 import {
-  countryOf,
   freeAudioFailed,
   recordFree,
   recordFreeAudio,
@@ -85,13 +89,16 @@ import { saveFile } from "@/lib/server/files.ts";
 import {
   MAX_SPEECH_CHARS,
   TYPICAL_CREDITS,
+  WEATHER_PLAN,
   claudePrice,
   creditsFor,
   finalCredits,
   planHold,
+  researchPlan,
   transcribeCostCents,
   voiceCostCents,
   voiceCredits,
+  type ToolPlan,
 } from "@/lib/credits.ts";
 import { falConfigured, falGenerate, type FalProgress } from "@/lib/engines/fal.ts";
 import {
@@ -114,6 +121,9 @@ import {
 import { unavailableReply } from "@/lib/engines/demo.ts";
 import { FriendlyError, JobAbandoned, JobStopped } from "@/lib/engines/errors.ts";
 import { buildSystem, latestApp, streamBuild } from "@/lib/engines/builder.ts";
+import { contextNote, type Where } from "@/lib/context-note.ts";
+import { whereFrom } from "@/lib/server/where.ts";
+import { engineStatus } from "@/lib/server/status.ts";
 import { CLIP_CENTS_PER_SECOND, MOVIE_EXTRA_CENTS, makeMovie } from "@/lib/engines/movie.ts";
 import { DEFAULT_VOICE, pickVoice } from "@/lib/voices.ts";
 import { falEditInput, falInput, packImageInput, packVideoInput, videoAspect } from "@/lib/engines/fal-input.ts";
@@ -178,6 +188,8 @@ type ChatRequest = {
   afterId?: string | null;
   // What a new chat is called when the browser named it (a template's title), else its first message.
   name?: string;
+  // The browser's time zone ("Africa/Lagos"), for the date and time in the models' instructions.
+  timeZone?: string;
 };
 
 function providers(): Set<Provider> {
@@ -295,11 +307,49 @@ function offered(history: ChatTurn[]): string | undefined {
 /** The voice engine speaks at most MAX_SPEECH_CHARS, and is priced on exactly that text. */
 const spokenText = (message: string) => textToSpeak(message).slice(0, MAX_SPEECH_CHARS);
 
-/** The system prompt a Claude engine sends, so the credit hold counts it too. */
-function systemFor(engine: Engine, preferences: string, history: ChatTurn[]): string {
-  if (engine === "app" || engine === "slides") return buildSystem(engine, preferences, latestApp(history) !== null);
-  return system(preferences, engine === "code" || engine === "translate" || engine === "docs" ? engine : "text");
+/**
+ * What every system prompt in a request adds to its mode: Flash's other tools that work now, and the
+ * user's date, time and rough place, taken once so every call in the request sends the same words.
+ * build is the builders' note, without the clock; free is the free models' (see otherToolsLine).
+ */
+type Prompting = { system: SystemOptions; free: SystemOptions; build: string; where?: Where };
+
+function promptingFor(where: Where, now: Date, picked: boolean): Prompting {
+  const status = engineStatus();
+  const context = contextNote(where, now);
+  return {
+    system: { tools: otherToolsLine(status, false, picked), context },
+    free: { tools: otherToolsLine(status, true, picked), context },
+    build: contextNote(where, now, { clock: false }),
+    where,
+  };
 }
+
+// The engines that answer in words with a live forecast when one is asked for (see weather-words.ts).
+const WEATHER_ENGINES: Engine[] = ["text", "docs", "search"];
+// Asks Research for more than a quick look, so it searches in full.
+const DEEP_RESEARCH =
+  /\b(research|in[- ]depth|thorough|compare|comparison|versus|vs\.?|pros and cons|sources|cite|citations?|studies|evidence|literature|report|analysis|history of|everything about)\b/i;
+
+/**
+ * The tools a reply in words has beyond its engine's own: the live forecast (hintOnly when only a
+ * weather word asked for it, see weather-words.ts) and, for Research, the quick plan of one search
+ * and one page read.
+ */
+type Tools = { weather: boolean; hintOnly: boolean; quick: boolean };
+const NO_EXTRA_TOOLS: Tools = { weather: false, hintOnly: false, quick: false };
+
+/** The system prompt a Claude engine sends, exactly, so the credit hold counts it too. */
+function systemFor(engine: Engine, preferences: string, history: ChatTurn[], prompting: Prompting, tools: Tools = NO_EXTRA_TOOLS): string {
+  if (engine === "app" || engine === "slides") return buildSystem(engine, preferences, latestApp(history) !== null, prompting.build);
+  const { weather, quick } = tools;
+  if (engine === "search") return system(preferences, "search", { ...prompting.system, weather, quick });
+  return system(preferences, engine === "code" || engine === "translate" || engine === "docs" ? engine : "text", { ...prompting.system, weather });
+}
+
+/** The tool calls a reply's hold pays for (see ToolPlan): Research's searches, and the forecast's rounds. */
+const toolPlan = (engine: Engine, tools: Tools): ToolPlan | undefined =>
+  engine === "search" ? researchPlan(tools.quick, tools.weather) : tools.weather ? WEATHER_PLAN : undefined;
 
 /** What a media request on this model cost Flash, in cents, with the number of photos it was given. */
 const mediaCents = (model: ModelInfo, request: string, photos = 1) => requestCents(model, request, photos);
@@ -436,9 +486,14 @@ async function* run(
   track: Track = NO_TRACK,
   // The language Flash's own words (progress, notes, errors) are in.
   t: Translate & { language?: string } = english,
+  // What the system prompt adds to the mode (see promptingFor); systemFor counts the same words.
+  prompting: Prompting = { system: {}, free: {}, build: "" },
+  // The live forecast for an answer in words, what to do once it's used, and Research's quick plan.
+  tools: { weather?: WeatherTool; onUsed?: () => void; quick?: boolean } = {},
 ): AsyncGenerator<StreamEvent> {
   const last = history[history.length - 1];
   const { started, watch, helper, halted, stop } = track;
+  const { weather, onUsed, quick } = tools;
   if (isMedia(engine) ? !model : !configured(engine)) {
     yield* unavailableReply(engine, t);
     return;
@@ -469,17 +524,27 @@ async function* run(
     case "docs":
       yield* withStepDown(
         choice ?? claudeChoice(engine, "ascend"),
-        (c) => streamText(history, preferences, engine, meter, budget, c, t, watch),
+        (c) => streamText(history, preferences, engine, meter, budget, c, t, watch, { system: prompting.system, weather, onUsed }),
         onStepDown,
         t,
       );
       return;
     case "search":
-      yield* withStepDown(choice ?? claudeChoice(engine, "ascend"), (c) => streamSearch(history, preferences, meter, budget, c, t, watch), onStepDown, t);
+      yield* withStepDown(
+        choice ?? claudeChoice(engine, "ascend"),
+        (c) => streamSearch(history, preferences, meter, budget, c, t, watch, { system: prompting.system, where: prompting.where, weather, onUsed, quick }),
+        onStepDown,
+        t,
+      );
       return;
     case "app":
     case "slides":
-      yield* withStepDown(choice ?? claudeChoice(engine, "vision"), (c) => streamBuild(history, preferences, engine, meter, budget, c, t, watch), onStepDown, t);
+      yield* withStepDown(
+        choice ?? claudeChoice(engine, "vision"),
+        (c) => streamBuild(history, preferences, engine, meter, budget, c, t, watch, { context: prompting.build }),
+        onStepDown,
+        t,
+      );
       return;
     case "image": {
       if (model!.edits) {
@@ -689,6 +754,10 @@ async function* runFree(
   t: Translate = english,
   // Seconds of Groq's free audio held for a transcript, set once they're taken.
   audio: { reserved?: number } = {},
+  // The free models' tools line and the context note (see promptingFor).
+  system: SystemOptions = {},
+  // The live forecast, what to do once it's used, and the language the user's answers are set to.
+  chat: { weather?: WeatherTool; onUsed?: () => void; language?: string } = {},
 ): AsyncGenerator<StreamEvent> {
   const last = history[history.length - 1];
   if (lane === "image") {
@@ -718,10 +787,18 @@ async function* runFree(
     yield { type: "text", delta: transcript(file.name, text, t) };
     return;
   }
-  yield* streamFreeChat(history, preferences, engine as WritingMode, reserveFree, recordFree, (label, provider) => {
-    used.provider = provider;
-    used.model = label;
-  }, undefined, country);
+  yield* streamFreeChat(
+    history,
+    preferences,
+    engine as WritingMode,
+    reserveFree,
+    recordFree,
+    (label, provider) => {
+      used.provider = provider;
+      used.model = label;
+    },
+    { country, system, ...chat },
+  );
 }
 
 /** What the error message says about credits after a failed request, after a space. */
@@ -774,11 +851,45 @@ export async function POST(request: Request) {
 
   const previous = body.previous && (ENGINES as readonly string[]).includes(body.previous) ? body.previous : undefined;
   const spoken = body.voice === true;
-  const auto = route(last.content, last.attachment?.mediaType, previous, { spoken });
+  // The user's message before this one, which the router sees too: "and tonight?" after a forecast
+  // follows it (see followsForecast).
+  const earlier = [...history.slice(0, -1)].reverse().find((turn) => turn.role === "user")?.content;
+  const earlierText = typeof earlier === "string" ? earlier : "";
+  const auto = followsForecast(route(last.content, last.attachment?.mediaType, previous, { spoken }), last.content, earlierText, Boolean(last.attachment), previous);
   const override =
     body.engine && body.engine !== "auto" && (ENGINES as readonly string[]).includes(body.engine) ? body.engine : null;
   // The request the user agreed to the price of: the router and the picture check aren't asked again.
   const decided = decidedFor(body, override);
+  // Where and when the user is, taken once, so the hold counts the same instructions the reply sends.
+  const where = whereFrom(request, body.timeZone);
+  const prompting = promptingFor(where, new Date(startedAt), override !== null);
+  // The live forecast (see weather-words.ts) is asked for by a precise weather question (firm) or by
+  // the router's guess. A weather word alone (hinted) and a short follow-up to a weather question
+  // (followsWeather) are hints: they add it only until the router answers otherwise, a weather word
+  // only when the user didn't pick the engine, and never make a request step down, search less or go
+  // free. On the free lane, where nothing is charged, a hint is enough.
+  const followsWeather = auto.followUp === true;
+  const firm = auto.live === "weather";
+  const hinted = !last.attachment && asksWeather(last.content);
+  // Whether the router gave an answer, and whether that answer was the forecast.
+  let guessRan = false;
+  let guessedWeather = false;
+  // A quick question Auto sent to Research gets one search and one page read.
+  const quickAsk = !override && last.content.length <= 160 && !/https?:\/\//i.test(last.content) && !DEEP_RESEARCH.test(last.content);
+  // forecast: priced as the router's "weather" answer would be; onFree: for a free model's reply.
+  const toolsFor = (e: Engine, forecast = false, onFree = false): Tools => {
+    const asked = firm || guessedWeather || forecast;
+    // The tool's instructions cost a little to read, so a paid reply the user picked the engine for
+    // ("write a poem about the rain" on Write) doesn't get it for a weather word alone, and a reply
+    // the router read as something else ("thanks!" after a forecast) doesn't get it for a follow-up.
+    const followUp = followsWeather && (onFree || !guessRan);
+    const weather = WEATHER_ENGINES.includes(e) && (asked || followUp || (hinted && (onFree || (!guessRan && !override))));
+    const hintOnly = weather && !asked;
+    // Research asked about the weather searches quickly: the forecast comes from the tool.
+    return { weather, hintOnly, quick: e === "search" && ((weather && !hintOnly) || quickAsk) };
+  };
+  // Sums, units and money: Sonic thinks harder on them.
+  const careful = needsCare(last.content);
   let engine = override ?? auto.engine;
   // Why this engine answers, in the user's language.
   let reason = override
@@ -789,7 +900,10 @@ export async function POST(request: Request) {
           ? t("Updating your app.")
           : t("Updating your slides.")
         : t("You picked this engine.")
-    : t(auto.reason);
+    : // A forecast question says so once the forecast is used (see onUsed below).
+      firm
+      ? t("Writing and reasoning task.")
+      : t(auto.reason);
   // Several files are read and compared by the writing engines; media tools take one file. The
   // builder reads several pictures too, so a few screens can be built in one go.
   const allPictures = [last.attachment, ...(last.more ?? [])].every((f) => f && PICTURE_TYPE.test(f.mediaType));
@@ -887,8 +1001,9 @@ export async function POST(request: Request) {
    * Prices the request on an engine: its model or level, the credits it needs and holds, and what it
    * may spend. A Claude engine's hold also pays for the helpers that already ran, and extraCents for
    * one still to run; a priced job's listed price already includes them (see CHECK_ALLOWANCE_CENTS).
+   * forecast: priced with the live forecast, as the router's "weather" answer runs (see toolsFor).
    */
-  const planFor = async (engine: Engine, editing: boolean, extraCents = 0) => {
+  const planFor = async (engine: Engine, editing: boolean, extraCents = 0, forecast = false) => {
     const helperCents = helperSpend() + extraCents;
     // The model whose price was agreed to, while it's still there (otherwise the new price is asked about).
     const wanted = decided?.engine === engine && decided.model ? decided.model : body.model;
@@ -909,9 +1024,10 @@ export async function POST(request: Request) {
     let budget = NO_BUDGET;
     // The price of a priced job (a picture, video, track, speech or transcript) in cents; null for a Claude engine.
     let priceCents: number | null = null;
-    // The level a Claude engine runs on, and why.
+    // The level a Claude engine runs on, and why, and the tools its reply has.
     let claudeRun: ClaudeChoice | null = null;
     let levelWhy = "";
+    let tools = NO_EXTRA_TOOLS;
     if (live) {
       const count = combines ? photos.length : 1;
       if (model) priceCents = requestCents(model, last.content, count);
@@ -932,44 +1048,66 @@ export async function POST(request: Request) {
         const files = last.attachment ? 1 + (last.more?.length ?? 0) : 0;
         const autoPick = autoLevel(engine, last.content, { files, voice: body.voice === true });
         const wanted = isLevel(body.level) && body.level !== "auto" ? body.level : null;
-        const systemText = systemFor(engine, preferences, history);
         // The reply may only spend what the held credits pay for, so no request runs at a loss.
-        const plan = async (level: ModelLevel) => {
-          const choice = claudeChoice(engine, level);
-          const inputTokens = await countOnce(choice.model, systemText);
+        const plan = async (level: ModelLevel, withTools: Tools) => {
+          const choice = claudeChoice(engine, level, { careful });
+          const inputTokens = await countOnce(choice.model, systemFor(engine, preferences, history, prompting, withTools));
           const scale = claudePrice(choice.model, inputTokens).output / claudePrice(defaultChoice(engine).model, inputTokens).output;
-          return { choice, hold: planHold(engine, choice.model, inputTokens, available, scale, helperCents) };
+          return { choice, tools: withTools, hold: planHold(engine, choice.model, inputTokens, available, scale, helperCents, toolPlan(engine, withTools)) };
         };
-        let planned = await plan(wanted ?? autoPick.level);
-        levelWhy = !wanted
-          ? t(autoPick.why)
-          : planned.choice.level === wanted
-            ? t("You picked {level}.", { level: levelName(wanted) })
-            : t("Research runs on {level} or above, so it answered instead of {picked}.", {
-                level: levelName(planned.choice.level),
+        // The level picked, or Auto's when the user can't pay for the one picked; Research the user
+        // picked searches quickly when their credits pay only for that. fellBack: either happened.
+        const price = async (withTools: Tools) => {
+          let planned = await plan(wanted ?? autoPick.level, withTools);
+          let why = !wanted
+            ? t(autoPick.why)
+            : planned.choice.level === wanted
+              ? t("You picked {level}.", { level: levelName(wanted) })
+              : t("Research runs on {level} or above, so it answered instead of {picked}.", {
+                  level: levelName(planned.choice.level),
+                  picked: levelName(wanted),
+                });
+          let fellBack = false;
+          // Not enough credits for the level picked: Auto's level answers when the user has enough for that.
+          if (wanted && wanted !== autoPick.level && available < planned.hold.needed) {
+            const instead = await plan(autoPick.level, withTools);
+            if (available >= instead.hold.needed) {
+              why = t("{picked} needs {credits} credits for this and you have {available}, so {level} answered.", {
                 picked: levelName(wanted),
+                credits: planned.hold.needed,
+                available,
+                level: levelName(autoPick.level),
               });
-        // Not enough credits for the level picked: Auto's level answers when the user has enough for that.
-        if (wanted && wanted !== autoPick.level && available < planned.hold.needed) {
-          const instead = await plan(autoPick.level);
-          if (available >= instead.hold.needed) {
-            levelWhy = t("{picked} needs {credits} credits for this and you have {available}, so {level} answered.", {
-              picked: levelName(wanted),
-              credits: planned.hold.needed,
-              available,
-              level: levelName(autoPick.level),
-            });
-            planned = instead;
+              planned = instead;
+              fellBack = true;
+            }
           }
+          if (engine === "search" && override === "search" && !withTools.quick && available < planned.hold.needed) {
+            const quick = await plan(planned.choice.level, { ...withTools, quick: true });
+            if (available >= quick.hold.needed) {
+              why = t("Flash did a quick search: a full one needs {needed} credits and you have {available}.", { needed: planned.hold.needed, available });
+              planned = quick;
+              fellBack = true;
+            }
+          }
+          return { planned, why, fellBack };
+        };
+        let priced = await price(toolsFor(engine, forecast));
+        // A weather word alone never makes a reply step down, search less or go to the free lane: the
+        // forecast is left out instead, and the reply is priced as it was before it.
+        if (priced.planned.tools.hintOnly && (priced.fellBack || available < priced.planned.hold.needed)) {
+          priced = await price({ weather: false, hintOnly: false, quick: engine === "search" && quickAsk });
         }
-        const { hold } = planned;
+        const { hold } = priced.planned;
+        levelWhy = priced.why;
+        tools = priced.planned.tools;
         ({ needed, held } = hold);
         budget = { maxTokens: hold.maxTokens, capCents: hold.capCents, byCredits: hold.byCredits };
         // A refusal fallback only when the hold pays for it (see planHold).
-        claudeRun = { ...planned.choice, fallback: hold.fallback };
+        claudeRun = { ...priced.planned.choice, fallback: hold.fallback };
       }
     }
-    return { picked, model, live, metered, preferences, held, needed, budget, priceCents, claudeRun, levelWhy };
+    return { picked, model, live, metered, preferences, held, needed, budget, priceCents, claudeRun, levelWhy, tools };
   };
 
   // The keyword rules can't tell every "make it darker" from "great edit!" or "change it back", and a change
@@ -1044,23 +1182,35 @@ export async function POST(request: Request) {
     // rules would have made of spoken talk that mentioned it (maybe).
     const answers = recheck || auto.answersOnly === true;
     const maybe = auto.guessed ? auto.maybe : undefined;
-    const may = (e: Engine) => takesGuess(e, engine, last.content, { spoken, recheck: answers, about, maybe });
-    // Someone talking is waiting in silence, so the router gets less time to think.
-    const routed = await guessEngine(last.content, engine, available, (e, extraCents) => planFor(e, false, extraCents), ready, meter, {
-      may,
-      timeoutMs: spoken ? 1500 : 4000,
-      about,
-      offer,
-    });
+    // A weather word after an app or deck was kept as a change to it (captured): any answer the
+    // router gives replaces that, an answer in words included.
+    const may = (e: Engine) =>
+      auto.captured ? e !== engine && e !== "transcribe" : takesGuess(e, engine, last.content, { spoken, recheck: answers, about, maybe });
+    // Someone talking is waiting in silence, so the router gets less time to think. It sees the
+    // earlier message and the engine of the last reply, so "and tomorrow?" follows a forecast.
+    const routed = await guessEngine(
+      last.content,
+      engine,
+      available,
+      (e, extraCents, forecast) => planFor(e, false, extraCents, forecast),
+      ready,
+      meter,
+      { may, weather: engine === "text" || may("text"), timeoutMs: spoken ? 1500 : 4000, about, offer, earlier: earlierText, previous },
+    );
+    guessRan = routed.answered;
+    guessedWeather = routed.weather === true;
     if (routed.guessed) {
       engine = routed.engine;
-      reason = t("Flash's router read your request.");
+      reason = guessedWeather ? t("Weather questions are answered from a live forecast.") : t("Flash's router read your request.");
     }
     plan = routed.plan;
+    // Priced with the forecast for a weather word before the router answered, and it read the
+    // request otherwise: the forecast is left out, so a wrong hint costs nothing.
+    if (guessRan && plan.tools.hintOnly) plan = await planFor(engine, editing);
   } else {
     plan = await planFor(engine, editing);
   }
-  const { picked, model, live, metered, preferences, priceCents, levelWhy } = plan;
+  const { picked, model, live, metered, preferences, priceCents, levelWhy, tools } = plan;
   let { held, needed, budget, claudeRun } = plan;
   // Out of credits: chat-style requests and images fall back to free models,
   // up to a daily allowance per user.
@@ -1089,6 +1239,11 @@ export async function POST(request: Request) {
       free = lane;
       held = needed = 0;
       budget = NO_BUDGET;
+      // A free model can't search, so the header doesn't say Research.
+      if (engine === "search") {
+        engine = "text";
+        reason = t("Research needs credits, so a free model answered without searching the web.");
+      }
     }
   }
   // Agreed to: every price, or the price asked, for this model at no more than those credits (see consents).
@@ -1196,7 +1351,8 @@ export async function POST(request: Request) {
   // The work runs to the end even when the page goes away (after() keeps the call alive until it's
   // done); the response only reads from it. It never throws, and settles the credits once.
   const work = (async () => {
-    const routed: StreamEvent = {
+    // The reply's header, sent again in full when it changes (see apply-event.ts).
+    let routed: Extract<StreamEvent, { type: "route" }> = {
       type: "route",
       engine,
       reason,
@@ -1229,9 +1385,17 @@ export async function POST(request: Request) {
     const steppedDown = (choice: ClaudeChoice) => {
       if (claudeRun) {
         const modelWhy = t("{level} was busy, so {instead} answered.", { level: levelName(claudeRun.level), instead: levelName(choice.level) });
-        send({ ...routed, model: levelName(choice.level), modelWhy });
+        routed = { ...routed, model: levelName(choice.level), modelWhy };
+        send(routed);
       }
       claudeRun = choice;
+    };
+    // Once a live forecast is used, the header says so, unless the user picked the engine.
+    const weatherReason = t("Weather questions are answered from a live forecast.");
+    const forecastUsed = () => {
+      if (override || routed.reason === weatherReason) return;
+      routed = { ...routed, reason: weatherReason };
+      send(routed);
     };
     // What a picture, video or sound says once Stop is pressed: stopping, or being finished.
     const stopNote = () => ({ type: "status" as const, message: t(startedCents > 0 ? FINISHING_AFTER_STOP : STOPPING) });
@@ -1249,9 +1413,17 @@ export async function POST(request: Request) {
     let stopped = false;
     let failure = "";
     let error: unknown;
+    // A free reply gets the forecast whenever it's asked for or a weather word is in the message: it costs nothing.
+    const freeWeather = free === "chat" && toolsFor(engine, false, true).weather;
     const events = free
-      ? runFree(free, engine, history, preferences, store, freeUse, countryOf(request), t, freeAudio)
-      : run(engine, history, preferences, store, model, meter, budget, mediaNotes, claudeRun, steppedDown, track, t);
+      ? runFree(free, engine, history, preferences, store, freeUse, where.country ?? "", t, freeAudio, prompting.free, {
+          ...(freeWeather && { weather: weatherTool(where, t), onUsed: forecastUsed }),
+          language: user.language ?? "",
+        })
+      : run(engine, history, preferences, store, model, meter, budget, mediaNotes, claudeRun, steppedDown, track, t, prompting, {
+          ...(tools.weather && { weather: weatherTool(where, t), onUsed: forecastUsed }),
+          quick: tools.quick,
+        });
     // Stop ends the request at once, without waiting for the next event: a Claude call is stopped,
     // and a provider job already sent is paid for as sent (see finalCredits). A Claude engine still
     // hands over what it finished before, and one that came to its end on its own isn't stopped.

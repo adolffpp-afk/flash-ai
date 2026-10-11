@@ -24,14 +24,18 @@ const cap = (n: number) => (Number.isFinite(n) ? n : 1e15);
 // Room kept for one chat reply when Cloudflare is the chat provider.
 const CHAT_NEURON_RESERVE = 300;
 
-/** Takes one request from a provider's daily allowance, or returns false when it is used up. */
-export async function reserveFree(provider: FreeProvider, limits: { requests: number; tokens: number }): Promise<boolean> {
+/**
+ * Takes count requests (2 for a reply that asks for the forecast first) from a provider's daily
+ * allowance in one statement, or returns false when they don't all fit, so the second call of a
+ * reply can never pass a cap.
+ */
+export async function reserveFree(provider: FreeProvider, limits: { requests: number; tokens: number }, count = 1): Promise<boolean> {
   const d = day();
   await run("INSERT OR IGNORE INTO free_quota (day, provider) VALUES (?, ?)", [d, provider]);
   const r = await run(
-    `UPDATE free_quota SET requests = requests + 1
-     WHERE day = ? AND provider = ? AND requests < ? AND tokens < ? AND (provider != 'cloudflare' OR neurons + ? <= ?)`,
-    [d, provider, cap(limits.requests), cap(limits.tokens), CHAT_NEURON_RESERVE, CLOUDFLARE_DAILY_NEURONS],
+    `UPDATE free_quota SET requests = requests + ?
+     WHERE day = ? AND provider = ? AND requests + ? <= ? AND tokens < ? AND (provider != 'cloudflare' OR neurons + ? <= ?)`,
+    [count, d, provider, count, cap(limits.requests), cap(limits.tokens), count * CHAT_NEURON_RESERVE, CLOUDFLARE_DAILY_NEURONS],
   );
   return r.rowsAffected === 1;
 }

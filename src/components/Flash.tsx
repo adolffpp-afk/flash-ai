@@ -67,6 +67,15 @@ const skipsCostCheck = () => {
   }
 };
 
+/** The device's time zone ("Africa/Lagos"), so answers use the user's own date and time; "" when the browser can't say. */
+const deviceTimeZone = () => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "";
+  } catch {
+    return "";
+  }
+};
+
 const ACCEPT =
   "image/png,image/jpeg,image/gif,image/webp,application/pdf,text/plain,text/markdown,text/csv,.md,.csv,.txt,.json," +
   "audio/*,video/mp4,video/webm,video/quicktime,.docx,.xlsx,.pptx," +
@@ -1080,6 +1089,8 @@ export function Flash({
           afterId: earlier.at(-1)?.id ?? null,
           // A new chat's name when it isn't its first message (a template's title).
           ...(!earlier.length && project.name !== "New project" && { name: project.name }),
+          // The device's time zone, so answers use the user's own date and time.
+          ...(deviceTimeZone() && { timeZone: deviceTimeZone() }),
         }),
         signal: controller.signal,
       });

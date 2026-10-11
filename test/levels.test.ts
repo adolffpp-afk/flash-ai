@@ -39,7 +39,7 @@ process.env.ANTHROPIC_API_KEY = "sk-fake";
 process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
 const { default: Anthropic } = await import("@anthropic-ai/sdk");
-const { LEVELS, autoLevel, isLevel, levelName } = await import("../src/lib/levels.ts");
+const { LEVELS, autoLevel, isLevel, levelName, needsCare } = await import("../src/lib/levels.ts");
 const { Running, claudeChoice, defaultChoice, streamText, withStepDown } = await import("../src/lib/engines/claude.ts");
 const { CLAUDE_PRICES, FALLBACKS, MARKUP, claudeCostCents, claudePrice, finalCredits, inputCostCents, planHold, readCostCents } = await import(
   "../src/lib/credits.ts"
@@ -74,6 +74,19 @@ test("Auto keeps building on Vision, answers quick questions on Sonic, and never
   const all = ["hi", "build a shop", "think hard about this", "x".repeat(5000)];
   for (const m of all) for (const e of ["text", "search", "code", "app"] as const) assert.notEqual(autoLevel(e, m).level, "ultra");
   for (const m of [...quick, ...everyday]) assert.ok(autoLevel("text", m).why.includes("Flash "), m);
+});
+
+test("Sonic thinks harder on sums, units, money and doses; the other levels and Research's level are unchanged", () => {
+  for (const m of ["what's 17.5% of 2,340", "convert 5 miles to km", "12 * 7", "how much is 3 kg in lbs", "loan of 2000 at 5 percent", "paracetamol dose for 20 kg"]) {
+    assert.ok(needsCare(m), m);
+  }
+  for (const m of ["hi", "what's the capital of Peru", "Will it rain tomorrow?", "write a poem about 3 cats"]) assert.equal(needsCare(m), false, m);
+  assert.equal(claudeChoice("text", "sonic", { careful: true }).effort, "medium");
+  assert.equal(claudeChoice("text", "sonic", { careful: false }).effort, "low");
+  assert.equal(claudeChoice("text", "ascend", { careful: true }).effort, "medium");
+  assert.equal(claudeChoice("code", "vision", { careful: true }).effort, "high");
+  // Research on Sonic still runs on Ascend.
+  assert.deepEqual([claudeChoice("search", "sonic", { careful: true }).level, claudeChoice("search", "sonic", { careful: true }).effort], ["ascend", "medium"]);
 });
 
 test("each level has a name, and only the five levels are accepted from a request", () => {

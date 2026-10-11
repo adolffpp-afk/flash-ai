@@ -40,7 +40,7 @@ async function* freeAnswer(
   onModel: (label: string, provider: string) => void,
   country: string,
 ): AsyncGenerator<CompanionEvent> {
-  for await (const e of streamFreeChat(turns, "", "text", reserveFree, recordFree, onModel, systemPrompt, country)) {
+  for await (const e of streamFreeChat(turns, "", "text", reserveFree, recordFree, onModel, { systemPrompt, country })) {
     if (e.type === "text") yield e;
   }
 }

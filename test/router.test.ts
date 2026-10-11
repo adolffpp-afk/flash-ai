@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checksSpoken, route, spokenFollowUp, takesGuess, textToSpeak, wantsAudioFile } from "../src/lib/router.ts";
+import { checksSpoken, followsForecast, pictureFollowUp, route, spokenFollowUp, takesGuess, textToSpeak, wantsAudioFile } from "../src/lib/router.ts";
+import { FIRM_MAX_CHARS, weatherQuestion } from "../src/lib/weather-words.ts";
+import { A, B, C } from "./fixtures/weather-messages.ts";
 
 const cases: [string, string][] = [
   ["Write a short poem about the ocean", "text"],
@@ -118,15 +120,15 @@ test("in a voice conversation, talk about how Flash speaks is answered, and audi
   assert.equal(route("make a voiceover of: hello", undefined, undefined, { spoken: true }).engine, "voice");
 });
 
-test("in a voice conversation, reading out the news, the weather or a price looks it up", () => {
-  for (const m of [
-    "read me the latest news out loud",
-    "can you read the weather forecast out loud",
-    "say the price of bitcoin today",
-    "say what's the weather like in paris right now",
-  ]) {
+test("in a voice conversation, reading out the news or a price looks it up, and the weather comes from the forecast", () => {
+  for (const m of ["read me the latest news out loud", "say the price of bitcoin today"]) {
     assert.equal(route(m).engine, "voice", `typed: ${m}`);
     assert.equal(route(m, undefined, undefined, { spoken: true }).engine, "search", m);
+  }
+  for (const m of ["can you read the weather forecast out loud", "say what's the weather like in paris right now"]) {
+    assert.equal(route(m).engine, "voice", `typed: ${m}`);
+    const r = route(m, undefined, undefined, { spoken: true });
+    assert.deepEqual([r.engine, r.live], ["text", "weather"], m);
   }
 });
 
@@ -340,14 +342,382 @@ test("spoken talk that mentions something to make is answered in words unless th
   }
 });
 
-test("spoken small talk about today isn't a web search; today's news and weather are", () => {
+test("spoken small talk about today isn't a web search; today's news is, and the weather comes from the forecast", () => {
   for (const m of ["How are you today?", "I'm feeling sad today", "what are you doing right now", "I'm so tired today", "what should I cook tonight"]) {
     assert.equal(route(m).engine, "search", `typed: ${m}`);
     const r = route(m, undefined, undefined, { spoken: true });
     // Answered in words: the guess may still search, when the user can pay for that.
     assert.deepEqual([r.engine, r.guessed, r.answersOnly], ["text", true, true], m);
   }
-  for (const m of ["what's the news today", "what's the weather like today", "is the pharmacy open right now", "who won the game last night", "what's the latest on the election"]) {
+  for (const m of ["what's the news today", "is the pharmacy open right now", "who won the game last night", "what's the latest on the election"]) {
     assert.equal(route(m, undefined, undefined, { spoken: true }).engine, "search", m);
+  }
+  const weather = route("what's the weather like today", undefined, undefined, { spoken: true });
+  assert.deepEqual([weather.engine, weather.live], ["text", "weather"], "the weather comes from the forecast");
+});
+
+const WEATHER_REASON = "Weather questions are answered from a live forecast.";
+
+test("a precise weather question is answered in words with the forecast; the date and time from the clock", () => {
+  const rain = route("Will it rain tomorrow?");
+  assert.deepEqual([rain.engine, rain.live, rain.reason, rain.guessed], ["text", "weather", WEATHER_REASON, undefined]);
+  assert.deepEqual([route("Give me the weather report for Nairobi").engine, route("Give me the weather report for Nairobi").live], ["text", "weather"]);
+  // Asked for as a spreadsheet: Docs & Sheets, which gets the forecast tool too.
+  assert.equal(route("What's the weather in Lagos? Put it in a spreadsheet").engine, "docs");
+  for (const m of ["Quel temps fait-il à Paris ?", "北京明天天气怎么样？", "هل ستمطر غدا في القاهرة؟"]) {
+    assert.deepEqual([route(m).engine, route(m).live], ["text", "weather"], m);
+  }
+  // Not a question: the guess decides, with the hint.
+  const montreal = route("météo à Montréal demain");
+  assert.deepEqual([montreal.engine, montreal.guessed, montreal.hint, montreal.live], ["text", true, "weather", undefined]);
+  for (const m of ["what time is it in Tokyo", "what's today's date"]) {
+    const r = route(m);
+    assert.deepEqual([r.engine, r.live, r.reason], ["text", "clock", "Flash answers this from today's date and time."], m);
+  }
+  // A question about an attached file isn't one about the weather.
+  assert.equal(route("Will it rain tomorrow?", "application/pdf").live, undefined);
+});
+
+test("questions about today's office holders and opening hours are searched; building, drawing and look-alikes aren't", () => {
+  for (const m of ["who is the president of France", "is the Louvre open now", "how much is one dollar in naira", "Is there a hurricane coming to Miami this week?"]) {
+    assert.equal(route(m).engine, "search", m);
+  }
+  assert.equal(route("build a weather app").engine, "app");
+  assert.equal(route("draw a stormy sky").engine, "image");
+  assert.equal(route("Make a weather report template for my class").engine, "docs");
+  for (const m of ["Who is the king of pop?", "How much is a pound of rice in kg?", "Light fixtures for a small bathroom", "How do I install a light fixture?"]) {
+    assert.notEqual(route(m).engine, "search", m);
+  }
+  for (const m of ["What time is it best to post on Instagram?", "What date is it on the Chinese calendar?", "What day is it on the Hebrew calendar?"]) {
+    assert.equal(route(m).live, undefined, m);
+  }
+});
+
+test("other weather words stay with the router's guess, with the hint", () => {
+  for (const m of [
+    "Dessine un parapluie rouge",
+    "Comment dit-on « il pleut » en anglais ?",
+    "How does weather affect stock prices?",
+    // A weather word with a word about when isn't a web search: the guess picks the forecast or Research.
+    "Any rain expected in Accra this week?",
+    "Make a packing list for Paris based on this week's weather",
+  ]) {
+    const r = route(m);
+    assert.deepEqual([r.engine, r.guessed, r.hint, r.live], ["text", true, "weather", undefined], m);
+  }
+  // A link is still read by Research.
+  assert.equal(route("Make a packing list for Paris based on this week's weather: https://example.com/trip").engine, "search");
+});
+
+test("after an app or deck: changes that mention the weather change it, weather and clock questions are answered", () => {
+  for (const m of ["show the temperature in Celsius", "add a 5 day forecast for the selected city", "add a weather widget to the header", "make the header blue"]) {
+    const r = route(m, undefined, "app");
+    assert.deepEqual([r.engine, r.captured], ["app", undefined], m);
+  }
+  // Another weather word stays the change, but the guess, which knows about the app, may read it otherwise.
+  const paint = route("Pinta un paraguas bajo la lluvia", undefined, "app");
+  assert.deepEqual([paint.engine, paint.guessed, paint.captured, paint.hint], ["app", true, true, "weather"]);
+  const hot = route("how hot is it in Lagos", undefined, "app");
+  assert.deepEqual([hot.engine, hot.live], ["text", "weather"]);
+  const date = route("what's the date", undefined, "slides");
+  assert.deepEqual([date.engine, date.live], ["text", "clock"]);
+  // Spoken, it's answered and the app is kept for the next follow-up.
+  const spoken = route("will it rain tomorrow?", undefined, "app", { spoken: true });
+  assert.deepEqual([spoken.engine, spoken.live, spoken.about], ["text", "weather", "app"]);
+  assert.equal(pictureFollowUp("make it rainy"), true);
+});
+
+test("in all three message sets, nothing to make goes to the forecast rule and nothing but the clock to the clock rule", () => {
+  const all = [...A.WEATHER, ...A.CLOCK, ...A.EVERYDAY, ...A.TRAPS, ...B.WEATHER, ...B.BY_DESIGN, ...B.ORDINARY_EN, ...B.ORDINARY_OTHER, ...C.BLIND];
+  assert.equal(all.length, 67 + 5 + 72 + 73 + 75 + 9 + 89 + 54 + 73);
+  const making = all.filter((m) => !["weather", "clock", "text", "other", "search", "followup"].includes(m.intent));
+  assert.ok(making.length >= 30);
+  for (const m of making) assert.equal(route(m.q).live, undefined, m.q);
+  // A drawing, a translation or a song in another language is guessed as today, never answered with a forecast.
+  for (const m of B.ORDINARY_OTHER.filter((x) => x.intent !== "text")) assert.equal(route(m.q).guessed, true, m.q);
+  assert.deepEqual(
+    all.filter((m) => m.intent !== "clock" && route(m.q).live === "clock").map((m) => m.q),
+    [],
+  );
+  assert.ok(all.filter((m) => m.intent === "clock").every((m) => route(m.q).live === "clock"));
+  // Known: two questions about weather words, answered in words anyway (see weather-words.test.ts).
+  assert.deepEqual(
+    all.filter((m) => m.intent !== "weather" && route(m.q).live === "weather").map((m) => m.q),
+    ["आम का मौसम कब आता है?", "天气预报的原理是什么？"],
+  );
+  // After an app, the edits stay edits (one already went to Image before the forecast: "make the weather icon bigger").
+  for (const m of A.AFTER_APP) {
+    const r = route(m.q, undefined, "app");
+    if (m.intent === "weather") assert.equal(r.live, "weather", m.q);
+    else if (m.q !== "make the weather icon bigger") assert.equal(r.engine, "app", m.q);
+  }
+});
+
+test("live questions phrased as requests still go to Research as on main; only a whole question about a changing fact is added", () => {
+  // Words about now and years, news, prices and scores: the web rule as on main, a request to write included.
+  for (const m of [
+    "Can you help me find out who the current president of Ghana is?",
+    "Make a summary of today's headlines",
+    "Please help, what's the current dollar rate in Nigeria?",
+    "Could you help me check if the British Museum is open today?",
+    "Tell me a quick update on today's Premier League results",
+    "Help me understand what happened in the 2026 election",
+    "Generate a briefing on the current situation in Sudan",
+    "Who scored in the game yesterday?",
+    "Write an Instagram post for today's sale",
+    "Write a summary of today's news in Ghana",
+    "What's the latest news about Tesla?",
+  ]) {
+    assert.equal(route(m).engine, "search", m);
+  }
+  // A whole question about a fact that changes, start to end.
+  for (const m of [
+    "What are the opening hours of the British Museum?",
+    "Is Tesco open on Sunday?",
+    "is the Louvre open now",
+    "who is the president of France",
+    "Who is the president of the senate in Nigeria?",
+    "how much is one dollar in naira",
+    "How much is a dollar in naira?",
+    "Is there a hurricane coming to Florida?",
+    "Any hurricane warnings for Florida?",
+  ]) {
+    assert.equal(route(m).engine, "search", m);
+  }
+  // Anything longer or different is routed as on main: to the guess.
+  for (const m of [
+    "Write a short story about a hurricane hitting a small fishing town",
+    "Write an Instagram post announcing our new opening hours",
+    "Create a flyer with our new opening hours",
+    "Write a WhatsApp message to customers about our closing time changing",
+    "What's closing time at most banks in Nigeria?",
+    "Why do hurricanes hit Florida?",
+    "What should I do if a tornado is coming?",
+    "How should I prepare if a cyclone is coming?",
+    "Tips for staying safe when a hurricane is heading your way",
+    "hurricane evacuation tips",
+    "What do I pack if a wildfire is near my home?",
+    "My character hears the flood warning siren, continue the story",
+    "What does a flood warning mean?",
+    "What is a hurricane watch?",
+    "What's the difference between a tornado watch and a tornado warning?",
+    "How much is one euro in dollars at 1.08?",
+    "How much is a pound in naira at 2000 naira per pound?",
+    "How much is a dollar in pesos if the rate is 18?",
+    "Who is the president of the USA in the movie Independence Day?",
+    "Who is the king of pop?",
+    "When is the next Arsenal match?",
+  ]) {
+    const r = route(m);
+    assert.deepEqual([r.engine, r.guessed], ["text", true], m);
+  }
+});
+
+test("after an app or deck, only an unmistakable forecast question is answered; anything else is the change, as on main", () => {
+  for (const previous of ["app", "slides"] as const) {
+    for (const m of [
+      "chance of rain should be a percentage",
+      "temperature in Celsius please",
+      "the hourly forecast is cut off",
+      "Weather for London doesn't load",
+      // Feedback that starts like a question.
+      "is it raining shows false",
+      "how hot is it label is cut off on mobile",
+      "do I need an umbrella should be a big yes or no",
+      "how hot is it in Lagos shows 300 degrees, it's in Kelvin",
+      // Terse, with no question: it may be about the build.
+      "give me the weather in Paris",
+      "weather in Accra",
+      "rain tomorrow in Lagos",
+      "5 day forecast for Toronto",
+    ]) {
+      const r = route(m, undefined, previous);
+      // The change, unless the guess, which sees the build, reads it otherwise.
+      assert.deepEqual([r.engine, r.guessed, r.captured, r.live], [previous, true, true, undefined], m);
+    }
+    for (const m of ["can you show me the weather in Accra?", "what's the weather in Accra?", "how hot is it in Lagos", "Should I bring an umbrella tomorrow in London?"]) {
+      const r = route(m, undefined, previous);
+      assert.deepEqual([r.engine, r.live, r.about], ["text", "weather", previous], m);
+    }
+    for (const m of ["show the temperature in Celsius", "add a weather widget to the header", "let the user pick the city", "make the header blue"]) {
+      assert.deepEqual([route(m, undefined, previous).engine, route(m, undefined, previous).captured], [previous, undefined], m);
+    }
+  }
+});
+
+test("programming questions about weather data go where they did on main; Java the island and a church program get the forecast; Bugün isn't a bug", () => {
+  for (const m of [
+    "Debug: weather in Tokyo returns 404 from OpenWeather",
+    "In TypeScript, how do I type the weather forecast for Paris response?",
+    "The weather in Lagos endpoint times out in my Django view",
+    "My python script that fetches the weather in London crashes",
+    "Why is the chance of rain null in my Swift model?",
+    "what time is it in python",
+  ]) {
+    assert.deepEqual([route(m).engine, route(m).live], ["code", undefined], m);
+  }
+  for (const m of [
+    "Parse this JSON forecast for Berlin in Go",
+    "How do I cache the weather forecast for Paris in Redis?",
+    "In Flutter, how do I show the forecast for Lagos?",
+    "How do I show the weather in London in my Vue component?",
+    "Why does my Next.js page show the temperature in Tokyo as undefined?",
+    "In Laravel, how do I store the weather in Accra?",
+    "The forecast for Paris request returns 401, what's wrong with my token?",
+  ]) {
+    assert.deepEqual([route(m).engine, route(m).guessed, route(m).live], ["text", true, undefined], m);
+  }
+  for (const m of ["Will it rain in Java tomorrow?", "Is it going to rain at the Taylor Swift concert tonight?", "Will it rain during our church program on Sunday?", "Will it be sunny at Ruby's wedding on Saturday?", "Bugün Ankara'da hava nasıl?"]) {
+    assert.equal(route(m).live, "weather", m);
+  }
+  // Everyday Turkish with "Bugün" (today) isn't Code; a bug is.
+  for (const m of ["Bugün ne yapsam?", "Bugün yağmur hakkında bir şiir yaz", "Bugün doğum günüm, anneme bir mesaj yaz", "Bugünkü toplantı için bir gündem hazırla"]) {
+    assert.notEqual(route(m).engine, "code", m);
+  }
+  for (const m of ["Bugün Python'da bir bug buldum", "Bugün bu kodu debug etmem lazım", "fix this bug in my python script", "fix this c++ code", "what does this ```code``` do"]) {
+    assert.equal(route(m).engine, "code", m);
+  }
+});
+
+test("spoken: words about now are talk only when no web rule is left once they are taken out", () => {
+  for (const m of ["Who is the current president of Ghana?", "What are the recent changes to UK visa rules?", "Will it be cheaper to rent or buy in 2027?", "What's the current inflation in Nigeria?"]) {
+    assert.equal(route(m, undefined, undefined, { spoken: true }).engine, "search", m);
+  }
+  for (const m of ["how are you today?", "I'm tired right now", "what are you doing tonight?"]) {
+    assert.deepEqual([route(m, undefined, undefined, { spoken: true }).engine, route(m, undefined, undefined, { spoken: true }).answersOnly], ["text", true], m);
+  }
+});
+
+test("a short follow-up to a forecast question: a bare one is a hint the guess can override; other messages are left alone", () => {
+  const earlier = "Will it rain tomorrow in London?";
+  for (const m of ["and tonight?", "and today?", "what about tonight?", "and this week?", "and right now?", "what about later today?", "and tomorrow?", "what about Saturday?", "tomorrow?", "and in Abuja?"]) {
+    for (const spoken of [false, true]) {
+      const r = followsForecast(route(m, undefined, "text", { spoken }), m, earlier);
+      assert.deepEqual([r.engine, r.guessed, r.hint, r.followUp, r.live], ["text", true, "weather", true, undefined], `${m} ${spoken}`);
+    }
+  }
+  // Searches stay searches, and other short messages get nothing.
+  for (const m of [
+    "Search for cheap flights to Paris",
+    "Who won the Arsenal game today?",
+    "latest news on the tube strike?",
+    "What's the bitcoin price today?",
+    "Any news about the election?",
+    "search the web for the best umbrellas",
+    "look up the population of Lagos",
+    "Who is the current UK prime minister?",
+    "news today?",
+    "Is the British Museum open today?",
+    "and the latest news?",
+    "what about the match today?",
+    "thanks!",
+    "make it shorter",
+    "Write me a haiku",
+    "and tonight?",
+  ]) {
+    const r = route(m, undefined, "text");
+    const before = m === "and tonight?" ? "Write a poem about London" : earlier;
+    assert.deepEqual(followsForecast(r, m, before), r, m);
+  }
+  // With a file or a link, too long, or already decided by a rule: unchanged.
+  for (const [m, attached] of [
+    ["and tonight?", true],
+    ["and tonight? https://example.com/events", false],
+    ["and what's on tonight at the theatres and the cinemas near the river?", false],
+    ["draw it as a watercolor", false],
+    ["what's the weather in Paris tomorrow?", false],
+  ] as const) {
+    const r = route(m, undefined, "text");
+    assert.deepEqual(followsForecast(r, m, earlier, attached), r, m);
+  }
+});
+
+test("after a forecast answered beside an app or deck, a bare follow-up that only says when or where goes on with the forecast", () => {
+  const earlier = "Will it rain tomorrow in London?";
+  for (const previous of ["app", "slides"] as const) {
+    for (const m of ["and tomorrow?", "what about Saturday?", "and in Abuja?", "and tonight?", "how about next week?"]) {
+      const r = followsForecast(route(m, undefined, previous), m, earlier, false, previous);
+      assert.deepEqual([r.engine, r.hint, r.followUp, r.about], ["text", "weather", true, previous], m);
+    }
+    // Anything else is the change, as on main.
+    for (const m of ["make the header blue", "and make the header blue", "add a 5 day forecast", "what about a dark mode?", "and bigger font", "in Fahrenheit please", "thanks!", "and the logo too", "tomorrow?", "Lagos", "in New York", "Book now", "Golden Crumb!"]) {
+      assert.equal(followsForecast(route(m, undefined, previous), m, earlier, false, previous).engine, previous, m);
+    }
+  }
+});
+
+test("a long message is routed by its start and its end, as a request is written", () => {
+  const text = "The committee met on Tuesday and talked for an hour about the garden. ".repeat(200);
+  assert.ok(text.length > 10_000);
+  assert.equal(route(`Translate this into French: ${text}`).engine, "translate");
+  assert.equal(route(`${text}\n\nTranslate all of that into French.`).engine, "translate");
+  assert.equal(route(`Summarise this: ${text}`).engine, route("Summarise this: the committee met on Tuesday.").engine);
+  assert.equal(route(`${text} https://example.com/minutes`).engine, "search");
+  // A precise question is short; a long message is never one.
+  assert.equal(weatherQuestion("Will it rain tomorrow in London? " + "x".repeat(FIRM_MAX_CHARS)), false);
+  assert.equal(route(`Will it rain tomorrow in London? ${text}`).live, undefined);
+});
+
+test("a web word in a name or a title keeps the message on Research: only a word about now alone goes to the guess", () => {
+  for (const m of [
+    "Who won the Thunder game last night?",
+    "Thunder vs Nuggets score tonight",
+    "Seattle Storm score today",
+    "Snow White box office numbers 2025",
+    "SNOW stock price today",
+    "Purple Rain anniversary edition release date",
+    "Apple revenue forecast 2026",
+    "IMF growth forecast for Nigeria 2026",
+    "Hail Mary movie release date",
+    "Robert Frost poems search",
+    "Who won the Rain or Shine game?",
+    "Lightning vs Thunder score",
+  ]) {
+    assert.equal(route(m).engine, "search", m);
+    assert.equal(route(m, undefined, "text", { spoken: true }).engine, "search", `spoken ${m}`);
+    assert.equal(route(m, undefined, "app").engine, "search", `after an app ${m}`);
+  }
+  for (const m of ["sunscreen today?", "Are flights cancelled at Heathrow today because of the fog?"]) {
+    const r = route(m);
+    assert.deepEqual([r.engine, r.guessed, r.hint], ["text", true, "weather"], m);
+  }
+  assert.equal(route("Is it going to rain today?").live, "weather");
+});
+
+test("code requests in Chinese, Japanese, Korean and Thai go to Code, with no spaces around the code words", () => {
+  for (const m of [
+    "用Python写一个排序算法",
+    "帮我debug这段代码",
+    "这个API怎么调用？",
+    "写一个SQL查询，找出重复的邮箱",
+    "Pythonでリストをソートする方法",
+    "このコードのbugを直して",
+    "Python으로 웹 크롤러 만들어줘",
+    "SQL로 중복 제거하는 방법",
+    "ช่วยdebugโค้ดนี้หน่อย",
+    "JavaScript的闭包是什么？",
+    "React组件怎么传参？",
+    "怎么用Java实现单例模式",
+    "请帮我写一个function",
+  ]) {
+    assert.equal(route(m).engine, "code", m);
+    assert.equal(route(m, undefined, "text", { spoken: true }).engine, "code", `spoken ${m}`);
+  }
+  // Turkish is still read word by word: "Bugün" (today) isn't "bug".
+  assert.equal(route("Bugün ne yapsam?").engine, "text");
+  assert.equal(route("Bugün Python'da bir bug buldum").engine, "code");
+});
+
+test("after a forecast question, a capitalised thanks or hello isn't a place", () => {
+  const earlier = "Will it rain tomorrow in London?";
+  for (const m of ["Thanks!", "Thanks", "Great", "Perfect.", "OK", "Okay", "Cool", "Nice", "Yes", "No", "Sure", "Hi", "Hello", "Wow", "Noted"]) {
+    for (const spoken of [false, true]) {
+      const r = route(m, undefined, "text", { spoken });
+      assert.deepEqual(followsForecast(r, m, earlier), r, `${m} ${spoken}`);
+    }
+  }
+  for (const m of ["Abuja?", "London?", "New York?", "Saturday?", "In Lagos?", "what about Saturday?", "what about Nice?"]) {
+    const r = followsForecast(route(m), m, earlier);
+    assert.deepEqual([r.hint, r.followUp], ["weather", true], m);
   }
 });

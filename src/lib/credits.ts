@@ -55,7 +55,12 @@ const FRAMING_TOKENS = 100;
 
 /** The most a call can cost, in cents, when it reads at most inputChars characters and writes at most maxTokens. */
 export function callMaxCents(model: string, inputChars: number, maxTokens: number): number {
-  const tokens = worstTokens(inputChars) + FRAMING_TOKENS;
+  return tokensMaxCents(model, worstTokens(inputChars), maxTokens);
+}
+
+/** The same for a call that reads at most inputTokens (a text's bytes of UTF-8 bound its tokens), with what wraps them. */
+export function tokensMaxCents(model: string, inputTokens: number, maxTokens: number): number {
+  const tokens = inputTokens + FRAMING_TOKENS;
   const price = claudePrice(model, tokens);
   return (tokens * price.input + maxTokens * price.output) / 1e6;
 }
@@ -331,42 +336,72 @@ export const MIN_OUTPUT_TOKENS: Partial<Record<Engine, number>> = {
   app: 16000,
   slides: 16000,
 };
-// Web search: up to 3 searches at 1¢ each, and the context is re-read once per tool call.
-const SEARCH_CALLS = 5;
-const SEARCH_RESULT_TOKENS = 6000;
+/**
+ * A reply's tool calls. Each entry of results is one more step: what that tool's answer adds to
+ * what the next step reads again (the step re-reads the input and everything added before it).
+ * searches are the paid web searches. A reply without tools is one step.
+ */
+export type ToolPlan = { results: number[]; searches: number };
+export const NO_TOOLS: ToolPlan = { results: [], searches: 0 };
+// The most a live forecast adds to what Claude reads (see summariseForecast in weather.ts), and the
+// rounds of forecasts a reply may ask for (WEATHER_ROUNDS there).
+export const WEATHER_RESULT_TOKENS = 1500;
+export const WEATHER_PLAN: ToolPlan = { results: [WEATHER_RESULT_TOKENS, WEATHER_RESULT_TOKENS], searches: 0 };
+// Research: up to 3 searches at 1¢ each, and 5 tool calls that each add up to 6,000 tokens.
+export const RESEARCH_PLAN: ToolPlan = { results: [6000, 6000, 6000, 6000, 6000], searches: 3 };
+// A quick question's research: one search and one page read.
+export const QUICK_RESEARCH_PLAN: ToolPlan = { results: [6000, 6000], searches: 1 };
+/** A plan with the forecast's rounds too. */
+export const withWeather = (plan: ToolPlan): ToolPlan => ({ results: [...WEATHER_PLAN.results, ...plan.results], searches: plan.searches });
+/** Research's plan: quick (one search and one page) or full, with the forecast's rounds when get_weather is attached. */
+export const researchPlan = (quick: boolean, weather: boolean): ToolPlan => {
+  const plan = quick ? QUICK_RESEARCH_PLAN : RESEARCH_PLAN;
+  return weather ? withWeather(plan) : plan;
+};
+/** The plan an engine has when none is given: Research searches, the others use no tools. */
+const planOf = (engine: Engine, plan?: ToolPlan) => plan ?? (engine === "search" ? RESEARCH_PLAN : NO_TOOLS);
 
 /** What reading the input once costs, in cents. Claude bills this even when a reply is stopped. */
 export const readCostCents = (model: string, inputTokens: number) => (inputTokens * claudePrice(model, inputTokens).input) / 1e6;
 
-/** Worst-case input cost of one request, in cents (search re-reads its context per tool call). */
-export function inputCostCents(engine: Engine, model: string, inputTokens: number): number {
-  if (engine !== "search") return readCostCents(model, inputTokens);
-  let tokens = inputTokens;
-  for (let i = 1; i <= SEARCH_CALLS; i++) tokens += inputTokens + i * SEARCH_RESULT_TOKENS;
-  return readCostCents(model, tokens) + 3 * WEB_SEARCH_CENTS;
+/**
+ * Worst-case input cost of one request, in cents: each tool step re-reads the input and what the steps
+ * before it added. Each step is priced at its own prompt's size, as Claude bills each call, so a long
+ * prompt rate (Haiku 5.5's above 100,000 tokens) applies only to a step whose prompt is that long.
+ */
+export function inputCostCents(engine: Engine, model: string, inputTokens: number, plan?: ToolPlan): number {
+  const { results, searches } = planOf(engine, plan);
+  let cents = readCostCents(model, inputTokens);
+  let carried = 0;
+  for (const added of results) {
+    carried += added;
+    cents += readCostCents(model, inputTokens + carried);
+  }
+  return cents + searches * WEB_SEARCH_CENTS;
 }
 
 /**
  * The most a Claude call can cost, in two parts: reading its input once per step (inputCents) and
  * each token it writes (outputPrice, in cents per million). With a refusal fallback both attempts
  * are counted: each reads the input and may write up to the token limit, and the fallback rereads
- * what the declined model wrote (research at every search step).
+ * what the declined model wrote (at every tool step).
  */
-export function callCost(engine: Engine, model: string, inputTokens: number, fallback = true) {
-  let inputCents = inputCostCents(engine, model, inputTokens);
+export function callCost(engine: Engine, model: string, inputTokens: number, fallback = true, plan?: ToolPlan) {
+  const steps = planOf(engine, plan).results.length + 1;
+  let inputCents = inputCostCents(engine, model, inputTokens, plan);
   let outputPrice = claudePrice(model, inputTokens).output;
   const backup = fallback ? fallbackModel(model) : undefined;
   if (backup) {
     const price = claudePrice(backup, inputTokens);
-    inputCents += inputCostCents(engine, backup, inputTokens);
-    outputPrice += price.output + price.input * (engine === "search" ? SEARCH_CALLS + 1 : 1);
+    inputCents += inputCostCents(engine, backup, inputTokens, plan);
+    outputPrice += price.output + price.input * steps;
   }
   return { inputCents, outputPrice, fallback: Boolean(backup) };
 }
 
 /** Most output tokens a call can write while costing no more than `cents` in all, its fallback included. */
-export function tokensWithin(engine: Engine, model: string, inputTokens: number, cents: number, fallback = true): number {
-  const cost = callCost(engine, model, inputTokens, fallback);
+export function tokensWithin(engine: Engine, model: string, inputTokens: number, cents: number, fallback = true, plan?: ToolPlan): number {
+  const cost = callCost(engine, model, inputTokens, fallback, plan);
   return Math.min(MAX_OUTPUT_TOKENS, Math.floor(((cents - cost.inputCents) * 1e6) / cost.outputPrice));
 }
 
@@ -381,10 +416,13 @@ export function tokensWithin(engine: Engine, model: string, inputTokens: number,
  * A model with a refusal fallback gets it only when the user has the credits to hold for both
  * attempts at the full length the reply would have without one, so a fallback never makes a reply
  * shorter, and more credits never give a shorter reply. Otherwise the request runs without one.
+ *
+ * plan is the tool calls the reply may make (see ToolPlan); by default Research's searches, and no
+ * tools for the other engines.
  */
-export function planHold(engine: Engine, model: string, inputTokens: number, available: number, scale = 1, spentCents = 0) {
+export function planHold(engine: Engine, model: string, inputTokens: number, available: number, scale = 1, spentCents = 0, plan?: ToolPlan) {
   const alone = (() => {
-    const cost = callCost(engine, model, inputTokens, false);
+    const cost = callCost(engine, model, inputTokens, false, plan);
     const fixedCents = cost.inputCents + spentCents;
     const minOutputCents = ((MIN_OUTPUT_TOKENS[engine] ?? 1500) * cost.outputPrice) / 1e6;
     const needed = Math.ceil((fixedCents + minOutputCents) * MARKUP * SAFETY) + 1;
@@ -392,12 +430,12 @@ export function planHold(engine: Engine, model: string, inputTokens: number, ava
     const held = Math.max(needed, Math.min(limit, available));
     // What the reply itself may spend, after the helpers.
     const capCents = held / MARKUP / SAFETY - spentCents;
-    const maxTokens = tokensWithin(engine, model, inputTokens, capCents, false);
+    const maxTokens = tokensWithin(engine, model, inputTokens, capCents, false, plan);
     return { needed, held, maxTokens, capCents, fallback: false, byCredits: held < limit && maxTokens < MAX_OUTPUT_TOKENS };
   })();
   if (!fallbackModel(model)) return alone;
   // Both attempts, each writing as much as the reply alone may.
-  const both = callCost(engine, model, inputTokens, true);
+  const both = callCost(engine, model, inputTokens, true, plan);
   const held = Math.ceil((both.inputCents + spentCents + (alone.maxTokens * both.outputPrice) / 1e6) * MARKUP * SAFETY) + 1;
   if (alone.byCredits || available < held) return alone;
   return { ...alone, held, capCents: held / MARKUP / SAFETY - spentCents, fallback: true };
