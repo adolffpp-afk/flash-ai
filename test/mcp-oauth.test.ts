@@ -222,6 +222,26 @@ test("discovery order: the authorization server's three metadata addresses, in t
   assert.deepEqual(mock.oauthLog.metadata, ["/.well-known/oauth-authorization-server/as", "/.well-known/openid-configuration/as"]);
 });
 
+test("discovery goes on past an address that answers with a web page instead of metadata", async () => {
+  // An app's own page for any address (200, HTML) at the addresses tried first, the metadata at the last.
+  mock.state.oauth.htmlPages = true;
+  mock.state.oauth.prm = "root";
+  mock.state.oauth.metadataAt = 3;
+  const plan = await oauth.planSignIn(SERVER);
+  assert.equal(plan.server.issuer, ISSUER);
+  assert.equal(plan.resource.resource, mock.origin);
+  assert.deepEqual(mock.oauthLog.metadata, [
+    "/.well-known/oauth-protected-resource/oauth/mcp",
+    "/.well-known/oauth-protected-resource",
+    "/.well-known/oauth-authorization-server/as",
+    "/.well-known/openid-configuration/as",
+    "/as/.well-known/openid-configuration",
+  ]);
+  // With no metadata anywhere, it says so (no sign-in), never that the page was the wrong kind.
+  mock.state.oauth.prm = "header";
+  await assert.rejects(oauth.planSignIn(SERVER, { challenge: "Bearer" }), (e: Error & { code?: string }) => e.code === "no_signin");
+});
+
 test("a resource that isn't the server's own is refused, and no sign-in starts", async () => {
   const user = await account("resource-user");
   for (const claimed of ["https://other.example/mcp", `${mock.origin}/other/mcp`]) {

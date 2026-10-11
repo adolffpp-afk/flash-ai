@@ -101,6 +101,8 @@ export type OAuthConfig = {
   deny: boolean;
   // The token endpoint answers with a 307 to /as/elsewhere, which keeps whatever is sent to it.
   tokenRedirect: boolean;
+  // A metadata address with nothing there answers with a web page (200, HTML) instead of a 404, as an app's catch-all page does.
+  htmlPages: boolean;
 };
 
 export const OAUTH_DEFAULTS: OAuthConfig = {
@@ -118,6 +120,7 @@ export const OAUTH_DEFAULTS: OAuthConfig = {
   refreshDelayMs: 0,
   deny: false,
   tokenRedirect: false,
+  htmlPages: false,
 };
 
 type Grant = { id: string; clientId: string; resource: string; scope: string; refresh: string; old: Set<string>; revoked: boolean };
@@ -206,25 +209,31 @@ export async function startMockConnectors(port = 7788) {
     const path = url.pathname;
     const cfg = state.oauth;
     if (path.startsWith("/.well-known/") || path.startsWith("/meta/") || path.startsWith("/as/.well-known/")) oauthLog.metadata.push(path);
+    // A metadata address with nothing there.
+    const none = () => {
+      if (cfg.htmlPages) res.writeHead(200, { "content-type": "text/html" }).end("<!doctype html><title>Home</title><p>Welcome</p>");
+      else res.writeHead(404).end();
+      return true;
+    };
     // Protected-resource metadata.
     const prm = (resourcePath: string) =>
       json(res, 200, { resource: resourceOf(resourcePath), authorization_servers: [issuer()], scopes_supported: ["read", "write"], bearer_methods_supported: ["header"] });
     if (path.startsWith("/meta/prm/")) {
-      if (cfg.prm !== "header") return (res.writeHead(404).end(), true);
+      if (cfg.prm !== "header") return none();
       return (prm(path.slice("/meta/prm".length)), true);
     }
     if (path === "/.well-known/oauth-protected-resource") {
-      if (cfg.prm !== "root") return (res.writeHead(404).end(), true);
+      if (cfg.prm !== "root") return none();
       return (prm("/"), true);
     }
     if (path.startsWith("/.well-known/oauth-protected-resource/")) {
-      if (cfg.prm !== "path") return (res.writeHead(404).end(), true);
+      if (cfg.prm !== "path") return none();
       return (prm(path.slice("/.well-known/oauth-protected-resource".length)), true);
     }
     // Authorization-server metadata, at one of its three addresses.
     const at = ["/.well-known/oauth-authorization-server/as", "/.well-known/openid-configuration/as", "/as/.well-known/openid-configuration"].indexOf(path) + 1;
     if (at) {
-      if (at !== cfg.metadataAt) return (res.writeHead(404).end(), true);
+      if (at !== cfg.metadataAt) return none();
       json(res, 200, {
         issuer: issuer(),
         authorization_endpoint: cfg.authorizeAt || `${origin}/as/authorize`,
@@ -241,7 +250,7 @@ export async function startMockConnectors(port = 7788) {
       });
       return true;
     }
-    if (path.startsWith("/.well-known/")) return (res.writeHead(404).end(), true);
+    if (path.startsWith("/.well-known/")) return none();
     if (path === "/as/register" && req.method === "POST") {
       if (!cfg.dcr) return (res.writeHead(404).end(), true);
       const body = JSON.parse((await readBody(req)) || "{}") as Record<string, unknown>;
