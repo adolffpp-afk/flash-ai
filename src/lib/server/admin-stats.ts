@@ -128,6 +128,16 @@ export async function adminStats(days: number) {
     series.push({ day: d * DAY, requests: n(row?.requests), costCents: n(row?.cost) });
   }
 
+  // What is still sealed with a key version other than the newest: accounts (keys, tokens, addresses)
+  // and Flash's registrations at sign-in services. An older version may go once nothing uses it.
+  const sealed = await all<{ version: string; n: number }>(
+    `SELECT key_version AS version, COUNT(*) AS n FROM (
+       SELECT key_version FROM connections WHERE key_version <> ''
+       UNION ALL SELECT key_version FROM mcp_client_registrations WHERE key_version <> ''
+     ) GROUP BY key_version ORDER BY key_version`,
+  );
+  const { newest, skipped } = keyVersions();
+
   return {
     days,
     users: { total: n(users?.total), new: n(users?.recent), active: n(usage?.active) },
@@ -145,7 +155,9 @@ export async function adminStats(days: number) {
     connectors: {
       setUp: connectorsReady(),
       missing: connectorsReady() ? [] : missingKeys(CONNECTOR_SETUP, process.env).length ? missingKeys(CONNECTOR_SETUP, process.env) : ["a usable CONNECTOR_KEYS (the one set can't be read)"],
-      ...keyVersions(),
+      newest,
+      skipped,
+      older: sealed.filter((r) => r.version !== newest).map((r) => ({ version: r.version, count: n(r.n) })),
     },
     byModel: byModel.map((r) => ({ model: r.model, provider: r.provider, requests: n(r.requests), costCents: n(r.cost) })),
     series,

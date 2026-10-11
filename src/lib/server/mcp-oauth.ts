@@ -2,7 +2,7 @@ import { db, now, one, run } from "./db.ts";
 import { randomId, sha256 } from "./ids.ts";
 import { pkceChallenge } from "./oauth.ts";
 import { checkUrl, mockOrigin, safeFetch, SafeFetchError, type SafeRequest, type SafeResponse } from "./safe-fetch.ts";
-import { seal, unseal, type SecretPlace } from "./secret-box.ts";
+import { keyVersions, seal, unseal, type SecretPlace } from "./secret-box.ts";
 import { isOwnHost } from "../site-host.ts";
 
 /*
@@ -44,6 +44,8 @@ export type OAuthProblem =
   | "registration"
   // The callback's iss isn't the authorization server's.
   | "iss"
+  // A server the user added whose authorization server doesn't say it sends iss: see requireIss.
+  | "no_iss"
   // The token endpoint refused, or answered with something that isn't a token.
   | "token"
   // The grant is gone (invalid_grant, or the client was refused): the user must sign in again.
@@ -363,21 +365,35 @@ type RegistrationRow = {
 /** Flash's client at one authorization server, with its secret opened (or "" for a public client). */
 export type OAuthClient = { regId: string; clientId: string; secret: string; authMethod: string; method: RegistrationRow["method"] };
 
-const regPlace = (row: Pick<RegistrationRow, "id" | "owner_user_id">, field: "client_secret" | "registration_token"): SecretPlace => ({
+const regPlace = (row: Pick<RegistrationRow, "id" | "owner_user_id">, field: "client_secret"): SecretPlace => ({
   id: row.id,
   userId: row.owner_user_id ?? "",
   provider: "mcp-client",
   field,
 });
 
-function opened(row: RegistrationRow): OAuthClient {
-  return {
-    regId: row.id,
-    clientId: row.client_id,
-    secret: row.enc_client_secret ? unseal(row.enc_client_secret, regPlace(row, "client_secret")) : "",
-    authMethod: row.auth_method,
-    method: row.method,
-  };
+/**
+ * A registration as Flash uses it, with its secret opened. A secret sealed with an older key version
+ * is sealed again with the newest one (only if it is still the one read, so a client ID typed in at
+ * the same moment stays), so a rotation of CONNECTOR_KEYS reaches registrations as they are used. A
+ * row without a secret holds nothing sealed and records no version (rows from before kept a
+ * registration token Flash never used: it is dropped).
+ */
+async function opened(row: RegistrationRow): Promise<OAuthClient> {
+  const secret = row.enc_client_secret ? unseal(row.enc_client_secret, regPlace(row, "client_secret")) : "";
+  const newest = keyVersions().newest;
+  if (secret && newest && row.key_version !== newest) {
+    const sealed = seal(secret, regPlace(row, "client_secret"));
+    await run("UPDATE mcp_client_registrations SET enc_client_secret = ?, enc_registration_token = '', key_version = ? WHERE id = ? AND enc_client_secret = ?", [
+      sealed.stored,
+      sealed.version,
+      row.id,
+      row.enc_client_secret,
+    ]);
+  } else if (!secret && (row.key_version || row.enc_registration_token)) {
+    await run("UPDATE mcp_client_registrations SET enc_registration_token = '', key_version = '' WHERE id = ? AND enc_client_secret = ''", [row.id]);
+  }
+  return { regId: row.id, clientId: row.client_id, secret, authMethod: row.auth_method, method: row.method };
 }
 
 /**
@@ -444,16 +460,15 @@ export async function clientAt(
 async function keepShared(
   issuer: string,
   redirectUri: string,
-  r: { client_id: string; method: RegistrationRow["method"]; auth_method: string; secret?: string; registrationToken?: string },
+  r: { client_id: string; method: RegistrationRow["method"]; auth_method: string; secret?: string },
 ): Promise<OAuthClient> {
   const id = randomId(12);
   const place = { id, owner_user_id: null };
   const secret = r.secret ? seal(r.secret, regPlace(place, "client_secret")) : null;
-  const token = r.registrationToken ? seal(r.registrationToken, regPlace(place, "registration_token")) : null;
   await run(
-    `INSERT OR IGNORE INTO mcp_client_registrations (id, issuer, owner_user_id, redirect_uri, client_id, enc_client_secret, enc_registration_token, auth_method, method, key_version, created_at)
-     VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [id, issuer, redirectUri, r.client_id, secret?.stored ?? "", token?.stored ?? "", r.auth_method, r.method, (secret ?? token)?.version ?? "", now()],
+    `INSERT OR IGNORE INTO mcp_client_registrations (id, issuer, owner_user_id, redirect_uri, client_id, enc_client_secret, auth_method, method, key_version, created_at)
+     VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)`,
+    [id, issuer, redirectUri, r.client_id, secret?.stored ?? "", r.auth_method, r.method, secret?.version ?? "", now()],
   );
   const row = await sharedRow(issuer, redirectUri);
   if (!row) throw new OAuthError("registration");
@@ -530,10 +545,10 @@ async function register(server: AuthServer, origin: string, redirectUri: string,
   const clientId = typeof body.client_id === "string" && /^[\x21-\x7e]{1,512}$/.test(body.client_id) ? body.client_id : "";
   if (!clientId) throw new OAuthError("registration");
   const secret = typeof body.client_secret === "string" && /^[\x21-\x7e]{1,2048}$/.test(body.client_secret) ? body.client_secret : "";
-  const registrationToken = typeof body.registration_access_token === "string" ? body.registration_access_token.slice(0, 4096) : "";
+  // A registration_access_token (RFC 7592) isn't kept: Flash never updates or deletes its registration.
   const said = typeof body.token_endpoint_auth_method === "string" ? body.token_endpoint_auth_method : "";
   const authMethod = !secret ? "none" : said === "client_secret_post" ? "client_secret_post" : "client_secret_basic";
-  return keepShared(server.issuer, redirectUri, { client_id: clientId, method: "dcr", auth_method: authMethod, secret, registrationToken });
+  return keepShared(server.issuer, redirectUri, { client_id: clientId, method: "dcr", auth_method: authMethod, secret });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -655,11 +670,21 @@ export async function takeFlow(userId: string, state: string | null): Promise<Fl
 
 /**
  * Whether the callback's iss is the authorization server the flow started with (RFC 9207, plain
- * string comparison). A server that says it sends iss must send it; one that doesn't may leave it out.
+ * string comparison). Every authorization server sends the browser back to the same callback, so
+ * only iss tells whose code came back. A server the user added may run an authorization server that
+ * sends the browser on to another one, which then answers without iss; its code would go to the first
+ * one's token endpoint with the PKCE verifier (mix-up, RFC 9700 §4.4). So a flow for a server the user
+ * added must carry iss, flows stored before this rule included. A preset's authorization server is
+ * its vendor's own: one that says it doesn't send iss may leave it out.
  */
-export function issMatches(flow: Pick<FlowRow, "issuer" | "endpoints_json">, iss: string | null): boolean {
-  if (iss === null) return !readEndpoints(flow.endpoints_json).iss;
+export function issMatches(flow: Pick<FlowRow, "issuer" | "endpoints_json" | "provider">, iss: string | null): boolean {
+  if (iss === null) return flow.provider !== "custom" && !readEndpoints(flow.endpoints_json).iss;
   return iss === flow.issuer;
+}
+
+/** Refuses signing in to a server the user added when its authorization server doesn't say it sends iss (see issMatches). */
+export function requireIss(provider: string, server: Pick<AuthServer, "issParameter">) {
+  if (provider === "custom" && !server.issParameter) throw new OAuthError("no_iss", "That server's sign-in doesn't identify itself on the way back.");
 }
 
 export type Tokens = { access: string; refresh: string; expiresAt: number; scope: string };

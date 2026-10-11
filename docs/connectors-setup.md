@@ -33,14 +33,17 @@ their accounts and add them again. (An account whose own service refuses its key
 Notion, Linear, Airtable and Klaviyo connect with **Connect**: the person signs in at the service
 and comes back to Flash, which never sees their password. (Linear and Airtable can still take a key
 under "Use a key instead".) A server someone adds themselves signs in the same way when it asks for
-it, and waits for them to look at its tools before it is added.
+it, and waits for them to look at its tools before it is added. It can only do that if its sign-in
+service says which service it is when it sends people back (the `iss` of RFC 9207); one that doesn't
+is refused, because Flash couldn't tell its sign-in from another service's (a "mix-up").
 
 There is nothing to set up and no new environment variable:
 
 - Flash introduces itself to each service with a public page,
   `<your address>/oauth/mcp-client.json` (its Client ID Metadata Document), or, when the service
   doesn't take that, by registering itself there (Dynamic Client Registration). Either way it does
-  this once per service and keeps it for everyone. No secret is involved.
+  this once per service and keeps it for everyone. Usually no secret is involved; if a service gives
+  Flash one when it registers, it is kept encrypted with `CONNECTOR_KEYS`.
 - The service sends people back to `<your address>/api/connect/mcp/callback`. "Your address" is
   `FLASH_APP_URL` (already set for email links), else the address the page was opened at. People
   must be signed in to Flash at that same address for the sign-in to finish.
@@ -50,8 +53,10 @@ There is nothing to set up and no new environment variable:
 
 Flash renews a sign-in's access as it runs out, one renewal at a time per account. If the service
 refuses (the person cancelled Flash's access there, or the sign-in was revoked), the account shows
-**Reconnect** and isn't used until they sign in again. Removing a signed-in account in Settings asks
-the service to cancel Flash's access too. Signing in, renewing and removing cost no credits.
+**Reconnect** and isn't used until they sign in again. Removing a signed-in account in Settings also
+asks the service to cancel Flash's access, where the service offers a way to (a revocation
+endpoint). Where it doesn't, Settings tells the person to cancel it in their account there. Signing
+in, renewing and removing cost no credits.
 
 ## Change the key (rotation)
 
@@ -64,12 +69,15 @@ the newest version.
    Then check /admin → **By provider** → **Connectors**: it says which version seals new keys
    ("New keys are sealed with v2"), and lists any entry it can't read (a name like `V2`, or a key
    that isn't 32 bytes) so you can fix it. Flash's logs say the same, by name, never the value.
-3. Only drop `v1` once nothing uses it. In the database, both of these must be 0:
+3. Only drop `v1` once nothing uses it. /admin → **By provider** → **Connectors** lists what is
+   "Still sealed with v1" (accounts, and Flash's registrations at sign-in services); it must be gone.
+   In the database, both of these must be 0:
    `SELECT COUNT(*) FROM connections WHERE key_version = 'v1';`
    `SELECT COUNT(*) FROM mcp_client_registrations WHERE key_version = 'v1';`
    A signed-in account moves to the new version by itself the next time its access is renewed
-   while it is used; one with a key, or a server added by address, keeps `v1`
-   until it is removed and added again. An account sealed with a
+   while it is used. Flash's registration at a service moves the next time anyone signs in or
+   renews there; a client ID someone typed in moves the next time they use it. One with a key, or a
+   server added by address, keeps `v1` until it is removed and added again. An account sealed with a
    dropped version shows as "needs to be connected again" and stops working until its owner removes
    it and adds it again, or the version is put back.
 
@@ -91,8 +99,8 @@ the newest version.
 ## Deleting someone's account by hand
 
 If they can still sign in, have them remove their accounts in Settings > Connectors first: for an
-account that signed in, that also asks the service to cancel Flash's access. Deleting rows by hand
-doesn't.
+account that signed in, that also asks the service to cancel Flash's access, where the service
+offers a way to. Deleting rows by hand doesn't.
 
 Their connector rows go with them when foreign keys are on. To be sure, delete them yourself first:
 

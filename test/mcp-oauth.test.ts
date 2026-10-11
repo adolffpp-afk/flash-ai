@@ -2,6 +2,7 @@ import { test, after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { createHash, randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { register } from "node:module";
 import type { AddressInfo } from "node:net";
 
@@ -41,11 +42,13 @@ after(async () => {
 
 const { all, one, run: sql } = await import("../src/lib/server/db.ts");
 const oauth = await import("../src/lib/server/mcp-oauth.ts");
-const { chatKit, listConnections } = await import("../src/lib/server/connections.ts");
+const { chatKit, failedText, listConnections } = await import("../src/lib/server/connections.ts");
+const { translate } = await import("../src/lib/i18n.ts");
 const startRoute = await import("../src/app/api/connect/mcp/start/route.ts");
 const callbackRoute = await import("../src/app/api/connect/mcp/callback/route.ts");
 const connectRoute = await import("../src/app/api/connect/route.ts");
 const connectIdRoute = await import("../src/app/api/connect/[id]/route.ts");
+const actionRoute = await import("../src/app/api/connect/actions/[id]/route.ts");
 
 const SERVER = `${mock.origin}/oauth/mcp`;
 const ISSUER = `${mock.origin}/as`;
@@ -334,6 +337,55 @@ test("an iss that isn't the authorization server's is refused, without its words
   assert.equal(cancelled.location, `${FLASH}/?connect=cancelled`);
 });
 
+test("mix-up: a server the user added can't have another authorization server's code and verifier sent to it", async () => {
+  const user = await account("mixup-user");
+  // The honest authorization server doesn't send iss; the attacker's server sends the browser on to it.
+  mock.state.oauth.iss = "none";
+  mock.state.oauth.issAdvertised = false;
+  const EVIL = `${mock.origin}/evil/mcp`;
+  /** The browser through the attacker's sign-in page, the honest one, and back: where it lands. */
+  const bounce = async (url: string) => authorize((await authorize(url)).href);
+
+  // An attacker's authorization server that says it doesn't send iss is refused before any sign-in.
+  const preview = await connectRoute.POST(post("/api/connect", user, { action: "preview", provider: "custom", url: EVIL }));
+  assert.equal(preview.status, 400);
+  assert.equal(((await preview.json()) as { code: string }).code, "no_iss");
+  const refused = await start(user, { provider: "custom", url: EVIL });
+  assert.equal(refused.status, 400);
+  assert.equal(refused.body.code, "no_iss");
+  assert.equal(refused.body.error, "That server's sign-in doesn't identify itself when it sends you back, so Flash can't use it safely.");
+  assert.equal(await flowsOf(user.id), 0);
+
+  // One that says it sends iss starts, but the honest server's code comes back without the attacker's iss: refused.
+  mock.state.oauth.evilIss = true;
+  let started = await start(user, { provider: "custom", url: EVIL });
+  assert.equal(started.status, 200);
+  assert.equal(new URL(started.body.url!).pathname, "/evil/authorize");
+  let back = await bounce(started.body.url!);
+  assert.ok(back.searchParams.get("code"), "the honest server gave a code");
+  assert.equal(back.searchParams.get("iss"), null);
+  assert.equal((await callback(user, back)).outcome, "failed");
+
+  // Nor with the honest server's own iss.
+  mock.state.oauth.iss = "right";
+  started = await start(user, { provider: "custom", url: EVIL });
+  back = await bounce(started.body.url!);
+  assert.equal(back.searchParams.get("iss"), ISSUER);
+  assert.equal((await callback(user, back)).outcome, "failed");
+
+  // A flow stored before this rule (its server said it sends no iss) is held to it too.
+  mock.state.oauth.iss = "none";
+  started = await start(user, { provider: "custom", url: EVIL });
+  await sql("UPDATE connect_flows SET endpoints_json = json_set(endpoints_json, '$.iss', json('false')) WHERE user_id = ?", [user.id]);
+  back = await bounce(started.body.url!);
+  assert.equal((await callback(user, back)).outcome, "failed");
+
+  assert.deepEqual(mock.oauthLog.stolen, [], "no code or verifier reached the attacker's token endpoint");
+  assert.equal((await connectionsOf(user.id)).length, 0);
+  // A preset whose own authorization server says it sends no iss still signs in without it.
+  assert.equal(await connect(user, { provider: "notion" }), "ok");
+});
+
 test("two refreshes at once make exactly one token call, and both get the new token", async () => {
   const user = await account("race-user");
   mock.state.oauth.accessTtl = 30; // always within a minute of running out: every use renews it
@@ -388,6 +440,34 @@ test("a token that runs out while a reply goes on is renewed once, for all of it
   assert.notEqual(now.enc_access, row.enc_access);
 });
 
+test("Stop while a sign-in is being renewed: the renewal is still kept, and the next reply works", async () => {
+  const user = await account("stop-renew-user");
+  mock.state.oauth.accessTtl = 30;
+  assert.equal(await connect(user, { provider: "notion" }), "ok");
+  const [row] = await connectionsOf(user.id);
+  const grants = mock.live().grants;
+  mock.state.oauth.refreshDelayMs = 300;
+  const stop = new AbortController();
+  const kit = (await chatKit(user.id, [String(row.id)], { signal: stop.signal }))!;
+  const checking = kit.check();
+  // The server has the refresh token (and retires it); the user presses Stop before its answer comes.
+  while (mock.oauthLog.refreshes === 0) await new Promise((r) => setTimeout(r, 5));
+  stop.abort("stop");
+  await assert.rejects(checking);
+  await kit.close();
+  const [after] = await connectionsOf(user.id);
+  assert.notEqual(after.enc_refresh, row.enc_refresh, "the rotated refresh token was saved");
+  assert.equal(after.status, "ok");
+  assert.equal(after.refreshing_until, null);
+
+  mock.state.oauth.refreshDelayMs = 0;
+  const next = (await chatKit(user.id, [String(row.id)]))!;
+  assert.deepEqual((await next.check()).unreachable, []);
+  await next.close();
+  assert.equal((await connectionsOf(user.id))[0].status, "ok");
+  assert.equal(mock.live().grants, grants, "the sign-in is still alive at the server");
+});
+
 test("a Reconnect that lands while a refresh is under way wins: the refresh's tokens go back to the server, not into the row", async () => {
   const user = await account("reconnect-race-user");
   mock.state.oauth.accessTtl = 30;
@@ -432,6 +512,70 @@ test("a refresh seals the tokens with the newest key version, and a preset's row
   } finally {
     process.env.CONNECTOR_KEYS = keep;
   }
+});
+
+test("key rotation reaches Flash's registrations: a secret is sealed again as it is used, so the old version can go", async () => {
+  const { adminStats } = await import("../src/lib/server/admin-stats.ts");
+  const older = async () => (await adminStats(30)).connectors.older.filter((o: { version: string }) => o.version === "v1");
+  await sql("DELETE FROM mcp_client_registrations");
+  // This server's DCR gives a client secret and a registration token.
+  mock.state.oauth.cimd = false;
+  mock.state.oauth.dcrSecret = true;
+  const user = await account("rotate-reg-user");
+  mock.state.oauth.accessTtl = 30;
+  assert.equal(await connect(user, { provider: "notion" }), "ok");
+  type Reg = { id: string; key_version: string; enc_client_secret: string; enc_registration_token: string; auth_method: string };
+  const regs = () => all<Reg>("SELECT id, key_version, enc_client_secret, enc_registration_token, auth_method FROM mcp_client_registrations");
+  let [reg] = await regs();
+  assert.equal(reg.auth_method, "client_secret_basic");
+  assert.equal(reg.key_version, "v1");
+  assert.match(reg.enc_client_secret, /^v1:/);
+  assert.equal(reg.enc_registration_token, "", "the registration token Flash never uses isn't kept");
+
+  const keep = process.env.CONNECTOR_KEYS!;
+  const v2 = randomBytes(32).toString("base64");
+  process.env.CONNECTOR_KEYS = JSON.stringify({ ...JSON.parse(keep), v2 });
+  try {
+    assert.ok((await older()).length > 0, "/admin lists what v1 still seals");
+    // A renewal at that server opens the registration: its secret is sealed again with v2.
+    const [row] = await connectionsOf(user.id);
+    let kit = (await chatKit(user.id, [String(row.id)]))!;
+    assert.deepEqual((await kit.check()).unreachable, []);
+    await kit.close();
+    [reg] = await regs();
+    assert.equal(reg.key_version, "v2");
+    assert.match(reg.enc_client_secret, /^v2:/);
+    // The connection moved with its renewal too; nothing is left on v1 for this user and server.
+    assert.equal((await connectionsOf(user.id))[0].key_version, "v2");
+    const left = await all<{ n: number }>("SELECT COUNT(*) AS n FROM mcp_client_registrations WHERE key_version = 'v1'");
+    assert.equal(Number(left[0].n), 0);
+
+    // With v1 dropped, signing in and renewing there still work.
+    process.env.CONNECTOR_KEYS = JSON.stringify({ v2 });
+    await sql("UPDATE connections SET expires_at = 1 WHERE id = ?", [String(row.id)]);
+    kit = (await chatKit(user.id, [String(row.id)]))!;
+    assert.deepEqual((await kit.check()).unreachable, []);
+    await kit.close();
+    const other = await account("rotate-reg-other");
+    assert.equal(await connect(other, { provider: "notion" }), "ok");
+  } finally {
+    process.env.CONNECTOR_KEYS = keep;
+    // Later tests start from Flash's own registration again (this one is sealed with v2 only).
+    await sql("DELETE FROM mcp_client_registrations");
+  }
+});
+
+test("a registration from before that kept only an unused registration token stops counting as sealed", async () => {
+  await sql("DELETE FROM mcp_client_registrations");
+  mock.state.oauth.cimd = false;
+  const user = await account("legacy-reg-user");
+  assert.equal(await connect(user, { provider: "notion" }), "ok");
+  await sql("UPDATE mcp_client_registrations SET enc_registration_token = 'v1:old:old:old', key_version = 'v1'");
+  const other = await account("legacy-reg-other");
+  assert.equal(await connect(other, { provider: "notion" }), "ok");
+  const [reg] = await all<{ key_version: string; enc_registration_token: string }>("SELECT key_version, enc_registration_token FROM mcp_client_registrations");
+  assert.deepEqual({ ...reg }, { key_version: "", enc_registration_token: "" });
+  await sql("DELETE FROM mcp_client_registrations");
 });
 
 test("a token endpoint that redirects gets no code, verifier or refresh token sent on", async () => {
@@ -650,10 +794,58 @@ test("step-up: a tool that needs more access asks for Reconnect, which asks for 
   assert.deepEqual(oauth.unionScopes("read write", ["write", "admin"]), ["read", "write", "admin"]);
 });
 
-test("removing an account that signed in asks its server to cancel the tokens", async () => {
+test("step-up: scopes two tools of one reply ask for are both kept", async () => {
+  const user = await account("scopes-race-user");
+  assert.equal(await connect(user, { provider: "custom", url: SERVER }), "review");
+  const [row] = await connectionsOf(user.id);
+  await sql("UPDATE connections SET status = 'ok' WHERE id = ?", [String(row.id)]);
+  const kit = (await chatKit(user.id, [String(row.id)]))!;
+  const { tools } = await kit.check();
+  // Another tool of this reply (or another reply) asked for "files:write" after this reply read the row.
+  await sql("UPDATE connections SET scopes = 'read offline_access files:write' WHERE id = ?", [String(row.id)]);
+  const report = tools.find((t) => t.tool === "admin_report")!;
+  assert.equal((await kit.run(report, {})).isError, true);
+  assert.equal((await connectionsOf(user.id))[0].scopes, "read offline_access files:write admin");
+  // A second refusal in the same reply builds on that.
+  assert.equal((await kit.run(report, {})).isError, true);
+  await kit.close();
+  assert.equal((await connectionsOf(user.id))[0].scopes, "read offline_access files:write admin");
+});
+
+test("step-up on an approved action: its card says so in Flash's words for the user, translated, not in Claude's", async () => {
+  const user = await account("scope-card-user");
+  assert.equal(await connect(user, { provider: "custom", url: SERVER }), "review");
+  const [row] = await connectionsOf(user.id);
+  await sql("UPDATE connections SET status = 'ok' WHERE id = ?", [String(row.id)]);
+  const kit = (await chatKit(user.id, [String(row.id)]))!;
+  const { tools } = await kit.check();
+  const report = tools.find((t) => t.tool === "admin_report")!;
+  const card = await kit.propose(report, {});
+  // In a chat, Claude is told what to tell the user.
+  assert.match((await kit.run(report, {})).text, /Tell the user/);
+  await kit.close();
+  const ctx = { params: Promise.resolve({ id: card.id }) } as never;
+  const headers = { "content-type": "application/json", cookie: user.cookie, origin: FLASH };
+  const res = await actionRoute.POST(
+    new Request(`${FLASH}/api/connect/actions/${card.id}`, { method: "POST", headers, body: JSON.stringify({ decision: "approve", inputHash: card.inputHash }) }),
+    ctx,
+  );
+  const words = "This needs more access than the account gave Flash. Press Reconnect on this account in Settings > Connectors and allow it, then ask again.";
+  assert.deepEqual(await res.json(), { status: "failed", result: words });
+  const shown = await actionRoute.GET(new Request(`${FLASH}/api/connect/actions/${card.id}`, { headers }), ctx);
+  assert.equal(((await shown.json()) as { result: string }).result, words, "and so it stays when the card is shown again");
+  // The routes show it with failedText, so a German user reads it in German (Node here can't load the tables the routes import).
+  const german = JSON.parse(readFileSync(new URL("../src/lib/i18n/de.json", import.meta.url), "utf8")) as Record<string, string>;
+  assert.ok(german[words]);
+  assert.equal(failedText(words, (text, blanks) => translate(german, text, blanks)), german[words]);
+  assert.equal((await connectionsOf(user.id))[0].scopes, "read offline_access admin", "Reconnect asks for what it needs");
+});
+
+test("removing an account that signed in asks its server to cancel the tokens, where it offers a way to", async () => {
   const user = await account("revoke-user");
   assert.equal(await connect(user, { provider: "notion" }), "ok");
   const [row] = await connectionsOf(user.id);
+  assert.equal((await listConnections(user.id))[0].revocable, true, "Settings says removing it cancels the access");
   const grants = mock.live().grants;
   const res = await connectRoute.DELETE(
     new Request(`${FLASH}/api/connect`, { method: "DELETE", headers: { "content-type": "application/json", origin: FLASH, cookie: user.cookie }, body: JSON.stringify({ id: row.id }) }),
@@ -662,14 +854,17 @@ test("removing an account that signed in asks its server to cancel the tokens", 
   assert.deepEqual([...mock.oauthLog.revoked].sort(), ["access_token", "refresh_token"]);
   assert.equal(mock.live().grants, grants - 1);
   assert.equal((await connectionsOf(user.id)).length, 0);
-  // A server with no revocation endpoint: removed all the same.
+  // A server with no revocation endpoint: Settings says Flash can't cancel the access there, and it is removed all the same.
+  mock.reset();
   mock.state.oauth.revocation = false;
   assert.equal(await connect(user, { provider: "notion" }), "ok");
   const [second] = await connectionsOf(user.id);
+  assert.equal((await listConnections(user.id))[0].revocable, false);
   await connectRoute.DELETE(
     new Request(`${FLASH}/api/connect`, { method: "DELETE", headers: { "content-type": "application/json", origin: FLASH, cookie: user.cookie }, body: JSON.stringify({ id: second.id }) }),
   );
   assert.equal((await connectionsOf(user.id)).length, 0);
+  assert.deepEqual(mock.oauthLog.revoked, [], "nothing was sent");
 });
 
 test("parsing a server's challenge", () => {

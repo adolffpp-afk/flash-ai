@@ -60,7 +60,8 @@ export default function Privacy() {
         to train its models. You can turn an account off in any chat, or remove it in Settings &gt; Connectors, which
         deletes the key and its tools from Flash. Removing it doesn&apos;t cancel a key at the service itself: do that
         in your account there if you no longer want it to work. For an account you connected by signing in, Flash also
-        asks the service to cancel the access you gave it; you can check or cancel it in your account there too.
+        asks the service to cancel the access you gave it, where the service offers a way to; where it doesn&apos;t,
+        Settings says so, and you cancel it in your account there. You can always check or cancel it there too.
       </p>
       <p>
         For weather questions, Flash&apos;s server asks MET Norway (the Norwegian Meteorological Institute, api.met.no) for

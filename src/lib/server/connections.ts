@@ -15,6 +15,7 @@ import {
   findResource,
   flowSecret,
   issMatches,
+  requireIss,
   parseChallenge,
   planSignIn,
   readEndpoints,
@@ -100,7 +101,9 @@ export type ConnectProblem =
   // an endpoint that isn't https or is one of Flash's own hosts (see mcp-oauth.ts).
   | "no_signin"
   // The server has neither a Client ID Metadata Document nor Dynamic Client Registration.
-  | "needs_client";
+  | "needs_client"
+  // A server the user added whose sign-in doesn't send iss, which Flash needs to know whose code came back.
+  | "no_iss";
 
 export class ConnectError extends Error {
   code: ConnectProblem;
@@ -139,6 +142,8 @@ export function problemText(code: ConnectProblem, t: Translate): string {
       return t("That server asks for a sign-in Flash can't use safely.");
     case "needs_client":
       return t("This server needs a client ID from its own settings. Fill it in under Advanced.");
+    case "no_iss":
+      return t("That server's sign-in doesn't identify itself when it sends you back, so Flash can't use it safely.");
   }
 }
 
@@ -146,7 +151,7 @@ export function problemText(code: ConnectProblem, t: Translate): string {
 function asProblem(err: unknown): unknown {
   if (err instanceof ConnectError) return err;
   if (err instanceof OAuthError) {
-    const code: ConnectProblem = err.code === "needs_client" ? "needs_client" : err.code === "unreachable" ? "unreachable" : "no_signin";
+    const code: ConnectProblem = err.code === "needs_client" || err.code === "unreachable" || err.code === "no_iss" ? err.code : "no_signin";
     return new ConnectError(code, err.message);
   }
   if (err instanceof SafeFetchError) return new ConnectError(err.code === "blocked" ? "blocked" : "unreachable", err.message);
@@ -262,6 +267,7 @@ function view(row: ConnectionRow, tools: ToolRow[]): ConnectionView {
     custom: !presetById(row.provider),
     last4: row.last4,
     signIn: row.kind === "oauth",
+    revocable: row.kind === "oauth" && readEndpoints(row.endpoints_json).revocation !== "",
     status: row.status !== "needs_reconnect" && !opens(row) ? "needs_reconnect" : row.status,
     createdAt: Number(row.created_at),
     tools: tools
@@ -348,6 +354,7 @@ export async function previewServer(userId: string, input: NewConnection, origin
       try {
         const found = await findResource(url, parseChallenge(err.challenge));
         const server = await findAuthServer(found.authorizationServers[0]);
+        requireIss("custom", server);
         const callback = callbackUrl(origin);
         return { host: hostOf(url), tools: [], signIn: { authHost: new URL(server.authorizationEndpoint).host, needsClient: !(await canRegister(userId, server, callback)), callback } };
       } catch (problem) {
@@ -526,11 +533,21 @@ const renewable = (row: ConnectionRow, err: unknown) => row.kind === "oauth" && 
 
 /**
  * Keeps the scopes a server asked for (step-up) with the ones asked for before, so Reconnect asks for
- * their union. Only the user starts that sign-in; nothing happens by itself.
+ * their union. Only the user starts that sign-in; nothing happens by itself. The union is made with
+ * what is stored now, never with the row as a reply read it: another tool of the same reply, another
+ * reply or a Reconnect may have added scopes since. It is written only if those are still what is
+ * stored (else read again), and kept on the row for the reply's later calls.
  */
 async function addScopes(row: ConnectionRow, scopes: string[]) {
-  const all = unionScopes(row.scopes, scopes).join(" ");
-  if (all !== row.scopes) await run("UPDATE connections SET scopes = ? WHERE id = ? AND user_id = ?", [all, row.id, row.user_id]);
+  for (let tries = 0; tries < 3; tries++) {
+    const stored = await one<{ scopes: string }>("SELECT scopes FROM connections WHERE id = ? AND user_id = ?", [row.id, row.user_id]);
+    if (!stored) return;
+    const all = unionScopes(stored.scopes, scopes).join(" ");
+    row.scopes = all;
+    if (all === stored.scopes) return;
+    const done = await run("UPDATE connections SET scopes = ? WHERE id = ? AND user_id = ? AND scopes = ?", [all, row.id, row.user_id, stored.scopes]);
+    if (done.rowsAffected) return;
+  }
 }
 
 // An access token is renewed this long before it runs out; one refresh may hold a connection this
@@ -616,7 +633,10 @@ async function refreshNow(row: ConnectionRow, lock: number, usable: boolean, sig
   }
   let tokens: Tokens;
   try {
-    tokens = await refreshGrant(grantOf(row), refreshToken, signal);
+    // Never cut short by Stop or the reply's deadline (only by its own time limit, REQUEST_MS): a server
+    // that rotates refresh tokens has retired the one sent as soon as it has it, so its answer must be
+    // read and kept. Stop takes effect once the new tokens are saved.
+    tokens = await refreshGrant(grantOf(row), refreshToken);
   } catch (err) {
     if (err instanceof OAuthError && err.code === "invalid_grant") {
       const ended = await run(
@@ -653,6 +673,7 @@ async function refreshNow(row: ConnectionRow, lock: number, usable: boolean, sig
     return null;
   }
   console.log(`[flash] connector ${row.id} ${row.provider} refreshed`);
+  if (signal?.aborted) throw stopError(signal);
   return { token: tokens.access, sealed: access.stored };
 }
 
@@ -821,9 +842,11 @@ async function callOn(
     if (more && row.kind === "oauth") {
       status = "needs_scope";
       await addScopes(row, more);
+      // Written for Claude (a chat's tool result); an approved action's card says it in the user's words (runApproved).
       return {
         text: "This tool needs more access than the account gave Flash. Tell the user to press Reconnect on this account in Settings > Connectors and allow it, then try again.",
         isError: true,
+        needsScope: true,
       };
     }
     status = err.code;
@@ -1007,8 +1030,9 @@ const NOT_RUN = {
   changed: msg("The tool changed since this was asked, so it didn't run."),
   reconnect: msg("This account needs to be connected again."),
   failed: msg("The action couldn't run."),
+  scope: msg("This needs more access than the account gave Flash. Press Reconnect on this account in Settings > Connectors and allow it, then ask again."),
 };
-const PROBLEMS: ConnectProblem[] = ["blocked", "auth", "unreachable", "protocol", "limit", "too_many", "changed", "no_tools", "bad_input", "gone", "unverified", "no_signin", "needs_client"];
+const PROBLEMS: ConnectProblem[] = ["blocked", "auth", "unreachable", "protocol", "limit", "too_many", "changed", "no_tools", "bad_input", "gone", "unverified", "no_signin", "needs_client", "no_iss"];
 const OWN_WORDS = new Set<string>([...Object.values(NOT_RUN), ...PROBLEMS.map((code) => problemText(code, english))]);
 
 /** A failed action's result for the card: Flash's own reasons in the user's language, a tool's own words as they are. */
@@ -1030,7 +1054,7 @@ export async function runApproved(userId: string, id: string, hash: string): Pro
   if (!row) return fail(NOT_RUN.gone);
   const pinned = await one<ToolRow>("SELECT * FROM connection_tools WHERE connection_id = ? AND name = ?", [row.id, action.tool]);
   if (!pinned || pinned.changed || pinned.hash !== action.tool_hash) return fail(NOT_RUN.changed);
-  let out: { text: string; isError: boolean } | "changed";
+  let out: { text: string; isError: boolean; needsScope?: boolean } | "changed";
   try {
     out = await withServer(row, async (opened) => {
       const live = await opened.client.listTools();
@@ -1050,6 +1074,7 @@ export async function runApproved(userId: string, id: string, hash: string): Pro
     await run("UPDATE connection_tools SET changed = 1 WHERE connection_id = ? AND name = ?", [row.id, action.tool]);
     return fail(NOT_RUN.changed);
   }
+  if (out.needsScope) return fail(NOT_RUN.scope);
   // Kept for the card, and for Continue, cut as a step's results are.
   const kept = cut(out.text, CONNECT_RESULT_TOKENS);
   await finishAction(action.id, !out.isError, kept);
@@ -1116,6 +1141,9 @@ export async function startSignIn(userId: string, input: SignInRequest, origin: 
   try {
     const typed = typedClient(input.clientId, input.clientSecret);
     const plan = await planSignIn(url, { more });
+    // A server the user added (also on Reconnect, which keeps the row's provider) signs in only where
+    // its authorization server sends iss; see issMatches.
+    requireIss(provider, plan.server);
     return await beginSignIn(userId, { provider, serverUrl: url, label, origin, plan, connectionId: input.connectionId, typed, reuse });
   } catch (err) {
     throw asProblem(err);

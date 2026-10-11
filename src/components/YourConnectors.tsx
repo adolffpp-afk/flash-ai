@@ -286,7 +286,9 @@ function Connection({
         <div className="mt-3 rounded-lg bg-white/[0.03] p-3">
           <p className="text-sm text-zinc-300">
             {c.signIn
-              ? t("Remove {name} from Flash? Flash also asks {name} to cancel the access you gave it.", { name: c.label })
+              ? c.revocable
+                ? t("Remove {name} from Flash? Flash also asks {name} to cancel the access you gave it.", { name: c.label })
+                : t("Remove {name} from Flash? {name} offers Flash no way to cancel the access you gave it: cancel it in your account there if you don't want it to work any more.", { name: c.label })
               : c.custom
                 ? t("Remove {name} from Flash?", { name: c.label })
                 : t("Remove {name} from Flash? This doesn't delete the key in {name}: delete it there too if you don't need it any more.", { name: c.label })}

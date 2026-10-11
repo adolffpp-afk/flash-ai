@@ -127,6 +127,8 @@ export type ConnectionView = {
   last4: string;
   // Signed in with OAuth: Reconnect signs in again (and asks for any access a tool said it needs).
   signIn: boolean;
+  // Signed in, at a service that offers a way to cancel Flash's access (a revocation endpoint): removing it asks for that.
+  revocable: boolean;
   // review: a server the user added and signed in to, waiting for them to look at its tools and add it.
   status: "ok" | "needs_reconnect" | "review";
   createdAt: number;
