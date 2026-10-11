@@ -569,7 +569,7 @@ export function Message({
             <span>{t("Used from your accounts:")}</span>
             {m.connectors.map((u) => (
               <span key={`${u.connection}/${u.tool}`} className="max-w-[16rem] truncate rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-zinc-300">
-                {u.connection} · {u.tool}
+                {u.connection} · {t(u.tool)}
               </span>
             ))}
           </div>

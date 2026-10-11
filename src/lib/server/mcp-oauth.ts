@@ -655,7 +655,7 @@ export type FlowRow = {
   expires_at: number;
 };
 
-const flowPlace = (stateHash: string, userId: string, field: "verifier" | "url"): SecretPlace => ({ id: stateHash, userId, provider: "connect-flow", field });
+export const flowPlace = (stateHash: string, userId: string, field: "verifier" | "url"): SecretPlace => ({ id: stateHash, userId, provider: "connect-flow", field });
 
 /** Opens what a flow sealed: its PKCE verifier and the server's address. */
 export const flowSecret = (flow: FlowRow, field: "verifier" | "url") => unseal(field === "verifier" ? flow.enc_verifier : flow.enc_url, flowPlace(flow.state_hash, flow.user_id, field));
@@ -731,11 +731,12 @@ export async function beginSignIn(
 
 /**
  * Takes a sign-in's flow, once: only the user who started it, only before it expires. Anyone else's
- * flow, an expired one or one already taken gives null, and nothing is stored.
+ * flow, an expired one or one already taken gives null, and nothing is stored. A GitHub flow is only
+ * ever taken by GitHub's own callback (see github.ts).
  */
 export async function takeFlow(userId: string, state: string | null): Promise<FlowRow | null> {
   if (!state || state.length > 200) return null;
-  const taken = await run("DELETE FROM connect_flows WHERE state_hash = ? AND user_id = ? AND expires_at > ? RETURNING *", [sha256(state), userId, now()]);
+  const taken = await run("DELETE FROM connect_flows WHERE state_hash = ? AND user_id = ? AND expires_at > ? AND provider <> 'github' RETURNING *", [sha256(state), userId, now()]);
   return (taken.rows[0] as unknown as FlowRow) ?? null;
 }
 

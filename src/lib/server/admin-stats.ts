@@ -1,6 +1,7 @@
 import { all, one } from "./db.ts";
 import { CREDIT_PACKS, MARKUP, PLANS, paymentFeeCents, planPrice, worstCaseProfitCents } from "../credits.ts";
-import { CONNECTOR_SETUP, PROVIDER_LIST, missingKeys, providerName } from "../providers.ts";
+import { CONNECTOR_SETUP, GITHUB_SETUP, PROVIDER_LIST, missingKeys, providerName } from "../providers.ts";
+import { githubReady } from "./github.ts";
 import { connectorsReady, keyVersions } from "./secret-box.ts";
 import { resealRegistrations } from "./mcp-oauth.ts";
 import { profitReport } from "./profit.ts";
@@ -161,6 +162,12 @@ export async function adminStats(days: number) {
       newest,
       skipped,
       older: sealed.filter((r) => r.version !== newest).map((r) => ({ version: r.version, count: n(r.n) })),
+      // GitHub in chat: its app's three variables, by name (never a value; one that is only spaces counts as
+      // missing, as it does for githubReady), and CONNECTOR_KEYS, which it needs too.
+      github: {
+        setUp: githubReady(),
+        missing: [...GITHUB_SETUP.keys.filter((name) => !process.env[name]?.trim()), ...(connectorsReady() ? [] : ["CONNECTOR_KEYS"])],
+      },
     },
     byModel: byModel.map((r) => ({ model: r.model, provider: r.provider, requests: n(r.requests), costCents: n(r.cost) })),
     series,

@@ -5,17 +5,21 @@ import { msg } from "./i18n.ts";
  * file is safe for the browser: the services Flash offers ready-made, and the shapes the chat and
  * Settings share. Secrets never come here; the server keeps them (see server/connections.ts).
  *
- * Every preset is the service's own official MCP server. Some sign in with one click (OAuth, see
- * server/mcp-oauth.ts: the service's own page, where Flash registers itself, so the user only says
- * yes); some take a key or token the user makes in that service; Linear and Airtable do both, with
- * sign-in first. Only services whose servers work this way are listed, so every card works.
+ * Every preset but GitHub is the service's own official MCP server. Some sign in with one click
+ * (OAuth, see server/mcp-oauth.ts: the service's own page, where Flash registers itself, so the user
+ * only says yes); some take a key or token the user makes in that service; Linear and Airtable do
+ * both, with sign-in first. GitHub signs in through Flash's own GitHub App and uses Flash's own tools
+ * over GitHub's API (see server/github.ts); it is listed only once the app is set up. Only services
+ * that work this way are listed, so every card works.
  */
 
 export type Preset = {
   id: string;
   name: string;
-  // The service's official MCP server.
+  // The service's official MCP server (GitHub: its API, see rest).
   url: string;
+  // Not an MCP server: Flash's own tools over the service's API, with its own Connect (only GitHub, see server/github.ts).
+  rest?: boolean;
   // Connect signs in on the service's own page (OAuth). A preset with a keyName also takes a key.
   signIn?: boolean;
   // What the user pastes, and where to make one (the service's own page about its MCP server); none for a service that only signs in.
@@ -71,6 +75,17 @@ export const PRESETS: Preset[] = [
     blurb: msg("Your lists, profiles, campaigns and flows."),
     note: msg("You need the Owner, Admin or Manager role in Klaviyo."),
     color: "#1f6f5f",
+  },
+  {
+    id: "github",
+    name: "GitHub",
+    url: "https://api.github.com",
+    rest: true,
+    signIn: true,
+    help: "https://docs.github.com/en/apps/using-github-apps/authorizing-github-apps",
+    blurb: msg("Read code, issues and pull requests. Create issues and pull requests after you approve each one."),
+    note: msg("On GitHub, you pick the repositories Flash can use. To change them later, open Settings > Applications on GitHub."),
+    color: "#24292f",
   },
   {
     id: "firecrawl",

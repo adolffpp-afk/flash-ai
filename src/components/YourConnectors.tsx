@@ -12,11 +12,13 @@ import { useT } from "@/lib/use-t";
  * the service's own page (OAuth); some take a key or token the user makes there, and Linear and
  * Airtable do both, sign-in first. "Add your own connector" takes any public https MCP server, shown
  * with its host and every tool before it is added; one that asks for a sign-in is signed in to first,
- * and its tools are shown when the browser comes back. Keys are never shown again, only their last 4
- * characters. Until CONNECTOR_KEYS is set, users see nothing here, and the owner sees one line saying why.
+ * and its tools are shown when the browser comes back. GitHub connects through Flash's GitHub App,
+ * installed on the repositories the user picks there, and is offered only once that app is set up (github).
+ * Keys are never shown again, only their last 4 characters. Until CONNECTOR_KEYS is set, users see
+ * nothing here, and the owner sees one line saying why.
  */
 
-type Loaded = { ready: boolean; owner: boolean; connections: ConnectionView[] };
+type Loaded = { ready: boolean; owner: boolean; github?: boolean; connections: ConnectionView[] };
 type Preview = { host: string; tools: ToolPreview[]; signIn?: { authHost: string; needsClient: boolean; callback: string } };
 
 /** How a sign-in that came back here ended (?connect=…, set by /api/connect/mcp/callback), in the user's words. */
@@ -26,14 +28,17 @@ const OUTCOMES: Record<string, { text: string; ok: boolean }> = {
   cancelled: { text: msg("Sign-in was cancelled. Nothing was connected."), ok: false },
   expired: { text: msg("That sign-in expired or was already used. Try again."), ok: false },
   failed: { text: msg("The sign-in didn't work, so nothing was connected. Try again."), ok: false },
+  github_install: { text: msg("The Flash AI app isn't installed on any of your GitHub repositories. Connect again and pick the repositories it may use."), ok: false },
 };
 
 /**
  * Signs in: the server stores the attempt and answers with the service's own sign-in page, which the
  * browser opens. Only a web address is opened (the server allows https only, or the dev stand-in).
+ * GitHub has its own start (its app's installation page, or for Reconnect its authorize page).
  */
-async function signIn(request: Record<string, unknown>) {
-  const { url } = await api<{ url: string }>("/api/connect/mcp/start", { method: "POST", json: request });
+async function signIn(request: Record<string, unknown>, provider = "") {
+  const route = provider === "github" ? "/api/connect/github/start" : "/api/connect/mcp/start";
+  const { url } = await api<{ url: string }>(route, { method: "POST", json: request });
   const target = new URL(url);
   if (target.protocol !== "https:" && target.protocol !== "http:") throw new Error("Unexpected sign-in address.");
   window.location.assign(target.href);
@@ -166,7 +171,7 @@ export function YourConnectors() {
                   setData((d) => d && { ...d, connections: d.connections.filter((x) => x.id !== c.id) });
                 })
               }
-              onReconnect={() => attempt(() => signIn({ connectionId: c.id }))}
+              onReconnect={() => attempt(() => signIn({ connectionId: c.id }, c.provider))}
               onConfirm={() =>
                 attempt(async () => {
                   const { connection } = await api<{ connection: ConnectionView }>(`/api/connect/${c.id}`, { method: "PATCH", json: { confirm: true } });
@@ -181,7 +186,7 @@ export function YourConnectors() {
         <>
           <p className="text-sm text-zinc-300">{t("Add an account")}</p>
           <div className="grid gap-2 sm:grid-cols-2">
-            {PRESETS.map((p) => (
+            {PRESETS.filter((p) => !p.rest || data.github).map((p) => (
               <button
                 key={p.id}
                 type="button"
@@ -381,10 +386,11 @@ function ToolRow({
   return (
     <li className="flex items-start gap-3 py-2.5">
       <div className="min-w-0 flex-1">
+        {/* A title and description Flash wrote itself (GitHub's tools) are shown in the user's language; any other is the server's own. */}
         <p className="text-sm text-zinc-200">
-          {tool.title} <span className={hint}>· {tool.trusted ? t("Always allowed") : kindText(tool.kind, custom, t)}</span>
+          {t(tool.title)} <span className={hint}>· {tool.trusted ? t("Always allowed") : kindText(tool.kind, custom, t)}</span>
         </p>
-        {tool.description && <p className={`mt-0.5 line-clamp-3 ${hint}`}>{tool.description}</p>}
+        {tool.description && <p className={`mt-0.5 line-clamp-3 ${hint}`}>{t(tool.description)}</p>}
         {tool.changed ? (
           <div className="mt-1 text-xs">
             <p className="text-amber-300">
@@ -407,7 +413,7 @@ function ToolRow({
               <div className="mt-1.5 rounded-lg bg-white/[0.03] p-2.5">
                 <p className="text-zinc-500">{t("What it says now")}</p>
                 <p dir="auto" className="mt-0.5 whitespace-pre-wrap break-words text-zinc-200">
-                  {now.description}
+                  {t(now.description)}
                 </p>
                 <p className="mt-1 text-zinc-500">{kindText(now.kind, custom, t)}</p>
                 <button type="button" disabled={busy} onClick={() => onChange({ review: true, hash: now.hash })} className={`mt-2 ${button}`}>
@@ -430,7 +436,7 @@ function ToolRow({
           )
         )}
       </div>
-      <Switch on={tool.enabled} disabled={busy} name={t("Use {tool}", { tool: tool.title })} onChange={(enabled) => onChange({ enabled })} />
+      <Switch on={tool.enabled} disabled={busy} name={t("Use {tool}", { tool: t(tool.title) })} onChange={(enabled) => onChange({ enabled })} />
     </li>
   );
 }
@@ -475,7 +481,7 @@ function AddPreset({ preset, busy, attempt, onAdded, onCancel }: Adding & { pres
         {note}
         <p className={hint}>{t("You sign in at {name}. Flash never sees your password.", { name: preset.name })}</p>
         <div className="flex flex-wrap items-center gap-2">
-          <button type="button" className={primary} disabled={busy} onClick={() => attempt(() => signIn({ provider: preset.id }))}>
+          <button type="button" className={primary} disabled={busy} onClick={() => attempt(() => signIn({ provider: preset.id }, preset.id))}>
             {busy ? t("Connecting…") : t("Connect")}
           </button>
           <button type="button" className={button} onClick={onCancel}>

@@ -197,7 +197,8 @@ export async function* connectorCalls(
       out.set(call.id, { content: WAITING(`${tool.connection} ${tool.title}`), isError: false });
       continue;
     }
-    yield { type: "status", message: t("Using {name}…", { name: `${tool.connection} · ${tool.title}` }) };
+    // A title Flash wrote itself (GitHub's tools) is shown in the user's language; any other is the server's own.
+    yield { type: "status", message: t("Using {name}…", { name: `${tool.connection} · ${t(tool.title)}` }) };
     let result: { text: string; isError: boolean };
     try {
       result = await kit.run(tool, input, signal);

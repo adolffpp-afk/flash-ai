@@ -1,22 +1,27 @@
-import { appUrl, fromOwnPage, getUser, isAdmin, unauthorized } from "@/lib/server/auth.ts";
+import { appUrl, getUser, isAdmin, unauthorized } from "@/lib/server/auth.ts";
 import { translatorFor } from "@/lib/server/i18n.ts";
 import { connectorsReady } from "@/lib/server/secret-box.ts";
+import { githubReady } from "@/lib/server/github.ts";
 import { ConnectError, addConnection, listConnections, previewServer, problemText, removeConnection } from "@/lib/server/connections.ts";
+import { approvalAllowed } from "@/lib/server/pending-actions.ts";
 
 /*
  * The user's connected accounts (Settings > Connectors): GET lists them (never a secret, only its
  * last 4 characters), POST looks at a server's tools ("preview", or how it signs in when it asks for
- * that) or adds an account with a key ("add"; signing in is /api/connect/mcp/start), DELETE removes
- * one (an account that signed in is signed out at its server first). Until CONNECTOR_KEYS is set
- * nothing can be added (503), and the owner is told why; an account whose email isn't confirmed can't
- * look at or add one either (403, see confirmedOnly).
+ * that) or adds an account with a key ("add"; signing in is /api/connect/mcp/start, and GitHub's
+ * /api/connect/github/start), DELETE removes one (an account that signed in is signed out at its
+ * server first). Both change what is stored, so like an approval they are taken only with Flash's
+ * exact Origin (S-3). Until CONNECTOR_KEYS
+ * is set nothing can be added (503), and the owner is told why; an account whose email isn't
+ * confirmed can't look at or add one either (403, see confirmedOnly). github says whether GitHub can
+ * be connected: until the GitHub App is set up, it isn't offered and a GitHub account isn't listed.
  */
 
 export async function GET(request: Request) {
   const user = await getUser(request);
   if (!user) return unauthorized();
   const ready = connectorsReady();
-  return Response.json({ ready, owner: isAdmin(user), connections: ready ? await listConnections(user.id) : [] });
+  return Response.json({ ready, owner: isAdmin(user), github: githubReady(), connections: ready ? await listConnections(user.id) : [] });
 }
 
 type AddBody = { action?: unknown; provider?: unknown; url?: unknown; token?: unknown; label?: unknown; pins?: unknown };
@@ -27,7 +32,9 @@ export async function POST(request: Request) {
   const user = await getUser(request);
   if (!user) return unauthorized();
   const t = await translatorFor(request, user.language);
-  if (!fromOwnPage(request)) return Response.json({ error: t("Please use Flash's own page.") }, { status: 403 });
+  if (!approvalAllowed(request, [new URL(appUrl(request)).origin, new URL(request.url).origin])) {
+    return Response.json({ error: t("Please use Flash's own page.") }, { status: 403 });
+  }
   if (!connectorsReady()) return Response.json({ error: t("Connectors aren't set up yet.") }, { status: 503 });
   const body = (await request.json().catch(() => ({}))) as AddBody;
   const input = {
@@ -58,7 +65,9 @@ export async function DELETE(request: Request) {
   const user = await getUser(request);
   if (!user) return unauthorized();
   const t = await translatorFor(request, user.language);
-  if (!fromOwnPage(request)) return Response.json({ error: t("Please use Flash's own page.") }, { status: 403 });
+  if (!approvalAllowed(request, [new URL(appUrl(request)).origin, new URL(request.url).origin])) {
+    return Response.json({ error: t("Please use Flash's own page.") }, { status: 403 });
+  }
   const { id } = (await request.json().catch(() => ({}))) as { id?: unknown };
   if (typeof id !== "string" || !(await removeConnection(user.id, id))) return Response.json({ error: t("Not found") }, { status: 404 });
   return Response.json({ ok: true });
