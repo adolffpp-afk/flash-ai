@@ -26,7 +26,7 @@ const unless = (re: RegExp, not: RegExp): Term => ({ test: (s) => re.test(s) && 
 const NOT_MONEY = /\b(sales|revenue|budget|cash ?flow|demand|financial|earnings|profit|market|traffic|growth|inventory|population|template|staff\w*|election|rates?|prices?|stocks?|crypto|bitcoin|match|game|score)\b/i;
 // Temperatures and humidity that aren't the air outside: cooking, the body, rooms and machines, space, conversions.
 const NOT_AIR =
-  /\b(body|oven|room|bedroom|indoor|house|home|water|pool|bath|sauna|core|cpu|gpu|engine|server|fridge|refrigerator|freezer|cook\w*|bak\w*|roast\w*|grill\w*|fry\w*|internal|boil\w*|melt\w*|freez(e|er|ing point)|wash\w*|laundry|dryer|sun|surface|chicken|beef|steak|pork|turkey|fish|meat|bread|cake|wine|milk|baby|fever|venus|mars|mercury|jupiter|saturn|moon|space|planet|lava|convert|conversion|ideal|optimal|best|recommended|normal|safe|should be|humidor|greenhouse|incubator|sleep\w*)\b|\d+(\.\d+)? ?°? ?(f|c|fahrenheit|celsius)\b/i;
+  /\b(body|oven|room|bedroom|indoor|house|home|water|pool|bath|sauna|core|cpu|gpu|engine|server|fridge|refrigerator|freezer|cook\w*|bak\w*|roast\w*|grill\w*|fry\w*|internal|boil\w*|melt\w*|freez(e|er|ing point)|wash\w*|laundry|dryer|sun|surface|chicken|beef|steak|pork|turkey|fish|meat|bread|cake|wine|milk|baby|fever|venus|mars|mercury|jupiter|saturn|moon|space|planet|lava|convert|conversion|ideal|optimal|best|recommended|normal|safe|should be|humidor|greenhouse|incubator|sleep\w*)\b|(?<!\d)\d+(\.\d+)? ?°? ?(f|c|fahrenheit|celsius)\b/i;
 
 // ---------- English, firm ----------
 const EN_FIRM: Term[] = [

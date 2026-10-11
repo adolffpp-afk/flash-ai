@@ -874,7 +874,7 @@ export async function POST(request: Request) {
   // follows it (see followsForecast).
   const earlier = [...history.slice(0, -1)].reverse().find((turn) => turn.role === "user")?.content;
   const earlierText = typeof earlier === "string" ? earlier : "";
-  const auto = followsForecast(route(last.content, last.attachment?.mediaType, previous, { spoken }), last.content, earlierText, Boolean(last.attachment));
+  const auto = followsForecast(route(last.content, last.attachment?.mediaType, previous, { spoken }), last.content, earlierText, Boolean(last.attachment), previous);
   const override =
     body.engine && body.engine !== "auto" && (ENGINES as readonly string[]).includes(body.engine) ? body.engine : null;
   // The request the user agreed to the price of: the router and the picture check aren't asked again.
@@ -1039,9 +1039,10 @@ export async function POST(request: Request) {
     }
   }
   // A request Auto would send to Research that names one of the accounts turned on is answered with
-  // them, in Write: Research has no connectors. The router isn't asked to move it.
+  // them, in Write: Research has no connectors. The router isn't asked to move it. Each account's name
+  // is looked for once, not once for each of its tools, so a long message is read a few times at most.
   const namesAccount =
-    Boolean(kit) && !override && !decided && kit!.tools.some((tool) => namesWord(last.content, tool.connection));
+    Boolean(kit) && !override && !decided && [...new Set(kit!.tools.map((tool) => tool.connection))].some((name) => namesWord(last.content, name));
   if (namesAccount && engine === "search") {
     engine = "text";
     reason = t("You named one of your connected accounts, so Flash answers with it.");

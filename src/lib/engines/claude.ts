@@ -5,6 +5,7 @@ import {
   CLAUDE_PRICES,
   CONNECT_STEPS,
   MAX_OUTPUT_TOKENS,
+  MIN_OUTPUT_TOKENS,
   NO_TOOLS,
   WEATHER_RESULT_TOKENS,
   WEB_SEARCH_CENTS,
@@ -560,9 +561,13 @@ function afterSpending(err: unknown): unknown {
 export function echoedContent(content: Anthropic.Beta.BetaContentBlock[]): Anthropic.Beta.BetaContentBlock[] {
   const boundary = content.map((b) => b.type).lastIndexOf("fallback");
   if (boundary < 0) return content;
-  const answered = new Set(content.flatMap((b) => ("tool_use_id" in b ? [b.tool_use_id] : [])));
-  const kept = ["text", "server_tool_use", "web_search_tool_result", "web_fetch_tool_result", "fallback"];
-  return content.filter((b, i) => i >= boundary || (kept.includes(b.type) && (b.type !== "server_tool_use" || answered.has(b.id))));
+  // A server tool's result (a search, a page read, or the code that filters a search) goes back with
+  // its call, and a call goes back only with its result.
+  const isResult = (b: Anthropic.Beta.BetaContentBlock) => b.type.endsWith("_tool_result") && b.type !== "mcp_tool_result";
+  const answered = new Set(content.flatMap((b) => (isResult(b) && "tool_use_id" in b ? [b.tool_use_id] : [])));
+  return content.filter(
+    (b, i) => i >= boundary || b.type === "text" || b.type === "fallback" || isResult(b) || (b.type === "server_tool_use" && answered.has(b.id)),
+  );
 }
 
 /** A reply's forecasts so far: tool rounds, calls, and whether any came back with data. */
@@ -970,17 +975,21 @@ export async function* streamSearch(
       content.forEach((b, i) => {
         if (b.type === "text" || b.type === "thinking" || b.type === "tool_use" || b.type === "server_tool_use") lastSaid = i;
       });
-      const found = content.filter((b, i) => i > lastSaid && (b.type === "web_search_tool_result" || b.type === "web_fetch_tool_result"));
+      // After a refusal fallback, the model that answered never read what the declined one found before
+      // the last fallback block (see echoedContent), so the next call reads that for the first time too.
+      const boundary = content.map((b) => b.type).lastIndexOf("fallback");
+      const found = content.filter((b, i) => (i > lastSaid || i < boundary) && (b.type === "web_search_tool_result" || b.type === "web_fetch_tool_result"));
       const nextInput = inputOf(final.usage) + final.usage.output_tokens + tokensAtMost(JSON.stringify(found)) + (round?.tokens ?? 0);
       const left = budget.capCents - spent;
       maxTokens = Math.min(budget.maxTokens, tokensWithin("search", choice.model, nextInput, left, usesFallback(choice), plan));
-      if (round && !(maxTokens >= MIN_ROUND_TOKENS)) {
-        // Too little left for more searches and forecasts after this one: one last call answers with
-        // what it has, with no tools (tool_choice none), so it is paid for as a single call.
+      if (round && !(maxTokens >= (MIN_OUTPUT_TOKENS.search ?? 2000))) {
+        // Too little left for more searches and forecasts after this one, and for a full answer: one last
+        // call answers with what it has, with no tools (tool_choice none), so it is paid for as a single
+        // call. (Room that grew with the credits held would otherwise give some a shorter answer.)
         answerOnly = true;
         maxTokens = Math.min(budget.maxTokens, tokensWithin("search", choice.model, nextInput, left, usesFallback(choice), NO_TOOLS));
       }
-      if (!(maxTokens >= (round ? MIN_ROUND_TOKENS : 2000))) {
+      if (!(maxTokens >= (round ? MIN_ROUND_TOKENS : (MIN_OUTPUT_TOKENS.search ?? 2000)))) {
         if (round) yield lengthNote(budget, t);
         break;
       }

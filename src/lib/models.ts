@@ -27,7 +27,8 @@ export type ModelInfo = {
 };
 
 const PLATFORM = "(?:instagram|insta|ig|tik ?tok|facebook|fb)";
-const PLATFORM_LIST = `${PLATFORM}(?:,? (?:and |& |\\+ )?${PLATFORM})+`;
+// At most six in a row: a longer list still holds six, and an unbounded one is slow to check on a long message.
+const PLATFORM_LIST = `${PLATFORM}(?:,? (?:and |& |\\+ )?${PLATFORM}){1,5}`;
 
 /**
  * Asking for a social post pack: "a social media pack", or posts for two or more of Instagram, TikTok
