@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
-import { connectorsReady, lastFour, seal, unseal } from "../src/lib/server/secret-box.ts";
+import { connectorsReady, keyVersions, lastFour, seal, unseal } from "../src/lib/server/secret-box.ts";
 
 const key = () => randomBytes(32).toString("base64");
 const place = { id: "c1", userId: "u1", provider: "linear", field: "token" };
@@ -76,4 +76,36 @@ test("old key versions still open, and new secrets use the newest", () => {
 test("only the last four characters of a long secret are ever shown", () => {
   assert.equal(lastFour("re_1234567890abcd"), "abcd");
   assert.equal(lastFour("short"), "");
+});
+
+test("a key version that can't be read is said once, by name, never by value, and shows on /admin", () => {
+  const v1 = key();
+  const short = randomBytes(31).toString("base64");
+  const said: string[] = [];
+  const error = console.error;
+  console.error = (...args: unknown[]) => void said.push(args.join(" "));
+  try {
+    // A rotation typed by hand with mistakes: v2 a byte short, V3 in capitals.
+    process.env.CONNECTOR_KEYS = JSON.stringify({ v1, v2: short, V3: key() });
+    assert.equal(connectorsReady(), true);
+    assert.equal(seal("x", place).version, "v1", "new secrets are still sealed with v1");
+    assert.deepEqual(keyVersions(), {
+      newest: "v1",
+      skipped: [
+        { version: "v2", reason: "it isn't 32 bytes in base64" },
+        { version: "V3", reason: "its name isn't v1, v2, … in lower case" },
+      ],
+    });
+    connectorsReady();
+    seal("y", place);
+    assert.equal(said.length, 2, "said once for each entry, not on every use");
+    assert.match(said[0], /CONNECTOR_KEYS: v2 can't be used/);
+    assert.match(said[1], /CONNECTOR_KEYS: V3 can't be used/);
+    // A name that could be a pasted key isn't repeated.
+    process.env.CONNECTOR_KEYS = JSON.stringify({ v1, [key()]: v1 });
+    assert.deepEqual(keyVersions().skipped, [{ version: "an entry", reason: "its name isn't v1, v2, … in lower case" }]);
+    assert.ok(said.every((line) => !line.includes(v1) && !line.includes(short)), "never a key's value");
+  } finally {
+    console.error = error;
+  }
 });

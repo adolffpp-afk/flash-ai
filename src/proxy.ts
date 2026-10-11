@@ -1,11 +1,11 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { routeHost } from "@/lib/site-host";
+import { OUTBOUND_HEADER, routeHost } from "@/lib/site-host";
 
-/** Sends visits to a custom domain to the published site connected to it. */
+/** Sends visits to a custom domain to the published site connected to it, and refuses Flash calling itself. */
 export function proxy(request: NextRequest) {
   const appHost = process.env.FLASH_APP_URL ? new URL(process.env.FLASH_APP_URL).hostname : "";
   const host = request.headers.get("host") ?? "";
-  const route = routeHost(host, request.nextUrl.pathname, request.method, appHost);
+  const route = routeHost(host, request.nextUrl.pathname, request.method, appHost, request.headers.has(OUTBOUND_HEADER));
   if ("pass" in route) return NextResponse.next();
   if ("rewrite" in route) {
     // The query goes along, so Open as owner's one-time code reaches the site's page.

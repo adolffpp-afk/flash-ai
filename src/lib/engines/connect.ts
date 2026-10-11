@@ -129,6 +129,10 @@ export function toolName(prefix: string, tool: string, taken: Set<string>): stri
   return name;
 }
 
+/** What a reply's connector work throws once it is stopped: the stop's own reason when it is an error. */
+export const stopError = (signal: AbortSignal): Error =>
+  signal.reason instanceof Error ? signal.reason : new DOMException(String(signal.reason ?? "stopped"), "AbortError");
+
 /** A reply's connector calls so far: the accounts read (for the taint rule), and what was used. */
 export type ConnectState = { readFrom: Set<string>; used: ConnectorUse[] };
 
@@ -154,6 +158,8 @@ export async function* connectorCalls(
   const share = Math.floor(CONNECT_RESULT_TOKENS / Math.max(1, Math.min(calls.length, CONNECT_CALLS_PER_STEP)));
   let count = 0;
   for (const call of calls) {
+    // Stop ends the step: no call after it runs, and no card for one appears.
+    if (signal?.aborted) throw stopError(signal);
     const tool = tools.find((x) => x.name === call.name);
     if (!tool) continue;
     if (++count > CONNECT_CALLS_PER_STEP) {
@@ -168,6 +174,7 @@ export async function* connectorCalls(
     const input = call.input as Record<string, unknown>;
     if (needsApproval(tool, state.readFrom)) {
       const card = await kit.propose(tool, input);
+      if (signal?.aborted) throw stopError(signal);
       yield { type: "approve_action", action: card };
       out.set(call.id, { content: WAITING(`${tool.connection} ${tool.title}`), isError: false });
       continue;

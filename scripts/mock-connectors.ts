@@ -12,10 +12,14 @@ import { pathToFileURL } from "node:url";
  * - /mcp: both protocol eras (2026-07-28 and 2025-11-25), any token or none;
  * - /modern/mcp: 2026-07-28 only; /legacy/mcp: 2025-11-25 only, with a session;
  * - /secure/mcp: both eras, only with "Bearer good-token";
- * - /presets/<id>/mcp: what a preset vendor's server would be, with trusted annotations.
+ * - /presets/<id>/mcp: what a preset vendor's server would be, with trusted annotations;
+ * - /s/<anything>/mcp: like /mcp, for an address that holds a key, with one more tool, whereami,
+ *   which says back the whole address it was called at;
+ * - /redirect/mcp: like /mcp, but a tool call is answered with a redirect to an address that isn't one.
  * Tools: echo (a read), send_note (a write), changing (its description changes from its second
  * listing), big (200 KB of text), poisoned (its result tells Claude to call send_note), ask (asks for
- * more input) and region (a modern tool with an x-mcp-header parameter). Every call is recorded.
+ * more input) and region (a modern tool with an x-mcp-header parameter). Every call is recorded, and
+ * state.callDelayMs holds every tool call back that long (a slow server).
  */
 
 const MODERN = "2026-07-28";
@@ -25,7 +29,7 @@ export type MockCall = { path: string; era: "modern" | "legacy"; name: string; a
 
 type Rpc = { jsonrpc: "2.0"; id?: number | string; method: string; params?: Record<string, unknown> };
 
-function tools(listings: number, preset: boolean) {
+function tools(listings: number, preset: boolean, keyed = false) {
   const hint = (readOnly: boolean, destructive = false) => (preset ? { annotations: { readOnlyHint: readOnly, destructiveHint: destructive } } : {});
   return [
     { name: "echo", description: "Says back the text it is given.", inputSchema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] }, ...hint(true) },
@@ -50,6 +54,7 @@ function tools(listings: number, preset: boolean) {
       inputSchema: { type: "object", properties: { region: { type: "string", "x-mcp-header": "Region" }, query: { type: "string" } }, required: ["region"] },
       ...hint(true),
     },
+    ...(keyed ? [{ name: "whereami", description: "Says the address it was called at.", inputSchema: { type: "object", properties: {} } }] : []),
   ];
 }
 
@@ -69,8 +74,8 @@ export async function startMockConnectors(port = 7788) {
   const listings = new Map<string, number>();
   const sessions = new Set<string>();
   let sessionCount = 0;
-  // Answer as an event stream instead of JSON (both are allowed).
-  const state = { sse: false };
+  // Answer as an event stream instead of JSON (both are allowed), and hold tool calls back (ms).
+  const state = { sse: false, callDelayMs: 0 };
 
   const send = (res: ServerResponse, status: number, message: unknown, headers: Record<string, string> = {}) => {
     if (state.sse && status === 200) {
@@ -86,7 +91,8 @@ export async function startMockConnectors(port = 7788) {
     const url = new URL(req.url ?? "/", "http://mock");
     const path = url.pathname;
     const preset = /^\/presets\/[\w-]+\/mcp$/.test(path);
-    if (!["/mcp", "/modern/mcp", "/legacy/mcp", "/secure/mcp"].includes(path) && !preset) {
+    const keyed = /^\/s\/[^/]+\/mcp$/.test(path);
+    if (!["/mcp", "/modern/mcp", "/legacy/mcp", "/secure/mcp", "/redirect/mcp"].includes(path) && !preset && !keyed) {
       res.writeHead(404).end();
       return;
     }
@@ -156,14 +162,20 @@ export async function startMockConnectors(port = 7788) {
       case "tools/list": {
         const n = (listings.get(path) ?? 0) + 1;
         listings.set(path, n);
-        const all = tools(n, preset).filter((t) => modernRequest || t.name !== "region");
+        const all = tools(n, preset, keyed).filter((t) => modernRequest || t.name !== "region");
         return ok({ tools: all, ttlMs: 0, cacheScope: "private" });
       }
       case "tools/call": {
         const name = String(rpc.params?.name ?? "");
         const args = (rpc.params?.arguments ?? {}) as Record<string, unknown>;
         calls.push({ path, era, name, arguments: args, headers });
+        if (state.callDelayMs) await new Promise((r) => setTimeout(r, state.callDelayMs));
+        if (path === "/redirect/mcp") {
+          res.writeHead(307, { location: "http://[" }).end();
+          return;
+        }
         const text = (t: string) => ok({ content: [{ type: "text", text: t }] });
+        if (name === "whereami") return text(`Called at http://${req.headers.host}${req.url}`);
         if (name === "echo") return text(String(args.text ?? ""));
         if (name === "send_note") return text(`Sent to ${String(args.to ?? "")}.`);
         if (name === "changing") return text("The report is fine.");
@@ -195,6 +207,7 @@ export async function startMockConnectors(port = 7788) {
     reset: () => {
       listings.clear();
       calls.length = 0;
+      state.callDelayMs = 0;
     },
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };

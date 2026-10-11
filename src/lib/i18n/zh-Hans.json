@@ -512,6 +512,7 @@
  "Flash couldn't read this app's flash-data block because it's too long.": "Flash 无法读取此应用的 flash-data 块，因为它太长了。",
  "Flash couldn't read this app's flash-data block because the page has more than one.": "Flash 无法读取此应用的 flash-data 块，因为页面中有不止一个。",
  "Flash couldn't save the language. Please try again.": "Flash 无法保存语言设置，请重试。",
+ "Flash couldn't start this answer within the credits held for it. Try again in a moment.": "Flash 无法在为这条回复预留的积分内开始作答。请稍后再试。",
  "Flash couldn't use part of this app's flash-data block ({names}). Until it's fixed, visitors can see those collections, even ones it marks as private, but can't add to them or change them. Those only you could see before stay private.": "Flash 无法使用此应用 flash-data 块中的部分内容（{names}）。在修复之前，访客可以查看这些集合，包括其中标为私密的集合，但无法向其中添加内容或进行修改。之前仅你可见的集合仍保持私密。",
  "Flash couldn't use part of this app's flash-data block ({names}). Until it's fixed, visitors can still see those they could see before, but can't add to them or change them. The others are private, as your default says: visitors can add to them, but only you can see them.": "Flash 无法使用此应用 flash-data 块中的部分内容（{names}）。在修复之前，访客仍可查看他们之前能看到的集合，但无法向其中添加内容或进行修改。其余集合按你的默认设置为私密：访客可以向其中添加内容，但只有你能查看。",
  "Flash couldn't write the posts this time. Please try again.": "Flash 这次没能写好帖子，请重试。",

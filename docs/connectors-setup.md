@@ -22,7 +22,8 @@ When the deploy is done, **By provider** no longer lists "Missing CONNECTOR_KEYS
 Settings > Connectors.
 
 Keep the value somewhere safe (a password manager). If it is lost, every connected account stops
-working, and people have to remove and add their accounts again.
+working: each one is marked "needs to be connected again" the next time it is used, and people have
+to remove and add it again.
 
 ## Change the key (rotation)
 
@@ -32,9 +33,13 @@ the newest version.
 1. On /admin → **By provider** → **Connectors**, click **Make a new key version** and copy it.
 2. In Vercel, edit `CONNECTOR_KEYS` and add the new key beside the old one with the next number:
    `{"v1":"<old>","v2":"<new key>"}`. Redeploy.
+   Then check /admin → **By provider** → **Connectors**: it says which version seals new keys
+   ("New keys are sealed with v2"), and lists any entry it can't read (a name like `V2`, or a key
+   that isn't 32 bytes) so you can fix it. Flash's logs say the same, by name, never the value.
 3. Only drop `v1` once nothing uses it. In the database:
    `SELECT COUNT(*) FROM connections WHERE key_version = 'v1';` must be 0. An account sealed with a
-   dropped version stops working until its owner removes it and adds it again.
+   dropped version is marked "needs to be connected again" the next time it is used, and stops
+   working until its owner removes it and adds it again.
 
 ## Try it without real accounts
 

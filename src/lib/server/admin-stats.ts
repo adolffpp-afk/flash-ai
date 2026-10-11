@@ -1,7 +1,7 @@
 import { all, one } from "./db.ts";
 import { CREDIT_PACKS, MARKUP, PLANS, paymentFeeCents, planPrice, worstCaseProfitCents } from "../credits.ts";
 import { CONNECTOR_SETUP, PROVIDER_LIST, missingKeys, providerName } from "../providers.ts";
-import { connectorsReady } from "./secret-box.ts";
+import { connectorsReady, keyVersions } from "./secret-box.ts";
 import { profitReport } from "./profit.ts";
 import { feeBps } from "./shop.ts";
 
@@ -141,9 +141,11 @@ export async function adminStats(days: number) {
     byEngine: byEngine.map((r) => ({ engine: r.engine, requests: n(r.requests), credits: n(r.credits), costCents: n(r.cost) })),
     byProvider,
     // Whether connectors can be used: CONNECTOR_KEYS is set and holds a usable key (never its value).
+    // With the version sealing new secrets and the entries that can't be used (by name), so a mistyped rotation shows.
     connectors: {
       setUp: connectorsReady(),
       missing: connectorsReady() ? [] : missingKeys(CONNECTOR_SETUP, process.env).length ? missingKeys(CONNECTOR_SETUP, process.env) : ["a usable CONNECTOR_KEYS (the one set can't be read)"],
+      ...keyVersions(),
     },
     byModel: byModel.map((r) => ({ model: r.model, provider: r.provider, requests: n(r.requests), costCents: n(r.cost) })),
     series,

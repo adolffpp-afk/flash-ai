@@ -6,7 +6,7 @@ import { McpClient, McpError, type McpTool } from "./mcp-client.ts";
 import { checkUrl, mockOrigin, SafeFetchError } from "./safe-fetch.ts";
 import { claimAction, finishAction, proposeAction, type ActionRow } from "./pending-actions.ts";
 import { CONNECTION_ID, MAX_CONNECTIONS, presetById, type ConnectionView, type Preset, type ToolKind, type ToolPreview } from "../connectors.ts";
-import { cleanSchema, cut, toolName, type ConnectorKit, type ConnectorTool } from "../engines/connect.ts";
+import { cleanSchema, cut, stopError, toolName, type ConnectorKit, type ConnectorTool } from "../engines/connect.ts";
 import { CONNECT_RESULT_TOKENS } from "../credits.ts";
 import { english, msg, type Translate } from "../i18n.ts";
 
@@ -137,12 +137,42 @@ export function kindOf(tool: McpTool, preset?: Preset): ToolKind {
   return "unknown";
 }
 
-/** Takes out the connection's own secret (and its last 8 characters) from anything a server sends back. */
-export function scrub(text: string, secret: string): string {
-  if (!secret) return text;
-  let out = text.split(secret).join("[hidden]");
-  if (secret.length >= 12) out = out.split(secret.slice(-8)).join("[hidden]");
+/**
+ * Takes out the connection's own secret (and its last 8 characters) from anything a server sends back,
+ * and the parts of its address that may be one (see addressSecrets), whole.
+ */
+export function scrub(text: string, secret: string, parts: string[] = []): string {
+  let out = text;
+  if (secret) {
+    out = out.split(secret).join("[hidden]");
+    if (secret.length >= 12) out = out.split(secret.slice(-8)).join("[hidden]");
+  }
+  // Longest first, so a part inside another is never left half shown.
+  for (const part of [...parts].sort((a, b) => b.length - a.length)) out = out.split(part).join("[hidden]");
   return out;
+}
+
+/**
+ * The parts of a server address the user gave that may hold a key (its query values and path
+ * segments of 12 characters or more), as written and decoded. A server that sends its own address
+ * back can't show them.
+ */
+export function addressSecrets(address: string): string[] {
+  let url: URL;
+  try {
+    url = new URL(address);
+  } catch {
+    return [];
+  }
+  const decode = (s: string) => {
+    try {
+      return decodeURIComponent(s.replace(/\+/g, " "));
+    } catch {
+      return s;
+    }
+  };
+  const raw = [...url.search.slice(1).split("&").map((pair) => pair.slice(pair.indexOf("=") + 1)), ...url.pathname.split("/")];
+  return [...new Set(raw.flatMap((s) => [s, decode(s)]))].filter((s) => s.length >= 12);
 }
 
 function view(row: ConnectionRow, tools: ToolRow[]): ConnectionView {
@@ -309,23 +339,41 @@ async function owned(userId: string, id: string): Promise<ConnectionRow> {
   return row;
 }
 
-/** A client for one of the user's connections, with its secret (and a server it added, its whole address) opened. */
-function clientFor(row: ConnectionRow, signal?: AbortSignal): { client: McpClient; secret: string } {
-  const secret = row.enc_secret ? unseal(row.enc_secret, place(row)) : "";
-  const url = row.enc_url ? unseal(row.enc_url, place(row, "url")) : serverUrl(row.provider, row.url);
-  return { client: new McpClient({ url, token: secret, protocol: row.protocol }, { signal }), secret };
+/** A connection's server, opened to call it: the client, its secret, and what of its address to hide (see scrub). */
+type Opened = { client: McpClient; secret: string; parts: string[] };
+
+/**
+ * A client for one of the user's connections, with its secret (and a server it added, its whole
+ * address) opened. A secret that can't be opened (CONNECTOR_KEYS lost the key that sealed it) is an
+ * "auth" problem, so the account is marked to be connected again.
+ */
+function clientFor(row: ConnectionRow, signal?: AbortSignal): Opened {
+  let secret: string;
+  let url: string;
+  try {
+    secret = row.enc_secret ? unseal(row.enc_secret, place(row)) : "";
+    url = row.enc_url ? unseal(row.enc_url, place(row, "url")) : serverUrl(row.provider, row.url);
+  } catch {
+    throw new McpError("auth", "The stored key can't be opened.");
+  }
+  return { client: new McpClient({ url, token: secret, protocol: row.protocol }, { signal }), secret, parts: row.enc_url ? addressSecrets(url) : [] };
 }
+
+/** Marks a connection to be connected again: its server refused its key, or the key can't be opened. */
+const needsReconnect = (id: string) => run("UPDATE connections SET status = 'needs_reconnect' WHERE id = ?", [id]);
 
 /** One tool of a connection as its server lists it now (null when it no longer has it). */
 async function liveTool(userId: string, row: ConnectionRow, name: string): Promise<McpTool | null> {
   await tryLimit(userId);
-  const { client } = clientFor(row);
+  let client: McpClient | null = null;
   try {
+    client = clientFor(row).client;
     return (await client.listTools()).find((t) => t.name === name) ?? null;
   } catch (err) {
+    if (err instanceof McpError && err.code === "auth") await needsReconnect(row.id);
     throw asProblem(err);
   } finally {
-    await client.close();
+    await client?.close();
   }
 }
 
@@ -380,24 +428,34 @@ export async function updateConnection(
   return (await listConnections(userId)).find((c) => c.id === id)!;
 }
 
-/** Calls one tool on a connection, under the per-account limit, and returns its text without the secret. */
-async function callOn(row: ConnectionRow, client: McpClient, secret: string, tool: Pick<ToolRow, "name" | "schema">, input: Record<string, unknown>) {
+/**
+ * Calls one tool on a connection, under the per-account limit, and returns its text without the
+ * secret or the address's secret-looking parts. Stop (signal) ends it and goes on as it is; any other
+ * failure is a tool error in Flash's own words, so nothing that could hold the address is ever passed
+ * on or logged. The log has the connection's id, service, tool, outcome and time only.
+ */
+async function callOn(row: ConnectionRow, opened: Opened, tool: Pick<ToolRow, "name" | "schema">, input: Record<string, unknown>, signal?: AbortSignal) {
+  if (signal?.aborted) throw stopError(signal);
   if (await overLimit(`conn:${row.user_id}:${row.id}`, CALLS_PER_HOUR, HOUR)) {
     return { text: "Flash's limit of 120 calls an hour to this account was reached. Tell the user to try again later.", isError: true };
   }
   const started = Date.now();
   let status = "ok";
   try {
-    const out = await client.callTool({ name: tool.name, inputSchema: JSON.parse(tool.schema) as Record<string, unknown> }, input);
+    const out = await opened.client.callTool({ name: tool.name, inputSchema: JSON.parse(tool.schema) as Record<string, unknown> }, input);
     if (out.isError) status = "tool_error";
-    return { text: scrub(out.text, secret), isError: out.isError };
+    return { text: scrub(out.text, opened.secret, opened.parts), isError: out.isError };
   } catch (err) {
-    if (!(err instanceof McpError)) {
+    if (signal?.aborted) {
       status = "stopped";
-      throw err;
+      throw stopError(signal);
+    }
+    if (!(err instanceof McpError)) {
+      status = "failed";
+      return { text: "The tool couldn't be called.", isError: true };
     }
     status = err.code;
-    return { text: scrub(err.message, secret), isError: true };
+    return { text: scrub(err.message, opened.secret, opened.parts), isError: true };
   } finally {
     console.log(`[flash] connector ${row.id} ${row.provider} ${tool.name} ${status} ${Date.now() - started}ms`);
   }
@@ -454,7 +512,7 @@ export async function chatKit(userId: string, ids: string[], { replyId = "", sig
     }
   });
   if (!tools.length) return null;
-  const open = new Map<string, { client: McpClient; secret: string }>();
+  const open = new Map<string, Opened>();
   const connect = (row: ConnectionRow) => {
     let c = open.get(row.id);
     if (!c) {
@@ -491,7 +549,7 @@ export async function chatKit(userId: string, ids: string[], { replyId = "", sig
           } catch (err) {
             if (signal?.aborted) throw err;
             console.log(`[flash] connector ${row.id} ${row.provider} list ${err instanceof McpError ? err.code : "failed"}`);
-            if (err instanceof McpError && err.code === "auth") await run("UPDATE connections SET status = 'needs_reconnect' WHERE id = ?", [row.id]);
+            if (err instanceof McpError && err.code === "auth") await needsReconnect(row.id);
             unreachable.push(row.label);
             return [];
           }
@@ -501,9 +559,16 @@ export async function chatKit(userId: string, ids: string[], { replyId = "", sig
     },
     async run(tool, input) {
       const row = rowOf(tool.connectionId);
-      const { client, secret } = connect(row);
       const pinned = tools.find((t) => t.name === tool.name)!;
-      return callOn(row, client, secret, { name: pinned.tool, schema: pinned.schemaJson }, input);
+      let opened: Opened;
+      try {
+        opened = connect(row);
+      } catch (err) {
+        if (!(err instanceof McpError)) throw err;
+        if (err.code === "auth") await needsReconnect(row.id);
+        return { text: err.message, isError: true };
+      }
+      return callOn(row, opened, { name: pinned.tool, schema: pinned.schemaJson }, input, signal);
     },
     propose(tool, input) {
       const pinned = tools.find((t) => t.name === tool.name)!;
@@ -561,10 +626,11 @@ export async function runApproved(userId: string, id: string, hash: string): Pro
   if (!row) return fail(NOT_RUN.gone);
   const pinned = await one<ToolRow>("SELECT * FROM connection_tools WHERE connection_id = ? AND name = ?", [row.id, action.tool]);
   if (!pinned || pinned.changed || pinned.hash !== action.tool_hash) return fail(NOT_RUN.changed);
-  let opened: { client: McpClient; secret: string };
+  let opened: Opened;
   try {
     opened = clientFor(row);
   } catch {
+    await needsReconnect(row.id);
     return fail(NOT_RUN.reconnect);
   }
   try {
@@ -573,7 +639,7 @@ export async function runApproved(userId: string, id: string, hash: string): Pro
       await run("UPDATE connection_tools SET changed = 1 WHERE connection_id = ? AND name = ?", [row.id, action.tool]);
       return fail(NOT_RUN.changed);
     }
-    const out = await callOn(row, opened.client, opened.secret, pinned, JSON.parse(action.input_json) as Record<string, unknown>);
+    const out = await callOn(row, opened, pinned, JSON.parse(action.input_json) as Record<string, unknown>);
     // Kept for the card, and for Continue, cut as a step's results are.
     const kept = cut(out.text, CONNECT_RESULT_TOKENS);
     await finishAction(action.id, !out.isError, kept);
@@ -581,7 +647,7 @@ export async function runApproved(userId: string, id: string, hash: string): Pro
   } catch (err) {
     const problem = asProblem(err);
     if (problem instanceof ConnectError) {
-      if (problem.code === "auth") await run("UPDATE connections SET status = 'needs_reconnect' WHERE id = ?", [row.id]);
+      if (problem.code === "auth") await needsReconnect(row.id);
       return fail(problemText(problem.code, english));
     }
     return fail(NOT_RUN.failed);

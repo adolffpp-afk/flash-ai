@@ -223,3 +223,70 @@ test("the dev mock origin is let through only off Vercel, and only that one orig
     else process.env.VERCEL_ENV = before.vercel;
   }
 });
+
+test("a redirect to something that isn't an address is a server problem, said without the address", async () => {
+  const resolve = resolver({ "a.example.com": ["93.184.216.34"] });
+  const send: typeof sendTo = async (url) => ({ status: 307, headers: { location: "http://[" }, contentType: "", body: "", url: url.href });
+  const err = await safeFetch("https://a.example.com/s/sk_live_PATHSECRET/mcp?api_key=QUERYSECRET1", {}, { resolve, send }).catch((e: unknown) => e);
+  assert.ok(err instanceof SafeFetchError && err.code === "network", String(err));
+  assert.equal((err as Error).message, "That server sent a redirect Flash couldn't follow.");
+  // Nothing about it can print the address: not its message, its fields or its stack.
+  const printed = `${(err as Error).stack} ${JSON.stringify(err)} ${Object.values(err as object).join(" ")}`;
+  assert.doesNotMatch(printed, /SECRET|a\.example\.com/);
+});
+
+test("a slow name lookup keeps to the request's time and to Stop", async () => {
+  const slow: Resolver = () => new Promise((r) => setTimeout(() => r([{ address: "93.184.216.34", family: 4 }]), 3000));
+  let sent = 0;
+  const send: typeof sendTo = async (url) => {
+    sent++;
+    return { status: 200, headers: {}, contentType: "application/json", body: "{}", url: url.href };
+  };
+  let started = Date.now();
+  await assert.rejects(safeFetch("https://slow.example.com/", { timeoutMs: 200 }, { resolve: slow, send }), (e: unknown) => e instanceof SafeFetchError && e.code === "timeout");
+  assert.ok(Date.now() - started < 1500, "the time ran out during the lookup");
+  const stop = new AbortController();
+  started = Date.now();
+  setTimeout(() => stop.abort("stop"), 100);
+  const err = await safeFetch("https://slow.example.com/", { signal: stop.signal }, { resolve: slow, send }).catch((e: unknown) => e);
+  assert.ok(Date.now() - started < 1500, "Stop ended the lookup");
+  // Stop is the caller's own reason, never a server that took too long.
+  assert.ok(err instanceof DOMException && err.name === "AbortError" && !(err instanceof SafeFetchError), String(err));
+  assert.equal(sent, 0, "nothing was sent");
+});
+
+test("Stop during a request is the caller's stop, not a timeout", async () => {
+  const server = createServer(() => {
+    // Never answers.
+  });
+  const port = await listen(server);
+  try {
+    const stop = new AbortController();
+    setTimeout(() => stop.abort("stop"), 100);
+    const err = await sendTo(new URL(`http://127.0.0.1:${port}/x`), { address: "127.0.0.1", family: 4 }, {}, {}, stop.signal, 1000).catch((e: unknown) => e);
+    assert.ok(err instanceof DOMException && err.name === "AbortError", String(err));
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+});
+
+test("every request Flash sends to a user's address says it comes from Flash, which Flash refuses to answer", async () => {
+  const { OUTBOUND_HEADER, routeHost } = await import("../src/lib/site-host.ts");
+  const server = createServer((req, res) => {
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ marked: req.headers[OUTBOUND_HEADER] }));
+  });
+  const port = await listen(server);
+  try {
+    const res = await sendTo(new URL(`http://127.0.0.1:${port}/x`), { address: "127.0.0.1", family: 4 }, {}, {}, new AbortController().signal, 1000);
+    assert.equal(JSON.parse(res.body).marked, "1");
+  } finally {
+    server.close();
+  }
+  // Any of Flash's addresses, its own list knows it or not, refuses it (see src/proxy.ts).
+  for (const host of ["flash-ai-pi.vercel.app", "flash-ai-git-connectors-1-flashteam.vercel.app", "www.flash-app.dev", "crumbbakery.com"]) {
+    assert.deepEqual(routeHost(host, "/mcp", "POST", "", true), { notFound: true }, host);
+  }
+  assert.deepEqual(routeHost("flash-ai-pi.vercel.app", "/mcp", "POST"), { pass: true }, "everyone else still reaches it");
+});

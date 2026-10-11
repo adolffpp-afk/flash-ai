@@ -577,5 +577,6 @@ export function finalCredits(r: {
     const incurred = r.costCents + (r.pendingCents ?? 0);
     return incurred > 0 ? Math.min(r.held, creditsFor(incurred)) : 0;
   }
-  return Math.min(r.held, creditsFor(r.costCents));
+  // A reply that made no call (one whose first step didn't fit, see streamText) costs nothing.
+  return r.costCents > 0 ? Math.min(r.held, creditsFor(r.costCents)) : 0;
 }

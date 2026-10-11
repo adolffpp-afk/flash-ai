@@ -19,15 +19,24 @@ function textOf(node: ReactNode): string {
   return "";
 }
 
+// Stands for the page a link is on, to read links written without a scheme ("//host/…") as a browser does.
+const HERE = "https://flash.invalid/";
+
 /** The host a web link goes to, or "" for anything else (a link inside Flash, an email address). */
 export function linkHost(href: string | undefined): string {
   if (!href) return "";
+  let url: URL;
   try {
-    const url = new URL(href);
-    return url.protocol === "https:" || url.protocol === "http:" ? url.host : "";
+    url = new URL(href);
   } catch {
-    return "";
+    try {
+      url = new URL(href, HERE);
+    } catch {
+      return "";
+    }
   }
+  if (url.host === new URL(HERE).host) return "";
+  return url.protocol === "https:" || url.protocol === "http:" ? url.host : "";
 }
 
 export const safeMarkdown: Components = {
@@ -35,7 +44,9 @@ export const safeMarkdown: Components = {
   a({ href, children }) {
     const host = linkHost(href);
     const link = createElement("a", { href, target: "_blank", rel: "noreferrer noopener" }, children);
-    if (!host || textOf(children).toLowerCase().includes(host.toLowerCase())) return link;
+    // Left out only when the words are that host, or an address on it: words that merely mention it can still hide where a link goes.
+    const text = textOf(children).trim().toLowerCase();
+    if (!host || text === host || linkHost(text) === host) return link;
     return createElement(Fragment, null, link, createElement("span", { className: "link-host" }, ` (${host})`));
   },
 };

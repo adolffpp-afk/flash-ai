@@ -30,7 +30,7 @@ type Stats = {
     costCents: number;
   }[];
   // CONNECTOR_KEYS: whether connectors can be used, and what's missing (never the value).
-  connectors: { setUp: boolean; missing: string[] };
+  connectors: { setUp: boolean; missing: string[]; newest: string; skipped: { version: string; reason: string }[] };
   byModel: { model: string; provider: string; requests: number; costCents: number }[];
   series: { day: number; requests: number; costCents: number }[];
   topUsers: { email: string; requests: number; credits: number; costCents: number }[];
@@ -126,7 +126,7 @@ function Panel({ title, children, note }: { title: string; children: React.React
  * source, shown once to copy into Vercel. It is never sent anywhere; Flash reads it only from its
  * environment, and no page or API ever shows it again.
  */
-function ConnectorKeyMaker({ setUp, missing }: { setUp: boolean; missing: string[] }) {
+function ConnectorKeyMaker({ setUp, missing, newest, skipped }: Stats["connectors"]) {
   const [value, setValue] = useState("");
   const [copied, setCopied] = useState(false);
   const make = () => {
@@ -148,13 +148,24 @@ function ConnectorKeyMaker({ setUp, missing }: { setUp: boolean; missing: string
     <div className="space-y-3 text-sm">
       <p>
         {setUp ? (
-          <span className="text-emerald-300">Set. Users can connect their own accounts in Settings &gt; Connectors.</span>
+          <span className="text-emerald-300">
+            Set. Users can connect their own accounts in Settings &gt; Connectors. New keys are sealed with {newest}.
+          </span>
         ) : (
           <span className="text-zinc-400">
             Not set. Missing {missing.join(", ")}. Until it is, users don&apos;t see connectors at all.
           </span>
         )}
       </p>
+      {skipped.length > 0 && (
+        <ul className="space-y-1 text-xs text-amber-300">
+          {skipped.map((s) => (
+            <li key={s.version + s.reason}>
+              {s.version} in CONNECTOR_KEYS can&apos;t be read: {s.reason}. Fix it in Vercel and redeploy.
+            </li>
+          ))}
+        </ul>
+      )}
       {setUp && (
         <p className="text-xs text-zinc-500">
           Keep CONNECTOR_KEYS as it is: every connected account is sealed with it. To change it, make a new key below and add it
@@ -577,7 +588,7 @@ export function AdminDashboard() {
               />
             </Panel>
             <Panel title="Connectors" note="Users' own accounts in chat. Their keys and tokens are sealed with CONNECTOR_KEYS.">
-              <ConnectorKeyMaker setUp={stats.connectors.setUp} missing={stats.connectors.missing} />
+              <ConnectorKeyMaker {...stats.connectors} />
             </Panel>
             <Panel title="Other bills" note="Payments and the bills you added under Net profit">
               <Table

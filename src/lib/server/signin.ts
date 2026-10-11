@@ -5,7 +5,7 @@
  */
 import { backfillEmailKeys, emailKey, endAllSessions, markVerified } from "./account.ts";
 import { ensureMonthlyCredits } from "./credits.ts";
-import { all, one, run, now } from "./db.ts";
+import { all, db, one, run, now } from "./db.ts";
 import { randomId, sha256 } from "./ids.ts";
 import type { Profile } from "./oauth.ts";
 import { verificationRequired } from "./email.ts";
@@ -29,7 +29,9 @@ export async function findAccount(email: string): Promise<Account | null> {
 /**
  * The person just proved they own the account's inbox. If the account was never confirmed,
  * whoever created it may not have been them, so the password and sign-ins set up before now are
- * dropped (they can set a password again with "Forgot password").
+ * dropped (they can set a password again with "Forgot password"), and so are the connected accounts
+ * (Settings > Connectors), with their tools, what was always allowed and the cards still waiting:
+ * a server someone else added must never get the owner's tool calls.
  */
 async function claim(account: Account): Promise<void> {
   if (Number(account.verified_at) > 0) return;
@@ -37,6 +39,15 @@ async function claim(account: Account): Promise<void> {
     await run("UPDATE users SET password_hash = '' WHERE id = ?", [account.id]);
     await run("DELETE FROM identities WHERE user_id = ?", [account.id]);
     await endAllSessions(account.id);
+    // Each deleted by hand, in one batch (Turso runs with foreign keys off; see removeConnection).
+    await (await db()).batch(
+      [
+        { sql: "DELETE FROM pending_actions WHERE user_id = ?", args: [account.id] },
+        { sql: "DELETE FROM connection_tools WHERE connection_id IN (SELECT id FROM connections WHERE user_id = ?)", args: [account.id] },
+        { sql: "DELETE FROM connections WHERE user_id = ?", args: [account.id] },
+      ],
+      "write",
+    );
   }
   await markVerified(account.id);
   await ensureMonthlyCredits(account.id);

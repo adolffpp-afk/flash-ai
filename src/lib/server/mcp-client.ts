@@ -24,6 +24,9 @@ const CLIENT_INFO = { name: "Flash AI", version: "1.0.0" };
 // What Flash keeps of a server's tool list (see S-4 in the connectors plan).
 export const MAX_TOOLS = 30;
 export const MAX_DESCRIPTION_CHARS = 1000;
+// The most a tool's input schema may be, as JSON: generous for real services, while a server can't
+// make every step read a huge schema the user never sees. A tool with a bigger one is left out.
+export const MAX_SCHEMA_CHARS = 32_000;
 const MAX_PAGES = 5;
 const LIST_TIMEOUT_MS = 15_000;
 export const CALL_TIMEOUT_MS = 20_000;
@@ -63,9 +66,24 @@ export function canonicalJson(value: unknown): string {
   return JSON.stringify(value ?? null);
 }
 
-/** The pin of a tool: a hash of its name, its full description and its input schema. */
-export const toolHash = (name: string, description: string, inputSchema: unknown) =>
-  createHash("sha256").update(canonicalJson([name, description, inputSchema ?? {}])).digest("hex");
+/**
+ * The pin of a tool: a hash of its name, its full description, its input schema, and its title and
+ * annotations (what Flash shows on a card and what decides whether it asks first). A tool whose
+ * server changes any of them is a changed tool.
+ */
+export const toolHash = (name: string, description: string, inputSchema: unknown, shown: { title?: string; annotations?: Record<string, unknown> } = {}) =>
+  createHash("sha256")
+    .update(canonicalJson([name, description, inputSchema ?? {}, { title: shown.title ?? "", annotations: shown.annotations ?? {} }]))
+    .digest("hex");
+
+/** A schema with every description in it cut to MAX_DESCRIPTION_CHARS, like the tool's own. */
+function cutDescriptions(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(cutDescriptions);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, k === "description" && typeof v === "string" ? v.slice(0, MAX_DESCRIPTION_CHARS) : cutDescriptions(v)]),
+  );
+}
 
 const TOKEN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 
@@ -364,22 +382,24 @@ export function readTool(raw: unknown, modern = true): McpTool | null {
   const schema = t.inputSchema && typeof t.inputSchema === "object" && !Array.isArray(t.inputSchema) ? (t.inputSchema as Record<string, unknown>) : { type: "object" };
   // A tool whose header parameters break the rules is left out, as the spec says.
   if (modern && headerParams(schema) === null) return null;
+  if (canonicalJson(schema).length > MAX_SCHEMA_CHARS) return null;
   const description = typeof t.description === "string" ? t.description : "";
   const a = t.annotations && typeof t.annotations === "object" ? (t.annotations as Record<string, unknown>) : {};
   const flag = (key: string) => (typeof a[key] === "boolean" ? (a[key] as boolean) : undefined);
   const title = typeof t.title === "string" ? t.title : typeof a.title === "string" ? a.title : "";
+  const annotations = {
+    readOnlyHint: flag("readOnlyHint"),
+    destructiveHint: flag("destructiveHint"),
+    idempotentHint: flag("idempotentHint"),
+    openWorldHint: flag("openWorldHint"),
+  };
   return {
     name: t.name,
     title: title.slice(0, 100),
     description: description.slice(0, MAX_DESCRIPTION_CHARS),
-    inputSchema: { ...schema, type: "object" },
-    annotations: {
-      readOnlyHint: flag("readOnlyHint"),
-      destructiveHint: flag("destructiveHint"),
-      idempotentHint: flag("idempotentHint"),
-      openWorldHint: flag("openWorldHint"),
-    },
-    hash: toolHash(t.name, description, t.inputSchema ?? {}),
+    inputSchema: { ...(cutDescriptions(schema) as Record<string, unknown>), type: "object" },
+    annotations,
+    hash: toolHash(t.name, description, t.inputSchema ?? {}, { title, annotations }),
   };
 }
 

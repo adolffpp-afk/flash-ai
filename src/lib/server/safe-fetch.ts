@@ -2,13 +2,15 @@ import { lookup as dnsLookup } from "node:dns/promises";
 import { request as httpRequest, type IncomingMessage, type RequestOptions } from "node:http";
 import { request as httpsRequest } from "node:https";
 import { BlockList, isIP, type LookupFunction } from "node:net";
+import { OUTBOUND_HEADER } from "../site-host.ts";
 
 /*
  * Every server-side request to an address a user typed (a connector's server), or found from one,
  * goes through safeFetch, so a user can't point Flash at its own network, the cloud's metadata
  * service or another private address. It:
  * - takes https on port 443 only, with no user name or password in the address, no IP addresses,
- *   no local or internal names, and never Flash's own hosts;
+ *   no local or internal names, and never Flash's own hosts (and marks every request it sends with
+ *   OUTBOUND_HEADER, which Flash refuses, for an address of Flash's that isn't on that list);
  * - looks the name up itself and connects only to an address it checked (every address the name has
  *   must be public, so a name that also points inside can't be used to switch between them);
  * - follows at most 3 redirects, checking each one the same way and dropping the Authorization
@@ -133,13 +135,25 @@ export type Resolved = { address: string; family: number };
 export type Resolver = (hostname: string) => Promise<Resolved[]>;
 const systemResolver: Resolver = (hostname) => dnsLookup(hostname, { all: true, verbatim: true });
 
-/** The address to connect to for a name: the first, once every one has been checked. */
-async function vetted(hostname: string, resolve: Resolver): Promise<Resolved> {
+/**
+ * The address to connect to for a name: the first, once every one has been checked. The lookup
+ * keeps to the request's time and Stop (signal): a slow name server can't hold either up.
+ */
+async function vetted(hostname: string, resolve: Resolver, signal: AbortSignal): Promise<Resolved> {
   let found: Resolved[];
+  let onAbort = () => {};
+  const stopped = new Promise<never>((_, reject) => {
+    onAbort = () => reject(abortError(signal));
+    if (signal.aborted) onAbort();
+    else signal.addEventListener("abort", onAbort, { once: true });
+  });
   try {
-    found = await resolve(hostname);
+    found = await Promise.race([resolve(hostname), stopped]);
   } catch {
+    if (signal.aborted) throw abortError(signal);
     throw new SafeFetchError("network", "That server's name couldn't be found.");
+  } finally {
+    signal.removeEventListener("abort", onAbort);
   }
   if (!found.length || found.some((a) => blockedAddress(a.address))) throw new SafeFetchError("blocked", BLOCKED);
   return found[0];
@@ -186,7 +200,7 @@ export function sendTo(url: URL, to: Resolved | null, req: SafeRequest, headers:
       hostname: url.hostname,
       port: url.port || (url.protocol === "https:" ? 443 : 80),
       path: url.pathname + url.search,
-      headers: { ...headers, "accept-encoding": "identity", ...(req.body !== undefined && { "content-length": String(Buffer.byteLength(req.body)) }) },
+      headers: { ...headers, "accept-encoding": "identity", [OUTBOUND_HEADER]: "1", ...(req.body !== undefined && { "content-length": String(Buffer.byteLength(req.body)) }) },
       signal,
       // A new connection every time, never one kept from an earlier request: it goes only to `to`.
       agent: false,
@@ -254,10 +268,11 @@ function messageFor(err: unknown): string {
   return "That server couldn't be reached.";
 }
 
+/** Why a request was stopped: the time running out (a SafeFetchError), or the caller's own reason (Stop). */
 function abortError(signal: AbortSignal): Error {
-  const reason = signal.reason;
-  if (reason instanceof SafeFetchError) return reason;
-  return reason instanceof Error ? reason : new SafeFetchError("timeout", "That server took too long to answer.");
+  const reason: unknown = signal.reason;
+  if (reason instanceof Error) return reason;
+  return new DOMException(String(reason ?? "stopped"), "AbortError");
 }
 
 /**
@@ -283,12 +298,19 @@ export async function safeFetch(
     for (let hop = 0; ; hop++) {
       if (signal.aborted) throw abortError(signal);
       const mock = Boolean(mockOrigin()) && url.origin === mockOrigin();
-      const to = mock ? null : await vetted(url.hostname, resolve);
+      const to = mock ? null : await vetted(url.hostname, resolve, signal);
       const res = await send(url, to, { ...req, method, body }, headers, signal, maxBytes);
       const location = res.status >= 300 && res.status < 400 ? res.headers.location : undefined;
       if (!location) return res;
       if (hop >= MAX_REDIRECTS) throw new SafeFetchError("redirects", "That server redirected too many times.");
-      const next = checkUrl(new URL(location, url));
+      // A Location that isn't an address is a server problem, said without the address (which can hold a key).
+      let target: URL;
+      try {
+        target = new URL(location, url);
+      } catch {
+        throw new SafeFetchError("network", "That server sent a redirect Flash couldn't follow.");
+      }
+      const next = checkUrl(target);
       if (next.origin !== url.origin) {
         // Another server never gets the user's key, or this server's session.
         headers = Object.fromEntries(Object.entries(headers).filter(([k]) => !/^(authorization|cookie|mcp-session-id)$/i.test(k)));

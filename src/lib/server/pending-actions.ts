@@ -146,6 +146,15 @@ export async function approvedResults(userId: string, ids: string[], { take = fa
 }
 
 /**
+ * Puts approved results back for another Continue, when the reply that took them failed or was
+ * stopped: Retry sends them again (see continueWith in Flash.tsx), and is paid like any reply.
+ */
+export async function releaseResults(userId: string, ids: string[]): Promise<void> {
+  if (!ids.length) return;
+  await run(`UPDATE pending_actions SET used = 0 WHERE user_id = ? AND used = 1 AND id IN (${ids.map(() => "?").join(",")})`, [userId, ...ids]);
+}
+
+/**
  * Whether an approval comes from Flash's own page: JSON, with an Origin header that is exactly one of
  * Flash's own origins (its configured address, or the one the request came to). A missing Origin,
  * "null" (a sandboxed page, like a published app on Flash's host) or any other origin is refused, and

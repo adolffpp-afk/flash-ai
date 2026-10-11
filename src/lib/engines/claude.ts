@@ -19,7 +19,8 @@ import {
   worstTokens,
   type ToolPlan,
 } from "../credits.ts";
-import { english, type Translate } from "../i18n.ts";
+import { english, msg, type Translate } from "../i18n.ts";
+import { FriendlyError } from "./errors.ts";
 import { MAX_FORECASTS, TOO_MANY, WEATHER_ROUNDS, WEATHER_TOOL, type WeatherTool } from "../weather.ts";
 import { tokensAtMost } from "../tokens.ts";
 import type { Where } from "../context-note.ts";
@@ -643,9 +644,10 @@ const weatherRound = (content: Anthropic.Beta.BetaContentBlock[], tool: WeatherT
 /**
  * What the next step of a reply with connectors will read, in tokens, before it is sent: counted by
  * Claude with its tools (counting costs nothing), and never less than what the last call read and
- * wrote plus what the tools returned, counted high (see tokensAtMost). When counting fails: what the
- * last call read and wrote, and what the tools returned at the most it can be (3 tokens a character,
- * see worstTokens), or null for a first step, which keeps the hold's own count.
+ * wrote plus what the tools returned, counted high (see tokensAtMost). When counting fails, the most
+ * it can be (3 tokens a character, see worstTokens): for a first step, of everything it sends; for a
+ * later one, of what the tools returned, on top of what the last call read and wrote. Never the hold's
+ * own estimate, which counting failing may have made too low.
  */
 async function nextInput(
   model: string,
@@ -654,16 +656,20 @@ async function nextInput(
   tools: Anthropic.Beta.BetaTool[],
   last: { usage: Anthropic.Beta.BetaUsage; tokens: number; chars: number } | null,
   signal?: AbortSignal,
-): Promise<number | null> {
+): Promise<number> {
   const read = last ? inputOf(last.usage) + last.usage.output_tokens : 0;
   try {
     const res = await getClient().beta.messages.countTokens({ model, system, messages, ...(tools.length && { tools }) }, { signal });
     return Math.max(res.input_tokens, read + (last?.tokens ?? 0));
   } catch (err) {
     if (signal?.aborted) throw err;
-    return last ? read + worstTokens(last.chars) : null;
+    if (last) return read + worstTokens(last.chars);
+    return worstTokens(system.length + JSON.stringify(messages).length + (tools.length ? JSON.stringify(tools).length : 0));
   }
 }
+
+/** A reply with connectors whose first step the credits held don't pay for: it isn't started, and costs nothing. */
+export const NO_FIRST_STEP = msg("Flash couldn't start this answer within the credits held for it. Try again in a moment.");
 
 /** Ends a reply whose next step the credits held don't pay for, after a tool round. */
 const stoppedLooking = (t: Translate): StreamEvent => ({
@@ -707,6 +713,15 @@ export async function* streamText(
   // Whether any words were sent yet, and whether the next call may only answer (no more forecasts).
   let wrote = false;
   let answerOnly = false;
+  // Notes about the accounts, sent with the reply's first words: nothing but a status is sent before
+  // Claude starts, so a level that is busy can still step down (see withStepDown), and the notes show once.
+  let notes = "";
+  const say = (words: string | StreamEvent): StreamEvent => {
+    const delta = typeof words === "string" ? words : words.type === "text" ? words.delta : "";
+    const event: StreamEvent = { type: "text", delta: notes + delta };
+    notes = "";
+    return event;
+  };
   try {
     // The accounts' tools as their servers list them now: one that changed since the user added it is left out.
     let connectors: ConnectorTool[] = [];
@@ -716,10 +731,10 @@ export async function* streamText(
       connectors = checked.tools;
       yield { type: "status", message: "" };
       for (const name of checked.unreachable) {
-        yield { type: "text", delta: `_${t("Flash couldn't reach {name} just now, so this answer doesn't use it.", { name })}_\n\n` };
+        notes += `_${t("Flash couldn't reach {name} just now, so this answer doesn't use it.", { name })}_\n\n`;
       }
       for (const name of checked.changed) {
-        yield { type: "text", delta: `_${t("{name} changed some of its tools since you added it. They're left out until you look at them in Settings > Connectors.", { name })}_\n\n` };
+        notes += `_${t("{name} changed some of its tools since you added it. They're left out until you look at them in Settings > Connectors.", { name })}_\n\n`;
       }
     }
     const tools = [...(tool ? [WEATHER_TOOL] : []), ...connectors.map((c) => c.definition)];
@@ -728,13 +743,11 @@ export async function* streamText(
     const earlier = new Set(history.flatMap((turn) => turn.toolCalls?.map((call) => call.name) ?? []));
     const declared = tools.length ? tools : (kit?.tools ?? []).filter((c) => earlier.has(c.name)).map((c) => c.definition);
     if (kit) {
-      // The first step is checked too, with the tools it really has.
+      // The first step is checked too, with the tools it really has. One that doesn't fit isn't
+      // started: the reply fails before Claude is called, so it costs nothing.
       const first = await nextInput(choice.model, instructions, messages, declared, null, signal);
-      if (first !== null) maxTokens = Math.min(budget.maxTokens, tokensWithin(mode, choice.model, first, budget.capCents, usesFallback(choice)));
-      if (!(maxTokens >= MIN_ROUND_TOKENS)) {
-        yield lengthNote(budget, t);
-        return;
-      }
+      maxTokens = Math.min(budget.maxTokens, tokensWithin(mode, choice.model, first, budget.capCents, usesFallback(choice)));
+      if (!(maxTokens >= MIN_ROUND_TOKENS)) throw new FriendlyError(NO_FIRST_STEP);
     }
     for (;;) {
       running?.begin(choice.model, maxTokens);
@@ -757,7 +770,7 @@ export async function* streamText(
       for await (const event of stream) {
         running?.see(event);
         if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-          yield { type: "text", delta: gap + event.delta.text };
+          yield say(gap + event.delta.text);
           gap = "";
           wrote = true;
         }
@@ -766,11 +779,11 @@ export async function* streamText(
       spent += meterClaude(meter, final, choice.model, running);
       // A turn cut off or declined never runs the tools it asked for.
       if (final.stop_reason === "refusal") {
-        yield refusalMessage(t);
+        yield say(refusalMessage(t));
         break;
       }
       if (final.stop_reason === "max_tokens") {
-        yield lengthNote(budget, t);
+        yield say(lengthNote(budget, t));
         break;
       }
       if (!tools.length || final.stop_reason !== "tool_use" || answerOnly) break;
@@ -792,10 +805,12 @@ export async function* streamText(
         maxTokens = Math.min(budget.maxTokens, tokensWithin(mode, choice.model, next!, left, usesFallback(choice), NO_TOOLS));
       }
       if (!(maxTokens >= MIN_ROUND_TOKENS)) {
-        yield kit ? stoppedLooking(t) : lengthNote(budget, t);
+        yield say(kit ? stoppedLooking(t) : lengthNote(budget, t));
         break;
       }
     }
+    // A reply that ended without words still shows the notes.
+    if (notes) yield say("");
   } catch (err) {
     // A reply stopped or cut off after a forecast still credits MET Norway for what it showed, and
     // lists the accounts' tools it used.

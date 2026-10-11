@@ -134,7 +134,7 @@ import { CONFIRM_CREDITS, consents, decidedFor, type Decided } from "@/lib/price
 import { WEATHER_TOOL } from "@/lib/weather.ts";
 import { refuseUnpaid, type ConnectorKit } from "@/lib/engines/connect.ts";
 import { chatKit, continuedCalls, requestedConnections } from "@/lib/server/connections.ts";
-import { approvedResults } from "@/lib/server/pending-actions.ts";
+import { approvedResults, releaseResults } from "@/lib/server/pending-actions.ts";
 
 // Vercel Pro allows up to 800 seconds, which the Movie maker needs (scenes, filming and joining).
 export const maxDuration = 800;
@@ -1361,8 +1361,9 @@ export async function POST(request: Request) {
     }
     return Response.json({ error: notes.join(" "), code: "out_of_credits", needed }, { status: 402 });
   }
-  // Approved results continued here are used once, now that the reply is paid for.
-  if (continued.length) await approvedResults(user.id, continued.map(({ row }) => row.id), { take: true });
+  // Approved results continued here are used once, now that the reply is paid for (and put back if it
+  // fails or is stopped, so Retry has them again).
+  const taken = continued.length ? (await approvedResults(user.id, continued.map(({ row }) => row.id), { take: true })).map((row) => row.id) : [];
   // Saved files take the extension of what the provider really sent, so downloads open correctly.
   const store: Store = (media, name) => saveFile(user.id, media.mime, withExtension(name, media.mime), media.data);
 
@@ -1578,6 +1579,8 @@ export async function POST(request: Request) {
         console.error("[flash] settling credits failed", err);
       }
     }
+    // A Continue that failed or was stopped gives its approved results back for Retry.
+    if (taken.length && (!ok || stopped)) await releaseResults(user.id, taken).catch((err) => console.error("[flash] putting back results failed", err instanceof Error ? err.name : "error"));
     // A free request that failed doesn't use up one of the user's free requests for today, except a
     // transcript Groq was sent, which gives back what freeAudioFailed says.
     if (free && !ok) {

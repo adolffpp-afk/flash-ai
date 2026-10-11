@@ -18,7 +18,10 @@ import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 
 type Keys = { newest: string; byVersion: Map<string, Buffer> };
 
-let cache: { raw: string; keys: Keys | null } | null = null;
+// The entries of CONNECTOR_KEYS that can't be used, each by its name and why (never its value).
+type Skipped = { version: string; reason: string }[];
+
+let cache: { raw: string; keys: Keys | null; skipped: Skipped } | null = null;
 
 const versionNumber = (v: string) => Number(/^v(\d{1,6})$/.exec(v)?.[1] ?? NaN);
 
@@ -27,14 +30,17 @@ function keys(): Keys | null {
   const raw = process.env.CONNECTOR_KEYS ?? "";
   if (cache?.raw === raw) return cache.keys;
   let parsed: Keys | null = null;
+  const skipped: Skipped = [];
   try {
     const value: unknown = raw.trim() ? JSON.parse(raw) : null;
     if (value && typeof value === "object" && !Array.isArray(value)) {
       const byVersion = new Map<string, Buffer>();
       for (const [version, encoded] of Object.entries(value)) {
-        if (!Number.isFinite(versionNumber(version)) || typeof encoded !== "string") continue;
-        const key = Buffer.from(encoded, "base64");
-        if (key.length === 32) byVersion.set(version, key);
+        // A name that isn't a version is shown only when it's short and plain: it could be a pasted key.
+        const name = /^[\w-]{1,12}$/.test(version) ? version : "an entry";
+        if (!Number.isFinite(versionNumber(version))) skipped.push({ version: name, reason: "its name isn't v1, v2, … in lower case" });
+        else if (typeof encoded !== "string" || Buffer.from(encoded, "base64").length !== 32) skipped.push({ version: name, reason: "it isn't 32 bytes in base64" });
+        else byVersion.set(version, Buffer.from(encoded, "base64"));
       }
       const newest = [...byVersion.keys()].sort((a, b) => versionNumber(b) - versionNumber(a))[0];
       if (newest) parsed = { newest, byVersion };
@@ -43,8 +49,16 @@ function keys(): Keys | null {
     parsed = null;
   }
   if (raw.trim() && !parsed) console.error("[flash] CONNECTOR_KEYS is set but holds no usable key (a JSON object like {\"v1\":\"<32 bytes in base64>\"})");
-  cache = { raw, keys: parsed };
+  // Once for each value of CONNECTOR_KEYS: a rotation with a mistyped entry would otherwise go on sealing with the old key.
+  for (const s of skipped) console.error(`[flash] CONNECTOR_KEYS: ${s.version} can't be used: ${s.reason}`);
+  cache = { raw, keys: parsed, skipped };
   return parsed;
+}
+
+/** Which key seals new secrets, and the entries of CONNECTOR_KEYS that can't be used (by name, never value), for /admin. */
+export function keyVersions(): { newest: string; skipped: Skipped } {
+  const k = keys();
+  return { newest: k?.newest ?? "", skipped: cache?.skipped ?? [] };
 }
 
 /** Whether connectors can store secrets: CONNECTOR_KEYS holds at least one usable key. */

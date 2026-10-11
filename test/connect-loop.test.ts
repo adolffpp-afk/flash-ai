@@ -14,14 +14,17 @@ type Block =
   | { type: "tool_use"; id: string; name: string; input: object }
   | { type: "thinking"; thinking: string; signature: string }
   | { type: "fallback"; from: object; to: object };
-// A reply that hangs sends its blocks and never finishes, as a slow answer the user stops.
-type Reply = { blocks: Block[]; stop: string; hang?: boolean };
+// A reply that hangs sends its blocks and never finishes, as a slow answer the user stops; usage is
+// what it says it read and wrote (by default, usage below).
+type Reply = { blocks: Block[]; stop: string; hang?: boolean; usage?: { input_tokens: number; output_tokens: number } };
 const replies: Reply[] = [];
 const sent: { model: string; max_tokens: number; system: string; tools?: { name: string }[]; tool_choice?: { type: string }; messages: { role: string; content: unknown }[] }[] = [];
 const counted: unknown[] = [];
 // What count_tokens answers: a number of tokens, or an error status.
 let counting: { tokens: number } | { status: number } = { tokens: 3000 };
 const usage = { input_tokens: 3000, output_tokens: 200 };
+// Models that answer "overloaded", as a busy level does.
+const busy = new Set<string>();
 const claude = createServer((req, res) => {
   let raw = "";
   req.on("data", (c) => (raw += c));
@@ -37,8 +40,13 @@ const claude = createServer((req, res) => {
       return res.end(JSON.stringify({ input_tokens: counting.tokens }));
     }
     sent.push(body);
-    const reply = replies.shift() ?? { blocks: [{ type: "text", text: "done" }], stop: "end_turn" };
-    const events: object[] = [{ type: "message_start", message: { id: `msg_${sent.length}`, type: "message", role: "assistant", model: body.model, content: [], stop_reason: null, usage } }];
+    if (busy.has(body.model)) {
+      res.writeHead(529, { "content-type": "application/json", "x-should-retry": "false" });
+      return res.end(JSON.stringify({ type: "error", error: { type: "overloaded_error", message: "Overloaded" } }));
+    }
+    const reply: Reply = replies.shift() ?? { blocks: [{ type: "text", text: "done" }], stop: "end_turn" };
+    const used = reply.usage ?? usage;
+    const events: object[] = [{ type: "message_start", message: { id: `msg_${sent.length}`, type: "message", role: "assistant", model: body.model, content: [], stop_reason: null, usage: used } }];
     reply.blocks.forEach((b, index) => {
       if (b.type === "text") {
         events.push({ type: "content_block_start", index, content_block: { type: "text", text: "" } });
@@ -53,7 +61,7 @@ const claude = createServer((req, res) => {
       } else events.push({ type: "content_block_start", index, content_block: b });
       if (!reply.hang) events.push({ type: "content_block_stop", index });
     });
-    if (!reply.hang) events.push({ type: "message_delta", delta: { stop_reason: reply.stop }, usage }, { type: "message_stop" });
+    if (!reply.hang) events.push({ type: "message_delta", delta: { stop_reason: reply.stop }, usage: used }, { type: "message_stop" });
     res.writeHead(200, { "content-type": "text/event-stream" });
     for (const e of events) res.write(`event: ${(e as { type: string }).type}\ndata: ${JSON.stringify(e)}\n\n`);
     if (!reply.hang) res.end();
@@ -76,14 +84,19 @@ after(async () => {
   await mock.close();
 });
 
-const { claudeChoice, streamText, Running } = await import("../src/lib/engines/claude.ts");
-const { CONNECT_LINE, needsApproval, refuseUnpaid } = await import("../src/lib/engines/connect.ts");
-const { CONNECT_STEPS, claudePrice, tokensWithin, worstTokens } = await import("../src/lib/credits.ts");
-const { addConnection, changedTool, chatKit, previewServer, runApproved, updateConnection } = await import("../src/lib/server/connections.ts");
-const { approvedResults } = await import("../src/lib/server/pending-actions.ts");
+const { NO_FIRST_STEP, claudeChoice, countInputTokens, streamText, system, withStepDown, Running } = await import("../src/lib/engines/claude.ts");
+const { FriendlyError } = await import("../src/lib/engines/errors.ts");
+const { CONNECT_LINE, connectorCalls, needsApproval, refuseUnpaid } = await import("../src/lib/engines/connect.ts");
+const { CONNECT_STEPS, claudeCostCents, claudePrice, connectPlan, finalCredits, planHold, tokensWithin, worstTokens } = await import("../src/lib/credits.ts");
+const { ConnectError, addConnection, changedTool, chatKit, listConnections, previewServer, runApproved, updateConnection } = await import(
+  "../src/lib/server/connections.ts"
+);
+const { approvedResults, releaseResults } = await import("../src/lib/server/pending-actions.ts");
+const { seal } = await import("../src/lib/server/secret-box.ts");
+const { signInWithEmail } = await import("../src/lib/server/signin.ts");
 const { applyEvent } = await import("../src/lib/apply-event.ts");
 const { readEngine } = await import("../src/lib/server/engine-steps.ts");
-const { all, run: sql } = await import("../src/lib/server/db.ts");
+const { all, one, run: sql } = await import("../src/lib/server/db.ts");
 
 type Event = { type: string; delta?: string; message?: string; items?: unknown[]; action?: { id: string; tool: string; input: Record<string, unknown>; inputHash: string; connection: string } };
 const ask = (content: string) => [{ role: "user" as const, content }];
@@ -468,4 +481,314 @@ test("what runs by itself: a preset's reads; a write, a tool of unknown kind, or
   assert.equal(needsApproval(tool("read"), ["a"]), false, "reading the same account again");
   assert.equal(needsApproval(tool("read"), ["b"]), true, "after another account was read (the taint rule)");
   assert.equal(needsApproval(tool("write", true, true), ["b"]), true, "the taint rule beats always allow");
+});
+
+/*
+ * What the security review found (each test names its finding), kept as tests.
+ */
+
+// A user of their own for a test that adds connections (adding is limited per user and hour).
+const newUser = async (id: string) => {
+  await sql("INSERT INTO users (id, email, name, password_hash, preferences, created_at, last_free_grant) VALUES (?, ?, '', 'x', '', 0, 0)", [id, `${id}@example.com`]);
+  return id;
+};
+// A server the user added, pinned as they saw it.
+const addServer = async (userId: string, url: string, label?: string) => {
+  const seen = await previewServer(userId, { provider: "custom", url });
+  mock.reset();
+  return (await addConnection(userId, { provider: "custom", url, label, pins: Object.fromEntries(seen.tools.map((t) => [t.name, t.hash])) })).id;
+};
+// Everything logged while fn runs, with what it returns.
+const logged = async <T,>(fn: () => Promise<T>): Promise<{ lines: string; value: T }> => {
+  const lines: string[] = [];
+  const saved = { log: console.log, error: console.error, warn: console.warn };
+  const keep = (...args: unknown[]) => void lines.push(args.map((a) => (a instanceof Error ? `${a.stack} ${JSON.stringify(a)} ${String(a.cause)}` : typeof a === "string" ? a : JSON.stringify(a))).join(" "));
+  console.log = console.error = console.warn = keep;
+  try {
+    return { value: await fn(), lines: lines.join("\n") };
+  } finally {
+    Object.assign(console, saved);
+  }
+};
+
+test("#1: claiming an account drops the connections someone else added to it, with what they always allowed and their cards", async () => {
+  const before = process.env.FLASH_DEMO_EMAILS;
+  process.env.FLASH_DEMO_EMAILS = "true";
+  try {
+    // Someone signs up with victim@example.com, never confirms it, and adds a server labelled "Linear".
+    await sql("INSERT INTO users (id, email, email_key, name, password_hash, preferences, created_at, last_free_grant, verified_at) VALUES ('acct', 'victim@example.com', 'victim@example.com', '', 'hash', '', 0, 0, 0)");
+    const conn = await addServer("acct", `${mock.origin}/mcp`, "Linear");
+    await updateConnection("acct", conn, { tool: "echo", trusted: true });
+    const kit = (await chatKit("acct", [conn]))!;
+    assert.equal(needsApproval(kit.tools.find((t) => t.tool === "echo")!, []), false);
+    await kit.propose(kit.tools.find((t) => t.tool === "send_note")!, { to: "a@b.c", note: "hi" });
+    await kit.close();
+    // The real owner signs in with an emailed link.
+    assert.equal(await signInWithEmail("victim@example.com"), "acct");
+    assert.equal(await chatKit("acct", [conn]), null, "nothing of the squatter's is used");
+    assert.deepEqual(await listConnections("acct"), []);
+    assert.equal((await all("SELECT * FROM connection_tools WHERE connection_id = ?", [conn])).length, 0);
+    assert.equal((await all("SELECT * FROM pending_actions WHERE user_id = 'acct'")).length, 0);
+    // Nobody else's are touched.
+    assert.ok((await listConnections(user)).some((c) => c.id === linear));
+  } finally {
+    if (before === undefined) delete process.env.FLASH_DEMO_EMAILS;
+    else process.env.FLASH_DEMO_EMAILS = before;
+  }
+});
+
+test("#2: a server that says its own address back shows none of the key in it, in a reply or on a card", async () => {
+  const u = await newUser("user-keyed");
+  const conn = await addServer(u, `${mock.origin}/s/sk_live_PATHSECRET12345/mcp?api_key=sk_live_QUERYSECRET67890&team=ab`, "Keyed");
+  await updateConnection(u, conn, { tool: "whereami", trusted: true });
+  const kit = (await chatKit(u, [conn]))!;
+  const where = kit.tools.find((t) => t.tool === "whereami")!;
+  const out = await kit.run(where, {});
+  assert.match(out.text, /^Called at http:\/\/127\.0\.0\.1:\d+\/s\/\[hidden\]\/mcp\?api_key=\[hidden\]&team=ab$/);
+  // An approved call: what the card shows, and what is kept for Continue.
+  const card = await kit.propose(where, {});
+  await kit.close();
+  const done = (await runApproved(u, card.id, card.inputHash))!;
+  assert.equal(done.status, "done");
+  const stored = await one<{ result: string }>("SELECT result FROM pending_actions WHERE id = ?", [card.id]);
+  assert.doesNotMatch(done.result + stored!.result, /SECRET/);
+});
+
+test("#4: an account whose stored key can't be opened asks to be connected again, everywhere it is used", async () => {
+  const u = await newUser("user-rekey");
+  const conn = (await addConnection(u, { provider: "linear", token: "lin_api_REKEYREKEY1234" })).id;
+  const first = (await chatKit(u, [conn]))!;
+  const card = await first.propose(first.tools.find((t) => t.tool === "send_note")!, { to: "a@b.c", note: "hi" });
+  await first.close();
+  const keys = process.env.CONNECTOR_KEYS;
+  const status = async () => (await listConnections(u))[0].status;
+  const reset = () => sql("UPDATE connections SET status = 'ok' WHERE id = ?", [conn]);
+  // The key that sealed it was replaced.
+  process.env.CONNECTOR_KEYS = JSON.stringify({ v1: randomBytes(32).toString("base64") });
+  try {
+    const kit = (await chatKit(u, [conn]))!;
+    const checked = await kit.check();
+    await kit.close();
+    assert.deepEqual(checked.unreachable, ["Linear"]);
+    assert.equal(await status(), "needs_reconnect", "a chat marks it");
+    await reset();
+    await assert.rejects(changedTool(u, conn, "echo"), (e: unknown) => e instanceof ConnectError && e.code === "auth", "Settings gets a problem in words, not a server error");
+    assert.equal(await status(), "needs_reconnect", "looking at a tool marks it");
+    await reset();
+    const done = (await runApproved(u, card.id, card.inputHash))!;
+    assert.deepEqual(done, { status: "failed", result: "This account needs to be connected again." });
+    assert.equal(await status(), "needs_reconnect", "an approval marks it");
+  } finally {
+    process.env.CONNECTOR_KEYS = keys;
+  }
+});
+
+test("#5: a redirect to something that isn't an address fails that call only, and no log line holds the server's address", async () => {
+  const u = await newUser("user-redirect");
+  const conn = await addServer(u, `${mock.origin}/redirect/mcp?api_key=sk_live_REDIRECTSECRET99`);
+  await updateConnection(u, conn, { tool: "echo", trusted: true });
+  replies.push({ blocks: [{ type: "tool_use", id: "toolu_1", name: "custom1__echo", input: { text: "x" } }], stop: "tool_use" }, { blocks: [{ type: "text", text: "It failed." }], stop: "end_turn" });
+  mock.reset();
+  const kit = (await chatKit(u, [conn]))!;
+  const { value: events, lines } = await logged(() => drain(streamText(ask("Use it"), "", "text", undefined, budget, choice, undefined, {}, { connect: kit })));
+  assert.equal(said(events), "It failed.");
+  const result = (sent[1].messages.at(-1)!.content as { content: string; is_error?: boolean }[])[0];
+  assert.equal(result.is_error, true);
+  assert.match(result.content, /That server sent a redirect Flash couldn't follow\./);
+  assert.match(lines, /connector \S+ custom echo unreachable/);
+  assert.doesNotMatch(lines + JSON.stringify(events) + JSON.stringify(sent), /REDIRECTSECRET|api_key/);
+});
+
+test("#11: a busy Summit steps down to Vision even when an account can't be reached, and the note shows once", async () => {
+  const u = await newUser("user-stepdown");
+  const lin = (await addConnection(u, { provider: "linear", token: "lin_api_STEPDOWN1234" })).id;
+  const down = await addServer(u, `${mock.origin}/mcp`, "Notes");
+  // Its server is gone now.
+  await sql("UPDATE connections SET enc_url = ? WHERE id = ?", [seal(`${mock.origin}/down/mcp`, { id: down, userId: u, provider: "custom", field: "url" }).stored, down]);
+  // The stand-in's "changing" tool would say it changed when the step-down lists it again.
+  await sql("UPDATE connection_tools SET enabled = 0 WHERE name = 'changing' AND connection_id IN (?, ?)", [lin, down]);
+  const summit = claudeChoice("text", "ultra");
+  busy.add(summit.model);
+  mock.reset();
+  try {
+    const kit = (await chatKit(u, [lin, down]))!;
+    const events = await drain(withStepDown(summit, (c) => streamText(ask("hi"), "", "text", undefined, budget, c, undefined, {}, { connect: kit })));
+    assert.deepEqual(sent.map((b) => b.model), [summit.model, summit.stepDown!.model]);
+    assert.equal(said(events), "_Flash couldn't reach Notes just now, so this answer doesn't use it._\n\ndone");
+  } finally {
+    busy.clear();
+  }
+});
+
+test("#12: approved results a Continue took are put back when it fails or is stopped, so Retry has them", async () => {
+  const u = await newUser("user-retry");
+  const conn = (await addConnection(u, { provider: "linear", token: "lin_api_RETRYRETRY1234" })).id;
+  const kit = (await chatKit(u, [conn]))!;
+  const card = await kit.propose(kit.tools.find((t) => t.tool === "send_note")!, { to: "a@b.c", note: "hi" });
+  await kit.close();
+  assert.equal((await runApproved(u, card.id, card.inputHash))!.status, "done");
+  // Taken once the reply is paid for (see the chat route)...
+  assert.deepEqual((await approvedResults(u, [card.id], { take: true })).map((r) => r.id), [card.id]);
+  assert.equal((await approvedResults(u, [card.id])).length, 0, "used");
+  // ...and the reply failed: they go back.
+  await releaseResults(u, [card.id]);
+  assert.deepEqual((await approvedResults(u, [card.id])).map((r) => r.id), [card.id], "Retry finds them");
+  // Only the user's own, and only ones that were used.
+  await approvedResults(u, [card.id], { take: true });
+  await releaseResults("someone-else", [card.id]);
+  assert.equal((await approvedResults(u, [card.id])).length, 0);
+});
+
+test("#13, #14: when counting fails at the first step it is priced at the most it can read; one that doesn't fit isn't started or charged", async () => {
+  const u = await newUser("user-firststep");
+  const lin = (await addConnection(u, { provider: "linear", token: "lin_api_FIRSTSTEP1234" })).id;
+  const ascend = { ...claudeChoice("text", "ascend"), fallback: false };
+  // Dense text: at least a token a character, more than the 2.5 characters a token the hold guesses.
+  const chars = 20_000;
+  const history = [{ role: "user" as const, content: "汉".repeat(chars) }];
+  // The route's hold when counting is down, for a user with exactly what is needed.
+  counting = { status: 500 };
+  const kit = (await chatKit(u, [lin]))!;
+  const estimate = await countInputTokens(ascend.model, history, system("", "text", { connect: true }), kit.tools.map((t) => t.definition));
+  const needed = planHold("text", ascend.model, estimate, 0, 1, 0, connectPlan(false)).needed;
+  const hold = planHold("text", ascend.model, estimate, needed, 1, 0, connectPlan(false));
+  const reply = (b: { maxTokens: number; capCents: number }, costs: number[]) =>
+    drain(streamText(history, "", "text", (_p, _m, c) => costs.push(c), b, ascend, undefined, { running: new Running() }, { connect: kit }));
+
+  // Still down at the first step: the most it can read doesn't fit what was held, so nothing is sent.
+  let costs: number[] = [];
+  await assert.rejects(reply(hold, costs), (e: unknown) => e instanceof FriendlyError && e.phrase === NO_FIRST_STEP);
+  assert.equal(sent.length, 0);
+  // A reply that failed before Claude was called costs nothing; nor does a finished one that made no call.
+  assert.equal(finalCredits({ held: hold.held, ok: false, stopped: false, metered: true, costCents: 0, pendingCents: 0, typical: 4 }), 0);
+  assert.equal(finalCredits({ held: hold.held, ok: true, stopped: false, metered: true, costCents: 0, typical: 4 }), 0);
+
+  // Back up at the first step, and longer than the hold's guess: not started either.
+  counting = { tokens: chars + 2000 };
+  await assert.rejects(reply(hold, costs), (e: unknown) => e instanceof FriendlyError);
+  assert.equal(sent.length, 0);
+
+  // With credits enough for the most it can read: it runs, and however dense the text really was it
+  // spends no more than was held.
+  counting = { status: 500 };
+  const roomy = { maxTokens: 8000, capCents: 40 };
+  costs = [];
+  replies.push({ blocks: [{ type: "text", text: "答" }], stop: "end_turn", usage: { input_tokens: chars + 2000, output_tokens: 8000 } });
+  await reply(roomy, costs);
+  assert.equal(sent.length, 1);
+  const bound = worstTokens(sent[0].system.length + JSON.stringify(sent[0].messages).length + JSON.stringify(sent[0].tools).length);
+  assert.equal(sent[0].max_tokens, Math.min(8000, tokensWithin("text", ascend.model, bound, roomy.capCents, false)));
+  // What it would cost had it written all it may: within the cap.
+  const most = claudeCostCents(ascend.model, { input_tokens: bound, output_tokens: sent[0].max_tokens } as never, ascend.model, 0);
+  assert.ok(most <= roomy.capCents, `${most} <= ${roomy.capCents}`);
+  assert.ok(costs.reduce((a, b) => a + b, 0) <= roomy.capCents);
+  await kit.close();
+});
+
+test("#15: Stop ends a step's remaining calls at once: nothing runs or is asked for after it, and nothing more is spent", async () => {
+  const u = await newUser("user-stop");
+  const lin = (await addConnection(u, { provider: "linear", token: "lin_api_STOPSTOP1234" })).id;
+  const step = {
+    blocks: [
+      { type: "tool_use" as const, id: "toolu_1", name: "linear__echo", input: { text: "a" } },
+      { type: "tool_use" as const, id: "toolu_2", name: "linear__echo", input: { text: "b" } },
+      { type: "tool_use" as const, id: "toolu_3", name: "linear__send_note", input: { to: "x@y.z", note: "hi" } },
+    ],
+    stop: "tool_use",
+  };
+  const callsMade = async () => Number((await one<{ count: number }>("SELECT count FROM rate_limits WHERE key = ?", [`conn:${u}:${lin}`]))?.count ?? 0);
+  // Pressed while the step's first call is about to go (between calls), then while it is on its way to a slow server.
+  for (const when of ["before", "in flight"] as const) {
+    mock.reset();
+    sent.length = 0;
+    replies.length = 0;
+    await sql("DELETE FROM rate_limits WHERE key = ?", [`conn:${u}:${lin}`]);
+    const stop = new AbortController();
+    const running = new Running();
+    const costs: number[] = [];
+    const kit = (await chatKit(u, [lin], { signal: stop.signal }))!;
+    if (when === "before") {
+      const run = kit.run.bind(kit);
+      kit.run = async (tool, input, signal) => {
+        stop.abort("stop");
+        return run(tool, input, signal);
+      };
+    } else mock.state.callDelayMs = 500;
+    replies.push(step, { blocks: [{ type: "text", text: "never" }], stop: "end_turn" });
+    const afterStop: string[] = [];
+    const started = Date.now();
+    let stoppedAt = 0;
+    const { lines } = await logged(() =>
+      assert.rejects(async () => {
+        for await (const e of streamText(ask("go"), "", "text", (_p, _m, c) => costs.push(c), budget, choice, undefined, { signal: stop.signal, running }, { connect: kit })) {
+          const event = e as Event;
+          if (stop.signal.aborted) afterStop.push(event.type);
+          if (when === "in flight" && event.type === "status" && event.message?.startsWith("Using") && !stoppedAt) {
+            stoppedAt = Date.now();
+            setTimeout(() => stop.abort("stop"), 100);
+          }
+        }
+      }, (e: unknown) => e instanceof Error && e.name === "AbortError"),
+    );
+    assert.deepEqual(afterStop.filter((t) => t !== "status"), [], `${when}: nothing but a progress line after Stop`);
+    assert.equal(mock.calls.length, when === "before" ? 0 : 1, `${when}: no call after Stop reached the server`);
+    assert.equal(await callsMade(), when === "before" ? 0 : 1, `${when}: no later call counted against the account`);
+    assert.equal((await all("SELECT * FROM pending_actions WHERE user_id = ?", [u])).length, 0, `${when}: no card was made`);
+    assert.equal(sent.length, 1, `${when}: no other step started`);
+    if (when === "in flight") assert.match(lines, /linear echo stopped/);
+    if (when === "in flight") assert.ok(Date.now() - started < 450 + (stoppedAt - started), "the call in flight ended at Stop, not when the server answered");
+    // Only the step that ran was paid for, and nothing is in progress.
+    assert.equal(costs.length, 1);
+    assert.equal(running.soFar, 0);
+  }
+});
+
+test("#15: a step's own checks: whatever a server does with Stop, no call runs and no card shows after it", async () => {
+  type Kit = Parameters<typeof connectorCalls>[2];
+  const tool = (name: string, kind: "read" | "write") => ({
+    name: `acct__${name}`,
+    tool: name,
+    title: name,
+    connectionId: "c1",
+    connection: "Acct",
+    host: "acct.example",
+    kind,
+    custom: false,
+    trusted: false,
+    definition: { name: `acct__${name}`, description: "", input_schema: { type: "object" as const } },
+  });
+  const tools = [tool("read", "read"), tool("send", "write")];
+  const call = (id: string, name: string) => ({ type: "tool_use" as const, id, name: `acct__${name}`, input: {} }) as Parameters<typeof connectorCalls>[0][number];
+  const step = async (calls: ReturnType<typeof call>[], kit: Partial<Kit>, signal: AbortSignal) => {
+    const events: Event[] = [];
+    const base: Kit = { tools, check: async () => ({ tools, unreachable: [], changed: [] }), run: async () => ({ text: "ok", isError: false }), propose: async () => ({}) as never, close: async () => {} };
+    await assert.rejects(async () => {
+      for await (const e of connectorCalls(calls, tools, { ...base, ...kit }, { readFrom: new Set(), used: [] }, signal)) events.push(e as Event);
+    }, (e: unknown) => e instanceof Error && e.name === "AbortError");
+    return events;
+  };
+  // A server that answers after Stop as if nothing happened: the step's other calls never run.
+  let stop = new AbortController();
+  const ran: string[] = [];
+  const proposed: string[] = [];
+  let events = await step([call("1", "read"), call("2", "read"), call("3", "send")], {
+    run: async (t) => {
+      ran.push(t.tool);
+      stop.abort("stop");
+      return { text: "ok", isError: false };
+    },
+    propose: async (t) => (proposed.push(t.tool), {}) as never,
+  }, stop.signal);
+  assert.deepEqual(ran, ["read"]);
+  assert.deepEqual(proposed, []);
+  assert.ok(!events.some((e) => e.type === "approve_action"));
+  // A card being made when Stop comes isn't shown, and nothing after it runs.
+  stop = new AbortController();
+  ran.length = 0;
+  events = await step([call("1", "send"), call("2", "read")], {
+    run: async (t) => (ran.push(t.tool), { text: "ok", isError: false }),
+    propose: async () => (stop.abort("stop"), {}) as never,
+  }, stop.signal);
+  assert.ok(!events.some((e) => e.type === "approve_action"));
+  assert.deepEqual(ran, []);
 });

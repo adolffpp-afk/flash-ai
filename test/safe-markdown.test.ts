@@ -38,3 +38,24 @@ test("links show the host they go to, unless the words already say it", () => {
   assert.equal(linkHost("https://a.example:8443/x"), "a.example:8443");
   assert.equal(linkHost("not a url"), "");
 });
+
+test("a link written without a scheme, or whose words only mention its host, still shows where it goes", () => {
+  // A link without a scheme goes to another server too.
+  const relative = render("[Open the issue in Linear](//evil.example/c?d=SECRET)");
+  assert.match(relative, /<span class="link-host"> \(evil\.example\)<\/span>/);
+  assert.equal(linkHost("//evil.example/x"), "evil.example");
+  // Words that mention the host aren't the address it goes to.
+  const mention = render("[https://linear.app/team/issue?ref=evil.example](https://evil.example/c?d=SECRET)");
+  assert.match(mention, /<span class="link-host"> \(evil\.example\)<\/span>/);
+  assert.match(render("[see evil.example docs](https://evil.example/x)"), /link-host/);
+  // Words that are the address, or its host, say it already.
+  assert.doesNotMatch(render("<https://evil.example/x>"), /link-host/);
+  assert.doesNotMatch(render("[evil.example](https://evil.example/x)"), /link-host/);
+  assert.doesNotMatch(render("[https://evil.example/other](https://evil.example/x)"), /link-host/);
+  // Links inside Flash still have none.
+  assert.equal(linkHost("/api/files/abc"), "");
+  assert.equal(linkHost("files/abc"), "");
+  assert.equal(linkHost("#top"), "");
+  // The ones that already worked still do.
+  assert.match(render("[Open](https:evil.example/x)"), /link-host/);
+});

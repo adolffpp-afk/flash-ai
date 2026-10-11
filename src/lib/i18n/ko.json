@@ -512,6 +512,7 @@
  "Flash couldn't read this app's flash-data block because it's too long.": "이 앱의 flash-data 블록이 너무 길어서 Flash가 읽지 못했어요.",
  "Flash couldn't read this app's flash-data block because the page has more than one.": "페이지에 flash-data 블록이 두 개 이상 있어서 Flash가 이 앱의 flash-data 블록을 읽지 못했어요.",
  "Flash couldn't save the language. Please try again.": "Flash가 언어를 저장하지 못했어요. 다시 시도해 주세요.",
+ "Flash couldn't start this answer within the credits held for it. Try again in a moment.": "이 답변에 확보한 크레딧으로는 Flash가 답변을 시작할 수 없었어요. 잠시 후 다시 시도해 주세요.",
  "Flash couldn't use part of this app's flash-data block ({names}). Until it's fixed, visitors can see those collections, even ones it marks as private, but can't add to them or change them. Those only you could see before stay private.": "Flash가 이 앱의 flash-data 블록 일부({names})를 사용하지 못했어요. 수정될 때까지 방문자는 블록에서 비공개로 지정한 컬렉션까지 포함해 해당 컬렉션을 볼 수 있지만, 추가하거나 변경할 수는 없어요. 이전에 나만 볼 수 있던 컬렉션은 계속 비공개로 유지돼요.",
  "Flash couldn't use part of this app's flash-data block ({names}). Until it's fixed, visitors can still see those they could see before, but can't add to them or change them. The others are private, as your default says: visitors can add to them, but only you can see them.": "Flash가 이 앱의 flash-data 블록 일부({names})를 사용하지 못했어요. 수정될 때까지 방문자는 이전에 볼 수 있던 컬렉션을 계속 볼 수 있지만, 추가하거나 변경할 수는 없어요. 나머지는 내 기본값에 따라 비공개예요. 방문자는 추가할 수 있지만, 볼 수 있는 사람은 나뿐이에요.",
  "Flash couldn't write the posts this time. Please try again.": "이번에는 Flash가 게시물을 작성하지 못했어요. 다시 시도해 주세요.",
