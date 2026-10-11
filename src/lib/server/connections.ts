@@ -5,6 +5,29 @@ import { overLimit } from "./limits.ts";
 import { connectorsReady, lastFour, seal, unseal, type SecretPlace } from "./secret-box.ts";
 import { McpClient, McpError, type McpTool } from "./mcp-client.ts";
 import { checkUrl, mockOrigin, SafeFetchError } from "./safe-fetch.ts";
+import {
+  OAuthError,
+  beginSignIn,
+  canRegister,
+  callbackUrl,
+  exchangeCode,
+  findAuthServer,
+  findResource,
+  flowSecret,
+  issMatches,
+  parseChallenge,
+  planSignIn,
+  readEndpoints,
+  refreshGrant,
+  revokeGrant,
+  scopeList,
+  takeFlow,
+  typedClient,
+  unionScopes,
+  type FlowRow,
+  type Grant,
+  type Tokens,
+} from "./mcp-oauth.ts";
 import { claimAction, finishAction, proposeAction, type ActionRow } from "./pending-actions.ts";
 import { CONNECTION_ID, MAX_CONNECTIONS, presetById, type ConnectionView, type Preset, type ToolKind, type ToolPreview } from "../connectors.ts";
 import { StoppedMidCall, cleanSchema, cut, stopError, toolName, type ConnectorKit, type ConnectorTool } from "../engines/connect.ts";
@@ -26,13 +49,24 @@ type ConnectionRow = {
   label: string;
   url: string;
   enc_url: string;
-  status: "ok" | "needs_reconnect";
+  // review: a server the user added and signed in to, whose tools they haven't looked at yet (not used in chats).
+  status: "ok" | "needs_reconnect" | "review";
   enc_secret: string;
   key_version: string;
   last4: string;
   protocol: string;
   created_at: number;
   last_used_at: number;
+  // Signed in with OAuth (kind "oauth", see mcp-oauth.ts).
+  enc_access: string;
+  enc_refresh: string;
+  expires_at: number;
+  issuer: string;
+  resource: string;
+  client_reg_id: string;
+  scopes: string;
+  endpoints_json: string;
+  refreshing_until: number | null;
 };
 
 type ToolRow = {
@@ -50,7 +84,23 @@ type ToolRow = {
 };
 
 /** Why a connection couldn't be added or used, as a code the routes put in the user's words. */
-export type ConnectProblem = "blocked" | "auth" | "unreachable" | "protocol" | "limit" | "too_many" | "changed" | "no_tools" | "bad_input" | "gone" | "unverified";
+export type ConnectProblem =
+  | "blocked"
+  | "auth"
+  | "unreachable"
+  | "protocol"
+  | "limit"
+  | "too_many"
+  | "changed"
+  | "no_tools"
+  | "bad_input"
+  | "gone"
+  | "unverified"
+  // A sign-in Flash won't do: no usable OAuth metadata, another server's resource, no PKCE S256, or
+  // an endpoint that isn't https or is one of Flash's own hosts (see mcp-oauth.ts).
+  | "no_signin"
+  // The server has neither a Client ID Metadata Document nor Dynamic Client Registration.
+  | "needs_client";
 
 export class ConnectError extends Error {
   code: ConnectProblem;
@@ -85,12 +135,20 @@ export function problemText(code: ConnectProblem, t: Translate): string {
       return t("That account isn't connected any more.");
     case "unverified":
       return t("Confirm your email to connect accounts.");
+    case "no_signin":
+      return t("That server asks for a sign-in Flash can't use safely.");
+    case "needs_client":
+      return t("This server needs a client ID from its own settings. Fill it in under Advanced.");
   }
 }
 
 /** A problem from the client or the guard, as a ConnectError. Anything else (Stop included) goes on as it is. */
 function asProblem(err: unknown): unknown {
   if (err instanceof ConnectError) return err;
+  if (err instanceof OAuthError) {
+    const code: ConnectProblem = err.code === "needs_client" ? "needs_client" : err.code === "unreachable" ? "unreachable" : "no_signin";
+    return new ConnectError(code, err.message);
+  }
   if (err instanceof SafeFetchError) return new ConnectError(err.code === "blocked" ? "blocked" : "unreachable", err.message);
   if (err instanceof McpError) {
     const code: ConnectProblem = err.code === "auth" ? "auth" : err.code === "unreachable" || err.code === "timeout" ? "unreachable" : "protocol";
@@ -104,7 +162,7 @@ const HOUR = 60 * 60_000;
 const CALLS_PER_HOUR = 120;
 const TRIES_PER_HOUR = 30;
 
-const place = (row: Pick<ConnectionRow, "id" | "user_id" | "provider">, field: "token" | "url" = "token"): SecretPlace => ({
+const place = (row: Pick<ConnectionRow, "id" | "user_id" | "provider">, field: "token" | "url" | "access" | "refresh" = "token"): SecretPlace => ({
   id: row.id,
   userId: row.user_id,
   provider: row.provider,
@@ -187,6 +245,8 @@ function opens(row: ConnectionRow): boolean {
   try {
     if (row.enc_secret) unseal(row.enc_secret, place(row));
     if (row.enc_url) unseal(row.enc_url, place(row, "url"));
+    if (row.enc_access) unseal(row.enc_access, place(row, "access"));
+    if (row.enc_refresh) unseal(row.enc_refresh, place(row, "refresh"));
     return true;
   } catch {
     return false;
@@ -201,7 +261,8 @@ function view(row: ConnectionRow, tools: ToolRow[]): ConnectionView {
     host: hostOf(serverUrl(row.provider, row.url)),
     custom: !presetById(row.provider),
     last4: row.last4,
-    status: row.status === "ok" && !opens(row) ? "needs_reconnect" : row.status,
+    signIn: row.kind === "oauth",
+    status: row.status !== "needs_reconnect" && !opens(row) ? "needs_reconnect" : row.status,
     createdAt: Number(row.created_at),
     tools: tools
       .filter((t) => t.connection_id === row.id)
@@ -236,7 +297,8 @@ export type NewConnection = { provider: string; url?: string; token?: string; la
 function target(input: NewConnection): { preset?: Preset; url: string } {
   const preset = presetById(input.provider);
   if (preset) {
-    if (!input.token?.trim()) throw new ConnectError("bad_input", "This service needs its key or token.");
+    // A service that only signs in takes no key (see startSignIn).
+    if (!input.token?.trim() || !preset.keyName) throw new ConnectError("bad_input", "This service needs its key or token.");
     return { preset, url: serverUrl(preset.id, preset.url) };
   }
   if (input.provider !== "custom" || typeof input.url !== "string") throw new ConnectError("bad_input", "Unknown service.");
@@ -261,16 +323,38 @@ async function tryLimit(userId: string) {
   if (await overLimit(`connect-try:${userId}`, TRIES_PER_HOUR, HOUR)) throw new ConnectError("limit", "Too many attempts. Try again in an hour.");
 }
 
-/** Lists a server's tools before it is added, so the user sees its host and every tool first. */
-export async function previewServer(userId: string, input: NewConnection): Promise<{ host: string; tools: ToolPreview[] }> {
+/**
+ * What a server that asks for a sign-in would be signed in at: its authorization server's host, and
+ * whether the user must type a client ID made there (it offers Flash no way to register itself).
+ */
+export type SignInPreview = { authHost: string; needsClient: boolean; callback: string };
+
+/**
+ * Lists a server's tools before it is added, so the user sees its host and every tool first. A
+ * server the user added that refuses a request without a key (401) and says how to sign in gets its
+ * sign-in instead (signIn), shown before the browser goes there; its tools are shown once signed in.
+ */
+export async function previewServer(userId: string, input: NewConnection, origin = ""): Promise<{ host: string; tools: ToolPreview[]; signIn?: SignInPreview }> {
   const { preset, url } = target(input);
   await confirmedOnly(userId);
   await tryLimit(userId);
-  const client = new McpClient({ url, token: input.token?.trim() || "" });
+  const token = input.token?.trim() || "";
+  const client = new McpClient({ url, token });
   try {
     const tools = await client.listTools();
     return { host: hostOf(url), tools: tools.map((t) => ({ name: t.name, title: t.title, description: t.description, kind: kindOf(t, preset), hash: t.hash })) };
   } catch (err) {
+    if (!preset && !token && origin && err instanceof McpError && err.code === "auth" && err.status === 401) {
+      try {
+        const found = await findResource(url, parseChallenge(err.challenge));
+        const server = await findAuthServer(found.authorizationServers[0]);
+        const callback = callbackUrl(origin);
+        return { host: hostOf(url), tools: [], signIn: { authHost: new URL(server.authorizationEndpoint).host, needsClient: !(await canRegister(userId, server, callback)), callback } };
+      } catch (problem) {
+        // No sign-in described at all: it wants a key or token, as before.
+        throw asProblem(problem instanceof OAuthError && problem.code === "no_signin" ? err : problem);
+      }
+    }
     throw asProblem(err);
   } finally {
     await client.close();
@@ -332,26 +416,31 @@ export async function addConnection(userId: string, input: NewConnection & { pin
           at,
         ],
       },
-      ...tools.map((t, i) => ({
-        sql: `INSERT INTO connection_tools (connection_id, name, title, description, schema, hash, kind, enabled, trusted, changed, position)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)`,
-        // A preset's costly tools start off.
-        args: [id, t.name, t.title, t.description, JSON.stringify(t.inputSchema), t.hash, kindOf(t, preset), preset?.costly?.test(t.name) ? 0 : 1, i],
-      })),
+      ...toolInserts(id, tools, preset),
     ],
     "write",
   );
   return (await listConnections(userId)).find((c) => c.id === id)!;
 }
 
+/** A connection's tools, pinned as its server listed them; a preset's costly tools start off. */
+const toolInserts = (id: string, tools: McpTool[], preset?: Preset) =>
+  tools.map((t, i) => ({
+    sql: `INSERT INTO connection_tools (connection_id, name, title, description, schema, hash, kind, enabled, trusted, changed, position)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?)`,
+    args: [id, t.name, t.title, t.description, JSON.stringify(t.inputSchema), t.hash, kindOf(t, preset), preset?.costly?.test(t.name) ? 0 : 1, i],
+  }));
+
 /**
  * Removes a connection of the user's, with its tools and waiting actions, each deleted by hand in
- * one batch (Turso runs with foreign keys off). A key needs no revoking with these services: the
- * user deletes it in the service, as Settings says.
+ * one batch (Turso runs with foreign keys off). An account signed in with OAuth is signed out at its
+ * authorization server first, where it has a revocation endpoint (S-7); it is removed either way. A
+ * key needs no revoking here: the user deletes it in the service, as Settings says.
  */
 export async function removeConnection(userId: string, id: string): Promise<boolean> {
-  const row = await one<{ id: string }>("SELECT id FROM connections WHERE id = ? AND user_id = ?", [id, userId]);
+  const row = await one<ConnectionRow>("SELECT * FROM connections WHERE id = ? AND user_id = ?", [id, userId]);
   if (!row) return false;
+  if (row.kind === "oauth") await revokeConnection(row);
   await (await db()).batch(
     [
       { sql: "DELETE FROM pending_actions WHERE connection_id = ? AND user_id = ?", args: [id, userId] },
@@ -363,14 +452,42 @@ export async function removeConnection(userId: string, id: string): Promise<bool
   return true;
 }
 
+/** What refreshing and revoking a connection's sign-in need. */
+const grantOf = (row: Pick<ConnectionRow, "user_id" | "client_reg_id" | "resource" | "endpoints_json">): Grant => ({
+  userId: row.user_id,
+  clientRegId: row.client_reg_id,
+  resource: row.resource,
+  endpoints: readEndpoints(row.endpoints_json),
+});
+
+/** Asks a connection's authorization server to cancel its tokens. Never throws; logs only whether it was confirmed. */
+async function revokeConnection(row: ConnectionRow): Promise<void> {
+  let tokens: { access: string; refresh: string };
+  try {
+    tokens = {
+      access: row.enc_access ? unseal(row.enc_access, place(row, "access")) : "",
+      refresh: row.enc_refresh ? unseal(row.enc_refresh, place(row, "refresh")) : "",
+    };
+  } catch {
+    return;
+  }
+  if (!tokens.access && !tokens.refresh) return;
+  const done = await revokeGrant(grantOf(row), tokens).catch(() => false);
+  console.log(`[flash] connector ${row.id} ${row.provider} revoke ${done ? "ok" : "not confirmed"}`);
+}
+
 async function owned(userId: string, id: string): Promise<ConnectionRow> {
   const row = await one<ConnectionRow>("SELECT * FROM connections WHERE id = ? AND user_id = ?", [id, userId]);
   if (!row) throw new ConnectError("gone", "That account isn't connected.");
   return row;
 }
 
-/** A connection's server, opened to call it: the client, its secret, and what of its address to hide (see scrub). */
-type Opened = { client: McpClient; secret: string; parts: string[] };
+/**
+ * A connection's server, opened to call it: the client, its secret (the key, or the OAuth access
+ * token), what of its address to hide (see scrub), and for OAuth the sealed token it used, so a
+ * refusal of that very token can be told from one already renewed.
+ */
+type Opened = { client: McpClient; secret: string; parts: string[]; sealed: string };
 
 /**
  * A secret that can't be opened: CONNECTOR_KEYS doesn't have the key that sealed it now. An "auth"
@@ -384,20 +501,195 @@ class KeyUnreadable extends McpError {
   }
 }
 
-/** The account's own server refused its key (401 or 403): it must be connected again, and that is stored. */
-const refusedKey = (err: unknown) => err instanceof McpError && err.code === "auth" && !(err instanceof KeyUnreadable);
+/** An OAuth sign-in that ended: its refresh was refused, or there is nothing to renew it with. Stored as needing Reconnect. */
+class SignInEnded extends McpError {
+  constructor() {
+    super("auth", "This account needs to be signed in again.");
+  }
+}
 
-/** A client for one of the user's connections, with its secret (and a server it added, its whole address) opened. */
-function clientFor(row: ConnectionRow, signal?: AbortSignal): Opened {
-  let secret: string;
-  let url: string;
+/**
+ * The scopes a server says a token lacks (403 insufficient_scope): a step-up, which only the user can
+ * agree to, with Reconnect. Null for any other answer.
+ */
+function stepUp(err: unknown): string[] | null {
+  if (!(err instanceof McpError) || err.code !== "auth" || err.status !== 403) return null;
+  const challenge = parseChallenge(err.challenge);
+  return challenge.error === "insufficient_scope" ? scopeList(challenge.scope) : null;
+}
+
+/** The account's own server refused its key or sign-in (401 or 403, not a step-up): it must be connected again, and that is stored. */
+const refusedKey = (err: unknown) => err instanceof McpError && err.code === "auth" && !(err instanceof KeyUnreadable) && !stepUp(err);
+
+/** A refusal Flash can try once more after renewing the sign-in: a 401 to an OAuth connection's token. */
+const renewable = (row: ConnectionRow, err: unknown) => row.kind === "oauth" && err instanceof McpError && err.code === "auth" && err.status === 401 && !(err instanceof SignInEnded);
+
+/**
+ * Keeps the scopes a server asked for (step-up) with the ones asked for before, so Reconnect asks for
+ * their union. Only the user starts that sign-in; nothing happens by itself.
+ */
+async function addScopes(row: ConnectionRow, scopes: string[]) {
+  const all = unionScopes(row.scopes, scopes).join(" ");
+  if (all !== row.scopes) await run("UPDATE connections SET scopes = ? WHERE id = ? AND user_id = ?", [all, row.id, row.user_id]);
+}
+
+// An access token is renewed this long before it runs out; one refresh may hold a connection this
+// long (longer than the token request may take); others wait for it at most this long.
+const REFRESH_EARLY_MS = 60_000;
+const REFRESH_LOCK_MS = 30_000;
+const REFRESH_WAIT_MS = 15_000;
+
+const pause = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener("abort", () => (clearTimeout(timer), resolve()), { once: true });
+  });
+
+/**
+ * An OAuth connection's access token, renewed first when it runs out within a minute, or when it is
+ * `stale` (the sealed token its server just refused). Refreshes run one at a time per connection:
+ * the one that takes refreshing_until (only while the row still holds the tokens it read) refreshes;
+ * the others wait for it and read what it stored. So a rotated refresh token is never sent twice.
+ */
+async function accessToken(row: ConnectionRow, stale = "", signal?: AbortSignal): Promise<{ token: string; sealed: string }> {
+  let current: ConnectionRow | null = row;
+  const first = row.enc_access;
+  const until = Date.now() + REFRESH_WAIT_MS;
+  for (;;) {
+    if (!current || current.status === "needs_reconnect" || !current.enc_access) throw new SignInEnded();
+    const expires = Number(current.expires_at);
+    const usable = current.enc_access !== stale && !(expires > 0 && expires <= now());
+    // A token another request renewed while this one waited is used as long as it lasts, not renewed again.
+    const fresh = usable && (current.enc_access !== first || !(expires > 0 && expires - REFRESH_EARLY_MS < now()));
+    const open = (c: ConnectionRow) => {
+      try {
+        return { token: unseal(c.enc_access, place(c, "access")), sealed: c.enc_access };
+      } catch {
+        throw new KeyUnreadable();
+      }
+    };
+    if (fresh) return open(current);
+    if (!current.enc_refresh) {
+      if (usable) return open(current);
+      await run("UPDATE connections SET status = 'needs_reconnect', enc_access = '', expires_at = 0 WHERE id = ? AND user_id = ? AND enc_access = ?", [
+        current.id,
+        current.user_id,
+        current.enc_access,
+      ]);
+      throw new SignInEnded();
+    }
+    const at = now();
+    const took = await run(
+      `UPDATE connections SET refreshing_until = ?
+       WHERE id = ? AND user_id = ? AND status <> 'needs_reconnect' AND enc_access = ? AND enc_refresh = ? AND (refreshing_until IS NULL OR refreshing_until < ?)`,
+      [at + REFRESH_LOCK_MS, current.id, current.user_id, current.enc_access, current.enc_refresh, at],
+    );
+    if (took.rowsAffected) {
+      const renewed = await refreshNow(current, at + REFRESH_LOCK_MS, usable, signal);
+      if (renewed) return renewed;
+      current = await one<ConnectionRow>("SELECT * FROM connections WHERE id = ? AND user_id = ?", [row.id, row.user_id]);
+      continue;
+    }
+    if (signal?.aborted) throw stopError(signal);
+    if (Date.now() > until) throw new McpError("unreachable", "The account's sign-in couldn't be renewed in time.");
+    await pause(200, signal);
+    current = await one<ConnectionRow>("SELECT * FROM connections WHERE id = ? AND user_id = ?", [row.id, row.user_id]);
+  }
+}
+
+/**
+ * Refreshes a connection's tokens, holding its refresh (lock). The new access and refresh tokens are
+ * stored in one write before the access token is used: a server that rotates refresh tokens may
+ * revoke the whole sign-in if an old one is sent again. A refused grant marks the account for
+ * Reconnect, with no retry. Any other failure frees the refresh; the old token is used while it lasts.
+ * Both writes land only while the row still holds the grant that was renewed: when a Reconnect replaced
+ * it meanwhile, the renewed tokens are given back to the server and null asks the caller to read the row again.
+ */
+async function refreshNow(row: ConnectionRow, lock: number, usable: boolean, signal?: AbortSignal): Promise<{ token: string; sealed: string } | null> {
+  const free = () => run("UPDATE connections SET refreshing_until = NULL WHERE id = ? AND refreshing_until = ?", [row.id, lock]);
+  let refreshToken: string;
   try {
-    secret = row.enc_secret ? unseal(row.enc_secret, place(row)) : "";
+    refreshToken = unseal(row.enc_refresh, place(row, "refresh"));
+  } catch {
+    await free();
+    throw new KeyUnreadable();
+  }
+  let tokens: Tokens;
+  try {
+    tokens = await refreshGrant(grantOf(row), refreshToken, signal);
+  } catch (err) {
+    if (err instanceof OAuthError && err.code === "invalid_grant") {
+      const ended = await run(
+        `UPDATE connections SET status = 'needs_reconnect', enc_access = '', enc_refresh = '', expires_at = 0, refreshing_until = NULL
+         WHERE id = ? AND user_id = ? AND enc_refresh = ?`,
+        [row.id, row.user_id, row.enc_refresh],
+      );
+      if (!ended.rowsAffected) return null;
+      console.log(`[flash] connector ${row.id} ${row.provider} refresh refused`);
+      throw new SignInEnded();
+    }
+    await free();
+    if (signal?.aborted) throw stopError(signal);
+    console.log(`[flash] connector ${row.id} ${row.provider} refresh failed`);
+    if (!usable) throw new McpError("unreachable", "The account's sign-in couldn't be renewed.");
+    try {
+      return { token: unseal(row.enc_access, place(row, "access")), sealed: row.enc_access };
+    } catch {
+      throw new KeyUnreadable();
+    }
+  }
+  // Both tokens are sealed again with the newest key version (a refresh token the server didn't rotate
+  // too), so a preset's row, which holds nothing else sealed, records that version (see key rotation).
+  const access = seal(tokens.access, place(row, "access"));
+  const refresh = seal(tokens.refresh || refreshToken, place(row, "refresh")).stored;
+  const saved = await run(
+    `UPDATE connections SET enc_access = ?, enc_refresh = ?, expires_at = ?, refreshing_until = NULL,
+       key_version = CASE WHEN COALESCE(enc_url, '') = '' AND COALESCE(enc_secret, '') = '' THEN ? ELSE key_version END
+     WHERE id = ? AND user_id = ? AND enc_refresh = ? AND status <> 'needs_reconnect'`,
+    [access.stored, refresh, tokens.expiresAt, access.version, row.id, row.user_id, row.enc_refresh],
+  );
+  if (!saved.rowsAffected) {
+    await revokeGrant(grantOf(row), { access: tokens.access, refresh: tokens.refresh }).catch(() => false);
+    return null;
+  }
+  console.log(`[flash] connector ${row.id} ${row.provider} refreshed`);
+  return { token: tokens.access, sealed: access.stored };
+}
+
+/**
+ * A client for one of the user's connections, with its secret (and a server it added, its whole
+ * address) opened. An OAuth connection's access token is renewed first when needed (see accessToken).
+ */
+async function openServer(row: ConnectionRow, signal?: AbortSignal, stale = ""): Promise<Opened> {
+  let secret = "";
+  let url: string;
+  let sealed = "";
+  try {
+    if (row.kind !== "oauth") secret = row.enc_secret ? unseal(row.enc_secret, place(row)) : "";
     url = row.enc_url ? unseal(row.enc_url, place(row, "url")) : serverUrl(row.provider, row.url);
   } catch {
     throw new KeyUnreadable();
   }
-  return { client: new McpClient({ url, token: secret, protocol: row.protocol }, { signal }), secret, parts: row.enc_url ? addressSecrets(url) : [] };
+  if (row.kind === "oauth") ({ token: secret, sealed } = await accessToken(row, stale, signal));
+  return { client: new McpClient({ url, token: secret, protocol: row.protocol }, { signal }), secret, parts: row.enc_url ? addressSecrets(url) : [], sealed };
+}
+
+/**
+ * Runs fn with the connection's server open, and closes it after. A server that refuses an OAuth
+ * connection's token (401) gets it renewed once, and fn is tried once more.
+ */
+async function withServer<T>(row: ConnectionRow, fn: (opened: Opened) => Promise<T>): Promise<T> {
+  let opened = await openServer(row);
+  try {
+    return await fn(opened);
+  } catch (err) {
+    if (!renewable(row, err)) throw err;
+    await opened.client.close();
+    opened = await openServer(row, undefined, opened.sealed);
+    return await fn(opened);
+  } finally {
+    await opened.client.close();
+  }
 }
 
 /** Marks a connection to be connected again: its server refused its key. */
@@ -406,18 +698,15 @@ const needsReconnect = (id: string) => run("UPDATE connections SET status = 'nee
 /** One tool of a connection as its server lists it now (null when it no longer has it). */
 async function liveTool(userId: string, row: ConnectionRow, name: string): Promise<McpTool | null> {
   await tryLimit(userId);
-  let client: McpClient | null = null;
   try {
-    client = clientFor(row).client;
-    return (await client.listTools()).find((t) => t.name === name) ?? null;
+    return (await withServer(row, (opened) => opened.client.listTools())).find((t) => t.name === name) ?? null;
   } catch (err) {
-    if (refusedKey(err)) await needsReconnect(row.id);
+    const more = stepUp(err);
+    if (more && row.kind === "oauth") await addScopes(row, more);
+    else if (refusedKey(err)) await needsReconnect(row.id);
     throw asProblem(err);
-  } finally {
-    await client?.close();
   }
 }
-
 /**
  * A tool its server changed since the user added it, as it is now, for the user to read before using
  * it again (see review in updateConnection). Null when the server no longer has it.
@@ -472,10 +761,23 @@ export async function updateConnection(
 }
 
 /**
+ * Adds a server the user added and signed in to, once they've looked at its tools (see
+ * finishSignIn): until then it is in review and no chat uses it.
+ */
+export async function confirmConnection(userId: string, id: string): Promise<ConnectionView> {
+  await confirmedOnly(userId);
+  const done = await run("UPDATE connections SET status = 'ok' WHERE id = ? AND user_id = ? AND status = 'review'", [id, userId]);
+  if (!done.rowsAffected) throw new ConnectError("gone", "That account isn't connected.");
+  return (await listConnections(userId)).find((c) => c.id === id)!;
+}
+
+/**
  * Calls one tool on a connection, under the per-account limit, and returns its text without the
  * secret or the address's secret-looking parts. Stop (signal) ends it and goes on as it is; any other
  * failure is a tool error in Flash's own words, so nothing that could hold the address is ever passed
- * on or logged. The log has the connection's id, service, tool, outcome and time only.
+ * on or logged. A tool its server says needs more access (step-up) keeps the scopes it names for the
+ * next sign-in, and tells the user to Reconnect. The log has the connection's id, service, tool,
+ * outcome and time only.
  */
 async function callOn(row: ConnectionRow, opened: Opened, tool: Pick<ToolRow, "name" | "schema">, input: Record<string, unknown>, signal?: AbortSignal) {
   if (signal?.aborted) throw stopError(signal);
@@ -497,6 +799,15 @@ async function callOn(row: ConnectionRow, opened: Opened, tool: Pick<ToolRow, "n
     if (!(err instanceof McpError)) {
       status = "failed";
       return { text: "The tool couldn't be called.", isError: true };
+    }
+    const more = stepUp(err);
+    if (more && row.kind === "oauth") {
+      status = "needs_scope";
+      await addScopes(row, more);
+      return {
+        text: "This tool needs more access than the account gave Flash. Tell the user to press Reconnect on this account in Settings > Connectors and allow it, then try again.",
+        isError: true,
+      };
     }
     status = err.code;
     return { text: scrub(err.message, opened.secret, opened.parts), isError: true };
@@ -556,14 +867,16 @@ export async function chatKit(userId: string, ids: string[], { replyId = "", sig
     }
   });
   if (!tools.length) return null;
-  const open = new Map<string, Opened>();
-  const connect = (row: ConnectionRow) => {
-    let c = open.get(row.id);
-    if (!c) {
-      c = clientFor(row, signal);
-      open.set(row.id, c);
-    }
-    return c;
+  // Each connection's server, opened once for the reply (an OAuth one with its token renewed first when needed).
+  const open = new Map<string, Promise<Opened>>();
+  const connect = (row: ConnectionRow, stale = ""): Promise<Opened> => {
+    const opened = open.get(row.id);
+    if (opened && !stale) return opened;
+    const opening = openServer(row, signal, stale);
+    // Read when used; a failure is answered there (a tool error), never left unhandled.
+    opening.catch(() => {});
+    open.set(row.id, opening);
+    return opening;
   };
   const rowOf = (id: string) => rows.find((r) => r.id === id)!;
   return {
@@ -576,8 +889,18 @@ export async function chatKit(userId: string, ids: string[], { replyId = "", sig
           const mine = tools.filter((t) => t.connectionId === row.id);
           if (!mine.length) return [];
           try {
-            const { client } = connect(row);
-            const live = await client.listTools();
+            let opened = await connect(row);
+            let live: McpTool[];
+            try {
+              live = await opened.client.listTools();
+            } catch (err) {
+              // A token its server refused: renewed once, and listed again.
+              if (!renewable(row, err)) throw err;
+              await opened.client.close();
+              opened = await connect(row, opened.sealed);
+              live = await opened.client.listTools();
+            }
+            const { client } = opened;
             if (client.protocol && client.protocol !== row.protocol) await run("UPDATE connections SET protocol = ? WHERE id = ?", [client.protocol, row.id]);
             const same = mine.filter((t) => live.find((l) => l.name === t.tool)?.hash === t.hash);
             const moved = mine.filter((t) => !same.includes(t));
@@ -593,7 +916,9 @@ export async function chatKit(userId: string, ids: string[], { replyId = "", sig
           } catch (err) {
             if (signal?.aborted) throw err;
             console.log(`[flash] connector ${row.id} ${row.provider} list ${err instanceof McpError ? err.code : "failed"}`);
-            if (refusedKey(err)) await needsReconnect(row.id);
+            const more = stepUp(err);
+            if (more && row.kind === "oauth") await addScopes(row, more);
+            else if (refusedKey(err)) await needsReconnect(row.id);
             unreachable.push(row.label);
             return [];
           }
@@ -606,7 +931,7 @@ export async function chatKit(userId: string, ids: string[], { replyId = "", sig
       const pinned = tools.find((t) => t.name === tool.name)!;
       let opened: Opened;
       try {
-        opened = connect(row);
+        opened = await connect(row);
       } catch (err) {
         if (!(err instanceof McpError)) throw err;
         if (refusedKey(err)) await needsReconnect(row.id);
@@ -631,9 +956,17 @@ export async function chatKit(userId: string, ids: string[], { replyId = "", sig
       });
     },
     async close() {
-      const clients = [...open.values()];
+      const opening = [...open.values()];
       open.clear();
-      await Promise.all(clients.map((c) => c.client.close()));
+      await Promise.all(
+        opening.map(async (o) => {
+          try {
+            await (await o).client.close();
+          } catch {
+            // Never opened.
+          }
+        }),
+      );
     },
   };
 }
@@ -648,7 +981,7 @@ const NOT_RUN = {
   reconnect: msg("This account needs to be connected again."),
   failed: msg("The action couldn't run."),
 };
-const PROBLEMS: ConnectProblem[] = ["blocked", "auth", "unreachable", "protocol", "limit", "too_many", "changed", "no_tools", "bad_input", "gone", "unverified"];
+const PROBLEMS: ConnectProblem[] = ["blocked", "auth", "unreachable", "protocol", "limit", "too_many", "changed", "no_tools", "bad_input", "gone", "unverified", "no_signin", "needs_client"];
 const OWN_WORDS = new Set<string>([...Object.values(NOT_RUN), ...PROBLEMS.map((code) => problemText(code, english))]);
 
 /** A failed action's result for the card: Flash's own reasons in the user's language, a tool's own words as they are. */
@@ -670,33 +1003,30 @@ export async function runApproved(userId: string, id: string, hash: string): Pro
   if (!row) return fail(NOT_RUN.gone);
   const pinned = await one<ToolRow>("SELECT * FROM connection_tools WHERE connection_id = ? AND name = ?", [row.id, action.tool]);
   if (!pinned || pinned.changed || pinned.hash !== action.tool_hash) return fail(NOT_RUN.changed);
-  let opened: Opened;
+  let out: { text: string; isError: boolean } | "changed";
   try {
-    opened = clientFor(row);
-  } catch {
-    return fail(NOT_RUN.reconnect);
-  }
-  try {
-    const live = await opened.client.listTools();
-    if (live.find((t) => t.name === action.tool)?.hash !== action.tool_hash) {
-      await run("UPDATE connection_tools SET changed = 1 WHERE connection_id = ? AND name = ?", [row.id, action.tool]);
-      return fail(NOT_RUN.changed);
-    }
-    const out = await callOn(row, opened, pinned, JSON.parse(action.input_json) as Record<string, unknown>);
-    // Kept for the card, and for Continue, cut as a step's results are.
-    const kept = cut(out.text, CONNECT_RESULT_TOKENS);
-    await finishAction(action.id, !out.isError, kept);
-    return { status: out.isError ? "failed" : "done", result: kept.slice(0, CARD_RESULT_CHARS) };
+    out = await withServer(row, async (opened) => {
+      const live = await opened.client.listTools();
+      if (live.find((t) => t.name === action.tool)?.hash !== action.tool_hash) return "changed" as const;
+      return callOn(row, opened, pinned, JSON.parse(action.input_json) as Record<string, unknown>);
+    });
   } catch (err) {
+    if (err instanceof KeyUnreadable || err instanceof SignInEnded) return fail(NOT_RUN.reconnect);
     const problem = asProblem(err);
     if (problem instanceof ConnectError) {
       if (refusedKey(err)) await needsReconnect(row.id);
       return fail(problemText(problem.code, english));
     }
     return fail(NOT_RUN.failed);
-  } finally {
-    await opened.client.close();
   }
+  if (out === "changed") {
+    await run("UPDATE connection_tools SET changed = 1 WHERE connection_id = ? AND name = ?", [row.id, action.tool]);
+    return fail(NOT_RUN.changed);
+  }
+  // Kept for the card, and for Continue, cut as a step's results are.
+  const kept = cut(out.text, CONNECT_RESULT_TOKENS);
+  await finishAction(action.id, !out.isError, kept);
+  return { status: out.isError ? "failed" : "done", result: kept.slice(0, CARD_RESULT_CHARS) };
 }
 
 /** For a reply continued with approved results: each one's tool as the reply knows it, or nothing when it isn't on. */
@@ -705,4 +1035,178 @@ export function continuedCalls(kit: ConnectorKit, rows: ActionRow[]) {
     const tool = kit.tools.find((t) => t.connectionId === row.connection_id && t.tool === row.tool);
     return tool ? [{ row, tool }] : [];
   });
+}
+
+/** What starts a sign-in: a preset that signs in, a server the user added, or Reconnect of an account that signed in. */
+export type SignInRequest = { provider?: string; url?: string; label?: string; connectionId?: string; clientId?: string; clientSecret?: string };
+
+/**
+ * Starts signing in to a server (see mcp-oauth.ts): finds how, registers Flash there when needed,
+ * keeps the flow for the callback, and returns the authorization server's page for the browser.
+ * Reconnect asks for the scopes asked before, with any a tool said it needs since (step-up). A client
+ * ID and secret the user typed in are kept for them alone. Costs nothing and calls no model.
+ */
+export async function startSignIn(userId: string, input: SignInRequest, origin: string): Promise<string> {
+  await confirmedOnly(userId);
+  let provider: string;
+  let url: string;
+  let label: string;
+  let more: string[] = [];
+  let reuse = "";
+  if (input.connectionId) {
+    const row = await owned(userId, input.connectionId);
+    if (row.kind !== "oauth") throw new ConnectError("bad_input", "That account doesn't sign in.");
+    try {
+      url = row.enc_url ? unseal(row.enc_url, place(row, "url")) : serverUrl(row.provider, row.url);
+    } catch {
+      throw new ConnectError("gone", "That account isn't connected any more.");
+    }
+    ({ provider, label } = row);
+    more = scopeList(row.scopes);
+    reuse = row.client_reg_id;
+  } else {
+    const preset = presetById(input.provider ?? "");
+    if (preset) {
+      if (!preset.signIn) throw new ConnectError("bad_input", "This service needs its key or token.");
+      provider = preset.id;
+      url = serverUrl(preset.id, preset.url);
+      label = preset.name;
+    } else if (input.provider === "custom" && typeof input.url === "string") {
+      try {
+        url = checkUrl(input.url.trim()).href;
+      } catch (err) {
+        throw asProblem(err);
+      }
+      provider = "custom";
+      label = (input.label?.trim() || hostOf(url)).slice(0, 60);
+    } else {
+      throw new ConnectError("bad_input", "Unknown service.");
+    }
+    const count = await one<{ n: number }>("SELECT COUNT(*) AS n FROM connections WHERE user_id = ?", [userId]);
+    if (Number(count?.n ?? 0) >= MAX_CONNECTIONS) throw new ConnectError("too_many", "You have the most connections Flash keeps. Remove one first.");
+  }
+  await tryLimit(userId);
+  try {
+    const typed = typedClient(input.clientId, input.clientSecret);
+    const plan = await planSignIn(url, { more });
+    return await beginSignIn(userId, { provider, serverUrl: url, label, origin, plan, connectionId: input.connectionId, typed, reuse });
+  } catch (err) {
+    throw asProblem(err);
+  }
+}
+
+/** How a sign-in ended, for the page it comes back to (never the authorization server's own words). */
+export type SignInOutcome = "ok" | "review" | "cancelled" | "expired" | "failed";
+
+/**
+ * Finishes a sign-in at the callback: takes the flow once (only the signed-in user's own, see
+ * takeFlow), checks iss, trades the code for tokens and keeps them sealed on the connection. A
+ * preset is ready at once; a server the user added waits in review until they've seen its tools.
+ * Nothing is stored unless all of it worked, and tokens that can't be kept are given back.
+ */
+export async function finishSignIn(userId: string, params: { state: string | null; code: string | null; iss: string | null; error: string | null }): Promise<SignInOutcome> {
+  const flow = await takeFlow(userId, params.state);
+  if (!flow) return "expired";
+  const failed = (why: string): SignInOutcome => {
+    console.log(`[flash] connector sign-in ${flow.provider} failed: ${why}`);
+    return "failed";
+  };
+  if (params.error) return "cancelled";
+  if (!issMatches(flow, params.iss)) return failed("iss");
+  if (!params.code) return failed("no code");
+  let tokens: Tokens;
+  try {
+    tokens = await exchangeCode(userId, flow, params.code);
+  } catch (err) {
+    return failed(err instanceof OAuthError ? err.code : "token");
+  }
+  try {
+    return await keepSignIn(userId, flow, tokens);
+  } catch (err) {
+    await revokeGrant({ userId, clientRegId: flow.client_reg_id, resource: flow.resource, endpoints: readEndpoints(flow.endpoints_json) }, tokens).catch(() => false);
+    return failed(err instanceof ConnectError || err instanceof McpError ? err.code : "store");
+  }
+}
+
+/** Keeps a finished sign-in: a new connection with its tools pinned, or new tokens for one being reconnected. */
+async function keepSignIn(userId: string, flow: FlowRow, tokens: Tokens): Promise<"ok" | "review"> {
+  const url = flowSecret(flow, "url");
+  const preset = presetById(flow.provider);
+  const client = new McpClient({ url, token: tokens.access });
+  let tools: McpTool[];
+  try {
+    tools = await client.listTools();
+  } finally {
+    await client.close();
+  }
+  const signedIn = (where: Pick<ConnectionRow, "id" | "user_id" | "provider">) => ({
+    access: seal(tokens.access, place(where, "access")),
+    refresh: tokens.refresh ? seal(tokens.refresh, place(where, "refresh")).stored : "",
+  });
+  if (flow.connection_id) {
+    const row = await one<ConnectionRow>("SELECT * FROM connections WHERE id = ? AND user_id = ? AND kind = 'oauth'", [flow.connection_id, userId]);
+    if (!row) throw new ConnectError("gone", "That account isn't connected any more.");
+    const sealed = signedIn(row);
+    await run(
+      `UPDATE connections SET enc_access = ?, enc_refresh = ?, expires_at = ?, issuer = ?, resource = ?, client_reg_id = ?, scopes = ?, endpoints_json = ?,
+         protocol = ?, refreshing_until = NULL, status = CASE status WHEN 'review' THEN 'review' ELSE 'ok' END,
+         key_version = CASE WHEN COALESCE(enc_url, '') = '' AND COALESCE(enc_secret, '') = '' THEN ? ELSE key_version END
+       WHERE id = ? AND user_id = ?`,
+      [
+        sealed.access.stored,
+        sealed.refresh,
+        tokens.expiresAt,
+        flow.issuer,
+        flow.resource,
+        flow.client_reg_id,
+        flow.scopes,
+        flow.endpoints_json,
+        client.protocol,
+        sealed.access.version,
+        row.id,
+        userId,
+      ],
+    );
+    return row.status === "review" ? "review" : "ok";
+  }
+  if (!tools.length) throw new ConnectError("no_tools", "That server has no tools Flash can use.");
+  const count = await one<{ n: number }>("SELECT COUNT(*) AS n FROM connections WHERE user_id = ?", [userId]);
+  if (Number(count?.n ?? 0) >= MAX_CONNECTIONS) throw new ConnectError("too_many", "You have the most connections Flash keeps. Remove one first.");
+  const id = randomId(12);
+  const where = { id, user_id: userId, provider: flow.provider };
+  const sealed = signedIn(where);
+  // A server the user added: only its origin is kept as it is, since its path or query may hold a secret.
+  const address = preset ? null : seal(url, place(where, "url"));
+  await (await db()).batch(
+    [
+      {
+        sql: `INSERT INTO connections (id, user_id, provider, kind, label, url, enc_url, status, enc_secret, key_version, last4, protocol, created_at,
+                enc_access, enc_refresh, expires_at, issuer, resource, client_reg_id, scopes, endpoints_json)
+              VALUES (?, ?, ?, 'oauth', ?, ?, ?, ?, '', ?, '', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        args: [
+          id,
+          userId,
+          flow.provider,
+          flow.label || preset?.name || hostOf(url),
+          preset ? preset.url : new URL(url).origin,
+          address?.stored ?? "",
+          preset ? "ok" : "review",
+          sealed.access.version,
+          client.protocol,
+          now(),
+          sealed.access.stored,
+          sealed.refresh,
+          tokens.expiresAt,
+          flow.issuer,
+          flow.resource,
+          flow.client_reg_id,
+          flow.scopes,
+          flow.endpoints_json,
+        ],
+      },
+      ...toolInserts(id, tools, preset),
+    ],
+    "write",
+  );
+  return preset ? "ok" : "review";
 }

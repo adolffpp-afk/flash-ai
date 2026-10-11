@@ -1,7 +1,7 @@
 import { appUrl, getUser, unauthorized } from "@/lib/server/auth.ts";
 import { translatorFor } from "@/lib/server/i18n.ts";
 import { connectorsReady } from "@/lib/server/secret-box.ts";
-import { ConnectError, changedTool, problemText, updateConnection } from "@/lib/server/connections.ts";
+import { ConnectError, changedTool, confirmConnection, problemText, updateConnection } from "@/lib/server/connections.ts";
 import { approvalAllowed } from "@/lib/server/pending-actions.ts";
 
 /** A tool its server changed, as it is now (?tool=name), so the user reads it before using it again. */
@@ -27,7 +27,8 @@ export async function GET(request: Request, ctx: RouteContext<"/api/connect/[id]
  * Changes one tool of the user's connections: on or off, always allowed (a server they added only),
  * or a changed tool looked at again (review). Always allowing a tool lets it run without asking, so
  * like an approval it is taken only from Flash's own page, with its exact Origin, and only from an
- * account whose email is confirmed (403, see confirmedOnly).
+ * account whose email is confirmed (403, see confirmedOnly). { confirm: true } adds a server the user
+ * signed in to, once they've looked at its tools.
  */
 export async function PATCH(request: Request, ctx: RouteContext<"/api/connect/[id]">) {
   const user = await getUser(request);
@@ -40,8 +41,10 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/connect/[i
   const { id } = await ctx.params;
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
   const flag = (key: string) => (typeof body[key] === "boolean" ? (body[key] as boolean) : undefined);
-  if (typeof body.tool !== "string") return Response.json({ error: t("Unknown action.") }, { status: 400 });
+  if (body.confirm !== true && typeof body.tool !== "string") return Response.json({ error: t("Unknown action.") }, { status: 400 });
   try {
+    if (body.confirm === true) return Response.json({ connection: await confirmConnection(user.id, id) });
+    if (typeof body.tool !== "string") return Response.json({ error: t("Unknown action.") }, { status: 400 });
     const connection = await updateConnection(user.id, id, {
       tool: body.tool.slice(0, 128),
       enabled: flag("enabled"),

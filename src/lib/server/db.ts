@@ -505,6 +505,49 @@ const SCHEMA = [
     finished_at INTEGER NOT NULL DEFAULT 0
   )`,
   `CREATE INDEX IF NOT EXISTS pending_actions_user ON pending_actions(user_id, created_at)`,
+  // A sign-in to a connector's server under way (see mcp-oauth.ts): kept here, never in a cookie,
+  // because the callback acts on what it says. Found by a hash of its state, taken once by its own
+  // user with one conditional DELETE, and gone after 10 minutes. The PKCE verifier and the server's
+  // address (which may hold a key) are sealed.
+  `CREATE TABLE IF NOT EXISTS connect_flows (
+    state_hash TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    enc_verifier TEXT NOT NULL,
+    provider TEXT NOT NULL,
+    connection_id TEXT NOT NULL DEFAULT '',
+    label TEXT NOT NULL DEFAULT '',
+    enc_url TEXT NOT NULL DEFAULT '',
+    issuer TEXT NOT NULL,
+    resource TEXT NOT NULL,
+    client_reg_id TEXT NOT NULL,
+    scopes TEXT NOT NULL DEFAULT '',
+    redirect_uri TEXT NOT NULL,
+    endpoints_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS connect_flows_expiry ON connect_flows(expires_at)`,
+  // Who Flash is to each authorization server, kept by its issuer (so re-registering never orphans
+  // earlier sign-ins). Flash's own registrations (a Client ID Metadata Document, or one made by
+  // Dynamic Client Registration) are shared by every user (owner_user_id NULL), one per issuer and
+  // callback address. A client ID and secret a user typed in for a server with neither belong to
+  // that user alone (owner_user_id), and are never used for anyone else.
+  `CREATE TABLE IF NOT EXISTS mcp_client_registrations (
+    id TEXT PRIMARY KEY,
+    issuer TEXT NOT NULL,
+    owner_user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+    redirect_uri TEXT NOT NULL,
+    client_id TEXT NOT NULL,
+    enc_client_secret TEXT NOT NULL DEFAULT '',
+    enc_registration_token TEXT NOT NULL DEFAULT '',
+    auth_method TEXT NOT NULL DEFAULT 'none',
+    method TEXT NOT NULL,
+    key_version TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    UNIQUE (issuer, owner_user_id)
+  )`,
+  // SQLite counts NULLs as different in a UNIQUE constraint, so the shared rows need their own index.
+  `CREATE UNIQUE INDEX IF NOT EXISTS mcp_client_registrations_shared ON mcp_client_registrations(issuer, redirect_uri) WHERE owner_user_id IS NULL`,
 ];
 
 let client: Client | null = null;
@@ -558,6 +601,19 @@ const MIGRATIONS = [
   // 1 for a row that only carries what another provider cost in the same request (a helper),
   // so request counts skip it. Its credits are 0; the request's main row (0) has them.
   "ALTER TABLE usage ADD COLUMN part INTEGER NOT NULL DEFAULT 0",
+  // Connections signed in with OAuth (see mcp-oauth.ts): the sealed access and refresh tokens, when
+  // the access token runs out, the authorization server (issuer), the resource the tokens are for,
+  // Flash's registration there, the scopes it asks for, the server's token and revocation endpoints,
+  // and refreshing_until, which lets one refresh run at a time per connection.
+  "ALTER TABLE connections ADD COLUMN enc_access TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE connections ADD COLUMN enc_refresh TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE connections ADD COLUMN expires_at INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE connections ADD COLUMN issuer TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE connections ADD COLUMN resource TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE connections ADD COLUMN client_reg_id TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE connections ADD COLUMN scopes TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE connections ADD COLUMN endpoints_json TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE connections ADD COLUMN refreshing_until INTEGER",
 ];
 
 async function init(c: Client) {

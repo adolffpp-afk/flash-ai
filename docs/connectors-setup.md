@@ -1,8 +1,9 @@
 # Setting up connectors
 
-Connectors let people use their own accounts (Linear, Airtable, Firecrawl, Perplexity, Resend,
-Brevo, or any MCP server they add themselves) in a chat. Flash stores each person's API key or token
-encrypted with one key of your own, `CONNECTOR_KEYS`. Until it is set, nobody sees connectors, and
+Connectors let people use their own accounts (Notion, Linear, Airtable, Klaviyo, Firecrawl,
+Perplexity, Resend, Brevo, or any MCP server they add themselves) in a chat. Some sign in with one
+click at the service; the others take an API key. Flash stores each person's key, or the tokens a
+sign-in gives it, encrypted with one key of your own, `CONNECTOR_KEYS`. Until it is set, nobody sees connectors, and
 only you (the emails in `FLASH_ADMIN_EMAILS`) see a line in Settings > Connectors saying a key is
 needed.
 
@@ -27,6 +28,31 @@ as "needs to be connected again" and isn't used. This isn't stored: put the righ
 redeploy, and every account works again. Only if the key is lost for good do people have to remove
 their accounts and add them again. (An account whose own service refuses its key is marked for good.)
 
+## Sign-in (one click)
+
+Notion, Linear, Airtable and Klaviyo connect with **Connect**: the person signs in at the service
+and comes back to Flash, which never sees their password. (Linear and Airtable can still take a key
+under "Use a key instead".) A server someone adds themselves signs in the same way when it asks for
+it, and waits for them to look at its tools before it is added.
+
+There is nothing to set up and no new environment variable:
+
+- Flash introduces itself to each service with a public page,
+  `<your address>/oauth/mcp-client.json` (its Client ID Metadata Document), or, when the service
+  doesn't take that, by registering itself there (Dynamic Client Registration). Either way it does
+  this once per service and keeps it for everyone. No secret is involved.
+- The service sends people back to `<your address>/api/connect/mcp/callback`. "Your address" is
+  `FLASH_APP_URL` (already set for email links), else the address the page was opened at. People
+  must be signed in to Flash at that same address for the sign-in to finish.
+- A few servers don't let Flash register itself. Then the person makes a client in that server's
+  settings with the callback address shown under **Advanced**, and types its client ID (and secret,
+  if it has one) there. Those are kept encrypted, for that person only.
+
+Flash renews a sign-in's access as it runs out, one renewal at a time per account. If the service
+refuses (the person cancelled Flash's access there, or the sign-in was revoked), the account shows
+**Reconnect** and isn't used until they sign in again. Removing a signed-in account in Settings asks
+the service to cancel Flash's access too. Signing in, renewing and removing cost no credits.
+
 ## Change the key (rotation)
 
 Every stored key or token says which version sealed it, so old ones keep working while new ones use
@@ -38,8 +64,12 @@ the newest version.
    Then check /admin → **By provider** → **Connectors**: it says which version seals new keys
    ("New keys are sealed with v2"), and lists any entry it can't read (a name like `V2`, or a key
    that isn't 32 bytes) so you can fix it. Flash's logs say the same, by name, never the value.
-3. Only drop `v1` once nothing uses it. In the database:
-   `SELECT COUNT(*) FROM connections WHERE key_version = 'v1';` must be 0. An account sealed with a
+3. Only drop `v1` once nothing uses it. In the database, both of these must be 0:
+   `SELECT COUNT(*) FROM connections WHERE key_version = 'v1';`
+   `SELECT COUNT(*) FROM mcp_client_registrations WHERE key_version = 'v1';`
+   A signed-in account moves to the new version by itself the next time its access is renewed
+   while it is used; one with a key, or a server added by address, keeps `v1`
+   until it is removed and added again. An account sealed with a
    dropped version shows as "needs to be connected again" and stops working until its owner removes
    it and adds it again, or the version is put back.
 
@@ -53,8 +83,16 @@ the newest version.
 3. Connect a preset with any key, turn it on in a chat with the plug button, and ask Flash to "echo
    hello" (a read: it runs by itself) or "send a note to Sam" (a write: a card waits for Approve).
    The mock's terminal prints every call it gets.
+4. Notion, Klaviyo (and Linear or Airtable with **Connect**) sign in at the mock's stand-in
+   authorization server, which says yes at once. Add `http://127.0.0.1:7788/oauth/mcp` as your own
+   connector to try a server that asks for a sign-in. Start the mock with `MOCK_ACCESS_TTL=65` to
+   have its access run out after 65 seconds and see Flash renew it.
 
 ## Deleting someone's account by hand
+
+If they can still sign in, have them remove their accounts in Settings > Connectors first: for an
+account that signed in, that also asks the service to cancel Flash's access. Deleting rows by hand
+doesn't.
 
 Their connector rows go with them when foreign keys are on. To be sure, delete them yourself first:
 
@@ -62,7 +100,9 @@ Their connector rows go with them when foreign keys are on. To be sure, delete t
 DELETE FROM pending_actions WHERE user_id = '<user id>';
 DELETE FROM connection_tools WHERE connection_id IN (SELECT id FROM connections WHERE user_id = '<user id>');
 DELETE FROM connections WHERE user_id = '<user id>';
+DELETE FROM connect_flows WHERE user_id = '<user id>';
+DELETE FROM mcp_client_registrations WHERE owner_user_id = '<user id>';
 ```
 
-This removes the keys from Flash only. It doesn't cancel them at Linear, Airtable and the rest;
-the person does that in their account there.
+This removes the keys and tokens from Flash only. It doesn't cancel them at Linear, Airtable and
+the rest; the person does that in their account there.

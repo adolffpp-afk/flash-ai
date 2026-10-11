@@ -1,13 +1,15 @@
-import { fromOwnPage, getUser, isAdmin, unauthorized } from "@/lib/server/auth.ts";
+import { appUrl, fromOwnPage, getUser, isAdmin, unauthorized } from "@/lib/server/auth.ts";
 import { translatorFor } from "@/lib/server/i18n.ts";
 import { connectorsReady } from "@/lib/server/secret-box.ts";
 import { ConnectError, addConnection, listConnections, previewServer, problemText, removeConnection } from "@/lib/server/connections.ts";
 
 /*
  * The user's connected accounts (Settings > Connectors): GET lists them (never a secret, only its
- * last 4 characters), POST looks at a server's tools ("preview") or adds an account ("add"), DELETE
- * removes one. Until CONNECTOR_KEYS is set nothing can be added (503), and the owner is told why; an
- * account whose email isn't confirmed can't look at or add one either (403, see confirmedOnly).
+ * last 4 characters), POST looks at a server's tools ("preview", or how it signs in when it asks for
+ * that) or adds an account with a key ("add"; signing in is /api/connect/mcp/start), DELETE removes
+ * one (an account that signed in is signed out at its server first). Until CONNECTOR_KEYS is set
+ * nothing can be added (503), and the owner is told why; an account whose email isn't confirmed can't
+ * look at or add one either (403, see confirmedOnly).
  */
 
 export async function GET(request: Request) {
@@ -39,7 +41,7 @@ export async function POST(request: Request) {
       ? Object.fromEntries(Object.entries(body.pins as Record<string, unknown>).filter((e): e is [string, string] => typeof e[1] === "string").slice(0, 100))
       : undefined;
   try {
-    if (body.action === "preview") return Response.json(await previewServer(user.id, input));
+    if (body.action === "preview") return Response.json(await previewServer(user.id, input, appUrl(request)));
     if (body.action === "add") return Response.json({ connection: await addConnection(user.id, { ...input, pins }) });
     return Response.json({ error: t("Unknown action.") }, { status: 400 });
   } catch (err) {

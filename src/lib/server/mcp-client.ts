@@ -45,14 +45,29 @@ export type McpTool = {
 
 export type McpErrorCode = "auth" | "unreachable" | "protocol" | "asks_input" | "tool" | "too_large" | "timeout";
 
-/** Why a server couldn't be used, with an English message that holds nothing from the request. */
+/**
+ * Why a server couldn't be used, with an English message that holds nothing from the request. A
+ * refusal ("auth") keeps the HTTP status and the server's WWW-Authenticate header (cut short), so an
+ * OAuth server's sign-in can be found from it, and a step-up told apart (see mcp-oauth.ts).
+ */
 export class McpError extends Error {
   code: McpErrorCode;
-  constructor(code: McpErrorCode, message: string) {
+  status: number;
+  challenge: string;
+  constructor(code: McpErrorCode, message: string, { status = 0, challenge = "" }: { status?: number; challenge?: string } = {}) {
     super(message);
     this.code = code;
+    this.status = status;
+    this.challenge = challenge;
   }
 }
+
+/** The server refused the request (401 or 403), with what it said about signing in. */
+const refused = (res: SafeResponse) =>
+  new McpError("auth", "The server didn't accept the key or token.", {
+    status: res.status,
+    challenge: String(res.headers["www-authenticate"] ?? "").slice(0, 2000),
+  });
 
 /** JSON with object keys sorted, so a server that only reorders a schema's keys keeps its tool's hash. */
 export function canonicalJson(value: unknown): string {
@@ -250,7 +265,7 @@ export class McpClient {
       { id, method, params: modern ? { ...params, _meta: this.meta() } : params },
       { ...o, headers: { ...(modern && { "mcp-method": method }), ...o.headers } },
     );
-    if (res.status === 401 || res.status === 403) throw new McpError("auth", "The server didn't accept the key or token.");
+    if (res.status === 401 || res.status === 403) throw refused(res);
     const answer = answerIn(res, id);
     if (answer?.error) {
       throw new McpError("tool", `The server answered with an error: ${String(answer.error.message ?? "unknown error").slice(0, 300)}`);
@@ -270,7 +285,7 @@ export class McpClient {
       { id, method: "server/discover", params: { _meta: this.meta() } },
       { headers: { "mcp-method": "server/discover" }, version: MODERN },
     );
-    if (res.status === 401 || res.status === 403) throw new McpError("auth", "The server didn't accept the key or token.");
+    if (res.status === 401 || res.status === 403) throw refused(res);
     let answer: JsonRpcMessage | null = null;
     try {
       answer = answerIn(res, id);
@@ -303,7 +318,7 @@ export class McpClient {
       method: "initialize",
       params: { protocolVersion: LEGACY[0], capabilities: {}, clientInfo: CLIENT_INFO },
     }, { version: "" });
-    if (res.status === 401 || res.status === 403) throw new McpError("auth", "The server didn't accept the key or token.");
+    if (res.status === 401 || res.status === 403) throw refused(res);
     const answer = answerIn(res, id);
     const result = answer?.result as { protocolVersion?: unknown } | undefined;
     const version = String(result?.protocolVersion ?? "");
