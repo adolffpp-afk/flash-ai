@@ -15,8 +15,9 @@ const B = (alts: string[]) =>
 const SUB = (alts: string[]) => new RegExp(`(?:${alts.join("|")})`, "iu");
 const HE = (alts: string[]) =>
   new RegExp(`(?<![\\p{L}\\p{M}\\p{N}])[הבולמש]?(?:${alts.join("|")})(?![\\p{L}\\p{M}\\p{N}])`, "iu");
-// A capitalised place of one to four words, matched case-sensitively ("in Port-au-Prince", "in New York").
-const PLACE = String.raw`\p{Lu}[\p{L}\p{M}'.-]+(?: (?:\p{Lu}[\p{L}\p{M}'.-]+|de|da|do|del|la|le|el|al|am|an|on|upon|sur|di|of)){0,3}`;
+// A capitalised place of one to four words, matched case-sensitively ("in Port-au-Prince", "in New York"),
+// never a unit ("temperature in Celsius").
+const PLACE = String.raw`(?!(?:Celsius|Fahrenheit|Kelvin)(?![\p{L}]))\p{Lu}[\p{L}\p{M}'.-]+(?: (?:\p{Lu}[\p{L}\p{M}'.-]+|de|da|do|del|la|le|el|al|am|an|on|upon|sur|di|of)){0,3}`;
 const WHEN = String.raw`today|tonight|tomorrow|later( today)?|now|right now|this (morning|afternoon|evening|week|weekend)|next week|the weekend|on \w+day|outside|out there`;
 
 type Term = RegExp | { test: (s: string) => boolean; source: string };
@@ -40,7 +41,7 @@ const EN_FIRM: Term[] = [
   /^\s*(what'?s the |the )?forecasts?( (for )?(today|tomorrow|tonight|this weekend))?\s*\??\s*$/i,
   // Temperature: "what's the temperature" alone, or with a time, "outside", or a capitalised place.
   unless(new RegExp(String.raw`\b(what('?s| is| will be) the|current|today'?s|tomorrow'?s|tonight'?s) temp(erature)?s?(\s*[?.!]*\s*$| (${WHEN}|like|going to|gonna|in ${PLACE}|at ${PLACE}|for (${WHEN}|${PLACE})))`, "u"), NOT_AIR),
-  unless(new RegExp(String.raw`\b[Tt]emp(erature)?s? (${WHEN}|in ${PLACE}|at ${PLACE}|for (today|tomorrow|tonight|this \w+|${PLACE}))`, "u"), NOT_AIR),
+  unless(new RegExp(String.raw`\b[Tt]emp(erature)?s?( in (Celsius|Fahrenheit|°C|°F))? (${WHEN}|in ${PLACE}|at ${PLACE}|for (today|tomorrow|tonight|this \w+|${PLACE}))`, "u"), NOT_AIR),
   unless(new RegExp(String.raw`\bhow (hot|cold|warm|chilly|humid|windy|sunny|rainy|wet) (is it|will it be|is it going to be|is it gonna be|is .{1,30}(${WHEN}))`, "i"), NOT_AIR),
   /\bis it (raining|snowing|hailing|pouring|drizzling|storming)\b/i,
   unless(new RegExp(String.raw`\b[Ii]s it (windy|sunny|cloudy|cold|hot|humid|foggy|stormy|freezing|warm|chilly)( (out(side)?|there|${WHEN}|in ${PLACE}( (?:${WHEN}))?))?\s*[?.!]*\s*$`, "u"), NOT_AIR),
@@ -77,7 +78,7 @@ const EN_HINT: RegExp[] = [
 
 // ---------- Other languages: forecast phrases (firm when a question, hint otherwise) ----------
 export const WEATHER_TERMS: Record<string, Term[]> = {
-  fr: [B(["météo", "quel temps (?:fait|fera|va|il|fera-t-il|fait-il|à|demain|aujourd'hui|ce)", "il fait (?:combien|chaud|froid)", "pleuvoir", "pleuvra", "pleut-il", "il pleut", "neiger", "neigera", "parapluie", "température (?:à|aujourd'hui|demain|ce)"]), /prévisions[\s\S]*météo/iu],
+  fr: [B(["météo", "quel temps (?:fait|fera|va|il|fera-t-il|fait-il|à|demain|aujourd'hui|ce)", "il fait (?:combien|chaud|froid)", "pleuvoir", "pleuvra", "pleut-il", "il pleut", "neiger", "neigera", "parapluie", "température (?:à|aujourd'hui|demain|ce)"]), /prévisions[\s\S]{0,60}météo/iu],
   es: [B(["el tiempo (?:hoy|mañana|para (?:hoy|mañana|el fin de semana))", "(?:qué|cómo) (?:tiempo|clima) (?:hace|hará|va a hacer|está|estará)", "(?:cómo|qué tal) (?:está|estará) el (?:tiempo|clima)", "pronóstico (?:del|de el) (?:tiempo|clima)", "pronóstico (?:para|de) (?:hoy|mañana)", "clima (?:hoy|mañana|para (?:hoy|mañana))", "llover", "lloverá", "llueve", "nevar", "nevará", "temperatura (?:hoy|mañana|ahora)", "paraguas"]), new RegExp(String.raw`(?<![\p{L}])(?:[Ee]l tiempo|[Ee]l clima|[Tt]emperatura) en ${PLACE}`, "u")],
   pt: [B(["previsão do tempo", "como (?:está|estará|vai (?:estar|ficar)) o tempo(?! de)", "vai chover", "está chovendo", "chover", "chuva (?:hoje|amanhã)", "temperatura (?:hoje|amanhã|agora)", "clima (?:hoje|amanhã)", "guarda-chuva"]), new RegExp(String.raw`(?<![\p{L}])(?:[Cc]huva|[Tt]emperatura|[Cc]lima|[Tt]empo) em ${PLACE}`, "u")],
   de: [B(["wetter", "wettervorhersage", "regnen", "regnet es", "schneien", "schneit es", "temperatur (?:in|heute|morgen|jetzt)", "wie (?:warm|kalt|heiß) (?:ist|wird) es", "regenschirm"])],
@@ -146,10 +147,21 @@ export function weatherMatch(m: string): string | null {
   return null;
 }
 const notForecast = (m: string) => NOT_FORECAST.some((r) => r.test(m));
+/*
+ * A forecast question is short (the longest in the message sets is 62 characters), so a longer message
+ * is never one, and only the start of a long message is read for a weather word. Every check then takes
+ * well under a millisecond, whatever a request holds (a message may be 100,000 characters).
+ */
+export const FIRM_MAX_CHARS = 300;
+export const HINT_MAX_CHARS = 2000;
 /** Any weather word: the engine that answers gets get_weather. Never decides the engine by itself. */
-export const asksWeather = (m: string) => weatherMatch(m) !== null && !notForecast(m);
+export const asksWeather = (message: string) => {
+  const m = message.length > HINT_MAX_CHARS ? message.slice(0, HINT_MAX_CHARS) : message;
+  return weatherMatch(m) !== null && !notForecast(m);
+};
 /** A precise forecast question: the router sends it to text + get_weather without the guess. */
-export const weatherQuestion = (m: string) => firmMatch(m) !== null && !notForecast(m) && !OTHER_WORK.test(m);
+export const weatherQuestion = (m: string) => m.length <= FIRM_MAX_CHARS && firmMatch(m) !== null && !notForecast(m) && !OTHER_WORK.test(m);
 // After an app or deck, a weather word in an edit ("add a weather widget") still edits it.
+// "show me", "give me" and "let me" ask for something, not a change.
 export const EDITS_BUILD =
-  /^\s*(please |pls |can you |could you |now |also |and |ok,? )?(add|make|show|change|put|remove|move|use|set|display|fix|update|turn|replace|include|let|give)\b|\b(widget|icon|section|header|footer|button|page|card|screen|theme|layout|slide|tab|component|chart|dashboard|font|colou?r|background)s?\b/i;
+  /^\s*(please |pls |can you |could you |now |also |and |ok,? )?(add|make|show(?! me\b)|change|put|remove|move|use|set|display|fix|update|turn|replace|include|let(?! me\b)|give(?! me\b))\b|\b(widget|icon|section|header|footer|button|page|card|screen|theme|layout|slide|tab|component|chart|dashboard|font|colou?r|background)s?\b/i;

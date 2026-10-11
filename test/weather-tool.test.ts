@@ -5,17 +5,20 @@ import type { AddressInfo } from "node:net";
 
 /*
  * A stand-in Claude that answers each request with the next scripted reply (content blocks and a stop
- * reason, streamed as Claude streams them) or an error status, and keeps every request body.
+ * reason, streamed as Claude streams them, with its usage) or an error status, and keeps every request
+ * body. A reply that hangs sends its blocks and never finishes, as a slow answer the user stops.
  */
 type Block =
   | { type: "text"; text: string; citations?: object[] }
   | { type: "tool_use" | "server_tool_use"; id: string; name: string; input: object }
   | { type: "thinking"; thinking: string; signature: string }
-  | { type: "web_search_tool_result"; tool_use_id: string; content: object[] };
-type Reply = { blocks: Block[]; stop: string } | { status: number };
+  | { type: "web_search_tool_result"; tool_use_id: string; content: object[] }
+  | { type: "fallback"; from: object; to: object };
+type Usage = { input_tokens: number; output_tokens: number; server_tool_use?: object };
+type Reply = { blocks: Block[]; stop: string; usage?: Usage; hang?: boolean } | { status: number };
 const replies: Reply[] = [];
 const sent: Record<string, unknown>[] = [];
-const usage = { input_tokens: 2000, output_tokens: 100 };
+const standard = { input_tokens: 2000, output_tokens: 100 };
 const server = createServer((req, res) => {
   let raw = "";
   req.on("data", (c) => (raw += c));
@@ -27,6 +30,7 @@ const server = createServer((req, res) => {
       res.writeHead(reply.status, { "content-type": "application/json" });
       return res.end(JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: "scripted" } }));
     }
+    const usage = reply.usage ?? standard;
     const events: object[] = [
       { type: "message_start", message: { id: `msg_${sent.length}`, type: "message", role: "assistant", model: body.model, content: [], stop_reason: null, usage } },
     ];
@@ -43,22 +47,27 @@ const server = createServer((req, res) => {
         events.push({ type: "content_block_delta", index, delta: { type: "thinking_delta", thinking: b.thinking } });
         events.push({ type: "content_block_delta", index, delta: { type: "signature_delta", signature: b.signature } });
       } else events.push({ type: "content_block_start", index, content_block: b });
-      events.push({ type: "content_block_stop", index });
+      if (!reply.hang) events.push({ type: "content_block_stop", index });
     });
-    events.push({ type: "message_delta", delta: { stop_reason: reply.stop }, usage }, { type: "message_stop" });
+    if (!reply.hang) events.push({ type: "message_delta", delta: { stop_reason: reply.stop }, usage }, { type: "message_stop" });
     res.writeHead(200, { "content-type": "text/event-stream" });
     for (const e of events) res.write(`event: ${(e as { type: string }).type}\ndata: ${JSON.stringify(e)}\n\n`);
-    res.end();
+    if (!reply.hang) res.end();
   });
 });
 await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-after(() => server.close());
+after(() => {
+  server.closeAllConnections();
+  server.close();
+});
 
 process.env.ANTHROPIC_API_KEY = "sk-fake";
 process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
-const { claudeChoice, searchLocation, streamSearch, streamText, withStepDown } = await import("../src/lib/engines/claude.ts");
+const { claudeChoice, echoedContent, searchLocation, streamSearch, streamText, withStepDown } = await import("../src/lib/engines/claude.ts");
 const { TOO_MANY, WEATHER_TOOL } = await import("../src/lib/weather.ts");
+const { planHold, researchPlan } = await import("../src/lib/credits.ts");
+const { readEngine } = await import("../src/lib/server/engine-steps.ts");
 
 type Event = { type: string; delta?: string; message?: string; items?: { title: string; url: string }[] };
 type Message = { role: string; content: unknown };
@@ -323,4 +332,159 @@ test("Summit researches with Fable 5.1's own page reader; the other levels with 
   // No place known, no location sent; UTC alone says nothing.
   assert.equal(searchLocation({ timeZone: "UTC" }), undefined);
   assert.deepEqual(searchLocation({ timeZone: "Europe/Paris" }), { type: "approximate", timezone: "Europe/Paris" });
+});
+
+test("Research that searches and then asks for the forecast in one turn still answers, within what was held", async () => {
+  const { tool } = stubTool();
+  // Ten results of 4 KB, as a normal search brings back; the turn's usage counts the search loop.
+  const results = Array.from({ length: 10 }, (_, i) => ({ type: "web_search_result", url: `https://r${i}.example`, title: `R${i}`, encrypted_content: "x".repeat(4000), page_age: null }));
+  const read = 2 * 5500 + 50 + 10 * 1383;
+  for (const quick of [true, false]) {
+    for (const available of quick ? [46, 120, 1000] : [113, 260, 1000]) {
+      replies.length = 0;
+      sent.length = 0;
+      const hold = planHold("search", "claude-sonnet-5-5", 5500, available, 1, 0.05, researchPlan(quick, true));
+      assert.ok(hold.held <= available, `${quick} ${available}`);
+      replies.push(
+        {
+          blocks: [
+            { type: "server_tool_use", id: "srv_1", name: "web_search", input: { query: "Lagos concert tonight" } },
+            { type: "web_search_tool_result", tool_use_id: "srv_1", content: results },
+            { type: "tool_use", id: "toolu_1", name: "get_weather", input: { where: "user_location" } },
+          ],
+          stop: "tool_use",
+          usage: { input_tokens: read, output_tokens: 150, server_tool_use: { web_search_requests: 1 } },
+        },
+        { blocks: [{ type: "text", text: "Dry tonight, so the concert should go ahead." }], stop: "end_turn", usage: { input_tokens: read + 1500, output_tokens: 300 } },
+      );
+      const costs: number[] = [];
+      const budget = { maxTokens: hold.maxTokens, capCents: hold.capCents, byCredits: hold.byCredits };
+      const events = await run(
+        streamSearch(ask("Will tonight's concert in Lagos be rained off?"), "", (_p, _m, cents) => costs.push(cents), budget, { ...claudeChoice("search", "ascend"), fallback: hold.fallback }, undefined, {}, { weather: tool, quick }),
+      );
+      const label = `${quick ? "quick" : "full"} at ${available} credits`;
+      assert.equal(said(events), "Dry tonight, so the concert should go ahead.", label);
+      assert.equal(sent.length, 2, label);
+      assert.ok(costs.reduce((a, b) => a + b, 0) <= hold.capCents, `${label}: within the cap`);
+      // When what is left can't pay for more searches, the last call answers with no tools.
+      const last = sent[1] as { tools: unknown[]; tool_choice?: { type: string }; max_tokens: number };
+      assert.ok(last.max_tokens >= 300, label);
+      assert.equal(last.tools.length, 3, `${label}: the tools still go with the turn that used them`);
+      if (quick && available === 46) assert.deepEqual(last.tool_choice, { type: "none" }, label);
+    }
+  }
+});
+
+test("a forecast answer stopped part way still credits MET Norway, and Research's links come with it", async () => {
+  // Stopped the way the chat route stops a reply (see readEngine): the stream is aborted and drained.
+  const stopped = async (start: (signal: AbortSignal) => AsyncGenerator<unknown>) => {
+    const abort = new AbortController();
+    const out: Event[] = [];
+    let wake = () => {};
+    let halt = false;
+    const gen = start(abort.signal) as AsyncGenerator<never>;
+    await assert.rejects(
+      readEngine(
+        gen,
+        (e) => {
+          out.push(e as Event);
+          if (e.type === "text" && !halt) {
+            halt = true;
+            abort.abort("stop");
+            wake();
+          }
+        },
+        { halted: () => halt, onWake: (w) => (wake = w), drainMs: 2000 },
+      ),
+    );
+    return out;
+  };
+  const { tool } = stubTool();
+  replies.push(
+    { blocks: [{ type: "tool_use", id: "toolu_1", name: "get_weather", input: paris }], stop: "tool_use" },
+    { blocks: [{ type: "text", text: "In Paris tomorrow: around 18°C with light rain, " }], stop: "end_turn", hang: true },
+  );
+  const text = await stopped((signal) =>
+    streamText(ask("Will it rain in Paris tomorrow?"), "", "text", undefined, undefined, claudeChoice("text", "ascend"), undefined, { signal }, { weather: tool }),
+  );
+  assert.deepEqual(text.at(-1), { type: "sources", items: MET });
+
+  const result = (url: string, title: string) => ({ type: "web_search_result", url, title, encrypted_content: "e", page_age: null });
+  replies.push(
+    {
+      blocks: [
+        { type: "server_tool_use", id: "srv_1", name: "web_search", input: { query: "Paris weekend" } },
+        { type: "web_search_tool_result", tool_use_id: "srv_1", content: [result("https://a.example", "A")] },
+        { type: "tool_use", id: "toolu_2", name: "get_weather", input: paris },
+      ],
+      stop: "tool_use",
+    },
+    { blocks: [{ type: "text", text: "This weekend in Paris: " }], stop: "end_turn", hang: true },
+  );
+  const research = await stopped((signal) =>
+    streamSearch(ask("What's on in Paris this weekend, and will it rain?"), "", undefined, undefined, claudeChoice("search", "ascend"), undefined, { signal }, { weather: tool }),
+  );
+  assert.deepEqual(research.at(-1)!.items!.map((s) => s.url), ["https://a.example", ...MET.map((s) => s.url)]);
+});
+
+test("words before a forecast call end their paragraph, and the answer starts a new one", async () => {
+  const { tool } = stubTool();
+  replies.push(
+    { blocks: [{ type: "text", text: "Let me check the forecast for Paris." }, { type: "tool_use", id: "t1", name: "get_weather", input: paris }], stop: "tool_use" },
+    { blocks: [{ type: "text", text: "In Paris tomorrow: " }, { type: "text", text: "around 18°C with light rain." }], stop: "end_turn" },
+  );
+  const events = await run(streamText(ask("Will it rain in Paris tomorrow?"), "", "text", undefined, undefined, claudeChoice("text", "sonic"), undefined, {}, { weather: tool }));
+  assert.equal(said(events), "Let me check the forecast for Paris.\n\nIn Paris tomorrow: around 18°C with light rain.");
+  // A call that only asks for the forecast adds no gap.
+  replies.push(
+    { blocks: [{ type: "tool_use", id: "t2", name: "get_weather", input: paris }], stop: "tool_use" },
+    { blocks: [{ type: "text", text: "Light rain." }], stop: "end_turn" },
+  );
+  assert.equal(said(await run(streamText(ask("rain in Paris?"), "", "text", undefined, undefined, claudeChoice("text", "sonic"), undefined, {}, { weather: tool }))), "Light rain.");
+});
+
+test("after a refusal fallback part way through, only the answering model's forecast calls run and go back", async () => {
+  const { tool, asked } = stubTool();
+  const lyon = { ...paris, place: "Lyon" };
+  const fallback = { type: "fallback" as const, from: { model: "claude-sonnet-5-5" }, to: { model: "claude-sonnet-5" } };
+  replies.push(
+    {
+      blocks: [
+        { type: "text", text: "Checking. " },
+        { type: "thinking", thinking: "declined reasoning", signature: "sig-declined" },
+        { type: "tool_use", id: "t_declined", name: "get_weather", input: paris },
+        fallback,
+        { type: "tool_use", id: "t_fb", name: "get_weather", input: lyon },
+      ],
+      stop: "tool_use",
+    },
+    { blocks: [{ type: "text", text: "Lyon: mild." }], stop: "end_turn" },
+  );
+  await run(streamText(ask("Will it rain in Lyon tomorrow?"), "", "text", undefined, undefined, claudeChoice("text", "ascend"), undefined, {}, { weather: tool }));
+  assert.deepEqual(asked, [lyon], "the declined model's call isn't run");
+  const messages = (sent[1] as { messages: Message[] }).messages;
+  const echoed = messages.at(-2)!.content as { type: string; id?: string }[];
+  assert.deepEqual(
+    echoed.map((b) => b.type + (b.id ? `:${b.id}` : "")),
+    ["text", "fallback", "tool_use:t_fb"],
+  );
+  assert.deepEqual(
+    (messages.at(-1)!.content as { tool_use_id: string }[]).map((b) => b.tool_use_id),
+    ["t_fb"],
+  );
+  // Research's paired search before the boundary goes back; one with no result doesn't. No fallback, no change.
+  const blocks = [
+    { type: "server_tool_use", id: "s1", name: "web_search", input: {} },
+    { type: "web_search_tool_result", tool_use_id: "s1", content: [] },
+    { type: "server_tool_use", id: "s2", name: "web_search", input: {} },
+    { type: "redacted_thinking", data: "x" },
+    fallback,
+    { type: "server_tool_use", id: "s3", name: "web_search", input: {} },
+  ] as unknown as Parameters<typeof echoedContent>[0];
+  assert.deepEqual(
+    echoedContent(blocks).map((b) => ("id" in b ? b.id : b.type)),
+    ["s1", "web_search_tool_result", "fallback", "s3"],
+  );
+  const plain = blocks.filter((b) => b.type !== "fallback");
+  assert.equal(echoedContent(plain), plain);
 });

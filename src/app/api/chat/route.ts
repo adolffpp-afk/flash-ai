@@ -1,6 +1,6 @@
 import { after } from "next/server";
-import { EDITABLE_TYPE, checksSpoken, fixesPictureText, route, takesGuess, textToSpeak } from "@/lib/router.ts";
-import { asksWeather, weatherQuestion } from "@/lib/weather-words.ts";
+import { EDITABLE_TYPE, checksSpoken, fixesPictureText, followsForecast, route, takesGuess, textToSpeak } from "@/lib/router.ts";
+import { asksWeather } from "@/lib/weather-words.ts";
 import type { WeatherTool } from "@/lib/weather.ts";
 import { weatherTool } from "@/lib/server/weather.ts";
 import { MAX_EDIT_PIXELS, imageDimensions } from "@/lib/imageSize.ts";
@@ -314,12 +314,12 @@ const spokenText = (message: string) => textToSpeak(message).slice(0, MAX_SPEECH
  */
 type Prompting = { system: SystemOptions; free: SystemOptions; build: string; where?: Where };
 
-function promptingFor(where: Where, now: Date): Prompting {
+function promptingFor(where: Where, now: Date, picked: boolean): Prompting {
   const status = engineStatus();
   const context = contextNote(where, now);
   return {
-    system: { tools: otherToolsLine(status), context },
-    free: { tools: otherToolsLine(status, true), context },
+    system: { tools: otherToolsLine(status, false, picked), context },
+    free: { tools: otherToolsLine(status, true, picked), context },
     build: contextNote(where, now, { clock: false }),
     where,
   };
@@ -833,9 +833,6 @@ export async function POST(request: Request) {
   }
   const history = (body.messages ?? []).slice(-30);
   const last = history[history.length - 1];
-  // Where and when the user is, taken once, so the hold counts the same instructions the reply sends.
-  const where = whereFrom(request, body.timeZone);
-  const prompting = promptingFor(where, new Date(startedAt));
   if (!last || last.role !== "user") {
     return Response.json({ error: t("The last message must be from the user.") }, { status: 400 });
   }
@@ -854,18 +851,24 @@ export async function POST(request: Request) {
 
   const previous = body.previous && (ENGINES as readonly string[]).includes(body.previous) ? body.previous : undefined;
   const spoken = body.voice === true;
-  const auto = route(last.content, last.attachment?.mediaType, previous, { spoken });
+  // The user's message before this one, which the router sees too: "and tonight?" after a forecast
+  // follows it (see followsForecast).
+  const earlier = [...history.slice(0, -1)].reverse().find((turn) => turn.role === "user")?.content;
+  const earlierText = typeof earlier === "string" ? earlier : "";
+  const auto = followsForecast(route(last.content, last.attachment?.mediaType, previous, { spoken }), last.content, earlierText, Boolean(last.attachment));
   const override =
     body.engine && body.engine !== "auto" && (ENGINES as readonly string[]).includes(body.engine) ? body.engine : null;
   // The request the user agreed to the price of: the router and the picture check aren't asked again.
   const decided = decidedFor(body, override);
-  // The live forecast (see weather-words.ts) is asked for by a precise weather question (firm), by the
-  // router's guess, or by a short follow-up to a weather question; a weather word alone (hinted) adds
-  // it only when no guess ran and the user didn't pick the engine, and never makes a request step
-  // down, search less or go free. On the free lane, where nothing is charged, a weather word is enough.
-  const earlier = [...history.slice(0, -1)].reverse().find((turn) => turn.role === "user")?.content;
-  const earlierText = typeof earlier === "string" ? earlier : "";
-  const followsWeather = auto.guessed === true && !last.attachment && last.content.trim().length <= 60 && weatherQuestion(earlierText);
+  // Where and when the user is, taken once, so the hold counts the same instructions the reply sends.
+  const where = whereFrom(request, body.timeZone);
+  const prompting = promptingFor(where, new Date(startedAt), override !== null);
+  // The live forecast (see weather-words.ts) is asked for by a precise weather question (firm) or by
+  // the router's guess. A weather word alone (hinted) and a short follow-up to a weather question
+  // (followsWeather) are hints: they add it only until the router answers otherwise, a weather word
+  // only when the user didn't pick the engine, and never make a request step down, search less or go
+  // free. On the free lane, where nothing is charged, a hint is enough.
+  const followsWeather = auto.followUp === true;
   const firm = auto.live === "weather";
   const hinted = !last.attachment && asksWeather(last.content);
   // Whether the router gave an answer, and whether that answer was the forecast.
@@ -875,10 +878,12 @@ export async function POST(request: Request) {
   const quickAsk = !override && last.content.length <= 160 && !/https?:\/\//i.test(last.content) && !DEEP_RESEARCH.test(last.content);
   // forecast: priced as the router's "weather" answer would be; onFree: for a free model's reply.
   const toolsFor = (e: Engine, forecast = false, onFree = false): Tools => {
-    const asked = firm || guessedWeather || followsWeather || forecast;
+    const asked = firm || guessedWeather || forecast;
     // The tool's instructions cost a little to read, so a paid reply the user picked the engine for
-    // ("write a poem about the rain" on Write) doesn't get it for a weather word alone.
-    const weather = WEATHER_ENGINES.includes(e) && (asked || (hinted && (onFree || (!guessRan && !override))));
+    // ("write a poem about the rain" on Write) doesn't get it for a weather word alone, and a reply
+    // the router read as something else ("thanks!" after a forecast) doesn't get it for a follow-up.
+    const followUp = followsWeather && (onFree || !guessRan);
+    const weather = WEATHER_ENGINES.includes(e) && (asked || followUp || (hinted && (onFree || (!guessRan && !override))));
     const hintOnly = weather && !asked;
     // Research asked about the weather searches quickly: the forecast comes from the tool.
     return { weather, hintOnly, quick: e === "search" && ((weather && !hintOnly) || quickAsk) };

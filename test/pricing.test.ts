@@ -204,14 +204,14 @@ test("a Claude reply can never cost more than the credits held for it, refusal f
 
 /*
  * The same, for a reply with tool calls, worked out apart from credits.ts: each tool step reads the
- * input again plus everything the steps before it added, and with a fallback, the fallback model
- * reads the declined words again at every step.
+ * input again plus everything the steps before it added, billed as its own call at its own prompt's
+ * size, and with a fallback, the fallback model reads the declined words again at every step.
  */
 function worstPlanCents(model: string, inputTokens: number, maxTokens: number, fallback: boolean, plan: ToolPlan): number {
   const readAll = (m: string) => {
-    let tokens = inputTokens;
-    for (let i = 0; i < plan.results.length; i++) tokens += inputTokens + plan.results.slice(0, i + 1).reduce((a, b) => a + b, 0);
-    return readCostCents(m, tokens);
+    let cents = readCostCents(m, inputTokens);
+    for (let i = 0; i < plan.results.length; i++) cents += readCostCents(m, inputTokens + plan.results.slice(0, i + 1).reduce((a, b) => a + b, 0));
+    return cents;
   };
   let cents = readAll(model) + plan.searches + (maxTokens * claudePrice(model, inputTokens).output) / 1e6;
   if (fallback) {
@@ -238,6 +238,13 @@ test("tool plans: Research's default plan gives today's numbers, and no plan run
   assert.equal(planHold("text", "claude-sonnet-5-5", 4100, 3000, 1, 0, WEATHER_PLAN).needed, 17);
   assert.equal(planHold("text", "claude-haiku-5-5", 4100, 3000, 0.05, 0, WEATHER_PLAN).needed, 2);
   assert.deepEqual(withWeather(QUICK_RESEARCH_PLAN), { results: [1500, 1500, 6000, 6000], searches: 1 });
+  // Haiku 5.5's long-prompt rate applies to a step only when that step's prompt is over 100,000 tokens,
+  // not when all the steps together are: a forecast in a long chat on Sonic needs a few credits, not 17.
+  const sonic = (tokens: number) => planHold("text", "claude-haiku-5-5", tokens, 10, 0.05, 0, WEATHER_PLAN).needed;
+  assert.equal(sonic(31_000), 5);
+  assert.equal(sonic(32_000), 5);
+  assert.ok(sonic(60_000) <= 7, `${sonic(60_000)}`);
+  assert.ok(sonic(99_000) < sonic(101_000), "a step over 100,000 tokens is priced at the long rate");
   const plans: [Engine, ToolPlan][] = [
     ["text", NO_TOOLS],
     ["text", WEATHER_PLAN],

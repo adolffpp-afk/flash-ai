@@ -9,13 +9,16 @@ function coordinate(value: string | null, limit: number): number | undefined {
 
 /**
  * Where the user is, roughly: Vercel's location headers for the city, country and coordinates, and
- * the browser's own time zone (sent with the chat) for the clock, else the connection's, else UTC.
+ * the browser's own time zone (sent with the chat) for the clock, else the connection's, else UTC. A
+ * browser's "UTC" says nothing about the user, so the connection's zone is used over it when known.
  * Every value is checked before it's used, since anything in a request can be made up. Local
  * development has no Vercel headers, so only the time zone is known there.
  */
 export function whereFrom(request: Request, bodyTimeZone?: unknown): Where {
   const h = request.headers;
-  const where: Where = { timeZone: validTimeZone(bodyTimeZone) ?? validTimeZone(h.get("x-vercel-ip-timezone")) ?? "UTC" };
+  const browser = validTimeZone(bodyTimeZone);
+  const connection = validTimeZone(h.get("x-vercel-ip-timezone"));
+  const where: Where = { timeZone: (browser && browser !== "UTC" ? browser : (connection ?? browser)) ?? "UTC" };
   // Vercel sends the city percent-encoded (RFC 3986): "S%C3%A3o%20Paulo".
   let city = "";
   try {

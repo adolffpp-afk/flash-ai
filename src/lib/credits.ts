@@ -364,16 +364,20 @@ const planOf = (engine: Engine, plan?: ToolPlan) => plan ?? (engine === "search"
 /** What reading the input once costs, in cents. Claude bills this even when a reply is stopped. */
 export const readCostCents = (model: string, inputTokens: number) => (inputTokens * claudePrice(model, inputTokens).input) / 1e6;
 
-/** Worst-case input cost of one request, in cents: each tool step re-reads the input and what the steps before it added. */
+/**
+ * Worst-case input cost of one request, in cents: each tool step re-reads the input and what the steps
+ * before it added. Each step is priced at its own prompt's size, as Claude bills each call, so a long
+ * prompt rate (Haiku 5.5's above 100,000 tokens) applies only to a step whose prompt is that long.
+ */
 export function inputCostCents(engine: Engine, model: string, inputTokens: number, plan?: ToolPlan): number {
   const { results, searches } = planOf(engine, plan);
-  let tokens = inputTokens;
+  let cents = readCostCents(model, inputTokens);
   let carried = 0;
   for (const added of results) {
     carried += added;
-    tokens += inputTokens + carried;
+    cents += readCostCents(model, inputTokens + carried);
   }
-  return readCostCents(model, tokens) + searches * WEB_SEARCH_CENTS;
+  return cents + searches * WEB_SEARCH_CENTS;
 }
 
 /**

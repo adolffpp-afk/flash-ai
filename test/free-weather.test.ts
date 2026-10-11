@@ -18,6 +18,8 @@ const sent: Sent[] = [];
 let busy = new Set<string>();
 // Providers whose streamed answer fails after the first call went through.
 let failsStreaming = new Set<string>();
+// Gemini's first reply holds neither words nor a call, as with its MALFORMED_FUNCTION_CALL.
+let geminiEmpty = false;
 let asks = true;
 const sse = (events: object[]) => events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join("") + "data: [DONE]\n\n";
 const PARIS = { where: "named_place", place: "Paris, Île-de-France, France", latitude: 48.85, longitude: 2.35, country: "FR", timezone: "Europe/Paris" };
@@ -39,6 +41,7 @@ globalThis.fetch = (async (url: string, init: RequestInit) => {
   if (body.stream === true && failsStreaming.has(provider)) return new Response("{}", { status: 500 });
   if (provider === "googleapis") {
     if (u.pathname.endsWith(":generateContent")) {
+      if (geminiEmpty) return Response.json({ candidates: [{ finishReason: "MALFORMED_FUNCTION_CALL" }], usageMetadata: { promptTokenCount: 800, candidatesTokenCount: 0 } });
       const content = asks ? GEMINI_TURN : { role: "model", parts: [{ text: "Il fera beau." }] };
       return Response.json({ candidates: [{ content }], usageMetadata: { promptTokenCount: 800, candidatesTokenCount: 30, thoughtsTokenCount: 20 } });
     }
@@ -220,6 +223,16 @@ test("when the answer after a forecast fails, the backup that answers without on
   assert.ok(!r.events.some((e) => e.type === "sources"));
   // Groq's first call still counts toward its daily tokens.
   assert.deepEqual(r.recorded, [{ provider: "groq", tokens: 940 }, { provider: "openrouter", tokens: 2015 }]);
+});
+
+test("an empty first reply isn't the answer: the next provider answers, and the empty call still counts", async () => {
+  sent.length = 0;
+  geminiEmpty = true;
+  const r = await ask("Va-t-il pleuvoir demain à Paris ?", { weather: forecast() });
+  geminiEmpty = false;
+  assert.deepEqual(sent.map((s) => s.host), ["generativelanguage.googleapis.com", "api.groq.com", "api.groq.com"]);
+  assert.equal(r.said, "Tomorrow in Paris: 18°C, dry.");
+  assert.deepEqual(r.recorded, [{ provider: "gemini", tokens: 800 }, { provider: "groq", tokens: 900 + 40 + 2000 + 15 }]);
 });
 
 test("without the forecast, a free reply is asked as before: one streamed call, one request reserved", async () => {

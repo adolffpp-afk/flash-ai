@@ -64,6 +64,9 @@ test("where the user is comes from Vercel's headers, checked, with the browser's
   // The connection's zone when the browser sent none or a bad one; UTC when neither is usable.
   assert.equal(whereFrom(request({ "x-vercel-ip-timezone": "America/Sao_Paulo" }), "Nope/Nope").timeZone, "America/Sao_Paulo");
   assert.deepEqual(whereFrom(request({})), { timeZone: "UTC" });
+  // A browser that says UTC hasn't been told its zone: the connection's real one is used, and UTC only without it.
+  assert.equal(whereFrom(request({ "x-vercel-ip-timezone": "Africa/Lagos" }), "UTC").timeZone, "Africa/Lagos");
+  assert.equal(whereFrom(request({}), "UTC").timeZone, "UTC");
   // Anything that isn't a place name, a country code or a coordinate in range is dropped.
   const bad = whereFrom(
     request({ "x-vercel-ip-city": "%3Cscript%3E", "x-vercel-ip-country": "Nigeria", "x-vercel-ip-latitude": "123", "x-vercel-ip-longitude": "3.4" }),
