@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "@/lib/store";
-import { PRESETS, presetById, type ConnectionView, type Preset, type ToolKind, type ToolView } from "@/lib/connectors";
+import { PRESETS, presetById, type ConnectionView, type Preset, type ToolKind, type ToolPreview, type ToolView } from "@/lib/connectors";
 import { useT } from "@/lib/use-t";
 
 /*
@@ -14,7 +14,7 @@ import { useT } from "@/lib/use-t";
  */
 
 type Loaded = { ready: boolean; owner: boolean; connections: ConnectionView[] };
-type Preview = { host: string; tools: { name: string; title: string; description: string; kind: ToolKind; hash: string }[] };
+type Preview = { host: string; tools: ToolPreview[] };
 
 const field =
   "mt-1 block w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-primary/60";
@@ -189,7 +189,7 @@ export function YourConnectors() {
   );
 }
 
-type Change = { tool: string; enabled?: boolean; trusted?: boolean; review?: boolean };
+type Change = { tool: string; enabled?: boolean; trusted?: boolean; review?: boolean; hash?: string };
 
 /** One connected account: its host, its key's last 4 characters, and its tools. */
 function Connection({ c, busy, onChange, onRemove }: { c: ConnectionView; busy: boolean; onChange: (change: Change) => void; onRemove: () => void }) {
@@ -235,7 +235,14 @@ function Connection({ c, busy, onChange, onRemove }: { c: ConnectionView; busy: 
         <summary className="cursor-pointer text-xs text-zinc-400 hover:text-zinc-200">{t("Tools ({count})", { count: c.tools.length })}</summary>
         <ul className="mt-2 divide-y divide-white/6">
           {c.tools.map((tool) => (
-            <ToolRow key={tool.name} tool={tool} custom={c.custom} busy={busy} onChange={(change) => onChange({ tool: tool.name, ...change })} />
+            <ToolRow
+              key={tool.name}
+              tool={tool}
+              connectionId={c.id}
+              custom={c.custom}
+              busy={busy}
+              onChange={(change) => onChange({ tool: tool.name, ...change })}
+            />
           ))}
         </ul>
       </details>
@@ -249,8 +256,35 @@ function kindText(kind: ToolKind, custom: boolean, t: ReturnType<typeof useT>) {
   return kind === "read" ? t("Reads, runs by itself") : t("Asks you first");
 }
 
-function ToolRow({ tool, custom, busy, onChange }: { tool: ToolView; custom: boolean; busy: boolean; onChange: (change: Omit<Change, "tool">) => void }) {
+function ToolRow({
+  tool,
+  connectionId,
+  custom,
+  busy,
+  onChange,
+}: {
+  tool: ToolView;
+  connectionId: string;
+  custom: boolean;
+  busy: boolean;
+  onChange: (change: Omit<Change, "tool">) => void;
+}) {
   const t = useT();
+  // A changed tool as its server lists it now (null: it no longer has it), read before it's used again.
+  const [now, setNow] = useState<ToolPreview | null | undefined>(undefined);
+  const [looking, setLooking] = useState(false);
+  const [lookError, setLookError] = useState("");
+  async function look() {
+    setLooking(true);
+    setLookError("");
+    try {
+      const { tool: live } = await api<{ tool: ToolPreview | null }>(`/api/connect/${connectionId}?tool=${encodeURIComponent(tool.name)}`);
+      setNow(live);
+    } catch (e) {
+      setLookError(e instanceof Error ? e.message : t("Something went wrong. Please try again."));
+    }
+    setLooking(false);
+  }
   return (
     <li className="flex items-start gap-3 py-2.5">
       <div className="min-w-0 flex-1">
@@ -259,12 +293,41 @@ function ToolRow({ tool, custom, busy, onChange }: { tool: ToolView; custom: boo
         </p>
         {tool.description && <p className={`mt-0.5 line-clamp-3 ${hint}`}>{tool.description}</p>}
         {tool.changed ? (
-          <p className="mt-1 text-xs text-amber-300">
-            {t("Its server changed this tool since you added it, so Flash leaves it out.")}{" "}
-            <button type="button" disabled={busy} onClick={() => onChange({ review: true })} className="underline underline-offset-2 hover:text-amber-200">
-              {t("Use the new version")}
-            </button>
-          </p>
+          <div className="mt-1 text-xs">
+            <p className="text-amber-300">
+              {t("Its server changed this tool since you added it, so Flash leaves it out.")}{" "}
+              {now === undefined && (
+                <button type="button" disabled={busy || looking} onClick={look} className="underline underline-offset-2 hover:text-amber-200">
+                  {looking ? t("Looking…") : t("See what changed")}
+                </button>
+              )}
+            </p>
+            {now === null && (
+              <p className="mt-1.5 text-zinc-400">
+                {t("Its server no longer has this tool.")}{" "}
+                <button type="button" disabled={busy} onClick={() => onChange({ review: true })} className="underline underline-offset-2 hover:text-zinc-200">
+                  {t("Remove it")}
+                </button>
+              </p>
+            )}
+            {now && (
+              <div className="mt-1.5 rounded-lg bg-white/[0.03] p-2.5">
+                <p className="text-zinc-500">{t("What it says now")}</p>
+                <p dir="auto" className="mt-0.5 whitespace-pre-wrap break-words text-zinc-200">
+                  {now.description}
+                </p>
+                <p className="mt-1 text-zinc-500">{kindText(now.kind, custom, t)}</p>
+                <button type="button" disabled={busy} onClick={() => onChange({ review: true, hash: now.hash })} className={`mt-2 ${button}`}>
+                  {t("Use the new version")}
+                </button>
+              </div>
+            )}
+            {lookError && (
+              <p role="alert" className="mt-1 text-red-400">
+                {lookError}
+              </p>
+            )}
+          </div>
         ) : (
           custom && (
             <label className="mt-1 inline-flex items-center gap-2 text-xs text-zinc-400">

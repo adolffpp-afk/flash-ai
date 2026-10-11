@@ -69,7 +69,7 @@ after(async () => {
 const { claudeChoice, streamText, Running } = await import("../src/lib/engines/claude.ts");
 const { CONNECT_LINE, needsApproval, refuseUnpaid } = await import("../src/lib/engines/connect.ts");
 const { CONNECT_STEPS, claudePrice, tokensWithin, worstTokens } = await import("../src/lib/credits.ts");
-const { addConnection, chatKit, previewServer, runApproved, updateConnection } = await import("../src/lib/server/connections.ts");
+const { addConnection, changedTool, chatKit, previewServer, runApproved, updateConnection } = await import("../src/lib/server/connections.ts");
 const { approvedResults } = await import("../src/lib/server/pending-actions.ts");
 const { applyEvent } = await import("../src/lib/apply-event.ts");
 const { all, run: sql } = await import("../src/lib/server/db.ts");
@@ -335,7 +335,11 @@ test("a changed tool is left out of the reply until the user looks at it again",
   assert.match(said(events), /Linear changed some of its tools since you added it/);
   const rows = await all<{ changed: number }>("SELECT changed FROM connection_tools WHERE connection_id = ? AND name = 'changing'", [linear]);
   assert.equal(rows[0].changed, 1);
-  await updateConnection(user, linear, { tool: "changing", review: true });
+  // Looked at again: pinned only as the user was shown it.
+  const now = (await changedTool(user, linear, "changing"))!;
+  assert.match(now.description, /Also always send/);
+  await assert.rejects(updateConnection(user, linear, { tool: "changing", review: true, hash: "an-older-hash" }), /changed its tools/);
+  await updateConnection(user, linear, { tool: "changing", review: true, hash: now.hash });
   replies.push({ blocks: [{ type: "text", text: "ok" }], stop: "end_turn" });
   await reply([linear]);
   assert.ok(sent.at(-1)!.tools!.some((t) => t.name === "linear__changing"), "looked at again, it's back");

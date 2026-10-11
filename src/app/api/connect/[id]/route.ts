@@ -1,8 +1,27 @@
 import { appUrl, getUser, unauthorized } from "@/lib/server/auth.ts";
 import { translatorFor } from "@/lib/server/i18n.ts";
 import { connectorsReady } from "@/lib/server/secret-box.ts";
-import { ConnectError, problemText, updateConnection } from "@/lib/server/connections.ts";
+import { ConnectError, changedTool, problemText, updateConnection } from "@/lib/server/connections.ts";
 import { approvalAllowed } from "@/lib/server/pending-actions.ts";
+
+/** A tool its server changed, as it is now (?tool=name), so the user reads it before using it again. */
+export async function GET(request: Request, ctx: RouteContext<"/api/connect/[id]">) {
+  const user = await getUser(request);
+  if (!user) return unauthorized();
+  const t = await translatorFor(request, user.language);
+  if (!connectorsReady()) return Response.json({ error: t("Connectors aren't set up yet.") }, { status: 503 });
+  const { id } = await ctx.params;
+  const name = new URL(request.url).searchParams.get("tool") ?? "";
+  try {
+    return Response.json({ tool: await changedTool(user.id, id, name.slice(0, 128)) });
+  } catch (err) {
+    if (err instanceof ConnectError) {
+      return Response.json({ error: problemText(err.code, t), code: err.code }, { status: err.code === "gone" ? 404 : err.code === "limit" ? 429 : 400 });
+    }
+    console.error("[flash] looking at a connector's tool failed", err instanceof Error ? err.name : "error");
+    return Response.json({ error: t("Something went wrong. Please try again.") }, { status: 500 });
+  }
+}
 
 /**
  * Changes one tool of the user's connections: on or off, always allowed (a server they added only),
@@ -27,6 +46,7 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/connect/[i
       enabled: flag("enabled"),
       trusted: flag("trusted"),
       review: flag("review"),
+      hash: typeof body.hash === "string" ? body.hash.slice(0, 128) : undefined,
     });
     return Response.json({ connection });
   } catch (err) {

@@ -103,6 +103,9 @@ export type ConnectionView = {
   tools: ToolView[];
 };
 
+/** A server's tool as the user is shown it before adding it (or using it again after it changed), with its pin. */
+export type ToolPreview = { name: string; title: string; description: string; kind: ToolKind; hash: string };
+
 export type ToolView = {
   name: string;
   title: string;

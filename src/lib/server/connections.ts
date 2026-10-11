@@ -5,7 +5,7 @@ import { connectorsReady, lastFour, seal, unseal, type SecretPlace } from "./sec
 import { McpClient, McpError, type McpTool } from "./mcp-client.ts";
 import { checkUrl, mockOrigin, SafeFetchError } from "./safe-fetch.ts";
 import { claimAction, finishAction, proposeAction, type ActionRow } from "./pending-actions.ts";
-import { CONNECTION_ID, MAX_CONNECTIONS, presetById, type ConnectionView, type Preset, type ToolKind } from "../connectors.ts";
+import { CONNECTION_ID, MAX_CONNECTIONS, presetById, type ConnectionView, type Preset, type ToolKind, type ToolPreview } from "../connectors.ts";
 import { cleanSchema, cut, toolName, type ConnectorKit, type ConnectorTool } from "../engines/connect.ts";
 import { CONNECT_RESULT_TOKENS } from "../credits.ts";
 import { english, msg, type Translate } from "../i18n.ts";
@@ -181,8 +181,6 @@ export async function listConnections(userId: string): Promise<ConnectionView[]>
   return rows.map((r) => view(r, tools));
 }
 
-/** A tool as the user is shown it before adding a server, with the pin it will be added with. */
-export type ToolPreview = { name: string; title: string; description: string; kind: ToolKind; hash: string };
 
 /** What the user adds: a preset (its id) or "custom" with an https address, and its key or token (or none). */
 export type NewConnection = { provider: string; url?: string; token?: string; label?: string };
@@ -318,32 +316,52 @@ function clientFor(row: ConnectionRow, signal?: AbortSignal): { client: McpClien
   return { client: new McpClient({ url, token: secret, protocol: row.protocol }, { signal }), secret };
 }
 
+/** One tool of a connection as its server lists it now (null when it no longer has it). */
+async function liveTool(userId: string, row: ConnectionRow, name: string): Promise<McpTool | null> {
+  await tryLimit(userId);
+  const { client } = clientFor(row);
+  try {
+    return (await client.listTools()).find((t) => t.name === name) ?? null;
+  } catch (err) {
+    throw asProblem(err);
+  } finally {
+    await client.close();
+  }
+}
+
+/**
+ * A tool its server changed since the user added it, as it is now, for the user to read before using
+ * it again (see review in updateConnection). Null when the server no longer has it.
+ */
+export async function changedTool(userId: string, id: string, name: string): Promise<ToolPreview | null> {
+  const row = await owned(userId, id);
+  if (!(await one<ToolRow>("SELECT * FROM connection_tools WHERE connection_id = ? AND name = ?", [id, name]))) {
+    throw new ConnectError("gone", "That tool isn't there any more.");
+  }
+  const t = await liveTool(userId, row, name);
+  return t && { name: t.name, title: t.title, description: t.description, kind: kindOf(t, presetById(row.provider)), hash: t.hash };
+}
+
 /**
  * Changes one tool of a connection: on or off, always allowed (a server the user added only), or
- * looked at again after its server changed it (review: pinned as it is now, and no longer always
- * allowed).
+ * looked at again after its server changed it (review: pinned as the user was shown it by
+ * changedTool, whose hash it must still have, and no longer always allowed; or removed when the
+ * server no longer has it).
  */
 export async function updateConnection(
   userId: string,
   id: string,
-  change: { tool: string; enabled?: boolean; trusted?: boolean; review?: boolean },
+  change: { tool: string; enabled?: boolean; trusted?: boolean; review?: boolean; hash?: string },
 ): Promise<ConnectionView> {
   const row = await owned(userId, id);
   const preset = presetById(row.provider);
   const tool = await one<ToolRow>("SELECT * FROM connection_tools WHERE connection_id = ? AND name = ?", [id, change.tool]);
   if (!tool) throw new ConnectError("gone", "That tool isn't there any more.");
   if (change.review) {
-    await tryLimit(userId);
-    const { client } = clientFor(row);
-    let live: McpTool[];
-    try {
-      live = await client.listTools();
-    } catch (err) {
-      throw asProblem(err);
-    } finally {
-      await client.close();
+    const current = await liveTool(userId, row, change.tool);
+    if (current && current.hash !== change.hash) {
+      throw new ConnectError("changed", "The server changed its tools while you were looking. Look at them again.");
     }
-    const current = live.find((t) => t.name === change.tool);
     if (!current) await run("DELETE FROM connection_tools WHERE connection_id = ? AND name = ?", [id, change.tool]);
     else {
       await run(
