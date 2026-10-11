@@ -444,9 +444,16 @@ export async function* streamFreeChat(
         lastError = typeof first === "string" ? first : `${p.id} sent a reply Flash couldn't read`;
         continue;
       }
-      onModel(p.label, p.id);
       input += asked.input ?? Math.ceil(JSON.stringify(messages).length / 3);
       output += asked.output ?? Math.ceil(asked.text.length / 2);
+      // Nothing to say and nothing asked for (Gemini's MALFORMED_FUNCTION_CALL, say): the call counts
+      // toward the provider's day, and the next provider answers.
+      if (!asked.calls.length && !asked.text.trim()) {
+        await record(p.id, input + output, p.id === "cloudflare" ? cloudflareChatNeurons(input, output) : 0);
+        lastError = `${p.id} sent an empty reply`;
+        continue;
+      }
+      onModel(p.label, p.id);
       if (!asked.calls.length) {
         // Answered without a forecast: that's the reply.
         if (asked.text) yield { type: "text", delta: asked.text };

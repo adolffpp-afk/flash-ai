@@ -10,7 +10,8 @@ import { EDITS_BUILD, asksWeather, weatherQuestion } from "./weather-words.ts";
 // spoken turn that sounds like talk ("how do I make a website?"), which the guess may still pick.
 // live: answered from the clock or a live forecast (see weather-words.ts); hint: it has a weather word,
 // so the engine that answers may get the forecast tool; captured: a follow-up to an app or deck kept
-// as an edit, which any guess may replace.
+// as an edit, which any guess may replace; followUp: a short follow-up to a forecast question (see
+// followsForecast).
 export type RouteDecision = {
   engine: Engine;
   reason: string;
@@ -21,6 +22,7 @@ export type RouteDecision = {
   live?: "weather" | "clock";
   hint?: "weather";
   captured?: boolean;
+  followUp?: boolean;
 };
 
 const LANGUAGES =
@@ -28,8 +30,38 @@ const LANGUAGES =
 
 type Rule = { engine: Engine; reason: string; patterns: RegExp[]; unless?: RegExp; test?: (text: string) => boolean; live?: "weather" | "clock" };
 
-// Words about when, which a request for fresh information from the web holds.
-const WHEN = /\b(latest|today|tonight|yesterday|this week|this month|right now|currently|current|recent|breaking)\b/i;
+// Words about now, which a request for fresh information from the web holds.
+const NOW = /\b(today|tonight|yesterday|this week|this month|right now|currently|current|recent)\b/i;
+
+// Programming: the Code rule's words, which the clock and forecast rules leave to it.
+const CODE_PATTERNS = [
+  /```/,
+  /\b(python|javascript|typescript|java|c\+\+|c#|golang|rust|php|ruby|kotlin|swift|sql|html|css|bash|regex|react|node\.?js|django|flask)\b/i,
+  /\b(code|function|script|api|endpoint|algorithm|bug|debug|stack trace|compile|refactor|unit test|program)\b/i,
+];
+// The same words for the clock and forecast rules, with word edges that know letters beyond English,
+// so "Bugün" (today, in Turkish) isn't "bug".
+const LETTER = "[\\p{L}\\p{M}\\p{N}_]";
+const EDGE = `(?:(?<!${LETTER})(?=${LETTER})|(?<=${LETTER})(?!${LETTER}))`;
+const CODE_WORDS = new RegExp(CODE_PATTERNS.map((p) => p.source.replaceAll("\\b", EDGE)).join("|"), "iu");
+/*
+ * A request to write, make or plan something, or a question about a story: its words about now ("a
+ * post for today's sale", "our new opening hours", "the president in the movie") don't ask for live
+ * data, so it goes to the router's guess instead of straight to Research or the forecast.
+ */
+const MAKES_SOMETHING =
+  /^\s*(?:(?:hey|hi|ok(?:ay)?|so|please|pls)[,!]?\s+){0,3}(?:(?:can|could|would|will) you\s+)?(?:please\s+)?(?:write|draft|compose|create|make|design|plan|prepare|craft|generate|help|come up with|tell me a|give me (?:a|an|some) (?:caption|post|message|idea|name|slogan|poem|story|email|text|tweet|speech))\b|\b(?:in|from) (?:the |a |that |this |my )?(?:movie|film|book|novel|show|series|story|game|play|episode|cartoon|anime|musical)\b/i;
+// A question about how or why something is, rather than what it is now ("why do hurricanes hit Florida?"),
+// or a sum with the rate given: the newer web-search words leave these to the guess.
+const EXPLAINS =
+  /\b(?:why|how) (?:do|does|did|can|could)\b|\bwhat (?:causes|caused|makes|made)\b|^\s*(?:please\s+)?(?:explain|describe)\b|\b(?:if|when|at) (?:the )?(?:exchange )?rate (?:is|of|=)|\brate (?:is|of) \d/i;
+// The date and the time, anchored to the end, so "what time is it best to post?" isn't one.
+const CLOCK = [
+  /\bwhat (time|day|date) is it( (now|today|right now|there|in [\p{L} .'-]{2,40}))?[\s?.!]*$/iu,
+  /\bwhat('?s| is) (today'?s date|the date( today)?|the time( now)?( in [\p{L} .'-]{2,40})?)[\s?]*$/iu,
+];
+// A typed message that reads as a question (answered after an app or deck instead of changing it).
+const QUESTION_SHAPED = /[?？؟]\s*$|^\s*(?:(?:can|could|would|will) you\s+)?(?:please\s+)?(?:what|what's|whats|how|how's|is|are|will|when|should|do|does|tell me)\b/i;
 
 // Checked in order: the most specific outputs first, plain writing last.
 const RULES: Rule[] = [
@@ -106,31 +138,28 @@ const RULES: Rule[] = [
   },
   {
     // The date and the time: every answer knows them (see context-note.ts), so no search is needed.
-    // Anchored to the end, so "what time is it best to post?" isn't one.
+    // A short question only; programming questions stay with Code.
     engine: "text",
     live: "clock",
     reason: msg("Flash answers this from today's date and time."),
-    patterns: [
-      /\bwhat (time|day|date) is it( (now|today|right now|there|in [\p{L} .'-]{2,40}))?\s*[?.!]*\s*$/iu,
-      /\bwhat('?s| is) (today'?s date|the date( today)?|the time( now)?( in [\p{L} .'-]{2,40})?)\s*\??\s*$/iu,
-    ],
+    patterns: [],
+    unless: CODE_WORDS,
+    test: (text) => text.length <= 200 && CLOCK.some((p) => p.test(text)),
   },
   {
     // A precise forecast question (see weather-words.ts): answered in words, with a live forecast.
+    // Programming questions about weather data stay with Code, and requests to make something go to the guess.
     engine: "text",
     live: "weather",
     reason: msg("Weather questions are answered from a live forecast."),
     patterns: [],
+    unless: new RegExp(`${CODE_WORDS.source}|${MAKES_SOMETHING.source}`, "iu"),
     test: weatherQuestion,
   },
   {
     engine: "code",
     reason: msg("This is a programming task."),
-    patterns: [
-      /```/,
-      /\b(python|javascript|typescript|java|c\+\+|c#|golang|rust|php|ruby|kotlin|swift|sql|html|css|bash|regex|react|node\.?js|django|flask)\b/i,
-      /\b(code|function|script|api|endpoint|algorithm|bug|debug|stack trace|compile|refactor|unit test|program)\b/i,
-    ],
+    patterns: CODE_PATTERNS,
   },
   {
     engine: "docs",
@@ -142,15 +171,30 @@ const RULES: Rule[] = [
     ],
   },
   {
+    // A link to read, a search asked for in words, and news, prices and scores.
     engine: "search",
     reason: msg("This needs fresh information from the web."),
     patterns: [
       /https?:\/\/\S+/i,
-      WHEN,
-      /\b(news|price of|stock price|exchange rate|score|release date|who won)\b/i,
       /\b(search|look up|google|find sources|with sources|cite|citations)\b/i,
-      /\b20(2[5-9]|3\d)\b/,
-      // Opening hours, who holds an office now, a crypto price or a currency pair, fixtures, and storms on their way.
+      /\b(latest|breaking|news|price of|stock price|exchange rate|score|release date|who won)\b/i,
+    ],
+  },
+  {
+    // Words about now and the years ahead, unless the request is to write or make something ("a post
+    // for today's sale", "a story set in 2030"): the guess decides those.
+    engine: "search",
+    reason: msg("This needs fresh information from the web."),
+    unless: MAKES_SOMETHING,
+    patterns: [NOW, /\b20(2[5-9]|3\d)\b/],
+  },
+  {
+    // Opening hours, who holds an office now, a crypto price or a currency pair, fixtures, and storms on
+    // their way; not in a request to make something, a question about how or why, or a sum with the rate given.
+    engine: "search",
+    reason: msg("This needs fresh information from the web."),
+    unless: new RegExp(`${MAKES_SOMETHING.source}|${EXPLAINS.source}`, "i"),
+    patterns: [
       /\b(open now|opening (hours|times)|closing time|is .{1,40} open (today|now|tomorrow|on \w+day))\b/i,
       /\bwho is (the )?(current|new) (president|prime minister|ceo|king|queen|chancellor|governor|mayor|pope|champion)\b|\bwho is the (president|prime minister|ceo|chancellor|governor|mayor|pope) of\b/i,
       /\bhow much is (a |one |1 )?(bitcoin|btc|ethereum|eth)\b|\bhow much is (a |one |1 )?(dollar|euro|pound|naira|cedi|rand|rupee|yen|peso)s? (in|to|against) (naira|cedis?|rand|rupees?|yen|pesos?|dollars?|euros?|pounds?|usd|eur|gbp|ngn|ghs|zar|inr|jpy|kes|shillings?|francs?|cfa|gourdes?|htg)\b/i,
@@ -578,11 +622,13 @@ export function route(message: string, attachmentType?: string, previous?: Engin
     const build = { engine: previous, reason: previous === "app" ? msg("Updating your app.") : msg("Updating your slides.") };
     // "Add a weather widget" or "show the temperature in Celsius" still changes it.
     const edit = EDITS_BUILD.test(message);
-    // A precise weather or clock question is answered, not taken for a change.
-    if (decision.live && !edit) return spoken ? { ...decision, about: previous } : decision;
+    // A weather or clock question is answered, not taken for a change, and the build is kept for the
+    // next change. Typed words that aren't a question ("temperature in Celsius please", "the hourly
+    // forecast is cut off") may be about the build, so the guess, which sees it, decides.
+    if (decision.live && !edit && (spoken || QUESTION_SHAPED.test(message))) return { ...decision, about: previous };
     if (!spoken) {
       // Another weather word: still the change, unless the guess, which sees the build, reads it otherwise.
-      return decision.guessed && !edit && asksWeather(message) ? { ...build, guessed: true, captured: true, hint: "weather" } : build;
+      return (decision.live || (decision.guessed && asksWeather(message))) && !edit ? { ...build, guessed: true, captured: true, hint: "weather" } : build;
     }
     const asks = spokenFollowUp(message);
     if (asks === "change") return build;
@@ -590,6 +636,19 @@ export function route(message: string, attachmentType?: string, previous?: Engin
     // which may answer in words or change the build but never start something else with a price.
     return asks === "talk" ? { ...decision, guessed: undefined, about: previous } : { ...decision, guessed: true, answersOnly: true, about: previous };
   }
+  return decision;
+}
+
+/**
+ * A short follow-up to a forecast question ("and tomorrow?", "and tonight?", "what about Saturday?"),
+ * given the user's earlier message: the router's guess decides, and the forecast is a hint it can
+ * override (see route.ts). "and tonight?" holds the web rule's words about now, so it goes back to the
+ * guess instead of straight to Research.
+ */
+export function followsForecast(decision: RouteDecision, message: string, earlier: string, attached = false): RouteDecision {
+  if (attached || message.trim().length > 60 || /https?:\/\//i.test(message) || !weatherQuestion(earlier)) return decision;
+  if (decision.guessed) return { ...decision, hint: "weather", followUp: true };
+  if (decision.engine === "search" && !decision.live) return { engine: "text", reason: msg("Writing and reasoning task."), guessed: true, hint: "weather", followUp: true };
   return decision;
 }
 
@@ -653,8 +712,7 @@ function routeOne(message: string, attachmentType?: string, { skipVoice = false 
     if (attachmentType && ["video", "music", "image", "voice", "search", "app", "slides"].includes(rule.engine)) continue;
     if (attachmentType && rule.live) continue;
     if (skipVoice && rule.engine === "voice") continue;
-    if (rule.unless?.test(text)) continue;
-    if (rule.patterns.some((p) => p.test(text)) || rule.test?.(text)) {
+    if ((rule.patterns.some((p) => p.test(text)) || rule.test?.(text)) && !rule.unless?.test(text)) {
       // A weather word with a word about when ("sunscreen today", "rain this week") isn't a web search:
       // the guess picks between the forecast and Research.
       if (rule.engine === "search" && asksWeather(text) && !/https?:\/\//i.test(text)) {

@@ -391,16 +391,34 @@ const planOf = (engine: Engine, plan?: ToolPlan) => plan ?? (engine === "search"
 /** What reading the input once costs, in cents. Claude bills this even when a reply is stopped. */
 export const readCostCents = (model: string, inputTokens: number) => (inputTokens * claudePrice(model, inputTokens).input) / 1e6;
 
-/** Worst-case input cost of one request, in cents: each tool step re-reads the input and what the steps before it added. */
+/**
+ * Worst-case input cost of one request, in cents: each tool step re-reads the input and what the steps
+ * before it added. Each step is priced at its own prompt's size, as Claude bills each call, so a long
+ * prompt rate (Haiku 5.5's above 100,000 tokens) applies only to a step whose prompt is that long.
+ */
 export function inputCostCents(engine: Engine, model: string, inputTokens: number, plan?: ToolPlan): number {
   const { results, searches } = planOf(engine, plan);
-  let tokens = inputTokens;
+  let cents = readCostCents(model, inputTokens);
   let carried = 0;
   for (const added of results) {
     carried += added;
-    tokens += inputTokens + carried;
+    cents += readCostCents(model, inputTokens + carried);
   }
-  return readCostCents(model, tokens) + searches * WEB_SEARCH_CENTS;
+  return cents + searches * WEB_SEARCH_CENTS;
+}
+
+/** What a plan's tool steps write (its output, shared evenly), in cents: each step at its own prompt's rate, like its input. */
+function stepOutputCents(engine: Engine, model: string, inputTokens: number, plan?: ToolPlan): number {
+  const { results, output = 0 } = planOf(engine, plan);
+  if (!output) return 0;
+  if (!results.length) return (output * claudePrice(model, inputTokens).output) / 1e6;
+  let cents = 0;
+  let carried = 0;
+  for (const added of results) {
+    cents += ((output / results.length) * claudePrice(model, inputTokens + carried).output) / 1e6;
+    carried += added;
+  }
+  return cents;
 }
 
 /**
@@ -410,15 +428,15 @@ export function inputCostCents(engine: Engine, model: string, inputTokens: numbe
  * what the declined model wrote (at every tool step).
  */
 export function callCost(engine: Engine, model: string, inputTokens: number, fallback = true, plan?: ToolPlan) {
-  const { results, output = 0 } = planOf(engine, plan);
+  const { results } = planOf(engine, plan);
   const steps = results.length + 1;
   // What the tool steps write is fixed too (a plan with connectors).
-  let inputCents = inputCostCents(engine, model, inputTokens, plan) + (output * claudePrice(model, inputTokens).output) / 1e6;
+  let inputCents = inputCostCents(engine, model, inputTokens, plan) + stepOutputCents(engine, model, inputTokens, plan);
   let outputPrice = claudePrice(model, inputTokens).output;
   const backup = fallback ? fallbackModel(model) : undefined;
   if (backup) {
     const price = claudePrice(backup, inputTokens);
-    inputCents += inputCostCents(engine, backup, inputTokens, plan) + (output * price.output) / 1e6;
+    inputCents += inputCostCents(engine, backup, inputTokens, plan) + stepOutputCents(engine, backup, inputTokens, plan);
     outputPrice += price.output + price.input * steps;
   }
   return { inputCents, outputPrice, fallback: Boolean(backup) };

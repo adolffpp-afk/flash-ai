@@ -5,6 +5,7 @@ import {
   CLAUDE_PRICES,
   CONNECT_STEPS,
   MAX_OUTPUT_TOKENS,
+  NO_TOOLS,
   WEATHER_RESULT_TOKENS,
   WEB_SEARCH_CENTS,
   callMaxCents,
@@ -336,14 +337,22 @@ const OTHER_TOOL_NAMES: Partial<Record<Engine, string>> = {
 /** "a, b and c". */
 const listed = (items: string[]) => (items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`);
 
-/** The line about Flash's other tools, from what's live (engineStatus()), or "" when none are. free: for the free models. */
-export function otherToolsLine(status: Partial<Record<Engine, boolean>>, free = false): string {
+/**
+ * The line about Flash's other tools, from what's live (engineStatus()), or "" when none are. free: for
+ * the free models. picked: the user picked this tool, so Flash doesn't switch by itself; they pick
+ * another one, or go back to Auto.
+ */
+export function otherToolsLine(status: Partial<Record<Engine, boolean>>, free = false, picked = false): string {
   const live = (Object.keys(OTHER_TOOL_NAMES) as Engine[]).filter((e) => status[e]);
   if (!live.length) return "";
   const list = listed(live.map((e) => OTHER_TOOL_NAMES[e]!));
-  if (free) return `Flash also makes ${list}, most of them with credits. When the user wants one of these, tell them to ask for it in their own words; never say Flash can't do them.`;
-  const example = status.image ? ' (for example "Make a picture of a red bicycle")' : "";
-  return `Flash also makes ${list}. When the user wants one of these, tell them to ask for it in their own words${example}; Flash switches tools by itself. Never say Flash can't do them.`;
+  const example = status.image && !free ? ' (for example "Make a picture of a red bicycle")' : "";
+  const makes = free ? `Flash also makes ${list}, most of them with credits.` : `Flash also makes ${list}.`;
+  const when = picked
+    ? "The user picked this tool, so Flash won't switch tools by itself: when they want one of these, tell them to pick it with the tool " +
+      `button by the message box, or to switch back to Auto and ask for it in their own words${example}.`
+    : `When the user wants one of these, tell them to ask for it in their own words${example}${free ? "." : "; Flash switches tools by itself."}`;
+  return `${makes} ${when} Never say Flash can't do them.`;
 }
 
 /** What may have changed since the model's training: the weather is listed only when no forecast tool is attached. */
@@ -541,6 +550,20 @@ function afterSpending(err: unknown): unknown {
   return new Error(`Claude failed part way through a reply: ${err.message}`, { cause: err });
 }
 
+/**
+ * A turn's content as it goes back to Claude. After a refusal fallback part way through (a "fallback"
+ * block marks where the next model took over), the declined model's thinking and tool calls before
+ * the last such block are left out, with any server tool call that has no result, so only the model
+ * that answered has its calls run and echoed (see the API's refusal fallback guidance).
+ */
+export function echoedContent(content: Anthropic.Beta.BetaContentBlock[]): Anthropic.Beta.BetaContentBlock[] {
+  const boundary = content.map((b) => b.type).lastIndexOf("fallback");
+  if (boundary < 0) return content;
+  const answered = new Set(content.flatMap((b) => ("tool_use_id" in b ? [b.tool_use_id] : [])));
+  const kept = ["text", "server_tool_use", "web_search_tool_result", "web_fetch_tool_result", "fallback"];
+  return content.filter((b, i) => i >= boundary || (kept.includes(b.type) && (b.type !== "server_tool_use" || answered.has(b.id))));
+}
+
 /** A reply's forecasts so far: tool rounds, calls, and whether any came back with data. */
 type WeatherState = { rounds: number; calls: number; used: boolean };
 
@@ -563,11 +586,11 @@ type RoundTools = {
  * reply), then the connector calls in order (see connectorCalls). Each round counts as one.
  */
 async function* replyRound(
-  final: Anthropic.Beta.BetaMessage,
+  content: Anthropic.Beta.BetaContentBlock[],
   r: RoundTools,
 ): AsyncGenerator<StreamEvent, { results: Anthropic.Beta.BetaToolResultBlockParam[]; tokens: number; chars: number }> {
   const { weather: tool, state } = r;
-  const calls = final.content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use");
+  const calls = content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use");
   const isWeather = (call: Anthropic.Beta.BetaToolUseBlock) => Boolean(tool) && call.name === WEATHER_TOOL.name;
   for (const call of calls) if (isWeather(call)) yield { type: "status", message: tool!.status(call.input) };
   const forecasts = new Map(
@@ -614,8 +637,8 @@ async function* replyRound(
 }
 
 /** Research's forecast rounds: replyRound with the forecast alone. */
-const weatherRound = (final: Anthropic.Beta.BetaMessage, tool: WeatherTool, state: WeatherState, onUsed?: () => void) =>
-  replyRound(final, { weather: tool, state, onUsed });
+const weatherRound = (content: Anthropic.Beta.BetaContentBlock[], tool: WeatherTool, state: WeatherState, onUsed?: () => void) =>
+  replyRound(content, { weather: tool, state, onUsed });
 
 /**
  * What the next step of a reply with connectors will read, in tokens, before it is sent: counted by
@@ -681,6 +704,9 @@ export async function* streamText(
   const rounds = kit ? CONNECT_STEPS - 1 : WEATHER_ROUNDS;
   let maxTokens = budget.maxTokens;
   let spent = 0;
+  // Whether any words were sent yet, and whether the next call may only answer (no more forecasts).
+  let wrote = false;
+  let answerOnly = false;
   try {
     // The accounts' tools as their servers list them now: one that changed since the user added it is left out.
     let connectors: ConnectorTool[] = [];
@@ -719,14 +745,21 @@ export async function* streamText(
           system: instructions,
           messages,
           // The last round can't ask for more, so the reply always ends in words.
-          ...(declared.length && { tools: declared, tool_choice: { type: !tools.length || state.rounds >= rounds ? ("none" as const) : ("auto" as const) } }),
+          ...(declared.length && {
+            tools: declared,
+            tool_choice: { type: !tools.length || state.rounds >= rounds || answerOnly ? ("none" as const) : ("auto" as const) },
+          }),
         },
         { signal },
       );
+      // Words written before a forecast was asked for end their paragraph; the answer starts a new one.
+      let gap = wrote && state.rounds > 0 ? "\n\n" : "";
       for await (const event of stream) {
         running?.see(event);
         if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-          yield { type: "text", delta: event.delta.text };
+          yield { type: "text", delta: gap + event.delta.text };
+          gap = "";
+          wrote = true;
         }
       }
       const final = await stream.finalMessage();
@@ -740,25 +773,34 @@ export async function* streamText(
         yield lengthNote(budget, t);
         break;
       }
-      if (!tools.length || final.stop_reason !== "tool_use") break;
-      const round = yield* replyRound(final, { weather: tool, state, onUsed: o.onUsed, kit, connectors, connect, signal, t });
-      messages.push({ role: "assistant", content: final.content }, { role: "user", content: round.results });
+      if (!tools.length || final.stop_reason !== "tool_use" || answerOnly) break;
+      const content = echoedContent(final.content);
+      const round = yield* replyRound(content, { weather: tool, state, onUsed: o.onUsed, kit, connectors, connect, signal, t });
+      messages.push({ role: "assistant", content }, { role: "user", content: round.results });
       // The next call reads everything again with what the tools returned, and writes only what the
       // credits held still pay for: priced as this one call with connectors, and leaving room for the
       // forecast's rounds still to come without.
       const next = kit
         ? await nextInput(choice.model, instructions, messages, tools, { usage: final.usage, tokens: round.tokens, chars: round.chars }, signal)
         : inputOf(final.usage) + final.usage.output_tokens + round.tokens;
-      maxTokens = Math.min(
-        budget.maxTokens,
-        tokensWithin(mode, choice.model, next!, budget.capCents - spent, usesFallback(choice), kit ? undefined : weatherLeft(state.rounds)),
-      );
+      const left = budget.capCents - spent;
+      maxTokens = Math.min(budget.maxTokens, tokensWithin(mode, choice.model, next!, left, usesFallback(choice), kit ? undefined : weatherLeft(state.rounds)));
+      if (!(maxTokens >= MIN_ROUND_TOKENS)) {
+        // Too little left for another round: one last call answers with what the tools returned. (A step
+        // with connectors is already priced as one call, so for it this is the same check.)
+        answerOnly = true;
+        maxTokens = Math.min(budget.maxTokens, tokensWithin(mode, choice.model, next!, left, usesFallback(choice), NO_TOOLS));
+      }
       if (!(maxTokens >= MIN_ROUND_TOKENS)) {
         yield kit ? stoppedLooking(t) : lengthNote(budget, t);
         break;
       }
     }
   } catch (err) {
+    // A reply stopped or cut off after a forecast still credits MET Norway for what it showed, and
+    // lists the accounts' tools it used.
+    if (state.used) yield { type: "sources", items: tool!.sources };
+    if (connect.used.length) yield { type: "connector_used", items: connect.used };
     throw spent > 0 ? afterSpending(err) : err;
   } finally {
     await kit?.close();
@@ -826,6 +868,14 @@ export async function* streamSearch(
   ];
   let spent = 0;
   let maxTokens = budget.maxTokens;
+  // The sources so far, in one list: the links cited first, then the others read, and MET Norway's credit.
+  const sources = () => {
+    const web = [...cited.values(), ...[...read.values()].filter((s) => !cited.has(s.url))];
+    return state.used ? [...web.slice(0, 6), ...tool!.sources] : web.slice(0, 8);
+  };
+  // Whether any words were sent yet, and whether the next call may only answer (no searches or forecasts).
+  let wroteAny = false;
+  let answerOnly = false;
   try {
     // pause_turn means the server paused a long search loop, and tool_use that Claude asked for a
     // forecast; either way the turn goes back to Claude, as it is, to carry on.
@@ -837,18 +887,22 @@ export async function* streamSearch(
           max_tokens: maxTokens,
           system: instructions,
           tools: tools(),
-          ...(tool && state.rounds >= WEATHER_ROUNDS && { tool_choice: { type: "none" as const } }),
+          // tool_choice none also keeps the web search and page reader from running.
+          ...(((tool && state.rounds >= WEATHER_ROUNDS) || answerOnly) && { tool_choice: { type: "none" as const } }),
           messages,
         },
         { signal },
       );
       let wrote = false;
+      // Words written before a forecast was asked for end their paragraph; the answer starts a new one.
+      let gap = wroteAny && state.rounds > 0 ? "\n\n" : "";
       try {
         for await (const event of stream) {
           running?.see(event);
           if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-            wrote = true;
-            yield { type: "text", delta: event.delta.text };
+            wrote = wroteAny = true;
+            yield { type: "text", delta: gap + event.delta.text };
+            gap = "";
           }
         }
       } catch (err) {
@@ -888,26 +942,42 @@ export async function* streamSearch(
         break;
       }
       const forecasts = tool && final.stop_reason === "tool_use";
-      if (final.stop_reason !== "pause_turn" && !forecasts) break;
-      const round = forecasts ? yield* weatherRound(final, tool, state, o.onUsed) : null;
-      messages.push({ role: "assistant", content: final.content });
+      if ((final.stop_reason !== "pause_turn" && !forecasts) || answerOnly) break;
+      const content = echoedContent(final.content);
+      const round = forecasts ? yield* weatherRound(content, tool, state, o.onUsed) : null;
+      messages.push({ role: "assistant", content });
       if (round) messages.push({ role: "user", content: round.results });
       // Keep going only while the credits held for this request still cover another call: it reads
       // everything again, what the searches found and the forecasts included.
-      const found = final.content.filter((b) => b.type === "web_search_tool_result" || b.type === "web_fetch_tool_result");
+      // What the searches found and Claude read before its last words or call is in this call's usage
+      // already; what came after (a paused search) it reads for the first time next call.
+      let lastSaid = -1;
+      content.forEach((b, i) => {
+        if (b.type === "text" || b.type === "thinking" || b.type === "tool_use" || b.type === "server_tool_use") lastSaid = i;
+      });
+      const found = content.filter((b, i) => i > lastSaid && (b.type === "web_search_tool_result" || b.type === "web_fetch_tool_result"));
       const nextInput = inputOf(final.usage) + final.usage.output_tokens + tokensAtMost(JSON.stringify(found)) + (round?.tokens ?? 0);
-      maxTokens = Math.min(budget.maxTokens, tokensWithin("search", choice.model, nextInput, budget.capCents - spent, usesFallback(choice), plan));
+      const left = budget.capCents - spent;
+      maxTokens = Math.min(budget.maxTokens, tokensWithin("search", choice.model, nextInput, left, usesFallback(choice), plan));
+      if (round && !(maxTokens >= MIN_ROUND_TOKENS)) {
+        // Too little left for more searches and forecasts after this one: one last call answers with
+        // what it has, with no tools (tool_choice none), so it is paid for as a single call.
+        answerOnly = true;
+        maxTokens = Math.min(budget.maxTokens, tokensWithin("search", choice.model, nextInput, left, usesFallback(choice), NO_TOOLS));
+      }
       if (!(maxTokens >= (round ? MIN_ROUND_TOKENS : 2000))) {
         if (round) yield lengthNote(budget, t);
         break;
       }
     }
   } catch (err) {
+    // A reply stopped or cut off part way still shows the links it found, and credits MET Norway.
+    const items = sources();
+    if (items.length) yield { type: "sources", items };
     throw spent > 0 ? afterSpending(err) : err;
   }
   // One list, sent once: the browser keeps only the last one a reply sends.
-  const web = [...cited.values(), ...[...read.values()].filter((s) => !cited.has(s.url))];
-  const items = state.used ? [...web.slice(0, 6), ...tool!.sources] : web.slice(0, 8);
+  const items = sources();
   if (items.length) yield { type: "sources", items };
 }
 

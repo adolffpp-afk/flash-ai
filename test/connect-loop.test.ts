@@ -9,8 +9,13 @@ import type { AddressInfo } from "node:net";
  * them, and token counts) and the stand-in MCP servers of scripts/mock-connectors.ts. Nothing here
  * reaches a real service.
  */
-type Block = { type: "text"; text: string } | { type: "tool_use"; id: string; name: string; input: object };
-type Reply = { blocks: Block[]; stop: string };
+type Block =
+  | { type: "text"; text: string }
+  | { type: "tool_use"; id: string; name: string; input: object }
+  | { type: "thinking"; thinking: string; signature: string }
+  | { type: "fallback"; from: object; to: object };
+// A reply that hangs sends its blocks and never finishes, as a slow answer the user stops.
+type Reply = { blocks: Block[]; stop: string; hang?: boolean };
 const replies: Reply[] = [];
 const sent: { model: string; max_tokens: number; system: string; tools?: { name: string }[]; tool_choice?: { type: string }; messages: { role: string; content: unknown }[] }[] = [];
 const counted: unknown[] = [];
@@ -38,16 +43,20 @@ const claude = createServer((req, res) => {
       if (b.type === "text") {
         events.push({ type: "content_block_start", index, content_block: { type: "text", text: "" } });
         events.push({ type: "content_block_delta", index, delta: { type: "text_delta", text: b.text } });
-      } else {
+      } else if (b.type === "tool_use") {
         events.push({ type: "content_block_start", index, content_block: { ...b, input: {} } });
         events.push({ type: "content_block_delta", index, delta: { type: "input_json_delta", partial_json: JSON.stringify(b.input) } });
-      }
-      events.push({ type: "content_block_stop", index });
+      } else if (b.type === "thinking") {
+        events.push({ type: "content_block_start", index, content_block: { type: "thinking", thinking: "", signature: "" } });
+        events.push({ type: "content_block_delta", index, delta: { type: "thinking_delta", thinking: b.thinking } });
+        events.push({ type: "content_block_delta", index, delta: { type: "signature_delta", signature: b.signature } });
+      } else events.push({ type: "content_block_start", index, content_block: b });
+      if (!reply.hang) events.push({ type: "content_block_stop", index });
     });
-    events.push({ type: "message_delta", delta: { stop_reason: reply.stop }, usage }, { type: "message_stop" });
+    if (!reply.hang) events.push({ type: "message_delta", delta: { stop_reason: reply.stop }, usage }, { type: "message_stop" });
     res.writeHead(200, { "content-type": "text/event-stream" });
     for (const e of events) res.write(`event: ${(e as { type: string }).type}\ndata: ${JSON.stringify(e)}\n\n`);
-    res.end();
+    if (!reply.hang) res.end();
   });
 });
 await new Promise<void>((r) => claude.listen(0, "127.0.0.1", r));
@@ -62,6 +71,7 @@ const { startMockConnectors, POISON } = await import("../scripts/mock-connectors
 const mock = await startMockConnectors(0);
 process.env.FLASH_CONNECT_MOCK = mock.origin;
 after(async () => {
+  claude.closeAllConnections();
   claude.close();
   await mock.close();
 });
@@ -72,6 +82,7 @@ const { CONNECT_STEPS, claudePrice, tokensWithin, worstTokens } = await import("
 const { addConnection, changedTool, chatKit, previewServer, runApproved, updateConnection } = await import("../src/lib/server/connections.ts");
 const { approvedResults } = await import("../src/lib/server/pending-actions.ts");
 const { applyEvent } = await import("../src/lib/apply-event.ts");
+const { readEngine } = await import("../src/lib/server/engine-steps.ts");
 const { all, run: sql } = await import("../src/lib/server/db.ts");
 
 type Event = { type: string; delta?: string; message?: string; items?: unknown[]; action?: { id: string; tool: string; input: Record<string, unknown>; inputHash: string; connection: string } };
@@ -320,6 +331,78 @@ test("Stop during a tool call ends the reply at once and starts no other step", 
   });
   assert.equal(sent.length, 1);
   assert.equal(running.soFar, 0, "the call that ran was metered; nothing is in progress");
+});
+
+test("Stop part way through the answer still lists the accounts' tools the reply used", async () => {
+  // Stopped the way the chat route stops a reply (see readEngine): the stream is aborted and drained.
+  const abort = new AbortController();
+  const events: Event[] = [];
+  let wake = () => {};
+  let halt = false;
+  replies.push(
+    { blocks: [{ type: "tool_use", id: "toolu_1", name: "linear__echo", input: { text: "x" } }], stop: "tool_use" },
+    { blocks: [{ type: "text", text: "It said " }], stop: "end_turn", hang: true },
+  );
+  const kit = (await chatKit(user, [linear], { signal: abort.signal }))!;
+  const gen = streamText(ask("Use my accounts"), "", "text", undefined, budget, choice, undefined, { signal: abort.signal }, { connect: kit });
+  await assert.rejects(
+    readEngine(
+      gen as AsyncGenerator<never>,
+      (e) => {
+        events.push(e as Event);
+        if (e.type === "text" && !halt) {
+          halt = true;
+          abort.abort("stop");
+          wake();
+        }
+      },
+      { halted: () => halt, onWake: (w) => (wake = w), drainMs: 2000 },
+    ),
+  );
+  assert.equal(sent.length, 2);
+  assert.deepEqual(events.at(-1), { type: "connector_used", items: [{ connection: "Linear", tool: "echo" }] });
+});
+
+test("after a refusal fallback part way through, only the answering model's connector calls run and go back", async () => {
+  const fallback = { type: "fallback" as const, from: { model: "claude-sonnet-5-5" }, to: { model: "claude-sonnet-5" } };
+  replies.push(
+    {
+      blocks: [
+        { type: "text", text: "Checking. " },
+        { type: "thinking", thinking: "declined reasoning", signature: "sig-declined" },
+        { type: "tool_use", id: "t_declined", name: "linear__echo", input: { text: "declined" } },
+        fallback,
+        { type: "tool_use", id: "t_fb", name: "linear__echo", input: { text: "answered" } },
+      ],
+      stop: "tool_use",
+    },
+    { blocks: [{ type: "text", text: "It said answered." }], stop: "end_turn" },
+  );
+  await reply([linear]);
+  assert.deepEqual(
+    mock.calls.map((c) => c.arguments),
+    [{ text: "answered" }],
+    "the declined model's call isn't run",
+  );
+  const messages = sent[1].messages;
+  const echoed = messages.at(-2)!.content as { type: string; id?: string }[];
+  assert.deepEqual(
+    echoed.map((b) => b.type + (b.id ? `:${b.id}` : "")),
+    ["text", "fallback", "tool_use:t_fb"],
+  );
+  assert.deepEqual(
+    (messages.at(-1)!.content as { tool_use_id: string }[]).map((b) => b.tool_use_id),
+    ["t_fb"],
+  );
+});
+
+test("words before an account's tool call end their paragraph, and the answer starts a new one", async () => {
+  replies.push(
+    { blocks: [{ type: "text", text: "Let me look." }, { type: "tool_use", id: "toolu_1", name: "linear__echo", input: { text: "x" } }], stop: "tool_use" },
+    { blocks: [{ type: "text", text: "It said x." }], stop: "end_turn" },
+  );
+  const events = await reply([linear]);
+  assert.equal(said(events), "Let me look.\n\nIt said x.");
 });
 
 test("a changed tool is left out of the reply until the user looks at it again", async () => {

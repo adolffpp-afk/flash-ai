@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checksSpoken, pictureFollowUp, route, spokenFollowUp, takesGuess, textToSpeak, wantsAudioFile } from "../src/lib/router.ts";
+import { checksSpoken, followsForecast, pictureFollowUp, route, spokenFollowUp, takesGuess, textToSpeak, wantsAudioFile } from "../src/lib/router.ts";
+import { FIRM_MAX_CHARS, asksWeather, weatherQuestion } from "../src/lib/weather-words.ts";
+import { freeFacts } from "../src/lib/free-order.ts";
 import { A, B, C } from "./fixtures/weather-messages.ts";
 
 const cases: [string, string][] = [
@@ -450,4 +452,135 @@ test("in all three message sets, nothing to make goes to the forecast rule and n
     if (m.intent === "weather") assert.equal(r.live, "weather", m.q);
     else if (m.q !== "make the weather icon bigger") assert.equal(r.engine, "app", m.q);
   }
+});
+
+test("requests to write, make or explain something aren't sent to Research by words about now; live questions still are", () => {
+  for (const m of [
+    "Write a short story about a hurricane hitting a small fishing town",
+    "Write a poem about the wildfire near my grandmother's house",
+    "Write an Instagram post announcing our new opening hours",
+    "Write an email telling customers our opening times are changing",
+    "Create a flyer with our new opening hours",
+    "Write a WhatsApp message to customers about our closing time changing",
+    "Write a caption for the match kick-off this weekend",
+    "Help my son with his homework: why do floods happen near rivers?",
+    "Why do hurricanes hit Florida?",
+    "What causes floods near rivers?",
+    "Explain why tornadoes hit the US Midwest so often",
+    "How much is a dollar in pesos if the rate is 18?",
+    "Who is the president of the USA in the movie Independence Day?",
+    "Write an Instagram post for today's sale",
+    "Can you write a toast for tonight's party?",
+    "Write a story set in 2030",
+    "Compose an email about the current project status",
+  ]) {
+    const r = route(m);
+    assert.deepEqual([r.engine, r.guessed], ["text", true], m);
+  }
+  for (const m of [
+    "What are the opening hours of the British Museum?",
+    "Is Tesco open on Sunday?",
+    "Who is the current president of Ghana?",
+    "How much is a dollar in naira?",
+    "Is there a hurricane coming to Florida?",
+    // News, prices and scores are searched as before, even in a request to write.
+    "Write a summary of today's news in Ghana",
+    "Draft a tweet about the current exchange rate",
+    "What's the latest news about Tesla?",
+    "news about Ghana today",
+  ]) {
+    assert.equal(route(m).engine, "search", m);
+  }
+});
+
+test("after an app or deck, typed weather feedback is left to the guess, a weather question is answered, and asking to see it isn't an edit", () => {
+  for (const previous of ["app", "slides"] as const) {
+    for (const m of ["chance of rain should be a percentage", "temperature in Celsius please", "the hourly forecast is cut off", "5 day forecast for Toronto is empty", "Weather for London doesn't load"]) {
+      const r = route(m, undefined, previous);
+      // Still the change unless the guess, which sees the build, reads it otherwise.
+      assert.deepEqual([r.engine, r.guessed, r.captured, r.live], [previous, true, true, undefined], m);
+    }
+    for (const m of ["can you show me the weather in Accra?", "what's the weather in Accra?", "how hot is it in Lagos"]) {
+      const r = route(m, undefined, previous);
+      assert.deepEqual([r.engine, r.live, r.about], ["text", "weather", previous], m);
+    }
+    for (const m of ["show the temperature in Celsius", "add a weather widget to the header", "let the user pick the city"]) {
+      assert.deepEqual([route(m, undefined, previous).engine, route(m, undefined, previous).captured], [previous, undefined], m);
+    }
+  }
+});
+
+test("programming questions that mention the weather stay with Code; Bugün isn't a bug", () => {
+  for (const m of [
+    "Debug: weather in Tokyo returns 404 from OpenWeather",
+    "In TypeScript, how do I type the weather forecast for Paris response?",
+    "The weather in Lagos endpoint times out in my Django view",
+    "My python script that fetches the weather in London crashes",
+    "what time is it in python",
+  ]) {
+    assert.deepEqual([route(m).engine, route(m).live], ["code", undefined], m);
+  }
+  assert.equal(route("Bugün Ankara'da hava nasıl?").live, "weather");
+});
+
+test("a short follow-up to a forecast question is a hint the guess can override, typed or spoken", () => {
+  const earlier = "Will it rain tomorrow in London?";
+  for (const m of ["and tonight?", "and today?", "what about tonight?", "and this week?", "and tomorrow?", "what about Saturday?"]) {
+    for (const spoken of [false, true]) {
+      const r = followsForecast(route(m, undefined, "text", { spoken }), m, earlier);
+      assert.deepEqual([r.engine, r.guessed, r.hint, r.followUp, r.live], ["text", true, "weather", true, undefined], `${m} ${spoken}`);
+    }
+  }
+  // "thanks!" is a follow-up too, but only a hint: the guess reads it as words and the forecast is left out (see route.ts).
+  assert.deepEqual([followsForecast(route("thanks!"), "thanks!", earlier).live, followsForecast(route("thanks!"), "thanks!", earlier).hint], [undefined, "weather"]);
+  // Not after a forecast question, with a file or a link, too long, or already decided by a rule: unchanged.
+  for (const [m, before, attached] of [
+    ["and tonight?", "Write a poem about London", false],
+    ["and tonight?", earlier, true],
+    ["and tonight? https://example.com/events", earlier, false],
+    ["and what's on tonight at the theatres and the cinemas near the river?", earlier, false],
+    ["draw it as a watercolor", earlier, false],
+    ["what's the weather in Paris tomorrow?", earlier, false],
+  ] as const) {
+    const r = route(m, undefined, "text");
+    assert.deepEqual(followsForecast(r, m, before, attached), r, m);
+  }
+});
+
+test("routing and the weather checks stay fast on 100,000-character hostile messages", () => {
+  const N = 100_000;
+  const hostile = [
+    "what time is it " + " ".repeat(N) + "x",
+    "prévisions ".repeat(N / 11),
+    "weather in Paris ".repeat(N / 17),
+    "is a open ".repeat(N / 10),
+    "hurricane coming " + "a".repeat(N),
+    "match " + "fixtures ".repeat(N / 9),
+    "天" + "Aa ".repeat(N / 3) + "?",
+    "Is it cold in " + "Aaaa ".repeat(N / 5) + "?",
+    "temperature " + " ".repeat(N) + "?",
+    "Weather in Aaa " + "? ".repeat(N / 2) + "x",
+  ];
+  // The fastest of three runs, so a slow moment of the test machine doesn't count; a pattern that
+  // backtracks takes seconds here.
+  const fastest = (f: () => unknown) =>
+    Math.min(
+      ...[0, 1, 2].map(() => {
+        const start = performance.now();
+        f();
+        return performance.now() - start;
+      }),
+    );
+  for (const m of hostile) {
+    const label = JSON.stringify(m.slice(0, 24));
+    assert.ok(fastest(() => route(m)) < 80, `route ${label}`);
+    assert.ok(fastest(() => route(m, undefined, "app")) < 80, `route after an app ${label}`);
+    assert.ok(fastest(() => route(m, undefined, "text", { spoken: true })) < 80, `spoken ${label}`);
+    assert.ok(fastest(() => asksWeather(m)) < 20, `asksWeather ${label}`);
+    assert.ok(fastest(() => weatherQuestion(m)) < 20, `weatherQuestion ${label}`);
+    assert.ok(fastest(() => freeFacts({ message: m, inputChars: m.length })) < 20, `freeFacts ${label}`);
+    assert.ok(fastest(() => followsForecast(route("and tonight?"), "and tonight?", m)) < 20, `followsForecast ${label}`);
+  }
+  // A precise question is short; a long message is never one.
+  assert.equal(weatherQuestion("Will it rain tomorrow in London? " + "x".repeat(FIRM_MAX_CHARS)), false);
 });

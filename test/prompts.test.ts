@@ -59,6 +59,15 @@ test("the tools line names only what works now, and never offers a missing tool"
   assert.match(otherToolsLine({ image: true }, true), /^Flash also makes pictures, most of them with credits\./);
 });
 
+test("when the user picked the tool, the line says how to switch instead of promising Flash will", () => {
+  for (const free of [false, true]) {
+    const line = otherToolsLine(ALL_LIVE, free, true);
+    assert.doesNotMatch(line, /switches tools by itself/);
+    assert.match(line, /The user picked this tool, so Flash won't switch tools by itself: when they want one of these, tell them to pick it with the tool button by the message box, or to switch back to Auto/);
+    assert.match(line, /Never say Flash can't do them\.$/);
+  }
+});
+
 test("the mode prompts answer first and leave placeholders instead of inventing details", () => {
   assert.match(system("", "code"), /name it in one line instead of asking/);
   const docs = system("", "docs");

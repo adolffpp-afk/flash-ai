@@ -50,9 +50,11 @@ const ENGLISH = new Set(
 
 /**
  * Whether a message reads as English: mostly plain Latin letters and at least one common English
- * word. Too short to tell (fewer than three words) counts as English, so the usual order holds.
+ * word. Too short to tell (fewer than three words) counts as English, so the usual order holds. Its
+ * start is enough to tell, so a very long message is read only that far.
  */
-export function looksEnglish(text: string): boolean {
+export function looksEnglish(message: string): boolean {
+  const text = message.slice(0, 2000);
   const letters = text.match(/\p{L}/gu) ?? [];
   if (!letters.length) return true;
   const plain = letters.filter((c) => /[a-z]/i.test(c)).length;

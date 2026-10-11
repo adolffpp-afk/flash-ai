@@ -1,7 +1,7 @@
 import { ImageResponse } from "next/og";
 import { one } from "@/lib/server/db.ts";
 import { sitePreview } from "@/lib/site-preview.ts";
-import { BRAND } from "../../../brand";
+import { BRAND, BrandMark } from "../../../brand";
 
 const size = { width: 1200, height: 630 };
 
@@ -21,20 +21,23 @@ export async function GET(_request: Request, ctx: RouteContext<"/p/[slug]/card">
           flexDirection: "column",
           justifyContent: "space-between",
           padding: "72px 80px",
-          background: `radial-gradient(circle at 20% 15%, #12392b, ${BRAND.ink} 65%)`,
+          background: `radial-gradient(circle at 20% 15%, #222944, ${BRAND.ink} 65%)`,
           color: "white",
         }}
       >
-        <div style={{ display: "flex", width: 120, height: 8, borderRadius: 4, background: `linear-gradient(90deg, ${BRAND.emerald}, ${BRAND.gold})` }} />
+        <div style={{ display: "flex", width: 120, height: 8, borderRadius: 4, background: "linear-gradient(90deg, #5eeaf4, #5b8cf6, #9b6cf4, #f472b6)" }} />
         <div style={{ display: "flex", flexDirection: "column" }}>
           <div style={{ display: "flex", fontSize: title.length > 40 ? 64 : 84, fontWeight: 700, letterSpacing: -2, lineHeight: 1.05 }}>{title}</div>
           {description && (
-            <div style={{ display: "flex", marginTop: 28, fontSize: 34, lineHeight: 1.35, color: "#b6c5bc" }}>
+            <div style={{ display: "flex", marginTop: 28, fontSize: 34, lineHeight: 1.35, color: "#b4bad0" }}>
               {description.length > 140 ? `${description.slice(0, 139)}…` : description}
             </div>
           )}
         </div>
-        <div style={{ display: "flex", fontSize: 24, color: "#7d8f85" }}>Made with Flash</div>
+        <div style={{ display: "flex", alignItems: "center", fontSize: 24, color: "#8a90a8" }}>
+          <BrandMark size={36} />
+          <span style={{ marginLeft: 10 }}>Made with Flash</span>
+        </div>
       </div>
     ),
     size,
