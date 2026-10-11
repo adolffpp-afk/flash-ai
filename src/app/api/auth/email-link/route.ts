@@ -1,3 +1,4 @@
+import { translatorFor } from "@/lib/server/i18n.ts";
 import { createSession, fromOwnPage, isSecure } from "@/lib/server/auth.ts";
 import { clientIp, overLimit } from "@/lib/server/limits.ts";
 import { CLEAR_REF_COOKIE } from "@/lib/server/referrals.ts";
@@ -8,15 +9,17 @@ import { redeemSignInLink, signInWithEmail } from "@/lib/server/signin.ts";
  * this, so email scanners that open links don't use it up.
  */
 export async function POST(request: Request) {
+  // Signed out, so the words follow the browser's language (see server/i18n.ts).
+  const t = await translatorFor(request);
   // Only this site's own page may use a link, so another site can't sign a visitor into its account.
-  if (!fromOwnPage(request)) return Response.json({ error: "Open the link from your email again." }, { status: 403 });
+  if (!fromOwnPage(request)) return Response.json({ error: t("Open the link from your email again.") }, { status: 403 });
   if (await overLimit(`link-use:${clientIp(request)}`, 30, 15 * 60_000)) {
-    return Response.json({ error: "Too many attempts. Try again in 15 minutes." }, { status: 429 });
+    return Response.json({ error: t("Too many attempts. Try again in 15 minutes.") }, { status: 429 });
   }
   const body = (await request.json().catch(() => ({}))) as { token?: string };
   const link = await redeemSignInLink(body.token ?? "");
   if (!link) {
-    return Response.json({ error: "This link has expired or was already used. Ask for a new one." }, { status: 400 });
+    return Response.json({ error: t("This link has expired or was already used. Ask for a new one.") }, { status: 400 });
   }
   const userId = await signInWithEmail(link.email, request);
   const cookie = await createSession(userId, isSecure(request));

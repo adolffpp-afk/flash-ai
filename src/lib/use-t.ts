@@ -3,7 +3,7 @@
  * in (see i18n.ts), and showLanguage() switches it when the account loads or the setting changes.
  * Every component on screen redraws in the new language at once, Settings included.
  */
-import { Fragment, createElement, useMemo, useSyncExternalStore, type ReactNode } from "react";
+import { Fragment, createElement, useEffect, useMemo, useSyncExternalStore, type ReactNode } from "react";
 import { localeOf, translate, uiLanguage, type Blanks, type Table, type Translate } from "./i18n.ts";
 import { TABLES } from "./i18n-tables.ts";
 import { languageById } from "./languages.ts";
@@ -80,3 +80,13 @@ export function useT(): T {
 
 /** t for code that runs outside a render, like a notification or a confirmation, in the language shown now. */
 export const tNow: Translate = (text, blanks) => translate(shown.table, text, blanks);
+
+/**
+ * For a signed-out page with no account to read a language from (an emailed link, signing in to
+ * connect an app): its words follow the browser's language when Flash has it.
+ */
+export function useBrowserLanguage(): void {
+  useEffect(() => {
+    void showLanguage("");
+  }, []);
+}
