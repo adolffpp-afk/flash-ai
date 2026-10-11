@@ -401,10 +401,11 @@ export function Flash({
     }
   }
 
-  // The language picked in Settings, or null when signed out (Flash's signed-out pages are in English).
-  const savedLanguage = me ? (me.user.language ?? "") : null;
+  // The language picked in Settings. Signed out, the sign-in and sign-up screen follows the
+  // browser's language (""), while the landing page stays in English.
+  const savedLanguage = me ? (me.user.language ?? "") : signedOut && authMode ? "" : "en";
   useEffect(() => {
-    void showLanguage(savedLanguage ?? "en");
+    void showLanguage(savedLanguage);
   }, [savedLanguage]);
 
   useEffect(() => {

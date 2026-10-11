@@ -4,7 +4,8 @@
  * where it's shown, as t("…") (see use-t.ts), and that English is its key in each language's table,
  * src/lib/i18n/<id>.json. The tables are written once, checked in and shipped with the app, so they
  * cost Flash nothing when people use it and call no service. A phrase a table lacks shows in English.
- * The signed-out pages, the legal pages and the admin pages stay in English.
+ * The sign-in, sign-up, reset and email-link pages follow the browser's language; the landing page,
+ * the legal pages and the admin pages stay in English.
  *
  * Words that change go in blanks: t("{count} credits left", { count }). A phrase written outside a
  * component (a list of labels, a reason a function returns) is marked msg("…") where it's written,
