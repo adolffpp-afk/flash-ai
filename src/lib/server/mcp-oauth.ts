@@ -149,6 +149,8 @@ async function getJson(url: string, signal?: AbortSignal): Promise<Record<string
   try {
     res = await safeFetch(url, { headers: { accept: "application/json" }, accept: ["json"], maxBytes: METADATA_MAX, timeoutMs: REQUEST_MS, signal });
   } catch (err) {
+    // A page that isn't JSON (an app's own page for any address) has no metadata: the next address is tried.
+    if (err instanceof SafeFetchError && err.code === "bad_type" && !signal?.aborted) return null;
     throw fetchProblem(err, signal);
   }
   if (res.status !== 200) return null;
@@ -512,6 +514,7 @@ async function register(server: AuthServer, origin: string, redirectUri: string,
       accept: ["json"],
       maxBytes: TOKEN_MAX,
       timeoutMs: REQUEST_MS,
+      followRedirects: false,
       signal,
     });
   } catch (err) {
@@ -690,7 +693,11 @@ function readTokens(res: SafeResponse): Tokens {
   };
 }
 
-/** Sends a form to a token or revocation endpoint, with the client's authentication. */
+/**
+ * Sends a form to a token or revocation endpoint, with the client's authentication. A redirect is
+ * never followed: the form holds a code and its verifier, a refresh token or a client secret, which
+ * go only to the endpoint the authorization server's metadata named.
+ */
 async function postForm(url: string, client: OAuthClient, form: Record<string, string>, signal?: AbortSignal, timeoutMs = REQUEST_MS): Promise<SafeResponse> {
   const body = new URLSearchParams(form);
   const headers: Record<string, string> = { "content-type": "application/x-www-form-urlencoded", accept: "application/json" };
@@ -702,7 +709,7 @@ async function postForm(url: string, client: OAuthClient, form: Record<string, s
     body.set("client_id", client.clientId);
     if (client.authMethod === "client_secret_post" && client.secret) body.set("client_secret", client.secret);
   }
-  const req: SafeRequest = { method: "POST", headers, body: body.toString(), accept: ["json"], maxBytes: TOKEN_MAX, timeoutMs, signal };
+  const req: SafeRequest = { method: "POST", headers, body: body.toString(), accept: ["json"], maxBytes: TOKEN_MAX, timeoutMs, followRedirects: false, signal };
   try {
     return await safeFetch(url, req);
   } catch (err) {

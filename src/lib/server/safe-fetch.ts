@@ -170,6 +170,9 @@ export type SafeRequest = {
   signal?: AbortSignal;
   // The answers taken from a server, by content type. Error answers (400 and up) are read whatever their type.
   accept?: ("json" | "sse")[];
+  // false: a redirect is answered as it is, never followed. For a request whose body carries a secret
+  // (an OAuth token or registration request), which a 307 would send on to wherever it points.
+  followRedirects?: false;
 };
 
 export type SafeResponse = { status: number; headers: IncomingMessage["headers"]; contentType: string; body: string; url: string };
@@ -301,7 +304,7 @@ export async function safeFetch(
       const to = mock ? null : await vetted(url.hostname, resolve, signal);
       const res = await send(url, to, { ...req, method, body }, headers, signal, maxBytes);
       const location = res.status >= 300 && res.status < 400 ? res.headers.location : undefined;
-      if (!location) return res;
+      if (!location || req.followRedirects === false) return res;
       if (hop >= MAX_REDIRECTS) throw new SafeFetchError("redirects", "That server redirected too many times.");
       // A Location that isn't an address is a server problem, said without the address (which can hold a key).
       let target: URL;

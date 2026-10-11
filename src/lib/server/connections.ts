@@ -779,15 +779,32 @@ export async function confirmConnection(userId: string, id: string): Promise<Con
  * next sign-in, and tells the user to Reconnect. The log has the connection's id, service, tool,
  * outcome and time only.
  */
-async function callOn(row: ConnectionRow, opened: Opened, tool: Pick<ToolRow, "name" | "schema">, input: Record<string, unknown>, signal?: AbortSignal) {
+async function callOn(
+  row: ConnectionRow,
+  opened: Opened,
+  tool: Pick<ToolRow, "name" | "schema">,
+  input: Record<string, unknown>,
+  signal?: AbortSignal,
+  renew?: (stale: string) => Promise<Opened>,
+) {
   if (signal?.aborted) throw stopError(signal);
   if (await overLimit(`conn:${row.user_id}:${row.id}`, CALLS_PER_HOUR, HOUR)) {
     return { text: "Flash's limit of 120 calls an hour to this account was reached. Tell the user to try again later.", isError: true };
   }
   const started = Date.now();
   let status = "ok";
+  const send = (o: Opened) => o.client.callTool({ name: tool.name, inputSchema: JSON.parse(tool.schema) as Record<string, unknown> }, input);
   try {
-    const out = await opened.client.callTool({ name: tool.name, inputSchema: JSON.parse(tool.schema) as Record<string, unknown> }, input);
+    let out: Awaited<ReturnType<typeof send>>;
+    try {
+      out = await send(opened);
+    } catch (err) {
+      // A sign-in's token that ran out while the reply went on: its server refused it before running
+      // anything, so it is renewed (once for all of the reply's calls) and the call sent once more.
+      if (!renew || signal?.aborted || !renewable(row, err)) throw err;
+      opened = await renew(opened.sealed);
+      out = await send(opened);
+    }
     if (out.isError) status = "tool_error";
     return { text: scrub(out.text, opened.secret, opened.parts), isError: out.isError };
   } catch (err) {
@@ -869,13 +886,21 @@ export async function chatKit(userId: string, ids: string[], { replyId = "", sig
   if (!tools.length) return null;
   // Each connection's server, opened once for the reply (an OAuth one with its token renewed first when needed).
   const open = new Map<string, Promise<Opened>>();
+  // A renewal under way, by connection: calls refused with the same token wait for it.
+  const renewing = new Map<string, { stale: string; opening: Promise<Opened> }>();
+  // Every client this reply opened, all closed at its end (one replaced by a renewal may still be in use).
+  const made: Promise<Opened>[] = [];
   const connect = (row: ConnectionRow, stale = ""): Promise<Opened> => {
     const opened = open.get(row.id);
     if (opened && !stale) return opened;
+    const pending = renewing.get(row.id);
+    if (stale && pending?.stale === stale) return pending.opening;
     const opening = openServer(row, signal, stale);
     // Read when used; a failure is answered there (a tool error), never left unhandled.
     opening.catch(() => {});
     open.set(row.id, opening);
+    made.push(opening);
+    if (stale) renewing.set(row.id, { stale, opening });
     return opening;
   };
   const rowOf = (id: string) => rows.find((r) => r.id === id)!;
@@ -937,7 +962,7 @@ export async function chatKit(userId: string, ids: string[], { replyId = "", sig
         if (refusedKey(err)) await needsReconnect(row.id);
         return { text: err.message, isError: true };
       }
-      return callOn(row, opened, { name: pinned.tool, schema: pinned.schemaJson }, input, signal);
+      return callOn(row, opened, { name: pinned.tool, schema: pinned.schemaJson }, input, signal, (stale) => connect(row, stale));
     },
     propose(tool, input) {
       const pinned = tools.find((t) => t.name === tool.name)!;
@@ -956,8 +981,10 @@ export async function chatKit(userId: string, ids: string[], { replyId = "", sig
       });
     },
     async close() {
-      const opening = [...open.values()];
+      const opening = [...new Set(made)];
       open.clear();
+      renewing.clear();
+      made.length = 0;
       await Promise.all(
         opening.map(async (o) => {
           try {

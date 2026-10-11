@@ -155,7 +155,12 @@ test("a preset connects with no key: sign-in, a read in a chat, and no token any
 
   // A reply reads with it: the server gets the access token, and only in its Authorization header.
   const kit = (await chatKit(user.id, [String(row.id)]))!;
-  const { tools } = await kit.check();
+  const { tools, changed } = await kit.check();
+  // Its tools are as they were when it was signed in, but for the mock's "changing" tool, which says
+  // something new after its first listing on purpose.
+  assert.deepEqual(changed, ["Notion"]);
+  assert.equal(tools.length, view.tools.length - 1);
+  assert.ok(!tools.some((t) => t.tool === "changing"));
   const echo = tools.find((t) => t.tool === "echo")!;
   assert.deepEqual(await kit.run(echo, { text: "hello" }), { text: "hello", isError: false });
   await kit.close();
@@ -342,6 +347,27 @@ test("a refresh after the access token runs out, saved before it is used", async
   await kit.close();
 });
 
+test("a token that runs out while a reply goes on is renewed once, for all of its calls, and the calls go through", async () => {
+  const user = await account("midchat-user");
+  assert.equal(await connect(user, { provider: "linear" }), "ok");
+  const [row] = await connectionsOf(user.id);
+  const kit = (await chatKit(user.id, [String(row.id)]))!;
+  const { tools } = await kit.check();
+  const echo = tools.find((t) => t.tool === "echo")!;
+  assert.deepEqual(await kit.run(echo, { text: "one" }), { text: "one", isError: false });
+  assert.equal(mock.oauthLog.refreshes, 0);
+  // The access token runs out at the server while Flash still holds it as good.
+  mock.expireTokens();
+  mock.state.oauth.refreshDelayMs = 200;
+  const answers = await Promise.all(["two", "three", "four"].map((text) => kit.run(echo, { text })));
+  assert.deepEqual(answers, ["two", "three", "four"].map((text) => ({ text, isError: false })));
+  assert.equal(mock.oauthLog.refreshes, 1, "one renewal for the three calls");
+  await kit.close();
+  const [now] = await connectionsOf(user.id);
+  assert.equal(now.status, "ok");
+  assert.notEqual(now.enc_access, row.enc_access);
+});
+
 test("a Reconnect that lands while a refresh is under way wins: the refresh's tokens go back to the server, not into the row", async () => {
   const user = await account("reconnect-race-user");
   mock.state.oauth.accessTtl = 30;
@@ -386,6 +412,29 @@ test("a refresh seals the tokens with the newest key version, and a preset's row
   } finally {
     process.env.CONNECTOR_KEYS = keep;
   }
+});
+
+test("a token endpoint that redirects gets no code, verifier or refresh token sent on", async () => {
+  const user = await account("redirect-user");
+  mock.state.oauth.tokenRedirect = true;
+  assert.equal(await connect(user, { provider: "notion" }), "failed");
+  assert.deepEqual(mock.oauthLog.elsewhere, [], "the code and its verifier stayed with the token endpoint");
+  assert.equal((await connectionsOf(user.id)).length, 0);
+
+  mock.state.oauth.tokenRedirect = false;
+  mock.state.oauth.accessTtl = 30;
+  assert.equal(await connect(user, { provider: "notion" }), "ok");
+  const [row] = await connectionsOf(user.id);
+  await sql("UPDATE connections SET expires_at = 1 WHERE id = ?", [String(row.id)]);
+  mock.state.oauth.tokenRedirect = true;
+  const kit = (await chatKit(user.id, [String(row.id)]))!;
+  assert.deepEqual((await kit.check()).unreachable, ["Notion"]);
+  await kit.close();
+  assert.deepEqual(mock.oauthLog.elsewhere, [], "nor the refresh token");
+  const [now] = await connectionsOf(user.id);
+  assert.equal(now.status, "ok", "a refresh that didn't work isn't a refused grant");
+  assert.equal(now.enc_refresh, row.enc_refresh);
+  assert.equal(now.refreshing_until, null);
 });
 
 test("an old refresh token sent again ends the sign-in: Reconnect, with no retry", async () => {

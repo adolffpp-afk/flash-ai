@@ -99,6 +99,8 @@ export type OAuthConfig = {
   refreshDelayMs: number;
   // The user says no on the authorize page.
   deny: boolean;
+  // The token endpoint answers with a 307 to /as/elsewhere, which keeps whatever is sent to it.
+  tokenRedirect: boolean;
 };
 
 export const OAUTH_DEFAULTS: OAuthConfig = {
@@ -115,6 +117,7 @@ export const OAUTH_DEFAULTS: OAuthConfig = {
   accessTtl: 3600,
   refreshDelayMs: 0,
   deny: false,
+  tokenRedirect: false,
 };
 
 type Grant = { id: string; clientId: string; resource: string; scope: string; refresh: string; old: Set<string>; revoked: boolean };
@@ -143,7 +146,7 @@ export async function startMockConnectors(port = 7788) {
   const state = { sse: false, callDelayMs: 0, oauth: { ...OAUTH_DEFAULTS, accessTtl: Number(process.env.MOCK_ACCESS_TTL) || OAUTH_DEFAULTS.accessTtl } };
   // The authorization server's records: what it was asked for (metadata paths, registrations, token
   // grants, revocations, Client ID Metadata Documents fetched), its clients, codes, grants and tokens.
-  const oauthLog = { metadata: [] as string[], registrations: [] as Record<string, unknown>[], codes: 0, refreshes: 0, revoked: [] as string[], cimdFetches: 0 };
+  const oauthLog = { metadata: [] as string[], registrations: [] as Record<string, unknown>[], codes: 0, refreshes: 0, revoked: [] as string[], cimdFetches: 0, elsewhere: [] as string[] };
   const clients = new Map<string, { redirectUris: string[]; secret: string }>([["pre-client", { redirectUris: [], secret: "pre-secret" }]]);
   const codes = new Map<string, { clientId: string; redirectUri: string; challenge: string; resource: string; scope: string }>();
   const grants = new Map<string, Grant>();
@@ -279,6 +282,15 @@ export async function startMockConnectors(port = 7788) {
         back.searchParams.set("code", code);
       }
       res.writeHead(302, { location: back.href }).end();
+      return true;
+    }
+    if (path === "/as/elsewhere") {
+      oauthLog.elsewhere.push(await readBody(req));
+      json(res, 200, { access_token: token("at"), token_type: "Bearer" });
+      return true;
+    }
+    if (path === "/as/token" && req.method === "POST" && state.oauth.tokenRedirect) {
+      res.writeHead(307, { location: `${origin}/as/elsewhere` }).end();
       return true;
     }
     if (path === "/as/token" && req.method === "POST") {
@@ -485,6 +497,10 @@ export async function startMockConnectors(port = 7788) {
     live: () => ({ access: accessTokens.size, grants: [...grants.values()].filter((g) => !g.revoked).length }),
     /** Every access and refresh token it ever gave (for tests that look for them where they must not be). */
     tokens: () => [...issued],
+    /** Lets every access token it gave run out now (refresh tokens still work). */
+    expireTokens: () => {
+      for (const t of accessTokens.values()) t.expiresAt = 0;
+    },
     /** Forgets the listings, so "changing" says its first description again, and puts the OAuth server back as it was (its clients and grants stay). */
     reset: () => {
       listings.clear();
@@ -497,6 +513,7 @@ export async function startMockConnectors(port = 7788) {
       oauthLog.codes = 0;
       oauthLog.refreshes = 0;
       oauthLog.cimdFetches = 0;
+      oauthLog.elsewhere.length = 0;
     },
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
