@@ -32,28 +32,28 @@ const NOT_AIR =
 const EN_FIRM: Term[] = [
   /\b(what'?s|what is|how'?s|how is|what will|how will|what'?ll|how'?ll) the weather\b/i,
   new RegExp(String.raw`\b[Ww]eather (forecast|report|update|outlook|looking|like|pls|please|here|${WHEN}|for (${WHEN}|${PLACE})|in ${PLACE}|at ${PLACE})`, "u"),
-  /^\s*(the )?weather( (pls|please|now|today|tomorrow|tonight|update|report|forecast|here|outside))?\s*[?.!]*\s*$/i,
-  new RegExp(String.raw`^\s*[Ww]eather (in |for |at )?${PLACE}\s*[?.!]*\s*$`, "u"),
-  new RegExp(String.raw`^\s*(?!(Bad|Good|Nice|Great|Lovely|Terrible|Awful|Fair|Cold|Hot|Warm|Beautiful|Crazy|Weird|Perfect|Stormy|The|This|That|What|Such|Our|My)\b)${PLACE}('s)? weather( (forecast|${WHEN}))?\s*[?.!]*\s*$`, "u"),
+  /^\s*(the )?weather( (pls|please|now|today|tomorrow|tonight|update|report|forecast|here|outside))?\s*(?:[?.!]+\s*)?$/i,
+  new RegExp(String.raw`^\s*[Ww]eather (in |for |at )?${PLACE}\s*(?:[?.!]+\s*)?$`, "u"),
+  new RegExp(String.raw`^\s*(?!(Bad|Good|Nice|Great|Lovely|Terrible|Awful|Fair|Cold|Hot|Warm|Beautiful|Crazy|Weird|Perfect|Stormy|The|This|That|What|Such|Our|My)\b)${PLACE}('s)? weather( (forecast|${WHEN}))?\s*(?:[?.!]+\s*)?$`, "u"),
   unless(/\b(\d+[- ]?day|hourly|weekend|today'?s|tomorrow'?s|tonight'?s|weather|rain|snow) forecasts?\b/i, NOT_MONEY),
   unless(new RegExp(String.raw`\bforecasts? (for|in) (today|tomorrow|tonight|this (weekend|week|morning|afternoon|evening)|the weekend|next week)\b`, "i"), NOT_MONEY),
   unless(new RegExp(String.raw`\b[Ff]orecasts? (for|in) ${PLACE}`, "u"), NOT_MONEY),
-  /^\s*(what'?s the |the )?forecasts?( (for )?(today|tomorrow|tonight|this weekend))?\s*\??\s*$/i,
+  /^\s*(what'?s the |the )?forecasts?( (for )?(today|tomorrow|tonight|this weekend))?\s*(?:\?\s*)?$/i,
   // Temperature: "what's the temperature" alone, or with a time, "outside", or a capitalised place.
-  unless(new RegExp(String.raw`\b(what('?s| is| will be) the|current|today'?s|tomorrow'?s|tonight'?s) temp(erature)?s?(\s*[?.!]*\s*$| (${WHEN}|like|going to|gonna|in ${PLACE}|at ${PLACE}|for (${WHEN}|${PLACE})))`, "u"), NOT_AIR),
+  unless(new RegExp(String.raw`\b(what('?s| is| will be) the|current|today'?s|tomorrow'?s|tonight'?s) temp(erature)?s?(\s*(?:[?.!]+\s*)?$| (${WHEN}|like|going to|gonna|in ${PLACE}|at ${PLACE}|for (${WHEN}|${PLACE})))`, "u"), NOT_AIR),
   unless(new RegExp(String.raw`\b[Tt]emp(erature)?s?( in (Celsius|Fahrenheit|°C|°F))? (${WHEN}|in ${PLACE}|at ${PLACE}|for (today|tomorrow|tonight|this \w+|${PLACE}))`, "u"), NOT_AIR),
   unless(new RegExp(String.raw`\bhow (hot|cold|warm|chilly|humid|windy|sunny|rainy|wet) (is it|will it be|is it going to be|is it gonna be|is .{1,30}(${WHEN}))`, "i"), NOT_AIR),
   /\bis it (raining|snowing|hailing|pouring|drizzling|storming)\b/i,
-  unless(new RegExp(String.raw`\b[Ii]s it (windy|sunny|cloudy|cold|hot|humid|foggy|stormy|freezing|warm|chilly)( (out(side)?|there|${WHEN}|in ${PLACE}( (?:${WHEN}))?))?\s*[?.!]*\s*$`, "u"), NOT_AIR),
+  unless(new RegExp(String.raw`\b[Ii]s it (windy|sunny|cloudy|cold|hot|humid|foggy|stormy|freezing|warm|chilly)( (out(side)?|there|${WHEN}|in ${PLACE}( (?:${WHEN}))?))?\s*(?:[?.!]+\s*)?$`, "u"), NOT_AIR),
   /\b(will|is|going to|gonna) it .{0,15}\b(rain|snow|storm|hail|thunder|drizzle|pour)(s|ing)?\b/i,
   new RegExp(String.raw`\b(will|is|gonna|going to) (it|there) ((gonna|going to) )?(be|get) .{0,12}\b(hot|cold|warm|chilly|windy|sunny|cloudy|rainy|snowy|stormy|humid|freezing|foggy|thunderstorms?|storms?|showers)\b.{0,30}\b(${WHEN})`, "i"),
   new RegExp(String.raw`\b(rain|snow)(ing)? (${WHEN})\b`, "i"),
-  new RegExp(String.raw`^\s*(rain|snow)(ing)? (in|at) ${PLACE}( (${WHEN}))?\s*[?.!]*\s*$`, "u"),
+  new RegExp(String.raw`^\s*(rain|snow)(ing)? (in|at) ${PLACE}( (${WHEN}))?\s*(?:[?.!]+\s*)?$`, "u"),
   /\b(rain|storm|snow)s? coming\b|\brained (off|out)\b|\b(when will|when does|has) the (rain|snow|storm) (stop|start|end|clear)/i,
   new RegExp(String.raw`\b(thunder)?storms? (${WHEN})\b`, "i"),
   /\bchance of (rain|snow|showers|storms?|thunder)\b/i,
   /\b(need|bring|take|pack) (an? |my )?umbrella\b(?! (insurance|policy|stroller|company|term|brand|organi[sz]ation|account|fund|coverage))/i,
-  new RegExp(String.raw`\b(need|bring|take|wear|pack) (an? |my )?(jacket|coat|sweater|hoodie|raincoat|sunscreen)( (${WHEN}))?\s*[?.!]*\s*$`, "i"),
+  new RegExp(String.raw`\b(need|bring|take|wear|pack) (an? |my )?(jacket|coat|sweater|hoodie|raincoat|sunscreen)( (${WHEN}))?\s*(?:[?.!]+\s*)?$`, "i"),
   new RegExp(String.raw`\bwhat (should|do|can) i wear\b(?![^.?!]{0,60}\b((to|for|at) (an? |the |my |our |his |her |their )?(church|work|school|office|interview|wedding|party|funeral|date|dinner|gym|meeting|event|concert|job|class)|to look|professional|formal|smart|casual|stylish)\b).{0,40}\b(${WHEN})`, "i"),
   unless(new RegExp(String.raw`\b(what('?s| is) the )?(humidity|[Uu][Vv] index)\b.{0,20}\b(in ${PLACE}|today|tomorrow|now|outside)`, "u"), NOT_AIR),
   unless(/\bhow many degrees\b.{0,12}\b(is it|will it|outside|today|tomorrow|tonight)\b/i, /\b(between|angle|clock|triangle|circle|turn|rotat\w*|polygon|hands)\b/i),
@@ -110,7 +110,7 @@ export const WEATHER_TERMS: Record<string, Term[]> = {
 };
 
 // A question: ends with a question mark (Latin, CJK, Arabic, Greek), or a question particle where people drop it.
-const QUESTION = /[?？؟;;]\s*$|(?:吗|嗎|呢|怎么样|怎麼樣|如何|多少度|几度|幾度|ですか|ますか|어때|나요|까요|ไหม|มั้ย|หรือเปล่า|ยังไง|อย่างไร|เท่าไร|không|thế nào|bao nhiêu)\s*[。.!]?\s*$/u;
+const QUESTION = /[?？؟;;]\s*$|(?:吗|嗎|呢|怎么样|怎麼樣|如何|多少度|几度|幾度|ですか|ますか|어때|나요|까요|ไหม|มั้ย|หรือเปล่า|ยังไง|อย่างไร|เท่าไร|không|thế nào|bao nhiêu)\s*(?:[。.!]\s*)?$/u;
 // Quoted words are being translated, spoken or written, not asked about.
 const QUOTED = /["“”«»„「」『』]|(?<![\p{L}])'[^']{3,}'(?![\p{L}])/u;
 

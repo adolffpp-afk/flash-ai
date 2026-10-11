@@ -64,9 +64,9 @@ after(() => {
 process.env.ANTHROPIC_API_KEY = "sk-fake";
 process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
-const { claudeChoice, echoedContent, searchLocation, streamSearch, streamText, withStepDown } = await import("../src/lib/engines/claude.ts");
+const { claudeChoice, defaultChoice, echoedContent, searchLocation, streamSearch, streamText, withStepDown } = await import("../src/lib/engines/claude.ts");
 const { TOO_MANY, WEATHER_TOOL } = await import("../src/lib/weather.ts");
-const { planHold, researchPlan } = await import("../src/lib/credits.ts");
+const { WEATHER_PLAN, claudePrice, planHold, researchPlan } = await import("../src/lib/credits.ts");
 const { readEngine } = await import("../src/lib/server/engine-steps.ts");
 
 type Event = { type: string; delta?: string; message?: string; items?: { title: string; url: string }[] };
@@ -372,6 +372,46 @@ test("Research that searches and then asks for the forecast in one turn still an
       assert.ok(last.max_tokens >= 2000, `${label}: room for a full answer (${last.max_tokens})`);
       assert.equal(last.tools.length, 3, `${label}: the tools still go with the turn that used them`);
       if (quick && available === 46) assert.deepEqual(last.tool_choice, { type: "none" }, label);
+    }
+  }
+});
+
+test("Write and Docs with the forecast: when what is left can't pay for another round and a full answer, the last call answers with no tools", async () => {
+  // A long forecast, as MET gives for a day with changes.
+  const forecast = "Paris, tomorrow: 18°C, light rain from 14:00, wind 12 km/h. ".repeat(25);
+  const tool = { status: () => "Checking the forecast…", run: async () => ({ text: forecast, isError: false, used: true }), sources: MET };
+  const input = 3000;
+  for (const [mode, level, firstOutput, balances] of [
+    ["text", "vision", 1300, [28, 29, 30, 32, 35, 40, 50]],
+    ["text", "ultra", 1200, [67, 68, 69, 70, 75, 90]],
+    ["text", "ascend", 2000, [12, 13, 14, 15, 16, 18, 25]],
+    ["docs", "ascend", 3500, [22, 24, 25, 26, 30, 40]],
+  ] as const) {
+    let wasWhole = false;
+    for (const available of balances) {
+      replies.length = 0;
+      sent.length = 0;
+      const choice = claudeChoice(mode, level);
+      const scale = claudePrice(choice.model, input).output / claudePrice(defaultChoice(mode).model, input).output;
+      const hold = planHold(mode, choice.model, input, available, scale, 0, WEATHER_PLAN);
+      if (available < hold.needed) continue;
+      replies.push(
+        { blocks: [{ type: "tool_use", id: "toolu_1", name: "get_weather", input: paris }], stop: "tool_use", usage: { input_tokens: input, output_tokens: firstOutput } },
+        { blocks: [{ type: "text", text: "Light rain from 2 pm: take an umbrella." }], stop: "end_turn", usage: { input_tokens: input + firstOutput + 400, output_tokens: 250 } },
+      );
+      const costs: number[] = [];
+      const budget = { maxTokens: hold.maxTokens, capCents: hold.capCents, byCredits: hold.byCredits };
+      await run(streamText(ask("Will it rain in Paris tomorrow?"), "", mode, (_p, _m, cents) => costs.push(cents), budget, { ...choice, fallback: hold.fallback }, undefined, {}, { weather: tool }));
+      const label = `${mode} on ${level} at ${available} credits`;
+      assert.equal(sent.length, 2, `${label}: the answer is written`);
+      const last = sent[1] as { tool_choice?: { type: string }; max_tokens: number };
+      // A call that may still ask for the forecast has room for a full answer; one that can't, answers.
+      if (last.tool_choice?.type !== "none") assert.ok(last.max_tokens >= (mode === "docs" ? 4000 : 1500), `${label}: ${last.max_tokens} with tools`);
+      // More credits never give a shorter answer: once there is room for this one, there always is.
+      const whole = last.max_tokens >= 600;
+      assert.ok(whole || !wasWhole, `${label}: room for less than with fewer credits (${last.max_tokens})`);
+      wasWhole ||= whole;
+      assert.ok(costs.reduce((a, b) => a + b, 0) <= hold.capCents, `${label}: within the cap`);
     }
   }
 });

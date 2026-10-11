@@ -656,8 +656,10 @@ export async function* streamText(
       const nextInput = inputOf(final.usage) + final.usage.output_tokens + round.tokens;
       const left = budget.capCents - spent;
       maxTokens = Math.min(budget.maxTokens, tokensWithin(mode, choice.model, nextInput, left, usesFallback(choice), weatherLeft(state.rounds)));
-      if (!(maxTokens >= MIN_ROUND_TOKENS)) {
-        // Too little left for another round: one last call answers with the forecasts it has.
+      if (!(maxTokens >= (MIN_OUTPUT_TOKENS[mode] ?? 1500))) {
+        // Too little left for another round and a full answer: one last call answers with the forecasts
+        // it has, with no tools, so it is paid for as a single call. (Room that grew with the credits
+        // held would otherwise give some a shorter answer.)
         answerOnly = true;
         maxTokens = Math.min(budget.maxTokens, tokensWithin(mode, choice.model, nextInput, left, usesFallback(choice), NO_TOOLS));
       }
