@@ -76,6 +76,7 @@ after(async () => {
 const { afterwards } = await import("./support/next-server.mjs");
 const { all, one, run: sql } = await import("../src/lib/server/db.ts");
 const { chatKit, runApproved, failedText } = await import("../src/lib/server/connections.ts");
+const { inputProblem } = await import("../src/lib/engines/connect.ts");
 const { GOOGLE_PROBLEMS, googleReady } = await import("../src/lib/server/google.ts");
 const { adminStats } = await import("../src/lib/server/admin-stats.ts");
 const { translate } = await import("../src/lib/i18n.ts");
@@ -283,6 +284,7 @@ test("Connect: Google's authorize step with drive.file only, offline access, PKC
   assert.match(String(row.scopes), /drive\.file/);
   assert.ok(row.enc_refresh, "a refresh token is kept");
   assert.equal(JSON.parse(String(row.endpoints_json)).sub, mock.google.sub);
+  assert.equal(row.account_id, mock.google.sub, "the account its cards are tied to");
   const listed = JSON.parse(await read(await connectRoute.GET(request("GET", "/api/connect", user)))) as {
     google: boolean;
     connections: { provider: string; account: string; files: unknown[]; signIn: boolean; revocable: boolean; tools: { name: string; kind: string }[] }[];
@@ -617,9 +619,36 @@ test("a field a tool doesn't have is refused, never dropped: what runs is exactl
   assert.match(JSON.stringify(sent[1].messages), /tool_result.*That input wasn't usable: share_with isn't a field of this tool/);
   assert.equal(mock.googleLog.calls.length, reads, "nothing was asked of Google");
 
-  // Claude is told each tool (and each slide) takes nothing else.
+  // A write with one gets no card at all: refused before it is proposed.
+  replies.length = 0;
+  sent.length = 0;
+  replies.push(
+    { blocks: [{ type: "tool_use", id: "toolu_2", name: "google-drive__create_doc", input: { title: "Shared", text: "Hi", share_with: "someone@example.com" } }], stop: "tool_use" },
+    { blocks: [{ type: "text", text: "That didn't work." }], stop: "end_turn" },
+  );
+  const events = await chat(user, "Make a Doc and share it", [id]);
+  assert.ok(!events.some((e) => e.type === "approve_action"), "no card");
+  assert.match(JSON.stringify(sent[1].messages), /tool_result.*That input wasn't usable: share_with isn't a field of this tool/);
+  assert.equal((await all("SELECT id FROM pending_actions WHERE user_id = ?", [user.id])).length, 0);
+
+  // Claude is told each tool (and each slide) takes nothing else, and every tool's input goes through
+  // the connector loop's check (inputProblem) for it, in the same words as the client's backstop.
   const kit = (await chatKit(user.id, [id]))!;
   for (const tool of kit.tools) assert.equal((tool.definition.input_schema as { additionalProperties?: unknown }).additionalProperties, false, tool.tool);
+  const samples: Record<string, Record<string, unknown>> = {
+    list_files: {},
+    read_file: { file_id: DOC },
+    create_doc: { title: "T", text: "Hi" },
+    create_sheet: { title: "T", rows: [["a"]] },
+    create_slides: { title: "T", slides: [{ title: "a", body: "b" }] },
+    append_rows: { file_id: SHEET, rows: [["a"]] },
+  };
+  assert.deepEqual(Object.keys(samples).sort(), kit.tools.map((t) => t.tool).sort());
+  for (const tool of kit.tools) {
+    const schema = tool.definition.input_schema as Record<string, unknown>;
+    assert.equal(inputProblem(schema, samples[tool.tool]), "", tool.tool);
+    assert.equal(inputProblem(schema, { ...samples[tool.tool], share_with: "x" }), "share_with isn't a field of this tool", tool.tool);
+  }
   const deckSchema = kit.tools.find((t) => t.tool === "create_slides")!.definition.input_schema as { properties: { slides: { items: { additionalProperties?: unknown } } } };
   assert.equal(deckSchema.properties.slides.items.additionalProperties, false);
   // Cards made with one anyway never send anything.
@@ -715,6 +744,7 @@ test("Reconnect as another Google account: the old account's grant is cancelled 
   assert.equal(row.id, id, "still the one Google Drive account");
   assert.equal(row.resource, "other-user@example.com");
   assert.equal(JSON.parse(String(row.endpoints_json)).sub, "110000000000000000002");
+  assert.equal(row.account_id, "110000000000000000002");
   assert.deepEqual(await filesOf(id), [], "the old account's files are forgotten");
   assert.deepEqual(mock.googleLog.revoked, ["refresh"], "the old account's grant was cancelled");
   assert.deepEqual(mock.googleLive(), { access: 1, refresh: 1 }, "the new account's tokens still work");
@@ -723,6 +753,42 @@ test("Reconnect as another Google account: the old account's grant is cancelled 
   const kit2 = (await chatKit(user.id, [id]))!;
   assert.match((await kit2.run(kit2.tools.find((t) => t.tool === "list_files")!, {})).text, /hasn't picked any files/);
   await kit2.close();
+});
+
+test("a reply that read one Google account makes no card after a sign-in as another; one for the account connected now runs", async () => {
+  const user = await account("g-switch-reply");
+  const id = await withFiles(user, [SHEET]);
+  const before = (await chatKit(user.id, [id]))!;
+  // An approved action already on its way for the old account goes with it, whatever its state.
+  const running = (await before.propose(before.tools.find((t) => t.tool === "append_rows")!, { file_id: SHEET, rows: [["running"]] }))!;
+  await sql("UPDATE pending_actions SET status = 'running' WHERE id = ?", [running.id]);
+
+  mock.google.sub = "110000000000000000003";
+  mock.google.email = "third-user@example.com";
+  assert.equal(await connect(user, { connectionId: id }), "ok");
+  assert.equal((await googleRow(user.id))!.account_id, "110000000000000000003");
+  assert.equal(await one("SELECT id FROM pending_actions WHERE user_id = ?", [user.id]), null, "nothing of the old account waits or runs");
+  assert.equal(
+    await before.propose(before.tools.find((t) => t.tool === "create_doc")!, { title: "As the old account", text: "Hi" }),
+    null,
+    "the reply read the old account: no card",
+  );
+  await before.close();
+
+  const after = (await chatKit(user.id, [id]))!;
+  const card = (await after.propose(after.tools.find((t) => t.tool === "create_doc")!, { title: "As the new account", text: "Hi" }))!;
+  await after.close();
+  assert.equal((await answer(user, card)).body.status, "done");
+  assert.ok(mock.googleLog.writes.length > 0);
+  assert.ok(!JSON.stringify(mock.googleLog.writes).includes("As the old account"), "only the card made for the account connected now ran");
+  assert.ok(!JSON.stringify(mock.googleLog.writes).includes("running"));
+
+  // The same account again: its waiting cards stay.
+  const kit = (await chatKit(user.id, [id]))!;
+  const waiting = (await kit.propose(kit.tools.find((t) => t.tool === "create_doc")!, { title: "Still waits", text: "Hi" }))!;
+  await kit.close();
+  assert.equal(await connect(user, { connectionId: id }), "ok");
+  assert.ok(await one("SELECT id FROM pending_actions WHERE id = ? AND status = 'pending'", [waiting.id]));
 });
 
 test("removing Google Drive revokes Flash's access at Google and forgets the picked files; only from Flash's own page", async () => {

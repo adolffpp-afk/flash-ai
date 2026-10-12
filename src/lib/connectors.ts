@@ -180,7 +180,7 @@ export const GITHUB_TOOL_WORDS = {
 
 /**
  * The titles and descriptions of Flash's own Google Drive tools (see server/google.ts). Flash wrote
- * them, so they are shown in the user's language.
+ * them, so they are shown translated, like GitHub's (see toolWords).
  */
 export const GOOGLE_TOOL_WORDS = {
   list_files: {
@@ -209,9 +209,9 @@ export const GOOGLE_TOOL_WORDS = {
   },
 } as const;
 
-const OWN_TOOL_WORDS = new Set<string>(Object.values(GITHUB_TOOL_WORDS).flatMap((w) => [w.title, w.description]));
+const OWN_TOOL_WORDS = new Set<string>([...Object.values(GITHUB_TOOL_WORDS), ...Object.values(GOOGLE_TOOL_WORDS)].flatMap((w) => [w.title, w.description]));
 
-/** A tool's title or description as shown: in the user's language when Flash wrote it (GitHub's tools), else as its server wrote it. */
+/** A tool's title or description as shown: in the user's language when Flash wrote it (GitHub's and Google Drive's tools), else as its server wrote it. */
 export const toolWords = (t: (text: string) => string, text: string): string => (OWN_TOOL_WORDS.has(text) ? t(text) : text);
 
 /** What a tool does, as far as Flash can tell: a read runs by itself; anything else asks the user first. */

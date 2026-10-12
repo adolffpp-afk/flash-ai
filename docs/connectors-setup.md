@@ -263,6 +263,9 @@ the old secret there.
   Google gives. **Forget** takes a file off the list; Flash can't open it in chat any more.
 - Flash keeps their access for about an hour and renews it by itself (one renewal at a time). If
   they cancel Flash at Google, the account shows **Reconnect**.
+- Connecting again as another Google account replaces the account: the files picked in the old one
+  and whatever was still waiting for **Approve** on it are removed, and Flash's access to the old one
+  is cancelled at Google.
 - **Remove** in Settings > Connectors also cancels all of Flash's access at Google and forgets the
   picked files. They can also cancel it themselves at
   [myaccount.google.com/connections](https://myaccount.google.com/connections).

@@ -105,7 +105,7 @@ export function ActionCard({
   }
 
   const fields = Object.entries(card.input);
-  // A title Flash wrote itself (GitHub's tools) is shown in the user's language; any other is the server's own.
+  // A title Flash wrote itself (GitHub's and Google Drive's tools) is shown in the user's language; any other is the server's own.
   const title = toolWords(t, card.title);
   // The service's own name: a GitHub account's label also has its login (GitHub · login).
   const service = card.connection.split(" · ")[0];

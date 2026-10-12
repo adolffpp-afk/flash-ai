@@ -409,7 +409,7 @@ function ToolRow({
   return (
     <li className="flex items-start gap-3 py-2.5">
       <div className="min-w-0 flex-1">
-        {/* A title and description Flash wrote itself (GitHub's tools) are shown in the user's language; any other is the server's own. */}
+        {/* A title and description Flash wrote itself (GitHub's and Google Drive's tools) are shown in the user's language; any other is the server's own. */}
         <p className="text-sm text-zinc-200">
           {toolWords(t, tool.title)} <span className={hint}>· {tool.trusted ? t("Always allowed") : kindText(tool.kind, custom, t)}</span>
         </p>

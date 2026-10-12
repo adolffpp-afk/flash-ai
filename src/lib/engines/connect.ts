@@ -201,7 +201,7 @@ export async function* connectorCalls(
       const card = await kit.propose(tool, input);
       if (signal?.aborted) throw stopError(signal);
       if (!card) {
-        // Another account (another GitHub login) or none since the reply began: no card for the old one.
+        // Another account (another GitHub login or Google account) or none since the reply began: no card for the old one.
         out.set(call.id, { content: JSON.stringify({ status: "error", reason: ACCOUNT_CHANGED }), isError: true });
         continue;
       }
@@ -209,7 +209,7 @@ export async function* connectorCalls(
       out.set(call.id, { content: WAITING(`${tool.connection} ${tool.title}`), isError: false });
       continue;
     }
-    // A title Flash wrote itself (GitHub's tools) is shown in the user's language; any other is the server's own.
+    // A title Flash wrote itself (GitHub's and Google Drive's tools) is shown in the user's language; any other is the server's own.
     yield { type: "status", message: t("Using {name}…", { name: `${tool.connection} · ${toolWords(t, tool.title)}` }) };
     let result: { text: string; isError: boolean };
     try {

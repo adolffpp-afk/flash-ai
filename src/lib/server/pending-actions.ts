@@ -38,10 +38,11 @@ export const inputHash = (input: unknown) => sha256(canonicalJson(input));
 
 /**
  * Stores a call to wait for the user and returns its card. Only while the connection is still the
- * account the reply read (accountId: for GitHub, the GitHub account's number; '' for every other
- * connection): the row is written in the same write that checks it, so a card is either stored before
- * a sign-in as another GitHub account (which then removes it, see keepGithub in connections.ts) or not
- * at all. Null when it wasn't stored (that account was replaced or removed meanwhile).
+ * account the reply read (accountId: for GitHub, the GitHub account's number; for Google Drive, the
+ * Google account's sub; '' for every other connection): the row is written in the same write that
+ * checks it, so a card is either stored before a sign-in as another GitHub or Google account (which
+ * then removes it, see keepGithub and keepGoogle in connections.ts) or not at all. Null when it wasn't
+ * stored (that account was replaced or removed meanwhile).
  */
 export async function proposeAction(a: {
   userId: string;

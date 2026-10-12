@@ -115,10 +115,12 @@ type ConnectionRow = {
   resource: string;
   client_reg_id: string;
   scopes: string;
-  // For Google Drive: {"sub": the Google account's id}, to tell a Reconnect to another account.
+  // For Google Drive: {"sub": the Google account's id}, to tell a Reconnect to another account (the
+  // same as account_id).
   endpoints_json: string;
   refreshing_until: number | null;
-  // For GitHub: the number of the GitHub account its tokens are for (see keepGithub).
+  // The account its tokens are for: for GitHub, the GitHub account's number (see keepGithub); for
+  // Google Drive, the Google account's id, its sub (see keepGoogle). '' for every other connection.
   account_id: string;
 };
 
@@ -1139,7 +1141,7 @@ export async function chatKit(userId: string, ids: string[], { replyId = "", sig
       return proposeAction({
         userId,
         connectionId: tool.connectionId,
-        // The account this reply read: a card is never stored for another one (see keepGithub).
+        // The account this reply read: a card is never stored for another one (see keepGithub and keepGoogle).
         accountId: rowOf(tool.connectionId).account_id,
         connection: tool.connection,
         host: tool.host,
@@ -1209,9 +1211,9 @@ export async function runApproved(userId: string, id: string, hash: string): Pro
     out = await withServer(row, async (opened) => {
       const live = await opened.client.listTools();
       if (live.find((t) => t.name === action.tool)?.hash !== action.tool_hash) return "changed" as const;
-      // Still waiting, now that the token is in hand: a sign-in as another GitHub account removes the
-      // account's actions in the same write as it keeps its tokens (see keepGithub), so a token of the
-      // new account never runs what was asked of the old one.
+      // Still waiting, now that the token is in hand: a sign-in as another GitHub or Google account
+      // removes the account's actions in the same write as it keeps its tokens (see keepGithub and
+      // keepGoogle), so a token of the new account never runs what was asked of the old one.
       if (!(await one("SELECT id FROM pending_actions WHERE id = ? AND user_id = ?", [action.id, userId]))) return "gone" as const;
       return callOn(row, opened, pinned, JSON.parse(action.input_json) as Record<string, unknown>);
     });
@@ -1687,9 +1689,12 @@ export async function finishGoogle(userId: string, params: { state: string | nul
  * Keeps a Google sign-in on the user's Google Drive connection, or adds one with Flash's Google tools
  * pinned. Without tokens (drive.file wasn't granted), it is kept as needing Reconnect, with none.
  * Google sends a refresh token only with its consent page: the one kept goes on for the same account
- * (sealed again with the newest key). Another Google account than before forgets the files picked in
- * the old one, and its waiting actions, and Flash's access to the old one is cancelled at Google. Of
- * two sign-ins finishing at once, only one adds the account.
+ * (sealed again with the newest key). The connection's account_id is the Google account's sub, as
+ * GitHub's is its account number: another Google account than before forgets the files picked in the
+ * old one, and removes its actions waiting for an Approve, in the same write as it keeps the new
+ * tokens, so a reply that read the old one can't store a card after it (see proposeAction) and
+ * nothing asked of one Google account ever runs as another (see runApproved). Flash's access to the
+ * old one is cancelled at Google. Of two sign-ins finishing at once, only one adds the account.
  */
 async function keepGoogle(userId: string, tokens: GoogleTokens | null, account: GoogleAccount): Promise<void> {
   const preset = presetById("google-drive")!;
@@ -1708,20 +1713,30 @@ async function keepGoogle(userId: string, tokens: GoogleTokens | null, account: 
           refresh = "";
         }
       }
-      const at = now();
+      // Another account's files and waiting actions: read in the same write as the new tokens, so of
+      // two sign-ins at once neither misses them.
+      const another = "EXISTS (SELECT 1 FROM connections WHERE id = ? AND user_id = ? AND account_id != ?)";
       await (await db()).batch(
         [
+          { sql: `DELETE FROM connection_files WHERE connection_id = ? AND ${another}`, args: [existing.id, existing.id, userId, account.sub] },
+          { sql: `DELETE FROM pending_actions WHERE connection_id = ? AND user_id = ? AND ${another}`, args: [existing.id, userId, existing.id, userId, account.sub] },
           {
             sql: `UPDATE connections SET enc_access = ?, enc_refresh = ?, expires_at = ?, resource = ?, scopes = ?, endpoints_json = ?, refreshing_until = NULL,
-                    status = ?, key_version = ? WHERE id = ? AND user_id = ?`,
-            args: [access?.stored ?? "", refresh, tokens?.expiresAt ?? 0, account.email, tokens?.scope ?? "", meta, tokens ? "ok" : "needs_reconnect", access?.version ?? existing.key_version, existing.id, userId],
+                    status = ?, key_version = ?, account_id = ? WHERE id = ? AND user_id = ?`,
+            args: [
+              access?.stored ?? "",
+              refresh,
+              tokens?.expiresAt ?? 0,
+              account.email,
+              tokens?.scope ?? "",
+              meta,
+              tokens ? "ok" : "needs_reconnect",
+              access?.version ?? existing.key_version,
+              account.sub,
+              existing.id,
+              userId,
+            ],
           },
-          ...(other
-            ? [
-                { sql: "DELETE FROM connection_files WHERE connection_id = ?", args: [existing.id] },
-                { sql: "UPDATE pending_actions SET status = 'cancelled', finished_at = ? WHERE connection_id = ? AND user_id = ? AND status = 'pending'", args: [at, existing.id, userId] },
-              ]
-            : []),
         ],
         "write",
       );
@@ -1740,8 +1755,8 @@ async function keepGoogle(userId: string, tokens: GoogleTokens | null, account: 
       [
         {
           sql: `INSERT INTO connections (id, user_id, provider, kind, label, url, enc_url, status, enc_secret, key_version, last4, protocol, created_at,
-                  enc_access, enc_refresh, expires_at, issuer, resource, client_reg_id, scopes, endpoints_json)
-                SELECT ?, ?, 'google-drive', 'google', ?, ?, '', ?, '', ?, '', '', ?, ?, ?, ?, ?, ?, '', ?, ?
+                  enc_access, enc_refresh, expires_at, issuer, resource, client_reg_id, scopes, endpoints_json, account_id)
+                SELECT ?, ?, 'google-drive', 'google', ?, ?, '', ?, '', ?, '', '', ?, ?, ?, ?, ?, ?, '', ?, ?, ?
                 WHERE NOT EXISTS (SELECT 1 FROM connections WHERE user_id = ? AND provider = 'google-drive')`,
           args: [
             id,
@@ -1758,6 +1773,7 @@ async function keepGoogle(userId: string, tokens: GoogleTokens | null, account: 
             account.email,
             tokens?.scope ?? "",
             meta,
+            account.sub,
             userId,
           ],
         },
@@ -1845,10 +1861,11 @@ export async function addPickedFiles(userId: string, connectionId: string, ids: 
       good.flatMap((f) => [
         { sql: "DELETE FROM connection_files WHERE connection_id = ? AND file_id = ?", args: [row.id, f.id] },
         {
-          // Only while the connection is still the user's (it may have been removed meanwhile).
+          // Only while the connection is still the user's, and the Google account whose token checked
+          // the file (it may have been removed, or replaced by another account, meanwhile).
           sql: `INSERT INTO connection_files (connection_id, file_id, name, mime, picked_at)
-                SELECT ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM connections WHERE id = ? AND user_id = ?)`,
-          args: [row.id, f.id, cleanName(f.name) || f.id, f.mime, at, row.id, userId],
+                SELECT ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM connections WHERE id = ? AND user_id = ? AND account_id = ?)`,
+          args: [row.id, f.id, cleanName(f.name) || f.id, f.mime, at, row.id, userId, row.account_id],
         },
       ]),
       "write",
