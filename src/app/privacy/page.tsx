@@ -104,10 +104,11 @@ export default function Privacy() {
           file, it&apos;s needed for security (such as investigating abuse), or the law requires it.
         </li>
         <li>
-          <strong>No copies of your files.</strong> Flash reads a file from Google each time it uses it and doesn&apos;t
-          keep its contents. It keeps your Google account&apos;s email address (to show which account is connected),
-          the name, type and ID of each file you picked, and the access Google gave it (its tokens, stored encrypted).
-          The answers Flash writes, and the cards for what you approved, are saved in your chat like any reply.
+          <strong>No copy of your Drive.</strong> Flash doesn&apos;t copy your files: it reads a file from Google each
+          time it uses it. What it read from a file to answer you is, like any tool&apos;s result, saved in that chat
+          with the reply, and with an approval as described under &ldquo;Your connected accounts&rdquo; above. Flash
+          also keeps your Google account&apos;s email address (to show which account is connected), the name, type and
+          ID of each file you picked, and the access Google gave it (its tokens, stored encrypted).
         </li>
         <li>
           <strong>Removing access.</strong> Forget a file in Settings &gt; Connectors and Flash can&apos;t open it in
