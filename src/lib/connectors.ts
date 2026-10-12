@@ -86,7 +86,7 @@ export const PRESETS: Preset[] = [
     signIn: true,
     help: "https://docs.github.com/en/apps/using-github-apps/authorizing-github-apps",
     blurb: msg("Read code, issues and pull requests. Create issues and pull requests after you approve each one."),
-    note: msg("On GitHub, you pick the repositories Flash can use. To change them later, open Settings > Applications on GitHub."),
+    note: msg("On GitHub, you pick the repositories Flash can use. To add more later, press Add repositories on GitHub here, in Settings > Connectors."),
     color: "#24292f",
   },
   {
@@ -143,6 +143,42 @@ export const PRESETS: Preset[] = [
 export const presetById = (id: string): Preset | undefined => PRESETS.find((p) => p.id === id);
 
 /**
+ * The titles and descriptions of Flash's own GitHub tools (see server/github.ts). Flash wrote them, so
+ * they are shown translated. Every other tool's words come from its server and are shown as they are:
+ * they are never looked up as a phrase (see toolWords).
+ */
+export const GITHUB_TOOL_WORDS = {
+  list_repos: {
+    title: msg("List repositories"),
+    description: msg("Lists the GitHub repositories the user gave Flash access to, with their default branch."),
+  },
+  read_file: {
+    title: msg("Read a file"),
+    description: msg("Reads a file in a repository, or lists a folder. Leave path empty for the top folder."),
+  },
+  search_code: {
+    title: msg("Search code"),
+    description: msg("Searches code on the default branch, in one repository or in all the user can reach."),
+  },
+  list_issues: {
+    title: msg("List issues and pull requests"),
+    description: msg("Lists a repository's 30 most recently updated issues and pull requests."),
+  },
+  read_pull_request: {
+    title: msg("Read a pull request"),
+    description: msg("Reads a pull request: its title, branches and description, and the changes in each file."),
+  },
+  create_issue: {
+    title: msg("Create an issue"),
+    description: msg("Creates an issue in a repository. It waits for the user to approve it."),
+  },
+  open_pull_request: {
+    title: msg("Open a pull request"),
+    description: msg("Opens a pull request from a branch that already exists. It waits for the user to approve it."),
+  },
+} as const;
+
+/**
  * The titles and descriptions of Flash's own Google Drive tools (see server/google.ts). Flash wrote
  * them, so they are shown in the user's language.
  */
@@ -172,6 +208,11 @@ export const GOOGLE_TOOL_WORDS = {
     description: msg("Adds rows at the end of a picked Google Sheet (its first sheet, or the one named). It waits for the user to approve it."),
   },
 } as const;
+
+const OWN_TOOL_WORDS = new Set<string>(Object.values(GITHUB_TOOL_WORDS).flatMap((w) => [w.title, w.description]));
+
+/** A tool's title or description as shown: in the user's language when Flash wrote it (GitHub's tools), else as its server wrote it. */
+export const toolWords = (t: (text: string) => string, text: string): string => (OWN_TOOL_WORDS.has(text) ? t(text) : text);
 
 /** What a tool does, as far as Flash can tell: a read runs by itself; anything else asks the user first. */
 export type ToolKind = "read" | "write" | "unknown";

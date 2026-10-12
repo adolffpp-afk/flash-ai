@@ -36,10 +36,17 @@ export type ActionRow = {
 /** The hash an approval is bound to: of the input exactly as it will be sent, whatever its key order. */
 export const inputHash = (input: unknown) => sha256(canonicalJson(input));
 
-/** Stores a call to wait for the user and returns its card. */
+/**
+ * Stores a call to wait for the user and returns its card. Only while the connection is still the
+ * account the reply read (accountId: for GitHub, the GitHub account's number; '' for every other
+ * connection): the row is written in the same write that checks it, so a card is either stored before
+ * a sign-in as another GitHub account (which then removes it, see keepGithub in connections.ts) or not
+ * at all. Null when it wasn't stored (that account was replaced or removed meanwhile).
+ */
 export async function proposeAction(a: {
   userId: string;
   connectionId: string;
+  accountId: string;
   connection: string;
   host: string;
   tool: string;
@@ -52,23 +59,25 @@ export async function proposeAction(a: {
   labels?: Record<string, string>;
   replyId?: string;
   at?: number;
-}): Promise<ActionCard> {
+}): Promise<ActionCard | null> {
   const at = a.at ?? now();
   const id = randomId(16);
   const hash = inputHash(a.input);
   const expiresAt = at + ACTION_TTL_MS;
-  await (await db()).batch(
+  const written = await (await db()).batch(
     [
       // Old rows go whenever a new one is written.
       { sql: "DELETE FROM pending_actions WHERE (status != 'pending' AND status != 'running' AND finished_at < ?) OR expires_at < ?", args: [at - KEEP_FINISHED_MS, at - KEEP_FINISHED_MS] },
       {
         sql: `INSERT INTO pending_actions (id, user_id, connection_id, tool, tool_hash, input_json, input_hash, reply_id, status, created_at, expires_at)
-              VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
-        args: [id, a.userId, a.connectionId, a.tool, a.toolHash, JSON.stringify(a.input), hash, a.replyId ?? "", at, expiresAt],
+              SELECT ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?
+              WHERE EXISTS (SELECT 1 FROM connections WHERE id = ? AND user_id = ? AND account_id = ?)`,
+        args: [id, a.userId, a.connectionId, a.tool, a.toolHash, JSON.stringify(a.input), hash, a.replyId ?? "", at, expiresAt, a.connectionId, a.userId, a.accountId],
       },
     ],
     "write",
   );
+  if (written[1]?.rowsAffected !== 1) return null;
   return {
     id,
     connectionId: a.connectionId,

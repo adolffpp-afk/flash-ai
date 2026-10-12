@@ -90,14 +90,23 @@ with the missing names. The "Continue with GitHub" sign-in button is a different
    - Under **Webhook**: untick **Active**. (The Webhook URL box then disappears.)
    - Under **Permissions** → **Repository permissions**, set these four and leave the rest at
      "No access":
-     - **Contents**: Read and write
+     - **Contents**: Read-only
      - **Issues**: Read and write
      - **Metadata**: Read-only (GitHub sets this one by itself)
      - **Pull requests**: Read and write
+
+     Contents stays **Read-only**: Flash reads files and opens pull requests from branches that
+     already exist, and writes no file. A later "Put this app on GitHub" step will ask for more,
+     and GitHub will then ask each person who installed the app to accept it.
    - Leave **Organization permissions** and **Account permissions** at "No access".
    - **Where can this GitHub App be installed?**: **Any account** (so everyone can use it, not
      only you).
 5. Click **Create GitHub App**. You land on the app's **General** page.
+
+   If you made the app earlier with **Contents: Read and write**, lower it: on the app's page,
+   click **Permissions & events** → **Repository permissions** → **Contents** → **Read-only** →
+   **Save changes**. GitHub asks people to accept only permissions that are added, so nobody has to
+   do anything.
 6. Copy these three things into a note for a minute:
    - **Client ID**, near the top (it looks like `Iv23li…`). This is `GITHUB_APP_CLIENT_ID`.
      (Not the "App ID", which is only digits.)
@@ -129,12 +138,21 @@ place of the old one, redeploy, and then delete the old secret on GitHub.
   install page, where they pick the repositories (all, or only some) and click **Install**. They
   come back to Flash, connected. Flash asks GitHub which installations they really have, and never
   takes the installation number from the address the browser comes back with.
+- Settings > Connectors shows the account as **GitHub · their login**, and every **Approve** card
+  says which GitHub account it is for. Connecting again while signed in to GitHub as someone else
+  replaces the account, and whatever was still waiting for **Approve** on the old one is removed.
+- **Add repositories on GitHub**, on the connected account in Settings > Connectors, opens the app's
+  install page: they can install it on their own account or on an organization (whose owner may
+  have to approve it), or pick more repositories, and they come back to Flash. Flash's notes point
+  there when GitHub says it can't find or reach a repository. If the app is already installed on
+  the account they pick, GitHub shows that installation's settings instead; after **Save** they go
+  back to Flash themselves.
 - Flash keeps their access for 8 hours and renews it by itself (one renewal at a time). After about
   6 months without use, or if they cancel Flash at GitHub, the account shows **Reconnect**.
 - **Remove** in Settings > Connectors also cancels Flash's access at GitHub. The app stays installed
   on their repositories, doing nothing, until they uninstall it on GitHub: their picture →
   **Settings** → **Applications** → **Installed GitHub Apps** → **Configure** → **Uninstall**.
-  To give Flash more or fewer repositories, they change them on that same page.
+  To give Flash fewer repositories, they change them on that same page.
 
 ## Google Drive
 
