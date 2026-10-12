@@ -1,5 +1,6 @@
 import { english, type Translate } from "./i18n.ts";
 import type { UIMessage } from "./store.ts";
+import { linkHost } from "./safe-markdown.ts";
 
 // Shared by the downloaded chat and the printed answer: light, readable and print-friendly.
 const STYLE = `  :root { --ink: #16201c; --muted: #5d6b65; --line: #dde5e1; --accent: #0f7a5a; --you: #eef6f2; }
@@ -105,8 +106,16 @@ export function chatDocument(
         body.push(`<p class="note">${m.app.kind === "slides" ? "🖥️" : "🧩"} ${esc(made)}${where}</p>`);
       }
       if (m.after?.trim()) body.push(opts.markdown(m.after));
-      if (m.sources?.length) {
-        const links = m.sources.map((s) => `<a href="${esc(s.url)}">${esc(s.title)}</a>`).join(" · ");
+      if (m.sources?.some((s) => linkHost(s.url))) {
+        // Only web links, each with the host it goes to when its title doesn't say it (see safe-markdown.ts).
+        const links = m.sources
+          .filter((s) => linkHost(s.url))
+          .map((s) => {
+            const host = linkHost(s.url);
+            const title = s.title || host;
+            return `<a href="${esc(s.url)}">${esc(title)}</a>${title.toLowerCase() === host ? "" : ` (${esc(host)})`}`;
+          })
+          .join(" · ");
         body.push(`<p class="note">${fillHtml(t("Sources: {links}"), { links })}</p>`);
       }
       if (m.error) body.push(`<p class="note">${esc(m.error)}</p>`);

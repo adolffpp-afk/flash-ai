@@ -5,6 +5,7 @@ import { msg } from "../i18n.ts";
 import { FriendlyError } from "./errors.ts";
 import { MAX_FORECASTS, TOO_MANY, WEATHER_FUNCTION, type WeatherAnswer, type WeatherTool } from "../weather.ts";
 import { freeFacts, freeOrder } from "../free-order.ts";
+import { failText, FRED_NOTE, functionTool, limitText, toolFlags, ToolLedger, type ClientTool, type ToolResult } from "../research.ts";
 
 /*
  * The free lane: models on providers' free tiers (mostly open-source), used when a user has run out of
@@ -32,7 +33,7 @@ type ChatProvider = {
   streamOptions?: boolean;
   // Whether the provider's terms let it answer someone in this country (a two-letter code, "" when unknown).
   serves?: (country: string) => boolean;
-  // Whether its model calls functions, so it may be offered the forecast tool (see weather.ts).
+  // Whether its model calls functions, so it may be offered the forecast tool (see weather.ts) and the data tools (see research.ts).
   tools?: boolean;
 };
 
@@ -191,24 +192,28 @@ export function freeEligible(engine: Engine, last: ChatTurn): FreeLane | null {
 
 type Message = { role: "system" | "user" | "assistant"; content: string };
 
-// The forecast tool as each reply shape takes it, and whether a call may use it ("auto") or must answer in words ("none").
+// Whether a call may use the tools ("auto") or must answer in words ("none").
 type ToolChoice = "auto" | "none";
-const OPENAI_TOOLS = [{ type: "function", function: WEATHER_FUNCTION }];
-const GEMINI_TOOLS = [{ functionDeclarations: [WEATHER_FUNCTION] }];
+/** A function the free models may call: the forecast's, or a data tool's. */
+type FreeFunction = { name: string; description: string; parameters: object };
 
 /**
  * The request body for a provider: OpenAI-style, or Gemini's contents with the system prompt apart.
- * With tools, the forecast tool is sent with that choice, and after holds what the model asked for
- * and the forecasts it got, in the provider's own shape, after the conversation.
+ * With tools, the functions (the forecast's by default) are sent with that choice, and after holds
+ * what the model asked for and what it got, in the provider's own shape, after the conversation.
  */
-function requestBody(p: ChatProvider, messages: Message[], { stream = true, tools, after = [] }: { stream?: boolean; tools?: ToolChoice; after?: object[] } = {}): string {
+function requestBody(
+  p: ChatProvider,
+  messages: Message[],
+  { stream = true, tools, functions = [WEATHER_FUNCTION], after = [] }: { stream?: boolean; tools?: ToolChoice; functions?: FreeFunction[]; after?: object[] } = {},
+): string {
   if (p.format === "gemini") {
     const [first, ...rest] = messages;
     return JSON.stringify({
       systemInstruction: { parts: [{ text: first.content }] },
       contents: [...rest.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] })), ...after],
       generationConfig: { maxOutputTokens: FREE_MAX_TOKENS },
-      ...(tools && { tools: GEMINI_TOOLS, toolConfig: { functionCallingConfig: { mode: tools === "auto" ? "AUTO" : "NONE" } } }),
+      ...(tools && { tools: [{ functionDeclarations: functions }], toolConfig: { functionCallingConfig: { mode: tools === "auto" ? "AUTO" : "NONE" } } }),
     });
   }
   return JSON.stringify({
@@ -217,7 +222,7 @@ function requestBody(p: ChatProvider, messages: Message[], { stream = true, tool
     stream,
     max_tokens: FREE_MAX_TOKENS,
     ...(stream && p.streamOptions !== false && { stream_options: { include_usage: true } }),
-    ...(tools && { tools: OPENAI_TOOLS, tool_choice: tools }),
+    ...(tools && { tools: functions.map((f) => ({ type: "function", function: f })), tool_choice: tools }),
   });
 }
 
@@ -294,14 +299,18 @@ export type RecordUse = (provider: FreeProvider, tokens: number, neurons: number
  * may only answer some countries. weather: the live forecast, offered to the providers that take
  * tools, and onUsed is called once when a reply used it. language: the language the user's answers
  * are set to ("" for the one they write in), which helps pick the provider (see free-order.ts).
+ * tools: web search and the SEC EDGAR and FRED tools (see research.ts), offered to the same
+ * providers, and onTool is called once for each whose data the reply used.
  */
 export type FreeChatOptions = {
   systemPrompt?: string;
-  system?: Omit<SystemOptions, "web" | "weather">;
+  system?: Omit<SystemOptions, "web" | "weather" | "search" | "filings" | "economy">;
   country?: string;
   weather?: WeatherTool;
   onUsed?: () => void;
   language?: string;
+  tools?: ClientTool[];
+  onTool?: (name: string) => void;
 };
 
 /** One reply at once (a call that may ask for the forecast): its words, the calls it asked for, and its tokens. */
@@ -339,8 +348,8 @@ function readAsked(p: ChatProvider, json: unknown): Asked {
   };
 }
 
-/** The forecasts asked for, in the provider's shape, after the model's own turn. */
-function toolResults(p: ChatProvider, asked: Asked, answers: WeatherAnswer[]): object[] {
+/** What the tools gave back, in the provider's shape, after the model's own turn. */
+function toolResults(p: ChatProvider, asked: Asked, answers: { text: string }[]): object[] {
   if (p.format === "gemini") {
     const parts = asked.calls.map((c, i) => ({
       functionResponse: { name: c.name, ...(c.id && { id: c.id }), response: { content: answers[i].text } },
@@ -395,9 +404,11 @@ async function send(p: ChatProvider, key: string, body: string, stream: boolean)
 
 /**
  * Streams a reply from the first free provider that is configured, under its cap, and answers. With
- * o.weather, a provider that takes tools is asked once with the forecast tool (one reply at once),
- * and when it asks for forecasts (at most MAX_FORECASTS), asked again with them to answer in words,
- * streamed. Both calls are reserved together, so the second can never pass a cap.
+ * o.weather or o.tools, a provider that takes tools is asked once with them (one reply at once), and
+ * when it calls them (at most MAX_FORECASTS forecasts, and CALL_CAPS of each data tool), asked again
+ * with what they gave back to answer in words, streamed. Both calls are reserved together, so the
+ * second can never pass a cap. When the first round only found where to look (FRED's search), one
+ * more round may follow, reserved on its own: without room for it, the reply answers with what it has.
  */
 export async function* streamFreeChat(
   history: ChatTurn[],
@@ -411,85 +422,143 @@ export async function* streamFreeChat(
   const country = o.country ?? "";
   const turns = toTurns(history);
   const tool = o.weather;
+  const data = o.tools ?? [];
   const facts = freeFacts({
     message: history.at(-1)?.content ?? "",
     inputChars: turns.reduce((sum, t) => sum + t.content.length, 0),
     code: mode === "code",
     language: o.language,
-    weather: Boolean(tool),
+    weather: Boolean(tool) || data.length > 0,
   });
   const order = freeOrder(
     facts,
     CHAT_PROVIDERS.map((p) => p.id),
     CHAT_PROVIDERS.filter((p) => p.tools).map((p) => p.id),
   );
+  // The functions offered: the forecast's first, then the data tools'.
+  const functions: FreeFunction[] = [...(tool ? [WEATHER_FUNCTION] : []), ...data.map(functionTool)];
   let lastError = "";
   for (const id of order) {
     const p = CHAT_PROVIDERS.find((c) => c.id === id)!;
     const key = p.key();
     if (!key) continue;
     if (p.serves && !p.serves(country.toUpperCase())) continue;
-    const offer = Boolean(tool && p.tools);
-    if (!(await reserve(p.id, { requests: p.dailyRequests, tokens: p.dailyTokens }, offer ? 2 : 1))) continue;
-    // A provider without tools is told it can't check the weather either.
-    const messages: Message[] = [{ role: "system", content: o.systemPrompt ?? system(preferences, mode, { ...o.system, web: "free", weather: offer }) }, ...turns];
+    const offer = functions.length > 0 && Boolean(p.tools);
+    const limits = { requests: p.dailyRequests, tokens: p.dailyTokens };
+    if (!(await reserve(p.id, limits, offer ? 2 : 1))) continue;
+    // A provider without tools is told it can't check the weather or search either.
+    const offered = offer ? data : [];
+    const messages: Message[] = [
+      { role: "system", content: o.systemPrompt ?? system(preferences, mode, { ...o.system, web: "free", weather: offer && Boolean(tool), ...toolFlags(offered) }) },
+      ...turns,
+    ];
     let input = 0;
     let output = 0;
     let after: object[] = [];
     let used = false;
-    if (offer) {
-      const first = await send(p, key, requestBody(p, messages, { stream: false, tools: "auto" }), false);
-      const asked = typeof first === "string" ? null : await first.json().then((json) => readAsked(p, json), () => null);
+    // This attempt's look-ups: a provider that takes over starts again.
+    const ledger = new ToolLedger();
+    let forecasts = 0;
+    const recordUse = () => record(p.id, input + output, p.id === "cloudflare" ? cloudflareChatNeurons(input, output) : 0);
+    // FRED's notice and the sources, after the words: the data's, then MET Norway's.
+    function* finish(): Generator<StreamEvent> {
+      if (ledger.fred) yield { type: "text", delta: FRED_NOTE };
+      const items = [...ledger.sources(), ...(used ? tool!.sources : [])];
+      if (items.length) yield { type: "sources", items };
+    }
+    /** Asks for one reply at once, with the tools: what it asked for, or null when it couldn't be read. */
+    const ask = async (): Promise<Asked | null> => {
+      const res = await send(p, key, requestBody(p, messages, { stream: false, tools: "auto", functions, after }), false);
+      const asked = typeof res === "string" ? null : await res.json().then((json) => readAsked(p, json), () => null);
       if (!asked) {
-        lastError = typeof first === "string" ? first : `${p.id} sent a reply Flash couldn't read`;
-        continue;
+        lastError = typeof res === "string" ? res : `${p.id} sent a reply Flash couldn't read`;
+        return null;
       }
-      input += asked.input ?? Math.ceil(JSON.stringify(messages).length / 3);
+      input += asked.input ?? Math.ceil((JSON.stringify(messages).length + JSON.stringify(after).length) / 3);
       output += asked.output ?? Math.ceil(asked.text.length / 2);
-      // Nothing to say and nothing asked for (Gemini's MALFORMED_FUNCTION_CALL, say): the call counts
-      // toward the provider's day, and the next provider answers.
-      if (!asked.calls.length && !asked.text.trim()) {
-        await record(p.id, input + output, p.id === "cloudflare" ? cloudflareChatNeurons(input, output) : 0);
-        lastError = `${p.id} sent an empty reply`;
-        continue;
+      return asked;
+    };
+    /** Runs the calls a reply asked for, saying what it checks, and adds what they gave back after it. */
+    async function* runCalls(asked: Asked): AsyncGenerator<StreamEvent> {
+      for (const call of asked.calls) {
+        const status = call.name === WEATHER_FUNCTION.name && tool ? tool.status(call.input) : offered.find((x) => x.name === call.name)?.status(call.input);
+        if (status) yield { type: "status", message: status };
       }
-      onModel(p.label, p.id);
-      if (!asked.calls.length) {
-        // Answered without a forecast: that's the reply.
-        if (asked.text) yield { type: "text", delta: asked.text };
-        await record(p.id, input + output, p.id === "cloudflare" ? cloudflareChatNeurons(input, output) : 0);
-        return;
-      }
-      for (const call of asked.calls) if (call.name === WEATHER_FUNCTION.name) yield { type: "status", message: tool!.status(call.input) };
-      let forecasts = 0;
+      // Each kind's calls are counted in the order they were asked for, before any runs.
       const answers = await Promise.all(
-        asked.calls.map((call) => {
-          if (call.name !== WEATHER_FUNCTION.name) return { text: `There is no tool called ${call.name}.`, isError: true, used: false };
-          return forecasts++ < MAX_FORECASTS ? tool!.run(call.input) : { text: TOO_MANY, isError: true, used: false };
+        asked.calls.map((call): Promise<WeatherAnswer | ToolResult> | WeatherAnswer => {
+          if (call.name === WEATHER_FUNCTION.name && tool) return forecasts++ < MAX_FORECASTS ? tool.run(call.input) : { text: TOO_MANY, isError: true, used: false };
+          const look = offered.find((x) => x.name === call.name);
+          if (!look) return { text: `There is no tool called ${call.name}.`, isError: true, used: false };
+          if (!ledger.take(look.family)) return { text: limitText(look.family), isError: true, used: false };
+          return look.run(call.input).catch(() => ({ text: failText(look.family), isError: true, used: false }));
         }),
       );
       // The answer is written next: the progress line goes.
       yield { type: "status", message: "" };
-      used = answers.some((a) => a.used);
-      after = toolResults(p, asked, answers);
+      // Read in the order they were asked for, so a search's numbers don't depend on which answered first.
+      const texts = asked.calls.map((call, i) => {
+        const answer = answers[i];
+        if (call.name === WEATHER_FUNCTION.name && tool) {
+          used ||= answer.used;
+          return { text: answer.text };
+        }
+        return { text: offered.some((x) => x.name === call.name) ? ledger.settle(call.name, answer as ToolResult) : answer.text };
+      });
+      after = [...after, ...toolResults(p, asked, texts)];
     }
-    const res = await send(p, key, requestBody(p, messages, offer ? { tools: "none", after } : {}), true);
+    if (offer) {
+      const first = await ask();
+      if (!first) continue;
+      // Nothing to say and nothing asked for (Gemini's MALFORMED_FUNCTION_CALL, say): the call counts
+      // toward the provider's day, and the next provider answers.
+      if (!first.calls.length && !first.text.trim()) {
+        await recordUse();
+        lastError = `${p.id} sent an empty reply`;
+        continue;
+      }
+      onModel(p.label, p.id);
+      if (!first.calls.length) {
+        // Answered without a tool: that's the reply.
+        if (first.text) yield { type: "text", delta: first.text };
+        await recordUse();
+        return;
+      }
+      yield* runCalls(first);
+      // Only found where to look: one more round, when the provider's day has room for it.
+      const finding = first.calls.every((call) => offered.find((x) => x.name === call.name)?.finder);
+      if (finding && (await reserve(p.id, limits, 1))) {
+        const second = await ask();
+        if (second?.calls.length) yield* runCalls(second);
+        else if (second?.text.trim()) {
+          // Answered with what it found: that's the reply.
+          if (used) o.onUsed?.();
+          for (const name of ledger.used) o.onTool?.(name);
+          yield { type: "text", delta: second.text };
+          await recordUse();
+          yield* finish();
+          return;
+        }
+      }
+    }
+    const res = await send(p, key, requestBody(p, messages, offer ? { tools: "none", functions, after } : {}), true);
     if (typeof res === "string") {
       lastError = res;
       // The first call is paid for in the provider's daily count all the same.
-      if (offer) await record(p.id, input + output, p.id === "cloudflare" ? cloudflareChatNeurons(input, output) : 0);
+      if (offer) await recordUse();
       continue;
     }
     if (!offer) onModel(p.label, p.id);
-    // Said once this provider is answering with the forecast, so a backup that answers without it isn't credited.
+    // Said once this provider is answering with the forecast or the data, so a backup that answers without it isn't credited.
     if (used) o.onUsed?.();
+    for (const name of ledger.used) o.onTool?.(name);
     const read = yield* readStream(p, res.body!);
     // Without a usage report, estimate on the high side.
     input += read.input || Math.ceil((JSON.stringify(messages).length + JSON.stringify(after).length) / 3);
     output += read.output || Math.ceil(read.chars / 2);
-    await record(p.id, input + output, p.id === "cloudflare" ? cloudflareChatNeurons(input, output) : 0);
-    // MET Norway's data is credited under the reply.
-    if (used) yield { type: "sources", items: tool!.sources };
+    await recordUse();
+    // MET Norway's data is credited under the reply, with the data's sources and FRED's notice.
+    yield* finish();
     return;
   }
   throw new FriendlyError(

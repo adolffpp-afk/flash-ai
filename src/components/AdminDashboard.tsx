@@ -24,8 +24,10 @@ type Stats = {
     does: string;
     free: boolean;
     setUp: boolean;
-    // Names of the environment variables Flash can't find for this provider.
+    // Names of the environment variables Flash can't find for this provider (or why one set can't be used).
     missing: string[];
+    // It needs no key (SEC EDGAR).
+    noKey?: boolean;
     requests: number;
     costCents: number;
   }[];
@@ -574,7 +576,7 @@ export function AdminDashboard() {
           <div className="mt-6 space-y-4">
             <Panel
               title="AI providers"
-              note="Every provider Flash can call, and what to expect on each bill. Uses counts each request a provider worked on, including as a helper. Key names must match exactly in Vercel's Production environment variables, then redeploy."
+              note="Every provider Flash can call, and what to expect on each bill. Uses counts each request a provider worked on, including as a helper (for SearXNG, SEC EDGAR and FRED, the requests Flash sent them). Key names must match exactly in Vercel's Production environment variables, then redeploy."
             >
               <Table
                 head={["Provider", "Billing", "Key", "Uses", "AI cost"]}
@@ -585,7 +587,11 @@ export function AdminDashboard() {
                   </div>,
                   r.free ? "Free tier" : "Pay per use",
                   r.setUp ? (
-                    "Set"
+                    r.noKey ? (
+                      "None needed"
+                    ) : (
+                      "Set"
+                    )
                   ) : (
                     <div key="key" className="text-zinc-500">
                       <div>Not set</div>

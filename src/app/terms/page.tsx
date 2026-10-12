@@ -1,11 +1,12 @@
 import type { Metadata } from "next";
 import { COMPANY, CONTACT, LegalPage } from "@/components/LegalPage";
+import { FRED_NOTICE, FRED_TERMS_URL } from "@/lib/research.ts";
 
 export const metadata: Metadata = { title: "Terms of Service" };
 
 export default function Terms() {
   return (
-    <LegalPage title="Terms of Service" updated="October 9, 2026">
+    <LegalPage title="Terms of Service" updated="October 12, 2026">
       <p>
         These terms are an agreement between you and {COMPANY} (&quot;Flash&quot;, &quot;we&quot;) for your use of the
         Flash AI website and app (the &quot;Service&quot;). By creating an account or using the Service you accept them.
@@ -22,6 +23,20 @@ export default function Terms() {
       <p>
         Flash sends your requests to third-party AI providers (such as Anthropic, and Groq, Google, OpenRouter,
         Cloudflare and Mistral for free models) and returns their results. Features, models and providers may change over time.
+      </p>
+      <p>
+        Some answers use public data, listed under the answer with a link to where it came from: web search results
+        (through Flash&apos;s own SearXNG search server), company filings and reported figures from the U.S. Securities
+        and Exchange Commission&apos;s SEC EDGAR, and economic data from FRED&reg;, Federal Reserve Bank of St. Louis.
+        That data can be late, incomplete or wrong, and Flash doesn&apos;t check it: check it at the source before you
+        rely on it.
+      </p>
+      <p>
+        By using FRED&reg; data through Flash, you also agree to the{" "}
+        <a href={FRED_TERMS_URL} target="_blank" rel="noopener noreferrer">
+          FRED&reg; API Terms of Use
+        </a>
+        , and you may use that data only as they allow. {FRED_NOTICE}
       </p>
 
       <h2>3. Credits and payments</h2>

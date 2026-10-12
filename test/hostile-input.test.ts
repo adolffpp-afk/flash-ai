@@ -7,6 +7,7 @@ import { autoLevel, needsCare } from "../src/lib/levels.ts";
 import { freeFacts } from "../src/lib/free-order.ts";
 import { POST_PACK_REQUEST, movieSplit, pickModel, videoSeconds, wantsSound, type Provider } from "../src/lib/models.ts";
 import { asksWeather, weatherQuestion } from "../src/lib/weather-words.ts";
+import { asksEconomy, asksFilings } from "../src/lib/research-words.ts";
 import { pickVoice } from "../src/lib/voices.ts";
 import { videoAspect } from "../src/lib/engines/fal-input.ts";
 
@@ -38,6 +39,8 @@ const others: Check[] = [
   ["pickModel", (m) => [pickModel("image", m, providers), pickModel("video", m, providers), pickModel("music", m, providers)]],
   ["asksWeather", (m) => asksWeather(m)],
   ["weatherQuestion", (m) => weatherQuestion(m)],
+  ["asksFilings", (m) => asksFilings(m)],
+  ["asksEconomy", (m) => asksEconomy(m)],
   ["followsForecast", (m) => followsForecast({ engine: "search", reason: "" }, m, "Will it rain tomorrow in London?")],
   ["pictureFollowUp", (m) => pictureFollowUp(m)],
   ["fixesPictureText", (m) => fixesPictureText(m)],
@@ -177,7 +180,7 @@ test("digit runs, punctuation runs, platform lists and openings followed by a lo
 // source itself (regular expression literals and the String.raw pieces patterns are built from), so
 // a pattern added later is covered without editing this list.
 function patternWords(): string[] {
-  const files = ["router.ts", "weather-words.ts", "free-order.ts", "weather.ts", "context-note.ts", "levels.ts", "models.ts", "voices.ts"];
+  const files = ["router.ts", "weather-words.ts", "research-words.ts", "free-order.ts", "weather.ts", "context-note.ts", "levels.ts", "models.ts", "voices.ts"];
   const words = new Set<string>();
   for (const file of files) {
     const path = new URL(`../src/lib/${file}`, import.meta.url);
