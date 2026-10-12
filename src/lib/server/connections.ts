@@ -1061,6 +1061,8 @@ export async function chatKit(userId: string, ids: string[], { replyId = "", sig
       return proposeAction({
         userId,
         connectionId: tool.connectionId,
+        // The account this reply read: a card is never stored for another one (see keepGithub).
+        accountId: rowOf(tool.connectionId).account_id,
         connection: tool.connection,
         host: tool.host,
         tool: tool.tool,
@@ -1437,7 +1439,8 @@ export async function finishGithub(
  * with Flash's GitHub tools pinned, named with the GitHub login it is for (GitHub · login). Of two
  * sign-ins finishing at once, only one adds the account. A sign-in as another GitHub account (another
  * number) replaces the one kept, so the actions waiting for an Approve on it are removed in the same
- * write: nothing asked of one GitHub account ever runs as another (see runApproved).
+ * write, and a reply that read the old one can't store a card after it (see proposeAction): nothing
+ * asked of one GitHub account ever runs as another (see runApproved).
  */
 async function keepGithub(userId: string, tokens: Tokens, installations: string[], account: GithubAccount): Promise<void> {
   const preset = presetById("github")!;

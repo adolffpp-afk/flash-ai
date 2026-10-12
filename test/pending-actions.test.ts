@@ -14,8 +14,8 @@ const { ACTION_TTL_MS, approvalAllowed, approvedResults, cancelAction, claimActi
 const { all, run } = await import("../src/lib/server/db.ts");
 
 const user = "user-1";
-const card = (input: Record<string, unknown> = { to: "sam@example.com", note: "Hi" }, at?: number) =>
-  proposeAction({ userId: user, connectionId: "conn-1", connection: "Resend", host: "mcp.resend.com", tool: "send_email", title: "Send email", toolHash: "h", kind: "write", custom: false, input, at });
+const card = async (input: Record<string, unknown> = { to: "sam@example.com", note: "Hi" }, at?: number) =>
+  (await proposeAction({ userId: user, connectionId: "conn-1", accountId: "", connection: "Resend", host: "mcp.resend.com", tool: "send_email", title: "Send email", toolHash: "h", kind: "write", custom: false, input, at }))!;
 
 before(async () => {
   await run("INSERT INTO users (id, email, name, password_hash, preferences, created_at, last_free_grant) VALUES (?, ?, '', 'x', '', 0, 0)", [user, "a@example.com"]);

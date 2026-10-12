@@ -275,12 +275,14 @@ export async function githubInstallations(access: string): Promise<string[]> {
   return [...new Set(ids)].slice(0, MAX_INSTALLATIONS);
 }
 
-/** The GitHub account a token is for: its login (shown) and its number (which never changes). */
+/** The GitHub account a token is for: its login (only shown) and its number (which never changes, and is what tells accounts apart). */
 export type GithubAccount = { login: string; id: string };
 
 /**
- * Who a user token signs in as (GET /user), checked: a login as GitHub allows one and a positive
- * number. Throws OAuthError when GitHub doesn't answer with them. Nothing else of the profile is kept.
+ * Who a user token signs in as (GET /user), checked: a positive number, and a login. The login is only
+ * shown, so any login GitHub gives is taken: letters, digits and hyphens, and the underscore of an
+ * Enterprise Managed User's login (handle_shortcode); never spaces or control characters. Throws
+ * OAuthError when GitHub doesn't answer with them. Nothing else of the profile is kept.
  */
 export async function githubAccount(access: string): Promise<GithubAccount> {
   let res: SafeResponse;
@@ -296,7 +298,7 @@ export async function githubAccount(access: string): Promise<GithubAccount> {
   }
   if (res.status !== 200) throw new OAuthError("token");
   const body = parse(res) as { login?: unknown; id?: unknown } | null;
-  const login = typeof body?.login === "string" && /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(body.login) ? body.login : "";
+  const login = typeof body?.login === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$/.test(body.login) ? body.login : "";
   const id = typeof body?.id === "number" && Number.isSafeInteger(body.id) && body.id > 0 ? String(body.id) : "";
   if (!login || !id) throw new OAuthError("token");
   return { login, id };

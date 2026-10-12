@@ -637,7 +637,7 @@ test("#2: a server that says its own address back shows none of the key in it, i
   const out = await kit.run(where, {});
   assert.match(out.text, /^Called at http:\/\/127\.0\.0\.1:\d+\/s\/\[hidden\]\/mcp\?api_key=\[hidden\]&team=ab$/);
   // An approved call: what the card shows, and what is kept for Continue.
-  const card = await kit.propose(where, {});
+  const card = (await kit.propose(where, {}))!;
   await kit.close();
   const done = (await runApproved(u, card.id, card.inputHash))!;
   assert.equal(done.status, "done");
@@ -649,7 +649,7 @@ test("#4: an account whose stored key can't be opened asks to be connected again
   const u = await newUser("user-rekey");
   const conn = (await addConnection(u, { provider: "linear", token: "lin_api_REKEYREKEY1234" })).id;
   const first = (await chatKit(u, [conn]))!;
-  const card = await first.propose(first.tools.find((t) => t.tool === "send_note")!, { to: "a@b.c", note: "hi" });
+  const card = (await first.propose(first.tools.find((t) => t.tool === "send_note")!, { to: "a@b.c", note: "hi" }))!;
   await first.close();
   const keys = process.env.CONNECTOR_KEYS;
   const shown = async () => (await listConnections(u))[0].status;
@@ -734,7 +734,7 @@ test("#12: approved results a Continue took are put back when it fails or is sto
   const u = await newUser("user-retry");
   const conn = (await addConnection(u, { provider: "linear", token: "lin_api_RETRYRETRY1234" })).id;
   const kit = (await chatKit(u, [conn]))!;
-  const card = await kit.propose(kit.tools.find((t) => t.tool === "send_note")!, { to: "a@b.c", note: "hi" });
+  const card = (await kit.propose(kit.tools.find((t) => t.tool === "send_note")!, { to: "a@b.c", note: "hi" }))!;
   await kit.close();
   assert.equal((await runApproved(u, card.id, card.inputHash))!.status, "done");
   // Taken once the reply is paid for (see the chat route)...

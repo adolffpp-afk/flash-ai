@@ -16,16 +16,23 @@ register("./support/route-hooks.mjs", import.meta.url);
 type Block = { type: "text"; text: string } | { type: "tool_use"; id: string; name: string; input: object };
 const replies: { blocks: Block[]; stop: string }[] = [];
 const sent: { model: string; messages: unknown[] }[] = [];
+// What happens while the reply waits for Claude's second answer (the user, in another tab).
+let meanwhile: (() => Promise<void>) | null = null;
 const claude = createServer((req, res) => {
   let raw = "";
   req.on("data", (c) => (raw += c));
-  req.on("end", () => {
+  req.on("end", async () => {
     const body = JSON.parse(raw || "{}");
     if (req.url?.includes("count_tokens")) {
       res.writeHead(200, { "content-type": "application/json" });
       return res.end(JSON.stringify({ input_tokens: 3000 }));
     }
     sent.push(body);
+    if (sent.length === 2 && meanwhile) {
+      const then = meanwhile;
+      meanwhile = null;
+      await then();
+    }
     const reply = replies.shift() ?? { blocks: [{ type: "text", text: "done" }], stop: "end_turn" };
     const usage = { input_tokens: 3000, output_tokens: 200 };
     const events: object[] = [{ type: "message_start", message: { id: `msg_${sent.length}`, type: "message", role: "assistant", model: body.model, content: [], stop_reason: null, usage } }];
@@ -86,6 +93,7 @@ const chatRoute = await import("../src/app/api/chat/route.ts");
 beforeEach(() => {
   replies.length = 0;
   sent.length = 0;
+  meanwhile = null;
   mock.reset();
   // Each test starts with a GitHub user who hasn't installed the app yet.
   mock.uninstallGithub();
@@ -506,8 +514,8 @@ test("open a pull request: the card shows repo, title, body, head and base; appr
   const pull = kit.tools.find((t) => t.tool === "open_pull_request")!;
   assert.equal(pull.kind, "write");
   const input = { repo: "octo/hello", title: "Add a wave", body: "Waves back.", head: "feature", base: "main" };
-  const card = await kit.propose(pull, input);
-  const cancelled = await kit.propose(pull, { ...input, title: "Never" });
+  const card = (await kit.propose(pull, input))!;
+  const cancelled = (await kit.propose(pull, { ...input, title: "Never" }))!;
   await kit.close();
   assert.deepEqual(card.input, input);
   assert.equal(mock.githubLog.writes.length, 0);
@@ -521,7 +529,7 @@ test("open a pull request: the card shows repo, title, body, head and base; appr
 
   // A branch GitHub doesn't have: its own words, once, and nothing written.
   const kit2 = (await chatKit(user.id, [id]))!;
-  const bad = await kit2.propose(kit2.tools.find((t) => t.tool === "open_pull_request")!, { ...input, head: "nope" });
+  const bad = (await kit2.propose(kit2.tools.find((t) => t.tool === "open_pull_request")!, { ...input, head: "nope" }))!;
   await kit2.close();
   const failed = await answer(user, bad);
   assert.equal(failed.body.status, "failed");
@@ -575,7 +583,7 @@ test("GitHub's rate limit: a clear note, in the user's language on a card, and n
   const out = await kit.run(kit.tools.find((t) => t.tool === "list_issues")!, { repo: "octo/hello" });
   assert.deepEqual(out, { text: GITHUB_PROBLEMS.rate, isError: true });
   assert.equal(mock.githubLog.calls.length, 1, "asked once");
-  const card = await kit.propose(kit.tools.find((t) => t.tool === "create_issue")!, { repo: "octo/hello", title: "T", body: "" });
+  const card = (await kit.propose(kit.tools.find((t) => t.tool === "create_issue")!, { repo: "octo/hello", title: "T", body: "" }))!;
   await kit.close();
   const done = (await runApproved(user.id, card.id, card.inputHash))!;
   assert.equal(done.status, "failed");
@@ -590,7 +598,7 @@ test("GitHub is hidden everywhere until all three of its variables are set", asy
   assert.equal(await connect(user), "ok");
   const id = (await githubRow(user.id))!.id as string;
   const kit = (await chatKit(user.id, [id], { replyId: "h1" }))!;
-  const card = await kit.propose(kit.tools.find((t) => t.tool === "create_issue")!, { repo: "octo/hello", title: "Hidden", body: "" });
+  const card = (await kit.propose(kit.tools.find((t) => t.tool === "create_issue")!, { repo: "octo/hello", title: "Hidden", body: "" }))!;
   await kit.close();
   for (const name of ["GITHUB_APP_CLIENT_ID", "GITHUB_APP_CLIENT_SECRET", "GITHUB_APP_SLUG"]) {
     const kept = process.env[name];
@@ -709,7 +717,7 @@ test("a field a tool doesn't have (draft: true) makes no card: Claude gets an er
   const kit = (await chatKit(user.id, [id]))!;
   for (const tool of kit.tools) assert.equal((tool.definition.input_schema as { additionalProperties?: unknown }).additionalProperties, false, tool.tool);
   // A card made with one anyway (as one from before this check) never sends it, nor does a read.
-  const card = await kit.propose(kit.tools.find((t) => t.tool === "open_pull_request")!, { ...input, draft: true });
+  const card = (await kit.propose(kit.tools.find((t) => t.tool === "open_pull_request")!, { ...input, draft: true }))!;
   const before = mock.githubLog.calls.length;
   const read = await kit.run(kit.tools.find((t) => t.tool === "read_file")!, { repo: "octo/hello", path: "README.md", ref: "main", extra: 1 });
   await kit.close();
@@ -758,7 +766,7 @@ test("the GitHub login is shown, and signing in as another GitHub account remove
   assert.deepEqual(listed.connections.map((c) => c.label), ["GitHub · octo"]);
   const kit = (await chatKit(user.id, [id]))!;
   const issue = kit.tools.find((t) => t.tool === "create_issue")!;
-  const waiting = await kit.propose(issue, { repo: "octo/hello", title: "Waits", body: "" });
+  const waiting = (await kit.propose(issue, { repo: "octo/hello", title: "Waits", body: "" }))!;
   await kit.close();
   assert.equal(waiting.connection, "GitHub · octo", "the card says which GitHub account");
 
@@ -785,6 +793,56 @@ test("the GitHub login is shown, and signing in as another GitHub account remove
   assert.equal(await logsOf(() => connect(user)), "failed");
   assert.deepEqual(mock.githubLog.revoked.slice(revoked), ["token"]);
   assert.equal((await githubRow(user.id))!.label, "GitHub · octo-work");
+});
+
+test("a reply that began before a sign-in as another GitHub account makes no card for the old one", async () => {
+  const user = await account("gh-switch");
+  assert.equal(await connect(user), "ok");
+  const id = (await githubRow(user.id))!.id as string;
+  // The reply reads as octo; while Claude thinks, the user connects again in another tab, signed in to GitHub as octo-work.
+  meanwhile = async () => {
+    mock.github.user = { login: "octo-work", id: 2 };
+    assert.equal(await connect(user), "ok");
+  };
+  replies.push(
+    { blocks: [{ type: "tool_use", id: "toolu_1", name: "github__read_file", input: { repo: "octo/hello", path: "README.md" } }], stop: "tool_use" },
+    { blocks: [{ type: "tool_use", id: "toolu_2", name: "github__create_issue", input: { repo: "octo/hello", title: "As octo", body: "" } }], stop: "tool_use" },
+    { blocks: [{ type: "text", text: "The account changed." }], stop: "end_turn" },
+  );
+  const events = await chat(user, "Read my README, then open an issue", [id]);
+  assert.equal((await githubRow(user.id))!.label, "GitHub · octo-work", "the switch happened during the reply");
+  assert.ok(!events.some((e) => e.type === "approve_action"), "no card for octo");
+  assert.match(JSON.stringify(sent[2].messages), /tool_result.*That account was replaced or removed since this reply began, so nothing was proposed/);
+  assert.equal(await one("SELECT id FROM pending_actions WHERE user_id = ?", [user.id]), null);
+
+  // The same through a kit loaded before the switch, and a kit loaded after it works as octo-work.
+  const before = (await chatKit(user.id, [id]))!;
+  mock.github.user = { login: "octo", id: 1 };
+  assert.equal(await connect(user), "ok");
+  assert.equal(await before.propose(before.tools.find((t) => t.tool === "create_issue")!, { repo: "octo/hello", title: "As octo-work", body: "" }), null);
+  await before.close();
+  const after = (await chatKit(user.id, [id]))!;
+  const card = (await after.propose(after.tools.find((t) => t.tool === "create_issue")!, { repo: "octo/hello", title: "As octo", body: "" }))!;
+  await after.close();
+  assert.equal(card.connection, "GitHub · octo");
+  assert.equal((await answer(user, card)).body.status, "done");
+  assert.deepEqual(mock.githubLog.writes.map((w) => (w.body as { title: string }).title), ["As octo"], "only the card made for the account connected now ran");
+});
+
+test("an Enterprise Managed User's login (with an underscore) connects; a token GitHub gives no number for doesn't", async () => {
+  const user = await account("gh-emu");
+  mock.github.user = { login: "mona-cat_octo", id: 77 };
+  assert.equal(await connect(user), "ok");
+  const row = (await githubRow(user.id))!;
+  assert.equal(row.label, "GitHub · mona-cat_octo");
+  assert.equal(row.account_id, "77");
+
+  const other = await account("gh-no-number");
+  for (const user of [{ login: "octo", id: 0 }, { login: "octo", id: 1.5 }, { login: "octo", id: "1" }, { login: "octo bot", id: 9 }]) {
+    mock.github.user = user as { login: string; id: number };
+    assert.equal(await logsOf(() => connect(other)), "failed", JSON.stringify(user));
+  }
+  assert.equal(await githubRow(other.id), null);
 });
 
 test("Add repositories on GitHub: the app's installation page, with a flow that brings the user back, and the new installation kept", async () => {

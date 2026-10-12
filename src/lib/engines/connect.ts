@@ -47,14 +47,15 @@ export type ConnectorTool = {
  * A reply's connected accounts (see chatKit in server/connections.ts). tools are the pinned tools the
  * user has on, which the hold counted; check() compares them with what each server lists now and
  * keeps those still the same; run() calls one and returns its text with any secret taken out;
- * propose() stores a call waiting for approval. tainted names accounts already read in this
- * conversation (a reply continued with an approved result).
+ * propose() stores a call waiting for approval (null when the account was replaced or removed since
+ * the reply began). tainted names accounts already read in this conversation (a reply continued with
+ * an approved result).
  */
 export type ConnectorKit = {
   tools: ConnectorTool[];
   check: (signal?: AbortSignal) => Promise<{ tools: ConnectorTool[]; unreachable: string[]; changed: string[] }>;
   run: (tool: ConnectorTool, input: Record<string, unknown>, signal?: AbortSignal) => Promise<{ text: string; isError: boolean }>;
-  propose: (tool: ConnectorTool, input: Record<string, unknown>) => Promise<ActionCard>;
+  propose: (tool: ConnectorTool, input: Record<string, unknown>) => Promise<ActionCard | null>;
   close: () => Promise<void>;
   tainted?: string[];
 };
@@ -160,6 +161,7 @@ function markUsed(state: ConnectState, tool: ConnectorTool) {
 }
 
 const SKIPPED = '{"status":"skipped","reason":"Only 4 tool calls fit in one step. Call this one again in your next step if you still need it."}';
+const ACCOUNT_CHANGED = "That account was replaced or removed since this reply began, so nothing was proposed. Tell the user to ask again.";
 const WAITING = (title: string) =>
   JSON.stringify({ status: "waiting_for_user", note: `Flash showed the user a card to approve ${title}. It runs only if they approve it.` });
 
@@ -198,6 +200,11 @@ export async function* connectorCalls(
     if (needsApproval(tool, state.readFrom)) {
       const card = await kit.propose(tool, input);
       if (signal?.aborted) throw stopError(signal);
+      if (!card) {
+        // Another account (another GitHub login) or none since the reply began: no card for the old one.
+        out.set(call.id, { content: JSON.stringify({ status: "error", reason: ACCOUNT_CHANGED }), isError: true });
+        continue;
+      }
       yield { type: "approve_action", action: card };
       out.set(call.id, { content: WAITING(`${tool.connection} ${tool.title}`), isError: false });
       continue;
