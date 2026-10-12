@@ -39,6 +39,7 @@ import {
   beginGithubFlow,
   dropGithubToken,
   exchangeGithubCode,
+  githubAccount,
   githubApi,
   githubInstallations,
   githubReady,
@@ -49,6 +50,7 @@ import {
   revokeGithubGrant,
   takeGithubFlow,
   takeInstallFlow,
+  type GithubAccount,
 } from "./github.ts";
 import { CONNECTION_ID, MAX_CONNECTIONS, presetById, type ConnectionView, type Preset, type ToolKind, type ToolPreview } from "../connectors.ts";
 import { StoppedMidCall, cleanSchema, cut, stopError, toolName, type ConnectorKit, type ConnectorTool } from "../engines/connect.ts";
@@ -89,6 +91,8 @@ type ConnectionRow = {
   scopes: string;
   endpoints_json: string;
   refreshing_until: number | null;
+  // For GitHub: the number of the GitHub account its tokens are for (see keepGithub).
+  account_id: string;
 };
 
 /** Signed in, with tokens Flash renews: at an MCP server's authorization server, or to GitHub. */
@@ -1119,11 +1123,15 @@ export async function runApproved(userId: string, id: string, hash: string): Pro
   if (!row || hidden(row)) return fail(NOT_RUN.gone);
   const pinned = await one<ToolRow>("SELECT * FROM connection_tools WHERE connection_id = ? AND name = ?", [row.id, action.tool]);
   if (!pinned || pinned.changed || pinned.hash !== action.tool_hash) return fail(NOT_RUN.changed);
-  let out: { text: string; isError: boolean; needsScope?: boolean } | "changed";
+  let out: { text: string; isError: boolean; needsScope?: boolean } | "changed" | "gone";
   try {
     out = await withServer(row, async (opened) => {
       const live = await opened.client.listTools();
       if (live.find((t) => t.name === action.tool)?.hash !== action.tool_hash) return "changed" as const;
+      // Still waiting, now that the token is in hand: a sign-in as another GitHub account removes the
+      // account's actions in the same write as it keeps its tokens (see keepGithub), so a token of the
+      // new account never runs what was asked of the old one.
+      if (!(await one("SELECT id FROM pending_actions WHERE id = ? AND user_id = ?", [action.id, userId]))) return "gone" as const;
       return callOn(row, opened, pinned, JSON.parse(action.input_json) as Record<string, unknown>);
     });
   } catch (err) {
@@ -1135,6 +1143,7 @@ export async function runApproved(userId: string, id: string, hash: string): Pro
     }
     return fail(NOT_RUN.failed);
   }
+  if (out === "gone") return fail(NOT_RUN.gone);
   if (out === "changed") {
     await run("UPDATE connection_tools SET changed = 1 WHERE connection_id = ? AND name = ?", [row.id, action.tool]);
     return fail(NOT_RUN.changed);
@@ -1335,18 +1344,24 @@ async function keepSignIn(userId: string, flow: FlowRow, tokens: Tokens): Promis
 /**
  * Connect GitHub, or Reconnect it (see github.ts): GitHub's authorize step, and the app's installation
  * page after it only when the user's token sees no installation. A user keeps one GitHub account
- * here: connecting again updates it (new tokens, and the installations its token sees). Only from a
+ * here: connecting again updates it (new tokens, and the installations its token sees). With install,
+ * for a connected account (Add repositories on GitHub): the app's installation page itself, where the
+ * user can install it on their own account or another organization, or pick more repositories; its
+ * flow brings them back through the authorize step, so new installations are kept. Only from a
  * confirmed account; costs nothing and calls no model.
  */
-export async function startGithub(userId: string, input: { connectionId?: string }, origin: string): Promise<string> {
+export async function startGithub(userId: string, input: { connectionId?: string; install?: boolean }, origin: string): Promise<string> {
   await confirmedOnly(userId);
   const existing = await one<ConnectionRow>("SELECT * FROM connections WHERE user_id = ? AND provider = 'github' ORDER BY created_at LIMIT 1", [userId]);
-  if (input.connectionId && existing?.id !== input.connectionId) throw new ConnectError("gone", "That account isn't connected any more.");
+  if ((input.connectionId || input.install) && (!existing || (input.connectionId && existing.id !== input.connectionId))) {
+    throw new ConnectError("gone", "That account isn't connected any more.");
+  }
   if (!existing) {
     const count = await one<{ n: number }>("SELECT COUNT(*) AS n FROM connections WHERE user_id = ?", [userId]);
     if (Number(count?.n ?? 0) >= MAX_CONNECTIONS) throw new ConnectError("too_many", "You have the most connections Flash keeps. Remove one first.");
   }
   await tryLimit(userId);
+  if (input.install) return beginGithubFlow(userId, origin, { step: "install" });
   // The authorize step first: the installation page comes next only when the user has none (see github.ts).
   return beginGithubFlow(userId, origin, { step: "authorize" });
 }
@@ -1397,7 +1412,7 @@ export async function finishGithub(
     return failed(err instanceof OAuthError ? err.code : "token");
   }
   try {
-    const installations = await githubInstallations(tokens.access);
+    const [account, installations] = await Promise.all([githubAccount(tokens.access), githubInstallations(tokens.access)]);
     if (!installations.length) {
       // Nothing installed yet: on to the app's installation page, unless the user has just been there.
       await dropGithubToken(tokens.access);
@@ -1409,7 +1424,7 @@ export async function finishGithub(
       await dropGithubToken(tokens.access);
       return failed("installation");
     }
-    await keepGithub(userId, tokens, installations);
+    await keepGithub(userId, tokens, installations, account);
     return { outcome: "ok" };
   } catch (err) {
     await dropGithubToken(tokens.access);
@@ -1419,19 +1434,35 @@ export async function finishGithub(
 
 /**
  * Keeps a GitHub sign-in: new tokens and installations for the user's GitHub account, or a new one
- * with Flash's GitHub tools pinned. Of two sign-ins finishing at once, only one adds the account.
+ * with Flash's GitHub tools pinned, named with the GitHub login it is for (GitHub · login). Of two
+ * sign-ins finishing at once, only one adds the account. A sign-in as another GitHub account (another
+ * number) replaces the one kept, so the actions waiting for an Approve on it are removed in the same
+ * write: nothing asked of one GitHub account ever runs as another (see runApproved).
  */
-async function keepGithub(userId: string, tokens: Tokens, installations: string[]): Promise<void> {
+async function keepGithub(userId: string, tokens: Tokens, installations: string[], account: GithubAccount): Promise<void> {
   const preset = presetById("github")!;
+  const label = `${preset.name} · ${account.login}`.slice(0, 60);
   for (let attempt = 0; attempt < 2; attempt++) {
     const existing = await one<ConnectionRow>("SELECT * FROM connections WHERE user_id = ? AND provider = 'github' ORDER BY created_at LIMIT 1", [userId]);
     if (existing) {
       const access = seal(tokens.access, place(existing, "access"));
       const refresh = tokens.refresh ? seal(tokens.refresh, place(existing, "refresh")).stored : "";
-      await run(
-        `UPDATE connections SET enc_access = ?, enc_refresh = ?, expires_at = ?, resource = ?, refreshing_until = NULL, status = 'ok', key_version = ?
-         WHERE id = ? AND user_id = ?`,
-        [access.stored, refresh, tokens.expiresAt, installations.join(" "), access.version, existing.id, userId],
+      await (await db()).batch(
+        [
+          // Read in the same write as the new tokens, so of two sign-ins at once neither misses it.
+          {
+            sql: `DELETE FROM pending_actions WHERE connection_id = ? AND user_id = ?
+                  AND EXISTS (SELECT 1 FROM connections WHERE id = ? AND user_id = ? AND account_id != ?)`,
+            args: [existing.id, userId, existing.id, userId, account.id],
+          },
+          {
+            sql: `UPDATE connections SET enc_access = ?, enc_refresh = ?, expires_at = ?, resource = ?, refreshing_until = NULL, status = 'ok', key_version = ?,
+                    label = ?, account_id = ?
+                  WHERE id = ? AND user_id = ?`,
+            args: [access.stored, refresh, tokens.expiresAt, installations.join(" "), access.version, label, account.id, existing.id, userId],
+          },
+        ],
+        "write",
       );
       return;
     }
@@ -1446,10 +1477,10 @@ async function keepGithub(userId: string, tokens: Tokens, installations: string[
       [
         {
           sql: `INSERT INTO connections (id, user_id, provider, kind, label, url, enc_url, status, enc_secret, key_version, last4, protocol, created_at,
-                  enc_access, enc_refresh, expires_at, issuer, resource, client_reg_id, scopes, endpoints_json)
-                SELECT ?, ?, 'github', 'github', ?, ?, '', 'ok', '', ?, '', '', ?, ?, ?, ?, ?, ?, '', '', ''
+                  enc_access, enc_refresh, expires_at, issuer, resource, client_reg_id, scopes, endpoints_json, account_id)
+                SELECT ?, ?, 'github', 'github', ?, ?, '', 'ok', '', ?, '', '', ?, ?, ?, ?, ?, ?, '', '', '', ?
                 WHERE NOT EXISTS (SELECT 1 FROM connections WHERE user_id = ? AND provider = 'github')`,
-          args: [id, userId, preset.name, GITHUB_API, access.version, now(), access.stored, refresh, tokens.expiresAt, GITHUB_ISSUER, installations.join(" "), userId],
+          args: [id, userId, label, GITHUB_API, access.version, now(), access.stored, refresh, tokens.expiresAt, GITHUB_ISSUER, installations.join(" "), account.id, userId],
         },
         ...GITHUB_TOOLS.map((t, i) => ({
           sql: `INSERT INTO connection_tools (connection_id, name, title, description, schema, hash, kind, enabled, trusted, changed, position)

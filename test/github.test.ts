@@ -464,7 +464,7 @@ test("a read in chat runs by itself and Claude gets its result; nothing is writt
   );
   const read1 = await chat(user, "What does my README say?", [id]);
   assert.match(JSON.stringify(sent[1].messages), /tool_result.*Hello from the mock repo/);
-  assert.deepEqual(read1.find((e) => e.type === "connector_used")?.items, [{ connection: "GitHub", tool: "Read a file" }]);
+  assert.deepEqual(read1.find((e) => e.type === "connector_used")?.items, [{ connection: "GitHub · octo", tool: "Read a file" }]);
   assert.ok(!read1.some((e) => e.type === "approve_action"), "a read asks nothing");
   assert.ok(b0 - (await balance(user.id)) > 0, "a reply that used GitHub is paid, like any reply");
 
@@ -689,6 +689,129 @@ test("removing GitHub cancels the app's authorization at GitHub, renewing a toke
   assert.equal(await connect(user), "ok");
   assert.equal(mock.githubLog.installs, installs);
   assert.equal((await githubRow(user.id))!.resource, "4242");
+});
+
+test("a field a tool doesn't have (draft: true) makes no card: Claude gets an error, and the call itself refuses it too", async () => {
+  const user = await account("gh-extra");
+  assert.equal(await connect(user), "ok");
+  const id = (await githubRow(user.id))!.id as string;
+  const input = { repo: "octo/hello", title: "Add a wave", body: "Waves back.", head: "feature", base: "main" };
+  replies.push(
+    { blocks: [{ type: "tool_use", id: "toolu_x", name: "github__open_pull_request", input: { ...input, draft: true } }], stop: "tool_use" },
+    { blocks: [{ type: "text", text: "That didn't work." }], stop: "end_turn" },
+  );
+  const events = await chat(user, "Open a draft pull request", [id]);
+  assert.ok(!events.some((e) => e.type === "approve_action"), "no card");
+  assert.match(JSON.stringify(sent[1].messages), /tool_result.*That input wasn't usable: draft isn't a field of this tool/);
+  assert.equal(await one("SELECT id FROM pending_actions WHERE user_id = ?", [user.id]), null);
+
+  // Claude is told each tool takes nothing else.
+  const kit = (await chatKit(user.id, [id]))!;
+  for (const tool of kit.tools) assert.equal((tool.definition.input_schema as { additionalProperties?: unknown }).additionalProperties, false, tool.tool);
+  // A card made with one anyway (as one from before this check) never sends it, nor does a read.
+  const card = await kit.propose(kit.tools.find((t) => t.tool === "open_pull_request")!, { ...input, draft: true });
+  const before = mock.githubLog.calls.length;
+  const read = await kit.run(kit.tools.find((t) => t.tool === "read_file")!, { repo: "octo/hello", path: "README.md", ref: "main", extra: 1 });
+  await kit.close();
+  assert.deepEqual(read, { text: "That input wasn't usable: extra isn't a field of this tool.", isError: true });
+  const done = await answer(user, card);
+  assert.equal(done.body.status, "failed");
+  assert.equal(done.body.result, "That input wasn't usable: draft isn't a field of this tool.");
+  assert.equal(mock.githubLog.calls.length, before, "nothing was sent to GitHub");
+  assert.equal(mock.githubLog.writes.length, 0);
+});
+
+test("a list over 2 MB comes back shorter, and a pull request whose changes can't be read keeps the rest", async () => {
+  const user = await account("gh-big");
+  assert.equal(await connect(user), "ok");
+  const kit = (await chatKit(user.id, [(await githubRow(user.id))!.id as string]))!;
+  const call = (tool: string, input: Record<string, unknown>) => kit.run(kit.tools.find((t) => t.tool === tool)!, input);
+  const pages = (part: string) => mock.githubLog.calls.filter((c) => c.path.includes(part)).map((c) => new URL(c.path, ORIGIN).searchParams.get("per_page"));
+
+  mock.github.bigPages = 10;
+  const issues = await call("list_issues", { repo: "octo/hello" });
+  assert.equal(issues.isError, false);
+  assert.match(issues.text, /^#1 issue \[open\] Bug: it breaks/);
+  assert.deepEqual(pages("/issues?"), ["30", "10"], "asked again for fewer");
+
+  mock.github.bigPages = 7;
+  const pr = await call("read_pull_request", { repo: "octo/hello", number: 2 });
+  assert.match(pr.text, /--- src\/app\.ts \(modified, \+1 -0\)/);
+  assert.deepEqual(pages("/pulls/2/files"), ["20", "5"]);
+
+  mock.github.bigPages = 3;
+  const big = await call("read_pull_request", { repo: "octo/hello", number: 2 });
+  assert.equal(big.isError, false);
+  assert.match(big.text, /^Pull request #2 in octo\/hello: Add a feature\n/);
+  assert.match(big.text, /Adds a feature\.\n\nThe changes couldn't be read: GitHub's list of changed files was too large to read here\.$/);
+  await kit.close();
+});
+
+test("the GitHub login is shown, and signing in as another GitHub account removes what waited for Approve on the old one", async () => {
+  const user = await account("gh-login");
+  assert.equal(await connect(user), "ok");
+  let row = (await githubRow(user.id))!;
+  const id = row.id as string;
+  assert.equal(row.label, "GitHub · octo");
+  assert.equal(row.account_id, "1");
+  const listed = JSON.parse(await read(await connectRoute.GET(request("GET", "/api/connect", user)))) as { connections: { label: string }[] };
+  assert.deepEqual(listed.connections.map((c) => c.label), ["GitHub · octo"]);
+  const kit = (await chatKit(user.id, [id]))!;
+  const issue = kit.tools.find((t) => t.tool === "create_issue")!;
+  const waiting = await kit.propose(issue, { repo: "octo/hello", title: "Waits", body: "" });
+  await kit.close();
+  assert.equal(waiting.connection, "GitHub · octo", "the card says which GitHub account");
+
+  // Connecting again as the same account keeps what waits.
+  assert.equal(await connect(user), "ok");
+  assert.ok(await one("SELECT id FROM pending_actions WHERE id = ?", [waiting.id]));
+
+  // The browser is signed in to GitHub as another account: the account is replaced, and what waited for the first is gone.
+  mock.github.user = { login: "octo-work", id: 2 };
+  const b0 = await balance(user.id);
+  assert.equal(await connect(user), "ok");
+  row = (await githubRow(user.id))!;
+  assert.equal(row.id, id, "still one GitHub account here");
+  assert.equal(row.label, "GitHub · octo-work");
+  assert.equal(row.account_id, "2");
+  assert.equal(await one("SELECT id FROM pending_actions WHERE id = ?", [waiting.id]), null);
+  assert.equal((await answer(user, waiting)).status, 409);
+  assert.equal(mock.githubLog.writes.length, 0, "nothing asked of octo ran as octo-work");
+  assert.equal(await balance(user.id), b0);
+
+  // A token whose account GitHub doesn't say plainly is given back, and nothing changes.
+  mock.github.user = { login: "-not a login", id: 3 };
+  const revoked = mock.githubLog.revoked.length;
+  assert.equal(await logsOf(() => connect(user)), "failed");
+  assert.deepEqual(mock.githubLog.revoked.slice(revoked), ["token"]);
+  assert.equal((await githubRow(user.id))!.label, "GitHub · octo-work");
+});
+
+test("Add repositories on GitHub: the app's installation page, with a flow that brings the user back, and the new installation kept", async () => {
+  const user = await account("gh-more");
+  assert.equal((await start(user, { install: true })).status, 404, "only for a connected account");
+  assert.equal(await connect(user), "ok");
+  assert.equal((await githubRow(user.id))!.resource, "4242");
+  const b0 = await balance(user.id);
+  for (const origin of [null, "https://evil.example"]) assert.equal((await start(user, { install: true }, origin)).status, 403);
+  const started = await start(user, { install: true });
+  assert.equal(started.status, 200);
+  const page = new URL(started.body.url!);
+  assert.equal(page.pathname, "/github/web/apps/flash-ai-test/installations/new");
+  assert.ok(page.searchParams.get("state"));
+
+  // The user installs the app on one more account (say, an organization of theirs) and comes back.
+  mock.github.anotherAccount = true;
+  const codes = mock.githubLog.codes;
+  const back = await visit(page.href);
+  assert.equal(back.searchParams.get("installation_id"), "4343");
+  const bounced = await callback(user, back);
+  assert.equal(bounced.location.pathname, "/github/web/login/oauth/authorize", "the installation's code is never traded");
+  const done = await callback(user, await visit(bounced.location.href));
+  assert.equal(done.outcome, "ok");
+  assert.equal(mock.githubLog.codes, codes + 1);
+  assert.equal((await githubRow(user.id))!.resource, "4242 4343");
+  assert.equal(await balance(user.id), b0, "costs nothing");
 });
 
 test("no token or client secret in any answer, log, the database or the stand-in Claude's requests", async () => {

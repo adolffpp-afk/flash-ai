@@ -26,8 +26,14 @@ export function fill(text: string, blanks?: Blanks): string {
   return text.replace(/\{(\w+)\}/g, (all, name: string) => (name in blanks ? String(blanks[name]) : all));
 }
 
-/** The phrase from the table, else the English, with its blanks filled in. */
-export const translate = (table: Table | null, text: string, blanks?: Blanks): string => fill(table?.[text] || text, blanks);
+/**
+ * The phrase from the table, else the English, with its blanks filled in. Only the table's own phrases:
+ * a text like "__proto__" or "constructor" is never looked up on the object's prototype.
+ */
+export const translate = (table: Table | null, text: string, blanks?: Blanks): string => {
+  const hit = table && Object.hasOwn(table, text) ? table[text] : undefined;
+  return fill(typeof hit === "string" && hit ? hit : text, blanks);
+};
 
 /** Flash in English: each phrase as written. */
 export const english: Translate = (text, blanks) => fill(text, blanks);

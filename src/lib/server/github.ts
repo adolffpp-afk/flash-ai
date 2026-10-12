@@ -6,6 +6,7 @@ import { CALL_TIMEOUT_MS, McpError, toolHash, type McpTool, type ToolOutput } fr
 import { RESULT_BYTES, SafeFetchError, mockOrigin, safeFetch, type SafeResponse } from "./safe-fetch.ts";
 import { connectorsReady, seal } from "./secret-box.ts";
 import { msg } from "../i18n.ts";
+import { GITHUB_TOOL_WORDS } from "../connectors.ts";
 
 /*
  * GitHub in chat (the connectors plan, PR 3), through Flash's own GitHub App and seven of Flash's own
@@ -31,7 +32,14 @@ import { msg } from "../i18n.ts";
  *   the authorize step starts again, with a new state and PKCE. Anyone else's link redeems nothing;
  * - the installation_id in that redirect is only a hint: once Flash has the user's token, it lists the
  *   installations that token can see (GET /user/installations), refuses a hint that isn't one of them,
- *   and keeps only ids from that list.
+ *   and keeps only ids from that list;
+ * - who the token is for comes from GitHub (GET /user): its login, shown as "GitHub · login", and its
+ *   number. Signing in as another GitHub account replaces the one kept and removes what waited for
+ *   Approve on it (see keepGithub in connections.ts).
+ *
+ * Add repositories on GitHub (Settings > Connectors) opens the app's installation page with an install
+ * flow, so someone whose organization installed the app can install it on their own account too, or
+ * on another organization, and come back the same way.
  *
  * Tokens are sealed (secret-box.ts) on the connection and in nothing else; they are never logged, put
  * in an address or returned by an API, and are taken out of every result (see scrub in
@@ -267,6 +275,33 @@ export async function githubInstallations(access: string): Promise<string[]> {
   return [...new Set(ids)].slice(0, MAX_INSTALLATIONS);
 }
 
+/** The GitHub account a token is for: its login (shown) and its number (which never changes). */
+export type GithubAccount = { login: string; id: string };
+
+/**
+ * Who a user token signs in as (GET /user), checked: a login as GitHub allows one and a positive
+ * number. Throws OAuthError when GitHub doesn't answer with them. Nothing else of the profile is kept.
+ */
+export async function githubAccount(access: string): Promise<GithubAccount> {
+  let res: SafeResponse;
+  try {
+    res = await safeFetch(`${githubApi()}/user`, {
+      headers: { authorization: `Bearer ${access}`, accept: "application/vnd.github+json", "x-github-api-version": API_VERSION, "user-agent": USER_AGENT },
+      accept: ["json"],
+      maxBytes: RESULT_BYTES,
+      timeoutMs: TOKEN_MS,
+    });
+  } catch {
+    throw new OAuthError("unreachable", "GitHub couldn't be reached.");
+  }
+  if (res.status !== 200) throw new OAuthError("token");
+  const body = parse(res) as { login?: unknown; id?: unknown } | null;
+  const login = typeof body?.login === "string" && /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/.test(body.login) ? body.login : "";
+  const id = typeof body?.id === "number" && Number.isSafeInteger(body.id) && body.id > 0 ? String(body.id) : "";
+  if (!login || !id) throw new OAuthError("token");
+  return { login, id };
+}
+
 /** The installations a connection keeps (in its resource column, as ids checked at sign-in). */
 export const installationsOf = (resource: string) => resource.split(/\s+/).filter((id) => INSTALLATION_ID.test(id)).slice(0, MAX_INSTALLATIONS);
 
@@ -279,8 +314,8 @@ export const installationsOf = (resource: string) => resource.split(/\s+/).filte
  */
 export const GITHUB_PROBLEMS = {
   rate: msg("GitHub's rate limit for this account was reached, so Flash didn't try again. Wait a few minutes, then ask again."),
-  notFound: msg("GitHub didn't find that. The repository, branch, file or number may be wrong, or the Flash AI app isn't installed on that repository."),
-  refused: msg("GitHub refused this. The Flash AI app may not have access to that repository: add it on GitHub, under Settings > Applications."),
+  notFound: msg("GitHub didn't find that. The repository, branch, file or number may be wrong, or the Flash AI app can't reach that repository: add it with Add repositories on GitHub, in Flash's Settings > Connectors."),
+  refused: msg("GitHub refused this. The Flash AI app may not have access to that repository: add it with Add repositories on GitHub, in Flash's Settings > Connectors."),
 };
 
 const REPO = { type: "string", description: "The repository, as owner/name (for example octocat/hello-world)." };
@@ -291,17 +326,18 @@ type Definition = { name: string; title: string; description: string; inputSchem
 const DEFINITIONS: Definition[] = [
   {
     name: "list_repos",
-    title: msg("List repositories"),
-    description: msg("Lists the GitHub repositories the user gave Flash access to, with their default branch."),
-    inputSchema: { type: "object", properties: {} },
+    title: GITHUB_TOOL_WORDS.list_repos.title,
+    description: GITHUB_TOOL_WORDS.list_repos.description,
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
     read: true,
   },
   {
     name: "read_file",
-    title: msg("Read a file"),
-    description: msg("Reads a file in a repository, or lists a folder. Leave path empty for the top folder."),
+    title: GITHUB_TOOL_WORDS.read_file.title,
+    description: GITHUB_TOOL_WORDS.read_file.description,
     inputSchema: {
       type: "object",
+      additionalProperties: false,
       properties: {
         repo: REPO,
         path: { type: "string", description: "The file or folder, like src/index.ts." },
@@ -313,10 +349,11 @@ const DEFINITIONS: Definition[] = [
   },
   {
     name: "search_code",
-    title: msg("Search code"),
-    description: msg("Searches code on the default branch, in one repository or in all the user can reach."),
+    title: GITHUB_TOOL_WORDS.search_code.title,
+    description: GITHUB_TOOL_WORDS.search_code.description,
     inputSchema: {
       type: "object",
+      additionalProperties: false,
       properties: {
         query: { type: "string", description: "Words to look for (GitHub code search; at least one word, not only qualifiers)." },
         repo: { ...REPO, description: "Only this repository, as owner/name. Leave it out to search everywhere the user can reach." },
@@ -327,10 +364,11 @@ const DEFINITIONS: Definition[] = [
   },
   {
     name: "list_issues",
-    title: msg("List issues and pull requests"),
-    description: msg("Lists a repository's 30 most recently updated issues and pull requests."),
+    title: GITHUB_TOOL_WORDS.list_issues.title,
+    description: GITHUB_TOOL_WORDS.list_issues.description,
     inputSchema: {
       type: "object",
+      additionalProperties: false,
       properties: {
         repo: REPO,
         state: { type: "string", enum: ["open", "closed", "all"], description: "Which ones: open (the default), closed or all." },
@@ -342,10 +380,11 @@ const DEFINITIONS: Definition[] = [
   },
   {
     name: "read_pull_request",
-    title: msg("Read a pull request"),
-    description: msg("Reads a pull request: its title, branches and description, and the changes in each file."),
+    title: GITHUB_TOOL_WORDS.read_pull_request.title,
+    description: GITHUB_TOOL_WORDS.read_pull_request.description,
     inputSchema: {
       type: "object",
+      additionalProperties: false,
       properties: { repo: REPO, number: { type: "integer", description: "The pull request's number." } },
       required: ["repo", "number"],
     },
@@ -353,10 +392,11 @@ const DEFINITIONS: Definition[] = [
   },
   {
     name: "create_issue",
-    title: msg("Create an issue"),
-    description: msg("Creates an issue in a repository. It waits for the user to approve it."),
+    title: GITHUB_TOOL_WORDS.create_issue.title,
+    description: GITHUB_TOOL_WORDS.create_issue.description,
     inputSchema: {
       type: "object",
+      additionalProperties: false,
       properties: {
         repo: REPO,
         title: { type: "string", description: "The issue's title." },
@@ -368,10 +408,11 @@ const DEFINITIONS: Definition[] = [
   },
   {
     name: "open_pull_request",
-    title: msg("Open a pull request"),
-    description: msg("Opens a pull request from a branch that already exists. It waits for the user to approve it."),
+    title: GITHUB_TOOL_WORDS.open_pull_request.title,
+    description: GITHUB_TOOL_WORDS.open_pull_request.description,
     inputSchema: {
       type: "object",
+      additionalProperties: false,
       properties: {
         repo: REPO,
         title: { type: "string", description: "The pull request's title." },
@@ -384,6 +425,9 @@ const DEFINITIONS: Definition[] = [
     read: false,
   },
 ];
+
+/** Each tool's fields. A call with any other field is refused, as the card shows every field it gets. */
+const FIELDS = new Map(DEFINITIONS.map((d) => [d.name, Object.keys(d.inputSchema.properties as Record<string, unknown>)]));
 
 /** The tools as a server would list them, pinned by the same hash as any connector's tools. */
 export const GITHUB_TOOLS: McpTool[] = DEFINITIONS.map((d) => {
@@ -517,8 +561,30 @@ export class GitHubClient {
     }
   }
 
+  /**
+   * One page of a list, asked for with each size in turn while GitHub's answer is over 2 MB (long
+   * issue texts or diffs), so a big list comes back shorter instead of not at all.
+   */
+  private async page(path: string, sizes: number[]): Promise<{ res: SafeResponse; size: number }> {
+    for (const [i, size] of sizes.entries()) {
+      try {
+        return { res: await this.api(`${path}${path.includes("?") ? "&" : "?"}per_page=${size}`), size };
+      } catch (err) {
+        if (i === sizes.length - 1 || this.signal?.aborted || !(err instanceof McpError) || err.code !== "too_large") throw err;
+      }
+    }
+    throw new McpError("too_large", "GitHub's answer was too large.");
+  }
+
   async callTool(tool: Pick<McpTool, "name">, args: Record<string, unknown>): Promise<ToolOutput> {
     this.deadline = Date.now() + CALL_TIMEOUT_MS;
+    // inputProblem (engines/connect.ts) refuses these before a card is made; this is the backstop, so
+    // nothing GitHub would get is left off the card.
+    const fields = FIELDS.get(tool.name);
+    if (!fields) return failed("Flash has no such GitHub tool.");
+    if (!args || typeof args !== "object" || Array.isArray(args)) return unusable("the input must be an object");
+    const extra = Object.keys(args).find((key) => !fields.includes(key));
+    if (extra !== undefined) return unusable(`${extra.slice(0, 60)} isn't a field of this tool`);
     switch (tool.name) {
       case "list_repos":
         return this.listRepos();
@@ -555,7 +621,7 @@ export class GitHubClient {
       const total = Number(field(body, "total_count") ?? 0);
       if (total > (Array.isArray(repos) ? repos.length : 0)) lines.push(`(${total} in all in this installation; the first 100 are listed.)`);
     }
-    if (!lines.length) return problem ?? { text: "No repositories: the Flash AI app isn't installed on any repository the user can reach. They can pick some on GitHub, under Settings > Applications.", isError: false };
+    if (!lines.length) return problem ?? { text: "No repositories: the Flash AI app isn't installed on any repository the user can reach. They can add some with Add repositories on GitHub, in Flash's Settings > Connectors.", isError: false };
     return { text: lines.join("\n"), isError: false };
   }
 
@@ -620,10 +686,11 @@ export class GitHubClient {
     if (state !== "open" && state !== "closed" && state !== "all") return unusable("state must be open, closed or all");
     const kind = args.kind ?? "all";
     if (kind !== "all" && kind !== "issues" && kind !== "pull_requests") return unusable("kind must be all, issues or pull_requests");
-    const res = await this.api(`/repos/${repo}/issues?state=${state}&sort=updated&per_page=30`);
+    const { res, size } = await this.page(`/repos/${repo}/issues?state=${state}&sort=updated`, [30, 10, 3]);
     const problem = problemOf(res);
     if (problem) return problem;
     const body = parse(res);
+    const more = Array.isArray(body) && body.length >= size ? [`(The ${size} most recently updated were read; there may be more.)`] : [];
     const lines = (Array.isArray(body) ? body : [])
       .filter((i) => kind === "all" || (field(i, "pull_request") !== undefined) === (kind === "pull_requests"))
       .map((i) => {
@@ -631,7 +698,8 @@ export class GitHubClient {
         const names = (Array.isArray(labels) ? labels : []).map((l) => oneLine(field(l, "name"), 50)).filter(Boolean);
         return `#${Number(field(i, "number"))} ${field(i, "pull_request") !== undefined ? "pull request" : "issue"} [${oneLine(field(i, "state"), 20)}] ${oneLine(field(i, "title"), 200)} (by ${oneLine(field(field(i, "user"), "login"), 60)}, updated ${oneLine(field(i, "updated_at"), 10)}${names.length ? `, labels: ${names.join(", ")}` : ""}) ${oneLine(field(i, "html_url"), 300)}`;
       });
-    return { text: lines.length ? lines.join("\n") : `No ${state === "all" ? "" : `${state} `}issues or pull requests in ${repo}.`, isError: false };
+    if (!lines.length && !more.length) return { text: `No ${state === "all" ? "" : `${state} `}issues or pull requests in ${repo}.`, isError: false };
+    return { text: [...lines, ...more].join("\n"), isError: false };
   }
 
   private async readPullRequest(args: Record<string, unknown>): Promise<ToolOutput> {
@@ -643,22 +711,35 @@ export class GitHubClient {
     const problem = problemOf(res);
     if (problem) return problem;
     const pr = parse(res);
-    const files = await this.api(`/repos/${repo}/pulls/${number}/files?per_page=50`);
-    const fileProblem = problemOf(files);
-    const list = fileProblem ? [] : (parse(files) as unknown[]);
-    const changes = (Array.isArray(list) ? list : []).map((f) => {
-      const patch = field(f, "patch");
-      return `--- ${oneLine(field(f, "filename"), 300)} (${oneLine(field(f, "status"), 20)}, +${Number(field(f, "additions") ?? 0)} -${Number(field(f, "deletions") ?? 0)})\n${typeof patch === "string" ? patch.slice(0, 6000) : "[No text changes to show.]"}`;
-    });
+    const changed = Number(field(pr, "changed_files") ?? 0);
+    // The pull request is read even when its changes can't be: too large or too slow says so, and
+    // keeps the rest. A refused sign-in (401) is still thrown, so it is renewed, as is a stop.
+    let changes: string[];
+    try {
+      const { res: files } = await this.page(`/repos/${repo}/pulls/${number}/files`, [20, 5]);
+      const fileProblem = problemOf(files);
+      const parsed = fileProblem ? [] : parse(files);
+      const list = Array.isArray(parsed) ? parsed : [];
+      changes = fileProblem
+        ? [`The changes couldn't be read: ${fileProblem.text}`]
+        : list.map((f) => {
+            const patch = field(f, "patch");
+            return `--- ${oneLine(field(f, "filename"), 300)} (${oneLine(field(f, "status"), 20)}, +${Number(field(f, "additions") ?? 0)} -${Number(field(f, "deletions") ?? 0)})\n${typeof patch === "string" ? patch.slice(0, 6000) : "[No text changes to show.]"}`;
+          });
+      if (!fileProblem && changed > list.length) changes.push(`(${changed} files changed; the first ${list.length} are shown.)`);
+    } catch (err) {
+      if (this.signal?.aborted || !(err instanceof McpError) || (err.code !== "too_large" && err.code !== "timeout")) throw err;
+      changes = [`The changes couldn't be read: ${err.code === "too_large" ? "GitHub's list of changed files was too large to read here." : "GitHub took too long to send them."}`];
+    }
     const text = [
       `Pull request #${number} in ${repo}: ${oneLine(field(pr, "title"), 300)}`,
       `State: ${field(pr, "merged") ? "merged" : oneLine(field(pr, "state"), 20)}${field(pr, "draft") ? " (draft)" : ""}, by ${oneLine(field(field(pr, "user"), "login"), 60)}`,
-      `From ${oneLine(field(field(pr, "head"), "label"), 200)} into ${oneLine(field(field(pr, "base"), "ref"), 200)}, ${Number(field(pr, "changed_files") ?? 0)} files changed`,
+      `From ${oneLine(field(field(pr, "head"), "label"), 200)} into ${oneLine(field(field(pr, "base"), "ref"), 200)}, ${changed} files changed`,
       oneLine(field(pr, "html_url"), 300),
       "",
       String(field(pr, "body") ?? "").slice(0, 8000) || "(No description.)",
       "",
-      ...(fileProblem ? [`The changes couldn't be read: ${fileProblem.text}`] : changes),
+      ...changes,
     ].join("\n");
     return { text, isError: false };
   }

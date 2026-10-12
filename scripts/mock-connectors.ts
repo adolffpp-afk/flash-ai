@@ -48,12 +48,14 @@ import { pathToFileURL } from "node:url";
  *   "Request user authorization during installation", sends the browser to the app's callback with a
  *   code, installation_id and setup_action, but not the page's state (state.github.passState passes it).
  *   Once the app is installed, it shows the page for changing the installation instead, which sends
- *   nobody back (uninstallGithub() takes the installation away);
+ *   nobody back (uninstallGithub() takes the installation away), unless state.github.anotherAccount
+ *   has it install the app on one more account;
  * - the authorize page (state, PKCE S256 or none), and the token endpoint: codes, and refresh tokens
  *   that rotate (the old refresh and access tokens stop working at once); errors come with 200, as
  *   GitHub's do;
- * - the REST API: /user/installations, an installation's repositories, contents, code search, issues,
- *   a pull request and its files, creating an issue or a pull request (githubLog.writes), and
+ * - the REST API: /user (state.github.user), /user/installations, an installation's repositories,
+ *   contents, code search, issues, a pull request and its files (over 2 MB a page above
+ *   state.github.bigPages), creating an issue or a pull request (githubLog.writes), and
  *   DELETE /applications/{client_id}/grant and /token (basic auth with the app's client ID and secret);
  * - state.github.rateLimited answers every API call with GitHub's rate-limit answer.
  * state.github changes how it behaves (also with POST /__mock/github, where {"uninstall":true} takes the
@@ -169,6 +171,14 @@ export type GithubConfig = {
   rateLimited: boolean;
   // The user says no on the authorize page.
   deny: boolean;
+  // Who the tokens sign in as (GET /user): change it to sign in as another GitHub account.
+  user: { login: string; id: number };
+  // A list asked for more than this many items a page (issues, a pull request's files) answers more
+  // than 2 MB, as long issue texts or diffs can; 0 for never.
+  bigPages: number;
+  // The installation page installs the app on one more account (as when the user picks an
+  // organization there), even when it is installed already.
+  anotherAccount: boolean;
 };
 
 export const GITHUB_DEFAULTS: GithubConfig = {
@@ -181,6 +191,9 @@ export const GITHUB_DEFAULTS: GithubConfig = {
   refreshDelayMs: 0,
   rateLimited: false,
   deny: false,
+  user: { login: "octo", id: 1 },
+  bigPages: 0,
+  anotherAccount: false,
 };
 
 /** The stand-in repository: its files, by path. */
@@ -504,14 +517,15 @@ export async function startMockConnectors(port = 7788) {
     // github.com
     if (path === `/github/web/apps/${github.slug}/installations/new` && req.method === "GET") {
       // Installed already: GitHub shows the page for changing the installation, which sends nobody back.
-      if (githubInstallations.size) return (res.writeHead(200, { "content-type": "text/html" }).end("<p>Configure Flash AI</p>"), true);
+      if (githubInstallations.size && !github.anotherAccount) return (res.writeHead(200, { "content-type": "text/html" }).end("<p>Configure Flash AI</p>"), true);
       githubLog.installs++;
-      githubInstallations.add(4242);
+      const installed = githubInstallations.has(4242) ? 4343 : 4242;
+      githubInstallations.add(installed);
       const code = `ghcode_${b64url(randomBytes(12))}`;
       githubCodes.set(code, { challenge: "", redirectUri: "" });
       const back = new URL(github.callback);
       back.searchParams.set("code", code);
-      back.searchParams.set("installation_id", "4242");
+      back.searchParams.set("installation_id", String(installed));
       back.searchParams.set("setup_action", "install");
       if (github.passState && url.searchParams.get("state")) back.searchParams.set("state", url.searchParams.get("state")!);
       return redirect(back);
@@ -586,6 +600,10 @@ export async function startMockConnectors(port = 7788) {
     }
     const notFound = () => (json(res, 404, { message: "Not Found" }), true);
     const ok = (body: unknown, status = 200) => (json(res, status, body), true);
+    if (api === "/user") return ok({ login: github.user.login, id: github.user.id, name: "Octo Cat", email: null });
+    // Over 2 MB when more items are asked for than bigPages allows.
+    const perPage = Number(url.searchParams.get("per_page") ?? 30);
+    const big = github.bigPages > 0 && perPage > github.bigPages;
     if (api === "/user/installations") {
       return ok({ total_count: githubInstallations.size, installations: [...githubInstallations].map((id) => ({ id, app_id: 1, account: { login: "octo" }, target_type: "User" })) });
     }
@@ -625,6 +643,7 @@ export async function startMockConnectors(port = 7788) {
       const names = [...new Set(inside.map((f) => f.slice(wanted ? wanted.length + 1 : 0).split("/")[0]))];
       return ok(names.map((n) => ({ type: GITHUB_FILES[wanted ? `${wanted}/${n}` : n] !== undefined ? "file" : "dir", path: wanted ? `${wanted}/${n}` : n })));
     }
+    if (big && req.method === "GET" && (rest === "/issues" || rest === "/pulls/2/files")) return ok([{ filename: "big", patch: "x".repeat(2_200_000) }]);
     if (req.method === "GET" && rest === "/issues") {
       return ok([
         { number: 1, title: "Bug: it breaks", state: "open", user: { login: "octo" }, labels: [{ name: "bug" }], html_url: `${html}/issues/1`, updated_at: "2026-10-01T10:00:00Z" },

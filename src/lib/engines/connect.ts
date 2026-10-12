@@ -1,6 +1,6 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { CONNECT_CALLS_PER_STEP, CONNECT_RESULT_TOKENS } from "../credits.ts";
-import type { ActionCard, ConnectorUse, ToolKind } from "../connectors.ts";
+import { toolWords, type ActionCard, type ConnectorUse, type ToolKind } from "../connectors.ts";
 import { english, type Translate } from "../i18n.ts";
 import { tokensAtMost } from "../tokens.ts";
 import type { StreamEvent } from "../types.ts";
@@ -74,8 +74,9 @@ export const MAX_INPUT_CHARS = 16_000;
 
 /**
  * Checks a call's input against the tool's schema as far as Flash can without a validator: an object,
- * not too big, with every required field, and each top-level field of the type the schema names.
- * Returns why it isn't usable, or "" when it is.
+ * not too big, with every required field, each top-level field of the type the schema names, and no
+ * other field when the schema says so (additionalProperties: false), so a card never shows a field
+ * the tool wouldn't send. Returns why it isn't usable, or "" when it is.
  */
 export function inputProblem(schema: Record<string, unknown>, input: unknown): string {
   if (!input || typeof input !== "object" || Array.isArray(input)) return "the input must be an object";
@@ -85,8 +86,12 @@ export function inputProblem(schema: Record<string, unknown>, input: unknown): s
   const missing = required.filter((r) => fields[r] === undefined);
   if (missing.length) return `missing ${missing.join(", ")}`;
   const properties = schema.properties && typeof schema.properties === "object" ? (schema.properties as Record<string, { type?: unknown }>) : {};
+  if (schema.additionalProperties === false) {
+    const extra = Object.keys(fields).find((key) => !Object.hasOwn(properties, key));
+    if (extra !== undefined) return `${extra.slice(0, 60)} isn't a field of this tool`;
+  }
   for (const [key, value] of Object.entries(fields)) {
-    const type = properties[key]?.type;
+    const type = Object.hasOwn(properties, key) ? properties[key]?.type : undefined;
     if (typeof type !== "string" || value === null) continue;
     const ok =
       type === "string"
@@ -198,7 +203,7 @@ export async function* connectorCalls(
       continue;
     }
     // A title Flash wrote itself (GitHub's tools) is shown in the user's language; any other is the server's own.
-    yield { type: "status", message: t("Using {name}…", { name: `${tool.connection} · ${t(tool.title)}` }) };
+    yield { type: "status", message: t("Using {name}…", { name: `${tool.connection} · ${toolWords(t, tool.title)}` }) };
     let result: { text: string; isError: boolean };
     try {
       result = await kit.run(tool, input, signal);

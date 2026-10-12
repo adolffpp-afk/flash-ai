@@ -614,6 +614,9 @@ const MIGRATIONS = [
   "ALTER TABLE connections ADD COLUMN scopes TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE connections ADD COLUMN endpoints_json TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE connections ADD COLUMN refreshing_until INTEGER",
+  // For GitHub: the number of the GitHub account the tokens are for (see keepGithub), so a sign-in as
+  // another account is told apart. Its login is shown in the connection's label.
+  "ALTER TABLE connections ADD COLUMN account_id TEXT NOT NULL DEFAULT ''",
 ];
 
 async function init(c: Client) {

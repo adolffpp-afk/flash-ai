@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/store";
-import type { ActionCard as Card } from "@/lib/connectors";
+import { toolWords, type ActionCard as Card } from "@/lib/connectors";
 import { useT } from "@/lib/use-t";
 import { ConnectorTile } from "./YourConnectors";
 
@@ -71,11 +71,11 @@ export function ActionCard({
 
   const fields = Object.entries(card.input);
   // A title Flash wrote itself (GitHub's tools) is shown in the user's language; any other is the server's own.
-  const title = t(card.title);
+  const title = toolWords(t, card.title);
   return (
     <div className="mt-3 rounded-xl border border-primary/30 bg-primary/[0.04] p-4 text-sm" role="group" aria-label={t("{connection} · {tool}", { connection: card.connection, tool: title })}>
       <div className="flex items-center gap-3">
-        <ConnectorTile provider={card.custom ? "" : card.connection.toLowerCase()} name={card.connection} />
+        <ConnectorTile provider={card.custom ? "" : card.connection.split(" · ")[0].toLowerCase()} name={card.connection} />
         <div className="min-w-0 flex-1">
           <p className="truncate font-medium text-zinc-100">{t("{connection} · {tool}", { connection: card.connection, tool: title })}</p>
           <p className="truncate text-xs text-zinc-500" dir="ltr">

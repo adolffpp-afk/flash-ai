@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "@/lib/store";
-import { PRESETS, presetById, type ConnectionView, type Preset, type ToolKind, type ToolPreview, type ToolView } from "@/lib/connectors";
+import { PRESETS, presetById, toolWords, type ConnectionView, type Preset, type ToolKind, type ToolPreview, type ToolView } from "@/lib/connectors";
 import { msg } from "@/lib/i18n";
 import { useT } from "@/lib/use-t";
 
@@ -172,6 +172,7 @@ export function YourConnectors() {
                 })
               }
               onReconnect={() => attempt(() => signIn({ connectionId: c.id }, c.provider))}
+              onInstall={() => attempt(() => signIn({ install: true }, c.provider))}
               onConfirm={() =>
                 attempt(async () => {
                   const { connection } = await api<{ connection: ConnectionView }>(`/api/connect/${c.id}`, { method: "PATCH", json: { confirm: true } });
@@ -254,6 +255,7 @@ function Connection({
   onChange,
   onRemove,
   onReconnect,
+  onInstall,
   onConfirm,
 }: {
   c: ConnectionView;
@@ -261,11 +263,14 @@ function Connection({
   onChange: (change: Change) => void;
   onRemove: () => void;
   onReconnect: () => void;
+  onInstall: () => void;
   onConfirm: () => void;
 }) {
   const t = useT();
   const [removing, setRemoving] = useState(false);
   const review = c.status === "review";
+  // A service's own name (a GitHub account's label also has its login): what removing asks it to cancel.
+  const service = presetById(c.provider)?.name ?? c.label;
   return (
     <li className="rounded-xl border border-zinc-800 p-4">
       <div className="flex items-center gap-3">
@@ -292,11 +297,11 @@ function Connection({
           <p className="text-sm text-zinc-300">
             {c.signIn
               ? c.revocable
-                ? t("Remove {name} from Flash? Flash also asks {name} to cancel the access you gave it.", { name: c.label })
-                : t("Remove {name} from Flash? {name} offers Flash no way to cancel the access you gave it: cancel it in your account there if you don't want it to work any more.", { name: c.label })
+                ? t("Remove {name} from Flash? Flash also asks {name} to cancel the access you gave it.", { name: service })
+                : t("Remove {name} from Flash? {name} offers Flash no way to cancel the access you gave it: cancel it in your account there if you don't want it to work any more.", { name: service })
               : c.custom
                 ? t("Remove {name} from Flash?", { name: c.label })
-                : t("Remove {name} from Flash? This doesn't delete the key in {name}: delete it there too if you don't need it any more.", { name: c.label })}
+                : t("Remove {name} from Flash? This doesn't delete the key in {name}: delete it there too if you don't need it any more.", { name: service })}
           </p>
           <div className="mt-2 flex gap-2">
             <button type="button" className={danger} disabled={busy} onClick={onRemove}>
@@ -306,6 +311,15 @@ function Connection({
               {t("Cancel")}
             </button>
           </div>
+        </div>
+      )}
+      {c.provider === "github" && c.status === "ok" && !removing && (
+        // The app's installation page, with a flow that brings the user back (see startGithub): to add
+        // repositories, their own or another organization's, which GitHub's own settings may not offer.
+        <div className="mt-2">
+          <button type="button" className={button} disabled={busy} onClick={onInstall}>
+            {t("Add repositories on GitHub")}
+          </button>
         </div>
       )}
       {c.status === "needs_reconnect" &&
@@ -388,9 +402,9 @@ function ToolRow({
       <div className="min-w-0 flex-1">
         {/* A title and description Flash wrote itself (GitHub's tools) are shown in the user's language; any other is the server's own. */}
         <p className="text-sm text-zinc-200">
-          {t(tool.title)} <span className={hint}>· {tool.trusted ? t("Always allowed") : kindText(tool.kind, custom, t)}</span>
+          {toolWords(t, tool.title)} <span className={hint}>· {tool.trusted ? t("Always allowed") : kindText(tool.kind, custom, t)}</span>
         </p>
-        {tool.description && <p className={`mt-0.5 line-clamp-3 ${hint}`}>{t(tool.description)}</p>}
+        {tool.description && <p className={`mt-0.5 line-clamp-3 ${hint}`}>{toolWords(t, tool.description)}</p>}
         {tool.changed ? (
           <div className="mt-1 text-xs">
             <p className="text-amber-300">
@@ -413,7 +427,7 @@ function ToolRow({
               <div className="mt-1.5 rounded-lg bg-white/[0.03] p-2.5">
                 <p className="text-zinc-500">{t("What it says now")}</p>
                 <p dir="auto" className="mt-0.5 whitespace-pre-wrap break-words text-zinc-200">
-                  {t(now.description)}
+                  {toolWords(t, now.description)}
                 </p>
                 <p className="mt-1 text-zinc-500">{kindText(now.kind, custom, t)}</p>
                 <button type="button" disabled={busy} onClick={() => onChange({ review: true, hash: now.hash })} className={`mt-2 ${button}`}>
@@ -436,7 +450,7 @@ function ToolRow({
           )
         )}
       </div>
-      <Switch on={tool.enabled} disabled={busy} name={t("Use {tool}", { tool: t(tool.title) })} onChange={(enabled) => onChange({ enabled })} />
+      <Switch on={tool.enabled} disabled={busy} name={t("Use {tool}", { tool: toolWords(t, tool.title) })} onChange={(enabled) => onChange({ enabled })} />
     </li>
   );
 }
