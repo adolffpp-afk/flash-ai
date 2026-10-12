@@ -11,10 +11,10 @@ import { useT } from "@/lib/use-t";
  * Picker, which shows only Docs, Sheets, Slides, PDFs and text files; its script is loaded from
  * apis.google.com only then, never with the page. What it needs comes from POST
  * /api/connect/google/picker-token: the user's own short-lived Google token, the Picker's API key and
- * the Cloud project's number. They are kept only while the Picker is open, in this function's own
- * variables (never in the page's state, an address or storage). The ids picked go to Flash, which
- * asks Google about each one before it keeps it. In development with the stand-in
- * (FLASH_CONNECT_MOCK), a plain list of the stand-in's files takes the Picker's place.
+ * the Cloud project's number. They are kept only while the Picker is open, in pick()'s own variables
+ * (never in the page's state, an address or storage). The ids picked go to Flash, which asks Google
+ * about each one before it keeps it. In development with the stand-in (FLASH_CONNECT_MOCK), a plain
+ * list of the stand-in's files takes the Picker's place, and holds the stand-in's token while it shows.
  */
 
 type PickerAccess = { token: string; apiKey: string; appId: string; mock?: string };
@@ -41,12 +41,13 @@ type PickerLib = {
   PickerBuilder: new () => PickerBuilder;
   DocsView: new (viewId?: unknown) => DocsView;
   ViewId: { DOCS: unknown };
+  DocsViewMode: { LIST: unknown };
   Feature: { MULTISELECT_ENABLED: unknown };
   Action: { PICKED: string; CANCEL: string };
   Response: { ACTION: string; DOCUMENTS: string };
   Document: { ID: string };
 };
-type DocsView = { setMimeTypes(types: string): DocsView; setIncludeFolders(on: boolean): DocsView; setSelectFolderEnabled(on: boolean): DocsView };
+type DocsView = { setMimeTypes(types: string): DocsView; setIncludeFolders(on: boolean): DocsView; setSelectFolderEnabled(on: boolean): DocsView; setMode(mode: unknown): DocsView };
 type PickerBuilder = {
   addView(view: DocsView): PickerBuilder;
   enableFeature(feature: unknown): PickerBuilder;
@@ -89,7 +90,12 @@ function pickerLib(): Promise<PickerLib> {
 async function pick(access: PickerAccess): Promise<string[]> {
   const picker = await pickerLib();
   return new Promise((resolve) => {
-    const view = new picker.DocsView(picker.ViewId.DOCS).setMimeTypes(PICKABLE.join(",")).setIncludeFolders(false).setSelectFolderEnabled(false);
+    // A list, not thumbnails: Google's guide advises it for an app with drive.file only, which isn't granted the thumbnails.
+    const view = new picker.DocsView(picker.ViewId.DOCS)
+      .setMimeTypes(PICKABLE.join(","))
+      .setMode(picker.DocsViewMode.LIST)
+      .setIncludeFolders(false)
+      .setSelectFolderEnabled(false);
     const shown = new picker.PickerBuilder()
       .addView(view)
       .enableFeature(picker.Feature.MULTISELECT_ENABLED)
