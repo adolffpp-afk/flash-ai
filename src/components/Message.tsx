@@ -20,7 +20,7 @@ import { speechLang } from "@/lib/languages";
 import { msg } from "@/lib/i18n";
 import { useT, type T } from "@/lib/use-t";
 import { safeMarkdown } from "@/lib/safe-markdown";
-import type { ActionCard as ActionCardData } from "@/lib/connectors";
+import { toolWords, type ActionCard as ActionCardData } from "@/lib/connectors";
 import { ActionCard } from "./ActionCard";
 
 export type Reshape = "tall" | "square" | "wide";
@@ -569,7 +569,7 @@ export function Message({
             <span>{t("Used from your accounts:")}</span>
             {m.connectors.map((u) => (
               <span key={`${u.connection}/${u.tool}`} className="max-w-[16rem] truncate rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-zinc-300">
-                {u.connection} · {u.tool}
+                {u.connection} · {toolWords(t, u.tool)}
               </span>
             ))}
           </div>

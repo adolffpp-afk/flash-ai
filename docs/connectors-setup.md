@@ -1,6 +1,6 @@
 # Setting up connectors
 
-Connectors let people use their own accounts (Notion, Linear, Airtable, Klaviyo, Firecrawl,
+Connectors let people use their own accounts (GitHub, Notion, Linear, Airtable, Klaviyo, Firecrawl,
 Perplexity, Resend, Brevo, or any MCP server they add themselves) in a chat. Some sign in with one
 click at the service; the others take an API key. Flash stores each person's key, or the tokens a
 sign-in gives it, encrypted with one key of your own, `CONNECTOR_KEYS`. Until it is set, nobody sees connectors, and
@@ -58,6 +58,102 @@ asks the service to cancel Flash's access, where the service offers a way to (a 
 endpoint). Where it doesn't, Settings tells the person to cancel it in their account there. Signing
 in, renewing and removing cost no credits.
 
+## GitHub
+
+GitHub works through a GitHub App that you make once, for everyone. People connect it with
+**Connect**: GitHub asks them whether Flash may act for them and, the first time, which of their
+repositories Flash may use (it installs the app there). In a chat Flash can then list their repositories, read files, search code, and read
+issues and pull requests by itself. Creating an issue or opening a pull request (from a branch that
+already exists) always waits on a card for **Approve**, showing the repository, title, text and
+branches. Nothing costs credits except the chat itself.
+
+GitHub stays hidden from everyone until all three of its variables below are set (and
+`CONNECTOR_KEYS`). Until then, /admin → **By provider** → **Connectors** shows a **GitHub** line
+with the missing names. The "Continue with GitHub" sign-in button is a different app
+(`GITHUB_CLIENT_ID`, see docs/sign-in-setup.md): leave it as it is.
+
+### Make the GitHub App (about 10 minutes, in Firefox or any browser)
+
+1. Sign in to [GitHub](https://github.com/) with the account that should own the app.
+2. Click your picture (top right) → **Settings**.
+3. At the bottom of the left menu, click **Developer settings** → **GitHub Apps** → **New GitHub
+   App**. (GitHub may ask for your password or a code again.)
+4. Fill in the form from top to bottom:
+   - **GitHub App name**: `Flash AI`. If GitHub says the name is taken, try `Flash AI Chat`.
+   - **Homepage URL**: `https://www.flash-app.dev`
+   - Under **Identifying and authorizing users**:
+     - **Callback URL**: `https://www.flash-app.dev/api/connect/github/callback`
+     - **Expire user authorization tokens**: ticked (it usually is already).
+     - **Request user authorization (OAuth) during installation**: ticked.
+     - **Enable Device Flow**: not ticked.
+   - Under **Post installation**: leave **Setup URL** empty.
+   - Under **Webhook**: untick **Active**. (The Webhook URL box then disappears.)
+   - Under **Permissions** → **Repository permissions**, set these four and leave the rest at
+     "No access":
+     - **Contents**: Read-only
+     - **Issues**: Read and write
+     - **Metadata**: Read-only (GitHub sets this one by itself)
+     - **Pull requests**: Read and write
+
+     Contents stays **Read-only**: Flash reads files and opens pull requests from branches that
+     already exist, and writes no file. A later "Put this app on GitHub" step will ask for more,
+     and GitHub will then ask each person who installed the app to accept it.
+   - Leave **Organization permissions** and **Account permissions** at "No access".
+   - **Where can this GitHub App be installed?**: **Any account** (so everyone can use it, not
+     only you).
+5. Click **Create GitHub App**. You land on the app's **General** page.
+
+   If you made the app earlier with **Contents: Read and write**, lower it: on the app's page,
+   click **Permissions & events** → **Repository permissions** → **Contents** → **Read-only** →
+   **Save changes**. GitHub asks people to accept only permissions that are added, so nobody has to
+   do anything.
+6. Copy these three things into a note for a minute:
+   - **Client ID**, near the top (it looks like `Iv23li…`). This is `GITHUB_APP_CLIENT_ID`.
+     (Not the "App ID", which is only digits.)
+   - Under **Client secrets**, click **Generate a new client secret** and copy it right away:
+     GitHub shows it only once. This is `GITHUB_APP_CLIENT_SECRET`.
+   - The **slug**: the app's own address, shown as **Public link**, ends with it. For
+     `https://github.com/apps/flash-ai` the slug is `flash-ai`. This is `GITHUB_APP_SLUG`.
+   You don't need a private key: Flash only acts for the person, with what they gave it.
+
+### Put them in Vercel
+
+1. Open [Vercel](https://vercel.com/) → the **flash-ai** project → **Settings** → **Environment
+   Variables**.
+2. Add `GITHUB_APP_CLIENT_ID` with the Client ID. Choose **Production** only, and save.
+3. Add `GITHUB_APP_SLUG` with the slug. Choose **Production** only, and save.
+4. Add `GITHUB_APP_CLIENT_SECRET` with the client secret, tick **Sensitive**, choose
+   **Production** only, and save.
+5. Go to **Deployments**, open the latest one, and click **Redeploy**.
+
+When the deploy is done, /admin → **By provider** → **Connectors** says GitHub is set, and GitHub
+shows in everyone's Settings > Connectors. Delete the note with the secret.
+
+To make a new secret later: on the app's **General** page, generate a new one, put it in Vercel in
+place of the old one, redeploy, and then delete the old secret on GitHub.
+
+### What people see
+
+- **Connect** opens GitHub, where they say yes to Flash. The first time, GitHub then shows the app's
+  install page, where they pick the repositories (all, or only some) and click **Install**. They
+  come back to Flash, connected. Flash asks GitHub which installations they really have, and never
+  takes the installation number from the address the browser comes back with.
+- Settings > Connectors shows the account as **GitHub · their login**, and every **Approve** card
+  says which GitHub account it is for. Connecting again while signed in to GitHub as someone else
+  replaces the account, and whatever was still waiting for **Approve** on the old one is removed.
+- **Add repositories on GitHub**, on the connected account in Settings > Connectors, opens the app's
+  install page: they can install it on their own account or on an organization (whose owner may
+  have to approve it), or pick more repositories, and they come back to Flash. Flash's notes point
+  there when GitHub says it can't find or reach a repository. If the app is already installed on
+  the account they pick, GitHub shows that installation's settings instead; after **Save** they go
+  back to Flash themselves.
+- Flash keeps their access for 8 hours and renews it by itself (one renewal at a time). After about
+  6 months without use, or if they cancel Flash at GitHub, the account shows **Reconnect**.
+- **Remove** in Settings > Connectors also cancels Flash's access at GitHub. The app stays installed
+  on their repositories, doing nothing, until they uninstall it on GitHub: their picture →
+  **Settings** → **Applications** → **Installed GitHub Apps** → **Configure** → **Uninstall**.
+  To give Flash fewer repositories, they change them on that same page.
+
 ## Change the key (rotation)
 
 Every stored key or token says which version sealed it, so old ones keep working while new ones use
@@ -100,6 +196,13 @@ the newest version.
    authorization server, which says yes at once. Add `http://127.0.0.1:7788/oauth/mcp` as your own
    connector to try a server that asks for a sign-in. Start the mock with `MOCK_ACCESS_TTL=65` to
    have its access run out after 65 seconds and see Flash renew it.
+5. GitHub: also put `GITHUB_APP_CLIENT_ID=mock-github-client`,
+   `GITHUB_APP_CLIENT_SECRET=mock-github-secret` and `GITHUB_APP_SLUG=flash-ai-test` in
+   `.env.local`. **Connect** on GitHub "installs" the app at once on the mock's two repositories
+   (`octo/hello` and `octo/site`) and comes back to `http://localhost:3000`; start the mock with
+   `MOCK_GITHUB_CALLBACK=<your address>/api/connect/github/callback` if Flash runs elsewhere. Ask
+   Flash to "read README.md in octo/hello" (a read) or "open an issue in octo/hello" (a card).
+   `MOCK_ACCESS_TTL=65` makes GitHub's access run out after 65 seconds too.
 
 ## Deleting someone's account by hand
 
@@ -117,5 +220,7 @@ DELETE FROM connect_flows WHERE user_id = '<user id>';
 DELETE FROM mcp_client_registrations WHERE owner_user_id = '<user id>';
 ```
 
-This removes the keys and tokens from Flash only. It doesn't cancel them at Linear, Airtable and
-the rest; the person does that in their account there.
+This removes the keys and tokens from Flash only. It doesn't cancel them at GitHub, Linear,
+Airtable and the rest; the person does that in their account there (for GitHub: their picture →
+**Settings** → **Applications** → **Authorized GitHub Apps** → **Revoke**, and **Installed GitHub
+Apps** → **Configure** → **Uninstall**).

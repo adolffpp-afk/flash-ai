@@ -58,3 +58,17 @@ export const CONNECTOR_SETUP: ProviderInfo = {
   free: true,
   keys: ["CONNECTOR_KEYS"],
 };
+
+/**
+ * GitHub in chat needs Flash's own GitHub App (see server/github.ts and docs/connectors-setup.md):
+ * its client ID and slug (Config) and client secret (Secret). Until all three are set, and
+ * CONNECTOR_KEYS, users don't see GitHub anywhere. The GitHub sign-in (GITHUB_CLIENT_ID) is another
+ * app, and isn't needed here.
+ */
+export const GITHUB_SETUP: ProviderInfo = {
+  id: "github-connector",
+  name: "GitHub (connector)",
+  does: "Lets users connect GitHub in chat: read code, issues and pull requests, and create issues and pull requests after they approve each one",
+  free: true,
+  keys: ["GITHUB_APP_CLIENT_ID", "GITHUB_APP_CLIENT_SECRET", "GITHUB_APP_SLUG"],
+};
