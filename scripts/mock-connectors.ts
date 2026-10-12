@@ -360,11 +360,12 @@ export async function startMockConnectors(port = 7788) {
     picks: [] as string[],
   };
   const drive = googleDrive();
+  // The files each Google account's grant may open (drive.file), as "<sub>/<file id>".
   const driveGranted = new Set<string>();
-  const googleCodes = new Map<string, { challenge: string; redirectUri: string; scope: string; refresh: boolean }>();
-  const googleAccess = new Map<string, { expiresAt: number; scope: string }>();
-  // Google keeps one refresh token for the grant (it doesn't rotate), with its scopes.
-  const googleRefresh = new Map<string, string>();
+  const googleCodes = new Map<string, { challenge: string; redirectUri: string; scope: string; refresh: boolean; sub: string; email: string }>();
+  const googleAccess = new Map<string, { expiresAt: number; scope: string; sub: string; email: string }>();
+  // Google keeps one refresh token for the grant (it doesn't rotate), with its scopes and account.
+  const googleRefresh = new Map<string, { scope: string; sub: string; email: string }>();
   const googleIssued: string[] = [];
   let googleMade = 0;
   let issueNumber = 2;
@@ -778,21 +779,21 @@ export async function startMockConnectors(port = 7788) {
   }
 
   /** New tokens for the stand-in Google user; a refresh token only when asked (Google keeps the old one otherwise). */
-  function googleTokens(scope: string, withRefresh: boolean, idToken: boolean) {
+  function googleTokens(scope: string, withRefresh: boolean, idToken: boolean, { sub, email }: { sub: string; email: string }) {
     const access = `ya29.${b64url(randomBytes(24))}`;
-    googleAccess.set(access, { expiresAt: Date.now() + google.accessTtl * 1000, scope });
+    googleAccess.set(access, { expiresAt: Date.now() + google.accessTtl * 1000, scope, sub, email });
     googleIssued.push(access);
     const answer: Record<string, unknown> = { access_token: access, expires_in: google.accessTtl, scope, token_type: "Bearer" };
     if (withRefresh) {
       const refresh = `1//${b64url(randomBytes(30))}`;
-      googleRefresh.set(refresh, scope);
+      googleRefresh.set(refresh, { scope, sub, email });
       googleIssued.push(refresh);
       answer.refresh_token = refresh;
     }
     if (idToken) {
       const now = Math.floor(Date.now() / 1000);
       const part = (v: unknown) => b64url(Buffer.from(JSON.stringify(v)));
-      const claims = { iss: "https://accounts.google.com", aud: google.clientId, azp: google.clientId, sub: google.sub, email: google.email, email_verified: true, iat: now, exp: now + 3600 };
+      const claims = { iss: "https://accounts.google.com", aud: google.clientId, azp: google.clientId, sub, email, email_verified: true, iat: now, exp: now + 3600 };
       answer.id_token = `${part({ alg: "RS256", kid: "mock", typ: "JWT" })}.${part(claims)}.${b64url(randomBytes(32))}`;
     }
     return answer;
@@ -827,7 +828,7 @@ export async function startMockConnectors(port = 7788) {
         const ids = (JSON.parse((await readBody(req)) || "{}") as { ids?: unknown }).ids;
         for (const id of Array.isArray(ids) ? ids : []) {
           if (typeof id !== "string" || !drive.has(id)) continue;
-          driveGranted.add(id);
+          driveGranted.add(`${access!.sub}/${id}`);
           googleLog.picks.push(id);
         }
         return (json(res, 200, { ok: true }, cors), true);
@@ -859,8 +860,16 @@ export async function startMockConnectors(port = 7788) {
       const asked = (p.get("scope") ?? "").split(" ");
       const scope = ["openid", "https://www.googleapis.com/auth/userinfo.email", ...(google.grantDrive && asked.includes(DRIVE_FILE_SCOPE) ? [DRIVE_FILE_SCOPE] : [])].join(" ");
       const code = `4/0A${b64url(randomBytes(24))}`;
-      const refresh = p.get("prompt") === "consent" || googleRefresh.size === 0;
-      googleCodes.set(code, { challenge: p.get("code_challenge_method") === "S256" ? (p.get("code_challenge") ?? "") : "", redirectUri: p.get("redirect_uri") ?? "", scope, refresh });
+      // A refresh token comes with the consent page, or the first time this account says yes.
+      const refresh = p.get("prompt") === "consent" || ![...googleRefresh.values()].some((r) => r.sub === google.sub);
+      googleCodes.set(code, {
+        challenge: p.get("code_challenge_method") === "S256" ? (p.get("code_challenge") ?? "") : "",
+        redirectUri: p.get("redirect_uri") ?? "",
+        scope,
+        refresh,
+        sub: google.sub,
+        email: google.email,
+      });
       back.searchParams.set("code", code);
       back.searchParams.set("scope", scope);
       return (res.writeHead(302, { location: back.href }).end(), true);
@@ -873,9 +882,9 @@ export async function startMockConnectors(port = 7788) {
       if (form.get("grant_type") === "refresh_token") {
         googleLog.refreshes++;
         if (google.refreshDelayMs) await new Promise((r) => setTimeout(r, google.refreshDelayMs));
-        const scope = googleRefresh.get(form.get("refresh_token") ?? "");
-        if (scope === undefined || google.refuseRefresh) return (json(res, 400, { error: "invalid_grant", error_description: "Token has been expired or revoked." }), true);
-        return (json(res, 200, googleTokens(scope, false, false)), true);
+        const grant = googleRefresh.get(form.get("refresh_token") ?? "");
+        if (!grant || google.refuseRefresh) return (json(res, 400, { error: "invalid_grant", error_description: "Token has been expired or revoked." }), true);
+        return (json(res, 200, googleTokens(grant.scope, false, false, grant)), true);
       }
       if (form.get("grant_type") !== "authorization_code") return (json(res, 400, { error: "unsupported_grant_type" }), true);
       googleLog.codes++;
@@ -885,16 +894,17 @@ export async function startMockConnectors(port = 7788) {
       if (!code || !code.challenge || b64url(createHash("sha256").update(verifier).digest()) !== code.challenge || form.get("redirect_uri") !== code.redirectUri) {
         return (json(res, 400, { error: "invalid_grant", error_description: "Bad Request" }), true);
       }
-      return (json(res, 200, googleTokens(code.scope, code.refresh, true)), true);
+      return (json(res, 200, googleTokens(code.scope, code.refresh, true, code)), true);
     }
     if (path === "/google/oauth2/revoke" && req.method === "POST") {
       const sent = new URLSearchParams(await readBody(req)).get("token") ?? "";
-      if (!googleAccess.has(sent) && !googleRefresh.has(sent)) return (json(res, 400, { error: "invalid_token", error_description: "Token expired or revoked" }), true);
+      const sub = googleRefresh.get(sent)?.sub ?? googleAccess.get(sent)?.sub;
+      if (!sub) return (json(res, 400, { error: "invalid_token", error_description: "Token expired or revoked" }), true);
       googleLog.revoked.push(googleRefresh.has(sent) ? "refresh" : "access");
-      // The whole grant: every token, and the files it could open.
-      googleAccess.clear();
-      googleRefresh.clear();
-      driveGranted.clear();
+      // That account's whole grant: every token it gave the app, and the files it could open.
+      for (const [token, t] of googleAccess) if (t.sub === sub) googleAccess.delete(token);
+      for (const [token, t] of googleRefresh) if (t.sub === sub) googleRefresh.delete(token);
+      for (const key of driveGranted) if (key.startsWith(`${sub}/`)) driveGranted.delete(key);
       return (json(res, 200, {}), true);
     }
 
@@ -903,12 +913,12 @@ export async function startMockConnectors(port = 7788) {
     if (!signedIn) return fail(401, "Request had invalid authentication credentials.", "authError", { status: "UNAUTHENTICATED" });
     if (google.rateLimited) return fail(429, "Rate Limit Exceeded", "rateLimitExceeded", { status: "RESOURCE_EXHAUSTED" });
     const ok = (body: unknown, status = 200) => (json(res, status, body), true);
-    if (path === "/google/www/oauth2/v3/userinfo") return ok({ sub: google.sub, email: google.email, email_verified: true });
+    if (path === "/google/www/oauth2/v3/userinfo") return ok({ sub: access!.sub, email: access!.email, email_verified: true });
     if (!canDrive) return fail(403, "Request had insufficient authentication scopes.", "insufficientPermissions", { status: "PERMISSION_DENIED" });
     // A file the app may open (drive.file): picked or made by it, and not in the trash; any other is "not found".
     const fileOf = (id: string) => {
       const f = drive.get(id);
-      return f && driveGranted.has(id) ? f : null;
+      return f && driveGranted.has(`${access!.sub}/${id}`) ? f : null;
     };
     const notFound = (id: string) => fail(404, `File not found: ${id}.`, "notFound");
     const body = async () => (req.method === "POST" ? (JSON.parse((await readBody(req)) || "{}") as Record<string, unknown>) : {});
@@ -939,7 +949,7 @@ export async function startMockConnectors(port = 7788) {
       const id = `made_sheet_${String(++googleMade).padStart(6, "0")}`;
       const title = String((sent.properties as { title?: unknown } | undefined)?.title ?? "Untitled spreadsheet");
       drive.set(id, { name: title, mimeType: GOOGLE_SHEET, sheets: [["Sheet1", []]] });
-      driveGranted.add(id);
+      driveGranted.add(`${access!.sub}/${id}`);
       googleLog.writes.push({ kind: "sheet", id, path, body: sent });
       return ok({ spreadsheetId: id, properties: { title }, sheets: [{ properties: { sheetId: 0, title: "Sheet1", index: 0 } }] });
     }
@@ -969,7 +979,7 @@ export async function startMockConnectors(port = 7788) {
       const sent = await body();
       const id = `made_doc_${String(++googleMade).padStart(8, "0")}`;
       drive.set(id, { name: String(sent.title ?? "Untitled document"), mimeType: GOOGLE_DOC, text: "" });
-      driveGranted.add(id);
+      driveGranted.add(`${access!.sub}/${id}`);
       googleLog.writes.push({ kind: "doc", id, path, body: sent });
       return ok({ documentId: id, title: String(sent.title ?? "") });
     }
@@ -988,7 +998,7 @@ export async function startMockConnectors(port = 7788) {
       const sent = await body();
       const id = `made_slides_${String(++googleMade).padStart(6, "0")}`;
       drive.set(id, { name: String(sent.title ?? "Untitled presentation"), mimeType: GOOGLE_SLIDES, text: "" });
-      driveGranted.add(id);
+      driveGranted.add(`${access!.sub}/${id}`);
       googleLog.writes.push({ kind: "slides", id, path, body: sent });
       return ok({ presentationId: id, title: String(sent.title ?? ""), slides: [{ objectId: "p" }] });
     }
@@ -1181,9 +1191,12 @@ export async function startMockConnectors(port = 7788) {
     googleLog,
     drive,
     driveGranted,
-    /** Every Google token it gave, and how many still work. */
+    /** Every Google token it gave, and how many of one account's (the one signing in now, unless named) still work. */
     googleTokens: () => [...googleIssued],
-    googleLive: () => ({ access: [...googleAccess.values()].filter((t) => t.expiresAt > Date.now()).length, refresh: googleRefresh.size }),
+    googleLive: (sub = google.sub) => ({
+      access: [...googleAccess.values()].filter((t) => t.sub === sub && t.expiresAt > Date.now()).length,
+      refresh: [...googleRefresh.values()].filter((t) => t.sub === sub).length,
+    }),
     /** Lets every Google access token run out now (refresh tokens still work). */
     expireGoogleTokens: () => {
       for (const t of googleAccess.values()) t.expiresAt = 0;

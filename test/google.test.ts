@@ -661,6 +661,32 @@ test("token refresh: one at a time, saved before use; invalid_grant asks for Rec
   assert.equal(await chatKit(user.id, [id]), null);
   assert.equal((await pickerToken(user, id)).status, 409);
   assert.equal(mock.googleLog.refreshes, 1);
+  // Reconnect asks for Google's consent page again, so Google sends a new refresh token.
+  const again = await start(user, { connectionId: id });
+  assert.equal(new URL(again.body.url!).searchParams.get("prompt"), "consent");
+});
+
+test("Reconnect as another Google account: the old account's grant is cancelled at Google, and its picked files and waiting cards are forgotten", async () => {
+  const user = await account("g-switch");
+  const id = await withFiles(user, [SHEET]);
+  const kit = (await chatKit(user.id, [id], { replyId: "sw1" }))!;
+  const card = await kit.propose(kit.tools.find((t) => t.tool === "append_rows")!, { file_id: SHEET, rows: [["old account"]] });
+  await kit.close();
+  mock.google.sub = "110000000000000000002";
+  mock.google.email = "other-user@example.com";
+  assert.equal(await connect(user, { connectionId: id }), "ok");
+  const row = (await googleRow(user.id))!;
+  assert.equal(row.id, id, "still the one Google Drive account");
+  assert.equal(row.resource, "other-user@example.com");
+  assert.equal(JSON.parse(String(row.endpoints_json)).sub, "110000000000000000002");
+  assert.deepEqual(await filesOf(id), [], "the old account's files are forgotten");
+  assert.deepEqual(mock.googleLog.revoked, ["refresh"], "the old account's grant was cancelled");
+  assert.deepEqual(mock.googleLive(), { access: 1, refresh: 1 }, "the new account's tokens still work");
+  assert.equal((await answer(user, card)).status, 409, "the old account's card was cancelled");
+  assert.equal(mock.googleLog.writes.length, 0);
+  const kit2 = (await chatKit(user.id, [id]))!;
+  assert.match((await kit2.run(kit2.tools.find((t) => t.tool === "list_files")!, {})).text, /hasn't picked any files/);
+  await kit2.close();
 });
 
 test("removing Google Drive revokes Flash's access at Google and forgets the picked files; only from Flash's own page", async () => {

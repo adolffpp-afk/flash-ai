@@ -1574,7 +1574,18 @@ export async function startGoogle(userId: string, input: { connectionId?: string
     if (Number(count?.n ?? 0) >= MAX_CONNECTIONS) throw new ConnectError("too_many", "You have the most connections Flash keeps. Remove one first.");
   }
   await tryLimit(userId);
-  return beginGoogleFlow(userId, origin, { connectionId: existing?.id ?? "", consent: !existing?.enc_refresh });
+  return beginGoogleFlow(userId, origin, { connectionId: existing?.id ?? "", consent: !existing || !usableRefresh(existing) });
+}
+
+/** Whether Flash holds a refresh token it can use for a connection (kept, readable, and the account not waiting for Reconnect). */
+function usableRefresh(row: ConnectionRow): boolean {
+  if (row.status !== "ok" || !row.enc_refresh) return false;
+  try {
+    unseal(row.enc_refresh, place(row, "refresh"));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** How Google's callback ends: as any sign-in, or with the sign-in but without access to the files the user picks. */
@@ -1643,7 +1654,8 @@ export async function finishGoogle(userId: string, params: { state: string | nul
  * pinned. Without tokens (drive.file wasn't granted), it is kept as needing Reconnect, with none.
  * Google sends a refresh token only with its consent page: the one kept goes on for the same account
  * (sealed again with the newest key). Another Google account than before forgets the files picked in
- * the old one, and its waiting actions. Of two sign-ins finishing at once, only one adds the account.
+ * the old one, and its waiting actions, and Flash's access to the old one is cancelled at Google. Of
+ * two sign-ins finishing at once, only one adds the account.
  */
 async function keepGoogle(userId: string, tokens: GoogleTokens | null, account: GoogleAccount): Promise<void> {
   const preset = presetById("google-drive")!;
@@ -1679,6 +1691,8 @@ async function keepGoogle(userId: string, tokens: GoogleTokens | null, account: 
         ],
         "write",
       );
+      // The old account's grant isn't used any more: Google is asked to cancel it (its tokens, as they were read).
+      if (other) await revokeGoogle(existing);
       return;
     }
     const count = await one<{ n: number }>("SELECT COUNT(*) AS n FROM connections WHERE user_id = ?", [userId]);
@@ -1806,7 +1820,7 @@ export async function addPickedFiles(userId: string, connectionId: string, ids: 
       "write",
     );
   }
-  console.log(`[flash] connector ${row.id} ${row.provider} pick ${good.length} kept ${wanted.length - good.length} refused`);
+  console.log(`[flash] connector ${row.id} ${row.provider} picked: ${good.length} kept, ${wanted.length - good.length} refused`);
   const files = (await pickedFiles(row.id)).map((f) => ({ id: f.file_id, name: f.name, mime: f.mime, pickedAt: Number(f.picked_at) }));
   return { files, added: good.length, refused: wanted.length - good.length };
 }

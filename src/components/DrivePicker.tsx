@@ -116,7 +116,7 @@ function typeName(mime: string, t: ReturnType<typeof useT>) {
   if (mime === "application/vnd.google-apps.spreadsheet") return "Google Sheets";
   if (mime === "application/vnd.google-apps.presentation") return "Google Slides";
   if (mime === "application/pdf") return "PDF";
-  return t("Text file");
+  return mime === "text/plain" ? t("Text file") : mime;
 }
 
 export function DriveFiles({

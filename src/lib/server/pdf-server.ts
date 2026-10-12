@@ -4,8 +4,9 @@ import { pageText } from "../pdf-text.ts";
  * The text of a PDF on Flash's server: a Google Drive file a user picked (see google.ts). It uses
  * pdf.js, which Flash already ships for PDFs attached in the browser, in its build made for Node, in
  * this same process: its worker runs here (globalThis.pdfjsWorker), so no thread is started and
- * nothing is fetched, no fonts are loaded, and only each page's text is read. The file's bytes come
- * from Google, so they are treated as untrusted: reading stops at a character count and a time.
+ * nothing is fetched, no fonts are loaded, and only each page's text is read (this version of pdf.js
+ * never compiles code from a file). The file's bytes come from Google, so they are treated as
+ * untrusted: reading stops at a character count and a time.
  */
 
 type PdfJs = typeof import("pdfjs-dist/legacy/build/pdf.mjs");
