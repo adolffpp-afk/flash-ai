@@ -72,3 +72,18 @@ export const GITHUB_SETUP: ProviderInfo = {
   free: true,
   keys: ["GITHUB_APP_CLIENT_ID", "GITHUB_APP_CLIENT_SECRET", "GITHUB_APP_SLUG"],
 };
+
+/**
+ * Google Drive in chat needs Flash's own Google Cloud project (see server/google.ts and
+ * docs/connectors-setup.md): its OAuth client ID (Config) and secret (Sensitive), the Picker's API
+ * key (Config) and the project number (Config). Until all four are set, and CONNECTOR_KEYS, users
+ * don't see Google Drive anywhere. The Google sign-in (GOOGLE_CLIENT_ID) is another client, and isn't
+ * needed here.
+ */
+export const GOOGLE_SETUP: ProviderInfo = {
+  id: "google-connector",
+  name: "Google Drive (connector)",
+  does: "Lets users connect Google Drive in chat: read the Docs, Sheets, Slides, PDFs and text files they pick, and create Docs, Sheets and Slides or add rows to a Sheet after they approve each one",
+  free: true,
+  keys: ["GOOGLE_CONNECT_CLIENT_ID", "GOOGLE_CONNECT_CLIENT_SECRET", "GOOGLE_PICKER_API_KEY", "GOOGLE_CONNECT_PROJECT_NUMBER"],
+};

@@ -2,6 +2,7 @@ import { all, one } from "./db.ts";
 import { CREDIT_PACKS, MARKUP, PLANS, paymentFeeCents, planPrice, worstCaseProfitCents } from "../credits.ts";
 import { CONNECTOR_SETUP, GITHUB_SETUP, PROVIDER_LIST, missingKeys, providerName } from "../providers.ts";
 import { githubReady } from "./github.ts";
+import { googleMissing, googleReady } from "./google.ts";
 import { connectorsReady, keyVersions } from "./secret-box.ts";
 import { resealRegistrations } from "./mcp-oauth.ts";
 import { profitReport } from "./profit.ts";
@@ -167,6 +168,12 @@ export async function adminStats(days: number) {
       github: {
         setUp: githubReady(),
         missing: [...GITHUB_SETUP.keys.filter((name) => !process.env[name]?.trim()), ...(connectorsReady() ? [] : ["CONNECTOR_KEYS"])],
+      },
+      // Google Drive in chat: its Cloud project's four variables, by name (a project number that isn't
+      // digits counts as missing, as it does for googleReady), and CONNECTOR_KEYS.
+      google: {
+        setUp: googleReady(),
+        missing: [...googleMissing(), ...(connectorsReady() ? [] : ["CONNECTOR_KEYS"])],
       },
     },
     byModel: byModel.map((r) => ({ model: r.model, provider: r.provider, requests: n(r.requests), costCents: n(r.cost) })),

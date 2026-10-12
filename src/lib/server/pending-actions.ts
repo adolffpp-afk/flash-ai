@@ -48,6 +48,8 @@ export async function proposeAction(a: {
   kind: ToolKind;
   custom: boolean;
   input: Record<string, unknown>;
+  // What Flash knows input values as (a picked file's name for its id): shown on the card, never stored or sent.
+  labels?: Record<string, string>;
   replyId?: string;
   at?: number;
 }): Promise<ActionCard> {
@@ -75,6 +77,7 @@ export async function proposeAction(a: {
     tool: a.tool,
     title: a.title,
     input: a.input,
+    ...(a.labels && Object.keys(a.labels).length && { labels: a.labels }),
     inputHash: hash,
     kind: a.kind,
     custom: a.custom,

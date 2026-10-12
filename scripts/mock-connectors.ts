@@ -58,6 +58,25 @@ import { pathToFileURL } from "node:url";
  * - state.github.rateLimited answers every API call with GitHub's rate-limit answer.
  * state.github changes how it behaves (also with POST /__mock/github, where {"uninstall":true} takes the
  * installation away), and githubLog records every call.
+ *
+ * And Google, for Google Drive in chat (one Google account, "drive-user@example.com"), at
+ * /google/accounts (accounts.google.com), /google/oauth2 (oauth2.googleapis.com), /google/www
+ * (www.googleapis.com) and /google/docs, /google/sheets and /google/slides (their APIs):
+ * - the authorize page (client, redirect URI, PKCE S256 required), which says yes at once (or no:
+ *   state.google.deny), granting drive.file unless state.google.grantDrive is false;
+ * - the token endpoint: codes (with an ID token, and a refresh token only when the consent page was
+ *   asked for or none was given yet, as Google does), refresh tokens that stay the same (refused with
+ *   invalid_grant once revoked, or with state.google.refuseRefresh), and the revoke endpoint, which
+ *   ends the whole grant for any of its tokens;
+ * - userinfo, Drive's files.get, export (text/plain, text/csv) and alt=media (text, PDF), the Sheets
+ *   API (a spreadsheet's sheets, a range's values, create, append), Docs and Slides create and
+ *   batchUpdate (googleLog.writes). Only files picked (or made by the app) can be opened, as with
+ *   drive.file: any other id is a 404, as Google answers;
+ * - in place of Google's Picker (which can't run here), GET /google/picker/files lists the drive and
+ *   POST /google/picker/pick gives the app the files picked, both with the user's token and CORS, for
+ *   the page's development list (see DrivePicker.tsx);
+ * - state.google.rateLimited answers every API call with Google's rate-limit answer.
+ * state.google changes how it behaves (also with POST /__mock/google), and googleLog records every call.
  */
 
 const MODERN = "2026-07-28";
@@ -190,6 +209,96 @@ const GITHUB_FILES: Record<string, string> = {
 };
 type AccessToken = { grant: string; resource: string; scope: string; expiresAt: number };
 
+/** How the stand-in Google behaves (see the top). */
+export type GoogleConfig = {
+  clientId: string;
+  clientSecret: string;
+  // The OAuth client's redirect URI, where the authorize page sends the browser.
+  callback: string;
+  // The Google account that signs in.
+  sub: string;
+  email: string;
+  // The user leaves drive.file out on the consent page (only openid and email are granted).
+  grantDrive: boolean;
+  // How long an access token lasts, in seconds (Google: an hour).
+  accessTtl: number;
+  // How long the token endpoint takes to answer a refresh.
+  refreshDelayMs: number;
+  // The token endpoint refuses every refresh token (invalid_grant), as after the user removed access.
+  refuseRefresh: boolean;
+  // The user says no on the authorize page.
+  deny: boolean;
+  // Every API call gets Google's rate-limit answer.
+  rateLimited: boolean;
+};
+
+export const GOOGLE_DEFAULTS: GoogleConfig = {
+  clientId: "mock-google-client.apps.googleusercontent.com",
+  clientSecret: "mock-google-secret",
+  callback: process.env.MOCK_GOOGLE_CALLBACK || "http://localhost:3000/api/connect/google/callback",
+  sub: "110000000000000000001",
+  email: "drive-user@example.com",
+  grantDrive: true,
+  accessTtl: Number(process.env.MOCK_ACCESS_TTL) || 3600,
+  refreshDelayMs: 0,
+  refuseRefresh: false,
+  deny: false,
+  rateLimited: false,
+};
+
+const GOOGLE_DOC = "application/vnd.google-apps.document";
+const GOOGLE_SHEET = "application/vnd.google-apps.spreadsheet";
+const GOOGLE_SLIDES = "application/vnd.google-apps.presentation";
+const DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+
+/** A one-page PDF with a line of text (Helvetica), for Drive's alt=media. */
+function pdfWith(text: string): Buffer {
+  const content = `BT /F1 18 Tf 20 100 Td (${text.replace(/[()\\]/g, "")}) Tj ET`;
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 400 144] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+  ];
+  let out = "%PDF-1.4\n";
+  const offsets: number[] = [];
+  objects.forEach((o, i) => {
+    offsets.push(out.length);
+    out += `${i + 1} 0 obj\n${o}\nendobj\n`;
+  });
+  const xref = out.length;
+  out += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, "0")} 00000 n \n`).join("")}`;
+  out += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return Buffer.from(out, "latin1");
+}
+
+/** A file in the stand-in Drive: a Doc's or a deck's text, a Sheet's sheets (by name, in order), a PDF's or a text file's bytes. */
+export type MockDriveFile = { name: string; mimeType: string; trashed?: boolean; text?: string; sheets?: [string, (string | number)[][]][]; bytes?: Buffer };
+
+/** The stand-in Drive as it starts: none of it is the app's until it is picked. */
+function googleDrive(): Map<string, MockDriveFile> {
+  return new Map<string, MockDriveFile>([
+    ["doc_trip_plan_0001", { name: "Trip plan", mimeType: GOOGLE_DOC, text: "Day 1: Oslo\nDay 2: Bergen\n" }],
+    [
+      "sheet_budget_00001",
+      {
+        name: "Budget",
+        mimeType: GOOGLE_SHEET,
+        sheets: [
+          ["Costs", [["Item", "Cost"], ["Hotel", 120], ["Train", 45], ["Note, with comma", "x"]]],
+          ["Q2", [["Month", "Total"], ["April", 300]]],
+        ],
+      },
+    ],
+    ["slides_pitch_00001", { name: "Pitch", mimeType: GOOGLE_SLIDES, text: "Flash AI\nFast answers for everyone\n" }],
+    ["pdf_report_000001", { name: "Report.pdf", mimeType: "application/pdf", bytes: pdfWith("Quarterly report: revenue grew") }],
+    ["text_notes_000001", { name: "notes.txt", mimeType: "text/plain", bytes: Buffer.from("Remember the milk.\n") }],
+    ["doc_private_00001", { name: "Private diary", mimeType: GOOGLE_DOC, text: "Never picked: Flash must not read this.\n" }],
+    ["image_photo_00001", { name: "photo.png", mimeType: "image/png", bytes: Buffer.from("not really a png") }],
+  ]);
+}
+
 const b64url = (b: Buffer) => b.toString("base64url");
 const token = (prefix: string) => `${prefix}_${b64url(randomBytes(18))}`;
 
@@ -239,6 +348,25 @@ export async function startMockConnectors(port = 7788) {
   // Each live refresh token, with the access token given with it.
   const githubRefresh = new Map<string, string>();
   const githubIssued: string[] = [];
+  // Google: its settings, what it was asked for, its drive, the files the app may open, and its codes and tokens.
+  const google = { ...GOOGLE_DEFAULTS };
+  const googleLog = {
+    calls: [] as { method: string; path: string }[],
+    authorizes: [] as { state: string; challenge: string; method: string; scope: string; prompt: string; accessType: string; includeGranted: string }[],
+    codes: 0,
+    refreshes: 0,
+    revoked: [] as string[],
+    writes: [] as { kind: "doc" | "doc-text" | "sheet" | "append" | "slides" | "slides-update"; id: string; path: string; body: Record<string, unknown> }[],
+    picks: [] as string[],
+  };
+  const drive = googleDrive();
+  const driveGranted = new Set<string>();
+  const googleCodes = new Map<string, { challenge: string; redirectUri: string; scope: string; refresh: boolean }>();
+  const googleAccess = new Map<string, { expiresAt: number; scope: string }>();
+  // Google keeps one refresh token for the grant (it doesn't rotate), with its scopes.
+  const googleRefresh = new Map<string, string>();
+  const googleIssued: string[] = [];
+  let googleMade = 0;
   let issueNumber = 2;
   let origin = "";
   const issuer = () => `${origin}/as`;
@@ -649,6 +777,236 @@ export async function startMockConnectors(port = 7788) {
     return notFound();
   }
 
+  /** New tokens for the stand-in Google user; a refresh token only when asked (Google keeps the old one otherwise). */
+  function googleTokens(scope: string, withRefresh: boolean, idToken: boolean) {
+    const access = `ya29.${b64url(randomBytes(24))}`;
+    googleAccess.set(access, { expiresAt: Date.now() + google.accessTtl * 1000, scope });
+    googleIssued.push(access);
+    const answer: Record<string, unknown> = { access_token: access, expires_in: google.accessTtl, scope, token_type: "Bearer" };
+    if (withRefresh) {
+      const refresh = `1//${b64url(randomBytes(30))}`;
+      googleRefresh.set(refresh, scope);
+      googleIssued.push(refresh);
+      answer.refresh_token = refresh;
+    }
+    if (idToken) {
+      const now = Math.floor(Date.now() / 1000);
+      const part = (v: unknown) => b64url(Buffer.from(JSON.stringify(v)));
+      const claims = { iss: "https://accounts.google.com", aud: google.clientId, azp: google.clientId, sub: google.sub, email: google.email, email_verified: true, iat: now, exp: now + 3600 };
+      answer.id_token = `${part({ alg: "RS256", kid: "mock", typ: "JWT" })}.${part(claims)}.${b64url(randomBytes(32))}`;
+    }
+    return answer;
+  }
+
+  /** The stand-in Google (see the top). True when it answered. */
+  async function googleSide(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
+    const path = url.pathname;
+    if (path === "/__mock/google") {
+      if (req.method === "POST") Object.assign(google, JSON.parse((await readBody(req)) || "{}") as Partial<GoogleConfig>);
+      json(res, 200, { config: google, log: googleLog, granted: [...driveGranted] });
+      return true;
+    }
+    if (!path.startsWith("/google/")) return false;
+    googleLog.calls.push({ method: req.method ?? "GET", path: path + url.search });
+    const p = url.searchParams;
+    const bearer = /^Bearer (\S+)$/.exec(String(req.headers.authorization ?? ""))?.[1] ?? "";
+    const access = googleAccess.get(bearer);
+    const signedIn = Boolean(access && access.expiresAt > Date.now());
+    const canDrive = signedIn && access!.scope.split(" ").includes(DRIVE_FILE_SCOPE);
+
+    // The page's development list in place of Google's Picker: the user's token, from the browser.
+    if (path.startsWith("/google/picker/")) {
+      const cors = { "access-control-allow-origin": String(req.headers.origin ?? "*"), "access-control-allow-headers": "authorization, content-type", "access-control-allow-methods": "GET, POST" };
+      if (req.method === "OPTIONS") return (res.writeHead(204, cors).end(), true);
+      if (!canDrive) return (json(res, 401, { error: "unauthenticated" }, cors), true);
+      if (path === "/google/picker/files" && req.method === "GET") {
+        const files = [...drive].filter(([, f]) => !f.trashed).map(([id, f]) => ({ id, name: f.name, mimeType: f.mimeType }));
+        return (json(res, 200, { files }, cors), true);
+      }
+      if (path === "/google/picker/pick" && req.method === "POST") {
+        const ids = (JSON.parse((await readBody(req)) || "{}") as { ids?: unknown }).ids;
+        for (const id of Array.isArray(ids) ? ids : []) {
+          if (typeof id !== "string" || !drive.has(id)) continue;
+          driveGranted.add(id);
+          googleLog.picks.push(id);
+        }
+        return (json(res, 200, { ok: true }, cors), true);
+      }
+      return (res.writeHead(404, cors).end(), true);
+    }
+
+    // accounts.google.com: the authorize page.
+    if (path === "/google/accounts/o/oauth2/v2/auth" && req.method === "GET") {
+      const refuse = (why: string) => (res.writeHead(400, { "content-type": "text/plain" }).end(`Error 400: ${why}`), true);
+      if (p.get("client_id") !== google.clientId) return refuse("invalid_client");
+      if (p.get("redirect_uri") !== google.callback) return refuse("redirect_uri_mismatch");
+      if (p.get("response_type") !== "code") return refuse("unsupported_response_type");
+      googleLog.authorizes.push({
+        state: p.get("state") ?? "",
+        challenge: p.get("code_challenge") ?? "",
+        method: p.get("code_challenge_method") ?? "",
+        scope: p.get("scope") ?? "",
+        prompt: p.get("prompt") ?? "",
+        accessType: p.get("access_type") ?? "",
+        includeGranted: p.get("include_granted_scopes") ?? "",
+      });
+      const back = new URL(google.callback);
+      if (p.get("state")) back.searchParams.set("state", p.get("state")!);
+      if (google.deny) {
+        back.searchParams.set("error", "access_denied");
+        return (res.writeHead(302, { location: back.href }).end(), true);
+      }
+      const asked = (p.get("scope") ?? "").split(" ");
+      const scope = ["openid", "https://www.googleapis.com/auth/userinfo.email", ...(google.grantDrive && asked.includes(DRIVE_FILE_SCOPE) ? [DRIVE_FILE_SCOPE] : [])].join(" ");
+      const code = `4/0A${b64url(randomBytes(24))}`;
+      const refresh = p.get("prompt") === "consent" || googleRefresh.size === 0;
+      googleCodes.set(code, { challenge: p.get("code_challenge_method") === "S256" ? (p.get("code_challenge") ?? "") : "", redirectUri: p.get("redirect_uri") ?? "", scope, refresh });
+      back.searchParams.set("code", code);
+      back.searchParams.set("scope", scope);
+      return (res.writeHead(302, { location: back.href }).end(), true);
+    }
+
+    // oauth2.googleapis.com: token and revoke.
+    if (path === "/google/oauth2/token" && req.method === "POST") {
+      const form = new URLSearchParams(await readBody(req));
+      if (form.get("client_id") !== google.clientId || form.get("client_secret") !== google.clientSecret) return (json(res, 401, { error: "invalid_client", error_description: "Unauthorized" }), true);
+      if (form.get("grant_type") === "refresh_token") {
+        googleLog.refreshes++;
+        if (google.refreshDelayMs) await new Promise((r) => setTimeout(r, google.refreshDelayMs));
+        const scope = googleRefresh.get(form.get("refresh_token") ?? "");
+        if (scope === undefined || google.refuseRefresh) return (json(res, 400, { error: "invalid_grant", error_description: "Token has been expired or revoked." }), true);
+        return (json(res, 200, googleTokens(scope, false, false)), true);
+      }
+      if (form.get("grant_type") !== "authorization_code") return (json(res, 400, { error: "unsupported_grant_type" }), true);
+      googleLog.codes++;
+      const code = googleCodes.get(form.get("code") ?? "");
+      googleCodes.delete(form.get("code") ?? "");
+      const verifier = form.get("code_verifier") ?? "";
+      if (!code || !code.challenge || b64url(createHash("sha256").update(verifier).digest()) !== code.challenge || form.get("redirect_uri") !== code.redirectUri) {
+        return (json(res, 400, { error: "invalid_grant", error_description: "Bad Request" }), true);
+      }
+      return (json(res, 200, googleTokens(code.scope, code.refresh, true)), true);
+    }
+    if (path === "/google/oauth2/revoke" && req.method === "POST") {
+      const sent = new URLSearchParams(await readBody(req)).get("token") ?? "";
+      if (!googleAccess.has(sent) && !googleRefresh.has(sent)) return (json(res, 400, { error: "invalid_token", error_description: "Token expired or revoked" }), true);
+      googleLog.revoked.push(googleRefresh.has(sent) ? "refresh" : "access");
+      // The whole grant: every token, and the files it could open.
+      googleAccess.clear();
+      googleRefresh.clear();
+      driveGranted.clear();
+      return (json(res, 200, {}), true);
+    }
+
+    // The APIs: a token that is still good, and Google's error shapes.
+    const fail = (status: number, message: string, reason: string, extra: Record<string, unknown> = {}) => (json(res, status, { error: { code: status, message, errors: [{ message, domain: "global", reason }], ...extra } }), true);
+    if (!signedIn) return fail(401, "Request had invalid authentication credentials.", "authError", { status: "UNAUTHENTICATED" });
+    if (google.rateLimited) return fail(429, "Rate Limit Exceeded", "rateLimitExceeded", { status: "RESOURCE_EXHAUSTED" });
+    const ok = (body: unknown, status = 200) => (json(res, status, body), true);
+    if (path === "/google/www/oauth2/v3/userinfo") return ok({ sub: google.sub, email: google.email, email_verified: true });
+    if (!canDrive) return fail(403, "Request had insufficient authentication scopes.", "insufficientPermissions", { status: "PERMISSION_DENIED" });
+    // A file the app may open (drive.file): picked or made by it, and not in the trash; any other is "not found".
+    const fileOf = (id: string) => {
+      const f = drive.get(id);
+      return f && driveGranted.has(id) ? f : null;
+    };
+    const notFound = (id: string) => fail(404, `File not found: ${id}.`, "notFound");
+    const body = async () => (req.method === "POST" ? (JSON.parse((await readBody(req)) || "{}") as Record<string, unknown>) : {});
+    const csv = (rows: (string | number)[][]) => rows.map((r) => r.map((c) => (/[",\r\n]/.test(String(c)) ? `"${String(c).replace(/"/g, '""')}"` : String(c))).join(",")).join("\r\n");
+
+    // Drive
+    const exported = /^\/google\/www\/drive\/v3\/files\/([\w-]+)\/export$/.exec(path);
+    if (exported && req.method === "GET") {
+      const f = fileOf(exported[1]);
+      if (!f) return notFound(exported[1]);
+      const type = p.get("mimeType");
+      if (type === "text/plain" && (f.mimeType === GOOGLE_DOC || f.mimeType === GOOGLE_SLIDES)) return (res.writeHead(200, { "content-type": "text/plain; charset=utf-8" }).end(`\ufeff${f.text ?? ""}`), true);
+      if (type === "text/csv" && f.mimeType === GOOGLE_SHEET) return (res.writeHead(200, { "content-type": "text/csv" }).end(csv(f.sheets?.[0]?.[1] ?? [])), true);
+      return fail(400, "The requested conversion is not supported.", "badRequest");
+    }
+    const file = /^\/google\/www\/drive\/v3\/files\/([\w-]+)$/.exec(path);
+    if (file && req.method === "GET") {
+      const f = fileOf(file[1]);
+      if (!f) return notFound(file[1]);
+      if (p.get("alt") !== "media") return ok({ id: file[1], name: f.name, mimeType: f.mimeType, trashed: Boolean(f.trashed) });
+      if (!f.bytes) return fail(403, "Only files with binary content can be downloaded. Use Export with Docs Editors files.", "fileNotDownloadable");
+      return (res.writeHead(200, { "content-type": f.mimeType, "content-length": String(f.bytes.length) }).end(f.bytes), true);
+    }
+
+    // Sheets
+    if (path === "/google/sheets/v4/spreadsheets" && req.method === "POST") {
+      const sent = await body();
+      const id = `made_sheet_${String(++googleMade).padStart(6, "0")}`;
+      const title = String((sent.properties as { title?: unknown } | undefined)?.title ?? "Untitled spreadsheet");
+      drive.set(id, { name: title, mimeType: GOOGLE_SHEET, sheets: [["Sheet1", []]] });
+      driveGranted.add(id);
+      googleLog.writes.push({ kind: "sheet", id, path, body: sent });
+      return ok({ spreadsheetId: id, properties: { title }, sheets: [{ properties: { sheetId: 0, title: "Sheet1", index: 0 } }] });
+    }
+    const sheet = /^\/google\/sheets\/v4\/spreadsheets\/([\w-]+)(\/values\/([^/]+?)(:append)?)?$/.exec(path);
+    if (sheet) {
+      const f = fileOf(sheet[1]);
+      if (!f || f.mimeType !== GOOGLE_SHEET) return notFound(sheet[1]);
+      const sheets = f.sheets ?? [];
+      if (!sheet[2]) return ok({ spreadsheetId: sheet[1], sheets: sheets.map(([title], index) => ({ properties: { title, index } })) });
+      const range = decodeURIComponent(sheet[3]);
+      const named = /^'((?:[^']|'')+)'!/.exec(range)?.[1]?.replace(/''/g, "'") ?? (range.includes("!") ? range.split("!")[0] : sheets[0]?.[0]);
+      const tab = sheets.find(([title]) => title === named);
+      if (!tab) return fail(400, `Unable to parse range: ${range}`, "badRequest");
+      if (sheet[4] && req.method === "POST") {
+        const sent = await body();
+        const values = Array.isArray(sent.values) ? (sent.values as (string | number)[][]) : [];
+        const from = tab[1].length + 1;
+        tab[1].push(...values);
+        googleLog.writes.push({ kind: "append", id: sheet[1], path: path + url.search, body: sent });
+        return ok({ spreadsheetId: sheet[1], updates: { updatedRange: `${tab[0]}!A${from}:Z${from + values.length - 1}`, updatedRows: values.length } });
+      }
+      if (!sheet[4] && req.method === "GET") return ok({ range: `${tab[0]}!A1:Z1000`, majorDimension: "ROWS", values: tab[1].map((r) => r.map(String)) });
+    }
+
+    // Docs
+    if (path === "/google/docs/v1/documents" && req.method === "POST") {
+      const sent = await body();
+      const id = `made_doc_${String(++googleMade).padStart(8, "0")}`;
+      drive.set(id, { name: String(sent.title ?? "Untitled document"), mimeType: GOOGLE_DOC, text: "" });
+      driveGranted.add(id);
+      googleLog.writes.push({ kind: "doc", id, path, body: sent });
+      return ok({ documentId: id, title: String(sent.title ?? "") });
+    }
+    const doc = /^\/google\/docs\/v1\/documents\/([\w-]+):batchUpdate$/.exec(path);
+    if (doc && req.method === "POST") {
+      const f = fileOf(doc[1]);
+      if (!f || f.mimeType !== GOOGLE_DOC) return notFound(doc[1]);
+      const sent = await body();
+      for (const r of Array.isArray(sent.requests) ? sent.requests : []) f.text = `${f.text ?? ""}${String((r as { insertText?: { text?: unknown } }).insertText?.text ?? "")}`;
+      googleLog.writes.push({ kind: "doc-text", id: doc[1], path, body: sent });
+      return ok({ documentId: doc[1], replies: [] });
+    }
+
+    // Slides
+    if (path === "/google/slides/v1/presentations" && req.method === "POST") {
+      const sent = await body();
+      const id = `made_slides_${String(++googleMade).padStart(6, "0")}`;
+      drive.set(id, { name: String(sent.title ?? "Untitled presentation"), mimeType: GOOGLE_SLIDES, text: "" });
+      driveGranted.add(id);
+      googleLog.writes.push({ kind: "slides", id, path, body: sent });
+      return ok({ presentationId: id, title: String(sent.title ?? ""), slides: [{ objectId: "p" }] });
+    }
+    const deck = /^\/google\/slides\/v1\/presentations\/([\w-]+):batchUpdate$/.exec(path);
+    if (deck && req.method === "POST") {
+      const f = fileOf(deck[1]);
+      if (!f || f.mimeType !== GOOGLE_SLIDES) return notFound(deck[1]);
+      const sent = await body();
+      for (const r of Array.isArray(sent.requests) ? sent.requests : []) {
+        const text = (r as { insertText?: { text?: unknown } }).insertText?.text;
+        if (typeof text === "string") f.text = `${f.text ?? ""}${text}\n`;
+      }
+      googleLog.writes.push({ kind: "slides-update", id: deck[1], path, body: sent });
+      return ok({ presentationId: deck[1], replies: [] });
+    }
+    return fail(404, "Not Found", "notFound");
+  }
+
   const send = (res: ServerResponse, status: number, message: unknown, headers: Record<string, string> = {}) => {
     if (state.sse && status === 200) {
       res.writeHead(200, { "content-type": "text/event-stream", ...headers });
@@ -663,6 +1021,7 @@ export async function startMockConnectors(port = 7788) {
     const url = new URL(req.url ?? "/", "http://mock");
     const path = url.pathname;
     if (await githubSide(req, res, url)) return;
+    if (await googleSide(req, res, url)) return;
     if (await oauth(req, res, url)) return;
     const preset = /^\/presets\/[\w-]+\/mcp$/.test(path);
     const keyed = /^\/s\/[^/]+\/mcp$/.test(path);
@@ -817,6 +1176,18 @@ export async function startMockConnectors(port = 7788) {
     },
     /** Takes the app's installation away (as uninstalling it on GitHub would); tokens stay. */
     uninstallGithub: () => githubInstallations.clear(),
+    /** The stand-in Google's settings, what it was asked for, its drive and the files the app may open. */
+    google,
+    googleLog,
+    drive,
+    driveGranted,
+    /** Every Google token it gave, and how many still work. */
+    googleTokens: () => [...googleIssued],
+    googleLive: () => ({ access: [...googleAccess.values()].filter((t) => t.expiresAt > Date.now()).length, refresh: googleRefresh.size }),
+    /** Lets every Google access token run out now (refresh tokens still work). */
+    expireGoogleTokens: () => {
+      for (const t of googleAccess.values()) t.expiresAt = 0;
+    },
     /** Forgets the listings, so "changing" says its first description again, and puts the OAuth server back as it was (its clients and grants stay). */
     reset: () => {
       listings.clear();
@@ -842,6 +1213,16 @@ export async function startMockConnectors(port = 7788) {
       githubLog.installs = 0;
       githubLog.codes = 0;
       githubLog.refreshes = 0;
+      // Google's settings go back as they were (its tokens, drive and granted files stay).
+      const googleCallback = google.callback;
+      Object.assign(google, GOOGLE_DEFAULTS, { callback: googleCallback });
+      googleLog.calls.length = 0;
+      googleLog.authorizes.length = 0;
+      googleLog.revoked.length = 0;
+      googleLog.writes.length = 0;
+      googleLog.picks.length = 0;
+      googleLog.codes = 0;
+      googleLog.refreshes = 0;
     },
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
@@ -852,6 +1233,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const mock = await startMockConnectors(port);
   console.log(`Mock connectors on ${mock.origin} (pid ${process.pid}). Start Flash with FLASH_CONNECT_MOCK=${mock.origin}`);
   let githubSeen = 0;
+  let googleSeen = 0;
   setInterval(() => {
     while (mock.calls.length) {
       const c = mock.calls.shift()!;
@@ -861,6 +1243,11 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     for (; githubSeen < mock.githubLog.calls.length; githubSeen++) {
       const c = mock.githubLog.calls[githubSeen];
       console.log(`[mock] github ${c.method} ${c.path.split("?")[0]}`);
+    }
+    // Google's calls, the same way.
+    for (; googleSeen < mock.googleLog.calls.length; googleSeen++) {
+      const c = mock.googleLog.calls[googleSeen];
+      console.log(`[mock] google ${c.method} ${c.path.split("?")[0]}`);
     }
   }, 500);
 }

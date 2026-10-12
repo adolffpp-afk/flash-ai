@@ -38,6 +38,8 @@ type Stats = {
     older: { version: string; count: number }[];
     // GitHub in chat: set up once its GitHub App's three variables are set (and CONNECTOR_KEYS).
     github?: { setUp: boolean; missing: string[] };
+    // Google Drive in chat: set up once its Cloud project's four variables are set (and CONNECTOR_KEYS).
+    google?: { setUp: boolean; missing: string[] };
   };
   byModel: { model: string; provider: string; requests: number; costCents: number }[];
   series: { day: number; requests: number; costCents: number }[];
@@ -616,6 +618,19 @@ export function AdminDashboard() {
                     <div className="text-zinc-500">
                       <div>Not set. Until it is, users don&apos;t see GitHub. Steps are in docs/connectors-setup.md.</div>
                       <div className="text-xs break-all">Missing {stats.connectors.github.missing.join(", ")}</div>
+                    </div>
+                  )}
+                </div>
+              )}
+              {stats.connectors.google && (
+                <div className="mt-4 border-t border-white/6 pt-3 text-sm">
+                  <div className="text-zinc-200">Google Drive</div>
+                  {stats.connectors.google.setUp ? (
+                    <div className="text-emerald-300">Set. Users can connect Google Drive in Settings &gt; Connectors.</div>
+                  ) : (
+                    <div className="text-zinc-500">
+                      <div>Not set. Until it is, users don&apos;t see Google Drive. Steps are in docs/connectors-setup.md.</div>
+                      <div className="text-xs break-all">Missing {stats.connectors.google.missing.join(", ")}</div>
                     </div>
                   )}
                 </div>
