@@ -605,6 +605,42 @@ test("writes wait for Approve: the card shows the whole content; approved, each 
   assert.equal(await balance(user.id), b1, "approving and cancelling cost nothing");
 });
 
+test("a field a tool doesn't have is refused, never dropped: what runs is exactly what the card showed", async () => {
+  const user = await account("g-fields");
+  const id = await withFiles(user, [DOC, SHEET]);
+  replies.push(
+    { blocks: [{ type: "tool_use", id: "toolu_1", name: "google-drive__read_file", input: { file_id: DOC, share_with: "someone@example.com" } }], stop: "tool_use" },
+    { blocks: [{ type: "text", text: "That didn't work." }], stop: "end_turn" },
+  );
+  const reads = mock.googleLog.calls.length;
+  await chat(user, "Read my trip plan", [id]);
+  assert.match(JSON.stringify(sent[1].messages), /tool_result.*That input wasn't usable: share_with isn't a field of this tool/);
+  assert.equal(mock.googleLog.calls.length, reads, "nothing was asked of Google");
+
+  // Claude is told each tool (and each slide) takes nothing else.
+  const kit = (await chatKit(user.id, [id]))!;
+  for (const tool of kit.tools) assert.equal((tool.definition.input_schema as { additionalProperties?: unknown }).additionalProperties, false, tool.tool);
+  const deckSchema = kit.tools.find((t) => t.tool === "create_slides")!.definition.input_schema as { properties: { slides: { items: { additionalProperties?: unknown } } } };
+  assert.equal(deckSchema.properties.slides.items.additionalProperties, false);
+  // Cards made with one anyway never send anything.
+  const doc = await kit.propose(kit.tools.find((t) => t.tool === "create_doc")!, { title: "Shared", text: "Hi", share_with: "someone@example.com" });
+  const deck = await kit.propose(kit.tools.find((t) => t.tool === "create_slides")!, { title: "Trip", slides: [{ title: "Day 1", body: "Oslo", notes: "secret" }] });
+  const rows = await kit.propose(kit.tools.find((t) => t.tool === "append_rows")!, { file_id: SHEET, rows: [["Taxi", 30]], valueInputOption: "USER_ENTERED" });
+  await kit.close();
+  const before = mock.googleLog.calls.length;
+  for (const [card, why] of [
+    [doc, "share_with isn't a field of this tool"],
+    [deck, "a slide has only a title and a body"],
+    [rows, "valueInputOption isn't a field of this tool"],
+  ] as const) {
+    const done = await answer(user, card);
+    assert.equal(done.body.status, "failed");
+    assert.equal(done.body.result, `That input wasn't usable: ${why}.`);
+  }
+  assert.equal(mock.googleLog.calls.length, before, "nothing was sent to Google");
+  assert.equal(mock.googleLog.writes.length, 0);
+});
+
 test("Google's rate limit: a clear note, in the user's language on a card, and no retry", async () => {
   const user = await account("g-limit");
   const id = await withFiles(user, [SHEET]);

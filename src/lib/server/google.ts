@@ -7,6 +7,7 @@ import { RESULT_BYTES, SafeFetchError, mockOrigin, safeFetch, type SafeRequest, 
 import { connectorsReady, seal } from "./secret-box.ts";
 import { pdfTextOnServer } from "./pdf-server.ts";
 import { msg } from "../i18n.ts";
+import { GOOGLE_TOOL_WORDS } from "../connectors.ts";
 
 /*
  * Google Drive, Docs, Sheets and Slides in chat (the connectors plan, PR 4), with the drive.file
@@ -332,40 +333,41 @@ type Definition = { name: string; title: string; description: string; inputSchem
 const DEFINITIONS: Definition[] = [
   {
     name: "list_files",
-    title: msg("List picked files"),
-    description: msg("Lists the Google Drive files the user picked for Flash, with their type and id. Flash can use no other file in their Drive."),
-    inputSchema: { type: "object", properties: {} },
+    title: GOOGLE_TOOL_WORDS.list_files.title,
+    description: GOOGLE_TOOL_WORDS.list_files.description,
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
     read: true,
   },
   {
     name: "read_file",
-    title: msg("Read a file"),
-    description: msg("Reads a picked file: a Doc or a Slides deck as text, a Sheet as CSV (its first sheet, or the one named), a PDF's text, or a text file."),
-    inputSchema: { type: "object", properties: { file_id: FILE, sheet: SHEET }, required: ["file_id"] },
+    title: GOOGLE_TOOL_WORDS.read_file.title,
+    description: GOOGLE_TOOL_WORDS.read_file.description,
+    inputSchema: { type: "object", properties: { file_id: FILE, sheet: SHEET }, required: ["file_id"], additionalProperties: false },
     read: true,
   },
   {
     name: "create_doc",
-    title: msg("Create a Google Doc"),
-    description: msg("Creates a new Google Doc in the user's Drive with a title and text. It waits for the user to approve it."),
+    title: GOOGLE_TOOL_WORDS.create_doc.title,
+    description: GOOGLE_TOOL_WORDS.create_doc.description,
     inputSchema: {
       type: "object",
       properties: { title: { type: "string", description: "The document's name." }, text: { type: "string", description: "The document's text, as plain text." } },
       required: ["title", "text"],
+      additionalProperties: false,
     },
     read: false,
   },
   {
     name: "create_sheet",
-    title: msg("Create a Google Sheet"),
-    description: msg("Creates a new Google Sheet in the user's Drive with a title and rows. It waits for the user to approve it."),
-    inputSchema: { type: "object", properties: { title: { type: "string", description: "The spreadsheet's name." }, rows: ROWS }, required: ["title", "rows"] },
+    title: GOOGLE_TOOL_WORDS.create_sheet.title,
+    description: GOOGLE_TOOL_WORDS.create_sheet.description,
+    inputSchema: { type: "object", properties: { title: { type: "string", description: "The spreadsheet's name." }, rows: ROWS }, required: ["title", "rows"], additionalProperties: false },
     read: false,
   },
   {
     name: "create_slides",
-    title: msg("Create a Google Slides deck"),
-    description: msg("Creates a new Google Slides deck in the user's Drive, one slide for each item, each with a title and text. It waits for the user to approve it."),
+    title: GOOGLE_TOOL_WORDS.create_slides.title,
+    description: GOOGLE_TOOL_WORDS.create_slides.description,
     inputSchema: {
       type: "object",
       properties: {
@@ -377,18 +379,20 @@ const DEFINITIONS: Definition[] = [
             type: "object",
             properties: { title: { type: "string", description: "The slide's title." }, body: { type: "string", description: "The slide's text, as plain text (one point per line)." } },
             required: ["title", "body"],
+            additionalProperties: false,
           },
         },
       },
       required: ["title", "slides"],
+      additionalProperties: false,
     },
     read: false,
   },
   {
     name: "append_rows",
-    title: msg("Add rows to a Sheet"),
-    description: msg("Adds rows at the end of a picked Google Sheet (its first sheet, or the one named). It waits for the user to approve it."),
-    inputSchema: { type: "object", properties: { file_id: FILE, rows: ROWS, sheet: SHEET }, required: ["file_id", "rows"] },
+    title: GOOGLE_TOOL_WORDS.append_rows.title,
+    description: GOOGLE_TOOL_WORDS.append_rows.description,
+    inputSchema: { type: "object", properties: { file_id: FILE, rows: ROWS, sheet: SHEET }, required: ["file_id", "rows"], additionalProperties: false },
     read: false,
   },
 ];
@@ -398,6 +402,9 @@ export const GOOGLE_TOOLS: McpTool[] = DEFINITIONS.map((d) => {
   const annotations = { readOnlyHint: d.read, destructiveHint: false };
   return { name: d.name, title: d.title, description: d.description, inputSchema: d.inputSchema, annotations, hash: toolHash(d.name, d.description, d.inputSchema, { title: d.title, annotations }) };
 });
+
+/** Each tool's fields: a call with any other is refused (see callTool). */
+const FIELDS = new Map(DEFINITIONS.map((d) => [d.name, Object.keys(d.inputSchema.properties as Record<string, unknown>)]));
 
 /** How a type is named to Claude. */
 const KIND_NAMES = { doc: "Google Doc", sheet: "Google Sheet", slides: "Google Slides", pdf: "PDF", text: "text file" } as const;
@@ -556,6 +563,11 @@ export class GoogleClient {
 
   async callTool(tool: Pick<McpTool, "name">, args: Record<string, unknown>): Promise<ToolOutput> {
     this.deadline = Date.now() + CALL_TIMEOUT_MS;
+    // A field the tool doesn't have is refused, never dropped: a card shows every field, so what is
+    // sent is exactly what the user approved.
+    const fields = FIELDS.get(tool.name);
+    const extra = fields && Object.keys(args).find((key) => !fields.includes(key));
+    if (extra !== undefined) return unusable(`${extra.slice(0, 60)} isn't a field of this tool`);
     switch (tool.name) {
       case "list_files":
         return this.listFiles();
@@ -735,6 +747,7 @@ export class GoogleClient {
     ) {
       return unusable(`slides must be 1 to ${MAX_SLIDES} items, each with a title and a body`);
     }
+    if (slides.some((s) => Object.keys(s as object).some((key) => key !== "title" && key !== "body"))) return unusable("a slide has only a title and a body");
     const res = await this.api(`${googleHost("slides")}/v1/presentations`, { method: "POST", body: { title } });
     const problem = problemOf(res);
     if (problem) return problem;

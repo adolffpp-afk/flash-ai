@@ -142,6 +142,37 @@ export const PRESETS: Preset[] = [
 
 export const presetById = (id: string): Preset | undefined => PRESETS.find((p) => p.id === id);
 
+/**
+ * The titles and descriptions of Flash's own Google Drive tools (see server/google.ts). Flash wrote
+ * them, so they are shown in the user's language.
+ */
+export const GOOGLE_TOOL_WORDS = {
+  list_files: {
+    title: msg("List picked files"),
+    description: msg("Lists the Google Drive files the user picked for Flash, with their type and id. Flash can use no other file in their Drive."),
+  },
+  read_file: {
+    title: msg("Read a file"),
+    description: msg("Reads a picked file: a Doc or a Slides deck as text, a Sheet as CSV (its first sheet, or the one named), a PDF's text, or a text file."),
+  },
+  create_doc: {
+    title: msg("Create a Google Doc"),
+    description: msg("Creates a new Google Doc in the user's Drive with a title and text. It waits for the user to approve it."),
+  },
+  create_sheet: {
+    title: msg("Create a Google Sheet"),
+    description: msg("Creates a new Google Sheet in the user's Drive with a title and rows. It waits for the user to approve it."),
+  },
+  create_slides: {
+    title: msg("Create a Google Slides deck"),
+    description: msg("Creates a new Google Slides deck in the user's Drive, one slide for each item, each with a title and text. It waits for the user to approve it."),
+  },
+  append_rows: {
+    title: msg("Add rows to a Sheet"),
+    description: msg("Adds rows at the end of a picked Google Sheet (its first sheet, or the one named). It waits for the user to approve it."),
+  },
+} as const;
+
 /** What a tool does, as far as Flash can tell: a read runs by itself; anything else asks the user first. */
 export type ToolKind = "read" | "write" | "unknown";
 
