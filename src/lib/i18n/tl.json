@@ -1781,6 +1781,7 @@
  "{link} (opens in Flash)": "{link} (bubukas sa Flash)",
  "{name} changed some of its tools since you added it. They're left out until you look at them in Settings > Connectors.": "Binago ng {name} ang ilan sa mga tool nito mula nang idagdag mo ito. Hindi muna ginagamit ang mga iyon hangga't hindi mo tinitingnan sa Settings > Mga connector.",
  "{name} is an older Office file. Save it as .docx, .xlsx or .pptx first, then attach it.": "Lumang Office file ang {name}. I-save muna ito bilang .docx, .xlsx o .pptx, tapos i-attach.",
+ "{name} is connected, but it's off in this chat. Turn it on with the Connectors button by the message box.": "Nakakonekta ang {name}, pero naka-off ito sa chat na ito. I-on ito gamit ang button na Mga connector sa tabi ng message box.",
  "{name} looks like scanned pages with no text to read. Attach a smaller copy (under {size} MB) or photos of the pages instead.": "Mukhang mga na-scan na page ang {name} na walang mababasang text. Mag-attach na lang ng mas maliit na kopya (mas mababa sa {size} MB) o mga larawan ng mga page.",
  "{name} plan": "{name} plan",
  "{picked} needs {credits} credits for this and you have {available}, so {level} answered.": "Kailangan ng {picked} ng {credits} credits para dito at {available} lang ang meron ka, kaya {level} ang sumagot.",

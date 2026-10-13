@@ -1781,6 +1781,7 @@
  "{link} (opens in Flash)": "{link} (se abre en Flash)",
  "{name} changed some of its tools since you added it. They're left out until you look at them in Settings > Connectors.": "{name} cambió algunas de sus herramientas desde que lo añadiste. Quedan fuera hasta que las revises en Configuración > Conectores.",
  "{name} is an older Office file. Save it as .docx, .xlsx or .pptx first, then attach it.": "{name} es un archivo antiguo de Office. Guárdalo primero como .docx, .xlsx o .pptx y luego adjúntalo.",
+ "{name} is connected, but it's off in this chat. Turn it on with the Connectors button by the message box.": "{name} está conectado, pero desactivado en este chat. Actívalo con el botón Conectores junto al cuadro de mensaje.",
  "{name} looks like scanned pages with no text to read. Attach a smaller copy (under {size} MB) or photos of the pages instead.": "{name} parece contener páginas escaneadas sin texto legible. Mejor adjunta una copia más pequeña (de menos de {size} MB) o fotos de las páginas.",
  "{name} plan": "Plan {name}",
  "{picked} needs {credits} credits for this and you have {available}, so {level} answered.": "{picked} necesita {credits} créditos para esto y tienes {available}, así que respondió {level}.",

@@ -1781,6 +1781,7 @@
  "{link} (opens in Flash)": "{link} (يُفتح في Flash)",
  "{name} changed some of its tools since you added it. They're left out until you look at them in Settings > Connectors.": "غيّر {name} بعض أدواته منذ أن أضفته. ستبقى خارج الاستخدام حتى تراجعها في الإعدادات > الموصِّلات.",
  "{name} is an older Office file. Save it as .docx, .xlsx or .pptx first, then attach it.": "{name} ملف Office قديم. احفظه أولًا بصيغة .docx أو .xlsx أو .pptx، ثم أرفقه.",
+ "{name} is connected, but it's off in this chat. Turn it on with the Connectors button by the message box.": "{name} متصل، لكنه متوقف في هذه المحادثة. شغّله بزر الموصِّلات بجانب مربع الرسالة.",
  "{name} looks like scanned pages with no text to read. Attach a smaller copy (under {size} MB) or photos of the pages instead.": "يبدو أن {name} صفحات ممسوحة ضوئيًا بلا نص يمكن قراءته. أرفق بدلًا منه نسخة أصغر (أقل من {size} ميغابايت) أو صورًا للصفحات.",
  "{name} plan": "خطة {name}",
  "{picked} needs {credits} credits for this and you have {available}, so {level} answered.": "يحتاج {picked} إلى {credits} رصيد لهذا الطلب ولديك {available}، لذا أجاب {level}.",

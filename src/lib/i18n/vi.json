@@ -1781,6 +1781,7 @@
  "{link} (opens in Flash)": "{link} (mở trong Flash)",
  "{name} changed some of its tools since you added it. They're left out until you look at them in Settings > Connectors.": "{name} đã thay đổi một số công cụ kể từ khi bạn thêm nó. Các công cụ đó bị bỏ qua cho đến khi bạn xem lại trong Cài đặt > Trình kết nối.",
  "{name} is an older Office file. Save it as .docx, .xlsx or .pptx first, then attach it.": "{name} là tệp Office định dạng cũ. Hãy lưu thành .docx, .xlsx hoặc .pptx trước rồi đính kèm.",
+ "{name} is connected, but it's off in this chat. Turn it on with the Connectors button by the message box.": "{name} đã được kết nối nhưng đang tắt trong cuộc trò chuyện này. Hãy bật nó bằng nút Trình kết nối cạnh ô tin nhắn.",
  "{name} looks like scanned pages with no text to read. Attach a smaller copy (under {size} MB) or photos of the pages instead.": "{name} có vẻ là các trang được quét, không có chữ để đọc. Hãy đính kèm bản nhỏ hơn (dưới {size} MB) hoặc ảnh chụp các trang.",
  "{name} plan": "Gói {name}",
  "{picked} needs {credits} credits for this and you have {available}, so {level} answered.": "{picked} cần {credits} tín dụng cho yêu cầu này nhưng bạn chỉ có {available}, nên {level} đã trả lời thay.",

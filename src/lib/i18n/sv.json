@@ -1781,6 +1781,7 @@
  "{link} (opens in Flash)": "{link} (öppnas i Flash)",
  "{name} changed some of its tools since you added it. They're left out until you look at them in Settings > Connectors.": "{name} har ändrat några av sina verktyg sedan du lade till det. De lämnas utanför tills du tittar på dem i Inställningar > Kopplingar.",
  "{name} is an older Office file. Save it as .docx, .xlsx or .pptx first, then attach it.": "{name} är en äldre Office-fil. Spara den som .docx, .xlsx eller .pptx först och bifoga den sedan.",
+ "{name} is connected, but it's off in this chat. Turn it on with the Connectors button by the message box.": "{name} är anslutet men avstängt i den här chatten. Slå på det med knappen Kopplingar bredvid meddelanderutan.",
  "{name} looks like scanned pages with no text to read. Attach a smaller copy (under {size} MB) or photos of the pages instead.": "{name} ser ut att vara inskannade sidor utan läsbar text. Bifoga en mindre kopia (under {size} MB) eller foton av sidorna i stället.",
  "{name} plan": "{name}-abonnemang",
  "{picked} needs {credits} credits for this and you have {available}, so {level} answered.": "{picked} behöver {credits} krediter för det här och du har {available}, så {level} svarade.",

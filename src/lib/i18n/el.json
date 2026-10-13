@@ -1781,6 +1781,7 @@
  "{link} (opens in Flash)": "{link} (ανοίγει στο Flash)",
  "{name} changed some of its tools since you added it. They're left out until you look at them in Settings > Connectors.": "Το {name} άλλαξε κάποια από τα εργαλεία του από τότε που το πρόσθεσες. Μένουν εκτός μέχρι να τα δεις στις Ρυθμίσεις > Συνδέσεις.",
  "{name} is an older Office file. Save it as .docx, .xlsx or .pptx first, then attach it.": "Το {name} είναι παλαιότερο αρχείο Office. Αποθήκευσέ το πρώτα ως .docx, .xlsx ή .pptx και μετά επισύναψέ το.",
+ "{name} is connected, but it's off in this chat. Turn it on with the Connectors button by the message box.": "Το {name} είναι συνδεδεμένο, αλλά απενεργοποιημένο σε αυτή τη συνομιλία. Ενεργοποιήστε το με το κουμπί Συνδέσεις δίπλα στο πλαίσιο μηνύματος.",
  "{name} looks like scanned pages with no text to read. Attach a smaller copy (under {size} MB) or photos of the pages instead.": "Το {name} μοιάζει με σαρωμένες σελίδες χωρίς κείμενο. Επισύναψε ένα μικρότερο αντίγραφο (κάτω από {size} MB) ή φωτογραφίες των σελίδων.",
  "{name} plan": "Πρόγραμμα {name}",
  "{picked} needs {credits} credits for this and you have {available}, so {level} answered.": "Το {picked} χρειάζεται {credits} πιστώσεις γι’ αυτό και έχεις {available}, οπότε απάντησε το {level}.",

@@ -1781,6 +1781,7 @@
  "{link} (opens in Flash)": "{link} (Flash'ta açılır)",
  "{name} changed some of its tools since you added it. They're left out until you look at them in Settings > Connectors.": "{name}, sen ekledikten sonra bazı araçlarını değiştirdi. Sen Ayarlar > Bağlayıcılar bölümünde onlara bakana kadar dışarıda bırakılıyorlar.",
  "{name} is an older Office file. Save it as .docx, .xlsx or .pptx first, then attach it.": "{name} eski bir Office dosyası. Önce .docx, .xlsx veya .pptx olarak kaydet, sonra ekle.",
+ "{name} is connected, but it's off in this chat. Turn it on with the Connectors button by the message box.": "{name} bağlı, ancak bu sohbette kapalı. Mesaj kutusunun yanındaki Bağlayıcılar düğmesiyle açın.",
  "{name} looks like scanned pages with no text to read. Attach a smaller copy (under {size} MB) or photos of the pages instead.": "{name} okunacak metni olmayan taranmış sayfalara benziyor. Bunun yerine daha küçük bir kopya ({size} MB altı) ya da sayfaların fotoğraflarını ekle.",
  "{name} plan": "{name} planı",
  "{picked} needs {credits} credits for this and you have {available}, so {level} answered.": "{picked} bunun için {credits} kredi gerektiriyor, sende {available} kredi var; bu yüzden {level} yanıtladı.",

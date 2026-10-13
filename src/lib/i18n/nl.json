@@ -1781,6 +1781,7 @@
  "{link} (opens in Flash)": "{link} (opent in Flash)",
  "{name} changed some of its tools since you added it. They're left out until you look at them in Settings > Connectors.": "{name} heeft sinds je het toevoegde een paar van zijn tools gewijzigd. Die blijven buiten beschouwing tot je ze bekijkt in Instellingen > Connectors.",
  "{name} is an older Office file. Save it as .docx, .xlsx or .pptx first, then attach it.": "{name} is een ouder Office-bestand. Sla het eerst op als .docx, .xlsx of .pptx en voeg het dan toe.",
+ "{name} is connected, but it's off in this chat. Turn it on with the Connectors button by the message box.": "{name} is verbonden, maar staat uit in deze chat. Zet het aan met de knop Connectors naast het berichtvak.",
  "{name} looks like scanned pages with no text to read. Attach a smaller copy (under {size} MB) or photos of the pages instead.": "{name} lijkt te bestaan uit gescande pagina's zonder leesbare tekst. Voeg in plaats daarvan een kleinere kopie (onder {size} MB) of foto's van de pagina's toe.",
  "{name} plan": "{name}-abonnement",
  "{picked} needs {credits} credits for this and you have {available}, so {level} answered.": "{picked} heeft hiervoor {credits} credits nodig en je hebt er {available}, dus {level} heeft geantwoord.",

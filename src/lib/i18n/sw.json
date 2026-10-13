@@ -1781,6 +1781,7 @@
  "{link} (opens in Flash)": "{link} (hufunguka kwenye Flash)",
  "{name} changed some of its tools since you added it. They're left out until you look at them in Settings > Connectors.": "{name} kimebadilisha baadhi ya zana zake tangu ulipokiongeza. Zinaachwa nje hadi uziangalie katika Mipangilio > Viunganishi.",
  "{name} is an older Office file. Save it as .docx, .xlsx or .pptx first, then attach it.": "{name} ni faili la zamani la Office. Lihifadhi kama .docx, .xlsx au .pptx kwanza, kisha uliambatishe.",
+ "{name} is connected, but it's off in this chat. Turn it on with the Connectors button by the message box.": "{name} imeunganishwa, lakini imezimwa katika gumzo hili. Iwashe kwa kitufe cha Viunganishi karibu na kisanduku cha ujumbe.",
  "{name} looks like scanned pages with no text to read. Attach a smaller copy (under {size} MB) or photos of the pages instead.": "{name} linaonekana kuwa kurasa zilizochanganuliwa bila maandishi ya kusoma. Badala yake, ambatisha nakala ndogo zaidi (chini ya MB {size}) au picha za kurasa hizo.",
  "{name} plan": "Mpango wa {name}",
  "{picked} needs {credits} credits for this and you have {available}, so {level} answered.": "{picked} inahitaji krediti {credits} kwa hili na una {available}, kwa hiyo {level} imejibu.",

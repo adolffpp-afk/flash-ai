@@ -1781,6 +1781,7 @@
  "{link} (opens in Flash)": "{link} (נפתח ב-Flash)",
  "{name} changed some of its tools since you added it. They're left out until you look at them in Settings > Connectors.": "{name} שינה חלק מהכלים שלו מאז שהוספת אותו. הם לא בשימוש עד שתבדוק אותם בהגדרות > מחברים.",
  "{name} is an older Office file. Save it as .docx, .xlsx or .pptx first, then attach it.": "{name} הוא קובץ Office ישן. יש לשמור אותו קודם כ-.docx, .xlsx או .pptx, ואז לצרף אותו.",
+ "{name} is connected, but it's off in this chat. Turn it on with the Connectors button by the message box.": "{name} מחובר, אבל כבוי בצ'אט הזה. הפעילו אותו עם כפתור המחברים ליד תיבת ההודעה.",
  "{name} looks like scanned pages with no text to read. Attach a smaller copy (under {size} MB) or photos of the pages instead.": "{name} נראה כמו דפים סרוקים בלי טקסט לקריאה. אפשר לצרף במקום זאת עותק קטן יותר (פחות מ-{size} MB) או תמונות של הדפים.",
  "{name} plan": "תוכנית {name}",
  "{picked} needs {credits} credits for this and you have {available}, so {level} answered.": "{picked} צריך {credits} קרדיטים בשביל זה ויש לך {available}, ולכן {level} ענה.",

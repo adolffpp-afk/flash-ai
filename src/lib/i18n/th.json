@@ -1781,6 +1781,7 @@
  "{link} (opens in Flash)": "{link} (เปิดใน Flash)",
  "{name} changed some of its tools since you added it. They're left out until you look at them in Settings > Connectors.": "{name} เปลี่ยนเครื่องมือบางอย่างตั้งแต่คุณเพิ่มเข้ามา เครื่องมือเหล่านั้นจะไม่ถูกใช้จนกว่าคุณจะตรวจดูใน การตั้งค่า > ตัวเชื่อมต่อ",
  "{name} is an older Office file. Save it as .docx, .xlsx or .pptx first, then attach it.": "{name} เป็นไฟล์ Office รุ่นเก่า บันทึกเป็น .docx, .xlsx หรือ .pptx ก่อน แล้วค่อยแนบ",
+ "{name} is connected, but it's off in this chat. Turn it on with the Connectors button by the message box.": "{name} เชื่อมต่ออยู่ แต่ปิดอยู่ในแชทนี้ เปิดใช้ด้วยปุ่มตัวเชื่อมต่อข้างช่องข้อความ",
  "{name} looks like scanned pages with no text to read. Attach a smaller copy (under {size} MB) or photos of the pages instead.": "{name} ดูเหมือนเป็นหน้าสแกนที่ไม่มีข้อความให้อ่าน แนบสำเนาที่เล็กกว่านี้ (ไม่เกิน {size} MB) หรือรูปถ่ายของแต่ละหน้าแทน",
  "{name} plan": "แพ็กเกจ {name}",
  "{picked} needs {credits} credits for this and you have {available}, so {level} answered.": "{picked} ต้องใช้ {credits} เครดิตสำหรับคำขอนี้ แต่คุณมี {available} จึงให้ {level} ตอบแทน",

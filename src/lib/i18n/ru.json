@@ -1781,6 +1781,7 @@
  "{link} (opens in Flash)": "{link} (откроется во Flash)",
  "{name} changed some of its tools since you added it. They're left out until you look at them in Settings > Connectors.": "{name} изменил некоторые свои инструменты после того, как вы его добавили. Они не используются, пока вы не посмотрите их в разделе Настройки > Коннекторы.",
  "{name} is an older Office file. Save it as .docx, .xlsx or .pptx first, then attach it.": "{name} — файл старого формата Office. Сначала сохраните его как .docx, .xlsx или .pptx, а затем прикрепите.",
+ "{name} is connected, but it's off in this chat. Turn it on with the Connectors button by the message box.": "{name} подключён, но выключен в этом чате. Включите его кнопкой «Коннекторы» рядом с полем сообщения.",
  "{name} looks like scanned pages with no text to read. Attach a smaller copy (under {size} MB) or photos of the pages instead.": "Похоже, {name} — это отсканированные страницы без текста. Прикрепите копию поменьше (до {size} МБ) или фото страниц.",
  "{name} plan": "Тариф {name}",
  "{picked} needs {credits} credits for this and you have {available}, so {level} answered.": "Для {picked} нужно кредитов: {credits}, а у вас {available}, поэтому ответил {level}.",

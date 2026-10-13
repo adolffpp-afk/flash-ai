@@ -1781,6 +1781,7 @@
  "{link} (opens in Flash)": "{link}（Flashで開きます）",
  "{name} changed some of its tools since you added it. They're left out until you look at them in Settings > Connectors.": "{name}は追加後に一部のツールを変更しました。設定 > コネクタで確認するまで、それらは使われません。",
  "{name} is an older Office file. Save it as .docx, .xlsx or .pptx first, then attach it.": "{name}は古い形式のOfficeファイルです。.docx、.xlsx、.pptxで保存し直してから添付してください。",
+ "{name} is connected, but it's off in this chat. Turn it on with the Connectors button by the message box.": "{name} は接続済みですが、このチャットではオフになっています。メッセージ欄の横にあるコネクタボタンでオンにしてください。",
  "{name} looks like scanned pages with no text to read. Attach a smaller copy (under {size} MB) or photos of the pages instead.": "{name}は読み取れるテキストのないスキャン画像のようです。{size} MB未満の小さいファイルか、ページの写真を添付してください。",
  "{name} plan": "{name}プラン",
  "{picked} needs {credits} credits for this and you have {available}, so {level} answered.": "{picked}ではこのリクエストに{credits}クレジットが必要ですが、残りが{available}クレジットのため、{level}が回答しました。",
