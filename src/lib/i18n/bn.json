@@ -1781,6 +1781,7 @@
  "{link} (opens in Flash)": "{link} (Flash-এ খোলে)",
  "{name} changed some of its tools since you added it. They're left out until you look at them in Settings > Connectors.": "আপনি যোগ করার পর {name} তার কিছু টুল বদলেছে। সেটিংস > কানেক্টর-এ আপনি সেগুলো না দেখা পর্যন্ত সেগুলো বাদ থাকবে।",
  "{name} is an older Office file. Save it as .docx, .xlsx or .pptx first, then attach it.": "{name} একটি পুরোনো Office ফাইল। আগে এটি .docx, .xlsx বা .pptx হিসেবে সেভ করুন, তারপর সংযুক্ত করুন।",
+ "{name} is connected, but it's off in this chat. Turn it on with the Connectors button by the message box.": "{name} সংযুক্ত আছে, কিন্তু এই চ্যাটে বন্ধ। মেসেজ বক্সের পাশের কানেক্টর বোতাম দিয়ে এটি চালু করুন।",
  "{name} looks like scanned pages with no text to read. Attach a smaller copy (under {size} MB) or photos of the pages instead.": "{name} দেখে মনে হচ্ছে স্ক্যান করা পাতা, পড়ার মতো কোনো লেখা নেই। এর বদলে একটি ছোট কপি ({size} MB-এর কম) বা পাতাগুলোর ছবি সংযুক্ত করুন।",
  "{name} plan": "{name} প্ল্যান",
  "{picked} needs {credits} credits for this and you have {available}, so {level} answered.": "এর জন্য {picked}-এর {credits} ক্রেডিট লাগে আর আপনার আছে {available}, তাই {level} উত্তর দিয়েছে।",

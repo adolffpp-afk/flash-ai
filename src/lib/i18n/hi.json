@@ -1781,6 +1781,7 @@
  "{link} (opens in Flash)": "{link} (Flash में खुलता है)",
  "{name} changed some of its tools since you added it. They're left out until you look at them in Settings > Connectors.": "{name} ने आपके जोड़ने के बाद अपने कुछ टूल बदल दिए हैं। जब तक आप उन्हें सेटिंग्स > कनेक्टर में देख नहीं लेते, वे शामिल नहीं होंगे।",
  "{name} is an older Office file. Save it as .docx, .xlsx or .pptx first, then attach it.": "{name} एक पुरानी Office फ़ाइल है। पहले इसे .docx, .xlsx या .pptx के रूप में सेव करें, फिर अटैच करें।",
+ "{name} is connected, but it's off in this chat. Turn it on with the Connectors button by the message box.": "{name} जुड़ा है, लेकिन इस चैट में बंद है। संदेश बॉक्स के पास कनेक्टर बटन से इसे चालू करें।",
  "{name} looks like scanned pages with no text to read. Attach a smaller copy (under {size} MB) or photos of the pages instead.": "{name} स्कैन किए गए पेज लगते हैं जिनमें पढ़ने लायक टेक्स्ट नहीं है। इसकी जगह छोटी कॉपी ({size} MB से कम) या पेजों की फ़ोटो अटैच करें।",
  "{name} plan": "{name} प्लान",
  "{picked} needs {credits} credits for this and you have {available}, so {level} answered.": "{picked} को इसके लिए {credits} क्रेडिट चाहिए और आपके पास {available} हैं, इसलिए {level} ने जवाब दिया।",

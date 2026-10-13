@@ -1781,6 +1781,7 @@
  "{link} (opens in Flash)": "{link} (se deschide în Flash)",
  "{name} changed some of its tools since you added it. They're left out until you look at them in Settings > Connectors.": "{name} și-a schimbat unele instrumente de când l-ai adăugat. Sunt lăsate deoparte până le verifici în Setări > Conectori.",
  "{name} is an older Office file. Save it as .docx, .xlsx or .pptx first, then attach it.": "{name} este un fișier Office mai vechi. Salvează-l mai întâi ca .docx, .xlsx sau .pptx, apoi atașează-l.",
+ "{name} is connected, but it's off in this chat. Turn it on with the Connectors button by the message box.": "{name} este conectat, dar este oprit în acest chat. Pornește-l cu butonul Conectori de lângă caseta de mesaj.",
  "{name} looks like scanned pages with no text to read. Attach a smaller copy (under {size} MB) or photos of the pages instead.": "{name} pare să conțină pagini scanate, fără text de citit. Atașează în schimb o copie mai mică (sub {size} MB) sau fotografii ale paginilor.",
  "{name} plan": "Planul {name}",
  "{picked} needs {credits} credits for this and you have {available}, so {level} answered.": "{picked} are nevoie de credite pentru asta ({credits}), iar tu ai {available}, așa că a răspuns {level}.",

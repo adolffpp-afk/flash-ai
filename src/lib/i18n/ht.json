@@ -1781,6 +1781,7 @@
  "{link} (opens in Flash)": "{link} (ap louvri nan Flash)",
  "{name} changed some of its tools since you added it. They're left out until you look at them in Settings > Connectors.": "{name} chanje kèk nan zouti li yo depi ou te ajoute l. Yo rete sou kote jiskaske ou gade yo nan Paramèt > Konektè.",
  "{name} is an older Office file. Save it as .docx, .xlsx or .pptx first, then attach it.": "{name} se yon ansyen fichye Office. Anrejistre l an .docx, .xlsx oswa .pptx anvan, epi tache l.",
+ "{name} is connected, but it's off in this chat. Turn it on with the Connectors button by the message box.": "{name} konekte, men li fèmen nan chat sa a. Limen l ak bouton Konektè ki bò bwat mesaj la.",
  "{name} looks like scanned pages with no text to read. Attach a smaller copy (under {size} MB) or photos of the pages instead.": "{name} sanble se paj ki eskane san tèks pou li. Pito tache yon kopi ki pi piti (mwens pase {size} MB) oswa foto paj yo.",
  "{name} plan": "Plan {name}",
  "{picked} needs {credits} credits for this and you have {available}, so {level} answered.": "{picked} bezwen {credits} kredi pou sa a epi ou gen {available}, se poutèt sa {level} reponn.",

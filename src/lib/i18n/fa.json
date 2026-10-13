@@ -1781,6 +1781,7 @@
  "{link} (opens in Flash)": "{link} (در Flash باز می‌شود)",
  "{name} changed some of its tools since you added it. They're left out until you look at them in Settings > Connectors.": "{name} از زمانی که آن را اضافه کردید برخی ابزارهایش را تغییر داده است. تا وقتی آن‌ها را در تنظیمات > اتصال‌دهنده‌ها بررسی نکنید، کنار گذاشته می‌شوند.",
  "{name} is an older Office file. Save it as .docx, .xlsx or .pptx first, then attach it.": "{name} یک فایل قدیمی Office است. اول آن را با قالب .docx، .xlsx یا .pptx ذخیره کنید، سپس پیوست کنید.",
+ "{name} is connected, but it's off in this chat. Turn it on with the Connectors button by the message box.": "{name} متصل است، اما در این گفتگو خاموش است. آن را با دکمهٔ اتصال‌دهنده‌ها کنار کادر پیام روشن کنید.",
  "{name} looks like scanned pages with no text to read. Attach a smaller copy (under {size} MB) or photos of the pages instead.": "{name} به نظر صفحه‌های اسکن‌شده‌ای است که متن قابل خواندن ندارد. به‌جای آن یک نسخهٔ کوچک‌تر (کمتر از {size} مگابایت) یا عکس صفحه‌ها را پیوست کنید.",
  "{name} plan": "طرح {name}",
  "{picked} needs {credits} credits for this and you have {available}, so {level} answered.": "{picked} برای این کار {credits} اعتبار لازم دارد و شما {available} اعتبار دارید، برای همین {level} پاسخ داد.",

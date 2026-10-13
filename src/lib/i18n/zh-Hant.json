@@ -1781,6 +1781,7 @@
  "{link} (opens in Flash)": "{link}（在 Flash 中開啟）",
  "{name} changed some of its tools since you added it. They're left out until you look at them in Settings > Connectors.": "{name} 在你新增之後變更了部分工具。在你到「設定 > 連接器」查看之前，這些工具不會被使用。",
  "{name} is an older Office file. Save it as .docx, .xlsx or .pptx first, then attach it.": "{name} 是舊版 Office 檔案。請先另存為 .docx、.xlsx 或 .pptx，再附加。",
+ "{name} is connected, but it's off in this chat. Turn it on with the Connectors button by the message box.": "{name} 已連接，但在此聊天中已關閉。請用訊息框旁的連接器按鈕將其開啟。",
  "{name} looks like scanned pages with no text to read. Attach a smaller copy (under {size} MB) or photos of the pages instead.": "{name} 看起來是掃描頁面，沒有可讀取的文字。請附加較小的副本（小於 {size} MB），或改為附加頁面的照片。",
  "{name} plan": "{name} 方案",
  "{picked} needs {credits} credits for this and you have {available}, so {level} answered.": "{picked} 處理這項要求需要 {credits} 點，而你只有 {available} 點，因此改由 {level} 回答。",

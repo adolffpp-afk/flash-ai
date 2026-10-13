@@ -1781,6 +1781,7 @@
  "{link} (opens in Flash)": "{link} (terbuka di Flash)",
  "{name} changed some of its tools since you added it. They're left out until you look at them in Settings > Connectors.": "{name} mengubah beberapa alatnya sejak Anda menambahkannya. Alat itu tidak dipakai sampai Anda memeriksanya di Pengaturan > Konektor.",
  "{name} is an older Office file. Save it as .docx, .xlsx or .pptx first, then attach it.": "{name} adalah file Office versi lama. Simpan dulu sebagai .docx, .xlsx, atau .pptx, lalu lampirkan.",
+ "{name} is connected, but it's off in this chat. Turn it on with the Connectors button by the message box.": "{name} terhubung, tetapi nonaktif di chat ini. Aktifkan dengan tombol Konektor di samping kotak pesan.",
  "{name} looks like scanned pages with no text to read. Attach a smaller copy (under {size} MB) or photos of the pages instead.": "{name} tampaknya berisi halaman hasil pindaian tanpa teks yang bisa dibaca. Sebagai gantinya, lampirkan salinan yang lebih kecil (di bawah {size} MB) atau foto halamannya.",
  "{name} plan": "Paket {name}",
  "{picked} needs {credits} credits for this and you have {available}, so {level} answered.": "{picked} memerlukan {credits} kredit untuk ini dan kredit Anda {available}, jadi {level} yang menjawab.",
