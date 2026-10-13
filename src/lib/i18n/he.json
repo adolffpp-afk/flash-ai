@@ -1305,6 +1305,7 @@
  "The model finished but sent nothing back. Please try again.": "המודל סיים אבל לא החזיר כלום. אפשר לנסות שוב.",
  "The newest 100. Download all to see every record.": "100 האחרונות. כדי לראות את כל הרשומות, אפשר להוריד הכול.",
  "The picture above": "התמונה שלמעלה",
+ "The picture service's safety filter blocked this picture, so it came back blank. You weren't charged for it. Please try again, or ask for the change in other words.": "מסנן הבטיחות של שירות התמונות חסם את התמונה הזו, ולכן היא חזרה ריקה. לא חויבת עליה. נסו שוב, או בקשו את השינוי במילים אחרות.",
  "The price for \"{item}\" isn't clear. Write it like 1200 or 12.50.": "המחיר של \"{item}\" לא ברור. יש לכתוב אותו כך: 1200 או 12.50.",
  "The problem you solve": "הבעיה שנפתרת",
  "The quantity for \"{item}\" isn't a number above 0. Write it like 3 or 2.5.": "הכמות של \"{item}\" היא לא מספר גדול מ-0. יש לכתוב אותה כך: 3 או 2.5.",

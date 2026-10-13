@@ -1305,6 +1305,7 @@
  "The model finished but sent nothing back. Please try again.": "মডেলটি কাজ শেষ করেছে কিন্তু কিছুই ফেরত পাঠায়নি। আবার চেষ্টা করুন।",
  "The newest 100. Download all to see every record.": "সবচেয়ে নতুন 100টি। সব রেকর্ড দেখতে সব ডাউনলোড করুন।",
  "The picture above": "ওপরের ছবি",
+ "The picture service's safety filter blocked this picture, so it came back blank. You weren't charged for it. Please try again, or ask for the change in other words.": "ছবি পরিষেবার নিরাপত্তা ফিল্টার এই ছবিটি আটকে দিয়েছে, তাই এটি ফাঁকা এসেছে। এর জন্য আপনার কোনো চার্জ কাটা হয়নি। আবার চেষ্টা করুন, অথবা অন্য কথায় পরিবর্তনটি চান।",
  "The price for \"{item}\" isn't clear. Write it like 1200 or 12.50.": "\"{item}\"-এর দাম স্পষ্ট নয়। 1200 বা 12.50-এর মতো করে লিখুন।",
  "The problem you solve": "আপনি যে সমস্যার সমাধান করেন",
  "The quantity for \"{item}\" isn't a number above 0. Write it like 3 or 2.5.": "\"{item}\"-এর পরিমাণ 0-এর বেশি কোনো সংখ্যা নয়। 3 বা 2.5-এর মতো করে লিখুন।",

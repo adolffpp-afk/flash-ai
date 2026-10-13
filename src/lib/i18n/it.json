@@ -1305,6 +1305,7 @@
  "The model finished but sent nothing back. Please try again.": "Il modello ha finito ma non ha restituito nulla. Riprova.",
  "The newest 100. Download all to see every record.": "I 100 più recenti. Scarica tutto per vedere ogni record.",
  "The picture above": "L'immagine qui sopra",
+ "The picture service's safety filter blocked this picture, so it came back blank. You weren't charged for it. Please try again, or ask for the change in other words.": "Il filtro di sicurezza del servizio immagini ha bloccato questa immagine, quindi è tornata vuota. Non ti è stata addebitata. Riprova, oppure chiedi la modifica con altre parole.",
  "The price for \"{item}\" isn't clear. Write it like 1200 or 12.50.": "Il prezzo per \"{item}\" non è chiaro. Scrivilo così: 1200 o 12,50.",
  "The problem you solve": "Il problema che risolvi",
  "The quantity for \"{item}\" isn't a number above 0. Write it like 3 or 2.5.": "La quantità per \"{item}\" non è un numero maggiore di 0. Scrivila così: 3 o 2,5.",

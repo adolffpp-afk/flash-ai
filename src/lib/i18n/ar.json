@@ -1305,6 +1305,7 @@
  "The model finished but sent nothing back. Please try again.": "انتهى النموذج لكنه لم يُرجع أي شيء. يُرجى المحاولة مرة أخرى.",
  "The newest 100. Download all to see every record.": "أحدث 100 سجل. نزّل الكل لرؤية جميع السجلات.",
  "The picture above": "الصورة أعلاه",
+ "The picture service's safety filter blocked this picture, so it came back blank. You weren't charged for it. Please try again, or ask for the change in other words.": "منع مرشح الأمان في خدمة الصور هذه الصورة، لذا عادت فارغة. لم يتم خصم أي رصيد مقابلها. يُرجى المحاولة مرة أخرى، أو طلب التغيير بكلمات أخرى.",
  "The price for \"{item}\" isn't clear. Write it like 1200 or 12.50.": "سعر \"{item}\" غير واضح. اكتبه مثل 1200 أو 12.50.",
  "The problem you solve": "المشكلة التي تحلّها",
  "The quantity for \"{item}\" isn't a number above 0. Write it like 3 or 2.5.": "كمية \"{item}\" ليست رقمًا أكبر من 0. اكتبها مثل 3 أو 2.5.",

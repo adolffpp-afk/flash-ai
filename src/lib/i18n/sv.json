@@ -1305,6 +1305,7 @@
  "The model finished but sent nothing back. Please try again.": "Modellen blev klar men skickade inget tillbaka. Försök igen.",
  "The newest 100. Download all to see every record.": "De 100 senaste. Ladda ned alla för att se varje post.",
  "The picture above": "Bilden ovan",
+ "The picture service's safety filter blocked this picture, so it came back blank. You weren't charged for it. Please try again, or ask for the change in other words.": "Bildtjänstens säkerhetsfilter blockerade den här bilden, så den kom tillbaka tom. Du debiterades inte för den. Försök igen, eller be om ändringen med andra ord.",
  "The price for \"{item}\" isn't clear. Write it like 1200 or 12.50.": "Priset för ”{item}” är otydligt. Skriv det som 1200 eller 12.50.",
  "The problem you solve": "Problemet du löser",
  "The quantity for \"{item}\" isn't a number above 0. Write it like 3 or 2.5.": "Antalet för ”{item}” är inte ett tal större än 0. Skriv det som 3 eller 2.5.",

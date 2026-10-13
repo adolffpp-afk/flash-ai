@@ -12,6 +12,8 @@ type AfterCancel = "error" | "gone" | "cancelled" | "queued" | "runs";
 type Job = { statuses: string[]; checks: number; cancelled: boolean; cancelStatus: number; afterCancel?: AfterCancel };
 const jobs: Job[] = [];
 let script: Omit<Job, "checks" | "cancelled"> = { statuses: ["IN_QUEUE"], cancelStatus: 202 };
+// What fal's safety filter says of the next results (it sends a flagged picture back all black).
+let nsfw: boolean[] | undefined;
 const server = createServer((req, res) => {
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   const json = (v: unknown, status = 200) => res.writeHead(status, { "Content-Type": "application/json" }).end(JSON.stringify(v));
@@ -36,7 +38,7 @@ const server = createServer((req, res) => {
       return json({ status, queue_position: 0 });
     }
     if (kind === "result" && after === "error") return json({ detail: "Request was cancelled" }, 400);
-    if (kind === "result") return json({ image: { url: `${base}/file/${n}`, content_type: "image/png" } });
+    if (kind === "result") return json({ images: [{ url: `${base}/file/${n}`, content_type: "image/png" }], ...(nsfw && { has_nsfw_concepts: nsfw }) });
     if (kind === "file") return res.writeHead(200, { "Content-Type": "image/png" }).end("PNG");
     res.writeHead(404).end();
   });
@@ -109,4 +111,20 @@ test("a cancelled job still shown in line is never charged, even when time runs 
   // 31.5 seconds in all leaves 1.5 seconds of waiting once the result's 30 are kept aside.
   const made = falGenerate("fal-ai/flux", { prompt: "a goat" }, () => {}, 31_500, stop.signal);
   await assert.rejects(made, (err) => (err instanceof JobStopped || err instanceof JobAbandoned) && !(err as { billed?: boolean }).billed);
+});
+
+test("a picture fal's safety filter blanked is never shown or charged, and says why", async () => {
+  script = { statuses: ["COMPLETED"], cancelStatus: 202 };
+  nsfw = [true];
+  try {
+    await assert.rejects(
+      falGenerate("fal-ai/flux-2/turbo/edit", { prompt: "make me a cartoon" }, () => {}, 60_000),
+      (err) => err instanceof JobAbandoned && !err.billed && /safety filter/.test(err.message),
+    );
+    nsfw = [false];
+    const media = await falGenerate("fal-ai/flux-2/turbo/edit", { prompt: "make me a cartoon" }, () => {}, 60_000);
+    assert.equal(media.data.toString(), "PNG", "a picture the filter passed is delivered");
+  } finally {
+    nsfw = undefined;
+  }
 });

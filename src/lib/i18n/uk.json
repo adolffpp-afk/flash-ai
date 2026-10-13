@@ -1305,6 +1305,7 @@
  "The model finished but sent nothing back. Please try again.": "Модель завершила роботу, але нічого не повернула. Спробуйте ще раз.",
  "The newest 100. Download all to see every record.": "100 найновіших. Щоб побачити всі записи, завантажте все.",
  "The picture above": "Зображення вище",
+ "The picture service's safety filter blocked this picture, so it came back blank. You weren't charged for it. Please try again, or ask for the change in other words.": "Фільтр безпеки сервісу зображень заблокував це зображення, тому воно прийшло порожнім. Плату за нього не списано. Спробуйте ще раз або опишіть зміну іншими словами.",
  "The price for \"{item}\" isn't clear. Write it like 1200 or 12.50.": "Незрозуміла ціна для «{item}». Укажіть її у форматі 1200 або 12.50.",
  "The problem you solve": "Яку проблему ви розв’язуєте",
  "The quantity for \"{item}\" isn't a number above 0. Write it like 3 or 2.5.": "Кількість для «{item}» має бути числом, більшим за 0, наприклад 3 або 2.5.",

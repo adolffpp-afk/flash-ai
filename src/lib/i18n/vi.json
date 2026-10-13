@@ -1305,6 +1305,7 @@
  "The model finished but sent nothing back. Please try again.": "Mô hình đã chạy xong nhưng không gửi lại gì. Vui lòng thử lại.",
  "The newest 100. Download all to see every record.": "100 bản ghi mới nhất. Tải tất cả xuống để xem mọi bản ghi.",
  "The picture above": "Ảnh ở trên",
+ "The picture service's safety filter blocked this picture, so it came back blank. You weren't charged for it. Please try again, or ask for the change in other words.": "Bộ lọc an toàn của dịch vụ hình ảnh đã chặn hình này nên nó trả về trống. Bạn không bị tính phí cho hình này. Vui lòng thử lại, hoặc yêu cầu thay đổi bằng cách diễn đạt khác.",
  "The price for \"{item}\" isn't clear. Write it like 1200 or 12.50.": "Giá của \"{item}\" chưa rõ. Hãy viết theo dạng 1200 hoặc 12.50.",
  "The problem you solve": "Vấn đề bạn giải quyết",
  "The quantity for \"{item}\" isn't a number above 0. Write it like 3 or 2.5.": "Số lượng của \"{item}\" không phải là số lớn hơn 0. Hãy viết theo dạng 3 hoặc 2.5.",

@@ -1305,6 +1305,7 @@
  "The model finished but sent nothing back. Please try again.": "Modelul a terminat, dar nu a trimis nimic înapoi. Încearcă din nou.",
  "The newest 100. Download all to see every record.": "Cele mai noi 100. Descarcă tot ca să vezi fiecare înregistrare.",
  "The picture above": "Imaginea de mai sus",
+ "The picture service's safety filter blocked this picture, so it came back blank. You weren't charged for it. Please try again, or ask for the change in other words.": "Filtrul de siguranță al serviciului de imagini a blocat această imagine, așa că a venit goală. Nu ai fost taxat pentru ea. Încearcă din nou sau cere modificarea în alte cuvinte.",
  "The price for \"{item}\" isn't clear. Write it like 1200 or 12.50.": "Prețul pentru „{item}” nu este clar. Scrie-l, de exemplu, 1200 sau 12.50.",
  "The problem you solve": "Problema pe care o rezolvi",
  "The quantity for \"{item}\" isn't a number above 0. Write it like 3 or 2.5.": "Cantitatea pentru „{item}” nu este un număr mai mare decât 0. Scrie-o, de exemplu, 3 sau 2.5.",

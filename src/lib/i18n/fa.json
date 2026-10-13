@@ -1305,6 +1305,7 @@
  "The model finished but sent nothing back. Please try again.": "مدل کارش را تمام کرد اما چیزی برنگرداند. لطفاً دوباره امتحان کنید.",
  "The newest 100. Download all to see every record.": "۱۰۰ رکورد جدیدتر. برای دیدن همهٔ رکوردها، همه را دانلود کنید.",
  "The picture above": "تصویر بالا",
+ "The picture service's safety filter blocked this picture, so it came back blank. You weren't charged for it. Please try again, or ask for the change in other words.": "فیلتر ایمنی سرویس تصویر این تصویر را مسدود کرد، به همین دلیل خالی برگشت. هزینه‌ای بابت آن از شما کسر نشد. لطفاً دوباره امتحان کنید یا تغییر را با کلمات دیگری بخواهید.",
  "The price for \"{item}\" isn't clear. Write it like 1200 or 12.50.": "قیمت «{item}» مشخص نیست. آن را به شکل 1200 یا 12.50 بنویسید.",
  "The problem you solve": "مشکلی که حل می‌کنید",
  "The quantity for \"{item}\" isn't a number above 0. Write it like 3 or 2.5.": "تعداد «{item}» عددی بزرگ‌تر از صفر نیست. آن را به شکل 3 یا 2.5 بنویسید.",

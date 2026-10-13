@@ -68,3 +68,12 @@ test("findFile reads video, audio and image results", () => {
   assert.equal(findFile({ images: [{ url: "i.png" }] })?.url, "i.png");
   assert.equal(findFile({ nothing: true }), null);
 });
+
+test("flagged reads fal's safety filter verdict", async () => {
+  const { flagged } = await import("../src/lib/engines/fal.ts");
+  assert.equal(flagged({ images: [], has_nsfw_concepts: [true] }), true);
+  assert.equal(flagged({ images: [], has_nsfw_concepts: [false, true] }), true);
+  assert.equal(flagged({ images: [], has_nsfw_concepts: [false] }), false);
+  assert.equal(flagged({ images: [] }), false);
+  assert.equal(flagged(null), false);
+});

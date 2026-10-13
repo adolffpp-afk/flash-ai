@@ -1305,6 +1305,7 @@
  "The model finished but sent nothing back. Please try again.": "โมเดลทำงานเสร็จแล้วแต่ไม่ได้ส่งอะไรกลับมา โปรดลองอีกครั้ง",
  "The newest 100. Download all to see every record.": "100 รายการล่าสุด ดาวน์โหลดทั้งหมดเพื่อดูทุกรายการ",
  "The picture above": "รูปภาพด้านบน",
+ "The picture service's safety filter blocked this picture, so it came back blank. You weren't charged for it. Please try again, or ask for the change in other words.": "ตัวกรองความปลอดภัยของบริการรูปภาพบล็อกรูปนี้ จึงได้รูปว่างกลับมา คุณไม่ถูกเรียกเก็บเงินสำหรับรูปนี้ โปรดลองอีกครั้ง หรือขอการเปลี่ยนแปลงด้วยคำอื่น",
  "The price for \"{item}\" isn't clear. Write it like 1200 or 12.50.": "ราคาของ \"{item}\" ไม่ชัดเจน เขียนในรูปแบบ 1200 หรือ 12.50",
  "The problem you solve": "ปัญหาที่คุณแก้ได้",
  "The quantity for \"{item}\" isn't a number above 0. Write it like 3 or 2.5.": "จำนวนของ \"{item}\" ไม่ใช่ตัวเลขที่มากกว่า 0 เขียนในรูปแบบ 3 หรือ 2.5",

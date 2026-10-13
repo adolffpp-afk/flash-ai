@@ -1305,6 +1305,7 @@
  "The model finished but sent nothing back. Please try again.": "モデルの処理は完了しましたが、結果が返ってきませんでした。もう一度お試しください。",
  "The newest 100. Download all to see every record.": "最新の100件です。すべてのレコードを見るには、すべてダウンロードしてください。",
  "The picture above": "上の画像",
+ "The picture service's safety filter blocked this picture, so it came back blank. You weren't charged for it. Please try again, or ask for the change in other words.": "画像サービスの安全フィルターがこの画像をブロックしたため、空白で返されました。料金は請求されていません。もう一度試すか、別の言葉で変更を依頼してください。",
  "The price for \"{item}\" isn't clear. Write it like 1200 or 12.50.": "「{item}」の価格がわかりません。1200や12.50のように入力してください。",
  "The problem you solve": "解決する課題",
  "The quantity for \"{item}\" isn't a number above 0. Write it like 3 or 2.5.": "「{item}」の数量が0より大きい数値になっていません。3や2.5のように入力してください。",
