@@ -1305,6 +1305,7 @@
  "The model finished but sent nothing back. Please try again.": "모델이 작업을 마쳤지만 아무 결과도 보내지 않았어요. 다시 시도해 주세요.",
  "The newest 100. Download all to see every record.": "최근 100개예요. 모든 항목을 보려면 전체를 다운로드하세요.",
  "The picture above": "위 이미지",
+ "The picture service's safety filter blocked this picture, so it came back blank. You weren't charged for it. Please try again, or ask for the change in other words.": "이미지 서비스의 안전 필터가 이 이미지를 차단해서 빈 이미지로 돌아왔습니다. 요금은 청구되지 않았습니다. 다시 시도하거나 다른 표현으로 변경을 요청해 주세요.",
  "The price for \"{item}\" isn't clear. Write it like 1200 or 12.50.": "\"{item}\"의 가격이 명확하지 않아요. 1200이나 12.50처럼 입력하세요.",
  "The problem you solve": "해결하려는 문제",
  "The quantity for \"{item}\" isn't a number above 0. Write it like 3 or 2.5.": "\"{item}\"의 수량이 0보다 큰 숫자가 아니에요. 3이나 2.5처럼 입력하세요.",

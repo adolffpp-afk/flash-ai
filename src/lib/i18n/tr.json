@@ -1305,6 +1305,7 @@
  "The model finished but sent nothing back. Please try again.": "Model işini bitirdi ama hiçbir şey döndürmedi. Lütfen tekrar dene.",
  "The newest 100. Download all to see every record.": "En yeni 100 kayıt. Tüm kayıtları görmek için tümünü indir.",
  "The picture above": "Yukarıdaki görsel",
+ "The picture service's safety filter blocked this picture, so it came back blank. You weren't charged for it. Please try again, or ask for the change in other words.": "Görsel hizmetinin güvenlik filtresi bu görseli engelledi, bu yüzden boş geldi. Bunun için ücret alınmadı. Lütfen tekrar deneyin ya da değişikliği başka kelimelerle isteyin.",
  "The price for \"{item}\" isn't clear. Write it like 1200 or 12.50.": "\"{item}\" için fiyat anlaşılmıyor. 1200 veya 12.50 gibi yaz.",
  "The problem you solve": "Çözdüğün problem",
  "The quantity for \"{item}\" isn't a number above 0. Write it like 3 or 2.5.": "\"{item}\" için miktar 0'dan büyük bir sayı değil. 3 veya 2.5 gibi yaz.",

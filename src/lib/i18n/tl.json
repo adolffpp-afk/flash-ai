@@ -1305,6 +1305,7 @@
  "The model finished but sent nothing back. Please try again.": "Natapos ang model pero walang ibinalik. Pakisubukan ulit.",
  "The newest 100. Download all to see every record.": "Ang 100 pinakabago. I-download lahat para makita ang bawat record.",
  "The picture above": "Ang larawan sa itaas",
+ "The picture service's safety filter blocked this picture, so it came back blank. You weren't charged for it. Please try again, or ask for the change in other words.": "Hinarang ng safety filter ng serbisyo ng larawan ang larawang ito, kaya bumalik itong blangko. Hindi ka siningil para dito. Pakisubukang muli, o hilingin ang pagbabago sa ibang salita.",
  "The price for \"{item}\" isn't clear. Write it like 1200 or 12.50.": "Hindi malinaw ang presyo para sa \"{item}\". Isulat ito gaya ng 1200 o 12.50.",
  "The problem you solve": "Ang problemang nilulutas mo",
  "The quantity for \"{item}\" isn't a number above 0. Write it like 3 or 2.5.": "Hindi numerong lampas sa 0 ang dami para sa \"{item}\". Isulat ito gaya ng 3 o 2.5.",

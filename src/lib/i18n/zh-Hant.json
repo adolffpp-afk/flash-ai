@@ -1305,6 +1305,7 @@
  "The model finished but sent nothing back. Please try again.": "模型已完成，但沒有傳回任何內容，請再試一次。",
  "The newest 100. Download all to see every record.": "最新的 100 筆。下載全部即可查看所有記錄。",
  "The picture above": "上方的圖片",
+ "The picture service's safety filter blocked this picture, so it came back blank. You weren't charged for it. Please try again, or ask for the change in other words.": "圖片服務的安全過濾器攔截了這張圖片，所以傳回的是空白圖片。這次沒有向你收費。請再試一次，或換個說法提出修改。",
  "The price for \"{item}\" isn't clear. Write it like 1200 or 12.50.": "「{item}」的價格不明確，請依 1200 或 12.50 的格式填寫。",
  "The problem you solve": "你要解決的問題",
  "The quantity for \"{item}\" isn't a number above 0. Write it like 3 or 2.5.": "「{item}」的數量不是大於 0 的數字，請依 3 或 2.5 的格式填寫。",
