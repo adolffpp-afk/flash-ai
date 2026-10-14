@@ -32,7 +32,15 @@ type Stats = {
     costCents: number;
   }[];
   // CONNECTOR_KEYS: whether connectors can be used, and what's missing (never the value).
-  connectors: { setUp: boolean; missing: string[]; newest: string; skipped: { version: string; reason: string }[]; older: { version: string; count: number }[] };
+  connectors: {
+    setUp: boolean;
+    missing: string[];
+    newest: string;
+    skipped: { version: string; reason: string }[];
+    older: { version: string; count: number }[];
+    // GitHub in chat: set up once its GitHub App's three variables are set (and CONNECTOR_KEYS).
+    github?: { setUp: boolean; missing: string[] };
+  };
   byModel: { model: string; provider: string; requests: number; costCents: number }[];
   series: { day: number; requests: number; costCents: number }[];
   topUsers: { email: string; requests: number; credits: number; costCents: number }[];
@@ -605,6 +613,19 @@ export function AdminDashboard() {
             </Panel>
             <Panel title="Connectors" note="Users' own accounts in chat. Their keys and tokens are sealed with CONNECTOR_KEYS.">
               <ConnectorKeyMaker {...stats.connectors} />
+              {stats.connectors.github && (
+                <div className="mt-4 border-t border-white/6 pt-3 text-sm">
+                  <div className="text-zinc-200">GitHub</div>
+                  {stats.connectors.github.setUp ? (
+                    <div className="text-emerald-300">Set. Users can connect GitHub in Settings &gt; Connectors.</div>
+                  ) : (
+                    <div className="text-zinc-500">
+                      <div>Not set. Until it is, users don&apos;t see GitHub. Steps are in docs/connectors-setup.md.</div>
+                      <div className="text-xs break-all">Missing {stats.connectors.github.missing.join(", ")}</div>
+                    </div>
+                  )}
+                </div>
+              )}
             </Panel>
             <Panel title="Other bills" note="Payments and the bills you added under Net profit">
               <Table

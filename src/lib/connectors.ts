@@ -5,17 +5,21 @@ import { msg } from "./i18n.ts";
  * file is safe for the browser: the services Flash offers ready-made, and the shapes the chat and
  * Settings share. Secrets never come here; the server keeps them (see server/connections.ts).
  *
- * Every preset is the service's own official MCP server. Some sign in with one click (OAuth, see
- * server/mcp-oauth.ts: the service's own page, where Flash registers itself, so the user only says
- * yes); some take a key or token the user makes in that service; Linear and Airtable do both, with
- * sign-in first. Only services whose servers work this way are listed, so every card works.
+ * Every preset but GitHub is the service's own official MCP server. Some sign in with one click
+ * (OAuth, see server/mcp-oauth.ts: the service's own page, where Flash registers itself, so the user
+ * only says yes); some take a key or token the user makes in that service; Linear and Airtable do
+ * both, with sign-in first. GitHub signs in through Flash's own GitHub App and uses Flash's own tools
+ * over GitHub's API (see server/github.ts); it is listed only once the app is set up. Only services
+ * that work this way are listed, so every card works.
  */
 
 export type Preset = {
   id: string;
   name: string;
-  // The service's official MCP server.
+  // The service's official MCP server (GitHub: its API, see rest).
   url: string;
+  // Not an MCP server: Flash's own tools over the service's API, with its own Connect (only GitHub, see server/github.ts).
+  rest?: boolean;
   // Connect signs in on the service's own page (OAuth). A preset with a keyName also takes a key.
   signIn?: boolean;
   // What the user pastes, and where to make one (the service's own page about its MCP server); none for a service that only signs in.
@@ -73,6 +77,17 @@ export const PRESETS: Preset[] = [
     color: "#1f6f5f",
   },
   {
+    id: "github",
+    name: "GitHub",
+    url: "https://api.github.com",
+    rest: true,
+    signIn: true,
+    help: "https://docs.github.com/en/apps/using-github-apps/authorizing-github-apps",
+    blurb: msg("Read code, issues and pull requests. Create issues and pull requests after you approve each one."),
+    note: msg("On GitHub, you pick the repositories Flash can use. To add more later, press Add repositories on GitHub here, in Settings > Connectors."),
+    color: "#24292f",
+  },
+  {
     id: "firecrawl",
     name: "Firecrawl",
     url: "https://mcp.firecrawl.dev/v2/mcp",
@@ -113,6 +128,47 @@ export const PRESETS: Preset[] = [
 ];
 
 export const presetById = (id: string): Preset | undefined => PRESETS.find((p) => p.id === id);
+
+/**
+ * The titles and descriptions of Flash's own GitHub tools (see server/github.ts). Flash wrote them, so
+ * they are shown translated. Every other tool's words come from its server and are shown as they are:
+ * they are never looked up as a phrase (see toolWords).
+ */
+export const GITHUB_TOOL_WORDS = {
+  list_repos: {
+    title: msg("List repositories"),
+    description: msg("Lists the GitHub repositories the user gave Flash access to, with their default branch."),
+  },
+  read_file: {
+    title: msg("Read a file"),
+    description: msg("Reads a file in a repository, or lists a folder. Leave path empty for the top folder."),
+  },
+  search_code: {
+    title: msg("Search code"),
+    description: msg("Searches code on the default branch, in one repository or in all the user can reach."),
+  },
+  list_issues: {
+    title: msg("List issues and pull requests"),
+    description: msg("Lists a repository's 30 most recently updated issues and pull requests."),
+  },
+  read_pull_request: {
+    title: msg("Read a pull request"),
+    description: msg("Reads a pull request: its title, branches and description, and the changes in each file."),
+  },
+  create_issue: {
+    title: msg("Create an issue"),
+    description: msg("Creates an issue in a repository. It waits for the user to approve it."),
+  },
+  open_pull_request: {
+    title: msg("Open a pull request"),
+    description: msg("Opens a pull request from a branch that already exists. It waits for the user to approve it."),
+  },
+} as const;
+
+const OWN_TOOL_WORDS = new Set<string>(Object.values(GITHUB_TOOL_WORDS).flatMap((w) => [w.title, w.description]));
+
+/** A tool's title or description as shown: in the user's language when Flash wrote it (GitHub's tools), else as its server wrote it. */
+export const toolWords = (t: (text: string) => string, text: string): string => (OWN_TOOL_WORDS.has(text) ? t(text) : text);
 
 /** What a tool does, as far as Flash can tell: a read runs by itself; anything else asks the user first. */
 export type ToolKind = "read" | "write" | "unknown";

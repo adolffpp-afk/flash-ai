@@ -906,7 +906,7 @@ test("step-up on an approved action: its card says so in Flash's words for the u
   const kit = (await chatKit(user.id, [String(row.id)]))!;
   const { tools } = await kit.check();
   const report = tools.find((t) => t.tool === "admin_report")!;
-  const card = await kit.propose(report, {});
+  const card = (await kit.propose(report, {}))!;
   // In a chat, Claude is told what to tell the user.
   assert.match((await kit.run(report, {})).text, /Tell the user/);
   await kit.close();

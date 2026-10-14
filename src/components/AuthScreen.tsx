@@ -59,6 +59,7 @@ const AUTH_ERRORS: Record<string, string> = {
   busy: msg("Too many attempts. Try again in 15 minutes."),
   unavailable: msg("That sign-in option isn't available right now."),
   failed: msg("Sign-in didn't work. Please try again."),
+  verify_signin: msg("To confirm your email, sign in to that account, then open the link in the email again."),
 };
 
 export function AuthScreen({

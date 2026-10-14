@@ -6,7 +6,7 @@ export const metadata: Metadata = { title: "Terms of Service" };
 
 export default function Terms() {
   return (
-    <LegalPage title="Terms of Service" updated="October 12, 2026">
+    <LegalPage title="Terms of Service" updated="October 14, 2026">
       <p>
         These terms are an agreement between you and {COMPANY} (&quot;Flash&quot;, &quot;we&quot;) for your use of the
         Flash AI website and app (the &quot;Service&quot;). By creating an account or using the Service you accept them.

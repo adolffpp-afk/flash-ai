@@ -41,6 +41,25 @@ import { pathToFileURL } from "node:url";
  * token endpoint (oauthLog.stolen).
  * state.oauth changes how it behaves (also with POST /__mock/oauth when run on its own), and
  * oauthLog records what it was asked for.
+ *
+ * And GitHub, for Flash's GitHub App (one GitHub user, "octo"), at /github/web (github.com) and
+ * /github/api (api.github.com):
+ * - the app's installation page, which installs it at once (on octo/hello and octo/site) and, as with
+ *   "Request user authorization during installation", sends the browser to the app's callback with a
+ *   code, installation_id and setup_action, but not the page's state (state.github.passState passes it).
+ *   Once the app is installed, it shows the page for changing the installation instead, which sends
+ *   nobody back (uninstallGithub() takes the installation away), unless state.github.anotherAccount
+ *   has it install the app on one more account;
+ * - the authorize page (state, PKCE S256 or none), and the token endpoint: codes, and refresh tokens
+ *   that rotate (the old refresh and access tokens stop working at once); errors come with 200, as
+ *   GitHub's do;
+ * - the REST API: /user (state.github.user), /user/installations, an installation's repositories,
+ *   contents, code search, issues, a pull request and its files (over 2 MB a page above
+ *   state.github.bigPages), creating an issue or a pull request (githubLog.writes), and
+ *   DELETE /applications/{client_id}/grant and /token (basic auth with the app's client ID and secret);
+ * - state.github.rateLimited answers every API call with GitHub's rate-limit answer.
+ * state.github changes how it behaves (also with POST /__mock/github, where {"uninstall":true} takes the
+ * installation away), and githubLog records every call.
  */
 
 const MODERN = "2026-07-28";
@@ -134,6 +153,54 @@ export const OAUTH_DEFAULTS: OAuthConfig = {
 };
 
 type Grant = { id: string; clientId: string; resource: string; scope: string; refresh: string; old: Set<string>; revoked: boolean };
+
+/** How the stand-in GitHub behaves (see the top). */
+export type GithubConfig = {
+  clientId: string;
+  clientSecret: string;
+  slug: string;
+  // The GitHub App's callback URL, where its installation and authorize pages send the browser.
+  callback: string;
+  // The installation page passes its state on to the callback.
+  passState: boolean;
+  // How long a user access token lasts, in seconds (GitHub: 8 hours).
+  accessTtl: number;
+  // How long the token endpoint takes to answer a refresh.
+  refreshDelayMs: number;
+  // Every API call gets GitHub's rate-limit answer.
+  rateLimited: boolean;
+  // The user says no on the authorize page.
+  deny: boolean;
+  // Who the tokens sign in as (GET /user): change it to sign in as another GitHub account.
+  user: { login: string; id: number };
+  // A list asked for more than this many items a page (issues, a pull request's files) answers more
+  // than 2 MB, as long issue texts or diffs can; 0 for never.
+  bigPages: number;
+  // The installation page installs the app on one more account (as when the user picks an
+  // organization there), even when it is installed already.
+  anotherAccount: boolean;
+};
+
+export const GITHUB_DEFAULTS: GithubConfig = {
+  clientId: "mock-github-client",
+  clientSecret: "mock-github-secret",
+  slug: "flash-ai-test",
+  callback: process.env.MOCK_GITHUB_CALLBACK || "http://localhost:3000/api/connect/github/callback",
+  passState: false,
+  accessTtl: Number(process.env.MOCK_ACCESS_TTL) || 28800,
+  refreshDelayMs: 0,
+  rateLimited: false,
+  deny: false,
+  user: { login: "octo", id: 1 },
+  bigPages: 0,
+  anotherAccount: false,
+};
+
+/** The stand-in repository: its files, by path. */
+const GITHUB_FILES: Record<string, string> = {
+  "README.md": "# hello\n\nHello from the mock repo.\n",
+  "src/app.ts": "export const greet = (name: string) => `Hello, ${name}!`;\n",
+};
 type AccessToken = { grant: string; resource: string; scope: string; expiresAt: number };
 
 const b64url = (b: Buffer) => b.toString("base64url");
@@ -167,6 +234,25 @@ export async function startMockConnectors(port = 7788) {
   const refreshTokens = new Map<string, string>();
   // Every token ever given, revoked ones too.
   const issued: string[] = [];
+  // GitHub: its settings, what it was asked for, the user's installations, and its codes and tokens.
+  const github = { ...GITHUB_DEFAULTS };
+  const githubLog = {
+    calls: [] as { method: string; path: string }[],
+    writes: [] as { kind: "issue" | "pull"; repo: string; body: Record<string, unknown> }[],
+    installs: 0,
+    authorizes: [] as { state: string; challenge: string }[],
+    codes: 0,
+    refreshes: 0,
+    revoked: [] as string[],
+    searches: [] as string[],
+  };
+  const githubInstallations = new Set<number>();
+  const githubCodes = new Map<string, { challenge: string; redirectUri: string }>();
+  const githubAccess = new Map<string, number>();
+  // Each live refresh token, with the access token given with it.
+  const githubRefresh = new Map<string, string>();
+  const githubIssued: string[] = [];
+  let issueNumber = 2;
   let origin = "";
   const issuer = () => `${origin}/as`;
 
@@ -403,6 +489,185 @@ export async function startMockConnectors(port = 7788) {
     return false;
   }
 
+  /** New user tokens for the stand-in GitHub user (refresh tokens rotate). */
+  function githubTokens() {
+    const access = `ghu_${b64url(randomBytes(18))}`;
+    const refresh = `ghr_${b64url(randomBytes(30))}`;
+    githubAccess.set(access, Date.now() + github.accessTtl * 1000);
+    githubRefresh.set(refresh, access);
+    githubIssued.push(access, refresh);
+    return { access_token: access, expires_in: github.accessTtl, refresh_token: refresh, refresh_token_expires_in: 15897600, scope: "", token_type: "bearer" };
+  }
+
+  /** The stand-in GitHub: github.com at /github/web, api.github.com at /github/api. True when it answered. */
+  async function githubSide(req: IncomingMessage, res: ServerResponse, url: URL): Promise<boolean> {
+    const path = url.pathname;
+    if (path === "/__mock/github") {
+      if (req.method === "POST") {
+        const { uninstall, ...change } = JSON.parse((await readBody(req)) || "{}") as Partial<GithubConfig> & { uninstall?: boolean };
+        if (uninstall) githubInstallations.clear();
+        Object.assign(github, change);
+      }
+      json(res, 200, { config: github, log: githubLog, installations: [...githubInstallations] });
+      return true;
+    }
+    if (!path.startsWith("/github/")) return false;
+    githubLog.calls.push({ method: req.method ?? "GET", path: path + url.search });
+    const redirect = (to: URL) => (res.writeHead(302, { location: to.href }).end(), true);
+    // github.com
+    if (path === `/github/web/apps/${github.slug}/installations/new` && req.method === "GET") {
+      // Installed already: GitHub shows the page for changing the installation, which sends nobody back.
+      if (githubInstallations.size && !github.anotherAccount) return (res.writeHead(200, { "content-type": "text/html" }).end("<p>Configure Flash AI</p>"), true);
+      githubLog.installs++;
+      const installed = githubInstallations.has(4242) ? 4343 : 4242;
+      githubInstallations.add(installed);
+      const code = `ghcode_${b64url(randomBytes(12))}`;
+      githubCodes.set(code, { challenge: "", redirectUri: "" });
+      const back = new URL(github.callback);
+      back.searchParams.set("code", code);
+      back.searchParams.set("installation_id", String(installed));
+      back.searchParams.set("setup_action", "install");
+      if (github.passState && url.searchParams.get("state")) back.searchParams.set("state", url.searchParams.get("state")!);
+      return redirect(back);
+    }
+    if (path === "/github/web/login/oauth/authorize" && req.method === "GET") {
+      const p = url.searchParams;
+      const refuse = (why: string) => (res.writeHead(400, { "content-type": "text/plain" }).end(why), true);
+      if (p.get("client_id") !== github.clientId) return refuse("unknown client");
+      const redirectUri = p.get("redirect_uri") ?? "";
+      if (redirectUri && redirectUri !== github.callback) return refuse("redirect_uri mismatch");
+      if (p.get("code_challenge") && p.get("code_challenge_method") !== "S256") return refuse("bad challenge method");
+      githubLog.authorizes.push({ state: p.get("state") ?? "", challenge: p.get("code_challenge") ?? "" });
+      const back = new URL(redirectUri || github.callback);
+      if (p.get("state")) back.searchParams.set("state", p.get("state")!);
+      if (github.deny) {
+        back.searchParams.set("error", "access_denied");
+        back.searchParams.set("error_description", "MOCK-GITHUB-SAYS-NO");
+        return redirect(back);
+      }
+      const code = `ghcode_${b64url(randomBytes(12))}`;
+      githubCodes.set(code, { challenge: p.get("code_challenge") ?? "", redirectUri });
+      back.searchParams.set("code", code);
+      return redirect(back);
+    }
+    if (path === "/github/web/login/oauth/access_token" && req.method === "POST") {
+      const form = new URLSearchParams(await readBody(req));
+      // GitHub answers its errors with 200 and an error field.
+      const fail = (error: string) => (json(res, 200, { error, error_description: "MOCK-GITHUB-ERROR-TEXT" }), true);
+      if (form.get("client_id") !== github.clientId || form.get("client_secret") !== github.clientSecret) return fail("incorrect_client_credentials");
+      if (form.get("grant_type") === "refresh_token") {
+        githubLog.refreshes++;
+        if (github.refreshDelayMs) await new Promise((r) => setTimeout(r, github.refreshDelayMs));
+        const sent = form.get("refresh_token") ?? "";
+        if (!githubRefresh.has(sent)) return fail("bad_refresh_token");
+        // The refresh token used and the access token given with it stop working.
+        githubAccess.delete(githubRefresh.get(sent)!);
+        githubRefresh.delete(sent);
+        return (json(res, 200, githubTokens()), true);
+      }
+      githubLog.codes++;
+      const code = githubCodes.get(form.get("code") ?? "");
+      githubCodes.delete(form.get("code") ?? "");
+      if (!code) return fail("bad_verification_code");
+      if (code.redirectUri && form.get("redirect_uri") !== code.redirectUri) return fail("redirect_uri_mismatch");
+      if (code.challenge && b64url(createHash("sha256").update(form.get("code_verifier") ?? "").digest()) !== code.challenge) return fail("bad_verification_code");
+      return (json(res, 200, githubTokens()), true);
+    }
+    if (!path.startsWith("/github/api/")) return (res.writeHead(404).end(), true);
+    // api.github.com
+    const api = path.slice("/github/api".length);
+    const app = /^\/applications\/([^/]+)\/(grant|token)$/.exec(api);
+    if (app && req.method === "DELETE") {
+      const [user, pass] = Buffer.from(/^Basic (.+)$/.exec(String(req.headers.authorization ?? ""))?.[1] ?? "", "base64").toString("utf8").split(":");
+      if (decodeURIComponent(app[1]) !== github.clientId || user !== github.clientId || pass !== github.clientSecret) return (json(res, 404, { message: "Not Found" }), true);
+      const sent = String((JSON.parse((await readBody(req)) || "{}") as { access_token?: unknown }).access_token ?? "");
+      if (!githubAccess.has(sent)) return (json(res, 404, { message: "Not Found" }), true);
+      githubLog.revoked.push(app[2]);
+      if (app[2] === "grant") {
+        // The user's whole authorization of the app: every token it gave.
+        githubAccess.clear();
+        githubRefresh.clear();
+      } else githubAccess.delete(sent);
+      res.writeHead(204).end();
+      return true;
+    }
+    const bearer = /^Bearer (\S+)$/.exec(String(req.headers.authorization ?? ""))?.[1] ?? "";
+    const expires = githubAccess.get(bearer);
+    if (!expires || expires < Date.now()) return (json(res, 401, { message: "Bad credentials" }), true);
+    if (github.rateLimited) {
+      json(res, 403, { message: "API rate limit exceeded for user ID 1." }, { "x-ratelimit-remaining": "0", "x-ratelimit-reset": String(Math.floor(Date.now() / 1000) + 600) });
+      return true;
+    }
+    const notFound = () => (json(res, 404, { message: "Not Found" }), true);
+    const ok = (body: unknown, status = 200) => (json(res, status, body), true);
+    if (api === "/user") return ok({ login: github.user.login, id: github.user.id, name: "Octo Cat", email: null });
+    // Over 2 MB when more items are asked for than bigPages allows.
+    const perPage = Number(url.searchParams.get("per_page") ?? 30);
+    const big = github.bigPages > 0 && perPage > github.bigPages;
+    if (api === "/user/installations") {
+      return ok({ total_count: githubInstallations.size, installations: [...githubInstallations].map((id) => ({ id, app_id: 1, account: { login: "octo" }, target_type: "User" })) });
+    }
+    const installation = /^\/user\/installations\/(\d+)\/repositories$/.exec(api);
+    if (installation) {
+      if (!githubInstallations.has(Number(installation[1]))) return notFound();
+      return ok({
+        total_count: 2,
+        repositories: [
+          { full_name: "octo/hello", private: true, default_branch: "main", description: "A test repository" },
+          { full_name: "octo/site", private: false, default_branch: "main", description: null },
+        ],
+      });
+    }
+    if (api === "/search/code") {
+      githubLog.searches.push(url.searchParams.get("q") ?? "");
+      return ok({
+        total_count: 1,
+        incomplete_results: false,
+        items: [{ name: "app.ts", path: "src/app.ts", repository: { full_name: "octo/hello" }, text_matches: [{ property: "content", fragment: "export const greet" }] }],
+      });
+    }
+    // octo/site is listed, but the app may not touch it (as when it lacks a permission there).
+    if (/^\/repos\/octo\/site(\/|$)/.test(api)) return ok({ message: "Resource not accessible by integration" }, 403);
+    const repo = /^\/repos\/octo\/hello(\/.*)?$/.exec(api);
+    if (!repo) return notFound();
+    const rest = repo[1] ?? "";
+    const html = "https://github.com/octo/hello";
+    if (req.method === "GET" && (rest === "/contents" || rest.startsWith("/contents/"))) {
+      const wanted = decodeURIComponent(rest.slice("/contents/".length));
+      if (GITHUB_FILES[wanted] !== undefined) {
+        const content = Buffer.from(GITHUB_FILES[wanted]).toString("base64");
+        return ok({ type: "file", path: wanted, size: GITHUB_FILES[wanted].length, encoding: "base64", content });
+      }
+      const inside = Object.keys(GITHUB_FILES).filter((f) => (wanted ? f.startsWith(`${wanted}/`) : true));
+      if (!inside.length) return notFound();
+      const names = [...new Set(inside.map((f) => f.slice(wanted ? wanted.length + 1 : 0).split("/")[0]))];
+      return ok(names.map((n) => ({ type: GITHUB_FILES[wanted ? `${wanted}/${n}` : n] !== undefined ? "file" : "dir", path: wanted ? `${wanted}/${n}` : n })));
+    }
+    if (big && req.method === "GET" && (rest === "/issues" || rest === "/pulls/2/files")) return ok([{ filename: "big", patch: "x".repeat(2_200_000) }]);
+    if (req.method === "GET" && rest === "/issues") {
+      return ok([
+        { number: 1, title: "Bug: it breaks", state: "open", user: { login: "octo" }, labels: [{ name: "bug" }], html_url: `${html}/issues/1`, updated_at: "2026-10-01T10:00:00Z" },
+        { number: 2, title: "Add a feature", state: "open", pull_request: {}, user: { login: "octo" }, labels: [], html_url: `${html}/pull/2`, updated_at: "2026-10-02T10:00:00Z" },
+      ]);
+    }
+    if (req.method === "GET" && rest === "/pulls/2") {
+      return ok({ number: 2, title: "Add a feature", state: "open", merged: false, draft: false, user: { login: "octo" }, head: { label: "octo:feature", ref: "feature" }, base: { ref: "main" }, body: "Adds a feature.", html_url: `${html}/pull/2`, changed_files: 1 });
+    }
+    if (req.method === "GET" && rest === "/pulls/2/files") {
+      return ok([{ filename: "src/app.ts", status: "modified", additions: 1, deletions: 0, patch: "@@ -1 +1,2 @@\n export const greet\n+export const wave = () => 1;" }]);
+    }
+    if (req.method === "POST" && (rest === "/issues" || rest === "/pulls")) {
+      const body = JSON.parse((await readBody(req)) || "{}") as Record<string, unknown>;
+      if (rest === "/pulls" && body.head !== "feature" && body.head !== "octo:feature") {
+        return ok({ message: "Validation Failed", errors: [{ resource: "PullRequest", field: "head", code: "invalid" }] }, 422);
+      }
+      githubLog.writes.push({ kind: rest === "/issues" ? "issue" : "pull", repo: "octo/hello", body });
+      const number = ++issueNumber;
+      return ok({ number, html_url: `${html}/${rest === "/issues" ? "issues" : "pull"}/${number}` }, 201);
+    }
+    return notFound();
+  }
+
   const send = (res: ServerResponse, status: number, message: unknown, headers: Record<string, string> = {}) => {
     if (state.sse && status === 200) {
       res.writeHead(200, { "content-type": "text/event-stream", ...headers });
@@ -416,6 +681,7 @@ export async function startMockConnectors(port = 7788) {
   const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://mock");
     const path = url.pathname;
+    if (await githubSide(req, res, url)) return;
     if (await oauth(req, res, url)) return;
     const preset = /^\/presets\/[\w-]+\/mcp$/.test(path);
     const keyed = /^\/s\/[^/]+\/mcp$/.test(path);
@@ -558,6 +824,18 @@ export async function startMockConnectors(port = 7788) {
     expireTokens: () => {
       for (const t of accessTokens.values()) t.expiresAt = 0;
     },
+    /** The stand-in GitHub's settings and what it was asked for. */
+    github,
+    githubLog,
+    /** Every GitHub token it gave, and how many still work. */
+    githubTokens: () => [...githubIssued],
+    githubLive: () => ({ access: [...githubAccess.values()].filter((at) => at > Date.now()).length, refresh: githubRefresh.size }),
+    /** Lets every GitHub access token run out now (refresh tokens still work). */
+    expireGithubTokens: () => {
+      for (const token of githubAccess.keys()) githubAccess.set(token, 0);
+    },
+    /** Takes the app's installation away (as uninstalling it on GitHub would); tokens stay. */
+    uninstallGithub: () => githubInstallations.clear(),
     /** Forgets the listings, so "changing" says its first description again, and puts the OAuth server back as it was (its clients and grants stay). */
     reset: () => {
       listings.clear();
@@ -572,6 +850,17 @@ export async function startMockConnectors(port = 7788) {
       oauthLog.cimdFetches = 0;
       oauthLog.elsewhere.length = 0;
       oauthLog.stolen.length = 0;
+      // GitHub's settings go back as they were (its installation, tokens and grant stay).
+      const callback = github.callback;
+      Object.assign(github, GITHUB_DEFAULTS, { callback });
+      githubLog.calls.length = 0;
+      githubLog.writes.length = 0;
+      githubLog.authorizes.length = 0;
+      githubLog.revoked.length = 0;
+      githubLog.searches.length = 0;
+      githubLog.installs = 0;
+      githubLog.codes = 0;
+      githubLog.refreshes = 0;
     },
     close: () => new Promise<void>((resolve) => server.close(() => resolve())),
   };
@@ -581,10 +870,16 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const port = Number(process.env.PORT ?? 7788);
   const mock = await startMockConnectors(port);
   console.log(`Mock connectors on ${mock.origin} (pid ${process.pid}). Start Flash with FLASH_CONNECT_MOCK=${mock.origin}`);
+  let githubSeen = 0;
   setInterval(() => {
     while (mock.calls.length) {
       const c = mock.calls.shift()!;
       console.log(`[mock] ${c.era} ${c.path} ${c.name} ${JSON.stringify(c.arguments).slice(0, 200)}`);
+    }
+    // GitHub's calls, by method and path only (an authorize or callback address can hold a code).
+    for (; githubSeen < mock.githubLog.calls.length; githubSeen++) {
+      const c = mock.githubLog.calls[githubSeen];
+      console.log(`[mock] github ${c.method} ${c.path.split("?")[0]}`);
     }
   }, 500);
 }

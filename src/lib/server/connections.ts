@@ -30,6 +30,28 @@ import {
   type Tokens,
 } from "./mcp-oauth.ts";
 import { claimAction, finishAction, proposeAction, type ActionRow } from "./pending-actions.ts";
+import {
+  GITHUB_API,
+  GITHUB_ISSUER,
+  GITHUB_PROBLEMS,
+  GITHUB_TOOLS,
+  GitHubClient,
+  beginGithubFlow,
+  dropGithubToken,
+  exchangeGithubCode,
+  githubAccount,
+  githubApi,
+  githubInstallations,
+  githubReady,
+  githubStep,
+  installationHint,
+  installationsOf,
+  refreshGithubToken,
+  revokeGithubGrant,
+  takeGithubFlow,
+  takeInstallFlow,
+  type GithubAccount,
+} from "./github.ts";
 import { CONNECTION_ID, MAX_CONNECTIONS, presetById, type ConnectionView, type Preset, type ToolKind, type ToolPreview } from "../connectors.ts";
 import { StoppedMidCall, cleanSchema, cut, stopError, toolName, type ConnectorKit, type ConnectorTool } from "../engines/connect.ts";
 import { CONNECT_RESULT_TOKENS } from "../credits.ts";
@@ -58,17 +80,26 @@ type ConnectionRow = {
   protocol: string;
   created_at: number;
   last_used_at: number;
-  // Signed in with OAuth (kind "oauth", see mcp-oauth.ts).
+  // Signed in with OAuth (kind "oauth", see mcp-oauth.ts), or to GitHub (kind "github", see github.ts).
   enc_access: string;
   enc_refresh: string;
   expires_at: number;
   issuer: string;
+  // For GitHub: the ids of the app's installations its token could see at sign-in (see github.ts).
   resource: string;
   client_reg_id: string;
   scopes: string;
   endpoints_json: string;
   refreshing_until: number | null;
+  // For GitHub: the number of the GitHub account its tokens are for (see keepGithub).
+  account_id: string;
 };
+
+/** Signed in, with tokens Flash renews: at an MCP server's authorization server, or to GitHub. */
+const signsIn = (row: Pick<ConnectionRow, "kind">) => row.kind === "oauth" || row.kind === "github";
+
+/** A GitHub connection while the GitHub App isn't set up: hidden everywhere, and never used. */
+const hidden = (row: Pick<ConnectionRow, "provider">) => row.provider === "github" && !githubReady();
 
 type ToolRow = {
   connection_id: string;
@@ -182,6 +213,7 @@ const place = (row: Pick<ConnectionRow, "id" | "user_id" | "provider">, field: "
 export function serverUrl(provider: string, url: string): string {
   const preset = presetById(provider);
   if (!preset) return url;
+  if (preset.rest) return githubApi();
   const mock = mockOrigin();
   return mock ? `${mock}/presets/${preset.id}/mcp` : preset.url;
 }
@@ -270,8 +302,9 @@ function view(row: ConnectionRow, tools: ToolRow[]): ConnectionView {
     host: hostOf(serverUrl(row.provider, row.url)),
     custom: !presetById(row.provider),
     last4: row.last4,
-    signIn: row.kind === "oauth",
-    revocable: row.kind === "oauth" && readEndpoints(row.endpoints_json).revocation !== "",
+    signIn: signsIn(row),
+    // GitHub's authorization of the app is always cancelled on removal (see revokeGithub).
+    revocable: row.kind === "github" || (row.kind === "oauth" && readEndpoints(row.endpoints_json).revocation !== ""),
     status: row.status !== "needs_reconnect" && !opens(row) ? "needs_reconnect" : row.status,
     createdAt: Number(row.created_at),
     tools: tools
@@ -289,9 +322,9 @@ function view(row: ConnectionRow, tools: ToolRow[]): ConnectionView {
   };
 }
 
-/** The user's connections, without their secrets. */
+/** The user's connections, without their secrets (GitHub only while the GitHub App is set up). */
 export async function listConnections(userId: string): Promise<ConnectionView[]> {
-  const rows = await all<ConnectionRow>("SELECT * FROM connections WHERE user_id = ? ORDER BY created_at", [userId]);
+  const rows = (await all<ConnectionRow>("SELECT * FROM connections WHERE user_id = ? ORDER BY created_at", [userId])).filter((r) => !hidden(r));
   if (!rows.length) return [];
   const tools = await all<ToolRow>(
     "SELECT t.* FROM connection_tools t JOIN connections c ON c.id = t.connection_id WHERE c.user_id = ?",
@@ -307,8 +340,8 @@ export type NewConnection = { provider: string; url?: string; token?: string; la
 function target(input: NewConnection): { preset?: Preset; url: string } {
   const preset = presetById(input.provider);
   if (preset) {
-    // A service that only signs in takes no key (see startSignIn).
-    if (!input.token?.trim() || !preset.keyName) throw new ConnectError("bad_input", "This service needs its key or token.");
+    // A service that only signs in takes no key (see startSignIn and startGithub).
+    if (!input.token?.trim() || !preset.keyName || preset.rest) throw new ConnectError("bad_input", "This service needs its key or token.");
     return { preset, url: serverUrl(preset.id, preset.url) };
   }
   if (input.provider !== "custom" || typeof input.url !== "string") throw new ConnectError("bad_input", "Unknown service.");
@@ -445,13 +478,15 @@ const toolInserts = (id: string, tools: McpTool[], preset?: Preset) =>
 /**
  * Removes a connection of the user's, with its tools and waiting actions, each deleted by hand in
  * one batch (Turso runs with foreign keys off). An account signed in with OAuth is signed out at its
- * authorization server first, where it has a revocation endpoint (S-7); it is removed either way. A
- * key needs no revoking here: the user deletes it in the service, as Settings says.
+ * authorization server first, where it has a revocation endpoint (S-7), and GitHub's authorization of
+ * the app is cancelled; it is removed either way. A key needs no revoking here: the user deletes it in
+ * the service, as Settings says.
  */
 export async function removeConnection(userId: string, id: string): Promise<boolean> {
   const row = await one<ConnectionRow>("SELECT * FROM connections WHERE id = ? AND user_id = ?", [id, userId]);
   if (!row) return false;
   if (row.kind === "oauth") await revokeConnection(row);
+  if (row.kind === "github") await revokeGithub(row);
   await (await db()).batch(
     [
       { sql: "DELETE FROM pending_actions WHERE connection_id = ? AND user_id = ?", args: [id, userId] },
@@ -487,6 +522,27 @@ async function revokeConnection(row: ConnectionRow): Promise<void> {
   console.log(`[flash] connector ${row.id} ${row.provider} revoke ${done ? "ok" : "not confirmed"}`);
 }
 
+/**
+ * Cancels the user's authorization of Flash's GitHub App (DELETE /applications/{client_id}/grant,
+ * which needs a token that still works: one about to run out is renewed first, at no cost). Never
+ * throws; logs only whether GitHub confirmed it. Without the app's settings there is no way to ask.
+ */
+async function revokeGithub(row: ConnectionRow): Promise<void> {
+  if (!githubReady()) return;
+  let token = "";
+  try {
+    token = (await accessToken(row)).token;
+  } catch {
+    try {
+      token = row.enc_access ? unseal(row.enc_access, place(row, "access")) : "";
+    } catch {
+      return;
+    }
+  }
+  const done = await revokeGithubGrant(token);
+  console.log(`[flash] connector ${row.id} ${row.provider} revoke ${done ? "ok" : "not confirmed"}`);
+}
+
 async function owned(userId: string, id: string): Promise<ConnectionRow> {
   const row = await one<ConnectionRow>("SELECT * FROM connections WHERE id = ? AND user_id = ?", [id, userId]);
   if (!row) throw new ConnectError("gone", "That account isn't connected.");
@@ -498,7 +554,10 @@ async function owned(userId: string, id: string): Promise<ConnectionRow> {
  * token), what of its address to hide (see scrub), and for OAuth the sealed token it used, so a
  * refusal of that very token can be told from one already renewed.
  */
-type Opened = { client: McpClient; secret: string; parts: string[]; sealed: string };
+type Opened = { client: ToolClient; secret: string; parts: string[]; sealed: string };
+
+/** What a connection is called through: an MCP server's client, or Flash's own GitHub tools (the same calls). */
+type ToolClient = Pick<McpClient, "listTools" | "callTool" | "close" | "protocol">;
 
 /**
  * A secret that can't be opened: CONNECTOR_KEYS doesn't have the key that sealed it now. An "auth"
@@ -533,7 +592,7 @@ function stepUp(err: unknown): string[] | null {
 const refusedKey = (err: unknown) => err instanceof McpError && err.code === "auth" && !(err instanceof KeyUnreadable) && !stepUp(err);
 
 /** A refusal Flash can try once more after renewing the sign-in: a 401 to an OAuth connection's token. */
-const renewable = (row: ConnectionRow, err: unknown) => row.kind === "oauth" && err instanceof McpError && err.code === "auth" && err.status === 401 && !(err instanceof SignInEnded);
+const renewable = (row: ConnectionRow, err: unknown) => signsIn(row) && err instanceof McpError && err.code === "auth" && err.status === 401 && !(err instanceof SignInEnded);
 
 /**
  * Keeps the scopes a server asked for (step-up) with the ones asked for before, so Reconnect asks for
@@ -640,7 +699,7 @@ async function refreshNow(row: ConnectionRow, lock: number, usable: boolean, sig
     // Never cut short by Stop or the reply's deadline (only by its own time limit, REQUEST_MS): a server
     // that rotates refresh tokens has retired the one sent as soon as it has it, so its answer must be
     // read and kept. Stop takes effect once the new tokens are saved.
-    tokens = await refreshGrant(grantOf(row), refreshToken);
+    tokens = await (row.kind === "github" ? refreshGithubToken(refreshToken) : refreshGrant(grantOf(row), refreshToken));
   } catch (err) {
     if (err instanceof OAuthError && err.code === "invalid_grant") {
       const ended = await run(
@@ -673,7 +732,9 @@ async function refreshNow(row: ConnectionRow, lock: number, usable: boolean, sig
     [access.stored, refresh, tokens.expiresAt, access.version, row.id, row.user_id, row.enc_refresh],
   );
   if (!saved.rowsAffected) {
-    await revokeGrant(grantOf(row), { access: tokens.access, refresh: tokens.refresh }).catch(() => false);
+    // Only these tokens: for GitHub, the whole grant would also end the sign-in that replaced them.
+    if (row.kind === "github") await dropGithubToken(tokens.access);
+    else await revokeGrant(grantOf(row), { access: tokens.access, refresh: tokens.refresh }).catch(() => false);
     return null;
   }
   console.log(`[flash] connector ${row.id} ${row.provider} refreshed`);
@@ -686,6 +747,10 @@ async function refreshNow(row: ConnectionRow, lock: number, usable: boolean, sig
  * address) opened. An OAuth connection's access token is renewed first when needed (see accessToken).
  */
 async function openServer(row: ConnectionRow, signal?: AbortSignal, stale = ""): Promise<Opened> {
+  if (row.kind === "github") {
+    const { token, sealed } = await accessToken(row, stale, signal);
+    return { client: new GitHubClient(token, installationsOf(row.resource), signal), secret: token, parts: [], sealed };
+  }
   let secret = "";
   let url: string;
   let sealed = "";
@@ -875,7 +940,7 @@ export async function chatKit(userId: string, ids: string[], { replyId = "", sig
   const wanted = [...new Set(ids)].slice(0, MAX_CONNECTIONS);
   if (!wanted.length) return null;
   const marks = wanted.map(() => "?").join(",");
-  const rows = await all<ConnectionRow>(`SELECT * FROM connections WHERE user_id = ? AND id IN (${marks}) AND status = 'ok' ORDER BY created_at`, [userId, ...wanted]);
+  const rows = (await all<ConnectionRow>(`SELECT * FROM connections WHERE user_id = ? AND id IN (${marks}) AND status = 'ok' ORDER BY created_at`, [userId, ...wanted])).filter((r) => !hidden(r));
   if (!rows.length) return null;
   const toolRows = await all<ToolRow>(
     `SELECT * FROM connection_tools WHERE connection_id IN (${rows.map(() => "?").join(",")}) AND enabled = 1 AND changed = 0 ORDER BY position`,
@@ -996,6 +1061,8 @@ export async function chatKit(userId: string, ids: string[], { replyId = "", sig
       return proposeAction({
         userId,
         connectionId: tool.connectionId,
+        // The account this reply read: a card is never stored for another one (see keepGithub).
+        accountId: rowOf(tool.connectionId).account_id,
         connection: tool.connection,
         host: tool.host,
         tool: tool.tool,
@@ -1037,7 +1104,7 @@ const NOT_RUN = {
   scope: msg("This needs more access than the account gave Flash. Press Reconnect on this account in Settings > Connectors and allow it, then ask again."),
 };
 const PROBLEMS: ConnectProblem[] = ["blocked", "auth", "unreachable", "protocol", "limit", "too_many", "changed", "no_tools", "bad_input", "gone", "unverified", "no_signin", "needs_client", "no_iss", "unreadable"];
-const OWN_WORDS = new Set<string>([...Object.values(NOT_RUN), ...PROBLEMS.map((code) => problemText(code, english))]);
+const OWN_WORDS = new Set<string>([...Object.values(NOT_RUN), ...Object.values(GITHUB_PROBLEMS), ...PROBLEMS.map((code) => problemText(code, english))]);
 
 /** A failed action's result for the card: Flash's own reasons in the user's language, a tool's own words as they are. */
 export const failedText = (result: string, t: Translate) => (OWN_WORDS.has(result) ? t(result) : result);
@@ -1055,14 +1122,18 @@ export async function runApproved(userId: string, id: string, hash: string): Pro
     return { status: "failed" as const, result: message };
   };
   const row = await one<ConnectionRow>("SELECT * FROM connections WHERE id = ? AND user_id = ?", [action.connection_id, userId]);
-  if (!row) return fail(NOT_RUN.gone);
+  if (!row || hidden(row)) return fail(NOT_RUN.gone);
   const pinned = await one<ToolRow>("SELECT * FROM connection_tools WHERE connection_id = ? AND name = ?", [row.id, action.tool]);
   if (!pinned || pinned.changed || pinned.hash !== action.tool_hash) return fail(NOT_RUN.changed);
-  let out: { text: string; isError: boolean; needsScope?: boolean } | "changed";
+  let out: { text: string; isError: boolean; needsScope?: boolean } | "changed" | "gone";
   try {
     out = await withServer(row, async (opened) => {
       const live = await opened.client.listTools();
       if (live.find((t) => t.name === action.tool)?.hash !== action.tool_hash) return "changed" as const;
+      // Still waiting, now that the token is in hand: a sign-in as another GitHub account removes the
+      // account's actions in the same write as it keeps its tokens (see keepGithub), so a token of the
+      // new account never runs what was asked of the old one.
+      if (!(await one("SELECT id FROM pending_actions WHERE id = ? AND user_id = ?", [action.id, userId]))) return "gone" as const;
       return callOn(row, opened, pinned, JSON.parse(action.input_json) as Record<string, unknown>);
     });
   } catch (err) {
@@ -1074,6 +1145,7 @@ export async function runApproved(userId: string, id: string, hash: string): Pro
     }
     return fail(NOT_RUN.failed);
   }
+  if (out === "gone") return fail(NOT_RUN.gone);
   if (out === "changed") {
     await run("UPDATE connection_tools SET changed = 1 WHERE connection_id = ? AND name = ?", [row.id, action.tool]);
     return fail(NOT_RUN.changed);
@@ -1123,7 +1195,8 @@ export async function startSignIn(userId: string, input: SignInRequest, origin: 
   } else {
     const preset = presetById(input.provider ?? "");
     if (preset) {
-      if (!preset.signIn) throw new ConnectError("bad_input", "This service needs its key or token.");
+      // GitHub connects through its own route (see startGithub).
+      if (!preset.signIn || preset.rest) throw new ConnectError("bad_input", "This service needs its key or token.");
       provider = preset.id;
       url = serverUrl(preset.id, preset.url);
       label = preset.name;
@@ -1268,4 +1341,159 @@ async function keepSignIn(userId: string, flow: FlowRow, tokens: Tokens): Promis
     "write",
   );
   return preset ? "ok" : "review";
+}
+
+/**
+ * Connect GitHub, or Reconnect it (see github.ts): GitHub's authorize step, and the app's installation
+ * page after it only when the user's token sees no installation. A user keeps one GitHub account
+ * here: connecting again updates it (new tokens, and the installations its token sees). With install,
+ * for a connected account (Add repositories on GitHub): the app's installation page itself, where the
+ * user can install it on their own account or another organization, or pick more repositories; its
+ * flow brings them back through the authorize step, so new installations are kept. Only from a
+ * confirmed account; costs nothing and calls no model.
+ */
+export async function startGithub(userId: string, input: { connectionId?: string; install?: boolean }, origin: string): Promise<string> {
+  await confirmedOnly(userId);
+  const existing = await one<ConnectionRow>("SELECT * FROM connections WHERE user_id = ? AND provider = 'github' ORDER BY created_at LIMIT 1", [userId]);
+  if ((input.connectionId || input.install) && (!existing || (input.connectionId && existing.id !== input.connectionId))) {
+    throw new ConnectError("gone", "That account isn't connected any more.");
+  }
+  if (!existing) {
+    const count = await one<{ n: number }>("SELECT COUNT(*) AS n FROM connections WHERE user_id = ?", [userId]);
+    if (Number(count?.n ?? 0) >= MAX_CONNECTIONS) throw new ConnectError("too_many", "You have the most connections Flash keeps. Remove one first.");
+  }
+  await tryLimit(userId);
+  if (input.install) return beginGithubFlow(userId, origin, { step: "install" });
+  // The authorize step first: the installation page comes next only when the user has none (see github.ts).
+  return beginGithubFlow(userId, origin, { step: "authorize" });
+}
+
+/** How GitHub's callback ends: back to Flash with an outcome, or on to GitHub's authorize step. */
+export type GithubOutcome = { outcome: SignInOutcome | "github_install" } | { redirect: string };
+
+/**
+ * GitHub's callback (see github.ts for the rules). Trades a code only for the authorize step of a flow
+ * this user started, taken once by its state, with its PKCE verifier. A redirect without Flash's state
+ * (GitHub's after an installation) or with an install flow's state redeems nothing: it starts the
+ * authorize step again when Flash has just sent this user to the installation page, and fails
+ * otherwise. A token that sees no installation goes on to the installation page (once). The
+ * installation the install named must be one the new token sees; only ids GitHub lists for that
+ * token are kept. Tokens that can't be kept are given back.
+ */
+export async function finishGithub(
+  userId: string,
+  params: { state: string | null; code: string | null; error: string | null; installationId: string | null },
+  origin: string,
+): Promise<GithubOutcome> {
+  const failed = (why: string): GithubOutcome => {
+    console.log(`[flash] connector sign-in github failed: ${why}`);
+    return { outcome: "failed" };
+  };
+  if (!params.state) {
+    const install = await takeInstallFlow(userId);
+    if (!install) return failed("no state");
+    if (params.error) return { outcome: "cancelled" };
+    return { redirect: await beginGithubFlow(userId, origin, { step: "authorize", installation: installationHint(params.installationId), afterInstall: true }) };
+  }
+  const flow = await takeGithubFlow(userId, params.state);
+  const step = flow && githubStep(flow);
+  if (!flow || !step) return { outcome: "expired" };
+  if (params.error) return { outcome: "cancelled" };
+  // GitHub passed Flash's state through the installation: its code still isn't the authorize step's.
+  if (step.step === "install") return { redirect: await beginGithubFlow(userId, origin, { step: "authorize", installation: installationHint(params.installationId), afterInstall: true }) };
+  if (!params.code) return failed("no code");
+  try {
+    await confirmedOnly(userId);
+  } catch {
+    return failed("unverified");
+  }
+  let tokens: Tokens;
+  try {
+    tokens = await exchangeGithubCode(params.code, flowSecret(flow, "verifier"), flow.redirect_uri);
+  } catch (err) {
+    return failed(err instanceof OAuthError ? err.code : "token");
+  }
+  try {
+    const [account, installations] = await Promise.all([githubAccount(tokens.access), githubInstallations(tokens.access)]);
+    if (!installations.length) {
+      // Nothing installed yet: on to the app's installation page, unless the user has just been there.
+      await dropGithubToken(tokens.access);
+      console.log("[flash] connector sign-in github: no installation");
+      if (step.afterInstall) return { outcome: "github_install" };
+      return { redirect: await beginGithubFlow(userId, origin, { step: "install" }) };
+    }
+    if (step.installation && !installations.includes(step.installation)) {
+      await dropGithubToken(tokens.access);
+      return failed("installation");
+    }
+    await keepGithub(userId, tokens, installations, account);
+    return { outcome: "ok" };
+  } catch (err) {
+    await dropGithubToken(tokens.access);
+    return failed(err instanceof ConnectError ? err.code : err instanceof OAuthError ? err.code : "store");
+  }
+}
+
+/**
+ * Keeps a GitHub sign-in: new tokens and installations for the user's GitHub account, or a new one
+ * with Flash's GitHub tools pinned, named with the GitHub login it is for (GitHub · login). Of two
+ * sign-ins finishing at once, only one adds the account. A sign-in as another GitHub account (another
+ * number) replaces the one kept, so the actions waiting for an Approve on it are removed in the same
+ * write, and a reply that read the old one can't store a card after it (see proposeAction): nothing
+ * asked of one GitHub account ever runs as another (see runApproved).
+ */
+async function keepGithub(userId: string, tokens: Tokens, installations: string[], account: GithubAccount): Promise<void> {
+  const preset = presetById("github")!;
+  const label = `${preset.name} · ${account.login}`.slice(0, 60);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const existing = await one<ConnectionRow>("SELECT * FROM connections WHERE user_id = ? AND provider = 'github' ORDER BY created_at LIMIT 1", [userId]);
+    if (existing) {
+      const access = seal(tokens.access, place(existing, "access"));
+      const refresh = tokens.refresh ? seal(tokens.refresh, place(existing, "refresh")).stored : "";
+      await (await db()).batch(
+        [
+          // Read in the same write as the new tokens, so of two sign-ins at once neither misses it.
+          {
+            sql: `DELETE FROM pending_actions WHERE connection_id = ? AND user_id = ?
+                  AND EXISTS (SELECT 1 FROM connections WHERE id = ? AND user_id = ? AND account_id != ?)`,
+            args: [existing.id, userId, existing.id, userId, account.id],
+          },
+          {
+            sql: `UPDATE connections SET enc_access = ?, enc_refresh = ?, expires_at = ?, resource = ?, refreshing_until = NULL, status = 'ok', key_version = ?,
+                    label = ?, account_id = ?
+                  WHERE id = ? AND user_id = ?`,
+            args: [access.stored, refresh, tokens.expiresAt, installations.join(" "), access.version, label, account.id, existing.id, userId],
+          },
+        ],
+        "write",
+      );
+      return;
+    }
+    const count = await one<{ n: number }>("SELECT COUNT(*) AS n FROM connections WHERE user_id = ?", [userId]);
+    if (Number(count?.n ?? 0) >= MAX_CONNECTIONS) throw new ConnectError("too_many", "You have the most connections Flash keeps. Remove one first.");
+    const id = randomId(12);
+    const where = { id, user_id: userId, provider: "github" };
+    const access = seal(tokens.access, place(where, "access"));
+    const refresh = tokens.refresh ? seal(tokens.refresh, place(where, "refresh")).stored : "";
+    // One write: the account only if the user has none yet, and its tools only if it was added.
+    await (await db()).batch(
+      [
+        {
+          sql: `INSERT INTO connections (id, user_id, provider, kind, label, url, enc_url, status, enc_secret, key_version, last4, protocol, created_at,
+                  enc_access, enc_refresh, expires_at, issuer, resource, client_reg_id, scopes, endpoints_json, account_id)
+                SELECT ?, ?, 'github', 'github', ?, ?, '', 'ok', '', ?, '', '', ?, ?, ?, ?, ?, ?, '', '', '', ?
+                WHERE NOT EXISTS (SELECT 1 FROM connections WHERE user_id = ? AND provider = 'github')`,
+          args: [id, userId, label, GITHUB_API, access.version, now(), access.stored, refresh, tokens.expiresAt, GITHUB_ISSUER, installations.join(" "), account.id, userId],
+        },
+        ...GITHUB_TOOLS.map((t, i) => ({
+          sql: `INSERT INTO connection_tools (connection_id, name, title, description, schema, hash, kind, enabled, trusted, changed, position)
+                SELECT ?, ?, ?, ?, ?, ?, ?, 1, 0, 0, ? WHERE EXISTS (SELECT 1 FROM connections WHERE id = ? AND user_id = ?)`,
+          args: [id, t.name, t.title, t.description, JSON.stringify(t.inputSchema), t.hash, kindOf(t, preset), i, id, userId],
+        })),
+      ],
+      "write",
+    );
+    if (await one("SELECT id FROM connections WHERE id = ? AND user_id = ?", [id, userId])) return;
+  }
+  throw new ConnectError("gone", "That account isn't connected any more.");
 }

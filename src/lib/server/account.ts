@@ -35,6 +35,16 @@ async function createToken(userId: string, kind: TokenKind): Promise<string> {
   return token;
 }
 
+/** Whose one-time link this is, without using it up, or null if it is wrong, used or expired. */
+async function tokenOwner(token: string, kind: TokenKind): Promise<string | null> {
+  if (!token) return null;
+  const row = await one<{ user_id: string }>(
+    "SELECT user_id FROM email_tokens WHERE token_hash = ? AND kind = ? AND expires_at > ?",
+    [sha256(token), kind, now()],
+  );
+  return row?.user_id ?? null;
+}
+
 /** Uses a one-time link. Returns the user it belongs to, or null if it is wrong, used or expired. */
 export async function redeemToken(token: string, kind: TokenKind): Promise<string | null> {
   if (!token) return null;
@@ -61,13 +71,36 @@ export async function sendReset(user: { id: string; email: string }, origin: str
   return demoEmails() ? link : undefined;
 }
 
+/**
+ * Uses a confirmation link for whoever is signed in (signedIn, a user id) in the browser that
+ * opened it. Only someone signed in to that account can confirm it: anyone can sign up with another
+ * person's email, and if that person then opened the link, the stranger's password would stay on an
+ * account they now think is theirs. Otherwise the link is kept and they're asked to sign in first;
+ * signing in with an email link or Google instead clears what the stranger set up (see signin.ts).
+ */
+export async function confirmEmail(token: string, signedIn: string | null): Promise<"confirmed" | "sign_in" | "invalid"> {
+  const owner = await tokenOwner(token, "verify");
+  if (!owner) return "invalid";
+  if (signedIn !== owner) return "sign_in";
+  const userId = await redeemToken(token, "verify");
+  if (!userId) return "invalid";
+  await markVerified(userId);
+  return "confirmed";
+}
+
 export async function markVerified(userId: string): Promise<void> {
   await run("UPDATE users SET verified_at = ? WHERE id = ? AND verified_at = 0", [now(), userId]);
 }
 
-/** Signs a user out everywhere (after a password reset). */
+/**
+ * Signs a user out everywhere (after a password reset or change, or "Sign out everywhere"),
+ * including apps like Claude connected to Flash: their tokens could have been given out by
+ * whoever was signed in before, and would otherwise keep working for 30 days at a time.
+ */
 export async function endAllSessions(userId: string): Promise<void> {
   await run("DELETE FROM sessions WHERE user_id = ?", [userId]);
+  await run("DELETE FROM oauth_tokens WHERE user_id = ?", [userId]);
+  await run("DELETE FROM oauth_codes WHERE user_id = ?", [userId]);
 }
 
 /** Accounts created before email keys existed get theirs filled in. */

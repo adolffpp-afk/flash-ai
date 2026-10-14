@@ -203,7 +203,7 @@ test("second review #5: Retry of a failed Continue, after a reload, reads the ap
   await sql("UPDATE connection_tools SET enabled = 0 WHERE name = 'changing'");
   // A card on the reply before, approved and done.
   const kit = (await chatKit(who.id, [linear], { replyId: "a0" }))!;
-  const card = await kit.propose(kit.tools.find((t) => t.tool === "send_note")!, { to: "a@b.c", note: "hi" });
+  const card = (await kit.propose(kit.tools.find((t) => t.tool === "send_note")!, { to: "a@b.c", note: "hi" }))!;
   await kit.close();
   assert.equal((await runApproved(who.id, card.id, card.inputHash))!.status, "done");
   const used = async () => Number((await one<{ used: number }>("SELECT used FROM pending_actions WHERE id = ?", [card.id]))!.used);

@@ -1,6 +1,6 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { CONNECT_CALLS_PER_STEP, CONNECT_RESULT_TOKENS } from "../credits.ts";
-import type { ActionCard, ConnectorUse, ToolKind } from "../connectors.ts";
+import { toolWords, type ActionCard, type ConnectorUse, type ToolKind } from "../connectors.ts";
 import { english, type Translate } from "../i18n.ts";
 import { tokensAtMost } from "../tokens.ts";
 import type { StreamEvent } from "../types.ts";
@@ -47,14 +47,15 @@ export type ConnectorTool = {
  * A reply's connected accounts (see chatKit in server/connections.ts). tools are the pinned tools the
  * user has on, which the hold counted; check() compares them with what each server lists now and
  * keeps those still the same; run() calls one and returns its text with any secret taken out;
- * propose() stores a call waiting for approval. tainted names accounts already read in this
- * conversation (a reply continued with an approved result).
+ * propose() stores a call waiting for approval (null when the account was replaced or removed since
+ * the reply began). tainted names accounts already read in this conversation (a reply continued with
+ * an approved result).
  */
 export type ConnectorKit = {
   tools: ConnectorTool[];
   check: (signal?: AbortSignal) => Promise<{ tools: ConnectorTool[]; unreachable: string[]; changed: string[] }>;
   run: (tool: ConnectorTool, input: Record<string, unknown>, signal?: AbortSignal) => Promise<{ text: string; isError: boolean }>;
-  propose: (tool: ConnectorTool, input: Record<string, unknown>) => Promise<ActionCard>;
+  propose: (tool: ConnectorTool, input: Record<string, unknown>) => Promise<ActionCard | null>;
   close: () => Promise<void>;
   tainted?: string[];
 };
@@ -74,8 +75,9 @@ export const MAX_INPUT_CHARS = 16_000;
 
 /**
  * Checks a call's input against the tool's schema as far as Flash can without a validator: an object,
- * not too big, with every required field, and each top-level field of the type the schema names.
- * Returns why it isn't usable, or "" when it is.
+ * not too big, with every required field, each top-level field of the type the schema names, and no
+ * other field when the schema says so (additionalProperties: false), so a card never shows a field
+ * the tool wouldn't send. Returns why it isn't usable, or "" when it is.
  */
 export function inputProblem(schema: Record<string, unknown>, input: unknown): string {
   if (!input || typeof input !== "object" || Array.isArray(input)) return "the input must be an object";
@@ -85,8 +87,12 @@ export function inputProblem(schema: Record<string, unknown>, input: unknown): s
   const missing = required.filter((r) => fields[r] === undefined);
   if (missing.length) return `missing ${missing.join(", ")}`;
   const properties = schema.properties && typeof schema.properties === "object" ? (schema.properties as Record<string, { type?: unknown }>) : {};
+  if (schema.additionalProperties === false) {
+    const extra = Object.keys(fields).find((key) => !Object.hasOwn(properties, key));
+    if (extra !== undefined) return `${extra.slice(0, 60)} isn't a field of this tool`;
+  }
   for (const [key, value] of Object.entries(fields)) {
-    const type = properties[key]?.type;
+    const type = Object.hasOwn(properties, key) ? properties[key]?.type : undefined;
     if (typeof type !== "string" || value === null) continue;
     const ok =
       type === "string"
@@ -155,6 +161,7 @@ function markUsed(state: ConnectState, tool: ConnectorTool) {
 }
 
 const SKIPPED = '{"status":"skipped","reason":"Only 4 tool calls fit in one step. Call this one again in your next step if you still need it."}';
+const ACCOUNT_CHANGED = "That account was replaced or removed since this reply began, so nothing was proposed. Tell the user to ask again.";
 const WAITING = (title: string) =>
   JSON.stringify({ status: "waiting_for_user", note: `Flash showed the user a card to approve ${title}. It runs only if they approve it.` });
 
@@ -193,11 +200,17 @@ export async function* connectorCalls(
     if (needsApproval(tool, state.readFrom)) {
       const card = await kit.propose(tool, input);
       if (signal?.aborted) throw stopError(signal);
+      if (!card) {
+        // Another account (another GitHub login) or none since the reply began: no card for the old one.
+        out.set(call.id, { content: JSON.stringify({ status: "error", reason: ACCOUNT_CHANGED }), isError: true });
+        continue;
+      }
       yield { type: "approve_action", action: card };
       out.set(call.id, { content: WAITING(`${tool.connection} ${tool.title}`), isError: false });
       continue;
     }
-    yield { type: "status", message: t("Using {name}…", { name: `${tool.connection} · ${tool.title}` }) };
+    // A title Flash wrote itself (GitHub's tools) is shown in the user's language; any other is the server's own.
+    yield { type: "status", message: t("Using {name}…", { name: `${tool.connection} · ${toolWords(t, tool.title)}` }) };
     let result: { text: string; isError: boolean };
     try {
       result = await kit.run(tool, input, signal);
