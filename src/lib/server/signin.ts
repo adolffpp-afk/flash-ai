@@ -32,7 +32,7 @@ export async function findAccount(email: string): Promise<Account | null> {
  * with "Forgot password"), and so do the connected accounts (Settings > Connectors), with their
  * tools, what was always allowed and the cards still waiting, the sign-ins under way and any client
  * ID and secret typed in for a server: a server someone else added must never get the owner's tool
- * calls, and nobody else's client may sign the owner in.
+ * calls, and nobody else's client may sign the owner in. Two-step sign-in goes too.
  */
 async function dropUnconfirmed(userId: string): Promise<void> {
   await run("UPDATE users SET password_hash = '' WHERE id = ?", [userId]);
@@ -46,6 +46,10 @@ async function dropUnconfirmed(userId: string): Promise<void> {
       { sql: "DELETE FROM connections WHERE user_id = ?", args: [userId] },
       { sql: "DELETE FROM connect_flows WHERE user_id = ?", args: [userId] },
       { sql: "DELETE FROM mcp_client_registrations WHERE owner_user_id = ?", args: [userId] },
+      // Two-step sign-in a stranger turned on would lock the owner out with the stranger's app.
+      { sql: "DELETE FROM two_factor WHERE user_id = ?", args: [userId] },
+      { sql: "DELETE FROM two_factor_recovery WHERE user_id = ?", args: [userId] },
+      { sql: "DELETE FROM two_factor_pending WHERE user_id = ?", args: [userId] },
     ],
     "write",
   );
