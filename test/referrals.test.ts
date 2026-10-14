@@ -151,9 +151,12 @@ test("the referrer's balance stops at zero when the bonus was already spent", as
   await waitOut("ref2");
   assert.equal(await balance("ref2"), PRO_BONUS.referrer);
   await run("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES ('ref2', -500, 'spent', 0)");
+  const friendBefore = await balance("f2");
+  await run("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES ('f2', ?, 'spent', 0)", [-friendBefore]);
   const p = (await findPurchase({ ref: "stripe-invoice:in_f2" }))!;
-  await reverseReferral(p, 1, "stripe-dispute:dp_f2:ch_f2", "Payment disputed");
-  assert.equal(await balance("ref2"), 0);
+  await reverseReferral(p, 1, "stripe-dispute:dp_f2:ch_f2", "Payment disputed", true);
+  assert.equal(await balance("ref2"), 0, "the referrer didn't dispute, so owes nothing");
+  assert.equal(await balance("f2"), -PRO_BONUS.friend, "the friend who disputed owes the spent bonus");
 });
 
 test("a yearly plan's bonuses are on one month's credits, the referrer's capped", async () => {

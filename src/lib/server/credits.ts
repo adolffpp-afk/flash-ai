@@ -57,6 +57,8 @@ async function monthlyCredits(userId: string): Promise<void> {
     await grantPlanCredits(sub);
     return;
   }
+  // No free credits for an account that disputed a payment: they'd only pay off its debt.
+  if (await disputed(userId)) return;
   // Free credits go only to confirmed emails, so throwaway accounts can't farm them.
   if (verificationRequired()) {
     const user = await one<{ verified_at: number }>("SELECT verified_at FROM users WHERE id = ?", [userId]);
@@ -64,7 +66,7 @@ async function monthlyCredits(userId: string): Promise<void> {
   }
   const ref = `free:${userId}:${monthKey()}`;
   if (await one("SELECT 1 FROM credit_ledger WHERE ref = ?", [ref])) return;
-  const topUp = Math.max(0, FREE_MONTHLY_CREDITS - (await balance(userId)));
+  const topUp = Math.max(0, FREE_MONTHLY_CREDITS - Math.max(0, await balance(userId)));
   await run(
     "INSERT OR IGNORE INTO credit_ledger (user_id, amount, reason, ref, created_at) VALUES (?, ?, ?, ?, ?)",
     [userId, topUp, "Monthly free credits", ref, now()],
@@ -202,20 +204,28 @@ async function grantedFor(p: Purchase): Promise<number> {
   return p.credits * Math.min(12, Math.max(1, Number(row?.n ?? 0)));
 }
 
+/** Whether an account has disputed a payment (its take-back is in the ledger as stripe-dispute:…). */
+export async function disputed(userId: string): Promise<boolean> {
+  return !!(await one("SELECT 1 FROM credit_ledger WHERE user_id = ? AND substr(ref, 1, 15) = 'stripe-dispute:' LIMIT 1", [userId]));
+}
+
 /**
  * Takes back the credits a refunded or disputed payment gave: share (0 to 1) of them, minus
- * what was already taken back for the same charge. The balance can reach 0 but never goes
- * below it. Safe to run twice: ref is unique, and earlier take-backs for the charge are counted.
- * Returns the credits taken.
+ * what was already taken back for the same charge. For a refund the balance can reach 0 but
+ * never goes below it. For a dispute (debt) it can: credits already spent become a debt, a
+ * balance below 0, so nothing can be spent until a later payment covers it. Safe to run twice:
+ * ref is unique, and earlier take-backs for the charge are counted. Returns the credits taken.
  */
-export async function clawBack(p: Purchase, share: number, charge: string, ref: string, reason: string): Promise<number> {
+export async function clawBack(p: Purchase, share: number, charge: string, ref: string, reason: string, debt = false): Promise<number> {
   const target = Math.round((await grantedFor(p)) * Math.min(1, Math.max(0, share)));
   const taken = await one<{ total: number }>(
     "SELECT COALESCE(-SUM(amount), 0) AS total FROM credit_ledger WHERE user_id = ? AND (ref LIKE ? OR ref LIKE ?)",
     [p.user_id, `stripe-refund:${charge}:%`, `stripe-dispute:%:${charge}`],
   );
-  const amount = Math.min(target - Number(taken?.total ?? 0), await balance(p.user_id));
-  if (amount <= 0) return 0;
+  const owed = target - Number(taken?.total ?? 0);
+  const amount = debt ? Math.max(0, owed) : Math.min(owed, await balance(p.user_id));
+  // A dispute is always written down, even with nothing left to take, so disputed() sees it.
+  if (amount <= 0 && !debt) return 0;
   const r = await run(
     "INSERT OR IGNORE INTO credit_ledger (user_id, amount, reason, ref, created_at) VALUES (?, ?, ?, ?, ?)",
     [p.user_id, -amount, reason, ref, now()],
