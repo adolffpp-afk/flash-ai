@@ -1167,7 +1167,7 @@
  "Sign-in, AI and Uploads": "Вхід, ШІ й завантаження",
  "Signed out everywhere.": "Вихід виконано на всіх пристроях.",
  "Signed-in people manage their own": "Користувачі, які ввійшли, керують своїми записами",
- "Signs you out everywhere, this device included. Connected apps keep working until you disconnect them.": "Вихід на всіх пристроях, включно з цим. Під’єднані застосунки працюватимуть, доки ви їх не від’єднаєте.",
+ "Signs you out everywhere, this device included, and disconnects apps connected to Flash, like Claude.": "Виходить з облікового запису всюди, зокрема на цьому пристрої, і відключає застосунки, підключені до Flash, як-от Claude.",
  "Singapore": "Сінгапур",
  "Skills and languages": "Навички й мови",
  "Slides": "Слайди",

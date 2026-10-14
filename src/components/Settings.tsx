@@ -639,7 +639,7 @@ function Account({ me, busy, attempt, onSignOut }: Shared & { onSignOut: (everyw
         </Row>
         <Row
           title={t("Log out of all devices")}
-          about={t("Signs you out everywhere, this device included. Connected apps keep working until you disconnect them.")}
+          about={t("Signs you out everywhere, this device included, and disconnects apps connected to Flash, like Claude.")}
         >
           {confirm === "everywhere" ? (
             <span className="flex gap-2">
