@@ -1386,6 +1386,7 @@
  "This {model} video uses {credits} credits. You have {available}.": "Videyo {model} sa a koute {credits} kredi. Ou gen {available}.",
  "Tip: connect the www. version too, so both addresses work.": "Konsèy: konekte vèsyon www. la tou, pou toude adrès yo mache.",
  "To accept this quote, reply to say yes or sign and return it.": "Pou aksepte devi sa a, reponn pou di wi oswa siyen l epi voye l tounen.",
+ "To confirm your email, sign in to that account, then open the link in the email again.": "Pou konfime imèl ou, konekte nan kont sa a, epi louvri lyen ki nan imèl la ankò.",
  "To delete your account and everything in it, email {contact} from {email}. We confirm by email before anything is deleted.": "Pou efase kont ou ak tout sa ki ladan l, voye yon imèl bay {contact} apati {email}. N ap konfime pa imèl anvan nou efase anyen.",
  "To fix it, open the chat that built this app and ask Flash to fix its flash-data block.": "Pou ranje sa, louvri konvèsasyon ki te kreye aplikasyon sa a epi mande Flash ranje blòk flash-data li a.",
  "To keep coding in Cursor or VS Code.": "Pou w kontinye kode nan Cursor oswa VS Code.",

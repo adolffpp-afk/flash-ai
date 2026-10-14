@@ -1386,6 +1386,7 @@
  "This {model} video uses {credits} credits. You have {available}.": "Video hii ya {model} inatumia krediti {credits}. Una {available}.",
  "Tip: connect the www. version too, so both addresses work.": "Kidokezo: unganisha pia toleo la www. ili anwani zote mbili zifanye kazi.",
  "To accept this quote, reply to say yes or sign and return it.": "Ili kukubali nukuu hii, jibu kwa kusema ndiyo au itie sahihi na uirudishe.",
+ "To confirm your email, sign in to that account, then open the link in the email again.": "Ili kuthibitisha barua pepe yako, ingia kwenye akaunti hiyo, kisha fungua tena kiungo kilicho kwenye barua pepe.",
  "To delete your account and everything in it, email {contact} from {email}. We confirm by email before anything is deleted.": "Ili kufuta akaunti yako na kila kitu kilichomo, tuma barua pepe kwa {contact} kutoka {email}. Tutathibitisha kwa barua pepe kabla ya kufuta chochote.",
  "To fix it, open the chat that built this app and ask Flash to fix its flash-data block.": "Ili kurekebisha, fungua gumzo lililounda programu hii na uiombe Flash irekebishe sehemu yake ya flash-data.",
  "To keep coding in Cursor or VS Code.": "Ili uendelee kuandika msimbo kwenye Cursor au VS Code.",

@@ -1386,6 +1386,7 @@
  "This {model} video uses {credits} credits. You have {available}.": "To wideo {model} zużywa kredyty: {credits}. Masz: {available}.",
  "Tip: connect the www. version too, so both addresses work.": "Wskazówka: połącz też wersję z www., aby działały oba adresy.",
  "To accept this quote, reply to say yes or sign and return it.": "Aby zaakceptować tę wycenę, prosimy o potwierdzenie w odpowiedzi lub podpisanie i odesłanie dokumentu.",
+ "To confirm your email, sign in to that account, then open the link in the email again.": "Aby potwierdzić e-mail, zaloguj się na to konto, a potem ponownie otwórz link z wiadomości.",
  "To delete your account and everything in it, email {contact} from {email}. We confirm by email before anything is deleted.": "Aby usunąć konto i wszystko, co w nim jest, napisz na {contact} z adresu {email}. Zanim cokolwiek usuniemy, potwierdzimy to e-mailem.",
  "To fix it, open the chat that built this app and ask Flash to fix its flash-data block.": "Aby to naprawić, otwórz czat, w którym powstała ta aplikacja, i poproś Flash o poprawienie jej bloku flash-data.",
  "To keep coding in Cursor or VS Code.": "Aby dalej programować w Cursorze lub VS Code.",

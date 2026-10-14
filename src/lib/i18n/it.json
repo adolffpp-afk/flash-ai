@@ -1386,6 +1386,7 @@
  "This {model} video uses {credits} credits. You have {available}.": "Questo video {model} costa {credits} crediti. Ne hai {available}.",
  "Tip: connect the www. version too, so both addresses work.": "Suggerimento: collega anche la versione con www., così funzionano entrambi gli indirizzi.",
  "To accept this quote, reply to say yes or sign and return it.": "Per accettare il preventivo, rispondere confermando oppure firmarlo e rinviarlo.",
+ "To confirm your email, sign in to that account, then open the link in the email again.": "Per confermare la tua email, accedi a quell'account e poi riapri il link nell'email.",
  "To delete your account and everything in it, email {contact} from {email}. We confirm by email before anything is deleted.": "Per eliminare il tuo account e tutto il suo contenuto, scrivi a {contact} da {email}. Ti chiederemo conferma via email prima di eliminare qualsiasi cosa.",
  "To fix it, open the chat that built this app and ask Flash to fix its flash-data block.": "Per correggerlo, apri la chat che ha creato questa app e chiedi a Flash di correggere il suo blocco flash-data.",
  "To keep coding in Cursor or VS Code.": "Per continuare a programmare in Cursor o VS Code.",
