@@ -1167,7 +1167,7 @@
  "Sign-in, AI and Uploads": "Autentificare, AI și încărcări",
  "Signed out everywhere.": "Te-ai deconectat peste tot.",
  "Signed-in people manage their own": "Cei conectați își gestionează propriile înregistrări",
- "Signs you out everywhere, this device included. Connected apps keep working until you disconnect them.": "Te deconectează peste tot, inclusiv de pe acest dispozitiv. Aplicațiile conectate funcționează în continuare până le deconectezi.",
+ "Signs you out everywhere, this device included, and disconnects apps connected to Flash, like Claude.": "Te deconectează peste tot, inclusiv pe acest dispozitiv, și deconectează aplicațiile conectate la Flash, precum Claude.",
  "Singapore": "Singapore",
  "Skills and languages": "Competențe și limbi străine",
  "Slides": "Slide-uri",
