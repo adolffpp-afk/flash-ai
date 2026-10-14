@@ -1386,6 +1386,7 @@
  "This {model} video uses {credits} credits. You have {available}.": "这段 {model} 视频需要 {credits} 积分，你有 {available} 积分。",
  "Tip: connect the www. version too, so both addresses work.": "提示：同时连接 www. 版本，这样两个地址都能访问。",
  "To accept this quote, reply to say yes or sign and return it.": "如接受此报价，请回复确认，或签字后寄回。",
+ "To confirm your email, sign in to that account, then open the link in the email again.": "要确认你的邮箱，请登录该账户，然后再次打开邮件中的链接。",
  "To delete your account and everything in it, email {contact} from {email}. We confirm by email before anything is deleted.": "如需删除你的账户及其中的所有内容，请使用 {email} 发送邮件至 {contact}。我们会在删除前通过邮件与你确认。",
  "To fix it, open the chat that built this app and ask Flash to fix its flash-data block.": "要修复此问题，请打开创建此应用的对话，让 Flash 修复它的 flash-data 块。",
  "To keep coding in Cursor or VS Code.": "可在 Cursor 或 VS Code 中继续编写代码。",

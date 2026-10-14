@@ -1386,6 +1386,7 @@
  "This {model} video uses {credits} credits. You have {available}.": "Den här videon med {model} kostar {credits} krediter. Du har {available}.",
  "Tip: connect the www. version too, so both addresses work.": "Tips: anslut också www.-versionen så att båda adresserna fungerar.",
  "To accept this quote, reply to say yes or sign and return it.": "Godkänn offerten genom att svara ja eller skriva under och skicka tillbaka den.",
+ "To confirm your email, sign in to that account, then open the link in the email again.": "Logga in på det kontot för att bekräfta din e-post och öppna sedan länken i mejlet igen.",
  "To delete your account and everything in it, email {contact} from {email}. We confirm by email before anything is deleted.": "För att radera ditt konto och allt i det mejlar du {contact} från {email}. Vi bekräftar via mejl innan något raderas.",
  "To fix it, open the chat that built this app and ask Flash to fix its flash-data block.": "Åtgärda det genom att öppna chatten som byggde appen och be Flash rätta dess flash-data-block.",
  "To keep coding in Cursor or VS Code.": "För att fortsätta koda i Cursor eller VS Code.",

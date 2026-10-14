@@ -7,8 +7,7 @@ const see = (location: string) => new Response(null, { status: 303, headers: { L
 /** The user's answer on the "Connect to Flash" page: allow sends the app a one-time code. */
 export async function POST(request: Request) {
   const origin = appUrl(request);
-  // Only Flash's own page may answer. A browser that hides the origin sends "null"; that is safe
-  // because the SameSite=Lax session cookie never comes with another site's form.
+  // Only Flash's own page may answer (see sameSite).
   if (!sameSite(request.headers.get("origin"), request, origin)) return new Response("Forbidden", { status: 403 });
   const form = await request.formData();
   const params = Object.fromEntries([...form.entries()].map(([k, v]) => [k, String(v)]));

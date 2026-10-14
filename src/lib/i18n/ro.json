@@ -1386,6 +1386,7 @@
  "This {model} video uses {credits} credits. You have {available}.": "Acest videoclip {model} folosește credite: {credits}. Ai: {available}.",
  "Tip: connect the www. version too, so both addresses work.": "Sfat: conectează și varianta cu www., ca să funcționeze ambele adrese.",
  "To accept this quote, reply to say yes or sign and return it.": "Pentru a accepta această ofertă, răspundeți afirmativ sau semnați-o și trimiteți-o înapoi.",
+ "To confirm your email, sign in to that account, then open the link in the email again.": "Pentru a-ți confirma e-mailul, conectează-te la acel cont, apoi deschide din nou linkul din e-mail.",
  "To delete your account and everything in it, email {contact} from {email}. We confirm by email before anything is deleted.": "Ca să-ți ștergi contul și tot ce conține, scrie la {contact} de pe adresa {email}. Confirmăm prin e-mail înainte de a șterge ceva.",
  "To fix it, open the chat that built this app and ask Flash to fix its flash-data block.": "Ca să-l corectezi, deschide chatul în care a fost creată această aplicație și cere-i lui Flash să-i corecteze blocul flash-data.",
  "To keep coding in Cursor or VS Code.": "Ca să continui să programezi în Cursor sau VS Code.",

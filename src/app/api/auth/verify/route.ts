@@ -1,12 +1,13 @@
-import { markVerified, redeemToken } from "@/lib/server/account.ts";
+import { getUser } from "@/lib/server/auth.ts";
+import { confirmEmail } from "@/lib/server/account.ts";
 import { ensureMonthlyCredits } from "@/lib/server/credits.ts";
 
-/** The link in the verification email. Confirms the address and adds the free credits. */
+/** The link in the verification email. Confirms the address and adds the free credits (see confirmEmail). */
 export async function GET(request: Request) {
   const url = new URL(request.url);
-  const userId = await redeemToken(url.searchParams.get("token") ?? "", "verify");
-  if (!userId) return Response.redirect(new URL("/?verified=invalid", url.origin), 303);
-  await markVerified(userId);
-  await ensureMonthlyCredits(userId);
-  return Response.redirect(new URL("/?verified=1", url.origin), 303);
+  const user = await getUser(request);
+  const result = await confirmEmail(url.searchParams.get("token") ?? "", user?.id ?? null);
+  if (result === "confirmed") await ensureMonthlyCredits(user!.id);
+  const verified = result === "confirmed" ? "1" : result === "sign_in" ? "signin" : "invalid";
+  return Response.redirect(new URL(`/?verified=${verified}`, url.origin), 303);
 }

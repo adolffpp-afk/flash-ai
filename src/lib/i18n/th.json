@@ -1386,6 +1386,7 @@
  "This {model} video uses {credits} credits. You have {available}.": "วิดีโอ {model} นี้ใช้ {credits} เครดิต คุณมี {available}",
  "Tip: connect the www. version too, so both addresses work.": "เคล็ดลับ: เชื่อมต่อเวอร์ชัน www. ด้วย เพื่อให้ใช้ได้ทั้งสองที่อยู่",
  "To accept this quote, reply to say yes or sign and return it.": "หากต้องการยอมรับใบเสนอราคานี้ ให้ตอบกลับเพื่อยืนยัน หรือลงนามแล้วส่งกลับมา",
+ "To confirm your email, sign in to that account, then open the link in the email again.": "หากต้องการยืนยันอีเมล ให้ลงชื่อเข้าใช้บัญชีนั้น แล้วเปิดลิงก์ในอีเมลอีกครั้ง",
  "To delete your account and everything in it, email {contact} from {email}. We confirm by email before anything is deleted.": "หากต้องการลบบัญชีและทุกอย่างในบัญชี ให้ส่งอีเมลถึง {contact} จาก {email} เราจะยืนยันทางอีเมลก่อนลบข้อมูลใดๆ",
  "To fix it, open the chat that built this app and ask Flash to fix its flash-data block.": "หากต้องการแก้ไข ให้เปิดแชทที่สร้างแอปนี้ แล้วขอให้ Flash แก้บล็อก flash-data ของแอป",
  "To keep coding in Cursor or VS Code.": "สำหรับเขียนโค้ดต่อใน Cursor หรือ VS Code",

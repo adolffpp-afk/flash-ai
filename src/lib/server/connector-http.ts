@@ -78,9 +78,17 @@ export function needsSignIn(request: Request, error?: "invalid_token"): Response
   );
 }
 
-/** Whether a form's Origin header is this site (by the configured address or the host it was sent to). */
+/**
+ * Whether a form's Origin header is this site (by the configured address or the host it was sent to).
+ * "null" is refused: a published app is a sealed-off page on Flash's own host and sends exactly that,
+ * so it could otherwise post Allow for whoever opens it. A browser that sends no Origin at all still
+ * says where the form came from in Sec-Fetch-Site, and one from another site is refused.
+ */
 export function sameSite(from: string | null, request: Request, origin: string): boolean {
-  if (!from || from === "null") return true;
+  const fetchSite = request.headers.get("sec-fetch-site");
+  if (fetchSite && fetchSite !== "same-origin" && fetchSite !== "none") return false;
+  if (from === "null") return false;
+  if (!from) return true;
   let host: string;
   try {
     host = new URL(from).host;

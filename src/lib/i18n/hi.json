@@ -1386,6 +1386,7 @@
  "This {model} video uses {credits} credits. You have {available}.": "इस {model} वीडियो में {credits} क्रेडिट लगते हैं। आपके पास {available} हैं।",
  "Tip: connect the www. version too, so both addresses work.": "सुझाव: www. वाला वर्शन भी कनेक्ट करें, ताकि दोनों पते काम करें।",
  "To accept this quote, reply to say yes or sign and return it.": "यह कोटेशन स्वीकार करने के लिए जवाब में हाँ कहें या इस पर साइन करके वापस भेजें।",
+ "To confirm your email, sign in to that account, then open the link in the email again.": "अपना ईमेल पुष्टि करने के लिए, उस खाते में साइन इन करें, फिर ईमेल में दिया लिंक दोबारा खोलें।",
  "To delete your account and everything in it, email {contact} from {email}. We confirm by email before anything is deleted.": "अपना अकाउंट और उसमें मौजूद सब कुछ डिलीट करने के लिए {email} से {contact} पर ईमेल करें। कुछ भी डिलीट करने से पहले हम ईमेल से कन्फ़र्म करते हैं।",
  "To fix it, open the chat that built this app and ask Flash to fix its flash-data block.": "इसे ठीक करने के लिए, वह चैट खोलें जिसमें यह ऐप बना था और Flash से इसका flash-data ब्लॉक ठीक करने को कहें।",
  "To keep coding in Cursor or VS Code.": "Cursor या VS Code में कोडिंग जारी रखने के लिए।",

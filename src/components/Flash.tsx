@@ -468,7 +468,13 @@ export function Flash({
     }
     const verified = params.get("verified");
     const reset = params.get("reset");
-    if (verified || reset) {
+    // A confirmation link opened while not signed in to its account (see api/auth/verify).
+    if (verified === "signin") {
+      setAuthError("verify_signin");
+      setAuthMode("login");
+      if (signedIn) setNotice(t("To confirm your email, sign in to that account, then open the link in the email again."));
+      window.history.replaceState(null, "", window.location.pathname);
+    } else if (verified || reset) {
       setNotice(
         reset
           ? t("Your password was changed. You're signed in.")

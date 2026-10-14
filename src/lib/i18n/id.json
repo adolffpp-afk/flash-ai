@@ -1386,6 +1386,7 @@
  "This {model} video uses {credits} credits. You have {available}.": "Video {model} ini memakai {credits} kredit. Kredit Anda {available}.",
  "Tip: connect the www. version too, so both addresses work.": "Tips: hubungkan juga versi www. agar kedua alamat berfungsi.",
  "To accept this quote, reply to say yes or sign and return it.": "Untuk menyetujui penawaran ini, balas untuk menyatakan setuju atau tanda tangani dan kirimkan kembali.",
+ "To confirm your email, sign in to that account, then open the link in the email again.": "Untuk mengonfirmasi email Anda, masuk ke akun tersebut, lalu buka lagi tautan di email.",
  "To delete your account and everything in it, email {contact} from {email}. We confirm by email before anything is deleted.": "Untuk menghapus akun Anda beserta seluruh isinya, kirim email ke {contact} dari {email}. Kami akan mengonfirmasi lewat email sebelum ada yang dihapus.",
  "To fix it, open the chat that built this app and ask Flash to fix its flash-data block.": "Untuk memperbaikinya, buka chat yang membuat aplikasi ini dan minta Flash memperbaiki blok flash-data-nya.",
  "To keep coding in Cursor or VS Code.": "Untuk melanjutkan coding di Cursor atau VS Code.",

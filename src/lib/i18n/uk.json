@@ -1386,6 +1386,7 @@
  "This {model} video uses {credits} credits. You have {available}.": "Це відео ({model}) коштує кредитів: {credits}. У вас: {available}.",
  "Tip: connect the www. version too, so both addresses work.": "Порада: під’єднайте й версію з www., щоб працювали обидві адреси.",
  "To accept this quote, reply to say yes or sign and return it.": "Щоб прийняти кошторис, дайте згоду у відповіді або підпишіть його й надішліть назад.",
+ "To confirm your email, sign in to that account, then open the link in the email again.": "Щоб підтвердити пошту, увійдіть у цей обліковий запис, а потім знову відкрийте посилання з листа.",
  "To delete your account and everything in it, email {contact} from {email}. We confirm by email before anything is deleted.": "Щоб видалити обліковий запис і всі його дані, напишіть на {contact} з адреси {email}. Перед видаленням ми попросимо підтвердити його поштою.",
  "To fix it, open the chat that built this app and ask Flash to fix its flash-data block.": "Щоб це виправити, відкрийте чат, у якому було створено застосунок, і попросіть Flash виправити його блок flash-data.",
  "To keep coding in Cursor or VS Code.": "Щоб продовжити роботу з кодом у Cursor або VS Code.",

@@ -1386,6 +1386,7 @@
  "This {model} video uses {credits} credits. You have {available}.": "يستهلك هذا الفيديو من {model} {credits} رصيد. لديك {available}.",
  "Tip: connect the www. version too, so both addresses work.": "نصيحة: اربط العنوان الذي يبدأ بـ www. أيضًا، ليعمل العنوانان.",
  "To accept this quote, reply to say yes or sign and return it.": "لقبول عرض السعر هذا، ردّوا بالموافقة أو وقّعوه وأعيدوه.",
+ "To confirm your email, sign in to that account, then open the link in the email again.": "لتأكيد بريدك الإلكتروني، سجّل الدخول إلى ذلك الحساب، ثم افتح الرابط في الرسالة مرة أخرى.",
  "To delete your account and everything in it, email {contact} from {email}. We confirm by email before anything is deleted.": "لحذف حسابك وكل ما فيه، راسل {contact} من {email}. سنطلب منك التأكيد عبر البريد الإلكتروني قبل حذف أي شيء.",
  "To fix it, open the chat that built this app and ask Flash to fix its flash-data block.": "لإصلاحها، افتح المحادثة التي أنشأت هذا التطبيق واطلب من Flash إصلاح كتلة flash-data فيه.",
  "To keep coding in Cursor or VS Code.": "لمواصلة البرمجة في Cursor أو VS Code.",

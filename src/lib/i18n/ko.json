@@ -1386,6 +1386,7 @@
  "This {model} video uses {credits} credits. You have {available}.": "이 {model} 동영상에는 {credits} 크레딧이 사용돼요. 보유 크레딧: {available}",
  "Tip: connect the www. version too, so both addresses work.": "팁: www. 주소도 연결하면 두 주소 모두 작동해요.",
  "To accept this quote, reply to say yes or sign and return it.": "이 견적을 수락하시려면 회신으로 수락 의사를 알려 주시거나 서명 후 보내 주세요.",
+ "To confirm your email, sign in to that account, then open the link in the email again.": "이메일을 확인하려면 해당 계정에 로그인한 다음 이메일의 링크를 다시 여세요.",
  "To delete your account and everything in it, email {contact} from {email}. We confirm by email before anything is deleted.": "계정과 모든 데이터를 삭제하려면 {email}에서 {contact}(으)로 이메일을 보내 주세요. 삭제하기 전에 이메일로 확인해 드려요.",
  "To fix it, open the chat that built this app and ask Flash to fix its flash-data block.": "수정하려면 이 앱을 만든 채팅을 열고 Flash에게 flash-data 블록을 고쳐 달라고 요청하세요.",
  "To keep coding in Cursor or VS Code.": "Cursor나 VS Code에서 계속 코딩할 수 있어요.",

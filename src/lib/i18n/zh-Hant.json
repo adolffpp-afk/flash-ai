@@ -1386,6 +1386,7 @@
  "This {model} video uses {credits} credits. You have {available}.": "這段 {model} 影片需要 {credits} 點，你有 {available} 點。",
  "Tip: connect the www. version too, so both addresses work.": "提示：也連結 www. 版本，這樣兩個網址都能使用。",
  "To accept this quote, reply to say yes or sign and return it.": "如接受這份報價，請回覆確認，或簽名後寄回。",
+ "To confirm your email, sign in to that account, then open the link in the email again.": "若要確認你的電子郵件，請登入該帳戶，然後再次開啟郵件中的連結。",
  "To delete your account and everything in it, email {contact} from {email}. We confirm by email before anything is deleted.": "如要刪除你的帳戶及其中所有內容，請使用 {email} 寄信到 {contact}。我們會在刪除前透過電子郵件與你確認。",
  "To fix it, open the chat that built this app and ask Flash to fix its flash-data block.": "如要修正，請開啟建立這個應用程式的對話，並請 Flash 修正它的 flash-data 區塊。",
  "To keep coding in Cursor or VS Code.": "可在 Cursor 或 VS Code 中繼續寫程式。",

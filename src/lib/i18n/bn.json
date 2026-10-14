@@ -1386,6 +1386,7 @@
  "This {model} video uses {credits} credits. You have {available}.": "এই {model} ভিডিওতে {credits} ক্রেডিট লাগবে। আপনার আছে {available}।",
  "Tip: connect the www. version too, so both addresses work.": "টিপ: www. সংস্করণটিও সংযোগ করুন, যাতে দুটো ঠিকানাই কাজ করে।",
  "To accept this quote, reply to say yes or sign and return it.": "এই কোটেশনটি গ্রহণ করতে উত্তরে সম্মতি জানান, অথবা সই করে ফেরত পাঠান।",
+ "To confirm your email, sign in to that account, then open the link in the email again.": "আপনার ইমেল নিশ্চিত করতে, সেই অ্যাকাউন্টে সাইন ইন করুন, তারপর ইমেলের লিঙ্কটি আবার খুলুন।",
  "To delete your account and everything in it, email {contact} from {email}. We confirm by email before anything is deleted.": "আপনার অ্যাকাউন্ট ও এর সবকিছু মুছে ফেলতে {email} থেকে {contact}-এ ইমেল করুন। কিছু মুছে ফেলার আগে আমরা ইমেলে নিশ্চিত করব।",
  "To fix it, open the chat that built this app and ask Flash to fix its flash-data block.": "এটি ঠিক করতে, যে চ্যাটে এই অ্যাপ তৈরি হয়েছিল সেটি খুলুন এবং Flash-কে এর flash-data ব্লক ঠিক করতে বলুন।",
  "To keep coding in Cursor or VS Code.": "Cursor বা VS Code-এ কোডিং চালিয়ে যেতে।",

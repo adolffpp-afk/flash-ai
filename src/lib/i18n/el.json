@@ -1386,6 +1386,7 @@
  "This {model} video uses {credits} credits. You have {available}.": "Αυτό το βίντεο ({model}) κοστίζει {credits} πιστώσεις. Έχεις {available}.",
  "Tip: connect the www. version too, so both addresses work.": "Συμβουλή: σύνδεσε και την έκδοση με www., ώστε να λειτουργούν και οι δύο διευθύνσεις.",
  "To accept this quote, reply to say yes or sign and return it.": "Για να αποδεχτείς αυτή την προσφορά, απάντησε θετικά ή υπόγραψέ την και στείλ’ την πίσω.",
+ "To confirm your email, sign in to that account, then open the link in the email again.": "Για να επιβεβαιώσετε το email σας, συνδεθείτε σε αυτόν τον λογαριασμό και ανοίξτε ξανά τον σύνδεσμο του email.",
  "To delete your account and everything in it, email {contact} from {email}. We confirm by email before anything is deleted.": "Για να διαγράψεις τον λογαριασμό σου και όλο το περιεχόμενό του, στείλε email στο {contact} από το {email}. Θα επιβεβαιώσουμε μέσω email πριν διαγραφεί οτιδήποτε.",
  "To fix it, open the chat that built this app and ask Flash to fix its flash-data block.": "Για να το διορθώσεις, άνοιξε τη συνομιλία που δημιούργησε αυτή την εφαρμογή και ζήτα από το Flash να διορθώσει το μπλοκ flash-data της.",
  "To keep coding in Cursor or VS Code.": "Για να συνεχίσεις τον κώδικα στο Cursor ή στο VS Code.",

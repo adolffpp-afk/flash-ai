@@ -1386,6 +1386,7 @@
  "This {model} video uses {credits} credits. You have {available}.": "Bu {model} videosu {credits} kredi harcar. Sende {available} kredi var.",
  "Tip: connect the www. version too, so both addresses work.": "İpucu: www. ile başlayan adresi de bağla, böylece iki adres de çalışır.",
  "To accept this quote, reply to say yes or sign and return it.": "Bu teklifi kabul etmek için olumlu yanıt verin ya da imzalayıp geri gönderin.",
+ "To confirm your email, sign in to that account, then open the link in the email again.": "E-postanızı onaylamak için o hesapta oturum açın, ardından e-postadaki bağlantıyı yeniden açın.",
  "To delete your account and everything in it, email {contact} from {email}. We confirm by email before anything is deleted.": "Hesabını ve içindeki her şeyi silmek için {email} adresinden {contact} adresine e-posta gönder. Herhangi bir şey silinmeden önce e-postayla onay isteriz.",
  "To fix it, open the chat that built this app and ask Flash to fix its flash-data block.": "Düzeltmek için bu uygulamayı oluşturan sohbeti aç ve Flash'tan flash-data bloğunu düzeltmesini iste.",
  "To keep coding in Cursor or VS Code.": "Cursor veya VS Code'da kodlamaya devam etmek için.",

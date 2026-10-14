@@ -1386,6 +1386,7 @@
  "This {model} video uses {credits} credits. You have {available}.": "Video {model} này dùng {credits} tín dụng. Bạn có {available}.",
  "Tip: connect the www. version too, so both addresses work.": "Mẹo: hãy kết nối cả phiên bản www. để cả hai địa chỉ đều hoạt động.",
  "To accept this quote, reply to say yes or sign and return it.": "Để chấp nhận báo giá này, hãy trả lời đồng ý hoặc ký và gửi lại.",
+ "To confirm your email, sign in to that account, then open the link in the email again.": "Để xác nhận email, hãy đăng nhập vào tài khoản đó rồi mở lại liên kết trong email.",
  "To delete your account and everything in it, email {contact} from {email}. We confirm by email before anything is deleted.": "Để xóa tài khoản và mọi dữ liệu trong đó, hãy gửi email đến {contact} từ {email}. Chúng tôi sẽ xác nhận qua email trước khi xóa bất cứ thứ gì.",
  "To fix it, open the chat that built this app and ask Flash to fix its flash-data block.": "Để sửa, hãy mở cuộc trò chuyện đã tạo ứng dụng này và nhờ Flash sửa khối flash-data của ứng dụng.",
  "To keep coding in Cursor or VS Code.": "Để tiếp tục lập trình trong Cursor hoặc VS Code.",
