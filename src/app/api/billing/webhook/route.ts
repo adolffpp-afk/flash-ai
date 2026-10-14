@@ -1,5 +1,5 @@
 import { addPurchase, clawBack, findPurchase, recordReversal } from "@/lib/server/credits.ts";
-import { cancelStripeSubscription, invoiceForPaymentIntent, verifyWebhook } from "@/lib/server/stripe.ts";
+import { cancelStripeSubscription, currency, invoiceForPaymentIntent, verifyWebhook } from "@/lib/server/stripe.ts";
 import {
   endSubscription,
   isInterval,
@@ -8,7 +8,7 @@ import {
   recordPayment,
   setCancelAtPeriodEnd,
 } from "@/lib/server/subscriptions.ts";
-import { planPrice } from "@/lib/credits.ts";
+import { CREDIT_PACKS, planPrice } from "@/lib/credits.ts";
 import { reverseReferral, rewardReferral } from "@/lib/server/referrals.ts";
 
 type Meta = { user?: string; plan?: string; interval?: string; pack?: string };
@@ -17,6 +17,7 @@ type Invoice = {
   id: string;
   customer?: string | null;
   amount_paid: number;
+  currency?: string;
   billing_reason?: string;
   // Newer API versions put the subscription under parent; older ones on the invoice itself.
   parent?: { subscription_details?: SubscriptionDetails | null } | null;
@@ -48,6 +49,8 @@ type StripeEvent = {
       cancel_at_period_end?: boolean;
       metadata?: Meta | null;
       payment_intent?: string | null;
+      amount_total?: number | null;
+      currency?: string | null;
     };
   };
 };
@@ -61,7 +64,7 @@ async function invoicePaid(invoice: Invoice) {
   if (!subscriptionId || !user || !plan || !isInterval(interval) || !period) return;
   // Credits are only given for the plan's full price (no zero or discounted invoices).
   const planInfo = planById(plan);
-  if (!planInfo || invoice.amount_paid < planPrice(planInfo, interval)) {
+  if (!planInfo || invoice.amount_paid < planPrice(planInfo, interval) || (invoice.currency ?? "").toLowerCase() !== currency()) {
     console.warn(`[flash] invoice ${invoice.id} paid ${invoice.amount_paid} for ${plan}/${interval}: no credits given`);
     return;
   }
@@ -149,7 +152,13 @@ export async function POST(request: Request) {
     case "checkout.session.async_payment_succeeded": {
       // Credit packs. Plans are handled by invoice.paid. Packs never earn referral bonuses.
       const { user, pack } = object.metadata ?? {};
-      if (object.mode !== "subscription" && object.payment_status === "paid" && user && pack) {
+      // Only for the pack's full price, in Flash's currency (Checkout's prices are set by Flash, so
+      // anything else means a setting changed in Stripe, and credits shouldn't follow it).
+      const price = CREDIT_PACKS.find((p) => p.id === pack)?.priceCents;
+      const paidInFull = price !== undefined && Number(object.amount_total ?? 0) >= price && (object.currency ?? "").toLowerCase() === currency();
+      if (object.mode !== "subscription" && object.payment_status === "paid" && user && pack && !paidInFull) {
+        console.warn(`[flash] checkout ${object.id} paid ${object.amount_total} ${object.currency} for ${pack}: no credits given`);
+      } else if (object.mode !== "subscription" && object.payment_status === "paid" && user && pack) {
         const ref = `stripe:${object.id}`;
         await addPurchase(user, pack, ref, object.payment_intent ?? null);
       }
