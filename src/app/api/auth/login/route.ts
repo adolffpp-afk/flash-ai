@@ -1,9 +1,10 @@
 import { translatorFor } from "@/lib/server/i18n.ts";
-import { createSession, fromOwnPage, isSecure, verifyPassword } from "@/lib/server/auth.ts";
+import { fromOwnPage, verifyPassword } from "@/lib/server/auth.ts";
 import { one } from "@/lib/server/db.ts";
 import { clearLimit, clientIp, overLimit } from "@/lib/server/limits.ts";
 import { PROVIDERS, isProvider } from "@/lib/server/oauth.ts";
 import { linkedProviders } from "@/lib/server/signin.ts";
+import { signInCookie } from "@/lib/server/two-factor.ts";
 
 const WINDOW = 15 * 60 * 1000;
 
@@ -42,6 +43,7 @@ export async function POST(request: Request) {
     return Response.json({ error: t("That email and password don't match.") }, { status: 401 });
   }
   await clearLimit(`login:${email}:${ip}`);
-  const cookie = await createSession(user.id, isSecure(request));
-  return Response.json({ ok: true }, { headers: { "Set-Cookie": cookie } });
+  // With two-step sign-in on, this only gets them to the code page (see two-factor.ts).
+  const { cookie, twoFactor } = await signInCookie(user.id, request);
+  return Response.json({ ok: true, twoFactor }, { headers: { "Set-Cookie": cookie } });
 }

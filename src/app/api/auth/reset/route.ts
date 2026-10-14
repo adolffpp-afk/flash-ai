@@ -1,7 +1,8 @@
 import { translatorFor } from "@/lib/server/i18n.ts";
-import { createSession, fromOwnPage, hashPassword, isSecure } from "@/lib/server/auth.ts";
+import { fromOwnPage, hashPassword } from "@/lib/server/auth.ts";
 import { redeemToken } from "@/lib/server/account.ts";
 import { resetPassword } from "@/lib/server/signin.ts";
+import { signInCookie } from "@/lib/server/two-factor.ts";
 
 /** Sets a new password from a reset link, signs out every other device and signs this one in. */
 export async function POST(request: Request) {
@@ -18,6 +19,7 @@ export async function POST(request: Request) {
   }
   // Opening the link proved they own the inbox: what an unconfirmed account had set up goes.
   await resetPassword(userId, await hashPassword(password));
-  const cookie = await createSession(userId, isSecure(request));
-  return Response.json({ ok: true }, { headers: { "Set-Cookie": cookie } });
+  // A reset link only proves the inbox, so with two-step sign-in on the code is still asked for.
+  const { cookie, twoFactor } = await signInCookie(userId, request, "/?reset=1");
+  return Response.json({ ok: true, twoFactor }, { headers: { "Set-Cookie": cookie } });
 }

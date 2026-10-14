@@ -8,7 +8,16 @@ import { msg } from "./i18n.ts";
  * what it costs Flash to run (the AI provider's bill), so every request makes a margin.
  * Provider prices below were checked on 2026-10-02; update them when providers change prices.
  */
-export const MARKUP = Number(process.env.FLASH_MARKUP ?? 2.5);
+export const MARKUP = markupFrom(process.env.FLASH_MARKUP);
+
+/** FLASH_MARKUP when it is a number of at least 1 (never selling below cost), else 2.5. */
+export function markupFrom(value: string | undefined): number {
+  if (value === undefined || value.trim() === "") return 2.5;
+  const n = Number(value);
+  if (Number.isFinite(n) && n >= 1) return n;
+  console.error("[flash] FLASH_MARKUP must be a number of at least 1; using 2.5");
+  return 2.5;
+}
 
 export const creditsFor = (costCents: number) => Math.max(1, Math.ceil(costCents * MARKUP));
 

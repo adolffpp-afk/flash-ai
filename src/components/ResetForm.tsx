@@ -20,8 +20,10 @@ export function ResetForm({ token }: { token: string }) {
     setBusy(true);
     setError("");
     try {
-      await api("/api/auth/reset", { method: "POST", json: { token, password } });
-      router.push("/?reset=1");
+      const { twoFactor } = await api<{ twoFactor?: boolean }>("/api/auth/reset", { method: "POST", json: { token, password } });
+      // Two-step sign-in is on: a reset link alone doesn't sign in; the code page does.
+      if (twoFactor) router.push("/signin/code");
+      else router.push("/?reset=1");
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Something went wrong."));
       setBusy(false);

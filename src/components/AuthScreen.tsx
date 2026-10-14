@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/store";
 import { LogoMark } from "@/app/brand";
@@ -79,6 +80,7 @@ export function AuthScreen({
   next?: string;
 }) {
   const t = useT();
+  const router = useRouter();
   const [mode, setMode] = useState<"signup" | "login" | "forgot" | "link">(initialMode);
   const [sent, setSent] = useState<{ devLink?: string } | null>(null);
   const [name, setName] = useState("");
@@ -116,12 +118,16 @@ export function AuthScreen({
         );
         return;
       }
-      onDone(
-        await api<{ emailFailed?: boolean }>(`/api/auth/${mode}`, {
-          method: "POST",
-          json: { name, email, password },
-        }),
-      );
+      const result = await api<{ emailFailed?: boolean; twoFactor?: boolean }>(`/api/auth/${mode}`, {
+        method: "POST",
+        json: { name, email, password },
+      });
+      // Two-step sign-in is on: the code page finishes signing in.
+      if (result.twoFactor) {
+        router.push("/signin/code");
+        return;
+      }
+      onDone(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Something went wrong."));
     } finally {

@@ -21,8 +21,9 @@ export function SignInLink({ token }: { token: string }) {
     setBusy(true);
     setError("");
     try {
-      const { next } = await api<{ next?: string }>("/api/auth/email-link", { method: "POST", json: { token } });
-      window.location.assign(next || "/");
+      const { next, twoFactor } = await api<{ next?: string; twoFactor?: boolean }>("/api/auth/email-link", { method: "POST", json: { token } });
+      // Two-step sign-in is on: the code page finishes signing in, then goes on to next.
+      window.location.assign(twoFactor ? "/signin/code" : next || "/");
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Something went wrong."));
       setBusy(false);

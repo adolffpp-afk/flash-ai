@@ -6,7 +6,8 @@ export async function GET(request: Request, ctx: RouteContext<"/f/[id]">) {
   const { id } = await ctx.params;
   const file = await publicFile(id);
   if (!file) return new Response("Not found", { status: 404 });
-  const response = fileResponse(file, request, "public, max-age=31536000, immutable");
+  // Kept by browsers for a day, not for good, so deleting the file stops it working soon after.
+  const response = fileResponse(file, request, "public, max-age=86400");
   response.headers.set("Access-Control-Allow-Origin", "*");
   response.headers.set("X-Robots-Tag", "noindex");
   return response;
