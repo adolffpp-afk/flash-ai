@@ -70,7 +70,7 @@ export async function inviteMember(
   const plan = sub && planById(sub.plan);
   if (!plan?.seats) throw new TeamError(t("Inviting people needs an active Business plan."), 403);
   email = email.trim().toLowerCase();
-  if (!EMAIL.test(email)) throw new TeamError(t("Enter a valid email address."));
+  if (email.length > 254 || !EMAIL.test(email)) throw new TeamError(t("Enter a valid email address."));
   const key = emailKey(email);
   if (key === emailKey(owner.email)) throw new TeamError(t("You're already on your team."));
 

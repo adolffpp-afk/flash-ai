@@ -154,7 +154,8 @@ export async function siteAuth(
   const email = (form.email ?? "").trim().toLowerCase();
   const password = form.password ?? "";
   const name = (form.name ?? "").trim().slice(0, 80);
-  if (!EMAIL.test(email) || email.length > 160) return outcome("bad-email");
+  // The length first: the pattern is slow on very long text.
+  if (email.length > 160 || !EMAIL.test(email)) return outcome("bad-email");
   if (password.length < MIN_PASSWORD) return outcome("short-password");
   if (password.length > 200) return outcome("long-password");
   // Guessing passwords, and signing people up in bulk, are both slowed down per app and per visitor.
