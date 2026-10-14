@@ -24,7 +24,7 @@ export async function stripe<T>(method: string, path: string, form?: URLSearchPa
   return json;
 }
 
-const currency = () => process.env.FLASH_CURRENCY || "usd";
+export const currency = () => (process.env.FLASH_CURRENCY || "usd").toLowerCase();
 
 /** Creates a Stripe Checkout page for a credit pack and returns its URL. */
 export async function createCheckout(pack: CreditPack, userId: string, email: string, origin: string): Promise<string> {
