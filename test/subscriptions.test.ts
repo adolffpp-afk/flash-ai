@@ -63,7 +63,7 @@ test("an ended plan stops adding credits but keeps the ones given", async () => 
   assert.equal(await balance("u1"), 3000);
 });
 
-const { addPurchase, clawBack, findPurchase } = await import("../src/lib/server/credits.ts");
+const { addPurchase, charge, clawBack, disputed, findPurchase } = await import("../src/lib/server/credits.ts");
 
 test("a refunded pack takes back its share of credits, once, never below zero", async () => {
   await user("r1");
@@ -86,6 +86,35 @@ test("a refunded pack takes back its share of credits, once, never below zero", 
   const p2 = (await findPurchase({ paymentIntent: "pi_2" }))!;
   assert.equal(await clawBack(p2, 1, "ch_2", "stripe-dispute:dp_2:ch_2", "Payment disputed"), 100);
   assert.equal(await balance("r1"), 0);
+});
+
+test("a disputed payment whose credits were spent leaves a debt, and no more free credits", async () => {
+  await user("d1");
+  await run("UPDATE users SET verified_at = 1 WHERE id = 'd1'");
+  await addPurchase("d1", "starter", "stripe:cs_d1", "pi_d1");
+  await run("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES ('d1', -400, 'spent', 0)");
+  const p = (await findPurchase({ paymentIntent: "pi_d1" }))!;
+  assert.equal(await clawBack(p, 1, "ch_d1", "stripe-dispute:dp_d1:ch_d1", "Payment disputed", true), 500);
+  // The same webhook again takes nothing more.
+  assert.equal(await clawBack(p, 1, "ch_d1", "stripe-dispute:dp_d1:ch_d1", "Payment disputed", true), 0);
+  assert.equal(await balance("d1"), -400, "the spent credits are owed");
+  assert.equal(await charge("d1", 1, "a reply"), null, "nothing can be spent while in debt");
+  await ensureMonthlyCredits("d1");
+  assert.equal(await balance("d1"), -400, "free credits don't pay off a dispute");
+  assert.equal(await disputed("d1"), true);
+  // A later pack pays the debt first.
+  await addPurchase("d1", "starter", "stripe:cs_d2", "pi_d2");
+  assert.equal(await balance("d1"), 100);
+});
+
+test("a dispute with nothing left to take is still recorded", async () => {
+  await user("d2");
+  await addPurchase("d2", "starter", "stripe:cs_d3", "pi_d3");
+  const p = (await findPurchase({ paymentIntent: "pi_d3" }))!;
+  assert.equal(await clawBack(p, 1, "ch_d3", "stripe-refund:ch_d3:500", "Payment refunded"), 500);
+  assert.equal(await clawBack(p, 1, "ch_d3", "stripe-dispute:dp_d3:ch_d3", "Payment disputed", true), 0);
+  assert.equal(await balance("d2"), 0);
+  assert.equal(await disputed("d2"), true);
 });
 
 test("a refunded plan payment is found by its invoice and takes back that month's credits", async () => {

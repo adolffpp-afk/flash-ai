@@ -124,9 +124,12 @@ async function reversePayment(
     return;
   }
   await recordReversal(purchase, money.kind, charge, money.total, ref);
-  await clawBack(purchase, share, charge, ref, reason);
+  // A dispute takes back credits already spent too, as a debt (a balance below 0); a refund
+  // Flash chose to give stops at 0.
+  const debt = money.kind === "dispute";
+  await clawBack(purchase, share, charge, ref, reason, debt);
   // Referral bonuses that payment earned go back in the same share (a pending one is cancelled).
-  await reverseReferral(purchase, share, ref, reason);
+  await reverseReferral(purchase, share, ref, reason, debt);
   if (share >= 1 && purchase.subscription) {
     await cancelStripeSubscription(purchase.subscription).catch((err) => console.error("[flash] cancel failed", err));
     await endSubscription(purchase.subscription);
