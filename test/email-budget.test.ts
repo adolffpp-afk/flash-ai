@@ -91,11 +91,34 @@ test("app emails and invites stop while there's still room for sign-in emails, w
   assert.equal(await sendEmail("next-day@x.co", appEmail(0), { owner: "fresh-owner" }), true);
 });
 
-test("sign-in emails count toward the day, so app emails leave them room", async () => {
+test("sign-in emails don't use up app emails' share, but a full day stops apps", async () => {
   clock = NOON + 2 * DAY;
   const before = sent.length;
-  for (let i = 0; i < EMAIL_BUDGET.perDay - 5; i++) await sendEmail(`p${i}@x.co`, EMAILS.signin("https://x/s"), "account");
-  // Only 5 of the day's emails are left, fewer than kept for sign-in emails, so apps wait.
-  assert.equal(await sendEmail("owner@x.co", appEmail(1), { owner: "someone" }), false);
-  assert.equal(sent.length - before, EMAIL_BUDGET.perDay - 5);
+  // As many sign-in emails as are kept for them: app emails still go out.
+  for (let i = 0; i < EMAIL_BUDGET.keptForAccounts; i++) await sendEmail(`p${i}@x.co`, EMAILS.signin("https://x/s"), "account");
+  assert.equal(await sendEmail("owner@x.co", appEmail(1), { owner: "someone" }), true);
+  // The provider's whole day used: apps wait.
+  for (let i = 0; i < forOthers; i++) await sendEmail(`q${i}@x.co`, EMAILS.signin("https://x/s"), "account");
+  assert.equal(await sendEmail("owner2@x.co", appEmail(2), { owner: "someone-else" }), false);
+  assert.equal(sent.length - before, EMAIL_BUDGET.perDay + 1);
+});
+
+test("emails to new addresses stop at their own daily share; members' sign-in emails still go", async () => {
+  clock = NOON + 3 * DAY;
+  let n = 0;
+  while (await sendEmail(`new${n}@x.co`, EMAILS.signin("https://x/s"), "new")) n++;
+  assert.equal(n, EMAIL_BUDGET.forNewAddresses);
+  assert.equal(await sendEmail("member@x.co", EMAILS.signin("https://x/s"), "account"), true);
+  assert.equal(await sendEmail("owner@x.co", appEmail(3), { owner: "o3" }), true, "orders and invites keep their share");
+});
+
+const { network } = await import("../src/lib/server/limits.ts");
+
+test("IPv6 addresses count by their /64 network", () => {
+  assert.equal(network("2001:db8:1:2:3:4:5:6"), "2001:db8:1:2::/64");
+  assert.equal(network("2001:db8:1:2::9"), "2001:db8:1:2::/64");
+  assert.equal(network("2001:0db8:0001:0002:ffff::1"), "2001:db8:1:2::/64");
+  assert.equal(network("2001:db8::1"), "2001:db8:0:0::/64");
+  assert.equal(network("203.0.113.7"), "203.0.113.7");
+  assert.equal(network("local"), "local");
 });

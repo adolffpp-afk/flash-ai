@@ -61,7 +61,8 @@ export async function redeemToken(token: string, kind: TokenKind): Promise<strin
 export async function sendVerification(user: { id: string; email: string }, origin: string): Promise<string | undefined> {
   if (!verificationRequired()) return undefined;
   const link = `${origin}/api/auth/verify?token=${await createToken(user.id, "verify")}`;
-  await sendEmail(user.email, EMAILS.verify(link), "account");
+  // To an address not confirmed yet, so it uses the daily share for new addresses (see email.ts).
+  if (!(await sendEmail(user.email, EMAILS.verify(link), "new"))) throw new Error("Today's emails to new addresses are used up.");
   return demoEmails() ? link : undefined;
 }
 
