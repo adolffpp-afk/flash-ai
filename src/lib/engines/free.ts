@@ -552,7 +552,14 @@ export async function* streamFreeChat(
     // Said once this provider is answering with the forecast or the data, so a backup that answers without it isn't credited.
     if (used) o.onUsed?.();
     for (const name of ledger.used) o.onTool?.(name);
-    const read = yield* readStream(p, res.body!);
+    let read: { input: number; output: number; chars: number };
+    try {
+      read = yield* readStream(p, res.body!);
+    } catch (err) {
+      // Cut off partway: what was shown still carries FRED's notice and its sources.
+      yield* finish();
+      throw err;
+    }
     // Without a usage report, estimate on the high side.
     input += read.input || Math.ceil((JSON.stringify(messages).length + JSON.stringify(after).length) / 3);
     output += read.output || Math.ceil(read.chars / 2);

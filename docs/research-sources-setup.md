@@ -43,6 +43,32 @@ Then delete the note with the password in it.
 says "SEARXNG_URL must start with https://", edit `SEARXNG_URL` in Vercel so it starts with
 `https://`, and redeploy. Flash never sends the password to an address that isn't https.
 
+**Check that SearXNG answers Flash.** Flash asks SearXNG for its results as data (JSON), which
+SearXNG turns off unless it's told to allow it. In Firefox, open your address with
+`/search?q=weather&format=json` after it, like
+`https://searxng-production-1234.up.railway.app/search?q=weather&format=json`. Firefox asks for a user
+name and password: use the ones from step 3.
+
+- You see a page of data with `query` and `results` (Firefox shows it as a tree): it works.
+- You see **403 Forbidden**: JSON is off. In Railway, the **Engine** box's settings file
+  (`settings.yml`) needs `json` in its list of formats, under `search:`:
+
+  ```yaml
+  search:
+    formats:
+      - html
+      - json
+  ```
+
+  Then redeploy the Engine box. If you don't see that file, ask whoever set SearXNG up (or Claude) to
+  "turn on SearXNG's JSON format".
+- You see **429 Too Many Requests**: SearXNG's bot limiter is blocking it. Your password gate already
+  keeps strangers out, so set `limiter: false` under `server:` in the same file, and redeploy the
+  Engine box.
+
+Flash's log in Vercel (**Logs**) says the same when a search fails: "status 401" (check the user
+name and password), "status 403" (JSON is off) or "status 429" (the limiter).
+
 **What people see:** someone out of credits who asks something like "what happened in the news
 today?" gets an answer with numbered sources, and the line above it says "Research needs credits, so
 a free model answered with a free web search." If the search doesn't work (wrong password, server

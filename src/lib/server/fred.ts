@@ -39,6 +39,15 @@ const SEARCH_FOR = 6 * HOUR;
 /** FRED's keys: 32 lower-case letters and digits. */
 const KEY = /^[a-z0-9]{32}$/;
 const COPYRIGHT = /copyright/i;
+// FRED answers a wrong key, a missing series and options it can't use all with 400, saying which in
+// its error_message: a key FRED refuses is a failure, never "no such series" or "bad options".
+const ERROR_BYTES = 2000;
+const KEY_REFUSED = /api_key/i;
+const NO_SERIES = /series does not exist/i;
+/** FRED says it has no such series (404, or 400 saying so). */
+const noSuchSeries = (err: unknown) => err instanceof SourceError && (err.status === 404 || (err.status === 400 && NO_SERIES.test(err.body) && !KEY_REFUSED.test(err.body)));
+/** FRED refused the options asked for (400 about anything but the key). */
+const refusedOptions = (err: unknown) => err instanceof SourceError && err.status === 400 && err.body !== "" && !KEY_REFUSED.test(err.body);
 
 /** The FRED key, or null when it isn't set or isn't a FRED key. */
 const fredKey = (env: Record<string, string | undefined> = process.env) => {
@@ -59,7 +68,9 @@ async function fredGet(path: string, params: Record<string, string>, signal?: Ab
   if (!(await reserveDaily("fred", envCount("FLASH_FRED_DAILY_REQUESTS", 10_000)))) throw new SourceError("busy");
   if (!(await takeSlot("fred", 1, 1000, { waitMs: 4000 }))) throw new SourceError("busy");
   const query = new URLSearchParams({ ...params, api_key: key, file_type: "json" });
-  return asObject(await fetchJson(`${testBase("FLASH_TEST_FRED_URL") ?? FRED_BASE}${path}?${query}`, { timeoutMs: TIMEOUT_MS, maxBytes: MAX_BYTES, signal }));
+  return asObject(
+    await fetchJson(`${testBase("FLASH_TEST_FRED_URL") ?? FRED_BASE}${path}?${query}`, { timeoutMs: TIMEOUT_MS, maxBytes: MAX_BYTES, signal, errorBytes: ERROR_BYTES }),
+  );
 }
 
 /** What Flash keeps of a series' details. copyrighted: its notes say a third party owns it. */
@@ -103,8 +114,8 @@ async function seriesInfo(id: string, at: number, signal?: AbortSignal): Promise
   try {
     json = await fredGet("/series", { series_id: id }, signal);
   } catch (err) {
-    // FRED answers an unknown series with 400 ("The series does not exist") or 404.
-    if (err instanceof SourceError && (err.status === 400 || err.status === 404)) {
+    // FRED answers an unknown series with 400 ("The series does not exist") or 404; a refused key isn't one.
+    if (noSuchSeries(err)) {
       await cachePut(key, { none: true }, HOUR, at);
       return null;
     }
@@ -195,7 +206,7 @@ export function fredSeriesTool(t: Translate = english, { now = Date.now }: { now
               signal,
             );
           } catch (err) {
-            if (err instanceof SourceError && err.status === 400) {
+            if (refusedOptions(err)) {
               return {
                 text: badInput(FRED_SERIES.name, "FRED refused these options (a frequency can only be lower than the series' own, and the dates must be in its range)"),
                 isError: true,

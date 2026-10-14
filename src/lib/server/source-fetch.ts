@@ -15,11 +15,18 @@ export type SourceFailure = "timeout" | "network" | "status" | "too_big" | "bad_
 export class SourceError extends Error {
   readonly reason: SourceFailure;
   readonly status: number;
-  constructor(reason: SourceFailure, status = 0) {
+  /**
+   * The start of an error reply's body, when the caller asked for it (see FetchOptions.errorBytes), to
+   * tell one error from another (FRED answers a wrong key and a missing series both with 400). Never
+   * logged or shown: it isn't in the message.
+   */
+  readonly body: string;
+  constructor(reason: SourceFailure, status = 0, body = "") {
     super(`source request failed: ${reason}${status ? ` ${status}` : ""}`);
     this.name = "SourceError";
     this.reason = reason;
     this.status = status;
+    this.body = body;
   }
 }
 
@@ -31,6 +38,8 @@ export type FetchOptions = {
   maxBytes: number;
   /** The reply's own signal: a request stopped by the user stops this too. */
   signal?: AbortSignal;
+  /** How much of an error reply's body to keep in the SourceError (none by default). */
+  errorBytes?: number;
 };
 
 /** Reads a body up to maxBytes, or throws as soon as it's longer. */
@@ -76,8 +85,9 @@ export async function fetchJson(url: string, options: FetchOptions): Promise<unk
     throw new SourceError(timeout.aborted ? "timeout" : "network");
   }
   if (res.status !== 200) {
+    const body = options.errorBytes ? await readCapped(res, options.errorBytes, timeout).catch(() => "") : "";
     await res.body?.cancel().catch(() => {});
-    throw new SourceError("status", res.status);
+    throw new SourceError("status", res.status, body);
   }
   if (Number(res.headers.get("content-length")) > options.maxBytes) {
     await res.body?.cancel().catch(() => {});

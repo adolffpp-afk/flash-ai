@@ -1,5 +1,5 @@
 import { one, run } from "./db.ts";
-import { cacheGet, cacheKey, cachePut, envCount, failureNote, fetchJson, reserveDaily, takeSlot } from "./source-fetch.ts";
+import { cacheGet, cacheKey, cachePut, envCount, failureNote, fetchJson, reserveDaily, SourceError, takeSlot } from "./source-fetch.ts";
 import {
   asObject,
   badInput,
@@ -141,7 +141,16 @@ export async function searxSearch(config: SearxConfig, q: Query, { signal, at = 
     if (results.length) await cachePut(key, results, CACHE_FOR, at);
     return results;
   } catch (err) {
-    console.error(`[flash] web search failed: ${failureNote(err)}`);
+    // What the owner can fix, said in the log: a wrong name or password, or SearXNG's JSON answers turned off.
+    const hint =
+      err instanceof SourceError && err.status === 401
+        ? " (check SEARXNG_USERNAME and SEARXNG_PASSWORD)"
+        : err instanceof SourceError && err.status === 403
+          ? " (turn on SearXNG's json format: search > formats in its settings.yml)"
+          : err instanceof SourceError && err.status === 429
+            ? " (SearXNG's limiter: server > limiter in its settings.yml)"
+            : "";
+    console.error(`[flash] web search failed: ${failureNote(err)}${hint}`);
     return null;
   }
 }

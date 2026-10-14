@@ -229,6 +229,18 @@ test("the free model finds a FRED series, then reads it in one more round, and F
   assert.deepEqual(freeSent().map((b) => b.stream), [false, true]);
 });
 
+test("a free answer cut off partway after FRED data still shows FRED's notice and the series' link", async () => {
+  stand.state.free.replies.push({ calls: [{ name: "fred_series", args: { series_id: "UNRATE", count: 12 } }] }, { text: "Unemployment was 4.3% in", cut: true });
+  const events: Event[] = [];
+  await assert.rejects(async () => {
+    for await (const e of streamFreeChat(ask("US unemployment rate trend"), "", "text", reserve, record, () => {}, { tools: dataTools({ economy: true }, { userId: "free-5" }) }))
+      events.push(e as Event);
+  });
+  assert.match(said(events), /^Unemployment was 4\.3% in/);
+  assert.ok(said(events).endsWith(R.FRED_NOTE));
+  assert.deepEqual(sources(events).map((s) => s.url), ["https://fred.stlouisfed.org/series/UNRATE"]);
+});
+
 test("a free provider without tools gets none, and is told it can't search", async () => {
   delete process.env.GROQ_API_KEY;
   process.env.OPENROUTER_API_KEY = "or-test";

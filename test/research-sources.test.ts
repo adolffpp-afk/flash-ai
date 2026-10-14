@@ -177,7 +177,10 @@ const stand = createServer((req, res) => {
     return json({}, 404);
   }
   if (service === "fred") {
-    if (url.searchParams.get("api_key") !== FRED_KEY || url.searchParams.get("file_type") !== "json") return json({ error_message: "bad key" }, 400);
+    if (url.searchParams.get("api_key") !== FRED_KEY || url.searchParams.get("file_type") !== "json")
+      return json({ error_code: 400, error_message: "Bad Request.  The value for variable api_key is not registered.  Read https://fred.stlouisfed.org/docs/api/api_key.html for more information." }, 400);
+    if (path === "/series/observations" && url.searchParams.get("frequency") === "d")
+      return json({ error_code: 400, error_message: "Bad Request.  Variable frequency can not be higher than the series' native frequency." }, 400);
     if (fredStatus) return json({ error_message: "scripted" }, fredStatus);
     const id = url.searchParams.get("series_id") ?? "";
     if (path === "/series") return SERIES[id] ? json({ seriess: [SERIES[id]] }) : json({ error_code: 400, error_message: "Bad Request. The series does not exist." }, 400);
@@ -353,10 +356,14 @@ test("SearXNG failing, redirecting, too big or with every engine down: the model
   try {
     const denied = await webSearchTool("u-fail")!.run({ query: "denied" });
     assert.equal(denied.text, R.SEARCH_FAILED);
-    assert.ok(logged.some((l) => l.includes("web search failed: source request failed: status 401")));
+    assert.ok(logged.some((l) => l.includes("web search failed: source request failed: status 401 (check SEARXNG_USERNAME and SEARXNG_PASSWORD)")));
   } finally {
     process.env.SEARXNG_PASSWORD = PASSWORD;
   }
+  // SearXNG with its JSON answers off (its default) refuses with 403: the log says what to turn on.
+  searx = { status: 403 };
+  assert.equal((await tool.run({ query: "json off" })).text, R.SEARCH_FAILED);
+  assert.ok(logged.some((l) => l.includes("status 403 (turn on SearXNG's json format")));
   // A model's input that isn't a query.
   for (const input of [null, {}, { query: "   " }, { query: 42 }]) assert.equal((await tool.run(input)).isError, true);
   noSecrets();
@@ -568,6 +575,29 @@ test("FRED: a series comes with its units, frequency, link and notice; the key g
   assert.deepEqual([failed.text, failed.used], [R.FRED_FAILED, false]);
   assert.ok(logged.some((l) => l.includes("FRED look-up failed: source request failed: status 500")));
   noSecrets(result, failed);
+});
+
+test("FRED refusing the key is a failure, never 'no such series' or 'bad options', and isn't remembered", async () => {
+  await sql("DELETE FROM source_cache");
+  const tool = fredSeriesTool();
+  process.env.FRED_API_KEY = "0123456789abcdef0123456789abcdef";
+  try {
+    const refused = await tool.run({ series_id: "UNRATE" });
+    assert.deepEqual([refused.text, refused.isError, refused.used], [R.FRED_FAILED, true, false]);
+    assert.ok(logged.some((l) => l.includes("FRED look-up failed: source request failed: status 400")));
+    assert.equal(logged.some((l) => l.includes("api_key")), false, "FRED's error text isn't logged");
+  } finally {
+    process.env.FRED_API_KEY = FRED_KEY;
+  }
+  // With the right key again, the series is there at once: nothing said it was missing.
+  const fixed = await tool.run({ series_id: "UNRATE", count: 3 });
+  assert.equal(fixed.used, true);
+  // A series FRED doesn't have, and options it refuses, are told to the model as such.
+  const missing = await tool.run({ series_id: "NOSUCHSERIES" });
+  assert.match(missing.text, /FRED has no series with the id NOSUCHSERIES/);
+  const daily = await tool.run({ series_id: "UNRATE", frequency: "d" });
+  assert.match(daily.text, /FRED refused these options/);
+  noSecrets(fixed, missing, daily);
 });
 
 test("FRED: a series a third party owns is refused before its values are fetched, and left out of a search", async () => {

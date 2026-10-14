@@ -8,7 +8,8 @@ import type { AddressInfo } from "node:net";
  * SearXNG (/searx), SEC EDGAR (/sec) and FRED (/fred). install() sends Flash's https requests to
  * SearXNG, the SEC and FRED here, with their headers as they are. With tls, it serves https (for a
  * built app, which takes the stand-ins' addresses from FLASH_TEST_SEC_URL and FLASH_TEST_FRED_URL).
- * Every request is kept, to check what was sent; nothing reaches a real service.
+ * Every request is kept, to check what was sent; nothing reaches a real service. port is any free
+ * one unless given.
  */
 
 export const PASSWORD = "s3cret-Pass-word-for-tests";
@@ -20,8 +21,8 @@ export type Block =
   | { type: "tool_use" | "server_tool_use"; id: string; name: string; input: object }
   | { type: "web_search_tool_result"; tool_use_id: string; content: object[] };
 export type ClaudeReply = { blocks: Block[]; stop: string; usage?: { input_tokens: number; output_tokens: number } };
-/** A free model's reply: the calls it asks for (one reply at once), or words (streamed, or at once). */
-export type FreeReply = { calls?: { name: string; args: object }[]; text?: string };
+/** A free model's reply: the calls it asks for (one reply at once), or words (streamed, or at once); cut: the stream breaks after the words. */
+export type FreeReply = { calls?: { name: string; args: object }[]; text?: string; cut?: boolean };
 export type Seen = { service: string; path: string; query: URLSearchParams; headers: IncomingMessage["headers"]; url: string; body: Record<string, unknown> };
 
 const iso = (t: number) => new Date(t).toISOString().slice(0, 10);
@@ -70,7 +71,7 @@ const SERIES: Record<string, object> = {
   SP500: { id: "SP500", title: "S&P 500", units: "Index", frequency: "Daily", observation_start: "2016-10-11", observation_end: "2026-10-09", notes: "Copyright © 2026, S&P Dow Jones Indices LLC." },
 };
 
-export async function startStandIns({ tls }: { tls?: { key: string; cert: string } } = {}) {
+export async function startStandIns({ tls, port: fixedPort = 0 }: { tls?: { key: string; cert: string }; port?: number } = {}) {
   const state = {
     claude: { replies: [] as ClaudeReply[], sent: [] as Record<string, unknown>[], router: "text" },
     free: { replies: [] as FreeReply[], sent: [] as Record<string, unknown>[] },
@@ -133,7 +134,8 @@ export async function startStandIns({ tls }: { tls?: { key: string; cert: string
         return found ? json(found) : json({}, 404);
       }
       if (service === "fred") {
-        if (url.searchParams.get("api_key") !== FRED_KEY) return json({ error_message: "bad key" }, 400);
+        if (url.searchParams.get("api_key") !== FRED_KEY)
+          return json({ error_code: 400, error_message: "Bad Request.  The value for variable api_key is not registered.  Read https://fred.stlouisfed.org/docs/api/api_key.html for more information." }, 400);
         const id = url.searchParams.get("series_id") ?? "";
         if (path === "/series") return SERIES[id] ? json({ seriess: [SERIES[id]] }) : json({ error_message: "Bad Request. The series does not exist." }, 400);
         if (path === "/series/observations") {
@@ -187,15 +189,20 @@ export async function startStandIns({ tls }: { tls?: { key: string; cert: string
       return json({ choices: [{ message }], usage: { prompt_tokens: 900, completion_tokens: 40 } });
     }
     const results = messages.filter((m) => m.role === "tool").length;
-    const text = state.free.replies.shift()?.text ?? `Here is what I found${results ? " [1]" : ""}.`;
+    const reply = state.free.replies.shift();
+    const text = reply?.text ?? `Here is what I found${results ? " [1]" : ""}.`;
     res.writeHead(200, { "content-type": "text/event-stream" });
     res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\n`);
+    if (reply?.cut) {
+      setTimeout(() => res.destroy(), 20);
+      return;
+    }
     res.write(`data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 2000, completion_tokens: 30 } })}\n\n`);
     res.end("data: [DONE]\n\n");
   }
 
   const server = tls ? createSecureServer(tls, handle) : createServer(handle);
-  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  await new Promise<void>((r) => server.listen(fixedPort, "127.0.0.1", r));
   const port = (server.address() as AddressInfo).port;
   const origin = `${tls ? "https" : "http"}://127.0.0.1:${port}`;
 
