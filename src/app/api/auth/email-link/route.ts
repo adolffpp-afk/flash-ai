@@ -1,8 +1,9 @@
 import { translatorFor } from "@/lib/server/i18n.ts";
-import { createSession, fromOwnPage, isSecure } from "@/lib/server/auth.ts";
+import { fromOwnPage } from "@/lib/server/auth.ts";
 import { clientIp, overLimit } from "@/lib/server/limits.ts";
 import { CLEAR_REF_COOKIE } from "@/lib/server/referrals.ts";
 import { redeemSignInLink, signInWithEmail } from "@/lib/server/signin.ts";
+import { signInCookie } from "@/lib/server/two-factor.ts";
 
 /**
  * Signs in with the code from a sign-in link. The link opens a page with a button that calls
@@ -22,10 +23,11 @@ export async function POST(request: Request) {
     return Response.json({ error: t("This link has expired or was already used. Ask for a new one.") }, { status: 400 });
   }
   const userId = await signInWithEmail(link.email, request);
-  const cookie = await createSession(userId, isSecure(request));
+  // With two-step sign-in on, this only gets them to the code page (see two-factor.ts).
+  const { cookie, twoFactor } = await signInCookie(userId, request, link.next);
   const headers = new Headers();
   headers.append("Set-Cookie", cookie);
   // Signed in, so a referral code (used if this made the account) is no longer needed.
   headers.append("Set-Cookie", CLEAR_REF_COOKIE);
-  return Response.json({ ok: true, next: link.next }, { headers });
+  return Response.json({ ok: true, next: link.next, twoFactor }, { headers });
 }

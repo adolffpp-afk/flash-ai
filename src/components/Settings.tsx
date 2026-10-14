@@ -22,6 +22,7 @@ import { BrandKitForm } from "./BrandKit";
 import { ConnectedApps } from "./ConnectedApps";
 import { YourConnectors } from "./YourConnectors";
 import { InstallApp } from "./InstallApp";
+import { TwoStepSignIn } from "./TwoStepSignIn";
 import { SETTINGS_TABS, type SettingsTab } from "@/lib/settings-tabs";
 import { hasBuiltInRecognition } from "@/lib/listen";
 import { msg, type Translate } from "@/lib/i18n";
@@ -689,6 +690,8 @@ function Account({ me, busy, attempt, onSignOut }: Shared & { onSignOut: (everyw
           </span>
         </Row>
       </Section>
+
+      <TwoStepSignIn busy={busy} attempt={attempt} section={Section} />
 
       <Section title={t("Password")}>
         {me.hasPassword ? (
