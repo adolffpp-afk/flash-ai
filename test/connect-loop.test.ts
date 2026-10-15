@@ -483,6 +483,24 @@ test("someone else's connection is never used, and the free lane refuses connect
   assert.equal(refuseUnpaid(false, 0, 10), false, "without connectors the free lane decides as before");
 });
 
+test("a chat's replies that used a connected account are found, so the chat never goes to the free lane", async () => {
+  const { accountReplies } = await import("../src/lib/connectors.ts");
+  const chat = [
+    { id: "u1", role: "user", content: "Hi" },
+    { id: "a1", role: "assistant", content: "Hello" },
+    { id: "u2", role: "user", content: "What's in my budget?" },
+    { id: "a2", role: "assistant", content: "Hotel 120", connectors: [{ connection: "Google Drive", tool: "Read a file" }] },
+    { id: "u3", role: "user", content: "Make a Doc of it" },
+    { id: "a3", role: "assistant", content: "It waits for you.", actions: [{ id: "card" }] },
+    { id: "u4", role: "user", content: "Continue with what came back.", continues: ["card_00000001"] },
+    { id: "a4", role: "assistant", content: "Made: https://docs.google.com/document/d/x/edit" },
+    { id: "u5", role: "user", content: "Thanks", connectors: [{ connection: "x", tool: "y" }] },
+    { id: "a5", role: "assistant", content: "You're welcome", connectors: [] },
+  ];
+  assert.deepEqual([...accountReplies(chat)], ["a2", "a3", "a4"], "its tools, a card, or writing on after a Continue; a user's message is never a reply");
+  assert.equal(accountReplies(chat.slice(0, 2)).size, 0);
+});
+
 test("keys and a server's whole address are stored sealed: only an origin and the last 4 characters are kept as they are", async () => {
   const rows = await all<{ provider: string; url: string; enc_url: string; enc_secret: string; last4: string }>("SELECT * FROM connections WHERE user_id = ?", [user]);
   const raw = JSON.stringify(rows);

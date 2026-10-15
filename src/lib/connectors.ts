@@ -294,3 +294,22 @@ export const MAX_CONNECTIONS = 20;
  */
 export const continuedIds = (value: unknown): string[] =>
   Array.isArray(value) ? [...new Set(value.filter((id): id is string => typeof id === "string" && /^[\w-]{10,40}$/.test(id)))].slice(0, 4) : [];
+
+/** What accountReplies reads of a chat's message. */
+type ChatMessage = { id: string; role: string; connectors?: unknown[]; actions?: unknown[]; continues?: unknown[] };
+
+/**
+ * The ids of a chat's replies that used a connected account: they called its tools, asked for a card
+ * to approve, or wrote on with what an approved call returned (the reply after a Continue). What
+ * Claude wrote in them can hold that account's data, so a chat with one of them never goes to the
+ * free lane: the browser marks them (ChatTurn.usedConnector) and the chat route checks the chat as it
+ * saved it too.
+ */
+export function accountReplies(messages: readonly ChatMessage[]): Set<string> {
+  const ids = new Set<string>();
+  messages.forEach((m, i) => {
+    if (m.role !== "assistant") return;
+    if (m.connectors?.length || m.actions?.length || messages[i - 1]?.continues?.length) ids.add(m.id);
+  });
+  return ids;
+}

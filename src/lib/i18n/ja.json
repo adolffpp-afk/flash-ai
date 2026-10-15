@@ -1374,6 +1374,7 @@
  "This browser can't show notifications.": "このブラウザでは通知を表示できません。",
  "This browser can't understand speech by itself, so Flash listens for you: about 3 credits each time you speak. In Chrome, Edge or Safari, listening is free.": "このブラウザには音声認識機能がないため、Flashが代わりに聞き取ります。話すたびに約3クレジットかかります。Chrome、Edge、Safariなら聞き取りは無料です。",
  "This browser can't use the microphone.": "このブラウザではマイクを使用できません。",
+ "This chat used your connected accounts, so it needs credits. Start a new chat to keep chatting for free.": "このチャットでは接続済みのアカウントを使ったため、クレジットが必要です。無料でチャットを続けるには新しいチャットを始めてください。",
  "This device has no voice for the language Flash answers in, so answers are read with another language's voice. Add one in your computer's speech or language settings, then reopen Flash.": "このデバイスにはFlashが回答する言語の音声がないため、別の言語の音声で読み上げられます。パソコンの音声または言語の設定で音声を追加し、Flashを開き直してください。",
  "This expired after 30 minutes, so nothing was sent. Ask again if you still want it.": "30分で期限切れになったため、何も送信されていません。まだ必要な場合はもう一度依頼してください。",
  "This invitation has expired or was already used.": "この招待は有効期限切れか、すでに使用されています。",

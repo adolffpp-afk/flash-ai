@@ -818,6 +818,74 @@ test("removing Google Drive revokes Flash's access at Google and forgets the pic
   assert.equal(mock.googleLog.writes.length, 0);
 });
 
+test("a chat with a reply that used Google Drive never goes to the free lane: with Drive off, on Research, or from a page that doesn't mark it", async () => {
+  // A stand-in Groq, the free lane's provider here: it records what it is sent.
+  const freeSent: string[] = [];
+  const groq = createServer((req, res) => {
+    let raw = "";
+    req.on("data", (c) => (raw += c));
+    req.on("end", () => {
+      freeSent.push(raw);
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.end('data: {"choices":[{"delta":{"content":"A free answer."}}]}\n\ndata: [DONE]\n\n');
+    });
+  });
+  await new Promise<void>((r) => groq.listen(0, "127.0.0.1", r));
+  process.env.GROQ_API_KEY = "gsk_stand_in";
+  process.env.GROQ_BASE_URL = `http://127.0.0.1:${(groq.address() as AddressInfo).port}`;
+  try {
+    const user = await account("g-free-lane");
+    const id = await withFiles(user, [SHEET]);
+    replies.push(
+      { blocks: [{ type: "tool_use", id: "toolu_1", name: "google-drive__read_file", input: { file_id: SHEET } }], stop: "tool_use" },
+      { blocks: [{ type: "text", text: "Your Budget sheet: the hotel costs 120." }], stop: "end_turn" },
+    );
+    const used = await chat(user, "What does the hotel cost?", [id]);
+    assert.ok(used.some((e) => e.type === "connector_used"));
+    // Then the user runs out of credits.
+    await sql("INSERT INTO credit_ledger (user_id, amount, reason, ref, created_at) VALUES (?, ?, 'test', 'spent', 0)", [user.id, -(await balance(user.id))]);
+    assert.equal(await balance(user.id), 0);
+    const turns = (mark: boolean) => [
+      { role: "user", content: "What does the hotel cost?" },
+      { role: "assistant", content: "Your Budget sheet: the hotel costs 120.", ...(mark && { usedConnector: true }) },
+      { role: "user", content: "And the train?" },
+    ];
+    const ask = async (who: Account, body: object) => {
+      const res = await chatRoute.POST(request("POST", "/api/chat", who, { projectId: who.projectId, engine: "text", level: "ascend", ...body }));
+      return { status: res.status, text: await read(res) };
+    };
+    const refused = "This chat used your connected accounts, so it needs credits. Start a new chat to keep chatting for free.";
+    // Google Drive turned off in the chat, as the earlier 402 says to: the marked reply keeps it off the free lane.
+    for (const [why, body] of [
+      ["Drive off", { messages: turns(true) }],
+      ["Drive on, on Research (it has no connectors)", { messages: turns(true), engine: "search", connectors: [id] }],
+      ["Drive on", { messages: turns(true), connectors: [id] }],
+      ["a page that doesn't mark it: the chat as the server saved it says so", { messages: turns(false) }],
+    ] as const) {
+      const r = await ask(user, body);
+      assert.equal(r.status, 402, why);
+      const answer = JSON.parse(r.text) as { error: string; code: string };
+      assert.equal(answer.code, "out_of_credits", why);
+      assert.ok(answer.error.endsWith(refused), `${why}: ${answer.error}`);
+    }
+    assert.equal(freeSent.length, 0, "the free model got nothing");
+
+    // A chat with no such reply, from another user out of credits too, still goes to the free lane.
+    const other = await account("g-free-lane-2", { credits: 0 });
+    const free = await ask(other, { messages: [{ role: "user", content: "Hello there" }], replyId: newId(), userMessage: { id: newId(), role: "user", content: "Hello there" }, afterId: null });
+    assert.equal(free.status, 200, free.text);
+    assert.match(free.text, /A free answer\./);
+    await afterwards();
+    assert.equal(freeSent.length, 1);
+    assert.ok(!freeSent.join("").includes("Budget sheet"));
+  } finally {
+    delete process.env.GROQ_API_KEY;
+    delete process.env.GROQ_BASE_URL;
+    groq.closeAllConnections();
+    groq.close();
+  }
+});
+
 test("Google Drive is hidden everywhere until all four of its variables are set (and CONNECTOR_KEYS)", async () => {
   const user = await account("g-hidden");
   const id = await withFiles(user, [SHEET]);

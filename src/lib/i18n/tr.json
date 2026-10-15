@@ -1374,6 +1374,7 @@
  "This browser can't show notifications.": "Bu tarayıcı bildirim gösteremiyor.",
  "This browser can't understand speech by itself, so Flash listens for you: about 3 credits each time you speak. In Chrome, Edge or Safari, listening is free.": "Bu tarayıcı konuşmayı kendi başına anlayamıyor, bu yüzden Flash senin için dinliyor: her konuştuğunda yaklaşık 3 kredi. Chrome, Edge veya Safari'de dinleme ücretsizdir.",
  "This browser can't use the microphone.": "Bu tarayıcı mikrofonu kullanamıyor.",
+ "This chat used your connected accounts, so it needs credits. Start a new chat to keep chatting for free.": "Bu sohbet bağlı hesaplarını kullandı, bu yüzden kredi gerekiyor. Ücretsiz sohbete devam etmek için yeni bir sohbet başlat.",
  "This device has no voice for the language Flash answers in, so answers are read with another language's voice. Add one in your computer's speech or language settings, then reopen Flash.": "Bu cihazda Flash'ın yanıt verdiği dil için bir ses yok, bu yüzden yanıtlar başka bir dilin sesiyle okunuyor. Bilgisayarının konuşma veya dil ayarlarından bir ses ekle, sonra Flash'ı yeniden aç.",
  "This expired after 30 minutes, so nothing was sent. Ask again if you still want it.": "Bunun süresi 30 dakika sonra doldu, bu yüzden hiçbir şey gönderilmedi. Hâlâ istiyorsan yeniden iste.",
  "This invitation has expired or was already used.": "Bu davetin süresi dolmuş ya da daha önce kullanılmış.",

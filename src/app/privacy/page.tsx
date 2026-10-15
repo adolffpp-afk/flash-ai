@@ -5,7 +5,7 @@ export const metadata: Metadata = { title: "Privacy Policy" };
 
 export default function Privacy() {
   return (
-    <LegalPage title="Privacy Policy" updated="October 12, 2026">
+    <LegalPage title="Privacy Policy" updated="October 15, 2026">
       <p>
         This policy explains what {COMPANY} collects when you use Flash AI, why, and the choices you have.
       </p>
@@ -38,7 +38,8 @@ export default function Privacy() {
       <ul>
         <li>Anthropic (writing, research, code, apps, slides, translation)</li>
         <li>
-          Groq, Google (Gemini), OpenRouter, Cloudflare and Mistral (free models, used when you are out of credits). Google may
+          Groq, Google (Gemini), OpenRouter, Cloudflare and Mistral (free models, used when you are out of credits, but
+          never for a chat that used your connected accounts: see below). Google may
           use messages its free Gemini models answer to improve its products, and its human reviewers may read them, so
           don&apos;t share personal or sensitive information in chats on free models. Free Gemini models never answer
           people in the European Economic Area, the UK or Switzerland. Flash&apos;s Mistral account is set so Mistral
@@ -57,7 +58,10 @@ export default function Privacy() {
         When a chat has your connected accounts turned on, Flash sends Claude&apos;s requests (what it searches for, or
         what it creates or changes) to those services with your key, and sends what they return to Anthropic to write
         the answer. Nothing goes to an account you haven&apos;t turned on in that chat, and Anthropic doesn&apos;t use it
-        to train its models. You can turn an account off in any chat, or remove it in Settings &gt; Connectors, which
+        to train its models. What they return, and the answers Claude writes with it, go to no other AI provider: a chat
+        with a reply that used your connected accounts is never answered by the free models, even after you turn the
+        accounts off (start a new chat to chat for free), and Flash&apos;s companion (Ask Flash) isn&apos;t shown that
+        chat&apos;s messages. You can turn an account off in any chat, or remove it in Settings &gt; Connectors, which
         deletes the key and its tools from Flash. Removing it doesn&apos;t cancel a key at the service itself: do that
         in your account there if you no longer want it to work. For an account you connected by signing in, Flash also
         asks the service to cancel the access you gave it, where the service offers a way to; where it doesn&apos;t,
@@ -94,8 +98,10 @@ export default function Privacy() {
         </li>
         <li>
           <strong>Sent only to write your answer.</strong> The text of a file Flash reads is sent to Anthropic only so
-          Claude can write the answer to your request. Anthropic doesn&apos;t use it to train its models. Nobody else
-          gets it.
+          Claude can write the answer to your request. Anthropic doesn&apos;t use it to train its models. The answers
+          Claude writes with it go to no other AI provider either: a chat that used Google Drive is never answered by
+          Flash&apos;s free models, even after you turn Google Drive off, and Flash&apos;s companion isn&apos;t shown
+          it. Flash gives it to nobody else, and nobody else sees it unless you share that chat yourself.
         </li>
         <li>
           <strong>Never for training or ads.</strong> Flash doesn&apos;t use your Google data to develop, improve or
