@@ -153,7 +153,7 @@ export function Wordmark({ className = "", tm = false }: { className?: string; t
       <InfinitySymbol id={id} className="mx-[0.24em] inline-block align-[0.06em]" />
       AI
       {/* Raised without vertical-align, so the line keeps its height. */}
-      {tm && <span className="relative -top-[0.75em] ms-[0.08em] text-[0.42em] font-medium">™</span>}
+      {tm && <span className="relative -top-[0.7em] ms-[0.08em] text-[max(0.45em,9px)] font-medium">™</span>}
     </span>
   );
 }
