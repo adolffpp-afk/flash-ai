@@ -11,6 +11,7 @@ import { ICONS, Orb, Tile, type Hue } from "./Home";
 import { msg } from "@/lib/i18n";
 import { LEGAL_NAME } from "@/lib/product";
 import { useT } from "@/lib/use-t";
+import { useInAndroidApp } from "@/lib/android-shell";
 
 const money = (cents: number) => `$${(cents / 100).toFixed(cents % 100 ? 2 : 0)}`;
 
@@ -108,6 +109,7 @@ export function Landing({
 }) {
   // The landing page shows in English (see Flash.tsx); its newer words are in the tables all the same.
   const t = useT();
+  const inApp = useInAndroidApp();
   const [pricing, setPricing] = useState<Pricing | null>(initialPricing ?? null);
   const [billing, setBilling] = useState<Interval>("month");
   useEffect(() => {
@@ -188,7 +190,7 @@ export function Landing({
           </a>
           <div className="hidden gap-6 text-sm text-zinc-400 sm:flex">
             <a href="#features" className="hover:text-zinc-100">Features</a>
-            <a href="#pricing" className="hover:text-zinc-100">Pricing</a>
+            {!inApp && <a href="#pricing" className="hover:text-zinc-100">Pricing</a>}
             <a href="#faq" className="hover:text-zinc-100">FAQ</a>
           </div>
           <div className="ml-auto flex items-center gap-2 text-sm">
@@ -341,52 +343,55 @@ export function Landing({
         </div>
       </section>
 
-      <section id="pricing" className="mx-auto max-w-5xl scroll-mt-16 px-4 py-24 sm:px-6">
-        <h2 className="text-center text-2xl font-medium tracking-[-0.025em] sm:text-[2rem]">Plans for every maker</h2>
-        <p className="mx-auto mt-4 max-w-xl text-center text-zinc-400">
-          {canBuy
-            ? "Start free. Upgrade for more monthly credits, or top up any time. Cancel whenever you like, and unused credits carry over."
-            : "Start free with credits every month. Paid plans and top-ups are coming soon."}
-        </p>
-        <div className="mt-8 flex justify-center">
-          <IntervalToggle value={billing} onChange={setBilling} />
-        </div>
-        {pricing && (
-          <div className="mt-8">
-            <PlanCards
-              pricing={pricing}
-              interval={billing}
-              onFree={() => onStart("signup")}
-              onPick={() => onStart("signup")}
-              comingSoon={!canBuy}
-            />
-          </div>
-        )}
-        {pricing && (
-          <p className="mt-4 text-center text-sm text-zinc-400">
-            {canBuy ? "Need more? Top up any time: " : "Top-ups, coming soon: "}
-            {pricing.packs.map((p) => `${p.credits.toLocaleString("en-US")} credits for ${money(p.priceCents)}`).join(" · ")}.
-            Bought credits never expire.
+      {/* Nothing is for sale inside the Android app (Play's billing rule, see android-shell.ts). */}
+      {!inApp && (
+        <section id="pricing" className="mx-auto max-w-5xl scroll-mt-16 px-4 py-24 sm:px-6">
+          <h2 className="text-center text-2xl font-medium tracking-[-0.025em] sm:text-[2rem]">Plans for every maker</h2>
+          <p className="mx-auto mt-4 max-w-xl text-center text-zinc-400">
+            {canBuy
+              ? "Start free. Upgrade for more monthly credits, or top up any time. Cancel whenever you like, and unused credits carry over."
+              : "Start free with credits every month. Paid plans and top-ups are coming soon."}
           </p>
-        )}
-        {pricing && (
-          <div className="glass mt-10 rounded-3xl p-5 shadow-none sm:p-6">
-            <h3 className="text-sm font-medium text-zinc-300">Typical credits per request</h3>
-            <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-3 lg:grid-cols-4">
-              {ENGINES.map((e) => (
-                <div key={e} className="flex justify-between border-b border-white/5 py-1.5">
-                  <span className="text-zinc-400">{ENGINE_LABELS[e]}</span>
-                  <span className="text-zinc-300">{isLive(e) ? `${pricing.limits[e] ? "~" : "from "}${pricing.costs[e]}` : <span className="text-zinc-500">soon</span>}</span>
-                </div>
-              ))}
-            </div>
-            <p className="mt-3 text-xs text-zinc-500">
-              Writing, research, code, apps and slides are charged by length. Every reply shows what it used, and
-              failed requests are free.
-            </p>
+          <div className="mt-8 flex justify-center">
+            <IntervalToggle value={billing} onChange={setBilling} />
           </div>
-        )}
-      </section>
+          {pricing && (
+            <div className="mt-8">
+              <PlanCards
+                pricing={pricing}
+                interval={billing}
+                onFree={() => onStart("signup")}
+                onPick={() => onStart("signup")}
+                comingSoon={!canBuy}
+              />
+            </div>
+          )}
+          {pricing && (
+            <p className="mt-4 text-center text-sm text-zinc-400">
+              {canBuy ? "Need more? Top up any time: " : "Top-ups, coming soon: "}
+              {pricing.packs.map((p) => `${p.credits.toLocaleString("en-US")} credits for ${money(p.priceCents)}`).join(" · ")}.
+              Bought credits never expire.
+            </p>
+          )}
+          {pricing && (
+            <div className="glass mt-10 rounded-3xl p-5 shadow-none sm:p-6">
+              <h3 className="text-sm font-medium text-zinc-300">Typical credits per request</h3>
+              <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-3 lg:grid-cols-4">
+                {ENGINES.map((e) => (
+                  <div key={e} className="flex justify-between border-b border-white/5 py-1.5">
+                    <span className="text-zinc-400">{ENGINE_LABELS[e]}</span>
+                    <span className="text-zinc-300">{isLive(e) ? `${pricing.limits[e] ? "~" : "from "}${pricing.costs[e]}` : <span className="text-zinc-500">soon</span>}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-3 text-xs text-zinc-500">
+                Writing, research, code, apps and slides are charged by length. Every reply shows what it used, and
+                failed requests are free.
+              </p>
+            </div>
+          )}
+        </section>
+      )}
 
       <section id="faq" className="mx-auto max-w-3xl scroll-mt-16 px-4 pb-24 sm:px-6">
         <h2 className="text-center text-2xl font-medium tracking-[-0.025em] sm:text-[2rem]">Questions</h2>
