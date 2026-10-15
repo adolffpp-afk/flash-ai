@@ -6,6 +6,7 @@
  */
 import { all, one, run, now } from "./db.ts";
 import { randomId } from "./ids.ts";
+import { infectedFile } from "./virus-scan.ts";
 
 export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 export const MAX_FILES_PER_SITE = 500;
@@ -60,8 +61,9 @@ export async function saveUpload(
   if (Number(use?.n ?? 0) >= MAX_FILES_PER_SITE || Number(use?.bytes ?? 0) + file.bytes.length > MAX_BYTES_PER_SITE) {
     return fail("This app can't hold more files. Its owner can remove some in Flash.", 507);
   }
-  const id = randomId(12);
   const name = cleanName(file.name, file.type);
+  if (await infectedFile([{ name, bytes: file.bytes }])) return fail("This file contains a virus, so the app can't take it.", 422);
+  const id = randomId(12);
   // INSERT … SELECT, so a file sent just as the app is unpublished, or as its owner turns files off, isn't kept.
   const r = await run(
     "INSERT INTO site_uploads (id, site_slug, owner, mime, name, data, size, created_at) SELECT ?, slug, ?, ?, ?, ?, ?, ? FROM sites WHERE slug = ? AND uploads_on = 1",

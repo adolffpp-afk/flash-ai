@@ -548,6 +548,8 @@
  "Flash couldn't write the scenes for this movie. Nothing was filmed. Please try again.": "Flash kunde inte skriva scenerna till den här filmen. Inget filmades. Försök igen.",
  "Flash did a quick search: a full one needs {needed} credits and you have {available}.": "Flash gjorde en snabb sökning: en fullständig behöver {needed} krediter och du har {available}.",
  "Flash follows these in every answer in this project. Your other projects aren’t affected.": "Flash följer dessa i varje svar i det här projektet. Dina andra projekt påverkas inte.",
+ "Flash found a virus in this picture, so it won't use it.": "Flash hittade ett virus i den här bilden och använder den därför inte.",
+ "Flash found a virus in {name}, so it won't open it. Delete it from your device.": "Flash hittade ett virus i {name} och öppnar det därför inte. Ta bort det från din enhet.",
  "Flash has sent all the emails it can today. Please send the invitation again tomorrow.": "Flash har skickat alla mejl som går i dag. Skicka inbjudan igen i morgon.",
  "Flash in Claude and ChatGPT": "Flash i Claude och ChatGPT",
  "Flash is busy right now. Please try again in a moment.": "Flash är upptagen just nu. Försök igen om en stund.",

@@ -21,6 +21,7 @@ import { saveFile } from "./files.ts";
 import { listSites, publishSite } from "./sites.ts";
 import { dataLine } from "../data-rules.ts";
 import { publicFile, publicFileLink } from "./connector.ts";
+import { infectedFile } from "./virus-scan.ts";
 import type { User } from "./auth.ts";
 import { fullName } from "../names.ts";
 
@@ -408,6 +409,7 @@ async function photoArg(args: Args, ctx: ToolContext): Promise<{ data: Buffer; m
     const b64 = str(args.image_base64).replace(/^data:[^,]*,/, "");
     if (!b64) return "Give the photo as image_url (a Flash link) or image_base64.";
     data = Buffer.from(b64, "base64");
+    if (await infectedFile([{ name: "photo", bytes: data }])) return "Flash found a virus in this file, so it won't use it.";
   }
   const mime = photoType(data);
   const size = imageDimensions(data);

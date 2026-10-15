@@ -33,6 +33,7 @@ import {
 } from "@/lib/engines/claude.ts";
 import { autoLevel, isLevel, levelName, needsCare, type ModelLevel } from "@/lib/levels.ts";
 import { checkFiles } from "@/lib/attachments.ts";
+import { infectedFile, scannerSetUp } from "@/lib/server/virus-scan.ts";
 import { withInstructions } from "@/lib/project-instructions.ts";
 import { profileNote } from "@/lib/names.ts";
 import { pictureWordsNote } from "@/lib/languages.ts";
@@ -868,6 +869,17 @@ export async function POST(request: Request) {
   }
   const filesProblem = checkFiles(last.attachment, last.more, t);
   if (filesProblem) return Response.json({ error: filesProblem }, { status: 413 });
+  // Every file in the conversation goes to the AI again, so each is checked (a clean one only once a week).
+  const sent = history
+    .flatMap((turn) => (turn.attachment ? [turn.attachment, ...(Array.isArray(turn.more) ? turn.more : [])] : []))
+    .filter((f): f is Attachment => typeof f?.data === "string" && typeof f.name === "string");
+  const infected = scannerSetUp() && (await infectedFile(sent.map((f) => ({ name: f.name, bytes: Buffer.from(f.data, "base64") }))));
+  if (infected) {
+    return Response.json(
+      { error: t("Flash found a virus in {name}, so it won't open it. Delete it from your device.", { name: infected.slice(0, 120) }) },
+      { status: 422 },
+    );
+  }
   const severalFiles = Boolean(last.more?.length);
   if (typeof last.content !== "string" || last.content.length > MAX_MESSAGE_CHARS) {
     return Response.json(

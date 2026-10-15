@@ -348,3 +348,48 @@ test("someone who keeps getting the price question stops paid helpers deciding t
     delete process.env.FAL_KEY;
   }
 });
+
+test("a chat file the virus scanner flags is refused before anything runs, even when sent again with a later message", async () => {
+  const flagged = photo("invoice.png");
+  const scanned: number[] = [];
+  const scanner = createServer((req, res) => {
+    const parts: Buffer[] = [];
+    req.on("data", (d: Buffer) => parts.push(d));
+    req.on("end", () => {
+      const body = Buffer.concat(parts);
+      scanned.push(body.length);
+      const bad = body.equals(Buffer.from(flagged.data, "base64"));
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify(bad ? { clean: false, virus: "Eicar-Test-Signature" } : { clean: true }));
+    });
+  });
+  await new Promise<void>((done) => scanner.listen(0, "127.0.0.1", done));
+  process.env.VIRUS_SCAN_URL = `http://127.0.0.1:${(scanner.address() as AddressInfo).port}/`;
+  process.env.VIRUS_SCAN_KEY = "test-key";
+  try {
+    const who = await account("virus", 500);
+    const first = await chat(who, { messages: [{ role: "user", content: "what's this?", attachment: flagged }] });
+    assert.equal(first.status, 422);
+    assert.match(first.error!.error, /virus in invoice\.png/);
+    // The same file further up the conversation is still refused.
+    const later = await chat(who, {
+      messages: [
+        { role: "user", content: "what's this?", attachment: flagged },
+        { role: "assistant", content: "…" },
+        { role: "user", content: "and now?" },
+      ],
+    });
+    assert.equal(later.status, 422);
+    assert.equal(await balance(who.id), 500);
+    // A clean file is scanned once, then remembered.
+    const clean = photo("cat.png", 32, 32);
+    scanned.length = 0;
+    await chat(who, { messages: [{ role: "user", content: "hi", attachment: clean }] });
+    await chat(who, { messages: [{ role: "user", content: "hi", attachment: clean }, { role: "assistant", content: "hello" }, { role: "user", content: "again" }] });
+    assert.equal(scanned.length, 1);
+  } finally {
+    delete process.env.VIRUS_SCAN_URL;
+    delete process.env.VIRUS_SCAN_KEY;
+    scanner.close();
+  }
+});

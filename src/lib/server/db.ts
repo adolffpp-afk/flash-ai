@@ -571,6 +571,12 @@ const SCHEMA = [
     attempts INTEGER NOT NULL DEFAULT 0,
     expires_at INTEGER NOT NULL
   )`,
+  // Uploaded files the virus scanner passed, by content hash, so a file sent again isn't scanned
+  // again for a while (see virus-scan.ts).
+  `CREATE TABLE IF NOT EXISTS scanned_clean (
+    hash TEXT PRIMARY KEY,
+    scanned_at INTEGER NOT NULL
+  )`,
 ];
 
 let client: Client | null = null;

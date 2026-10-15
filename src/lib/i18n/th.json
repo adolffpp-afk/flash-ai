@@ -548,6 +548,8 @@
  "Flash couldn't write the scenes for this movie. Nothing was filmed. Please try again.": "Flash เขียนฉากสำหรับภาพยนตร์เรื่องนี้ไม่ได้ จึงยังไม่ได้สร้างวิดีโอใดๆ โปรดลองอีกครั้ง",
  "Flash did a quick search: a full one needs {needed} credits and you have {available}.": "Flash ค้นหาแบบรวดเร็ว: การค้นหาแบบเต็มต้องใช้ {needed} เครดิต แต่คุณมี {available}",
  "Flash follows these in every answer in this project. Your other projects aren’t affected.": "Flash จะทำตามคำแนะนำเหล่านี้ในทุกคำตอบของโปรเจกต์นี้ โปรเจกต์อื่นของคุณจะไม่ได้รับผลกระทบ",
+ "Flash found a virus in this picture, so it won't use it.": "Flash พบไวรัสในรูปภาพนี้ จึงจะไม่ใช้รูปนี้",
+ "Flash found a virus in {name}, so it won't open it. Delete it from your device.": "Flash พบไวรัสใน {name} จึงจะไม่เปิดไฟล์นี้ ลบไฟล์นี้ออกจากอุปกรณ์ของคุณ",
  "Flash has sent all the emails it can today. Please send the invitation again tomorrow.": "วันนี้ Flash ส่งอีเมลครบตามจำนวนที่ส่งได้แล้ว โปรดส่งคำเชิญอีกครั้งพรุ่งนี้",
  "Flash in Claude and ChatGPT": "Flash ใน Claude และ ChatGPT",
  "Flash is busy right now. Please try again in a moment.": "Flash ไม่ว่างในขณะนี้ โปรดลองอีกครั้งในอีกสักครู่",

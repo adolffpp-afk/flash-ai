@@ -548,6 +548,8 @@
  "Flash couldn't write the scenes for this movie. Nothing was filmed. Please try again.": "Flash no pudo escribir las escenas de esta película. No se grabó nada. Inténtalo de nuevo.",
  "Flash did a quick search: a full one needs {needed} credits and you have {available}.": "Flash hizo una búsqueda rápida: una completa necesita {needed} créditos y tienes {available}.",
  "Flash follows these in every answer in this project. Your other projects aren’t affected.": "Flash las sigue en cada respuesta de este proyecto. Tus otros proyectos no se ven afectados.",
+ "Flash found a virus in this picture, so it won't use it.": "Flash encontró un virus en esta imagen, así que no la usará.",
+ "Flash found a virus in {name}, so it won't open it. Delete it from your device.": "Flash encontró un virus en {name}, así que no lo abrirá. Bórralo de tu dispositivo.",
  "Flash has sent all the emails it can today. Please send the invitation again tomorrow.": "Flash ya envió todos los correos que puede enviar hoy. Vuelve a enviar la invitación mañana.",
  "Flash in Claude and ChatGPT": "Flash en Claude y ChatGPT",
  "Flash is busy right now. Please try again in a moment.": "Flash está ocupado en este momento. Inténtalo de nuevo en un momento.",

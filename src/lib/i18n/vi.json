@@ -548,6 +548,8 @@
  "Flash couldn't write the scenes for this movie. Nothing was filmed. Please try again.": "Flash không viết được các cảnh cho bộ phim này. Chưa có gì được quay. Vui lòng thử lại.",
  "Flash did a quick search: a full one needs {needed} credits and you have {available}.": "Flash đã tìm nhanh: tìm đầy đủ cần {needed} tín dụng nhưng bạn chỉ có {available}.",
  "Flash follows these in every answer in this project. Your other projects aren’t affected.": "Flash làm theo các hướng dẫn này trong mọi câu trả lời của dự án này. Các dự án khác của bạn không bị ảnh hưởng.",
+ "Flash found a virus in this picture, so it won't use it.": "Flash phát hiện virus trong hình này nên sẽ không dùng nó.",
+ "Flash found a virus in {name}, so it won't open it. Delete it from your device.": "Flash phát hiện virus trong {name} nên sẽ không mở tệp này. Hãy xóa nó khỏi thiết bị của bạn.",
  "Flash has sent all the emails it can today. Please send the invitation again tomorrow.": "Hôm nay Flash đã gửi hết số email có thể gửi. Vui lòng gửi lại lời mời vào ngày mai.",
  "Flash in Claude and ChatGPT": "Flash trong Claude và ChatGPT",
  "Flash is busy right now. Please try again in a moment.": "Flash đang bận. Vui lòng thử lại sau giây lát.",

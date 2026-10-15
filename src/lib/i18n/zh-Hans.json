@@ -548,6 +548,8 @@
  "Flash couldn't write the scenes for this movie. Nothing was filmed. Please try again.": "Flash 无法为这部影片编写场景，因此没有生成任何视频。请重试。",
  "Flash did a quick search: a full one needs {needed} credits and you have {available}.": "Flash 做了快速搜索：完整搜索需要 {needed} 积分，而你有 {available} 积分。",
  "Flash follows these in every answer in this project. Your other projects aren’t affected.": "Flash 会在此项目的每个回答中遵循这些指令，你的其他项目不受影响。",
+ "Flash found a virus in this picture, so it won't use it.": "Flash 在这张图片中发现了病毒，因此不会使用它。",
+ "Flash found a virus in {name}, so it won't open it. Delete it from your device.": "Flash 在 {name} 中发现了病毒，因此不会打开它。请从你的设备中删除它。",
  "Flash has sent all the emails it can today. Please send the invitation again tomorrow.": "Flash 今天能发送的邮件已全部发完。请明天再发送邀请。",
  "Flash in Claude and ChatGPT": "在 Claude 和 ChatGPT 中使用 Flash",
  "Flash is busy right now. Please try again in a moment.": "Flash 当前繁忙，请稍后再试。",

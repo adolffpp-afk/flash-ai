@@ -548,6 +548,8 @@
  "Flash couldn't write the scenes for this movie. Nothing was filmed. Please try again.": "Flash не вдалося написати сцени для цього фільму. Нічого не знято. Спробуйте ще раз.",
  "Flash did a quick search: a full one needs {needed} credits and you have {available}.": "Flash виконав швидкий пошук: для повного потрібно кредитів: {needed}, а у вас {available}.",
  "Flash follows these in every answer in this project. Your other projects aren’t affected.": "Flash дотримується цих інструкцій у кожній відповіді в цьому проєкті. На інші проєкти вони не впливають.",
+ "Flash found a virus in this picture, so it won't use it.": "Flash знайшов вірус у цьому зображенні, тому не використовуватиме його.",
+ "Flash found a virus in {name}, so it won't open it. Delete it from your device.": "Flash знайшов вірус у {name}, тому не відкриє його. Видаліть його зі свого пристрою.",
  "Flash has sent all the emails it can today. Please send the invitation again tomorrow.": "Сьогодні Flash уже надіслав усі листи, які міг. Надішліть запрошення ще раз завтра.",
  "Flash in Claude and ChatGPT": "Flash у Claude і ChatGPT",
  "Flash is busy right now. Please try again in a moment.": "Flash зараз зайнятий. Спробуйте ще раз трохи згодом.",
