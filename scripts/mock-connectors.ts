@@ -78,7 +78,9 @@ import { pathToFileURL } from "node:url";
  *   POST /google/picker/pick gives the app the files picked, both with the user's token and CORS, for
  *   the page's development list (see DrivePicker.tsx);
  * - state.google.rateLimited answers every API call with Google's rate-limit answer.
- * state.google changes how it behaves (also with POST /__mock/google), and googleLog records every call.
+ * state.google changes how it behaves (also with POST /__mock/google), POST /__mock/google/files puts
+ * one more file in the drive ({id, name, mimeType, base64}: its bytes, say a hostile PDF), and
+ * googleLog records every call.
  */
 
 const MODERN = "2026-07-28";
@@ -825,6 +827,12 @@ export async function startMockConnectors(port = 7788) {
       if (req.method === "POST") Object.assign(google, JSON.parse((await readBody(req)) || "{}") as Partial<GoogleConfig>);
       json(res, 200, { config: google, log: googleLog, granted: [...driveGranted] });
       return true;
+    }
+    if (path === "/__mock/google/files" && req.method === "POST") {
+      const sent = JSON.parse((await readBody(req)) || "{}") as { id?: string; name?: string; mimeType?: string; base64?: string };
+      if (!sent.id || !/^[\w-]+$/.test(sent.id) || !sent.name || !sent.mimeType) return (json(res, 400, { error: "id, name and mimeType" }), true);
+      drive.set(sent.id, { name: sent.name, mimeType: sent.mimeType, bytes: Buffer.from(sent.base64 ?? "", "base64") });
+      return (json(res, 200, { ok: true }), true);
     }
     if (!path.startsWith("/google/")) return false;
     googleLog.calls.push({ method: req.method ?? "GET", path: path + url.search });
