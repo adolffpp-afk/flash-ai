@@ -129,3 +129,15 @@ test("a refunded plan payment is found by its invoice and takes back that month'
   assert.equal(await clawBack(p, 1, "ch_r2", "stripe-refund:ch_r2:2500", "Payment refunded"), 3000);
   assert.equal(await balance("r2"), 0);
 });
+
+test("a request still running at month end doesn't make the free top-up bigger", async () => {
+  await user("m1");
+  await run("UPDATE users SET verified_at = 1 WHERE id = 'm1'");
+  // Last month's free credits, then a request holding all of them as the month changes.
+  await run("INSERT INTO credit_ledger (user_id, amount, reason, ref, created_at) VALUES ('m1', 200, 'free', 'free:m1:2000-01', 0)");
+  const id = (await charge("m1", 200, "app request"))!;
+  await ensureMonthlyCredits("m1");
+  const { settle } = await import("../src/lib/server/credits.ts");
+  await settle(id, 2);
+  assert.ok((await balance("m1")) <= 200, `balance ${await balance("m1")}`);
+});

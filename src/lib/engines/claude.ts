@@ -279,14 +279,10 @@ export const modelForEngine = (engine: Engine) =>
 export async function countInputTokens(model: string, history: ChatTurn[], systemPrompt = "", tools?: Anthropic.Beta.BetaTool[]): Promise<number> {
   const messages = toMessages(history);
   const withTools = Boolean(tools?.length);
-  try {
-    const res = await getClient().beta.messages.countTokens({ model, messages, ...(systemPrompt && { system: systemPrompt }), ...(withTools && { tools }) });
-    return res.input_tokens + (withTools ? 0 : 3000);
-  } catch {
-    // Counting failed: estimate on the high side (about 2.5 characters per token), the tools at the
-    // most they can be. The reply's check before every step counts again (see streamText).
-    return Math.ceil((JSON.stringify(messages).length + systemPrompt.length) / 2.5) + (withTools ? worstTokens(JSON.stringify(tools).length) : 3000);
-  }
+  // Throws when counting fails: no guess is safe (a character can be several tokens, and a picture or
+  // PDF page costs tokens whatever its size), so the request isn't priced or sent (see the chat route).
+  const res = await getClient().beta.messages.countTokens({ model, messages, ...(systemPrompt && { system: systemPrompt }), ...(withTools && { tools }) });
+  return res.input_tokens + (withTools ? 0 : 3000);
 }
 
 /**

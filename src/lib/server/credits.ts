@@ -36,6 +36,9 @@ export async function spendable(userId: string): Promise<{ largest: number; tota
   };
 }
 
+// Longer than any request runs (the chat route's maxDuration is 800 seconds).
+const HOLD_MINUTES = 15;
+
 const monthKey = (t = new Date()) => `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, "0")}`;
 
 /**
@@ -66,7 +69,14 @@ async function monthlyCredits(userId: string): Promise<void> {
   }
   const ref = `free:${userId}:${monthKey()}`;
   if (await one("SELECT 1 FROM credit_ledger WHERE ref = ?", [ref])) return;
-  const topUp = Math.max(0, FREE_MONTHLY_CREDITS - Math.max(0, await balance(userId)));
+  // Credits held by a request still running count as not spent yet: most of a hold comes back when
+  // the reply ends, so counting it as spent would top up past the monthly amount.
+  const row = await one<{ total: number }>(
+    `SELECT COALESCE(SUM(amount), 0) AS total FROM credit_ledger
+     WHERE user_id = ? AND NOT (amount < 0 AND ref IS NULL AND settled_at = 0 AND created_at > ?)`,
+    [userId, now() - HOLD_MINUTES * 60_000],
+  );
+  const topUp = Math.max(0, FREE_MONTHLY_CREDITS - Math.max(0, Number(row?.total ?? 0)));
   await run(
     "INSERT OR IGNORE INTO credit_ledger (user_id, amount, reason, ref, created_at) VALUES (?, ?, ?, ?, ?)",
     [userId, topUp, "Monthly free credits", ref, now()],
