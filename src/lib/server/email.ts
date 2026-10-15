@@ -1,5 +1,5 @@
 import { now } from "./db.ts";
-import { overLimit } from "./limits.ts";
+import { countOf, overLimit } from "./limits.ts";
 import { BRAND_NAME } from "../product.ts";
 
 /*
@@ -23,36 +23,58 @@ export const EMAIL_BUDGET = {
   // Form messages one person's apps may email them in a day, across all their apps. Every message
   // is still saved in My websites & apps.
   perOwner: 10,
+  // Sign-in links and confirmations to addresses with no confirmed account yet, a day. Anyone can
+  // ask for these, so they get a share of their own and can't use up what members need.
+  forNewAddresses: 25,
+  // Emails one network may ask Flash to send to anyone a day, while signed out (sign-in links,
+  // sign-ups and password resets together).
+  perNetwork: 15,
 };
 
 const DAY = 86_400_000;
 
 /**
  * What an email is, which decides whether today's budget lets it go out:
- * - "account": sign-in links, email confirmations and password resets. Always sent.
+ * - "account": email confirmations, password resets and sign-in links for confirmed accounts.
+ *   Always sent.
+ * - "new": a sign-in link or confirmation to an address with no confirmed account yet. Anyone can
+ *   ask for these, so they stop at EMAIL_BUDGET.forNewAddresses a day.
  * - "other": team invitations and shop orders, sent while the day's budget lasts. Each needs a
  *   paid plan or a real payment, so nobody can send many for free.
  * - { owner }: a published app's form message to the user who owns the app. Anyone can send
  *   forms, so these also stop at the owner's own daily cap.
  */
-export type EmailKind = "account" | "other" | { owner: string };
+export type EmailKind = "account" | "new" | "other" | { owner: string };
 
-/** Whether today's budget lets an email of this kind go out, counting it when it does. */
+/**
+ * Whether today's budget lets an email of this kind go out, counting it when it does. Account
+ * emails and the rest are counted apart, so sign-in emails never use up what orders and invites
+ * get, and those never use up what sign-in emails keep.
+ */
 async function withinBudget(kind: EmailKind): Promise<boolean> {
-  const today = `email-day:${new Date(now()).toISOString().slice(0, 10)}`;
-  if (kind === "account") {
-    // Never held back, so nobody is locked out, but counted so other emails leave room for these.
-    await overLimit(today, Infinity, DAY);
+  const day = new Date(now()).toISOString().slice(0, 10);
+  const accounts = `email-day-acct:${day}`;
+  const others = `email-day:${day}`;
+  if (kind === "new" && (await overLimit(`email-new:${day}`, EMAIL_BUDGET.forNewAddresses, DAY))) {
+    console.warn("[flash] today's sign-in emails to new addresses are used up");
+    return false;
+  }
+  if (kind === "account" || kind === "new") {
+    await overLimit(accounts, Infinity, DAY);
     return true;
   }
   // Checked first, so one person's busy apps can't use up everyone else's share.
   if (typeof kind === "object" && (await overLimit(`email-owner:${kind.owner}`, EMAIL_BUDGET.perOwner, DAY))) return false;
-  if (await overLimit(today, EMAIL_BUDGET.perDay - EMAIL_BUDGET.keptForAccounts, DAY)) {
+  const full = (await countOf(accounts)) + (await countOf(others)) >= EMAIL_BUDGET.perDay;
+  if (full || (await overLimit(others, EMAIL_BUDGET.perDay - EMAIL_BUDGET.keptForAccounts, DAY))) {
     console.warn("[flash] today's emails for apps and invites are used up; raise EMAIL_BUDGET in email.ts on a bigger email plan");
     return false;
   }
   return true;
 }
+
+/** Counts one signed-out request to email someone; true when this network has asked too often today. */
+export const tooManyFromNetwork = (ip: string) => overLimit(`email-ip:${ip}`, EMAIL_BUDGET.perNetwork, DAY);
 
 export const emailEnabled = () => Boolean(process.env.RESEND_API_KEY);
 export const demoEmails = () => !emailEnabled() && process.env.FLASH_DEMO_EMAILS === "true";

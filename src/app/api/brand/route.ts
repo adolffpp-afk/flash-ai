@@ -1,6 +1,7 @@
 import { appUrl, getUser, unauthorized } from "@/lib/server/auth.ts";
 import { getBrand, logoProblem, saveBrand, type LogoUpload } from "@/lib/server/brand.ts";
 import { translatorFor } from "@/lib/server/i18n.ts";
+import { infectedFile } from "@/lib/server/virus-scan.ts";
 
 /** The user's brand kit. */
 export async function GET(request: Request) {
@@ -20,6 +21,9 @@ export async function PUT(request: Request) {
   if (logo) {
     const problem = logoProblem(logo, t);
     if (problem) return Response.json({ error: problem }, { status: 400 });
+    if (await infectedFile([{ name: "logo", bytes: Buffer.from(logo.data, "base64") }])) {
+      return Response.json({ error: t("Flash found a virus in this picture, so it won't use it.") }, { status: 422 });
+    }
   }
   await saveBrand(user.id, body, logo === undefined ? undefined : logo ? { mediaType: logo.mediaType, data: logo.data } : null);
   return Response.json({ brand: await getBrand(user.id, appUrl(request)) });

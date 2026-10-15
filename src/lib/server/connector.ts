@@ -17,6 +17,9 @@ const REFRESH_DAYS = 30;
 
 export type Client = { id: string; name: string; redirectUris: string[]; confidential: boolean };
 
+const flashHost = (host: string) =>
+  /(^|\.)flash-app\.dev$/.test(host) || (Boolean(process.env.FLASH_APP_URL) && host === new URL(process.env.FLASH_APP_URL!).hostname.toLowerCase());
+
 /**
  * Where an app may be sent back to: https addresses, http only on this computer (for desktop
  * apps and testing tools), or an app's own scheme like cursor://. Never script or data links.
@@ -31,7 +34,9 @@ export function validRedirectUri(uri: unknown): uri is string {
   }
   if (url.hash || url.username || url.password) return false;
   const scheme = url.protocol.slice(0, -1);
-  if (scheme === "https") return true;
+  // Never Flash's own site: published apps live there too, so an app could take the code while the
+  // Connect page says it's Flash asking.
+  if (scheme === "https") return !flashHost(url.hostname.toLowerCase().replace(/\.$/, ""));
   if (scheme === "http") return ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
   return /^[a-z][a-z0-9+.-]*$/.test(scheme) && !["javascript", "data", "vbscript", "file", "blob", "about", "ws", "wss"].includes(scheme);
 }
@@ -206,7 +211,8 @@ export async function checkAuthorize(
   const client = await getClient(params.client_id);
   if (!client) return { fatal: "This app isn't registered with Flash. Go back to the app and try connecting again." };
   const redirectUri = params.redirect_uri ?? (client.redirectUris.length === 1 ? client.redirectUris[0] : "");
-  if (!client.redirectUris.includes(redirectUri)) {
+  // Checked again, so an app registered before a rule was added can't use what it now refuses.
+  if (!client.redirectUris.includes(redirectUri) || !validRedirectUri(redirectUri)) {
     return { fatal: "This app gave a return address it didn't register. Go back to the app and try connecting again." };
   }
   const state = params.state ?? null;

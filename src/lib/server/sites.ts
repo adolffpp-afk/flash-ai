@@ -14,8 +14,12 @@ const HOUR = 3600_000;
 // Earlier versions kept per site, newest first; older ones are deleted.
 export const MAX_VERSIONS = 10;
 
-function makeSlug(title: string): string {
-  const base = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 32) || "app";
+// Words an app's address can't carry, so no app looks like one of Flash's own pages at /p/….
+const LOOKALIKE = /flash|log-?in|sign-?in|sign-?up|oauth|connect|account|verify|password|reset|auth/;
+
+export function makeSlug(title: string): string {
+  const words = title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 32);
+  const base = !words || LOOKALIKE.test(words) ? "app" : words;
   return `${base}-${randomId(4).toLowerCase().replace(/[^a-z0-9]/g, "x")}`;
 }
 
