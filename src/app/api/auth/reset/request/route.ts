@@ -4,6 +4,7 @@ import { appUrl, fromOwnPage } from "@/lib/server/auth.ts";
 import { emailEnabled, demoEmails, tooManyFromNetwork } from "@/lib/server/email.ts";
 import { one } from "@/lib/server/db.ts";
 import { clientIp, overLimit } from "@/lib/server/limits.ts";
+import { askedCookie } from "@/lib/server/link-browser.ts";
 
 const HOUR = 3600_000;
 
@@ -39,5 +40,6 @@ export async function POST(request: Request) {
       console.error("[flash] reset email failed", err);
     }
   }
-  return Response.json({ ok: true, devLink });
+  // Set whether or not the account exists, so the answer doesn't say which.
+  return Response.json({ ok: true, devLink }, { headers: { "Set-Cookie": askedCookie(email, request) } });
 }

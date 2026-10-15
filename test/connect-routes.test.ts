@@ -189,7 +189,9 @@ test("second review #1: an unconfirmed account can't add accounts or always allo
     // The owner takes the account back with Forgot password: the squatter's account and tools go.
     const asked = await resetRequestRoute.POST(request("POST", "/api/auth/reset/request", { email: "owner@example.com" }));
     const { devLink } = (await asked.json()) as { devLink: string };
-    const reset = await resetRoute.POST(request("POST", "/api/auth/reset", { token: new URL(devLink).searchParams.get("token"), password: "owners-own-pass" }));
+    // In the browser that asked for it (see link-browser.ts).
+    const askedHere = asked.headers.getSetCookie()[0].split(";")[0];
+    const reset = await resetRoute.POST(request("POST", "/api/auth/reset", { token: new URL(devLink).searchParams.get("token"), password: "owners-own-pass" }, askedHere));
     assert.equal(reset.status, 200);
     assert.equal((await all("SELECT * FROM connections WHERE user_id = ?", [id])).length, 0);
     assert.equal((await all("SELECT * FROM connection_tools WHERE connection_id = ?", [before])).length, 0);

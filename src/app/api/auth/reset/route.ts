@@ -1,6 +1,7 @@
 import { translatorFor } from "@/lib/server/i18n.ts";
 import { fromOwnPage, hashPassword } from "@/lib/server/auth.ts";
-import { redeemToken } from "@/lib/server/account.ts";
+import { redeemToken, resetLinkEmail } from "@/lib/server/account.ts";
+import { mayUse } from "@/lib/server/link-browser.ts";
 import { resetPassword } from "@/lib/server/signin.ts";
 import { signInCookie } from "@/lib/server/two-factor.ts";
 
@@ -10,9 +11,14 @@ export async function POST(request: Request) {
   const t = await translatorFor(request);
   // This signs in too, so only Flash's own reset page may use it (see fromOwnPage).
   if (!fromOwnPage(request)) return Response.json({ error: t("Open the link from your email again.") }, { status: 403 });
-  const body = (await request.json().catch(() => ({}))) as { token?: string; password?: string };
+  const body = (await request.json().catch(() => ({}))) as { token?: string; password?: string; email?: string };
   const password = body.password ?? "";
   if (password.length < 8) return Response.json({ error: t("Use a password of at least 8 characters.") }, { status: 400 });
+  // Opened in a browser that didn't ask for it: the address it was sent to is typed first (see link-browser.ts).
+  const sentTo = await resetLinkEmail(body.token ?? "");
+  const use = sentTo ? mayUse(sentTo, request, body.email) : "ok";
+  if (use === "ask") return Response.json({ error: t("To keep your account safe, type the email address this link was sent to."), code: "confirm_email" }, { status: 400 });
+  if (use === "wrong") return Response.json({ error: t("That isn't the email address this link was sent to."), code: "confirm_email" }, { status: 400 });
   const userId = await redeemToken(body.token ?? "", "reset");
   if (!userId) {
     return Response.json({ error: t("This link has expired or was already used. Ask for a new one.") }, { status: 400 });

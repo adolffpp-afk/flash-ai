@@ -5,6 +5,7 @@ import { EMAILS, demoEmails, emailEnabled, sendEmail, tooManyFromNetwork } from 
 import { clientIp, overLimit } from "@/lib/server/limits.ts";
 import { safeNext } from "@/lib/server/oauth.ts";
 import { createSignInLink, findAccount } from "@/lib/server/signin.ts";
+import { askedCookie } from "@/lib/server/link-browser.ts";
 
 const HOUR = 3600_000;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -39,5 +40,6 @@ export async function POST(request: Request) {
     console.error("[flash] sign-in link email failed", err instanceof Error ? err.message : err);
     return Response.json({ error: t("Couldn't send the email. Please try again.") }, { status: 502 });
   }
-  return Response.json({ ok: true, devLink: demoEmails() ? link : undefined });
+  // This browser asked, so the link works here without typing the address (see link-browser.ts).
+  return Response.json({ ok: true, devLink: demoEmails() ? link : undefined }, { headers: { "Set-Cookie": askedCookie(email, request) } });
 }
