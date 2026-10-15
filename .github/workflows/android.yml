@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -32,3 +32,13 @@ jobs:
             android/app/build/outputs/bundle/release/*.aab
             android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
+      # The same unsigned files on the android-builds branch, where they can be fetched with git
+      # to be signed (they hold no secrets: anyone can build them from android/).
+      - name: Publish to the android-builds branch
+        run: |
+          mkdir -p /tmp/out && cp app/build/outputs/bundle/release/*.aab app/build/outputs/apk/release/*.apk /tmp/out/
+          # Vercel reads its settings from the commit it builds: this stops a failed preview on every build.
+          echo '{"git":{"deploymentEnabled":false}}' > /tmp/out/vercel.json
+          cd /tmp/out && git init -q -b android-builds && git add -A
+          git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com commit -qm "Unsigned Android build of ${GITHUB_SHA}"
+          git push -qf "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" android-builds
