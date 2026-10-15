@@ -1794,6 +1794,7 @@
  "you picked it": "вы выбрали её сами",
  "{answer} The details are on your screen.": "{answer} Подробности — на экране.",
  "{answer} The rest is on your screen.": "{answer} Остальное — на экране.",
+ "{brand} is a trademark of {company}": "{brand} — товарный знак {company}",
  "{collection} — {rule}": "{collection} — {rule}",
  "{connection} · {tool}": "{connection} · {tool}",
  "{cost} Say yes to go ahead, or no to skip it.": "{cost} Скажите «да», чтобы продолжить, или «нет», чтобы отменить.",

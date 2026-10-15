@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { LogoMark, Wordmark } from "@/app/brand";
-import { LEGAL_NAME } from "@/lib/product";
+import { LEGAL_NAME, TRADEMARK } from "@/lib/product";
 
 export const CONTACT = process.env.FLASH_CONTACT_EMAIL || "support@flash-app.dev";
 // The company that runs Flash, as the terms and privacy policy name it.
@@ -14,7 +14,7 @@ export function LegalPage({ title, updated, children }: { title: string; updated
       <div className="mx-auto max-w-3xl px-4 py-10">
         <Link href="/" className="flex items-center gap-2 text-sm font-semibold">
           <LogoMark size={28} />
-          <Wordmark />
+          <Wordmark tm />
         </Link>
         <h1 className="mt-8 text-3xl font-semibold tracking-tight">{title}</h1>
         <p className="mt-2 text-sm text-zinc-500">Last updated {updated}</p>
@@ -27,6 +27,9 @@ export function LegalPage({ title, updated, children }: { title: string; updated
           </span>
           <span>
             <Wordmark /> is operated by {COMPANY}
+          </span>
+          <span>
+            {TRADEMARK} is a trademark of {COMPANY}
           </span>
         </footer>
       </div>

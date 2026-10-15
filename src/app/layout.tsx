@@ -10,7 +10,7 @@ const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 // Search results and shared links are in English, like the landing page.
-const title = `${PRODUCT_NAME}: ${TAGLINE}`;
+const title = `${PRODUCT_NAME}™: ${TAGLINE}`;
 const description = `${TAGLINE} Build apps, make slides, write, research, code and translate in one place. Ask once, and Flash picks the best AI for the job.`;
 
 export const metadata: Metadata = {

@@ -1948,7 +1948,7 @@ export function Flash({
               <BrandMark size={56} id="flash-side" />
             </span>
             <span className="min-w-0">
-              <Wordmark className="block text-[28px] font-bold leading-none tracking-tight text-white" />
+              <Wordmark tm className="block text-[28px] font-bold leading-none tracking-tight text-white" />
               {/* In the narrow sidebar the tagline's two halves take a line each, so it never breaks mid-phrase. */}
               <span className="mt-1.5 block text-[11.5px] leading-snug text-zinc-400">
                 <span className="md:block">{t("One Workspace.")}</span> <span className="md:block">{t("Infinite Possibilities.")}</span>

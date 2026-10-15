@@ -9,7 +9,7 @@ import { InstallApp } from "./InstallApp";
 import { BrandMark, Wordmark } from "@/app/brand";
 import { ICONS, Orb, Tile, type Hue } from "./Home";
 import { msg } from "@/lib/i18n";
-import { LEGAL_NAME } from "@/lib/product";
+import { LEGAL_NAME, TRADEMARK } from "@/lib/product";
 import { useT } from "@/lib/use-t";
 
 const money = (cents: number) => `$${(cents / 100).toFixed(cents % 100 ? 2 : 0)}`;
@@ -184,7 +184,7 @@ export function Landing({
             <span className="[filter:drop-shadow(0_3px_8px_rgb(91_140_246/0.35))]">
               <BrandMark size={34} id="flash-landing" />
             </span>
-            <Wordmark className="text-[19px] font-bold leading-none tracking-tight text-white" />
+            <Wordmark tm className="text-[19px] font-bold leading-none tracking-tight text-white" />
           </a>
           <div className="hidden gap-6 text-sm text-zinc-400 sm:flex">
             <a href="#features" className="hover:text-zinc-100">Features</a>
@@ -416,6 +416,7 @@ export function Landing({
               © {new Date().getFullYear()} {LEGAL_NAME}
             </span>
             <span className="text-xs">{t.node("{product} is operated by {company}", { product: <Wordmark />, company: LEGAL_NAME })}</span>
+            <span className="text-xs">{t("{brand} is a trademark of {company}", { brand: TRADEMARK, company: LEGAL_NAME })}</span>
           </div>
           <div className="flex gap-4 sm:ml-auto">
             <a href="/terms" className="hover:text-zinc-200">Terms</a>

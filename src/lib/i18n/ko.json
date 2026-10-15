@@ -1794,6 +1794,7 @@
  "you picked it": "직접 선택함",
  "{answer} The details are on your screen.": "{answer} 자세한 내용은 화면에서 확인하세요.",
  "{answer} The rest is on your screen.": "{answer} 나머지는 화면에서 확인하세요.",
+ "{brand} is a trademark of {company}": "{brand}은(는) {company}의 상표예요",
  "{collection} — {rule}": "{collection} — {rule}",
  "{connection} · {tool}": "{connection} · {tool}",
  "{cost} Say yes to go ahead, or no to skip it.": "{cost} 진행하려면 네, 건너뛰려면 아니요라고 말해 주세요.",

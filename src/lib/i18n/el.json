@@ -1794,6 +1794,7 @@
  "you picked it": "το επέλεξες εσύ",
  "{answer} The details are on your screen.": "{answer} Οι λεπτομέρειες είναι στην οθόνη σου.",
  "{answer} The rest is on your screen.": "{answer} Τα υπόλοιπα είναι στην οθόνη σου.",
+ "{brand} is a trademark of {company}": "Το {brand} είναι εμπορικό σήμα της {company}",
  "{collection} — {rule}": "{collection} — {rule}",
  "{connection} · {tool}": "{connection} · {tool}",
  "{cost} Say yes to go ahead, or no to skip it.": "{cost} Πες «ναι» για να συνεχίσουμε ή «όχι» για να το παραλείψουμε.",

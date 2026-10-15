@@ -152,7 +152,7 @@ export function AuthScreen({
           )}
           <LogoMark size={56} className="mb-6" />
           <h1 className="text-3xl font-semibold tracking-[-0.03em] text-white">
-            <Wordmark />
+            <Wordmark tm />
           </h1>
           <p className="mt-3 max-w-sm leading-relaxed text-zinc-400">{t(TAGLINE)}</p>
           <div className="mt-6 flex flex-wrap gap-2">
