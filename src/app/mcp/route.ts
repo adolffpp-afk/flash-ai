@@ -2,6 +2,7 @@ import { appUrl } from "@/lib/server/auth.ts";
 import { getClient, tokenUser } from "@/lib/server/connector.ts";
 import { CORS, json, needsSignIn, preflight, tooManyCalls } from "@/lib/server/connector-http.ts";
 import { callTool, tools, type ToolContext } from "@/lib/server/mcp-tools.ts";
+import { PRODUCT_NAME } from "@/lib/product.ts";
 
 // Videos take a few minutes (each media job stops waiting after 240 seconds).
 export const maxDuration = 300;
@@ -32,7 +33,8 @@ async function handle(msg: RpcMessage, ctx: ToolContext): Promise<RpcReply | nul
       return reply(msg.id, {
         protocolVersion: VERSIONS.includes(asked) ? asked : VERSIONS[0],
         capabilities: { tools: { listChanged: false } },
-        serverInfo: { name: "flash-ai", title: "Flash AI", version: "1.0.0", websiteUrl: ctx.origin },
+        // The name stays "flash-ai"; the title is what apps show.
+        serverInfo: { name: "flash-ai", title: PRODUCT_NAME, version: "1.0.0", websiteUrl: ctx.origin },
         instructions: INSTRUCTIONS,
       });
     }

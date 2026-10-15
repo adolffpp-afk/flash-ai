@@ -1,25 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <!-- The favicon: the F-bolt enlarged on a deep navy tile, without the spark (too fine at 16px). Keep in step with BrandMark in brand.tsx. -->
-  <defs>
-    <linearGradient id="f" x1="0.85" y1="0" x2="0.2" y2="1">
-      <stop offset="0" stop-color="#5eeaf4"/>
-      <stop offset="0.32" stop-color="#5b8cf6"/>
-      <stop offset="0.62" stop-color="#9b6cf4"/>
-      <stop offset="1" stop-color="#f472b6"/>
-    </linearGradient>
-    <linearGradient id="a" x1="0" y1="0" x2="1" y2="0.6">
-      <stop offset="0" stop-color="#f9a8d4"/>
-      <stop offset="1" stop-color="#fcd34d"/>
-    </linearGradient>
-    <linearGradient id="t" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#222944"/>
-      <stop offset="1" stop-color="#0d1124"/>
-    </linearGradient>
-  </defs>
-  <rect width="64" height="64" rx="14" fill="url(#t)"/>
-  <rect x="0.75" y="0.75" width="62.5" height="62.5" rx="13.25" fill="none" stroke="#5b8cf6" stroke-opacity="0.35" stroke-width="1.5"/>
-  <g transform="translate(32 32.5) scale(1.12) translate(-35.5 -32.5)">
-    <path d="M26 26C32 23 40 22.5 51 22.5C49 27 46 30.5 40 31C35 31.2 31 32 27 35Z" fill="url(#a)"/>
-    <path d="M24 10C34 6.5 46 7 57 7L52.5 15.5C44 15.5 36 16 32.5 19L27.5 30H33L15 58L20.5 36H14Z" fill="url(#f)"/>
-  </g>
+<!-- The favicon: the F-bolt with its infinity arm, enlarged 1.07x on the deep navy tile so it reads at 16px. Keep in step with BrandMark in brand.tsx. -->
+<defs>
+<linearGradient id="cvf" gradientTransform="matrix(-0.65 1 1 0.65 0.85 0)"><stop offset="0" stop-color="#5eeaf4"/><stop offset=".32" stop-color="#5b8cf6"/><stop offset=".62" stop-color="#9b6cf4"/><stop offset="1" stop-color="#f472b6"/></linearGradient>
+<linearGradient id="cva" gradientTransform="matrix(.982 .39 -.203 1.884 .08 .032)"><stop offset="0" stop-color="#f9a8d4"/><stop offset="1" stop-color="#fcd34d"/></linearGradient>
+<linearGradient id="cvt" gradientTransform="matrix(1 1 -1 1 0 0)"><stop offset="0" stop-color="#222944"/><stop offset="1" stop-color="#0d1124"/></linearGradient>
+</defs>
+<rect width="64" height="64" rx="14" fill="url(#cvt)"/>
+<rect x="0.75" y="0.75" width="62.5" height="62.5" rx="13.25" fill="none" stroke="#5b8cf6" stroke-opacity="0.35" stroke-width="1.5"/>
+<g transform="translate(32 32.5) scale(1.07) translate(-35 -32.6)">
+<path d="M51.18 24.61C51.42 24.95 51.47 25.26 51.42 25.63C51.36 26 51.17 26.47 50.76 26.93C50.34 27.4 49.7 27.84 48.99 28.1C48.28 28.35 47.51 28.41 46.89 28.3C46.58 28.25 46.31 28.16 46.08 28.04C45.84 27.92 45.63 27.77 45.37 27.51C44.87 27.01 44.21 26.16 43.59 25.38C42.98 24.61 42.46 23.86 41.63 22.92C41.2 22.43 40.64 21.91 39.99 21.49C39.34 21.07 38.62 20.75 37.85 20.55C36.33 20.14 34.67 20.18 33.12 20.63C31.56 21.08 30.11 21.94 29 23.14C27.89 24.34 27.14 25.9 27.04 27.57C26.93 29.23 27.53 30.95 28.66 32.2L32.57 28.64C32.33 28.38 32.21 28.14 32.18 27.77C32.16 27.4 32.29 26.87 32.68 26.33C33.08 25.79 33.74 25.27 34.51 24.98C35.27 24.69 36.12 24.62 36.79 24.77C37.13 24.84 37.43 24.96 37.68 25.12C37.93 25.27 38.14 25.46 38.38 25.75C38.86 26.31 39.45 27.2 40.01 28.02C40.56 28.84 41.01 29.62 41.82 30.62C42.23 31.14 42.79 31.7 43.45 32.15C44.12 32.61 44.87 32.96 45.66 33.18C47.25 33.62 48.98 33.58 50.59 33.09C52.19 32.6 53.67 31.67 54.76 30.4C55.85 29.12 56.53 27.5 56.56 25.83C56.59 24.17 55.92 22.51 54.79 21.34ZM29 23.14C27.89 24.34 27.14 25.9 27.04 27.57C26.93 29.23 27.53 30.95 28.66 32.2C29.78 33.45 31.37 34.23 33.02 34.48C34.67 34.73 36.39 34.47 37.91 33.81C39.43 33.15 40.76 31.98 41.61 30.88C42.44 29.82 42.97 28.93 43.6 28.01C44.22 27.09 44.87 26.12 45.45 25.41C46.05 24.68 46.65 24.23 47.44 23.94C48.22 23.65 49.09 23.6 49.78 23.76C50.46 23.92 50.95 24.27 51.18 24.61C51.42 24.95 51.47 25.26 51.42 25.63C51.36 26 51.17 26.47 50.76 26.93L54.76 30.4C55.85 29.12 56.53 27.5 56.56 25.83C56.59 24.17 55.92 22.51 54.79 21.34C53.65 20.17 52.11 19.48 50.52 19.26C48.94 19.04 47.29 19.29 45.82 19.9C44.34 20.52 43.03 21.6 42.14 22.65C41.29 23.66 40.69 24.51 40 25.39C39.32 26.26 38.6 27.2 37.99 27.85C37.36 28.53 36.77 28.9 36.04 29.15C35.3 29.39 34.51 29.43 33.88 29.3C33.25 29.18 32.82 28.9 32.57 28.64C32.33 28.38 32.21 28.14 32.18 27.77C32.16 27.4 32.29 26.87 32.68 26.33Z" fill="url(#cva)"/>
+<path d="M24 10C34 6.5 46 7 57 7L52.5 15.5C44 15.5 36 16 32.5 19L27.5 30H33L15 58L20.5 36H14Z" fill="url(#cvf)"/>
+</g>
 </svg>
