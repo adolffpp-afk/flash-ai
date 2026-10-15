@@ -16,6 +16,16 @@ import { overLimit } from "./limits.ts";
 
 export const SITE_COOKIE = "flash_app_session";
 const SESSION_DAYS = 30;
+export const FORM_COOKIE = "flash_app_form";
+
+/**
+ * The cookie holding the key an app's sign-in forms must send (see serve-site.ts and the auth
+ * route). An app has no origin of its own, so its form is a cross-site send and only a
+ * SameSite=None cookie goes with it. Those must be Secure; browsers take them on http://localhost too.
+ */
+export const formCookie = (slug: string, key: string) =>
+  `${FORM_COOKIE}=${key}; Path=/api/sites/${slug}/auth; HttpOnly; Max-Age=${SESSION_DAYS * 86400}; SameSite=None; Secure`;
+
 // How long the key put into one page stays good. Long enough for a visit, short enough to be dull.
 const PAGE_TOKEN_MINUTES = 120;
 const MINUTE = 60_000;
@@ -197,5 +207,7 @@ export async function removeSiteUser(slug: string, id: string): Promise<boolean>
   await run("DELETE FROM site_sessions WHERE site_slug = ? AND site_user_id = ?", [slug, id]);
   await run("DELETE FROM site_page_tokens WHERE site_slug = ? AND site_user_id = ?", [slug, id]);
   await run("DELETE FROM site_records WHERE site_slug = ? AND owner = ?", [slug, id]);
+  // The files they sent are theirs too (see the files route), so they stop being served.
+  await run("DELETE FROM site_uploads WHERE site_slug = ? AND owner = ?", [slug, id]);
   return true;
 }

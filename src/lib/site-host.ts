@@ -2,9 +2,11 @@
 const OWN_HOST = /(^|\.)flash-app\.dev$|\.vercel\.app$|^localhost$|^127\.0\.0\.1$|^\[::1\]$/;
 // What a site on its own domain may call: its flashDB data (shared and each person's own), its
 // form inbox, its shop, its own assistant, the files sent to it, and signing visitors in and out.
-const SITE_API = /^\/api\/sites\/[\w-]+\/(data|mine|inbox|shop|auth|ai|files(\/[\w-]+)?)$/;
+const SITE_API = /^\/api\/sites\/([\w-]+)\/(data|mine|inbox|shop|auth|ai|files(\/[\w-]+)?)$/;
 
-export type HostRoute = { pass: true } | { rewrite: string } | { redirect: "/" } | { notFound: true };
+// siteApi: a site API call on a custom domain, which goes through only for the site connected to
+// that domain (checked in src/proxy.ts), so another app's files can't be shown under it.
+export type HostRoute = { pass: true } | { siteApi: string } | { rewrite: string } | { redirect: "/" } | { notFound: true };
 
 /**
  * The header on every request Flash itself sends to an address a user gave (see safe-fetch.ts). A
@@ -22,7 +24,8 @@ export function routeHost(hostHeader: string, path: string, method: string, appH
   if (outbound) return { notFound: true };
   const host = hostHeader.replace(/:\d+$/, "").toLowerCase();
   if (isOwnHost(host, appHost)) return { pass: true };
-  if (SITE_API.test(path)) return { pass: true };
+  const api = SITE_API.exec(path);
+  if (api) return { siteApi: api[1] };
   if (path === "/") return { rewrite: `/d/${encodeURIComponent(host)}` };
   // A site is one page, so other paths go home; Flash's own pages aren't reachable from here.
   if (method === "GET" && path !== "/favicon.ico") return { redirect: "/" };

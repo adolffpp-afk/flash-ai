@@ -80,6 +80,8 @@ export function flashDbShim(
   files: string | null = null,
   // Set only on a page opened with Open as owner in Flash (see site-owner.ts).
   owner: OwnerView = null,
+  // The key this browser's sign-in forms carry, matching its form cookie (see serve-site.ts).
+  formKey = "",
 ): string {
   const remote = `
   // The page's own fetch and tools, kept before the app's code runs, and every address made whole
@@ -247,8 +249,9 @@ export function flashDbShim(
       input.value = value == null ? "" : String(value);
       form.appendChild(input);
     };
+    add("form_key", ${js(formKey)});
     add("action", action);
-    for (const name in fields) add(name, fields[name]);
+    for (const name in fields) if (name !== "form_key") add(name, fields[name]);
     document.body.appendChild(form);
     form.submit();
     // The page is leaving; nothing after this runs.
@@ -309,9 +312,16 @@ export function flashDbShim(
 
 /** Puts a script at the top of an HTML document so it runs before the app's own code. */
 export function injectHead(html: string, snippet: string): string {
-  // Not <header>, which can come first in a page with no <head>.
-  const head = html.match(/<head(?=[\s>])[^>]*>/i);
-  const at = head?.index !== undefined ? head.index + head[0].length : afterDoctype(html);
+  // Found without a regex, so no page can make it slow. Not <header>, which can come first in a page with no <head>.
+  const lower = html.toLowerCase();
+  let at = -1;
+  for (let i = lower.indexOf("<head"); i !== -1; i = lower.indexOf("<head", i + 5)) {
+    if (!/[\s>]/.test(lower[i + 5] ?? "")) continue;
+    const end = html.indexOf(">", i);
+    if (end !== -1) at = end + 1;
+    break;
+  }
+  if (at === -1) at = afterDoctype(html);
   return html.slice(0, at) + snippet + html.slice(at);
 }
 

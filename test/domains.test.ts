@@ -129,8 +129,8 @@ test("custom domains show their site and keep Flash's pages off them", () => {
   assert.deepEqual(routeHost("localhost:3100", "/api/me", "GET"), { pass: true });
   assert.deepEqual(routeHost("flash-ai-pi.vercel.app", "/admin", "GET"), { pass: true });
   assert.deepEqual(routeHost("CrumbBakery.com", "/", "GET"), { rewrite: "/d/crumbbakery.com" });
-  assert.deepEqual(routeHost("crumbbakery.com", "/api/sites/bakery-1/inbox", "POST"), { pass: true });
-  assert.deepEqual(routeHost("crumbbakery.com", "/api/sites/bakery-1/data", "GET"), { pass: true });
+  assert.deepEqual(routeHost("crumbbakery.com", "/api/sites/bakery-1/inbox", "POST"), { siteApi: "bakery-1" });
+  assert.deepEqual(routeHost("crumbbakery.com", "/api/sites/bakery-1/data", "GET"), { siteApi: "bakery-1" });
   assert.deepEqual(routeHost("crumbbakery.com", "/admin", "GET"), { redirect: "/" });
   assert.deepEqual(routeHost("crumbbakery.com", "/api/auth/signin", "POST"), { notFound: true });
   assert.deepEqual(routeHost("flash.example.org", "/admin", "GET", "flash.example.org"), { pass: true }, "FLASH_APP_URL's host is Flash's own");
