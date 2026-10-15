@@ -9,6 +9,7 @@ import { TeamPanel } from "./TeamPanel";
 import { ConnectedApps } from "./ConnectedApps";
 import type { Translate } from "@/lib/i18n";
 import { useT } from "@/lib/use-t";
+import { useInAndroidApp } from "@/lib/android-shell";
 
 /** One price, or a range when an engine's models cost different amounts. */
 function costLabel(me: Me, engine: Engine): string {
@@ -46,6 +47,8 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
   const plan = me.plan;
   // Plans and top-ups can't be bought until payments are switched on.
   const canBuy = me.paymentsEnabled || me.testPurchases;
+  // Nothing is for sale inside the Android app (Play's billing rule, see android-shell.ts).
+  const inApp = useInAndroidApp();
   const closeRef = useRef<HTMLButtonElement>(null);
 
   // Runs once on open: focus starts on Close, and Escape closes the dialog.
@@ -165,26 +168,30 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
           </button>
         </div>
 
-        <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-xs font-medium uppercase tracking-wider text-zinc-500">{t("Plans")}</h3>
-          <div className="flex items-center gap-2">
+        {!inApp && (
+          <>
+            <div className="mt-8 flex flex-wrap items-center justify-between gap-3">
+              <h3 className="text-xs font-medium uppercase tracking-wider text-zinc-500">{t("Plans")}</h3>
+              <div className="flex items-center gap-2">
+                {plan && (
+                  <button
+                    onClick={manage}
+                    disabled={busy !== null}
+                    className="h-8 rounded-full border border-white/10 px-3 text-xs text-zinc-200 transition hover:bg-white/[0.04] disabled:opacity-50"
+                  >
+                    {busy === "manage" ? t("Opening…") : plan.test ? (plan.renews ? t("Cancel plan") : t("Resume plan")) : t("Manage billing")}
+                  </button>
+                )}
+                <IntervalToggle value={billing} onChange={setBilling} />
+              </div>
+            </div>
+            <div className="mt-3">
+              <PlanCards pricing={me} interval={billing} current={plan} busy={busy} onPick={subscribe} comingSoon={!canBuy} compact />
+            </div>
             {plan && (
-              <button
-                onClick={manage}
-                disabled={busy !== null}
-                className="h-8 rounded-full border border-white/10 px-3 text-xs text-zinc-200 transition hover:bg-white/[0.04] disabled:opacity-50"
-              >
-                {busy === "manage" ? t("Opening…") : plan.test ? (plan.renews ? t("Cancel plan") : t("Resume plan")) : t("Manage billing")}
-              </button>
+              <p className="mt-2 text-xs text-zinc-500">{t("Switching plans starts a new month today at the new price. You keep every credit you already have.")}</p>
             )}
-            <IntervalToggle value={billing} onChange={setBilling} />
-          </div>
-        </div>
-        <div className="mt-3">
-          <PlanCards pricing={me} interval={billing} current={plan} busy={busy} onPick={subscribe} comingSoon={!canBuy} compact />
-        </div>
-        {plan && (
-          <p className="mt-2 text-xs text-zinc-500">{t("Switching plans starts a new month today at the new price. You keep every credit you already have.")}</p>
+          </>
         )}
 
         {me.team && (
@@ -196,33 +203,37 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
           </>
         )}
 
-        <h3 className="mt-10 text-xs font-medium uppercase tracking-wider text-zinc-500">{t("Top up")}</h3>
-        <div className="mt-3 grid gap-3 sm:grid-cols-3">
-          {me.packs.map((p, i) => (
-            <div
-              key={p.id}
-              className={`flex flex-col rounded-xl border p-5 ${i === 1 ? "border-white/15 bg-white/[0.025]" : "border-white/8"}`}
-            >
-              <div className="flex items-baseline justify-between">
-                <span className="font-medium">{p.name}</span>
-                {i === 1 && <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-400">{t("Popular")}</span>}
-              </div>
-              <div className="mt-1 text-2xl font-medium tracking-tight">{money(p.priceCents)}</div>
-              <div className="text-sm text-zinc-400">{t("{count} credits", { count: p.credits.toLocaleString(t.locale) })}</div>
-              <p className="mb-3 mt-2 text-xs text-zinc-500">{t(p.blurb)}</p>
-              <button
-                onClick={() => buy(p.id)}
-                disabled={busy !== null || !canBuy}
-                className="mt-auto h-9 w-full rounded-full bg-brand text-sm font-medium text-on-brand transition hover:brightness-110 disabled:opacity-50"
-              >
-                {!canBuy ? t("Coming soon") : busy === p.id ? t("Opening…") : t("Buy")}
-              </button>
+        {!inApp && (
+          <>
+            <h3 className="mt-10 text-xs font-medium uppercase tracking-wider text-zinc-500">{t("Top up")}</h3>
+            <div className="mt-3 grid gap-3 sm:grid-cols-3">
+              {me.packs.map((p, i) => (
+                <div
+                  key={p.id}
+                  className={`flex flex-col rounded-xl border p-5 ${i === 1 ? "border-white/15 bg-white/[0.025]" : "border-white/8"}`}
+                >
+                  <div className="flex items-baseline justify-between">
+                    <span className="font-medium">{p.name}</span>
+                    {i === 1 && <span className="text-[10px] font-medium uppercase tracking-wider text-zinc-400">{t("Popular")}</span>}
+                  </div>
+                  <div className="mt-1 text-2xl font-medium tracking-tight">{money(p.priceCents)}</div>
+                  <div className="text-sm text-zinc-400">{t("{count} credits", { count: p.credits.toLocaleString(t.locale) })}</div>
+                  <p className="mb-3 mt-2 text-xs text-zinc-500">{t(p.blurb)}</p>
+                  <button
+                    onClick={() => buy(p.id)}
+                    disabled={busy !== null || !canBuy}
+                    className="mt-auto h-9 w-full rounded-full bg-brand text-sm font-medium text-on-brand transition hover:brightness-110 disabled:opacity-50"
+                  >
+                    {!canBuy ? t("Coming soon") : busy === p.id ? t("Opening…") : t("Buy")}
+                  </button>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-        {message && <p className="mt-3 text-sm text-amber-300">{message}</p>}
-        {!canBuy && !message && (
-          <p className="mt-3 text-xs text-zinc-500">{t("Paid plans and top-ups are coming soon. Your free credits refill on the 1st of each month.")}</p>
+            {message && <p className="mt-3 text-sm text-amber-300">{message}</p>}
+            {!canBuy && !message && (
+              <p className="mt-3 text-xs text-zinc-500">{t("Paid plans and top-ups are coming soon. Your free credits refill on the 1st of each month.")}</p>
+            )}
+          </>
         )}
 
         {me.freeLane.chats > 0 && (

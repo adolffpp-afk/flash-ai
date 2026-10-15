@@ -27,6 +27,7 @@ import { SETTINGS_TABS, type SettingsTab } from "@/lib/settings-tabs";
 import { hasBuiltInRecognition } from "@/lib/listen";
 import { msg, type Translate } from "@/lib/i18n";
 import { useT } from "@/lib/use-t";
+import { useInAndroidApp } from "@/lib/android-shell";
 
 export { settingsTabFor, type SettingsTab } from "@/lib/settings-tabs";
 
@@ -830,6 +831,8 @@ function Privacy({ me, busy, attempt, preferences }: Shared & { preferences: str
 
 function Billing({ me, busy, attempt, onOpenCredits, onOpenInvite }: Shared & { onOpenCredits: () => void; onOpenInvite: () => void }) {
   const t = useT();
+  // Nothing is for sale inside the Android app (Play's billing rule, see android-shell.ts).
+  const inApp = useInAndroidApp();
   const canManage = Boolean(me.plan && !me.plan.test && me.paymentsEnabled);
   const portal = () =>
     attempt(async () => {
@@ -860,9 +863,11 @@ function Billing({ me, busy, attempt, onOpenCredits, onOpenInvite }: Shared & { 
               <p className={`mt-1 ${hint}`}>{t("{count} free credits every month.", { count: me.freeMonthly.toLocaleString(t.locale) })}</p>
             )}
           </div>
-          <button className={primary} onClick={onOpenCredits}>
-            {me.plan ? t("Adjust plan") : t("Upgrade")}
-          </button>
+          {!inApp && (
+            <button className={primary} onClick={onOpenCredits}>
+              {me.plan ? t("Adjust plan") : t("Upgrade")}
+            </button>
+          )}
         </div>
         <p className="mt-4 text-sm text-zinc-400">{t("Credits")}</p>
         <p className="mt-0.5 text-lg font-medium">{me.credits.toLocaleString(t.locale)}</p>
@@ -874,11 +879,13 @@ function Billing({ me, busy, attempt, onOpenCredits, onOpenInvite }: Shared & { 
           </button>
         </Row>
       )}
-      <Row title={t("Buy credits")} about={t("One-off top-ups that never expire.")}>
-        <button className={button} onClick={onOpenCredits}>
-          {t("Buy credits")}
-        </button>
-      </Row>
+      {!inApp && (
+        <Row title={t("Buy credits")} about={t("One-off top-ups that never expire.")}>
+          <button className={button} onClick={onOpenCredits}>
+            {t("Buy credits")}
+          </button>
+        </Row>
+      )}
       <Row title={t("Invite friends")} about={t("You both get credits when they subscribe to a plan.")}>
         <button className={button} onClick={onOpenInvite}>
           🎁 {t("Invite friends")}
