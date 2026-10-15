@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useEffectEvent, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { BrandMark, Sparkle } from "@/app/brand";
+import { BrandMark, Sparkle, Wordmark } from "@/app/brand";
 import { api, type Me, type ProjectSummary } from "@/lib/store";
 import { ENGINE_LABELS, type Engine } from "@/lib/types";
 import { firstName } from "@/lib/names";
@@ -372,7 +372,10 @@ export function Home({
             <div className="relative grid items-center gap-x-6 gap-y-5 p-4 sm:p-8 @min-[640px]/hero:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)] @min-[640px]/hero:gap-y-6 @min-[640px]/hero:px-9 @min-[640px]/hero:pb-6 @min-[640px]/hero:pt-12">
               <Orb className="mx-auto w-28 sm:w-36 @min-[640px]/hero:row-span-2 @min-[640px]/hero:w-[86%] @min-[640px]/hero:max-w-[260px] @min-[640px]/hero:-translate-y-3" />
               <div className="min-w-0">
-                <p className="text-[13px] font-semibold uppercase tracking-[0.34em] text-zinc-300">Flash AI</p>
+                <p className="text-[13px] font-semibold uppercase tracking-[0.34em] text-zinc-300">
+                  {/* The wide letter spacing follows the H too, so the space after the ∞ makes up for it. */}
+                  <Wordmark className="[&>svg]:me-[0.58em]" />
+                </p>
                 {/* Two lines whatever the width: the type scales with the hero, and each phrase stays whole. */}
                 <h1 className="mt-3 text-[clamp(32px,9.5cqw,48px)] font-bold leading-[1] tracking-[-0.035em] text-white @min-[640px]/hero:text-[clamp(40px,6.5cqw,66px)]">
                   {t.node("What will you {create}", { create: <span className="whitespace-nowrap text-iris">{t("create today?")}</span> })}

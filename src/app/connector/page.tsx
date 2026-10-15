@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { LogoMark } from "@/app/brand";
+import { LogoMark, Wordmark } from "@/app/brand";
 import { SITE_URL } from "@/app/site";
 
 export const metadata: Metadata = {
   title: "Flash connector",
-  description: "Use Flash AI's images, videos, music and voice from Claude, ChatGPT and other AI apps.",
+  description: "Use Flash ∞ AI's images, videos, music and voice from Claude, ChatGPT and other AI apps.",
 };
 
 const URL = `${SITE_URL}/mcp`;
@@ -54,7 +54,7 @@ export default function ConnectorGuide() {
       <div className="mx-auto max-w-2xl px-4 py-10">
         <Link href="/" className="flex items-center gap-2 text-sm font-semibold">
           <LogoMark size={28} />
-          Flash AI
+          <Wordmark />
         </Link>
         <h1 className="mt-8 text-3xl font-semibold tracking-tight text-balance">
           Bring Flash into <span className="text-holo">every AI app</span>

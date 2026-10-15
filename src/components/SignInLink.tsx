@@ -1,6 +1,6 @@
 "use client";
 
-import { LogoMark } from "@/app/brand";
+import { LogoMark, WithWordmark } from "@/app/brand";
 import Link from "next/link";
 import { useState } from "react";
 import { api } from "@/lib/store";
@@ -34,7 +34,7 @@ export function SignInLink({ token }: { token: string }) {
     <div className="flex min-h-full items-center justify-center px-4 py-16">
       <form onSubmit={submit} className="w-full max-w-sm rounded-2xl border border-zinc-800 bg-zinc-950/80 p-6 shadow-[var(--glass-shadow)]">
         <LogoMark size={44} className="mb-4" />
-        <h1 className="text-xl font-semibold">{t("Sign in to Flash AI")}</h1>
+        <h1 className="text-xl font-semibold"><WithWordmark text={t("Sign in to Flash ∞ AI")} /></h1>
         {token ? (
           <>
             <p className="mt-1 text-sm text-zinc-400">{t("You're one click away.")}</p>

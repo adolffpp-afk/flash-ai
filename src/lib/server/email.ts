@@ -1,5 +1,6 @@
 import { now } from "./db.ts";
 import { overLimit } from "./limits.ts";
+import { BRAND_NAME } from "../product.ts";
 
 /*
  * Sends account emails (verification, password reset and sign-in links) through Resend when RESEND_API_KEY is
@@ -58,12 +59,12 @@ export const demoEmails = () => !emailEnabled() && process.env.FLASH_DEMO_EMAILS
 /** Whether new accounts must confirm their email before getting free credits. */
 export const verificationRequired = () => emailEnabled() || demoEmails();
 
-const FROM = () => process.env.FLASH_EMAIL_FROM || "Flash AI <hello@flash-app.dev>";
+const FROM = () => process.env.FLASH_EMAIL_FROM || `${BRAND_NAME} <hello@flash-app.dev>`;
 
 function layout(heading: string, body: string, button: string, link: string): string {
-  return `<!doctype html><html><body style="margin:0;background:#f4f4f5;font-family:system-ui,-apple-system,Segoe UI,sans-serif">
+  return `<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;background:#f4f4f5;font-family:system-ui,-apple-system,Segoe UI,sans-serif">
 <div style="max-width:480px;margin:32px auto;background:#fff;border-radius:16px;padding:32px">
-<div style="font-size:20px;font-weight:700;color:#047857">Flash AI</div>
+<div style="font-size:20px;font-weight:700;color:#047857">Flash ∞ AI</div>
 <h1 style="font-size:20px;margin:24px 0 8px">${heading}</h1>
 <p style="color:#52525b;line-height:1.5">${body}</p>
 <p style="margin:24px 0"><a href="${link}" style="background:#047857;color:#fff;padding:12px 20px;border-radius:10px;text-decoration:none;font-weight:600">${button}</a></p>
@@ -77,14 +78,14 @@ const escapeHtml = (s: string) =>
 
 export const EMAILS = {
   teamInvite: (inviter: string, link: string) => ({
-    subject: `${inviter.slice(0, 60)} invited you to their Flash AI team`,
+    subject: `${inviter.slice(0, 60)} invited you to their Flash ∞ AI team`,
     html: layout(
-      "Join a team on Flash AI",
+      "Join a team on Flash ∞ AI",
       `${escapeHtml(inviter.slice(0, 80))} invited you to their Business team. You'll share the team's monthly credits; your projects stay private. The link works for 14 days.`,
       "Join the team",
       link,
     ),
-    text: `${inviter.slice(0, 80)} invited you to their Flash AI Business team (the link works for 14 days):\n${link}\n\nIf you don't know them, ignore this email.`,
+    text: `${inviter.slice(0, 80)} invited you to their Flash ∞ AI Business team (the link works for 14 days):\n${link}\n\nIf you don't know them, ignore this email.`,
   }),
   siteMessage: (site: string, preview: string, link: string) => ({
     subject: `New message from your site ${site.slice(0, 60)}`,
@@ -107,29 +108,29 @@ export const EMAILS = {
     text: `Someone paid on your Flash site ${site.slice(0, 80)}:\n\n${summary}\n\nThe money is in your Stripe account. See your orders: ${link}`,
   }),
   verify: (link: string) => ({
-    subject: "Confirm your email for Flash AI",
+    subject: "Confirm your email for Flash ∞ AI",
     html: layout("Confirm your email", "Confirm your email to get your free monthly credits.", "Confirm email", link),
-    text: `Confirm your email to get your free monthly credits:\n${link}\n\nIf you didn't sign up for Flash AI, ignore this email.`,
+    text: `Confirm your email to get your free monthly credits:\n${link}\n\nIf you didn't sign up for Flash ∞ AI, ignore this email.`,
   }),
   reset: (link: string) => ({
-    subject: "Reset your Flash AI password",
+    subject: "Reset your Flash ∞ AI password",
     html: layout(
       "Reset your password",
-      "Someone asked to reset the password for your Flash AI account. The link works for one hour.",
+      "Someone asked to reset the password for your Flash ∞ AI account. The link works for one hour.",
       "Choose a new password",
       link,
     ),
-    text: `Reset your Flash AI password (the link works for one hour):\n${link}\n\nIf you didn't ask for this, ignore this email.`,
+    text: `Reset your Flash ∞ AI password (the link works for one hour):\n${link}\n\nIf you didn't ask for this, ignore this email.`,
   }),
   signin: (link: string) => ({
-    subject: "Your Flash AI sign-in link",
+    subject: "Your Flash ∞ AI sign-in link",
     html: layout(
-      "Sign in to Flash AI",
+      "Sign in to Flash ∞ AI",
       "Use this button to sign in. It works once, for the next 15 minutes.",
       "Sign in",
       link,
     ),
-    text: `Sign in to Flash AI (the link works once, for 15 minutes):\n${link}\n\nIf you didn't ask for this, ignore this email.`,
+    text: `Sign in to Flash ∞ AI (the link works once, for 15 minutes):\n${link}\n\nIf you didn't ask for this, ignore this email.`,
   }),
 };
 

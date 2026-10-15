@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { BrandMark } from "@/app/brand";
+import { BrandMark, WithWordmark } from "@/app/brand";
 import { INSTALL_STEPS, installPlatform, type InstallPlatform } from "@/lib/install";
 import { useT } from "@/lib/use-t";
 
@@ -127,15 +127,16 @@ export function InstallPopup() {
         // On a computer it drops in at the top right, under the top bar, near where the browser offers installs; on a phone it sits at the bottom.
         <div
           role="dialog"
-          aria-label={t("Install Flash AI")}
+          aria-label={t("Install Flash ∞ AI")}
           className="glass-raised fixed inset-x-3 bottom-3 z-50 rounded-2xl p-4 text-zinc-100 sm:inset-x-auto sm:bottom-auto sm:end-4 sm:top-20 sm:w-[23rem]"
         >
           <div className="flex items-start gap-3">
-            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-zinc-900 ring-1 ring-white/10">
-              <BrandMark size={34} id="flash-install" />
+            {/* The app icon itself, as it will look on the home screen or taskbar. */}
+            <span className="shrink-0 drop-shadow-[0_4px_10px_rgb(13_17_36/0.35)]">
+              <BrandMark size={48} id="flash-install" tile />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-[15px] font-semibold">{t("Install Flash AI")}</p>
+              <p className="text-[15px] font-semibold"><WithWordmark text={t("Install Flash ∞ AI")} /></p>
               <p className="mt-0.5 text-[13px] leading-snug text-zinc-400">{t("Open Flash from your taskbar, dock or home screen, in its own window.")}</p>
             </div>
             <button onClick={close} aria-label={t("Close")} className="-mr-1 -mt-1 rounded-full p-1.5 text-zinc-500 transition hover:bg-white/[0.06] hover:text-zinc-200">
@@ -182,12 +183,12 @@ function InstallHelp({ platform, onClose }: { platform: InstallPlatform; onClose
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={t("Install Flash AI")}
+        aria-label={t("Install Flash ∞ AI")}
         className="w-full max-w-md rounded-t-2xl border border-white/8 bg-zinc-950 p-6 text-zinc-100 sm:rounded-2xl sm:p-7"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex items-start justify-between">
-          <h2 className="text-lg font-medium tracking-tight">{t("Install Flash AI")}</h2>
+          <h2 className="text-lg font-medium tracking-tight"><WithWordmark text={t("Install Flash ∞ AI")} /></h2>
           <button ref={closeRef} onClick={onClose} className="rounded-full p-2 text-zinc-400 transition hover:bg-white/[0.06] hover:text-zinc-100" aria-label={t("Close")}>
             ✕
           </button>

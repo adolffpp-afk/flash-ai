@@ -28,7 +28,7 @@ import { applyEvent } from "@/lib/apply-event";
 import { api, newId, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
 import { PROJECT_TOO_LARGE } from "@/lib/project-size";
 import type { ChatHit } from "@/lib/server/search";
-import { BoltIcon, BrandMark } from "@/app/brand";
+import { BoltIcon, BrandMark, Wordmark } from "@/app/brand";
 import { Home, ICONS, Icon } from "./Home";
 import { Bell } from "./Bell";
 import { ConnectorsButton, LevelPicker, MenusOpenDown, MicButton, PlusMenu, SendButton, TalkButton, ToolPicker, type Choice } from "./ComposerTools";
@@ -1943,16 +1943,16 @@ export function Flash({
         className={`${sidebar ? "flex" : "hidden"} fixed inset-0 z-[35] w-full flex-col overflow-y-auto bg-zinc-950 md:static md:m-3 md:me-0 md:flex md:w-[256px] md:shrink-0 md:rounded-[26px] md:bg-transparent md:glass`}
       >
         <div className="flex items-start justify-between px-5 pb-1 pt-6">
-          <button onClick={goHome} className="flex items-center gap-2 text-left" aria-label={t("Flash AI, home")}>
+          <button onClick={goHome} className="flex items-center gap-2 text-left" aria-label={t("Flash Infinity AI, home")}>
             <span className="-ml-1 [filter:drop-shadow(0_4px_10px_rgb(91_140_246/0.35))]">
               <BrandMark size={56} id="flash-side" />
             </span>
             <span className="min-w-0">
-              <span className="block whitespace-nowrap text-[28px] font-bold leading-none tracking-tight text-white">
-                FLASH <span className="font-light">AI</span>
+              <Wordmark className="block text-[28px] font-bold leading-none tracking-tight text-white" />
+              {/* In the narrow sidebar the tagline's two halves take a line each, so it never breaks mid-phrase. */}
+              <span className="mt-1.5 block text-[11.5px] leading-snug text-zinc-400">
+                <span className="md:block">{t("One Workspace.")}</span> <span className="md:block">{t("Infinite Possibilities.")}</span>
               </span>
-              {/* Other languages need more room than the English, so the line may wrap. */}
-              <span className="mt-1.5 block text-[11.5px] leading-snug text-zinc-400">{t("One App. Infinite Possibilities.")}</span>
             </span>
           </button>
           <button className="mt-1 text-zinc-400 md:hidden" onClick={() => setSidebar(false)} aria-label={t("Close menu")}>
@@ -2143,7 +2143,7 @@ export function Flash({
           </button>
           {isHome ? (
             <>
-              <button onClick={goHome} className="shrink-0 md:hidden" aria-label={t("Flash AI, home")}>
+              <button onClick={goHome} className="shrink-0 md:hidden" aria-label={t("Flash Infinity AI, home")}>
                 <BrandMark size={32} id="flash-top" />
               </button>
               <div ref={searchBoxRef} className="relative hidden min-w-0 max-w-2xl flex-[3] md:block @min-[1100px]/main:max-w-[760px]">
@@ -2239,7 +2239,7 @@ export function Flash({
               <div className="min-w-0 flex-1" />
             </>
           ) : (
-            <h1 dir="auto" className="min-w-0 flex-1 truncate text-[15px] font-medium text-zinc-100">{active ? projectName(active.name) : "Flash AI"}</h1>
+            <h1 dir="auto" className="min-w-0 flex-1 truncate text-[15px] font-medium text-zinc-100">{active ? projectName(active.name) : <Wordmark />}</h1>
           )}
           {active?.messages && (
             <button
