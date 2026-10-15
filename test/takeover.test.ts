@@ -41,3 +41,19 @@ test("the Connect to Flash answer must come from Flash's own page", () => {
   assert.equal(sameSite("https://evil.example", req({}), own), false);
   assert.equal(sameSite(null, req({}), own), true, "no Origin and no Sec-Fetch-Site is not a browser");
 });
+
+const { askedCookie, mayUse } = await import("../src/lib/server/link-browser.ts");
+
+test("a sign-in or reset link works at once only in the browser that asked for it", () => {
+  const asked = new Request("https://flash-app.dev/api/auth/email-link/request", { headers: { "x-forwarded-proto": "https" } });
+  const cookie = askedCookie("Ann@Gmail.com", asked);
+  assert.match(cookie, /^flash_link_for=\w+; Path=\/api\/auth; HttpOnly; SameSite=Lax/);
+  const using = (c: string) => new Request("https://flash-app.dev/api/auth/email-link", { method: "POST", headers: { cookie: c } });
+  assert.equal(mayUse("ann@gmail.com", using(cookie.split(";")[0]), undefined), "ok");
+  // A link someone else asked for, sent to this person: they're asked for the address first.
+  assert.equal(mayUse("attacker@evil.io", using(cookie.split(";")[0]), undefined), "ask");
+  assert.equal(mayUse("attacker@evil.io", using(""), undefined), "ask");
+  assert.equal(mayUse("attacker@evil.io", using(""), "ann@gmail.com"), "wrong");
+  // Their own link on another device: typing their address is enough.
+  assert.equal(mayUse("ann@gmail.com", using(""), " A.nn+flash@gmail.com"), "ok");
+});

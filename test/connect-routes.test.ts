@@ -18,11 +18,17 @@ const replies: { blocks: Block[]; stop: string }[] = [];
 const sent: { model: string; messages: unknown[] }[] = [];
 // Every model answers "overloaded" while this is set.
 let busy = false;
+// count_tokens answers "overloaded" while this is set.
+let countDown = false;
 const claude = createServer((req, res) => {
   let raw = "";
   req.on("data", (c) => (raw += c));
   req.on("end", () => {
     const body = JSON.parse(raw || "{}");
+    if (req.url?.includes("count_tokens") && countDown) {
+      res.writeHead(529, { "content-type": "application/json", "x-should-retry": "false" });
+      return res.end(JSON.stringify({ type: "error", error: { type: "overloaded_error", message: "Overloaded" } }));
+    }
     if (req.url?.includes("count_tokens")) {
       res.writeHead(200, { "content-type": "application/json" });
       return res.end(JSON.stringify({ input_tokens: 3000 }));
@@ -85,6 +91,7 @@ beforeEach(() => {
   replies.length = 0;
   sent.length = 0;
   busy = false;
+  countDown = false;
   mock.reset();
 });
 
@@ -182,7 +189,9 @@ test("second review #1: an unconfirmed account can't add accounts or always allo
     // The owner takes the account back with Forgot password: the squatter's account and tools go.
     const asked = await resetRequestRoute.POST(request("POST", "/api/auth/reset/request", { email: "owner@example.com" }));
     const { devLink } = (await asked.json()) as { devLink: string };
-    const reset = await resetRoute.POST(request("POST", "/api/auth/reset", { token: new URL(devLink).searchParams.get("token"), password: "owners-own-pass" }));
+    // In the browser that asked for it (see link-browser.ts).
+    const askedHere = asked.headers.getSetCookie()[0].split(";")[0];
+    const reset = await resetRoute.POST(request("POST", "/api/auth/reset", { token: new URL(devLink).searchParams.get("token"), password: "owners-own-pass" }, askedHere));
     assert.equal(reset.status, 200);
     assert.equal((await all("SELECT * FROM connections WHERE user_id = ?", [id])).length, 0);
     assert.equal((await all("SELECT * FROM connection_tools WHERE connection_id = ?", [before])).length, 0);
@@ -274,4 +283,113 @@ test("second review #4: a reply stopped while an always-allowed write is on its 
   const reply = (await savedMessages(who.projectId)).find((m) => m.id === r.replyId)!;
   assert.equal(reply.stopped, true);
   assert.deepEqual(reply.connectors, [{ connection: "Notes", tool: "send_note" }]);
+});
+
+test("a reply Anthropic can't count isn't sent or charged", async () => {
+  const who = await account("uncounted", 500);
+  countDown = true;
+  const r = await chat(who, { messages: [{ role: "user", content: "ꀀ".repeat(5000) }] });
+  assert.equal(r.status, 503);
+  assert.equal(sent.length, 0, "nothing went to Claude");
+  assert.equal(await balance(who.id), 500, "nothing was held or charged");
+  countDown = false;
+  const ok = await chat(who, { messages: [{ role: "user", content: "hello" }] });
+  assert.equal(ok.status, 200);
+});
+
+/** A PNG of this size, as an attachment (only its header is read). */
+const photo = (name: string, w = 64, h = 64) => {
+  const b = Buffer.alloc(24);
+  b.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52]);
+  b.writeUInt32BE(w, 16);
+  b.writeUInt32BE(h, 20);
+  return { name, mediaType: "image/png", data: b.toString("base64") };
+};
+
+test("photos sent to a picture edit are all priced and checked, or the request is refused", async () => {
+  process.env.FAL_KEY = "fake";
+  try {
+    const who = await account("photos", 500);
+    // A question about five photos, agreed to as a picture edit: Flash can't combine five, so nothing runs.
+    const five = await chat(who, {
+      engine: undefined,
+      confirmed: true,
+      decided: { engine: "image" },
+      messages: [{ role: "user", content: "what is in these photos?", attachment: photo("a.png"), more: ["b", "c", "d", "e"].map((n) => photo(`${n}.png`)) }],
+    });
+    assert.equal(five.status, 400);
+    // Four, one of them too big to edit: refused too, though only the first was checked before.
+    const big = await chat(who, {
+      engine: undefined,
+      confirmed: true,
+      decided: { engine: "image" },
+      messages: [{ role: "user", content: "what is in these photos?", attachment: photo("a.png"), more: [photo("b.png", 8000, 8000), photo("c.png")] }],
+    });
+    assert.equal(big.status, 400);
+    assert.equal(await balance(who.id), 500);
+  } finally {
+    delete process.env.FAL_KEY;
+  }
+});
+
+test("someone who keeps getting the price question stops paid helpers deciding their requests", async () => {
+  process.env.FAL_KEY = "fake";
+  try {
+    const who = await account("asker", 1000);
+    const helperCalls = () => sent.filter((b) => (b as { model: string }).model.includes("haiku")).length;
+    const ask = () => chat(who, { engine: undefined, messages: [{ role: "user", content: "animate this photo", attachment: photo("me.png") }] });
+    for (let i = 0; i < 25; i++) {
+      replies.push({ blocks: [{ type: "text", text: "edit" }], stop: "end_turn" });
+      assert.equal((await ask()).status, 409);
+    }
+    assert.ok(helperCalls() <= 20, `the picture check ran ${helperCalls()} times`);
+    assert.equal(await balance(who.id), 1000);
+  } finally {
+    delete process.env.FAL_KEY;
+  }
+});
+
+test("a chat file the virus scanner flags is refused before anything runs, even when sent again with a later message", async () => {
+  const flagged = photo("invoice.png");
+  const scanned: number[] = [];
+  const scanner = createServer((req, res) => {
+    const parts: Buffer[] = [];
+    req.on("data", (d: Buffer) => parts.push(d));
+    req.on("end", () => {
+      const body = Buffer.concat(parts);
+      scanned.push(body.length);
+      const bad = body.equals(Buffer.from(flagged.data, "base64"));
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify(bad ? { clean: false, virus: "Eicar-Test-Signature" } : { clean: true }));
+    });
+  });
+  await new Promise<void>((done) => scanner.listen(0, "127.0.0.1", done));
+  process.env.VIRUS_SCAN_URL = `http://127.0.0.1:${(scanner.address() as AddressInfo).port}/`;
+  process.env.VIRUS_SCAN_KEY = "test-key";
+  try {
+    const who = await account("virus", 500);
+    const first = await chat(who, { messages: [{ role: "user", content: "what's this?", attachment: flagged }] });
+    assert.equal(first.status, 422);
+    assert.match(first.error!.error, /virus in invoice\.png/);
+    // The same file further up the conversation is still refused.
+    const later = await chat(who, {
+      messages: [
+        { role: "user", content: "what's this?", attachment: flagged },
+        { role: "assistant", content: "…" },
+        { role: "user", content: "and now?" },
+      ],
+    });
+    assert.equal(later.status, 422);
+    assert.equal(await balance(who.id), 500);
+    // A clean file is scanned once, then remembered.
+    const clean = photo("cat.png", 32, 32);
+    scanned.length = 0;
+    await chat(who, { messages: [{ role: "user", content: "hi", attachment: clean }] });
+    await chat(who, { messages: [{ role: "user", content: "hi", attachment: clean }, { role: "assistant", content: "hello" }, { role: "user", content: "again" }] });
+    assert.equal(scanned.length, 1);
+  } finally {
+    delete process.env.VIRUS_SCAN_URL;
+    delete process.env.VIRUS_SCAN_KEY;
+    scanner.close();
+  }
 });

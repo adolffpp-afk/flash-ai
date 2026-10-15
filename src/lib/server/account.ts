@@ -35,6 +35,12 @@ async function createToken(userId: string, kind: TokenKind): Promise<string> {
   return token;
 }
 
+/** The address of the account a reset link is for, without using it up, or null if wrong, used or expired. */
+export async function resetLinkEmail(token: string): Promise<string | null> {
+  const userId = await tokenOwner(token, "reset");
+  return userId ? ((await one<{ email: string }>("SELECT email FROM users WHERE id = ?", [userId]))?.email ?? null) : null;
+}
+
 /** Whose one-time link this is, without using it up, or null if it is wrong, used or expired. */
 async function tokenOwner(token: string, kind: TokenKind): Promise<string | null> {
   if (!token) return null;
@@ -61,7 +67,8 @@ export async function redeemToken(token: string, kind: TokenKind): Promise<strin
 export async function sendVerification(user: { id: string; email: string }, origin: string): Promise<string | undefined> {
   if (!verificationRequired()) return undefined;
   const link = `${origin}/api/auth/verify?token=${await createToken(user.id, "verify")}`;
-  await sendEmail(user.email, EMAILS.verify(link), "account");
+  // To an address not confirmed yet, so it uses the daily share for new addresses (see email.ts).
+  if (!(await sendEmail(user.email, EMAILS.verify(link), "new"))) throw new Error("Today's emails to new addresses are used up.");
   return demoEmails() ? link : undefined;
 }
 

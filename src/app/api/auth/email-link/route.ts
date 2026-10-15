@@ -2,7 +2,8 @@ import { translatorFor } from "@/lib/server/i18n.ts";
 import { fromOwnPage } from "@/lib/server/auth.ts";
 import { clientIp, overLimit } from "@/lib/server/limits.ts";
 import { CLEAR_REF_COOKIE } from "@/lib/server/referrals.ts";
-import { redeemSignInLink, signInWithEmail } from "@/lib/server/signin.ts";
+import { mayUse } from "@/lib/server/link-browser.ts";
+import { redeemSignInLink, signInLinkEmail, signInWithEmail } from "@/lib/server/signin.ts";
 import { signInCookie } from "@/lib/server/two-factor.ts";
 
 /**
@@ -17,7 +18,12 @@ export async function POST(request: Request) {
   if (await overLimit(`link-use:${clientIp(request)}`, 30, 15 * 60_000)) {
     return Response.json({ error: t("Too many attempts. Try again in 15 minutes.") }, { status: 429 });
   }
-  const body = (await request.json().catch(() => ({}))) as { token?: string };
+  const body = (await request.json().catch(() => ({}))) as { token?: string; email?: string };
+  // Opened in a browser that didn't ask for it: the address it was sent to is typed first (see link-browser.ts).
+  const sentTo = await signInLinkEmail(body.token ?? "");
+  const use = sentTo ? mayUse(sentTo, request, body.email) : "ok";
+  if (use === "ask") return Response.json({ error: t("To keep your account safe, type the email address this link was sent to."), code: "confirm_email" }, { status: 400 });
+  if (use === "wrong") return Response.json({ error: t("That isn't the email address this link was sent to."), code: "confirm_email" }, { status: 400 });
   const link = await redeemSignInLink(body.token ?? "");
   if (!link) {
     return Response.json({ error: t("This link has expired or was already used. Ask for a new one.") }, { status: 400 });
