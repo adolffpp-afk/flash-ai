@@ -179,7 +179,7 @@ export function Landing({
     // No background of its own: the app's page glow (iridescent by day, Nova glass at night) shows through.
     <div className="h-full overflow-y-auto text-zinc-100">
       <header className="sticky top-0 z-10 border-b border-white/6 bg-zinc-950/60 backdrop-blur-xl">
-        <nav className="mx-auto flex h-16 max-w-6xl items-center gap-8 px-4 sm:px-6">
+        <nav className="mx-auto flex h-16 max-w-6xl items-center gap-4 px-4 sm:px-6 md:gap-8">
           <a href="#" aria-label={t("Flash Infinity AI, home")} className="flex shrink-0 items-center gap-2">
             <span className="[filter:drop-shadow(0_3px_8px_rgb(91_140_246/0.35))]">
               <BrandMark size={34} id="flash-landing" />
@@ -285,11 +285,11 @@ export function Landing({
               key={p.name}
               className={`glass w-full rounded-3xl p-5 shadow-none sm:w-[calc(50%-0.375rem)] lg:w-[calc(25%-0.5625rem)] ${p.live ? "" : "opacity-60"}`}
             >
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3 gap-y-2">
                 <Tile d={p.d} hue={p.hue} size="sm" />
                 <h3 className="text-[15px] font-medium text-zinc-100">{p.name}</h3>
                 {!p.live && (
-                  <span className="ms-auto rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-normal uppercase tracking-wide text-zinc-400">
+                  <span className="ms-auto whitespace-nowrap rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-normal uppercase tracking-wide text-zinc-400">
                     {t("Coming soon")}
                   </span>
                 )}
