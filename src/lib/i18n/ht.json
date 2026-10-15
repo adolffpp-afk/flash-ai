@@ -548,6 +548,8 @@
  "Flash couldn't write the scenes for this movie. Nothing was filmed. Please try again.": "Flash pa t ka ekri sèn fim sa a. Anyen pa t filme. Tanpri eseye ankò.",
  "Flash did a quick search: a full one needs {needed} credits and you have {available}.": "Flash fè yon rechèch rapid: yon rechèch konplè bezwen {needed} kredi epi ou gen {available}.",
  "Flash follows these in every answer in this project. Your other projects aren’t affected.": "Flash swiv enstriksyon sa yo nan chak repons nan pwojè sa a. Sa pa chanje anyen nan lòt pwojè ou yo.",
+ "Flash found a virus in this picture, so it won't use it.": "Flash jwenn yon viris nan foto sa a, kidonk li p ap sèvi avè l.",
+ "Flash found a virus in {name}, so it won't open it. Delete it from your device.": "Flash jwenn yon viris nan {name}, kidonk li p ap louvri l. Efase l sou aparèy ou.",
  "Flash has sent all the emails it can today. Please send the invitation again tomorrow.": "Flash voye tout imèl li te ka voye jodi a. Tanpri voye envitasyon an ankò demen.",
  "Flash in Claude and ChatGPT": "Flash nan Claude ak ChatGPT",
  "Flash is busy right now. Please try again in a moment.": "Flash okipe kounye a. Tanpri eseye ankò nan yon ti moman.",

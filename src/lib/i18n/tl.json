@@ -548,6 +548,8 @@
  "Flash couldn't write the scenes for this movie. Nothing was filmed. Please try again.": "Hindi naisulat ng Flash ang mga eksena para sa movie na ito. Walang nakunan. Pakisubukan ulit.",
  "Flash did a quick search: a full one needs {needed} credits and you have {available}.": "Mabilis na naghanap ang Flash: kailangan ng buong paghahanap ng {needed} credits at {available} lang ang meron ka.",
  "Flash follows these in every answer in this project. Your other projects aren’t affected.": "Sinusunod ito ng Flash sa bawat sagot sa project na ito. Hindi apektado ang iba mong project.",
+ "Flash found a virus in this picture, so it won't use it.": "May nakitang virus ang Flash sa larawang ito, kaya hindi nito ito gagamitin.",
+ "Flash found a virus in {name}, so it won't open it. Delete it from your device.": "May nakitang virus ang Flash sa {name}, kaya hindi nito ito bubuksan. Burahin ito sa iyong device.",
  "Flash has sent all the emails it can today. Please send the invitation again tomorrow.": "Naipadala na ng Flash ang lahat ng email na kaya nito ngayong araw. Pakipadala ulit ang imbitasyon bukas.",
  "Flash in Claude and ChatGPT": "Flash sa Claude at ChatGPT",
  "Flash is busy right now. Please try again in a moment.": "Abala ang Flash ngayon. Pakisubukan ulit mamaya.",

@@ -548,6 +548,8 @@
  "Flash couldn't write the scenes for this movie. Nothing was filmed. Please try again.": "Flash এই মুভির দৃশ্যগুলো লিখতে পারেনি। কোনো ভিডিও তৈরি হয়নি। আবার চেষ্টা করুন।",
  "Flash did a quick search: a full one needs {needed} credits and you have {available}.": "Flash দ্রুত একটি খোঁজ করেছে: পূর্ণ খোঁজের জন্য {needed} ক্রেডিট লাগে আর আপনার আছে {available}।",
  "Flash follows these in every answer in this project. Your other projects aren’t affected.": "এই প্রজেক্টের প্রতিটি উত্তরে Flash এগুলো মেনে চলে। আপনার অন্য প্রজেক্টে এর কোনো প্রভাব পড়ে না।",
+ "Flash found a virus in this picture, so it won't use it.": "Flash এই ছবিতে একটি ভাইরাস পেয়েছে, তাই এটি ব্যবহার করবে না।",
+ "Flash found a virus in {name}, so it won't open it. Delete it from your device.": "Flash {name}-এ একটি ভাইরাস পেয়েছে, তাই এটি খুলবে না। আপনার ডিভাইস থেকে এটি মুছে ফেলুন।",
  "Flash has sent all the emails it can today. Please send the invitation again tomorrow.": "Flash আজ যত ইমেল পাঠাতে পারে, সব পাঠিয়ে ফেলেছে। কাল আবার আমন্ত্রণটি পাঠান।",
  "Flash in Claude and ChatGPT": "Claude ও ChatGPT-তে Flash",
  "Flash is busy right now. Please try again in a moment.": "Flash এখন ব্যস্ত। একটু পরে আবার চেষ্টা করুন।",

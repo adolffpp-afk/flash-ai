@@ -548,6 +548,8 @@
  "Flash couldn't write the scenes for this movie. Nothing was filmed. Please try again.": "Το Flash δεν μπόρεσε να γράψει τις σκηνές για αυτή την ταινία. Δεν γυρίστηκε τίποτα. Δοκίμασε ξανά.",
  "Flash did a quick search: a full one needs {needed} credits and you have {available}.": "Το Flash έκανε μια γρήγορη αναζήτηση: μια πλήρης χρειάζεται {needed} πιστώσεις και έχεις {available}.",
  "Flash follows these in every answer in this project. Your other projects aren’t affected.": "Το Flash τις ακολουθεί σε κάθε απάντηση σε αυτό το έργο. Τα άλλα έργα σου δεν επηρεάζονται.",
+ "Flash found a virus in this picture, so it won't use it.": "Το Flash βρήκε ιό σε αυτή την εικόνα, γι' αυτό δεν θα τη χρησιμοποιήσει.",
+ "Flash found a virus in {name}, so it won't open it. Delete it from your device.": "Το Flash βρήκε ιό στο {name}, γι' αυτό δεν θα το ανοίξει. Διαγράψτε το από τη συσκευή σας.",
  "Flash has sent all the emails it can today. Please send the invitation again tomorrow.": "Το Flash έστειλε σήμερα όλα τα email που μπορούσε. Στείλε ξανά την πρόσκληση αύριο.",
  "Flash in Claude and ChatGPT": "Το Flash στο Claude και στο ChatGPT",
  "Flash is busy right now. Please try again in a moment.": "Το Flash είναι απασχολημένο αυτή τη στιγμή. Δοκίμασε ξανά σε λίγο.",

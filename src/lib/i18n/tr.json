@@ -548,6 +548,8 @@
  "Flash couldn't write the scenes for this movie. Nothing was filmed. Please try again.": "Flash bu filmin sahnelerini yazamadı. Hiçbir şey çekilmedi. Lütfen tekrar dene.",
  "Flash did a quick search: a full one needs {needed} credits and you have {available}.": "Flash hızlı bir arama yaptı: tam arama için {needed} kredi gerekiyor, sende {available} kredi var.",
  "Flash follows these in every answer in this project. Your other projects aren’t affected.": "Flash bu projedeki her yanıtta bunlara uyar. Diğer projelerin etkilenmez.",
+ "Flash found a virus in this picture, so it won't use it.": "Flash bu resimde virüs buldu, bu yüzden kullanmayacak.",
+ "Flash found a virus in {name}, so it won't open it. Delete it from your device.": "Flash, {name} dosyasında virüs buldu, bu yüzden açmayacak. Cihazınızdan silin.",
  "Flash has sent all the emails it can today. Please send the invitation again tomorrow.": "Flash bugün gönderebileceği tüm e-postaları gönderdi. Lütfen daveti yarın tekrar gönder.",
  "Flash in Claude and ChatGPT": "Claude ve ChatGPT'de Flash",
  "Flash is busy right now. Please try again in a moment.": "Flash şu anda meşgul. Lütfen birazdan tekrar dene.",
