@@ -165,7 +165,7 @@ export const FRED_SERIES = {
   description:
     "Values of one FRED series, newest first, with its title, units, frequency and last update. Common ids: UNRATE (US unemployment " +
     "rate), CPIAUCSL (consumer prices; units pc1 gives inflation over a year), CPILFESL (core CPI), GDP, GDPC1 (real GDP), " +
-    "A191RL1Q225SBEA (real GDP growth), FEDFUNDS (fed funds rate), DGS10 (10-year Treasury yield), MORTGAGE30US, PAYEMS (payrolls).",
+    "A191RL1Q225SBEA (real GDP growth), FEDFUNDS (fed funds rate), DGS10 (10-year Treasury yield), PAYEMS (payrolls).",
   schema: {
     type: "object" as const,
     properties: {
@@ -200,8 +200,9 @@ export const FRED_FAILED =
   "FRED couldn't be reached just now. Tell the user in one sentence that you couldn't get the FRED data, give no figures from it, and " +
   "suggest trying again in a minute.";
 export const FRED_COPYRIGHT =
-  "This FRED series is a third party's data, marked as copyrighted in its notes, so Flash can't show it. Tell the user so in one " +
-  "sentence and give no figures from it; a public series may cover the same thing (fred_series_search can find one).";
+  "This FRED series is a third party's copyrighted data, so Flash can't show it. Tell the user so in one sentence and give no " +
+  "figures from it. Other series on the same subject may be a third party's too: fred_series_search doesn't tell, and fred_series " +
+  "refuses them the same way.";
 export const DATA_LIMIT = "No more look-ups of this kind fit in this answer. Answer with what you have.";
 export const badInput = (tool: string, reason: string) => `That input wasn't usable: ${reason}. Call ${tool} again with a corrected input, or answer without it.`;
 

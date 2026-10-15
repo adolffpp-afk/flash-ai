@@ -42,8 +42,12 @@ const TICKERS_BYTES = 8_000_000;
 const SUBMISSIONS_BYTES = 12_000_000;
 const CONCEPT_BYTES = 6_000_000;
 const FACTS_BYTES = 40_000_000;
-// Filings kept from a company's list, and years of figures kept.
-const KEEP_FILINGS = 300;
+// The most filings one answer lists. A company's list keeps this many of each form, newest first, so
+// a form filed by the hundred (a bank's 424B2s) never crowds out its 10-K, 10-Q or 8-K, and at most
+// KEEP_FILINGS in all.
+const MOST_FILINGS = 20;
+const KEEP_FILINGS = 500;
+// Years of figures kept.
 const KEEP_YEARS = 12;
 
 /** Who Flash is to the SEC, as its fair-access rules ask: a name and a contact address. */
@@ -183,13 +187,16 @@ async function filingsOf(cik: string, at: number, signal?: AbortSignal): Promise
   const accessions = column(recent, "accessionNumber");
   const docs = column(recent, "primaryDocument");
   const abouts = column(recent, "primaryDocDescription");
-  const filings: Filing[] = [];
-  for (let i = 0; i < forms.length && filings.length < KEEP_FILINGS; i++) {
+  // Each form's filings, read in full before any is cut.
+  const byForm = new Map<string, Filing[]>();
+  for (let i = 0; i < forms.length; i++) {
     const form = typeof forms[i] === "string" ? (forms[i] as string).toUpperCase() : "";
     const date = validDate(filed[i]);
     const accession = typeof accessions[i] === "string" ? (accessions[i] as string) : "";
     if (!FORM.test(form) || !date || !ACCESSION.test(accession)) continue;
-    filings.push({
+    let same = byForm.get(form);
+    if (!same) byForm.set(form, (same = []));
+    same.push({
       form,
       filed: date,
       period: validDate(periods[i]) ?? "",
@@ -198,7 +205,15 @@ async function filingsOf(cik: string, at: number, signal?: AbortSignal): Promise
       about: cleanText(abouts[i], 80),
     });
   }
-  filings.sort((a, b) => b.filed.localeCompare(a.filed));
+  const newestFirst = (a: Filing, b: Filing) => b.filed.localeCompare(a.filed);
+  // The newest MOST_FILINGS of each form, taken a rank at a time across the forms (the forms with the
+  // newest filing first), so that when they don't all fit in KEEP_FILINGS each form still has its newest.
+  const groups = [...byForm.values()].map((same) => same.sort(newestFirst).slice(0, MOST_FILINGS)).sort((a, b) => newestFirst(a[0], b[0]));
+  const filings: Filing[] = [];
+  for (let rank = 0; rank < MOST_FILINGS; rank++) {
+    for (const same of groups) if (rank < same.length && filings.length < KEEP_FILINGS) filings.push(same[rank]);
+  }
+  filings.sort(newestFirst);
   const list: FilingList = {
     name: cleanText(json?.name, 120),
     tickers: (Array.isArray(json?.tickers) ? json.tickers : []).filter((x): x is string => typeof x === "string").slice(0, 5).map((x) => cleanText(x, 10)),
@@ -211,8 +226,11 @@ async function filingsOf(cik: string, at: number, signal?: AbortSignal): Promise
 // ---------------------------------------------------------------------------------------------
 // Reported figures (XBRL)
 
-/** One reported value, compact: [start ("" for a point in time), end, value, form, filed, accession]. */
-type Row = [string, string, number, string, string, string];
+/**
+ * One reported value, compact: [start ("" for a point in time), end, value, form, filed, accession],
+ * with true at the end for a quarter worked out from values to date (see quartersToDate).
+ */
+type Row = [string, string, number, string, string, string, true?];
 /** A tag's values by unit, or none when the company never reported it. */
 type Series = { label: string; units: Record<string, Row[]> } | { none: true };
 
@@ -308,6 +326,43 @@ function fitsPeriod([start, end, , form]: Row, period: "annual" | "quarterly"): 
   return start ? days(start, end) >= 80 && days(start, end) <= 100 : QUARTER_FORMS.has(form);
 }
 
+// An amount of money (USD, EUR…), whose quarters add up to its year: not a value a share or a number
+// of shares.
+const CURRENCY = /^[A-Z]{3}$/;
+const dayAfter = (date: string) => new Date(Date.parse(`${date}T00:00:00Z`) + DAY).toISOString().slice(0, 10);
+
+/**
+ * Quarters worked out from values to date: a 10-Q reports cash flows only from the fiscal year's start
+ * (three, six, then nine months), and a fourth quarter is often only in the year's 10-K. Each value
+ * less the one with the same start that ends a quarter before it, both from the latest filing of their
+ * period, credited to the later value's filing and marked as worked out.
+ */
+function quartersToDate(rows: Row[]): Row[] {
+  const latest = new Map<string, Row>();
+  for (const r of rows) {
+    if (!r[0] || !QUARTER_FORMS.has(r[3])) continue;
+    const key = `${r[0]} ${r[1]}`;
+    const was = latest.get(key);
+    if (!was || r[4] > was[4]) latest.set(key, r);
+  }
+  const byStart = new Map<string, Row[]>();
+  for (const r of latest.values()) {
+    let same = byStart.get(r[0]);
+    if (!same) byStart.set(r[0], (same = []));
+    same.push(r);
+  }
+  const quarters: Row[] = [];
+  for (const same of byStart.values()) {
+    same.sort((a, b) => a[1].localeCompare(b[1]));
+    for (let k = 1; k < same.length; k++) {
+      const [before, to] = [same[k - 1], same[k]];
+      const gap = days(before[1], to[1]);
+      if (gap >= 80 && gap <= 100) quarters.push([dayAfter(before[1]), to[1], to[2] - before[2], to[3], to[4], to[5], true]);
+    }
+  }
+  return quarters;
+}
+
 // The unit to show when a tag has several: dollars, dollars a share, shares, then the first.
 const UNIT_ORDER = ["USD", "USD/shares", "shares"];
 const unitOf = (units: Record<string, Row[]>) => UNIT_ORDER.find((u) => units[u]) ?? Object.keys(units)[0];
@@ -316,25 +371,33 @@ type Picked = { concept: string; tags: string[]; label: string; unit: string; ro
 
 /**
  * The newest values of one figure: the candidates' values in their order (an earlier tag wins a
- * period both report), one per period end, the latest filing of each, newest first.
+ * period both report), one per period end, the latest filing of each, newest first. A quarter of an
+ * amount that wasn't reported as one is worked out from values to date (see quartersToDate).
  */
 function pickFigure(concept: string, candidates: string[], series: Map<string, Series>, period: "annual" | "quarterly", count: number): Picked {
   const byEnd = new Map<string, { row: Row; tag: string }>();
   let unit = "";
   let label = "";
-  for (const tag of candidates) {
-    const s = series.get(tag);
-    if (!s || "none" in s) continue;
-    unit ||= unitOf(s.units);
-    label ||= s.label;
-    const rows = (s.units[unit] ?? []).filter((r) => fitsPeriod(r, period));
+  const add = (rows: Row[], tag: string) => {
     const latest = new Map<string, Row>();
     for (const r of rows) {
       const was = latest.get(r[1]);
       if (!was || r[4] > was[4]) latest.set(r[1], r);
     }
     for (const [end, row] of latest) if (!byEnd.has(end)) byEnd.set(end, { row, tag });
+  };
+  const found: [string, Row[]][] = [];
+  for (const tag of candidates) {
+    const s = series.get(tag);
+    if (!s || "none" in s) continue;
+    unit ||= unitOf(s.units);
+    label ||= s.label;
+    const rows = s.units[unit] ?? [];
+    found.push([tag, rows]);
+    add(rows.filter((r) => fitsPeriod(r, period)), tag);
   }
+  // Reported quarters first, from every tag; then those worked out, where none was reported.
+  if (period === "quarterly" && CURRENCY.test(unit)) for (const [tag, rows] of found) add(quartersToDate(rows), tag);
   const newest = [...byEnd.values()].sort((a, b) => b.row[1].localeCompare(a.row[1])).slice(0, count);
   return { concept, tags: [...new Set(newest.map((x) => x.tag))], label, unit, rows: newest.map((x) => x.row), tagOf: newest.map((x) => x.tag) };
 }
@@ -392,8 +455,8 @@ export function secFilingsTool(t: Translate = english, { now = Date.now }: { now
       if (!ref) return { text: badInput(SEC_FILINGS.name, "company must be a stock ticker like AAPL, a company's name or a CIK"), isError: true, used: false };
       const forms = formsOf(i?.forms);
       if (!forms) return { text: badInput(SEC_FILINGS.name, 'forms must be a list of form names like ["10-K", "8-K"]'), isError: true, used: false };
-      const limit = intIn(i?.limit, 1, 20, 10);
-      if (limit === null) return { text: badInput(SEC_FILINGS.name, "limit must be a whole number from 1 to 20"), isError: true, used: false };
+      const limit = intIn(i?.limit, 1, MOST_FILINGS, 10);
+      if (limit === null) return { text: badInput(SEC_FILINGS.name, `limit must be a whole number from 1 to ${MOST_FILINGS}`), isError: true, used: false };
       const at = now();
       try {
         const company = await resolveCompany(ref, at);
@@ -495,6 +558,7 @@ export function secFactsTool(t: Translate = english, { now = Date.now }: { now?:
                 value: r[2],
                 form: r[3],
                 filed: r[4],
+                ...(r[6] && { computed: true }),
                 ...(f.tags.length > 1 && { tag: f.tagOf[k] }),
               })),
               ...(!f.rows.length && { note: "Not reported under these tags." }),
@@ -502,7 +566,11 @@ export function secFactsTool(t: Translate = english, { now = Date.now }: { now?:
             note:
               "As reported to the SEC (XBRL), newest first; amounts in the unit shown (USD is dollars, not thousands). The period is start to end: " +
               "a fiscal year may not match the calendar year." +
-              (period === "quarterly" ? " A fourth quarter is often only in the annual report, so it may be missing." : ""),
+              (period === "quarterly"
+                ? " computed: a quarter worked out as a value to date less the one before it (a 10-Q reports cash flows like operating_cash_flow " +
+                  "only to date, and a fourth quarter is often only in the annual report); say it was worked out. A quarter may still be " +
+                  "missing: give each value's start and end, and never call values consecutive quarters unless their periods are."
+                : ""),
           }),
         );
         if (!fit?.n) return failed(new SourceError("too_big"));

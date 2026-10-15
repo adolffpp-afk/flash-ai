@@ -2,7 +2,7 @@ import { after } from "next/server";
 import { EDITABLE_TYPE, checksSpoken, fixesPictureText, followsForecast, route, takesGuess, textToSpeak } from "@/lib/router.ts";
 import { asksWeather } from "@/lib/weather-words.ts";
 import { asksEconomy, asksFilings } from "@/lib/research-words.ts";
-import { claudeTool, FAMILY_TOOLS, type ClientTool } from "@/lib/research.ts";
+import { claudeTool, FAMILY_TOOLS, FRED_NOTE, type ClientTool } from "@/lib/research.ts";
 import { tokensAtMost } from "@/lib/tokens.ts";
 import { dataTools, fredReady, searxngReady } from "@/lib/server/research-tools.ts";
 import type { WeatherTool } from "@/lib/weather.ts";
@@ -529,12 +529,13 @@ async function* run(
   // What the system prompt adds to the mode (see promptingFor); systemFor counts the same words.
   prompting: Prompting = { system: {}, free: {}, build: "" },
   // The live forecast for an answer in words, what to do once it's used, Research's quick plan, the
-  // user's connected accounts for Write, Code, Translate and Docs, and SEC EDGAR's and FRED's tools.
-  tools: { weather?: WeatherTool; onUsed?: () => void; quick?: boolean; connect?: ConnectorKit; data?: ClientTool[] } = {},
+  // user's connected accounts for Write, Code, Translate and Docs, and SEC EDGAR's and FRED's tools,
+  // with what to do once each tool's data is first used.
+  tools: { weather?: WeatherTool; onUsed?: () => void; quick?: boolean; connect?: ConnectorKit; data?: ClientTool[]; onTool?: (name: string) => void } = {},
 ): AsyncGenerator<StreamEvent> {
   const last = history[history.length - 1];
   const { started, watch, helper, halted, stop } = track;
-  const { weather, onUsed, quick, connect, data } = tools;
+  const { weather, onUsed, quick, connect, data, onTool } = tools;
   if (isMedia(engine) ? !model : !configured(engine)) {
     yield* unavailableReply(engine, t);
     return;
@@ -565,7 +566,7 @@ async function* run(
     case "docs":
       yield* withStepDown(
         choice ?? claudeChoice(engine, "ascend"),
-        (c) => streamText(history, preferences, engine, meter, budget, c, t, watch, { system: prompting.system, weather, onUsed, connect, data }),
+        (c) => streamText(history, preferences, engine, meter, budget, c, t, watch, { system: prompting.system, weather, onUsed, connect, data, onTool }),
         onStepDown,
         t,
       );
@@ -573,7 +574,7 @@ async function* run(
     case "search":
       yield* withStepDown(
         choice ?? claudeChoice(engine, "ascend"),
-        (c) => streamSearch(history, preferences, meter, budget, c, t, watch, { system: prompting.system, where: prompting.where, weather, onUsed, quick, data }),
+        (c) => streamSearch(history, preferences, meter, budget, c, t, watch, { system: prompting.system, where: prompting.where, weather, onUsed, quick, data, onTool }),
         onStepDown,
         t,
       );
@@ -1554,11 +1555,14 @@ export async function POST(request: Request) {
     const deadline = metered && !free ? setTimeout(() => stopEngine("deadline"), startedAt + DEADLINE_MS - Date.now()) : undefined;
     let ok = true;
     let stopped = false;
+    // The reply showed FRED data, so it carries FRED's notice even when it's stopped (see below).
+    let fredShown = false;
     let failure = "";
     let error: unknown;
     // Once a free model's web search is used, the header says so.
     const searchedReason = t("Research needs credits, so a free model answered with a free web search.");
     const freeToolUsed = (name: string) => {
+      if (name.startsWith("fred_")) fredShown = true;
       if (name !== "web_search" || routed.reason === searchedReason) return;
       routed = { ...routed, reason: searchedReason };
       send(routed);
@@ -1580,7 +1584,12 @@ export async function POST(request: Request) {
           ...(tools.weather && { weather: weatherTool(where, t), onUsed: forecastUsed }),
           quick: tools.quick,
           ...(tools.connect && kit && { connect: kit }),
-          ...(paidData.length && { data: paidData }),
+          ...(paidData.length && {
+            data: paidData,
+            onTool: (name: string) => {
+              if (name.startsWith("fred_")) fredShown = true;
+            },
+          }),
         });
     // Stop ends the request at once, without waiting for the next event: a Claude call is stopped,
     // and a provider job already sent is paid for as sent (see finalCredits). A Claude engine still
@@ -1620,6 +1629,10 @@ export async function POST(request: Request) {
       ok = false;
       failure = t(BUILD_TOO_LONG);
     }
+    // FRED's terms ask for its notice under any reply that showed its data, a stopped one too: the free
+    // lane stops at once, before its engine adds the notice, and a paid reply's engine may not hand it
+    // over within DRAIN_MS. Sent here, it's in the reply that's saved.
+    if (stopped && fredShown && !reply.content.includes(FRED_NOTE)) send({ type: "text", delta: FRED_NOTE });
     // A helper still running when the user stopped is billed by Claude, so the request waits for it
     // to be metered (each has a timeout of under a minute) and pays for it.
     if (stopped) await Promise.allSettled(helping);

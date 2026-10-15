@@ -20,9 +20,13 @@ export type Block =
   | { type: "text"; text: string }
   | { type: "tool_use" | "server_tool_use"; id: string; name: string; input: object }
   | { type: "web_search_tool_result"; tool_use_id: string; content: object[] };
-export type ClaudeReply = { blocks: Block[]; stop: string; usage?: { input_tokens: number; output_tokens: number } };
-/** A free model's reply: the calls it asks for (one reply at once), or words (streamed, or at once); cut: the stream breaks after the words. */
-export type FreeReply = { calls?: { name: string; args: object }[]; text?: string; cut?: boolean };
+/** Claude's reply, streamed; hold: the stream waits for it after its first words (to press Stop then). */
+export type ClaudeReply = { blocks: Block[]; stop: string; usage?: { input_tokens: number; output_tokens: number }; hold?: Promise<unknown> };
+/**
+ * A free model's reply: the calls it asks for (one reply at once), or words (streamed, or at once); cut:
+ * the stream breaks after the words; hold: the stream waits for it after the words.
+ */
+export type FreeReply = { calls?: { name: string; args: object }[]; text?: string; cut?: boolean; hold?: Promise<unknown> };
 export type Seen = { service: string; path: string; query: URLSearchParams; headers: IncomingMessage["headers"]; url: string; body: Record<string, unknown> };
 
 const iso = (t: number) => new Date(t).toISOString().slice(0, 10);
@@ -70,6 +74,8 @@ const SERIES: Record<string, object> = {
   },
   SP500: { id: "SP500", title: "S&P 500", units: "Index", frequency: "Daily", observation_start: "2016-10-11", observation_end: "2026-10-09", notes: "Copyright © 2026, S&P Dow Jones Indices LLC." },
 };
+// FRED's tags for each series, as /series/tags lists them: a third party's says "copyrighted: …".
+const TAGS: Record<string, string[]> = { UNRATE: ["bls", "monthly", "nation", "public domain: citation requested", "unemployment"], SP500: ["copyrighted: pre-approval required", "s&p"] };
 
 export async function startStandIns({ tls, port: fixedPort = 0 }: { tls?: { key: string; cert: string }; port?: number } = {}) {
   const state = {
@@ -144,6 +150,7 @@ export async function startStandIns({ tls, port: fixedPort = 0 }: { tls?: { key:
           return json({ observations: observations.slice(0, limit) });
         }
         if (path === "/series/search") return json({ seriess: [SERIES.UNRATE, SERIES.SP500] });
+        if (path === "/series/tags") return TAGS[id] ? json({ tags: TAGS[id].map((name) => ({ name, group_id: "gen" })) }) : json({ error_message: "Bad Request. The series does not exist." }, 400);
       }
       json({}, 404);
     });
@@ -173,7 +180,23 @@ export async function startStandIns({ tls, port: fixedPort = 0 }: { tls?: { key:
     });
     events.push({ type: "message_delta", delta: { stop_reason: reply.stop }, usage: used }, { type: "message_stop" });
     res.writeHead(200, { "content-type": "text/event-stream" });
-    for (const e of events) res.write(`event: ${(e as { type: string }).type}\ndata: ${JSON.stringify(e)}\n\n`);
+    const write = (list: object[]) => {
+      for (const e of list) res.write(`event: ${(e as { type: string }).type}\ndata: ${JSON.stringify(e)}\n\n`);
+    };
+    // Held: the rest is sent once the hold ends, unless the reply was stopped (its connection closed) by then.
+    const held = reply.hold ? events.findIndex((e) => (e as { type: string }).type === "content_block_delta") + 1 : 0;
+    if (held > 0) {
+      let closed = false;
+      res.on("close", () => (closed = true));
+      write(events.slice(0, held));
+      void reply.hold!.then(() => {
+        if (closed) return;
+        write(events.slice(held));
+        res.end();
+      });
+      return;
+    }
+    write(events);
     res.end();
   }
 
@@ -197,8 +220,15 @@ export async function startStandIns({ tls, port: fixedPort = 0 }: { tls?: { key:
       setTimeout(() => res.destroy(), 20);
       return;
     }
-    res.write(`data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 2000, completion_tokens: 30 } })}\n\n`);
-    res.end("data: [DONE]\n\n");
+    const end = () => {
+      res.write(`data: ${JSON.stringify({ choices: [], usage: { prompt_tokens: 2000, completion_tokens: 30 } })}\n\n`);
+      res.end("data: [DONE]\n\n");
+    };
+    if (reply?.hold) {
+      let closed = false;
+      res.on("close", () => (closed = true));
+      void reply.hold.then(() => !closed && end());
+    } else end();
   }
 
   const server = tls ? createSecureServer(tls, handle) : createServer(handle);

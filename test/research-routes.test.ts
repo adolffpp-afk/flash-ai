@@ -36,6 +36,7 @@ const { claudeChoice, defaultChoice, SEC_LINE, FRED_LINE } = await import("../sr
 const { planHold, claudePrice, researchPlan } = await import("../src/lib/credits.ts");
 const { autoLevel } = await import("../src/lib/levels.ts");
 const { forgetTickers } = await import("../src/lib/server/sec.ts");
+const { requestStop } = await import("../src/lib/server/stops.ts");
 const R = await import("../src/lib/research.ts");
 const { tokensAtMost } = await import("../src/lib/tokens.ts");
 
@@ -61,14 +62,16 @@ const balance = async (id: string) => Number((await one<{ b: number }>("SELECT C
 
 type ChatEvent = { type: string; delta?: string; message?: string; reason?: string; engine?: string; free?: boolean; items?: { title: string; url: string }[]; error?: string };
 let n = 0;
-async function chat(who: Awaited<ReturnType<typeof account>>, content: string, body: Record<string, unknown> = {}) {
+/** A chat request as the page sends it, read as it comes (onEvent may press Stop) to its end. */
+async function chat(who: Awaited<ReturnType<typeof account>>, content: string, body: Record<string, unknown> = {}, onEvent?: (e: ChatEvent, replyId: string) => void) {
+  const replyId = `r${n}${Date.now().toString(36)}`;
   const res = await chatRoute.POST(
     new Request(`${ORIGIN}/api/chat`, {
       method: "POST",
       headers: { "content-type": "application/json", origin: ORIGIN, cookie: who.cookie },
       body: JSON.stringify({
         projectId: who.projectId,
-        replyId: `r${n}${Date.now().toString(36)}`,
+        replyId,
         // The turn the route saves with the reply, as the browser sends it.
         userMessage: { id: `u${n++}${Date.now().toString(36)}`, role: "user", content },
         afterId: null,
@@ -84,8 +87,19 @@ async function chat(who: Awaited<ReturnType<typeof account>>, content: string, b
     await afterwards();
     return { status: res.status, events, error: await res.text() };
   }
-  const text = await res.text();
-  for (const line of text.split("\n").filter((l) => l.trim())) events.push(JSON.parse(line) as ChatEvent);
+  let buffer = "";
+  const decoder = new TextDecoder();
+  const reader = res.body.getReader();
+  for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
+    buffer += decoder.decode(chunk.value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines.filter((l) => l.trim())) {
+      const e = JSON.parse(line) as ChatEvent;
+      events.push(e);
+      onEvent?.(e, replyId);
+    }
+  }
   await afterwards();
   return { status: res.status, events, error: "" };
 }
@@ -213,6 +227,62 @@ test("a paid user asks for the unemployment trend: FRED's values, its link, and 
   const saved = JSON.parse((await one<{ messages: string }>("SELECT messages FROM projects WHERE id = ?", [who.projectId]))!.messages) as { role: string; content: string }[];
   assert.ok(saved.find((m) => m.role === "assistant")!.content.includes(R.FRED_NOTICE));
   await noSecrets(events);
+});
+
+/** A reply stopped once its first words about the data have come: what the user got, and what was saved. */
+async function stoppedOnWords(who: Awaited<ReturnType<typeof account>>, words: string) {
+  let pressed = false;
+  const { events } = await chat(who, "Show me the US unemployment rate trend", {}, (e, replyId) => {
+    if (!pressed && e.type === "text" && e.delta?.includes(words)) {
+      pressed = true;
+      void requestStop(who.id, replyId);
+    }
+  });
+  assert.ok(pressed, "Stop was pressed");
+  const saved = JSON.parse((await one<{ messages: string }>("SELECT messages FROM projects WHERE id = ?", [who.projectId]))!.messages) as { role: string; content: string; stopped?: boolean }[];
+  return { events, reply: saved.find((m) => m.role === "assistant")! };
+}
+const notices = (text: string) => text.split(R.FRED_NOTE).length - 1;
+
+test("a free reply stopped after it showed FRED data still ends with FRED's notice and terms, as shown and as saved", async () => {
+  const who = await account("free-fred-stop", 0);
+  let release = () => {};
+  const hold = new Promise<void>((r) => (release = r));
+  stand.state.free.replies.push({ calls: [{ name: "fred_series", args: { series_id: "UNRATE", count: 24 } }] }, { text: "US unemployment was 4.3% in September 2026.", hold });
+  try {
+    const { events, reply } = await stoppedOnWords(who, "4.3%");
+    assert.equal(routes(events)[0].free, true);
+    assert.ok(events.some((e) => e.type === "stopped"));
+    assert.ok(said(events).endsWith(R.FRED_NOTE));
+    assert.equal(notices(said(events)), 1);
+    assert.equal(reply.stopped, true);
+    assert.ok(reply.content.endsWith(R.FRED_NOTE));
+    assert.equal(notices(reply.content), 1);
+  } finally {
+    release();
+  }
+  // The free model's stream ends, and its engine with it, before the next test.
+  await new Promise((r) => setTimeout(r, 50));
+});
+
+test("a paid reply stopped after it showed FRED data carries FRED's notice once: its engine's, never a second", async () => {
+  const who = await account("paid-fred-stop", 300);
+  let release = () => {};
+  const hold = new Promise<void>((r) => (release = r));
+  stand.state.claude.replies.push(
+    { blocks: [{ type: "tool_use", id: "toolu_s", name: "fred_series", input: { series_id: "UNRATE", count: 24 } }], stop: "tool_use" },
+    { blocks: [{ type: "text", text: "US unemployment was 4.3% in September 2026." }], stop: "end_turn", hold },
+  );
+  try {
+    const { events, reply } = await stoppedOnWords(who, "4.3%");
+    assert.equal(routes(events)[0].free, undefined);
+    assert.ok(events.some((e) => e.type === "stopped"));
+    assert.equal(notices(said(events)), 1);
+    assert.equal(reply.stopped, true);
+    assert.equal(notices(reply.content), 1);
+  } finally {
+    release();
+  }
 });
 
 test("credits that pay for Research but not for FRED's tools too: Research answers as before, without them, never stepping down or going free", async () => {

@@ -22,9 +22,10 @@ import { english, type Translate } from "../i18n.ts";
  * FRED, the Federal Reserve Bank of St. Louis's economic data, through its free API: switched on by
  * FRED_API_KEY. Its terms (https://fred.stlouisfed.org/docs/api/terms_of_use.html) are kept: every
  * reply that shows FRED data carries its notice (FRED_NOTE in research.ts), a series a third party
- * owns (its notes say "Copyright") is never shown, nothing suggests the Federal Reserve endorses
- * Flash, and requests stay well under its rate limit: 1 a second across Flash and
- * FLASH_FRED_DAILY_REQUESTS a day (10,000), with series details kept six hours and values an hour.
+ * owns (FRED tags it "copyrighted: …", or its notes say "Copyright") is never shown, nothing suggests
+ * the Federal Reserve endorses Flash, and requests stay well under its rate limit: 1 a second across
+ * Flash and FLASH_FRED_DAILY_REQUESTS a day (10,000), with series details (and their tags) kept six
+ * hours and values an hour.
  * FRED's API takes the key only in the address, so addresses are never logged or shown: a failure
  * is logged by what went wrong alone (see SourceError).
  */
@@ -39,6 +40,8 @@ const SEARCH_FOR = 6 * HOUR;
 /** FRED's keys: 32 lower-case letters and digits. */
 const KEY = /^[a-z0-9]{32}$/;
 const COPYRIGHT = /copyright/i;
+// FRED's tags for a third party's series: "copyrighted: citation required", "copyrighted: pre-approval required".
+const COPYRIGHTED_TAG = /^copyrighted/i;
 // FRED answers a wrong key, a missing series and options it can't use all with 400, saying which in
 // its error_message: a key FRED refuses is a failure, never "no such series" or "bad options".
 const ERROR_BYTES = 2000;
@@ -73,7 +76,10 @@ async function fredGet(path: string, params: Record<string, string>, signal?: Ab
   );
 }
 
-/** What Flash keeps of a series' details. copyrighted: its notes say a third party owns it. */
+/**
+ * What Flash keeps of a series' details. copyrighted: a third party owns it, as its notes or title say
+ * (all a search shows) or, once seriesInfo has read them, its tags.
+ */
 type SeriesInfo = {
   id: string;
   title: string;
@@ -105,7 +111,11 @@ function readInfo(raw: unknown): SeriesInfo | null {
   };
 }
 
-/** A series' details from the cache or FRED, or null when FRED has no such series. Throws a SourceError. */
+/**
+ * A series' details from the cache or FRED, with its tags read for a third party's copyright (many,
+ * like Optimal Blue's mortgage rates, don't say so in their notes), or null when FRED has no such
+ * series. Throws a SourceError, also when the tags can't be read: a series isn't shown unchecked.
+ */
 async function seriesInfo(id: string, at: number, signal?: AbortSignal): Promise<SeriesInfo | null> {
   const key = `fred:series:${id}`;
   const cached = await cacheGet<SeriesInfo | { none: true }>(key, at);
@@ -123,6 +133,15 @@ async function seriesInfo(id: string, at: number, signal?: AbortSignal): Promise
   }
   const info = readInfo(Array.isArray(json?.seriess) ? json.seriess[0] : null);
   if (!info) throw new SourceError("bad_json");
+  if (!info.copyrighted) {
+    const tags = await fredGet("/series/tags", { series_id: id }, signal);
+    const list = Array.isArray(tags?.tags) ? tags.tags : null;
+    if (!list) throw new SourceError("bad_json");
+    info.copyrighted = list.some((tag) => {
+      const name = asObject(tag)?.name;
+      return typeof name === "string" && COPYRIGHTED_TAG.test(name.trim());
+    });
+  }
   await cachePut(key, info, SERIES_FOR, at);
   return info;
 }

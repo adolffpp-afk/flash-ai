@@ -49,6 +49,8 @@ const COMPANIES = [
   { cik_str: 1067983, ticker: "BRK-B", title: "BERKSHIRE HATHAWAY INC" },
   { cik_str: 1318605, ticker: "TSLA", title: "Tesla, Inc." },
   ...Array.from({ length: 30 }, (_, i) => ({ cik_str: 1_000_001 + i, ticker: `ZZ${String.fromCharCode(65 + (i % 26))}${i >= 26 ? "X" : ""}`, title: `Filler Company ${i}` })),
+  { cik_str: 19617, ticker: "JPM", title: "JPMORGAN CHASE & CO" },
+  { cik_str: 2_000_001, ticker: "MANY", title: "Many Forms Corp" },
 ];
 
 /** Apple's submissions: 300 filings, newest first, with long descriptions. */
@@ -66,6 +68,36 @@ function submissions(cik: string) {
   }
   return { cik, name: "Apple Inc.", tickers: ["AAPL"], filings: { recent } };
 }
+
+/** A submissions block from [form, filed] rows, newest first, as EDGAR lists them. */
+function recentOf(cik: string, name: string, rows: [string, string][]) {
+  const recent: Record<string, unknown[]> = { accessionNumber: [], filingDate: [], reportDate: [], form: [], primaryDocument: [], primaryDocDescription: [] };
+  rows.forEach(([form, filed], i) => {
+    recent.accessionNumber.push(`${cik}-24-${String(i + 1).padStart(6, "0")}`);
+    recent.filingDate.push(filed);
+    recent.reportDate.push("");
+    recent.form.push(form);
+    recent.primaryDocument.push(`doc-${i}.htm`);
+    recent.primaryDocDescription.push(form);
+  });
+  return { cik, name, tickers: [], filings: { recent } };
+}
+/** A bank's: 500 424B2s (five a day), then, older, its 30 8-Ks, three 10-Qs and a 10-K. */
+const bankSubmissions = (cik: string) =>
+  recentOf(cik, "JPMORGAN CHASE & CO", [
+    ...Array.from({ length: 500 }, (_, i): [string, string] => ["424B2", iso(Date.UTC(2024, 10, 1) - Math.floor(i / 5) * DAY)]),
+    ...Array.from({ length: 30 }, (_, i): [string, string] => ["8-K", iso(Date.UTC(2024, 6, 20) - i * 7 * DAY)]),
+    ["10-Q", iso(Date.UTC(2024, 6, 15))],
+    ["10-Q", iso(Date.UTC(2024, 3, 15))],
+    ["10-Q", iso(Date.UTC(2023, 10, 1))],
+    ["10-K", iso(Date.UTC(2024, 1, 20))],
+  ]);
+/** 40 forms of 30 filings each (more than are kept in all), and, oldest of all, one 10-K. */
+const manyFormsSubmissions = (cik: string) =>
+  recentOf(cik, "Many Forms Corp", [
+    ...Array.from({ length: 1200 }, (_, i): [string, string] => [`F-${i % 40}`, iso(Date.UTC(2024, 10, 1) - Math.floor(i / 40) * DAY)]),
+    ["10-K", iso(Date.UTC(2024, 0, 2))],
+  ]);
 
 /** One reported value as EDGAR lists it. */
 const fact = (start: string | null, end: string, val: number, form: string, filed: string, accn = "0000320193-24-000123") => ({
@@ -92,6 +124,23 @@ const REVENUE = [
   ...Array.from({ length: 200 }, (_, i) => fact(iso(Date.UTC(2014, 0, 1) + i * 9 * DAY), iso(Date.UTC(2014, 0, 1) + i * 9 * DAY + 90 * DAY), 50_000_000_000 + i, "10-Q", iso(Date.UTC(2014, 3, 1) + i * 9 * DAY), `0000320193-${String(14 + Math.floor(i / 25)).padStart(2, "0")}-${String(i).padStart(6, "0")}`)),
 ];
 const OLD_REVENUE = [fact("2017-10-01", "2018-09-29", 265_595_000_000, "10-K", "2018-11-05", "0000320193-18-000145")];
+// Apple's operating cash flow, FY2023 to the third quarter of FY2026, as its filings report it: to date
+// from the fiscal year's start (3, 6 and 9 months in each 10-Q, the year in the 10-K), never by quarter.
+const B = 1_000_000;
+const OPERATING_CASH = [
+  ...(
+    [
+      ["2022-09-25", ["2022-12-31", "2023-04-01", "2023-07-01", "2023-09-30"], [34_005, 62_565, 88_945, 110_543], ["2023-02-03", "2023-05-05", "2023-08-04", "2023-11-03"]],
+      ["2023-10-01", ["2023-12-30", "2024-03-30", "2024-06-29", "2024-09-28"], [39_895, 62_585, 91_443, 118_254], ["2024-02-02", "2024-05-03", "2024-08-02", "2024-11-01"]],
+      ["2024-09-29", ["2024-12-28", "2025-03-29", "2025-06-28", "2025-09-27"], [29_935, 53_887, 81_754, 111_482], ["2025-01-31", "2025-05-02", "2025-08-01", "2025-10-31"]],
+      ["2025-09-28", ["2025-12-27", "2026-03-28", "2026-06-27"], [41_000, 64_000, 92_000], ["2026-01-30", "2026-05-01", "2026-07-31"]],
+    ] as const
+  ).flatMap(([start, ends, values, filed], y) =>
+    ends.map((end, k) => fact(start, end, values[k] * B, k === 3 ? "10-K" : "10-Q", filed[k], `0000320193-${23 + y}-${String(k + 1).padStart(6, "0")}`)),
+  ),
+  // The latest 10-Q restates last year's nine months: the latest filing of a period is the one used.
+  fact("2024-09-29", "2025-06-28", 81_700 * B, "10-Q", "2026-07-31", "0000320193-26-000003"),
+];
 const companyfacts = (cik: string) => ({
   cik: Number(cik),
   entityName: "Apple Inc.",
@@ -100,7 +149,17 @@ const companyfacts = (cik: string) => ({
       RevenueFromContractWithCustomerExcludingAssessedTax: { label: "Revenue from Contract with Customer", units: { USD: REVENUE } },
       SalesRevenueNet: { label: "Sales Revenue, Net", units: { USD: OLD_REVENUE } },
       NetIncomeLoss: { label: "Net Income (Loss)", units: { USD: [fact("2023-10-01", "2024-09-28", 93_736_000_000, "10-K", "2024-11-01")] } },
-      EarningsPerShareDiluted: { label: "EPS, Diluted", units: { "USD/shares": [fact("2023-10-01", "2024-09-28", 6.08, "10-K", "2024-11-01")] } },
+      EarningsPerShareDiluted: {
+        label: "EPS, Diluted",
+        units: {
+          "USD/shares": [
+            fact("2023-10-01", "2024-09-28", 6.08, "10-K", "2024-11-01"),
+            fact("2023-10-01", "2023-12-30", 2.18, "10-Q", "2024-02-02", "0000320193-24-000006"),
+            fact("2023-10-01", "2024-03-30", 3.71, "10-Q", "2024-05-03", "0000320193-24-000069"),
+          ],
+        },
+      },
+      NetCashProvidedByUsedInOperatingActivities: { label: "Net Cash Provided by (Used in) Operating Activities", units: { USD: OPERATING_CASH } },
     },
   },
 });
@@ -130,7 +189,27 @@ const SERIES: Record<string, object> = {
     popularity: 83,
     notes: "Copyright © 2026, S&P Dow Jones Indices LLC. All rights reserved.",
   },
+  // A third party's series whose notes don't say so: only FRED's tags do.
+  OBMMIJUMBO30YF: {
+    id: "OBMMIJUMBO30YF",
+    title: "30-Year Fixed Rate Jumbo Mortgage Index",
+    units: "Percent",
+    frequency: "Daily",
+    observation_start: "2017-01-03",
+    observation_end: "2026-10-09",
+    last_updated: "2026-10-10",
+    popularity: 60,
+    notes: "Data provided by Optimal Blue. Rate locks for 30-year fixed jumbo loans.",
+  },
 };
+// FRED's tags for each series, as /series/tags lists them (lower case).
+const TAGS: Record<string, string[]> = {
+  UNRATE: ["bls", "monthly", "nation", "public domain: citation requested", "sa", "unemployment", "usa"],
+  SP500: ["copyrighted: pre-approval required", "daily", "s&p"],
+  OBMMIJUMBO30YF: ["30-year", "copyrighted: citation required", "daily", "jumbo", "mortgage", "optimal blue"],
+};
+// How /series/tags answers next: as listed, an error, or a reply without a list.
+let fredTags: "ok" | "fail" | "malformed" = "ok";
 
 const stand = createServer((req, res) => {
   const url = new URL(req.url ?? "/", "http://stand.in");
@@ -166,7 +245,11 @@ const stand = createServer((req, res) => {
   if (service === "sec") {
     if (path === "/files/company_tickers.json") return json(Object.fromEntries(COMPANIES.map((c, i) => [String(i), c])));
     const sub = /^\/submissions\/CIK(\d{10})\.json$/.exec(path);
-    if (sub) return sub[1] === "0000320193" || sub[1] === "0000789019" ? json(submissions(sub[1])) : json({}, 404);
+    if (sub) {
+      if (sub[1] === "0000019617") return json(bankSubmissions(sub[1]));
+      if (sub[1] === "0002000001") return json(manyFormsSubmissions(sub[1]));
+      return sub[1] === "0000320193" || sub[1] === "0000789019" ? json(submissions(sub[1])) : json({}, 404);
+    }
     const facts = /^\/api\/xbrl\/companyfacts\/CIK(\d{10})\.json$/.exec(path);
     if (facts) return facts[1] === "0000320193" ? json(companyfacts(facts[1])) : json({ facts: {} });
     const concept = /^\/api\/xbrl\/companyconcept\/CIK(\d{10})\/([\w-]+)\/(\w+)\.json$/.exec(path);
@@ -190,6 +273,12 @@ const stand = createServer((req, res) => {
       return json({ units: url.searchParams.get("units"), observations: observations.slice(0, limit) });
     }
     if (path === "/series/search") return json({ seriess: [SERIES.UNRATE, SERIES.SP500, { ...SERIES.UNRATE, id: "U6RATE", title: "Total Unemployed, U-6" }] });
+    if (path === "/series/tags") {
+      if (fredTags === "fail") return json({ error_message: "scripted" }, 500);
+      if (fredTags === "malformed") return json({ count: 3 });
+      if (!TAGS[id]) return json({ error_code: 400, error_message: "Bad Request. The series does not exist." }, 400);
+      return json({ count: TAGS[id].length, tags: TAGS[id].map((name) => ({ name, group_id: "gen", notes: "", popularity: 50, series_count: 10 })) });
+    }
     return json({}, 404);
   }
   json({}, 404);
@@ -232,6 +321,7 @@ beforeEach(async () => {
   seen.length = 0;
   searx = {};
   fredStatus = 0;
+  fredTags = "ok";
   forgetTickers();
   for (const table of ["source_cache", "free_quota", "free_user_quota", "rate_limits"]) await sql(`DELETE FROM ${table}`);
   delete process.env.FLASH_FREE_DAILY_SEARCHES;
@@ -487,6 +577,64 @@ test("SEC EDGAR: filings and figures are cut to fit one tool answer, figures mer
   assert.match(none.text, /EDGAR has no annual values/);
 });
 
+test("SEC EDGAR: a bank's hundreds of 424B2s don't crowd out its 10-K, 10-Q and 8-K, and each form keeps its newest", async () => {
+  const filings = secFilingsTool();
+  type Listed = { filings: { form: string; filed: string }[] };
+  const read = async (input: object) => JSON.parse((await filings.run(input)).text) as Listed;
+  // The usual forms, newest first: its 10-Qs and 8-Ks (its 10-K is older than the newest 20 of them).
+  const usual = await read({ company: "JPM", limit: 20 });
+  assert.equal(usual.filings.length, 20);
+  for (const form of ["10-Q", "8-K"]) assert.ok(usual.filings.some((f) => f.form === form), `${form} is listed`);
+  assert.deepEqual((await read({ company: "JPM", forms: ["10-K"] })).filings.map((f) => f.filed), ["2024-02-20"]);
+  assert.equal((await read({ company: "JPM", forms: ["10-Q"] })).filings.length, 3);
+  // As many of a form as one answer lists: the newest 20.
+  const eightK = (await read({ company: "JPM", forms: ["8-K"], limit: 20 })).filings;
+  assert.equal(eightK.length, 20);
+  assert.equal(eightK[0].filed, "2024-07-20");
+  const prospectuses = (await read({ company: "JPM", forms: ["424B2"], limit: 20 })).filings;
+  assert.equal(prospectuses.length, 20);
+  assert.equal(prospectuses[0].filed, "2024-11-01");
+  assert.equal(seen.filter((s) => s.path === "/submissions/CIK0000019617.json").length, 1, "the list is read once, then kept");
+
+  // More forms than fit in all: each keeps its newest, and a lone 10-K older than all of them is still there.
+  const many = await read({ company: "MANY", forms: ["F-7"], limit: 20 });
+  assert.ok(many.filings.length >= 12 && many.filings.length < 20, `${many.filings.length} kept`);
+  assert.equal(many.filings[0].filed, "2024-11-01");
+  assert.deepEqual((await read({ company: "MANY", forms: ["10-K"] })).filings.map((f) => f.filed), ["2024-01-02"]);
+});
+
+test("SEC EDGAR: quarters of a cash flow reported only to date are worked out, marked computed, and shares' values never are", async () => {
+  type Values = { facts: { values: { start: string; end: string; value: number; form: string; filed: string; computed?: boolean }[] }[]; note: string };
+  const run = async (input: object) => JSON.parse((await secFactsTool().run({ ticker: "AAPL", period: "quarterly", ...input })).text) as Values;
+  const last4 = await run({ concepts: ["operating_cash_flow"] });
+  assert.deepEqual(
+    last4.facts[0].values.map((v) => [v.start, v.end, v.value / B, v.form, v.computed ?? false]),
+    [
+      ["2026-03-29", "2026-06-27", 28_000, "10-Q", true],
+      ["2025-12-28", "2026-03-28", 23_000, "10-Q", true],
+      ["2025-09-28", "2025-12-27", 41_000, "10-Q", false],
+      // The year less its nine months, as restated in the latest 10-Q.
+      ["2025-06-29", "2025-09-27", 111_482 - 81_700, "10-K", true],
+    ],
+  );
+  assert.match(last4.note, /computed: a quarter worked out/);
+  assert.match(last4.note, /never call values consecutive quarters/);
+  // Ten in a row, each starting the day after the one before it ends.
+  const ten = (await run({ concepts: ["operating_cash_flow"], count: 10 })).facts[0].values;
+  assert.equal(ten.length, 10);
+  for (let k = 1; k < ten.length; k++) assert.equal(Date.parse(ten[k - 1].start) - Date.parse(ten[k].end), DAY, `${ten[k].end} then ${ten[k - 1].start}`);
+  assert.deepEqual(
+    ten.slice(4).map((v) => v.value / B),
+    [81_700 - 53_887, 53_887 - 29_935, 29_935, 118_254 - 91_443, 91_443 - 62_585, 62_585 - 39_895],
+  );
+  // A value a share doesn't add up over quarters: only the quarter reported as one.
+  const eps = await run({ concepts: ["eps_diluted"] });
+  assert.deepEqual(eps.facts[0].values.map((v) => [v.end, v.value, v.computed ?? false]), [["2023-12-30", 2.18, false]]);
+  // A quarter reported as one wins over the same quarter worked out (Apple's fourth quarter of revenue).
+  const revenue = await run({ concepts: ["revenue"], count: 1 });
+  assert.deepEqual(revenue.facts[0].values.map((v) => [v.start, v.value, v.computed ?? false]), [["2024-06-30", 94_930_000_000, false]]);
+});
+
 test("SEC EDGAR: Flash sends at most 5 requests a second across every server, and a reply makes at most 3 look-ups", async () => {
   assert.equal(SEC_PER_SECOND, 5);
   // Twelve look-ups at once, each of a company not looked up before: the ticker list, then a request each.
@@ -610,6 +758,40 @@ test("FRED: a series a third party owns is refused before its values are fetched
   assert.match(read.note, /1 copyrighted series left out/);
   assert.equal(search.notice, "fred");
   assert.ok(fredSearchTool().finder);
+});
+
+test("FRED: a series FRED tags as copyrighted is refused though its notes don't say so, and one whose tags can't be read isn't shown", async () => {
+  const tool = fredSeriesTool();
+  // FRED's 1 a second is shown elsewhere: each step here starts with it free.
+  const fresh = async () => {
+    await sql("DELETE FROM rate_limits");
+    seen.length = 0;
+  };
+  const refused = await tool.run({ series_id: "OBMMIJUMBO30YF" });
+  assert.deepEqual([refused.text, refused.isError, refused.used, refused.notice], [R.FRED_COPYRIGHT, true, false, undefined]);
+  assert.equal(seen.find((s) => s.path === "/series/tags")!.query.get("series_id"), "OBMMIJUMBO30YF");
+  assert.equal(seen.some((s) => s.path === "/series/observations"), false, "its values were never asked for");
+  // Kept with the series' details: asked again, FRED isn't.
+  await fresh();
+  assert.equal((await tool.run({ series_id: "OBMMIJUMBO30YF" })).text, R.FRED_COPYRIGHT);
+  assert.equal(seen.length, 0);
+  // Copyrighted by its notes already: the tags aren't asked for.
+  await fresh();
+  await tool.run({ series_id: "SP500" });
+  assert.equal(seen.some((s) => s.path === "/series/tags"), false);
+  // Tags that fail, or come back without a list: a public series isn't shown either, nor remembered as checked.
+  for (const how of ["fail", "malformed"] as const) {
+    await sql("DELETE FROM source_cache");
+    await fresh();
+    fredTags = how;
+    const unchecked = await tool.run({ series_id: "UNRATE" });
+    assert.deepEqual([unchecked.text, unchecked.isError, unchecked.used], [R.FRED_FAILED, true, false], how);
+    assert.equal(seen.some((s) => s.path === "/series/observations"), false, how);
+  }
+  fredTags = "ok";
+  await fresh();
+  assert.equal((await tool.run({ series_id: "UNRATE", count: 3 })).used, true);
+  noSecrets(refused);
 });
 
 test("FRED's notice is the exact wording its terms ask for, with a link to them", () => {
