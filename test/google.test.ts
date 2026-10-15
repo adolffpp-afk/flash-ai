@@ -957,6 +957,16 @@ test("Google Drive is hidden everywhere until all four of its variables are set 
   assert.deepEqual((await adminStats(30)).connectors.google, { setUp: true, missing: [] });
 });
 
+test("the app's page, which opens Google's Picker, tells other sites its origin and nothing more; Flash's other pages tell them nothing", async () => {
+  const { ownPageHeaders } = await import("../src/proxy.ts");
+  // Google shows the Picker's frame only when the request names Flash's site (its key is limited to it).
+  assert.deepEqual(ownPageHeaders("/"), { "X-Frame-Options": "DENY", "Content-Security-Policy": "frame-ancestors 'none'", "Referrer-Policy": "strict-origin-when-cross-origin" });
+  for (const path of ["/signin", "/signin/code", "/reset", "/privacy", "/admin", "/oauth/authorize"]) {
+    assert.deepEqual(ownPageHeaders(path), { "X-Frame-Options": "DENY", "Content-Security-Policy": "frame-ancestors 'none'", "Referrer-Policy": "same-origin" }, path);
+  }
+  for (const path of ["/p/shop", "/d/example.com/", "/f/abc", "/api/connect/google/picker-token"]) assert.equal(ownPageHeaders(path), null, path);
+});
+
 test("only a confirmed account, from Flash's own page, starts Connect, and only Reconnects its own account", async () => {
   const unconfirmed = await account("g-unconfirmed", { verified: false });
   process.env.FLASH_DEMO_EMAILS = "true";

@@ -29,14 +29,24 @@ export async function proxy(request: NextRequest) {
 const EMBEDDABLE = /^\/(p|d|f|api)\//;
 
 /**
- * Flash's own pages can't be shown inside another site, so nobody can trick a click on them, and
- * they don't tell other sites their address (sign-in and reset links carry a code in it).
+ * The headers Flash's own pages get, or null for a path that may be shown inside other pages. They
+ * can't be shown inside another site, so nobody can trick a click on them, and they don't tell other
+ * sites their address (sign-in and reset links carry a code in it). The app's page ("/") tells them
+ * its origin only (never a path or a query): it opens Google Drive's Picker (Settings > Connectors),
+ * a frame from docs.google.com that Google shows only when the request names the site it is in,
+ * since the Picker's API key is limited to Flash's site (see DrivePicker.tsx).
  */
+export function ownPageHeaders(path: string): Record<string, string> | null {
+  if (EMBEDDABLE.test(path)) return null;
+  return {
+    "X-Frame-Options": "DENY",
+    "Content-Security-Policy": "frame-ancestors 'none'",
+    "Referrer-Policy": path === "/" ? "strict-origin-when-cross-origin" : "same-origin",
+  };
+}
+
 function protect(path: string, response: NextResponse): NextResponse {
-  if (EMBEDDABLE.test(path)) return response;
-  response.headers.set("X-Frame-Options", "DENY");
-  response.headers.set("Content-Security-Policy", "frame-ancestors 'none'");
-  response.headers.set("Referrer-Policy", "same-origin");
+  for (const [name, value] of Object.entries(ownPageHeaders(path) ?? {})) response.headers.set(name, value);
   return response;
 }
 

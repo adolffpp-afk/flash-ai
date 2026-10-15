@@ -86,8 +86,28 @@ function pickerLib(): Promise<PickerLib> {
   return loading;
 }
 
+/**
+ * Google shows its Picker (a frame from docs.google.com) only when the request names the site it is
+ * in, since the Picker's API key is limited to Flash's site. The app's page says its origin, and only
+ * that (see proxy.ts), but a page reached from another of Flash's pages without a reload keeps that
+ * page's policy, which says nothing: so this page says the same here, before the Picker opens.
+ */
+function sendOrigin() {
+  const policy = "strict-origin-when-cross-origin";
+  const meta = document.querySelector<HTMLMetaElement>('meta[name="referrer"]');
+  if (meta) {
+    meta.content = policy;
+    return;
+  }
+  const added = document.createElement("meta");
+  added.name = "referrer";
+  added.content = policy;
+  document.head.appendChild(added);
+}
+
 /** Opens Google's Picker with the user's token; the ids they picked, or none when they closed it. */
 async function pick(access: PickerAccess): Promise<string[]> {
+  sendOrigin();
   const picker = await pickerLib();
   return new Promise((resolve) => {
     // A list, not thumbnails: Google's guide advises it for an app with drive.file only, which isn't granted the thumbnails.
