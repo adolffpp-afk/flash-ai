@@ -147,6 +147,13 @@ export async function createSignInLink(email: string, next: string): Promise<str
   return token;
 }
 
+/** The address a sign-in link was sent to, without using it up, or null if wrong, used or expired. */
+export async function signInLinkEmail(token: string): Promise<string | null> {
+  if (!token) return null;
+  const row = await one<{ email: string }>("SELECT email FROM sign_in_links WHERE token_hash = ? AND expires_at > ?", [sha256(token), now()]);
+  return row?.email ?? null;
+}
+
 /** Uses a sign-in link. Returns its email and destination, or null if wrong, used or expired. */
 export async function redeemSignInLink(token: string): Promise<{ email: string; next: string } | null> {
   if (!token) return null;
