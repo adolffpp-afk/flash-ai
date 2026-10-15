@@ -33,7 +33,7 @@ import { Home, ICONS, Icon } from "./Home";
 import { Bell } from "./Bell";
 import { ConnectorsButton, LevelPicker, MenusOpenDown, MicButton, PlusMenu, SendButton, TalkButton, ToolPicker, type Choice } from "./ComposerTools";
 import { ConnectorTile } from "./YourConnectors";
-import { accountReplies, type ActionCard, type ConnectionView } from "@/lib/connectors";
+import { PRESETS, accountReplies, type ActionCard, type ConnectionView } from "@/lib/connectors";
 import { readChatConnectors, writeChatConnectors } from "@/lib/chat-connectors";
 import { VoiceMode, type VoiceAnswer } from "./VoiceMode";
 import { useWakeWord } from "./useWakeWord";
@@ -468,7 +468,13 @@ export function Flash({
     }
     const verified = params.get("verified");
     const reset = params.get("reset");
-    if (verified || reset) {
+    // A confirmation link opened while not signed in to its account (see api/auth/verify).
+    if (verified === "signin") {
+      setAuthError("verify_signin");
+      setAuthMode("login");
+      if (signedIn) setNotice(t("To confirm your email, sign in to that account, then open the link in the email again."));
+      window.history.replaceState(null, "", window.location.pathname);
+    } else if (verified || reset) {
       setNotice(
         reset
           ? t("Your password was changed. You're signed in.")
@@ -692,6 +698,19 @@ export function Flash({
   /** The accounts on in a chat ("" for the chat a message from Home starts) that can still be used. */
   const connectorsIn = (projectId: string) =>
     (connectorChoice[projectId] ?? []).filter((id) => accounts.some((a) => a.id === id && a.status === "ok"));
+
+  /** The name of a connected account the message names as a word of its own, when it isn't one of those on. */
+  function offAccountNamed(message: string, on: string[]): string | null {
+    if (!connectorsOn) return null;
+    const words = message.toLocaleLowerCase().split(/[^\p{L}\p{N}]+/u);
+    for (const a of accounts) {
+      if (a.status !== "ok" || on.includes(a.id)) continue;
+      const name = PRESETS.find((p) => p.id === a.provider)?.name ?? a.label;
+      const parts = name.toLocaleLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+      if (parts.length && words.some((_, i) => parts.every((part, j) => words[i + j] === part))) return name;
+    }
+    return null;
+  }
 
   /** Turns accounts on or off in the open chat (or for the chat Home's next message starts). */
   function setConnectorsHere(ids: string[]) {
@@ -928,6 +947,10 @@ export function Flash({
     }));
     setInput("");
     setFiles([]);
+    // A connected account the message names but that is off in this chat isn't used (nothing is on
+    // until the user turns it on), so they hear why the reply can't see it.
+    const off = offAccountNamed(content, fromHome ?? connectorsIn(chat.id));
+    if (off) setNotice(t("{name} is connected, but it's off in this chat. Turn it on with the Connectors button by the message box.", { name: off }));
     await respond(
       chat,
       chat.messages,

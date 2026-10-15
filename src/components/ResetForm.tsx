@@ -14,15 +14,21 @@ export function ResetForm({ token }: { token: string }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // Opened in another browser than the one that asked for the link: the address it was sent to is typed first.
+  const [askEmail, setAskEmail] = useState(false);
+  const [email, setEmail] = useState("");
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError("");
     try {
-      await api("/api/auth/reset", { method: "POST", json: { token, password } });
-      router.push("/?reset=1");
+      const { twoFactor } = await api<{ twoFactor?: boolean }>("/api/auth/reset", { method: "POST", json: { token, password, ...(askEmail && { email }) } });
+      // Two-step sign-in is on: a reset link alone doesn't sign in; the code page does.
+      if (twoFactor) router.push("/signin/code");
+      else router.push("/?reset=1");
     } catch (err) {
+      if ((err as { code?: string }).code === "confirm_email") setAskEmail(true);
       setError(err instanceof Error ? err.message : t("Something went wrong."));
       setBusy(false);
     }
@@ -36,6 +42,19 @@ export function ResetForm({ token }: { token: string }) {
         <p className="mt-1 text-sm text-zinc-400">{t("You'll be signed out on your other devices.")}</p>
         {token ? (
           <>
+            {askEmail && (
+              <input
+                className="mt-5 w-full rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2.5 outline-none transition focus:border-primary"
+                type="email"
+                placeholder={t("Email")}
+                aria-label={t("Email")}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                autoComplete="email"
+                required
+                autoFocus
+              />
+            )}
             <input
               className="mt-5 w-full rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2.5 outline-none transition focus:border-primary"
               type="password"

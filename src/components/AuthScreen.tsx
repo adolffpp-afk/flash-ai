@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/store";
 import { LogoMark } from "@/app/brand";
@@ -59,6 +60,7 @@ const AUTH_ERRORS: Record<string, string> = {
   busy: msg("Too many attempts. Try again in 15 minutes."),
   unavailable: msg("That sign-in option isn't available right now."),
   failed: msg("Sign-in didn't work. Please try again."),
+  verify_signin: msg("To confirm your email, sign in to that account, then open the link in the email again."),
 };
 
 export function AuthScreen({
@@ -78,6 +80,7 @@ export function AuthScreen({
   next?: string;
 }) {
   const t = useT();
+  const router = useRouter();
   const [mode, setMode] = useState<"signup" | "login" | "forgot" | "link">(initialMode);
   const [sent, setSent] = useState<{ devLink?: string } | null>(null);
   const [name, setName] = useState("");
@@ -115,12 +118,16 @@ export function AuthScreen({
         );
         return;
       }
-      onDone(
-        await api<{ emailFailed?: boolean }>(`/api/auth/${mode}`, {
-          method: "POST",
-          json: { name, email, password },
-        }),
-      );
+      const result = await api<{ emailFailed?: boolean; twoFactor?: boolean }>(`/api/auth/${mode}`, {
+        method: "POST",
+        json: { name, email, password },
+      });
+      // Two-step sign-in is on: the code page finishes signing in.
+      if (result.twoFactor) {
+        router.push("/signin/code");
+        return;
+      }
+      onDone(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Something went wrong."));
     } finally {

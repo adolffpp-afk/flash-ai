@@ -22,6 +22,7 @@ import { BrandKitForm } from "./BrandKit";
 import { ConnectedApps } from "./ConnectedApps";
 import { YourConnectors } from "./YourConnectors";
 import { InstallApp } from "./InstallApp";
+import { TwoStepSignIn } from "./TwoStepSignIn";
 import { SETTINGS_TABS, type SettingsTab } from "@/lib/settings-tabs";
 import { hasBuiltInRecognition } from "@/lib/listen";
 import { msg, type Translate } from "@/lib/i18n";
@@ -639,7 +640,7 @@ function Account({ me, busy, attempt, onSignOut }: Shared & { onSignOut: (everyw
         </Row>
         <Row
           title={t("Log out of all devices")}
-          about={t("Signs you out everywhere, this device included. Connected apps keep working until you disconnect them.")}
+          about={t("Signs you out everywhere, this device included, and disconnects apps connected to Flash, like Claude.")}
         >
           {confirm === "everywhere" ? (
             <span className="flex gap-2">
@@ -689,6 +690,8 @@ function Account({ me, busy, attempt, onSignOut }: Shared & { onSignOut: (everyw
           </span>
         </Row>
       </Section>
+
+      <TwoStepSignIn busy={busy} attempt={attempt} section={Section} />
 
       <Section title={t("Password")}>
         {me.hasPassword ? (

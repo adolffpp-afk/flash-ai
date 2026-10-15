@@ -1,9 +1,10 @@
 import { translatorFor } from "@/lib/server/i18n.ts";
-import { createSession, fromOwnPage, isSecure, verifyPassword } from "@/lib/server/auth.ts";
+import { fromOwnPage, verifyPassword } from "@/lib/server/auth.ts";
 import { one } from "@/lib/server/db.ts";
 import { clearLimit, clientIp, overLimit } from "@/lib/server/limits.ts";
 import { PROVIDERS, isProvider } from "@/lib/server/oauth.ts";
 import { linkedProviders } from "@/lib/server/signin.ts";
+import { signInCookie } from "@/lib/server/two-factor.ts";
 
 const WINDOW = 15 * 60 * 1000;
 
@@ -14,8 +15,15 @@ export async function POST(request: Request) {
   if (!fromOwnPage(request)) return Response.json({ error: t("Please sign in on Flash's own page.") }, { status: 403 });
   const body = (await request.json().catch(() => ({}))) as { email?: string; password?: string };
   const email = (body.email ?? "").trim().toLowerCase();
-  // Slows password guessing on one account, and one network trying many accounts.
-  if ((await overLimit(`login:${email}`, 10, WINDOW)) || (await overLimit(`login-ip:${clientIp(request)}`, 50, WINDOW))) {
+  // Slows password guessing on one account from one network, on one account from many networks,
+  // and one network trying many accounts. The first is cleared by a right password, so a stranger
+  // guessing someone's password can't lock them out unless they guess a hundred times.
+  const ip = clientIp(request);
+  if (
+    (await overLimit(`login:${email}:${ip}`, 10, WINDOW)) ||
+    (await overLimit(`login:${email}`, 100, WINDOW)) ||
+    (await overLimit(`login-ip:${ip}`, 50, WINDOW))
+  ) {
     return Response.json({ error: t("Too many attempts. Try again in 15 minutes.") }, { status: 429 });
   }
   const user = await one<{ id: string; password_hash: string }>("SELECT id, password_hash FROM users WHERE email = ?", [
@@ -34,7 +42,8 @@ export async function POST(request: Request) {
   if (!user || !(await verifyPassword(body.password ?? "", user.password_hash))) {
     return Response.json({ error: t("That email and password don't match.") }, { status: 401 });
   }
-  await clearLimit(`login:${email}`);
-  const cookie = await createSession(user.id, isSecure(request));
-  return Response.json({ ok: true }, { headers: { "Set-Cookie": cookie } });
+  await clearLimit(`login:${email}:${ip}`);
+  // With two-step sign-in on, this only gets them to the code page (see two-factor.ts).
+  const { cookie, twoFactor } = await signInCookie(user.id, request);
+  return Response.json({ ok: true, twoFactor }, { headers: { "Set-Cookie": cookie } });
 }

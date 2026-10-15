@@ -40,6 +40,17 @@ export function findFile(result: unknown): FileRef | null {
   return null;
 }
 
+/** What the chat says when fal's safety filter blanked a picture. */
+export const BLOCKED = msg(
+  "The picture service's safety filter blocked this picture, so it came back blank. You weren't charged for it. Please try again, or ask for the change in other words.",
+);
+
+/** True when fal's safety filter flagged a result ({ has_nsfw_concepts: [true] }), which it sends back as a black picture. */
+export function flagged(result: unknown): boolean {
+  const flags = result && typeof result === "object" ? (result as { has_nsfw_concepts?: unknown }).has_nsfw_concepts : null;
+  return Array.isArray(flags) ? flags.some((f) => f === true) : flags === true;
+}
+
 /** Where a job is: its place in line (1 is next) while it waits, or null once it's working. */
 export type FalProgress = { position: number | null };
 /** Short English updates ("In line (position 2)", "Working"), and where the job is, to say it in the user's language. */
@@ -169,6 +180,9 @@ export async function falGenerate(
   stop?: AbortSignal,
 ): Promise<Media> {
   const { result, end } = await falRun(endpoint, input, onProgress, timeoutMs, { stop });
+  // fal's safety filter sends a flagged picture back all black; nobody gets what they asked for,
+  // so it isn't charged and the chat says why instead of showing a black square.
+  if (flagged(result)) throw new JobAbandoned(BLOCKED, false);
   try {
     const file = findFile(result);
     if (!file) throw new FriendlyError(msg("The model finished but sent nothing back. Please try again."));

@@ -1,8 +1,9 @@
-import { appUrl, createSession, isSecure, readCookie } from "@/lib/server/auth.ts";
+import { appUrl, readCookie } from "@/lib/server/auth.ts";
 import { clientIp, overLimit } from "@/lib/server/limits.ts";
 import { OAUTH_COOKIE, PROVIDERS, checkState, clearStateCookie, fetchProfile, isProvider } from "@/lib/server/oauth.ts";
 import { CLEAR_REF_COOKIE } from "@/lib/server/referrals.ts";
 import { signInWithProvider } from "@/lib/server/signin.ts";
+import { signInCookie } from "@/lib/server/two-factor.ts";
 
 /** Where Google, GitHub and Microsoft send people back after they sign in there. */
 export async function GET(request: Request, ctx: RouteContext<"/api/auth/oauth/[provider]/callback">) {
@@ -35,10 +36,12 @@ export async function GET(request: Request, ctx: RouteContext<"/api/auth/oauth/[
     const profile = await fetchProfile(saved, code, origin);
     const result = await signInWithProvider(profile, request);
     if (!result.ok) return fail(result.code, `email ${result.code === "unverified" ? "not confirmed" : "missing"} at provider`);
-    cookies.push(await createSession(result.userId, isSecure(request)));
+    // With two-step sign-in on, this only gets them to the code page (see two-factor.ts).
+    const { cookie, twoFactor } = await signInCookie(result.userId, request, saved.next);
+    cookies.push(cookie);
     // A new account has used the referral code (if any); it never applies twice.
     if (result.created) cookies.push(CLEAR_REF_COOKIE);
-    return go(saved.next);
+    return go(twoFactor ? "/signin/code" : saved.next);
   } catch (err) {
     return fail("failed", err instanceof Error ? err.message : "unknown error");
   }

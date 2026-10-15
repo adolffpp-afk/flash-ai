@@ -3,6 +3,7 @@ import { appUrl, createSession, fromOwnPage, hashPassword, isSecure } from "@/li
 import { backfillEmailKeys, emailKey, sendVerification } from "@/lib/server/account.ts";
 import { one } from "@/lib/server/db.ts";
 import { clientIp, overLimit } from "@/lib/server/limits.ts";
+import { tooManyFromNetwork } from "@/lib/server/email.ts";
 import { CLEAR_REF_COOKIE } from "@/lib/server/referrals.ts";
 import { createUser } from "@/lib/server/users.ts";
 
@@ -14,15 +15,17 @@ export async function POST(request: Request) {
   // Only Flash's own sign-up page may make an account and sign into it (see fromOwnPage).
   if (!fromOwnPage(request)) return Response.json({ error: t("Please create your account on Flash's own page.") }, { status: 403 });
   const body = (await request.json().catch(() => ({}))) as { email?: string; password?: string; name?: string };
-  const email = (body.email ?? "").trim().toLowerCase();
+  const email = String(body.email ?? "").trim().toLowerCase();
   const password = body.password ?? "";
   const name = (body.name ?? "").trim().slice(0, 80);
-  if (!EMAIL.test(email)) return Response.json({ error: t("Enter a valid email address.") }, { status: 400 });
+  // The length first: the pattern is slow on very long text.
+  if (email.length > 254 || !EMAIL.test(email)) return Response.json({ error: t("Enter a valid email address.") }, { status: 400 });
   if (password.length < 8) return Response.json({ error: t("Use a password of at least 8 characters.") }, { status: 400 });
   // A few sign-ups per network per hour is plenty for real people and slows account farming.
   if (await overLimit(`signup:${clientIp(request)}`, 5, 3600_000)) {
     return Response.json({ error: t("Too many new accounts from here. Try again in an hour.") }, { status: 429 });
   }
+  if (await tooManyFromNetwork(clientIp(request))) return Response.json({ error: t("Too many tries today. Please try again tomorrow.") }, { status: 429 });
   await backfillEmailKeys();
   const key = emailKey(email);
   if (await one("SELECT 1 FROM users WHERE email = ? OR email_key = ?", [email, key])) {

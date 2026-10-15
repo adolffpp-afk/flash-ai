@@ -33,6 +33,7 @@ import {
 } from "@/lib/engines/claude.ts";
 import { autoLevel, isLevel, levelName, needsCare, type ModelLevel } from "@/lib/levels.ts";
 import { checkFiles } from "@/lib/attachments.ts";
+import { infectedFile, scannerSetUp } from "@/lib/server/virus-scan.ts";
 import { withInstructions } from "@/lib/project-instructions.ts";
 import { profileNote } from "@/lib/names.ts";
 import { pictureWordsNote } from "@/lib/languages.ts";
@@ -99,8 +100,10 @@ import {
   transcribeCostCents,
   voiceCostCents,
   voiceCredits,
+  worstTokens,
   type ToolPlan,
 } from "@/lib/credits.ts";
+import { countOf, overLimit } from "@/lib/server/limits.ts";
 import { falConfigured, falGenerate, type FalProgress } from "@/lib/engines/fal.ts";
 import {
   MEDIA_ENGINES,
@@ -139,6 +142,10 @@ import { accountReplies, continuedIds } from "@/lib/connectors.ts";
 import { messageWindow } from "@/lib/message-window.ts";
 
 // Vercel Pro allows up to 800 seconds, which the Movie maker needs (scenes, filming and joining).
+// Price questions (409 confirm_cost) one user gets in an hour before the paid helpers stop deciding
+// their requests (see askedOften).
+const PRICE_QUESTIONS_AN_HOUR = 20;
+
 export const maxDuration = 800;
 // Claude replies end as stopped this long after the request started, so they're saved and settled
 // within maxDuration: a Claude stream can't be picked up again in another call.
@@ -881,6 +888,17 @@ export async function POST(request: Request) {
   }
   const filesProblem = checkFiles(last.attachment, last.more, t);
   if (filesProblem) return Response.json({ error: filesProblem }, { status: 413 });
+  // Every file in the conversation goes to the AI again, so each is checked (a clean one only once a week).
+  const sent = history
+    .flatMap((turn) => (turn.attachment ? [turn.attachment, ...(Array.isArray(turn.more) ? turn.more : [])] : []))
+    .filter((f): f is Attachment => typeof f?.data === "string" && typeof f.name === "string");
+  const infected = scannerSetUp() && (await infectedFile(sent.map((f) => ({ name: f.name, bytes: Buffer.from(f.data, "base64") }))));
+  if (infected) {
+    return Response.json(
+      { error: t("Flash found a virus in {name}, so it won't open it. Delete it from your device.", { name: infected.slice(0, 120) }) },
+      { status: 422 },
+    );
+  }
   const severalFiles = Boolean(last.more?.length);
   if (typeof last.content !== "string" || last.content.length > MAX_MESSAGE_CHARS) {
     return Response.json(
@@ -953,9 +971,10 @@ export async function POST(request: Request) {
   const builds = engine === "app" || engine === "slides";
   // Several photos and a change asked for are combined into one picture: "put me and my dog on a beach".
   const photos = last.attachment ? [last.attachment, ...(last.more ?? [])] : [];
-  const combines =
-    engine === "image" && severalFiles && photos.length <= MAX_EDIT_PHOTOS && photos.every((f) => EDITABLE_TYPE.test(f.mediaType));
-  if (severalFiles && !WRITING_ENGINES.includes(engine) && !(builds && allPictures) && !combines) {
+  // Asked of the engine as it ends up: a price agreed to, or "fix the text" on the picture above, can make it image later.
+  const combinesOn = (e: Engine) =>
+    e === "image" && severalFiles && photos.length <= MAX_EDIT_PHOTOS && photos.every((f) => EDITABLE_TYPE.test(f.mediaType));
+  if (severalFiles && !WRITING_ENGINES.includes(engine) && !(builds && allPictures) && !combinesOn(engine)) {
     engine = "docs";
     reason = t("Flash reads several files together.");
   }
@@ -1087,9 +1106,20 @@ export async function POST(request: Request) {
   // A conversation's size depends only on the model and the system prompt, so it is counted once.
   const counts = new Map<string, Promise<number>>();
   // With connectors, the tools the reply may send are counted exactly too.
+  // Set when Anthropic couldn't count a request: planning goes on with a guess, but a Claude reply
+  // priced on it isn't sent (see below), since a guess can be far under what the reply reads.
+  let countFailed = false;
   const countOnce = (model: string, systemText: string, tools?: Parameters<typeof countInputTokens>[3]) => {
     const key = `${model}\n${systemText}\n${tools?.map((tool) => tool.name).join(",") ?? ""}`;
-    if (!counts.has(key)) counts.set(key, countInputTokens(model, history, systemText, tools));
+    if (!counts.has(key)) {
+      counts.set(
+        key,
+        countInputTokens(model, history, systemText, tools).catch(() => {
+          countFailed = true;
+          return worstTokens(systemText.length + JSON.stringify(history).length + (tools ? JSON.stringify(tools).length : 0));
+        }),
+      );
+    }
     return counts.get(key)!;
   };
   /** The tools a reply with connectors sends: the forecast's when it has one, then the accounts'. */
@@ -1106,7 +1136,8 @@ export async function POST(request: Request) {
     // The model whose price was agreed to, while it's still there (otherwise the new price is asked about).
     const wanted = decided?.engine === engine && decided.model ? decided.model : body.model;
     // Only FLUX.2 Edit takes several photos at once; the other photo tools work on one.
-    const picked = isMedia(engine) ? pickModel(engine, last.content, providers(), combines ? "flux-2-edit" : wanted, editing) : null;
+    const combining = editing && combinesOn(engine);
+    const picked = isMedia(engine) ? pickModel(engine, last.content, providers(), combining ? "flux-2-edit" : wanted, editing) : null;
     const model = picked?.model ?? null;
     // Engines that aren't available yet reply for free. Media has a fixed price per model. Claude engines are charged by
     // length: Flash holds up to a limit, then keeps only what the reply really cost.
@@ -1127,7 +1158,7 @@ export async function POST(request: Request) {
     let levelWhy = "";
     let tools = NO_EXTRA_TOOLS;
     if (live) {
-      const count = combines ? photos.length : 1;
+      const count = combining ? photos.length : 1;
       if (model) priceCents = requestCents(model, last.content, count);
       else if (engine === "voice") priceCents = voiceCostCents(spokenText(last.content).length);
       // Priced on the recording's length (see transcribeCostCents); with no file, the engine just asks for one.
@@ -1219,13 +1250,16 @@ export async function POST(request: Request) {
       const size = imageDimensions(Buffer.from(photo.data, "base64"));
       return size !== null && size.width * size.height <= MAX_EDIT_PIXELS;
     });
+  // The picture check and the router are paid for by the request they decide, so someone who keeps
+  // getting the price question and never says yes gets the keyword rules' answer instead.
+  const askedOften = body.confirmed !== true && (await countOf(`price-q:${user.id}`)) >= PRICE_QUESTIONS_AN_HOUR;
   if (decided) {
     // Decided before the user agreed to the price (see Decided).
     if (decided.engine !== engine) reason = t("Flash's router read your request.");
     engine = decided.engine;
     fresh = decided.fresh === true && body.pictureAbove === true;
     if (fresh) reason = t("Flash makes a new picture.");
-  } else if (wouldEdit && !override && body.confirmed !== true && claudeConfigured() && editable(combines ? photos : [last.attachment!])) {
+  } else if (wouldEdit && !override && body.confirmed !== true && !askedOften && claudeConfigured() && editable(combinesOn(engine) ? photos : [last.attachment!])) {
     // The check runs only when every answer it can give leads to a request the user can pay for, which
     // pays for it: the change the rules decided on, an answer in words, and a new picture for the picture
     // above. (A request with a picture never goes to the free lane, whose models can't see pictures.)
@@ -1248,10 +1282,14 @@ export async function POST(request: Request) {
   // An image request with a photo attached edits it; a video request animates it.
   const editing = !fresh && (engine === "image" || engine === "video") && Boolean(last.attachment && EDITABLE_TYPE.test(last.attachment.mediaType));
   if (editing && body.pictureAbove === true) reason = engine === "video" ? t("Bringing the picture above to life.") : t("Changing the picture above.");
-  if (editing && !editable(combines ? photos : [last.attachment!])) {
+  // Every photo sent is priced and checked: several photos go to a picture only when Flash combines them.
+  if (editing && engine === "image" && severalFiles && !combinesOn(engine)) {
     return Response.json({ error: t("Flash can edit PNG, JPEG and WebP photos up to 2048 × 2048 pixels. Try a smaller photo.") }, { status: 400 });
   }
-  if (combines && editing) reason = t("Flash combines your {count} photos into one picture.", { count: photos.length });
+  if (editing && !editable(combinesOn(engine) ? photos : [last.attachment!])) {
+    return Response.json({ error: t("Flash can edit PNG, JPEG and WebP photos up to 2048 × 2048 pixels. Try a smaller photo.") }, { status: 400 });
+  }
+  if (combinesOn(engine) && editing) reason = t("Flash combines your {count} photos into one picture.", { count: photos.length });
   // A transcript is priced on how long the recording plays, so one Flash can't measure isn't sent.
   if (engine === "transcribe" && last.attachment && configured(engine) && !measured(last.attachment)) {
     return Response.json(
@@ -1269,7 +1307,7 @@ export async function POST(request: Request) {
   // In a voice conversation it also checks requests the rules sent to code, docs or search (see checksSpoken).
   const recheck = spoken && checksSpoken(engine);
   let plan: Awaited<ReturnType<typeof planFor>>;
-  if (!override && !decided && !namesAccount && !continued.length && (auto.guessed || recheck) && !last.attachment && claudeConfigured()) {
+  if (!override && !decided && !namesAccount && !continued.length && (auto.guessed || recheck) && !last.attachment && !askedOften && claudeConfigured()) {
     const ready = (e: Engine) => (isMedia(e) ? Boolean(pickModel(e, last.content, providers())) : configured(e));
     // A spoken turn about an app or deck the rules couldn't place: the guess knows about the build,
     // and the question Flash asked before it, which a "yes" may answer.
@@ -1374,7 +1412,12 @@ export async function POST(request: Request) {
             : t("This {model} image uses {credits} credits. You have {available}.", price);
     // What the router and the picture check decided, and the price asked, for the request the user agrees to (see Decided).
     const settled: Decided = { engine, ...(fresh && { fresh }), model: model.id, credits: needed };
+    await overLimit(`price-q:${user.id}`, PRICE_QUESTIONS_AN_HOUR, 3600_000);
     return Response.json({ error, code: "confirm_cost", needed, decided: settled }, { status: 409 });
+  }
+  // A Claude reply whose length couldn't be counted isn't run: nothing is charged or sent.
+  if (countFailed && metered && !free) {
+    return Response.json({ error: t("Flash is busy right now. Please try again in a moment.") }, { status: 503 });
   }
   const freeUse = { provider: "", model: "" };
   const freeAudio: { reserved?: number } = {};

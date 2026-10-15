@@ -1,8 +1,10 @@
 import { translatorFor } from "@/lib/server/i18n.ts";
-import { createSession, fromOwnPage, isSecure } from "@/lib/server/auth.ts";
+import { fromOwnPage } from "@/lib/server/auth.ts";
 import { clientIp, overLimit } from "@/lib/server/limits.ts";
 import { CLEAR_REF_COOKIE } from "@/lib/server/referrals.ts";
-import { redeemSignInLink, signInWithEmail } from "@/lib/server/signin.ts";
+import { mayUse } from "@/lib/server/link-browser.ts";
+import { redeemSignInLink, signInLinkEmail, signInWithEmail } from "@/lib/server/signin.ts";
+import { signInCookie } from "@/lib/server/two-factor.ts";
 
 /**
  * Signs in with the code from a sign-in link. The link opens a page with a button that calls
@@ -16,16 +18,22 @@ export async function POST(request: Request) {
   if (await overLimit(`link-use:${clientIp(request)}`, 30, 15 * 60_000)) {
     return Response.json({ error: t("Too many attempts. Try again in 15 minutes.") }, { status: 429 });
   }
-  const body = (await request.json().catch(() => ({}))) as { token?: string };
+  const body = (await request.json().catch(() => ({}))) as { token?: string; email?: string };
+  // Opened in a browser that didn't ask for it: the address it was sent to is typed first (see link-browser.ts).
+  const sentTo = await signInLinkEmail(body.token ?? "");
+  const use = sentTo ? mayUse(sentTo, request, body.email) : "ok";
+  if (use === "ask") return Response.json({ error: t("To keep your account safe, type the email address this link was sent to."), code: "confirm_email" }, { status: 400 });
+  if (use === "wrong") return Response.json({ error: t("That isn't the email address this link was sent to."), code: "confirm_email" }, { status: 400 });
   const link = await redeemSignInLink(body.token ?? "");
   if (!link) {
     return Response.json({ error: t("This link has expired or was already used. Ask for a new one.") }, { status: 400 });
   }
   const userId = await signInWithEmail(link.email, request);
-  const cookie = await createSession(userId, isSecure(request));
+  // With two-step sign-in on, this only gets them to the code page (see two-factor.ts).
+  const { cookie, twoFactor } = await signInCookie(userId, request, link.next);
   const headers = new Headers();
   headers.append("Set-Cookie", cookie);
   // Signed in, so a referral code (used if this made the account) is no longer needed.
   headers.append("Set-Cookie", CLEAR_REF_COOKIE);
-  return Response.json({ ok: true, next: link.next }, { headers });
+  return Response.json({ ok: true, next: link.next, twoFactor }, { headers });
 }

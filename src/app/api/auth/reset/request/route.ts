@@ -1,9 +1,10 @@
 import { translatorFor } from "@/lib/server/i18n.ts";
 import { sendReset } from "@/lib/server/account.ts";
-import { appUrl } from "@/lib/server/auth.ts";
-import { emailEnabled, demoEmails } from "@/lib/server/email.ts";
+import { appUrl, fromOwnPage } from "@/lib/server/auth.ts";
+import { emailEnabled, demoEmails, tooManyFromNetwork } from "@/lib/server/email.ts";
 import { one } from "@/lib/server/db.ts";
 import { clientIp, overLimit } from "@/lib/server/limits.ts";
+import { askedCookie } from "@/lib/server/link-browser.ts";
 
 const HOUR = 3600_000;
 
@@ -21,11 +22,15 @@ export async function POST(request: Request) {
       { status: 503 },
     );
   }
+  // Only Flash's own page may ask, so other sites can't use visitors' browsers to send mail.
+  if (!fromOwnPage(request)) return Response.json({ error: t("Please sign in on Flash's own page.") }, { status: 403 });
   const body = (await request.json().catch(() => ({}))) as { email?: string };
-  const email = (body.email ?? "").trim().toLowerCase();
-  if ((await overLimit(`reset-ip:${clientIp(request)}`, 10, HOUR)) || (await overLimit(`reset:${email}`, 3, HOUR))) {
+  const email = String(body.email ?? "").trim().toLowerCase().slice(0, 254);
+  const ip = clientIp(request);
+  if ((await overLimit(`reset-ip:${ip}`, 10, HOUR)) || (await overLimit(`reset:${email}`, 3, HOUR))) {
     return Response.json({ error: t("Too many requests. Try again in an hour.") }, { status: 429 });
   }
+  if (await tooManyFromNetwork(ip)) return Response.json({ error: t("Too many tries today. Please try again tomorrow.") }, { status: 429 });
   const user = await one<{ id: string; email: string }>("SELECT id, email FROM users WHERE email = ?", [email]);
   let devLink: string | undefined;
   if (user) {
@@ -35,5 +40,6 @@ export async function POST(request: Request) {
       console.error("[flash] reset email failed", err);
     }
   }
-  return Response.json({ ok: true, devLink });
+  // Set whether or not the account exists, so the answer doesn't say which.
+  return Response.json({ ok: true, devLink }, { headers: { "Set-Cookie": askedCookie(email, request) } });
 }

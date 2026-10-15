@@ -7,6 +7,7 @@ import { connectorsReady, keyVersions } from "./secret-box.ts";
 import { resealRegistrations } from "./mcp-oauth.ts";
 import { profitReport } from "./profit.ts";
 import { feeBps } from "./shop.ts";
+import { scannerMissing, scannerReady } from "./virus-scan.ts";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -176,6 +177,9 @@ export async function adminStats(days: number) {
         missing: [...googleMissing(), ...(connectorsReady() ? [] : ["CONNECTOR_KEYS"])],
       },
     },
+    // Virus scanning of uploads: which of its two variables are missing (never values), and whether
+    // the scanner answers right now (null when it isn't set up).
+    virusScan: { missing: scannerMissing(), ready: await scannerReady() },
     byModel: byModel.map((r) => ({ model: r.model, provider: r.provider, requests: n(r.requests), costCents: n(r.cost) })),
     series,
     topUsers: topUsers.map((r) => ({ email: r.email, requests: n(r.requests), credits: n(r.credits), costCents: n(r.cost) })),

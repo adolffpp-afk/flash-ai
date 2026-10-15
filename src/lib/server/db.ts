@@ -559,6 +559,35 @@ const SCHEMA = [
   )`,
   // SQLite counts NULLs as different in a UNIQUE constraint, so the shared rows need their own index.
   `CREATE UNIQUE INDEX IF NOT EXISTS mcp_client_registrations_shared ON mcp_client_registrations(issuer, redirect_uri) WHERE owner_user_id IS NULL`,
+  // Two-step sign-in with an authenticator app (see two-factor.ts): the app's secret, sealed, and
+  // whether it's on (enabled_at 0 while being set up); last_step is the newest code used, so no
+  // code works twice. Recovery codes are kept only as hashes, and each works once.
+  `CREATE TABLE IF NOT EXISTS two_factor (
+    user_id TEXT PRIMARY KEY,
+    enc_secret TEXT NOT NULL,
+    enabled_at INTEGER NOT NULL DEFAULT 0,
+    last_step INTEGER NOT NULL DEFAULT -1,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE TABLE IF NOT EXISTS two_factor_recovery (
+    user_id TEXT NOT NULL,
+    code_hash TEXT NOT NULL,
+    PRIMARY KEY (user_id, code_hash)
+  )`,
+  // A sign-in that got past the password (or link, or Google) and now waits for the code.
+  `CREATE TABLE IF NOT EXISTS two_factor_pending (
+    token_hash TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    next TEXT NOT NULL DEFAULT '/',
+    attempts INTEGER NOT NULL DEFAULT 0,
+    expires_at INTEGER NOT NULL
+  )`,
+  // Uploaded files the virus scanner passed, by content hash, so a file sent again isn't scanned
+  // again for a while (see virus-scan.ts).
+  `CREATE TABLE IF NOT EXISTS scanned_clean (
+    hash TEXT PRIMARY KEY,
+    scanned_at INTEGER NOT NULL
+  )`,
 ];
 
 let client: Client | null = null;

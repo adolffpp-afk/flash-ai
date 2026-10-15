@@ -803,7 +803,11 @@ test("#13, #14: when counting fails at the first step it is priced at the most i
   // The route's hold when counting is down, for a user with exactly what is needed.
   counting = { status: 500 };
   const kit = (await chatKit(u, [lin]))!;
-  const estimate = await countInputTokens(ascend.model, history, system("", "text", { connect: true }), kit.tools.map((t) => t.definition));
+  const definitions = kit.tools.map((t) => t.definition);
+  // Counting down: no guess is made (the chat route then sends nothing, see connect-routes).
+  await assert.rejects(countInputTokens(ascend.model, history, system("", "text", { connect: true }), definitions));
+  // A hold from a low guess (2.5 characters a token), as if one got through.
+  const estimate = Math.ceil(chars / 2.5) + worstTokens(JSON.stringify(definitions).length);
   const needed = planHold("text", ascend.model, estimate, 0, 1, 0, connectPlan(false)).needed;
   const hold = planHold("text", ascend.model, estimate, needed, 1, 0, connectPlan(false));
   const reply = (b: { maxTokens: number; capCents: number }, costs: number[]) =>

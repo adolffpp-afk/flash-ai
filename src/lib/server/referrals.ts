@@ -110,10 +110,12 @@ export async function releaseReferralBonuses(referrerId: string, at = now()): Pr
 
 /**
  * Takes back share (0 to 1) of the referral bonuses a refunded or disputed payment gave, minus
- * what earlier refunds of it already took. Like clawBack(), balances stop at zero and the same
- * event can't take twice (eventRef is part of each entry's unique ref).
+ * what earlier refunds of it already took. Like clawBack(), balances stop at zero, except that
+ * with debt (a dispute) the friend who disputed can go below it; the referrer never does, as
+ * they didn't dispute anything. The same event can't take twice (eventRef is part of each
+ * entry's unique ref).
  */
-export async function reverseReferral(purchase: Purchase, share: number, eventRef: string, reason: string): Promise<number> {
+export async function reverseReferral(purchase: Purchase, share: number, eventRef: string, reason: string, debt = false): Promise<number> {
   const reward = await one<{ friend_id: string; referrer_id: string; friend_credits: number; referrer_credits: number }>(
     "SELECT friend_id, referrer_id, friend_credits, referrer_credits FROM referral_rewards WHERE purchase_ref = ?",
     [purchase.ref],
@@ -138,7 +140,8 @@ export async function reverseReferral(purchase: Purchase, share: number, eventRe
       "SELECT COALESCE(-SUM(amount), 0) AS total FROM credit_ledger WHERE user_id = ? AND substr(ref, 1, ?) = ?",
       [userId, prefix.length, prefix],
     );
-    const amount = Math.min(target - Number(taken?.total ?? 0), await balance(userId));
+    const owed = target - Number(taken?.total ?? 0);
+    const amount = debt && side === "friend" ? owed : Math.min(owed, await balance(userId));
     if (amount <= 0) continue;
     const r = await run(
       "INSERT OR IGNORE INTO credit_ledger (user_id, amount, reason, ref, created_at) VALUES (?, ?, ?, ?, ?)",

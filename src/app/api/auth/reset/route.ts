@@ -1,7 +1,9 @@
 import { translatorFor } from "@/lib/server/i18n.ts";
-import { createSession, fromOwnPage, hashPassword, isSecure } from "@/lib/server/auth.ts";
-import { redeemToken } from "@/lib/server/account.ts";
+import { fromOwnPage, hashPassword } from "@/lib/server/auth.ts";
+import { redeemToken, resetLinkEmail } from "@/lib/server/account.ts";
+import { mayUse } from "@/lib/server/link-browser.ts";
 import { resetPassword } from "@/lib/server/signin.ts";
+import { signInCookie } from "@/lib/server/two-factor.ts";
 
 /** Sets a new password from a reset link, signs out every other device and signs this one in. */
 export async function POST(request: Request) {
@@ -9,15 +11,21 @@ export async function POST(request: Request) {
   const t = await translatorFor(request);
   // This signs in too, so only Flash's own reset page may use it (see fromOwnPage).
   if (!fromOwnPage(request)) return Response.json({ error: t("Open the link from your email again.") }, { status: 403 });
-  const body = (await request.json().catch(() => ({}))) as { token?: string; password?: string };
+  const body = (await request.json().catch(() => ({}))) as { token?: string; password?: string; email?: string };
   const password = body.password ?? "";
   if (password.length < 8) return Response.json({ error: t("Use a password of at least 8 characters.") }, { status: 400 });
+  // Opened in a browser that didn't ask for it: the address it was sent to is typed first (see link-browser.ts).
+  const sentTo = await resetLinkEmail(body.token ?? "");
+  const use = sentTo ? mayUse(sentTo, request, body.email) : "ok";
+  if (use === "ask") return Response.json({ error: t("To keep your account safe, type the email address this link was sent to."), code: "confirm_email" }, { status: 400 });
+  if (use === "wrong") return Response.json({ error: t("That isn't the email address this link was sent to."), code: "confirm_email" }, { status: 400 });
   const userId = await redeemToken(body.token ?? "", "reset");
   if (!userId) {
     return Response.json({ error: t("This link has expired or was already used. Ask for a new one.") }, { status: 400 });
   }
   // Opening the link proved they own the inbox: what an unconfirmed account had set up goes.
   await resetPassword(userId, await hashPassword(password));
-  const cookie = await createSession(userId, isSecure(request));
-  return Response.json({ ok: true }, { headers: { "Set-Cookie": cookie } });
+  // A reset link only proves the inbox, so with two-step sign-in on the code is still asked for.
+  const { cookie, twoFactor } = await signInCookie(userId, request, "/?reset=1");
+  return Response.json({ ok: true, twoFactor }, { headers: { "Set-Cookie": cookie } });
 }

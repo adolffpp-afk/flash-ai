@@ -41,6 +41,8 @@ type Stats = {
     // Google Drive in chat: set up once its Cloud project's four variables are set (and CONNECTOR_KEYS).
     google?: { setUp: boolean; missing: string[] };
   };
+  // Virus scanning of uploads (see docs/virus-scan-setup.md): missing variables, and whether the scanner answers.
+  virusScan?: { missing: string[]; ready: boolean | null };
   byModel: { model: string; provider: string; requests: number; costCents: number }[];
   series: { day: number; requests: number; costCents: number }[];
   topUsers: { email: string; requests: number; credits: number; costCents: number }[];
@@ -636,6 +638,22 @@ export function AdminDashboard() {
                 </div>
               )}
             </Panel>
+            {stats.virusScan && (
+              <Panel title="Virus scanning" note="Checks every file people upload before Flash uses or stores it. Steps are in docs/virus-scan-setup.md.">
+                {stats.virusScan.missing.length ? (
+                  <div className="text-sm text-zinc-500">
+                    <div>Off. Files aren&apos;t scanned until both variables are set.</div>
+                    <div className="text-xs break-all">Missing {stats.virusScan.missing.join(", ")}</div>
+                  </div>
+                ) : stats.virusScan.ready ? (
+                  <div className="text-sm text-emerald-300">On. The scanner is answering.</div>
+                ) : (
+                  <div className="text-sm text-amber-300">
+                    Set, but the scanner isn&apos;t answering. Files go through unscanned until it does. Check the scanner on Railway (it takes a few minutes to start).
+                  </div>
+                )}
+              </Panel>
+            )}
             <Panel title="Other bills" note="Payments and the bills you added under Net profit">
               <Table
                 head={["Provider", `Last ${stats.days} days`]}
