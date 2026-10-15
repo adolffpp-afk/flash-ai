@@ -155,7 +155,7 @@ test("apps are told who is signed in, and never see the session cookie", () => {
 
 test("a site on its own domain can sign people in and reach their data", () => {
   for (const path of ["/api/sites/shop/auth", "/api/sites/shop/mine", "/api/sites/shop/data"]) {
-    assert.deepEqual(routeHost("mybakery.com", path, "POST"), { pass: true }, path);
+    assert.deepEqual(routeHost("mybakery.com", path, "POST"), { siteApi: "shop" }, path);
   }
   // Flash's own pages still aren't reachable from a custom domain.
   assert.deepEqual(routeHost("mybakery.com", "/api/me", "GET"), { redirect: "/" });

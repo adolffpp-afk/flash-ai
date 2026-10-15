@@ -20,24 +20,31 @@ const clip = (text: string, max: number) => (text.length <= max ? text : `${text
 
 const escapeAttr = (text: string) => text.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
+/*
+ * Read on every view of a site, so each pattern looks only at the start of the page and bounds how
+ * far it looks: a page made of half-written tags can't make it slow.
+ */
+const READ = 32 * 1024;
+
 /** Whether the site already sets its own share card, which then wins. */
-export const hasOwnPreview = (html: string) => /<meta[^>]+property\s*=\s*["']og:title["']/i.test(html);
+export const hasOwnPreview = (html: string) => /<meta[^<>]{1,500}?property\s*=\s*["']og:title["']/i.test(html.slice(0, READ));
 
 /** The title, description and first real picture of a site. */
-export function sitePreview(html: string): SitePreview {
+export function sitePreview(page: string): SitePreview {
+  const html = page.slice(0, READ);
   // A many-page site titles its first page "Home · Name": the card shows the name.
-  const named = plain(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "").replace(/^home\s*[·|:–—-]\s*/i, "");
+  const named = plain(html.match(/<title[^<>]{0,200}>([^<]{0,500})<\/title>/i)?.[1] ?? "").replace(/^home\s*[·|:–—-]\s*/i, "");
   const title = clip(named || "Made with Flash", 90);
   const meta =
-    html.match(/<meta[^>]+name\s*=\s*["']description["'][^>]*content\s*=\s*"([^"]*)"/i)?.[1] ??
-    html.match(/<meta[^>]+name\s*=\s*["']description["'][^>]*content\s*=\s*'([^']*)'/i)?.[1] ??
-    html.match(/<meta[^>]+content\s*=\s*"([^"]*)"[^>]*name\s*=\s*["']description["']/i)?.[1];
+    html.match(/<meta[^<>]{1,500}?name\s*=\s*["']description["'][^<>]{0,500}?content\s*=\s*"([^"<>]{0,1000})"/i)?.[1] ??
+    html.match(/<meta[^<>]{1,500}?name\s*=\s*["']description["'][^<>]{0,500}?content\s*=\s*'([^'<>]{0,1000})'/i)?.[1] ??
+    html.match(/<meta[^<>]{1,500}?content\s*=\s*"([^"<>]{0,1000})"[^<>]{0,500}?name\s*=\s*["']description["']/i)?.[1];
   // No description: the first paragraph long enough to say something.
-  const paragraph = [...html.matchAll(/<p[^>]*>([\s\S]*?)<\/p>/gi)].map((m) => plain(m[1])).find((t) => t.length >= 40);
+  const paragraph = [...html.matchAll(/<p(?:\s[^<>]{0,300})?>([\s\S]{0,1500}?)<\/p>/gi)].map((m) => plain(m[1])).find((t) => t.length >= 40);
   const description = clip(decode(meta ?? "").trim() || paragraph || "", 200);
   // The first web picture that isn't an icon: data: pictures and SVGs don't show in share cards.
   const image =
-    [...html.matchAll(/<img[^>]+src\s*=\s*["'](https:\/\/[^"'\s]+)["']/gi)]
+    [...html.matchAll(/<img[^<>]{1,500}?src\s*=\s*["'](https:\/\/[^"'\s<>]{1,2000})["']/gi)]
       .map((m) => decode(m[1]))
       .find((src) => !/\.svg(\?|$)|icon|logo|favicon/i.test(src)) ?? null;
   return { title, description, image };

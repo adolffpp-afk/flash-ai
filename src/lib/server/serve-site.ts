@@ -1,7 +1,8 @@
 import { one } from "./db.ts";
 import { OWNER_CODE_PARAM, flashDbShim, injectHead, type OwnerView, type Visitor } from "../flashdb-shim.ts";
-import { SITE_COOKIE, newPageToken, visitorForSession } from "./site-auth.ts";
+import { FORM_COOKIE, SITE_COOKIE, formCookie, newPageToken, visitorForSession } from "./site-auth.ts";
 import { readCookie } from "./auth.ts";
+import { randomId } from "./ids.ts";
 import { ownerKeyForCode } from "./site-owner.ts";
 import { translatorFor } from "./i18n.ts";
 import { isOwnHost } from "../site-host.ts";
@@ -41,6 +42,10 @@ export async function serveSite(slug: string | null, pageUrl?: string, request?:
   // on the app's own domain. Opening the app any other way, even signed in to Flash, shows it as
   // visitors see it.
   const owner = request ? await ownerView(slug, request) : null;
+  // The key this browser's sign-in forms send back, kept in a cookie only Flash can read, so another
+  // site (or another app) can't sign a visitor in to this app as someone else (see the auth route).
+  const known = request ? readCookie(request, FORM_COOKIE) : null;
+  const formKey = known && /^[\w-]{16,64}$/.test(known) ? known : randomId(24);
 
   const html = injectHead(site.html, card + flashDbShim(
     `/api/sites/${slug}/data`,
@@ -54,16 +59,17 @@ export async function serveSite(slug: string | null, pageUrl?: string, request?:
     `/api/sites/${slug}/ai`,
     `/api/sites/${slug}/files`,
     owner,
+    formKey,
   ));
-  return new Response(html, {
-    headers: {
-      "Content-Type": "text/html; charset=utf-8",
-      "Content-Security-Policy": SANDBOX_CSP,
-      "X-Content-Type-Options": "nosniff",
-      // Never kept by a shared cache: the page says who is signed in, and may hold the owner's key.
-      "Cache-Control": "no-store, private",
-    },
+  const headers = new Headers({
+    "Content-Type": "text/html; charset=utf-8",
+    "Content-Security-Policy": SANDBOX_CSP,
+    "X-Content-Type-Options": "nosniff",
+    // Never kept by a shared cache: the page says who is signed in, and may hold the owner's key.
+    "Cache-Control": "no-store, private",
   });
+  if (formKey !== known) headers.append("Set-Cookie", formCookie(slug, formKey));
+  return new Response(html, { headers });
 }
 
 /**

@@ -40,7 +40,7 @@ test("buyers only go back to the site's own addresses", () => {
   assert.equal(safeReturn("https://evil.example/p/crumb-1", sites), sites[0]);
   assert.equal(safeReturn("javascript:alert(1)", sites), sites[0]);
   assert.equal(withPaidNote("https://crumbbakery.com/#/menu"), "https://crumbbakery.com/?flash_paid=1#/menu");
-  assert.deepEqual(routeHost("crumbbakery.com", "/api/sites/crumb-1/shop", "POST"), { pass: true });
+  assert.deepEqual(routeHost("crumbbakery.com", "/api/sites/crumb-1/shop", "POST"), { siteApi: "crumb-1" });
   assert.deepEqual(routeHost("crumbbakery.com", "/api/sites/crumb-1/shop/done", "GET"), { redirect: "/" });
 });
 
