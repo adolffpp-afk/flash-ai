@@ -76,8 +76,9 @@ export const MAX_INPUT_CHARS = 16_000;
 /**
  * Checks a call's input against the tool's schema as far as Flash can without a validator: an object,
  * not too big, with every required field, each top-level field of the type the schema names, and no
- * other field when the schema says so (additionalProperties: false), so a card never shows a field
- * the tool wouldn't send. Returns why it isn't usable, or "" when it is.
+ * other field when the schema says so (additionalProperties: false), at the top or in an object or
+ * an array's items inside it (see extraField), so a card never shows a field the tool wouldn't send.
+ * Returns why it isn't usable, or "" when it is.
  */
 export function inputProblem(schema: Record<string, unknown>, input: unknown): string {
   if (!input || typeof input !== "object" || Array.isArray(input)) return "the input must be an object";
@@ -109,6 +110,43 @@ export function inputProblem(schema: Record<string, unknown>, input: unknown): s
                   ? typeof value === "object" && !Array.isArray(value)
                   : true;
     if (!ok) return `${key} must be a ${type}`;
+  }
+  for (const [key, value] of Object.entries(fields)) {
+    const extra = Object.hasOwn(properties, key) ? extraField(properties[key], value, key.slice(0, 60)) : "";
+    if (extra) return `${extra} isn't a field of this tool`;
+  }
+  return "";
+}
+
+// How deep extraField follows a schema into an input.
+const MAX_FIELD_DEPTH = 16;
+
+/**
+ * Where value has a field its schema doesn't, inside it: in an object whose schema says
+ * additionalProperties: false, or in such an object among an array's items, at any depth (to
+ * MAX_FIELD_DEPTH). Its path ("slides[1].notes"), or "" when there is none. Only fields are
+ * checked here; types and required fields only at the top (see inputProblem).
+ */
+function extraField(schema: unknown, value: unknown, path: string, depth = 1): string {
+  if (!schema || typeof schema !== "object" || depth > MAX_FIELD_DEPTH || value === null || typeof value !== "object") return "";
+  const s = schema as { properties?: unknown; additionalProperties?: unknown; items?: unknown };
+  if (Array.isArray(value)) {
+    if (!s.items || typeof s.items !== "object" || Array.isArray(s.items)) return "";
+    for (const [i, item] of value.entries()) {
+      const extra = extraField(s.items, item, `${path}[${i}]`, depth + 1);
+      if (extra) return extra;
+    }
+    return "";
+  }
+  const properties = s.properties && typeof s.properties === "object" ? (s.properties as Record<string, unknown>) : {};
+  for (const [key, inner] of Object.entries(value as Record<string, unknown>)) {
+    const at = `${path}.${key.slice(0, 60)}`;
+    if (!Object.hasOwn(properties, key)) {
+      if (s.additionalProperties === false) return at;
+      continue;
+    }
+    const extra = extraField(properties[key], inner, at, depth + 1);
+    if (extra) return extra;
   }
   return "";
 }

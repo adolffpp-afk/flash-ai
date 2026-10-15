@@ -483,6 +483,32 @@ test("someone else's connection is never used, and the free lane refuses connect
   assert.equal(refuseUnpaid(false, 0, 10), false, "without connectors the free lane decides as before");
 });
 
+test("a field the schema doesn't have is refused inside objects and array items too, where the schema says additionalProperties: false", async () => {
+  const { inputProblem } = await import("../src/lib/engines/connect.ts");
+  const schema = {
+    type: "object",
+    properties: {
+      title: { type: "string" },
+      slides: { type: "array", items: { type: "object", properties: { title: { type: "string" }, body: { type: "string" } }, additionalProperties: false } },
+      page: { type: "object", properties: { size: { type: "string" }, margins: { type: "object", properties: { top: { type: "number" } }, additionalProperties: false } }, additionalProperties: false },
+      // A schema that allows more keeps allowing it, at any depth.
+      meta: { type: "object", properties: { tags: { type: "array", items: { type: "object", properties: { name: { type: "string" } } } } } },
+    },
+    required: ["title"],
+    additionalProperties: false,
+  };
+  assert.equal(inputProblem(schema, { title: "T", slides: [{ title: "a", body: "b" }], page: { size: "A4", margins: { top: 1 } }, meta: { tags: [{ name: "x", colour: "red" }], more: 1 } }), "");
+  assert.equal(inputProblem(schema, { title: "T", slides: [{ title: "a", body: "b" }, { title: "c", body: "d", notes: "e" }] }), "slides[1].notes isn't a field of this tool");
+  assert.equal(inputProblem(schema, { title: "T", page: { size: "A4", colour: "red" } }), "page.colour isn't a field of this tool");
+  assert.equal(inputProblem(schema, { title: "T", page: { margins: { top: 1, left: 2 } } }), "page.margins.left isn't a field of this tool");
+  // The checks at the top come first, as before, and say the same.
+  assert.equal(inputProblem(schema, { slides: [{ notes: "e" }] }), "missing title");
+  assert.equal(inputProblem(schema, { title: "T", share_with: "x", page: { colour: "red" } }), "share_with isn't a field of this tool");
+  assert.equal(inputProblem(schema, { title: 5, page: { colour: "red" } }), "title must be a string");
+  // Values that aren't what the schema says are left to the tool, as before.
+  assert.equal(inputProblem(schema, { title: "T", slides: ["a", null, [{ notes: 1 }]], page: { margins: "wide" } }), "");
+});
+
 test("a chat's replies that used a connected account are found, so the chat never goes to the free lane", async () => {
   const { accountReplies } = await import("../src/lib/connectors.ts");
   const chat = [

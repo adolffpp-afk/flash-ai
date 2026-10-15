@@ -564,9 +564,9 @@ export class GoogleClient {
   async callTool(tool: Pick<McpTool, "name">, args: Record<string, unknown>): Promise<ToolOutput> {
     this.deadline = Date.now() + CALL_TIMEOUT_MS;
     // A field the tool doesn't have is refused, never dropped, so what is sent is exactly what the card
-    // showed. Every schema says additionalProperties: false, so inputProblem (engines/connect.ts)
-    // refuses these, in the same words, before Claude's call runs or a card is made; this is the
-    // backstop, as GitHub's is. A slide's own fields are checked in createSlides.
+    // showed. Every schema says additionalProperties: false (a slide's too), so inputProblem
+    // (engines/connect.ts) refuses these, in the same words, before Claude's call runs or a card is
+    // made; this is the backstop, as GitHub's is. A slide's own fields are checked in createSlides.
     const fields = FIELDS.get(tool.name);
     const extra = fields && Object.keys(args).find((key) => !fields.includes(key));
     if (extra !== undefined) return unusable(`${extra.slice(0, 60)} isn't a field of this tool`);

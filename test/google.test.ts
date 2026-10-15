@@ -631,6 +631,21 @@ test("a field a tool doesn't have is refused, never dropped: what runs is exactl
   assert.match(JSON.stringify(sent[1].messages), /tool_result.*That input wasn't usable: share_with isn't a field of this tool/);
   assert.equal((await all("SELECT id FROM pending_actions WHERE user_id = ?", [user.id])).length, 0);
 
+  // Nor does a slide with a field a slide doesn't have: refused in the loop too, not on Approve.
+  replies.length = 0;
+  sent.length = 0;
+  replies.push(
+    {
+      blocks: [{ type: "tool_use", id: "toolu_3", name: "google-drive__create_slides", input: { title: "Trip", slides: [{ title: "Day 1", body: "Oslo" }, { title: "Day 2", body: "Bergen", notes: "secret" }] } }],
+      stop: "tool_use",
+    },
+    { blocks: [{ type: "text", text: "That didn't work." }], stop: "end_turn" },
+  );
+  const deckEvents = await chat(user, "Make a deck of my trip", [id]);
+  assert.ok(!deckEvents.some((e) => e.type === "approve_action"), "no card");
+  assert.match(JSON.stringify(sent[1].messages), /tool_result.*That input wasn't usable: slides\[1\]\.notes isn't a field of this tool/);
+  assert.equal((await all("SELECT id FROM pending_actions WHERE user_id = ?", [user.id])).length, 0);
+
   // Claude is told each tool (and each slide) takes nothing else, and every tool's input goes through
   // the connector loop's check (inputProblem) for it, in the same words as the client's backstop.
   const kit = (await chatKit(user.id, [id]))!;
@@ -651,6 +666,7 @@ test("a field a tool doesn't have is refused, never dropped: what runs is exactl
   }
   const deckSchema = kit.tools.find((t) => t.tool === "create_slides")!.definition.input_schema as { properties: { slides: { items: { additionalProperties?: unknown } } } };
   assert.equal(deckSchema.properties.slides.items.additionalProperties, false);
+  assert.equal(inputProblem(deckSchema, { title: "T", slides: [{ title: "a", body: "b", notes: "c" }] }), "slides[0].notes isn't a field of this tool");
   // Cards made with one anyway never send anything.
   const doc = (await kit.propose(kit.tools.find((t) => t.tool === "create_doc")!, { title: "Shared", text: "Hi", share_with: "someone@example.com" }))!;
   const deck = (await kit.propose(kit.tools.find((t) => t.tool === "create_slides")!, { title: "Trip", slides: [{ title: "Day 1", body: "Oslo", notes: "secret" }] }))!;
