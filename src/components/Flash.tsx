@@ -49,6 +49,7 @@ import { applyAppearance, applyTheme, notifiesWhenDone, readSetting, writeSettin
 import { LEVEL_ENGINES, isLevel, type Level } from "@/lib/levels";
 import { showLanguage, tNow, useT } from "@/lib/use-t";
 import { msg, type Translate } from "@/lib/i18n";
+import { inAndroidApp } from "@/lib/android-shell";
 
 // A project's messages are loaded the first time it is opened.
 type Project = ProjectSummary & { messages?: UIMessage[] };
@@ -362,7 +363,9 @@ export function Flash({
 
   async function refreshMe() {
     try {
-      const data = await api<Me>("/api/me");
+      const fetched = await api<Me>("/api/me");
+      // Play's billing rule: nothing is for sale inside the Android app (see android-shell.ts).
+      const data = inAndroidApp() ? { ...fetched, paymentsEnabled: false, testPurchases: false } : fetched;
       // Flash's own words switch to the account's language before its first screen shows.
       await showLanguage(data.user.language);
       setMe(data);

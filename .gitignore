@@ -43,3 +43,11 @@ next-env.d.ts
 
 # local database
 flash.db*
+
+# android: signing keys never go in the repo; build output stays local
+*.keystore
+*.jks
+/android/.gradle/
+/android/build/
+/android/app/build/
+/android/local.properties
