@@ -465,6 +465,31 @@ test("Business gives no more credits per dollar than Max, so its worst-case marg
   }
 });
 
+test("Agency is a 10-seat team plan that gives no more credits per dollar than Max", () => {
+  const agency = PLANS.find((p) => p.id === "agency")!;
+  assert.equal(agency.seats, 10);
+  assert.equal(agency.yearlyPriceCents, Math.round(agency.priceCents * 0.8));
+  assert.ok(agency.credits / agency.priceCents <= max.credits / max.priceCents);
+  assert.ok(agency.credits / agency.yearlyPriceCents <= max.credits / max.yearlyPriceCents);
+  for (const interval of ["month", "year"] as const) {
+    const months = interval === "year" ? 12 : 1;
+    assert.ok(margin(planPrice(agency, interval), agency.credits, months) > 0.25, interval);
+  }
+});
+
+test("Lite is the cheapest plan and gives fewer credits per dollar than Pro", () => {
+  const lite = PLANS.find((p) => p.id === "lite")!;
+  const pro = PLANS.find((p) => p.id === "pro")!;
+  assert.equal(Math.min(...PLANS.map((p) => p.priceCents)), lite.priceCents);
+  assert.equal(lite.yearlyPriceCents, Math.round(lite.priceCents * 0.8));
+  assert.ok(lite.credits / lite.priceCents < pro.credits / pro.priceCents);
+  assert.ok(lite.credits / lite.yearlyPriceCents <= pro.credits / pro.yearlyPriceCents);
+  for (const interval of ["month", "year"] as const) {
+    const months = interval === "year" ? 12 : 1;
+    assert.ok(margin(planPrice(lite, interval), lite.credits, months) > 0.3, interval);
+  }
+});
+
 test("referral bonuses are a share of the credits bought, the referrer's capped", () => {
   assert.deepEqual(referralBonus(500), {
     friend: Math.round(500 * REFERRAL_FRIEND_SHARE),

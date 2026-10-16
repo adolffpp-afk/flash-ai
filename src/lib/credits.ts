@@ -225,6 +225,19 @@ export type Plan = {
 };
 
 export const PLANS: Plan[] = [
+  /*
+   * Lite: a low first step. 118 credits per dollar (147 yearly): more than the best top-up, fewer
+   * than Pro's. Worst case, every credit used: 43% margin monthly, 35% yearly.
+   */
+  {
+    id: "lite",
+    name: "Lite",
+    priceCents: 1000,
+    yearlyPriceCents: 800,
+    credits: 1180,
+    blurb: msg("A low-cost start for lighter use"),
+    features: [msg("1,180 credits a month"), msg("About 10 apps or 270 chats"), msg("Writing, research, code, apps and slides"), msg("Unused credits carry over")],
+  },
   {
     id: "pro",
     name: "Pro",
@@ -266,6 +279,20 @@ export const PLANS: Plan[] = [
     blurb: msg("For teams: one bill, one shared credit pool"),
     features: [msg("13,500 shared credits a month"), msg("Up to 5 people, the owner included"), msg("Owner invites and removes members"), msg("Each member's projects stay private")],
     seats: 5,
+  },
+  /*
+   * Agency: like Business, for studios building for clients, with up to 10 people. 41,000 / $299
+   * is 137 credits per dollar, below Max's 140, so its worst-case margin is at least Max's too.
+   */
+  {
+    id: "agency",
+    name: "Agency",
+    priceCents: 29900,
+    yearlyPriceCents: 23920,
+    credits: 41000,
+    blurb: msg("For agencies building for clients"),
+    features: [msg("41,000 shared credits a month"), msg("Up to 10 people, the owner included"), msg("Custom domains for client apps"), msg("Each member's projects stay private")],
+    seats: 10,
   },
 ];
 
