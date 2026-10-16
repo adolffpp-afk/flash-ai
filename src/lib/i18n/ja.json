@@ -1794,6 +1794,7 @@
  "you picked it": "手動で選択",
  "{answer} The details are on your screen.": "{answer}詳しくは画面をご覧ください。",
  "{answer} The rest is on your screen.": "{answer}続きは画面をご覧ください。",
+ "{brand} is a trademark of {company}": "{brand}は{company}の商標です",
  "{collection} — {rule}": "{collection} — {rule}",
  "{connection} · {tool}": "{connection} · {tool}",
  "{cost} Say yes to go ahead, or no to skip it.": "{cost}続ける場合は「はい」、やめる場合は「いいえ」と言ってください。",

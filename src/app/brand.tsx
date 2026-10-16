@@ -142,9 +142,9 @@ export function InfinitySymbol({
 /**
  * "Flash ∞ AI", with the logo's infinity drawn rather than typed: the app's font has no ∞, and another
  * font's would not match. It takes the font, size, weight and colour around it, and screen readers read
- * it as "Flash Infinity AI".
+ * it as "Flash Infinity AI". With `tm`, a small raised ™ follows, for the places the name stands out.
  */
-export function Wordmark({ className = "" }: { className?: string }) {
+export function Wordmark({ className = "", tm = false }: { className?: string; tm?: boolean }) {
   const id = `wordmark${useId().replace(/[^a-zA-Z0-9]/g, "")}`;
   return (
     <span role="img" aria-label={BRAND_NAME} className={`whitespace-nowrap ${className}`}>
@@ -152,6 +152,8 @@ export function Wordmark({ className = "" }: { className?: string }) {
       {/* As in the logo: about half the text's height, just above the line, with a space either side. */}
       <InfinitySymbol id={id} className="mx-[0.24em] inline-block align-[0.06em]" />
       AI
+      {/* Raised without vertical-align, so the line keeps its height. */}
+      {tm && <span className="relative -top-[0.7em] ms-[0.08em] text-[max(0.45em,9px)] font-medium">™</span>}
     </span>
   );
 }

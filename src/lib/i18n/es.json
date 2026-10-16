@@ -1794,6 +1794,7 @@
  "you picked it": "lo elegiste tú",
  "{answer} The details are on your screen.": "{answer} Los detalles están en tu pantalla.",
  "{answer} The rest is on your screen.": "{answer} El resto está en tu pantalla.",
+ "{brand} is a trademark of {company}": "{brand} es una marca comercial de {company}",
  "{collection} — {rule}": "{collection} — {rule}",
  "{connection} · {tool}": "{connection} · {tool}",
  "{cost} Say yes to go ahead, or no to skip it.": "{cost} Di sí para continuar, o no para omitirlo.",

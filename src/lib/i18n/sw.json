@@ -1794,6 +1794,7 @@
  "you picked it": "uliichagua wewe",
  "{answer} The details are on your screen.": "{answer} Maelezo yako kwenye skrini yako.",
  "{answer} The rest is on your screen.": "{answer} Mengine yako kwenye skrini yako.",
+ "{brand} is a trademark of {company}": "{brand} ni chapa ya biashara ya {company}",
  "{collection} — {rule}": "{collection} — {rule}",
  "{connection} · {tool}": "{connection} · {tool}",
  "{cost} Say yes to go ahead, or no to skip it.": "{cost} Sema ndiyo ili kuendelea, au hapana ili kuacha.",
