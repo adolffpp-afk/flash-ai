@@ -32,6 +32,9 @@ type Payments = { available: boolean; allowed: boolean; seller: Seller };
 type Product = { id: string; name: string; label: string; delivery: boolean };
 type Order = { id: string; item: string; quantity: number; total: string; email: string; name: string; address: string; createdAt: number; done: boolean };
 type Shop = { products: Product[]; unpriced: string[]; orders: Order[] };
+// "Made with Flash ∞ AI" on the app's link preview. on: the owner's choice; allowed: their plan lets
+// them turn it off; shown: link previews say it now (always, without a paid plan).
+type MadeWith = { on: boolean; allowed: boolean; shown: boolean };
 
 const dateLabel = (when: number, locale: string) =>
   new Date(when).toLocaleString(locale, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
@@ -49,6 +52,7 @@ const sizeLabel = (bytes: number, t: T) =>
 // The heading over each part of an app.
 const VIEW_TITLES = {
   domains: msg("Domain"),
+  preview: msg("Link preview"),
   payments: msg("Payments"),
   messages: msg("Messages"),
   visits: msg("Visitors"),
@@ -67,12 +71,15 @@ const SOURCE_TEXT: Record<RuleSource, string> = {
 };
 const isOpen = (data: AppData) => data.collections.some((c) => c.rule === "open") || (data.fallback ?? data.guess) === "open";
 
-/** My websites and apps: every published app, its link, and the forms visitors sent to it. */
-export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (projectId: string) => void }) {
+/**
+ * My websites and apps: every published app, its link, and the forms visitors sent to it. onPlans
+ * opens the plans, for what comes with a paid one.
+ */
+export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEdit?: (projectId: string) => void; onPlans?: () => void }) {
   const t = useT();
   const [sites, setSites] = useState<Site[] | null>(null);
   const [open, setOpen] = useState<Site | null>(null);
-  const [view, setView] = useState<"messages" | "domains" | "payments" | "visits" | "history" | "members" | "ai" | "files" | "data">("messages");
+  const [view, setView] = useState<"messages" | "domains" | "preview" | "payments" | "visits" | "history" | "members" | "ai" | "files" | "data">("messages");
   const [appData, setAppData] = useState<ShownData | null>(null);
   const [records, setRecords] = useState<Records | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -90,6 +97,7 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
   const [item, setItem] = useState({ name: "", price: "", delivery: false });
   const [busy, setBusy] = useState(false);
   const [domains, setDomains] = useState<Domains | null>(null);
+  const [madeWith, setMadeWith] = useState<MadeWith | null>(null);
   const [newDomain, setNewDomain] = useState("");
   const [adding, setAdding] = useState(false);
   const [messages, setMessages] = useState<SiteMessage[] | null>(null);
@@ -170,6 +178,32 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
       setDomains((d) => d && { ...d, domains: d.domains.filter((x) => x.domain !== domain) });
     } catch {
       setError(t("Couldn't remove that domain. Please try again."));
+    }
+  }
+
+  async function showPreview(site: Site) {
+    setOpen(site);
+    setView("preview");
+    setMadeWith(null);
+    setError("");
+    try {
+      setMadeWith(await api<MadeWith>(`/api/sites/${site.slug}/made-with`));
+    } catch {
+      setError(t("Couldn't load the link preview. Please try again."));
+    }
+  }
+
+  /** Shows "Made with Flash ∞ AI" on the app's link preview, or (on a paid plan) stops it. */
+  async function saveMadeWith(on: boolean) {
+    if (!open || !madeWith) return;
+    const before = madeWith;
+    setMadeWith({ ...madeWith, on, shown: on });
+    setError("");
+    try {
+      setMadeWith(await api<MadeWith>(`/api/sites/${open.slug}/made-with`, { method: "PATCH", json: { on } }));
+    } catch (err) {
+      setMadeWith(before);
+      setError(err instanceof Error ? err.message : t("Couldn't save that. Please try again."));
     }
   }
 
@@ -982,6 +1016,51 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
                 </section>
               </div>
             )
+          ) : open && view === "preview" ? (
+            madeWith === null ? (
+              !error && <p className="text-sm text-zinc-500">{t("Loading…")}</p>
+            ) : (
+              <div className="space-y-4">
+                <label className="flex items-center gap-3 rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={madeWith.shown}
+                    disabled={!madeWith.allowed}
+                    onChange={(e) => saveMadeWith(e.target.checked)}
+                    className="h-4 w-4 accent-emerald-500 disabled:opacity-50"
+                  />
+                  <span className="flex-1">
+                    <span className="block text-zinc-100">{t("Show “Made with Flash ∞ AI” on link previews")}</span>
+                    <span className="mt-0.5 block text-xs text-zinc-500">
+                      {t("Flash adds it to the picture shown when this app's link is shared, if your app has no picture of its own.")}
+                    </span>
+                  </span>
+                  <span className="text-xs text-zinc-500">{madeWith.shown ? t("On") : t("Off")}</span>
+                </label>
+                {!madeWith.allowed && (
+                  <p className="text-sm text-gold-soft">
+                    {t("Paid plans can turn this off.")}
+                    {onPlans && (
+                      <>
+                        {" "}
+                        <button onClick={onPlans} className="text-primary-soft hover:underline">
+                          {t("Upgrade plan")}
+                        </button>
+                      </>
+                    )}
+                  </p>
+                )}
+                <a
+                  // The same address as the one shared with the link, so the browser never shows the other look.
+                  href={`/p/${open.slug}/card${madeWith.shown ? "" : "?plain=1"}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-block text-xs text-primary-soft hover:underline"
+                >
+                  {t("See the preview picture")} ↗
+                </a>
+              </div>
+            )
           ) : open && view === "domains" ? (
             domains === null ? (
               !error && <p className="text-sm text-zinc-500">{t("Loading…")}</p>
@@ -1180,6 +1259,9 @@ export function MyApps({ onClose, onEdit }: { onClose: () => void; onEdit?: (pro
                       </button>
                       <button onClick={() => showDomains(s)} className="text-zinc-200 hover:text-white">
                         🔗 {t("Domain")}
+                      </button>
+                      <button onClick={() => showPreview(s)} className="text-zinc-200 hover:text-white" title={t("What shows when this app's link is shared")}>
+                        🖼️ {t("Link preview")}
                       </button>
                       <button onClick={() => showPayments(s)} className="text-zinc-200 hover:text-white">
                         💳 {t("Payments")}

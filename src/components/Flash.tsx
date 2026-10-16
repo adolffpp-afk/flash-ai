@@ -2310,6 +2310,15 @@ export function Flash({
               setNotice(t("Ask for your changes here, then press Update site under the new version."));
               openProject(id);
             }}
+            // Only where plans can be bought: not before payments are on, nor inside the Android app (see android-shell.ts).
+            onPlans={
+              me.paymentsEnabled || me.testPurchases
+                ? () => {
+                    setShowApps(false);
+                    setShowCredits(true);
+                  }
+                : undefined
+            }
           />
         )}
         {showAutomations && <Automations onTemplates={() => setTemplates("")} onClose={() => setShowAutomations(false)} />}

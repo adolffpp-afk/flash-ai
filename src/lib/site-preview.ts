@@ -29,12 +29,18 @@ const READ = 32 * 1024;
 /** Whether the site already sets its own share card, which then wins. */
 export const hasOwnPreview = (html: string) => /<meta[^<>]{1,500}?property\s*=\s*["']og:title["']/i.test(html.slice(0, READ));
 
-/** The title, description and first real picture of a site. */
-export function sitePreview(page: string): SitePreview {
+// The title of a site whose page has none, while its link preview says what it was made with (see made-with.ts).
+export const MADE_WITH_TITLE = "Made with Flash";
+
+/**
+ * The title, description and first real picture of a site. `untitled` is the title when the page
+ * has none: "Made with Flash", or something of the app's own when its owner turned that off.
+ */
+export function sitePreview(page: string, untitled: string = MADE_WITH_TITLE): SitePreview {
   const html = page.slice(0, READ);
   // A many-page site titles its first page "Home · Name": the card shows the name.
   const named = plain(html.match(/<title[^<>]{0,200}>([^<]{0,500})<\/title>/i)?.[1] ?? "").replace(/^home\s*[·|:–—-]\s*/i, "");
-  const title = clip(named || "Made with Flash", 90);
+  const title = clip(named || untitled, 90);
   const meta =
     html.match(/<meta[^<>]{1,500}?name\s*=\s*["']description["'][^<>]{0,500}?content\s*=\s*"([^"<>]{0,1000})"/i)?.[1] ??
     html.match(/<meta[^<>]{1,500}?name\s*=\s*["']description["'][^<>]{0,500}?content\s*=\s*'([^'<>]{0,1000})'/i)?.[1] ??
@@ -42,11 +48,16 @@ export function sitePreview(page: string): SitePreview {
   // No description: the first paragraph long enough to say something.
   const paragraph = [...html.matchAll(/<p(?:\s[^<>]{0,300})?>([\s\S]{0,1500}?)<\/p>/gi)].map((m) => plain(m[1])).find((t) => t.length >= 40);
   const description = clip(decode(meta ?? "").trim() || paragraph || "", 200);
-  // The first web picture that isn't an icon: data: pictures and SVGs don't show in share cards.
+  // The page's own share picture first: Flash's tags go before the page's, and share apps use the first.
+  const own =
+    html.match(/<meta[^<>]{1,500}?property\s*=\s*["']og:image["'][^<>]{0,500}?content\s*=\s*["'](https:\/\/[^"'\s<>]{1,2000})["']/i)?.[1] ??
+    html.match(/<meta[^<>]{1,500}?content\s*=\s*["'](https:\/\/[^"'\s<>]{1,2000})["'][^<>]{0,500}?property\s*=\s*["']og:image["']/i)?.[1];
+  // Otherwise the first web picture that isn't an icon: data: pictures and SVGs don't show in share cards.
   const image =
-    [...html.matchAll(/<img[^<>]{1,500}?src\s*=\s*["'](https:\/\/[^"'\s<>]{1,2000})["']/gi)]
+    (own && decode(own)) ||
+    ([...html.matchAll(/<img[^<>]{1,500}?src\s*=\s*["'](https:\/\/[^"'\s<>]{1,2000})["']/gi)]
       .map((m) => decode(m[1]))
-      .find((src) => !/\.svg(\?|$)|icon|logo|favicon/i.test(src)) ?? null;
+      .find((src) => !/\.svg(\?|$)|icon|logo|favicon/i.test(src)) ?? null);
   return { title, description, image };
 }
 
