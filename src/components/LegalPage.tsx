@@ -31,6 +31,9 @@ export function LegalPage({ title, updated, children }: { title: string; updated
           <span>
             {TRADEMARK} is a trademark of {COMPANY}
           </span>
+          <Link href="/report" className="mt-2 w-fit text-zinc-400 hover:text-zinc-200">
+            Report content
+          </Link>
         </footer>
       </div>
     </div>
