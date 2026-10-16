@@ -658,6 +658,9 @@ const MIGRATIONS = [
   // GitHub account's number (its login is shown in the connection's label, see keepGithub); for Google
   // Drive, the Google account's sub (see keepGoogle).
   "ALTER TABLE connections ADD COLUMN account_id TEXT NOT NULL DEFAULT ''",
+  // Whether the app's link preview says "Made with Flash ∞ AI" (see made-with.ts). On until its owner,
+  // on a paid plan, turns it off.
+  "ALTER TABLE sites ADD COLUMN made_with INTEGER NOT NULL DEFAULT 1",
 ];
 
 async function init(c: Client) {

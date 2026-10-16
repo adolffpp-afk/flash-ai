@@ -127,7 +127,7 @@ export function unauthorized(): Response {
  * The owner and anyone else listed in FLASH_ADMIN_EMAILS (comma separated) can open /admin,
  * once they have confirmed the address (so nobody can sign up with it first and get in).
  */
-export function isAdmin(user: User): boolean {
+export function isAdmin(user: Pick<User, "email" | "verified_at">): boolean {
   const admins = (process.env.FLASH_ADMIN_EMAILS ?? "")
     .split(",")
     .map((e) => e.trim().toLowerCase())
