@@ -1,4 +1,4 @@
-import { PLANS, planPrice, type Interval, type Plan } from "../credits.ts";
+import { CARRY_CAP_FROM, CARRY_MONTHS, PLANS, carryOverTrim, planPrice, type Interval, type Plan } from "../credits.ts";
 import { all, one, run, now } from "./db.ts";
 
 export type Subscription = {
@@ -13,6 +13,7 @@ export type Subscription = {
   anchor: number;
   paid_until: number;
   test: number;
+  created_at: number;
 };
 
 export const planById = (id: string | undefined): Plan | undefined => PLANS.find((p) => p.id === id);
@@ -54,11 +55,33 @@ export async function grantPlanCredits(sub: Subscription, at = now()): Promise<b
   if (!plan) return false;
   const n = monthsSince(sub.anchor, at);
   if (addMonths(sub.anchor, n) >= sub.paid_until) return false;
+  const ref = `plan:${sub.id}:${n}`;
   const r = await run(
     "INSERT OR IGNORE INTO credit_ledger (user_id, amount, reason, ref, created_at) VALUES (?, ?, ?, ?, ?)",
-    [sub.user_id, plan.credits, `${plan.name} plan monthly credits`, `plan:${sub.id}:${n}`, at],
+    [sub.user_id, plan.credits, `${plan.name} plan monthly credits`, ref, at],
   );
-  return r.rowsAffected === 1;
+  if (r.rowsAffected !== 1) return false;
+  if (n > 0 && Number(sub.created_at) >= CARRY_CAP_FROM) await capCarryOver(sub, plan, ref, n, at);
+  return true;
+}
+
+/**
+ * Takes off plan credits left from earlier months above CARRY_MONTHS months' worth (see
+ * carryOverTrim), once per month. Everything but plan grants that was ever added counts as kept.
+ */
+async function capCarryOver(sub: Subscription, plan: Plan, grantRef: string, n: number, at: number): Promise<void> {
+  const row = await one<{ before: number; kept: number }>(
+    `SELECT COALESCE(SUM(CASE WHEN ref IS NULL OR ref <> ? THEN amount ELSE 0 END), 0) AS before,
+            COALESCE(SUM(CASE WHEN amount > 0 AND (ref IS NULL OR ref NOT LIKE 'plan:%') THEN amount ELSE 0 END), 0) AS kept
+     FROM credit_ledger WHERE user_id = ?`,
+    [grantRef, sub.user_id],
+  );
+  const trim = carryOverTrim(Number(row?.before ?? 0), Number(row?.kept ?? 0), plan.credits);
+  if (trim <= 0) return;
+  await run(
+    "INSERT OR IGNORE INTO credit_ledger (user_id, amount, reason, ref, created_at) VALUES (?, ?, ?, ?, ?)",
+    [sub.user_id, -trim, `Plan credits over ${CARRY_MONTHS} months' worth`, `carry:${sub.id}:${n}`, at],
+  );
 }
 
 /** Records a paid subscription period (a Stripe invoice, or a demo purchase) and grants credits. */

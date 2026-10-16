@@ -207,7 +207,8 @@ export const CREDIT_PACKS: CreditPack[] = [
 ];
 
 /*
- * Monthly plans. Credits arrive each month (yearly plans too) and unused credits carry over.
+ * Monthly plans. Credits arrive each month (yearly plans too) and unused plan credits carry over,
+ * up to CARRY_MONTHS months' worth (see grantPlanCredits).
  * Every plan must make a profit even if the subscriber uses every credit: at worst a credit
  * costs Flash 1/MARKUP cents, so credits / MARKUP + payment fees must stay below the price.
  * test/pricing.test.ts checks this for every plan and pack.
@@ -236,7 +237,7 @@ export const PLANS: Plan[] = [
     yearlyPriceCents: 800,
     credits: 1180,
     blurb: msg("A low-cost start for lighter use"),
-    features: [msg("1,180 credits a month"), msg("About 10 apps or 270 chats"), msg("Writing, research, code, apps and slides"), msg("Unused credits carry over")],
+    features: [msg("1,180 credits a month"), msg("About 10 apps or 270 chats"), msg("Writing, research, code, apps and slides"), msg("Up to 2 months of unused credits carry over")],
   },
   {
     id: "pro",
@@ -245,7 +246,7 @@ export const PLANS: Plan[] = [
     yearlyPriceCents: 2000,
     credits: 3000,
     blurb: msg("For makers who build every week"),
-    features: [msg("3,000 credits a month"), msg("About 25 apps or 700 chats"), msg("Writing, research, code, apps and slides"), msg("Unused credits carry over")],
+    features: [msg("3,000 credits a month"), msg("About 25 apps or 700 chats"), msg("Writing, research, code, apps and slides"), msg("Up to 2 months of unused credits carry over")],
   },
   {
     id: "power",
@@ -254,7 +255,7 @@ export const PLANS: Plan[] = [
     yearlyPriceCents: 4000,
     credits: 6500,
     blurb: msg("For daily building and research"),
-    features: [msg("6,500 credits a month"), msg("About 55 apps or 1,600 chats"), msg("Writing, research, code, apps and slides"), msg("Unused credits carry over")],
+    features: [msg("6,500 credits a month"), msg("About 55 apps or 1,600 chats"), msg("Writing, research, code, apps and slides"), msg("Up to 2 months of unused credits carry over")],
   },
   {
     id: "max",
@@ -263,7 +264,7 @@ export const PLANS: Plan[] = [
     yearlyPriceCents: 16000,
     credits: 28000,
     blurb: msg("For studios and heavy app building"),
-    features: [msg("28,000 credits a month"), msg("About 230 apps or 7,000 chats"), msg("Writing, research, code, apps and slides"), msg("Unused credits carry over")],
+    features: [msg("28,000 credits a month"), msg("About 230 apps or 7,000 chats"), msg("Writing, research, code, apps and slides"), msg("Up to 2 months of unused credits carry over")],
   },
   /*
    * Business: one owner pays and up to 5 people (the owner included) spend one shared monthly
@@ -295,6 +296,21 @@ export const PLANS: Plan[] = [
     seats: 10,
   },
 ];
+
+/*
+ * Carry-over. When a month's plan credits arrive, plan credits left from earlier months above
+ * CARRY_MONTHS months' worth are taken off, so credits sold at today's provider prices can't pile
+ * up without limit. Credits from top-up packs, referrals and refunds are never taken off: every
+ * credit of those ever received is counted as still there. Subscriptions started before
+ * CARRY_CAP_FROM keep unlimited carry-over, as the plan said when they bought it.
+ */
+export const CARRY_MONTHS = 2;
+export const CARRY_CAP_FROM = Date.UTC(2026, 9, 17);
+
+/** Plan credits to take off when a new month's credits arrive (0 when within the limit). */
+export function carryOverTrim(balanceBefore: number, keptCredits: number, monthlyCredits: number): number {
+  return Math.max(0, balanceBefore - Math.max(0, keptCredits) - CARRY_MONTHS * monthlyCredits);
+}
 
 export type Interval = "month" | "year";
 export const planPrice = (plan: Plan, interval: Interval) =>
