@@ -40,9 +40,12 @@ const MB = 1024 * 1024;
 /**
  * The limits that depend on time and on the server's memory, for a 2 GB function (Vercel's
  * default): the longest a PDF is read for, waiting for a turn included; the process's memory above
- * which no read starts; and the memory at which any read is stopped. Only tests change them.
+ * which no read starts; and the memory at which any read is stopped. A server of about 300 MB that
+ * read hostile PDFs holds about 900 MB with MALLOC_ARENA_MAX=2, most of it free for the next reads,
+ * so reads still start there; without it, it holds about 1.2 GB, and PDFs wait for a fresh server.
+ * Only tests change them.
  */
-export const LIMITS = { readMs: 8_000, startMaxMb: 900, rssMaxMb: 1_300 };
+export const LIMITS = { readMs: 8_000, startMaxMb: 1_000, rssMaxMb: 1_300 };
 
 /**
  * A PDF that wasn't read for a reason that has nothing to do with the file: other PDFs held every
