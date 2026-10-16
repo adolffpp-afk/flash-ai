@@ -85,6 +85,36 @@ test("several paths at once, a key written with escapes, the last of a repeated 
   assert.deepEqual(picker.end(), ["0:{}", "1:[1]"]);
 });
 
+test("a key that comes again replaces all the first one held, as with JSON.parse, whatever its new value", () => {
+  const paths: Path[] = [["facts", "us-gaap", "Revenues"], ["facts", "us-gaap", "Assets"]];
+  const cases: [string, unknown[]][] = [
+    ['{"facts":{"us-gaap":{"Revenues":{"v":1},"Revenues":null}}}', [undefined, undefined]],
+    ['{"facts":{"us-gaap":{"Revenues":{"v":1},"Rev\\u0065nues":7,"Assets":[1]}}}', [undefined, [1]]],
+    ['{"facts":{"us-gaap":{"Revenues":{"v":1},"Assets":[1]},"us-gaap":{"Assets":[2]}}}', [undefined, [2]]],
+    ['{"facts":{"us-gaap":{"Revenues":{"v":1}}},"facts":{}}', [undefined, undefined]],
+    ['{"facts":{"us-gaap":{"Revenues":{"v":1}}},"facts":[{"us-gaap":{"Revenues":{}}}]}', [undefined, undefined]],
+    ['{"facts":{"us-gaap":{"Revenues":{"v":1}}},"facts":{"us-gaap":{"Revenues":[2]}}}', [[2], undefined]],
+    ['{"facts":{"us-gaap":{"Revenues":{"v":1},"Assets":{"a":1},"Assets":null}},"other":{"facts":1}}', [{ v: 1 }, undefined]],
+  ];
+  for (const [text, want] of cases) {
+    assert.deepEqual(paths.map((path) => parsedAt(text, path)), want, `JSON.parse: ${text}`);
+    for (const size of [1, 5, Infinity]) assert.deepEqual(pick(text, paths, size), want, `in pieces of ${size}: ${text}`);
+  }
+});
+
+test("a byte order mark at the start is skipped, as TextDecoder skips it, and refused anywhere else", () => {
+  const encode = (...parts: (string | number[])[]) => new Uint8Array(parts.flatMap((part) => (typeof part === "string" ? [...new TextEncoder().encode(part)] : part)));
+  const bom = [0xef, 0xbb, 0xbf];
+  const text = '{"facts":{"us-gaap":{"Revenues":{"v":1}}}}';
+  for (const size of [1, 2, Infinity]) {
+    assert.deepEqual(pick(encode(bom, text), [["facts", "us-gaap", "Revenues"]], size), [{ v: 1 }], `in pieces of ${size}`);
+    for (const bytes of [encode(bom.slice(0, 2), text), encode(bom, bom, text), encode(" ", bom, text), encode(bom)]) {
+      assert.throws(() => JSON.parse(new TextDecoder().decode(bytes)), SyntaxError);
+      assert.throws(() => pick(bytes, [["facts", "us-gaap", "Revenues"]], size), SyntaxError, `${bytes.slice(0, 7)} in pieces of ${size}`);
+    }
+  }
+});
+
 test("a character of another script cut between two pieces is read whole", () => {
   const text = JSON.stringify({ facts: { "us-gaap": { "Revenus€": { label: "中文 😀 é", v: [1] } } } });
   const bytes = new TextEncoder().encode(text);

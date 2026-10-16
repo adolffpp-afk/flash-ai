@@ -35,16 +35,22 @@ const literal = (b: number) => (b >= 0x30 && b <= 0x39) || (b >= 0x61 && b <= 0x
 // A key longer than this can't be one asked for, so it isn't kept.
 const MAX_KEY_BYTES = 1024;
 const SEP = "\u0000";
+// The byte order mark TextDecoder drops from the start of a body.
+const BOM = [0xef, 0xbb, 0xbf];
 
 /**
  * Reads a JSON document piece by piece (push, then end) and keeps the object or list at each path
  * asked for, as keep makes it from the parsed value as soon as its last byte is in. Where a key comes
- * twice, the last one counts, as with JSON.parse. A path whose value isn't an object or a list, or that
- * the document doesn't have, gives undefined; paths aren't inside one another. A document that isn't
- * JSON throws a SyntaxError (outside the values kept, only its structure is checked).
+ * twice, the last one counts, as with JSON.parse: what the first one held is dropped, at its path and
+ * every path under it. A path whose value isn't an object or a list, or that the document doesn't have,
+ * gives undefined; paths aren't inside one another. A byte order mark at the start is skipped, as
+ * TextDecoder skips it. A document that isn't JSON throws a SyntaxError (outside the values kept, only
+ * its structure is checked).
  */
 export class JsonPicker<T> {
   private readonly wanted = new Map<string, number>();
+  // The paths each key on the way to one leads to: "facts" and "facts\0us-gaap" to facts.us-gaap.Revenues.
+  private readonly under = new Map<string, number[]>();
   private readonly depths = new Set<number>();
   private readonly deepest: number;
   private readonly keep: (value: unknown, index: number) => T;
@@ -53,6 +59,8 @@ export class JsonPicker<T> {
   private readonly stack: number[] = [];
   private readonly keys: (string | null)[] = [];
   private state = VALUE;
+  // How much of a byte order mark the start has had: 3 once the start is past, with one or without.
+  private bom = 0;
   private inString = false;
   private escaped = false;
   private inLiteral = false;
@@ -66,6 +74,10 @@ export class JsonPicker<T> {
     paths.forEach((path, i) => {
       this.wanted.set(path.join(SEP), i);
       this.depths.add(path.length);
+      for (let n = 1; n <= path.length; n++) {
+        const prefix = path.slice(0, n).join(SEP);
+        this.under.set(prefix, [...(this.under.get(prefix) ?? []), i]);
+      }
     });
     this.deepest = Math.max(0, ...this.depths);
     this.keep = keep;
@@ -76,7 +88,17 @@ export class JsonPicker<T> {
   push(chunk: Uint8Array): void {
     // Where the value being kept starts in this piece (0 when it began in an earlier one).
     let from = this.capture ? 0 : -1;
-    for (let i = 0; i < chunk.length; i++) {
+    let i = 0;
+    // A byte order mark before the document is skipped; part of one is refused, as JSON.parse would.
+    for (; this.bom < BOM.length && i < chunk.length; i++) {
+      if (chunk[i] === BOM[this.bom]) this.bom++;
+      else if (this.bom) throw new SyntaxError("JSON: an unexpected character");
+      else {
+        this.bom = BOM.length;
+        break;
+      }
+    }
+    for (; i < chunk.length; i++) {
       const b = chunk[i];
       if (this.inString) {
         if (this.escaped) this.escaped = false;
@@ -173,13 +195,21 @@ export class JsonPicker<T> {
     }
     this.keys[this.stack.length - 1] = key;
     this.key = null;
+    // A key that comes again replaces the value before it: nothing kept under the first one stands.
+    const at = this.path(this.stack.length);
+    if (at !== undefined) for (const index of this.under.get(at) ?? []) this.found[index] = undefined;
   }
 
-  /** The path a value starting here is at, when it's one asked for: every container an object, each at a key. */
+  /** The path a value starting here is at, when it's one asked for. */
   private match(): number | undefined {
-    const depth = this.stack.length;
+    const at = this.path(this.stack.length);
+    return at === undefined ? undefined : this.wanted.get(at);
+  }
+
+  /** The keys down to depth, joined, when every container on the way is an object, each at a key. */
+  private path(depth: number): string | undefined {
     for (let d = 0; d < depth; d++) if (this.stack[d] !== OBJECT || this.keys[d] === null) return undefined;
-    return this.wanted.get(this.keys.slice(0, depth).join(SEP));
+    return this.keys.slice(0, depth).join(SEP);
   }
 
   /** Parses the value just read whole, and keeps what keep makes of it. */
