@@ -18,7 +18,7 @@ export async function POST(request: Request) {
   if (!fromOwnPage(request)) return Response.json({ error: t("Please send reports from Flash's own page.") }, { status: 403 });
   const result = await submitReport(await request.json().catch(() => ({})), clientIp(request), t);
   if ("error" in result) return Response.json({ error: result.error }, { status: result.status });
-  // The same network reporting the same item again adds to its report, with no new email.
+  // The same network reporting the same item for the same reason again adds to its report, with no new email.
   if (!result.repeat) {
     const origin = appUrl(request);
     after(() => tellAdmins(result.id, origin).catch((err) => console.error("[flash] report email failed", err)));

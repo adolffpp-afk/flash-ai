@@ -6,8 +6,9 @@ import { readFileSync } from "node:fs";
 /*
  * Reporting what people share or publish: a report is kept as the item it points at (a shared chat,
  * a file link, a published app, found by its custom domain too), only from Flash's own pages,
- * within caps, with repeats from one network collapsed, and the admins are emailed at most once
- * per item an hour. Only admins see reports or act on them, and what reporters type is never HTML.
+ * within caps, with repeats from one network for one reason collapsed, and the admins are emailed
+ * at most once per item an hour and twice a day for one network's reports. Only admins see reports
+ * or act on them, and what reporters type is never HTML.
  */
 register("./support/route-hooks.mjs", import.meta.url);
 process.env.DATABASE_URL = ":memory:";
@@ -22,10 +23,10 @@ let clock = Date.UTC(2026, 9, 16, 12);
 Date.now = () => clock;
 
 // What Resend was asked to send.
-const sent: { to: string; subject: string; html: string; text: string }[] = [];
+const sent: { to: string; recipients: string[]; subject: string; html: string; text: string }[] = [];
 globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
   const body = JSON.parse(String(init?.body));
-  sent.push({ to: body.to[0], subject: body.subject, html: body.html, text: body.text });
+  sent.push({ to: body.to[0], recipients: body.to, subject: body.subject, html: body.html, text: body.text });
   return Response.json({ id: "email" });
 }) as typeof fetch;
 console.info = () => {};
@@ -35,7 +36,8 @@ const { run, one, all } = await import("../src/lib/server/db.ts");
 const { createSession } = await import("../src/lib/server/auth.ts");
 const { EMAIL_BUDGET, EMAILS, sendEmail } = await import("../src/lib/server/email.ts");
 const { reportTarget, MAX_REPORT_DETAILS } = await import("../src/lib/report.ts");
-const { REPORT_LIMITS, plainText } = await import("../src/lib/server/reports.ts");
+const { REPORT_LIMITS, listReports, plainText } = await import("../src/lib/server/reports.ts");
+const { countOf } = await import("../src/lib/server/limits.ts");
 const { serveSite } = await import("../src/lib/server/serve-site.ts");
 const reportRoute = await import("../src/app/api/reports/route.ts");
 const adminRoute = await import("../src/app/api/admin/reports/route.ts");
@@ -122,6 +124,8 @@ test("a shared chat's report is kept as that chat, as plain text, without the re
   assert.equal(stored!.owner_id, "owner");
   assert.equal(stored!.title, "Logo ideas");
   assert.ok(!JSON.stringify(stored).includes("203.0.113.1"), "only a hash of the network is kept");
+  const limits = await all<{ key: string }>("SELECT key FROM rate_limits");
+  assert.ok(limits.length && limits.every((l) => !l.key.includes("203.0.113.1")), "its limits count the hash too");
   assert.equal(sent.length, 1);
   assert.equal(sent[0].to, "boss@flash.test");
   assert.match(sent[0].subject, /^New report: shared chat Logo ideas$/);
@@ -152,28 +156,35 @@ test("a custom domain is reported as the app connected to it, with or without ww
   assert.equal((await report({ address: "gone.example", reason: "spam" }, "198.51.100.1")).status, 404);
 });
 
-test("one network reporting the same item again adds to its report; another network's counts apart; one email an hour", async () => {
+test("one network reporting the same item for the same reason adds to its report; another reason or network counts apart; one email an hour", async () => {
   await afterwards();
   const emails = () => sent.filter((s) => s.subject.includes("Golden Crumb")).length;
   assert.equal(emails(), 1, "the custom-domain report above emailed the admins");
-  // The same network again, now with details: still one report, counted twice.
-  assert.equal((await report({ address: `${SITE}/p/bakery-ab12`, reason: "spam", details: "Copies my bakery's photos" }, "198.51.100.1")).status, 200);
+  // The same network again for the same reason, now with details: still one report, counted again.
+  assert.equal((await report({ address: `${SITE}/p/bakery-ab12`, reason: "copyright", details: "Copies my bakery's photos" }, "198.51.100.1")).status, 200);
+  // More details are added below the ones it has, once.
+  for (let i = 0; i < 2; i++) assert.equal((await report({ address: "/p/bakery-ab12", reason: "copyright", details: "And my logo" }, "198.51.100.1")).status, 200);
   // Another address in the same IPv6 /64 is the same network.
   assert.equal((await report({ address: "/p/bakery-ab12", reason: "spam" }, "2001:db8:7:7::1")).status, 200);
-  assert.equal((await report({ address: "/p/bakery-ab12", reason: "illegal" }, "2001:db8:7:7::2")).status, 200);
+  assert.equal((await report({ address: "/p/bakery-ab12", reason: "spam" }, "2001:db8:7:7::2")).status, 200);
+  // Another reason from that network is a report of its own, so what it says isn't lost.
+  assert.equal((await report({ address: "/p/bakery-ab12", reason: "illegal", details: "Sells stolen cards" }, "2001:db8:7:7::3")).status, 200);
   await afterwards();
   const rows = await reportsOf("site", "bakery-ab12");
-  assert.equal(rows.length, 2);
-  assert.equal(rows[0].repeats, 2);
-  assert.equal(rows[0].reason, "copyright", "the first report's reason stays");
-  assert.equal(rows[0].details, "Copies my bakery's photos", "details it didn't have are added");
-  assert.equal(rows[1].repeats, 2);
+  assert.deepEqual(
+    rows.map((r) => [r.reason, r.repeats, r.details]),
+    [
+      ["copyright", 4, "Copies my bakery's photos\nAnd my logo"],
+      ["spam", 2, ""],
+      ["illegal", 1, "Sells stolen cards"],
+    ],
+  );
   assert.equal(emails(), 1, "no second email about the same item within the hour");
   clock += HOUR + 1;
   assert.equal((await report({ address: "/p/bakery-ab12", reason: "violence" }, "192.0.2.50")).status, 200);
   await afterwards();
   assert.equal(emails(), 2, "an hour later, a new report emails again");
-  assert.match(sent.at(-1)!.text, /Reports about it: 3/);
+  assert.match(sent.at(-1)!.text, /Reports about it: 4/);
 });
 
 test("reports are capped: a reason from the list, short details, a real email, and so many per network and for everyone", async () => {
@@ -194,12 +205,28 @@ test("reports are capped: a reason from the list, short details, a real email, a
   const refused = await report({ address, reason: "spam" }, "192.0.2.99");
   assert.equal(refused.status, 429);
   assert.match((await refused.json()).error, /Too many requests/);
+  // And perDay a day: then waiting an hour doesn't help, and it says so.
+  for (let hour = 1; hour < REPORT_LIMITS.perDay / REPORT_LIMITS.perHour; hour++) {
+    clock += HOUR + 1;
+    for (let i = 0; i < REPORT_LIMITS.perHour; i++) assert.equal((await report({ address, reason: "spam" }, "192.0.2.99")).status, 200);
+  }
+  clock += HOUR + 1;
+  const today = await report({ address, reason: "spam" }, "192.0.2.99");
+  assert.equal(today.status, 429);
+  assert.match((await today.json()).error, /Too many tries today/);
 
   // Everyone together: once the day's reports are used up, a new network waits too.
   await run("UPDATE rate_limits SET count = ? WHERE key = 'report-all'", [REPORT_LIMITS.allPerDay]);
-  assert.equal((await report({ address, reason: "spam" }, "192.0.2.150")).status, 429);
+  const full = await report({ address, reason: "spam" }, "192.0.2.150");
+  assert.equal(full.status, 429);
+  assert.match((await full.json()).error, /Too many tries today/);
   await run("DELETE FROM rate_limits WHERE key = 'report-all'");
   assert.equal((await report({ address, reason: "spam" }, "192.0.2.151")).status, 200);
+  // Only reports of something Flash has count for everyone.
+  const counted = await countOf("report-all");
+  assert.equal((await report({ address: "https://not-connected.example/", reason: "spam" }, "192.0.2.152")).status, 404);
+  assert.equal((await report({ address: `${SITE}/settings`, reason: "spam" }, "192.0.2.152")).status, 400);
+  assert.equal(await countOf("report-all"), counted);
 });
 
 test("another site, a published app or a plain form can't send reports from a visitor's browser", async () => {
@@ -234,7 +261,7 @@ test("without email set up a report is still kept; report emails stop at their o
   assert.equal(await sendEmail("someone@x.co", EMAILS.signin("https://x/s"), "account"), true, "sign-in emails still go");
 });
 
-test("only admins see reports, from Flash's own dashboard, and taking down works only where Flash has a way", async () => {
+test("only admins see reports, from Flash's own dashboard, and take down a share link, a file link or an app", async () => {
   const owner = await cookieFor("owner");
   const boss = await cookieFor("boss");
   assert.equal((await admin("GET", "")).status, 401);
@@ -249,8 +276,7 @@ test("only admins see reports, from Flash's own dashboard, and taking down works
   assert.ok(items.every((i) => i.open > 0 && i.ownerEmail === "owner@x.co"));
   const share = items.find((i) => i.kind === "share")!;
   assert.ok(share.reports.some((r) => r.details === "Fake <b>pills</b> sold here\nTwice"), "the dashboard gets what was typed as text, to show as text");
-  assert.equal(items.find((i) => i.kind === "file")!.canTakeDown, false);
-  assert.equal(items.find((i) => i.kind === "site")!.canTakeDown, true);
+  assert.ok(items.every((i) => i.canTakeDown));
 
   // Another site can't make the admin's browser act.
   assert.equal((await admin("POST", boss, { kind: "share", id: SHARE, action: "take_down" }, { origin: "https://evil.example" })).status, 403);
@@ -261,9 +287,11 @@ test("only admins see reports, from Flash's own dashboard, and taking down works
   const reviewed = await admin("POST", boss, { kind: "file", id: FILE, action: "reviewed" });
   assert.equal(reviewed.status, 200);
   assert.ok((await reportsOf("file", FILE)).every((r) => r.status === "reviewed"));
-  // A file link has no take-down of its own, so it stays.
-  assert.equal((await admin("POST", boss, { kind: "file", id: FILE, action: "take_down" })).status, 400);
-  assert.ok(await one("SELECT 1 FROM public_files WHERE id = ?", [FILE]));
+  // Taking down a file link turns that link off; the owner's file stays.
+  assert.equal((await admin("POST", boss, { kind: "file", id: FILE, action: "take_down" })).status, 200);
+  assert.equal(await one("SELECT 1 FROM public_files WHERE id = ?", [FILE]), null);
+  assert.ok(await one("SELECT 1 FROM files WHERE id = 'file1'"));
+  assert.ok((await reportsOf("file", FILE)).every((r) => r.status === "taken_down"));
 
   // Taking down a shared chat turns its link off; the owner's chat stays.
   assert.equal((await admin("POST", boss, { kind: "share", id: SHARE, action: "take_down" })).status, 200);
@@ -279,12 +307,13 @@ test("only admins see reports, from Flash's own dashboard, and taking down works
   const log = await all<{ item_kind: string; action: string; admin_email: string }>("SELECT item_kind, action, admin_email FROM report_actions ORDER BY id");
   assert.deepEqual(log.map((l) => `${l.item_kind} ${l.action} ${l.admin_email}`), [
     "file reviewed boss@flash.test",
+    "file taken_down boss@flash.test",
     "share taken_down boss@flash.test",
     "site taken_down boss@flash.test",
   ]);
   const after = (await (await admin("GET", boss)).json()) as { items: { kind: string; status: string; live: boolean; last: { action: string } | null }[] };
   assert.deepEqual(after.items.map((i) => `${i.kind} ${i.status} ${i.live} ${i.last?.action}`).sort(), [
-    "file reviewed true reviewed",
+    "file taken_down false taken_down",
     "share taken_down false taken_down",
     "site taken_down false taken_down",
   ]);
@@ -320,6 +349,50 @@ test("published apps get nothing from Flash on their pages: they're reported on 
   for (const path of ["components/Landing.tsx", "components/LegalPage.tsx", "components/AccountMenu.tsx", "components/ReportButton.tsx"]) {
     assert.ok(src(path).includes('href="/report"'), path);
   }
+  assert.ok(!src("components/LegalPage.tsx").includes('<Link href="/report"'), "a full page load, so /report's language doesn't stay after Back");
   assert.ok(src("app/s/[id]/page.tsx").includes("<ReportButton"), "shared chats have their own Report form");
   assert.match(src("app/privacy/page.tsx"), /<strong>Reports:<\/strong>[^<]*hashed/);
+});
+
+test("one network can't use up the day's report emails, and each report is one email to every admin", async () => {
+  clock += 24 * HOUR;
+  process.env.FLASH_ADMIN_EMAILS = "boss@flash.test, deputy@flash.test";
+  for (let i = 0; i < 3; i++) {
+    await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES (?, 'owner', ?, '<p>App</p>', 0, 0)", [`app-${i}`, `App ${i}`]);
+  }
+  const before = sent.length;
+  for (let i = 0; i < 3; i++) assert.equal((await report({ address: `/p/app-${i}`, reason: "spam" }, "198.51.100.77")).status, 200);
+  await afterwards();
+  assert.equal(sent.length - before, REPORT_LIMITS.emailsPerNetwork, "one network's new reports email the admins twice a day at most");
+  assert.deepEqual(sent.at(-1)!.recipients, ["boss@flash.test", "deputy@flash.test"], "one email to every admin");
+  // Another network reporting the item that got no email still gets one sent.
+  assert.equal((await report({ address: "/p/app-2", reason: "privacy" }, "203.0.113.77")).status, 200);
+  await afterwards();
+  assert.equal(sent.length - before, REPORT_LIMITS.emailsPerNetwork + 1);
+  assert.match(sent.at(-1)!.subject, /App 2$/);
+  // Each report counts once against the day's report emails, however many admins it goes to; the
+  // day's total counts every admin.
+  const day = new Date(clock).toISOString().slice(0, 10);
+  assert.equal(await countOf(`email-report:${day}`), REPORT_LIMITS.emailsPerNetwork + 1);
+  assert.equal(await countOf(`email-day:${day}`), 2 * (REPORT_LIMITS.emailsPerNetwork + 1));
+  process.env.FLASH_ADMIN_EMAILS = "boss@flash.test";
+});
+
+test("the dashboard lists every open report, however many newer ones were closed", async () => {
+  const add = (id: string, status: string, at: number) =>
+    run("INSERT INTO reports (id, item_kind, item_id, owner_id, title, reason, reporter, status, created_at, updated_at) VALUES (?, 'share', ?, 'owner', 'Chat', 'spam', ?, ?, ?, ?)", [
+      id,
+      `Share-${id}`,
+      id,
+      status,
+      at,
+      at,
+    ]);
+  await add("old-open", "open", 1);
+  const open = Number((await one<{ n: number }>("SELECT COUNT(*) AS n FROM reports WHERE status = 'open'"))!.n);
+  for (let i = 0; i <= open; i++) await add(`closed-${i}`, "reviewed", clock + 1 + i);
+  // Room for only as many reports as are open, all newer ones closed: every open one is listed.
+  const items = await listReports(open);
+  assert.ok(items.some((i) => i.id === "Share-old-open" && i.open === 1));
+  assert.equal(items.reduce((n, i) => n + i.open, 0), open);
 });

@@ -35,7 +35,9 @@ export function ReportForm({ t, address, onCancel, after }: { t: T; address?: st
       await api("/api/reports", { method: "POST", json: { address: address ?? typed, reason, details, email } });
       setSent(true);
     } catch (err) {
-      setError(err instanceof Error && err.message ? err.message : t("Something went wrong. Please try again."));
+      // Flash's own replies are in the form's language; a lost connection or a server failure isn't.
+      const status = (err as { status?: number } | null)?.status;
+      setError(err instanceof Error && status !== undefined && status < 500 && err.message ? err.message : t("Something went wrong. Please try again."));
     } finally {
       setBusy(false);
     }

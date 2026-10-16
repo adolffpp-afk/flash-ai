@@ -578,9 +578,9 @@ const SCHEMA = [
     scanned_at INTEGER NOT NULL
   )`,
   // Reports of what people share or publish, for Flash's admins only (see reports.ts). While an
-  // item's report is open, the same network reporting it again adds to repeats instead of a new
-  // row. reporter is a hash of the network's address, never the address itself. owner_id is whose
-  // item it was, and title what it was called, when it was reported.
+  // item's report is open, the same network reporting it again for the same reason adds to repeats
+  // instead of a new row. reporter is a hash of the network's address, never the address itself.
+  // owner_id is whose item it was, and title what it was called, when it was reported.
   `CREATE TABLE IF NOT EXISTS reports (
     id TEXT PRIMARY KEY,
     item_kind TEXT NOT NULL,
@@ -597,7 +597,7 @@ const SCHEMA = [
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   )`,
-  `CREATE UNIQUE INDEX IF NOT EXISTS reports_open ON reports(item_kind, item_id, reporter) WHERE status = 'open'`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS reports_open ON reports(item_kind, item_id, reporter, reason) WHERE status = 'open'`,
   `CREATE INDEX IF NOT EXISTS reports_time ON reports(created_at)`,
   // What an admin did about an item's reports (marked them reviewed, took the item down), by whom and when.
   `CREATE TABLE IF NOT EXISTS report_actions (

@@ -13,11 +13,12 @@ import type { ReportedItem } from "@/lib/server/reports.ts";
 
 const when = (t: number) => new Date(t).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
-// What taking each kind down does, said before it happens. A file link has no take-down of its own.
-const TAKE_DOWN_SAYS: Partial<Record<ReportedItem["kind"], string>> = {
+// What taking each kind down does, said before it happens.
+const TAKE_DOWN_SAYS: Record<ReportedItem["kind"], string> = {
   share:
     "Turn off this share link? It stops working for everyone at once. The owner's chat isn't changed, and they could share it again.",
   site: "Unpublish this app? It goes offline at once with everything it kept: its data, members, form messages, orders, files and earlier versions, and its own domains are disconnected. This can't be undone. The chat the owner built it in isn't changed.",
+  file: "Turn off this file link? It stops working for everyone at once (browsers that already opened it may keep it for up to a day). The owner's file stays in their account.",
 };
 
 function Status({ item }: { item: ReportedItem }) {
@@ -103,12 +104,6 @@ function ReportCard({ item, onChange }: { item: ReportedItem; onChange: (items: 
           </div>
         </div>
       )}
-      {item.kind === "file" && item.live && item.status !== "taken_down" && (
-        <p className="mt-2 text-xs text-zinc-500">
-          File links can only be marked reviewed: Flash has no way to turn off one file link without deleting the owner&apos;s file. Email
-          the owner if it has to go.
-        </p>
-      )}
       {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
 
       <ul className="mt-3 divide-y divide-zinc-800/70 border-t border-zinc-800/70">
@@ -150,9 +145,10 @@ export function AdminReports({ items, error, onChange }: { items: ReportedItem[]
   return (
     <div className="mt-6 space-y-3">
       <p className="text-xs text-zinc-500">
-        What people reported from shared chats and the public Report content page (/report). Several reports from one network count once.
-        Mark reviewed closes an item&apos;s open reports; Take down turns off a share link or unpublishes an app, as its owner would.
-        You get an email for a new report at most once per item an hour.
+        What people reported from shared chats and the public Report content page (/report). Several reports from one network for the
+        same reason count once. Mark reviewed closes an item&apos;s open reports; Take down turns off a share link or a file link, or
+        unpublishes an app as its owner would. You get an email for a new report at most once per item an hour, and for at most two
+        of one network&apos;s reports a day.
       </p>
       {items.length === 0 ? (
         <p className="rounded-xl border border-zinc-800 p-6 text-center text-sm text-zinc-500">No reports yet.</p>

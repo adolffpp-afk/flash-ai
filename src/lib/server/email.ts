@@ -30,7 +30,8 @@ export const EMAIL_BUDGET = {
   // sign-ups and password resets together).
   perNetwork: 15,
   // Emails telling Flash's admins about new reports, a day (and one per reported item an hour, see
-  // reports.ts). Anyone can report, so these have a share of their own. Every report is still
+  // reports.ts). Anyone can report, so these have a share of their own. One email goes to every
+  // admin at once and counts once here (once per admin in the day's total). Every report is still
   // listed in /admin > Reports.
   reports: 10,
 };
@@ -55,9 +56,10 @@ export type EmailKind = "account" | "new" | "other" | "report" | { owner: string
 /**
  * Whether today's budget lets an email of this kind go out, counting it when it does. Account
  * emails and the rest are counted apart, so sign-in emails never use up what orders and invites
- * get, and those never use up what sign-in emails keep.
+ * get, and those never use up what sign-in emails keep. The day's totals count each recipient, so
+ * an email to several never takes more than the provider allows.
  */
-async function withinBudget(kind: EmailKind): Promise<boolean> {
+async function withinBudget(kind: EmailKind, recipients: number): Promise<boolean> {
   const day = new Date(now()).toISOString().slice(0, 10);
   const accounts = `email-day-acct:${day}`;
   const others = `email-day:${day}`;
@@ -66,14 +68,14 @@ async function withinBudget(kind: EmailKind): Promise<boolean> {
     return false;
   }
   if (kind === "account" || kind === "new") {
-    await overLimit(accounts, Infinity, DAY);
+    await overLimit(accounts, Infinity, DAY, recipients);
     return true;
   }
   // Checked first, so one person's busy apps (or a flood of reports) can't use up everyone else's share.
   if (typeof kind === "object" && (await overLimit(`email-owner:${kind.owner}`, EMAIL_BUDGET.perOwner, DAY))) return false;
   if (kind === "report" && (await overLimit(`email-report:${day}`, EMAIL_BUDGET.reports, DAY))) return false;
-  const full = (await countOf(accounts)) + (await countOf(others)) >= EMAIL_BUDGET.perDay;
-  if (full || (await overLimit(others, EMAIL_BUDGET.perDay - EMAIL_BUDGET.keptForAccounts, DAY))) {
+  const full = (await countOf(accounts)) + (await countOf(others)) + recipients > EMAIL_BUDGET.perDay;
+  if (full || (await overLimit(others, EMAIL_BUDGET.perDay - EMAIL_BUDGET.keptForAccounts, DAY, recipients))) {
     console.warn("[flash] today's emails for apps and invites are used up; raise EMAIL_BUDGET in email.ts on a bigger email plan");
     return false;
   }
@@ -187,16 +189,18 @@ export const EMAILS = {
 };
 
 /**
- * Sends one email, when today's budget allows its kind (see EMAIL_BUDGET). Returns false when the
- * budget held it back; account emails never are. With email off, nothing is sent.
+ * Sends one email, to one address or several, when today's budget allows its kind (see
+ * EMAIL_BUDGET). Returns false when the budget held it back; account emails never are. With email
+ * off, nothing is sent.
  */
-export async function sendEmail(to: string, message: { subject: string; html: string; text: string }, kind: EmailKind): Promise<boolean> {
+export async function sendEmail(to: string | string[], message: { subject: string; html: string; text: string }, kind: EmailKind): Promise<boolean> {
   if (!emailEnabled()) return true;
-  if (!(await withinBudget(kind))) return false;
+  const recipients = Array.isArray(to) ? to : [to];
+  if (!(await withinBudget(kind, recipients.length))) return false;
   const res = await fetch(`${RESEND_API}/emails`, {
     method: "POST",
     headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ from: FROM(), to: [to], ...message }),
+    body: JSON.stringify({ from: FROM(), to: recipients, ...message }),
     signal: AbortSignal.timeout(15_000),
   });
   if (!res.ok) throw new Error(`Email provider returned ${res.status}: ${(await res.text()).slice(0, 200)}`);

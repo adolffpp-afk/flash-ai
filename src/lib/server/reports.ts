@@ -1,6 +1,6 @@
 import { all, one, run, now } from "./db.ts";
 import { randomId, sha256 } from "./ids.ts";
-import { overLimit } from "./limits.ts";
+import { countOf, overLimit } from "./limits.ts";
 import { EMAILS, emailEnabled, sendEmail } from "./email.ts";
 import { domainsForSite, removeDomain, siteForDomain } from "./domains.ts";
 import { deleteShare } from "./shares.ts";
@@ -22,19 +22,18 @@ import {
  * Reports of what people share or publish with Flash (see src/lib/report.ts), for Flash's admins:
  * kept here, listed in /admin > Reports, and emailed to the admins. Anyone can report, signed in or
  * not, so reports are limited per network and for everyone together, are plain text with a capped
- * length, and the same network reporting the same item again adds to its open report. Nothing is
- * shown to the item's owner or anyone else.
+ * length, and the same network reporting the same item for the same reason again adds to its open
+ * report. Nothing is shown to the item's owner or anyone else.
  */
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
-// Reports one network may send an hour and a day, and everyone together a day.
-export const REPORT_LIMITS = { perHour: 10, perDay: 30, allPerDay: 500 };
+// Reports one network may send an hour and a day, and everyone together a day; and how many of one
+// network's new reports a day the admins get an email about, so one network can't use up the day's
+// report emails (EMAIL_BUDGET.reports) before anyone else reports.
+export const REPORT_LIMITS = { perHour: 10, perDay: 30, allPerDay: 500, emailsPerNetwork: 2 };
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const KINDS: ReportKind[] = ["share", "site", "file"];
-// Kinds Flash has a way to take down: turning off a share link, unpublishing an app. A file link
-// has none of its own (deleting the file would take it from its owner's account too).
-export const TAKE_DOWN: Record<ReportKind, boolean> = { share: true, site: true, file: false };
 
 const isKind = (value: unknown): value is ReportKind => KINDS.includes(value as ReportKind);
 
@@ -97,32 +96,35 @@ export async function submitReport(body: unknown, ip: string, t: Translate = eng
   const email = typeof input.email === "string" ? input.email.trim().toLowerCase() : "";
   // The length first: the pattern is slow on very long text.
   if (email && (email.length > MAX_REPORT_EMAIL || !EMAIL.test(email))) return { error: t("Enter a valid email address."), status: 400 };
-  if (
-    (await overLimit(`report-ip:${ip}`, REPORT_LIMITS.perHour, HOUR)) ||
-    (await overLimit(`report-ip-day:${ip}`, REPORT_LIMITS.perDay, DAY)) ||
-    (await overLimit("report-all", REPORT_LIMITS.allPerDay, DAY))
-  ) {
-    return { error: t("Too many requests. Try again in an hour."), status: 429 };
-  }
+  // The network as a hash, for its limits too, so its address is kept nowhere.
+  const reporter = sha256(`flash-report:${ip}`).slice(0, 32);
+  if (await overLimit(`report-ip:${reporter}`, REPORT_LIMITS.perHour, HOUR)) return { error: t("Too many requests. Try again in an hour."), status: 429 };
+  if (await overLimit(`report-ip-day:${reporter}`, REPORT_LIMITS.perDay, DAY)) return { error: t("Too many tries today. Please try again tomorrow."), status: 429 };
   const target = reportTarget(address);
   if (!target) return { error: t("That isn't the address of a Flash page or an app made with Flash."), status: 400 };
   const item = await findReported(target);
   if (!item) return { error: t("We couldn't find that page. Check the address. It may have been taken down already."), status: 404 };
+  // Only reports of something Flash has count for everyone, so addresses that point nowhere can't use them up.
+  if (await overLimit("report-all", REPORT_LIMITS.allPerDay, DAY)) return { error: t("Too many tries today. Please try again tomorrow."), status: 429 };
 
-  const reporter = sha256(`flash-report:${ip}`).slice(0, 32);
   const at = now();
-  // Reported again by the same network while open: one report, counted again, with details or an
-  // email it didn't have yet.
+  // Reported again by the same network for the same reason while open: one report, counted again,
+  // with new details added below the ones it has, and an email if it had none. Another reason is a
+  // report of its own.
   const row = await one<{ id: string; repeats: number }>(
     `INSERT INTO reports (id, item_kind, item_id, owner_id, title, via, reason, details, email, reporter, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT (item_kind, item_id, reporter) WHERE status = 'open' DO UPDATE SET
+     ON CONFLICT (item_kind, item_id, reporter, reason) WHERE status = 'open' DO UPDATE SET
        repeats = repeats + 1,
        updated_at = excluded.updated_at,
-       details = CASE WHEN details = '' THEN excluded.details ELSE details END,
+       details = CASE
+         WHEN excluded.details = '' OR instr(details, excluded.details) > 0 THEN details
+         WHEN details = '' THEN excluded.details
+         ELSE substr(details || char(10) || excluded.details, 1, ?)
+       END,
        email = CASE WHEN email = '' THEN excluded.email ELSE email END
      RETURNING id, repeats`,
-    [randomId(), item.kind, item.id, item.ownerId, item.title.slice(0, 200), item.via, reason, details, email, reporter, at, at],
+    [randomId(), item.kind, item.id, item.ownerId, item.title.slice(0, 200), item.via, reason, details, email, reporter, at, at, MAX_REPORT_DETAILS],
   );
   return { ok: true, id: String(row!.id), item, repeat: Number(row!.repeats) > 1 };
 }
@@ -136,21 +138,27 @@ const adminEmails = () =>
     .slice(0, 5);
 
 /**
- * Emails Flash's admins about a new report: at most one email per item an hour, and only while the
- * day's email budget lasts (EMAIL_BUDGET.reports, see email.ts). Without email set up, or admins,
- * nothing is sent; the report is in /admin > Reports either way. origin is Flash's address, for
- * the links. Returns how many emails went out.
+ * Emails Flash's admins about a new report, one email to them all: at most one per item an hour,
+ * REPORT_LIMITS.emailsPerNetwork a day for one network's reports, and only while the day's email
+ * budget lasts (EMAIL_BUDGET.reports, see email.ts). Without email set up, or admins, nothing is
+ * sent; the report is in /admin > Reports either way. origin is Flash's address, for the links.
+ * Returns how many admins it went to.
  */
 export async function tellAdmins(reportId: string, origin: string): Promise<number> {
   const admins = adminEmails();
   if (!admins.length || !emailEnabled()) return 0;
-  const report = await one<{ item_kind: ReportKind; item_id: string; title: string; via: string; reason: string; details: string; email: string; owner: string | null }>(
-    `SELECT r.item_kind, r.item_id, r.title, r.via, r.reason, r.details, r.email, u.email AS owner
+  const report = await one<{ item_kind: ReportKind; item_id: string; title: string; via: string; reason: string; details: string; email: string; reporter: string; owner: string | null }>(
+    `SELECT r.item_kind, r.item_id, r.title, r.via, r.reason, r.details, r.email, r.reporter, u.email AS owner
      FROM reports r LEFT JOIN users u ON u.id = r.owner_id WHERE r.id = ?`,
     [reportId],
   );
   if (!report) return 0;
+  // The network's share is looked at first and counted last, so a network that used it up doesn't
+  // take the item's hour from the next person who reports it.
+  const network = `report-mail-net:${report.reporter}`;
+  if ((await countOf(network)) >= REPORT_LIMITS.emailsPerNetwork) return 0;
   if (await overLimit(`report-mail:${report.item_kind}:${report.item_id}`, 1, HOUR)) return 0;
+  await overLimit(network, REPORT_LIMITS.emailsPerNetwork, DAY);
   const count = await one<{ n: number }>("SELECT COUNT(*) AS n FROM reports WHERE item_kind = ? AND item_id = ?", [report.item_kind, report.item_id]);
   const message = EMAILS.report({
     what: REPORT_KIND_NAMES[report.item_kind],
@@ -163,15 +171,12 @@ export async function tellAdmins(reportId: string, origin: string): Promise<numb
     reporter: report.email,
     link: `${origin}/admin?tab=reports`,
   });
-  let sent = 0;
-  for (const admin of admins) {
-    try {
-      if (await sendEmail(admin, message, "report")) sent++;
-    } catch (err) {
-      console.error("[flash] report email failed", err instanceof Error ? err.message : err);
-    }
+  try {
+    return (await sendEmail(admins, message, "report")) ? admins.length : 0;
+  } catch (err) {
+    console.error("[flash] report email failed", err instanceof Error ? err.message : err);
+    return 0;
   }
-  return sent;
 }
 
 export type ReportEntry = { id: string; reason: string; details: string; email: string; repeats: number; status: string; createdAt: number; updatedAt: number };
@@ -183,7 +188,7 @@ export type ReportedItem = {
   via: string;
   path: string;
   ownerEmail: string;
-  // Whether it's still up, and whether Flash has a way to take it down.
+  // Whether it's still up, so it can be taken down.
   live: boolean;
   canTakeDown: boolean;
   open: number;
@@ -223,12 +228,16 @@ async function stillUp(kind: ReportKind, ids: string[]): Promise<Set<string>> {
   return up;
 }
 
-/** Every reported item with its reports, items with open reports first, then the newest. */
+/**
+ * Every reported item with its reports, items with open reports first, then the newest. Open
+ * reports are read first, then the newest closed ones, up to limit reports in all, so an old open
+ * report never drops off behind newer closed ones.
+ */
 export async function listReports(limit = 1000): Promise<ReportedItem[]> {
   const rows = await all<ReportRow>(
     `SELECT r.id, r.item_kind, r.item_id, r.title, r.via, r.reason, r.details, r.email, r.repeats, r.status, r.created_at, r.updated_at,
             u.email AS owner_email
-     FROM reports r LEFT JOIN users u ON u.id = r.owner_id ORDER BY r.created_at DESC, r.rowid DESC LIMIT ?`,
+     FROM reports r LEFT JOIN users u ON u.id = r.owner_id ORDER BY (r.status = 'open') DESC, r.created_at DESC, r.rowid DESC LIMIT ?`,
     [limit],
   );
   const items = new Map<string, ReportedItem>();
@@ -283,15 +292,16 @@ export async function listReports(limit = 1000): Promise<ReportedItem[]> {
   }
   for (const item of list) {
     item.status = item.open ? "open" : item.reports.some((r) => r.status === "taken_down") ? "taken_down" : "reviewed";
-    item.canTakeDown = TAKE_DOWN[item.kind] && item.live;
+    item.canTakeDown = item.live;
   }
   return list.sort((a, b) => Number(b.open > 0) - Number(a.open > 0) || b.newest - a.newest);
 }
 
 /**
  * What an admin does about an item's reports: "reviewed" closes its open reports; "take_down" also
- * takes the item down the way its owner would (stops the share link, or unpublishes the app with
- * everything it kept and disconnects its domains). Each is logged in report_actions.
+ * takes the item down: stops the share link or the file link (the owner's chat or file stays), or
+ * unpublishes the app with everything it kept and disconnects its domains, as its owner would.
+ * Each is logged in report_actions.
  */
 export async function actOnReport(admin: User, kind: unknown, id: unknown, action: unknown): Promise<{ ok: true } | { error: string; status: number }> {
   if (!isKind(kind) || typeof id !== "string" || !id || (action !== "reviewed" && action !== "take_down")) {
@@ -301,10 +311,11 @@ export async function actOnReport(admin: User, kind: unknown, id: unknown, actio
     return { error: "Nobody has reported that.", status: 404 };
   }
   if (action === "take_down") {
-    if (!TAKE_DOWN[kind]) return { error: "Flash has no way to take down a file link on its own. Mark it reviewed, and ask its owner to delete the file.", status: 400 };
     const found = await one<{ owner: string }>(LOOKUP[kind], [id]);
     // Gone already (its owner took it down): its reports close all the same.
     if (found && kind === "share") await deleteShare(String(found.owner), id);
+    // Only this link: /f/ serves a file through its own link, and the file stays in its owner's account.
+    if (found && kind === "file") await run("DELETE FROM public_files WHERE id = ?", [id]);
     if (found && kind === "site") {
       // Its domains leave Vercel too, before the app and everything it kept go (as unpublishing does).
       for (const domain of await domainsForSite(id)) await removeDomain(domain);
