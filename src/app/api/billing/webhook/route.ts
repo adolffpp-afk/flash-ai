@@ -1,5 +1,6 @@
 import { addPurchase, clawBack, findPurchase, recordReversal } from "@/lib/server/credits.ts";
 import { cancelStripeSubscription, currency, invoiceForPaymentIntent, verifyWebhook } from "@/lib/server/stripe.ts";
+import { saveCard } from "@/lib/server/auto-topup.ts";
 import {
   endSubscription,
   isInterval,
@@ -8,15 +9,18 @@ import {
   recordPayment,
   setCancelAtPeriodEnd,
 } from "@/lib/server/subscriptions.ts";
-import { CREDIT_PACKS, planPrice } from "@/lib/credits.ts";
+import { CREDIT_PACKS, extraSeatsFor, planPrice, seatsPrice } from "@/lib/credits.ts";
 import { reverseReferral, rewardReferral } from "@/lib/server/referrals.ts";
 
-type Meta = { user?: string; plan?: string; interval?: string; pack?: string };
+type Meta = { user?: string; plan?: string; interval?: string; pack?: string; extra_seats?: string; auto_topup?: string };
 type SubscriptionDetails = { subscription?: string; metadata?: Meta | null };
 type Invoice = {
   id: string;
   customer?: string | null;
   amount_paid: number;
+  // With Stripe Tax: the invoice's total with and without its tax.
+  total?: number;
+  total_excluding_tax?: number | null;
   currency?: string;
   billing_reason?: string;
   // Newer API versions put the subscription under parent; older ones on the invoice itself.
@@ -59,12 +63,17 @@ type StripeEvent = {
 async function invoicePaid(invoice: Invoice) {
   const details = invoice.parent?.subscription_details ?? invoice.subscription_details ?? null;
   const subscriptionId = details?.subscription ?? invoice.subscription ?? null;
-  const { user, plan, interval } = details?.metadata ?? {};
+  const { user, plan, interval, extra_seats } = details?.metadata ?? {};
   const period = invoice.lines?.data?.[0]?.period;
   if (!subscriptionId || !user || !plan || !isInterval(interval) || !period) return;
   // Credits are only given for the plan's full price (no zero or discounted invoices).
+  // Tax collected goes to governments, not Flash: only the price counts.
+  const tax = invoice.total !== undefined && typeof invoice.total_excluding_tax === "number" ? Math.max(0, invoice.total - invoice.total_excluding_tax) : 0;
+  const paid = invoice.amount_paid - tax;
   const planInfo = planById(plan);
-  if (!planInfo || invoice.amount_paid < planPrice(planInfo, interval) || (invoice.currency ?? "").toLowerCase() !== currency()) {
+  const extraSeats = planInfo ? extraSeatsFor(planInfo, Number(extra_seats ?? 0)) : 0;
+  const due = planInfo ? planPrice(planInfo, interval) + seatsPrice(extraSeats, interval) : 0;
+  if (!planInfo || paid < due || (invoice.currency ?? "").toLowerCase() !== currency()) {
     console.warn(`[flash] invoice ${invoice.id} paid ${invoice.amount_paid} for ${plan}/${interval}: no credits given`);
     return;
   }
@@ -75,11 +84,12 @@ async function invoicePaid(invoice: Invoice) {
     planId: plan,
     interval,
     customer: invoice.customer ?? null,
-    amountCents: invoice.amount_paid,
+    amountCents: paid,
     periodStart: period.start * 1000,
     periodEnd: period.end * 1000,
     ref,
     test: false,
+    extraSeats,
     paymentIntent: invoice.payment_intent ?? invoice.payments?.data?.[0]?.payment?.payment_intent ?? null,
   });
   // A referred friend's first payment of a plan that counts (REFERRAL_EARNS) gives the referral
@@ -154,7 +164,12 @@ export async function POST(request: Request) {
     // Payment methods that take days (bank debits) complete unpaid and send this once paid.
     case "checkout.session.async_payment_succeeded": {
       // Credit packs. Plans are handled by invoice.paid. Packs never earn referral bonuses.
-      const { user, pack } = object.metadata ?? {};
+      const { user, pack, auto_topup } = object.metadata ?? {};
+      // A card saved for auto top-up (see auto-topup.ts).
+      if (object.mode === "setup") {
+        if (auto_topup === "1") await saveCard(object.id);
+        break;
+      }
       // Only for the pack's full price, in Flash's currency (Checkout's prices are set by Flash, so
       // anything else means a setting changed in Stripe, and credits shouldn't follow it).
       const price = CREDIT_PACKS.find((p) => p.id === pack)?.priceCents;

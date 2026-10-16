@@ -7,10 +7,42 @@
 import { all, one, run, now } from "./db.ts";
 import { randomId } from "./ids.ts";
 import { infectedFile } from "./virus-scan.ts";
+import { activeSubscription } from "./subscriptions.ts";
 
 export const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 export const MAX_FILES_PER_SITE = 500;
 export const MAX_BYTES_PER_SITE = 100 * 1024 * 1024;
+
+/*
+ * Files are kept in Flash's database, which bills by the gigabyte, and no credit pays for that. So
+ * all of an owner's apps together hold at most their plan's room: 100 MB on the free plan, more on
+ * paid plans, whatever each app's own limit.
+ */
+const MB = 1024 * 1024;
+export const FREE_STORAGE_BYTES = 100 * MB;
+export const PLAN_STORAGE_BYTES: Record<string, number> = {
+  lite: 1024 * MB,
+  pro: 2048 * MB,
+  power: 2048 * MB,
+  max: 10240 * MB,
+  business: 10240 * MB,
+  agency: 10240 * MB,
+};
+
+/** How many bytes of files all of a user's apps may hold together, by their plan. */
+export async function storageLimit(userId: string): Promise<number> {
+  const sub = await activeSubscription(userId);
+  return sub && Object.hasOwn(PLAN_STORAGE_BYTES, sub.plan) ? PLAN_STORAGE_BYTES[sub.plan] : FREE_STORAGE_BYTES;
+}
+
+/** The bytes of files all of a user's apps hold. */
+async function ownerBytes(userId: string): Promise<number> {
+  const row = await one<{ bytes: number }>(
+    "SELECT COALESCE(SUM(u.size), 0) AS bytes FROM site_uploads u JOIN sites s ON s.slug = u.site_slug WHERE s.user_id = ?",
+    [userId],
+  );
+  return Number(row?.bytes ?? 0);
+}
 
 // What an app may take: pictures, documents and plain text. Nothing that runs.
 const TYPES: Record<string, string> = {
@@ -49,7 +81,7 @@ export async function saveUpload(
   if (!TYPES[file.type]) return fail("Apps can take pictures, PDFs and text files.", 415);
   if (!file.bytes.length) return fail("That file is empty.", 400);
   if (file.bytes.length > MAX_UPLOAD_BYTES) return fail("Files must be 5 MB or smaller.", 413);
-  const site = await one<{ uploads_on: number }>("SELECT uploads_on FROM sites WHERE slug = ?", [slug]);
+  const site = await one<{ uploads_on: number; user_id: string }>("SELECT uploads_on, user_id FROM sites WHERE slug = ?", [slug]);
   if (!site) return fail("App not found.", 404);
   if (!Number(site.uploads_on)) {
     return fail("This app isn't taking files yet. Its owner can turn that on in Flash, in My websites & apps > Files.", 403);
@@ -58,7 +90,11 @@ export async function saveUpload(
     "SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS bytes FROM site_uploads WHERE site_slug = ?",
     [slug],
   );
-  if (Number(use?.n ?? 0) >= MAX_FILES_PER_SITE || Number(use?.bytes ?? 0) + file.bytes.length > MAX_BYTES_PER_SITE) {
+  const full =
+    Number(use?.n ?? 0) >= MAX_FILES_PER_SITE ||
+    Number(use?.bytes ?? 0) + file.bytes.length > MAX_BYTES_PER_SITE ||
+    (await ownerBytes(site.user_id)) + file.bytes.length > (await storageLimit(site.user_id));
+  if (full) {
     return fail("This app can't hold more files. Its owner can remove some in Flash.", 507);
   }
   const name = cleanName(file.name, file.type);
@@ -114,16 +150,21 @@ export async function deleteUpload(slug: string, id: string): Promise<boolean> {
   return (await run("DELETE FROM site_uploads WHERE site_slug = ? AND id = ?", [slug, id])).rowsAffected > 0;
 }
 
-/** How much room an app's files take, for its owner. */
+/**
+ * How much room an app's files take, for its owner. maxBytes is the most this app can hold now:
+ * its own limit, or less when the owner's other apps use most of their plan's room.
+ */
 export async function uploadUse(slug: string): Promise<{ files: number; bytes: number; maxFiles: number; maxBytes: number }> {
-  const use = await one<{ n: number; bytes: number }>(
-    "SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS bytes FROM site_uploads WHERE site_slug = ?",
+  const use = await one<{ n: number; bytes: number; user_id: string | null }>(
+    "SELECT COUNT(u.id) AS n, COALESCE(SUM(u.size), 0) AS bytes, s.user_id FROM sites s LEFT JOIN site_uploads u ON u.site_slug = s.slug WHERE s.slug = ?",
     [slug],
   );
+  const bytes = Number(use?.bytes ?? 0);
+  const room = use?.user_id ? (await storageLimit(use.user_id)) - (await ownerBytes(use.user_id)) + bytes : MAX_BYTES_PER_SITE;
   return {
     files: Number(use?.n ?? 0),
-    bytes: Number(use?.bytes ?? 0),
+    bytes,
     maxFiles: MAX_FILES_PER_SITE,
-    maxBytes: MAX_BYTES_PER_SITE,
+    maxBytes: Math.max(bytes, Math.min(MAX_BYTES_PER_SITE, room)),
   };
 }

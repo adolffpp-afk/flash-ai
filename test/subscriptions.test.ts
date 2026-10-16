@@ -51,10 +51,34 @@ test("a yearly plan adds credits each month of the paid year", async () => {
     subscriptionId: "sub_2", userId: "u2", planId: "max", interval: "year", customer: "cus_2",
     amountCents: 192000, periodStart: start, periodEnd: addMonths(start, 12), ref: "stripe-invoice:in_2", test: false,
   });
+  // Started before the carry-over limit, so every unused credit stays.
+  await run("UPDATE subscriptions SET created_at = 0 WHERE id = 'sub_2'");
   const sub = (await activeSubscription("u2"))!;
   for (let m = 1; m < 12; m++) assert.equal(await grantPlanCredits(sub, addMonths(start, m) + DAY), true);
   assert.equal(await grantPlanCredits(sub, addMonths(start, 12) + DAY), false);
   assert.equal(await balance("u2"), 12 * 28000);
+});
+
+test("a new plan carries over at most 2 months of plan credits, and never takes bought credits", async () => {
+  const { CARRY_CAP_FROM, carryOverTrim } = await import("../src/lib/credits.ts");
+  assert.equal(carryOverTrim(5000, 0, 3000), 0);
+  assert.equal(carryOverTrim(7000, 500, 3000), 500);
+  assert.equal(carryOverTrim(7000, 9000, 3000), 0, "bought credits are never taken off");
+  await user("u9");
+  const start = Date.now() - DAY;
+  await recordPayment({
+    subscriptionId: "sub_9", userId: "u9", planId: "pro", interval: "year", customer: "cus_9",
+    amountCents: 24000, periodStart: start, periodEnd: addMonths(start, 12), ref: "stripe-invoice:in_9", test: false,
+  });
+  await run("UPDATE subscriptions SET created_at = ? WHERE id = 'sub_9'", [CARRY_CAP_FROM]);
+  await run("INSERT INTO credit_ledger (user_id, amount, reason, ref, created_at) VALUES ('u9', 500, 'Bought Starter pack', 'stripe:pack_9', 0)");
+  const sub = (await activeSubscription("u9"))!;
+  for (let m = 1; m < 6; m++) assert.equal(await grantPlanCredits(sub, addMonths(start, m) + DAY), true);
+  // Nothing spent: 2 months carried over, this month's credits, and the pack.
+  assert.equal(await balance("u9"), 3 * 3000 + 500);
+  // A second visit in the same month takes nothing more.
+  assert.equal(await grantPlanCredits(sub, addMonths(start, 5) + 2 * DAY), false);
+  assert.equal(await balance("u9"), 3 * 3000 + 500);
 });
 
 test("an ended plan stops adding credits but keeps the ones given", async () => {
