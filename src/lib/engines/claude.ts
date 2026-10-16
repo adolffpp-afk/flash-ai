@@ -26,6 +26,7 @@ import { MAX_FORECASTS, TOO_MANY, WEATHER_ROUNDS, WEATHER_TOOL, type WeatherTool
 import { tokensAtMost } from "../tokens.ts";
 import type { Where } from "../context-note.ts";
 import { CONNECT_LINE, connectorCalls, type ConnectState, type ConnectorKit, type ConnectorTool } from "./connect.ts";
+import { claudeTool, failText, FRED_NOTE, limitText, toolFlags, ToolLedger, type ClientTool, type ToolResult } from "../research.ts";
 
 /*
  * Flash uses three Claude models, to keep quality high where it shows and costs low elsewhere:
@@ -371,6 +372,14 @@ const WEB_LINES = {
     "You can't search the web in this answer. Your training data ends well before today's date, so for anything that may have changed " +
     `since then (${changing(weather)}news, prices, scores, who holds an office, the latest version of something), give what you know and ` +
     "roughly when it dates from, and say that Flash's Research can check it live. Never state a current figure as if you had just checked it.",
+  // The free models with web_search (the owner's SearXNG, see server/searxng.ts).
+  freeSearch: (weather: boolean) =>
+    "You're answering on Flash's free model, with a web_search tool. Your training data ends well before today's date, so for anything " +
+    `that may have changed since then (${changing(weather)}news, today's events, prices, exchange rates, scores, schedules, opening hours, who ` +
+    "holds an office now, the latest version of something), search before you answer, with a short query, at most twice. Answer from " +
+    "the results and cite each fact you take from them with its number, like [1]; snippets are short, so never add details they don't " +
+    "show, and give the date of anything that changes. If the search fails or finds nothing, say so in one sentence, give what you know " +
+    "and roughly when it dates from, and never present it as current or checked. Facts that can't change need no search.",
   // The free models.
   free: (weather: boolean) =>
     "You're answering on Flash's free model, which can't search the web. For anything that changes " +
@@ -391,6 +400,22 @@ export const WEATHER_LINE =
   "question. If the forecast shows thunder, heavy rain or snow, strong wind or gusts, or extreme heat or cold, or the user mentions a " +
   "storm, flood or warning, add one sentence telling them to follow their national weather service's official warnings, which this " +
   "forecast doesn't include. Flash shows the data source under your answer, so you needn't name it.";
+
+/** For a reply that has the SEC EDGAR tools (see research.ts). */
+export const SEC_LINE =
+  "You have SEC EDGAR tools with what US public companies file: sec_company_filings lists a company's recent filings (10-K, 10-Q, 8-K) " +
+  "with links, and sec_financial_facts gives the figures it reported (revenue, net income, EPS and more) by fiscal year or quarter. For " +
+  "a public company's filings or reported figures, call them before you answer instead of giving figures from memory. Use the values " +
+  "exactly as they come, in their units, and say which period each covers (a fiscal year may not match the calendar year). If a tool " +
+  "returns an error or no values, say so in one sentence and give no figures as if they were checked. Flash lists the filings used under your answer.";
+
+/** For a reply that has the FRED tools (see research.ts). */
+export const FRED_LINE =
+  "You have FRED tools with US economic data from the Federal Reserve Bank of St. Louis: fred_series gives a series' values (UNRATE " +
+  "unemployment, CPIAUCSL consumer prices, GDP, FEDFUNDS and more) and fred_series_search finds a series' id. For an economic " +
+  "indicator, call them before you answer instead of giving figures from memory. Use the values exactly as they come, with their units " +
+  "and dates, and give the latest date the data covers. If a tool returns an error, say so in one sentence and give no figures from it. " +
+  "Never say or suggest that the Federal Reserve endorses Flash. Flash adds FRED's notice and the series' link under your answer.";
 
 const RESEARCH_PROMPT =
   "This is a research answer: search the web, and read any page the user links. Answer first, in a sentence or a short list, then the " +
@@ -491,9 +516,20 @@ const MODE_PROMPTS: Record<WritingMode, string> = {
  * What a system prompt says beyond the mode. web: whether the model can search (Research), can't
  * (the other Claude modes) or is a free model; weather: get_weather is attached; quick: Research's
  * quick plan; tools: otherToolsLine(engineStatus()), built in route.ts since this file can't import
- * server code; context: contextNote(where, now).
+ * server code; context: contextNote(where, now). search: a free model has web_search; filings and
+ * economy: the SEC EDGAR and FRED tools are attached (see research.ts).
  */
-export type SystemOptions = { web?: "search" | "none" | "free"; weather?: boolean; quick?: boolean; tools?: string; context?: string; connect?: boolean };
+export type SystemOptions = {
+  web?: "search" | "none" | "free";
+  weather?: boolean;
+  quick?: boolean;
+  tools?: string;
+  context?: string;
+  connect?: boolean;
+  search?: boolean;
+  filings?: boolean;
+  economy?: boolean;
+};
 
 /**
  * A chat engine's system prompt. The text that never changes comes first and the per-minute context
@@ -508,8 +544,10 @@ export function system(preferences: string, mode: WritingMode | "search" = "text
   const parts = [
     BASE_SYSTEM,
     o.tools ?? "",
-    WEB_LINES[web](weather),
+    web === "free" && o.search ? WEB_LINES.freeSearch(weather) : WEB_LINES[web](weather),
     weather ? WEATHER_LINE : "",
+    o.filings ? SEC_LINE : "",
+    o.economy ? FRED_LINE : "",
     o.connect ? CONNECT_LINE : "",
     mode === "search" ? RESEARCH_PROMPT + (o.quick ? ` ${QUICK_RESEARCH}` : "") : MODE_PROMPTS[mode],
   ];
@@ -525,10 +563,32 @@ function refusalMessage(t: Translate): StreamEvent {
 
 /**
  * What a reply with tools may use besides its system prompt: get_weather (weather), onUsed, called
- * once when a forecast first comes back with data, so the reply's header can say why, and the user's
- * connected accounts (connect, Write, Code, Translate and Docs only; see engines/connect.ts).
+ * once when a forecast first comes back with data, so the reply's header can say why, the user's
+ * connected accounts (connect, Write, Code, Translate and Docs only; see engines/connect.ts), and the
+ * SEC EDGAR and FRED tools (data, see research.ts), with onTool called once for each of them whose
+ * data the reply first uses. Claude has its own web search (Research), so the free models' is never given it.
  */
-export type ReplyOptions = { system?: SystemOptions; weather?: WeatherTool; onUsed?: () => void; connect?: ConnectorKit };
+export type ReplyOptions = {
+  system?: SystemOptions;
+  weather?: WeatherTool;
+  onUsed?: () => void;
+  connect?: ConnectorKit;
+  data?: ClientTool[];
+  onTool?: (name: string) => void;
+};
+
+/** The data tools Claude may have: SEC EDGAR and FRED. */
+const claudeData = (data: ClientTool[] = []) => data.filter((x) => x.family !== "web");
+
+/**
+ * What ends a reply that used data tools: FRED's notice when it showed FRED data, then one list of
+ * sources (the browser keeps only the last one a reply sends): the data's, then MET Norway's.
+ */
+function* dataEnd(ledger: ToolLedger, weather: Source[] | null, say: (words: string) => StreamEvent = (delta) => ({ type: "text", delta })): Generator<StreamEvent> {
+  if (ledger.fred) yield say(FRED_NOTE);
+  const items = [...ledger.sources(), ...(weather ?? [])];
+  if (items.length) yield { type: "sources", items };
+}
 
 // A tool round is followed by another call only when the credits held still pay for this much of it.
 const MIN_ROUND_TOKENS = 300;
@@ -569,7 +629,7 @@ export function echoedContent(content: Anthropic.Beta.BetaContentBlock[]): Anthr
 /** A reply's forecasts so far: tool rounds, calls, and whether any came back with data. */
 type WeatherState = { rounds: number; calls: number; used: boolean };
 
-/** What one round of a reply's tools needs: the forecast and its state, and the connected accounts (see engines/connect.ts). */
+/** What one round of a reply's tools needs: the forecast and its state, the connected accounts (see engines/connect.ts), and the data tools and their ledger. */
 type RoundTools = {
   weather?: WeatherTool;
   state: WeatherState;
@@ -579,27 +639,56 @@ type RoundTools = {
   connect?: ConnectState;
   signal?: AbortSignal;
   t?: Translate;
+  data?: ClientTool[];
+  ledger?: ToolLedger;
+  onTool?: (name: string) => void;
 };
 
 /**
  * Runs the tool calls of a turn that stopped for them, saying what it checks, and returns their
  * results, in order, for one user message, with about how many tokens they add (and how many
- * characters, for the most they can be): the get_weather calls together (at most MAX_FORECASTS in a
- * reply), then the connector calls in order (see connectorCalls). Each round counts as one.
+ * characters, for the most they can be): the get_weather calls (at most MAX_FORECASTS in a reply) and
+ * the data tools' calls (at most CALL_CAPS of each kind, see research.ts) together, then the connector
+ * calls in order (see connectorCalls). Each round counts as one.
  */
 async function* replyRound(
   content: Anthropic.Beta.BetaContentBlock[],
   r: RoundTools,
 ): AsyncGenerator<StreamEvent, { results: Anthropic.Beta.BetaToolResultBlockParam[]; tokens: number; chars: number }> {
-  const { weather: tool, state } = r;
+  const { weather: tool, state, ledger } = r;
   const calls = content.filter((b): b is Anthropic.Beta.BetaToolUseBlock => b.type === "tool_use");
   const isWeather = (call: Anthropic.Beta.BetaToolUseBlock) => Boolean(tool) && call.name === WEATHER_TOOL.name;
+  const dataOf = (call: Anthropic.Beta.BetaToolUseBlock) => (ledger ? r.data?.find((x) => x.name === call.name) : undefined);
   for (const call of calls) if (isWeather(call)) yield { type: "status", message: tool!.status(call.input) };
+  for (const call of calls) {
+    const data = dataOf(call);
+    if (data) yield { type: "status", message: data.status(call.input) };
+  }
+  // Each kind's calls are counted in the order they were asked for, before any runs.
+  const looking = Promise.all(
+    calls.flatMap((call) => {
+      const data = dataOf(call);
+      if (!data) return [];
+      const run: Promise<ToolResult> = ledger!.take(data.family)
+        ? data.run(call.input, r.signal).catch(() => ({ text: failText(data.family), isError: true, used: false }))
+        : Promise.resolve({ text: limitText(data.family), isError: true, used: false });
+      return [run.then((result) => [call.id, result] as const)];
+    }),
+  );
   const forecasts = new Map(
     await Promise.all(
       calls.filter(isWeather).map(async (call) => [call.id, state.calls++ < MAX_FORECASTS ? await tool!.run(call.input) : { text: TOO_MANY, isError: true, used: false }] as const),
     ),
   );
+  const looked = new Map(await looking);
+  // Read in the order they were asked for, so a search's numbers don't depend on which answered first.
+  const before = new Set(ledger?.used ?? []);
+  const settled = new Map<string, { text: string; isError: boolean }>();
+  for (const call of calls) {
+    const result = looked.get(call.id);
+    if (result) settled.set(call.id, { text: ledger!.settle(call.name, result), isError: result.isError });
+  }
+  for (const name of ledger?.used ?? []) if (!before.has(name)) r.onTool?.(name);
   const connected =
     r.kit && r.connectors?.length && r.connect
       ? yield* connectorCalls(
@@ -621,6 +710,8 @@ async function* replyRound(
   const answers = calls.map((call) => {
     const forecast = forecasts.get(call.id);
     if (forecast) return { text: forecast.text, isError: forecast.isError };
+    const data = settled.get(call.id);
+    if (data) return data;
     const result = connected.get(call.id);
     if (result) return { text: result.content, isError: result.isError };
     return { text: `There is no tool called ${call.name}.`, isError: true };
@@ -637,10 +728,6 @@ async function* replyRound(
     chars: answers.reduce((sum, a) => sum + a.text.length + 50, 0),
   };
 }
-
-/** Research's forecast rounds: replyRound with the forecast alone. */
-const weatherRound = (content: Anthropic.Beta.BetaContentBlock[], tool: WeatherTool, state: WeatherState, onUsed?: () => void) =>
-  replyRound(content, { weather: tool, state, onUsed });
 
 /**
  * What the next step of a reply with connectors will read, in tokens, before it is sent: counted by
@@ -703,8 +790,10 @@ export async function* streamText(
 ): AsyncGenerator<StreamEvent> {
   const tool = o.weather;
   const kit = o.connect;
+  const data = claudeData(o.data);
+  const ledger = new ToolLedger();
   // The same words in every call of the reply, so the hold counted them and Claude's thinking stays valid.
-  const instructions = system(preferences, mode, { ...o.system, weather: Boolean(tool), connect: Boolean(kit) });
+  const instructions = system(preferences, mode, { ...o.system, weather: Boolean(tool), connect: Boolean(kit), ...toolFlags(data) });
   const messages = toMessages(history);
   const state: WeatherState = { rounds: 0, calls: 0, used: false };
   const connect: ConnectState = { readFrom: new Set(kit?.tainted ?? []), used: [] };
@@ -738,7 +827,7 @@ export async function* streamText(
         notes += `_${t("{name} changed some of its tools since you added it. They're left out until you look at them in Settings > Connectors.", { name })}_\n\n`;
       }
     }
-    const tools = [...(tool ? [WEATHER_TOOL] : []), ...connectors.map((c) => c.definition)];
+    const tools = [...(tool ? [WEATHER_TOOL] : []), ...data.map(claudeTool), ...connectors.map((c) => c.definition)];
     // Results continued from an approved card are tool blocks, which need their tools defined even
     // when none can be used now (their server is unreachable or changed): sent, but not to be called.
     const earlier = new Set(history.flatMap((turn) => turn.toolCalls?.map((call) => call.name) ?? []));
@@ -789,7 +878,7 @@ export async function* streamText(
       }
       if (!tools.length || final.stop_reason !== "tool_use" || answerOnly) break;
       const content = echoedContent(final.content);
-      const round = yield* replyRound(content, { weather: tool, state, onUsed: o.onUsed, kit, connectors, connect, signal, t });
+      const round = yield* replyRound(content, { weather: tool, state, onUsed: o.onUsed, kit, connectors, connect, signal, t, data, ledger, onTool: o.onTool });
       messages.push({ role: "assistant", content }, { role: "user", content: round.results });
       // The next call reads everything again with what the tools returned, and writes only what the
       // credits held still pay for: priced as this one call with connectors, and leaving room for the
@@ -815,15 +904,15 @@ export async function* streamText(
     // A reply that ended without words still shows the notes.
     if (notes) yield say("");
   } catch (err) {
-    // A reply stopped or cut off after a forecast still credits MET Norway for what it showed, and
-    // lists the accounts' tools it used.
-    if (state.used) yield { type: "sources", items: tool!.sources };
+    // A reply stopped or cut off after a forecast or a look-up still credits MET Norway and the data's
+    // sources (with FRED's notice) for what it showed, and lists the accounts' tools it used.
+    yield* dataEnd(ledger, state.used ? tool!.sources : null);
     if (connect.used.length) yield { type: "connector_used", items: connect.used };
     throw spent > 0 ? afterSpending(err) : err;
   } finally {
     await kit?.close();
   }
-  if (state.used) yield { type: "sources", items: tool!.sources };
+  yield* dataEnd(ledger, state.used ? tool!.sources : null, (words) => say(words));
   if (connect.used.length) yield { type: "connector_used", items: connect.used };
 }
 
@@ -871,9 +960,13 @@ export async function* streamSearch(
   o: ResearchOptions = {},
 ): AsyncGenerator<StreamEvent> {
   const tool = o.weather;
+  const data = claudeData(o.data);
+  const ledger = new ToolLedger();
+  // Whether Claude has tools of Flash's own to call (the forecast, SEC EDGAR, FRED), each round of them priced as a forecast's.
+  const own = Boolean(tool) || data.length > 0;
   const quick = Boolean(o.quick);
-  const plan = researchPlan(quick, Boolean(tool));
-  const instructions = system(preferences, "search", { ...o.system, quick, weather: Boolean(tool) });
+  const plan = researchPlan(quick, own);
+  const instructions = system(preferences, "search", { ...o.system, quick, weather: Boolean(tool), ...toolFlags(data) });
   const messages = toMessages(history);
   const cited = new Map<string, Source>();
   const read = new Map<string, Source>();
@@ -883,13 +976,16 @@ export async function* streamSearch(
     { type: "web_search_20260209" as const, name: "web_search" as const, max_uses: quick ? 1 : 3, ...(location && { user_location: location }) },
     webFetch(choice.model, quick ? 1 : 2),
     ...(tool ? [WEATHER_TOOL] : []),
+    ...data.map(claudeTool),
   ];
   let spent = 0;
   let maxTokens = budget.maxTokens;
-  // The sources so far, in one list: the links cited first, then the others read, and MET Norway's credit.
+  // The sources so far, in one list: the links cited first, then the others read, then the data's
+  // sources (SEC EDGAR, FRED) and MET Norway's credit.
   const sources = () => {
     const web = [...cited.values(), ...[...read.values()].filter((s) => !cited.has(s.url))];
-    return state.used ? [...web.slice(0, 6), ...tool!.sources] : web.slice(0, 8);
+    const extra = [...ledger.sources(), ...(state.used ? tool!.sources : [])];
+    return extra.length ? [...web.slice(0, 6), ...extra] : web.slice(0, 8);
   };
   // Whether any words were sent yet, and whether the next call may only answer (no searches or forecasts).
   let wroteAny = false;
@@ -906,7 +1002,7 @@ export async function* streamSearch(
           system: instructions,
           tools: tools(),
           // tool_choice none also keeps the web search and page reader from running.
-          ...(((tool && state.rounds >= WEATHER_ROUNDS) || answerOnly) && { tool_choice: { type: "none" as const } }),
+          ...(((own && state.rounds >= WEATHER_ROUNDS) || answerOnly) && { tool_choice: { type: "none" as const } }),
           messages,
         },
         { signal },
@@ -959,10 +1055,10 @@ export async function* streamSearch(
         yield lengthNote(budget, t);
         break;
       }
-      const forecasts = tool && final.stop_reason === "tool_use";
+      const forecasts = own && final.stop_reason === "tool_use";
       if ((final.stop_reason !== "pause_turn" && !forecasts) || answerOnly) break;
       const content = echoedContent(final.content);
-      const round = forecasts ? yield* weatherRound(content, tool, state, o.onUsed) : null;
+      const round = forecasts ? yield* replyRound(content, { weather: tool, state, onUsed: o.onUsed, signal, t, data, ledger, onTool: o.onTool }) : null;
       messages.push({ role: "assistant", content });
       if (round) messages.push({ role: "user", content: round.results });
       // Keep going only while the credits held for this request still cover another call: it reads
@@ -993,11 +1089,14 @@ export async function* streamSearch(
       }
     }
   } catch (err) {
-    // A reply stopped or cut off part way still shows the links it found, and credits MET Norway.
+    // A reply stopped or cut off part way still shows the links it found, credits MET Norway, and
+    // carries FRED's notice when it showed FRED data.
+    if (ledger.fred) yield { type: "text", delta: FRED_NOTE };
     const items = sources();
     if (items.length) yield { type: "sources", items };
     throw spent > 0 ? afterSpending(err) : err;
   }
+  if (ledger.fred) yield { type: "text", delta: FRED_NOTE };
   // One list, sent once: the browser keeps only the last one a reply sends.
   const items = sources();
   if (items.length) yield { type: "sources", items };

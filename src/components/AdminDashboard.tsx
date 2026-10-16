@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ENGINE_LABELS, type Engine } from "@/lib/types";
 import { api } from "@/lib/store";
 import { LogoMark } from "@/app/brand";
+import { AdminReports } from "@/components/AdminReports";
 import type { FixedCost, ProfitReport } from "@/lib/server/profit.ts";
+import type { ReportedItem } from "@/lib/server/reports.ts";
 
 type Stats = {
   days: number;
@@ -24,8 +26,10 @@ type Stats = {
     does: string;
     free: boolean;
     setUp: boolean;
-    // Names of the environment variables Flash can't find for this provider.
+    // Names of the environment variables Flash can't find for this provider (or why one set can't be used).
     missing: string[];
+    // It needs no key (SEC EDGAR).
+    noKey?: boolean;
     requests: number;
     costCents: number;
   }[];
@@ -71,8 +75,10 @@ const TABS = [
   { id: "providers", label: "By provider" },
   { id: "tools", label: "By tool" },
   { id: "users", label: "Users" },
+  { id: "reports", label: "Reports" },
 ] as const;
 type Tab = (typeof TABS)[number]["id"];
+const isTab = (id: unknown): id is Tab => TABS.some((t) => t.id === id);
 
 const usd = (cents: number) =>
   `${cents < 0 ? "-" : ""}$${(Math.abs(cents) / 100).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -429,12 +435,16 @@ function Bills({ days, costs, onChange }: { days: number; costs: (FixedCost & { 
   );
 }
 
-export function AdminDashboard() {
+/** The owner dashboard. initialTab opens a tab by its id (?tab=reports, as report emails link to it). */
+export function AdminDashboard({ initialTab }: { initialTab?: string }) {
   const [days, setDays] = useState(30);
-  const [tab, setTab] = useState<Tab>("overview");
+  const [tab, setTab] = useState<Tab>(isTab(initialTab) ? initialTab : "overview");
   const [stats, setStats] = useState<Stats | null>(null);
   const [error, setError] = useState("");
   const [reload, setReload] = useState(0);
+  // Reports don't depend on the time range, and their count shows on the tab, so they load once.
+  const [reports, setReports] = useState<ReportedItem[] | null>(null);
+  const [reportsError, setReportsError] = useState("");
 
   useEffect(() => {
     let live = true;
@@ -445,6 +455,30 @@ export function AdminDashboard() {
       live = false;
     };
   }, [days, reload]);
+
+  useEffect(() => {
+    let live = true;
+    api<{ items: ReportedItem[] }>("/api/admin/reports")
+      .then((r) => live && setReports(r.items))
+      .catch((err) => live && setReportsError(err.message));
+    return () => {
+      live = false;
+    };
+  }, []);
+  const openReports = reports?.filter((r) => r.open > 0).length ?? 0;
+
+  // On a phone the tabs scroll sideways: keep the open one in view (?tab=reports opens the last),
+  // also once its count shows. Only the tab row scrolls, never the page.
+  const tabsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const list = tabsRef.current;
+    const open = list?.querySelector('[aria-selected="true"]');
+    if (!list || !open) return;
+    const row = list.getBoundingClientRect();
+    const box = open.getBoundingClientRect();
+    if (box.right > row.right) list.scrollLeft += box.right - row.right;
+    else if (box.left < row.left) list.scrollLeft -= row.left - box.left;
+  }, [tab, openReports]);
 
   if (error) {
     return (
@@ -469,7 +503,11 @@ export function AdminDashboard() {
             <LogoMark size={32} />
             Flash dashboard
           </Link>
-          <div className="ml-auto flex rounded-lg border border-zinc-800 text-sm" role="radiogroup" aria-label="Time range">
+          <div
+            className={`ml-auto flex rounded-lg border border-zinc-800 text-sm ${tab === "reports" ? "invisible max-sm:hidden" : ""}`}
+            role="radiogroup"
+            aria-label="Time range"
+          >
             {RANGES.map((r) => (
               <button
                 key={r}
@@ -484,7 +522,7 @@ export function AdminDashboard() {
           </div>
         </div>
 
-        <div className="mt-4 flex gap-1 overflow-x-auto border-b border-zinc-800 text-sm" role="tablist" aria-label="Dashboard">
+        <div ref={tabsRef} className="mt-4 flex gap-1 overflow-x-auto border-b border-zinc-800 text-sm" role="tablist" aria-label="Dashboard">
           {TABS.map((t) => (
             <button
               key={t.id}
@@ -496,11 +534,16 @@ export function AdminDashboard() {
               }`}
             >
               {t.label}
+              {t.id === "reports" && openReports > 0 && (
+                <span className="ml-1.5 rounded-full bg-amber-400/20 px-1.5 text-[11px] font-medium text-amber-300 tabular-nums">{openReports}</span>
+              )}
             </button>
           ))}
         </div>
 
-        {!stats ? (
+        {tab === "reports" ? (
+          <AdminReports items={reports} error={reportsError} onChange={setReports} />
+        ) : !stats ? (
           <p className="mt-10 text-zinc-500">Loading…</p>
         ) : tab === "overview" ? (
           <>
@@ -588,7 +631,7 @@ export function AdminDashboard() {
           <div className="mt-6 space-y-4">
             <Panel
               title="AI providers"
-              note="Every provider Flash can call, and what to expect on each bill. Uses counts each request a provider worked on, including as a helper. Key names must match exactly in Vercel's Production environment variables, then redeploy."
+              note="Every provider Flash can call, and what to expect on each bill. Uses counts each request a provider worked on, including as a helper (for SearXNG, SEC EDGAR and FRED, the requests Flash sent them). Key names must match exactly in Vercel's Production environment variables, then redeploy."
             >
               <Table
                 head={["Provider", "Billing", "Key", "Uses", "AI cost"]}
@@ -599,7 +642,11 @@ export function AdminDashboard() {
                   </div>,
                   r.free ? "Free tier" : "Pay per use",
                   r.setUp ? (
-                    "Set"
+                    r.noKey ? (
+                      "None needed"
+                    ) : (
+                      "Set"
+                    )
                   ) : (
                     <div key="key" className="text-zinc-500">
                       <div>Not set</div>
@@ -721,7 +768,7 @@ export function AdminDashboard() {
             </Panel>
           </div>
         )}
-        {stats && (
+        {stats && tab !== "reports" && (
           <p className="mt-6 text-xs text-zinc-500">
             AI costs are estimates from token counts and list prices. Compare them with each provider&apos;s billing
             page now and then. Prices live in src/lib/credits.ts and src/lib/models.ts.

@@ -20,6 +20,15 @@ an image, or speech, sends it to the right engine, and keeps the result in a pro
 | Music         | 30 second songs, jingles and beats                | ElevenLabs `music_v2_5`          | `ELEVENLABS_API_KEY` |
 | Transcribe    | Turning audio or video files into text            | ElevenLabs `scribe_v2`           | `ELEVENLABS_API_KEY` |
 
+Answers can also look things up in free public data. Each source stays hidden until its
+variables are set (steps in `docs/research-sources-setup.md`):
+
+| Source    | Used for                                                     | Key                                                    |
+| --------- | ------------------------------------------------------------ | ------------------------------------------------------ |
+| SearXNG   | Free web search for users out of credits (your own server)   | `SEARXNG_URL`, `SEARXNG_USERNAME`, `SEARXNG_PASSWORD`  |
+| SEC EDGAR | A listed company's filings and reported figures            | none (`FLASH_CONTACT_EMAIL` goes in its User-Agent)    |
+| FRED      | Economic indicators: unemployment, inflation, GDP, rates     | `FRED_API_KEY`                                         |
+
 Three keys switch on all twelve engines. An optional fourth key, `FAL_KEY` from
 [fal.ai](https://fal.ai), adds more models, and Flash picks the best one for each request:
 
@@ -79,9 +88,11 @@ Features:
   sums and code, as it's the fastest; Gemini for long inputs and messages not in English,
   where its free tier may answer; the others stay backups in the usual order. Weather
   questions get the live forecast through the models' own function calling (Groq, Gemini and
-  Mistral, asked first for them). Research questions are answered without the web, and the
-  reply says so. Apps, video, music, voice and web research stay on credits. See
-  `src/lib/engines/free.ts`.
+  Mistral, asked first for them). With SearXNG set, research questions get a free web search
+  (up to 2 a reply, `FLASH_FREE_DAILY_SEARCHES` a day per user, and a daily total for Flash),
+  with numbered sources; without it, or when the search fails, they are answered without the
+  web, and the reply says so. Apps, video, music, voice and paid web research stay on
+  credits. See `src/lib/engines/free.ts`.
 - **Live weather and the date**: every written answer knows the user's date, local time and rough
   place (from the connection), and weather questions are answered from MET Norway's free
   forecast (Locationforecast 2.0, no key or account). Flash's server asks MET with the place
@@ -91,6 +102,18 @@ Features:
   (linking to met.no) and "CC BY 4.0": MET's data is CC BY 4.0 and NLOD 2.0, and its terms
   allow commercial use with that credit. See `src/lib/weather.ts` and
   `src/lib/server/weather.ts`.
+- **Public data (web search, SEC EDGAR, FRED)**: questions about current events, a listed
+  company's filings or figures, or the economy get tools the AI calls like the forecast's.
+  Free web search runs through the owner's own SearXNG (HTTP Basic auth, https only) on the
+  free lane; paid Research keeps its own web search. SEC EDGAR (no key) gives a company's
+  recent filings and reported figures from its XBRL data, about 5 requests a second across
+  Flash, with the User-Agent the SEC asks for. FRED gives economic series with a free key;
+  answers that use it end with FRED's notice and a link to its API terms, and copyrighted
+  series are refused. On paid replies each round of these tools is priced and checked like
+  the forecast's, within the credits held; on the free lane they cost nothing. Every request
+  has a timeout and size cap, results are cached briefly in the database, and a failed source
+  is reported as failed, never guessed. See `src/lib/research.ts` and `src/lib/server/`
+  (`searxng.ts`, `sec.ts`, `fred.ts`, `source-fetch.ts`).
 - **Model mix**: Claude Opus 5.5 builds apps, slides and code; Claude Sonnet 5.5 handles
   everyday chat, writing, research and translation; Claude Haiku 5.5 picks the engine
   (or the forecast) for requests the keyword rules can't place. Override with

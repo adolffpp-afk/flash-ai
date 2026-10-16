@@ -1,6 +1,10 @@
 import { after } from "next/server";
 import { EDITABLE_TYPE, checksSpoken, fixesPictureText, followsForecast, route, takesGuess, textToSpeak } from "@/lib/router.ts";
 import { asksWeather } from "@/lib/weather-words.ts";
+import { asksEconomy, asksFilings } from "@/lib/research-words.ts";
+import { claudeTool, FAMILY_TOOLS, FRED_NOTE, type ClientTool } from "@/lib/research.ts";
+import { tokensAtMost } from "@/lib/tokens.ts";
+import { dataTools, fredReady, searxngReady } from "@/lib/server/research-tools.ts";
 import type { WeatherTool } from "@/lib/weather.ts";
 import { weatherTool } from "@/lib/server/weather.ts";
 import { MAX_EDIT_PIXELS, imageDimensions } from "@/lib/imageSize.ts";
@@ -141,6 +145,7 @@ import { chatKit, continuedCalls, requestedConnections } from "@/lib/server/conn
 import { approvedResults, releaseResults } from "@/lib/server/pending-actions.ts";
 import { accountReplies, continuedIds } from "@/lib/connectors.ts";
 import { messageWindow } from "@/lib/message-window.ts";
+import { maybeAutoTopUp } from "@/lib/server/auto-topup.ts";
 
 // Vercel Pro allows up to 800 seconds, which the Movie maker needs (scenes, filming and joining).
 // Price questions (409 confirm_cost) one user gets in an hour before the paid helpers stop deciding
@@ -352,11 +357,18 @@ const DEEP_RESEARCH =
 
 /**
  * The tools a reply in words has beyond its engine's own: the live forecast (hintOnly when only a
- * weather word asked for it, see weather-words.ts) and, for Research, the quick plan of one search
- * and one page read.
+ * weather word asked for it, see weather-words.ts), for Research, the quick plan of one search and
+ * one page read, and the SEC EDGAR (filings) and FRED (economy) tools when the message asks about a
+ * public company's filings or figures, or an economic indicator (see research-words.ts).
  */
-type Tools = { weather: boolean; hintOnly: boolean; quick: boolean; connect?: boolean };
+type Tools = { weather: boolean; hintOnly: boolean; quick: boolean; connect?: boolean; filings?: boolean; economy?: boolean };
 const NO_EXTRA_TOOLS: Tools = { weather: false, hintOnly: false, quick: false };
+// The engines that answer in words with SEC EDGAR's and FRED's data when a message asks for it.
+const DATA_ENGINES: Engine[] = ["text", "docs", "search"];
+/** The data tools' definitions a reply has, as Claude reads them: SEC EDGAR's, then FRED's. */
+const dataDefinitions = (tools: Tools) => [...(tools.filings ? FAMILY_TOOLS.sec : []), ...(tools.economy ? FAMILY_TOOLS.fred : [])].map(claudeTool);
+/** Whether a reply has tools of Flash's own to call (the forecast, SEC EDGAR, FRED): each round of them is priced as a forecast's. */
+const ownTools = (tools: Tools) => tools.weather || Boolean(tools.filings) || Boolean(tools.economy);
 // The engines that use the user's connected accounts when a chat has them on. Research keeps its web
 // search instead (the connector loop has no server tools), and building and media don't use them.
 const CONNECT_ENGINES: Engine[] = ["text", "code", "translate", "docs"];
@@ -393,13 +405,23 @@ async function usedAccounts(sent: unknown, projectId: unknown, userId: string): 
 function systemFor(engine: Engine, preferences: string, history: ChatTurn[], prompting: Prompting, tools: Tools = NO_EXTRA_TOOLS): string {
   if (engine === "app" || engine === "slides") return buildSystem(engine, preferences, latestApp(history) !== null, prompting.build);
   const { weather, quick } = tools;
-  if (engine === "search") return system(preferences, "search", { ...prompting.system, weather, quick });
-  return system(preferences, engine === "code" || engine === "translate" || engine === "docs" ? engine : "text", { ...prompting.system, weather, connect: Boolean(tools.connect) });
+  // The data tools' lines, as the engine adds them for the tools it gets (see toolFlags).
+  const data = { ...(tools.filings && { filings: true }), ...(tools.economy && { economy: true }) };
+  if (engine === "search") return system(preferences, "search", { ...prompting.system, weather, quick, ...data });
+  return system(preferences, engine === "code" || engine === "translate" || engine === "docs" ? engine : "text", {
+    ...prompting.system,
+    weather,
+    connect: Boolean(tools.connect),
+    ...data,
+  });
 }
 
-/** The tool calls a reply's hold pays for (see ToolPlan): Research's searches, the forecast's rounds, and the connectors' steps. */
+/**
+ * The tool calls a reply's hold pays for (see ToolPlan): Research's searches, the forecast's rounds
+ * (SEC EDGAR's and FRED's share them, and are priced the same), and the connectors' steps.
+ */
 const toolPlan = (engine: Engine, tools: Tools): ToolPlan | undefined =>
-  engine === "search" ? researchPlan(tools.quick, tools.weather) : tools.connect ? connectPlan(tools.weather) : tools.weather ? WEATHER_PLAN : undefined;
+  engine === "search" ? researchPlan(tools.quick, ownTools(tools)) : tools.connect ? connectPlan(ownTools(tools)) : ownTools(tools) ? WEATHER_PLAN : undefined;
 
 /** What a media request on this model cost Flash, in cents, with the number of photos it was given. */
 const mediaCents = (model: ModelInfo, request: string, photos = 1) => requestCents(model, request, photos);
@@ -538,13 +560,14 @@ async function* run(
   t: Translate & { language?: string } = english,
   // What the system prompt adds to the mode (see promptingFor); systemFor counts the same words.
   prompting: Prompting = { system: {}, free: {}, build: "" },
-  // The live forecast for an answer in words, what to do once it's used, Research's quick plan, and the
-  // user's connected accounts for Write, Code, Translate and Docs.
-  tools: { weather?: WeatherTool; onUsed?: () => void; quick?: boolean; connect?: ConnectorKit } = {},
+  // The live forecast for an answer in words, what to do once it's used, Research's quick plan, the
+  // user's connected accounts for Write, Code, Translate and Docs, and SEC EDGAR's and FRED's tools,
+  // with what to do once each tool's data is first used.
+  tools: { weather?: WeatherTool; onUsed?: () => void; quick?: boolean; connect?: ConnectorKit; data?: ClientTool[]; onTool?: (name: string) => void } = {},
 ): AsyncGenerator<StreamEvent> {
   const last = history[history.length - 1];
   const { started, watch, helper, halted, stop } = track;
-  const { weather, onUsed, quick, connect } = tools;
+  const { weather, onUsed, quick, connect, data, onTool } = tools;
   if (isMedia(engine) ? !model : !configured(engine)) {
     yield* unavailableReply(engine, t);
     return;
@@ -575,7 +598,7 @@ async function* run(
     case "docs":
       yield* withStepDown(
         choice ?? claudeChoice(engine, "ascend"),
-        (c) => streamText(history, preferences, engine, meter, budget, c, t, watch, { system: prompting.system, weather, onUsed, connect }),
+        (c) => streamText(history, preferences, engine, meter, budget, c, t, watch, { system: prompting.system, weather, onUsed, connect, data, onTool }),
         onStepDown,
         t,
       );
@@ -583,7 +606,7 @@ async function* run(
     case "search":
       yield* withStepDown(
         choice ?? claudeChoice(engine, "ascend"),
-        (c) => streamSearch(history, preferences, meter, budget, c, t, watch, { system: prompting.system, where: prompting.where, weather, onUsed, quick }),
+        (c) => streamSearch(history, preferences, meter, budget, c, t, watch, { system: prompting.system, where: prompting.where, weather, onUsed, quick, data, onTool }),
         onStepDown,
         t,
       );
@@ -807,8 +830,9 @@ async function* runFree(
   audio: { reserved?: number } = {},
   // The free models' tools line and the context note (see promptingFor).
   system: SystemOptions = {},
-  // The live forecast, what to do once it's used, and the language the user's answers are set to.
-  chat: { weather?: WeatherTool; onUsed?: () => void; language?: string } = {},
+  // The live forecast, what to do once it's used, the language the user's answers are set to, the data
+  // tools (web search, SEC EDGAR, FRED) with what to do once each is used, and the request's signal.
+  chat: { weather?: WeatherTool; onUsed?: () => void; language?: string; tools?: ClientTool[]; onTool?: (name: string) => void; signal?: AbortSignal } = {},
 ): AsyncGenerator<StreamEvent> {
   const last = history[history.length - 1];
   if (lane === "image") {
@@ -934,6 +958,10 @@ export async function POST(request: Request) {
   const followsWeather = auto.followUp === true;
   const firm = auto.live === "weather";
   const hinted = !last.attachment && asksWeather(last.content);
+  // A public company's filings or figures, or an economic indicator (see research-words.ts): hints that
+  // give an answer in words SEC EDGAR's or FRED's tools. They never make a request step down, search
+  // less or go free: on a paid reply they're left out when they would (see planFor).
+  const asksData = { filings: !last.attachment && asksFilings(last.content), economy: !last.attachment && asksEconomy(last.content) };
   // Whether the router gave an answer, and whether that answer was the forecast.
   let guessRan = false;
   let guessedWeather = false;
@@ -951,8 +979,17 @@ export async function POST(request: Request) {
     const followUp = followsWeather && (onFree || !guessRan);
     const weather = WEATHER_ENGINES.includes(e) && (asked || followUp || (hinted && (onFree || (!guessRan && !override))));
     const hintOnly = weather && !asked;
-    // Research asked about the weather searches quickly: the forecast comes from the tool.
-    return { weather, hintOnly, quick: e === "search" && ((weather && !hintOnly) || quickAsk), connect: connectsOn(e) };
+    // As for a weather word, a paid reply the user picked the engine for doesn't get them: a free one does.
+    const data = DATA_ENGINES.includes(e) && (onFree || !override);
+    return {
+      weather,
+      hintOnly,
+      // Research asked about the weather searches quickly: the forecast comes from the tool.
+      quick: e === "search" && ((weather && !hintOnly) || quickAsk),
+      connect: connectsOn(e),
+      ...(data && asksData.filings && { filings: true }),
+      ...(data && asksData.economy && fredReady() && { economy: true }),
+    };
   };
   // Sums, units and money: Sonic thinks harder on them.
   const careful = needsCare(last.content);
@@ -1127,8 +1164,18 @@ export async function POST(request: Request) {
     }
     return counts.get(key)!;
   };
-  /** The tools a reply with connectors sends: the forecast's when it has one, then the accounts'. */
-  const connectTools = (withTools: Tools) => (withTools.connect && kit ? [...(withTools.weather ? [WEATHER_TOOL] : []), ...kit.tools.map((tool) => tool.definition)] : undefined);
+  /** The tools a reply with connectors sends: the forecast's when it has one, SEC EDGAR's and FRED's, then the accounts'. */
+  const connectTools = (withTools: Tools) =>
+    withTools.connect && kit ? [...(withTools.weather ? [WEATHER_TOOL] : []), ...dataDefinitions(withTools), ...kit.tools.map((tool) => tool.definition)] : undefined;
+  /**
+   * What SEC EDGAR's and FRED's tools add to what a reply reads, counted high (see tokensAtMost), on
+   * top of the room countInputTokens leaves for tools: 0 without them, and with connectors, where
+   * every tool is counted exactly.
+   */
+  const dataRoom = (withTools: Tools) => {
+    const definitions = dataDefinitions(withTools);
+    return definitions.length === 0 || (withTools.connect && kit) ? 0 : tokensAtMost(JSON.stringify(definitions));
+  };
 
   /**
    * Prices the request on an engine: its model or level, the credits it needs and holds, and what it
@@ -1185,7 +1232,7 @@ export async function POST(request: Request) {
         // The reply may only spend what the held credits pay for, so no request runs at a loss.
         const plan = async (level: ModelLevel, withTools: Tools) => {
           const choice = claudeChoice(engine, level, { careful });
-          const inputTokens = await countOnce(choice.model, systemFor(engine, preferences, history, prompting, withTools), connectTools(withTools));
+          const inputTokens = (await countOnce(choice.model, systemFor(engine, preferences, history, prompting, withTools), connectTools(withTools))) + dataRoom(withTools);
           const scale = claudePrice(choice.model, inputTokens).output / claudePrice(defaultChoice(engine).model, inputTokens).output;
           return { choice, tools: withTools, hold: planHold(engine, choice.model, inputTokens, available, scale, helperCents, toolPlan(engine, withTools)) };
         };
@@ -1226,7 +1273,12 @@ export async function POST(request: Request) {
           }
           return { planned, why, fellBack };
         };
-        let priced = await price(toolsFor(engine, forecast));
+        const asked = toolsFor(engine, forecast);
+        let priced = await price(asked);
+        // Nor do SEC EDGAR's and FRED's tools: they're left out instead.
+        if ((asked.filings || asked.economy) && (priced.fellBack || available < priced.planned.hold.needed)) {
+          priced = await price({ ...asked, filings: false, economy: false });
+        }
         // A weather word alone never makes a reply step down, search less or go to the free lane: the
         // forecast is left out instead, and the reply is priced as it was before it.
         if (priced.planned.tools.hintOnly && (priced.fellBack || available < priced.planned.hold.needed)) {
@@ -1356,6 +1408,8 @@ export async function POST(request: Request) {
   // Out of credits: chat-style requests and images fall back to free models,
   // up to a daily allowance per user.
   let free: FreeLane | null = null;
+  // Research's question goes to a free model with the free web search, when SearXNG is set up.
+  let freeSearch = false;
   const verified = isVerified(user);
   // Connectors use credits: a chat with them on never goes to the free lane. Nor does a chat with a
   // reply that used them, with them off now or on Research (which has none): what Claude wrote from an
@@ -1397,9 +1451,10 @@ export async function POST(request: Request) {
       free = lane;
       held = needed = 0;
       budget = NO_BUDGET;
-      // A free model can't search, so the header doesn't say Research.
+      // A free model searches only with Flash's own search, so the header doesn't say Research.
       if (engine === "search") {
         engine = "text";
+        freeSearch = searxngReady();
         reason = t("Research needs credits, so a free model answered without searching the web.");
       }
     }
@@ -1577,19 +1632,43 @@ export async function POST(request: Request) {
     const deadline = metered && !free ? setTimeout(() => stopEngine("deadline"), startedAt + DEADLINE_MS - Date.now()) : undefined;
     let ok = true;
     let stopped = false;
+    // The reply showed FRED data, so it carries FRED's notice even when it's stopped (see below).
+    let fredShown = false;
     let failure = "";
     let error: unknown;
-    // A free reply gets the forecast whenever it's asked for or a weather word is in the message: it costs nothing.
-    const freeWeather = free === "chat" && toolsFor(engine, false, true).weather;
+    // Once a free model's web search is used, the header says so.
+    const searchedReason = t("Research needs credits, so a free model answered with a free web search.");
+    const freeToolUsed = (name: string) => {
+      if (name.startsWith("fred_")) fredShown = true;
+      if (name !== "web_search" || routed.reason === searchedReason) return;
+      routed = { ...routed, reason: searchedReason };
+      send(routed);
+    };
+    // A free reply gets the forecast whenever it's asked for or a weather word is in the message, and
+    // SEC EDGAR, FRED and web search whenever they're asked for: they cost nothing.
+    const freeTools = free === "chat" ? toolsFor(engine, false, true) : NO_EXTRA_TOOLS;
+    const freeData =
+      free === "chat" ? dataTools({ search: freeSearch, filings: freeTools.filings, economy: freeTools.economy }, { userId: user.id, language: user.language ?? "", t }) : [];
+    // A paid reply's are those its hold paid for.
+    const paidData = free ? [] : dataTools({ filings: tools.filings, economy: tools.economy }, { userId: user.id, t });
     const events = free
       ? runFree(free, engine, history, preferences, store, freeUse, where.country ?? "", t, freeAudio, prompting.free, {
-          ...(freeWeather && { weather: weatherTool(where, t), onUsed: forecastUsed }),
+          ...(freeTools.weather && { weather: weatherTool(where, t), onUsed: forecastUsed }),
+          ...(freeData.length && { tools: freeData, onTool: freeToolUsed }),
           language: user.language ?? "",
+          // Stop ends the free model's look-ups too: they'd use slots and daily counts every reply shares.
+          signal: abort.signal,
         })
       : run(engine, history, preferences, store, model, meter, budget, mediaNotes, claudeRun, steppedDown, track, t, prompting, {
           ...(tools.weather && { weather: weatherTool(where, t), onUsed: forecastUsed }),
           quick: tools.quick,
           ...(tools.connect && kit && { connect: kit }),
+          ...(paidData.length && {
+            data: paidData,
+            onTool: (name: string) => {
+              if (name.startsWith("fred_")) fredShown = true;
+            },
+          }),
         });
     // Stop ends the request at once, without waiting for the next event: a Claude call is stopped,
     // and a provider job already sent is paid for as sent (see finalCredits). A Claude engine still
@@ -1629,6 +1708,10 @@ export async function POST(request: Request) {
       ok = false;
       failure = t(BUILD_TOO_LONG);
     }
+    // FRED's terms ask for its notice under any reply that showed its data, a stopped one too: the free
+    // lane stops at once, before its engine adds the notice, and a paid reply's engine may not hand it
+    // over within DRAIN_MS. Sent here, it's in the reply that's saved.
+    if (stopped && fredShown && !reply.content.includes(FRED_NOTE)) send({ type: "text", delta: FRED_NOTE });
     // A helper still running when the user stopped is billed by Claude, so the request waits for it
     // to be metered (each has a timeout of under a minute) and pays for it.
     if (stopped) await Promise.allSettled(helping);
@@ -1717,7 +1800,10 @@ export async function POST(request: Request) {
       try {
         reader?.close();
       } catch {}
-    });
+    })
+    // A reply that brought the balance below the person's auto top-up level buys their pack.
+    .then(() => maybeAutoTopUp(user.id))
+    .catch((err) => console.error("[flash] auto top-up failed", err));
   after(work);
   return new Response(stream, {
     headers: { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-store" },

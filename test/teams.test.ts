@@ -153,3 +153,35 @@ test("a member's visit gives the team pool this month's paid-for credits", async
   await ensureMonthlyCredits("mm");
   assert.equal(await balance("owner2"), business.credits);
 });
+
+test("extra seats add people and monthly credits to a team plan", async () => {
+  const { EXTRA_SEAT } = await import("../src/lib/credits.ts");
+  await user("owner3");
+  const start = Date.now() - DAY;
+  await recordPayment({
+    subscriptionId: "sub_biz3", userId: "owner3", planId: "business", interval: "month", customer: "cus_3",
+    amountCents: business.priceCents + 2 * EXTRA_SEAT.priceCents, periodStart: start, periodEnd: addMonths(start, 1),
+    ref: "stripe-invoice:in_biz3", test: false, extraSeats: 2,
+  });
+  assert.equal(await balance("owner3"), business.credits + 2 * EXTRA_SEAT.credits);
+  const summary = await teamSummary("owner3");
+  assert.equal(summary?.role === "owner" ? summary.seats : 0, business.seats! + 2);
+  // 7 seats: the owner and 6 others.
+  for (let i = 0; i < 6; i++) {
+    await user(`s${i}`);
+    await join("owner3", `s${i}`);
+  }
+  await user("s6");
+  await assert.rejects(inviteMember(users.owner3, users.s6.email, "http://x"), /7 seats/);
+});
+
+test("extra seats only go with team plans", async () => {
+  await user("solo");
+  const start = Date.now() - DAY;
+  const pro = PLANS.find((p) => p.id === "pro")!;
+  await recordPayment({
+    subscriptionId: "sub_solo", userId: "solo", planId: "pro", interval: "month", customer: "cus_solo",
+    amountCents: pro.priceCents, periodStart: start, periodEnd: addMonths(start, 1), ref: "stripe-invoice:in_solo", test: false, extraSeats: 3,
+  });
+  assert.equal(await balance("solo"), pro.credits);
+});

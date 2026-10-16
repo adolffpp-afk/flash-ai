@@ -1,4 +1,4 @@
-import { CREDIT_LIMITS, CREDIT_PACKS, FREE_MONTHLY_CREDITS, PLANS, TYPICAL_CREDITS } from "../credits.ts";
+import { CREDIT_LIMITS, CREDIT_PACKS, EXTRA_SEAT, FREE_MONTHLY_CREDITS, MAX_EXTRA_SEATS, PLANS, TYPICAL_CREDITS } from "../credits.ts";
 import { templateCredits } from "../templates.ts";
 import { CHAT_MODEL } from "../engines/claude.ts";
 import { MODELS, modelCredits } from "../models.ts";
@@ -33,6 +33,8 @@ export function pricingInfo() {
     limits: CREDIT_LIMITS,
     packs: CREDIT_PACKS,
     plans: PLANS,
+    // More people on a team plan, each with more monthly credits.
+    extraSeat: { ...EXTRA_SEAT, max: MAX_EXTRA_SEATS },
     freeMonthly: FREE_MONTHLY_CREDITS,
     // Free models once credits run out, per user per day.
     freeLane: {

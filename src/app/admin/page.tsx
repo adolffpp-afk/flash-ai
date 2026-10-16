@@ -3,6 +3,7 @@ import { AdminDashboard } from "@/components/AdminDashboard";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
-export default function Admin() {
-  return <AdminDashboard />;
+export default async function Admin({ searchParams }: { searchParams: Promise<{ tab?: string | string[] }> }) {
+  const { tab } = await searchParams;
+  return <AdminDashboard initialTab={typeof tab === "string" ? tab : undefined} />;
 }

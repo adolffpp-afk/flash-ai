@@ -1,6 +1,8 @@
 import { all, one } from "./db.ts";
 import { CREDIT_PACKS, MARKUP, PLANS, paymentFeeCents, planPrice, worstCaseProfitCents } from "../credits.ts";
-import { CONNECTOR_SETUP, GITHUB_SETUP, PROVIDER_LIST, missingKeys, providerName } from "../providers.ts";
+import { CONNECTOR_SETUP, DATA_SOURCES, GITHUB_SETUP, PROVIDER_LIST, missingKeys, providerName } from "../providers.ts";
+import { searxngUrlProblem } from "./searxng.ts";
+import { fredKeyProblem } from "./fred.ts";
 import { githubReady } from "./github.ts";
 import { googleMissing, googleReady } from "./google.ts";
 import { connectorsReady, keyVersions } from "./secret-box.ts";
@@ -53,19 +55,28 @@ export async function adminStats(days: number) {
      FROM usage WHERE created_at >= ? AND provider != '' GROUP BY provider`,
     [since],
   );
+  // The data sources' requests (web search, SEC EDGAR, FRED), counted per day as they're sent.
+  const sourceUse = await all<{ provider: string; requests: number }>(
+    `SELECT provider, COALESCE(SUM(requests), 0) AS requests FROM free_quota
+     WHERE day >= ? AND provider IN (${DATA_SOURCES.map(() => "?").join(", ")}) GROUP BY provider`,
+    [new Date(since).toISOString().slice(0, 10), ...DATA_SOURCES],
+  );
+  // What makes a variable that is set unusable (an http SearXNG address, a FRED key of the wrong shape), by name.
+  const problems: Record<string, string> = { searxng: searxngUrlProblem(), fred: fredKeyProblem() };
   // Every provider Flash can call, used or not, then any other provider the usage log names.
   const byProvider = [
     ...PROVIDER_LIST.map((p) => {
-      const missing = missingKeys(p, process.env);
-      return { id: p.id, does: p.does, free: p.free, setUp: !missing.length, missing };
+      const missing = [...missingKeys(p, process.env), ...(problems[p.id] ? [problems[p.id]] : [])];
+      return { id: p.id, does: p.does, free: p.free, setUp: !missing.length, missing, noKey: !p.keys.length };
     }),
     ...providerUse
       .filter((r) => !PROVIDER_LIST.some((p) => p.id === r.provider))
-      .map((r) => ({ id: r.provider, does: "", free: false, setUp: true, missing: [] as string[] })),
+      .map((r) => ({ id: r.provider, does: "", free: false, setUp: true, missing: [] as string[], noKey: false })),
   ]
     .map((p) => {
       const use = providerUse.find((r) => r.provider === p.id);
-      return { ...p, provider: providerName(p.id), requests: n(use?.requests), costCents: n(use?.cost) };
+      const sent = sourceUse.find((r) => r.provider === p.id);
+      return { ...p, provider: providerName(p.id), requests: n(use?.requests) + n(sent?.requests), costCents: n(use?.cost) };
     })
     .sort((a, b) => b.costCents - a.costCents || b.requests - a.requests || Number(a.free) - Number(b.free));
   const byModel = await all<{ model: string; provider: string; requests: number; cost: number }>(
