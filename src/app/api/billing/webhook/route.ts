@@ -17,6 +17,9 @@ type Invoice = {
   id: string;
   customer?: string | null;
   amount_paid: number;
+  // With Stripe Tax: the invoice's total with and without its tax.
+  total?: number;
+  total_excluding_tax?: number | null;
   currency?: string;
   billing_reason?: string;
   // Newer API versions put the subscription under parent; older ones on the invoice itself.
@@ -63,10 +66,13 @@ async function invoicePaid(invoice: Invoice) {
   const period = invoice.lines?.data?.[0]?.period;
   if (!subscriptionId || !user || !plan || !isInterval(interval) || !period) return;
   // Credits are only given for the plan's full price (no zero or discounted invoices).
+  // Tax collected goes to governments, not Flash: only the price counts.
+  const tax = invoice.total !== undefined && typeof invoice.total_excluding_tax === "number" ? Math.max(0, invoice.total - invoice.total_excluding_tax) : 0;
+  const paid = invoice.amount_paid - tax;
   const planInfo = planById(plan);
   const extraSeats = planInfo ? extraSeatsFor(planInfo, Number(extra_seats ?? 0)) : 0;
   const due = planInfo ? planPrice(planInfo, interval) + seatsPrice(extraSeats, interval) : 0;
-  if (!planInfo || invoice.amount_paid < due || (invoice.currency ?? "").toLowerCase() !== currency()) {
+  if (!planInfo || paid < due || (invoice.currency ?? "").toLowerCase() !== currency()) {
     console.warn(`[flash] invoice ${invoice.id} paid ${invoice.amount_paid} for ${plan}/${interval}: no credits given`);
     return;
   }
@@ -77,7 +83,7 @@ async function invoicePaid(invoice: Invoice) {
     planId: plan,
     interval,
     customer: invoice.customer ?? null,
-    amountCents: invoice.amount_paid,
+    amountCents: paid,
     periodStart: period.start * 1000,
     periodEnd: period.end * 1000,
     ref,

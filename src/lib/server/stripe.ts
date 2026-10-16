@@ -26,6 +26,28 @@ export async function stripe<T>(method: string, path: string, form?: URLSearchPa
 
 export const currency = () => (process.env.FLASH_CURRENCY || "usd").toLowerCase();
 
+/*
+ * Sales tax (GST/HST, VAT, US sales tax) through Stripe Tax, on when FLASH_STRIPE_TAX is "true".
+ * Turn it on only once Stripe Tax is set up in the Stripe dashboard (business address and the
+ * places Flash is registered), or checkout fails. Tax is added on top of Flash's prices, so what
+ * Flash keeps, and every plan's margin, stays the same.
+ */
+export const taxOn = () => process.env.FLASH_STRIPE_TAX === "true";
+
+/** Asks Stripe to work out and add tax on a checkout with these many line items. */
+export function withTax(form: URLSearchParams, lineItems: number, existingCustomer: boolean): URLSearchParams {
+  if (!taxOn()) return form;
+  form.set("automatic_tax[enabled]", "true");
+  for (let i = 0; i < lineItems; i++) form.set(`line_items[${i}][price_data][tax_behavior]`, "exclusive");
+  form.set("billing_address_collection", "required");
+  // A returning customer's address is saved on them, so tax on their renewals uses it.
+  if (existingCustomer) {
+    form.set("customer_update[address]", "auto");
+    form.set("customer_update[name]", "auto");
+  }
+  return form;
+}
+
 /** Creates a Stripe Checkout page for a credit pack and returns its URL. */
 export async function createCheckout(pack: CreditPack, userId: string, email: string, origin: string): Promise<string> {
   const form = new URLSearchParams({
@@ -41,6 +63,7 @@ export async function createCheckout(pack: CreditPack, userId: string, email: st
     success_url: `${origin}/?purchase=success`,
     cancel_url: `${origin}/?purchase=cancelled`,
   });
+  withTax(form, 1, false);
   const json = await stripe<{ url?: string }>("POST", "/checkout/sessions", form);
   if (!json.url) throw new Error("Stripe didn't return a checkout link");
   return json.url;
@@ -82,6 +105,7 @@ export async function createSubscriptionCheckout(
   }
   if (customer) form.set("customer", customer);
   else form.set("customer_email", user.email);
+  withTax(form, extraSeats > 0 ? 2 : 1, Boolean(customer));
   const json = await stripe<{ url?: string }>("POST", "/checkout/sessions", form);
   if (!json.url) throw new Error("Stripe didn't return a checkout link");
   return json.url;
