@@ -1643,8 +1643,12 @@ export async function POST(request: Request) {
     try {
       const how = await readEngine(
         events[Symbol.asyncIterator](),
-        // Once Stop is pressed on a picture, video or sound, its progress says what happens to it.
-        (e) => send(stopAsked && e.type === "status" ? stopNote() : e),
+        (e) => {
+          // The file being written is only for the page watching it (see live-draft.ts), and never after Stop.
+          if (e.type === "draft" && halt === "stop") return;
+          // Once Stop is pressed on a picture, video or sound, its progress says what happens to it.
+          send(stopAsked && e.type === "status" ? stopNote() : e);
+        },
         { halted: () => halt !== null, onWake: (w) => (wake = w), ...(drains && { drainMs: DRAIN_MS }) },
       );
       stopped = how === "stopped";

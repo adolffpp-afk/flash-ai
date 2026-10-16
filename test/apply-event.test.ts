@@ -50,7 +50,17 @@ test("a stopped or failed reply says so", () => {
 test("the browser and the server save the same reply from the same events", () => {
   const streams: StreamEvent[][] = [
     [route, { type: "text", delta: "One" }, { type: "cost", credits: 2 }, { type: "done" }],
-    [route, { type: "status", message: "Writing your app… 25 lines" }, { type: "app", app: { title: "A", html: "<html></html>", kind: "app" } }, { type: "text", delta: "Done." }, { type: "done" }],
+    [
+      route,
+      { type: "status", message: "Writing your app… 25 lines" },
+      // The live preview's drafts are never part of the reply.
+      { type: "draft", at: 0, delta: "<html><script>half" },
+      { type: "draft", at: 18, delta: "-written" },
+      { type: "app", app: { title: "A", html: "<html></html>", kind: "app" } },
+      { type: "text", delta: "Done." },
+      { type: "done" },
+    ],
+    [route, { type: "draft", at: 0, delta: "<!doctype html><script>half" }, { type: "draft", at: 0, delta: "" }, { type: "stopped" }, { type: "done" }],
     [route, { type: "text", delta: "Cut" }, { type: "stopped" }, { type: "cost", credits: 1 }, { type: "done" }],
     [route, { type: "error", message: "Busy. Your credits were refunded." }, { type: "done" }],
   ];
@@ -60,5 +70,11 @@ test("the browser and the server save the same reply from the same events", () =
     const browser = build(events);
     const server = events.filter((e) => e.type !== "done").reduce(applyEvent, placeholder());
     assert.equal(serverSaves(server), browserSaves(browser));
+    assert.ok(!serverSaves(server).includes("half") && !browserSaves(browser).includes("half"), "a draft is never saved");
   }
+});
+
+test("a draft leaves the reply exactly as it was", () => {
+  const m = build([route, { type: "text", delta: "Building." }]);
+  assert.equal(applyEvent(m, { type: "draft", at: 0, delta: "<script>half" }), m);
 });

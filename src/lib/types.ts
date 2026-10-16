@@ -92,6 +92,9 @@ export type StreamEvent =
   // A social post pack's posts, each ready to copy.
   | { type: "posts"; posts: Post[] }
   | { type: "app"; app: BuiltApp }
+  // The file being written, for the live preview: delta continues the draft at offset at (at 0
+  // starts it over; an empty delta at 0 clears it). Shown while it streams, never saved.
+  | { type: "draft"; at: number; delta: string }
   | { type: "error"; message: string }
   // The reply ended early: the user pressed Stop, or a Claude engine ran out of time.
   | { type: "stopped" }

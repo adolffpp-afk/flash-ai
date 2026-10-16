@@ -36,7 +36,9 @@ process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${(server.address() as Addres
 
 const { streamBuild } = await import("../src/lib/engines/builder.ts");
 const { Running } = await import("../src/lib/engines/claude.ts");
-type Event = { type: string; message?: string; app?: { html: string } };
+type Event = { type: string; message?: string; app?: { html: string }; at?: number; delta?: string };
+// The file the live preview's drafts add up to (see live-draft.ts).
+const drafted = (events: Event[]) => events.filter((e) => e.type === "draft").reduce((html, e) => (e.at === 0 ? e.delta! : html + e.delta), "");
 
 const LONG_PAGE = "Here's your page.\n\n```html\n<!doctype html>\n<html><body>\n" + "<p>A line of the page that goes on.</p>\n".repeat(200) + "</body></html>\n```";
 const PAGE = "<!doctype html>\n<html><body><h1>Bakery</h1></body></html>";
@@ -78,6 +80,8 @@ test("a first build cut off by the request's deadline keeps what was written, pa
   assert.equal(events.find((e) => e.type === "error")?.message, "The app was too large to finish in one go. Try asking for a simpler first version.");
   assert.equal(costs.length, 1);
   assert.ok(costs[0] > 0, "the cut call is paid for");
+  assert.ok(drafted(events).length > 0, "it was shown as it was written");
+  assert.ok(app.html.startsWith(drafted(events)), "and what was shown is the start of what is kept");
 });
 
 test("Stop on a first build, or the deadline on a change, keeps nothing: the call is cut", async () => {
@@ -85,6 +89,8 @@ test("Stop on a first build, or the deadline on a change, keeps nothing: the cal
   const stopped = await build([{ role: "user", content: "build me a page" }], 300, "stop");
   assert.ok(stopped.error);
   assert.equal(stopped.events.find((e) => e.type === "app"), undefined);
+  const shown = drafted(stopped.events);
+  assert.ok(shown && LONG_PAGE.includes("```html\n" + shown), "the start of the file was shown, and only shown");
   answers.push(LONG_PAGE);
   const change = await build(edited, 300, "deadline");
   assert.ok(change.error);
