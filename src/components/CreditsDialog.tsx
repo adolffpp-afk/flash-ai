@@ -6,6 +6,7 @@ import { api, type Me } from "@/lib/store";
 import { IntervalToggle, PlanCards, type Interval } from "./PlanCards";
 import { InviteFriends } from "./InviteFriends";
 import { TeamPanel } from "./TeamPanel";
+import { AutoTopUp } from "./AutoTopUp";
 import { ConnectedApps } from "./ConnectedApps";
 import type { Translate } from "@/lib/i18n";
 import { useT } from "@/lib/use-t";
@@ -229,6 +230,7 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
                 </div>
               ))}
             </div>
+            {me.paymentsEnabled && <AutoTopUp packs={me.packs} />}
             {message && <p className="mt-3 text-sm text-amber-300">{message}</p>}
             {!canBuy && !message && (
               <p className="mt-3 text-xs text-zinc-500">{t("Paid plans and top-ups are coming soon. Your free credits refill on the 1st of each month.")}</p>

@@ -230,6 +230,18 @@ const SCHEMA = [
     ref TEXT NOT NULL UNIQUE,
     created_at INTEGER NOT NULL
   )`,
+  // Auto top-up: buys a credit pack with the saved card when the balance falls below a level (see auto-topup.ts).
+  `CREATE TABLE IF NOT EXISTS auto_topups (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    enabled INTEGER NOT NULL DEFAULT 0,
+    pack TEXT NOT NULL,
+    below INTEGER NOT NULL,
+    customer TEXT,
+    payment_method TEXT,
+    last_at INTEGER NOT NULL DEFAULT 0,
+    failed TEXT NOT NULL DEFAULT '',
+    updated_at INTEGER NOT NULL
+  )`,
   // Monthly plans. paid_until is how far the subscriber has paid; credits arrive once a month
   // from anchor (the subscription's start) for as long as that month began before paid_until.
   `CREATE TABLE IF NOT EXISTS subscriptions (

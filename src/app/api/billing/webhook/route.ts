@@ -1,5 +1,6 @@
 import { addPurchase, clawBack, findPurchase, recordReversal } from "@/lib/server/credits.ts";
 import { cancelStripeSubscription, currency, invoiceForPaymentIntent, verifyWebhook } from "@/lib/server/stripe.ts";
+import { saveCard } from "@/lib/server/auto-topup.ts";
 import {
   endSubscription,
   isInterval,
@@ -11,7 +12,7 @@ import {
 import { CREDIT_PACKS, extraSeatsFor, planPrice, seatsPrice } from "@/lib/credits.ts";
 import { reverseReferral, rewardReferral } from "@/lib/server/referrals.ts";
 
-type Meta = { user?: string; plan?: string; interval?: string; pack?: string; extra_seats?: string };
+type Meta = { user?: string; plan?: string; interval?: string; pack?: string; extra_seats?: string; auto_topup?: string };
 type SubscriptionDetails = { subscription?: string; metadata?: Meta | null };
 type Invoice = {
   id: string;
@@ -163,7 +164,12 @@ export async function POST(request: Request) {
     // Payment methods that take days (bank debits) complete unpaid and send this once paid.
     case "checkout.session.async_payment_succeeded": {
       // Credit packs. Plans are handled by invoice.paid. Packs never earn referral bonuses.
-      const { user, pack } = object.metadata ?? {};
+      const { user, pack, auto_topup } = object.metadata ?? {};
+      // A card saved for auto top-up (see auto-topup.ts).
+      if (object.mode === "setup") {
+        if (auto_topup === "1") await saveCard(object.id);
+        break;
+      }
       // Only for the pack's full price, in Flash's currency (Checkout's prices are set by Flash, so
       // anything else means a setting changed in Stripe, and credits shouldn't follow it).
       const price = CREDIT_PACKS.find((p) => p.id === pack)?.priceCents;
