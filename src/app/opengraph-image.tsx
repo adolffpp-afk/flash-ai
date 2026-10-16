@@ -1,11 +1,10 @@
 import { ImageResponse } from "next/og";
-import { BRAND, BrandMark } from "./brand";
+import { PRODUCT_NAME, TAGLINE } from "@/lib/product";
+import { BRAND, BrandMark, InfinitySymbol } from "./brand";
 
-// The iridescent sweep of the logo, for the "AI" and the underline.
-const IRIS = "linear-gradient(95deg, #5eeaf4, #5b8cf6 30%, #9b6cf4 60%, #f472b6)";
-
-// The preview shown when a Flash link is shared. Twitter uses it too.
-export const alt = "Flash AI: one AI for everything";
+// The preview shown when a Flash link is shared. Twitter uses it too. Laid out like the logo lockup:
+// the app icon, then the name with the drawn infinity, and the tagline under it.
+export const alt = `${PRODUCT_NAME}: ${TAGLINE}`;
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -17,23 +16,32 @@ export default function OpengraphImage() {
           width: "100%",
           height: "100%",
           display: "flex",
-          flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          background: `radial-gradient(circle at 50% 35%, #222944, ${BRAND.ink} 70%)`,
-          color: "white",
+          background: `radial-gradient(circle at 30% 45%, #222944, ${BRAND.ink} 70%)`,
+          color: "#f4f5fa",
         }}
       >
-        <BrandMark size={200} />
-        <div style={{ display: "flex", marginTop: 36, fontSize: 96, fontWeight: 700, letterSpacing: -2 }}>
-          <span>Flash</span>
-          <span style={{ marginLeft: 24, backgroundImage: IRIS, backgroundClip: "text", color: "transparent" }}>AI</span>
-          <svg width="28" height="28" viewBox="0 0 16 16" style={{ marginLeft: 6, marginTop: 14 }}>
-            <path d="M8 0l1.9 6.1L16 8l-6.1 1.9L8 16l-1.9-6.1L0 8l6.1-1.9z" fill={BRAND.spark} />
-          </svg>
+        <BrandMark size={232} id="og-icon" tile />
+        <div style={{ display: "flex", flexDirection: "column", marginLeft: 52 }}>
+          {/* Only the regular weight of the font ships with the image renderer, so an outline in the text's
+              own colour thickens the name to the logo's bold. */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              fontSize: 136,
+              letterSpacing: 0,
+              lineHeight: 1,
+              WebkitTextStroke: "6px #f4f5fa",
+            }}
+          >
+            <span>Flash</span>
+            <InfinitySymbol id="og-name" width={134} height={71} style={{ margin: "12px 32px 0" }} />
+            <span>AI</span>
+          </div>
+          <div style={{ display: "flex", marginTop: 30, fontSize: 38, color: "#a5b0cc" }}>{TAGLINE}</div>
         </div>
-        <div style={{ marginTop: 12, fontSize: 40, color: "#b4bad0" }}>One AI for everything</div>
-        <div style={{ display: "flex", marginTop: 36, width: 220, height: 6, borderRadius: 3, background: IRIS }} />
       </div>
     ),
     size,

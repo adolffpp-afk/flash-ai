@@ -162,7 +162,7 @@ const saveAsExcel = (text: string) =>
 const saveAsSlides = (text: string, t: T) => {
   const name = wordFileName(text).replace(/\.docx$/, "");
   const date = new Date().toLocaleDateString(t.locale, { month: "long", day: "numeric", year: "numeric" });
-  download(slidesDeck(text, name, t("Made with Flash AI · {date}", { date })), "application/vnd.openxmlformats-officedocument.presentationml.presentation", `${name}.pptx`);
+  download(slidesDeck(text, name, t("Made with Flash ∞ AI · {date}", { date })), "application/vnd.openxmlformats-officedocument.presentationml.presentation", `${name}.pptx`);
 };
 
 // Answers with headings or lists make a deck; a few plain sentences don't.

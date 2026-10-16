@@ -6,8 +6,12 @@ import { api, type Pricing } from "@/lib/store";
 import { IntervalToggle, PlanCards, type Interval } from "./PlanCards";
 import { EngineIcon } from "./EngineIcon";
 import { InstallApp } from "./InstallApp";
-import { BrandMark } from "@/app/brand";
-import { Orb } from "./Home";
+import { BrandMark, Wordmark } from "@/app/brand";
+import { ICONS, Orb, Tile, type Hue } from "./Home";
+import { msg } from "@/lib/i18n";
+import { LEGAL_NAME, TRADEMARK } from "@/lib/product";
+import { useT } from "@/lib/use-t";
+import { useInAndroidApp } from "@/lib/android-shell";
 
 const money = (cents: number) => `$${(cents / 100).toFixed(cents % 100 ? 2 : 0)}`;
 
@@ -24,6 +28,13 @@ const ENGINE_COPY: Record<Engine, { text: string }> = {
   voice: { text: "Natural-sounding voiceovers for any text." },
   music: { text: "Jingles, beats and full songs with sung lyrics." },
   transcribe: { text: "Clean transcripts from any recording or video." },
+};
+
+// What Create makes, worded for the media tools that are live (pictures and video share a provider, as do music and voice).
+const CREATE_TEXT = {
+  all: msg("Pictures, video, music and voice-overs from a few words."),
+  pictures: msg("Pictures and video from a few words."),
+  sound: msg("Music and voice-overs from a few words."),
 };
 
 const STEPS = [
@@ -96,6 +107,9 @@ export function Landing({
   status: Record<Engine, boolean> | null;
   initialPricing?: Pricing;
 }) {
+  // The landing page shows in English (see Flash.tsx); its newer words are in the tables all the same.
+  const t = useT();
+  const inApp = useInAndroidApp();
   const [pricing, setPricing] = useState<Pricing | null>(initialPricing ?? null);
   const [billing, setBilling] = useState<Interval>("month");
   useEffect(() => {
@@ -108,6 +122,57 @@ export function Landing({
   const soonMedia = MEDIA_WORDS.filter(([e]) => !isLive(e)).map(([, word]) => word);
   // Until the prices load, plans are assumed to be on sale so nothing flickers to "coming soon".
   const canBuy = !pricing || pricing.paymentsEnabled || pricing.testPurchases;
+  const pictures = isLive("image") && isLive("video");
+  const sound = isLive("music") && isLive("voice");
+
+  // The seven things Flash is for, each with what it does today. Automate is planned, not built, so it says so.
+  const pillars: { name: string; text: string; d: string; hue: Hue; live: boolean }[] = [
+    { name: t("Chat"), text: t("Ask anything by typing or talking, and get answers in your language."), d: ICONS.chat, hue: "blue", live: isLive("text") },
+    {
+      name: t("Research"),
+      text: t("Flash searches the web for you and writes up what it finds, citing each source."),
+      d: ICONS.search,
+      hue: "pink",
+      live: isLive("search"),
+    },
+    {
+      name: t("Create"),
+      text: t(pictures && !sound ? CREATE_TEXT.pictures : sound && !pictures ? CREATE_TEXT.sound : CREATE_TEXT.all),
+      d: ICONS.create,
+      hue: "orange",
+      live: pictures || sound,
+    },
+    {
+      name: t("Build"),
+      text: t("Working apps and websites from a description, with a live preview you change by chatting."),
+      d: ICONS.app,
+      hue: "violet",
+      live: isLive("app"),
+    },
+    {
+      name: t("Host"),
+      text: t("Published apps run on Flash, with their own database, a form inbox and visitor stats."),
+      d: ICONS.globe,
+      hue: "teal",
+      live: isLive("app"),
+    },
+    {
+      name: t("Deploy"),
+      text: pricing?.domainsEnabled
+        ? t("Publish in one click to a Flash address, or to your own domain on a paid plan.")
+        : t("Publish in one click and get a link anyone can open. Update it any time."),
+      d: ICONS.share,
+      hue: "rose",
+      live: isLive("app"),
+    },
+    {
+      name: t("Automate"),
+      text: t("Set up a job once, like a weekly sales summary, and Flash will run it on time."),
+      d: ICONS.bolt,
+      hue: "blue",
+      live: false,
+    },
+  ];
 
   // The main call to action, in the same colours as the app's main buttons.
   const cta =
@@ -116,18 +181,16 @@ export function Landing({
     // No background of its own: the app's page glow (iridescent by day, Nova glass at night) shows through.
     <div className="h-full overflow-y-auto text-zinc-100">
       <header className="sticky top-0 z-10 border-b border-white/6 bg-zinc-950/60 backdrop-blur-xl">
-        <nav className="mx-auto flex h-16 max-w-6xl items-center gap-8 px-4 sm:px-6">
-          <a href="#" aria-label="Flash AI home" className="flex items-center gap-1.5">
+        <nav className="mx-auto flex h-16 max-w-6xl items-center gap-4 px-4 sm:px-6 md:gap-8">
+          <a href="#" aria-label={t("Flash Infinity AI, home")} className="flex shrink-0 items-center gap-2">
             <span className="[filter:drop-shadow(0_3px_8px_rgb(91_140_246/0.35))]">
               <BrandMark size={34} id="flash-landing" />
             </span>
-            <span className="whitespace-nowrap text-[19px] font-bold leading-none tracking-tight text-white">
-              FLASH <span className="font-light">AI</span>
-            </span>
+            <Wordmark tm className="text-[19px] font-bold leading-none tracking-tight text-white" />
           </a>
           <div className="hidden gap-6 text-sm text-zinc-400 sm:flex">
             <a href="#features" className="hover:text-zinc-100">Features</a>
-            <a href="#pricing" className="hover:text-zinc-100">Pricing</a>
+            {!inApp && <a href="#pricing" className="hover:text-zinc-100">Pricing</a>}
             <a href="#faq" className="hover:text-zinc-100">FAQ</a>
           </div>
           <div className="ml-auto flex items-center gap-2 text-sm">
@@ -155,8 +218,10 @@ export function Landing({
             <span className="h-1.5 w-1.5 rounded-full bg-spark" />
             {liveCount ? `${liveCount} AI tools` : "AI tools"} · one app · one bill
           </p>
-          <h1 className="mt-6 text-[2.6rem] font-bold leading-[1.04] tracking-[-0.04em] text-white sm:text-[4.25rem]">
-            One AI for <span className="text-iris">everything</span>
+          {/* The tagline, one sentence to a line. */}
+          <h1 className="mt-6 text-[2.5rem] font-bold leading-[1.04] tracking-[-0.04em] text-white sm:text-[3.75rem] lg:text-[4.25rem]">
+            <span className="block">{t("One Workspace.")}</span>
+            <span className="block text-iris">{t("Infinite Possibilities.")}</span>
           </h1>
           <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-zinc-400 sm:text-lg">
             Build and publish apps, make slides, write, research, code and translate
@@ -211,6 +276,32 @@ export function Landing({
         </div>
       </section>
 
+      <section id="product" aria-labelledby="product-title" className="mx-auto max-w-6xl scroll-mt-16 px-4 sm:px-6">
+        <h2 id="product-title" className="text-center text-2xl font-medium tracking-[-0.025em] sm:text-[2rem]">
+          {t("All in one workspace")}
+        </h2>
+        {/* Four to a row on a wide screen, with the last three centred under them. */}
+        <ul className="mt-12 flex flex-wrap justify-center gap-3">
+          {pillars.map((p) => (
+            <li
+              key={p.name}
+              className={`glass w-full rounded-3xl p-5 shadow-none sm:w-[calc(50%-0.375rem)] lg:w-[calc(25%-0.5625rem)] ${p.live ? "" : "opacity-60"}`}
+            >
+              <div className="flex flex-wrap items-center gap-3 gap-y-2">
+                <Tile d={p.d} hue={p.hue} size="sm" />
+                <h3 className="text-[15px] font-medium text-zinc-100">{p.name}</h3>
+                {!p.live && (
+                  <span className="ms-auto whitespace-nowrap rounded-full border border-white/10 px-2 py-0.5 text-[10px] font-normal uppercase tracking-wide text-zinc-400">
+                    {t("Coming soon")}
+                  </span>
+                )}
+              </div>
+              <p className="mt-2.5 text-sm leading-relaxed text-zinc-400">{p.text}</p>
+            </li>
+          ))}
+        </ul>
+      </section>
+
       <section id="features" className="mx-auto max-w-6xl scroll-mt-16 px-4 py-24 sm:px-6">
         <h2 className="text-center text-2xl font-medium tracking-[-0.025em] sm:text-[2rem]">Everything you&apos;d use five AI apps for</h2>
         <p className="mx-auto mt-4 max-w-xl text-center text-zinc-400">
@@ -252,52 +343,55 @@ export function Landing({
         </div>
       </section>
 
-      <section id="pricing" className="mx-auto max-w-5xl scroll-mt-16 px-4 py-24 sm:px-6">
-        <h2 className="text-center text-2xl font-medium tracking-[-0.025em] sm:text-[2rem]">Plans for every maker</h2>
-        <p className="mx-auto mt-4 max-w-xl text-center text-zinc-400">
-          {canBuy
-            ? "Start free. Upgrade for more monthly credits, or top up any time. Cancel whenever you like, and unused credits carry over."
-            : "Start free with credits every month. Paid plans and top-ups are coming soon."}
-        </p>
-        <div className="mt-8 flex justify-center">
-          <IntervalToggle value={billing} onChange={setBilling} />
-        </div>
-        {pricing && (
-          <div className="mt-8">
-            <PlanCards
-              pricing={pricing}
-              interval={billing}
-              onFree={() => onStart("signup")}
-              onPick={() => onStart("signup")}
-              comingSoon={!canBuy}
-            />
-          </div>
-        )}
-        {pricing && (
-          <p className="mt-4 text-center text-sm text-zinc-400">
-            {canBuy ? "Need more? Top up any time: " : "Top-ups, coming soon: "}
-            {pricing.packs.map((p) => `${p.credits.toLocaleString("en-US")} credits for ${money(p.priceCents)}`).join(" · ")}.
-            Bought credits never expire.
+      {/* Nothing is for sale inside the Android app (Play's billing rule, see android-shell.ts). */}
+      {!inApp && (
+        <section id="pricing" className="mx-auto max-w-5xl scroll-mt-16 px-4 py-24 sm:px-6">
+          <h2 className="text-center text-2xl font-medium tracking-[-0.025em] sm:text-[2rem]">Plans for every maker</h2>
+          <p className="mx-auto mt-4 max-w-xl text-center text-zinc-400">
+            {canBuy
+              ? "Start free. Upgrade for more monthly credits, or top up any time. Cancel whenever you like, and unused credits carry over."
+              : "Start free with credits every month. Paid plans and top-ups are coming soon."}
           </p>
-        )}
-        {pricing && (
-          <div className="glass mt-10 rounded-3xl p-5 shadow-none sm:p-6">
-            <h3 className="text-sm font-medium text-zinc-300">Typical credits per request</h3>
-            <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-3 lg:grid-cols-4">
-              {ENGINES.map((e) => (
-                <div key={e} className="flex justify-between border-b border-white/5 py-1.5">
-                  <span className="text-zinc-400">{ENGINE_LABELS[e]}</span>
-                  <span className="text-zinc-300">{isLive(e) ? `${pricing.limits[e] ? "~" : "from "}${pricing.costs[e]}` : <span className="text-zinc-500">soon</span>}</span>
-                </div>
-              ))}
-            </div>
-            <p className="mt-3 text-xs text-zinc-500">
-              Writing, research, code, apps and slides are charged by length. Every reply shows what it used, and
-              failed requests are free.
-            </p>
+          <div className="mt-8 flex justify-center">
+            <IntervalToggle value={billing} onChange={setBilling} />
           </div>
-        )}
-      </section>
+          {pricing && (
+            <div className="mt-8">
+              <PlanCards
+                pricing={pricing}
+                interval={billing}
+                onFree={() => onStart("signup")}
+                onPick={() => onStart("signup")}
+                comingSoon={!canBuy}
+              />
+            </div>
+          )}
+          {pricing && (
+            <p className="mt-4 text-center text-sm text-zinc-400">
+              {canBuy ? "Need more? Top up any time: " : "Top-ups, coming soon: "}
+              {pricing.packs.map((p) => `${p.credits.toLocaleString("en-US")} credits for ${money(p.priceCents)}`).join(" · ")}.
+              Bought credits never expire.
+            </p>
+          )}
+          {pricing && (
+            <div className="glass mt-10 rounded-3xl p-5 shadow-none sm:p-6">
+              <h3 className="text-sm font-medium text-zinc-300">Typical credits per request</h3>
+              <div className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-3 lg:grid-cols-4">
+                {ENGINES.map((e) => (
+                  <div key={e} className="flex justify-between border-b border-white/5 py-1.5">
+                    <span className="text-zinc-400">{ENGINE_LABELS[e]}</span>
+                    <span className="text-zinc-300">{isLive(e) ? `${pricing.limits[e] ? "~" : "from "}${pricing.costs[e]}` : <span className="text-zinc-500">soon</span>}</span>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-3 text-xs text-zinc-500">
+                Writing, research, code, apps and slides are charged by length. Every reply shows what it used, and
+                failed requests are free.
+              </p>
+            </div>
+          )}
+        </section>
+      )}
 
       <section id="faq" className="mx-auto max-w-3xl scroll-mt-16 px-4 pb-24 sm:px-6">
         <h2 className="text-center text-2xl font-medium tracking-[-0.025em] sm:text-[2rem]">Questions</h2>
@@ -321,7 +415,14 @@ export function Landing({
 
       <footer className="border-t border-white/6">
         <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-8 sm:px-6 text-sm text-zinc-500 sm:flex-row sm:items-center">
-          <span>© {new Date().getFullYear()} Flash AI</span>
+          {/* The company that runs Flash. The name ends in a full stop, so the line has none of its own. */}
+          <div className="flex flex-col gap-1">
+            <span>
+              © {new Date().getFullYear()} {LEGAL_NAME}
+            </span>
+            <span className="text-xs">{t.node("{product} is operated by {company}", { product: <Wordmark />, company: LEGAL_NAME })}</span>
+            <span className="text-xs">{t("{brand} is a trademark of {company}", { brand: TRADEMARK, company: LEGAL_NAME })}</span>
+          </div>
           <div className="flex gap-4 sm:ml-auto">
             <a href="/terms" className="hover:text-zinc-200">Terms</a>
             <a href="/privacy" className="hover:text-zinc-200">Privacy</a>

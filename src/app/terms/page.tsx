@@ -1,15 +1,17 @@
 import type { Metadata } from "next";
 import { COMPANY, CONTACT, LegalPage } from "@/components/LegalPage";
 import { FRED_NOTICE, FRED_TERMS_URL } from "@/lib/research.ts";
+import { PRODUCT_NAME } from "@/lib/product";
 
 export const metadata: Metadata = { title: "Terms of Service" };
 
 export default function Terms() {
   return (
-    <LegalPage title="Terms of Service" updated="October 14, 2026">
+    <LegalPage title="Terms of Service" updated="October 15, 2026">
       <p>
-        These terms are an agreement between you and {COMPANY} (&quot;Flash&quot;, &quot;we&quot;) for your use of the
-        Flash AI website and app (the &quot;Service&quot;). By creating an account or using the Service you accept them.
+        These terms are an agreement between you and {COMPANY} (&quot;Flash&quot;, &quot;we&quot;), which operates the{" "}
+        {PRODUCT_NAME} website and app (the &quot;Service&quot;), for your use of the Service. By creating an account or using
+        the Service you accept them.
       </p>
 
       <h2>1. Your account</h2>

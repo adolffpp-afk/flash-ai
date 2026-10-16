@@ -129,15 +129,15 @@ export function chatDocument(
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${esc(name)} · Flash AI</title>
+<title>${esc(name)} · Flash ∞ AI</title>
 <style>
 ${STYLE}</style>
 </head>
 <body>
 <main>
-<header><h1>${esc(name)}</h1><p>${esc(t("A chat with Flash AI · {date}", { date: opts.date }))}</p></header>
+<header><h1>${esc(name)}</h1><p>${esc(t("A chat with Flash ∞ AI · {date}", { date: opts.date }))}</p></header>
 ${parts}
-<footer>${esc(t("Made with Flash AI"))} · <a href="https://www.flash-app.dev">flash-app.dev</a></footer>
+<footer>${esc(t("Made with Flash ∞ AI"))} · <a href="https://www.flash-app.dev">flash-app.dev</a></footer>
 </main>
 </body>
 </html>
@@ -160,7 +160,7 @@ ${STYLE}</style>
 <body>
 <main>
 ${html}
-<footer>${esc(t("Made with Flash AI · {date}", { date }))}</footer>
+<footer>${esc(t("Made with Flash ∞ AI · {date}", { date }))}</footer>
 </main>
 </body>
 </html>

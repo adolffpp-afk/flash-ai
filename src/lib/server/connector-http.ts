@@ -1,5 +1,6 @@
 import { appUrl } from "./auth.ts";
 import { overLimit } from "./limits.ts";
+import { PRODUCT_NAME } from "../product.ts";
 
 /**
  * HTTP pieces of the Flash connector. The connector's endpoints use tokens, never cookies, so
@@ -63,7 +64,7 @@ export function protectedResourceMetadata(request: Request) {
     authorization_servers: [origin],
     bearer_methods_supported: ["header"],
     scopes_supported: ["flash"],
-    resource_name: "Flash AI",
+    resource_name: PRODUCT_NAME,
     resource_documentation: `${origin}/connector`,
   };
 }
