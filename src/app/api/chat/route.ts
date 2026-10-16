@@ -144,6 +144,7 @@ import { chatKit, continuedCalls, requestedConnections } from "@/lib/server/conn
 import { approvedResults, releaseResults } from "@/lib/server/pending-actions.ts";
 import { continuedIds } from "@/lib/connectors.ts";
 import { messageWindow } from "@/lib/message-window.ts";
+import { maybeAutoTopUp } from "@/lib/server/auto-topup.ts";
 
 // Vercel Pro allows up to 800 seconds, which the Movie maker needs (scenes, filming and joining).
 // Price questions (409 confirm_cost) one user gets in an hour before the paid helpers stop deciding
@@ -1766,7 +1767,10 @@ export async function POST(request: Request) {
       try {
         reader?.close();
       } catch {}
-    });
+    })
+    // A reply that brought the balance below the person's auto top-up level buys their pack.
+    .then(() => maybeAutoTopUp(user.id))
+    .catch((err) => console.error("[flash] auto top-up failed", err));
   after(work);
   return new Response(stream, {
     headers: { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-store" },

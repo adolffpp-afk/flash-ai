@@ -1,5 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { planPrice, type CreditPack, type Interval, type Plan } from "../credits.ts";
+import { EXTRA_SEAT, planCredits, planPrice, type CreditPack, type Interval, type Plan } from "../credits.ts";
 import { one, run } from "./db.ts";
 
 const STRIPE_API = process.env.STRIPE_API_BASE || "https://api.stripe.com/v1";
@@ -26,6 +26,28 @@ export async function stripe<T>(method: string, path: string, form?: URLSearchPa
 
 export const currency = () => (process.env.FLASH_CURRENCY || "usd").toLowerCase();
 
+/*
+ * Sales tax (GST/HST, VAT, US sales tax) through Stripe Tax, on when FLASH_STRIPE_TAX is "true".
+ * Turn it on only once Stripe Tax is set up in the Stripe dashboard (business address and the
+ * places Flash is registered), or checkout fails. Tax is added on top of Flash's prices, so what
+ * Flash keeps, and every plan's margin, stays the same.
+ */
+export const taxOn = () => process.env.FLASH_STRIPE_TAX === "true";
+
+/** Asks Stripe to work out and add tax on a checkout with these many line items. */
+export function withTax(form: URLSearchParams, lineItems: number, existingCustomer: boolean): URLSearchParams {
+  if (!taxOn()) return form;
+  form.set("automatic_tax[enabled]", "true");
+  for (let i = 0; i < lineItems; i++) form.set(`line_items[${i}][price_data][tax_behavior]`, "exclusive");
+  form.set("billing_address_collection", "required");
+  // A returning customer's address is saved on them, so tax on their renewals uses it.
+  if (existingCustomer) {
+    form.set("customer_update[address]", "auto");
+    form.set("customer_update[name]", "auto");
+  }
+  return form;
+}
+
 /** Creates a Stripe Checkout page for a credit pack and returns its URL. */
 export async function createCheckout(pack: CreditPack, userId: string, email: string, origin: string): Promise<string> {
   const form = new URLSearchParams({
@@ -41,6 +63,7 @@ export async function createCheckout(pack: CreditPack, userId: string, email: st
     success_url: `${origin}/?purchase=success`,
     cancel_url: `${origin}/?purchase=cancelled`,
   });
+  withTax(form, 1, false);
   const json = await stripe<{ url?: string }>("POST", "/checkout/sessions", form);
   if (!json.url) throw new Error("Stripe didn't return a checkout link");
   return json.url;
@@ -53,6 +76,7 @@ export async function createSubscriptionCheckout(
   user: { id: string; email: string },
   customer: string | null,
   origin: string,
+  extraSeats = 0,
 ): Promise<string> {
   const form = new URLSearchParams({
     mode: "subscription",
@@ -66,11 +90,22 @@ export async function createSubscriptionCheckout(
     "subscription_data[metadata][user]": user.id,
     "subscription_data[metadata][plan]": plan.id,
     "subscription_data[metadata][interval]": interval,
+    "subscription_data[metadata][extra_seats]": String(extraSeats),
     success_url: `${origin}/?purchase=subscribed`,
     cancel_url: `${origin}/?purchase=cancelled`,
   });
+  if (extraSeats > 0) {
+    const seat = interval === "year" ? EXTRA_SEAT.yearlyPriceCents * 12 : EXTRA_SEAT.priceCents;
+    form.set("line_items[1][quantity]", String(extraSeats));
+    form.set("line_items[1][price_data][currency]", currency());
+    form.set("line_items[1][price_data][unit_amount]", String(seat));
+    form.set("line_items[1][price_data][recurring][interval]", interval);
+    form.set("line_items[1][price_data][product_data][name]", `Flash AI extra seat: 1 more person, ${EXTRA_SEAT.credits.toLocaleString("en-US")} more credits a month`);
+    form.set("line_items[0][price_data][product_data][name]", `Flash AI ${plan.name}: ${planCredits(plan, extraSeats).toLocaleString("en-US")} credits a month with ${extraSeats} extra seats`);
+  }
   if (customer) form.set("customer", customer);
   else form.set("customer_email", user.email);
+  withTax(form, extraSeats > 0 ? 2 : 1, Boolean(customer));
   const json = await stripe<{ url?: string }>("POST", "/checkout/sessions", form);
   if (!json.url) throw new Error("Stripe didn't return a checkout link");
   return json.url;

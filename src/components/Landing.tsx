@@ -72,7 +72,7 @@ const faq = (live: string[], soon: string[], canBuy: boolean) => [
   {
     q: "Do I need a subscription?",
     a: canBuy
-      ? "No. The free plan gives you credits every month. Plans give you more credits each month for less per credit, and you can cancel any time. You can also buy one-off top-ups. Unused plan credits carry over, and bought credits don't expire."
+      ? "No. The free plan gives you credits every month. Plans give you more credits each month for less per credit, and you can cancel any time. You can also buy one-off top-ups. Up to 2 months of unused plan credits carry over, and bought credits don't expire."
       : "No. The free plan gives you credits every month, with no card needed. Paid plans and top-ups are coming soon.",
   },
   {
@@ -349,7 +349,7 @@ export function Landing({
           <h2 className="text-center text-2xl font-medium tracking-[-0.025em] sm:text-[2rem]">Plans for every maker</h2>
           <p className="mx-auto mt-4 max-w-xl text-center text-zinc-400">
             {canBuy
-              ? "Start free. Upgrade for more monthly credits, or top up any time. Cancel whenever you like, and unused credits carry over."
+              ? "Start free. Upgrade for more monthly credits, or top up any time. Cancel whenever you like, and up to 2 months of unused credits carry over."
               : "Start free with credits every month. Paid plans and top-ups are coming soon."}
           </p>
           <div className="mt-8 flex justify-center">

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { Me, Pricing } from "@/lib/store";
 import type { Translate } from "@/lib/i18n";
 import { useT } from "@/lib/use-t";
@@ -40,7 +41,10 @@ export function IntervalToggle({ value, onChange }: { value: Interval; onChange:
   );
 }
 
-/** Free plus the paid plans, then team plans in a wide row. The first paid plan is highlighted as the popular one. */
+// The plan highlighted as the popular one.
+const POPULAR_PLAN = "pro";
+
+/** Free plus the paid plans, then team plans in a wide row. Pro is highlighted as the popular one. */
 export function PlanCards({
   pricing,
   interval,
@@ -56,18 +60,22 @@ export function PlanCards({
   current?: Me["plan"];
   busy?: string | null;
   onFree?: () => void;
-  onPick: (plan: string) => void;
+  // extraSeats: people added on top of a team plan's own seats.
+  onPick: (plan: string, extraSeats?: number) => void;
   // Paid plans aren't on sale yet: the landing page offers the free plan instead, the app disables them.
   comingSoon?: boolean;
   compact?: boolean;
 }) {
   const t = useT();
+  // Extra seats picked for each team plan, by plan id.
+  const [extra, setExtra] = useState<Record<string, number>>({});
   const pad = compact ? "p-5" : "p-6";
   const button = (p: Pricing["plans"][number]) => {
-    const isCurrent = current?.id === p.id && current.interval === interval;
+    const seats = p.seats ? (extra[p.id] ?? 0) : 0;
+    const isCurrent = current?.id === p.id && current.interval === interval && (current.extraSeats ?? 0) === seats;
     return (
       <button
-        onClick={() => (comingSoon ? onFree?.() : onPick(p.id))}
+        onClick={() => (comingSoon ? onFree?.() : onPick(p.id, seats))}
         disabled={isCurrent || (busy ?? null) !== null || (comingSoon && !onFree)}
         className="mt-auto h-9 rounded-full bg-brand text-sm font-medium text-on-brand transition hover:brightness-110 disabled:opacity-60"
       >
@@ -100,9 +108,34 @@ export function PlanCards({
     );
   };
   const teamPlans = pricing.plans.filter((p) => p.seats);
+  const seat = pricing.extraSeat;
+  const seatPicker = (p: Pricing["plans"][number]) => {
+    if (!seat || comingSoon) return null;
+    const n = extra[p.id] ?? 0;
+    const set = (v: number) => setExtra((e) => ({ ...e, [p.id]: Math.min(seat.max, Math.max(0, v)) }));
+    const step = "h-6 w-6 rounded-full border border-white/10 text-sm text-zinc-200 transition hover:bg-white/[0.04] disabled:opacity-40";
+    return (
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-zinc-400">
+        <span>{t("Extra people")}</span>
+        <button type="button" className={step} onClick={() => set(n - 1)} disabled={n <= 0} aria-label={t("Fewer people")}>
+          −
+        </button>
+        <span className="w-5 text-center tabular-nums text-zinc-100">{n}</span>
+        <button type="button" className={step} onClick={() => set(n + 1)} disabled={n >= seat.max} aria-label={t("More people")}>
+          +
+        </button>
+        <span>
+          {t("{price} a month each, with {credits} more credits", {
+            price: money(interval === "year" ? seat.yearlyPriceCents : seat.priceCents),
+            credits: seat.credits.toLocaleString(t.locale),
+          })}
+        </span>
+      </div>
+    );
+  };
   return (
     <>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         <div className={`flex flex-col rounded-xl border border-white/8 ${pad}`}>
           <div className="font-medium">{t("Free")}</div>
           <div className="mt-1 text-3xl font-medium tracking-tight">$0</div>
@@ -121,8 +154,8 @@ export function PlanCards({
             <div className="mt-auto py-2 text-center text-xs text-zinc-500">{current ? "" : t("Your plan")}</div>
           )}
         </div>
-        {pricing.plans.filter((p) => !p.seats).map((p, i) => {
-          const popular = i === 0;
+        {pricing.plans.filter((p) => !p.seats).map((p) => {
+          const popular = p.id === POPULAR_PLAN;
           return (
             <div
               key={p.id}
@@ -165,6 +198,7 @@ export function PlanCards({
                 <li key={f}>✓ {t(f)}</li>
               ))}
             </ul>
+            {seatPicker(p)}
           </div>
           <div className="grid sm:w-44 sm:shrink-0">{button(p)}</div>
         </div>
