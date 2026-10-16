@@ -136,6 +136,7 @@ export async function takeSlot(
   windowMs: number,
   { waitMs = 3000, now = Date.now, wait = sleep, signal }: SlotOptions = {},
 ): Promise<boolean> {
+  if (signal?.aborted) return false;
   const start = now();
   if (start - slotsPrunedAt >= PRUNE_SLOTS_EVERY) {
     slotsPrunedAt = start;

@@ -347,8 +347,9 @@ const less = (a: number, b: number) => Number((a - b).toFixed(Math.min(100, Math
  * less the one with the same start that ends a quarter before it, credited to the later value's filing
  * and marked as worked out. Two values are taken apart only when they're on the same basis: never when
  * filings reported either period differently (a restatement, a business sold, a reclassification), nor
- * when the later value's filing changed any value of this tag an earlier filing had reported. A quarter
- * missing is better than one that was never true.
+ * when the later value's filing changed a value of this tag and the earlier value's filing didn't. Once
+ * both are on the new basis, quarters are worked out again. A quarter missing is better than one that
+ * was never true.
  */
 function quartersToDate(rows: Row[]): Row[] {
   const byPeriod = new Map<string, Row[]>();
@@ -358,12 +359,16 @@ function quartersToDate(rows: Row[]): Row[] {
     if (!same) byPeriod.set(key, (same = []));
     same.push(r);
   }
-  // Periods reported with more than one value, and the filings that changed a value reported before them.
+  // Periods reported with more than one value, and the filings that changed a value: one that differs
+  // from the latest report of its period before it (repeating an earlier restatement changes nothing).
   const restated = new Set<string>();
   const rebased = new Set<string>();
   for (const [key, same] of byPeriod) {
     if (new Set(same.map((r) => r[2])).size > 1) restated.add(key);
-    for (const r of same) if (same.some((q) => q[4] < r[4] && q[2] !== r[2])) rebased.add(r[5]);
+    for (const r of same) {
+      const prior = same.filter((q) => q[4] < r[4]).reduce<Row | null>((a, b) => (!a || b[4] > a[4] ? b : a), null);
+      if (prior && prior[2] !== r[2]) rebased.add(r[5]);
+    }
   }
   const byStart = new Map<string, Row[]>();
   for (const [key, same] of byPeriod) {
@@ -381,7 +386,9 @@ function quartersToDate(rows: Row[]): Row[] {
     for (let k = 1; k < same.length; k++) {
       const [before, to] = [same[k - 1], same[k]];
       const gap = days(before[1], to[1]);
-      if (gap >= 80 && gap <= 100 && !rebased.has(to[5])) quarters.push([dayAfter(before[1]), to[1], less(to[2], before[2]), to[3], to[4], to[5], true]);
+      // A later value from a filing that changed figures, less one from a filing that didn't: two bases.
+      const mixed = rebased.has(to[5]) && !rebased.has(before[5]);
+      if (gap >= 80 && gap <= 100 && !mixed) quarters.push([dayAfter(before[1]), to[1], less(to[2], before[2]), to[3], to[4], to[5], true]);
     }
   }
   return quarters;

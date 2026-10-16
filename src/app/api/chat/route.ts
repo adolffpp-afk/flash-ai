@@ -805,9 +805,9 @@ async function* runFree(
   audio: { reserved?: number } = {},
   // The free models' tools line and the context note (see promptingFor).
   system: SystemOptions = {},
-  // The live forecast, what to do once it's used, the language the user's answers are set to, and the
-  // data tools (web search, SEC EDGAR, FRED) with what to do once each is used.
-  chat: { weather?: WeatherTool; onUsed?: () => void; language?: string; tools?: ClientTool[]; onTool?: (name: string) => void } = {},
+  // The live forecast, what to do once it's used, the language the user's answers are set to, the data
+  // tools (web search, SEC EDGAR, FRED) with what to do once each is used, and the request's signal.
+  chat: { weather?: WeatherTool; onUsed?: () => void; language?: string; tools?: ClientTool[]; onTool?: (name: string) => void; signal?: AbortSignal } = {},
 ): AsyncGenerator<StreamEvent> {
   const last = history[history.length - 1];
   if (lane === "image") {
@@ -1622,6 +1622,8 @@ export async function POST(request: Request) {
           ...(freeTools.weather && { weather: weatherTool(where, t), onUsed: forecastUsed }),
           ...(freeData.length && { tools: freeData, onTool: freeToolUsed }),
           language: user.language ?? "",
+          // Stop ends the free model's look-ups too: they'd use slots and daily counts every reply shares.
+          signal: abort.signal,
         })
       : run(engine, history, preferences, store, model, meter, budget, mediaNotes, claudeRun, steppedDown, track, t, prompting, {
           ...(tools.weather && { weather: weatherTool(where, t), onUsed: forecastUsed }),

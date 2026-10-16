@@ -55,6 +55,9 @@ const COMPANIES = [
   { cik_str: 3_000_002, ticker: "RECL", title: "Reclass Corp" },
   { cik_str: 3_000_003, ticker: "FLOT", title: "Float Corp" },
   { cik_str: 3_000_004, ticker: "DECI", title: "Decimal Corp" },
+  { cik_str: 3_000_005, ticker: "ONCE", title: "Reclass Once Corp" },
+  { cik_str: 3_000_006, ticker: "PREC", title: "Precision Corp" },
+  { cik_str: 3_000_007, ticker: "OLDR", title: "Old Restatement Corp" },
 ];
 
 /** Apple's submissions: 300 filings, newest first, with long descriptions. */
@@ -216,6 +219,34 @@ const at = (cik: number) => (y: number, k: number) => `${String(cik).padStart(10
       },
     },
   };
+  /**
+   * A calendar-year filer's operating cash flow as EDGAR lists it, filed up to `until`: each 10-Q its
+   * year to date and last year's, each 10-K its year and the two before. ytd(y, k, shownIn) is year y's
+   * value after k quarters as a filing made in year shownIn presents it.
+   */
+  const filer = (cik: number, ytd: (y: number, k: number, shownIn: number) => number, until = "2026-10-31") => {
+    const id = at(cik);
+    const rows: object[] = [];
+    const ends = (y: number) => [`${y}-03-31`, `${y}-06-30`, `${y}-09-30`, `${y}-12-31`];
+    for (const y of [2022, 2023, 2024, 2025, 2026]) {
+      for (let k = 1; k <= 4; k++) {
+        const filed = k < 4 ? `${y}-${["05", "08", "11"][k - 1]}-01` : `${y + 1}-02-20`;
+        if (filed > until) continue;
+        const shownIn = k < 4 ? y : y + 1;
+        const [form, accn] = [k < 4 ? "10-Q" : "10-K", id(shownIn, k)];
+        rows.push(fact(`${y}-01-01`, ends(y)[k - 1], ytd(y, k, shownIn) * B, form, filed, accn));
+        if (k < 4) rows.push(fact(`${y - 1}-01-01`, ends(y - 1)[k - 1], ytd(y - 1, k, shownIn) * B, form, filed, accn));
+        else for (const back of [1, 2]) rows.push(fact(`${y - back}-01-01`, ends(y - back)[3], ytd(y - back, 4, shownIn) * B, form, filed, accn));
+      }
+    }
+    RESTATED[String(cik).padStart(10, "0")] = { NetCashProvidedByUsedInOperatingActivities: { label: "Operating cash flow", units: { USD: rows } } };
+  };
+  // 100 a quarter as first reported; from the 2025 10-K on, 10 a quarter is shown elsewhere (2024 and 2025 restated).
+  filer(3_000_005, (y, k, shownIn) => (shownIn >= 2026 && y >= 2024 ? 90 : 100) * k);
+  // In thousands at first (100.123 a quarter); from 2026's filings on in millions, the comparatives re-rounded.
+  filer(3_000_006, (_y, k, shownIn) => (shownIn >= 2026 ? Math.round(100.123 * k) : Math.round(100.123 * k * 1000) / 1000));
+  // The 2023 10-K restated 2022's year (400 to 395); the 2024 10-K repeats it as restated. Filed up to June 2025.
+  filer(3_000_007, (y, k, shownIn) => (y === 2022 && k === 4 && shownIn >= 2024 ? 395 : 100 * k), "2025-06-01");
   // Amounts with cents.
   const d = at(3_000_004);
   RESTATED["0003000004"] = {
@@ -765,6 +796,32 @@ test("SEC EDGAR: no quarter is worked out from figures a later filing restated, 
   ]);
 });
 
+test("SEC EDGAR: once both values are on a new basis, their quarter is worked out again", async () => {
+  const quarters = async (ticker: string, count = 10) =>
+    (JSON.parse((await secFactsTool().run({ ticker, concepts: ["operating_cash_flow"], period: "quarterly", count })).text) as { facts: { values: { end: string; value: number; computed?: boolean }[] }[] }).facts[0].values.map(
+      (v) => `${v.end}:${v.value / B}${v.computed ? "*" : ""}`,
+    );
+  // A reclassification carried into 2026's comparatives: 2026's six months less its first quarter, both
+  // on the new basis, is 90. 2025's restated quarters, and 2024's fourth, stay out.
+  assert.deepEqual(await quarters("ONCE"), [
+    "2026-06-30:90*",
+    "2026-03-31:90",
+    "2025-03-31:90",
+    "2024-09-30:100*",
+    "2024-06-30:100*",
+    "2024-03-31:100",
+    "2023-09-30:100*",
+    "2023-06-30:100*",
+    "2023-03-31:100",
+    "2022-12-31:100*",
+  ]);
+  // Thousands re-rounded to millions: the same, at 100 a quarter in 2026 and 100.123 before.
+  assert.deepEqual((await quarters("PREC", 4)).slice(0, 2), ["2026-06-30:100*", "2026-03-31:100"]);
+  assert.ok((await quarters("PREC")).every((q) => /:100(\.123)?\*?$/.test(q)));
+  // A 10-K that repeats an old year as already restated changes nothing: its own fourth quarter is worked out.
+  assert.deepEqual(await quarters("OLDR", 4), ["2025-03-31:100", "2024-12-31:100*", "2024-09-30:100*", "2024-06-30:100*"]);
+});
+
 test("SEC EDGAR: Flash sends at most 5 requests a second across every server, and a reply makes at most 3 look-ups", async () => {
   assert.equal(SEC_PER_SECOND, 5);
   // Twelve look-ups at once, each of a company not looked up before: the ticker list, then a request each.
@@ -807,6 +864,9 @@ test("SEC EDGAR: Flash sends at most 5 requests a second across every server, an
   setTimeout(() => stop.abort(), 50);
   assert.equal(await takeSlot("full", 5, 60_000, { waitMs: 120_000, now: () => 0, signal: stop.signal }), false);
   assert.ok(Date.now() - waiting < 1000, `${Date.now() - waiting} ms`);
+  // One already stopped takes no slot, even a free one.
+  assert.equal(await takeSlot("free-window", 5, 60_000, { signal: stop.signal }), false);
+  assert.deepEqual(await all("SELECT key FROM rate_limits WHERE key LIKE 'source:free-window:%'"), []);
 
   const ledger = new R.ToolLedger();
   assert.deepEqual([ledger.take("sec"), ledger.take("sec"), ledger.take("sec"), ledger.take("sec")], [true, true, true, false]);
@@ -931,6 +991,26 @@ test("FRED: a series FRED tags as copyrighted is refused though its notes don't 
   fredTags = "ok";
   await fresh();
   assert.equal((await tool.run({ series_id: "UNRATE", count: 3 })).used, true);
+  // FRED marks it a third party's: once the day the tags are kept for is over, it's refused, though its
+  // details (which say nothing of the tags) are still kept.
+  const was = TAGS.UNRATE;
+  TAGS.UNRATE = [...was, "copyrighted: citation required"];
+  try {
+    await sql("DELETE FROM source_cache WHERE key LIKE 'fred:tags:%'");
+    await fresh();
+    assert.equal((await tool.run({ series_id: "UNRATE", count: 3 })).text, R.FRED_COPYRIGHT);
+    assert.deepEqual(seen.map((s) => s.path), ["/series/tags"], "the details came from the cache");
+  } finally {
+    TAGS.UNRATE = was;
+  }
+  // A reply already stopped asks FRED nothing, and takes no slot and none of the day's requests.
+  await sql("DELETE FROM source_cache");
+  await fresh();
+  const stopped = new AbortController();
+  stopped.abort("stop");
+  assert.equal((await tool.run({ series_id: "UNRATE" }, stopped.signal)).text, R.FRED_FAILED);
+  assert.equal(seen.length, 0);
+  assert.deepEqual(await all("SELECT key FROM rate_limits WHERE key LIKE 'source:fred:%'"), []);
   noSecrets(refused);
 });
 

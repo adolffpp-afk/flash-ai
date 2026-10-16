@@ -33,7 +33,7 @@ const { dataTools } = await import("../src/lib/server/research-tools.ts");
 const { forgetTickers } = await import("../src/lib/server/sec.ts");
 const { WEATHER_PLAN, planHold, claudePrice, researchPlan } = await import("../src/lib/credits.ts");
 const R = await import("../src/lib/research.ts");
-const { run: sql } = await import("../src/lib/server/db.ts");
+const { run: sql, all } = await import("../src/lib/server/db.ts");
 
 type Event = { type: string; delta?: string; message?: string; items?: { title: string; url: string }[] };
 const ask = (content: string) => [{ role: "user" as const, content }];
@@ -239,6 +239,19 @@ test("a free answer cut off partway after FRED data still shows FRED's notice an
   assert.match(said(events), /^Unemployment was 4\.3% in/);
   assert.ok(said(events).endsWith(R.FRED_NOTE));
   assert.deepEqual(sources(events).map((s) => s.url), ["https://fred.stlouisfed.org/series/UNRATE"]);
+});
+
+test("a free reply's look-ups have the request's signal: stopped, the free model's FRED call sends FRED nothing and uses none of its allowance", async () => {
+  const stop = new AbortController();
+  stop.abort("stop");
+  stand.state.free.replies.push({ calls: [{ name: "fred_series", args: { series_id: "UNRATE", count: 12 } }] }, { text: "I couldn't get FRED's data just now." });
+  const tools = dataTools({ economy: true }, { userId: "free-6" });
+  const events = await collect(streamFreeChat(ask("US unemployment rate trend"), "", "text", reserve, record, () => {}, { tools, signal: stop.signal }));
+  assert.equal(freeSent()[1].messages.find((m) => m.role === "tool")!.content, R.FRED_FAILED);
+  assert.equal(stand.state.seen.some((s) => s.service === "fred"), false);
+  assert.deepEqual(await all("SELECT key FROM rate_limits WHERE key LIKE 'source:fred:%'"), []);
+  assert.deepEqual(await all("SELECT requests FROM free_quota WHERE provider = 'fred'"), []);
+  assert.equal(said(events).includes(R.FRED_NOTE), false);
 });
 
 test("a free provider without tools gets none, and is told it can't search", async () => {

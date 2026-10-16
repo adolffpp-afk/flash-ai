@@ -65,8 +65,12 @@ export const fredReady = (env: Record<string, string | undefined> = process.env)
 export const fredKeyProblem = (env: Record<string, string | undefined> = process.env) =>
   env.FRED_API_KEY?.trim() && !fredKey(env) ? "FRED_API_KEY must be the 32 letters and digits FRED shows" : "";
 
-/** One request to FRED's API, within Flash's daily allowance and 1 a second. Throws a SourceError. */
+/**
+ * One request to FRED's API, within Flash's daily allowance and 1 a second. Throws a SourceError, at
+ * once for a stopped reply (signal), which takes neither a slot nor one of the day's requests.
+ */
 async function fredGet(path: string, params: Record<string, string>, signal?: AbortSignal): Promise<Record<string, unknown> | null> {
+  if (signal?.aborted) throw new SourceError("network");
   const key = fredKey();
   if (!key) throw new SourceError("busy");
   if (!(await reserveDaily("fred", envCount("FLASH_FRED_DAILY_REQUESTS", 10_000)))) throw new SourceError("busy");
@@ -80,7 +84,7 @@ async function fredGet(path: string, params: Record<string, string>, signal?: Ab
 
 /**
  * What Flash keeps of a series' details. copyrighted: a third party owns it, as its notes or title say
- * (all a search shows) or, once seriesInfo has read them, its tags.
+ * (all a search shows). What its tags say is kept apart (see taggedCopyright).
  */
 type SeriesInfo = {
   id: string;
@@ -113,11 +117,7 @@ function readInfo(raw: unknown): SeriesInfo | null {
   };
 }
 
-/**
- * A series' details from the cache or FRED, with its tags read for a third party's copyright (many,
- * like Optimal Blue's mortgage rates, don't say so in their notes), or null when FRED has no such
- * series. Throws a SourceError, also when the tags can't be read: a series isn't shown unchecked.
- */
+/** A series' details from the cache or FRED, or null when FRED has no such series. Throws a SourceError. */
 async function seriesInfo(id: string, at: number, signal?: AbortSignal): Promise<SeriesInfo | null> {
   const key = `fred:series:${id}`;
   const cached = await cacheGet<SeriesInfo | { none: true }>(key, at);
@@ -135,15 +135,15 @@ async function seriesInfo(id: string, at: number, signal?: AbortSignal): Promise
   }
   const info = readInfo(Array.isArray(json?.seriess) ? json.seriess[0] : null);
   if (!info) throw new SourceError("bad_json");
-  if (!info.copyrighted) info.copyrighted = await taggedCopyright(id, at, signal);
   await cachePut(key, info, SERIES_FOR, at);
   return info;
 }
 
 /**
- * Whether FRED tags a series as a third party's ("copyrighted: …"), from the cache (kept a day, so a
- * series asked for again needs no more than its details and values) or FRED. Throws a SourceError
- * when the tags can't be read.
+ * Whether FRED tags a series as a third party's ("copyrighted: …"), as many say only there (like
+ * Optimal Blue's mortgage rates), from the cache or FRED. Read on every look-up and kept a day on its
+ * own, so a series FRED marks is refused within a day, and one asked for again needs no more than its
+ * details and values. Throws a SourceError when the tags can't be read: a series isn't shown unchecked.
  */
 async function taggedCopyright(id: string, at: number, signal?: AbortSignal): Promise<boolean> {
   const key = `fred:tags:${id}`;
@@ -219,7 +219,7 @@ export function fredSeriesTool(t: Translate = english, { now = Date.now }: { now
         if (!info) {
           return { text: `FRED has no series with the id ${asked.id}. Find the id with fred_series_search, or answer without FRED data.`, isError: true, used: false };
         }
-        if (info.copyrighted) return { text: FRED_COPYRIGHT, isError: true, used: false };
+        if (info.copyrighted || (await taggedCopyright(info.id, at, signal))) return { text: FRED_COPYRIGHT, isError: true, used: false };
         const key = cacheKey("fred:values", asked.id, asked.start ?? "", asked.end ?? "", asked.frequency ?? "", asked.units, String(asked.count));
         let values = await cacheGet<[string, number | null][]>(key, at);
         if (!values) {

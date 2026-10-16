@@ -300,7 +300,8 @@ export type RecordUse = (provider: FreeProvider, tokens: number, neurons: number
  * tools, and onUsed is called once when a reply used it. language: the language the user's answers
  * are set to ("" for the one they write in), which helps pick the provider (see free-order.ts).
  * tools: web search and the SEC EDGAR and FRED tools (see research.ts), offered to the same
- * providers, and onTool is called once for each whose data the reply used.
+ * providers, and onTool is called once for each whose data the reply used. signal: the request's, so
+ * a reply stopped stops its look-ups too.
  */
 export type FreeChatOptions = {
   systemPrompt?: string;
@@ -311,6 +312,7 @@ export type FreeChatOptions = {
   language?: string;
   tools?: ClientTool[];
   onTool?: (name: string) => void;
+  signal?: AbortSignal;
 };
 
 /** One reply at once (a call that may ask for the forecast): its words, the calls it asked for, and its tokens. */
@@ -491,7 +493,7 @@ export async function* streamFreeChat(
           const look = offered.find((x) => x.name === call.name);
           if (!look) return { text: `There is no tool called ${call.name}.`, isError: true, used: false };
           if (!ledger.take(look.family)) return { text: limitText(look.family), isError: true, used: false };
-          return look.run(call.input).catch(() => ({ text: failText(look.family), isError: true, used: false }));
+          return look.run(call.input, o.signal).catch(() => ({ text: failText(look.family), isError: true, used: false }));
         }),
       );
       // The answer is written next: the progress line goes.
