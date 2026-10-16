@@ -1363,19 +1363,28 @@ export async function POST(request: Request) {
   // learn from it (see the privacy policy's Google section, and Google's Limited Use rules).
   const connected = refuseUnpaid(Boolean(tools.connect), available, needed);
   const goesFree = live && available < needed && verified && model?.id !== "post-pack" && freeEligible(engine, last) !== null;
+  // What's said when today's free use of the kind this request would take is used up.
+  const usedUp = (lane: FreeLane) => {
+    const left = { credits: available };
+    return lane === "image"
+      ? t("You've used today's free images and you have {credits} credits. Free use resets tomorrow, or get more credits now.", left)
+      : lane === "transcribe"
+        ? t("You've used today's free transcripts and you have {credits} credits. Free use resets tomorrow, or get more credits now.", left)
+        : t("You've used today's free messages and you have {credits} credits. Free use resets tomorrow, or get more credits now.", left);
+  };
   if (live && (connected || goesFree)) {
     const used = await usedAccounts(body.messages, body.projectId, user.id);
     if (connected || used) {
       const counts = { needed, available };
       const short = metered ? t("This needs at least {needed} credits and you have {available}.", counts) : t("This needs {needed} credits and you have {available}.", counts);
       // A free reply is offered (turn connectors off, or a new chat) only when this one could go free
-      // and today's free messages aren't used up; looking reserves nothing.
+      // and today's free use of its kind (messages, images or transcripts) isn't used up; looking reserves nothing.
       const lane = verified && model?.id !== "post-pack" ? freeEligible(engine, last) : null;
       const freeOpen = lane !== null && (await freeLeft(user.id, lane)) > 0;
       const error = freeOpen
         ? `${short} ${t(used ? CONNECTED_CHAT_NEEDS_CREDITS : CONNECTORS_NEED_CREDITS)}`
         : lane !== null
-          ? `${t(used ? CONNECTED_CHAT_USES_CREDITS : CONNECTORS_USE_CREDITS)} ${t("You've used today's free messages and you have {credits} credits. Free use resets tomorrow, or get more credits now.", { credits: available })}`
+          ? `${t(used ? CONNECTED_CHAT_USES_CREDITS : CONNECTORS_USE_CREDITS)} ${usedUp(lane)}`
           : `${short} ${t(used ? CONNECTED_CHAT_USES_CREDITS : CONNECTORS_USE_CREDITS)}`;
       return Response.json({ error, code: "out_of_credits", needed }, { status: 402 });
     }
@@ -1384,22 +1393,7 @@ export async function POST(request: Request) {
     // A post pack has no free version: one free picture isn't what was asked for.
     const lane = model?.id === "post-pack" ? null : freeEligible(engine, last);
     if (lane) {
-      if (!(await reserveFreeUser(user.id, lane))) {
-        const left = { credits: available };
-        return Response.json(
-          {
-            error:
-              lane === "image"
-                ? t("You've used today's free images and you have {credits} credits. Free use resets tomorrow, or get more credits now.", left)
-                : lane === "transcribe"
-                  ? t("You've used today's free transcripts and you have {credits} credits. Free use resets tomorrow, or get more credits now.", left)
-                  : t("You've used today's free messages and you have {credits} credits. Free use resets tomorrow, or get more credits now.", left),
-            code: "out_of_credits",
-            needed,
-          },
-          { status: 402 },
-        );
-      }
+      if (!(await reserveFreeUser(user.id, lane))) return Response.json({ error: usedUp(lane), code: "out_of_credits", needed }, { status: 402 });
       free = lane;
       held = needed = 0;
       budget = NO_BUDGET;

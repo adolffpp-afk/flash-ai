@@ -338,8 +338,9 @@ const MAX_TITLE = 200;
 const MAX_CELL = 50_000;
 
 const FILE = { type: "string", description: "The file's id, from list_files." };
-// What one call may hold: Flash refuses a call longer than MAX_INPUT_CHARS as JSON (engines/connect.ts),
-// so each schema tells Claude, with room for the call's other fields, and says how to write more in parts.
+// What one call may hold: Flash refuses a call longer than MAX_INPUT_CHARS as JSON, a text with a maxLength
+// counted by its characters (inputProblem, engines/connect.ts), so each schema tells Claude, with room for
+// the call's other fields, and says how to write more in parts.
 const PART_CHARS = MAX_INPUT_CHARS - 1_000;
 const ROWS = {
   type: "array",

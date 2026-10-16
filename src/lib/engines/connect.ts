@@ -70,29 +70,40 @@ export function needsApproval(tool: Pick<ConnectorTool, "connectionId" | "kind" 
   return tool.kind !== "read";
 }
 
-// The most an input may be, as JSON, for a call or a card.
+// The most an input may be, as JSON, for a call or a card (a top-level text field the schema gives a
+// maxLength counts as the characters it has: see inputProblem).
 export const MAX_INPUT_CHARS = 16_000;
 
 /**
  * Checks a call's input against the tool's schema as far as Flash can without a validator: an object,
- * not too big, with every required field, each top-level field of the type the schema names, and no
- * other field when the schema says so (additionalProperties: false), at the top or in an object or
- * an array's items inside it (see extraField), so a card never shows a field the tool wouldn't send.
+ * not too big, each top-level text field no longer than the schema's maxLength, with every required
+ * field, each top-level field of the type the schema names, and no other field when the schema says
+ * so (additionalProperties: false), at the top or in an object or an array's items inside it (see
+ * extraField), so a card never shows a field the tool wouldn't send.
  * Returns why it isn't usable, or "" when it is.
  */
 export function inputProblem(schema: Record<string, unknown>, input: unknown): string {
   if (!input || typeof input !== "object" || Array.isArray(input)) return "the input must be an object";
-  // Said with both numbers, so Claude can write it again shorter, or in parts where the tool says how.
-  const length = JSON.stringify(input).length;
-  if (length > MAX_INPUT_CHARS) {
-    const n = (v: number) => v.toLocaleString("en-US");
-    return `the input is too long (${n(length)} characters as JSON; a call may have at most ${n(MAX_INPUT_CHARS)}): make it shorter, or split it over several calls of at most that, if the tool's description says how`;
-  }
   const fields = input as Record<string, unknown>;
+  const properties = schema.properties && typeof schema.properties === "object" ? (schema.properties as Record<string, { type?: unknown; maxLength?: unknown }>) : {};
+  // Said with both numbers, so Claude can write it again shorter, or in parts where the tool says how.
+  const n = (v: number) => v.toLocaleString("en-US");
+  const split = "make it shorter, or split it over several calls of at most that, if the tool's description says how";
+  let length = JSON.stringify(input).length;
+  // A text field with a maxLength counts as the schema states it, in characters (as JSON Schema counts
+  // them), not as JSON: a line break or a quote in it is one, not the two JSON writes it as, so a text
+  // that keeps to its stated limit is never refused for the rest.
+  for (const [key, value] of Object.entries(fields)) {
+    const max = Object.hasOwn(properties, key) ? properties[key]?.maxLength : undefined;
+    if (typeof value !== "string" || typeof max !== "number") continue;
+    const chars = [...value].length;
+    if (chars > max) return `${key.slice(0, 60)} is too long (${n(chars)} characters; it may have at most ${n(max)}): ${split}`;
+    length -= JSON.stringify(value).length - chars;
+  }
+  if (length > MAX_INPUT_CHARS) return `the input is too long (${n(length)} characters as JSON; a call may have at most ${n(MAX_INPUT_CHARS)}): ${split}`;
   const required = Array.isArray(schema.required) ? schema.required.filter((r): r is string => typeof r === "string") : [];
   const missing = required.filter((r) => fields[r] === undefined);
   if (missing.length) return `missing ${missing.join(", ")}`;
-  const properties = schema.properties && typeof schema.properties === "object" ? (schema.properties as Record<string, { type?: unknown }>) : {};
   if (schema.additionalProperties === false) {
     const extra = Object.keys(fields).find((key) => !Object.hasOwn(properties, key));
     if (extra !== undefined) return `${extra.slice(0, 60)} isn't a field of this tool`;

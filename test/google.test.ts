@@ -784,10 +784,30 @@ test("a write too long for one call: Claude is told the limit, a longer one is r
   };
   const refused = await replyCost({ title: "Report", text: long });
   assert.ok(!refused.events.some((e) => e.type === "approve_action"), "no card");
-  assert.match(refused.result, /That input wasn't usable: the input is too long \(17,0\d\d characters as JSON; a call may have at most 16,000\): make it shorter, or split it over several calls of at most that/);
+  assert.match(refused.result, /That input wasn't usable: text is too long \(17,000 characters; it may have at most 15,000\): make it shorter, or split it over several calls of at most that/);
   assert.equal((await all("SELECT id FROM pending_actions WHERE user_id = ?", [user.id])).length, 0);
   assert.equal(mock.googleLog.calls.length, calls, "nothing was asked of Google");
   assert.equal(await one("SELECT key FROM rate_limits WHERE key = ?", [`conn:${user.id}:${id}`]), null, "nor counted against the account's calls an hour");
+  // A text that keeps to the stated limit is never refused, though its line breaks and quotes are two
+  // characters each as JSON: counted as characters, as its schema states it (an emoji is one too).
+  const listed = Array.from({ length: 1100 }, (_, i) => `- "Item ${String(i).padStart(4, "0")}"`).join("\n").slice(0, 15_000);
+  assert.equal(listed.length, 15_000);
+  assert.ok(listed.split("\n").length > 1000 && JSON.stringify({ title: "Report", text: listed }).length > 18_000);
+  const fits = await replyCost({ title: "Report", text: listed });
+  assert.ok(fits.events.some((e) => e.type === "approve_action"), "a card");
+  for (const tool of ["create_doc", "append_text"]) {
+    const fields = tool === "create_doc" ? { title: "Report" } : { file_id: "doc" };
+    assert.equal(inputProblem(schema(tool), { ...fields, text: listed }), "", tool);
+    assert.equal(inputProblem(schema(tool), { ...fields, text: "\u{1F642}".repeat(15_000) }), "", tool);
+    assert.equal(
+      inputProblem(schema(tool), { ...fields, text: `${listed}"` }),
+      "text is too long (15,001 characters; it may have at most 15,000): make it shorter, or split it over several calls of at most that, if the tool's description says how",
+      tool,
+    );
+  }
+  // Rows count as JSON, as their description says.
+  const wide = Array.from({ length: 1000 }, (_, i) => [`Item ${i}`, i]);
+  assert.match(inputProblem(schema("create_sheet"), { title: "Big", rows: wide }), /^the input is too long \(1\d,\d{3} characters as JSON; a call may have at most 16,000\)/);
   // It costs what Claude wrote, as any reply: no more than one whose card was made.
   const first = await replyCost({ title: "Report", text: long.slice(0, 9000) });
   assert.equal(refused.cost, first.cost);
@@ -1065,11 +1085,13 @@ test("a chat with a reply that used Google Drive never goes to the free lane: wi
   }
 });
 
-test("the note for a chat that used a connected account offers chatting for free only while today's free messages last", async () => {
-  process.env.GROQ_API_KEY = "gsk_stand_in";
+test("the note for a chat that used a connected account offers chatting for free only while today's free messages last, and names the free use an image or a transcript is out of", async () => {
+  const stand = { GROQ_API_KEY: "gsk_stand_in", CLOUDFLARE_API_TOKEN: "cf_stand_in", CLOUDFLARE_ACCOUNT_ID: "acct", FAL_KEY: "fal_stand_in" };
+  const kept = Object.fromEntries(Object.keys(stand).map((k) => [k, process.env[k]]));
+  Object.assign(process.env, stand);
   try {
-    const { reserveFreeUser } = await import("../src/lib/server/free.ts");
-    const { FREE_DAILY_CHATS } = await import("../src/lib/engines/free.ts");
+    const { reserveFreeUser, freeLeft } = await import("../src/lib/server/free.ts");
+    const { FREE_DAILY_CHATS, FREE_DAILY_IMAGES, FREE_DAILY_TRANSCRIPTS } = await import("../src/lib/engines/free.ts");
     const user = await account("g-free-used-up");
     const id = await withFiles(user, [SHEET]);
     await sql("INSERT INTO credit_ledger (user_id, amount, reason, ref, created_at) VALUES (?, ?, 'test', ?, 0)", [user.id, -(await balance(user.id)), `spent:${user.id}`]);
@@ -1086,6 +1108,24 @@ test("the note for a chat that used a connected account offers chatting for free
     // While free messages are left, the way to chat for free is offered.
     assert.match((await ask({ messages: usedChat })).body.error, /Start a new chat to keep chatting for free\.$/);
     assert.match((await ask({ messages: fresh, connectors: [id] })).body.error, /Turn them off to keep chatting for free\.$/);
+    // An image, or a transcript, out of today's free ones is told so, while free messages are left.
+    for (let i = 0; i < FREE_DAILY_IMAGES; i++) assert.ok(await reserveFreeUser(user.id, "image"));
+    for (let i = 0; i < FREE_DAILY_TRANSCRIPTS; i++) assert.ok(await reserveFreeUser(user.id, "transcribe"));
+    assert.equal(await freeLeft(user.id, "chat"), FREE_DAILY_CHATS);
+    const { wav } = await import("./audio-files.ts");
+    const audio = { name: "talk.wav", mediaType: "audio/wav", data: wav({ data: Buffer.alloc(16_000) }).toString("base64") };
+    for (const [kind, body] of [
+      ["images", { engine: "image", messages: [...usedChat.slice(0, 2), { role: "user", content: "Draw a cat on a beach" }] }],
+      ["transcripts", { engine: "transcribe", messages: [...usedChat.slice(0, 2), { role: "user", content: "", attachment: audio }] }],
+    ] as const) {
+      const r = await ask(body);
+      assert.equal(r.status, 402, kind);
+      assert.equal(
+        r.body.error,
+        `This chat used your connected accounts, so it needs credits. You've used today's free ${kind} and you have 0 credits. Free use resets tomorrow, or get more credits now.`,
+        kind,
+      );
+    }
     // Once today's are used up, it isn't: neither a new chat nor turning them off would be free.
     for (let i = 0; i < FREE_DAILY_CHATS; i++) assert.ok(await reserveFreeUser(user.id, "chat"));
     const later = "You've used today's free messages and you have 0 credits. Free use resets tomorrow, or get more credits now.";
@@ -1100,7 +1140,10 @@ test("the note for a chat that used a connected account offers chatting for free
       assert.ok(!r.body.error.includes("for free"), why);
     }
   } finally {
-    delete process.env.GROQ_API_KEY;
+    for (const [k, v] of Object.entries(kept)) {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    }
   }
 });
 
