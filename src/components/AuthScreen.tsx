@@ -3,8 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/store";
-import { LogoMark } from "@/app/brand";
+import { LogoMark, Wordmark } from "@/app/brand";
 import { msg } from "@/lib/i18n";
+import { TAGLINE } from "@/lib/product";
 import { useT } from "@/lib/use-t";
 
 const FEATURES = [
@@ -150,12 +151,10 @@ export function AuthScreen({
             </button>
           )}
           <LogoMark size={56} className="mb-6" />
-          <h1 className="text-3xl font-medium tracking-[-0.03em]">
-            Flash <span className="text-holo">AI</span>
+          <h1 className="text-3xl font-semibold tracking-[-0.03em] text-white">
+            <Wordmark tm />
           </h1>
-          <p className="mt-3 max-w-sm leading-relaxed text-zinc-400">
-            {t("One AI for everything. Ask once, and Flash picks the best AI for the job.")}
-          </p>
+          <p className="mt-3 max-w-sm leading-relaxed text-zinc-400">{t(TAGLINE)}</p>
           <div className="mt-6 flex flex-wrap gap-2">
             {FEATURES.map((f) => (
               <span

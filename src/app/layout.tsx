@@ -2,20 +2,25 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { BAR_COLORS, THEME_SCRIPT } from "@/lib/device-settings";
 import { ThemeSync } from "@/components/ThemeSync";
+import { PRODUCT_NAME, TAGLINE } from "@/lib/product";
 import { SITE_URL } from "./site";
 import "./globals.css";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
-const description =
-  "Build apps, make slides, write, research, code and translate in one place. Ask once, and Flash picks the best AI for the job.";
+// Search results and shared links are in English, like the landing page.
+const title = `${PRODUCT_NAME}™: ${TAGLINE}`;
+const description = `${TAGLINE} Build apps, make slides, write, research, code and translate in one place. Ask once, and Flash picks the best AI for the job.`;
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  title: { default: "Flash AI: one AI for everything", template: "%s · Flash AI" },
+  title: { default: title, template: `%s · ${PRODUCT_NAME}` },
   description,
-  openGraph: { title: "Flash AI: one AI for everything", siteName: "Flash AI", type: "website", url: "/", description },
+  applicationName: PRODUCT_NAME,
+  // The name an iPhone suggests for the home-screen icon.
+  other: { "apple-mobile-web-app-title": PRODUCT_NAME },
+  openGraph: { title, siteName: PRODUCT_NAME, type: "website", url: "/", description },
   twitter: { card: "summary_large_image" },
 };
 

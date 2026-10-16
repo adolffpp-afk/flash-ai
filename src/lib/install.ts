@@ -33,5 +33,5 @@ export const INSTALL_STEPS: Record<InstallPlatform, string[]> = {
     msg("Open www.flash-app.dev in Chrome or Edge."),
     msg("Click the install icon at the right of the address bar, then Install."),
   ],
-  desktop: [msg("Open your browser's menu (⋮ or …)."), msg("Choose Install Flash AI (under Cast, save and share in Chrome, or Apps in Edge)."), msg("Click Install.")],
+  desktop: [msg("Open your browser's menu (⋮ or …)."), msg("Choose Install Flash ∞ AI (under Cast, save and share in Chrome, or Apps in Edge)."), msg("Click Install.")],
 };

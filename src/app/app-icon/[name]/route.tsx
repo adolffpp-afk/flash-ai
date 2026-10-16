@@ -15,7 +15,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ nam
   return new ImageResponse(
     (
       <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", background: GRADIENT }}>
-        <BrandMark size={icon.mark} />
+        <BrandMark size={icon.mark} onNavy />
       </div>
     ),
     { width: icon.size, height: icon.size },

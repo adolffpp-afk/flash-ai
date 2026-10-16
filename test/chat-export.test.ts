@@ -16,7 +16,7 @@ test("a downloaded chat keeps the words, pictures and links, and escapes what pe
     link: (url) => `https://www.flash-app.dev${url}`,
     date: "October 4, 2026",
   });
-  assert.match(html, /<title>Fox &amp; friends · Flash AI<\/title>/);
+  assert.match(html, /<title>Fox &amp; friends · Flash ∞ AI<\/title>/);
   assert.match(html, /Draw &lt;b&gt;a fox&lt;\/b&gt;<br>please/);
   assert.match(html, /📎 fox\.jpg/);
   assert.match(html, /<img src="data:image\/png;base64,AAA" alt="A red fox">/);
@@ -39,5 +39,5 @@ test("one answer becomes a print page named after it", async () => {
   assert.match(page, /<title>Bakery &lt;plan&gt;<\/title>/);
   assert.match(page, /<h1>Bakery plan<\/h1><table>/);
   assert.match(page, /@page \{ margin: 18mm 16mm; \}/);
-  assert.match(page, /Made with Flash AI · October 4, 2026/);
+  assert.match(page, /Made with Flash ∞ AI · October 4, 2026/);
 });

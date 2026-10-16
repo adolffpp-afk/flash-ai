@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { COMPANY, CONTACT, LegalPage } from "@/components/LegalPage";
+import { PRODUCT_NAME } from "@/lib/product";
 
 export const metadata: Metadata = { title: "Privacy Policy" };
 
@@ -7,7 +8,8 @@ export default function Privacy() {
   return (
     <LegalPage title="Privacy Policy" updated="October 15, 2026">
       <p>
-        This policy explains what {COMPANY} collects when you use Flash AI, why, and the choices you have.
+        {PRODUCT_NAME} is operated by {COMPANY} (&quot;we&quot;), which is responsible for the personal information described
+        here. This policy explains what we collect when you use {PRODUCT_NAME}, why, and the choices you have.
       </p>
 
       <h2>What we collect</h2>
