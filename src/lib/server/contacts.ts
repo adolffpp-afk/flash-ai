@@ -2,7 +2,8 @@
  * Each published app's contact list: one row per person the app heard from, whichever way they
  * came (a form sent with flashDB.send, a flashAuth sign-up, a paid order, or its owner adding them),
  * matched by email address without regard to case, or by phone number for someone who gave no
- * email. Only the app's owner sees it, in My websites & apps › Contacts, where they move people
+ * email. Nobody proves a phone number is theirs, so a number never joins an email's contact to one
+ * known by that number alone: each one's details name the other instead. Only the app's owner sees it, in My websites & apps › Contacts, where they move people
  * through their own stages, tag them, write notes, and download, export or delete each one: the
  * owner is in charge of this data, and unpublishing the app deletes it with everything else.
  *
@@ -33,6 +34,7 @@ import {
   cleanName,
   cleanTags,
   contactFromFields,
+  contactMatches,
   normalPhone,
   pageHas,
   sourceLabel,
@@ -114,11 +116,11 @@ const COLUMNS = "id, site_slug, email, phone, name, source, first_seen, last_see
 // Room for one more, unless they are on the list already (key is the condition that finds them).
 const room = (key: string) =>
   `(EXISTS (SELECT 1 FROM site_contacts WHERE site_slug = ? AND ${key}) OR (SELECT COUNT(*) FROM site_contacts WHERE site_slug = ?) < ${MAX_CONTACTS})`;
-// The contact with an email address, and the one with a phone number (one with an email first).
+// The contact with an email address, and the one known by a phone number alone.
 const BY_EMAIL = "email = ? AND email <> ''";
 const ID_BY_EMAIL = `SELECT id FROM site_contacts WHERE site_slug = ? AND ${BY_EMAIL}`;
-const ID_BY_PHONE = "SELECT id FROM site_contacts WHERE site_slug = ? AND phone = ? AND phone <> '' ORDER BY email <> '' DESC, last_seen DESC LIMIT 1";
-const EMAIL_WITH_PHONE = "SELECT id FROM site_contacts WHERE site_slug = ? AND phone = ? AND phone <> '' AND email <> '' ORDER BY last_seen DESC LIMIT 1";
+const PHONE_ONLY = "email = '' AND phone = ? AND phone <> ''";
+const ID_BY_PHONE = `SELECT id FROM site_contacts WHERE site_slug = ? AND ${PHONE_ONLY}`;
 
 const hmac = (secret: string, text: string) => createHmac("sha256", secret).update(text);
 
@@ -162,14 +164,6 @@ export async function checkedConsent(slug: string, raw: unknown, ip: string, for
 function contactStatements(slug: string, who: Who, { source, at, consent = null, messageId = "" }: Seen, select = true): InStatement[] {
   const statements: InStatement[] = [];
   if (who.email) {
-    // Someone known by phone alone who now gives an email address becomes that email's contact.
-    if (who.phone) {
-      statements.push({
-        sql: `UPDATE site_contacts SET email = ? WHERE site_slug = ? AND email = '' AND phone = ? AND phone <> ''
-              AND NOT EXISTS (${ID_BY_EMAIL})`,
-        args: [who.email, slug, who.phone, slug, who.email],
-      });
-    }
     const agreed: InValue[] = consent ? [consent.text, at, consent.ipHash, "email", consent.form] : ["", 0, "", "", ""];
     statements.push({
       sql: `INSERT INTO site_contacts (${COLUMNS})
@@ -186,23 +180,15 @@ function contactStatements(slug: string, who: Who, { source, at, consent = null,
     if (select) statements.push({ sql: ID_BY_EMAIL, args: [slug, who.email] });
     return statements;
   }
-  // A phone number alone (news by email can't be agreed to without an email address): the newest
-  // contact with an email and this phone, else the one known by this phone alone.
-  statements.push({
-    sql: `UPDATE site_contacts SET
-            name = CASE WHEN name = '' THEN ? ELSE name END,
-            source = CASE WHEN ? < first_seen THEN ? ELSE source END,
-            first_seen = min(first_seen, ?),
-            last_seen = CASE WHEN ? = 'owner' THEN last_seen ELSE max(last_seen, ?) END
-          WHERE id = (${EMAIL_WITH_PHONE})`,
-    args: [who.name, at, source, at, source, at, slug, who.phone],
-  });
+  // A phone number alone (news by email can't be agreed to without an email address) is the contact
+  // known by that number alone, never one with an email address that has it: whoever typed the
+  // number would otherwise put someone else's messages and the owner's notes on them in their data.
   statements.push({
     sql: `INSERT INTO site_contacts (${COLUMNS})
           SELECT ?, slug, '', ?, ?, ?, ?, ?, '', 0, '', '', '' FROM sites
-          WHERE slug = ? AND NOT EXISTS (${EMAIL_WITH_PHONE}) AND ${room("email = '' AND phone = ? AND phone <> ''")}
+          WHERE slug = ? AND ${room(PHONE_ONLY)}
           ON CONFLICT(site_slug, phone) WHERE email = '' AND phone <> '' DO UPDATE SET ${MERGE}`,
-    args: [randomId(12), who.phone, who.name, source, at, at, slug, slug, who.phone, slug, who.phone, slug],
+    args: [randomId(12), who.phone, who.name, source, at, at, slug, slug, who.phone, slug],
   });
   if (messageId) {
     statements.push({
@@ -238,22 +224,15 @@ export async function noteSender(slug: string, form: string, data: Record<string
 export async function fillContacts(slug: string): Promise<void> {
   const site = await one<{ contacts_filled: number }>("SELECT contacts_filled FROM sites WHERE slug = ?", [slug]);
   if (!site || Number(site.contacts_filled)) return;
-  const left = `max(0, ${MAX_CONTACTS} - (SELECT COUNT(*) FROM site_contacts WHERE site_slug = ?))`;
-  await run(
-    `INSERT INTO site_contacts (id, site_slug, email, name, source, first_seen, last_seen)
-     SELECT lower(hex(randomblob(12))), u.site_slug, lower(trim(u.email)), substr(trim(u.name), 1, ${MAX_NAME}), 'signup', u.created_at, u.created_at
-     FROM site_users u JOIN sites s ON s.slug = u.site_slug
-     WHERE u.site_slug = ? AND instr(u.email, '@') > 1 AND length(u.email) <= 160 ORDER BY u.created_at LIMIT ${left}
-     ON CONFLICT(site_slug, email) WHERE email <> '' DO UPDATE SET ${MERGE}`,
-    [slug, slug],
+  await fillFrom(
+    slug,
+    `SELECT lower(trim(email)) AS e, trim(name) AS nm, 'signup' AS src, created_at AS at, id AS k
+     FROM site_users WHERE site_slug = ? AND instr(email, '@') > 1 AND length(email) <= 160`,
   );
-  await run(
-    `INSERT INTO site_contacts (id, site_slug, email, name, source, first_seen, last_seen)
-     SELECT lower(hex(randomblob(12))), o.site_slug, lower(trim(o.email)), substr(trim(o.name), 1, ${MAX_NAME}), 'order:' || substr(o.item, 1, 60), o.created_at, o.created_at
-     FROM site_orders o JOIN sites s ON s.slug = o.site_slug
-     WHERE o.site_slug = ? AND instr(trim(o.email), '@') > 1 AND length(trim(o.email)) <= 160 ORDER BY o.created_at LIMIT ${left}
-     ON CONFLICT(site_slug, email) WHERE email <> '' DO UPDATE SET ${MERGE}`,
-    [slug, slug],
+  await fillFrom(
+    slug,
+    `SELECT lower(trim(email)) AS e, trim(name) AS nm, 'order:' || substr(item, 1, 60) AS src, created_at AS at, session_id AS k
+     FROM site_orders WHERE site_slug = ? AND instr(trim(email), '@') > 1 AND length(trim(email)) <= 160`,
   );
   // Messages: who sent each is read from its fields here, 50 messages to a write.
   const messages = await all<{ id: string; form: string; data: string; created_at: number }>(
@@ -280,6 +259,30 @@ export async function fillContacts(slug: string): Promise<void> {
   }
   if (batch.length) await (await db()).batch(batch, "write");
   await run("UPDATE sites SET contacts_filled = 1 WHERE slug = ?", [slug]);
+}
+
+/**
+ * The people in an app's earlier sightings (rows gives e, the email; nm, the name; src, the source;
+ * at, when; and k, to break ties; for the app's slug), one row each: their earliest sighting, with
+ * the first name they gave and their latest time. Those already on the list are brought up to date,
+ * then the others are added, earliest first, while there's room, so someone seen many times takes
+ * one place and never keeps someone else off the list.
+ */
+async function fillFrom(slug: string, rows: string) {
+  const insert = (which: "IN" | "NOT IN", limit: string) => `
+    WITH seen AS (${rows}), people AS (
+      SELECT e, src, at AS first_at, max(at) OVER (PARTITION BY e) AS last_at,
+        first_value(nm) OVER (PARTITION BY e ORDER BY nm = '', at, k) AS nm,
+        ROW_NUMBER() OVER (PARTITION BY e ORDER BY at, k) AS n
+      FROM seen
+    )
+    INSERT INTO site_contacts (id, site_slug, email, name, source, first_seen, last_seen)
+    SELECT lower(hex(randomblob(12))), s.slug, e, substr(nm, 1, ${MAX_NAME}), src, first_at, last_at
+    FROM people JOIN sites s ON s.slug = ?
+    WHERE n = 1 AND e ${which} (SELECT email FROM site_contacts WHERE site_slug = ? AND email <> '') ORDER BY first_at ${limit}
+    ON CONFLICT(site_slug, email) WHERE email <> '' DO UPDATE SET ${MERGE}`;
+  await run(insert("IN", ""), [slug, slug, slug]);
+  await run(insert("NOT IN", `LIMIT max(0, ${MAX_CONTACTS} - (SELECT COUNT(*) FROM site_contacts WHERE site_slug = ?))`), [slug, slug, slug, slug]);
 }
 
 const tagsOf = (json: string): string[] => {
@@ -328,8 +331,9 @@ export type ContactList = {
   // Everyone on the list, and in each stage, counted (never just what was loaded).
   total: number;
   byStage: Record<string, number>;
-  // How many a search found, when the server searched.
+  // How many a search found, in all and in each stage, when the server searched.
   matched?: number;
+  matchedByStage?: Record<string, number>;
   stages: Stage[];
   max: number;
   // The whole list is here, so the page can search and lay out the board by itself.
@@ -361,14 +365,13 @@ export async function listContacts(slug: string, t: Translate, { q = "", mode = 
   }
   const words = q.trim().slice(0, 80);
   if (words) {
-    const like = `%${words.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-    const digits = /^[+\d\s().\-/]+$/.test(words) ? words.replace(/\D/g, "") : "";
-    const fields = ["name", "email", "phone", "tags", "notes"].map((f) => `${f} LIKE ? ESCAPE '\\'`);
-    const where = `site_slug = ? AND (${fields.join(" OR ")}${digits.length >= 3 ? " OR phone LIKE ?" : ""})`;
-    const args: InValue[] = [slug, like, like, like, like, like, ...(digits.length >= 3 ? [`%${digits}%`] : [])];
-    const rows = await all<Row>(`SELECT ${LISTED} FROM site_contacts WHERE ${where} ORDER BY last_seen DESC, id LIMIT ?`, [...args, SHOWN]);
-    const matched = Number((await one<{ n: number }>(`SELECT COUNT(*) AS n FROM site_contacts WHERE ${where}`, args))?.n ?? 0);
-    return { ...base, contacts: list(rows), matched, everything: false };
+    // Searched here as the page searches a small list: SQLite's LIKE ignores the case of A to Z
+    // only, so "иван" would miss Иван. Reading the list once costs no more rows than LIKE did.
+    const rows = await all<Row>(`SELECT ${LISTED} FROM site_contacts WHERE site_slug = ? ORDER BY last_seen DESC, id LIMIT ?`, [slug, MAX_CONTACTS]);
+    const found = list(rows).filter((c) => contactMatches(c, words));
+    const matchedByStage = Object.fromEntries(stages.map((s) => [s.id, 0]));
+    for (const c of found) matchedByStage[c.stage] += 1;
+    return { ...base, contacts: found.slice(0, SHOWN), matched: found.length, matchedByStage, everything: false };
   }
   if (mode === "board") {
     const rows = await all<Row>(
@@ -397,6 +400,8 @@ export type ContactDetail = {
   orderCount: number;
   // Only for someone with an email address: news by email is what they can stop.
   unsubscribeLink: string;
+  // Other contacts with their phone number: maybe the same person, maybe not, so never joined.
+  samePhone: { id: string; name: string; email: string; phone: string }[];
 };
 
 const parsed = (json: string): Record<string, unknown> => {
@@ -429,6 +434,12 @@ export async function contactDetail(slug: string, id: string, base: string, t: T
   const orderCount = row.email
     ? Number((await one<{ n: number }>("SELECT COUNT(*) AS n FROM site_orders WHERE site_slug = ? AND lower(email) = ?", [slug, row.email]))?.n ?? 0)
     : 0;
+  const samePhone = row.phone
+    ? await all<{ id: string; name: string; email: string; phone: string }>(
+        "SELECT id, name, email, phone FROM site_contacts WHERE site_slug = ? AND phone = ? AND phone <> '' AND id <> ? ORDER BY last_seen DESC, id LIMIT 10",
+        [slug, row.phone, id],
+      )
+    : [];
   return {
     contact: toContact(row, stages),
     member: member ? { joined: Number(member.created_at) } : null,
@@ -444,6 +455,7 @@ export async function contactDetail(slug: string, id: string, base: string, t: T
     })),
     orderCount,
     unsubscribeLink: unsubLink(base, row.email ? await siteSecret(slug) : "", slug, row),
+    samePhone: samePhone.map((c) => ({ id: c.id, name: c.name, email: c.email, phone: c.phone })),
   };
 }
 
@@ -493,6 +505,15 @@ export async function addContact(
   if (emailText && !email) return { error: "email" };
   const phone = normalPhone(phoneText);
   if (phoneText && !phone) return { error: "phone" };
+  if (!email) {
+    // The owner typing a number someone with an email address gave opens them, unless someone is
+    // known by that number alone. Nothing about anyone moves.
+    const known = await one<{ id: string; email: string }>(
+      "SELECT id, email FROM site_contacts WHERE site_slug = ? AND phone = ? AND phone <> '' ORDER BY email = '' DESC, last_seen DESC, id LIMIT 1",
+      [slug, phone],
+    );
+    if (known?.email) return { id: known.id };
+  }
   const id = await noteContact(slug, { email, phone, name: cleanName(input.name) }, { source: "owner", at: now() });
   return id ? { id } : { error: "full" };
 }
@@ -546,7 +567,8 @@ export async function setStages(slug: string, t: Translate, input: unknown): Pro
 /**
  * The owner deletes someone and what the app kept about them: their member account (with its
  * sign-ins, private records and files), the messages they sent, and the contact. Their orders stay
- * for the owner's books, without their name, email or address (Stripe keeps its own copy).
+ * for the owner's books, without their name, email or address (Stripe keeps its own copy). Other
+ * contacts with the same phone number stay: the details and the confirmation name them.
  */
 export async function deleteContact(slug: string, id: string): Promise<boolean> {
   const contact = await one<{ email: string }>("SELECT email FROM site_contacts WHERE site_slug = ? AND id = ?", [slug, id]);

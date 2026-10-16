@@ -2,7 +2,19 @@
 
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/store";
-import { MAX_NAME, MAX_NOTES, MAX_STAGES, MAX_STAGE_NAME, cleanName, cleanTags, contactMatches, sourceLabel } from "@/lib/contacts";
+import {
+  MAX_NAME,
+  MAX_NOTES,
+  MAX_STAGES,
+  MAX_STAGE_NAME,
+  cleanName,
+  cleanTags,
+  contactMatches,
+  dateText,
+  formChanged,
+  sourceLabel,
+  type ContactForm,
+} from "@/lib/contacts";
 import { useT, type T } from "@/lib/use-t";
 
 // One app's contact list (see server/contacts.ts), in My websites & apps › Contacts.
@@ -23,7 +35,16 @@ type Contact = {
   subscribed: boolean;
 };
 // everything: the whole list came at once, so this page searches it and lays out the board itself.
-type List = { contacts: Contact[]; total: number; byStage: Record<string, number>; matched?: number; stages: Stage[]; max: number; everything: boolean };
+type List = {
+  contacts: Contact[];
+  total: number;
+  byStage: Record<string, number>;
+  matched?: number;
+  matchedByStage?: Record<string, number>;
+  stages: Stage[];
+  max: number;
+  everything: boolean;
+};
 type Detail = {
   contact: Contact;
   member: { joined: number } | null;
@@ -32,6 +53,7 @@ type Detail = {
   orders: { id: string; item: string; quantity: number; total: string; createdAt: number; done: boolean }[];
   orderCount: number;
   unsubscribeLink: string;
+  samePhone: { id: string; name: string; email: string; phone: string }[];
 };
 type Mode = "board" | "list";
 type Screen = { kind: "all" } | { kind: "detail"; id: string } | { kind: "add" } | { kind: "stages" };
@@ -39,16 +61,10 @@ type Screen = { kind: "all" } | { kind: "detail"; id: string } | { kind: "add" }
 type DraftStage = { key: number; id: string; name: string };
 
 const MODE_KEY = "flash-contacts-mode";
-const dateLabel = (when: number, locale: string) =>
-  new Date(when).toLocaleString(locale, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-const dayLabel = (when: number, locale: string) =>
-  new Date(when).toLocaleDateString(locale, {
-    month: "short",
-    day: "numeric",
-    ...(new Date(when).getFullYear() !== new Date().getFullYear() && { year: "numeric" }),
-  });
+const dateLabel = (when: number, locale: string) => dateText(when, locale, true);
+const dayLabel = (when: number, locale: string) => dateText(when, locale);
 const fieldText = (v: unknown) => (typeof v === "string" ? v : JSON.stringify(v));
-const shownName = (c: Contact) => c.name || c.email || c.phone;
+const shownName = (c: { name: string; email: string; phone: string }) => c.name || c.email || c.phone;
 const input = "h-10 min-w-0 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-zinc-200 outline-none focus:border-primary/70";
 const chip = "rounded-full border px-2 py-0.5 text-[11px]";
 const textButton = "text-xs text-zinc-300 hover:text-white disabled:opacity-50";
@@ -90,7 +106,7 @@ export function ContactsView({ slug, onCount }: { slug: string; onCount: (count:
   const [list, setList] = useState<List | null>(null);
   const [q, setQ] = useState("");
   // What the server found for the search, when the list is too big to search here.
-  const [found, setFound] = useState<{ q: string; contacts: Contact[]; matched: number } | null>(null);
+  const [found, setFound] = useState<{ q: string; contacts: Contact[]; matched: number; byStage: Record<string, number> } | null>(null);
   const [screen, setScreen] = useState<Screen>({ kind: "all" });
   const [phoneStage, setPhoneStage] = useState("");
   const [dropOn, setDropOn] = useState("");
@@ -132,7 +148,7 @@ export function ContactsView({ slug, onCount }: { slug: string; onCount: (count:
     const timer = setTimeout(async () => {
       try {
         const result = await api<List>(`/api/sites/${slug}/contacts?q=${encodeURIComponent(words)}`);
-        setFound({ q: words, contacts: result.contacts, matched: result.matched ?? result.contacts.length });
+        setFound({ q: words, contacts: result.contacts, matched: result.matched ?? result.contacts.length, byStage: result.matchedByStage ?? {} });
       } catch (err) {
         setError(err instanceof Error && err.message ? err.message : t("Couldn't load the contacts. Please try again."));
       }
@@ -192,6 +208,7 @@ export function ContactsView({ slug, onCount }: { slug: string; onCount: (count:
     setScreen({ kind: "all" });
     void load();
   };
+  const open = (id: string) => setScreen({ kind: "detail", id });
 
   if (!list) return error ? <p role="alert" className="text-sm text-red-400">{error}</p> : <p className="text-sm text-zinc-500">{t("Loading…")}</p>;
   const { stages } = list;
@@ -208,6 +225,7 @@ export function ContactsView({ slug, onCount }: { slug: string; onCount: (count:
           id={screen.id}
           stages={stages}
           onBack={back}
+          onOpen={open}
           onSaved={(c) => changeShown(c.id, () => c)}
           onError={setError}
         />
@@ -244,8 +262,18 @@ export function ContactsView({ slug, onCount }: { slug: string; onCount: (count:
   const matched = !searching ? list.total : list.everything ? (shown?.length ?? 0) : found?.q === words ? found.matched : null;
   const chosenStage = stages.some((s) => s.id === phoneStage) ? phoneStage : stages[0].id;
   const inStage = (id: string) => (shown ?? []).filter((c) => c.stage === id);
-  const stageCount = (id: string) => (searching ? inStage(id).length : (list.byStage[id] ?? 0));
-  const open = (id: string) => setScreen({ kind: "detail", id });
+  // Everyone in a stage, or everyone a search found there (the server counts them when it searched).
+  const stageCount = (id: string) =>
+    !searching ? (list.byStage[id] ?? 0) : list.everything ? inStage(id).length : found?.q === words ? (found.byStage[id] ?? 0) : 0;
+  // A note for the people a column or the list leaves out, as how many more there are.
+  const moreNote = (count: number) =>
+    count > 0 && (
+      <p className="mt-2 px-1 text-xs text-zinc-500">
+        {searching
+          ? t("{count} more. Narrow your search to see them.", { count: count.toLocaleString(t.locale) })
+          : t("{count} more. Search to find them.", { count: count.toLocaleString(t.locale) })}
+      </p>
+    );
 
   const card = (c: Contact) => (
     <li
@@ -350,26 +378,29 @@ export function ContactsView({ slug, onCount }: { slug: string; onCount: (count:
           {t("No contacts yet. People who send a form, sign up or pay on this app show up here.")}
         </p>
       ) : shown === null ? null : mode === "list" ? (
-        <ul className="space-y-2">
-          {shown.map((c) => (
-            <li key={c.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 text-sm">
-              <button onClick={() => open(c.id)} className="min-w-0 flex-[1_1_12rem] text-start">
-                <span className="block truncate text-zinc-100" dir="auto">
-                  {shownName(c)}
-                </span>
-                {c.name && <span className="block truncate text-xs text-zinc-500">{c.email || c.phone}</span>}
-              </button>
-              <span className={`${chip} border-white/10 bg-white/[0.06] text-zinc-200`}>{stageName(c.stage)}</span>
-              {c.tags.slice(0, 3).map((tag) => (
-                <button key={tag} onClick={() => setQ(tag)} className={`${chip} max-w-[10rem] truncate border-white/10 text-zinc-400 hover:text-zinc-100`}>
-                  {tag}
+        <>
+          <ul className="space-y-2">
+            {shown.map((c) => (
+              <li key={c.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 text-sm">
+                <button onClick={() => open(c.id)} className="min-w-0 flex-[1_1_12rem] text-start">
+                  <span className="block truncate text-zinc-100" dir="auto">
+                    {shownName(c)}
+                  </span>
+                  {c.name && <span className="block truncate text-xs text-zinc-500">{c.email || c.phone}</span>}
                 </button>
-              ))}
-              <NewsChip c={c} t={t} />
-              <span className="text-xs text-zinc-500">{t("Last seen {date}", { date: dayLabel(c.lastSeen, t.locale) })}</span>
-            </li>
-          ))}
-        </ul>
+                <span className={`${chip} border-white/10 bg-white/[0.06] text-zinc-200`}>{stageName(c.stage)}</span>
+                {c.tags.slice(0, 3).map((tag) => (
+                  <button key={tag} onClick={() => setQ(tag)} className={`${chip} max-w-[10rem] truncate border-white/10 text-zinc-400 hover:text-zinc-100`}>
+                    {tag}
+                  </button>
+                ))}
+                <NewsChip c={c} t={t} />
+                <span className="text-xs text-zinc-500">{t("Last seen {date}", { date: dayLabel(c.lastSeen, t.locale) })}</span>
+              </li>
+            ))}
+          </ul>
+          {moreNote((matched ?? 0) - shown.length)}
+        </>
       ) : (
         <>
           <div className="flex flex-wrap gap-2 sm:hidden">
@@ -388,7 +419,6 @@ export function ContactsView({ slug, onCount }: { slug: string; onCount: (count:
           <div className="sm:flex sm:gap-3 sm:overflow-x-auto sm:pb-2">
             {stages.map((s) => {
               const cards = inStage(s.id);
-              const more = searching ? 0 : stageCount(s.id) - cards.length;
               return (
                 <section
                   key={s.id}
@@ -411,7 +441,7 @@ export function ContactsView({ slug, onCount }: { slug: string; onCount: (count:
                     <span className="tabular-nums text-zinc-500">{stageCount(s.id).toLocaleString(t.locale)}</span>
                   </h3>
                   <ul className="space-y-2">{cards.map(card)}</ul>
-                  {more > 0 && <p className="mt-2 px-1 text-xs text-zinc-500">{t("{count} more. Search to find them.", { count: more.toLocaleString(t.locale) })}</p>}
+                  {moreNote(stageCount(s.id) - cards.length)}
                 </section>
               );
             })}
@@ -428,6 +458,7 @@ function ContactDetails({
   id,
   stages,
   onBack,
+  onOpen,
   onSaved,
   onError,
 }: {
@@ -435,12 +466,15 @@ function ContactDetails({
   id: string;
   stages: Stage[];
   onBack: () => void;
+  onOpen: (id: string) => void;
   onSaved: (c: Contact) => void;
   onError: (error: string) => void;
 }) {
   const t = useT();
   const [detail, setDetail] = useState<Detail | null>(null);
-  const [form, setForm] = useState({ name: "", stage: "", tags: "", notes: "" });
+  const [form, setForm] = useState<ContactForm>({ name: "", stage: "", tags: "", notes: "" });
+  // The form as it was loaded or last saved: "Saved" shows only while nothing has changed since.
+  const [savedForm, setSavedForm] = useState<ContactForm>(form);
   const [saving, setSaving] = useState<"" | "saving" | "saved">("");
   const [copied, setCopied] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -452,7 +486,9 @@ function ContactDetails({
       .then((d) => {
         if (!live) return;
         setDetail(d);
-        setForm({ name: d.contact.name, stage: d.contact.stage, tags: d.contact.tags.join(", "), notes: d.contact.notes });
+        const loaded = { name: d.contact.name, stage: d.contact.stage, tags: d.contact.tags.join(", "), notes: d.contact.notes };
+        setForm(loaded);
+        setSavedForm(loaded);
       })
       .catch((err) => live && onError(err instanceof Error && err.message ? err.message : t("Couldn't load the contacts. Please try again.")));
     return () => {
@@ -460,8 +496,13 @@ function ContactDetails({
     };
   }, [slug, id, t, onError]);
 
+  const edited = formChanged(form, savedForm);
+  // Leaving with changes not saved asks first, so they're never lost without a word.
+  const leave = (go: () => void) => () => {
+    if (!edited || window.confirm(t("Leave without saving your changes?"))) go();
+  };
   const backButton = (
-    <button onClick={onBack} className="text-xs text-zinc-400 hover:text-zinc-100">
+    <button onClick={leave(onBack)} className="text-xs text-zinc-400 hover:text-zinc-100">
       <span className="inline-block rtl:-scale-x-100" aria-hidden>
         ←
       </span>{" "}
@@ -480,7 +521,9 @@ function ContactDetails({
     try {
       await api(`/api/sites/${slug}/contacts`, { method: "PATCH", json: { id, name: form.name, stage: form.stage, tags, notes: form.notes } });
       const saved = { ...c, name: cleanName(form.name), stage: form.stage, tags, notes: form.notes.trim() };
-      setForm((f) => ({ ...f, name: saved.name, tags: tags.join(", "), notes: saved.notes }));
+      const next = { name: saved.name, stage: saved.stage, tags: tags.join(", "), notes: saved.notes };
+      setForm(next);
+      setSavedForm(next);
       setDetail((d) => d && { ...d, contact: saved });
       onSaved(saved);
       setSaving("saved");
@@ -523,6 +566,7 @@ function ContactDetails({
 
   const field = "block text-xs text-zinc-400";
   const fact = "text-xs text-zinc-500";
+  const samePhone = detail.samePhone ?? [];
   return (
     <div className="space-y-5">
       {backButton}
@@ -548,6 +592,24 @@ function ContactDetails({
           <span className={fact}>{t("Last seen {date}", { date: dateLabel(c.lastSeen, t.locale) })}</span>
           {detail.member && <span className={fact}>{t("Joined {date}", { date: dateLabel(detail.member.joined, t.locale) })}</span>}
         </div>
+        {samePhone.length > 0 && (
+          <p className="mt-2 text-xs text-gold-soft">
+            {t.node("Also on your list with this phone number: {names}", {
+              names: (
+                <>
+                  {samePhone.map((o, i) => (
+                    <span key={o.id}>
+                      {i > 0 && ", "}
+                      <button onClick={leave(() => onOpen(o.id))} className="underline hover:text-zinc-100" dir="auto">
+                        {shownName(o)}
+                      </button>
+                    </span>
+                  ))}
+                </>
+              ),
+            })}
+          </p>
+        )}
         <div className="mt-2 space-y-1 text-xs">
           {c.consent ? (
             <>
@@ -608,7 +670,7 @@ function ContactDetails({
           <button disabled={saving === "saving"} className={primary}>
             {saving === "saving" ? t("Saving…") : t("Save")}
           </button>
-          {saving === "saved" && (
+          {saving === "saved" && !edited && (
             <span role="status" className="text-xs text-primary-soft">
               ✓ {t("Saved")}
             </span>
@@ -690,6 +752,11 @@ function ContactDetails({
                 { name: shownName(c) },
               )}
             </p>
+            {samePhone.length > 0 && (
+              <p className="text-gold-soft">
+                {t("Contacts with the same phone number aren't deleted: {names}.", { names: samePhone.map(shownName).join(", ") })}
+              </p>
+            )}
             <div className="flex gap-4">
               <button onClick={remove} disabled={busy} className="text-red-400 hover:text-red-300 disabled:opacity-50">
                 {t("Delete")}

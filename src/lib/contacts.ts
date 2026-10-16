@@ -22,9 +22,12 @@ export const STAGE_ID = /^[a-z0-9]{1,12}$/;
 export type Who = { email: string; phone: string; name: string };
 export type Stage = { id: string; name: string };
 
-/** The stages every list starts with. A stage saved with these ids and no name of its own shows these, translated. */
+/**
+ * The stages every list starts with. A stage saved with these ids and no name of its own shows these,
+ * translated. The first has its own phrase: "New" is an unread message's, worded for a message.
+ */
 export const DEFAULT_STAGES: readonly Stage[] = [
-  { id: "new", name: msg("New") },
+  { id: "new", name: msg("New contact") },
   { id: "contacted", name: msg("Contacted") },
   { id: "won", name: msg("Won") },
   { id: "lost", name: msg("Lost") },
@@ -150,6 +153,26 @@ export function contactMatches(c: { name: string; email: string; phone: string; 
   const digits = /^[+\d\s().\-/]+$/.test(q) ? q.replace(/\D/g, "") : "";
   if (digits.length >= 3 && c.phone.includes(digits)) return true;
   return [c.name, c.email, c.phone, c.tags.join(" "), c.notes].some((text) => text.toLowerCase().includes(q));
+}
+
+/** What the owner can change on a contact's page, as typed. */
+export type ContactForm = { name: string; stage: string; tags: string; notes: string };
+
+/** Whether two versions of a contact's form differ once cleaned as the server cleans them (so spaces alone change nothing). */
+export function formChanged(a: ContactForm, b: ContactForm): boolean {
+  const cleaned = (f: ContactForm) => JSON.stringify([cleanName(f.name), f.stage, cleanTags(f.tags), f.notes.trim()]);
+  return cleaned(a) !== cleaned(b);
+}
+
+/** A date for the owner: "Mar 3" this year, else "Mar 3, 2025", with the time when withTime. */
+export function dateText(when: number, locale: string, withTime = false, today = Date.now()): string {
+  const date = new Date(when);
+  return date.toLocaleString(locale, {
+    month: "short",
+    day: "numeric",
+    ...(date.getFullYear() !== new Date(today).getFullYear() && { year: "numeric" }),
+    ...(withTime && { hour: "numeric", minute: "2-digit" }),
+  });
 }
 
 /** Where a contact came from, in words: a form, a sign-up, a paid order or the owner. */

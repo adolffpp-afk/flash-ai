@@ -17,7 +17,7 @@ process.env.FLASH_ADMIN_EMAILS = "admin@x.co";
 process.env.FLASH_APP_URL = "https://www.flash-app.dev";
 
 const { run, one, all } = await import("../src/lib/server/db.ts");
-const { contactFromFields, normalPhone, pageHas, pageWords, stagesOf, cleanTags, DEFAULT_STAGES } = await import("../src/lib/contacts.ts");
+const { contactFromFields, normalPhone, pageHas, pageWords, stagesOf, cleanTags, dateText, formChanged, DEFAULT_STAGES } = await import("../src/lib/contacts.ts");
 const contacts = await import("../src/lib/server/contacts.ts");
 const { receiveMessage, sitesWithMessages } = await import("../src/lib/server/inbox.ts");
 const { siteAuth } = await import("../src/lib/server/site-auth.ts");
@@ -162,26 +162,81 @@ test("one person who sends a form, signs up and pays is one contact", async () =
   assert.equal((await all("SELECT 1 FROM site_orders WHERE site_slug = 'crumb'")).length, 1);
 });
 
-test("someone known only by phone is one contact, and becomes their email's contact", async () => {
+test("someone known only by phone is one contact, and a number alone never joins them to someone with an email", async () => {
   await fresh();
   await site("phones", "owner");
-  await send("phones", { name: "Bo", phone: "+1 555 010 0001" }, {}, "10.0.0.1");
+  await send("phones", { name: "Bo", phone: "+1 555 010 0001", message: "Please deliver to 12 Elm St, gate code 4471" }, {}, "10.0.0.1");
   await send("phones", { phone: "+1-555-010-0001", message: "again" }, {}, "10.0.0.2");
   let list = await contactsOf("phones");
   assert.equal(list.length, 1, "the same phone, the same contact");
-  assert.equal(list[0].email, "");
-  await send("phones", { email: "bo@example.com", phone: "+15550100001" }, {}, "10.0.0.3");
+  const bo = list[0];
+  assert.equal(bo.email, "");
+  await run("UPDATE site_contacts SET notes = 'Pays cash' WHERE id = ?", [bo.id]);
+  // Anyone can type Bo's number next to their own email: they get a contact of their own, and nothing of Bo's.
+  await send("phones", { email: "mal@example.com", phone: "+15550100001", message: "hi" }, {}, "10.0.0.3");
   list = await contactsOf("phones");
-  assert.equal(list.length, 1, "no duplicate once they give an email");
-  assert.equal(list[0].email, "bo@example.com");
-  assert.equal(list[0].name, "Bo");
-  const linked = await all<{ contact_id: string }>("SELECT contact_id FROM site_messages WHERE site_slug = 'phones'");
-  assert.deepEqual([...new Set(linked.map((m) => m.contact_id))], [list[0].id], "every message is theirs");
-  // A later form with just that phone number is the email contact's too.
-  await send("phones", { phone: "+1 (555) 010-0001" }, {}, "10.0.0.4");
-  await send("phones", { phone: "+15550100001", message: "phone only" }, {}, "10.0.0.5");
-  assert.equal((await contactsOf("phones")).length, 1);
-  assert.equal(await one("SELECT 1 FROM site_messages WHERE site_slug = 'phones' AND contact_id <> ?", [list[0].id]), null);
+  assert.equal(list.length, 2);
+  const kept = list.find((c) => c.id === bo.id)!;
+  assert.deepEqual([kept.email, kept.name, kept.notes], ["", "Bo", "Pays cash"], "Bo's contact is still only Bo's");
+  const mal = list.find((c) => c.email === "mal@example.com")!;
+  assert.equal(mal.phone, "+15550100001");
+  // Bo's later messages by phone alone are Bo's, not those of whoever gave that number with an email.
+  await send("phones", { phone: "+1 (555) 010-0001", message: "callback please, my code is 4471" }, {}, "10.0.0.4");
+  assert.equal((await contactsOf("phones")).length, 2);
+  const whose = async () =>
+    Object.fromEntries(
+      (await all<{ contact_id: string; data: string }>("SELECT contact_id, data FROM site_messages WHERE site_slug = 'phones'")).map((m) => [
+        JSON.parse(m.data).message ?? "",
+        m.contact_id,
+      ]),
+    );
+  assert.deepEqual(await whose(), {
+    "Please deliver to 12 Elm St, gate code 4471": bo.id,
+    again: bo.id,
+    hi: mal.id,
+    "callback please, my code is 4471": bo.id,
+  });
+  const exported = await (await call("GET", owner, "phones", `?id=${mal.id}&format=json`)).json();
+  assert.deepEqual([exported.contact.email, exported.contact.notes], ["mal@example.com", ""]);
+  assert.deepEqual(
+    exported.messages.map((m: { data: { message: string } }) => m.data.message),
+    ["hi"],
+    "their data has nothing of Bo's",
+  );
+  // Each one's details name the other, so the owner can tell whether they're one person.
+  const detailOf = async (id: unknown) => (await call("GET", owner, "phones", `?id=${id}`)).json();
+  assert.deepEqual((await detailOf(bo.id)).samePhone, [{ id: mal.id, name: "", email: "mal@example.com", phone: "+15550100001" }]);
+  assert.deepEqual((await detailOf(mal.id)).samePhone.map((c: { id: string }) => c.id), [bo.id]);
+  // Deleting the one with the email takes none of Bo's messages.
+  assert.deepEqual(await (await call("DELETE", owner, "phones", `?id=${mal.id}`)).json(), { ok: true });
+  assert.deepEqual(Object.keys(await whose()).sort(), ["Please deliver to 12 Elm St, gate code 4471", "again", "callback please, my code is 4471"]);
+  assert.deepEqual((await detailOf(bo.id)).samePhone, []);
+});
+
+test("one person who gave their email on one form and only their phone on another is two contacts that name each other", async () => {
+  await fresh();
+  await site("twins", "owner");
+  await siteAuth("twins", "signup", { email: "wes@x.co", password: "longenough1", name: "Wes" }, "10.0.1.1", "/p/twins", true, null);
+  await send("twins", { name: "Wes", phone: "+1 555 010 8888", message: "Call me about my lab results" }, {}, "10.0.1.2");
+  await send("twins", { email: "wes@x.co", phone: "+15550108888", message: "follow-up" }, {}, "10.0.1.3");
+  const list = await contactsOf("twins");
+  assert.deepEqual(
+    list.map((c) => [c.email, c.phone, c.name]),
+    [
+      ["wes@x.co", "+15550108888", "Wes"],
+      ["", "+15550108888", "Wes"],
+    ],
+  );
+  const [withEmail, phoneOnly] = list;
+  const detailOf = async (id: unknown) => (await call("GET", owner, "twins", `?id=${id}`)).json();
+  assert.deepEqual((await detailOf(withEmail.id)).samePhone, [{ id: phoneOnly.id, name: "Wes", email: "", phone: "+15550108888" }]);
+  assert.deepEqual((await detailOf(phoneOnly.id)).samePhone.map((c: { id: string }) => c.id), [withEmail.id]);
+  // The owner deletes each one they find is the same person: the delete confirmation names the other.
+  await call("DELETE", owner, "twins", `?id=${withEmail.id}`);
+  assert.deepEqual((await contactsOf("twins")).map((c) => c.id), [phoneOnly.id]);
+  await call("DELETE", owner, "twins", `?id=${phoneOnly.id}`);
+  assert.deepEqual(await contactsOf("twins"), []);
+  assert.equal(await one("SELECT 1 FROM site_messages WHERE site_slug = 'twins'"), null);
 });
 
 test("agreeing to news counts only with the page's own wording, and the latest choice wins", async () => {
@@ -303,6 +358,45 @@ test("the people an app had before are copied in once, without duplicates", asyn
   assert.equal(JSON.stringify(await contactsOf("old")), before, "a second run changes nothing");
 });
 
+test("someone seen many times before takes one place in the copied-in list, never someone else's", async () => {
+  await fresh();
+  await site("busy", "owner");
+  // 5,000 members, the 3,000 oldest already on the list with 3,000 others who sent forms, then
+  // 6,500 repeat orders from members and 50 orders from new buyers.
+  await run(
+    `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 5000)
+     INSERT INTO site_users (id, site_slug, email, name, password_hash, created_at) SELECT 'bm' || i, 'busy', 'm' || i || '@x.co', '', 'h', 1000 + i FROM n`,
+  );
+  await run(
+    `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 6000)
+     INSERT INTO site_contacts (id, site_slug, email, source, first_seen, last_seen)
+     SELECT 'bc' || i, 'busy', CASE WHEN i <= 3000 THEN 'm' || i ELSE 'f' || i END || '@x.co', 'form:contact', 50000 + i, 50000 + i FROM n`,
+  );
+  await run(
+    `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 6500)
+     INSERT INTO site_orders (session_id, site_slug, item, quantity, amount, currency, email, name, address, created_at)
+     SELECT 'cs_bm' || i, 'busy', 'Bread', 1, 500, 'cad', 'M' || (1 + i % 5000) || '@x.co', CASE WHEN i = 5001 THEN 'Ann Member' ELSE '' END, '', 10000 + i FROM n`,
+  );
+  await run(
+    `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 50)
+     INSERT INTO site_orders (session_id, site_slug, item, quantity, amount, currency, email, name, address, created_at)
+     SELECT 'cs_bg' || i, 'busy', 'Cake', 1, 900, 'cad', 'guest' || i || '@x.co', 'Guest ' || i, '', 30000 + i FROM n`,
+  );
+  await contacts.fillContacts("busy");
+  const count = async (where: string) => Number((await one<{ n: number }>(`SELECT COUNT(*) AS n FROM site_contacts WHERE site_slug = 'busy' AND ${where}`))?.n);
+  assert.equal(await count("1"), 8050, "6,000, the 2,000 newer members and the 50 buyers");
+  assert.equal(await count("email LIKE 'm%'"), 5000, "every member");
+  assert.equal(await count("email LIKE 'guest%'"), 50, "every new buyer");
+  // Someone already there is brought up to date once, from all their orders.
+  const m2 = await one<Record<string, unknown>>("SELECT * FROM site_contacts WHERE site_slug = 'busy' AND email = 'm2@x.co'");
+  assert.deepEqual([m2?.source, m2?.first_seen, m2?.last_seen, m2?.name], ["signup", 1002, 50002, "Ann Member"]);
+  const g1 = await one<Record<string, unknown>>("SELECT * FROM site_contacts WHERE site_slug = 'busy' AND email = 'guest1@x.co'");
+  assert.deepEqual([g1?.source, g1?.first_seen, g1?.last_seen, g1?.name], ["order:Cake", 30001, 30001, "Guest 1"]);
+  const m4999 = await one<Record<string, unknown>>("SELECT * FROM site_contacts WHERE site_slug = 'busy' AND email = 'm4999@x.co'");
+  assert.deepEqual([m4999?.source, m4999?.first_seen, m4999?.last_seen], ["signup", 5999, 14998], "a newer member who bought");
+  await run("DELETE FROM site_contacts WHERE site_slug = 'busy'");
+});
+
 test("only the app's owner can see or change its contacts", async () => {
   await fresh();
   await site("mine", "owner");
@@ -379,12 +473,39 @@ test("the owner adds, changes and finds people", async () => {
   assert.equal(list.contacts.length, 500);
   const found = await (await call("GET", owner, "edit", "?q=person5")).json();
   assert.equal(found.matched, 111, "person5, person50…59, person500…599");
+  assert.deepEqual(found.matchedByStage, { new: 55, contacted: 56, won: 0, lost: 0 }, "what the search found in each stage, for the board");
+  const many = await (await call("GET", owner, "edit", "?q=person")).json();
+  assert.deepEqual([many.contacts.length, many.matched], [500, 600], "the newest 500, and how many there are");
+  assert.deepEqual(many.matchedByStage, { new: 300, contacted: 300, won: 0, lost: 0 });
+  // Capitals in any language, as the page searches a small list.
+  await contacts.addContact("edit", { name: "Иван Петров", email: "ivan@x.co" });
+  await contacts.addContact("edit", { name: "Élodie Brün", email: "elodie@x.co" });
+  for (const q of ["иван", "ИВАН", "élodie", "ÉLODIE", "brün", "BRÜN"]) {
+    assert.equal((await (await call("GET", owner, "edit", `?q=${encodeURIComponent(q)}`)).json()).matched, 1, q);
+  }
   const tagged = await (await call("GET", owner, "edit", "?q=rye")).json();
   assert.deepEqual(tagged.contacts.map((c: { id: string }) => c.id), [gus.body.id]);
   const wild = await (await call("GET", owner, "edit", "?q=%25")).json();
   assert.equal(wild.matched, 0, "% is a character, not a wildcard");
   const phone = await (await call("GET", owner, "edit", "?q=555-010-0004")).json();
   assert.equal(phone.matched, 1);
+});
+
+test("a contact's dates say the year when it isn't this one, and only real changes count as unsaved", () => {
+  const today = new Date(2026, 9, 16, 12).getTime();
+  const old = new Date(2025, 2, 3, 15).getTime();
+  const recent = new Date(2026, 2, 3, 15).getTime();
+  assert.match(dateText(old, "en-US", true, today), /^Mar 3, 2025, 3:00\sPM$/);
+  assert.equal(dateText(old, "en-US", false, today), "Mar 3, 2025");
+  assert.match(dateText(recent, "en-US", true, today), /^Mar 3, 3:00\sPM$/);
+  assert.equal(dateText(recent, "en-US", false, today), "Mar 3");
+  assert.match(dateText(old, "ar-SA-u-ca-gregory", true, today), /2025|٢٠٢٥/);
+  const saved = { name: "Ann", stage: "new", tags: "VIP, Rye", notes: "Called on Monday." };
+  assert.equal(formChanged({ ...saved }, saved), false);
+  assert.equal(formChanged({ name: " Ann ", stage: "new", tags: "VIP,Rye, vip", notes: "Called on Monday.\n" }, saved), false, "spaces and repeats change nothing");
+  assert.equal(formChanged({ ...saved, stage: "won" }, saved), true);
+  assert.equal(formChanged({ ...saved, notes: "Called on Monday. Wants rye." }, saved), true);
+  assert.equal(formChanged({ ...saved, tags: "VIP" }, saved), true);
 });
 
 test("stages can be renamed, added, reordered and removed", async () => {
@@ -401,15 +522,16 @@ test("stages can be renamed, added, reordered and removed", async () => {
     return { status: res.status, body: await res.json() };
   };
   // Won renamed, a stage added, Contacted first, Lost removed.
-  const saved = await put([{ id: "contacted", name: "Called" }, { id: "new", name: "New" }, { name: "Quoted" }, { id: "won", name: "Paid" }]);
+  const saved = await put([{ id: "contacted", name: "Called" }, { id: "new", name: "New contact" }, { name: "Quoted" }, { id: "won", name: "Paid" }]);
   assert.equal(saved.status, 200);
   const ids = saved.body.stages.map((s: { id: string }) => s.id);
   assert.deepEqual(ids.slice(0, 2), ["contacted", "new"]);
   assert.match(ids[2], /^s[a-z0-9]{6}$/);
   const stored = JSON.parse((await one<{ s: string }>("SELECT contact_stages AS s FROM sites WHERE slug = 'stages'"))!.s);
   assert.equal(stored[1].name, "", "a standard name is kept as the standard, so it's translated");
-  assert.equal(stagesOf(JSON.stringify(stored), fr)[1].name, fr("New"));
-  assert.notEqual(fr("New"), "New");
+  assert.equal(stagesOf(JSON.stringify(stored), fr)[1].name, fr("New contact"));
+  assert.notEqual(fr("New contact"), "New contact");
+  assert.notEqual(DEFAULT_STAGES[0].name, "New", "the first stage has its own phrase, not an unread message's");
   const stageOf = async (id: string) => (await one<{ stage: string }>("SELECT stage FROM site_contacts WHERE id = ?", [id]))?.stage;
   assert.equal(await stageOf("s1"), "new", "someone never moved stays in the stage that was first");
   assert.equal(await stageOf("s2"), "contacted");
@@ -522,7 +644,7 @@ test("the whole list downloads as a CSV file in the owner's language", async () 
   // (Reading the reply as text drops the byte-order mark the file starts with.)
   assert.ok(lines[0].startsWith("Name,Email,Phone,Stage,Tags,Notes,Source,First seen,Last seen,Agreed to news,Agreed on,Wording they saw"), lines[0]);
   assert.ok(csv.includes("'=1+1"), "a name like a formula stays text");
-  assert.ok(csv.includes(`Lu,lu@x.co,,New,,,Form: contact,`));
+  assert.ok(csv.includes(`Lu,lu@x.co,,New contact,,,Form: contact,`));
   assert.match(csv, /,Yes,\d{4}-\d\d-\d\d \d\d:\d\d,Email me news/);
   assert.match(csv, /https:\/\/www\.flash-app\.dev\/u\/[\w-]+\.[\w-]{22}/, "links use Flash's own address, never the app's domain");
   assert.ok(!csv.includes("goldencrumb.com"));

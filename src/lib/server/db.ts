@@ -147,7 +147,8 @@ const SCHEMA = [
     unsubscribed_at INTEGER NOT NULL DEFAULT 0
   )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS site_contacts_email ON site_contacts(site_slug, email) WHERE email <> ''`,
-  // Someone known only by their phone number is one contact too, until they give an email.
+  // Someone known only by their phone number is one contact too, kept apart from anyone with an
+  // email address who gives that number (nobody proves a number is theirs).
   `CREATE UNIQUE INDEX IF NOT EXISTS site_contacts_phone_only ON site_contacts(site_slug, phone) WHERE email = '' AND phone <> ''`,
   `CREATE INDEX IF NOT EXISTS site_contacts_phone ON site_contacts(site_slug, phone) WHERE phone <> ''`,
   `CREATE INDEX IF NOT EXISTS site_contacts_seen ON site_contacts(site_slug, last_seen)`,
