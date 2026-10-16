@@ -1801,6 +1801,7 @@
  "you picked it": "انتخاب خودتان",
  "{answer} The details are on your screen.": "{answer} جزئیات روی صفحهٔ شماست.",
  "{answer} The rest is on your screen.": "{answer} بقیه‌اش روی صفحهٔ شماست.",
+ "{brand} is a trademark of {company}": "{brand} علامت تجاری متعلق به {company} است",
  "{collection} — {rule}": "{collection} — {rule}",
  "{connection} · {tool}": "{connection} · {tool}",
  "{cost} Say yes to go ahead, or no to skip it.": "{cost} اگر می‌خواهید انجامش بدهم بگویید بله، وگرنه بگویید نه.",

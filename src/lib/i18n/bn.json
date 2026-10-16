@@ -1801,6 +1801,7 @@
  "you picked it": "আপনি এটি বেছে নিয়েছেন",
  "{answer} The details are on your screen.": "{answer} বিস্তারিত আপনার স্ক্রিনে আছে।",
  "{answer} The rest is on your screen.": "{answer} বাকিটা আপনার স্ক্রিনে আছে।",
+ "{brand} is a trademark of {company}": "{brand} একটি ট্রেডমার্ক, যার মালিক {company}",
  "{collection} — {rule}": "{collection} — {rule}",
  "{connection} · {tool}": "{connection} · {tool}",
  "{cost} Say yes to go ahead, or no to skip it.": "{cost} এগিয়ে যেতে হ্যাঁ বলুন, বাদ দিতে না বলুন।",

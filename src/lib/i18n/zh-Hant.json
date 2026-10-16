@@ -1801,6 +1801,7 @@
  "you picked it": "你的選擇",
  "{answer} The details are on your screen.": "{answer}詳細內容在螢幕上。",
  "{answer} The rest is on your screen.": "{answer}其餘內容在螢幕上。",
+ "{brand} is a trademark of {company}": "{brand} 是 {company} 的商標",
  "{collection} — {rule}": "{collection} — {rule}",
  "{connection} · {tool}": "{connection} · {tool}",
  "{cost} Say yes to go ahead, or no to skip it.": "{cost}說「好」就繼續，說「不用」就跳過。",

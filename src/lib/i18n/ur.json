@@ -1801,6 +1801,7 @@
  "you picked it": "آپ نے خود چنا",
  "{answer} The details are on your screen.": "{answer} تفصیلات آپ کی اسکرین پر ہیں۔",
  "{answer} The rest is on your screen.": "{answer} باقی آپ کی اسکرین پر ہے۔",
+ "{brand} is a trademark of {company}": "{brand} {company} کا ٹریڈ مارک ہے",
  "{collection} — {rule}": "{collection} — {rule}",
  "{connection} · {tool}": "{connection} · {tool}",
  "{cost} Say yes to go ahead, or no to skip it.": "{cost} آگے بڑھنے کے لیے ہاں کہیں، یا چھوڑنے کے لیے نہیں۔",
