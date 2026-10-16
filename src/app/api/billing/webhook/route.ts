@@ -8,10 +8,10 @@ import {
   recordPayment,
   setCancelAtPeriodEnd,
 } from "@/lib/server/subscriptions.ts";
-import { CREDIT_PACKS, planPrice } from "@/lib/credits.ts";
+import { CREDIT_PACKS, extraSeatsFor, planPrice, seatsPrice } from "@/lib/credits.ts";
 import { reverseReferral, rewardReferral } from "@/lib/server/referrals.ts";
 
-type Meta = { user?: string; plan?: string; interval?: string; pack?: string };
+type Meta = { user?: string; plan?: string; interval?: string; pack?: string; extra_seats?: string };
 type SubscriptionDetails = { subscription?: string; metadata?: Meta | null };
 type Invoice = {
   id: string;
@@ -59,12 +59,14 @@ type StripeEvent = {
 async function invoicePaid(invoice: Invoice) {
   const details = invoice.parent?.subscription_details ?? invoice.subscription_details ?? null;
   const subscriptionId = details?.subscription ?? invoice.subscription ?? null;
-  const { user, plan, interval } = details?.metadata ?? {};
+  const { user, plan, interval, extra_seats } = details?.metadata ?? {};
   const period = invoice.lines?.data?.[0]?.period;
   if (!subscriptionId || !user || !plan || !isInterval(interval) || !period) return;
   // Credits are only given for the plan's full price (no zero or discounted invoices).
   const planInfo = planById(plan);
-  if (!planInfo || invoice.amount_paid < planPrice(planInfo, interval) || (invoice.currency ?? "").toLowerCase() !== currency()) {
+  const extraSeats = planInfo ? extraSeatsFor(planInfo, Number(extra_seats ?? 0)) : 0;
+  const due = planInfo ? planPrice(planInfo, interval) + seatsPrice(extraSeats, interval) : 0;
+  if (!planInfo || invoice.amount_paid < due || (invoice.currency ?? "").toLowerCase() !== currency()) {
     console.warn(`[flash] invoice ${invoice.id} paid ${invoice.amount_paid} for ${plan}/${interval}: no credits given`);
     return;
   }
@@ -80,6 +82,7 @@ async function invoicePaid(invoice: Invoice) {
     periodEnd: period.end * 1000,
     ref,
     test: false,
+    extraSeats,
     paymentIntent: invoice.payment_intent ?? invoice.payments?.data?.[0]?.payment?.payment_intent ?? null,
   });
   // A referred friend's first payment of a plan that counts (REFERRAL_EARNS) gives the referral

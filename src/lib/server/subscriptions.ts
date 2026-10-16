@@ -1,4 +1,4 @@
-import { CARRY_CAP_FROM, CARRY_MONTHS, PLANS, carryOverTrim, planPrice, type Interval, type Plan } from "../credits.ts";
+import { CARRY_CAP_FROM, CARRY_MONTHS, PLANS, carryOverTrim, planCredits, planPrice, seatsPrice, type Interval, type Plan } from "../credits.ts";
 import { all, one, run, now } from "./db.ts";
 
 export type Subscription = {
@@ -14,6 +14,7 @@ export type Subscription = {
   paid_until: number;
   test: number;
   created_at: number;
+  extra_seats: number;
 };
 
 export const planById = (id: string | undefined): Plan | undefined => PLANS.find((p) => p.id === id);
@@ -58,7 +59,7 @@ export async function grantPlanCredits(sub: Subscription, at = now()): Promise<b
   const ref = `plan:${sub.id}:${n}`;
   const r = await run(
     "INSERT OR IGNORE INTO credit_ledger (user_id, amount, reason, ref, created_at) VALUES (?, ?, ?, ?, ?)",
-    [sub.user_id, plan.credits, `${plan.name} plan monthly credits`, ref, at],
+    [sub.user_id, planCredits(plan, Number(sub.extra_seats ?? 0)), `${plan.name} plan monthly credits`, ref, at],
   );
   if (r.rowsAffected !== 1) return false;
   if (n > 0 && Number(sub.created_at) >= CARRY_CAP_FROM) await capCarryOver(sub, plan, ref, n, at);
@@ -76,7 +77,7 @@ async function capCarryOver(sub: Subscription, plan: Plan, grantRef: string, n: 
      FROM credit_ledger WHERE user_id = ?`,
     [grantRef, sub.user_id],
   );
-  const trim = carryOverTrim(Number(row?.before ?? 0), Number(row?.kept ?? 0), plan.credits);
+  const trim = carryOverTrim(Number(row?.before ?? 0), Number(row?.kept ?? 0), planCredits(plan, Number(sub.extra_seats ?? 0)));
   if (trim <= 0) return;
   await run(
     "INSERT OR IGNORE INTO credit_ledger (user_id, amount, reason, ref, created_at) VALUES (?, ?, ?, ?, ?)",
@@ -97,22 +98,25 @@ export async function recordPayment(p: {
   ref: string;
   test: boolean;
   paymentIntent?: string | null;
+  // Seats bought on top of a team plan's own (see EXTRA_SEAT).
+  extraSeats?: number;
 }): Promise<boolean> {
   const plan = planById(p.planId);
   if (!plan) return false;
+  const seats = plan.seats ? Math.max(0, p.extraSeats ?? 0) : 0;
   const t = now();
   await run(
-    `INSERT INTO subscriptions (id, user_id, plan, interval, status, customer, amount_cents, anchor, paid_until, test, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO subscriptions (id, user_id, plan, interval, status, customer, amount_cents, anchor, paid_until, test, created_at, updated_at, extra_seats)
+     VALUES (?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET paid_until = MAX(paid_until, excluded.paid_until), status = 'active',
        customer = COALESCE(excluded.customer, customer), updated_at = excluded.updated_at`,
-    [p.subscriptionId, p.userId, plan.id, p.interval, p.customer, planPrice(plan, p.interval), p.periodStart,
-      p.periodEnd, p.test ? 1 : 0, t, t],
+    [p.subscriptionId, p.userId, plan.id, p.interval, p.customer, planPrice(plan, p.interval) + seatsPrice(seats, p.interval), p.periodStart,
+      p.periodEnd, p.test ? 1 : 0, t, t, seats],
   );
   await run(
     `INSERT OR IGNORE INTO purchases (user_id, pack, credits, amount_cents, test, ref, payment_intent, subscription, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [p.userId, `plan:${plan.id}:${p.interval}`, plan.credits, p.amountCents, p.test ? 1 : 0, p.ref,
+    [p.userId, `plan:${plan.id}:${p.interval}`, planCredits(plan, seats), p.amountCents, p.test ? 1 : 0, p.ref,
       p.paymentIntent ?? null, p.subscriptionId, t],
   );
   const sub = await one<Subscription>("SELECT * FROM subscriptions WHERE id = ?", [p.subscriptionId]);
@@ -155,7 +159,8 @@ export async function planSummary(userId: string) {
     id: plan.id,
     name: plan.name,
     interval: sub.interval,
-    credits: plan.credits,
+    credits: planCredits(plan, Number(sub.extra_seats ?? 0)),
+    extraSeats: Number(sub.extra_seats ?? 0),
     nextCredits: Math.min(addMonths(sub.anchor, n + 1), sub.paid_until),
     renews: !sub.cancel_at_period_end,
     paidUntil: sub.paid_until,

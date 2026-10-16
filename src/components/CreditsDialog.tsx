@@ -60,13 +60,13 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function subscribe(planId: string) {
+  async function subscribe(planId: string, extraSeats = 0) {
     setBusy(planId);
     setMessage("");
     try {
       const res = await api<{ url?: string; demo?: boolean }>("/api/billing/subscribe", {
         method: "POST",
-        json: { plan: planId, interval: billing },
+        json: { plan: planId, interval: billing, extraSeats },
       });
       if (res.url) window.location.assign(res.url);
       else if (res.demo) {
