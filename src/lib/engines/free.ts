@@ -5,7 +5,7 @@ import { msg } from "../i18n.ts";
 import { FriendlyError } from "./errors.ts";
 import { MAX_FORECASTS, TOO_MANY, WEATHER_FUNCTION, type WeatherAnswer, type WeatherTool } from "../weather.ts";
 import { freeFacts, freeOrder } from "../free-order.ts";
-import { failText, FRED_NOTE, functionTool, limitText, toolFlags, ToolLedger, type ClientTool, type ToolResult } from "../research.ts";
+import { failText, FRED_NOTE, functionTool, limitText, toolFlags, ToolLedger, type CallCounts, type ClientTool, type ToolResult } from "../research.ts";
 
 /*
  * The free lane: models on providers' free tiers (mostly open-source), used when a user has run out of
@@ -411,6 +411,8 @@ async function send(p: ChatProvider, key: string, body: string, stream: boolean)
  * with what they gave back to answer in words, streamed. Both calls are reserved together, so the
  * second can never pass a cap. When the first round only found where to look (FRED's search), one
  * more round may follow, reserved on its own: without room for it, the reply answers with what it has.
+ * Those caps are the whole reply's: a provider that takes over after another's look-ups is offered
+ * only the tools with calls left, and lists only the sources its own answer read.
  */
 export async function* streamFreeChat(
   history: ChatTurn[],
@@ -437,30 +439,35 @@ export async function* streamFreeChat(
     CHAT_PROVIDERS.map((p) => p.id),
     CHAT_PROVIDERS.filter((p) => p.tools).map((p) => p.id),
   );
-  // The functions offered: the forecast's first, then the data tools'.
-  const functions: FreeFunction[] = [...(tool ? [WEATHER_FUNCTION] : []), ...data.map(functionTool)];
+  // The look-ups the reply has made, counted across providers: one that takes over after another's
+  // tool round (its answer failed) may make only what's left, and the daily caps count them all.
+  const calls: CallCounts = new Map();
+  let forecasts = 0;
   let lastError = "";
   for (const id of order) {
     const p = CHAT_PROVIDERS.find((c) => c.id === id)!;
     const key = p.key();
     if (!key) continue;
     if (p.serves && !p.serves(country.toUpperCase())) continue;
-    const offer = functions.length > 0 && Boolean(p.tools);
+    // This attempt's sources and FRED's notice: a provider that takes over lists only what its own answer read.
+    const ledger = new ToolLedger(calls);
+    // What this provider is offered, when it takes tools: the forecast and the data tools that still
+    // have calls left in the reply, the forecast's function first. One without tools, or with none
+    // left, is told it can't check the weather or search either.
+    const forecast = p.tools && forecasts < MAX_FORECASTS ? tool : undefined;
+    const offered = p.tools ? data.filter((x) => ledger.left(x.family) > 0) : [];
+    const functions: FreeFunction[] = [...(forecast ? [WEATHER_FUNCTION] : []), ...offered.map(functionTool)];
+    const offer = functions.length > 0;
     const limits = { requests: p.dailyRequests, tokens: p.dailyTokens };
     if (!(await reserve(p.id, limits, offer ? 2 : 1))) continue;
-    // A provider without tools is told it can't check the weather or search either.
-    const offered = offer ? data : [];
     const messages: Message[] = [
-      { role: "system", content: o.systemPrompt ?? system(preferences, mode, { ...o.system, web: "free", weather: offer && Boolean(tool), ...toolFlags(offered) }) },
+      { role: "system", content: o.systemPrompt ?? system(preferences, mode, { ...o.system, web: "free", weather: Boolean(forecast), ...toolFlags(offered) }) },
       ...turns,
     ];
     let input = 0;
     let output = 0;
     let after: object[] = [];
     let used = false;
-    // This attempt's look-ups: a provider that takes over starts again.
-    const ledger = new ToolLedger();
-    let forecasts = 0;
     const recordUse = () => record(p.id, input + output, p.id === "cloudflare" ? cloudflareChatNeurons(input, output) : 0);
     // FRED's notice and the sources, after the words: the data's, then MET Norway's.
     function* finish(): Generator<StreamEvent> {
@@ -483,13 +490,13 @@ export async function* streamFreeChat(
     /** Runs the calls a reply asked for, saying what it checks, and adds what they gave back after it. */
     async function* runCalls(asked: Asked): AsyncGenerator<StreamEvent> {
       for (const call of asked.calls) {
-        const status = call.name === WEATHER_FUNCTION.name && tool ? tool.status(call.input) : offered.find((x) => x.name === call.name)?.status(call.input);
+        const status = call.name === WEATHER_FUNCTION.name && forecast ? forecast.status(call.input) : offered.find((x) => x.name === call.name)?.status(call.input);
         if (status) yield { type: "status", message: status };
       }
       // Each kind's calls are counted in the order they were asked for, before any runs.
       const answers = await Promise.all(
         asked.calls.map((call): Promise<WeatherAnswer | ToolResult> | WeatherAnswer => {
-          if (call.name === WEATHER_FUNCTION.name && tool) return forecasts++ < MAX_FORECASTS ? tool.run(call.input) : { text: TOO_MANY, isError: true, used: false };
+          if (call.name === WEATHER_FUNCTION.name && forecast) return forecasts++ < MAX_FORECASTS ? forecast.run(call.input) : { text: TOO_MANY, isError: true, used: false };
           const look = offered.find((x) => x.name === call.name);
           if (!look) return { text: `There is no tool called ${call.name}.`, isError: true, used: false };
           if (!ledger.take(look.family)) return { text: limitText(look.family), isError: true, used: false };
@@ -501,7 +508,7 @@ export async function* streamFreeChat(
       // Read in the order they were asked for, so a search's numbers don't depend on which answered first.
       const texts = asked.calls.map((call, i) => {
         const answer = answers[i];
-        if (call.name === WEATHER_FUNCTION.name && tool) {
+        if (call.name === WEATHER_FUNCTION.name && forecast) {
           used ||= answer.used;
           return { text: answer.text };
         }

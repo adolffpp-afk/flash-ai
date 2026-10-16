@@ -40,6 +40,11 @@ const hanging = new Set<import("node:http").ServerResponse>();
 // How SearXNG answers next: its results, an error status, a redirect, a body too big, or nothing at all.
 let searx: { status?: number; results?: object[]; unresponsive?: string[]; redirect?: boolean; huge?: boolean; hang?: boolean } = {};
 let fredStatus = 0;
+// companyfacts answers wait for this while it's set (to see who reads at once), and how many were open at once at most.
+let factsGate: Promise<unknown> | null = null;
+const factsOpen = { now: 0, most: 0 };
+// How companyfacts answers next: as usual, saying it's over 40 MB, or with a body that isn't JSON.
+let factsAnswer: "ok" | "huge" | "broken" = "ok";
 
 const DAY = 86_400_000;
 const iso = (t: number) => new Date(t).toISOString().slice(0, 10);
@@ -310,6 +315,23 @@ const companyfacts = (cik: string) => ({
   },
 });
 
+/**
+ * A big filer's facts (Tesla's here): thousands of tags, its revenue and net income among them, in a
+ * body of a few megabytes that comes in many pieces, with escapes, brackets and other scripts in its words.
+ */
+const BIG_FACTS = (() => {
+  const gaap: Record<string, object> = {};
+  for (let i = 0; i < 1500; i++) {
+    gaap[`Filler${i}`] = {
+      label: `Filler ${i} "quoted" {braced} [listed] \\ é 中 😀`,
+      units: { USD: Array.from({ length: 10 }, (_, k) => fact("2023-01-01", "2023-12-31", i * 100 + k, "10-K", "2024-01-29", "0001318605-24-000004")) },
+    };
+    if (i === 700) gaap.Revenues = { label: "Revenues", units: { USD: [fact("2023-01-01", "2023-12-31", 96_773_000_000, "10-K", "2024-01-29", "0001318605-24-000004"), fact("2022-01-01", "2022-12-31", 81_462_000_000, "10-K", "2023-01-31", "0001318605-23-000004")] } };
+    if (i === 1200) gaap.NetIncomeLoss = { label: "Net Income (Loss)", units: { USD: [fact("2023-01-01", "2023-12-31", 14_997_000_000, "10-K", "2024-01-29", "0001318605-24-000004")] } };
+  }
+  return { cik: 1318605, entityName: "Tesla, Inc.", facts: { dei: { EntityCommonStockSharesOutstanding: { label: "Shares", units: { shares: [] } } }, "us-gaap": gaap } };
+})();
+
 // FRED's series: one public, one a third party's.
 const SERIES: Record<string, object> = {
   UNRATE: {
@@ -397,8 +419,22 @@ const stand = createServer((req, res) => {
       return sub[1] === "0000320193" || sub[1] === "0000789019" ? json(submissions(sub[1])) : json({}, 404);
     }
     const facts = /^\/api\/xbrl\/companyfacts\/CIK(\d{10})\.json$/.exec(path);
-    if (facts && RESTATED[facts[1]]) return json({ cik: Number(facts[1]), facts: { "us-gaap": RESTATED[facts[1]] } });
-    if (facts) return facts[1] === "0000320193" ? json(companyfacts(facts[1])) : json({ facts: {} });
+    if (facts) {
+      factsOpen.most = Math.max(factsOpen.most, ++factsOpen.now);
+      res.on("close", () => void factsOpen.now--);
+      const body = RESTATED[facts[1]]
+        ? { cik: Number(facts[1]), facts: { "us-gaap": RESTATED[facts[1]] } }
+        : facts[1] === "0000320193"
+          ? companyfacts(facts[1])
+          : facts[1] === "0001318605"
+            ? BIG_FACTS
+            : { facts: {} };
+      return void (factsGate ?? Promise.resolve()).then(() => {
+        if (factsAnswer === "huge") return res.writeHead(200, { "content-type": "application/json", "content-length": "41000000" }).end();
+        if (factsAnswer === "broken") return res.writeHead(200, { "content-type": "application/json" }).end('{"facts":{"us-gaap":{"Revenues":{"units":{}}');
+        json(body);
+      });
+    }
     const concept = /^\/api\/xbrl\/companyconcept\/CIK(\d{10})\/([\w-]+)\/(\w+)\.json$/.exec(path);
     if (concept && RESTATED[concept[1]]) {
       const found = concept[2] === "us-gaap" ? RESTATED[concept[1]][concept[3]] : undefined;
@@ -473,6 +509,9 @@ beforeEach(async () => {
   searx = {};
   fredStatus = 0;
   fredTags = "ok";
+  factsGate = null;
+  factsAnswer = "ok";
+  factsOpen.most = factsOpen.now;
   forgetTickers();
   for (const table of ["source_cache", "free_quota", "free_user_quota", "rate_limits"]) await sql(`DELETE FROM ${table}`);
   delete process.env.FLASH_FREE_DAILY_SEARCHES;
@@ -632,6 +671,15 @@ test("a reply makes at most two searches, numbered in the order they came, and a
   assert.deepEqual(second.results.map((r) => r.n), [3, 1]);
   ledger.settle("sec_financial_facts", { text: "{}", isError: false, used: true, sources: [{ title: "SEC EDGAR · Apple Inc. · 10-K · 2024-11-01", url: "https://www.sec.gov/x" }] });
   assert.deepEqual(ledger.sources().map((s) => s.url), ["https://a.test/1", "https://b.test/2", "https://c.test/3", "https://www.sec.gov/x"]);
+  // Another attempt at the same reply (a free provider taking over) shares the reply's calls, not its sources or FRED's notice.
+  const calls = new Map();
+  const failed = new R.ToolLedger(calls);
+  assert.equal(failed.take("web"), true);
+  failed.settle("web_search", result(["https://a.test/1"]));
+  failed.settle("fred_series", { text: "{}", isError: false, used: true, notice: "fred", sources: [{ title: "FRED", url: "https://fred.stlouisfed.org/series/UNRATE" }] });
+  const next = new R.ToolLedger(calls);
+  assert.deepEqual([next.left("web"), next.take("web"), next.take("web"), next.left("web"), next.left("sec")], [1, true, false, 0, 3]);
+  assert.deepEqual([next.sources(), next.fred, [...next.used]], [[], false, []]);
   // A search is cut to fit one tool answer before it's numbered: every number listed was read.
   const many = Array.from({ length: 6 }, (_, i) => ({ title: "t".repeat(150), url: `https://long.test/${i}`, snippet: "s".repeat(300) }));
   const fresh = new R.ToolLedger();
@@ -864,6 +912,88 @@ test("SEC EDGAR: no quarter is worked out across a second restatement, one an am
   assert.deepEqual(await cashQuarters("QAMD", 4), ["2026-03-31:100", "2025-12-31:100*", "2025-03-31:100", "2024-12-31:100*"]);
   // A restating 10-K/A filed between the nine months and the year's 10-K, which repeats it: 360 less 300 would be 60.
   assert.deepEqual(await cashQuarters("MIDA", 4), ["2026-03-31:90", "2025-03-31:90", "2024-09-30:100*", "2024-06-30:100*"]);
+});
+
+test("SEC EDGAR: a company's facts are read as they come in, and only the tags asked for are ever parsed, never the whole body", async () => {
+  const parse = JSON.parse;
+  let longest = 0;
+  JSON.parse = ((text: string, reviver?: (this: unknown, key: string, value: unknown) => unknown) => {
+    longest = Math.max(longest, String(text).length);
+    return parse(text, reviver);
+  }) as typeof JSON.parse;
+  let read: Awaited<ReturnType<ReturnType<typeof secFactsTool>["run"]>>;
+  try {
+    read = await secFactsTool().run({ ticker: "TSLA", concepts: ["revenue", "net_income"], count: 2 });
+  } finally {
+    JSON.parse = parse;
+  }
+  const size = JSON.stringify(BIG_FACTS).length;
+  assert.ok(size > 2_000_000, `${size} characters`);
+  assert.ok(longest < 20_000, `the longest text parsed was ${longest} characters`);
+  const facts = (JSON.parse(read.text) as { facts: { concept: string; values: { end: string; value: number }[] }[] }).facts;
+  assert.deepEqual(
+    facts.map((f) => [f.concept, f.values.map((v) => v.value)]),
+    [
+      ["revenue", [96_773_000_000, 81_462_000_000]],
+      ["net_income", [14_997_000_000]],
+    ],
+  );
+  // Only the tags asked for are kept: what isn't there is kept as none, and nothing else is.
+  const kept = await all<{ key: string }>("SELECT key FROM source_cache WHERE key LIKE 'sec:tag:0001318605:%' ORDER BY key");
+  assert.deepEqual(kept.map((r) => r.key.split(":").slice(3).join(":")).sort(), [...new Set([...R.FACT_NAMES.revenue, ...R.FACT_NAMES.net_income])].sort());
+
+  // A body that isn't JSON fails, as any source's would; one over 40 MB is read tag by tag instead.
+  await sql("DELETE FROM source_cache");
+  factsAnswer = "broken";
+  assert.equal((await secFactsTool().run({ ticker: "AAPL", concepts: ["revenue"] })).text, R.SEC_FAILED);
+  assert.ok(logged.some((l) => l.includes("SEC EDGAR look-up failed: source request failed: bad_json")));
+  factsAnswer = "huge";
+  seen.length = 0;
+  const big = await secFactsTool().run({ ticker: "AAPL", concepts: ["revenue", "net_income"], count: 1 });
+  assert.match(big.text, /391035000000/);
+  assert.ok(seen.some((s) => s.path === "/api/xbrl/companyconcept/CIK0000320193/us-gaap/NetIncomeLoss.json"));
+});
+
+test("SEC EDGAR: one company's facts are read at a time on each server; the next waits its turn, and one stopped or kept waiting too long is told EDGAR is busy", async () => {
+  const factsRead = () => seen.filter((s) => s.path.startsWith("/api/xbrl/companyfacts/")).map((s) => s.path);
+  const until = async (ok: () => boolean) => {
+    for (let i = 0; i < 200 && !ok(); i++) await new Promise((r) => setTimeout(r, 10));
+  };
+  let open = () => {};
+  factsGate = new Promise<void>((r) => (open = r));
+  const tool = secFactsTool();
+  try {
+    const first = tool.run({ ticker: "AAPL", concepts: ["revenue"] });
+    // The same figures for another reply, and another company's.
+    const same = tool.run({ ticker: "AAPL", concepts: ["revenue"] });
+    const other = tool.run({ ticker: "MSFT", concepts: ["revenue", "net_income"] });
+    await until(() => factsRead().length > 0);
+    await new Promise((r) => setTimeout(r, 150));
+    assert.deepEqual(factsRead(), ["/api/xbrl/companyfacts/CIK0000320193.json"], "the others wait for the first read to end");
+    // Stopped while it waits: it ends at once, and asks EDGAR nothing.
+    const stop = new AbortController();
+    const stopped = tool.run({ ticker: "TSLA", concepts: ["revenue"] }, stop.signal);
+    await new Promise((r) => setTimeout(r, 50));
+    const at = Date.now();
+    stop.abort("stop");
+    assert.equal((await stopped).text, R.SEC_FAILED);
+    assert.ok(Date.now() - at < 500, `${Date.now() - at} ms`);
+    // Kept waiting longer than a read takes: EDGAR is busy, said as any failure is.
+    const impatient = await secFactsTool(undefined, { factsWaitMs: 50 }).run({ ticker: "TSLA", concepts: ["revenue"] });
+    assert.equal(impatient.text, R.SEC_FAILED);
+    assert.ok(logged.some((l) => l.includes("SEC EDGAR look-up failed: source request failed: busy")));
+    factsGate = null;
+    open();
+    const [a, b, c] = await Promise.all([first, same, other]);
+    assert.match(a.text, /391035000000/);
+    assert.equal(b.text, a.text);
+    assert.equal(c.used, false);
+    assert.deepEqual(factsRead(), ["/api/xbrl/companyfacts/CIK0000320193.json", "/api/xbrl/companyfacts/CIK0000789019.json"], "Apple's are read once, then kept for the reply that waited");
+    assert.equal(factsOpen.most, 1);
+  } finally {
+    factsGate = null;
+    open();
+  }
 });
 
 test("SEC EDGAR: Flash sends at most 5 requests a second across every server, and a reply makes at most 3 look-ups", async () => {

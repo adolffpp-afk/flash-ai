@@ -1,12 +1,15 @@
 import { createHash } from "node:crypto";
 import { one, run } from "./db.ts";
+import { JsonPicker, type JsonPath } from "./json-pick.ts";
 
 /*
  * What the data tools (server/searxng.ts, server/sec.ts, server/fred.ts) share to fetch safely and
  * kindly: a JSON fetch with a timeout and a size cap that never follows a redirect, a limit on
  * requests per second shared by every server (in rate_limits), a daily cap for each source across
  * Flash (in free_quota, as for MET Norway's forecasts), and a short cache shared by every user (in
- * source_cache). A failure never carries the address it was fetching: FRED's key is in its query.
+ * source_cache). A failure never carries the address it was fetching: FRED's key is in its query. A
+ * document too big to hold whole (SEC EDGAR's companyfacts) is read with fetchJsonPaths, which keeps
+ * only the parts asked for.
  */
 
 /** Why a fetch failed, in words safe to log: never the address, a header or a key. */
@@ -42,35 +45,39 @@ export type FetchOptions = {
   errorBytes?: number;
 };
 
-/** Reads a body up to maxBytes, or throws as soon as it's longer. */
-async function readCapped(res: Response, maxBytes: number, timeout: AbortSignal): Promise<string> {
-  if (!res.body) return "";
+/**
+ * Reads a body piece by piece into take, up to maxBytes, or throws as soon as it's longer. take
+ * throwing a SyntaxError (a body that isn't JSON) is a bad_json failure.
+ */
+async function readBody(res: Response, maxBytes: number, timeout: AbortSignal, take: (chunk: Uint8Array) => void): Promise<void> {
+  if (!res.body) return;
   const reader = res.body.getReader();
-  const chunks: Uint8Array[] = [];
   let size = 0;
   try {
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
       size += value.byteLength;
-      if (size > maxBytes) {
-        await reader.cancel().catch(() => {});
-        throw new SourceError("too_big");
-      }
-      chunks.push(value);
+      if (size > maxBytes) throw new SourceError("too_big");
+      take(value);
     }
   } catch (err) {
+    await reader.cancel().catch(() => {});
     if (err instanceof SourceError) throw err;
+    if (err instanceof SyntaxError) throw new SourceError("bad_json");
     throw new SourceError(timeout.aborted ? "timeout" : "network");
   }
+}
+
+/** Reads a body up to maxBytes as text, or throws as soon as it's longer. */
+async function readCapped(res: Response, maxBytes: number, timeout: AbortSignal): Promise<string> {
+  const chunks: Uint8Array[] = [];
+  await readBody(res, maxBytes, timeout, (chunk) => chunks.push(chunk));
   return new TextDecoder().decode(Buffer.concat(chunks));
 }
 
-/**
- * GETs JSON from a source. Only a 200 counts: a redirect, an error or anything else throws a
- * SourceError (with the status), as do a timeout, a body over maxBytes and a body that isn't JSON.
- */
-export async function fetchJson(url: string, options: FetchOptions): Promise<unknown> {
+/** Sends a GET and checks its answer before the body is read: only a 200 within maxBytes goes on. */
+async function open(url: string, options: FetchOptions): Promise<{ res: Response; timeout: AbortSignal }> {
   const timeout = AbortSignal.timeout(options.timeoutMs);
   const signal = options.signal ? AbortSignal.any([timeout, options.signal]) : timeout;
   let res: Response;
@@ -93,9 +100,34 @@ export async function fetchJson(url: string, options: FetchOptions): Promise<unk
     await res.body?.cancel().catch(() => {});
     throw new SourceError("too_big");
   }
+  return { res, timeout };
+}
+
+/**
+ * GETs JSON from a source. Only a 200 counts: a redirect, an error or anything else throws a
+ * SourceError (with the status), as do a timeout, a body over maxBytes and a body that isn't JSON.
+ */
+export async function fetchJson(url: string, options: FetchOptions): Promise<unknown> {
+  const { res, timeout } = await open(url, options);
   const text = await readCapped(res, options.maxBytes, timeout);
   try {
     return JSON.parse(text);
+  } catch {
+    throw new SourceError("bad_json");
+  }
+}
+
+/**
+ * GETs JSON as fetchJson does, with the same checks and failures, but keeps only the objects or lists
+ * at paths, each made into what keep returns as soon as it has come in (see JsonPicker): the body is
+ * never held whole, as text or as objects. Undefined for a path the body doesn't have.
+ */
+export async function fetchJsonPaths<T>(url: string, options: FetchOptions, paths: readonly JsonPath[], keep: (value: unknown, index: number) => T): Promise<(T | undefined)[]> {
+  const { res, timeout } = await open(url, options);
+  const picker = new JsonPicker(paths, keep);
+  await readBody(res, options.maxBytes, timeout, (chunk) => picker.push(chunk));
+  try {
+    return picker.end();
   } catch {
     throw new SourceError("bad_json");
   }
