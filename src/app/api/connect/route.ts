@@ -2,26 +2,29 @@ import { appUrl, getUser, isAdmin, unauthorized } from "@/lib/server/auth.ts";
 import { translatorFor } from "@/lib/server/i18n.ts";
 import { connectorsReady } from "@/lib/server/secret-box.ts";
 import { githubReady } from "@/lib/server/github.ts";
+import { googleReady } from "@/lib/server/google.ts";
 import { ConnectError, addConnection, listConnections, previewServer, problemText, removeConnection } from "@/lib/server/connections.ts";
 import { approvalAllowed } from "@/lib/server/pending-actions.ts";
 
 /*
  * The user's connected accounts (Settings > Connectors): GET lists them (never a secret, only its
  * last 4 characters), POST looks at a server's tools ("preview", or how it signs in when it asks for
- * that) or adds an account with a key ("add"; signing in is /api/connect/mcp/start, and GitHub's
- * /api/connect/github/start), DELETE removes one (an account that signed in is signed out at its
+ * that) or adds an account with a key ("add"; signing in is /api/connect/mcp/start, GitHub's
+ * /api/connect/github/start and Google Drive's /api/connect/google/start), DELETE removes one (an account that signed in is signed out at its
  * server first). Both change what is stored, so like an approval they are taken only with Flash's
  * exact Origin (S-3). Until CONNECTOR_KEYS
  * is set nothing can be added (503), and the owner is told why; an account whose email isn't
  * confirmed can't look at or add one either (403, see confirmedOnly). github says whether GitHub can
- * be connected: until the GitHub App is set up, it isn't offered and a GitHub account isn't listed.
+ * be connected: until the GitHub App is set up, it isn't offered and a GitHub account isn't listed;
+ * google says the same of Google Drive (Flash's Google Cloud project, see google.ts). Google Drive's
+ * picked files are /api/connect/google/files.
  */
 
 export async function GET(request: Request) {
   const user = await getUser(request);
   if (!user) return unauthorized();
   const ready = connectorsReady();
-  return Response.json({ ready, owner: isAdmin(user), github: githubReady(), connections: ready ? await listConnections(user.id) : [] });
+  return Response.json({ ready, owner: isAdmin(user), github: githubReady(), google: googleReady(), connections: ready ? await listConnections(user.id) : [] });
 }
 
 type AddBody = { action?: unknown; provider?: unknown; url?: unknown; token?: unknown; label?: unknown; pins?: unknown };

@@ -57,7 +57,17 @@ test("what the app says about the user's work is checked before it reaches the m
   assert.equal(odd.job!.engine, undefined);
   assert.equal(odd.job!.seconds, 0);
   assert.equal(odd.job!.request, "");
-  assert.deepEqual(cleanContext({ recent: ["hi", { role: "nobody", content: "x" }] }).recent, []);
+  assert.deepEqual(cleanContext({ recent: ["hi", { role: "nobody", content: "x" }], usedConnector: false }).recent, []);
+});
+
+test("a chat that used a connected account is never shown to the companion, whose answers can reach a free model", () => {
+  const recent = [{ role: "assistant", content: "Your Budget sheet: the hotel costs 120." }];
+  assert.deepEqual(cleanContext({ recent, usedConnector: false }).recent, recent, "a chat that used none");
+  assert.equal(cleanContext({ recent, usedConnector: true }).recent, undefined);
+  assert.equal(cleanContext({ recent }).recent, undefined, "a page from before the mark says nothing: left out");
+  const prompt = companionSystem({ ...FACTS, live: [...FACTS.live], context: cleanContext({ recent, usedConnector: true }) });
+  assert.doesNotMatch(prompt, /120/);
+  assert.match(prompt, /That chat used the user's connected accounts \(Connectors\), so its messages aren't shown to you\./);
 });
 
 test("the chat's latest messages reach the companion with what Flash made", () => {

@@ -63,6 +63,7 @@ import {
 } from "@/lib/engines/free.ts";
 import {
   freeAudioFailed,
+  freeLeft,
   recordFree,
   recordFreeAudio,
   releaseFreeUser,
@@ -142,7 +143,7 @@ import { WEATHER_TOOL } from "@/lib/weather.ts";
 import { refuseUnpaid, type ConnectorKit } from "@/lib/engines/connect.ts";
 import { chatKit, continuedCalls, requestedConnections } from "@/lib/server/connections.ts";
 import { approvedResults, releaseResults } from "@/lib/server/pending-actions.ts";
-import { continuedIds } from "@/lib/connectors.ts";
+import { accountReplies, continuedIds } from "@/lib/connectors.ts";
 import { messageWindow } from "@/lib/message-window.ts";
 import { maybeAutoTopUp } from "@/lib/server/auto-topup.ts";
 
@@ -376,6 +377,29 @@ const namesWord = (message: string, name: string) =>
   new RegExp(`(^|[^\\p{L}\\p{N}])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^\\p{L}\\p{N}])`, "iu").test(message);
 // What a request with connectors on says when the user can't pay for it: never the free lane.
 const CONNECTORS_NEED_CREDITS = msg("Connectors use credits. Turn them off to keep chatting for free.");
+// And a chat with a reply that used them: turning them off doesn't take that reply out of the chat.
+const CONNECTED_CHAT_NEEDS_CREDITS = msg("This chat used your connected accounts, so it needs credits. Start a new chat to keep chatting for free.");
+// The same, when chatting for free isn't open to them now (today's free messages are used up, or
+// this request couldn't go free anyway): the way out isn't offered.
+const CONNECTORS_USE_CREDITS = msg("Connectors use credits.");
+const CONNECTED_CHAT_USES_CREDITS = msg("This chat used your connected accounts, so it needs credits.");
+
+/**
+ * Whether a chat has a reply that used a connected account (see accountReplies): marked so by the
+ * browser on any turn it sent, or in the chat as the server saved it, so a page loaded before the
+ * mark existed is held to it too.
+ */
+async function usedAccounts(sent: unknown, projectId: unknown, userId: string): Promise<boolean> {
+  if (Array.isArray(sent) && sent.some((turn) => typeof turn === "object" && turn !== null && (turn as ChatTurn).usedConnector === true)) return true;
+  if (typeof projectId !== "string") return false;
+  const saved = await one<{ messages: string }>("SELECT messages FROM projects WHERE id = ? AND user_id = ?", [projectId, userId]);
+  try {
+    const messages: unknown = JSON.parse(saved?.messages ?? "[]");
+    return Array.isArray(messages) && accountReplies(messages.filter((m) => typeof m === "object" && m !== null)).size > 0;
+  } catch {
+    return false;
+  }
+}
 
 /** The system prompt a Claude engine sends, exactly, so the credit hold counts it too. */
 function systemFor(engine: Engine, preferences: string, history: ChatTurn[], prompting: Prompting, tools: Tools = NO_EXTRA_TOOLS): string {
@@ -1387,34 +1411,43 @@ export async function POST(request: Request) {
   // Research's question goes to a free model with the free web search, when SearXNG is set up.
   let freeSearch = false;
   const verified = isVerified(user);
-  // Connectors use credits: a chat with them on never goes to the free lane.
-  if (live && refuseUnpaid(Boolean(tools.connect), available, needed)) {
-    const counts = { needed, available };
-    return Response.json(
-      { error: `${t("This needs at least {needed} credits and you have {available}.", counts)} ${t(CONNECTORS_NEED_CREDITS)}`, code: "out_of_credits", needed },
-      { status: 402 },
-    );
+  // Connectors use credits: a chat with them on never goes to the free lane. Nor does a chat with a
+  // reply that used them, with them off now or on Research (which has none): what Claude wrote from an
+  // account's data goes to Anthropic only, never to the free models' providers, which may keep it or
+  // learn from it (see the privacy policy's Google section, and Google's Limited Use rules).
+  const connected = refuseUnpaid(Boolean(tools.connect), available, needed);
+  const goesFree = live && available < needed && verified && model?.id !== "post-pack" && freeEligible(engine, last) !== null;
+  // What's said when today's free use of the kind this request would take is used up.
+  const usedUp = (lane: FreeLane) => {
+    const left = { credits: available };
+    return lane === "image"
+      ? t("You've used today's free images and you have {credits} credits. Free use resets tomorrow, or get more credits now.", left)
+      : lane === "transcribe"
+        ? t("You've used today's free transcripts and you have {credits} credits. Free use resets tomorrow, or get more credits now.", left)
+        : t("You've used today's free messages and you have {credits} credits. Free use resets tomorrow, or get more credits now.", left);
+  };
+  if (live && (connected || goesFree)) {
+    const used = await usedAccounts(body.messages, body.projectId, user.id);
+    if (connected || used) {
+      const counts = { needed, available };
+      const short = metered ? t("This needs at least {needed} credits and you have {available}.", counts) : t("This needs {needed} credits and you have {available}.", counts);
+      // A free reply is offered (turn connectors off, or a new chat) only when this one could go free
+      // and today's free use of its kind (messages, images or transcripts) isn't used up; looking reserves nothing.
+      const lane = verified && model?.id !== "post-pack" ? freeEligible(engine, last) : null;
+      const freeOpen = lane !== null && (await freeLeft(user.id, lane)) > 0;
+      const error = freeOpen
+        ? `${short} ${t(used ? CONNECTED_CHAT_NEEDS_CREDITS : CONNECTORS_NEED_CREDITS)}`
+        : lane !== null
+          ? `${t(used ? CONNECTED_CHAT_USES_CREDITS : CONNECTORS_USE_CREDITS)} ${usedUp(lane)}`
+          : `${short} ${t(used ? CONNECTED_CHAT_USES_CREDITS : CONNECTORS_USE_CREDITS)}`;
+      return Response.json({ error, code: "out_of_credits", needed }, { status: 402 });
+    }
   }
   if (live && available < needed && verified) {
     // A post pack has no free version: one free picture isn't what was asked for.
     const lane = model?.id === "post-pack" ? null : freeEligible(engine, last);
     if (lane) {
-      if (!(await reserveFreeUser(user.id, lane))) {
-        const left = { credits: available };
-        return Response.json(
-          {
-            error:
-              lane === "image"
-                ? t("You've used today's free images and you have {credits} credits. Free use resets tomorrow, or get more credits now.", left)
-                : lane === "transcribe"
-                  ? t("You've used today's free transcripts and you have {credits} credits. Free use resets tomorrow, or get more credits now.", left)
-                  : t("You've used today's free messages and you have {credits} credits. Free use resets tomorrow, or get more credits now.", left),
-            code: "out_of_credits",
-            needed,
-          },
-          { status: 402 },
-        );
-      }
+      if (!(await reserveFreeUser(user.id, lane))) return Response.json({ error: usedUp(lane), code: "out_of_credits", needed }, { status: 402 });
       free = lane;
       held = needed = 0;
       budget = NO_BUDGET;

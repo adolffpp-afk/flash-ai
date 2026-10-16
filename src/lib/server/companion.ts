@@ -81,7 +81,8 @@ export async function spendingSummary(userId: string, at = Date.now()): Promise<
 
 /** Chats whose name or messages contain the words. */
 export async function chatsSummary(userId: string, query: string): Promise<string> {
-  const hits = (await searchChats(userId, query)).slice(0, 8);
+  // The companion never reads a chat that used a connected account: what it says can go to a free model later.
+  const hits = (await searchChats(userId, query, { withoutAccounts: true })).slice(0, 8);
   if (!hits.length) return `No chats mention "${query.slice(0, 100)}".`;
   return (
     `${STORED}\n` +

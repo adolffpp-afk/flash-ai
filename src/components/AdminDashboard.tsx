@@ -42,6 +42,10 @@ type Stats = {
     older: { version: string; count: number }[];
     // GitHub in chat: set up once its GitHub App's three variables are set (and CONNECTOR_KEYS).
     github?: { setUp: boolean; missing: string[] };
+    // Google Drive in chat: set up once its Cloud project's four variables are set (and CONNECTOR_KEYS).
+    google?: { setUp: boolean; missing: string[] };
+    // MALLOC_ARENA_MAX as the server started (null: it wasn't set), for the memory PDFs from Drive use.
+    pdfArenaMax?: string | null;
   };
   // Virus scanning of uploads (see docs/virus-scan-setup.md): missing variables, and whether the scanner answers.
   virusScan?: { missing: string[]; ready: boolean | null };
@@ -666,6 +670,31 @@ export function AdminDashboard({ initialTab }: { initialTab?: string }) {
                       <div>Not set. Until it is, users don&apos;t see GitHub. Steps are in docs/connectors-setup.md.</div>
                       <div className="text-xs break-all">Missing {stats.connectors.github.missing.join(", ")}</div>
                     </div>
+                  )}
+                </div>
+              )}
+              {stats.connectors.google && (
+                <div className="mt-4 border-t border-white/6 pt-3 text-sm">
+                  <div className="text-zinc-200">Google Drive</div>
+                  {stats.connectors.google.setUp ? (
+                    <div className="text-emerald-300">Set. Users can connect Google Drive in Settings &gt; Connectors.</div>
+                  ) : (
+                    <div className="text-zinc-500">
+                      <div>Not set. Until it is, users don&apos;t see Google Drive. Steps are in docs/connectors-setup.md.</div>
+                      <div className="text-xs break-all">Missing {stats.connectors.google.missing.join(", ")}</div>
+                    </div>
+                  )}
+                  {stats.connectors.pdfArenaMax === null ? (
+                    <div className="mt-1 text-xs text-amber-300">
+                      MALLOC_ARENA_MAX wasn&apos;t set when this server started, so the memory that PDFs from Drive use builds up until
+                      it stops reading them for a while. Add it in Vercel with the value 2 and redeploy (docs/connectors-setup.md).
+                    </div>
+                  ) : (
+                    stats.connectors.pdfArenaMax !== undefined && (
+                      <div className="mt-1 text-xs text-zinc-500">
+                        MALLOC_ARENA_MAX was {stats.connectors.pdfArenaMax} when this server started, which keeps the memory PDFs use small.
+                      </div>
+                    )
                   )}
                 </div>
               )}

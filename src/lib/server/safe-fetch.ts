@@ -16,7 +16,8 @@ import { OUTBOUND_HEADER } from "../site-host.ts";
  * - follows at most 3 redirects, checking each one the same way and dropping the Authorization
  *   header when one goes to another server;
  * - gives 5 seconds to connect and 20 in all, reads at most maxBytes, asks for no compression, and
- *   takes only JSON or event-stream answers.
+ *   takes only JSON or event-stream answers, unless the caller names others (Google Drive's plain
+ *   text, CSV and PDF files, see google.ts).
  *
  * FLASH_CONNECT_MOCK (dev only) names one local origin, like http://127.0.0.1:7788, that is let
  * through for scripts/mock-connectors.ts. It is ignored whenever VERCEL_ENV is set, so it can never
@@ -169,13 +170,19 @@ export type SafeRequest = {
   timeoutMs?: number;
   signal?: AbortSignal;
   // The answers taken from a server, by content type. Error answers (400 and up) are read whatever their type.
-  accept?: ("json" | "sse")[];
+  accept?: ("json" | "sse" | "text" | "pdf")[];
+  // The body as its bytes, one character each (latin1), not as UTF-8 text: for a file (a PDF) to be
+  // read back exactly with Buffer.from(body, "latin1").
+  raw?: boolean;
+  // A success longer than maxBytes is cut there (truncated: true) instead of refused: for a long text
+  // file, of which only the start is ever read.
+  truncate?: boolean;
   // false: a redirect is answered as it is, never followed. For a request whose body carries a secret
   // (an OAuth token or registration request), which a 307 would send on to wherever it points.
   followRedirects?: false;
 };
 
-export type SafeResponse = { status: number; headers: IncomingMessage["headers"]; contentType: string; body: string; url: string };
+export type SafeResponse = { status: number; headers: IncomingMessage["headers"]; contentType: string; body: string; url: string; truncated?: boolean };
 
 export const CONNECT_TIMEOUT_MS = 5000;
 export const TOTAL_TIMEOUT_MS = 20_000;
@@ -185,7 +192,7 @@ const MAX_REDIRECTS = 3;
 // What is read of an error answer.
 const ERROR_BYTES = 16 * 1024;
 
-const TYPES = { json: /^application\/([\w.+-]+\+)?json$/, sse: /^text\/event-stream$/ };
+const TYPES = { json: /^application\/([\w.+-]+\+)?json$/, sse: /^text\/event-stream$/, text: /^text\/(plain|csv)$/, pdf: /^application\/pdf$/ };
 
 /**
  * One request and its answer, to an address already checked, connecting only to `to` whatever the
@@ -220,7 +227,10 @@ export function sendTo(url: URL, to: Resolved | null, req: SafeRequest, headers:
         res.destroy();
         return reject(new SafeFetchError("bad_type", "That server didn't answer with JSON."));
       }
-      if (Number(res.headers["content-length"] ?? 0) > Math.max(limit, ERROR_BYTES) && status < 400) {
+      // A success cut at maxBytes (req.truncate) is read up to there, whatever its length.
+      const cut = Boolean(req.truncate) && status < 300 && !redirect;
+      const decode = (bytes: Buffer) => bytes.toString(req.raw && status < 300 ? "latin1" : "utf8");
+      if (Number(res.headers["content-length"] ?? 0) > Math.max(limit, ERROR_BYTES) && status < 400 && !cut) {
         res.destroy();
         return reject(new SafeFetchError("too_large", "That server's answer was too large."));
       }
@@ -229,6 +239,12 @@ export function sendTo(url: URL, to: Resolved | null, req: SafeRequest, headers:
       res.on("data", (chunk: Buffer) => {
         size += chunk.length;
         if (size > limit) {
+          if (cut) {
+            const keep = limit - (size - chunk.length);
+            if (keep > 0) chunks.push(chunk.subarray(0, keep));
+            res.destroy();
+            return resolve({ status, headers: res.headers, contentType, body: decode(Buffer.concat(chunks)), url: url.href, truncated: true });
+          }
           if (status >= 400 || redirect) {
             // An error's start is enough; a redirect's body is never read.
             const keep = limit - (size - chunk.length);
@@ -243,7 +259,7 @@ export function sendTo(url: URL, to: Resolved | null, req: SafeRequest, headers:
       });
       res.on("end", () => {
         if (!typed && size > 0) return reject(new SafeFetchError("bad_type", "That server didn't answer with JSON."));
-        resolve({ status, headers: res.headers, contentType, body: Buffer.concat(chunks).toString("utf8"), url: url.href });
+        resolve({ status, headers: res.headers, contentType, body: decode(Buffer.concat(chunks)), url: url.href });
       });
       res.on("error", (err) => reject(signal.aborted ? abortError(signal) : new SafeFetchError("network", messageFor(err))));
     });

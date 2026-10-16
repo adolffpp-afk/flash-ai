@@ -731,12 +731,12 @@ export async function beginSignIn(
 
 /**
  * Takes a sign-in's flow, once: only the user who started it, only before it expires. Anyone else's
- * flow, an expired one or one already taken gives null, and nothing is stored. A GitHub flow is only
- * ever taken by GitHub's own callback (see github.ts).
+ * flow, an expired one or one already taken gives null, and nothing is stored. A GitHub or Google
+ * flow is only ever taken by that service's own callback (see github.ts and google.ts).
  */
 export async function takeFlow(userId: string, state: string | null): Promise<FlowRow | null> {
   if (!state || state.length > 200) return null;
-  const taken = await run("DELETE FROM connect_flows WHERE state_hash = ? AND user_id = ? AND expires_at > ? AND provider <> 'github' RETURNING *", [sha256(state), userId, now()]);
+  const taken = await run("DELETE FROM connect_flows WHERE state_hash = ? AND user_id = ? AND expires_at > ? AND provider NOT IN ('github', 'google-drive') RETURNING *", [sha256(state), userId, now()]);
   return (taken.rows[0] as unknown as FlowRow) ?? null;
 }
 

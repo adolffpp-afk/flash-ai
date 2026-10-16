@@ -4,11 +4,13 @@ import { CONNECTOR_SETUP, DATA_SOURCES, GITHUB_SETUP, PROVIDER_LIST, missingKeys
 import { searxngUrlProblem } from "./searxng.ts";
 import { fredKeyProblem } from "./fred.ts";
 import { githubReady } from "./github.ts";
+import { googleMissing, googleReady } from "./google.ts";
 import { connectorsReady, keyVersions } from "./secret-box.ts";
 import { resealRegistrations } from "./mcp-oauth.ts";
 import { profitReport } from "./profit.ts";
 import { feeBps } from "./shop.ts";
 import { scannerMissing, scannerReady } from "./virus-scan.ts";
+import { startEnv } from "./start-env.ts";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -180,6 +182,16 @@ export async function adminStats(days: number) {
         setUp: githubReady(),
         missing: [...GITHUB_SETUP.keys.filter((name) => !process.env[name]?.trim()), ...(connectorsReady() ? [] : ["CONNECTOR_KEYS"])],
       },
+      // Google Drive in chat: its Cloud project's four variables, by name (a project number that isn't
+      // digits counts as missing, as it does for googleReady), and CONNECTOR_KEYS.
+      google: {
+        setUp: googleReady(),
+        missing: [...googleMissing(), ...(connectorsReady() ? [] : ["CONNECTOR_KEYS"])],
+      },
+      // MALLOC_ARENA_MAX as this server started (null when it wasn't set; left out when that can't be
+      // told), which keeps the memory that PDFs from Drive used from building up (see pdf-server.ts).
+      // glibc reads it only then, so one set later in code would do nothing and isn't counted.
+      pdfArenaMax: startEnv("MALLOC_ARENA_MAX"),
     },
     // Virus scanning of uploads: which of its two variables are missing (never values), and whether
     // the scanner answers right now (null when it isn't set up).

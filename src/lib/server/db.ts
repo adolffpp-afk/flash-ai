@@ -526,6 +526,17 @@ const SCHEMA = [
     finished_at INTEGER NOT NULL DEFAULT 0
   )`,
   `CREATE INDEX IF NOT EXISTS pending_actions_user ON pending_actions(user_id, created_at)`,
+  // The Google Drive files a user picked for Flash with Google's Picker (see google.ts): the only
+  // files a reply can read or add rows to. Their name and type are what Google said when they were
+  // picked, never what the browser sent. Deleted by hand with their connection (see removeConnection).
+  `CREATE TABLE IF NOT EXISTS connection_files (
+    connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+    file_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    mime TEXT NOT NULL,
+    picked_at INTEGER NOT NULL,
+    PRIMARY KEY (connection_id, file_id)
+  )`,
   // A sign-in to a connector's server under way (see mcp-oauth.ts): kept here, never in a cookie,
   // because the callback acts on what it says. Found by a hash of its state, taken once by its own
   // user with one conditional DELETE, and gone after 10 minutes. The PKCE verifier and the server's
@@ -698,8 +709,9 @@ const MIGRATIONS = [
   "ALTER TABLE connections ADD COLUMN scopes TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE connections ADD COLUMN endpoints_json TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE connections ADD COLUMN refreshing_until INTEGER",
-  // For GitHub: the number of the GitHub account the tokens are for (see keepGithub), so a sign-in as
-  // another account is told apart. Its login is shown in the connection's label.
+  // The account the tokens are for, so a sign-in as another account is told apart: for GitHub, the
+  // GitHub account's number (its login is shown in the connection's label, see keepGithub); for Google
+  // Drive, the Google account's sub (see keepGoogle).
   "ALTER TABLE connections ADD COLUMN account_id TEXT NOT NULL DEFAULT ''",
   // Whether the app's link preview says "Made with Flash ∞ AI" (see made-with.ts). On until its owner,
   // on a paid plan, turns it off.
