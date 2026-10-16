@@ -51,6 +51,10 @@ const COMPANIES = [
   ...Array.from({ length: 30 }, (_, i) => ({ cik_str: 1_000_001 + i, ticker: `ZZ${String.fromCharCode(65 + (i % 26))}${i >= 26 ? "X" : ""}`, title: `Filler Company ${i}` })),
   { cik_str: 19617, ticker: "JPM", title: "JPMORGAN CHASE & CO" },
   { cik_str: 2_000_001, ticker: "MANY", title: "Many Forms Corp" },
+  { cik_str: 3_000_001, ticker: "DISC", title: "Divest Corp" },
+  { cik_str: 3_000_002, ticker: "RECL", title: "Reclass Corp" },
+  { cik_str: 3_000_003, ticker: "FLOT", title: "Float Corp" },
+  { cik_str: 3_000_004, ticker: "DECI", title: "Decimal Corp" },
 ];
 
 /** Apple's submissions: 300 filings, newest first, with long descriptions. */
@@ -138,9 +142,94 @@ const OPERATING_CASH = [
   ).flatMap(([start, ends, values, filed], y) =>
     ends.map((end, k) => fact(start, end, values[k] * B, k === 3 ? "10-K" : "10-Q", filed[k], `0000320193-${23 + y}-${String(k + 1).padStart(6, "0")}`)),
   ),
-  // The latest 10-Q restates last year's nine months: the latest filing of a period is the one used.
-  fact("2024-09-29", "2025-06-28", 81_700 * B, "10-Q", "2026-07-31", "0000320193-26-000003"),
+  // The latest 10-Q repeats last year's nine months, as every 10-Q does: a value repeated unchanged
+  // still lets its quarters be worked out.
+  fact("2024-09-29", "2025-06-28", 81_754 * B, "10-Q", "2026-07-31", "0000320193-26-000003"),
 ];
+// Companies whose filings restated figures, by CIK: quarters are never worked out across two bases.
+const RESTATED: Record<string, Record<string, { label: string; units: { USD: object[] } }>> = {};
+const at = (cik: number) => (y: number, k: number) => `${String(cik).padStart(10, "0")}-${String(y).slice(2)}-${String(k).padStart(6, "0")}`;
+{
+  // A segment (250 a quarter) is discontinued from the second quarter of 2026: that 10-Q and the next
+  // restate 2025's comparatives, while 2025's year is still the old 10-K's.
+  const n = at(3_000_001);
+  RESTATED["0003000001"] = {
+    Revenues: {
+      label: "Revenues",
+      units: {
+        USD: [
+          fact("2025-01-01", "2025-03-31", 2500 * B, "10-Q", "2025-05-01", n(2025, 1)),
+          fact("2025-04-01", "2025-06-30", 2500 * B, "10-Q", "2025-08-01", n(2025, 2)),
+          fact("2025-01-01", "2025-06-30", 5000 * B, "10-Q", "2025-08-01", n(2025, 2)),
+          fact("2025-07-01", "2025-09-30", 2500 * B, "10-Q", "2025-11-01", n(2025, 3)),
+          fact("2025-01-01", "2025-09-30", 7500 * B, "10-Q", "2025-11-01", n(2025, 3)),
+          fact("2025-01-01", "2025-12-31", 10_000 * B, "10-K", "2026-02-20", n(2026, 4)),
+          fact("2026-01-01", "2026-03-31", 2300 * B, "10-Q", "2026-05-01", n(2026, 5)),
+          fact("2025-01-01", "2025-03-31", 2500 * B, "10-Q", "2026-05-01", n(2026, 5)),
+          fact("2026-04-01", "2026-06-30", 2300 * B, "10-Q", "2026-08-01", n(2026, 6)),
+          fact("2026-01-01", "2026-06-30", 4600 * B, "10-Q", "2026-08-01", n(2026, 6)),
+          fact("2025-04-01", "2025-06-30", 2250 * B, "10-Q", "2026-08-01", n(2026, 6)),
+          fact("2025-01-01", "2025-06-30", 4500 * B, "10-Q", "2026-08-01", n(2026, 6)),
+          fact("2026-07-01", "2026-09-30", 2300 * B, "10-Q", "2026-10-30", n(2026, 7)),
+          fact("2026-01-01", "2026-09-30", 6900 * B, "10-Q", "2026-10-30", n(2026, 7)),
+          fact("2025-07-01", "2025-09-30", 2250 * B, "10-Q", "2026-10-30", n(2026, 7)),
+          fact("2025-01-01", "2025-09-30", 6750 * B, "10-Q", "2026-10-30", n(2026, 7)),
+        ],
+      },
+    },
+  };
+  // A change first shown in the 2025 10-K, which restates 2024's year with it; 2025's nine months are the old basis.
+  const r = at(3_000_002);
+  RESTATED["0003000002"] = {
+    NetCashProvidedByUsedInOperatingActivities: {
+      label: "Operating cash flow",
+      units: {
+        USD: [
+          fact("2024-01-01", "2024-12-31", 1000 * B, "10-K", "2025-02-20", r(2025, 1)),
+          fact("2025-01-01", "2025-03-31", 250 * B, "10-Q", "2025-05-01", r(2025, 2)),
+          fact("2025-01-01", "2025-06-30", 500 * B, "10-Q", "2025-08-01", r(2025, 3)),
+          fact("2025-01-01", "2025-09-30", 750 * B, "10-Q", "2025-11-01", r(2025, 4)),
+          fact("2025-01-01", "2025-12-31", 900 * B, "10-K", "2026-02-20", r(2026, 5)),
+          fact("2024-01-01", "2024-12-31", 900 * B, "10-K", "2026-02-20", r(2026, 5)),
+        ],
+      },
+    },
+  };
+  // Cash flows reclassified from the third-quarter 10-Q of 2026 on (40 a quarter moves out), with 2025's nine months restated.
+  const f = at(3_000_003);
+  RESTATED["0003000003"] = {
+    NetCashProvidedByUsedInOperatingActivities: {
+      label: "Operating cash flow",
+      units: {
+        USD: [
+          fact("2025-01-01", "2025-03-31", 300 * B, "10-Q", "2025-05-01", f(2025, 1)),
+          fact("2025-01-01", "2025-06-30", 600 * B, "10-Q", "2025-08-01", f(2025, 2)),
+          fact("2025-01-01", "2025-09-30", 900 * B, "10-Q", "2025-11-01", f(2025, 3)),
+          fact("2025-01-01", "2025-12-31", 1200 * B, "10-K", "2026-02-20", f(2026, 4)),
+          fact("2026-01-01", "2026-03-31", 300 * B, "10-Q", "2026-05-01", f(2026, 5)),
+          fact("2025-01-01", "2025-03-31", 300 * B, "10-Q", "2026-05-01", f(2026, 5)),
+          fact("2026-01-01", "2026-06-30", 600 * B, "10-Q", "2026-08-01", f(2026, 6)),
+          fact("2025-01-01", "2025-06-30", 600 * B, "10-Q", "2026-08-01", f(2026, 6)),
+          fact("2026-01-01", "2026-09-30", 780 * B, "10-Q", "2026-10-30", f(2026, 7)),
+          fact("2025-01-01", "2025-09-30", 780 * B, "10-Q", "2026-10-30", f(2026, 7)),
+        ],
+      },
+    },
+  };
+  // Amounts with cents.
+  const d = at(3_000_004);
+  RESTATED["0003000004"] = {
+    NetCashProvidedByUsedInOperatingActivities: {
+      label: "Operating cash flow",
+      units: {
+        USD: [
+          fact("2026-01-01", "2026-03-31", 1_000_000.12, "10-Q", "2026-05-01", d(2026, 1)),
+          fact("2026-01-01", "2026-06-30", 1_234_567.89, "10-Q", "2026-08-01", d(2026, 2)),
+        ],
+      },
+    },
+  };
+}
 const companyfacts = (cik: string) => ({
   cik: Number(cik),
   entityName: "Apple Inc.",
@@ -251,8 +340,13 @@ const stand = createServer((req, res) => {
       return sub[1] === "0000320193" || sub[1] === "0000789019" ? json(submissions(sub[1])) : json({}, 404);
     }
     const facts = /^\/api\/xbrl\/companyfacts\/CIK(\d{10})\.json$/.exec(path);
+    if (facts && RESTATED[facts[1]]) return json({ cik: Number(facts[1]), facts: { "us-gaap": RESTATED[facts[1]] } });
     if (facts) return facts[1] === "0000320193" ? json(companyfacts(facts[1])) : json({ facts: {} });
     const concept = /^\/api\/xbrl\/companyconcept\/CIK(\d{10})\/([\w-]+)\/(\w+)\.json$/.exec(path);
+    if (concept && RESTATED[concept[1]]) {
+      const found = concept[2] === "us-gaap" ? RESTATED[concept[1]][concept[3]] : undefined;
+      return found ? json(found) : json({}, 404);
+    }
     if (concept) {
       const found = (companyfacts(concept[1]).facts as Record<string, Record<string, object>>)[concept[2]]?.[concept[3]];
       return concept[1] === "0000320193" && found ? json(found) : json({}, 404);
@@ -613,8 +707,8 @@ test("SEC EDGAR: quarters of a cash flow reported only to date are worked out, m
       ["2026-03-29", "2026-06-27", 28_000, "10-Q", true],
       ["2025-12-28", "2026-03-28", 23_000, "10-Q", true],
       ["2025-09-28", "2025-12-27", 41_000, "10-Q", false],
-      // The year less its nine months, as restated in the latest 10-Q.
-      ["2025-06-29", "2025-09-27", 111_482 - 81_700, "10-K", true],
+      // The year less its nine months.
+      ["2025-06-29", "2025-09-27", 111_482 - 81_754, "10-K", true],
     ],
   );
   assert.match(last4.note, /computed: a quarter worked out/);
@@ -625,7 +719,7 @@ test("SEC EDGAR: quarters of a cash flow reported only to date are worked out, m
   for (let k = 1; k < ten.length; k++) assert.equal(Date.parse(ten[k - 1].start) - Date.parse(ten[k].end), DAY, `${ten[k].end} then ${ten[k - 1].start}`);
   assert.deepEqual(
     ten.slice(4).map((v) => v.value / B),
-    [81_700 - 53_887, 53_887 - 29_935, 29_935, 118_254 - 91_443, 91_443 - 62_585, 62_585 - 39_895],
+    [81_754 - 53_887, 53_887 - 29_935, 29_935, 118_254 - 91_443, 91_443 - 62_585, 62_585 - 39_895],
   );
   // A value a share doesn't add up over quarters: only the quarter reported as one.
   const eps = await run({ concepts: ["eps_diluted"] });
@@ -633,6 +727,42 @@ test("SEC EDGAR: quarters of a cash flow reported only to date are worked out, m
   // A quarter reported as one wins over the same quarter worked out (Apple's fourth quarter of revenue).
   const revenue = await run({ concepts: ["revenue"], count: 1 });
   assert.deepEqual(revenue.facts[0].values.map((v) => [v.start, v.value, v.computed ?? false]), [["2024-06-30", 94_930_000_000, false]]);
+});
+
+test("SEC EDGAR: no quarter is worked out from figures a later filing restated, as no such quarter was ever true; cents stay cents", async () => {
+  type Value = { start: string; end: string; value: number; computed?: boolean };
+  const quarters = async (ticker: string, concept: string) =>
+    (JSON.parse((await secFactsTool().run({ ticker, concepts: [concept], period: "quarterly", count: 10 })).text) as { facts: { values: Value[] }[] }).facts[0].values.map(
+      (v) => [v.start, v.end, v.value / B, v.computed ?? false],
+    );
+  // A business sold: 2025's fourth quarter would be the old year less restated nine months (3,250), never true.
+  assert.deepEqual(await quarters("DISC", "revenue"), [
+    ["2026-07-01", "2026-09-30", 2300, false],
+    ["2026-04-01", "2026-06-30", 2300, false],
+    ["2026-01-01", "2026-03-31", 2300, false],
+    ["2025-07-01", "2025-09-30", 2250, false],
+    ["2025-04-01", "2025-06-30", 2250, false],
+    ["2025-01-01", "2025-03-31", 2500, false],
+  ]);
+  // A change first in the 10-K: its year less the old nine months (150) isn't shown; the 10-Qs' own quarters are.
+  assert.deepEqual(await quarters("RECL", "operating_cash_flow"), [
+    ["2025-07-01", "2025-09-30", 250, true],
+    ["2025-04-01", "2025-06-30", 250, true],
+    ["2025-01-01", "2025-03-31", 250, false],
+  ]);
+  // Reclassified from a third quarter on: neither third quarter (180) nor 2025's fourth (420) is shown.
+  assert.deepEqual(await quarters("FLOT", "operating_cash_flow"), [
+    ["2026-04-01", "2026-06-30", 300, true],
+    ["2026-01-01", "2026-03-31", 300, false],
+    ["2025-04-01", "2025-06-30", 300, true],
+    ["2025-01-01", "2025-03-31", 300, false],
+  ]);
+  // 1,234,567.89 less 1,000,000.12 is 234,567.77, not 234,567.76999….
+  const cents = JSON.parse((await secFactsTool().run({ ticker: "DECI", concepts: ["operating_cash_flow"], period: "quarterly" })).text) as { facts: { values: Value[] }[] };
+  assert.deepEqual(cents.facts[0].values.map((v) => [v.end, v.value, v.computed ?? false]), [
+    ["2026-06-30", 234_567.77, true],
+    ["2026-03-31", 1_000_000.12, false],
+  ]);
 });
 
 test("SEC EDGAR: Flash sends at most 5 requests a second across every server, and a reply makes at most 3 look-ups", async () => {
@@ -671,6 +801,12 @@ test("SEC EDGAR: Flash sends at most 5 requests a second across every server, an
   await sql("DELETE FROM rate_limits");
   for (let i = 0; i < 5; i++) assert.equal(await takeSlot("full", 5, 60_000, { waitMs: 100, now: () => 0 }), true);
   assert.equal(await takeSlot("full", 5, 60_000, { waitMs: 100, now: () => 0 }), false);
+  // A reply stopped while it waits for the next window stops waiting at once.
+  const stop = new AbortController();
+  const waiting = Date.now();
+  setTimeout(() => stop.abort(), 50);
+  assert.equal(await takeSlot("full", 5, 60_000, { waitMs: 120_000, now: () => 0, signal: stop.signal }), false);
+  assert.ok(Date.now() - waiting < 1000, `${Date.now() - waiting} ms`);
 
   const ledger = new R.ToolLedger();
   assert.deepEqual([ledger.take("sec"), ledger.take("sec"), ledger.take("sec"), ledger.take("sec")], [true, true, true, false]);
@@ -775,6 +911,10 @@ test("FRED: a series FRED tags as copyrighted is refused though its notes don't 
   await fresh();
   assert.equal((await tool.run({ series_id: "OBMMIJUMBO30YF" })).text, R.FRED_COPYRIGHT);
   assert.equal(seen.length, 0);
+  // What the tags say is kept a day, longer than the details: once the details are read again, the tags aren't.
+  await sql("DELETE FROM source_cache WHERE key LIKE 'fred:series:%'");
+  assert.equal((await tool.run({ series_id: "OBMMIJUMBO30YF" })).text, R.FRED_COPYRIGHT);
+  assert.deepEqual(seen.map((s) => s.path), ["/series"]);
   // Copyrighted by its notes already: the tags aren't asked for.
   await fresh();
   await tool.run({ series_id: "SP500" });

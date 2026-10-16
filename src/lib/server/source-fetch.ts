@@ -107,19 +107,35 @@ export const failureNote = (err: unknown) => (err instanceof SourceError ? err.m
 // ---------------------------------------------------------------------------------------------
 // Requests per second, shared by every server
 
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+/** Waits ms, or less when signal ends first. */
+const sleep = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    signal?.addEventListener("abort", done, { once: true });
+  });
 const SLOT_PREFIX = "source:";
 const PRUNE_SLOTS_EVERY = 10 * 60_000;
 let slotsPrunedAt = 0;
 
-export type SlotOptions = { waitMs?: number; now?: () => number; wait?: (ms: number) => Promise<void> };
+export type SlotOptions = { waitMs?: number; now?: () => number; wait?: (ms: number, signal?: AbortSignal) => Promise<void>; signal?: AbortSignal };
 
 /**
  * Takes one of a source's requests in the current window (perWindow per windowMs, counted in
  * rate_limits so every server shares them), waiting for the next window while this one is full, up
- * to waitMs. False when none came free in time: the caller fails as busy, it never goes over.
+ * to waitMs. False when none came free in time, or the reply was stopped (signal) while it waited:
+ * the caller fails as busy, it never goes over.
  */
-export async function takeSlot(source: string, perWindow: number, windowMs: number, { waitMs = 3000, now = Date.now, wait = sleep }: SlotOptions = {}): Promise<boolean> {
+export async function takeSlot(
+  source: string,
+  perWindow: number,
+  windowMs: number,
+  { waitMs = 3000, now = Date.now, wait = sleep, signal }: SlotOptions = {},
+): Promise<boolean> {
   const start = now();
   if (start - slotsPrunedAt >= PRUNE_SLOTS_EVERY) {
     slotsPrunedAt = start;
@@ -138,9 +154,10 @@ export async function takeSlot(source: string, perWindow: number, windowMs: numb
     );
     if (r.rowsAffected === 1) return true;
     const next = (window + 1) * windowMs;
-    if (next - start > waitMs) return false;
+    if (next - start > waitMs || signal?.aborted) return false;
     // A little later than the window's start, spread out so waiting requests don't all arrive at once.
-    await wait(next - t + 5 + Math.floor(Math.random() * 40));
+    await wait(next - t + 5 + Math.floor(Math.random() * 40), signal);
+    if (signal?.aborted) return false;
   }
 }
 

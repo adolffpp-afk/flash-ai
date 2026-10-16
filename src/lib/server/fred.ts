@@ -24,8 +24,8 @@ import { english, type Translate } from "../i18n.ts";
  * reply that shows FRED data carries its notice (FRED_NOTE in research.ts), a series a third party
  * owns (FRED tags it "copyrighted: …", or its notes say "Copyright") is never shown, nothing suggests
  * the Federal Reserve endorses Flash, and requests stay well under its rate limit: 1 a second across
- * Flash and FLASH_FRED_DAILY_REQUESTS a day (10,000), with series details (and their tags) kept six
- * hours and values an hour.
+ * Flash and FLASH_FRED_DAILY_REQUESTS a day (10,000), with series details kept six hours, what their
+ * tags say of copyright a day, and values an hour.
  * FRED's API takes the key only in the address, so addresses are never logged or shown: a failure
  * is logged by what went wrong alone (see SourceError).
  */
@@ -35,6 +35,7 @@ const TIMEOUT_MS = 8000;
 const MAX_BYTES = 2_000_000;
 const HOUR = 3_600_000;
 const SERIES_FOR = 6 * HOUR;
+const TAGS_FOR = 24 * HOUR;
 const VALUES_FOR = HOUR;
 const SEARCH_FOR = 6 * HOUR;
 /** FRED's keys: 32 lower-case letters and digits. */
@@ -69,7 +70,8 @@ async function fredGet(path: string, params: Record<string, string>, signal?: Ab
   const key = fredKey();
   if (!key) throw new SourceError("busy");
   if (!(await reserveDaily("fred", envCount("FLASH_FRED_DAILY_REQUESTS", 10_000)))) throw new SourceError("busy");
-  if (!(await takeSlot("fred", 1, 1000, { waitMs: 4000 }))) throw new SourceError("busy");
+  // One reply can need 9 requests (3 series of 3: details, tags, values), all in one second's line.
+  if (!(await takeSlot("fred", 1, 1000, { waitMs: 10_000, signal }))) throw new SourceError("busy");
   const query = new URLSearchParams({ ...params, api_key: key, file_type: "json" });
   return asObject(
     await fetchJson(`${testBase("FLASH_TEST_FRED_URL") ?? FRED_BASE}${path}?${query}`, { timeoutMs: TIMEOUT_MS, maxBytes: MAX_BYTES, signal, errorBytes: ERROR_BYTES }),
@@ -133,17 +135,29 @@ async function seriesInfo(id: string, at: number, signal?: AbortSignal): Promise
   }
   const info = readInfo(Array.isArray(json?.seriess) ? json.seriess[0] : null);
   if (!info) throw new SourceError("bad_json");
-  if (!info.copyrighted) {
-    const tags = await fredGet("/series/tags", { series_id: id }, signal);
-    const list = Array.isArray(tags?.tags) ? tags.tags : null;
-    if (!list) throw new SourceError("bad_json");
-    info.copyrighted = list.some((tag) => {
-      const name = asObject(tag)?.name;
-      return typeof name === "string" && COPYRIGHTED_TAG.test(name.trim());
-    });
-  }
+  if (!info.copyrighted) info.copyrighted = await taggedCopyright(id, at, signal);
   await cachePut(key, info, SERIES_FOR, at);
   return info;
+}
+
+/**
+ * Whether FRED tags a series as a third party's ("copyrighted: …"), from the cache (kept a day, so a
+ * series asked for again needs no more than its details and values) or FRED. Throws a SourceError
+ * when the tags can't be read.
+ */
+async function taggedCopyright(id: string, at: number, signal?: AbortSignal): Promise<boolean> {
+  const key = `fred:tags:${id}`;
+  const cached = await cacheGet<{ copyrighted: boolean }>(key, at);
+  if (cached) return cached.copyrighted === true;
+  const tags = await fredGet("/series/tags", { series_id: id }, signal);
+  const list = Array.isArray(tags?.tags) ? tags.tags : null;
+  if (!list) throw new SourceError("bad_json");
+  const copyrighted = list.some((tag) => {
+    const name = asObject(tag)?.name;
+    return typeof name === "string" && COPYRIGHTED_TAG.test(name.trim());
+  });
+  await cachePut(key, { copyrighted }, TAGS_FOR, at);
+  return copyrighted;
 }
 
 const FREQUENCY_NAMES: Record<string, string> = { d: "daily", w: "weekly", bw: "biweekly", m: "monthly", q: "quarterly", sa: "semiannual", a: "annual" };

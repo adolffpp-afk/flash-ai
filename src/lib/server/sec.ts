@@ -331,25 +331,49 @@ function fitsPeriod([start, end, , form]: Row, period: "annual" | "quarterly"): 
 const CURRENCY = /^[A-Z]{3}$/;
 const dayAfter = (date: string) => new Date(Date.parse(`${date}T00:00:00Z`) + DAY).toISOString().slice(0, 10);
 
+/** How many decimal places a number is written with: 2 for 1234567.89, 8 for 1.5e-7. */
+function places(n: number): number {
+  const [digits, exponent = "0"] = String(n).split("e");
+  const dot = digits.indexOf(".");
+  return Math.max(0, (dot < 0 ? 0 : digits.length - dot - 1) - Number(exponent));
+}
+
+/** a less b, without the float noise of binary fractions: rounded to the places they're written with. */
+const less = (a: number, b: number) => Number((a - b).toFixed(Math.min(100, Math.max(places(a), places(b)))));
+
 /**
  * Quarters worked out from values to date: a 10-Q reports cash flows only from the fiscal year's start
  * (three, six, then nine months), and a fourth quarter is often only in the year's 10-K. Each value
- * less the one with the same start that ends a quarter before it, both from the latest filing of their
- * period, credited to the later value's filing and marked as worked out.
+ * less the one with the same start that ends a quarter before it, credited to the later value's filing
+ * and marked as worked out. Two values are taken apart only when they're on the same basis: never when
+ * filings reported either period differently (a restatement, a business sold, a reclassification), nor
+ * when the later value's filing changed any value of this tag an earlier filing had reported. A quarter
+ * missing is better than one that was never true.
  */
 function quartersToDate(rows: Row[]): Row[] {
-  const latest = new Map<string, Row>();
+  const byPeriod = new Map<string, Row[]>();
   for (const r of rows) {
-    if (!r[0] || !QUARTER_FORMS.has(r[3])) continue;
     const key = `${r[0]} ${r[1]}`;
-    const was = latest.get(key);
-    if (!was || r[4] > was[4]) latest.set(key, r);
+    let same = byPeriod.get(key);
+    if (!same) byPeriod.set(key, (same = []));
+    same.push(r);
+  }
+  // Periods reported with more than one value, and the filings that changed a value reported before them.
+  const restated = new Set<string>();
+  const rebased = new Set<string>();
+  for (const [key, same] of byPeriod) {
+    if (new Set(same.map((r) => r[2])).size > 1) restated.add(key);
+    for (const r of same) if (same.some((q) => q[4] < r[4] && q[2] !== r[2])) rebased.add(r[5]);
   }
   const byStart = new Map<string, Row[]>();
-  for (const r of latest.values()) {
-    let same = byStart.get(r[0]);
-    if (!same) byStart.set(r[0], (same = []));
-    same.push(r);
+  for (const [key, same] of byPeriod) {
+    const filed = same.filter((r) => QUARTER_FORMS.has(r[3]));
+    if (!filed.length || !filed[0][0] || restated.has(key)) continue;
+    // The latest filing of the period (each reported the same value).
+    const r = filed.reduce((a, b) => (b[4] > a[4] ? b : a));
+    let from = byStart.get(r[0]);
+    if (!from) byStart.set(r[0], (from = []));
+    from.push(r);
   }
   const quarters: Row[] = [];
   for (const same of byStart.values()) {
@@ -357,7 +381,7 @@ function quartersToDate(rows: Row[]): Row[] {
     for (let k = 1; k < same.length; k++) {
       const [before, to] = [same[k - 1], same[k]];
       const gap = days(before[1], to[1]);
-      if (gap >= 80 && gap <= 100) quarters.push([dayAfter(before[1]), to[1], to[2] - before[2], to[3], to[4], to[5], true]);
+      if (gap >= 80 && gap <= 100 && !rebased.has(to[5])) quarters.push([dayAfter(before[1]), to[1], less(to[2], before[2]), to[3], to[4], to[5], true]);
     }
   }
   return quarters;
@@ -568,8 +592,9 @@ export function secFactsTool(t: Translate = english, { now = Date.now }: { now?:
               "a fiscal year may not match the calendar year." +
               (period === "quarterly"
                 ? " computed: a quarter worked out as a value to date less the one before it (a 10-Q reports cash flows like operating_cash_flow " +
-                  "only to date, and a fourth quarter is often only in the annual report); say it was worked out. A quarter may still be " +
-                  "missing: give each value's start and end, and never call values consecutive quarters unless their periods are."
+                  "only to date, and a fourth quarter is often only in the annual report); say it was worked out. None is worked out from " +
+                  "figures a later filing restated, so a quarter may be missing: give each value's start and end, and never call values " +
+                  "consecutive quarters unless their periods are."
                 : ""),
           }),
         );
