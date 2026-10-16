@@ -325,14 +325,18 @@ const searchText = (query: string, results: (WebResult & { n: number })[]) =>
 // ---------------------------------------------------------------------------------------------
 // A reply's ledger
 
+/** The calls of each kind a reply has made, which every attempt at it shares (see ToolLedger). */
+export type CallCounts = Map<ToolFamily, number>;
+
 /**
  * What one reply's tools did: how many calls of each kind it made (at most CALL_CAPS), the web
  * results it read, numbered in the order they came (the model cites them as [n], and they're listed
  * under the reply in that order), the other sources, and whether FRED's notice is due. One for each
- * attempt at a reply: a free provider that takes over starts a new one.
+ * attempt at a reply: a free provider that takes over starts a new one, given the reply's calls, so
+ * the calls made before it still count toward CALL_CAPS while only what its own answer read is listed.
  */
 export class ToolLedger {
-  private calls = new Map<ToolFamily, number>();
+  private calls: CallCounts;
   private cited: Source[] = [];
   private other: Source[] = [];
   /** FRED data was shown, so its notice goes under the reply. */
@@ -340,12 +344,20 @@ export class ToolLedger {
   /** The tools whose data the reply used, by name. */
   readonly used = new Set<string>();
 
+  constructor(calls: CallCounts = new Map()) {
+    this.calls = calls;
+  }
+
   /** Takes one call of a tool's kind, or returns false when the reply has made all it may. */
   take(family: ToolFamily): boolean {
-    const n = this.calls.get(family) ?? 0;
-    if (n >= CALL_CAPS[family]) return false;
-    this.calls.set(family, n + 1);
+    if (!this.left(family)) return false;
+    this.calls.set(family, (this.calls.get(family) ?? 0) + 1);
     return true;
+  }
+
+  /** How many more calls of a tool's kind the reply may make. */
+  left(family: ToolFamily): number {
+    return Math.max(0, CALL_CAPS[family] - (this.calls.get(family) ?? 0));
   }
 
   /** The number a link is cited by: the one it already has, or the next. */

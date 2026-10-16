@@ -1,4 +1,4 @@
-import { cacheGet, cacheKey, cachePut, envCount, failureNote, fetchJson, reserveDaily, SourceError, takeSlot, testBase } from "./source-fetch.ts";
+import { cacheGet, cacheKey, cachePut, envCount, failureNote, fetchJson, fetchJsonPaths, reserveDaily, SourceError, takeSlot, testBase } from "./source-fetch.ts";
 import {
   asObject,
   badInput,
@@ -25,7 +25,9 @@ import type { Source } from "../types.ts";
  * User-Agent naming who asks with a contact address. Flash keeps to 5 a second across every server
  * (see takeSlot) and FLASH_SEC_DAILY_REQUESTS a day (20,000), and keeps what it reads: the ticker
  * list for a day in each server's memory, companies found for a day, filings lists for an hour and
- * reported figures for six hours, in source_cache.
+ * reported figures for six hours, in source_cache. A company's facts (companyfacts, tens of megabytes
+ * for a big filer) are read one company at a time on each server, keeping only the tags asked for as
+ * they come in: never the whole document, as text or as objects (see JsonPicker).
  */
 
 const SEC_WWW = "https://www.sec.gov";
@@ -37,11 +39,15 @@ const HOUR = 3_600_000;
 const TICKERS_FOR = 24 * HOUR;
 const FILINGS_FOR = HOUR;
 const FACTS_FOR = 6 * HOUR;
-// The most each reply may read: the ticker list is about 1 MB, a big company's facts about 20 MB.
+// The most each reply may read: the ticker list is about 1 MB, a big company's facts about 20 MB
+// (read as they come in, see seriesOf: what a read holds is the tags it keeps, not the body).
 const TICKERS_BYTES = 8_000_000;
 const SUBMISSIONS_BYTES = 12_000_000;
 const CONCEPT_BYTES = 6_000_000;
 const FACTS_BYTES = 40_000_000;
+// How long a reply waits for this server's companyfacts read before it's told EDGAR is busy: one
+// whole read is at most a request's wait for its slot (3 seconds) and its timeout.
+const FACTS_WAIT_MS = 15_000;
 // The most filings one answer lists. A company's list keeps this many of each form, newest first, so
 // a form filed by the hundred (a bank's 424B2s) never crowds out its 10-K, 10-Q or 8-K, and at most
 // KEEP_FILINGS in all.
@@ -69,9 +75,58 @@ function bases(): { www: string; data: string } {
  * for it takes neither, and one stopped while its daily request is taken gives it back.
  */
 async function secGet(url: string, maxBytes: number, signal?: AbortSignal): Promise<unknown> {
+  await secTurn(signal);
+  return fetchJson(url, secOptions(maxBytes, signal));
+}
+
+/** Takes one of the SEC's requests (see secGet), or throws a SourceError when there's none or the reply was stopped. */
+async function secTurn(signal?: AbortSignal): Promise<void> {
   if (!(await takeSlot("sec", SEC_PER_SECOND, 1000, { signal })) || signal?.aborted) throw new SourceError(signal?.aborted ? "network" : "busy");
   if (!(await reserveDaily("sec", envCount("FLASH_SEC_DAILY_REQUESTS", 20_000), Date.now(), signal))) throw new SourceError(signal?.aborted ? "network" : "busy");
-  return fetchJson(url, { headers: { "User-Agent": secUserAgent() }, timeoutMs: TIMEOUT_MS, maxBytes, signal });
+}
+
+const secOptions = (maxBytes: number, signal?: AbortSignal) => ({ headers: { "User-Agent": secUserAgent() }, timeoutMs: TIMEOUT_MS, maxBytes, signal });
+
+// ---------------------------------------------------------------------------------------------
+// One companyfacts read at a time on each server
+
+let factsReading = false;
+const factsWaiting: (() => void)[] = [];
+
+/**
+ * This server's turn to read a company's facts: true once it's this call's (which then calls
+ * factsDone), false when waitMs passed first or the reply was stopped (signal) while it waited. Turns
+ * go in the order they were asked for.
+ */
+function factsTurn(signal: AbortSignal | undefined, waitMs: number): Promise<boolean> {
+  if (signal?.aborted) return Promise.resolve(false);
+  if (!factsReading) {
+    factsReading = true;
+    return Promise.resolve(true);
+  }
+  return new Promise((resolve) => {
+    const give = (yes: boolean) => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", stop);
+      resolve(yes);
+    };
+    const turn = () => give(true);
+    const stop = () => {
+      const at = factsWaiting.indexOf(turn);
+      if (at >= 0) factsWaiting.splice(at, 1);
+      give(false);
+    };
+    const timer = setTimeout(stop, waitMs);
+    signal?.addEventListener("abort", stop, { once: true });
+    factsWaiting.push(turn);
+  });
+}
+
+/** Ends a companyfacts turn: the next call waiting has it. */
+function factsDone(): void {
+  const next = factsWaiting.shift();
+  if (next) next();
+  else factsReading = false;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -280,33 +335,44 @@ const seriesKey = (cik: string, tag: string) => `sec:tag:${cik}:${tag}`;
 
 /**
  * The data of each tag for a company, from the cache, else from EDGAR: one tag from companyconcept,
- * several from companyfacts in one request (or one by one when that is too big). Throws a SourceError.
+ * several from companyfacts in one request (or one by one when that is too big). companyfacts waits
+ * for this server's turn (waitMs at most, then EDGAR is busy), and only the tags asked for are read
+ * out of it, as they come in. Throws a SourceError.
  */
-async function seriesOf(cik: string, tags: string[], at: number, signal?: AbortSignal): Promise<Map<string, Series>> {
+async function seriesOf(cik: string, tags: string[], at: number, signal?: AbortSignal, waitMs = FACTS_WAIT_MS): Promise<Map<string, Series>> {
   const found = new Map<string, Series>();
-  const cached = await Promise.all(tags.map((tag) => cacheGet<Series>(seriesKey(cik, tag), at)));
-  tags.forEach((tag, i) => cached[i] && found.set(tag, cached[i]));
-  let missing = tags.filter((tag) => !found.has(tag));
+  const fromCache = async (list: string[]) => {
+    const cached = await Promise.all(list.map((tag) => cacheGet<Series>(seriesKey(cik, tag), at)));
+    list.forEach((tag, i) => cached[i] && found.set(tag, cached[i]));
+    return list.filter((tag) => !found.has(tag));
+  };
+  let missing = await fromCache(tags);
   const keep = async (tag: string, series: Series) => {
     found.set(tag, series);
     await cachePut(seriesKey(cik, tag), series, FACTS_FOR, at);
   };
   if (missing.length > 1) {
+    const waits = factsReading;
+    if (!(await factsTurn(signal, waitMs))) throw new SourceError(signal?.aborted ? "network" : "busy");
     try {
-      const facts = asObject(asObject(await secGet(`${bases().data}/api/xbrl/companyfacts/CIK${cik}.json`, FACTS_BYTES, signal))?.facts);
-      await Promise.all(
-        missing.map((tag) => {
-          const [taxonomy, name] = splitTag(tag);
-          return keep(tag, readSeries(asObject(facts?.[taxonomy])?.[name], at));
-        }),
-      );
-      missing = [];
+      // The read it waited for may have been the same company's.
+      if (waits) missing = await fromCache(missing);
+      if (missing.length > 1) {
+        await secTurn(signal);
+        const url = `${bases().data}/api/xbrl/companyfacts/CIK${cik}.json`;
+        const picked = await fetchJsonPaths(url, secOptions(FACTS_BYTES, signal), missing.map((tag) => ["facts", ...splitTag(tag)]), (raw) => readSeries(raw, at));
+        // Kept before the turn ends, so a reply waiting for the same company's finds them.
+        await Promise.all(missing.map((tag, i) => keep(tag, picked[i] ?? { none: true })));
+        missing = [];
+      }
     } catch (err) {
       // A company that never filed figures has none; one whose figures are too big to read at once is read tag by tag.
       if (err instanceof SourceError && err.status === 404) {
         await Promise.all(missing.map((tag) => keep(tag, { none: true })));
         missing = [];
       } else if (!(err instanceof SourceError && err.reason === "too_big")) throw err;
+    } finally {
+      factsDone();
     }
   }
   for (const tag of missing) {
@@ -536,8 +602,8 @@ export function secFilingsTool(t: Translate = english, { now = Date.now }: { now
   };
 }
 
-/** sec_financial_facts for one reply. now is for tests. */
-export function secFactsTool(t: Translate = english, { now = Date.now }: { now?: () => number } = {}): ClientTool {
+/** sec_financial_facts for one reply. now, and how long a read waits for its companyfacts turn, are for tests. */
+export function secFactsTool(t: Translate = english, { now = Date.now, factsWaitMs = FACTS_WAIT_MS }: { now?: () => number; factsWaitMs?: number } = {}): ClientTool {
   return {
     ...SEC_FACTS,
     family: "sec",
@@ -564,7 +630,7 @@ export function secFactsTool(t: Translate = english, { now = Date.now }: { now?:
         if (!company) return { text: notFound(ref), isError: true, used: false };
         const wanted = concepts as { concept: string; tags: string[] }[];
         const tags = [...new Set(wanted.flatMap((c) => c.tags))];
-        const series = await seriesOf(company.cik, tags, at, signal);
+        const series = await seriesOf(company.cik, tags, at, signal, factsWaitMs);
         const figures = wanted.map((c) => pickFigure(c.concept, c.tags, series, period, count));
         const name = company.name || `CIK ${company.cik}`;
         if (figures.every((f) => !f.rows.length)) {

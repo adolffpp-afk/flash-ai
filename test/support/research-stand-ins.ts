@@ -24,9 +24,10 @@ export type Block =
 export type ClaudeReply = { blocks: Block[]; stop: string; usage?: { input_tokens: number; output_tokens: number }; hold?: Promise<unknown> };
 /**
  * A free model's reply: the calls it asks for (one reply at once), or words (streamed, or at once); cut:
- * the stream breaks after the words; hold: the stream waits for it after the words.
+ * the stream breaks after the words; hold: the stream waits for it after the words; status: the
+ * provider answers with this error instead (busy, say), so the next one takes over.
  */
-export type FreeReply = { calls?: { name: string; args: object }[]; text?: string; cut?: boolean; hold?: Promise<unknown> };
+export type FreeReply = { calls?: { name: string; args: object }[]; text?: string; cut?: boolean; hold?: Promise<unknown>; status?: number };
 export type Seen = { service: string; path: string; query: URLSearchParams; headers: IncomingMessage["headers"]; url: string; body: Record<string, unknown> };
 
 const iso = (t: number) => new Date(t).toISOString().slice(0, 10);
@@ -206,6 +207,7 @@ export async function startStandIns({ tls, port: fixedPort = 0 }: { tls?: { key:
     const messages = (body.messages as { role: string; content: string }[]) ?? [];
     if (body.stream === false) {
       const reply = state.free.replies.shift() ?? { text: "Answered at once." };
+      if (reply.status) return json({ error: "scripted" }, reply.status);
       const message = reply.calls
         ? { role: "assistant", content: null, tool_calls: reply.calls.map((c, i) => ({ id: `call_${state.free.sent.length}_${i}`, type: "function", function: { name: c.name, arguments: JSON.stringify(c.args) } })) }
         : { role: "assistant", content: reply.text ?? "" };
@@ -213,6 +215,7 @@ export async function startStandIns({ tls, port: fixedPort = 0 }: { tls?: { key:
     }
     const results = messages.filter((m) => m.role === "tool").length;
     const reply = state.free.replies.shift();
+    if (reply?.status) return json({ error: "scripted" }, reply.status);
     const text = reply?.text ?? `Here is what I found${results ? " [1]" : ""}.`;
     res.writeHead(200, { "content-type": "text/event-stream" });
     res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\n`);
