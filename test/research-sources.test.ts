@@ -58,6 +58,11 @@ const COMPANIES = [
   { cik_str: 3_000_005, ticker: "ONCE", title: "Reclass Once Corp" },
   { cik_str: 3_000_006, ticker: "PREC", title: "Precision Corp" },
   { cik_str: 3_000_007, ticker: "OLDR", title: "Old Restatement Corp" },
+  { cik_str: 3_000_008, ticker: "TWCE", title: "Twice Restated Corp" },
+  { cik_str: 3_000_009, ticker: "TWQS", title: "Restated In 10-Qs Corp" },
+  { cik_str: 3_000_010, ticker: "AMND", title: "Amended 10-K Corp" },
+  { cik_str: 3_000_011, ticker: "QAMD", title: "Amended 10-Q Corp" },
+  { cik_str: 3_000_012, ticker: "MIDA", title: "Amended Between Corp" },
 ];
 
 /** Apple's submissions: 300 filings, newest first, with long descriptions. */
@@ -247,6 +252,27 @@ const at = (cik: number) => (y: number, k: number) => `${String(cik).padStart(10
   filer(3_000_006, (_y, k, shownIn) => (shownIn >= 2026 ? Math.round(100.123 * k) : Math.round(100.123 * k * 1000) / 1000));
   // The 2023 10-K restated 2022's year (400 to 395); the 2024 10-K repeats it as restated. Filed up to June 2025.
   filer(3_000_007, (y, k, shownIn) => (y === 2022 && k === 4 && shownIn >= 2024 ? 395 : 100 * k), "2025-06-01");
+  /** An amendment filed on `filed` that repeats the figures of the filing `accn` unchanged. */
+  const amend = (cik: number, accn: string, form: string, filed: string) => {
+    const rows = RESTATED[String(cik).padStart(10, "0")].NetCashProvidedByUsedInOperatingActivities.units.USD as { accn: string }[];
+    rows.push(...rows.filter((r) => r.accn === accn).map((r) => ({ ...r, form, filed, accn: at(cik)(Number(filed.slice(0, 4)), 99) })));
+  };
+  // Restated twice: by the 2024 10-K (90 a quarter, carried into 2025's 10-Qs), then by the 2025 10-K (80).
+  filer(3_000_008, (_y, k, shownIn) => (shownIn >= 2026 ? 80 : shownIn >= 2025 ? 90 : 100) * k);
+  // The same, the first change made in 2025's 10-Qs (the 2024 10-K was as first reported).
+  filer(3_000_009, (_y, k, shownIn) => (shownIn >= 2026 ? 80 : shownIn === 2025 && k < 4 ? 90 : 100) * k);
+  // ONCE, with a 10-K/A in April 2026 that re-files the 2025 10-K unchanged.
+  filer(3_000_010, (y, k, shownIn) => (shownIn >= 2026 && y >= 2024 ? 90 : 100) * k);
+  amend(3_000_010, at(3_000_010)(2026, 4), "10-K/A", "2026-04-15");
+  // Restated from the 2026 Q2 10-Q on (90 a quarter in 2025 and 2026), with a 10-Q/A in September that re-files it unchanged.
+  filer(3_000_011, (y, k, shownIn) => (shownIn >= 2026 && y >= 2025 && k >= 2 && k <= 3 ? 90 : 100) * k);
+  amend(3_000_011, at(3_000_011)(2026, 2), "10-Q/A", "2026-09-15");
+  // A 10-K/A for 2024, filed in December 2025 after the Q3 10-Q, restates 2022 to 2024 (90 a quarter); the
+  // 2025 10-K repeats them as restated, and 2026's 10-Qs restate 2025.
+  filer(3_000_012, (_y, k, shownIn) => (shownIn >= 2026 ? 90 : 100) * k);
+  for (const y of [2022, 2023, 2024]) {
+    (RESTATED["0003000012"].NetCashProvidedByUsedInOperatingActivities.units.USD as object[]).push(fact(`${y}-01-01`, `${y}-12-31`, 360 * B, "10-K/A", "2025-12-01", at(3_000_012)(2025, 99)));
+  }
   // Amounts with cents.
   const d = at(3_000_004);
   RESTATED["0003000004"] = {
@@ -796,30 +822,48 @@ test("SEC EDGAR: no quarter is worked out from figures a later filing restated, 
   ]);
 });
 
-test("SEC EDGAR: once both values are on a new basis, their quarter is worked out again", async () => {
-  const quarters = async (ticker: string, count = 10) =>
-    (JSON.parse((await secFactsTool().run({ ticker, concepts: ["operating_cash_flow"], period: "quarterly", count })).text) as { facts: { values: { end: string; value: number; computed?: boolean }[] }[] }).facts[0].values.map(
-      (v) => `${v.end}:${v.value / B}${v.computed ? "*" : ""}`,
-    );
-  // A reclassification carried into 2026's comparatives: 2026's six months less its first quarter, both
-  // on the new basis, is 90. 2025's restated quarters, and 2024's fourth, stay out.
-  assert.deepEqual(await quarters("ONCE"), [
-    "2026-06-30:90*",
+/** A company's newest quarters of operating cash flow, as "end:value", with * for one worked out. */
+const cashQuarters = async (ticker: string, count = 10) =>
+  (JSON.parse((await secFactsTool().run({ ticker, concepts: ["operating_cash_flow"], period: "quarterly", count })).text) as { facts: { values: { end: string; value: number; computed?: boolean }[] }[] }).facts[0].values.map(
+    (v) => `${v.end}:${v.value / B}${v.computed ? "*" : ""}`,
+  );
+
+test("SEC EDGAR: a filing that repeats an earlier restatement changes nothing, but no quarter is worked out across one that changed figures", async () => {
+  // A reclassification carried into 2026's comparatives: each 2026 10-Q changes 2025's figures, as a
+  // second restatement would, so 2026's six months less its first quarter stays out too. 2025's
+  // restated quarters, and 2024's fourth, stay out; 2023's fourth, which no filing changed, is worked out.
+  assert.deepEqual(await cashQuarters("ONCE"), [
     "2026-03-31:90",
     "2025-03-31:90",
     "2024-09-30:100*",
     "2024-06-30:100*",
     "2024-03-31:100",
+    "2023-12-31:100*",
     "2023-09-30:100*",
     "2023-06-30:100*",
     "2023-03-31:100",
     "2022-12-31:100*",
   ]);
-  // Thousands re-rounded to millions: the same, at 100 a quarter in 2026 and 100.123 before.
-  assert.deepEqual((await quarters("PREC", 4)).slice(0, 2), ["2026-06-30:100*", "2026-03-31:100"]);
-  assert.ok((await quarters("PREC")).every((q) => /:100(\.123)?\*?$/.test(q)));
+  // Thousands re-rounded to millions change figures too: 2026's second quarter stays out, and every
+  // other is 100 a quarter in 2026 and 100.123 before.
+  assert.deepEqual(await cashQuarters("PREC", 2), ["2026-03-31:100", "2025-03-31:100"]);
+  assert.ok((await cashQuarters("PREC")).every((q) => /:100(\.123)?\*?$/.test(q)));
   // A 10-K that repeats an old year as already restated changes nothing: its own fourth quarter is worked out.
-  assert.deepEqual(await quarters("OLDR", 4), ["2025-03-31:100", "2024-12-31:100*", "2024-09-30:100*", "2024-06-30:100*"]);
+  assert.deepEqual(await cashQuarters("OLDR", 4), ["2025-03-31:100", "2024-12-31:100*", "2024-09-30:100*", "2024-06-30:100*"]);
+});
+
+test("SEC EDGAR: no quarter is worked out across a second restatement, one an amendment repeats, or one filed between its two values", async () => {
+  // 2025's fourth quarter would be its year restated again (320) less its nine months restated once
+  // (270): 50, true on no basis (90 as first reported, 80 restated). The same when the first change
+  // was made in 2025's 10-Qs.
+  for (const ticker of ["TWCE", "TWQS"]) assert.deepEqual(await cashQuarters(ticker, 4), ["2026-03-31:80", "2025-03-31:80", "2024-03-31:90", "2023-09-30:100*"], ticker);
+  // A 10-K/A that re-files the restating 10-K: its year (360) less the old nine months (300) would be 60.
+  assert.deepEqual(await cashQuarters("AMND", 4), ["2026-03-31:90", "2025-03-31:90", "2024-09-30:100*", "2024-06-30:100*"]);
+  // A 10-Q/A that re-files the restating Q2 10-Q: its six months (180) less the old first quarter (100)
+  // would be 80. 2025's fourth quarter, which no filing between its year and nine months changed, is shown.
+  assert.deepEqual(await cashQuarters("QAMD", 4), ["2026-03-31:100", "2025-12-31:100*", "2025-03-31:100", "2024-12-31:100*"]);
+  // A restating 10-K/A filed between the nine months and the year's 10-K, which repeats it: 360 less 300 would be 60.
+  assert.deepEqual(await cashQuarters("MIDA", 4), ["2026-03-31:90", "2025-03-31:90", "2024-09-30:100*", "2024-06-30:100*"]);
 });
 
 test("SEC EDGAR: Flash sends at most 5 requests a second across every server, and a reply makes at most 3 look-ups", async () => {
@@ -870,6 +914,37 @@ test("SEC EDGAR: Flash sends at most 5 requests a second across every server, an
 
   const ledger = new R.ToolLedger();
   assert.deepEqual([ledger.take("sec"), ledger.take("sec"), ledger.take("sec"), ledger.take("sec")], [true, true, true, false]);
+});
+
+test("a stopped reply asks SearXNG, the SEC and FRED nothing and takes none of their daily requests, also when it stops while it waits its turn", async () => {
+  // The company is known already, from an earlier reply.
+  await secFilingsTool().run({ company: "AAPL" });
+  await sql("DELETE FROM source_cache WHERE key LIKE 'sec:filings:%'");
+  for (const table of ["free_quota", "rate_limits"]) await sql(`DELETE FROM ${table}`);
+  seen.length = 0;
+  const daily = () => all("SELECT provider, requests FROM free_quota");
+  const [search, filings, series] = [webSearchTool("u-stop")!, secFilingsTool(), fredSeriesTool()];
+  const look = (signal: AbortSignal) =>
+    Promise.all([search.run({ query: "news today" }, signal), filings.run({ company: "AAPL" }, signal), series.run({ series_id: "UNRATE" }, signal)]).then((r) => r.map((x) => x.text));
+  const failed = [R.SEARCH_FAILED, R.SEC_FAILED, R.FRED_FAILED];
+  const stopped = new AbortController();
+  stopped.abort("stop");
+  assert.deepEqual(await look(stopped.signal), failed);
+  assert.deepEqual(seen, []);
+  assert.deepEqual(await daily(), []);
+  assert.deepEqual(await all("SELECT key FROM rate_limits"), [], "no slot either");
+  // Every slot taken for the next 12 seconds: stopped while it waits for one, each ends at once, with none of the day's requests.
+  const second = Math.floor(Date.now() / 1000);
+  for (const [source, per] of [["searxng", 5], ["sec", 5], ["fred", 1]] as const) {
+    for (let w = second; w <= second + 12; w++) await sql("INSERT INTO rate_limits (key, count, reset_at) VALUES (?, ?, ?)", [`source:${source}:${w}`, per, (w + 1) * 1000]);
+  }
+  const stop = new AbortController();
+  setTimeout(() => stop.abort("stop"), 100);
+  const begun = Date.now();
+  assert.deepEqual(await look(stop.signal), failed);
+  assert.ok(Date.now() - begun < 2000, `${Date.now() - begun} ms`);
+  assert.deepEqual(seen, []);
+  assert.deepEqual(await daily(), []);
 });
 
 // ---------------------------------------------------------------------------------------------

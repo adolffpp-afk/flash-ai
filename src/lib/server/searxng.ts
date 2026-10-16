@@ -105,12 +105,14 @@ export async function searxSearch(config: SearxConfig, q: Query, { signal, at = 
   const cached = await cacheGet<WebResult[]>(key, at);
   if (cached) return cached;
   try {
-    if (!(await reserveDaily("searxng", envCount("FLASH_SEARXNG_DAILY_REQUESTS", 5000), at))) {
-      console.error("[flash] web search skipped: today's SearXNG requests are used up across Flash");
+    // The slot first, so a stopped reply (signal), also one stopped while it waits for it, asks SearXNG
+    // nothing and takes none of the day's requests.
+    if (!(await takeSlot("searxng", PER_SECOND, 1000, { signal })) || signal?.aborted) {
+      if (!signal?.aborted) console.error("[flash] web search skipped: SearXNG is busy");
       return null;
     }
-    if (!(await takeSlot("searxng", PER_SECOND, 1000))) {
-      console.error("[flash] web search skipped: SearXNG is busy");
+    if (!(await reserveDaily("searxng", envCount("FLASH_SEARXNG_DAILY_REQUESTS", 5000), at))) {
+      console.error("[flash] web search skipped: today's SearXNG requests are used up across Flash");
       return null;
     }
     const params = new URLSearchParams({ q: q.query, format: "json", language: q.language, safesearch: "1" });

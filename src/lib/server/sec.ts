@@ -63,10 +63,14 @@ function bases(): { www: string; data: string } {
   return test ? { www: test, data: test } : { www: SEC_WWW, data: SEC_DATA };
 }
 
-/** One request to the SEC, within Flash's daily allowance and 5 a second. */
+/**
+ * One request to the SEC, within 5 a second and Flash's daily allowance. A stopped reply (signal) asks
+ * nothing, and takes none of the day's requests: the slot comes first, so one stopped while it waits
+ * for it takes neither.
+ */
 async function secGet(url: string, maxBytes: number, signal?: AbortSignal): Promise<unknown> {
+  if (!(await takeSlot("sec", SEC_PER_SECOND, 1000, { signal })) || signal?.aborted) throw new SourceError(signal?.aborted ? "network" : "busy");
   if (!(await reserveDaily("sec", envCount("FLASH_SEC_DAILY_REQUESTS", 20_000)))) throw new SourceError("busy");
-  if (!(await takeSlot("sec", SEC_PER_SECOND, 1000))) throw new SourceError("busy");
   return fetchJson(url, { headers: { "User-Agent": secUserAgent() }, timeoutMs: TIMEOUT_MS, maxBytes, signal });
 }
 
@@ -344,12 +348,14 @@ const less = (a: number, b: number) => Number((a - b).toFixed(Math.min(100, Math
 /**
  * Quarters worked out from values to date: a 10-Q reports cash flows only from the fiscal year's start
  * (three, six, then nine months), and a fourth quarter is often only in the year's 10-K. Each value
- * less the one with the same start that ends a quarter before it, credited to the later value's filing
- * and marked as worked out. Two values are taken apart only when they're on the same basis: never when
- * filings reported either period differently (a restatement, a business sold, a reclassification), nor
- * when the later value's filing changed a value of this tag and the earlier value's filing didn't. Once
- * both are on the new basis, quarters are worked out again. A quarter missing is better than one that
- * was never true.
+ * less the one with the same start that ends a quarter before it, credited to the later value's latest
+ * filing and marked as worked out. Two values are taken apart only when they're on the same basis:
+ * never when filings reported either period differently (a restatement, a business sold, a
+ * reclassification), nor when any filing changed a value of this tag between the two values' first
+ * reports (other than the earlier one's, whose value is on the basis it changed to). A filing that
+ * repeats an earlier change changes nothing; one that carries a change into the next year's
+ * comparatives can't be told from a second change, so it counts. A quarter missing is better than one
+ * that was never true.
  */
 function quartersToDate(rows: Row[]): Row[] {
   const byPeriod = new Map<string, Row[]>();
@@ -359,35 +365,37 @@ function quartersToDate(rows: Row[]): Row[] {
     if (!same) byPeriod.set(key, (same = []));
     same.push(r);
   }
-  // Periods reported with more than one value, and the filings that changed a value: one that differs
+  // Periods reported with more than one value, and the reports that changed a value: each that differs
   // from the latest report of its period before it (repeating an earlier restatement changes nothing).
   const restated = new Set<string>();
-  const rebased = new Set<string>();
+  const changes: Row[] = [];
   for (const [key, same] of byPeriod) {
     if (new Set(same.map((r) => r[2])).size > 1) restated.add(key);
     for (const r of same) {
       const prior = same.filter((q) => q[4] < r[4]).reduce<Row | null>((a, b) => (!a || b[4] > a[4] ? b : a), null);
-      if (prior && prior[2] !== r[2]) rebased.add(r[5]);
+      if (prior && prior[2] !== r[2]) changes.push(r);
     }
   }
-  const byStart = new Map<string, Row[]>();
+  // Each period's first report, whose basis its value is on, and its latest (each reported the same value).
+  const byStart = new Map<string, { first: Row; last: Row }[]>();
   for (const [key, same] of byPeriod) {
     const filed = same.filter((r) => QUARTER_FORMS.has(r[3]));
     if (!filed.length || !filed[0][0] || restated.has(key)) continue;
-    // The latest filing of the period (each reported the same value).
-    const r = filed.reduce((a, b) => (b[4] > a[4] ? b : a));
-    let from = byStart.get(r[0]);
-    if (!from) byStart.set(r[0], (from = []));
-    from.push(r);
+    const first = same.reduce((a, b) => (b[4] < a[4] ? b : a));
+    const last = filed.reduce((a, b) => (b[4] > a[4] ? b : a));
+    let from = byStart.get(last[0]);
+    if (!from) byStart.set(last[0], (from = []));
+    from.push({ first, last });
   }
   const quarters: Row[] = [];
   for (const same of byStart.values()) {
-    same.sort((a, b) => a[1].localeCompare(b[1]));
+    same.sort((a, b) => a.last[1].localeCompare(b.last[1]));
     for (let k = 1; k < same.length; k++) {
-      const [before, to] = [same[k - 1], same[k]];
+      const [before, to] = [same[k - 1].last, same[k].last];
       const gap = days(before[1], to[1]);
-      // A later value from a filing that changed figures, less one from a filing that didn't: two bases.
-      const mixed = rebased.has(to[5]) && !rebased.has(before[5]);
+      // Two bases when a filing other than the first of the two first reports changed figures from it to the second.
+      const [a, b] = [same[k - 1].first, same[k].first].sort((x, y) => x[4].localeCompare(y[4]));
+      const mixed = changes.some((c) => c[5] !== a[5] && c[4] >= a[4] && c[4] <= b[4]);
       if (gap >= 80 && gap <= 100 && !mixed) quarters.push([dayAfter(before[1]), to[1], less(to[2], before[2]), to[3], to[4], to[5], true]);
     }
   }
