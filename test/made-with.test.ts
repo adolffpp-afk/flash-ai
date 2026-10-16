@@ -155,3 +155,13 @@ test("a page with no title is titled after what made it, or the app's own name o
   assert.equal(plainTitle({ slug: "crumb-x1", title: "Golden Crumb " }), "Golden Crumb");
   assert.equal(plainTitle({ slug: "crumb-x1", title: " " }), "crumb-x1", "an app with no name goes by its address");
 });
+
+test("an app with a share picture of its own keeps it first, and Flash's picture isn't used", async () => {
+  const own = await owner("pictured");
+  const share = "https://goldencrumb.ca/share.jpg?v=1&amp;s=2";
+  await run("UPDATE sites SET html = ? WHERE slug = ?", [UNTITLED.replace("<head>", `<head><meta property="og:image" content="${share}">`), own.slug]);
+  const images = [...(await page(own.slug)).matchAll(/property="og:image" content="([^"]*)"/g)].map((m) => m[1]);
+  assert.deepEqual(images, [share, share], "its own picture comes first, not /p/<slug>/card");
+  assert.equal(sitePreview(`<meta content="${share}" property='og:image'>`).image, "https://goldencrumb.ca/share.jpg?v=1&s=2", "either order of the tag's parts");
+  assert.equal(sitePreview(`<meta property="og:image" content="/share.jpg"><img src="https://cdn.example/cake.jpg">`).image, "https://cdn.example/cake.jpg", "not a picture with no full address");
+});

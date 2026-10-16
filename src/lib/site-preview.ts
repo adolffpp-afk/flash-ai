@@ -48,11 +48,16 @@ export function sitePreview(page: string, untitled: string = MADE_WITH_TITLE): S
   // No description: the first paragraph long enough to say something.
   const paragraph = [...html.matchAll(/<p(?:\s[^<>]{0,300})?>([\s\S]{0,1500}?)<\/p>/gi)].map((m) => plain(m[1])).find((t) => t.length >= 40);
   const description = clip(decode(meta ?? "").trim() || paragraph || "", 200);
-  // The first web picture that isn't an icon: data: pictures and SVGs don't show in share cards.
+  // The page's own share picture first: Flash's tags go before the page's, and share apps use the first.
+  const own =
+    html.match(/<meta[^<>]{1,500}?property\s*=\s*["']og:image["'][^<>]{0,500}?content\s*=\s*["'](https:\/\/[^"'\s<>]{1,2000})["']/i)?.[1] ??
+    html.match(/<meta[^<>]{1,500}?content\s*=\s*["'](https:\/\/[^"'\s<>]{1,2000})["'][^<>]{0,500}?property\s*=\s*["']og:image["']/i)?.[1];
+  // Otherwise the first web picture that isn't an icon: data: pictures and SVGs don't show in share cards.
   const image =
-    [...html.matchAll(/<img[^<>]{1,500}?src\s*=\s*["'](https:\/\/[^"'\s<>]{1,2000})["']/gi)]
+    (own && decode(own)) ||
+    ([...html.matchAll(/<img[^<>]{1,500}?src\s*=\s*["'](https:\/\/[^"'\s<>]{1,2000})["']/gi)]
       .map((m) => decode(m[1]))
-      .find((src) => !/\.svg(\?|$)|icon|logo|favicon/i.test(src)) ?? null;
+      .find((src) => !/\.svg(\?|$)|icon|logo|favicon/i.test(src)) ?? null);
   return { title, description, image };
 }
 
