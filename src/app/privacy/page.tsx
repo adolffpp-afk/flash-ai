@@ -6,7 +6,7 @@ export const metadata: Metadata = { title: "Privacy Policy" };
 
 export default function Privacy() {
   return (
-    <LegalPage title="Privacy Policy" updated="October 15, 2026">
+    <LegalPage title="Privacy Policy" updated="October 16, 2026">
       <p>
         {PRODUCT_NAME} is operated by {COMPANY} (&quot;we&quot;), which is responsible for the personal information described
         here. This policy explains what we collect when you use {PRODUCT_NAME}, why, and the choices you have.
@@ -24,6 +24,7 @@ export default function Privacy() {
         <li><strong>Voice conversations:</strong> when you talk with Flash, what you say is turned into text and saved in the chat like a typed message, and answers are read aloud by your device. In Chrome, Edge and Safari your browser turns speech into text (using its maker&apos;s speech service); in other browsers Flash sends each recorded turn to its transcription provider and keeps only the text. If you turn on &ldquo;Hey Flash&rdquo;, your browser listens while Flash is open, and Flash only gets what you say after &ldquo;Hey Flash&rdquo;.</li>
         <li><strong>Usage and billing:</strong> which tools you use, credits spent, and purchases. When paid plans are available, card payments are handled by Stripe; we never see your full card number.</li>
         <li><strong>Technical data:</strong> a sign-in cookie that keeps you logged in, and standard server logs.</li>
+        <li><strong>Reports:</strong> when you report a page or an app, we keep its address, the reason, any details and email address you give, and a scrambled (hashed) version of your internet address, so our team can review the report (new reports are emailed to them through Resend), reply if you asked, and stop repeated or abusive reports; none of it is shown to the person who made the page.</li>
       </ul>
 
       <h2>How we use it</h2>

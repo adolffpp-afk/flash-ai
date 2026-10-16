@@ -589,6 +589,38 @@ const SCHEMA = [
     hash TEXT PRIMARY KEY,
     scanned_at INTEGER NOT NULL
   )`,
+  // Reports of what people share or publish, for Flash's admins only (see reports.ts). While an
+  // item's report is open, the same network reporting it again for the same reason adds to repeats
+  // instead of a new row. reporter is a hash of the network's address, never the address itself.
+  // owner_id is whose item it was, and title what it was called, when it was reported.
+  `CREATE TABLE IF NOT EXISTS reports (
+    id TEXT PRIMARY KEY,
+    item_kind TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    owner_id TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    via TEXT NOT NULL DEFAULT '',
+    reason TEXT NOT NULL,
+    details TEXT NOT NULL DEFAULT '',
+    email TEXT NOT NULL DEFAULT '',
+    reporter TEXT NOT NULL,
+    repeats INTEGER NOT NULL DEFAULT 1,
+    status TEXT NOT NULL DEFAULT 'open',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS reports_open ON reports(item_kind, item_id, reporter, reason) WHERE status = 'open'`,
+  `CREATE INDEX IF NOT EXISTS reports_time ON reports(created_at)`,
+  // What an admin did about an item's reports (marked them reviewed, took the item down), by whom and when.
+  `CREATE TABLE IF NOT EXISTS report_actions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_kind TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    admin_email TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS report_actions_item ON report_actions(item_kind, item_id)`,
 ];
 
 let client: Client | null = null;

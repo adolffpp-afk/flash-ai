@@ -423,10 +423,11 @@ export function Landing({
             <span className="text-xs">{t.node("{product} is operated by {company}", { product: <Wordmark />, company: LEGAL_NAME })}</span>
             <span className="text-xs">{t("{brand} is a trademark of {company}", { brand: TRADEMARK, company: LEGAL_NAME })}</span>
           </div>
-          <div className="flex gap-4 sm:ml-auto">
+          <div className="flex flex-wrap gap-x-4 gap-y-2 sm:ml-auto">
             <a href="/terms" className="hover:text-zinc-200">Terms</a>
             <a href="/privacy" className="hover:text-zinc-200">Privacy</a>
             <a href="#pricing" className="hover:text-zinc-200">Pricing</a>
+            <a href="/report" className="hover:text-zinc-200">{t("Report content")}</a>
             <InstallApp className="flex items-center gap-1.5 hover:text-zinc-200" />
           </div>
         </div>

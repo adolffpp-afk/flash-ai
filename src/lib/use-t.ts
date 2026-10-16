@@ -3,7 +3,7 @@
  * in (see i18n.ts), and showLanguage() switches it when the account loads or the setting changes.
  * Every component on screen redraws in the new language at once, Settings included.
  */
-import { Fragment, createElement, useEffect, useMemo, useSyncExternalStore, type ReactNode } from "react";
+import { Fragment, createElement, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from "react";
 import { localeOf, translate, uiLanguage, type Blanks, type Table, type Translate } from "./i18n.ts";
 import { TABLES } from "./i18n-tables.ts";
 import { languageById } from "./languages.ts";
@@ -22,14 +22,8 @@ const subscribe = (listener: () => void) => {
   return () => listeners.delete(listener);
 };
 
-/**
- * Shows Flash in the language saved in Settings ("" is Automatic: the browser's language when Flash
- * has it). Resolves once its table is loaded, so the first screen is already in it. A table that
- * can't load (offline) leaves Flash in English.
- */
-export async function showLanguage(saved: unknown): Promise<void> {
-  const language = uiLanguage(saved, typeof navigator === "undefined" ? [] : navigator.languages);
-  const turn = ++latest;
+/** A language's table, loaded once; null for English, or when it can't load (offline). */
+async function tableFor(language: string): Promise<Table | null> {
   let table = loaded.get(language) ?? null;
   if (!table && TABLES[language]) {
     try {
@@ -39,6 +33,18 @@ export async function showLanguage(saved: unknown): Promise<void> {
       table = null;
     }
   }
+  return table;
+}
+
+/**
+ * Shows Flash in the language saved in Settings ("" is Automatic: the browser's language when Flash
+ * has it). Resolves once its table is loaded, so the first screen is already in it. A table that
+ * can't load (offline) leaves Flash in English.
+ */
+export async function showLanguage(saved: unknown): Promise<void> {
+  const language = uiLanguage(saved, typeof navigator === "undefined" ? [] : navigator.languages);
+  const turn = ++latest;
+  const table = await tableFor(language);
   if (turn !== latest) return;
   const next: Shown = table ? { language, table } : ENGLISH;
   if (next.language === shown.language && next.table === shown.table) return;
@@ -90,3 +96,26 @@ export function useBrowserLanguage(): void {
     void showLanguage("");
   }, []);
 }
+
+/**
+ * t for one part of a page that otherwise stays in English, like the Report form on a shared chat:
+ * the browser's language when Flash has it. The rest of the page keeps its language and direction,
+ * so that part sets its own lang and dir (see textDirection).
+ */
+export function useBrowserT(): T {
+  const [own, setOwn] = useState<Shown>(ENGLISH);
+  useEffect(() => {
+    let live = true;
+    const language = uiLanguage("", navigator.languages);
+    void tableFor(language).then((table) => {
+      if (live && table) setOwn({ language, table });
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+  return useMemo(() => (own === ENGLISH ? englishT : translator(own)), [own]);
+}
+
+/** Which way a language is written, for an element's dir. */
+export const textDirection = (language: string): "rtl" | "ltr" => (languageById(language)?.rtl ? "rtl" : "ltr");

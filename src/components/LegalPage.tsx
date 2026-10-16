@@ -31,6 +31,10 @@ export function LegalPage({ title, updated, children }: { title: string; updated
           <span>
             {TRADEMARK} is a trademark of {COMPANY}
           </span>
+          {/* A full page load: /report follows the browser's language, which shouldn't stay on this page after Back. */}
+          <a href="/report" className="mt-2 w-fit text-zinc-400 hover:text-zinc-200">
+            Report content
+          </a>
         </footer>
       </div>
     </div>
