@@ -13,6 +13,8 @@ import { one, run, all, now } from "./db.ts";
 import { randomId, sha256 } from "./ids.ts";
 import { hashPassword, verifyPassword } from "./auth.ts";
 import { overLimit } from "./limits.ts";
+import { noteContact } from "./contacts.ts";
+import { EMAIL, cleanName } from "../contacts.ts";
 
 export const SITE_COOKIE = "flash_app_session";
 const SESSION_DAYS = 30;
@@ -33,8 +35,6 @@ export const MIN_PASSWORD = 8;
 export const MAX_SITE_USERS = 5000;
 
 export type SiteVisitor = { id: string; email: string; name: string };
-
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 /** The people signed up to an app, newest first, for its owner. */
 export async function listSiteUsers(slug: string, limit = 500): Promise<(SiteVisitor & { createdAt: number })[]> {
@@ -194,6 +194,8 @@ export async function siteAuth(
       slug,
     ]);
     if (!made.rowsAffected) return outcome("no-app");
+    // A new member goes on the app's contact list; one that can't be saved never stops the sign-up.
+    await noteContact(slug, { email, name: cleanName(name), phone: "" }, { source: "signup", at: now() }).catch((err) => console.error("[flash] contact not saved", err));
     return signedIn(id, slug, path, secure);
   }
   if (!existing || !(await verifyPassword(password, existing.password_hash))) return outcome("wrong");

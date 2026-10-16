@@ -6,6 +6,8 @@ import { domainsForSite } from "./domains.ts";
 import { randomId } from "./ids.ts";
 import { overLimit } from "./limits.ts";
 import { EMAILS, sendEmail } from "./email.ts";
+import { noteContact } from "./contacts.ts";
+import { cleanContact } from "../contacts.ts";
 import { MAX_QUANTITY, MIN_PRICE, SELLER_COUNTRIES, cleanItemName, formatMoney, safeReturn, saleFee, toMinor } from "../shop.ts";
 import { english, type Translate } from "../i18n.ts";
 
@@ -285,26 +287,32 @@ function addressText(s: Session): string {
     .join(", ");
 }
 
-/** Saves a paid order once; true when it is new. */
+/** Saves a paid order once, with its buyer on the app's contact list; true when it is new. */
 async function recordOrder(slug: string, s: Session): Promise<boolean> {
   if (s.payment_status !== "paid" || s.metadata?.flash_site !== slug) return false;
+  const item = s.metadata.flash_item ?? "";
+  const created = s.created ? s.created * 1000 : now();
   const res = await run(
     `INSERT INTO site_orders (session_id, site_slug, item, quantity, amount, currency, email, name, address, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(session_id) DO NOTHING`,
     [
       s.id,
       slug,
-      s.metadata.flash_item ?? "",
+      item,
       s.line_items?.data?.[0]?.quantity ?? 1,
       s.amount_total ?? 0,
       s.currency ?? "",
       s.customer_details?.email ?? "",
       s.customer_details?.name ?? "",
       addressText(s),
-      s.created ? s.created * 1000 : now(),
+      created,
     ],
   );
-  return res.rowsAffected > 0;
+  if (!res.rowsAffected) return false;
+  // Paying isn't agreeing to news, so no consent is kept. A contact that can't be saved never stops the order.
+  const buyer = cleanContact({ email: s.customer_details?.email, name: s.customer_details?.name, phone: s.customer_details?.phone });
+  if (buyer) await noteContact(slug, buyer, { source: `order:${item.slice(0, 60)}`, at: created }).catch((err) => console.error("[flash] contact not saved", err));
+  return true;
 }
 
 /**

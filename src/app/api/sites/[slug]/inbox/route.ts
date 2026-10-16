@@ -21,7 +21,7 @@ export function OPTIONS() {
 /** A visitor sends a form to the site's owner (window.flashDB.send). */
 export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug]/inbox">) {
   const { slug } = await ctx.params;
-  const body = (await request.json().catch(() => ({}))) as { form?: unknown; data?: unknown };
+  const body = (await request.json().catch(() => ({}))) as { form?: unknown; data?: unknown; consent?: unknown };
   const result = await receiveMessage(slug, body, clientIp(request), appUrl(request));
   if ("error" in result) return Response.json({ error: result.error }, { status: result.status, headers: CORS });
   return Response.json({ ok: true }, { headers: CORS });
