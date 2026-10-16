@@ -18,6 +18,8 @@ import { Creations } from "./Creations";
 import { Companion } from "./Companion";
 import { Templates } from "./Templates";
 import { MyApps } from "./MyApps";
+import { BuildPanel, useMedia } from "./BuildPanel";
+import { draftStore } from "@/lib/live-draft";
 import { OFFICE_TYPES, officeKind, officeText } from "@/lib/office";
 import { MAX_PDF_MB, pdfText } from "@/lib/pdf-text";
 import { addAttachment } from "@/lib/attachments";
@@ -282,6 +284,16 @@ export function Flash({
   const attachment = files[0] ?? null;
   const [busy, setBusy] = useState(false);
   const [companion, setCompanion] = useState(false);
+  // The file Flash is writing, for the live preview (see live-draft.ts). It's kept out of the chat's
+  // state, so only the preview draws again as the file grows, and it's never saved.
+  const [drafts] = useState(draftStore);
+  // The preview beside the chat, hidden with its button until the next build; on a phone or a narrow
+  // window, whether the chat or the preview shows.
+  const [panelHidden, setPanelHidden] = useState(false);
+  const [phoneTab, setPhoneTab] = useState<"chat" | "preview">("chat");
+  // Wide enough for the preview beside the chat, and for it and the open companion both.
+  const wide = useMedia("(min-width: 1280px)");
+  const roomy = useMedia("(min-width: 1760px)");
   // Installing Flash from "Everything Flash can do" or the search; nothing to install inside the installed app.
   const install = useInstall();
   // The Ask Flash button can be hidden in Settings > Capabilities (read after mount: it lives on the device).
@@ -674,6 +686,7 @@ export function Flash({
   async function openProject(id: string) {
     setActiveId(id);
     setSidebar(false);
+    setPhoneTab("chat");
     if (projects.find((p) => p.id === id)?.messages) return;
     try {
       const { project } = await api<{ project: Project }>(`/api/projects/${id}`);
@@ -745,6 +758,7 @@ export function Flash({
   function goHome() {
     setActiveId("");
     setSidebar(false);
+    setPhoneTab("chat");
   }
 
   /** AI Chat in the sidebar: the latest chat, or the message box on Home when there's none yet. */
@@ -893,6 +907,8 @@ export function Flash({
   function pickApp(kind: "app" | "slides", part: PickedElement) {
     if (!active) return;
     setPicked({ projectId: active.id, kind, label: part.label, context: pickedContext(part) });
+    // Back to the chat on a phone, where the part shows above the message box.
+    setPhoneTab("chat");
     inputRef.current?.focus();
   }
 
@@ -1053,6 +1069,8 @@ export function Flash({
    * being made is finished), the reply is left to the server and shows here once it's saved.
    */
   function stop() {
+    // The file being written is taken away at once: a stopped build keeps nothing of it.
+    drafts.clear();
     const controller = abortRef.current;
     const tell = () => api("/api/chat/stop", { method: "POST", json: { replyId: runningReply }, keepalive: true });
     if (!runningReply || !acceptedRef.current) {
@@ -1229,10 +1247,19 @@ export function Flash({
         for (const line of lines) {
           if (!line.trim()) continue;
           const e = JSON.parse(line) as StreamEvent;
+          if (e.type === "draft") {
+            // The file being written goes to the live preview only, never onto the reply, so it's never saved.
+            if (!stoppingRef.current) drafts.apply(reply.id, e);
+            continue;
+          }
           if (e.type === "error" || e.type === "stopped") finished = false;
           if (e.type === "done") ended = true;
+          // A new build shows the preview beside the chat again.
+          if (e.type === "route" && (e.engine === "app" || e.engine === "slides")) setPanelHidden(false);
           final = applyEvent(final, e);
           updateMessage(projectId, reply.id, (m) => applyEvent(m, e));
+          // The finished file replaces the draft in the same redraw.
+          if (e.type === "app" || e.type === "stopped" || e.type === "done") drafts.clear(reply.id);
           // Once Stop is pressed, a voice conversation says nothing more of it.
           if (e.type === "text" && !stoppingRef.current) progress?.(final);
         }
@@ -1263,6 +1290,8 @@ export function Flash({
       updateMessage(projectId, reply.id, outcome);
       final = outcome(final);
     } finally {
+      // However the reply ended (finished, failed, lost or left to the server), its draft goes.
+      drafts.clear(reply.id);
       if (!onServer) updateMessage(projectId, reply.id, (m) => ({ ...m, pending: false, status: undefined }));
       refreshMe();
       abortRef.current = null;
@@ -1576,8 +1605,13 @@ export function Flash({
   // What's typed reads as a change to the picture Flash just made, so the picture goes with it.
   const above = pictureAbove(active?.messages);
   const changingPicture = !files.length && !pickedNow && Boolean(followUpPicture(active?.messages, input, choice, keepPicture));
-  // Flash builds on the most recent app in the chat.
-  const lastAppId = active?.messages?.findLast((m) => m.app)?.id;
+  // Flash builds on the most recent app in the chat, which the live preview shows.
+  const appIndex = active?.messages?.findLastIndex((m) => m.app) ?? -1;
+  const appMsg = appIndex === -1 ? undefined : active?.messages?.[appIndex];
+  const lastAppId = appMsg?.id;
+  // The app or deck Flash is writing in the open chat right now, until its file arrives.
+  const lastMsg = active?.messages?.at(-1);
+  const building = lastMsg?.pending && !lastMsg.app && (lastMsg.engine === "app" || lastMsg.engine === "slides") ? lastMsg : undefined;
   const liveCount = ENGINES.filter(isLive).length;
   const allOff = status && !liveCount;
 
@@ -1629,6 +1663,28 @@ export function Flash({
 
   // Home shows until the open chat has messages: on a fresh start, after Home or New chat, and while a first message is on its way.
   const isHome = !active || active.messages?.length === 0;
+  // The live preview of the chat's latest app, and of the one being written: beside the chat on a wide
+  // screen when the open companion leaves room for both, else under a Chat / Preview switch, which
+  // shows the chat whenever there's nothing to preview.
+  const showPanel = !isHome && Boolean(appMsg || building);
+  const beside = showPanel && wide && (!companion || roomy);
+  const tab = showPanel && !beside ? phoneTab : "chat";
+  const panelShown = beside && !panelHidden;
+  const showPreview = () => (beside ? setPanelHidden(false) : setPhoneTab("preview"));
+  const panel = showPanel && (
+    <BuildPanel
+      drafts={drafts}
+      appMsg={appMsg}
+      publishedEarlier={appMsg?.app && !appMsg.app.slug ? active?.messages?.slice(0, appIndex).findLast((x) => x.app?.slug)?.app?.slug : undefined}
+      building={building}
+      live={Boolean(building) && building?.id === runningReply}
+      busy={busy}
+      onPublished={setAppSlug}
+      onEditCode={editAppCode}
+      onFix={fixApp}
+      onPick={pickApp}
+    />
+  );
   // The connected accounts on in the open chat (or for the chat Home's next message starts).
   const connectorsHere = connectorsOn ? connectorsIn(activeId) : [];
   const connectorsButton = connectorsOn && (
@@ -2244,6 +2300,23 @@ export function Flash({
           ) : (
             <h1 dir="auto" className="min-w-0 flex-1 truncate text-[15px] font-medium text-zinc-100">{active ? projectName(active.name) : <Wordmark />}</h1>
           )}
+          {beside && (
+            <button
+              onClick={() => setPanelHidden((hidden) => !hidden)}
+              aria-controls="flash-preview"
+              aria-expanded={!panelHidden}
+              aria-label={panelHidden ? t("Show preview") : t("Hide preview")}
+              title={panelHidden ? t("Show preview") : t("Hide preview")}
+              className={`inline-flex h-[26px] w-[30px] shrink-0 items-center justify-center rounded-full border transition ${
+                panelHidden ? "border-white/10 text-zinc-200 hover:bg-white/[0.05]" : "border-primary/40 bg-primary/10 text-primary-soft hover:bg-primary/20"
+              }`}
+            >
+              <svg viewBox="0 0 24 24" className="h-3.5 w-3.5 rtl:-scale-x-100" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                <rect x="3" y="4" width="18" height="16" rx="2" />
+                <path d="M14 4v16" />
+              </svg>
+            </button>
+          )}
           {active?.messages && (
             <button
               onClick={() => setShowInstructions(true)}
@@ -2259,7 +2332,8 @@ export function Flash({
               <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                 <path d="M4 6h16 M4 12h10 M4 18h7 M17 15l2 2 4-4" />
               </svg>
-              <span className="hidden sm:inline">{active.instructions ? t("Instructions on") : t("Instructions")}</span>
+              {/* Words only when the chat column has room: beside the preview it's narrower than the screen. */}
+              <span className="hidden @min-[700px]/main:inline">{active.instructions ? t("Instructions on") : t("Instructions")}</span>
             </button>
           )}
           {active?.messages?.some((m) => !m.pending) && <DownloadChat project={active} disabled={busy} />}
@@ -2274,7 +2348,7 @@ export function Flash({
               <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                 <path d="M12 15V3 M7 8l5-5 5 5 M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" />
               </svg>
-              <span className="hidden sm:inline">{t("Share")}</span>
+              <span className="hidden @min-[700px]/main:inline">{t("Share")}</span>
             </button>
           )}
           <button
@@ -2385,7 +2459,32 @@ export function Flash({
         />
       )}
 
-        <div className={`min-h-0 flex-1 overflow-y-auto ${isHome ? "[mask-image:linear-gradient(to_bottom,transparent,#000_16px)]" : ""}`}>
+        {showPanel && !beside && (
+          // On a phone or a narrow window, the chat or the preview, with the message box under both.
+          <div className="flex h-11 shrink-0 items-center justify-center px-4">
+            <div role="tablist" aria-label={t("Preview")} className="flex rounded-md border border-zinc-800 text-xs text-zinc-400">
+              {(["chat", "preview"] as const).map((v) => (
+                <button
+                  key={v}
+                  role="tab"
+                  aria-selected={tab === v}
+                  aria-controls={v === "preview" ? "flash-preview" : undefined}
+                  onClick={() => setPhoneTab(v)}
+                  className={`inline-flex min-w-24 items-center justify-center gap-1.5 px-4 py-1.5 ${tab === v ? "bg-primary/15 text-primary-soft" : "hover:text-zinc-200"}`}
+                >
+                  {v === "chat" ? t("Conversation") : t("Preview")}
+                  {v === "preview" && building && <span className="h-1.5 w-1.5 motion-safe:animate-pulse rounded-full bg-emerald-400" aria-hidden />}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        <div className="relative flex min-h-0 flex-1 flex-col">
+        {/* Under the preview on a phone, the chat keeps its place (and where it was scrolled to) out of sight. */}
+        <div
+          inert={tab === "preview"}
+          className={`min-h-0 flex-1 overflow-y-auto ${tab === "preview" ? "invisible" : ""} ${isHome ? "[mask-image:linear-gradient(to_bottom,transparent,#000_16px)]" : ""}`}
+        >
           {(notice || !me.verified || allOff) && (
             <div className={`mx-auto space-y-3 px-4 pt-2 ${isHome ? "max-w-[1600px] sm:px-6 lg:px-8" : "max-w-3xl"}`}>
             {notice && (
@@ -2471,11 +2570,25 @@ export function Flash({
                   onContinue={
                     i === all.length - 1 && !m.pending && !busy && active && continuable(m, active.id).length ? () => continueWith(m.id) : undefined
                   }
+                  // The latest app runs in the live preview only, so it's never two copies with their own state.
+                  onShowApp={m.id === lastAppId || (m.id === building?.id && !panelShown) ? showPreview : undefined}
+                  appShown={m.id === lastAppId && (panelShown || tab === "preview")}
                 />
               ))}
               <div ref={bottomRef} />
             </div>
           )}
+        </div>
+        {showPanel && !beside && (
+          // Kept in place while the chat shows, so the app keeps its state between looks.
+          <section
+            id="flash-preview"
+            aria-label={t("Preview")}
+            className={`${tab === "preview" ? "flex" : "hidden"} absolute inset-x-3 inset-y-1 flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900`}
+          >
+            {panel}
+          </section>
+        )}
         </div>
 
         {(!isHome || voice) && (
@@ -2496,7 +2609,18 @@ export function Flash({
         <input ref={cameraRef} type="file" accept="image/*" capture="environment" hidden onChange={onFile} />
       </main>
 
-      {(!hideCompanion || companion) && (
+      {beside && (
+        // Not the glass utility: its backdrop filter would hold the app's full screen inside the panel.
+        <section
+          id="flash-preview"
+          aria-label={t("Preview")}
+          className={`${panelHidden ? "hidden" : "flex"} my-3 me-3 w-[clamp(26rem,36vw,40rem)] shrink-0 flex-col overflow-hidden rounded-[26px] border border-[var(--glass-line)] [background-image:var(--glass-1)] shadow-[var(--glass-shadow)]`}
+        >
+          {panel}
+        </section>
+      )}
+
+      {(!hideCompanion || companion) && !(tab === "preview" && !companion) && (
       <Companion
         open={companion}
         onOpen={() => setCompanion(true)}
@@ -2506,6 +2630,7 @@ export function Flash({
         onPage={openCompanionPage}
         onCost={refreshMe}
         running={busy ? { engine: runningMsg?.engine, status: runningMsg?.status } : null}
+        beside={panelShown}
       />
       )}
     </div>

@@ -8,6 +8,7 @@
  */
 import { isDocument } from "./build-parse.ts";
 import { hasPieces } from "./edit-blocks.ts";
+import { msg } from "./i18n.ts";
 import type { StreamEvent } from "./types.ts";
 
 export type DraftEvent = Extract<StreamEvent, { type: "draft" }>;
@@ -74,4 +75,168 @@ export function draftSender({ base, now = Date.now }: { base: boolean; now?: () 
       return e;
     },
   };
+}
+
+// ---- The page's half: keeping the draft, and showing it without running any of it. ----
+
+export type Draft = { reply: string; html: string; frozen: boolean };
+const NO_DRAFT: Draft = { reply: "", html: "", frozen: false };
+
+/**
+ * The draft of the reply being written, for useSyncExternalStore: only the live preview reads it,
+ * so the chat never renders again for a draft. A draft that misses a piece stops growing (frozen)
+ * but stays on show, as what it holds is still the start of the file.
+ */
+export function draftStore() {
+  let draft = NO_DRAFT;
+  const listeners = new Set<() => void>();
+  const set = (next: Draft) => {
+    draft = next;
+    for (const listener of listeners) listener();
+  };
+  return {
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => void listeners.delete(listener);
+    },
+    get: () => draft,
+    /** One draft event of the reply replyId. */
+    apply(replyId: string, e: DraftEvent) {
+      const now = draft.reply === replyId ? draft : { ...NO_DRAFT, reply: replyId };
+      if (e.at === 0) {
+        if (e.delta.length <= DRAFT_MAX && (now !== draft || now.html !== e.delta || now.frozen)) set({ reply: replyId, html: e.delta, frozen: false });
+        return;
+      }
+      if (now.frozen) return;
+      if (e.at === now.html.length && now.html.length + e.delta.length <= DRAFT_MAX) set({ ...now, html: now.html + e.delta });
+      else set({ ...now, frozen: true });
+    },
+    /** Takes the draft away: only replyId's when given. */
+    clear(replyId?: string) {
+      if (draft === NO_DRAFT || (replyId !== undefined && draft.reply !== replyId)) return;
+      set(NO_DRAFT);
+    },
+  };
+}
+export type DraftStore = ReturnType<typeof draftStore>;
+export const NO_DRAFT_YET = NO_DRAFT;
+
+/** Where the next "<tag" opens in lower (the page in lowercase), from index from, or -1. */
+function tagAt(lower: string, tag: string, from: number): number {
+  for (let i = lower.indexOf(`<${tag}`, from); i !== -1; i = lower.indexOf(`<${tag}`, i + 1)) {
+    const after = lower.charAt(i + tag.length + 1);
+    if (after === "" || /[\s/>]/.test(after)) return i;
+  }
+  return -1;
+}
+
+/** Each whole <tag …> in lower, as what is inside the brackets. Plain searches, so a long draft stays quick. */
+function* tagsIn(lower: string, tag: string, from = 0): Generator<string> {
+  for (let i = tagAt(lower, tag, from); i !== -1; i = tagAt(lower, tag, i + 1)) {
+    const end = lower.indexOf(">", i);
+    if (end === -1) return;
+    yield lower.slice(i, end);
+  }
+}
+
+/**
+ * The draft as markup to show while it is written. Nothing in it can run (the frame has no
+ * scripts), so its scripts are left out, as are noscript blocks (they'd show with scripts off) and
+ * a meta refresh; it ends before a tag, comment or script still being written; and its links
+ * open nothing, so a tap never takes the frame away from the draft.
+ */
+export function draftView(html: string): string {
+  const lower = html.toLowerCase();
+  let out = "";
+  let at = 0;
+  // Each found once and reused while it's still ahead, so a page with many scripts stays quick.
+  let script = -2;
+  let noscript = -2;
+  for (;;) {
+    if (script !== -1 && script < at) script = tagAt(lower, "script", at);
+    if (noscript !== -1 && noscript < at) noscript = tagAt(lower, "noscript", at);
+    const start = script === -1 ? noscript : noscript === -1 ? script : Math.min(script, noscript);
+    if (start === -1) {
+      out += html.slice(at);
+      break;
+    }
+    out += html.slice(at, start);
+    const tag = start === script ? "script" : "noscript";
+    const close = lower.indexOf(`</${tag}`, start);
+    const end = close === -1 ? -1 : lower.indexOf(">", close);
+    // Not closed yet: the draft ends here for now.
+    if (end === -1) break;
+    at = end + 1;
+  }
+  // A meta refresh would take the frame to another page.
+  let kept = "";
+  let from = 0;
+  const lowerKept = out.toLowerCase();
+  for (let i = tagAt(lowerKept, "meta", 0); i !== -1; i = tagAt(lowerKept, "meta", i + 1)) {
+    const end = lowerKept.indexOf(">", i);
+    if (end === -1) break;
+    if (/http-equiv\s*=\s*["']?\s*refresh/.test(lowerKept.slice(i, end))) {
+      kept += out.slice(from, i);
+      from = end + 1;
+    }
+  }
+  out = kept + out.slice(from);
+  // A comment, then a tag, still being written.
+  const comment = out.lastIndexOf("<!--");
+  if (comment !== -1 && comment > out.lastIndexOf("-->")) out = out.slice(0, comment);
+  const open = out.lastIndexOf("<");
+  if (open !== -1 && open > out.lastIndexOf(">")) out = out.slice(0, open);
+  // Links open a new window, which the frame never may, so they do nothing.
+  const lowerOut = out.toLowerCase();
+  const head = tagAt(lowerOut, "head", 0);
+  const after = head !== -1 ? head : tagAt(lowerOut, "html", 0) !== -1 ? tagAt(lowerOut, "html", 0) : lowerOut.indexOf("<!doctype");
+  const at2 = after === -1 ? 0 : out.indexOf(">", after) + 1;
+  return `${out.slice(0, at2)}<base target="_blank">${out.slice(at2)}`;
+}
+
+// The steps the live preview shows, in order, each reached when the file has got that far (see buildStep).
+export const BUILD_STEPS = [msg("Page layout"), msg("Styles"), msg("Content"), msg("Interactions"), msg("Final checks")] as const;
+
+/** How far the file has got: 0 to 4, an index into BUILD_STEPS. */
+export function buildStep(html: string): number {
+  const lower = html.toLowerCase();
+  if (/id\s*=\s*["']?flash-data\b/.test(lower) || lower.includes("</body") || lower.includes("</html")) return 4;
+  const body = tagAt(lower, "body", 0);
+  if (body !== -1) {
+    // A script in the page itself, not a library in the head or the app's data block.
+    for (const script of tagsIn(lower, "script", body)) {
+      if (!/type\s*=\s*["']?application\/(?:ld\+)?json/.test(script)) return 3;
+    }
+    return 2;
+  }
+  if (["header", "nav", "main", "section"].some((tag) => tagAt(lower, tag, 0) !== -1)) return 2;
+  if (tagAt(lower, "style", 0) !== -1 || lower.includes("cdn.tailwindcss") || lower.includes("fonts.googleapis")) return 1;
+  for (const link of tagsIn(lower, "link")) if (link.includes("stylesheet")) return 1;
+  return 0;
+}
+
+const ENTITIES: Record<string, string> = { "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'", "&nbsp;": " " };
+
+/** The words of the last heading written (h1 to h3), for "Writing: …"; "" when there is none. */
+export function writingPart(html: string): string {
+  const tail = html.slice(-20_000);
+  const lower = tail.toLowerCase();
+  let last = -1;
+  for (const level of ["h1", "h2", "h3"]) {
+    for (let i = tagAt(lower, level, 0); i !== -1; i = tagAt(lower, level, i + 1)) last = Math.max(last, i);
+  }
+  if (last === -1) return "";
+  const open = tail.indexOf(">", last);
+  if (open === -1) return "";
+  const close = lower.indexOf("</h", open);
+  // A heading is short: what's past this is never shown.
+  let inside = tail.slice(open + 1, close === -1 ? undefined : close).slice(0, 2_000);
+  const partial = inside.lastIndexOf("<");
+  if (partial > inside.lastIndexOf(">")) inside = inside.slice(0, partial);
+  const words = inside
+    .replace(/<[^>]*>/g, "")
+    .replace(/&(?:amp|lt|gt|quot|#39|nbsp);/g, (e) => ENTITIES[e])
+    .replace(/\s+/g, " ")
+    .trim();
+  return words.length > 40 ? `${words.slice(0, 40).trimEnd()}…` : words;
 }

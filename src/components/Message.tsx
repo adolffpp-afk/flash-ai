@@ -359,6 +359,31 @@ function UserMessage({ m, onEdit }: { m: UIMessage; onEdit?: (text: string) => v
   );
 }
 
+/** The latest app in the chat, which runs in the live preview: one line here that opens it there. */
+function AppCard({ title, kind, shown, onShow }: { title: string; kind: "app" | "slides"; shown: boolean; onShow: () => void }) {
+  const t = useT();
+  return (
+    <div className="mt-3 flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2.5 text-sm">
+      <span className="flex shrink-0 gap-1" aria-hidden>
+        <span className="h-2.5 w-2.5 rounded-full bg-spark/80" />
+        <span className="h-2.5 w-2.5 rounded-full bg-gold/80" />
+        <span className="h-2.5 w-2.5 rounded-full bg-primary/80" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate font-medium text-zinc-100">{title}</span>
+        <span className="block text-xs text-zinc-500">{kind === "slides" ? t("Slides") : t("App")}</span>
+      </span>
+      {shown ? (
+        <span className="shrink-0 text-xs text-zinc-500">{t("Showing in preview")}</span>
+      ) : (
+        <button onClick={onShow} className="shrink-0 rounded-md border border-zinc-700 px-2.5 py-1 text-xs text-zinc-100 transition hover:border-primary/50 hover:bg-zinc-800">
+          {t("Preview")}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function Message({
   m,
   onRetry,
@@ -374,6 +399,8 @@ export function Message({
   onPickApp,
   onAction,
   onContinue,
+  onShowApp,
+  appShown,
   paymentsOn = true,
   language,
 }: {
@@ -402,6 +429,11 @@ export function Message({
   // A connector call's card was answered (approved, cancelled), and Continue writes on with its result.
   onAction?: (card: ActionCardData) => void;
   onContinue?: (card: ActionCardData) => void;
+  // The app shows in the live preview beside the chat (or under Preview on a phone): here it's a
+  // card that opens it there, and appShown says it's on show already. On a build being written,
+  // it's a button to watch it there.
+  onShowApp?: () => void;
+  appShown?: boolean;
 }) {
   const t = useT();
   if (m.role === "user") return <UserMessage m={m} onEdit={onEdit} />;
@@ -456,6 +488,15 @@ export function Message({
             {m.status}
           </div>
         )}
+        {m.pending && !m.app && onShowApp && (
+          <button
+            onClick={onShowApp}
+            className="mt-2 inline-flex items-center gap-2 rounded-full border border-primary/40 bg-primary/10 px-3 py-1 text-xs text-primary-soft transition hover:bg-primary/20"
+          >
+            <span className="h-1.5 w-1.5 motion-safe:animate-pulse rounded-full bg-emerald-400" aria-hidden />
+            {t("Watch it being built")}
+          </button>
+        )}
         {m.pending && !m.status && !m.content && !m.images?.length && (
           <div className="flex gap-1 py-3" aria-label={t("Thinking")}>
             <span className="h-2 w-2 animate-bounce rounded-full bg-zinc-500" />
@@ -505,7 +546,9 @@ export function Message({
             ),
           )}
         </div>
-        {m.app && (
+        {m.app && onShowApp ? (
+          <AppCard title={m.app.title} kind={m.app.kind} shown={Boolean(appShown)} onShow={onShowApp} />
+        ) : m.app && (
           <AppPreview
             app={m.app}
             onPublished={onPublished}

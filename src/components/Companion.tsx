@@ -47,6 +47,7 @@ export function Companion({
   onPage,
   onCost,
   running,
+  beside = false,
 }: {
   open: boolean;
   onOpen: () => void;
@@ -60,6 +61,8 @@ export function Companion({
   onCost: () => void;
   // What Flash is doing in the chat right now, for the line at the top of the panel.
   running: { engine?: string; status?: string } | null;
+  // The live preview is beside the chat, so the closed button sits at the chat's edge, not over it.
+  beside?: boolean;
 }) {
   const t = useT();
   const [lines, setLines] = useState<Line[]>([]);
@@ -170,7 +173,9 @@ export function Companion({
         onClick={onOpen}
         aria-label={t("Ask Flash")}
         title={t("Ask the companion anything, even while Flash is working")}
-        className="fixed bottom-36 end-4 z-30 inline-flex items-center gap-2 rounded-full border border-primary/40 bg-zinc-900/90 px-3.5 py-2 text-sm text-zinc-100 shadow-lg shadow-black/40 backdrop-blur transition hover:border-primary hover:bg-zinc-900 sm:bottom-6 light:border-transparent light:bg-brand light:text-on-brand light:shadow-black/15"
+        // Beside the preview: at the chat's edge, above the message box. The clamp is the preview's
+        // width (see Flash.tsx), plus its margin and the button's own.
+        className={`fixed ${beside ? "bottom-44 end-[calc(clamp(26rem,36vw,40rem)+1.75rem)]" : "bottom-36 end-4 sm:bottom-6"} z-30 inline-flex items-center gap-2 rounded-full border border-primary/40 bg-zinc-900/90 px-3.5 py-2 text-sm text-zinc-100 shadow-lg shadow-black/40 backdrop-blur transition hover:border-primary hover:bg-zinc-900 light:border-transparent light:bg-brand light:text-on-brand light:shadow-black/15`}
       >
         <LogoMark size={18} />
         <span className="hidden sm:inline">{t("Ask Flash")}</span>

@@ -1,6 +1,18 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { DRAFT_CHUNK, DRAFT_EVERY_MS, DRAFT_MAX, draftSender, sendable, type DraftEvent } from "../src/lib/live-draft.ts";
+import {
+  BUILD_STEPS,
+  DRAFT_CHUNK,
+  DRAFT_EVERY_MS,
+  DRAFT_MAX,
+  buildStep,
+  draftSender,
+  draftStore,
+  draftView,
+  sendable,
+  writingPart,
+  type DraftEvent,
+} from "../src/lib/live-draft.ts";
 import { splitBuild } from "../src/lib/build-parse.ts";
 
 const PAGE = `<!doctype html>
@@ -116,4 +128,81 @@ test("a file that turns out to be pieces takes back what was shown, once", () =>
   assert.ok(events.length >= 2);
   assert.deepEqual(events.at(-1), { type: "draft", at: 0, delta: "" }, "cleared");
   assert.equal(events.filter((e) => e.at === 0 && e.delta === "").length, 1, "and nothing after");
+});
+
+const draft = (at: number, delta: string): DraftEvent => ({ type: "draft", at, delta });
+
+test("the page keeps one reply's draft: it grows piece by piece, starts over at 0, and stops growing at a gap", () => {
+  const store = draftStore();
+  let renders = 0;
+  store.subscribe(() => renders++);
+  const empty = store.get();
+  assert.deepEqual(empty, { reply: "", html: "", frozen: false });
+  store.apply("r1", draft(0, "<!doctype html>"));
+  store.apply("r1", draft(15, "<body>"));
+  assert.deepEqual(store.get(), { reply: "r1", html: "<!doctype html><body>", frozen: false });
+  const shown = store.get();
+  assert.equal(store.get(), shown, "the same snapshot while nothing changes");
+  store.apply("r1", draft(99, "<p>lost</p>"));
+  assert.equal(store.get().frozen, true, "a missed piece stops the draft");
+  assert.equal(store.get().html, "<!doctype html><body>", "but what it has stays on show");
+  store.apply("r1", draft(21, "<p>late</p>"));
+  assert.equal(store.get().html, "<!doctype html><body>", "nothing joins a stopped draft");
+  store.apply("r1", draft(0, "<!doctype html>"));
+  assert.deepEqual(store.get(), { reply: "r1", html: "<!doctype html>", frozen: false }, "at 0 starts it over");
+  store.apply("r2", draft(0, "<html>"));
+  assert.equal(store.get().reply, "r2", "another reply starts its own");
+  const before = renders;
+  store.clear("r1");
+  assert.equal(store.get().html, "<html>", "clearing another reply's draft does nothing");
+  assert.equal(renders, before);
+  store.clear("r2");
+  assert.equal(store.get().html, "");
+  store.apply("r3", draft(0, "x".repeat(DRAFT_MAX - 1)));
+  store.apply("r3", draft(DRAFT_MAX - 1, "yy"));
+  assert.equal(store.get().html.length, DRAFT_MAX - 1, "never past 400 KB");
+  assert.equal(store.get().frozen, true);
+  store.clear();
+  assert.equal(store.get().html, "");
+});
+
+test("a draft is shown with nothing in it that runs, and ends before anything half-written", () => {
+  const view = draftView(
+    '<!DOCTYPE html><html><head><meta http-equiv="Refresh" content="0;url=https://elsewhere.example"><title>T</title></head><body>' +
+      "<h1>Hi</h1><SCRIPT>alert(1)</SCRIPT><svg><script>alert(2)</script></svg><noscript><p>Turn on scripts</p></noscript><p>After</p>",
+  );
+  assert.ok(!/script|refresh|Turn on scripts|alert/i.test(view), view);
+  assert.match(view, /<h1>Hi<\/h1>/);
+  assert.match(view, /<p>After<\/p>$/);
+  assert.match(view, /^<!DOCTYPE html><html><head><base target="_blank">/, "links open nothing");
+  // An unclosed script, comment or tag: the draft ends before it.
+  assert.equal(draftView("<head></head><p>One</p><script>let a = '<p>not shown</p>"), '<head><base target="_blank"></head><p>One</p>');
+  assert.equal(draftView("<head></head><p>One</p><!-- a note <p>"), '<head><base target="_blank"></head><p>One</p>');
+  assert.equal(draftView('<head></head><p>One</p><a href="#/menu" cla'), '<head><base target="_blank"></head><p>One</p>');
+  assert.equal(draftView("<head></head><p>Words being writ"), '<head><base target="_blank"></head><p>Words being writ', "text already written stays");
+  assert.equal(draftView("<head></head><p>a</p><!-- done --><p>b"), '<head><base target="_blank"></head><p>a</p><!-- done --><p>b');
+  assert.equal(draftView("<!doctype html><body>x"), '<!doctype html><base target="_blank"><body>x');
+  assert.ok(draftView("<header>not the head</header>").startsWith('<base target="_blank"><header>'));
+});
+
+test("the build steps follow how far the file has got", () => {
+  const steps = (html: string) => BUILD_STEPS[buildStep(html)];
+  assert.equal(steps(""), "Page layout");
+  assert.equal(steps("<!doctype html><html><head><title>Shop</title>"), "Page layout");
+  assert.equal(steps("<head><style>body{margin:0}"), "Styles");
+  assert.equal(steps('<head><link rel="stylesheet" href="x.css">'), "Styles");
+  assert.equal(steps('<head><script src="https://cdn.tailwindcss.com"></script></head>'), "Styles", "a library in the head isn't the app's own script");
+  assert.equal(steps("<head></head><body><h1>Shop</h1>"), "Content");
+  assert.equal(steps("<head></head><body><h1>Shop</h1><script>const cart = [];"), "Interactions");
+  assert.equal(steps('<body><script type="application/ld+json">{}</script>'), "Content");
+  assert.equal(steps('<body><script>go()</script>\n<script type="application/json" id="flash-data">{"menu": "read"}'), "Final checks");
+  assert.equal(steps("<body><main></main></body>"), "Final checks");
+});
+
+test("the part being written is the last heading's words", () => {
+  assert.equal(writingPart("<h1>Golden Crumb</h1><p>x</p><h2 class=\"t\">Our <em>fresh</em> &amp; warm loaves</h2>"), "Our fresh & warm loaves");
+  assert.equal(writingPart("<h1>Golden Crumb</h1><section><h3>Opening ho"), "Opening ho");
+  assert.equal(writingPart("<h2>A heading that goes on far longer than any heading should</h2>"), "A heading that goes on far longer than a…");
+  assert.equal(writingPart("<p>No heading here</p><header>x</header>"), "");
+  assert.equal(writingPart("<h2>Menu <span cla"), "Menu");
 });
