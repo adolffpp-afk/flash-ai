@@ -108,12 +108,13 @@ with the missing names. The "Continue with GitHub" sign-in button is a different
    **Save changes**. GitHub asks people to accept only permissions that are added, so nobody has to
    do anything.
 6. Copy these three things into a note for a minute:
-   - **Client ID**, near the top (it looks like `Iv23li…`). This is `GITHUB_APP_CLIENT_ID`.
-     (Not the "App ID", which is only digits.)
-   - Under **Client secrets**, click **Generate a new client secret** and copy it right away:
+   - **Client ID**, near the top of the **General** page (it looks like `Iv23li…`). This is
+     `GITHUB_APP_CLIENT_ID`. (Not the "App ID", which is only digits.)
+   - The **slug**: the app's own address, shown as **Public link** on the **General** page, ends
+     with it. For `https://github.com/apps/flash-ai` the slug is `flash-ai`. This is `GITHUB_APP_SLUG`.
+   - The client secret, which GitHub keeps on a page of its own: in the app's left menu, click
+     **Credentials**, then under **Client secrets** click **New secret**, and copy it right away:
      GitHub shows it only once. This is `GITHUB_APP_CLIENT_SECRET`.
-   - The **slug**: the app's own address, shown as **Public link**, ends with it. For
-     `https://github.com/apps/flash-ai` the slug is `flash-ai`. This is `GITHUB_APP_SLUG`.
    You don't need a private key: Flash only acts for the person, with what they gave it.
 
 ### Put them in Vercel
@@ -129,8 +130,9 @@ with the missing names. The "Continue with GitHub" sign-in button is a different
 When the deploy is done, /admin → **By provider** → **Connectors** says GitHub is set, and GitHub
 shows in everyone's Settings > Connectors. Delete the note with the secret.
 
-To make a new secret later: on the app's **General** page, generate a new one, put it in Vercel in
-place of the old one, redeploy, and then delete the old secret on GitHub.
+To make a new secret later: on the app's **Credentials** page (in its left menu), under **Client
+secrets**, click **New secret**, put it in Vercel in place of the old one, redeploy, and then delete
+the old secret on that same page.
 
 ### What people see
 
@@ -161,11 +163,11 @@ with **Connect**: Google asks whether Flash may see their email address and "see
 delete only the specific Google Drive files you use with this app" (the `drive.file` permission).
 Then, under their Google Drive account in Settings > Connectors, **Add from Drive** opens Google's own
 file picker, showing only Docs, Sheets, Slides, PDFs and text files. Flash can open only the files
-they pick there, never the rest of their Drive, and Settings lists those files, each with **Forget**.
-In a chat Flash reads a picked file by itself (a Doc or Slides deck as text, a Sheet as CSV, a PDF's
-text). Creating a Doc, Sheet or Slides deck, or adding rows to a picked Sheet, always waits on a card
-for **Approve**, showing the title and everything that will be written. Nothing costs credits except
-the chat itself.
+they pick there and the files Flash made for them, never the rest of their Drive, and Settings lists
+those files, each with **Forget**. In a chat Flash reads a picked file by itself (a Doc or Slides deck
+as text, a Sheet as CSV, a PDF's text). Creating a Doc, Sheet or Slides deck, adding rows to a Sheet
+or adding text to a Doc always waits on a card for **Approve**, showing the title and everything that
+will be written. Nothing costs credits except the chat itself.
 
 Google Drive stays hidden from everyone until all four of its variables below are set (and
 `CONNECTOR_KEYS`). Until then, /admin → **By provider** → **Connectors** shows a **Google Drive**
@@ -244,10 +246,21 @@ project: nothing here needs it, and if a page asks for a billing account, stop a
 4. Add `GOOGLE_CONNECT_PROJECT_NUMBER` with the project number. Choose **Production** only, and save.
 5. Add `GOOGLE_CONNECT_CLIENT_SECRET` with the client secret, tick **Sensitive**, choose
    **Production** only, and save.
-6. Go to **Deployments**, open the latest one, and click **Redeploy**.
+6. Add `MALLOC_ARENA_MAX` with the value `2`. Choose **Production** only (it isn't secret), and
+   save. Flash reads PDFs from Drive in threads of their own, and without this the server keeps
+   memory those threads gave back, a little more each time PDFs are read at the same time, until it
+   refuses to read PDFs ("Flash can't read PDFs right now") until Vercel starts a fresh one. It
+   works only when it is in the environment as the server starts: setting it any other way (in
+   code, say) does nothing.
+7. Go to **Deployments**, open the latest one, and click **Redeploy**. Variables added or changed
+   reach the server only with a new deploy.
 
 When the deploy is done, /admin → **By provider** → **Connectors** says Google Drive is set, and
-Google Drive shows in everyone's Settings > Connectors. Delete the note with the secret.
+Google Drive shows in everyone's Settings > Connectors. Under it, a line says "MALLOC_ARENA_MAX was 2
+when this server started". If it says MALLOC_ARENA_MAX wasn't set, check the variable's name and
+value, and that it is set for Production, then redeploy. (If it still says so, PDFs are still read
+safely, but after many have been read at the same time a server may refuse them for a while, until
+Vercel replaces it.) Delete the note with the secret.
 
 To make a new secret later: in **Google Auth Platform** → **Clients** → `Flash AI web`, click **Add
 secret**, put the new one in Vercel in place of the old one, redeploy, and then disable and delete
@@ -261,6 +274,10 @@ the old secret there.
 - **Add from Drive** opens Google's picker (its script is loaded from Google only then). They pick
   up to 20 files at a time, 100 in all. Flash asks Google about each one and keeps the name and type
   Google gives. **Forget** takes a file off the list; Flash can't open it in chat any more.
+- A Doc, Sheet or deck Flash made after **Approve** is added to that list, so a later reply can read
+  it or add to it. One call holds at most about 15,000 characters, so a longer Doc or Sheet is
+  written in parts: the first card makes it, and after **Continue the answer** each further card
+  adds the next part at its end. A deck can't be added to, so its slides are kept short.
 - Flash keeps their access for about an hour and renews it by itself (one renewal at a time). If
   they cancel Flash at Google, the account shows **Reconnect**.
 - Connecting again as another Google account replaces the account: the files picked in the old one

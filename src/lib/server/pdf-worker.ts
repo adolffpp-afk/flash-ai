@@ -5,7 +5,8 @@ import { pageText } from "../pdf-text.ts";
  * Reads a PDF's text in its own thread for pdf-server.ts, which stops this thread when it runs past
  * its time or memory. pdf.js's own worker runs here too (globalThis.pdfjsWorker), so nothing more is
  * started and nothing is fetched, no fonts are loaded, and only each page's text is read (this
- * version of pdf.js never compiles code from a file).
+ * version of pdf.js never compiles code from a file). Each page is sent as soon as it is read, so
+ * the pages read before the time ran out are kept.
  */
 
 type Job = { bytes: Uint8Array; maxChars: number; pagesUntil: number };
@@ -24,6 +25,7 @@ try {
     parts.push(`--- Page ${n} ---\n${text}`);
     length += text.length;
     read = n;
+    parentPort!.postMessage({ page: parts[n - 1], pages: doc.numPages });
   }
   parentPort!.postMessage({ text: parts.join("\n\n"), pages: doc.numPages, read });
 } catch {

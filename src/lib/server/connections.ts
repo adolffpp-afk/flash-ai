@@ -827,7 +827,7 @@ async function openServer(row: ConnectionRow, signal?: AbortSignal, stale = ""):
   }
   if (row.kind === "google") {
     const { token, sealed } = await accessToken(row, stale, signal);
-    return { client: new GoogleClient(token, row.id, signal), secret: token, parts: [], sealed };
+    return { client: new GoogleClient(token, row.id, { userId: row.user_id, accountId: row.account_id }, signal), secret: token, parts: [], sealed };
   }
   let secret = "";
   let url: string;

@@ -88,12 +88,13 @@ function pickerLib(): Promise<PickerLib> {
 
 /**
  * Google shows its Picker (a frame from docs.google.com) only when the request names the site it is
- * in, since the Picker's API key is limited to Flash's site. The app's page says its origin, and only
- * that (see proxy.ts), but a page reached from another of Flash's pages without a reload keeps that
- * page's policy, which says nothing: so this page says the same here, before the Picker opens.
+ * in, since the Picker's API key is limited to Flash's site. Every page of Flash's tells other sites
+ * nothing of its address (Referrer-Policy: same-origin, see proxy.ts), so just before the Picker
+ * opens this page says its origin, and only that (never a path or a query), in a referrer meta tag,
+ * which browsers apply as soon as it is added or changed, whichever way the page was reached. Once
+ * the Picker is closed, the page says nothing again (keepOrigin).
  */
-function sendOrigin() {
-  const policy = "strict-origin-when-cross-origin";
+function referrer(policy: "strict-origin-when-cross-origin" | "same-origin") {
   const meta = document.querySelector<HTMLMetaElement>('meta[name="referrer"]');
   if (meta) {
     meta.content = policy;
@@ -104,11 +105,19 @@ function sendOrigin() {
   added.content = policy;
   document.head.appendChild(added);
 }
+const sendOrigin = () => referrer("strict-origin-when-cross-origin");
+const keepOrigin = () => referrer("same-origin");
 
 /** Opens Google's Picker with the user's token; the ids they picked, or none when they closed it. */
 async function pick(access: PickerAccess): Promise<string[]> {
   sendOrigin();
-  const picker = await pickerLib();
+  let picker: PickerLib;
+  try {
+    picker = await pickerLib();
+  } catch (err) {
+    keepOrigin();
+    throw err;
+  }
   return new Promise((resolve) => {
     // A list, not thumbnails: Google's guide advises it for an app with drive.file only, which isn't granted the thumbnails.
     const view = new picker.DocsView(picker.ViewId.DOCS)
@@ -129,6 +138,7 @@ async function pick(access: PickerAccess): Promise<string[]> {
         if (action !== picker.Action.PICKED && action !== picker.Action.CANCEL) return;
         const docs = action === picker.Action.PICKED ? data[picker.Response.DOCUMENTS] : [];
         shown.dispose();
+        keepOrigin();
         resolve((Array.isArray(docs) ? docs : []).map((d) => String((d as Record<string, unknown>)[picker.Document.ID] ?? "")).filter(Boolean));
       })
       .build();

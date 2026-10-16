@@ -207,6 +207,10 @@ export const GOOGLE_TOOL_WORDS = {
     title: msg("Add rows to a Sheet"),
     description: msg("Adds rows at the end of a picked Google Sheet (its first sheet, or the one named). It waits for the user to approve it."),
   },
+  append_text: {
+    title: msg("Add text to a Doc"),
+    description: msg("Adds text at the end of a Google Doc the user picked or Flash created. It waits for the user to approve it."),
+  },
 } as const;
 
 const OWN_TOOL_WORDS = new Set<string>([...Object.values(GITHUB_TOOL_WORDS), ...Object.values(GOOGLE_TOOL_WORDS)].flatMap((w) => [w.title, w.description]));

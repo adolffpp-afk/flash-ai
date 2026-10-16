@@ -82,7 +82,12 @@ export const MAX_INPUT_CHARS = 16_000;
  */
 export function inputProblem(schema: Record<string, unknown>, input: unknown): string {
   if (!input || typeof input !== "object" || Array.isArray(input)) return "the input must be an object";
-  if (JSON.stringify(input).length > MAX_INPUT_CHARS) return "the input is too long";
+  // Said with both numbers, so Claude can write it again shorter, or in parts where the tool says how.
+  const length = JSON.stringify(input).length;
+  if (length > MAX_INPUT_CHARS) {
+    const n = (v: number) => v.toLocaleString("en-US");
+    return `the input is too long (${n(length)} characters as JSON; a call may have at most ${n(MAX_INPUT_CHARS)}): make it shorter, or split it over several calls of at most that, if the tool's description says how`;
+  }
   const fields = input as Record<string, unknown>;
   const required = Array.isArray(schema.required) ? schema.required.filter((r): r is string => typeof r === "string") : [];
   const missing = required.filter((r) => fields[r] === undefined);

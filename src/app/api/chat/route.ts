@@ -59,6 +59,7 @@ import {
 } from "@/lib/engines/free.ts";
 import {
   freeAudioFailed,
+  freeLeft,
   recordFree,
   recordFreeAudio,
   releaseFreeUser,
@@ -366,6 +367,10 @@ const namesWord = (message: string, name: string) =>
 const CONNECTORS_NEED_CREDITS = msg("Connectors use credits. Turn them off to keep chatting for free.");
 // And a chat with a reply that used them: turning them off doesn't take that reply out of the chat.
 const CONNECTED_CHAT_NEEDS_CREDITS = msg("This chat used your connected accounts, so it needs credits. Start a new chat to keep chatting for free.");
+// The same, when chatting for free isn't open to them now (today's free messages are used up, or
+// this request couldn't go free anyway): the way out isn't offered.
+const CONNECTORS_USE_CREDITS = msg("Connectors use credits.");
+const CONNECTED_CHAT_USES_CREDITS = msg("This chat used your connected accounts, so it needs credits.");
 
 /**
  * Whether a chat has a reply that used a connected account (see accountReplies): marked so by the
@@ -1363,7 +1368,16 @@ export async function POST(request: Request) {
     if (connected || used) {
       const counts = { needed, available };
       const short = metered ? t("This needs at least {needed} credits and you have {available}.", counts) : t("This needs {needed} credits and you have {available}.", counts);
-      return Response.json({ error: `${short} ${t(used ? CONNECTED_CHAT_NEEDS_CREDITS : CONNECTORS_NEED_CREDITS)}`, code: "out_of_credits", needed }, { status: 402 });
+      // A free reply is offered (turn connectors off, or a new chat) only when this one could go free
+      // and today's free messages aren't used up; looking reserves nothing.
+      const lane = verified && model?.id !== "post-pack" ? freeEligible(engine, last) : null;
+      const freeOpen = lane !== null && (await freeLeft(user.id, lane)) > 0;
+      const error = freeOpen
+        ? `${short} ${t(used ? CONNECTED_CHAT_NEEDS_CREDITS : CONNECTORS_NEED_CREDITS)}`
+        : lane !== null
+          ? `${t(used ? CONNECTED_CHAT_USES_CREDITS : CONNECTORS_USE_CREDITS)} ${t("You've used today's free messages and you have {credits} credits. Free use resets tomorrow, or get more credits now.", { credits: available })}`
+          : `${short} ${t(used ? CONNECTED_CHAT_USES_CREDITS : CONNECTORS_USE_CREDITS)}`;
+      return Response.json({ error, code: "out_of_credits", needed }, { status: 402 });
     }
   }
   if (live && available < needed && verified) {

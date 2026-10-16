@@ -91,12 +91,12 @@ export default function Privacy() {
         <li>
           <strong>Only the files you pick.</strong> Flash can open only the files you choose with Google&apos;s own file
           picker (&ldquo;Add from Drive&rdquo;), and the Docs, Sheets and Slides it creates for you. It can&apos;t see,
-          list or search anything else in your Drive. Settings &gt; Connectors lists every file you picked.
+          list or search anything else in your Drive. Settings &gt; Connectors lists every file it can open.
         </li>
         <li>
-          <strong>Only when you ask.</strong> Flash reads a picked file only to answer you in a chat where you turned
-          Google Drive on. It creates a Doc, Sheet or Slides deck, or adds rows to a Sheet you picked, only after you
-          approve a card that shows exactly what will be written.
+          <strong>Only when you ask.</strong> Flash reads one of these files only to answer you in a chat where you
+          turned Google Drive on. It creates a Doc, Sheet or Slides deck, adds rows to a Sheet or adds text to a Doc,
+          only after you approve a card that shows exactly what will be written.
         </li>
         <li>
           <strong>Sent only to write your answer.</strong> The text of a file Flash reads is sent to Anthropic only so
@@ -116,12 +116,12 @@ export default function Privacy() {
           time it uses it. What it read from a file to answer you is, like any tool&apos;s result, saved in that chat
           with the reply, and with an approval as described under &ldquo;Your connected accounts&rdquo; above. Flash
           also keeps your Google account&apos;s email address (to show which account is connected), the name, type and
-          ID of each file you picked, and the access Google gave it (its tokens, stored encrypted).
+          ID of each file you picked or it created for you, and the access Google gave it (its tokens, stored encrypted).
         </li>
         <li>
           <strong>Removing access.</strong> Forget a file in Settings &gt; Connectors and Flash can&apos;t open it in
           chat any more. Remove Google Drive there and Flash asks Google to cancel all the access you gave it, and
-          deletes its tokens and your list of picked files. You can also remove Flash AI at any time from your Google
+          deletes its tokens and your list of files. You can also remove Flash AI at any time from your Google
           Account, under{" "}
           <a href="https://myaccount.google.com/connections" target="_blank" rel="noreferrer">
             Third-party apps &amp; services

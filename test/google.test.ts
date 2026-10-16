@@ -78,6 +78,8 @@ const { all, one, run: sql } = await import("../src/lib/server/db.ts");
 const { chatKit, runApproved, failedText } = await import("../src/lib/server/connections.ts");
 const { inputProblem } = await import("../src/lib/engines/connect.ts");
 const { GOOGLE_PROBLEMS, googleReady } = await import("../src/lib/server/google.ts");
+const { LIMITS: PDF_LIMITS } = await import("../src/lib/server/pdf-server.ts");
+const { page, pagesPdf } = await import("./support/pdfs.ts");
 const { adminStats } = await import("../src/lib/server/admin-stats.ts");
 const { translate } = await import("../src/lib/i18n.ts");
 const startRoute = await import("../src/app/api/connect/google/start/route.ts");
@@ -294,7 +296,7 @@ test("Connect: Google's authorize step with drive.file only, offline access, PKC
   assert.deepEqual([c.provider, c.account, c.files, c.signIn, c.revocable], ["google-drive", "drive-user@example.com", [], true, true]);
   assert.deepEqual(
     c.tools.map((t) => `${t.name}:${t.kind}`),
-    ["list_files:read", "read_file:read", "create_doc:write", "create_sheet:write", "create_slides:write", "append_rows:write"],
+    ["list_files:read", "read_file:read", "create_doc:write", "create_sheet:write", "create_slides:write", "append_rows:write", "append_text:write"],
   );
   assert.equal(await balance(user.id), b0, "connecting costs nothing");
   assert.equal(sent.length, 0, "and calls no model");
@@ -532,6 +534,69 @@ test("reads in chat run by themselves: a Sheet as CSV (its first sheet, or the o
   assert.equal(mock.googleLog.writes.length, 0, "reads write nothing");
 });
 
+/** Puts a file in the stand-in Drive, as one of the user's own. */
+async function driveFile(id: string, name: string, mimeType: string, bytes: Uint8Array) {
+  const res = await fetch(`${mock.origin}/__mock/google/files`, { method: "POST", body: JSON.stringify({ id, name, mimeType, base64: Buffer.from(bytes).toString("base64") }) });
+  assert.equal(res.status, 200);
+}
+
+test("a PDF Flash can't read now is said so, not blamed on the file, and costs no more than one it read; a slow one gives its first pages", async () => {
+  const SLOW = "pdf_slow_pages_0001";
+  await driveFile(SLOW, "Slow.pdf", "application/pdf", pagesPdf([page("The first page"), page("Never read", 10_000_000)]));
+  const user = await account("g-pdf-later");
+  const id = await withFiles(user, [PDF, SLOW]);
+  const readPdf = async () => {
+    replies.length = 0;
+    sent.length = 0;
+    replies.push(
+      { blocks: [{ type: "tool_use", id: "toolu_1", name: "google-drive__read_file", input: { file_id: PDF } }], stop: "tool_use" },
+      { blocks: [{ type: "text", text: "Here it is." }], stop: "end_turn" },
+    );
+    const before = await balance(user.id);
+    await chat(user, "What does my report say?", [id]);
+    const result = (sent[1].messages as { content: { type: string; content?: string }[] }[])[2].content.find((b) => b.type === "tool_result")!;
+    return { text: (JSON.parse(result.content!) as { text: string }).text, cost: before - (await balance(user.id)) };
+  };
+  const read = await readPdf();
+  assert.match(read.text, /^PDF "Report\.pdf" \(1 page\):/);
+  // The server holds too much memory to start a PDF: the reply says Flash can't read PDFs now.
+  const usual = { ...PDF_LIMITS };
+  PDF_LIMITS.startMaxMb = 1;
+  let refused: Awaited<ReturnType<typeof readPdf>>;
+  try {
+    refused = await readPdf();
+  } finally {
+    Object.assign(PDF_LIMITS, usual);
+  }
+  assert.equal(refused.text, GOOGLE_PROBLEMS.pdfLater);
+  assert.notEqual(refused.text, "Flash couldn't read this PDF.");
+  // Paid like any reply, for what Claude wrote: the refused read adds nothing.
+  assert.equal(refused.cost, read.cost);
+
+  // Out of time after page 1: the pages read are given, with a note that the rest wasn't.
+  PDF_LIMITS.readMs = 3000;
+  const kit = (await chatKit(user.id, [id]))!;
+  const other = (await chatKit(user.id, [id]))!;
+  const readFile = kit.tools.find((t) => t.tool === "read_file")!;
+  try {
+    const slow = kit.run(readFile, { file_id: SLOW });
+    await new Promise((r) => setTimeout(r, 200));
+    // Meanwhile, another of this user's PDFs (from another chat) waits for nothing: Flash is busy with theirs.
+    assert.deepEqual(await other.run(other.tools.find((t) => t.tool === "read_file")!, { file_id: PDF }), { text: GOOGLE_PROBLEMS.pdfBusy, isError: true });
+    assert.deepEqual(await slow, {
+      text: 'PDF "Slow.pdf" (2 pages, the first 1 read):\n\n--- Page 1 ---\nThe first page\n\n[Reading stopped at its time limit after page 1: the rest of this PDF wasn\'t read.]',
+      isError: false,
+    });
+  } finally {
+    Object.assign(PDF_LIMITS, usual);
+    await kit.close();
+    await other.close();
+  }
+  // On a card (a read that waited for approval), both notes are in the user's language.
+  const fr = JSON.parse((await import("node:fs")).readFileSync(new URL("../src/lib/i18n/fr.json", import.meta.url), "utf8")) as Record<string, string>;
+  for (const note of [GOOGLE_PROBLEMS.pdfLater, GOOGLE_PROBLEMS.pdfBusy]) assert.equal(failedText(note, (text) => translate(fr, text)), fr[note]);
+});
+
 test("writes wait for Approve: the card shows the whole content; approved, each is written exactly once; cancelled, never", async () => {
   const user = await account("g-writes");
   const id = await withFiles(user, [SHEET]);
@@ -553,7 +618,7 @@ test("writes wait for Approve: the card shows the whole content; approved, each 
   const approved = await answer(user, card);
   assert.equal(approved.status, 200);
   assert.equal(approved.body.status, "done", approved.body.result);
-  assert.match(approved.body.result!, /^Created the Google Doc "Packing list": https:\/\/docs\.google\.com\/document\/d\/made_doc_\d+\/edit$/);
+  assert.match(approved.body.result!, /^Created the Google Doc "Packing list" \(id made_doc_\d+\): https:\/\/docs\.google\.com\/document\/d\/made_doc_\d+\/edit$/);
   assert.deepEqual(
     mock.googleLog.writes.map((w) => w.kind),
     ["doc", "doc-text"],
@@ -590,10 +655,10 @@ test("writes wait for Approve: the card shows the whole content; approved, each 
 
   const made = await answer(user, sheet);
   assert.equal(made.body.status, "done", made.body.result);
-  assert.match(made.body.result!, /^Created the Google Sheet "Trip costs" with 2 rows: https:\/\/docs\.google\.com\/spreadsheets\/d\/made_sheet_\d+\/edit$/);
+  assert.match(made.body.result!, /^Created the Google Sheet "Trip costs" \(id made_sheet_\d+\) with 2 rows: https:\/\/docs\.google\.com\/spreadsheets\/d\/made_sheet_\d+\/edit$/);
   const deck = await answer(user, slides);
   assert.equal(deck.body.status, "done", deck.body.result);
-  assert.match(deck.body.result!, /^Created the Google Slides deck "Trip" with 2 slides: https:\/\/docs\.google\.com\/presentation\/d\/made_slides_\d+\/edit$/);
+  assert.match(deck.body.result!, /^Created the Google Slides deck "Trip" \(id made_slides_\d+\) with 2 slides: https:\/\/docs\.google\.com\/presentation\/d\/made_slides_\d+\/edit$/);
   const update = mock.googleLog.writes.find((w) => w.kind === "slides-update")!;
   assert.deepEqual(
     (update.body.requests as Record<string, { text?: string; objectId?: string }>[]).filter((r) => r.insertText).map((r) => r.insertText.text),
@@ -657,6 +722,7 @@ test("a field a tool doesn't have is refused, never dropped: what runs is exactl
     create_sheet: { title: "T", rows: [["a"]] },
     create_slides: { title: "T", slides: [{ title: "a", body: "b" }] },
     append_rows: { file_id: SHEET, rows: [["a"]] },
+    append_text: { file_id: DOC, text: "Hi" },
   };
   assert.deepEqual(Object.keys(samples).sort(), kit.tools.map((t) => t.tool).sort());
   for (const tool of kit.tools) {
@@ -686,6 +752,82 @@ test("a field a tool doesn't have is refused, never dropped: what runs is exactl
   assert.equal(mock.googleLog.writes.length, 0);
 });
 
+test("a write too long for one call: Claude is told the limit, a longer one is refused with its length before a card or a request and costs nothing more, and a Doc or a new Sheet is written in parts", async () => {
+  const user = await account("g-long");
+  const id = await withFiles(user, [SHEET]);
+  // Every write tells Claude how much one call may hold, and how to write more.
+  const kit0 = (await chatKit(user.id, [id]))!;
+  const schema = (tool: string) => kit0.tools.find((t) => t.tool === tool)!.definition.input_schema as { properties: Record<string, { maxLength?: number; description?: string; maxItems?: number }> };
+  await kit0.close();
+  for (const tool of ["create_doc", "append_text"]) {
+    assert.equal(schema(tool).properties.text.maxLength, 15_000, tool);
+    assert.match(schema(tool).properties.text.description!, /at most 15,000 characters/, tool);
+  }
+  assert.match(schema("create_doc").properties.text.description!, /add the rest with append_text/);
+  for (const tool of ["create_sheet", "append_rows"]) assert.match(schema(tool).properties.rows.description!, /under 15,000 characters as JSON.*add the rest with append_rows/, tool);
+  assert.match(schema("create_slides").properties.slides.description!, /under 15,000 characters as JSON/);
+  assert.equal(schema("create_slides").properties.slides.maxItems, 50);
+
+  // A 17,000-character Doc in one call: refused with both numbers, no card, nothing asked of Google.
+  const long = "Quarterly report. ".repeat(1000).slice(0, 17_000);
+  const calls = mock.googleLog.calls.length;
+  const replyCost = async (input: object) => {
+    replies.length = 0;
+    sent.length = 0;
+    replies.push(
+      { blocks: [{ type: "tool_use", id: "toolu_1", name: "google-drive__create_doc", input }], stop: "tool_use" },
+      { blocks: [{ type: "text", text: "Done." }], stop: "end_turn" },
+    );
+    const before = await balance(user.id);
+    const events = await chat(user, "Write my quarterly report as a Google Doc", [id]);
+    return { events, cost: before - (await balance(user.id)), result: JSON.stringify(sent[1].messages) };
+  };
+  const refused = await replyCost({ title: "Report", text: long });
+  assert.ok(!refused.events.some((e) => e.type === "approve_action"), "no card");
+  assert.match(refused.result, /That input wasn't usable: the input is too long \(17,0\d\d characters as JSON; a call may have at most 16,000\): make it shorter, or split it over several calls of at most that/);
+  assert.equal((await all("SELECT id FROM pending_actions WHERE user_id = ?", [user.id])).length, 0);
+  assert.equal(mock.googleLog.calls.length, calls, "nothing was asked of Google");
+  assert.equal(await one("SELECT key FROM rate_limits WHERE key = ?", [`conn:${user.id}:${id}`]), null, "nor counted against the account's calls an hour");
+  // It costs what Claude wrote, as any reply: no more than one whose card was made.
+  const first = await replyCost({ title: "Report", text: long.slice(0, 9000) });
+  assert.equal(refused.cost, first.cost);
+
+  // In parts: the Doc with its start, then (approved, and continued) the rest added at its end.
+  const card = first.events.find((e) => e.type === "approve_action")!.action!;
+  const made = await answer(user, card);
+  assert.equal(made.body.status, "done", made.body.result);
+  const docId = /\(id (made_doc_\d+)\)/.exec(made.body.result!)![1];
+  // A file Flash made is kept with the picked ones, so a later reply can open it.
+  assert.deepEqual(
+    (await filesOf(id)).find((f) => f.file_id === docId),
+    { file_id: docId, name: "Report", mime: "application/vnd.google-apps.document" },
+  );
+  const kit = (await chatKit(user.id, [id]))!;
+  const rest = (await kit.propose(kit.tools.find((t) => t.tool === "append_text")!, { file_id: docId, text: `\n${long.slice(9000)}` }))!;
+  assert.deepEqual(rest.labels, { file_id: "Report" });
+  assert.equal(rest.title, "Add text to a Doc");
+  const added = await answer(user, rest);
+  assert.equal(added.body.status, "done", added.body.result);
+  assert.equal(added.body.result, `Added 8,001 characters at the end of "Report": https://docs.google.com/document/d/${docId}/edit`);
+  const write = mock.googleLog.writes.at(-1)!;
+  assert.equal(write.kind, "doc-text");
+  assert.deepEqual(write.body, { requests: [{ insertText: { endOfSegmentLocation: {}, text: `\n${long.slice(9000)}` } }] });
+  assert.equal((await kit.run(kit.tools.find((t) => t.tool === "read_file")!, { file_id: docId })).text, `Google Doc "Report":\n\n${long.slice(0, 9000)}\n${long.slice(9000)}`);
+  // Only to a Doc.
+  assert.deepEqual(await kit.run(kit.tools.find((t) => t.tool === "append_text")!, { file_id: SHEET, text: "x" }), { text: "That input wasn't usable: file_id must be a Google Doc.", isError: true });
+
+  // A new Sheet's first rows, then the rest added to it.
+  const sheet = (await kit.propose(kit.tools.find((t) => t.tool === "create_sheet")!, { title: "Big", rows: [["Item", "Cost"], ["A", 1]] }))!;
+  const sheetMade = await answer(user, sheet);
+  assert.equal(sheetMade.body.status, "done", sheetMade.body.result);
+  const sheetId = /\(id (made_sheet_\d+)\)/.exec(sheetMade.body.result!)![1];
+  const more = (await kit.propose(kit.tools.find((t) => t.tool === "append_rows")!, { file_id: sheetId, rows: [["B", 2]] }))!;
+  await kit.close();
+  const moreDone = await answer(user, more);
+  assert.equal(moreDone.body.status, "done", moreDone.body.result);
+  assert.match(moreDone.body.result!, /^Added 1 row to "Big"/);
+});
+
 test("Google's rate limit: a clear note, in the user's language on a card, and no retry", async () => {
   const user = await account("g-limit");
   const id = await withFiles(user, [SHEET]);
@@ -702,6 +844,27 @@ test("Google's rate limit: a clear note, in the user's language on a card, and n
   assert.equal(done.result, GOOGLE_PROBLEMS.rate);
   const fr = JSON.parse((await import("node:fs")).readFileSync(new URL("../src/lib/i18n/fr.json", import.meta.url), "utf8")) as Record<string, string>;
   assert.equal(failedText(done.result, (text) => translate(fr, text)), fr[GOOGLE_PROBLEMS.rate]);
+  assert.equal(mock.googleLog.writes.length, 0);
+});
+
+test("a Sheet or Doc the user lost access to: the same note as Drive's, or one saying Flash may not change it, in the user's language on a card", async () => {
+  const user = await account("g-lost");
+  const id = await withFiles(user, [SHEET, DOC]);
+  const kit = (await chatKit(user.id, [id]))!;
+  const card = (await kit.propose(kit.tools.find((t) => t.tool === "append_rows")!, { file_id: SHEET, rows: [["x"]] }))!;
+  const text = (await kit.propose(kit.tools.find((t) => t.tool === "append_text")!, { file_id: DOC, text: "\nMore" }))!;
+  // The owner takes the user's access away: the Sheets and Docs APIs say only PERMISSION_DENIED.
+  mock.google.denied = [SHEET, DOC];
+  assert.deepEqual(await kit.run(kit.tools.find((t) => t.tool === "read_file")!, { file_id: SHEET }), { text: GOOGLE_PROBLEMS.notFound, isError: true });
+  assert.deepEqual(await kit.run(kit.tools.find((t) => t.tool === "read_file")!, { file_id: SHEET, sheet: "Q2" }), { text: GOOGLE_PROBLEMS.notFound, isError: true });
+  await kit.close();
+  const fr = JSON.parse((await import("node:fs")).readFileSync(new URL("../src/lib/i18n/fr.json", import.meta.url), "utf8")) as Record<string, string>;
+  for (const action of [card, text]) {
+    const done = (await runApproved(user.id, action.id, action.inputHash))!;
+    assert.equal(done.status, "failed");
+    assert.equal(done.result, GOOGLE_PROBLEMS.noEdit);
+    assert.equal(failedText(done.result, (t) => translate(fr, t)), fr[GOOGLE_PROBLEMS.noEdit]);
+  }
   assert.equal(mock.googleLog.writes.length, 0);
 });
 
@@ -902,6 +1065,45 @@ test("a chat with a reply that used Google Drive never goes to the free lane: wi
   }
 });
 
+test("the note for a chat that used a connected account offers chatting for free only while today's free messages last", async () => {
+  process.env.GROQ_API_KEY = "gsk_stand_in";
+  try {
+    const { reserveFreeUser } = await import("../src/lib/server/free.ts");
+    const { FREE_DAILY_CHATS } = await import("../src/lib/engines/free.ts");
+    const user = await account("g-free-used-up");
+    const id = await withFiles(user, [SHEET]);
+    await sql("INSERT INTO credit_ledger (user_id, amount, reason, ref, created_at) VALUES (?, ?, 'test', ?, 0)", [user.id, -(await balance(user.id)), `spent:${user.id}`]);
+    const ask = async (body: object) => {
+      const res = await chatRoute.POST(request("POST", "/api/chat", user, { projectId: user.projectId, engine: "text", level: "ascend", ...body }));
+      return { status: res.status, body: JSON.parse(await read(res)) as { error: string; code: string } };
+    };
+    const usedChat = [
+      { role: "user", content: "What does the hotel cost?" },
+      { role: "assistant", content: "Your Budget sheet: the hotel costs 120.", usedConnector: true },
+      { role: "user", content: "And the train?" },
+    ];
+    const fresh = [{ role: "user", content: "Read my budget" }];
+    // While free messages are left, the way to chat for free is offered.
+    assert.match((await ask({ messages: usedChat })).body.error, /Start a new chat to keep chatting for free\.$/);
+    assert.match((await ask({ messages: fresh, connectors: [id] })).body.error, /Turn them off to keep chatting for free\.$/);
+    // Once today's are used up, it isn't: neither a new chat nor turning them off would be free.
+    for (let i = 0; i < FREE_DAILY_CHATS; i++) assert.ok(await reserveFreeUser(user.id, "chat"));
+    const later = "You've used today's free messages and you have 0 credits. Free use resets tomorrow, or get more credits now.";
+    for (const [why, body, first] of [
+      ["the chat that used one", { messages: usedChat }, "This chat used your connected accounts, so it needs credits."],
+      ["a new chat with Drive on", { messages: fresh, connectors: [id] }, "Connectors use credits."],
+    ] as const) {
+      const r = await ask(body);
+      assert.equal(r.status, 402, why);
+      assert.equal(r.body.code, "out_of_credits", why);
+      assert.equal(r.body.error, `${first} ${later}`, why);
+      assert.ok(!r.body.error.includes("for free"), why);
+    }
+  } finally {
+    delete process.env.GROQ_API_KEY;
+  }
+});
+
 test("Google Drive is hidden everywhere until all four of its variables are set (and CONNECTOR_KEYS)", async () => {
   const user = await account("g-hidden");
   const id = await withFiles(user, [SHEET]);
@@ -957,14 +1159,22 @@ test("Google Drive is hidden everywhere until all four of its variables are set 
   assert.deepEqual((await adminStats(30)).connectors.google, { setUp: true, missing: [] });
 });
 
-test("the app's page, which opens Google's Picker, tells other sites its origin and nothing more; Flash's other pages tell them nothing", async () => {
-  const { ownPageHeaders } = await import("../src/proxy.ts");
-  // Google shows the Picker's frame only when the request names Flash's site (its key is limited to it).
-  assert.deepEqual(ownPageHeaders("/"), { "X-Frame-Options": "DENY", "Content-Security-Policy": "frame-ancestors 'none'", "Referrer-Policy": "strict-origin-when-cross-origin" });
-  for (const path of ["/signin", "/signin/code", "/reset", "/privacy", "/admin", "/oauth/authorize"]) {
-    assert.deepEqual(ownPageHeaders(path), { "X-Frame-Options": "DENY", "Content-Security-Policy": "frame-ancestors 'none'", "Referrer-Policy": "same-origin" }, path);
+test("every page of Flash's, the app's page where Google's Picker opens too, tells other sites nothing of its address", async () => {
+  // The Picker gets Flash's origin from DrivePicker's own meta tag, set just before it opens: the
+  // headers of #88 stay as they were.
+  const { proxy } = await import("../src/proxy.ts");
+  const headersOf = async (path: string) => {
+    const url = new URL(path, ORIGIN);
+    const res = await proxy({ nextUrl: url, url: url.href, method: "GET", headers: new Headers({ host: url.host }) } as never);
+    return Object.fromEntries(["x-frame-options", "content-security-policy", "referrer-policy"].map((name) => [name, res.headers.get(name)]));
+  };
+  const own = { "x-frame-options": "DENY", "content-security-policy": "frame-ancestors 'none'", "referrer-policy": "same-origin" };
+  for (const path of ["/", "/?invite=abc", "/?connect=ok", "/signin", "/signin/code", "/reset", "/privacy", "/admin", "/oauth/authorize"]) {
+    assert.deepEqual(await headersOf(path), own, path);
   }
-  for (const path of ["/p/shop", "/d/example.com/", "/f/abc", "/api/connect/google/picker-token"]) assert.equal(ownPageHeaders(path), null, path);
+  for (const path of ["/p/shop", "/d/example.com/", "/f/abc", "/api/connect/google/picker-token"]) {
+    assert.deepEqual(await headersOf(path), { "x-frame-options": null, "content-security-policy": null, "referrer-policy": null }, path);
+  }
 });
 
 test("only a confirmed account, from Flash's own page, starts Connect, and only Reconnects its own account", async () => {

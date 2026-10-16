@@ -5,9 +5,10 @@ import { FLOW_TTL_MS, OAuthError, flowPlace, scopeList, type FlowRow, type Token
 import { CALL_TIMEOUT_MS, McpError, toolHash, type McpTool, type ToolOutput } from "./mcp-client.ts";
 import { RESULT_BYTES, SafeFetchError, mockOrigin, safeFetch, type SafeRequest, type SafeResponse } from "./safe-fetch.ts";
 import { connectorsReady, seal } from "./secret-box.ts";
-import { pdfTextOnServer } from "./pdf-server.ts";
+import { PdfNotNow, pdfTextOnServer } from "./pdf-server.ts";
 import { msg } from "../i18n.ts";
 import { GOOGLE_TOOL_WORDS } from "../connectors.ts";
+import { MAX_INPUT_CHARS } from "../engines/connect.ts";
 
 /*
  * Google Drive, Docs, Sheets and Slides in chat (the connectors plan, PR 4), with the drive.file
@@ -317,14 +318,38 @@ export const GOOGLE_PROBLEMS = {
   notPicked: msg("That file isn't one you picked for Flash. Add it with Add from Drive in Settings > Connectors first."),
   notFound: msg("Google Drive didn't find that file, or Flash no longer has access to it. Pick it again with Add from Drive."),
   rate: msg("Google's limit for this account was reached, so Flash didn't try again. Wait a few minutes, then ask again."),
+  // A PDF Flash didn't read for a reason that has nothing to do with the file (see PdfNotNow).
+  pdfBusy: msg("Flash is busy reading other PDFs. Try again in a minute."),
+  pdfLater: msg("Flash can't read PDFs right now. Try again later."),
+  noEdit: msg("Google didn't let Flash change that file: you may only be able to view it, or you no longer have access. Ask its owner for edit access."),
 };
 
+// How much of a file is read: the start of a text or an export (Claude gets far less, see
+// CONNECT_RESULT_TOKENS), a whole PDF up to Drive's own export limit, and a sheet's first rows.
+const TEXT_BYTES = 512 * 1024;
+const PDF_BYTES = 10 * 1024 * 1024;
+const READ_CHARS = 100_000;
+const SHEET_ROWS = 1000;
+// What a write may hold: rows (and their cells), slides, and the length of a title or a cell.
+const MAX_ROWS = 1000;
+const MAX_COLUMNS = 200;
+const MAX_SLIDES = 50;
+const MAX_TITLE = 200;
+const MAX_CELL = 50_000;
+
 const FILE = { type: "string", description: "The file's id, from list_files." };
+// What one call may hold: Flash refuses a call longer than MAX_INPUT_CHARS as JSON (engines/connect.ts),
+// so each schema tells Claude, with room for the call's other fields, and says how to write more in parts.
+const PART_CHARS = MAX_INPUT_CHARS - 1_000;
 const ROWS = {
   type: "array",
-  description: "The rows, top to bottom. Each row is a list of cells, left to right: text, or a number. Cells are written as they are, never as formulas.",
+  description:
+    "The rows, top to bottom. Each row is a list of cells, left to right: text, or a number. Cells are written as they are, never as formulas. " +
+    `All the rows of one call together must stay under ${PART_CHARS.toLocaleString("en-US")} characters as JSON (a few hundred short rows). For more, ` +
+    "send the first rows in this call, tell the user the rest will follow once they approve it and continue, then add the rest with append_rows, in calls of that size.",
   items: { type: "array", items: { type: ["string", "number"] } },
 };
+const TEXT_PART = { type: "string", maxLength: PART_CHARS };
 const SHEET = { type: "string", description: "The sheet's name (a tab in the file). Leave it out for the first sheet." };
 
 type Definition = { name: string; title: string; description: string; inputSchema: Record<string, unknown>; read: boolean };
@@ -351,7 +376,15 @@ const DEFINITIONS: Definition[] = [
     description: GOOGLE_TOOL_WORDS.create_doc.description,
     inputSchema: {
       type: "object",
-      properties: { title: { type: "string", description: "The document's name." }, text: { type: "string", description: "The document's text, as plain text." } },
+      properties: {
+        title: { type: "string", description: "The document's name." },
+        text: {
+          ...TEXT_PART,
+          description:
+            `The document's text, as plain text, at most ${PART_CHARS.toLocaleString("en-US")} characters. For a longer document, write its start here, tell the user ` +
+            "the rest will follow once they approve it and continue, then add the rest with append_text, in parts of that size.",
+        },
+      },
       required: ["title", "text"],
       additionalProperties: false,
     },
@@ -374,7 +407,8 @@ const DEFINITIONS: Definition[] = [
         title: { type: "string", description: "The deck's name." },
         slides: {
           type: "array",
-          description: "The slides, in order.",
+          description: `The slides, in order: 1 to ${MAX_SLIDES}, all of them together under ${PART_CHARS.toLocaleString("en-US")} characters as JSON. A deck can't be added to later, so keep its slides short.`,
+          maxItems: MAX_SLIDES,
           items: {
             type: "object",
             properties: { title: { type: "string", description: "The slide's title." }, body: { type: "string", description: "The slide's text, as plain text (one point per line)." } },
@@ -395,6 +429,26 @@ const DEFINITIONS: Definition[] = [
     inputSchema: { type: "object", properties: { file_id: FILE, rows: ROWS, sheet: SHEET }, required: ["file_id", "rows"], additionalProperties: false },
     read: false,
   },
+  {
+    name: "append_text",
+    title: GOOGLE_TOOL_WORDS.append_text.title,
+    description: GOOGLE_TOOL_WORDS.append_text.description,
+    inputSchema: {
+      type: "object",
+      properties: {
+        file_id: { type: "string", description: "The Doc's id: from list_files, or the one create_doc's result gave." },
+        text: {
+          ...TEXT_PART,
+          description:
+            `The text to add after the Doc's last character, as plain text, at most ${PART_CHARS.toLocaleString("en-US")} characters: start it with a line break ` +
+            "to begin a new paragraph. For more, use several calls, in order.",
+        },
+      },
+      required: ["file_id", "text"],
+      additionalProperties: false,
+    },
+    read: false,
+  },
 ];
 
 /** The tools as a server would list them, pinned by the same hash as any connector's tools. */
@@ -408,19 +462,6 @@ const FIELDS = new Map(DEFINITIONS.map((d) => [d.name, Object.keys(d.inputSchema
 
 /** How a type is named to Claude. */
 const KIND_NAMES = { doc: "Google Doc", sheet: "Google Sheet", slides: "Google Slides", pdf: "PDF", text: "text file" } as const;
-
-// How much of a file is read: the start of a text or an export (Claude gets far less, see
-// CONNECT_RESULT_TOKENS), a whole PDF up to Drive's own export limit, and a sheet's first rows.
-const TEXT_BYTES = 512 * 1024;
-const PDF_BYTES = 10 * 1024 * 1024;
-const READ_CHARS = 100_000;
-const SHEET_ROWS = 1000;
-// What a write may hold: rows (and their cells), slides, and the length of a title or a cell.
-const MAX_ROWS = 1000;
-const MAX_COLUMNS = 200;
-const MAX_SLIDES = 50;
-const MAX_TITLE = 200;
-const MAX_CELL = 50_000;
 
 const parse = (res: SafeResponse): unknown => {
   try {
@@ -488,6 +529,20 @@ function problemOf(res: SafeResponse): ToolOutput | null {
 }
 
 /**
+ * Whether Google's answer is the Docs or Sheets API's own "no" for a file: 403 PERMISSION_DENIED and
+ * nothing more (Drive names a reason; an API the project hasn't turned on, or a missing scope, comes
+ * with details, and stays in Google's own words). For a read it means the user can't open the file
+ * any more; for a write, also that they may only view it.
+ */
+function deniedFile(res: SafeResponse): boolean {
+  const error = field(parse(res), "error");
+  return res.status === 403 && field(error, "status") === "PERMISSION_DENIED" && field(error, "errors") === undefined && field(error, "details") === undefined;
+}
+
+/** What a failed write to a picked file means: Google's "no" for the file said plainly (deniedFile), or as problemOf says. */
+const writeProblem = (res: SafeResponse): ToolOutput | null => (deniedFile(res) ? failed(GOOGLE_PROBLEMS.noEdit) : problemOf(res));
+
+/**
  * A connected Google account, as connections.ts calls any connector: listTools and callTool, like an
  * MCP client's, so pins, the per-account limit, approvals, renewal and scrubbing work the same way.
  * It holds the user's access token for one reply or one approved action, and finds files only among
@@ -498,13 +553,16 @@ export class GoogleClient {
   readonly protocol = "";
   private readonly token: string;
   private readonly connectionId: string;
+  // Whose connection it is: the Flash user, and the Google account (its sub) the token is for.
+  private readonly owner: { userId: string; accountId: string };
   private readonly signal?: AbortSignal;
   // When the call being made must be done: every request of one call shares one call's time.
   private deadline = 0;
 
-  constructor(token: string, connectionId: string, signal?: AbortSignal) {
+  constructor(token: string, connectionId: string, owner: { userId: string; accountId: string }, signal?: AbortSignal) {
     this.token = token;
     this.connectionId = connectionId;
+    this.owner = owner;
     this.signal = signal;
   }
 
@@ -583,6 +641,8 @@ export class GoogleClient {
         return this.createSlides(args);
       case "append_rows":
         return this.appendRows(args);
+      case "append_text":
+        return this.appendText(args);
       default:
         return failed("Flash has no such Google Drive tool.");
     }
@@ -594,7 +654,7 @@ export class GoogleClient {
       return { text: "The user hasn't picked any files for Flash yet. They can add some with Add from Drive in Settings > Connectors.", isError: false };
     }
     const lines = files.map((f) => `- "${f.name}" (${KIND_NAMES[DRIVE_TYPES[f.mime] ?? "text"]}), id ${f.file_id}`);
-    return { text: `The files the user picked for Flash (use the id with read_file or append_rows):\n${lines.join("\n")}`, isError: false };
+    return { text: `The files the user picked for Flash, and the ones Flash made for them (use the id with read_file, append_rows or append_text):\n${lines.join("\n")}`, isError: false };
   }
 
   /** A picked file of this connection, or the reason it can't be used. */
@@ -636,13 +696,17 @@ export class GoogleClient {
       if (problem) return problem;
       let pdf: Awaited<ReturnType<typeof pdfTextOnServer>>;
       try {
-        pdf = await pdfTextOnServer(new Uint8Array(Buffer.from(res.body, "latin1")), { maxChars: READ_CHARS, deadline: this.deadline - 500 });
-      } catch {
+        // One PDF at a time for each user, so one account can't hold every reader.
+        pdf = await pdfTextOnServer(new Uint8Array(Buffer.from(res.body, "latin1")), { maxChars: READ_CHARS, deadline: this.deadline - 500, user: this.owner.userId });
+      } catch (err) {
+        // The server was busy or low on memory: nothing is wrong with the file, so it isn't blamed.
+        if (err instanceof PdfNotNow) return failed(err.why === "busy" ? GOOGLE_PROBLEMS.pdfBusy : GOOGLE_PROBLEMS.pdfLater);
         return failed("Flash couldn't read this PDF.");
       }
       if (!pdf.text.replace(/--- Page \d+ ---/g, "").trim()) return failed("This PDF has no text Flash can read: it may be scanned pages.");
       const pages = `${pdf.pages} page${pdf.pages === 1 ? "" : "s"}${pdf.read < pdf.pages ? `, the first ${pdf.read} read` : ""}`;
-      return { text: `PDF ${name} (${pages}):\n\n${pdf.text.slice(0, READ_CHARS)}`, isError: false };
+      const cutOff = pdf.stopped ? `\n\n[Reading stopped at its time limit after page ${pdf.read}: the rest of this PDF wasn't read.]` : "";
+      return { text: `PDF ${name} (${pages}):\n\n${pdf.text.slice(0, READ_CHARS)}${cutOff}`, isError: false };
     }
     return failed("Flash can't read this type of file.");
   }
@@ -657,7 +721,8 @@ export class GoogleClient {
     }
     const id = file.file_id;
     const info = await this.api(`${googleHost("sheets")}/v4/spreadsheets/${id}?fields=sheets.properties(title,index)`, { maxBytes: 256 * 1024 });
-    const infoProblem = problemOf(info);
+    // The Sheets API says a file the user can't open any more only this way (Drive says notFound).
+    const infoProblem = deniedFile(info) ? failed(GOOGLE_PROBLEMS.notFound) : problemOf(info);
     if (infoProblem) return infoProblem;
     const listed = field(parse(info), "sheets");
     const names = (Array.isArray(listed) ? listed : [])
@@ -674,7 +739,7 @@ export class GoogleClient {
       return { text: `${head(names[0] ?? "")}${res.body.replace(/^\ufeff/, "").slice(0, READ_CHARS)}${res.truncated ? "\n\n[Only the start of this sheet was read.]" : ""}`, isError: false };
     }
     const res = await this.api(`${googleHost("sheets")}/v4/spreadsheets/${id}/values/${encodeURIComponent(`${quoted(sheet)}!1:${SHEET_ROWS}`)}?majorDimension=ROWS&valueRenderOption=FORMATTED_VALUE`);
-    const problem = problemOf(res);
+    const problem = deniedFile(res) ? failed(GOOGLE_PROBLEMS.notFound) : problemOf(res);
     if (problem) return problem;
     const values = field(parse(res), "values");
     const rows = Array.isArray(values) ? values : [];
@@ -706,7 +771,8 @@ export class GoogleClient {
     if (problem) return problem;
     const id = String(field(parse(res), "documentId") ?? "");
     if (!FILE_ID.test(id)) return failed("Google's answer couldn't be read.");
-    const made = `Created the Google Doc "${title}": ${fileUrl("document", id)}`;
+    await this.keepMade(id, title, "application/vnd.google-apps.document");
+    const made = `Created the Google Doc "${title}" (id ${id}): ${fileUrl("document", id)}`;
     if (text) {
       const later = await this.content(made, () => this.api(`${googleHost("docs")}/v1/documents/${id}:batchUpdate`, { method: "POST", body: { requests: [{ insertText: { location: { index: 1 }, text } }] } }));
       if (later) return later;
@@ -733,7 +799,8 @@ export class GoogleClient {
     if (problem) return problem;
     const id = String(field(parse(res), "spreadsheetId") ?? "");
     if (!FILE_ID.test(id)) return failed("Google's answer couldn't be read.");
-    const made = `Created the Google Sheet "${title}" with ${rows.length} row${rows.length === 1 ? "" : "s"}: ${fileUrl("spreadsheets", id)}`;
+    await this.keepMade(id, title, "application/vnd.google-apps.spreadsheet");
+    const made = `Created the Google Sheet "${title}" (id ${id}) with ${rows.length} row${rows.length === 1 ? "" : "s"}: ${fileUrl("spreadsheets", id)}`;
     return (await this.content(made, () => this.appendRequest(id, rows))) ?? { text: made, isError: false };
   }
 
@@ -780,8 +847,43 @@ export class GoogleClient {
       if (words.body) requests.push({ insertText: { objectId: text, insertionIndex: 0, text: words.body } });
     });
     for (const objectId of first) requests.push({ deleteObject: { objectId } });
-    const made = `Created the Google Slides deck "${title}" with ${slides.length} slide${slides.length === 1 ? "" : "s"}: ${fileUrl("presentation", id)}`;
+    await this.keepMade(id, title, "application/vnd.google-apps.presentation");
+    const made = `Created the Google Slides deck "${title}" (id ${id}) with ${slides.length} slide${slides.length === 1 ? "" : "s"}: ${fileUrl("presentation", id)}`;
     return (await this.content(made, () => this.api(`${googleHost("slides")}/v1/presentations/${id}:batchUpdate`, { method: "POST", body: { requests } }))) ?? { text: made, isError: false };
+  }
+
+  /**
+   * A file Flash just made, kept with the picked ones (drive.file lets Flash open the files it makes),
+   * so a later reply can read it or add to it: while the connection is still this user's and this
+   * Google account's, and has room. The file is made either way.
+   */
+  private async keepMade(id: string, title: string, mime: string): Promise<void> {
+    try {
+      await run(
+        `INSERT OR IGNORE INTO connection_files (connection_id, file_id, name, mime, picked_at)
+         SELECT ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM connections WHERE id = ? AND user_id = ? AND account_id = ?)
+           AND (SELECT COUNT(*) FROM connection_files WHERE connection_id = ?) < ?`,
+        [this.connectionId, id, cleanName(title) || id, mime, now(), this.connectionId, this.owner.userId, this.owner.accountId, this.connectionId, MAX_FILES],
+      );
+    } catch {
+      console.error("[flash] keeping a file Flash made failed");
+    }
+  }
+
+  /** Text added at the end of a picked (or made) Doc's body, as plain text. */
+  private async appendText(args: Record<string, unknown>): Promise<ToolOutput> {
+    const file = await this.picked(args.file_id);
+    if ("isError" in file) return file;
+    if (DRIVE_TYPES[file.mime] !== "doc") return unusable("file_id must be a Google Doc");
+    if (typeof args.text !== "string" || !args.text) return unusable("text must be text");
+    const text = args.text;
+    const res = await this.api(`${googleHost("docs")}/v1/documents/${file.file_id}:batchUpdate`, {
+      method: "POST",
+      body: { requests: [{ insertText: { endOfSegmentLocation: {}, text } }] },
+    });
+    const problem = writeProblem(res);
+    if (problem) return problem;
+    return { text: `Added ${text.length.toLocaleString("en-US")} characters at the end of "${file.name}": ${fileUrl("document", file.file_id)}`, isError: false };
   }
 
   private async appendRows(args: Record<string, unknown>): Promise<ToolOutput> {
@@ -797,7 +899,7 @@ export class GoogleClient {
     const rows = rowsOf(args.rows);
     if (!rows) return unusable(`rows must be 1 to ${MAX_ROWS} lists of text or numbers`);
     const res = await this.appendRequest(file.file_id, rows, sheet);
-    const problem = problemOf(res);
+    const problem = writeProblem(res);
     if (problem) return problem;
     const where = oneLine(field(field(parse(res), "updates"), "updatedRange"), 200);
     return { text: `Added ${rows.length} row${rows.length === 1 ? "" : "s"} to "${file.name}"${where ? ` (${where})` : ""}: ${fileUrl("spreadsheets", file.file_id)}`, isError: false };

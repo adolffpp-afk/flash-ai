@@ -77,7 +77,9 @@ import { pathToFileURL } from "node:url";
  * - in place of Google's Picker (which can't run here), GET /google/picker/files lists the drive and
  *   POST /google/picker/pick gives the app the files picked, both with the user's token and CORS, for
  *   the page's development list (see DrivePicker.tsx);
- * - state.google.rateLimited answers every API call with Google's rate-limit answer.
+ * - state.google.rateLimited answers every API call with Google's rate-limit answer, and
+ *   state.google.denied lists files whose owner took the user's access away: the Sheets and Docs
+ *   APIs answer them with a bare 403 PERMISSION_DENIED, as Google does (Drive with a 404).
  * state.google changes how it behaves (also with POST /__mock/google), POST /__mock/google/files puts
  * one more file in the drive ({id, name, mimeType, base64}: its bytes, say a hostile PDF), and
  * googleLog records every call.
@@ -241,6 +243,8 @@ export type GoogleConfig = {
   refreshDelayMs: number;
   // The token endpoint refuses every refresh token (invalid_grant), as after the user removed access.
   refuseRefresh: boolean;
+  // Files the user no longer has access to (their owner removed it), by id.
+  denied: string[];
   // The user says no on the authorize page.
   deny: boolean;
   // Every API call gets Google's rate-limit answer.
@@ -259,6 +263,7 @@ export const GOOGLE_DEFAULTS: GoogleConfig = {
   refuseRefresh: false,
   deny: false,
   rateLimited: false,
+  denied: [],
 };
 
 const GOOGLE_DOC = "application/vnd.google-apps.document";
@@ -364,7 +369,7 @@ export async function startMockConnectors(port = 7788) {
   const githubRefresh = new Map<string, string>();
   const githubIssued: string[] = [];
   // Google: its settings, what it was asked for, its drive, the files the app may open, and its codes and tokens.
-  const google = { ...GOOGLE_DEFAULTS };
+  const google = { ...GOOGLE_DEFAULTS, denied: [] as string[] };
   const googleLog = {
     calls: [] as { method: string; path: string }[],
     authorizes: [] as { state: string; challenge: string; method: string; scope: string; prompt: string; accessType: string; includeGranted: string }[],
@@ -945,8 +950,13 @@ export async function startMockConnectors(port = 7788) {
     // A file the app may open (drive.file): picked or made by it, and not in the trash; any other is "not found".
     const fileOf = (id: string) => {
       const f = drive.get(id);
-      return f && driveGranted.has(`${access!.sub}/${id}`) ? f : null;
+      return f && driveGranted.has(`${access!.sub}/${id}`) && !google.denied.includes(id) ? f : null;
     };
+    // The Sheets, Docs and Slides APIs say no to a file the user lost access to with only a status, no reason.
+    const denied = /^\/google\/(sheets\/v4\/spreadsheets|docs\/v1\/documents|slides\/v1\/presentations)\/([\w-]+)/.exec(path);
+    if (denied && google.denied.includes(denied[2])) {
+      return (json(res, 403, { error: { code: 403, message: "The caller does not have permission", status: "PERMISSION_DENIED" } }), true);
+    }
     const notFound = (id: string) => fail(404, `File not found: ${id}.`, "notFound");
     const body = async () => (req.method === "POST" ? (JSON.parse((await readBody(req)) || "{}") as Record<string, unknown>) : {});
     const csv = (rows: (string | number)[][]) => rows.map((r) => r.map((c) => (/[",\r\n]/.test(String(c)) ? `"${String(c).replace(/"/g, '""')}"` : String(c))).join(",")).join("\r\n");
@@ -1255,7 +1265,7 @@ export async function startMockConnectors(port = 7788) {
       githubLog.refreshes = 0;
       // Google's settings go back as they were (its tokens, drive and granted files stay).
       const googleCallback = google.callback;
-      Object.assign(google, GOOGLE_DEFAULTS, { callback: googleCallback });
+      Object.assign(google, GOOGLE_DEFAULTS, { callback: googleCallback, denied: [] });
       googleLog.calls.length = 0;
       googleLog.authorizes.length = 0;
       googleLog.revoked.length = 0;
