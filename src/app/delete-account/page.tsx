@@ -9,7 +9,7 @@ export const metadata: Metadata = { title: "Delete your account" };
 export default function DeleteAccount() {
   const subject = encodeURIComponent(`Delete my ${PRODUCT_NAME} account`);
   return (
-    <LegalPage title="Delete your account" updated="October 15, 2026">
+    <LegalPage title="Delete your account" updated="October 16, 2026">
       <p>
         You can ask {COMPANY} to delete your {PRODUCT_NAME} account and its data at any time, from the website or the
         Android app. You don&apos;t need to sign in or have the app installed.
@@ -33,7 +33,7 @@ export default function DeleteAccount() {
       <ul>
         <li>Your account: email address, name, password, sign-in methods and settings.</li>
         <li>Your chats, files, pictures, recordings, projects and memory note.</li>
-        <li>Websites and apps you published, and the data their visitors and members saved in them.</li>
+        <li>Websites and apps you published, with their contact lists and the data their visitors and members saved in them.</li>
         <li>Connected accounts (connectors) and their keys or tokens.</li>
         <li>Your unused credits, which can&apos;t be refunded once the account is deleted.</li>
       </ul>

@@ -88,6 +88,13 @@ test("the builders build first, never invent a business's details, and get the d
   assert.ok(!buildSystem("app", "").includes("Today is"), "no note, no date");
 });
 
+test("apps offer news with a box the person ticks themselves, sent with the form", () => {
+  const app = buildSystem("app", "");
+  assert.match(app, /never ticked to start with/);
+  assert.match(app, /flashDB\.send\(formName, fields, \{ news: thatCheckbox \}\)/);
+  assert.match(app, /Name form fields name, email and phone/);
+});
+
 test("the companion sends live questions to the chat instead of answering them from memory", () => {
   const facts = {
     name: "Ada",

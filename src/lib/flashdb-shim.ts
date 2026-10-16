@@ -4,8 +4,47 @@
  * the preview inside Flash keeps them in memory so trying an app never touches real data.
  */
 
+/**
+ * flashDB.send(form, fields, { news: checkbox }): what the person agreed to by ticking a box, for the
+ * app's contact list (see server/contacts.ts). It counts only when they ticked it themselves (a
+ * click, a tap or the space bar; a box ticked by code, or by code clicking it, doesn't), when it
+ * didn't start ticked, and with the words of its <label>, which Flash then finds on the app's page.
+ * Shared by the preview and the published shim, so both judge a box the same way. Pages with no
+ * document (tests, downloads run elsewhere) just never find a tick.
+ */
+const NEWS = `
+  const newsTicks = new WeakMap();
+  let scriptedClick = false;
+  if (typeof document === "object" && document && typeof document.addEventListener === "function") {
+    // A click made by code (el.click(), label.click(), dispatchEvent) is untrusted, while the change
+    // it causes isn't, so the change that follows it in the same task doesn't count.
+    document.addEventListener("click", function (e) {
+      if (e && !e.isTrusted) { scriptedClick = true; Promise.resolve().then(function () { scriptedClick = false; }); }
+    }, true);
+    document.addEventListener("change", function (e) {
+      const el = e && e.target;
+      if (el && el.type === "checkbox") newsTicks.set(el, Boolean(e.isTrusted && !scriptedClick && el.checked));
+    }, true);
+  }
+  function newsOf(options) {
+    const box = options && options.news;
+    if (!box) return null;
+    const warn = function (why) { if (typeof console === "object" && console.warn) console.warn("flashDB.send: no agreement to news was kept: " + why); };
+    if (box.type !== "checkbox") warn("pass the checkbox itself as news");
+    else if (!box.checked) return null;
+    else if (box.defaultChecked) warn("a box that starts ticked isn't agreement");
+    else if (newsTicks.get(box) !== true) warn("the person didn't tick it themselves");
+    else {
+      const label = (box.labels && box.labels[0]) || (typeof box.closest === "function" ? box.closest("label") : null);
+      const text = label ? String(label.textContent || "").replace(/\\s+/g, " ").trim() : "";
+      if (text && text.length <= 300) return { text: text };
+      warn("put the box in a <label> of up to 300 characters");
+    }
+    return null;
+  }`;
+
 /** flashDB kept in memory: for trying an app in Flash's preview, or running a downloaded app anywhere. */
-export const MEMORY_DB = `
+export const MEMORY_DB = `${NEWS}
   const store = {};
   const id = () => Math.random().toString(36).slice(2, 12);
   const col = (c) => (store[c] = store[c] || []);
@@ -17,7 +56,12 @@ export const MEMORY_DB = `
     async add(collection, data) { const r = { ...clone(data), id: id(), createdAt: Date.now(), byYou: true }; col(collection).push(r); return clone(r); },
     async update(collection, rid, data) { const r = col(collection).find((x) => x.id === rid); if (!r) throw new Error("Record not found"); Object.assign(r, clone(data), { id: rid }); return clone(r); },
     async remove(collection, rid) { store[collection] = col(collection).filter((x) => x.id !== rid); },
-    async send(form, data) { console.info("flashDB.send: nothing was really sent (this is a stand-in)", form, clone(data)); return true; },
+    async send(form, data, options) {
+      const news = newsOf(options);
+      console.info("flashDB.send: nothing was really sent (this is a stand-in)", form, clone(data));
+      if (news) console.info("flashDB.send: once published, Flash records that they agreed to: " + news.text);
+      return true;
+    },
     // In the preview the file stays in this page, so file screens can be tried before publishing.
     async upload(file) { return { url: URL.createObjectURL(file), name: file.name, size: file.size }; },
     paid: false,
@@ -83,7 +127,7 @@ export function flashDbShim(
   // The key this browser's sign-in forms carry, matching its form cookie (see serve-site.ts).
   formKey = "",
 ): string {
-  const remote = `
+  const remote = `${NEWS}
   // The page's own fetch and tools, kept before the app's code runs, and every address made whole
   // from the page's own address: markup that gets into the page later (a <base> tag, a changed
   // fetch) can't send a request, or the key it carries, anywhere else.
@@ -166,9 +210,11 @@ export function flashDbShim(
       if (!res.ok) throw new Error(json.error || "That file couldn't be sent.");
       return json;
     },
-    // Sends a form privately to the site's owner, who reads it in Flash and gets an email.
-    async send(form, data) {
-      const res = await request(inbox, "POST", "", toJson({ form, data }), "application/json");
+    // Sends a form privately to the site's owner, who reads it in Flash and gets an email. With
+    // { news: checkbox }, what the person agreed to by ticking it goes too (see NEWS).
+    async send(form, data, options) {
+      const news = newsOf(options);
+      const res = await request(inbox, "POST", "", toJson(news ? { form, data, consent: news } : { form, data }), "application/json");
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || "Sending failed");
       return true;
