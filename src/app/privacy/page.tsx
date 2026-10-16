@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { COMPANY, CONTACT, LegalPage } from "@/components/LegalPage";
+import { FRED_NOTICE } from "@/lib/research.ts";
 import { PRODUCT_NAME } from "@/lib/product";
 
 export const metadata: Metadata = { title: "Privacy Policy" };
@@ -73,6 +74,19 @@ export default function Privacy() {
         asking about the same place gets the same copy.
       </p>
       <p>
+        Some answers look things up in public sources, from Flash&apos;s server and without your account, name, email or
+        IP address. For questions about current events, Flash searches the web through its own search server (SearXNG),
+        which passes the search on to public search engines: it sends the search words written for your question,
+        which can include words from your message, and your language. For a listed company&apos;s filings or reported
+        figures, Flash asks the U.S. Securities and Exchange Commission&apos;s SEC EDGAR (sec.gov), sending only the
+        company&apos;s ticker, name or SEC number. For economic data, Flash asks FRED&reg; (the Federal Reserve Bank of
+        St. Louis&apos;s economic data, api.stlouisfed.org), sending only the series or the words searched for. Flash
+        keeps what they return for a short time (web results for 10 minutes, company and economic data for up to a
+        day), stored by request and not by person, and anyone asking the same thing gets the same copy. To apply the
+        daily limit on free web searches, Flash counts how many each account makes in a day, but not what they were.{" "}
+        {FRED_NOTICE}
+      </p>
+      <p>
         We also use Stripe for payments (when paid plans are available), Resend to send account emails (email confirmation and password reset), and a database and hosting provider to store your data. Each provider processes
         data under its own terms and privacy policy. Some are based in the United States, so your data may be processed
         outside your country.
@@ -81,7 +95,8 @@ export default function Privacy() {
       <h2>How long we keep it</h2>
       <p>
         We keep your account and projects until you delete them or ask us to delete your account. Billing records are
-        kept as long as tax law requires. Weather forecasts are kept for up to 2 days.
+        kept as long as tax law requires. Weather forecasts are kept for up to 2 days, web search results for 10 minutes,
+        and company and economic data for up to a day.
       </p>
 
       <h2>Your choices and rights</h2>

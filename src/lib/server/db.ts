@@ -281,6 +281,15 @@ const SCHEMA = [
   )`,
   // Lets the prune read only the old rows: Turso bills rows read.
   `CREATE INDEX IF NOT EXISTS weather_cache_fetched ON weather_cache(fetched_at)`,
+  // Answers from web search, SEC EDGAR and FRED, kept a short while and shared by every user, so the
+  // same question doesn't ask again (see server/source-fetch.ts). value is what Flash kept, already trimmed.
+  `CREATE TABLE IF NOT EXISTS source_cache (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    fetched_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS source_cache_expires ON source_cache(expires_at)`,
   `CREATE INDEX IF NOT EXISTS usage_user_time ON usage(user_id, created_at)`,
   // One-time links for email verification and password reset (only hashes are stored).
   `CREATE TABLE IF NOT EXISTS email_tokens (

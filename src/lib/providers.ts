@@ -34,7 +34,20 @@ export const PROVIDER_LIST: ProviderInfo[] = [
     keys: ["CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN"],
   },
   { id: "mistral", name: "Mistral", does: "Free chat, the last backup", free: true, keys: ["MISTRAL_API_KEY"] },
+  // Data the models look up (see research.ts). Uses counts the requests Flash sent them.
+  {
+    id: "searxng",
+    name: "SearXNG",
+    does: "Free web search for the free models, on your own server (the password gate's https address)",
+    free: true,
+    keys: ["SEARXNG_URL", "SEARXNG_USERNAME", "SEARXNG_PASSWORD"],
+  },
+  { id: "sec", name: "SEC EDGAR", does: "US public companies' filings and reported figures (no key needed)", free: true, keys: [] },
+  { id: "fred", name: "FRED", does: "US economic data from the Federal Reserve Bank of St. Louis", free: true, keys: ["FRED_API_KEY"] },
 ];
+
+/** The data sources on the list: their uses are the requests counted in free_quota, not the usage log. */
+export const DATA_SOURCES = ["searxng", "sec", "fred"];
 
 /** A provider's name for the dashboard, or its id when Flash doesn't know it. */
 export const providerName = (id: string) => PROVIDER_LIST.find((p) => p.id === id)?.name ?? id;
