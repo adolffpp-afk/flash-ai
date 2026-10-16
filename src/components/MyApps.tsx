@@ -7,8 +7,20 @@ import { DATA_RULES, DEFAULT_KEY, RULE_TEXT, blockProblem, dataLine, type DataRu
 import { msg } from "@/lib/i18n";
 import { inOrder } from "@/lib/in-order";
 import { tNow, useT, type T } from "@/lib/use-t";
+import { ContactsView } from "./ContactsView";
 
-type Site = { slug: string; title: string; updated_at: number; messages: number; unread: number; views: number; members: number; openData?: boolean };
+// contacts: null until the app's contact list was first filled (see server/contacts.ts).
+type Site = {
+  slug: string;
+  title: string;
+  updated_at: number;
+  messages: number;
+  unread: number;
+  views: number;
+  members: number;
+  contacts: number | null;
+  openData?: boolean;
+};
 type DataCollection = { name: string; count: number; lastAdded: number; rule: DataRule; source: RuleSource; personal: string[] };
 // block: the app names its rules in a flash-data block; bad: what Flash couldn't use in it. domains: the app's own addresses.
 type AppData = { collections: DataCollection[]; fallback: DataRule | null; guess: DataRule; block: boolean; bad?: DataSummary["bad"]; domains: string[] };
@@ -55,6 +67,7 @@ const VIEW_TITLES = {
   preview: msg("Link preview"),
   payments: msg("Payments"),
   messages: msg("Messages"),
+  contacts: msg("Contacts"),
   visits: msg("Visitors"),
   history: msg("History"),
   members: msg("Members"),
@@ -79,7 +92,7 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
   const t = useT();
   const [sites, setSites] = useState<Site[] | null>(null);
   const [open, setOpen] = useState<Site | null>(null);
-  const [view, setView] = useState<"messages" | "domains" | "preview" | "payments" | "visits" | "history" | "members" | "ai" | "files" | "data">("messages");
+  const [view, setView] = useState<"messages" | "contacts" | "domains" | "preview" | "payments" | "visits" | "history" | "members" | "ai" | "files" | "data">("messages");
   const [appData, setAppData] = useState<ShownData | null>(null);
   const [records, setRecords] = useState<Records | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -344,6 +357,12 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
     }
   }
 
+  function showContacts(site: Site) {
+    setOpen(site);
+    setView("contacts");
+    setError("");
+  }
+
   async function showMembers(site: Site) {
     setOpen(site);
     setView("members");
@@ -574,7 +593,7 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
         role="dialog"
         aria-modal="true"
         aria-label={t("My websites and apps")}
-        className="flex h-full w-full max-w-3xl flex-col bg-zinc-950 text-zinc-100 sm:h-[80vh] sm:rounded-2xl sm:border sm:border-white/8"
+        className={`flex h-full w-full ${open && view === "contacts" ? "max-w-5xl" : "max-w-3xl"} flex-col bg-zinc-950 text-zinc-100 sm:h-[80vh] sm:rounded-2xl sm:border sm:border-white/8`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3 border-b border-white/6 px-5 py-4">
@@ -796,6 +815,12 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
                 </p>
               </div>
             )
+          ) : open && view === "contacts" ? (
+            <ContactsView
+              key={open.slug}
+              slug={open.slug}
+              onCount={(count) => setSites((all) => all?.map((s) => (s.slug === open.slug ? { ...s, contacts: count } : s)) ?? null)}
+            />
           ) : open && view === "members" ? (
             members === null ? (
               !error && <p className="text-sm text-zinc-500">{t("Loading…")}</p>
@@ -1231,6 +1256,10 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
                         {s.unread > 0 && (
                           <span className="ml-1.5 rounded-full bg-brand px-1.5 py-0.5 text-[10px] text-on-brand">{t("{count} new", { count: s.unread })}</span>
                         )}
+                      </button>
+                      <button onClick={() => showContacts(s)} className="text-zinc-200 hover:text-white" title={t("Everyone who sent a form, signed up or paid")}>
+                        👥 {t("Contacts")}
+                        {s.contacts ? <> ({s.contacts.toLocaleString(t.locale)})</> : null}
                       </button>
                       <button onClick={() => showVisits(s)} className="text-zinc-200 hover:text-white" title={t("Visits in the last 30 days")}>
                         📈 {t("Visitors")}
