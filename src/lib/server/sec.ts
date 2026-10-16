@@ -66,11 +66,11 @@ function bases(): { www: string; data: string } {
 /**
  * One request to the SEC, within 5 a second and Flash's daily allowance. A stopped reply (signal) asks
  * nothing, and takes none of the day's requests: the slot comes first, so one stopped while it waits
- * for it takes neither.
+ * for it takes neither, and one stopped while its daily request is taken gives it back.
  */
 async function secGet(url: string, maxBytes: number, signal?: AbortSignal): Promise<unknown> {
   if (!(await takeSlot("sec", SEC_PER_SECOND, 1000, { signal })) || signal?.aborted) throw new SourceError(signal?.aborted ? "network" : "busy");
-  if (!(await reserveDaily("sec", envCount("FLASH_SEC_DAILY_REQUESTS", 20_000)))) throw new SourceError("busy");
+  if (!(await reserveDaily("sec", envCount("FLASH_SEC_DAILY_REQUESTS", 20_000), Date.now(), signal))) throw new SourceError(signal?.aborted ? "network" : "busy");
   return fetchJson(url, { headers: { "User-Agent": secUserAgent() }, timeoutMs: TIMEOUT_MS, maxBytes, signal });
 }
 

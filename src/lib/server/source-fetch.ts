@@ -165,12 +165,21 @@ export async function takeSlot(
 // ---------------------------------------------------------------------------------------------
 // A daily cap for each source, across Flash
 
-/** Takes one request from a source's daily allowance across Flash (in free_quota), or returns false when it's used up. */
-export async function reserveDaily(source: string, cap: number, at = Date.now()): Promise<boolean> {
+/**
+ * Takes one request from a source's daily allowance across Flash (in free_quota), or returns false when
+ * it's used up, or when the reply was stopped (signal) while it was being taken: that one is given back,
+ * as the request will never be sent.
+ */
+export async function reserveDaily(source: string, cap: number, at = Date.now(), signal?: AbortSignal): Promise<boolean> {
   const day = new Date(at).toISOString().slice(0, 10);
   await run("INSERT OR IGNORE INTO free_quota (day, provider) VALUES (?, ?)", [day, source]);
   const r = await run("UPDATE free_quota SET requests = requests + 1 WHERE day = ? AND provider = ? AND requests < ?", [day, source, cap]);
-  return r.rowsAffected === 1;
+  if (r.rowsAffected !== 1) return false;
+  if (!signal?.aborted) return true;
+  await run("UPDATE free_quota SET requests = requests - 1 WHERE day = ? AND provider = ? AND requests > 0", [day, source]).catch((err) =>
+    console.error("[flash] giving back a source's daily request failed", err),
+  );
+  return false;
 }
 
 /**

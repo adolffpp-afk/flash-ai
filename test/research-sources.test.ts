@@ -458,7 +458,7 @@ after(() => {
   globalThis.fetch = realFetch;
 });
 
-const { run: sql, all } = await import("../src/lib/server/db.ts");
+const { run: sql, all, db } = await import("../src/lib/server/db.ts");
 const { searxngConfig, searxngReady, searxngUrlProblem, searchesToday, webSearchTool } = await import("../src/lib/server/searxng.ts");
 const { forgetTickers, secFactsTool, secFilingsTool, secUserAgent, SEC_PER_SECOND } = await import("../src/lib/server/sec.ts");
 const { fredKeyProblem, fredReady, fredSearchTool, fredSeriesTool } = await import("../src/lib/server/fred.ts");
@@ -945,6 +945,41 @@ test("a stopped reply asks SearXNG, the SEC and FRED nothing and takes none of t
   assert.ok(Date.now() - begun < 2000, `${Date.now() - begun} ms`);
   assert.deepEqual(seen, []);
   assert.deepEqual(await daily(), []);
+});
+
+test("a reply stopped while the database counts its daily request gives that request back, and asks SearXNG, the SEC and FRED nothing", async () => {
+  // The company is known already, from an earlier reply.
+  await secFilingsTool().run({ company: "AAPL" });
+  await sql("DELETE FROM source_cache WHERE key LIKE 'sec:filings:%'");
+  const looks = [
+    ["searxng", (signal: AbortSignal) => webSearchTool("u-mid")!.run({ query: "news today" }, signal), R.SEARCH_FAILED],
+    ["sec", (signal: AbortSignal) => secFilingsTool().run({ company: "AAPL" }, signal), R.SEC_FAILED],
+    ["fred", (signal: AbortSignal) => fredSeriesTool().run({ series_id: "UNRATE" }, signal), R.FRED_FAILED],
+  ] as const;
+  const client = await db();
+  const execute = client.execute;
+  try {
+    for (const [provider, look, failed] of looks) {
+      for (const table of ["free_quota", "rate_limits"]) await sql(`DELETE FROM ${table}`);
+      seen.length = 0;
+      const stop = new AbortController();
+      // The Stop arrives from another task while the round trip that counts this source's request is out.
+      client.execute = (async (stmt: { sql: string; args: unknown[] }) => {
+        if (stmt.sql.startsWith("UPDATE free_quota SET requests = requests + 1") && stmt.args[1] === provider) {
+          setTimeout(() => stop.abort("stop"), 0);
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        return execute.call(client, stmt as never);
+      }) as typeof execute;
+      assert.equal((await look(stop.signal)).text, failed, provider);
+      assert.equal(stop.signal.aborted, true, provider);
+      assert.deepEqual(seen, [], provider);
+      const daily = await all<{ provider: string; requests: number }>("SELECT provider, requests FROM free_quota");
+      assert.deepEqual(daily.map((r) => [r.provider, Number(r.requests)]), [[provider, 0]], `${provider} kept a daily request it never sent`);
+    }
+  } finally {
+    client.execute = execute;
+  }
 });
 
 // ---------------------------------------------------------------------------------------------

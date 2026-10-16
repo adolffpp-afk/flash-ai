@@ -68,14 +68,15 @@ export const fredKeyProblem = (env: Record<string, string | undefined> = process
 /**
  * One request to FRED's API, within 1 a second and Flash's daily allowance. Throws a SourceError, at
  * once for a stopped reply (signal), which takes none of the day's requests: the slot comes first, so
- * one stopped while it waits for it takes neither.
+ * one stopped while it waits for it takes neither, and one stopped while its daily request is taken
+ * gives it back.
  */
 async function fredGet(path: string, params: Record<string, string>, signal?: AbortSignal): Promise<Record<string, unknown> | null> {
   const key = fredKey();
   if (!key) throw new SourceError("busy");
   // One reply can need 9 requests (3 series of 3: details, tags, values), all in one second's line.
   if (!(await takeSlot("fred", 1, 1000, { waitMs: 10_000, signal })) || signal?.aborted) throw new SourceError(signal?.aborted ? "network" : "busy");
-  if (!(await reserveDaily("fred", envCount("FLASH_FRED_DAILY_REQUESTS", 10_000)))) throw new SourceError("busy");
+  if (!(await reserveDaily("fred", envCount("FLASH_FRED_DAILY_REQUESTS", 10_000), Date.now(), signal))) throw new SourceError(signal?.aborted ? "network" : "busy");
   const query = new URLSearchParams({ ...params, api_key: key, file_type: "json" });
   return asObject(
     await fetchJson(`${testBase("FLASH_TEST_FRED_URL") ?? FRED_BASE}${path}?${query}`, { timeoutMs: TIMEOUT_MS, maxBytes: MAX_BYTES, signal, errorBytes: ERROR_BYTES }),
