@@ -1,4 +1,3 @@
-import { one } from "./db.ts";
 import { OWNER_CODE_PARAM, flashDbShim, injectHead, type OwnerView, type Visitor } from "../flashdb-shim.ts";
 import { FORM_COOKIE, SITE_COOKIE, formCookie, newPageToken, visitorForSession } from "./site-auth.ts";
 import { readCookie } from "./auth.ts";
@@ -7,6 +6,7 @@ import { ownerKeyForCode } from "./site-owner.ts";
 import { translatorFor } from "./i18n.ts";
 import { isOwnHost } from "../site-host.ts";
 import { hasOwnPreview, previewTags, sitePreview } from "../site-preview.ts";
+import { plainTitle, previewSite, showsMadeWith } from "./made-with.ts";
 import { SITE_URL } from "../../app/site.ts";
 
 // Published apps are served with a CSP sandbox, which gives them their own opaque origin:
@@ -20,17 +20,21 @@ const SANDBOX_CSP = "sandbox allow-scripts allow-forms allow-popups allow-modals
  * card for its address (pageUrl) unless the site has its own.
  */
 export async function serveSite(slug: string | null, pageUrl?: string, request?: Request): Promise<Response> {
-  const site = slug ? await one<{ html: string }>("SELECT html FROM sites WHERE slug = ?", [slug]) : null;
+  const site = slug ? await previewSite(slug) : null;
   if (!slug || !site) {
     return new Response("<!doctype html><title>Not found</title><p style='font-family:sans-serif'>This app doesn't exist or was unpublished.</p>", {
       status: 404,
       headers: { "Content-Type": "text/html; charset=utf-8" },
     });
   }
-  const card =
-    pageUrl && !hasOwnPreview(site.html)
-      ? previewTags(sitePreview(site.html), pageUrl, `${(process.env.FLASH_APP_URL || SITE_URL).replace(/\/$/, "")}/p/${slug}/card`)
-      : "";
+  let card = "";
+  if (pageUrl && !hasOwnPreview(site.html)) {
+    // Without "Made with Flash" (see made-with.ts), a page with no title takes the app's name, and the
+    // picture has an address of its own, so share apps that keep a picture by its address fetch the new one.
+    const madeWith = await showsMadeWith(site);
+    const picture = `${(process.env.FLASH_APP_URL || SITE_URL).replace(/\/$/, "")}/p/${slug}/card${madeWith ? "" : "?plain=1"}`;
+    card = previewTags(sitePreview(site.html, madeWith ? undefined : plainTitle(site)), pageUrl, picture);
+  }
   // Who is signed in to this app, if anyone, with a key that works on this page for a couple of
   // hours. The session cookie itself never reaches the app's own code.
   let visitor: Visitor = null;

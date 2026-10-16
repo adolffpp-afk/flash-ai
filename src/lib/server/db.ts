@@ -646,6 +646,9 @@ const MIGRATIONS = [
   // For GitHub: the number of the GitHub account the tokens are for (see keepGithub), so a sign-in as
   // another account is told apart. Its login is shown in the connection's label.
   "ALTER TABLE connections ADD COLUMN account_id TEXT NOT NULL DEFAULT ''",
+  // Whether the app's link preview says "Made with Flash ∞ AI" (see made-with.ts). On until its owner,
+  // on a paid plan, turns it off.
+  "ALTER TABLE sites ADD COLUMN made_with INTEGER NOT NULL DEFAULT 1",
 ];
 
 async function init(c: Client) {

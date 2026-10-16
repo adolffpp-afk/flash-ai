@@ -2307,6 +2307,10 @@ export function Flash({
               setNotice(t("Ask for your changes here, then press Update site under the new version."));
               openProject(id);
             }}
+            onPlans={() => {
+              setShowApps(false);
+              setShowCredits(true);
+            }}
           />
         )}
         {showAutomations && <Automations onTemplates={() => setTemplates("")} onClose={() => setShowAutomations(false)} />}

@@ -29,12 +29,18 @@ const READ = 32 * 1024;
 /** Whether the site already sets its own share card, which then wins. */
 export const hasOwnPreview = (html: string) => /<meta[^<>]{1,500}?property\s*=\s*["']og:title["']/i.test(html.slice(0, READ));
 
-/** The title, description and first real picture of a site. */
-export function sitePreview(page: string): SitePreview {
+// The title of a site whose page has none, while its link preview says what it was made with (see made-with.ts).
+export const MADE_WITH_TITLE = "Made with Flash";
+
+/**
+ * The title, description and first real picture of a site. `untitled` is the title when the page
+ * has none: "Made with Flash", or something of the app's own when its owner turned that off.
+ */
+export function sitePreview(page: string, untitled: string = MADE_WITH_TITLE): SitePreview {
   const html = page.slice(0, READ);
   // A many-page site titles its first page "Home · Name": the card shows the name.
   const named = plain(html.match(/<title[^<>]{0,200}>([^<]{0,500})<\/title>/i)?.[1] ?? "").replace(/^home\s*[·|:–—-]\s*/i, "");
-  const title = clip(named || "Made with Flash", 90);
+  const title = clip(named || untitled, 90);
   const meta =
     html.match(/<meta[^<>]{1,500}?name\s*=\s*["']description["'][^<>]{0,500}?content\s*=\s*"([^"<>]{0,1000})"/i)?.[1] ??
     html.match(/<meta[^<>]{1,500}?name\s*=\s*["']description["'][^<>]{0,500}?content\s*=\s*'([^'<>]{0,1000})'/i)?.[1] ??
