@@ -4,6 +4,7 @@ import { LogoMark } from "@/app/brand";
 import { tokenContact } from "@/lib/server/contacts.ts";
 import { acceptLanguages, translatorIn } from "@/lib/server/i18n.ts";
 import { uiLanguage } from "@/lib/i18n.ts";
+import { languageById } from "@/lib/languages.ts";
 
 type Props = { params: Promise<{ token: string }>; searchParams: Promise<{ wait?: string }> };
 
@@ -28,7 +29,7 @@ export default async function Unsubscribe({ params, searchParams }: Props) {
   const found = await tokenContact(token);
   const site = found?.title ?? "";
   return (
-    <div lang={t.language} className="flex min-h-full items-center justify-center bg-[radial-gradient(ellipse_at_top,rgba(99,102,241,0.18),transparent_60%)] px-4 py-16">
+    <div lang={t.language} dir={languageById(t.language)?.rtl ? "rtl" : "ltr"} className="flex min-h-full items-center justify-center bg-[radial-gradient(ellipse_at_top,rgba(99,102,241,0.18),transparent_60%)] px-4 py-16">
       <main className="w-full max-w-sm rounded-2xl border border-zinc-800 bg-zinc-950/80 p-6 text-zinc-100 shadow-[var(--glass-shadow)]">
         <LogoMark size={44} className="mb-4" />
         {!found ? (

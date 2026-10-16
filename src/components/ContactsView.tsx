@@ -552,7 +552,7 @@ function ContactDetails({
           {c.consent ? (
             <>
               <p className="text-zinc-300">{t("Agreed to news by email on {date}", { date: dateLabel(c.consent.at, t.locale) })}</p>
-              <p className="break-words text-zinc-500">{t.node("Wording they saw: {text}", { text: <q dir="auto">{c.consent.text}</q> })}</p>
+              <p className="break-words text-zinc-500">{t.node("Wording they saw: {text}", { text: <q><bdi>{c.consent.text}</bdi></q> })}</p>
             </>
           ) : (
             <p className="text-zinc-500">{t("Hasn't agreed to news")}</p>
