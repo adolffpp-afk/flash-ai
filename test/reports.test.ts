@@ -396,3 +396,15 @@ test("the dashboard lists every open report, however many newer ones were closed
   assert.ok(items.some((i) => i.id === "Share-old-open" && i.open === 1));
   assert.equal(items.reduce((n, i) => n + i.open, 0), open);
 });
+
+test("an app's name taken again by someone else isn't taken down for what was reported about the old app", async () => {
+  const boss = await cookieFor("boss");
+  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES ('reused-ef56', 'someone', 'New app', '<p>New</p>', 0, 0)");
+  await run(
+    "INSERT INTO reports (id, item_kind, item_id, owner_id, title, reason, reporter, status, created_at, updated_at) VALUES ('old-owner', 'site', 'reused-ef56', 'owner', 'Old app', 'spam', 'r', 'open', 1, 1)",
+  );
+  assert.equal((await admin("POST", boss, { kind: "site", id: "reused-ef56", action: "take_down" })).status, 409);
+  assert.ok(await one("SELECT 1 FROM sites WHERE slug = 'reused-ef56'"), "the new owner's app stays");
+  assert.ok((await reportsOf("site", "reused-ef56")).every((r) => r.status === "open"));
+  assert.equal((await admin("POST", boss, { kind: "site", id: "reused-ef56", action: "reviewed" })).status, 200);
+});

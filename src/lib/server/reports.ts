@@ -312,6 +312,12 @@ export async function actOnReport(admin: User, kind: unknown, id: unknown, actio
   }
   if (action === "take_down") {
     const found = await one<{ owner: string }>(LOOKUP[kind], [id]);
+    // An app's name can be taken again once it's unpublished: never take down someone else's app
+    // because of what was reported about the one that had its name before.
+    const reported = await one<{ owner_id: string }>("SELECT owner_id FROM reports WHERE item_kind = ? AND item_id = ? ORDER BY created_at DESC LIMIT 1", [kind, id]);
+    if (found && reported && String(found.owner) !== reported.owner_id) {
+      return { error: "This has a new owner since it was reported, so it wasn't taken down. Check what's there now, then mark it reviewed.", status: 409 };
+    }
     // Gone already (its owner took it down): its reports close all the same.
     if (found && kind === "share") await deleteShare(String(found.owner), id);
     // Only this link: /f/ serves a file through its own link, and the file stays in its owner's account.
