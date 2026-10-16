@@ -1,4 +1,6 @@
+import { after } from "next/server";
 import { appUrl, getUser, isAdmin, unauthorized } from "@/lib/server/auth.ts";
+import { maybeAutoTopUp } from "@/lib/server/auto-topup.ts";
 import { ensureMonthlyCredits, recentActivity, spendable } from "@/lib/server/credits.ts";
 import { one, run } from "@/lib/server/db.ts";
 import { pricingInfo } from "@/lib/server/pricing.ts";
@@ -22,6 +24,8 @@ export async function GET(request: Request) {
   const user = await getUser(request);
   if (!user) return unauthorized();
   await ensureMonthlyCredits(user.id);
+  // Buys the person's auto top-up pack when they're low, after this answer (see auto-topup.ts).
+  after(() => maybeAutoTopUp(user.id).catch((err) => console.error("[flash] auto top-up failed", err)));
   const credits = await spendable(user.id);
   const { code, ...referrals } = await referralStats(user.id);
   return Response.json({
