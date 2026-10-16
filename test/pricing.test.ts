@@ -490,6 +490,27 @@ test("Lite is the cheapest plan and gives fewer credits per dollar than Pro", ()
   }
 });
 
+test("extra seats make a profit on their own, so a team plan with seats stays above its plan's margin", async () => {
+  const { EXTRA_SEAT, MAX_EXTRA_SEATS, extraSeatsFor, planCredits, seatsPrice } = await import("../src/lib/credits.ts");
+  assert.ok(EXTRA_SEAT.credits / EXTRA_SEAT.priceCents <= max.credits / max.priceCents);
+  assert.ok(EXTRA_SEAT.credits / EXTRA_SEAT.yearlyPriceCents <= max.credits / max.yearlyPriceCents);
+  for (const team of PLANS.filter((p) => p.seats)) {
+    for (const interval of ["month", "year"] as const) {
+      const months = interval === "year" ? 12 : 1;
+      for (const seats of [1, MAX_EXTRA_SEATS]) {
+        const m = margin(planPrice(team, interval) + seatsPrice(seats, interval), planCredits(team, seats), months);
+        assert.ok(m >= margin(planPrice(team, interval), team.credits, months), `${team.id} ${interval} +${seats}`);
+      }
+    }
+    assert.equal(extraSeatsFor(team, 3), 3);
+    assert.equal(extraSeatsFor(team, 999), MAX_EXTRA_SEATS);
+    assert.equal(extraSeatsFor(team, -1), 0);
+    assert.equal(extraSeatsFor(team, 1.5), 0);
+    assert.equal(extraSeatsFor(team, "4"), 0);
+  }
+  assert.equal(extraSeatsFor(PLANS.find((p) => p.id === "pro")!, 3), 0, "only team plans take seats");
+});
+
 test("referral bonuses are a share of the credits bought, the referrer's capped", () => {
   assert.deepEqual(referralBonus(500), {
     friend: Math.round(500 * REFERRAL_FRIEND_SHARE),

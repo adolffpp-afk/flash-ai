@@ -317,6 +317,25 @@ export const planPrice = (plan: Plan, interval: Interval) =>
   interval === "year" ? plan.yearlyPriceCents * 12 : plan.priceCents;
 
 /*
+ * Extra seats on a team plan: each adds one person and EXTRA_SEAT.credits to the shared monthly
+ * pool, for EXTRA_SEAT's price (20% off yearly). 100 credits per dollar (125 yearly), fewer than
+ * any plan, so seats only raise a team plan's worst-case margin.
+ */
+export const EXTRA_SEAT = { priceCents: 1500, yearlyPriceCents: 1200, credits: 1500 };
+export const MAX_EXTRA_SEATS = 20;
+
+/** The extra seats a team plan is bought with: a whole number up to MAX_EXTRA_SEATS, 0 for other plans. */
+export const extraSeatsFor = (plan: Plan, value: unknown): number =>
+  plan.seats && typeof value === "number" && Number.isInteger(value) && value > 0 ? Math.min(MAX_EXTRA_SEATS, value) : 0;
+
+/** What extra seats cost per billing period, like planPrice. */
+export const seatsPrice = (seats: number, interval: Interval) =>
+  seats * (interval === "year" ? EXTRA_SEAT.yearlyPriceCents * 12 : EXTRA_SEAT.priceCents);
+
+/** A plan's monthly credits with its extra seats. */
+export const planCredits = (plan: Plan, extraSeats = 0) => plan.credits + (plan.seats ? extraSeats * EXTRA_SEAT.credits : 0);
+
+/*
  * Referrals. When a referred friend first pays for a plan that REFERRAL_EARNS counts, the friend
  * gets REFERRAL_FRIEND_SHARE of one month of that plan's credits on top of it and the referrer
  * gets REFERRAL_REFERRER_SHARE of it, up to REFERRAL_REFERRER_CAP, even when the payment is

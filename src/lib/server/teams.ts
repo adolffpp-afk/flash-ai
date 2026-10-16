@@ -25,6 +25,12 @@ export class TeamError extends Error {
   }
 }
 
+/** How many people a team subscription holds, the owner included: its plan's seats and any extra ones. */
+export function seatsOf(sub: Subscription | null): number {
+  const seats = planById(sub?.plan)?.seats ?? 0;
+  return seats && sub ? seats + Number(sub.extra_seats ?? 0) : seats;
+}
+
 /** The user's own paid-up team plan, if they have one. */
 export async function ownTeamPlan(userId: string): Promise<Subscription | null> {
   const sub = await activeSubscription(userId);
@@ -83,8 +89,8 @@ export async function inviteMember(
   if (member) throw new TeamError(t("That person is already on your team."), 409);
   // A new invite to the same address replaces the old one.
   await run("DELETE FROM team_invites WHERE team_id = ? AND email_key = ?", [team.id, key]);
-  if ((await seatsUsed(team.id)) >= plan.seats) {
-    throw new TeamError(t("Your plan has {seats} seats, the owner included. Remove someone first.", { seats: plan.seats }), 409);
+  if ((await seatsUsed(team.id)) >= seatsOf(sub)) {
+    throw new TeamError(t("Your plan has {seats} seats, the owner included. Remove someone first.", { seats: seatsOf(sub) }), 409);
   }
   const token = randomId(32);
   const inviteId = randomId();
@@ -124,13 +130,13 @@ export async function acceptInvite(
   if (await one("SELECT 1 FROM team_members WHERE user_id = ?", [user.id])) {
     throw new TeamError(t("You're already on a team. Leave it first."), 409);
   }
-  const plan = planById((await ownTeamPlan(invite.owner_id))?.plan);
-  if (!plan?.seats) throw new TeamError(t("This team's Business plan isn't active."), 409);
+  const teamSub = await ownTeamPlan(invite.owner_id);
+  if (!planById(teamSub?.plan)?.seats) throw new TeamError(t("This team's Business plan isn't active."), 409);
   // This invite's seat becomes the member's, so count members only. The check and the insert are one statement.
   const r = await run(
     `INSERT OR IGNORE INTO team_members (user_id, team_id, joined_at)
      SELECT ?, ?, ? WHERE (SELECT COUNT(*) FROM team_members WHERE team_id = ?) < ?`,
-    [user.id, invite.team_id, now(), invite.team_id, plan.seats - 1],
+    [user.id, invite.team_id, now(), invite.team_id, seatsOf(teamSub) - 1],
   );
   if (r.rowsAffected !== 1) throw new TeamError(t("This team is full."), 409);
   await run("DELETE FROM team_invites WHERE id = ?", [invite.id]);
@@ -159,7 +165,6 @@ export async function teamSummary(userId: string) {
   const own = await ownTeamPlan(userId);
   const team = await teamOf(userId);
   if (own || team) {
-    const plan = planById(own?.plan);
     const members = team
       ? await all<{ id: string; name: string; email: string; joined_at: number; used: number }>(
           `SELECT u.id, u.name, u.email, m.joined_at,
@@ -178,7 +183,7 @@ export async function teamSummary(userId: string) {
     return {
       role: "owner" as const,
       active: Boolean(own),
-      seats: plan?.seats ?? 0,
+      seats: seatsOf(own),
       members: members.map((m) => ({ ...m, used: Number(m.used) })),
       invites,
     };

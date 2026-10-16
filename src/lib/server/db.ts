@@ -624,6 +624,8 @@ const MIGRATIONS = [
   "ALTER TABLE site_owner_codes ADD COLUMN host TEXT NOT NULL DEFAULT ''",
   // When a held charge was settled to what the request really cost, or 0 while it runs.
   "ALTER TABLE credit_ledger ADD COLUMN settled_at INTEGER NOT NULL DEFAULT 0",
+  // People added to a team plan on top of its own seats, each with more monthly credits (EXTRA_SEAT).
+  "ALTER TABLE subscriptions ADD COLUMN extra_seats INTEGER NOT NULL DEFAULT 0",
   // Counts every write of a project's messages, so the server saving a reply never overwrites
   // a change saved since it read them (see turns.ts).
   "ALTER TABLE projects ADD COLUMN version INTEGER NOT NULL DEFAULT 0",
