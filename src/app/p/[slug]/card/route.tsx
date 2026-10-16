@@ -1,16 +1,19 @@
 import { ImageResponse } from "next/og";
-import { one } from "@/lib/server/db.ts";
-import { sitePreview } from "@/lib/site-preview.ts";
+import { shareCard } from "@/lib/server/made-with.ts";
 import { BRAND, BrandMark, InfinitySymbol } from "../../../brand";
 
 const size = { width: 1200, height: 630 };
 
-/** The picture in a published site's share card when the site has no picture of its own. */
+/**
+ * The picture in a published site's share card when the site has no picture of its own. Its foot says
+ * "Made with Flash ∞ AI" unless the owner turned that off on a paid plan (see made-with.ts); then it
+ * shows the site's own domain, or stays empty so the title keeps its place.
+ */
 export async function GET(_request: Request, ctx: RouteContext<"/p/[slug]/card">) {
   const { slug } = await ctx.params;
-  const site = await one<{ html: string }>("SELECT html FROM sites WHERE slug = ?", [slug]);
-  if (!site) return new Response("Not found", { status: 404 });
-  const { title, description } = sitePreview(site.html);
+  const card = await shareCard(slug);
+  if (!card) return new Response("Not found", { status: 404 });
+  const { title, description, madeWith, address } = card;
   const image = new ImageResponse(
     (
       <div
@@ -34,12 +37,16 @@ export async function GET(_request: Request, ctx: RouteContext<"/p/[slug]/card">
             </div>
           )}
         </div>
-        <div style={{ display: "flex", alignItems: "center", fontSize: 24, color: "#8a90a8" }}>
-          <BrandMark size={36} />
-          <span style={{ marginLeft: 10 }}>Made with Flash</span>
-          <InfinitySymbol id="card" width={25} height={13} style={{ margin: "2px 6px 0" }} />
-          <span>AI</span>
-        </div>
+        {madeWith ? (
+          <div style={{ display: "flex", alignItems: "center", height: 36, fontSize: 24, color: "#8a90a8" }}>
+            <BrandMark size={36} />
+            <span style={{ marginLeft: 10 }}>Made with Flash</span>
+            <InfinitySymbol id="card" width={25} height={13} style={{ margin: "2px 6px 0" }} />
+            <span>AI</span>
+          </div>
+        ) : (
+          <div style={{ display: "flex", alignItems: "center", height: 36, fontSize: 24, color: "#8a90a8" }}>{address}</div>
+        )}
       </div>
     ),
     size,
