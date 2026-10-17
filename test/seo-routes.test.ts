@@ -23,6 +23,8 @@ const { afterwards } = (await import("./support/next-server.mjs")) as unknown as
 const seoRoute = await import("../src/app/api/sites/[slug]/seo/route.ts");
 const sitesRoute = await import("../src/app/api/sites/route.ts");
 const versionsRoute = await import("../src/app/api/sites/[slug]/versions/route.ts");
+const appRoute = await import("../src/app/p/[slug]/route.ts");
+const domainRoute = await import("../src/app/d/[host]/route.ts");
 
 const ORIGIN = "http://localhost";
 
@@ -233,4 +235,28 @@ test("publishing through the connector says the app's search check", async () =>
   const report = evaluate(scanPage(GOOD), CTX(slug));
   assert.match(text, new RegExp(` Search check: ${report.score}/100, ${issueCount(report)} things to fix in Flash › My websites & apps › SEO\\.$`));
   assert.match(text, /Free, no credits used\./);
+});
+
+test("each app's page names its main address for Google: Flash's main domain, or the domain it's opened on", async () => {
+  const who = await owner("canon");
+  await legacy(who, "canon-app", GOOD);
+  await run("INSERT INTO site_domains (domain, site_slug, user_id, created_at) VALUES ('crumb.lisbon', 'canon-app', ?, 0), ('www.crumb.lisbon', 'canon-app', ?, 1)", [who.id, who.id]);
+  const canonicals = (html: string) => [...html.matchAll(/<link rel="canonical" href="([^"]*)">/g)].map((m) => m[1]);
+
+  // A copy on another of Flash's addresses points at the main one; its share card keeps the address it was opened at.
+  const copy = await (await appRoute.GET(new Request("https://flash-ai-pi.vercel.app/p/canon-app"), params("canon-app"))).text();
+  assert.deepEqual(canonicals(copy), ["https://www.flash-app.dev/p/canon-app"]);
+  assert.match(copy, /property="og:url" content="https:\/\/flash-ai-pi\.vercel\.app\/p\/canon-app"/);
+  // Each domain names itself, the bare one and www alike.
+  for (const domain of ["crumb.lisbon", "www.crumb.lisbon"]) {
+    const res = await domainRoute.GET(new Request(`http://localhost/d/${domain}`), { params: Promise.resolve({ host: domain }) } as never);
+    assert.deepEqual(canonicals(await res.text()), [`https://${domain}/`]);
+  }
+  await afterwards();
+
+  // A page that names its own keeps it, with no second one.
+  await run("UPDATE sites SET html = ? WHERE slug = 'canon-app'", [GOOD.replace("</head>", '<link rel="canonical" href="https://crumb.lisbon/"></head>')]);
+  const own = await (await appRoute.GET(new Request("https://www.flash-app.dev/p/canon-app"), params("canon-app"))).text();
+  assert.deepEqual(canonicals(own), ["https://crumb.lisbon/"]);
+  await afterwards();
 });

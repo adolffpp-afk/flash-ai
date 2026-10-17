@@ -27,6 +27,8 @@ export function routeHost(hostHeader: string, path: string, method: string, appH
   const api = SITE_API.exec(path);
   if (api) return { siteApi: api[1] };
   if (path === "/") return { rewrite: `/d/${encodeURIComponent(host)}` };
+  // The domain's own robots.txt and sitemap.xml, which let Google find the site (see src/app/d/[host]/[file]).
+  if (method === "GET" && (path === "/robots.txt" || path === "/sitemap.xml")) return { rewrite: `/d/${encodeURIComponent(host)}${path}` };
   // A site is one page, so other paths go home; Flash's own pages aren't reachable from here.
   if (method === "GET" && path !== "/favicon.ico") return { redirect: "/" };
   return { notFound: true };

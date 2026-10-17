@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { register } from "node:module";
 
+register("./support/route-hooks.mjs", import.meta.url);
 process.env.DATABASE_URL = ":memory:";
 process.env.VERCEL_API_TOKEN = "t";
 process.env.VERCEL_PROJECT_ID = "flash-ai";
@@ -9,6 +11,7 @@ const { run } = await import("../src/lib/server/db.ts");
 const { cleanDomain, isSubdomain, addDomain, siteForDomain, removeDomain, domainsForSite, ownershipValue, ownershipRecord, provesOwnership, pointsAtFlash } =
   await import("../src/lib/server/domains.ts");
 const { routeHost } = await import("../src/lib/site-host.ts");
+const domainFile = await import("../src/app/d/[host]/[file]/route.ts");
 
 test("domains people type are cleaned, and Flash's own can't be claimed", () => {
   assert.equal(cleanDomain(" https://WWW.CrumbBakery.com/menu "), "www.crumbbakery.com");
@@ -134,6 +137,50 @@ test("custom domains show their site and keep Flash's pages off them", () => {
   assert.deepEqual(routeHost("crumbbakery.com", "/admin", "GET"), { redirect: "/" });
   assert.deepEqual(routeHost("crumbbakery.com", "/api/auth/signin", "POST"), { notFound: true });
   assert.deepEqual(routeHost("flash.example.org", "/admin", "GET", "flash.example.org"), { pass: true }, "FLASH_APP_URL's host is Flash's own");
+  // Its own robots.txt and sitemap.xml, so Google can find it; only to read.
+  assert.deepEqual(routeHost("CrumbBakery.com", "/robots.txt", "GET"), { rewrite: "/d/crumbbakery.com/robots.txt" });
+  assert.deepEqual(routeHost("crumbbakery.com", "/sitemap.xml", "GET"), { rewrite: "/d/crumbbakery.com/sitemap.xml" });
+  assert.deepEqual(routeHost("crumbbakery.com", "/robots.txt", "POST"), { notFound: true });
+  assert.deepEqual(routeHost("crumbbakery.com", "/about", "GET"), { redirect: "/" });
+  assert.deepEqual(routeHost("www.flash-app.dev", "/robots.txt", "GET"), { pass: true }, "Flash's own robots.txt is its own");
+});
+
+test("a site on its own domain has a robots.txt that lets Google in and a sitemap of its one page", async () => {
+  await run("INSERT INTO users (id, email, password_hash, created_at, verified_at) VALUES ('u9', 'r@x.co', 'h', 0, 1)");
+  const day = Date.UTC(2026, 9, 12, 15, 30);
+  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES ('robots-1', 'u9', 'Crumb', '<!doctype html><title>Crumb</title><p>Bread', 0, ?)", [day]);
+  await run("INSERT INTO site_domains (domain, site_slug, user_id, created_at) VALUES ('robotsbakery.com', 'robots-1', 'u9', 0)");
+  const get = (host: string, file: string) => domainFile.GET(new Request(`http://localhost/d/${host}/${file}`), { params: Promise.resolve({ host, file }) } as never);
+
+  const robots = await get("robotsbakery.com", "robots.txt");
+  assert.equal(robots.status, 200);
+  assert.equal(robots.headers.get("content-type"), "text/plain; charset=utf-8");
+  assert.equal(robots.headers.get("cache-control"), "public, max-age=3600");
+  assert.equal(await robots.text(), "User-agent: *\nAllow: /\nSitemap: https://robotsbakery.com/sitemap.xml\n", "nothing kept from Google, the app's data included");
+
+  const sitemap = await get("RobotsBakery.com", "sitemap.xml");
+  assert.equal(sitemap.status, 200);
+  assert.equal(sitemap.headers.get("content-type"), "application/xml; charset=utf-8");
+  const xml = await sitemap.text();
+  assert.match(xml, /^<\?xml version="1.0" encoding="UTF-8"\?>\n<urlset xmlns="http:\/\/www.sitemaps.org\/schemas\/sitemap\/0.9">/);
+  assert.match(xml, /<url><loc>https:\/\/robotsbakery.com\/<\/loc><lastmod>2026-10-12<\/lastmod><\/url>/);
+
+  for (const [host, file] of [["nobody.com", "robots.txt"], ["nobody.com", "sitemap.xml"], ["robotsbakery.com", "x.txt"], ["robotsbakery.com", "humans.txt"], ["%E0%A4%A", "robots.txt"]]) {
+    assert.equal((await get(host, file)).status, 404, `${host}/${file}`);
+  }
+
+  // A page that asks to be kept off Google, or a site someone reported, lists nothing.
+  const empty = /<urlset xmlns="http:\/\/www.sitemaps.org\/schemas\/sitemap\/0.9"><\/urlset>/;
+  await run("UPDATE sites SET html = ?, seo = '' WHERE slug = 'robots-1'", ['<!doctype html><meta name="robots" content="noindex"><title>Crumb</title>']);
+  assert.match(await (await get("robotsbakery.com", "sitemap.xml")).text(), empty);
+  await run("UPDATE sites SET html = '<p>Bread', seo = '' WHERE slug = 'robots-1'");
+  assert.match(await (await get("robotsbakery.com", "sitemap.xml")).text(), /<loc>/);
+  await run(
+    "INSERT INTO reports (id, item_kind, item_id, owner_id, reason, reporter, created_at, updated_at) VALUES ('rep-1', 'site', 'robots-1', 'u9', 'spam', 'someone', 0, 0)",
+  );
+  assert.match(await (await get("robotsbakery.com", "sitemap.xml")).text(), empty);
+  await run("UPDATE reports SET status = 'reviewed' WHERE id = 'rep-1'");
+  assert.match(await (await get("robotsbakery.com", "sitemap.xml")).text(), /<loc>/, "listed again once it's reviewed");
 });
 
 test("only a domain that leads to Flash now counts as pointing at it", async () => {

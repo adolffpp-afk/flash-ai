@@ -2,6 +2,7 @@ import { test, after, mock } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { register } from "node:module";
 
 // A stand-in Claude: answers with what it was asked, and reports what it cost.
 let sent: { system: string; prompt: string; maxTokens: number } | null = null;
@@ -33,6 +34,7 @@ const server = createServer((req, res) => {
 await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
 after(() => server.close());
 
+register("./support/route-hooks.mjs", import.meta.url);
 process.env.DATABASE_URL = ":memory:";
 process.env.ANTHROPIC_API_KEY = "sk-fake";
 process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -44,6 +46,7 @@ const { askSiteAi, aiSettings, saveAiSettings, worstCaseCredits, MAX_INSTRUCTION
 const { CREDIT_PACKS, PLANS, claudeCostCents } = await import("../src/lib/credits.ts");
 const { saveUpload, listUploads, deleteUpload, cleanName, uploadUse, setUploadsOn, uploadsOn } = await import("../src/lib/server/site-files.ts");
 const { flashDbShim } = await import("../src/lib/flashdb-shim.ts");
+const aiRoute = await import("../src/app/api/sites/[slug]/ai/route.ts");
 
 const balance = async () =>
   Number((await one<{ c: number }>("SELECT COALESCE(SUM(amount), 0) AS c FROM credit_ledger WHERE user_id = 'owner'"))?.c);
@@ -118,6 +121,33 @@ test("what the app says and what a visitor types are kept apart", async () => {
   // Empty questions and missing apps don't reach the model.
   assert.equal((await ask("   ")).status, 400);
   assert.equal((await askSiteAi("nope", { prompt: "hi" }, "1.1.1.1")).status, 404);
+});
+
+test("Google's page speed check (Lighthouse) never spends an app's AI, and visitors still get answers", async () => {
+  const post = (agent: string) =>
+    aiRoute.POST(
+      new Request("http://localhost/api/sites/shop/ai", {
+        method: "POST",
+        headers: { "content-type": "application/json", "user-agent": agent },
+        body: JSON.stringify({ prompt: "When should I book?" }),
+      }),
+      { params: Promise.resolve({ slug: "shop" }) } as never,
+    );
+  const before = await balance();
+  const today = await aiSettings("shop");
+  sent = null;
+  const lighthouse = await post("Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36 Chrome-Lighthouse");
+  assert.equal(lighthouse.status, 503);
+  assert.deepEqual(await lighthouse.json(), { error: "The AI isn't available right now. Please try again later." });
+  assert.equal(lighthouse.headers.get("access-control-allow-origin"), "*", "the app can read the answer");
+  assert.equal(sent, null, "the model was never asked");
+  assert.equal(await balance(), before, "nothing charged");
+  assert.deepEqual(await aiSettings("shop"), today, "nothing taken from the day's budget");
+
+  const visitor = await post("Mozilla/5.0 (Linux; Android 11) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36");
+  assert.equal(visitor.status, 200);
+  assert.notEqual(sent, null);
+  assert.ok((await balance()) < before);
 });
 
 test("an answer that ends after midnight gives back what it didn't use to the day it was taken from", async () => {

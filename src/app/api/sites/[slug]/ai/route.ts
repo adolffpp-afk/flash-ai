@@ -20,6 +20,11 @@ export function OPTIONS() {
 
 /** Someone using a published app asks its AI (window.flashAI.ask). The app's owner pays. */
 export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug]/ai">) {
+  // Google's page speed check (Lighthouse) runs the app in a browser, so it could press a button that
+  // asks: it gets the app's usual "not available" answer and never spends the owner's credits.
+  if (/Chrome-Lighthouse/i.test(request.headers.get("user-agent") ?? "")) {
+    return Response.json({ error: "The AI isn't available right now. Please try again later." }, { status: 503, headers: CORS });
+  }
   const { slug } = await ctx.params;
   const body = (await request.json().catch(() => ({}))) as { prompt?: unknown; instructions?: unknown };
   const { status, body: answer } = await askSiteAi(slug, body, clientIp(request));
