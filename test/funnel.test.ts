@@ -41,8 +41,14 @@ const events = (slug: string) =>
     "SELECT day, step, source, medium, campaign, n FROM site_events WHERE site_slug = ? AND step NOT IN ('visit') ORDER BY day, step, source",
     [slug],
   ).then((rows) => rows.map((r) => ({ ...r, n: Number(r.n) })));
-const site = (slug: string, owner = "u1") =>
-  run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES (?, ?, ?, '<p>', 0, 0)", [slug, owner, slug]);
+/** An app, with the step names its code reports with flashDB.track (as publishing keeps them, see stepsInHtml). */
+const site = (slug: string, owner = "u1", stepNames: string[] = []) =>
+  run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at, step_names) VALUES (?, ?, ?, '<p>', 0, 0, ?)", [
+    slug,
+    owner,
+    slug,
+    JSON.stringify(stepNames),
+  ]);
 const sendForm = (slug: string, headers: Record<string, string> = {}, data: unknown = { name: "Ana", email: "ana@example.com" }) =>
   inboxRoute.POST(call(slug, "inbox", { headers: { "content-type": "application/json", ...headers }, body: JSON.stringify({ form: "contact", data }) }), ctx(slug));
 
@@ -229,7 +235,7 @@ test("a checkout keeps only its buyer's source beside the session, and its order
     return Response.json({ id: "e" });
   }) as typeof fetch;
   // The page the buyer is on, which they go back to, with the tags of the link they came by.
-  const onPage = "https://www.flash-app.dev/p/cake-1?utm_source=instagram&utm_medium=social&utm_campaign=Spring%20Sale&gclid=Cj0x&menu=cakes#/shop";
+  const onPage = "https://www.flash-app.dev/p/cake-1?utm_source=instagram&utm_medium=social&utm_campaign=Spring%20Sale&gclid=Cj0x&ttclid=E.C.P&mc_eid=6f1e2d3c4b&menu=cakes#/shop";
   const buy = (headers: Record<string, string> = {}) =>
     shopRoute.POST(call("cake-1", "shop", { headers: { "content-type": "application/json", ...headers }, body: JSON.stringify({ item: "Cake", page: onPage }) }), ctx("cake-1"));
   const paid = (id: string, amount: number, currency = "cad") => ({
@@ -274,8 +280,8 @@ test("a checkout keeps only its buyer's source beside the session, and its order
     [...forms[0].keys()].filter((k) => k.startsWith("metadata")),
     ["metadata[flash_site]", "metadata[flash_item]"],
   );
-  assert.ok(![...forms[0].values()].some((v) => /instagram|spring|utm_|gclid/i.test(v)), "not even in the address the buyer goes back to");
-  assert.equal(forms[0].get("cancel_url"), "https://www.flash-app.dev/p/cake-1?menu=cakes#/shop");
+  assert.ok(![...forms[0].values()].some((v) => /instagram|spring|utm_|clid|mc_eid/i.test(v)), "not even in the address the buyer goes back to");
+  assert.equal(forms[0].get("cancel_url"), "https://www.flash-app.dev/p/cake-1#/shop", "only the page and its #/route, so no other tool's click ID goes either");
 
   // A buyer Flash can't match, and the owner, leave no source: their orders show as not matched.
   sessionId = "cs_test_b";
@@ -321,7 +327,7 @@ test("a checkout keeps only its buyer's source beside the session, and its order
 
 test("the track route counts the steps an app reports, without a source, and always answers 204 at once", async () => {
   forgetServerMemory();
-  await site("track-1");
+  await site("track-1", "u1", ["booking", "plan-chosen", "menu-opened", "survey", "after-the-cut"]);
   const track = (body: BodyInit, headers: Record<string, string> = {}) =>
     trackRoute.POST(call("track-1", "track", { headers: { "content-type": "text/plain", ...headers }, body }), ctx("track-1"));
   const appSteps = async () =>
@@ -343,16 +349,20 @@ test("the track route counts the steps an app reports, without a source, and alw
     return (execute as (...a: unknown[]) => unknown)(s, ...rest);
   }) as typeof client.execute;
   try {
-    assert.equal((await track("booking\nPlan-Chosen\ncheckout\norder-1234567\n" + "a1b2c3d4e5f6a7b8\nnot ok\n" + "x".repeat(41))).status, 204);
+    assert.equal((await track("booking\nPlan-Chosen\ncall-us-now\ncheckout\norder-1234567\n" + "a1b2c3d4e5f6a7b8\nnot ok\n" + "x".repeat(41))).status, 204);
     await afterwards();
   } finally {
     client.execute = execute;
   }
   assert.equal(lists, 1, "one write to the person's list for the whole request");
-  assert.deepEqual(await appSteps(), [
-    ["app:booking", "", "", "", 1],
-    ["app:plan-chosen", "", "", "", 1],
-  ]);
+  assert.deepEqual(
+    await appSteps(),
+    [
+      ["app:booking", "", "", "", 1],
+      ["app:plan-chosen", "", "", "", 1],
+    ],
+    "call-us-now isn't in the app's code",
+  );
   // Reported again: once a day per person.
   await track("booking");
   await afterwards();
@@ -383,7 +393,8 @@ test("the track route counts the steps an app reports, without a source, and alw
 
 test("an app counts 10 names a day, a person 15 tries, and the owner's apps their plan's number of app steps", async () => {
   forgetServerMemory();
-  await site("names-1");
+  // More names than one page can have (10), as when the app is changed during the day.
+  await site("names-1", "u1", [..."123456789", "10", "11"].map((i) => `n${i}`).concat(["m1", "m2", "m3", "m4", "m5", "z1"]));
   const at = Date.now();
   const ip = (i: number) => `10.1.0.${i}`;
   const step = async (i: number, names: string[]) =>
@@ -406,19 +417,33 @@ test("an app counts 10 names a day, a person 15 tries, and the owner's apps thei
   try {
     const match = await matchVisit("names-1", call("names-1", "track", { headers: { "x-forwarded-for": ip(1) } }), at);
     sent = 0;
-    await countSteps("names-1", match, ["app:z1", "form"], at);
+    await countSteps("names-1", match, ["app:z1"], at);
   } finally {
     client.execute = execute;
     client.batch = batch;
   }
   assert.equal(sent, 0, "a person who used their 15 tries costs nothing more past the match");
+  // Their form, sign-up and checkout still count: the tries are for the app's own names.
+  await step(1, ["z1"]);
+  await countSteps("names-1", await matchVisit("names-1", call("names-1", "inbox", { headers: { "x-forwarded-for": ip(1) } }), at), ["app:z1", "form"], at);
+  await countSteps("names-1", await matchVisit("names-1", call("names-1", "shop", { headers: { "x-forwarded-for": ip(1) } }), at), ["checkout"], at);
+  assert.deepEqual(
+    (await all<{ step: string; n: number }>("SELECT step, n FROM site_events WHERE site_slug = 'names-1' AND step IN ('form', 'checkout', 'app:z1') ORDER BY step")).map((r) => [
+      r.step,
+      Number(r.n),
+    ]),
+    [
+      ["checkout", 1],
+      ["form", 1],
+    ],
+  );
 
   // The owner's daily app steps, here 3, across all their apps; built-in steps still count.
   visitTests.freePeople = 3;
   try {
     forgetServerMemory();
-    await site("budget-1", "u2");
-    await site("budget-2", "u2");
+    await site("budget-1", "u2", ["a", "b"]);
+    await site("budget-2", "u2", ["c", "d"]);
     const later = Date.now();
     await recordVisit("budget-1", page("budget-1", { "x-forwarded-for": ip(7) }), null, later);
     await recordVisit("budget-2", page("budget-2", { "x-forwarded-for": ip(8) }), null, later);
@@ -442,6 +467,88 @@ test("an app counts 10 names a day, a person 15 tries, and the owner's apps thei
   } finally {
     visitTests.freePeople = 0;
   }
+});
+
+test("a paid owner whose apps reach the free number of app steps within one request counts them all, with no limit note", async () => {
+  visitTests.freePeople = 3;
+  const { PLAN_PEOPLE } = await import("../src/lib/server/visits.ts");
+  const pro = PLAN_PEOPLE.pro;
+  PLAN_PEOPLE.pro = 100;
+  try {
+    forgetServerMemory();
+    await run("INSERT INTO users (id, email, password_hash, created_at, verified_at) VALUES ('pro1', 'pro1@x.co', 'h', 0, 1)");
+    await run(
+      `INSERT INTO subscriptions (id, user_id, plan, interval, status, amount_cents, anchor, paid_until, test, created_at, updated_at)
+       VALUES ('sub-pro1', 'pro1', 'pro', 'month', 'active', 100, 0, ?, 1, 0, 0)`,
+      [Date.UTC(2100, 0, 1)],
+    );
+    await site("cross-1", "pro1", ["a", "b", "c", "d"]);
+    const at = Date.now();
+    await recordVisit("cross-1", page("cross-1", { "x-forwarded-for": "10.2.0.1" }), null, at);
+    const on = () => matchVisit("cross-1", call("cross-1", "track", { headers: { "x-forwarded-for": "10.2.0.1" } }), at);
+    await countSteps("cross-1", await on(), ["app:a", "app:b", "app:c", "app:d"], at);
+    const rows = (await events("cross-1")).map((e) => [e.step, e.n]);
+    assert.deepEqual(rows, [
+      ["app:a", 1],
+      ["app:b", 1],
+      ["app:c", 1],
+      ["app:d", 1],
+    ]);
+    assert.equal((await funnelStats("cross-1", 30, at))!.stepsPaused.length, 0, "no note saying their steps stopped at the free number");
+  } finally {
+    visitTests.freePeople = 0;
+    PLAN_PEOPLE.pro = pro;
+  }
+});
+
+test("app steps sent at once by many people stay within the owner's daily number", async () => {
+  visitTests.freePeople = 5;
+  try {
+    forgetServerMemory();
+    await run("INSERT INTO users (id, email, password_hash, created_at, verified_at) VALUES ('par1', 'par1@x.co', 'h', 0, 1)");
+    await site("par-1", "par1", ["a", "b"]);
+    const at = Date.now();
+    const ip = (i: number) => `10.3.${i}.1`;
+    for (let i = 0; i < 5; i++) await recordVisit("par-1", page("par-1", { "x-forwarded-for": ip(i) }), null, at);
+    const matches = await Promise.all(Array.from({ length: 5 }, (_, i) => matchVisit("par-1", call("par-1", "track", { headers: { "x-forwarded-for": ip(i) } }), at)));
+    await Promise.all(matches.map((m) => countSteps("par-1", m, ["app:a", "app:b"], at)));
+    const counted = await n("SELECT COALESCE(SUM(n), 0) AS n FROM site_events WHERE site_slug = 'par-1' AND step LIKE 'app:%'");
+    assert.equal(counted, 5, "5 people sending 2 steps each at once count the owner's 5");
+    assert.ok((await n("SELECT steps AS n FROM owner_people WHERE user_id = 'par1'")) >= 5, "the owner's count says their day is used up");
+    const f = (await funnelStats("par-1", 30, at))!;
+    assert.equal(f.stepsPausedToday, 5);
+  } finally {
+    visitTests.freePeople = 0;
+  }
+});
+
+test("only the names written out in the app's code count, so a stranger can't fill the app's day with others", async () => {
+  forgetServerMemory();
+  const { publishSite } = await import("../src/lib/server/sites.ts");
+  await run("DELETE FROM rate_limits");
+  const published = await publishSite({ id: "u3", email: "q@x.co", name: "", verified_at: 1 } as never, {
+    title: "Bookings",
+    html: `<button onclick="flashDB.track('booking-started')">Book</button><script>flashDB.track("Plan-Chosen"); flashDB.track(\`viewed-\${x}\`)</script>`,
+  });
+  assert.ok("slug" in published, JSON.stringify(published));
+  const slug = published.slug;
+  assert.equal((await one<{ step_names: string }>("SELECT step_names FROM sites WHERE slug = ?", [slug]))?.step_names, '["booking-started","plan-chosen"]');
+  const track = (ip: string, body: string) =>
+    trackRoute.POST(call(slug, "track", { headers: { "content-type": "text/plain", "x-forwarded-for": ip }, body }), ctx(slug));
+  // A stranger: one visit, then ten made-up names.
+  await recordVisit(slug, page(slug, { "x-forwarded-for": "6.6.6.6" }));
+  await track("6.6.6.6", Array.from({ length: 10 }, (_, i) => `call-us-now-${"abcdefghij"[i]}`).join("\n"));
+  await afterwards();
+  for (let i = 1; i <= 3; i++) {
+    await recordVisit(slug, page(slug, { "x-forwarded-for": `10.4.0.${i}` }));
+    await track(`10.4.0.${i}`, "booking-started");
+    await afterwards();
+  }
+  assert.deepEqual((await funnelStats(slug, 30))!.appSteps, [{ step: "booking-started", people: 3 }]);
+  assert.deepEqual(
+    (await all<{ name: string }>("SELECT name FROM site_step_names WHERE site_slug = ?", [slug])).map((r) => r.name),
+    ["booking-started"],
+  );
 });
 
 test("a custom domain's app can report steps", () => {

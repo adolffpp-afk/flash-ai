@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useState, type ChangeEvent, type ReactNode } from "react";
 import type { FunnelCounts, FunnelRange, FunnelSource, FunnelStats, Money } from "@/lib/server/funnel.ts";
 import { formatMoney } from "@/lib/shop";
 import { msg } from "@/lib/i18n";
-import { percent, share, taggedLink } from "@/lib/traffic";
+import { cleanTag, percent, share, taggedLink } from "@/lib/traffic";
 import { useT, type T } from "@/lib/use-t";
 
 const DAY = 86_400_000;
@@ -38,6 +38,18 @@ const ofVisitors = (n: number, visitors: number, t: T) => {
   return rate === null ? of : `${of}${between(t)}${percent(rate, t.locale)}`;
 };
 const sourceName = (source: string, t: T) => source || t("Direct (typed, bookmarked or shared in a message)");
+/** Days as one list in the reader's language ("Oct 12, Oct 8 and Oct 2"). */
+const dayList = (days: string[], t: T) => new Intl.ListFormat(t.locale, { type: "conjunction" }).format(days.map((d) => dayLabel(d, t.locale)));
+/** Days with the same limit together, newest first, so each limit is said once. */
+function byLimit<T extends { day: string }>(list: T[], limit: (x: T) => number): { days: string[]; limit: number }[] {
+  const groups: { days: string[]; limit: number }[] = [];
+  for (const x of list) {
+    const group = groups.find((g) => g.limit === limit(x));
+    if (group) group.days.push(x.day);
+    else groups.push({ days: [x.day], limit: limit(x) });
+  }
+  return groups;
+}
 const campaignName = (c: { medium: string; campaign: string }) => [c.medium, c.campaign].filter(Boolean).join(" · ");
 
 /**
@@ -53,17 +65,23 @@ export function FunnelNotes({ stats, onPlans }: { stats: FunnelStats; onPlans?: 
   const more = (n: number) => (n === 1 ? t("…and on 1 other day.") : t("…and on {count} other days.", { count: count(n, t) }));
   const notes: string[] = [];
   if (stats.stepsPausedToday !== null) notes.push(t("Your apps' own steps stopped counting for today at {count} (your plan's daily limit).", { count: count(stats.stepsPausedToday, t) }));
-  for (const p of earlier.slice(0, NOTED_DAYS)) {
+  // Earlier days in one sentence per limit, so a month of them doesn't fill a phone's screen.
+  for (const g of byLimit(earlier.slice(0, NOTED_DAYS), (p) => p.people)) {
     notes.push(
-      t(
-        "On {date}, counting paused at {count} people across your apps (your plan's limit). People who came after that aren't in that day's numbers, and their forms, sign-ups and checkouts show as Not matched.",
-        { date: dayLabel(p.day, t.locale), count: count(p.people, t) },
-      ),
+      g.days.length === 1
+        ? t(
+            "On {date}, counting paused at {count} people across your apps (your plan's limit). People who came after that aren't in that day's numbers, and their forms, sign-ups and checkouts show as Not matched.",
+            { date: dayLabel(g.days[0], t.locale), count: count(g.limit, t) },
+          )
+        : t(
+            "On {dates}, counting paused at {count} people across your apps (your plan's limit). People who came after that aren't in those days' numbers, and their forms, sign-ups and checkouts show as Not matched.",
+            { dates: dayList(g.days, t), count: count(g.limit, t) },
+          ),
     );
   }
   if (earlier.length > NOTED_DAYS) notes.push(more(earlier.length - NOTED_DAYS));
-  for (const p of stepsEarlier.slice(0, NOTED_DAYS)) {
-    notes.push(t("On {date}, your apps' own steps stopped counting at {count} (your plan's daily limit).", { date: dayLabel(p.day, t.locale), count: count(p.steps, t) }));
+  for (const g of byLimit(stepsEarlier.slice(0, NOTED_DAYS), (p) => p.steps)) {
+    notes.push(t("On {date}, your apps' own steps stopped counting at {count} (your plan's daily limit).", { date: dayList(g.days, t), count: count(g.limit, t) }));
   }
   if (stepsEarlier.length > NOTED_DAYS) notes.push(more(stepsEarlier.length - NOTED_DAYS));
   if (stats.netCapped !== null) {
@@ -164,6 +182,9 @@ function SourceTable({ stats }: { stats: FunnelStats }) {
     ...stats.sources.map((s) => ({ key: `s:${s.source}`, name: sourceName(s.source, t), c: s, source: s })),
     ...(stats.rest ? [{ key: "rest", name: t("Other sources"), c: stats.rest, muted: true }] : []),
   ];
+  // People who came on the day counting by source began, before it began, are in Visitors only.
+  const inRows = rows.reduce((n, r) => n + r.c.visitors, 0);
+  const before = stats.totals.visitors > inRows;
   const cell = "px-2 py-2 text-end tabular-nums";
   const numbers = (c: Omit<FunnelCounts, "visitors">, visitors: number | null) => (
     <>
@@ -183,7 +204,8 @@ function SourceTable({ stats }: { stats: FunnelStats }) {
       </td>
     </>
   );
-  const nameCell = (name: string, source?: FunnelSource, muted?: boolean) => {
+  // In the table a long name is cut (its title shows it whole); on a card, where there's no hovering, it wraps.
+  const nameCell = (name: string, source?: FunnelSource, muted?: boolean, wrap = false) => {
     const open = source ? opened.includes(source.source) : false;
     return (
       <div className="flex min-w-0 items-center gap-1">
@@ -197,12 +219,24 @@ function SourceTable({ stats }: { stats: FunnelStats }) {
             <Chevron open={open} />
           </button>
         ) : null}
-        <bdi dir="auto" title={name} className={`min-w-0 truncate ${muted ? "text-zinc-400" : "text-zinc-200"}`}>
+        <bdi dir="auto" title={wrap ? undefined : name} className={`min-w-0 ${wrap ? "[overflow-wrap:anywhere]" : "truncate"} ${muted ? "text-zinc-400" : "text-zinc-200"}`}>
           {name}
         </bdi>
       </div>
     );
   };
+  const beforeNote = before && (
+    <p className="mt-2 text-xs text-zinc-500">{t("People who came on {date} before counting by source began aren't in a source.", { date: dayLabel(stats.from, t.locale) })}</p>
+  );
+  if (!rows.length && !hasUnmatched) {
+    return (
+      <div>
+        <h3 className={`mb-2 ${heading}`}>{t("By source")}</h3>
+        <p className="text-sm text-zinc-500">{t("No visitors counted by source in these days yet.")}</p>
+        {beforeNote}
+      </div>
+    );
+  }
   return (
     <div>
       <h3 className={`mb-2 ${heading}`}>{t("By source")}</h3>
@@ -242,12 +276,12 @@ function SourceTable({ stats }: { stats: FunnelStats }) {
           const open = r.source ? opened.includes(r.source.source) : false;
           return (
             <li key={r.key} className="rounded-xl border border-white/8 bg-white/[0.02] p-3">
-              <div className="text-sm">{nameCell(r.name, r.source, r.muted)}</div>
+              <div className="text-sm">{nameCell(r.name, r.source, r.muted, true)}</div>
               <SourceNumbers c={r.c} visitors={r.c.visitors} t={t} />
               {open &&
                 r.source?.campaigns.map((c) => (
                   <div key={`${c.medium}|${c.campaign}`} className="ms-3 mt-2 border-s border-white/8 ps-3">
-                    <bdi dir="auto" className="block truncate text-xs text-zinc-300">
+                    <bdi dir="auto" className="block text-xs text-zinc-300 [overflow-wrap:anywhere]">
                       {campaignName(c)}
                     </bdi>
                     <SourceNumbers c={c} visitors={c.visitors} t={t} />
@@ -263,6 +297,7 @@ function SourceTable({ stats }: { stats: FunnelStats }) {
           </li>
         )}
       </ul>
+      {beforeNote}
     </div>
   );
 }
@@ -276,7 +311,7 @@ function SourceRows({
 }: {
   r: { name: string; c: FunnelCounts; source?: FunnelSource; muted?: boolean };
   opened: string[];
-  nameCell: (name: string, source?: FunnelSource, muted?: boolean) => ReactNode;
+  nameCell: (name: string, source?: FunnelSource, muted?: boolean, wrap?: boolean) => ReactNode;
   numbers: (c: Omit<FunnelCounts, "visitors">, visitors: number | null) => ReactNode;
 }) {
   const open = r.source ? opened.includes(r.source.source) : false;
@@ -308,8 +343,25 @@ export function LinkMaker({ addresses }: { addresses: string[] }) {
   const [campaign, setCampaign] = useState("");
   const [address, setAddress] = useState(addresses[0] ?? "");
   const [copied, setCopied] = useState(false);
+  // A change makes a new link, not yet copied.
+  const edit = (set: (value: string) => void) => (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    set(e.target.value);
+    setCopied(false);
+  };
   // Made the way visits are read (see traffic.ts), so what is copied is what gets counted.
   const link = taggedLink(addresses.includes(address) ? address : (addresses[0] ?? ""), { source, campaign });
+  // What was typed but can't be a tag, which the link leaves out.
+  const dropped = (typed: string) => typed.trim() !== "" && !cleanTag(typed);
+  const leftOut = <span className="mt-1 block text-xs text-gold-soft">{t("Use letters or digits. Flash leaves out names with an @, 7 or more digits in a row or a long code, as they could identify someone.")}</span>;
+  // A campaign is read only with a source, so without one the link leaves it out.
+  const noSource = source.trim() === "" && campaign.trim() !== "";
+  // Shown with its words as typed, in any script; copied as the browser writes it.
+  let shown = link;
+  try {
+    shown = decodeURI(link);
+  } catch {
+    // Shown as it is.
+  }
   async function copy() {
     try {
       await navigator.clipboard.writeText(link);
@@ -332,16 +384,19 @@ export function LinkMaker({ addresses }: { addresses: string[] }) {
         <div className={`grid grid-cols-1 gap-3 ${addresses.length > 1 ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
           <label className="block min-w-0 text-xs text-zinc-500">
             {t("Where you'll share it")}
-            <input value={source} onChange={(e) => setSource(e.target.value)} placeholder="instagram" dir="auto" className={`mt-1 ${field}`} />
+            <input value={source} onChange={edit(setSource)} placeholder="instagram" dir="auto" className={`mt-1 ${field}`} />
+            {dropped(source) && leftOut}
+            {noSource && <span className="mt-1 block text-xs text-gold-soft">{t("Type where you'll share it too. Without it, the link leaves out the campaign.")}</span>}
           </label>
           <label className="block min-w-0 text-xs text-zinc-500">
             {t("Campaign (optional)")}
-            <input value={campaign} onChange={(e) => setCampaign(e.target.value)} dir="auto" className={`mt-1 ${field}`} />
+            <input value={campaign} onChange={edit(setCampaign)} dir="auto" className={`mt-1 ${field}`} />
+            {dropped(campaign) && leftOut}
           </label>
           {addresses.length > 1 && (
             <label className="block min-w-0 text-xs text-zinc-500">
               {t("App address")}
-              <select value={address} onChange={(e) => setAddress(e.target.value)} dir="ltr" className={`mt-1 ${field} bg-zinc-900`}>
+              <select value={address} onChange={edit(setAddress)} dir="ltr" className={`mt-1 ${field} bg-zinc-900`}>
                 {addresses.map((a) => (
                   <option key={a} value={a}>
                     {a.replace(/^https:\/\//, "").replace(/\/$/, "")}
@@ -352,11 +407,13 @@ export function LinkMaker({ addresses }: { addresses: string[] }) {
           )}
         </div>
         <p dir="ltr" className="break-all rounded-lg bg-white/[0.03] px-3 py-2 text-start font-mono text-xs text-zinc-300">
-          {link}
+          {shown}
         </p>
         <button
           onClick={copy}
-          className="h-10 w-full rounded-lg bg-brand px-4 text-sm font-medium text-on-brand transition hover:brightness-110 sm:w-auto"
+          // A link without the tags typed would count as Direct, so it isn't copied as if it had them.
+          disabled={dropped(source) || noSource}
+          className="h-10 w-full rounded-lg bg-brand px-4 text-sm font-medium text-on-brand transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:brightness-100 sm:w-auto"
         >
           {copied ? t("Copied") : t("Copy link")}
         </button>
@@ -368,9 +425,22 @@ export function LinkMaker({ addresses }: { addresses: string[] }) {
 /**
  * From visit to sale, for 7, 30 or 90 days: visitors, then each step, counted on its own; where
  * visitors came from and what each source brought; the steps the app reports; and the link maker.
- * stats is null while the range loads (or when it couldn't).
+ * stats is null until the first range loads (or when it couldn't); while another range loads, the
+ * one before stays, dimmed (loading), so the link maker and opened sources keep what was in them.
  */
-export function FunnelView({ stats, days, onDays, failed }: { stats: FunnelStats | null; days: FunnelRange; onDays: (days: FunnelRange) => void; failed: boolean }) {
+export function FunnelView({
+  stats,
+  days,
+  onDays,
+  failed,
+  loading = false,
+}: {
+  stats: FunnelStats | null;
+  days: FunnelRange;
+  onDays: (days: FunnelRange) => void;
+  failed: boolean;
+  loading?: boolean;
+}) {
   const t = useT();
   const totals = stats?.totals;
   const steps = totals ? totals.form + totals.signup + totals.checkout + totals.orders : 0;
@@ -394,7 +464,7 @@ export function FunnelView({ stats, days, onDays, failed }: { stats: FunnelStats
       {!stats || !totals ? (
         !failed && <p className="text-sm text-zinc-500">{t("Loading…")}</p>
       ) : (
-        <>
+        <div aria-busy={loading || undefined} className={`space-y-6 transition-opacity ${loading ? "opacity-50" : ""}`}>
           {stats.shownDays < stats.days && (
             <p className="-mt-3 text-xs text-zinc-500">
               {stats.shownDays === 1
@@ -445,7 +515,7 @@ export function FunnelView({ stats, days, onDays, failed }: { stats: FunnelStats
             <p>{t("Paid is every order Stripe confirmed: what buyers paid, before Stripe's and Flash's fees and any refunds.")}</p>
             {totals.visitors < 100 && <p>{t("Rates show once there are 100 visitors.")}</p>}
           </div>
-        </>
+        </div>
       )}
     </div>
   );

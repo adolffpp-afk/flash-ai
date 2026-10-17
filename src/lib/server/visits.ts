@@ -43,6 +43,8 @@ export const PLAN_PEOPLE: Record<string, number> = {
 export const NETWORK_PEOPLE = 100;
 /** Sources (each with its medium and campaign) per app per day; past them, people count under "(other)". */
 export const MAX_TOUCHES = 30;
+/** New sources each server lets one internet connection add to an app's day, so one stranger can't fill its 30. */
+export const NETWORK_SOURCES = 3;
 // How long a server goes by what it read of an owner's plan, and by "paused for today".
 const PLAN_MEMORY = 15 * MINUTE;
 // Past this many connections in memory, the older half is forgotten.
@@ -52,6 +54,12 @@ const MAX_NETWORKS = 50_000;
 export const visitTests = { freePeople: 0, networkPeople: 0, failPrune: false };
 /** The free plan's number of people a day, which is also its number of app steps (see funnel.ts). */
 export const freePeople = () => visitTests.freePeople || FREE_PEOPLE_PER_DAY;
+/**
+ * Below this many people (or app steps) today, counting goes by the free number without reading
+ * the owner's plan: nine tenths of it, so loads counted at the same moment on a paid plan never
+ * reach the free number with their plan unread.
+ */
+export const planFrom = () => freePeople() * 0.9;
 const networkPeople = () => visitTests.networkPeople || NETWORK_PEOPLE;
 // Crawlers, link previews, uptime checkers, browsers run by scripts, and AI assistants fetching a
 // page for someone aren't people looking at it.
@@ -83,7 +91,8 @@ export function isPersonVisit(request: Request): boolean {
  * What each server remembers, so most loads read nothing extra: the day's keys (today's and
  * yesterday's), the day counting began, whether it tried the daily prune today, owners' plans and
  * "paused for today" for 15 minutes, the marks it wrote today, and how many new people it counted
- * today per owner from each connection (under a code made with the day's key, never the address).
+ * today per owner from each connection and how many new sources each connection added to an app's
+ * day (under a code made with the day's key, never the address).
  */
 const keys = new Map<string, Buffer>();
 const noKey = new Map<string, number>();
@@ -93,6 +102,7 @@ const plans = new Map<string, { until: number; cap: number; paid: boolean }>();
 const paused = new Map<string, { until: number; cap: number }>();
 const marked = new Set<string>();
 const networks = new Map<string, number>();
+const opened = new Map<string, number>();
 let memoryDay = "";
 
 /** Forgets what this server remembers, as a new server would start. For tests. */
@@ -105,11 +115,12 @@ export function forgetServerMemory(): void {
   paused.clear();
   marked.clear();
   networks.clear();
+  opened.clear();
   memoryDay = "";
 }
 
 /** What this server keeps about connections, for tests to check it holds no address. */
-export const networkMemory = () => [...networks.keys()];
+export const networkMemory = () => [...networks.keys(), ...opened.keys()];
 
 /** Today's marks and connection counts start empty each day. */
 function startDay(day: string) {
@@ -117,6 +128,7 @@ function startDay(day: string) {
   memoryDay = day;
   marked.clear();
   networks.clear();
+  opened.clear();
   for (const key of paused.keys()) if (!key.endsWith(`|${day}`)) paused.delete(key);
 }
 
@@ -244,14 +256,27 @@ export function markOnce(slug: string, step: string, limit: number, day: string)
   };
 }
 
-/** The touch, or "(other)" once the app has its 30 sources for the day and this isn't one of them. */
-async function withinTouches(slug: string, day: string, touch: Touch): Promise<Touch> {
+/**
+ * The touch, or "(other)" when it would be new to the app's day and the app has its 30 sources for
+ * the day, or the person's connection (network, when given) already added 3 of them.
+ */
+async function withinTouches(slug: string, day: string, touch: Touch, network = ""): Promise<Touch> {
   const s = await one<{ touches: number; known: number }>(
     `SELECT COUNT(*) AS touches, COALESCE(MAX(source = ? AND medium = ? AND campaign = ?), 0) AS known
      FROM site_events WHERE site_slug = ? AND day = ? AND step = 'visit'`,
     [touch.source, touch.medium, touch.campaign, slug, day],
   );
-  return !Number(s?.known) && Number(s?.touches ?? 0) >= MAX_TOUCHES ? OTHER : touch;
+  if (Number(s?.known)) return touch;
+  if (Number(s?.touches ?? 0) >= MAX_TOUCHES) return OTHER;
+  if (network) {
+    // Read and added with nothing waiting in between, so loads answered at once can't all add one.
+    const key = `${network}|${slug}`;
+    const added = opened.get(key) ?? 0;
+    if (added >= NETWORK_SOURCES) return OTHER;
+    opened.set(key, added + 1);
+    if (opened.size > MAX_NETWORKS) for (const old of [...opened.keys()].slice(0, MAX_NETWORKS / 2)) opened.delete(old);
+  }
+  return touch;
 }
 
 /** The code this server counts an owner's new people from one connection under, made with the day's key. */
@@ -316,74 +341,88 @@ async function countVisit(slug: string, request: Request, viewerId: string | nul
     : touchOf(new URL(request.url), request.headers.get("referer"), request.headers.get("host"));
   let counted = Boolean(row.kind);
   let network = "";
-  if (!row.kind && row.before) {
-    // Counted already today, by the counter before this one.
-    touch = await withinTouches(slug, day, touch);
-    writes.push(person(touch));
-    counted = true;
-  } else if (!row.kind) {
-    const pausedFor = `${row.owner}|${day}`;
-    const people = Number(row.people ?? 0);
-    let pause = paused.get(pausedFor);
-    if (pause && pause.until <= at) pause = undefined;
-    if (!pause) {
-      // The plan is read only past the free plan's number.
-      const cap = people < freePeople() ? freePeople() : (await peopleCap(row.owner, at)).cap;
-      if (people >= cap) {
-        pause = { until: at + PLAN_MEMORY, cap };
-        paused.set(pausedFor, pause);
+  try {
+    if (!row.kind && row.before) {
+      // Counted already today, by the counter before this one.
+      touch = await withinTouches(slug, day, touch);
+      writes.push(person(touch));
+      counted = true;
+    } else if (!row.kind) {
+      const pausedFor = `${row.owner}|${day}`;
+      const people = Number(row.people ?? 0);
+      let pause = paused.get(pausedFor);
+      if (pause && pause.until <= at) pause = undefined;
+      let cap = 0;
+      if (!pause) {
+        cap = people < planFrom() ? freePeople() : (await peopleCap(row.owner, at)).cap;
+        if (people >= cap) {
+          pause = { until: at + PLAN_MEMORY, cap };
+          paused.set(pausedFor, pause);
+        }
+      }
+      network = networkOf(key, row.owner, request);
+      const overNetwork = !pause && (networks.get(network) ?? 0) >= networkPeople();
+      if (pause || overNetwork) {
+        // Not counted: a view only (see below), and a mark on the app's day saying why.
+        const mark = pause ? markOnce(slug, "capped", pause.cap, day) : markOnce(slug, "capped-net", networkPeople(), day);
+        if (mark) writes.push(mark);
+        network = "";
+      } else {
+        // Taken with nothing waiting since it was read, so loads this server answers at once can't
+        // all pass it; given back if nothing is written.
+        networks.set(network, (networks.get(network) ?? 0) + 1);
+        if (networks.size > MAX_NETWORKS) for (const old of [...networks.keys()].slice(0, MAX_NETWORKS / 2)) networks.delete(old);
+        touch = await withinTouches(slug, day, touch, network);
+        // One transaction, in this order. The owner's count goes up for a person not counted yet
+        // today (so two servers counting the same person at once count them once). Then the person
+        // and their day total are written only while that count is within the owner's number, so
+        // loads counted at the same moment, on any server, stop exactly there. One past it still
+        // added to the owner's count, which only keeps counting paused.
+        const fresh = "NOT EXISTS (SELECT 1 FROM site_people WHERE site_slug = ? AND day = ? AND visitor = ?)";
+        const within = "(SELECT people FROM owner_people WHERE user_id = sites.user_id AND day = ?) <= ?";
+        writes.push(
+          {
+            sql: `INSERT INTO owner_people (user_id, day, people) SELECT user_id, ?, 1 FROM sites WHERE slug = ? AND ${fresh}
+                  ON CONFLICT DO UPDATE SET people = people + 1`,
+            args: [day, slug, slug, day, visitor],
+          },
+          {
+            sql: `INSERT INTO site_events (site_slug, day, step, source, medium, campaign, n)
+                  SELECT slug, ?, 'visit', ?, ?, ?, 1 FROM sites WHERE slug = ? AND ${fresh} AND ${within}
+                  ON CONFLICT DO UPDATE SET n = n + 1`,
+            args: [day, touch.source, touch.medium, touch.campaign, slug, slug, day, visitor, day, cap],
+          },
+          {
+            sql: `INSERT OR IGNORE INTO site_people (site_slug, day, visitor, kind, source, medium, campaign)
+                  SELECT slug, ?, ?, 'visit', ?, ?, ? FROM sites WHERE slug = ? AND ${within}`,
+            args: [day, visitor, touch.source, touch.medium, touch.campaign, slug, day, cap],
+          },
+        );
+        counted = true;
       }
     }
-    network = networkOf(key, row.owner, request);
-    const overNetwork = !pause && (networks.get(network) ?? 0) >= networkPeople();
-    if (pause || overNetwork) {
-      // Not counted: a view only (see below), and a mark on the app's day saying why.
-      const mark = pause ? markOnce(slug, "capped", pause.cap, day) : markOnce(slug, "capped-net", networkPeople(), day);
-      if (mark) writes.push(mark);
-      network = "";
-    } else {
-      touch = await withinTouches(slug, day, touch);
-      // The person's day total and the owner's count go up only while the person's row isn't there
-      // yet, so two servers counting the same person at once count them once.
-      const fresh = "NOT EXISTS (SELECT 1 FROM site_people WHERE site_slug = ? AND day = ? AND visitor = ?)";
-      writes.push(
-        {
-          sql: `INSERT INTO site_events (site_slug, day, step, source, medium, campaign, n)
-                SELECT slug, ?, 'visit', ?, ?, ?, 1 FROM sites WHERE slug = ? AND ${fresh}
-                ON CONFLICT DO UPDATE SET n = n + 1`,
-          args: [day, touch.source, touch.medium, touch.campaign, slug, slug, day, visitor],
-        },
-        {
-          sql: `INSERT INTO owner_people (user_id, day, people) SELECT user_id, ?, 1 FROM sites WHERE slug = ? AND ${fresh}
-                ON CONFLICT DO UPDATE SET people = people + 1`,
-          args: [day, slug, slug, day, visitor],
-        },
-        person(touch),
-      );
-      counted = true;
-    }
-  }
-  // The view, under the person's source. A view by someone who wasn't counted never opens a new
-  // source for the day: it goes under one already there, or "(other)".
-  writes.push(
-    counted
-      ? {
-          sql: `INSERT INTO site_visits (site_slug, day, source, views) SELECT slug, ?, ?, 1 FROM sites WHERE slug = ?
-                ON CONFLICT (site_slug, day, source) DO UPDATE SET views = views + 1`,
-          args: [day, touch.source, slug],
-        }
-      : {
-          sql: `INSERT INTO site_visits (site_slug, day, source, views)
-                SELECT slug, ?, CASE WHEN ? = '' OR EXISTS (SELECT 1 FROM site_visits WHERE site_slug = ? AND day = ? AND source = ?) THEN ? ELSE ? END, 1
-                FROM sites WHERE slug = ?
-                ON CONFLICT (site_slug, day, source) DO UPDATE SET views = views + 1`,
-          args: [day, touch.source, slug, day, touch.source, touch.source, OTHER.source, slug],
-        },
-  );
-  await (await db()).batch(writes, "write");
-  if (network) {
-    networks.set(network, (networks.get(network) ?? 0) + 1);
-    if (networks.size > MAX_NETWORKS) for (const old of [...networks.keys()].slice(0, MAX_NETWORKS / 2)) networks.delete(old);
+    // The view, under the person's source. A view by someone who wasn't counted never opens a new
+    // source for the day: it goes under one already there, or "(other)".
+    writes.push(
+      counted
+        ? {
+            sql: `INSERT INTO site_visits (site_slug, day, source, views) SELECT slug, ?, ?, 1 FROM sites WHERE slug = ?
+                  ON CONFLICT (site_slug, day, source) DO UPDATE SET views = views + 1`,
+            args: [day, touch.source, slug],
+          }
+        : {
+            sql: `INSERT INTO site_visits (site_slug, day, source, views)
+                  SELECT slug, ?, CASE WHEN ? = '' OR EXISTS (SELECT 1 FROM site_visits WHERE site_slug = ? AND day = ? AND source = ?) THEN ? ELSE ? END, 1
+                  FROM sites WHERE slug = ?
+                  ON CONFLICT (site_slug, day, source) DO UPDATE SET views = views + 1`,
+            args: [day, touch.source, slug, day, touch.source, touch.source, OTHER.source, slug],
+          },
+    );
+    await (await db()).batch(writes, "write");
+  } catch (err) {
+    // Nobody was counted, so the connection's place is given back.
+    if (network && networks.has(network)) networks.set(network, Math.max(0, networks.get(network)! - 1));
+    throw err;
   }
 }
 

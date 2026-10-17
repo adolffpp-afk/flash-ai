@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-const { touchOf, isReturnTrip, taggedLink, share, percent, cleanTag, visitSource, stepName, DIRECT, OTHER } = await import("../src/lib/traffic.ts");
+const { touchOf, isReturnTrip, taggedLink, share, percent, cleanTag, visitSource, stepName, stepsInHtml, DIRECT, OTHER } = await import("../src/lib/traffic.ts");
 
 const APP = "https://www.flash-app.dev/p/crumb-1";
 const touch = (query: string, referer: string | null = null, host = "www.flash-app.dev") => touchOf(new URL(`${APP}${query}`), referer, host);
@@ -71,6 +71,22 @@ test("tags are cleaned, and ones that look like personal data are left out", () 
   assert.deepEqual(touch("?utm_source=newsletter&utm_campaign=a1b2c3d4e5f6a7b8c9"), { source: "newsletter", medium: "", campaign: "" });
   assert.deepEqual(touch("?utm_source=🎉🎉", "https://www.bing.com/"), { source: "bing.com", medium: "", campaign: "" }, "empty once cleaned");
   assert.equal(touch(`?utm_source=${"x".repeat(5000)}`).source.length, 40);
+  // Looked for again once cleaned, which joins what other characters kept apart, and in any digits.
+  for (const value of ["415'555'0123", "+1(415)555'0123", "a1b2c3d4'e5f6a7b8c9d0", "٤١٥٥٥٥٠١٢٣", "４１５５５５０１２３"]) {
+    assert.equal(cleanTag(value), "", value);
+  }
+  assert.equal(cleanTag("spring-2026"), "spring-2026");
+  assert.equal(cleanTag("رمضان ٢٠٢٦"), "رمضان-٢٠٢٦", "a year in Arabic digits is fine");
+});
+
+test("an app's step names are the ones written out in its flashDB.track calls, at most 10", () => {
+  const html = `<button onclick="flashDB.track('booking-started')">Book</button>
+    <script>flashDB.track("Plan-Chosen"); window.flashDB?.track( \`menu-opened\` ); flashDB.track(\`viewed-\${cat}\`); flashDB.track(name);
+    flashDB.track("checkout"); flashDB.track("order-12345678"); flashDB.track("booking-started")</script>`;
+  assert.deepEqual(stepsInHtml(html), ["booking-started", "plan-chosen", "menu-opened"]);
+  const many = Array.from({ length: 12 }, (_, i) => `flashDB.track("step-${i}")`).join(";");
+  assert.equal(stepsInHtml(many).length, 10);
+  assert.deepEqual(stepsInHtml("<p>no steps</p>"), []);
 });
 
 test("coming back from paying or signing in isn't a new visit", () => {

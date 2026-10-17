@@ -559,7 +559,7 @@ test("one internet connection adds at most its number of new people a day per ow
     // An IPv6 address counts by its /64 network.
     for (let n = 1; n <= 4; n++) await recordVisit("net-1", visit({ "x-forwarded-for": `2001:db8:1:2::${n}`, "user-agent": `${BROWSER} phone/${n}` }, "/p/net-1"), null, at);
     assert.equal(await peopleRows("net-1"), 7);
-    assert.ok(networkMemory().every((k) => /^[0-9a-f]{24}$/.test(k) && !k.includes("13.0.0")));
+    assert.ok(networkMemory().every((k) => /^[0-9a-f]{24}(\|net-1)?$/.test(k) && !k.includes("13.0.0")), networkMemory().join());
     assert.equal(FREE_PEOPLE_PER_DAY, 10_000);
     // The next day the first connection counts again.
     await school(5, at + DAY);
@@ -567,6 +567,64 @@ test("one internet connection adds at most its number of new people a day per ow
   } finally {
     visitTests.networkPeople = 0;
   }
+});
+
+test("loads answered at the same moment can't pass a connection's number of people, nor the owner's", async () => {
+  forgetServerMemory();
+  visitTests.networkPeople = 5;
+  visitTests.freePeople = 20;
+  try {
+    await app("burst-1", "burster");
+    const at = Date.UTC(2027, 6, 9, 9);
+    // One connection, a new browser string each time, all at once.
+    await Promise.all(
+      Array.from({ length: 40 }, (_, i) => recordVisit("burst-1", visit({ "x-forwarded-for": "14.0.0.1", "user-agent": `${BROWSER} burst/${i}` }, "/p/burst-1"), null, at)),
+    );
+    assert.equal(await peopleRows("burst-1"), 5);
+    assert.equal(await eventsOf("burst-1"), 5);
+    assert.equal(await viewsOf("burst-1"), 40, "the rest are views");
+    // Many connections at once: exactly the owner's number, though the count of tries goes past it.
+    await Promise.all(
+      Array.from({ length: 60 }, (_, i) => recordVisit("burst-1", visit({ "x-forwarded-for": `14.1.${i}.1`, "user-agent": `${BROWSER} many/${i}` }, "/p/burst-1"), null, at)),
+    );
+    assert.equal(await peopleRows("burst-1"), 20);
+    assert.equal(await eventsOf("burst-1"), 20);
+    assert.ok((await ownerCount("burster", dayOf(at))) >= 20, "which keeps counting paused");
+    await recordVisit("burst-1", someone("burst-1"), null, at);
+    assert.equal(await peopleRows("burst-1"), 20);
+    assert.equal(await mark("burst-1", "capped"), 20);
+  } finally {
+    visitTests.networkPeople = 0;
+    visitTests.freePeople = 0;
+  }
+});
+
+test("one connection adds at most 3 new sources to an app's day, so it can't fill the 30", async () => {
+  forgetServerMemory();
+  await app("spam-1", "u1");
+  const at = Date.UTC(2027, 6, 10, 9);
+  const stranger = (i: number) => visit({ "x-forwarded-for": "15.0.0.1", "user-agent": `${BROWSER} spam/${i}` }, `/p/spam-1?utm_source=spam-${i}`);
+  for (let i = 0; i < 30; i++) await recordVisit("spam-1", stranger(i), null, at);
+  // Its people still count, under "(other)" past their 3 sources.
+  assert.equal(await eventsOf("spam-1"), 30);
+  assert.deepEqual(
+    (await all<{ source: string; n: number }>("SELECT source, n FROM site_events WHERE site_slug = 'spam-1' AND step = 'visit' ORDER BY source")).map((r) => [
+      r.source,
+      Number(r.n),
+    ]),
+    [
+      ["(other)", 27],
+      ["spam-0", 1],
+      ["spam-1", 1],
+      ["spam-2", 1],
+    ],
+  );
+  // A source already there counts as itself, and real visitors' sources open as before.
+  await recordVisit("spam-1", visit({ "x-forwarded-for": "15.0.0.1", "user-agent": `${BROWSER} spam/again` }, "/p/spam-1?utm_source=spam-1"), null, at);
+  for (let i = 0; i < 5; i++) await recordVisit("spam-1", someone("spam-1", {}, "?utm_source=instagram&utm_campaign=spring"), null, at);
+  const sources = await viewsBySource("spam-1");
+  assert.equal(sources["spam-1"], 2);
+  assert.equal(sources["instagram.com"], 5);
 });
 
 test('views past the day\'s sources stay "(other)" in the stats, which the Visitors view shows as Other sources', async () => {

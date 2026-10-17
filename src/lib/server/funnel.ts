@@ -9,7 +9,20 @@
  */
 import { all, db, one, run } from "./db.ts";
 import { domainsForSite } from "./domains.ts";
-import { dayOf, daysBetween, freePeople, funnelSince, isRobot, markOnce, pastKey, peopleCap, peoplePerDay, visitorCode, type Statement } from "./visits.ts";
+import {
+  dayOf,
+  daysBetween,
+  freePeople,
+  funnelSince,
+  isRobot,
+  markOnce,
+  pastKey,
+  peopleCap,
+  peoplePerDay,
+  planFrom,
+  visitorCode,
+  type Statement,
+} from "./visits.ts";
 import { MAX_STEP_NAMES, MAX_TRACKED, OTHER, UNMATCHED, type Touch } from "../traffic.ts";
 import { SITE_URL } from "../../app/site.ts";
 
@@ -110,8 +123,14 @@ async function count(slug: string, match: Match, list: Step[], at: number, retry
     if (builtIn.length) await (await db()).batch(builtIn.map((s) => countUp(slug, today, s, { source: UNMATCHED, medium: "", campaign: "" })), "write");
     return;
   }
-  // The person's list of steps for the day: each step once, at most 15 tries in all, counted or not.
-  const fresh = [...new Set(list)].filter((s) => !match.steps.includes(s)).slice(0, Math.max(0, MAX_TRACKED - match.steps.length));
+  // The person's list of steps for the day, each step once. A form, a sign-up and a checkout always
+  // go on it; the app's own names at most 15 times, counted or not.
+  const wanted = [...new Set(list)].filter((s) => !match.steps.includes(s));
+  const tried = match.steps.filter((s) => s.startsWith("app:")).length;
+  const fresh = [
+    ...wanted.filter((s) => !s.startsWith("app:")),
+    ...wanted.filter((s) => s.startsWith("app:")).slice(0, Math.max(0, MAX_TRACKED - tried)),
+  ];
   if (!fresh.length) return;
   const c = await db();
   // Written only if nobody changed the list since it was read, so two requests can't count one step twice.
@@ -127,23 +146,28 @@ async function count(slug: string, match: Match, list: Step[], at: number, retry
   }
   const writes: Statement[] = [];
   for (const s of fresh) if (!s.startsWith("app:")) writes.push(countUp(slug, match.day, s, match.touch));
-  const app = fresh.filter((s) => s.startsWith("app:")).map((s) => s.slice(4));
+  let app = fresh.filter((s) => s.startsWith("app:")).map((s) => s.slice(4));
   if (app.length) {
-    // Two gates, read in one statement: the names the app reported that day (at most 10), and how
-    // many app steps the owner's apps counted today, against their plan's daily number.
-    const gate = await one<{ names: string; used: number | null; owner: string }>(
-      `SELECT (SELECT json_group_array(name) FROM site_step_names WHERE site_slug = ? AND day = ?) AS names,
+    // The gates, read in one statement: the names in the app's code (see stepsInHtml), the names it
+    // reported that day (at most 10), and how many app steps the owner's apps counted today, against
+    // their plan's daily number.
+    const gate = await one<{ allowed: string; names: string; used: number | null; owner: string }>(
+      `SELECT s.step_names AS allowed, (SELECT json_group_array(name) FROM site_step_names WHERE site_slug = ? AND day = ?) AS names,
               o.steps AS used, s.user_id AS owner
        FROM sites s LEFT JOIN owner_people o ON o.user_id = s.user_id AND o.day = ? WHERE s.slug = ?`,
       [slug, match.day, today, slug],
     );
     if (!gate) return;
+    // A name the app's code doesn't have isn't counted, so nobody can fill the app's day with others.
+    const allowed = steps(gate.allowed || "[]");
+    app = app.filter((name) => allowed.includes(name));
     const names = steps(gate.names);
     const used = Number(gate.used ?? 0);
-    const budget = used < freePeople() ? freePeople() : (await peopleCap(gate.owner, at)).cap;
+    // The plan is read only when this request could come near the free number.
+    const budget = used + app.length < planFrom() ? freePeople() : (await peopleCap(gate.owner, at)).cap;
     let room = Math.max(0, budget - used);
     let known = names.length;
-    let counted = 0;
+    const counting: { name: string; isNew: boolean }[] = [];
     for (const name of app) {
       const isNew = !names.includes(name);
       // An 11th name of the day isn't counted.
@@ -153,31 +177,38 @@ async function count(slug: string, match: Match, list: Step[], at: number, retry
         if (mark) writes.push(mark);
         break;
       }
-      if (isNew) {
-        known++;
-        writes.push({
-          sql: `INSERT INTO site_step_names (site_slug, day, name) SELECT slug, ?, ? FROM sites WHERE slug = ?
-                AND (SELECT COUNT(*) FROM site_step_names WHERE site_slug = ? AND day = ?) < ${MAX_STEP_NAMES}
-                ON CONFLICT DO NOTHING`,
-          args: [match.day, name, slug, slug, match.day],
-        });
-      }
-      // Counted without a source, and only while the name is among the day's (it may have lost the
-      // race for the 10th place).
-      writes.push({
-        sql: `INSERT INTO site_events (site_slug, day, step, source, medium, campaign, n) SELECT slug, ?, ?, '', '', '', 1 FROM sites WHERE slug = ?
-              AND EXISTS (SELECT 1 FROM site_step_names WHERE site_slug = ? AND day = ? AND name = ?)
-              ON CONFLICT DO UPDATE SET n = n + 1`,
-        args: [match.day, `app:${name}`, slug, slug, match.day, name],
-      });
+      if (isNew) known++;
+      counting.push({ name, isNew });
       room--;
-      counted++;
     }
-    if (counted) {
+    if (counting.length) {
+      // One transaction, in this order: the owner's count goes up by all of them, then the k-th is
+      // counted only while the count before it plus k is within the budget, so requests counted at
+      // the same moment, on any server, stop exactly there.
+      const k = counting.length;
       writes.push({
         sql: `INSERT INTO owner_people (user_id, day, steps) SELECT user_id, ?, ? FROM sites WHERE slug = ?
               ON CONFLICT DO UPDATE SET steps = steps + excluded.steps`,
-        args: [today, counted, slug],
+        args: [today, k, slug],
+      });
+      counting.forEach(({ name, isNew }, i) => {
+        if (isNew) {
+          writes.push({
+            sql: `INSERT INTO site_step_names (site_slug, day, name) SELECT slug, ?, ? FROM sites WHERE slug = ?
+                  AND (SELECT COUNT(*) FROM site_step_names WHERE site_slug = ? AND day = ?) < ${MAX_STEP_NAMES}
+                  ON CONFLICT DO NOTHING`,
+            args: [match.day, name, slug, slug, match.day],
+          });
+        }
+        // Counted without a source, and only while the name is among the day's (it may have lost the
+        // race for the 10th place).
+        writes.push({
+          sql: `INSERT INTO site_events (site_slug, day, step, source, medium, campaign, n) SELECT slug, ?, ?, '', '', '', 1 FROM sites WHERE slug = ?
+                AND EXISTS (SELECT 1 FROM site_step_names WHERE site_slug = ? AND day = ? AND name = ?)
+                AND (SELECT steps FROM owner_people WHERE user_id = sites.user_id AND day = ?) - ? <= ?
+                ON CONFLICT DO UPDATE SET n = n + 1`,
+          args: [match.day, `app:${name}`, slug, slug, match.day, name, today, k - i - 1, budget],
+        });
       });
     }
   }

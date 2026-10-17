@@ -873,6 +873,9 @@ const MIGRATIONS = [
   // Who recorded that a contact agreed to news: '' for a box they ticked on a form, 'owner' for the
   // owner recording that they asked for news again after unsubscribing (see recordConsent).
   "ALTER TABLE site_contacts ADD COLUMN consent_by TEXT NOT NULL DEFAULT ''",
+  // The step names the app's code reports with flashDB.track, as JSON, worked out when it is
+  // published (see stepsInHtml): the only ones Flash counts for it.
+  "ALTER TABLE sites ADD COLUMN step_names TEXT NOT NULL DEFAULT ''",
 ];
 
 async function init(c: Client) {

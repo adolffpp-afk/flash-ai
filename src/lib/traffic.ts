@@ -14,13 +14,10 @@ export const OTHER: Touch = { source: "(other)", medium: "", campaign: "" };
 /** The source of a form, sign-up or order Flash couldn't tie to a visit that day or the day before. */
 export const UNMATCHED = "?";
 
-/** The parts of an address that say where someone came from (see touchOf), and Facebook's click ID. */
-export const LINK_TAGS = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "ref", "gclid", "gbraid", "wbraid", "msclkid", "fbclid"];
-
 const MAX_TAG = 40;
 const MAX_SOURCE = 60;
-// An email address, a phone number, or a subscriber's or click's ID: a tag holding one isn't used.
-const PERSONAL = /@|\d{7,}|[0-9a-f]{16,}/i;
+// An email address, a phone number (in any digits), or a subscriber's or click's ID: a tag holding one isn't used.
+const PERSONAL = /@|\p{Nd}{7,}|[0-9a-f]{16,}/iu;
 // What people type in utm_source, as the name a referrer from there would give.
 const ALIASES: Record<string, string> = {
   google: "google.com",
@@ -49,13 +46,13 @@ export function cleanTag(value: string | null | undefined): string {
   if (!value) return "";
   // Cut first, so no pattern runs on a long value.
   const cut = value.slice(0, 200);
-  if (PERSONAL.test(cut)) return "";
-  return cut
+  const clean = cut
     .toLowerCase()
     .replace(/[^\p{L}\p{M}\p{N}._ -]/gu, "")
     .trim()
-    .replace(/ +/g, "-")
-    .slice(0, MAX_TAG);
+    .replace(/ +/g, "-");
+  // Looked for before and after cleaning, which joins what other characters kept apart: (415) 555'0123.
+  return PERSONAL.test(cut) || PERSONAL.test(clean) ? "" : clean.slice(0, MAX_TAG);
 }
 
 /** A website's name as Flash shows it: search engines and social apps by their main name (m.facebook.com is facebook.com). */
@@ -151,6 +148,20 @@ export function stepName(step: unknown): string {
   if (typeof step !== "string") return "";
   const name = step.trim().toLowerCase();
   return STEP_NAME.test(name) && !STEP_ID.test(name) && !RESERVED_STEPS.includes(name) ? name : "";
+}
+
+/**
+ * The step names an app's code reports, written out in its flashDB.track("name") calls: the only
+ * names Flash counts for the app (kept with it when it is published), at most 10.
+ */
+export function stepsInHtml(html: string): string[] {
+  const found = new Set<string>();
+  for (const m of html.matchAll(/flashDB\??\.track\(\s*(["'`])([^"'`\n]{1,40})\1/g)) {
+    const name = stepName(m[2]);
+    if (name) found.add(name);
+    if (found.size >= MAX_STEP_NAMES) break;
+  }
+  return [...found];
 }
 
 /** How many visitors took a step, as a fraction: only from 100 visitors, so a rate is never read into a handful of people. */

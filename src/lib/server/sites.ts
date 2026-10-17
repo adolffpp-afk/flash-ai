@@ -7,6 +7,7 @@ import { activeSubscription } from "./subscriptions.ts";
 import { isAdmin, type User } from "./auth.ts";
 import type { DataSummary } from "../data-rules.ts";
 import { english, type Translate } from "../i18n.ts";
+import { stepsInHtml } from "../traffic.ts";
 
 export const MAX_HTML = 2 * 1024 * 1024;
 // Published apps are public pages on Flash's domain, so publishing is limited to slow abuse: a free
@@ -166,11 +167,12 @@ export async function publishSite(
     const before = (await one("SELECT 1 FROM sites WHERE slug = ? AND user_id = ?", [slug, user.id])) ? await dataSummary(slug).catch(() => null) : null;
     await saveVersion(slug, user.id, html);
     // The rules the page names are saved with it, so they change together.
-    const r = await run("UPDATE sites SET html = ?, title = ?, updated_at = ?, data_rules = ? WHERE slug = ? AND user_id = ?", [
+    const r = await run("UPDATE sites SET html = ?, title = ?, updated_at = ?, data_rules = ?, step_names = ? WHERE slug = ? AND user_id = ?", [
       html,
       title,
       now(),
       await rulesForPage(slug, html),
+      JSON.stringify(stepsInHtml(html)),
       slug,
       user.id,
     ]);
@@ -181,13 +183,18 @@ export async function publishSite(
   // The plan is read only from the free number on.
   const max = count < FREE_SITES ? FREE_SITES : await siteLimit(user);
   if (count >= max) {
-    const refused = t("You can publish up to {max} apps. Unpublish one to publish another.", { max });
-    return { error: max === FREE_SITES ? `${refused} ${t("Paid plans can publish more apps.")}` : refused, status: 409 };
+    // Someone back on a smaller plan may have more than one app too many.
+    const refused =
+      count > max
+        ? t("You have {count} apps published and your plan allows {max}. Unpublish {extra} of them to publish another.", { count, max, extra: count - max + 1 })
+        : t("You can publish up to {max} apps. Unpublish one to publish another.", { max });
+    // On the free number, a paid plan publishes more (the app shows Upgrade plan for site_cap).
+    return max === FREE_SITES ? { error: `${refused} ${t("Paid plans can publish more apps.")}`, status: 409, code: "site_cap" } : { error: refused, status: 409 };
   }
   if (await overLimit(`publish:${user.id}`, 10, HOUR)) return { error: t("You've published a lot this hour. Try again later."), status: 429 };
   let fresh = makeSlug(title);
   while (await slugTaken(fresh)) fresh = makeSlug(title);
-  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at, data_rules) VALUES (?, ?, ?, ?, ?, ?, ?)", [
+  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at, data_rules, step_names) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", [
     fresh,
     user.id,
     title,
@@ -195,6 +202,7 @@ export async function publishSite(
     now(),
     now(),
     await rulesForPage(null, html),
+    JSON.stringify(stepsInHtml(html)),
   ]);
   return published(fresh);
 }
@@ -260,11 +268,12 @@ export async function restoreVersion(userId: string, slug: string, id: string): 
   if (!version) return null;
   const before = (await one("SELECT 1 FROM sites WHERE slug = ? AND user_id = ?", [slug, userId])) ? await dataSummary(slug).catch(() => null) : null;
   await saveVersion(slug, userId, version.html);
-  const r = await run("UPDATE sites SET html = ?, title = ?, updated_at = ?, data_rules = ? WHERE slug = ? AND user_id = ?", [
+  const r = await run("UPDATE sites SET html = ?, title = ?, updated_at = ?, data_rules = ?, step_names = ? WHERE slug = ? AND user_id = ?", [
     version.html,
     version.title,
     now(),
     await rulesForPage(slug, version.html),
+    JSON.stringify(stepsInHtml(version.html)),
     slug,
     userId,
   ]);

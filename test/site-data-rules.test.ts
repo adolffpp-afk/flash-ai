@@ -904,6 +904,7 @@ test("paid plans publish more apps; free stays at 20, and an app at the cap can 
     "error" in refused && refused.error,
     "You can publish up to 20 apps. Unpublish one to publish another. Paid plans can publish more apps.",
   );
+  assert.equal("code" in refused && refused.code, "site_cap", "so the preview offers a paid plan");
   const updated = await publishSite(capper, { html: "<p>changed</p>", title: "Cap", slug: "cap-3" });
   assert.ok("slug" in updated && updated.slug === "cap-3", "updates are never held to the cap");
   // On Pro the 21st goes through, and the refusal at Pro's number doesn't offer a paid plan.
@@ -917,4 +918,18 @@ test("paid plans publish more apps; free stays at 20, and an app at the cap can 
   await run("DELETE FROM rate_limits");
   const full = await publishSite(capper, { html: "<p>61st</p>", title: "Too many" });
   assert.equal("error" in full && full.error, "You can publish up to 60 apps. Unpublish one to publish another.");
+  assert.ok(!("code" in full && full.code), "no paid plan offered past the free number");
+
+  // Back on free with 60 apps: they all stay, and the refusal says how many must go.
+  await run("DELETE FROM subscriptions WHERE user_id = 'capper'");
+  await run("DELETE FROM rate_limits");
+  const over = await publishSite(capper, { html: "<p>new</p>", title: "New" });
+  assert.equal(
+    "error" in over && over.error,
+    "You have 60 apps published and your plan allows 20. Unpublish 41 of them to publish another. Paid plans can publish more apps.",
+  );
+  for (const { slug } of await all<{ slug: string }>("SELECT slug FROM sites WHERE user_id = 'capper' LIMIT 41")) await unpublishSite("capper", slug);
+  await run("DELETE FROM rate_limits");
+  const back = await publishSite(capper, { html: "<p>new</p>", title: "New" });
+  assert.ok("slug" in back, "unpublishing as many as it said is enough");
 });

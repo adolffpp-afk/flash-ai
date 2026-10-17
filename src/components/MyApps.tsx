@@ -668,8 +668,9 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
     setConfirming(null);
   }
 
-  // The funnel shown: only the open app's, for the range picked.
-  const shownFunnel = open && funnel?.slug === open.slug && funnel.days === funnelDays ? funnel.stats : null;
+  // The funnel shown: only the open app's. While another range loads, the one before stays (dimmed).
+  const shownFunnel = open && funnel?.slug === open.slug ? funnel.stats : null;
+  const funnelLoading = Boolean(shownFunnel) && funnel?.days !== funnelDays;
 
   return (
     <div className="fixed inset-0 z-40 flex items-stretch justify-center bg-black/60 backdrop-blur-sm sm:items-center sm:p-6" onClick={() => mayLeave() && onClose()}>
@@ -955,7 +956,7 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
                 {visits.data.views === 0 ? (
                   shownFunnel && <LinkMaker addresses={shownFunnel.addresses} />
                 ) : (
-                  <FunnelView stats={shownFunnel} days={funnelDays} onDays={chooseDays} failed={Boolean(funnelError)} />
+                  <FunnelView stats={shownFunnel} days={funnelDays} onDays={chooseDays} failed={Boolean(funnelError)} loading={funnelLoading} />
                 )}
               </div>
             )

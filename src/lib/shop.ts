@@ -3,7 +3,6 @@
  * the tests and the browser can use it too (the server side is src/lib/server/shop.ts).
  */
 import { msg } from "./i18n.ts";
-import { LINK_TAGS } from "./traffic.ts";
 
 // Currencies without cents, where Stripe counts whole units.
 const ZERO_DECIMAL = new Set(["bif", "clp", "djf", "gnf", "jpy", "kmf", "krw", "mga", "pyg", "rwf", "ugx", "vnd", "vuv", "xaf", "xof", "xpf"]);
@@ -94,8 +93,7 @@ export function itemsInHtml(html: string): string[] {
 
 /**
  * Where to send a visitor after paying: the page they bought from, if it is one of the site's own
- * addresses (without the tags of the link they came by), else the site's first address. Stops a
- * checkout being used to send people elsewhere.
+ * addresses, else the site's first address. Stops a checkout being used to send people elsewhere.
  */
 export function safeReturn(page: unknown, addresses: string[]): string {
   if (typeof page === "string") {
@@ -103,9 +101,9 @@ export function safeReturn(page: unknown, addresses: string[]): string {
       const url = new URL(page);
       const base = `${url.origin}${url.pathname}`.replace(/\/$/, "");
       if (url.protocol.startsWith("http") && addresses.some((a) => a.replace(/\/$/, "") === base)) {
-        url.searchParams.delete("flash_paid");
-        // Where the buyer came from doesn't go to Stripe with the address they go back to.
-        for (const tag of LINK_TAGS) url.searchParams.delete(tag);
+        // Only the page and its #/route: the rest of the address can say where the buyer came from
+        // (link tags, an ad's or an email's click ID), which mustn't go to Stripe with their name.
+        url.search = "";
         return url.toString();
       }
     } catch {

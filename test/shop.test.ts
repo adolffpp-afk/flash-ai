@@ -40,8 +40,16 @@ test("buyers only go back to the site's own addresses", () => {
   assert.equal(safeReturn("https://evil.example/p/crumb-1", sites), sites[0]);
   assert.equal(
     safeReturn("https://www.flash-app.dev/p/crumb-1?utm_source=ig&utm_campaign=spring&ref=news&gclid=Cj0x&fbclid=IwAR&page=2#/shop", sites),
-    "https://www.flash-app.dev/p/crumb-1?page=2#/shop",
+    "https://www.flash-app.dev/p/crumb-1#/shop",
     "where the buyer came from stays out of the address Stripe gets",
+  );
+  // Other ad networks' and email tools' click IDs too: only the page and its #/route go.
+  assert.equal(
+    safeReturn(
+      "https://www.flash-app.dev/p/crumb-1?ttclid=E.C.P&li_fat_id=abc&twclid=2-x&dclid=CJx&mc_eid=6f1e2d3c4b&_hsenc=p2A&srsltid=AfmB&epik=dj0y&yclid=987&UTM_Source=ig#/menu",
+      sites,
+    ),
+    "https://www.flash-app.dev/p/crumb-1#/menu",
   );
   assert.equal(safeReturn("javascript:alert(1)", sites), sites[0]);
   assert.equal(withPaidNote("https://crumbbakery.com/#/menu"), "https://crumbbakery.com/?flash_paid=1#/menu");
