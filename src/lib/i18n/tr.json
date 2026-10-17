@@ -888,6 +888,7 @@
  "Log out of this account": "Bu hesaptan çıkış yap",
  "Log out of {email} on this device.": "Bu cihazda {email} hesabından çıkış yap.",
  "Logged out of {email}. You're now using {next}.": "{email} hesabından çıkış yapıldı. Artık {next} kullanıyorsun.",
+ "Logging out…": "Çıkış yapılıyor…",
  "Logo": "Logo",
  "Logos, posters and photos": "Logolar, afişler ve fotoğraflar",
  "Logs {email} out everywhere, this device included, and disconnects apps connected to Flash, like Claude.": "{email} hesabından bu cihaz dahil her yerde çıkış yapar ve Claude gibi Flash'a bağlı uygulamaların bağlantısını keser.",

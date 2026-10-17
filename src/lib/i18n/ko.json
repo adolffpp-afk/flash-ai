@@ -888,6 +888,7 @@
  "Log out of this account": "이 계정에서 로그아웃",
  "Log out of {email} on this device.": "이 기기에서 {email} 로그아웃",
  "Logged out of {email}. You're now using {next}.": "{email}에서 로그아웃했어요. 이제 {next}을(를) 사용하고 있어요.",
+ "Logging out…": "로그아웃 중…",
  "Logo": "로고",
  "Logos, posters and photos": "로고, 포스터, 사진",
  "Logs {email} out everywhere, this device included, and disconnects apps connected to Flash, like Claude.": "이 기기를 포함한 모든 곳에서 {email} 계정을 로그아웃하고, Claude 같은 Flash에 연결된 앱의 연결도 끊습니다.",

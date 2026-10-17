@@ -888,6 +888,7 @@
  "Log out of this account": "Вийти з цього акаунта",
  "Log out of {email} on this device.": "Вийти з {email} на цьому пристрої.",
  "Logged out of {email}. You're now using {next}.": "Ви вийшли з {email}. Тепер використовується {next}.",
+ "Logging out…": "Вихід…",
  "Logo": "Логотип",
  "Logos, posters and photos": "Логотипи, постери й фото",
  "Logs {email} out everywhere, this device included, and disconnects apps connected to Flash, like Claude.": "Виходить з {email} всюди, зокрема на цьому пристрої, і відключає застосунки, підключені до Flash, як-от Claude.",

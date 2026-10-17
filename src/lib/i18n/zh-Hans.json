@@ -888,6 +888,7 @@
  "Log out of this account": "退出此账户",
  "Log out of {email} on this device.": "在此设备上退出 {email}。",
  "Logged out of {email}. You're now using {next}.": "已退出 {email}。您现在使用的是 {next}。",
+ "Logging out…": "正在退出登录…",
  "Logo": "徽标",
  "Logos, posters and photos": "徽标、海报和照片",
  "Logs {email} out everywhere, this device included, and disconnects apps connected to Flash, like Claude.": "在所有地方退出 {email}（包括这台设备），并断开 Claude 等已连接到 Flash 的应用。",

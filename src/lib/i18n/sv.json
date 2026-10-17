@@ -888,6 +888,7 @@
  "Log out of this account": "Logga ut från det här kontot",
  "Log out of {email} on this device.": "Logga ut {email} på den här enheten.",
  "Logged out of {email}. You're now using {next}.": "Utloggad från {email}. Du använder nu {next}.",
+ "Logging out…": "Loggar ut…",
  "Logo": "Logotyp",
  "Logos, posters and photos": "Logotyper, affischer och foton",
  "Logs {email} out everywhere, this device included, and disconnects apps connected to Flash, like Claude.": "Loggar ut {email} överallt, även på den här enheten, och kopplar från appar som är anslutna till Flash, som Claude.",

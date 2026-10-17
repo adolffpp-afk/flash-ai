@@ -888,6 +888,7 @@
  "Log out of this account": "Esci da questo account",
  "Log out of {email} on this device.": "Disconnetti {email} su questo dispositivo.",
  "Logged out of {email}. You're now using {next}.": "Disconnesso da {email}. Ora stai usando {next}.",
+ "Logging out…": "Uscita in corso…",
  "Logo": "Logo",
  "Logos, posters and photos": "Loghi, poster e foto",
  "Logs {email} out everywhere, this device included, and disconnects apps connected to Flash, like Claude.": "Disconnette {email} ovunque, incluso questo dispositivo, e scollega le app collegate a Flash, come Claude.",

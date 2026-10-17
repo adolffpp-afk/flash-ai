@@ -75,8 +75,9 @@ export function AuthScreen({
   next,
   adding,
 }: {
-  // Sign-up says when the confirmation email couldn't be sent; account is the one signed in to.
-  onDone: (result?: { emailFailed?: boolean; account?: string }) => void;
+  // Sign-up says when the confirmation email couldn't be sent; account is the one signed in to. The
+  // form stays busy until it settles (saving what changed on the page under it, say).
+  onDone: (result?: { emailFailed?: boolean; account?: string }) => void | Promise<void>;
   initialMode?: "signup" | "login";
   // An auth_error code from a "Continue with …" sign-in that didn't finish.
   initialError?: string;
@@ -137,7 +138,7 @@ export function AuthScreen({
         router.push("/signin/code");
         return;
       }
-      onDone(result);
+      await onDone(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Something went wrong."));
     } finally {

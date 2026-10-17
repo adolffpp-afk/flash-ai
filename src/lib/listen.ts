@@ -54,6 +54,15 @@ export function takeMic(owner: string, stop: () => void): void {
   }
 }
 
+/** Stops whoever is using the microphone (Add another account opening over the page). */
+export function stopMic(): void {
+  const previous = holder;
+  holder = null;
+  try {
+    previous?.stop();
+  } catch {}
+}
+
 /** Gives the microphone back (only if owner still has it). */
 export function releaseMic(owner: string): void {
   if (holder?.owner === owner) holder = null;

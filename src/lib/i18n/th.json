@@ -888,6 +888,7 @@
  "Log out of this account": "ออกจากระบบบัญชีนี้",
  "Log out of {email} on this device.": "ออกจากระบบ {email} บนอุปกรณ์นี้",
  "Logged out of {email}. You're now using {next}.": "ออกจากระบบ {email} แล้ว ตอนนี้คุณกำลังใช้ {next}",
+ "Logging out…": "กำลังออกจากระบบ…",
  "Logo": "โลโก้",
  "Logos, posters and photos": "โลโก้ โปสเตอร์ และรูปภาพ",
  "Logs {email} out everywhere, this device included, and disconnects apps connected to Flash, like Claude.": "ออกจากระบบ {email} ทุกที่ รวมถึงอุปกรณ์นี้ และยกเลิกการเชื่อมต่อแอปที่เชื่อมกับ Flash เช่น Claude",

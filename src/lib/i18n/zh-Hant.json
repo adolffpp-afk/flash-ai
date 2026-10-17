@@ -888,6 +888,7 @@
  "Log out of this account": "登出此帳戶",
  "Log out of {email} on this device.": "在這部裝置上登出 {email}。",
  "Logged out of {email}. You're now using {next}.": "已登出 {email}。您現在使用的是 {next}。",
+ "Logging out…": "正在登出…",
  "Logo": "標誌",
  "Logos, posters and photos": "標誌、海報和照片",
  "Logs {email} out everywhere, this device included, and disconnects apps connected to Flash, like Claude.": "在所有地方登出 {email}（包括這台裝置），並中斷 Claude 等已連接到 Flash 的應用程式。",

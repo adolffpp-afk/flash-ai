@@ -63,6 +63,49 @@ function Sheet({ label, onEscape, children }: { label: string; onEscape?: () => 
 }
 
 /**
+ * Add another account (or Sign in again) over the page, which stays as it was underneath, out of
+ * reach (inert). It takes the focus as it opens, so it is announced; Escape is its Back, and
+ * nothing under it hears the key (Ask Flash, a preview in full screen). Once it closes, the focus
+ * goes back to the profile menu's button it was opened from.
+ */
+export function AddOver({ label, onBack, children }: { label: string; onBack: () => void; children: ReactNode }) {
+  const box = useRef<HTMLDivElement>(null);
+  const back = useRef(onBack);
+  useEffect(() => {
+    back.current = onBack;
+  });
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    el.focus();
+    const key = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.isComposing) return;
+      e.preventDefault();
+      e.stopPropagation();
+      back.current();
+    };
+    el.addEventListener("keydown", key);
+    return () => {
+      el.removeEventListener("keydown", key);
+      document.querySelector<HTMLElement>("[data-account-menu]")?.focus({ preventScroll: true });
+    };
+  }, []);
+  return createPortal(
+    <div
+      ref={box}
+      role="dialog"
+      aria-modal="true"
+      aria-label={label}
+      tabIndex={-1}
+      className="fixed inset-0 z-[60] overflow-y-auto overscroll-contain outline-none [background:var(--page-glow),var(--color-ink)]"
+    >
+      {children}
+    </div>,
+    document.body,
+  );
+}
+
+/**
  * Choose an account to keep going: shown when the account this tab showed was logged out on this
  * browser (in another tab, say), or when a link was for an account that isn't signed in here. The
  * tab never moves to another account on its own; the person picks one, or signs in to another.

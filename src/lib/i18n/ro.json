@@ -888,6 +888,7 @@
  "Log out of this account": "Deconectează-te de la acest cont",
  "Log out of {email} on this device.": "Deconectează {email} pe acest dispozitiv.",
  "Logged out of {email}. You're now using {next}.": "Te-ai deconectat de la {email}. Acum folosești {next}.",
+ "Logging out…": "Se deconectează…",
  "Logo": "Logo",
  "Logos, posters and photos": "Logouri, afișe și fotografii",
  "Logs {email} out everywhere, this device included, and disconnects apps connected to Flash, like Claude.": "Deconectează {email} peste tot, inclusiv pe acest dispozitiv, și deconectează aplicațiile conectate la Flash, precum Claude.",

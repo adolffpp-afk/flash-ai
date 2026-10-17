@@ -57,9 +57,14 @@ function read(): Tones {
   return memory;
 }
 
-/** Each listed account's colour, kept for this browser's tabs. */
+/**
+ * Each listed account's colour, kept for this browser's tabs. An account keeps its colour once the
+ * others log out too; one alone on a browser that never held two has Flash's own (the first), and
+ * nothing is kept for it yet.
+ */
 export function accountTones(ids: string[], count: number): Map<string, number> {
   const before = read();
+  if (!before.length && ids.length < 2) return new Map(ids.map((id) => [id, 0]));
   const next = keepTones(before, ids, count);
   memory = next;
   if (JSON.stringify(next) !== JSON.stringify(before)) {

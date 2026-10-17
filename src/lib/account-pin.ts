@@ -141,12 +141,19 @@ export function adoptAccountFromUrl(): string | null {
 }
 
 /**
- * The address that reloads this tab as another account signed in here (Switch, or the next account
- * after a log out). The tab's account changes only once that page loads (adoptAccountFromUrl), so a
- * reload the browser keeps from happening ("Leave site?", Stay) leaves the tab on the account it
- * shows, naming that account in every request.
+ * The address that reloads this tab as another account signed in here (Switch, the next account
+ * after a log out, or the account just added), at to: a page of Flash itself (like /?apps=1), Home
+ * when none. The tab's account changes only once that page loads (adoptAccountFromUrl), so a reload
+ * the browser keeps from happening ("Leave site?", Stay) leaves the tab on the account it shows,
+ * naming that account in every request. It always loads a page, even when to differs from this
+ * address only by its #.
  */
-export const switchAddress = (id: string): string => `/?as=${encodeURIComponent(id)}&switched=1`;
+export function switchAddress(id: string, to = "/"): string {
+  const url = new URL(to, "https://flash.invalid");
+  url.searchParams.set("as", id);
+  url.searchParams.set("switched", "1");
+  return `${url.pathname}${url.search}${url.hash}`;
+}
 
 /** What a tab says once it has reloaded as the next account after a log out: who left, and who it uses now. */
 export type LeftNote = { email: string; next: string };
@@ -154,12 +161,13 @@ export type LeftNote = { email: string; next: string };
 const NOTE_KEY = "flash-notice";
 
 /**
- * Reloads this tab as another account signed in here: Switch, or the next account after a log out
- * (note: what the new page says about it). It never names that account itself: the new page does
+ * Reloads this tab as another account signed in here: Switch, the next account after a log out
+ * (note: what the new page says about it), or the account just signed in to in Add another account
+ * (to: the page of Flash it was for). It never names that account itself: the new page does
  * (adoptAccountFromUrl), so until it loads, and if the browser's "Leave site?" keeps this page
  * (Stay), every request still names the account this tab shows. Every switch goes through here.
  */
-export function reloadAs(id: string, note?: LeftNote): void {
+export function reloadAs(id: string, note?: LeftNote, to?: string): void {
   if (note) {
     try {
       storage()?.setItem(NOTE_KEY, JSON.stringify(note));
@@ -170,7 +178,7 @@ export function reloadAs(id: string, note?: LeftNote): void {
   announce({ type: "changed" });
   // A fresh page clears everything of the account before (its chats, files kept in memory, the
   // queue, the wake word), and Back can't return to it.
-  window.location.replace(switchAddress(id));
+  window.location.replace(switchAddress(id, to));
 }
 
 /** The note reloadAs left for this tab, once: null when there is none (or storage refuses). */

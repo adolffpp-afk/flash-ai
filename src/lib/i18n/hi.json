@@ -888,6 +888,7 @@
  "Log out of this account": "इस खाते से लॉग आउट करें",
  "Log out of {email} on this device.": "इस डिवाइस पर {email} से लॉग आउट करें।",
  "Logged out of {email}. You're now using {next}.": "{email} से लॉग आउट हो गया। अब आप {next} इस्तेमाल कर रहे हैं।",
+ "Logging out…": "लॉग आउट हो रहा है…",
  "Logo": "लोगो",
  "Logos, posters and photos": "लोगो, पोस्टर और फ़ोटो",
  "Logs {email} out everywhere, this device included, and disconnects apps connected to Flash, like Claude.": "इस डिवाइस सहित हर जगह से {email} को साइन आउट करता है, और Claude जैसे Flash से जुड़े ऐप्स को डिस्कनेक्ट करता है।",

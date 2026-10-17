@@ -888,6 +888,7 @@
  "Log out of this account": "התנתקות מהחשבון הזה",
  "Log out of {email} on this device.": "התנתקות של {email} במכשיר הזה.",
  "Logged out of {email}. You're now using {next}.": "התנתקת מ-{email}. החשבון שבשימוש עכשיו: {next}.",
+ "Logging out…": "מתבצעת התנתקות…",
  "Logo": "לוגו",
  "Logos, posters and photos": "לוגואים, פוסטרים ותמונות",
  "Logs {email} out everywhere, this device included, and disconnects apps connected to Flash, like Claude.": "מנתק את {email} מכל מקום, כולל המכשיר הזה, ומנתק אפליקציות שמחוברות ל-Flash, כמו Claude.",

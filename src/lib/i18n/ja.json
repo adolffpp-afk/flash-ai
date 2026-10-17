@@ -888,6 +888,7 @@
  "Log out of this account": "このアカウントからログアウト",
  "Log out of {email} on this device.": "このデバイスで {email} からログアウトします。",
  "Logged out of {email}. You're now using {next}.": "{email} からログアウトしました。現在は {next} を使っています。",
+ "Logging out…": "ログアウトしています…",
  "Logo": "ロゴ",
  "Logos, posters and photos": "ロゴ、ポスター、写真",
  "Logs {email} out everywhere, this device included, and disconnects apps connected to Flash, like Claude.": "この端末を含むすべての場所で {email} からサインアウトし、Claude など Flash に接続したアプリの接続も解除します。",

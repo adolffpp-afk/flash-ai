@@ -14,9 +14,9 @@ const item = "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-start tex
 
 /*
  * Each account signed in to a browser has its own badge colour, kept for as long as it stays
- * signed in here (see account-tones.ts; on a fresh browser the first keeps Flash's own), so tabs on
- * two accounts tell apart at a glance, even with the same name and on a phone, where the top bar
- * shows only the badge. A browser holds at most 5 accounts.
+ * signed in here (see account-tones.ts; on a browser that never held two, the one keeps Flash's
+ * own), so tabs on two accounts tell apart at a glance, even with the same name and on a phone,
+ * where the top bar shows only the badge. A browser holds at most 5 accounts.
  */
 const TONES = [
   "bg-[linear-gradient(140deg,#3ee0c3,#7c6cf0_70%,#c084fc)]",
@@ -26,9 +26,9 @@ const TONES = [
   "bg-[linear-gradient(140deg,#a5f3fc,#60a5fa_70%,#818cf8)]",
 ] as const;
 
-/** An account's colour among the browser's accounts (Flash's own while there's only one). */
+/** An account's colour among the browser's accounts, kept when the others log out (see accountTones). */
 export function accountTone(accounts: { id: string }[] | undefined, id: string): string {
-  const at = accounts && accounts.length > 1 ? accountTones(accounts.map((a) => a.id), TONES.length).get(id) : 0;
+  const at = accounts?.length ? accountTones(accounts.map((a) => a.id), TONES.length).get(id) : 0;
   return TONES[at ?? 0];
 }
 
@@ -82,12 +82,15 @@ export function AccountMenu({
   // Resolves false when the tab stays on its account (it asks first, or says why it couldn't switch).
   onSwitch: (id: string) => Promise<boolean>;
   onAdd: () => void;
-  onSignOut: () => void;
-  onSignOutAll: () => void;
+  // Each resolves true once the tab leaves the account (it reloads, or is signed out), false when it stays.
+  onSignOut: () => Promise<boolean>;
+  onSignOutAll: () => Promise<boolean>;
 }) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const [more, setMore] = useState(false);
+  // A log out under way, which first saves what it can (up to 3 seconds): the menu stays open and says so.
+  const [out, setOut] = useState<"one" | "all" | null>(null);
   const box = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -115,6 +118,24 @@ export function AccountMenu({
     close();
     fn();
   };
+  // Logs out, once, with "Logging out…" on the item until the page changes; when the tab stays on
+  // its account instead, the menu closes, so what Flash says next is in view.
+  const logOut = (which: "one" | "all", fn: () => Promise<boolean>) => () => {
+    if (out) return;
+    setOut(which);
+    const stay = () => {
+      setOut(null);
+      close();
+    };
+    // Still here a few seconds after leaving: the browser's "Leave site?" kept the page.
+    void fn().then((left) => (left ? window.setTimeout(() => setOut(null), 3000) : stay()), stay);
+  };
+  const outItem = (which: "one" | "all") => ({
+    "aria-busy": out === which || undefined,
+    disabled: Boolean(out) && out !== which,
+    className: `${item} disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent`,
+    onClick: logOut(which, which === "one" ? onSignOut : onSignOutAll),
+  });
   const plan = me.plan ? t("{plan} plan", { plan: me.plan.name }) : t("Free plan");
   // firstName gives "there" when there's no name to use.
   const called = firstName(me.user);
@@ -172,8 +193,8 @@ export function AccountMenu({
                       // The name and email shown, after what choosing it does.
                       aria-label={t("Switch to {name} ({email})", { name: isolate(fullName(a)), email: isolate(a.email) })}
                       aria-busy={going || undefined}
-                      disabled={Boolean(switching)}
-                      className={`${item} min-h-11 py-1.5 disabled:cursor-default disabled:hover:bg-transparent ${switching && !going ? "opacity-50" : ""}`}
+                      disabled={Boolean(switching || out)}
+                      className={`${item} min-h-11 py-1.5 disabled:cursor-default disabled:hover:bg-transparent ${(switching && !going) || out ? "opacity-50" : ""}`}
                       // The menu stays open, saying "Switching…", while the tab reloads as that account. When
                       // it stays instead, the menu closes, so what Flash says (or asks) next is in view.
                       onClick={() => {
@@ -201,7 +222,7 @@ export function AccountMenu({
           {full ? (
             <p className="px-3 py-2 text-xs leading-relaxed text-zinc-500">{t("You're signed in to 5 accounts. Log out of one to add another.")}</p>
           ) : (
-            <button role="menuitem" className={`${item} min-h-11`} disabled={Boolean(switching)} onClick={pick(onAdd)}>
+            <button role="menuitem" className={`${item} min-h-11 disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent`} disabled={Boolean(switching || out)} onClick={pick(onAdd)}>
               <span aria-hidden className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-dashed border-white/15 text-base text-zinc-400">
                 +
               </span>
@@ -211,11 +232,11 @@ export function AccountMenu({
           {/* With several accounts, the log-outs come right after them (on a small phone the menu scrolls, and Learn more below can hide what's under it). */}
           {several && (
             <>
-              <button role="menuitem" className={item} onClick={pick(onSignOut)}>
-                <span aria-hidden className="rtl:-scale-x-100">↪</span> {t("Log out of this account")}
+              <button role="menuitem" {...outItem("one")}>
+                <span aria-hidden className="rtl:-scale-x-100">↪</span> {out === "one" ? t("Logging out…") : t("Log out of this account")}
               </button>
-              <button role="menuitem" className={item} onClick={pick(onSignOutAll)}>
-                <span aria-hidden className="rtl:-scale-x-100">⇤</span> {t("Log out of all accounts")}
+              <button role="menuitem" {...outItem("all")}>
+                <span aria-hidden className="rtl:-scale-x-100">⇤</span> {out === "all" ? t("Logging out…") : t("Log out of all accounts")}
               </button>
             </>
           )}
@@ -261,14 +282,15 @@ export function AccountMenu({
           {!several && (
             <>
               <div className="my-1 border-t border-white/8" />
-              <button role="menuitem" className={item} onClick={pick(onSignOut)}>
-                <span aria-hidden className="rtl:-scale-x-100">↪</span> {t("Log out")}
+              <button role="menuitem" {...outItem("one")}>
+                <span aria-hidden className="rtl:-scale-x-100">↪</span> {out === "one" ? t("Logging out…") : t("Log out")}
               </button>
             </>
           )}
         </div>
       )}
       <button
+        data-account-menu
         onClick={() => setOpen((o) => !o)}
         aria-haspopup="menu"
         aria-expanded={open}

@@ -888,6 +888,7 @@
  "Log out of this account": "Dekonekte kont sa a",
  "Log out of {email} on this device.": "Dekonekte {email} sou aparèy sa a.",
  "Logged out of {email}. You're now using {next}.": "Ou dekonekte {email}. Kounye a w ap itilize {next}.",
+ "Logging out…": "N ap dekonekte…",
  "Logo": "Logo",
  "Logos, posters and photos": "Logo, afich ak foto",
  "Logs {email} out everywhere, this device included, and disconnects apps connected to Flash, like Claude.": "Li dekonekte {email} toupatou, ladan l aparèy sa a tou, epi li dekonekte aplikasyon ki konekte ak Flash, tankou Claude.",

@@ -888,6 +888,7 @@
  "Log out of this account": "Đăng xuất khỏi tài khoản này",
  "Log out of {email} on this device.": "Đăng xuất {email} trên thiết bị này.",
  "Logged out of {email}. You're now using {next}.": "Đã đăng xuất khỏi {email}. Bạn đang dùng {next}.",
+ "Logging out…": "Đang đăng xuất…",
  "Logo": "Logo",
  "Logos, posters and photos": "Logo, áp phích và ảnh",
  "Logs {email} out everywhere, this device included, and disconnects apps connected to Flash, like Claude.": "Đăng xuất {email} ở mọi nơi, kể cả thiết bị này, và ngắt kết nối các ứng dụng đã kết nối với Flash, như Claude.",

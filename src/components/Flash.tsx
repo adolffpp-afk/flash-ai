@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { createPortal } from "react-dom";
 import { Message, type Reshape } from "./Message";
 import { AuthScreen } from "./AuthScreen";
 import { Landing } from "./Landing";
@@ -14,7 +13,7 @@ import { DownloadChat } from "./DownloadChat";
 import { ProjectInstructions } from "./ProjectInstructions";
 import { Settings, SKIP_COST_CHECK, settingsTabFor, type SettingsTab } from "./Settings";
 import { AccountMenu } from "./AccountMenu";
-import { AccountChooser, SwitchAnyway } from "./AccountChooser";
+import { AccountChooser, AddOver, SwitchAnyway } from "./AccountChooser";
 import { EmailLabel } from "./EmailLabel";
 import { Automations } from "./Automations";
 import { Creations } from "./Creations";
@@ -33,6 +32,7 @@ import { applyEvent } from "@/lib/apply-event";
 import { api, authedFetch, newId, type AccountSummary, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
 import { PRODUCT_NAME } from "@/lib/product";
 import { adoptAccountFromUrl, announce, getPin, getPinEmail, isolate, isTabAccount, linkTarget, onAnnounce, reloadAs, setPin, setPinEmail, takeLeftNote, type LeftNote } from "@/lib/account-pin";
+import { stopMic } from "@/lib/listen";
 import { isLocalPath } from "@/lib/local-path";
 import { forgetInvite, keepInviteInTab, saveInvite, waitingInvite } from "@/lib/invite-keep";
 import { saveTracker } from "@/lib/save-tracker";
@@ -107,6 +107,12 @@ const saving = saveTracker();
  * turned out not to be signed in here anymore.
  */
 type Chooser = { reason: "link" | "gone" | "notHere"; email?: string; name?: string; accounts: AccountSummary[] };
+/**
+ * Add mode: signing in to another account over the page, then going to next (a page of Flash's).
+ * back: the chooser that opened it, which Back returns to; again: the email of the account this tab
+ * showed, to sign in to again.
+ */
+type Adding = { next?: string; error?: string; back?: Chooser; again?: string };
 export type Status = Record<Engine, boolean>;
 
 /**
@@ -260,14 +266,14 @@ export function Flash({
   const [notice, setNotice] = useState("");
   // Several accounts in one browser (see account-pin.ts): the account a switch is under way to; the
   // chooser shown when this tab's account was logged out here, or a link was for another account;
-  // a switch waiting on "Switch anyway"; add mode (signing in to another account) and where it goes
-  // after; and an invitation for another account signed in here.
+  // a switch waiting on "Switch anyway" (to: the page of Flash it goes to, after Add another
+  // account); add mode (signing in to another account); a log out under way; and an invitation for
+  // another account signed in here.
   const [switching, setSwitching] = useState<string | null>(null);
   const [chooser, setChooser] = useState<Chooser | null>(null);
-  const [unsaved, setUnsaved] = useState<string | null>(null);
-  // back: the chooser that opened add mode, which Back returns to; again: the email of the account
-  // this tab showed, to sign in to again.
-  const [adding, setAdding] = useState<{ next?: string; error?: string; back?: Chooser; again?: string } | null>(null);
+  const [unsaved, setUnsaved] = useState<{ id: string; added?: boolean; to?: string } | null>(null);
+  const [adding, setAdding] = useState<Adding | null>(null);
+  const leavingRef = useRef(false);
   const [addNext, setAddNext] = useState<string | undefined>(undefined);
   const [inviteFor, setInviteFor] = useState<{ id: string; email: string } | null>(null);
   // The account a link opened this tab as (?as=), until it is known to be signed in here.
@@ -398,6 +404,7 @@ export function Flash({
   // What the account check and saving before a switch read, as of the last render.
   const meRef = useRef<Me | null>(null);
   const chooserRef = useRef<Chooser | null>(null);
+  const addingRef = useRef<Adding | null>(null);
   const projectsRef = useRef<Project[]>([]);
   useEffect(() => {
     meRef.current = me;
@@ -405,6 +412,9 @@ export function Flash({
   useEffect(() => {
     chooserRef.current = chooser;
   }, [chooser]);
+  useEffect(() => {
+    addingRef.current = adding;
+  }, [adding]);
   useEffect(() => {
     projectsRef.current = projects;
   }, [projects]);
@@ -451,10 +461,11 @@ export function Flash({
   /**
    * After the server said this tab is signed out, or another tab changed the accounts: who is still
    * signed in here. "here" when this tab's account still is (the list in the menu is refreshed),
-   * "back" when it is signed in here again while the chooser asked (the chooser closes), "none"
-   * when nobody is, "retry" when this tab had no account and now has the default, and "gone" when
-   * its account was logged out but others are signed in: the chooser shows, and this tab never
-   * moves to another account on its own.
+   * "back" when it is signed in here again while the chooser asked, or while signing in from it
+   * (the chooser, or that sign-in, closes), "none" when nobody is, "retry" when this tab had no
+   * account and now has the default, and "gone" when its account was logged out but others are
+   * signed in: the chooser shows, and this tab never moves to another account on its own. While
+   * add mode is open, the chooser never covers it: its Back leads to the chooser instead.
    */
   async function checkAccounts(): Promise<"here" | "back" | "none" | "retry" | "gone"> {
     let list: { default: string | null; accounts: AccountSummary[] };
@@ -471,10 +482,16 @@ export function Flash({
       setPinEmail(showing.email);
       mine = showing.id;
     }
+    const signingIn = addingRef.current;
     if (mine && list.accounts.some((a) => a.id === mine)) {
       setMe((m) => (m ? { ...m, accounts: list.accounts } : m));
+      // Signed in here again (in another tab, or by an emailed link) while the chooser asked which
+      // account to use, or while signing in from it: this tab goes on as it.
+      if (signingIn?.back) {
+        closeAdding();
+        return "back";
+      }
       if (!chooserRef.current) return "here";
-      // Signed in here again (in another tab) while the chooser asked which account to use: this tab goes on as it.
       setChooser(null);
       return "back";
     }
@@ -487,7 +504,16 @@ export function Flash({
       return "retry";
     }
     const loaded = meRef.current?.user.id === mine ? meRef.current.user : null;
-    setChooser({ reason: linkedRef.current === mine ? "link" : "gone", email: loaded?.email ?? getPinEmail(), name: loaded?.name, accounts: list.accounts });
+    const gone: Chooser = { reason: linkedRef.current === mine ? "link" : "gone", email: loaded?.email ?? getPinEmail(), name: loaded?.name, accounts: list.accounts };
+    // Signing in over the page (add mode): the form stays as it is, and its Back leads to the
+    // chooser, with who is signed in here now.
+    if (signingIn) {
+      const next = { ...signingIn, back: signingIn.back ? { ...signingIn.back, accounts: list.accounts } : gone };
+      addingRef.current = next;
+      setAdding(next);
+      return "gone";
+    }
+    setChooser(gone);
     return "gone";
   }
 
@@ -564,7 +590,7 @@ export function Flash({
     const back = opened.get("next");
     const safeNext = isLocalPath(back) ? back : undefined;
     if (opened.get("add") === "1") {
-      if (signedIn) setAdding({ next: safeNext });
+      if (signedIn) openAdding({ next: safeNext });
       else {
         setAuthMode("login");
         setAddNext(safeNext);
@@ -623,7 +649,7 @@ export function Flash({
     if (authErr) {
       setAuthError(authErr);
       setAuthMode("login");
-      if (signedIn) setAdding({ error: authErr });
+      if (signedIn) openAdding({ error: authErr });
       window.history.replaceState(null, "", window.location.pathname);
     }
     const verified = params.get("verified");
@@ -1076,7 +1102,7 @@ export function Flash({
     if (switching && !anyway) return false;
     setSwitching(id);
     if (!gone && !anyway && !(await flushSaves())) {
-      setUnsaved(id);
+      setUnsaved({ id });
       return false;
     }
     setUnsaved(null);
@@ -1104,13 +1130,62 @@ export function Flash({
   function addFromChooser(from: Chooser) {
     const target = from.reason === "link" ? linkTarget() : null;
     setChooser(null);
-    setAdding({ back: from, next: target && isLocalPath(target) ? target : undefined });
+    openAdding({ back: from, next: target && isLocalPath(target) ? target : undefined });
   }
 
   /** "Sign in again" in the chooser: signing in to the account this tab showed, which then goes on where it was. */
   function signInAgain(from: Chooser) {
     setChooser(null);
-    setAdding({ back: from, again: from.email });
+    openAdding({ back: from, again: from.email });
+  }
+
+  /**
+   * Add mode, over the page, which stays as it was underneath and out of reach (see addScreen).
+   * Nothing of the page listens on under it: a voice conversation ends and the mic stops, so
+   * nothing said while signing in (a password read out, say) is heard, sent or typed.
+   */
+  function openAdding(next: Adding) {
+    setVoice(null);
+    stopMic();
+    addingRef.current = next;
+    setAdding(next);
+  }
+
+  function closeAdding() {
+    addingRef.current = null;
+    setAdding(null);
+  }
+
+  /**
+   * Signed in from add mode. To the account this tab showed (Sign in again): it goes on where it
+   * was. To another: the tab goes on as it, like a switch: what changed here is saved first, or
+   * Flash asks (not when this tab's account already ended), and the account is named only once its
+   * page loads (reloadAs), so until then every request still names the account this tab shows.
+   */
+  async function addDone(from: Adding, result?: { account?: string }) {
+    announce({ type: "changed" });
+    const id = result?.account;
+    if (from.again && id && id === getPin()) {
+      closeAdding();
+      if (meRef.current) void refreshMe();
+      else void start();
+      return;
+    }
+    if (!id) return window.location.reload();
+    if (meRef.current && !from.back && !(await flushSaves())) {
+      // Asked over the page, which keeps its changes if the person stays (Cancel).
+      closeAdding();
+      setUnsaved({ id, added: true, to: from.next });
+      return;
+    }
+    goOnAs(id, from.next);
+  }
+
+  /** After Add another account: to the page of Flash it was for (Home when none), as that account. */
+  function goOnAs(id: string, to?: string) {
+    // Another page of Flash's (Connect to Flash) shows the account just signed in to, now the default.
+    if (to && new URL(to, window.location.href).pathname !== "/") return window.location.replace(to);
+    reloadAs(id, undefined, to);
   }
 
   /** After a switch to an account that turned out not to be signed in here: the chooser, with who is. */
@@ -1128,7 +1203,11 @@ export function Flash({
   }
 
   // everywhere: Settings already logged this account out of every device (after: who this browser uses now).
-  async function signOut(everywhere = false, after: { id: string; email: string } | null = null) {
+  // True once this tab leaves the account (it reloads as the next one, or is signed out); false
+  // when it stays, and says why. One log out at a time: the menu says "Logging out…" meanwhile.
+  async function signOut(everywhere = false, after: { id: string; email: string } | null = null): Promise<boolean> {
+    if (leavingRef.current) return false;
+    leavingRef.current = true;
     const leaving = me?.user.email ?? "";
     const mine = getPin();
     let next = after;
@@ -1141,27 +1220,37 @@ export function Flash({
       } catch (err) {
         // Nothing was logged out: this tab's account isn't the one signed in here anymore, or it named none.
         if ((err as { code?: string }).code === "account_required") {
+          leavingRef.current = false;
           setNotice(err instanceof Error ? err.message : t("Reload Flash, then log out again."));
           void checkAccounts();
-          return;
+          return false;
         }
       }
     }
     // Another account is still signed in here: Flash goes on as it, and says so.
-    if (next) return reloadAs(next.id, { email: leaving, next: next.email });
+    if (next) {
+      reloadAs(next.id, { email: leaving, next: next.email });
+      // Still here a few seconds on: the browser's "Leave site?" kept this page.
+      window.setTimeout(() => (leavingRef.current = false), 3000);
+      return true;
+    }
     setPin(null);
     announce({ type: "changed" });
     signedOutHere();
+    return true;
   }
 
   /** Log out of all accounts: every session this browser holds ends (other devices stay signed in). */
-  async function signOutAll() {
+  async function signOutAll(): Promise<boolean> {
+    if (leavingRef.current) return false;
+    leavingRef.current = true;
     for (const a of me?.accounts ?? []) announce({ type: "leaving", account: a.id });
     await flushSaves().catch(() => false);
     await api("/api/auth/logout", { method: "POST", json: { all: true } }).catch(() => {});
     setPin(null);
     announce({ type: "changed" });
     signedOutHere();
+    return true;
   }
 
   /** What this tab keeps of an account that's no longer signed in here: nothing. */
@@ -1177,9 +1266,10 @@ export function Flash({
     filesRef.current.clear();
     setAuthMode(null);
     setChooser(null);
-    setAdding(null);
+    closeAdding();
     setInviteFor(null);
     setSignedOut(true);
+    leavingRef.current = false;
   }
 
   // Another tab logged an account out, switched or added one; or this tab comes back into view; or
@@ -1189,8 +1279,9 @@ export function Flash({
     const check = (now = false) => {
       if (!now && Date.now() - last < 15_000) return;
       last = Date.now();
-      // Signed out, nothing to check; the chooser shown before this tab's account loaded checks too.
-      if (!meRef.current && !chooserRef.current) return;
+      // Signed out, nothing to check; the chooser shown before this tab's account loaded checks too,
+      // and so does signing in from it.
+      if (!meRef.current && !chooserRef.current && !addingRef.current?.back) return;
       void checkAccounts().then((found) => {
         if (found === "none") signedOutHere();
         // That chooser's account was signed in again elsewhere: it loads now.
@@ -1994,6 +2085,13 @@ export function Flash({
   // Signing in to another account as well as this one, or again to the one this tab showed (again).
   // Back returns to the chooser that opened it, to the Connect to Flash page it came from, or to the
   // account shown: over the page, which stays as it was underneath (its chat, preview and code).
+  const addBack = (from: Adding) => {
+    if (from.back) {
+      closeAdding();
+      setChooser(from.back);
+    } else if (from.next) window.location.replace(from.next);
+    else closeAdding();
+  };
   const addScreen =
     adding && (me || adding.back) ? (
       <AuthScreen
@@ -2003,26 +2101,9 @@ export function Flash({
         adding={{
           email: adding.back ? undefined : me?.user.email,
           again: adding.again,
-          onBack: () => {
-            if (adding.back) {
-              setAdding(null);
-              setChooser(adding.back);
-            } else if (adding.next) window.location.replace(adding.next);
-            else setAdding(null);
-          },
+          onBack: () => addBack(adding),
         }}
-        onDone={(result) => {
-          announce({ type: "changed" });
-          // Signed in again to the account this tab showed: it goes on where it was.
-          if (adding.again && result?.account && result.account === getPin()) {
-            setAdding(null);
-            if (meRef.current) void refreshMe();
-            else void start();
-            return;
-          }
-          if (result?.account) setPin(result.account);
-          window.location.replace(adding.next || "/");
-        }}
+        onDone={(result) => addDone(adding, result)}
       />
     ) : null;
   if (addScreen && !me) return addScreen;
@@ -2034,9 +2115,9 @@ export function Flash({
         initialError={authError}
         next={addNext}
         onDone={(result) => {
-          if (result?.account) setPin(result.account);
           // Signed in from the Connect to Flash page's "Sign in to another account": back there.
-          if (addNext) return window.location.replace(addNext);
+          if (addNext && result?.account) return goOnAs(result.account, addNext);
+          if (result?.account) setPin(result.account);
           setEmailFailed(Boolean(result?.emailFailed));
           start();
         }}
@@ -2093,8 +2174,9 @@ export function Flash({
     setPhoneTab(v);
   };
   const showPreview = () => (beside ? setPanelHidden(false) : showPhoneTab("preview"));
-  // What Flash says (a notice, an invitation for another account here): at the top of the chat, or
-  // above the preview while it shows instead of the chat (on a phone), so it's never out of sight.
+  // What Flash says (a notice, an invitation for another account here): above the chat, however far
+  // it is scrolled, or above the preview while it shows instead of the chat (on a phone), so it's
+  // never out of sight.
   const said = (notice || inviteFor) && (
     <>
       {notice && (
@@ -2840,9 +2922,9 @@ export function Flash({
             onPlan={() => setShowCredits(true)}
             onInvite={() => setShowInvite(true)}
             onSwitch={(id) => switchAccount(id)}
-            onAdd={() => setAdding({})}
+            onAdd={() => openAdding({})}
             onSignOut={() => signOut()}
-            onSignOutAll={() => void signOutAll()}
+            onSignOutAll={signOutAll}
           />
         </header>
         {showApps && (
@@ -2932,10 +3014,13 @@ export function Flash({
       )}
       {unsaved && (
         <SwitchAnyway
-          onSwitch={() => void switchAccount(unsaved, { anyway: true })}
+          // After Add another account, the account is already signed in here and the default.
+          onSwitch={() => (unsaved.added ? goOnAs(unsaved.id, unsaved.to) : void switchAccount(unsaved.id, { anyway: true }))}
           onCancel={() => {
             setUnsaved(null);
             setSwitching(null);
+            // Staying: the menu lists the account just added, to switch to once this is saved.
+            if (unsaved.added) void checkAccounts();
           }}
         />
       )}
@@ -2967,16 +3052,17 @@ export function Flash({
             </div>
           </div>
         )}
-        {said && tab === "preview" && <div className="mx-auto w-full max-w-3xl shrink-0 space-y-2 px-3 pb-1">{said}</div>}
+        {said && (
+          <div className={`mx-auto w-full shrink-0 ${tab === "preview" ? "max-w-3xl space-y-2 px-3 pb-1" : `space-y-3 px-4 pb-2 pt-2 ${isHome ? "max-w-[1600px] sm:px-6 lg:px-8" : "max-w-3xl"}`}`}>{said}</div>
+        )}
         <div className="relative flex min-h-0 flex-1 flex-col">
         {/* Under the preview on a phone, the chat keeps its place (and where it was scrolled to) out of sight. */}
         <div
           inert={tab === "preview"}
           className={`min-h-0 flex-1 overflow-y-auto ${tab === "preview" ? "invisible" : ""} ${isHome ? "[mask-image:linear-gradient(to_bottom,transparent,#000_16px)]" : ""}`}
         >
-          {((said && tab !== "preview") || !me.verified || allOff) && (
+          {(!me.verified || allOff) && (
             <div className={`mx-auto space-y-3 px-4 pt-2 ${isHome ? "max-w-[1600px] sm:px-6 lg:px-8" : "max-w-3xl"}`}>
-            {tab !== "preview" && said}
             {me && !me.verified && <VerifyBanner email={me.user.email} free={me.freeMonthly} failed={emailFailed} />}
             {allOff && (
               <div role="status" className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
@@ -3116,18 +3202,11 @@ export function Flash({
       />
       )}
     </div>
-    {addScreen &&
-      createPortal(
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label={adding?.again ? t("Welcome back") : t("Add another account")}
-          className="fixed inset-0 z-[60] overflow-y-auto overscroll-contain [background:var(--page-glow),var(--color-ink)]"
-        >
-          {addScreen}
-        </div>,
-        document.body,
-      )}
+    {addScreen && adding && (
+      <AddOver label={adding.again ? t("Welcome back") : t("Add another account")} onBack={() => addBack(adding)}>
+        {addScreen}
+      </AddOver>
+    )}
     </>
   );
 }

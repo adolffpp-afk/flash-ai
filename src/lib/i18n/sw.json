@@ -888,6 +888,7 @@
  "Log out of this account": "Ondoka kwenye akaunti hii",
  "Log out of {email} on this device.": "Ondoa {email} kwenye kifaa hiki.",
  "Logged out of {email}. You're now using {next}.": "Umeondoka kwenye {email}. Sasa unatumia {next}.",
+ "Logging out…": "Inaondoka…",
  "Logo": "Nembo",
  "Logos, posters and photos": "Nembo, mabango na picha",
  "Logs {email} out everywhere, this device included, and disconnects apps connected to Flash, like Claude.": "Inaondoa {email} kila mahali, pamoja na kifaa hiki, na kutenganisha programu zilizounganishwa na Flash, kama Claude.",

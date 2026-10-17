@@ -4,7 +4,7 @@ import { LogoMark } from "@/app/brand";
 import Link from "next/link";
 import { useState } from "react";
 import { api } from "@/lib/store";
-import { setPin } from "@/lib/account-pin";
+import { announce, setPin } from "@/lib/account-pin";
 import { useBrowserLanguage, useT } from "@/lib/use-t";
 
 /** Asks for the code from the authenticator app (or a recovery code) to finish signing in. */
@@ -26,8 +26,10 @@ export function TwoFactorForm() {
         method: "POST",
         json: { code },
       });
-      // This tab shows the account it just signed in to (others in this browser stay signed in).
+      // This tab shows the account it just signed in to (others in this browser stay signed in), and
+      // Flash's other tabs check at once (a tab whose account had ended goes on as it).
       if (account) setPin(account);
+      announce({ type: "changed" });
       window.location.assign(next || "/");
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Something went wrong."));
