@@ -92,8 +92,9 @@ const ASK_AGAIN_AFTER = 7 * 24 * 60 * 60 * 1000;
 /**
  * When Flash opens in a browser (signed in or not), a card offers to install it, like the browser's
  * own install offer. "Not now" hides it for a week; inside the installed app it never shows.
+ * besidePreview: the live preview is beside the chat, where the card would cover its toolbar.
  */
-export function InstallPopup() {
+export function InstallPopup({ besidePreview = false }: { besidePreview?: boolean }) {
   const t = useT();
   const { available, install, dialog } = useInstall();
   const [show, setShow] = useState(false);
@@ -125,10 +126,11 @@ export function InstallPopup() {
     <>
       {show && (
         // On a computer it drops in at the top right, under the top bar, near where the browser offers installs; on a phone it sits at the bottom.
+        // Beside the preview, it drops in at the top of the chat column instead (it's drawn in the chat's own box).
         <div
           role="dialog"
           aria-label={t("Install Flash ∞ AI")}
-          className="glass-raised fixed inset-x-3 bottom-3 z-50 rounded-2xl p-4 text-zinc-100 sm:inset-x-auto sm:bottom-auto sm:end-4 sm:top-20 sm:w-[23rem]"
+          className={`glass-raised ${besidePreview ? "absolute" : "fixed"} inset-x-3 bottom-3 z-50 rounded-2xl p-4 text-zinc-100 sm:inset-x-auto sm:bottom-auto sm:end-4 sm:top-20 sm:w-[23rem]`}
         >
           <div className="flex items-start gap-3">
             {/* The app icon itself, as it will look on the home screen or taskbar. */}

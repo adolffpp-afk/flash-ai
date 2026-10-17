@@ -2,6 +2,7 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import type { StreamEvent } from "../src/lib/types.ts";
 
 // A stand-in Claude that streams whatever the test lines up next, and keeps what it was sent.
 const answers: (string | { text: string; stop: string })[] = [];
@@ -33,7 +34,8 @@ process.env.ANTHROPIC_API_KEY = "sk-fake";
 process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
 const { streamBuild } = await import("../src/lib/engines/builder.ts");
-type Event = { type: string; delta?: string; message?: string; app?: { title: string; html: string; kind: string } };
+const { startsWriting } = await import("../src/lib/live-draft.ts");
+type Event = { type: string; delta?: string; message?: string; at?: number; app?: { title: string; html: string; kind: string } };
 
 const PAGE = `<!doctype html>
 <html>
@@ -57,15 +59,36 @@ const history = (request: string) => [
 
 const edit = (find: string, replace: string) => `\`\`\`flash-edit\n<<<<<<< FIND\n${find}\n=======\n${replace}\n>>>>>>> REPLACE\n\`\`\``;
 
-async function run(request: string, budget?: { maxTokens: number; capCents: number }) {
+async function run(
+  request: string,
+  budget?: { maxTokens: number; capCents: number },
+  { turns = history(request), kind = "app" }: { turns?: { role: "user" | "assistant"; content: string; app?: string }[]; kind?: "app" | "slides" } = {},
+) {
   const events: Event[] = [];
   const costs: number[] = [];
-  for await (const e of streamBuild(history(request), "", "app", (_p, _m, cents) => costs.push(cents), budget)) events.push(e as Event);
+  for await (const e of streamBuild(turns, "", kind, (_p, _m, cents) => costs.push(cents), budget)) events.push(e as Event);
   const said = events.filter((e) => e.type === "text").map((e) => e.delta).join("");
   const app = events.find((e) => e.type === "app")?.app;
   const error = events.find((e) => e.type === "error")?.message;
   const statuses = events.filter((e) => e.type === "status").map((e) => e.message);
-  return { said, app, error, statuses, costs };
+  // The live preview's drafts, in order (see live-draft.ts).
+  const drafts = events.filter((e) => e.type === "draft") as { at: number; delta: string }[];
+  // Where the live preview opens (see startsWriting): -1 when it never does.
+  const writes = events.findIndex((e) => startsWriting(e as StreamEvent));
+  const appAt = events.findIndex((e) => e.type === "app");
+  return { said, app, error, statuses, costs, drafts, writes, appAt };
+}
+
+/** The file the drafts add up to, as the page puts it together, and whether each went on where the last stopped. */
+function draftedFile(drafts: { at: number; delta: string }[]) {
+  let html = "";
+  let contiguous = true;
+  for (const d of drafts) {
+    if (d.at === 0) html = d.delta;
+    else if (d.at === html.length) html += d.delta;
+    else contiguous = false;
+  }
+  return { html, contiguous };
 }
 
 test("a small change comes back as the whole app, built from the pieces", async () => {
@@ -223,4 +246,81 @@ test("the second go leaves room to think before writing the whole file", async (
   const { error } = await run("change the tagline", { maxTokens: 64000, capCents: 3.2 + 2000 * 0.002 });
   assert.match(error ?? "", /couldn't fit that change/);
   assert.equal(sent.length, 1);
+});
+
+test("a whole file is drafted as it is written, adding up to the app exactly", async () => {
+  sent.length = 0;
+  const bigger = PAGE.replace("<h1>", '<h1 style="font-size:52px">');
+  answers.push(`Rebuilt it.\n\n\`\`\`html\n${bigger}\n\`\`\`\n\n- Add prices`);
+  const { app, drafts } = await run("redo the whole page");
+  assert.ok(drafts.length > 0);
+  const drafted = draftedFile(drafts);
+  assert.ok(drafted.contiguous);
+  assert.equal(drafted.html, app?.html);
+  assert.equal(sent.length, 1, "no extra call for the drafts");
+});
+
+test("pieces, a snippet, and pieces in a block that isn't a whole file are never drafted", async () => {
+  sent.length = 0;
+  answers.push(`Made the button green.\n\n${edit("      .order { background: #d97706; }", "      .order { background: #16a34a; }")}`);
+  assert.deepEqual((await run("make the order button green")).drafts, []);
+  answers.push("Use this:\n\n```html\n<button class=\"order big\">Order</button>\n```\n\nShall I add it?");
+  assert.deepEqual((await run("how would a bigger button look?")).drafts, []);
+  answers.push(`Renamed it.\n\n\`\`\`html\n<<<<<<< FIND\n    <h1>Golden Crumb</h1>\n=======\n    <h1>Golden Crumb Bakery</h1>\n>>>>>>> REPLACE\n\`\`\``);
+  const pieces = await run("rename the heading");
+  assert.deepEqual(pieces.drafts, []);
+  assert.equal(pieces.app?.html, PAGE.replace("<h1>Golden Crumb</h1>", "<h1>Golden Crumb Bakery</h1>"));
+});
+
+test("a whole file that turns into pieces takes its draft back, and the app comes from the pieces", async () => {
+  sent.length = 0;
+  const start = PAGE.split("\n").slice(0, 3).join("\n");
+  answers.push(`Renamed it.\n\n\`\`\`html\n${start}\n<<<<<<< FIND\n    <h1>Golden Crumb</h1>\n=======\n    <h1>Golden Crumb Bakery</h1>\n>>>>>>> REPLACE\n\`\`\``);
+  const { app, drafts } = await run("rename the heading");
+  assert.ok(drafts.length >= 2, "the start of the file was shown");
+  assert.deepEqual(drafts.at(-1), { type: "draft", at: 0, delta: "" });
+  assert.equal(app?.html, PAGE.replace("<h1>Golden Crumb</h1>", "<h1>Golden Crumb Bakery</h1>"));
+});
+
+test("when pieces don't fit and the whole file is asked for again, the drafts start over and add up to it", async () => {
+  sent.length = 0;
+  const bigger = PAGE.replace("<h1>", '<h1 style="font-size:52px">');
+  answers.push(`Made the heading bigger.\n\n${edit("    <h2>Fresh since 1998</h2>", "    <h2>Fresh every day</h2>")}`);
+  answers.push(`Here it is.\n\n\`\`\`html\n${bigger}\n\`\`\``);
+  const { app, drafts } = await run("make the heading bigger");
+  assert.equal(app?.html, bigger);
+  assert.equal(drafts[0].at, 0, "the second go starts a fresh draft");
+  assert.equal(draftedFile(drafts).html, bigger);
+});
+
+test("a first build and a first deck are drafted from the first line", async () => {
+  for (const kind of ["app", "slides"] as const) {
+    sent.length = 0;
+    answers.push(`Here it is.\n\n\`\`\`html\n${PAGE}\n\`\`\``);
+    const { app, drafts } = await run("", undefined, { turns: [{ role: "user", content: `build me a bakery ${kind}` }], kind });
+    assert.equal(app?.kind, kind);
+    const drafted = draftedFile(drafts);
+    assert.ok(drafted.contiguous, kind);
+    assert.equal(drafted.html, app?.html, kind);
+  }
+});
+
+test("the live preview opens only once a file or the pieces of a change are written, never for words", async () => {
+  // A first build that asks a question first, and how-to answers and a snippet about an app there now.
+  answers.push("Happy to build that. What is the shop called, and which pages do you want?");
+  assert.equal((await run("", undefined, { turns: [{ role: "user", content: "build a website" }] })).writes, -1);
+  answers.push("Open the Code tab, find [Phone number] in the Visit section and type your number in its place.");
+  assert.equal((await run("how do I put my phone number on it?")).writes, -1);
+  answers.push("Use this:\n\n```html\n<button class=\"order big\">Order</button>\n```\n\nShall I add it?");
+  assert.equal((await run("how would a bigger button look?")).writes, -1);
+  // A first build, a whole new file, and pieces: each opens it before the app arrives.
+  answers.push(`Here it is.\n\n\`\`\`html\n${PAGE}\n\`\`\``);
+  const first = await run("", undefined, { turns: [{ role: "user", content: "build me a bakery page" }] });
+  answers.push(`Rebuilt it.\n\n\`\`\`html\n${PAGE.replace("Golden Crumb</h1>", "Golden Crumb Bakery</h1>")}\n\`\`\``);
+  const whole = await run("redo the whole page");
+  answers.push(`Made the button green.\n\n${edit("      .order { background: #d97706; }", "      .order { background: #16a34a; }")}`);
+  const pieces = await run("make the order button green");
+  for (const [name, r] of Object.entries({ first, whole, pieces })) {
+    assert.ok(r.writes !== -1 && r.writes < r.appAt, name);
+  }
 });
