@@ -47,6 +47,8 @@ const { CREDIT_PACKS, PLANS, claudeCostCents } = await import("../src/lib/credit
 const { saveUpload, listUploads, deleteUpload, cleanName, uploadUse, setUploadsOn, uploadsOn } = await import("../src/lib/server/site-files.ts");
 const { flashDbShim } = await import("../src/lib/flashdb-shim.ts");
 const aiRoute = await import("../src/app/api/sites/[slug]/ai/route.ts");
+const { runLock } = await import("../src/lib/server/pagespeed.ts");
+const { clearLimit, overLimit } = await import("../src/lib/server/limits.ts");
 
 const balance = async () =>
   Number((await one<{ c: number }>("SELECT COALESCE(SUM(amount), 0) AS c FROM credit_ledger WHERE user_id = 'owner'"))?.c);
@@ -133,21 +135,40 @@ test("Google's page speed check (Lighthouse) never spends an app's AI, and visit
       }),
       { params: Promise.resolve({ slug: "shop" }) } as never,
     );
-  const before = await balance();
-  const today = await aiSettings("shop");
-  sent = null;
-  const lighthouse = await post("Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36 Chrome-Lighthouse");
-  assert.equal(lighthouse.status, 503);
-  assert.deepEqual(await lighthouse.json(), { error: "The AI isn't available right now. Please try again later." });
-  assert.equal(lighthouse.headers.get("access-control-allow-origin"), "*", "the app can read the answer");
-  assert.equal(sent, null, "the model was never asked");
-  assert.equal(await balance(), before, "nothing charged");
-  assert.deepEqual(await aiSettings("shop"), today, "nothing taken from the day's budget");
-
-  const visitor = await post("Mozilla/5.0 (Linux; Android 11) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36");
-  assert.equal(visitor.status, 200);
-  assert.notEqual(sent, null);
-  assert.ok((await balance()) < before);
+  // Lighthouse's own user agents (core/config/constants.js): 9.6 said Chrome-Lighthouse, 10 to 13 don't.
+  const lighthouse9 = "Mozilla/5.0 (Linux; Android 7.0; Moto G (4)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4695.0 Mobile Safari/537.36 Chrome-Lighthouse";
+  const phone13 = "Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Mobile Safari/537.36";
+  const computer13 = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36";
+  const refused = async (agent: string, why: string) => {
+    const before = await balance();
+    const today = await aiSettings("shop");
+    sent = null;
+    const res = await post(agent);
+    assert.equal(res.status, 503, why);
+    assert.deepEqual(await res.json(), { error: "The AI isn't available right now. Please try again later." });
+    assert.equal(res.headers.get("access-control-allow-origin"), "*", "the app can read the answer");
+    assert.equal(sent, null, `${why}: the model was never asked`);
+    assert.equal(await balance(), before, `${why}: nothing charged`);
+    assert.deepEqual(await aiSettings("shop"), today, `${why}: nothing taken from the day's budget`);
+  };
+  const answered = async (agent: string, why: string) => {
+    const before = await balance();
+    sent = null;
+    assert.equal((await post(agent)).status, 200, why);
+    assert.notEqual(sent, null, why);
+    assert.ok((await balance()) < before, why);
+  };
+  await refused(lighthouse9, "Lighthouse 9");
+  await refused(phone13, "Lighthouse 13's phone");
+  // While Flash's check with Google runs for this app, Lighthouse's computer (any Mac's user agent) is refused too.
+  await overLimit(runLock("shop"), 1, 180_000);
+  await refused(computer13, "a computer while Google checks the app");
+  await refused(phone13.replace("Android 11; moto g power (2022)", "Android 10; K"), "a phone while Google checks the app");
+  await clearLimit(runLock("shop"));
+  // Visitors, before and after: a real phone (Chrome names no model), a phone's in-app browser, and a Mac.
+  await answered("Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36", "a phone");
+  await answered("Mozilla/5.0 (Linux; Android 12; moto g power (2022) Build/S3RQS32.20-42-10-6; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/137.0.0.0 Mobile Safari/537.36", "an in-app browser");
+  await answered(computer13, "a computer");
 });
 
 test("an answer that ends after midnight gives back what it didn't use to the day it was taken from", async () => {

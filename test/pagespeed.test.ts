@@ -26,6 +26,8 @@ const { adminStats } = await import("../src/lib/server/admin-stats.ts");
 const { countOf } = await import("../src/lib/server/limits.ts");
 const route = await import("../src/app/api/sites/[slug]/pagespeed/route.ts");
 const seoRoute = await import("../src/app/api/sites/[slug]/seo/route.ts");
+const aiRoute = await import("../src/app/api/sites/[slug]/ai/route.ts");
+const { labBand } = await import("../src/lib/seo-band.ts");
 
 const GOOGLE = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed";
 const KEY = `AIza${"Sy0_k-".repeat(5)}abcde`;
@@ -195,21 +197,24 @@ test("only the scores, Google's test numbers and real visitors' numbers are kept
   const before = Date.now();
   const res = await check(who);
   assert.equal(res.status, 200);
-  const record = res.body.pagespeed as Record<string, unknown>;
+  const record = res.body.pagespeed as Record<string, unknown> & { mobile: { at: number }; desktop: { at: number } };
   assert.ok(Number(record.at) >= before);
-  assert.deepEqual({ ...record, at: 0 }, {
+  assert.equal(record.at, Math.min(record.mobile.at, record.desktop.at), "as old as its older half");
+  assert.deepEqual({ ...record, at: 0, mobile: { ...record.mobile, at: 0 }, desktop: { ...record.desktop, at: 0 } }, {
     v: 1,
     at: 0,
     for: 1000,
     url: `https://www.flash-app.dev/p/${who.slug}`,
     mobile: {
       ok: true,
+      at: 0,
       scores: { performance: 73, accessibility: 91, bestPractices: 100, seo: null },
       lab: { lcpMs: 3123.4, cls: 0.042, tbtMs: 410, fcpMs: 1820 },
       field: { lcp: { p75: 2900, rating: "needs" }, inp: { p75: 180, rating: "good" }, cls: { p75: 0.31, rating: "poor" } },
     },
     desktop: {
       ok: true,
+      at: 0,
       scores: { performance: 98, accessibility: 91, bestPractices: 100, seo: 90 },
       lab: { lcpMs: 812.9, cls: 0.042, tbtMs: 20, fcpMs: 610 },
       field: { lcp: { p75: 1400, rating: "good" }, inp: { p75: 180, rating: "good" }, cls: { p75: 0.31, rating: "poor" } },
@@ -280,9 +285,21 @@ test("each owner has a few checks an hour, waiting for a running one uses none, 
   assert.equal(second.body.code, "running");
   assert.equal(second.body.error, "Google is still checking this page. The result shows here when it's done.");
   assert.equal(await countOf(`pagespeed:${other.id}`), 1, "waiting used up no check");
+  // Meanwhile Lighthouse opens the app like a visitor, on a Mac's user agent: its AI says no, so the check spends nothing.
+  const askAi = () =>
+    aiRoute.POST(
+      new Request(`http://localhost/api/sites/${other.slug}/ai`, {
+        method: "POST",
+        headers: { "content-type": "application/json", "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36" },
+        body: JSON.stringify({ prompt: "What's fresh today?" }),
+      }),
+      { params: Promise.resolve({ slug: other.slug }) } as never,
+    );
+  assert.equal((await askAi()).status, 503);
   release();
   assert.equal((await first).status, 200);
   assert.equal((await seo(other)).pagespeedRunning, false);
+  assert.notEqual((await askAi()).status, 503, "after the check, visitors are answered as before (this app's AI is off: 403)");
   googleReply = ok;
 
   // Flash's daily allowance for everyone together: then Google isn't asked, and the owner is told it's busy.
@@ -404,6 +421,59 @@ test("a check that failed on a phone only is asked again for the phone, not answ
   // Both halves done: kept for the day.
   assert.equal((await check(who)).body.cached, true);
   assert.equal(google.length, 3);
+});
+
+test("a half kept while the other is asked again keeps when it was tested, and the check is kept a day from the older one", async () => {
+  await fresh();
+  const realNow = Date.now;
+  const T0 = realNow();
+  try {
+    const who = await owner("restamp");
+    await run("UPDATE sessions SET expires_at = ? WHERE user_id = ?", [T0 + 100 * HOUR, who.id]);
+    Date.now = () => T0;
+    googleReply = (s) => (s === "DESKTOP" ? { status: 500, body: "{}" } : ok(s));
+    const first = (await check(who)).body.pagespeed as { at: number; mobile: { at: number } };
+    assert.equal(first.mobile.at, T0);
+    // 23 hours on, Google can do the computer: the phone's half says it's from 23 hours ago, and so does the check.
+    Date.now = () => T0 + 23 * HOUR;
+    await run("DELETE FROM source_cache WHERE key != ?", [REFUSED]);
+    await run("DELETE FROM rate_limits");
+    googleReply = ok;
+    const again = await check(who);
+    assert.deepEqual(google.slice(2).map((c) => c.url.searchParams.get("strategy")), ["DESKTOP"]);
+    const record = again.body.pagespeed as { at: number; mobile: { at: number }; desktop: { at: number } };
+    assert.deepEqual([record.at, record.mobile.at, record.desktop.at], [T0, T0, T0 + 23 * HOUR]);
+    assert.equal((await check(who)).body.cached, true, "both halves done: kept");
+    // A day after the phone was tested, both are asked again rather than answered as kept.
+    Date.now = () => T0 + 25 * HOUR;
+    await run("DELETE FROM rate_limits");
+    const later = await check(who);
+    assert.equal(later.body.cached, undefined);
+    assert.deepEqual(google.slice(3).map((c) => c.url.searchParams.get("strategy")).sort(), ["DESKTOP", "MOBILE"]);
+    assert.equal((later.body.pagespeed as { at: number }).at, T0 + 25 * HOUR);
+    // A check saved before halves had their own time: a kept half is as old as that check.
+    const old = { v: 1, at: T0, for: 1000, url: `https://www.flash-app.dev/p/${who.slug}`, mobile: { ...first.mobile, at: undefined }, desktop: { ok: false, error: "unreachable" } };
+    await run("UPDATE sites SET pagespeed = ? WHERE slug = ?", [JSON.stringify(old), who.slug]);
+    await run("DELETE FROM rate_limits");
+    Date.now = () => T0 + 2 * HOUR;
+    const mixed = (await check(who)).body.pagespeed as { at: number; mobile: { at: number } };
+    assert.deepEqual([mixed.at, mixed.mobile.at], [T0, T0]);
+  } finally {
+    Date.now = realNow;
+    googleReply = ok;
+  }
+});
+
+test("Google's test numbers are banded as its report bands them: stricter on a computer than on a phone", () => {
+  // Lighthouse's scoring points (p10 and median) for each device: at or under p10 is good, over the median poor.
+  const said = (strategy: "mobile" | "desktop", metric: "lcp" | "fcp" | "tbt" | "cls", values: number[]) => values.map((v) => labBand(strategy, metric, v)).join(" ");
+  assert.equal(said("mobile", "lcp", [2000, 2500, 3000, 4000, 4001]), "good good needs needs poor");
+  assert.equal(said("desktop", "lcp", [1200, 2000, 2400, 3000]), "good needs needs poor");
+  assert.equal(said("mobile", "fcp", [1500, 1800, 2200, 3001]), "good good needs poor");
+  assert.equal(said("desktop", "fcp", [934, 1500, 2200]), "good needs poor");
+  assert.equal(said("mobile", "tbt", [150, 200, 500, 601]), "good good needs poor");
+  assert.equal(said("desktop", "tbt", [150, 200, 500]), "good needs poor");
+  for (const strategy of ["mobile", "desktop"] as const) assert.equal(said(strategy, "cls", [0.05, 0.1, 0.2, 0.3]), "good good needs poor");
 });
 
 test("the key never shows in the logs or in what's kept", async () => {

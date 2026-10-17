@@ -27,6 +27,8 @@ const ERROR_BYTES = 4000;
 
 /** Set while Google refuses Flash's checks: none is sent until it expires. */
 export const REFUSED = "pagespeed:refused";
+/** Held (in rate_limits) while Google checks an app: one check at a time, and its AI says no meanwhile. */
+export const runLock = (slug: string) => `pagespeed-run:${slug}`;
 
 const AUDITS = ["largest-contentful-paint", "cumulative-layout-shift", "total-blocking-time", "first-contentful-paint"] as const;
 const PATHS: JsonPath[] = [
@@ -44,8 +46,13 @@ export type Lab = { lcpMs?: number; cls?: number; tbtMs?: number; fcpMs?: number
 /** What real Chrome visitors got over 28 days, at the 75th percentile: only for this page, never the whole site's. */
 export type Field = { lcp?: Metric; inp?: Metric; cls?: Metric };
 export type PageSpeedError = "quota" | "slow" | "unreachable" | "busy";
-export type PageSpeedRun = { ok: true; scores: PageSpeedScores; lab: Lab; field: Field | null } | { ok: false; error: PageSpeedError };
-/** One check of one address, as kept in sites.pagespeed. for: the version of the app it tested (sites.updated_at). */
+/** One strategy's check. at: when Google ran it (not in checks saved before it was kept). */
+export type PageSpeedRun = { ok: true; at?: number; scores: PageSpeedScores; lab: Lab; field: Field | null } | { ok: false; error: PageSpeedError };
+/**
+ * One check of one address, as kept in sites.pagespeed. for: the version of the app it tested
+ * (sites.updated_at); at: when its older half was run, so a half kept from an earlier check is never
+ * answered as fresh for longer than a day.
+ */
 export type PageSpeedRecord = { v: 1; at: number; for: number; url: string; mobile: PageSpeedRun; desktop: PageSpeedRun };
 
 /** The key, or null when it isn't set or isn't a Google API key: then Flash asks without one. */

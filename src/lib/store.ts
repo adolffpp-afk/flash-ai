@@ -160,3 +160,17 @@ export async function api<T>(path: string, init?: RequestInit & { json?: unknown
   }
   return data as T;
 }
+
+const UNPUBLISHED = "flash:unpublished";
+
+/** Tells what's on screen (an app's own page in the chat) that a site was unpublished in My websites & apps. */
+export function announceUnpublished(slug: string): void {
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(UNPUBLISHED, { detail: slug }));
+}
+
+/** Calls back with each site unpublished on this page; returns what stops it. */
+export function onUnpublished(callback: (slug: string) => void): () => void {
+  const listener = (e: Event) => callback(String((e as CustomEvent).detail));
+  window.addEventListener(UNPUBLISHED, listener);
+  return () => window.removeEventListener(UNPUBLISHED, listener);
+}

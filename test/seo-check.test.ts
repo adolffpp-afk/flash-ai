@@ -318,7 +318,17 @@ test("blanks the builder left for the owner, but not numbers, capitals or code",
   assert.equal(check(found, "placeholders")?.fix, null);
   assert.equal(said(page({ body: `${BODY}<p>See note [1] and [NEW] and [2.5].</p>` }), "placeholders"), "pass pass");
   assert.equal(said(page({ body: `${BODY}<pre><code>const list = [Phone number];</code></pre>` }), "placeholders"), "pass pass");
-  assert.equal(said(page({ body: `${BODY}<script>const blank = "[Phone number]";</script>` }), "placeholders"), "pass pass");
+  // Code in a script that only looks like a blank: an index, a key, a pattern, a log line, a comment, a link.
+  const code = [
+    "const v = items[Key] + cache[Total];",
+    "const iter = { [Symbol.iterator]() { return list.values(); } };",
+    'const email = /^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$/; const word = new RegExp("[A-Za-z]+");',
+    'console.log("[App] ready"); throw new Error("[Cart] is empty");',
+    "// Fill in [Phone number] when the owner sends it.",
+    'const md = "[Read more](https://example.com)";',
+  ].join("\n");
+  assert.equal(said(page({ body: `${BODY}<script>${code}</script>` }), "placeholders"), "pass pass");
+  assert.equal(said(page({ body: `${BODY}<script type="text/babel">${code}</script>` }), "placeholders"), "pass pass");
   assert.equal(said(page({ title: "<title>[Business name] · Sourdough bakery</title>" }), "placeholders"), "fail found");
   assert.equal(said(page({ description: '<meta name="description" content="[Business name] bakes sourdough, pastries and birthday cakes every morning in [City].">' }), "placeholders"), "fail found");
   assert.equal(said(page({ body: `${BODY}<p>[东京店的地址]</p>` }), "placeholders"), "fail found");
@@ -478,6 +488,52 @@ test("words and alt text the page's script fills in aren't missing, and an empty
   const skip = check(page({ body: `<h1>Golden Crumb</h1><h3>Breads</h3><h2></h2>${STORY}` }), "headings")!;
   assert.equal(skip.problem, "skip");
   assert.ok(skip.fix?.includes("These headings are empty in the page's code: <h2>."), skip.fix ?? "");
+});
+
+test("blanks a script writes on the page: JSX, Alpine's x-data and sample records shown while a list is empty", () => {
+  const head = `<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>`;
+  const pages: Record<string, string> = {
+    react: page({
+      head: `<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" defer></script><script src="https://unpkg.com/@babel/standalone@7.26.4/babel.min.js" defer></script>`,
+      body: `<div id="root"></div><script type="text/babel">
+function App() { return <main><h1>Golden Crumb</h1><p className="text-[10px]">Call us on [Phone number]</p><p>[Address], Lisbon</p><img src="http://img.example/loaf.jpg" alt="Loaf" /></main>; }
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>`,
+    }),
+    alpine: page({
+      head,
+      body: `<div x-data="{ phone: '[Phone number]', address: '[Address]' }">${BODY}<p>Call us: <a :href="'tel:' + phone" x-text="phone"></a></p><p>Find us at <span x-text="address"></span></p></div>`,
+    }),
+    sample: page({
+      body: `${BODY}<ul id="bakes"></ul><script>
+const SAMPLE = [{ name: "Country loaf", price: "[Price]" }, { name: "Seeded rye", price: "[Price]" }];
+(async () => { const list = (await flashDB.list("bakes")).length ? await flashDB.list("bakes") : SAMPLE;
+  for (const s of list) { const li = document.createElement("li"); li.textContent = s.name + " · " + s.price; bakes.append(li); } })();
+</script>`,
+    }),
+    template: page({ head, body: `${BODY}<template x-for="b in bakes"><li><span x-text="b.name"></span> · [Price]</li></template>` }),
+    innerHTML: page({ body: `${BODY}<div id="contact"></div><script>contact.innerHTML = \`<p>Write to [Email address]</p>\`;</script>` }),
+  };
+  const lists: Record<string, string> = {};
+  for (const [name, html] of Object.entries(pages)) {
+    assert.equal(said(html, "placeholders"), "fail found", name);
+    lists[name] = String(check(html, "placeholders")?.values.list);
+  }
+  assert.deepEqual(lists, {
+    react: "[Phone number], [Address]",
+    alpine: "[Phone number], [Address]",
+    sample: "[Price]",
+    template: "[Price]",
+    innerHTML: "[Email address]",
+  });
+  // What the React page's code shows is read too: its small text and a picture over http://.
+  assert.equal(scanPage(pages.react).jsBuilt, true);
+  assert.equal(said(pages.react, "textSize"), "warn small");
+  assert.deepEqual(scanPage(pages.react).mixed, ["http://img.example/loaf.jpg"]);
+  assert.ok(report(pages.react).score! < 100, "a page that shows blanks never scores 100");
+  // A script full of brackets that aren't blanks is read as quickly as any other.
+  const brackets = `<script>${"x[Ab] ".repeat(100_000)}"[Phone number]"</script>`;
+  assert.ok(timed(() => scanPage(brackets), 250) < 250);
 });
 
 test("a page its scripts build: the rules about what it shows don't apply", () => {

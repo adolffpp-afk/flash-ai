@@ -14,7 +14,7 @@ import { decode, hasOwnPreview, sitePreview } from "./site-preview.ts";
 import { imageDimensions } from "./imageSize.ts";
 
 /** Changes when the reading changes, so facts saved before are read again (see server/seo.ts). */
-export const SEO_VERSION = 2;
+export const SEO_VERSION = 3;
 
 export type Alphabet = "latin" | "arabic" | "hebrew" | "cyrillic" | "greek" | "devanagari" | "bengali" | "thai" | "hangul" | "cjk";
 
@@ -208,6 +208,12 @@ const IMPORT = /@import\s+(?:url\(\s*(?:"([^"]{0,2000})"|'([^']{0,2000})'|([^"'(
 const GOOGLE_FONTS = /^\s*(?:https?:)?\/\/fonts\.googleapis\.com\/css2?\?/i;
 // A blank like [Phone number] or [Dirección] that the builder leaves for the owner to fill in.
 const PLACEHOLDER = /\[[\p{Lu}\p{Lo}][\p{L}\p{M}\p{N} '’.-]{1,38}\]/gu;
+// Where a blank in a script's code is in its words: after a quote, a tag's ">", a space or "(".
+const SCRIPT_TEXT_BEFORE = /[\s"'`>(]/;
+// A line in a script that only logs, throws or is a comment: its words never show on the page.
+const NOT_SHOWN_LINE = /console\.|\bthrow\b|Error\(|^\s*(?:\/\/|\/?\*)/;
+// A picture or other file a script's HTML or JSX loads over http:// (src="http://…", src={"http://…"}).
+const SCRIPT_HTTP_SRC = /\bsrc\s*=\s*(?:\{\s*)?["'`](http:\/\/[^"'`\s<>]{1,200})/gi;
 const JS_TYPE = /^(?:(?:text|application)\/(?:x-)?(?:java|ecma)script|module)?$/;
 const OTHER_SCHEME = /^[a-z][a-z0-9+.-]{0,30}:/i;
 // What Alpine.js and Vue (which builder.ts lets apps load) fill an element's words or a picture's alt text from.
@@ -605,10 +611,12 @@ function scan(html: string): SeoFacts {
     if (type === "text/babel" || type === "text/jsx") {
       reactish = true;
       jsScripts++;
+      onScriptWords(content);
       return;
     }
     if (!JS_TYPE.test(type)) return;
     jsScripts++;
+    if (src === undefined) onScriptWords(content);
     if (src !== undefined) {
       markMixed(src);
       if (/babel/i.test(src)) reactish = true;
@@ -616,6 +624,27 @@ function scan(html: string): SeoFacts {
       // Tailwind's Play CDN has to run before the page shows (builder.ts allows it), and has nothing better.
       if (!inBody && !later && !/^(?:https?:)?\/\/cdn\.tailwindcss\.com/i.test(src.trim())) addOnce(facts.blocking, tagSample(from, to), 10);
     } else if (content.includes("createRoot(") || content.includes("ReactDOM.render(")) reactish = true;
+  };
+
+  /**
+   * What a script (or a <template>) writes on the page: blanks like [Phone number] in its strings and
+   * JSX, small Tailwind text sizes, and pictures it loads over http://. Pages built by React, Alpine's
+   * x-data or sample records shown while a list is empty hold their words here, not in the HTML.
+   */
+  const onScriptWords = (code: string) => {
+    findScriptPlaceholders(code, facts.placeholders);
+    checkClasses(code);
+    if (code.includes("http://")) for (const m of code.matchAll(SCRIPT_HTTP_SRC)) addOnce(facts.mixed, clip(m[1], SAMPLE), 8);
+  };
+
+  /** Tailwind text sizes under 12px (text-[10px], text-[0.6rem]) in a class list, or in a script's code. */
+  const checkClasses = (text: string) => {
+    if (!text.includes("text-[") || facts.smallText.length >= 5) return;
+    for (const m of text.matchAll(SMALL_CLASS)) {
+      const size = Number(m[1]);
+      if (size > 0 && ((m[2] === "px" && size < 12) || (m[2] === "rem" && size < 0.75))) addOnce(facts.smallText, m[0].slice(m[0].indexOf("text-")), 5);
+      if (facts.smallText.length >= 5) break;
+    }
   };
 
   const onMeta = (attrs: Attrs) => {
@@ -697,11 +726,10 @@ function scan(html: string): SeoFacts {
     const style = attrs.get("style");
     if (style) checkStyle(style);
     const cls = attrs.get("class");
-    if (cls?.includes("text-[")) {
-      for (const m of cls.matchAll(SMALL_CLASS)) {
-        const size = Number(m[1]);
-        if (size > 0 && ((m[2] === "px" && size < 12) || (m[2] === "rem" && size < 0.75))) addOnce(facts.smallText, m[0].slice(m[0].indexOf("text-")), 5);
-      }
+    if (cls) checkClasses(cls);
+    // What Alpine and Vue show from code in an attribute (x-data="{ phone: '[Phone number]' }", x-text, :href).
+    for (const [attr, value] of attrs) {
+      if (value.includes("[") && (attr.startsWith("x-") || attr.startsWith("v-") || attr.startsWith(":"))) findScriptPlaceholders(decodeText(value), facts.placeholders);
     }
     const page = attrs.get("data-page");
     if (page !== undefined && page.trim()) addOnce(facts.pages, clip(page.trim(), 40), 50);
@@ -954,6 +982,7 @@ function scan(html: string): SeoFacts {
         if (facts.titles.length < 3) facts.titles.push(clip(title));
         findPlaceholders(title, facts.placeholders);
       } else if (raw === "script") onScript(attrs, content, lt, end + 1);
+      else if (raw === "template") onScriptWords(content);
       else if (raw === "style") {
         checkStyle(content);
         if (content.includes("fonts.googleapis.com")) {
@@ -1046,13 +1075,42 @@ function namesWritten(lower: string): Set<string> {
   return found;
 }
 
-/** Blanks like [Phone number] in a text, all-digit ones ([1]) and all-capitals words ([NEW]) aside. */
+/** Whether a [bracketed] text is a blank: all-digit ones ([1]) and all-capitals words ([NEW]) aside. */
+function isBlank(match: string): boolean {
+  const inner = match.slice(1, -1);
+  if (/^[\d\s.]+$/.test(inner)) return false;
+  return !(/\p{Lu}/u.test(inner) && !/\p{Ll}/u.test(inner) && !/\p{Lo}/u.test(inner));
+}
+
+/** Blanks like [Phone number] in a text. */
 function findPlaceholders(text: string, found: string[]) {
   if (found.length >= 8 || !text.includes("[")) return;
   for (const m of text.matchAll(PLACEHOLDER)) {
+    if (!isBlank(m[0])) continue;
+    addOnce(found, m[0], 8);
+    if (found.length >= 8) return;
+  }
+}
+
+/**
+ * Blanks like [Phone number] in a script's words: its strings, JSX text and template literals, which
+ * show on the page. Code that looks like one never counts: items[Key] (a name or a bracket before it),
+ * obj[Symbol.iterator] (a "." inside), a pattern's [A-Za-z], what follows it as code ([A-Za-z]+,
+ * [Key](…)), and lines that only log or throw ("[App] failed") or are comments. At most 2,000 are
+ * looked at, so a script full of brackets is read as quickly as any other.
+ */
+function findScriptPlaceholders(code: string, found: string[]) {
+  if (found.length >= 8 || !code.includes("[")) return;
+  let looked = 0;
+  for (const m of code.matchAll(PLACEHOLDER)) {
+    if (++looked > 2000) return;
+    const at = m.index;
     const inner = m[0].slice(1, -1);
-    if (/^[\d\s.]+$/.test(inner)) continue;
-    if (/\p{Lu}/u.test(inner) && !/\p{Ll}/u.test(inner) && !/\p{Lo}/u.test(inner)) continue;
+    if (at > 0 && !SCRIPT_TEXT_BEFORE.test(code[at - 1])) continue;
+    if (/^[A-Z]-[A-Z]/.test(inner) || /\p{L}\.\p{L}/u.test(inner)) continue;
+    if (/[({+*?]/.test(code[at + m[0].length] ?? "")) continue;
+    const head = code.slice(Math.max(0, at - 160), at);
+    if (NOT_SHOWN_LINE.test(head.slice(head.lastIndexOf("\n") + 1)) || !isBlank(m[0])) continue;
     addOnce(found, m[0], 8);
     if (found.length >= 8) return;
   }

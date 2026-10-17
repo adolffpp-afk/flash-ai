@@ -706,7 +706,11 @@ export function Flash({
     setPhoneTab("chat");
   }
 
-  /** A chat's messages, loaded the first time they're needed; null when they can't be. */
+  /**
+   * A chat's messages, loaded the first time they're needed; null when they can't be. A chat this page
+   * doesn't list yet (made in another tab or on another device since it loaded, or older than the
+   * newest 200 it lists) joins the list, so it can open.
+   */
   async function chatMessages(id: string): Promise<UIMessage[] | null> {
     const known = projects.find((p) => p.id === id)?.messages;
     if (known) return known;
@@ -714,7 +718,12 @@ export function Flash({
       const { project } = await api<{ project: Project }>(`/api/projects/${id}`);
       // A reply still pending there is one the server is working on; the watch below shows it once it's done.
       const messages = project.messages?.map((m) => (m.pending ? { ...m, status: t(STILL_WORKING) } : m)) ?? [];
-      setProjects((list) => list.map((p) => (p.id === id ? { ...p, messages: p.messages ?? messages, instructions: project.instructions ?? "" } : p)));
+      const instructions = project.instructions ?? "";
+      setProjects((list) =>
+        list.some((p) => p.id === id)
+          ? list.map((p) => (p.id === id ? { ...p, messages: p.messages ?? messages, instructions } : p))
+          : [{ id, name: project.name, updated_at: project.updated_at, instructions, messages }, ...list],
+      );
       return messages;
     } catch {
       return null;
@@ -947,7 +956,7 @@ export function Flash({
   async function fixSite(fix: SiteFix): Promise<string | null> {
     const busyNote = t("Flash is still working on a reply. Send this when it's done.");
     if (busy || runningRef.current) return busyNote;
-    const messages = projects.some((p) => p.id === fix.projectId) ? await chatMessages(fix.projectId) : null;
+    const messages = await chatMessages(fix.projectId);
     if (!messages) return t("Couldn't find the chat that built this site.");
     const plan = await fixFor(fix, messages);
     if ("why" in plan) return plan.why;
@@ -958,13 +967,28 @@ export function Flash({
     return null;
   }
 
-  /** Adds the owner's own details (for the placeholders the check found) to that chat's message box, unsent. */
-  function draftInChat({ projectId, text }: { projectId: string; text: string }) {
+  /**
+   * Adds the owner's own details (for the placeholders the check found) to that chat's message box,
+   * unsent: null once it's there. When that chat's newest app is another site (after Publish as new),
+   * nothing is added and the answer is why, as for Fix it, so the details never go to the wrong site.
+   */
+  async function draftInChat({ projectId, slug, text }: { projectId: string; slug: string; text: string }): Promise<string | null> {
+    const messages = await chatMessages(projectId);
+    if (!messages) return t("Couldn't find the chat that built this site.");
+    if (newestApp(messages).site !== slug) return t("The newest app in that chat is a different site, so Flash didn't add your details there.");
     closeApps();
-    void openProject(projectId);
+    showChat(projectId);
     // After anything already typed there, never in its place.
     setInput((typed) => (typed.trim() ? `${typed.trimEnd()}\n\n${text}` : text));
     requestAnimationFrame(() => inputRef.current?.focus());
+    return null;
+  }
+
+  /** A chat's newest app, and the site it updates: its own, or the one an earlier version was published as (as AppPreview does). */
+  function newestApp(messages: UIMessage[]) {
+    const at = messages.findLastIndex((m) => m.app);
+    const latest = at === -1 ? undefined : messages[at].app;
+    return { latest, site: latest && (latest.slug ?? messages.slice(0, at).findLast((m) => m.app?.slug)?.app?.slug) };
   }
 
   /**
@@ -974,10 +998,7 @@ export function Flash({
    * English instructions (shown as "◎ SEO"); the owner sees what was asked in their own language.
    */
   async function fixFor(fix: SiteFix, messages: UIMessage[]): Promise<{ why: string } | { message: UIMessage }> {
-    const at = messages.findLastIndex((m) => m.app);
-    const latest = at === -1 ? undefined : messages[at].app;
-    // An unpublished version updates the site an earlier one was published as (as AppPreview does).
-    const site = latest && (latest.slug ?? messages.slice(0, at).findLast((m) => m.app?.slug)?.app?.slug);
+    const { latest, site } = newestApp(messages);
     if (!latest || site !== fix.slug) return { why: t("The newest app in that chat is a different site, so Flash didn't send the change.") };
     // Loaded only now, so the check stays out of the chat's own code until it's used.
     const [{ scanPage }, { evaluate, stillToFix }, { fixMessage }] = await Promise.all([import("@/lib/seo-scan"), import("@/lib/seo-rules"), import("@/lib/seo-words")]);

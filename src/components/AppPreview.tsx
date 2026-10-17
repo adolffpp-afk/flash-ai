@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { BuiltApp } from "@/lib/types";
-import { api } from "@/lib/store";
+import { api, onUnpublished } from "@/lib/store";
 import { flashDbShim, injectHead } from "@/lib/flashdb-shim";
 import { dataLine, type DataSummary } from "@/lib/data-rules";
 import { appSlug, projectZip } from "@/lib/app-project";
@@ -116,6 +116,8 @@ export function AppPreview({
   const [dataNote, setDataNote] = useState<DataSummary | null>(null);
   // The search check of the page this publish put live, with the score of the one it replaced.
   const [publishSeo, setPublishSeo] = useState<{ score: number | null; issues: number; before?: number | null } | null>(null);
+  // The site unpublished in My websites & apps since: it has no search check to open.
+  const [unpublished, setUnpublished] = useState("");
   const [copied, setCopied] = useState(false);
   const [menu, setMenu] = useState(false);
   const [picking, setPicking] = useState(false);
@@ -134,6 +136,16 @@ export function AppPreview({
 
   // A new version of an already published app updates the same site, so its link, domain and prices stay.
   const target = app.slug ?? publishedEarlier;
+
+  useEffect(
+    () =>
+      onUnpublished((slug) => {
+        if (slug !== app.slug) return;
+        setUnpublished(slug);
+        setPublishSeo(null);
+      }),
+    [app.slug],
+  );
 
   // What the preview reports: the errors it hits, and the part picked while choosing.
   const pick = useRef(onPick);
@@ -192,6 +204,7 @@ export function AppPreview({
         json: { html: app.html, title: app.title, slug: asNew ? undefined : target },
       });
       onPublished?.(res.slug);
+      setUnpublished("");
       setPublishedHtml(app.html);
       setDataNote(res.data ?? null);
       setPublishSeo(res.seo ?? null);
@@ -369,7 +382,7 @@ export function AppPreview({
               <button className={btn} onClick={copyLink}>
                 {copied ? t("Copied") : t("Copy link")}
               </button>
-              {onSeo && app.slug && (
+              {onSeo && app.slug && unpublished !== app.slug && (
                 <button
                   className={`${btn} inline-flex items-center gap-1`}
                   onClick={() => onSeo(app.slug!)}

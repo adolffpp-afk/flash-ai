@@ -5,7 +5,7 @@ import { clearLimit, countOf, overLimit } from "@/lib/server/limits.ts";
 import { domainsForSite, pointsAtFlash } from "@/lib/server/domains.ts";
 import { cacheGet, cacheKey, cachePut } from "@/lib/server/source-fetch.ts";
 import { appBase } from "@/lib/server/seo.ts";
-import { parseRecord, REFUSED, runPageSpeed, type PageSpeedError, type PageSpeedRecord } from "@/lib/server/pagespeed.ts";
+import { parseRecord, REFUSED, runLock, runPageSpeed, type PageSpeedError, type PageSpeedRecord, type PageSpeedRun } from "@/lib/server/pagespeed.ts";
 import { preferredDomain } from "@/lib/seo-rules.ts";
 import type { Translate } from "@/lib/i18n.ts";
 
@@ -71,7 +71,8 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug
   if (await cacheGet<number>(REFUSED)) {
     return Response.json({ code: "pagespeed_unavailable", error: t("Google's speed check isn't available right now. Flash's own check above still works.") }, { status: 503 });
   }
-  const lock = `pagespeed-run:${site.slug}`;
+  // Held for the whole run: the app's AI says no to Lighthouse meanwhile (see the ai route).
+  const lock = runLock(site.slug);
   const running = () =>
     Response.json({ code: "running", error: t("Google is still checking this page. The result shows here when it's done.") }, { status: 409 });
   // Waiting for a check already going doesn't use up one of the owner's.
@@ -81,17 +82,23 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug
   if (await overLimit(lock, 1, 3 * MINUTE)) return running();
 
   try {
-    // Both side by side, or only the half that failed last time. Never the request's signal: the
-    // result is kept even when the owner closes the page.
-    const [mobile, desktop] = await Promise.all([
-      same?.mobile.ok ? same.mobile : runPageSpeed(url, "mobile"),
-      same?.desktop.ok ? same.desktop : runPageSpeed(url, "desktop"),
-    ]);
+    // Both side by side, or only the half that failed last time, each with when Google ran it (a kept
+    // half saved before halves had their own time is as old as its check). Never the request's
+    // signal: the result is kept even when the owner closes the page.
+    const ask = async (strategy: "mobile" | "desktop"): Promise<PageSpeedRun> => {
+      const kept = same?.[strategy];
+      if (kept?.ok) return { ...kept, at: kept.at ?? same!.at };
+      const result = await runPageSpeed(url, strategy);
+      return result.ok ? { ...result, at: Date.now() } : result;
+    };
+    const [mobile, desktop] = await Promise.all([ask("mobile"), ask("desktop")]);
     // Google couldn't load or finish this version: the same answer for a while, without asking again.
     const error = !mobile.ok ? mobile.error : !desktop.ok ? desktop.error : null;
     if (error === "unreachable" || error === "slow") await cachePut(failKey, error, 10 * MINUTE);
     if (!mobile.ok && !desktop.ok) return failed(t, mobile.error);
-    const record: PageSpeedRecord = { v: 1, at: Date.now(), for: version, url, mobile, desktop };
+    // As old as its older half: a day from then, it's asked for again, both halves.
+    const at = Math.min(...[mobile, desktop].map((r) => (r.ok && r.at ? r.at : Date.now())));
+    const record: PageSpeedRecord = { v: 1, at, for: version, url, mobile, desktop };
     await run("UPDATE sites SET pagespeed = ? WHERE slug = ? AND user_id = ?", [JSON.stringify(record), site.slug, user.id]);
     return Response.json({ pagespeed: record });
   } finally {

@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "@/lib/store";
 import { msg } from "@/lib/i18n";
 import { useT, type T } from "@/lib/use-t";
-import { band, type Band } from "@/lib/seo-band";
+import { band, labBand, type Band } from "@/lib/seo-band";
 import { fixContext, fixableIds, stillToFix, type Check, type CheckId, type SeoContext, type SeoReport } from "@/lib/seo-rules";
 import { WHY, labelOf, messageOf } from "@/lib/seo-words";
 import type { PageSpeedError, PageSpeedRecord, PageSpeedRun, Rating } from "@/lib/server/pagespeed";
@@ -50,6 +50,8 @@ const RUN_ERRORS: Record<PageSpeedError, string> = {
   unreachable: msg("Google couldn't load your page this time. Try again in a few minutes."),
 };
 const RUNNING = msg("Google is still checking this page. The result shows here when it's done.");
+// Said when the chat that built the site couldn't be found or loaded: there's no chat to open then.
+const NO_CHAT = msg("Couldn't find the chat that built this site.");
 // What each mark in the list says to a screen reader.
 const MARKS: Partial<Record<Check["status"], [string, string, string]>> = {
   fail: ["✕", "text-red-400", msg("Problem")],
@@ -61,8 +63,6 @@ const CATEGORIES = [
   ["bestPractices", msg("Best practices")],
   ["seo", msg("SEO")],
 ] as const;
-// Google's own lines between good, needs work and poor for its test's numbers.
-const LIMITS = { lcp: [2500, 4000], cls: [0.1, 0.25], tbt: [200, 600], fcp: [1800, 3000] } as const;
 // A check of the same version at the same address is kept a day (see the pagespeed route).
 const KEPT_MS = 24 * 3600_000;
 // Polls for a check already running: every 5 seconds, for up to 2 minutes.
@@ -79,7 +79,6 @@ const sizeLabel = (bytes: number, t: T) =>
     : t("{size} KB", { size: plain(Math.max(1, Math.round(bytes / 1024)), t.locale) });
 // An address as people read it: no https://, no slash at the end.
 const shortUrl = (url: string) => url.replace(/^https?:\/\//, "").replace(/\/$/, "");
-const rate = (n: number, [good, poor]: readonly [number, number]): Rating => (n <= good ? "good" : n > poor ? "poor" : "needs");
 const isIssue = (c: Check) => c.status === "fail" || c.status === "warn";
 
 function unit(n: number, name: "second" | "millisecond", locale: string) {
@@ -172,22 +171,25 @@ export function SeoView({
   editCredits?: number;
   // Hands the change to Flash: null once it's on its way, else why nothing was sent.
   onFix?: (fix: SiteFix) => Promise<string | null>;
-  // Puts text in the message box of the chat that built the site, without sending it.
-  onDraft?: (draft: { projectId: string; text: string }) => void;
+  // Puts text in the message box of the chat that built the site, without sending it: null once it's
+  // there, else why it isn't (that chat's newest app is another site).
+  onDraft?: (draft: { projectId: string; slug: string; text: string }) => Promise<string | null>;
   // Opens the chat that built the site.
   onOpenChat?: (projectId: string) => void;
   onPreview: () => void;
 }) {
   const t = useT();
   const { report } = data;
-  // The change waiting for Send: under the item it's for (key: its id, or "all" for Fix all).
-  const [asking, setAsking] = useState<{ key: string; ids: CheckId[]; left: number } | null>(null);
+  // The change waiting for Send: under the item it's for (key: its id, or "all" for Fix all). ids: every
+  // point asked for, which Flash gets; shown: those of them that fit in one change on the live page.
+  const [asking, setAsking] = useState<{ key: string; ids: CheckId[]; shown: CheckId[]; left: number } | null>(null);
   // The chat that built the site: loading (null), found, or why it can't be.
   const [project, setProject] = useState<{ id?: string; error?: string } | null>(null);
   // Why Send sent nothing, said in the panel.
   const [note, setNote] = useState("");
   const [sending, setSending] = useState(false);
-  const [draftError, setDraftError] = useState("");
+  // Why the owner's details weren't put in the chat, and whether that chat can be opened.
+  const [draftNote, setDraftNote] = useState<{ text: string; chat: boolean } | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const canFix = !!onFix && editCredits !== undefined;
   const site = { title: data.title, address: `${data.ctx.appBase}/p/${slug}` };
@@ -206,7 +208,7 @@ export function SeoView({
       setProject({ id });
       return id;
     } catch (err) {
-      const error = err instanceof Error ? err.message : t("Couldn't find the chat that built this site.");
+      const error = err instanceof Error ? err.message : t(NO_CHAT);
       setProject({ error });
       return null;
     }
@@ -214,7 +216,9 @@ export function SeoView({
 
   function ask(key: string, ids: CheckId[]) {
     const { sent, left } = fixContext(report, ids, site);
-    setAsking({ key, ids: sent, left });
+    // Flash gets every point asked for: it leaves out what the chat's newest version already fixes and
+    // sends what fits of the rest, so Fix all again after a change sends the points that didn't fit.
+    setAsking({ key, ids, shown: sent, left });
     setNote("");
     if (!project?.id) {
       setProject(null);
@@ -233,14 +237,15 @@ export function SeoView({
 
   async function draft(check: Check) {
     if (!onDraft) return;
-    setDraftError("");
+    setDraftNote(null);
     const id = await projectId();
     if (!id) {
-      setDraftError(t("Couldn't find the chat that built this site."));
+      setDraftNote({ text: t(NO_CHAT), chat: false });
       return;
     }
     const placeholders = String(check.values.list ?? "").split(", ").filter(Boolean);
-    onDraft({ projectId: id, text: t("Here are my real details for the site:") + "\n" + placeholders.map((p) => `${p}: `).join("\n") });
+    const why = await onDraft({ projectId: id, slug, text: t("Here are my real details for the site:") + "\n" + placeholders.map((p) => `${p}: `).join("\n") });
+    if (why) setDraftNote({ text: why, chat: why !== t(NO_CHAT) });
   }
 
   const panel = (key: string) =>
@@ -254,13 +259,13 @@ export function SeoView({
       >
         <h4 className="font-medium text-zinc-100">{t("Ask Flash to change your app")}</h4>
         <ul className="mt-2 list-disc space-y-0.5 ps-5 text-zinc-300">
-          {asking.ids.map((id) => (
+          {asking.shown.map((id) => (
             <li key={id}>{labelOf(t, id)}</li>
           ))}
         </ul>
         {asking.left > 0 && (
           <p className="mt-2 text-zinc-400">
-            {t("Only the first {count} fit in one change. Press Fix all again after this one for the rest.", { count: asking.ids.length.toLocaleString(t.locale) })}
+            {t("Only the first {count} fit in one change. Press Fix all again after this one for the rest.", { count: asking.shown.length.toLocaleString(t.locale) })}
           </p>
         )}
         <p className="mt-2 text-zinc-400">{t(PRICE, { count: (editCredits ?? 0).toLocaleString(t.locale) })}</p>
@@ -285,7 +290,7 @@ export function SeoView({
               {t("Send to Flash")}
             </button>
           )}
-          {note && project?.id && onOpenChat && (
+          {note && note !== t(NO_CHAT) && project?.id && onOpenChat && (
             <button
               onClick={() => onOpenChat(project.id!)}
               className="rounded-md border border-primary/40 px-3 py-1.5 text-primary-soft hover:bg-primary/10"
@@ -352,10 +357,20 @@ export function SeoView({
             </p>
             {messageOf(check) && <p className="mt-0.5 break-words text-zinc-300">{found(check, t)}</p>}
             {why && <p className="mt-1 text-xs text-zinc-500">{t(why)}</p>}
-            {check.action === "tell" && draftError && (
-              <p role="alert" className="mt-1 text-xs text-red-400">
-                {draftError}
-              </p>
+            {check.action === "tell" && draftNote && (
+              <div className="mt-2 space-y-2">
+                <p role={draftNote.chat ? "status" : "alert"} className={`text-xs ${draftNote.chat ? "text-gold-soft" : "text-red-400"}`}>
+                  {draftNote.text}
+                </p>
+                {draftNote.chat && project?.id && onOpenChat && (
+                  <button
+                    onClick={() => onOpenChat(project.id!)}
+                    className="rounded-md border border-primary/40 px-2.5 py-1 text-xs text-primary-soft hover:bg-primary/10"
+                  >
+                    {t("Open the chat that built this site")}
+                  </button>
+                )}
+              </div>
             )}
           </div>
           {action(check)}
@@ -574,11 +589,11 @@ function PageSpeed({ slug, data }: { slug: string; data: SeoData }) {
                 </button>
               ))}
             </div>
-            <Run run={run} />
+            <Run run={run} strategy={tab} />
             <p className="text-xs text-zinc-500">
               {t.node("Tested {address} on {date}. Google's scores change a little from run to run.", {
                 address: <bdi dir="ltr">{shortUrl(record.url)}</bdi>,
-                date: dateLabel(record.at, t.locale),
+                date: dateLabel(run.ok && run.at ? run.at : record.at, t.locale),
               })}
             </p>
           </div>
@@ -600,7 +615,7 @@ function PageSpeed({ slug, data }: { slug: string; data: SeoData }) {
 }
 
 /** One of Google's checks (a phone's or a computer's): its four scores, real visitors' numbers, and its test's. */
-function Run({ run }: { run: PageSpeedRun }) {
+function Run({ run, strategy }: { run: PageSpeedRun; strategy: "mobile" | "desktop" }) {
   const t = useT();
   if (!run.ok) return <p className="text-sm text-gold-soft">{t(RUN_ERRORS[run.error])}</p>;
   const seconds = (ms: number) => unit(ms / 1000, "second", t.locale);
@@ -643,10 +658,10 @@ function Run({ run }: { run: PageSpeedRun }) {
       <div className="space-y-1">
         <h4 className={heading}>{t("In Google's test")}</h4>
         <dl className="grid grid-cols-1 gap-x-6 text-sm sm:grid-cols-2">
-          {lab.lcpMs !== undefined && <Metric label={msg("Main content shows (LCP)")} value={seconds(lab.lcpMs)} rating={rate(lab.lcpMs, LIMITS.lcp)} />}
-          {lab.tbtMs !== undefined && <Metric label={msg("Blocking time (TBT)")} value={millis(lab.tbtMs)} rating={rate(lab.tbtMs, LIMITS.tbt)} />}
-          {lab.cls !== undefined && <Metric label={msg("Layout stays still (CLS)")} value={shift(lab.cls)} rating={rate(lab.cls, LIMITS.cls)} />}
-          {lab.fcpMs !== undefined && <Metric label={msg("First content shows (FCP)")} value={seconds(lab.fcpMs)} rating={rate(lab.fcpMs, LIMITS.fcp)} />}
+          {lab.lcpMs !== undefined && <Metric label={msg("Main content shows (LCP)")} value={seconds(lab.lcpMs)} rating={labBand(strategy, "lcp", lab.lcpMs)} />}
+          {lab.tbtMs !== undefined && <Metric label={msg("Blocking time (TBT)")} value={millis(lab.tbtMs)} rating={labBand(strategy, "tbt", lab.tbtMs)} />}
+          {lab.cls !== undefined && <Metric label={msg("Layout stays still (CLS)")} value={shift(lab.cls)} rating={labBand(strategy, "cls", lab.cls)} />}
+          {lab.fcpMs !== undefined && <Metric label={msg("First content shows (FCP)")} value={seconds(lab.fcpMs)} rating={labBand(strategy, "fcp", lab.fcpMs)} />}
         </dl>
       </div>
     </>

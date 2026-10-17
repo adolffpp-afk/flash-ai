@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api } from "@/lib/store";
+import { announceUnpublished, api } from "@/lib/store";
 import { SELLER_COUNTRIES } from "@/lib/shop";
 import { DATA_RULES, DEFAULT_KEY, RULE_TEXT, blockProblem, dataLine, type DataRule, type DataSummary, type RuleSource } from "@/lib/data-rules";
 import { msg } from "@/lib/i18n";
@@ -111,7 +111,7 @@ export function MyApps({
   start?: { slug: string; view: "seo" };
   editCredits?: number;
   onFix?: (fix: SiteFix) => Promise<string | null>;
-  onDraft?: (draft: { projectId: string; text: string }) => void;
+  onDraft?: (draft: { projectId: string; slug: string; text: string }) => Promise<string | null>;
 }) {
   const t = useT();
   const [sites, setSites] = useState<Site[] | null>(null);
@@ -144,6 +144,8 @@ export function MyApps({
   const [messages, setMessages] = useState<SiteMessage[] | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [error, setError] = useState("");
+  // The app it was opened for (its search check, from the chat) isn't published any more.
+  const [gone, setGone] = useState(false);
   const closeRef = useRef<HTMLButtonElement>(null);
   // Whether a contact's page, Add contact or Edit stages has changes not saved: leaving the app or
   // closing My websites & apps then asks first, as the contact's own way back does.
@@ -185,6 +187,7 @@ export function MyApps({
       .then(({ sites: list }) => {
         setSites(list);
         const site = start && !started.current ? list.find((s) => s.slug === start.slug) : undefined;
+        if (start && !started.current && !site) setGone(true);
         started.current = true;
         if (site) void showSeo(site);
       })
@@ -652,6 +655,8 @@ export function MyApps({
     try {
       await api(`/api/sites?slug=${encodeURIComponent(slug)}`, { method: "DELETE" });
       setSites((all) => all?.filter((s) => s.slug !== slug) ?? null);
+      // Its page in the chat stops offering its search check.
+      announceUnpublished(slug);
     } catch {
       setError(t("Couldn't unpublish that. Please try again."));
     }
@@ -696,6 +701,11 @@ export function MyApps({
 
         <div className="flex-1 overflow-y-auto p-4 sm:p-5">
           {error && <p role="alert" className="mb-3 text-sm text-red-400">{error}</p>}
+          {gone && !open && (
+            <p role="status" className="mb-3 text-sm text-gold-soft">
+              {t("This app isn't published any more.")}
+            </p>
+          )}
           {open && view === "data" ? (
             appData?.slug !== open.slug ? (
               !error && <p className="text-sm text-zinc-500">{t("Loading…")}</p>
