@@ -181,6 +181,19 @@ test("a site on its own domain has a robots.txt that lets Google in and a sitema
   assert.match(await (await get("robotsbakery.com", "sitemap.xml")).text(), empty);
   await run("UPDATE reports SET status = 'reviewed' WHERE id = 'rep-1'");
   assert.match(await (await get("robotsbakery.com", "sitemap.xml")).text(), /<loc>/, "listed again once it's reviewed");
+
+  // With www. connected too, both name the bare domain's sitemap, and only that one lists the page,
+  // under the bare address (as the page names it), so the two copies don't compete.
+  await run("INSERT INTO site_domains (domain, site_slug, user_id, created_at) VALUES ('www.robotsbakery.com', 'robots-1', 'u9', 1)");
+  for (const host of ["robotsbakery.com", "www.robotsbakery.com"]) {
+    assert.equal(await (await get(host, "robots.txt")).text(), "User-agent: *\nAllow: /\nSitemap: https://robotsbakery.com/sitemap.xml\n", host);
+  }
+  assert.match(await (await get("robotsbakery.com", "sitemap.xml")).text(), /<loc>https:\/\/robotsbakery.com\/<\/loc>/);
+  assert.match(await (await get("www.robotsbakery.com", "sitemap.xml")).text(), empty);
+  // A www. alone is the main address.
+  await run("DELETE FROM site_domains WHERE domain = 'robotsbakery.com'");
+  assert.equal(await (await get("www.robotsbakery.com", "robots.txt")).text(), "User-agent: *\nAllow: /\nSitemap: https://www.robotsbakery.com/sitemap.xml\n");
+  assert.match(await (await get("www.robotsbakery.com", "sitemap.xml")).text(), /<loc>https:\/\/www.robotsbakery.com\/<\/loc>/);
 });
 
 test("only a domain that leads to Flash now counts as pointing at it", async () => {

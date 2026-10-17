@@ -347,7 +347,7 @@ test("publishing through the connector says the app's search check", async () =>
   assert.match(text, /Free, no credits used\./);
 });
 
-test("each app's page names its main address for Google: Flash's main domain, or the domain it's opened on", async () => {
+test("each app's page names its main address for Google: Flash's main domain, or the domain it's opened on (the bare one for its www.)", async () => {
   const who = await owner("canon");
   await legacy(who, "canon-app", GOOD);
   await run("INSERT INTO site_domains (domain, site_slug, user_id, created_at) VALUES ('crumb.lisbon', 'canon-app', ?, 0), ('www.crumb.lisbon', 'canon-app', ?, 1)", [who.id, who.id]);
@@ -357,11 +357,18 @@ test("each app's page names its main address for Google: Flash's main domain, or
   const copy = await (await appRoute.GET(new Request("https://flash-ai-pi.vercel.app/p/canon-app"), params("canon-app"))).text();
   assert.deepEqual(canonicals(copy), ["https://www.flash-app.dev/p/canon-app"]);
   assert.match(copy, /property="og:url" content="https:\/\/flash-ai-pi\.vercel\.app\/p\/canon-app"/);
-  // Each domain names itself, the bare one and www alike.
+  // A domain names itself, and www. names the bare domain when that's the app's too, so the two
+  // copies don't compete; each share card keeps the address it was opened at. A www. alone names itself.
+  const onDomain = async (domain: string) =>
+    (await domainRoute.GET(new Request(`http://localhost/d/${domain}`), { params: Promise.resolve({ host: domain }) } as never)).text();
   for (const domain of ["crumb.lisbon", "www.crumb.lisbon"]) {
-    const res = await domainRoute.GET(new Request(`http://localhost/d/${domain}`), { params: Promise.resolve({ host: domain }) } as never);
-    assert.deepEqual(canonicals(await res.text()), [`https://${domain}/`]);
+    const html = await onDomain(domain);
+    assert.deepEqual(canonicals(html), ["https://crumb.lisbon/"], domain);
+    assert.ok(html.includes(`property="og:url" content="https://${domain}/"`), domain);
   }
+  await run("INSERT INTO site_domains (domain, site_slug, user_id, created_at) VALUES ('www.crumb.porto', 'canon-app', ?, 2), ('crumb.porto.example', 'canon-app', ?, 3)", [who.id, who.id]);
+  assert.deepEqual(canonicals(await onDomain("www.crumb.porto")), ["https://www.crumb.porto/"]);
+  assert.deepEqual(canonicals(await onDomain("crumb.porto.example")), ["https://crumb.porto.example/"]);
   await afterwards();
 
   // A page that names its own keeps it, with no second one (a new version the check hasn't read yet:

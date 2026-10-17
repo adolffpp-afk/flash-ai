@@ -94,7 +94,8 @@ const isOpen = (data: AppData) => data.collections.some((c) => c.rule === "open"
  * My websites and apps: every published app, its link, and the forms visitors sent to it. onPlans
  * opens the plans, for what comes with a paid one. start opens one app's search check (SEO) once the
  * list is in (from an app's own page in the chat); editCredits, onPlanFix, onFix and onDraft let that
- * check ask the builder for a change, or put the owner's own details in the chat's message box.
+ * check ask the builder for a change, or put the owner's own details in the chat's message box, and
+ * onOpenChat opens that chat from there, saying why nothing was sent (not Edit's "ask for your changes").
  */
 export function MyApps({
   onClose,
@@ -105,6 +106,7 @@ export function MyApps({
   onPlanFix,
   onFix,
   onDraft,
+  onOpenChat,
 }: {
   onClose: () => void;
   onEdit?: (projectId: string) => void;
@@ -113,7 +115,8 @@ export function MyApps({
   editCredits?: number;
   onPlanFix?: (fix: SiteFix) => Promise<FixPlan>;
   onFix?: (fix: SiteFix) => Promise<FixPlan | null>;
-  onDraft?: (draft: { projectId: string; slug: string; text: string }) => Promise<string | null>;
+  onDraft?: (draft: { projectId: string; slug: string; text: string }) => Promise<{ why: string; chat?: string } | null>;
+  onOpenChat?: (projectId: string, note?: string) => void;
 }) {
   const t = useT();
   const [sites, setSites] = useState<Site[] | null>(null);
@@ -688,13 +691,16 @@ export function MyApps({
               </span>
             </button>
           )}
-          <h2 className="min-w-0 flex-1 truncate text-lg font-medium tracking-tight">
+          {/* The view's name stays at the start, in right-to-left languages too, and only the app's title is cut. */}
+          <h2 className="flex min-w-0 flex-1 gap-1 text-lg font-medium tracking-tight">
             {open ? (
               <>
-                {t(VIEW_TITLES[view])} · {open.title}
+                <span className="max-w-[60%] shrink-0 truncate">{t(VIEW_TITLES[view])}</span>
+                <span className="shrink-0">·</span>
+                <bdi className="min-w-0 truncate">{open.title}</bdi>
               </>
             ) : (
-              t("My websites and apps")
+              <span className="truncate">{t("My websites and apps")}</span>
             )}
           </h2>
           <button
@@ -960,7 +966,7 @@ export function MyApps({
                 onPlanFix={onPlanFix}
                 onFix={onFix}
                 onDraft={onDraft}
-                onOpenChat={onEdit}
+                onOpenChat={onOpenChat}
                 onPreview={() => showPreview(open)}
               />
             )

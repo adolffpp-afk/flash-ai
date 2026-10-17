@@ -177,6 +177,13 @@ const hostOf = (url: string) => {
 /** The domain an app's address shows: the one without www., else the first (as its share card does). */
 export const preferredDomain = (domains: string[]) => domains.find((d) => !d.startsWith("www.")) ?? domains[0] ?? "";
 
+/**
+ * The address a page served on domain names as its main one (canonical, and the sitemap's): the
+ * domain itself, except www.X when X is connected to the same app too, which names X, so the two
+ * copies don't compete. Any other domain names itself, as it may lapse or be sold on its own.
+ */
+export const mainDomain = (domain: string, domains: string[]) => (domain.startsWith("www.") && domains.includes(domain.slice(4)) ? domain.slice(4) : domain);
+
 /** What the page's facts mean, check by check, with the score. */
 export function evaluate(facts: SeoFacts | null | undefined, ctx: SeoContext): SeoReport {
   if (!facts || facts.error) return { score: null, passed: 0, total: 0, checks: [] };

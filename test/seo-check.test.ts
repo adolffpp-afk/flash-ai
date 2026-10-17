@@ -10,6 +10,7 @@ const { SEO_VERSION, scanPage, textWidth } = await import("../src/lib/seo-scan.t
 const { MAX_CONTEXT, band, evaluate, fixContext, fixableIds, issueCount, stillToFix } = await import("../src/lib/seo-rules.ts");
 const { LABELS, WHY, fixMessage, listOf, messageOf } = await import("../src/lib/seo-words.ts");
 const { fixForCopy } = await import("../src/lib/seo-fix.ts");
+const { newestApp, stillAnswering } = await import("../src/lib/seo-chat.ts");
 const { hasOwnCanonical, hasOwnPreview } = await import("../src/lib/site-preview.ts");
 const { cleanUserMessage } = await import("../src/lib/server/turns.ts");
 const { translate } = await import("../src/lib/i18n.ts");
@@ -17,6 +18,7 @@ type Check = import("../src/lib/seo-rules.ts").Check;
 type CheckId = import("../src/lib/seo-rules.ts").CheckId;
 type SeoContext = import("../src/lib/seo-rules.ts").SeoContext;
 type SeoFacts = import("../src/lib/seo-scan.ts").SeoFacts;
+type UIMessage = import("../src/lib/store.ts").UIMessage;
 
 const CTX: SeoContext = { slug: "golden-crumb-x1", appBase: "https://www.flash-app.dev", domains: [] };
 const ADDRESS = "https://www.flash-app.dev/p/golden-crumb-x1";
@@ -804,6 +806,34 @@ ${[1517248135467, 1414235077428, 1555396273, 1504674900247].map((n) => `<img src
   assert.deepEqual([once.sent, once.left, once.context], [first.sent, 0, first.context], "the first press too, without the rest");
   // Once that copy has everything, nothing would go: the panel says so before Send.
   assert.equal(fixForCopy(t, BAKERY, CTX, fixable, site), null);
+});
+
+test("a fix waits while Flash is still writing a reply in that chat, here or on the server, and goes to the site that chat updates", () => {
+  const app = (html: string, slug?: string) => ({ title: "Golden Crumb", html, kind: "app" as const, ...(slug && { slug }) });
+  const built: UIMessage[] = [
+    { id: "u1", role: "user", content: "Build a website for my bakery" },
+    { id: "a1", role: "assistant", content: "Here it is.", app: app(BAKERY, "golden-crumb-x1") },
+  ];
+  assert.equal(stillAnswering(built), false);
+  assert.equal(newestApp(built).site, "golden-crumb-x1");
+  // "Make the header blue", and the page was left while Flash writes it: the chat comes back from the
+  // server with that reply pending (as Flash.tsx loads it). The newest app is still the one before it,
+  // so a fix sent now would be made on that copy and land below the blue header's reply, without it.
+  const writing: UIMessage[] = [
+    ...built,
+    { id: "u2", role: "user", content: "Make the header blue" },
+    { id: "a2", role: "assistant", content: "", pending: true, pendingSince: 1, status: "Flash is still finishing this on the server." },
+  ];
+  assert.equal(stillAnswering(writing), true);
+  assert.equal(newestApp(writing).latest?.html, BAKERY);
+  // Done: the blue header is the newest version, of the same site, and the fix goes on it.
+  const done = writing.map((m) => (m.id === "a2" ? { ...m, pending: false, status: undefined, content: "Made the header blue.", app: app(BAKERY.replace("<header ", "<header data-blue ")) } : m));
+  assert.equal(stillAnswering(done), false);
+  assert.deepEqual([newestApp(done).latest?.html.includes("data-blue"), newestApp(done).site], [true, "golden-crumb-x1"]);
+  // After Publish as new, that chat's newest app is another site.
+  const asNew = [...done.slice(0, -1), { ...done.at(-1)!, app: { ...done.at(-1)!.app!, slug: "golden-crumb-2" } }];
+  assert.equal(newestApp(asNew).site, "golden-crumb-2");
+  assert.equal(newestApp([]).latest, undefined);
 });
 
 test("a page where everything fails sends what fits, says how many didn't, and the chat keeps it whole", () => {

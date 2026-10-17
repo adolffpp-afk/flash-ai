@@ -39,8 +39,9 @@ export type SiteFix = { projectId: string; slug: string; title: string; ids: Che
 /**
  * What Flash would send for a change in the chat that built the site: the points that fit and how many
  * more were asked for, or why none would go. busy: Flash is still answering there, so it would go later.
+ * chat: what that chat says when it's opened from here (Open the chat that built this site), if anything.
  */
-export type FixPlan = { sent: CheckId[]; left: number } | { why: string; busy?: true };
+export type FixPlan = { sent: CheckId[]; left: number } | { why: string; busy?: true; chat?: string };
 
 const BAND_WORDS: Record<Band, string> = { good: msg("Good"), needs: msg("Needs work"), poor: msg("Poor") };
 const BAND_TEXT: Record<Band, string> = { good: "text-emerald-400", needs: "text-gold-soft", poor: "text-red-400" };
@@ -60,6 +61,8 @@ const RUN_ERRORS: Record<PageSpeedError, string> = {
 const RUNNING = msg("Google is still checking this page. The result shows here when it's done.");
 // Said when the chat that built the site couldn't be found or loaded: there's no chat to open then.
 const NO_CHAT = msg("Couldn't find the chat that built this site.");
+// Said in place of Fix it, Fix all, Add it and Write them when the app has no chat that built it.
+const NO_CHAT_APP = msg("Flash can't change this app from here: the chat that built it was deleted, or it was published from another app.");
 // Said when Send found that chat's newest version changed since the panel listed what goes.
 const CHANGED = msg("That chat's newest version changed, so this list did too. Press Send to Flash again to ask for these.");
 // What each mark in the list says to a screen reader.
@@ -186,10 +189,10 @@ export function SeoView({
   // now when it isn't what was listed (shown).
   onFix?: (fix: SiteFix) => Promise<FixPlan | null>;
   // Puts text in the message box of the chat that built the site, without sending it: null once it's
-  // there, else why it isn't (that chat's newest app is another site).
-  onDraft?: (draft: { projectId: string; slug: string; text: string }) => Promise<string | null>;
-  // Opens the chat that built the site.
-  onOpenChat?: (projectId: string) => void;
+  // there, else why it isn't (that chat's newest app is another site), and what that chat says if opened.
+  onDraft?: (draft: { projectId: string; slug: string; text: string }) => Promise<{ why: string; chat?: string } | null>;
+  // Opens the chat that built the site, saying note there (why nothing was sent, in the chat's terms).
+  onOpenChat?: (projectId: string, note?: string) => void;
   onPreview: () => void;
 }) {
   const t = useT();
@@ -200,16 +203,19 @@ export function SeoView({
   const [asking, setAsking] = useState<{ key: string; ids: CheckId[]; plan: FixPlan | null } | null>(null);
   // What Fix all would send, once looked at: its button counts that, and only that.
   const [allPlan, setAllPlan] = useState<FixPlan | null>(null);
-  // The chat that built the site: loading (null), found, or why it can't be.
-  const [project, setProject] = useState<{ id?: string; error?: string } | null>(null);
+  // The chat that built the site: loading (null), found, or why it can't be (missing: there's none).
+  const [project, setProject] = useState<{ id?: string; error?: string; missing?: boolean } | null>(null);
   // Why Send sent nothing, said in the panel.
   const [note, setNote] = useState("");
   const [sending, setSending] = useState(false);
-  // Why the owner's details weren't put in the chat, and whether that chat can be opened.
-  const [draftNote, setDraftNote] = useState<{ text: string; chat: boolean } | null>(null);
+  // Why the owner's details weren't put in the chat, and what that chat says when it's opened from here
+  // (only when it can be).
+  const [draftNote, setDraftNote] = useState<{ text: string; chat?: string } | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const lookup = useRef<Promise<string | null> | null>(null);
-  const canFix = !!onFix && !!onPlanFix && editCredits !== undefined;
+  // Without the chat that built the site, nothing here can change the app, so nothing offers to.
+  const noChat = !!project?.missing;
+  const canFix = !!onFix && !!onPlanFix && editCredits !== undefined && !noChat;
   const site = { title: data.title, address: `${data.ctx.appBase}/p/${slug}` };
   const fixable = fixableIds(report);
   const all = fixContext(report, fixable, site);
@@ -221,9 +227,11 @@ export function SeoView({
     if (askingKey) panelRef.current?.focus();
   }, [askingKey]);
 
-  // What Fix all would send is looked at once, when there's a Fix all: the chat's newest version may
+  // The chat that built the site is looked up at once, so an app without one offers no change. What
+  // Fix all would send is looked at once too, when there's a Fix all: the chat's newest version may
   // already have some of it (a change not put live yet), so the button counts what would really go.
   useEffect(() => {
+    if (canFix || onDraft) void projectId();
     if (!canFix || fixable.length < 2 || !all.sent.length) return;
     let shown = true;
     void planFor(fixable).then((plan) => {
@@ -246,8 +254,10 @@ export function SeoView({
         return id;
       },
       (err) => {
-        lookup.current = null;
-        setProject({ error: err instanceof Error ? err.message : t(NO_CHAT) });
+        // None (404) is the answer; anything else can be tried again.
+        const missing = (err as { status?: number })?.status === 404;
+        if (!missing) lookup.current = null;
+        setProject({ error: err instanceof Error ? err.message : t(NO_CHAT), missing });
         return null;
       },
     );
@@ -306,19 +316,20 @@ export function SeoView({
     setDraftNote(null);
     const id = await projectId();
     if (!id) {
-      setDraftNote({ text: t(NO_CHAT), chat: false });
+      setDraftNote({ text: t(NO_CHAT) });
       return;
     }
     const placeholders = String(check.values.list ?? "").split(", ").filter(Boolean);
-    const why = await onDraft({ projectId: id, slug, text: t("Here are my real details for the site:") + "\n" + placeholders.map((p) => `${p}: `).join("\n") });
-    if (why) setDraftNote({ text: why, chat: why !== t(NO_CHAT) });
+    const whyNot = await onDraft({ projectId: id, slug, text: t("Here are my real details for the site:") + "\n" + placeholders.map((p) => `${p}: `).join("\n") });
+    if (whyNot) setDraftNote({ text: whyNot.why, chat: whyNot.chat });
   }
 
   const panel = (key: string) => {
     if (asking?.key !== key) return null;
     // What would go (listed, priced and sent as it is), or why nothing would.
     const points = asking.plan && "sent" in asking.plan ? asking.plan : null;
-    const said = note || (asking.plan && "why" in asking.plan ? asking.plan.why : "");
+    const whyNot = asking.plan && "why" in asking.plan ? asking.plan : null;
+    const said = note || whyNot?.why || "";
     return (
       <div
         ref={panelRef}
@@ -367,7 +378,7 @@ export function SeoView({
           )}
           {said && said !== t(NO_CHAT) && project?.id && onOpenChat && (
             <button
-              onClick={() => onOpenChat(project.id!)}
+              onClick={() => onOpenChat(project.id!, note ? undefined : whyNot?.chat)}
               className="rounded-md border border-primary/40 px-3 py-1.5 text-primary-soft hover:bg-primary/10"
             >
               {t("Open the chat that built this site")}
@@ -391,7 +402,7 @@ export function SeoView({
         </button>
       );
     }
-    if (check.action === "tell" && onDraft) {
+    if (check.action === "tell" && onDraft && !noChat) {
       return (
         <button onClick={() => draft(check)} className={button}>
           {t("Write them in the chat")}
@@ -440,7 +451,7 @@ export function SeoView({
                 </p>
                 {draftNote.chat && project?.id && onOpenChat && (
                   <button
-                    onClick={() => onOpenChat(project.id!)}
+                    onClick={() => onOpenChat(project.id!, draftNote.chat)}
                     className="rounded-md border border-primary/40 px-2.5 py-1 text-xs text-primary-soft hover:bg-primary/10"
                   >
                     {t("Open the chat that built this site")}
@@ -492,6 +503,7 @@ export function SeoView({
                 </span>
               </p>
               <p className="text-xs text-zinc-500">{t("Checks the live page, published {date}.", { date: dateLabel(data.checkedAt, t.locale) })}</p>
+              {noChat && <p className="text-xs text-zinc-500">{t(NO_CHAT_APP)}</p>}
             </div>
             {canFix && fixable.length >= 2 && all.sent.length > 0 && (
               <button

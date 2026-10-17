@@ -20,6 +20,7 @@ import { Templates } from "./Templates";
 import { MyApps } from "./MyApps";
 import type { FixPlan, SiteFix } from "./SeoView";
 import type { CheckId } from "@/lib/seo-rules";
+import { newestApp, stillAnswering } from "@/lib/seo-chat";
 import { BuildPanel, useMedia } from "./BuildPanel";
 import { draftShown, draftStore, startsWriting } from "@/lib/live-draft";
 import { OFFICE_TYPES, officeKind, officeText } from "@/lib/office";
@@ -221,6 +222,10 @@ const NO_PICTURE = msg("Couldn't open the picture above, so nothing was sent and
 const NO_FILES = msg("Attached files aren't kept once Flash is reloaded, so nothing was sent. Attach them again and send your message.");
 // A reply the server finishes and saves on its own: the page lost its connection, or the chat was opened while it ran.
 const STILL_WORKING = msg("Flash is still finishing this on the server. You can leave this page and come back.");
+// Said when a change the search check asked for waits for a reply Flash is still writing in that chat.
+const BUSY_FIX = msg("Flash is still working on a reply. Send this when it's done.");
+// Said in a chat opened from the search check when its newest app is another site (after Publish as new).
+const OTHER_SITE = msg("This chat's newest app is a different site, so changes you ask for here go to that site, not to the one you were checking.");
 // Stop pressed: the server stops the reply (a picture, video or sound already being made is finished
 // and delivered), then sends what it saved and charged.
 const STOPPING = msg("Stopping…");
@@ -968,10 +973,12 @@ export function Flash({
    * exactly what was listed goes there (sendFix): the answer is null.
    */
   async function fixSite(fix: SiteFix): Promise<FixPlan | null> {
-    const busyNote = { why: t("Flash is still working on a reply. Send this when it's done."), busy: true as const };
+    const busyNote = { why: t(BUSY_FIX), busy: true as const };
     if (busy || runningRef.current) return busyNote;
     const messages = await chatMessages(fix.projectId);
     if (!messages) return { why: t("Couldn't find the chat that built this site.") };
+    // A reply Flash is finishing there (asked in another tab, or before this page was left) comes first.
+    if (stillAnswering(messages)) return busyNote;
     const plan = await fixFor(fix, messages);
     if ("why" in plan) return plan;
     if (fix.shown && plan.sent.join() !== fix.shown.join()) return { sent: plan.sent, left: plan.left };
@@ -988,10 +995,10 @@ export function Flash({
    * unsent: null once it's there. When that chat's newest app is another site (after Publish as new),
    * nothing is added and the answer is why, as for Fix it, so the details never go to the wrong site.
    */
-  async function draftInChat({ projectId, slug, text }: { projectId: string; slug: string; text: string }): Promise<string | null> {
+  async function draftInChat({ projectId, slug, text }: { projectId: string; slug: string; text: string }): Promise<{ why: string; chat?: string } | null> {
     const messages = await chatMessages(projectId);
-    if (!messages) return t("Couldn't find the chat that built this site.");
-    if (newestApp(messages).site !== slug) return t("The newest app in that chat is a different site, so Flash didn't add your details there.");
+    if (!messages) return { why: t("Couldn't find the chat that built this site.") };
+    if (newestApp(messages).site !== slug) return { why: t("The newest app in that chat is a different site, so Flash didn't add your details there."), chat: t(OTHER_SITE) };
     closeApps();
     showChat(projectId);
     // After anything already typed there, never in its place.
@@ -1000,32 +1007,27 @@ export function Flash({
     return null;
   }
 
-  /** A chat's newest app, and the site it updates: its own, or the one an earlier version was published as (as AppPreview does). */
-  function newestApp(messages: UIMessage[]) {
-    const at = messages.findLastIndex((m) => m.app);
-    const latest = at === -1 ? undefined : messages[at].app;
-    return { latest, site: latest && (latest.slug ?? messages.slice(0, at).findLast((m) => m.app?.slug)?.app?.slug) };
-  }
-
   /**
    * What a change the search check asked for sends in the chat that built the site: the message, made
    * for that chat's newest app as the builder will see it, or why nothing would be sent (that app is
-   * another site, after Publish as new, or it has the fix already). The builder gets the check's
+   * another site, after Publish as new, or it has the fix already), with what that chat says when it's
+   * opened from there (chat: never Edit's "ask for your changes here"). The builder gets the check's
    * English instructions (shown as "◎ SEO"); the owner sees what was asked in their own language.
    */
-  async function fixFor(fix: SiteFix, messages: UIMessage[]): Promise<{ why: string } | { message: UIMessage; sent: CheckId[]; left: number }> {
+  async function fixFor(fix: SiteFix, messages: UIMessage[]): Promise<{ why: string; chat: string } | { message: UIMessage; sent: CheckId[]; left: number }> {
     const { latest, site } = newestApp(messages);
-    if (!latest || site !== fix.slug) return { why: t("The newest app in that chat is a different site, so Flash didn't send the change.") };
+    if (!latest || site !== fix.slug) return { why: t("The newest app in that chat is a different site, so Flash didn't send the change."), chat: t(OTHER_SITE) };
     // Loaded only now, so the check stays out of the chat's own code until it's used.
     const { fixForCopy } = await import("@/lib/seo-fix");
     const planned = fixForCopy(t, latest.html, fix.ctx, fix.ids, { title: fix.title, address: `${fix.ctx.appBase}/p/${fix.slug}` });
-    // That version's button: Update when it was published before (an older one was brought back since), else Update site.
-    if (!planned)
-      return {
-        why: latest.slug
-          ? t("The newest version in that chat already fixes this. Press Update under it to put it live.")
-          : t("The newest version in that chat already fixes this. Press Update site under it to put it live."),
-      };
+    // That version's button: Update when it was published before (an older one was brought back since),
+    // else Update site. The chat says the same when it's opened from there.
+    if (!planned) {
+      const why = latest.slug
+        ? t("The newest version in that chat already fixes this. Press Update under it to put it live.")
+        : t("The newest version in that chat already fixes this. Press Update site under it to put it live.");
+      return { why, chat: why };
+    }
     const { content, context, sent, left } = planned;
     return { message: { id: newId(), role: "user", content, build: latest.kind, picked: { label: t("SEO"), context } }, sent, left };
   }
@@ -1039,6 +1041,7 @@ export function Flash({
     const chat = projects.find((p) => p.id === fix.projectId);
     const messages = chat?.messages;
     if (!chat || !messages || busy || runningRef.current) return;
+    if (stillAnswering(messages)) return setNotice(t(BUSY_FIX));
     const plan = await fixFor(fix, messages);
     if ("why" in plan) setNotice(plan.why);
     else await respond(chat, messages, plan.message);
@@ -2590,6 +2593,11 @@ export function Flash({
             onFix={fixSite}
             onPlanFix={planFix}
             onDraft={draftInChat}
+            onOpenChat={(id, note) => {
+              closeApps();
+              setNotice(note ?? "");
+              openProject(id);
+            }}
           />
         )}
         {showAutomations && <Automations onTemplates={() => setTemplates("")} onClose={() => setShowAutomations(false)} />}
