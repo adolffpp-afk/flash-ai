@@ -598,8 +598,8 @@ test("unpublishing takes everything the app kept, from every table that keeps so
     assert.equal(await slugTaken(slug), false, "the name is free again, with nothing left to inherit");
 
     // What an app unpublished before this fix left behind keeps its name from being reused: its
-    // records, members, files, orders, domains, visits and the AI it used.
-    for (const table of ["site_records", "site_users", "site_uploads", "site_orders", "site_domains", "site_visits", "site_visitors", "site_ai_usage"]) {
+    // records, members, files, orders, contacts, domains, visits and the AI it used.
+    for (const table of ["site_records", "site_users", "site_uploads", "site_orders", "site_contacts", "site_domains", "site_visits", "site_visitors", "site_ai_usage"]) {
       const old = `old-${table.replace(/_/g, "-")}`;
       assert.equal(await slugTaken(old), false, old);
       await seed(table, old);

@@ -35,6 +35,7 @@ export const SITE_TABLES = [
   "site_ai_usage",
   "site_uploads",
   "site_messages",
+  "site_contacts",
   "site_domains",
   "site_versions",
   "site_visits",
@@ -46,13 +47,14 @@ export const SITE_TABLES = [
   "site_collection_rules",
 ];
 // The ones a new site must never take over from an old site of the same name (records, members,
-// files, messages, orders, history, settings, visits and the AI it used today), each looked up by
-// an index on site_slug.
+// files, messages, contacts, orders, history, settings, visits and the AI it used today), each
+// looked up by an index on site_slug.
 const INHERITABLE = [
   "site_records",
   "site_users",
   "site_uploads",
   "site_messages",
+  "site_contacts",
   "site_orders",
   "site_products",
   "site_domains",

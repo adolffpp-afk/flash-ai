@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api, authedFetch } from "@/lib/store";
 import { withAccount } from "@/lib/account-pin";
 import { SELLER_COUNTRIES } from "@/lib/shop";
@@ -8,8 +8,20 @@ import { DATA_RULES, DEFAULT_KEY, RULE_TEXT, blockProblem, dataLine, type DataRu
 import { msg } from "@/lib/i18n";
 import { inOrder } from "@/lib/in-order";
 import { tNow, useT, type T } from "@/lib/use-t";
+import { ContactsView } from "./ContactsView";
 
-type Site = { slug: string; title: string; updated_at: number; messages: number; unread: number; views: number; members: number; openData?: boolean };
+// contacts: null until the app's contact list was first filled (see server/contacts.ts).
+type Site = {
+  slug: string;
+  title: string;
+  updated_at: number;
+  messages: number;
+  unread: number;
+  views: number;
+  members: number;
+  contacts: number | null;
+  openData?: boolean;
+};
 type DataCollection = { name: string; count: number; lastAdded: number; rule: DataRule; source: RuleSource; personal: string[] };
 // block: the app names its rules in a flash-data block; bad: what Flash couldn't use in it. domains: the app's own addresses.
 type AppData = { collections: DataCollection[]; fallback: DataRule | null; guess: DataRule; block: boolean; bad?: DataSummary["bad"]; domains: string[] };
@@ -56,6 +68,7 @@ const VIEW_TITLES = {
   preview: msg("Link preview"),
   payments: msg("Payments"),
   messages: msg("Messages"),
+  contacts: msg("Contacts"),
   visits: msg("Visitors"),
   history: msg("History"),
   members: msg("Members"),
@@ -80,7 +93,7 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
   const t = useT();
   const [sites, setSites] = useState<Site[] | null>(null);
   const [open, setOpen] = useState<Site | null>(null);
-  const [view, setView] = useState<"messages" | "domains" | "preview" | "payments" | "visits" | "history" | "members" | "ai" | "files" | "data">("messages");
+  const [view, setView] = useState<"messages" | "contacts" | "domains" | "preview" | "payments" | "visits" | "history" | "members" | "ai" | "files" | "data">("messages");
   const [appData, setAppData] = useState<ShownData | null>(null);
   const [records, setRecords] = useState<Records | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -105,6 +118,13 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
   const [confirming, setConfirming] = useState<string | null>(null);
   const [error, setError] = useState("");
   const closeRef = useRef<HTMLButtonElement>(null);
+  // Whether a contact's page, Add contact or Edit stages has changes not saved: leaving the app or
+  // closing My websites & apps then asks first, as the contact's own way back does.
+  const contactsEdited = useRef(false);
+  const onContactsEdited = useCallback((edited: boolean) => {
+    contactsEdited.current = edited;
+  }, []);
+  const mayLeave = useCallback(() => !contactsEdited.current || window.confirm(tNow("Leave without saving your changes?")), []);
   // Counts the Data view's loads, so only the newest one's answer is shown.
   const dataLoads = useRef(0);
   // The rules chosen in the Data view reach the server one at a time for each app, and the view shows
@@ -122,10 +142,14 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
 
   useEffect(() => {
     closeRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    // Escape closes, except while typing: in a text field, or choosing a word with an input method.
+    const typing = (e: KeyboardEvent) =>
+      e.isComposing ||
+      (e.target instanceof Element && e.target.matches("textarea, input:not([type=checkbox], [type=radio], [type=button], [type=submit], [type=range], [type=color], [type=file])"));
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !typing(e) && mayLeave() && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, mayLeave]);
 
   useEffect(() => {
     api<{ sites: Site[] }>("/api/sites")
@@ -343,6 +367,12 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
       setError(t("Couldn't load the messages. Please try again."));
       setMessages([]);
     }
+  }
+
+  function showContacts(site: Site) {
+    setOpen(site);
+    setView("contacts");
+    setError("");
   }
 
   async function showMembers(site: Site) {
@@ -570,17 +600,17 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-stretch justify-center bg-black/60 backdrop-blur-sm sm:items-center sm:p-6" onClick={onClose}>
+    <div className="fixed inset-0 z-40 flex items-stretch justify-center bg-black/60 backdrop-blur-sm sm:items-center sm:p-6" onClick={() => mayLeave() && onClose()}>
       <div
         role="dialog"
         aria-modal="true"
         aria-label={t("My websites and apps")}
-        className="flex h-full w-full max-w-3xl flex-col bg-zinc-950 text-zinc-100 sm:h-[80vh] sm:rounded-2xl sm:border sm:border-white/8"
+        className={`flex h-full w-full ${open && view === "contacts" ? "max-w-5xl" : "max-w-3xl"} flex-col bg-zinc-950 text-zinc-100 sm:h-[80vh] sm:rounded-2xl sm:border sm:border-white/8`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3 border-b border-white/6 px-5 py-4">
           {open && (
-            <button onClick={() => setOpen(null)} className="text-sm text-zinc-400 hover:text-zinc-100" aria-label={t("Back to my apps")}>
+            <button onClick={() => mayLeave() && setOpen(null)} className="text-sm text-zinc-400 hover:text-zinc-100" aria-label={t("Back to my apps")}>
               ←
             </button>
           )}
@@ -595,7 +625,7 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
           </h2>
           <button
             ref={closeRef}
-            onClick={onClose}
+            onClick={() => mayLeave() && onClose()}
             className="rounded-full p-2 text-zinc-400 transition hover:bg-white/[0.06] hover:text-zinc-100"
             aria-label={t("Close")}
           >
@@ -797,6 +827,13 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
                 </p>
               </div>
             )
+          ) : open && view === "contacts" ? (
+            <ContactsView
+              key={open.slug}
+              slug={open.slug}
+              onCount={(count) => setSites((all) => all?.map((s) => (s.slug === open.slug ? { ...s, contacts: count } : s)) ?? null)}
+              onEdited={onContactsEdited}
+            />
           ) : open && view === "members" ? (
             members === null ? (
               !error && <p className="text-sm text-zinc-500">{t("Loading…")}</p>
@@ -1232,6 +1269,10 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
                         {s.unread > 0 && (
                           <span className="ml-1.5 rounded-full bg-brand px-1.5 py-0.5 text-[10px] text-on-brand">{t("{count} new", { count: s.unread })}</span>
                         )}
+                      </button>
+                      <button onClick={() => showContacts(s)} className="text-zinc-200 hover:text-white" title={t("Everyone who sent a form, signed up or paid")}>
+                        👥 {t("Contacts")}
+                        {s.contacts ? <> ({s.contacts.toLocaleString(t.locale)})</> : null}
                       </button>
                       <button onClick={() => showVisits(s)} className="text-zinc-200 hover:text-white" title={t("Visits in the last 30 days")}>
                         📈 {t("Visitors")}
