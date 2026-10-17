@@ -94,7 +94,7 @@ export function AccountChooser({
               aria-busy={going || undefined}
               disabled={Boolean(switching)}
               onClick={() => onChoose(a.id)}
-              className={`flex min-h-12 w-full items-center gap-3 rounded-xl px-3 py-2 text-start transition hover:bg-white/[0.06] focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:hover:bg-transparent ${
+              className={`flex min-h-12 w-full min-w-0 items-center gap-3 rounded-xl px-3 py-2 text-start transition hover:bg-white/[0.06] focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-default disabled:hover:bg-transparent ${
                 switching && !going ? "opacity-50" : ""
               }`}
             >
@@ -122,7 +122,10 @@ export function AccountChooser({
             {t("Use another account")}
           </button>
         ) : (
-          <p className="px-3 py-2 text-xs leading-relaxed text-zinc-500">{t("You're signed in to 5 accounts. Log out of one to add another.")}</p>
+          // Nothing here logs out: the profile menu of the account chosen does.
+          <p className="px-3 py-2 text-xs leading-relaxed text-zinc-500">
+            {t("You're signed in to 5 accounts. To add another, choose one you no longer need and log out of it from the profile menu.")}
+          </p>
         )}
       </div>
     </Sheet>

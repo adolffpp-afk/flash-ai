@@ -79,6 +79,16 @@ export function getPinEmail(): string {
   }
 }
 
+/**
+ * Whether the server's answer for an account is this tab's to show: its own account, or the
+ * browser's default while it has none yet. An answer asked for before the tab moved to another
+ * account (a switch, which then reloads it) is not, and must never move it back.
+ */
+export function isTabAccount(account: string): boolean {
+  const mine = getPin();
+  return !mine || mine === account;
+}
+
 /** The header that names this tab's account, when it has one. */
 export function accountHeaders(): Record<string, string> {
   const id = getPin();
@@ -95,6 +105,9 @@ export function withAccount(url: string): string {
   if (/[?&]as=/.test(path)) return url;
   return `${path}${path.includes("?") ? "&" : "?"}as=${encodeURIComponent(id)}${hash}`;
 }
+
+// Where the link that named this page's account was going (its path and query, without ?as=).
+let linked: string | null = null;
 
 /**
  * The account a link opened this page as (?as=, from an email, Stripe or a callback): this tab
@@ -119,8 +132,16 @@ export function adoptAccountFromUrl(): string | null {
   }
   if (!ID.test(named)) return null;
   setPin(named);
+  linked = `${url.pathname}${url.search}`;
   return named;
 }
+
+/**
+ * Where the link that named this page's account was going (like /?apps=1), to go on to after
+ * signing in to that account from the account chooser; null when no link named one. The page
+ * takes those parts out of the address once it has opened them.
+ */
+export const linkTarget = (): string | null => linked;
 
 /** What one tab tells Flash's other tabs: an account is about to log out here, or the accounts changed. */
 export type Announcement = { type: "leaving"; account: string } | { type: "changed" };

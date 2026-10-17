@@ -66,6 +66,7 @@ const driveFilesRoute = await import("../src/app/api/connect/google/files/route.
 const madeWithRoute = await import("../src/app/api/sites/[slug]/made-with/route.ts");
 const adminReportsRoute = await import("../src/app/api/admin/reports/route.ts");
 const contactsRoute = await import("../src/app/api/sites/[slug]/contacts/route.ts");
+const inboxRoute = await import("../src/app/api/sites/[slug]/inbox/route.ts");
 const { addContact } = await import("../src/lib/server/contacts.ts");
 const { registerClient } = await import("../src/lib/server/connector.ts");
 const { sendVerification } = await import("../src/lib/server/account.ts");
@@ -229,6 +230,20 @@ test("a browser with one account works exactly as before, with no header and no 
   assert.deepEqual(setCookies(got), {}, "nothing new is set");
 });
 
+test("/api/me lists every account signed in to the browser, in the order added, for the menu's Switch account", async () => {
+  const a = await account("mla");
+  const b = await account("mlb");
+  const c = await account("mlc");
+  // c is the default (added last); the tab shows a.
+  const { cookie } = await browser(a, b, c);
+  const got = await meRoute.GET(req("/api/me", { cookie, account: a }));
+  assert.equal(got.status, 200);
+  const me = (await got.json()) as { user: { id: string }; account: string; accounts: { id: string; email: string; name: string; nickname: string }[] };
+  assert.equal(me.user.id, a);
+  assert.equal(me.account, a);
+  assert.deepEqual(me.accounts, [a, b, c].map((id) => ({ id, email: `${id}@x.io`, name: `User ${id}`, nickname: "" })));
+});
+
 test("a tab's header acts as its account, on reads and on changes", async () => {
   const a = await account("ha");
   const b = await account("hb");
@@ -296,6 +311,10 @@ test("?as= names the account only on the links that need it, and only reads", as
   }
   assert.equal((await auth.getUser(req("/api/me", { cookie, as: b })))?.id, a, "ignored anywhere else");
   assert.equal((await auth.getUser(req("/api/sites/s1/records", { cookie, as: b })))?.id, a);
+  // The same routes' other reads aren't links: the page makes them with its header.
+  for (const path of ["/api/sites/s1/inbox", "/api/sites/s1/inbox?format=json", "/api/sites/s1/members", "/api/sites/s1/versions", "/api/sites/s1/versions?view="]) {
+    assert.equal((await auth.getUser(req(path, { cookie, as: b })))?.id, a, `${path}: not a link`);
+  }
   // A browser with one account (no list cookie) follows a link for another account: nobody, not its own.
   const single = `flash_session=${ta}`;
   for (const path of ["/api/sites/s1/orders", "/api/payments/link"]) {
@@ -305,6 +324,31 @@ test("?as= names the account only on the links that need it, and only reads", as
   assert.equal((await auth.getUser(req("/api/me", { cookie: single, as: b })))?.id, a, "ignored anywhere else");
   assert.equal(auth.asParamAllowed("GET", "/api/sites/x/versions/extra"), false);
   assert.equal(auth.asParamAllowed("DELETE", "/api/sites/x/versions"), false);
+});
+
+test("a link from another site with ?as= can't mark another account's app messages read", async () => {
+  const a = await account("ira");
+  const b = await account("irb");
+  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES ('ir-b', ?, 'B', '<p>b</p>', 0, 0)", [b]);
+  for (const id of ["irm1", "irm2"]) {
+    await run("INSERT INTO site_messages (id, site_slug, form, data, created_at, read_at) VALUES (?, 'ir-b', 'contact', '{\"name\":\"Ana\"}', ?, 0)", [id, Date.now()]);
+  }
+  const unread = () => count("SELECT COUNT(*) AS n FROM site_messages WHERE site_slug = 'ir-b' AND read_at = 0");
+  // a is the default. A top-level navigation from another site: the cookies, and no Origin or header.
+  const { cookie } = await browser(b, a);
+  const nav = (path: string) => inboxRoute.GET(req(path, { cookie, as: b, origin: null, site: "cross-site" }), ctx({ slug: "ir-b" }));
+  const read = await nav("/api/sites/ir-b/inbox");
+  assert.equal(read.status, 404, "the inbox's own read acts as the default, who doesn't own the app");
+  assert.equal(await unread(), 2);
+  const csv = await nav("/api/sites/ir-b/inbox?format=csv");
+  assert.equal(csv.status, 200, "the download link opens as the account it names");
+  assert.equal(csv.headers.get("cache-control"), "no-store");
+  assert.match(await csv.text(), /Ana/);
+  assert.equal(await unread(), 2, "downloading leaves new messages new");
+  // The page itself, naming the tab's account, still reads them and marks them read.
+  const own = await inboxRoute.GET(req("/api/sites/ir-b/inbox", { cookie, account: b }), ctx({ slug: "ir-b" }));
+  assert.equal(own.status, 200);
+  assert.equal(await unread(), 0);
 });
 
 test("a deleted account's session is dropped from the browser's accounts", async () => {
@@ -700,6 +744,38 @@ test("Log out of this account ends only that account's session here, and the nex
   assert.equal(await userOf(elsewhere), a, "a's other device stays signed in");
   assert.equal(await userOf(tb), b);
   assert.equal(await siteOwner.isOwnerKey(owned.slug, owned.key), false, "owner mode opened from that session ends with it");
+});
+
+test("Log out of this account from a tab on an account that isn't the default ends that account, not the default", async () => {
+  const a = await account("lda");
+  const b = await account("ldb");
+  const ta = await session(a);
+  const tb = await session(b);
+  // b is the default (added last); the tab shows a.
+  const res = await logout(jarCookie({ def: tb, list: [ta, tb] }), {}, a);
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), { ok: true, next: { id: b, email: `${b}@x.io` } });
+  const set = setCookies(res);
+  assert.equal(set.flash_session, undefined, "b stays the default");
+  assert.equal(set["__Host-flash_accounts"].maxAge, 0, "one account left, so no list");
+  assert.equal(await userOf(ta), null, "a is logged out");
+  assert.equal(await userOf(tb), b, "b stays signed in");
+});
+
+test("when the default logs out, the oldest account added becomes the default", async () => {
+  const a = await account("lo3a");
+  const b = await account("lo3b");
+  const c = await account("lo3c");
+  const { cookie, tokens } = await browser(a, b, c);
+  const [ta, tb, tc] = tokens;
+  const res = await logout(cookie, {}, c);
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), { ok: true, next: { id: a, email: `${a}@x.io` } });
+  const set = setCookies(res);
+  assert.equal(set.flash_session.value, ta, "a, added first, rather than b, added after it");
+  assert.deepEqual(listOf(res), [ta, tb]);
+  assert.equal(await userOf(tc), null);
+  assert.equal(await userOf(tb), b);
 });
 
 test("with 2 accounts, a log out that doesn't name the tab's account changes nothing", async () => {
@@ -1127,6 +1203,48 @@ test("an app's message email opens Flash as the app's owner", async () => {
     globalThis.fetch = saved.fetch;
     if (saved.key === undefined) delete process.env.RESEND_API_KEY;
     else process.env.RESEND_API_KEY = saved.key;
+  }
+});
+
+test("an app's order email opens Flash as the app's owner", async () => {
+  const b = await account("eob");
+  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES ('eo-b', ?, 'B', '<p>b</p>', 0, 0)", [b]);
+  await run("INSERT INTO seller_accounts (user_id, stripe_account, country, currency, ready, created_at) VALUES (?, 'acct_eob', 'CA', 'cad', 1, 0)", [b]);
+  const saved = { resend: process.env.RESEND_API_KEY, stripe: process.env.STRIPE_SECRET_KEY, fetch: globalThis.fetch };
+  process.env.RESEND_API_KEY = "re_test";
+  process.env.STRIPE_SECRET_KEY = "rk_test";
+  const sent: { text: string }[] = [];
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(String(input));
+    if (url.hostname === "api.resend.com") {
+      sent.push(JSON.parse(String(init?.body)) as { text: string });
+      return Response.json({ id: "e" });
+    }
+    if (url.pathname.startsWith("/v1/checkout/sessions/cs_eob")) {
+      return Response.json({
+        id: "cs_eob",
+        payment_status: "paid",
+        amount_total: 1250,
+        currency: "cad",
+        created: 1_700_000_000,
+        metadata: { flash_site: "eo-b", flash_item: "Cake" },
+        customer_details: { email: "buyer@x.co", name: "Ana" },
+        line_items: { data: [{ quantity: 1 }] },
+      });
+    }
+    return Response.json({ error: { message: "unexpected" } }, { status: 400 });
+  }) as typeof fetch;
+  try {
+    const { finishCheckout } = await import("../src/lib/server/shop.ts");
+    assert.equal((await finishCheckout("eo-b", "cs_eob", null, ORIGIN)).paid, true);
+    assert.equal(sent.length, 1);
+    assert.ok(sent[0].text.includes(`${ORIGIN}/?apps=1&as=${b}`), sent[0].text);
+  } finally {
+    globalThis.fetch = saved.fetch;
+    if (saved.resend === undefined) delete process.env.RESEND_API_KEY;
+    else process.env.RESEND_API_KEY = saved.resend;
+    if (saved.stripe === undefined) delete process.env.STRIPE_SECRET_KEY;
+    else process.env.STRIPE_SECRET_KEY = saved.stripe;
   }
 });
 

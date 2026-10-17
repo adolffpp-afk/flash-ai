@@ -28,7 +28,7 @@ import { TEMPLATES, type Template, type TemplateValues } from "@/lib/templates";
 import { ENGINES, ENGINE_LABELS, PENDING_LIMIT_MS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types";
 import { applyEvent } from "@/lib/apply-event";
 import { api, authedFetch, newId, type AccountSummary, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
-import { adoptAccountFromUrl, announce, getPin, getPinEmail, isolate, onAnnounce, setPin, setPinEmail } from "@/lib/account-pin";
+import { adoptAccountFromUrl, announce, getPin, getPinEmail, isolate, isTabAccount, linkTarget, onAnnounce, setPin, setPinEmail } from "@/lib/account-pin";
 import { isLocalPath } from "@/lib/local-path";
 import { PROJECT_TOO_LARGE } from "@/lib/project-size";
 import type { ChatHit } from "@/lib/server/search";
@@ -393,16 +393,23 @@ export function Flash({
   const prefsPending = useRef<string | null>(null);
   // What the account check and saving before a switch read, as of the last render.
   const meRef = useRef<Me | null>(null);
+  const chooserRef = useRef<Chooser | null>(null);
   const projectsRef = useRef<Project[]>([]);
   useEffect(() => {
     meRef.current = me;
   }, [me]);
   useEffect(() => {
+    chooserRef.current = chooser;
+  }, [chooser]);
+  useEffect(() => {
     projectsRef.current = projects;
   }, [projects]);
 
   /** The only way the account's data reaches the page. */
-  async function adoptMe(fetched: Me) {
+  async function adoptMe(fetched: Me): Promise<Me | null> {
+    // An answer asked for before this tab moved to another account (a reply's refresh that ends
+    // just as a switch reloads the tab) is left alone: it must not take the tab back to its account.
+    if (!isTabAccount(fetched.account)) return null;
     // Play's billing rule: nothing is for sale inside the Android app (see android-shell.ts), whichever account.
     const data = inAndroidApp() ? { ...fetched, paymentsEnabled: false, testPurchases: false } : fetched;
     // This tab shows this account from now on (the default's, when it showed none), and remembers
@@ -440,11 +447,12 @@ export function Flash({
   /**
    * After the server said this tab is signed out, or another tab changed the accounts: who is still
    * signed in here. "here" when this tab's account still is (the list in the menu is refreshed),
-   * "none" when nobody is, "retry" when this tab had no account and now has the default, and "gone"
-   * when its account was logged out but others are signed in: the chooser shows, and this tab never
+   * "back" when it is signed in here again while the chooser asked (the chooser closes), "none"
+   * when nobody is, "retry" when this tab had no account and now has the default, and "gone" when
+   * its account was logged out but others are signed in: the chooser shows, and this tab never
    * moves to another account on its own.
    */
-  async function checkAccounts(): Promise<"here" | "none" | "retry" | "gone"> {
+  async function checkAccounts(): Promise<"here" | "back" | "none" | "retry" | "gone"> {
     let list: { default: string | null; accounts: AccountSummary[] };
     try {
       list = await api<{ default: string | null; accounts: AccountSummary[] }>("/api/auth/accounts");
@@ -454,7 +462,10 @@ export function Flash({
     const mine = getPin();
     if (mine && list.accounts.some((a) => a.id === mine)) {
       setMe((m) => (m ? { ...m, accounts: list.accounts } : m));
-      return "here";
+      if (!chooserRef.current) return "here";
+      // Signed in here again (in another tab) while the chooser asked which account to use: this tab goes on as it.
+      setChooser(null);
+      return "back";
     }
     if (!list.accounts.length) {
       setPin(null);
@@ -1066,6 +1077,16 @@ export function Flash({
     reloadAs(id);
   }
 
+  /**
+   * "Use another account" in the chooser: add mode, whose Back returns to the chooser. When a link
+   * was for an account not signed in here, the link opens once signed in to it (/?apps=1, say).
+   */
+  function addFromChooser(from: Chooser) {
+    const target = from.reason === "link" ? linkTarget() : null;
+    setChooser(null);
+    setAdding({ back: from, next: target && isLocalPath(target) ? target : undefined });
+  }
+
   /** After a switch to an account that turned out not to be signed in here: the chooser, with who is. */
   async function checkAccountsFor(id: string) {
     try {
@@ -1142,9 +1163,12 @@ export function Flash({
     const check = (now = false) => {
       if (!now && Date.now() - last < 15_000) return;
       last = Date.now();
-      if (!meRef.current) return;
+      // Signed out, nothing to check; the chooser shown before this tab's account loaded checks too.
+      if (!meRef.current && !chooserRef.current) return;
       void checkAccounts().then((found) => {
         if (found === "none") signedOutHere();
+        // That chooser's account was signed in again elsewhere: it loads now.
+        else if (found === "back" && !meRef.current) void start();
       });
     };
     const shown = () => {
@@ -1896,10 +1920,7 @@ export function Flash({
         accounts={chooser.accounts}
         switching={switching}
         onChoose={(id) => void switchAccount(id, { gone: true })}
-        onAdd={() => {
-          setChooser(null);
-          setAdding({ back: chooser });
-        }}
+        onAdd={() => addFromChooser(chooser)}
       />
     );
   }
@@ -2740,10 +2761,7 @@ export function Flash({
           accounts={chooser.accounts}
           switching={switching}
           onChoose={(id) => void switchAccount(id, { gone: true })}
-          onAdd={() => {
-            setChooser(null);
-            setAdding({ back: chooser });
-          }}
+          onAdd={() => addFromChooser(chooser)}
         />
       )}
       {unsaved && (

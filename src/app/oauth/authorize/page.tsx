@@ -103,7 +103,7 @@ export default async function Authorize({ searchParams }: Props) {
               </p>
             )}
             <p className="mt-6 text-xs text-zinc-500">
-              Signed in as <span className="font-medium text-zinc-300">{user!.email}</span>. What it makes uses this
+              Signed in as <span className="break-words font-medium text-zinc-300">{user!.email}</span>. What it makes uses this
               account&apos;s credits, at the same prices as in Flash. You can disconnect it at any time: in Flash, open
               your credits, then Connected apps.
             </p>
@@ -111,7 +111,7 @@ export default async function Authorize({ searchParams }: Props) {
               <summary className="cursor-pointer select-none text-zinc-300 hover:text-zinc-100">Use another account</summary>
               <ul className="mt-2 grid gap-1">
                 {others.map((e) => (
-                  <li key={e.user.id}>
+                  <li key={e.user.id} className="min-w-0">
                     <a
                       href={`${here}&account=${encodeURIComponent(e.user.id)}`}
                       className="flex min-h-10 items-center rounded-lg border border-white/8 px-3 text-zinc-200 transition hover:bg-white/[0.05]"

@@ -251,19 +251,27 @@ export function jarFromCookies(get: (name: string) => string | undefined, secure
 }
 
 /*
- * GET routes people reach by following a link (a new tab, a download), which can't send a header:
- * these alone read the tab's account from ?as=. Each answers with Cache-Control: no-store.
+ * The links people follow (a new tab, a download), which can't send a header: these GETs alone read
+ * the tab's account from ?as=, and only in the form the links take (an earlier version's page, a
+ * CSV file, Stripe's seller link), none of which changes anything in Flash. Each answers with
+ * Cache-Control: no-store. The same routes' other reads (the inbox's, which marks messages read)
+ * are the page's own, which names the account in its header.
  */
-const AS_PATHS = [/^\/api\/sites\/[^/]+\/(?:versions|members|orders|inbox)$/, /^\/api\/payments\/link$/];
+const AS_LINKS: { path: RegExp; link: (query: URLSearchParams) => boolean }[] = [
+  { path: /^\/api\/sites\/[^/]+\/versions$/, link: (q) => Boolean(q.get("view")) },
+  { path: /^\/api\/sites\/[^/]+\/(?:members|inbox)$/, link: (q) => q.get("format") === "csv" },
+  { path: /^\/api\/sites\/[^/]+\/orders$/, link: () => true },
+  { path: /^\/api\/payments\/link$/, link: () => true },
+];
 
-export function asParamAllowed(method: string, pathname: string): boolean {
-  return (method === "GET" || method === "HEAD") && AS_PATHS.some((path) => path.test(pathname));
+export function asParamAllowed(method: string, pathname: string, query: URLSearchParams = new URLSearchParams()): boolean {
+  return (method === "GET" || method === "HEAD") && AS_LINKS.some((a) => a.path.test(pathname) && a.link(query));
 }
 
 /** The ?as= account on a request that may use it, else null (ignored). */
 function asParam(request: Request): string | null {
   const url = new URL(request.url);
-  return asParamAllowed(request.method, url.pathname) ? url.searchParams.get("as") : null;
+  return asParamAllowed(request.method, url.pathname, url.searchParams) ? url.searchParams.get("as") : null;
 }
 
 const READS = new Set(["GET", "HEAD", "OPTIONS"]);

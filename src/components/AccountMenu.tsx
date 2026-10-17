@@ -95,6 +95,23 @@ export function AccountMenu({
   const others = (me.accounts ?? []).filter((a) => a.id !== me.user.id);
   const several = others.length > 0;
   const full = others.length + 1 >= MAX_ACCOUNTS;
+  // The account this tab shows, at the top of the menu.
+  const current = (
+    <>
+      <AccountBadge account={shown} current />
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-medium text-zinc-100">{fullName(me.user)}</span>
+        <bdi className="block truncate text-xs text-zinc-500 rtl:text-right" title={me.user.email}>
+          {me.user.email}
+        </bdi>
+      </span>
+      {several && (
+        <span aria-hidden className="text-primary">
+          ✓
+        </span>
+      )}
+    </>
+  );
 
   return (
     <div ref={box} className={down ? "relative shrink-0" : "relative mt-3 border-t border-white/6 pt-3"}>
@@ -106,49 +123,47 @@ export function AccountMenu({
             down ? "end-0 top-full mt-2 max-h-[calc(100dvh-5rem)] w-[min(18rem,calc(100vw-2rem))]" : "bottom-full start-0 end-0 mb-2 max-h-[calc(100dvh-6rem)]"
           }`}
         >
-          <div aria-current="true" className="flex min-h-11 items-center gap-3 px-3 py-1.5">
-            <AccountBadge account={shown} current />
-            <span className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-medium text-zinc-100">{fullName(me.user)}</span>
-              <bdi className="block truncate text-xs text-zinc-500 rtl:text-right" title={me.user.email}>
-                {me.user.email}
-              </bdi>
-            </span>
-            {several && (
-              <span aria-hidden className="text-primary">
-                ✓
-              </span>
-            )}
-          </div>
-          {several && (
-            <div role="group" aria-label={t("Switch account")} className="mt-1 border-t border-white/8 pt-1">
-              <p className="px-3 pb-1 pt-1.5 text-xs text-zinc-500">{t("Switch account")}</p>
-              {others.map((a) => {
-                const going = switching === a.id;
-                return (
-                  <button
-                    key={a.id}
-                    role="menuitemradio"
-                    aria-checked="false"
-                    aria-label={t("Switch to {email}", { email: isolate(a.email) })}
-                    aria-busy={going || undefined}
-                    disabled={Boolean(switching)}
-                    className={`${item} min-h-11 py-1.5 disabled:cursor-default disabled:hover:bg-transparent ${switching && !going ? "opacity-50" : ""}`}
-                    onClick={() => {
-                      if (switching) return;
-                      onSwitch(a.id);
-                    }}
-                  >
-                    <AccountBadge account={a} size="sm" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm text-zinc-200">{fullName(a)}</span>
-                      <bdi className="block truncate text-xs text-zinc-500 rtl:text-right" title={a.email}>
-                        {going ? t("Switching…") : a.email}
-                      </bdi>
-                    </span>
-                  </button>
-                );
-              })}
+          {several ? (
+            // The account shown is the checked one of the accounts to switch to; choosing it stays on it.
+            <div role="group" aria-label={t("Switch account")}>
+              <button role="menuitemradio" aria-checked="true" className="flex min-h-11 w-full items-center gap-3 rounded-lg px-3 py-1.5 text-start" onClick={pick(() => {})}>
+                {current}
+              </button>
+              <div className="mt-1 border-t border-white/8 pt-1">
+                <p aria-hidden className="px-3 pb-1 pt-1.5 text-xs text-zinc-500">
+                  {t("Switch account")}
+                </p>
+                {others.map((a) => {
+                  const going = switching === a.id;
+                  return (
+                    <button
+                      key={a.id}
+                      role="menuitemradio"
+                      aria-checked="false"
+                      aria-label={t("Switch to {email}", { email: isolate(a.email) })}
+                      aria-busy={going || undefined}
+                      disabled={Boolean(switching)}
+                      className={`${item} min-h-11 py-1.5 disabled:cursor-default disabled:hover:bg-transparent ${switching && !going ? "opacity-50" : ""}`}
+                      onClick={() => {
+                        if (switching) return;
+                        onSwitch(a.id);
+                      }}
+                    >
+                      <AccountBadge account={a} size="sm" />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm text-zinc-200">{fullName(a)}</span>
+                        <bdi className="block truncate text-xs text-zinc-500 rtl:text-right" title={a.email}>
+                          {going ? t("Switching…") : a.email}
+                        </bdi>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ) : (
+            <div aria-current="true" className="flex min-h-11 items-center gap-3 px-3 py-1.5">
+              {current}
             </div>
           )}
           {full ? (
@@ -221,6 +236,8 @@ export function AccountMenu({
             : "flex w-full items-center gap-2.5 rounded-lg px-1.5 py-1.5 text-start transition hover:bg-white/[0.05]"
         }
         title={t("Account and settings")}
+        // Its name says whose account it is, which on a phone shows only as initials.
+        aria-label={t("Account and settings for {email}", { email: isolate(me.user.email) })}
       >
         <span
           className={`flex shrink-0 items-center justify-center rounded-full font-medium ${
