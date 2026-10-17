@@ -23,6 +23,9 @@ export function applyEvent(m: UIMessage, e: StreamEvent): UIMessage {
       return { ...m, status: undefined, audio: e.url, audioLabel: e.label };
     case "app":
       return { ...m, status: undefined, app: e.app };
+    // The file being written is only for the live preview: never part of the reply, so never saved.
+    case "draft":
+      return m;
     case "sources":
       return { ...m, sources: e.items };
     case "connector_used":

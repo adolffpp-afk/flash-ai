@@ -13,6 +13,9 @@ export function splitBuild(text: string): { before: string; html: string | null;
   };
 }
 
+/** A whole HTML file, as opposed to a snippet quoted in an answer. */
+export const isDocument = (code: string) => /<!doctype html|<html[\s>]|<body[\s>]/i.test(code);
+
 /** Reads the <title> of a generated page. */
 export function htmlTitle(html: string, fallback: string): string {
   const t = html.match(/<title[^>]*>([^<]*)<\/title>/i)?.[1]?.trim();
