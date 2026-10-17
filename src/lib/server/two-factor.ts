@@ -8,7 +8,7 @@
  * The app's secret is sealed like connector secrets (secret-box.ts), so two-step sign-in needs
  * CONNECTOR_KEYS. Recovery codes are kept only as hashes. Codes work once each.
  */
-import { createSession, isSecure, readCookie } from "./auth.ts";
+import { TooManyAccounts, addToJar, canAdd, inJar, isSecure, readCookie, type Jar } from "./auth.ts";
 import { db, one, run, now } from "./db.ts";
 import { randomId, sha256 } from "./ids.ts";
 import { clearLimit, clientIp, overLimit } from "./limits.ts";
@@ -144,11 +144,23 @@ export const clearPendingCookie = () => `${PENDING_COOKIE}=; Path=/api/auth; Htt
 
 /**
  * What to set once someone has proved who they are by a password, an email link, Google, GitHub or
- * Microsoft, or a reset link: the session cookie, or, with two-step sign-in on, the cookie that
- * waits for the code (twoFactor true; the page then goes to /signin/code). next is where to go after.
+ * Microsoft, or a reset link: the session cookie (cookie, and the list of the browser's accounts in
+ * also, see auth.ts), or, with two-step sign-in on, the cookie that waits for the code (twoFactor
+ * true; the page then goes to /signin/code). next is where to go after. An account this browser is
+ * signed in to already keeps its session, without the code again: this browser passed it. A browser
+ * that already holds 5 accounts gets TooManyAccounts before anything is stored. prior: see addToJar.
  */
-export async function signInCookie(userId: string, request: Request, next = "/"): Promise<{ cookie: string; twoFactor: boolean }> {
-  if (!(await twoFactorOn(userId))) return { cookie: await createSession(userId, isSecure(request)), twoFactor: false };
+export async function signInCookie(
+  userId: string,
+  request: Request,
+  next = "/",
+  prior?: Jar,
+): Promise<{ cookie: string; also: string[]; twoFactor: boolean; account?: string }> {
+  if (!(await twoFactorOn(userId)) || (await inJar(request, userId))) {
+    const added = await addToJar(request, userId, prior);
+    return { cookie: added.cookie, also: added.also, twoFactor: false, account: added.account };
+  }
+  if (!(await canAdd(request, userId))) throw new TooManyAccounts();
   const token = randomId(32);
   await run("DELETE FROM two_factor_pending WHERE expires_at < ?", [now()]);
   await run("INSERT INTO two_factor_pending (token_hash, user_id, next, attempts, expires_at) VALUES (?, ?, ?, 0, ?)", [
@@ -158,12 +170,13 @@ export async function signInCookie(userId: string, request: Request, next = "/")
     now() + PENDING_MINUTES * 60_000,
   ]);
   const cookie = `${PENDING_COOKIE}=${token}; Path=/api/auth; HttpOnly; SameSite=Lax; Max-Age=${PENDING_MINUTES * 60}${isSecure(request) ? "; Secure" : ""}`;
-  return { cookie, twoFactor: true };
+  return { cookie, also: [], twoFactor: true };
 }
 
 export type Finished =
-  | { ok: true; cookie: string; next: string }
-  | { ok: false; reason: "expired" | "wrong" | "busy" };
+  | { ok: true; cookie: string; also: string[]; next: string; account: string }
+  // full: the browser holds 5 accounts now; the code wasn't used and the sign-in still waits.
+  | { ok: false; reason: "expired" | "wrong" | "busy" | "full" };
 
 /** The second step: a code for the sign-in waiting in this browser's cookie. */
 export async function finishSignIn(request: Request, typed: string): Promise<Finished> {
@@ -182,9 +195,18 @@ export async function finishSignIn(request: Request, typed: string): Promise<Fin
   const pending = await one<{ user_id: string; next: string }>("SELECT user_id, next FROM two_factor_pending WHERE token_hash = ?", [sha256(token)]);
   if (!pending) return { ok: false, reason: "expired" };
   if (await tooMany(pending.user_id)) return { ok: false, reason: "busy" };
+  // Before the code is used: with no room for the account, it still works after logging out of one.
+  if (!(await canAdd(request, pending.user_id))) return { ok: false, reason: "full" };
   if (!(await spendCode(pending.user_id, typed, true))) return { ok: false, reason: "wrong" };
   const used = await run("DELETE FROM two_factor_pending WHERE token_hash = ?", [sha256(token)]);
   if (used.rowsAffected !== 1) return { ok: false, reason: "expired" };
   await clearLimit(`2fa:${pending.user_id}`);
-  return { ok: true, cookie: await createSession(pending.user_id, isSecure(request)), next: pending.next || "/" };
+  let added: Awaited<ReturnType<typeof addToJar>>;
+  try {
+    added = await addToJar(request, pending.user_id);
+  } catch (err) {
+    if (err instanceof TooManyAccounts) return { ok: false, reason: "full" };
+    throw err;
+  }
+  return { ok: true, cookie: added.cookie, also: added.also, next: pending.next || "/", account: added.account };
 }

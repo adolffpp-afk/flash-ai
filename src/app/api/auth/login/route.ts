@@ -1,5 +1,5 @@
 import { translatorFor } from "@/lib/server/i18n.ts";
-import { fromOwnPage, verifyPassword } from "@/lib/server/auth.ts";
+import { TooManyAccounts, canAdd, fromOwnPage, tooManyAccounts, verifyPassword } from "@/lib/server/auth.ts";
 import { one } from "@/lib/server/db.ts";
 import { clearLimit, clientIp, overLimit } from "@/lib/server/limits.ts";
 import { PROVIDERS, isProvider } from "@/lib/server/oauth.ts";
@@ -43,7 +43,16 @@ export async function POST(request: Request) {
     return Response.json({ error: t("That email and password don't match.") }, { status: 401 });
   }
   await clearLimit(`login:${email}:${ip}`);
-  // With two-step sign-in on, this only gets them to the code page (see two-factor.ts).
-  const { cookie, twoFactor } = await signInCookie(user.id, request);
-  return Response.json({ ok: true, twoFactor }, { headers: { "Set-Cookie": cookie } });
+  // A browser holds at most 5 accounts (see auth.ts): checked before anything is stored.
+  if (!(await canAdd(request, user.id))) return tooManyAccounts(t);
+  try {
+    // With two-step sign-in on, this only gets them to the code page (see two-factor.ts).
+    const { cookie, also, twoFactor, account } = await signInCookie(user.id, request);
+    const headers = new Headers();
+    for (const c of [cookie, ...also]) headers.append("Set-Cookie", c);
+    return Response.json({ ok: true, twoFactor, ...(account && { account }) }, { headers });
+  } catch (err) {
+    if (err instanceof TooManyAccounts) return tooManyAccounts(t);
+    throw err;
+  }
 }

@@ -41,6 +41,9 @@ export async function resetLinkEmail(token: string): Promise<string | null> {
   return userId ? ((await one<{ email: string }>("SELECT email FROM users WHERE id = ?", [userId]))?.email ?? null) : null;
 }
 
+/** The account a reset link is for, without using it up, or null if wrong, used or expired. */
+export const resetLinkUser = (token: string) => tokenOwner(token, "reset");
+
 /** Whose one-time link this is, without using it up, or null if it is wrong, used or expired. */
 async function tokenOwner(token: string, kind: TokenKind): Promise<string | null> {
   if (!token) return null;

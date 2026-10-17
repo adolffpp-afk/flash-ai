@@ -3,6 +3,7 @@ import { promisify } from "node:util";
 import { all, one, run, now } from "./db.ts";
 import { randomId, sha256 } from "./ids.ts";
 import { isVerified } from "./account.ts";
+import type { Translate } from "../i18n.ts";
 
 const scryptAsync = promisify(scrypt) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>;
 
@@ -40,7 +41,7 @@ export async function verifyPassword(password: string, stored: string): Promise<
 }
 
 /** A new session row for the user: its token (for the cookie) and when it ends. */
-async function newSession(userId: string): Promise<{ token: string; expiresAt: number }> {
+export async function newSession(userId: string): Promise<{ token: string; expiresAt: number }> {
   const token = randomId(32);
   const at = now();
   // Old sessions go now and then, here: a browser may now sign in to several accounts.
@@ -134,6 +135,11 @@ export type JarEntry = { token: string; user: User; expiresAt: number };
  * the list cookie no longer says exactly what is live.
  */
 export type Jar = { entries: JarEntry[]; byDefault: JarEntry | null; listed: boolean; stale: boolean };
+
+/** The answer to signing in to a sixth account in one browser. */
+export function tooManyAccounts(t: Translate): Response {
+  return Response.json({ error: t("You're signed in to 5 accounts on this browser. Log out of one first."), code: "too_many_accounts" }, { status: 409 });
+}
 
 /** Signing in to another account when the browser already holds MAX_ACCOUNTS. */
 export class TooManyAccounts extends Error {
@@ -294,9 +300,10 @@ function listChange(request: Request, tokens: string[], secure: boolean): string
 /**
  * Signs the browser in to an account as well as the ones it has: the account becomes the default.
  * One already in the jar keeps its session (no new row); a new one gets a session, unless the
- * browser already holds MAX_ACCOUNTS (TooManyAccounts, before anything is created).
+ * browser already holds MAX_ACCOUNTS (TooManyAccounts, before anything is created). prior, the jar
+ * as the request found it, keeps an account whose sessions ended just before (a reset) in its place.
  */
-export async function addToJar(request: Request, userId: string): Promise<{ cookie: string; also: string[]; account: string; reused: boolean }> {
+export async function addToJar(request: Request, userId: string, prior?: Jar): Promise<{ cookie: string; also: string[]; account: string; reused: boolean }> {
   const secure = isSecure(request);
   const jar = await freshJar(request);
   const existing = jar.entries.find((e) => e.user.id === userId);
@@ -305,12 +312,18 @@ export async function addToJar(request: Request, userId: string): Promise<{ cook
   }
   if (jar.entries.length >= MAX_ACCOUNTS) throw new TooManyAccounts();
   const { token } = await newSession(userId);
-  return {
-    cookie: sessionCookie(token, SESSION_MAX_AGE, secure),
-    also: listChange(request, [...tokensOf(jar.entries), token], secure),
-    account: userId,
-    reused: false,
-  };
+  const live = tokensOf(jar.entries);
+  let tokens = [...live, token];
+  if (prior?.entries.some((e) => e.user.id === userId)) {
+    const placed = prior.entries.map((e) => (e.user.id === userId ? token : e.token)).filter((t) => t === token || live.includes(t));
+    tokens = [...placed, ...live.filter((t) => !placed.includes(t))];
+  }
+  return { cookie: sessionCookie(token, SESSION_MAX_AGE, secure), also: listChange(request, tokens, secure), account: userId, reused: false };
+}
+
+/** Whether the browser holds a live session for the account. */
+export async function inJar(request: Request, userId: string): Promise<boolean> {
+  return (await freshJar(request)).entries.some((e) => e.user.id === userId);
 }
 
 /**

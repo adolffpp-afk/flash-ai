@@ -38,6 +38,8 @@ export const PROVIDERS: Record<ProviderId, Provider> = {
     authorize: "https://github.com/login/oauth/authorize",
     token: "https://github.com/login/oauth/access_token",
     scope: "read:user user:email",
+    // Shows GitHub's account picker, so adding a second Flash account can pick another GitHub account.
+    params: { prompt: "select_account" },
   },
   microsoft: {
     name: "Microsoft",

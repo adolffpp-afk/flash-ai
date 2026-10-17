@@ -1,4 +1,4 @@
-import { createSession, getUser, hashPassword, isSecure, unauthorized, verifyPassword } from "@/lib/server/auth.ts";
+import { getUser, hashPassword, jarSessions, newSession, replaceInJar, unauthorized, verifyPassword } from "@/lib/server/auth.ts";
 import { endAllSessions } from "@/lib/server/account.ts";
 import { one, run } from "@/lib/server/db.ts";
 import { clearLimit, overLimit } from "@/lib/server/limits.ts";
@@ -25,9 +25,14 @@ export async function POST(request: Request) {
     return Response.json({ error: t("Your current password isn't right.") }, { status: 400 });
   }
   await clearLimit(`password:${user.id}`);
+  // The browser's accounts as they are now, before this one's sessions end (see replaceInJar).
+  await jarSessions(request);
   await run("UPDATE users SET password_hash = ? WHERE id = ?", [await hashPassword(next), user.id]);
-  // Anyone signed in elsewhere with the old password is signed out; this device stays signed in.
+  // Anyone signed in elsewhere with the old password is signed out; this device stays signed in, in
+  // the same place among the browser's accounts, and its other accounts are untouched.
   await endAllSessions(user.id);
-  const cookie = await createSession(user.id, isSecure(request));
-  return Response.json({ ok: true }, { headers: { "Set-Cookie": cookie } });
+  const { token } = await newSession(user.id);
+  const headers = new Headers();
+  for (const c of await replaceInJar(request, user.id, token)) headers.append("Set-Cookie", c);
+  return Response.json({ ok: true }, { headers });
 }
