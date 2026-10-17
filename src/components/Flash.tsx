@@ -332,6 +332,8 @@ export function Flash({
   const [sidebar, setSidebar] = useState(false);
   const [dragging, setDragging] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  // Where the message box is, for the companion's closed button (see Companion).
+  const [dock, setDock] = useState<HTMLDivElement | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const cameraRef = useRef<HTMLInputElement>(null);
   const [projectQuery, setProjectQuery] = useState("");
@@ -2575,7 +2577,8 @@ export function Flash({
                   appShown={m.id === lastAppId && (panelShown || tab === "preview")}
                 />
               ))}
-              <div ref={bottomRef} />
+              {/* Scrolled to with the padding under it, so the last line clears the companion's button. */}
+              <div ref={bottomRef} className="scroll-mb-6" />
             </div>
           )}
         </div>
@@ -2593,7 +2596,8 @@ export function Flash({
 
         {(!isHome || voice) && (
           <div className="px-4 pb-4 pt-2">
-            <div className="mx-auto max-w-3xl">
+            {/* The closed companion button sits on top of this when the preview is beside the chat. */}
+            <div ref={setDock} className="relative mx-auto max-w-3xl">
               {queueList}
               {voicePanel || form}
               {!voice && (
@@ -2630,7 +2634,7 @@ export function Flash({
         onPage={openCompanionPage}
         onCost={refreshMe}
         running={busy ? { engine: runningMsg?.engine, status: runningMsg?.status } : null}
-        beside={panelShown}
+        dock={panelShown ? dock : null}
       />
       )}
     </div>

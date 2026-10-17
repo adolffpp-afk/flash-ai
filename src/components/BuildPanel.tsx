@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import type { UIMessage } from "@/lib/store";
 import type { PickedElement } from "@/lib/preview-bridge";
 import { htmlTitle } from "@/lib/build-parse";
-import { BUILD_STEPS, NO_DRAFT_YET, buildStep, draftView, writingPart, type DraftStore } from "@/lib/live-draft";
+import { BUILD_STEPS, NO_DRAFT_YET, buildStep, draftShown, draftView, writingPart, type DraftStore } from "@/lib/live-draft";
 import { useT } from "@/lib/use-t";
 import { AppPreview } from "./AppPreview";
 
@@ -34,6 +34,9 @@ export function useMedia(query: string): boolean {
 
 // A draft is shown again at most once a second: each showing loads the page afresh.
 const REDRAW_MS = 1000;
+// A page's load waits for its pictures, which never hold back its text: a new draft comes to the
+// front by this long after it started loading, so one slow picture never holds the preview still.
+const SWAP_BY_MS = 1500;
 // The Code view shows the end of the file, where Flash is writing.
 const CODE_TAIL = 8_000;
 
@@ -83,7 +86,10 @@ export function BuildPanel({
   // Only this panel reads the draft, so only it renders again as the file grows.
   const draft = useSyncExternalStore(drafts.subscribe, drafts.get, () => NO_DRAFT_YET);
   const kind = building?.engine === "slides" || (!building && appMsg?.app?.kind === "slides") ? "slides" : "app";
-  if (building && draft.reply === building.id && draft.html) {
+  // A change keeps the version there now on show until the new file has a page to show.
+  const changing = Boolean(appMsg?.app);
+  const shown = useMemo(() => draftShown(draft.html, { changing, kind }), [draft.html, changing, kind]);
+  if (building && draft.reply === building.id && shown) {
     return <LiveBuild html={draft.html} kind={kind} status={building.status} live={live} />;
   }
   if (appMsg?.app) {
@@ -190,8 +196,8 @@ function LiveBuild({ html, kind, status, live }: { html: string; kind: "app" | "
 
 /**
  * The page so far, in a frame where nothing may run (sandbox with no permissions). Two frames take
- * turns, so a new draft loads out of sight and the page never flashes blank. Redrawing waits while
- * the pointer is on the page or it has the focus, so it can be looked at.
+ * turns, so a new draft loads and paints under the one on show and the page never flashes blank.
+ * Redrawing waits while the pointer is on the page or it has the focus, so it can be looked at.
  */
 function DraftFrame({ markup, title }: { markup: string; title: string }) {
   const [frames, setFrames] = useState({ docs: [markup, ""], keys: [0, 1], front: 0, loading: false });
@@ -215,7 +221,7 @@ function DraftFrame({ markup, title }: { markup: string; title: string }) {
     const timer = setTimeout(
       () => {
         last.current = Date.now();
-        // The frame out of sight loads it afresh, and comes to the front once it has.
+        // The frame underneath loads it afresh, and comes to the front once it has.
         setFrames((f) => {
           const back = 1 - f.front;
           const docs = [...f.docs];
@@ -230,21 +236,30 @@ function DraftFrame({ markup, title }: { markup: string; title: string }) {
     return () => clearTimeout(timer);
   }, [markup, hovered, focused, frames]);
 
+  // The frame underneath comes to the front by SWAP_BY_MS, even if a picture in it hasn't loaded.
+  useEffect(() => {
+    if (!frames.loading) return;
+    const timer = setTimeout(() => setFrames((f) => (f.loading ? { ...f, front: 1 - f.front, loading: false } : f)), SWAP_BY_MS);
+    return () => clearTimeout(timer);
+  }, [frames.loading]);
+
   return (
-    <div ref={box} className="relative min-h-0 flex-1 bg-paper" onPointerEnter={() => setHovered(true)} onPointerLeave={() => setHovered(false)}>
+    <div ref={box} className="relative isolate min-h-0 flex-1 bg-paper" onPointerEnter={() => setHovered(true)} onPointerLeave={() => setHovered(false)}>
       {[0, 1].map((i) => (
         <iframe
           key={frames.keys[i]}
           title={title}
-          aria-hidden={i === frames.front ? undefined : true}
-          tabIndex={i === frames.front ? undefined : -1}
+          // Underneath, not hidden: a hidden frame isn't painted, so it would show blank as it came forward.
+          inert={i !== frames.front}
           // No permissions at all: no scripts, forms, pop-ups or navigation of Flash's page.
           sandbox=""
           srcDoc={frames.docs[i]}
           onLoad={() => {
-            if (i !== frames.front && frames.loading) setFrames((f) => ({ ...f, front: i, loading: false }));
+            if (i === frames.front || !frames.loading) return;
+            // Two animation frames on, so it has painted: brought forward at its load, it can show blank.
+            requestAnimationFrame(() => requestAnimationFrame(() => setFrames((f) => (f.loading && f.front !== i ? { ...f, front: i, loading: false } : f))));
           }}
-          className={`absolute inset-0 h-full w-full border-0 bg-paper ${i === frames.front ? "" : "invisible"}`}
+          className={`absolute inset-0 h-full w-full border-0 bg-paper ${i === frames.front ? "z-10" : ""}`}
         />
       ))}
     </div>

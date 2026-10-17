@@ -7,6 +7,7 @@ import {
   DRAFT_MAX,
   buildStep,
   draftSender,
+  draftShown,
   draftStore,
   draftView,
   sendable,
@@ -185,6 +186,18 @@ test("a draft is shown with nothing in it that runs, and ends before anything ha
   assert.ok(draftView("<header>not the head</header>").startsWith('<base target="_blank"><header>'));
 });
 
+test("a link with a target of its own does nothing in a draft either: the target is taken off", () => {
+  // _self would take the frame itself away to the link; with no target, the base's _blank applies, which the frame may not open.
+  assert.equal(
+    draftView(
+      '<head></head><a target="_self" href="https://elsewhere.example">A</a><A HREF=b TARGET=_top>B</A><map><area shape=rect target=\'_parent\' href="c"></map>' +
+        '<a title="1 > 2" target = _self data-target="menu">D</a><abbr target="x">E</abbr><p>Set target="_self" on it</p>',
+    ),
+    '<head><base target="_blank"></head><a href="https://elsewhere.example">A</a><A HREF=b>B</A><map><area shape=rect href="c"></map>' +
+      '<a title="1 > 2" data-target="menu">D</a><abbr target="x">E</abbr><p>Set target="_self" on it</p>',
+  );
+});
+
 test("the build steps follow how far the file has got", () => {
   const steps = (html: string) => BUILD_STEPS[buildStep(html)];
   assert.equal(steps(""), "Page layout");
@@ -197,6 +210,18 @@ test("the build steps follow how far the file has got", () => {
   assert.equal(steps('<body><script type="application/ld+json">{}</script>'), "Content");
   assert.equal(steps('<body><script>go()</script>\n<script type="application/json" id="flash-data">{"menu": "read"}'), "Final checks");
   assert.equal(steps("<body><main></main></body>"), "Final checks");
+});
+
+test("a change keeps the version on show until the new file's page starts; a first build or a deck shows at once", () => {
+  const head = "<!doctype html><html><head><title>Golden Crumb</title><style>body { margin: 0 }";
+  const content = `${head}</style></head><body><h1>Golden Crumb</h1>`;
+  for (const kind of ["app", "slides"] as const) {
+    assert.equal(draftShown("", { changing: false, kind }), false, "nothing written yet");
+    assert.equal(draftShown(head, { changing: false, kind }), true, `a first ${kind} shows its steps from the start`);
+    assert.equal(draftShown(content, { changing: true, kind }), true);
+  }
+  assert.equal(draftShown(head, { changing: true, kind: "app" }), false, "a whole new file for an app: the app stays while the head and styles are written");
+  assert.equal(draftShown(head, { changing: true, kind: "slides" }), true, "a deck never has a live page, so its steps show at once");
 });
 
 test("the part being written is the last heading's words", () => {

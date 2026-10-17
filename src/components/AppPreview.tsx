@@ -220,6 +220,11 @@ export function AppPreview({
   };
 
   const btn = "rounded-md px-2 py-1 hover:bg-zinc-800 hover:text-zinc-100";
+  // The panel beside the chat is narrower than the window says, so there the buttons show icons
+  // only, as on a phone, whatever the window's width.
+  const compact = fill && !full;
+  const label = compact ? "hidden" : "hidden sm:inline";
+  const icon = compact ? undefined : "sm:hidden";
   const pane = full ? "min-h-0 flex-1" : app.kind === "slides" ? (fill ? "my-auto aspect-video" : "aspect-video") : fill ? "min-h-0 flex-1" : "h-[560px]";
   return (
     <div
@@ -239,8 +244,8 @@ export function AppPreview({
         </span>
         {/* Keeps room for a few words of the title: the buttons wrap below it before it shrinks away. */}
         <span className="ms-1 min-w-24 flex-1 truncate font-medium text-zinc-200">{app.title}</span>
-        {/* On a phone the buttons wrap below the title and show icons only. */}
-        <div className="ms-auto flex shrink-0 items-center gap-1">
+        {/* On a phone the buttons wrap below the title and show icons only; with no room even so, they wrap among themselves. */}
+        <div className="ms-auto flex min-w-0 flex-wrap items-center justify-end gap-1">
           <div className="me-1 flex rounded-md border border-zinc-800" role="tablist">
             {(["preview", "code"] as const).map((v) => (
               <button
@@ -266,24 +271,36 @@ export function AppPreview({
               title={t("Click a part of your app, then say what to change")}
             >
               <span aria-hidden>◎</span>
-              <span className="hidden sm:inline"> {t("Select")}</span>
+              <span className={label}> {t("Select")}</span>
             </button>
           )}
           <button className={btn} onClick={restart} aria-label={t("Restart app")} title={t("Restart")}>
             ↻
           </button>
-          <button className={btn} onClick={() => setFull((f) => !f)} aria-label={full ? t("Exit full screen") : t("Full screen")}>
-            <span className="sm:hidden" aria-hidden>
+          <button
+            className={btn}
+            onClick={() => setFull((f) => !f)}
+            aria-label={full ? t("Exit full screen") : t("Full screen")}
+            title={compact ? t("Full screen") : undefined}
+          >
+            <span className={icon} aria-hidden>
               {full ? "✕" : "⤢"}
             </span>
-            <span className="hidden sm:inline">{full ? t("Exit full screen") : t("Full screen")}</span>
+            <span className={label}>{full ? t("Exit full screen") : t("Full screen")}</span>
           </button>
           <div className="relative">
-            <button className={`${btn} text-primary`} onClick={() => setMenu((m) => !m)} aria-expanded={menu} aria-haspopup="menu" aria-label={t("Download")}>
-              <span className="sm:hidden" aria-hidden>
+            <button
+              className={`${btn} text-primary`}
+              onClick={() => setMenu((m) => !m)}
+              aria-expanded={menu}
+              aria-haspopup="menu"
+              aria-label={t("Download")}
+              title={compact ? t("Download") : undefined}
+            >
+              <span className={icon} aria-hidden>
                 ⬇
               </span>
-              <span className="hidden sm:inline">{t("Download")} ▾</span>
+              <span className={label}>{t("Download")} ▾</span>
             </button>
             {menu && (
               <>

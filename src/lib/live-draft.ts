@@ -140,6 +140,61 @@ function* tagsIn(lower: string, tag: string, from = 0): Generator<string> {
 }
 
 /**
+ * The tag opened at i with its target attribute taken off, and the index just past it; null when it
+ * isn't finished. Its attributes are read as a browser reads them, so a ">" in a quoted value doesn't
+ * end it, and each character is looked at once.
+ */
+function untargeted(html: string, i: number): [string, number] | null {
+  const n = html.length;
+  let j = i + 1;
+  while (j < n && !/[\s/>]/.test(html[j])) j++;
+  let out = "";
+  let from = i;
+  for (;;) {
+    const before = j;
+    while (j < n && /[\s/]/.test(html[j])) j++;
+    if (j >= n) return null;
+    if (html[j] === ">") return [out + html.slice(from, j + 1), j + 1];
+    const name = j;
+    while (++j < n && !/[\s/>=]/.test(html[j]));
+    const target = html.slice(name, j).toLowerCase() === "target";
+    let k = j;
+    while (k < n && /\s/.test(html[k])) k++;
+    if (html[k] === "=") {
+      while (++k < n && /\s/.test(html[k]));
+      if (html[k] === '"' || html[k] === "'") {
+        const close = html.indexOf(html[k], k + 1);
+        if (close === -1) return null;
+        j = close + 1;
+      } else {
+        for (j = k; j < n && !/[\s>]/.test(html[j]); j++);
+      }
+    }
+    if (target) {
+      out += html.slice(from, before);
+      from = j;
+    }
+  }
+}
+
+const LINK = /<a(?:rea)?[\s/>]/gi;
+
+/** The page with no target on its links (<a> and <area>), so each falls back to the base's. */
+function withoutTargets(html: string): string {
+  let out = "";
+  let at = 0;
+  LINK.lastIndex = 0;
+  for (let m = LINK.exec(html); m; m = LINK.exec(html)) {
+    const tag = untargeted(html, m.index);
+    // Not finished: the rest is all inside it.
+    if (!tag) break;
+    out += html.slice(at, m.index) + tag[0];
+    at = LINK.lastIndex = tag[1];
+  }
+  return out + html.slice(at);
+}
+
+/**
  * The draft as markup to show while it is written. Nothing in it can run (the frame has no
  * scripts), so its scripts are left out, as are noscript blocks (they'd show with scripts off) and
  * a meta refresh; it ends before a tag, comment or script still being written; and its links
@@ -186,7 +241,9 @@ export function draftView(html: string): string {
   if (comment !== -1 && comment > out.lastIndexOf("-->")) out = out.slice(0, comment);
   const open = out.lastIndexOf("<");
   if (open !== -1 && open > out.lastIndexOf(">")) out = out.slice(0, open);
-  // Links open a new window, which the frame never may, so they do nothing.
+  // Links open a new window, which the frame never may, so they do nothing. A link's own target is
+  // taken off, as one such as _self would take the frame itself away to the link.
+  out = withoutTargets(out);
   const lowerOut = out.toLowerCase();
   const head = tagAt(lowerOut, "head", 0);
   const after = head !== -1 ? head : tagAt(lowerOut, "html", 0) !== -1 ? tagAt(lowerOut, "html", 0) : lowerOut.indexOf("<!doctype");
@@ -213,6 +270,15 @@ export function buildStep(html: string): number {
   if (tagAt(lower, "style", 0) !== -1 || lower.includes("cdn.tailwindcss") || lower.includes("fonts.googleapis")) return 1;
   for (const link of tagsIn(lower, "link")) if (link.includes("stylesheet")) return 1;
   return 0;
+}
+
+/**
+ * Whether the draft takes the place of the version on show. A first build's does at once. A change's
+ * waits until the new file reaches Content, where its page starts to show (a deck only ever shows its
+ * steps, so at once), so the version there now never gives way to an empty pane.
+ */
+export function draftShown(html: string, { changing, kind }: { changing: boolean; kind: "app" | "slides" }): boolean {
+  return html !== "" && (!changing || kind === "slides" || buildStep(html) >= 2);
 }
 
 const ENTITIES: Record<string, string> = { "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'", "&nbsp;": " " };
