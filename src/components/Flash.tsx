@@ -13,6 +13,7 @@ import { DownloadChat } from "./DownloadChat";
 import { ProjectInstructions } from "./ProjectInstructions";
 import { Settings, SKIP_COST_CHECK, settingsTabFor, type SettingsTab } from "./Settings";
 import { AccountMenu } from "./AccountMenu";
+import { AccountChooser, SwitchAnyway } from "./AccountChooser";
 import { Automations } from "./Automations";
 import { Creations } from "./Creations";
 import { Companion } from "./Companion";
@@ -25,7 +26,8 @@ import { MAX_QUEUE, recentTurns, type CompanionContext } from "@/lib/companion";
 import { TEMPLATES, type Template, type TemplateValues } from "@/lib/templates";
 import { ENGINES, ENGINE_LABELS, PENDING_LIMIT_MS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types";
 import { applyEvent } from "@/lib/apply-event";
-import { api, authedFetch, newId, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
+import { api, authedFetch, newId, type AccountSummary, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
+import { adoptAccountFromUrl, announce, getPin, isolate, onAnnounce, setPin } from "@/lib/account-pin";
 import { PROJECT_TOO_LARGE } from "@/lib/project-size";
 import type { ChatHit } from "@/lib/server/search";
 import { BoltIcon, BrandMark, Wordmark } from "@/app/brand";
@@ -90,6 +92,8 @@ const MAX_OFFICE_MB = 20;
 
 // A team invitation opened before signing in waits here until the account loads.
 const INVITE_KEY = "flash_invite";
+// A note this tab shows after reloading as another account, kept in this tab's sessionStorage.
+const NOTICE_KEY = "flash-notice";
 const storage = {
   get: (key: string) => {
     try {
@@ -258,6 +262,18 @@ export function Flash({
   const [showCredits, setShowCredits] = useState(false);
   const [showInvite, setShowInvite] = useState(false);
   const [notice, setNotice] = useState("");
+  // Several accounts in one browser (see account-pin.ts): the account a switch is under way to; the
+  // chooser shown when this tab's account was logged out here, or a link was for another account;
+  // a switch waiting on "Switch anyway"; add mode (signing in to another account) and where it goes
+  // after; and an invitation for another account signed in here.
+  const [switching, setSwitching] = useState<string | null>(null);
+  const [chooser, setChooser] = useState<{ title: string; accounts: AccountSummary[] } | null>(null);
+  const [unsaved, setUnsaved] = useState<string | null>(null);
+  const [adding, setAdding] = useState<{ next?: string; error?: string } | null>(null);
+  const [addNext, setAddNext] = useState<string | undefined>(undefined);
+  const [inviteFor, setInviteFor] = useState<{ id: string; email: string } | null>(null);
+  // The account a link opened this tab as (?as=), until it is known to be signed in here.
+  const linkedRef = useRef<string | null>(null);
   // Set when sign-up couldn't send the confirmation email, so the banner asks to send it again.
   const [emailFailed, setEmailFailed] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -360,22 +376,90 @@ export function Flash({
   const acceptedRef = useRef(false);
   const stoppingRef = useRef(false);
   const prefsTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // Preferences typed but not sent yet (sent 600 ms after the last change).
+  const prefsPending = useRef<string | null>(null);
+  // What the account check and saving before a switch read, as of the last render.
+  const meRef = useRef<Me | null>(null);
+  const projectsRef = useRef<Project[]>([]);
+  useEffect(() => {
+    meRef.current = me;
+  }, [me]);
+  useEffect(() => {
+    projectsRef.current = projects;
+  }, [projects]);
 
-  async function refreshMe() {
-    try {
-      const fetched = await api<Me>("/api/me");
-      // Play's billing rule: nothing is for sale inside the Android app (see android-shell.ts).
-      const data = inAndroidApp() ? { ...fetched, paymentsEnabled: false, testPurchases: false } : fetched;
-      // Flash's own words switch to the account's language before its first screen shows.
-      await showLanguage(data.user.language);
-      setMe(data);
-      setLoadError(false);
-      return data;
-    } catch (err) {
-      if ((err as { status?: number }).status === 401) setSignedOut(true);
-      else setLoadError(true);
-      return null;
+  /** The only way the account's data reaches the page. */
+  async function adoptMe(fetched: Me) {
+    // Play's billing rule: nothing is for sale inside the Android app (see android-shell.ts), whichever account.
+    const data = inAndroidApp() ? { ...fetched, paymentsEnabled: false, testPurchases: false } : fetched;
+    // This tab shows this account from now on (the default's, when it showed none).
+    setPin(data.account);
+    if (linkedRef.current === data.account) linkedRef.current = null;
+    // Flash's own words switch to the account's language before its first screen shows.
+    await showLanguage(data.user.language);
+    setMe(data);
+    setLoadError(false);
+    return data;
+  }
+
+  async function refreshMe(): Promise<Me | null> {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        return await adoptMe(await api<Me>("/api/me"));
+      } catch (err) {
+        if ((err as { status?: number }).status !== 401) {
+          setLoadError(true);
+          return null;
+        }
+        const found = await checkAccounts();
+        // The default when this tab had none (or a session that ended just then): tried once more.
+        if (found !== "gone" && found !== "none" && attempt === 0) continue;
+        // "gone": the chooser asks which account to keep going with.
+        if (found !== "gone") setSignedOut(true);
+        return null;
+      }
     }
+    return null;
+  }
+
+  /**
+   * After the server said this tab is signed out, or another tab changed the accounts: who is still
+   * signed in here. "here" when this tab's account still is (the list in the menu is refreshed),
+   * "none" when nobody is, "retry" when this tab had no account and now has the default, and "gone"
+   * when its account was logged out but others are signed in: the chooser shows, and this tab never
+   * moves to another account on its own.
+   */
+  async function checkAccounts(): Promise<"here" | "none" | "retry" | "gone"> {
+    let list: { default: string | null; accounts: AccountSummary[] };
+    try {
+      list = await api<{ default: string | null; accounts: AccountSummary[] }>("/api/auth/accounts");
+    } catch {
+      return "here";
+    }
+    const mine = getPin();
+    if (mine && list.accounts.some((a) => a.id === mine)) {
+      setMe((m) => (m ? { ...m, accounts: list.accounts } : m));
+      return "here";
+    }
+    if (!list.accounts.length) {
+      setPin(null);
+      return "none";
+    }
+    if (!mine) {
+      setPin(list.default);
+      return "retry";
+    }
+    const shown = meRef.current?.user.id === mine ? meRef.current.user.email : "";
+    setChooser({
+      title:
+        linkedRef.current === mine
+          ? tNow("This link is for another Flash account. Sign in to it to open the link.")
+          : shown
+            ? tNow("{email} was logged out on this browser.", { email: isolate(shown) })
+            : tNow("Choose an account to keep going."),
+      accounts: list.accounts,
+    });
+    return "gone";
   }
 
   /** Joins the team from a saved invitation link, once signed in. */
@@ -388,8 +472,11 @@ export function Flash({
       setNotice(t("You joined the team. Your requests now use the team's shared credits."));
       await refreshMe();
     } catch (err) {
+      const { code, data } = err as { code?: string; data?: { forAccount?: { id: string; email: string } } };
+      // For another account signed in here: kept, and joined once switched to it (start runs again then).
+      if (code === "other_account" && data?.forAccount) return setInviteFor(data.forAccount);
       // An unconfirmed email can try again after confirming; any other answer is final.
-      if ((err as { code?: string }).code !== "unverified") storage.set(INVITE_KEY, null);
+      if (code !== "unverified") storage.set(INVITE_KEY, null);
       setNotice(err instanceof Error ? err.message : t("Couldn't join the team."));
     }
   }
@@ -419,6 +506,30 @@ export function Flash({
   }, [savedLanguage]);
 
   useEffect(() => {
+    // A link that names its account (?as=, from an email, Stripe or a callback) opens as it.
+    linkedRef.current = adoptAccountFromUrl();
+    const opened = new URLSearchParams(window.location.search);
+    // Add another account (from the Connect to Flash page): then back to where it came from.
+    const back = opened.get("next");
+    const safeNext = back && back.startsWith("/") && !back.startsWith("//") && !back.startsWith("/\\") ? back : undefined;
+    if (opened.get("add") === "1") {
+      if (signedIn) setAdding({ next: safeNext });
+      else {
+        setAuthMode("login");
+        setAddNext(safeNext);
+      }
+      window.history.replaceState(null, "", window.location.pathname);
+    }
+    // A note left for this tab before it reloaded as another account ("Logged out of …").
+    try {
+      const left = sessionStorage.getItem(NOTICE_KEY);
+      if (left) {
+        sessionStorage.removeItem(NOTICE_KEY);
+        setNotice(left);
+      }
+    } catch {
+      // Storage blocked: no note.
+    }
     // Loading the account must wait for the browser, so this runs once after mount.
     if (signedIn) start();
     if (!initialStatus) {
@@ -462,11 +573,13 @@ export function Flash({
     }
     // A connector's sign-in comes back here: Settings > Connectors says how it ended (and takes ?connect= out).
     if (params.get("connect") && signedIn) setSettingsTab("connectors");
-    // A "Continue with …" sign-in that didn't finish comes back here to say why.
+    // A "Continue with …" sign-in that didn't finish comes back here to say why: while signed in,
+    // that was adding another account, so the add screen says it.
     const authErr = params.get("auth_error");
     if (authErr) {
       setAuthError(authErr);
       setAuthMode("login");
+      if (signedIn) setAdding({ error: authErr });
       window.history.replaceState(null, "", window.location.pathname);
     }
     const verified = params.get("verified");
@@ -551,28 +664,60 @@ export function Flash({
     setVoice({ woke: true, first: rest }),
   );
 
+  /** Sends the chats changed here: each save's promise says whether it was kept. */
+  function saveChanged(): Promise<boolean>[] {
+    const saves: Promise<boolean>[] = [];
+    for (const id of dirtyRef.current) {
+      const p = projectsRef.current.find((x) => x.id === id);
+      // A reply that may never have reached the server waits until the watch knows, so it isn't
+      // saved as one the server is working on.
+      if (p?.messages?.some((m) => m.pending && unsureRef.current.has(m.id))) continue;
+      dirtyRef.current.delete(id);
+      if (!p?.messages) continue;
+      // A reply the server is still finishing is sent as pending: the server keeps its own copy of
+      // it (see keepRunning in turns.ts), and saves everything else as it is here.
+      const messages = p.messages.map((m) => ({ ...m, pending: m.pending || undefined, status: undefined }));
+      saves.push(
+        api(`/api/projects/${id}`, { method: "PUT", json: { name: p.name, messages } }).then(
+          () => true,
+          (err) => {
+            // Saved by the server at the same moment: tried again with the next change.
+            if (err?.status === 409) {
+              dirtyRef.current.add(id);
+              return false;
+            }
+            // Over 4.5 MB, Vercel refuses the save before Flash can say why.
+            setNotice(err?.status === 413 ? tNow(PROJECT_TOO_LARGE) : err instanceof Error ? err.message : tNow("Couldn't save your project."));
+            return false;
+          },
+        ),
+      );
+    }
+    return saves;
+  }
+
+  /**
+   * Saves everything changed here now, before this tab leaves its account (a switch or a log out):
+   * the chats and the preferences still waiting. True when all of it was kept within 3 seconds;
+   * false when something didn't save, or can't yet (a reply that may never have reached the server).
+   */
+  async function flushSaves(): Promise<boolean> {
+    const work = saveChanged();
+    if (prefsPending.current !== null) {
+      clearTimeout(prefsTimer.current);
+      const value = prefsPending.current;
+      prefsPending.current = null;
+      work.push(api("/api/me", { method: "PATCH", json: { preferences: value } }).then(() => true, () => false));
+    }
+    const done = Promise.all(work).then((kept) => kept.every(Boolean) && dirtyRef.current.size === 0);
+    const late = new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 3000));
+    return Promise.race([done, late]);
+  }
+
   // Saves changed projects shortly after a reply finishes.
   useEffect(() => {
     if (busy || !dirtyRef.current.size) return;
-    const timer = setTimeout(() => {
-      for (const id of dirtyRef.current) {
-        const p = projects.find((x) => x.id === id);
-        // A reply that may never have reached the server waits until the watch knows, so it isn't
-        // saved as one the server is working on.
-        if (p?.messages?.some((m) => m.pending && unsureRef.current.has(m.id))) continue;
-        dirtyRef.current.delete(id);
-        if (!p?.messages) continue;
-        // A reply the server is still finishing is sent as pending: the server keeps its own copy of
-        // it (see keepRunning in turns.ts), and saves everything else as it is here.
-        const messages = p.messages.map((m) => ({ ...m, pending: m.pending || undefined, status: undefined }));
-        api(`/api/projects/${id}`, { method: "PUT", json: { name: p.name, messages } }).catch((err) => {
-          // Saved by the server at the same moment: tried again with the next change.
-          if (err?.status === 409) return void dirtyRef.current.add(id);
-          // Over 4.5 MB, Vercel refuses the save before Flash can say why.
-          setNotice(err?.status === 413 ? tNow(PROJECT_TOO_LARGE) : err instanceof Error ? err.message : tNow("Couldn't save your project."));
-        });
-      }
-    }, 600);
+    const timer = setTimeout(() => void saveChanged(), 600);
     return () => clearTimeout(timer);
   }, [projects, busy]);
 
@@ -653,6 +798,8 @@ export function Flash({
       window.removeEventListener("online", check);
       document.removeEventListener("visibilitychange", onVisible);
     };
+    // refreshMe only sets state, whichever render's copy runs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [waiting]);
 
   const active = projects.find((p) => p.id === activeId);
@@ -855,12 +1002,109 @@ export function Flash({
   function changePreferences(value: string) {
     setPreferences(value);
     clearTimeout(prefsTimer.current);
-    prefsTimer.current = setTimeout(() => api("/api/me", { method: "PATCH", json: { preferences: value } }).catch(() => {}), 600);
+    prefsPending.current = value;
+    prefsTimer.current = setTimeout(() => {
+      prefsPending.current = null;
+      api("/api/me", { method: "PATCH", json: { preferences: value } }).catch(() => {});
+    }, 600);
   }
 
-  // everywhere: Settings already signed out every device, this one included.
-  async function signOut(everywhere = false) {
-    if (!everywhere) await api("/api/auth/logout", { method: "POST", json: {} }).catch(() => {});
+  /** Reloads Flash as another account signed in here, saying so once it has (a note for this tab). */
+  function reloadAs(id: string, note?: string) {
+    setPin(id);
+    if (note) {
+      try {
+        sessionStorage.setItem(NOTICE_KEY, note);
+      } catch {
+        // Storage blocked: no note.
+      }
+    }
+    announce({ type: "changed" });
+    // A fresh page clears everything of the account before (its chats, files kept in memory, the
+    // queue, the wake word), and Back can't return to it.
+    window.location.replace("/");
+  }
+
+  /**
+   * Switch account: saves what changed here first (or asks), then makes that account the default
+   * and reloads as it. A reply running now is left to the server, which finishes and saves it for
+   * the account it was asked in (see keepRunning in turns.ts). gone: this tab's account was already
+   * logged out, so there's nothing it could save.
+   */
+  async function switchAccount(id: string, { gone = false, anyway = false } = {}) {
+    if (switching && !anyway) return;
+    setSwitching(id);
+    if (!gone && !anyway && !(await flushSaves())) {
+      setUnsaved(id);
+      return;
+    }
+    setUnsaved(null);
+    abortRef.current?.abort();
+    try {
+      await api("/api/auth/switch", { method: "POST", json: { account: id } });
+    } catch (err) {
+      setSwitching(null);
+      // Logged out here meanwhile (in another tab): choose again from who is left.
+      if ((err as { code?: string }).code === "not_signed_in") await checkAccountsFor(id);
+      else setNotice(err instanceof Error ? err.message : t("Something went wrong."));
+      return;
+    }
+    reloadAs(id);
+  }
+
+  /** After a switch to an account that turned out not to be signed in here: the chooser, with who is. */
+  async function checkAccountsFor(id: string) {
+    try {
+      const list = await api<{ accounts: AccountSummary[] }>("/api/auth/accounts");
+      if (!list.accounts.length) return void signedOutHere();
+      setMe((m) => (m ? { ...m, accounts: list.accounts } : m));
+      if (chooser || !list.accounts.some((a) => a.id === getPin())) {
+        setChooser({ title: t("That account isn't signed in on this browser anymore."), accounts: list.accounts.filter((a) => a.id !== id) });
+      } else setNotice(t("That account isn't signed in on this browser anymore."));
+    } catch {
+      setNotice(t("That account isn't signed in on this browser anymore."));
+    }
+  }
+
+  // everywhere: Settings already logged this account out of every device (after: who this browser uses now).
+  async function signOut(everywhere = false, after: { id: string; email: string } | null = null) {
+    const leaving = me?.user.email ?? "";
+    const mine = getPin();
+    let next = after;
+    if (!everywhere) {
+      // This tab, and other tabs showing this account, save what they have before it goes.
+      if (mine) announce({ type: "leaving", account: mine });
+      await flushSaves().catch(() => false);
+      try {
+        next = (await api<{ next: { id: string; email: string } | null }>("/api/auth/logout", { method: "POST", json: {} })).next;
+      } catch (err) {
+        // Nothing was logged out: this tab's account isn't the one signed in here anymore, or it named none.
+        if ((err as { code?: string }).code === "account_required") {
+          setNotice(err instanceof Error ? err.message : t("Reload Flash, then log out again."));
+          void checkAccounts();
+          return;
+        }
+      }
+    }
+    // Another account is still signed in here: Flash goes on as it, and says so.
+    if (next) return reloadAs(next.id, t("Logged out of {email}. You're now using {next}.", { email: isolate(leaving), next: isolate(next.email) }));
+    setPin(null);
+    announce({ type: "changed" });
+    signedOutHere();
+  }
+
+  /** Log out of all accounts: every session this browser holds ends (other devices stay signed in). */
+  async function signOutAll() {
+    for (const a of me?.accounts ?? []) announce({ type: "leaving", account: a.id });
+    await flushSaves().catch(() => false);
+    await api("/api/auth/logout", { method: "POST", json: { all: true } }).catch(() => {});
+    setPin(null);
+    announce({ type: "changed" });
+    signedOutHere();
+  }
+
+  /** What this tab keeps of an account that's no longer signed in here: nothing. */
+  function signedOutHere() {
     // Nothing of this account keeps running, or runs later for whoever signs in next.
     abortRef.current?.abort();
     jobRef.current = null;
@@ -871,8 +1115,43 @@ export function Flash({
     setActiveId("");
     filesRef.current.clear();
     setAuthMode(null);
+    setChooser(null);
+    setAdding(null);
+    setInviteFor(null);
     setSignedOut(true);
   }
+
+  // Another tab logged an account out, switched or added one; or this tab comes back into view; or
+  // the server said this tab is signed out: who is still signed in here (see checkAccounts).
+  useEffect(() => {
+    let last = 0;
+    const check = (now = false) => {
+      if (!now && Date.now() - last < 15_000) return;
+      last = Date.now();
+      if (!meRef.current) return;
+      void checkAccounts().then((found) => {
+        if (found === "none") signedOutHere();
+      });
+    };
+    const shown = () => {
+      if (!document.hidden) check();
+    };
+    const asked = () => check(true);
+    window.addEventListener("flash:account-check", asked);
+    document.addEventListener("visibilitychange", shown);
+    const stop = onAnnounce((message) => {
+      // This tab's account is about to log out in another tab: what changed here is saved first.
+      if (message.type === "leaving") {
+        if (message.account === getPin()) void flushSaves();
+      } else check(true);
+    });
+    return () => {
+      window.removeEventListener("flash:account-check", asked);
+      document.removeEventListener("visibilitychange", shown);
+      stop();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function setAppSlug(messageId: string, slug: string) {
     if (active) updateMessage(active.id, messageId, (m) => (m.app ? { ...m, app: { ...m.app, slug } } : m));
@@ -1585,13 +1864,49 @@ export function Flash({
   const liveCount = ENGINES.filter(isLive).length;
   const allOff = status && !liveCount;
 
+  // This tab's account was logged out here before its data loaded: which account now.
+  if (chooser && !me) {
+    return (
+      <AccountChooser
+        title={chooser.title}
+        accounts={chooser.accounts}
+        switching={switching}
+        onChoose={(id) => void switchAccount(id, { gone: true })}
+        onAdd={() => {
+          setChooser(null);
+          setSignedOut(true);
+          setAuthMode("login");
+        }}
+      />
+    );
+  }
+  // Signing in to another account as well as this one.
+  if (adding && me) {
+    return (
+      <AuthScreen
+        initialMode="login"
+        initialError={adding.error}
+        next={adding.next}
+        adding={{ email: me.user.email, onBack: () => setAdding(null) }}
+        onDone={(result) => {
+          if (result?.account) setPin(result.account);
+          announce({ type: "changed" });
+          window.location.replace(adding.next || "/");
+        }}
+      />
+    );
+  }
   if (signedOut) {
     return authMode ? (
       <AuthScreen
         key={authMode}
         initialMode={authMode}
         initialError={authError}
+        next={addNext}
         onDone={(result) => {
+          if (result?.account) setPin(result.account);
+          // Signed in from the Connect to Flash page's "Sign in to another account": back there.
+          if (addNext) return window.location.replace(addNext);
           setEmailFailed(Boolean(result?.emailFailed));
           start();
         }}
@@ -2299,11 +2614,15 @@ export function Flash({
             me={me}
             placement="down"
             greet={isHome}
+            switching={switching}
             onSettings={() => setSettingsTab("general")}
             onHelp={() => setCompanion(true)}
             onPlan={() => setShowCredits(true)}
             onInvite={() => setShowInvite(true)}
+            onSwitch={(id) => void switchAccount(id)}
+            onAdd={() => setAdding({})}
             onSignOut={() => signOut()}
+            onSignOutAll={() => void signOutAll()}
           />
         </header>
         {showApps && (
@@ -2372,13 +2691,34 @@ export function Flash({
             setSettingsTab(null);
             setShowInvite(true);
           }}
-          onSignOut={(everywhere) => {
+          onSignOut={(everywhere, next) => {
             setSettingsTab(null);
-            signOut(everywhere);
+            signOut(everywhere, next);
           }}
           onCompanionShown={(shown) => setHideCompanion(!shown)}
           onWakeWord={setWakeOn}
           onClose={closeSettings}
+        />
+      )}
+      {chooser && (
+        <AccountChooser
+          title={chooser.title}
+          accounts={chooser.accounts}
+          switching={switching}
+          onChoose={(id) => void switchAccount(id, { gone: true })}
+          onAdd={() => {
+            setChooser(null);
+            setAdding({});
+          }}
+        />
+      )}
+      {unsaved && (
+        <SwitchAnyway
+          onSwitch={() => void switchAccount(unsaved, { anyway: true })}
+          onCancel={() => {
+            setUnsaved(null);
+            setSwitching(null);
+          }}
         />
       )}
       {showInstructions && active && (
@@ -2390,7 +2730,7 @@ export function Flash({
       )}
 
         <div className={`min-h-0 flex-1 overflow-y-auto ${isHome ? "[mask-image:linear-gradient(to_bottom,transparent,#000_16px)]" : ""}`}>
-          {(notice || !me.verified || allOff) && (
+          {(notice || inviteFor || !me.verified || allOff) && (
             <div className={`mx-auto space-y-3 px-4 pt-2 ${isHome ? "max-w-[1600px] sm:px-6 lg:px-8" : "max-w-3xl"}`}>
             {notice && (
               <div
@@ -2400,6 +2740,18 @@ export function Flash({
                 <span className="flex-1">{notice}</span>
                 <button onClick={() => setNotice("")} aria-label={t("Dismiss")} className="text-primary-soft hover:text-white">
                   ✕
+                </button>
+              </div>
+            )}
+            {inviteFor && (
+              <div role="status" className="flex flex-wrap items-center gap-3 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm text-zinc-100">
+                <span className="min-w-0 flex-1 basis-56">{t("This invitation is for {email}. Switch to that account to join.", { email: isolate(inviteFor.email) })}</span>
+                <button
+                  onClick={() => void switchAccount(inviteFor.id)}
+                  disabled={Boolean(switching)}
+                  className="min-h-10 max-w-full truncate rounded-lg bg-brand px-3 text-sm font-medium text-on-brand transition hover:brightness-110 disabled:opacity-50"
+                >
+                  {switching === inviteFor.id ? t("Switching…") : t("Switch to {email}", { email: isolate(inviteFor.email) })}
                 </button>
               </div>
             )}

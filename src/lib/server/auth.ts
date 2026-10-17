@@ -4,6 +4,7 @@ import { all, one, run, now } from "./db.ts";
 import { randomId, sha256 } from "./ids.ts";
 import { isVerified } from "./account.ts";
 import type { Translate } from "../i18n.ts";
+import { MAX_ACCOUNTS } from "../accounts.ts";
 
 const scryptAsync = promisify(scrypt) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>;
 
@@ -116,7 +117,7 @@ export async function userForSession(token: string | null | undefined): Promise<
  * showing one account can't log out, charge, publish or connect as another.
  */
 
-export const MAX_ACCOUNTS = 5;
+export { MAX_ACCOUNTS };
 export const ACCOUNT_HEADER = "x-flash-account";
 // The __Host- prefix means no subdomain, and no cookie with a longer Path, can stand in for it.
 export const ACCOUNTS_COOKIE = "__Host-flash_accounts";

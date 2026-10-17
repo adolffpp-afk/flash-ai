@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/store";
+import { isolate } from "@/lib/account-pin";
 import { LogoMark, Wordmark } from "@/app/brand";
 import { msg } from "@/lib/i18n";
 import { TAGLINE } from "@/lib/product";
@@ -62,6 +63,7 @@ const AUTH_ERRORS: Record<string, string> = {
   unavailable: msg("That sign-in option isn't available right now."),
   failed: msg("Sign-in didn't work. Please try again."),
   verify_signin: msg("To confirm your email, sign in to that account, then open the link in the email again."),
+  too_many_accounts: msg("You're signed in to 5 accounts on this browser. Log out of one first."),
 };
 
 export function AuthScreen({
@@ -70,15 +72,18 @@ export function AuthScreen({
   initialError,
   onBack,
   next,
+  adding,
 }: {
-  // Sign-up says when the confirmation email couldn't be sent.
-  onDone: (result?: { emailFailed?: boolean }) => void;
+  // Sign-up says when the confirmation email couldn't be sent; account is the one signed in to.
+  onDone: (result?: { emailFailed?: boolean; account?: string }) => void;
   initialMode?: "signup" | "login";
   // An auth_error code from a "Continue with …" sign-in that didn't finish.
   initialError?: string;
   onBack?: () => void;
   // Where to return after a "Continue with …" or email-link sign-in (a path on this site).
   next?: string;
+  // Adding another account while signed in to this one (email), which Back returns to.
+  adding?: { email: string; onBack: () => void };
 }) {
   const t = useT();
   const router = useRouter();
@@ -119,7 +124,7 @@ export function AuthScreen({
         );
         return;
       }
-      const result = await api<{ emailFailed?: boolean; twoFactor?: boolean }>(`/api/auth/${mode}`, {
+      const result = await api<{ emailFailed?: boolean; twoFactor?: boolean; account?: string }>(`/api/auth/${mode}`, {
         method: "POST",
         json: { name, email, password },
       });
@@ -142,13 +147,23 @@ export function AuthScreen({
     <div className="flex min-h-full items-center justify-center bg-[radial-gradient(ellipse_at_top,rgba(16,185,129,0.12),transparent_60%)] px-4 py-12">
       <div className="grid w-full max-w-4xl items-center gap-12 md:grid-cols-2 md:gap-16">
         <div>
-          {onBack && (
+          {adding ? (
             <button
-              onClick={onBack}
-              className="mb-6 text-sm text-zinc-400 hover:text-zinc-100"
+              onClick={adding.onBack}
+              className="mb-4 -ms-2 inline-flex min-h-11 max-w-full items-center gap-1 rounded-lg px-2 text-sm text-zinc-400 hover:text-zinc-100"
             >
-              ← {t("Back to home")}
+              <span aria-hidden className="rtl:-scale-x-100">←</span>
+              <span className="truncate">{t("Back to {email}", { email: isolate(adding.email) })}</span>
             </button>
+          ) : (
+            onBack && (
+              <button
+                onClick={onBack}
+                className="mb-6 text-sm text-zinc-400 hover:text-zinc-100"
+              >
+                ← {t("Back to home")}
+              </button>
+            )
           )}
           <LogoMark size={56} className="mb-6" />
           <h1 className="text-3xl font-semibold tracking-[-0.03em] text-white">
@@ -171,7 +186,9 @@ export function AuthScreen({
           className="rounded-2xl border border-white/8 bg-zinc-950/70 p-6 backdrop-blur sm:p-8"
         >
           <h2 className="text-lg font-medium tracking-tight">
-            {mode === "signup"
+            {adding && (mode === "signup" || mode === "login")
+              ? t("Add another account")
+              : mode === "signup"
               ? t("Create your account")
               : mode === "login"
                 ? t("Welcome back")
