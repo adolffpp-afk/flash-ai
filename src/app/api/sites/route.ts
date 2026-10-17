@@ -1,15 +1,20 @@
+import { after } from "next/server";
 import { getUser, unauthorized } from "@/lib/server/auth.ts";
 import { translatorFor } from "@/lib/server/i18n.ts";
 import { publishSite, unpublishSite } from "@/lib/server/sites.ts";
 import { ownsSite, sitesWithMessages } from "@/lib/server/inbox.ts";
 import { domainsForSite, removeDomain } from "@/lib/server/domains.ts";
+import { refreshStale } from "@/lib/server/seo.ts";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
   const user = await getUser(request);
   if (!user) return unauthorized();
-  return Response.json({ sites: await sitesWithMessages(user.id) });
+  const sites = await sitesWithMessages(user.id);
+  // Apps published before the search check existed get theirs after this answer: the next look shows them.
+  if (sites.some((s) => !s.seo)) after(() => refreshStale(user.id));
+  return Response.json({ sites });
 }
 
 /** Publishes an app, or updates an already published one when its slug is passed. */

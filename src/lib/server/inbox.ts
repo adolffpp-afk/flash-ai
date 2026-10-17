@@ -4,6 +4,7 @@ import { overLimit } from "./limits.ts";
 import { EMAILS, sendEmail } from "./email.ts";
 import { refreshRules } from "./site-data.ts";
 import { noteSender } from "./contacts.ts";
+import { parseFacts, seoContext, seoSummary } from "./seo.ts";
 import { anyOpen, isDataRule, parseComputed, type DataRule } from "../data-rules.ts";
 import { english, type Translate } from "../i18n.ts";
 
@@ -100,7 +101,8 @@ export async function deleteMessage(slug: string, id: string): Promise<void> {
 /**
  * The user's published sites with how many messages each has, and how many are unread. openData
  * says anyone at all could change or delete some of a site's data (see data-rules.ts). contacts is
- * null until the app's list was first filled with the people it had before (see fillContacts).
+ * null until the app's list was first filled with the people it had before (see fillContacts). seo
+ * is its search check's score and how many things there are to fix, null until worked out (see seo.ts).
  */
 export async function sitesWithMessages(userId: string) {
   const since = new Date(Date.now() - 29 * 86_400_000).toISOString().slice(0, 10);
@@ -114,8 +116,9 @@ export async function sitesWithMessages(userId: string) {
     members: number;
     contacts: number | null;
     data_rules: string;
+    seo: string;
   }>(
-    `SELECT s.slug, s.title, s.updated_at, s.data_rules,
+    `SELECT s.slug, s.title, s.updated_at, s.data_rules, s.seo,
             (SELECT COUNT(*) FROM site_messages m WHERE m.site_slug = s.slug) AS messages,
             (SELECT COUNT(*) FROM site_messages m WHERE m.site_slug = s.slug AND m.read_at = 0) AS unread,
             (SELECT COALESCE(SUM(v.views), 0) FROM site_visits v WHERE v.site_slug = s.slug AND v.day >= ?) AS views,
@@ -128,8 +131,9 @@ export async function sitesWithMessages(userId: string) {
     "SELECT r.site_slug, r.collection, r.rule FROM site_collection_rules r JOIN sites s ON s.slug = r.site_slug WHERE s.user_id = ?",
     [userId],
   );
+  const domains = await all<{ site_slug: string; domain: string }>("SELECT site_slug, domain FROM site_domains WHERE user_id = ? ORDER BY created_at", [userId]);
   const sites = [];
-  for (const { data_rules, ...r } of rows) {
+  for (const { data_rules, seo, ...r } of rows) {
     // Sites published before data rules existed get theirs worked out here, once.
     const computed = parseComputed(data_rules) ?? (await refreshRules(r.slug));
     const mine: [string, DataRule][] = chosen.filter((c) => c.site_slug === r.slug && isDataRule(c.rule)).map((c) => [c.collection, c.rule as DataRule]);
@@ -142,6 +146,8 @@ export async function sitesWithMessages(userId: string) {
       members: Number(r.members),
       contacts: r.contacts === null ? null : Number(r.contacts),
       openData: computed ? anyOpen(computed, Object.fromEntries(mine)) : false,
+      // Missing or old facts are worked out after the list is answered (see refreshStale).
+      seo: seoSummary(parseFacts(seo), await seoContext(r.slug, domains.filter((d) => d.site_slug === r.slug).map((d) => d.domain))),
     });
   }
   return sites;
