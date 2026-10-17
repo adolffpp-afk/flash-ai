@@ -232,8 +232,9 @@ project: nothing here needs it, and if a page asks for a billing account, stop a
 11. Brand verification: in the left menu click **Verification Center**. If it asks for verification,
     click **Prepare for verification** (or **Submit**), check the details, and submit. Google may ask
     you to prove you own `flash-app.dev`: it links to Google Search Console, where you add the domain
-    and get a TXT record. Add it in Vercel → **Domains** → `flash-app.dev` → **DNS Records** (type
-    `TXT`, name `@`, value as given), then click **Verify** in Search Console. Google usually answers
+    and get a TXT record. Add it where `flash-app.dev`'s DNS is kept, which is GoDaddy: **My Products**
+    → `flash-app.dev` → **DNS** → **Add New Record** (type `TXT`, name `@`, value as given), then click
+    **Verify** in Search Console. Google usually answers
     within a few working days, by email. Connecting works meanwhile; Google may show the web address
     instead of the app's name until it is done.
 
