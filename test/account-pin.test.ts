@@ -1,0 +1,134 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+
+/*
+ * The browser side of several accounts in one browser (see account-pin.ts): the account a tab
+ * shows, how its requests and links name it, and that nothing breaks when storage refuses.
+ * The browser is a stand-in: sessionStorage, history and fetch.
+ */
+
+class MemoryStorage {
+  data = new Map<string, string>();
+  refuse = false;
+  getItem(key: string) {
+    if (this.refuse) throw new Error("SecurityError");
+    return this.data.get(key) ?? null;
+  }
+  setItem(key: string, value: string) {
+    if (this.refuse) throw new Error("QuotaExceededError");
+    this.data.set(key, value);
+  }
+  removeItem(key: string) {
+    if (this.refuse) throw new Error("SecurityError");
+    this.data.delete(key);
+  }
+}
+
+const storage = new MemoryStorage();
+let address = "https://flash-app.test/";
+const g = globalThis as Record<string, unknown>;
+g.sessionStorage = storage;
+// Not a browser with tabs to tell (and a real channel would keep the test running).
+g.BroadcastChannel = undefined;
+g.window = {
+  get location() {
+    const url = new URL(address);
+    return { href: url.href, origin: url.origin, pathname: url.pathname, search: url.search, hash: url.hash };
+  },
+  history: {
+    state: null,
+    replaceState: (_state: unknown, _title: string, to: string) => {
+      address = new URL(to, address).href;
+    },
+  },
+  dispatchEvent: () => true,
+};
+type Sent = { url: string; method: string; headers: Headers; body: unknown };
+const sent: Sent[] = [];
+let accountsAnswer: { default: string | null } = { default: null };
+globalThis.fetch = (async (input: string | URL, init: RequestInit = {}) => {
+  const url = String(input);
+  sent.push({ url, method: init.method ?? "GET", headers: new Headers(init.headers), body: init.body });
+  if (url === "/api/auth/accounts") return Response.json(accountsAnswer);
+  return Response.json({ ok: true });
+}) as typeof fetch;
+
+const pin = await import("../src/lib/account-pin.ts");
+const store = await import("../src/lib/store.ts");
+
+test("api() keeps the caller's headers, adds the JSON type and names the tab's account", async () => {
+  pin.setPin("acct_a");
+  sent.length = 0;
+  await store.api("/api/projects/p1", { method: "PUT", headers: { "X-Extra": "1" }, json: { name: "x" } });
+  const [put] = sent;
+  assert.equal(put.headers.get("x-extra"), "1", "the caller's header isn't dropped any more");
+  assert.equal(put.headers.get("content-type"), "application/json");
+  assert.equal(put.headers.get("x-flash-account"), "acct_a");
+  assert.equal(put.body, JSON.stringify({ name: "x" }));
+  // A picture's link on another site never hears which account a tab shows.
+  sent.length = 0;
+  await store.authedFetch("https://cdn.example/picture.png");
+  assert.equal(sent[0].headers.get("x-flash-account"), null);
+  await store.authedFetch("https://flash-app.test/api/files/f1");
+  assert.equal(sent[1].headers.get("x-flash-account"), "acct_a");
+  await store.authedFetch("//evil.example/x");
+  assert.equal(sent[2].headers.get("x-flash-account"), null);
+});
+
+test("a tab with no account takes the browser's default before its first change, once", async () => {
+  pin.setPin(null);
+  accountsAnswer = { default: "acct_d" };
+  sent.length = 0;
+  await store.api("/api/projects", { method: "GET" });
+  assert.deepEqual(sent.map((s) => s.url), ["/api/projects"], "reads don't ask");
+  assert.equal(sent[0].headers.get("x-flash-account"), null);
+  await store.api("/api/me", { method: "PATCH", json: {} });
+  assert.deepEqual(sent.map((s) => s.url), ["/api/projects", "/api/auth/accounts", "/api/me"]);
+  assert.equal(sent[2].headers.get("x-flash-account"), "acct_d");
+  assert.equal(pin.getPin(), "acct_d");
+});
+
+test("withAccount adds the tab's account to a link once, before its #", () => {
+  pin.setPin("acct_a");
+  assert.equal(pin.withAccount("/api/sites/s1/orders"), "/api/sites/s1/orders?as=acct_a");
+  assert.equal(pin.withAccount("/api/sites/s1/members?format=csv"), "/api/sites/s1/members?format=csv&as=acct_a");
+  assert.equal(pin.withAccount("/api/sites/s1/versions?view=v1#top"), "/api/sites/s1/versions?view=v1&as=acct_a#top");
+  assert.equal(pin.withAccount(pin.withAccount("/api/sites/s1/orders")), "/api/sites/s1/orders?as=acct_a", "once");
+  pin.setPin(null);
+  assert.equal(pin.withAccount("/api/sites/s1/orders"), "/api/sites/s1/orders");
+});
+
+test("an address's ?as= becomes the tab's account and leaves the address; a malformed one is ignored", () => {
+  pin.setPin("acct_a");
+  address = "https://flash-app.test/?apps=1&as=acct_b#x";
+  assert.equal(pin.adoptAccountFromUrl(), "acct_b");
+  assert.equal(pin.getPin(), "acct_b");
+  assert.equal(address, "https://flash-app.test/?apps=1#x");
+  assert.equal(storage.data.get("flash-account"), "acct_b", "kept for reloads of this tab");
+  address = "https://flash-app.test/?as=bad%20id!";
+  assert.equal(pin.adoptAccountFromUrl(), null);
+  assert.equal(pin.getPin(), "acct_b", "unchanged");
+  assert.equal(address, "https://flash-app.test/");
+  address = "https://flash-app.test/?credits=1";
+  assert.equal(pin.adoptAccountFromUrl(), null);
+  assert.equal(address, "https://flash-app.test/?credits=1");
+  assert.equal(pin.setPin("not ok!"), undefined);
+  assert.equal(pin.getPin(), null, "only an id is kept");
+});
+
+test("storage that refuses keeps the account for this page, without breaking anything", async () => {
+  storage.refuse = true;
+  pin.setPin("acct_c");
+  assert.equal(pin.getPin(), "acct_c");
+  assert.deepEqual(pin.accountHeaders(), { "X-Flash-Account": "acct_c" });
+  sent.length = 0;
+  await store.api("/api/me", { method: "PATCH", json: {} });
+  assert.equal(sent[0].headers.get("x-flash-account"), "acct_c");
+  pin.setPin(null);
+  assert.deepEqual(pin.accountHeaders(), {});
+  storage.refuse = false;
+  assert.equal(pin.isolate("a@b.co"), "⁨a@b.co⁩");
+  // No BroadcastChannel here: announcing reaches nobody and listening does nothing.
+  pin.announce({ type: "changed" });
+  pin.onAnnounce(() => assert.fail("nothing to hear"))();
+});

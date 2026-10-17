@@ -1016,3 +1016,33 @@ test("only auth.ts reads the session cookie itself", async () => {
   }
   assert.deepEqual(found, []);
 });
+
+test("every request the pages make goes through api() or authedFetch(), which name the tab's account", async () => {
+  const { readdir, readFile } = await import("node:fs/promises");
+  const root = new URL("../src/components/", import.meta.url);
+  // Public, signed-out, or not Flash at all (the stand-in for Google's Picker in development).
+  const allowed = [/^fetch\("\/api\/status"\)/, /^fetch\("\/api\/auth\/providers"\)/, /^fetch\(`\$\{access\.mock\}\//];
+  const found: string[] = [];
+  for (const entry of await readdir(root, { recursive: true })) {
+    if (!/\.(ts|tsx)$/.test(entry)) continue;
+    const text = await readFile(new URL(entry, root), "utf8");
+    for (const m of text.matchAll(/(?<![\w.])fetch\(/g)) {
+      const call = text.slice(m.index, m.index + 80);
+      if (!allowed.some((a) => a.test(call))) found.push(`${entry}: ${call.split("\n")[0]}`);
+    }
+  }
+  assert.deepEqual(found, []);
+});
+
+test("every link to Flash's API on a page names the tab's account (withAccount)", async () => {
+  const { readdir, readFile } = await import("node:fs/promises");
+  const root = new URL("../src/components/", import.meta.url);
+  const found: string[] = [];
+  for (const entry of await readdir(root, { recursive: true })) {
+    if (!/\.(ts|tsx)$/.test(entry)) continue;
+    const text = await readFile(new URL(entry, root), "utf8");
+    // Starting a sign-in acts as no account yet.
+    for (const m of text.matchAll(/href=(?:"\/api\/|\{`\/api\/)(?!auth\/oauth\/)/g)) found.push(`${entry}: ${text.slice(m.index, m.index + 60)}`);
+  }
+  assert.deepEqual(found, []);
+});

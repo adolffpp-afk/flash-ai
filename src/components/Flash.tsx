@@ -25,7 +25,7 @@ import { MAX_QUEUE, recentTurns, type CompanionContext } from "@/lib/companion";
 import { TEMPLATES, type Template, type TemplateValues } from "@/lib/templates";
 import { ENGINES, ENGINE_LABELS, PENDING_LIMIT_MS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types";
 import { applyEvent } from "@/lib/apply-event";
-import { api, newId, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
+import { api, authedFetch, newId, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
 import { PROJECT_TOO_LARGE } from "@/lib/project-size";
 import type { ChatHit } from "@/lib/server/search";
 import { BoltIcon, BrandMark, Wordmark } from "@/app/brand";
@@ -226,7 +226,7 @@ const STOP_WAIT_MS = 10_000;
 /** The picture above, ready to send with a follow-up, scaled down the way an attached photo is. */
 async function pictureAttachment(url: string, signal?: AbortSignal): Promise<Attachment | null> {
   try {
-    const res = await fetch(url, { signal });
+    const res = await authedFetch(url, { signal });
     const blob = await res.blob();
     if (!res.ok || !/^image\//.test(blob.type)) return null;
     const ext = blob.type.split("/")[1].replace("jpeg", "jpg");
@@ -1178,7 +1178,7 @@ export function Flash({
     let onServer = false;
 
     try {
-      const res = await fetch("/api/chat", {
+      const res = await authedFetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1472,7 +1472,7 @@ export function Flash({
   /** Puts a picture Flash made into the composer, so the photo buttons and edits apply to it. */
   async function editImage(url: string) {
     try {
-      const blob = await (await fetch(url)).blob();
+      const blob = await (await authedFetch(url)).blob();
       const ext = blob.type.split("/")[1]?.replace("jpeg", "jpg") || "png";
       // The picture replaces any files waiting, so the photo buttons apply to it.
       setFiles([]);

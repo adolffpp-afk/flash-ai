@@ -2,6 +2,7 @@ import type { BuiltApp, Engine, Source } from "./types";
 import type { Post } from "./post-pack";
 import type { ActionCard, ConnectorUse } from "./connectors";
 import { tNow } from "./use-t.ts";
+import { accountHeaders, getPin, setPin } from "./account-pin.ts";
 
 export type UIMessage = {
   id: string;
@@ -97,7 +98,13 @@ export type Pricing = {
   models: { id: string; engine: Engine; label: string; credits: number; blurb: string; live: boolean }[];
 };
 
+/** One of the accounts this browser is signed in to, as the profile menu lists them. */
+export type AccountSummary = { id: string; email: string; name: string; nickname: string };
+
 export type Me = Pricing & {
+  // The account this tab shows, and every account this browser is signed in to (see account-pin.ts).
+  account: string;
+  accounts: AccountSummary[];
   // language: the one Flash answers in (see languages.ts), "" for Automatic.
   user: { id: string; email: string; name: string; nickname?: string; work?: string; language?: string; preferences: string };
   hasPassword?: boolean;
@@ -147,12 +154,70 @@ export type TeamInfo =
 
 export const newId = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
 
+const READS = new Set(["GET", "HEAD", "OPTIONS"]);
+
+/** Whether a request goes to Flash itself: a path, or an address on this page's own origin. */
+function ownAddress(input: string | URL): boolean {
+  const text = String(input);
+  if (text.startsWith("/") && !text.startsWith("//")) return true;
+  try {
+    return typeof window !== "undefined" && new URL(text, window.location.href).origin === window.location.origin;
+  } catch {
+    return false;
+  }
+}
+let pinning: Promise<void> | null = null;
+let checked = false;
+
+/**
+ * Gives a tab with no account yet the browser's default, once: a page other than Flash's own (like
+ * /admin) that is about to change something, which the server refuses without one once several
+ * accounts are signed in here.
+ */
+export function ensurePin(): Promise<void> {
+  if (getPin() || checked) return Promise.resolve();
+  pinning ??= fetch("/api/auth/accounts", { cache: "no-store" })
+    .then((res) => (res.ok ? (res.json() as Promise<{ default?: string | null }>) : null))
+    .then((list) => {
+      if (list?.default && !getPin()) setPin(list.default);
+    })
+    .catch(() => {})
+    .finally(() => {
+      checked = true;
+      pinning = null;
+    });
+  return pinning;
+}
+
+/**
+ * fetch for Flash's own API, naming this tab's account (see account-pin.ts). When the server says
+ * the tab is signed out, Flash checks whether its account was logged out here (flash:account-check).
+ */
+export async function authedFetch(input: string | URL, init: RequestInit = {}): Promise<Response> {
+  // Only Flash's own address hears which account a tab shows (a picture's link can be elsewhere).
+  if (!ownAddress(input)) return fetch(input, init);
+  if (!READS.has((init.method ?? "GET").toUpperCase())) await ensurePin();
+  const headers = new Headers(init.headers);
+  for (const [name, value] of Object.entries(accountHeaders())) headers.set(name, value);
+  const res = await fetch(input, { ...init, headers });
+  if (res.status === 401 && getPin() && typeof window !== "undefined") {
+    res
+      .clone()
+      .json()
+      .then((body: { code?: string }) => {
+        if (body?.code === "signed_out") window.dispatchEvent(new Event("flash:account-check"));
+      })
+      .catch(() => {});
+  }
+  return res;
+}
+
 export async function api<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {
-  const res = await fetch(path, {
-    ...init,
-    headers: init?.json !== undefined ? { "Content-Type": "application/json" } : init?.headers,
-    body: init?.json !== undefined ? JSON.stringify(init.json) : init?.body,
-  });
+  const { json, ...rest } = init ?? {};
+  // The caller's headers stay, with the JSON type added when sending JSON.
+  const headers = new Headers(rest.headers);
+  if (json !== undefined) headers.set("Content-Type", "application/json");
+  const res = await authedFetch(path, { ...rest, headers, body: json !== undefined ? JSON.stringify(json) : rest.body });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     // The server's message comes in the language Flash is shown in; this one is for a reply with none (a proxy's error page).

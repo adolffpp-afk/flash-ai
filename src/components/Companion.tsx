@@ -5,7 +5,7 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { LogoMark } from "@/app/brand";
 import { ENGINE_LABELS } from "@/lib/types";
-import { newId } from "@/lib/store";
+import { authedFetch, newId } from "@/lib/store";
 import { msg } from "@/lib/i18n";
 import { useT } from "@/lib/use-t";
 import type { CompanionAction, CompanionContext, CompanionEvent, CompanionTurn } from "@/lib/companion";
@@ -111,7 +111,7 @@ export function Companion({
     const patch = (change: (line: Line) => Line) =>
       update(linesNow.current.map((l) => (l.id === reply.id ? change(l) : l)));
     try {
-      const res = await fetch("/api/companion", {
+      const res = await authedFetch("/api/companion", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
