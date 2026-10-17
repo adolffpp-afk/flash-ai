@@ -6,7 +6,7 @@ import { msg } from "@/lib/i18n";
 import { useT, type T } from "@/lib/use-t";
 import { band, labBand, type Band } from "@/lib/seo-band";
 import { fixContext, fixableIds, stillToFix, type Check, type CheckId, type SeoContext, type SeoReport } from "@/lib/seo-rules";
-import { WHY, labelOf, messageOf } from "@/lib/seo-words";
+import { labelOf, messageOf, whyOf } from "@/lib/seo-words";
 import type { PageSpeedError, PageSpeedRecord, PageSpeedRun, Rating } from "@/lib/server/pagespeed";
 
 /*
@@ -31,8 +31,13 @@ export type SeoData = {
   loadedAt: number;
 };
 
-/** A change asked for here, for Flash to send in the chat that built the site (at: when it was asked). */
-export type SiteFix = { projectId: string; slug: string; title: string; ids: CheckId[]; ctx: SeoContext; at: number };
+/**
+ * A change asked for here, for Flash to send in the chat that built the site (at: when it was asked).
+ * shown: the points the panel listed, when Send was pressed: nothing is sent when others would go.
+ */
+export type SiteFix = { projectId: string; slug: string; title: string; ids: CheckId[]; ctx: SeoContext; at: number; shown?: CheckId[] };
+/** What Flash would send for a change in the chat that built the site: the points that fit and how many more were asked for, or why none would go. */
+export type FixPlan = { sent: CheckId[]; left: number } | { why: string };
 
 const BAND_WORDS: Record<Band, string> = { good: msg("Good"), needs: msg("Needs work"), poor: msg("Poor") };
 const BAND_TEXT: Record<Band, string> = { good: "text-emerald-400", needs: "text-gold-soft", poor: "text-red-400" };
@@ -52,6 +57,8 @@ const RUN_ERRORS: Record<PageSpeedError, string> = {
 const RUNNING = msg("Google is still checking this page. The result shows here when it's done.");
 // Said when the chat that built the site couldn't be found or loaded: there's no chat to open then.
 const NO_CHAT = msg("Couldn't find the chat that built this site.");
+// Said when Send found that chat's newest version changed since the panel listed what goes.
+const CHANGED = msg("That chat's newest version changed, so this list did too. Press Send to Flash again to ask for these.");
 // What each mark in the list says to a screen reader.
 const MARKS: Partial<Record<Check["status"], [string, string, string]>> = {
   fail: ["✕", "text-red-400", msg("Problem")],
@@ -160,6 +167,7 @@ export function SeoView({
   slug,
   data,
   editCredits,
+  onPlanFix,
   onFix,
   onDraft,
   onOpenChat,
@@ -169,8 +177,11 @@ export function SeoView({
   data: SeoData;
   // What a change to an app typically costs (the pricing table's number), said before anything is sent.
   editCredits?: number;
-  // Hands the change to Flash: null once it's on its way, else why nothing was sent.
-  onFix?: (fix: SiteFix) => Promise<string | null>;
+  // What Flash would send for a change, from the chat's newest version of the site (which the builder changes), listed before Send.
+  onPlanFix?: (fix: SiteFix) => Promise<FixPlan>;
+  // Hands the change to Flash: null once it's on its way, else why nothing was sent, or what would go
+  // now when it isn't what was listed (shown).
+  onFix?: (fix: SiteFix) => Promise<FixPlan | null>;
   // Puts text in the message box of the chat that built the site, without sending it: null once it's
   // there, else why it isn't (that chat's newest app is another site).
   onDraft?: (draft: { projectId: string; slug: string; text: string }) => Promise<string | null>;
@@ -181,8 +192,11 @@ export function SeoView({
   const t = useT();
   const { report } = data;
   // The change waiting for Send: under the item it's for (key: its id, or "all" for Fix all). ids: every
-  // point asked for, which Flash gets; shown: those of them that fit in one change on the live page.
-  const [asking, setAsking] = useState<{ key: string; ids: CheckId[]; shown: CheckId[]; left: number } | null>(null);
+  // point asked for, which Flash gets; plan: what Flash would send for them in the chat that built the
+  // site (null while it's looked at), which the panel lists.
+  const [asking, setAsking] = useState<{ key: string; ids: CheckId[]; plan: FixPlan | null } | null>(null);
+  // What Fix all would send, once looked at: its button counts that.
+  const [allPlan, setAllPlan] = useState<FixPlan | null>(null);
   // The chat that built the site: loading (null), found, or why it can't be.
   const [project, setProject] = useState<{ id?: string; error?: string } | null>(null);
   // Why Send sent nothing, said in the panel.
@@ -191,48 +205,90 @@ export function SeoView({
   // Why the owner's details weren't put in the chat, and whether that chat can be opened.
   const [draftNote, setDraftNote] = useState<{ text: string; chat: boolean } | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  const canFix = !!onFix && editCredits !== undefined;
+  const lookup = useRef<Promise<string | null> | null>(null);
+  const canFix = !!onFix && !!onPlanFix && editCredits !== undefined;
   const site = { title: data.title, address: `${data.ctx.appBase}/p/${slug}` };
   const fixable = fixableIds(report);
   const all = fixContext(report, fixable, site);
+  const allCount = allPlan && "sent" in allPlan ? allPlan.sent.length : all.sent.length;
+  const askingKey = asking?.key;
 
   useEffect(() => {
-    if (asking) panelRef.current?.focus();
-  }, [asking]);
+    if (askingKey) panelRef.current?.focus();
+  }, [askingKey]);
+
+  // What Fix all would send is looked at once, when there's a Fix all: the chat's newest version may
+  // already have some of it (a change not put live yet), so the button counts what would really go.
+  useEffect(() => {
+    if (!canFix || fixable.length < 2 || !all.sent.length) return;
+    let shown = true;
+    void planFor(fixable).then((plan) => {
+      if (shown && plan) setAllPlan(plan);
+    });
+    return () => {
+      shown = false;
+    };
+    // Once for the check shown (MyApps shows a new one for each version of the page).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   /** The chat that built the site, looked up once. */
   async function projectId(): Promise<string | null> {
     if (project?.id) return project.id;
-    try {
-      const { project: id } = await api<{ project: string }>(`/api/sites/${slug}/project`);
-      setProject({ id });
-      return id;
-    } catch (err) {
-      const error = err instanceof Error ? err.message : t(NO_CHAT);
-      setProject({ error });
-      return null;
-    }
+    // One look at a time (Fix all's count and a panel may ask together); a failed one can be tried again.
+    lookup.current ??= api<{ project: string }>(`/api/sites/${slug}/project`).then(
+      ({ project: id }) => {
+        setProject({ id });
+        return id;
+      },
+      (err) => {
+        lookup.current = null;
+        setProject({ error: err instanceof Error ? err.message : t(NO_CHAT) });
+        return null;
+      },
+    );
+    return lookup.current;
+  }
+
+  /** What Flash would send for ids in the chat that built the site, or null when there's no such chat (project says why). */
+  async function planFor(ids: CheckId[]): Promise<FixPlan | null> {
+    const id = await projectId();
+    if (!id || !onPlanFix) return null;
+    return onPlanFix({ projectId: id, slug, title: data.title, ids, ctx: data.ctx, at: Date.now() }).catch(() => ({
+      why: t("Couldn't load the search check. Please try again."),
+    }));
   }
 
   function ask(key: string, ids: CheckId[]) {
-    const { sent, left } = fixContext(report, ids, site);
     // Flash gets every point asked for: it leaves out what the chat's newest version already fixes and
     // sends what fits of the rest, so Fix all again after a change sends the points that didn't fit.
-    setAsking({ key, ids, shown: sent, left });
+    // The panel lists exactly that, looked at in that chat now.
+    setAsking({ key, ids, plan: key === "all" ? allPlan : null });
     setNote("");
-    if (!project?.id) {
-      setProject(null);
-      void projectId();
-    }
+    if (!project?.id) setProject(null);
+    void planFor(ids).then((plan) => {
+      if (!plan) return;
+      setAsking((open) => (open?.key === key ? { ...open, plan } : open));
+      if (key === "all") setAllPlan(plan);
+    });
   }
 
   async function send() {
-    if (!asking || !project?.id || !onFix || sending) return;
+    const plan = asking?.plan;
+    if (!asking || !plan || !("sent" in plan) || !project?.id || !onFix || sending) return;
     setSending(true);
     setNote("");
-    const why = await onFix({ projectId: project.id, slug, title: data.title, ids: asking.ids, ctx: data.ctx, at: Date.now() });
+    const answer = await onFix({ projectId: project.id, slug, title: data.title, ids: asking.ids, ctx: data.ctx, at: Date.now(), shown: plan.sent });
     setSending(false);
-    if (why) setNote(why);
+    if (!answer) return;
+    if ("why" in answer) {
+      setNote(answer.why);
+      return;
+    }
+    // That chat changed since the list was made: the panel lists what would go now, for Send again.
+    setAsking((open) => (open?.key === asking.key ? { ...open, plan: answer } : open));
+    if (asking.key === "all") setAllPlan(answer);
+    setNote(t(CHANGED));
   }
 
   async function draft(check: Check) {
@@ -248,49 +304,58 @@ export function SeoView({
     if (why) setDraftNote({ text: why, chat: why !== t(NO_CHAT) });
   }
 
-  const panel = (key: string) =>
-    asking?.key === key && (
+  const panel = (key: string) => {
+    if (asking?.key !== key) return null;
+    // What would go (listed, priced and sent as it is), or why nothing would.
+    const points = asking.plan && "sent" in asking.plan ? asking.plan : null;
+    const said = note || (asking.plan && "why" in asking.plan ? asking.plan.why : "");
+    return (
       <div
         ref={panelRef}
         tabIndex={-1}
         role="region"
         aria-label={t("Ask Flash to change your app")}
+        aria-busy={!asking.plan && !project?.error}
         className="mt-3 rounded-xl border border-primary/30 bg-primary/5 p-4 text-sm outline-none"
       >
         <h4 className="font-medium text-zinc-100">{t("Ask Flash to change your app")}</h4>
-        <ul className="mt-2 list-disc space-y-0.5 ps-5 text-zinc-300">
-          {asking.shown.map((id) => (
-            <li key={id}>{labelOf(t, id)}</li>
-          ))}
-        </ul>
-        {asking.left > 0 && (
-          <p className="mt-2 text-zinc-400">
-            {t("Only the first {count} fit in one change. Press Fix all again after this one for the rest.", { count: asking.shown.length.toLocaleString(t.locale) })}
-          </p>
+        {points && (
+          <>
+            <ul className="mt-2 list-disc space-y-0.5 ps-5 text-zinc-300">
+              {points.sent.map((id) => (
+                <li key={id}>{labelOf(t, id)}</li>
+              ))}
+            </ul>
+            {points.left > 0 && (
+              <p className="mt-2 text-zinc-400">
+                {t("Only the first {count} fit in one change. Press Fix all again after this one for the rest.", { count: points.sent.length.toLocaleString(t.locale) })}
+              </p>
+            )}
+            <p className="mt-2 text-zinc-400">{t(PRICE, { count: (editCredits ?? 0).toLocaleString(t.locale) })}</p>
+            <p className="mt-2 text-zinc-400">{t(WHERE)}</p>
+          </>
         )}
-        <p className="mt-2 text-zinc-400">{t(PRICE, { count: (editCredits ?? 0).toLocaleString(t.locale) })}</p>
-        <p className="mt-2 text-zinc-400">{t(WHERE)}</p>
         {project?.error && (
           <p role="alert" className="mt-2 text-red-400">
             {project.error}
           </p>
         )}
-        {note && (
+        {said && (
           <p role="status" className="mt-2 text-gold-soft">
-            {note}
+            {said}
           </p>
         )}
         <div className="mt-3 flex flex-wrap gap-2">
-          {!project?.error && (
+          {!project?.error && (!asking.plan || points) && (
             <button
               onClick={send}
-              disabled={!project?.id || sending}
+              disabled={!points || !project?.id || sending}
               className="rounded-md bg-brand px-3 py-1.5 font-medium text-on-brand hover:brightness-110 disabled:opacity-50"
             >
               {t("Send to Flash")}
             </button>
           )}
-          {note && note !== t(NO_CHAT) && project?.id && onOpenChat && (
+          {said && said !== t(NO_CHAT) && project?.id && onOpenChat && (
             <button
               onClick={() => onOpenChat(project.id!)}
               className="rounded-md border border-primary/40 px-3 py-1.5 text-primary-soft hover:bg-primary/10"
@@ -304,6 +369,7 @@ export function SeoView({
         </div>
       </div>
     );
+  };
 
   const button = "shrink-0 ms-auto rounded-md border border-primary/40 px-2.5 py-1 text-xs text-primary-soft hover:bg-primary/10";
   // What an item offers: the builder's change, the owner's own details, or the link preview.
@@ -342,7 +408,7 @@ export function SeoView({
 
   // An item to fix or worth knowing: what it is, what was found, and why it matters.
   const item = (check: Check) => {
-    const why = WHY[check.id];
+    const why = whyOf(check);
     const mark = MARKS[check.status] ?? ["💡", "", ""];
     return (
       <li key={check.id} className="rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 text-sm">
@@ -422,7 +488,7 @@ export function SeoView({
                 onClick={() => ask("all", fixable)}
                 className="w-full rounded-md bg-brand px-3 py-2 text-sm font-medium text-on-brand hover:brightness-110 sm:ms-auto sm:w-auto"
               >
-                {t("Fix all ({count})", { count: all.sent.length.toLocaleString(t.locale) })}
+                {t("Fix all ({count})", { count: allCount.toLocaleString(t.locale) })}
               </button>
             )}
           </div>
@@ -536,6 +602,9 @@ function PageSpeed({ slug, data }: { slug: string; data: SeoData }) {
     setChecking(false);
   }
 
+  // Google's own page runs its test again (see the pagespeed route's PUT); never waited for.
+  const googleRuns = () => void api(`/api/sites/${slug}/pagespeed`, { method: "PUT" }).catch(() => {});
+
   const run = record?.[tab];
   return (
     <section className="space-y-3 rounded-xl border border-white/8 bg-white/[0.02] p-4" aria-labelledby="pagespeed-heading">
@@ -599,12 +668,15 @@ function PageSpeed({ slug, data }: { slug: string; data: SeoData }) {
           </div>
         </div>
       )}
-      {/* Google's own page for the last result, or to run the check there while Flash can't. */}
+      {/* Google's own page for the last result, or to run the check there while Flash can't. Opening it
+          runs Google's test there, so Flash is told first: the app's AI says no to it meanwhile. */}
       {(record || !available) && (
         <a
           href={`https://pagespeed.web.dev/analysis?url=${encodeURIComponent(record?.url ?? target)}`}
           target="_blank"
           rel="noreferrer"
+          onClick={googleRuns}
+          onAuxClick={(e) => e.button === 1 && googleRuns()}
           className="inline-block text-sm text-primary-soft hover:underline"
         >
           {t("Open the full report on Google")} ↗

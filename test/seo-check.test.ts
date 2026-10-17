@@ -8,7 +8,8 @@ import assert from "node:assert/strict";
 process.env.DATABASE_URL = ":memory:";
 const { SEO_VERSION, scanPage, textWidth } = await import("../src/lib/seo-scan.ts");
 const { MAX_CONTEXT, band, evaluate, fixContext, fixableIds, issueCount, stillToFix } = await import("../src/lib/seo-rules.ts");
-const { LABELS, WHY, fixMessage, messageOf } = await import("../src/lib/seo-words.ts");
+const { LABELS, WHY, fixMessage, listOf, messageOf } = await import("../src/lib/seo-words.ts");
+const { fixForCopy } = await import("../src/lib/seo-fix.ts");
 const { hasOwnCanonical, hasOwnPreview } = await import("../src/lib/site-preview.ts");
 const { cleanUserMessage } = await import("../src/lib/server/turns.ts");
 const { translate } = await import("../src/lib/i18n.ts");
@@ -526,6 +527,36 @@ const SAMPLE = [{ name: "Country loaf", price: "[Price]" }, { name: "Seeded rye"
     template: "[Price]",
     innerHTML: "[Email address]",
   });
+  // A script's blanks that are an object's field are kept apart, with their fields and the lists the page
+  // reads: a sample shows only while its list is empty. Its JSX, strings and template literals, a
+  // template's and Alpine's data are always shown.
+  const facts = (html: string) => {
+    const f = scanPage(html);
+    return [f.placeholders, f.scriptPlaceholders, f.sampleFields, f.lists];
+  };
+  assert.deepEqual(facts(pages.sample), [[], ["[Price]"], ["price"], ["bakes"]]);
+  for (const name of ["react", "alpine", "template", "innerHTML"]) assert.deepEqual(facts(pages[name]).slice(1), [[], [], []], name);
+  const script = (code: string) => facts(page({ body: `${BODY}<ul id="bakes"></ul><script>${code}</script>` }));
+  assert.deepEqual(script(`const S = [{ "name": "Rye", 'price': 'From [Price]' }];\nlet b = {\n  about: \`Made with [Flour]\`,\n}; flashDB.list("bakes");`), [[], ["[Price]", "[Flour]"], ["price", "about"], ["bakes"]]);
+  assert.deepEqual(script(`el.textContent = "Call [Phone number]"; el.title = x ? "a" : "[Price]"; flashDB.list("bakes");`), [["[Phone number]", "[Price]"], [], [], []]);
+  // Once every list it reads has entries without them (the server looks: see seo-routes.test.ts), a
+  // sample's blanks are only worth knowing, and don't count; what the page shows itself still does.
+  const filled = { ...CTX, listsFilled: true };
+  assert.equal(said(pages.sample, "placeholders", filled), "tip samples");
+  assert.equal(check(pages.sample, "placeholders", filled)?.weight, 0);
+  assert.equal(check(pages.sample, "placeholders", filled)?.action, null);
+  assert.ok(report(pages.sample, filled).score! > report(pages.sample).score!);
+  for (const name of ["template", "alpine"]) assert.equal(said(pages[name], "placeholders", filled), "fail found", name);
+  const both = pages.sample.replace("<ul", "<p>Call [Phone number]</p><ul");
+  assert.equal(check(both, "placeholders", filled)?.values.list, "[Phone number]");
+  assert.equal(check(both, "placeholders")?.values.list, "[Phone number], [Price]");
+  // A blank the page shows outside its script too is only counted there.
+  const twice = pages.sample.replace("<ul", "<p>[Price] a loaf</p><ul");
+  assert.deepEqual([scanPage(twice).placeholders, scanPage(twice).scriptPlaceholders], [["[Price]"], []]);
+  // A list named while the page runs can't be looked at, nor can more than ten.
+  assert.deepEqual(scanPage(pages.sample.replace('flashDB.list("bakes")).length', "flashDB.list(name)).length")).lists, ["*", "bakes"]);
+  const many = Array.from({ length: 12 }, (_, i) => `flashDB.list("l${i}");`).join("");
+  assert.deepEqual(scanPage(pages.sample.replace("(async", `${many}(async`)).lists, [...Array.from({ length: 10 }, (_, i) => `l${i}`), "*"]);
   // What the React page's code shows is read too: its small text and a picture over http://.
   assert.equal(scanPage(pages.react).jsBuilt, true);
   assert.equal(said(pages.react, "textSize"), "warn small");
@@ -666,6 +697,78 @@ test("a fix asked for in My websites goes only with what the chat's newest versi
   // A newer version that already has them: nothing is sent, so nothing is charged.
   const fixed = page({ head: '<script type="application/ld+json">{"@context":"https://schema.org","@type":"Bakery","name":"Golden Crumb"}</script>' });
   assert.deepEqual(stillToFix(report(fixed), asked), []);
+});
+
+test("Fix all lists what it sends: pressed again before Update site, the rest of what the chat's newest version needs", () => {
+  // A live page with more to fix than one change holds, and the chat's newest version after the first
+  // Fix all, with what fitted fixed (the builder's answer), not yet put live.
+  const live = `<html lang="en-gb-oxendict-x"><head><meta charset="utf-8"><title>Home</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no"><meta property="og:title" content="Casa Rosa">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Lato:wght@300;400;700" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=Source+Sans+3:wght@400;600" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" integrity="sha384-abcdefabcdefabcdefabcdef" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/swiper@11.1.4/swiper-bundle.min.js" integrity="sha384-ghijklghijklghijklghijkl" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" integrity="sha512-mnopqrmnopqrmnopqrmnopqr" crossorigin="anonymous"></script>
+<style>.tag { font-size: 10px; } .note { font-size: 11px; } .tiny { font-size: 0.6rem; }</style></head>
+<body><header><a href="index.html">Casa Rosa</a>
+<button class="h-5 w-5 rounded-full bg-rose-500 text-white" onclick="toggleMenu()"><svg viewBox="0 0 24 24"><path d="M0 0"/></svg></button>
+<button class="h-4 w-4 rounded-full bg-rose-200" onclick="setTheme('light')"></button>
+<nav><a href="about-our-family-restaurant-in-the-douro-valley.html">About us</a> <a href="/menu-for-lunch-and-dinner-with-seasonal-dishes">Our menu</a> <a href="/gallery-of-the-garden-terrace-and-dining-room">Gallery</a> <a href="#booking-form-for-a-table-on-the-terrace">Book</a> <a href="#opening-hours-and-holidays-this-summer">Hours</a></nav></header>
+<h2>Welcome to Casa Rosa, family cooking from the Douro valley since 1987</h2>
+<h4>Lunch and dinner, six days a week, with a garden terrace for summer evenings</h4>
+<h1>Casa Rosa</h1><h1>Douro valley kitchen</h1>
+<p>Our kitchen cooks what the valley grows: river fish on Fridays, slow lamb on Sundays, and bread from the village oven every morning. Come hungry, stay late.</p>
+<img src="http://casarosa-restaurant-douro.example/images/terrace-summer-evening-2024.jpg">
+<img src="http://casarosa-restaurant-douro.example/images/dining-room-winter-fireplace.jpg">
+${[1517248135467, 1414235077428, 1555396273].map((n) => `<img src="https://images.unsplash.com/photo-${n}-4c7edcad34c4?auto=format&fit=crop&w=1600&q=80">`).join("")}
+<img src="https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1600&q=80" alt="IMG_2041.jpg">
+<a href="#menu">More</a> <a href="#wine">Read more</a> <a href="#terrace">Click here</a><span class="tag">New</span></body></html>`;
+  const newest = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Casa Rosa · Douro valley family restaurant</title>
+<meta name="description" content="Casa Rosa cooks river fish, slow lamb and village bread in the Douro valley, with a garden terrace for summer evenings.">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Lato:wght@300;400;700" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=Source+Sans+3:wght@400;600" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/swiper@11.1.4/swiper-bundle.min.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" defer></script>
+<style>.tag { font-size: 12px; } .note { font-size: 12px; } .tiny { font-size: 0.75rem; }</style></head>
+<body><header><a href="#/">Casa Rosa</a>
+<button class="h-5 w-5 rounded-full bg-rose-500 text-white" onclick="toggleMenu()" aria-label="Menu"><svg viewBox="0 0 24 24"><path d="M0 0"/></svg></button>
+<button class="h-4 w-4 rounded-full bg-rose-200" onclick="setTheme('light')" aria-label="Light theme"></button>
+<nav><a href="#about">About us</a> <a href="#menu">Our menu</a> <a href="#gallery">Gallery</a> <a href="#booking">Book</a> <a href="#hours">Hours</a></nav></header>
+<h1>Casa Rosa, family cooking from the Douro valley since 1987</h1>
+<h2 id="about">Lunch and dinner, six days a week, with a garden terrace for summer evenings</h2>
+<h2 id="menu">Our menu</h2><h2 id="gallery">Gallery</h2><h2 id="booking">Book a table</h2><h2 id="hours">Hours</h2>
+<p>Our kitchen cooks what the valley grows: river fish on Fridays, slow lamb on Sundays, and bread from the village oven every morning. Come hungry, stay late.</p>
+${["terrace-summer-evening-2024", "dining-room-winter-fireplace"].map((n) => `<img src="https://casarosa-restaurant-douro.example/images/${n}.jpg" alt="Casa Rosa">`).join("")}
+${[1517248135467, 1414235077428, 1555396273, 1504674900247].map((n) => `<img src="https://images.unsplash.com/photo-${n}-4c7edcad34c4?auto=format&fit=crop&w=1600&q=80" alt="A dish at Casa Rosa">`).join("")}
+<a href="#menu">See the menu</a> <a href="#booking">Book a table on the terrace</a> <a href="#gallery">See the terrace</a><span class="tag">New</span></body></html>`;
+  const t = Object.assign((text: string, blanks?: Record<string, string | number>) => translate(null, text, blanks), { locale: "en-US" });
+  const site = { title: "Casa Rosa", address: ADDRESS };
+  const fixable = fixableIds(report(live));
+  // The first Fix all, on the live page (the chat's newest version then): what the panel lists is what goes.
+  const first = fixForCopy(t, live, CTX, fixable, site)!;
+  assert.ok(first.left > 0, "more than one change holds");
+  assert.deepEqual(first.sent, fixContext(report(live), fixable, site).sent);
+  // Pressed again before Update site: the live page still lists the same points, but the chat's newest
+  // version has the first batch, so the panel lists, counts and sends only what it still needs.
+  const second = fixForCopy(t, newest, CTX, fixable, site)!;
+  assert.ok(second.sent.length > 0);
+  assert.equal(second.left, 0);
+  assert.deepEqual(
+    second.sent.filter((id) => first.sent.includes(id)),
+    [],
+    `none of the first batch again: ${second.sent.join(", ")}`,
+  );
+  assert.deepEqual(second.sent, stillToFix(report(newest), fixable).slice(0, second.sent.length));
+  assert.equal(second.content, `Fix what Flash's search check found on my site: ${listOf(second.sent.map((id) => LABELS[id]), "en-US")}.`, "the bubble names what the panel listed");
+  // Send asks for only what was listed (Flash.tsx sends its sent): the same points, message and instructions.
+  const sent = fixForCopy(t, newest, CTX, second.sent, site)!;
+  assert.deepEqual([sent.sent, sent.content, sent.context], [second.sent, second.content, second.context]);
+  const once = fixForCopy(t, live, CTX, first.sent, site)!;
+  assert.deepEqual([once.sent, once.left, once.context], [first.sent, 0, first.context], "the first press too, without the rest");
+  // Once that copy has everything, nothing would go: the panel says so before Send.
+  assert.equal(fixForCopy(t, BAKERY, CTX, fixable, site), null);
 });
 
 test("a page where everything fails sends what fits, says how many didn't, and the chat keeps it whole", () => {

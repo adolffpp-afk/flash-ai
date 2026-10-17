@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { BuiltApp } from "@/lib/types";
-import { api, onUnpublished } from "@/lib/store";
+import { api, onSeoScore, onUnpublished } from "@/lib/store";
 import { flashDbShim, injectHead } from "@/lib/flashdb-shim";
 import { dataLine, type DataSummary } from "@/lib/data-rules";
 import { appSlug, projectZip } from "@/lib/app-project";
@@ -143,6 +143,15 @@ export function AppPreview({
         if (slug !== app.slug) return;
         setUnpublished(slug);
         setPublishSeo(null);
+      }),
+    [app.slug],
+  );
+  // The score shown follows the live page's as My websites & apps reads it (after History > Bring back,
+  // or a look at the check): the one before stays only while the score is still this publish's.
+  useEffect(
+    () =>
+      onSeoScore((slug, seo) => {
+        if (slug === app.slug) setPublishSeo((shown) => shown && (shown.score === seo.score ? { ...shown, issues: seo.issues } : seo));
       }),
     [app.slug],
   );

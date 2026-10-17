@@ -137,6 +137,7 @@ export async function sitesWithMessages(userId: string) {
     // Sites published before data rules existed get theirs worked out here, once.
     const computed = parseComputed(data_rules) ?? (await refreshRules(r.slug));
     const mine: [string, DataRule][] = chosen.filter((c) => c.site_slug === r.slug && isDataRule(c.rule)).map((c) => [c.collection, c.rule as DataRule]);
+    const facts = parseFacts(seo);
     sites.push({
       ...r,
       updated_at: Number(r.updated_at),
@@ -147,7 +148,7 @@ export async function sitesWithMessages(userId: string) {
       contacts: r.contacts === null ? null : Number(r.contacts),
       openData: computed ? anyOpen(computed, Object.fromEntries(mine)) : false,
       // Missing or old facts are worked out after the list is answered (see refreshStale).
-      seo: seoSummary(parseFacts(seo), await seoContext(r.slug, domains.filter((d) => d.site_slug === r.slug).map((d) => d.domain))),
+      seo: seoSummary(facts, await seoContext(r.slug, domains.filter((d) => d.site_slug === r.slug).map((d) => d.domain), facts)),
     });
   }
   return sites;

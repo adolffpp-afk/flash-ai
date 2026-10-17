@@ -18,7 +18,8 @@ import { Creations } from "./Creations";
 import { Companion } from "./Companion";
 import { Templates } from "./Templates";
 import { MyApps } from "./MyApps";
-import type { SiteFix } from "./SeoView";
+import type { FixPlan, SiteFix } from "./SeoView";
+import type { CheckId } from "@/lib/seo-rules";
 import { BuildPanel, useMedia } from "./BuildPanel";
 import { draftShown, draftStore, startsWriting } from "@/lib/live-draft";
 import { OFFICE_TYPES, officeKind, officeText } from "@/lib/office";
@@ -947,23 +948,38 @@ export function Flash({
   }
 
   /**
-   * A change the search check (SEO) asked for, after the owner saw its price and pressed Send. The chat
-   * that built the site is looked at first, while My websites & apps is still open: when nothing would
-   * be sent (see fixFor), or Flash is still answering something else, the answer is why, shown where
-   * Send was pressed. Otherwise My websites & apps closes, the chat opens, and the change goes there
-   * (sendFix): the answer is null.
+   * What Send would send for a change the search check (SEO) asks for, in the chat that built the site
+   * (see fixFor): the points that fit, or why none would go. The panel lists it before Send is pressed.
    */
-  async function fixSite(fix: SiteFix): Promise<string | null> {
-    const busyNote = t("Flash is still working on a reply. Send this when it's done.");
+  async function planFix(fix: SiteFix): Promise<FixPlan> {
+    const messages = await chatMessages(fix.projectId);
+    if (!messages) return { why: t("Couldn't find the chat that built this site.") };
+    const plan = await fixFor(fix, messages);
+    return "why" in plan ? plan : { sent: plan.sent, left: plan.left };
+  }
+
+  /**
+   * A change the search check (SEO) asked for, after the owner saw what it changes and its price and
+   * pressed Send. The chat that built the site is looked at first, while My websites & apps is still
+   * open: when nothing would be sent (see fixFor), or Flash is still answering something else, the
+   * answer is why, shown where Send was pressed. When what would be sent isn't what the panel listed
+   * (shown: a reply changed that chat's newest version since), nothing is sent and the answer is what
+   * would go now, for the panel to list. Otherwise My websites & apps closes, the chat opens, and
+   * exactly what was listed goes there (sendFix): the answer is null.
+   */
+  async function fixSite(fix: SiteFix): Promise<FixPlan | null> {
+    const busyNote = { why: t("Flash is still working on a reply. Send this when it's done.") };
     if (busy || runningRef.current) return busyNote;
     const messages = await chatMessages(fix.projectId);
-    if (!messages) return t("Couldn't find the chat that built this site.");
+    if (!messages) return { why: t("Couldn't find the chat that built this site.") };
     const plan = await fixFor(fix, messages);
-    if ("why" in plan) return plan.why;
+    if ("why" in plan) return plan;
+    if (fix.shown && plan.sent.join() !== fix.shown.join()) return { sent: plan.sent, left: plan.left };
     if (runningRef.current) return busyNote;
     closeApps();
     showChat(fix.projectId);
-    setPendingFix({ ...fix, at: Date.now() });
+    // Only what was listed: sendFix asks for what the chat's newest version still needs of it, never more.
+    setPendingFix({ ...fix, ids: plan.sent, at: Date.now() });
     return null;
   }
 
@@ -997,16 +1013,15 @@ export function Flash({
    * another site, after Publish as new, or it has the fix already). The builder gets the check's
    * English instructions (shown as "◎ SEO"); the owner sees what was asked in their own language.
    */
-  async function fixFor(fix: SiteFix, messages: UIMessage[]): Promise<{ why: string } | { message: UIMessage }> {
+  async function fixFor(fix: SiteFix, messages: UIMessage[]): Promise<{ why: string } | { message: UIMessage; sent: CheckId[]; left: number }> {
     const { latest, site } = newestApp(messages);
     if (!latest || site !== fix.slug) return { why: t("The newest app in that chat is a different site, so Flash didn't send the change.") };
     // Loaded only now, so the check stays out of the chat's own code until it's used.
-    const [{ scanPage }, { evaluate, stillToFix }, { fixMessage }] = await Promise.all([import("@/lib/seo-scan"), import("@/lib/seo-rules"), import("@/lib/seo-words")]);
-    const report = evaluate(scanPage(latest.html), fix.ctx);
-    const ids = stillToFix(report, fix.ids);
-    if (!ids.length) return { why: t("The newest version in that chat already fixes this. Press Update site under it to put it live.") };
-    const { content, context } = fixMessage(t, report, ids, { title: fix.title, address: `${fix.ctx.appBase}/p/${fix.slug}` });
-    return { message: { id: newId(), role: "user", content, build: latest.kind, picked: { label: t("SEO"), context } } };
+    const { fixForCopy } = await import("@/lib/seo-fix");
+    const planned = fixForCopy(t, latest.html, fix.ctx, fix.ids, { title: fix.title, address: `${fix.ctx.appBase}/p/${fix.slug}` });
+    if (!planned) return { why: t("The newest version in that chat already fixes this. Press Update site under it to put it live.") };
+    const { content, context, sent, left } = planned;
+    return { message: { id: newId(), role: "user", content, build: latest.kind, picked: { label: t("SEO"), context } }, sent, left };
   }
 
   /**
@@ -2567,6 +2582,7 @@ export function Flash({
             // What a change to an app typically costs, as the pricing table says: a fix is charged like any change.
             editCredits={me.costs.app}
             onFix={fixSite}
+            onPlanFix={planFix}
             onDraft={draftInChat}
           />
         )}

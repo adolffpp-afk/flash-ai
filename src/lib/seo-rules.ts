@@ -98,8 +98,12 @@ export type Check = {
   fix: string | null;
   action: Action;
 };
-/** slug, Flash's address without a trailing slash (FLASH_APP_URL or SITE_URL), and the app's own domains. */
-export type SeoContext = { slug: string; appBase: string; domains: string[] };
+/**
+ * slug, Flash's address without a trailing slash (FLASH_APP_URL or SITE_URL), and the app's own
+ * domains. listsFilled: every shared list the page reads has entries without the blanks its scripts
+ * hold (see server/seo.ts), so those are in sample entries visitors don't see.
+ */
+export type SeoContext = { slug: string; appBase: string; domains: string[]; listsFilled?: boolean };
 /** score is null when the page couldn't be read: no number is ever shown then. */
 export type SeoReport = { score: number | null; passed: number; total: number; checks: Check[] };
 
@@ -408,8 +412,12 @@ export function evaluate(facts: SeoFacts | null | undefined, ctx: SeoContext): S
     else add("links", 2, "pass", "pass", { count: links.inside });
   }
 
-  // 13. Blanks the builder left for the owner: only they know what goes there.
-  if (facts.placeholders.length) add("placeholders", 2, "fail", "found", { list: facts.placeholders.join(", ") }, null, "tell");
+  // 13. Blanks the builder left for the owner: only they know what goes there. Those only in its
+  // scripts, while the lists it reads have entries, are in sample entries shown only while a list is empty.
+  const blanks = [...facts.placeholders, ...facts.scriptPlaceholders];
+  const shown = ctx.listsFilled ? facts.placeholders : blanks;
+  if (shown.length) add("placeholders", 2, "fail", "found", { list: shown.join(", ") }, null, "tell");
+  else if (blanks.length) add("placeholders", 0, "tip", "samples", { list: blanks.join(", ") });
   else add("placeholders", 2, "pass", "pass");
 
   // 14 and 15. The share card. Flash adds one when the page has none (serve-site.ts).

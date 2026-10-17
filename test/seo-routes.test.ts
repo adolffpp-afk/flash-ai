@@ -16,6 +16,7 @@ process.env.FLASH_APP_URL = "https://www.flash-app.dev";
 const { all, one, run } = await import("../src/lib/server/db.ts");
 const { publishSite, restoreVersion, listVersions } = await import("../src/lib/server/sites.ts");
 const { refreshSeo, seoFactsFor } = await import("../src/lib/server/seo.ts");
+const { chooseRule } = await import("../src/lib/server/site-data.ts");
 const { callTool } = await import("../src/lib/server/mcp-tools.ts");
 const { scanPage, SEO_VERSION } = await import("../src/lib/seo-scan.ts");
 const { evaluate, issueCount } = await import("../src/lib/seo-rules.ts");
@@ -41,6 +42,7 @@ const GOOD = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta n
 const BAD = "<h1>Hi</h1><img src=x.png><a href='#/menu'></a>";
 const CTX = (slug: string, domains: string[] = []) => ({ slug, appBase: "https://www.flash-app.dev", domains });
 const scoreOf = (html: string, slug: string) => evaluate(scanPage(html), CTX(slug)).score;
+type Check = import("../src/lib/seo-rules.ts").Check;
 
 /** A confirmed user with a session. */
 async function owner(id: string) {
@@ -207,6 +209,71 @@ test("the list of apps shows each score, working out old apps' after it answers"
   assert.deepEqual(JSON.parse(await savedSeo("old-list")), { v: SEO_VERSION, error: true });
   const failed = (await (await getSeo(who, "old-list")).json()) as { report: { score: number | null } };
   assert.equal(failed.report.score, null, "no made-up number");
+});
+
+test("blanks only in the sample entries a list shows while it's empty count until the list has entries without them", async () => {
+  const who = await owner("luigi");
+  // As builder.ts asks: sample content while a list is empty, and [Price] for what the owner hasn't said.
+  const MENU = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Luigi's Pizzeria · Wood-fired pizza in Leeds</title>
+<meta name="description" content="Luigi's Pizzeria bakes wood-fired Neapolitan pizza in Leeds every evening. See the menu and book a table online.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E"></head>
+<body><h1>Wood-fired pizza in Leeds</h1><p>Neapolitan dough, slow-proved for two days, baked in ninety seconds in our oak-fired oven.</p>
+<h2>Menu</h2><ul id="menu"><li>Loading the menu…</li></ul>
+<script>
+const SAMPLE_MENU = [{ name: "Margherita", price: "[Price]" }, { name: "Diavola", price: "[Price]" }];
+async function load() {
+  let items = await flashDB.list("menu");
+  if (!items.length && flashDB.isOwner) { for (const s of SAMPLE_MENU) await flashDB.add("menu", s); items = await flashDB.list("menu"); }
+  const shown = items.length ? items : SAMPLE_MENU;
+  menu.replaceChildren(...shown.map((d) => { const li = document.createElement("li"); li.textContent = d.name + " · " + d.price; return li; }));
+}
+load();
+</script>
+<script type="application/json" id="flash-data">{"menu": "read"}</script></body></html>`;
+  const published = await publishSite(who.user, { html: MENU, title: "Luigi's" });
+  assert.ok("slug" in published && published.seo);
+  const slug = published.slug;
+  const look = async () => {
+    const body = (await (await getSeo(who, slug)).json()) as { report: { score: number; checks: Check[] } };
+    const found = body.report.checks.find((c) => c.id === "placeholders")!;
+    return { score: body.report.score, said: `${found.status} ${found.problem} ${found.values.list} ${found.action}` };
+  };
+  const add = (id: string, data: object, owner = "") =>
+    run("INSERT INTO site_records (id, site_slug, collection, data, created_at, updated_at, owner) VALUES (?, ?, 'menu', ?, 0, 0, ?)", [id, slug, JSON.stringify(data), owner]);
+  // An empty menu: visitors see the sample, [Price] and all.
+  const empty = await look();
+  assert.equal(empty.said, "fail found [Price] tell");
+  assert.equal(published.seo.score, empty.score);
+  // Someone's own entries (flashDB.mine) aren't what visitors see.
+  await add("mine1", { name: "Margherita", price: "£9.50" }, "visitor-1");
+  assert.equal((await look()).said, "fail found [Price] tell");
+  // The owner opened the app, which saved the sample as the menu: visitors see [Price] in it.
+  await add("m1", { name: "Margherita", price: "[Price]" });
+  await add("m2", { name: "Diavola", price: "£11.00" });
+  assert.equal((await look()).said, "fail found [Price] tell");
+  // The real menu: the sample never shows, so it's only worth knowing, and doesn't count.
+  await run("UPDATE site_records SET data = ? WHERE id = 'm1'", [JSON.stringify({ name: "Margherita", price: "£9.50" })]);
+  const filled = await look();
+  assert.equal(filled.said, "tip samples [Price] null");
+  assert.ok(filled.score > empty.score, `${filled.score} > ${empty.score}`);
+  assert.equal((await listed(who)).find((s) => s.slug === slug)?.seo?.score, filled.score, "the list of apps says the same");
+  // When visitors can't read the menu, they get the sample.
+  await chooseRule(slug, "menu", "private");
+  assert.equal((await look()).said, "fail found [Price] tell");
+  await chooseRule(slug, "menu", null);
+  assert.equal((await look()).said, "tip samples [Price] null");
+  // A blank in another object the script always shows (no menu entry has a phone) still counts.
+  const contact = MENU.replace("const SAMPLE_MENU", 'const CONTACT = { phone: "[Phone number]" };\nfooter.textContent = CONTACT.phone;\nconst SAMPLE_MENU');
+  assert.ok("slug" in (await publishSite(who.user, { html: contact, title: "Luigi's", slug })));
+  assert.equal((await look()).said, "fail found [Phone number], [Price] tell");
+  // A blank the page's own words show still counts, whatever the menu holds.
+  const shown = MENU.replace("<h2>Menu</h2>", "<p>Call us on [Phone number].</p><h2>Menu</h2>");
+  assert.ok("slug" in (await publishSite(who.user, { html: MENU, title: "Luigi's", slug })));
+  const updated = await publishSite(who.user, { html: shown, title: "Luigi's", slug });
+  assert.ok("slug" in updated && updated.seo);
+  assert.equal((await look()).said, "fail found [Phone number] tell");
+  assert.equal(updated.seo.before, filled.score, "the score before counts the menu too");
 });
 
 test("the search check never charges: looking, publishing, updating and restoring", async () => {

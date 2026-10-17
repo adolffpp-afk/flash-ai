@@ -1,14 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { announceUnpublished, api } from "@/lib/store";
+import { announceSeoScore, announceUnpublished, api } from "@/lib/store";
 import { SELLER_COUNTRIES } from "@/lib/shop";
 import { DATA_RULES, DEFAULT_KEY, RULE_TEXT, blockProblem, dataLine, type DataRule, type DataSummary, type RuleSource } from "@/lib/data-rules";
 import { msg } from "@/lib/i18n";
 import { inOrder } from "@/lib/in-order";
 import { tNow, useT, type T } from "@/lib/use-t";
 import { ContactsView } from "./ContactsView";
-import { SeoView, type SeoData, type SiteFix } from "./SeoView";
+import { SeoView, type FixPlan, type SeoData, type SiteFix } from "./SeoView";
 import { BAND_PILL, band } from "@/lib/seo-band";
 import { issueCount } from "@/lib/seo-rules";
 
@@ -93,8 +93,8 @@ const isOpen = (data: AppData) => data.collections.some((c) => c.rule === "open"
 /**
  * My websites and apps: every published app, its link, and the forms visitors sent to it. onPlans
  * opens the plans, for what comes with a paid one. start opens one app's search check (SEO) once the
- * list is in (from an app's own page in the chat); editCredits, onFix and onDraft let that check ask
- * the builder for a change, or put the owner's own details in the chat's message box.
+ * list is in (from an app's own page in the chat); editCredits, onPlanFix, onFix and onDraft let that
+ * check ask the builder for a change, or put the owner's own details in the chat's message box.
  */
 export function MyApps({
   onClose,
@@ -102,6 +102,7 @@ export function MyApps({
   onPlans,
   start,
   editCredits,
+  onPlanFix,
   onFix,
   onDraft,
 }: {
@@ -110,7 +111,8 @@ export function MyApps({
   onPlans?: () => void;
   start?: { slug: string; view: "seo" };
   editCredits?: number;
-  onFix?: (fix: SiteFix) => Promise<string | null>;
+  onPlanFix?: (fix: SiteFix) => Promise<FixPlan>;
+  onFix?: (fix: SiteFix) => Promise<FixPlan | null>;
   onDraft?: (draft: { projectId: string; slug: string; text: string }) => Promise<string | null>;
 }) {
   const t = useT();
@@ -364,8 +366,11 @@ export function MyApps({
         method: "POST",
         json: { id },
       });
-      // The search check read the page now live again: the list shows its score.
-      if (check) setSites((all) => all?.map((s) => (s.slug === slug ? { ...s, seo: check.score === null ? null : { score: check.score, issues: check.issues } } : s)) ?? null);
+      // The search check read the page now live again: the list shows its score, and so does the app's page in the chat.
+      if (check) {
+        setSites((all) => all?.map((s) => (s.slug === slug ? { ...s, seo: check.score === null ? null : { score: check.score, issues: check.issues } } : s)) ?? null);
+        announceSeoScore(slug, { score: check.score, issues: check.issues });
+      }
       setVersions((await api<{ versions: Version[] }>(`/api/sites/${slug}/versions`)).versions);
       setRestored({ data });
     } catch (err) {
@@ -399,6 +404,7 @@ export function MyApps({
       const score = data.report.score;
       const issues = issueCount(data.report);
       setSites((all) => all?.map((s) => (s.slug === site.slug ? { ...s, seo: score === null ? null : { score, issues } } : s)) ?? null);
+      announceSeoScore(site.slug, { score, issues });
     } catch {
       setError(t("Couldn't load the search check. Please try again."));
     }
@@ -949,6 +955,7 @@ export function MyApps({
                 slug={open.slug}
                 data={seo.data}
                 editCredits={editCredits}
+                onPlanFix={onPlanFix}
                 onFix={onFix}
                 onDraft={onDraft}
                 onOpenChat={onEdit}

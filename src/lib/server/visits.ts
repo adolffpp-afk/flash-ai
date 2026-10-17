@@ -6,6 +6,7 @@
 import { all, run } from "./db.ts";
 import { sha256 } from "./ids.ts";
 import { clientIp } from "./limits.ts";
+import { googleTesting, isLighthousePhone, mayBeLighthouseComputer } from "./lighthouse.ts";
 
 const DAYS_SHOWN = 30;
 const KEEP_VISITORS_DAYS = 31;
@@ -38,7 +39,8 @@ export function visitSource(referrer: string | null, host: string | null): strin
 /** Whether a page request is a person looking at the page, not a robot or a prefetch. */
 export function isPersonVisit(request: Request): boolean {
   const agent = request.headers.get("user-agent") ?? "";
-  if (!agent || ROBOT.test(agent)) return false;
+  // Robots, and Google's page speed test on its own phone (see lighthouse.ts), aren't people.
+  if (!agent || ROBOT.test(agent) || isLighthousePhone(agent)) return false;
   const purpose = request.headers.get("sec-purpose") ?? request.headers.get("purpose") ?? "";
   return !/prefetch|prerender/i.test(purpose);
 }
@@ -46,9 +48,12 @@ export function isPersonVisit(request: Request): boolean {
 /** Counts one load of a published site. Never throws: stats must not break a site. */
 export async function recordVisit(slug: string, request: Request, ownerId?: string | null, at = Date.now()): Promise<void> {
   if (!isPersonVisit(request)) return;
+  const agent = request.headers.get("user-agent") ?? "";
   try {
-    // The owner checking their own site isn't a visitor.
+    // The owner checking their own site isn't a visitor, and nor is Google's page speed test of it
+    // (its computer looks like any Mac's Chrome, so only while Google is testing the app).
     if (ownerId && (await all("SELECT 1 FROM sites WHERE slug = ? AND user_id = ?", [slug, ownerId])).length) return;
+    if (mayBeLighthouseComputer(agent) && (await googleTesting(slug))) return;
     const day = dayOf(at);
     const source = visitSource(request.headers.get("referer"), request.headers.get("host"));
     const visitor = sha256(`${day}|${slug}|${clientIp(request)}|${request.headers.get("user-agent")}`).slice(0, 24);

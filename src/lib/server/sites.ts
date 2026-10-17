@@ -131,12 +131,13 @@ async function published(slug: string, before: DataSummary | null = null, seo?: 
 
 /** The search check's score for a page just put live, and for the one it replaced (when there was one). */
 async function seoResult(slug: string, now: string, before: SeoFacts | null | undefined): Promise<PublishedSeo> {
-  const ctx = await seoContext(slug);
-  const summary = seoSummary(parseFacts(now), ctx);
+  const facts = parseFacts(now);
+  const ctx = await seoContext(slug, undefined, facts);
+  const summary = seoSummary(facts, ctx);
   return {
     score: summary?.score ?? null,
     issues: summary?.issues ?? 0,
-    ...(before !== undefined && { before: before ? (seoSummary(before, ctx)?.score ?? null) : null }),
+    ...(before !== undefined && { before: before ? (seoSummary(before, await seoContext(slug, ctx.domains, before))?.score ?? null) : null }),
   };
 }
 

@@ -128,6 +128,7 @@ const MESSAGES: Record<string, string> = {
   "links:missingIds": msg("Links to spots on the page that don't exist: {links}."),
   "links:pass": msg("Links inside your site all lead somewhere ({count})."),
   "placeholders:found": msg("Your page still shows placeholders: {list}."),
+  "placeholders:samples": msg("Placeholders like {list} are only in your page's script, in sample entries it shows while a list is empty. Your lists have entries now, so visitors see those instead."),
   "card:flash": msg("Flash adds your share card: the title, description and picture people see when your link is shared."),
   "card:missing": msg("Your page sets its own share card, but it's missing {tags}."),
   "card:image": msg("Your share picture isn't a full https:// address, so apps can't show it."),
@@ -160,6 +161,9 @@ const MESSAGES: Record<string, string> = {
     "Part of your page (what flashDB loads, and prices you set in Flash) appears only when it opens. On Flash's address Google can't fetch it, so Google sees the rest of the page, and any sample prices written in its code. On your own domain it can.",
   ),
 };
+
+/** Why a check matters, shown under what it found: nothing for blanks visitors don't see (sample entries). */
+export const whyOf = (check: Pick<Check, "id" | "status">): string | undefined => (check.id === "placeholders" && check.status === "tip" ? undefined : WHY[check.id]);
 
 /** What a check found, as its English phrase (translate it with t), or null when it passed with nothing more to say. */
 export const messageOf = (check: Pick<Check, "id" | "problem">): string | null => MESSAGES[`${check.id}:${check.problem}`] ?? null;

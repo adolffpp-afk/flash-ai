@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { register } from "node:module";
+import { createHash } from "node:crypto";
 
 // A stand-in Claude: answers with what it was asked, and reports what it cost.
 let sent: { system: string; prompt: string; maxTokens: number } | null = null;
@@ -49,6 +50,8 @@ const { flashDbShim } = await import("../src/lib/flashdb-shim.ts");
 const aiRoute = await import("../src/app/api/sites/[slug]/ai/route.ts");
 const { runLock } = await import("../src/lib/server/pagespeed.ts");
 const { clearLimit, overLimit } = await import("../src/lib/server/limits.ts");
+const pagespeedRoute = await import("../src/app/api/sites/[slug]/pagespeed/route.ts");
+const { OUTSIDE_MS } = await import("../src/lib/server/lighthouse.ts");
 
 const balance = async () =>
   Number((await one<{ c: number }>("SELECT COALESCE(SUM(amount), 0) AS c FROM credit_ledger WHERE user_id = 'owner'"))?.c);
@@ -169,6 +172,47 @@ test("Google's page speed check (Lighthouse) never spends an app's AI, and visit
   await answered("Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36", "a phone");
   await answered("Mozilla/5.0 (Linux; Android 12; moto g power (2022) Build/S3RQS32.20-42-10-6; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/137.0.0.0 Mobile Safari/537.36", "an in-app browser");
   await answered(computer13, "a computer");
+});
+
+test("Google's own report, opened from Flash, never spends an app's AI either, for a while", async () => {
+  const computer13 = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36";
+  const asked = async () => {
+    const before = await balance();
+    const res = await aiRoute.POST(
+      new Request("http://localhost/api/sites/shop/ai", { method: "POST", headers: { "content-type": "application/json", "user-agent": computer13 }, body: '{"prompt":"Hi"}' }),
+      { params: Promise.resolve({ slug: "shop" }) } as never,
+    );
+    return { status: res.status, charged: before - (await balance()) };
+  };
+  const session = async (id: string) => {
+    await run("INSERT OR IGNORE INTO users (id, email, password_hash, created_at, verified_at) VALUES (?, ?, '', 0, 1)", [id, `${id}@x.io`]);
+    await run("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)", [createHash("sha256").update(`tok-${id}`).digest("hex"), id, Date.now() + 3600_000]);
+    return `flash_session=tok-${id}`;
+  };
+  // Open the full report on Google: Flash is told first, only by the app's owner.
+  const opening = async (cookie?: string) =>
+    (await pagespeedRoute.PUT(new Request("http://localhost/api/sites/shop/pagespeed", { method: "PUT", headers: cookie ? { cookie } : {} }), { params: Promise.resolve({ slug: "shop" }) } as never)).status;
+  const owner = await session("owner");
+  assert.equal(await opening(), 401);
+  assert.equal(await opening(await session("someone-else")), 404, "only the app's owner");
+  assert.equal((await asked()).status, 200, "a Mac before");
+  assert.equal(await opening(owner), 204);
+  assert.deepEqual(await asked(), { status: 503, charged: 0 }, "Lighthouse's computer while Google runs its test on its own site");
+  // Opened again just before it ends (Google runs its test again), it lasts two minutes from then;
+  // after that, a Mac is answered again.
+  const opened = Date.now();
+  mock.timers.enable({ apis: ["Date"], now: opened + OUTSIDE_MS - 1000 });
+  try {
+    assert.equal(await opening(owner), 204);
+    mock.timers.setTime(opened + OUTSIDE_MS + 1000);
+    assert.equal((await asked()).status, 503, "still Google's second test");
+    mock.timers.setTime(opened + 2 * OUTSIDE_MS);
+    const after = await asked();
+    assert.equal(after.status, 200);
+    assert.ok(after.charged > 0);
+  } finally {
+    mock.timers.reset();
+  }
 });
 
 test("an answer that ends after midnight gives back what it didn't use to the day it was taken from", async () => {

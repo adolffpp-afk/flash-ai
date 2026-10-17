@@ -27,8 +27,8 @@ const ERROR_BYTES = 4000;
 
 /** Set while Google refuses Flash's checks: none is sent until it expires. */
 export const REFUSED = "pagespeed:refused";
-/** Held (in rate_limits) while Google checks an app: one check at a time, and its AI says no meanwhile. */
-export const runLock = (slug: string) => `pagespeed-run:${slug}`;
+// Held while Google checks an app: one check at a time, and its AI says no meanwhile (see lighthouse.ts).
+export { runLock } from "./lighthouse.ts";
 
 const AUDITS = ["largest-contentful-paint", "cumulative-layout-shift", "total-blocking-time", "first-contentful-paint"] as const;
 const PATHS: JsonPath[] = [

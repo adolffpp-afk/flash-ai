@@ -174,3 +174,24 @@ export function onUnpublished(callback: (slug: string) => void): () => void {
   window.addEventListener(UNPUBLISHED, listener);
   return () => window.removeEventListener(UNPUBLISHED, listener);
 }
+
+const SEO = "flash:seo";
+type SeoScore = { score: number | null; issues: number };
+
+/**
+ * Tells what's on screen (an app's own page in the chat) the search check's score of a site's live
+ * page, read in My websites & apps: after a version was brought back there, or the check was opened.
+ */
+export function announceSeoScore(slug: string, seo: SeoScore): void {
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(SEO, { detail: { slug, seo } }));
+}
+
+/** Calls back with each site's score announced on this page; returns what stops it. */
+export function onSeoScore(callback: (slug: string, seo: SeoScore) => void): () => void {
+  const listener = (e: Event) => {
+    const { slug, seo } = (e as CustomEvent<{ slug: string; seo: SeoScore }>).detail;
+    callback(slug, seo);
+  };
+  window.addEventListener(SEO, listener);
+  return () => window.removeEventListener(SEO, listener);
+}

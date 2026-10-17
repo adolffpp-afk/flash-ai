@@ -14,7 +14,7 @@ import { decode, hasOwnPreview, sitePreview } from "./site-preview.ts";
 import { imageDimensions } from "./imageSize.ts";
 
 /** Changes when the reading changes, so facts saved before are read again (see server/seo.ts). */
-export const SEO_VERSION = 3;
+export const SEO_VERSION = 4;
 
 export type Alphabet = "latin" | "arabic" | "hebrew" | "cyrillic" | "greek" | "devanagari" | "bengali" | "thai" | "hangul" | "cjk";
 
@@ -94,9 +94,23 @@ export type SeoFacts = {
   smallText: string[];
   smallTargets: string[];
   mixed: string[];
+  /**
+   * Blanks like [Phone number] the page shows: in its words, title, description, templates, Alpine's
+   * and Vue's data, and its scripts' JSX, strings and template literals.
+   */
   placeholders: string[];
+  /**
+   * Blanks found only as a field of an object in its scripts' code ({ price: "[Price]" }), which may be
+   * sample entries shown only while a list is empty (as builder.ts asks): they count as shown unless
+   * the lists it reads have entries with those fields (sampleFields) and without those blanks.
+   */
+  scriptPlaceholders: string[];
+  /** The fields those blanks are in (price). */
+  sampleFields: string[];
   /** The page loads data from Flash when it opens (flashDB lists, prices set in Flash). */
   loadsData: boolean;
+  /** The shared lists it reads (flashDB.list("menu")), with "*" for one named while it runs. */
+  lists: string[];
   /** Reading the page failed: there is no score. */
   error?: true;
 };
@@ -210,6 +224,9 @@ const GOOGLE_FONTS = /^\s*(?:https?:)?\/\/fonts\.googleapis\.com\/css2?\?/i;
 const PLACEHOLDER = /\[[\p{Lu}\p{Lo}][\p{L}\p{M}\p{N} '’.-]{1,38}\]/gu;
 // Where a blank in a script's code is in its words: after a quote, a tag's ">", a space or "(".
 const SCRIPT_TEXT_BEFORE = /[\s"'`>(]/;
+// A blank in a string that is an object's field, as a sample entry's are ({ price: "[Price]" }): the
+// field's name after a "{", a "," or the line's start, then the string's start, with no quote after it.
+const SAMPLE_FIELD = /(?:^|[{,])\s*([A-Za-z_$][\w$]{0,39}|"[\w$ -]{1,40}"|'[\w$ -]{1,40}')\s*:\s*["'`][^"'`\n]*$/;
 // A line in a script that only logs, throws or is a comment: its words never show on the page.
 const NOT_SHOWN_LINE = /console\.|\bthrow\b|Error\(|^\s*(?:\/\/|\/?\*)/;
 // A picture or other file a script's HTML or JSX loads over http:// (src="http://…", src={"http://…"}).
@@ -276,7 +293,10 @@ function empty(bytes: number): SeoFacts {
     smallTargets: [],
     mixed: [],
     placeholders: [],
+    scriptPlaceholders: [],
+    sampleFields: [],
     loadsData: false,
+    lists: [],
   };
 }
 
@@ -297,6 +317,8 @@ function fit(facts: SeoFacts): SeoFacts {
   facts.fonts.noSwap = short(facts.fonts.noSwap);
   facts.smallTargets = short(facts.smallTargets);
   facts.placeholders = short(facts.placeholders);
+  facts.scriptPlaceholders = short(facts.scriptPlaceholders);
+  facts.sampleFields = short(facts.sampleFields);
   facts.h1Texts = short(facts.h1Texts);
   facts.headings = facts.headings.slice(0, 20);
   facts.h1s = Object.fromEntries(Object.entries(facts.h1s).slice(0, 30));
@@ -611,12 +633,12 @@ function scan(html: string): SeoFacts {
     if (type === "text/babel" || type === "text/jsx") {
       reactish = true;
       jsScripts++;
-      onScriptWords(content);
+      onScriptWords(content, true);
       return;
     }
     if (!JS_TYPE.test(type)) return;
     jsScripts++;
-    if (src === undefined) onScriptWords(content);
+    if (src === undefined) onScriptWords(content, true);
     if (src !== undefined) {
       markMixed(src);
       if (/babel/i.test(src)) reactish = true;
@@ -629,10 +651,11 @@ function scan(html: string): SeoFacts {
   /**
    * What a script (or a <template>) writes on the page: blanks like [Phone number] in its strings and
    * JSX, small Tailwind text sizes, and pictures it loads over http://. Pages built by React, Alpine's
-   * x-data or sample records shown while a list is empty hold their words here, not in the HTML.
+   * x-data or sample records shown while a list is empty hold their words here, not in the HTML. A
+   * script's blanks that are an object's field go apart (see scriptPlaceholders); a template's are shown.
    */
-  const onScriptWords = (code: string) => {
-    findScriptPlaceholders(code, facts.placeholders);
+  const onScriptWords = (code: string, script = false) => {
+    findScriptPlaceholders(code, facts.placeholders, script ? { blanks: facts.scriptPlaceholders, fields: facts.sampleFields } : undefined);
     checkClasses(code);
     if (code.includes("http://")) for (const m of code.matchAll(SCRIPT_HTTP_SRC)) addOnce(facts.mixed, clip(m[1], SAMPLE), 8);
   };
@@ -1038,7 +1061,27 @@ function scan(html: string): SeoFacts {
   facts.ownCanonical = facts.canonicalCount > 0;
   facts.photo = sitePreview(html).image !== null;
   facts.loadsData = html.includes("flashDB.list(") || html.includes("data-flash-price");
+  // A blank the page shows elsewhere too is shown, whatever its lists hold.
+  facts.scriptPlaceholders = facts.scriptPlaceholders.filter((p) => !facts.placeholders.includes(p));
+  if (facts.scriptPlaceholders.length && html.includes("flashDB")) facts.lists = listsRead(html);
   return facts;
+}
+
+/**
+ * The shared lists a page reads, by the names its flashDB.list calls give, with "*" for a name made
+ * while it runs, or for more than it looks at (10 names, 200 calls).
+ */
+function listsRead(html: string): string[] {
+  const names = new Set<string>();
+  let calls = 0;
+  for (const m of html.matchAll(/\bflashDB\s*\??\.\s*list\s*\(\s*(?:(["'`])([A-Za-z0-9_-]{1,40})\1\s*[,)])?/g)) {
+    if (++calls > 200 || names.size >= 10) {
+      names.add("*");
+      break;
+    }
+    names.add(m[2] ?? "*");
+  }
+  return [...names];
 }
 
 // What ends a name written without quotes: a space, ">", a quote or "/".
@@ -1097,10 +1140,11 @@ function findPlaceholders(text: string, found: string[]) {
  * show on the page. Code that looks like one never counts: items[Key] (a name or a bracket before it),
  * obj[Symbol.iterator] (a "." inside), a pattern's [A-Za-z], what follows it as code ([A-Za-z]+,
  * [Key](…)), and lines that only log or throw ("[App] failed") or are comments. At most 2,000 are
- * looked at, so a script full of brackets is read as quickly as any other.
+ * looked at, so a script full of brackets is read as quickly as any other. With samples, a blank that
+ * is an object's field ({ price: "[Price]" }) goes there, with its field, as a possible sample entry.
  */
-function findScriptPlaceholders(code: string, found: string[]) {
-  if (found.length >= 8 || !code.includes("[")) return;
+function findScriptPlaceholders(code: string, found: string[], samples?: { blanks: string[]; fields: string[] }) {
+  if ((found.length >= 8 && !samples) || !code.includes("[")) return;
   let looked = 0;
   for (const m of code.matchAll(PLACEHOLDER)) {
     if (++looked > 2000) return;
@@ -1110,8 +1154,13 @@ function findScriptPlaceholders(code: string, found: string[]) {
     if (/^[A-Z]-[A-Z]/.test(inner) || /\p{L}\.\p{L}/u.test(inner)) continue;
     if (/[({+*?]/.test(code[at + m[0].length] ?? "")) continue;
     const head = code.slice(Math.max(0, at - 160), at);
-    if (NOT_SHOWN_LINE.test(head.slice(head.lastIndexOf("\n") + 1)) || !isBlank(m[0])) continue;
-    addOnce(found, m[0], 8);
-    if (found.length >= 8) return;
+    const line = head.slice(head.lastIndexOf("\n") + 1);
+    if (NOT_SHOWN_LINE.test(line) || !isBlank(m[0])) continue;
+    const field = samples && SAMPLE_FIELD.exec(line)?.[1];
+    if (samples && field) {
+      addOnce(samples.blanks, m[0], 8);
+      addOnce(samples.fields, field.replace(/^["']|["']$/g, ""), 8);
+    } else addOnce(found, m[0], 8);
+    if (found.length >= 8 && (!samples || samples.blanks.length >= 8)) return;
   }
 }

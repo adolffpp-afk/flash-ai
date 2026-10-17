@@ -3,6 +3,8 @@ import { domainsForSite } from "./domains.ts";
 import { SEO_VERSION, scanPage, type SeoFacts } from "../seo-scan.ts";
 import { evaluate, issueCount, type SeoContext, type SeoReport } from "../seo-rules.ts";
 import { hasOwnCanonical } from "../site-preview.ts";
+import { ANYONE, can } from "../data-rules.ts";
+import { collectionRule } from "./site-data.ts";
 import { SITE_URL } from "../../app/site.ts";
 
 /*
@@ -54,9 +56,35 @@ export async function namesOwnCanonical(site: { slug: string; html: string; seo:
 /** Flash's own address, as published apps are linked from it (FLASH_APP_URL, else the live site). */
 export const appBase = () => (process.env.FLASH_APP_URL || SITE_URL).replace(/\/+$/, "");
 
-/** What the check needs to know besides the page: its address on Flash and its own domains. */
-export async function seoContext(slug: string, domains?: string[]): Promise<SeoContext> {
-  return { slug, appBase: appBase(), domains: domains ?? (await domainsForSite(slug)) };
+/**
+ * What the check needs to know besides the page: its address on Flash, its own domains, and (for a
+ * page whose scripts hold blanks like [Price]) whether every shared list it reads has entries.
+ */
+export async function seoContext(slug: string, domains?: string[], facts?: SeoFacts | null): Promise<SeoContext> {
+  const ctx: SeoContext = { slug, appBase: appBase(), domains: domains ?? (await domainsForSite(slug)) };
+  if (await listsFilled(slug, facts)) ctx.listsFilled = true;
+  return ctx;
+}
+
+/**
+ * Whether every shared list a page reads (flashDB.list("menu")) has entries visitors may see, with the
+ * fields its scripts' blanks are in ({ price: "[Price]" }) and none of those blanks: the blanks are then
+ * in sample entries the page shows only while a list is empty (as builder.ts asks), so visitors don't
+ * see them. A list named while the page runs can't be looked at, so it never counts as filled.
+ */
+async function listsFilled(slug: string, facts: SeoFacts | null | undefined): Promise<boolean> {
+  if (!facts?.scriptPlaceholders?.length || !facts.sampleFields?.length || !facts.lists?.length || facts.lists.includes("*")) return false;
+  for (const list of facts.lists) {
+    const rule = await collectionRule(slug, list);
+    if (!rule || !can(rule.rule, "read", ANYONE)) return false;
+    if (!(await one("SELECT 1 AS found FROM site_records WHERE site_slug = ? AND owner = '' AND collection = ? LIMIT 1", [slug, list]))) return false;
+  }
+  const where = `site_slug = ? AND owner = '' AND collection IN (${facts.lists.map(() => "?").join(", ")})`;
+  for (const field of facts.sampleFields) {
+    if (!(await one(`SELECT 1 AS found FROM site_records WHERE ${where} AND json_extract(data, ?) IS NOT NULL LIMIT 1`, [slug, ...facts.lists, `$."${field}"`]))) return false;
+  }
+  const blanks = facts.scriptPlaceholders.map(() => "instr(data, ?) > 0").join(" OR ");
+  return !(await one(`SELECT 1 AS found FROM site_records WHERE ${where} AND (${blanks}) LIMIT 1`, [slug, ...facts.lists, ...facts.scriptPlaceholders]));
 }
 
 /** A site's score and how many things there are to fix, or null when there's no score. */
@@ -97,6 +125,7 @@ export async function refreshStale(userId: string): Promise<void> {
 export async function seoReport(site: { slug: string; seo: string; updated_at: number }): Promise<{ checkedAt: number; ctx: SeoContext; report: SeoReport }> {
   const saved = parseFacts(site.seo);
   const fresh = saved ? null : await refreshSeo(site.slug);
-  const ctx = await seoContext(site.slug);
-  return { checkedAt: fresh?.updatedAt ?? Number(site.updated_at), ctx, report: evaluate(saved ?? fresh?.facts, ctx) };
+  const facts = saved ?? fresh?.facts;
+  const ctx = await seoContext(site.slug, undefined, facts);
+  return { checkedAt: fresh?.updatedAt ?? Number(site.updated_at), ctx, report: evaluate(facts, ctx) };
 }

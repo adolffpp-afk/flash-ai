@@ -6,6 +6,7 @@ import { domainsForSite, pointsAtFlash } from "@/lib/server/domains.ts";
 import { cacheGet, cacheKey, cachePut } from "@/lib/server/source-fetch.ts";
 import { appBase } from "@/lib/server/seo.ts";
 import { parseRecord, REFUSED, runLock, runPageSpeed, type PageSpeedError, type PageSpeedRecord, type PageSpeedRun } from "@/lib/server/pagespeed.ts";
+import { openedOutside } from "@/lib/server/lighthouse.ts";
 import { preferredDomain } from "@/lib/seo-rules.ts";
 import type { Translate } from "@/lib/i18n.ts";
 
@@ -104,4 +105,20 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug
   } finally {
     await clearLimit(lock);
   }
+}
+
+/**
+ * The owner is opening Google's own report for the app (Open the full report on Google), which runs
+ * Google's test there: for the next two minutes (from the last time it's opened) the app's AI says no
+ * to Lighthouse and its loads aren't counted as visitors, as during Flash's own check (see
+ * lighthouse.ts). Free, and nothing is fetched.
+ */
+export async function PUT(request: Request, ctx: RouteContext<"/api/sites/[slug]/pagespeed">) {
+  const user = await getUser(request);
+  if (!user) return unauthorized();
+  const t = await translatorFor(request, user.language);
+  const { slug } = await ctx.params;
+  if (!(await one("SELECT 1 AS mine FROM sites WHERE slug = ? AND user_id = ?", [slug, user.id]))) return Response.json({ error: t("Not found") }, { status: 404 });
+  await openedOutside(slug);
+  return new Response(null, { status: 204 });
 }
