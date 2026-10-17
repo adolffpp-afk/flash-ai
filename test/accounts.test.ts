@@ -294,6 +294,13 @@ test("?as= names the account only on the links that need it, and only reads", as
   }
   assert.equal((await auth.getUser(req("/api/me", { cookie, as: b })))?.id, a, "ignored anywhere else");
   assert.equal((await auth.getUser(req("/api/sites/s1/records", { cookie, as: b })))?.id, a);
+  // A browser with one account (no list cookie) follows a link for another account: nobody, not its own.
+  const single = `flash_session=${ta}`;
+  for (const path of ["/api/sites/s1/orders", "/api/payments/link"]) {
+    assert.equal(await auth.getUser(req(path, { cookie: single, as: b })), null, `${path}: one account here, link for another`);
+    assert.equal((await auth.getUser(req(path, { cookie: single, as: a })))?.id, a, `${path}: one account here, its own link`);
+  }
+  assert.equal((await auth.getUser(req("/api/me", { cookie: single, as: b })))?.id, a, "ignored anywhere else");
   assert.equal(auth.asParamAllowed("GET", "/api/sites/x/versions/extra"), false);
   assert.equal(auth.asParamAllowed("DELETE", "/api/sites/x/versions"), false);
 });
@@ -1061,6 +1068,17 @@ test("Stripe's seller sign-up link opens for the account it was made for, and ne
     assert.equal(other.status, 303);
     assert.equal(other.headers.get("location"), `${ORIGIN}/?apps=1&as=${c}`);
     assert.equal(links.length, 1, "no sign-up link for an account not signed in here");
+    // A browser signed in to a alone, a seller too, follows b's link: a's sign-up doesn't start.
+    await run("INSERT INTO seller_accounts (user_id, stripe_account, country, currency, ready, created_at) VALUES (?, 'acct_a', 'CA', 'cad', 0, 0)", [a]);
+    process.env.FLASH_ADMIN_EMAILS = `${b}@x.io,${a}@x.io`;
+    const alone = `flash_session=${await session(a)}`;
+    const forB = await payLinkRoute.GET(req("/api/payments/link", { cookie: alone, as: b }));
+    assert.equal(forB.status, 303);
+    assert.equal(forB.headers.get("location"), `${ORIGIN}/?apps=1&as=${b}`);
+    assert.equal(links.length, 1, "no sign-up link for a from b's link");
+    const forA = await payLinkRoute.GET(req("/api/payments/link", { cookie: alone, as: a }));
+    assert.equal(forA.headers.get("location"), "https://connect.stripe.com/setup/b");
+    assert.deepEqual(links.map((l) => l.get("account")), ["acct_b", "acct_a"], "a's own link opens a's");
   } finally {
     globalThis.fetch = saved.fetch;
     if (saved.key === undefined) delete process.env.STRIPE_SECRET_KEY;
