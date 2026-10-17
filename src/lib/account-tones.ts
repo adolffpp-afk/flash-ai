@@ -57,14 +57,27 @@ function read(): Tones {
   return memory;
 }
 
+function forget(): void {
+  memory = [];
+  try {
+    localStorage.removeItem(KEY);
+  } catch {
+    // Storage refused: this page's copy is gone.
+  }
+}
+
 /**
  * Each listed account's colour, kept for this browser's tabs. An account keeps its colour once the
- * others log out too; one alone on a browser that never held two has Flash's own (the first), and
- * nothing is kept for it yet.
+ * others log out too. One alone with no colour kept for it, on a browser that never held two or
+ * whose accounts have all logged out since, has Flash's own (the first), as on a fresh browser, and
+ * nothing is kept for it yet: the colours of the accounts no longer here are let go.
  */
 export function accountTones(ids: string[], count: number): Map<string, number> {
   const before = read();
-  if (!before.length && ids.length < 2) return new Map(ids.map((id) => [id, 0]));
+  if (ids.length < 2 && !before.some(([id]) => ids.includes(id))) {
+    if (before.length) forget();
+    return new Map(ids.map((id) => [id, 0]));
+  }
   const next = keepTones(before, ids, count);
   memory = next;
   if (JSON.stringify(next) !== JSON.stringify(before)) {

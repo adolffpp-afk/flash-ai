@@ -14,6 +14,8 @@ import { AccountBadge, accountTone } from "./AccountMenu";
  * computer. Tab stays inside it. It opens with the dialog itself focused, not its first button, so
  * no account looks already chosen. It sits above everything else on the page, an app in full
  * screen too (in a portal, one layer up), so what it asks is never hidden behind what it guards.
+ * Its keys are heard first (on the window, as they go down) and Escape goes no further: it is the
+ * dialog's own (its Cancel, when it has one), never Ask Flash's or a preview's under it.
  */
 function Sheet({ label, onEscape, children }: { label: string; onEscape?: () => void; children: ReactNode }) {
   const box = useRef<HTMLDivElement>(null);
@@ -23,7 +25,9 @@ function Sheet({ label, onEscape, children }: { label: string; onEscape?: () => 
     const focusable = () => [...el.querySelectorAll<HTMLElement>("button:not([disabled]), a[href]")];
     el.focus();
     const keep = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && onEscape) {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        if (!onEscape) return;
         e.preventDefault();
         onEscape();
         return;
@@ -42,8 +46,8 @@ function Sheet({ label, onEscape, children }: { label: string; onEscape?: () => 
         first.focus();
       }
     };
-    document.addEventListener("keydown", keep);
-    return () => document.removeEventListener("keydown", keep);
+    window.addEventListener("keydown", keep, true);
+    return () => window.removeEventListener("keydown", keep, true);
   }, [onEscape]);
   return createPortal(
     <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center sm:p-4">
@@ -64,9 +68,10 @@ function Sheet({ label, onEscape, children }: { label: string; onEscape?: () => 
 
 /**
  * Add another account (or Sign in again) over the page, which stays as it was underneath, out of
- * reach (inert). It takes the focus as it opens, so it is announced; Escape is its Back, and
- * nothing under it hears the key (Ask Flash, a preview in full screen). Once it closes, the focus
- * goes back to the profile menu's button it was opened from.
+ * reach (inert). It takes the focus as it opens, so it is announced; Escape is its Back wherever
+ * the focus is (the page itself, once a button chosen in it is gone), and nothing under it hears
+ * the key (Ask Flash, a preview in full screen): it is heard first, on the window as it goes down.
+ * Once it closes, the focus goes back to the profile menu's button it was opened from.
  */
 export function AddOver({ label, onBack, children }: { label: string; onBack: () => void; children: ReactNode }) {
   const box = useRef<HTMLDivElement>(null);
@@ -84,9 +89,9 @@ export function AddOver({ label, onBack, children }: { label: string; onBack: ()
       e.stopPropagation();
       back.current();
     };
-    el.addEventListener("keydown", key);
+    window.addEventListener("keydown", key, true);
     return () => {
-      el.removeEventListener("keydown", key);
+      window.removeEventListener("keydown", key, true);
       document.querySelector<HTMLElement>("[data-account-menu]")?.focus({ preventScroll: true });
     };
   }, []);

@@ -110,9 +110,10 @@ type Chooser = { reason: "link" | "gone" | "notHere"; email?: string; name?: str
 /**
  * Add mode: signing in to another account over the page, then going to next (a page of Flash's).
  * back: the chooser that opened it, which Back returns to; again: the email of the account this tab
- * showed, to sign in to again.
+ * showed, to sign in to again; opened: which time add mode opened, so a sign-in that ends after its
+ * add mode was closed (Back) doesn't go on.
  */
-type Adding = { next?: string; error?: string; back?: Chooser; again?: string };
+type Adding = { next?: string; error?: string; back?: Chooser; again?: string; opened?: number };
 export type Status = Record<Engine, boolean>;
 
 /**
@@ -266,12 +267,12 @@ export function Flash({
   const [notice, setNotice] = useState("");
   // Several accounts in one browser (see account-pin.ts): the account a switch is under way to; the
   // chooser shown when this tab's account was logged out here, or a link was for another account;
-  // a switch waiting on "Switch anyway" (to: the page of Flash it goes to, after Add another
-  // account); add mode (signing in to another account); a log out under way; and an invitation for
-  // another account signed in here.
+  // a switch waiting on "Switch anyway" (go: what it does then; added: after Add another account,
+  // whose account is signed in here already); add mode (signing in to another account); a log out
+  // under way; and an invitation for another account signed in here.
   const [switching, setSwitching] = useState<string | null>(null);
   const [chooser, setChooser] = useState<Chooser | null>(null);
-  const [unsaved, setUnsaved] = useState<{ id: string; added?: boolean; to?: string } | null>(null);
+  const [unsaved, setUnsaved] = useState<{ go: () => void; added?: boolean } | null>(null);
   const [adding, setAdding] = useState<Adding | null>(null);
   const leavingRef = useRef(false);
   const [addNext, setAddNext] = useState<string | undefined>(undefined);
@@ -405,6 +406,7 @@ export function Flash({
   const meRef = useRef<Me | null>(null);
   const chooserRef = useRef<Chooser | null>(null);
   const addingRef = useRef<Adding | null>(null);
+  const addSeq = useRef(0);
   const projectsRef = useRef<Project[]>([]);
   useEffect(() => {
     meRef.current = me;
@@ -1102,7 +1104,7 @@ export function Flash({
     if (switching && !anyway) return false;
     setSwitching(id);
     if (!gone && !anyway && !(await flushSaves())) {
-      setUnsaved({ id });
+      setUnsaved({ go: () => void switchAccount(id, { anyway: true }) });
       return false;
     }
     setUnsaved(null);
@@ -1147,14 +1149,17 @@ export function Flash({
   function openAdding(next: Adding) {
     setVoice(null);
     stopMic();
-    addingRef.current = next;
-    setAdding(next);
+    addingRef.current = { ...next, opened: ++addSeq.current };
+    setAdding(addingRef.current);
   }
 
   function closeAdding() {
     addingRef.current = null;
     setAdding(null);
   }
+
+  /** The add mode a sign-in started in is still open: not closed meanwhile (Back, Escape), nor opened again. */
+  const stillAdding = (from: Adding) => addingRef.current?.opened === from.opened;
 
   /**
    * Signed in from add mode. To the account this tab showed (Sign in again): it goes on where it
@@ -1165,6 +1170,14 @@ export function Flash({
   async function addDone(from: Adding, result?: { account?: string }) {
     announce({ type: "changed" });
     const id = result?.account;
+    // Back (or Escape) before the sign-in, or the saves before going on, ended: the tab stays as it
+    // was, on its account, and the menu (or the chooser) lists who is signed in here now.
+    const stayed = () => {
+      if (stillAdding(from)) return false;
+      window.dispatchEvent(new Event("flash:account-check"));
+      return true;
+    };
+    if (stayed()) return;
     if (from.again && id && id === getPin()) {
       closeAdding();
       if (meRef.current) void refreshMe();
@@ -1172,13 +1185,28 @@ export function Flash({
       return;
     }
     if (!id) return window.location.reload();
-    if (meRef.current && !from.back && !(await flushSaves())) {
+    const saved = !meRef.current || Boolean(from.back) || (await flushSaves());
+    if (stayed()) return;
+    if (!saved) {
       // Asked over the page, which keeps its changes if the person stays (Cancel).
       closeAdding();
-      setUnsaved({ id, added: true, to: from.next });
+      setUnsaved({ go: () => goOnAs(id, from.next), added: true });
       return;
     }
     goOnAs(id, from.next);
+  }
+
+  /**
+   * Add mode leaving the page to finish signing in (two-step sign-in's code page, a "Continue with
+   * …" sign-in): what changed here is saved first, or Flash asks, as before a switch (not when this
+   * tab's account already ended). Back meanwhile, or Cancel, keeps the tab here as it was.
+   */
+  async function addLeave(from: Adding, go: () => void) {
+    const saved = !meRef.current || Boolean(from.back) || (await flushSaves());
+    if (!stillAdding(from)) return;
+    if (saved) return go();
+    closeAdding();
+    setUnsaved({ go });
   }
 
   /** After Add another account: to the page of Flash it was for (Home when none), as that account. */
@@ -2102,6 +2130,7 @@ export function Flash({
           email: adding.back ? undefined : me?.user.email,
           again: adding.again,
           onBack: () => addBack(adding),
+          leave: (go) => addLeave(adding, go),
         }}
         onDone={(result) => addDone(adding, result)}
       />
@@ -3014,8 +3043,7 @@ export function Flash({
       )}
       {unsaved && (
         <SwitchAnyway
-          // After Add another account, the account is already signed in here and the default.
-          onSwitch={() => (unsaved.added ? goOnAs(unsaved.id, unsaved.to) : void switchAccount(unsaved.id, { anyway: true }))}
+          onSwitch={unsaved.go}
           onCancel={() => {
             setUnsaved(null);
             setSwitching(null);
@@ -3052,10 +3080,14 @@ export function Flash({
             </div>
           </div>
         )}
+        {/* What's said takes up to half the room it shares with the chat (or the preview), so a screen
+            with little height (a phone held sideways) keeps the chat in view; beyond that it scrolls
+            on its own, its edge faded. */}
+        <div className="grid min-h-0 flex-1 grid-rows-[fit-content(50%)_minmax(0,1fr)]">
         {said && (
-          <div className={`mx-auto w-full shrink-0 ${tab === "preview" ? "max-w-3xl space-y-2 px-3 pb-1" : `space-y-3 px-4 pb-2 pt-2 ${isHome ? "max-w-[1600px] sm:px-6 lg:px-8" : "max-w-3xl"}`}`}>{said}</div>
+          <div className={`mx-auto w-full overflow-y-auto overscroll-contain [mask-image:linear-gradient(to_bottom,#000_calc(100%-0.5rem),transparent)] ${tab === "preview" ? "max-w-3xl space-y-2 px-3 pb-2" : `space-y-3 px-4 pb-2 pt-2 ${isHome ? "max-w-[1600px] sm:px-6 lg:px-8" : "max-w-3xl"}`}`}>{said}</div>
         )}
-        <div className="relative flex min-h-0 flex-1 flex-col">
+        <div className="relative row-start-2 flex min-h-0 flex-col">
         {/* Under the preview on a phone, the chat keeps its place (and where it was scrolled to) out of sight. */}
         <div
           inert={tab === "preview"}
@@ -3156,6 +3188,7 @@ export function Flash({
             {panel}
           </section>
         )}
+        </div>
         </div>
 
         {(!isHome || voice) && (

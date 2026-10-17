@@ -332,10 +332,10 @@ test("a switch names the account chosen only once the page loads, so a reload th
   const added = body(page, "async function addDone(");
   assert.doesNotMatch(added, /setPin\(/);
   assert.doesNotMatch(added, /location\.(replace|assign)\(/);
-  assert.match(added, /if \(meRef\.current && !from\.back && !\(await flushSaves\(\)\)\) \{\n(\s*\/\/.*\n)*\s+closeAdding\(\);\n\s+setUnsaved\(\{ id, added: true, to: from\.next \}\);\n\s+return;\n\s+\}\n\s+goOnAs\(id, from\.next\);/);
+  assert.match(added, /const saved = !meRef\.current \|\| Boolean\(from\.back\) \|\| \(await flushSaves\(\)\);\n\s+if \(stayed\(\)\) return;\n\s+if \(!saved\) \{\n(\s*\/\/.*\n)*\s+closeAdding\(\);\n\s+setUnsaved\(\{ go: \(\) => goOnAs\(id, from\.next\), added: true \}\);\n\s+return;\n\s+\}\n\s+goOnAs\(id, from\.next\);/);
   assert.match(body(page, "function goOnAs("), /if \(to && new URL\(to, window\.location\.href\)\.pathname !== "\/"\) return window\.location\.replace\(to\);\n\s+reloadAs\(id, undefined, to\);/);
   assert.match(page, /onDone=\{\(result\) => addDone\(adding, result\)\}/);
-  assert.match(page, /onSwitch=\{\(\) => \(unsaved\.added \? goOnAs\(unsaved\.id, unsaved\.to\) : void switchAccount\(unsaved\.id, \{ anyway: true \}\)\)\}/);
+  assert.match(page, /onSwitch=\{unsaved\.go\}/);
   // The form stays busy while that happens.
   const screen = await readFile(new URL("../src/components/AuthScreen.tsx", import.meta.url), "utf8");
   assert.match(screen, /\n\s+await onDone\(result\);\n/);
@@ -439,6 +439,17 @@ test("each account keeps its badge colour while it stays signed in here, whoever
   assert.equal(accountTones(["personal"], 5).get("personal"), both.get("personal"));
   assert.equal(accountTones(["personal", "new"], 5).get("personal"), both.get("personal"), "nor when another is added");
   browserStorage.data.clear();
+  // A shared computer: Ben and Ana used this browser, then logged out of all accounts. The next
+  // person, alone here, has Flash's own colour, as on a fresh browser, and the old colours are let go.
+  accountTones(["ben", "ana"], 5);
+  assert.deepEqual([...accountTones(["gil"], 5)], [["gil", 0]]);
+  assert.equal(browserStorage.data.get("flash-account-tones"), undefined);
+  assert.deepEqual([...accountTones(["gil", "hana"], 5)], [["gil", 0], ["hana", 1]]);
+  browserStorage.refuse = true;
+  accountTones(["kim", "lee"], 5);
+  assert.deepEqual([...accountTones(["max"], 5)], [["max", 0]], "storage that refuses too");
+  browserStorage.refuse = false;
+  browserStorage.data.clear();
   // The menu and the account chooser colour every badge this way, one account left included.
   const { readFile } = await import("node:fs/promises");
   const menu = await readFile(new URL("../src/components/AccountMenu.tsx", import.meta.url), "utf8");
@@ -489,7 +500,8 @@ test("code changed in a Code view and not saved yet makes a switch ask first", a
   assert.match(editor, /const unsaved = changed && Boolean\(onSave\);\n\s+useEffect\(\(\) => \{\n\s+markCodeDraft\(editor, unsaved\);\n\s+return \(\) => markCodeDraft\(editor, false\);\n\s+\}, \[editor, unsaved\]\);/);
   // Switch asks ("Switch anyway?") when flushSaves says something isn't saved.
   const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
-  assert.match(body(page, "async function switchAccount("), /if \(!gone && !anyway && !\(await flushSaves\(\)\)\) \{\n\s+setUnsaved\(\{ id \}\);/);
+  assert.match(body(page, "async function switchAccount("), /if \(!gone && !anyway && !\(await flushSaves\(\)\)\) \{\n\s+setUnsaved\(\{ go: \(\) => void switchAccount\(id, \{ anyway: true \}\) \}\);/);
+  assert.match(page, /<SwitchAnyway\n\s+onSwitch=\{unsaved\.go\}/);
 });
 
 test("the page around a switch: what Flash says stays in view, the menu closes when the tab stays, and add mode keeps the page", async () => {
@@ -501,7 +513,12 @@ test("the page around a switch: what Flash says stays in view, the menu closes w
   const said = page.indexOf("        {said && (\n");
   const scroller = page.indexOf('className={`min-h-0 flex-1 overflow-y-auto ${tab === "preview" ? "invisible" : ""}');
   assert.ok(said > 0 && scroller > said, "said comes before the chat's scroller");
-  assert.match(page.slice(said, scroller), /^\s+\{said && \(\n\s+<div className=\{`mx-auto w-full shrink-0 \$\{tab === "preview" \? "[^"]+" : `[^`]+`\}`\}>\{said\}<\/div>\n\s+\)\}\n\s+<div className="relative flex min-h-0 flex-1 flex-col">\n/);
+  // It never takes the chat's room on a screen with little height (a phone held sideways, with a
+  // notice and an invitation): it shares a grid with the chat (or the preview) and takes at most
+  // half of it, then scrolls on its own, its edge faded.
+  assert.match(page.slice(said - 400, said), /\n\s+<div className="grid min-h-0 flex-1 grid-rows-\[fit-content\(50%\)_minmax\(0,1fr\)\]">\n$/);
+  assert.match(page.slice(said, scroller), /^\s+\{said && \(\n\s+<div className=\{`mx-auto w-full overflow-y-auto overscroll-contain \[mask-image:linear-gradient\(to_bottom,#000_calc\(100%-0\.5rem\),transparent\)\] \$\{tab === "preview" \? "[^"]+ pb-2" : `[^`]+ pb-2 [^`]+`\}`\}>\{said\}<\/div>\n\s+\)\}\n\s+<div className="relative row-start-2 flex min-h-0 flex-col">\n/);
+  assert.doesNotMatch(page.slice(said, scroller), /shrink-0/);
   assert.equal(page.match(/\{said\}/g)?.length, 1, "shown in one place");
   assert.match(page, /\{\(!me\.verified \|\| allOff\) && \(/);
   assert.equal(page.match(/role="status"/g)?.length, 3, "the notice, the invitation and the break note, each once");
@@ -538,7 +555,7 @@ test("Add another account over the page: nothing under it listens on, and it is 
   const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
   // Every way into add mode goes through openAdding, which ends the voice conversation and stops the
   // mic before the sign-in covers the page (nothing said there, a password read out, is heard or sent).
-  assert.match(body(page, "function openAdding("), /\{\n\s+setVoice\(null\);\n\s+stopMic\(\);\n\s+addingRef\.current = next;\n\s+setAdding\(next\);\n\s+\}$/);
+  assert.match(body(page, "function openAdding("), /\{\n\s+setVoice\(null\);\n\s+stopMic\(\);\n\s+addingRef\.current = \{ \.\.\.next, opened: \+\+addSeq\.current \};\n\s+setAdding\(addingRef\.current\);\n\s+\}$/);
   assert.doesNotMatch(page, /setAdding\(\{/, "add mode opens only through openAdding");
   assert.equal(page.match(/setAdding\(/g)?.length, 3, "openAdding, closeAdding and the account check, which keeps it open");
   assert.equal(page.match(/openAdding\(\{/g)?.length, 5, "the menu, the chooser's two, ?add=1 and a sign-in error");
@@ -564,11 +581,71 @@ test("Add another account over the page: nothing under it listens on, and it is 
   const over = body(chooser, "export function AddOver(");
   assert.match(over, /el\.focus\(\);/);
   assert.match(over, /if \(e\.key !== "Escape" \|\| e\.isComposing\) return;\n\s+e\.preventDefault\(\);\n\s+e\.stopPropagation\(\);\n\s+back\.current\(\);/);
-  assert.match(over, /el\.addEventListener\("keydown", key\);/);
+  // Heard first, on the window as the key goes down, wherever the focus is: on the page itself too,
+  // once a button chosen in it ("Email me a sign-in link", "Forgot password?") is gone.
+  assert.match(over, /window\.addEventListener\("keydown", key, true\);/);
+  assert.match(over, /window\.removeEventListener\("keydown", key, true\);/);
+  assert.doesNotMatch(over, /el\.addEventListener/);
+  // The focus then moves to the new form's first field, not to the page under it.
+  const auth = await readFile(new URL("../src/components/AuthScreen.tsx", import.meta.url), "utf8");
+  assert.match(body(auth, "function switchMode("), /switched\.current = true;/);
+  assert.match(auth, /useEffect\(\(\) => \{\n\s+if \(!switched\.current\) return;\n\s+switched\.current = false;\n\s+if \(!document\.activeElement \|\| document\.activeElement === document\.body\) form\.current\?\.querySelector<HTMLElement>\("input"\)\?\.focus\(\);\n\s+\}, \[mode\]\);/);
+  assert.match(auth, /<form\n\s+ref=\{form\}/);
+  // "Switch anyway?" and the account chooser: Escape is theirs (Cancel, when there is one) and goes
+  // no further, so Ask Flash under them stays open with its answer, and so does the code not saved.
+  const sheet = body(chooser, "function Sheet(");
+  assert.match(sheet, /if \(e\.key === "Escape"\) \{\n\s+e\.stopPropagation\(\);\n\s+if \(!onEscape\) return;\n\s+e\.preventDefault\(\);\n\s+onEscape\(\);\n\s+return;\n\s+\}/);
+  assert.match(sheet, /window\.addEventListener\("keydown", keep, true\);/);
+  assert.match(sheet, /window\.removeEventListener\("keydown", keep, true\);/);
+  assert.doesNotMatch(sheet, /document\.addEventListener/);
+  assert.match(body(chooser, "export function SwitchAnyway("), /<Sheet label=\{question\} onEscape=\{onCancel\}>/);
+  // What they keep Escape from: Ask Flash and the preview listen on the window as the key comes back up, after them.
+  const companion = await readFile(new URL("../src/components/Companion.tsx", import.meta.url), "utf8");
+  assert.match(companion, /if \(e\.key === "Escape" && open\) onClose\(\);\n\s+\};\n\s+window\.addEventListener\("keydown", onKey\);/);
+  const preview = await readFile(new URL("../src/components/AppPreview.tsx", import.meta.url), "utf8");
+  assert.match(preview, /if \(e\.key !== "Escape"\) return;\n\s+if \(menu\) setMenu\(false\);\n\s+else if \(picking\) choose\(false\);\n\s+else setFull\(false\);\n\s+\};\n\s+window\.addEventListener\("keydown", onKey\);/);
   assert.match(over, /document\.querySelector<HTMLElement>\("\[data-account-menu\]"\)\?\.focus\(\{ preventScroll: true \}\);/);
   assert.match(over, /role="dialog"\n\s+aria-modal="true"\n\s+aria-label=\{label\}\n\s+tabIndex=\{-1\}/);
   const menu = await readFile(new URL("../src/components/AccountMenu.tsx", import.meta.url), "utf8");
   assert.match(menu, /<button\n\s+data-account-menu\n\s+onClick=\{\(\) => setOpen\(\(o\) => !o\)\}/);
+});
+
+test("Add another account saves or asks before the page goes anywhere, and Back while it waits keeps the tab as it was", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
+  const auth = await readFile(new URL("../src/components/AuthScreen.tsx", import.meta.url), "utf8");
+  // Every way out of the sign-in form while adding: a password sign-in ends in addDone; two-step
+  // sign-in's code page and a "Continue with …" sign-in leave the page, each through leave, which
+  // waits for Flash (addLeave) to save what changed under it, or ask, before going.
+  assert.match(page, /leave: \(go\) => addLeave\(adding, go\),\n\s+\}\}\n\s+onDone=\{\(result\) => addDone\(adding, result\)\}/);
+  assert.match(body(auth, "async function leave("), /\{\n\s+if \(adding\?\.leave\) await adding\.leave\(go\);\n\s+else go\(\);\n\s+\}$/);
+  assert.equal(auth.match(/router\.push\(/g)?.length, 1);
+  assert.match(auth, /if \(result\.twoFactor\) \{\n\s+await leave\(\(\) => router\.push\("\/signin\/code"\)\);\n\s+return;\n\s+\}/);
+  assert.equal(auth.match(/window\.location/g)?.length, 1, "only leaveBy sends the page elsewhere");
+  const by = body(auth, "function leaveBy(");
+  assert.match(by, /if \(!adding\?\.leave \|\| e\.button !== 0 \|\| e\.metaKey \|\| e\.ctrlKey \|\| e\.shiftKey \|\| e\.altKey\) return;\n\s+e\.preventDefault\(\);\n\s+if \(busy\) return;/);
+  assert.match(by, /void leave\(\(\) => window\.location\.assign\(href\)\)\.finally\(\(\) => setBusy\(false\)\);/);
+  // Each link in the form that opens in this tab goes through leaveBy: the "Continue with …" ones,
+  // and demo mode's sign-in link. The Terms and Privacy Policy open in a tab of their own.
+  const links = [...auth.matchAll(/<a\s([^>]*)>/g)].map((m) => m[1]);
+  assert.equal(links.length, 4);
+  for (const link of links) assert.ok(/target="_blank"/.test(link) || /onClick=\{leaveBy\}/.test(link), link);
+  assert.equal(auth.match(/onClick=\{leaveBy\}/g)?.length, 2);
+  assert.match(auth, /href=\{`\/api\/auth\/oauth\/\$\{id\}.*\n\s+onClick=\{leaveBy\}/);
+  // Flash's side: saved, or "Switch anyway?" over the page (Cancel keeps it), as before a switch.
+  const leave = body(page, "async function addLeave(");
+  assert.match(leave, /const saved = !meRef\.current \|\| Boolean\(from\.back\) \|\| \(await flushSaves\(\)\);\n\s+if \(!stillAdding\(from\)\) return;\n\s+if \(saved\) return go\(\);\n\s+closeAdding\(\);\n\s+setUnsaved\(\{ go \}\);/);
+  // Back or Escape while the form says "One moment…" (the sign-in, or the saves before going on, not
+  // ended yet): nothing goes on afterwards, no reload as the other account and no question; the
+  // menu lists the account signed in to meanwhile.
+  assert.match(page, /const stillAdding = \(from: Adding\) => addingRef\.current\?\.opened === from\.opened;/);
+  const done = body(page, "async function addDone(");
+  assert.match(done, /const stayed = \(\) => \{\n\s+if \(stillAdding\(from\)\) return false;\n\s+window\.dispatchEvent\(new Event\("flash:account-check"\)\);\n\s+return true;\n\s+\};\n\s+if \(stayed\(\)\) return;\n\s+if \(from\.again/);
+  assert.match(done, /const saved = !meRef\.current \|\| Boolean\(from\.back\) \|\| \(await flushSaves\(\)\);\n\s+if \(stayed\(\)\) return;\n\s+if \(!saved\) \{/);
+  assert.match(done, /setUnsaved\(\{ go: \(\) => goOnAs\(id, from\.next\), added: true \}\);/);
+  assert.equal(done.match(/await /g)?.length, 1, "nothing else is waited on before going on");
+  // Add mode is numbered each time it opens; the account check keeps that number when it updates Back.
+  assert.match(body(page, "async function checkAccounts("), /const next = \{ \.\.\.signingIn, back:/);
 });
 
 test("a log out says it's under way while it saves what it can, and runs once", async () => {
