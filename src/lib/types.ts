@@ -82,7 +82,8 @@ export type StreamEvent =
   | { type: "text"; delta: string }
   // What a reply charged by length really cost, sent when it finishes.
   | { type: "cost"; credits: number }
-  | { type: "status"; message: string }
+  // writing: the first pieces of a change to the app or deck are written (see startsWriting in live-draft.ts).
+  | { type: "status"; message: string; writing?: boolean }
   // label names a picture that comes with others, like a post pack's "Square" and "Tall".
   | { type: "image"; url: string; prompt: string; label?: string }
   | { type: "video"; url: string; prompt: string }
@@ -95,6 +96,9 @@ export type StreamEvent =
   // A social post pack's posts, each ready to copy.
   | { type: "posts"; posts: Post[] }
   | { type: "app"; app: BuiltApp }
+  // The file being written, for the live preview: delta continues the draft at offset at (at 0
+  // starts it over; an empty delta at 0 clears it). Shown while it streams, never saved.
+  | { type: "draft"; at: number; delta: string }
   | { type: "error"; message: string }
   // The reply ended early: the user pressed Stop, or a Claude engine ran out of time.
   | { type: "stopped" }

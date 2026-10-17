@@ -13,7 +13,8 @@ import {
   type Watch,
 } from "./claude.ts";
 import { tokensWithin } from "../credits.ts";
-import { htmlTitle, splitBuild } from "../build-parse.ts";
+import { htmlTitle, isDocument, splitBuild } from "../build-parse.ts";
+import { draftSender } from "../live-draft.ts";
 import { applyEdits, hasPieces, piecesIn, splitEdits, type Edit } from "../edit-blocks.ts";
 import type { ChatTurn, StreamEvent } from "../types.ts";
 import { english, msg, type Translate } from "../i18n.ts";
@@ -134,9 +135,6 @@ const WHOLE_FILE_AGAIN =
 
 const NO_FIT = msg("Flash couldn't fit that change into your app. Try again, or say exactly which part to change.");
 
-/** A whole HTML file, as opposed to a snippet quoted in an answer. */
-const isDocument = (code: string) => /<!doctype html|<html[\s>]|<body[\s>]/i.test(code);
-
 /** Room left for thinking when the whole file is asked for again. */
 const THINKING_ROOM = 4200;
 
@@ -156,7 +154,8 @@ export function latestApp(history: ChatTurn[]): string | null {
 
 /**
  * Builds or edits an app or slide deck. Prose streams as text; the HTML is collected
- * and sent once as an "app" event, with line-count progress while it is being written.
+ * and sent once as an "app" event, with line-count progress while it is being written. The
+ * file is also sent as it is written, in "draft" events, for the live preview (see live-draft.ts).
  */
 export async function* streamBuild(
   history: ChatTurn[],
@@ -223,6 +222,8 @@ export async function* streamBuild(
     let lastLines = 0;
     let lastPieces = 0;
     let editAt = -1;
+    // The file as it is written, for the live preview.
+    const drafts = draftSender({ base: base !== null });
     let final: Awaited<ReturnType<typeof stream.finalMessage>>;
     try {
       for await (const event of stream) {
@@ -243,6 +244,8 @@ export async function* streamBuild(
             lastLines = lines;
             yield { type: "status", message: app ? t("Writing your app… {lines} lines", { lines }) : t("Writing your slides… {lines} lines", { lines }) };
           }
+          const draft = drafts.next(part.html, part.open);
+          if (draft) yield draft;
         } else if (editAt !== -1) {
           const pieces = splitEdits(text).edits.length;
           if (pieces > lastPieces) {
@@ -255,7 +258,7 @@ export async function* streamBuild(
                 : app
                   ? t("Changing {count} places in your app…", { count: pieces })
                   : t("Changing {count} places in your slides…", { count: pieces });
-            yield { type: "status", message };
+            yield { type: "status", message, writing: true };
           }
         }
       }
@@ -330,6 +333,8 @@ export async function* streamBuild(
       }
       messages = [...messages, { role: "assistant", content: text }, { role: "user", content: WHOLE_FILE_AGAIN }];
       canEdit = false;
+      // The whole file is written from the start, so a draft on the page is taken back first.
+      if (drafts.sent) yield { type: "draft", at: 0, delta: "" };
       continue;
     }
     // Pieces sent next to a whole file are left out: the whole file is the change. Without a
