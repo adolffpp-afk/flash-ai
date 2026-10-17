@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/store";
 import {
   MAX_NAME,
@@ -12,6 +12,7 @@ import {
   contactMatches,
   dateText,
   formChanged,
+  mailtoLink,
   sourceLabel,
   type ContactForm,
 } from "@/lib/contacts";
@@ -90,11 +91,28 @@ function NewsChip({ c, t }: { c: Contact; t: T }) {
 }
 
 /**
+ * Tells My websites & apps whether a form has changes not saved (onEdited), so leaving it asks
+ * first. Closing or reloading the tab then asks too.
+ */
+function useUnsaved(edited: boolean, onEdited: (edited: boolean) => void) {
+  useEffect(() => {
+    onEdited(edited);
+    if (!edited) return;
+    const ask = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", ask);
+    return () => {
+      window.removeEventListener("beforeunload", ask);
+      onEdited(false);
+    };
+  }, [edited, onEdited]);
+}
+
+/**
  * An app's contacts: everyone who sent its forms, signed up or paid, as a board of the owner's own
  * stages (or a list), with search, each person's details, notes and tags, and downloads. onCount
- * tells My websites & apps how many there are now.
+ * tells My websites & apps how many there are now, and onEdited whether a form has changes not saved.
  */
-export function ContactsView({ slug, onCount }: { slug: string; onCount: (count: number) => void }) {
+export function ContactsView({ slug, onCount, onEdited }: { slug: string; onCount: (count: number) => void; onEdited: (edited: boolean) => void }) {
   const t = useT();
   const [mode, setMode] = useState<Mode>(() => {
     try {
@@ -105,8 +123,10 @@ export function ContactsView({ slug, onCount }: { slug: string; onCount: (count:
   });
   const [list, setList] = useState<List | null>(null);
   const [q, setQ] = useState("");
-  // What the server found for the search, when the list is too big to search here.
+  // What the server found for the search, when the list is too big to search here. searches counts
+  // the changes that make it out of date, so it's searched again.
   const [found, setFound] = useState<{ q: string; contacts: Contact[]; matched: number; byStage: Record<string, number> } | null>(null);
+  const [searches, setSearches] = useState(0);
   const [screen, setScreen] = useState<Screen>({ kind: "all" });
   const [phoneStage, setPhoneStage] = useState("");
   const [dropOn, setDropOn] = useState("");
@@ -143,18 +163,29 @@ export function ContactsView({ slug, onCount }: { slug: string; onCount: (count:
   // A big list is searched by the server, a moment after typing stops.
   const words = q.trim();
   const serverSearch = Boolean(list && !list.everything && words);
+  // Only the latest search shows: a slower answer for what was typed before is dropped.
   useEffect(() => {
     if (!serverSearch) return;
+    let live = true;
     const timer = setTimeout(async () => {
       try {
         const result = await api<List>(`/api/sites/${slug}/contacts?q=${encodeURIComponent(words)}`);
-        setFound({ q: words, contacts: result.contacts, matched: result.matched ?? result.contacts.length, byStage: result.matchedByStage ?? {} });
+        if (live) setFound({ q: words, contacts: result.contacts, matched: result.matched ?? result.contacts.length, byStage: result.matchedByStage ?? {} });
       } catch (err) {
-        setError(err instanceof Error && err.message ? err.message : t("Couldn't load the contacts. Please try again."));
+        if (live) setError(err instanceof Error && err.message ? err.message : t("Couldn't load the contacts. Please try again."));
       }
     }, 300);
-    return () => clearTimeout(timer);
-  }, [serverSearch, words, slug, t]);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [serverSearch, words, slug, t, searches]);
+
+  /** After someone is saved, added, deleted or gone, or the stages change: what the server found is searched again. */
+  const searchAgain = useCallback(() => {
+    setFound(null);
+    setSearches((n) => n + 1);
+  }, []);
 
   function chooseMode(next: Mode) {
     setMode(next);
@@ -175,14 +206,22 @@ export function ContactsView({ slug, onCount }: { slug: string; onCount: (count:
     const c = list?.contacts.find((x) => x.id === id) ?? found?.contacts.find((x) => x.id === id);
     if (!c || c.stage === stage) return;
     const from = c.stage;
-    const shift = (l: List, a: string, b: string) => ({ ...l, byStage: { ...l.byStage, [a]: (l.byStage[a] ?? 1) - 1, [b]: (l.byStage[b] ?? 0) + 1 } });
+    // The counts move with them: the whole list's, and the search's when they're among what it found.
+    const shift = <L extends { byStage: Record<string, number> }>(l: L, a: string, b: string) => ({
+      ...l,
+      byStage: { ...l.byStage, [a]: (l.byStage[a] ?? 1) - 1, [b]: (l.byStage[b] ?? 0) + 1 },
+    });
+    const both = (a: string, b: string) => {
+      setList((l) => l && shift(l, a, b));
+      setFound((f) => (f?.contacts.some((x) => x.id === id) ? shift(f, a, b) : f));
+    };
     changeShown(id, (x) => ({ ...x, stage }));
-    setList((l) => l && shift(l, from, stage));
+    both(from, stage);
     try {
       await api(`/api/sites/${slug}/contacts`, { method: "PATCH", json: { id, stage } });
     } catch {
       changeShown(id, (x) => ({ ...x, stage: from }));
-      setList((l) => l && shift(l, stage, from));
+      both(stage, from);
       setError(t("Couldn't save that contact. Please try again."));
     }
   }
@@ -226,8 +265,17 @@ export function ContactsView({ slug, onCount }: { slug: string; onCount: (count:
           stages={stages}
           onBack={back}
           onOpen={open}
-          onSaved={(c) => changeShown(c.id, () => c)}
+          onSaved={(c) => {
+            changeShown(c.id, () => c);
+            searchAgain();
+          }}
+          onDeleted={() => {
+            searchAgain();
+            back();
+          }}
+          onFailed={searchAgain}
           onError={setError}
+          onEdited={onEdited}
         />
       </>
     );
@@ -236,7 +284,15 @@ export function ContactsView({ slug, onCount }: { slug: string; onCount: (count:
     return (
       <>
         {alert}
-        <AddContact slug={slug} onCancel={() => setScreen({ kind: "all" })} onAdded={(id) => setScreen({ kind: "detail", id })} />
+        <AddContact
+          slug={slug}
+          onCancel={() => setScreen({ kind: "all" })}
+          onAdded={(id) => {
+            searchAgain();
+            setScreen({ kind: "detail", id });
+          }}
+          onEdited={onEdited}
+        />
       </>
     );
   }
@@ -250,8 +306,10 @@ export function ContactsView({ slug, onCount }: { slug: string; onCount: (count:
           onCancel={() => setScreen({ kind: "all" })}
           onSaved={() => {
             setPhoneStage("");
+            searchAgain();
             back();
           }}
+          onEdited={onEdited}
         />
       </>
     );
@@ -460,7 +518,10 @@ function ContactDetails({
   onBack,
   onOpen,
   onSaved,
+  onDeleted,
+  onFailed,
   onError,
+  onEdited,
 }: {
   slug: string;
   id: string;
@@ -468,7 +529,10 @@ function ContactDetails({
   onBack: () => void;
   onOpen: (id: string) => void;
   onSaved: (c: Contact) => void;
+  onDeleted: () => void;
+  onFailed: () => void;
   onError: (error: string) => void;
+  onEdited: (edited: boolean) => void;
 }) {
   const t = useT();
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -479,6 +543,9 @@ function ContactDetails({
   const [copied, setCopied] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
+  // They couldn't be loaded (deleted meanwhile, say): the error shows above, with the way back, and
+  // onFailed has a search that found them run again.
+  const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -490,13 +557,19 @@ function ContactDetails({
         setForm(loaded);
         setSavedForm(loaded);
       })
-      .catch((err) => live && onError(err instanceof Error && err.message ? err.message : t("Couldn't load the contacts. Please try again.")));
+      .catch((err) => {
+        if (!live) return;
+        setFailed(true);
+        onFailed();
+        onError(err instanceof Error && err.message ? err.message : t("Couldn't load the contacts. Please try again."));
+      });
     return () => {
       live = false;
     };
-  }, [slug, id, t, onError]);
+  }, [slug, id, t, onError, onFailed]);
 
   const edited = formChanged(form, savedForm);
+  useUnsaved(edited, onEdited);
   // Leaving with changes not saved asks first, so they're never lost without a word.
   const leave = (go: () => void) => () => {
     if (!edited || window.confirm(t("Leave without saving your changes?"))) go();
@@ -509,7 +582,7 @@ function ContactDetails({
       {t("All contacts")}
     </button>
   );
-  if (!detail) return <div className="space-y-3">{backButton}<p className="text-sm text-zinc-500">{t("Loading…")}</p></div>;
+  if (!detail) return <div className="space-y-3">{backButton}{!failed && <p className="text-sm text-zinc-500">{t("Loading…")}</p>}</div>;
   const c = detail.contact;
 
   async function save(e: React.FormEvent) {
@@ -538,7 +611,7 @@ function ContactDetails({
     onError("");
     try {
       await api(`/api/sites/${slug}/contacts?id=${encodeURIComponent(id)}`, { method: "DELETE" });
-      onBack();
+      onDeleted();
     } catch {
       setBusy(false);
       onError(t("Couldn't delete that contact. Please try again."));
@@ -576,7 +649,7 @@ function ContactDetails({
         </h3>
         <p className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm">
           {c.email && (
-            <a href={`mailto:${c.email}`} className="min-w-0 break-all text-primary-soft hover:underline">
+            <a href={mailtoLink(c.email)} className="min-w-0 break-all text-primary-soft hover:underline">
               {c.email}
             </a>
           )}
@@ -777,11 +850,22 @@ function ContactDetails({
 }
 
 /** The owner adds someone by hand. Someone already on the list opens as themselves. */
-function AddContact({ slug, onCancel, onAdded }: { slug: string; onCancel: () => void; onAdded: (id: string) => void }) {
+function AddContact({
+  slug,
+  onCancel,
+  onAdded,
+  onEdited,
+}: {
+  slug: string;
+  onCancel: () => void;
+  onAdded: (id: string) => void;
+  onEdited: (edited: boolean) => void;
+}) {
   const t = useT();
   const [form, setForm] = useState({ name: "", email: "", phone: "" });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  useUnsaved(Object.values(form).some((v) => v.trim() !== ""), onEdited);
   async function add(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -836,12 +920,26 @@ function AddContact({ slug, onCancel, onAdded }: { slug: string; onCancel: () =>
 }
 
 /** The owner renames, adds, removes and reorders their stages. */
-function StageEditor({ slug, stages, onCancel, onSaved }: { slug: string; stages: Stage[]; onCancel: () => void; onSaved: () => void }) {
+function StageEditor({
+  slug,
+  stages,
+  onCancel,
+  onSaved,
+  onEdited,
+}: {
+  slug: string;
+  stages: Stage[];
+  onCancel: () => void;
+  onSaved: () => void;
+  onEdited: (edited: boolean) => void;
+}) {
   const t = useT();
   const next = useRef(stages.length);
   const [draft, setDraft] = useState<DraftStage[]>(() => stages.map((s, key) => ({ key, id: s.id, name: s.name })));
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const shape = (list: { id: string; name: string }[]) => JSON.stringify(list.map((s) => [s.id, s.name.trim()]));
+  useUnsaved(shape(draft) !== shape(stages), onEdited);
   const swap = (i: number, j: number) =>
     setDraft((d) => {
       const copy = [...d];

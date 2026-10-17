@@ -17,7 +17,7 @@ process.env.FLASH_ADMIN_EMAILS = "admin@x.co";
 process.env.FLASH_APP_URL = "https://www.flash-app.dev";
 
 const { run, one, all } = await import("../src/lib/server/db.ts");
-const { contactFromFields, normalPhone, pageHas, pageWords, stagesOf, cleanTags, dateText, formChanged, DEFAULT_STAGES } = await import("../src/lib/contacts.ts");
+const { contactFromFields, normalPhone, pageHas, pageWords, stagesOf, cleanTags, dateText, formChanged, mailtoLink, DEFAULT_STAGES } = await import("../src/lib/contacts.ts");
 const contacts = await import("../src/lib/server/contacts.ts");
 const { receiveMessage, sitesWithMessages } = await import("../src/lib/server/inbox.ts");
 const { siteAuth } = await import("../src/lib/server/site-auth.ts");
@@ -106,6 +106,30 @@ test("the sender of a form is found from its fields", () => {
   assert.deepEqual(cleanTags([" VIP ", "vip", "", "Wholesale", 3, "x".repeat(40)]), ["VIP", "Wholesale", "x".repeat(30)]);
 });
 
+test("an email address can't bring a Bcc, a subject or another recipient into the owner's reply", async () => {
+  const bcc = "jo@example.com?bcc=spy%40evil.example&subject=Re%3A%20your%20order";
+  assert.equal(contactFromFields({ email: bcc }), null);
+  for (const odd of ["jo@example.com#x", "jo@exa&mple.com", "jo@example.com,spy@evil.example", "jo@exam%40ple.com", "jo@example.com/x"]) {
+    assert.equal(contactFromFields({ email: odd }), null, odd);
+  }
+  for (const real of ["ana.silva+cakes@example.co.uk", "josé@bäckerei.de", "user@例え.テスト", "a@उदाहरण.भारत", "o'brien@xn--bcherei-n2a.de"]) {
+    assert.equal(contactFromFields({ email: real })?.email, real, real);
+  }
+  await site("odd", "owner");
+  assert.deepEqual(await send("odd", { name: "Jo", email: bcc }), { ok: true }, "the message still arrives");
+  assert.deepEqual(await contactsOf("odd"), []);
+  assert.equal((await siteAuth("odd", "signup", { email: bcc, password: "longenough1" }, "1.2.3.9", "/p/odd", true, null)).result, "bad-email");
+
+  // Before the @ an address may have them, and the link still writes to that address alone.
+  assert.equal(mailtoLink("ana.silva+cakes@example.co.uk"), "mailto:ana.silva+cakes@example.co.uk");
+  for (const email of ["jo?bcc=spy%40evil.example&x=@example.com", "spy%40evil.example,jo@example.com", "jo#x@example.com", "josé@bäckerei.de"]) {
+    const link = new URL(mailtoLink(email));
+    assert.equal(link.search + link.hash, "", email);
+    assert.equal(decodeURIComponent(link.pathname), email);
+    assert.equal(link.pathname.split("%2C").length - 1, (email.match(/,/g) ?? []).length, "a comma stays in the address");
+  }
+});
+
 test("a form without an email or phone is still saved, with nobody added", async () => {
   await site("quiet", "owner");
   assert.deepEqual(await send("quiet", { message: "Lovely bread" }), { ok: true });
@@ -160,6 +184,47 @@ test("one person who sends a form, signs up and pays is one contact", async () =
   assert.deepEqual([ana.stage, ana.tags, ana.notes], ["won", '["VIP"]', "Wants rye"]);
   assert.equal(ana.consent_at, 0, "paying isn't agreeing to news");
   assert.equal((await all("SELECT 1 FROM site_orders WHERE site_slug = 'crumb'")).length, 1);
+});
+
+test("a buyer whose order Flash hadn't seen yet is on the list when the owner opens Contacts", async () => {
+  await fresh();
+  await site("late", "owner");
+  const paid = {
+    id: "cs_test_late",
+    payment_status: "paid",
+    amount_total: 2500,
+    currency: "cad",
+    created: Math.floor(Date.now() / 1000) - 3600,
+    metadata: { flash_site: "late", flash_item: "Cake" },
+    customer_details: { email: "bea@x.co", name: "Bea Buyer" },
+    line_items: { data: [{ quantity: 1 }] },
+  };
+  // Stripe has the paid checkout (the buyer closed the page, or the payment went through later).
+  const asked: string[] = [];
+  globalThis.fetch = (async (url: string) => {
+    asked.push(String(url));
+    return Response.json({ data: [paid, { ...paid, id: "cs_test_other", metadata: { flash_site: "crumb", flash_item: "Pie" } }] });
+  }) as typeof fetch;
+  const board = await (await call("GET", owner, "late")).json();
+  assert.deepEqual(
+    board.contacts.map((c: { email: string; source: string }) => [c.email, c.source]),
+    [["bea@x.co", "order:Cake"]],
+  );
+  assert.equal(asked.length, 1);
+  assert.match(asked[0], /\/checkout\/sessions\?limit=100&status=complete/);
+  assert.equal((await all("SELECT 1 FROM site_orders WHERE site_slug = 'late'")).length, 1, "the order is saved too");
+  // Coming back to the list within a minute, searching or opening someone doesn't ask Stripe again.
+  await call("GET", owner, "late", "?mode=list");
+  await call("GET", owner, "late", "?q=bea");
+  await call("GET", owner, "late", `?id=${board.contacts[0].id}`);
+  assert.equal(asked.length, 1);
+  // A minute later it asks again, and a look-up that fails still shows the list.
+  await run("UPDATE rate_limits SET reset_at = 0 WHERE key = 'contacts-orders:late'");
+  globalThis.fetch = (async () => {
+    throw new Error("offline");
+  }) as typeof fetch;
+  assert.equal((await (await call("GET", owner, "late")).json()).total, 1);
+  assert.equal((await call("GET", stranger, "late")).status, 404);
 });
 
 test("someone known only by phone is one contact, and a number alone never joins them to someone with an email", async () => {
@@ -707,11 +772,29 @@ test("an unsubscribe link works without signing in, and only a POST changes anyt
   assert.equal((await unsub(changed, "List-Unsubscribe=One-Click")).status, 404);
   assert.equal((await unsub(changed)).status, 303, "the page then says the link doesn't work");
   await fresh();
-  for (let i = 0; i < 30; i++) await unsub(token, "", "198.51.100.30");
-  const limited = await unsub(token, "", "198.51.100.30");
-  assert.equal(limited.status, 303);
-  assert.match(limited.headers.get("location") ?? "", /\?wait=1$/);
-  assert.equal((await unsub(token, "List-Unsubscribe=One-Click", "198.51.100.30")).status, 429);
+  // Links that don't work count against an address, 30 an hour.
+  for (let i = 0; i < 30; i++) assert.equal((await unsub(changed, "List-Unsubscribe=One-Click", "198.51.100.30")).status, 404);
+  assert.equal((await unsub(changed, "List-Unsubscribe=One-Click", "198.51.100.30")).status, 429);
+  assert.equal((await unsub(changed, "", "198.51.100.30")).headers.get("location"), `https://www.flash-app.dev/u/${changed}`, "the page says the link doesn't work");
+  // One that works always unsubscribes, from that address too.
+  await run("UPDATE site_contacts SET unsubscribed_at = 0 WHERE id = ?", [mo.id]);
+  const late = await unsub(token, "List-Unsubscribe=One-Click", "198.51.100.30");
+  assert.equal(late.status, 200);
+  assert.ok(Number((await one<{ u: number }>("SELECT unsubscribed_at AS u FROM site_contacts WHERE id = ?", [mo.id]))?.u) > 0);
+  assert.equal((await unsub(token, "", "198.51.100.30")).headers.get("location"), `https://www.flash-app.dev/u/${token}`);
+
+  // A mail provider posts everyone's one-click unsubscribes from one of its own servers.
+  await fresh();
+  const people: string[] = [];
+  for (let i = 0; i < 40; i++) {
+    const slug = i % 2 ? "unsub" : "unsub2";
+    const id = await contacts.noteContact(slug, { email: `reader${i}@x.co`, phone: "", name: "" }, { source: "form:news", at: Date.now() - 60_000, consent: { text: NEWS, ipHash: "x", form: "news" } });
+    people.push(id);
+    const answer = await unsub(contacts.unsubToken(await contacts.siteSecret(slug), slug, id), "List-Unsubscribe=One-Click", "209.85.220.41");
+    assert.equal(answer.status, 200, `reader ${i}`);
+  }
+  const still = await all(`SELECT id FROM site_contacts WHERE id IN (${people.map(() => "?").join(", ")}) AND consent_at > unsubscribed_at`, people);
+  assert.deepEqual(still, [], "all 40 unsubscribed");
   await fresh();
 });
 

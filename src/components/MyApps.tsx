@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/store";
 import { SELLER_COUNTRIES } from "@/lib/shop";
 import { DATA_RULES, DEFAULT_KEY, RULE_TEXT, blockProblem, dataLine, type DataRule, type DataSummary, type RuleSource } from "@/lib/data-rules";
@@ -117,6 +117,13 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
   const [confirming, setConfirming] = useState<string | null>(null);
   const [error, setError] = useState("");
   const closeRef = useRef<HTMLButtonElement>(null);
+  // Whether a contact's page, Add contact or Edit stages has changes not saved: leaving the app or
+  // closing My websites & apps then asks first, as the contact's own way back does.
+  const contactsEdited = useRef(false);
+  const onContactsEdited = useCallback((edited: boolean) => {
+    contactsEdited.current = edited;
+  }, []);
+  const mayLeave = useCallback(() => !contactsEdited.current || window.confirm(tNow("Leave without saving your changes?")), []);
   // Counts the Data view's loads, so only the newest one's answer is shown.
   const dataLoads = useRef(0);
   // The rules chosen in the Data view reach the server one at a time for each app, and the view shows
@@ -134,10 +141,14 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
 
   useEffect(() => {
     closeRef.current?.focus();
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    // Escape closes, except while typing: in a text field, or choosing a word with an input method.
+    const typing = (e: KeyboardEvent) =>
+      e.isComposing ||
+      (e.target instanceof Element && e.target.matches("textarea, input:not([type=checkbox], [type=radio], [type=button], [type=submit], [type=range], [type=color], [type=file])"));
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !typing(e) && mayLeave() && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, mayLeave]);
 
   useEffect(() => {
     api<{ sites: Site[] }>("/api/sites")
@@ -588,7 +599,7 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
   }
 
   return (
-    <div className="fixed inset-0 z-40 flex items-stretch justify-center bg-black/60 backdrop-blur-sm sm:items-center sm:p-6" onClick={onClose}>
+    <div className="fixed inset-0 z-40 flex items-stretch justify-center bg-black/60 backdrop-blur-sm sm:items-center sm:p-6" onClick={() => mayLeave() && onClose()}>
       <div
         role="dialog"
         aria-modal="true"
@@ -598,7 +609,7 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
       >
         <div className="flex items-center gap-3 border-b border-white/6 px-5 py-4">
           {open && (
-            <button onClick={() => setOpen(null)} className="text-sm text-zinc-400 hover:text-zinc-100" aria-label={t("Back to my apps")}>
+            <button onClick={() => mayLeave() && setOpen(null)} className="text-sm text-zinc-400 hover:text-zinc-100" aria-label={t("Back to my apps")}>
               ←
             </button>
           )}
@@ -613,7 +624,7 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
           </h2>
           <button
             ref={closeRef}
-            onClick={onClose}
+            onClick={() => mayLeave() && onClose()}
             className="rounded-full p-2 text-zinc-400 transition hover:bg-white/[0.06] hover:text-zinc-100"
             aria-label={t("Close")}
           >
@@ -820,6 +831,7 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
               key={open.slug}
               slug={open.slug}
               onCount={(count) => setSites((all) => all?.map((s) => (s.slug === open.slug ? { ...s, contacts: count } : s)) ?? null)}
+              onEdited={onContactsEdited}
             />
           ) : open && view === "members" ? (
             members === null ? (

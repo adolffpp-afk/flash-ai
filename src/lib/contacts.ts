@@ -5,8 +5,12 @@
  */
 import { msg, type Translate } from "./i18n.ts";
 
-/** An email address, as sign-up forms check it. Check the length first: the pattern is slow on very long text. */
-export const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+/**
+ * An email address, as sign-up forms check it: after the @, a domain of letters, digits, dots and
+ * hyphens in any script, so nothing like "?bcc=…" can ride along on it. Check the length first:
+ * the pattern is slow on very long text.
+ */
+export const EMAIL = /^[^\s@]+@[\p{L}\p{M}\p{N}.-]+\.[\p{L}\p{M}\p{N}-]{2,}$/u;
 
 export const MAX_CONTACTS = 10_000;
 export const MAX_EMAIL = 160;
@@ -41,6 +45,18 @@ export function cleanEmail(value: unknown): string {
   if (typeof value !== "string") return "";
   const email = value.trim().toLowerCase();
   return email.length <= MAX_EMAIL && EMAIL.test(email) ? email : "";
+}
+
+// What a mailto: link takes as it is; anything else in an address is percent-encoded.
+const mailtoPart = (text: string) => text.replace(/[^\w.~!$'*+-]/gu, encodeURIComponent);
+
+/**
+ * A mailto: link that writes to this address and no one else: a "?", "#", "%" or "," in it (an
+ * address may have them before the @) can't add a Bcc, a subject or another recipient.
+ */
+export function mailtoLink(email: string): string {
+  const at = email.lastIndexOf("@");
+  return at < 0 ? `mailto:${mailtoPart(email)}` : `mailto:${mailtoPart(email.slice(0, at))}@${mailtoPart(email.slice(at + 1))}`;
 }
 
 /**

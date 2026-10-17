@@ -364,23 +364,28 @@ export type Order = {
 };
 
 /**
- * The site's orders, newest first. Recent paid checkouts are fetched from Stripe first, so orders
- * whose buyer closed the page before coming back show up too.
+ * Saves the site's recent paid checkouts from Stripe, with their buyers on its contact list, so
+ * orders whose buyer closed the page before coming back, or whose payment went through later,
+ * show up too. For Orders and Contacts, when the owner opens them.
  */
-export async function listOrders(userId: string, slug: string): Promise<Order[]> {
+export async function syncOrders(userId: string, slug: string): Promise<void> {
   const seller = await sellerRow(userId);
-  if (seller?.ready && sellingAvailable()) {
-    const recent = await stripe<{ data?: Session[] }>(
-      "GET",
-      "/checkout/sessions?limit=100&status=complete&expand[]=data.line_items",
-      undefined,
-      seller.stripe_account,
-    ).catch((err) => {
-      console.error("[flash] order sync failed", err);
-      return null;
-    });
-    for (const s of recent?.data ?? []) await recordOrder(slug, s);
-  }
+  if (!seller?.ready || !sellingAvailable()) return;
+  const recent = await stripe<{ data?: Session[] }>(
+    "GET",
+    "/checkout/sessions?limit=100&status=complete&expand[]=data.line_items",
+    undefined,
+    seller.stripe_account,
+  ).catch((err) => {
+    console.error("[flash] order sync failed", err);
+    return null;
+  });
+  for (const s of recent?.data ?? []) await recordOrder(slug, s);
+}
+
+/** The site's orders, newest first, with its recent paid checkouts fetched from Stripe first. */
+export async function listOrders(userId: string, slug: string): Promise<Order[]> {
+  await syncOrders(userId, slug);
   const rows = await all<{
     session_id: string;
     item: string;

@@ -15,6 +15,7 @@ import {
   setStages,
   updateContact,
 } from "@/lib/server/contacts.ts";
+import { syncOrders } from "@/lib/server/shop.ts";
 import { MAX_CONTACTS, MAX_STAGES } from "@/lib/contacts.ts";
 import { csvName } from "@/lib/csv.ts";
 
@@ -63,7 +64,8 @@ const title = async (slug: string) => (await one<{ title: string }>("SELECT titl
 /**
  * The app's contacts (?mode=board or list, ?q= to search), one contact (?id=), one contact's data
  * as a file (?id=&format=json), or everyone as a CSV file (?format=csv, cut before 4 MB, newest
- * first). The first time, the people the app had before contacts existed are copied in.
+ * first). The first time, the people the app had before contacts existed are copied in, and the
+ * board and the list bring in buyers from Stripe that Flash hasn't seen yet.
  */
 export async function GET(request: Request, ctx: Ctx) {
   const who = await owner(request, ctx);
@@ -103,6 +105,11 @@ export async function GET(request: Request, ctx: Ctx) {
     }
     const detail = await contactDetail(slug, id, base, t);
     return detail ? Response.json(detail) : Response.json({ error: t("Not found") }, { status: 404 });
+  }
+  // Buyers whose order Flash hasn't seen yet (they closed the page after paying, or paid later) are
+  // fetched from Stripe as Orders does, at most once a minute while the owner goes through the list.
+  if (!q && !(await overLimit(`contacts-orders:${slug}`, 1, MINUTE))) {
+    await syncOrders(who.user.id, slug).catch((err) => console.error("[flash] contact order sync failed", err));
   }
   const list = await listContacts(slug, t, { q: q.slice(0, 80), mode: params.get("mode") === "list" ? "list" : "board" });
   return list ? Response.json(list) : Response.json({ error: t("Not found") }, { status: 404 });

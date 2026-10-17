@@ -6,7 +6,7 @@ import { acceptLanguages, translatorIn } from "@/lib/server/i18n.ts";
 import { uiLanguage } from "@/lib/i18n.ts";
 import { languageById } from "@/lib/languages.ts";
 
-type Props = { params: Promise<{ token: string }>; searchParams: Promise<{ wait?: string }> };
+type Props = { params: Promise<{ token: string }> };
 
 /** The visitor's own language (they have no Flash account), else English. */
 async function visitorT() {
@@ -24,8 +24,8 @@ export async function generateMetadata(): Promise<Metadata> {
  * signing in. Opening the page changes nothing (link scanners open links too); the button does.
  * It never shows whose link it is, and says only what the app's list shows, as Flash sends no news.
  */
-export default async function Unsubscribe({ params, searchParams }: Props) {
-  const [{ token }, { wait }, t] = await Promise.all([params, searchParams, visitorT()]);
+export default async function Unsubscribe({ params }: Props) {
+  const [{ token }, t] = await Promise.all([params, visitorT()]);
   const found = await tokenContact(token);
   const site = found?.title ?? "";
   return (
@@ -46,11 +46,6 @@ export default async function Unsubscribe({ params, searchParams }: Props) {
           <form method="post" action={`/api/u/${encodeURIComponent(token)}`}>
             <h1 className="break-words text-xl font-semibold">{t("Stop news emails from {site}?", { site })}</h1>
             <p className="mt-2 text-sm text-zinc-400">{t("{site} will see on its contact list that you don't want its news and offers by email.", { site })}</p>
-            {wait && (
-              <p role="alert" className="mt-3 text-sm text-red-400">
-                {t("Too many tries. Please wait a few minutes.")}
-              </p>
-            )}
             <button className="mt-5 w-full rounded-xl bg-brand py-2.5 font-medium text-on-brand transition hover:brightness-110">{t("Unsubscribe")}</button>
           </form>
         )}
