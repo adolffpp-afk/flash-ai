@@ -164,12 +164,13 @@ export async function siteAuth(
     return { result: "signed-out", cookie: clearSessionCookie(path) };
   }
   if (action !== "signup" && action !== "signin") return outcome("unknown");
-  const email = (form.email ?? "").trim().toLowerCase();
+  const typed = (form.email ?? "").trim();
+  const email = typed.toLowerCase();
   const password = form.password ?? "";
   const name = (form.name ?? "").trim().slice(0, 80);
   // The length first: the pattern is slow on very long text. New members need an address the
   // contact list takes; members who joined before it was stricter still sign in.
-  if (email.length > 160 || !(action === "signup" ? cleanEmail(email) : ANY_EMAIL.test(email))) return outcome("bad-email");
+  if (email.length > 160 || !(action === "signup" ? cleanEmail(typed) : ANY_EMAIL.test(email))) return outcome("bad-email");
   if (password.length < MIN_PASSWORD) return outcome("short-password");
   if (password.length > 200) return outcome("long-password");
   // Guessing passwords, and signing people up in bulk, are both slowed down per app and per visitor.
@@ -199,8 +200,10 @@ export async function siteAuth(
     ]);
     if (!made.rowsAffected) return outcome("no-app");
     // A new member goes on the app's contact list, in the spelling it keeps (they sign in with the
-    // address as they typed it); one that can't be saved never stops the sign-up.
-    await noteContact(slug, { email: cleanEmail(email), name: cleanName(name), phone: "" }, { source: "signup", at: now() }).catch((err) =>
+    // address as they typed it); one that can't be saved never stops the sign-up. It's made from
+    // what they typed, as a form's or an order's is: lowercasing the whole address first makes a
+    // "Σ" at the end of a word "ς", where cleanEmail gives "σ".
+    await noteContact(slug, { email: cleanEmail(typed), name: cleanName(name), phone: "" }, { source: "signup", at: now() }).catch((err) =>
       console.error("[flash] contact not saved", err),
     );
     return signedIn(id, slug, path, secure);

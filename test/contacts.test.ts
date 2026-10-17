@@ -5,6 +5,7 @@ import { register } from "node:module";
 import vm from "node:vm";
 import { readFileSync } from "node:fs";
 import { domainToASCII } from "node:url";
+import type { InValue } from "@libsql/client";
 
 /*
  * Each app's contact list: forms, sign-ups and paid orders fill one list per app, matched by email
@@ -17,7 +18,7 @@ process.env.STRIPE_SECRET_KEY = "rk_test";
 process.env.FLASH_ADMIN_EMAILS = "admin@x.co";
 process.env.FLASH_APP_URL = "https://www.flash-app.dev";
 
-const { run, one, all } = await import("../src/lib/server/db.ts");
+const { run, one, all, db } = await import("../src/lib/server/db.ts");
 const { cleanEmail, contactFromFields, normalPhone, pageHas, pageWords, stagesOf, cleanTags, dateText, formChanged, mailtoLink, phoneStage, failedText, DEFAULT_STAGES } = await import(
   "../src/lib/contacts.ts"
 );
@@ -287,12 +288,20 @@ test("one person who sends a form, signs up and pays is one contact", async () =
   }
 });
 
-test("a member who signs up, writes and pays with a domain outside A to Z is one contact, and deleting them leaves nothing", async () => {
+test("a member who signs up, writes and pays with an address outside A to Z is one contact, and deleting them leaves nothing", async () => {
   await fresh();
   await run("INSERT INTO seller_accounts (user_id, stripe_account, country, currency, ready, created_at) VALUES ('owner', 'acct_1', 'CA', 'cad', 1, 0) ON CONFLICT DO NOTHING");
   // As Chrome's email field sends the address (the xn-- form), and as another browser's or a text
-  // field sends it (in letters, here in capitals). A member signs in with the address as typed.
-  for (const [i, typed] of ["jo@xn--bckerei-5wa.de", "JO@BÄCKEREI.DE"].entries()) {
+  // field sends it (in letters, here in capitals). A member signs in with the address as typed. A
+  // Greek capital Σ at the end of a word, before a digit or the @, is σ for the contact (each letter
+  // lowercased on its own), though the member's address, lowercased as a whole, has ς.
+  const cases = [
+    ["jo@xn--bckerei-5wa.de", "jo@xn--bckerei-5wa.de"],
+    ["JO@BÄCKEREI.DE", "jo@xn--bckerei-5wa.de"],
+    ["JO@ΟΔΟΣ1.GR", `jo@${domainToASCII("οδοσ1.gr")}`],
+    ["ΝΙΚΟΣ@example.gr", "νικοσ@example.gr"],
+  ];
+  for (const [i, [typed, kept]] of cases.entries()) {
     const slug = `idn${i}`;
     await site(slug, "owner");
     assert.equal((await siteAuth(slug, "signup", { email: typed, password: "longenough1", name: "Jo" }, "1.2.3.4", `/p/${slug}`, true, null)).result, "ok");
@@ -310,7 +319,7 @@ test("a member who signs up, writes and pays with a domain outside A to Z is one
     globalThis.fetch = (async () => Response.json(order)) as typeof fetch;
     assert.equal((await finishCheckout(slug, order.id, null, ORIGIN)).paid, true);
     const list = await contactsOf(slug);
-    assert.deepEqual(list.map((c) => c.email), ["jo@xn--bckerei-5wa.de"], typed);
+    assert.deepEqual(list.map((c) => c.email), [kept], typed);
     const detail = (await contacts.contactDetail(slug, String(list[0].id), ORIGIN))!;
     assert.ok(detail.member, typed);
     assert.deepEqual([detail.orderCount, detail.messageCount], [1, 1], typed);
@@ -323,6 +332,51 @@ test("a member who signs up, writes and pays with a domain outside A to Z is one
     assert.deepEqual(await one("SELECT email, name FROM site_orders WHERE session_id = ?", [order.id]), { email: "", name: "" }, typed);
     assert.deepEqual(await contactsOf(slug), [], typed);
   }
+});
+
+test("a contact's page, export and delete find the member through its index, and read only the rows outside ASCII to check their spelling", async () => {
+  await fresh();
+  await site("lookups", "owner");
+  for (let i = 0; i < 20; i++) {
+    await run("INSERT INTO site_users (id, site_slug, email, name, password_hash, created_at) VALUES (?, 'lookups', ?, '', 'x', ?)", [`ru${i}`, `m${i}@example.com`, i]);
+    await run("INSERT INTO site_orders (session_id, site_slug, item, quantity, amount, currency, email, created_at) VALUES (?, 'lookups', 'Rye', 1, 900, 'cad', ?, ?)", [
+      `cs_lookups${i}`,
+      `M${i}@example.com`,
+      i,
+    ]);
+  }
+  // Someone else, outside ASCII: read to check their spelling, and not the contact's.
+  await run("INSERT INTO site_users (id, site_slug, email, name, password_hash, created_at) VALUES ('ru_jo', 'lookups', 'jo@bäckerei.de', '', 'x', 0)");
+  await run("INSERT INTO site_orders (session_id, site_slug, item, quantity, amount, currency, email, created_at) VALUES ('cs_lookups_jo', 'lookups', 'Rye', 1, 900, 'cad', 'jo@bäckerei.de', 0)");
+  const id = await contacts.noteContact("lookups", { email: "m3@example.com", phone: "", name: "" }, { source: "owner", at: 1 });
+  const client = await db();
+  const execute = client.execute.bind(client);
+  const statements: { sql: string; args: InValue[] }[] = [];
+  client.execute = ((stmt: { sql: string; args: InValue[] }) => {
+    statements.push(stmt);
+    return execute(stmt);
+  }) as typeof client.execute;
+  try {
+    const detail = await contacts.contactDetail("lookups", id, ORIGIN);
+    assert.deepEqual([Boolean(detail?.member), detail?.orderCount], [true, 1]);
+    assert.equal(((await contacts.exportContact("lookups", id, ORIGIN))?.member as { email: string }).email, "m3@example.com");
+    assert.equal(await contacts.deleteContact("lookups", id), true);
+  } finally {
+    client.execute = execute;
+  }
+  assert.equal(await one("SELECT 1 FROM site_users WHERE id = 'ru3'"), null);
+  assert.ok(await one("SELECT 1 FROM site_users WHERE id = 'ru_jo'"));
+  const plans: string[] = [];
+  // The reads (EXPLAIN of a DELETE here leaves its statement open).
+  for (const { sql, args } of statements.filter((s) => /^SELECT [\s\S]*FROM site_(users|orders)\b/.test(s.sql))) {
+    const plan = (await all<{ detail: string }>(`EXPLAIN QUERY PLAN ${sql}`, args)).map((r) => r.detail).join(" | ");
+    plans.push(plan);
+    // A member by the index of their address, never by reading every member.
+    if (/FROM site_users\b/.test(sql)) assert.match(plan, /site_users_email \(site_slug=\? AND email=\?\)|site_users_unicode/, sql);
+    // Rows outside ASCII through the index of those rows alone.
+    if (sql.includes("GLOB")) assert.match(plan, /site_(users|orders)_unicode/, sql);
+  }
+  assert.equal(plans.filter((p) => /_unicode/.test(p)).length, 6, "each look-up checks the spelling of the members and orders outside ASCII");
 });
 
 test("a buyer whose order Flash hadn't seen yet is on the list when the owner opens Contacts", async () => {

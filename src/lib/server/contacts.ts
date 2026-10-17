@@ -169,14 +169,21 @@ const NOT_ASCII = "email GLOB '*[^ -~]*'";
  * after "site_slug = ? AND": written the same but for the case of A to Z, or in another spelling of
  * it. A member keeps the address as they typed it to sign in with it, so jo@bäckerei.de is the
  * member of the contact jo@xn--bckerei-5wa.de. Only rows with a character outside ASCII are read
- * to check their spelling.
+ * to check their spelling, through an index of those rows alone, and members are found through the
+ * index of their addresses, so an app whose addresses are all in ASCII reads no more than before.
  */
 async function withAddress(table: "site_users" | "site_orders", slug: string, email: string): Promise<{ sql: string; args: InValue[] }> {
-  const key = table === "site_users" ? "id" : "session_id";
+  const member = table === "site_users";
+  const key = member ? "id" : "session_id";
   const kept = cleanEmail(email) || email;
   const rows = await all<{ k: string; email: string }>(`SELECT ${key} AS k, email FROM ${table} WHERE site_slug = ? AND ${NOT_ASCII}`, [slug]);
-  const others = rows.filter((r) => cleanEmail(r.email) === kept).map((r) => r.k);
-  return { sql: `(lower(email) IN (?, ?) OR ${key} IN (${others.map(() => "?").join(", ")}))`, args: [email, kept, ...others] };
+  // A member's address is kept lowercased as a whole (see siteAuth), which makes a "Σ" at the end of
+  // a word "ς", where contacts lowercase each letter on its own and have "σ": so it's read both ways.
+  const spellings = (text: string) => (member ? [text, text.replace(/ς/g, "σ")] : [text]);
+  const others = rows.filter((r) => spellings(r.email).some((text) => cleanEmail(text) === kept)).map((r) => r.k);
+  // site_users.email is COLLATE NOCASE, so "=" there is lower() without losing the index.
+  const same = member ? "email IN (?, ?)" : "lower(email) IN (?, ?)";
+  return { sql: others.length ? `(${same} OR ${key} IN (${others.map(() => "?").join(", ")}))` : same, args: [email, kept, ...others] };
 }
 
 const hmac = (secret: string, text: string) => createHmac("sha256", secret).update(text);

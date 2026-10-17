@@ -71,6 +71,9 @@ const SCHEMA = [
     created_at INTEGER NOT NULL
   )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS site_users_email ON site_users(site_slug, email)`,
+  // Members whose address has a character outside ASCII, which contacts may keep in another spelling:
+  // a contact's page finds them without reading every member (see withAddress in contacts.ts).
+  `CREATE INDEX IF NOT EXISTS site_users_unicode ON site_users(site_slug) WHERE email GLOB '*[^ -~]*'`,
   `CREATE TABLE IF NOT EXISTS site_sessions (
     token_hash TEXT PRIMARY KEY,
     site_user_id TEXT NOT NULL REFERENCES site_users(id) ON DELETE CASCADE,
@@ -236,6 +239,8 @@ const SCHEMA = [
     created_at INTEGER NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS site_orders_site ON site_orders(site_slug, created_at)`,
+  // The same for orders whose address has a character outside ASCII.
+  `CREATE INDEX IF NOT EXISTS site_orders_unicode ON site_orders(site_slug) WHERE email GLOB '*[^ -~]*'`,
   `CREATE TABLE IF NOT EXISTS usage (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL,
