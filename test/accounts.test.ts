@@ -36,6 +36,10 @@ const resetRoute = await import("../src/app/api/auth/reset/route.ts");
 const twoFactorRoute = await import("../src/app/api/auth/two-factor/route.ts");
 const callbackRoute = await import("../src/app/api/auth/oauth/[provider]/callback/route.ts");
 const passwordRoute = await import("../src/app/api/me/password/route.ts");
+const switchRoute = await import("../src/app/api/auth/switch/route.ts");
+const accountsRoute = await import("../src/app/api/auth/accounts/route.ts");
+const logoutRoute = await import("../src/app/api/auth/logout/route.ts");
+const siteOwner = await import("../src/lib/server/site-owner.ts");
 const { createSignInLink, providerAccountId } = await import("../src/lib/server/signin.ts");
 const { referralCode } = await import("../src/lib/server/referrals.ts");
 
@@ -187,7 +191,10 @@ test("a browser with one account works exactly as before, with no header and no 
   assert.equal((await one<{ nickname: string }>("SELECT nickname FROM users WHERE id = ?", [a]))!.nickname, "Legacy");
   const got = await meRoute.GET(req("/api/me", { cookie: `flash_session=${ta}` }));
   assert.equal(got.status, 200);
-  assert.equal(((await got.json()) as { user: { id: string } }).user.id, a);
+  const me = (await got.json()) as { user: { id: string }; account: string; accounts: { id: string; email: string }[] };
+  assert.equal(me.user.id, a);
+  assert.equal(me.account, a);
+  assert.deepEqual(me.accounts.map((x) => [x.id, x.email]), [[a, `${a}@x.io`]]);
   assert.deepEqual(setCookies(got), {}, "nothing new is set");
 });
 
@@ -275,6 +282,9 @@ test("a deleted account's session is dropped from the browser's accounts", async
   assert.deepEqual(jar.entries.map((e) => e.user.id), [a]);
   assert.equal(jar.stale, true, "its list is rewritten when next written");
   assert.equal(await auth.getUser(req("/api/me", { cookie: jarCookie({ def: ta, list: [ta, tb] }), account: b })), null);
+  const listed = await accountsRoute.GET(req("/api/auth/accounts", { cookie: jarCookie({ def: ta, list: [ta, tb] }) }));
+  assert.deepEqual(((await listed.json()) as { accounts: { id: string }[] }).accounts.map((x) => x.id), [a]);
+  assert.match(setCookies(listed)["__Host-flash_accounts"].attrs, /Max-Age=0/, "a list of one is no list");
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -493,4 +503,216 @@ test("changing the password of a tab's account that isn't the default leaves the
   assert.equal(await userOf(list[1]), b);
   assert.equal(await userOf(tb), null, "the old session ended");
   assert.equal(await userOf(ta), a, "the other account is untouched");
+});
+
+// ---------------------------------------------------------------------------------------------
+// Switching
+
+test("Switch account works only from Flash's own page", async () => {
+  const a = await account("swa");
+  const b = await account("swb");
+  const { cookie } = await browser(a, b);
+  const plain = new Request(`${ORIGIN}/api/auth/switch`, { method: "POST", headers: { cookie, origin: ORIGIN, "content-type": "text/plain" }, body: JSON.stringify({ account: a }) });
+  for (const r of [
+    plain,
+    req("/api/auth/switch", { cookie, json: { account: a }, site: "cross-site" }),
+    req("/api/auth/switch", { cookie, json: { account: a }, origin: "https://evil.example" }),
+  ]) {
+    const res = await switchRoute.POST(r);
+    assert.equal(res.status, 403);
+    assert.deepEqual(res.headers.getSetCookie(), []);
+  }
+});
+
+test("switching to an account the browser isn't signed in to is refused", async () => {
+  const a = await account("swna");
+  const b = await account("swnb");
+  const c = await account("swnc");
+  await session(c);
+  const { cookie } = await browser(a, b);
+  for (const id of [c, "nobody", "", "bad id!"]) {
+    const res = await switchRoute.POST(req("/api/auth/switch", { cookie, json: { account: id } }));
+    assert.equal(res.status, 404, id);
+    assert.equal(((await res.json()) as { code: string }).code, "not_signed_in");
+    assert.deepEqual(res.headers.getSetCookie(), []);
+  }
+});
+
+test("a switch makes the account's existing session the default and changes no session", async () => {
+  const a = await account("swxa");
+  const b = await account("swxb");
+  const tb = await session(b, 10 * 86_400_000);
+  const ta = await session(a);
+  const before = await sessionHashes();
+  const res = await switchRoute.POST(req("/api/auth/switch", { cookie: jarCookie({ def: ta, list: [tb, ta] }), json: { account: b } }));
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), { ok: true, account: b });
+  const set = setCookies(res);
+  assert.equal(set.flash_session.value, tb);
+  assert.ok(Math.abs(set.flash_session.maxAge! - 10 * 86_400) <= 2, String(set.flash_session.maxAge));
+  assert.match(set.flash_session.attrs, /HttpOnly/);
+  assert.equal(set["__Host-flash_accounts"], undefined, "the list was already right");
+  assert.deepEqual(await sessionHashes(), before, "no session made, renewed or ended");
+});
+
+// ---------------------------------------------------------------------------------------------
+// The accounts list
+
+test("the accounts list drops ended sessions and is the only place a new default is chosen", async () => {
+  const a = await account("ala");
+  const b = await account("alb");
+  const c = await account("alc");
+  const ta = await session(a);
+  const tb = await session(b);
+  const tc = await session(c);
+  const dead = await session(b, -1000);
+  // c's session is the default and has ended.
+  await run("DELETE FROM sessions WHERE token_hash = ?", [sha256(tc)]);
+  const cookie = jarCookie({ def: tc, list: [dead, ta, tc, tb] });
+  const me = await meRoute.GET(req("/api/me", { cookie }));
+  assert.equal(me.status, 401, "/api/me never picks another account");
+  assert.deepEqual(me.headers.getSetCookie(), []);
+  const res = await accountsRoute.GET(req("/api/auth/accounts", { cookie }));
+  assert.equal(res.status, 200);
+  const body = (await res.json()) as { default: string; accounts: { id: string; email: string; name: string; nickname: string }[] };
+  assert.deepEqual(body.accounts, [
+    { id: a, email: `${a}@x.io`, name: `User ${a}`, nickname: "" },
+    { id: b, email: `${b}@x.io`, name: `User ${b}`, nickname: "" },
+  ]);
+  assert.equal(body.default, a);
+  const set = setCookies(res);
+  assert.equal(set.flash_session.value, ta, "the first account left is the default now");
+  assert.deepEqual(listOf(res), [ta, tb]);
+  assert.equal(res.headers.get("cache-control"), "no-store");
+  const signedOut = await accountsRoute.GET(req("/api/auth/accounts"));
+  assert.deepEqual(await signedOut.json(), { default: null, accounts: [] });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Logging out
+
+/** An app of the user's, opened as owner from a session: the owner key it gives. */
+async function ownerKey(userId: string, token: string): Promise<{ slug: string; key: string }> {
+  const slug = `app-${userId}`;
+  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES (?, ?, 'App', '<p>hi</p>', 0, 0)", [slug, userId]);
+  const code = (await siteOwner.newOwnerCode(slug, userId, token))!;
+  const { key } = (await siteOwner.ownerKeyForCode(slug, code))!;
+  assert.equal(await siteOwner.isOwnerKey(slug, key), true);
+  return { slug, key };
+}
+/** A connected app's token and an unused code for the user, as Claude's connector would hold. */
+async function connected(userId: string) {
+  await run("INSERT INTO oauth_tokens (token_hash, kind, client_id, user_id, expires_at, created_at) VALUES (?, 'access', 'claude', ?, ?, 0)", [randomId(16), userId, Date.now() + 86_400_000]);
+  await run("INSERT INTO oauth_codes (code_hash, client_id, user_id, redirect_uri, challenge, expires_at) VALUES (?, 'claude', ?, 'https://claude.ai/cb', 'x', ?)", [randomId(16), userId, Date.now() + 60_000]);
+}
+const rows = async (table: string, userId: string) => count(`SELECT COUNT(*) AS n FROM ${table} WHERE user_id = ?`, [userId]);
+const logout = (cookie: string, json: unknown, account?: string) => logoutRoute.POST(req("/api/auth/logout", { cookie, json, account }));
+
+test("logging out works only from Flash's own page", async () => {
+  const a = await account("loa");
+  const ta = await session(a);
+  const res = await logoutRoute.POST(new Request(`${ORIGIN}/api/auth/logout`, { method: "POST", headers: { cookie: `flash_session=${ta}`, origin: ORIGIN } }));
+  assert.equal(res.status, 403);
+  assert.deepEqual(res.headers.getSetCookie(), []);
+  assert.equal(await userOf(ta), a);
+  assert.equal((await logoutRoute.POST(req("/api/auth/logout", { cookie: `flash_session=${ta}`, json: {}, site: "cross-site" }))).status, 403);
+  assert.equal(await userOf(ta), a);
+});
+
+test("Log out of this account ends only that account's session here, and the next one becomes the default", async () => {
+  const a = await account("lta");
+  const b = await account("ltb");
+  const tb = await session(b);
+  const ta = await session(a);
+  const elsewhere = await session(a);
+  const owned = await ownerKey(a, ta);
+  const res = await logout(jarCookie({ def: ta, list: [tb, ta] }), {}, a);
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), { ok: true, next: { id: b, email: `${b}@x.io` } });
+  const set = setCookies(res);
+  assert.equal(set.flash_session.value, tb);
+  assert.equal(set["__Host-flash_accounts"].maxAge, 0, "one account left, so no list");
+  assert.equal(await userOf(ta), null);
+  assert.equal(await userOf(elsewhere), a, "a's other device stays signed in");
+  assert.equal(await userOf(tb), b);
+  assert.equal(await siteOwner.isOwnerKey(owned.slug, owned.key), false, "owner mode opened from that session ends with it");
+});
+
+test("with 2 accounts, a log out that doesn't name the tab's account changes nothing", async () => {
+  const a = await account("lna");
+  const b = await account("lnb");
+  const c = await account("lnc");
+  await connected(a);
+  await connected(b);
+  const ta = await session(a);
+  const tb = await session(b);
+  const tc = await session(c);
+  const cookie = jarCookie({ def: tb, list: [ta, tb] });
+  const before = [await sessionHashes(), await rows("oauth_tokens", a), await rows("oauth_tokens", b), await rows("oauth_codes", a)];
+  for (const [body, account] of [[{}, undefined], [{ everywhere: true }, undefined], [{}, c], [{ everywhere: true }, c], [{}, "bad id!"]] as const) {
+    const res = await logout(cookie, body, account);
+    assert.equal(res.status, 409, JSON.stringify([body, account]));
+    assert.equal(((await res.json()) as { code: string }).code, "account_required");
+    assert.deepEqual(res.headers.getSetCookie(), []);
+  }
+  assert.deepEqual([await sessionHashes(), await rows("oauth_tokens", a), await rows("oauth_tokens", b), await rows("oauth_codes", a)], before);
+  assert.equal(await userOf(tc), c);
+});
+
+test("a tab still showing an account that isn't the default logs out everywhere only that account", async () => {
+  const a = await account("lea");
+  const b = await account("leb");
+  await connected(a);
+  await connected(b);
+  const ta = await session(a);
+  const otherDevice = await session(a);
+  const tb = await session(b);
+  const bElsewhere = await session(b);
+  const res = await logout(jarCookie({ def: tb, list: [ta, tb] }), { everywhere: true }, a);
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), { ok: true, next: { id: b, email: `${b}@x.io` } });
+  const set = setCookies(res);
+  assert.equal(set.flash_session, undefined, "b stays the default");
+  assert.equal(set["__Host-flash_accounts"].maxAge, 0);
+  for (const token of [ta, otherDevice]) assert.equal(await userOf(token), null);
+  assert.deepEqual([await rows("oauth_tokens", a), await rows("oauth_codes", a)], [0, 0], "a's connected apps are disconnected");
+  for (const token of [tb, bElsewhere]) assert.equal(await userOf(token), b);
+  assert.deepEqual([await rows("oauth_tokens", b), await rows("oauth_codes", b)], [1, 1]);
+});
+
+test("Log out of all accounts ends this browser's sessions only, and clears both cookies", async () => {
+  const a = await account("laa");
+  const b = await account("lab");
+  const ta = await session(a);
+  const aElsewhere = await session(a);
+  const tb = await session(b);
+  const res = await logout(jarCookie({ def: tb, list: [ta, tb] }), { all: true });
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), { ok: true, next: null });
+  const set = setCookies(res);
+  assert.equal(set.flash_session.maxAge, 0);
+  assert.equal(set["__Host-flash_accounts"].maxAge, 0);
+  assert.equal(await userOf(ta), null);
+  assert.equal(await userOf(tb), null);
+  assert.equal(await userOf(aElsewhere), a, "other devices stay signed in");
+});
+
+test("a browser with one account logs out exactly as before, even when its session already ended", async () => {
+  const a = await account("lla");
+  const ta = await session(a);
+  const res = await logout(`flash_session=${ta}`, {});
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), { ok: true, next: null });
+  assert.deepEqual(res.headers.getSetCookie(), [auth.clearSessionCookie()]);
+  assert.equal(await count("SELECT COUNT(*) AS n FROM sessions WHERE token_hash = ?", [sha256(ta)]), 0);
+  const ended = await session(a, -1000);
+  const again = await logout(`flash_session=${ended}`, {});
+  assert.equal(again.status, 200);
+  assert.deepEqual(again.headers.getSetCookie(), [auth.clearSessionCookie()]);
+  assert.equal(await count("SELECT COUNT(*) AS n FROM sessions WHERE token_hash = ?", [sha256(ended)]), 0, "the ended row goes too");
+  const tabbed = await session(a);
+  const pinned = await logout(`flash_session=${tabbed}`, { everywhere: true }, a);
+  assert.equal(pinned.status, 200);
+  assert.deepEqual(pinned.headers.getSetCookie(), [auth.clearSessionCookie()]);
+  assert.equal(await rows("sessions", a), 0);
 });

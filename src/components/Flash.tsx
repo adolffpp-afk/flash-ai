@@ -860,7 +860,7 @@ export function Flash({
 
   // everywhere: Settings already signed out every device, this one included.
   async function signOut(everywhere = false) {
-    if (!everywhere) await api("/api/auth/logout", { method: "POST" }).catch(() => {});
+    if (!everywhere) await api("/api/auth/logout", { method: "POST", json: {} }).catch(() => {});
     // Nothing of this account keeps running, or runs later for whoever signs in next.
     abortRef.current?.abort();
     jobRef.current = null;
