@@ -8,14 +8,18 @@ import { useT } from "@/lib/use-t";
 import { isolate } from "@/lib/account-pin";
 import { AccountBadge } from "./AccountMenu";
 
-/** A dialog that must be answered: a sheet from the bottom on a phone, a card in the middle on a computer. Tab stays inside it. */
+/**
+ * A dialog that must be answered: a sheet from the bottom on a phone, a card in the middle on a
+ * computer. Tab stays inside it. It opens with the dialog itself focused, not its first button, so
+ * no account looks already chosen.
+ */
 function Sheet({ label, onEscape, children }: { label: string; onEscape?: () => void; children: ReactNode }) {
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = box.current;
     if (!el) return;
     const focusable = () => [...el.querySelectorAll<HTMLElement>("button:not([disabled]), a[href]")];
-    focusable()[0]?.focus();
+    el.focus();
     const keep = (e: KeyboardEvent) => {
       if (e.key === "Escape" && onEscape) {
         e.preventDefault();
@@ -27,10 +31,11 @@ function Sheet({ label, onEscape, children }: { label: string; onEscape?: () => 
       if (!all.length) return;
       const first = all[0];
       const last = all[all.length - 1];
-      if (e.shiftKey && (document.activeElement === first || !el.contains(document.activeElement))) {
+      const outside = document.activeElement === el || !el.contains(document.activeElement);
+      if (e.shiftKey && (document.activeElement === first || outside)) {
         e.preventDefault();
         last.focus();
-      } else if (!e.shiftKey && (document.activeElement === last || !el.contains(document.activeElement))) {
+      } else if (!e.shiftKey && (document.activeElement === last || outside)) {
         e.preventDefault();
         first.focus();
       }
@@ -45,7 +50,8 @@ function Sheet({ label, onEscape, children }: { label: string; onEscape?: () => 
         role="dialog"
         aria-modal="true"
         aria-label={label}
-        className="max-h-[calc(100dvh-2rem)] w-full overflow-y-auto overscroll-contain rounded-t-2xl border border-white/8 bg-zinc-950 px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-5 text-zinc-100 sm:max-w-sm sm:rounded-2xl sm:p-6"
+        tabIndex={-1}
+        className="max-h-[calc(100dvh-2rem)] w-full overflow-y-auto overscroll-contain rounded-t-2xl outline-none border border-white/8 bg-zinc-950 px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-5 text-zinc-100 sm:max-w-sm sm:rounded-2xl sm:p-6"
       >
         {children}
       </div>
@@ -75,7 +81,7 @@ export function AccountChooser({
   const t = useT();
   return (
     <Sheet label={title}>
-      <h2 className="text-lg font-medium tracking-tight text-balance">{title}</h2>
+      <h2 className="break-words text-lg font-medium tracking-tight text-balance">{title}</h2>
       <p className="mt-1 text-sm text-zinc-400">{t("Choose an account to keep going.")}</p>
       <div className="mt-4 grid gap-1">
         {accounts.map((a) => {
@@ -94,7 +100,7 @@ export function AccountChooser({
               <AccountBadge account={a} />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium text-zinc-100">{fullName(a)}</span>
-                <bdi className="block truncate text-xs text-zinc-500" title={a.email}>
+                <bdi className="block truncate text-xs text-zinc-500 rtl:text-right" title={a.email}>
                   {going ? t("Switching…") : a.email}
                 </bdi>
               </span>

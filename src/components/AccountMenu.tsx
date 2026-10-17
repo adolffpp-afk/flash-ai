@@ -110,7 +110,7 @@ export function AccountMenu({
             <AccountBadge account={shown} current />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-sm font-medium text-zinc-100">{fullName(me.user)}</span>
-              <bdi className="block truncate text-xs text-zinc-500" title={me.user.email}>
+              <bdi className="block truncate text-xs text-zinc-500 rtl:text-right" title={me.user.email}>
                 {me.user.email}
               </bdi>
             </span>
@@ -142,7 +142,7 @@ export function AccountMenu({
                     <AccountBadge account={a} size="sm" />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm text-zinc-200">{fullName(a)}</span>
-                      <bdi className="block truncate text-xs text-zinc-500" title={a.email}>
+                      <bdi className="block truncate text-xs text-zinc-500 rtl:text-right" title={a.email}>
                         {going ? t("Switching…") : a.email}
                       </bdi>
                     </span>

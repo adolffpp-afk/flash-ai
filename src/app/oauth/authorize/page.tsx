@@ -114,7 +114,7 @@ export default async function Authorize({ searchParams }: Props) {
                   <li key={e.user.id}>
                     <a
                       href={`${here}&account=${encodeURIComponent(e.user.id)}`}
-                      className="flex min-h-10 items-center rounded-lg px-2 hover:bg-white/[0.05]"
+                      className="flex min-h-10 items-center rounded-lg border border-white/8 px-3 text-zinc-200 transition hover:bg-white/[0.05]"
                     >
                       <bdi className="truncate">{e.user.email}</bdi>
                     </a>
@@ -124,7 +124,7 @@ export default async function Authorize({ searchParams }: Props) {
                   <li>
                     <a
                       href={`/?add=1&next=${encodeURIComponent(here)}`}
-                      className="flex min-h-10 items-center rounded-lg px-2 text-primary hover:bg-white/[0.05]"
+                      className="flex min-h-10 items-center rounded-lg px-3 text-primary transition hover:bg-white/[0.05]"
                     >
                       Sign in to another account
                     </a>

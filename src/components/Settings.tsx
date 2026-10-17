@@ -59,7 +59,7 @@ function Row({ title, about, children }: { title: string; about?: ReactNode; chi
     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
       <div className="min-w-0">
         <p className="text-sm text-zinc-200">{title}</p>
-        {about && <p className={`mt-0.5 ${hint}`}>{about}</p>}
+        {about && <p className={`mt-0.5 break-words ${hint}`}>{about}</p>}
       </div>
       <div className="shrink-0">{children}</div>
     </div>

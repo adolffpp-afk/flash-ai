@@ -2737,7 +2737,7 @@ export function Flash({
                 role="status"
                 className="flex items-start gap-3 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm text-zinc-100"
               >
-                <span className="flex-1">{notice}</span>
+                <span className="min-w-0 flex-1 break-words">{notice}</span>
                 <button onClick={() => setNotice("")} aria-label={t("Dismiss")} className="text-primary-soft hover:text-white">
                   ✕
                 </button>
@@ -2745,7 +2745,7 @@ export function Flash({
             )}
             {inviteFor && (
               <div role="status" className="flex flex-wrap items-center gap-3 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm text-zinc-100">
-                <span className="min-w-0 flex-1 basis-56">{t("This invitation is for {email}. Switch to that account to join.", { email: isolate(inviteFor.email) })}</span>
+                <span className="min-w-0 flex-1 basis-56 break-words">{t("This invitation is for {email}. Switch to that account to join.", { email: isolate(inviteFor.email) })}</span>
                 <button
                   onClick={() => void switchAccount(inviteFor.id)}
                   disabled={Boolean(switching)}
