@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import type { UIMessage } from "@/lib/store";
 import type { PickedElement } from "@/lib/preview-bridge";
 import { htmlTitle } from "@/lib/build-parse";
-import { BUILD_STEPS, NO_DRAFT_YET, buildStep, draftView, writingPart, type DraftStore } from "@/lib/live-draft";
+import { BUILD_STEPS, NO_DRAFT_YET, buildStep, draftView, swapAt, writingPart, type DraftStore } from "@/lib/live-draft";
 import { useT } from "@/lib/use-t";
 import { AppPreview } from "./AppPreview";
 
@@ -35,11 +35,14 @@ export function useMedia(query: string): boolean {
 // A draft is shown again at most every 3 seconds, and only while it can be seen: each showing loads
 // the page afresh, pictures and fonts too, as a frame with no permissions can't use the browser's cache.
 const REDRAW_MS = 3000;
-// A page's load waits for its pictures, which never hold back its text: a new draft comes to the
-// front by this long after it started loading, so one slow picture never holds the preview still.
-const SWAP_BY_MS = 1500;
+// Focus that goes into the page this soon after a Tab key press came from the keyboard.
+const TABBED_IN_MS = 500;
 // The Code view shows the end of the file, where Flash is writing.
 const CODE_TAIL = 8_000;
+// In a short window (a phone on its side) the space under the Preview tab is a strip: the preview keeps
+// a usable height and the panel scrolls, and the steps and the note under the page give it their room.
+const TALL = "min-h-96";
+const SHORT_HIDDEN = "[@media(max-height:500px)]:hidden";
 
 const Dots = () => (
   <span className="flex shrink-0 gap-1" aria-hidden>
@@ -91,25 +94,32 @@ export function BuildPanel({
   // Only this panel reads the draft, so only it renders again as the file grows.
   const draft = useSyncExternalStore(drafts.subscribe, drafts.get, () => NO_DRAFT_YET);
   const kind = building?.engine === "slides" || (!building && appMsg?.app?.kind === "slides") ? "slides" : "app";
-  if (building && drafting) {
-    return <LiveBuild html={draft.html} kind={kind} status={building.status} live={live} />;
-  }
   if (appMsg?.app) {
     const app = appMsg.app;
     const done = !appMsg.pending;
+    // A change's new file, once it shows, covers the version there now, which stays mounted under it:
+    // if the change is stopped or fails, that version comes back as it was (its data, screen and code).
+    const covered = Boolean(building && drafting);
     return (
-      <div className="relative flex min-h-0 flex-1 flex-col">
-        <AppPreview
-          key={appMsg.id}
-          fill
-          app={app}
-          onPublished={(slug) => onPublished(appMsg.id, slug)}
-          publishedEarlier={publishedEarlier}
-          onEditCode={done ? (html) => onEditCode(appMsg.id, html) : undefined}
-          onFix={done && !busy ? (request) => onFix(app.kind, request) : undefined}
-          onPick={done ? (part) => onPick(app.kind, part) : undefined}
-        />
-        {building && (
+      <div className={`relative flex flex-1 flex-col ${TALL}`}>
+        <div inert={covered} className={`flex min-h-0 flex-1 flex-col ${covered ? "invisible" : ""}`}>
+          <AppPreview
+            key={appMsg.id}
+            fill
+            app={app}
+            onPublished={(slug) => onPublished(appMsg.id, slug)}
+            publishedEarlier={publishedEarlier}
+            onEditCode={done ? (html) => onEditCode(appMsg.id, html) : undefined}
+            onFix={done && !busy ? (request) => onFix(app.kind, request) : undefined}
+            onPick={done ? (part) => onPick(app.kind, part) : undefined}
+          />
+        </div>
+        {building && covered && (
+          <div className="absolute inset-0 z-20 flex flex-col">
+            <LiveBuild html={draft.html} kind={kind} status={building.status} live={live} />
+          </div>
+        )}
+        {building && !covered && (
           // Changing it: the version there now stays on show, held still until the new one comes.
           <div className="absolute inset-0 z-20 flex items-center justify-center bg-zinc-950/50 px-6">
             <p role="status" className="flex max-w-xs items-center gap-2.5 rounded-full border border-zinc-800 bg-zinc-900 px-4 py-2 text-sm text-zinc-200 shadow-lg shadow-black/20">
@@ -121,7 +131,7 @@ export function BuildPanel({
       </div>
     );
   }
-  if (building) return <LiveBuild html="" kind={kind} status={building.status} live={live} />;
+  if (building) return <LiveBuild html={drafting ? draft.html : ""} kind={kind} status={building.status} live={live} />;
   return null;
 }
 
@@ -136,7 +146,7 @@ function LiveBuild({ html, kind, status, live }: { html: string; kind: "app" | "
   // Pages show once their content starts; a deck shows one slide at a time with its scripts, so never.
   const page = kind === "app" && step >= 2;
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className={`flex flex-1 flex-col ${TALL}`}>
       <div className="flex items-center gap-2 border-b border-zinc-800 px-3 py-2 text-xs text-zinc-400">
         <Dots />
         <span className="ms-1 min-w-0 flex-1 truncate font-medium text-zinc-200">{title}</span>
@@ -149,7 +159,7 @@ function LiveBuild({ html, kind, status, live }: { html: string; kind: "app" | "
         </div>
       </div>
       {live && (
-        <div className="border-b border-zinc-800 px-3 py-2">
+        <div className={`border-b border-zinc-800 px-3 py-2 ${SHORT_HIDDEN}`}>
           <ol aria-label={t("Build steps")} className="-mx-1.5 flex flex-wrap items-center gap-y-1 text-xs">
             {BUILD_STEPS.map((label, i) => (
               <li
@@ -173,18 +183,20 @@ function LiveBuild({ html, kind, status, live }: { html: string; kind: "app" | "
           <p dir="auto" className="mt-1.5 truncate text-xs text-zinc-500">
             {part ? t("Writing: {part}", { part }) : status}
           </p>
-          {/* Only a new step is read out, not every line written. */}
-          <span className="sr-only" aria-live="polite">
-            {t(BUILD_STEPS[step])}
-          </span>
         </div>
+      )}
+      {live && (
+        // Only a new step is read out, not every line written.
+        <span className="sr-only" aria-live="polite">
+          {t(BUILD_STEPS[step])}
+        </span>
       )}
       {view === "code" ? (
         <DraftCode html={html} />
       ) : page ? (
         <>
           <DraftFrame markup={markup} title={title} />
-          <p className="border-t border-zinc-800 px-3 py-1.5 text-xs text-zinc-500">{t("Buttons start working when it's finished.")}</p>
+          <p className={`border-t border-zinc-800 px-3 py-1.5 text-xs text-zinc-500 ${SHORT_HIDDEN}`}>{t("Buttons start working when it's finished.")}</p>
         </>
       ) : (
         <div className={`flex flex-col items-center justify-center gap-3 px-6 text-center text-sm text-zinc-400 ${kind === "slides" ? "my-auto aspect-video w-full" : "min-h-0 flex-1"}`}>
@@ -199,11 +211,18 @@ function LiveBuild({ html, kind, status, live }: { html: string; kind: "app" | "
 /**
  * The page so far, in a frame where nothing may run (sandbox with no permissions). Two frames take
  * turns, so a new draft loads and paints under the one on show and the page never flashes blank.
- * Redrawing waits while the pointer is on the page or it has the focus, so it can be looked at, and
- * while it can't be seen (under the Conversation tab, the panel hidden, another browser tab).
+ * Redrawing waits while the pointer is on the page or keyboard focus is in it, so it can be looked
+ * at, and while it can't be seen (under the Conversation tab, the panel hidden, another browser tab).
  */
 function DraftFrame({ markup, title }: { markup: string; title: string }) {
-  const [frames, setFrames] = useState({ docs: [markup, ""], keys: [0, 1], front: 0, loading: false });
+  // started and loaded: when the frame underneath began loading its draft, and when it had (see swapAt).
+  const [frames, setFrames] = useState<{ docs: string[]; keys: number[]; front: number; loading: boolean; started: number; loaded?: number }>({
+    docs: [markup, ""],
+    keys: [0, 1],
+    front: 0,
+    loading: false,
+    started: 0,
+  });
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const [seen, setSeen] = useState(false);
@@ -228,11 +247,20 @@ function DraftFrame({ markup, title }: { markup: string; title: string }) {
     };
   }, []);
 
+  // Focus that came in with Tab: a keyboard user reading the page keeps their place in it. A click or
+  // a tap focuses it too, but holds nothing once the pointer has gone (a touch is never seen here).
   useEffect(() => {
-    const check = () => setFocused(Boolean(box.current && document.activeElement && box.current.contains(document.activeElement)));
+    let tabbed = -Infinity;
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Tab") tabbed = performance.now();
+    };
+    const check = () =>
+      setFocused(performance.now() - tabbed < TABBED_IN_MS && Boolean(box.current && document.activeElement && box.current.contains(document.activeElement)));
+    window.addEventListener("keydown", key, true);
     window.addEventListener("blur", check);
     window.addEventListener("focus", check);
     return () => {
+      window.removeEventListener("keydown", key, true);
       window.removeEventListener("blur", check);
       window.removeEventListener("focus", check);
     };
@@ -242,7 +270,8 @@ function DraftFrame({ markup, title }: { markup: string; title: string }) {
     if (!seen || hovered || focused || frames.loading || markup === frames.docs[frames.front]) return;
     const timer = setTimeout(
       () => {
-        last.current = Date.now();
+        const now = Date.now();
+        last.current = now;
         // The frame underneath loads it afresh, and comes to the front once it has.
         setFrames((f) => {
           const back = 1 - f.front;
@@ -250,7 +279,7 @@ function DraftFrame({ markup, title }: { markup: string; title: string }) {
           const keys = [...f.keys];
           docs[back] = markup;
           keys[back] = Math.max(...keys) + 1;
-          return { ...f, docs, keys, loading: true };
+          return { ...f, docs, keys, loading: true, started: now, loaded: undefined };
         });
       },
       Math.max(0, last.current + REDRAW_MS - Date.now()),
@@ -258,12 +287,17 @@ function DraftFrame({ markup, title }: { markup: string; title: string }) {
     return () => clearTimeout(timer);
   }, [markup, seen, hovered, focused, frames]);
 
-  // The frame underneath comes to the front by SWAP_BY_MS, even if a picture in it hasn't loaded.
+  // The frame underneath comes to the front a while after its load, once its fonts have come too, and
+  // by SWAP_BY_MS after it started even if a picture in it hasn't loaded (see swapAt). While the page
+  // is looked at, it waits, so the page that has the focus is never put underneath.
   useEffect(() => {
-    if (!frames.loading) return;
-    const timer = setTimeout(() => setFrames((f) => (f.loading ? { ...f, front: 1 - f.front, loading: false } : f)), SWAP_BY_MS);
+    if (!frames.loading || hovered || focused) return;
+    const timer = setTimeout(
+      () => setFrames((f) => (f.loading ? { ...f, front: 1 - f.front, loading: false } : f)),
+      Math.max(0, swapAt(frames.started, frames.loaded) - Date.now()),
+    );
     return () => clearTimeout(timer);
-  }, [frames.loading]);
+  }, [frames.loading, frames.started, frames.loaded, hovered, focused]);
 
   return (
     <div ref={box} className="relative isolate min-h-0 flex-1 bg-paper" onPointerEnter={() => setHovered(true)} onPointerLeave={() => setHovered(false)}>
@@ -276,11 +310,7 @@ function DraftFrame({ markup, title }: { markup: string; title: string }) {
           // No permissions at all: no scripts, forms, pop-ups or navigation of Flash's page.
           sandbox=""
           srcDoc={frames.docs[i]}
-          onLoad={() => {
-            if (i === frames.front || !frames.loading) return;
-            // Two animation frames on, so it has painted: brought forward at its load, it can show blank.
-            requestAnimationFrame(() => requestAnimationFrame(() => setFrames((f) => (f.loading && f.front !== i ? { ...f, front: i, loading: false } : f))));
-          }}
+          onLoad={() => setFrames((f) => (f.loading && f.front !== i && f.loaded === undefined ? { ...f, loaded: Date.now() } : f))}
           className={`absolute inset-0 h-full w-full border-0 bg-paper ${i === frames.front ? "z-10" : ""}`}
         />
       ))}

@@ -1697,6 +1697,9 @@ export function Flash({
   const beside = showPanel && wide && (!companion || roomy);
   const tab = showPanel && !beside ? phoneTab : "chat";
   const panelShown = beside && !panelHidden;
+  // The header's button labels show when the chat column has room: beside the preview it's narrower
+  // than the window, so there it's measured itself.
+  const headerWords = beside ? "hidden @min-[700px]/main:inline" : "hidden sm:inline";
   const showPhoneTab = (v: "chat" | "preview") => {
     if (v === "preview") previewIn.current = activeId;
     setPhoneTab(v);
@@ -2364,8 +2367,7 @@ export function Flash({
               <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                 <path d="M4 6h16 M4 12h10 M4 18h7 M17 15l2 2 4-4" />
               </svg>
-              {/* Words only when the chat column has room: beside the preview it's narrower than the screen. */}
-              <span className="hidden @min-[700px]/main:inline">{active.instructions ? t("Instructions on") : t("Instructions")}</span>
+              <span className={headerWords}>{active.instructions ? t("Instructions on") : t("Instructions")}</span>
             </button>
           )}
           {active?.messages?.some((m) => !m.pending) && <DownloadChat project={active} disabled={busy} />}
@@ -2380,7 +2382,7 @@ export function Flash({
               <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                 <path d="M12 15V3 M7 8l5-5 5 5 M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7" />
               </svg>
-              <span className="hidden @min-[700px]/main:inline">{t("Share")}</span>
+              <span className={headerWords}>{t("Share")}</span>
             </button>
           )}
           <button
@@ -2618,7 +2620,7 @@ export function Flash({
           <section
             id="flash-preview"
             aria-label={t("Preview")}
-            className={`${tab === "preview" ? "flex" : "hidden"} absolute inset-x-3 inset-y-1 flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900`}
+            className={`${tab === "preview" ? "flex" : "hidden"} absolute inset-x-3 inset-y-1 flex-col overflow-y-auto rounded-2xl border border-zinc-800 bg-zinc-900`}
           >
             {panel}
           </section>
@@ -2649,7 +2651,7 @@ export function Flash({
         <section
           id="flash-preview"
           aria-label={t("Preview")}
-          className={`${panelHidden ? "hidden" : "flex"} my-3 me-3 w-[clamp(26rem,36vw,40rem)] shrink-0 flex-col overflow-hidden rounded-[26px] border border-[var(--glass-line)] [background-image:var(--glass-1)] shadow-[var(--glass-shadow)]`}
+          className={`${panelHidden ? "hidden" : "flex"} my-3 me-3 w-[clamp(26rem,36vw,40rem)] shrink-0 flex-col overflow-y-auto rounded-[26px] border border-[var(--glass-line)] [background-image:var(--glass-1)] shadow-[var(--glass-shadow)]`}
         >
           {panel}
         </section>

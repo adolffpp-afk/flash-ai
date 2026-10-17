@@ -5,12 +5,15 @@ import {
   DRAFT_CHUNK,
   DRAFT_EVERY_MS,
   DRAFT_MAX,
+  FONTS_MS,
+  SWAP_BY_MS,
   buildStep,
   draftSender,
   draftShown,
   draftStore,
   draftView,
   sendable,
+  swapAt,
   writingPart,
   type DraftEvent,
 } from "../src/lib/live-draft.ts";
@@ -234,6 +237,14 @@ test("a change keeps the version on show until the new file's page starts; a fir
   }
   assert.equal(draftShown(head, { changing: true, kind: "app" }), false, "a whole new file for an app: the app stays while the head and styles are written");
   assert.equal(draftShown(head, { changing: true, kind: "slides" }), true, "a deck never has a live page, so its steps show at once");
+});
+
+test("a redrawn draft comes to the front a while after its load, so its web fonts have come, and never later than 1.5 s", () => {
+  assert.ok(FONTS_MS >= 500, "a font that takes half a second still arrives underneath");
+  assert.equal(swapAt(10_000, 10_080), 10_080 + FONTS_MS, "not at its load: the load doesn't wait for fonts");
+  assert.ok(swapAt(10_000, 10_080) > 10_080 + 300, "a font host answering in 300 ms after the load is in time");
+  assert.equal(swapAt(10_000, 11_200), 10_000 + SWAP_BY_MS, "a page held back by its pictures comes by the cap");
+  assert.equal(swapAt(10_000), 10_000 + SWAP_BY_MS, "one that never loads too");
 });
 
 test("the part being written is the last heading's words", () => {

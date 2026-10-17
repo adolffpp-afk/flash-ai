@@ -295,6 +295,19 @@ export function draftShown(html: string, { changing, kind }: { changing: boolean
   return html !== "" && (!changing || kind === "slides" || buildStep(html) >= 2);
 }
 
+// A redrawn draft loads under the one on show. A page's load doesn't wait for its web fonts, so
+// brought forward at its load, its text would show in a fallback font, then wrap again as the font
+// came: it comes to the front this long after its load…
+export const FONTS_MS = 700;
+// …and by this long after it started loading, as a page's load waits for its pictures and one slow
+// picture must never hold the preview still.
+export const SWAP_BY_MS = 1500;
+
+/** When a redrawn draft that started loading at started (and loaded at loaded, once it has) comes to the front. */
+export function swapAt(started: number, loaded?: number): number {
+  return Math.min(started + SWAP_BY_MS, loaded === undefined ? Infinity : loaded + FONTS_MS);
+}
+
 const ENTITIES: Record<string, string> = { "&amp;": "&", "&lt;": "<", "&gt;": ">", "&quot;": '"', "&#39;": "'", "&nbsp;": " " };
 
 /** The words of the last heading written (h1 to h3), for "Writing: …"; "" when there is none. */
