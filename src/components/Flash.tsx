@@ -28,7 +28,8 @@ import { TEMPLATES, type Template, type TemplateValues } from "@/lib/templates";
 import { ENGINES, ENGINE_LABELS, PENDING_LIMIT_MS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types";
 import { applyEvent } from "@/lib/apply-event";
 import { api, authedFetch, newId, type AccountSummary, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
-import { adoptAccountFromUrl, announce, getPin, getPinEmail, isolate, isTabAccount, linkTarget, onAnnounce, setPin, setPinEmail } from "@/lib/account-pin";
+import { PRODUCT_NAME } from "@/lib/product";
+import { adoptAccountFromUrl, announce, getPin, getPinEmail, isolate, isTabAccount, linkTarget, onAnnounce, setPin, setPinEmail, switchAddress } from "@/lib/account-pin";
 import { isLocalPath } from "@/lib/local-path";
 import { PROJECT_TOO_LARGE } from "@/lib/project-size";
 import type { ChatHit } from "@/lib/server/search";
@@ -92,7 +93,8 @@ const MAX_FILE_MB = 3;
 // Word, Excel and PowerPoint files are read in the browser and only their text is sent.
 const MAX_OFFICE_MB = 20;
 
-// A team invitation opened before signing in waits here until the account loads.
+// A team invitation opened before signing in waits here (localStorage) until the account loads; one
+// for another account signed in here waits only in the tab that opened it (sessionStorage).
 const INVITE_KEY = "flash_invite";
 // A note this tab shows after reloading as another account, kept in this tab's sessionStorage: who
 // was logged out and who it uses now, put into words once the next account's language is shown.
@@ -104,23 +106,25 @@ type LeftNote = { email: string; next: string };
  * not to be signed in here anymore.
  */
 type Chooser = { reason: "link" | "gone" | "notHere"; email?: string; accounts: AccountSummary[] };
-const storage = {
+const keeper = (area: () => Storage) => ({
   get: (key: string) => {
     try {
-      return localStorage.getItem(key);
+      return area().getItem(key);
     } catch {
       return null;
     }
   },
   set: (key: string, value: string | null) => {
     try {
-      if (value === null) localStorage.removeItem(key);
-      else localStorage.setItem(key, value);
+      if (value === null) area().removeItem(key);
+      else area().setItem(key, value);
     } catch {
       // Storage blocked: the invitation link can be opened again after signing in.
     }
   },
-};
+});
+const storage = keeper(() => localStorage);
+const tabStorage = keeper(() => sessionStorage);
 export type Status = Record<Engine, boolean>;
 
 /**
@@ -459,7 +463,14 @@ export function Flash({
     } catch {
       return "here";
     }
-    const mine = getPin();
+    let mine = getPin();
+    // A page's requests name the account it shows, whatever a reload that didn't happen left behind.
+    const showing = meRef.current?.user;
+    if (mine && showing && mine !== showing.id) {
+      setPin(showing.id);
+      setPinEmail(showing.email);
+      mine = showing.id;
+    }
     if (mine && list.accounts.some((a) => a.id === mine)) {
       setMe((m) => (m ? { ...m, accounts: list.accounts } : m));
       if (!chooserRef.current) return "here";
@@ -482,21 +493,32 @@ export function Flash({
 
   /** Joins the team from a saved invitation link, once signed in. */
   async function acceptInvite() {
-    const token = storage.get(INVITE_KEY);
+    const token = tabStorage.get(INVITE_KEY) ?? storage.get(INVITE_KEY);
     if (!token) return;
     try {
       await api("/api/team/accept", { method: "POST", json: { token } });
-      storage.set(INVITE_KEY, null);
+      dropInvite();
       setNotice(t("You joined the team. Your requests now use the team's shared credits."));
       await refreshMe();
     } catch (err) {
       const { code, data } = err as { code?: string; data?: { forAccount?: { id: string; email: string } } };
-      // For another account signed in here: kept, and joined once switched to it (start runs again then).
-      if (code === "other_account" && data?.forAccount) return setInviteFor(data.forAccount);
+      // For another account signed in here: kept in this tab only, so other tabs and accounts don't
+      // ask too, and joined once this tab switches to it (start runs again then), or put away.
+      if (code === "other_account" && data?.forAccount) {
+        storage.set(INVITE_KEY, null);
+        tabStorage.set(INVITE_KEY, token);
+        return setInviteFor(data.forAccount);
+      }
       // An unconfirmed email can try again after confirming; any other answer is final.
-      if (code !== "unverified") storage.set(INVITE_KEY, null);
+      if (code !== "unverified") dropInvite();
       setNotice(err instanceof Error ? err.message : t("Couldn't join the team."));
     }
+  }
+
+  /** Forgets a saved invitation link (joined, refused, or put away). */
+  function dropInvite() {
+    storage.set(INVITE_KEY, null);
+    tabStorage.set(INVITE_KEY, null);
   }
 
   async function start() {
@@ -505,7 +527,8 @@ export function Flash({
     // Put into words in this account's language, now shown (see reloadAs).
     const left = leftRef.current;
     leftRef.current = null;
-    if (left) setNotice(tNow("Logged out of {email}. You're now using {next}.", { email: isolate(left.email), next: isolate(left.next) }));
+    // Only on the account the note says this tab went on as (not after a reload that didn't happen then).
+    if (left && left.next === data.user.email) setNotice(tNow("Logged out of {email}. You're now using {next}.", { email: isolate(left.email), next: isolate(left.next) }));
     setSignedOut(false);
     acceptInvite();
     setPreferences(data.user.preferences);
@@ -527,6 +550,17 @@ export function Flash({
   useEffect(() => {
     void showLanguage(savedLanguage);
   }, [savedLanguage]);
+
+  // With several accounts here, the browser's tab says which one this tab is on.
+  const tabEmail = me && (me.accounts?.length ?? 0) > 1 ? me.user.email : null;
+  useEffect(() => {
+    if (!tabEmail) return;
+    const before = document.title;
+    document.title = `${tabEmail} · ${PRODUCT_NAME}`;
+    return () => {
+      document.title = before;
+    };
+  }, [tabEmail]);
 
   useEffect(() => {
     // A link that names its account (?as=, from an email, Stripe or a callback) opens as it.
@@ -1034,9 +1068,13 @@ export function Flash({
     }, 600);
   }
 
-  /** Reloads Flash as another account signed in here, saying so once it has (a note for this tab). */
+  /**
+   * Reloads Flash as another account signed in here, saying so once it has (a note for this tab).
+   * This tab names that account only once the new page loads (switchAddress): if the browser's
+   * "Leave site?" keeps this page (unsaved contact edits in My websites and apps, say), it stays on
+   * the account it shows, and every request still names that one.
+   */
   function reloadAs(id: string, note?: LeftNote) {
-    setPin(id);
     if (note) {
       try {
         sessionStorage.setItem(NOTICE_KEY, JSON.stringify(note));
@@ -1047,7 +1085,7 @@ export function Flash({
     announce({ type: "changed" });
     // A fresh page clears everything of the account before (its chats, files kept in memory, the
     // queue, the wake word), and Back can't return to it.
-    window.location.replace("/");
+    window.location.replace(switchAddress(id));
   }
 
   /**
@@ -1075,6 +1113,9 @@ export function Flash({
       return;
     }
     reloadAs(id);
+    // Still here a few seconds on: the browser's "Leave site?" kept this page, on its own account.
+    // Switching can be chosen again.
+    window.setTimeout(() => setSwitching(null), 3000);
   }
 
   /**
@@ -1909,7 +1950,7 @@ export function Flash({
     reason === "link"
       ? t("This link is for another Flash account. Sign in to it to open the link.")
       : reason === "gone" && email
-        ? t("{email} was logged out on this browser.", { email: isolate(email) })
+        ? t("{email} isn't signed in on this browser anymore.", { email: isolate(email) })
         : t("That account isn't signed in on this browser anymore.");
 
   // This tab's account was logged out here before its data loaded: which account now.
@@ -2796,14 +2837,27 @@ export function Flash({
               </div>
             )}
             {inviteFor && (
-              <div role="status" className="flex flex-wrap items-center gap-3 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm text-zinc-100">
-                <span className="min-w-0 flex-1 basis-56 break-words">{t("This invitation is for {email}. Switch to that account to join.", { email: isolate(inviteFor.email) })}</span>
+              <div role="status" className="flex items-start gap-3 rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm text-zinc-100">
+                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+                  <span className="min-w-0 flex-1 basis-56 break-words">{t("This invitation is for {email}. Switch to that account to join.", { email: isolate(inviteFor.email) })}</span>
+                  <button
+                    onClick={() => void switchAccount(inviteFor.id)}
+                    disabled={Boolean(switching)}
+                    className="flex min-h-10 max-w-full items-center rounded-lg bg-brand px-3 text-sm font-medium text-on-brand transition hover:brightness-110 disabled:opacity-50"
+                  >
+                    {switching === inviteFor.id ? t("Switching…") : <EmailLabel text={msg("Switch to {email}")} email={inviteFor.email} />}
+                  </button>
+                </div>
+                {/* Not now: the invitation is put away (its email link still works later). */}
                 <button
-                  onClick={() => void switchAccount(inviteFor.id)}
-                  disabled={Boolean(switching)}
-                  className="flex min-h-10 max-w-full items-center rounded-lg bg-brand px-3 text-sm font-medium text-on-brand transition hover:brightness-110 disabled:opacity-50"
+                  onClick={() => {
+                    dropInvite();
+                    setInviteFor(null);
+                  }}
+                  aria-label={t("Dismiss")}
+                  className="text-primary-soft hover:text-white"
                 >
-                  {switching === inviteFor.id ? t("Switching…") : <EmailLabel text={msg("Switch to {email}")} email={inviteFor.email} />}
+                  ✕
                 </button>
               </div>
             )}

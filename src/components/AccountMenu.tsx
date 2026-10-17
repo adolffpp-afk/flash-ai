@@ -11,13 +11,35 @@ import { InstallApp } from "./InstallApp";
 
 const item = "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-start text-sm text-zinc-200 transition hover:bg-white/[0.06]";
 
-/** An account's round badge with its initials: the gradient one for the account shown, a quiet one for the others. */
-export function AccountBadge({ account, current = false, size = "md" }: { account: AccountSummary; current?: boolean; size?: "md" | "sm" }) {
+/*
+ * Each account signed in to a browser has its own badge colour, in the order they were added (the
+ * first keeps Flash's own), so tabs on two accounts tell apart at a glance, even with the same name
+ * and on a phone, where the top bar shows only the badge. A browser holds at most 5 accounts.
+ */
+const TONES = [
+  "bg-[linear-gradient(140deg,#3ee0c3,#7c6cf0_70%,#c084fc)]",
+  "bg-[linear-gradient(140deg,#fde68a,#fb923c_70%,#f472b6)]",
+  "bg-[linear-gradient(140deg,#d9f99d,#4ade80_70%,#2dd4bf)]",
+  "bg-[linear-gradient(140deg,#fecdd3,#fb7185_70%,#e879f9)]",
+  "bg-[linear-gradient(140deg,#a5f3fc,#60a5fa_70%,#818cf8)]",
+] as const;
+
+/** An account's colour among the browser's accounts (Flash's own while there's only one). */
+export function accountTone(accounts: { id: string }[] | undefined, id: string): string {
+  const at = accounts && accounts.length > 1 ? accounts.findIndex((a) => a.id === id) : 0;
+  return TONES[Math.max(0, at) % TONES.length];
+}
+
+/**
+ * An account's round badge with its initials: in its colour (tone, see accountTone), or else the
+ * gradient one for the account shown and a quiet one for the others.
+ */
+export function AccountBadge({ account, current = false, size = "md", tone }: { account: AccountSummary; current?: boolean; size?: "md" | "sm"; tone?: string }) {
   return (
     <span
       aria-hidden
       className={`flex shrink-0 items-center justify-center rounded-full font-medium ${size === "md" ? "h-9 w-9 text-sm" : "h-8 w-8 text-xs"} ${
-        current ? "bg-[linear-gradient(140deg,#3ee0c3,#7c6cf0_70%,#c084fc)] text-night" : "bg-primary-deep text-primary-soft"
+        tone ? `${tone} text-night` : current ? `${TONES[0]} text-night` : "bg-primary-deep text-primary-soft"
       }`}
     >
       {initials(account)}
@@ -95,10 +117,11 @@ export function AccountMenu({
   const others = (me.accounts ?? []).filter((a) => a.id !== me.user.id);
   const several = others.length > 0;
   const full = others.length + 1 >= MAX_ACCOUNTS;
+  const tone = accountTone(me.accounts, me.user.id);
   // The account this tab shows, at the top of the menu.
   const current = (
     <>
-      <AccountBadge account={shown} current />
+      <AccountBadge account={shown} current tone={tone} />
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium text-zinc-100">{fullName(me.user)}</span>
         <bdi className="block truncate text-xs text-zinc-500 rtl:text-right" title={me.user.email}>
@@ -140,7 +163,8 @@ export function AccountMenu({
                       key={a.id}
                       role="menuitemradio"
                       aria-checked="false"
-                      aria-label={t("Switch to {email}", { email: isolate(a.email) })}
+                      // The name and email shown, after what choosing it does.
+                      aria-label={t("Switch to {name} ({email})", { name: isolate(fullName(a)), email: isolate(a.email) })}
                       aria-busy={going || undefined}
                       disabled={Boolean(switching)}
                       className={`${item} min-h-11 py-1.5 disabled:cursor-default disabled:hover:bg-transparent ${switching && !going ? "opacity-50" : ""}`}
@@ -149,7 +173,7 @@ export function AccountMenu({
                         onSwitch(a.id);
                       }}
                     >
-                      <AccountBadge account={a} size="sm" />
+                      <AccountBadge account={a} size="sm" tone={accountTone(me.accounts, a.id)} />
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm text-zinc-200">{fullName(a)}</span>
                         <bdi className="block truncate text-xs text-zinc-500 rtl:text-right" title={a.email}>
@@ -175,6 +199,17 @@ export function AccountMenu({
               </span>
               {t("Add another account")}
             </button>
+          )}
+          {/* With several accounts, the log-outs come right after them (on a small phone the menu scrolls, and Learn more below can hide what's under it). */}
+          {several && (
+            <>
+              <button role="menuitem" className={item} onClick={pick(onSignOut)}>
+                <span aria-hidden className="rtl:-scale-x-100">↪</span> {t("Log out of this account")}
+              </button>
+              <button role="menuitem" className={item} onClick={pick(onSignOutAll)}>
+                <span aria-hidden className="rtl:-scale-x-100">⇤</span> {t("Log out of all accounts")}
+              </button>
+            </>
           )}
           <div className="my-1 border-t border-white/8" />
           <button role="menuitem" className={item} onClick={pick(onSettings)}>
@@ -215,14 +250,13 @@ export function AccountMenu({
               </a>
             </div>
           )}
-          <div className="my-1 border-t border-white/8" />
-          <button role="menuitem" className={item} onClick={pick(onSignOut)}>
-            <span aria-hidden className="rtl:-scale-x-100">↪</span> {several ? t("Log out of this account") : t("Log out")}
-          </button>
-          {several && (
-            <button role="menuitem" className={item} onClick={pick(onSignOutAll)}>
-              <span aria-hidden className="rtl:-scale-x-100">⇤</span> {t("Log out of all accounts")}
-            </button>
+          {!several && (
+            <>
+              <div className="my-1 border-t border-white/8" />
+              <button role="menuitem" className={item} onClick={pick(onSignOut)}>
+                <span aria-hidden className="rtl:-scale-x-100">↪</span> {t("Log out")}
+              </button>
+            </>
           )}
         </div>
       )}
@@ -236,19 +270,25 @@ export function AccountMenu({
             : "flex w-full items-center gap-2.5 rounded-lg px-1.5 py-1.5 text-start transition hover:bg-white/[0.05]"
         }
         title={t("Account and settings")}
-        // Its name says whose account it is, which on a phone shows only as initials.
-        aria-label={t("Account and settings for {email}", { email: isolate(me.user.email) })}
       >
         <span
           className={`flex shrink-0 items-center justify-center rounded-full font-medium ${
-            down ? "h-10 w-10 bg-[linear-gradient(140deg,#3ee0c3,#7c6cf0_70%,#c084fc)] text-sm text-night" : "h-8 w-8 bg-primary-deep text-xs text-primary-soft"
+            down ? `h-10 w-10 ${tone} text-sm text-night` : several ? `h-8 w-8 ${tone} text-xs text-night` : "h-8 w-8 bg-primary-deep text-xs text-primary-soft"
           }`}
         >
           {initials(me.user)}
         </span>
         {/* In the top bar the name shows when there's room beside the search (see Flash.tsx's main container). */}
         <span className={`min-w-0 text-start ${down ? "hidden @min-[900px]/main:block" : "flex-1"}`}>
-          {greet ? (
+          {several ? (
+            // Several accounts here: which one this tab is on, under the name (the same name can be on two).
+            <>
+              <span className="block max-w-[12rem] truncate text-[15px] font-semibold leading-tight text-zinc-100">{greet && called !== "there" ? called : fullName(me.user)}</span>
+              <bdi aria-hidden className="block max-w-[12rem] truncate text-xs text-zinc-400 rtl:text-right">
+                {me.user.email}
+              </bdi>
+            </>
+          ) : greet ? (
             <>
               {called === "there" ? (
                 // No name to use: the greeting on its own reads naturally in every language.
@@ -267,6 +307,8 @@ export function AccountMenu({
             </>
           )}
         </span>
+        {/* Its name is what it shows, then whose account it is, which on a phone shows only as initials. */}
+        <span className="sr-only">{t("Account and settings for {email}", { email: isolate(me.user.email) })}</span>
         <span className={`text-zinc-500 ${down ? "hidden @min-[900px]/main:block" : ""}`} aria-hidden>
           {down ? "⌄" : "⌃"}
         </span>

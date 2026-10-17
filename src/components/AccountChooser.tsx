@@ -1,17 +1,19 @@
 "use client";
 
 import { useEffect, useRef, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import type { AccountSummary } from "@/lib/store";
 import { MAX_ACCOUNTS } from "@/lib/accounts";
 import { fullName } from "@/lib/names";
 import { useT } from "@/lib/use-t";
 import { isolate } from "@/lib/account-pin";
-import { AccountBadge } from "./AccountMenu";
+import { AccountBadge, accountTone } from "./AccountMenu";
 
 /**
  * A dialog that must be answered: a sheet from the bottom on a phone, a card in the middle on a
  * computer. Tab stays inside it. It opens with the dialog itself focused, not its first button, so
- * no account looks already chosen.
+ * no account looks already chosen. It sits above everything else on the page, an app in full
+ * screen too (in a portal, one layer up), so what it asks is never hidden behind what it guards.
  */
 function Sheet({ label, onEscape, children }: { label: string; onEscape?: () => void; children: ReactNode }) {
   const box = useRef<HTMLDivElement>(null);
@@ -43,8 +45,8 @@ function Sheet({ label, onEscape, children }: { label: string; onEscape?: () => 
     document.addEventListener("keydown", keep);
     return () => document.removeEventListener("keydown", keep);
   }, [onEscape]);
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center sm:p-4">
+  return createPortal(
+    <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center sm:p-4">
       <div
         ref={box}
         role="dialog"
@@ -55,7 +57,8 @@ function Sheet({ label, onEscape, children }: { label: string; onEscape?: () => 
       >
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -90,7 +93,7 @@ export function AccountChooser({
           return (
             <button
               key={a.id}
-              aria-label={t("Switch to {email}", { email: isolate(a.email) })}
+              aria-label={t("Switch to {name} ({email})", { name: isolate(fullName(a)), email: isolate(a.email) })}
               aria-busy={going || undefined}
               disabled={Boolean(switching)}
               onClick={() => onChoose(a.id)}
@@ -98,7 +101,7 @@ export function AccountChooser({
                 switching && !going ? "opacity-50" : ""
               }`}
             >
-              <AccountBadge account={a} />
+              <AccountBadge account={a} tone={accountTone(accounts, a.id)} />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium text-zinc-100">{fullName(a)}</span>
                 <bdi className="block truncate text-xs text-zinc-500 rtl:text-right" title={a.email}>

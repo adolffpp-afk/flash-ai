@@ -587,6 +587,59 @@ test("changing the password of a tab's account that isn't the default leaves the
   assert.equal(await userOf(ta), a, "the other account is untouched");
 });
 
+test("a password change keeps the account in its place in the browser's list, so the menu's order stays", async () => {
+  const a = await account("pma");
+  const b = await account("pmb");
+  const c = await account("pmc");
+  const { cookie, tokens } = await browser(a, b, c);
+  const res = await passwordRoute.POST(req("/api/me/password", { cookie, account: b, json: { current: "secret123", next: "another123" } }));
+  assert.equal(res.status, 200);
+  const list = listOf(res);
+  assert.equal(list.length, 3);
+  assert.equal(list[0], tokens[0]);
+  assert.notEqual(list[1], tokens[1], "b has a new session");
+  assert.equal(await userOf(list[1]), b, "in b's place, between a and c");
+  assert.equal(list[2], tokens[2]);
+  assert.equal(setCookies(res).flash_session, undefined, "c stays the default");
+});
+
+test("a reset answers with the account reset, so a tab on another account opens as it", async () => {
+  const { sendReset } = await import("../src/lib/server/account.ts");
+  const a = await account("rta");
+  const r = await account("rtr");
+  const { cookie } = await browser(a);
+  const link = (await sendReset({ id: r, email: `${r}@x.io` }, ORIGIN))!;
+  // The reset page pins the tab to the browser's default (a) before it posts.
+  const res = await resetRoute.POST(
+    req("/api/auth/reset", { cookie, account: a, json: { token: new URL(link).searchParams.get("token"), password: "brandnew123", email: `${r}@x.io` } }),
+  );
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), { ok: true, twoFactor: false, account: r });
+  assert.equal(await userOf(setCookies(res).flash_session.value), r);
+});
+
+test("two-step sign-in with a password goes on to the page the add screen was opened for", async () => {
+  const a = await account("tna");
+  const b = await account("tnb");
+  const secret = await twoStep(b);
+  const { cookie } = await browser(a);
+  // As the add screen posts it from a link's account chooser (Use another account): the link's page as next.
+  const asked = await loginRoute.POST(req("/api/auth/login", { cookie, account: a, json: { name: "", email: `${b}@x.io`, password: "secret123", next: "/?apps=1" } }));
+  assert.deepEqual(await asked.json(), { ok: true, twoFactor: true });
+  const code = codeFor(secret, stepAt(Date.now()));
+  const done = await twoFactorRoute.POST(req("/api/auth/two-factor", { cookie: after(cookie, asked), json: { code } }));
+  assert.equal(done.status, 200);
+  assert.deepEqual(await done.json(), { ok: true, next: "/?apps=1", account: b });
+
+  // Only a path on Flash waits for the code: anything else goes to Home.
+  for (const next of ["//evil.example/", "https://evil.example/", "/\\evil.example", "/\t/evil.example"]) {
+    const again = await loginRoute.POST(req("/api/auth/login", { cookie, json: { email: `${b}@x.io`, password: "secret123", next } }));
+    assert.equal(((await again.json()) as { twoFactor: boolean }).twoFactor, true);
+    const waiting = await one<{ next: string }>("SELECT next FROM two_factor_pending WHERE token_hash = ?", [sha256(setCookies(again).flash_2fa.value)]);
+    assert.equal(waiting?.next, "/", JSON.stringify(next));
+  }
+});
+
 // ---------------------------------------------------------------------------------------------
 // Switching
 
@@ -760,6 +813,22 @@ test("Log out of this account from a tab on an account that isn't the default en
   assert.equal(set["__Host-flash_accounts"].maxAge, 0, "one account left, so no list");
   assert.equal(await userOf(ta), null, "a is logged out");
   assert.equal(await userOf(tb), b, "b stays signed in");
+});
+
+test("Log out of this account in a tab on neither the default nor the oldest keeps the default", async () => {
+  const a = await account("lma");
+  const b = await account("lmb");
+  const c = await account("lmc");
+  // c, added last, is the default; the tab shows b.
+  const { cookie, tokens } = await browser(a, b, c);
+  const [ta, tb, tc] = tokens;
+  const res = await logout(cookie, {}, b);
+  assert.equal(res.status, 200);
+  assert.deepEqual(await res.json(), { ok: true, next: { id: c, email: `${c}@x.io` } }, "the tab goes on as the default, not the oldest");
+  assert.equal(setCookies(res).flash_session, undefined, "c stays the default");
+  assert.deepEqual(listOf(res), [ta, tc]);
+  assert.equal(await userOf(tb), null);
+  assert.equal(await userOf(tc), c);
 });
 
 test("when the default logs out, the oldest account added becomes the default", async () => {

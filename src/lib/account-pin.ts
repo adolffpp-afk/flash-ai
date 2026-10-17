@@ -112,7 +112,8 @@ let linked: string | null = null;
 /**
  * The account a link opened this page as (?as=, from an email, Stripe or a callback): this tab
  * shows it from now on, and the address loses it. Returns it, so the page can say when that account
- * isn't signed in here; null when the address names none or nothing that could be an account.
+ * isn't signed in here; null when the address names none or nothing that could be an account, and
+ * when it is this tab's own switch (switchAddress), which no link waits on.
  */
 export function adoptAccountFromUrl(): string | null {
   if (typeof window === "undefined") return null;
@@ -124,7 +125,9 @@ export function adoptAccountFromUrl(): string | null {
   }
   const named = url.searchParams.get("as");
   if (named === null) return null;
+  const switched = url.searchParams.get("switched") === "1";
   url.searchParams.delete("as");
+  url.searchParams.delete("switched");
   try {
     window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
   } catch {
@@ -132,9 +135,18 @@ export function adoptAccountFromUrl(): string | null {
   }
   if (!ID.test(named)) return null;
   setPin(named);
+  if (switched) return null;
   linked = `${url.pathname}${url.search}`;
   return named;
 }
+
+/**
+ * The address that reloads this tab as another account signed in here (Switch, or the next account
+ * after a log out). The tab's account changes only once that page loads (adoptAccountFromUrl), so a
+ * reload the browser keeps from happening ("Leave site?", Stay) leaves the tab on the account it
+ * shows, naming that account in every request.
+ */
+export const switchAddress = (id: string): string => `/?as=${encodeURIComponent(id)}&switched=1`;
 
 /**
  * Where the link that named this page's account was going (like /?apps=1), to go on to after

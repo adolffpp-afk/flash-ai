@@ -246,3 +246,26 @@ test("a link for an account remembers where it was going, for after signing in t
   pin.setPin(null);
   address = "https://flash-app.test/";
 });
+
+test("a switch names the account chosen only once the page loads, so a reload the browser keeps from happening leaves the tab on its account", async () => {
+  pin.setPin("acct_a");
+  const to = pin.switchAddress("acct_b");
+  assert.equal(to, "/?as=acct_b&switched=1");
+  assert.equal(pin.getPin(), "acct_a", "until the page loads, this tab's requests name the account it shows");
+  // The new page: it shows the account chosen, and no link waits on it (no "This link is for another account").
+  address = `https://flash-app.test${to}`;
+  assert.equal(pin.adoptAccountFromUrl(), null);
+  assert.equal(pin.getPin(), "acct_b");
+  assert.equal(address, "https://flash-app.test/", "the address loses both");
+  // Flash's reload names nobody before it goes (no setPin), and a page's check puts its requests
+  // back on the account it shows if they ever name another.
+  const { readFile } = await import("node:fs/promises");
+  const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
+  const reload = page.slice(page.indexOf("function reloadAs("), page.indexOf("\n  }\n", page.indexOf("function reloadAs(")));
+  assert.doesNotMatch(reload, /setPin\(/);
+  assert.match(reload, /window\.location\.replace\(switchAddress\(id\)\);/);
+  assert.match(page, /if \(mine && showing && mine !== showing\.id\) \{\n\s+setPin\(showing\.id\);/);
+  // The note "Logged out of …" shows only on the account it says the tab went on as.
+  assert.match(page, /if \(left && left\.next === data\.user\.email\) setNotice\(/);
+  pin.setPin(null);
+});

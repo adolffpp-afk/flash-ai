@@ -127,9 +127,10 @@ export function AuthScreen({
       }
       const result = await api<{ emailFailed?: boolean; twoFactor?: boolean; account?: string }>(`/api/auth/${mode}`, {
         method: "POST",
-        json: { name, email, password },
+        // next: where the code page goes once signed in, when two-step sign-in is on.
+        json: { name, email, password, ...(mode === "login" && next && { next }) },
       });
-      // Two-step sign-in is on: the code page finishes signing in.
+      // Two-step sign-in is on: the code page finishes signing in, then opens next.
       if (result.twoFactor) {
         router.push("/signin/code");
         return;
