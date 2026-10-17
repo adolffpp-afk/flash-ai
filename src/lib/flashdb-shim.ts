@@ -3,6 +3,7 @@
  * Published apps store records on the Flash server (shared by everyone who uses the app);
  * the preview inside Flash keeps them in memory so trying an app never touches real data.
  */
+import { UNSEEN } from "./contacts.ts";
 
 /**
  * flashDB.send(form, fields, { news: checkbox }): what the person agreed to by ticking a box, for the
@@ -30,6 +31,8 @@ const NEWS = `
   // A label's words as Flash reads the page (see pageWords in contacts.ts): textContent runs the
   // words of elements next to each other together ("newsletter" and "Email" in two spans, or around
   // a <br>), so a space goes where an element starts or ends between two words, or after a "." or ")" there.
+  // What a visitor never reads (an icon's <title>, a <style> or a <script>) isn't in them either.
+  const unseenTags = /^(${[...UNSEEN, "template"].join("|")})$/i;
   function labelText(label) {
     let text = "";
     let edge = false;
@@ -42,7 +45,7 @@ const NEWS = `
           if (part) edge = false;
         } else {
           edge = true;
-          if (n.nodeType === 1) walk(n);
+          if (n.nodeType === 1 && !unseenTags.test(String(n.nodeName || ""))) walk(n);
           edge = true;
         }
       }

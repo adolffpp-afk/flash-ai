@@ -231,8 +231,10 @@ const plainWords = (text: string) =>
 
 // Elements whose text a visitor never reads on the page: code, styles, the tab's title, what shows
 // only without scripts (flashDB needs them), a frame's fallback and a field's starting text. Each
-// ends only at its own end tag, as browsers read them, whatever looks like a tag inside.
-const UNSEEN = ["script", "style", "title", "noscript", "iframe", "noembed", "noframes", "textarea"];
+// ends only at its own end tag, as browsers read them, whatever looks like a tag inside. A news
+// box's label leaves them out too (see labelText in flashdb-shim.ts), so an icon's <title> in it
+// isn't sent as words the person saw.
+export const UNSEEN = ["script", "style", "title", "noscript", "iframe", "noembed", "noframes", "textarea"];
 const UNSEEN_END = new Map(UNSEEN.map((name) => [name, new RegExp(`</${name}[\\s/>]`, "gi")]));
 const TAG_NAME = /[a-z][^\s/>]*/iy;
 

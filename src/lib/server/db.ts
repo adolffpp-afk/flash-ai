@@ -154,6 +154,9 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS site_contacts_phone ON site_contacts(site_slug, phone) WHERE phone <> ''`,
   `CREATE INDEX IF NOT EXISTS site_contacts_seen ON site_contacts(site_slug, last_seen)`,
   `CREATE INDEX IF NOT EXISTS site_contacts_stage ON site_contacts(site_slug, stage, last_seen)`,
+  // Who unsubscribed, so a box ticked for their mailbox under another address is found without
+  // reading the whole list (see mailboxUnsubscribed in contacts.ts).
+  `CREATE INDEX IF NOT EXISTS site_contacts_unsubscribed ON site_contacts(site_slug, email) WHERE unsubscribed_at > 0`,
   // How many contacts each app has, so a new one checks the 10,000 cap by reading one row instead of
   // counting the whole list. An app's row is made by counting once (see counted in contacts.ts), and
   // the two triggers keep it right from then on, whatever adds or deletes a contact. An app without

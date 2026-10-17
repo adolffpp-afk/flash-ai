@@ -462,6 +462,70 @@ test("agreeing to news counts only with the page's own wording, and a ticked box
   assert.equal((await shown()).subscribed, true);
 });
 
+test("a ticked box doesn't sign up the mailbox of someone who unsubscribed under another spelling of their address", async () => {
+  await fresh();
+  await site("plus", "owner");
+  await site("plus2", "owner");
+  const agreed = async (slug: string, email: string) => Number((await contactsOf(slug)).find((c) => c.email === email)?.consent_at) > 0;
+  const off = async (slug: string, email: string) => {
+    const c = (await contactsOf(slug)).find((x) => x.email === email)!;
+    assert.equal(await contacts.unsubscribe(contacts.unsubToken(await contacts.siteSecret(slug), slug, String(c.id))), true);
+  };
+  await send("plus", { email: "cy@gmail.com" }, { consent: { text: NEWS } }, "203.0.113.60");
+  await send("plus", { email: "a.b@example.com" }, { consent: { text: NEWS } }, "203.0.113.61");
+  // Someone already on the list at another spelling, who never agreed or unsubscribed.
+  await send("plus", { email: "c.y+shop@gmail.com" }, {}, "203.0.113.62");
+  await off("plus", "cy@gmail.com");
+  await off("plus", "a.b@example.com");
+  // The same mailboxes, written another way: Gmail ignores dots and +tags, most others +tags.
+  for (const [i, email] of ["cy+news@gmail.com", "c.y@gmail.com", "C.Y+x@googlemail.com", "c.y+shop@gmail.com", "a.b+news@example.com"].entries()) {
+    await send("plus", { email }, { consent: { text: NEWS } }, `198.51.100.${70 + i}`);
+    assert.equal(await agreed("plus", email.toLowerCase()), false, email);
+  }
+  // Other mailboxes still agree: dots count outside Gmail, and another app's unsubscribe is its own.
+  for (const [i, email] of ["ab@example.com", "cy@example.com", "cyd@gmail.com"].entries()) {
+    await send("plus", { email }, { consent: { text: NEWS } }, `198.51.100.${80 + i}`);
+    assert.equal(await agreed("plus", email), true, email);
+  }
+  await send("plus2", { email: "cy+news@gmail.com" }, { consent: { text: NEWS } }, "198.51.100.90");
+  assert.equal(await agreed("plus2", "cy+news@gmail.com"), true, "another app");
+  const csv = (await contacts.contactCsv("plus", await translatorIn("en"), ORIGIN)).csv;
+  const yes = csv.split("\n").filter((line) => /,Yes,/.test(line)).map((line) => line.split(",")[1]).sort();
+  assert.deepEqual(yes, ["ab@example.com", "cy@example.com", "cyd@gmail.com"], "the file marks only them as agreed");
+  await fresh();
+});
+
+test("someone a form signed up again after they unsubscribed, before a tick stopped doing that, reads as unsubscribed", async () => {
+  await fresh();
+  await site("before", "owner");
+  await send("before", { email: "cy@example.com" }, { consent: { text: NEWS } }, "203.0.113.63");
+  const [cy] = await contactsOf("before");
+  const token = contacts.unsubToken(await contacts.siteSecret("before"), "before", String(cy.id));
+  await contacts.unsubscribe(token);
+  // What #114 kept when a stranger then ticked the box with Cy's address: a newer agreement from a form.
+  const firstOff = Number((await contactsOf("before"))[0].unsubscribed_at);
+  await run("UPDATE site_contacts SET consent_at = ?, consent_ip = 'x', consent_by = '' WHERE id = ?", [firstOff + 60_000, cy.id]);
+  const t = await translatorIn("en");
+  const shown = async () => (await contacts.listContacts("before", t))!.contacts[0];
+  assert.equal((await shown()).subscribed, false);
+  assert.equal((await shown()).unsubscribedAt, firstOff);
+  assert.match((await contacts.contactCsv("before", t, ORIGIN)).csv, /cy@example\.com,[^\n]*,No,/);
+  assert.equal((await contacts.tokenContact(token))?.unsubscribed, true, "their link says so");
+  assert.equal(await contacts.unsubscribe(token), true);
+  assert.equal(Number((await contactsOf("before"))[0].unsubscribed_at), firstOff, "the time they unsubscribed stays");
+  // The owner can still record that they asked for news again.
+  assert.equal((await call("PATCH", owner, "before", "", { id: cy.id, askedAgain: "They asked at the shop" })).status, 200);
+  assert.equal((await shown()).subscribed, true);
+  assert.equal((await contacts.tokenContact(token))?.unsubscribed, false);
+  await fresh();
+});
+
+test("the Privacy Policy says how long an unsubscribe holds, and for which spellings", () => {
+  const policy = readFileSync(new URL("../src/app/privacy/page.tsx", import.meta.url), "utf8");
+  assert.match(policy, /for as long as they&apos;re on the app&apos;s contact list, a box ticked on a form doesn&apos;t sign them up again, not even with a \+tag \(or, for Gmail, dots\)/);
+  assert.match(policy, /If the owner deletes them, Flash keeps no record that they unsubscribed\./);
+});
+
 test("only wording a visitor sees on the page counts, never words in its code, comments or attributes", async () => {
   await fresh();
   const words = "Email me news and offers from Golden Crumb";
@@ -654,24 +718,25 @@ test("the owner's reads have a limit too: the board and list, one contact, and e
   await site("reads", "owner");
   const ana = await contacts.addContact("reads", { email: "ana@x.co" });
   assert.ok("id" in ana);
-  const limitOf = (key: string) => one<{ count: number }>("SELECT count FROM rate_limits WHERE key = ?", [`${key}:${owner.id}`]);
+  const limitOf = (key: string) => one<{ count: number }>("SELECT count FROM rate_limits WHERE key = ?", [key]);
   const nearly = (key: string, count: number, window = 3_600_000) =>
-    run("INSERT OR REPLACE INTO rate_limits (key, count, reset_at) VALUES (?, ?, ?)", [`${key}:${owner.id}`, count, Date.now() + window]);
-  // Each kind of read counts on its own: what one does never uses another's.
+    run("INSERT OR REPLACE INTO rate_limits (key, count, reset_at) VALUES (?, ?, ?)", [key, count, Date.now() + window]);
+  // Each kind of read counts on its own: what one does never uses another's. Downloads and exports
+  // count for each app.
   const reads: [string, string, number, RegExp][] = [
-    ["contacts-list", "?mode=board", 600, /Too many requests\. Try again in an hour\./],
-    ["contacts-list", "?mode=list", 600, /Too many requests\. Try again in an hour\./],
-    ["contacts-contact", `?id=${ana.id}`, 600, /Too many requests\. Try again in an hour\./],
-    ["contacts-csv", "?format=csv", 10, /Too many requests\. Try again in an hour\./],
-    ["contacts-export", `?id=${ana.id}&format=json`, 20, /Too many requests\. Try again in an hour\./],
-    ["contacts-search", "?q=ana", 60, /Too many searches\. Please wait a minute\./],
+    [`contacts-list:${owner.id}`, "?mode=board", 600, /Too many requests\. Try again in an hour\./],
+    [`contacts-list:${owner.id}`, "?mode=list", 600, /Too many requests\. Try again in an hour\./],
+    [`contacts-contact:${owner.id}`, `?id=${ana.id}`, 600, /Too many requests\. Try again in an hour\./],
+    [`contacts-csv:${owner.id}:reads`, "?format=csv", 10, /Too many requests\. Try again in an hour\./],
+    [`contacts-export:${owner.id}:reads`, `?id=${ana.id}&format=json`, 20, /Too many requests\. Try again in an hour\./],
+    [`contacts-search:${owner.id}`, "?q=ana", 60, /Too many searches\. Please wait a minute\./],
   ];
   for (const [key, query, max, error] of reads) {
     await fresh();
     assert.equal((await call("GET", owner, "reads", query)).status, 200, query);
     assert.equal(Number((await limitOf(key))?.count), 1, `${query} counts as ${key}`);
     assert.equal((await all("SELECT key FROM rate_limits WHERE key LIKE 'contacts-%' AND key NOT LIKE 'contacts-orders:%'")).length, 1, `${query} uses no other limit`);
-    await nearly(key, max - 1, key === "contacts-search" ? 60_000 : undefined);
+    await nearly(key, max - 1, key.startsWith("contacts-search:") ? 60_000 : undefined);
     assert.equal((await call("GET", owner, "reads", query)).status, 200, `${query}: the last one of ${max}`);
     const limited = await call("GET", owner, "reads", query);
     assert.equal(limited.status, 429, query);
@@ -685,6 +750,15 @@ test("the owner's reads have a limit too: the board and list, one contact, and e
   // Another owner's limit is their own.
   await site("reads2", "stranger");
   assert.equal((await call("GET", stranger, "reads2", "?format=csv")).status, 200);
+  // An owner with many apps can download each one's list, and export someone from each, in the same hour.
+  await fresh();
+  for (let i = 1; i <= 11; i++) {
+    await site(`reads-app${i}`, "owner");
+    const someone = await contacts.addContact(`reads-app${i}`, { email: `p${i}@x.co` });
+    assert.ok("id" in someone);
+    assert.equal((await call("GET", owner, `reads-app${i}`, "?format=csv")).status, 200, `app ${i}'s list`);
+    assert.equal((await call("GET", owner, `reads-app${i}`, `?id=${someone.id}&format=json`)).status, 200, `someone from app ${i}`);
+  }
   await fresh();
 });
 
@@ -1108,7 +1182,7 @@ test("unpublishing an app deletes its contacts", async () => {
  * it sent and what it logged. Labels are a small stand-in for the browser's nodes (labelOf).
  */
 type Listener = (e: { target: unknown; isTrusted: boolean }) => void;
-type FakeNode = { nodeType: number; nodeValue: string | null; firstChild: FakeNode | null; nextSibling: FakeNode | null; textContent: string };
+type FakeNode = { nodeType: number; nodeName: string; nodeValue: string | null; firstChild: FakeNode | null; nextSibling: FakeNode | null; textContent: string };
 type Box = { type: string; checked: boolean; defaultChecked: boolean; labels: FakeNode[] };
 function shimPage(code: string) {
   const listeners: Record<string, Listener[]> = {};
@@ -1132,10 +1206,20 @@ function shimPage(code: string) {
 }
 const livePage = () => shimPage(flashDbShim("/d", "/api/sites/x/inbox").replace(/^<script>|<\/script>$/g, ""));
 
-/** A <label>'s markup as the browser's nodes: elements, and text with its character references read. textContent as the DOM has it. */
+/**
+ * A <label>'s markup as the browser's nodes: elements (named in capitals, or as written inside an
+ * <svg>), and text with its character references read. textContent as the DOM has it.
+ */
 function labelOf(markup: string): FakeNode {
-  const node = (nodeType: number, nodeValue: string | null): FakeNode => ({ nodeType, nodeValue, firstChild: null, nextSibling: null, textContent: nodeValue ?? "" });
-  const root = node(1, null);
+  const node = (nodeType: number, nodeValue: string | null, nodeName = "#text"): FakeNode => ({
+    nodeType,
+    nodeName,
+    nodeValue,
+    firstChild: null,
+    nextSibling: null,
+    textContent: nodeValue ?? "",
+  });
+  const root = node(1, null, "DIV");
   const open: { el: FakeNode; last: FakeNode | null }[] = [{ el: root, last: null }];
   const append = (child: FakeNode) => {
     const top = open.at(-1)!;
@@ -1149,8 +1233,9 @@ function labelOf(markup: string): FakeNode {
     if (!tag) append(node(3, token.replace(/&(\w+);/g, (_all, name: string) => entities[name] ?? `&${name};`)));
     else if (closing) open.pop();
     else {
-      const el = append(node(1, null));
-      if (!/^(br|input|img|wbr|hr)$/i.test(tag)) open.push({ el, last: null });
+      const inSvg = tag === "svg" || open.some((o) => o.el.nodeName === "svg");
+      const el = append(node(1, null, inSvg ? tag : tag.toUpperCase()));
+      if (!/^(br|input|img|wbr|hr|path)$/i.test(tag)) open.push({ el, last: null });
     }
   }
   const fill = (n: FakeNode): string => {
@@ -1179,6 +1264,13 @@ test("a tick counts whatever elements the label's words are in, as a page made w
     ],
     [`<label><input type="checkbox"><span>Email me news</span><small>(monthly)</small><b>Golden</b>&nbsp;<b>Crumb</b></label>`, "Email me news(monthly) Golden Crumb"],
     [`<label><input type="checkbox">  Email me news\n     and offers from <a href="/">Golden Crumb</a>. I can unsubscribe at any&nbsp;time.</label>`, NEWS],
+    // An icon's <title> (and a style or a script) inside the label is no more part of its words than on the page.
+    [
+      `<label class="flex gap-2"><input type="checkbox" id="news"><svg aria-hidden="true" viewBox="0 0 20 20" class="h-5 w-5"><title>Envelope</title><path d="M2 4h16v12H2z"/></svg><span>${NEWS}</span></label>`,
+      NEWS,
+    ],
+    [`<label><input type="checkbox"><svg viewBox="0 0 24 24" role="img"><title>Newsletter</title><path d="M0 0h24v24H0z"/></svg> ${NEWS}</label>`, NEWS],
+    [`<label><input type="checkbox"><style>.tick{color:red}</style>Email me news<script>void 0</script> from Golden Crumb</label>`, "Email me news from Golden Crumb"],
   ];
   const page = livePage();
   for (const [i, [markup, words]] of labels.entries()) {

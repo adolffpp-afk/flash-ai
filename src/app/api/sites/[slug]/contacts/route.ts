@@ -32,15 +32,17 @@ const MAX_BODY = 16 * 1024;
 /**
  * How many reads each owner gets, far more than going through a list by hand takes: a search reads
  * the whole list, so does each board or list (it counts every stage), a contact's page reads their
- * messages and orders, and a download or a contact's export reads all of it. Each has the words to
- * say when it's used up.
+ * messages and orders, and a download or a contact's export reads all of it. Downloads and exports
+ * count for each app on its own (perApp), so an owner with many apps can download every list in
+ * the same hour; their 20 apps at most still read less than the board allows. Each has the words
+ * to say when it's used up.
  */
 const READS = {
-  search: { max: 60, window: MINUTE, error: (t: ServerT) => t("Too many searches. Please wait a minute.") },
-  list: { max: 600, window: HOUR, error: (t: ServerT) => t("Too many requests. Try again in an hour.") },
-  contact: { max: 600, window: HOUR, error: (t: ServerT) => t("Too many requests. Try again in an hour.") },
-  csv: { max: 10, window: HOUR, error: (t: ServerT) => t("Too many requests. Try again in an hour.") },
-  export: { max: 20, window: HOUR, error: (t: ServerT) => t("Too many requests. Try again in an hour.") },
+  search: { max: 60, window: MINUTE, perApp: false, error: (t: ServerT) => t("Too many searches. Please wait a minute.") },
+  list: { max: 600, window: HOUR, perApp: false, error: (t: ServerT) => t("Too many requests. Try again in an hour.") },
+  contact: { max: 600, window: HOUR, perApp: false, error: (t: ServerT) => t("Too many requests. Try again in an hour.") },
+  csv: { max: 10, window: HOUR, perApp: true, error: (t: ServerT) => t("Too many requests. Try again in an hour.") },
+  export: { max: 20, window: HOUR, perApp: true, error: (t: ServerT) => t("Too many requests. Try again in an hour.") },
 };
 
 type Ctx = RouteContext<"/api/sites/[slug]/contacts">;
@@ -91,8 +93,9 @@ export async function GET(request: Request, ctx: Ctx) {
   const id = params.get("id");
   const format = params.get("format");
   const read: keyof typeof READS = format === "csv" ? "csv" : id !== null ? (format === "json" ? "export" : "contact") : q ? "search" : "list";
-  if (await overLimit(`contacts-${read}:${who.user.id}`, READS[read].max, READS[read].window)) {
-    return Response.json({ error: READS[read].error(t) }, { status: 429 });
+  const limit = READS[read];
+  if (await overLimit(`contacts-${read}:${who.user.id}${limit.perApp ? `:${slug}` : ""}`, limit.max, limit.window)) {
+    return Response.json({ error: limit.error(t) }, { status: 429 });
   }
   await fillContacts(slug);
   const base = appUrl(request);

@@ -21,6 +21,7 @@
  */
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { InStatement, InValue } from "@libsql/client";
+import { emailKey } from "./account.ts";
 import { all, db, one, run, now } from "./db.ts";
 import { randomId } from "./ids.ts";
 import { removeSiteUser } from "./site-auth.ts";
@@ -69,7 +70,7 @@ export type Contact = {
   // asked for news again after unsubscribing (by "owner", with no form).
   consent: { text: string; at: number; form: string; by: "form" | "owner" } | null;
   unsubscribedAt: number;
-  // They agreed to news, and haven't unsubscribed since: the latest of the two counts.
+  // They agreed to news, and haven't unsubscribed since (see unsubscribedNow).
   subscribed: boolean;
 };
 
@@ -106,6 +107,15 @@ const EXPORT_BYTES = 3_600_000;
 // someone else's address, so it can't bring back someone who said no: after an unsubscribe, only
 // the owner can record that they asked for news again (see recordConsent).
 const FORM_AGREES = "excluded.consent_at > consent_at AND unsubscribed_at = 0";
+/**
+ * Whether someone is unsubscribed now: they used their link, and the owner hasn't recorded since
+ * then that they asked for news again. Only the owner's record comes after an unsubscribe, so a
+ * form's agreement after one never counts, including one taken before FORM_AGREES (#114 let a
+ * newer tick win). UNSUBSCRIBED says the same in SQL.
+ */
+const unsubscribedNow = (r: { unsubscribed_at: number; consent_at: number; consent_by: string }) =>
+  Number(r.unsubscribed_at) > 0 && (r.consent_by !== "owner" || Number(r.unsubscribed_at) >= Number(r.consent_at));
+const UNSUBSCRIBED = "unsubscribed_at > 0 AND (consent_by <> 'owner' OR unsubscribed_at >= consent_at)";
 
 /**
  * What a new sighting changes on a contact already on the list: the name and phone fill in only
@@ -235,11 +245,32 @@ export async function noteContact(slug: string, who: Who, seen: Seen): Promise<s
   return row?.id ?? "";
 }
 
-/** A form's sender, for receiveMessage: who they are from its fields, and what they agreed to. "" when the form had no email or phone. */
+/**
+ * Whether someone on the app's list whose address reaches the same mailbox as email (the same
+ * address with a +tag, or for Gmail with dots: see emailKey) has unsubscribed. Only the app's
+ * unsubscribed contacts at that address's domain are read.
+ */
+async function mailboxUnsubscribed(slug: string, email: string): Promise<boolean> {
+  const key = emailKey(email);
+  const domain = key.slice(key.lastIndexOf("@"));
+  const domains = domain === "@gmail.com" ? [domain, "@googlemail.com"] : [domain];
+  const rows = await all<{ email: string }>(
+    `SELECT email FROM site_contacts WHERE site_slug = ? AND unsubscribed_at > 0 AND (${domains.map(() => "email LIKE ?").join(" OR ")})`,
+    [slug, ...domains.map((d) => `%${d}`)],
+  );
+  return rows.some((r) => emailKey(r.email) === key);
+}
+
+/**
+ * A form's sender, for receiveMessage: who they are from its fields, and what they agreed to. "" when
+ * the form had no email or phone. A box ticked with an address that reaches the mailbox of someone
+ * who unsubscribed counts no more than one ticked with their own address (see FORM_AGREES).
+ */
 export async function noteSender(slug: string, form: string, data: Record<string, unknown>, consent: unknown, ip: string, at: number, messageId: string) {
   const who = contactFromFields(data);
   if (!who) return "";
-  const agreed = who.email && consent ? await checkedConsent(slug, consent, ip, form).catch(() => null) : null;
+  const checked = who.email && consent ? await checkedConsent(slug, consent, ip, form).catch(() => null) : null;
+  const agreed = checked && !(await mailboxUnsubscribed(slug, who.email)) ? checked : null;
   return noteContact(slug, who, { source: `form:${form}`, at, consent: agreed, messageId });
 }
 
@@ -346,7 +377,7 @@ function toContact(r: Row, stages: readonly Stage[]): Contact {
     lastSeen: Number(r.last_seen),
     consent: agreedAt > 0 ? { text: r.consent_text, at: agreedAt, form: r.consent_form, by: r.consent_by === "owner" ? "owner" : "form" } : null,
     unsubscribedAt,
-    subscribed: agreedAt > 0 && agreedAt > unsubscribedAt,
+    subscribed: agreedAt > 0 && !unsubscribedNow(r),
   };
 }
 
@@ -563,7 +594,7 @@ export async function recordConsent(slug: string, id: string, note: unknown): Pr
   if (!text || text.length > MAX_CONSENT_NOTE) return "bad";
   const r = await run(
     `UPDATE site_contacts SET consent_text = ?, consent_at = max(?, unsubscribed_at + 1), consent_ip = '', consent_channel = 'email', consent_form = '', consent_by = 'owner'
-     WHERE site_slug = ? AND id = ? AND email <> '' AND unsubscribed_at > 0 AND unsubscribed_at >= consent_at`,
+     WHERE site_slug = ? AND id = ? AND email <> '' AND ${UNSUBSCRIBED}`,
     [text, now(), slug, id],
   );
   if (r.rowsAffected) return "ok";
@@ -846,8 +877,8 @@ const TOKEN = /^([\w-]{16,24})\.([\w-]{22})$/;
 export async function tokenContact(token: string): Promise<{ id: string; slug: string; title: string; unsubscribed: boolean } | null> {
   const parts = TOKEN.exec(token);
   if (!parts) return null;
-  const row = await one<{ id: string; site_slug: string; consent_at: number; unsubscribed_at: number; title: string; contact_secret: string }>(
-    `SELECT c.id, c.site_slug, c.consent_at, c.unsubscribed_at, s.title, s.contact_secret
+  const row = await one<{ id: string; site_slug: string; consent_at: number; consent_by: string; unsubscribed_at: number; title: string; contact_secret: string }>(
+    `SELECT c.id, c.site_slug, c.consent_at, c.consent_by, c.unsubscribed_at, s.title, s.contact_secret
      FROM site_contacts c JOIN sites s ON s.slug = c.site_slug WHERE c.id = ?`,
     [parts[1]],
   );
@@ -855,8 +886,7 @@ export async function tokenContact(token: string): Promise<{ id: string; slug: s
   const expected = Buffer.from(unsubToken(row.contact_secret, row.site_slug, row.id).slice(row.id.length + 1));
   const given = Buffer.from(parts[2]);
   if (expected.length !== given.length || !timingSafeEqual(expected, given)) return null;
-  const unsubscribedAt = Number(row.unsubscribed_at);
-  return { id: row.id, slug: row.site_slug, title: row.title, unsubscribed: unsubscribedAt > 0 && unsubscribedAt >= Number(row.consent_at) };
+  return { id: row.id, slug: row.site_slug, title: row.title, unsubscribed: unsubscribedNow(row) };
 }
 
 /**
@@ -868,6 +898,6 @@ export async function tokenContact(token: string): Promise<{ id: string; slug: s
 export async function unsubscribe(token: string): Promise<boolean> {
   const found = await tokenContact(token);
   if (!found) return false;
-  await run("UPDATE site_contacts SET unsubscribed_at = ? WHERE id = ? AND unsubscribed_at <= consent_at", [now(), found.id]);
+  await run(`UPDATE site_contacts SET unsubscribed_at = ? WHERE id = ? AND NOT (${UNSUBSCRIBED})`, [now(), found.id]);
   return true;
 }
