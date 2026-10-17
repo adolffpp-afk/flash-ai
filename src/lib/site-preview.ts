@@ -5,7 +5,8 @@
 
 export type SitePreview = { title: string; description: string; image: string | null };
 
-const decode = (text: string) =>
+/** The few named characters pages use most (&amp;, &nbsp;…), written out. Flash's search check (seo-scan.ts) reads text with it too. */
+export const decode = (text: string) =>
   text
     .replace(/&nbsp;/g, " ")
     .replace(/&lt;/g, "<")
@@ -14,7 +15,8 @@ const decode = (text: string) =>
     .replace(/&#39;|&apos;/g, "'")
     .replace(/&amp;/g, "&");
 
-const plain = (html: string) => decode(html.replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim();
+/** A piece of HTML as the words it shows, on one line. */
+export const plain = (html: string) => decode(html.replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim();
 
 const clip = (text: string, max: number) => (text.length <= max ? text : `${text.slice(0, max - 1).replace(/\s+\S*$/, "")}…`);
 
@@ -28,6 +30,12 @@ const READ = 32 * 1024;
 
 /** Whether the site already sets its own share card, which then wins. */
 export const hasOwnPreview = (html: string) => /<meta[^<>]{1,500}?property\s*=\s*["']og:title["']/i.test(html.slice(0, READ));
+
+/** Whether the site names its own main address (canonical), which then wins over the one Flash adds. */
+export const hasOwnCanonical = (html: string) => /<link[^<>]{1,500}?rel\s*=\s*["']?canonical\b/i.test(html.slice(0, READ));
+
+/** The tag that names a page's main address for search engines, so its other addresses don't compete with it. */
+export const canonicalTag = (url: string) => `<link rel="canonical" href="${escapeAttr(url)}">`;
 
 // The title of a site whose page has none, while its link preview says what it was made with (see made-with.ts).
 export const MADE_WITH_TITLE = "Made with Flash";
