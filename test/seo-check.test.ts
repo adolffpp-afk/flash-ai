@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
  * and the instruction a fix sends the builder. Pure: nothing here touches a database or a network.
  */
 process.env.DATABASE_URL = ":memory:";
-const { scanPage, textWidth } = await import("../src/lib/seo-scan.ts");
+const { SEO_VERSION, scanPage, textWidth } = await import("../src/lib/seo-scan.ts");
 const { MAX_CONTEXT, band, evaluate, fixContext, fixableIds, issueCount, stillToFix } = await import("../src/lib/seo-rules.ts");
 const { LABELS, WHY, fixMessage, messageOf } = await import("../src/lib/seo-words.ts");
 const { hasOwnCanonical, hasOwnPreview } = await import("../src/lib/site-preview.ts");
@@ -195,7 +195,10 @@ test("the main address: Flash names it, and one the page names itself must be th
   assert.deepEqual(check(own("https://example.com/"), "canonical")?.values, { url: "https://example.com/" });
   assert.equal(said(own("/p/golden-crumb-x1"), "canonical"), "fail invalid", "a relative address");
   assert.equal(said(own("http://www.flash-app.dev/p/golden-crumb-x1"), "canonical"), "fail invalid", "not https");
-  assert.equal(said(own("https://flash-ai-pi.vercel.app/p/golden-crumb-x1"), "canonical"), "pass pass", "another of Flash's own addresses");
+  // Only Flash's main address, which is the one Flash names: any *.vercel.app or localhost could be anyone's.
+  for (const elsewhere of ["https://flash-ai-pi.vercel.app/p/golden-crumb-x1", "https://some-other-team.vercel.app/p/golden-crumb-x1", "https://localhost/p/golden-crumb-x1", "https://flash-app.dev/p/golden-crumb-x1"]) {
+    assert.equal(said(own(elsewhere), "canonical"), "fail elsewhere", elsewhere);
+  }
   assert.equal(said(own("https://www.flash-app.dev/p/golden-crumb-x1/"), "canonical"), "pass pass");
   assert.equal(said(own("https://www.flash-app.dev/p/another-app"), "canonical"), "fail elsewhere", "another app");
   assert.equal(said(own("https://crumbbakery.com/"), "canonical"), "fail elsewhere", "a domain that isn't the app's");
@@ -234,7 +237,7 @@ test("the language and reading direction", () => {
   assert.equal(said(page({ lang: 'lang="en"', body: arabic }), "language"), "warn mismatch", "English said, Arabic written");
   assert.equal(said(page({ lang: 'lang="ar"', body: arabic }), "language"), "pass pass");
   assert.equal(said(page({ lang: 'lang="ar"', body: arabic }), "direction"), "warn missing");
-  assert.deepEqual(check(page({ lang: 'lang="ar"', body: arabic }), "direction")?.values, { lang: "ar" });
+  assert.deepEqual(check(page({ lang: 'lang="ar"', body: arabic }), "direction")?.values, { lang: "ar", tag: 'dir="rtl"' }, "code in a blank, shown left to right");
   assert.equal(said(page({ lang: 'lang="ar" dir="rtl"', body: arabic }), "direction"), "pass pass");
   assert.equal(said(page({ lang: 'lang="he"', body: "<h1>שלום</h1>" }), "direction"), "warn missing");
   assert.equal(said(page({ lang: "", body: arabic }), "direction"), "warn missing", "no language said, but written right to left");
@@ -348,6 +351,14 @@ test("phones: the viewport, small text and small buttons", () => {
   assert.equal(said(page({ body: `${BODY}<button class="h-5 w-5 p-3" aria-label="Close">×</button>` }), "tapTargets"), "na none", "padding makes it bigger");
   assert.equal(said(page({ body: `${BODY}<a href="#/" style="width: 16px; height: 16px">×</a>` }), "tapTargets"), "warn small");
   assert.equal(said(page({ body: `${BODY}<input type="checkbox" class="h-4 w-4">` }), "tapTargets"), "warn small");
+  // A tick box in its label, or one a <label for> names (before or after it): tapping the words ticks it.
+  const news = '<input type="checkbox" name="news" class="mt-1 h-4 w-4 rounded border-stone-300">';
+  assert.equal(said(page({ body: `${BODY}<form><label class="flex gap-2 text-sm">${news}<span>Email me news and offers from Golden Crumb.</span></label><button class="px-6 py-3">Send</button></form>` }), "tapTargets"), "na none");
+  assert.equal(said(page({ body: `${BODY}<label><input type="radio" name="size" class="h-4 w-4"> Large</label>` }), "tapTargets"), "na none");
+  assert.equal(said(page({ body: `${BODY}<input id="news" type="checkbox" class="h-4 w-4"><label for="news">Email me news</label>` }), "tapTargets"), "na none");
+  assert.equal(said(page({ body: `${BODY}<label for="news">Email me news</label><input id="news" type="checkbox" class="h-4 w-4">` }), "tapTargets"), "na none");
+  assert.equal(said(page({ body: `${BODY}<label>Email me news</label><input id="news" type="checkbox" class="h-4 w-4">` }), "tapTargets"), "warn small", "a label for something else");
+  assert.equal(said(page({ body: `${BODY}<label><span>News</span></label><input type="checkbox" class="h-4 w-4">` }), "tapTargets"), "warn small", "after its label has closed");
   assert.equal(said(page(), "tapTargets"), "na none", "the code doesn't say: Google's check measures them");
 });
 
@@ -391,6 +402,7 @@ test("speed: page weight, scripts that hold up the page, fonts and insecure addr
 
 test("the doctype and the icon", () => {
   assert.equal(said(page({ doctype: "" }), "doctype"), "fail none");
+  assert.deepEqual(check(page({ doctype: "" }), "doctype")?.values, { tag: "<!doctype html>" });
   assert.equal(said(page({ doctype: "<!DOCTYPE html>" }), "doctype"), "pass pass");
   assert.equal(said(`<p>hi</p>${page()}`, "doctype"), "fail none", "only at the very start");
   assert.equal(said(page({ icon: "" }), "icon"), "warn none");
@@ -418,8 +430,54 @@ test("rules that must not fire on what Flash's apps do", () => {
   }
   const fonts = page({ head: '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:wght@400;600;700&amp;family=Inter:wght@400;500;700&amp;display=swap">' });
   assert.equal(said(fonts, "fonts"), "pass pass");
+  // The same address in an @import: read to its closing quote or bracket, past the ";" between weights.
+  const css2 = "https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600;700&family=Inter:wght@400;500&display=swap";
+  for (const rule of [`@import url('${css2}');`, `@import url("${css2}");`, `@import url(${css2});`, `@import "${css2}";`, `@import '${css2}' screen;`]) {
+    assert.equal(said(page({ head: `<style>${rule} body { margin: 0 }</style>` }), "fonts"), "pass pass", rule);
+  }
+  const noSwap = css2.replace("&display=swap", "");
+  const cut = check(page({ head: `<style>@import url('${noSwap}');</style>` }), "fonts");
+  assert.equal(`${cut?.status} ${cut?.problem}`, "warn noSwap");
+  assert.ok(scanPage(page({ head: `<style>@import url('${noSwap}');</style>` })).fonts.noSwap[0].startsWith(`${noSwap.slice(0, 70)}`), "the whole address is read");
+  assert.equal(said(page({ head: `<style>@import url("theme.css"); .x { background: url(https://fonts.googleapis.com/css2?family=A) }</style>` }), "fonts"), "absent", "not a Google Fonts @import");
   assert.equal(said(page({ body: `${BODY}<p>Prices from €3 &lt; €5 &amp; 2 < 3.</p>` }), "placeholders"), "pass pass");
   assert.equal(said(page({ body: `${BODY}<div class="h-5 w-5 rounded-full bg-amber-500"></div>` }), "tapTargets"), "na none", "not something people tap");
+});
+
+test("words and alt text the page's script fills in aren't missing, and an empty heading is never to be removed", () => {
+  // Alpine.js (which the builder may load): x-text writes the words, :alt the picture's description.
+  const alpine = page({
+    head: '<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>',
+    body: `<h1>Sourdough baked before sunrise in Lisbon every day</h1>${STORY}<main x-data="{ open: false, pick: { name: 'Country loaf', img: 'https://images.unsplash.com/photo-1509440159596?w=800' } }">
+  <h2>Today's loaf</h2>
+  <img :src="pick.img" :alt="pick.name" class="h-64 w-full rounded-2xl object-cover">
+  <h3 x-text="pick.name"></h3>
+  <button @click="open = !open" x-text="open ? 'Hide the menu' : 'Show the menu'" class="rounded-full bg-amber-700 px-6 py-3 text-white"></button>
+  <a href="#/menu" class="font-semibold"><span x-text="pick.name"></span></a>
+  <a href="#/menu"><img x-bind:alt="pick.name" :src="pick.img" class="h-8"></a>
+  <h3><span v-text="title"></span></h3>
+</main>`,
+  });
+  for (const id of ["alt", "linkText", "headings"] as const) assert.equal(said(alpine, id), "pass pass", id);
+  assert.equal(report(alpine).score, 100);
+  // A dialog's heading, button and link its script fills in by id.
+  const dialog = page({
+    body: `${BODY}<h2>Our bread</h2><a href="#/menu">See the menu</a><div id="dialog" class="hidden"><h3 id="dTitle"></h3><p id="dDesc"></p><button id="dOrder" class="px-4 py-2"></button><a id="dMore" href="#/menu"></a></div>
+<script>function openDialog(p) { dTitle.textContent = p.name; dOrder.textContent = "Order " + p.name; dMore.textContent = "More about " + p.name; dialog.classList.remove("hidden"); }</script>`,
+  });
+  for (const id of ["headings", "linkText"] as const) assert.equal(said(dialog, id), "pass pass", id);
+  // Truly empty ones still count: no id, no binding, or something inside (an icon with no label).
+  const empty = check(page({ body: `${BODY}<h2>Our bread</h2><h3 class="text-xl"></h3>` }), "headings")!;
+  assert.equal(`${empty.status} ${empty.problem}`, "warn empty");
+  assert.ok(empty.fix?.includes('<h3 class="text-xl">'), empty.fix ?? "");
+  assert.ok(!/remove/i.test(empty.fix ?? ""), "never told to remove a heading its script may fill in");
+  assert.ok(empty.fix?.includes("unless the page's script already fills it in"));
+  assert.equal(said(page({ body: `${BODY}<button id="close" class="p-3"><svg viewBox="0 0 24 24"><path d="M0 0"/></svg></button>` }), "linkText"), "fail empty");
+  assert.equal(said(page({ body: `${BODY}<img src="https://x.example/loaf.jpg" class="h-48">` }), "alt"), "fail noAlt");
+  // A heading jump says the same about empty ones.
+  const skip = check(page({ body: `<h1>Golden Crumb</h1><h3>Breads</h3><h2></h2>${STORY}` }), "headings")!;
+  assert.equal(skip.problem, "skip");
+  assert.ok(skip.fix?.includes("These headings are empty in the page's code: <h2>."), skip.fix ?? "");
 });
 
 test("a page its scripts build: the rules about what it shows don't apply", () => {
@@ -650,6 +708,8 @@ test("hostile pages finish quickly and never throw", () => {
     ["50,000 missing spots", Array.from({ length: 50_000 }, (_, k) => `<a href="#missing-${k}">`).join("")],
     ["a 100 KB attribute", `<div class="${"x ".repeat(50_000)}">`],
     ["font-size × 20,000", `<style>${"p{font-size:".repeat(20_000)}</style>`],
+    ["@import × 20,000", `<style>fonts.googleapis.com ${"@import url(\"//fonts.googleapis.com/css2?".repeat(20_000)}</style>`],
+    ["<label> × 30,000", `${'<label><input type="checkbox" id="x" class="h-4 w-4">'.repeat(30_000)}`],
     ["font-size in a style attribute", `<p style="${"font-size:1px;".repeat(8_000)}">`],
     ["text-[ × 20,000", `<p class="${"text-[".repeat(20_000)}">`],
     ["ids written in a script", `<a href="#a">x</a><script>${"id=".repeat(30_000)}</script>`],
@@ -670,7 +730,7 @@ test("hostile pages finish quickly and never throw", () => {
   assert.equal(scanPage(two).error, undefined);
 });
 
-test("Flash's main address is added only when the page has none, and only the start of the page is read", () => {
+test("a page the check couldn't read is judged by its start for Flash's main address (see site-preview.test.ts)", () => {
   assert.equal(hasOwnCanonical('<link rel="canonical" href="https://crumbbakery.com/">'), true);
   assert.equal(hasOwnCanonical("<link href='https://crumbbakery.com/' rel=canonical>"), true);
   assert.equal(hasOwnCanonical('<link rel="canonicalx" href="/">'), false, "another word");
@@ -679,18 +739,19 @@ test("Flash's main address is added only when the page has none, and only the st
   assert.equal(hasOwnCanonical(far), false, "like hasOwnPreview, only the first 32 KB");
   assert.equal(hasOwnPreview(`${" ".repeat(33 * 1024)}<meta property="og:title" content="x">`), false);
   assert.ok(timed(() => hasOwnCanonical("<link ".repeat(20_000)), 250) < 250);
-  // The scanner still sees a canonical further down.
+  // The scanner, which serving goes by for every page it could read, sees a canonical further down.
   assert.equal(scanPage(page({ body: `${BODY}${" ".repeat(33 * 1024)}<link rel="canonical" href="https://example.com/">` })).ownCanonical, true);
 });
 
 test("every check's words exist, and say what they fill in", () => {
   const facts: SeoFacts = scanPage(BAKERY);
-  assert.equal(facts.v, 1);
+  assert.equal(facts.v, SEO_VERSION);
   const blanks = (text: string) => [...text.matchAll(/\{(\w+)\}/g)].map((m) => m[1]).sort();
   const pages = [
     BAKERY,
     page({ title: "", description: "", lang: "", viewport: "", icon: "", doctype: "" }),
     page({ title: `${TITLE}${TITLE}`, description: DESCRIPTION + DESCRIPTION, head: '<link rel="canonical" href="https://a.example/"><link rel="canonical" href="https://b.example/">' }),
+    page({ head: `<link rel="canonical" href="${ADDRESS}">` }),
   ];
   for (const html of pages) {
     for (const c of report(html).checks) {
@@ -700,6 +761,8 @@ test("every check's words exist, and say what they fill in", () => {
         continue;
       }
       for (const blank of blanks(text)) assert.ok(blank in c.values, `${c.id}:${c.problem} fills {${blank}}`);
+      // Shown after the check's name ("Language · en"), so it never names it again ("Language · Language: en.").
+      assert.ok(!text.toLowerCase().startsWith(`${LABELS[c.id].toLowerCase()}:`), `${c.id}:${c.problem} repeats its name: ${text}`);
     }
   }
 });

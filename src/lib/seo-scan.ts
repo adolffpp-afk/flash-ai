@@ -10,11 +10,11 @@
  * page of its size. Every list is capped and every text clipped, so the facts stay small whatever
  * the page holds. Pure, with no DOM, so the browser can check a chat's newest copy the same way.
  */
-import { decode, hasOwnCanonical, hasOwnPreview, sitePreview } from "./site-preview.ts";
+import { decode, hasOwnPreview, sitePreview } from "./site-preview.ts";
 import { imageDimensions } from "./imageSize.ts";
 
 /** Changes when the reading changes, so facts saved before are read again (see server/seo.ts). */
-export const SEO_VERSION = 1;
+export const SEO_VERSION = 2;
 
 export type Alphabet = "latin" | "arabic" | "hebrew" | "cyrillic" | "greek" | "devanagari" | "bengali" | "thai" | "hangul" | "cjk";
 
@@ -41,6 +41,7 @@ export type SeoFacts = {
   robots: string[];
   noindex: boolean;
   nofollow: boolean;
+  /** The page names its own main address (a <link rel="canonical"> anywhere in its code): Flash then adds none (see server/seo.ts). */
   ownCanonical: boolean;
   canonicals: string[];
   canonicalCount: number;
@@ -53,7 +54,9 @@ export type SeoFacts = {
   /** [level, text, page] in the page's order; page is the <section data-page> it's in, or "" outside them. */
   headings: [number, string, string][];
   headingCount: number;
+  /** Headings with nothing in them that its script could be filling in (see onStart). */
   emptyHeadings: number;
+  emptyHeadingSamples: string[];
   /** Main headings (h1) per page section, "" for those outside every section. */
   h1s: Record<string, number>;
   h1Texts: string[];
@@ -200,16 +203,22 @@ const TINY_CLASS = /^(?:[a-z0-9]+:)*(?:h|w|size)-(?:[1-5](?:\.5)?|0\.5|\[(\d{1,3
 const PADDED_CLASS = /^(?:[a-z0-9]+:)*(?:p|px|py|min-h|min-w)-/;
 const TINY_STYLE = /(?:^|[;\s])(height|width)\s*:\s*(\d{1,4}(?:\.\d{1,3})?)px/gi;
 const CSS_HTTP = /url\(\s*["']?(http:\/\/[^"')\s]{1,200})/gi;
-const FONT_IMPORT = /@import\s+(?:url\(\s*)?["']?((?:https?:)?\/\/fonts\.googleapis\.com\/css2?\?[^"')\s;]{0,2000})/gi;
+// An @import's address, to its closing quote or bracket: Google Fonts puts ";" between weights (wght@400;700).
+const IMPORT = /@import\s+(?:url\(\s*(?:"([^"]{0,2000})"|'([^']{0,2000})'|([^"'()\s]{0,2000}))|"([^"]{0,2000})"|'([^']{0,2000})')/gi;
+const GOOGLE_FONTS = /^\s*(?:https?:)?\/\/fonts\.googleapis\.com\/css2?\?/i;
 // A blank like [Phone number] or [Dirección] that the builder leaves for the owner to fill in.
 const PLACEHOLDER = /\[[\p{Lu}\p{Lo}][\p{L}\p{M}\p{N} '’.-]{1,38}\]/gu;
 const JS_TYPE = /^(?:(?:text|application)\/(?:x-)?(?:java|ecma)script|module)?$/;
 const OTHER_SCHEME = /^[a-z][a-z0-9+.-]{0,30}:/i;
+// What Alpine.js and Vue (which builder.ts lets apps load) fill an element's words or a picture's alt text from.
+const BOUND_TEXT = ["x-text", "x-html", "v-text", "v-html"];
+const BOUND_ALT = [":alt", "x-bind:alt", "v-bind:alt"];
 const HOME_ROUTES = new Set(["", "home", "index"]);
 
 type Attrs = Map<string, string>;
-// from and to: where its tag is in the page, shown as a sample only when it's needed.
-type Open = { label: boolean; text: string; from: number; to: number };
+// from and to: where its tag is in the page, shown as a sample only when it's needed. id: it has one;
+// inner: a tag was seen inside it. An element with an id and nothing in it is one its script fills in.
+type Open = { label: boolean; text: string; from: number; to: number; id: boolean; inner: boolean };
 
 /** What a page says about itself. Never throws: a page it can't read gives facts with error set. */
 export function scanPage(html: string): SeoFacts {
@@ -248,6 +257,7 @@ function empty(bytes: number): SeoFacts {
     headings: [],
     headingCount: 0,
     emptyHeadings: 0,
+    emptyHeadingSamples: [],
     h1s: {},
     h1Texts: [],
     pages: [],
@@ -274,6 +284,7 @@ function fit(facts: SeoFacts): SeoFacts {
   const { links, imgs } = facts;
   for (const key of ["emptySamples", "vagueSamples", "missingPages", "missingIds", "outside"] as const) links[key] = short(links[key]);
   imgs.noAltSamples = short(imgs.noAltSamples);
+  facts.emptyHeadingSamples = short(facts.emptyHeadingSamples);
   imgs.fileAlt = short(imgs.fileAlt);
   facts.blocking = short(facts.blocking);
   facts.mixed = short(facts.mixed);
@@ -315,7 +326,11 @@ function scan(html: string): SeoFacts {
   let codeDepth = 0;
   let link: Open | null = null;
   let button: Open | null = null;
-  let heading: { level: number; text: string; page: string } | null = null;
+  let heading: (Open & { level: number; page: string }) | null = null;
+  // Open <label>s, the ids <label for> names, and small tick boxes with an id that one may name further on.
+  let labels = 0;
+  const labelled = new Set<string>();
+  const boxes: [string, string][] = [];
   const pageStack: { tag: string; page: string | null }[] = [];
   let pageOverflow = 0;
   const currentPage = () => {
@@ -364,9 +379,15 @@ function scan(html: string): SeoFacts {
     if (!codeDepth) findPlaceholders(text, facts.placeholders);
   };
 
+  /** Nothing in it, but an id its script can fill it in by. */
+  const filledByScript = (open: Open) => open.id && !open.inner;
   const closeLink = () => {
     if (!link) return;
     const words = link.text.replace(/\s+/g, " ").trim();
+    if (!words && !link.label && filledByScript(link)) {
+      link = null;
+      return;
+    }
     facts.links.checked++;
     if (!words && !link.label) {
       facts.links.empty++;
@@ -380,6 +401,10 @@ function scan(html: string): SeoFacts {
   const closeButton = () => {
     if (!button) return;
     const words = button.text.replace(/\s+/g, " ").trim();
+    if (!words && !button.label && filledByScript(button)) {
+      button = null;
+      return;
+    }
     facts.links.checked++;
     if (!words && !button.label) {
       facts.links.empty++;
@@ -391,7 +416,10 @@ function scan(html: string): SeoFacts {
     if (!heading) return;
     const text = heading.text.replace(/\s+/g, " ").trim();
     facts.headingCount++;
-    if (!text) facts.emptyHeadings++;
+    if (!text && !heading.label && !filledByScript(heading)) {
+      facts.emptyHeadings++;
+      addOnce(facts.emptyHeadingSamples, tagSample(heading.from, heading.to), 5);
+    }
     if (facts.headings.length < 120) facts.headings.push([heading.level, clip(text, 60), clip(heading.page, 40)]);
     if (heading.level === 1) {
       facts.h1s[heading.page] = (facts.h1s[heading.page] ?? 0) + 1;
@@ -474,7 +502,12 @@ function scan(html: string): SeoFacts {
     const alt = attrs.get("alt");
     const role = (attrs.get("role") ?? "").toLowerCase();
     const decorative = role === "presentation" || role === "none" || (attrs.get("aria-hidden") ?? "").toLowerCase() === "true";
-    if (alt === undefined && !decorative) {
+    if (alt === undefined && BOUND_ALT.some((a) => attrs.has(a))) {
+      // Its script gives it words: they label what it's in.
+      if (link) link.label = true;
+      if (button) button.label = true;
+      if (heading) heading.label = true;
+    } else if (alt === undefined && !decorative) {
       imgs.noAlt++;
       addOnce(imgs.noAltSamples, src ? sampleUrl(src) : "<img>", 5);
     } else if (alt !== undefined) {
@@ -619,18 +652,28 @@ function scan(html: string): SeoFacts {
     if (rel.includes("stylesheet") && /fonts\.googleapis\.com/i.test(href)) checkFontUrl(decodeText(href.trim()));
   };
 
-  /** A link, button or tick box people tap, with a size set smaller than a finger in its code. */
-  const checkTarget = (attrs: Attrs, from: number, to: number) => {
+  /** Whether something people tap has a size set smaller than a finger in its code. */
+  const tiny = (attrs: Attrs) => {
     const style = attrs.get("style") ?? "";
     const cls = attrs.get("class") ?? "";
-    if (facts.smallTargets.length >= 5 || (!style.includes("px") && !cls.includes("-"))) return;
-    let tiny = false;
-    if (style.includes("px")) for (const m of style.matchAll(TINY_STYLE)) if (Number(m[2]) > 0 && Number(m[2]) < 24) tiny = true;
+    if (!style.includes("px") && !cls.includes("-")) return false;
+    if (style.includes("px")) for (const m of style.matchAll(TINY_STYLE)) if (Number(m[2]) > 0 && Number(m[2]) < 24) return true;
     const classes = cls.split(/\s+/).filter(Boolean);
-    if (!tiny && classes.some((c) => TINY_CLASS.test(c) && (!c.includes("[") || Number(TINY_CLASS.exec(c)?.[1]) < 24)) && !classes.some((c) => PADDED_CLASS.test(c))) {
-      tiny = true;
-    }
-    if (tiny) addOnce(facts.smallTargets, tagSample(from, to), 5);
+    return classes.some((c) => TINY_CLASS.test(c) && (!c.includes("[") || Number(TINY_CLASS.exec(c)?.[1]) < 24)) && !classes.some((c) => PADDED_CLASS.test(c));
+  };
+  /** A link or button people tap, set smaller than a finger. */
+  const checkTarget = (attrs: Attrs, from: number, to: number) => {
+    if (facts.smallTargets.length < 5 && tiny(attrs)) addOnce(facts.smallTargets, tagSample(from, to), 5);
+  };
+  /**
+   * A tick box set smaller than a finger, unless it's in a <label> or one names it (<label for>):
+   * tapping the label's words ticks it, so the label is what people tap.
+   */
+  const checkBox = (attrs: Attrs, from: number, to: number) => {
+    if (labels || facts.smallTargets.length >= 5 || !tiny(attrs)) return;
+    const id = attrs.get("id")?.trim();
+    if (!id) addOnce(facts.smallTargets, tagSample(from, to), 5);
+    else if (boxes.length < 20) boxes.push([id, tagSample(from, to)]);
   };
 
   /** A tag between words: they're two words, even with no space between them. */
@@ -644,9 +687,13 @@ function scan(html: string): SeoFacts {
   const onStart = (name: string, attrs: Attrs, selfClosing: boolean, from: number, to: number) => {
     seenToken = true;
     boundary();
+    if (link) link.inner = true;
+    if (button) button.inner = true;
+    if (heading) heading.inner = true;
     if (!inBody && !HEAD_TAGS.has(name)) inBody = true;
     const id = attrs.get("id");
     if (id && ids.size < 10_000) ids.add(id.trim());
+    const hasId = Boolean(id?.trim());
     const style = attrs.get("style");
     if (style) checkStyle(style);
     const cls = attrs.get("class");
@@ -700,18 +747,27 @@ function scan(html: string): SeoFacts {
         if (attrs.has("href")) {
           onLinkHref(attrs.get("href")!);
           checkTarget(attrs, from, to);
-          if (!selfClosing) link = { label, text: "", from, to };
+          if (!selfClosing) link = { label, text: "", from, to, id: hasId, inner: false };
         }
         break;
       }
       case "button":
         closeButton();
         checkTarget(attrs, from, to);
-        if (!selfClosing) button = { label: Boolean(attrs.get("aria-label")?.trim() || attrs.get("aria-labelledby")?.trim() || attrs.get("title")?.trim()), text: "", from, to };
+        if (!selfClosing) {
+          const label = Boolean(attrs.get("aria-label")?.trim() || attrs.get("aria-labelledby")?.trim() || attrs.get("title")?.trim());
+          button = { label, text: "", from, to, id: hasId, inner: false };
+        }
         break;
       case "input": {
         const type = (attrs.get("type") ?? "").toLowerCase();
-        if (type === "checkbox" || type === "radio") checkTarget(attrs, from, to);
+        if (type === "checkbox" || type === "radio") checkBox(attrs, from, to);
+        break;
+      }
+      case "label": {
+        const named = attrs.get("for")?.trim();
+        if (named && labelled.size < 1000) labelled.add(named);
+        if (!selfClosing) labels++;
         break;
       }
       case "code":
@@ -728,8 +784,14 @@ function scan(html: string): SeoFacts {
       default:
         if (/^h[1-6]$/.test(name) && !selfClosing) {
           closeHeading();
-          heading = { level: Number(name[1]), text: "", page: currentPage() };
+          heading = { level: Number(name[1]), text: "", page: currentPage(), label: false, from, to, id: hasId, inner: false };
         } else if ((attrs.get("role") ?? "").toLowerCase() === "button") checkTarget(attrs, from, to);
+    }
+    // Words its script writes in (Alpine's x-text, Vue's v-text): what it's in, and itself, aren't empty.
+    if (BOUND_TEXT.some((a) => attrs.has(a))) {
+      if (link) link.label = true;
+      if (button) button.label = true;
+      if (heading) heading.label = true;
     }
   };
 
@@ -746,6 +808,7 @@ function scan(html: string): SeoFacts {
       return;
     }
     if (name === "head") inBody = true;
+    else if (name === "label") labels = Math.max(0, labels - 1);
     else if (name === "a") closeLink();
     else if (name === "button") closeButton();
     else if (/^h[1-6]$/.test(name)) closeHeading();
@@ -893,7 +956,12 @@ function scan(html: string): SeoFacts {
       } else if (raw === "script") onScript(attrs, content, lt, end + 1);
       else if (raw === "style") {
         checkStyle(content);
-        if (content.includes("fonts.googleapis.com")) for (const m of content.matchAll(FONT_IMPORT)) checkFontUrl(m[1]);
+        if (content.includes("fonts.googleapis.com")) {
+          for (const m of content.matchAll(IMPORT)) {
+            const url = m[1] ?? m[2] ?? m[3] ?? m[4] ?? m[5] ?? "";
+            if (GOOGLE_FONTS.test(url)) checkFontUrl(url.trim());
+          }
+        }
       }
       const gt = html.indexOf(">", close);
       if (gt === -1) {
@@ -907,6 +975,8 @@ function scan(html: string): SeoFacts {
   closeLink();
   closeButton();
   closeHeading();
+  // Small tick boxes no <label for> names.
+  for (const [id, tag] of boxes) if (!labelled.has(id)) addOnce(facts.smallTargets, tag, 5);
 
   // Links to pages and spots the page doesn't have. A target written anywhere in the file (made by
   // its script, or in a template) counts as there: every id="…" and data-page="…" in it, found in one pass.
@@ -936,7 +1006,7 @@ function scan(html: string): SeoFacts {
   // A page with headings or page sections in its code shows them itself, however few its words.
   facts.jsBuilt = (reactish && facts.words < 150) || (facts.words < 40 && jsScripts > 0 && facts.headingCount === 0 && !facts.pages.length);
   facts.ownCard = hasOwnPreview(html);
-  facts.ownCanonical = hasOwnCanonical(html) || facts.canonicalCount > 0;
+  facts.ownCanonical = facts.canonicalCount > 0;
   facts.photo = sitePreview(html).image !== null;
   facts.loadsData = html.includes("flashDB.list(") || html.includes("data-flash-price");
   return facts;

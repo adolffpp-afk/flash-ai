@@ -254,8 +254,9 @@ test("each app's page names its main address for Google: Flash's main domain, or
   }
   await afterwards();
 
-  // A page that names its own keeps it, with no second one.
-  await run("UPDATE sites SET html = ? WHERE slug = 'canon-app'", [GOOD.replace("</head>", '<link rel="canonical" href="https://crumb.lisbon/"></head>')]);
+  // A page that names its own keeps it, with no second one (a new version the check hasn't read yet:
+  // every visit above kept what it read in the old one).
+  await run("UPDATE sites SET html = ?, updated_at = 2, seo = '' WHERE slug = 'canon-app'", [GOOD.replace("</head>", '<link rel="canonical" href="https://crumb.lisbon/"></head>')]);
   const own = await (await appRoute.GET(new Request("https://www.flash-app.dev/p/canon-app"), params("canon-app"))).text();
   assert.deepEqual(canonicals(own), ["https://crumb.lisbon/"]);
   await afterwards();

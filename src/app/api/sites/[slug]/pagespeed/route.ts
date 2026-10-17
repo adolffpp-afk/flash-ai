@@ -5,7 +5,7 @@ import { clearLimit, countOf, overLimit } from "@/lib/server/limits.ts";
 import { domainsForSite, pointsAtFlash } from "@/lib/server/domains.ts";
 import { cacheGet, cacheKey, cachePut } from "@/lib/server/source-fetch.ts";
 import { appBase } from "@/lib/server/seo.ts";
-import { checkWithGoogle, parseRecord, REFUSED, type PageSpeedError, type PageSpeedRecord } from "@/lib/server/pagespeed.ts";
+import { parseRecord, REFUSED, runPageSpeed, type PageSpeedError, type PageSpeedRecord } from "@/lib/server/pagespeed.ts";
 import { preferredDomain } from "@/lib/seo-rules.ts";
 import type { Translate } from "@/lib/i18n.ts";
 
@@ -32,8 +32,9 @@ function failed(t: Translate, error: PageSpeedError): Response {
 /**
  * Checks the owner's live app with Google PageSpeed Insights, at its address on Flash or on its own
  * domain ({ address: "flash" | "domain" }: never an address from the request). A check of the same
- * version at the same address within a day is answered from the one saved; one app is checked once at
- * a time, and each owner a few times an hour. Free: it never charges anything.
+ * version at the same address within a day is answered from the one saved, unless Google couldn't do
+ * the phone's or the computer's half: then only that half is asked again. One app is checked once at a
+ * time, and each owner a few times an hour. Free: it never charges anything.
  */
 export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug]/pagespeed">) {
   const user = await getUser(request);
@@ -59,9 +60,10 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug
     url = `https://${domain}/`;
   }
 
-  // The same version at the same address, checked within a day: no new check.
+  // The same version at the same address, checked within a day: no new check, unless half of it failed.
   const saved = parseRecord(site.pagespeed);
-  if (saved && saved.url === url && saved.for === version && Date.now() - saved.at < DAY) return Response.json({ pagespeed: saved, cached: true });
+  const same = saved && saved.url === url && saved.for === version && Date.now() - saved.at < DAY ? saved : null;
+  if (same?.mobile.ok && same.desktop.ok) return Response.json({ pagespeed: same, cached: true });
   const failKey = cacheKey("pagespeed-fail", site.slug, String(version), url);
   const failedBefore = await cacheGet<PageSpeedError>(failKey);
   if (failedBefore) return failed(t, failedBefore);
@@ -79,13 +81,16 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug
   if (await overLimit(lock, 1, 3 * MINUTE)) return running();
 
   try {
-    // Never the request's signal: the result is kept even when the owner closes the page.
-    const { mobile, desktop } = await checkWithGoogle(url);
-    if (!mobile.ok && !desktop.ok) {
-      // Google couldn't load or finish this version: the same answer for a while, without asking again.
-      if (mobile.error === "unreachable" || mobile.error === "slow") await cachePut(failKey, mobile.error, 10 * MINUTE);
-      return failed(t, mobile.error);
-    }
+    // Both side by side, or only the half that failed last time. Never the request's signal: the
+    // result is kept even when the owner closes the page.
+    const [mobile, desktop] = await Promise.all([
+      same?.mobile.ok ? same.mobile : runPageSpeed(url, "mobile"),
+      same?.desktop.ok ? same.desktop : runPageSpeed(url, "desktop"),
+    ]);
+    // Google couldn't load or finish this version: the same answer for a while, without asking again.
+    const error = !mobile.ok ? mobile.error : !desktop.ok ? desktop.error : null;
+    if (error === "unreachable" || error === "slow") await cachePut(failKey, error, 10 * MINUTE);
+    if (!mobile.ok && !desktop.ok) return failed(t, mobile.error);
     const record: PageSpeedRecord = { v: 1, at: Date.now(), for: version, url, mobile, desktop };
     await run("UPDATE sites SET pagespeed = ? WHERE slug = ? AND user_id = ?", [JSON.stringify(record), site.slug, user.id]);
     return Response.json({ pagespeed: record });

@@ -2,6 +2,7 @@ import { all, one, run } from "./db.ts";
 import { domainsForSite } from "./domains.ts";
 import { SEO_VERSION, scanPage, type SeoFacts } from "../seo-scan.ts";
 import { evaluate, issueCount, type SeoContext, type SeoReport } from "../seo-rules.ts";
+import { hasOwnCanonical } from "../site-preview.ts";
 import { SITE_URL } from "../../app/site.ts";
 
 /*
@@ -30,6 +31,24 @@ export function parseFacts(text: string | null | undefined): SeoFacts | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Whether a page names its own main address (canonical), so Flash adds none when it serves it: what
+ * the search check read in it (a tag anywhere in its code), so the two always agree. A page it hasn't
+ * read yet (published before it, or read by an older version) is read now, and its facts kept, as
+ * when its owner looks. Only a page it can't read at all is judged by a look at its start.
+ */
+export async function namesOwnCanonical(site: { slug: string; html: string; seo: string | null; updated_at: number }): Promise<boolean> {
+  let facts = parseFacts(site.seo);
+  if (!facts) {
+    const text = seoFactsFor(site.html);
+    facts = parseFacts(text);
+    await run("UPDATE sites SET seo = ? WHERE slug = ? AND updated_at = ?", [text, site.slug, Number(site.updated_at)]).catch((err) =>
+      console.error("[flash] search check failed", err),
+    );
+  }
+  return facts && !facts.error ? facts.canonicalCount > 0 : hasOwnCanonical(site.html);
 }
 
 /** Flash's own address, as published apps are linked from it (FLASH_APP_URL, else the live site). */

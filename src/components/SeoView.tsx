@@ -163,16 +163,19 @@ export function SeoView({
   editCredits,
   onFix,
   onDraft,
+  onOpenChat,
   onPreview,
 }: {
   slug: string;
   data: SeoData;
   // What a change to an app typically costs (the pricing table's number), said before anything is sent.
   editCredits?: number;
-  // Hands the change to Flash; false while Flash is still answering something else.
-  onFix?: (fix: SiteFix) => boolean;
+  // Hands the change to Flash: null once it's on its way, else why nothing was sent.
+  onFix?: (fix: SiteFix) => Promise<string | null>;
   // Puts text in the message box of the chat that built the site, without sending it.
   onDraft?: (draft: { projectId: string; text: string }) => void;
+  // Opens the chat that built the site.
+  onOpenChat?: (projectId: string) => void;
   onPreview: () => void;
 }) {
   const t = useT();
@@ -181,7 +184,9 @@ export function SeoView({
   const [asking, setAsking] = useState<{ key: string; ids: CheckId[]; left: number } | null>(null);
   // The chat that built the site: loading (null), found, or why it can't be.
   const [project, setProject] = useState<{ id?: string; error?: string } | null>(null);
+  // Why Send sent nothing, said in the panel.
   const [note, setNote] = useState("");
+  const [sending, setSending] = useState(false);
   const [draftError, setDraftError] = useState("");
   const panelRef = useRef<HTMLDivElement>(null);
   const canFix = !!onFix && editCredits !== undefined;
@@ -217,10 +222,13 @@ export function SeoView({
     }
   }
 
-  function send() {
-    if (!asking || !project?.id || !onFix) return;
-    const ok = onFix({ projectId: project.id, slug, title: data.title, ids: asking.ids, ctx: data.ctx, at: Date.now() });
-    if (!ok) setNote(t("Flash is still working on a reply. Send this when it's done."));
+  async function send() {
+    if (!asking || !project?.id || !onFix || sending) return;
+    setSending(true);
+    setNote("");
+    const why = await onFix({ projectId: project.id, slug, title: data.title, ids: asking.ids, ctx: data.ctx, at: Date.now() });
+    setSending(false);
+    if (why) setNote(why);
   }
 
   async function draft(check: Check) {
@@ -271,10 +279,18 @@ export function SeoView({
           {!project?.error && (
             <button
               onClick={send}
-              disabled={!project?.id}
+              disabled={!project?.id || sending}
               className="rounded-md bg-brand px-3 py-1.5 font-medium text-on-brand hover:brightness-110 disabled:opacity-50"
             >
               {t("Send to Flash")}
+            </button>
+          )}
+          {note && project?.id && onOpenChat && (
+            <button
+              onClick={() => onOpenChat(project.id!)}
+              className="rounded-md border border-primary/40 px-3 py-1.5 text-primary-soft hover:bg-primary/10"
+            >
+              {t("Open the chat that built this site")}
             </button>
           )}
           <button onClick={() => setAsking(null)} className="rounded-md px-3 py-1.5 text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100">
@@ -460,8 +476,9 @@ function PageSpeed({ slug, data }: { slug: string; data: SeoData }) {
   const domainUrl = data.domainTest ? `https://${data.domainTest}/` : "";
   const [address, setAddress] = useState<"flash" | "domain">(domainUrl && record?.url === domainUrl ? "domain" : "flash");
   const target = address === "domain" && domainUrl ? domainUrl : flashUrl;
-  // Asking again would bring back the same result: the button shows once the page changes, or a day on.
-  const fresh = Boolean(record && !stale && record.url === target && data.loadedAt - record.at < KEPT_MS);
+  // Asking again would bring back the same result: the button shows once the page changes, or a day on,
+  // and while Google couldn't do one half (the server asks again for that half only).
+  const fresh = Boolean(record && !stale && record.url === target && data.loadedAt - record.at < KEPT_MS && record.mobile.ok && record.desktop.ok);
 
   useEffect(() => {
     if (!waiting) return;

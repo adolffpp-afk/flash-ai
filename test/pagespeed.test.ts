@@ -376,6 +376,36 @@ test("a run Google couldn't finish shows no scores, and Flash's own numbers for 
   assert.equal(record.desktop.ok, true);
 });
 
+test("a check that failed on a phone only is asked again for the phone, not answered from the saved one for a day", async () => {
+  await fresh();
+  const who = await owner("half");
+  googleReply = (s) => (s === "MOBILE" ? { status: 500, body: "{}" } : ok(s));
+  const first = await check(who);
+  assert.equal(first.status, 200);
+  assert.deepEqual((first.body.pagespeed as { mobile: unknown }).mobile, { ok: false, error: "unreachable" });
+  assert.equal(google.length, 2);
+  // Right away: the same answer for a few minutes, as for a check that failed on both, without asking Google.
+  googleReply = ok;
+  const soon = await check(who);
+  assert.equal(soon.status, 502);
+  assert.equal(soon.body.code, "unreachable");
+  assert.equal(google.length, 2);
+  // A few minutes on: only the phone is asked again, and the computer's result is kept.
+  await run("DELETE FROM source_cache WHERE key != ?", [REFUSED]);
+  const desktop = JSON.parse(await saved(who.slug)).desktop;
+  const again = await check(who);
+  assert.equal(again.status, 200);
+  assert.equal(again.body.cached, undefined, "not the saved one");
+  assert.deepEqual(google.slice(2).map((c) => c.url.searchParams.get("strategy")), ["MOBILE"]);
+  const record = again.body.pagespeed as { mobile: { ok: boolean }; desktop: unknown };
+  assert.equal(record.mobile.ok, true);
+  assert.deepEqual(record.desktop, desktop);
+  assert.deepEqual(JSON.parse(await saved(who.slug)), record);
+  // Both halves done: kept for the day.
+  assert.equal((await check(who)).body.cached, true);
+  assert.equal(google.length, 3);
+});
+
 test("the key never shows in the logs or in what's kept", async () => {
   await fresh();
   process.env.PAGESPEED_API_KEY = KEY;

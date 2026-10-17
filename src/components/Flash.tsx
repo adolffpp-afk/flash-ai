@@ -696,17 +696,28 @@ export function Flash({
   }, [input]);
 
   async function openProject(id: string) {
+    showChat(id);
+    if (!(await chatMessages(id))) setNotice(t("Couldn't open that project. Pick it again in the sidebar to try again."));
+  }
+
+  function showChat(id: string) {
     setActiveId(id);
     setSidebar(false);
     setPhoneTab("chat");
-    if (projects.find((p) => p.id === id)?.messages) return;
+  }
+
+  /** A chat's messages, loaded the first time they're needed; null when they can't be. */
+  async function chatMessages(id: string): Promise<UIMessage[] | null> {
+    const known = projects.find((p) => p.id === id)?.messages;
+    if (known) return known;
     try {
       const { project } = await api<{ project: Project }>(`/api/projects/${id}`);
       // A reply still pending there is one the server is working on; the watch below shows it once it's done.
-      const messages = project.messages?.map((m) => (m.pending ? { ...m, status: t(STILL_WORKING) } : m));
+      const messages = project.messages?.map((m) => (m.pending ? { ...m, status: t(STILL_WORKING) } : m)) ?? [];
       setProjects((list) => list.map((p) => (p.id === id ? { ...p, messages: p.messages ?? messages, instructions: project.instructions ?? "" } : p)));
+      return messages;
     } catch {
-      setNotice(t("Couldn't open that project. Pick it again in the sidebar to try again."));
+      return null;
     }
   }
 
@@ -927,55 +938,68 @@ export function Flash({
   }
 
   /**
-   * A change the search check (SEO) asked for, after the owner saw its price and pressed Send: My
-   * websites & apps closes, the chat that built the site opens, and the change goes there once it has
-   * loaded (sendFix). False while Flash is still answering something else: nothing is sent then.
+   * A change the search check (SEO) asked for, after the owner saw its price and pressed Send. The chat
+   * that built the site is looked at first, while My websites & apps is still open: when nothing would
+   * be sent (see fixFor), or Flash is still answering something else, the answer is why, shown where
+   * Send was pressed. Otherwise My websites & apps closes, the chat opens, and the change goes there
+   * (sendFix): the answer is null.
    */
-  function fixSite(fix: SiteFix): boolean {
-    if (busy || runningRef.current) return false;
+  async function fixSite(fix: SiteFix): Promise<string | null> {
+    const busyNote = t("Flash is still working on a reply. Send this when it's done.");
+    if (busy || runningRef.current) return busyNote;
+    const messages = projects.some((p) => p.id === fix.projectId) ? await chatMessages(fix.projectId) : null;
+    if (!messages) return t("Couldn't find the chat that built this site.");
+    const plan = await fixFor(fix, messages);
+    if ("why" in plan) return plan.why;
+    if (runningRef.current) return busyNote;
     closeApps();
-    void openProject(fix.projectId);
+    showChat(fix.projectId);
     setPendingFix({ ...fix, at: Date.now() });
-    return true;
+    return null;
   }
 
-  /** Puts the owner's own details (for the placeholders the check found) in that chat's message box, unsent. */
+  /** Adds the owner's own details (for the placeholders the check found) to that chat's message box, unsent. */
   function draftInChat({ projectId, text }: { projectId: string; text: string }) {
     closeApps();
     void openProject(projectId);
-    setInput(text);
+    // After anything already typed there, never in its place.
+    setInput((typed) => (typed.trim() ? `${typed.trimEnd()}\n\n${text}` : text));
     requestAnimationFrame(() => inputRef.current?.focus());
   }
 
   /**
+   * What a change the search check asked for sends in the chat that built the site: the message, made
+   * for that chat's newest app as the builder will see it, or why nothing would be sent (that app is
+   * another site, after Publish as new, or it has the fix already). The builder gets the check's
+   * English instructions (shown as "◎ SEO"); the owner sees what was asked in their own language.
+   */
+  async function fixFor(fix: SiteFix, messages: UIMessage[]): Promise<{ why: string } | { message: UIMessage }> {
+    const at = messages.findLastIndex((m) => m.app);
+    const latest = at === -1 ? undefined : messages[at].app;
+    // An unpublished version updates the site an earlier one was published as (as AppPreview does).
+    const site = latest && (latest.slug ?? messages.slice(0, at).findLast((m) => m.app?.slug)?.app?.slug);
+    if (!latest || site !== fix.slug) return { why: t("The newest app in that chat is a different site, so Flash didn't send the change.") };
+    // Loaded only now, so the check stays out of the chat's own code until it's used.
+    const [{ scanPage }, { evaluate, stillToFix }, { fixMessage }] = await Promise.all([import("@/lib/seo-scan"), import("@/lib/seo-rules"), import("@/lib/seo-words")]);
+    const report = evaluate(scanPage(latest.html), fix.ctx);
+    const ids = stillToFix(report, fix.ids);
+    if (!ids.length) return { why: t("The newest version in that chat already fixes this. Press Update site under it to put it live.") };
+    const { content, context } = fixMessage(t, report, ids, { title: fix.title, address: `${fix.ctx.appBase}/p/${fix.slug}` });
+    return { message: { id: newId(), role: "user", content, build: latest.kind, picked: { label: t("SEO"), context } } };
+  }
+
+  /**
    * Sends a change the search check asked for in the chat that built the site, as a normal change to
-   * its newest app, priced and charged exactly like one typed here. That copy is checked again first,
-   * as the builder will see it: it may be another site (after Publish as new) or have the fix already,
-   * and then nothing is sent. The builder gets the check's English instructions (shown as "◎ SEO");
-   * the owner sees what was asked in their own language.
+   * its newest app, priced and charged exactly like one typed here. That copy is checked again first
+   * (fixSite did, but the chat may have changed since): when nothing would be sent, a notice says why.
    */
   async function sendFix(fix: SiteFix) {
     const chat = projects.find((p) => p.id === fix.projectId);
     const messages = chat?.messages;
     if (!chat || !messages || busy || runningRef.current) return;
-    const at = messages.findLastIndex((m) => m.app);
-    const latest = at === -1 ? undefined : messages[at].app;
-    // An unpublished version updates the site an earlier one was published as (as AppPreview does).
-    const site = latest && (latest.slug ?? messages.slice(0, at).findLast((m) => m.app?.slug)?.app?.slug);
-    if (!latest || site !== fix.slug) {
-      setNotice(t("The newest app in that chat is a different site, so Flash didn't send the change."));
-      return;
-    }
-    // Loaded only now, so the check stays out of the chat's own code until it's used.
-    const [{ scanPage }, { evaluate, stillToFix }, { fixMessage }] = await Promise.all([import("@/lib/seo-scan"), import("@/lib/seo-rules"), import("@/lib/seo-words")]);
-    const report = evaluate(scanPage(latest.html), fix.ctx);
-    const ids = stillToFix(report, fix.ids);
-    if (!ids.length) {
-      setNotice(t("The newest version in that chat already fixes this. Press Update site under it to put it live."));
-      return;
-    }
-    const { content, context } = fixMessage(t, report, ids, { title: fix.title, address: `${fix.ctx.appBase}/p/${fix.slug}` });
-    await respond(chat, messages, { id: newId(), role: "user", content, build: latest.kind, picked: { label: t("SEO"), context } });
+    const plan = await fixFor(fix, messages);
+    if ("why" in plan) setNotice(plan.why);
+    else await respond(chat, messages, plan.message);
   }
   const sendFixRef = useRef(sendFix);
   useEffect(() => {

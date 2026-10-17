@@ -110,7 +110,7 @@ export function MyApps({
   onPlans?: () => void;
   start?: { slug: string; view: "seo" };
   editCredits?: number;
-  onFix?: (fix: SiteFix) => boolean;
+  onFix?: (fix: SiteFix) => Promise<string | null>;
   onDraft?: (draft: { projectId: string; text: string }) => void;
 }) {
   const t = useT();
@@ -941,6 +941,7 @@ export function MyApps({
                 editCredits={editCredits}
                 onFix={onFix}
                 onDraft={onDraft}
+                onOpenChat={onEdit}
                 onPreview={() => showPreview(open)}
               />
             )

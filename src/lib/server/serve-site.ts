@@ -5,8 +5,9 @@ import { randomId } from "./ids.ts";
 import { ownerKeyForCode } from "./site-owner.ts";
 import { translatorFor } from "./i18n.ts";
 import { isOwnHost } from "../site-host.ts";
-import { canonicalTag, hasOwnCanonical, hasOwnPreview, previewTags, sitePreview } from "../site-preview.ts";
+import { canonicalTag, hasOwnPreview, previewTags, sitePreview } from "../site-preview.ts";
 import { plainTitle, previewSite, showsMadeWith } from "./made-with.ts";
+import { namesOwnCanonical } from "./seo.ts";
 import { SITE_URL } from "../../app/site.ts";
 
 // Published apps are served with a CSP sandbox, which gives them their own opaque origin:
@@ -29,7 +30,7 @@ export async function serveSite(slug: string | null, pageUrl?: string, request?:
     });
   }
   // The address search engines should list the page under, unless it names its own (see seo-rules.ts).
-  let card = canonical && !hasOwnCanonical(site.html) ? canonicalTag(canonical) : "";
+  let card = canonical && !(await namesOwnCanonical(site)) ? canonicalTag(canonical) : "";
   if (pageUrl && !hasOwnPreview(site.html)) {
     // Without "Made with Flash" (see made-with.ts), a page with no title takes the app's name, and the
     // picture has an address of its own, so share apps that keep a picture by its address fetch the new one.

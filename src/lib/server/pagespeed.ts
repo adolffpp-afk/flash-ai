@@ -157,9 +157,3 @@ export async function runPageSpeed(target: string, strategy: "mobile" | "desktop
     return { ok: false, error };
   }
 }
-
-/** Both checks of an address, side by side: a phone's and a computer's. */
-export async function checkWithGoogle(target: string, opts: RunOptions = {}): Promise<{ mobile: PageSpeedRun; desktop: PageSpeedRun }> {
-  const [mobile, desktop] = await Promise.all([runPageSpeed(target, "mobile", opts), runPageSpeed(target, "desktop", opts)]);
-  return { mobile, desktop };
-}

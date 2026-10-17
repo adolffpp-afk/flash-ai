@@ -11,7 +11,6 @@
  * or domain (except whether a main address the page names itself is one of its own).
  */
 import { textWidth, type Alphabet, type SeoFacts } from "./seo-scan.ts";
-import { isOwnHost } from "./site-host.ts";
 
 export type CheckId =
   | "title"
@@ -263,7 +262,8 @@ export function evaluate(facts: SeoFacts | null | undefined, ctx: SeoContext): S
     if (!parsed || parsed.protocol !== "https:") add("canonical", 2, "fail", "invalid", { url }, removeCanonical);
     else {
       const path = parsed.pathname.replace(/\/$/, "");
-      const onFlash = isOwnHost(parsed.hostname, hostOf(ctx.appBase)) && path === `/p/${ctx.slug}`;
+      // Flash's own address exactly, as Flash names it: not another deployment (any *.vercel.app) or localhost.
+      const onFlash = parsed.hostname === hostOf(ctx.appBase) && path === `/p/${ctx.slug}`;
       const onDomain = ctx.domains.includes(parsed.hostname) && path === "";
       if (onFlash || onDomain) add("canonical", 2, "pass", "pass", { url });
       else add("canonical", 2, "fail", "elsewhere", { url }, removeCanonical);
@@ -342,7 +342,10 @@ export function evaluate(facts: SeoFacts | null | undefined, ctx: SeoContext): S
         }
         if (skip) break;
       }
-      const emptyFix = facts.emptyHeadings ? `${facts.emptyHeadings} heading elements are empty. Remove them or give them text.` : "";
+      // Never "remove them": the page's script may fill one in, and would then break without it.
+      const emptyFix = facts.emptyHeadings
+        ? `These headings are empty in the page's code: ${samples(facts.emptyHeadingSamples, 3)}. Give each one the words it should show, unless the page's script already fills it in.`
+        : "";
       if (skip) {
         const values = { from: `h${skip.from}`, to: `h${skip.to}`, text: skip.text };
         add("headings", 1, "warn", "skip", values, fixText(`A heading jumps from h${skip.from} to h${skip.to} at "${sample(skip.text)}". Change heading tags so levels go down one step at a time, ${keepLook}.`, emptyFix));
@@ -461,7 +464,7 @@ export function evaluate(facts: SeoFacts | null | undefined, ctx: SeoContext): S
         1,
         "warn",
         "missing",
-        { lang },
+        { lang, tag: 'dir="rtl"' },
         fixText(`The page is in ${lang ? sample(lang) : "a right-to-left language"}, which reads right to left. Add dir="rtl" to <html> and make the layout mirror (margin-inline and padding-inline instead of left and right where it matters).`),
       );
     }
@@ -503,7 +506,7 @@ export function evaluate(facts: SeoFacts | null | undefined, ctx: SeoContext): S
   if (facts.mixed.length) {
     add("mixed", 2, "fail", "found", { list: samples(facts.mixed, 3) }, fixText(`Change these http:// addresses to https:// (or remove what doesn't work over https): ${samples(facts.mixed, 4)}.`));
   } else add("mixed", 2, "pass", "pass");
-  if (!facts.doctype) add("doctype", 1, "fail", "none", {}, "Add <!doctype html> as the very first line.");
+  if (!facts.doctype) add("doctype", 1, "fail", "none", { tag: "<!doctype html>" }, "Add <!doctype html> as the very first line.");
   else add("doctype", 1, "pass", "pass");
   if (!facts.icon) {
     add("icon", 1, "warn", "none", {}, `Add a <link rel="icon"> inside <head>: a small SVG icon as a data: URL, in the site's accent colour, with its first letter or a fitting emoji.`);
