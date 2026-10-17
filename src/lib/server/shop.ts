@@ -293,6 +293,12 @@ async function recordOrder(slug: string, s: Session): Promise<boolean> {
   if (s.payment_status !== "paid" || s.metadata?.flash_site !== slug) return false;
   const item = s.metadata.flash_item ?? "";
   const created = s.created ? s.created * 1000 : now();
+  const given = s.customer_details?.email ?? "";
+  const buyer = cleanContact({ email: given, name: s.customer_details?.name, phone: s.customer_details?.phone });
+  // An address Stripe gives in another spelling than the one contacts keep (see cleanEmail), beyond
+  // the case of A to Z (all the database's lower() changes), is saved in the contacts' spelling: the
+  // buyer's contact then finds the order, and deleting them clears their address from it.
+  const email = buyer?.email && buyer.email !== given.replace(/[A-Z]+/g, (s) => s.toLowerCase()) ? buyer.email : given;
   const res = await run(
     `INSERT INTO site_orders (session_id, site_slug, item, quantity, amount, currency, email, name, address, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(session_id) DO NOTHING`,
@@ -303,7 +309,7 @@ async function recordOrder(slug: string, s: Session): Promise<boolean> {
       s.line_items?.data?.[0]?.quantity ?? 1,
       s.amount_total ?? 0,
       s.currency ?? "",
-      s.customer_details?.email ?? "",
+      email,
       s.customer_details?.name ?? "",
       addressText(s),
       created,
@@ -311,7 +317,6 @@ async function recordOrder(slug: string, s: Session): Promise<boolean> {
   );
   if (!res.rowsAffected) return false;
   // Paying isn't agreeing to news, so no consent is kept. A contact that can't be saved never stops the order.
-  const buyer = cleanContact({ email: s.customer_details?.email, name: s.customer_details?.name, phone: s.customer_details?.phone });
   if (buyer) await noteContact(slug, buyer, { source: `order:${item.slice(0, 60)}`, at: created }).catch((err) => console.error("[flash] contact not saved", err));
   return true;
 }

@@ -8,16 +8,20 @@
  * owner is in charge of this data, and unpublishing the app deletes it with everything else.
  *
  * Agreeing to an app's news counts only when the person ticked a box themselves (see flashdb-shim.ts)
- * whose wording is really on the app's page. Flash keeps that wording, the time, the form, and a
- * hash of their address keyed by the app's own secret, never the address. The same secret signs
- * each contact's unsubscribe link, which is worked out again whenever it's shown, so no usable link
- * is stored. Flash sends no news itself: the list shows who agreed and who unsubscribed.
+ * whose wording a visitor sees on the app's page. Flash keeps that wording, the time, the form, and
+ * a hash of their address keyed by the app's own secret, never the address. Anyone can send a form
+ * with someone else's address, so a ticked box never undoes an unsubscribe: once someone has
+ * unsubscribed, only the owner can record that they asked for news again, with a note saying how.
+ * The same secret signs each contact's unsubscribe link, which is worked out again whenever it's
+ * shown, so no usable link is stored. Flash sends no news itself: the list shows who agreed and
+ * who unsubscribed.
  *
  * It costs only database rows, within the caps below, and fills without slowing anyone down: a
  * contact that can't be saved never stops the form, the sign-up or the order it came with.
  */
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { InStatement, InValue } from "@libsql/client";
+import { emailKey } from "./account.ts";
 import { all, db, one, run, now } from "./db.ts";
 import { randomId } from "./ids.ts";
 import { removeSiteUser } from "./site-auth.ts";
@@ -25,11 +29,13 @@ import { toCsv } from "../csv.ts";
 import { formatMoney } from "../shop.ts";
 import {
   DEFAULT_STAGES,
+  MAX_CONSENT_NOTE,
   MAX_CONTACTS,
   MAX_NAME,
   MAX_NOTES,
   MAX_STAGES,
   MAX_STAGE_NAME,
+  cleanContact,
   cleanEmail,
   cleanName,
   cleanTags,
@@ -61,9 +67,11 @@ export type Contact = {
   source: string;
   firstSeen: number;
   lastSeen: number;
-  consent: { text: string; at: number; form: string } | null;
+  // What they agreed to: the wording they saw on a form (by "form"), or the owner's note on how they
+  // asked for news again after unsubscribing (by "owner", with no form).
+  consent: { text: string; at: number; form: string; by: "form" | "owner" } | null;
   unsubscribedAt: number;
-  // They agreed to news, and haven't unsubscribed since: the latest of the two counts.
+  // They agreed to news, and haven't unsubscribed since (see unsubscribedNow).
   subscribed: boolean;
 };
 
@@ -83,11 +91,12 @@ type Row = {
   consent_ip?: string;
   consent_channel?: string;
   consent_form: string;
+  consent_by: string;
   unsubscribed_at: number;
 };
 
 // The list and the board leave out the hashed address; the export and the file have it.
-const LISTED = "id, email, phone, name, stage, tags, notes, source, first_seen, last_seen, consent_text, consent_at, consent_form, unsubscribed_at";
+const LISTED = "id, email, phone, name, stage, tags, notes, source, first_seen, last_seen, consent_text, consent_at, consent_form, consent_by, unsubscribed_at";
 // How many the list and a search show at once, how many the board shows per stage, and below how
 // many the whole list comes at once (the page then searches and lays out the board itself).
 const SHOWN = 500;
@@ -95,11 +104,26 @@ const PER_STAGE = 100;
 // A reply can't be much over 4.5 MB on the host, so a contact's export stays under 4 MB.
 const EXPORT_BYTES = 3_600_000;
 
+// A box ticked on a form counts only for someone who never unsubscribed. Anyone can send a form with
+// someone else's address, so it can't bring back someone who said no: after an unsubscribe, only
+// the owner can record that they asked for news again (see recordConsent).
+const FORM_AGREES = "excluded.consent_at > consent_at AND unsubscribed_at = 0";
+/**
+ * Whether someone is unsubscribed now: they used their link, and the owner hasn't recorded since
+ * then that they asked for news again. Only the owner's record comes after an unsubscribe, so a
+ * form's agreement after one never counts, including one taken before FORM_AGREES (#114 let a
+ * newer tick win). UNSUBSCRIBED says the same in SQL.
+ */
+const unsubscribedNow = (r: { unsubscribed_at: number; consent_at: number; consent_by: string }) =>
+  Number(r.unsubscribed_at) > 0 && (r.consent_by !== "owner" || Number(r.unsubscribed_at) >= Number(r.consent_at));
+const UNSUBSCRIBED = "unsubscribed_at > 0 AND (consent_by <> 'owner' OR unsubscribed_at >= consent_at)";
+
 /**
  * What a new sighting changes on a contact already on the list: the name and phone fill in only
  * while it has none, the earliest sighting says where they came from, and a newer agreement to news
- * replaces an older one. The owner's own stage, tags and notes never change, an unsubscribe stays,
- * and the owner adding someone who is already there doesn't count as seeing them.
+ * replaces an older one while they've never unsubscribed. The owner's own stage, tags and notes
+ * never change, an unsubscribe stays, and the owner adding someone who is already there doesn't
+ * count as seeing them.
  */
 const MERGE = `
   name = CASE WHEN name = '' THEN excluded.name ELSE name END,
@@ -107,20 +131,68 @@ const MERGE = `
   source = CASE WHEN excluded.first_seen < first_seen THEN excluded.source ELSE source END,
   first_seen = min(first_seen, excluded.first_seen),
   last_seen = CASE WHEN excluded.source = 'owner' THEN last_seen ELSE max(last_seen, excluded.last_seen) END,
-  consent_text = CASE WHEN excluded.consent_at > consent_at THEN excluded.consent_text ELSE consent_text END,
-  consent_ip = CASE WHEN excluded.consent_at > consent_at THEN excluded.consent_ip ELSE consent_ip END,
-  consent_channel = CASE WHEN excluded.consent_at > consent_at THEN excluded.consent_channel ELSE consent_channel END,
-  consent_form = CASE WHEN excluded.consent_at > consent_at THEN excluded.consent_form ELSE consent_form END,
-  consent_at = max(consent_at, excluded.consent_at)`;
+  consent_text = CASE WHEN ${FORM_AGREES} THEN excluded.consent_text ELSE consent_text END,
+  consent_ip = CASE WHEN ${FORM_AGREES} THEN excluded.consent_ip ELSE consent_ip END,
+  consent_channel = CASE WHEN ${FORM_AGREES} THEN excluded.consent_channel ELSE consent_channel END,
+  consent_form = CASE WHEN ${FORM_AGREES} THEN excluded.consent_form ELSE consent_form END,
+  consent_by = CASE WHEN ${FORM_AGREES} THEN '' ELSE consent_by END,
+  consent_at = CASE WHEN ${FORM_AGREES} THEN excluded.consent_at ELSE consent_at END`;
 const COLUMNS = "id, site_slug, email, phone, name, source, first_seen, last_seen, consent_text, consent_at, consent_ip, consent_channel, consent_form";
+/**
+ * Counts the app's contacts when it has no count yet: the first time someone may join them, and
+ * once more after the people it had before are copied in (see fillFrom). From then on the database
+ * keeps the count as people are added and deleted (site_contact_counts in db.ts), so a new contact
+ * checks the cap by reading one row, not by counting the whole list.
+ */
+const counted = (slug: string): InStatement => ({
+  sql: `INSERT INTO site_contact_counts (site_slug, n)
+        SELECT slug, (SELECT COUNT(*) FROM site_contacts WHERE site_slug = ?) FROM sites
+        WHERE slug = ? AND NOT EXISTS (SELECT 1 FROM site_contact_counts WHERE site_slug = ?)
+        ON CONFLICT(site_slug) DO NOTHING`,
+  args: [slug, slug, slug],
+});
 // Room for one more, unless they are on the list already (key is the condition that finds them).
+// counted goes first in the same write, so the count is there; without one there's no room.
 const room = (key: string) =>
-  `(EXISTS (SELECT 1 FROM site_contacts WHERE site_slug = ? AND ${key}) OR (SELECT COUNT(*) FROM site_contacts WHERE site_slug = ?) < ${MAX_CONTACTS})`;
+  `(EXISTS (SELECT 1 FROM site_contacts WHERE site_slug = ? AND ${key}) OR (SELECT n FROM site_contact_counts WHERE site_slug = ?) < ${MAX_CONTACTS})`;
 // The contact with an email address, and the one known by a phone number alone.
 const BY_EMAIL = "email = ? AND email <> ''";
 const ID_BY_EMAIL = `SELECT id FROM site_contacts WHERE site_slug = ? AND ${BY_EMAIL}`;
 const PHONE_ONLY = "email = '' AND phone = ? AND phone <> ''";
 const ID_BY_PHONE = `SELECT id FROM site_contacts WHERE site_slug = ? AND ${PHONE_ONLY}`;
+// An address with a character outside ASCII, which may be another spelling than contacts keep (see
+// cleanEmail): as a member typed it, as Stripe gave it before, or a contact saved before.
+const NOT_ASCII = "email GLOB '*[^ -~]*'";
+/**
+ * The ways an address kept lowercased as a whole (a member's, or a contact #114 kept) may be read:
+ * as it is, and with each "ς" in its domain as "σ". Lowercasing a whole domain makes a Greek "Σ"
+ * before a digit, a hyphen or its end "ς", where cleanEmail, as browsers, reads it as "σ".
+ */
+function spellings(email: string): string[] {
+  const at = email.lastIndexOf("@") + 1;
+  const domain = email.slice(at);
+  return domain.includes("ς") ? [email, email.slice(0, at) + domain.replace(/ς/g, "σ")] : [email];
+}
+
+/**
+ * What finds the app's members (site_users) or orders (site_orders) with a contact's address,
+ * after "site_slug = ? AND": written the same but for the case of A to Z, or in another spelling of
+ * it. A member keeps the address as they typed it to sign in with it, so jo@bäckerei.de is the
+ * member of the contact jo@xn--bckerei-5wa.de. Only rows with a character outside ASCII are read
+ * to check their spelling, through an index of those rows alone, and members are found through the
+ * index of their addresses, so an app whose addresses are all in ASCII reads no more than before.
+ */
+async function withAddress(table: "site_users" | "site_orders", slug: string, email: string): Promise<{ sql: string; args: InValue[] }> {
+  const member = table === "site_users";
+  const key = member ? "id" : "session_id";
+  const kept = cleanEmail(email) || email;
+  const rows = await all<{ k: string; email: string }>(`SELECT ${key} AS k, email FROM ${table} WHERE site_slug = ? AND ${NOT_ASCII}`, [slug]);
+  // A member's address is kept lowercased as a whole (see siteAuth), so it's read both ways.
+  const others = rows.filter((r) => (member ? spellings(r.email) : [r.email]).some((text) => cleanEmail(text) === kept)).map((r) => r.k);
+  // site_users.email is COLLATE NOCASE, so "=" there is lower() without losing the index.
+  const same = member ? "email IN (?, ?)" : "lower(email) IN (?, ?)";
+  return { sql: others.length ? `(${same} OR ${key} IN (${others.map(() => "?").join(", ")}))` : same, args: [email, kept, ...others] };
+}
 
 const hmac = (secret: string, text: string) => createHmac("sha256", secret).update(text);
 
@@ -141,8 +213,8 @@ export const hashedIp = (secret: string, ip: string) => hmac(secret, `ip|${ip}`)
 
 /**
  * What someone agreed to get, when a form says they ticked the news box ({ text } from flashDB.send):
- * kept only when that wording is on the app's page, so made-up wording is never stored. null
- * otherwise; it never stops the message.
+ * kept only when a visitor sees that wording on the app's published page (not just in its code),
+ * so made-up wording is never stored. null otherwise; it never stops the message.
  */
 export async function checkedConsent(slug: string, raw: unknown, ip: string, form: string): Promise<Consent | null> {
   const given = raw && typeof raw === "object" ? (raw as { text?: unknown }).text : undefined;
@@ -162,7 +234,7 @@ export async function checkedConsent(slug: string, raw: unknown, ip: string, for
  * passed as messageId is linked to its contact.
  */
 function contactStatements(slug: string, who: Who, { source, at, consent = null, messageId = "" }: Seen, select = true): InStatement[] {
-  const statements: InStatement[] = [];
+  const statements: InStatement[] = [counted(slug)];
   if (who.email) {
     const agreed: InValue[] = consent ? [consent.text, at, consent.ipHash, "email", consent.form] : ["", 0, "", "", ""];
     statements.push({
@@ -207,12 +279,79 @@ export async function noteContact(slug: string, who: Who, seen: Seen): Promise<s
   return row?.id ?? "";
 }
 
-/** A form's sender, for receiveMessage: who they are from its fields, and what they agreed to. "" when the form had no email or phone. */
+/**
+ * The app's contacts that `which` (SQL) picks whose address reaches the same mailbox as email: the
+ * same address with a +tag, or for Gmail with dots (see emailKey). Only those at that address's
+ * domain are read, and those whose address has a letter outside ASCII: one saved before addresses
+ * were kept in one spelling (see cleanEmail) may write the same domain another way, and is read in
+ * that spelling here, as #114 kept it (see spellings).
+ */
+async function sameMailbox(slug: string, email: string, which: string): Promise<{ id: string; email: string }[]> {
+  const keys = new Set(spellings(email).map(mailbox));
+  const domains = [...new Set([...keys].map((key) => key.slice(key.lastIndexOf("@"))))].flatMap((d) => (d === "@gmail.com" ? [d, "@googlemail.com"] : [d]));
+  const rows = await all<{ id: string; email: string }>(
+    `SELECT id, email FROM site_contacts WHERE site_slug = ? AND ${which}
+     AND (${domains.map(() => "email LIKE ?").join(" OR ")} OR ${NOT_ASCII})`,
+    [slug, ...domains.map((d) => `%${d}`)],
+  );
+  return rows.filter((r) => spellings(r.email).some((text) => keys.has(mailbox(text))));
+}
+// The mailbox that one way of reading an address reaches (see sameMailbox).
+const mailbox = (text: string) => emailKey(cleanEmail(text) || text);
+
+/** Whether someone on the app's list whose address reaches the same mailbox as email has unsubscribed. */
+const mailboxUnsubscribed = async (slug: string, email: string) => (await sameMailbox(slug, email, "unsubscribed_at > 0")).length > 0;
+
+/**
+ * A form's sender, for receiveMessage: who they are from its fields, and what they agreed to. "" when
+ * the form had no email or phone. A box ticked with an address that reaches the mailbox of someone
+ * who unsubscribed counts no more than one ticked with their own address (see FORM_AGREES).
+ */
 export async function noteSender(slug: string, form: string, data: Record<string, unknown>, consent: unknown, ip: string, at: number, messageId: string) {
   const who = contactFromFields(data);
   if (!who) return "";
-  const agreed = who.email && consent ? await checkedConsent(slug, consent, ip, form).catch(() => null) : null;
+  const checked = who.email && consent ? await checkedConsent(slug, consent, ip, form).catch(() => null) : null;
+  const agreed = checked && !(await mailboxUnsubscribed(slug, who.email)) ? checked : null;
   return noteContact(slug, who, { source: `form:${form}`, at, consent: agreed, messageId });
+}
+
+/**
+ * What the app's list needs, once, when the owner opens Contacts: the people it had before are
+ * copied in (contacts_filled 1), then an unsubscribe #114 took reaches the same mailbox's other
+ * contacts (2). A reply that times out carries on from there next time.
+ */
+export async function fillContacts(slug: string): Promise<void> {
+  const site = await one<{ contacts_filled: number }>("SELECT contacts_filled FROM sites WHERE slug = ?", [slug]);
+  if (!site || Number(site.contacts_filled) >= 2) return;
+  if (!Number(site.contacts_filled)) await copyIn(slug);
+  await reachMailboxes(slug);
+  await run("UPDATE sites SET contacts_filled = 2 WHERE slug = ?", [slug]);
+}
+
+/**
+ * #114's unsubscribe changed only the person's own row, so the app's other contacts with the same
+ * mailbox (see sameMailbox) may still read as agreeing. Each of those gets the time of the mailbox's
+ * first unsubscribe, in one write. Nobody who ever unsubscribed changes, so no record of the owner's
+ * is undone (see recordConsent). It reads the app's agreeing contacts once, however many unsubscribed.
+ */
+async function reachMailboxes(slug: string) {
+  const off = await all<{ email: string; unsubscribed_at: number }>(
+    "SELECT email, unsubscribed_at FROM site_contacts WHERE site_slug = ? AND unsubscribed_at > 0 AND email <> '' ORDER BY unsubscribed_at",
+    [slug],
+  );
+  if (!off.length) return;
+  const since = new Map<string, number>();
+  for (const o of off) for (const key of spellings(o.email).map(mailbox)) if (!since.has(key)) since.set(key, Number(o.unsubscribed_at));
+  const agreed = await all<{ id: string; email: string }>(
+    "SELECT id, email FROM site_contacts WHERE site_slug = ? AND consent_at > 0 AND unsubscribed_at = 0 AND email <> ''",
+    [slug],
+  );
+  const stamps: InStatement[] = [];
+  for (const c of agreed) {
+    const at = Math.min(...spellings(c.email).map((text) => since.get(mailbox(text)) ?? Infinity));
+    if (at < Infinity) stamps.push({ sql: "UPDATE site_contacts SET unsubscribed_at = ? WHERE id = ? AND unsubscribed_at = 0", args: [at, c.id] });
+  }
+  if (stamps.length) await (await db()).batch(stamps, "write");
 }
 
 /**
@@ -221,26 +360,40 @@ export async function noteSender(slug: string, form: string, data: Record<string
  * run again, so a reply that times out simply carries on next time. It runs when the owner first
  * opens Contacts, never on a visitor's request. Nobody copied in has agreed to news, which is true.
  */
-export async function fillContacts(slug: string): Promise<void> {
-  const site = await one<{ contacts_filled: number }>("SELECT contacts_filled FROM sites WHERE slug = ?", [slug]);
-  if (!site || Number(site.contacts_filled)) return;
+async function copyIn(slug: string): Promise<void> {
   await fillFrom(
     slug,
     `SELECT lower(trim(email)) AS e, trim(name) AS nm, 'signup' AS src, created_at AS at, id AS k
-     FROM site_users WHERE site_slug = ? AND instr(email, '@') > 1 AND length(email) <= 160`,
+     FROM site_users WHERE site_slug = ? AND instr(email, '@') > 1 AND length(email) <= 160 AND NOT (${NOT_ASCII})`,
   );
   await fillFrom(
     slug,
     `SELECT lower(trim(email)) AS e, trim(name) AS nm, 'order:' || substr(item, 1, 60) AS src, created_at AS at, session_id AS k
-     FROM site_orders WHERE site_slug = ? AND instr(trim(email), '@') > 1 AND length(trim(email)) <= 160`,
+     FROM site_orders WHERE site_slug = ? AND instr(trim(email), '@') > 1 AND length(trim(email)) <= 160 AND NOT (${NOT_ASCII})`,
   );
-  // Messages: who sent each is read from its fields here, 50 messages to a write.
+  // Members and buyers whose address has a character outside ASCII are read here, as messages are,
+  // so they're kept in the spelling contacts keep (see cleanEmail): the contact their messages join.
+  const others = await all<{ email: string; name: string; src: string; at: number }>(
+    `SELECT email, name, 'signup' AS src, created_at AS at FROM site_users WHERE site_slug = ? AND ${NOT_ASCII}
+     UNION ALL
+     SELECT email, name, 'order:' || substr(item, 1, 60), created_at FROM site_orders WHERE site_slug = ? AND ${NOT_ASCII}
+     ORDER BY at LIMIT ${MAX_CONTACTS}`,
+    [slug, slug],
+  );
+  const seen: [Who | null, Seen][] = [];
+  for (const o of others) {
+    const who = cleanContact({ email: o.email, name: o.name });
+    // A member's address is lowercased as a whole (see spellings): the contact their sign-up made
+    // may read a "ς" in its domain as "σ", and is the one they join.
+    const other = o.src === "signup" ? spellings(o.email).map(cleanEmail)[1] : "";
+    if (who && other && (await one("SELECT 1 FROM site_contacts WHERE site_slug = ? AND email = ?", [slug, other]))) who.email = other;
+    seen.push([who, { source: o.src, at: Number(o.at) }]);
+  }
+  // Messages: who sent each is read from its fields here.
   const messages = await all<{ id: string; form: string; data: string; created_at: number }>(
     "SELECT id, form, data, created_at FROM site_messages WHERE site_slug = ? AND contact_id = '' ORDER BY created_at LIMIT 2000",
     [slug],
   );
-  let batch: InStatement[] = [];
-  let count = 0;
   for (const m of messages) {
     let data: unknown = null;
     try {
@@ -249,9 +402,14 @@ export async function fillContacts(slug: string): Promise<void> {
       continue;
     }
     if (!data || typeof data !== "object" || Array.isArray(data)) continue;
-    const who = contactFromFields(data as Record<string, unknown>);
+    seen.push([contactFromFields(data as Record<string, unknown>), { source: `form:${m.form}`, at: Number(m.created_at), messageId: m.id }]);
+  }
+  // 50 people to a write.
+  let batch: InStatement[] = [];
+  let count = 0;
+  for (const [who, sighting] of seen) {
     if (!who) continue;
-    batch.push(...contactStatements(slug, who, { source: `form:${m.form}`, at: Number(m.created_at), messageId: m.id }, false));
+    batch.push(...contactStatements(slug, who, sighting, false));
     if (++count % 50 === 0) {
       await (await db()).batch(batch, "write");
       batch = [];
@@ -282,7 +440,15 @@ async function fillFrom(slug: string, rows: string) {
     WHERE n = 1 AND e ${which} (SELECT email FROM site_contacts WHERE site_slug = ? AND email <> '') ORDER BY first_at ${limit}
     ON CONFLICT(site_slug, email) WHERE email <> '' DO UPDATE SET ${MERGE}`;
   await run(insert("IN", ""), [slug, slug, slug]);
-  await run(insert("NOT IN", `LIMIT max(0, ${MAX_CONTACTS} - (SELECT COUNT(*) FROM site_contacts WHERE site_slug = ?))`), [slug, slug, slug, slug]);
+  // Up to 10,000 people at once: the app's count goes in the same write, rather than being kept up to
+  // date one row at a time, and the next contact counts the list once again (see counted).
+  await (await db()).batch(
+    [
+      { sql: "DELETE FROM site_contact_counts WHERE site_slug = ?", args: [slug] },
+      { sql: insert("NOT IN", `LIMIT max(0, ${MAX_CONTACTS} - (SELECT COUNT(*) FROM site_contacts WHERE site_slug = ?))`), args: [slug, slug, slug, slug] },
+    ],
+    "write",
+  );
 }
 
 const tagsOf = (json: string): string[] => {
@@ -308,9 +474,9 @@ function toContact(r: Row, stages: readonly Stage[]): Contact {
     source: r.source,
     firstSeen: Number(r.first_seen),
     lastSeen: Number(r.last_seen),
-    consent: agreedAt > 0 ? { text: r.consent_text, at: agreedAt, form: r.consent_form } : null,
+    consent: agreedAt > 0 ? { text: r.consent_text, at: agreedAt, form: r.consent_form, by: r.consent_by === "owner" ? "owner" : "form" } : null,
     unsubscribedAt,
-    subscribed: agreedAt > 0 && agreedAt > unsubscribedAt,
+    subscribed: agreedAt > 0 && !unsubscribedNow(r),
   };
 }
 
@@ -418,22 +584,24 @@ export async function contactDetail(slug: string, id: string, base: string, t: T
   const stages = await contactStages(slug, t);
   const row = stages && (await one<Row>(`SELECT ${LISTED} FROM site_contacts WHERE site_slug = ? AND id = ?`, [slug, id]));
   if (!stages || !row) return null;
-  const member = row.email ? await one<{ created_at: number }>("SELECT created_at FROM site_users WHERE site_slug = ? AND email = ?", [slug, row.email]) : null;
+  const members = row.email ? await withAddress("site_users", slug, row.email) : null;
+  const member = members
+    ? await one<{ created_at: number }>(`SELECT created_at FROM site_users WHERE site_slug = ? AND ${members.sql} ORDER BY created_at LIMIT 1`, [slug, ...members.args])
+    : null;
   const messages = await all<{ id: string; form: string; data: string; created_at: number }>(
     "SELECT id, form, data, created_at FROM site_messages WHERE site_slug = ? AND contact_id = ? ORDER BY created_at DESC LIMIT 5",
     [slug, id],
   );
   const messageCount = Number((await one<{ n: number }>("SELECT COUNT(*) AS n FROM site_messages WHERE site_slug = ? AND contact_id = ?", [slug, id]))?.n ?? 0);
   type OrderRow = { session_id: string; item: string; quantity: number; amount: number; currency: string; created_at: number; done_at: number };
-  const orders = row.email
+  const paid = row.email ? await withAddress("site_orders", slug, row.email) : null;
+  const orders = paid
     ? await all<OrderRow>(
-        "SELECT session_id, item, quantity, amount, currency, created_at, done_at FROM site_orders WHERE site_slug = ? AND lower(email) = ? ORDER BY created_at DESC LIMIT 5",
-        [slug, row.email],
+        `SELECT session_id, item, quantity, amount, currency, created_at, done_at FROM site_orders WHERE site_slug = ? AND ${paid.sql} ORDER BY created_at DESC LIMIT 5`,
+        [slug, ...paid.args],
       )
     : [];
-  const orderCount = row.email
-    ? Number((await one<{ n: number }>("SELECT COUNT(*) AS n FROM site_orders WHERE site_slug = ? AND lower(email) = ?", [slug, row.email]))?.n ?? 0)
-    : 0;
+  const orderCount = paid ? Number((await one<{ n: number }>(`SELECT COUNT(*) AS n FROM site_orders WHERE site_slug = ? AND ${paid.sql}`, [slug, ...paid.args]))?.n ?? 0) : 0;
   const samePhone = row.phone
     ? await all<{ id: string; name: string; email: string; phone: string }>(
         "SELECT id, name, email, phone FROM site_contacts WHERE site_slug = ? AND phone = ? AND phone <> '' AND id <> ? ORDER BY last_seen DESC, id LIMIT 10",
@@ -513,6 +681,25 @@ export async function updateContact(
     id,
   ]);
   return r.rowsAffected ? "ok" : "missing";
+}
+
+/**
+ * The owner records that someone who unsubscribed asked them for news again, and how (note: "they
+ * asked at the till", "they replied to my email"). A ticked box on a form can't do this (see
+ * FORM_AGREES), as anyone can type someone else's address. The record says the owner made it, with
+ * their note, and never claims wording the person saw. A later unsubscribe wins again. "bad" for a
+ * note that's empty or too long, or someone who has no email or hasn't unsubscribed.
+ */
+export async function recordConsent(slug: string, id: string, note: unknown): Promise<"ok" | "bad" | "missing"> {
+  const text = typeof note === "string" && note.length <= 2000 ? note.replace(/\s+/g, " ").trim() : "";
+  if (!text || text.length > MAX_CONSENT_NOTE) return "bad";
+  const r = await run(
+    `UPDATE site_contacts SET consent_text = ?, consent_at = max(?, unsubscribed_at + 1), consent_ip = '', consent_channel = 'email', consent_form = '', consent_by = 'owner'
+     WHERE site_slug = ? AND id = ? AND email <> '' AND ${UNSUBSCRIBED}`,
+    [text, now(), slug, id],
+  );
+  if (r.rowsAffected) return "ok";
+  return (await one("SELECT 1 FROM site_contacts WHERE site_slug = ? AND id = ?", [slug, id])) ? "bad" : "missing";
 }
 
 /**
@@ -598,16 +785,17 @@ export async function setStages(slug: string, t: Translate, input: unknown): Pro
 export async function deleteContact(slug: string, id: string): Promise<boolean> {
   const contact = await one<{ email: string }>("SELECT email FROM site_contacts WHERE site_slug = ? AND id = ?", [slug, id]);
   if (!contact) return false;
+  const paid = contact.email ? await withAddress("site_orders", slug, contact.email) : null;
   if (contact.email) {
-    const member = await one<{ id: string }>("SELECT id FROM site_users WHERE site_slug = ? AND email = ?", [slug, contact.email]);
-    if (member) await removeSiteUser(slug, member.id);
+    const members = await withAddress("site_users", slug, contact.email);
+    for (const member of await all<{ id: string }>(`SELECT id FROM site_users WHERE site_slug = ? AND ${members.sql}`, [slug, ...members.args])) {
+      await removeSiteUser(slug, member.id);
+    }
   }
   await (await db()).batch(
     [
       { sql: "DELETE FROM site_messages WHERE site_slug = ? AND contact_id = ?", args: [slug, id] },
-      ...(contact.email
-        ? [{ sql: "UPDATE site_orders SET email = '', name = '', address = '' WHERE site_slug = ? AND lower(email) = ?", args: [slug, contact.email] }]
-        : []),
+      ...(paid ? [{ sql: `UPDATE site_orders SET email = '', name = '', address = '' WHERE site_slug = ? AND ${paid.sql}`, args: [slug, ...paid.args] }] : []),
       { sql: "DELETE FROM site_contacts WHERE site_slug = ? AND id = ?", args: [slug, id] },
     ],
     "write",
@@ -646,10 +834,11 @@ export async function exportContact(slug: string, id: string, base: string, t: T
   if (!stages || !row) return null;
   const site = await one<{ title: string }>("SELECT title FROM sites WHERE slug = ?", [slug]);
   const secret = await siteSecret(slug);
-  const member = row.email
+  const members = row.email ? await withAddress("site_users", slug, row.email) : null;
+  const member = members
     ? await one<{ id: string; email: string; name: string; created_at: number }>(
-        "SELECT id, email, name, created_at FROM site_users WHERE site_slug = ? AND email = ?",
-        [slug, row.email],
+        `SELECT id, email, name, created_at FROM site_users WHERE site_slug = ? AND ${members.sql} ORDER BY created_at LIMIT 1`,
+        [slug, ...members.args],
       )
     : null;
   const agreedAt = Number(row.consent_at);
@@ -667,18 +856,24 @@ export async function exportContact(slug: string, id: string, base: string, t: T
       source: sourceLabel(row.source, t),
       firstSeen: iso(Number(row.first_seen)),
       lastSeen: iso(Number(row.last_seen)),
-      consent: agreedAt
-        ? { text: row.consent_text, at: iso(agreedAt), form: row.consent_form, channel: row.consent_channel, ipHash: row.consent_ip }
-        : null,
+      consent: !agreedAt
+        ? null
+        : row.consent_by === "owner"
+          ? { recordedBy: "owner", note: row.consent_text, at: iso(agreedAt), channel: row.consent_channel }
+          : { text: row.consent_text, at: iso(agreedAt), form: row.consent_form, channel: row.consent_channel, ipHash: row.consent_ip },
       unsubscribedAt: iso(Number(row.unsubscribed_at)),
+      // As the list says it (see unsubscribedNow), so a form's agreement dated after their
+      // unsubscribe (#114 kept those) never reads as them agreeing again.
+      subscribed: agreedAt > 0 && !unsubscribedNow(row),
       unsubscribeLink: unsubLink(base, secret, slug, row),
     },
     member: member ? { email: member.email, name: member.name, joined: iso(Number(member.created_at)) } : null,
   };
-  const orders = row.email
+  const paid = row.email ? await withAddress("site_orders", slug, row.email) : null;
+  const orders = paid
     ? await all<{ item: string; quantity: number; amount: number; currency: string; email: string; name: string; address: string; created_at: number; done_at: number }>(
-        "SELECT item, quantity, amount, currency, email, name, address, created_at, done_at FROM site_orders WHERE site_slug = ? AND lower(email) = ? ORDER BY created_at DESC LIMIT 1000",
-        [slug, row.email],
+        `SELECT item, quantity, amount, currency, email, name, address, created_at, done_at FROM site_orders WHERE site_slug = ? AND ${paid.sql} ORDER BY created_at DESC LIMIT 1000`,
+        [slug, ...paid.args],
       )
     : [];
   out.orders = orders.map((o) => ({
@@ -768,7 +963,7 @@ export async function contactCsv(slug: string, t: Translate, base: string, maxBy
       when(c.lastSeen),
       c.subscribed ? t("Yes") : t("No"),
       when(c.consent?.at ?? 0),
-      c.consent?.text ?? "",
+      c.consent?.by === "owner" ? t("Recorded by you: {note}", { note: c.consent.text }) : (c.consent?.text ?? ""),
       c.consent?.form ?? "",
       c.consent ? (r.consent_ip ?? "") : "",
       when(c.unsubscribedAt),
@@ -789,8 +984,8 @@ const TOKEN = /^([\w-]{16,24})\.([\w-]{22})$/;
 export async function tokenContact(token: string): Promise<{ id: string; slug: string; title: string; unsubscribed: boolean } | null> {
   const parts = TOKEN.exec(token);
   if (!parts) return null;
-  const row = await one<{ id: string; site_slug: string; consent_at: number; unsubscribed_at: number; title: string; contact_secret: string }>(
-    `SELECT c.id, c.site_slug, c.consent_at, c.unsubscribed_at, s.title, s.contact_secret
+  const row = await one<{ id: string; site_slug: string; consent_at: number; consent_by: string; unsubscribed_at: number; title: string; contact_secret: string }>(
+    `SELECT c.id, c.site_slug, c.consent_at, c.consent_by, c.unsubscribed_at, s.title, s.contact_secret
      FROM site_contacts c JOIN sites s ON s.slug = c.site_slug WHERE c.id = ?`,
     [parts[1]],
   );
@@ -798,17 +993,32 @@ export async function tokenContact(token: string): Promise<{ id: string; slug: s
   const expected = Buffer.from(unsubToken(row.contact_secret, row.site_slug, row.id).slice(row.id.length + 1));
   const given = Buffer.from(parts[2]);
   if (expected.length !== given.length || !timingSafeEqual(expected, given)) return null;
-  const unsubscribedAt = Number(row.unsubscribed_at);
-  return { id: row.id, slug: row.site_slug, title: row.title, unsubscribed: unsubscribedAt > 0 && unsubscribedAt >= Number(row.consent_at) };
+  return { id: row.id, slug: row.site_slug, title: row.title, unsubscribed: unsubscribedNow(row) };
 }
 
 /**
- * Someone stops an app's news with their link. The time is kept, and stays: agreeing again later
- * counts from then, and a later unsubscribe is kept again. false for a link that doesn't work.
+ * Someone stops an app's news with their link. The time is kept, and stays: a box ticked on a form
+ * afterwards doesn't undo it (see FORM_AGREES), the owner recording that they asked for news again
+ * counts from then (recordConsent), and a later unsubscribe is kept again. It holds as well for the
+ * app's other contacts with the same mailbox (see sameMailbox), such as one with a +tag or one #114
+ * kept in another spelling, which may have agreed before. Both go in one write, so a try that fails
+ * keeps neither and the link does it all next time. false for a link that doesn't work.
  */
 export async function unsubscribe(token: string): Promise<boolean> {
   const found = await tokenContact(token);
   if (!found) return false;
-  await run("UPDATE site_contacts SET unsubscribed_at = ? WHERE id = ? AND unsubscribed_at <= consent_at", [now(), found.id]);
+  // The link used again changes nothing.
+  if (found.unsubscribed) return true;
+  const at = now();
+  const email = (await one<{ email: string }>("SELECT email FROM site_contacts WHERE id = ?", [found.id]))?.email ?? "";
+  const others = email ? (await sameMailbox(found.slug, email, `NOT (${UNSUBSCRIBED})`)).map((c) => c.id).filter((id) => id !== found.id) : [];
+  const statements: InStatement[] = [{ sql: `UPDATE site_contacts SET unsubscribed_at = ? WHERE id = ? AND NOT (${UNSUBSCRIBED})`, args: [at, found.id] }];
+  if (others.length) {
+    statements.push({
+      sql: `UPDATE site_contacts SET unsubscribed_at = ? WHERE site_slug = ? AND id IN (${others.map(() => "?").join(", ")}) AND NOT (${UNSUBSCRIBED})`,
+      args: [at, found.slug, ...others],
+    });
+  }
+  await (await db()).batch(statements, "write");
   return true;
 }

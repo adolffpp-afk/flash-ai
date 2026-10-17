@@ -12,6 +12,7 @@ import {
   exportContact,
   fillContacts,
   listContacts,
+  recordConsent,
   setStages,
   updateContact,
 } from "@/lib/server/contacts.ts";
@@ -26,16 +27,39 @@ export const dynamic = "force-dynamic";
 // orders). Custom domains can't reach this (see site-host.ts), so every link it makes uses Flash's own address.
 
 const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
 const MAX_BODY = 16 * 1024;
+/**
+ * How many reads each owner gets, far more than going through a list by hand takes: a search reads
+ * the whole list, so does each board or list (it counts every stage), a contact's page reads their
+ * messages and orders, and a download or a contact's export reads all of it. Downloads and exports
+ * count for each app on its own (perApp), so an owner with many apps can download every list in
+ * the same hour; their 20 apps at most still read less than the board allows. Each has the words
+ * to say when it's used up.
+ */
+const READS = {
+  search: { max: 60, window: MINUTE, perApp: false, error: (t: ServerT) => t("Too many searches. Please wait a minute.") },
+  list: { max: 600, window: HOUR, perApp: false, error: (t: ServerT) => t("Too many requests. Try again in an hour.") },
+  contact: { max: 600, window: HOUR, perApp: false, error: (t: ServerT) => t("Too many requests. Try again in an hour.") },
+  csv: { max: 10, window: HOUR, perApp: true, error: (t: ServerT) => t("Too many requests. Try again in an hour.") },
+  export: { max: 20, window: HOUR, perApp: true, error: (t: ServerT) => t("Too many requests. Try again in an hour.") },
+};
 
 type Ctx = RouteContext<"/api/sites/[slug]/contacts">;
 type Owner = { user: User; t: ServerT; slug: string };
 
-/** The signed-in owner of the app, or the answer to send instead. */
+/**
+ * The signed-in owner of the app, or the answer to send instead. A request another site set off is
+ * refused before it counts against the owner's limits (the sign-in cookie comes along when another
+ * site sends their browser to a download): only Flash's own page ("same-origin"), an address typed
+ * in ("none") and browsers too old to say get through.
+ */
 async function owner(request: Request, ctx: Ctx): Promise<Owner | Response> {
   const user = await getUser(request);
   if (!user) return unauthorized();
   const t = await translatorFor(request, user.language);
+  const from = request.headers.get("sec-fetch-site");
+  if (from && from !== "same-origin" && from !== "none") return Response.json({ error: t("Please use Flash's own page.") }, { status: 403 });
   const { slug } = await ctx.params;
   if (!(await ownsSite(user.id, slug))) return Response.json({ error: t("Not found") }, { status: 404 });
   return { user, t, slug };
@@ -73,13 +97,15 @@ export async function GET(request: Request, ctx: Ctx) {
   const { t, slug } = who;
   const params = new URL(request.url).searchParams;
   const q = (params.get("q") ?? "").trim();
-  if (q && (await overLimit(`contacts-search:${who.user.id}`, 60, MINUTE))) {
-    return Response.json({ error: t("Too many searches. Please wait a minute.") }, { status: 429 });
+  const id = params.get("id");
+  const format = params.get("format");
+  const read: keyof typeof READS = format === "csv" ? "csv" : id !== null ? (format === "json" ? "export" : "contact") : q ? "search" : "list";
+  const limit = READS[read];
+  if (await overLimit(`contacts-${read}:${who.user.id}${limit.perApp ? `:${slug}` : ""}`, limit.max, limit.window)) {
+    return Response.json({ error: limit.error(t) }, { status: 429 });
   }
   await fillContacts(slug);
   const base = appUrl(request);
-  const id = params.get("id");
-  const format = params.get("format");
   if (format === "csv") {
     const { csv, included, total } = await contactCsv(slug, t, base);
     return new Response(csv, {
@@ -138,7 +164,10 @@ export async function POST(request: Request, ctx: Ctx) {
   return Response.json({ error }, { status: added.error === "full" ? 409 : 400 });
 }
 
-/** The owner changes a contact: { id, name?, stage?, tags?, notes?, phone? }. */
+/**
+ * The owner changes a contact: { id, name?, stage?, tags?, notes?, phone? }, or records that someone
+ * who unsubscribed asked for news again: { id, askedAgain: how they asked }.
+ */
 export async function PATCH(request: Request, ctx: Ctx) {
   const who = await owner(request, ctx);
   if (who instanceof Response) return who;
@@ -148,7 +177,12 @@ export async function PATCH(request: Request, ctx: Ctx) {
   const body = await bodyOf(request, t("Couldn't save that contact. Please try again."));
   if (body instanceof Response) return body;
   const stages = await contactStages(slug, t);
-  const result = typeof body.id === "string" && stages ? await updateContact(slug, stages, body.id, body) : "missing";
+  const result =
+    typeof body.id !== "string" || !stages
+      ? "missing"
+      : body.askedAgain !== undefined
+        ? await recordConsent(slug, body.id, body.askedAgain)
+        : await updateContact(slug, stages, body.id, body);
   if (result === "ok") return Response.json({ ok: true });
   if (result === "phone") return Response.json({ error: t("That isn't a phone number.") }, { status: 400 });
   if (result === "bad") return Response.json({ error: t("Couldn't save that contact. Please try again.") }, { status: 400 });

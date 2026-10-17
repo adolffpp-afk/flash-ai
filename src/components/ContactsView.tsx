@@ -3,6 +3,7 @@
 import { memo, useCallback, useDeferredValue, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { api, authedFetch } from "@/lib/store";
 import {
+  MAX_CONSENT_NOTE,
   MAX_NAME,
   MAX_NOTES,
   MAX_STAGES,
@@ -34,7 +35,8 @@ type Contact = {
   source: string;
   firstSeen: number;
   lastSeen: number;
-  consent: { text: string; at: number; form: string } | null;
+  // by "owner": the owner recorded that they asked for news again after unsubscribing, and text is their note.
+  consent: { text: string; at: number; form: string; by: "form" | "owner" } | null;
   unsubscribedAt: number;
   subscribed: boolean;
 };
@@ -87,10 +89,13 @@ const chip = "rounded-full border px-2 py-0.5 text-[11px]";
 const textButton = "text-xs text-zinc-300 hover:text-white disabled:opacity-50";
 const primary = "h-10 shrink-0 rounded-lg bg-brand px-4 text-sm font-medium text-on-brand transition hover:brightness-110 disabled:opacity-50";
 
-/** Saves a file the server sent (a CSV or JSON download) under the name it gave, as the tab's account. */
+/** Saves a file the server sent (a CSV or JSON download) under the name it gave, as the tab's account. When it can't, the server's reason (see failedText). */
 async function download(url: string, fallback: string): Promise<{ included: number; total: number }> {
   const res = await authedFetch(url);
-  if (!res.ok) throw new Error();
+  if (!res.ok) {
+    const error = await res.json().then((d: { error?: unknown }) => (typeof d.error === "string" ? d.error : ""), () => "");
+    throw Object.assign(new Error(error), { status: res.status });
+  }
   const name = res.headers.get("content-disposition")?.match(/filename="([^"]+)"/)?.[1] ?? fallback;
   const [included, total] = (res.headers.get("x-flash-truncated") ?? "").split("/").map(Number);
   const href = URL.createObjectURL(await res.blob());
@@ -348,8 +353,8 @@ export function ContactsView({ slug, onCount, onEdited }: { slug: string; onCoun
             })
           : "",
       );
-    } catch {
-      setError(t("Couldn't load the contacts. Please try again."));
+    } catch (err) {
+      setError(failedText(err, t("Couldn't load the contacts. Please try again.")));
     }
   }
 
@@ -629,6 +634,9 @@ function ContactDetails({
   const [copied, setCopied] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
+  // The owner's note on how someone who unsubscribed asked for news again, while they write it (null when closed).
+  const [asked, setAsked] = useState<string | null>(null);
+  const [recording, setRecording] = useState(false);
   // They couldn't be loaded (deleted meanwhile, say): the error shows above, with the way back, and
   // onFailed has a search that found them run again.
   const [failed, setFailed] = useState(false);
@@ -655,10 +663,12 @@ function ContactDetails({
   }, [slug, id, t, onError, onFailed]);
 
   const edited = formChanged(form, savedForm);
-  useUnsaved(edited, onEdited);
+  // A note on how they asked for news again, written but not saved, counts too.
+  const unsaved = edited || Boolean(asked?.trim());
+  useUnsaved(unsaved, onEdited);
   // Leaving with changes not saved asks first, so they're never lost without a word.
   const leave = (go: () => void) => () => {
-    if (!edited || window.confirm(t("Leave without saving your changes?"))) go();
+    if (!unsaved || window.confirm(t("Leave without saving your changes?"))) go();
   };
   const backButton = (
     <button onClick={leave(onBack)} className="text-xs text-zinc-400 hover:text-zinc-100">
@@ -720,8 +730,26 @@ function ContactDetails({
     onError("");
     try {
       await download(`/api/sites/${slug}/contacts?id=${encodeURIComponent(id)}&format=json`, "contact.json");
-    } catch {
-      onError(t("Couldn't load the contacts. Please try again."));
+    } catch (err) {
+      onError(failedText(err, t("Couldn't load the contacts. Please try again.")));
+    }
+  }
+
+  /** Records that someone who unsubscribed asked for news again, with how they asked; the server says when. */
+  async function recordAsked(e: React.FormEvent) {
+    e.preventDefault();
+    setRecording(true);
+    onError("");
+    try {
+      await api(`/api/sites/${slug}/contacts`, { method: "PATCH", json: { id, askedAgain: asked ?? "" } });
+      const d = await api<Detail>(`/api/sites/${slug}/contacts?id=${encodeURIComponent(id)}`);
+      setDetail((shown) => shown && { ...shown, contact: { ...shown.contact, consent: d.contact.consent, subscribed: d.contact.subscribed } });
+      onSaved({ ...c, consent: d.contact.consent, subscribed: d.contact.subscribed });
+      setAsked(null);
+    } catch (err) {
+      onError(failedText(err, t("Couldn't save that contact. Please try again.")));
+    } finally {
+      setRecording(false);
     }
   }
 
@@ -782,7 +810,12 @@ function ContactDetails({
           </p>
         )}
         <div className="mt-2 space-y-1 text-xs">
-          {c.consent ? (
+          {c.consent?.by === "owner" ? (
+            <>
+              <p className="text-zinc-300">{t("You recorded on {date} that they asked for news by email again", { date: dateLabel(c.consent.at, t.locale) })}</p>
+              <p className="break-words text-zinc-500">{t.node("Your note: {note}", { note: <q><bdi>{c.consent.text}</bdi></q> })}</p>
+            </>
+          ) : c.consent ? (
             <>
               <p className="text-zinc-300">{t("Agreed to news by email on {date}", { date: dateLabel(c.consent.at, t.locale) })}</p>
               <p className="break-words text-zinc-500">{t.node("Wording they saw: {text}", { text: <q><bdi>{c.consent.text}</bdi></q> })}</p>
@@ -791,9 +824,47 @@ function ContactDetails({
             <p className="text-zinc-500">{t("Hasn't agreed to news")}</p>
           )}
           {c.unsubscribedAt > 0 && !c.subscribed && (
-            <p className="text-gold-soft">{t("Unsubscribed on {date}: don't send them news or offers.", { date: dateLabel(c.unsubscribedAt, t.locale) })}</p>
+            <>
+              <p className="text-gold-soft">{t("Unsubscribed on {date}: don't send them news or offers.", { date: dateLabel(c.unsubscribedAt, t.locale) })}</p>
+              {c.email && (
+                <p className="text-zinc-500">
+                  {t("A box ticked on a form doesn't undo this, as anyone can type someone's email address. If they ask you themselves to get news again, record it here.")}
+                  {asked === null && (
+                    <>
+                      {" "}
+                      <button onClick={() => setAsked("")} className="text-primary-soft hover:underline">
+                        {t("They asked for news again")}
+                      </button>
+                    </>
+                  )}
+                </p>
+              )}
+            </>
           )}
         </div>
+        {asked !== null && (
+          <form onSubmit={recordAsked} className="mt-3 space-y-3 rounded-xl border border-white/8 bg-white/[0.02] p-3">
+            <label className={field}>
+              {t("How did they ask?")}
+              <input
+                value={asked}
+                onChange={(e) => setAsked(e.target.value)}
+                maxLength={MAX_CONSENT_NOTE}
+                placeholder={t("For example: they asked at the shop")}
+                autoFocus
+                className={`${input} mt-1 w-full`}
+              />
+            </label>
+            <div className="flex items-center gap-4">
+              <button disabled={recording || !asked.trim()} className={primary}>
+                {recording ? t("Saving…") : t("Save")}
+              </button>
+              <button type="button" onClick={() => setAsked(null)} className="text-xs text-zinc-400 hover:text-zinc-100">
+                {t("Cancel")}
+              </button>
+            </div>
+          </form>
+        )}
       </div>
 
       <form onSubmit={save} className="space-y-3 rounded-xl border border-white/8 bg-white/[0.02] p-4">
