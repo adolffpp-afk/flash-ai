@@ -1474,6 +1474,7 @@
  "This device has no voice for the language Flash answers in, so answers are read with another language's voice. Add one in your computer's speech or language settings, then reopen Flash.": "Bu cihazda Flash'ın yanıt verdiği dil için bir ses yok, bu yüzden yanıtlar başka bir dilin sesiyle okunuyor. Bilgisayarının konuşma veya dil ayarlarından bir ses ekle, sonra Flash'ı yeniden aç.",
  "This expired after 30 minutes, so nothing was sent. Ask again if you still want it.": "Bunun süresi 30 dakika sonra doldu, bu yüzden hiçbir şey gönderilmedi. Hâlâ istiyorsan yeniden iste.",
  "This invitation has expired or was already used.": "Bu davetin süresi dolmuş ya da daha önce kullanılmış.",
+ "This invitation is for {email}. Switch to that account to join.": "Bu davet {email} için. Katılmak için o hesaba geç.",
  "This invitation was sent to a different email address. Sign in with that address.": "Bu davet farklı bir e-posta adresine gönderildi. O adresle giriş yap.",
  "This is a programming task.": "Bu bir programlama görevi.",
  "This is document or spreadsheet work.": "Bu bir belge veya tablo işi.",

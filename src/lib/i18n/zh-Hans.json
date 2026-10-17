@@ -1474,6 +1474,7 @@
  "This device has no voice for the language Flash answers in, so answers are read with another language's voice. Add one in your computer's speech or language settings, then reopen Flash.": "此设备没有 Flash 回答所用语言的声音，因此会用其他语言的声音朗读。请在电脑的语音或语言设置中添加一个，然后重新打开 Flash。",
  "This expired after 30 minutes, so nothing was sent. Ask again if you still want it.": "已在 30 分钟后过期，未发送任何内容。如仍需要，请重新提出。",
  "This invitation has expired or was already used.": "此邀请已过期或已被使用。",
+ "This invitation is for {email}. Switch to that account to join.": "此邀请发给 {email}。请切换到该账户加入。",
  "This invitation was sent to a different email address. Sign in with that address.": "此邀请发送到了另一个邮箱地址，请使用该地址登录。",
  "This is a programming task.": "这是一个编程任务。",
  "This is document or spreadsheet work.": "这是文档或电子表格工作。",

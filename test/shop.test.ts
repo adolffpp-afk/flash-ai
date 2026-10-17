@@ -101,7 +101,9 @@ test("a seller connects Stripe, prices items, and buyers pay through Checkout", 
   const created = calls.find((c) => c.path === "/accounts")!;
   assert.equal(created.body.get("controller[fees][payer]"), "account", "the seller pays Stripe's fees, not Flash");
   assert.equal(created.body.get("controller[losses][payments]"), "stripe");
-  assert.equal(calls.find((c) => c.path === "/account_links")!.body.get("return_url"), `${origin}/?apps=1`);
+  // Both name the account, so they open as it in a browser signed in to several.
+  assert.equal(calls.find((c) => c.path === "/account_links")!.body.get("return_url"), `${origin}/?apps=1&as=u1`);
+  assert.equal(calls.find((c) => c.path === "/account_links")!.body.get("refresh_url"), `${origin}/api/payments/link?as=u1`);
 
   // Not ready until Stripe says the account can take charges.
   assert.equal((await shop.sellerStatus("u1")).ready, false);

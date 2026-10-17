@@ -1474,6 +1474,7 @@
  "This device has no voice for the language Flash answers in, so answers are read with another language's voice. Add one in your computer's speech or language settings, then reopen Flash.": "لا يتوفر على هذا الجهاز صوت للغة التي يجيب بها Flash، لذا تُقرأ الإجابات بصوت لغة أخرى. أضف صوتًا من إعدادات الكلام أو اللغة في حاسوبك، ثم أعد فتح Flash.",
  "This expired after 30 minutes, so nothing was sent. Ask again if you still want it.": "انتهت صلاحية هذا بعد 30 دقيقة، لذا لم يُرسَل أي شيء. اطلبه مرة أخرى إن كنت لا تزال تريده.",
  "This invitation has expired or was already used.": "انتهت صلاحية هذه الدعوة أو استُخدمت من قبل.",
+ "This invitation is for {email}. Switch to that account to join.": "هذه الدعوة موجّهة إلى {email}. بدّل إلى ذلك الحساب للانضمام.",
  "This invitation was sent to a different email address. Sign in with that address.": "أُرسلت هذه الدعوة إلى عنوان بريد إلكتروني مختلف. سجّل الدخول بذلك العنوان.",
  "This is a programming task.": "هذه مهمة برمجية.",
  "This is document or spreadsheet work.": "هذا عمل على مستند أو جدول بيانات.",

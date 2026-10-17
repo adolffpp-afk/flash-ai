@@ -1,16 +1,12 @@
 import {
   ACCOUNT_HEADER,
-  ACCOUNTS_COOKIE,
-  ACCOUNTS_COOKIE_HTTP,
-  SESSION_COOKIE,
   accountsCookie,
   clearSessionCookie,
   endSession,
   fromOwnPage,
+  heldTokens,
   isSecure,
   jarSessions,
-  parseAccounts,
-  readCookie,
   removeFromJar,
   resolveSession,
 } from "@/lib/server/auth.ts";
@@ -37,11 +33,7 @@ export async function POST(request: Request) {
 
   if (body.all === true) {
     // Every session this browser holds, live or not; the accounts' other devices stay signed in.
-    const tokens = new Set(parseAccounts(readCookie(request, secure ? ACCOUNTS_COOKIE : ACCOUNTS_COOKIE_HTTP)));
-    const def = readCookie(request, SESSION_COOKIE);
-    if (def) tokens.add(def);
-    for (const e of jar.entries) tokens.add(e.token);
-    const hashes = [...tokens].map((token) => sha256(token));
+    const hashes = heldTokens(request).map((token) => sha256(token));
     if (hashes.length) await run(`DELETE FROM sessions WHERE token_hash IN (${hashes.map(() => "?").join(", ")})`, hashes);
     headers.append("Set-Cookie", clearSessionCookie());
     headers.append("Set-Cookie", accountsCookie([], secure));

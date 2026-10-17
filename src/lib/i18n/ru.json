@@ -1474,6 +1474,7 @@
  "This device has no voice for the language Flash answers in, so answers are read with another language's voice. Add one in your computer's speech or language settings, then reopen Flash.": "На этом устройстве нет голоса для языка, на котором отвечает Flash, поэтому ответы читаются голосом другого языка. Добавьте голос в настройках речи или языка на компьютере и снова откройте Flash.",
  "This expired after 30 minutes, so nothing was sent. Ask again if you still want it.": "Срок истёк через 30 минут, поэтому ничего не отправлено. Попросите снова, если это ещё нужно.",
  "This invitation has expired or was already used.": "Срок действия приглашения истёк, или оно уже использовано.",
+ "This invitation is for {email}. Switch to that account to join.": "Это приглашение для {email}. Переключитесь на этот аккаунт, чтобы присоединиться.",
  "This invitation was sent to a different email address. Sign in with that address.": "Это приглашение отправлено на другой адрес. Войдите с этим адресом.",
  "This is a programming task.": "Это задача по программированию.",
  "This is document or spreadsheet work.": "Это работа с документами или таблицами.",

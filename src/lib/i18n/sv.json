@@ -1474,6 +1474,7 @@
  "This device has no voice for the language Flash answers in, so answers are read with another language's voice. Add one in your computer's speech or language settings, then reopen Flash.": "Enheten har ingen röst för språket som Flash svarar på, så svaren läses upp med en röst för ett annat språk. Lägg till en röst i datorns tal- eller språkinställningar och öppna sedan Flash igen.",
  "This expired after 30 minutes, so nothing was sent. Ask again if you still want it.": "Det här gick ut efter 30 minuter, så inget skickades. Fråga igen om du fortfarande vill det.",
  "This invitation has expired or was already used.": "Inbjudan har gått ut eller redan använts.",
+ "This invitation is for {email}. Switch to that account to join.": "Den här inbjudan är till {email}. Byt till det kontot för att gå med.",
  "This invitation was sent to a different email address. Sign in with that address.": "Inbjudan skickades till en annan e-postadress. Logga in med den adressen.",
  "This is a programming task.": "Det här är en programmeringsuppgift.",
  "This is document or spreadsheet work.": "Det här är arbete med dokument eller kalkylblad.",

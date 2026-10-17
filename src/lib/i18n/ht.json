@@ -1474,6 +1474,7 @@
  "This device has no voice for the language Flash answers in, so answers are read with another language's voice. Add one in your computer's speech or language settings, then reopen Flash.": "Aparèy sa a pa gen vwa pou lang Flash reponn nan, kidonk repons yo li ak vwa yon lòt lang. Ajoute youn nan paramèt vwa oswa lang òdinatè ou, epi relouvri Flash.",
  "This expired after 30 minutes, so nothing was sent. Ask again if you still want it.": "Sa a te ekspire apre 30 minit, kidonk anyen pa t voye. Mande ankò si ou toujou vle l.",
  "This invitation has expired or was already used.": "Envitasyon sa a ekspire oswa li deja sèvi.",
+ "This invitation is for {email}. Switch to that account to join.": "Envitasyon sa a se pou {email}. Pase nan kont sa a pou w ka antre nan ekip la.",
  "This invitation was sent to a different email address. Sign in with that address.": "Envitasyon sa a te voye bay yon lòt adrès imèl. Konekte ak adrès sa a.",
  "This is a programming task.": "Sa a se yon travay pwogramasyon.",
  "This is document or spreadsheet work.": "Sa a se travay dokiman oswa tablo kalkil.",

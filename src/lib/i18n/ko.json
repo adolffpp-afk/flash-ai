@@ -1474,6 +1474,7 @@
  "This device has no voice for the language Flash answers in, so answers are read with another language's voice. Add one in your computer's speech or language settings, then reopen Flash.": "이 기기에는 Flash가 답하는 언어의 목소리가 없어서 다른 언어의 목소리로 읽어요. 컴퓨터의 음성 또는 언어 설정에서 목소리를 추가한 다음 Flash를 다시 여세요.",
  "This expired after 30 minutes, so nothing was sent. Ask again if you still want it.": "30분이 지나 만료되어 아무것도 보내지 않았어요. 아직 필요하면 다시 요청하세요.",
  "This invitation has expired or was already used.": "초대가 만료됐거나 이미 사용됐어요.",
+ "This invitation is for {email}. Switch to that account to join.": "이 초대는 {email} 계정용이에요. 참여하려면 그 계정으로 전환하세요.",
  "This invitation was sent to a different email address. Sign in with that address.": "이 초대는 다른 이메일 주소로 보내졌어요. 해당 주소로 로그인하세요.",
  "This is a programming task.": "프로그래밍 작업이에요.",
  "This is document or spreadsheet work.": "문서 또는 스프레드시트 작업이에요.",

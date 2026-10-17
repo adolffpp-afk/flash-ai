@@ -1474,6 +1474,7 @@
  "This device has no voice for the language Flash answers in, so answers are read with another language's voice. Add one in your computer's speech or language settings, then reopen Flash.": "Kifaa hiki hakina sauti ya lugha ambayo Flash inajibu nayo, kwa hiyo majibu yanasomwa kwa sauti ya lugha nyingine. Ongeza sauti kwenye mipangilio ya matamshi au lugha ya kompyuta yako, kisha ufungue Flash upya.",
  "This expired after 30 minutes, so nothing was sent. Ask again if you still want it.": "Muda wa hili uliisha baada ya dakika 30, kwa hivyo hakuna kilichotumwa. Omba tena kama bado unalitaka.",
  "This invitation has expired or was already used.": "Mwaliko huu umeisha muda au umeshatumika.",
+ "This invitation is for {email}. Switch to that account to join.": "Mwaliko huu ni wa {email}. Hamia akaunti hiyo ili kujiunga.",
  "This invitation was sent to a different email address. Sign in with that address.": "Mwaliko huu ulitumwa kwa anwani nyingine ya barua pepe. Ingia kwa anwani hiyo.",
  "This is a programming task.": "Hii ni kazi ya uandishi wa programu.",
  "This is document or spreadsheet work.": "Hii ni kazi ya hati au lahajedwali.",

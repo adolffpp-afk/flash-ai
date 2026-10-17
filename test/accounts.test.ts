@@ -19,6 +19,14 @@ delete process.env.VERCEL_ENV;
 process.env.CONNECTOR_KEYS = JSON.stringify({ v1: randomBytes(32).toString("base64") });
 process.env.GOOGLE_CLIENT_ID = "gid";
 process.env.GOOGLE_CLIENT_SECRET = "gsecret";
+// Connecting GitHub and Google Drive is set up, though nothing here reaches either.
+process.env.GITHUB_APP_CLIENT_ID = "gh-client";
+process.env.GITHUB_APP_CLIENT_SECRET = "gh-secret";
+process.env.GITHUB_APP_SLUG = "flash-test";
+process.env.GOOGLE_CONNECT_CLIENT_ID = "gc-client";
+process.env.GOOGLE_CONNECT_CLIENT_SECRET = "gc-secret";
+process.env.GOOGLE_PICKER_API_KEY = "picker";
+process.env.GOOGLE_CONNECT_PROJECT_NUMBER = "123456";
 
 const auth = await import("../src/lib/server/auth.ts");
 const { all, one, run } = await import("../src/lib/server/db.ts");
@@ -40,6 +48,20 @@ const switchRoute = await import("../src/app/api/auth/switch/route.ts");
 const accountsRoute = await import("../src/app/api/auth/accounts/route.ts");
 const logoutRoute = await import("../src/app/api/auth/logout/route.ts");
 const siteOwner = await import("../src/lib/server/site-owner.ts");
+const consentRoute = await import("../src/app/api/oauth/authorize/route.ts");
+const verifyRoute = await import("../src/app/api/auth/verify/route.ts");
+const acceptRoute = await import("../src/app/api/team/accept/route.ts");
+const mcpCallback = await import("../src/app/api/connect/mcp/callback/route.ts");
+const githubCallback = await import("../src/app/api/connect/github/callback/route.ts");
+const googleCallback = await import("../src/app/api/connect/google/callback/route.ts");
+const fileRoute = await import("../src/app/api/files/[id]/route.ts");
+const pageRoute = await import("../src/app/p/[slug]/route.ts");
+const payLinkRoute = await import("../src/app/api/payments/link/route.ts");
+const ownerRoute = await import("../src/app/api/sites/[slug]/owner/route.ts");
+const { registerClient } = await import("../src/lib/server/connector.ts");
+const { sendVerification } = await import("../src/lib/server/account.ts");
+const { receiveMessage } = await import("../src/lib/server/inbox.ts");
+const { afterwards } = await import("./support/next-server.mjs");
 const { createSignInLink, providerAccountId } = await import("../src/lib/server/signin.ts");
 const { referralCode } = await import("../src/lib/server/referrals.ts");
 
@@ -715,4 +737,282 @@ test("a browser with one account logs out exactly as before, even when its sessi
   assert.equal(pinned.status, 200);
   assert.deepEqual(pinned.headers.getSetCookie(), [auth.clearSessionCookie()]);
   assert.equal(await rows("sessions", a), 0);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Links and flows that belong to one account
+
+/** The "Connect to Flash" page's answer, as its form posts it. */
+function consent(cookie: string, fields: Record<string, string>) {
+  return consentRoute.POST(
+    new Request(`${ORIGIN}/api/oauth/authorize`, {
+      method: "POST",
+      headers: { cookie, origin: ORIGIN, "sec-fetch-site": "same-origin", "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(fields),
+    }),
+  );
+}
+
+test("Connect to Flash connects the account the page showed, and nothing when the accounts here changed", async () => {
+  const a = await account("cna");
+  const b = await account("cnb");
+  const c = await account("cnc");
+  await session(c);
+  const app = "https://claude.ai/api/mcp/auth_callback";
+  const reg = await registerClient({ client_name: "Claude", redirect_uris: [app] });
+  assert.ok(!("error" in reg));
+  const asked = { client_id: reg.client.id, redirect_uri: app, response_type: "code", code_challenge: "c".repeat(43), code_challenge_method: "S256", state: "st" };
+  const { cookie } = await browser(a, b);
+  const codes = (id: string) => count("SELECT COUNT(*) AS n FROM oauth_codes WHERE user_id = ?", [id]);
+
+  const allowed = await consent(cookie, { ...asked, account: a, decision: "allow" });
+  assert.equal(allowed.status, 303);
+  const to = new URL(allowed.headers.get("location")!);
+  assert.equal(`${to.origin}${to.pathname}`, app);
+  assert.ok(to.searchParams.get("code"));
+  assert.deepEqual([await codes(a), await codes(b)], [1, 0], "the shown account, not the default");
+
+  for (const fields of [{ ...asked, account: c, decision: "allow" }, { ...asked, account: "bad id!", decision: "allow" }, { ...asked, decision: "allow" }]) {
+    const res = await consent(cookie, fields);
+    assert.equal(res.status, 303);
+    const back = new URL(res.headers.get("location")!, ORIGIN);
+    assert.equal(back.pathname, "/oauth/authorize");
+    assert.equal(back.searchParams.get("changed"), "1");
+    assert.equal(back.searchParams.get("account"), null);
+    assert.equal(back.searchParams.get("decision"), null);
+    assert.equal(back.searchParams.get("client_id"), reg.client.id);
+  }
+  assert.deepEqual([await codes(a), await codes(b), await codes(c)], [1, 0, 0], "no code for anyone");
+
+  // A page from before accounts could be switched, in a browser with one account: as before.
+  const solo = await session(c);
+  const legacy = await consent(`flash_session=${solo}`, { ...asked, decision: "allow" });
+  assert.ok(new URL(legacy.headers.get("location")!).searchParams.get("code"));
+  assert.equal(await codes(c), 1);
+});
+
+test("a confirmation link confirms its account when it is any account signed in here, and opens Flash as it", async () => {
+  const a = await account("vfa");
+  const b = await account("vfb");
+  await run("UPDATE users SET verified_at = 0 WHERE id = ?", [b]);
+  const { cookie } = await browser(b, a);
+  const link = (await sendVerification({ id: b, email: `${b}@x.io` }, ORIGIN))!;
+  const res = await verifyRoute.GET(req(new URL(link).pathname + new URL(link).search, { cookie }));
+  assert.equal(res.status, 303);
+  assert.equal(res.headers.get("location"), `${ORIGIN}/?verified=1&as=${b}`);
+  assert.ok(Number((await one<{ v: number }>("SELECT verified_at AS v FROM users WHERE id = ?", [b]))!.v) > 0);
+  const elsewhere = await verifyRoute.GET(req(new URL(link).pathname + new URL(link).search, { cookie: (await browser(a)).cookie }));
+  assert.equal(elsewhere.headers.get("location"), `${ORIGIN}/?verified=invalid`, "used once");
+});
+
+test("an invitation for another account signed in here asks to switch, and is kept for it", async () => {
+  const owner = await account("tio");
+  const a = await account("tia");
+  const b = await account("tib");
+  await run("INSERT INTO teams (id, owner_id, created_at) VALUES ('team_ti', ?, 0)", [owner]);
+  const token = randomId(32);
+  await run("INSERT INTO team_invites (id, token_hash, team_id, email, email_key, expires_at, created_at) VALUES ('inv_ti', ?, 'team_ti', ?, ?, ?, 0)", [sha256(token), `${b}@x.io`, `${b}@x.io`, Date.now() + 86_400_000]);
+  const { cookie } = await browser(b, a);
+  const res = await acceptRoute.POST(req("/api/team/accept", { cookie, account: a, json: { token } }));
+  assert.equal(res.status, 409);
+  const body = (await res.json()) as { code: string; forAccount: { id: string; email: string }; error: string };
+  assert.equal(body.code, "other_account");
+  assert.deepEqual(body.forAccount, { id: b, email: `${b}@x.io` });
+  assert.match(body.error, /Switch to that account to join/);
+  assert.equal(await count("SELECT COUNT(*) AS n FROM team_invites WHERE id = 'inv_ti'"), 1, "the invitation is still there");
+  assert.equal(await count("SELECT COUNT(*) AS n FROM team_members"), 0);
+  // For an address no account here has: the usual answer.
+  const stranger = await acceptRoute.POST(req("/api/team/accept", { cookie: (await browser(a)).cookie, json: { token } }));
+  assert.equal(stranger.status, 403);
+});
+
+/** A connector sign-in under way for the user, as its start leaves it: the state it went out with. */
+async function flow(userId: string, provider: string, endpoints = "{}"): Promise<string> {
+  const state = randomId(24);
+  await run(
+    `INSERT INTO connect_flows (state_hash, user_id, enc_verifier, provider, issuer, resource, client_reg_id, redirect_uri, endpoints_json, created_at, expires_at)
+     VALUES (?, ?, 'v', ?, 'https://auth.example', 'https://mcp.example', 'reg', ?, ?, ?, ?)`,
+    [sha256(state), userId, provider, `${ORIGIN}/api/connect/x/callback`, endpoints, Date.now(), Date.now() + 600_000],
+  );
+  return state;
+}
+const flowLeft = async (state: string) => count("SELECT COUNT(*) AS n FROM connect_flows WHERE state_hash = ?", [sha256(state)]);
+const outcomeOf = (res: Response) => {
+  const to = new URL(res.headers.get("location")!);
+  return { outcome: to.searchParams.get("connect"), as: to.searchParams.get("as") };
+};
+
+test("a connector's sign-in finishes for the account that started it, whichever is the default", async () => {
+  const a = await account("cfa");
+  const b = await account("cfb");
+  const c = await account("cfc");
+  await session(c);
+  const { cookie } = await browser(a, b);
+  // The person said no at the service: the flow is taken (so it was found for its account) and nothing kept.
+  const mine = await flow(a, "notion");
+  assert.deepEqual(outcomeOf(await mcpCallback.GET(req(`/api/connect/mcp/callback?state=${mine}&error=access_denied`, { cookie }))), { outcome: "cancelled", as: a });
+  assert.equal(await flowLeft(mine), 0);
+  const theirs = await flow(c, "notion");
+  assert.deepEqual(outcomeOf(await mcpCallback.GET(req(`/api/connect/mcp/callback?state=${theirs}&error=access_denied`, { cookie }))), { outcome: "expired", as: null });
+  assert.equal(await flowLeft(theirs), 1, "nobody here can take another account's flow");
+  // A GitHub or Google flow is only ever taken by its own callback.
+  const gh = await flow(a, "github", JSON.stringify({ github: "authorize" }));
+  assert.equal(outcomeOf(await mcpCallback.GET(req(`/api/connect/mcp/callback?state=${gh}&error=access_denied`, { cookie }))).outcome, "expired");
+  assert.equal(await flowLeft(gh), 1);
+  // One account in the browser: the address back is as before.
+  const solo = await flow(c, "notion");
+  assert.deepEqual(outcomeOf(await mcpCallback.GET(req(`/api/connect/mcp/callback?state=${solo}&error=access_denied`, { cookie: (await browser(c)).cookie }))), { outcome: "cancelled", as: null });
+});
+
+test("GitHub's sign-in and installation, and Google Drive's sign-in, finish for the account that started them", async () => {
+  const a = await account("gfa");
+  const b = await account("gfb");
+  const c = await account("gfc");
+  await session(c);
+  const { cookie } = await browser(a, b);
+  const step = await flow(a, "github", JSON.stringify({ github: "authorize" }));
+  assert.deepEqual(outcomeOf(await githubCallback.GET(req(`/api/connect/github/callback?state=${step}&error=access_denied`, { cookie }))), { outcome: "cancelled", as: a });
+  assert.equal(await flowLeft(step), 0);
+  // The redirect after an installation carries no state: the newest installation any account here started.
+  const older = await flow(b, "github", JSON.stringify({ github: "install" }));
+  await run("UPDATE connect_flows SET created_at = created_at - 60000 WHERE state_hash = ?", [sha256(older)]);
+  const install = await flow(a, "github", JSON.stringify({ github: "install" }));
+  const theirs = await flow(c, "github", JSON.stringify({ github: "install" }));
+  await run("UPDATE connect_flows SET created_at = created_at + 60000 WHERE state_hash = ?", [sha256(theirs)]);
+  assert.deepEqual(outcomeOf(await githubCallback.GET(req("/api/connect/github/callback?installation_id=42&setup_action=install&error=access_denied", { cookie }))), { outcome: "cancelled", as: a });
+  assert.deepEqual([await flowLeft(install), await flowLeft(older), await flowLeft(theirs)], [0, 1, 1], "only that one is taken");
+  const cState = await flow(c, "github", JSON.stringify({ github: "authorize" }));
+  assert.equal(outcomeOf(await githubCallback.GET(req(`/api/connect/github/callback?state=${cState}&error=access_denied`, { cookie }))).outcome, "expired");
+  assert.equal(await flowLeft(cState), 1);
+
+  const drive = await flow(a, "google-drive");
+  assert.deepEqual(outcomeOf(await googleCallback.GET(req(`/api/connect/google/callback?state=${drive}&error=access_denied`, { cookie }))), { outcome: "cancelled", as: a });
+  assert.equal(await flowLeft(drive), 0);
+  const cDrive = await flow(c, "google-drive");
+  assert.equal(outcomeOf(await googleCallback.GET(req(`/api/connect/google/callback?state=${cDrive}&error=access_denied`, { cookie }))).outcome, "expired");
+  assert.equal(await flowLeft(cDrive), 1);
+});
+
+test("a file of any account signed in here loads, but only the tab's own account deletes one", async () => {
+  const a = await account("fia");
+  const b = await account("fib");
+  const c = await account("fic");
+  await run("INSERT INTO files (id, user_id, mime, name, data, created_at) VALUES ('file_b', ?, 'image/png', 'b.png', ?, 0)", [b, Buffer.from("png")]);
+  await run("INSERT INTO files (id, user_id, mime, name, data, created_at) VALUES ('file_c', ?, 'image/png', 'c.png', ?, 0)", [c, Buffer.from("png")]);
+  const { cookie } = await browser(b, a);
+  const get = (id: string, account?: string, cookieOf = cookie) => fileRoute.GET(req(`/api/files/${id}`, { cookie: cookieOf, account }), ctx({ id }));
+  assert.equal((await get("file_b", a)).status, 200);
+  assert.equal((await get("file_b")).status, 200);
+  assert.equal((await get("file_c", a)).status, 404, "not another browser's account");
+  assert.equal((await get("file_b", undefined, "")).status, 401);
+  const del = (account: string) => fileRoute.DELETE(req("/api/files/file_b", { method: "DELETE", cookie, account }), ctx({ id: "file_b" }));
+  assert.equal((await del(a)).status, 404);
+  assert.equal((await fileRoute.DELETE(req("/api/files/file_b", { method: "DELETE", cookie }), ctx({ id: "file_b" }))).status, 401);
+  assert.equal(await count("SELECT COUNT(*) AS n FROM files WHERE id = 'file_b'"), 1);
+  assert.equal((await del(b)).status, 200);
+});
+
+test("an app's owner looking at it isn't counted as a visitor, whichever account here is the default", async () => {
+  const a = await account("pva");
+  const b = await account("pvb");
+  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES ('pv-b', ?, 'B', '<p>b</p>', 0, 0)", [b]);
+  const views = async () => count("SELECT COALESCE(SUM(views), 0) AS n FROM site_visits WHERE site_slug = 'pv-b'");
+  const look = async (cookie: string) => {
+    const res = await pageRoute.GET(req("/p/pv-b", { cookie, headers: { "user-agent": "Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0" } }), ctx({ slug: "pv-b" }));
+    assert.equal(res.status, 200);
+    await afterwards();
+  };
+  await look((await browser(b, a)).cookie);
+  assert.equal(await views(), 0, "the owner, signed in here though not the default");
+  await look((await browser(a)).cookie);
+  assert.equal(await views(), 1);
+});
+
+test("Stripe's seller sign-up link opens for the account it was made for, and never for another", async () => {
+  const a = await account("sla");
+  const b = await account("slb");
+  const c = await account("slc");
+  await session(c);
+  await run("INSERT INTO seller_accounts (user_id, stripe_account, country, currency, ready, created_at) VALUES (?, 'acct_b', 'CA', 'cad', 0, 0)", [b]);
+  const saved = { key: process.env.STRIPE_SECRET_KEY, admins: process.env.FLASH_ADMIN_EMAILS, fetch: globalThis.fetch };
+  process.env.STRIPE_SECRET_KEY = "rk_test";
+  process.env.FLASH_ADMIN_EMAILS = `${b}@x.io`;
+  const links: URLSearchParams[] = [];
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(String(input));
+    if (url.pathname === "/v1/account_links") {
+      links.push(new URLSearchParams(String(init?.body ?? "")));
+      return Response.json({ url: "https://connect.stripe.com/setup/b" });
+    }
+    return Response.json({ error: { message: "unexpected" } }, { status: 400 });
+  }) as typeof fetch;
+  try {
+    const { cookie } = await browser(b, a);
+    const mine = await payLinkRoute.GET(req("/api/payments/link", { cookie, as: b }));
+    assert.equal(mine.status, 303);
+    assert.equal(mine.headers.get("location"), "https://connect.stripe.com/setup/b");
+    assert.equal(mine.headers.get("cache-control"), "no-store");
+    assert.equal(links.length, 1);
+    assert.equal(links[0].get("account"), "acct_b");
+    assert.equal(links[0].get("refresh_url"), `${ORIGIN}/api/payments/link?as=${b}`);
+    assert.equal(links[0].get("return_url"), `${ORIGIN}/?apps=1&as=${b}`);
+    const other = await payLinkRoute.GET(req("/api/payments/link", { cookie, as: c }));
+    assert.equal(other.status, 303);
+    assert.equal(other.headers.get("location"), `${ORIGIN}/?apps=1&as=${c}`);
+    assert.equal(links.length, 1, "no sign-up link for an account not signed in here");
+  } finally {
+    globalThis.fetch = saved.fetch;
+    if (saved.key === undefined) delete process.env.STRIPE_SECRET_KEY;
+    else process.env.STRIPE_SECRET_KEY = saved.key;
+    if (saved.admins === undefined) delete process.env.FLASH_ADMIN_EMAILS;
+    else process.env.FLASH_ADMIN_EMAILS = saved.admins;
+  }
+});
+
+test("an app's message email opens Flash as the app's owner", async () => {
+  const b = await account("emb");
+  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES ('em-b', ?, 'B', '<p>b</p>', 0, 0)", [b]);
+  const saved = { key: process.env.RESEND_API_KEY, fetch: globalThis.fetch };
+  process.env.RESEND_API_KEY = "re_test";
+  const sent: { text: string; html: string }[] = [];
+  globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+    sent.push(JSON.parse(String(init?.body)) as { text: string; html: string });
+    return Response.json({ id: "e" });
+  }) as typeof fetch;
+  try {
+    assert.deepEqual(await receiveMessage("em-b", { form: "contact", data: { name: "Ana" } }, "10.1.1.1", ORIGIN), { ok: true });
+    assert.equal(sent.length, 1);
+    assert.ok(sent[0].text.includes(`${ORIGIN}/?apps=1&as=${b}`), sent[0].text);
+  } finally {
+    globalThis.fetch = saved.fetch;
+    if (saved.key === undefined) delete process.env.RESEND_API_KEY;
+    else process.env.RESEND_API_KEY = saved.key;
+  }
+});
+
+test("Open as owner binds owner mode to the tab's account's own session", async () => {
+  const a = await account("oma");
+  const b = await account("omb");
+  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES ('om-b', ?, 'B', '<p>b</p>', 0, 0)", [b]);
+  const { cookie, tokens } = await browser(b, a);
+  const res = await ownerRoute.POST(req("/api/sites/om-b/owner", { cookie, account: b, json: {} }), ctx({ slug: "om-b" }));
+  assert.equal(res.status, 200);
+  const row = (await one<{ session_hash: string; user_id: string }>("SELECT session_hash, user_id FROM site_owner_codes WHERE site_slug = 'om-b'"))!;
+  assert.deepEqual(row, { session_hash: sha256(tokens[0]), user_id: b }, "b's session, not the default's");
+  assert.equal((await ownerRoute.POST(req("/api/sites/om-b/owner", { cookie, json: {} }), ctx({ slug: "om-b" }))).status, 401, "a change names the tab's account");
+});
+
+// ---------------------------------------------------------------------------------------------
+// Source scans
+
+test("only auth.ts reads the session cookie itself", async () => {
+  const { readdir, readFile } = await import("node:fs/promises");
+  const root = new URL("../src/", import.meta.url);
+  const found: string[] = [];
+  for (const entry of await readdir(root, { recursive: true })) {
+    if (!/\.(ts|tsx)$/.test(entry) || entry === "lib/server/auth.ts") continue;
+    const text = await readFile(new URL(entry, root), "utf8");
+    if (/readCookie\([^)]*SESSION_COOKIE|\.get\(\s*SESSION_COOKIE|["']flash_session["']/.test(text)) found.push(entry);
+  }
+  assert.deepEqual(found, []);
 });

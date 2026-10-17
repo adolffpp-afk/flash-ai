@@ -1474,6 +1474,7 @@
  "This device has no voice for the language Flash answers in, so answers are read with another language's voice. Add one in your computer's speech or language settings, then reopen Flash.": "Thiết bị này không có giọng đọc cho ngôn ngữ Flash dùng để trả lời, nên câu trả lời được đọc bằng giọng của ngôn ngữ khác. Hãy thêm giọng trong phần cài đặt giọng nói hoặc ngôn ngữ của máy tính, rồi mở lại Flash.",
  "This expired after 30 minutes, so nothing was sent. Ask again if you still want it.": "Yêu cầu này đã hết hạn sau 30 phút nên không có gì được gửi. Hãy hỏi lại nếu bạn vẫn muốn.",
  "This invitation has expired or was already used.": "Lời mời này đã hết hạn hoặc đã được dùng.",
+ "This invitation is for {email}. Switch to that account to join.": "Lời mời này dành cho {email}. Hãy chuyển sang tài khoản đó để tham gia.",
  "This invitation was sent to a different email address. Sign in with that address.": "Lời mời này được gửi đến một địa chỉ email khác. Hãy đăng nhập bằng địa chỉ đó.",
  "This is a programming task.": "Đây là việc lập trình.",
  "This is document or spreadsheet work.": "Đây là việc về tài liệu hoặc bảng tính.",

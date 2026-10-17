@@ -1474,6 +1474,7 @@
  "This device has no voice for the language Flash answers in, so answers are read with another language's voice. Add one in your computer's speech or language settings, then reopen Flash.": "อุปกรณ์นี้ไม่มีเสียงสำหรับภาษาที่ Flash ใช้ตอบ คำตอบจึงถูกอ่านด้วยเสียงของภาษาอื่น เพิ่มเสียงในการตั้งค่าเสียงพูดหรือภาษาของคอมพิวเตอร์ แล้วเปิด Flash ใหม่",
  "This expired after 30 minutes, so nothing was sent. Ask again if you still want it.": "รายการนี้หมดอายุหลังจาก 30 นาที จึงไม่มีอะไรถูกส่ง ขอใหม่อีกครั้งหากยังต้องการ",
  "This invitation has expired or was already used.": "คำเชิญนี้หมดอายุหรือถูกใช้ไปแล้ว",
+ "This invitation is for {email}. Switch to that account to join.": "คำเชิญนี้สำหรับ {email} สลับไปที่บัญชีนั้นเพื่อเข้าร่วม",
  "This invitation was sent to a different email address. Sign in with that address.": "คำเชิญนี้ส่งไปยังอีเมลอื่น ลงชื่อเข้าใช้ด้วยอีเมลนั้น",
  "This is a programming task.": "นี่คืองานเขียนโปรแกรม",
  "This is document or spreadsheet work.": "นี่คืองานเอกสารหรือสเปรดชีต",

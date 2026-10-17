@@ -43,12 +43,16 @@ export function isPersonVisit(request: Request): boolean {
   return !/prefetch|prerender/i.test(purpose);
 }
 
-/** Counts one load of a published site. Never throws: stats must not break a site. */
-export async function recordVisit(slug: string, request: Request, ownerId?: string | null, at = Date.now()): Promise<void> {
+/**
+ * Counts one load of a published site. Never throws: stats must not break a site. ownerId is who is
+ * signed in to Flash in that browser (several accounts, sometimes), so the owner isn't counted.
+ */
+export async function recordVisit(slug: string, request: Request, ownerId?: string | readonly string[] | null, at = Date.now()): Promise<void> {
   if (!isPersonVisit(request)) return;
   try {
     // The owner checking their own site isn't a visitor.
-    if (ownerId && (await all("SELECT 1 FROM sites WHERE slug = ? AND user_id = ?", [slug, ownerId])).length) return;
+    const ids = ownerId ? (typeof ownerId === "string" ? [ownerId] : [...ownerId]) : [];
+    if (ids.length && (await all(`SELECT 1 FROM sites WHERE slug = ? AND user_id IN (${ids.map(() => "?").join(", ")})`, [slug, ...ids])).length) return;
     const day = dayOf(at);
     const source = visitSource(request.headers.get("referer"), request.headers.get("host"));
     const visitor = sha256(`${day}|${slug}|${clientIp(request)}|${request.headers.get("user-agent")}`).slice(0, 24);

@@ -1474,6 +1474,7 @@
  "This device has no voice for the language Flash answers in, so answers are read with another language's voice. Add one in your computer's speech or language settings, then reopen Flash.": "Dit apparaat heeft geen stem voor de taal waarin Flash antwoordt, dus antwoorden worden voorgelezen met de stem van een andere taal. Voeg er een toe in de spraak- of taalinstellingen van je computer en open Flash daarna opnieuw.",
  "This expired after 30 minutes, so nothing was sent. Ask again if you still want it.": "Dit is na 30 minuten verlopen, dus er is niets verstuurd. Vraag het opnieuw als je het nog wilt.",
  "This invitation has expired or was already used.": "Deze uitnodiging is verlopen of al gebruikt.",
+ "This invitation is for {email}. Switch to that account to join.": "Deze uitnodiging is voor {email}. Schakel over naar dat account om mee te doen.",
  "This invitation was sent to a different email address. Sign in with that address.": "Deze uitnodiging is naar een ander e-mailadres gestuurd. Log in met dat adres.",
  "This is a programming task.": "Dit is een programmeertaak.",
  "This is document or spreadsheet work.": "Dit is werk met documenten of spreadsheets.",

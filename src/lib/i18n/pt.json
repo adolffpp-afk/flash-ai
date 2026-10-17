@@ -1474,6 +1474,7 @@
  "This device has no voice for the language Flash answers in, so answers are read with another language's voice. Add one in your computer's speech or language settings, then reopen Flash.": "Este dispositivo não tem uma voz para o idioma em que o Flash responde, então as respostas são lidas com a voz de outro idioma. Adicione uma nas configurações de fala ou de idioma do seu computador e abra o Flash de novo.",
  "This expired after 30 minutes, so nothing was sent. Ask again if you still want it.": "Isto expirou após 30 minutos, então nada foi enviado. Peça de novo se ainda quiser.",
  "This invitation has expired or was already used.": "Este convite expirou ou já foi usado.",
+ "This invitation is for {email}. Switch to that account to join.": "Este convite é para {email}. Mude para essa conta para participar.",
  "This invitation was sent to a different email address. Sign in with that address.": "Este convite foi enviado para outro endereço de e-mail. Faça login com esse endereço.",
  "This is a programming task.": "É uma tarefa de programação.",
  "This is document or spreadsheet work.": "É um trabalho com documentos ou planilhas.",

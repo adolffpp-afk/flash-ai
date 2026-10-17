@@ -280,6 +280,14 @@ export async function resolveSession(request: Request): Promise<JarEntry | null>
   return jar.byDefault;
 }
 
+/** Every session token this browser holds, live or not: its default and its list (Log out of all accounts). */
+export function heldTokens(request: Request): string[] {
+  const tokens = new Set(parseAccounts(listValue(request)));
+  const def = readCookie(request, SESSION_COOKIE);
+  if (def) tokens.add(def);
+  return [...tokens];
+}
+
 /** Whether this browser may sign in to the account (already in the jar, or the jar has room). */
 export async function canAdd(request: Request, userId: string | null): Promise<boolean> {
   const jar = await freshJar(request);
@@ -319,6 +327,20 @@ export async function addToJar(request: Request, userId: string, prior?: Jar): P
     tokens = [...placed, ...live.filter((t) => !placed.includes(t))];
   }
   return { cookie: sessionCookie(token, SESSION_MAX_AGE, secure), also: listChange(request, tokens, secure), account: userId, reused: false };
+}
+
+/**
+ * The account a connector sign-in's callback acts as: the one that started it (owner, from its
+ * flow) when the browser is signed in to it, whichever is the default. Otherwise the browser's
+ * default as before, whose own flows alone it can take, so a flow that isn't theirs ends as
+ * expired and stays for its owner. as is what to add to the address the callback sends the tab
+ * back to, so that tab shows the account it acted as (only once several are signed in).
+ */
+export async function flowAccount(request: Request, owner: string | null): Promise<{ user: User | null; as: string }> {
+  const jar = await jarSessions(request);
+  const entry = owner ? jar.entries.find((e) => e.user.id === owner) : undefined;
+  if (!entry) return { user: await getUser(request), as: "" };
+  return { user: entry.user, as: jar.listed ? `&as=${encodeURIComponent(entry.user.id)}` : "" };
 }
 
 /** Whether the browser holds a live session for the account. */

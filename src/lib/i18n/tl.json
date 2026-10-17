@@ -1474,6 +1474,7 @@
  "This device has no voice for the language Flash answers in, so answers are read with another language's voice. Add one in your computer's speech or language settings, then reopen Flash.": "Walang boses ang device na ito para sa wikang ginagamit ng Flash sa pagsagot, kaya binabasa ang mga sagot gamit ang boses ng ibang wika. Magdagdag ng boses sa speech o language settings ng computer mo, tapos buksan ulit ang Flash.",
  "This expired after 30 minutes, so nothing was sent. Ask again if you still want it.": "Nag-expire ito pagkalipas ng 30 minuto, kaya walang naipadala. Magtanong ulit kung gusto mo pa rin.",
  "This invitation has expired or was already used.": "Expired na o nagamit na ang imbitasyong ito.",
+ "This invitation is for {email}. Switch to that account to join.": "Para sa {email} ang imbitasyong ito. Lumipat sa account na iyon para sumali.",
  "This invitation was sent to a different email address. Sign in with that address.": "Ipinadala ang imbitasyong ito sa ibang email address. Mag-sign in gamit ang address na iyon.",
  "This is a programming task.": "Programming task ito.",
  "This is document or spreadsheet work.": "Trabaho ito sa dokumento o spreadsheet.",

@@ -107,6 +107,12 @@ export async function inviteMember(
   return demoEmails() ? link : undefined;
 }
 
+/** The email key a live invitation was sent to, without using it (null when there's none). */
+export async function inviteEmailKey(token: string): Promise<string | null> {
+  if (!token) return null;
+  return (await one<{ email_key: string }>("SELECT email_key FROM team_invites WHERE token_hash = ? AND expires_at > ?", [sha256(token), now()]))?.email_key ?? null;
+}
+
 /** Joins the team an invitation is for. The invite only works for the address it was sent to. `t` words the reasons it can't. */
 export async function acceptInvite(
   user: { id: string; email: string; verified_at?: number | null },

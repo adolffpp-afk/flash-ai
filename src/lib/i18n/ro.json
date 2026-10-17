@@ -1474,6 +1474,7 @@
  "This device has no voice for the language Flash answers in, so answers are read with another language's voice. Add one in your computer's speech or language settings, then reopen Flash.": "Acest dispozitiv nu are o voce pentru limba în care răspunde Flash, așa că răspunsurile sunt citite cu vocea altei limbi. Adaugă una din setările de vorbire sau de limbă ale computerului, apoi redeschide Flash.",
  "This expired after 30 minutes, so nothing was sent. Ask again if you still want it.": "A expirat după 30 de minute, așa că nu s-a trimis nimic. Cere din nou dacă încă vrei asta.",
  "This invitation has expired or was already used.": "Această invitație a expirat sau a fost deja folosită.",
+ "This invitation is for {email}. Switch to that account to join.": "Această invitație este pentru {email}. Treci la acel cont ca să te alături.",
  "This invitation was sent to a different email address. Sign in with that address.": "Această invitație a fost trimisă la altă adresă de e-mail. Conectează-te cu adresa respectivă.",
  "This is a programming task.": "Aceasta este o sarcină de programare.",
  "This is document or spreadsheet work.": "Aceasta este o sarcină cu documente sau foi de calcul.",

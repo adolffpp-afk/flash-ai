@@ -1474,6 +1474,7 @@
  "This device has no voice for the language Flash answers in, so answers are read with another language's voice. Add one in your computer's speech or language settings, then reopen Flash.": "Αυτή η συσκευή δεν έχει φωνή για τη γλώσσα στην οποία απαντά το Flash, οπότε οι απαντήσεις διαβάζονται με φωνή άλλης γλώσσας. Πρόσθεσε μία στις ρυθμίσεις ομιλίας ή γλώσσας του υπολογιστή σου και άνοιξε ξανά το Flash.",
  "This expired after 30 minutes, so nothing was sent. Ask again if you still want it.": "Έληξε μετά από 30 λεπτά, οπότε δεν στάλθηκε τίποτα. Ζήτησέ το ξανά αν το θέλεις ακόμη.",
  "This invitation has expired or was already used.": "Αυτή η πρόσκληση έληξε ή έχει ήδη χρησιμοποιηθεί.",
+ "This invitation is for {email}. Switch to that account to join.": "Αυτή η πρόσκληση είναι για το {email}. Κάνε εναλλαγή σε αυτόν τον λογαριασμό για να συμμετάσχεις.",
  "This invitation was sent to a different email address. Sign in with that address.": "Αυτή η πρόσκληση στάλθηκε σε άλλη διεύθυνση email. Συνδέσου με εκείνη τη διεύθυνση.",
  "This is a programming task.": "Πρόκειται για εργασία προγραμματισμού.",
  "This is document or spreadsheet work.": "Πρόκειται για δουλειά σε έγγραφα ή υπολογιστικά φύλλα.",

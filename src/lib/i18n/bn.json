@@ -1474,6 +1474,7 @@
  "This device has no voice for the language Flash answers in, so answers are read with another language's voice. Add one in your computer's speech or language settings, then reopen Flash.": "Flash যে ভাষায় উত্তর দেয় সেই ভাষার কোনো ভয়েস এই ডিভাইসে নেই, তাই অন্য ভাষার ভয়েসে উত্তর পড়া হয়। আপনার কম্পিউটারের স্পিচ বা ভাষা সেটিংসে একটি যোগ করুন, তারপর Flash আবার খুলুন।",
  "This expired after 30 minutes, so nothing was sent. Ask again if you still want it.": "30 মিনিট পরে এর মেয়াদ শেষ হয়েছে, তাই কিছুই পাঠানো হয়নি। এখনও চাইলে আবার বলুন।",
  "This invitation has expired or was already used.": "এই আমন্ত্রণের মেয়াদ শেষ হয়ে গেছে বা আগেই ব্যবহার করা হয়েছে।",
+ "This invitation is for {email}. Switch to that account to join.": "এই আমন্ত্রণটি {email}-এর জন্য। যোগ দিতে সেই অ্যাকাউন্টে বদলান।",
  "This invitation was sent to a different email address. Sign in with that address.": "এই আমন্ত্রণটি অন্য একটি ইমেল ঠিকানায় পাঠানো হয়েছিল। সেই ঠিকানা দিয়ে সাইন ইন করুন।",
  "This is a programming task.": "এটি একটি প্রোগ্রামিংয়ের কাজ।",
  "This is document or spreadsheet work.": "এটি ডকুমেন্ট বা স্প্রেডশিটের কাজ।",

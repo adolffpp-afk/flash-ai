@@ -1474,6 +1474,7 @@
  "This device has no voice for the language Flash answers in, so answers are read with another language's voice. Add one in your computer's speech or language settings, then reopen Flash.": "На цьому пристрої немає голосу для мови, якою відповідає Flash, тому відповіді читаються голосом іншої мови. Додайте голос у налаштуваннях мовлення або мови на комп’ютері й знову відкрийте Flash.",
  "This expired after 30 minutes, so nothing was sent. Ask again if you still want it.": "Термін минув через 30 хвилин, тому нічого не надіслано. Попросіть знову, якщо це ще потрібно.",
  "This invitation has expired or was already used.": "Термін дії запрошення минув, або його вже використано.",
+ "This invitation is for {email}. Switch to that account to join.": "Це запрошення для {email}. Перейдіть до цього акаунта, щоб приєднатися.",
  "This invitation was sent to a different email address. Sign in with that address.": "Це запрошення надіслано на іншу адресу. Увійдіть із цією адресою.",
  "This is a programming task.": "Це завдання з програмування.",
  "This is document or spreadsheet work.": "Це робота з документами або таблицями.",

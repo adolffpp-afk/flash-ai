@@ -1474,6 +1474,7 @@
  "This device has no voice for the language Flash answers in, so answers are read with another language's voice. Add one in your computer's speech or language settings, then reopen Flash.": "Perangkat ini tidak memiliki suara untuk bahasa yang digunakan Flash, jadi jawaban dibacakan dengan suara bahasa lain. Tambahkan suara di pengaturan ucapan atau bahasa komputer Anda, lalu buka Flash lagi.",
  "This expired after 30 minutes, so nothing was sent. Ask again if you still want it.": "Ini kedaluwarsa setelah 30 menit, jadi tidak ada yang dikirim. Minta lagi jika Anda masih menginginkannya.",
  "This invitation has expired or was already used.": "Undangan ini sudah kedaluwarsa atau sudah digunakan.",
+ "This invitation is for {email}. Switch to that account to join.": "Undangan ini untuk {email}. Beralih ke akun tersebut untuk bergabung.",
  "This invitation was sent to a different email address. Sign in with that address.": "Undangan ini dikirim ke alamat email lain. Masuk dengan alamat tersebut.",
  "This is a programming task.": "Ini tugas pemrograman.",
  "This is document or spreadsheet work.": "Ini pekerjaan dokumen atau spreadsheet.",
