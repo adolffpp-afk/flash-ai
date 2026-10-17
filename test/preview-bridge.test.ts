@@ -86,3 +86,10 @@ test("a screenshot or sketch with a build request goes to the builder", () => {
   // Without a picture, nothing changes.
   assert.equal(route("build me a website for my bakery").engine, "app");
 });
+
+test("the live preview's flashDB has track, which sends nowhere", () => {
+  const head = PREVIEW_BRIDGE + flashDbShim(null);
+  assert.match(head, /async track\(step\) \{ const name = stepName\(step\)/);
+  assert.doesNotMatch(head, /trackUrl|\/api\/sites\/[^"]*\/track/);
+});
+

@@ -97,6 +97,13 @@ test("apps offer news with a box the person ticks themselves, sent with the form
   assert.match(app, /Name form fields name, email and phone/);
 });
 
+test("apps count their own key steps with flashDB.track, never the person or what Flash counts already", () => {
+  const app = buildSystem("app", "");
+  assert.match(app, /flashDB\.track\("step-name"\)/);
+  assert.match(app, /nothing about the person/);
+  assert.match(app, /Visits, flashDB\.send, flashAuth sign-ups and flashDB\.buy are counted already/);
+});
+
 test("the companion sends live questions to the chat instead of answering them from memory", () => {
   const facts = {
     name: "Ada",

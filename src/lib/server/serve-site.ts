@@ -67,6 +67,7 @@ export async function serveSite(slug: string | null, pageUrl?: string, request?:
     `/api/sites/${slug}/files`,
     owner,
     formKey,
+    `/api/sites/${slug}/track`,
   ));
   const headers = new Headers({
     "Content-Type": "text/html; charset=utf-8",

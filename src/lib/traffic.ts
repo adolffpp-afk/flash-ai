@@ -129,6 +129,27 @@ export function taggedLink(base: string, tags: { source: string; campaign?: stri
   }
 }
 
+/** What a step an app reports with flashDB.track may be called: a fixed lowercase name. */
+export const STEP_NAME = /^[a-z0-9][a-z0-9_-]{0,39}$/;
+/** A run of 7 or more digits, or of 16 or more hex characters: a name holding one carries an ID. */
+export const STEP_ID = /\d{7,}|[0-9a-f]{16,}/;
+/** The steps Flash counts itself, which an app can't report. */
+export const RESERVED_STEPS = ["visit", "form", "signup", "checkout", "order", "capped"];
+/** Most names an app can report a day, and in one request (see the track route). */
+export const MAX_STEP_NAMES = 10;
+export const MAX_TRACKED = 15;
+
+/**
+ * A step name as Flash counts it, or "" when it can't be one: not a fixed lowercase name of
+ * letters, digits, - and _, holding an ID, or a step Flash counts itself. The shim checks the same
+ * (see flashdb-shim.ts).
+ */
+export function stepName(step: unknown): string {
+  if (typeof step !== "string") return "";
+  const name = step.trim().toLowerCase();
+  return STEP_NAME.test(name) && !STEP_ID.test(name) && !RESERVED_STEPS.includes(name) ? name : "";
+}
+
 /** How many visitors took a step, as a fraction: only from 100 visitors, so a rate is never read into a handful of people. */
 export const share = (n: number, base: number): number | null => (base >= 100 && n >= 0 && n <= base ? n / base : null);
 

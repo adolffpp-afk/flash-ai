@@ -128,7 +128,7 @@ test("a seller connects Stripe, prices items, and buyers pay through Checkout", 
     "1.1.1.1",
     origin,
   );
-  assert.deepEqual(checkout, { url: "https://checkout.stripe.com/c/pay/x" });
+  assert.deepEqual(checkout, { url: "https://checkout.stripe.com/c/pay/x", id: "" }, "Stripe gave no session id, so no source waits for the order");
   const session = calls.findLast((c) => c.path === "/checkout/sessions")!;
   assert.equal(session.account, "acct_seller", "the charge is made on the seller's own account");
   assert.equal(session.body.get("line_items[0][price_data][unit_amount]"), "1250", "the price comes from Flash, not the page");

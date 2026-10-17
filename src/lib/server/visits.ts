@@ -16,7 +16,7 @@ import { OTHER, isReturnTrip, touchOf, visitSource, type Touch } from "../traffi
 
 export { visitSource };
 
-type Statement = { sql: string; args: InValue[] };
+export type Statement = { sql: string; args: InValue[] };
 
 const DAY = 86_400_000;
 const MINUTE = 60_000;
@@ -50,7 +50,8 @@ const MAX_NETWORKS = 50_000;
 
 /** What tests change (see test/visits.test.ts): smaller limits, and a prune that fails. Flash itself never does. */
 export const visitTests = { freePeople: 0, networkPeople: 0, failPrune: false };
-const freePeople = () => visitTests.freePeople || FREE_PEOPLE_PER_DAY;
+/** The free plan's number of people a day, which is also its number of app steps (see funnel.ts). */
+export const freePeople = () => visitTests.freePeople || FREE_PEOPLE_PER_DAY;
 const networkPeople = () => visitTests.networkPeople || NETWORK_PEOPLE;
 // Crawlers, link previews, uptime checkers, browsers run by scripts, and AI assistants fetching a
 // page for someone aren't people looking at it.
@@ -62,13 +63,18 @@ export const dayOf = (t: number) => new Date(t).toISOString().slice(0, 10);
 /** How many days from one day to another ("2026-10-01" to "2026-10-04" is 3). */
 export const daysBetween = (from: string, to: string) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY);
 
+/** Whether a request comes from a robot (or sends no browser at all), by what it says it is. */
+export function isRobot(request: Request): boolean {
+  const agent = request.headers.get("user-agent") ?? "";
+  return !agent || ROBOT.test(agent);
+}
+
 /**
  * Whether a page request is a person looking at the page, not a robot or a prefetch. Browsers, and
  * the web views inside apps, always say which languages their person reads; most scripts don't.
  */
 export function isPersonVisit(request: Request): boolean {
-  const agent = request.headers.get("user-agent") ?? "";
-  if (!agent || ROBOT.test(agent) || !request.headers.get("accept-language")) return false;
+  if (isRobot(request) || !request.headers.get("accept-language")) return false;
   const purpose = request.headers.get("sec-purpose") ?? request.headers.get("purpose") ?? "";
   return !/prefetch|prerender/i.test(purpose);
 }
@@ -148,7 +154,8 @@ export async function pastKey(day: string, at = Date.now()): Promise<Buffer | nu
   if ((noKey.get(day) ?? 0) > at) return null;
   const row = await one<{ secret: string }>("SELECT secret FROM visit_keys WHERE day = ?", [day]);
   if (!row) {
-    noKey.set(day, at + 60_000);
+    // Today's can still be made by the next visit, so only an earlier day's absence is remembered.
+    if (day < dayOf(at)) noKey.set(day, at + 60_000);
     while (noKey.size > 4) noKey.delete(noKey.keys().next().value!);
     return null;
   }
@@ -226,7 +233,7 @@ export async function peopleCap(ownerId: string, at = Date.now()): Promise<{ cap
  * A mark on the app's day that its numbers missed people (or app steps), with the limit reached.
  * Each server writes it once per app and day; the higher limit stays, for a plan bought that day.
  */
-function markOnce(slug: string, step: string, limit: number, day: string): Statement | null {
+export function markOnce(slug: string, step: string, limit: number, day: string): Statement | null {
   const key = `${slug}|${step}|${day}`;
   if (marked.has(key)) return null;
   marked.add(key);
@@ -425,8 +432,12 @@ export async function pruneDaily(at = Date.now()): Promise<boolean> {
         { sql: "DELETE FROM visit_keys WHERE day < ?", args: [yesterday] },
         { sql: "DELETE FROM site_people WHERE day < ?", args: [yesterday] },
         { sql: "DELETE FROM owner_people WHERE day < ?", args: [yesterday] },
+        { sql: "DELETE FROM site_step_names WHERE day < ?", args: [yesterday] },
         { sql: "DELETE FROM site_visits WHERE day < ?", args: [kept] },
         { sql: "DELETE FROM site_events WHERE day < ?", args: [kept] },
+        { sql: "DELETE FROM site_revenue WHERE day < ?", args: [kept] },
+        // A checkout's source waits for its order at most 3 days (see funnel.ts).
+        { sql: "DELETE FROM site_checkouts WHERE created_at < ?", args: [at - 3 * DAY] },
       ],
       "write",
     );

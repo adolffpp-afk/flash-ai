@@ -210,14 +210,18 @@ const SCHEMA = [
   // The tables below are WITHOUT ROWID: each row is kept once, in its primary key, where an ordinary
   // table also keeps the key in an automatic index, which Turso bills as another row written.
   //
-  // Daily counts per app of people who took each step (see visits.ts), never who they were. step is
-  // one of:
-  //   'visit';
+  // Daily counts per app of people who took each step (see visits.ts and funnel.ts), never who they
+  // were. step is one of:
+  //   'visit', 'form', 'signup', 'checkout';
+  //   'app:<name>': a step the app reported with flashDB.track;
   //   'visit-old': people counted before site_people, from site_visitors;
   //   'capped': the owner's daily people limit was reached and this app missed people that day;
+  //   'capped-app': the owner's daily limit of app steps was reached;
   //   'capped-net': one network passed its number of new people that day, and later ones were views only.
-  // source is '' for Direct, and '(other)' past the day's limit of sources. n is people, each counted
-  // once a day per step; in the marks it is the limit. Kept 100 days.
+  // source is '' for Direct and for every 'app:' step (those are counted without a source), '?' for
+  // a form, sign-up or checkout that couldn't be matched to a visit that day or the day before, and
+  // '(other)' past the day's limit of sources. n is people, each counted once a day per step; in '?'
+  // rows it is sends, and in the marks it is the limit. Kept 100 days.
   `CREATE TABLE IF NOT EXISTS site_events (
     site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
     day TEXT NOT NULL,
@@ -227,6 +231,37 @@ const SCHEMA = [
     campaign TEXT NOT NULL DEFAULT '',
     n INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (site_slug, day, step, source, medium, campaign)
+  ) WITHOUT ROWID`,
+  // Paid orders per day, source and currency (see funnel.ts): how many and what they took, never
+  // which. Kept 100 days.
+  `CREATE TABLE IF NOT EXISTS site_revenue (
+    site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
+    day TEXT NOT NULL,
+    source TEXT NOT NULL,
+    medium TEXT NOT NULL,
+    campaign TEXT NOT NULL,
+    currency TEXT NOT NULL,
+    orders INTEGER NOT NULL DEFAULT 0,
+    amount INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (site_slug, day, source, medium, campaign, currency)
+  ) WITHOUT ROWID`,
+  // Where an open checkout's buyer came from, until its order is saved or 3 days pass (see
+  // funnel.ts). No buyer details. No site_slug index: it holds at most 3 days of checkouts, so
+  // unpublishing reads it whole.
+  `CREATE TABLE IF NOT EXISTS site_checkouts (
+    session_id TEXT NOT NULL PRIMARY KEY,
+    site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
+    source TEXT NOT NULL,
+    medium TEXT NOT NULL,
+    campaign TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  ) WITHOUT ROWID`,
+  // The names an app reported with flashDB.track each day: at most 10 (see funnel.ts). Kept 2 days.
+  `CREATE TABLE IF NOT EXISTS site_step_names (
+    site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
+    day TEXT NOT NULL,
+    name TEXT NOT NULL,
+    PRIMARY KEY (site_slug, day, name)
   ) WITHOUT ROWID`,
   // Each person's visit to an app on one day (see visits.ts). It keeps a code made with that day's
   // key (never their address), where they first came from that day, and the steps they were counted
@@ -244,12 +279,13 @@ const SCHEMA = [
     steps TEXT NOT NULL DEFAULT '[]',
     PRIMARY KEY (site_slug, day, visitor)
   ) WITHOUT ROWID`,
-  // How many people were counted each day across all of one owner's apps (see visits.ts), for their
-  // plan's daily limit. Deleted after 2 days.
+  // How many people, and how many app steps, were counted each day across all of one owner's apps
+  // (see visits.ts and funnel.ts), for their plan's daily limits. Deleted after 2 days.
   `CREATE TABLE IF NOT EXISTS owner_people (
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     day TEXT NOT NULL,
     people INTEGER NOT NULL DEFAULT 0,
+    steps INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (user_id, day)
   ) WITHOUT ROWID`,
   // The random key that makes each day's visitor codes (see visits.ts). Deleted after 2 days, with

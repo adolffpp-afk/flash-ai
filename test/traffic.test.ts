@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-const { touchOf, isReturnTrip, taggedLink, share, percent, cleanTag, visitSource, DIRECT, OTHER } = await import("../src/lib/traffic.ts");
+const { touchOf, isReturnTrip, taggedLink, share, percent, cleanTag, visitSource, stepName, DIRECT, OTHER } = await import("../src/lib/traffic.ts");
 
 const APP = "https://www.flash-app.dev/p/crumb-1";
 const touch = (query: string, referer: string | null = null, host = "www.flash-app.dev") => touchOf(new URL(`${APP}${query}`), referer, host);
@@ -102,4 +102,18 @@ test("a share of visitors only from 100 visitors, written the reader's way", () 
   assert.equal(percent(share(300, 612)!, "en-US"), "49%");
   assert.match(percent(0.023, "fr-FR"), /^2,3\s%$/u);
   assert.match(percent(0.023, "tr-TR"), /^%2,3$/u);
+});
+
+test("a step an app reports is a fixed name, never an ID or a step Flash counts itself", () => {
+  assert.equal(stepName("Booking-Started"), "booking-started");
+  assert.equal(stepName(" plan_chosen "), "plan_chosen");
+  assert.equal(stepName("x".repeat(40)), "x".repeat(40));
+  assert.equal(stepName("x".repeat(41)), "");
+  assert.equal(stepName("has space"), "");
+  assert.equal(stepName("-leading"), "");
+  assert.equal(stepName("order-1234567"), "", "7 digits in a row are an ID");
+  assert.equal(stepName("step-a1b2c3d4e5f6a7b8"), "", "so are 16 hex characters");
+  assert.equal(stepName("step-123456"), "step-123456");
+  for (const own of ["visit", "form", "signup", "checkout", "order", "capped"]) assert.equal(stepName(own), "", own);
+  assert.equal(stepName(42), "");
 });

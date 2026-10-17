@@ -245,11 +245,18 @@ test("the daily prune runs on one server once a day, keeps codes 2 days and tota
     await run("INSERT OR IGNORE INTO visit_keys (day, secret) VALUES (?, 'aa')", [day(n)]);
     await run("INSERT INTO site_people (site_slug, day, visitor, kind) VALUES ('prune-1', ?, 'v', 'visit')", [day(n)]);
     await run("INSERT INTO owner_people (user_id, day, people) VALUES ('u1', ?, 1)", [day(n)]);
+    await run("INSERT INTO site_step_names (site_slug, day, name) VALUES ('prune-1', ?, 'booking')", [day(n)]);
   }
   for (const n of [100, 99]) {
     await run("INSERT INTO site_visits (site_slug, day, source, views) VALUES ('prune-1', ?, '', 1)", [day(n)]);
     await run("INSERT INTO site_events (site_slug, day, step, n) VALUES ('prune-1', ?, 'visit', 1)", [day(n)]);
+    await run("INSERT INTO site_revenue (site_slug, day, source, medium, campaign, currency, orders, amount) VALUES ('prune-1', ?, '', '', '', 'usd', 1, 500)", [day(n)]);
   }
+  // A checkout's source waits 3 days for its order.
+  await run("INSERT INTO site_checkouts (session_id, site_slug, source, medium, campaign, created_at) VALUES ('cs_old', 'prune-1', 'x', '', '', ?), ('cs_new', 'prune-1', 'x', '', '', ?)", [
+    at - 3 * DAY - 1,
+    at - 3 * DAY + 60_000,
+  ]);
   assert.equal(await pruneDaily(at), true);
   forgetServerMemory(); // another server
   assert.equal(await pruneDaily(at), false, "only one server claims the day");
@@ -261,6 +268,9 @@ test("the daily prune runs on one server once a day, keeps codes 2 days and tota
   assert.deepEqual(await days("owner_people"), [day(1), day(0)]);
   assert.deepEqual(await days("site_visits"), [day(99)], "day −99 stays, day −100 goes");
   assert.deepEqual(await days("site_events"), [day(99)]);
+  assert.deepEqual(await days("site_revenue"), [day(99)]);
+  assert.deepEqual(await days("site_step_names"), [day(1), day(0)]);
+  assert.deepEqual((await all<{ session_id: string }>("SELECT session_id FROM site_checkouts")).map((r) => r.session_id), ["cs_new"]);
   const since = (await one<{ value: string }>("SELECT value FROM settings WHERE key = 'funnel_since'"))?.value;
   assert.equal(since, day(0));
 
