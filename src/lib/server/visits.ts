@@ -39,12 +39,19 @@ export const PLAN_PEOPLE: Record<string, number> = {
   max: 300_000,
   agency: 500_000,
 };
-/** New people each server counts per owner per day from one internet connection, so one stranger can't use up the owner's day. */
+/**
+ * New people each server counts per owner per day from one internet connection, so one stranger
+ * can't use up the owner's day. An IPv6 connection is its /56, the block a home is usually given.
+ */
 export const NETWORK_PEOPLE = 100;
 /** Sources (each with its medium and campaign) per app per day; past them, people count under "(other)". */
 export const MAX_TOUCHES = 30;
-/** New sources each server lets one internet connection add to an app's day, so one stranger can't fill its 30. */
+/**
+ * New sources each server lets one internet connection add to an app's day once the day has 20, so
+ * one stranger can't fill its 30, while an office whose people come from a few places never meets it.
+ */
 export const NETWORK_SOURCES = 3;
+const GUARDED_TOUCHES = 20;
 // How long a server goes by what it read of an owner's plan, and by "paused for today".
 const PLAN_MEMORY = 15 * MINUTE;
 // Past this many connections in memory, the older half is forgotten.
@@ -258,7 +265,7 @@ export function markOnce(slug: string, step: string, limit: number, day: string)
 
 /**
  * The touch, or "(other)" when it would be new to the app's day and the app has its 30 sources for
- * the day, or the person's connection (network, when given) already added 3 of them.
+ * the day, or it has 20 and the person's connection (network, when given) already added 3 of them.
  */
 async function withinTouches(slug: string, day: string, touch: Touch, network = ""): Promise<Touch> {
   const s = await one<{ touches: number; known: number }>(
@@ -272,16 +279,23 @@ async function withinTouches(slug: string, day: string, touch: Touch, network = 
     // Read and added with nothing waiting in between, so loads answered at once can't all add one.
     const key = `${network}|${slug}`;
     const added = opened.get(key) ?? 0;
-    if (added >= NETWORK_SOURCES) return OTHER;
+    if (added >= NETWORK_SOURCES && Number(s?.touches ?? 0) >= GUARDED_TOUCHES) return OTHER;
     opened.set(key, added + 1);
     if (opened.size > MAX_NETWORKS) for (const old of [...opened.keys()].slice(0, MAX_NETWORKS / 2)) opened.delete(old);
   }
   return touch;
 }
 
+/** One internet connection: an IPv4 address, or the /56 an IPv6 address is in (clientIp gives its /64). */
+export const connectionOf = (request: Request): string => {
+  const ip = clientIp(request);
+  const v6 = ip.match(/^([0-9a-f]+:[0-9a-f]+:[0-9a-f]+):([0-9a-f]+)::\/64$/);
+  return v6 ? `${v6[1]}:${v6[2].padStart(4, "0").slice(0, 2)}00::/56` : ip;
+};
+
 /** The code this server counts an owner's new people from one connection under, made with the day's key. */
 const networkOf = (key: Buffer, owner: string, request: Request) =>
-  createHmac("sha256", key).update(`network|${owner}|${clientIp(request)}`).digest("hex").slice(0, 24);
+  createHmac("sha256", key).update(`network|${owner}|${connectionOf(request)}`).digest("hex").slice(0, 24);
 
 /**
  * Counts one load of a published app: a view, and the person once a day, under where they first

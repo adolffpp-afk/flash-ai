@@ -599,32 +599,90 @@ test("loads answered at the same moment can't pass a connection's number of peop
   }
 });
 
-test("one connection adds at most 3 new sources to an app's day, so it can't fill the 30", async () => {
+test("once an app's day has 20 sources, a connection that added 3 of them adds no more, so it can't fill the 30", async () => {
   forgetServerMemory();
   await app("spam-1", "u1");
   const at = Date.UTC(2027, 6, 10, 9);
   const stranger = (i: number) => visit({ "x-forwarded-for": "15.0.0.1", "user-agent": `${BROWSER} spam/${i}` }, `/p/spam-1?utm_source=spam-${i}`);
   for (let i = 0; i < 30; i++) await recordVisit("spam-1", stranger(i), null, at);
-  // Its people still count, under "(other)" past their 3 sources.
+  // Its people still count, under "(other)" past the day's 20th source.
   assert.equal(await eventsOf("spam-1"), 30);
-  assert.deepEqual(
-    (await all<{ source: string; n: number }>("SELECT source, n FROM site_events WHERE site_slug = 'spam-1' AND step = 'visit' ORDER BY source")).map((r) => [
-      r.source,
-      Number(r.n),
-    ]),
-    [
-      ["(other)", 27],
-      ["spam-0", 1],
-      ["spam-1", 1],
-      ["spam-2", 1],
-    ],
+  const rows = (await all<{ source: string; n: number }>("SELECT source, n FROM site_events WHERE site_slug = 'spam-1' AND step = 'visit' ORDER BY source")).map(
+    (r) => [r.source, Number(r.n)],
   );
+  assert.deepEqual(rows, [["(other)", 10], ...Array.from({ length: 20 }, (_, i) => [`spam-${i}`, 1])].sort((a, b) => (a[0] < b[0] ? -1 : 1)));
   // A source already there counts as itself, and real visitors' sources open as before.
   await recordVisit("spam-1", visit({ "x-forwarded-for": "15.0.0.1", "user-agent": `${BROWSER} spam/again` }, "/p/spam-1?utm_source=spam-1"), null, at);
   for (let i = 0; i < 5; i++) await recordVisit("spam-1", someone("spam-1", {}, "?utm_source=instagram&utm_campaign=spring"), null, at);
   const sources = await viewsBySource("spam-1");
   assert.equal(sources["spam-1"], 2);
   assert.equal(sources["instagram.com"], 5);
+  // The other 9 places stay for other connections: another stranger's 3, then nothing more from it.
+  for (let i = 0; i < 5; i++) {
+    await recordVisit("spam-1", visit({ "x-forwarded-for": "15.0.0.2", "user-agent": `${BROWSER} more/${i}` }, `/p/spam-1?utm_source=more-${i}`), null, at);
+  }
+  const after = await viewsBySource("spam-1");
+  assert.deepEqual([after["more-0"], after["more-1"], after["more-2"], after["more-3"]], [1, 1, 1, undefined]);
+});
+
+test("people on one office's Wi-Fi coming from several places each count under their own source", async () => {
+  forgetServerMemory();
+  await app("cafe-1", "u1");
+  const at = Date.UTC(2027, 2, 3, 10);
+  const colleague = (n: number, query = "", referer?: string) =>
+    visit({ "x-forwarded-for": "203.0.113.7", "user-agent": `${BROWSER} colleague/${n}`, ...(referer ? { referer } : {}) }, `/p/cafe-1${query}`);
+  await recordVisit("cafe-1", colleague(1, "", "https://www.google.com/"), null, at);
+  await recordVisit("cafe-1", colleague(2, "", "https://www.linkedin.com/feed/"), null, at);
+  await recordVisit("cafe-1", colleague(3), null, at);
+  await recordVisit("cafe-1", colleague(4, "?utm_source=newsletter&utm_campaign=march"), null, at);
+  await recordVisit("cafe-1", colleague(5, "?utm_source=ig"), null, at);
+  const rows = await all<{ source: string; campaign: string; n: number }>("SELECT source, campaign, n FROM site_events WHERE site_slug = 'cafe-1' AND step = 'visit' ORDER BY source");
+  assert.deepEqual(
+    rows.map((r) => [r.source, r.campaign, Number(r.n)]),
+    [
+      ["", "", 1],
+      ["google.com", "", 1],
+      ["instagram.com", "", 1],
+      ["linkedin.com", "", 1],
+      ["newsletter", "march", 1],
+    ],
+  );
+});
+
+test("a visit tagged constructor or __proto__ counts like any other", async () => {
+  forgetServerMemory();
+  await app("proto-1", "u1");
+  const at = Date.UTC(2027, 6, 12, 9);
+  await recordVisit("proto-1", someone("proto-1", {}, "?utm_source=constructor"), null, at);
+  await recordVisit("proto-1", someone("proto-1", {}, "?ref=__proto__"), null, at);
+  assert.equal(await peopleRows("proto-1"), 2);
+  assert.deepEqual(await viewsBySource("proto-1"), { constructor: 1, ["__proto__"]: 1 });
+});
+
+test("an IPv6 home's /56 is one connection, for its number of people and of sources, while its people stay apart", async () => {
+  forgetServerMemory();
+  visitTests.networkPeople = 2;
+  try {
+    await app("home-1", "home-owner");
+    const at = Date.UTC(2027, 6, 11, 9);
+    // Eight /64s of one /56, a new browser each time: one connection's 2 people, the rest views.
+    for (let i = 1; i <= 8; i++) {
+      await recordVisit("home-1", visit({ "x-forwarded-for": `2001:db8:0:${i.toString(16)}::1`, "user-agent": `${BROWSER} home/${i}` }, "/p/home-1"), null, at);
+    }
+    assert.equal(await peopleRows("home-1"), 2);
+    assert.equal(await viewsOf("home-1"), 8);
+    assert.equal(await mark("home-1", "capped-net"), 2);
+    // The next /56 is another home.
+    await recordVisit("home-1", visit({ "x-forwarded-for": "2001:db8:0:100::1", "user-agent": `${BROWSER} next-door` }, "/p/home-1"), null, at);
+    assert.equal(await peopleRows("home-1"), 3);
+    // Each person's code is still made from their own /64, so two homes' people are never one person.
+    assert.notEqual(
+      await visitorCode("home-1", visit({ "x-forwarded-for": "2001:db8:0:1::1" }), dayOf(at)),
+      await visitorCode("home-1", visit({ "x-forwarded-for": "2001:db8:0:2::1" }), dayOf(at)),
+    );
+  } finally {
+    visitTests.networkPeople = 0;
+  }
 });
 
 test('views past the day\'s sources stay "(other)" in the stats, which the Visitors view shows as Other sources', async () => {

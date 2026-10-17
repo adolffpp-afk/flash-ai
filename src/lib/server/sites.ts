@@ -152,7 +152,7 @@ async function published(slug: string, before: DataSummary | null = null): Promi
 export async function publishSite(
   user: User,
   input: { html?: unknown; title?: unknown; slug?: unknown },
-  t: Translate = english,
+  t: Translate & { locale?: string } = english,
 ): Promise<PublishResult> {
   const html = typeof input.html === "string" ? input.html : "";
   const title = (typeof input.title === "string" ? input.title : "My app").trim().slice(0, 100) || "My app";
@@ -183,11 +183,13 @@ export async function publishSite(
   // The plan is read only from the free number on.
   const max = count < FREE_SITES ? FREE_SITES : await siteLimit(user);
   if (count >= max) {
+    // Numbers in the reader's own digits, like the rest of what they read.
+    const n = (x: number) => x.toLocaleString(t.locale ?? "en-US");
     // Someone back on a smaller plan may have more than one app too many.
     const refused =
       count > max
-        ? t("You have {count} apps published and your plan allows {max}. Unpublish {extra} of them to publish another.", { count, max, extra: count - max + 1 })
-        : t("You can publish up to {max} apps. Unpublish one to publish another.", { max });
+        ? t("You have {count} apps published and your plan allows {max}. Unpublish {extra} of them to publish another.", { count: n(count), max: n(max), extra: n(count - max + 1) })
+        : t("You can publish up to {max} apps. Unpublish one to publish another.", { max: n(max) });
     // On the free number, a paid plan publishes more (the app shows Upgrade plan for site_cap).
     return max === FREE_SITES ? { error: `${refused} ${t("Paid plans can publish more apps.")}`, status: 409, code: "site_cap" } : { error: refused, status: 409 };
   }

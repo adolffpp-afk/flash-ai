@@ -67,7 +67,12 @@ test("tags are cleaned, and ones that look like personal data are left out", () 
   // An email address, a phone number, a subscriber's ID: the tag counts as missing, and the referrer is used.
   assert.equal(touch("?utm_source=jane@x.com", "https://www.google.com/").source, "google.com");
   assert.equal(touch("?ref=12345678", "https://www.google.com/").source, "google.com");
-  assert.equal(touch("?ref=+1 555 0100 2233").source, "1-555-0100-2233", "a number with spaces in it isn't seven digits in a row");
+  // A phone number or an ID written with spaces, dots or dashes is one too.
+  for (const value of ["+1 555 0100 2233", "555-123-4567", "415.555.0123", "+1 415-555-0123", "+44 7911 123456", "f47ac10b-58cc-4372-a567-0e02b2c3d479", "1_415_555_0123"]) {
+    assert.equal(cleanTag(value), "", value);
+  }
+  assert.equal(touch("?ref=f47ac10b-58cc-4372-a567-0e02b2c3d479", "https://www.google.com/").source, "google.com");
+  assert.deepEqual(touch("?utm_source=sms&utm_campaign=%2B44%207911%20123456"), { source: "sms", medium: "", campaign: "" });
   assert.deepEqual(touch("?utm_source=newsletter&utm_campaign=a1b2c3d4e5f6a7b8c9"), { source: "newsletter", medium: "", campaign: "" });
   assert.deepEqual(touch("?utm_source=🎉🎉", "https://www.bing.com/"), { source: "bing.com", medium: "", campaign: "" }, "empty once cleaned");
   assert.equal(touch(`?utm_source=${"x".repeat(5000)}`).source.length, 40);
@@ -76,6 +81,8 @@ test("tags are cleaned, and ones that look like personal data are left out", () 
     assert.equal(cleanTag(value), "", value);
   }
   assert.equal(cleanTag("spring-2026"), "spring-2026");
+  assert.equal(cleanTag("sale-10-17"), "sale-10-17");
+  assert.equal(cleanTag("v1.2.3"), "v1.2.3");
   assert.equal(cleanTag("رمضان ٢٠٢٦"), "رمضان-٢٠٢٦", "a year in Arabic digits is fine");
 });
 
@@ -96,6 +103,13 @@ test("coming back from paying or signing in isn't a new visit", () => {
   assert.equal(isReturnTrip(new URL(APP), "https://www.google.com/"), false);
   assert.equal(isReturnTrip(new URL(`${APP}?utm_source=ig`), null), false);
   assert.equal(isReturnTrip(new URL(APP), "nonsense"), false);
+});
+
+test("a tag named like a built-in property of objects is a name like any other", () => {
+  for (const name of ["constructor", "__proto__", "tostring", "hasownproperty", "valueof"]) {
+    assert.deepEqual(touch(`?utm_source=${name}`), { source: name, medium: "", campaign: "" }, name);
+    assert.equal(touch(`?ref=${name}`).source, name, name);
+  }
 });
 
 test("a tagged link counts under exactly the names it shows", () => {

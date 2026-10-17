@@ -23,6 +23,7 @@ const {
 } = await import("../src/lib/server/site-data.ts");
 const { newOwnerCode, ownerKeyForCode, isOwnerKey, callerFor } = await import("../src/lib/server/site-owner.ts");
 const { publishSite, restoreVersion, listVersions, versionHtml, unpublishSite, slugTaken, SITE_TABLES } = await import("../src/lib/server/sites.ts");
+const { english } = await import("../src/lib/i18n.ts");
 const { readUpload } = await import("../src/lib/server/site-files.ts");
 const { serveSite } = await import("../src/lib/server/serve-site.ts");
 const { flashDbShim, injectHead, MEMORY_DB } = await import("../src/lib/flashdb-shim.ts");
@@ -927,6 +928,14 @@ test("paid plans publish more apps; free stays at 20, and an app at the cap can 
   assert.equal(
     "error" in over && over.error,
     "You have 60 apps published and your plan allows 20. Unpublish 41 of them to publish another. Paid plans can publish more apps.",
+  );
+  // In the reader's own digits, as the app list writes them.
+  await run("DELETE FROM rate_limits");
+  const arabicDigits = Object.assign((text: string, blanks?: Record<string, string | number>) => english(text, blanks), { locale: "ar-SA-u-ca-gregory" });
+  const arabic = await publishSite(capper, { html: "<p>new</p>", title: "New" }, arabicDigits);
+  assert.equal(
+    "error" in arabic && arabic.error,
+    "You have ٦٠ apps published and your plan allows ٢٠. Unpublish ٤١ of them to publish another. Paid plans can publish more apps.",
   );
   for (const { slug } of await all<{ slug: string }>("SELECT slug FROM sites WHERE user_id = 'capper' LIMIT 41")) await unpublishSite("capper", slug);
   await run("DELETE FROM rate_limits");

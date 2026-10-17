@@ -648,10 +648,20 @@ test("the funnel adds up each step for people matched to a visit, per source wit
   assert.deepEqual(f.unmatched, { form: 5, signup: 0, checkout: 2, orders: 1, revenue: [{ currency: "usd", amount: 1200 }] }, "paid minus what sources took, per currency");
   assert.deepEqual(
     f.sources.map((s) => s.source),
-    ["google.com", "", "newsletter", "s10", "s9", "s8", "s7", "s6", "s5", "s4"],
-    "the 10 with the most visitors",
+    ["google.com", "", "newsletter", "s10", "s9", "s8", "s7", "s6", "s5", "s4", "s3", "s2", "s1"],
+    "busiest first, each by name however few its visitors",
   );
-  assert.deepEqual(f.sources[0], { source: "google.com", visitors: 240, form: 6, signup: 2, checkout: 3, orders: 1, revenue: [{ currency: "usd", amount: 2900 }], campaigns: [] });
+  assert.deepEqual(f.sources[0], {
+    source: "google.com",
+    visitors: 240,
+    form: 6,
+    signup: 2,
+    checkout: 3,
+    orders: 1,
+    revenue: [{ currency: "usd", amount: 2900 }],
+    campaigns: [],
+    otherCampaigns: null,
+  });
   assert.deepEqual(f.sources[2], {
     source: "newsletter",
     visitors: 88,
@@ -661,8 +671,9 @@ test("the funnel adds up each step for people matched to a visit, per source wit
     orders: 3,
     revenue: [{ currency: "usd", amount: 5800 }, { currency: "eur", amount: 1000 }],
     campaigns: [{ medium: "email", campaign: "spring-sale", visitors: 60, form: 4, signup: 3, checkout: 0, orders: 3, revenue: [{ currency: "usd", amount: 5800 }, { currency: "eur", amount: 1000 }] }],
+    otherCampaigns: null,
   });
-  assert.deepEqual(f.rest, { ...zeroCounts, visitors: 3 + 2 + 1 + 5 }, "the others, (other) among them, and never the old count");
+  assert.deepEqual(f.rest, { ...zeroCounts, visitors: 5 }, "(other), and never the old count");
   assert.ok(!f.sources.some((s) => s.source === "?" || s.source === "(other)"));
   assert.deepEqual(f.appSteps, [{ step: "booking", people: 31 }, { step: "menu-open", people: 12 }]);
   assert.deepEqual([f.paused, f.stepsPaused, f.netCapped], [[{ day: D1, people: 10_000 }], [{ day: D1, steps: 10_000 }], 100]);
@@ -677,6 +688,33 @@ test("the funnel adds up each step for people matched to a visit, per source wit
   assert.equal(quarter.shownDays, 81);
   assert.deepEqual(["7", "30", "90", 90, "14", "abc", null, undefined].map(funnelRange), [7, 30, 90, 90, 30, 30, 30, 30]);
   assert.equal(await funnelStats("nobody-1", 30, NOW), null);
+});
+
+test("a tagged link with a few visitors shows by name beside busier sources; past 100 sources and 30 campaigns, the rest are added up", async () => {
+  await site("fun-many", "u4");
+  for (let i = 1; i <= 14; i++) await event("fun-many", D0, "visit", `busy-${String(i).padStart(2, "0")}.com`, 100 + i);
+  await event("fun-many", D0, "visit", "instagram-story", 2, "", "fall-sale-2026");
+  await event("fun-many", D0, "form", "instagram-story", 1, "", "fall-sale-2026");
+  let f = (await funnelStats("fun-many", 30, NOW))!;
+  assert.equal(f.sources.length, 15);
+  assert.deepEqual(
+    [f.sources.at(-1)!.source, f.sources.at(-1)!.visitors, f.sources.at(-1)!.form, f.sources.at(-1)!.campaigns.map((c) => c.campaign)],
+    ["instagram-story", 2, 1, ["fall-sale-2026"]],
+  );
+  assert.equal(f.rest, null);
+  // 35 campaigns of one source: its 30 busiest by name, the other 5 as one row.
+  for (let i = 1; i <= 35; i++) await event("fun-many", D1, "visit", "newsletter", i, "email", `issue-${i}`);
+  // 100 more sources: past the 100 busiest, the others are one row.
+  for (let i = 1; i <= 100; i++) await event("fun-many", D1, "visit", `tiny-${String(i).padStart(3, "0")}`, 1);
+  f = (await funnelStats("fun-many", 30, NOW))!;
+  const newsletter = f.sources.find((s) => s.source === "newsletter")!;
+  assert.equal(newsletter.campaigns.length, 30);
+  assert.deepEqual(newsletter.otherCampaigns, { ...zeroCounts, visitors: 1 + 2 + 3 + 4 + 5 });
+  assert.equal(f.sources.length, 100);
+  assert.ok(f.sources.some((s) => s.source === "instagram-story"), "still by name");
+  const all = f.sources.reduce((n, s) => n + s.visitors, 0) + (f.rest?.visitors ?? 0);
+  assert.equal(all, f.totals.visitors, "the rows add up to Visitors");
+  assert.equal(f.rest?.visitors, 16);
 });
 
 test("the funnel starts on the day counting began, or the app's first day, and never shows the days before as zeros", async () => {

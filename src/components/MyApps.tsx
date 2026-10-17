@@ -362,7 +362,8 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
     ]);
   }
 
-  async function loadFunnel(slug: string, days: FunnelRange) {
+  /** Loads a range of the funnel; when it can't, the range shown (shownDays) stays picked, with why. */
+  async function loadFunnel(slug: string, days: FunnelRange, shownDays?: FunnelRange) {
     const asked = ++funnelLoads.current;
     setFunnelError("");
     try {
@@ -371,14 +372,16 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
     } catch (err) {
       // Too many loads in an hour says so; the visits above still show.
       const busy = err instanceof Error && (err as Error & { status?: number }).status === 429;
-      if (asked === funnelLoads.current) setFunnelError(busy ? err.message : t("Couldn't load the visitor stats. Please try again."));
+      if (asked !== funnelLoads.current) return;
+      setFunnelError(busy ? err.message : t("Couldn't load the visitor stats. Please try again."));
+      if (shownDays) setFunnelDays(shownDays);
     }
   }
 
   function chooseDays(days: FunnelRange) {
     if (!open) return;
     setFunnelDays(days);
-    loadFunnel(open.slug, days);
+    loadFunnel(open.slug, days, funnel?.slug === open.slug ? funnel.days : undefined);
   }
 
   async function markOrder(order: Order) {
@@ -671,6 +674,18 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
   // The funnel shown: only the open app's. While another range loads, the one before stays (dimmed).
   const shownFunnel = open && funnel?.slug === open.slug ? funnel.stats : null;
   const funnelLoading = Boolean(shownFunnel) && funnel?.days !== funnelDays;
+  // An app with no visits in 30 days shows only the link maker, while no range could show more: its
+  // funnel has nothing, and it is younger than 30 days (or counting is), so 90 days are those days too.
+  const noFunnel =
+    shownFunnel !== null &&
+    shownFunnel.shownDays < 30 &&
+    !shownFunnel.totals.visitors &&
+    !shownFunnel.totals.orders &&
+    !shownFunnel.unmatched.form &&
+    !shownFunnel.unmatched.signup &&
+    !shownFunnel.unmatched.checkout &&
+    !shownFunnel.unmatched.orders &&
+    !shownFunnel.appSteps.length;
 
   return (
     <div className="fixed inset-0 z-40 flex items-stretch justify-center bg-black/60 backdrop-blur-sm sm:items-center sm:p-6" onClick={() => mayLeave() && onClose()}>
@@ -707,9 +722,9 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 sm:p-5">
-          {(error || (open && view === "visits" && funnelError)) && (
+          {error && (
             <p role="alert" className="mb-3 text-sm text-red-400">
-              {error || funnelError}
+              {error}
             </p>
           )}
           {open && view === "data" ? (
@@ -953,10 +968,10 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
               <div className="space-y-8">
                 {shownFunnel && <FunnelNotes stats={shownFunnel} onPlans={onPlans} />}
                 <VisitsView visits={visits.data} />
-                {visits.data.views === 0 ? (
-                  shownFunnel && <LinkMaker addresses={shownFunnel.addresses} />
+                {visits.data.views === 0 && noFunnel ? (
+                  <LinkMaker addresses={shownFunnel.addresses} />
                 ) : (
-                  <FunnelView stats={shownFunnel} days={funnelDays} onDays={chooseDays} failed={Boolean(funnelError)} loading={funnelLoading} />
+                  <FunnelView stats={shownFunnel} days={funnelDays} onDays={chooseDays} error={funnelError} loading={funnelLoading} />
                 )}
               </div>
             )
@@ -1325,7 +1340,18 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
             <>
               {maxSites !== null && (
                 <div className="mb-3 space-y-1">
-                  <p className="text-xs text-zinc-500">{t("{count} of {max} apps published", { count: sites.length.toLocaleString(t.locale), max: maxSites.toLocaleString(t.locale) })}</p>
+                  {sites.length > maxSites ? (
+                    // Back on a smaller plan: every app stays, and publishing another waits until enough are unpublished.
+                    <p className="text-sm text-gold-soft">
+                      {t("You have {count} apps published and your plan allows {max}. Unpublish {extra} of them to publish another.", {
+                        count: sites.length.toLocaleString(t.locale),
+                        max: maxSites.toLocaleString(t.locale),
+                        extra: (sites.length - maxSites + 1).toLocaleString(t.locale),
+                      })}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-zinc-500">{t("{count} of {max} apps published", { count: sites.length.toLocaleString(t.locale), max: maxSites.toLocaleString(t.locale) })}</p>
+                  )}
                   {maxSites <= LIST_STEP && sites.length >= 15 && (
                     <p className="text-sm text-gold-soft">
                       {t("Paid plans can publish more apps.")}
@@ -1351,6 +1377,11 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
                   maxLength={80}
                   className="mb-3 h-10 w-full min-w-0 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-zinc-200 outline-none focus:border-primary/70"
                 />
+              )}
+              {find.trim() && !found.length && (
+                <p className="text-sm text-zinc-500">
+                  {t("No apps match “{text}”.", { text: find.trim() })}
+                </p>
               )}
               <ul className="space-y-2">
                 {found.slice(0, listed).map((s) => (
@@ -1665,7 +1696,10 @@ function VisitsView({ visits }: { visits: Visits }) {
   if (visits.views === 0) {
     return (
       <p className="mx-auto mt-16 max-w-sm text-center text-sm text-zinc-500">
-        {t("No visitors yet. Share your site's link and each visit shows up here. Your own visits while signed in to Flash aren't counted.")}
+        {/* An app older than the 30 days shown may have had visitors before them (see From visit to sale). */}
+        {visits.days.length < 30
+          ? t("No visitors yet. Share your site's link and each visit shows up here. Your own visits while signed in to Flash aren't counted.")
+          : t("No visits in the last 30 days. Your own visits while signed in to Flash aren't counted.")}
       </p>
     );
   }
@@ -1689,11 +1723,15 @@ function VisitsView({ visits }: { visits: Visits }) {
       </div>
       <div>
         <p className="mb-2 text-xs text-zinc-500">{t("Visits per day, last 30 days")}</p>
-        <div className="flex h-32 items-end gap-[3px]" role="img" aria-label={t("{count} visits in the last 30 days", { count: visits.views })}>
+        <div className="flex h-32 items-end gap-[3px]" role="img" aria-label={t("{count} visits in the last 30 days", { count: visits.views.toLocaleString(t.locale) })}>
           {visits.days.map((d) => (
             <div
               key={d.day}
-              title={t("{date}: {views} visits, {visitors} visitors", { date: dayLabel(d.day, t.locale), views: d.views, visitors: d.visitors })}
+              title={t("{date}: {views} visits, {visitors} visitors", {
+                date: dayLabel(d.day, t.locale),
+                views: d.views.toLocaleString(t.locale),
+                visitors: d.visitors.toLocaleString(t.locale),
+              })}
               className="min-w-0 flex-1 rounded-t-sm bg-primary/70 hover:bg-primary"
               style={{ height: d.views ? `${Math.max(4, (d.views / top) * 100)}%` : "2px", opacity: d.views ? 1 : 0.25 }}
             />
@@ -1705,14 +1743,18 @@ function VisitsView({ visits }: { visits: Visits }) {
         </div>
       </div>
       <div>
-        <p className="mb-2 text-xs text-zinc-500">{t("Where visitors came from")}</p>
+        {/* Its numbers are visits, so they aren't read as the people in By source. */}
+        <p className="mb-2 flex justify-between gap-3 px-4 text-xs text-zinc-500">
+          <span>{t("Where visitors came from")}</span>
+          <span>{t("Visits")}</span>
+        </p>
         <ul className="divide-y divide-white/6 rounded-xl border border-white/8">
           {visits.sources.map((s) => (
-            <li key={s.source} className="flex items-center justify-between px-4 py-2 text-sm">
+            <li key={s.source} className="flex items-center justify-between gap-3 px-4 py-2 text-sm">
               <bdi dir="auto" className="min-w-0 truncate text-zinc-200">
                 {s.source === OTHER.source ? t("Other sources") : s.source || t("Direct (typed, bookmarked or shared in a message)")}
               </bdi>
-              <span className="tabular-nums text-zinc-400">{s.views.toLocaleString(t.locale)}</span>
+              <span className="shrink-0 tabular-nums text-zinc-400">{s.views.toLocaleString(t.locale)}</span>
             </li>
           ))}
         </ul>

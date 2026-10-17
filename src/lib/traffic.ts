@@ -18,8 +18,9 @@ const MAX_TAG = 40;
 const MAX_SOURCE = 60;
 // An email address, a phone number (in any digits), or a subscriber's or click's ID: a tag holding one isn't used.
 const PERSONAL = /@|\p{Nd}{7,}|[0-9a-f]{16,}/iu;
-// What people type in utm_source, as the name a referrer from there would give.
-const ALIASES: Record<string, string> = {
+// What people type in utm_source, as the name a referrer from there would give. Looked up only by
+// its own names, so a tag like "constructor" is a name like any other.
+const ALIASES: Readonly<Record<string, string>> = {
   google: "google.com",
   fb: "facebook.com",
   facebook: "facebook.com",
@@ -51,8 +52,9 @@ export function cleanTag(value: string | null | undefined): string {
     .replace(/[^\p{L}\p{M}\p{N}._ -]/gu, "")
     .trim()
     .replace(/ +/g, "-");
-  // Looked for before and after cleaning, which joins what other characters kept apart: (415) 555'0123.
-  return PERSONAL.test(cut) || PERSONAL.test(clean) ? "" : clean.slice(0, MAX_TAG);
+  // Looked for before cleaning, and after it with dots, dashes and underscores taken out too, which
+  // joins what they and other characters kept apart: (415) 555-0123, +44 7911 123456, a UUID.
+  return PERSONAL.test(cut) || PERSONAL.test(clean.replace(/[._-]/g, "")) ? "" : clean.slice(0, MAX_TAG);
 }
 
 /** A website's name as Flash shows it: search engines and social apps by their main name (m.facebook.com is facebook.com). */
@@ -88,7 +90,7 @@ export function touchOf(url: URL, referer: string | null, host: string | null): 
   const utm = tag("utm_source");
   const named = utm || tag("ref");
   if (named) {
-    const source = ALIASES[named] ?? (named.includes(".") ? foldHost(named) : named);
+    const source = Object.hasOwn(ALIASES, named) ? ALIASES[named] : named.includes(".") ? foldHost(named) : named;
     return utm ? { source, medium: tag("utm_medium"), campaign: tag("utm_campaign") } : { source, medium: "", campaign: "" };
   }
   // Facebook's fbclid is left out: Facebook adds it to links nobody paid for too.

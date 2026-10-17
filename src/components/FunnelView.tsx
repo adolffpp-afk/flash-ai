@@ -20,13 +20,17 @@ const RANGES: [FunnelRange, string][] = [
 ];
 // Earlier days with a limit note, at most this many by date.
 const NOTED_DAYS = 3;
+// Sources shown before Show more: the busiest.
+const SHOWN_SOURCES = 10;
 const heading = "text-xs font-medium uppercase tracking-wider text-zinc-500";
 const field = "h-10 w-full min-w-0 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-zinc-200 outline-none focus:border-primary/70";
 
 const count = (n: number, t: T) => n.toLocaleString(t.locale);
 const money = (list: Money[], t: T) => list.map((m) => formatMoney(m.amount, m.currency, t.locale));
+/** Amounts in several currencies as one list in the reader's language ("30,00 $ und 25,00 €"), never added together. */
+const moneyList = (list: Money[], t: T) => new Intl.ListFormat(t.locale, { type: "conjunction" }).format(money(list, t));
 const ordersText = (n: number, list: Money[], t: T) => {
-  const amount = money(list, t).join(", ") || formatMoney(0, "usd", t.locale);
+  const amount = moneyList(list, t) || formatMoney(0, "usd", t.locale);
   return n === 1 ? t("1 order · {amount}", { amount }) : t("{count} orders · {amount}", { count: count(n, t), amount });
 };
 /** What goes between two numbers: a middle dot, or a comma where digits are Arabic or Persian, whose zero is a dot too. */
@@ -51,6 +55,24 @@ function byLimit<T extends { day: string }>(list: T[], limit: (x: T) => number):
   return groups;
 }
 const campaignName = (c: { medium: string; campaign: string }) => [c.medium, c.campaign].filter(Boolean).join(" · ");
+/** Rows added up into one, each currency on its own. */
+function sumCounts(list: FunnelCounts[]): FunnelCounts {
+  const sum: FunnelCounts = { visitors: 0, form: 0, signup: 0, checkout: 0, orders: 0, revenue: [] };
+  for (const c of list) {
+    sum.visitors += c.visitors;
+    sum.form += c.form;
+    sum.signup += c.signup;
+    sum.checkout += c.checkout;
+    sum.orders += c.orders;
+    for (const m of c.revenue) {
+      const known = sum.revenue.find((x) => x.currency === m.currency);
+      if (known) known.amount += m.amount;
+      else sum.revenue.push({ ...m });
+    }
+  }
+  sum.revenue.sort((a, b) => b.amount - a.amount || a.currency.localeCompare(b.currency));
+  return sum;
+}
 
 /**
  * Why some of the funnel's days are incomplete: counting paused at the owner's daily limit today or
@@ -149,7 +171,7 @@ function SourceNumbers({ c, visitors, t }: { c: Omit<FunnelCounts, "visitors">; 
     [t("Sign-ups"), count(c.signup, t)],
     [t("Checkouts"), count(c.checkout, t)],
     [t("Orders"), count(c.orders, t)],
-    [t("Revenue"), money(c.revenue, t).join(", ") || "—"],
+    [t("Revenue"), moneyList(c.revenue, t) || "—"],
   ];
   return (
     <dl className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs">
@@ -175,13 +197,24 @@ function Chevron({ open }: { open: boolean }) {
 function SourceTable({ stats }: { stats: FunnelStats }) {
   const t = useT();
   const [opened, setOpened] = useState<string[]>([]);
+  const [everySource, setEverySource] = useState(false);
   const toggle = (source: string) => setOpened((list) => (list.includes(source) ? list.filter((s) => s !== source) : [...list, source]));
   const u = stats.unmatched;
   const hasUnmatched = Boolean(u.form || u.signup || u.checkout || u.orders);
+  // The busiest 10, then every source by name after Show more. Until then the others are in Other
+  // sources, so the rows always add up.
+  const shown = everySource ? stats.sources : stats.sources.slice(0, SHOWN_SOURCES);
+  const hidden = stats.sources.slice(shown.length);
+  const rest = hidden.length ? sumCounts([...hidden, ...(stats.rest ? [stats.rest] : [])]) : stats.rest;
   const rows: { key: string; name: string; c: FunnelCounts; source?: FunnelSource; muted?: boolean }[] = [
-    ...stats.sources.map((s) => ({ key: `s:${s.source}`, name: sourceName(s.source, t), c: s, source: s })),
-    ...(stats.rest ? [{ key: "rest", name: t("Other sources"), c: stats.rest, muted: true }] : []),
+    ...shown.map((s) => ({ key: `s:${s.source}`, name: sourceName(s.source, t), c: s, source: s })),
+    ...(rest ? [{ key: "rest", name: t("Other sources"), c: rest, muted: true }] : []),
   ];
+  const more = hidden.length > 0 && (
+    <button onClick={() => setEverySource(true)} className="mx-auto mt-3 block rounded-full border border-white/10 px-4 py-2 text-sm text-zinc-300 transition hover:bg-white/[0.05]">
+      {t("Show more")}
+    </button>
+  );
   // People who came on the day counting by source began, before it began, are in Visitors only.
   const inRows = rows.reduce((n, r) => n + r.c.visitors, 0);
   const before = stats.totals.visitors > inRows;
@@ -287,6 +320,12 @@ function SourceTable({ stats }: { stats: FunnelStats }) {
                     <SourceNumbers c={c} visitors={c.visitors} t={t} />
                   </div>
                 ))}
+              {open && r.source?.otherCampaigns && (
+                <div className="ms-3 mt-2 border-s border-white/8 ps-3">
+                  <p className="text-xs text-zinc-400">{t("Other campaigns")}</p>
+                  <SourceNumbers c={r.source.otherCampaigns} visitors={r.source.otherCampaigns.visitors} t={t} />
+                </div>
+              )}
             </li>
           );
         })}
@@ -297,6 +336,7 @@ function SourceTable({ stats }: { stats: FunnelStats }) {
           </li>
         )}
       </ul>
+      {more}
       {beforeNote}
     </div>
   );
@@ -314,7 +354,9 @@ function SourceRows({
   nameCell: (name: string, source?: FunnelSource, muted?: boolean, wrap?: boolean) => ReactNode;
   numbers: (c: Omit<FunnelCounts, "visitors">, visitors: number | null) => ReactNode;
 }) {
+  const t = useT();
   const open = r.source ? opened.includes(r.source.source) : false;
+  const others = open ? r.source?.otherCampaigns : null;
   return (
     <>
       <tr className={r.muted ? "text-zinc-400" : ""}>
@@ -332,6 +374,14 @@ function SourceRows({
             {numbers(c, c.visitors)}
           </tr>
         ))}
+      {others && (
+        <tr className="text-xs text-zinc-400">
+          <td className="py-1.5 pe-3 ps-8">
+            <span className="block truncate">{t("Other campaigns")}</span>
+          </td>
+          {numbers(others, others.visitors)}
+        </tr>
+      )}
     </>
   );
 }
@@ -352,7 +402,7 @@ export function LinkMaker({ addresses }: { addresses: string[] }) {
   const link = taggedLink(addresses.includes(address) ? address : (addresses[0] ?? ""), { source, campaign });
   // What was typed but can't be a tag, which the link leaves out.
   const dropped = (typed: string) => typed.trim() !== "" && !cleanTag(typed);
-  const leftOut = <span className="mt-1 block text-xs text-gold-soft">{t("Use letters or digits. Flash leaves out names with an @, 7 or more digits in a row or a long code, as they could identify someone.")}</span>;
+  const leftOut = <span className="mt-1 block text-xs text-gold-soft">{t("Use letters or digits. Flash leaves out names with an @, 7 or more digits or a long code, as they could identify someone.")}</span>;
   // A campaign is read only with a source, so without one the link leaves it out.
   const noSource = source.trim() === "" && campaign.trim() !== "";
   // Shown with its words as typed, in any script; copied as the browser writes it.
@@ -427,18 +477,19 @@ export function LinkMaker({ addresses }: { addresses: string[] }) {
  * visitors came from and what each source brought; the steps the app reports; and the link maker.
  * stats is null until the first range loads (or when it couldn't); while another range loads, the
  * one before stays, dimmed (loading), so the link maker and opened sources keep what was in them.
+ * error is why the last range didn't load, said by its buttons, which then show the range shown.
  */
 export function FunnelView({
   stats,
   days,
   onDays,
-  failed,
+  error,
   loading = false,
 }: {
   stats: FunnelStats | null;
   days: FunnelRange;
   onDays: (days: FunnelRange) => void;
-  failed: boolean;
+  error: string;
   loading?: boolean;
 }) {
   const t = useT();
@@ -461,8 +512,13 @@ export function FunnelView({
           ))}
         </div>
       </div>
+      {error && (
+        <p role="alert" className="-mt-3 text-sm text-red-400">
+          {error}
+        </p>
+      )}
       {!stats || !totals ? (
-        !failed && <p className="text-sm text-zinc-500">{t("Loading…")}</p>
+        !error && <p className="text-sm text-zinc-500">{t("Loading…")}</p>
       ) : (
         <div aria-busy={loading || undefined} className={`space-y-6 transition-opacity ${loading ? "opacity-50" : ""}`}>
           {stats.shownDays < stats.days && (

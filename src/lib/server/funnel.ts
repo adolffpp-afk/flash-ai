@@ -274,13 +274,21 @@ export const funnelRange = (days: unknown): FunnelRange => FUNNEL_RANGES.find((d
 export const FUNNEL_CALLS = 120;
 export const funnelTests = { calls: 0 };
 export const funnelCalls = () => funnelTests.calls || FUNNEL_CALLS;
-/** Sources shown by name; the others are added up as one row. */
-const TOP_SOURCES = 10;
-const TOP_CAMPAIGNS = 10;
+/**
+ * Sources sent by name (the view shows the first 10 until asked for more), and campaigns per source;
+ * past them, the others are added up as one row, so a link with only a few visitors still shows.
+ */
+const TOP_SOURCES = 100;
+const TOP_CAMPAIGNS = 30;
 
 export type Money = { currency: string; amount: number };
 export type FunnelCounts = { visitors: number; form: number; signup: number; checkout: number; orders: number; revenue: Money[] };
-export type FunnelSource = FunnelCounts & { source: string; campaigns: (FunnelCounts & { medium: string; campaign: string })[] };
+export type FunnelSource = FunnelCounts & {
+  source: string;
+  campaigns: (FunnelCounts & { medium: string; campaign: string })[];
+  /** The source's other campaigns added up, past its 30 busiest; null when there are none. */
+  otherCampaigns: FunnelCounts | null;
+};
 export type FunnelStats = {
   days: FunnelRange;
   /** Today (UTC), the first day shown, and how many days that is. */
@@ -289,7 +297,7 @@ export type FunnelStats = {
   shownDays: number;
   /** Visitors as the Visitors tile counts them; form, signup and checkout people matched to a visit; every paid order. */
   totals: FunnelCounts;
-  /** The 10 sources with the most visitors ('' is Direct), with their campaigns. */
+  /** The 100 sources with the most visitors ('' is Direct), busiest first, with their campaigns. */
   sources: FunnelSource[];
   /** The other sources added up, "(other)" among them; null when there are none. */
   rest: FunnelCounts | null;
@@ -370,7 +378,7 @@ export async function funnelStats(slug: string, days: FunnelRange, at = Date.now
   const sources = new Map<string, FunnelSource>();
   const sourceOf = (source: string) => {
     let s = sources.get(source);
-    if (!s) sources.set(source, (s = { ...zero(), source, campaigns: [] }));
+    if (!s) sources.set(source, (s = { ...zero(), source, campaigns: [], otherCampaigns: null }));
     return s;
   };
   const campaignOf = (s: FunnelSource, medium: string, campaign: string) => {
@@ -436,7 +444,13 @@ export async function funnelStats(slug: string, days: FunnelRange, at = Date.now
     byMoney(rest.revenue);
   }
   for (const s of named) {
-    s.campaigns = s.campaigns.sort((a, b) => busier(a, b) || a.campaign.localeCompare(b.campaign)).slice(0, TOP_CAMPAIGNS);
+    const campaigns = s.campaigns.sort((a, b) => busier(a, b) || a.campaign.localeCompare(b.campaign));
+    s.campaigns = campaigns.slice(0, TOP_CAMPAIGNS);
+    if (campaigns.length > TOP_CAMPAIGNS) {
+      s.otherCampaigns = zero();
+      for (const c of campaigns.slice(TOP_CAMPAIGNS)) addCounts(s.otherCampaigns, c);
+      byMoney(s.otherCampaigns.revenue);
+    }
     byMoney(s.revenue);
     for (const c of s.campaigns) byMoney(c.revenue);
   }
