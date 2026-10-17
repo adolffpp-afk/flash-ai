@@ -65,6 +65,8 @@ const pickerTokenRoute = await import("../src/app/api/connect/google/picker-toke
 const driveFilesRoute = await import("../src/app/api/connect/google/files/route.ts");
 const madeWithRoute = await import("../src/app/api/sites/[slug]/made-with/route.ts");
 const adminReportsRoute = await import("../src/app/api/admin/reports/route.ts");
+const contactsRoute = await import("../src/app/api/sites/[slug]/contacts/route.ts");
+const { addContact } = await import("../src/lib/server/contacts.ts");
 const { registerClient } = await import("../src/lib/server/connector.ts");
 const { sendVerification } = await import("../src/lib/server/account.ts");
 const { receiveMessage } = await import("../src/lib/server/inbox.ts");
@@ -933,7 +935,7 @@ test("GitHub's sign-in and installation, and Google Drive's sign-in, finish for 
   assert.equal(await flowLeft(cDrive), 1);
 });
 
-test("auto top-up, Google Drive, Made with Flash and the reports dashboard act as the tab's account", async () => {
+test("auto top-up, Google Drive, Made with Flash, the reports dashboard and contacts act as the tab's account", async () => {
   const a = await account("nra");
   const b = await account("nrb");
   const stranger = await account("nrc");
@@ -983,6 +985,25 @@ test("auto top-up, Google Drive, Made with Flash and the reports dashboard act a
   assert.equal((await made(b)).status, 200);
   assert.equal((await made(undefined, "PATCH")).status, 401);
   assert.equal((await made(a, "PATCH")).status, 404);
+
+  // Contacts: the CSV export and one contact's data are the tab's account's app's, not the default's.
+  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES ('ct-a', ?, 'A', '<p>a</p>', 0, 0)", [a]);
+  const added = await addContact("ct-a", { name: "Rosa", email: "rosa@example.com" });
+  assert.ok("id" in added);
+  const contacts = (query: string, account?: string) => contactsRoute.GET(req(`/api/sites/ct-a/contacts?${query}`, { cookie, account }), ctx({ slug: "ct-a" }));
+  for (const query of ["format=csv", `id=${added.id}&format=json`]) {
+    const mine = await contacts(query, a);
+    assert.equal(mine.status, 200, query);
+    assert.match(mine.headers.get("content-type") ?? "", query === "format=csv" ? /^text\/csv/ : /json/);
+    assert.equal((await contacts(query)).status, 404, `${query}: with no account named, the default (b) owns no such app`);
+    assert.equal((await contacts(query, b)).status, 404, query);
+    assert.equal((await contacts(query, stranger)).status, 401, query);
+  }
+  const removed = (account?: string) =>
+    contactsRoute.DELETE(req(`/api/sites/ct-a/contacts?id=${added.id}`, { method: "DELETE", cookie, account }), ctx({ slug: "ct-a" }));
+  assert.equal((await removed()).status, 401, "a change must name the tab's account");
+  assert.equal((await removed(b)).status, 404);
+  assert.equal(await count("SELECT COUNT(*) AS n FROM site_contacts WHERE site_slug = 'ct-a'"), 1);
 
   // The reports dashboard: only while the tab shows the owner's account, whichever is the default.
   const admins = process.env.FLASH_ADMIN_EMAILS;
