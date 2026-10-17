@@ -258,7 +258,7 @@ export async function* streamBuild(
                 : app
                   ? t("Changing {count} places in your app…", { count: pieces })
                   : t("Changing {count} places in your slides…", { count: pieces });
-            yield { type: "status", message };
+            yield { type: "status", message, writing: true };
           }
         }
       }

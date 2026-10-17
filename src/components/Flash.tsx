@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Message, type Reshape } from "./Message";
 import { AuthScreen } from "./AuthScreen";
 import { Landing } from "./Landing";
@@ -19,7 +19,7 @@ import { Companion } from "./Companion";
 import { Templates } from "./Templates";
 import { MyApps } from "./MyApps";
 import { BuildPanel, useMedia } from "./BuildPanel";
-import { draftStore } from "@/lib/live-draft";
+import { draftShown, draftStore, startsWriting } from "@/lib/live-draft";
 import { OFFICE_TYPES, officeKind, officeText } from "@/lib/office";
 import { MAX_PDF_MB, pdfText } from "@/lib/pdf-text";
 import { addAttachment } from "@/lib/attachments";
@@ -291,6 +291,11 @@ export function Flash({
   // window, whether the chat or the preview shows.
   const [panelHidden, setPanelHidden] = useState(false);
   const [phoneTab, setPhoneTab] = useState<"chat" | "preview">("chat");
+  // The chat whose preview was last opened on a phone, so a reply there that doesn't build brings the chat back.
+  const previewIn = useRef("");
+  // The reply Flash has started writing a file in (see startsWriting): only from then on does the
+  // preview show it being built, so a reply from the builder that is only words never opens or dims it.
+  const [writing, setWriting] = useState("");
   // Wide enough for the preview beside the chat, and for it and the open companion both.
   const wide = useMedia("(min-width: 1280px)");
   const roomy = useMedia("(min-width: 1760px)");
@@ -1186,6 +1191,7 @@ export function Flash({
     jobRef.current = { request: userMsg.content, startedAt: Date.now(), projectId };
     setRunningIn(projectId);
     setRunningReply(reply.id);
+    let wrote = false;
     let finished = true;
     // An answer came back from the server, and it took the request: from then on it finishes and
     // saves the reply itself, whatever happens to this page.
@@ -1249,6 +1255,12 @@ export function Flash({
         for (const line of lines) {
           if (!line.trim()) continue;
           const e = JSON.parse(line) as StreamEvent;
+          if (!wrote && !stoppingRef.current && startsWriting(e)) {
+            wrote = true;
+            setWriting(reply.id);
+            // A new build shows the preview beside the chat again.
+            setPanelHidden(false);
+          }
           if (e.type === "draft") {
             // The file being written goes to the live preview only, never onto the reply, so it's never saved.
             if (!stoppingRef.current) drafts.apply(reply.id, e);
@@ -1256,8 +1268,8 @@ export function Flash({
           }
           if (e.type === "error" || e.type === "stopped") finished = false;
           if (e.type === "done") ended = true;
-          // A new build shows the preview beside the chat again.
-          if (e.type === "route" && (e.engine === "app" || e.engine === "slides")) setPanelHidden(false);
+          // An answer that isn't a build shows in the chat, on a phone too: sent from under the preview, it'd go unseen.
+          if (e.type === "route" && e.engine !== "app" && e.engine !== "slides" && previewIn.current === projectId) setPhoneTab("chat");
           final = applyEvent(final, e);
           updateMessage(projectId, reply.id, (m) => applyEvent(m, e));
           // The finished file replaces the draft in the same redraw.
@@ -1294,6 +1306,8 @@ export function Flash({
     } finally {
       // However the reply ended (finished, failed, lost or left to the server), its draft goes.
       drafts.clear(reply.id);
+      // A reply with no app (words, a question, an error) is read in the chat, not under the preview.
+      if (!final.app && previewIn.current === projectId) setPhoneTab("chat");
       if (!onServer) updateMessage(projectId, reply.id, (m) => ({ ...m, pending: false, status: undefined }));
       refreshMe();
       abortRef.current = null;
@@ -1613,7 +1627,18 @@ export function Flash({
   const lastAppId = appMsg?.id;
   // The app or deck Flash is writing in the open chat right now, until its file arrives.
   const lastMsg = active?.messages?.at(-1);
-  const building = lastMsg?.pending && !lastMsg.app && (lastMsg.engine === "app" || lastMsg.engine === "slides") ? lastMsg : undefined;
+  const building =
+    lastMsg?.pending && !lastMsg.app && (lastMsg.engine === "app" || lastMsg.engine === "slides") && lastMsg.id === writing ? lastMsg : undefined;
+  // Whether the preview shows the file being written in place of the latest app. Read as a yes or no,
+  // so the chat draws again only when that changes, never for each draft.
+  const drafting = useSyncExternalStore(
+    drafts.subscribe,
+    () =>
+      Boolean(building) &&
+      drafts.get().reply === building?.id &&
+      draftShown(drafts.get().html, { changing: Boolean(appMsg?.app), kind: building?.engine === "slides" ? "slides" : "app" }),
+    () => false,
+  );
   const liveCount = ENGINES.filter(isLive).length;
   const allOff = status && !liveCount;
 
@@ -1672,13 +1697,18 @@ export function Flash({
   const beside = showPanel && wide && (!companion || roomy);
   const tab = showPanel && !beside ? phoneTab : "chat";
   const panelShown = beside && !panelHidden;
-  const showPreview = () => (beside ? setPanelHidden(false) : setPhoneTab("preview"));
+  const showPhoneTab = (v: "chat" | "preview") => {
+    if (v === "preview") previewIn.current = activeId;
+    setPhoneTab(v);
+  };
+  const showPreview = () => (beside ? setPanelHidden(false) : showPhoneTab("preview"));
   const panel = showPanel && (
     <BuildPanel
       drafts={drafts}
       appMsg={appMsg}
       publishedEarlier={appMsg?.app && !appMsg.app.slug ? active?.messages?.slice(0, appIndex).findLast((x) => x.app?.slug)?.app?.slug : undefined}
       building={building}
+      drafting={drafting}
       live={Boolean(building) && building?.id === runningReply}
       busy={busy}
       onPublished={setAppSlug}
@@ -2426,7 +2456,7 @@ export function Flash({
         )}
         {showCredits && <CreditsDialog me={me} onClose={() => setShowCredits(false)} onChanged={refreshMe} />}
         {showInvite && <InviteDialog me={me} onClose={() => setShowInvite(false)} />}
-        <InstallPopup />
+        <InstallPopup besidePreview={panelShown} />
         {install.dialog}
       {showShare && active && <ShareDialog project={active} onClose={() => setShowShare(false)} />}
       {settingsTab && me && (
@@ -2471,7 +2501,7 @@ export function Flash({
                   role="tab"
                   aria-selected={tab === v}
                   aria-controls={v === "preview" ? "flash-preview" : undefined}
-                  onClick={() => setPhoneTab(v)}
+                  onClick={() => showPhoneTab(v)}
                   className={`inline-flex min-w-24 items-center justify-center gap-1.5 px-4 py-1.5 ${tab === v ? "bg-primary/15 text-primary-soft" : "hover:text-zinc-200"}`}
                 >
                   {v === "chat" ? t("Conversation") : t("Preview")}
@@ -2575,6 +2605,7 @@ export function Flash({
                   // The latest app runs in the live preview only, so it's never two copies with their own state.
                   onShowApp={m.id === lastAppId || (m.id === building?.id && !panelShown) ? showPreview : undefined}
                   appShown={m.id === lastAppId && (panelShown || tab === "preview")}
+                  appReplaced={m.id === lastAppId && drafting}
                 />
               ))}
               {/* Scrolled to with the padding under it, so the last line clears the companion's button. */}

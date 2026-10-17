@@ -360,7 +360,7 @@ function UserMessage({ m, onEdit }: { m: UIMessage; onEdit?: (text: string) => v
 }
 
 /** The latest app in the chat, which runs in the live preview: one line here that opens it there. */
-function AppCard({ title, kind, shown, onShow }: { title: string; kind: "app" | "slides"; shown: boolean; onShow: () => void }) {
+function AppCard({ title, kind, shown, replaced, onShow }: { title: string; kind: "app" | "slides"; shown: boolean; replaced: boolean; onShow: () => void }) {
   const t = useT();
   return (
     <div className="mt-3 flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900 px-3 py-2.5 text-sm">
@@ -373,7 +373,8 @@ function AppCard({ title, kind, shown, onShow }: { title: string; kind: "app" | 
         <span className="block truncate font-medium text-zinc-100">{title}</span>
         <span className="block text-xs text-zinc-500">{kind === "slides" ? t("Slides") : t("App")}</span>
       </span>
-      {shown ? (
+      {/* While its new version is written there, it's in the preview no more and isn't offered. */}
+      {replaced ? null : shown ? (
         <span className="shrink-0 text-xs text-zinc-500">{t("Showing in preview")}</span>
       ) : (
         <button onClick={onShow} className="shrink-0 rounded-md border border-zinc-700 px-2.5 py-1 text-xs text-zinc-100 transition hover:border-primary/50 hover:bg-zinc-800">
@@ -401,6 +402,7 @@ export function Message({
   onContinue,
   onShowApp,
   appShown,
+  appReplaced,
   paymentsOn = true,
   language,
 }: {
@@ -434,6 +436,8 @@ export function Message({
   // it's a button to watch it there.
   onShowApp?: () => void;
   appShown?: boolean;
+  // The preview shows the new version being written in its place.
+  appReplaced?: boolean;
 }) {
   const t = useT();
   if (m.role === "user") return <UserMessage m={m} onEdit={onEdit} />;
@@ -547,7 +551,7 @@ export function Message({
           )}
         </div>
         {m.app && onShowApp ? (
-          <AppCard title={m.app.title} kind={m.app.kind} shown={Boolean(appShown)} onShow={onShowApp} />
+          <AppCard title={m.app.title} kind={m.app.kind} shown={Boolean(appShown)} replaced={Boolean(appReplaced)} onShow={onShowApp} />
         ) : m.app && (
           <AppPreview
             app={m.app}

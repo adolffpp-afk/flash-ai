@@ -2,6 +2,7 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import type { StreamEvent } from "../src/lib/types.ts";
 
 // A stand-in Claude that streams whatever the test lines up next, and keeps what it was sent.
 const answers: (string | { text: string; stop: string })[] = [];
@@ -33,6 +34,7 @@ process.env.ANTHROPIC_API_KEY = "sk-fake";
 process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
 const { streamBuild } = await import("../src/lib/engines/builder.ts");
+const { startsWriting } = await import("../src/lib/live-draft.ts");
 type Event = { type: string; delta?: string; message?: string; at?: number; app?: { title: string; html: string; kind: string } };
 
 const PAGE = `<!doctype html>
@@ -71,7 +73,10 @@ async function run(
   const statuses = events.filter((e) => e.type === "status").map((e) => e.message);
   // The live preview's drafts, in order (see live-draft.ts).
   const drafts = events.filter((e) => e.type === "draft") as { at: number; delta: string }[];
-  return { said, app, error, statuses, costs, drafts };
+  // Where the live preview opens (see startsWriting): -1 when it never does.
+  const writes = events.findIndex((e) => startsWriting(e as StreamEvent));
+  const appAt = events.findIndex((e) => e.type === "app");
+  return { said, app, error, statuses, costs, drafts, writes, appAt };
 }
 
 /** The file the drafts add up to, as the page puts it together, and whether each went on where the last stopped. */
@@ -297,5 +302,25 @@ test("a first build and a first deck are drafted from the first line", async () 
     const drafted = draftedFile(drafts);
     assert.ok(drafted.contiguous, kind);
     assert.equal(drafted.html, app?.html, kind);
+  }
+});
+
+test("the live preview opens only once a file or the pieces of a change are written, never for words", async () => {
+  // A first build that asks a question first, and how-to answers and a snippet about an app there now.
+  answers.push("Happy to build that. What is the shop called, and which pages do you want?");
+  assert.equal((await run("", undefined, { turns: [{ role: "user", content: "build a website" }] })).writes, -1);
+  answers.push("Open the Code tab, find [Phone number] in the Visit section and type your number in its place.");
+  assert.equal((await run("how do I put my phone number on it?")).writes, -1);
+  answers.push("Use this:\n\n```html\n<button class=\"order big\">Order</button>\n```\n\nShall I add it?");
+  assert.equal((await run("how would a bigger button look?")).writes, -1);
+  // A first build, a whole new file, and pieces: each opens it before the app arrives.
+  answers.push(`Here it is.\n\n\`\`\`html\n${PAGE}\n\`\`\``);
+  const first = await run("", undefined, { turns: [{ role: "user", content: "build me a bakery page" }] });
+  answers.push(`Rebuilt it.\n\n\`\`\`html\n${PAGE.replace("Golden Crumb</h1>", "Golden Crumb Bakery</h1>")}\n\`\`\``);
+  const whole = await run("redo the whole page");
+  answers.push(`Made the button green.\n\n${edit("      .order { background: #d97706; }", "      .order { background: #16a34a; }")}`);
+  const pieces = await run("make the order button green");
+  for (const [name, r] of Object.entries({ first, whole, pieces })) {
+    assert.ok(r.writes !== -1 && r.writes < r.appAt, name);
   }
 });

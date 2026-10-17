@@ -79,6 +79,15 @@ export function draftSender({ base, now = Date.now }: { base: boolean; now?: () 
 
 // ---- The page's half: keeping the draft, and showing it without running any of it. ----
 
+/**
+ * Whether an event shows Flash has started writing the file: a draft of it, or the first pieces of a
+ * change. Only then does the live preview open (or dim the app it shows), so a reply from the builder
+ * that turns out to be words, such as a question or how to do something, never opens it.
+ */
+export function startsWriting(e: StreamEvent): boolean {
+  return (e.type === "draft" && e.delta !== "") || (e.type === "status" && e.writing === true);
+}
+
 export type Draft = { reply: string; html: string; frozen: boolean };
 const NO_DRAFT: Draft = { reply: "", html: "", frozen: false };
 
@@ -140,11 +149,11 @@ function* tagsIn(lower: string, tag: string, from = 0): Generator<string> {
 }
 
 /**
- * The tag opened at i with its target attribute taken off, and the index just past it; null when it
- * isn't finished. Its attributes are read as a browser reads them, so a ">" in a quoted value doesn't
- * end it, and each character is looked at once.
+ * The tag opened at i with its own target attribute taken off and target="_blank" put in its place,
+ * and the index just past it; null when it isn't finished. Its attributes are read as a browser reads
+ * them, so a ">" in a quoted value doesn't end it, and each character is looked at once.
  */
-function untargeted(html: string, i: number): [string, number] | null {
+function blankTargeted(html: string, i: number): [string, number] | null {
   const n = html.length;
   let j = i + 1;
   while (j < n && !/[\s/>]/.test(html[j])) j++;
@@ -154,7 +163,8 @@ function untargeted(html: string, i: number): [string, number] | null {
     const before = j;
     while (j < n && /[\s/]/.test(html[j])) j++;
     if (j >= n) return null;
-    if (html[j] === ">") return [out + html.slice(from, j + 1), j + 1];
+    // Before a closing "/", so an SVG link written as <a … /> stays empty.
+    if (html[j] === ">") return [`${out}${html.slice(from, before)} target="_blank"${html.slice(before, j + 1)}`, j + 1];
     const name = j;
     while (++j < n && !/[\s/>=]/.test(html[j]));
     const target = html.slice(name, j).toLowerCase() === "target";
@@ -179,13 +189,17 @@ function untargeted(html: string, i: number): [string, number] | null {
 
 const LINK = /<a(?:rea)?[\s/>]/gi;
 
-/** The page with no target on its links (<a> and <area>), so each falls back to the base's. */
-function withoutTargets(html: string): string {
+/**
+ * The page with target="_blank" on every link (<a> and <area>, in an SVG too), whatever target it
+ * had. An SVG link doesn't follow the page's <base target>, so one with no target would take the
+ * frame itself away to the link.
+ */
+function blankTargets(html: string): string {
   let out = "";
   let at = 0;
   LINK.lastIndex = 0;
   for (let m = LINK.exec(html); m; m = LINK.exec(html)) {
-    const tag = untargeted(html, m.index);
+    const tag = blankTargeted(html, m.index);
     // Not finished: the rest is all inside it.
     if (!tag) break;
     out += html.slice(at, m.index) + tag[0];
@@ -241,9 +255,9 @@ export function draftView(html: string): string {
   if (comment !== -1 && comment > out.lastIndexOf("-->")) out = out.slice(0, comment);
   const open = out.lastIndexOf("<");
   if (open !== -1 && open > out.lastIndexOf(">")) out = out.slice(0, open);
-  // Links open a new window, which the frame never may, so they do nothing. A link's own target is
-  // taken off, as one such as _self would take the frame itself away to the link.
-  out = withoutTargets(out);
+  // Links open a new window, which the frame never may, so they do nothing. Each link is given that
+  // target itself, as its own (such as _self), or none in an SVG, would take the frame away to the link.
+  out = blankTargets(out);
   const lowerOut = out.toLowerCase();
   const head = tagAt(lowerOut, "head", 0);
   const after = head !== -1 ? head : tagAt(lowerOut, "html", 0) !== -1 ? tagAt(lowerOut, "html", 0) : lowerOut.indexOf("<!doctype");

@@ -186,15 +186,27 @@ test("a draft is shown with nothing in it that runs, and ends before anything ha
   assert.ok(draftView("<header>not the head</header>").startsWith('<base target="_blank"><header>'));
 });
 
-test("a link with a target of its own does nothing in a draft either: the target is taken off", () => {
-  // _self would take the frame itself away to the link; with no target, the base's _blank applies, which the frame may not open.
+test("every link in a draft opens a new window, which the frame may not: its own target is put aside", () => {
+  // _self would take the frame itself away to the link; _blank is a window the frame may not open.
   assert.equal(
     draftView(
       '<head></head><a target="_self" href="https://elsewhere.example">A</a><A HREF=b TARGET=_top>B</A><map><area shape=rect target=\'_parent\' href="c"></map>' +
-        '<a title="1 > 2" target = _self data-target="menu">D</a><abbr target="x">E</abbr><p>Set target="_self" on it</p>',
+        '<a title="1 > 2" target = _self data-target="menu">D</a><abbr target="x">E</abbr><p>Set target="_self" on it</p><a href=e/>F</a>',
     ),
-    '<head><base target="_blank"></head><a href="https://elsewhere.example">A</a><A HREF=b>B</A><map><area shape=rect href="c"></map>' +
-      '<a title="1 > 2" data-target="menu">D</a><abbr target="x">E</abbr><p>Set target="_self" on it</p>',
+    '<head><base target="_blank"></head><a href="https://elsewhere.example" target="_blank">A</a><A HREF=b target="_blank">B</A><map><area shape=rect href="c" target="_blank"></map>' +
+      '<a title="1 > 2" data-target="menu" target="_blank">D</a><abbr target="x">E</abbr><p>Set target="_self" on it</p><a href=e/ target="_blank">F</a>',
+  );
+});
+
+test("an SVG link, which doesn't follow the page's base target, is given _blank too", () => {
+  // With no target of its own, an SVG link would take the frame away to the other site.
+  assert.equal(
+    draftView(
+      '<head></head><svg viewBox="0 0 10 10"><a href="https://elsewhere.example/map"><circle r="4"/></a>' +
+        '<a target="_blank" xlink:href="https://elsewhere.example/x"><rect width="2"/></a><a target="_self" href="y" /><text>Shops</text></svg>',
+    ),
+    '<head><base target="_blank"></head><svg viewBox="0 0 10 10"><a href="https://elsewhere.example/map" target="_blank"><circle r="4"/></a>' +
+      '<a xlink:href="https://elsewhere.example/x" target="_blank"><rect width="2"/></a><a href="y" target="_blank" /><text>Shops</text></svg>',
   );
 });
 

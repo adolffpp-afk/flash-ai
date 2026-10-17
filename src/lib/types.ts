@@ -79,7 +79,8 @@ export type StreamEvent =
   | { type: "text"; delta: string }
   // What a reply charged by length really cost, sent when it finishes.
   | { type: "cost"; credits: number }
-  | { type: "status"; message: string }
+  // writing: the first pieces of a change to the app or deck are written (see startsWriting in live-draft.ts).
+  | { type: "status"; message: string; writing?: boolean }
   // label names a picture that comes with others, like a post pack's "Square" and "Tall".
   | { type: "image"; url: string; prompt: string; label?: string }
   | { type: "video"; url: string; prompt: string }

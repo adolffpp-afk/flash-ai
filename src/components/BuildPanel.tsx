@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import type { UIMessage } from "@/lib/store";
 import type { PickedElement } from "@/lib/preview-bridge";
 import { htmlTitle } from "@/lib/build-parse";
-import { BUILD_STEPS, NO_DRAFT_YET, buildStep, draftShown, draftView, writingPart, type DraftStore } from "@/lib/live-draft";
+import { BUILD_STEPS, NO_DRAFT_YET, buildStep, draftView, writingPart, type DraftStore } from "@/lib/live-draft";
 import { useT } from "@/lib/use-t";
 import { AppPreview } from "./AppPreview";
 
@@ -32,8 +32,9 @@ export function useMedia(query: string): boolean {
   );
 }
 
-// A draft is shown again at most once a second: each showing loads the page afresh.
-const REDRAW_MS = 1000;
+// A draft is shown again at most every 3 seconds, and only while it can be seen: each showing loads
+// the page afresh, pictures and fonts too, as a frame with no permissions can't use the browser's cache.
+const REDRAW_MS = 3000;
 // A page's load waits for its pictures, which never hold back its text: a new draft comes to the
 // front by this long after it started loading, so one slow picture never holds the preview still.
 const SWAP_BY_MS = 1500;
@@ -62,6 +63,7 @@ export function BuildPanel({
   appMsg,
   publishedEarlier,
   building,
+  drafting,
   live,
   busy,
   onPublished,
@@ -75,6 +77,9 @@ export function BuildPanel({
   publishedEarlier?: string;
   // The reply Flash is writing an app or deck in, while it does; live when this page is reading it.
   building?: UIMessage;
+  // Its draft takes the place of the latest app (see draftShown): at once for a first build, and
+  // once a change's new file has a page to show.
+  drafting: boolean;
   live: boolean;
   busy: boolean;
   onPublished: (messageId: string, slug: string) => void;
@@ -86,10 +91,7 @@ export function BuildPanel({
   // Only this panel reads the draft, so only it renders again as the file grows.
   const draft = useSyncExternalStore(drafts.subscribe, drafts.get, () => NO_DRAFT_YET);
   const kind = building?.engine === "slides" || (!building && appMsg?.app?.kind === "slides") ? "slides" : "app";
-  // A change keeps the version there now on show until the new file has a page to show.
-  const changing = Boolean(appMsg?.app);
-  const shown = useMemo(() => draftShown(draft.html, { changing, kind }), [draft.html, changing, kind]);
-  if (building && draft.reply === building.id && shown) {
+  if (building && drafting) {
     return <LiveBuild html={draft.html} kind={kind} status={building.status} live={live} />;
   }
   if (appMsg?.app) {
@@ -197,14 +199,34 @@ function LiveBuild({ html, kind, status, live }: { html: string; kind: "app" | "
 /**
  * The page so far, in a frame where nothing may run (sandbox with no permissions). Two frames take
  * turns, so a new draft loads and paints under the one on show and the page never flashes blank.
- * Redrawing waits while the pointer is on the page or it has the focus, so it can be looked at.
+ * Redrawing waits while the pointer is on the page or it has the focus, so it can be looked at, and
+ * while it can't be seen (under the Conversation tab, the panel hidden, another browser tab).
  */
 function DraftFrame({ markup, title }: { markup: string; title: string }) {
   const [frames, setFrames] = useState({ docs: [markup, ""], keys: [0, 1], front: 0, loading: false });
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
+  const [seen, setSeen] = useState(false);
   const last = useRef(0);
   const box = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    let inView = false;
+    const check = () => setSeen(inView && !document.hidden);
+    // Told at once, and whenever that changes: hidden (display: none), it's in no view.
+    const observer = new IntersectionObserver((entries) => {
+      inView = entries.at(-1)?.isIntersecting ?? inView;
+      check();
+    });
+    observer.observe(el);
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      observer.disconnect();
+      document.removeEventListener("visibilitychange", check);
+    };
+  }, []);
 
   useEffect(() => {
     const check = () => setFocused(Boolean(box.current && document.activeElement && box.current.contains(document.activeElement)));
@@ -217,7 +239,7 @@ function DraftFrame({ markup, title }: { markup: string; title: string }) {
   }, []);
 
   useEffect(() => {
-    if (hovered || focused || frames.loading || markup === frames.docs[frames.front]) return;
+    if (!seen || hovered || focused || frames.loading || markup === frames.docs[frames.front]) return;
     const timer = setTimeout(
       () => {
         last.current = Date.now();
@@ -234,7 +256,7 @@ function DraftFrame({ markup, title }: { markup: string; title: string }) {
       Math.max(0, last.current + REDRAW_MS - Date.now()),
     );
     return () => clearTimeout(timer);
-  }, [markup, hovered, focused, frames]);
+  }, [markup, seen, hovered, focused, frames]);
 
   // The frame underneath comes to the front by SWAP_BY_MS, even if a picture in it hasn't loaded.
   useEffect(() => {
