@@ -148,6 +148,44 @@ export function adoptAccountFromUrl(): string | null {
  */
 export const switchAddress = (id: string): string => `/?as=${encodeURIComponent(id)}&switched=1`;
 
+/** What a tab says once it has reloaded as the next account after a log out: who left, and who it uses now. */
+export type LeftNote = { email: string; next: string };
+// Kept in this tab's sessionStorage across that reload.
+const NOTE_KEY = "flash-notice";
+
+/**
+ * Reloads this tab as another account signed in here: Switch, or the next account after a log out
+ * (note: what the new page says about it). It never names that account itself: the new page does
+ * (adoptAccountFromUrl), so until it loads, and if the browser's "Leave site?" keeps this page
+ * (Stay), every request still names the account this tab shows. Every switch goes through here.
+ */
+export function reloadAs(id: string, note?: LeftNote): void {
+  if (note) {
+    try {
+      storage()?.setItem(NOTE_KEY, JSON.stringify(note));
+    } catch {
+      // Storage blocked: no note.
+    }
+  }
+  announce({ type: "changed" });
+  // A fresh page clears everything of the account before (its chats, files kept in memory, the
+  // queue, the wake word), and Back can't return to it.
+  window.location.replace(switchAddress(id));
+}
+
+/** The note reloadAs left for this tab, once: null when there is none (or storage refuses). */
+export function takeLeftNote(): LeftNote | null {
+  try {
+    const left = storage()?.getItem(NOTE_KEY);
+    if (!left) return null;
+    storage()?.removeItem(NOTE_KEY);
+    const note = JSON.parse(left) as Partial<LeftNote> | null;
+    return typeof note?.email === "string" && typeof note.next === "string" ? { email: note.email, next: note.next } : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Where the link that named this page's account was going (like /?apps=1), to go on to after
  * signing in to that account from the account chooser; null when no link named one. The page

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { MAX_ACCOUNTS, jarFromCookies } from "@/lib/server/auth.ts";
+import { MAX_ACCOUNTS, jarFromCookies, shownAccount } from "@/lib/server/auth.ts";
 import { checkAuthorize } from "@/lib/server/connector.ts";
 import { ConnectSignIn } from "@/components/ConnectSignIn";
 import { LogoMark } from "@/app/brand";
@@ -48,7 +48,7 @@ export default async function Authorize({ searchParams }: Props) {
   const cookieStore = await cookies();
   const secure = (await headers()).get("x-forwarded-proto") === "https";
   const jar = await jarFromCookies((name) => cookieStore.get(name)?.value, secure);
-  const shown = jar.entries.find((e) => e.user.id === wanted) ?? jar.byDefault ?? jar.entries[0] ?? null;
+  const shown = shownAccount(jar, wanted);
   const user = shown?.user ?? null;
   const others = jar.entries.filter((e) => e !== shown);
   const query = new URLSearchParams(Object.entries(params).filter((e): e is [string, string] => typeof e[1] === "string"));

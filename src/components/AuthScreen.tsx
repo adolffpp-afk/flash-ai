@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/store";
+import { signInBody } from "@/lib/accounts";
 import { LogoMark, Wordmark } from "@/app/brand";
 import { msg } from "@/lib/i18n";
 import { TAGLINE } from "@/lib/product";
@@ -83,15 +84,16 @@ export function AuthScreen({
   // Where to return after a "Continue with …" or email-link sign-in (a path on this site).
   next?: string;
   // Adding another account while signed in to this one (email), which Back returns to; with no
-  // email, Back returns to the account chooser.
-  adding?: { email?: string; onBack: () => void };
+  // email, Back returns to the account chooser. again: signing in again to the account this tab
+  // showed, whose email is filled in.
+  adding?: { email?: string; again?: string; onBack: () => void };
 }) {
   const t = useT();
   const router = useRouter();
   const [mode, setMode] = useState<"signup" | "login" | "forgot" | "link">(initialMode);
   const [sent, setSent] = useState<{ devLink?: string } | null>(null);
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(adding?.again ?? "");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(initialError ? (AUTH_ERRORS[initialError] ?? AUTH_ERRORS.failed) : "");
   const [busy, setBusy] = useState(false);
@@ -128,7 +130,7 @@ export function AuthScreen({
       const result = await api<{ emailFailed?: boolean; twoFactor?: boolean; account?: string }>(`/api/auth/${mode}`, {
         method: "POST",
         // next: where the code page goes once signed in, when two-step sign-in is on.
-        json: { name, email, password, ...(mode === "login" && next && { next }) },
+        json: signInBody(mode, { name, email, password, next }),
       });
       // Two-step sign-in is on: the code page finishes signing in, then opens next.
       if (result.twoFactor) {
@@ -189,7 +191,7 @@ export function AuthScreen({
           className="rounded-2xl border border-white/8 bg-zinc-950/70 p-6 backdrop-blur sm:p-8"
         >
           <h2 className="text-lg font-medium tracking-tight">
-            {adding && (mode === "signup" || mode === "login")
+            {adding && !adding.again && (mode === "signup" || mode === "login")
               ? t("Add another account")
               : mode === "signup"
               ? t("Create your account")

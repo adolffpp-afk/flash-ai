@@ -73,6 +73,7 @@ export function AccountChooser({
   switching,
   onChoose,
   onAdd,
+  again,
 }: {
   // What happened, in the person's language: the account that was logged out, or the link's.
   title: string;
@@ -80,6 +81,8 @@ export function AccountChooser({
   switching: string | null;
   onChoose: (id: string) => void;
   onAdd: () => void;
+  // The account this tab showed, which was logged out here (its name when known): signing in to it again.
+  again?: { email: string; name?: string; onChoose: () => void };
 }) {
   const t = useT();
   const ask = t("Choose an account to keep going.");
@@ -112,7 +115,22 @@ export function AccountChooser({
           );
         })}
       </div>
-      <div className="mt-3 border-t border-white/8 pt-3">
+      <div className="mt-3 grid gap-1 border-t border-white/8 pt-3">
+        {accounts.length < MAX_ACCOUNTS && again && (
+          <button
+            onClick={again.onChoose}
+            disabled={Boolean(switching)}
+            className="flex min-h-12 w-full min-w-0 items-center gap-3 rounded-xl px-3 py-2 text-start transition hover:bg-white/[0.06] focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-50 disabled:hover:bg-transparent"
+          >
+            <AccountBadge account={{ id: "", email: again.email, name: again.name ?? "", nickname: "" }} />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-medium text-zinc-100">{t("Sign in again")}</span>
+              <bdi className="block truncate text-xs text-zinc-500 rtl:text-right" title={again.email}>
+                {again.email}
+              </bdi>
+            </span>
+          </button>
+        )}
         {accounts.length < MAX_ACCOUNTS ? (
           <button
             onClick={onAdd}

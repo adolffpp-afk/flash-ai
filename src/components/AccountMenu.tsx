@@ -7,14 +7,16 @@ import { firstName, fullName, initials } from "@/lib/names";
 import { greeting } from "@/lib/when";
 import { useT } from "@/lib/use-t";
 import { isolate } from "@/lib/account-pin";
+import { accountTones } from "@/lib/account-tones";
 import { InstallApp } from "./InstallApp";
 
 const item = "flex w-full items-center gap-3 rounded-lg px-3 py-2 text-start text-sm text-zinc-200 transition hover:bg-white/[0.06]";
 
 /*
- * Each account signed in to a browser has its own badge colour, in the order they were added (the
- * first keeps Flash's own), so tabs on two accounts tell apart at a glance, even with the same name
- * and on a phone, where the top bar shows only the badge. A browser holds at most 5 accounts.
+ * Each account signed in to a browser has its own badge colour, kept for as long as it stays
+ * signed in here (see account-tones.ts; on a fresh browser the first keeps Flash's own), so tabs on
+ * two accounts tell apart at a glance, even with the same name and on a phone, where the top bar
+ * shows only the badge. A browser holds at most 5 accounts.
  */
 const TONES = [
   "bg-[linear-gradient(140deg,#3ee0c3,#7c6cf0_70%,#c084fc)]",
@@ -26,8 +28,8 @@ const TONES = [
 
 /** An account's colour among the browser's accounts (Flash's own while there's only one). */
 export function accountTone(accounts: { id: string }[] | undefined, id: string): string {
-  const at = accounts && accounts.length > 1 ? accounts.findIndex((a) => a.id === id) : 0;
-  return TONES[Math.max(0, at) % TONES.length];
+  const at = accounts && accounts.length > 1 ? accountTones(accounts.map((a) => a.id), TONES.length).get(id) : 0;
+  return TONES[at ?? 0];
 }
 
 /**
@@ -77,7 +79,8 @@ export function AccountMenu({
   onHelp: () => void;
   onPlan: () => void;
   onInvite: () => void;
-  onSwitch: (id: string) => void;
+  // Resolves false when the tab stays on its account (it asks first, or says why it couldn't switch).
+  onSwitch: (id: string) => Promise<boolean>;
   onAdd: () => void;
   onSignOut: () => void;
   onSignOutAll: () => void;
@@ -103,10 +106,13 @@ export function AccountMenu({
     };
   }, [open]);
 
-  // Runs a menu item and closes the menu.
-  const pick = (fn: () => void) => () => {
+  const close = () => {
     setOpen(false);
     setMore(false);
+  };
+  // Runs a menu item and closes the menu.
+  const pick = (fn: () => void) => () => {
+    close();
     fn();
   };
   const plan = me.plan ? t("{plan} plan", { plan: me.plan.name }) : t("Free plan");
@@ -168,9 +174,11 @@ export function AccountMenu({
                       aria-busy={going || undefined}
                       disabled={Boolean(switching)}
                       className={`${item} min-h-11 py-1.5 disabled:cursor-default disabled:hover:bg-transparent ${switching && !going ? "opacity-50" : ""}`}
+                      // The menu stays open, saying "Switching…", while the tab reloads as that account. When
+                      // it stays instead, the menu closes, so what Flash says (or asks) next is in view.
                       onClick={() => {
                         if (switching) return;
-                        onSwitch(a.id);
+                        void onSwitch(a.id).then((reloading) => reloading || close());
                       }}
                     >
                       <AccountBadge account={a} size="sm" tone={accountTone(me.accounts, a.id)} />

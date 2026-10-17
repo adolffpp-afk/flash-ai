@@ -978,6 +978,30 @@ test("Connect to Flash connects the account the page showed, and nothing when th
   assert.equal(await codes(c), 1);
 });
 
+test("the Connect to Flash page shows the account its \"Use another account\" names, when it is signed in here", async () => {
+  const a = await account("cpa");
+  const b = await account("cpb");
+  const c = await account("cpc");
+  const jarOf = async (cookie: string) => auth.jarSessions(req("/oauth/authorize", { cookie }));
+  const jar = await jarOf((await browser(a, b)).cookie);
+  assert.equal(auth.shownAccount(jar, a)?.user.id, a, "the one named");
+  assert.equal(auth.shownAccount(jar, b)?.user.id, b);
+  for (const wanted of [c, "bad id!", "", null, undefined]) assert.equal(auth.shownAccount(jar, wanted)?.user.id, b, `${wanted}: the default`);
+  // No default (its session ended): the first account here; none signed in: nobody.
+  const [ta, tb] = [await session(a), await session(b)];
+  const noDefault = await jarOf(`flash_session=${randomId(32)}; __Host-flash_accounts=1.${ta}.${tb}`);
+  assert.equal(noDefault.byDefault, null);
+  assert.equal(auth.shownAccount(noDefault, c)?.user.id, a);
+  assert.equal(auth.shownAccount(await jarOf(""), a), null);
+  // The page shows that account and its form answers for it; "Use another account" links name each other one.
+  const { readFile } = await import("node:fs/promises");
+  const page = await readFile(new URL("../src/app/oauth/authorize/page.tsx", import.meta.url), "utf8");
+  assert.match(page, /const \{ account: wanted, changed, \.\.\.params \} = all;/);
+  assert.match(page, /const shown = shownAccount\(jar, wanted\);\n\s+const user = shown\?\.user \?\? null;\n\s+const others = jar\.entries\.filter\(\(e\) => e !== shown\);/);
+  assert.match(page, /<input type="hidden" name="account" value=\{user!\.id\} \/>/);
+  assert.match(page, /href=\{`\$\{here\}&account=\$\{encodeURIComponent\(e\.user\.id\)\}`\}/);
+});
+
 test("a confirmation link confirms its account when it is any account signed in here, and opens Flash as it", async () => {
   const a = await account("vfa");
   const b = await account("vfb");

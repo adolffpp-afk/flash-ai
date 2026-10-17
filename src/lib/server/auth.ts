@@ -245,6 +245,15 @@ function freshJar(request: Request): Promise<Jar> {
   return jarSessions(request);
 }
 
+/**
+ * The account a page shows from this browser's accounts (Connect to Flash): the one it names
+ * (?account=, from "Use another account") when that one is signed in here, else the default, else
+ * the first; null when none is.
+ */
+export function shownAccount(jar: Jar, wanted: string | null | undefined): JarEntry | null {
+  return (wanted ? jar.entries.find((e) => e.user.id === wanted) : undefined) ?? jar.byDefault ?? jar.entries[0] ?? null;
+}
+
 /** The jar for a page that reads cookies itself (a Server Component), as cookies().get gives them. */
 export function jarFromCookies(get: (name: string) => string | undefined, secure: boolean): Promise<Jar> {
   return readJar(get(SESSION_COOKIE) ?? null, get(accountsName(secure)) ?? null);

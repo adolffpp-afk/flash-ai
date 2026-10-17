@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { BuiltApp } from "@/lib/types";
 import { api } from "@/lib/store";
 import { flashDbShim, injectHead } from "@/lib/flashdb-shim";
@@ -8,6 +8,7 @@ import { dataLine, type DataSummary } from "@/lib/data-rules";
 import { appSlug, projectZip } from "@/lib/app-project";
 import { PREVIEW_BRIDGE, fixRequest, friendlyError, isPreviewMessage, linesIn, type PickedElement, type PreviewError } from "@/lib/preview-bridge";
 import { useT } from "@/lib/use-t";
+import { markCodeDraft } from "@/lib/code-drafts";
 
 // No allow-same-origin: generated code can't read Flash's storage or cookies.
 const SANDBOX = "allow-scripts allow-forms allow-modals allow-popups allow-pointer-lock allow-downloads";
@@ -29,6 +30,13 @@ function CodeEditor({ html, full, onSave }: { html: string; full: boolean; onSav
   const t = useT();
   const [draft, setDraft] = useState(html);
   const changed = draft !== html;
+  // Unsaved code, which Flash asks about before switching account away from it.
+  const editor = useId();
+  const unsaved = changed && Boolean(onSave);
+  useEffect(() => {
+    markCodeDraft(editor, unsaved);
+    return () => markCodeDraft(editor, false);
+  }, [editor, unsaved]);
   const btn = "rounded-md px-2 py-1 hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-40 disabled:hover:bg-transparent";
   return (
     <div className={`flex flex-col ${full ? "min-h-0 flex-1" : "h-[560px]"}`}>
