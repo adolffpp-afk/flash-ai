@@ -202,7 +202,7 @@ export async function siteAuth(
     // A new member goes on the app's contact list, in the spelling it keeps (they sign in with the
     // address as they typed it); one that can't be saved never stops the sign-up. It's made from
     // what they typed, as a form's or an order's is: lowercasing the whole address first makes a
-    // "Σ" at the end of a word "ς", where cleanEmail gives "σ".
+    // "Σ" in its domain before a digit or a hyphen "ς", where cleanEmail gives "σ".
     await noteContact(slug, { email: cleanEmail(typed), name: cleanName(name), phone: "" }, { source: "signup", at: now() }).catch((err) =>
       console.error("[flash] contact not saved", err),
     );

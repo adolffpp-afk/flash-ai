@@ -163,6 +163,16 @@ const ID_BY_PHONE = `SELECT id FROM site_contacts WHERE site_slug = ? AND ${PHON
 // An address with a character outside ASCII, which may be another spelling than contacts keep (see
 // cleanEmail): as a member typed it, as Stripe gave it before, or a contact saved before.
 const NOT_ASCII = "email GLOB '*[^ -~]*'";
+/**
+ * The ways an address kept lowercased as a whole (a member's, or a contact #114 kept) may be read:
+ * as it is, and with each "ς" in its domain as "σ". Lowercasing a whole domain makes a Greek "Σ"
+ * before a digit, a hyphen or its end "ς", where cleanEmail, as browsers, reads it as "σ".
+ */
+function spellings(email: string): string[] {
+  const at = email.lastIndexOf("@") + 1;
+  const domain = email.slice(at);
+  return domain.includes("ς") ? [email, email.slice(0, at) + domain.replace(/ς/g, "σ")] : [email];
+}
 
 /**
  * What finds the app's members (site_users) or orders (site_orders) with a contact's address,
@@ -177,10 +187,8 @@ async function withAddress(table: "site_users" | "site_orders", slug: string, em
   const key = member ? "id" : "session_id";
   const kept = cleanEmail(email) || email;
   const rows = await all<{ k: string; email: string }>(`SELECT ${key} AS k, email FROM ${table} WHERE site_slug = ? AND ${NOT_ASCII}`, [slug]);
-  // A member's address is kept lowercased as a whole (see siteAuth), which makes a "Σ" at the end of
-  // a word "ς", where contacts lowercase each letter on its own and have "σ": so it's read both ways.
-  const spellings = (text: string) => (member ? [text, text.replace(/ς/g, "σ")] : [text]);
-  const others = rows.filter((r) => spellings(r.email).some((text) => cleanEmail(text) === kept)).map((r) => r.k);
+  // A member's address is kept lowercased as a whole (see siteAuth), so it's read both ways.
+  const others = rows.filter((r) => (member ? spellings(r.email) : [r.email]).some((text) => cleanEmail(text) === kept)).map((r) => r.k);
   // site_users.email is COLLATE NOCASE, so "=" there is lower() without losing the index.
   const same = member ? "email IN (?, ?)" : "lower(email) IN (?, ?)";
   return { sql: others.length ? `(${same} OR ${key} IN (${others.map(() => "?").join(", ")}))` : same, args: [email, kept, ...others] };
@@ -272,23 +280,26 @@ export async function noteContact(slug: string, who: Who, seen: Seen): Promise<s
 }
 
 /**
- * Whether someone on the app's list whose address reaches the same mailbox as email (the same
- * address with a +tag, or for Gmail with dots: see emailKey) has unsubscribed. Only the app's
- * unsubscribed contacts at that address's domain are read, and those whose address has a letter
- * outside ASCII: one saved before addresses were kept in one spelling (see cleanEmail) may write
- * the same domain another way, and is read in that spelling here.
+ * The app's contacts that `which` (SQL) picks whose address reaches the same mailbox as email: the
+ * same address with a +tag, or for Gmail with dots (see emailKey). Only those at that address's
+ * domain are read, and those whose address has a letter outside ASCII: one saved before addresses
+ * were kept in one spelling (see cleanEmail) may write the same domain another way, and is read in
+ * that spelling here, as #114 kept it (see spellings).
  */
-async function mailboxUnsubscribed(slug: string, email: string): Promise<boolean> {
-  const key = emailKey(email);
-  const domain = key.slice(key.lastIndexOf("@"));
-  const domains = domain === "@gmail.com" ? [domain, "@googlemail.com"] : [domain];
-  const rows = await all<{ email: string }>(
-    `SELECT email FROM site_contacts WHERE site_slug = ? AND unsubscribed_at > 0
+async function sameMailbox(slug: string, email: string, which: string): Promise<{ id: string; email: string }[]> {
+  const mailbox = (text: string) => emailKey(cleanEmail(text) || text);
+  const keys = new Set(spellings(email).map(mailbox));
+  const domains = [...new Set([...keys].map((key) => key.slice(key.lastIndexOf("@"))))].flatMap((d) => (d === "@gmail.com" ? [d, "@googlemail.com"] : [d]));
+  const rows = await all<{ id: string; email: string }>(
+    `SELECT id, email FROM site_contacts WHERE site_slug = ? AND ${which}
      AND (${domains.map(() => "email LIKE ?").join(" OR ")} OR ${NOT_ASCII})`,
     [slug, ...domains.map((d) => `%${d}`)],
   );
-  return rows.some((r) => emailKey(cleanEmail(r.email) || r.email) === key);
+  return rows.filter((r) => spellings(r.email).some((text) => keys.has(mailbox(text))));
 }
+
+/** Whether someone on the app's list whose address reaches the same mailbox as email has unsubscribed. */
+const mailboxUnsubscribed = async (slug: string, email: string) => (await sameMailbox(slug, email, "unsubscribed_at > 0")).length > 0;
 
 /**
  * A form's sender, for receiveMessage: who they are from its fields, and what they agreed to. "" when
@@ -331,7 +342,15 @@ export async function fillContacts(slug: string): Promise<void> {
      ORDER BY at LIMIT ${MAX_CONTACTS}`,
     [slug, slug],
   );
-  const seen: [Who | null, Seen][] = others.map((o) => [cleanContact({ email: o.email, name: o.name }), { source: o.src, at: Number(o.at) }]);
+  const seen: [Who | null, Seen][] = [];
+  for (const o of others) {
+    const who = cleanContact({ email: o.email, name: o.name });
+    // A member's address is lowercased as a whole (see spellings): the contact their sign-up made
+    // may read a "ς" in its domain as "σ", and is the one they join.
+    const other = o.src === "signup" ? spellings(o.email).map(cleanEmail)[1] : "";
+    if (who && other && (await one("SELECT 1 FROM site_contacts WHERE site_slug = ? AND email = ?", [slug, other]))) who.email = other;
+    seen.push([who, { source: o.src, at: Number(o.at) }]);
+  }
   // Messages: who sent each is read from its fields here.
   const messages = await all<{ id: string; form: string; data: string; created_at: number }>(
     "SELECT id, form, data, created_at FROM site_messages WHERE site_slug = ? AND contact_id = '' ORDER BY created_at LIMIT 2000",
@@ -942,12 +961,24 @@ export async function tokenContact(token: string): Promise<{ id: string; slug: s
 /**
  * Someone stops an app's news with their link. The time is kept, and stays: a box ticked on a form
  * afterwards doesn't undo it (see FORM_AGREES), the owner recording that they asked for news again
- * counts from then (recordConsent), and a later unsubscribe is kept again. false for a link that
- * doesn't work.
+ * counts from then (recordConsent), and a later unsubscribe is kept again. It holds as well for the
+ * app's other contacts with the same mailbox (see sameMailbox), such as one with a +tag or one #114
+ * kept in another spelling, which may have agreed before. false for a link that doesn't work.
  */
 export async function unsubscribe(token: string): Promise<boolean> {
   const found = await tokenContact(token);
   if (!found) return false;
-  await run(`UPDATE site_contacts SET unsubscribed_at = ? WHERE id = ? AND NOT (${UNSUBSCRIBED})`, [now(), found.id]);
+  const at = now();
+  const done = await run(`UPDATE site_contacts SET unsubscribed_at = ? WHERE id = ? AND NOT (${UNSUBSCRIBED}) RETURNING email`, [at, found.id]);
+  // Only when they weren't unsubscribed already, as the link used again changes nothing.
+  const email = (done.rows[0] as unknown as { email: string } | undefined)?.email;
+  const others = email ? (await sameMailbox(found.slug, email, `NOT (${UNSUBSCRIBED})`)).map((c) => c.id) : [];
+  if (others.length) {
+    await run(`UPDATE site_contacts SET unsubscribed_at = ? WHERE site_slug = ? AND id IN (${others.map(() => "?").join(", ")}) AND NOT (${UNSUBSCRIBED})`, [
+      at,
+      found.slug,
+      ...others,
+    ]);
+  }
   return true;
 }

@@ -49,8 +49,8 @@ const INVISIBLE = /[\p{Default_Ignorable_Code_Point}\p{Cf}\p{Cc}]/u;
 // cy@gmail.com), and what only goes with them. No one's real address needs these.
 const QUOTING = /[()"\\,;:<>[\]]/;
 
-// Text with each letter lowercased on its own, as the address bar does: lowercasing a whole word
-// makes a Greek "Σ" before a digit or a hyphen "ς", which is another letter.
+// A domain with each letter lowercased on its own, as the address bar does: lowercasing a whole word
+// makes a Greek "Σ" before a digit or a hyphen "ς", which is another letter there.
 const lowercase = (text: string) => [...text].map((ch) => ch.toLowerCase()).join("");
 
 /**
@@ -70,16 +70,16 @@ function readDomain(domain: string): string {
 /**
  * An email address someone typed, lowercased, or "". It's kept in one spelling, so one person's
  * address is always the same text: its domain as readDomain reads it, and the part before the @
- * composed (NFC), never with a character nobody sees in it, a (comment) or quotes.
+ * lowercased as a whole, as a member's address is (a "Σ" at the end of a word is "ς" there, as
+ * Greek is written) and composed (NFC), never with a character nobody sees in it, a (comment) or quotes.
  */
 export function cleanEmail(value: unknown): string {
   if (typeof value !== "string") return "";
   const text = value.trim();
   if (text.length > MAX_EMAIL || !EMAIL.test(text)) return "";
-  const typed = lowercase(text);
-  const at = typed.lastIndexOf("@");
-  const name = typed.slice(0, at).normalize("NFC");
-  const email = `${name}@${readDomain(typed.slice(at + 1))}`;
+  const at = text.lastIndexOf("@");
+  const name = text.slice(0, at).toLowerCase().normalize("NFC");
+  const email = `${name}@${readDomain(lowercase(text.slice(at + 1)))}`;
   return !INVISIBLE.test(name) && !QUOTING.test(name) && email.length <= MAX_EMAIL && EMAIL.test(email) ? email : "";
 }
 

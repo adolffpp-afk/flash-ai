@@ -19,7 +19,7 @@ process.env.FLASH_ADMIN_EMAILS = "admin@x.co";
 process.env.FLASH_APP_URL = "https://www.flash-app.dev";
 
 const { run, one, all, db } = await import("../src/lib/server/db.ts");
-const { cleanEmail, contactFromFields, normalPhone, pageHas, pageWords, stagesOf, cleanTags, dateText, formChanged, mailtoLink, phoneStage, failedText, DEFAULT_STAGES } = await import(
+const { cleanEmail, contactFromFields, contactMatches, normalPhone, pageHas, pageWords, stagesOf, cleanTags, dateText, formChanged, mailtoLink, phoneStage, failedText, DEFAULT_STAGES } = await import(
   "../src/lib/contacts.ts"
 );
 const contacts = await import("../src/lib/server/contacts.ts");
@@ -165,6 +165,10 @@ test("an address is kept in one spelling: its domain as browsers and DNS read it
     ["JO@ΟΔΟΣ1.GR", "jo@xn--1-4lb6abu.gr"],
     ["jo@ΟΔΟΣ-ΚΑΦΕ.gr", `jo@${domainToASCII("οδοσ-καφε.gr")}`],
     ["jo@STRAẞE.de", "jo@xn--strae-oqa.de"],
+    // Before the @, the address is lowercased as a whole, as a member's is and as #114 kept a
+    // contact's: a capital Σ at the end of a word is ς there, as Greek is written.
+    ["ΝΙΚΟΣ@example.gr", "νικος@example.gr"],
+    ["νικος@example.gr", "νικος@example.gr"],
     // Letters that aren't in any script, which browsers allow in a domain: an emoji, the Catalan
     // l·l, a Persian joiner between letters and a katakana middle dot.
     ["me@xn--i-7iq.ws", "me@xn--i-7iq.ws"],
@@ -174,6 +178,9 @@ test("an address is kept in one spelling: its domain as browsers and DNS read it
   ]) {
     assert.equal(cleanEmail(typed), kept, JSON.stringify(typed));
   }
+  // So the owner finds them however the address is searched for.
+  const nikos = { name: "", email: cleanEmail("ΝΙΚΟΣ@example.gr"), phone: "", tags: [], notes: "" };
+  for (const search of ["νικος", "ΝΙΚΟΣ", "ΝΙΚΟΣ@example.gr"]) assert.ok(contactMatches(nikos, search), search);
   // Every script reads as browsers read it.
   for (const domain of ["bäckerei.de", "例え.テスト", "उदाहरण.भारत", "почта.рф", "xn--80a1acny.xn--p1ai", "δοκιμή.gr", "ΟΔΟΣ1.gr", "straße.de", "مثال.إختبار", "ドメイン名例.jp", "한국.kr", "ab--cd.com", "a-b.c-d.com"]) {
     assert.equal(cleanEmail(`a@${domain}`), `a@${domainToASCII(domain)}`, domain);
@@ -293,13 +300,15 @@ test("a member who signs up, writes and pays with an address outside A to Z is o
   await run("INSERT INTO seller_accounts (user_id, stripe_account, country, currency, ready, created_at) VALUES ('owner', 'acct_1', 'CA', 'cad', 1, 0) ON CONFLICT DO NOTHING");
   // As Chrome's email field sends the address (the xn-- form), and as another browser's or a text
   // field sends it (in letters, here in capitals). A member signs in with the address as typed. A
-  // Greek capital Σ at the end of a word, before a digit or the @, is σ for the contact (each letter
-  // lowercased on its own), though the member's address, lowercased as a whole, has ς.
+  // Greek capital Σ in the domain before a digit is σ for the contact (each letter of a domain
+  // lowercased on its own, as browsers read it), though the member's address, lowercased as a whole,
+  // has ς, as the address of one who typed ς has. Before the @, a Σ at the end of a word is ς for both.
   const cases = [
     ["jo@xn--bckerei-5wa.de", "jo@xn--bckerei-5wa.de"],
     ["JO@BÄCKEREI.DE", "jo@xn--bckerei-5wa.de"],
     ["JO@ΟΔΟΣ1.GR", `jo@${domainToASCII("οδοσ1.gr")}`],
-    ["ΝΙΚΟΣ@example.gr", "νικοσ@example.gr"],
+    ["jo@οδος1.gr", `jo@${domainToASCII("οδος1.gr")}`],
+    ["ΝΙΚΟΣ@example.gr", "νικος@example.gr"],
   ];
   for (const [i, [typed, kept]] of cases.entries()) {
     const slug = `idn${i}`;
@@ -318,6 +327,9 @@ test("a member who signs up, writes and pays with an address outside A to Z is o
     };
     globalThis.fetch = (async () => Response.json(order)) as typeof fetch;
     assert.equal((await finishCheckout(slug, order.id, null, ORIGIN)).paid, true);
+    // The owner then opens Contacts for the first time, which copies in the people the app had: the
+    // member joins the contact their sign-up made.
+    assert.equal((await call("GET", owner, slug)).status, 200);
     const list = await contactsOf(slug);
     assert.deepEqual(list.map((c) => c.email), [kept], typed);
     const detail = (await contacts.contactDetail(slug, String(list[0].id), ORIGIN))!;
@@ -683,14 +695,15 @@ test("a ticked box doesn't sign up the mailbox of someone who unsubscribed under
   assert.equal((await contactsOf("plus")).length, before, "nobody new");
   assert.equal(await agreed("plus", "cy+news@gmail.com"), false);
   // Someone saved before addresses were kept in one spelling, who then unsubscribed: their mailbox
-  // under the usual spelling doesn't agree either.
-  for (const [i, email] of ["di@ｅｘａｍｐｌｅ.org", "ed@bäckerei.de", "fi@ba\u0308ckerei.de", "gi@exam\u{FE0F}ple.org"].entries()) {
+  // under the usual spelling doesn't agree either. #114 lowercased the whole address, which makes a
+  // Greek capital Σ at the end of a word ς, also in the domain, where it's σ now.
+  for (const [i, email] of ["di@ｅｘａｍｐｌｅ.org", "ed@bäckerei.de", "fi@ba\u0308ckerei.de", "gi@exam\u{FE0F}ple.org", "νικος@example.gr", "ki@οδος1.gr", "li@οδος-καφε.gr"].entries()) {
     await run("INSERT INTO site_contacts (id, site_slug, email, source, first_seen, last_seen, unsubscribed_at) VALUES (?, 'plus', ?, 'form:contact', 1, 1, 2)", [
       `old${i}`,
       email,
     ]);
   }
-  for (const [i, email] of ["di+news@example.org", "ed@xn--bckerei-5wa.de", "FI@BÄCKEREI.DE", "gi@example.org"].entries()) {
+  for (const [i, email] of ["di+news@example.org", "ed@xn--bckerei-5wa.de", "FI@BÄCKEREI.DE", "gi@example.org", "ΝΙΚΟΣ@example.gr", "KI@ΟΔΟΣ1.GR", "li+news@ΟΔΟΣ-ΚΑΦΕ.gr"].entries()) {
     await send("plus", { email }, { consent: { text: NEWS } }, `198.51.100.${120 + i}`);
     assert.equal(await agreed("plus", cleanEmail(email)), false, email);
     assert.ok((await contactsOf("plus")).some((c) => c.email === cleanEmail(email)), email);
@@ -698,6 +711,66 @@ test("a ticked box doesn't sign up the mailbox of someone who unsubscribed under
   const csv = (await contacts.contactCsv("plus", await translatorIn("en"), ORIGIN)).csv;
   const yes = csv.split("\n").filter((line) => /,Yes,/.test(line)).map((line) => line.split(",")[1]).sort();
   assert.deepEqual(yes, ["ab@example.com", "cy@example.com", "cyd@gmail.com"], "the file marks only them as agreed");
+  await fresh();
+});
+
+test("an unsubscribe holds for the app's other contacts with the same mailbox, also ones that agreed before it", async () => {
+  await fresh();
+  await site("reach", "owner");
+  const t = await translatorIn("en");
+  const subscribed = async () => Object.fromEntries((await contacts.listContacts("reach", t))!.contacts.map((c) => [c.email, c.subscribed]));
+  const linkOf = async (email: string) => {
+    const c = (await contactsOf("reach")).find((x) => x.email === email)!;
+    return contacts.unsubToken(await contacts.siteSecret("reach"), "reach", String(c.id));
+  };
+  // Kept by #114 with the box ticked, as a text field or a browser other than Chrome sent the
+  // address (in letters, and lowercased as a whole, which makes a Greek capital Σ before a digit ς):
+  // the same person ticking it again now is a second contact (jo@xn--…).
+  for (const [i, [kept, typed]] of [
+    ["jo@bäckerei.de", "jo@bäckerei.de"],
+    ["ed@bäckerei.de", "ed@bäckerei.de"],
+    ["ki@οδος1.gr", "KI@ΟΔΟΣ1.GR"],
+  ].entries()) {
+    await run(
+      `INSERT INTO site_contacts (id, site_slug, email, source, first_seen, last_seen, consent_text, consent_at, consent_ip, consent_channel, consent_form)
+       VALUES (?, 'reach', ?, 'form:contact', 1, 1, ?, 1, 'x', 'email', 'contact')`,
+      [`kept_by_114_${i}_row`, kept, NEWS],
+    );
+    await send("reach", { email: typed }, { consent: { text: NEWS } }, `203.0.113.${140 + i}`);
+  }
+  // The same mailbox with a +tag, or for Gmail with dots, and other mailboxes.
+  for (const [i, email] of ["cy+shop@gmail.com", "c.y@googlemail.com", "cy@gmail.com", "cyd@gmail.com", "cy@example.com"].entries()) {
+    await send("reach", { email }, { consent: { text: NEWS } }, `203.0.113.${150 + i}`);
+  }
+  assert.equal(Object.values(await subscribed()).filter(Boolean).length, 11);
+  // Each unsubscribes with one of their links: the new contact's, the one #114 kept, and cy@gmail.com.
+  for (const email of ["jo@xn--bckerei-5wa.de", "ed@bäckerei.de", "ki@οδος1.gr", "cy@gmail.com"]) assert.equal(await contacts.unsubscribe(await linkOf(email)), true);
+  assert.deepEqual(await subscribed(), {
+    "jo@bäckerei.de": false,
+    "jo@xn--bckerei-5wa.de": false,
+    "ed@bäckerei.de": false,
+    "ed@xn--bckerei-5wa.de": false,
+    "ki@οδος1.gr": false,
+    [`ki@${domainToASCII("οδοσ1.gr")}`]: false,
+    "cy+shop@gmail.com": false,
+    "c.y@googlemail.com": false,
+    "cy@gmail.com": false,
+    "cyd@gmail.com": true,
+    "cy@example.com": true,
+  });
+  const csv = (await contacts.contactCsv("reach", t, ORIGIN)).csv;
+  const yes = csv.split("\n").filter((line) => /,Yes,/.test(line)).map((line) => line.split(",")[1]).sort();
+  assert.deepEqual(yes, ["cy@example.com", "cyd@gmail.com"], "the file marks only them as agreed");
+  const list = await contactsOf("reach");
+  const of = (email: string) => list.find((c) => c.email === email)!;
+  assert.equal(of("jo@bäckerei.de").unsubscribed_at, of("jo@xn--bckerei-5wa.de").unsubscribed_at, "at the time they unsubscribed");
+  const exported = (await contacts.exportContact("reach", String(of("jo@bäckerei.de").id), ORIGIN, t))!.contact as { subscribed: boolean };
+  assert.equal(exported.subscribed, false);
+  // It reaches them once: after the owner records that Jo asked for news again, Jo's other link,
+  // used again, changes nothing, as the first one wouldn't.
+  assert.equal((await call("PATCH", owner, "reach", "", { id: of("jo@xn--bckerei-5wa.de").id, askedAgain: "They asked at the shop" })).status, 200);
+  assert.equal(await contacts.unsubscribe(await linkOf("jo@bäckerei.de")), true);
+  assert.equal((await subscribed())["jo@xn--bckerei-5wa.de"], true);
   await fresh();
 });
 
