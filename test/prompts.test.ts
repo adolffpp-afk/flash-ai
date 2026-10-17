@@ -92,6 +92,8 @@ test("apps offer news with a box the person ticks themselves, sent with the form
   const app = buildSystem("app", "");
   assert.match(app, /never ticked to start with/);
   assert.match(app, /flashDB\.send\(formName, fields, \{ news: thatCheckbox \}\)/);
+  // Flash counts only the words a visitor sees in the page's HTML (see pageHas), so a label a script writes never counts.
+  assert.match(app, /Write that box and its label in the page's HTML itself, never from a script/);
   assert.match(app, /Name form fields name, email and phone/);
 });
 
