@@ -25,18 +25,24 @@ test("a phrase comes from the table, else in English, with its blanks filled", (
 });
 
 test("a text that isn't one of Flash's phrases is shown as it is, even one named like an object's own fields", async () => {
-  const { GITHUB_TOOL_WORDS, toolWords } = await import("../src/lib/connectors.ts");
+  const { GITHUB_TOOL_WORDS, GOOGLE_TOOL_WORDS, toolWords } = await import("../src/lib/connectors.ts");
   const fr = tableOf("fr");
   for (const text of ["__proto__", "constructor", "toString", "hasOwnProperty", "valueOf", "__defineGetter__"]) {
     assert.equal(translate(fr, text), text, text);
     assert.equal(translate(fr, text, { n: 1 }), text, text);
   }
-  // Any server's tool titles and descriptions are its own words: only Flash's own (GitHub's tools) are translated.
+  // Any server's tool titles and descriptions are its own words: only Flash's own (GitHub's and Google Drive's tools) are translated.
   const t = (text: string) => translate(fr, text);
   assert.equal(toolWords(t, "__proto__"), "__proto__");
   assert.equal(toolWords(t, "Close"), "Close", "a server's title that happens to be one of Flash's phrases stays as the server wrote it");
   assert.equal(toolWords(t, GITHUB_TOOL_WORDS.read_file.title), fr[GITHUB_TOOL_WORDS.read_file.title]);
   assert.notEqual(fr[GITHUB_TOOL_WORDS.read_file.title], GITHUB_TOOL_WORDS.read_file.title);
+  for (const words of [...Object.values(GITHUB_TOOL_WORDS), ...Object.values(GOOGLE_TOOL_WORDS)]) {
+    for (const text of [words.title, words.description]) {
+      assert.ok(fr[text], text);
+      assert.equal(toolWords(t, text), fr[text], text);
+    }
+  }
 });
 
 test("Flash shows the language picked in Settings, else the browser's when Flash has it, else English", () => {

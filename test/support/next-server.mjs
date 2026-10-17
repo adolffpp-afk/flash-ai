@@ -11,4 +11,9 @@ export function after(task) {
 /** Waits for everything after() was given so far. */
 export const afterwards = () => Promise.allSettled(pending.splice(0));
 
-export class NextResponse extends Response {}
+export class NextResponse extends Response {
+  /** Lets the request go on to its page or route (what a proxy returns), with the headers set on it. */
+  static next() {
+    return new NextResponse(null);
+  }
+}

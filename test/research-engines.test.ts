@@ -31,6 +31,7 @@ const { claudeChoice, defaultChoice, streamSearch, streamText, SEC_LINE, FRED_LI
 const { streamFreeChat } = await import("../src/lib/engines/free.ts");
 const { dataTools } = await import("../src/lib/server/research-tools.ts");
 const { forgetTickers } = await import("../src/lib/server/sec.ts");
+const { searchesToday } = await import("../src/lib/server/searxng.ts");
 const { WEATHER_PLAN, planHold, claudePrice, researchPlan } = await import("../src/lib/credits.ts");
 const R = await import("../src/lib/research.ts");
 const { run: sql, all } = await import("../src/lib/server/db.ts");
@@ -252,6 +253,68 @@ test("a free reply's look-ups have the request's signal: stopped, the free model
   assert.deepEqual(await all("SELECT key FROM rate_limits WHERE key LIKE 'source:fred:%'"), []);
   assert.deepEqual(await all("SELECT requests FROM free_quota WHERE provider = 'fred'"), []);
   assert.equal(said(events).includes(R.FRED_NOTE), false);
+});
+
+/** Mistral set up too, on the same stand-in, as the backup that takes over when Groq's answer fails. */
+async function withMistral(run: () => Promise<void>) {
+  process.env.MISTRAL_API_KEY = "mistral-test";
+  process.env.MISTRAL_BASE_URL = `${stand.origin}/groq`;
+  try {
+    await run();
+  } finally {
+    delete process.env.MISTRAL_API_KEY;
+    delete process.env.MISTRAL_BASE_URL;
+  }
+}
+const searches = () => stand.state.seen.filter((s) => s.service === "searx").map((s) => s.query.get("q"));
+
+test("a free provider that takes over after another's two searches searches no more: the reply's caps hold, and nothing the failed answer read is listed", async () => {
+  await withMistral(async () => {
+    reserves.length = 0;
+    const used: string[] = [];
+    stand.state.free.replies.push(
+      { calls: [{ name: "web_search", args: { query: "groq first" } }, { name: "web_search", args: { query: "groq second" } }] },
+      // Groq's answer fails (busy), so Mistral takes over.
+      { status: 503 },
+      { text: "I couldn't search the web for this, but from what I know…" },
+    );
+    const tools = dataTools({ search: true }, { userId: "free-7" });
+    const events = await collect(streamFreeChat(ask("what happened in the news today?"), "", "text", reserve, record, () => {}, { tools, onTool: (n) => used.push(n) }));
+    assert.deepEqual(searches(), ["groq first", "groq second"]);
+    assert.equal(await searchesToday("free-7"), 2);
+    assert.deepEqual(reserves, [["groq", 2], ["mistral", 1]], "Mistral is asked once, without tools");
+    const mistral = freeSent()[2];
+    assert.deepEqual([freeSent().length, mistral.tools, mistral.stream], [3, undefined, true]);
+    assert.match(mistral.messages[0].content, /can't search the web/);
+    assert.match(said(events), /^I couldn't search the web/);
+    assert.deepEqual(sources(events), [], "Groq's results aren't listed under Mistral's answer");
+    assert.deepEqual(used, []);
+  });
+});
+
+test("a free provider that takes over has only the reply's calls left, and lists only its own sources, without FRED's notice for data it never read", async () => {
+  await withMistral(async () => {
+    reserves.length = 0;
+    const used: string[] = [];
+    stand.state.free.replies.push(
+      { calls: [{ name: "web_search", args: { query: "groq query" } }, { name: "fred_series", args: { series_id: "UNRATE", count: 12 } }] },
+      { status: 503 },
+      // One search is left in the reply, and FRED's two more look-ups: Mistral asks for two searches.
+      { calls: [{ name: "web_search", args: { query: "mistral one" } }, { name: "web_search", args: { query: "mistral two" } }] },
+      { text: "Today's top story [1]." },
+    );
+    const tools = dataTools({ search: true, economy: true }, { userId: "free-8" });
+    const events = await collect(streamFreeChat(ask("news today, and the unemployment rate?"), "", "text", reserve, record, () => {}, { tools, onTool: (n) => used.push(n) }));
+    assert.deepEqual(reserves, [["groq", 2], ["mistral", 2]]);
+    const first = freeSent()[2];
+    assert.deepEqual(first.tools?.map((t) => t.function.name), ["web_search", "fred_series_search", "fred_series"]);
+    assert.deepEqual(searches(), ["groq query", "mistral one"], "the second of Mistral's searches would be the reply's third");
+    const answered = freeSent()[3].messages.filter((m) => m.role === "tool").map((m) => m.content);
+    assert.equal(answered[1], R.SEARCH_LIMIT);
+    assert.deepEqual(sources(events).map((s) => s.title), ["Top story: mistral one", "Markets close higher"]);
+    assert.equal(said(events), "Today's top story [1].", "no FRED notice: Mistral's answer read no FRED data");
+    assert.deepEqual(used, ["web_search"]);
+  });
 });
 
 test("a free provider without tools gets none, and is told it can't search", async () => {

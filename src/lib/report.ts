@@ -1,6 +1,7 @@
 /*
  * Reporting what people make with Flash and show others: shared chats (/s/…), files a connected app
- * made (/f/…) and published apps (/p/…, or on the app's own domain). The Report form on shared chats
+ * made (/f/…) and published apps (/p/…, or on the app's own domain, or an unsubscribe page /u/…
+ * that shows the app's name). The Report form on shared chats
  * and the public /report page send reports to Flash's admins (src/lib/server/reports.ts); nobody
  * else sees them, the page's owner included. Published apps are their owners' own sites, so Flash
  * adds nothing to their pages: they are reported by their address on /report.
@@ -32,8 +33,8 @@ export const MAX_REPORT_EMAIL = 254;
 export type ReportKind = "share" | "site" | "file";
 // What each kind of item is called in the admin dashboard and in emails to the admins (in English, like them).
 export const REPORT_KIND_NAMES: Record<ReportKind, string> = { share: "Shared chat", site: "Published app", file: "File link" };
-/** What an address points at, before it's looked up: one of Flash's own pages, or a custom domain. */
-export type ReportTarget = { kind: ReportKind; id: string } | { kind: "domain"; domain: string };
+/** What an address points at, before it's looked up: one of Flash's own pages, an app's unsubscribe link, or a custom domain. */
+export type ReportTarget = { kind: ReportKind; id: string } | { kind: "unsubscribe"; token: string } | { kind: "domain"; domain: string };
 
 // Flash's own pages that show what someone made. A shared chat's pictures (/s/<id>/files/<file>)
 // are the chat's, a share card (/p/<slug>/card) and the files sent to an app are the app's.
@@ -43,6 +44,8 @@ const OWN_PAGES: [RegExp, ReportKind][] = [
   [/^\/api\/sites\/([a-z0-9-]{1,64})\/files\/[\w-]{1,64}$/, "site"],
   [/^\/f\/([\w-]{1,64})\/?$/, "file"],
 ];
+// An app's unsubscribe page (/u/<contact>.<signature>) shows the app's name: it's reported as that app.
+const UNSUBSCRIBE = /^\/u\/([\w-]{16,24}\.[\w-]{22})\/?$/;
 const DOMAIN = /^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{1,62}$/;
 
 /**
@@ -62,6 +65,8 @@ export function reportTarget(input: string, ownHost: (host: string) => boolean =
   if ((url.protocol !== "https:" && url.protocol !== "http:") || url.username || url.password) return null;
   const host = url.hostname.toLowerCase().replace(/\.$/, "");
   if (text.startsWith("/") || ownHost(host)) {
+    const token = UNSUBSCRIBE.exec(url.pathname)?.[1];
+    if (token) return { kind: "unsubscribe", token };
     for (const [pattern, kind] of OWN_PAGES) {
       const id = pattern.exec(url.pathname)?.[1];
       if (id) return { kind, id };

@@ -53,6 +53,9 @@ export type ChatTurn = {
   // calls (on the assistant turn before) and what they returned (on the user's turn), as tool blocks.
   toolCalls?: { id: string; name: string; input: Record<string, unknown> }[];
   toolResults?: { id: string; content: string; isError?: boolean }[];
+  // A reply that used a connected account (see accountReplies in connectors.ts): what it says can
+  // hold that account's data, so a chat with one never goes to the free lane.
+  usedConnector?: boolean;
 };
 
 export type BuiltApp = { title: string; html: string; kind: "app" | "slides" };

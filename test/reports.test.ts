@@ -37,6 +37,7 @@ const { createSession } = await import("../src/lib/server/auth.ts");
 const { EMAIL_BUDGET, EMAILS, sendEmail } = await import("../src/lib/server/email.ts");
 const { reportTarget, MAX_REPORT_DETAILS } = await import("../src/lib/report.ts");
 const { REPORT_LIMITS, listReports, plainText } = await import("../src/lib/server/reports.ts");
+const contacts = await import("../src/lib/server/contacts.ts");
 const { countOf } = await import("../src/lib/server/limits.ts");
 const { serveSite } = await import("../src/lib/server/serve-site.ts");
 const reportRoute = await import("../src/app/api/reports/route.ts");
@@ -407,4 +408,25 @@ test("an app's name taken again by someone else isn't taken down for what was re
   assert.ok(await one("SELECT 1 FROM sites WHERE slug = 'reused-ef56'"), "the new owner's app stays");
   assert.ok((await reportsOf("site", "reused-ef56")).every((r) => r.status === "open"));
   assert.equal((await admin("POST", boss, { kind: "site", id: "reused-ef56", action: "reviewed" })).status, 200);
+});
+
+test("an app's unsubscribe page is reported as the app, so it can be taken down; a made-up link is refused", async () => {
+  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES ('news-app', 'owner', 'Your bank: call now', '<p>Hi</p>', 0, 0)");
+  const added = await contacts.addContact("news-app", { email: "pat@example.com" });
+  assert.ok("id" in added);
+  const token = contacts.unsubToken(await contacts.siteSecret("news-app"), "news-app", added.id);
+  assert.deepEqual(reportTarget(`${SITE}/u/${token}`), { kind: "unsubscribe", token });
+  assert.deepEqual(reportTarget(`/u/${token}/`), { kind: "unsubscribe", token });
+  assert.equal((await report({ address: `${SITE}/u/${token}`, reason: "spam" }, "198.51.100.90")).status, 200);
+  const [kept] = await reportsOf("site", "news-app");
+  assert.equal(kept.reason, "spam");
+  assert.equal(kept.via, "");
+  // A link with another signature, or for no contact, points at nothing Flash has.
+  const forged = `${token.slice(0, -1)}${token.endsWith("A") ? "B" : "A"}`;
+  assert.equal((await report({ address: `${SITE}/u/${forged}`, reason: "spam" }, "198.51.100.91")).status, 404);
+  assert.equal((await report({ address: `${SITE}/u/NoSuchContactAAAA.${"A".repeat(22)}`, reason: "spam" }, "198.51.100.92")).status, 404);
+  assert.equal((await reportsOf("site", "news-app")).length, 1);
+  // Taking the app down from that report takes its contacts too, so the page stops working.
+  assert.equal((await admin("POST", await cookieFor("boss"), { kind: "site", id: "news-app", action: "take_down" })).status, 200);
+  assert.equal(await contacts.tokenContact(token), null);
 });

@@ -35,7 +35,7 @@ import { Home, ICONS, Icon } from "./Home";
 import { Bell } from "./Bell";
 import { ConnectorsButton, LevelPicker, MenusOpenDown, MicButton, PlusMenu, SendButton, TalkButton, ToolPicker, type Choice } from "./ComposerTools";
 import { ConnectorTile } from "./YourConnectors";
-import { PRESETS, type ActionCard, type ConnectionView } from "@/lib/connectors";
+import { PRESETS, accountReplies, type ActionCard, type ConnectionView } from "@/lib/connectors";
 import { readChatConnectors, writeChatConnectors } from "@/lib/chat-connectors";
 import { VoiceMode, type VoiceAnswer } from "./VoiceMode";
 import { useWakeWord } from "./useWakeWord";
@@ -1175,6 +1175,8 @@ export function Flash({
     // follow-up can change it.
     const lastReply = [...earlier].reverse().find((m) => m.role === "assistant" && m.engine);
     const previous = lastReply?.about ?? lastReply?.engine;
+    // Replies that used a connected account are marked, so the chat never goes to the free lane.
+    const fromAccounts = accountReplies(earlier);
     const history: ChatTurn[] = [
       ...earlier
         // A price Flash asked about stays, so "how much was it?" is answered with the real price.
@@ -1183,6 +1185,7 @@ export function Flash({
           role: m.role,
           content: m.errorCode === "confirm_cost" && !m.content ? (m.error ?? "") : turnText(m),
           app: m.id === lastAppId ? m.app?.html : undefined,
+          usedConnector: fromAccounts.has(m.id) || undefined,
         })),
       { role: "user", content: turnText(userMsg), attachment: sent[0], more: sent.length > 1 ? sent.slice(1) : undefined },
     ];
@@ -1430,7 +1433,8 @@ export function Flash({
             request: job.request,
           },
         }),
-        recent: recentTurns(chat?.messages ?? []),
+        // A chat that used a connected account isn't shown to the companion (see cleanContext).
+        ...(accountReplies(chat?.messages ?? []).size ? { usedConnector: true } : { usedConnector: false, recent: recentTurns(chat?.messages ?? []) }),
         queue: queueNow.current.map((q) => q.request),
       };
     },

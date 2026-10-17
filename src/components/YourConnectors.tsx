@@ -5,6 +5,7 @@ import { api } from "@/lib/store";
 import { PRESETS, presetById, toolWords, type ConnectionView, type Preset, type ToolKind, type ToolPreview, type ToolView } from "@/lib/connectors";
 import { msg } from "@/lib/i18n";
 import { useT } from "@/lib/use-t";
+import { DriveFiles } from "./DrivePicker";
 
 /*
  * Settings > Connectors > Your accounts in Flash: the user's own accounts that replies can use when
@@ -14,14 +15,16 @@ import { useT } from "@/lib/use-t";
  * with its host and every tool before it is added; one that asks for a sign-in is signed in to first,
  * and its tools are shown when the browser comes back. GitHub connects through Flash's GitHub App,
  * installed on the repositories the user picks there, and is offered only once that app is set up (github).
+ * Google Drive connects through Flash's own Google Cloud project, offered only once that is set up
+ * (google), and opens only the files the user picks with Google's Picker (see DrivePicker.tsx).
  * Keys are never shown again, only their last 4 characters. Until CONNECTOR_KEYS is set, users see
  * nothing here, and the owner sees one line saying why.
  */
 
-type Loaded = { ready: boolean; owner: boolean; github?: boolean; connections: ConnectionView[] };
+type Loaded = { ready: boolean; owner: boolean; github?: boolean; google?: boolean; connections: ConnectionView[] };
 type Preview = { host: string; tools: ToolPreview[]; signIn?: { authHost: string; needsClient: boolean; callback: string } };
 
-/** How a sign-in that came back here ended (?connect=…, set by /api/connect/mcp/callback or GitHub's), in the user's words. */
+/** How a sign-in that came back here ended (?connect=…, set by /api/connect/mcp/callback, GitHub's or Google's), in the user's words. */
 const OUTCOMES: Record<string, { text: string; ok: boolean }> = {
   ok: { text: msg("Your account is connected."), ok: true },
   review: { text: msg("Look at its tools, then add it."), ok: true },
@@ -29,15 +32,17 @@ const OUTCOMES: Record<string, { text: string; ok: boolean }> = {
   expired: { text: msg("That sign-in expired or was already used. Try again."), ok: false },
   failed: { text: msg("The sign-in didn't work, so nothing was connected. Try again."), ok: false },
   github_install: { text: msg("The Flash AI app isn't installed on any of your GitHub repositories. Connect again and pick the repositories it may use."), ok: false },
+  google_scope: { text: msg("Google didn't give Flash access to the files you pick, so Google Drive can't be used. Reconnect and allow access to the Google Drive files you use with Flash."), ok: false },
 };
 
 /**
  * Signs in: the server stores the attempt and answers with the service's own sign-in page, which the
  * browser opens. Only a web address is opened (the server allows https only, or the dev stand-in).
- * GitHub has its own start (its authorize page; the app's installation page follows when needed).
+ * GitHub has its own start (its authorize page; the app's installation page follows when needed), and
+ * so does Google Drive (Google's authorize page).
  */
 async function signIn(request: Record<string, unknown>, provider = "") {
-  const route = provider === "github" ? "/api/connect/github/start" : "/api/connect/mcp/start";
+  const route = provider === "github" ? "/api/connect/github/start" : provider === "google-drive" ? "/api/connect/google/start" : "/api/connect/mcp/start";
   const { url } = await api<{ url: string }>(route, { method: "POST", json: request });
   const target = new URL(url);
   if (target.protocol !== "https:" && target.protocol !== "http:") throw new Error("Unexpected sign-in address.");
@@ -173,6 +178,7 @@ export function YourConnectors() {
               }
               onReconnect={() => attempt(() => signIn({ connectionId: c.id }, c.provider))}
               onInstall={() => attempt(() => signIn({ install: true }, c.provider))}
+              onFiles={(files) => replace({ ...c, files })}
               onConfirm={() =>
                 attempt(async () => {
                   const { connection } = await api<{ connection: ConnectionView }>(`/api/connect/${c.id}`, { method: "PATCH", json: { confirm: true } });
@@ -187,7 +193,7 @@ export function YourConnectors() {
         <>
           <p className="text-sm text-zinc-300">{t("Add an account")}</p>
           <div className="grid gap-2 sm:grid-cols-2">
-            {PRESETS.filter((p) => !p.rest || data.github).map((p) => (
+            {PRESETS.filter((p) => !p.rest || (p.id === "github" ? data.github : p.id === "google-drive" ? data.google : false)).map((p) => (
               <button
                 key={p.id}
                 type="button"
@@ -257,6 +263,7 @@ function Connection({
   onReconnect,
   onInstall,
   onConfirm,
+  onFiles,
 }: {
   c: ConnectionView;
   busy: boolean;
@@ -265,6 +272,7 @@ function Connection({
   onReconnect: () => void;
   onInstall: () => void;
   onConfirm: () => void;
+  onFiles: (files: NonNullable<ConnectionView["files"]>) => void;
 }) {
   const t = useT();
   const [removing, setRemoving] = useState(false);
@@ -278,7 +286,7 @@ function Connection({
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm text-zinc-100">{c.label}</p>
           <p className={`truncate ${hint}`}>
-            <span dir="ltr">{c.host}</span> · {c.signIn ? t("Connected") : c.last4 ? t("key ending in {last4}", { last4: c.last4 }) : t("no sign-in")}
+            <span dir="ltr">{c.account || c.host}</span> · {c.signIn ? t("Connected") : c.last4 ? t("key ending in {last4}", { last4: c.last4 }) : t("no sign-in")}
           </p>
         </div>
         {c.signIn && !review && !removing && c.status === "ok" && (
@@ -343,6 +351,7 @@ function Connection({
           </button>
         </div>
       )}
+      {c.files && <DriveFiles connectionId={c.id} files={c.files} usable={c.status === "ok"} busy={busy} onFiles={onFiles} />}
       <details className="mt-3" open={review}>
         <summary className="cursor-pointer text-xs text-zinc-400 hover:text-zinc-200">{t("Tools ({count})", { count: c.tools.length })}</summary>
         <ul className="mt-2 divide-y divide-white/6">
@@ -400,7 +409,7 @@ function ToolRow({
   return (
     <li className="flex items-start gap-3 py-2.5">
       <div className="min-w-0 flex-1">
-        {/* A title and description Flash wrote itself (GitHub's tools) are shown in the user's language; any other is the server's own. */}
+        {/* A title and description Flash wrote itself (GitHub's and Google Drive's tools) are shown in the user's language; any other is the server's own. */}
         <p className="text-sm text-zinc-200">
           {toolWords(t, tool.title)} <span className={hint}>· {tool.trusted ? t("Always allowed") : kindText(tool.kind, custom, t)}</span>
         </p>

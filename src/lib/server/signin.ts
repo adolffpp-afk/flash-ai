@@ -43,6 +43,7 @@ async function dropUnconfirmed(userId: string): Promise<void> {
     [
       { sql: "DELETE FROM pending_actions WHERE user_id = ?", args: [userId] },
       { sql: "DELETE FROM connection_tools WHERE connection_id IN (SELECT id FROM connections WHERE user_id = ?)", args: [userId] },
+      { sql: "DELETE FROM connection_files WHERE connection_id IN (SELECT id FROM connections WHERE user_id = ?)", args: [userId] },
       { sql: "DELETE FROM connections WHERE user_id = ?", args: [userId] },
       { sql: "DELETE FROM connect_flows WHERE user_id = ?", args: [userId] },
       { sql: "DELETE FROM mcp_client_registrations WHERE owner_user_id = ?", args: [userId] },

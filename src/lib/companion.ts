@@ -52,8 +52,10 @@ export type CompanionContext = {
   project?: string;
   // The request running in that chat, if any.
   job?: { engine?: Engine; model?: string; status?: string; seconds: number; request: string };
-  // The last messages of that chat.
+  // The last messages of that chat, only when the page says the chat used no connected account.
   recent?: CompanionTurn[];
+  // The chat used a connected account (see accountReplies in connectors.ts), so its messages are left out.
+  usedConnector?: boolean;
   // Requests waiting in Next up, in order.
   queue?: string[];
   // The date on the user's own calendar, as yyyy-mm-dd.
@@ -113,7 +115,11 @@ export function cleanContext(input: unknown): CompanionContext {
       request: typeof job.request === "string" ? clip(job.request, 500) : "",
     };
   }
-  if (Array.isArray(c.recent)) {
+  // What Claude wrote from a connected account's data goes to Anthropic only, and the companion's
+  // answers can reach a free model later (when the user is out of credits): a chat's messages are
+  // kept only when the page says it used none (a page from before this says nothing, so they go).
+  if (c.usedConnector === true) out.usedConnector = true;
+  else if (Array.isArray(c.recent) && c.usedConnector === false) {
     out.recent = c.recent
       .filter(isTurn)
       .slice(-MAX_RECENT)
@@ -246,6 +252,8 @@ export function companionSystem(f: CompanionFacts): string {
   if (c.queue?.length) work.push(`Next up, in order: ${c.queue.map((q, i) => `${i + 1}. "${q}"`).join(" ")}`);
   if (c.recent?.length) {
     work.push("Latest messages in that chat:\n" + c.recent.map((t) => `${t.role === "user" ? "User" : "Flash"}: ${t.content}`).join("\n"));
+  } else if (c.usedConnector) {
+    work.push("That chat used the user's connected accounts (Connectors), so its messages aren't shown to you.");
   }
   const language = languageNote(f.language);
 
