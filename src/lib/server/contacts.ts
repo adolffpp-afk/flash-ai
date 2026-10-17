@@ -785,8 +785,8 @@ export async function contactCsv(slug: string, t: Translate, base: string, maxBy
 
 const TOKEN = /^([\w-]{16,24})\.([\w-]{22})$/;
 
-/** Whose unsubscribe link this is: the app's title and whether they're unsubscribed now. null for a link that doesn't work. Reads only. */
-export async function tokenContact(token: string): Promise<{ id: string; title: string; unsubscribed: boolean } | null> {
+/** Whose unsubscribe link this is: the app (its slug and title) and whether they're unsubscribed now. null for a link that doesn't work. Reads only. */
+export async function tokenContact(token: string): Promise<{ id: string; slug: string; title: string; unsubscribed: boolean } | null> {
   const parts = TOKEN.exec(token);
   if (!parts) return null;
   const row = await one<{ id: string; site_slug: string; consent_at: number; unsubscribed_at: number; title: string; contact_secret: string }>(
@@ -799,7 +799,7 @@ export async function tokenContact(token: string): Promise<{ id: string; title: 
   const given = Buffer.from(parts[2]);
   if (expected.length !== given.length || !timingSafeEqual(expected, given)) return null;
   const unsubscribedAt = Number(row.unsubscribed_at);
-  return { id: row.id, title: row.title, unsubscribed: unsubscribedAt > 0 && unsubscribedAt >= Number(row.consent_at) };
+  return { id: row.id, slug: row.site_slug, title: row.title, unsubscribed: unsubscribedAt > 0 && unsubscribedAt >= Number(row.consent_at) };
 }
 
 /**

@@ -856,7 +856,7 @@ test("an unsubscribe link works without signing in, and only a POST changes anyt
   const secret = await contacts.siteSecret("unsub");
   assert.equal(await contacts.siteSecret("unsub"), secret, "made once");
   const token = contacts.unsubToken(secret, "unsub", String(mo.id));
-  assert.deepEqual(await contacts.tokenContact(token), { id: mo.id, title: "Golden Crumb", unsubscribed: false });
+  assert.deepEqual(await contacts.tokenContact(token), { id: mo.id, slug: "unsub", title: "Golden Crumb", unsubscribed: false });
   const changed = token.slice(0, -1) + (token.endsWith("A") ? "B" : "A");
   assert.equal(await contacts.tokenContact(changed), null, "a changed signature");
   assert.equal(await contacts.tokenContact(contacts.unsubToken(secret, "unsub", String(mo2.id))), null, "another app's contact");

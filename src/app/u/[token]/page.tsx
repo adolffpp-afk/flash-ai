@@ -49,6 +49,9 @@ export default async function Unsubscribe({ params }: Props) {
             <button className="mt-5 w-full rounded-xl bg-brand py-2.5 font-medium text-on-brand transition hover:brightness-110">{t("Unsubscribe")}</button>
           </form>
         )}
+        <p className="mt-6 text-center text-xs text-zinc-500">
+          <a href="/report" className="hover:text-zinc-300">{t("Report content")}</a>
+        </p>
       </main>
     </div>
   );
