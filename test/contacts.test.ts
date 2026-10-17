@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { register } from "node:module";
 import vm from "node:vm";
 import { readFileSync } from "node:fs";
+import { domainToASCII, domainToUnicode } from "node:url";
 
 /*
  * Each app's contact list: forms, sign-ups and paid orders fill one list per app, matched by email
@@ -17,7 +18,7 @@ process.env.FLASH_ADMIN_EMAILS = "admin@x.co";
 process.env.FLASH_APP_URL = "https://www.flash-app.dev";
 
 const { run, one, all } = await import("../src/lib/server/db.ts");
-const { contactFromFields, normalPhone, pageHas, pageWords, stagesOf, cleanTags, dateText, formChanged, mailtoLink, phoneStage, failedText, DEFAULT_STAGES } = await import(
+const { cleanEmail, contactFromFields, normalPhone, pageHas, pageWords, stagesOf, cleanTags, dateText, formChanged, mailtoLink, phoneStage, failedText, DEFAULT_STAGES } = await import(
   "../src/lib/contacts.ts"
 );
 const contacts = await import("../src/lib/server/contacts.ts");
@@ -117,9 +118,10 @@ test("an email address can't bring a Bcc, a subject or another recipient into th
   for (const odd of ["jo@example.com#x", "jo@exa&mple.com", "jo@example.com,spy@evil.example", "jo@exam%40ple.com", "jo@example.com/x"]) {
     assert.equal(contactFromFields({ email: odd }), null, odd);
   }
-  for (const real of ["ana.silva+cakes@example.co.uk", "josé@bäckerei.de", "user@例え.テスト", "a@उदाहरण.भारत", "o'brien@xn--bcherei-n2a.de"]) {
+  for (const real of ["ana.silva+cakes@example.co.uk", "josé@bäckerei.de", "user@例え.テスト", "a@उदाहरण.भारत", "o'brien@bücherei.de"]) {
     assert.equal(contactFromFields({ email: real })?.email, real, real);
   }
+  assert.equal(contactFromFields({ email: "o'brien@xn--bcherei-n2a.de" })?.email, "o'brien@bücherei.de", "a domain as DNS writes it");
   await site("odd", "owner");
   assert.deepEqual(await send("odd", { name: "Jo", email: bcc }), { ok: true }, "the message still arrives");
   assert.deepEqual(await contactsOf("odd"), []);
@@ -133,6 +135,34 @@ test("an email address can't bring a Bcc, a subject or another recipient into th
     assert.equal(decodeURIComponent(link.pathname), email);
     assert.equal(link.pathname.split("%2C").length - 1, (email.match(/,/g) ?? []).length, "a comma stays in the address");
   }
+});
+
+test("an address is kept in one spelling: its domain as browsers and mail programs read it, with nothing invisible in it", () => {
+  // The same domain, however it's written: an invisible character in it, fullwidth letters, the
+  // "xn--" form DNS uses, or "ä" as "a" and a combining mark.
+  for (const [typed, kept] of [
+    ["cy@gmail\u{FE0F}.com", "cy@gmail.com"],
+    ["cy@gma\u034Fil.com", "cy@gmail.com"],
+    ["cy@gmail\u{E0100}.com", "cy@gmail.com"],
+    ["cy@ｇｍａｉｌ.com", "cy@gmail.com"],
+    ["CY@ＧＭＡＩＬ.COM", "cy@gmail.com"],
+    ["jo@xn--bckerei-5wa.de", "jo@bäckerei.de"],
+    ["jo@ba\u0308ckerei.de", "jo@bäckerei.de"],
+    ["jo@BÄCKEREI.de", "jo@bäckerei.de"],
+    ["jo\u0308@x.de", "jö@x.de"],
+  ]) {
+    assert.equal(cleanEmail(typed), kept, JSON.stringify(typed));
+  }
+  // Every script reads back as browsers show it.
+  for (const domain of ["bäckerei.de", "例え.テスト", "उदाहरण.भारत", "почта.рф", "xn--80a1acny.xn--p1ai", "δοκιμή.gr", "straße.de", "مثال.إختبار", "ドメイン名例.jp", "한국.kr", "ab--cd.com", "a-b.c-d.com"]) {
+    assert.equal(cleanEmail(`a@${domain}`), `a@${domainToUnicode(domainToASCII(domain))}`, domain);
+  }
+  // Before the @, an invisible character makes another address that looks the same: it isn't kept.
+  for (const typed of ["c\u200By@gmail.com", "cy\u{FE0F}@gmail.com", "c\u00ADy@gmail.com", "\u202Ecy@gmail.com", "c\u0000y@gmail.com"]) {
+    assert.equal(cleanEmail(typed), "", JSON.stringify(typed));
+  }
+  // A domain no browser could open isn't one.
+  for (const typed of ["a@xn--zz.com", "a@b.12", "a@gm\u200Dail.com"]) assert.equal(cleanEmail(typed), "", typed);
 });
 
 test("members who joined with an address the old check allowed can still sign in", async () => {
@@ -208,6 +238,20 @@ test("one person who sends a form, signs up and pays is one contact", async () =
   assert.deepEqual([ana.stage, ana.tags, ana.notes], ["won", '["VIP"]', "Wants rye"]);
   assert.equal(ana.consent_at, 0, "paying isn't agreeing to news");
   assert.equal((await all("SELECT 1 FROM site_orders WHERE site_slug = 'crumb'")).length, 1);
+  assert.equal((await one<{ email: string }>("SELECT email FROM site_orders WHERE site_slug = 'crumb'"))?.email, "ana@EXAMPLE.com", "the order keeps the address as given");
+
+  // A buyer whose address Stripe gives in another spelling of its domain: the order keeps it as
+  // their contact does, so their page shows it, the file has it and deleting them clears it.
+  const jo = { ...paid, id: "cs_test_jo", customer_details: { email: "Jo@XN--BCKEREI-5WA.de", name: "Jo" } };
+  globalThis.fetch = (async () => Response.json(jo)) as typeof fetch;
+  assert.equal((await finishCheckout("crumb", "cs_test_jo", null, ORIGIN)).paid, true);
+  const joContact = (await contactsOf("crumb")).find((c) => c.source === "order:Chocolate cake" && c.name === "Jo")!;
+  assert.equal(joContact.email, "jo@bäckerei.de");
+  assert.equal((await one<{ email: string }>("SELECT email FROM site_orders WHERE session_id = 'cs_test_jo'"))?.email, "jo@bäckerei.de");
+  assert.equal((await contacts.contactDetail("crumb", String(joContact.id), ORIGIN))?.orderCount, 1);
+  assert.equal(((await contacts.exportContact("crumb", String(joContact.id), ORIGIN))?.orders as unknown[]).length, 1);
+  assert.equal(await contacts.deleteContact("crumb", String(joContact.id)), true);
+  assert.equal((await one<{ email: string }>("SELECT email FROM site_orders WHERE session_id = 'cs_test_jo'"))?.email, "");
 });
 
 test("a buyer whose order Flash hadn't seen yet is on the list when the owner opens Contacts", async () => {
@@ -489,6 +533,29 @@ test("a ticked box doesn't sign up the mailbox of someone who unsubscribed under
   }
   await send("plus2", { email: "cy+news@gmail.com" }, { consent: { text: NEWS } }, "198.51.100.90");
   assert.equal(await agreed("plus2", "cy+news@gmail.com"), true, "another app");
+  // The same domain written another way is the same address: an invisible character in it,
+  // fullwidth letters, the xn-- form, or "ä" as "a" and a combining mark. Each joins the person
+  // who unsubscribed, who stays unsubscribed, and no one who looks like them is added.
+  await send("plus", { email: "jo@bäckerei.de" }, { consent: { text: NEWS } }, "203.0.113.64");
+  await off("plus", "jo@bäckerei.de");
+  const before = (await contactsOf("plus")).length;
+  for (const [i, email] of ["cy@gmail\u{FE0F}.com", "cy@gma\u034Fil.com", "cy@ｇｍａｉｌ.com", "jo@xn--bckerei-5wa.de", "jo@ba\u0308ckerei.de"].entries()) {
+    await send("plus", { email }, { consent: { text: NEWS } }, `198.51.100.${100 + i}`);
+  }
+  assert.equal((await contactsOf("plus")).length, before, "nobody new");
+  assert.equal(await agreed("plus", "cy+news@gmail.com"), false);
+  // Someone saved before addresses were kept in one spelling, who then unsubscribed: their mailbox
+  // under the usual spelling doesn't agree either.
+  for (const [i, email] of ["di@ｅｘａｍｐｌｅ.org", "ed@xn--bckerei-5wa.de", "fi@ba\u0308ckerei.de", "gi@exam\u{FE0F}ple.org"].entries()) {
+    await run("INSERT INTO site_contacts (id, site_slug, email, source, first_seen, last_seen, unsubscribed_at) VALUES (?, 'plus', ?, 'form:contact', 1, 1, 2)", [
+      `old${i}`,
+      email,
+    ]);
+  }
+  for (const [i, email] of ["di+news@example.org", "ed@bäckerei.de", "fi@bäckerei.de", "gi@example.org"].entries()) {
+    await send("plus", { email }, { consent: { text: NEWS } }, `198.51.100.${110 + i}`);
+    assert.equal(await agreed("plus", email), false, email);
+  }
   const csv = (await contacts.contactCsv("plus", await translatorIn("en"), ORIGIN)).csv;
   const yes = csv.split("\n").filter((line) => /,Yes,/.test(line)).map((line) => line.split(",")[1]).sort();
   assert.deepEqual(yes, ["ab@example.com", "cy@example.com", "cyd@gmail.com"], "the file marks only them as agreed");
@@ -510,12 +577,17 @@ test("someone a form signed up again after they unsubscribed, before a tick stop
   assert.equal((await shown()).subscribed, false);
   assert.equal((await shown()).unsubscribedAt, firstOff);
   assert.match((await contacts.contactCsv("before", t, ORIGIN)).csv, /cy@example\.com,[^\n]*,No,/);
+  // So does the file the owner gives them, beside the form's later agreement.
+  const exported = (await contacts.exportContact("before", String(cy.id), ORIGIN, t))!.contact as Record<string, unknown>;
+  assert.equal(exported.subscribed, false);
+  assert.equal((exported.consent as { at: string }).at, new Date(firstOff + 60_000).toISOString());
   assert.equal((await contacts.tokenContact(token))?.unsubscribed, true, "their link says so");
   assert.equal(await contacts.unsubscribe(token), true);
   assert.equal(Number((await contactsOf("before"))[0].unsubscribed_at), firstOff, "the time they unsubscribed stays");
   // The owner can still record that they asked for news again.
   assert.equal((await call("PATCH", owner, "before", "", { id: cy.id, askedAgain: "They asked at the shop" })).status, 200);
   assert.equal((await shown()).subscribed, true);
+  assert.equal(((await contacts.exportContact("before", String(cy.id), ORIGIN, t))!.contact as Record<string, unknown>).subscribed, true);
   assert.equal((await contacts.tokenContact(token))?.unsubscribed, false);
   await fresh();
 });
@@ -547,6 +619,10 @@ test("only wording a visitor sees on the page counts, never words in its code, c
     `<textarea>${words}</textarea>`,
     `<iframe>${words}</iframe>`,
     `<p>A tag that never ends</p><p title="${words}`,
+    // Outside an <svg>, browsers read "<title/>" as a title that runs to its end tag.
+    `<p><title/>${words}</title></p>`,
+    `<svg><title>${words}</title></svg>`,
+    `<svg><title a=b/>${words}</title></svg>`,
   ];
   for (const code of unseen) {
     const html = `<!doctype html><html><head><title>${words}</title></head><body><h1>Golden Crumb</h1>${code}</body></html>`;
@@ -559,6 +635,12 @@ test("only wording a visitor sees on the page counts, never words in its code, c
     `<a title="a > b" href='/x?a=1>2'>Email me news</a> and <b class=x>offers</b> from <!-- the shop -->Golden Crumb`,
     `<template><p>Not this</p></template><label>${words}</label><style>p > a { color: red }</style>`,
     `<p>Ages <12 &amp; up. ${words}</p>`,
+    // In an <svg> a tag that ends in "/>" is empty, so an icon's <title/> or <style/> hides nothing after it.
+    `<svg viewBox="0 0 40 40"><title/><circle r="1"/></svg><label>${words}</label>`,
+    `<svg viewBox="0 0 24 24"><style/><path d="M0 0h1v1z"/></svg><label>${words}</label>`,
+    `<svg><title class="x" /></svg><p>${words}</p><svg><title>Logo</title></svg>`,
+    `<svg/><p>${words}</p>`,
+    `<math><mi>x</mi><style/></math><p>${words}</p>`,
   ];
   for (const html of seen) assert.ok(pageHas(html, words), html);
   assert.equal(pageWords(`<p>One</p><script>Two</script><style>Three</style><!-- Four --><template>Five</template><b title="Six">Seven</b>`), "one seven");
@@ -759,6 +841,36 @@ test("the owner's reads have a limit too: the board and list, one contact, and e
     assert.equal((await call("GET", owner, `reads-app${i}`, "?format=csv")).status, 200, `app ${i}'s list`);
     assert.equal((await call("GET", owner, `reads-app${i}`, `?id=${someone.id}&format=json`)).status, 200, `someone from app ${i}`);
   }
+  await fresh();
+});
+
+test("a read or change another site sets off is refused before it counts against the owner's limits", async () => {
+  await fresh();
+  await site("elsewhere", "owner");
+  const ana = await contacts.addContact("elsewhere", { email: "ana@x.co" });
+  assert.ok("id" in ana);
+  const from = (fetchSite: string, method: "GET" | "PATCH" = "GET", query = "?format=csv", body?: unknown) =>
+    (route[method] as (r: Request, c: unknown) => Promise<Response>)(
+      new Request(`${ORIGIN}/api/sites/elsewhere/contacts${query}`, {
+        method,
+        headers: { "content-type": "application/json", cookie: owner.cookie, "sec-fetch-site": fetchSite, "sec-fetch-dest": "document" },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      }),
+      { params: Promise.resolve({ slug: "elsewhere" }) },
+    );
+  // A page on another site sends the owner's browser to the download again and again.
+  for (let i = 0; i < 11; i++) {
+    const refused = await from("cross-site");
+    assert.equal(refused.status, 403);
+    assert.equal((await refused.json()).error, "Please use Flash's own page.");
+  }
+  assert.equal((await from("same-site", "GET", "?mode=board")).status, 403, "a page on another address of the same site");
+  assert.equal((await from("cross-site", "PATCH", "", { id: ana.id, notes: "x" })).status, 403);
+  assert.deepEqual(await all("SELECT key FROM rate_limits WHERE key LIKE 'contacts-%'"), [], "nothing counted");
+  // The owner's own download still works, and so does the address typed in.
+  assert.equal((await from("same-origin")).status, 200);
+  assert.equal((await from("none")).status, 200);
+  assert.equal((await call("GET", owner, "elsewhere", "?format=csv")).status, 200, "a browser that doesn't say");
   await fresh();
 });
 
@@ -1037,6 +1149,7 @@ test("one contact's data comes as one file, under 4 MB", async () => {
   assert.equal(data.contact.email, "jo@x.co");
   assert.equal(data.contact.consent.text, NEWS);
   assert.match(data.contact.consent.ipHash, /^[0-9a-f]{24}$/);
+  assert.equal(data.contact.subscribed, true);
   assert.match(data.contact.unsubscribeLink, /^https:\/\/www\.flash-app\.dev\/u\//);
   assert.equal(data.member.email, "jo@x.co");
   assert.deepEqual(data.messages.map((m: { data: { message: string } }) => m.data.message), ["Hello"]);

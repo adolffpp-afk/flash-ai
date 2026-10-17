@@ -48,11 +48,18 @@ const READS = {
 type Ctx = RouteContext<"/api/sites/[slug]/contacts">;
 type Owner = { user: User; t: ServerT; slug: string };
 
-/** The signed-in owner of the app, or the answer to send instead. */
+/**
+ * The signed-in owner of the app, or the answer to send instead. A request another site set off is
+ * refused before it counts against the owner's limits (the sign-in cookie comes along when another
+ * site sends their browser to a download): only Flash's own page ("same-origin"), an address typed
+ * in ("none") and browsers too old to say get through.
+ */
 async function owner(request: Request, ctx: Ctx): Promise<Owner | Response> {
   const user = await getUser(request);
   if (!user) return unauthorized();
   const t = await translatorFor(request, user.language);
+  const from = request.headers.get("sec-fetch-site");
+  if (from && from !== "same-origin" && from !== "none") return Response.json({ error: t("Please use Flash's own page.") }, { status: 403 });
   const { slug } = await ctx.params;
   if (!(await ownsSite(user.id, slug))) return Response.json({ error: t("Not found") }, { status: 404 });
   return { user, t, slug };

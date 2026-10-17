@@ -42,11 +42,74 @@ export const DEFAULT_STAGES: readonly Stage[] = [
 /** Text with every run of spaces made one space, trimmed. */
 const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
 
-/** An email address someone typed, lowercased, or "". */
+// Characters nobody sees: an address with one looks just like the address without it.
+const INVISIBLE = /[\p{Default_Ignorable_Code_Point}\p{Cf}\p{Cc}]/u;
+
+/** The letters a domain's "xn--" label stands for (RFC 3492), or null when it stands for none. */
+function fromPunycode(code: string): string | null {
+  const out: number[] = [];
+  const basic = code.lastIndexOf("-");
+  for (let j = 0; j < basic; j++) out.push(code.charCodeAt(j));
+  let n = 128;
+  let i = 0;
+  let bias = 72;
+  for (let at = basic + 1; at < code.length; ) {
+    const old = i;
+    for (let w = 1, k = 36; ; k += 36) {
+      if (at >= code.length) return null;
+      const c = code.charCodeAt(at++);
+      // a to z are 0 to 25, and 0 to 9 are 26 to 35.
+      const digit = c >= 97 && c <= 122 ? c - 97 : c >= 48 && c <= 57 ? c - 22 : -1;
+      if (digit < 0) return null;
+      i += digit * w;
+      const t = k <= bias ? 1 : k >= bias + 26 ? 26 : k - bias;
+      if (digit < t) break;
+      w *= 36 - t;
+    }
+    const count = out.length + 1;
+    let delta = old === 0 ? Math.floor((i - old) / 700) : Math.floor((i - old) / 2);
+    delta += Math.floor(delta / count);
+    let k = 0;
+    for (; delta > 455; k += 36) delta = Math.floor(delta / 35);
+    bias = k + Math.floor((36 * delta) / (delta + 38));
+    n += Math.floor(i / count);
+    if (n > 0x10ffff) return null;
+    i %= count;
+    out.splice(i++, 0, n);
+  }
+  return String.fromCodePoint(...out);
+}
+
+/**
+ * A domain in the one spelling browsers and mail programs read it as (the address bar's rules,
+ * UTS 46): fullwidth letters as plain ones, invisible characters left out, "a" and a combining mark
+ * as "ä", and an "xn--" label as the letters it stands for. "" when it isn't one.
+ */
+function readDomain(domain: string): string {
+  let ascii: string;
+  try {
+    ascii = new URL(`http://${domain}`).hostname;
+  } catch {
+    return "";
+  }
+  const labels = ascii.split(".").map((label) => (label.startsWith("xn--") ? fromPunycode(label.slice(4)) : label));
+  return labels.includes(null) ? "" : labels.join(".");
+}
+
+/**
+ * An email address someone typed, lowercased, or "". It's kept in one spelling, so one person's
+ * address is always the same text: its domain as readDomain reads it, and the part before the @
+ * composed (NFC), never with a character nobody sees in it.
+ */
 export function cleanEmail(value: unknown): string {
   if (typeof value !== "string") return "";
-  const email = value.trim().toLowerCase();
-  return email.length <= MAX_EMAIL && EMAIL.test(email) ? email : "";
+  const typed = value.trim().toLowerCase();
+  if (typed.length > MAX_EMAIL || !EMAIL.test(typed)) return "";
+  const at = typed.lastIndexOf("@");
+  const name = typed.slice(0, at).normalize("NFC");
+  const domain = readDomain(typed.slice(at + 1));
+  const email = `${name}@${domain}`;
+  return domain && !INVISIBLE.test(name) && email.length <= MAX_EMAIL && EMAIL.test(email) ? email : "";
 }
 
 // What a mailto: link takes as it is; anything else in an address is percent-encoded.
@@ -239,24 +302,28 @@ const UNSEEN_END = new Map(UNSEEN.map((name) => [name, new RegExp(`</${name}[\\s
 const TAG_NAME = /[a-z][^\s/>]*/iy;
 
 /**
- * Where the tag whose name ends at from ends: the index just past its ">", or -1 when it never
- * ends. A ">" inside a quoted attribute value doesn't end it.
+ * Where the tag whose name ends at from ends (end, just past its ">") and whether it ends in "/>"
+ * (empty), or null when it never ends. A ">" or "/" in an attribute's value doesn't count: a quoted
+ * value runs to its quote, and one without quotes to a space or the ">".
  */
-function tagEnd(text: string, from: number): number {
+function tagEnd(text: string, from: number): { end: number; empty: boolean } | null {
+  let slash = false;
   for (let i = from; i < text.length; ) {
-    const ch = text[i];
-    if (ch === ">") return i + 1;
-    i++;
+    const ch = text[i++];
+    if (ch === ">") return { end: i, empty: slash };
+    slash = ch === "/";
     if (ch !== "=") continue;
     while (i < text.length && /\s/.test(text[i])) i++;
     const quote = text[i];
     if (quote === '"' || quote === "'") {
       const close = text.indexOf(quote, i + 1);
-      if (close === -1) return -1;
+      if (close === -1) return null;
       i = close + 1;
+    } else {
+      while (i < text.length && !/[\s>]/.test(text[i])) i++;
     }
   }
-  return -1;
+  return null;
 }
 
 /**
@@ -270,6 +337,9 @@ export function pageWords(text: string): string {
   let plain = "";
   // How many <template>s the reading is inside: their content is only ever shown by code.
   let templates = 0;
+  // How many <svg>s and <math>s it's inside: there a tag that ends in "/>" is empty, so an icon's
+  // <title/> or <style/> hides nothing after it. Elsewhere browsers read <title/> as <title>.
+  let foreign = 0;
   const keep = (part: string) => {
     if (!templates) plain += part;
   };
@@ -295,11 +365,12 @@ export function pageWords(text: string): string {
     TAG_NAME.lastIndex = open + (closing ? 2 : 1);
     const name = TAG_NAME.exec(text)?.[0].toLowerCase() ?? "";
     // A tag that never ends isn't shown, and neither is anything after it.
-    const end = tagEnd(text, name ? TAG_NAME.lastIndex : open + 1);
-    if (end === -1) break;
-    i = end;
+    const tag = tagEnd(text, name ? TAG_NAME.lastIndex : open + 1);
+    if (!tag) break;
+    i = tag.end;
     if (name === "template") templates = closing ? Math.max(0, templates - 1) : templates + 1;
-    const unseen = !closing && UNSEEN_END.get(name);
+    if ((name === "svg" || name === "math") && (closing || !tag.empty)) foreign = closing ? Math.max(0, foreign - 1) : foreign + 1;
+    const unseen = !closing && !(foreign && tag.empty) && UNSEEN_END.get(name);
     if (unseen) {
       unseen.lastIndex = i;
       const found = unseen.exec(text);

@@ -248,17 +248,20 @@ export async function noteContact(slug: string, who: Who, seen: Seen): Promise<s
 /**
  * Whether someone on the app's list whose address reaches the same mailbox as email (the same
  * address with a +tag, or for Gmail with dots: see emailKey) has unsubscribed. Only the app's
- * unsubscribed contacts at that address's domain are read.
+ * unsubscribed contacts at that address's domain are read, and those whose address has a letter
+ * outside A to Z or an "xn--": one saved before addresses were kept in one spelling (see
+ * cleanEmail) may write the same domain another way, and is read in that spelling here.
  */
 async function mailboxUnsubscribed(slug: string, email: string): Promise<boolean> {
   const key = emailKey(email);
   const domain = key.slice(key.lastIndexOf("@"));
   const domains = domain === "@gmail.com" ? [domain, "@googlemail.com"] : [domain];
   const rows = await all<{ email: string }>(
-    `SELECT email FROM site_contacts WHERE site_slug = ? AND unsubscribed_at > 0 AND (${domains.map(() => "email LIKE ?").join(" OR ")})`,
+    `SELECT email FROM site_contacts WHERE site_slug = ? AND unsubscribed_at > 0
+     AND (${domains.map(() => "email LIKE ?").join(" OR ")} OR email GLOB '*[^ -~]*' OR email LIKE '%xn--%')`,
     [slug, ...domains.map((d) => `%${d}`)],
   );
-  return rows.some((r) => emailKey(r.email) === key);
+  return rows.some((r) => emailKey(cleanEmail(r.email) || r.email) === key);
 }
 
 /**
@@ -759,6 +762,9 @@ export async function exportContact(slug: string, id: string, base: string, t: T
           ? { recordedBy: "owner", note: row.consent_text, at: iso(agreedAt), channel: row.consent_channel }
           : { text: row.consent_text, at: iso(agreedAt), form: row.consent_form, channel: row.consent_channel, ipHash: row.consent_ip },
       unsubscribedAt: iso(Number(row.unsubscribed_at)),
+      // As the list says it (see unsubscribedNow), so a form's agreement dated after their
+      // unsubscribe (#114 kept those) never reads as them agreeing again.
+      subscribed: agreedAt > 0 && !unsubscribedNow(row),
       unsubscribeLink: unsubLink(base, secret, slug, row),
     },
     member: member ? { email: member.email, name: member.name, joined: iso(Number(member.created_at)) } : null,
