@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
  */
 process.env.DATABASE_URL = ":memory:";
 const { scanPage, textWidth } = await import("../src/lib/seo-scan.ts");
-const { MAX_CONTEXT, band, evaluate, fixContext, fixableIds, issueCount } = await import("../src/lib/seo-rules.ts");
+const { MAX_CONTEXT, band, evaluate, fixContext, fixableIds, issueCount, stillToFix } = await import("../src/lib/seo-rules.ts");
 const { LABELS, WHY, fixMessage, messageOf } = await import("../src/lib/seo-words.ts");
 const { hasOwnCanonical, hasOwnPreview } = await import("../src/lib/site-preview.ts");
 const { cleanUserMessage } = await import("../src/lib/server/turns.ts");
@@ -539,6 +539,19 @@ test("Fix all sends what the builder can fix, numbered, within what the chat kee
   assert.ok(one.context.endsWith(`\n1. ${check(weak, "icon")!.fix}`));
   // Asking for one that can't be sent sends nothing more.
   assert.deepEqual(fixContext(r, ["placeholders", "weight"], { title: "Golden Crumb", address: ADDRESS }).sent, []);
+});
+
+test("a fix asked for in My websites goes only with what the chat's newest version still needs", () => {
+  const weak = page({ title: "<title>Home</title>", icon: "", body: `${BODY}<p>Call [Phone number].</p>` });
+  const asked: CheckId[] = ["icon", "placeholders", "title", "structured", "weight"];
+  // In the order asked; the owner's own details and what passed aren't the builder's to change.
+  assert.deepEqual(stillToFix(report(weak), asked), ["icon", "title", "structured"]);
+  // Add it: the details for Google are only a tip, but the owner asked for them.
+  assert.equal(said(weak, "structured"), "tip none");
+  assert.deepEqual(fixContext(report(weak), ["structured"], { title: "Golden Crumb", address: ADDRESS }).sent, ["structured"]);
+  // A newer version that already has them: nothing is sent, so nothing is charged.
+  const fixed = page({ head: '<script type="application/ld+json">{"@context":"https://schema.org","@type":"Bakery","name":"Golden Crumb"}</script>' });
+  assert.deepEqual(stillToFix(report(fixed), asked), []);
 });
 
 test("a page where everything fails sends what fits, says how many didn't, and the chat keeps it whole", () => {

@@ -8,6 +8,7 @@ import { dataLine, type DataSummary } from "@/lib/data-rules";
 import { appSlug, projectZip } from "@/lib/app-project";
 import { PREVIEW_BRIDGE, fixRequest, friendlyError, isPreviewMessage, linesIn, type PickedElement, type PreviewError } from "@/lib/preview-bridge";
 import { useT } from "@/lib/use-t";
+import { BAND_PILL, band } from "@/lib/seo-band";
 
 // No allow-same-origin: generated code can't read Flash's storage or cookies.
 const SANDBOX = "allow-scripts allow-forms allow-modals allow-popups allow-pointer-lock allow-downloads";
@@ -86,6 +87,7 @@ export function AppPreview({
   onEditCode,
   onFix,
   onPick,
+  onSeo,
 }: {
   app: BuiltApp & { slug?: string };
   // Fills the live preview beside the chat (see BuildPanel), which draws its own frame around it.
@@ -99,6 +101,8 @@ export function AppPreview({
   onFix?: (request: string) => void;
   // Hands a part of the app the user clicked to the message box, to say what to change.
   onPick?: (picked: PickedElement) => void;
+  // Opens the published app's search check (SEO) in My websites & apps.
+  onSeo?: (slug: string) => void;
 }) {
   const t = useT();
   const [view, setView] = useState<"preview" | "code">("preview");
@@ -110,6 +114,8 @@ export function AppPreview({
   const [publishError, setPublishError] = useState("");
   // Who may change the published app's data, said once it's published.
   const [dataNote, setDataNote] = useState<DataSummary | null>(null);
+  // The search check of the page this publish put live, with the score of the one it replaced.
+  const [publishSeo, setPublishSeo] = useState<{ score: number | null; issues: number; before?: number | null } | null>(null);
   const [copied, setCopied] = useState(false);
   const [menu, setMenu] = useState(false);
   const [picking, setPicking] = useState(false);
@@ -181,13 +187,14 @@ export function AppPreview({
     setPublishing(true);
     setPublishError("");
     try {
-      const res = await api<{ slug: string; data?: DataSummary }>("/api/sites", {
+      const res = await api<{ slug: string; data?: DataSummary; seo?: { score: number | null; issues: number; before?: number | null } }>("/api/sites", {
         method: "POST",
         json: { html: app.html, title: app.title, slug: asNew ? undefined : target },
       });
       onPublished?.(res.slug);
       setPublishedHtml(app.html);
       setDataNote(res.data ?? null);
+      setPublishSeo(res.seo ?? null);
     } catch (err) {
       setPublishError(err instanceof Error ? err.message : t("Couldn't publish."));
     } finally {
@@ -362,6 +369,26 @@ export function AppPreview({
               <button className={btn} onClick={copyLink}>
                 {copied ? t("Copied") : t("Copy link")}
               </button>
+              {onSeo && app.slug && (
+                <button
+                  className={`${btn} inline-flex items-center gap-1`}
+                  onClick={() => onSeo(app.slug!)}
+                  title={publishSeo?.score != null ? t("To fix: {count}", { count: publishSeo.issues.toLocaleString(t.locale) }) : t("How easy your app is to find on Google, and what to fix")}
+                >
+                  <span aria-hidden>🔎</span> {t("SEO")}
+                  {publishSeo?.score != null && (
+                    <>
+                      <span aria-hidden className={`rounded-full px-1.5 py-0.5 text-[10px] tabular-nums ${BAND_PILL[band(publishSeo.score)]}`}>
+                        {publishSeo.score.toLocaleString(t.locale)}
+                      </span>
+                      <span className="sr-only">{t("Search check: {score} out of 100", { score: publishSeo.score.toLocaleString(t.locale) })}</span>
+                      {publishSeo.before != null && publishSeo.before !== publishSeo.score && (
+                        <span className="text-zinc-500">· {t("Was {score}", { score: publishSeo.before.toLocaleString(t.locale) })}</span>
+                      )}
+                    </>
+                  )}
+                </button>
+              )}
               {dataText && <span className="basis-full text-zinc-400">{dataText}</span>}
             </>
           )}

@@ -99,6 +99,7 @@ export const FEATURES: Feature[] = [
   { title: msg("Build From a Picture"), about: msg("Attach a screenshot or sketch to turn it into an app"), group: "Build", icon: "images", action: { open: "build-from-picture" }, needs: "app" },
   { title: msg("Code"), about: msg("Write, explain and fix code"), group: "Build", icon: "code", action: { tool: "code" }, needs: "code" },
   { title: msg("My Websites"), about: msg("Your published sites, updated in one click"), group: "Build", icon: "globe", action: { open: "websites" }, also: "apps publish" },
+  { title: msg("SEO Check"), about: msg("See what keeps your site from showing well on Google, and fix it"), group: "Build", icon: "search", action: { open: "websites" }, also: "seo google pagespeed ranking search" },
   { title: msg("Form Inbox"), about: msg("Messages people send through your sites"), group: "Build", icon: "inbox", action: { open: "websites" }, also: "messages contact" },
   { title: msg("Visitor Stats"), about: msg("Who visits your sites, without cookies"), group: "Build", icon: "chart", action: { open: "websites" }, also: "analytics" },
   { title: msg("Your Own Domain"), about: msg("Put a site on a domain you own"), group: "Build", icon: "link", action: { open: "websites" }, setup: "domains", paid: true },

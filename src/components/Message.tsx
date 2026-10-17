@@ -398,6 +398,7 @@ export function Message({
   onEditApp,
   onFixApp,
   onPickApp,
+  onSeoApp,
   onAction,
   onContinue,
   onShowApp,
@@ -428,6 +429,8 @@ export function Message({
   onEditApp?: (html: string) => void;
   onFixApp?: (request: string) => void;
   onPickApp?: (picked: PickedElement) => void;
+  // Opens a published app's search check (SEO) in My websites & apps.
+  onSeoApp?: (slug: string) => void;
   // A connector call's card was answered (approved, cancelled), and Continue writes on with its result.
   onAction?: (card: ActionCardData) => void;
   onContinue?: (card: ActionCardData) => void;
@@ -560,6 +563,7 @@ export function Message({
             onEditCode={onEditApp}
             onFix={onFixApp}
             onPick={onPickApp}
+            onSeo={onSeoApp}
           />
         )}
         {m.after?.trim() && (

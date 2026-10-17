@@ -8,8 +8,12 @@ import { msg } from "@/lib/i18n";
 import { inOrder } from "@/lib/in-order";
 import { tNow, useT, type T } from "@/lib/use-t";
 import { ContactsView } from "./ContactsView";
+import { SeoView, type SeoData, type SiteFix } from "./SeoView";
+import { BAND_PILL, band } from "@/lib/seo-band";
+import { issueCount } from "@/lib/seo-rules";
 
-// contacts: null until the app's contact list was first filled (see server/contacts.ts).
+// contacts: null until the app's contact list was first filled (see server/contacts.ts). seo: its
+// search check's score and how many things it found to fix, null until worked out (see server/seo.ts).
 type Site = {
   slug: string;
   title: string;
@@ -20,6 +24,7 @@ type Site = {
   members: number;
   contacts: number | null;
   openData?: boolean;
+  seo?: { score: number; issues: number } | null;
 };
 type DataCollection = { name: string; count: number; lastAdded: number; rule: DataRule; source: RuleSource; personal: string[] };
 // block: the app names its rules in a flash-data block; bad: what Flash couldn't use in it. domains: the app's own addresses.
@@ -71,6 +76,7 @@ const VIEW_TITLES = {
   visits: msg("Visitors"),
   history: msg("History"),
   members: msg("Members"),
+  seo: msg("SEO"),
   ai: msg("AI"),
   files: msg("Files"),
   data: msg("Data"),
@@ -86,13 +92,33 @@ const isOpen = (data: AppData) => data.collections.some((c) => c.rule === "open"
 
 /**
  * My websites and apps: every published app, its link, and the forms visitors sent to it. onPlans
- * opens the plans, for what comes with a paid one.
+ * opens the plans, for what comes with a paid one. start opens one app's search check (SEO) once the
+ * list is in (from an app's own page in the chat); editCredits, onFix and onDraft let that check ask
+ * the builder for a change, or put the owner's own details in the chat's message box.
  */
-export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEdit?: (projectId: string) => void; onPlans?: () => void }) {
+export function MyApps({
+  onClose,
+  onEdit,
+  onPlans,
+  start,
+  editCredits,
+  onFix,
+  onDraft,
+}: {
+  onClose: () => void;
+  onEdit?: (projectId: string) => void;
+  onPlans?: () => void;
+  start?: { slug: string; view: "seo" };
+  editCredits?: number;
+  onFix?: (fix: SiteFix) => boolean;
+  onDraft?: (draft: { projectId: string; text: string }) => void;
+}) {
   const t = useT();
   const [sites, setSites] = useState<Site[] | null>(null);
   const [open, setOpen] = useState<Site | null>(null);
-  const [view, setView] = useState<"messages" | "contacts" | "domains" | "preview" | "payments" | "visits" | "history" | "members" | "ai" | "files" | "data">("messages");
+  const [view, setView] = useState<"messages" | "contacts" | "domains" | "preview" | "payments" | "visits" | "history" | "members" | "ai" | "files" | "data" | "seo">(
+    "messages",
+  );
   const [appData, setAppData] = useState<ShownData | null>(null);
   const [records, setRecords] = useState<Records | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -104,6 +130,8 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
   // The version brought back, with what that changed for who may see or change the app's data.
   const [restored, setRestored] = useState<{ data?: DataSummary } | null>(null);
   const [visits, setVisits] = useState<Visits | null>(null);
+  // The search check carries the app it's for, so a late answer for another app never shows.
+  const [seo, setSeo] = useState<{ slug: string; data: SeoData } | null>(null);
   const [payments, setPayments] = useState<Payments | null>(null);
   const [shop, setShop] = useState<Shop | null>(null);
   const [country, setCountry] = useState("CA");
@@ -150,13 +178,22 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, mayLeave]);
 
+  // An app's search check asked for from its page in the chat: opened once the list is in.
+  const started = useRef(false);
   useEffect(() => {
     api<{ sites: Site[] }>("/api/sites")
-      .then(({ sites: list }) => setSites(list))
+      .then(({ sites: list }) => {
+        setSites(list);
+        const site = start && !started.current ? list.find((s) => s.slug === start.slug) : undefined;
+        started.current = true;
+        if (site) void showSeo(site);
+      })
       .catch(() => {
         setError(tNow("Couldn't load your apps. Please try again."));
         setSites([]);
       });
+    // Only the app it opened with: My websites & apps opens afresh each time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function showDomains(site: Site) {
@@ -319,8 +356,14 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
     setBusy(true);
     setError("");
     try {
-      const { data } = await api<{ data?: DataSummary }>(`/api/sites/${open.slug}/versions`, { method: "POST", json: { id } });
-      setVersions((await api<{ versions: Version[] }>(`/api/sites/${open.slug}/versions`)).versions);
+      const slug = open.slug;
+      const { data, seo: check } = await api<{ data?: DataSummary; seo?: { score: number | null; issues: number } }>(`/api/sites/${slug}/versions`, {
+        method: "POST",
+        json: { id },
+      });
+      // The search check read the page now live again: the list shows its score.
+      if (check) setSites((all) => all?.map((s) => (s.slug === slug ? { ...s, seo: check.score === null ? null : { score: check.score, issues: check.issues } } : s)) ?? null);
+      setVersions((await api<{ versions: Version[] }>(`/api/sites/${slug}/versions`)).versions);
       setRestored({ data });
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Couldn't bring that version back."));
@@ -338,6 +381,23 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
       setVisits(await api<Visits>(`/api/sites/${site.slug}/visits`));
     } catch {
       setError(t("Couldn't load the visitor stats. Please try again."));
+    }
+  }
+
+  async function showSeo(site: Site) {
+    setOpen(site);
+    setView("seo");
+    setSeo(null);
+    setError("");
+    try {
+      const data = await api<Omit<SeoData, "loadedAt">>(`/api/sites/${site.slug}/seo`);
+      setSeo({ slug: site.slug, data: { ...data, loadedAt: Date.now() } });
+      // The list shows the score of the page checked now (an app published before the check gets its first here).
+      const score = data.report.score;
+      const issues = issueCount(data.report);
+      setSites((all) => all?.map((s) => (s.slug === site.slug ? { ...s, seo: score === null ? null : { score, issues } } : s)) ?? null);
+    } catch {
+      setError(t("Couldn't load the search check. Please try again."));
     }
   }
 
@@ -610,7 +670,9 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
         <div className="flex items-center gap-3 border-b border-white/6 px-5 py-4">
           {open && (
             <button onClick={() => mayLeave() && setOpen(null)} className="text-sm text-zinc-400 hover:text-zinc-100" aria-label={t("Back to my apps")}>
-              ←
+              <span className="inline-block rtl:-scale-x-100" aria-hidden>
+                ←
+              </span>
             </button>
           )}
           <h2 className="min-w-0 flex-1 truncate text-lg font-medium tracking-tight">
@@ -867,6 +929,20 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
                   </li>
                 ))}
               </ul>
+            )
+          ) : open && view === "seo" ? (
+            seo?.slug !== open.slug ? (
+              !error && <p className="text-sm text-zinc-500">{t("Loading…")}</p>
+            ) : (
+              <SeoView
+                key={`${open.slug}:${seo.data.checkedAt}`}
+                slug={open.slug}
+                data={seo.data}
+                editCredits={editCredits}
+                onFix={onFix}
+                onDraft={onDraft}
+                onPreview={() => showPreview(open)}
+              />
             )
           ) : open && view === "visits" ? (
             visits === null ? (
@@ -1276,6 +1352,18 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
                       <button onClick={() => showVisits(s)} className="text-zinc-200 hover:text-white" title={t("Visits in the last 30 days")}>
                         📈 {t("Visitors")}
                         {s.views ? <> ({s.views.toLocaleString(t.locale)})</> : null}
+                      </button>
+                      <button onClick={() => showSeo(s)} className="text-zinc-200 hover:text-white" title={t("How easy your app is to find on Google, and what to fix")}>
+                        🔎 {t("SEO")}
+                        {s.seo && (
+                          <>
+                            {/* bdi: the score stays after "SEO" in right-to-left languages too. */}
+                            <bdi aria-hidden className={`ms-1 rounded-full px-1.5 py-0.5 text-[10px] tabular-nums ${BAND_PILL[band(s.seo.score)]}`}>
+                              {s.seo.score.toLocaleString(t.locale)}
+                            </bdi>
+                            <span className="sr-only"> {t("Search check: {score} out of 100", { score: s.seo.score.toLocaleString(t.locale) })}</span>
+                          </>
+                        )}
                       </button>
                       <button onClick={() => showFiles(s)} className="text-zinc-200 hover:text-white" title={t("Files people sent to this app")}>
                         📁 {t("Files")}

@@ -540,8 +540,8 @@ function ordered(checks: Check[]): Check[] {
   });
 }
 
-/** The score's band, as Google's own scores are banded: 90 and up is good, under 50 poor. */
-export const band = (score: number): "good" | "needs" | "poor" => (score >= 90 ? "good" : score >= 50 ? "needs" : "poor");
+// The score's band (90 and up good, under 50 poor), kept on its own for the list of apps.
+export { band } from "./seo-band.ts";
 
 /** How many things there are to fix or improve (placeholders included). */
 export const issueCount = (report: SeoReport) => report.checks.filter((c) => c.status === "fail" || c.status === "warn").length;
@@ -549,6 +549,18 @@ export const issueCount = (report: SeoReport) => report.checks.filter((c) => c.s
 /** The checks Fix all sends: problems and what could be better that the builder can change, in the list's order. */
 export const fixableIds = (report: SeoReport): CheckId[] =>
   report.checks.filter((c) => (c.status === "fail" || c.status === "warn") && c.action === "fix" && c.fix).map((c) => c.id);
+
+/**
+ * Which of ids the builder can still change on this version of the page, in the order asked: a
+ * problem, something that could be better, or the details for Google (structured data) the owner
+ * asked to add. What a newer version already fixed drops out, so nothing is asked twice.
+ */
+export const stillToFix = (report: SeoReport, ids: CheckId[]): CheckId[] =>
+  ids.filter((id) =>
+    report.checks.some(
+      (c) => c.id === id && c.action === "fix" && !!c.fix && (c.status === "fail" || c.status === "warn" || (c.status === "tip" && c.id === "structured")),
+    ),
+  );
 
 /**
  * The instruction a fix sends the builder, in English: what the check found and what to change,

@@ -18,6 +18,7 @@ import { Creations } from "./Creations";
 import { Companion } from "./Companion";
 import { Templates } from "./Templates";
 import { MyApps } from "./MyApps";
+import type { SiteFix } from "./SeoView";
 import { BuildPanel, useMedia } from "./BuildPanel";
 import { draftShown, draftStore, startsWriting } from "@/lib/live-draft";
 import { OFFICE_TYPES, officeKind, officeText } from "@/lib/office";
@@ -360,6 +361,10 @@ export function Flash({
   // The templates window: "" shows them all, a template's id opens its form.
   const [templates, setTemplates] = useState<string | null>(null);
   const [showApps, setShowApps] = useState(false);
+  // My websites & apps opened on one app's search check (SEO), from the SEO button under a published app.
+  const [appsStart, setAppsStart] = useState<{ slug: string; view: "seo" } | undefined>(undefined);
+  // A change the search check asked for, sent in the chat that built the site once it's open (see sendFix).
+  const [pendingFix, setPendingFix] = useState<SiteFix | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   // A request is starting or running. Set at once, before busy shows or the picture above loads,
@@ -910,6 +915,73 @@ export function Flash({
     await respond(active, active.messages, { id: newId(), role: "user", content: request, build: kind });
   }
 
+  /** My websites & apps, open on a published app's search check (SEO). */
+  function openSeo(slug: string) {
+    setAppsStart({ slug, view: "seo" });
+    setShowApps(true);
+  }
+
+  function closeApps() {
+    setShowApps(false);
+    setAppsStart(undefined);
+  }
+
+  /**
+   * A change the search check (SEO) asked for, after the owner saw its price and pressed Send: My
+   * websites & apps closes, the chat that built the site opens, and the change goes there once it has
+   * loaded (sendFix). False while Flash is still answering something else: nothing is sent then.
+   */
+  function fixSite(fix: SiteFix): boolean {
+    if (busy || runningRef.current) return false;
+    closeApps();
+    void openProject(fix.projectId);
+    setPendingFix({ ...fix, at: Date.now() });
+    return true;
+  }
+
+  /** Puts the owner's own details (for the placeholders the check found) in that chat's message box, unsent. */
+  function draftInChat({ projectId, text }: { projectId: string; text: string }) {
+    closeApps();
+    void openProject(projectId);
+    setInput(text);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }
+
+  /**
+   * Sends a change the search check asked for in the chat that built the site, as a normal change to
+   * its newest app, priced and charged exactly like one typed here. That copy is checked again first,
+   * as the builder will see it: it may be another site (after Publish as new) or have the fix already,
+   * and then nothing is sent. The builder gets the check's English instructions (shown as "◎ SEO");
+   * the owner sees what was asked in their own language.
+   */
+  async function sendFix(fix: SiteFix) {
+    const chat = projects.find((p) => p.id === fix.projectId);
+    const messages = chat?.messages;
+    if (!chat || !messages || busy || runningRef.current) return;
+    const at = messages.findLastIndex((m) => m.app);
+    const latest = at === -1 ? undefined : messages[at].app;
+    // An unpublished version updates the site an earlier one was published as (as AppPreview does).
+    const site = latest && (latest.slug ?? messages.slice(0, at).findLast((m) => m.app?.slug)?.app?.slug);
+    if (!latest || site !== fix.slug) {
+      setNotice(t("The newest app in that chat is a different site, so Flash didn't send the change."));
+      return;
+    }
+    // Loaded only now, so the check stays out of the chat's own code until it's used.
+    const [{ scanPage }, { evaluate, stillToFix }, { fixMessage }] = await Promise.all([import("@/lib/seo-scan"), import("@/lib/seo-rules"), import("@/lib/seo-words")]);
+    const report = evaluate(scanPage(latest.html), fix.ctx);
+    const ids = stillToFix(report, fix.ids);
+    if (!ids.length) {
+      setNotice(t("The newest version in that chat already fixes this. Press Update site under it to put it live."));
+      return;
+    }
+    const { content, context } = fixMessage(t, report, ids, { title: fix.title, address: `${fix.ctx.appBase}/p/${fix.slug}` });
+    await respond(chat, messages, { id: newId(), role: "user", content, build: latest.kind, picked: { label: t("SEO"), context } });
+  }
+  const sendFixRef = useRef(sendFix);
+  useEffect(() => {
+    sendFixRef.current = sendFix;
+  });
+
   /** Puts a part picked in the latest app's preview above the message box, to say what to change. */
   function pickApp(kind: "app" | "slides", part: PickedElement) {
     if (!active) return;
@@ -1394,6 +1466,20 @@ export function Flash({
   }, [busy, queuePaused, queue, projects]);
 
   /**
+   * Sends the change the search check asked for once its chat is open and loaded, and Flash is free.
+   * It's cleared before anything is sent, so it goes once; one not sent within 30 seconds of Send (the
+   * chat didn't load, another one was opened) is dropped, never sent later.
+   */
+  useEffect(() => {
+    const fix = pendingFix;
+    if (!fix || busy || runningRef.current) return;
+    const late = Date.now() - fix.at > 30_000 || activeId !== fix.projectId;
+    if (!late && !projects.find((p) => p.id === fix.projectId)?.messages) return;
+    setPendingFix(null);
+    if (!late) void sendFixRef.current(fix);
+  }, [pendingFix, activeId, projects, busy]);
+
+  /**
    * Adds a request the companion lined up to Next up, for the chat Flash is working in (or the
    * open one). "waiting" requests only run once the user presses Run.
    */
@@ -1722,6 +1808,7 @@ export function Flash({
       onEditCode={editAppCode}
       onFix={fixApp}
       onPick={pickApp}
+      onSeo={openSeo}
     />
   );
   // The connected accounts on in the open chat (or for the chat Home's next message starts).
@@ -2416,9 +2503,9 @@ export function Flash({
         </header>
         {showApps && (
           <MyApps
-            onClose={() => setShowApps(false)}
+            onClose={closeApps}
             onEdit={(id) => {
-              setShowApps(false);
+              closeApps();
               setNotice(t("Ask for your changes here, then press Update site under the new version."));
               openProject(id);
             }}
@@ -2426,11 +2513,16 @@ export function Flash({
             onPlans={
               me.paymentsEnabled || me.testPurchases
                 ? () => {
-                    setShowApps(false);
+                    closeApps();
                     setShowCredits(true);
                   }
                 : undefined
             }
+            start={appsStart}
+            // What a change to an app typically costs, as the pricing table says: a fix is charged like any change.
+            editCredits={me.costs.app}
+            onFix={fixSite}
+            onDraft={draftInChat}
           />
         )}
         {showAutomations && <Automations onTemplates={() => setTemplates("")} onClose={() => setShowAutomations(false)} />}
@@ -2604,6 +2696,7 @@ export function Flash({
                   // Flash builds on the latest app, so fixes and picked parts are for that one.
                   onFixApp={m.app && !m.pending && !busy && m.id === lastAppId ? (request) => fixApp(m.app!.kind, request) : undefined}
                   onPickApp={m.app && !m.pending && m.id === lastAppId ? (part) => pickApp(m.app!.kind, part) : undefined}
+                  onSeoApp={openSeo}
                   onAction={m.actions?.length ? (card) => updateCard(m.id, card) : undefined}
                   onContinue={
                     i === all.length - 1 && !m.pending && !busy && active && continuable(m, active.id).length ? () => continueWith(m.id) : undefined
