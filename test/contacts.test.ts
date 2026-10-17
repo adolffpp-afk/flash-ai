@@ -804,6 +804,119 @@ test("someone a form signed up again after they unsubscribed, before a tick stop
   await fresh();
 });
 
+test("an unsubscribe #114 took reaches the same mailbox's other contacts that agreed, when the owner next opens Contacts", async () => {
+  await fresh();
+  await site("reached", "owner");
+  await site("reached2", "owner");
+  const t = await translatorIn("en");
+  const subscribed = async (slug: string) => Object.fromEntries((await contacts.listContacts(slug, t))!.contacts.map((c) => [c.email, c.subscribed]));
+  const kept = (slug: string, id: string, email: string, agreed: number, off: number, by = "") =>
+    run(
+      `INSERT INTO site_contacts (id, site_slug, email, source, first_seen, last_seen, consent_text, consent_at, consent_ip, consent_channel, consent_form, consent_by, unsubscribed_at)
+       VALUES (?, ?, ?, 'form:contact', 1, 1, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, slug, email, agreed ? NEWS : "", agreed, agreed ? "x" : "", agreed ? "email" : "", agreed ? "contact" : "", by, off],
+    );
+  // As #114 left an app whose owner had opened Contacts: an unsubscribe changed only the person's own
+  // row, and a box ticked afterwards for the same mailbox was kept.
+  await kept("reached", "reached_cy_plain_0", "cy@gmail.com", 1_000, 2_000);
+  await kept("reached", "reached_cy_shop_00", "cy+shop@gmail.com", 1_500, 0); // agreed before it
+  await kept("reached", "reached_cy_news_00", "cy+news@gmail.com", 3_000, 0); // a stranger's tick after it
+  await kept("reached", "reached_cy_dots_00", "c.y@googlemail.com", 0, 0); // never agreed
+  await kept("reached", "reached_jo_kept_00", "jo@bäckerei.de", 1_000, 2_500); // in #114's spelling
+  await kept("reached", "reached_jo_new_000", "jo@xn--bckerei-5wa.de", 1_100, 0);
+  await kept("reached", "reached_ed_off_000", "ed@example.com", 1_000, 2_200);
+  await kept("reached", "reached_ed_asked_0", "ed+news@example.com", 2_600, 2_400, "owner"); // the owner's record
+  await kept("reached", "reached_cyd_000000", "cyd@gmail.com", 1_200, 0); // another mailbox
+  await kept("reached2", "reached2_cyshop0", "cy+shop@gmail.com", 1_500, 0); // another app
+  await run("UPDATE sites SET contacts_filled = 1 WHERE slug IN ('reached', 'reached2')");
+  assert.equal((await subscribed("reached"))["cy+shop@gmail.com"], true, "as #114 left it");
+  for (const slug of ["reached", "reached2"]) assert.equal((await call("GET", owner, slug)).status, 200);
+  assert.deepEqual(await subscribed("reached"), {
+    "cy@gmail.com": false,
+    "cy+shop@gmail.com": false,
+    "cy+news@gmail.com": false,
+    "c.y@googlemail.com": false,
+    "jo@bäckerei.de": false,
+    "jo@xn--bckerei-5wa.de": false,
+    "ed@example.com": false,
+    "ed+news@example.com": true,
+    "cyd@gmail.com": true,
+  });
+  // At the time of the mailbox's unsubscribe; nobody else is changed.
+  assert.deepEqual(Object.fromEntries((await contactsOf("reached")).map((c) => [c.email, Number(c.unsubscribed_at)])), {
+    "cy@gmail.com": 2_000,
+    "cy+shop@gmail.com": 2_000,
+    "cy+news@gmail.com": 2_000,
+    "c.y@googlemail.com": 0,
+    "jo@bäckerei.de": 2_500,
+    "jo@xn--bckerei-5wa.de": 2_500,
+    "ed@example.com": 2_200,
+    "ed+news@example.com": 2_400,
+    "cyd@gmail.com": 0,
+  });
+  const csv = (await contacts.contactCsv("reached", t, ORIGIN)).csv;
+  const yes = csv.split("\n").filter((line) => /,Yes,/.test(line)).map((line) => line.split(",")[1]).sort();
+  assert.deepEqual(yes, ["cyd@gmail.com", "ed+news@example.com"], "the file marks only them as agreed");
+  const exported = (await contacts.exportContact("reached", "reached_cy_news_00", ORIGIN, t))!.contact as { subscribed: boolean };
+  assert.equal(exported.subscribed, false);
+  assert.deepEqual(await subscribed("reached2"), { "cy+shop@gmail.com": true }, "another app's unsubscribe is its own");
+  // Once: opening Contacts again reads and changes nothing more.
+  assert.equal((await one<{ f: number }>("SELECT contacts_filled AS f FROM sites WHERE slug = 'reached'"))?.f, 2);
+  const before = JSON.stringify(await contactsOf("reached"));
+  assert.equal((await call("GET", owner, "reached")).status, 200);
+  assert.equal(JSON.stringify(await contactsOf("reached")), before);
+  await fresh();
+});
+
+test("an unsubscribe that fails part way keeps nothing, so the link used again still reaches the mailbox's other contacts", async () => {
+  await fresh();
+  await site("halfway", "owner");
+  const t = await translatorIn("en");
+  const subscribed = async () => Object.fromEntries((await contacts.listContacts("halfway", t))!.contacts.map((c) => [c.email, c.subscribed]));
+  for (const [i, email] of ["cy@gmail.com", "cy+shop@gmail.com", "ed@gmail.com", "ed+shop@gmail.com"].entries()) {
+    await send("halfway", { email }, { consent: { text: NEWS } }, `203.0.113.${170 + i}`);
+  }
+  const list = await contactsOf("halfway");
+  const linkOf = async (email: string) => contacts.unsubToken(await contacts.siteSecret("halfway"), "halfway", String(list.find((c) => c.email === email)!.id));
+  // Reading the same mailbox's other contacts fails, as a dropped connection to the database would.
+  const client = await db();
+  const original = client.execute;
+  const execute = original.bind(client);
+  let failed = 0;
+  client.execute = ((stmt: { sql: string; args: InValue[] }) => {
+    if (!failed && /^SELECT id, email FROM site_contacts/.test(stmt.sql)) {
+      failed++;
+      return Promise.reject(new Error("SERVER_ERROR: connection reset"));
+    }
+    return execute(stmt);
+  }) as typeof client.execute;
+  const cy = await linkOf("cy@gmail.com");
+  try {
+    await assert.rejects(unsub(cy, "List-Unsubscribe=One-Click"), /connection reset/);
+  } finally {
+    client.execute = original;
+  }
+  assert.equal(failed, 1);
+  assert.equal((await contacts.tokenContact(cy))?.unsubscribed, false, "their page offers the button again");
+  assert.equal((await unsub(cy, "List-Unsubscribe=One-Click")).status, 200);
+  // Writing the other contacts fails: nothing is kept, and the next try does it all.
+  await run(`CREATE TEMP TRIGGER halfway_refused BEFORE UPDATE OF unsubscribed_at ON site_contacts WHEN OLD.email = 'ed+shop@gmail.com'
+             BEGIN SELECT RAISE(ABORT, 'database is locked'); END`);
+  const ed = await linkOf("ed@gmail.com");
+  try {
+    await assert.rejects(contacts.unsubscribe(ed), /database is locked/);
+  } finally {
+    await run("DROP TRIGGER halfway_refused");
+  }
+  assert.equal((await contacts.tokenContact(ed))?.unsubscribed, false, "their page offers the button again");
+  assert.equal(await contacts.unsubscribe(ed), true);
+  assert.deepEqual(await subscribed(), { "cy@gmail.com": false, "cy+shop@gmail.com": false, "ed@gmail.com": false, "ed+shop@gmail.com": false });
+  const at = Object.fromEntries((await contactsOf("halfway")).map((c) => [c.email, Number(c.unsubscribed_at)]));
+  assert.equal(at["cy+shop@gmail.com"], at["cy@gmail.com"]);
+  assert.equal(at["ed+shop@gmail.com"], at["ed@gmail.com"]);
+  await fresh();
+});
+
 test("the Privacy Policy says how long an unsubscribe holds, and for which spellings", () => {
   const policy = readFileSync(new URL("../src/app/privacy/page.tsx", import.meta.url), "utf8");
   assert.match(policy, /for as long as they&apos;re on the app&apos;s contact list, a box ticked on a form doesn&apos;t sign them up again, not even with a \+tag \(or, for Gmail, dots\)/);
@@ -929,7 +1042,7 @@ test("the people an app had before are copied in once, without duplicates", asyn
     linked.map((m) => [m.id, m.contact_id !== ""]),
     [["g1", true], ["g2", true], ["g3", false], ["g4", false]],
   );
-  assert.equal((await one<{ f: number }>("SELECT contacts_filled AS f FROM sites WHERE slug = 'old'"))?.f, 1);
+  assert.equal((await one<{ f: number }>("SELECT contacts_filled AS f FROM sites WHERE slug = 'old'"))?.f, 2);
   assert.equal((await sitesWithMessages("owner")).find((s) => s.slug === "old")?.contacts, 4);
   // Again: nothing changes.
   const before = JSON.stringify(await contactsOf("old"));

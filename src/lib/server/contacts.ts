@@ -287,7 +287,6 @@ export async function noteContact(slug: string, who: Who, seen: Seen): Promise<s
  * that spelling here, as #114 kept it (see spellings).
  */
 async function sameMailbox(slug: string, email: string, which: string): Promise<{ id: string; email: string }[]> {
-  const mailbox = (text: string) => emailKey(cleanEmail(text) || text);
   const keys = new Set(spellings(email).map(mailbox));
   const domains = [...new Set([...keys].map((key) => key.slice(key.lastIndexOf("@"))))].flatMap((d) => (d === "@gmail.com" ? [d, "@googlemail.com"] : [d]));
   const rows = await all<{ id: string; email: string }>(
@@ -297,6 +296,8 @@ async function sameMailbox(slug: string, email: string, which: string): Promise<
   );
   return rows.filter((r) => spellings(r.email).some((text) => keys.has(mailbox(text))));
 }
+// The mailbox that one way of reading an address reaches (see sameMailbox).
+const mailbox = (text: string) => emailKey(cleanEmail(text) || text);
 
 /** Whether someone on the app's list whose address reaches the same mailbox as email has unsubscribed. */
 const mailboxUnsubscribed = async (slug: string, email: string) => (await sameMailbox(slug, email, "unsubscribed_at > 0")).length > 0;
@@ -315,14 +316,51 @@ export async function noteSender(slug: string, form: string, data: Record<string
 }
 
 /**
+ * What the app's list needs, once, when the owner opens Contacts: the people it had before are
+ * copied in (contacts_filled 1), then an unsubscribe #114 took reaches the same mailbox's other
+ * contacts (2). A reply that times out carries on from there next time.
+ */
+export async function fillContacts(slug: string): Promise<void> {
+  const site = await one<{ contacts_filled: number }>("SELECT contacts_filled FROM sites WHERE slug = ?", [slug]);
+  if (!site || Number(site.contacts_filled) >= 2) return;
+  if (!Number(site.contacts_filled)) await copyIn(slug);
+  await reachMailboxes(slug);
+  await run("UPDATE sites SET contacts_filled = 2 WHERE slug = ?", [slug]);
+}
+
+/**
+ * #114's unsubscribe changed only the person's own row, so the app's other contacts with the same
+ * mailbox (see sameMailbox) may still read as agreeing. Each of those gets the time of the mailbox's
+ * first unsubscribe, in one write. Nobody who ever unsubscribed changes, so no record of the owner's
+ * is undone (see recordConsent). It reads the app's agreeing contacts once, however many unsubscribed.
+ */
+async function reachMailboxes(slug: string) {
+  const off = await all<{ email: string; unsubscribed_at: number }>(
+    "SELECT email, unsubscribed_at FROM site_contacts WHERE site_slug = ? AND unsubscribed_at > 0 AND email <> '' ORDER BY unsubscribed_at",
+    [slug],
+  );
+  if (!off.length) return;
+  const since = new Map<string, number>();
+  for (const o of off) for (const key of spellings(o.email).map(mailbox)) if (!since.has(key)) since.set(key, Number(o.unsubscribed_at));
+  const agreed = await all<{ id: string; email: string }>(
+    "SELECT id, email FROM site_contacts WHERE site_slug = ? AND consent_at > 0 AND unsubscribed_at = 0 AND email <> ''",
+    [slug],
+  );
+  const stamps: InStatement[] = [];
+  for (const c of agreed) {
+    const at = Math.min(...spellings(c.email).map((text) => since.get(mailbox(text)) ?? Infinity));
+    if (at < Infinity) stamps.push({ sql: "UPDATE site_contacts SET unsubscribed_at = ? WHERE id = ? AND unsubscribed_at = 0", args: [at, c.id] });
+  }
+  if (stamps.length) await (await db()).batch(stamps, "write");
+}
+
+/**
  * Copies in, once, the people an app heard from before it had a contact list: its members, the
  * buyers of its paid orders, and the senders of its form messages, without duplicates. Each step can
  * run again, so a reply that times out simply carries on next time. It runs when the owner first
  * opens Contacts, never on a visitor's request. Nobody copied in has agreed to news, which is true.
  */
-export async function fillContacts(slug: string): Promise<void> {
-  const site = await one<{ contacts_filled: number }>("SELECT contacts_filled FROM sites WHERE slug = ?", [slug]);
-  if (!site || Number(site.contacts_filled)) return;
+async function copyIn(slug: string): Promise<void> {
   await fillFrom(
     slug,
     `SELECT lower(trim(email)) AS e, trim(name) AS nm, 'signup' AS src, created_at AS at, id AS k
@@ -963,22 +1001,24 @@ export async function tokenContact(token: string): Promise<{ id: string; slug: s
  * afterwards doesn't undo it (see FORM_AGREES), the owner recording that they asked for news again
  * counts from then (recordConsent), and a later unsubscribe is kept again. It holds as well for the
  * app's other contacts with the same mailbox (see sameMailbox), such as one with a +tag or one #114
- * kept in another spelling, which may have agreed before. false for a link that doesn't work.
+ * kept in another spelling, which may have agreed before. Both go in one write, so a try that fails
+ * keeps neither and the link does it all next time. false for a link that doesn't work.
  */
 export async function unsubscribe(token: string): Promise<boolean> {
   const found = await tokenContact(token);
   if (!found) return false;
+  // The link used again changes nothing.
+  if (found.unsubscribed) return true;
   const at = now();
-  const done = await run(`UPDATE site_contacts SET unsubscribed_at = ? WHERE id = ? AND NOT (${UNSUBSCRIBED}) RETURNING email`, [at, found.id]);
-  // Only when they weren't unsubscribed already, as the link used again changes nothing.
-  const email = (done.rows[0] as unknown as { email: string } | undefined)?.email;
-  const others = email ? (await sameMailbox(found.slug, email, `NOT (${UNSUBSCRIBED})`)).map((c) => c.id) : [];
+  const email = (await one<{ email: string }>("SELECT email FROM site_contacts WHERE id = ?", [found.id]))?.email ?? "";
+  const others = email ? (await sameMailbox(found.slug, email, `NOT (${UNSUBSCRIBED})`)).map((c) => c.id).filter((id) => id !== found.id) : [];
+  const statements: InStatement[] = [{ sql: `UPDATE site_contacts SET unsubscribed_at = ? WHERE id = ? AND NOT (${UNSUBSCRIBED})`, args: [at, found.id] }];
   if (others.length) {
-    await run(`UPDATE site_contacts SET unsubscribed_at = ? WHERE site_slug = ? AND id IN (${others.map(() => "?").join(", ")}) AND NOT (${UNSUBSCRIBED})`, [
-      at,
-      found.slug,
-      ...others,
-    ]);
+    statements.push({
+      sql: `UPDATE site_contacts SET unsubscribed_at = ? WHERE site_slug = ? AND id IN (${others.map(() => "?").join(", ")}) AND NOT (${UNSUBSCRIBED})`,
+      args: [at, found.slug, ...others],
+    });
   }
+  await (await db()).batch(statements, "write");
   return true;
 }

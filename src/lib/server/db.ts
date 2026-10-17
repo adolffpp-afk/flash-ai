@@ -773,7 +773,8 @@ const MIGRATIONS = [
   "ALTER TABLE sites ADD COLUMN contact_stages TEXT NOT NULL DEFAULT ''",
   // The app's own key for its unsubscribe links and its contacts' hashed addresses, made on first use.
   "ALTER TABLE sites ADD COLUMN contact_secret TEXT NOT NULL DEFAULT ''",
-  // 1 once the members, orders and messages the app had before contacts existed were copied in.
+  // 1 once the members, orders and messages the app had before contacts existed were copied in, and 2
+  // once an unsubscribe #114 took also reached the same mailbox's other contacts (see fillContacts).
   "ALTER TABLE sites ADD COLUMN contacts_filled INTEGER NOT NULL DEFAULT 0",
   // Whose message it is (see contacts.ts); '' when the form had no email or phone number.
   "ALTER TABLE site_messages ADD COLUMN contact_id TEXT NOT NULL DEFAULT ''",
