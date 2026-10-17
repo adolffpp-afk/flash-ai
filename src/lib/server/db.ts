@@ -170,8 +170,7 @@ const SCHEMA = [
     created_at INTEGER NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS site_versions_site ON site_versions(site_slug, created_at)`,
-  // Visits to published sites (see visits.ts): page loads per day and source, and a daily list of
-  // anonymous visitor fingerprints (no cookies, deleted after a month) to count people, not loads.
+  // Visits to published sites (see visits.ts): page loads per day and source, kept 100 days.
   `CREATE TABLE IF NOT EXISTS site_visits (
     site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
     day TEXT NOT NULL,
@@ -179,12 +178,49 @@ const SCHEMA = [
     views INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (site_slug, day, source)
   )`,
+  // The people counted before site_people, with codes made without a key. Nothing writes it now:
+  // the daily prune turns its days into totals (site_events' 'visit-old') and empties it.
   `CREATE TABLE IF NOT EXISTS site_visitors (
     site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
     day TEXT NOT NULL,
     visitor TEXT NOT NULL,
     PRIMARY KEY (site_slug, day, visitor)
   )`,
+  // The tables below are WITHOUT ROWID: each row is kept once, in its primary key, where an ordinary
+  // table also keeps the key in an automatic index, which Turso bills as another row written.
+  //
+  // Daily counts per app of people who took each step (see visits.ts), never who they were. step is
+  // 'visit', or 'visit-old' for people counted before site_people, from site_visitors. source is ''
+  // for Direct. n is people, each counted once a day per step. Kept 100 days.
+  `CREATE TABLE IF NOT EXISTS site_events (
+    site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
+    day TEXT NOT NULL,
+    step TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT '',
+    medium TEXT NOT NULL DEFAULT '',
+    campaign TEXT NOT NULL DEFAULT '',
+    n INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (site_slug, day, step, source, medium, campaign)
+  ) WITHOUT ROWID`,
+  // Each person's visit to an app on one day (see visits.ts). It keeps a code made with that day's
+  // key (never their address), where they first came from that day, and the steps they were counted
+  // for (a JSON list of at most 15). kind is 'visit', or 'owner' for the app's owner (signed in to
+  // Flash on /p/, or with a working Open as owner code), who is never counted. Deleted after 2 days,
+  // with the key.
+  `CREATE TABLE IF NOT EXISTS site_people (
+    site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
+    day TEXT NOT NULL,
+    visitor TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT '',
+    medium TEXT NOT NULL DEFAULT '',
+    campaign TEXT NOT NULL DEFAULT '',
+    steps TEXT NOT NULL DEFAULT '[]',
+    PRIMARY KEY (site_slug, day, visitor)
+  ) WITHOUT ROWID`,
+  // The random key that makes each day's visitor codes (see visits.ts). Deleted after 2 days, with
+  // the codes it made, so no code can be traced back to an address after that.
+  `CREATE TABLE IF NOT EXISTS visit_keys (day TEXT PRIMARY KEY, secret TEXT NOT NULL) WITHOUT ROWID`,
   // Selling from published sites (see shop.ts): each seller's own Stripe account, the items a
   // site sells with their prices, and the orders paid.
   `CREATE TABLE IF NOT EXISTS seller_accounts (

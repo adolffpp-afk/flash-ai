@@ -40,6 +40,8 @@ export const SITE_TABLES = [
   "site_versions",
   "site_visits",
   "site_visitors",
+  "site_events",
+  "site_people",
   "site_products",
   "site_orders",
   "site_owner_keys",
@@ -48,7 +50,7 @@ export const SITE_TABLES = [
 ];
 // The ones a new site must never take over from an old site of the same name (records, members,
 // files, messages, contacts, orders, history, settings, visits and the AI it used today), each
-// looked up by an index on site_slug.
+// looked up by an index on site_slug. site_people lasts 2 days and holds nothing to take over.
 const INHERITABLE = [
   "site_records",
   "site_users",
@@ -63,6 +65,7 @@ const INHERITABLE = [
   "site_ai_usage",
   "site_visits",
   "site_visitors",
+  "site_events",
   "site_collection_rules",
 ];
 
