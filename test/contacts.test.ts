@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import { register } from "node:module";
 import vm from "node:vm";
 import { readFileSync } from "node:fs";
-import { domainToASCII, domainToUnicode } from "node:url";
+import { domainToASCII } from "node:url";
 
 /*
  * Each app's contact list: forms, sign-ups and paid orders fill one list per app, matched by email
@@ -118,14 +118,20 @@ test("an email address can't bring a Bcc, a subject or another recipient into th
   for (const odd of ["jo@example.com#x", "jo@exa&mple.com", "jo@example.com,spy@evil.example", "jo@exam%40ple.com", "jo@example.com/x"]) {
     assert.equal(contactFromFields({ email: odd }), null, odd);
   }
-  for (const real of ["ana.silva+cakes@example.co.uk", "josé@bäckerei.de", "user@例え.テスト", "a@उदाहरण.भारत", "o'brien@bücherei.de"]) {
-    assert.equal(contactFromFields({ email: real })?.email, real, real);
+  for (const real of ["ana.silva+cakes@example.co.uk", "josé@bäckerei.de", "user@例え.テスト", "a@उदाहरण.भारत", "o'brien@xn--bcherei-n2a.de"]) {
+    const at = real.lastIndexOf("@");
+    assert.equal(contactFromFields({ email: real })?.email, `${real.slice(0, at)}@${domainToASCII(real.slice(at + 1))}`, real);
   }
-  assert.equal(contactFromFields({ email: "o'brien@xn--bcherei-n2a.de" })?.email, "o'brien@bücherei.de", "a domain as DNS writes it");
+  assert.equal(contactFromFields({ email: "o'brien@bücherei.de" })?.email, "o'brien@xn--bcherei-n2a.de", "a domain as DNS writes it");
   await site("odd", "owner");
   assert.deepEqual(await send("odd", { name: "Jo", email: bcc }), { ok: true }, "the message still arrives");
   assert.deepEqual(await contactsOf("odd"), []);
   assert.equal((await siteAuth("odd", "signup", { email: bcc, password: "longenough1" }, "1.2.3.9", "/p/odd", true, null)).result, "bad-email");
+  // A new member needs an address the list keeps, as their contact has it.
+  for (const email of ['"cy"@gmail.com', "a@xn--zz.com"]) {
+    assert.equal((await siteAuth("odd", "signup", { email, password: "longenough1" }, "1.2.3.9", "/p/odd", true, null)).result, "bad-email", email);
+  }
+  assert.deepEqual(await all("SELECT email FROM site_users WHERE site_slug = 'odd'"), []);
 
   // Before the @ an address may have them, and the link still writes to that address alone.
   assert.equal(mailtoLink("ana.silva+cakes@example.co.uk"), "mailto:ana.silva+cakes@example.co.uk");
@@ -137,29 +143,47 @@ test("an email address can't bring a Bcc, a subject or another recipient into th
   }
 });
 
-test("an address is kept in one spelling: its domain as browsers and mail programs read it, with nothing invisible in it", () => {
-  // The same domain, however it's written: an invisible character in it, fullwidth letters, the
-  // "xn--" form DNS uses, or "ä" as "a" and a combining mark.
+test("an address is kept in one spelling: its domain as browsers and DNS read it, with nothing invisible in it", () => {
+  // The same domain, however it's written: an invisible character in it, fullwidth letters, "ä" as
+  // "a" and a combining mark, or in capitals. Letters outside A to Z are kept in the "xn--" form DNS
+  // uses, which is what Chrome sends from an email field (and what #114 kept from one).
   for (const [typed, kept] of [
     ["cy@gmail\u{FE0F}.com", "cy@gmail.com"],
     ["cy@gma\u034Fil.com", "cy@gmail.com"],
     ["cy@gmail\u{E0100}.com", "cy@gmail.com"],
     ["cy@ｇｍａｉｌ.com", "cy@gmail.com"],
     ["CY@ＧＭＡＩＬ.COM", "cy@gmail.com"],
-    ["jo@xn--bckerei-5wa.de", "jo@bäckerei.de"],
-    ["jo@ba\u0308ckerei.de", "jo@bäckerei.de"],
-    ["jo@BÄCKEREI.de", "jo@bäckerei.de"],
+    ["jo@bäckerei.de", "jo@xn--bckerei-5wa.de"],
+    ["jo@xn--bckerei-5wa.de", "jo@xn--bckerei-5wa.de"],
+    ["JO@XN--BCKEREI-5WA.DE", "jo@xn--bckerei-5wa.de"],
+    ["jo@ba\u0308ckerei.de", "jo@xn--bckerei-5wa.de"],
+    ["jo@BÄCKEREI.de", "jo@xn--bckerei-5wa.de"],
     ["jo\u0308@x.de", "jö@x.de"],
+    // A capital Σ is σ, as browsers read it, also before a digit or a hyphen, where lowercasing the
+    // whole domain would make it ς, another letter. A capital ẞ is ß, as Chrome reads it.
+    ["JO@ΟΔΟΣ1.GR", "jo@xn--1-4lb6abu.gr"],
+    ["jo@ΟΔΟΣ-ΚΑΦΕ.gr", `jo@${domainToASCII("οδοσ-καφε.gr")}`],
+    ["jo@STRAẞE.de", "jo@xn--strae-oqa.de"],
+    // Letters that aren't in any script, which browsers allow in a domain: an emoji, the Catalan
+    // l·l, a Persian joiner between letters and a katakana middle dot.
+    ["me@xn--i-7iq.ws", "me@xn--i-7iq.ws"],
+    ["info@xn--collegi-xma.cat", "info@xn--collegi-xma.cat"],
+    ["a@xn--mgbn2ecje63gr19l.ir", "a@xn--mgbn2ecje63gr19l.ir"],
+    ["a@xn--yckca5mnb7duc.jp", "a@xn--yckca5mnb7duc.jp"],
   ]) {
     assert.equal(cleanEmail(typed), kept, JSON.stringify(typed));
   }
-  // Every script reads back as browsers show it.
-  for (const domain of ["bäckerei.de", "例え.テスト", "उदाहरण.भारत", "почта.рф", "xn--80a1acny.xn--p1ai", "δοκιμή.gr", "straße.de", "مثال.إختبار", "ドメイン名例.jp", "한국.kr", "ab--cd.com", "a-b.c-d.com"]) {
-    assert.equal(cleanEmail(`a@${domain}`), `a@${domainToUnicode(domainToASCII(domain))}`, domain);
+  // Every script reads as browsers read it.
+  for (const domain of ["bäckerei.de", "例え.テスト", "उदाहरण.भारत", "почта.рф", "xn--80a1acny.xn--p1ai", "δοκιμή.gr", "ΟΔΟΣ1.gr", "straße.de", "مثال.إختبار", "ドメイン名例.jp", "한국.kr", "ab--cd.com", "a-b.c-d.com"]) {
+    assert.equal(cleanEmail(`a@${domain}`), `a@${domainToASCII(domain)}`, domain);
   }
   // Before the @, an invisible character makes another address that looks the same: it isn't kept.
   for (const typed of ["c\u200By@gmail.com", "cy\u{FE0F}@gmail.com", "c\u00ADy@gmail.com", "\u202Ecy@gmail.com", "c\u0000y@gmail.com"]) {
     assert.equal(cleanEmail(typed), "", JSON.stringify(typed));
+  }
+  // Nor is a (comment) or a "quoted" name, which mail programs read as the address without them.
+  for (const typed of ["cy(news)@gmail.com", "(news)c.y@gmail.com", '"cy"@gmail.com', '"c\\y"@gmail.com', "a,b@x.com", "a;b@x.com", "a:b@x.com", "<a>@x.com", "[a]@x.com"]) {
+    assert.equal(cleanEmail(typed), "", typed);
   }
   // A domain no browser could open isn't one.
   for (const typed of ["a@xn--zz.com", "a@b.12", "a@gm\u200Dail.com"]) assert.equal(cleanEmail(typed), "", typed);
@@ -240,18 +264,65 @@ test("one person who sends a form, signs up and pays is one contact", async () =
   assert.equal((await all("SELECT 1 FROM site_orders WHERE site_slug = 'crumb'")).length, 1);
   assert.equal((await one<{ email: string }>("SELECT email FROM site_orders WHERE site_slug = 'crumb'"))?.email, "ana@EXAMPLE.com", "the order keeps the address as given");
 
-  // A buyer whose address Stripe gives in another spelling of its domain: the order keeps it as
-  // their contact does, so their page shows it, the file has it and deleting them clears it.
-  const jo = { ...paid, id: "cs_test_jo", customer_details: { email: "Jo@XN--BCKEREI-5WA.de", name: "Jo" } };
-  globalThis.fetch = (async () => Response.json(jo)) as typeof fetch;
-  assert.equal((await finishCheckout("crumb", "cs_test_jo", null, ORIGIN)).paid, true);
-  const joContact = (await contactsOf("crumb")).find((c) => c.source === "order:Chocolate cake" && c.name === "Jo")!;
-  assert.equal(joContact.email, "jo@bäckerei.de");
-  assert.equal((await one<{ email: string }>("SELECT email FROM site_orders WHERE session_id = 'cs_test_jo'"))?.email, "jo@bäckerei.de");
-  assert.equal((await contacts.contactDetail("crumb", String(joContact.id), ORIGIN))?.orderCount, 1);
-  assert.equal(((await contacts.exportContact("crumb", String(joContact.id), ORIGIN))?.orders as unknown[]).length, 1);
-  assert.equal(await contacts.deleteContact("crumb", String(joContact.id)), true);
-  assert.equal((await one<{ email: string }>("SELECT email FROM site_orders WHERE session_id = 'cs_test_jo'"))?.email, "");
+  // A buyer whose address Stripe gives in another spelling: the order keeps it as their contact
+  // does, so their page shows it, the file has it and deleting them clears it. That includes a
+  // capital outside A to Z, which the database's lower() leaves as it is. A difference in A to Z's
+  // case alone keeps Stripe's spelling, as lower() reads it as the contact's.
+  for (const [i, given, kept, saved] of [
+    [1, "Jo@BÄCKEREI.de", "jo@xn--bckerei-5wa.de", "jo@xn--bckerei-5wa.de"],
+    [2, "Jo@XN--BCKEREI-5WA.de", "jo@xn--bckerei-5wa.de", "Jo@XN--BCKEREI-5WA.de"],
+    [3, "ÉLODIE@example.fr", "élodie@example.fr", "élodie@example.fr"],
+    [4, "ΑΝΝΑ@example.gr", "αννα@example.gr", "αννα@example.gr"],
+  ] as const) {
+    const order = { ...paid, id: `cs_test_${i}`, customer_details: { email: given, name: "Jo" } };
+    globalThis.fetch = (async () => Response.json(order)) as typeof fetch;
+    assert.equal((await finishCheckout("crumb", order.id, null, ORIGIN)).paid, true);
+    const buyer = (await contactsOf("crumb")).find((c) => c.email === kept);
+    assert.ok(buyer, given);
+    assert.equal((await one<{ email: string }>("SELECT email FROM site_orders WHERE session_id = ?", [order.id]))?.email, saved, given);
+    assert.equal((await contacts.contactDetail("crumb", String(buyer.id), ORIGIN))?.orderCount, 1, given);
+    assert.equal(((await contacts.exportContact("crumb", String(buyer.id), ORIGIN))?.orders as unknown[]).length, 1, given);
+    assert.equal(await contacts.deleteContact("crumb", String(buyer.id)), true);
+    assert.deepEqual(await one("SELECT email, name FROM site_orders WHERE session_id = ?", [order.id]), { email: "", name: "" }, given);
+  }
+});
+
+test("a member who signs up, writes and pays with a domain outside A to Z is one contact, and deleting them leaves nothing", async () => {
+  await fresh();
+  await run("INSERT INTO seller_accounts (user_id, stripe_account, country, currency, ready, created_at) VALUES ('owner', 'acct_1', 'CA', 'cad', 1, 0) ON CONFLICT DO NOTHING");
+  // As Chrome's email field sends the address (the xn-- form), and as another browser's or a text
+  // field sends it (in letters, here in capitals). A member signs in with the address as typed.
+  for (const [i, typed] of ["jo@xn--bckerei-5wa.de", "JO@BÄCKEREI.DE"].entries()) {
+    const slug = `idn${i}`;
+    await site(slug, "owner");
+    assert.equal((await siteAuth(slug, "signup", { email: typed, password: "longenough1", name: "Jo" }, "1.2.3.4", `/p/${slug}`, true, null)).result, "ok");
+    await send(slug, { email: typed, message: "Is the rye in?" });
+    const order = {
+      id: `cs_test_idn${i}`,
+      payment_status: "paid",
+      amount_total: 2500,
+      currency: "cad",
+      created: Math.floor(Date.now() / 1000) - 60,
+      metadata: { flash_site: slug, flash_item: "Rye" },
+      customer_details: { email: typed, name: "Jo" },
+      line_items: { data: [{ quantity: 1 }] },
+    };
+    globalThis.fetch = (async () => Response.json(order)) as typeof fetch;
+    assert.equal((await finishCheckout(slug, order.id, null, ORIGIN)).paid, true);
+    const list = await contactsOf(slug);
+    assert.deepEqual(list.map((c) => c.email), ["jo@xn--bckerei-5wa.de"], typed);
+    const detail = (await contacts.contactDetail(slug, String(list[0].id), ORIGIN))!;
+    assert.ok(detail.member, typed);
+    assert.deepEqual([detail.orderCount, detail.messageCount], [1, 1], typed);
+    const data = (await contacts.exportContact(slug, String(list[0].id), ORIGIN))!;
+    assert.equal((data.member as { email: string }).email, typed.toLowerCase(), typed);
+    assert.equal((data.orders as unknown[]).length, 1, typed);
+    assert.equal(await contacts.deleteContact(slug, String(list[0].id)), true);
+    assert.deepEqual(await all("SELECT email FROM site_users WHERE site_slug = ?", [slug]), [], typed);
+    assert.deepEqual(await all("SELECT 1 FROM site_messages WHERE site_slug = ?", [slug]), [], typed);
+    assert.deepEqual(await one("SELECT email, name FROM site_orders WHERE session_id = ?", [order.id]), { email: "", name: "" }, typed);
+    assert.deepEqual(await contactsOf(slug), [], typed);
+  }
 });
 
 test("a buyer whose order Flash hadn't seen yet is on the list when the owner opens Contacts", async () => {
@@ -534,27 +605,41 @@ test("a ticked box doesn't sign up the mailbox of someone who unsubscribed under
   await send("plus2", { email: "cy+news@gmail.com" }, { consent: { text: NEWS } }, "198.51.100.90");
   assert.equal(await agreed("plus2", "cy+news@gmail.com"), true, "another app");
   // The same domain written another way is the same address: an invisible character in it,
-  // fullwidth letters, the xn-- form, or "ä" as "a" and a combining mark. Each joins the person
-  // who unsubscribed, who stays unsubscribed, and no one who looks like them is added.
+  // fullwidth letters, in letters or the xn-- form, "ä" as "a" and a combining mark, or a Greek
+  // capital Σ before a digit. Each joins the person who unsubscribed, who stays unsubscribed, and
+  // no one who looks like them is added. Nor is the same mailbox with a (comment) or "quotes".
   await send("plus", { email: "jo@bäckerei.de" }, { consent: { text: NEWS } }, "203.0.113.64");
-  await off("plus", "jo@bäckerei.de");
+  await off("plus", "jo@xn--bckerei-5wa.de");
+  await send("plus", { email: "jo@xn--1-4lb6abu.gr" }, { consent: { text: NEWS } }, "203.0.113.65");
+  await off("plus", "jo@xn--1-4lb6abu.gr");
   const before = (await contactsOf("plus")).length;
-  for (const [i, email] of ["cy@gmail\u{FE0F}.com", "cy@gma\u034Fil.com", "cy@ｇｍａｉｌ.com", "jo@xn--bckerei-5wa.de", "jo@ba\u0308ckerei.de"].entries()) {
+  for (const [i, email] of [
+    "cy@gmail\u{FE0F}.com",
+    "cy@gma\u034Fil.com",
+    "cy@ｇｍａｉｌ.com",
+    "jo@xn--bckerei-5wa.de",
+    "jo@ba\u0308ckerei.de",
+    "JO@ΟΔΟΣ1.GR",
+    "cy(news)@gmail.com",
+    "(news)c.y@gmail.com",
+    '"cy"@gmail.com',
+  ].entries()) {
     await send("plus", { email }, { consent: { text: NEWS } }, `198.51.100.${100 + i}`);
   }
   assert.equal((await contactsOf("plus")).length, before, "nobody new");
   assert.equal(await agreed("plus", "cy+news@gmail.com"), false);
   // Someone saved before addresses were kept in one spelling, who then unsubscribed: their mailbox
   // under the usual spelling doesn't agree either.
-  for (const [i, email] of ["di@ｅｘａｍｐｌｅ.org", "ed@xn--bckerei-5wa.de", "fi@ba\u0308ckerei.de", "gi@exam\u{FE0F}ple.org"].entries()) {
+  for (const [i, email] of ["di@ｅｘａｍｐｌｅ.org", "ed@bäckerei.de", "fi@ba\u0308ckerei.de", "gi@exam\u{FE0F}ple.org"].entries()) {
     await run("INSERT INTO site_contacts (id, site_slug, email, source, first_seen, last_seen, unsubscribed_at) VALUES (?, 'plus', ?, 'form:contact', 1, 1, 2)", [
       `old${i}`,
       email,
     ]);
   }
-  for (const [i, email] of ["di+news@example.org", "ed@bäckerei.de", "fi@bäckerei.de", "gi@example.org"].entries()) {
-    await send("plus", { email }, { consent: { text: NEWS } }, `198.51.100.${110 + i}`);
-    assert.equal(await agreed("plus", email), false, email);
+  for (const [i, email] of ["di+news@example.org", "ed@xn--bckerei-5wa.de", "FI@BÄCKEREI.DE", "gi@example.org"].entries()) {
+    await send("plus", { email }, { consent: { text: NEWS } }, `198.51.100.${120 + i}`);
+    assert.equal(await agreed("plus", cleanEmail(email)), false, email);
+    assert.ok((await contactsOf("plus")).some((c) => c.email === cleanEmail(email)), email);
   }
   const csv = (await contacts.contactCsv("plus", await translatorIn("en"), ORIGIN)).csv;
   const yes = csv.split("\n").filter((line) => /,Yes,/.test(line)).map((line) => line.split(",")[1]).sort();
@@ -724,6 +809,44 @@ test("the people an app had before are copied in once, without duplicates", asyn
   await run("UPDATE sites SET contacts_filled = 0 WHERE slug = 'old'");
   await contacts.fillContacts("old");
   assert.equal(JSON.stringify(await contactsOf("old")), before, "a second run changes nothing");
+});
+
+test("someone an app had before with a domain outside A to Z is copied in as one contact, with their account, orders and messages", async () => {
+  await fresh();
+  await site("oldidn", "owner");
+  // As #114 kept them: the address as Chrome's email field sends it (xn--), and in letters, as
+  // another browser or a text field sends it.
+  await run("INSERT INTO site_users (id, site_slug, email, name, password_hash, created_at) VALUES ('mi1', 'oldidn', 'ana@bäckerei.de', 'Ana', 'h', 100)");
+  await run(
+    `INSERT INTO site_orders (session_id, site_slug, item, quantity, amount, currency, email, name, address, created_at) VALUES
+       ('cs_i1', 'oldidn', 'Rye', 1, 900, 'eur', 'jo@xn--bckerei-5wa.de', 'Jo', '', 50),
+       ('cs_i2', 'oldidn', 'Rye', 1, 900, 'eur', 'ANA@BÄCKEREI.DE', 'Ana S', 'Hauptstr. 1', 150)`,
+  );
+  await run(
+    `INSERT INTO site_messages (id, site_slug, form, data, created_at) VALUES
+       ('gi1', 'oldidn', 'contact', '{"email":"jo@xn--bckerei-5wa.de","message":"Thanks!"}', 60),
+       ('gi2', 'oldidn', 'contact', '{"email":"ana@bäckerei.de","message":"Hi"}', 200)`,
+  );
+  assert.equal((await call("GET", owner, "oldidn")).status, 200);
+  const list = await contactsOf("oldidn");
+  assert.deepEqual(
+    list.map((c) => [c.email, c.source, c.name]),
+    [
+      ["jo@xn--bckerei-5wa.de", "order:Rye", "Jo"],
+      ["ana@xn--bckerei-5wa.de", "signup", "Ana"],
+    ],
+  );
+  for (const c of list) {
+    const detail = (await contacts.contactDetail("oldidn", String(c.id), ORIGIN))!;
+    assert.deepEqual([detail.orderCount, detail.messageCount, Boolean(detail.member)], [1, 1, c.email === "ana@xn--bckerei-5wa.de"], String(c.email));
+  }
+  assert.equal(await contacts.deleteContact("oldidn", String(list[1].id)), true);
+  assert.deepEqual(await all("SELECT id FROM site_users WHERE site_slug = 'oldidn'"), []);
+  assert.deepEqual(await one("SELECT email, name, address FROM site_orders WHERE session_id = 'cs_i2'"), { email: "", name: "", address: "" });
+  assert.deepEqual(
+    (await all<{ id: string }>("SELECT id FROM site_messages WHERE site_slug = 'oldidn'")).map((m) => m.id),
+    ["gi1"],
+  );
 });
 
 test("someone seen many times before takes one place in the copied-in list, never someone else's", async () => {

@@ -44,72 +44,43 @@ const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
 
 // Characters nobody sees: an address with one looks just like the address without it.
 const INVISIBLE = /[\p{Default_Ignorable_Code_Point}\p{Cf}\p{Cc}]/u;
+// Before the @, what makes the same mailbox look like another address to Flash but not to mail
+// programs: a (comment) and a "quoted" name (cy(news)@gmail.com and "cy"@gmail.com are
+// cy@gmail.com), and what only goes with them. No one's real address needs these.
+const QUOTING = /[()"\\,;:<>[\]]/;
 
-/** The letters a domain's "xn--" label stands for (RFC 3492), or null when it stands for none. */
-function fromPunycode(code: string): string | null {
-  const out: number[] = [];
-  const basic = code.lastIndexOf("-");
-  for (let j = 0; j < basic; j++) out.push(code.charCodeAt(j));
-  let n = 128;
-  let i = 0;
-  let bias = 72;
-  for (let at = basic + 1; at < code.length; ) {
-    const old = i;
-    for (let w = 1, k = 36; ; k += 36) {
-      if (at >= code.length) return null;
-      const c = code.charCodeAt(at++);
-      // a to z are 0 to 25, and 0 to 9 are 26 to 35.
-      const digit = c >= 97 && c <= 122 ? c - 97 : c >= 48 && c <= 57 ? c - 22 : -1;
-      if (digit < 0) return null;
-      i += digit * w;
-      const t = k <= bias ? 1 : k >= bias + 26 ? 26 : k - bias;
-      if (digit < t) break;
-      w *= 36 - t;
-    }
-    const count = out.length + 1;
-    let delta = old === 0 ? Math.floor((i - old) / 700) : Math.floor((i - old) / 2);
-    delta += Math.floor(delta / count);
-    let k = 0;
-    for (; delta > 455; k += 36) delta = Math.floor(delta / 35);
-    bias = k + Math.floor((36 * delta) / (delta + 38));
-    n += Math.floor(i / count);
-    if (n > 0x10ffff) return null;
-    i %= count;
-    out.splice(i++, 0, n);
-  }
-  return String.fromCodePoint(...out);
-}
+// Text with each letter lowercased on its own, as the address bar does: lowercasing a whole word
+// makes a Greek "Σ" before a digit or a hyphen "ς", which is another letter.
+const lowercase = (text: string) => [...text].map((ch) => ch.toLowerCase()).join("");
 
 /**
- * A domain in the one spelling browsers and mail programs read it as (the address bar's rules,
- * UTS 46): fullwidth letters as plain ones, invisible characters left out, "a" and a combining mark
- * as "ä", and an "xn--" label as the letters it stands for. "" when it isn't one.
+ * A domain in the one spelling browsers and DNS use (the address bar's rules, UTS 46): fullwidth
+ * letters as plain ones, invisible characters left out, "a" and a combining mark as "ä", and
+ * letters outside A to Z in the "xn--" form, as Chrome sends an email field's address. "" when no
+ * browser could open it.
  */
 function readDomain(domain: string): string {
-  let ascii: string;
   try {
-    ascii = new URL(`http://${domain}`).hostname;
+    return new URL(`http://${domain}`).hostname;
   } catch {
     return "";
   }
-  const labels = ascii.split(".").map((label) => (label.startsWith("xn--") ? fromPunycode(label.slice(4)) : label));
-  return labels.includes(null) ? "" : labels.join(".");
 }
 
 /**
  * An email address someone typed, lowercased, or "". It's kept in one spelling, so one person's
  * address is always the same text: its domain as readDomain reads it, and the part before the @
- * composed (NFC), never with a character nobody sees in it.
+ * composed (NFC), never with a character nobody sees in it, a (comment) or quotes.
  */
 export function cleanEmail(value: unknown): string {
   if (typeof value !== "string") return "";
-  const typed = value.trim().toLowerCase();
-  if (typed.length > MAX_EMAIL || !EMAIL.test(typed)) return "";
+  const text = value.trim();
+  if (text.length > MAX_EMAIL || !EMAIL.test(text)) return "";
+  const typed = lowercase(text);
   const at = typed.lastIndexOf("@");
   const name = typed.slice(0, at).normalize("NFC");
-  const domain = readDomain(typed.slice(at + 1));
-  const email = `${name}@${domain}`;
-  return domain && !INVISIBLE.test(name) && email.length <= MAX_EMAIL && EMAIL.test(email) ? email : "";
+  const email = `${name}@${readDomain(typed.slice(at + 1))}`;
+  return !INVISIBLE.test(name) && !QUOTING.test(name) && email.length <= MAX_EMAIL && EMAIL.test(email) ? email : "";
 }
 
 // What a mailto: link takes as it is; anything else in an address is percent-encoded.

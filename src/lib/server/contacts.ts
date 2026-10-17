@@ -35,6 +35,7 @@ import {
   MAX_NOTES,
   MAX_STAGES,
   MAX_STAGE_NAME,
+  cleanContact,
   cleanEmail,
   cleanName,
   cleanTags,
@@ -159,6 +160,24 @@ const BY_EMAIL = "email = ? AND email <> ''";
 const ID_BY_EMAIL = `SELECT id FROM site_contacts WHERE site_slug = ? AND ${BY_EMAIL}`;
 const PHONE_ONLY = "email = '' AND phone = ? AND phone <> ''";
 const ID_BY_PHONE = `SELECT id FROM site_contacts WHERE site_slug = ? AND ${PHONE_ONLY}`;
+// An address with a character outside ASCII, which may be another spelling than contacts keep (see
+// cleanEmail): as a member typed it, as Stripe gave it before, or a contact saved before.
+const NOT_ASCII = "email GLOB '*[^ -~]*'";
+
+/**
+ * What finds the app's members (site_users) or orders (site_orders) with a contact's address,
+ * after "site_slug = ? AND": written the same but for the case of A to Z, or in another spelling of
+ * it. A member keeps the address as they typed it to sign in with it, so jo@bäckerei.de is the
+ * member of the contact jo@xn--bckerei-5wa.de. Only rows with a character outside ASCII are read
+ * to check their spelling.
+ */
+async function withAddress(table: "site_users" | "site_orders", slug: string, email: string): Promise<{ sql: string; args: InValue[] }> {
+  const key = table === "site_users" ? "id" : "session_id";
+  const kept = cleanEmail(email) || email;
+  const rows = await all<{ k: string; email: string }>(`SELECT ${key} AS k, email FROM ${table} WHERE site_slug = ? AND ${NOT_ASCII}`, [slug]);
+  const others = rows.filter((r) => cleanEmail(r.email) === kept).map((r) => r.k);
+  return { sql: `(lower(email) IN (?, ?) OR ${key} IN (${others.map(() => "?").join(", ")}))`, args: [email, kept, ...others] };
+}
 
 const hmac = (secret: string, text: string) => createHmac("sha256", secret).update(text);
 
@@ -249,8 +268,8 @@ export async function noteContact(slug: string, who: Who, seen: Seen): Promise<s
  * Whether someone on the app's list whose address reaches the same mailbox as email (the same
  * address with a +tag, or for Gmail with dots: see emailKey) has unsubscribed. Only the app's
  * unsubscribed contacts at that address's domain are read, and those whose address has a letter
- * outside A to Z or an "xn--": one saved before addresses were kept in one spelling (see
- * cleanEmail) may write the same domain another way, and is read in that spelling here.
+ * outside ASCII: one saved before addresses were kept in one spelling (see cleanEmail) may write
+ * the same domain another way, and is read in that spelling here.
  */
 async function mailboxUnsubscribed(slug: string, email: string): Promise<boolean> {
   const key = emailKey(email);
@@ -258,7 +277,7 @@ async function mailboxUnsubscribed(slug: string, email: string): Promise<boolean
   const domains = domain === "@gmail.com" ? [domain, "@googlemail.com"] : [domain];
   const rows = await all<{ email: string }>(
     `SELECT email FROM site_contacts WHERE site_slug = ? AND unsubscribed_at > 0
-     AND (${domains.map(() => "email LIKE ?").join(" OR ")} OR email GLOB '*[^ -~]*' OR email LIKE '%xn--%')`,
+     AND (${domains.map(() => "email LIKE ?").join(" OR ")} OR ${NOT_ASCII})`,
     [slug, ...domains.map((d) => `%${d}`)],
   );
   return rows.some((r) => emailKey(cleanEmail(r.email) || r.email) === key);
@@ -289,20 +308,28 @@ export async function fillContacts(slug: string): Promise<void> {
   await fillFrom(
     slug,
     `SELECT lower(trim(email)) AS e, trim(name) AS nm, 'signup' AS src, created_at AS at, id AS k
-     FROM site_users WHERE site_slug = ? AND instr(email, '@') > 1 AND length(email) <= 160`,
+     FROM site_users WHERE site_slug = ? AND instr(email, '@') > 1 AND length(email) <= 160 AND NOT (${NOT_ASCII})`,
   );
   await fillFrom(
     slug,
     `SELECT lower(trim(email)) AS e, trim(name) AS nm, 'order:' || substr(item, 1, 60) AS src, created_at AS at, session_id AS k
-     FROM site_orders WHERE site_slug = ? AND instr(trim(email), '@') > 1 AND length(trim(email)) <= 160`,
+     FROM site_orders WHERE site_slug = ? AND instr(trim(email), '@') > 1 AND length(trim(email)) <= 160 AND NOT (${NOT_ASCII})`,
   );
-  // Messages: who sent each is read from its fields here, 50 messages to a write.
+  // Members and buyers whose address has a character outside ASCII are read here, as messages are,
+  // so they're kept in the spelling contacts keep (see cleanEmail): the contact their messages join.
+  const others = await all<{ email: string; name: string; src: string; at: number }>(
+    `SELECT email, name, 'signup' AS src, created_at AS at FROM site_users WHERE site_slug = ? AND ${NOT_ASCII}
+     UNION ALL
+     SELECT email, name, 'order:' || substr(item, 1, 60), created_at FROM site_orders WHERE site_slug = ? AND ${NOT_ASCII}
+     ORDER BY at LIMIT ${MAX_CONTACTS}`,
+    [slug, slug],
+  );
+  const seen: [Who | null, Seen][] = others.map((o) => [cleanContact({ email: o.email, name: o.name }), { source: o.src, at: Number(o.at) }]);
+  // Messages: who sent each is read from its fields here.
   const messages = await all<{ id: string; form: string; data: string; created_at: number }>(
     "SELECT id, form, data, created_at FROM site_messages WHERE site_slug = ? AND contact_id = '' ORDER BY created_at LIMIT 2000",
     [slug],
   );
-  let batch: InStatement[] = [];
-  let count = 0;
   for (const m of messages) {
     let data: unknown = null;
     try {
@@ -311,9 +338,14 @@ export async function fillContacts(slug: string): Promise<void> {
       continue;
     }
     if (!data || typeof data !== "object" || Array.isArray(data)) continue;
-    const who = contactFromFields(data as Record<string, unknown>);
+    seen.push([contactFromFields(data as Record<string, unknown>), { source: `form:${m.form}`, at: Number(m.created_at), messageId: m.id }]);
+  }
+  // 50 people to a write.
+  let batch: InStatement[] = [];
+  let count = 0;
+  for (const [who, sighting] of seen) {
     if (!who) continue;
-    batch.push(...contactStatements(slug, who, { source: `form:${m.form}`, at: Number(m.created_at), messageId: m.id }, false));
+    batch.push(...contactStatements(slug, who, sighting, false));
     if (++count % 50 === 0) {
       await (await db()).batch(batch, "write");
       batch = [];
@@ -488,22 +520,24 @@ export async function contactDetail(slug: string, id: string, base: string, t: T
   const stages = await contactStages(slug, t);
   const row = stages && (await one<Row>(`SELECT ${LISTED} FROM site_contacts WHERE site_slug = ? AND id = ?`, [slug, id]));
   if (!stages || !row) return null;
-  const member = row.email ? await one<{ created_at: number }>("SELECT created_at FROM site_users WHERE site_slug = ? AND email = ?", [slug, row.email]) : null;
+  const members = row.email ? await withAddress("site_users", slug, row.email) : null;
+  const member = members
+    ? await one<{ created_at: number }>(`SELECT created_at FROM site_users WHERE site_slug = ? AND ${members.sql} ORDER BY created_at LIMIT 1`, [slug, ...members.args])
+    : null;
   const messages = await all<{ id: string; form: string; data: string; created_at: number }>(
     "SELECT id, form, data, created_at FROM site_messages WHERE site_slug = ? AND contact_id = ? ORDER BY created_at DESC LIMIT 5",
     [slug, id],
   );
   const messageCount = Number((await one<{ n: number }>("SELECT COUNT(*) AS n FROM site_messages WHERE site_slug = ? AND contact_id = ?", [slug, id]))?.n ?? 0);
   type OrderRow = { session_id: string; item: string; quantity: number; amount: number; currency: string; created_at: number; done_at: number };
-  const orders = row.email
+  const paid = row.email ? await withAddress("site_orders", slug, row.email) : null;
+  const orders = paid
     ? await all<OrderRow>(
-        "SELECT session_id, item, quantity, amount, currency, created_at, done_at FROM site_orders WHERE site_slug = ? AND lower(email) = ? ORDER BY created_at DESC LIMIT 5",
-        [slug, row.email],
+        `SELECT session_id, item, quantity, amount, currency, created_at, done_at FROM site_orders WHERE site_slug = ? AND ${paid.sql} ORDER BY created_at DESC LIMIT 5`,
+        [slug, ...paid.args],
       )
     : [];
-  const orderCount = row.email
-    ? Number((await one<{ n: number }>("SELECT COUNT(*) AS n FROM site_orders WHERE site_slug = ? AND lower(email) = ?", [slug, row.email]))?.n ?? 0)
-    : 0;
+  const orderCount = paid ? Number((await one<{ n: number }>(`SELECT COUNT(*) AS n FROM site_orders WHERE site_slug = ? AND ${paid.sql}`, [slug, ...paid.args]))?.n ?? 0) : 0;
   const samePhone = row.phone
     ? await all<{ id: string; name: string; email: string; phone: string }>(
         "SELECT id, name, email, phone FROM site_contacts WHERE site_slug = ? AND phone = ? AND phone <> '' AND id <> ? ORDER BY last_seen DESC, id LIMIT 10",
@@ -687,16 +721,17 @@ export async function setStages(slug: string, t: Translate, input: unknown): Pro
 export async function deleteContact(slug: string, id: string): Promise<boolean> {
   const contact = await one<{ email: string }>("SELECT email FROM site_contacts WHERE site_slug = ? AND id = ?", [slug, id]);
   if (!contact) return false;
+  const paid = contact.email ? await withAddress("site_orders", slug, contact.email) : null;
   if (contact.email) {
-    const member = await one<{ id: string }>("SELECT id FROM site_users WHERE site_slug = ? AND email = ?", [slug, contact.email]);
-    if (member) await removeSiteUser(slug, member.id);
+    const members = await withAddress("site_users", slug, contact.email);
+    for (const member of await all<{ id: string }>(`SELECT id FROM site_users WHERE site_slug = ? AND ${members.sql}`, [slug, ...members.args])) {
+      await removeSiteUser(slug, member.id);
+    }
   }
   await (await db()).batch(
     [
       { sql: "DELETE FROM site_messages WHERE site_slug = ? AND contact_id = ?", args: [slug, id] },
-      ...(contact.email
-        ? [{ sql: "UPDATE site_orders SET email = '', name = '', address = '' WHERE site_slug = ? AND lower(email) = ?", args: [slug, contact.email] }]
-        : []),
+      ...(paid ? [{ sql: `UPDATE site_orders SET email = '', name = '', address = '' WHERE site_slug = ? AND ${paid.sql}`, args: [slug, ...paid.args] }] : []),
       { sql: "DELETE FROM site_contacts WHERE site_slug = ? AND id = ?", args: [slug, id] },
     ],
     "write",
@@ -735,10 +770,11 @@ export async function exportContact(slug: string, id: string, base: string, t: T
   if (!stages || !row) return null;
   const site = await one<{ title: string }>("SELECT title FROM sites WHERE slug = ?", [slug]);
   const secret = await siteSecret(slug);
-  const member = row.email
+  const members = row.email ? await withAddress("site_users", slug, row.email) : null;
+  const member = members
     ? await one<{ id: string; email: string; name: string; created_at: number }>(
-        "SELECT id, email, name, created_at FROM site_users WHERE site_slug = ? AND email = ?",
-        [slug, row.email],
+        `SELECT id, email, name, created_at FROM site_users WHERE site_slug = ? AND ${members.sql} ORDER BY created_at LIMIT 1`,
+        [slug, ...members.args],
       )
     : null;
   const agreedAt = Number(row.consent_at);
@@ -769,10 +805,11 @@ export async function exportContact(slug: string, id: string, base: string, t: T
     },
     member: member ? { email: member.email, name: member.name, joined: iso(Number(member.created_at)) } : null,
   };
-  const orders = row.email
+  const paid = row.email ? await withAddress("site_orders", slug, row.email) : null;
+  const orders = paid
     ? await all<{ item: string; quantity: number; amount: number; currency: string; email: string; name: string; address: string; created_at: number; done_at: number }>(
-        "SELECT item, quantity, amount, currency, email, name, address, created_at, done_at FROM site_orders WHERE site_slug = ? AND lower(email) = ? ORDER BY created_at DESC LIMIT 1000",
-        [slug, row.email],
+        `SELECT item, quantity, amount, currency, email, name, address, created_at, done_at FROM site_orders WHERE site_slug = ? AND ${paid.sql} ORDER BY created_at DESC LIMIT 1000`,
+        [slug, ...paid.args],
       )
     : [];
   out.orders = orders.map((o) => ({

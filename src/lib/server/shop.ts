@@ -295,9 +295,9 @@ async function recordOrder(slug: string, s: Session): Promise<boolean> {
   const given = s.customer_details?.email ?? "";
   const buyer = cleanContact({ email: given, name: s.customer_details?.name, phone: s.customer_details?.phone });
   // An address Stripe gives in another spelling than the one contacts keep (see cleanEmail), beyond
-  // its case, is saved in the contacts' spelling: the buyer's contact then finds the order, and
-  // deleting them clears their address from it.
-  const email = buyer?.email && buyer.email !== given.trim().toLowerCase() ? buyer.email : given;
+  // the case of A to Z (all the database's lower() changes), is saved in the contacts' spelling: the
+  // buyer's contact then finds the order, and deleting them clears their address from it.
+  const email = buyer?.email && buyer.email !== given.replace(/[A-Z]+/g, (s) => s.toLowerCase()) ? buyer.email : given;
   const res = await run(
     `INSERT INTO site_orders (session_id, site_slug, item, quantity, amount, currency, email, name, address, created_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(session_id) DO NOTHING`,
