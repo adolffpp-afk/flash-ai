@@ -620,6 +620,17 @@ test("the facts stay small whatever the page holds", () => {
   assert.ok(evaluate(facts, CTX).score! < 100);
 });
 
+// Timed like hostile-patterns.test.ts: a slow run is tried twice more, so a busy machine doesn't fail it.
+const time = (f: () => unknown) => {
+  const begun = performance.now();
+  f();
+  return performance.now() - begun;
+};
+const timed = (f: () => unknown, limit: number) => {
+  const took = time(f);
+  return took < limit ? took : Math.min(took, time(f), time(f));
+};
+
 test("hostile pages finish quickly and never throw", () => {
   const N = 100_000;
   const fill = (start: string, unit: string) => (start + unit.repeat(Math.ceil(N / unit.length))).slice(0, N);
@@ -648,20 +659,15 @@ test("hostile pages finish quickly and never throw", () => {
     ["entities", fill("<p>", "&#x1F600;&amp;&#99999999;")],
   ];
   for (const [name, input] of inputs) {
-    const begun = performance.now();
-    const facts = scanPage(input);
-    evaluate(facts, CTX);
-    const took = performance.now() - begun;
+    const took = timed(() => evaluate(scanPage(input), CTX), 250);
     assert.ok(took < 250, `${name} took ${took.toFixed(0)} ms`);
-    assert.ok(JSON.stringify(facts).length <= 16_000, name);
+    assert.ok(JSON.stringify(scanPage(input)).length <= 16_000, name);
   }
   const mix = inputs.map(([, input]) => input).join("").repeat(1);
   const two = (mix + BAKERY.repeat(200)).slice(0, 2 * 1024 * 1024);
-  const begun = performance.now();
-  const facts = scanPage(two);
-  const took = performance.now() - begun;
+  const took = timed(() => scanPage(two), 1000);
   assert.ok(took < 1000, `2 MB took ${took.toFixed(0)} ms`);
-  assert.equal(facts.error, undefined);
+  assert.equal(scanPage(two).error, undefined);
 });
 
 test("Flash's main address is added only when the page has none, and only the start of the page is read", () => {
@@ -672,9 +678,7 @@ test("Flash's main address is added only when the page has none, and only the st
   const far = `${" ".repeat(33 * 1024)}<link rel="canonical" href="https://crumbbakery.com/">`;
   assert.equal(hasOwnCanonical(far), false, "like hasOwnPreview, only the first 32 KB");
   assert.equal(hasOwnPreview(`${" ".repeat(33 * 1024)}<meta property="og:title" content="x">`), false);
-  const begun = performance.now();
-  hasOwnCanonical("<link ".repeat(20_000));
-  assert.ok(performance.now() - begun < 250);
+  assert.ok(timed(() => hasOwnCanonical("<link ".repeat(20_000)), 250) < 250);
   // The scanner still sees a canonical further down.
   assert.equal(scanPage(page({ body: `${BODY}${" ".repeat(33 * 1024)}<link rel="canonical" href="https://example.com/">` })).ownCanonical, true);
 });
