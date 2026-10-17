@@ -9,8 +9,9 @@ delete process.env.FLASH_APP_URL;
 console.error = () => {};
 console.info = () => {};
 const { run, one, all, db } = await import("../src/lib/server/db.ts");
-const { recordVisit, forgetServerMemory, visitTests, dayOf } = await import("../src/lib/server/visits.ts");
-const { matchVisit, countSteps } = await import("../src/lib/server/funnel.ts");
+const { recordVisit, forgetServerMemory, visitTests, visitStats, dayOf } = await import("../src/lib/server/visits.ts");
+const { matchVisit, countSteps, funnelStats, funnelRange, funnelTests } = await import("../src/lib/server/funnel.ts");
+const { createSession } = await import("../src/lib/server/auth.ts");
 const shop = await import("../src/lib/server/shop.ts");
 const { FORM_COOKIE } = await import("../src/lib/server/site-auth.ts");
 const { routeHost } = await import("../src/lib/site-host.ts");
@@ -18,6 +19,7 @@ const inboxRoute = await import("../src/app/api/sites/[slug]/inbox/route.ts");
 const authRoute = await import("../src/app/api/sites/[slug]/auth/route.ts");
 const shopRoute = await import("../src/app/api/sites/[slug]/shop/route.ts");
 const trackRoute = await import("../src/app/api/sites/[slug]/track/route.ts");
+const funnelRoute = await import("../src/app/api/sites/[slug]/funnel/route.ts");
 const { afterwards } = await import("./support/next-server.mjs");
 
 const BROWSER = "Mozilla/5.0 (Windows NT 10.0; rv:140.0) Gecko/20100101 Firefox/140.0";
@@ -226,8 +228,10 @@ test("a checkout keeps only its buyer's source beside the session, and its order
     if (path.startsWith("/checkout/sessions?")) return Response.json({ data: Object.values(sessions) });
     return Response.json({ id: "e" });
   }) as typeof fetch;
+  // The page the buyer is on, which they go back to, with the tags of the link they came by.
+  const onPage = "https://www.flash-app.dev/p/cake-1?utm_source=instagram&utm_medium=social&utm_campaign=Spring%20Sale&gclid=Cj0x&menu=cakes#/shop";
   const buy = (headers: Record<string, string> = {}) =>
-    shopRoute.POST(call("cake-1", "shop", { headers: { "content-type": "application/json", ...headers }, body: JSON.stringify({ item: "Cake" }) }), ctx("cake-1"));
+    shopRoute.POST(call("cake-1", "shop", { headers: { "content-type": "application/json", ...headers }, body: JSON.stringify({ item: "Cake", page: onPage }) }), ctx("cake-1"));
   const paid = (id: string, amount: number, currency = "cad") => ({
     id,
     payment_status: "paid",
@@ -270,7 +274,8 @@ test("a checkout keeps only its buyer's source beside the session, and its order
     [...forms[0].keys()].filter((k) => k.startsWith("metadata")),
     ["metadata[flash_site]", "metadata[flash_item]"],
   );
-  assert.ok(![...forms[0].values()].some((v) => /instagram|spring/.test(v)));
+  assert.ok(![...forms[0].values()].some((v) => /instagram|spring|utm_|gclid/i.test(v)), "not even in the address the buyer goes back to");
+  assert.equal(forms[0].get("cancel_url"), "https://www.flash-app.dev/p/cake-1?menu=cakes#/shop");
 
   // A buyer Flash can't match, and the owner, leave no source: their orders show as not matched.
   sessionId = "cs_test_b";
@@ -454,5 +459,209 @@ test("unpublishing takes the funnel's tables with the app", async () => {
   assert.equal(await unpublishSite("u1", "gone-1"), true);
   for (const table of ["site_events", "site_revenue", "site_checkouts", "site_step_names", "site_people"]) {
     assert.equal(await n(`SELECT COUNT(*) AS n FROM ${table} WHERE site_slug = 'gone-1'`), 0, table);
+  }
+});
+
+// The funnel's numbers, from daily totals put in by hand, on a fixed day.
+const NOW = Date.UTC(2026, 9, 20, 12);
+const D0 = "2026-10-20";
+const D1 = "2026-10-19";
+const D40 = "2026-09-10";
+const since = async (day: string) => {
+  await run("INSERT INTO settings (key, value) VALUES ('funnel_since', ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value", [day]);
+  forgetServerMemory();
+};
+const event = (slug: string, day: string, step: string, source: string, n: number, medium = "", campaign = "") =>
+  run("INSERT INTO site_events (site_slug, day, step, source, medium, campaign, n) VALUES (?, ?, ?, ?, ?, ?, ?)", [slug, day, step, source, medium, campaign, n]);
+const revenue = (slug: string, day: string, source: string, currency: string, orders: number, amount: number, medium = "", campaign = "") =>
+  run("INSERT INTO site_revenue (site_slug, day, source, medium, campaign, currency, orders, amount) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", [
+    slug,
+    day,
+    source,
+    medium,
+    campaign,
+    currency,
+    orders,
+    amount,
+  ]);
+let orders = 0;
+const order = (slug: string, at: number, currency: string, amount: number) =>
+  run("INSERT INTO site_orders (session_id, site_slug, item, quantity, amount, currency, created_at) VALUES (?, ?, 'Loaf', 1, ?, ?, ?)", [
+    `cs_f${++orders}`,
+    slug,
+    amount,
+    currency,
+    at,
+  ]);
+const zeroCounts = { visitors: 0, form: 0, signup: 0, checkout: 0, orders: 0, revenue: [] };
+
+test("the funnel adds up each step for people matched to a visit, per source with campaigns, and every paid order per currency", async () => {
+  await since("2026-08-01");
+  await run("INSERT INTO users (id, email, password_hash, created_at, verified_at) VALUES ('u4', 'r@x.co', 'h', 0, 1)");
+  await site("fun-1", "u4");
+  await run("INSERT INTO site_domains (domain, site_slug, user_id, created_at) VALUES ('crumbfunnel.com', 'fun-1', 'u4', 0)");
+  await event("fun-1", D0, "visit", "google.com", 100);
+  await event("fun-1", D1, "visit", "google.com", 140);
+  await event("fun-1", D0, "visit", "newsletter", 60, "email", "spring-sale");
+  await event("fun-1", D1, "visit", "newsletter", 28);
+  await event("fun-1", D0, "visit", "", 201);
+  await event("fun-1", D0, "visit", "(other)", 5);
+  for (let i = 1; i <= 10; i++) await event("fun-1", D0, "visit", `s${i}`, i);
+  // People counted before B2: in Visitors, under no source.
+  await event("fun-1", D1, "visit-old", "", 7);
+  await event("fun-1", D40, "visit", "google.com", 50);
+  await event("fun-1", D0, "form", "google.com", 6);
+  await event("fun-1", D0, "form", "newsletter", 4, "email", "spring-sale");
+  await event("fun-1", D0, "form", "?", 5);
+  await event("fun-1", D1, "signup", "google.com", 2);
+  await event("fun-1", D0, "signup", "newsletter", 3, "email", "spring-sale");
+  await event("fun-1", D0, "checkout", "google.com", 3);
+  await event("fun-1", D0, "checkout", "?", 2);
+  await event("fun-1", D0, "app:booking", "", 31);
+  await event("fun-1", D1, "app:menu-open", "", 12);
+  await event("fun-1", D1, "capped", "", 10_000);
+  await event("fun-1", D1, "capped-app", "", 10_000);
+  await event("fun-1", D0, "capped-net", "", 100);
+  await revenue("fun-1", D0, "google.com", "usd", 1, 2900);
+  await revenue("fun-1", D0, "newsletter", "usd", 2, 5800, "email", "spring-sale");
+  await revenue("fun-1", D1, "newsletter", "eur", 1, 1000, "email", "spring-sale");
+  for (const [amount, currency] of [[2900, "usd"], [2900, "usd"], [2900, "usd"], [1200, "usd"], [1000, "eur"]] as const) await order("fun-1", NOW - 3600_000, currency, amount);
+  await order("fun-1", Date.parse(`${D40}T10:00:00Z`), "usd", 500);
+
+  const f = (await funnelStats("fun-1", 30, NOW))!;
+  assert.deepEqual([f.days, f.today, f.from, f.shownDays], [30, D0, "2026-09-21", 30]);
+  // Visitors as the tile counts them, for the same days.
+  assert.equal(f.totals.visitors, 100 + 140 + 60 + 28 + 201 + 5 + 55 + 7);
+  assert.equal(f.totals.visitors, (await visitStats("fun-1", NOW)).visitors, "the same number as the Visitors tile");
+  // Steps count matched people only; sends nobody matched are their own row, never added in.
+  assert.deepEqual(
+    { form: f.totals.form, signup: f.totals.signup, checkout: f.totals.checkout, orders: f.totals.orders, revenue: f.totals.revenue },
+    { form: 10, signup: 5, checkout: 3, orders: 5, revenue: [{ currency: "usd", amount: 9900 }, { currency: "eur", amount: 1000 }] },
+  );
+  assert.deepEqual(f.unmatched, { form: 5, signup: 0, checkout: 2, orders: 1, revenue: [{ currency: "usd", amount: 1200 }] }, "paid minus what sources took, per currency");
+  assert.deepEqual(
+    f.sources.map((s) => s.source),
+    ["google.com", "", "newsletter", "s10", "s9", "s8", "s7", "s6", "s5", "s4"],
+    "the 10 with the most visitors",
+  );
+  assert.deepEqual(f.sources[0], { source: "google.com", visitors: 240, form: 6, signup: 2, checkout: 3, orders: 1, revenue: [{ currency: "usd", amount: 2900 }], campaigns: [] });
+  assert.deepEqual(f.sources[2], {
+    source: "newsletter",
+    visitors: 88,
+    form: 4,
+    signup: 3,
+    checkout: 0,
+    orders: 3,
+    revenue: [{ currency: "usd", amount: 5800 }, { currency: "eur", amount: 1000 }],
+    campaigns: [{ medium: "email", campaign: "spring-sale", visitors: 60, form: 4, signup: 3, checkout: 0, orders: 3, revenue: [{ currency: "usd", amount: 5800 }, { currency: "eur", amount: 1000 }] }],
+  });
+  assert.deepEqual(f.rest, { ...zeroCounts, visitors: 3 + 2 + 1 + 5 }, "the others, (other) among them, and never the old count");
+  assert.ok(!f.sources.some((s) => s.source === "?" || s.source === "(other)"));
+  assert.deepEqual(f.appSteps, [{ step: "booking", people: 31 }, { step: "menu-open", people: 12 }]);
+  assert.deepEqual([f.paused, f.stepsPaused, f.netCapped], [[{ day: D1, people: 10_000 }], [{ day: D1, steps: 10_000 }], 100]);
+  assert.deepEqual([f.pausedToday, f.stepsPausedToday, f.free], [null, null, false], "the owner's day isn't at the limit");
+  assert.deepEqual(f.addresses, ["https://www.flash-app.dev/p/fun-1", "https://crumbfunnel.com/"]);
+
+  // 7 and 90 days; anything else asks for 30.
+  const week = (await funnelStats("fun-1", 7, NOW))!;
+  assert.deepEqual([week.from, week.shownDays, week.totals.visitors], ["2026-10-14", 7, f.totals.visitors]);
+  const quarter = (await funnelStats("fun-1", 90, NOW))!;
+  assert.deepEqual([quarter.from, quarter.sources[0].visitors, quarter.totals.orders], ["2026-08-01", 290, 6], "from the day counting began");
+  assert.equal(quarter.shownDays, 81);
+  assert.deepEqual(["7", "30", "90", 90, "14", "abc", null, undefined].map(funnelRange), [7, 30, 90, 90, 30, 30, 30, 30]);
+  assert.equal(await funnelStats("nobody-1", 30, NOW), null);
+});
+
+test("the funnel starts on the day counting began, or the app's first day, and never shows the days before as zeros", async () => {
+  await site("fun-2", "u4");
+  await event("fun-2", D0, "visit", "", 4);
+  await since(D0);
+  // On the deploy day, the morning's people (counted the old way) are in Visitors, under no source.
+  await run("INSERT INTO site_visitors (site_slug, day, visitor) VALUES ('fun-2', ?, 'old-a'), ('fun-2', ?, 'old-b')", [D0, D0]);
+  const deploy = (await funnelStats("fun-2", 30, NOW))!;
+  assert.deepEqual([deploy.from, deploy.shownDays, deploy.totals.visitors], [D0, 1, 6]);
+  assert.equal(deploy.totals.visitors, (await visitStats("fun-2", NOW)).days.at(-1)!.visitors, "the tile's today, the deploy day included");
+  assert.deepEqual(
+    deploy.sources.map((s) => [s.source, s.visitors]),
+    [["", 4]],
+    "the old count is under no source, not even Direct",
+  );
+  await since("2026-10-15");
+  assert.deepEqual([(await funnelStats("fun-2", 30, NOW))!.from, (await funnelStats("fun-2", 30, NOW))!.shownDays], ["2026-10-15", 6]);
+  await run("UPDATE sites SET created_at = ? WHERE slug = 'fun-2'", [Date.UTC(2026, 9, 18, 15)]);
+  const young = (await funnelStats("fun-2", 7, NOW))!;
+  assert.deepEqual([young.from, young.shownDays], ["2026-10-18", 3]);
+});
+
+test("today's limit notes come from the owner's count across their apps, and their plan is read only past the free number", async () => {
+  visitTests.freePeople = 3;
+  try {
+    await since("2026-08-01");
+    await run("INSERT INTO users (id, email, password_hash, created_at, verified_at) VALUES ('u5', 's@x.co', 'h', 0, 1)");
+    await site("fun-3", "u5");
+    await site("fun-3b", "u5");
+    await run("INSERT INTO owner_people (user_id, day, people, steps) VALUES ('u5', ?, 2, 0)", [D0]);
+    const client = await db();
+    const execute = client.execute.bind(client);
+    const read: string[] = [];
+    client.execute = ((s: { sql: string } | string, ...rest: unknown[]) => {
+      read.push(typeof s === "string" ? s : s.sql);
+      return (execute as (...a: unknown[]) => unknown)(s, ...rest);
+    }) as typeof client.execute;
+    try {
+      const below = (await funnelStats("fun-3", 30, NOW))!;
+      assert.deepEqual([below.pausedToday, below.stepsPausedToday, below.free], [null, null, false]);
+    } finally {
+      client.execute = execute;
+    }
+    assert.ok(!read.some((sql) => /subscriptions|FROM users/.test(sql)), "no plan read below the free number");
+
+    // At the free number: paused today on every app of theirs, with the upgrade note.
+    await run("UPDATE owner_people SET people = 3 WHERE user_id = 'u5'");
+    await event("fun-3", D0, "capped", "", 3);
+    for (const slug of ["fun-3", "fun-3b"]) {
+      const f = (await funnelStats(slug, 30, NOW))!;
+      assert.deepEqual([f.pausedToday, f.stepsPausedToday, f.free], [3, null, true], slug);
+    }
+    assert.deepEqual((await funnelStats("fun-3", 30, NOW))!.paused, [{ day: D0, people: 3 }], "the app's own mark, which the note for today stands for");
+    await run("UPDATE owner_people SET steps = 3 WHERE user_id = 'u5'");
+    assert.equal((await funnelStats("fun-3b", 30, NOW))!.stepsPausedToday, 3);
+
+    // A paid plan counts more: not paused, and no upgrade note.
+    await run(
+      `INSERT INTO subscriptions (id, user_id, plan, interval, status, amount_cents, anchor, paid_until, test, created_at, updated_at)
+       VALUES ('sub-u5', 'u5', 'pro', 'month', 'active', 100, 0, ?, 1, 0, 0)`,
+      [Date.UTC(2100, 0, 1)],
+    );
+    forgetServerMemory();
+    const paid = (await funnelStats("fun-3", 30, NOW))!;
+    assert.deepEqual([paid.pausedToday, paid.stepsPausedToday, paid.free], [null, null, false]);
+  } finally {
+    visitTests.freePeople = 0;
+  }
+});
+
+test("only the owner reads an app's funnel, at most 120 times an hour", async () => {
+  await run("INSERT INTO users (id, email, password_hash, created_at, verified_at) VALUES ('u6', 't@x.co', 'h', 0, 1)");
+  await site("fun-4", "u6");
+  const cookie = (await createSession("u6", true)).split(";")[0];
+  const get = (slug: string, query = "") =>
+    funnelRoute.GET(new Request(`https://www.flash-app.dev/api/sites/${slug}/funnel${query}`, { headers: { cookie } }), ctx(slug));
+  const week = await get("fun-4", "?days=7");
+  assert.equal(week.status, 200);
+  assert.equal(((await week.json()) as { days: number }).days, 7);
+  assert.equal(((await (await get("fun-4", "?days=365")).json()) as { days: number }).days, 30);
+  assert.equal((await get("fun-1")).status, 404, "another owner's app");
+  assert.equal((await funnelRoute.GET(new Request("https://www.flash-app.dev/api/sites/fun-4/funnel"), ctx("fun-4"))).status, 401);
+  funnelTests.calls = 5;
+  try {
+    // Three calls so far this hour (a refused one counts too).
+    assert.equal((await get("fun-4")).status, 200, "the 4th call this hour");
+    assert.equal((await get("fun-4")).status, 200, "the 5th");
+    const over = await get("fun-4");
+    assert.equal(over.status, 429, "the 6th");
+    assert.equal(((await over.json()) as { error: string }).error, "Too many requests. Try again in an hour.");
+  } finally {
+    funnelTests.calls = 0;
   }
 });

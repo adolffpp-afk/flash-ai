@@ -3,11 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/store";
 import { SELLER_COUNTRIES } from "@/lib/shop";
+import { OTHER } from "@/lib/traffic";
 import { DATA_RULES, DEFAULT_KEY, RULE_TEXT, blockProblem, dataLine, type DataRule, type DataSummary, type RuleSource } from "@/lib/data-rules";
 import { msg } from "@/lib/i18n";
 import { inOrder } from "@/lib/in-order";
 import { tNow, useT, type T } from "@/lib/use-t";
+import type { FunnelRange, FunnelStats } from "@/lib/server/funnel.ts";
 import { ContactsView } from "./ContactsView";
+import { FunnelNotes, FunnelView, LinkMaker, dayLabel } from "./FunnelView";
 
 // messages, views, members and contacts: null until counted, as the list counts only 20 apps at a
 // time (see sitesWithMessages); contacts also until the app's contact list was first filled.
@@ -50,8 +53,6 @@ type MadeWith = { on: boolean; allowed: boolean; shown: boolean };
 
 const dateLabel = (when: number, locale: string) =>
   new Date(when).toLocaleString(locale, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-const dayLabel = (day: string, locale: string) =>
-  new Date(`${day}T12:00:00Z`).toLocaleDateString(locale, { month: "short", day: "numeric", timeZone: "UTC" });
 const fieldText = (v: unknown) => (typeof v === "string" ? v : JSON.stringify(v));
 // Written like toFixed: no thousands separator, so English reads as before.
 const plain = (n: number, locale: string, digits = 0) =>
@@ -109,7 +110,14 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
   const [restoring, setRestoring] = useState<string | null>(null);
   // The version brought back, with what that changed for who may see or change the app's data.
   const [restored, setRestored] = useState<{ data?: DataSummary } | null>(null);
-  const [visits, setVisits] = useState<Visits | null>(null);
+  // The Visitors view's numbers, each with the app (and range) it's for, so a late answer for
+  // another app or range never shows; and the funnel's own error, which leaves the visits shown.
+  const [visits, setVisits] = useState<{ slug: string; data: Visits } | null>(null);
+  const [funnel, setFunnel] = useState<{ slug: string; days: FunnelRange; stats: FunnelStats } | null>(null);
+  const [funnelDays, setFunnelDays] = useState<FunnelRange>(30);
+  const [funnelError, setFunnelError] = useState("");
+  const visitLoads = useRef(0);
+  const funnelLoads = useRef(0);
   const [payments, setPayments] = useState<Payments | null>(null);
   const [shop, setShop] = useState<Shop | null>(null);
   const [country, setCountry] = useState("CA");
@@ -343,11 +351,34 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
     setView("visits");
     setVisits(null);
     setError("");
+    setFunnelDays(30);
+    const asked = ++visitLoads.current;
+    await Promise.all([
+      api<Visits>(`/api/sites/${site.slug}/visits`).then(
+        (data) => asked === visitLoads.current && setVisits({ slug: site.slug, data }),
+        () => asked === visitLoads.current && setError(t("Couldn't load the visitor stats. Please try again.")),
+      ),
+      loadFunnel(site.slug, 30),
+    ]);
+  }
+
+  async function loadFunnel(slug: string, days: FunnelRange) {
+    const asked = ++funnelLoads.current;
+    setFunnelError("");
     try {
-      setVisits(await api<Visits>(`/api/sites/${site.slug}/visits`));
-    } catch {
-      setError(t("Couldn't load the visitor stats. Please try again."));
+      const stats = await api<FunnelStats>(`/api/sites/${slug}/funnel?days=${days}`);
+      if (asked === funnelLoads.current) setFunnel({ slug, days, stats });
+    } catch (err) {
+      // Too many loads in an hour says so; the visits above still show.
+      const busy = err instanceof Error && (err as Error & { status?: number }).status === 429;
+      if (asked === funnelLoads.current) setFunnelError(busy ? err.message : t("Couldn't load the visitor stats. Please try again."));
     }
+  }
+
+  function chooseDays(days: FunnelRange) {
+    if (!open) return;
+    setFunnelDays(days);
+    loadFunnel(open.slug, days);
   }
 
   async function markOrder(order: Order) {
@@ -637,13 +668,16 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
     setConfirming(null);
   }
 
+  // The funnel shown: only the open app's, for the range picked.
+  const shownFunnel = open && funnel?.slug === open.slug && funnel.days === funnelDays ? funnel.stats : null;
+
   return (
     <div className="fixed inset-0 z-40 flex items-stretch justify-center bg-black/60 backdrop-blur-sm sm:items-center sm:p-6" onClick={() => mayLeave() && onClose()}>
       <div
         role="dialog"
         aria-modal="true"
         aria-label={t("My websites and apps")}
-        className={`flex h-full w-full ${open && view === "contacts" ? "max-w-5xl" : "max-w-3xl"} flex-col bg-zinc-950 text-zinc-100 sm:h-[80vh] sm:rounded-2xl sm:border sm:border-white/8`}
+        className={`flex h-full w-full ${open && (view === "contacts" || view === "visits") ? "max-w-5xl" : "max-w-3xl"} flex-col bg-zinc-950 text-zinc-100 sm:h-[80vh] sm:rounded-2xl sm:border sm:border-white/8`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3 border-b border-white/6 px-5 py-4">
@@ -672,7 +706,11 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 sm:p-5">
-          {error && <p role="alert" className="mb-3 text-sm text-red-400">{error}</p>}
+          {(error || (open && view === "visits" && funnelError)) && (
+            <p role="alert" className="mb-3 text-sm text-red-400">
+              {error || funnelError}
+            </p>
+          )}
           {open && view === "data" ? (
             appData?.slug !== open.slug ? (
               !error && <p className="text-sm text-zinc-500">{t("Loading…")}</p>
@@ -908,10 +946,18 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
               </ul>
             )
           ) : open && view === "visits" ? (
-            visits === null ? (
+            visits?.slug !== open.slug ? (
               !error && <p className="text-sm text-zinc-500">{t("Loading…")}</p>
             ) : (
-              <VisitsView visits={visits} />
+              <div className="space-y-8">
+                {shownFunnel && <FunnelNotes stats={shownFunnel} onPlans={onPlans} />}
+                <VisitsView visits={visits.data} />
+                {visits.data.views === 0 ? (
+                  shownFunnel && <LinkMaker addresses={shownFunnel.addresses} />
+                ) : (
+                  <FunnelView stats={shownFunnel} days={funnelDays} onDays={chooseDays} failed={Boolean(funnelError)} />
+                )}
+              </div>
             )
           ) : open && view === "payments" ? (
             payments === null ? (
@@ -1662,7 +1708,9 @@ function VisitsView({ visits }: { visits: Visits }) {
         <ul className="divide-y divide-white/6 rounded-xl border border-white/8">
           {visits.sources.map((s) => (
             <li key={s.source} className="flex items-center justify-between px-4 py-2 text-sm">
-              <span className="min-w-0 truncate text-zinc-200">{s.source || t("Direct (typed, bookmarked or shared in a message)")}</span>
+              <bdi dir="auto" className="min-w-0 truncate text-zinc-200">
+                {s.source === OTHER.source ? t("Other sources") : s.source || t("Direct (typed, bookmarked or shared in a message)")}
+              </bdi>
               <span className="tabular-nums text-zinc-400">{s.views.toLocaleString(t.locale)}</span>
             </li>
           ))}

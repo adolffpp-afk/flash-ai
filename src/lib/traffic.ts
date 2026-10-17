@@ -14,6 +14,9 @@ export const OTHER: Touch = { source: "(other)", medium: "", campaign: "" };
 /** The source of a form, sign-up or order Flash couldn't tie to a visit that day or the day before. */
 export const UNMATCHED = "?";
 
+/** The parts of an address that say where someone came from (see touchOf), and Facebook's click ID. */
+export const LINK_TAGS = ["utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content", "ref", "gclid", "gbraid", "wbraid", "msclkid", "fbclid"];
+
 const MAX_TAG = 40;
 const MAX_SOURCE = 60;
 // An email address, a phone number, or a subscriber's or click's ID: a tag holding one isn't used.

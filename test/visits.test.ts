@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { register } from "node:module";
+import { readFileSync } from "node:fs";
 
 register("./support/route-hooks.mjs", import.meta.url);
 process.env.DATABASE_URL = ":memory:";
@@ -566,4 +567,17 @@ test("one internet connection adds at most its number of new people a day per ow
   } finally {
     visitTests.networkPeople = 0;
   }
+});
+
+test('views past the day\'s sources stay "(other)" in the stats, which the Visitors view shows as Other sources', async () => {
+  forgetServerMemory();
+  await app("other-1", "u1");
+  const at = Date.UTC(2027, 6, 3, 9);
+  // Three past the 30 sources: "(other)" has the most views of the day.
+  for (let i = 1; i <= MAX_TOUCHES + 3; i++) await recordVisit("other-1", someone("other-1", {}, `?utm_source=tag-${i}`), null, at);
+  const stats = await visitStats("other-1", at);
+  assert.deepEqual(stats.sources[0], { source: "(other)", views: 3 }, "its own source, not folded into another");
+  const view = readFileSync(new URL("../src/components/MyApps.tsx", import.meta.url), "utf8");
+  assert.match(view, /s\.source === OTHER\.source \? t\("Other sources"\)/);
+  assert.match(view, /<bdi dir="auto"[^>]*>\s*\{s\.source === OTHER\.source/, "each source written in its own direction");
 });

@@ -38,6 +38,11 @@ test("buyers only go back to the site's own addresses", () => {
   assert.equal(safeReturn("https://crumbbakery.com/?flash_paid=1#/menu", sites), "https://crumbbakery.com/#/menu");
   assert.equal(safeReturn("https://www.flash-app.dev/p/crumb-1#/shop", sites), "https://www.flash-app.dev/p/crumb-1#/shop");
   assert.equal(safeReturn("https://evil.example/p/crumb-1", sites), sites[0]);
+  assert.equal(
+    safeReturn("https://www.flash-app.dev/p/crumb-1?utm_source=ig&utm_campaign=spring&ref=news&gclid=Cj0x&fbclid=IwAR&page=2#/shop", sites),
+    "https://www.flash-app.dev/p/crumb-1?page=2#/shop",
+    "where the buyer came from stays out of the address Stripe gets",
+  );
   assert.equal(safeReturn("javascript:alert(1)", sites), sites[0]);
   assert.equal(withPaidNote("https://crumbbakery.com/#/menu"), "https://crumbbakery.com/?flash_paid=1#/menu");
   assert.deepEqual(routeHost("crumbbakery.com", "/api/sites/crumb-1/shop", "POST"), { siteApi: "crumb-1" });

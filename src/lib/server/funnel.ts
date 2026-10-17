@@ -7,9 +7,11 @@
  * (site_revenue); while a checkout is open, its buyer's source waits beside it (site_checkouts),
  * with nothing about the buyer.
  */
-import { db, one, run } from "./db.ts";
-import { dayOf, freePeople, isRobot, markOnce, pastKey, peopleCap, visitorCode, type Statement } from "./visits.ts";
-import { MAX_STEP_NAMES, MAX_TRACKED, UNMATCHED, type Touch } from "../traffic.ts";
+import { all, db, one, run } from "./db.ts";
+import { domainsForSite } from "./domains.ts";
+import { dayOf, daysBetween, freePeople, funnelSince, isRobot, markOnce, pastKey, peopleCap, peoplePerDay, visitorCode, type Statement } from "./visits.ts";
+import { MAX_STEP_NAMES, MAX_TRACKED, OTHER, UNMATCHED, type Touch } from "../traffic.ts";
+import { SITE_URL } from "../../app/site.ts";
 
 const DAY = 86_400_000;
 
@@ -231,4 +233,215 @@ export async function saleBySource(slug: string, sessionId: string, at: number, 
     ],
     "write",
   );
+}
+
+/** The ranges the funnel shows, in days; any other asks for 30. */
+export const FUNNEL_RANGES = [7, 30, 90] as const;
+export type FunnelRange = (typeof FUNNEL_RANGES)[number];
+export const funnelRange = (days: unknown): FunnelRange => FUNNEL_RANGES.find((d) => String(d) === String(days)) ?? 30;
+/** Calls to the funnel an owner may make an hour: a 90-day funnel of a full app reads about 40,000 rows. */
+export const FUNNEL_CALLS = 120;
+export const funnelTests = { calls: 0 };
+export const funnelCalls = () => funnelTests.calls || FUNNEL_CALLS;
+/** Sources shown by name; the others are added up as one row. */
+const TOP_SOURCES = 10;
+const TOP_CAMPAIGNS = 10;
+
+export type Money = { currency: string; amount: number };
+export type FunnelCounts = { visitors: number; form: number; signup: number; checkout: number; orders: number; revenue: Money[] };
+export type FunnelSource = FunnelCounts & { source: string; campaigns: (FunnelCounts & { medium: string; campaign: string })[] };
+export type FunnelStats = {
+  days: FunnelRange;
+  /** Today (UTC), the first day shown, and how many days that is. */
+  today: string;
+  from: string;
+  shownDays: number;
+  /** Visitors as the Visitors tile counts them; form, signup and checkout people matched to a visit; every paid order. */
+  totals: FunnelCounts;
+  /** The 10 sources with the most visitors ('' is Direct), with their campaigns. */
+  sources: FunnelSource[];
+  /** The other sources added up, "(other)" among them; null when there are none. */
+  rest: FunnelCounts | null;
+  /** Sends Flash couldn't tie to a visit, and paid orders no source covers: sends and orders, never people. */
+  unmatched: Omit<FunnelCounts, "visitors">;
+  /** The steps the app reported, the 10 with the most people. */
+  appSteps: { step: string; people: number }[];
+  /** Days this app missed people at the owner's daily limit, newest first, and the limit today when it is reached now. */
+  paused: { day: string; people: number }[];
+  pausedToday: number | null;
+  /** The same for the apps' own steps. */
+  stepsPaused: { day: string; steps: number }[];
+  stepsPausedToday: number | null;
+  /** How many new people are counted from one connection a day, when some day in the range passed it; else null. */
+  netCapped: number | null;
+  /** The owner has no paid plan (known when counting is paused today). */
+  free: boolean;
+  /** The app's addresses, for tagged links. */
+  addresses: string[];
+};
+
+const MARKS = ["capped", "capped-app", "capped-net"];
+const zero = (): FunnelCounts => ({ visitors: 0, form: 0, signup: 0, checkout: 0, orders: 0, revenue: [] });
+const addMoney = (list: Money[], currency: string, amount: number) => {
+  const known = list.find((m) => m.currency === currency);
+  if (known) known.amount += amount;
+  else list.push({ currency, amount });
+};
+const addCounts = (to: FunnelCounts, from: FunnelCounts) => {
+  to.visitors += from.visitors;
+  to.form += from.form;
+  to.signup += from.signup;
+  to.checkout += from.checkout;
+  to.orders += from.orders;
+  for (const m of from.revenue) addMoney(to.revenue, m.currency, m.amount);
+};
+const byMoney = (list: Money[]) => list.sort((a, b) => b.amount - a.amount || a.currency.localeCompare(b.currency));
+const busier = (a: FunnelCounts, b: FunnelCounts) =>
+  b.visitors - a.visitors || b.orders - a.orders || b.form + b.signup + b.checkout - (a.form + a.signup + a.checkout);
+
+/**
+ * The app's funnel for the last 7, 30 or 90 days, starting no earlier than the day counting began
+ * (settings.funnel_since) or the app's creation day: visitors, each step, paid orders and what was
+ * paid, per source. Null when the app isn't there.
+ */
+export async function funnelStats(slug: string, days: FunnelRange, at = Date.now()): Promise<FunnelStats | null> {
+  const site = await one<{ owner: string; created_at: number }>("SELECT user_id AS owner, created_at FROM sites WHERE slug = ?", [slug]);
+  if (!site) return null;
+  const today = dayOf(at);
+  const from = [dayOf(at - (days - 1) * DAY), await funnelSince(today), dayOf(Number(site.created_at))].reduce((a, b) => (b > a ? b : a));
+  const first = from > today ? today : from;
+  const shownDays = daysBetween(first, today) + 1;
+  const people = await peoplePerDay(slug, first);
+  const [events, revenue, paid, owner, domains] = await Promise.all([
+    // Marks stay per day; everything else is added up over the range.
+    all<{ on_day: string; step: string; source: string; medium: string; campaign: string; n: number }>(
+      `SELECT CASE WHEN step IN (${MARKS.map(() => "?").join(", ")}) THEN day ELSE '' END AS on_day, step, source, medium, campaign, SUM(n) AS n
+       FROM site_events WHERE site_slug = ? AND day >= ? AND step <> 'visit-old'
+       GROUP BY 1, step, source, medium, campaign`,
+      [...MARKS, slug, first],
+    ),
+    all<{ source: string; medium: string; campaign: string; currency: string; orders: number; amount: number }>(
+      `SELECT source, medium, campaign, currency, SUM(orders) AS orders, SUM(amount) AS amount FROM site_revenue
+       WHERE site_slug = ? AND day >= ? GROUP BY source, medium, campaign, currency`,
+      [slug, first],
+    ),
+    all<{ currency: string; orders: number; amount: number }>(
+      "SELECT currency, COUNT(*) AS orders, SUM(amount) AS amount FROM site_orders WHERE site_slug = ? AND created_at >= ? GROUP BY currency",
+      [slug, Date.parse(`${first}T00:00:00Z`)],
+    ),
+    one<{ people: number; steps: number }>("SELECT people, steps FROM owner_people WHERE user_id = ? AND day = ?", [site.owner, today]),
+    domainsForSite(slug),
+  ]);
+
+  const totals = zero();
+  totals.visitors = [...people.values()].reduce((n, v) => n + v, 0);
+  const unmatched = zero();
+  const sources = new Map<string, FunnelSource>();
+  const sourceOf = (source: string) => {
+    let s = sources.get(source);
+    if (!s) sources.set(source, (s = { ...zero(), source, campaigns: [] }));
+    return s;
+  };
+  const campaignOf = (s: FunnelSource, medium: string, campaign: string) => {
+    let c = s.campaigns.find((x) => x.medium === medium && x.campaign === campaign);
+    if (!c) s.campaigns.push((c = { ...zero(), medium, campaign }));
+    return c;
+  };
+  const appSteps = new Map<string, number>();
+  const paused: FunnelStats["paused"] = [];
+  const stepsPaused: FunnelStats["stepsPaused"] = [];
+  let netCapped: number | null = null;
+  for (const e of events) {
+    const n = Number(e.n);
+    if (e.step === "capped") paused.push({ day: e.on_day, people: n });
+    else if (e.step === "capped-app") stepsPaused.push({ day: e.on_day, steps: n });
+    else if (e.step === "capped-net") netCapped = Math.max(netCapped ?? 0, n);
+    else if (e.step.startsWith("app:")) appSteps.set(e.step.slice(4), (appSteps.get(e.step.slice(4)) ?? 0) + n);
+    else if (e.step === "visit" || e.step === "form" || e.step === "signup" || e.step === "checkout") {
+      const key = e.step === "visit" ? "visitors" : e.step;
+      if (e.source === UNMATCHED) {
+        if (key !== "visitors") unmatched[key] += n;
+        continue;
+      }
+      // Steps of matched people only (sends Flash couldn't match are sends, not people).
+      if (key !== "visitors") totals[key] += n;
+      const s = sourceOf(e.source);
+      s[key] += n;
+      if (e.medium || e.campaign) campaignOf(s, e.medium, e.campaign)[key] += n;
+    }
+  }
+  const attributed = new Map<string, Money & { orders: number }>();
+  for (const r of revenue) {
+    const [orders, amount] = [Number(r.orders), Number(r.amount)];
+    const s = sourceOf(r.source);
+    s.orders += orders;
+    addMoney(s.revenue, r.currency, amount);
+    if (r.medium || r.campaign) {
+      const c = campaignOf(s, r.medium, r.campaign);
+      c.orders += orders;
+      addMoney(c.revenue, r.currency, amount);
+    }
+    const a = attributed.get(r.currency) ?? { currency: r.currency, amount: 0, orders: 0 };
+    attributed.set(r.currency, { ...a, amount: a.amount + amount, orders: a.orders + orders });
+  }
+  // Every paid order counts; those no source covers are not matched.
+  for (const p of paid) {
+    const [orders, amount] = [Number(p.orders), Number(p.amount)];
+    totals.orders += orders;
+    addMoney(totals.revenue, p.currency, amount);
+    const a = attributed.get(p.currency);
+    const left = { orders: Math.max(0, orders - (a?.orders ?? 0)), amount: Math.max(0, amount - (a?.amount ?? 0)) };
+    unmatched.orders += left.orders;
+    if (left.amount) addMoney(unmatched.revenue, p.currency, left.amount);
+  }
+
+  const ranked = [...sources.values()].sort((a, b) => busier(a, b) || a.source.localeCompare(b.source));
+  const named = ranked.filter((s) => s.source !== OTHER.source).slice(0, TOP_SOURCES);
+  const others = ranked.filter((s) => !named.includes(s));
+  let rest: FunnelCounts | null = null;
+  if (others.length) {
+    rest = zero();
+    for (const s of others) addCounts(rest, s);
+    byMoney(rest.revenue);
+  }
+  for (const s of named) {
+    s.campaigns = s.campaigns.sort((a, b) => busier(a, b) || a.campaign.localeCompare(b.campaign)).slice(0, TOP_CAMPAIGNS);
+    byMoney(s.revenue);
+    for (const c of s.campaigns) byMoney(c.revenue);
+  }
+
+  // Today's limits, from the owner's count across their apps. Their plan is read only past the free number.
+  let pausedToday: number | null = null;
+  let stepsPausedToday: number | null = null;
+  let free = false;
+  const [counted, steps] = [Number(owner?.people ?? 0), Number(owner?.steps ?? 0)];
+  if (counted >= freePeople() || steps >= freePeople()) {
+    const plan = await peopleCap(site.owner, at);
+    free = !plan.paid;
+    if (counted >= plan.cap) pausedToday = plan.cap;
+    if (steps >= plan.cap) stepsPausedToday = plan.cap;
+  }
+  const newest = <T extends { day: string }>(list: T[]) => list.sort((a, b) => b.day.localeCompare(a.day));
+  const base = (process.env.FLASH_APP_URL || SITE_URL).replace(/\/+$/, "");
+  return {
+    days,
+    today,
+    from: first,
+    shownDays,
+    totals: { ...totals, revenue: byMoney(totals.revenue) },
+    sources: named,
+    rest,
+    unmatched: { form: unmatched.form, signup: unmatched.signup, checkout: unmatched.checkout, orders: unmatched.orders, revenue: byMoney(unmatched.revenue) },
+    appSteps: [...appSteps]
+      .map(([step, n]) => ({ step, people: n }))
+      .sort((a, b) => b.people - a.people || a.step.localeCompare(b.step))
+      .slice(0, MAX_STEP_NAMES),
+    paused: newest(paused),
+    pausedToday,
+    stepsPaused: newest(stepsPaused),
+    stepsPausedToday,
+    netCapped,
+    free,
+    addresses: [`${base}/p/${slug}`, ...domains.map((d) => `https://${d}/`)],
+  };
 }
