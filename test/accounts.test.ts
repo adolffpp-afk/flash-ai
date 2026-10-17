@@ -639,13 +639,39 @@ const logout = (cookie: string, json: unknown, account?: string) => logoutRoute.
 
 test("logging out works only from Flash's own page", async () => {
   const a = await account("loa");
+  const b = await account("lob");
   const ta = await session(a);
-  const res = await logoutRoute.POST(new Request(`${ORIGIN}/api/auth/logout`, { method: "POST", headers: { cookie: `flash_session=${ta}`, origin: ORIGIN } }));
-  assert.equal(res.status, 403);
-  assert.deepEqual(res.headers.getSetCookie(), []);
-  assert.equal(await userOf(ta), a);
-  assert.equal((await logoutRoute.POST(req("/api/auth/logout", { cookie: `flash_session=${ta}`, json: {}, site: "cross-site" }))).status, 403);
-  assert.equal(await userOf(ta), a);
+  // A Log out with no body, as a tab loaded before this change sends it.
+  const bare = (cookie: string, headers: Record<string, string> = { origin: ORIGIN, "sec-fetch-site": "same-origin" }) =>
+    logoutRoute.POST(new Request(`${ORIGIN}/api/auth/logout`, { method: "POST", headers: { cookie, ...headers } }));
+  const refused = [
+    () => bare(`flash_session=${ta}`, { origin: "https://evil.example", "sec-fetch-site": "cross-site" }),
+    () => bare(`flash_session=${ta}`, { origin: "https://evil.example" }),
+    () => bare(`flash_session=${ta}`, { origin: "null" }),
+    () => bare(`flash_session=${ta}`, {}),
+    () => bare(`flash_session=${ta}`, { origin: ORIGIN, "sec-fetch-site": "cross-site" }),
+    () => bare(`flash_session=${ta}`, { origin: ORIGIN, "content-type": "text/plain" }),
+    () => logoutRoute.POST(req("/api/auth/logout", { cookie: `flash_session=${ta}`, json: {}, site: "cross-site" })),
+    () => logoutRoute.POST(req("/api/auth/logout", { cookie: `flash_session=${ta}`, json: {}, origin: "https://evil.example" })),
+  ];
+  for (const send of refused) {
+    const res = await send();
+    assert.equal(res.status, 403);
+    assert.deepEqual(res.headers.getSetCookie(), []);
+    assert.equal(await userOf(ta), a);
+  }
+  // With 2 accounts here, the old page's Log out can't say which: it changes nothing.
+  const { cookie, tokens } = await browser(a, b);
+  for (const res of [await bare(cookie), await bare(cookie, { origin: ORIGIN, "sec-fetch-site": "same-origin", "x-flash-account": a })]) {
+    assert.equal(res.status, 403);
+    assert.deepEqual(res.headers.getSetCookie(), []);
+  }
+  for (const token of tokens) assert.notEqual(await userOf(token), null);
+  // With one account, the old page's Log out ends its session here, as it always did.
+  const res = await bare(`flash_session=${ta}`);
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.headers.getSetCookie(), [auth.clearSessionCookie()]);
+  assert.equal(await userOf(ta), null);
 });
 
 test("Log out of this account ends only that account's session here, and the next one becomes the default", async () => {

@@ -412,6 +412,22 @@ export function fromOwnPage(request: Request): boolean {
   if (request.headers.get("sec-fetch-site") === "cross-site") return false;
   const origin = request.headers.get("origin");
   if (origin === null) return true;
+  return ownOrigin(request, origin);
+}
+
+/**
+ * Log out from a Flash page loaded before a browser could hold several accounts: it posts no body
+ * and no type at all. Browsers name the sending site in Origin on every such request, so this one
+ * must say it came from this site; another site's page, or one that hides where it is, can't.
+ */
+export function oldPageLogout(request: Request): boolean {
+  if (request.headers.has("content-type") || request.headers.get("sec-fetch-site") === "cross-site") return false;
+  const origin = request.headers.get("origin");
+  return origin !== null && ownOrigin(request, origin);
+}
+
+/** Whether an Origin header names this site. */
+function ownOrigin(request: Request, origin: string): boolean {
   // A sealed-off page sends "null", which isn't an address, so it matches nothing.
   const hostOf = (address: string) => {
     try {

@@ -7,6 +7,7 @@ import {
   heldTokens,
   isSecure,
   jarSessions,
+  oldPageLogout,
   removeFromJar,
   resolveSession,
 } from "@/lib/server/auth.ts";
@@ -21,12 +22,15 @@ import { translatorFor } from "@/lib/server/i18n.ts";
  * browser out of every account it holds, leaving their other devices signed in. Once a browser
  * holds 2 or more accounts, {} and { everywhere } need the tab's account (X-Flash-Account) and
  * change nothing without it, so a tab showing one account can never log out another. Only Flash's
- * own pages may ask (see fromOwnPage), so another site can't sign a visitor out.
+ * own pages may ask (see fromOwnPage), so another site can't sign a visitor out. A tab loaded
+ * before this change logs out with no body (oldPageLogout): that still works from this site while
+ * the browser holds one account and names none, as it did then.
  */
 export async function POST(request: Request) {
   const jar = await jarSessions(request);
   const t = await translatorFor(request, jar.byDefault?.user.language);
-  if (!fromOwnPage(request)) return Response.json({ error: t("Please use Flash's own page.") }, { status: 403 });
+  const oldPage = !jar.listed && !request.headers.has(ACCOUNT_HEADER) && oldPageLogout(request);
+  if (!fromOwnPage(request) && !oldPage) return Response.json({ error: t("Please use Flash's own page.") }, { status: 403 });
   const body = (await request.json().catch(() => ({}))) as { everywhere?: unknown; all?: unknown };
   const headers = new Headers({ "Cache-Control": "no-store" });
   const secure = isSecure(request);
