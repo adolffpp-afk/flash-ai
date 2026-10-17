@@ -1,0 +1,434 @@
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { register } from "node:module";
+
+/*
+ * Google PageSpeed Insights for a published app: only addresses Flash makes itself are tested, the key
+ * (when set) goes in a header, results are kept per version and address for a day, each owner and each
+ * app is limited, Google refusing stops the checks for a while, and nothing is ever charged.
+ */
+register("./support/route-hooks.mjs", import.meta.url);
+process.env.DATABASE_URL = ":memory:";
+process.env.FLASH_ADMIN_EMAILS = "";
+process.env.FLASH_APP_URL = "https://www.flash-app.dev";
+process.env.VERCEL_API_BASE_URL = "https://vercel.test";
+process.env.VERCEL_API_TOKEN = "t";
+process.env.VERCEL_PROJECT_ID = "flash-ai";
+delete process.env.PAGESPEED_API_KEY;
+delete process.env.FLASH_PAGESPEED_DAILY_REQUESTS;
+delete process.env.FLASH_TEST_PAGESPEED_URL;
+
+const { one, run } = await import("../src/lib/server/db.ts");
+const { pagespeedKeyProblem, runPageSpeed, REFUSED } = await import("../src/lib/server/pagespeed.ts");
+const { adminStats } = await import("../src/lib/server/admin-stats.ts");
+const { countOf } = await import("../src/lib/server/limits.ts");
+const route = await import("../src/app/api/sites/[slug]/pagespeed/route.ts");
+const seoRoute = await import("../src/app/api/sites/[slug]/seo/route.ts");
+
+const GOOGLE = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed";
+const KEY = `AIza${"Sy0_k-".repeat(5)}abcde`;
+const REFUSAL = readFileSync(new URL("./fixtures/pagespeed-refused.json", import.meta.url), "utf8");
+const HOUR = 3_600_000;
+
+/** What Google answers for one strategy: scores, its lab numbers, real visitors' numbers, and a screenshot that is never kept. */
+function result(strategy: string, overrides: { runtimeError?: unknown; originFallback?: boolean } = {}) {
+  const phone = strategy === "MOBILE";
+  return {
+    loadingExperience: {
+      id: "https://www.flash-app.dev/p/x",
+      metrics: {
+        LARGEST_CONTENTFUL_PAINT_MS: { percentile: phone ? 2900 : 1400, category: phone ? "AVERAGE" : "FAST" },
+        INTERACTION_TO_NEXT_PAINT: { percentile: 180, category: "FAST" },
+        CUMULATIVE_LAYOUT_SHIFT_SCORE: { percentile: 31, category: "SLOW" },
+        FIRST_INPUT_DELAY_MS: { percentile: 9, category: "FAST" },
+      },
+      ...(overrides.originFallback && { origin_fallback: true }),
+      overall_category: "AVERAGE",
+    },
+    lighthouseResult: {
+      ...(overrides.runtimeError ? { runtimeError: overrides.runtimeError } : {}),
+      categories: {
+        performance: { id: "performance", score: phone ? 0.734 : 0.98, auditRefs: [{ id: "largest-contentful-paint", weight: 25 }] },
+        accessibility: { id: "accessibility", score: 0.91 },
+        "best-practices": { id: "best-practices", score: 1 },
+        seo: { id: "seo", score: phone ? null : 0.9 },
+      },
+      audits: {
+        "largest-contentful-paint": { numericValue: phone ? 3123.4 : 812.9, displayValue: "3.1 s" },
+        "cumulative-layout-shift": { numericValue: 0.042 },
+        "total-blocking-time": { numericValue: phone ? 410 : 20 },
+        "first-contentful-paint": { numericValue: phone ? 1820 : 610 },
+        "final-screenshot": { details: { data: `data:image/jpeg;base64,${"A".repeat(50_000)}` } },
+      },
+    },
+  };
+}
+
+type Reply = { status: number; body: string } | "never" | Promise<{ status: number; body: string }>;
+const ok = (strategy: string) => ({ status: 200, body: JSON.stringify(result(strategy)) });
+let googleReply: (strategy: string) => Reply = ok;
+const google: { url: URL; key: string | null }[] = [];
+const elsewhere: string[] = [];
+// What Vercel says about each domain: connected, or its DNS leading somewhere else.
+const vercel: Record<string, boolean> = { "crumb.pt": true, "www.crumb.pt": true, "lapsed.pt": false };
+
+globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+  const url = new URL(String(input));
+  if (url.href.startsWith(GOOGLE)) {
+    const headers = new Headers(init?.headers);
+    google.push({ url, key: headers.get("x-goog-api-key") });
+    const reply = googleReply(url.searchParams.get("strategy") ?? "");
+    if (reply === "never") {
+      // A request's timeout doesn't keep Node running by itself, so this does until it fires.
+      const alive = setTimeout(() => {}, 60_000);
+      return new Promise((_, reject) =>
+        init?.signal?.addEventListener("abort", () => {
+          clearTimeout(alive);
+          reject(new DOMException("The operation was aborted.", "AbortError"));
+        }),
+      );
+    }
+    const { status, body } = await reply;
+    return new Response(body, { status, headers: { "content-type": "application/json" } });
+  }
+  if (url.origin === "https://vercel.test") {
+    const domain = Object.keys(vercel).find((d) => url.pathname.includes(`/${d}`));
+    if (!domain) return Response.json({ error: { code: "not_found" } }, { status: 404 });
+    if (url.pathname.endsWith("/config")) return Response.json({ misconfigured: !vercel[domain] });
+    return Response.json({ verified: true });
+  }
+  elsewhere.push(url.href);
+  throw new Error(`unexpected fetch: ${url.href}`);
+}) as typeof fetch;
+
+/** A confirmed user with a session and a published app of theirs, at version 1000. */
+async function owner(id: string, domains: string[] = []) {
+  const token = `tok_${id}`;
+  await run("INSERT INTO users (id, email, password_hash, created_at, verified_at) VALUES (?, ?, 'x', 0, 1)", [id, `${id}@example.com`]);
+  await run("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)", [createHash("sha256").update(token).digest("hex"), id, Date.now() + 3600_000]);
+  const slug = `crumb-${id}`;
+  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES (?, ?, 'Golden Crumb', '<!doctype html><title>Golden Crumb</title><h1>Bread</h1>', 0, 1000)", [
+    slug,
+    id,
+  ]);
+  for (const [i, domain] of domains.entries()) await run("INSERT INTO site_domains (domain, site_slug, user_id, created_at) VALUES (?, ?, ?, ?)", [domain, slug, id, i]);
+  return { id, slug, cookie: `flash_session=${token}` };
+}
+type Owner = Awaited<ReturnType<typeof owner>>;
+
+/** The owner presses Check with Google. Each test starts with Google's per-second slots free. */
+async function check(who: Owner, body: unknown = {}, slug = who.slug) {
+  await run("DELETE FROM rate_limits WHERE key LIKE 'source:pagespeed:%'");
+  const res = await route.POST(
+    new Request(`http://localhost/api/sites/${slug}/pagespeed`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: "http://localhost", cookie: who.cookie },
+      body: JSON.stringify(body),
+    }),
+    { params: Promise.resolve({ slug }) } as never,
+  );
+  return { status: res.status, body: (await res.json()) as Record<string, unknown> & { pagespeed?: Record<string, unknown>; code?: string; error?: string } };
+}
+const seo = async (who: Owner) =>
+  (await (
+    await seoRoute.GET(new Request(`http://localhost/api/sites/${who.slug}/seo`, { headers: { cookie: who.cookie } }), { params: Promise.resolve({ slug: who.slug }) } as never)
+  ).json()) as { checkedAt: number; pagespeed: { for: number; url: string } | null; pagespeedStale: boolean; pagespeedAvailable: boolean; pagespeedRunning: boolean };
+const saved = async (slug: string) => (await one<{ pagespeed: string }>("SELECT pagespeed FROM sites WHERE slug = ?", [slug]))!.pagespeed;
+const republish = (slug: string) => run("UPDATE sites SET updated_at = updated_at + 1 WHERE slug = ?", [slug]);
+const fresh = async () => {
+  google.length = 0;
+  googleReply = ok;
+  await run("DELETE FROM source_cache");
+};
+
+test("Google is asked about the app's own address, phone and computer, with the key only in a header", async () => {
+  await fresh();
+  const who = await owner("req", ["www.crumb.pt", "crumb.pt"]);
+  const res = await check(who, { url: "https://evil.example", address: "flash" });
+  assert.equal(res.status, 200);
+  assert.equal(google.length, 2);
+  assert.deepEqual(google.map((c) => c.url.searchParams.get("strategy")).sort(), ["DESKTOP", "MOBILE"]);
+  for (const { url, key } of google) {
+    assert.equal(url.origin + url.pathname, GOOGLE);
+    assert.equal(url.searchParams.get("url"), `https://www.flash-app.dev/p/${who.slug}`);
+    assert.deepEqual(url.searchParams.getAll("category"), ["PERFORMANCE", "ACCESSIBILITY", "BEST_PRACTICES", "SEO"]);
+    assert.equal(key, null, "no key, no header");
+    assert.ok(!url.href.includes("evil.example"), "an address in the request is never used");
+    assert.ok(!url.searchParams.has("key"));
+  }
+  assert.ok(!elsewhere.length, "nothing else was fetched");
+
+  // On its own domain: the bare one is preferred over www.
+  google.length = 0;
+  process.env.PAGESPEED_API_KEY = KEY;
+  const onDomain = await check(who, { address: "domain" });
+  assert.equal(onDomain.status, 200);
+  assert.equal(google.length, 2);
+  for (const { url, key } of google) {
+    assert.equal(url.searchParams.get("url"), "https://crumb.pt/");
+    assert.equal(key, KEY, "the key goes in X-goog-api-key");
+    assert.ok(!url.href.includes(KEY), "never in the address");
+  }
+  delete process.env.PAGESPEED_API_KEY;
+
+  // With no domain, there's nothing to check there.
+  const bare = await owner("req-bare");
+  assert.equal((await check(bare, { address: "domain" })).status, 400);
+});
+
+test("a domain that doesn't point at Flash isn't checked", async () => {
+  await fresh();
+  const who = await owner("lapsed", ["lapsed.pt"]);
+  const res = await check(who, { address: "domain" });
+  assert.equal(res.status, 409);
+  assert.equal(res.body.code, "domain_not_connected");
+  assert.equal(res.body.error, "Your domain doesn't point at Flash yet, so Google can't check your app there.");
+  assert.equal(google.length, 0, "Google was never asked");
+  assert.equal(await saved(who.slug), "");
+});
+
+test("only the scores, Google's test numbers and real visitors' numbers are kept, and shown", async () => {
+  await fresh();
+  const who = await owner("trim");
+  const before = Date.now();
+  const res = await check(who);
+  assert.equal(res.status, 200);
+  const record = res.body.pagespeed as Record<string, unknown>;
+  assert.ok(Number(record.at) >= before);
+  assert.deepEqual({ ...record, at: 0 }, {
+    v: 1,
+    at: 0,
+    for: 1000,
+    url: `https://www.flash-app.dev/p/${who.slug}`,
+    mobile: {
+      ok: true,
+      scores: { performance: 73, accessibility: 91, bestPractices: 100, seo: null },
+      lab: { lcpMs: 3123.4, cls: 0.042, tbtMs: 410, fcpMs: 1820 },
+      field: { lcp: { p75: 2900, rating: "needs" }, inp: { p75: 180, rating: "good" }, cls: { p75: 0.31, rating: "poor" } },
+    },
+    desktop: {
+      ok: true,
+      scores: { performance: 98, accessibility: 91, bestPractices: 100, seo: 90 },
+      lab: { lcpMs: 812.9, cls: 0.042, tbtMs: 20, fcpMs: 610 },
+      field: { lcp: { p75: 1400, rating: "good" }, inp: { p75: 180, rating: "good" }, cls: { p75: 0.31, rating: "poor" } },
+    },
+  });
+  assert.deepEqual(JSON.parse(await saved(who.slug)), record, "stored with the app");
+  assert.ok((await saved(who.slug)).length < 2000, "no screenshot");
+  const view = await seo(who);
+  assert.deepEqual(view.pagespeed, record);
+  assert.equal(view.pagespeedStale, false);
+  assert.equal(view.pagespeedAvailable, true);
+  assert.equal(view.pagespeedRunning, false);
+  await republish(who.slug);
+  assert.equal((await seo(who)).pagespeedStale, true, "from before the last update");
+});
+
+test("a check is kept a day for the same version and address", async () => {
+  await fresh();
+  const who = await owner("cache", ["crumb-cache.pt"]);
+  vercel["crumb-cache.pt"] = true;
+  assert.equal((await check(who)).status, 200);
+  assert.equal(google.length, 2);
+  const again = await check(who);
+  assert.equal(again.body.cached, true);
+  assert.equal(google.length, 2, "no new check");
+
+  await republish(who.slug);
+  assert.equal((await check(who)).body.cached, undefined);
+  assert.equal(google.length, 4, "a new version is checked again");
+
+  const record = JSON.parse(await saved(who.slug));
+  await run("UPDATE sites SET pagespeed = ? WHERE slug = ?", [JSON.stringify({ ...record, at: Date.now() - 25 * HOUR }), who.slug]);
+  assert.equal((await check(who)).body.cached, undefined);
+  assert.equal(google.length, 6, "after a day it's checked again");
+
+  const domain = await check(who, { address: "domain" });
+  assert.equal(domain.body.cached, undefined, "the other address isn't answered with this one's result");
+  assert.equal((domain.body.pagespeed as { url: string }).url, "https://crumb-cache.pt/");
+  assert.equal(google.length, 8);
+});
+
+test("each owner has a few checks an hour, waiting for a running one uses none, and Flash's daily allowance holds", async () => {
+  await fresh();
+  const who = await owner("limits");
+  assert.equal((await check(who)).status, 200);
+  assert.equal((await check(who)).body.cached, true, "a kept result doesn't count");
+  for (let i = 2; i <= 10; i++) {
+    await republish(who.slug);
+    assert.equal((await check(who)).status, 200, `check ${i}`);
+  }
+  await republish(who.slug);
+  const eleventh = await check(who);
+  assert.equal(eleventh.status, 429);
+  assert.equal(eleventh.body.error, "Too many requests. Try again in an hour.");
+  assert.equal(google.length, 20);
+
+  // One check of an app at a time: a second press while it runs waits for it, and doesn't count.
+  const other = await owner("parallel");
+  let release!: () => void;
+  const held = new Promise<{ status: number; body: string }>((resolve) => (release = () => resolve(ok("MOBILE"))));
+  googleReply = () => held;
+  const first = check(other);
+  await new Promise((r) => setTimeout(r, 100));
+  assert.equal(await countOf(`pagespeed:${other.id}`), 1);
+  assert.equal((await seo(other)).pagespeedRunning, true);
+  const second = await check(other);
+  assert.equal(second.status, 409);
+  assert.equal(second.body.code, "running");
+  assert.equal(second.body.error, "Google is still checking this page. The result shows here when it's done.");
+  assert.equal(await countOf(`pagespeed:${other.id}`), 1, "waiting used up no check");
+  release();
+  assert.equal((await first).status, 200);
+  assert.equal((await seo(other)).pagespeedRunning, false);
+  googleReply = ok;
+
+  // Flash's daily allowance for everyone together: then Google isn't asked, and the owner is told it's busy.
+  const capped = await owner("capped");
+  const used = await one<{ requests: number }>("SELECT requests FROM free_quota WHERE provider = 'pagespeed'");
+  process.env.FLASH_PAGESPEED_DAILY_REQUESTS = String(used!.requests);
+  google.length = 0;
+  const busy = await check(capped);
+  delete process.env.FLASH_PAGESPEED_DAILY_REQUESTS;
+  assert.equal(busy.status, 503);
+  assert.equal(busy.body.code, "busy");
+  assert.equal(busy.body.error, "Google's free speed check is busy right now. Try again later.");
+  assert.equal(google.length, 0);
+});
+
+test("Google refusing stops the checks for a while, and the view says so", async () => {
+  await fresh();
+  const who = await owner("refused");
+  googleReply = () => ({ status: 429, body: REFUSAL });
+  const refused = await check(who);
+  assert.equal(refused.status, 503);
+  assert.equal(refused.body.code, "quota");
+  const cooldown = await one<{ expires_at: number }>("SELECT expires_at FROM source_cache WHERE key = ?", [REFUSED]);
+  assert.ok(Math.abs(Number(cooldown!.expires_at) - Date.now() - 6 * HOUR) < 60_000, "six hours without a key");
+  assert.equal(await saved(who.slug), "", "nothing kept");
+
+  google.length = 0;
+  const next = await check(who);
+  assert.equal(next.status, 503);
+  assert.equal(next.body.code, "pagespeed_unavailable");
+  assert.equal(next.body.error, "Google's speed check isn't available right now. Flash's own check above still works.");
+  assert.equal(google.length, 0, "Google isn't asked again");
+  assert.equal((await seo(who)).pagespeedAvailable, false);
+
+  // With a key, Google refusing is usually a burst: a short pause.
+  await run("DELETE FROM source_cache");
+  process.env.PAGESPEED_API_KEY = KEY;
+  await republish(who.slug);
+  await check(who);
+  delete process.env.PAGESPEED_API_KEY;
+  const short = await one<{ expires_at: number }>("SELECT expires_at FROM source_cache WHERE key = ?", [REFUSED]);
+  assert.ok(Math.abs(Number(short!.expires_at) - Date.now() - 10 * 60_000) < 60_000, "ten minutes with a key");
+});
+
+test("a run Google couldn't finish shows no scores, and Flash's own numbers for the whole site are never shown as the app's", async () => {
+  await fresh();
+  const target = "https://www.flash-app.dev/p/bad-runs";
+  googleReply = (s) => ({ status: 200, body: JSON.stringify(result(s, { runtimeError: { code: "NO_FCP", message: "The page did not paint any content." } })) });
+  assert.deepEqual(await runPageSpeed(target, "mobile"), { ok: false, error: "unreachable" });
+
+  googleReply = (s) => ({ status: 200, body: JSON.stringify(result(s, { originFallback: true })) });
+  const fallback = await runPageSpeed(target, "mobile");
+  assert.ok(fallback.ok);
+  assert.equal(fallback.field, null, "the origin's numbers aren't this app's");
+  assert.equal(fallback.scores.performance, 73);
+
+  googleReply = () => "never";
+  assert.deepEqual(await runPageSpeed(target, "mobile", { timeoutMs: 50 }), { ok: false, error: "slow" });
+
+  googleReply = ok;
+  assert.deepEqual(await runPageSpeed(target, "mobile", { maxBytes: 1000 }), { ok: false, error: "unreachable" });
+
+  googleReply = () => ({ status: 400, body: JSON.stringify({ error: { code: 400, message: "Lighthouse returned error: FAILED_DOCUMENT_REQUEST." } }) });
+  assert.deepEqual(await runPageSpeed(target, "desktop"), { ok: false, error: "unreachable" });
+  googleReply = () => ({ status: 500, body: "{}" });
+  assert.deepEqual(await runPageSpeed(target, "desktop"), { ok: false, error: "unreachable" });
+  googleReply = () => ({ status: 200, body: "not json" });
+  assert.deepEqual(await runPageSpeed(target, "desktop"), { ok: false, error: "unreachable" });
+  assert.ok(!(await one("SELECT 1 FROM source_cache WHERE key = ?", [REFUSED])), "none of these stop the checks");
+
+  // One that failed on both is answered the same for a while, without asking Google again.
+  const who = await owner("failing");
+  googleReply = () => ({ status: 502, body: "{}" });
+  const failed = await check(who);
+  assert.equal(failed.status, 502);
+  assert.equal(failed.body.code, "unreachable");
+  assert.equal(failed.body.error, "Google couldn't load your page this time. Try again in a few minutes.");
+  google.length = 0;
+  assert.equal((await check(who)).body.code, "unreachable");
+  assert.equal(google.length, 0);
+  // One that fails on a phone only is kept, with the computer's scores.
+  await republish(who.slug);
+  googleReply = (s) => (s === "MOBILE" ? "never" : ok(s));
+  const half = await runPageSpeed(target, "mobile", { timeoutMs: 50 });
+  assert.deepEqual(half, { ok: false, error: "slow" });
+  googleReply = (s) => (s === "MOBILE" ? { status: 502, body: "{}" } : ok(s));
+  const partial = await check(who);
+  assert.equal(partial.status, 200);
+  const record = partial.body.pagespeed as { mobile: unknown; desktop: { ok: boolean } };
+  assert.deepEqual(record.mobile, { ok: false, error: "unreachable" });
+  assert.equal(record.desktop.ok, true);
+});
+
+test("the key never shows in the logs or in what's kept", async () => {
+  await fresh();
+  process.env.PAGESPEED_API_KEY = KEY;
+  const logged: string[] = [];
+  const { error, warn } = console;
+  console.error = (...args: unknown[]) => void logged.push(args.map(String).join(" "));
+  console.warn = (...args: unknown[]) => void logged.push(args.map(String).join(" "));
+  try {
+    const who = await owner("secret");
+    googleReply = (s) => (s === "MOBILE" ? { status: 500, body: JSON.stringify({ error: { message: `bad key ${KEY}` } }) } : ok(s));
+    assert.equal((await check(who)).status, 200);
+    await runPageSpeed("https://www.flash-app.dev/p/x", "desktop", { timeoutMs: 1, maxBytes: 10 });
+    assert.ok(logged.length >= 1, "the failure is logged");
+    assert.ok(logged.every((line) => !line.includes("AIza") && !line.includes("googleapis")), logged.join("\n"));
+    assert.ok(!(await saved(who.slug)).includes("AIza"));
+  } finally {
+    console.error = error;
+    console.warn = warn;
+    delete process.env.PAGESPEED_API_KEY;
+  }
+});
+
+test("the owner dashboard lists PageSpeed Insights, with its uses and any problem with its key", async () => {
+  assert.equal(pagespeedKeyProblem({}), "");
+  assert.equal(pagespeedKeyProblem({ PAGESPEED_API_KEY: KEY }), "");
+  assert.equal(KEY.length, 39);
+  assert.match(pagespeedKeyProblem({ PAGESPEED_API_KEY: "AIzaTooShort" }), /39-character key/);
+  assert.match(pagespeedKeyProblem({ PAGESPEED_API_KEY: `xyz${KEY.slice(3)}` }), /starts with AIza/);
+  const body = JSON.parse(JSON.stringify(await adminStats(30)));
+  const row = body.byProvider.find((p: { id: string }) => p.id === "pagespeed");
+  assert.ok(row);
+  assert.deepEqual([row.provider, row.free, row.noKey, row.setUp], ["PageSpeed Insights", true, true, true]);
+  const sent = await one<{ n: number }>("SELECT COALESCE(SUM(requests), 0) AS n FROM free_quota WHERE provider = 'pagespeed'");
+  assert.ok(Number(sent?.n) > 0);
+  assert.equal(row.requests, Number(sent?.n), "its uses are the requests Flash sent");
+  process.env.PAGESPEED_API_KEY = "nope";
+  const wrong = JSON.parse(JSON.stringify(await adminStats(30))).byProvider.find((p: { id: string }) => p.id === "pagespeed");
+  delete process.env.PAGESPEED_API_KEY;
+  assert.equal(wrong.setUp, false);
+  assert.match(wrong.missing[0], /PAGESPEED_API_KEY must be/);
+});
+
+test("checking with Google never charges anything", async () => {
+  await fresh();
+  const who = await owner("free");
+  await run("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES (?, 300, 'grant', 0)", [who.id]);
+  const total = async () => Number((await one<{ b: number }>("SELECT COALESCE(SUM(amount), 0) AS b FROM credit_ledger"))?.b);
+  const before = await total();
+  await check(who);
+  await check(who);
+  await republish(who.slug);
+  googleReply = () => ({ status: 500, body: "{}" });
+  await check(who);
+  await seo(who);
+  assert.equal(await total(), before);
+});

@@ -12,6 +12,9 @@ Flash's AI can look things up in three free public sources:
 Each one stays hidden until its settings are in Vercel. In Flash, **/admin** → **By provider** lists
 SearXNG, SEC EDGAR and FRED, and says "Missing …" next to anything still to add.
 
+At the end are the steps for **PageSpeed Insights**, which isn't something the AI looks up: it
+scores published apps in My websites & apps › SEO, and works (less reliably) without a key.
+
 These steps use Firefox, but any browser works the same way.
 
 ## Web search (SearXNG)
@@ -114,6 +117,43 @@ Reserve Bank of St. Louis." and a link to FRED's API Terms of Use. The Terms of 
 Policy say the same. Flash refuses FRED series that are someone else's copyright, as FRED's terms
 ask. Don't use the Federal Reserve's logo or say FRED endorses Flash anywhere else (the website,
 ads, the app store).
+
+## PageSpeed Insights (scores for published apps, not an AI tool)
+
+**My websites & apps** → **SEO** → **Check with Google** asks Google's free PageSpeed Insights to load
+an app's live page on a phone and on a computer, and shows Google's speed, accessibility, best
+practices and SEO scores. It works without a key, but Google usually refuses keyless checks (every
+keyless caller shares one quota, which can be 0), so add one. It's free: the API has no paid tier, and
+the project never needs billing.
+
+1. Open [console.cloud.google.com](https://console.cloud.google.com/) and pick the existing
+   **Flash AI Connectors** project in the project list at the top (the one Google Drive in chat uses,
+   see docs/connectors-setup.md). Check its name shows at the top before each step. Never turn on
+   billing for it: nothing here needs it, and if a page asks for a billing account, stop and close it.
+2. **APIs & Services** → **Library**, search for **PageSpeed Insights API**, open it and click
+   **Enable**.
+3. **APIs & Services** → **Credentials** → **Create credentials** → **API key**. Google shows a key of
+   39 characters that starts with `AIza`. Copy it.
+4. Click the new key (or **Edit API key**). Under **API restrictions**, choose **Restrict key**, tick
+   only **PageSpeed Insights API**, and click **Save**. Leave **Application restrictions** at None:
+   Flash's server calls it, not a browser.
+5. **APIs & Services** → **PageSpeed Insights API** → **Quotas**: check the queries per day (about
+   25,000) and per 100 seconds. Flash sends at most `FLASH_PAGESPEED_DAILY_REQUESTS` a day (5,000 with
+   a key), 2 for each check.
+6. In Vercel → the **flash-ai** project → **Settings** → **Environment Variables**, add
+   `PAGESPEED_API_KEY` with the key, tick **Sensitive**, choose **Production** only, and click
+   **Save**.
+7. Go to **Deployments**, open the menu (**⋯**) next to the latest one, and click **Redeploy**.
+
+**Check it:** **/admin** → **By provider** shows PageSpeed Insights with no problem next to it, and
+its uses grow after someone presses **Check with Google**. A key of the wrong shape shows "PAGESPEED_API_KEY
+must be the 39-character key Google Cloud shows".
+
+**What people see:** each owner can check their apps a few times an hour (10 an hour, 30 a day). A
+check of the same version at the same address is kept for a day, so pressing it again doesn't ask
+Google. When Google refuses, the button hides for a while and Flash's own search check still works.
+Google's test opens the app like a visitor: an app whose AI it would ask gets "not available", so it
+never spends the owner's credits.
 
 ## Prices
 
