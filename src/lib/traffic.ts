@@ -1,7 +1,101 @@
 /*
  * Where a visit to a published app came from, worked out from its address and referrer alone (see
- * server/visits.ts). Nothing here reads or keeps anything about the person. Safe in the browser too.
+ * server/visits.ts): the link's tags (utm_source, utm_medium, utm_campaign, or ref), an ad's click
+ * ID, else the website the visitor came from. Nothing here reads or keeps anything about the
+ * person, and a tag that looks like personal data is left out. Safe in the browser too.
  */
+
+/** Where someone came from, as the owner sees it: "instagram.com", "paid", "spring-sale". */
+export type Touch = { source: string; medium: string; campaign: string };
+/** Typed in, bookmarked, or shared in a message. */
+export const DIRECT: Touch = { source: "", medium: "", campaign: "" };
+/** Past an app's 30 sources of the day, and the visits of people who weren't counted, under a source new that day. */
+export const OTHER: Touch = { source: "(other)", medium: "", campaign: "" };
+/** The source of a form, sign-up or order Flash couldn't tie to a visit that day or the day before. */
+export const UNMATCHED = "?";
+
+const MAX_TAG = 40;
+const MAX_SOURCE = 60;
+// An email address, a phone number, or a subscriber's or click's ID: a tag holding one isn't used.
+const PERSONAL = /@|\d{7,}|[0-9a-f]{16,}/i;
+// What people type in utm_source, as the name a referrer from there would give.
+const ALIASES: Record<string, string> = {
+  google: "google.com",
+  fb: "facebook.com",
+  facebook: "facebook.com",
+  ig: "instagram.com",
+  instagram: "instagram.com",
+  tiktok: "tiktok.com",
+  yt: "youtube.com",
+  youtube: "youtube.com",
+  linkedin: "linkedin.com",
+  pinterest: "pinterest.com",
+  reddit: "reddit.com",
+  twitter: "x.com",
+  x: "x.com",
+  bing: "bing.com",
+  duckduckgo: "duckduckgo.com",
+  yahoo: "yahoo.com",
+};
+
+/**
+ * A link tag's value as Flash keeps it: lowercase letters, digits, dots, - and _ in any script, at
+ * most 40 characters, or "" when it is missing or looks like personal data.
+ */
+export function cleanTag(value: string | null | undefined): string {
+  if (!value) return "";
+  // Cut first, so no pattern runs on a long value.
+  const cut = value.slice(0, 200);
+  if (PERSONAL.test(cut)) return "";
+  return cut
+    .toLowerCase()
+    .replace(/[^\p{L}\p{M}\p{N}._ -]/gu, "")
+    .trim()
+    .replace(/ +/g, "-")
+    .slice(0, MAX_TAG);
+}
+
+/** A website's name as Flash shows it: search engines and social apps by their main name (m.facebook.com is facebook.com). */
+export function foldHost(host: string): string {
+  const name = host.toLowerCase().replace(/^www\./, "");
+  const known = name.match(/(?:^|\.)(google|bing|duckduckgo|yahoo|facebook|instagram|tiktok|youtube|linkedin|pinterest|reddit)\.[a-z.]+$/);
+  if (known) return known[1] === "google" ? "google.com" : `${known[1]}.com`;
+  if (name === "t.co") return "x.com";
+  return name.slice(0, MAX_SOURCE);
+}
+
+/** Where a visit came from: the other website's name, or "" when typed in, bookmarked or from the site itself. */
+export function visitSource(referrer: string | null, host: string | null): string {
+  if (!referrer) return "";
+  try {
+    const from = new URL(referrer);
+    if (!from.protocol.startsWith("http")) return "";
+    const name = from.hostname.toLowerCase().replace(/^www\./, "");
+    if (!name || name === (host ?? "").toLowerCase().split(":")[0].replace(/^www\./, "")) return "";
+    return foldHost(name);
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Where a page load came from, taking the first that applies: the link's tags (utm_source, else
+ * ref), a Google or Microsoft ad's click ID, else the referring website. utm_content and utm_term
+ * are never read.
+ */
+export function touchOf(url: URL, referer: string | null, host: string | null): Touch {
+  const tag = (name: string) => cleanTag(url.searchParams.get(name));
+  const utm = tag("utm_source");
+  const named = utm || tag("ref");
+  if (named) {
+    const source = ALIASES[named] ?? (named.includes(".") ? foldHost(named) : named);
+    return utm ? { source, medium: tag("utm_medium"), campaign: tag("utm_campaign") } : { source, medium: "", campaign: "" };
+  }
+  // Facebook's fbclid is left out: Facebook adds it to links nobody paid for too.
+  if (["gclid", "gbraid", "wbraid"].some((name) => url.searchParams.get(name))) return { source: "google.com", medium: "paid", campaign: "" };
+  if (url.searchParams.get("msclkid")) return { source: "bing.com", medium: "paid", campaign: "" };
+  return { ...DIRECT, source: visitSource(referer, host) };
+}
 
 /**
  * Whether a page load is the same person coming back in the middle of something, not a new visit:
@@ -15,3 +109,29 @@ export function isReturnTrip(url: URL, referer: string | null): boolean {
     return false;
   }
 }
+
+/**
+ * The app's address with tags saying where it was shared, cleaned as Flash will read them, so the
+ * link counts under exactly the names shown. base as it is when the source is empty.
+ */
+export function taggedLink(base: string, tags: { source: string; campaign?: string }): string {
+  const source = cleanTag(tags.source);
+  if (!source) return base;
+  try {
+    const url = new URL(base);
+    url.searchParams.set("utm_source", source);
+    const campaign = cleanTag(tags.campaign);
+    if (campaign) url.searchParams.set("utm_campaign", campaign);
+    else url.searchParams.delete("utm_campaign");
+    return url.href;
+  } catch {
+    return base;
+  }
+}
+
+/** How many visitors took a step, as a fraction: only from 100 visitors, so a rate is never read into a handful of people. */
+export const share = (n: number, base: number): number | null => (base >= 100 && n >= 0 && n <= base ? n / base : null);
+
+/** A fraction as a percentage in the reader's own way of writing it ("2.3%", "2,3 %", "%2,3"), with one decimal under 10%. */
+export const percent = (fraction: number, locale: string): string =>
+  new Intl.NumberFormat(locale, { style: "percent", maximumFractionDigits: fraction < 0.1 ? 1 : 0 }).format(fraction);

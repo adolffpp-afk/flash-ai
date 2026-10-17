@@ -190,8 +190,13 @@ const SCHEMA = [
   // table also keeps the key in an automatic index, which Turso bills as another row written.
   //
   // Daily counts per app of people who took each step (see visits.ts), never who they were. step is
-  // 'visit', or 'visit-old' for people counted before site_people, from site_visitors. source is ''
-  // for Direct. n is people, each counted once a day per step. Kept 100 days.
+  // one of:
+  //   'visit';
+  //   'visit-old': people counted before site_people, from site_visitors;
+  //   'capped': the owner's daily people limit was reached and this app missed people that day;
+  //   'capped-net': one network passed its number of new people that day, and later ones were views only.
+  // source is '' for Direct, and '(other)' past the day's limit of sources. n is people, each counted
+  // once a day per step; in the marks it is the limit. Kept 100 days.
   `CREATE TABLE IF NOT EXISTS site_events (
     site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
     day TEXT NOT NULL,
@@ -217,6 +222,14 @@ const SCHEMA = [
     campaign TEXT NOT NULL DEFAULT '',
     steps TEXT NOT NULL DEFAULT '[]',
     PRIMARY KEY (site_slug, day, visitor)
+  ) WITHOUT ROWID`,
+  // How many people were counted each day across all of one owner's apps (see visits.ts), for their
+  // plan's daily limit. Deleted after 2 days.
+  `CREATE TABLE IF NOT EXISTS owner_people (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    day TEXT NOT NULL,
+    people INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, day)
   ) WITHOUT ROWID`,
   // The random key that makes each day's visitor codes (see visits.ts). Deleted after 2 days, with
   // the codes it made, so no code can be traced back to an address after that.

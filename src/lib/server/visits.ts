@@ -10,15 +10,48 @@ import type { InValue } from "@libsql/client";
 import { all, db, one, run } from "./db.ts";
 import { sha256 } from "./ids.ts";
 import { clientIp } from "./limits.ts";
-import { isReturnTrip } from "../traffic.ts";
+import { isAdmin } from "./auth.ts";
+import { activeSubscription } from "./subscriptions.ts";
+import { OTHER, isReturnTrip, touchOf, visitSource, type Touch } from "../traffic.ts";
+
+export { visitSource };
 
 type Statement = { sql: string; args: InValue[] };
 
 const DAY = 86_400_000;
+const MINUTE = 60_000;
 const DAYS_SHOWN = 30;
 /** How many days of daily totals (views, people) are kept: today and the 99 before it. */
 export const KEEP_DAYS = 100;
-const MAX_SOURCE = 60;
+
+/*
+ * How many people are counted each UTC day across all of one owner's apps, by their plan (set by
+ * Flash's plans). Past it the apps work as before and views still count, but new people that day
+ * aren't counted, so their forms, sign-ups and checkouts show as not matched. A team member's apps
+ * count against the member's own plan.
+ */
+export const FREE_PEOPLE_PER_DAY = 10_000;
+export const PLAN_PEOPLE: Record<string, number> = {
+  lite: 20_000,
+  pro: 50_000,
+  power: 100_000,
+  business: 150_000,
+  max: 300_000,
+  agency: 500_000,
+};
+/** New people each server counts per owner per day from one internet connection, so one stranger can't use up the owner's day. */
+export const NETWORK_PEOPLE = 100;
+/** Sources (each with its medium and campaign) per app per day; past them, people count under "(other)". */
+export const MAX_TOUCHES = 30;
+// How long a server goes by what it read of an owner's plan, and by "paused for today".
+const PLAN_MEMORY = 15 * MINUTE;
+// Past this many connections in memory, the older half is forgotten.
+const MAX_NETWORKS = 50_000;
+
+/** What tests change (see test/visits.test.ts): smaller limits, and a prune that fails. Flash itself never does. */
+export const visitTests = { freePeople: 0, networkPeople: 0, failPrune: false };
+const freePeople = () => visitTests.freePeople || FREE_PEOPLE_PER_DAY;
+const networkPeople = () => visitTests.networkPeople || NETWORK_PEOPLE;
 // Crawlers, link previews, uptime checkers, browsers run by scripts, and AI assistants fetching a
 // page for someone aren't people looking at it.
 const ROBOT =
@@ -28,24 +61,6 @@ const ROBOT =
 export const dayOf = (t: number) => new Date(t).toISOString().slice(0, 10);
 /** How many days from one day to another ("2026-10-01" to "2026-10-04" is 3). */
 export const daysBetween = (from: string, to: string) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / DAY);
-
-/** Where a visit came from: the other website's name, or "" when typed in, bookmarked or from the site itself. */
-export function visitSource(referrer: string | null, host: string | null): string {
-  if (!referrer) return "";
-  try {
-    const from = new URL(referrer);
-    if (!from.protocol.startsWith("http")) return "";
-    const name = from.hostname.toLowerCase().replace(/^www\./, "");
-    if (!name || name === (host ?? "").toLowerCase().split(":")[0].replace(/^www\./, "")) return "";
-    // Search engines and social apps send many subdomains (m.facebook.com, l.instagram.com).
-    const known = name.match(/(?:^|\.)(google|bing|duckduckgo|yahoo|facebook|instagram|tiktok|youtube|linkedin|pinterest|reddit)\.[a-z.]+$/);
-    if (known) return known[1] === "google" ? "google.com" : `${known[1]}.com`;
-    if (name === "t.co") return "x.com";
-    return name.slice(0, MAX_SOURCE);
-  } catch {
-    return "";
-  }
-}
 
 /**
  * Whether a page request is a person looking at the page, not a robot or a prefetch. Browsers, and
@@ -60,12 +75,19 @@ export function isPersonVisit(request: Request): boolean {
 
 /*
  * What each server remembers, so most loads read nothing extra: the day's keys (today's and
- * yesterday's), the day counting began, and whether it tried the daily prune today.
+ * yesterday's), the day counting began, whether it tried the daily prune today, owners' plans and
+ * "paused for today" for 15 minutes, the marks it wrote today, and how many new people it counted
+ * today per owner from each connection (under a code made with the day's key, never the address).
  */
 const keys = new Map<string, Buffer>();
 const noKey = new Map<string, number>();
 let since: { day: string; value: string } | null = null;
 let triedPrune = "";
+const plans = new Map<string, { until: number; cap: number; paid: boolean }>();
+const paused = new Map<string, { until: number; cap: number }>();
+const marked = new Set<string>();
+const networks = new Map<string, number>();
+let memoryDay = "";
 
 /** Forgets what this server remembers, as a new server would start. For tests. */
 export function forgetServerMemory(): void {
@@ -73,10 +95,24 @@ export function forgetServerMemory(): void {
   noKey.clear();
   since = null;
   triedPrune = "";
+  plans.clear();
+  paused.clear();
+  marked.clear();
+  networks.clear();
+  memoryDay = "";
 }
 
-/** Tests make the daily prune fail with this (see test/visits.test.ts); Flash itself never sets it. */
-export const pruneTests = { fail: false };
+/** What this server keeps about connections, for tests to check it holds no address. */
+export const networkMemory = () => [...networks.keys()];
+
+/** Today's marks and connection counts start empty each day. */
+function startDay(day: string) {
+  if (day === memoryDay) return;
+  memoryDay = day;
+  marked.clear();
+  networks.clear();
+  for (const key of paused.keys()) if (!key.endsWith(`|${day}`)) paused.delete(key);
+}
 
 function keep(day: string, key: Buffer) {
   keys.set(day, key);
@@ -166,8 +202,59 @@ export async function recordOwnerVisit(slug: string, request: Request, at = Date
 }
 
 /**
- * Counts one load of a published app: a view, and the person once a day. viewerId is who is signed
- * in to Flash, on /p/ only. Never throws: stats must not break an app.
+ * How many people an owner's apps may count a day, by their plan (an admin's is Agency's), and
+ * whether they have a paid plan. Each server reads it at most every 15 minutes per owner, so a plan
+ * bought during the day counts within 15 minutes.
+ */
+export async function peopleCap(ownerId: string, at = Date.now()): Promise<{ cap: number; paid: boolean }> {
+  const known = plans.get(ownerId);
+  if (known && known.until > at) return { cap: known.cap, paid: known.paid };
+  const sub = await activeSubscription(ownerId);
+  let cap = freePeople();
+  let paid = false;
+  if (sub && Object.hasOwn(PLAN_PEOPLE, sub.plan)) [cap, paid] = [PLAN_PEOPLE[sub.plan], true];
+  else {
+    const user = await one<{ email: string; verified_at: number }>("SELECT email, verified_at FROM users WHERE id = ?", [ownerId]);
+    if (user && isAdmin(user)) [cap, paid] = [PLAN_PEOPLE.agency, true];
+  }
+  plans.set(ownerId, { until: at + PLAN_MEMORY, cap, paid });
+  while (plans.size > 10_000) plans.delete(plans.keys().next().value!);
+  return { cap, paid };
+}
+
+/**
+ * A mark on the app's day that its numbers missed people (or app steps), with the limit reached.
+ * Each server writes it once per app and day; the higher limit stays, for a plan bought that day.
+ */
+function markOnce(slug: string, step: string, limit: number, day: string): Statement | null {
+  const key = `${slug}|${step}|${day}`;
+  if (marked.has(key)) return null;
+  marked.add(key);
+  return {
+    sql: `INSERT INTO site_events (site_slug, day, step, source, medium, campaign, n) SELECT slug, ?, ?, '', '', '', ? FROM sites WHERE slug = ?
+          ON CONFLICT DO UPDATE SET n = MAX(n, excluded.n)`,
+    args: [day, step, limit, slug],
+  };
+}
+
+/** The touch, or "(other)" once the app has its 30 sources for the day and this isn't one of them. */
+async function withinTouches(slug: string, day: string, touch: Touch): Promise<Touch> {
+  const s = await one<{ touches: number; known: number }>(
+    `SELECT COUNT(*) AS touches, COALESCE(MAX(source = ? AND medium = ? AND campaign = ?), 0) AS known
+     FROM site_events WHERE site_slug = ? AND day = ? AND step = 'visit'`,
+    [touch.source, touch.medium, touch.campaign, slug, day],
+  );
+  return !Number(s?.known) && Number(s?.touches ?? 0) >= MAX_TOUCHES ? OTHER : touch;
+}
+
+/** The code this server counts an owner's new people from one connection under, made with the day's key. */
+const networkOf = (key: Buffer, owner: string, request: Request) =>
+  createHmac("sha256", key).update(`network|${owner}|${clientIp(request)}`).digest("hex").slice(0, 24);
+
+/**
+ * Counts one load of a published app: a view, and the person once a day, under where they first
+ * came from that day. viewerId is who is signed in to Flash, on /p/ only. Never throws: stats must
+ * not break an app.
  */
 export async function recordVisit(slug: string, request: Request, viewerId?: string | null, at = Date.now()): Promise<void> {
   if (!isPersonVisit(request) || isReturnTrip(new URL(request.url), request.headers.get("referer"))) return;
@@ -177,17 +264,29 @@ export async function recordVisit(slug: string, request: Request, viewerId?: str
 
 async function countVisit(slug: string, request: Request, viewerId: string | null | undefined, at: number): Promise<void> {
   const day = dayOf(at);
-  const visitor = await visitorCode(slug, request, day);
+  startDay(day);
+  const key = await dayKey(day);
+  const visitor = await visitorCode(slug, request, day, key);
   // On the day this counter took over from the one before it, someone that one counted earlier in
   // the day is found by their old code, so they aren't counted twice.
   const deploy = (await funnelSince(day)) === day;
-  const row = await one<{ owner: string; kind: string | null; before?: number | null }>(
-    `SELECT s.user_id AS owner, p.kind${deploy ? ", v.visitor IS NOT NULL AS before" : ""}
+  // The app, the person's row for today, and the owner's count for today: three lookups by key.
+  const row = await one<{
+    owner: string;
+    kind: string | null;
+    source: string | null;
+    medium: string | null;
+    campaign: string | null;
+    people: number | null;
+    before?: number | null;
+  }>(
+    `SELECT s.user_id AS owner, p.kind, p.source, p.medium, p.campaign, o.people${deploy ? ", v.visitor IS NOT NULL AS before" : ""}
      FROM sites s
      LEFT JOIN site_people p ON p.site_slug = s.slug AND p.day = ? AND p.visitor = ?
+     LEFT JOIN owner_people o ON o.user_id = s.user_id AND o.day = ?
      ${deploy ? "LEFT JOIN site_visitors v ON v.site_slug = s.slug AND v.day = ? AND v.visitor = ?" : ""}
      WHERE s.slug = ?`,
-    deploy ? [day, visitor, day, oldCode(slug, request, day), slug] : [day, visitor, slug],
+    deploy ? [day, visitor, day, day, oldCode(slug, request, day), slug] : [day, visitor, day, slug],
   );
   // The app was just unpublished.
   if (!row) return;
@@ -198,35 +297,87 @@ async function countVisit(slug: string, request: Request, viewerId: string | nul
     return;
   }
   if (row.kind === "owner") return;
+
   const writes: Statement[] = [];
-  if (!row.kind) {
-    const person: Statement = {
-      sql: "INSERT OR IGNORE INTO site_people (site_slug, day, visitor, kind) SELECT slug, ?, ?, 'visit' FROM sites WHERE slug = ?",
-      args: [day, visitor, slug],
-    };
+  const person = (t: Touch): Statement => ({
+    sql: "INSERT OR IGNORE INTO site_people (site_slug, day, visitor, kind, source, medium, campaign) SELECT slug, ?, ?, 'visit', ?, ?, ? FROM sites WHERE slug = ?",
+    args: [day, visitor, t.source, t.medium, t.campaign, slug],
+  });
+  // Someone counted already today keeps the source they first came from.
+  let touch: Touch = row.kind
+    ? { source: row.source ?? "", medium: row.medium ?? "", campaign: row.campaign ?? "" }
+    : touchOf(new URL(request.url), request.headers.get("referer"), request.headers.get("host"));
+  let counted = Boolean(row.kind);
+  let network = "";
+  if (!row.kind && row.before) {
     // Counted already today, by the counter before this one.
-    if (row.before) writes.push(person);
-    else
+    touch = await withinTouches(slug, day, touch);
+    writes.push(person(touch));
+    counted = true;
+  } else if (!row.kind) {
+    const pausedFor = `${row.owner}|${day}`;
+    const people = Number(row.people ?? 0);
+    let pause = paused.get(pausedFor);
+    if (pause && pause.until <= at) pause = undefined;
+    if (!pause) {
+      // The plan is read only past the free plan's number.
+      const cap = people < freePeople() ? freePeople() : (await peopleCap(row.owner, at)).cap;
+      if (people >= cap) {
+        pause = { until: at + PLAN_MEMORY, cap };
+        paused.set(pausedFor, pause);
+      }
+    }
+    network = networkOf(key, row.owner, request);
+    const overNetwork = !pause && (networks.get(network) ?? 0) >= networkPeople();
+    if (pause || overNetwork) {
+      // Not counted: a view only (see below), and a mark on the app's day saying why.
+      const mark = pause ? markOnce(slug, "capped", pause.cap, day) : markOnce(slug, "capped-net", networkPeople(), day);
+      if (mark) writes.push(mark);
+      network = "";
+    } else {
+      touch = await withinTouches(slug, day, touch);
+      // The person's day total and the owner's count go up only while the person's row isn't there
+      // yet, so two servers counting the same person at once count them once.
+      const fresh = "NOT EXISTS (SELECT 1 FROM site_people WHERE site_slug = ? AND day = ? AND visitor = ?)";
       writes.push(
-        // Counted only while the person's row isn't there yet, so two servers counting the same
-        // person at once count them once.
         {
           sql: `INSERT INTO site_events (site_slug, day, step, source, medium, campaign, n)
-                SELECT slug, ?, 'visit', '', '', '', 1 FROM sites WHERE slug = ?
-                  AND NOT EXISTS (SELECT 1 FROM site_people WHERE site_slug = ? AND day = ? AND visitor = ?)
+                SELECT slug, ?, 'visit', ?, ?, ?, 1 FROM sites WHERE slug = ? AND ${fresh}
                 ON CONFLICT DO UPDATE SET n = n + 1`,
+          args: [day, touch.source, touch.medium, touch.campaign, slug, slug, day, visitor],
+        },
+        {
+          sql: `INSERT INTO owner_people (user_id, day, people) SELECT user_id, ?, 1 FROM sites WHERE slug = ? AND ${fresh}
+                ON CONFLICT DO UPDATE SET people = people + 1`,
           args: [day, slug, slug, day, visitor],
         },
-        person,
+        person(touch),
       );
+      counted = true;
+    }
   }
-  // INSERT … SELECT so a visit to a site that was just unpublished writes nothing.
-  writes.push({
-    sql: `INSERT INTO site_visits (site_slug, day, source, views) SELECT slug, ?, ?, 1 FROM sites WHERE slug = ?
-          ON CONFLICT (site_slug, day, source) DO UPDATE SET views = views + 1`,
-    args: [day, visitSource(request.headers.get("referer"), request.headers.get("host")), slug],
-  });
+  // The view, under the person's source. A view by someone who wasn't counted never opens a new
+  // source for the day: it goes under one already there, or "(other)".
+  writes.push(
+    counted
+      ? {
+          sql: `INSERT INTO site_visits (site_slug, day, source, views) SELECT slug, ?, ?, 1 FROM sites WHERE slug = ?
+                ON CONFLICT (site_slug, day, source) DO UPDATE SET views = views + 1`,
+          args: [day, touch.source, slug],
+        }
+      : {
+          sql: `INSERT INTO site_visits (site_slug, day, source, views)
+                SELECT slug, ?, CASE WHEN ? = '' OR EXISTS (SELECT 1 FROM site_visits WHERE site_slug = ? AND day = ? AND source = ?) THEN ? ELSE ? END, 1
+                FROM sites WHERE slug = ?
+                ON CONFLICT (site_slug, day, source) DO UPDATE SET views = views + 1`,
+          args: [day, touch.source, slug, day, touch.source, touch.source, OTHER.source, slug],
+        },
+  );
   await (await db()).batch(writes, "write");
+  if (network) {
+    networks.set(network, (networks.get(network) ?? 0) + 1);
+    if (networks.size > MAX_NETWORKS) for (const old of [...networks.keys()].slice(0, MAX_NETWORKS / 2)) networks.delete(old);
+  }
 }
 
 /**
@@ -268,11 +419,12 @@ export async function pruneDaily(at = Date.now()): Promise<boolean> {
       ],
       "write",
     );
-    if (pruneTests.fail) throw new Error("prune failed (test)");
+    if (visitTests.failPrune) throw new Error("prune failed (test)");
     await c.batch(
       [
         { sql: "DELETE FROM visit_keys WHERE day < ?", args: [yesterday] },
         { sql: "DELETE FROM site_people WHERE day < ?", args: [yesterday] },
+        { sql: "DELETE FROM owner_people WHERE day < ?", args: [yesterday] },
         { sql: "DELETE FROM site_visits WHERE day < ?", args: [kept] },
         { sql: "DELETE FROM site_events WHERE day < ?", args: [kept] },
       ],

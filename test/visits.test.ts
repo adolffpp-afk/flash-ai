@@ -12,7 +12,7 @@ const { createSession } = await import("../src/lib/server/auth.ts");
 const { newOwnerCode } = await import("../src/lib/server/site-owner.ts");
 const { serveSite } = await import("../src/lib/server/serve-site.ts");
 const visits = await import("../src/lib/server/visits.ts");
-const { recordVisit, recordOwnerVisit, visitStats, visitSource, isPersonVisit, dayOf, visitorCode, peoplePerDay, pruneDaily, forgetServerMemory, pruneTests } = visits;
+const { recordVisit, recordOwnerVisit, visitStats, visitSource, isPersonVisit, dayOf, visitorCode, peoplePerDay, pruneDaily, forgetServerMemory, visitTests } = visits;
 const { sitesWithMessages } = await import("../src/lib/server/inbox.ts");
 const pageRoute = await import("../src/app/p/[slug]/route.ts");
 const domainRoute = await import("../src/app/d/[host]/route.ts");
@@ -244,6 +244,7 @@ test("the daily prune runs on one server once a day, keeps codes 2 days and tota
   for (const n of [3, 2, 1, 0]) {
     await run("INSERT OR IGNORE INTO visit_keys (day, secret) VALUES (?, 'aa')", [day(n)]);
     await run("INSERT INTO site_people (site_slug, day, visitor, kind) VALUES ('prune-1', ?, 'v', 'visit')", [day(n)]);
+    await run("INSERT INTO owner_people (user_id, day, people) VALUES ('u1', ?, 1)", [day(n)]);
   }
   for (const n of [100, 99]) {
     await run("INSERT INTO site_visits (site_slug, day, source, views) VALUES ('prune-1', ?, '', 1)", [day(n)]);
@@ -253,9 +254,11 @@ test("the daily prune runs on one server once a day, keeps codes 2 days and tota
   forgetServerMemory(); // another server
   assert.equal(await pruneDaily(at), false, "only one server claims the day");
   assert.equal(await pruneDaily(at), false, "and a server tries once a day");
-  const days = async (table: string) => (await all<{ day: string }>(`SELECT DISTINCT day FROM ${table} WHERE ${table === "visit_keys" ? "1" : "site_slug = 'prune-1'"} ORDER BY day`)).map((r) => r.day);
+  const where = (table: string) => (table === "visit_keys" ? "1" : table === "owner_people" ? "user_id = 'u1'" : "site_slug = 'prune-1'");
+  const days = async (table: string) => (await all<{ day: string }>(`SELECT DISTINCT day FROM ${table} WHERE ${where(table)} ORDER BY day`)).map((r) => r.day);
   assert.deepEqual(await days("visit_keys"), [day(1), day(0)]);
   assert.deepEqual(await days("site_people"), [day(1), day(0)]);
+  assert.deepEqual(await days("owner_people"), [day(1), day(0)]);
   assert.deepEqual(await days("site_visits"), [day(99)], "day −99 stays, day −100 goes");
   assert.deepEqual(await days("site_events"), [day(99)]);
   const since = (await one<{ value: string }>("SELECT value FROM settings WHERE key = 'funnel_since'"))?.value;
@@ -263,10 +266,10 @@ test("the daily prune runs on one server once a day, keeps codes 2 days and tota
 
   // A day whose prune fails is given back, so another server can do it.
   const next = at + DAY;
-  pruneTests.fail = true;
+  visitTests.failPrune = true;
   forgetServerMemory();
   assert.equal(await pruneDaily(next), false);
-  pruneTests.fail = false;
+  visitTests.failPrune = false;
   assert.equal((await one<{ value: string }>("SELECT value FROM settings WHERE key = 'visits_pruned'"))?.value, day(0));
   assert.equal(await pruneDaily(next), false, "the server that failed doesn't try again that day");
   forgetServerMemory();
@@ -337,4 +340,220 @@ test("the 30-day chart starts on the day the app was made", async () => {
   assert.equal(stats.days.length, 5);
   assert.equal(stats.days[0].day, dayOf(at - 4 * DAY));
   assert.deepEqual(stats.days[4], { day: dayOf(at), views: 1, visitors: 1 });
+});
+
+const { FREE_PEOPLE_PER_DAY, PLAN_PEOPLE, MAX_TOUCHES, peopleCap, networkMemory } = visits;
+/** A new browser each time: another person on the same network. */
+let browsers = 0;
+const someone = (slug: string, headers: Record<string, string> = {}, query = "") =>
+  visit({ "user-agent": `${BROWSER} person/${++browsers}`, "x-forwarded-for": `10.0.${Math.floor(browsers / 250)}.${browsers % 250}`, ...headers }, `/p/${slug}${query}`);
+const eventsOf = (slug: string, step = "visit") => count("SELECT COALESCE(SUM(n), 0) AS n FROM site_events WHERE site_slug = ? AND step = ?", [slug, step]);
+const peopleRows = (slug: string) => count("SELECT COUNT(*) AS n FROM site_people WHERE site_slug = ? AND kind = 'visit'", [slug]);
+const ownerCount = async (owner: string, day: string) => count("SELECT COALESCE(SUM(people), 0) AS n FROM owner_people WHERE user_id = ? AND day = ?", [owner, day]);
+const viewsBySource = async (slug: string) =>
+  Object.fromEntries((await all<{ source: string; views: number }>("SELECT source, SUM(views) AS views FROM site_visits WHERE site_slug = ? GROUP BY source", [slug])).map((r) => [r.source, Number(r.views)]));
+const mark = async (slug: string, step: string) => (await one<{ n: number }>("SELECT n FROM site_events WHERE site_slug = ? AND step = ?", [slug, step]))?.n ?? null;
+async function app(slug: string, owner: string) {
+  await run("INSERT OR IGNORE INTO users (id, email, password_hash, created_at, verified_at) VALUES (?, ?, 'h', 0, 1)", [owner, `${owner}@x.co`]);
+  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES (?, ?, 'App', '<p>', 0, 0)", [slug, owner]);
+}
+async function plan(owner: string, id: string) {
+  await run(
+    `INSERT INTO subscriptions (id, user_id, plan, interval, status, amount_cents, anchor, paid_until, test, created_at, updated_at)
+     VALUES (?, ?, ?, 'month', 'active', 100, 0, ?, 1, 0, 0)`,
+    [`sub-${owner}`, owner, id, Date.UTC(2100, 0, 1)],
+  );
+}
+
+test("each person counts under where they first came from that day, and an app counts 30 sources a day", async () => {
+  forgetServerMemory();
+  await app("touch-1", "u1");
+  const at = Date.UTC(2027, 6, 1, 9);
+  const ana = visit({ "x-forwarded-for": "11.0.0.1", referer: "https://www.google.com/" }, "/p/touch-1");
+  await recordVisit("touch-1", ana, null, at);
+  // A reload with no referrer, and one from Instagram later, are still the Google visit.
+  await recordVisit("touch-1", visit({ "x-forwarded-for": "11.0.0.1" }, "/p/touch-1"), null, at + 1000);
+  await recordVisit("touch-1", visit({ "x-forwarded-for": "11.0.0.1", referer: "https://l.instagram.com/" }, "/p/touch-1?utm_source=ig"), null, at + 2000);
+  assert.deepEqual(await viewsBySource("touch-1"), { "google.com": 3 });
+  assert.equal((await one<{ source: string }>("SELECT source FROM site_people WHERE site_slug = 'touch-1'"))?.source, "google.com");
+  await recordVisit("touch-1", someone("touch-1", {}, "?utm_source=newsletter&utm_medium=email&utm_campaign=Spring"), null, at);
+  assert.deepEqual(
+    (await all<{ source: string; medium: string; campaign: string; n: number }>(
+      "SELECT source, medium, campaign, n FROM site_events WHERE site_slug = 'touch-1' AND step = 'visit' ORDER BY source",
+    )).map((r) => [r.source, r.medium, r.campaign, Number(r.n)]),
+    [
+      ["google.com", "", "", 1],
+      ["newsletter", "email", "spring", 1],
+    ],
+  );
+
+  // Up to 30 sources a day; a 31st new one is "(other)", while one already there still counts as itself.
+  for (let i = 3; i <= MAX_TOUCHES; i++) await recordVisit("touch-1", someone("touch-1", {}, `?utm_source=src-${i}`), null, at);
+  assert.equal(await count("SELECT COUNT(*) AS n FROM site_events WHERE site_slug = 'touch-1' AND step = 'visit'"), MAX_TOUCHES);
+  await recordVisit("touch-1", someone("touch-1", {}, "?utm_source=one-too-many"), null, at);
+  await recordVisit("touch-1", someone("touch-1", {}, "?utm_source=src-7"), null, at);
+  await recordVisit("touch-1", someone("touch-1", { referer: "https://www.google.com/" }), null, at);
+  const sources = await viewsBySource("touch-1");
+  assert.equal(sources["(other)"], 1);
+  assert.equal(sources["one-too-many"], undefined);
+  assert.equal(sources["src-7"], 2);
+  assert.equal(sources["google.com"], 4);
+  assert.equal(await eventsOf("touch-1"), MAX_TOUCHES + 3);
+});
+
+test("people are counted per owner per day across all their apps, up to their plan's number; past it the apps just count views", async () => {
+  forgetServerMemory();
+  visitTests.freePeople = 3;
+  try {
+    await app("cap-a", "capper");
+    await app("cap-b", "capper");
+    await app("else-1", "someone-else");
+    const at = Date.UTC(2027, 6, 2, 9);
+    const day = dayOf(at);
+    const early = someone("cap-a", { referer: "https://www.google.com/" });
+    const sent = await statementsDuring(async () => {
+      await recordVisit("cap-a", early, null, at);
+      await recordVisit("cap-a", someone("cap-a", {}, "?utm_source=newsletter"), null, at);
+      await recordVisit("cap-b", someone("cap-b"), null, at);
+    });
+    assert.deepEqual(sent.filter((sql) => /subscriptions|FROM users/.test(sql)), [], "below the free number, no plan is read");
+    assert.equal(await ownerCount("capper", day), 3, "two apps, one count");
+    assert.equal(await mark("cap-a", "capped"), null);
+
+    // The 4th new person, on either app: a view, but no person, no day total and nothing on the count.
+    await recordVisit("cap-b", someone("cap-b"), null, at + 1000);
+    await recordVisit("cap-a", someone("cap-a", {}, "?utm_source=fresh"), null, at + 2000);
+    await recordVisit("cap-a", someone("cap-a", {}, "?utm_source=newsletter"), null, at + 3000);
+    await recordVisit("cap-a", someone("cap-a"), null, at + 4000);
+    assert.equal(await ownerCount("capper", day), 3);
+    assert.equal(await peopleRows("cap-a"), 2);
+    assert.equal(await peopleRows("cap-b"), 1);
+    assert.equal(await eventsOf("cap-a"), 2);
+    // Their views never open a new source: one already there that day keeps its own, Direct stays Direct.
+    assert.deepEqual(await viewsBySource("cap-a"), { "google.com": 1, newsletter: 2, "(other)": 1, "": 1 });
+    assert.equal(await mark("cap-a", "capped"), 3);
+    assert.equal(await mark("cap-b", "capped"), 3);
+    // Someone counted before the pause still counts, under where they came from.
+    await recordVisit("cap-a", early, null, at + 5000);
+    assert.equal((await viewsBySource("cap-a"))["google.com"], 2);
+    // Another owner's apps are unaffected.
+    for (let i = 0; i < 3; i++) await recordVisit("else-1", someone("else-1"), null, at);
+    assert.equal(await peopleRows("else-1"), 3);
+    assert.equal(await mark("else-1", "capped"), null);
+    // The stats show only who was counted.
+    assert.equal((await visitStats("cap-a", at)).visitors, 2);
+  } finally {
+    visitTests.freePeople = 0;
+  }
+});
+
+test("a paid plan counts more people a day, a team member counts against their own plan, and an admin gets Agency's number", async () => {
+  forgetServerMemory();
+  visitTests.freePeople = 2;
+  const real = { ...PLAN_PEOPLE };
+  Object.assign(PLAN_PEOPLE, { pro: 4, business: 5, agency: 6 });
+  process.env.FLASH_ADMIN_EMAILS = "boss@x.co";
+  try {
+    await app("pro-1", "pro-owner");
+    await plan("pro-owner", "pro");
+    await app("team-1", "team-owner");
+    await plan("team-owner", "business");
+    await app("member-1", "member");
+    await run("INSERT INTO teams (id, owner_id, created_at) VALUES ('t1', 'team-owner', 0)");
+    await run("INSERT INTO team_members (user_id, team_id, joined_at) VALUES ('member', 't1', 0)");
+    await run("INSERT INTO users (id, email, password_hash, created_at, verified_at) VALUES ('boss', 'boss@x.co', 'h', 0, 1)");
+    await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES ('boss-1', 'boss', 'App', '<p>', 0, 0)");
+    const at = Date.UTC(2027, 6, 3, 9);
+    const day = dayOf(at);
+    for (const slug of ["pro-1", "team-1", "member-1", "boss-1"]) for (let i = 0; i < 8; i++) await recordVisit(slug, someone(slug), null, at);
+    assert.equal(await ownerCount("pro-owner", day), 4, "Pro's number, past the free one");
+    assert.equal(await ownerCount("team-owner", day), 5, "the team's owner: Business");
+    assert.equal(await ownerCount("member", day), 2, "a team member: their own free number, not the team's");
+    assert.equal(await ownerCount("boss", day), 6, "an admin: Agency's number");
+    assert.deepEqual(await peopleCap("member", at), { cap: 2, paid: false });
+    assert.deepEqual(await peopleCap("pro-owner", at), { cap: 4, paid: true });
+  } finally {
+    visitTests.freePeople = 0;
+    Object.assign(PLAN_PEOPLE, real);
+    delete process.env.FLASH_ADMIN_EMAILS;
+  }
+});
+
+test("a paused day is remembered 15 minutes, so a plan bought that day counts soon, and counting starts again at midnight", async () => {
+  forgetServerMemory();
+  visitTests.freePeople = 2;
+  const real = { ...PLAN_PEOPLE };
+  PLAN_PEOPLE.pro = 4;
+  try {
+    await app("late-1", "late-owner");
+    const at = Date.UTC(2027, 6, 4, 23, 30);
+    for (let i = 0; i < 2; i++) await recordVisit("late-1", someone("late-1"), null, at);
+    await recordVisit("late-1", someone("late-1"), null, at + 1000); // past the number: the plan is read, and the day paused
+    await plan("late-owner", "pro");
+    const reads = await statementsDuring(async () => {
+      await recordVisit("late-1", someone("late-1"), null, at + 5 * 60_000);
+      await recordVisit("late-1", someone("late-1"), null, at + 14 * 60_000);
+    });
+    assert.deepEqual(reads.filter((sql) => /subscriptions|FROM users/.test(sql)), [], "no plan read while paused");
+    assert.equal(await ownerCount("late-owner", dayOf(at)), 2);
+    // 15 minutes on, the plan is read again: Pro's number, so counting goes on.
+    await recordVisit("late-1", someone("late-1"), null, at + 16 * 60_000);
+    assert.equal(await ownerCount("late-owner", dayOf(at)), 3);
+
+    // Paused at 23:58 on a free plan; a new person at 00:00:30 is counted at once.
+    await run("DELETE FROM subscriptions WHERE user_id = 'late-owner'");
+    forgetServerMemory();
+    const night = Date.UTC(2027, 6, 5, 23, 58);
+    for (let i = 0; i < 3; i++) await recordVisit("late-1", someone("late-1"), null, night);
+    assert.equal(await ownerCount("late-owner", dayOf(night)), 2);
+    await recordVisit("late-1", someone("late-1"), null, Date.UTC(2027, 6, 6, 0, 0, 30));
+    assert.equal(await ownerCount("late-owner", "2027-07-06"), 1);
+  } finally {
+    visitTests.freePeople = 0;
+    Object.assign(PLAN_PEOPLE, real);
+  }
+});
+
+test("two servers counting the same new person at once count them once", async () => {
+  forgetServerMemory();
+  await app("race-1", "racer");
+  const at = Date.UTC(2027, 6, 7, 9);
+  await recordVisit("race-1", someone("race-1"), null, at); // the day's key and settings are known
+  const same = () => visit({ "x-forwarded-for": "12.0.0.1" }, "/p/race-1");
+  const sent = await statementsDuring(() => Promise.all([recordVisit("race-1", same(), null, at), recordVisit("race-1", same(), null, at)]));
+  const reads = sent.map((sql, i) => [sql, i] as const).filter(([sql]) => /LEFT JOIN owner_people/.test(sql));
+  const firstWrite = sent.findIndex((sql) => /INSERT INTO owner_people/.test(sql));
+  assert.equal(reads.length, 2);
+  assert.ok(reads[1][1] < firstWrite, "both read before either wrote");
+  assert.equal(await ownerCount("racer", dayOf(at)), 2);
+  assert.equal(await eventsOf("race-1"), 2);
+  assert.equal(await peopleRows("race-1"), 2);
+  assert.equal(await viewsOf("race-1"), 3);
+});
+
+test("one internet connection adds at most its number of new people a day per owner on a server, and the server keeps no address", async () => {
+  forgetServerMemory();
+  visitTests.networkPeople = 3;
+  try {
+    await app("net-1", "networked");
+    const at = Date.UTC(2027, 6, 8, 9);
+    const school = (n: number, at2 = at) => recordVisit("net-1", visit({ "x-forwarded-for": "13.0.0.1", "user-agent": `${BROWSER} pupil/${n}` }, "/p/net-1"), null, at2);
+    for (let n = 1; n <= 4; n++) await school(n);
+    assert.equal(await peopleRows("net-1"), 3);
+    assert.equal(await eventsOf("net-1"), 3);
+    assert.equal(await viewsOf("net-1"), 4, "the 4th is a view");
+    assert.equal(await mark("net-1", "capped-net"), 3);
+    await recordVisit("net-1", visit({ "x-forwarded-for": "13.0.0.2" }, "/p/net-1"), null, at);
+    assert.equal(await peopleRows("net-1"), 4, "another connection still counts");
+    // An IPv6 address counts by its /64 network.
+    for (let n = 1; n <= 4; n++) await recordVisit("net-1", visit({ "x-forwarded-for": `2001:db8:1:2::${n}`, "user-agent": `${BROWSER} phone/${n}` }, "/p/net-1"), null, at);
+    assert.equal(await peopleRows("net-1"), 7);
+    assert.ok(networkMemory().every((k) => /^[0-9a-f]{24}$/.test(k) && !k.includes("13.0.0")));
+    assert.equal(FREE_PEOPLE_PER_DAY, 10_000);
+    // The next day the first connection counts again.
+    await school(5, at + DAY);
+    assert.equal(await count("SELECT COUNT(*) AS n FROM site_people WHERE site_slug = 'net-1' AND day = ?", [dayOf(at + DAY)]), 1);
+  } finally {
+    visitTests.networkPeople = 0;
+  }
 });
