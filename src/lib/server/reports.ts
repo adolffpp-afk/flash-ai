@@ -5,6 +5,7 @@ import { EMAILS, emailEnabled, sendEmail } from "./email.ts";
 import { domainsForSite, removeDomain, siteForDomain } from "./domains.ts";
 import { deleteShare } from "./shares.ts";
 import { unpublishSite } from "./sites.ts";
+import { tokenContact } from "./contacts.ts";
 import type { User } from "./auth.ts";
 import { english, type Translate } from "../i18n.ts";
 import {
@@ -61,9 +62,13 @@ const LOOKUP: Record<ReportKind, string> = {
 
 /**
  * The item an address points at, as Flash has it now, or null. A custom domain is the app connected
- * to it, found with or without its www.
+ * to it, found with or without its www, and an unsubscribe link (one that works) is its app.
  */
 export async function findReported(target: ReportTarget): Promise<ReportItem | null> {
+  if (target.kind === "unsubscribe") {
+    const contact = await tokenContact(target.token);
+    return contact ? findReported({ kind: "site", id: contact.slug }) : null;
+  }
   if (target.kind === "domain") {
     const bare = target.domain.replace(/^www\./, "");
     for (const domain of new Set([target.domain, bare, `www.${bare}`])) {

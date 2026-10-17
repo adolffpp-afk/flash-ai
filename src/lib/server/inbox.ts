@@ -3,6 +3,7 @@ import { randomId } from "./ids.ts";
 import { overLimit } from "./limits.ts";
 import { EMAILS, sendEmail } from "./email.ts";
 import { refreshRules } from "./site-data.ts";
+import { noteSender } from "./contacts.ts";
 import { anyOpen, isDataRule, parseComputed, type DataRule } from "../data-rules.ts";
 import { english, type Translate } from "../i18n.ts";
 
@@ -26,11 +27,12 @@ function preview(data: Record<string, unknown>): string {
 /**
  * Saves a form a visitor sent from a published site, for its owner only, and emails the owner
  * (at most 20 emails per site a day, and EMAIL_BUDGET.perOwner across all of one owner's apps).
- * Visitors are limited per address and per site.
+ * Visitors are limited per address and per site. The sender goes on the app's contact list (see
+ * contacts.ts), with consent ({ text }) when they ticked its news box themselves.
  */
 export async function receiveMessage(
   slug: string,
-  input: { form?: unknown; data?: unknown },
+  input: { form?: unknown; data?: unknown; consent?: unknown },
   ip: string,
   origin: string,
 ): Promise<{ ok: true } | { error: string; status: number }> {
@@ -49,14 +51,18 @@ export async function receiveMessage(
   );
   if (!site) return { error: "Site not found.", status: 404 };
   // INSERT … SELECT, so a message sent just as the site is unpublished isn't left behind without it.
+  const id = randomId();
+  const at = now();
   const saved = await run("INSERT INTO site_messages (id, site_slug, form, data, created_at) SELECT ?, slug, ?, ?, ? FROM sites WHERE slug = ?", [
-    randomId(),
+    id,
     form,
     text,
-    now(),
+    at,
     slug,
   ]);
   if (!saved.rowsAffected) return { error: "Site not found.", status: 404 };
+  // A contact that can't be saved never stops the message. Trimming old messages below leaves contacts as they are.
+  await noteSender(slug, form, data as Record<string, unknown>, input.consent, ip, at, id).catch((err) => console.error("[flash] contact not saved", err));
   await run(
     `DELETE FROM site_messages WHERE site_slug = ? AND id NOT IN
        (SELECT id FROM site_messages WHERE site_slug = ? ORDER BY created_at DESC LIMIT ?)`,
@@ -93,7 +99,8 @@ export async function deleteMessage(slug: string, id: string): Promise<void> {
 
 /**
  * The user's published sites with how many messages each has, and how many are unread. openData
- * says anyone at all could change or delete some of a site's data (see data-rules.ts).
+ * says anyone at all could change or delete some of a site's data (see data-rules.ts). contacts is
+ * null until the app's list was first filled with the people it had before (see fillContacts).
  */
 export async function sitesWithMessages(userId: string) {
   const since = new Date(Date.now() - 29 * 86_400_000).toISOString().slice(0, 10);
@@ -105,13 +112,15 @@ export async function sitesWithMessages(userId: string) {
     unread: number;
     views: number;
     members: number;
+    contacts: number | null;
     data_rules: string;
   }>(
     `SELECT s.slug, s.title, s.updated_at, s.data_rules,
             (SELECT COUNT(*) FROM site_messages m WHERE m.site_slug = s.slug) AS messages,
             (SELECT COUNT(*) FROM site_messages m WHERE m.site_slug = s.slug AND m.read_at = 0) AS unread,
             (SELECT COALESCE(SUM(v.views), 0) FROM site_visits v WHERE v.site_slug = s.slug AND v.day >= ?) AS views,
-            (SELECT COUNT(*) FROM site_users u WHERE u.site_slug = s.slug) AS members
+            (SELECT COUNT(*) FROM site_users u WHERE u.site_slug = s.slug) AS members,
+            CASE WHEN s.contacts_filled THEN (SELECT COUNT(*) FROM site_contacts c WHERE c.site_slug = s.slug) END AS contacts
      FROM sites s WHERE s.user_id = ? ORDER BY s.updated_at DESC`,
     [since, userId],
   );
@@ -131,6 +140,7 @@ export async function sitesWithMessages(userId: string) {
       unread: Number(r.unread),
       views: Number(r.views),
       members: Number(r.members),
+      contacts: r.contacts === null ? null : Number(r.contacts),
       openData: computed ? anyOpen(computed, Object.fromEntries(mine)) : false,
     });
   }

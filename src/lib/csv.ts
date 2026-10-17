@@ -11,6 +11,6 @@ export function toCsv(rows: unknown[][]): string {
   return "﻿" + rows.map((row) => row.map(cell).join(",")).join("\r\n") + "\r\n";
 }
 
-/** A file name from a site's title, like "golden-crumb-orders.csv". */
-export const csvName = (title: string, what: string) =>
-  `${title.toLowerCase().replace(/^home\s*[·|:–—-]\s*/, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "site"}-${what}.csv`;
+/** A file name from a site's title, like "golden-crumb-orders.csv" (or another ext, like "json"). */
+export const csvName = (title: string, what: string, ext = "csv") =>
+  `${title.toLowerCase().replace(/^home\s*[·|:–—-]\s*/, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "site"}-${what}.${ext}`;

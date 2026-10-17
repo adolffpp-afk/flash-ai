@@ -58,5 +58,5 @@ test("the app builder makes multi-page sites and sends forms privately", () => {
   assert.match(system, /flashDB\.send\("contact"/);
   assert.doesNotMatch(buildSystem("slides", ""), /data-page/);
   assert.match(flashDbShim("/api/sites/x/data", "/api/sites/x/inbox"), /"\/api\/sites\/x\/inbox"/);
-  assert.match(flashDbShim(null), /async send\(form, data\)/, "the preview has send too, without sending");
+  assert.match(flashDbShim(null), /async send\(form, data, options\)/, "the preview has send too, without sending");
 });

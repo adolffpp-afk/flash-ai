@@ -17,7 +17,7 @@ const when = (t: number) => new Date(t).toLocaleString("en-US", { month: "short"
 const TAKE_DOWN_SAYS: Record<ReportedItem["kind"], string> = {
   share:
     "Turn off this share link? It stops working for everyone at once. The owner's chat isn't changed, and they could share it again.",
-  site: "Unpublish this app? It goes offline at once with everything it kept: its data, members, form messages, orders, files and earlier versions, and its own domains are disconnected. This can't be undone. The chat the owner built it in isn't changed.",
+  site: "Unpublish this app? It goes offline at once with everything it kept: its data, members, form messages, contacts (with who unsubscribed), orders, files and earlier versions, and its own domains are disconnected. This can't be undone. The chat the owner built it in isn't changed.",
   file: "Turn off this file link? It stops working for everyone at once (browsers that already opened it may keep it for up to a day). The owner's file stays in their account.",
 };
 
