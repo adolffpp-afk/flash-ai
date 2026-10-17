@@ -35,6 +35,8 @@ export const SITE_TABLES = [
   "site_ai_usage",
   "site_uploads",
   "site_messages",
+  // Before the contacts, so deleting them has no count left to keep up to date.
+  "site_contact_counts",
   "site_contacts",
   "site_domains",
   "site_versions",
@@ -57,6 +59,7 @@ const INHERITABLE = [
   "site_uploads",
   "site_messages",
   "site_contacts",
+  "site_contact_counts",
   "site_orders",
   "site_products",
   "site_domains",
