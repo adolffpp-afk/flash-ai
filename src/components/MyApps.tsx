@@ -9,18 +9,18 @@ import { inOrder } from "@/lib/in-order";
 import { tNow, useT, type T } from "@/lib/use-t";
 import { ContactsView } from "./ContactsView";
 
-// contacts: null until the app's contact list was first filled (see server/contacts.ts).
-type Site = {
+// messages, views, members and contacts: null until counted, as the list counts only 20 apps at a
+// time (see sitesWithMessages); contacts also until the app's contact list was first filled.
+type Counts = { messages: number | null; views: number | null; members: number | null; contacts: number | null };
+type Site = Counts & {
   slug: string;
   title: string;
   updated_at: number;
-  messages: number;
   unread: number;
-  views: number;
-  members: number;
-  contacts: number | null;
   openData?: boolean;
 };
+// The list shows this many apps at a time, the most the server counts in one go.
+const LIST_STEP = 20;
 type DataCollection = { name: string; count: number; lastAdded: number; rule: DataRule; source: RuleSource; personal: string[] };
 // block: the app names its rules in a flash-data block; bad: what Flash couldn't use in it. domains: the app's own addresses.
 type AppData = { collections: DataCollection[]; fallback: DataRule | null; guess: DataRule; block: boolean; bad?: DataSummary["bad"]; domains: string[] };
@@ -91,6 +91,12 @@ const isOpen = (data: AppData) => data.collections.some((c) => c.rule === "open"
 export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEdit?: (projectId: string) => void; onPlans?: () => void }) {
   const t = useT();
   const [sites, setSites] = useState<Site[] | null>(null);
+  // How many apps the user may publish, how many the list shows, and what the filter box holds.
+  const [maxSites, setMaxSites] = useState<number | null>(null);
+  const [listed, setListed] = useState(LIST_STEP);
+  const [find, setFind] = useState("");
+  // Apps whose counts were asked for already, so each is asked for once.
+  const asked = useRef(new Set<string>());
   const [open, setOpen] = useState<Site | null>(null);
   const [view, setView] = useState<"messages" | "contacts" | "domains" | "preview" | "payments" | "visits" | "history" | "members" | "ai" | "files" | "data">("messages");
   const [appData, setAppData] = useState<ShownData | null>(null);
@@ -151,8 +157,11 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
   }, [onClose, mayLeave]);
 
   useEffect(() => {
-    api<{ sites: Site[] }>("/api/sites")
-      .then(({ sites: list }) => setSites(list))
+    api<{ sites: Site[]; maxSites?: number }>("/api/sites")
+      .then(({ sites: list, maxSites: max }) => {
+        setSites(list);
+        setMaxSites(max ?? null);
+      })
       .catch(() => {
         setError(tNow("Couldn't load your apps. Please try again."));
         setSites([]);
@@ -571,7 +580,7 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
     try {
       await api(`/api/sites/${open.slug}/members?id=${encodeURIComponent(member.id)}`, { method: "DELETE" });
       setMembers((list) => list?.filter((m) => m.id !== member.id) ?? null);
-      setSites((all) => all?.map((s) => (s.slug === open.slug ? { ...s, members: Math.max(0, s.members - 1) } : s)) ?? null);
+      setSites((all) => all?.map((s) => (s.slug === open.slug && s.members !== null ? { ...s, members: Math.max(0, s.members - 1) } : s)) ?? null);
     } catch {
       setError(t("Couldn't remove that member. Please try again."));
     }
@@ -582,10 +591,40 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
     try {
       await api(`/api/sites/${open.slug}/inbox?id=${encodeURIComponent(id)}`, { method: "DELETE" });
       setMessages((list) => list?.filter((m) => m.id !== id) ?? null);
-      setSites((all) => all?.map((s) => (s.slug === open.slug ? { ...s, messages: s.messages - 1 } : s)) ?? null);
+      setSites((all) => all?.map((s) => (s.slug === open.slug && s.messages !== null ? { ...s, messages: Math.max(0, s.messages - 1) } : s)) ?? null);
     } catch {
       setError(t("Couldn't delete that message. Please try again."));
     }
+  }
+
+  /**
+   * Asks for the counts of listed apps past the 20 the list came with, 20 at a time, each once. Until
+   * they come, those apps show no numbers.
+   */
+  function countApps(list: Site[]) {
+    const slugs = list.filter((s) => s.views === null && !asked.current.has(s.slug)).map((s) => s.slug);
+    for (let i = 0; i < slugs.length; i += LIST_STEP) {
+      const part = slugs.slice(i, i + LIST_STEP);
+      for (const slug of part) asked.current.add(slug);
+      api<{ counts: Record<string, Counts> }>(`/api/sites?counts=${encodeURIComponent(part.join(","))}`)
+        .then(({ counts }) => setSites((all) => all?.map((s) => (counts[s.slug] ? { ...s, ...counts[s.slug] } : s)) ?? null))
+        .catch(() => {
+          for (const slug of part) asked.current.delete(slug);
+        });
+    }
+  }
+  const matches = (s: Site, text: string) => {
+    const q = text.trim().toLocaleLowerCase(t.locale);
+    return !q || s.title.toLocaleLowerCase(t.locale).includes(q) || s.slug.includes(q);
+  };
+  const found = sites?.filter((s) => matches(s, find)) ?? [];
+  function showMore() {
+    countApps(found.slice(listed, listed + LIST_STEP));
+    setListed(listed + LIST_STEP);
+  }
+  function findApp(text: string) {
+    setFind(text);
+    countApps((sites ?? []).filter((s) => matches(s, text)).slice(0, listed));
   }
 
   async function unpublish(slug: string) {
@@ -1236,88 +1275,124 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
               </p>
             </div>
           ) : (
-            <ul className="space-y-2">
-              {sites.map((s) => (
-                <li key={s.slug} className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3">
-                  <div className="min-w-0 flex-[1_1_14rem]">
-                    <p className="truncate font-medium text-zinc-100">{s.title}</p>
-                    <a href={`/p/${s.slug}`} target="_blank" rel="noreferrer" className="block truncate text-xs text-primary-soft hover:underline">
-                      {typeof window !== "undefined" ? window.location.host : ""}/p/{s.slug}
-                    </a>
-                  </div>
-                  {confirming === s.slug ? (
-                    <div className="flex items-center gap-3 text-xs">
-                      <span className="text-zinc-400">{t("Take it offline, with its data and messages?")}</span>
-                      <button onClick={() => unpublish(s.slug)} className="text-red-400 hover:text-red-300">
-                        {t("Unpublish")}
-                      </button>
-                      <button onClick={() => setConfirming(null)} className="text-zinc-400 hover:text-zinc-100">
-                        {t("Keep")}
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                      {onEdit && (
-                        <button onClick={() => editSite(s)} className="text-zinc-200 hover:text-white" title={t("Open the chat that built this site")}>
-                          ✏️ {t("Edit")}
-                        </button>
+            <>
+              {maxSites !== null && (
+                <div className="mb-3 space-y-1">
+                  <p className="text-xs text-zinc-500">{t("{count} of {max} apps published", { count: sites.length.toLocaleString(t.locale), max: maxSites.toLocaleString(t.locale) })}</p>
+                  {maxSites <= LIST_STEP && sites.length >= 15 && (
+                    <p className="text-sm text-gold-soft">
+                      {t("Paid plans can publish more apps.")}
+                      {onPlans && (
+                        <>
+                          {" "}
+                          <button onClick={onPlans} className="text-primary-soft hover:underline">
+                            {t("Upgrade plan")}
+                          </button>
+                        </>
                       )}
-                      <button onClick={() => showMessages(s)} className="text-zinc-200 hover:text-white">
-                        ✉️ {t("Messages")}
-                        {s.messages ? <> ({s.messages})</> : null}
-                        {s.unread > 0 && (
-                          <span className="ml-1.5 rounded-full bg-brand px-1.5 py-0.5 text-[10px] text-on-brand">{t("{count} new", { count: s.unread })}</span>
-                        )}
-                      </button>
-                      <button onClick={() => showContacts(s)} className="text-zinc-200 hover:text-white" title={t("Everyone who sent a form, signed up or paid")}>
-                        👥 {t("Contacts")}
-                        {s.contacts ? <> ({s.contacts.toLocaleString(t.locale)})</> : null}
-                      </button>
-                      <button onClick={() => showVisits(s)} className="text-zinc-200 hover:text-white" title={t("Visits in the last 30 days")}>
-                        📈 {t("Visitors")}
-                        {s.views ? <> ({s.views.toLocaleString(t.locale)})</> : null}
-                      </button>
-                      <button onClick={() => showFiles(s)} className="text-zinc-200 hover:text-white" title={t("Files people sent to this app")}>
-                        📁 {t("Files")}
-                      </button>
-                      <button onClick={() => showAi(s)} className="text-zinc-200 hover:text-white" title={t("Let this app use AI, and set what it may spend")}>
-                        🤖 {t("AI")}
-                      </button>
-                      <button onClick={() => showMembers(s)} className="text-zinc-200 hover:text-white" title={t("People signed up to this app")}>
-                        👤 {t("Members")}
-                        {s.members ? <> ({s.members.toLocaleString(t.locale)})</> : null}
-                      </button>
-                      <button onClick={() => openAsOwner(s.slug)} className="text-zinc-200 hover:text-white" title={t("Change this app's data from the app itself")}>
-                        🔑 {t("Open as owner")}
-                      </button>
-                      <button
-                        onClick={() => showData(s)}
-                        className="text-zinc-200 hover:text-white"
-                        title={s.openData ? t("Anyone can change or delete some of this app's data") : t("What this app keeps, and who may change it")}
-                      >
-                        🗄️ {t("Data")}
-                        {s.openData && <span className="ms-1 text-gold-soft">⚠</span>}
-                      </button>
-                      <button onClick={() => showDomains(s)} className="text-zinc-200 hover:text-white">
-                        🔗 {t("Domain")}
-                      </button>
-                      <button onClick={() => showPreview(s)} className="text-zinc-200 hover:text-white" title={t("What shows when this app's link is shared")}>
-                        🖼️ {t("Link preview")}
-                      </button>
-                      <button onClick={() => showPayments(s)} className="text-zinc-200 hover:text-white">
-                        💳 {t("Payments")}
-                      </button>
-                      <button onClick={() => showHistory(s)} className="text-zinc-200 hover:text-white" title={t("Earlier versions of this site")}>
-                        🕘 {t("History")}
-                      </button>
-                      <button onClick={() => setConfirming(s.slug)} className="text-zinc-500 hover:text-red-400">
-                        {t("Unpublish")}
-                      </button>
-                    </div>
+                    </p>
                   )}
-                </li>
-              ))}
-            </ul>
+                </div>
+              )}
+              {sites.length > LIST_STEP && (
+                <input
+                  type="search"
+                  value={find}
+                  onChange={(e) => findApp(e.target.value)}
+                  placeholder={t("Find an app")}
+                  aria-label={t("Find an app")}
+                  maxLength={80}
+                  className="mb-3 h-10 w-full min-w-0 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-zinc-200 outline-none focus:border-primary/70"
+                />
+              )}
+              <ul className="space-y-2">
+                {found.slice(0, listed).map((s) => (
+                  <li key={s.slug} className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3">
+                    <div className="min-w-0 flex-[1_1_14rem]">
+                      <p className="truncate font-medium text-zinc-100">{s.title}</p>
+                      <a href={`/p/${s.slug}`} target="_blank" rel="noreferrer" className="block truncate text-xs text-primary-soft hover:underline">
+                        {typeof window !== "undefined" ? window.location.host : ""}/p/{s.slug}
+                      </a>
+                    </div>
+                    {confirming === s.slug ? (
+                      <div className="flex items-center gap-3 text-xs">
+                        <span className="text-zinc-400">{t("Take it offline, with its data and messages?")}</span>
+                        <button onClick={() => unpublish(s.slug)} className="text-red-400 hover:text-red-300">
+                          {t("Unpublish")}
+                        </button>
+                        <button onClick={() => setConfirming(null)} className="text-zinc-400 hover:text-zinc-100">
+                          {t("Keep")}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                        {onEdit && (
+                          <button onClick={() => editSite(s)} className="text-zinc-200 hover:text-white" title={t("Open the chat that built this site")}>
+                            ✏️ {t("Edit")}
+                          </button>
+                        )}
+                        <button onClick={() => showMessages(s)} className="text-zinc-200 hover:text-white">
+                          ✉️ {t("Messages")}
+                          {s.messages ? <> ({s.messages})</> : null}
+                          {s.unread > 0 && (
+                            <span className="ml-1.5 rounded-full bg-brand px-1.5 py-0.5 text-[10px] text-on-brand">{t("{count} new", { count: s.unread })}</span>
+                          )}
+                        </button>
+                        <button onClick={() => showContacts(s)} className="text-zinc-200 hover:text-white" title={t("Everyone who sent a form, signed up or paid")}>
+                          👥 {t("Contacts")}
+                          {s.contacts ? <> ({s.contacts.toLocaleString(t.locale)})</> : null}
+                        </button>
+                        <button onClick={() => showVisits(s)} className="text-zinc-200 hover:text-white" title={t("Visits in the last 30 days")}>
+                          📈 {t("Visitors")}
+                          {s.views ? <> ({s.views.toLocaleString(t.locale)})</> : null}
+                        </button>
+                        <button onClick={() => showFiles(s)} className="text-zinc-200 hover:text-white" title={t("Files people sent to this app")}>
+                          📁 {t("Files")}
+                        </button>
+                        <button onClick={() => showAi(s)} className="text-zinc-200 hover:text-white" title={t("Let this app use AI, and set what it may spend")}>
+                          🤖 {t("AI")}
+                        </button>
+                        <button onClick={() => showMembers(s)} className="text-zinc-200 hover:text-white" title={t("People signed up to this app")}>
+                          👤 {t("Members")}
+                          {s.members ? <> ({s.members.toLocaleString(t.locale)})</> : null}
+                        </button>
+                        <button onClick={() => openAsOwner(s.slug)} className="text-zinc-200 hover:text-white" title={t("Change this app's data from the app itself")}>
+                          🔑 {t("Open as owner")}
+                        </button>
+                        <button
+                          onClick={() => showData(s)}
+                          className="text-zinc-200 hover:text-white"
+                          title={s.openData ? t("Anyone can change or delete some of this app's data") : t("What this app keeps, and who may change it")}
+                        >
+                          🗄️ {t("Data")}
+                          {s.openData && <span className="ms-1 text-gold-soft">⚠</span>}
+                        </button>
+                        <button onClick={() => showDomains(s)} className="text-zinc-200 hover:text-white">
+                          🔗 {t("Domain")}
+                        </button>
+                        <button onClick={() => showPreview(s)} className="text-zinc-200 hover:text-white" title={t("What shows when this app's link is shared")}>
+                          🖼️ {t("Link preview")}
+                        </button>
+                        <button onClick={() => showPayments(s)} className="text-zinc-200 hover:text-white">
+                          💳 {t("Payments")}
+                        </button>
+                        <button onClick={() => showHistory(s)} className="text-zinc-200 hover:text-white" title={t("Earlier versions of this site")}>
+                          🕘 {t("History")}
+                        </button>
+                        <button onClick={() => setConfirming(s.slug)} className="text-zinc-500 hover:text-red-400">
+                          {t("Unpublish")}
+                        </button>
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              {found.length > listed && (
+                <button onClick={showMore} className="mx-auto mt-4 block rounded-full border border-white/10 px-4 py-2 text-sm text-zinc-300 transition hover:bg-white/[0.05]">
+                  {t("Show more")}
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>

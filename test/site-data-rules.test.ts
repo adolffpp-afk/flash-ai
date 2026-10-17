@@ -870,3 +870,51 @@ test("the shim goes into the head, or right after the doctype when there's no he
   injectHead("<!--".repeat(500_000), shim);
   assert.ok(Date.now() - started < 1000);
 });
+
+test("paid plans publish more apps; free stays at 20, and an app at the cap can still be updated", async () => {
+  const { siteLimit, FREE_SITES, PLAN_SITES } = await import("../src/lib/server/sites.ts");
+  process.env.FLASH_ADMIN_EMAILS = "admin@x.io";
+  await run("INSERT INTO users (id, email, password_hash, created_at, verified_at) VALUES ('capper', 'c@x.io', '', 0, 1), ('boss', 'admin@x.io', '', 0, 1)");
+  const capper = { id: "capper", email: "c@x.io", name: "", verified_at: 1 } as never;
+  assert.equal(FREE_SITES, 20);
+  assert.equal(await siteLimit(capper), 20);
+  assert.equal(await siteLimit({ id: "boss", email: "admin@x.io", name: "", verified_at: 1 } as never), 1000, "Flash's admins");
+  const subscribe = (plan: string) =>
+    run(
+      `INSERT OR REPLACE INTO subscriptions (id, user_id, plan, interval, status, amount_cents, anchor, paid_until, test, created_at, updated_at)
+       VALUES ('sub-capper', 'capper', ?, 'year', 'active', 100, 0, ?, 1, 0, 0)`,
+      [plan, Date.UTC(2100, 0, 1)],
+    );
+  const caps: Record<string, number> = {};
+  for (const plan of ["lite", "pro", "power", "max", "business", "agency"]) {
+    await subscribe(plan);
+    caps[plan] = await siteLimit(capper);
+  }
+  assert.deepEqual(caps, { lite: 25, pro: 60, power: 120, max: 300, business: 150, agency: 500 });
+  assert.deepEqual(caps, PLAN_SITES);
+  await run("DELETE FROM subscriptions WHERE user_id = 'capper'");
+
+  for (let i = 0; i < 20; i++) {
+    await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES (?, 'capper', 'Cap', '<p>', 0, 0)", [`cap-${i}`]);
+  }
+  await run("DELETE FROM rate_limits");
+  const refused = await publishSite(capper, { html: "<p>21st</p>", title: "One more" });
+  assert.equal("status" in refused && refused.status, 409);
+  assert.equal(
+    "error" in refused && refused.error,
+    "You can publish up to 20 apps. Unpublish one to publish another. Paid plans can publish more apps.",
+  );
+  const updated = await publishSite(capper, { html: "<p>changed</p>", title: "Cap", slug: "cap-3" });
+  assert.ok("slug" in updated && updated.slug === "cap-3", "updates are never held to the cap");
+  // On Pro the 21st goes through, and the refusal at Pro's number doesn't offer a paid plan.
+  await subscribe("pro");
+  await run("DELETE FROM rate_limits");
+  const more = await publishSite(capper, { html: "<p>21st</p>", title: "One more" });
+  assert.ok("slug" in more, JSON.stringify(more));
+  for (let i = 21; i < 60; i++) {
+    await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES (?, 'capper', 'Cap', '<p>', 0, 0)", [`cap-${i}`]);
+  }
+  await run("DELETE FROM rate_limits");
+  const full = await publishSite(capper, { html: "<p>61st</p>", title: "Too many" });
+  assert.equal("error" in full && full.error, "You can publish up to 60 apps. Unpublish one to publish another.");
+});

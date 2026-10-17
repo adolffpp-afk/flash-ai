@@ -1,15 +1,23 @@
 import { getUser, unauthorized } from "@/lib/server/auth.ts";
 import { translatorFor } from "@/lib/server/i18n.ts";
-import { publishSite, unpublishSite } from "@/lib/server/sites.ts";
-import { ownsSite, sitesWithMessages } from "@/lib/server/inbox.ts";
+import { publishSite, siteLimit, unpublishSite } from "@/lib/server/sites.ts";
+import { ownsSite, siteCounts, sitesWithMessages } from "@/lib/server/inbox.ts";
 import { domainsForSite, removeDomain } from "@/lib/server/domains.ts";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * The user's apps, with how many they may publish (maxSites). The list counts messages, visits,
+ * members and contacts for its 20 most recently updated apps; ?counts=a,b,… gives those of up to 20
+ * more, when the list shows them.
+ */
 export async function GET(request: Request) {
   const user = await getUser(request);
   if (!user) return unauthorized();
-  return Response.json({ sites: await sitesWithMessages(user.id) });
+  const asked = new URL(request.url).searchParams.get("counts");
+  if (asked !== null) return Response.json({ counts: await siteCounts(user.id, asked.split(",").filter(Boolean).slice(0, 20)) });
+  const [sites, maxSites] = await Promise.all([sitesWithMessages(user.id), siteLimit(user)]);
+  return Response.json({ sites, maxSites });
 }
 
 /** Publishes an app, or updates an already published one when its slug is passed. */

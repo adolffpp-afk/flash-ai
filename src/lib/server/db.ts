@@ -53,6 +53,10 @@ const SCHEMA = [
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   )`,
+  // One owner's apps, newest first, without reading every app on Flash: the app list, publishing's
+  // count, the companion and storage all look apps up by owner. Built on the existing database by
+  // hand before it shipped, as building it reads every app's page.
+  `CREATE INDEX IF NOT EXISTS sites_user ON sites(user_id, updated_at)`,
   `CREATE TABLE IF NOT EXISTS site_records (
     id TEXT PRIMARY KEY,
     site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
@@ -126,6 +130,9 @@ const SCHEMA = [
     read_at INTEGER NOT NULL DEFAULT 0
   )`,
   `CREATE INDEX IF NOT EXISTS site_messages_site ON site_messages(site_slug, created_at)`,
+  // Only the unread messages, so the app list counts them for every app without stepping through
+  // the read ones.
+  `CREATE INDEX IF NOT EXISTS site_messages_unread ON site_messages(site_slug) WHERE read_at = 0`,
   // One list per app of the people it heard from (forms, sign-ups, paid orders, or added by its
   // owner), one per email address (see contacts.ts). source is how it first heard from them; the
   // consent columns say what they agreed to get (by ticking a box themselves, or, after they

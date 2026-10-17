@@ -3,13 +3,19 @@ import { randomId } from "./ids.ts";
 import { isVerified } from "./account.ts";
 import { overLimit } from "./limits.ts";
 import { dataSummary, rulesForPage } from "./site-data.ts";
-import type { User } from "./auth.ts";
+import { activeSubscription } from "./subscriptions.ts";
+import { isAdmin, type User } from "./auth.ts";
 import type { DataSummary } from "../data-rules.ts";
 import { english, type Translate } from "../i18n.ts";
 
 export const MAX_HTML = 2 * 1024 * 1024;
-// Published apps are public pages on Flash's domain, so publishing is limited to slow abuse.
-export const MAX_SITES_PER_USER = 20;
+// Published apps are public pages on Flash's domain, so publishing is limited to slow abuse: a free
+// account publishes up to 20, and paid plans more, set by Flash's plans so that even the worst case
+// (every app full, every credit used, yearly billing) can't make a plan lose money. A team member's
+// apps count against their own plan, as their domains and storage do.
+export const FREE_SITES = 20;
+export const PLAN_SITES: Record<string, number> = { lite: 25, pro: 60, power: 120, max: 300, business: 150, agency: 500 };
+const ADMIN_SITES = 1000;
 const HOUR = 3600_000;
 // Earlier versions kept per site, newest first; older ones are deleted.
 export const MAX_VERSIONS = 10;
@@ -98,6 +104,13 @@ export async function unpublishSite(userId: string, slug: string): Promise<boole
   return results.at(-1)!.rowsAffected > 0;
 }
 
+/** How many apps the user may have published at once, by their plan. */
+export async function siteLimit(user: User): Promise<number> {
+  if (isAdmin(user)) return ADMIN_SITES;
+  const sub = await activeSubscription(user.id);
+  return sub && Object.hasOwn(PLAN_SITES, sub.plan) ? PLAN_SITES[sub.plan] : FREE_SITES;
+}
+
 export async function listSites(userId: string) {
   return all<{ slug: string; title: string; updated_at: number }>(
     "SELECT slug, title, updated_at FROM sites WHERE user_id = ? ORDER BY updated_at DESC",
@@ -163,9 +176,13 @@ export async function publishSite(
     ]);
     if (r.rowsAffected) return published(slug, before);
   }
-  const count = await one<{ n: number }>("SELECT COUNT(*) AS n FROM sites WHERE user_id = ?", [user.id]);
-  if (Number(count?.n ?? 0) >= MAX_SITES_PER_USER) {
-    return { error: t("You can publish up to {max} apps. Unpublish one to publish another.", { max: MAX_SITES_PER_USER }), status: 409 };
+  // Updates are never held to the cap, so someone back on free keeps every app and can change them.
+  const count = Number((await one<{ n: number }>("SELECT COUNT(*) AS n FROM sites WHERE user_id = ?", [user.id]))?.n ?? 0);
+  // The plan is read only from the free number on.
+  const max = count < FREE_SITES ? FREE_SITES : await siteLimit(user);
+  if (count >= max) {
+    const refused = t("You can publish up to {max} apps. Unpublish one to publish another.", { max });
+    return { error: max === FREE_SITES ? `${refused} ${t("Paid plans can publish more apps.")}` : refused, status: 409 };
   }
   if (await overLimit(`publish:${user.id}`, 10, HOUR)) return { error: t("You've published a lot this hour. Try again later."), status: 429 };
   let fresh = makeSlug(title);
