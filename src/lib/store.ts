@@ -175,6 +175,23 @@ export function onUnpublished(callback: (slug: string) => void): () => void {
   return () => window.removeEventListener(UNPUBLISHED, listener);
 }
 
+const RESTORED = "flash:restored";
+
+/**
+ * Tells what's on screen (an app's own page in the chat) that an earlier version of a site was brought
+ * back in My websites & apps (History): the version published from there isn't the live one any more.
+ */
+export function announceRestored(slug: string): void {
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(RESTORED, { detail: slug }));
+}
+
+/** Calls back with each site an earlier version was brought back for on this page; returns what stops it. */
+export function onRestored(callback: (slug: string) => void): () => void {
+  const listener = (e: Event) => callback(String((e as CustomEvent).detail));
+  window.addEventListener(RESTORED, listener);
+  return () => window.removeEventListener(RESTORED, listener);
+}
+
 const SEO = "flash:seo";
 type SeoScore = { score: number | null; issues: number };
 

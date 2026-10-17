@@ -14,7 +14,7 @@ import { decode, hasOwnPreview, sitePreview } from "./site-preview.ts";
 import { imageDimensions } from "./imageSize.ts";
 
 /** Changes when the reading changes, so facts saved before are read again (see server/seo.ts). */
-export const SEO_VERSION = 4;
+export const SEO_VERSION = 5;
 
 export type Alphabet = "latin" | "arabic" | "hebrew" | "cyrillic" | "greek" | "devanagari" | "bengali" | "thai" | "hangul" | "cjk";
 
@@ -100,9 +100,10 @@ export type SeoFacts = {
    */
   placeholders: string[];
   /**
-   * Blanks found only as a field of an object in its scripts' code ({ price: "[Price]" }), which may be
-   * sample entries shown only while a list is empty (as builder.ts asks): they count as shown unless
-   * the lists it reads have entries with those fields (sampleFields) and without those blanks.
+   * Blanks found only in sample entries in its scripts' code: a field of an object in an array the
+   * script shows in a list's place while the list is empty, as builder.ts asks (const SAMPLE =
+   * [{ price: "[Price]" }], shown as items.length ? items : SAMPLE). They count as shown unless the
+   * lists it reads have entries with those fields (sampleFields) and without those blanks.
    */
   scriptPlaceholders: string[];
   /** The fields those blanks are in (price). */
@@ -227,6 +228,19 @@ const SCRIPT_TEXT_BEFORE = /[\s"'`>(]/;
 // A blank in a string that is an object's field, as a sample entry's are ({ price: "[Price]" }): the
 // field's name after a "{", a "," or the line's start, then the string's start, with no quote after it.
 const SAMPLE_FIELD = /(?:^|[{,])\s*([A-Za-z_$][\w$]{0,39}|"[\w$ -]{1,40}"|'[\w$ -]{1,40}')\s*:\s*["'`][^"'`\n]*$/;
+// An array of objects in a script's code ([{ … }]), which may be sample entries.
+const OBJECT_ARRAY = /\[\s*\{/g;
+// What comes before an array written in a list's place while it's empty: items.length ? items : [{ … }],
+// !items.length ? [{ … }] : items, || [{ … }], ?? [{ … }], or if (!items.length) items = [{ … }].
+const INSTEAD_HERE = /\blength\b[^;]{0,40}?\?(?!\.)(?:[^:;]{0,80}:)?\s*$|(?:\|\||\?\?)\s*$|\blength\b[^;{}]{0,40}?\)\s*(?:\{\s*)?(?:[\w$.]+\s*=\s*|return\s+|[\w$.]+\()$/;
+// The names used in a list's place, in the same ways (items.length ? items : SAMPLE, || SAMPLE, if (!items.length) items = SAMPLE).
+const USED_INSTEAD =
+  /\blength\b[^;]{0,40}?\?(?!\.)\s*([A-Za-z_$][\w$]{0,39})(?:[^:;]{0,80}:\s*([A-Za-z_$][\w$]{0,39}))?|(?:\|\||\?\?)\s*([A-Za-z_$][\w$]{0,39})|\blength\b[^;{}]{0,40}?\)\s*(?:\{\s*)?(?:[\w$.]+\s*=\s*|return\s+|[\w$.]+\()([A-Za-z_$][\w$]{0,39})/g;
+// A React state an array starts as: const [menu, setMenu] = useState(SAMPLE) (the name), or useState([{ … }]) (written there).
+const STATE_OF = /\[\s*[\w$]+\s*,\s*([A-Za-z_$][\w$]{0,39})\s*\]\s*=\s*(?:React\.)?useState\(\s*([A-Za-z_$][\w$]{0,39})\s*\)/g;
+const STATE_HERE = /\[\s*[\w$]+\s*,\s*([A-Za-z_$][\w$]{0,39})\s*\]\s*=\s*(?:React\.)?useState\(\s*$/;
+// The name an array is given (const SAMPLE = [{ … }]).
+const NAMED = /(?<![\w$.])([A-Za-z_$][\w$]{0,39})\s*=(?![=>])\s*$/;
 // A line in a script that only logs, throws or is a comment: its words never show on the page.
 const NOT_SHOWN_LINE = /console\.|\bthrow\b|Error\(|^\s*(?:\/\/|\/?\*)/;
 // A picture or other file a script's HTML or JSX loads over http:// (src="http://…", src={"http://…"}).
@@ -652,7 +666,7 @@ function scan(html: string): SeoFacts {
    * What a script (or a <template>) writes on the page: blanks like [Phone number] in its strings and
    * JSX, small Tailwind text sizes, and pictures it loads over http://. Pages built by React, Alpine's
    * x-data or sample records shown while a list is empty hold their words here, not in the HTML. A
-   * script's blanks that are an object's field go apart (see scriptPlaceholders); a template's are shown.
+   * script's blanks in sample entries go apart (see scriptPlaceholders); a template's are shown.
    */
   const onScriptWords = (code: string, script = false) => {
     findScriptPlaceholders(code, facts.placeholders, script ? { blanks: facts.scriptPlaceholders, fields: facts.sampleFields } : undefined);
@@ -1141,11 +1155,13 @@ function findPlaceholders(text: string, found: string[]) {
  * obj[Symbol.iterator] (a "." inside), a pattern's [A-Za-z], what follows it as code ([A-Za-z]+,
  * [Key](…)), and lines that only log or throw ("[App] failed") or are comments. At most 2,000 are
  * looked at, so a script full of brackets is read as quickly as any other. With samples, a blank that
- * is an object's field ({ price: "[Price]" }) goes there, with its field, as a possible sample entry.
+ * is an object's field in sample entries (see sampleArrays) goes there, with its field. Any other
+ * object's are shown: a lone one (const SPECIAL = { price: "[Price]" }), JSX's and createElement's props.
  */
 function findScriptPlaceholders(code: string, found: string[], samples?: { blanks: string[]; fields: string[] }) {
   if ((found.length >= 8 && !samples) || !code.includes("[")) return;
   let looked = 0;
+  let sampled: [number, number][] | undefined;
   for (const m of code.matchAll(PLACEHOLDER)) {
     if (++looked > 2000) return;
     const at = m.index;
@@ -1157,10 +1173,80 @@ function findScriptPlaceholders(code: string, found: string[], samples?: { blank
     const line = head.slice(head.lastIndexOf("\n") + 1);
     if (NOT_SHOWN_LINE.test(line) || !isBlank(m[0])) continue;
     const field = samples && SAMPLE_FIELD.exec(line)?.[1];
-    if (samples && field) {
+    if (samples && field && (sampled ??= sampleArrays(code)).some(([from, to]) => at > from && at < to)) {
       addOnce(samples.blanks, m[0], 8);
       addOnce(samples.fields, field.replace(/^["']|["']$/g, ""), 8);
     } else addOnce(found, m[0], 8);
     if (found.length >= 8 && (!samples || samples.blanks.length >= 8)) return;
   }
+}
+
+/**
+ * Where a script's code holds sample entries: arrays of objects it shows in a list's place while the
+ * list is empty, as builder.ts asks. Written there (items.length ? items : [{ … }]), or named (const
+ * SAMPLE = [{ … }]) and used there (items.length ? items : SAMPLE, if (!items.length) items = SAMPLE),
+ * or a React state that starts as one and is set from flashDB.list. At most 50 arrays are looked at,
+ * each up to 20,000 characters long, and the names in one pass, so any script is read quickly.
+ */
+function sampleArrays(code: string): [number, number][] {
+  const found: [number, number][] = [];
+  let names: Set<string> | undefined;
+  let looked = 0;
+  for (const m of code.matchAll(OBJECT_ARRAY)) {
+    if (++looked > 50) break;
+    const before = code.slice(Math.max(0, m.index - 160), m.index);
+    let sample = INSTEAD_HERE.test(before) || setFromList(code, STATE_HERE.exec(before)?.[1]);
+    const name = !sample && NAMED.exec(before)?.[1];
+    if (name) sample = (names ??= namesUsedInstead(code)).has(name);
+    const end = sample ? arrayEnd(code, m.index) : -1;
+    if (end !== -1) found.push([m.index, end]);
+  }
+  return found;
+}
+
+/** The names a script uses in a list's place while it's empty (see sampleArrays). */
+function namesUsedInstead(code: string): Set<string> {
+  const names = new Set<string>();
+  for (const m of code.matchAll(USED_INSTEAD)) for (const name of m.slice(1)) if (name) names.add(name);
+  let states = 0;
+  for (const m of code.matchAll(STATE_OF)) {
+    if (++states > 20) break;
+    if (setFromList(code, m[1])) names.add(m[2]);
+  }
+  return names;
+}
+
+/** Whether a React state's setter (setMenu) is called with what flashDB.list gives, in the 300 characters after a call (of the first 20). */
+function setFromList(code: string, setter: string | undefined): boolean {
+  if (!setter) return false;
+  const word = new RegExp(`(?<![\\w$])${setter.replace(/\$/g, "\\$")}(?![\\w$])`);
+  let calls = 0;
+  for (const m of code.matchAll(/\bflashDB\s*\??\.\s*list\s*\(/g)) {
+    if (++calls > 20) break;
+    if (word.test(code.slice(m.index, m.index + 300))) return true;
+  }
+  return false;
+}
+
+/**
+ * Where the array that starts at from ends (its "]"), past strings and comments, or -1 when it doesn't
+ * within 20,000 characters.
+ */
+function arrayEnd(code: string, from: number): number {
+  const stop = Math.min(code.length, from + 20_000);
+  let depth = 0;
+  for (let i = from; i < stop; i++) {
+    const c = code[i];
+    if (c === '"' || c === "'" || c === "`") {
+      for (i++; i < stop && code[i] !== c; i++) if (code[i] === "\\") i++;
+    } else if (c === "/" && (code[i + 1] === "/" || code[i + 1] === "*")) {
+      const end = code[i + 1] === "/" ? code.indexOf("\n", i) : code.indexOf("*/", i + 2) + 1;
+      if (end <= 0) return -1;
+      i = end;
+    } else if (c === "[" || c === "{" || c === "(") depth++;
+    else if (c === "]" || c === "}" || c === ")") {
+      if (--depth === 0) return c === "]" ? i : -1;
+    }
+  }
+  return -1;
 }

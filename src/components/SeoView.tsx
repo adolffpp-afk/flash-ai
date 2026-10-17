@@ -36,8 +36,11 @@ export type SeoData = {
  * shown: the points the panel listed, when Send was pressed: nothing is sent when others would go.
  */
 export type SiteFix = { projectId: string; slug: string; title: string; ids: CheckId[]; ctx: SeoContext; at: number; shown?: CheckId[] };
-/** What Flash would send for a change in the chat that built the site: the points that fit and how many more were asked for, or why none would go. */
-export type FixPlan = { sent: CheckId[]; left: number } | { why: string };
+/**
+ * What Flash would send for a change in the chat that built the site: the points that fit and how many
+ * more were asked for, or why none would go. busy: Flash is still answering there, so it would go later.
+ */
+export type FixPlan = { sent: CheckId[]; left: number } | { why: string; busy?: true };
 
 const BAND_WORDS: Record<Band, string> = { good: msg("Good"), needs: msg("Needs work"), poor: msg("Poor") };
 const BAND_TEXT: Record<Band, string> = { good: "text-emerald-400", needs: "text-gold-soft", poor: "text-red-400" };
@@ -195,7 +198,7 @@ export function SeoView({
   // point asked for, which Flash gets; plan: what Flash would send for them in the chat that built the
   // site (null while it's looked at), which the panel lists.
   const [asking, setAsking] = useState<{ key: string; ids: CheckId[]; plan: FixPlan | null } | null>(null);
-  // What Fix all would send, once looked at: its button counts that.
+  // What Fix all would send, once looked at: its button counts that, and only that.
   const [allPlan, setAllPlan] = useState<FixPlan | null>(null);
   // The chat that built the site: loading (null), found, or why it can't be.
   const [project, setProject] = useState<{ id?: string; error?: string } | null>(null);
@@ -210,7 +213,8 @@ export function SeoView({
   const site = { title: data.title, address: `${data.ctx.appBase}/p/${slug}` };
   const fixable = fixableIds(report);
   const all = fixContext(report, fixable, site);
-  const allCount = allPlan && "sent" in allPlan ? allPlan.sent.length : all.sent.length;
+  // No number while it's looked at, or when nothing would go (the panel says why).
+  const allCount = allPlan && "sent" in allPlan ? allPlan.sent.length : null;
   const askingKey = asking?.key;
 
   useEffect(() => {
@@ -282,7 +286,13 @@ export function SeoView({
     setSending(false);
     if (!answer) return;
     if ("why" in answer) {
-      setNote(answer.why);
+      // Flash is busy: what's listed still goes when it's done. Otherwise nothing would go now (that chat's
+      // newest version has the fix, or is another site), so the panel says why in place of the list and Send.
+      if (answer.busy) setNote(answer.why);
+      else {
+        setAsking((open) => (open?.key === asking.key ? { ...open, plan: answer } : open));
+        if (asking.key === "all") setAllPlan(answer);
+      }
       return;
     }
     // That chat changed since the list was made: the panel lists what would go now, for Send again.
@@ -488,7 +498,7 @@ export function SeoView({
                 onClick={() => ask("all", fixable)}
                 className="w-full rounded-md bg-brand px-3 py-2 text-sm font-medium text-on-brand hover:brightness-110 sm:ms-auto sm:w-auto"
               >
-                {t("Fix all ({count})", { count: allCount.toLocaleString(t.locale) })}
+                {allCount === null ? t("Fix all") : t("Fix all ({count})", { count: allCount.toLocaleString(t.locale) })}
               </button>
             )}
           </div>

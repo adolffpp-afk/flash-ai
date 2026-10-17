@@ -527,9 +527,9 @@ const SAMPLE = [{ name: "Country loaf", price: "[Price]" }, { name: "Seeded rye"
     template: "[Price]",
     innerHTML: "[Email address]",
   });
-  // A script's blanks that are an object's field are kept apart, with their fields and the lists the page
-  // reads: a sample shows only while its list is empty. Its JSX, strings and template literals, a
-  // template's and Alpine's data are always shown.
+  // A script's blanks in sample entries (objects in an array it shows in a list's place) are kept apart,
+  // with their fields and the lists the page reads: a sample shows only while its list is empty. Its
+  // JSX, strings, template literals and other objects, a template's and Alpine's data are always shown.
   const facts = (html: string) => {
     const f = scanPage(html);
     return [f.placeholders, f.scriptPlaceholders, f.sampleFields, f.lists];
@@ -537,7 +537,42 @@ const SAMPLE = [{ name: "Country loaf", price: "[Price]" }, { name: "Seeded rye"
   assert.deepEqual(facts(pages.sample), [[], ["[Price]"], ["price"], ["bakes"]]);
   for (const name of ["react", "alpine", "template", "innerHTML"]) assert.deepEqual(facts(pages[name]).slice(1), [[], [], []], name);
   const script = (code: string) => facts(page({ body: `${BODY}<ul id="bakes"></ul><script>${code}</script>` }));
-  assert.deepEqual(script(`const S = [{ "name": "Rye", 'price': 'From [Price]' }];\nlet b = {\n  about: \`Made with [Flour]\`,\n}; flashDB.list("bakes");`), [[], ["[Price]", "[Flour]"], ["price", "about"], ["bakes"]]);
+  assert.deepEqual(
+    script(`const S = [{ "name": "Rye", 'price': 'From [Price]',\n  about: \`Made with [Flour]\` }];\nconst list = await flashDB.list("bakes");\nshow(list.length ? list : S);`),
+    [[], ["[Price]", "[Flour]"], ["price", "about"], ["bakes"]],
+  );
+  // However the page puts them in the list's place.
+  const read = 'let list = await flashDB.list("bakes");';
+  const samples = {
+    unless: `const S = [{ price: "[Price]" }];\n${read}\nshow(!list.length ? S : list);`,
+    if: `const S = [{ price: "[Price]" }];\n${read}\nif (list.length === 0) list = S;\nshow(list);`,
+    or: `${read}\nshow(list.length && list || [{ price: "[Price]" }]);`,
+    inPlace: `${read}\nshow(list.length ? list : [\n  { name: "Rye" }, // ] in a comment\n  { name: "Spelt (100%)", note: "] in a string", price: "[Price]" },\n]);`,
+    state: `const S = [{ price: "[Price]" }];\nfunction Bakes() {\n  const [bakes, setBakes] = React.useState(S);\n  React.useEffect(() => { flashDB.list("bakes").then((l) => l.length && setBakes(l)); }, []);\n}`,
+    stateInPlace: `function Bakes() {\n  const [bakes, setBakes] = useState([{ price: "[Price]" }]);\n  useEffect(() => { flashDB.list("bakes").then(setBakes); }, []);\n}`,
+  };
+  for (const [name, code] of Object.entries(samples)) assert.deepEqual(script(code), [[], ["[Price]"], ["price"], ["bakes"]], name);
+  // An object the page always shows isn't a sample entry, however its fields are named: a lone one, an
+  // array no list replaces, a React state no list sets, and JSX's or createElement's props.
+  const shown = {
+    lone: `const SPECIAL = { name: "Truffle bianca", price: "[Price]" };\nspecial.textContent = SPECIAL.price;\n${read}\nshow(list.length ? list : []);`,
+    multiline: `let b = {\n  about: \`Made with [Flour]\`,\n};\n${read}`,
+    array: `const TEAM = [{ name: "Ana", phone: "[Phone number]" }];\nshowTeam(TEAM);\n${read}\nshow(list);`,
+    state: `const S = [{ price: "[Price]" }];\nfunction Bakes() {\n  const [bakes, setBakes] = React.useState(S);\n  React.useEffect(() => { flashDB.list("bakes").then(setOther); }, []);\n}`,
+    props: `ReactDOM.createRoot(root).render(React.createElement(Special, { item: { name: "Truffle bianca", price: "[Price]" } }));\nflashDB.list("bakes");`,
+  };
+  for (const [name, code] of Object.entries(shown)) assert.deepEqual(script(code).slice(1), [[], [], []], name);
+  const jsx = page({
+    body: `${BODY}<div id="root"></div><script type="text/babel">
+function App() {
+  const [menu, setMenu] = React.useState([]);
+  React.useEffect(() => { flashDB.list("menu").then(setMenu); }, []);
+  return <main><Special item={{ name: "Truffle bianca", price: "[Price]" }} /><Cards items={[{ title: "Delivery", body: "[Delivery area]" }]} /><ul>{menu.map((m) => <li key={m.id}>{m.name} {m.price}</li>)}</ul></main>;
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>`,
+  });
+  assert.deepEqual(facts(jsx), [["[Price]", "[Delivery area]"], [], [], []], "JSX's props are shown");
   assert.deepEqual(script(`el.textContent = "Call [Phone number]"; el.title = x ? "a" : "[Price]"; flashDB.list("bakes");`), [["[Phone number]", "[Price]"], [], [], []]);
   // Once every list it reads has entries without them (the server looks: see seo-routes.test.ts), a
   // sample's blanks are only worth knowing, and don't count; what the page shows itself still does.
@@ -875,6 +910,10 @@ test("hostile pages finish quickly and never throw", () => {
     ["nested sections", '<section data-page="a">'.repeat(30_000)],
     ["data: picture", `<img src="data:image/png;base64,${"iVBORw0KGgo".repeat(9_000)}">`],
     ["ld+json", `<script type="application/ld+json">${"[".repeat(50_000)}</script>`],
+    ["sample entries", `${fill("<script>flashDB.list('x');", 'length ? x : S; S = [{ p: "[Price]", ')}</script>`],
+    ["sample states", `${fill("<script>", '[a, setA] = useState(S); S = [{ p: "[Price]", flashDB.list(setA ')}</script>`],
+    ["|| [{", `${fill("<script>", '|| [{ p: "[Price]" /* ')}</script>`],
+    ["length ?", `${fill('<script>flashDB.list("x"); S = [{ p: "[Price]" }];', "length ? a : b ")}</script>`],
     ["entities", fill("<p>", "&#x1F600;&amp;&#99999999;")],
   ];
   for (const [name, input] of inputs) {

@@ -68,9 +68,9 @@ export async function seoContext(slug: string, domains?: string[], facts?: SeoFa
 
 /**
  * Whether every shared list a page reads (flashDB.list("menu")) has entries visitors may see, with the
- * fields its scripts' blanks are in ({ price: "[Price]" }) and none of those blanks: the blanks are then
- * in sample entries the page shows only while a list is empty (as builder.ts asks), so visitors don't
- * see them. A list named while the page runs can't be looked at, so it never counts as filled.
+ * fields its sample entries' blanks are in ([{ price: "[Price]" }], shown only while a list is empty, as
+ * builder.ts asks: see seo-scan.ts) and none of those blanks, so visitors don't see the samples. A list
+ * named while the page runs can't be looked at, so it never counts as filled.
  */
 async function listsFilled(slug: string, facts: SeoFacts | null | undefined): Promise<boolean> {
   if (!facts?.scriptPlaceholders?.length || !facts.sampleFields?.length || !facts.lists?.length || facts.lists.includes("*")) return false;

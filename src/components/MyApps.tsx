@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { announceSeoScore, announceUnpublished, api } from "@/lib/store";
+import { announceRestored, announceSeoScore, announceUnpublished, api } from "@/lib/store";
 import { SELLER_COUNTRIES } from "@/lib/shop";
 import { DATA_RULES, DEFAULT_KEY, RULE_TEXT, blockProblem, dataLine, type DataRule, type DataSummary, type RuleSource } from "@/lib/data-rules";
 import { msg } from "@/lib/i18n";
@@ -366,6 +366,8 @@ export function MyApps({
         method: "POST",
         json: { id },
       });
+      // The app's page in the chat: the version published from there isn't the live one any more.
+      announceRestored(slug);
       // The search check read the page now live again: the list shows its score, and so does the app's page in the chat.
       if (check) {
         setSites((all) => all?.map((s) => (s.slug === slug ? { ...s, seo: check.score === null ? null : { score: check.score, issues: check.issues } } : s)) ?? null);

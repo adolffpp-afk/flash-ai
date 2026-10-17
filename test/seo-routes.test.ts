@@ -263,10 +263,15 @@ load();
   assert.equal((await look()).said, "fail found [Price] tell");
   await chooseRule(slug, "menu", null);
   assert.equal((await look()).said, "tip samples [Price] null");
-  // A blank in another object the script always shows (no menu entry has a phone) still counts.
+  // A blank in another object the script always shows still counts, while the sample's doesn't.
   const contact = MENU.replace("const SAMPLE_MENU", 'const CONTACT = { phone: "[Phone number]" };\nfooter.textContent = CONTACT.phone;\nconst SAMPLE_MENU');
   assert.ok("slug" in (await publishSite(who.user, { html: contact, title: "Luigi's", slug })));
-  assert.equal((await look()).said, "fail found [Phone number], [Price] tell");
+  assert.equal((await look()).said, "fail found [Phone number] tell");
+  // So does one in a field named like the menu's, as in a pizza of the week shown above it: the real
+  // menu has prices, but the special still shows [Price].
+  const special = MENU.replace("const SAMPLE_MENU", 'const SPECIAL = { name: "Truffle bianca", price: "[Price]" };\nspecial.textContent = SPECIAL.name + " · " + SPECIAL.price;\nconst SAMPLE_MENU');
+  assert.ok("slug" in (await publishSite(who.user, { html: special, title: "Luigi's", slug })));
+  assert.equal((await look()).said, "fail found [Price] tell");
   // A blank the page's own words show still counts, whatever the menu holds.
   const shown = MENU.replace("<h2>Menu</h2>", "<p>Call us on [Phone number].</p><h2>Menu</h2>");
   assert.ok("slug" in (await publishSite(who.user, { html: MENU, title: "Luigi's", slug })));
@@ -274,6 +279,44 @@ load();
   assert.ok("slug" in updated && updated.seo);
   assert.equal((await look()).said, "fail found [Phone number] tell");
   assert.equal(updated.seo.before, filled.score, "the score before counts the menu too");
+});
+
+test("blanks in an object a page always shows count, whatever its lists hold", async () => {
+  const who = await owner("crumb");
+  // A bakery chain's shops come from a list, and its footer always shows the head office: there are no sample entries.
+  const CHAIN = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Golden Crumb · Sourdough bakeries in Lisbon</title>
+<meta name="description" content="Golden Crumb bakes sourdough, pastries and birthday cakes every morning in three Lisbon shops. Find the one nearest you.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E"></head>
+<body><h1>Sourdough baked before sunrise</h1><p>Our bakers start at four so the loaves are still warm when the doors open at seven, every day of the week.</p>
+<h2>Our shops</h2><ul id="shops"></ul>
+<footer><p>Head office: <span id="addr"></span> · <span id="tel"></span></p></footer>
+<script>
+const HEAD_OFFICE = { address: "[Address]", phone: "[Phone number]" };
+document.getElementById("addr").textContent = HEAD_OFFICE.address;
+document.getElementById("tel").textContent = HEAD_OFFICE.phone;
+flashDB.list("shops").then((list) => { shops.replaceChildren(...list.map((s) => { const li = document.createElement("li"); li.textContent = s.name + ", " + s.address + ", " + s.phone; return li; })); });
+</script>
+<script type="application/json" id="flash-data">{"shops": "read"}</script></body></html>`;
+  const published = await publishSite(who.user, { html: CHAIN, title: "Golden Crumb" });
+  assert.ok("slug" in published && published.seo);
+  const slug = published.slug;
+  const look = async () => {
+    const body = (await (await getSeo(who, slug)).json()) as { report: { score: number; checks: Check[] } };
+    const found = body.report.checks.find((c) => c.id === "placeholders")!;
+    return { score: body.report.score, said: `${found.status} ${found.problem} ${found.values.list} ${found.action}` };
+  };
+  const empty = await look();
+  assert.equal(empty.said, "fail found [Address], [Phone number] tell");
+  for (const [id, name, address, phone] of [
+    ["s1", "Baixa", "Rua das Flores 12", "+351 21 000 0001"],
+    ["s2", "Alfama", "Largo do Chafariz 3", "+351 21 000 0002"],
+  ]) {
+    await run("INSERT INTO site_records (id, site_slug, collection, data, created_at, updated_at, owner) VALUES (?, ?, 'shops', ?, 0, 0, '')", [id, slug, JSON.stringify({ name, address, phone })]);
+  }
+  // The shops have addresses and phones, but the footer still shows the blanks.
+  assert.deepEqual(await look(), empty);
+  assert.equal((await listed(who)).find((s) => s.slug === slug)?.seo?.score, empty.score, "the list of apps says the same");
 });
 
 test("the search check never charges: looking, publishing, updating and restoring", async () => {

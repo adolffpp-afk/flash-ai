@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { BuiltApp } from "@/lib/types";
-import { api, onSeoScore, onUnpublished } from "@/lib/store";
+import { api, onRestored, onSeoScore, onUnpublished } from "@/lib/store";
 import { flashDbShim, injectHead } from "@/lib/flashdb-shim";
 import { dataLine, type DataSummary } from "@/lib/data-rules";
 import { appSlug, projectZip } from "@/lib/app-project";
@@ -143,6 +143,14 @@ export function AppPreview({
         if (slug !== app.slug) return;
         setUnpublished(slug);
         setPublishSeo(null);
+      }),
+    [app.slug],
+  );
+  // After History > Bring back in My websites & apps, this version isn't the live one any more: its button reads Update again.
+  useEffect(
+    () =>
+      onRestored((slug) => {
+        if (slug === app.slug) setPublishedHtml("");
       }),
     [app.slug],
   );

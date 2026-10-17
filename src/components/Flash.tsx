@@ -968,7 +968,7 @@ export function Flash({
    * exactly what was listed goes there (sendFix): the answer is null.
    */
   async function fixSite(fix: SiteFix): Promise<FixPlan | null> {
-    const busyNote = { why: t("Flash is still working on a reply. Send this when it's done.") };
+    const busyNote = { why: t("Flash is still working on a reply. Send this when it's done."), busy: true as const };
     if (busy || runningRef.current) return busyNote;
     const messages = await chatMessages(fix.projectId);
     if (!messages) return { why: t("Couldn't find the chat that built this site.") };
@@ -1019,7 +1019,13 @@ export function Flash({
     // Loaded only now, so the check stays out of the chat's own code until it's used.
     const { fixForCopy } = await import("@/lib/seo-fix");
     const planned = fixForCopy(t, latest.html, fix.ctx, fix.ids, { title: fix.title, address: `${fix.ctx.appBase}/p/${fix.slug}` });
-    if (!planned) return { why: t("The newest version in that chat already fixes this. Press Update site under it to put it live.") };
+    // That version's button: Update when it was published before (an older one was brought back since), else Update site.
+    if (!planned)
+      return {
+        why: latest.slug
+          ? t("The newest version in that chat already fixes this. Press Update under it to put it live.")
+          : t("The newest version in that chat already fixes this. Press Update site under it to put it live."),
+      };
     const { content, context, sent, left } = planned;
     return { message: { id: newId(), role: "user", content, build: latest.kind, picked: { label: t("SEO"), context } }, sent, left };
   }
