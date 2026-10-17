@@ -28,6 +28,7 @@ import { ENGINES, ENGINE_LABELS, PENDING_LIMIT_MS, type Attachment, type ChatTur
 import { applyEvent } from "@/lib/apply-event";
 import { api, authedFetch, newId, type AccountSummary, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
 import { adoptAccountFromUrl, announce, getPin, isolate, onAnnounce, setPin } from "@/lib/account-pin";
+import { isLocalPath } from "@/lib/local-path";
 import { PROJECT_TOO_LARGE } from "@/lib/project-size";
 import type { ChatHit } from "@/lib/server/search";
 import { BoltIcon, BrandMark, Wordmark } from "@/app/brand";
@@ -511,7 +512,7 @@ export function Flash({
     const opened = new URLSearchParams(window.location.search);
     // Add another account (from the Connect to Flash page): then back to where it came from.
     const back = opened.get("next");
-    const safeNext = back && back.startsWith("/") && !back.startsWith("//") && !back.startsWith("/\\") ? back : undefined;
+    const safeNext = isLocalPath(back) ? back : undefined;
     if (opened.get("add") === "1") {
       if (signedIn) setAdding({ next: safeNext });
       else {

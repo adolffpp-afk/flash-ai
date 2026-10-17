@@ -17,7 +17,7 @@ const cookieValue = (header: string) => header.split(";")[0].split("=").slice(1)
 
 test("only relative paths are allowed after signing in", () => {
   assert.equal(oauth.safeNext("/projects?x=1"), "/projects?x=1");
-  for (const bad of [null, "", "https://evil.example", "//evil.example", "/\\evil.example", "evil", "/a\nb"]) {
+  for (const bad of [null, "", "https://evil.example", "//evil.example", "/\\evil.example", "evil", "/a\nb", "/\t/evil.example"]) {
     assert.equal(oauth.safeNext(bad), "/", String(bad));
   }
 });

@@ -55,6 +55,7 @@ globalThis.fetch = (async (input: string | URL, init: RequestInit = {}) => {
 
 const pin = await import("../src/lib/account-pin.ts");
 const store = await import("../src/lib/store.ts");
+const { isLocalPath } = await import("../src/lib/local-path.ts");
 
 test("api() keeps the caller's headers, adds the JSON type and names the tab's account", async () => {
   pin.setPin("acct_a");
@@ -131,4 +132,21 @@ test("storage that refuses keeps the account for this page, without breaking any
   // No BroadcastChannel here: announcing reaches nobody and listening does nothing.
   pin.announce({ type: "changed" });
   pin.onAnnounce(() => assert.fail("nothing to hear"))();
+});
+
+test("a link's ?next= (Add another account) is followed only to a path on Flash", async () => {
+  // Browsers drop tabs and line breaks from an address, so "/\t/evil.example" goes to evil.example.
+  for (const bad of ["/\t/evil.example/signin", "/\n/evil.example", "/\r/evil.example", "//evil.example", "/\\evil.example", "/a\\b", "https://evil.example", "evil", "", null]) {
+    assert.equal(isLocalPath(bad), false, JSON.stringify(bad));
+  }
+  assert.equal(isLocalPath("/oauth/authorize?client_id=c1&redirect_uri=https%3A%2F%2Fapp.example%2Fcb"), true);
+  // Whatever one character follows the first "/", an address that passes stays on Flash.
+  for (let code = 0; code < 128; code++) {
+    const next = `/${String.fromCharCode(code)}/evil.example/x`;
+    if (isLocalPath(next)) assert.equal(new URL(next, "https://flash-app.test/?add=1").origin, "https://flash-app.test", JSON.stringify(next));
+  }
+  // The page reads ?next= only through it.
+  const { readFile } = await import("node:fs/promises");
+  const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
+  assert.match(page, /const back = opened\.get\("next"\);\n\s*const safeNext = isLocalPath\(back\) \? back : undefined;/);
 });
