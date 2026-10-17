@@ -91,7 +91,7 @@ const plainKey = (key: string) => key.normalize("NFD").replace(/[̀-ͯ]/g, "");
 const wordsOf = (key: string) => plainKey(key).replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase().split(/[^a-z0-9]+/);
 const squashed = (key: string) => plainKey(key).toLowerCase().replace(/[^a-z0-9]/g, "");
 
-const PHONE_WORDS = new Set(["phone", "mobile", "cell", "cellphone", "whatsapp", "tel", "telephone", "telefon", "telefono", "telefone", "handy"]);
+const PHONE_WORDS = new Set(["phone", "mobile", "cell", "cellphone", "celular", "movil", "whatsapp", "tel", "telephone", "telefon", "telefono", "telefone", "handy"]);
 const FULL_NAME = new Set(["name", "fullname", "yourname", "customername", "contactname", "nombre"]);
 const FIRST_NAME = new Set(["firstname", "first", "prenom", "givenname", "vorname"]);
 const LAST_NAME = new Set(["lastname", "last", "surname", "familyname", "nachname", "apellido", "apellidos"]);
@@ -116,7 +116,8 @@ export function contactFromFields(data: Record<string, unknown>): Who | null {
     firstOf((k) => squashed(k) === "email", cleanEmail) ||
     firstOf((k) => /e-?mail|correo|courriel/i.test(plainKey(k)), cleanEmail) ||
     firstOf(() => true, cleanEmail);
-  const phone = firstOf((k) => wordsOf(k).some((w) => PHONE_WORDS.has(w)) || squashed(k).includes("phone"), normalPhone);
+  // "WhatsApp" is the words "whats" and "app", so the name squashed together counts too.
+  const phone = firstOf((k) => wordsOf(k).some((w) => PHONE_WORDS.has(w)) || /phone|whatsapp/.test(squashed(k)), normalPhone);
   const named = (names: Set<string>) => firstOf((k) => names.has(squashed(k)), cleanName);
   const first = named(FIRST_NAME);
   const nom = named(new Set(["nom"]));
@@ -162,6 +163,25 @@ export function stagesOf(saved: string, t: Translate): Stage[] {
 /** The stage a contact shows in: their own, or the first stage when it's "" or no longer there. */
 export const stageOf = (stage: string, stages: readonly Stage[]) => (stages.some((s) => s.id === stage) ? stage : stages[0].id);
 
+/**
+ * What to say when a request from My websites & apps › Contacts failed: the server's own words
+ * (they come with the answer's status), or fallback when no answer came at all, such as the
+ * browser's "Failed to fetch" offline, which is in the browser's language rather than Flash's.
+ */
+export const failedText = (err: unknown, fallback: string) => (err instanceof Error && "status" in err && err.message ? err.message : fallback);
+
+/**
+ * The stage a phone shows of the board, where one stage shows at a time: the one the owner picked
+ * (the first when they picked none, or one that's gone), or, for a search they picked it before
+ * (searchedSince), the first with matches when theirs has none, so matches never hide behind a
+ * stage. count is how many show in each.
+ */
+export function phoneStage(ids: readonly string[], picked: string, searchedSince: boolean, count: (id: string) => number): string {
+  const chosen = ids.includes(picked) ? picked : ids[0];
+  if (!searchedSince || count(chosen) > 0) return chosen;
+  return ids.find((id) => count(id) > 0) ?? chosen;
+}
+
 /** Whether a contact matches what the owner searched for: their name, email, phone, tags or notes, without regard to case. */
 export function contactMatches(c: { name: string; email: string; phone: string; tags: string[]; notes: string }, search: string): boolean {
   const q = search.trim().toLowerCase();
@@ -172,11 +192,11 @@ export function contactMatches(c: { name: string; email: string; phone: string; 
 }
 
 /** What the owner can change on a contact's page, as typed. */
-export type ContactForm = { name: string; stage: string; tags: string; notes: string };
+export type ContactForm = { name: string; stage: string; tags: string; notes: string; phone: string };
 
 /** Whether two versions of a contact's form differ once cleaned as the server cleans them (so spaces alone change nothing). */
 export function formChanged(a: ContactForm, b: ContactForm): boolean {
-  const cleaned = (f: ContactForm) => JSON.stringify([cleanName(f.name), f.stage, cleanTags(f.tags), f.notes.trim()]);
+  const cleaned = (f: ContactForm) => JSON.stringify([cleanName(f.name), f.stage, cleanTags(f.tags), f.notes.trim(), normalPhone(f.phone) || f.phone.trim()]);
   return cleaned(a) !== cleaned(b);
 }
 

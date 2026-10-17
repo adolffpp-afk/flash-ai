@@ -138,7 +138,7 @@ export async function POST(request: Request, ctx: Ctx) {
   return Response.json({ error }, { status: added.error === "full" ? 409 : 400 });
 }
 
-/** The owner changes a contact: { id, name?, stage?, tags?, notes? }. */
+/** The owner changes a contact: { id, name?, stage?, tags?, notes?, phone? }. */
 export async function PATCH(request: Request, ctx: Ctx) {
   const who = await owner(request, ctx);
   if (who instanceof Response) return who;
@@ -150,6 +150,7 @@ export async function PATCH(request: Request, ctx: Ctx) {
   const stages = await contactStages(slug, t);
   const result = typeof body.id === "string" && stages ? await updateContact(slug, stages, body.id, body) : "missing";
   if (result === "ok") return Response.json({ ok: true });
+  if (result === "phone") return Response.json({ error: t("That isn't a phone number.") }, { status: 400 });
   if (result === "bad") return Response.json({ error: t("Couldn't save that contact. Please try again.") }, { status: 400 });
   return Response.json({ error: t("Not found") }, { status: 404 });
 }

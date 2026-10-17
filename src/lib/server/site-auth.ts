@@ -33,6 +33,9 @@ const PAGE_TOKEN_MINUTES = 120;
 const MINUTE = 60_000;
 export const MIN_PASSWORD = 8;
 export const MAX_SITE_USERS = 5000;
+// The address check sign-ups had before the contact list's stricter one (EMAIL), for signing in:
+// someone who joined with an address it allowed (an "_" in the domain, say) can still sign in.
+const ANY_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 export type SiteVisitor = { id: string; email: string; name: string };
 
@@ -164,8 +167,9 @@ export async function siteAuth(
   const email = (form.email ?? "").trim().toLowerCase();
   const password = form.password ?? "";
   const name = (form.name ?? "").trim().slice(0, 80);
-  // The length first: the pattern is slow on very long text.
-  if (email.length > 160 || !EMAIL.test(email)) return outcome("bad-email");
+  // The length first: the pattern is slow on very long text. New members need an address the
+  // contact list takes; members who joined before it was stricter still sign in.
+  if (email.length > 160 || !(action === "signup" ? EMAIL : ANY_EMAIL).test(email)) return outcome("bad-email");
   if (password.length < MIN_PASSWORD) return outcome("short-password");
   if (password.length > 200) return outcome("long-password");
   // Guessing passwords, and signing people up in bulk, are both slowed down per app and per visitor.

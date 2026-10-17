@@ -459,12 +459,32 @@ export async function contactDetail(slug: string, id: string, base: string, t: T
   };
 }
 
-export type ContactPatch = { name?: unknown; stage?: unknown; tags?: unknown; notes?: unknown };
+export type ContactPatch = { name?: unknown; stage?: unknown; tags?: unknown; notes?: unknown; phone?: unknown };
 
-/** The owner changes a contact's name, stage, tags or notes. "bad" for anything that doesn't fit. */
-export async function updateContact(slug: string, stages: readonly Stage[], id: string, patch: ContactPatch): Promise<"ok" | "bad" | "missing"> {
+/**
+ * The owner changes a contact's name, stage, tags, notes or phone number. "bad" for anything that
+ * doesn't fit, "phone" for a phone number that isn't one. A form fills in a phone number nobody
+ * proved is theirs, so the owner can correct it or clear it ("") on a contact with an email address;
+ * someone known by their number alone keeps it, as an email contact keeps their address.
+ */
+export async function updateContact(
+  slug: string,
+  stages: readonly Stage[],
+  id: string,
+  patch: ContactPatch,
+): Promise<"ok" | "bad" | "phone" | "missing"> {
   const sets: string[] = [];
   const args: InValue[] = [];
+  if (patch.phone !== undefined) {
+    if (typeof patch.phone !== "string" || patch.phone.length > 100) return "bad";
+    const phone = normalPhone(patch.phone);
+    if (patch.phone.trim() && !phone) return "phone";
+    const contact = await one<{ email: string }>("SELECT email FROM site_contacts WHERE site_slug = ? AND id = ?", [slug, id]);
+    if (!contact) return "missing";
+    if (!contact.email) return "bad";
+    sets.push("phone = ?");
+    args.push(phone);
+  }
   if (patch.name !== undefined) {
     if (typeof patch.name !== "string" || patch.name.trim().length > MAX_NAME) return "bad";
     sets.push("name = ?");
@@ -486,7 +506,12 @@ export async function updateContact(slug: string, stages: readonly Stage[], id: 
     args.push(patch.notes.trim());
   }
   if (!sets.length) return "bad";
-  const r = await run(`UPDATE site_contacts SET ${sets.join(", ")} WHERE site_slug = ? AND id = ?`, [...args, slug, id]);
+  // The phone number changes only on a contact with an email address (see above), whatever happened meanwhile.
+  const r = await run(`UPDATE site_contacts SET ${sets.join(", ")} WHERE site_slug = ? AND id = ?${patch.phone !== undefined ? " AND email <> ''" : ""}`, [
+    ...args,
+    slug,
+    id,
+  ]);
   return r.rowsAffected ? "ok" : "missing";
 }
 

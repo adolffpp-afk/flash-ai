@@ -17,7 +17,9 @@ process.env.FLASH_ADMIN_EMAILS = "admin@x.co";
 process.env.FLASH_APP_URL = "https://www.flash-app.dev";
 
 const { run, one, all } = await import("../src/lib/server/db.ts");
-const { contactFromFields, normalPhone, pageHas, pageWords, stagesOf, cleanTags, dateText, formChanged, mailtoLink, DEFAULT_STAGES } = await import("../src/lib/contacts.ts");
+const { contactFromFields, normalPhone, pageHas, pageWords, stagesOf, cleanTags, dateText, formChanged, mailtoLink, phoneStage, failedText, DEFAULT_STAGES } = await import(
+  "../src/lib/contacts.ts"
+);
 const contacts = await import("../src/lib/server/contacts.ts");
 const { receiveMessage, sitesWithMessages } = await import("../src/lib/server/inbox.ts");
 const { siteAuth } = await import("../src/lib/server/site-auth.ts");
@@ -93,6 +95,9 @@ test("the sender of a form is found from its fields", () => {
   assert.equal(contactFromFields({ telefono: "00 44 20 7946 0958" })?.phone, "+442079460958");
   assert.equal(contactFromFields({ mobileNumber: "555-0100-22" })?.phone, "555010022");
   assert.equal(contactFromFields({ téléphone: "06 12 34 56 78" })?.phone, "0612345678");
+  for (const key of ["WhatsApp", "whatsApp", "whatsAppNumber", "WhatsApp number", "whatsapp", "celular", "móvil"]) {
+    assert.deepEqual(contactFromFields({ name: "Ravi", [key]: "+91 98765 43210" }), { email: "", phone: "+919876543210", name: "Ravi" }, key);
+  }
   assert.equal(contactFromFields({ hotel: "+1 555 010 0000", email: "a@b.co" })?.phone, "", "hotel isn't a phone");
   assert.equal(contactFromFields({ telescope: "5550100000" }), null);
   assert.equal(contactFromFields({ phone: "call me after 5" }), null, "words aren't a number");
@@ -128,6 +133,25 @@ test("an email address can't bring a Bcc, a subject or another recipient into th
     assert.equal(decodeURIComponent(link.pathname), email);
     assert.equal(link.pathname.split("%2C").length - 1, (email.match(/,/g) ?? []).length, "a comma stays in the address");
   }
+});
+
+test("members who joined with an address the old check allowed can still sign in", async () => {
+  await fresh();
+  await site("legacy", "owner");
+  const { hashPassword } = await import("../src/lib/server/auth.ts");
+  const hash = await hashPassword("longenough1");
+  const odd = ["ann@mail_box.example.com", "bob@gmail.com.", "cy@[192.0.2.1]", "info@col·legi.cat", "me@i❤.ws"];
+  for (const [i, email] of odd.entries()) {
+    await run("INSERT INTO site_users (id, site_slug, email, name, password_hash, created_at) VALUES (?, 'legacy', ?, '', ?, 1)", [`lg${i}`, email, hash]);
+    const signin = (password: string) => siteAuth("legacy", "signin", { email, password }, `1.2.4.${i}`, "/p/legacy", true, null);
+    assert.equal((await signin("longenough1")).result, "ok", email);
+    assert.equal((await signin("wrong-password")).result, "wrong", email);
+  }
+  // New sign-ups still need an address the contact list takes, and nonsense is still turned away.
+  assert.equal((await siteAuth("legacy", "signup", { email: "dee@mail_box.example.com", password: "longenough1" }, "1.2.4.9", "/p/legacy", true, null)).result, "bad-email");
+  assert.equal((await siteAuth("legacy", "signin", { email: "not an email", password: "longenough1" }, "1.2.4.9", "/p/legacy", true, null)).result, "bad-email");
+  assert.deepEqual(await contactsOf("legacy"), []);
+  await fresh();
 });
 
 test("a form without an email or phone is still saved, with nobody added", async () => {
@@ -302,6 +326,47 @@ test("one person who gave their email on one form and only their phone on anothe
   await call("DELETE", owner, "twins", `?id=${phoneOnly.id}`);
   assert.deepEqual(await contactsOf("twins"), []);
   assert.equal(await one("SELECT 1 FROM site_messages WHERE site_slug = 'twins'"), null);
+});
+
+test("a phone number someone else typed with a member's email can be corrected or cleared by the owner", async () => {
+  await fresh();
+  await site("wrongphone", "owner");
+  await siteAuth("wrongphone", "signup", { email: "ann@example.com", password: "longenough1", name: "Ann Lee" }, "10.0.2.1", "/p/wrongphone", true, null);
+  // A stranger sends a form with Ann's email and their own number; later Ann sends her real one.
+  await send("wrongphone", { email: "ann@example.com", phone: "+1 555 010 9999", message: "hi" }, {}, "10.0.2.2");
+  await send("wrongphone", { email: "ann@example.com", phone: "+44 20 7946 0958", message: "it's Ann" }, {}, "10.0.2.3");
+  await send("wrongphone", { phone: "+1 555 010 9999", message: "stranger again" }, {}, "10.0.2.4");
+  const ann = (await contactsOf("wrongphone")).find((c) => c.email === "ann@example.com")!;
+  const strangerOnly = (await contactsOf("wrongphone")).find((c) => c.email === "")!;
+  assert.equal(ann.phone, "+15550109999", "the first number given fills in");
+  const detailOf = async (id: unknown) => (await call("GET", owner, "wrongphone", `?id=${id}`)).json();
+  assert.deepEqual((await detailOf(strangerOnly.id)).samePhone.map((c: { name: string }) => c.name), ["Ann Lee"]);
+
+  const patch = (body: Record<string, unknown>) => call("PATCH", owner, "wrongphone", "", body);
+  assert.equal((await patch({ id: ann.id, name: "Ann Lee", phone: "+44 20 7946 0958" })).status, 200);
+  const fixed = await detailOf(ann.id);
+  assert.deepEqual([fixed.contact.phone, fixed.contact.name], ["+442079460958", "Ann Lee"]);
+  assert.deepEqual(fixed.samePhone, []);
+  assert.deepEqual((await detailOf(strangerOnly.id)).samePhone, [], "the stranger's messages no longer name Ann");
+  assert.equal((await (await call("GET", owner, "wrongphone", `?id=${ann.id}&format=json`)).json()).contact.phone, "+442079460958");
+  const csv = await (await call("GET", owner, "wrongphone", "?format=csv")).text();
+  assert.ok(csv.includes("Ann Lee,ann@example.com,'+442079460958,"), csv);
+  assert.ok(!csv.includes("'+15550109999,New contact,,,Signed up"), "the stranger's number is off Ann's row");
+
+  // Cleared, and refused when it isn't a number; someone known by their number alone keeps it.
+  assert.equal((await patch({ id: ann.id, phone: "  " })).status, 200);
+  assert.equal((await detailOf(ann.id)).contact.phone, "");
+  const bad = await patch({ id: ann.id, phone: "call me" });
+  assert.equal(bad.status, 400);
+  assert.match((await bad.json()).error, /isn't a phone number/);
+  assert.equal((await patch({ id: ann.id, phone: 5550100 })).status, 400);
+  assert.equal((await patch({ id: strangerOnly.id, phone: "+1 555 010 7777" })).status, 400);
+  assert.equal((await patch({ id: strangerOnly.id, phone: "" })).status, 400);
+  assert.equal((await detailOf(strangerOnly.id)).contact.phone, "+15550109999");
+  assert.equal((await patch({ id: "missing", phone: "+1 555 010 7777" })).status, 404);
+  // A later form fills it in again only while it's empty, as before.
+  await send("wrongphone", { email: "ann@example.com", phone: "+44 20 7946 0958" }, {}, "10.0.2.5");
+  assert.equal((await detailOf(ann.id)).contact.phone, "+442079460958");
 });
 
 test("agreeing to news counts only with the page's own wording, and the latest choice wins", async () => {
@@ -565,12 +630,56 @@ test("a contact's dates say the year when it isn't this one, and only real chang
   assert.match(dateText(recent, "en-US", true, today), /^Mar 3, 3:00\sPM$/);
   assert.equal(dateText(recent, "en-US", false, today), "Mar 3");
   assert.match(dateText(old, "ar-SA-u-ca-gregory", true, today), /2025|٢٠٢٥/);
-  const saved = { name: "Ann", stage: "new", tags: "VIP, Rye", notes: "Called on Monday." };
+  const saved = { name: "Ann", stage: "new", tags: "VIP, Rye", notes: "Called on Monday.", phone: "+442079460958" };
   assert.equal(formChanged({ ...saved }, saved), false);
-  assert.equal(formChanged({ name: " Ann ", stage: "new", tags: "VIP,Rye, vip", notes: "Called on Monday.\n" }, saved), false, "spaces and repeats change nothing");
+  assert.equal(
+    formChanged({ name: " Ann ", stage: "new", tags: "VIP,Rye, vip", notes: "Called on Monday.\n", phone: "+44 20 7946 0958" }, saved),
+    false,
+    "spaces and repeats change nothing",
+  );
+  assert.equal(formChanged({ ...saved, phone: "+44 20 7946 0959" }, saved), true);
+  assert.equal(formChanged({ ...saved, phone: "" }, saved), true);
+  assert.equal(formChanged({ ...saved, phone: "call me" }, saved), true, "a number that isn't one is a change, which saving then refuses");
   assert.equal(formChanged({ ...saved, stage: "won" }, saved), true);
   assert.equal(formChanged({ ...saved, notes: "Called on Monday. Wants rye." }, saved), true);
   assert.equal(formChanged({ ...saved, tags: "VIP" }, saved), true);
+});
+
+test("a phone shows the stage a search found people in, and a failed search says why", () => {
+  const ids = ["new", "contacted", "won", "lost"];
+  const counts: Record<string, number> = { new: 0, contacted: 0, won: 1, lost: 2 };
+  const count = (id: string) => counts[id] ?? 0;
+  assert.equal(phoneStage(ids, "", true, count), "won", "the first stage with matches, not an empty page");
+  assert.equal(phoneStage(ids, "lost", true, count), "lost", "the owner's pick when it has matches");
+  assert.equal(phoneStage(ids, "", false, count), "new", "the first stage when not searching, even when empty");
+  assert.equal(phoneStage(ids, "contacted", false, count), "contacted", "a stage tapped during this search, even with nothing found there");
+  assert.equal(phoneStage(ids, "gone", true, () => 0), "new", "nothing found anywhere");
+  // The server's own words, or Flash's when no answer came (the browser's "Failed to fetch").
+  const answered = Object.assign(new Error("Too many searches. Please wait a minute."), { status: 429 });
+  assert.equal(failedText(answered, "Couldn't load"), "Too many searches. Please wait a minute.");
+  assert.equal(failedText(new TypeError("Failed to fetch"), "Couldn't load"), "Couldn't load");
+  assert.equal(failedText(Object.assign(new Error(""), { status: 500 }), "Couldn't load"), "Couldn't load");
+});
+
+test("Arabic counts of contacts read right for any number", () => {
+  // Arabic puts 3 to 10 of something in the plural and 11 to 99 in the singular, so a number
+  // that can be anything goes after a label ("جهات الاتصال: 4"), as other Arabic counts do.
+  const ar = JSON.parse(readFileSync(new URL("../src/lib/i18n/ar.json", import.meta.url), "utf8"));
+  const singular = /\d\s*جهة اتصال/;
+  for (const n of [2, 3, 4, 10, 11, 103, 5004]) {
+    for (const [text, blanks] of [
+      ["{count} contacts", { count: n }],
+      ["{shown} of {count} contacts match", { shown: 1, count: n }],
+      ["Your download has the newest {included} of {total} contacts (the file limit is 4 MB).", { included: 3000, total: n }],
+    ] as const) {
+      const shown = translate(ar, text, blanks);
+      assert.notEqual(shown, text, `translated: ${text}`);
+      assert.doesNotMatch(shown, singular, `${n}: ${shown}`);
+      assert.ok(shown.includes(String(n)), shown);
+    }
+  }
+  // Only ever 12 stages, which takes the singular.
+  assert.equal(translate(ar, "You can have up to {count} stages.", { count: 12 }), "يمكنك إضافة 12 مرحلة كحد أقصى.");
 });
 
 test("stages can be renamed, added, reordered and removed", async () => {
@@ -811,31 +920,105 @@ test("unpublishing an app deletes its contacts", async () => {
   assert.equal((await contactsOf("bye")).length, 0);
 });
 
-test("the app's page sends what the person agreed to only when they ticked the box themselves", async () => {
-  type Listener = (e: { target: unknown; isTrusted: boolean }) => void;
-  type Box = { type: string; checked: boolean; defaultChecked: boolean; labels: { textContent: string }[] };
-  const setup = (code: string) => {
-    const listeners: Record<string, Listener[]> = {};
-    const document = {
-      readyState: "complete",
-      addEventListener: (type: string, fn: Listener) => (listeners[type] ??= []).push(fn),
-      createElement: () => ({ style: {} }),
-      body: { appendChild() {} },
-    };
-    const sent: unknown[] = [];
-    const logs: string[] = [];
-    const fetch = async (_url: string, init: { body: string }) => {
-      sent.push(JSON.parse(init.body));
-      return { ok: true, json: async () => ({ ok: true }) };
-    };
-    const console = { info: (...a: unknown[]) => logs.push(a.map(String).join(" ")), warn: (m: string) => logs.push(`warn: ${m}`) };
-    const window: { flashDB?: { send(f: string, d: object, o?: object): Promise<boolean> } } = {};
-    vm.runInNewContext(code, { window, document, fetch, console, location: { href: "https://flash.test/p/x" }, history: { replaceState() {} }, URL, URLSearchParams, Promise });
-    const fire = (type: string, target: unknown, isTrusted: boolean) => (listeners[type] ?? []).forEach((fn) => fn({ target, isTrusted }));
-    return { db: window.flashDB!, fire, sent, logs };
+/*
+ * A page running the app's flashDB in a bare context: listeners for the page's events (fire), what
+ * it sent and what it logged. Labels are a small stand-in for the browser's nodes (labelOf).
+ */
+type Listener = (e: { target: unknown; isTrusted: boolean }) => void;
+type FakeNode = { nodeType: number; nodeValue: string | null; firstChild: FakeNode | null; nextSibling: FakeNode | null; textContent: string };
+type Box = { type: string; checked: boolean; defaultChecked: boolean; labels: FakeNode[] };
+function shimPage(code: string) {
+  const listeners: Record<string, Listener[]> = {};
+  const document = {
+    readyState: "complete",
+    addEventListener: (type: string, fn: Listener) => (listeners[type] ??= []).push(fn),
+    createElement: () => ({ style: {} }),
+    body: { appendChild() {} },
   };
-  const box = (over: Partial<Box> = {}): Box => ({ type: "checkbox", checked: false, defaultChecked: false, labels: [{ textContent: "  Email me\n   news from Golden Crumb " }], ...over });
-  const live = setup(flashDbShim("/d", "/api/sites/x/inbox").replace(/^<script>|<\/script>$/g, ""));
+  const sent: { form: string; data: object; consent?: { text: string } }[] = [];
+  const logs: string[] = [];
+  const fetch = async (_url: string, init: { body: string }) => {
+    sent.push(JSON.parse(init.body));
+    return { ok: true, json: async () => ({ ok: true }) };
+  };
+  const console = { info: (...a: unknown[]) => logs.push(a.map(String).join(" ")), warn: (m: string) => logs.push(`warn: ${m}`) };
+  const window: { flashDB?: { send(f: string, d: object, o?: object): Promise<boolean> } } = {};
+  vm.runInNewContext(code, { window, document, fetch, console, location: { href: "https://flash.test/p/x" }, history: { replaceState() {} }, URL, URLSearchParams, Promise });
+  const fire = (type: string, target: unknown, isTrusted: boolean) => (listeners[type] ?? []).forEach((fn) => fn({ target, isTrusted }));
+  return { db: window.flashDB!, fire, sent, logs };
+}
+const livePage = () => shimPage(flashDbShim("/d", "/api/sites/x/inbox").replace(/^<script>|<\/script>$/g, ""));
+
+/** A <label>'s markup as the browser's nodes: elements, and text with its character references read. textContent as the DOM has it. */
+function labelOf(markup: string): FakeNode {
+  const node = (nodeType: number, nodeValue: string | null): FakeNode => ({ nodeType, nodeValue, firstChild: null, nextSibling: null, textContent: nodeValue ?? "" });
+  const root = node(1, null);
+  const open: { el: FakeNode; last: FakeNode | null }[] = [{ el: root, last: null }];
+  const append = (child: FakeNode) => {
+    const top = open.at(-1)!;
+    if (top.last) top.last.nextSibling = child;
+    else top.el.firstChild = child;
+    top.last = child;
+    return child;
+  };
+  const entities: Record<string, string> = { nbsp: "\u00a0", amp: "&", rsquo: "’", lt: "<", gt: ">" };
+  for (const [token, closing, tag] of markup.matchAll(/<(\/?)([a-z0-9]+)[^>]*>|[^<]+/gi)) {
+    if (!tag) append(node(3, token.replace(/&(\w+);/g, (_all, name: string) => entities[name] ?? `&${name};`)));
+    else if (closing) open.pop();
+    else {
+      const el = append(node(1, null));
+      if (!/^(br|input|img|wbr|hr)$/i.test(tag)) open.push({ el, last: null });
+    }
+  }
+  const fill = (n: FakeNode): string => {
+    if (n.nodeType !== 1) return n.nodeValue ?? "";
+    let text = "";
+    for (let c = n.firstChild; c; c = c.nextSibling) text += fill(c);
+    n.textContent = text;
+    return text;
+  };
+  fill(root);
+  return root.firstChild?.nodeType === 1 && !root.firstChild.nextSibling ? root.firstChild : root;
+}
+
+test("a tick counts whatever elements the label's words are in, as a page made with React shows them", async () => {
+  await fresh();
+  // Each label as the page has it (JSX drops the line breaks between elements), and the words kept.
+  const labels: [string, string][] = [
+    [
+      `<label class="flex gap-2"><input type="checkbox" id="news"><span><span class="font-medium">Join the Golden Crumb newsletter</span><span class="block text-sm">Email me news and offers. I can unsubscribe at any time.</span></span></label>`,
+      "Join the Golden Crumb newsletter Email me news and offers. I can unsubscribe at any time.",
+    ],
+    [`<label><input type="checkbox">Email me news and offers<br>from Golden Crumb</label>`, "Email me news and offers from Golden Crumb"],
+    [
+      `<label><input type="checkbox"><span>Email me news and offers from Golden Crumb.</span><small class="block">I can unsubscribe at any time</small></label>`,
+      "Email me news and offers from Golden Crumb. I can unsubscribe at any time",
+    ],
+    [`<label><input type="checkbox"><span>Email me news</span><small>(monthly)</small><b>Golden</b>&nbsp;<b>Crumb</b></label>`, "Email me news(monthly) Golden Crumb"],
+    [`<label><input type="checkbox">  Email me news\n     and offers from <a href="/">Golden Crumb</a>. I can unsubscribe at any&nbsp;time.</label>`, NEWS],
+  ];
+  const page = livePage();
+  for (const [i, [markup, words]] of labels.entries()) {
+    const slug = `react${i}`;
+    await site(slug, "owner", `<!doctype html><html><body><div id="root"><form><input name="email">${markup}<button>Join</button></form></div></body></html>`);
+    const box: Box = { type: "checkbox", checked: true, defaultChecked: false, labels: [labelOf(markup)] };
+    page.fire("click", box, true);
+    page.fire("change", box, true);
+    await page.db.send("signup", { email: `p${i}@example.com` }, { news: box });
+    const sent = page.sent.at(-1)!;
+    assert.deepEqual(sent.consent, { text: words }, markup);
+    await send(slug, sent.data as Record<string, unknown>, { consent: sent.consent }, `203.0.113.${80 + i}`, sent.form);
+    const [c] = await contactsOf(slug);
+    assert.ok(Number(c.consent_at) > 0, `kept: ${markup}`);
+    assert.equal(c.consent_text, words);
+  }
+  assert.ok(!page.logs.some((l) => l.startsWith("warn")), page.logs.join("\n"));
+});
+
+test("the app's page sends what the person agreed to only when they ticked the box themselves", async () => {
+  const setup = shimPage;
+  const box = (over: Partial<Box> = {}): Box => ({ type: "checkbox", checked: false, defaultChecked: false, labels: [labelOf("<label><input>  Email me\n   news from Golden Crumb </label>")], ...over });
+  const live = livePage();
   const ticked = box();
   ticked.checked = true;
   live.fire("click", ticked, true);

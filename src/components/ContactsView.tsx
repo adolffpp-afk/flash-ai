@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { memo, useCallback, useDeferredValue, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { api } from "@/lib/store";
 import {
   MAX_NAME,
@@ -11,8 +11,11 @@ import {
   cleanTags,
   contactMatches,
   dateText,
+  failedText,
   formChanged,
   mailtoLink,
+  normalPhone,
+  phoneStage as stageOnPhone,
   sourceLabel,
   type ContactForm,
 } from "@/lib/contacts";
@@ -57,6 +60,8 @@ type Detail = {
   samePhone: { id: string; name: string; email: string; phone: string }[];
 };
 type Mode = "board" | "list";
+// What the server found for a search of a big list, or why it couldn't search (failed).
+type Found = { q: string; contacts: Contact[]; matched: number; byStage: Record<string, number>; failed?: string };
 type Screen = { kind: "all" } | { kind: "detail"; id: string } | { kind: "add" } | { kind: "stages" };
 // A stage being edited; key keeps its row while it moves, and id is "" for a new one.
 type DraftStage = { key: number; id: string; name: string };
@@ -66,6 +71,17 @@ const dateLabel = (when: number, locale: string) => dateText(when, locale, true)
 const dayLabel = (when: number, locale: string) => dateText(when, locale);
 const fieldText = (v: unknown) => (typeof v === "string" ? v : JSON.stringify(v));
 const shownName = (c: { name: string; email: string; phone: string }) => c.name || c.email || c.phone;
+// A phone number reads left to right in every language ("+44…", never "…44+"); a name or an email
+// address goes the way its own letters do.
+const nameDir = (c: { name: string; email: string }) => (c.name || c.email ? "auto" : "ltr");
+// Whether the window is wide enough for the board's columns side by side (Tailwind's sm).
+const WIDE = "(min-width: 640px)";
+const onWideChange = (changed: () => void) => {
+  const query = window.matchMedia(WIDE);
+  query.addEventListener("change", changed);
+  return () => query.removeEventListener("change", changed);
+};
+const isWide = () => window.matchMedia(WIDE).matches;
 const input = "h-10 min-w-0 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-zinc-200 outline-none focus:border-primary/70";
 const chip = "rounded-full border px-2 py-0.5 text-[11px]";
 const textButton = "text-xs text-zinc-300 hover:text-white disabled:opacity-50";
@@ -89,6 +105,94 @@ function NewsChip({ c, t }: { c: Contact; t: T }) {
   if (c.unsubscribedAt) return <span className={`${chip} border-gold/40 text-gold-soft`}>{t("Unsubscribed")}</span>;
   return null;
 }
+
+/** A contact's card on the board. Drawn again only when they or the stages change, so typing a search or moving one card stays quick. */
+const BoardCard = memo(function BoardCard({
+  c,
+  stages,
+  onOpen,
+  onMove,
+  onDragEnd,
+}: {
+  c: Contact;
+  stages: Stage[];
+  onOpen: (id: string) => void;
+  onMove: (id: string, stage: string) => void;
+  onDragEnd: () => void;
+}) {
+  const t = useT();
+  return (
+    <li
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.setData("text/plain", c.id);
+        e.dataTransfer.effectAllowed = "move";
+      }}
+      onDragEnd={onDragEnd}
+      className="rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2 text-sm"
+    >
+      <button onClick={() => onOpen(c.id)} className="block w-full min-w-0 text-start">
+        <span className="block truncate text-zinc-100" dir={nameDir(c)}>
+          {shownName(c)}
+        </span>
+        <span className="mt-0.5 block truncate text-xs text-zinc-500">
+          {sourceLabel(c.source, t)} · {t("Last seen {date}", { date: dayLabel(c.lastSeen, t.locale) })}
+        </span>
+      </button>
+      {(c.tags.length > 0 || c.subscribed || c.unsubscribedAt > 0) && (
+        <div className="mt-1.5 flex flex-wrap gap-1">
+          {c.tags.slice(0, 3).map((tag) => (
+            <span key={tag} className={`${chip} max-w-full truncate border-white/10 text-zinc-300`} dir="auto">
+              {tag}
+            </span>
+          ))}
+          <NewsChip c={c} t={t} />
+        </div>
+      )}
+      <select
+        value={c.stage}
+        onChange={(e) => onMove(c.id, e.target.value)}
+        aria-label={t("Stage")}
+        className="mt-2 h-8 w-full rounded-md border border-white/10 bg-zinc-900 px-1.5 text-xs text-zinc-300 outline-none focus:border-primary/70"
+      >
+        {stages.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.name}
+          </option>
+        ))}
+      </select>
+    </li>
+  );
+});
+
+/** A contact's row in the list, drawn again only when they change. */
+const ListRow = memo(function ListRow({ c, stage, onOpen, onTag }: { c: Contact; stage: string; onOpen: (id: string) => void; onTag: (tag: string) => void }) {
+  const t = useT();
+  return (
+    <li className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 text-sm">
+      <button onClick={() => onOpen(c.id)} className="min-w-0 flex-[1_1_12rem] text-start" dir={nameDir(c)}>
+        <span className="block truncate text-zinc-100">{shownName(c)}</span>
+        {c.name && (
+          // Lined up under the name, and cut at its own end whichever way the page reads, so a long
+          // address keeps whose it is.
+          <span className="block text-xs text-zinc-500">
+            <span className="inline-block max-w-full truncate align-top" dir={c.email ? "auto" : "ltr"}>
+              {c.email || c.phone}
+            </span>
+          </span>
+        )}
+      </button>
+      <span className={`${chip} border-white/10 bg-white/[0.06] text-zinc-200`}>{stage}</span>
+      {c.tags.slice(0, 3).map((tag) => (
+        <button key={tag} onClick={() => onTag(tag)} className={`${chip} max-w-[10rem] truncate border-white/10 text-zinc-400 hover:text-zinc-100`} dir="auto">
+          {tag}
+        </button>
+      ))}
+      <NewsChip c={c} t={t} />
+      <span className="text-xs text-zinc-500">{t("Last seen {date}", { date: dayLabel(c.lastSeen, t.locale) })}</span>
+    </li>
+  );
+});
 
 /**
  * Tells My websites & apps whether a form has changes not saved (onEdited), so leaving it asks
@@ -123,16 +227,21 @@ export function ContactsView({ slug, onCount, onEdited }: { slug: string; onCoun
   });
   const [list, setList] = useState<List | null>(null);
   const [q, setQ] = useState("");
+  // A list that came whole is searched here, a moment behind the typing when drawing it is slow.
+  const typedLater = useDeferredValue(q);
   // What the server found for the search, when the list is too big to search here. searches counts
   // the changes that make it out of date, so it's searched again.
-  const [found, setFound] = useState<{ q: string; contacts: Contact[]; matched: number; byStage: Record<string, number> } | null>(null);
+  const [found, setFound] = useState<Found | null>(null);
   const [searches, setSearches] = useState(0);
   const [screen, setScreen] = useState<Screen>({ kind: "all" });
-  const [phoneStage, setPhoneStage] = useState("");
+  // The stage the owner last tapped on a phone, and what they had searched for then.
+  const [phonePick, setPhonePick] = useState({ id: "", search: "" });
   const [dropOn, setDropOn] = useState("");
   const [error, setError] = useState("");
   const [cut, setCut] = useState("");
   const loads = useRef(0);
+  // On a phone the board shows one stage, and only that one is drawn.
+  const wide = useSyncExternalStore(onWideChange, isWide, () => true);
   const onCountRef = useRef(onCount);
   useEffect(() => {
     onCountRef.current = onCount;
@@ -149,7 +258,7 @@ export function ContactsView({ slug, onCount, onEdited }: { slug: string; onCoun
         onCountRef.current(loaded.total);
       },
       (err) => {
-        if (asked === loads.current) setError(err instanceof Error && err.message ? err.message : t("Couldn't load the contacts. Please try again."));
+        if (asked === loads.current) setError(failedText(err, t("Couldn't load the contacts. Please try again.")));
       },
     );
   }
@@ -163,7 +272,8 @@ export function ContactsView({ slug, onCount, onEdited }: { slug: string; onCoun
   // A big list is searched by the server, a moment after typing stops.
   const words = q.trim();
   const serverSearch = Boolean(list && !list.everything && words);
-  // Only the latest search shows: a slower answer for what was typed before is dropped.
+  // Only the latest search shows: a slower answer for what was typed before is dropped. One that
+  // fails says why where the count goes, with Try again, until it's searched again.
   useEffect(() => {
     if (!serverSearch) return;
     let live = true;
@@ -172,7 +282,7 @@ export function ContactsView({ slug, onCount, onEdited }: { slug: string; onCoun
         const result = await api<List>(`/api/sites/${slug}/contacts?q=${encodeURIComponent(words)}`);
         if (live) setFound({ q: words, contacts: result.contacts, matched: result.matched ?? result.contacts.length, byStage: result.matchedByStage ?? {} });
       } catch (err) {
-        if (live) setError(err instanceof Error && err.message ? err.message : t("Couldn't load the contacts. Please try again."));
+        if (live) setFound({ q: words, contacts: [], matched: 0, byStage: {}, failed: failedText(err, t("Couldn't load the contacts. Please try again.")) });
       }
     }, 300);
     return () => {
@@ -247,7 +357,14 @@ export function ContactsView({ slug, onCount, onEdited }: { slug: string; onCoun
     setScreen({ kind: "all" });
     void load();
   };
-  const open = (id: string) => setScreen({ kind: "detail", id });
+  // The same functions on every draw, so cards and rows that haven't changed aren't drawn again.
+  const open = useCallback((id: string) => setScreen({ kind: "detail", id }), []);
+  const moveRef = useRef(move);
+  useEffect(() => {
+    moveRef.current = move;
+  });
+  const onMove = useCallback((id: string, stage: string) => void moveRef.current(id, stage), []);
+  const endDrag = useCallback(() => setDropOn(""), []);
 
   if (!list) return error ? <p role="alert" className="text-sm text-red-400">{error}</p> : <p className="text-sm text-zinc-500">{t("Loading…")}</p>;
   const { stages } = list;
@@ -305,7 +422,7 @@ export function ContactsView({ slug, onCount, onEdited }: { slug: string; onCoun
           stages={stages}
           onCancel={() => setScreen({ kind: "all" })}
           onSaved={() => {
-            setPhoneStage("");
+            setPhonePick({ id: "", search: "" });
             searchAgain();
             back();
           }}
@@ -315,14 +432,25 @@ export function ContactsView({ slug, onCount, onEdited }: { slug: string; onCoun
     );
   }
 
-  const searching = words !== "";
-  const shown = !searching ? list.contacts : list.everything ? list.contacts.filter((c) => contactMatches(c, words)) : found?.q === words ? found.contacts : null;
-  const matched = !searching ? list.total : list.everything ? (shown?.length ?? 0) : found?.q === words ? found.matched : null;
-  const chosenStage = stages.some((s) => s.id === phoneStage) ? phoneStage : stages[0].id;
-  const inStage = (id: string) => (shown ?? []).filter((c) => c.stage === id);
+  // A list that came whole is searched here; a bigger one by the server (found).
+  const local = list.everything;
+  const typed = local ? typedLater.trim() : words;
+  const searching = typed !== "";
+  const current = !local && found?.q === typed ? found : null;
+  const shown = !searching ? list.contacts : local ? list.contacts.filter((c) => contactMatches(c, typed)) : current && !current.failed ? current.contacts : null;
+  const matched = !searching ? list.total : local ? (shown?.length ?? 0) : current && !current.failed ? current.matched : null;
+  const groups: Record<string, Contact[]> = Object.fromEntries(stages.map((s) => [s.id, []]));
+  for (const c of shown ?? []) groups[c.stage]?.push(c);
   // Everyone in a stage, or everyone a search found there (the server counts them when it searched).
   const stageCount = (id: string) =>
-    !searching ? (list.byStage[id] ?? 0) : list.everything ? inStage(id).length : found?.q === words ? (found.byStage[id] ?? 0) : 0;
+    !searching ? (list.byStage[id] ?? 0) : local ? (groups[id]?.length ?? 0) : current && !current.failed ? (current.byStage[id] ?? 0) : 0;
+  const chosenStage = stageOnPhone(
+    stages.map((s) => s.id),
+    phonePick.id,
+    searching && phonePick.search !== typed,
+    stageCount,
+  );
+  const board = mode === "board" && list.total > 0 && shown !== null;
   // A note for the people a column or the list leaves out, as how many more there are.
   const moreNote = (count: number) =>
     count > 0 && (
@@ -333,52 +461,10 @@ export function ContactsView({ slug, onCount, onEdited }: { slug: string; onCoun
       </p>
     );
 
-  const card = (c: Contact) => (
-    <li
-      key={c.id}
-      draggable
-      onDragStart={(e) => {
-        e.dataTransfer.setData("text/plain", c.id);
-        e.dataTransfer.effectAllowed = "move";
-      }}
-      onDragEnd={() => setDropOn("")}
-      className="rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2 text-sm"
-    >
-      <button onClick={() => open(c.id)} className="block w-full min-w-0 text-start">
-        <span className="block truncate text-zinc-100" dir="auto">
-          {shownName(c)}
-        </span>
-        <span className="mt-0.5 block truncate text-xs text-zinc-500">
-          {sourceLabel(c.source, t)} · {t("Last seen {date}", { date: dayLabel(c.lastSeen, t.locale) })}
-        </span>
-      </button>
-      {(c.tags.length > 0 || c.subscribed || c.unsubscribedAt > 0) && (
-        <div className="mt-1.5 flex flex-wrap gap-1">
-          {c.tags.slice(0, 3).map((tag) => (
-            <span key={tag} className={`${chip} max-w-full truncate border-white/10 text-zinc-300`}>
-              {tag}
-            </span>
-          ))}
-          <NewsChip c={c} t={t} />
-        </div>
-      )}
-      <select
-        value={c.stage}
-        onChange={(e) => move(c.id, e.target.value)}
-        aria-label={t("Stage")}
-        className="mt-2 h-8 w-full rounded-md border border-white/10 bg-zinc-900 px-1.5 text-xs text-zinc-300 outline-none focus:border-primary/70"
-      >
-        {stages.map((s) => (
-          <option key={s.id} value={s.id}>
-            {s.name}
-          </option>
-        ))}
-      </select>
-    </li>
-  );
-
   return (
-    <div className="space-y-3">
+    // On a computer the board fills the panel, and each stage scrolls by itself under its name, so
+    // every stage, and the way sideways to the ones past the edge, is in sight.
+    <div className={`space-y-3 ${board ? "sm:flex sm:h-full sm:flex-col" : ""}`}>
       {alert}
       <div className="flex flex-wrap items-center gap-2">
         <div className="flex rounded-full border border-white/10 p-0.5 text-xs" role="group">
@@ -417,15 +503,24 @@ export function ContactsView({ slug, onCount, onEdited }: { slug: string; onCoun
         </div>
       </div>
       {cut && <p className="text-xs text-gold-soft">{cut}</p>}
-      <p className="text-xs text-zinc-500">
-        {searching
-          ? matched === null
-            ? t("Loading…")
-            : t("{shown} of {count} contacts match", { shown: matched.toLocaleString(t.locale), count: list.total.toLocaleString(t.locale) })
-          : list.total === 1
-            ? t("1 contact")
-            : t("{count} contacts", { count: list.total.toLocaleString(t.locale) })}
-      </p>
+      {searching && current?.failed ? (
+        <p role="alert" className="text-xs text-red-400">
+          {current.failed}{" "}
+          <button onClick={searchAgain} className="ms-1 text-primary-soft hover:underline">
+            {t("Try again")}
+          </button>
+        </p>
+      ) : (
+        <p className="text-xs text-zinc-500">
+          {searching
+            ? matched === null
+              ? t("Loading…")
+              : t("{shown} of {count} contacts match", { shown: matched.toLocaleString(t.locale), count: list.total.toLocaleString(t.locale) })
+            : list.total === 1
+              ? t("1 contact")
+              : t("{count} contacts", { count: list.total.toLocaleString(t.locale) })}
+        </p>
+      )}
       {list.total >= list.max && (
         <p className="text-xs text-gold-soft">
           {t("This app has {count} contacts, the most it can keep. New people aren't added until you delete some.", { count: list.max.toLocaleString(t.locale) })}
@@ -439,22 +534,7 @@ export function ContactsView({ slug, onCount, onEdited }: { slug: string; onCoun
         <>
           <ul className="space-y-2">
             {shown.map((c) => (
-              <li key={c.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3 text-sm">
-                <button onClick={() => open(c.id)} className="min-w-0 flex-[1_1_12rem] text-start">
-                  <span className="block truncate text-zinc-100" dir="auto">
-                    {shownName(c)}
-                  </span>
-                  {c.name && <span className="block truncate text-xs text-zinc-500">{c.email || c.phone}</span>}
-                </button>
-                <span className={`${chip} border-white/10 bg-white/[0.06] text-zinc-200`}>{stageName(c.stage)}</span>
-                {c.tags.slice(0, 3).map((tag) => (
-                  <button key={tag} onClick={() => setQ(tag)} className={`${chip} max-w-[10rem] truncate border-white/10 text-zinc-400 hover:text-zinc-100`}>
-                    {tag}
-                  </button>
-                ))}
-                <NewsChip c={c} t={t} />
-                <span className="text-xs text-zinc-500">{t("Last seen {date}", { date: dayLabel(c.lastSeen, t.locale) })}</span>
-              </li>
+              <ListRow key={c.id} c={c} stage={stageName(c.stage)} onOpen={open} onTag={setQ} />
             ))}
           </ul>
           {moreNote((matched ?? 0) - shown.length)}
@@ -465,7 +545,7 @@ export function ContactsView({ slug, onCount, onEdited }: { slug: string; onCoun
             {stages.map((s) => (
               <button
                 key={s.id}
-                onClick={() => setPhoneStage(s.id)}
+                onClick={() => setPhonePick({ id: s.id, search: typed })}
                 aria-pressed={s.id === chosenStage}
                 className={`rounded-full border border-white/10 px-2.5 py-1 text-xs ${s.id === chosenStage ? "bg-white/10 text-zinc-100" : "text-zinc-400"}`}
               >
@@ -474,35 +554,41 @@ export function ContactsView({ slug, onCount, onEdited }: { slug: string; onCoun
             ))}
           </div>
           <p className="hidden text-xs text-zinc-500 sm:block">{t("Drag a card to another stage, or pick its stage on the card.")}</p>
-          <div className="sm:flex sm:gap-3 sm:overflow-x-auto sm:pb-2">
-            {stages.map((s) => {
-              const cards = inStage(s.id);
-              return (
-                <section
-                  key={s.id}
-                  aria-label={s.name}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    setDropOn(s.id);
-                  }}
-                  onDragLeave={() => setDropOn((d) => (d === s.id ? "" : d))}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    setDropOn("");
-                    const id = e.dataTransfer.getData("text/plain");
-                    if (id) void move(id, s.id);
-                  }}
-                  className={`${s.id === chosenStage ? "" : "hidden"} min-w-0 sm:block sm:max-w-80 sm:min-w-56 sm:flex-1 sm:basis-0 sm:rounded-xl sm:p-2 ${dropOn === s.id ? "sm:bg-white/[0.05] sm:ring-1 sm:ring-primary/50" : "sm:bg-white/[0.015]"}`}
-                >
-                  <h3 className="mb-2 hidden items-center gap-2 px-1 text-xs font-medium text-zinc-300 sm:flex">
-                    <span className="min-w-0 flex-1 truncate">{s.name}</span>
-                    <span className="tabular-nums text-zinc-500">{stageCount(s.id).toLocaleString(t.locale)}</span>
-                  </h3>
-                  <ul className="space-y-2">{cards.map(card)}</ul>
-                  {moreNote(stageCount(s.id) - cards.length)}
-                </section>
-              );
-            })}
+          <div className="sm:flex sm:min-h-64 sm:flex-1 sm:gap-3 sm:overflow-x-auto sm:pb-2">
+            {stages
+              .filter((s) => wide || s.id === chosenStage)
+              .map((s) => {
+                const cards = groups[s.id] ?? [];
+                return (
+                  <section
+                    key={s.id}
+                    aria-label={s.name}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setDropOn(s.id);
+                    }}
+                    onDragLeave={() => setDropOn((d) => (d === s.id ? "" : d))}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setDropOn("");
+                      const id = e.dataTransfer.getData("text/plain");
+                      if (id) void move(id, s.id);
+                    }}
+                    className={`min-w-0 sm:flex sm:min-h-0 sm:max-w-80 sm:min-w-56 sm:flex-1 sm:basis-0 sm:flex-col sm:rounded-xl sm:p-2 ${dropOn === s.id ? "sm:bg-white/[0.05] sm:ring-1 sm:ring-primary/50" : "sm:bg-white/[0.015]"}`}
+                  >
+                    <h3 className="mb-2 hidden items-center gap-2 px-1 text-xs font-medium text-zinc-300 sm:flex">
+                      <span className="min-w-0 flex-1 truncate">{s.name}</span>
+                      <span className="tabular-nums text-zinc-500">{stageCount(s.id).toLocaleString(t.locale)}</span>
+                    </h3>
+                    <ul className="space-y-2 sm:min-h-0 sm:flex-1 sm:overflow-y-auto">
+                      {cards.map((c) => (
+                        <BoardCard key={c.id} c={c} stages={stages} onOpen={open} onMove={onMove} onDragEnd={endDrag} />
+                      ))}
+                    </ul>
+                    {moreNote(stageCount(s.id) - cards.length)}
+                  </section>
+                );
+              })}
           </div>
         </>
       )}
@@ -536,7 +622,7 @@ function ContactDetails({
 }) {
   const t = useT();
   const [detail, setDetail] = useState<Detail | null>(null);
-  const [form, setForm] = useState<ContactForm>({ name: "", stage: "", tags: "", notes: "" });
+  const [form, setForm] = useState<ContactForm>({ name: "", stage: "", tags: "", notes: "", phone: "" });
   // The form as it was loaded or last saved: "Saved" shows only while nothing has changed since.
   const [savedForm, setSavedForm] = useState<ContactForm>(form);
   const [saving, setSaving] = useState<"" | "saving" | "saved">("");
@@ -553,7 +639,7 @@ function ContactDetails({
       .then((d) => {
         if (!live) return;
         setDetail(d);
-        const loaded = { name: d.contact.name, stage: d.contact.stage, tags: d.contact.tags.join(", "), notes: d.contact.notes };
+        const loaded = { name: d.contact.name, stage: d.contact.stage, tags: d.contact.tags.join(", "), notes: d.contact.notes, phone: d.contact.phone };
         setForm(loaded);
         setSavedForm(loaded);
       })
@@ -561,7 +647,7 @@ function ContactDetails({
         if (!live) return;
         setFailed(true);
         onFailed();
-        onError(err instanceof Error && err.message ? err.message : t("Couldn't load the contacts. Please try again."));
+        onError(failedText(err, t("Couldn't load the contacts. Please try again.")));
       });
     return () => {
       live = false;
@@ -589,20 +675,32 @@ function ContactDetails({
     e.preventDefault();
     setSaving("saving");
     onError("");
-    // Cleaned as the server cleans them, so what shows is what was saved.
+    // Cleaned as the server cleans them, so what shows is what was saved. The phone number of someone
+    // with an email address is the owner's to correct; someone known by their number alone keeps it.
     const tags = cleanTags(form.tags);
+    const phone = c.email ? normalPhone(form.phone) : c.phone;
     try {
-      await api(`/api/sites/${slug}/contacts`, { method: "PATCH", json: { id, name: form.name, stage: form.stage, tags, notes: form.notes } });
-      const saved = { ...c, name: cleanName(form.name), stage: form.stage, tags, notes: form.notes.trim() };
-      const next = { name: saved.name, stage: saved.stage, tags: tags.join(", "), notes: saved.notes };
+      await api(`/api/sites/${slug}/contacts`, {
+        method: "PATCH",
+        json: { id, name: form.name, stage: form.stage, tags, notes: form.notes, ...(c.email && { phone: form.phone }) },
+      });
+      const saved = { ...c, name: cleanName(form.name), stage: form.stage, tags, notes: form.notes.trim(), phone };
+      const next = { name: saved.name, stage: saved.stage, tags: tags.join(", "), notes: saved.notes, phone };
       setForm(next);
       setSavedForm(next);
       setDetail((d) => d && { ...d, contact: saved });
       onSaved(saved);
       setSaving("saved");
+      // Who else has their number changes with it.
+      if (phone !== c.phone) {
+        api<Detail>(`/api/sites/${slug}/contacts?id=${encodeURIComponent(id)}`).then(
+          (d) => setDetail((shown) => shown && { ...shown, samePhone: d.samePhone }),
+          () => {},
+        );
+      }
     } catch (err) {
       setSaving("");
-      onError(err instanceof Error && err.message ? err.message : t("Couldn't save that contact. Please try again."));
+      onError(failedText(err, t("Couldn't save that contact. Please try again.")));
     }
   }
 
@@ -644,17 +742,17 @@ function ContactDetails({
     <div className="space-y-5">
       {backButton}
       <div className="min-w-0">
-        <h3 className="break-words text-lg font-medium text-zinc-100" dir="auto">
+        <h3 className="break-words text-lg font-medium text-zinc-100" dir={nameDir(c)}>
           {shownName(c)}
         </h3>
         <p className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm">
           {c.email && (
-            <a href={mailtoLink(c.email)} className="min-w-0 break-all text-primary-soft hover:underline">
+            <a href={mailtoLink(c.email)} className="min-w-0 break-all text-primary-soft hover:underline" dir="auto">
               {c.email}
             </a>
           )}
           {c.phone && (
-            <a href={`tel:${c.phone}`} className="text-primary-soft hover:underline">
+            <a href={`tel:${c.phone}`} className="text-primary-soft hover:underline" dir="ltr">
               {c.phone}
             </a>
           )}
@@ -673,7 +771,7 @@ function ContactDetails({
                   {samePhone.map((o, i) => (
                     <span key={o.id}>
                       {i > 0 && ", "}
-                      <button onClick={leave(() => onOpen(o.id))} className="underline hover:text-zinc-100" dir="auto">
+                      <button onClick={leave(() => onOpen(o.id))} className="underline hover:text-zinc-100" dir={nameDir(o)}>
                         {shownName(o)}
                       </button>
                     </span>
@@ -699,7 +797,7 @@ function ContactDetails({
       </div>
 
       <form onSubmit={save} className="space-y-3 rounded-xl border border-white/8 bg-white/[0.02] p-4">
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className={`grid gap-3 ${c.email ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
           <label className={field}>
             {t("Name")}
             <input
@@ -709,6 +807,20 @@ function ContactDetails({
               className={`${input} mt-1 w-full`}
             />
           </label>
+          {c.email && (
+            <label className={field}>
+              {t("Phone")}
+              <input
+                type="tel"
+                value={form.phone}
+                onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                maxLength={40}
+                autoComplete="off"
+                dir="ltr"
+                className={`${input} mt-1 w-full`}
+              />
+            </label>
+          )}
           <label className={field}>
             {t("Stage")}
             <select
@@ -820,14 +932,21 @@ function ContactDetails({
         {confirming ? (
           <div className="basis-full space-y-2 rounded-xl border border-red-400/30 p-3">
             <p className="text-zinc-300">
-              {t(
+              {t.node(
                 "Delete {name}? Their messages, member account and private data go too. Their orders stay for your records without their name, email or address (Stripe keeps its own copy).",
-                { name: shownName(c) },
+                { name: <bdi dir={nameDir(c)}>{shownName(c)}</bdi> },
               )}
             </p>
             {samePhone.length > 0 && (
               <p className="text-gold-soft">
-                {t("Contacts with the same phone number aren't deleted: {names}.", { names: samePhone.map(shownName).join(", ") })}
+                {t.node("Contacts with the same phone number aren't deleted: {names}.", {
+                  names: samePhone.map((o, i) => (
+                    <span key={o.id}>
+                      {i > 0 && ", "}
+                      <bdi dir={nameDir(o)}>{shownName(o)}</bdi>
+                    </span>
+                  )),
+                })}
               </p>
             )}
             <div className="flex gap-4">
@@ -874,7 +993,7 @@ function AddContact({
       const { id } = await api<{ id: string }>(`/api/sites/${slug}/contacts`, { method: "POST", json: form });
       onAdded(id);
     } catch (err) {
-      setError(err instanceof Error && err.message ? err.message : t("Couldn't save that contact. Please try again."));
+      setError(failedText(err, t("Couldn't save that contact. Please try again.")));
       setBusy(false);
     }
   }
@@ -955,7 +1074,7 @@ function StageEditor({
       await api(`/api/sites/${slug}/contacts`, { method: "PUT", json: { stages: draft.map((s) => ({ ...(s.id && { id: s.id }), name: s.name })) } });
       onSaved();
     } catch (err) {
-      setError(err instanceof Error && err.message ? err.message : t("Couldn't save the stages. Please try again."));
+      setError(failedText(err, t("Couldn't save the stages. Please try again.")));
       setBusy(false);
     }
   }

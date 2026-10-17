@@ -26,6 +26,28 @@ const NEWS = `
       if (el && el.type === "checkbox") newsTicks.set(el, Boolean(e.isTrusted && !scriptedClick && el.checked));
     }, true);
   }
+  // A label's words as Flash reads the page (see pageWords in contacts.ts): textContent runs the
+  // words of elements next to each other together ("newsletter" and "Email" in two spans, or around
+  // a <br>), so a space goes where an element starts or ends between two words, or after a "." or ")" there.
+  function labelText(label) {
+    let text = "";
+    let edge = false;
+    (function walk(node) {
+      for (let n = node.firstChild; n; n = n.nextSibling) {
+        if (n.nodeType === 3) {
+          const part = String(n.nodeValue || "");
+          if (edge && part && /[\\p{L}\\p{N}.!?:;,)\\]]$/u.test(text) && /^[\\p{L}\\p{N}]/u.test(part)) text += " ";
+          text += part;
+          if (part) edge = false;
+        } else {
+          edge = true;
+          if (n.nodeType === 1) walk(n);
+          edge = true;
+        }
+      }
+    })(label);
+    return text.replace(/\\s+/g, " ").trim();
+  }
   function newsOf(options) {
     const box = options && options.news;
     if (!box) return null;
@@ -36,7 +58,7 @@ const NEWS = `
     else if (newsTicks.get(box) !== true) warn("the person didn't tick it themselves");
     else {
       const label = (box.labels && box.labels[0]) || (typeof box.closest === "function" ? box.closest("label") : null);
-      const text = label ? String(label.textContent || "").replace(/\\s+/g, " ").trim() : "";
+      const text = label ? labelText(label) : "";
       if (text && text.length <= 300) return { text: text };
       warn("put the box in a <label> of up to 300 characters");
     }
