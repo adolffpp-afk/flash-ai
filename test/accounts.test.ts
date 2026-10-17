@@ -58,6 +58,13 @@ const fileRoute = await import("../src/app/api/files/[id]/route.ts");
 const pageRoute = await import("../src/app/p/[slug]/route.ts");
 const payLinkRoute = await import("../src/app/api/payments/link/route.ts");
 const ownerRoute = await import("../src/app/api/sites/[slug]/owner/route.ts");
+// Added on main after the plan: they read the account through getUser, so they follow the tab's account too.
+const autoTopUpRoute = await import("../src/app/api/billing/auto-topup/route.ts");
+const driveStartRoute = await import("../src/app/api/connect/google/start/route.ts");
+const pickerTokenRoute = await import("../src/app/api/connect/google/picker-token/route.ts");
+const driveFilesRoute = await import("../src/app/api/connect/google/files/route.ts");
+const madeWithRoute = await import("../src/app/api/sites/[slug]/made-with/route.ts");
+const adminReportsRoute = await import("../src/app/api/admin/reports/route.ts");
 const { registerClient } = await import("../src/lib/server/connector.ts");
 const { sendVerification } = await import("../src/lib/server/account.ts");
 const { receiveMessage } = await import("../src/lib/server/inbox.ts");
@@ -891,6 +898,74 @@ test("GitHub's sign-in and installation, and Google Drive's sign-in, finish for 
   const cDrive = await flow(c, "google-drive");
   assert.equal(outcomeOf(await googleCallback.GET(req(`/api/connect/google/callback?state=${cDrive}&error=access_denied`, { cookie }))).outcome, "expired");
   assert.equal(await flowLeft(cDrive), 1);
+});
+
+test("auto top-up, Google Drive, Made with Flash and the reports dashboard act as the tab's account", async () => {
+  const a = await account("nra");
+  const b = await account("nrb");
+  const stranger = await account("nrc");
+  await session(stranger);
+  // b is the browser's default; the tab shows a.
+  const { cookie } = await browser(a, b);
+  const json = (account: string | undefined, body: unknown) => ({ cookie, account, json: body });
+
+  // Auto top-up: reads and saves are the tab's account's, never the default's.
+  await run("INSERT INTO auto_topups (user_id, enabled, pack, below, payment_method, updated_at) VALUES (?, 1, 'x', 100, 'pm_a', 0)", [a]);
+  assert.equal((await (await autoTopUpRoute.GET(req("/api/billing/auto-topup", { cookie, account: a }))).json()).enabled, true);
+  const shown = await (await autoTopUpRoute.GET(req("/api/billing/auto-topup", { cookie }))).json();
+  assert.equal(shown.enabled, false, "with no account named, a read is the default's (b)");
+  const choice = { enabled: false, pack: shown.pack, below: shown.below };
+  assert.equal((await autoTopUpRoute.POST(req("/api/billing/auto-topup", json(undefined, choice)))).status, 401, "a change must name the tab's account");
+  assert.equal((await autoTopUpRoute.POST(req("/api/billing/auto-topup", json(stranger, choice)))).status, 401, "never an account not signed in here");
+  assert.equal(await count("SELECT COUNT(*) AS n FROM auto_topups WHERE user_id IN (?, ?)", [b, stranger]), 0);
+  assert.equal((await autoTopUpRoute.POST(req("/api/billing/auto-topup", json(a, choice)))).status, 200);
+  assert.equal(await count("SELECT COUNT(*) AS n FROM auto_topups WHERE user_id = ? AND enabled = 0", [a]), 1, "turned off for a");
+  assert.equal(await count("SELECT COUNT(*) AS n FROM auto_topups WHERE user_id = ?", [b]), 0, "b untouched");
+
+  // Connecting Google Drive starts for the tab's account; the Picker and picked files are its own.
+  assert.equal((await driveStartRoute.POST(req("/api/connect/google/start", json(undefined, {})))).status, 401);
+  assert.equal((await driveStartRoute.POST(req("/api/connect/google/start", json(stranger, {})))).status, 401);
+  const started = await driveStartRoute.POST(req("/api/connect/google/start", json(a, {})));
+  assert.equal(started.status, 200);
+  assert.deepEqual(
+    (await all<{ user_id: string }>("SELECT user_id FROM connect_flows WHERE provider = 'google-drive' AND user_id IN (?, ?, ?)", [a, b, stranger])).map((r) => r.user_id),
+    [a],
+  );
+  for (const route of [pickerTokenRoute, driveFilesRoute]) {
+    const path = route === pickerTokenRoute ? "/api/connect/google/picker-token" : "/api/connect/google/files";
+    const body = { connectionId: "conn_none", ids: ["f1"] };
+    assert.equal((await route.POST(req(path, json(undefined, body)))).status, 401, path);
+    assert.equal((await route.POST(req(path, json(stranger, body)))).status, 401, path);
+    // As a: a has no such connection (not "signed out").
+    assert.equal((await route.POST(req(path, json(a, body)))).status, 404, path);
+  }
+
+  // Made with Flash: only the tab's account's own app.
+  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES ('mw-b', ?, 'B', '<p>b</p>', 0, 0)", [b]);
+  const made = (account?: string, method = "GET") =>
+    method === "GET"
+      ? madeWithRoute.GET(req("/api/sites/mw-b/made-with", { cookie, account }), ctx({ slug: "mw-b" }))
+      : madeWithRoute.PATCH(req("/api/sites/mw-b/made-with", { method: "PATCH", cookie, account, json: { on: false } }), ctx({ slug: "mw-b" }));
+  assert.equal((await made(a)).status, 404, "a tab showing a doesn't see b's app");
+  assert.equal((await made(b)).status, 200);
+  assert.equal((await made(undefined, "PATCH")).status, 401);
+  assert.equal((await made(a, "PATCH")).status, 404);
+
+  // The reports dashboard: only while the tab shows the owner's account, whichever is the default.
+  const admins = process.env.FLASH_ADMIN_EMAILS;
+  process.env.FLASH_ADMIN_EMAILS = `${a}@x.io`;
+  try {
+    assert.equal((await adminReportsRoute.GET(req("/api/admin/reports", { cookie, account: a }))).status, 200);
+    assert.equal((await adminReportsRoute.GET(req("/api/admin/reports", { cookie }))).status, 403, "the default (b) isn't the owner");
+    assert.equal((await adminReportsRoute.GET(req("/api/admin/reports", { cookie, account: b }))).status, 403);
+    const act = { kind: "share", id: "nothing", action: "take_down" };
+    assert.equal((await adminReportsRoute.POST(req("/api/admin/reports", json(undefined, act)))).status, 401);
+    assert.equal((await adminReportsRoute.POST(req("/api/admin/reports", json(b, act)))).status, 403);
+    assert.equal((await adminReportsRoute.POST(req("/api/admin/reports", json(a, act)))).status, 404, "as the owner: nobody reported it");
+  } finally {
+    if (admins === undefined) delete process.env.FLASH_ADMIN_EMAILS;
+    else process.env.FLASH_ADMIN_EMAILS = admins;
+  }
 });
 
 test("a file of any account signed in here loads, but only the tab's own account deletes one", async () => {
