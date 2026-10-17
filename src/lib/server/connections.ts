@@ -52,7 +52,31 @@ import {
   takeInstallFlow,
   type GithubAccount,
 } from "./github.ts";
-import { CONNECTION_ID, MAX_CONNECTIONS, presetById, type ConnectionView, type Preset, type ToolKind, type ToolPreview } from "../connectors.ts";
+import {
+  FILE_ID,
+  GOOGLE_API,
+  GOOGLE_PROBLEMS,
+  GOOGLE_TOOLS,
+  MAX_FILES,
+  MAX_PICK,
+  GoogleClient,
+  accountOf,
+  beginGoogleFlow,
+  cleanName,
+  exchangeGoogleCode,
+  googleHost,
+  googleReady,
+  grantsDrive,
+  pickedFile,
+  pickedFiles,
+  refreshGoogleToken,
+  revokeGoogleToken,
+  takeGoogleFlow,
+  userinfo,
+  type GoogleAccount,
+  type GoogleTokens,
+} from "./google.ts";
+import { CONNECTION_ID, MAX_CONNECTIONS, presetById, type ConnectionView, type PickedFileView, type Preset, type ToolKind, type ToolPreview } from "../connectors.ts";
 import { StoppedMidCall, cleanSchema, cut, stopError, toolName, type ConnectorKit, type ConnectorTool } from "../engines/connect.ts";
 import { CONNECT_RESULT_TOKENS } from "../credits.ts";
 import { english, msg, type Translate } from "../i18n.ts";
@@ -80,26 +104,31 @@ type ConnectionRow = {
   protocol: string;
   created_at: number;
   last_used_at: number;
-  // Signed in with OAuth (kind "oauth", see mcp-oauth.ts), or to GitHub (kind "github", see github.ts).
+  // Signed in with OAuth (kind "oauth", see mcp-oauth.ts), to GitHub (kind "github", see github.ts) or
+  // to Google Drive (kind "google", see google.ts).
   enc_access: string;
   enc_refresh: string;
   expires_at: number;
   issuer: string;
   // For GitHub: the ids of the app's installations its token could see at sign-in (see github.ts).
+  // For Google Drive: the Google account's email, the account's label in Settings.
   resource: string;
   client_reg_id: string;
   scopes: string;
+  // For Google Drive: {"sub": the Google account's id}, to tell a Reconnect to another account (the
+  // same as account_id).
   endpoints_json: string;
   refreshing_until: number | null;
-  // For GitHub: the number of the GitHub account its tokens are for (see keepGithub).
+  // The account its tokens are for: for GitHub, the GitHub account's number (see keepGithub); for
+  // Google Drive, the Google account's id, its sub (see keepGoogle). '' for every other connection.
   account_id: string;
 };
 
-/** Signed in, with tokens Flash renews: at an MCP server's authorization server, or to GitHub. */
-const signsIn = (row: Pick<ConnectionRow, "kind">) => row.kind === "oauth" || row.kind === "github";
+/** Signed in, with tokens Flash renews: at an MCP server's authorization server, to GitHub or to Google. */
+const signsIn = (row: Pick<ConnectionRow, "kind">) => row.kind === "oauth" || row.kind === "github" || row.kind === "google";
 
-/** A GitHub connection while the GitHub App isn't set up: hidden everywhere, and never used. */
-const hidden = (row: Pick<ConnectionRow, "provider">) => row.provider === "github" && !githubReady();
+/** A GitHub or Google Drive connection while Flash's app for it isn't set up: hidden everywhere, and never used. */
+const hidden = (row: Pick<ConnectionRow, "provider">) => (row.provider === "github" && !githubReady()) || (row.provider === "google-drive" && !googleReady());
 
 type ToolRow = {
   connection_id: string;
@@ -136,7 +165,11 @@ export type ConnectProblem =
   // A server the user added whose sign-in doesn't send iss, which Flash needs to know whose code came back.
   | "no_iss"
   // Flash's registration at that server can't be opened (its key version left CONNECTOR_KEYS too soon).
-  | "unreadable";
+  | "unreadable"
+  // The account's sign-in ended (or never gave the access Flash needs): only Reconnect helps.
+  | "reconnect"
+  // A Google Drive account keeps at most MAX_FILES picked files.
+  | "too_many_files";
 
 export class ConnectError extends Error {
   code: ConnectProblem;
@@ -179,6 +212,10 @@ export function problemText(code: ConnectProblem, t: Translate): string {
       return t("That server's sign-in doesn't identify itself when it sends you back, so Flash can't use it safely.");
     case "unreadable":
       return t("Flash can't open its sign-in details for that server right now. Try again later.");
+    case "reconnect":
+      return t("This account needs to be connected again.");
+    case "too_many_files":
+      return t("Flash keeps at most {count} files for one account. Forget some first.", { count: MAX_FILES });
   }
 }
 
@@ -213,7 +250,7 @@ const place = (row: Pick<ConnectionRow, "id" | "user_id" | "provider">, field: "
 export function serverUrl(provider: string, url: string): string {
   const preset = presetById(provider);
   if (!preset) return url;
-  if (preset.rest) return githubApi();
+  if (preset.rest) return preset.id === "google-drive" ? googleHost("www") : githubApi();
   const mock = mockOrigin();
   return mock ? `${mock}/presets/${preset.id}/mcp` : preset.url;
 }
@@ -294,7 +331,7 @@ function opens(row: ConnectionRow): boolean {
   }
 }
 
-function view(row: ConnectionRow, tools: ToolRow[]): ConnectionView {
+function view(row: ConnectionRow, tools: ToolRow[], files: (PickedFileView & { connectionId: string })[] = []): ConnectionView {
   return {
     id: row.id,
     provider: row.provider,
@@ -303,8 +340,8 @@ function view(row: ConnectionRow, tools: ToolRow[]): ConnectionView {
     custom: !presetById(row.provider),
     last4: row.last4,
     signIn: signsIn(row),
-    // GitHub's authorization of the app is always cancelled on removal (see revokeGithub).
-    revocable: row.kind === "github" || (row.kind === "oauth" && readEndpoints(row.endpoints_json).revocation !== ""),
+    // GitHub's authorization of the app, and Google's grant, are always cancelled on removal (see revokeGithub and revokeGoogle).
+    revocable: row.kind === "github" || row.kind === "google" || (row.kind === "oauth" && readEndpoints(row.endpoints_json).revocation !== ""),
     status: row.status !== "needs_reconnect" && !opens(row) ? "needs_reconnect" : row.status,
     createdAt: Number(row.created_at),
     tools: tools
@@ -319,10 +356,14 @@ function view(row: ConnectionRow, tools: ToolRow[]): ConnectionView {
         trusted: Boolean(t.trusted),
         changed: Boolean(t.changed),
       })),
+    ...(row.kind === "google" && {
+      account: row.resource,
+      files: files.filter((f) => f.connectionId === row.id).map(({ id, name, mime, pickedAt }) => ({ id, name, mime, pickedAt })),
+    }),
   };
 }
 
-/** The user's connections, without their secrets (GitHub only while the GitHub App is set up). */
+/** The user's connections, without their secrets (GitHub and Google Drive only while Flash's app for each is set up), with Google Drive's picked files. */
 export async function listConnections(userId: string): Promise<ConnectionView[]> {
   const rows = (await all<ConnectionRow>("SELECT * FROM connections WHERE user_id = ? ORDER BY created_at", [userId])).filter((r) => !hidden(r));
   if (!rows.length) return [];
@@ -330,7 +371,15 @@ export async function listConnections(userId: string): Promise<ConnectionView[]>
     "SELECT t.* FROM connection_tools t JOIN connections c ON c.id = t.connection_id WHERE c.user_id = ?",
     [userId],
   );
-  return rows.map((r) => view(r, tools));
+  const files = rows.some((r) => r.kind === "google")
+    ? (
+        await all<{ connection_id: string; file_id: string; name: string; mime: string; picked_at: number }>(
+          "SELECT f.* FROM connection_files f JOIN connections c ON c.id = f.connection_id WHERE c.user_id = ? ORDER BY f.picked_at DESC, f.name",
+          [userId],
+        )
+      ).map((f) => ({ connectionId: f.connection_id, id: f.file_id, name: f.name, mime: f.mime, pickedAt: Number(f.picked_at) }))
+    : [];
+  return rows.map((r) => view(r, tools, files));
 }
 
 
@@ -476,21 +525,23 @@ const toolInserts = (id: string, tools: McpTool[], preset?: Preset) =>
   }));
 
 /**
- * Removes a connection of the user's, with its tools and waiting actions, each deleted by hand in
- * one batch (Turso runs with foreign keys off). An account signed in with OAuth is signed out at its
- * authorization server first, where it has a revocation endpoint (S-7), and GitHub's authorization of
- * the app is cancelled; it is removed either way. A key needs no revoking here: the user deletes it in
- * the service, as Settings says.
+ * Removes a connection of the user's, with its tools, waiting actions and picked files, each deleted
+ * by hand in one batch (Turso runs with foreign keys off). An account signed in with OAuth is signed
+ * out at its authorization server first, where it has a revocation endpoint (S-7), GitHub's
+ * authorization of the app is cancelled, and so is Google's grant; it is removed either way. A key
+ * needs no revoking here: the user deletes it in the service, as Settings says.
  */
 export async function removeConnection(userId: string, id: string): Promise<boolean> {
   const row = await one<ConnectionRow>("SELECT * FROM connections WHERE id = ? AND user_id = ?", [id, userId]);
   if (!row) return false;
   if (row.kind === "oauth") await revokeConnection(row);
   if (row.kind === "github") await revokeGithub(row);
+  if (row.kind === "google") await revokeGoogle(row);
   await (await db()).batch(
     [
       { sql: "DELETE FROM pending_actions WHERE connection_id = ? AND user_id = ?", args: [id, userId] },
       { sql: "DELETE FROM connection_tools WHERE connection_id = ?", args: [id] },
+      { sql: "DELETE FROM connection_files WHERE connection_id = ?", args: [id] },
       { sql: "DELETE FROM connections WHERE id = ? AND user_id = ?", args: [id, userId] },
     ],
     "write",
@@ -543,6 +594,26 @@ async function revokeGithub(row: ConnectionRow): Promise<void> {
   console.log(`[flash] connector ${row.id} ${row.provider} revoke ${done ? "ok" : "not confirmed"}`);
 }
 
+/**
+ * Cancels the user's grant to Flash at Google (POST https://oauth2.googleapis.com/revoke). The refresh
+ * token is sent when there is one: Google then cancels the whole grant, and every access token it
+ * gave. Without one, the access token. It needs no working token and no client secret, so nothing is
+ * renewed first, and it is asked even while Google Drive is hidden. Never throws; logs only whether
+ * Google confirmed it.
+ */
+async function revokeGoogle(row: ConnectionRow): Promise<void> {
+  let token = "";
+  try {
+    token = row.enc_refresh ? unseal(row.enc_refresh, place(row, "refresh")) : row.enc_access ? unseal(row.enc_access, place(row, "access")) : "";
+  } catch {
+    console.log(`[flash] connector ${row.id} ${row.provider} revoke skipped: key unreadable`);
+    return;
+  }
+  if (!token) return;
+  const done = await revokeGoogleToken(token);
+  console.log(`[flash] connector ${row.id} ${row.provider} revoke ${done ? "ok" : "not confirmed"}`);
+}
+
 async function owned(userId: string, id: string): Promise<ConnectionRow> {
   const row = await one<ConnectionRow>("SELECT * FROM connections WHERE id = ? AND user_id = ?", [id, userId]);
   if (!row) throw new ConnectError("gone", "That account isn't connected.");
@@ -556,7 +627,7 @@ async function owned(userId: string, id: string): Promise<ConnectionRow> {
  */
 type Opened = { client: ToolClient; secret: string; parts: string[]; sealed: string };
 
-/** What a connection is called through: an MCP server's client, or Flash's own GitHub tools (the same calls). */
+/** What a connection is called through: an MCP server's client, or Flash's own GitHub or Google tools (the same calls). */
 type ToolClient = Pick<McpClient, "listTools" | "callTool" | "close" | "protocol">;
 
 /**
@@ -626,12 +697,13 @@ const pause = (ms: number, signal?: AbortSignal) =>
   });
 
 /**
- * An OAuth connection's access token, renewed first when it runs out within a minute, or when it is
- * `stale` (the sealed token its server just refused). Refreshes run one at a time per connection:
- * the one that takes refreshing_until (only while the row still holds the tokens it read) refreshes;
- * the others wait for it and read what it stored. So a rotated refresh token is never sent twice.
+ * An OAuth connection's access token, renewed first when it runs out within a minute (or within
+ * `early`), or when it is `stale` (the sealed token its server just refused). Refreshes run one at a
+ * time per connection: the one that takes refreshing_until (only while the row still holds the
+ * tokens it read) refreshes; the others wait for it and read what it stored. So a rotated refresh
+ * token is never sent twice.
  */
-async function accessToken(row: ConnectionRow, stale = "", signal?: AbortSignal): Promise<{ token: string; sealed: string }> {
+async function accessToken(row: ConnectionRow, stale = "", signal?: AbortSignal, early = REFRESH_EARLY_MS): Promise<{ token: string; sealed: string }> {
   let current: ConnectionRow | null = row;
   const first = row.enc_access;
   const until = Date.now() + REFRESH_WAIT_MS;
@@ -640,7 +712,7 @@ async function accessToken(row: ConnectionRow, stale = "", signal?: AbortSignal)
     const expires = Number(current.expires_at);
     const usable = current.enc_access !== stale && !(expires > 0 && expires <= now());
     // A token another request renewed while this one waited is used as long as it lasts, not renewed again.
-    const fresh = usable && (current.enc_access !== first || !(expires > 0 && expires - REFRESH_EARLY_MS < now()));
+    const fresh = usable && (current.enc_access !== first || !(expires > 0 && expires - early < now()));
     const open = (c: ConnectionRow) => {
       try {
         return { token: unseal(c.enc_access, place(c, "access")), sealed: c.enc_access };
@@ -699,7 +771,7 @@ async function refreshNow(row: ConnectionRow, lock: number, usable: boolean, sig
     // Never cut short by Stop or the reply's deadline (only by its own time limit, REQUEST_MS): a server
     // that rotates refresh tokens has retired the one sent as soon as it has it, so its answer must be
     // read and kept. Stop takes effect once the new tokens are saved.
-    tokens = await (row.kind === "github" ? refreshGithubToken(refreshToken) : refreshGrant(grantOf(row), refreshToken));
+    tokens = await (row.kind === "github" ? refreshGithubToken(refreshToken) : row.kind === "google" ? refreshGoogleToken(refreshToken) : refreshGrant(grantOf(row), refreshToken));
   } catch (err) {
     if (err instanceof OAuthError && err.code === "invalid_grant") {
       const ended = await run(
@@ -733,8 +805,10 @@ async function refreshNow(row: ConnectionRow, lock: number, usable: boolean, sig
   );
   if (!saved.rowsAffected) {
     // Only these tokens: for GitHub, the whole grant would also end the sign-in that replaced them.
+    // Google cancels the whole grant for any token it is sent, so its tokens are only dropped (they
+    // run out within the hour).
     if (row.kind === "github") await dropGithubToken(tokens.access);
-    else await revokeGrant(grantOf(row), { access: tokens.access, refresh: tokens.refresh }).catch(() => false);
+    else if (row.kind !== "google") await revokeGrant(grantOf(row), { access: tokens.access, refresh: tokens.refresh }).catch(() => false);
     return null;
   }
   console.log(`[flash] connector ${row.id} ${row.provider} refreshed`);
@@ -750,6 +824,10 @@ async function openServer(row: ConnectionRow, signal?: AbortSignal, stale = ""):
   if (row.kind === "github") {
     const { token, sealed } = await accessToken(row, stale, signal);
     return { client: new GitHubClient(token, installationsOf(row.resource), signal), secret: token, parts: [], sealed };
+  }
+  if (row.kind === "google") {
+    const { token, sealed } = await accessToken(row, stale, signal);
+    return { client: new GoogleClient(token, row.id, { userId: row.user_id, accountId: row.account_id }, signal), secret: token, parts: [], sealed };
   }
   let secret = "";
   let url: string;
@@ -1056,12 +1134,14 @@ export async function chatKit(userId: string, ids: string[], { replyId = "", sig
       }
       return callOn(row, opened, { name: pinned.tool, schema: pinned.schemaJson }, input, signal, (stale) => connect(row, stale));
     },
-    propose(tool, input) {
+    async propose(tool, input) {
       const pinned = tools.find((t) => t.name === tool.name)!;
+      // A picked Google Drive file is shown by the name Google gave it, beside its id.
+      const file = rowOf(tool.connectionId).kind === "google" ? await pickedFile(tool.connectionId, input.file_id) : null;
       return proposeAction({
         userId,
         connectionId: tool.connectionId,
-        // The account this reply read: a card is never stored for another one (see keepGithub).
+        // The account this reply read: a card is never stored for another one (see keepGithub and keepGoogle).
         accountId: rowOf(tool.connectionId).account_id,
         connection: tool.connection,
         host: tool.host,
@@ -1071,6 +1151,7 @@ export async function chatKit(userId: string, ids: string[], { replyId = "", sig
         kind: tool.kind,
         custom: tool.custom,
         input,
+        ...(file && { labels: { file_id: file.name } }),
         replyId,
       });
     },
@@ -1103,8 +1184,8 @@ const NOT_RUN = {
   failed: msg("The action couldn't run."),
   scope: msg("This needs more access than the account gave Flash. Press Reconnect on this account in Settings > Connectors and allow it, then ask again."),
 };
-const PROBLEMS: ConnectProblem[] = ["blocked", "auth", "unreachable", "protocol", "limit", "too_many", "changed", "no_tools", "bad_input", "gone", "unverified", "no_signin", "needs_client", "no_iss", "unreadable"];
-const OWN_WORDS = new Set<string>([...Object.values(NOT_RUN), ...Object.values(GITHUB_PROBLEMS), ...PROBLEMS.map((code) => problemText(code, english))]);
+const PROBLEMS: ConnectProblem[] = ["blocked", "auth", "unreachable", "protocol", "limit", "too_many", "changed", "no_tools", "bad_input", "gone", "unverified", "no_signin", "needs_client", "no_iss", "unreadable", "reconnect", "too_many_files"];
+const OWN_WORDS = new Set<string>([...Object.values(NOT_RUN), ...Object.values(GITHUB_PROBLEMS), ...Object.values(GOOGLE_PROBLEMS), ...PROBLEMS.map((code) => problemText(code, english))]);
 
 /** A failed action's result for the card: Flash's own reasons in the user's language, a tool's own words as they are. */
 export const failedText = (result: string, t: Translate) => (OWN_WORDS.has(result) ? t(result) : result);
@@ -1130,9 +1211,9 @@ export async function runApproved(userId: string, id: string, hash: string): Pro
     out = await withServer(row, async (opened) => {
       const live = await opened.client.listTools();
       if (live.find((t) => t.name === action.tool)?.hash !== action.tool_hash) return "changed" as const;
-      // Still waiting, now that the token is in hand: a sign-in as another GitHub account removes the
-      // account's actions in the same write as it keeps its tokens (see keepGithub), so a token of the
-      // new account never runs what was asked of the old one.
+      // Still waiting, now that the token is in hand: a sign-in as another GitHub or Google account
+      // removes the account's actions in the same write as it keeps its tokens (see keepGithub and
+      // keepGoogle), so a token of the new account never runs what was asked of the old one.
       if (!(await one("SELECT id FROM pending_actions WHERE id = ? AND user_id = ?", [action.id, userId]))) return "gone" as const;
       return callOn(row, opened, pinned, JSON.parse(action.input_json) as Record<string, unknown>);
     });
@@ -1496,4 +1577,313 @@ async function keepGithub(userId: string, tokens: Tokens, installations: string[
     if (await one("SELECT id FROM connections WHERE id = ? AND user_id = ?", [id, userId])) return;
   }
   throw new ConnectError("gone", "That account isn't connected any more.");
+}
+
+// ---------------------------------------------------------------------------------------------
+// Google Drive (see google.ts)
+
+/** The user's Google Drive connection: one per user, like GitHub. */
+const googleRowOf = (userId: string) => one<ConnectionRow>("SELECT * FROM connections WHERE user_id = ? AND provider = 'google-drive' ORDER BY created_at LIMIT 1", [userId]);
+
+/** The Google account (its sub) a Google Drive connection signed in as, or "". */
+function subOf(row: Pick<ConnectionRow, "endpoints_json">): string {
+  try {
+    const value = JSON.parse(row.endpoints_json) as { sub?: unknown };
+    return typeof value.sub === "string" ? value.sub : "";
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Connect Google Drive, or Reconnect it (see google.ts): Google's authorize step. A user keeps one
+ * Google Drive account here: connecting again updates it. Google is asked to show its consent page
+ * (and so send a refresh token) whenever Flash holds none for the user: the first Connect, or after
+ * Google refused the old one. Only from a confirmed account; costs nothing and calls no model.
+ */
+export async function startGoogle(userId: string, input: { connectionId?: string }, origin: string): Promise<string> {
+  await confirmedOnly(userId);
+  const existing = await googleRowOf(userId);
+  if (input.connectionId && existing?.id !== input.connectionId) throw new ConnectError("gone", "That account isn't connected any more.");
+  if (!existing) {
+    const count = await one<{ n: number }>("SELECT COUNT(*) AS n FROM connections WHERE user_id = ?", [userId]);
+    if (Number(count?.n ?? 0) >= MAX_CONNECTIONS) throw new ConnectError("too_many", "You have the most connections Flash keeps. Remove one first.");
+  }
+  await tryLimit(userId);
+  return beginGoogleFlow(userId, origin, { connectionId: existing?.id ?? "", consent: !existing || !usableRefresh(existing) });
+}
+
+/** Whether Flash holds a refresh token it can use for a connection (kept, readable, and the account not waiting for Reconnect). */
+function usableRefresh(row: ConnectionRow): boolean {
+  if (row.status !== "ok" || !row.enc_refresh) return false;
+  try {
+    unseal(row.enc_refresh, place(row, "refresh"));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** How Google's callback ends: as any sign-in, or with the sign-in but without access to the files the user picks. */
+export type GoogleOutcome = SignInOutcome | "google_scope";
+
+/**
+ * Google's callback (see google.ts for the rules). Trades a code only for a flow this user started,
+ * taken once by its state, with its PKCE verifier. The account is the one in the ID token from
+ * Google's token endpoint (or its userinfo). Google's answer must grant drive.file: if the user left
+ * it out, those tokens go back to Google and the account is kept as needing Reconnect (a connection
+ * to another Google account stays as it was). Tokens that can't be kept go back to Google, unless
+ * they belong to the grant the user's connection already uses (Google would end that one too).
+ */
+export async function finishGoogle(userId: string, params: { state: string | null; code: string | null; error: string | null }): Promise<GoogleOutcome> {
+  const failed = (why: string): GoogleOutcome => {
+    console.log(`[flash] connector sign-in google-drive failed: ${why}`);
+    return "failed";
+  };
+  const flow = await takeGoogleFlow(userId, params.state);
+  if (!flow) return "expired";
+  if (params.error) return "cancelled";
+  if (!params.code) return failed("no code");
+  try {
+    await confirmedOnly(userId);
+  } catch {
+    return failed("unverified");
+  }
+  let tokens: GoogleTokens;
+  try {
+    tokens = await exchangeGoogleCode(params.code, flowSecret(flow, "verifier"), flow.redirect_uri);
+  } catch (err) {
+    return failed(err instanceof OAuthError ? err.code : "token");
+  }
+  const existing = await googleRowOf(userId);
+  let account: GoogleAccount | null = tokens.idToken ? accountOf(tokens.idToken) : null;
+  if (!account?.email) {
+    const info = await userinfo(tokens.access);
+    if (info && (!account || info.sub === account.sub)) account = info;
+  }
+  // Tokens Flash won't keep: given back, unless they may be the grant the user's connection uses.
+  const giveBack = async () => {
+    if (!existing || (account && subOf(existing) && subOf(existing) !== account.sub)) await revokeGoogleToken(tokens.refresh || tokens.access);
+  };
+  if (!account) {
+    await giveBack();
+    return failed("account");
+  }
+  if (!grantsDrive(tokens.scope)) {
+    // Signed in, but without the files the user picks: a grant that can't do anything here.
+    await revokeGoogleToken(tokens.refresh || tokens.access);
+    console.log("[flash] connector sign-in google-drive: drive.file not granted");
+    if (!existing || subOf(existing) === account.sub || !subOf(existing)) await keepGoogle(userId, null, account).catch(() => {});
+    return "google_scope";
+  }
+  try {
+    await keepGoogle(userId, tokens, account);
+    return "ok";
+  } catch (err) {
+    await giveBack();
+    return failed(err instanceof ConnectError ? err.code : "store");
+  }
+}
+
+/**
+ * Keeps a Google sign-in on the user's Google Drive connection, or adds one with Flash's Google tools
+ * pinned. Without tokens (drive.file wasn't granted), it is kept as needing Reconnect, with none.
+ * Google sends a refresh token only with its consent page: the one kept goes on for the same account
+ * (sealed again with the newest key). The connection's account_id is the Google account's sub, as
+ * GitHub's is its account number: another Google account than before forgets the files picked in the
+ * old one, and removes its actions waiting for an Approve, in the same write as it keeps the new
+ * tokens, so a reply that read the old one can't store a card after it (see proposeAction) and
+ * nothing asked of one Google account ever runs as another (see runApproved). Flash's access to the
+ * old one is cancelled at Google. Of two sign-ins finishing at once, only one adds the account.
+ */
+async function keepGoogle(userId: string, tokens: GoogleTokens | null, account: GoogleAccount): Promise<void> {
+  const preset = presetById("google-drive")!;
+  const meta = JSON.stringify({ sub: account.sub });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const existing = await googleRowOf(userId);
+    if (existing) {
+      const other = subOf(existing) !== account.sub;
+      const access = tokens ? seal(tokens.access, place(existing, "access")) : null;
+      let refresh = "";
+      if (tokens?.refresh) refresh = seal(tokens.refresh, place(existing, "refresh")).stored;
+      else if (tokens && !other && existing.enc_refresh) {
+        try {
+          refresh = seal(unseal(existing.enc_refresh, place(existing, "refresh")), place(existing, "refresh")).stored;
+        } catch {
+          refresh = "";
+        }
+      }
+      // Another account's files and waiting actions: read in the same write as the new tokens, so of
+      // two sign-ins at once neither misses them.
+      const another = "EXISTS (SELECT 1 FROM connections WHERE id = ? AND user_id = ? AND account_id != ?)";
+      await (await db()).batch(
+        [
+          { sql: `DELETE FROM connection_files WHERE connection_id = ? AND ${another}`, args: [existing.id, existing.id, userId, account.sub] },
+          { sql: `DELETE FROM pending_actions WHERE connection_id = ? AND user_id = ? AND ${another}`, args: [existing.id, userId, existing.id, userId, account.sub] },
+          {
+            sql: `UPDATE connections SET enc_access = ?, enc_refresh = ?, expires_at = ?, resource = ?, scopes = ?, endpoints_json = ?, refreshing_until = NULL,
+                    status = ?, key_version = ?, account_id = ? WHERE id = ? AND user_id = ?`,
+            args: [
+              access?.stored ?? "",
+              refresh,
+              tokens?.expiresAt ?? 0,
+              account.email,
+              tokens?.scope ?? "",
+              meta,
+              tokens ? "ok" : "needs_reconnect",
+              access?.version ?? existing.key_version,
+              account.sub,
+              existing.id,
+              userId,
+            ],
+          },
+        ],
+        "write",
+      );
+      // The old account's grant isn't used any more: Google is asked to cancel it (its tokens, as they were read).
+      if (other) await revokeGoogle(existing);
+      return;
+    }
+    const count = await one<{ n: number }>("SELECT COUNT(*) AS n FROM connections WHERE user_id = ?", [userId]);
+    if (Number(count?.n ?? 0) >= MAX_CONNECTIONS) throw new ConnectError("too_many", "You have the most connections Flash keeps. Remove one first.");
+    const id = randomId(12);
+    const where = { id, user_id: userId, provider: "google-drive" };
+    const access = tokens ? seal(tokens.access, place(where, "access")) : null;
+    const refresh = tokens?.refresh ? seal(tokens.refresh, place(where, "refresh")).stored : "";
+    // One write: the account only if the user has none yet, and its tools only if it was added.
+    await (await db()).batch(
+      [
+        {
+          sql: `INSERT INTO connections (id, user_id, provider, kind, label, url, enc_url, status, enc_secret, key_version, last4, protocol, created_at,
+                  enc_access, enc_refresh, expires_at, issuer, resource, client_reg_id, scopes, endpoints_json, account_id)
+                SELECT ?, ?, 'google-drive', 'google', ?, ?, '', ?, '', ?, '', '', ?, ?, ?, ?, ?, ?, '', ?, ?, ?
+                WHERE NOT EXISTS (SELECT 1 FROM connections WHERE user_id = ? AND provider = 'google-drive')`,
+          args: [
+            id,
+            userId,
+            preset.name,
+            GOOGLE_API,
+            tokens ? "ok" : "needs_reconnect",
+            access?.version ?? "",
+            now(),
+            access?.stored ?? "",
+            refresh,
+            tokens?.expiresAt ?? 0,
+            "https://accounts.google.com",
+            account.email,
+            tokens?.scope ?? "",
+            meta,
+            account.sub,
+            userId,
+          ],
+        },
+        ...GOOGLE_TOOLS.map((t, i) => ({
+          sql: `INSERT INTO connection_tools (connection_id, name, title, description, schema, hash, kind, enabled, trusted, changed, position)
+                SELECT ?, ?, ?, ?, ?, ?, ?, 1, 0, 0, ? WHERE EXISTS (SELECT 1 FROM connections WHERE id = ? AND user_id = ?)`,
+          args: [id, t.name, t.title, t.description, JSON.stringify(t.inputSchema), t.hash, kindOf(t, preset), i, id, userId],
+        })),
+      ],
+      "write",
+    );
+    if (await one("SELECT id FROM connections WHERE id = ? AND user_id = ?", [id, userId])) return;
+  }
+  throw new ConnectError("gone", "That account isn't connected any more.");
+}
+
+// Picker tokens and picks, per user and hour. A Picker token is renewed first when it has less than
+// this left, so Google's Picker doesn't lose it while the user looks for files.
+const PICKER_PER_HOUR = 60;
+const PICKS_PER_HOUR = 30;
+const PICKER_EARLY_MS = 10 * 60_000;
+
+/** The user's own Google Drive connection, ready to use, or why not. */
+async function usableGoogle(userId: string, connectionId: string): Promise<ConnectionRow> {
+  const row = await owned(userId, connectionId);
+  if (row.kind !== "google" || hidden(row)) throw new ConnectError("gone", "That account isn't connected any more.");
+  if (row.status !== "ok") throw new ConnectError("reconnect", "This account needs to be connected again.");
+  return row;
+}
+
+/**
+ * The access token Google's Picker needs, for the user's own browser only (see the picker-token
+ * route): the connection's own token, renewed first when it has less than 10 minutes left. Only from
+ * a confirmed account, at most 60 times an hour. It is never logged. Costs nothing and calls no model.
+ */
+export async function googlePickerToken(userId: string, connectionId: string): Promise<{ token: string }> {
+  await confirmedOnly(userId);
+  if (await overLimit(`google-picker:${userId}`, PICKER_PER_HOUR, HOUR)) throw new ConnectError("limit", "Too many attempts. Try again in an hour.");
+  const row = await usableGoogle(userId, connectionId);
+  try {
+    const { token } = await accessToken(row, "", undefined, PICKER_EARLY_MS);
+    console.log(`[flash] connector ${row.id} ${row.provider} picker token`);
+    return { token };
+  } catch (err) {
+    if (err instanceof KeyUnreadable || err instanceof SignInEnded) throw new ConnectError("reconnect", "This account needs to be connected again.");
+    throw asProblem(err);
+  }
+}
+
+/**
+ * Records files the user picked with Google's Picker. Nothing the browser says is believed: each id
+ * is looked up with files.get and the user's own token, which works only for a file the Picker gave
+ * Flash (or one Flash made), and the name and type kept are the ones Google answers with. A file
+ * Google doesn't show, one in the trash, or one that isn't a Doc, Sheet, Slides deck, PDF or text
+ * file is left out (refused). At most MAX_PICK at a time, MAX_FILES in all. Costs nothing.
+ */
+export async function addPickedFiles(userId: string, connectionId: string, ids: string[]): Promise<{ files: PickedFileView[]; added: number; refused: number }> {
+  await confirmedOnly(userId);
+  const wanted = [...new Set(ids)];
+  if (!wanted.length || wanted.length > MAX_PICK) throw new ConnectError("bad_input", "Pick between 1 and 20 files at a time.");
+  if (await overLimit(`google-pick:${userId}`, PICKS_PER_HOUR, HOUR)) throw new ConnectError("limit", "Too many attempts. Try again in an hour.");
+  const row = await usableGoogle(userId, connectionId);
+  const kept = await pickedFiles(row.id);
+  const valid = wanted.filter((id) => FILE_ID.test(id));
+  if (kept.length + valid.filter((id) => !kept.some((f) => f.file_id === id)).length > MAX_FILES) {
+    throw new ConnectError("too_many_files", "Flash keeps at most 100 files for one account.");
+  }
+  let found: ({ id: string; name: string; mime: string } | null)[];
+  try {
+    found = await withServer(row, async (opened) => {
+      if (!(opened.client instanceof GoogleClient)) throw new ConnectError("gone", "That account isn't connected any more.");
+      const out: ({ id: string; name: string; mime: string } | null)[] = [];
+      for (const id of valid) out.push(await opened.client.describe(id));
+      return out;
+    });
+  } catch (err) {
+    if (err instanceof KeyUnreadable || err instanceof SignInEnded) throw new ConnectError("reconnect", "This account needs to be connected again.");
+    if (refusedKey(err)) await needsReconnect(row.id);
+    throw asProblem(err);
+  }
+  const good = found.filter((f): f is { id: string; name: string; mime: string } => f !== null);
+  const at = now();
+  if (good.length) {
+    await (await db()).batch(
+      good.flatMap((f) => [
+        { sql: "DELETE FROM connection_files WHERE connection_id = ? AND file_id = ?", args: [row.id, f.id] },
+        {
+          // Only while the connection is still the user's, and the Google account whose token checked
+          // the file (it may have been removed, or replaced by another account, meanwhile).
+          sql: `INSERT INTO connection_files (connection_id, file_id, name, mime, picked_at)
+                SELECT ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM connections WHERE id = ? AND user_id = ? AND account_id = ?)`,
+          args: [row.id, f.id, cleanName(f.name) || f.id, f.mime, at, row.id, userId, row.account_id],
+        },
+      ]),
+      "write",
+    );
+  }
+  console.log(`[flash] connector ${row.id} ${row.provider} picked: ${good.length} kept, ${wanted.length - good.length} refused`);
+  const files = (await pickedFiles(row.id)).map((f) => ({ id: f.file_id, name: f.name, mime: f.mime, pickedAt: Number(f.picked_at) }));
+  return { files, added: good.length, refused: wanted.length - good.length };
+}
+
+/**
+ * Forgets a picked file: Flash can't open it in chat any more. (Google keeps the access the Picker
+ * gave to that one file until the user removes Flash's access to their account; drive.file has no
+ * way to give one file back.) Costs nothing.
+ */
+export async function forgetPickedFile(userId: string, connectionId: string, fileId: string): Promise<PickedFileView[]> {
+  const row = await owned(userId, connectionId);
+  if (row.kind !== "google") throw new ConnectError("gone", "That account isn't connected any more.");
+  await run("DELETE FROM connection_files WHERE connection_id = ? AND file_id = ?", [row.id, fileId]);
+  return (await pickedFiles(row.id)).map((f) => ({ id: f.file_id, name: f.name, mime: f.mime, pickedAt: Number(f.picked_at) }));
 }

@@ -1,7 +1,7 @@
 # Setting up connectors
 
-Connectors let people use their own accounts (GitHub, Notion, Linear, Airtable, Klaviyo, Firecrawl,
-Perplexity, Resend, Brevo, or any MCP server they add themselves) in a chat. Some sign in with one
+Connectors let people use their own accounts (GitHub, Google Drive, Notion, Linear, Airtable, Klaviyo,
+Firecrawl, Perplexity, Resend, Brevo, or any MCP server they add themselves) in a chat. Some sign in with one
 click at the service; the others take an API key. Flash stores each person's key, or the tokens a
 sign-in gives it, encrypted with one key of your own, `CONNECTOR_KEYS`. Until it is set, nobody sees connectors, and
 only you (the emails in `FLASH_ADMIN_EMAILS`) see a line in Settings > Connectors saying a key is
@@ -108,12 +108,13 @@ with the missing names. The "Continue with GitHub" sign-in button is a different
    **Save changes**. GitHub asks people to accept only permissions that are added, so nobody has to
    do anything.
 6. Copy these three things into a note for a minute:
-   - **Client ID**, near the top (it looks like `Iv23li…`). This is `GITHUB_APP_CLIENT_ID`.
-     (Not the "App ID", which is only digits.)
-   - Under **Client secrets**, click **Generate a new client secret** and copy it right away:
+   - **Client ID**, near the top of the **General** page (it looks like `Iv23li…`). This is
+     `GITHUB_APP_CLIENT_ID`. (Not the "App ID", which is only digits.)
+   - The **slug**: the app's own address, shown as **Public link** on the **General** page, ends
+     with it. For `https://github.com/apps/flash-ai` the slug is `flash-ai`. This is `GITHUB_APP_SLUG`.
+   - The client secret, which GitHub keeps on a page of its own: in the app's left menu, click
+     **Credentials**, then under **Client secrets** click **New secret**, and copy it right away:
      GitHub shows it only once. This is `GITHUB_APP_CLIENT_SECRET`.
-   - The **slug**: the app's own address, shown as **Public link**, ends with it. For
-     `https://github.com/apps/flash-ai` the slug is `flash-ai`. This is `GITHUB_APP_SLUG`.
    You don't need a private key: Flash only acts for the person, with what they gave it.
 
 ### Put them in Vercel
@@ -129,8 +130,9 @@ with the missing names. The "Continue with GitHub" sign-in button is a different
 When the deploy is done, /admin → **By provider** → **Connectors** says GitHub is set, and GitHub
 shows in everyone's Settings > Connectors. Delete the note with the secret.
 
-To make a new secret later: on the app's **General** page, generate a new one, put it in Vercel in
-place of the old one, redeploy, and then delete the old secret on GitHub.
+To make a new secret later: on the app's **Credentials** page (in its left menu), under **Client
+secrets**, click **New secret**, put it in Vercel in place of the old one, redeploy, and then delete
+the old secret on that same page.
 
 ### What people see
 
@@ -153,6 +155,137 @@ place of the old one, redeploy, and then delete the old secret on GitHub.
   on their repositories, doing nothing, until they uninstall it on GitHub: their picture →
   **Settings** → **Applications** → **Installed GitHub Apps** → **Configure** → **Uninstall**.
   To give Flash fewer repositories, they change them on that same page.
+
+## Google Drive
+
+Google Drive works through a Google Cloud project that you make once, for everyone. People connect it
+with **Connect**: Google asks whether Flash may see their email address and "see, edit, create and
+delete only the specific Google Drive files you use with this app" (the `drive.file` permission).
+Then, under their Google Drive account in Settings > Connectors, **Add from Drive** opens Google's own
+file picker, showing only Docs, Sheets, Slides, PDFs and text files. Flash can open only the files
+they pick there and the files Flash made for them, never the rest of their Drive, and Settings lists
+those files, each with **Forget**. In a chat Flash reads a picked file by itself (a Doc or Slides deck
+as text, a Sheet as CSV, a PDF's text). Creating a Doc, Sheet or Slides deck, adding rows to a Sheet
+or adding text to a Doc always waits on a card for **Approve**, showing the title and everything that
+will be written. Nothing costs credits except the chat itself.
+
+Google Drive stays hidden from everyone until all four of its variables below are set (and
+`CONNECTOR_KEYS`). Until then, /admin → **By provider** → **Connectors** shows a **Google Drive**
+line with the missing names. The "Continue with Google" sign-in button is a different client
+(`GOOGLE_CLIENT_ID`, see docs/sign-in-setup.md): leave it as it is. Never turn on billing for this
+project: nothing here needs it, and if a page asks for a billing account, stop and close it.
+
+### Make the Google Cloud project (about 30 minutes, in Firefox or any browser)
+
+1. Open [console.cloud.google.com](https://console.cloud.google.com/) and sign in with the Google
+   account that should own it. Accept the terms if Google asks.
+2. Make the project: click the project list at the top of the page (next to "Google Cloud") →
+   **New project**. **Project name**: `Flash AI Connectors`. Leave the rest, click **Create**, and
+   wait a few seconds. Open the project list again and click **Flash AI Connectors**. Check that its
+   name shows at the top of the page before each step below.
+3. Turn on five APIs: click the menu (☰, top left) → **APIs & Services** → **Library**. For each of
+   these, type its name in the search box, click it, and click **Enable**:
+   **Google Drive API**, **Google Picker API**, **Google Docs API**, **Google Sheets API**,
+   **Google Slides API**. (Go back to **Library** between them.)
+4. Start the consent screen: ☰ → **APIs & Services** → **OAuth consent screen**. This opens
+   **Google Auth Platform**. Click **Get started** and fill in:
+   - **App name**: `Flash AI`; **User support email**: your email. **Next**.
+   - **Audience**: **External**. **Next**.
+   - **Contact information**: your email. **Next**.
+   - Tick that you agree to the Google API Services: User Data Policy. **Continue**, then **Create**.
+5. In the left menu click **Branding** and fill in:
+   - **Application home page**: `https://www.flash-app.dev`
+   - **Application privacy policy link**: `https://www.flash-app.dev/privacy`
+   - **Application terms of service link**: `https://www.flash-app.dev/terms`
+   - **Authorized domains**: click **Add domain** and type `flash-app.dev`.
+   - **Developer contact information**: your email.
+   - An **App logo** is optional. Click **Save**.
+6. In the left menu click **Data Access** → **Add or remove scopes**. Tick exactly these three:
+   `openid`, `.../auth/userinfo.email`, and `.../auth/drive.file` ("See, edit, create, and delete
+   only the specific Google Drive files you use with this app"). If `drive.file` isn't in the list,
+   paste `https://www.googleapis.com/auth/drive.file` into **Manually add scopes** and click **Add to
+   table**, then tick it. Click **Update**, then **Save**. Don't add any other scope: `drive.file`
+   doesn't need Google's security review, and broader Drive scopes do.
+7. In the left menu click **Clients** → **Create client**:
+   - **Application type**: **Web application**. **Name**: `Flash AI web`.
+   - **Authorized JavaScript origins** → **Add URI**: `https://www.flash-app.dev`
+   - **Authorized redirect URIs** → **Add URI**: `https://www.flash-app.dev/api/connect/google/callback`
+   - Click **Create**. A window shows the **Client ID** (it ends in `.apps.googleusercontent.com`)
+     and the **Client secret**. Copy both into a note right away: Google shows the secret only
+     once. The Client ID is `GOOGLE_CONNECT_CLIENT_ID`, the secret `GOOGLE_CONNECT_CLIENT_SECRET`.
+8. Make the Picker's API key: ☰ → **APIs & Services** → **Credentials** → **Create credentials** →
+   **API key**. Copy the key into your note (this is `GOOGLE_PICKER_API_KEY`), then click **Edit API
+   key** (or the key's name in the list) and set:
+   - **Name**: `Flash AI Picker`
+   - **Application restrictions**: **Websites**. Add two: `https://www.flash-app.dev/*` and
+     `https://docs.google.com/*`. Google's picker runs in a frame on docs.google.com, and without
+     that second line it says the key is invalid.
+   - **API restrictions**: **Restrict key**, and tick only **Google Picker API**.
+   - Click **Save**. This key is public by design (it identifies the project, it opens nothing); the
+     restrictions stop other sites from using it.
+9. Find the project number: ☰ → **Cloud overview** → **Dashboard**. The **Project info** box shows
+   **Project number** (only digits, like `123456789012`; not the project ID, which has letters).
+   Copy it: this is `GOOGLE_CONNECT_PROJECT_NUMBER`.
+10. Publish: ☰ → **APIs & Services** → **OAuth consent screen** → **Audience** → **Publish app** →
+    **Confirm**. The status becomes **In production**. (While it says "Testing", only test users can
+    connect, and Google ends their access after 7 days.)
+11. Brand verification: in the left menu click **Verification Center**. If it asks for verification,
+    click **Prepare for verification** (or **Submit**), check the details, and submit. Google may ask
+    you to prove you own `flash-app.dev`: it links to Google Search Console, where you add the domain
+    and get a TXT record. Add it in Vercel → **Domains** → `flash-app.dev` → **DNS Records** (type
+    `TXT`, name `@`, value as given), then click **Verify** in Search Console. Google usually answers
+    within a few working days, by email. Connecting works meanwhile; Google may show the web address
+    instead of the app's name until it is done.
+
+### Put them in Vercel
+
+1. Open [Vercel](https://vercel.com/) → the **flash-ai** project → **Settings** → **Environment
+   Variables**.
+2. Add `GOOGLE_CONNECT_CLIENT_ID` with the Client ID. Choose **Production** only, and save.
+3. Add `GOOGLE_PICKER_API_KEY` with the API key. Choose **Production** only, and save.
+4. Add `GOOGLE_CONNECT_PROJECT_NUMBER` with the project number. Choose **Production** only, and save.
+5. Add `GOOGLE_CONNECT_CLIENT_SECRET` with the client secret, tick **Sensitive**, choose
+   **Production** only, and save.
+6. Add `MALLOC_ARENA_MAX` with the value `2`. Choose **Production** only (it isn't secret), and
+   save. Flash reads PDFs from Drive in threads of their own, and without this the server keeps
+   memory those threads gave back, a little more each time PDFs are read at the same time, until it
+   refuses to read PDFs ("Flash can't read PDFs right now") until Vercel starts a fresh one. It
+   works only when it is in the environment as the server starts: setting it any other way (in
+   code, say) does nothing.
+7. Go to **Deployments**, open the latest one, and click **Redeploy**. Variables added or changed
+   reach the server only with a new deploy.
+
+When the deploy is done, /admin → **By provider** → **Connectors** says Google Drive is set, and
+Google Drive shows in everyone's Settings > Connectors. Under it, a line says "MALLOC_ARENA_MAX was 2
+when this server started". If it says MALLOC_ARENA_MAX wasn't set, check the variable's name and
+value, and that it is set for Production, then redeploy. (If it still says so, PDFs are still read
+safely, but after many have been read at the same time a server may refuse them for a while, until
+Vercel replaces it.) Delete the note with the secret.
+
+To make a new secret later: in **Google Auth Platform** → **Clients** → `Flash AI web`, click **Add
+secret**, put the new one in Vercel in place of the old one, redeploy, and then disable and delete
+the old secret there.
+
+### What people see
+
+- **Connect** opens Google, where they pick their account and say yes. If they untick access to
+  their Drive files, Flash keeps nothing it can use: the account shows **Reconnect** and a note
+  asks them to allow it.
+- **Add from Drive** opens Google's picker (its script is loaded from Google only then). They pick
+  up to 20 files at a time, 100 in all. Flash asks Google about each one and keeps the name and type
+  Google gives. **Forget** takes a file off the list; Flash can't open it in chat any more.
+- A Doc, Sheet or deck Flash made after **Approve** is added to that list, so a later reply can read
+  it or add to it. One call holds at most about 15,000 characters, so a longer Doc or Sheet is
+  written in parts: the first card makes it, and after **Continue the answer** each further card
+  adds the next part at its end. A deck can't be added to, so its slides are kept short.
+- Flash keeps their access for about an hour and renews it by itself (one renewal at a time). If
+  they cancel Flash at Google, the account shows **Reconnect**.
+- Connecting again as another Google account replaces the account: the files picked in the old one
+  and whatever was still waiting for **Approve** on it are removed, and Flash's access to the old one
+  is cancelled at Google.
+- **Remove** in Settings > Connectors also cancels all of Flash's access at Google and forgets the
+  picked files. They can also cancel it themselves at
+  [myaccount.google.com/connections](https://myaccount.google.com/connections).
 
 ## Change the key (rotation)
 
@@ -203,6 +336,14 @@ the newest version.
    `MOCK_GITHUB_CALLBACK=<your address>/api/connect/github/callback` if Flash runs elsewhere. Ask
    Flash to "read README.md in octo/hello" (a read) or "open an issue in octo/hello" (a card).
    `MOCK_ACCESS_TTL=65` makes GitHub's access run out after 65 seconds too.
+6. Google Drive: also put `GOOGLE_CONNECT_CLIENT_ID=mock-google-client.apps.googleusercontent.com`,
+   `GOOGLE_CONNECT_CLIENT_SECRET=mock-google-secret`, `GOOGLE_PICKER_API_KEY=mock-key` and
+   `GOOGLE_CONNECT_PROJECT_NUMBER=123456789012` in `.env.local`. **Connect** says yes at once and
+   comes back to `http://localhost:3000` (start the mock with
+   `MOCK_GOOGLE_CALLBACK=<your address>/api/connect/google/callback` if Flash runs elsewhere).
+   **Add from Drive** shows a plain list of the mock's files in place of Google's picker. Pick
+   "Budget" and ask Flash "what does the hotel cost in my budget?" (a read), or "make a Doc with my
+   packing list" (a card). `MOCK_ACCESS_TTL=65` makes Google's access run out after 65 seconds too.
 
 ## Deleting someone's account by hand
 
@@ -215,6 +356,7 @@ Their connector rows go with them when foreign keys are on. To be sure, delete t
 ```sql
 DELETE FROM pending_actions WHERE user_id = '<user id>';
 DELETE FROM connection_tools WHERE connection_id IN (SELECT id FROM connections WHERE user_id = '<user id>');
+DELETE FROM connection_files WHERE connection_id IN (SELECT id FROM connections WHERE user_id = '<user id>');
 DELETE FROM connections WHERE user_id = '<user id>';
 DELETE FROM connect_flows WHERE user_id = '<user id>';
 DELETE FROM mcp_client_registrations WHERE owner_user_id = '<user id>';
@@ -223,4 +365,5 @@ DELETE FROM mcp_client_registrations WHERE owner_user_id = '<user id>';
 This removes the keys and tokens from Flash only. It doesn't cancel them at GitHub, Linear,
 Airtable and the rest; the person does that in their account there (for GitHub: their picture →
 **Settings** → **Applications** → **Authorized GitHub Apps** → **Revoke**, and **Installed GitHub
-Apps** → **Configure** → **Uninstall**).
+Apps** → **Configure** → **Uninstall**; for Google: [myaccount.google.com/connections](https://myaccount.google.com/connections)
+→ **Flash AI** → **Delete all connections you have with Flash AI**).

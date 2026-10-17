@@ -11,7 +11,7 @@ import {
   planById,
   recordPayment,
 } from "@/lib/server/subscriptions.ts";
-import { planPrice } from "@/lib/credits.ts";
+import { extraSeatsFor, planPrice, seatsPrice } from "@/lib/credits.ts";
 import { translatorFor } from "@/lib/server/i18n.ts";
 
 /** Starts a plan, or switches to another one. Switching starts a new month today. */
@@ -19,13 +19,14 @@ export async function POST(request: Request) {
   const user = await getUser(request);
   if (!user) return unauthorized();
   const t = await translatorFor(request, user.language);
-  const body = (await request.json().catch(() => ({}))) as { plan?: string; interval?: string };
+  const body = (await request.json().catch(() => ({}))) as { plan?: string; interval?: string; extraSeats?: unknown };
   const plan = planById(body.plan);
   const interval = body.interval ?? "month";
   if (!plan || !isInterval(interval)) return Response.json({ error: t("Unknown plan.") }, { status: 400 });
+  const extraSeats = extraSeatsFor(plan, body.extraSeats);
 
   const current = await activeSubscription(user.id);
-  if (current && current.plan === plan.id && current.interval === interval) {
+  if (current && current.plan === plan.id && current.interval === interval && Number(current.extra_seats ?? 0) === extraSeats) {
     return Response.json({ error: t("You're already on {plan}.", { plan: plan.name }) }, { status: 409 });
   }
 
@@ -38,11 +39,12 @@ export async function POST(request: Request) {
       planId: plan.id,
       interval,
       customer: null,
-      amountCents: planPrice(plan, interval),
+      amountCents: planPrice(plan, interval) + seatsPrice(extraSeats, interval),
       periodStart: start,
       periodEnd: addMonths(start, interval === "year" ? 12 : 1),
       ref: `demo:${randomId()}`,
       test: true,
+      extraSeats,
     });
     for (const old of await otherSubscriptions(user.id, id)) await endSubscription(old.id);
     return Response.json({ demo: true });
@@ -61,6 +63,7 @@ export async function POST(request: Request) {
       user,
       customer?.customer ?? null,
       appUrl(request),
+      extraSeats,
     );
     return Response.json({ url });
   } catch (err) {

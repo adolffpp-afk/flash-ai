@@ -9,8 +9,10 @@ import { msg } from "./i18n.ts";
  * (OAuth, see server/mcp-oauth.ts: the service's own page, where Flash registers itself, so the user
  * only says yes); some take a key or token the user makes in that service; Linear and Airtable do
  * both, with sign-in first. GitHub signs in through Flash's own GitHub App and uses Flash's own tools
- * over GitHub's API (see server/github.ts); it is listed only once the app is set up. Only services
- * that work this way are listed, so every card works.
+ * over GitHub's API (see server/github.ts); Google Drive signs in through Flash's own Google Cloud
+ * project, with access only to the files the user picks, and uses Flash's own tools over Google's
+ * APIs (see server/google.ts). Each is listed only once it is set up. Only services that work this
+ * way are listed, so every card works.
  */
 
 export type Preset = {
@@ -18,7 +20,7 @@ export type Preset = {
   name: string;
   // The service's official MCP server (GitHub: its API, see rest).
   url: string;
-  // Not an MCP server: Flash's own tools over the service's API, with its own Connect (only GitHub, see server/github.ts).
+  // Not an MCP server: Flash's own tools over the service's API, with its own Connect (GitHub and Google Drive, see server/github.ts and server/google.ts).
   rest?: boolean;
   // Connect signs in on the service's own page (OAuth). A preset with a keyName also takes a key.
   signIn?: boolean;
@@ -86,6 +88,17 @@ export const PRESETS: Preset[] = [
     blurb: msg("Read code, issues and pull requests. Create issues and pull requests after you approve each one."),
     note: msg("On GitHub, you pick the repositories Flash can use. To add more later, press Add repositories on GitHub here, in Settings > Connectors."),
     color: "#24292f",
+  },
+  {
+    id: "google-drive",
+    name: "Google Drive",
+    url: "https://www.googleapis.com",
+    rest: true,
+    signIn: true,
+    help: "https://support.google.com/accounts/answer/13533235",
+    blurb: msg("Read the Docs, Sheets, Slides, PDFs and text files you pick. Create Docs, Sheets and Slides, or add rows to a Sheet, after you approve each one."),
+    note: msg("Flash sees only the files you pick with Add from Drive, never the rest of your Drive."),
+    color: "#1a73e8",
   },
   {
     id: "firecrawl",
@@ -165,9 +178,44 @@ export const GITHUB_TOOL_WORDS = {
   },
 } as const;
 
-const OWN_TOOL_WORDS = new Set<string>(Object.values(GITHUB_TOOL_WORDS).flatMap((w) => [w.title, w.description]));
+/**
+ * The titles and descriptions of Flash's own Google Drive tools (see server/google.ts). Flash wrote
+ * them, so they are shown translated, like GitHub's (see toolWords).
+ */
+export const GOOGLE_TOOL_WORDS = {
+  list_files: {
+    title: msg("List picked files"),
+    description: msg("Lists the Google Drive files the user picked for Flash, with their type and id. Flash can use no other file in their Drive."),
+  },
+  read_file: {
+    title: msg("Read a file"),
+    description: msg("Reads a picked file: a Doc or a Slides deck as text, a Sheet as CSV (its first sheet, or the one named), a PDF's text, or a text file."),
+  },
+  create_doc: {
+    title: msg("Create a Google Doc"),
+    description: msg("Creates a new Google Doc in the user's Drive with a title and text. It waits for the user to approve it."),
+  },
+  create_sheet: {
+    title: msg("Create a Google Sheet"),
+    description: msg("Creates a new Google Sheet in the user's Drive with a title and rows. It waits for the user to approve it."),
+  },
+  create_slides: {
+    title: msg("Create a Google Slides deck"),
+    description: msg("Creates a new Google Slides deck in the user's Drive, one slide for each item, each with a title and text. It waits for the user to approve it."),
+  },
+  append_rows: {
+    title: msg("Add rows to a Sheet"),
+    description: msg("Adds rows at the end of a picked Google Sheet (its first sheet, or the one named). It waits for the user to approve it."),
+  },
+  append_text: {
+    title: msg("Add text to a Doc"),
+    description: msg("Adds text at the end of a Google Doc the user picked or Flash created. It waits for the user to approve it."),
+  },
+} as const;
 
-/** A tool's title or description as shown: in the user's language when Flash wrote it (GitHub's tools), else as its server wrote it. */
+const OWN_TOOL_WORDS = new Set<string>([...Object.values(GITHUB_TOOL_WORDS), ...Object.values(GOOGLE_TOOL_WORDS)].flatMap((w) => [w.title, w.description]));
+
+/** A tool's title or description as shown: in the user's language when Flash wrote it (GitHub's and Google Drive's tools), else as its server wrote it. */
 export const toolWords = (t: (text: string) => string, text: string): string => (OWN_TOOL_WORDS.has(text) ? t(text) : text);
 
 /** What a tool does, as far as Flash can tell: a read runs by itself; anything else asks the user first. */
@@ -189,7 +237,14 @@ export type ConnectionView = {
   status: "ok" | "needs_reconnect" | "review";
   createdAt: number;
   tools: ToolView[];
+  // The account it signed in as, where Flash knows it (Google Drive: the Google account's email).
+  account?: string;
+  // Google Drive: the files the user picked, the only ones a reply can open there.
+  files?: PickedFileView[];
 };
+
+/** A Google Drive file the user picked, with the name and type Google gave when it was picked. */
+export type PickedFileView = { id: string; name: string; mime: string; pickedAt: number };
 
 /** A server's tool as the user is shown it before adding it (or using it again after it changed), with its pin. */
 export type ToolPreview = { name: string; title: string; description: string; kind: ToolKind; hash: string };
@@ -219,6 +274,8 @@ export type ActionCard = {
   title: string;
   // Every field of the input, as it will be sent.
   input: Record<string, unknown>;
+  // What Flash knows an input's value as, by field (a picked file's name for its id), shown with it. Never sent.
+  labels?: Record<string, string>;
   inputHash: string;
   kind: ToolKind;
   // A server the user added themselves: its tools can be always allowed.
@@ -241,3 +298,22 @@ export const MAX_CONNECTIONS = 20;
  */
 export const continuedIds = (value: unknown): string[] =>
   Array.isArray(value) ? [...new Set(value.filter((id): id is string => typeof id === "string" && /^[\w-]{10,40}$/.test(id)))].slice(0, 4) : [];
+
+/** What accountReplies reads of a chat's message. */
+type ChatMessage = { id: string; role: string; connectors?: unknown[]; actions?: unknown[]; continues?: unknown[] };
+
+/**
+ * The ids of a chat's replies that used a connected account: they called its tools, asked for a card
+ * to approve, or wrote on with what an approved call returned (the reply after a Continue). What
+ * Claude wrote in them can hold that account's data, so a chat with one of them never goes to the
+ * free lane: the browser marks them (ChatTurn.usedConnector) and the chat route checks the chat as it
+ * saved it too.
+ */
+export function accountReplies(messages: readonly ChatMessage[]): Set<string> {
+  const ids = new Set<string>();
+  messages.forEach((m, i) => {
+    if (m.role !== "assistant") return;
+    if (m.connectors?.length || m.actions?.length || messages[i - 1]?.continues?.length) ids.add(m.id);
+  });
+  return ids;
+}

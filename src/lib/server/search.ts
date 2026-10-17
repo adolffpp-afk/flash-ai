@@ -1,3 +1,4 @@
+import { accountReplies } from "../connectors.ts";
 import { all } from "./db.ts";
 
 export type ChatHit = { id: string; name: string; snippet: string; role: "user" | "assistant" | null };
@@ -12,8 +13,12 @@ function snippetOf(text: string, at: number, length: number): string {
   return (start > 0 ? "…" : "") + piece + (end < text.length ? "…" : "");
 }
 
-/** The user's projects whose name or messages contain the words, newest first, with where they matched. */
-export async function searchChats(userId: string, query: string): Promise<ChatHit[]> {
+/**
+ * The user's projects whose name or messages contain the words, newest first, with where they matched.
+ * withoutAccounts (for the companion, see server/companion.ts): a chat with a reply that used a
+ * connected account is found by its name only, never by or with its messages.
+ */
+export async function searchChats(userId: string, query: string, { withoutAccounts = false } = {}): Promise<ChatHit[]> {
   const q = query.trim().slice(0, 100);
   if (q.length < 2) return [];
   const like = `%${q.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
@@ -25,11 +30,13 @@ export async function searchChats(userId: string, query: string): Promise<ChatHi
   const needle = q.toLowerCase();
   const hits: ChatHit[] = [];
   for (const row of rows) {
-    let messages: { role?: string; content?: string }[] = [];
+    let messages: { id: string; role: string; content?: string }[] = [];
     try {
-      messages = JSON.parse(row.messages);
+      const parsed: unknown = JSON.parse(row.messages);
+      if (Array.isArray(parsed)) messages = parsed.filter((m) => typeof m === "object" && m !== null);
     } catch {}
-    const found = messages.find((m) => typeof m.content === "string" && m.content.toLowerCase().includes(needle));
+    const hidden = withoutAccounts && accountReplies(messages).size > 0;
+    const found = hidden ? undefined : messages.find((m) => typeof m.content === "string" && m.content.toLowerCase().includes(needle));
     if (found) {
       const text = found.content!;
       hits.push({

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/store";
-import { toolWords, type ActionCard as Card } from "@/lib/connectors";
+import { PRESETS, toolWords, type ActionCard as Card } from "@/lib/connectors";
 import { useT } from "@/lib/use-t";
 import { ConnectorTile } from "./YourConnectors";
 
@@ -19,6 +19,41 @@ const primary = "rounded-lg bg-brand px-4 py-1.5 text-sm font-medium text-on-bra
 
 /** An input value as the user should read it: text as it is, anything else as indented JSON. */
 const shown = (value: unknown) => (typeof value === "string" ? value : JSON.stringify(value, null, 2));
+
+/** Rows of cells (a Sheet's rows): a list of lists of text or numbers, shown as a table, every cell of it. */
+const isRows = (value: unknown): value is (string | number)[][] =>
+  Array.isArray(value) && value.length > 0 && value.every((row) => Array.isArray(row) && row.every((cell) => typeof cell === "string" || typeof cell === "number"));
+
+const box = "rounded-lg bg-black/20 px-3 py-2 text-zinc-100 light:bg-black/5";
+
+/** One input value, all of it. */
+function Value({ value }: { value: unknown }) {
+  if (isRows(value)) {
+    return (
+      <dd className={`max-h-96 overflow-auto ${box}`}>
+        <table className="text-xs">
+          <tbody>
+            {value.map((row, i) => (
+              <tr key={i} className="border-b border-white/6 last:border-0">
+                <td className="py-1 pe-3 align-top text-zinc-500">{i + 1}</td>
+                {row.map((cell, j) => (
+                  <td key={j} dir="auto" className="whitespace-pre-wrap break-words py-1 pe-3 align-top">
+                    {String(cell)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </dd>
+    );
+  }
+  return (
+    <dd dir="auto" className={`whitespace-pre-wrap break-words ${box}`}>
+      {shown(value)}
+    </dd>
+  );
+}
 
 export function ActionCard({
   card,
@@ -70,12 +105,14 @@ export function ActionCard({
   }
 
   const fields = Object.entries(card.input);
-  // A title Flash wrote itself (GitHub's tools) is shown in the user's language; any other is the server's own.
+  // A title Flash wrote itself (GitHub's and Google Drive's tools) is shown in the user's language; any other is the server's own.
   const title = toolWords(t, card.title);
+  // The service's own name: a GitHub account's label also has its login (GitHub · login).
+  const service = card.connection.split(" · ")[0];
   return (
     <div className="mt-3 rounded-xl border border-primary/30 bg-primary/[0.04] p-4 text-sm" role="group" aria-label={t("{connection} · {tool}", { connection: card.connection, tool: title })}>
       <div className="flex items-center gap-3">
-        <ConnectorTile provider={card.custom ? "" : card.connection.split(" · ")[0].toLowerCase()} name={card.connection} />
+        <ConnectorTile provider={card.custom ? "" : (PRESETS.find((p) => p.name === service)?.id ?? service.toLowerCase())} name={card.connection} />
         <div className="min-w-0 flex-1">
           <p className="truncate font-medium text-zinc-100">{t("{connection} · {tool}", { connection: card.connection, tool: title })}</p>
           <p className="truncate text-xs text-zinc-500" dir="ltr">
@@ -99,9 +136,13 @@ export function ActionCard({
               <dt className="text-xs text-zinc-500" dir="ltr">
                 {key}
               </dt>
-              <dd dir="auto" className="whitespace-pre-wrap break-words rounded-lg bg-black/20 px-3 py-2 text-zinc-100 light:bg-black/5">
-                {shown(value)}
-              </dd>
+              {/* What Flash knows the value as (a picked file's name), beside the value itself. */}
+              {card.labels?.[key] && (
+                <dd dir="auto" className="mb-1 text-sm font-medium text-zinc-100">
+                  {card.labels[key]}
+                </dd>
+              )}
+              <Value value={value} />
             </div>
           ))}
         </dl>

@@ -21,6 +21,8 @@ let failsStreaming = new Set<string>();
 // Gemini's first reply holds neither words nor a call, as with its MALFORMED_FUNCTION_CALL.
 let geminiEmpty = false;
 let asks = true;
+// How many forecasts an OpenAI-style provider asks for at once.
+let forecastCalls = 1;
 const sse = (events: object[]) => events.map((e) => `data: ${JSON.stringify(e)}\n\n`).join("") + "data: [DONE]\n\n";
 const PARIS = { where: "named_place", place: "Paris, Île-de-France, France", latitude: 48.85, longitude: 2.35, country: "FR", timezone: "Europe/Paris" };
 // What Gemini's first reply holds, which must go back exactly as it came.
@@ -56,7 +58,11 @@ globalThis.fetch = (async (url: string, init: RequestInit) => {
   }
   if (body.stream === false) {
     const message = asks
-      ? { role: "assistant", content: null, tool_calls: [{ id: "call_1", type: "function", function: { name: "get_weather", arguments: JSON.stringify(PARIS) } }] }
+      ? {
+          role: "assistant",
+          content: null,
+          tool_calls: Array.from({ length: forecastCalls }, (_, i) => ({ id: `call_${i + 1}`, type: "function", function: { name: "get_weather", arguments: JSON.stringify(PARIS) } })),
+        }
       : { role: "assistant", content: "Sunny, probably." };
     return Response.json({ choices: [{ message }], usage: { prompt_tokens: 900, completion_tokens: 40 } });
   }
@@ -223,6 +229,24 @@ test("when the answer after a forecast fails, the backup that answers without on
   assert.ok(!r.events.some((e) => e.type === "sources"));
   // Groq's first call still counts toward its daily tokens.
   assert.deepEqual(r.recorded, [{ provider: "groq", tokens: 940 }, { provider: "openrouter", tokens: 2015 }]);
+});
+
+test("a reply's three forecasts are its whole allowance: the provider that takes over after Groq's answer fails gets no forecast tool", async () => {
+  sent.length = 0;
+  failsStreaming = new Set(["groq"]);
+  forecastCalls = 3;
+  const tool = forecast();
+  const r = await ask("Will it rain in Paris, Lyon and Nice tomorrow?", { weather: tool, country: "FR" });
+  failsStreaming = new Set();
+  forecastCalls = 1;
+  assert.deepEqual(sent.map((s) => s.host), ["api.groq.com", "api.groq.com", "api.mistral.ai"]);
+  assert.equal(tool.ran.length, 3, "Groq's three forecasts, and none after");
+  assert.deepEqual(r.reserved.at(-1), { provider: "mistral", count: 1 });
+  const mistral = sent[2].body;
+  assert.deepEqual([mistral.tools, mistral.stream], [undefined, true]);
+  assert.doesNotMatch(String((mistral.messages as { content: string }[])[0].content), /get_weather/);
+  assert.equal(r.usedCalls, 0);
+  assert.ok(!r.events.some((e) => e.type === "sources"));
 });
 
 test("an empty first reply isn't the answer: the next provider answers, and the empty call still counts", async () => {

@@ -260,6 +260,18 @@ const SCHEMA = [
     ref TEXT NOT NULL UNIQUE,
     created_at INTEGER NOT NULL
   )`,
+  // Auto top-up: buys a credit pack with the saved card when the balance falls below a level (see auto-topup.ts).
+  `CREATE TABLE IF NOT EXISTS auto_topups (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    enabled INTEGER NOT NULL DEFAULT 0,
+    pack TEXT NOT NULL,
+    below INTEGER NOT NULL,
+    customer TEXT,
+    payment_method TEXT,
+    last_at INTEGER NOT NULL DEFAULT 0,
+    failed TEXT NOT NULL DEFAULT '',
+    updated_at INTEGER NOT NULL
+  )`,
   // Monthly plans. paid_until is how far the subscriber has paid; credits arrive once a month
   // from anchor (the subscription's start) for as long as that month began before paid_until.
   `CREATE TABLE IF NOT EXISTS subscriptions (
@@ -299,6 +311,15 @@ const SCHEMA = [
   )`,
   // Lets the prune read only the old rows: Turso bills rows read.
   `CREATE INDEX IF NOT EXISTS weather_cache_fetched ON weather_cache(fetched_at)`,
+  // Answers from web search, SEC EDGAR and FRED, kept a short while and shared by every user, so the
+  // same question doesn't ask again (see server/source-fetch.ts). value is what Flash kept, already trimmed.
+  `CREATE TABLE IF NOT EXISTS source_cache (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    expires_at INTEGER NOT NULL,
+    fetched_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS source_cache_expires ON source_cache(expires_at)`,
   `CREATE INDEX IF NOT EXISTS usage_user_time ON usage(user_id, created_at)`,
   // One-time links for email verification and password reset (only hashes are stored).
   `CREATE TABLE IF NOT EXISTS email_tokens (
@@ -535,6 +556,17 @@ const SCHEMA = [
     finished_at INTEGER NOT NULL DEFAULT 0
   )`,
   `CREATE INDEX IF NOT EXISTS pending_actions_user ON pending_actions(user_id, created_at)`,
+  // The Google Drive files a user picked for Flash with Google's Picker (see google.ts): the only
+  // files a reply can read or add rows to. Their name and type are what Google said when they were
+  // picked, never what the browser sent. Deleted by hand with their connection (see removeConnection).
+  `CREATE TABLE IF NOT EXISTS connection_files (
+    connection_id TEXT NOT NULL REFERENCES connections(id) ON DELETE CASCADE,
+    file_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    mime TEXT NOT NULL,
+    picked_at INTEGER NOT NULL,
+    PRIMARY KEY (connection_id, file_id)
+  )`,
   // A sign-in to a connector's server under way (see mcp-oauth.ts): kept here, never in a cookie,
   // because the callback acts on what it says. Found by a hash of its state, taken once by its own
   // user with one conditional DELETE, and gone after 10 minutes. The PKCE verifier and the server's
@@ -607,6 +639,38 @@ const SCHEMA = [
     hash TEXT PRIMARY KEY,
     scanned_at INTEGER NOT NULL
   )`,
+  // Reports of what people share or publish, for Flash's admins only (see reports.ts). While an
+  // item's report is open, the same network reporting it again for the same reason adds to repeats
+  // instead of a new row. reporter is a hash of the network's address, never the address itself.
+  // owner_id is whose item it was, and title what it was called, when it was reported.
+  `CREATE TABLE IF NOT EXISTS reports (
+    id TEXT PRIMARY KEY,
+    item_kind TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    owner_id TEXT NOT NULL,
+    title TEXT NOT NULL DEFAULT '',
+    via TEXT NOT NULL DEFAULT '',
+    reason TEXT NOT NULL,
+    details TEXT NOT NULL DEFAULT '',
+    email TEXT NOT NULL DEFAULT '',
+    reporter TEXT NOT NULL,
+    repeats INTEGER NOT NULL DEFAULT 1,
+    status TEXT NOT NULL DEFAULT 'open',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS reports_open ON reports(item_kind, item_id, reporter, reason) WHERE status = 'open'`,
+  `CREATE INDEX IF NOT EXISTS reports_time ON reports(created_at)`,
+  // What an admin did about an item's reports (marked them reviewed, took the item down), by whom and when.
+  `CREATE TABLE IF NOT EXISTS report_actions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_kind TEXT NOT NULL,
+    item_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    admin_email TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS report_actions_item ON report_actions(item_kind, item_id)`,
 ];
 
 let client: Client | null = null;
@@ -654,6 +718,8 @@ const MIGRATIONS = [
   "ALTER TABLE site_owner_codes ADD COLUMN host TEXT NOT NULL DEFAULT ''",
   // When a held charge was settled to what the request really cost, or 0 while it runs.
   "ALTER TABLE credit_ledger ADD COLUMN settled_at INTEGER NOT NULL DEFAULT 0",
+  // People added to a team plan on top of its own seats, each with more monthly credits (EXTRA_SEAT).
+  "ALTER TABLE subscriptions ADD COLUMN extra_seats INTEGER NOT NULL DEFAULT 0",
   // Counts every write of a project's messages, so the server saving a reply never overwrites
   // a change saved since it read them (see turns.ts).
   "ALTER TABLE projects ADD COLUMN version INTEGER NOT NULL DEFAULT 0",
@@ -673,8 +739,9 @@ const MIGRATIONS = [
   "ALTER TABLE connections ADD COLUMN scopes TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE connections ADD COLUMN endpoints_json TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE connections ADD COLUMN refreshing_until INTEGER",
-  // For GitHub: the number of the GitHub account the tokens are for (see keepGithub), so a sign-in as
-  // another account is told apart. Its login is shown in the connection's label.
+  // The account the tokens are for, so a sign-in as another account is told apart: for GitHub, the
+  // GitHub account's number (its login is shown in the connection's label, see keepGithub); for Google
+  // Drive, the Google account's sub (see keepGoogle).
   "ALTER TABLE connections ADD COLUMN account_id TEXT NOT NULL DEFAULT ''",
   // Whether the app's link preview says "Made with Flash ∞ AI" (see made-with.ts). On until its owner,
   // on a paid plan, turns it off.

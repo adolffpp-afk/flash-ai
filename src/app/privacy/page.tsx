@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { COMPANY, CONTACT, LegalPage } from "@/components/LegalPage";
+import { FRED_NOTICE } from "@/lib/research.ts";
 import { PRODUCT_NAME } from "@/lib/product";
 
 export const metadata: Metadata = { title: "Privacy Policy" };
@@ -20,10 +21,11 @@ export default function Privacy() {
         <li><strong>Published apps:</strong> the apps you publish and the data their users save in them. If your app has sign-in, Flash keeps each member&apos;s email address, their name if they give one, a scrambled (hashed) version of their password and the data they save in your app. You can see your members, remove them, and download the list in My websites &amp; apps; unpublishing an app deletes them with it. Those accounts belong to your app alone: they are not Flash accounts, and they work on no other app. Each app&apos;s owner also gets one contact list of the people who sent its forms, signed up or paid: their name, email address and phone number if they gave them, where they came from, and the owner&apos;s own stages, tags and notes. When someone ticks a box to get an app&apos;s news, Flash keeps the wording they saw, the time, the form it was on and a scrambled (hashed) version of their internet address. The owner can download or delete each contact, unpublishing an app deletes its contacts, and anyone can stop an app&apos;s news with the unsubscribe link the owner puts in their emails.</li>
         <li><strong>Shared chats:</strong> when you share a chat, a copy of it (with its pictures, videos and audio) is visible to anyone with the link until you stop sharing it.</li>
         <li><strong>Connected apps:</strong> when you connect Flash to another app (like Claude or ChatGPT), that app sends Flash the requests it makes for you, and Flash keeps what it makes in your account. Each file gets a hard-to-guess link that the app, and anyone it is shared with, can open. The app can&apos;t see your chats or projects, and you can disconnect it at any time.</li>
-        <li><strong>Your connected accounts (connectors):</strong> when you connect an account of yours (like GitHub, Notion, Linear or Airtable) or a server you add yourself in Settings &gt; Connectors, Flash keeps its address, the list of its tools and the key or token you give it. When you connect by signing in at the service, you type your password there, never in Flash, and Flash keeps the access the service gives it (its tokens, which it renews as they run out) instead of a key. For GitHub, Flash also keeps your GitHub login and account number, and the numbers of its GitHub App&apos;s installations your GitHub account can use (yours, or one an organization of yours made), which say which repositories it may use. Flash doesn&apos;t copy your repositories, but what a GitHub tool reads (a file, an issue or a pull request) is, like any tool&apos;s result, saved as described below. Keys and tokens are stored encrypted, are only ever sent to that service, and are never shown again, not even to you; for a key, Flash shows only its last 4 characters. Flash reads from or acts in that account only in a chat where you turned it on, and anything that sends or changes something runs only after you approve it. What a tool sent and returned is saved in the chat with the reply. An approval Flash waits on keeps what you approved and, once it ran, what the tool returned, so that Continue and Retry can use it; it is deleted 24 hours after it ends.</li>
+        <li><strong>Your connected accounts (connectors):</strong> when you connect an account of yours (like GitHub, Notion, Linear or Airtable) or a server you add yourself in Settings &gt; Connectors, Flash keeps its address, the list of its tools and the key or token you give it. When you connect by signing in at the service, you type your password there, never in Flash, and Flash keeps the access the service gives it (its tokens, which it renews as they run out) instead of a key. For GitHub, Flash also keeps your GitHub login and account number, and the numbers of its GitHub App&apos;s installations your GitHub account can use (yours, or one an organization of yours made), which say which repositories it may use. Flash doesn&apos;t copy your repositories, but what a GitHub tool reads (a file, an issue or a pull request) is, like any tool&apos;s result, saved as described below. For Google Drive, see Google user data below. Keys and tokens are stored encrypted, are only ever sent to that service, and are never shown again, not even to you; for a key, Flash shows only its last 4 characters. Flash reads from or acts in that account only in a chat where you turned it on, and anything that sends or changes something runs only after you approve it. What a tool sent and returned is saved in the chat with the reply. An approval Flash waits on keeps what you approved and, once it ran, what the tool returned, so that Continue and Retry can use it; it is deleted 24 hours after it ends.</li>
         <li><strong>Voice conversations:</strong> when you talk with Flash, what you say is turned into text and saved in the chat like a typed message, and answers are read aloud by your device. In Chrome, Edge and Safari your browser turns speech into text (using its maker&apos;s speech service); in other browsers Flash sends each recorded turn to its transcription provider and keeps only the text. If you turn on &ldquo;Hey Flash&rdquo;, your browser listens while Flash is open, and Flash only gets what you say after &ldquo;Hey Flash&rdquo;.</li>
         <li><strong>Usage and billing:</strong> which tools you use, credits spent, and purchases. When paid plans are available, card payments are handled by Stripe; we never see your full card number.</li>
         <li><strong>Technical data:</strong> a sign-in cookie that keeps you logged in, and standard server logs.</li>
+        <li><strong>Reports:</strong> when you report a page or an app, we keep its address, the reason, any details and email address you give, and a scrambled (hashed) version of your internet address, so our team can review the report (new reports are emailed to them through Resend), reply if you asked, and stop repeated or abusive reports; none of it is shown to the person who made the page.</li>
       </ul>
 
       <h2>How we use it</h2>
@@ -40,7 +42,8 @@ export default function Privacy() {
       <ul>
         <li>Anthropic (writing, research, code, apps, slides, translation)</li>
         <li>
-          Groq, Google (Gemini), OpenRouter, Cloudflare and Mistral (free models, used when you are out of credits). Google may
+          Groq, Google (Gemini), OpenRouter, Cloudflare and Mistral (free models, used when you are out of credits, but
+          never for a chat that used your connected accounts: see below). Google may
           use messages its free Gemini models answer to improve its products, and its human reviewers may read them, so
           don&apos;t share personal or sensitive information in chats on free models. Free Gemini models never answer
           people in the European Economic Area, the UK or Switzerland. Flash&apos;s Mistral account is set so Mistral
@@ -59,7 +62,10 @@ export default function Privacy() {
         When a chat has your connected accounts turned on, Flash sends Claude&apos;s requests (what it searches for, or
         what it creates or changes) to those services with your key, and sends what they return to Anthropic to write
         the answer. Nothing goes to an account you haven&apos;t turned on in that chat, and Anthropic doesn&apos;t use it
-        to train its models. You can turn an account off in any chat, or remove it in Settings &gt; Connectors, which
+        to train its models. What they return, and the answers Claude writes with it, go to no other AI provider: a chat
+        with a reply that used your connected accounts is never answered by the free models, even after you turn the
+        accounts off (start a new chat to chat for free), and Flash&apos;s companion (Ask Flash) isn&apos;t shown that
+        chat&apos;s messages. You can turn an account off in any chat, or remove it in Settings &gt; Connectors, which
         deletes the key and its tools from Flash. Removing it doesn&apos;t cancel a key at the service itself: do that
         in your account there if you no longer want it to work. For an account you connected by signing in, Flash also
         asks the service to cancel the access you gave it, where the service offers a way to; where it doesn&apos;t,
@@ -72,15 +78,89 @@ export default function Privacy() {
         asking about the same place gets the same copy.
       </p>
       <p>
+        Some answers look things up in public sources, from Flash&apos;s server and without your account, name, email or
+        IP address. For questions about current events, Flash searches the web through its own search server (SearXNG),
+        which passes the search on to public search engines: it sends the search words written for your question,
+        which can include words from your message, and your language. For a listed company&apos;s filings or reported
+        figures, Flash asks the U.S. Securities and Exchange Commission&apos;s SEC EDGAR (sec.gov), sending only the
+        company&apos;s ticker, name or SEC number. For economic data, Flash asks FRED&reg; (the Federal Reserve Bank of
+        St. Louis&apos;s economic data, api.stlouisfed.org), sending only the series or the words searched for. Flash
+        keeps what they return for a short time (web results for 10 minutes, company and economic data for up to a
+        day), stored by request and not by person, and anyone asking the same thing gets the same copy. To apply the
+        daily limit on free web searches, Flash counts how many each account makes in a day, but not what they were.{" "}
+        {FRED_NOTICE}
+      </p>
+      <p>
         We also use Stripe for payments (when paid plans are available), Resend to send account emails (email confirmation and password reset), and a database and hosting provider to store your data. Each provider processes
         data under its own terms and privacy policy. Some are based in the United States, so your data may be processed
         outside your country.
       </p>
 
+      <h2 id="google">Google user data</h2>
+      <p>
+        When you connect Google Drive in Settings &gt; Connectors, you sign in at Google, never in Flash, and Google asks
+        whether Flash may see your email address and use the Google Drive files you pick with Flash (Google calls this
+        the drive.file permission). Here is exactly what Flash does with it:
+      </p>
+      <ul>
+        <li>
+          <strong>Only the files you pick.</strong> Flash can open only the files you choose with Google&apos;s own file
+          picker (&ldquo;Add from Drive&rdquo;), and the Docs, Sheets and Slides it creates for you. It can&apos;t see,
+          list or search anything else in your Drive. Settings &gt; Connectors lists every file it can open.
+        </li>
+        <li>
+          <strong>Only when you ask.</strong> Flash reads one of these files only to answer you in a chat where you
+          turned Google Drive on. It creates a Doc, Sheet or Slides deck, adds rows to a Sheet or adds text to a Doc,
+          only after you approve a card that shows exactly what will be written.
+        </li>
+        <li>
+          <strong>Sent only to write your answer.</strong> The text of a file Flash reads is sent to Anthropic only so
+          Claude can write the answer to your request. Anthropic doesn&apos;t use it to train its models. The answers
+          Claude writes with it go to no other AI provider either: a chat that used Google Drive is never answered by
+          Flash&apos;s free models, even after you turn Google Drive off, and Flash&apos;s companion isn&apos;t shown
+          it. Flash gives it to nobody else, and nobody else sees it unless you share that chat yourself.
+        </li>
+        <li>
+          <strong>Never for training or ads.</strong> Flash doesn&apos;t use your Google data to develop, improve or
+          train AI or machine-learning models, its own or anyone else&apos;s. It doesn&apos;t sell it, use it for
+          advertising, or give it to data brokers. No person at Flash reads it, unless you ask us to look at a specific
+          file, it&apos;s needed for security (such as investigating abuse), or the law requires it.
+        </li>
+        <li>
+          <strong>No copy of your Drive.</strong> Flash doesn&apos;t copy your files: it reads a file from Google each
+          time it uses it. What it read from a file to answer you is, like any tool&apos;s result, saved in that chat
+          with the reply, and with an approval as described under &ldquo;Your connected accounts&rdquo; above. Flash
+          also keeps your Google account&apos;s email address (to show which account is connected), the name, type and
+          ID of each file you picked or it created for you, and the access Google gave it (its tokens, stored encrypted).
+        </li>
+        <li>
+          <strong>Removing access.</strong> Forget a file in Settings &gt; Connectors and Flash can&apos;t open it in
+          chat any more. Remove Google Drive there and Flash asks Google to cancel all the access you gave it, and
+          deletes its tokens and your list of files. You can also remove Flash AI at any time from your Google
+          Account, under{" "}
+          <a href="https://myaccount.google.com/connections" target="_blank" rel="noreferrer">
+            Third-party apps &amp; services
+          </a>
+          .
+        </li>
+      </ul>
+      <p>
+        Flash AI&apos;s use and transfer to any other app of information received from Google APIs will adhere to the{" "}
+        <a href="https://developers.google.com/terms/api-services-user-data-policy" target="_blank" rel="noreferrer">
+          Google API Services User Data Policy
+        </a>
+        , including the Limited Use requirements, and to the{" "}
+        <a href="https://developers.google.com/workspace/workspace-api-user-data-developer-policy" target="_blank" rel="noreferrer">
+          Google Workspace user data and developer policy
+        </a>
+        .
+      </p>
+
       <h2>How long we keep it</h2>
       <p>
         We keep your account and projects until you delete them or ask us to delete your account. Billing records are
-        kept as long as tax law requires. Weather forecasts are kept for up to 2 days.
+        kept as long as tax law requires. Weather forecasts are kept for up to 2 days, web search results for 10 minutes,
+        and company and economic data for up to a day.
       </p>
 
       <h2>Your choices and rights</h2>

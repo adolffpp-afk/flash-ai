@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getShare } from "@/lib/server/shares.ts";
 import { referralCode } from "@/lib/server/referrals.ts";
 import { Message } from "@/components/Message";
+import { ReportButton } from "@/components/ReportButton";
 import { Logo, Wordmark } from "@/app/brand";
 import { BRAND_NAME, PRODUCT_NAME } from "@/lib/product";
 
@@ -20,7 +21,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 /** A read-only copy of a chat, as it was when it was shared. */
 export default async function SharedChat({ params }: Props) {
-  const share = await getShare((await params).id);
+  const { id } = await params;
+  const share = await getShare(id);
   if (!share) notFound();
   // Visitors who sign up from a shared chat count as the sharer's referral.
   const ref = await referralCode(share.user_id).catch(() => null);
@@ -59,6 +61,10 @@ export default async function SharedChat({ params }: Props) {
           >
             Try Flash free
           </a>
+        </div>
+        {/* Anyone viewing it can tell Flash's team something is wrong with it (see src/lib/report.ts). */}
+        <div className="flex justify-center">
+          <ReportButton address={`/s/${id}`} />
         </div>
       </main>
     </div>

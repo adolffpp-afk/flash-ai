@@ -70,23 +70,40 @@ export function needsApproval(tool: Pick<ConnectorTool, "connectionId" | "kind" 
   return tool.kind !== "read";
 }
 
-// The most an input may be, as JSON, for a call or a card.
+// The most an input may be, as JSON, for a call or a card (a top-level text field the schema gives a
+// maxLength counts as the characters it has: see inputProblem).
 export const MAX_INPUT_CHARS = 16_000;
 
 /**
  * Checks a call's input against the tool's schema as far as Flash can without a validator: an object,
- * not too big, with every required field, each top-level field of the type the schema names, and no
- * other field when the schema says so (additionalProperties: false), so a card never shows a field
- * the tool wouldn't send. Returns why it isn't usable, or "" when it is.
+ * not too big, each top-level text field no longer than the schema's maxLength, with every required
+ * field, each top-level field of the type the schema names, and no other field when the schema says
+ * so (additionalProperties: false), at the top or in an object or an array's items inside it (see
+ * extraField), so a card never shows a field the tool wouldn't send.
+ * Returns why it isn't usable, or "" when it is.
  */
 export function inputProblem(schema: Record<string, unknown>, input: unknown): string {
   if (!input || typeof input !== "object" || Array.isArray(input)) return "the input must be an object";
-  if (JSON.stringify(input).length > MAX_INPUT_CHARS) return "the input is too long";
   const fields = input as Record<string, unknown>;
+  const properties = schema.properties && typeof schema.properties === "object" ? (schema.properties as Record<string, { type?: unknown; maxLength?: unknown }>) : {};
+  // Said with both numbers, so Claude can write it again shorter, or in parts where the tool says how.
+  const n = (v: number) => v.toLocaleString("en-US");
+  const split = "make it shorter, or split it over several calls of at most that, if the tool's description says how";
+  let length = JSON.stringify(input).length;
+  // A text field with a maxLength counts as the schema states it, in characters (as JSON Schema counts
+  // them), not as JSON: a line break or a quote in it is one, not the two JSON writes it as, so a text
+  // that keeps to its stated limit is never refused for the rest.
+  for (const [key, value] of Object.entries(fields)) {
+    const max = Object.hasOwn(properties, key) ? properties[key]?.maxLength : undefined;
+    if (typeof value !== "string" || typeof max !== "number") continue;
+    const chars = [...value].length;
+    if (chars > max) return `${key.slice(0, 60)} is too long (${n(chars)} characters; it may have at most ${n(max)}): ${split}`;
+    length -= JSON.stringify(value).length - chars;
+  }
+  if (length > MAX_INPUT_CHARS) return `the input is too long (${n(length)} characters as JSON; a call may have at most ${n(MAX_INPUT_CHARS)}): ${split}`;
   const required = Array.isArray(schema.required) ? schema.required.filter((r): r is string => typeof r === "string") : [];
   const missing = required.filter((r) => fields[r] === undefined);
   if (missing.length) return `missing ${missing.join(", ")}`;
-  const properties = schema.properties && typeof schema.properties === "object" ? (schema.properties as Record<string, { type?: unknown }>) : {};
   if (schema.additionalProperties === false) {
     const extra = Object.keys(fields).find((key) => !Object.hasOwn(properties, key));
     if (extra !== undefined) return `${extra.slice(0, 60)} isn't a field of this tool`;
@@ -109,6 +126,43 @@ export function inputProblem(schema: Record<string, unknown>, input: unknown): s
                   ? typeof value === "object" && !Array.isArray(value)
                   : true;
     if (!ok) return `${key} must be a ${type}`;
+  }
+  for (const [key, value] of Object.entries(fields)) {
+    const extra = Object.hasOwn(properties, key) ? extraField(properties[key], value, key.slice(0, 60)) : "";
+    if (extra) return `${extra} isn't a field of this tool`;
+  }
+  return "";
+}
+
+// How deep extraField follows a schema into an input.
+const MAX_FIELD_DEPTH = 16;
+
+/**
+ * Where value has a field its schema doesn't, inside it: in an object whose schema says
+ * additionalProperties: false, or in such an object among an array's items, at any depth (to
+ * MAX_FIELD_DEPTH). Its path ("slides[1].notes"), or "" when there is none. Only fields are
+ * checked here; types and required fields only at the top (see inputProblem).
+ */
+function extraField(schema: unknown, value: unknown, path: string, depth = 1): string {
+  if (!schema || typeof schema !== "object" || depth > MAX_FIELD_DEPTH || value === null || typeof value !== "object") return "";
+  const s = schema as { properties?: unknown; additionalProperties?: unknown; items?: unknown };
+  if (Array.isArray(value)) {
+    if (!s.items || typeof s.items !== "object" || Array.isArray(s.items)) return "";
+    for (const [i, item] of value.entries()) {
+      const extra = extraField(s.items, item, `${path}[${i}]`, depth + 1);
+      if (extra) return extra;
+    }
+    return "";
+  }
+  const properties = s.properties && typeof s.properties === "object" ? (s.properties as Record<string, unknown>) : {};
+  for (const [key, inner] of Object.entries(value as Record<string, unknown>)) {
+    const at = `${path}.${key.slice(0, 60)}`;
+    if (!Object.hasOwn(properties, key)) {
+      if (s.additionalProperties === false) return at;
+      continue;
+    }
+    const extra = extraField(properties[key], inner, at, depth + 1);
+    if (extra) return extra;
   }
   return "";
 }
@@ -201,7 +255,7 @@ export async function* connectorCalls(
       const card = await kit.propose(tool, input);
       if (signal?.aborted) throw stopError(signal);
       if (!card) {
-        // Another account (another GitHub login) or none since the reply began: no card for the old one.
+        // Another account (another GitHub login or Google account) or none since the reply began: no card for the old one.
         out.set(call.id, { content: JSON.stringify({ status: "error", reason: ACCOUNT_CHANGED }), isError: true });
         continue;
       }
@@ -209,7 +263,7 @@ export async function* connectorCalls(
       out.set(call.id, { content: WAITING(`${tool.connection} ${tool.title}`), isError: false });
       continue;
     }
-    // A title Flash wrote itself (GitHub's tools) is shown in the user's language; any other is the server's own.
+    // A title Flash wrote itself (GitHub's and Google Drive's tools) is shown in the user's language; any other is the server's own.
     yield { type: "status", message: t("Using {name}…", { name: `${tool.connection} · ${toolWords(t, tool.title)}` }) };
     let result: { text: string; isError: boolean };
     try {

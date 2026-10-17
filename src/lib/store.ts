@@ -85,6 +85,8 @@ export type Pricing = {
     // Team plans: people who share the monthly credits, the owner included.
     seats?: number;
   }[];
+  // An extra person on a team plan: its price and the credits it adds each month, and the most a plan can add.
+  extraSeat?: { priceCents: number; yearlyPriceCents: number; credits: number; max: number };
   freeMonthly: number;
   freeLane: { chats: number; images: number; transcripts?: number };
   paymentsEnabled: boolean;
@@ -107,6 +109,8 @@ export type Me = Pricing & {
     name: string;
     interval: "month" | "year";
     credits: number;
+    // People added on top of a team plan's own seats.
+    extraSeats?: number;
     nextCredits: number;
     renews: boolean;
     paidUntil: number;

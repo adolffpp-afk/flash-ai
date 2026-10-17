@@ -34,7 +34,20 @@ export const PROVIDER_LIST: ProviderInfo[] = [
     keys: ["CLOUDFLARE_ACCOUNT_ID", "CLOUDFLARE_API_TOKEN"],
   },
   { id: "mistral", name: "Mistral", does: "Free chat, the last backup", free: true, keys: ["MISTRAL_API_KEY"] },
+  // Data the models look up (see research.ts). Uses counts the requests Flash sent them.
+  {
+    id: "searxng",
+    name: "SearXNG",
+    does: "Free web search for the free models, on your own server (the password gate's https address)",
+    free: true,
+    keys: ["SEARXNG_URL", "SEARXNG_USERNAME", "SEARXNG_PASSWORD"],
+  },
+  { id: "sec", name: "SEC EDGAR", does: "US public companies' filings and reported figures (no key needed)", free: true, keys: [] },
+  { id: "fred", name: "FRED", does: "US economic data from the Federal Reserve Bank of St. Louis", free: true, keys: ["FRED_API_KEY"] },
 ];
+
+/** The data sources on the list: their uses are the requests counted in free_quota, not the usage log. */
+export const DATA_SOURCES = ["searxng", "sec", "fred"];
 
 /** A provider's name for the dashboard, or its id when Flash doesn't know it. */
 export const providerName = (id: string) => PROVIDER_LIST.find((p) => p.id === id)?.name ?? id;
@@ -71,4 +84,19 @@ export const GITHUB_SETUP: ProviderInfo = {
   does: "Lets users connect GitHub in chat: read code, issues and pull requests, and create issues and pull requests after they approve each one",
   free: true,
   keys: ["GITHUB_APP_CLIENT_ID", "GITHUB_APP_CLIENT_SECRET", "GITHUB_APP_SLUG"],
+};
+
+/**
+ * Google Drive in chat needs Flash's own Google Cloud project (see server/google.ts and
+ * docs/connectors-setup.md): its OAuth client ID (Config) and secret (Sensitive), the Picker's API
+ * key (Config) and the project number (Config). Until all four are set, and CONNECTOR_KEYS, users
+ * don't see Google Drive anywhere. The Google sign-in (GOOGLE_CLIENT_ID) is another client, and isn't
+ * needed here.
+ */
+export const GOOGLE_SETUP: ProviderInfo = {
+  id: "google-connector",
+  name: "Google Drive (connector)",
+  does: "Lets users connect Google Drive in chat: read the Docs, Sheets, Slides, PDFs and text files they pick, and create Docs, Sheets and Slides or add rows to a Sheet after they approve each one",
+  free: true,
+  keys: ["GOOGLE_CONNECT_CLIENT_ID", "GOOGLE_CONNECT_CLIENT_SECRET", "GOOGLE_PICKER_API_KEY", "GOOGLE_CONNECT_PROJECT_NUMBER"],
 };

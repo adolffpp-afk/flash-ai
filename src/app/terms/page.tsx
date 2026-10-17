@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
 import { COMPANY, CONTACT, LegalPage } from "@/components/LegalPage";
+import { FRED_NOTICE, FRED_TERMS_URL } from "@/lib/research.ts";
 import { PRODUCT_NAME } from "@/lib/product";
 
 export const metadata: Metadata = { title: "Terms of Service" };
 
 export default function Terms() {
   return (
-    <LegalPage title="Terms of Service" updated="October 15, 2026">
+    <LegalPage title="Terms of Service" updated="October 16, 2026">
       <p>
         These terms are an agreement between you and {COMPANY} (&quot;Flash&quot;, &quot;we&quot;), which operates the{" "}
         {PRODUCT_NAME} website and app (the &quot;Service&quot;), for your use of the Service. By creating an account or using
@@ -25,19 +26,34 @@ export default function Terms() {
         Flash sends your requests to third-party AI providers (such as Anthropic, and Groq, Google, OpenRouter,
         Cloudflare and Mistral for free models) and returns their results. Features, models and providers may change over time.
       </p>
+      <p>
+        Some answers use public data, listed under the answer with a link to where it came from: web search results
+        (through Flash&apos;s own SearXNG search server), company filings and reported figures from the U.S. Securities
+        and Exchange Commission&apos;s SEC EDGAR, and economic data from FRED&reg;, Federal Reserve Bank of St. Louis.
+        That data can be late, incomplete or wrong, and Flash doesn&apos;t check it: check it at the source before you
+        rely on it.
+      </p>
+      <p>
+        By using FRED&reg; data through Flash, you also agree to the{" "}
+        <a href={FRED_TERMS_URL} target="_blank" rel="noopener noreferrer">
+          FRED&reg; API Terms of Use
+        </a>
+        , and you may use that data only as they allow. {FRED_NOTICE}
+      </p>
 
       <h2>3. Credits and payments</h2>
       <ul>
         <li>Requests use credits. The cost of a request is shown in the app and may change as provider prices change.</li>
         <li>Free credits are added each month and do not carry over beyond the monthly allowance.</li>
         <li>
-          Purchased credits, including plan credits, do not expire while your account is open. They have no cash value
-          and cannot be transferred.
+          Credits from top-ups do not expire while your account is open. Credits have no cash value and cannot be
+          transferred.
         </li>
         <li>
           Plans are subscriptions that renew automatically each month or year at the price shown when you subscribe,
           until you cancel. Each plan adds its credits once a month, including yearly plans. Unused plan credits carry
-          over.
+          over, up to two months&apos; worth: when a month&apos;s credits are added, plan credits left from earlier months
+          above that are removed. Plans started before October 17, 2026 keep all their unused plan credits.
         </li>
         <li>
           You can cancel at any time from the credits panel. Your plan keeps running, and keeps adding its monthly

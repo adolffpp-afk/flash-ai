@@ -197,6 +197,21 @@ test("apps take pictures, PDFs and text files, and nothing that runs", async () 
   assert.equal((await listUploads("shop")).length, 0);
 });
 
+test("all of an owner's apps together hold at most their plan's room", async () => {
+  const { FREE_STORAGE_BYTES, PLAN_STORAGE_BYTES, storageLimit } = await import("../src/lib/server/site-files.ts");
+  assert.equal(await storageLimit("owner"), FREE_STORAGE_BYTES, "no plan: the free room");
+  for (const p of PLANS) assert.ok(PLAN_STORAGE_BYTES[p.id] > FREE_STORAGE_BYTES, `${p.id} has its own room`);
+  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at, uploads_on) VALUES ('shop2', 'owner', 'Two', '<p>', 0, 0, 1)");
+  // Another app of theirs already holds almost all of the free room.
+  await run("INSERT INTO site_uploads (id, site_slug, owner, mime, name, data, size, created_at) VALUES ('big', 'shop2', '', 'image/png', 'b.png', x'00', ?, 0)", [FREE_STORAGE_BYTES - 1000]);
+  const full = await saveUpload("shop", { name: "a.png", type: "image/png", bytes: Buffer.alloc(2000) }, "");
+  assert.equal(full.status, 507);
+  assert.equal((await uploadUse("shop")).maxBytes, 1000, "the owner sees the room left");
+  assert.equal((await saveUpload("shop", { name: "a.png", type: "image/png", bytes: Buffer.alloc(500) }, "")).status, 201);
+  await run("DELETE FROM sites WHERE slug = 'shop2'");
+  await run("DELETE FROM site_uploads WHERE site_slug IN ('shop', 'shop2')");
+});
+
 test("apps are given the AI and upload addresses, and the preview pretends", () => {
   const page = flashDbShim("/d", "/in", "/shop", false, "/auth", "/mine", null, "/api/sites/shop/ai", "/api/sites/shop/files");
   assert.match(page, /window\.flashAI = \{/);

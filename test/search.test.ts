@@ -29,3 +29,17 @@ test("chat search finds words inside a user's own chats, with a snippet", async 
   assert.deepEqual(await searchChats("u1", "%_"), []);
   assert.deepEqual(await searchChats("u1", "a"), [], "one letter is too short");
 });
+
+test("for the companion, a chat that used a connected account is found by its name only", async () => {
+  const save = (id: string, name: string, messages: unknown[], at: number) =>
+    run("INSERT INTO projects (id, user_id, name, messages, updated_at) VALUES (?, 'u1', ?, ?, ?)", [id, name, JSON.stringify(messages), at]);
+  const read = [
+    { id: "q", role: "user", content: "What does the hotel cost?" },
+    { id: "r", role: "assistant", content: "Your Budget sheet: the hotel costs 120.", connectors: [{ connection: "Google Drive", tool: "Read a file" }] },
+  ];
+  await save("p4", "Trip", read, 4);
+  await save("p5", "Hotel ideas", read, 5);
+  assert.deepEqual((await searchChats("u1", "hotel costs")).map((h) => h.id), ["p5", "p4"], "the user's own search finds both");
+  const forCompanion = await searchChats("u1", "hotel", { withoutAccounts: true });
+  assert.deepEqual(forCompanion, [{ id: "p5", name: "Hotel ideas", snippet: "", role: null }], "by name, with no snippet; never by its messages");
+});

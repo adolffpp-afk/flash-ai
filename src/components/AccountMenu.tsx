@@ -111,6 +111,9 @@ export function AccountMenu({
               <a role="menuitem" href="/privacy" target="_blank" rel="noreferrer" className={item}>
                 {t("Privacy Policy")}
               </a>
+              <a role="menuitem" href="/report" target="_blank" rel="noreferrer" className={item}>
+                {t("Report content")}
+              </a>
             </div>
           )}
           <div className="my-1 border-t border-white/8" />

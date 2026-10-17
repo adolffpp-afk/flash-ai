@@ -19,7 +19,7 @@ import { readAloudVoice } from "@/lib/device-settings";
 import { speechLang } from "@/lib/languages";
 import { msg } from "@/lib/i18n";
 import { useT, type T } from "@/lib/use-t";
-import { safeMarkdown } from "@/lib/safe-markdown";
+import { linkHost, safeMarkdown } from "@/lib/safe-markdown";
 import { toolWords, type ActionCard as ActionCardData } from "@/lib/connectors";
 import { ActionCard } from "./ActionCard";
 
@@ -548,17 +548,24 @@ export function Message({
         )}
         {m.sources && m.sources.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-2">
-            {m.sources.map((s, i) => (
-              <a
-                key={s.url}
-                href={s.url}
-                target="_blank"
-                rel="noreferrer"
-                className="max-w-[16rem] truncate rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-xs text-zinc-300 hover:border-primary"
-              >
-                {i + 1}. {s.title || new URL(s.url).hostname}
-              </a>
-            ))}
+            {/* Numbered as the answer cites them ([1]). Only web links, each showing the host it goes to, as links in the words do (see safe-markdown.ts). */}
+            {m.sources.map((s, i) => {
+              const host = linkHost(s.url);
+              return host ? (
+                <a
+                  key={s.url}
+                  href={s.url}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="flex max-w-[18rem] gap-1 rounded-lg border border-zinc-800 bg-zinc-900 px-2.5 py-1 text-xs text-zinc-300 hover:border-primary"
+                >
+                  <span className="truncate">
+                    {i + 1}. {s.title || host}
+                  </span>
+                  {s.title && s.title.toLowerCase() !== host && <span className="link-host shrink-0 text-zinc-500">· {host}</span>}
+                </a>
+              ) : null;
+            })}
           </div>
         )}
         {m.actions?.map((card) => (
