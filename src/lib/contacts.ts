@@ -20,6 +20,8 @@ export const MAX_TAG = 30;
 export const MAX_NOTES = 1000;
 export const MAX_STAGES = 12;
 export const MAX_STAGE_NAME = 40;
+// The owner's note on how someone who unsubscribed asked for news again (see recordConsent).
+export const MAX_CONSENT_NOTE = 300;
 export const STAGE_ID = /^[a-z0-9]{1,12}$/;
 
 /** Who a contact is: their email (lowercased) and phone ("+digits" or "digits"), either may be "", and their name. */
@@ -220,43 +222,104 @@ export function sourceLabel(source: string, t: Translate): string {
   return source;
 }
 
+/** Text as words: lowercased, with every run of anything that isn't a letter or a digit as one space. */
+const plainWords = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+
+// Elements whose text a visitor never reads on the page: code, styles, the tab's title, what shows
+// only without scripts (flashDB needs them), a frame's fallback and a field's starting text. Each
+// ends only at its own end tag, as browsers read them, whatever looks like a tag inside.
+const UNSEEN = ["script", "style", "title", "noscript", "iframe", "noembed", "noframes", "textarea"];
+const UNSEEN_END = new Map(UNSEEN.map((name) => [name, new RegExp(`</${name}[\\s/>]`, "gi")]));
+const TAG_NAME = /[a-z][^\s/>]*/iy;
+
 /**
- * A page's words, for finding a phrase in it: without tags, with character references read and
- * other named ones (&rsquo;, &nbsp;) as a space, lowercased, and every run of anything that isn't a
- * letter or a digit as one space. Read in one pass, so no page can make it slow.
+ * Where the tag whose name ends at from ends: the index just past its ">", or -1 when it never
+ * ends. A ">" inside a quoted attribute value doesn't end it.
+ */
+function tagEnd(text: string, from: number): number {
+  for (let i = from; i < text.length; ) {
+    const ch = text[i];
+    if (ch === ">") return i + 1;
+    i++;
+    if (ch !== "=") continue;
+    while (i < text.length && /\s/.test(text[i])) i++;
+    const quote = text[i];
+    if (quote === '"' || quote === "'") {
+      const close = text.indexOf(quote, i + 1);
+      if (close === -1) return -1;
+      i = close + 1;
+    }
+  }
+  return -1;
+}
+
+/**
+ * A page's words as a visitor sees them, for finding a phrase in it: the text between its tags,
+ * without comments, attributes or what's in a <template>, a <script>, a <style> or the other
+ * elements in UNSEEN, with character references read and other named ones (&rsquo;, &nbsp;) as a
+ * space, lowercased, and every run of anything that isn't a letter or a digit as one space. Read
+ * in one pass, so no page can make it slow.
  */
 export function pageWords(text: string): string {
   let plain = "";
+  // How many <template>s the reading is inside: their content is only ever shown by code.
+  let templates = 0;
+  const keep = (part: string) => {
+    if (!templates) plain += part;
+  };
   for (let i = 0; i < text.length; ) {
     let open = text.indexOf("<", i);
     // A "<" that can't start a tag ("ages <12") is text, as browsers read it.
     while (open !== -1 && !/[a-z/!?]/i.test(text[open + 1] ?? "")) open = text.indexOf("<", open + 1);
     if (open === -1) {
-      plain += text.slice(i);
+      keep(text.slice(i));
       break;
     }
-    plain += text.slice(i, open);
-    const close = text.indexOf(">", open + 1);
-    if (close === -1) {
-      plain += text.slice(open);
-      break;
+    keep(text.slice(i, open));
+    keep(" ");
+    if (text.startsWith("<!--", open)) {
+      // A comment, to its "-->" ("<!-->" and "<!--->" are empty ones), or to the end when it never ends.
+      const rest = open + 4;
+      const close = text.startsWith(">", rest) ? rest : text.startsWith("->", rest) ? rest + 1 : text.indexOf("-->", rest);
+      if (close === -1) break;
+      i = close + (text.startsWith("-->", close) ? 3 : 1);
+      continue;
     }
-    plain += " ";
-    i = close + 1;
+    const closing = text[open + 1] === "/";
+    TAG_NAME.lastIndex = open + (closing ? 2 : 1);
+    const name = TAG_NAME.exec(text)?.[0].toLowerCase() ?? "";
+    // A tag that never ends isn't shown, and neither is anything after it.
+    const end = tagEnd(text, name ? TAG_NAME.lastIndex : open + 1);
+    if (end === -1) break;
+    i = end;
+    if (name === "template") templates = closing ? Math.max(0, templates - 1) : templates + 1;
+    const unseen = !closing && UNSEEN_END.get(name);
+    if (unseen) {
+      unseen.lastIndex = i;
+      const found = unseen.exec(text);
+      if (!found) break;
+      i = found.index;
+    }
   }
-  return plain
+  const decoded = plain
     .replace(/&#(x[0-9a-f]{1,6}|\d{1,7});/gi, (_all, n: string) => {
       const code = n[0] === "x" || n[0] === "X" ? parseInt(n.slice(1), 16) : parseInt(n, 10);
       return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : " ";
     })
-    .replace(/&[a-z][a-z0-9]{0,31};/gi, " ")
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim();
+    .replace(/&[a-z][a-z0-9]{0,31};/gi, " ");
+  return plainWords(decoded);
 }
 
-/** Whether a page shows a phrase, word for word, whatever its markup, spacing, quotes and case. */
+/**
+ * Whether a page shows a phrase (text as a visitor reads it, such as a label's words), word for
+ * word, whatever its markup, spacing, quotes and case. Only words a visitor sees count, so wording
+ * that is only in the page's code, comments or attributes doesn't.
+ */
 export function pageHas(html: string, text: string): boolean {
-  const words = pageWords(text);
+  const words = plainWords(text);
   return words !== "" && ` ${pageWords(html)} `.includes(` ${words} `);
 }

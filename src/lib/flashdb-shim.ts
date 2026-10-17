@@ -8,7 +8,8 @@
  * flashDB.send(form, fields, { news: checkbox }): what the person agreed to by ticking a box, for the
  * app's contact list (see server/contacts.ts). It counts only when they ticked it themselves (a
  * click, a tap or the space bar; a box ticked by code, or by code clicking it, doesn't), when it
- * didn't start ticked, and with the words of its <label>, which Flash then finds on the app's page.
+ * didn't start ticked, and with the words of its <label>, which Flash then finds among the words a
+ * visitor sees on the app's published page (written in its HTML, not put there by a script).
  * Shared by the preview and the published shim, so both judge a box the same way. Pages with no
  * document (tests, downloads run elsewhere) just never find a tick.
  */

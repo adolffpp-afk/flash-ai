@@ -369,7 +369,7 @@ test("a phone number someone else typed with a member's email can be corrected o
   assert.equal((await detailOf(ann.id)).contact.phone, "+442079460958");
 });
 
-test("agreeing to news counts only with the page's own wording, and the latest choice wins", async () => {
+test("agreeing to news counts only with the page's own wording, and a ticked box never undoes an unsubscribe", async () => {
   await fresh();
   await site("news", "owner");
   await site("news2", "owner");
@@ -398,22 +398,114 @@ test("agreeing to news counts only with the page's own wording, and the latest c
   await send("news", { email: "fay@example.com" }, { consent: "yes" }, "203.0.113.54");
   for (const c of (await contactsOf("news")).slice(1)) assert.equal(c.consent_at, 0, String(c.email || c.phone));
 
-  // They unsubscribe, agree again later, and unsubscribe again: the latest counts, and the time stays.
+  // They unsubscribe. Anyone can send the form with their address and the page's wording, so a box
+  // ticked afterwards changes nothing: they stay unsubscribed, and the owner sees when.
   const t = await translatorIn("en");
   const token = contacts.unsubToken(await contacts.siteSecret("news"), "news", String(cy.id));
   assert.equal(await contacts.unsubscribe(token), true);
-  const firstOff = Number((await one<{ u: number }>("SELECT unsubscribed_at AS u FROM site_contacts WHERE id = ?", [cy.id]))?.u);
+  const row = () => one<Record<string, string | number>>("SELECT * FROM site_contacts WHERE id = ?", [cy.id]);
+  const before = await row();
+  const firstOff = Number(before?.unsubscribed_at);
   assert.ok(firstOff > 0);
-  const subscribed = async () => (await contacts.listContacts("news", t))!.contacts.find((c) => c.id === cy.id)!.subscribed;
-  assert.equal(await subscribed(), false);
+  const shown = async () => (await contacts.listContacts("news", t))!.contacts.find((c) => c.id === cy.id)!;
+  assert.equal((await shown()).subscribed, false);
   await new Promise((r) => setTimeout(r, 5));
-  await send("news", { email: "CY@example.com" }, { consent: { text: NEWS } }, "203.0.113.55");
-  assert.equal(await subscribed(), true, "a newer agreement");
-  assert.equal(Number((await one<{ u: number }>("SELECT unsubscribed_at AS u FROM site_contacts WHERE id = ?", [cy.id]))?.u), firstOff, "never zeroed");
+  await send("news", { email: "CY@example.com", message: "sign me up" }, { consent: { text: NEWS } }, "203.0.113.55");
+  assert.equal((await shown()).subscribed, false, "a ticked box doesn't undo an unsubscribe");
+  assert.equal((await shown()).unsubscribedAt, firstOff, "the owner sees when they unsubscribed");
+  assert.deepEqual(await row(), { ...before, last_seen: (await row())?.last_seen }, "nothing about their agreement changed");
+  assert.equal((await contacts.tokenContact(token))?.unsubscribed, true, "their link still says so");
+  // Nor for someone who unsubscribed without ever agreeing.
+  await send("news", { email: "gil@example.com" }, {}, "203.0.113.56");
+  const gil = (await contactsOf("news")).find((c) => c.email === "gil@example.com")!;
+  await contacts.unsubscribe(contacts.unsubToken(await contacts.siteSecret("news"), "news", String(gil.id)));
+  await send("news", { email: "gil@example.com" }, { consent: { text: NEWS } }, "203.0.113.57");
+  const gilNow = (await contactsOf("news")).find((c) => c.email === "gil@example.com")!;
+  assert.equal(gilNow.consent_at, 0);
+  assert.ok(Number(gilNow.unsubscribed_at) > 0);
+
+  // Only the owner can record that they asked for news again, with how they asked.
+  const ask = (id: unknown, askedAgain: unknown) => call("PATCH", owner, "news", "", { id, askedAgain });
+  assert.equal((await ask(cy.id, "  ")).status, 400, "it needs a note");
+  assert.equal((await ask(cy.id, "x".repeat(301))).status, 400, "of up to 300 characters");
+  assert.equal((await ask("missing", "They asked")).status, 404);
+  const dee = (await contactsOf("news")).find((c) => c.email === "dee@example.com")!;
+  assert.equal((await ask(dee.id, "They asked")).status, 400, "only for someone who unsubscribed");
+  assert.equal((await ask(cy.id, "  They asked at the till\n on Saturday ")).status, 200);
+  const back = await shown();
+  assert.equal(back.subscribed, true);
+  assert.deepEqual({ ...back.consent, at: 0 }, { text: "They asked at the till on Saturday", at: 0, form: "", by: "owner" });
+  assert.ok(back.consent!.at > firstOff);
+  const recorded = await row();
+  assert.deepEqual([recorded?.consent_ip, recorded?.consent_form, recorded?.consent_by], ["", "", "owner"], "never wording they saw, a form or an address");
+  const csv = (await contacts.contactCsv("news", t, ORIGIN)).csv;
+  assert.match(csv, /Recorded by you: They asked at the till on Saturday/);
+  const file = (await contacts.exportContact("news", String(cy.id), ORIGIN, t))!.contact as { consent: unknown };
+  assert.deepEqual({ ...(file.consent as object), at: null }, { recordedBy: "owner", note: "They asked at the till on Saturday", at: null, channel: "email" });
+  const detail = await (await call("GET", owner, "news", `?id=${cy.id}`)).json();
+  assert.equal(detail.contact.consent.by, "owner");
+  assert.equal((await ask(cy.id, "Again")).status, 400, "they're subscribed now");
+  // A box ticked now changes nothing of what the owner recorded.
+  await send("news", { email: "cy@example.com" }, { consent: { text: NEWS } }, "203.0.113.58");
+  assert.equal((await row())?.consent_by, "owner");
+  assert.equal((await row())?.consent_text, "They asked at the till on Saturday");
+
+  // A later unsubscribe wins again, and the owner can record it again after that.
   await new Promise((r) => setTimeout(r, 5));
   assert.equal(await contacts.unsubscribe(token), true);
-  assert.equal(await subscribed(), false, "a later unsubscribe");
-  assert.ok(Number((await one<{ u: number }>("SELECT unsubscribed_at AS u FROM site_contacts WHERE id = ?", [cy.id]))?.u) > firstOff);
+  assert.equal((await shown()).subscribed, false, "a later unsubscribe");
+  assert.ok((await shown()).unsubscribedAt > firstOff);
+  assert.equal((await contacts.tokenContact(token))?.unsubscribed, true);
+  await send("news", { email: "cy@example.com" }, { consent: { text: NEWS } }, "203.0.113.59");
+  assert.equal((await shown()).subscribed, false);
+  assert.equal((await ask(cy.id, "They emailed me")).status, 200);
+  assert.equal((await shown()).subscribed, true);
+});
+
+test("only wording a visitor sees on the page counts, never words in its code, comments or attributes", async () => {
+  await fresh();
+  const words = "Email me news and offers from Golden Crumb";
+  const unseen = [
+    `<script>const label = "${words}. I can unsubscribe at any time.";</script>`,
+    `<script type="text/babel">function App() { return <label><input type="checkbox" /> ${words}</label>; }</script>`,
+    `<SCRIPT>var x = "</div> ${words}";</SCRIPT >`,
+    `<script type="application/json" id="i18n">{"news": "${words}"}</script>`,
+    `<style>.news::after { content: "${words}"; }</style>`,
+    `<template id="news"><label><input type="checkbox"> ${words}</label></template>`,
+    `<template><template></template><p>${words}</p></template>`,
+    `<noscript>${words}</noscript>`,
+    `<!-- ${words} -->`,
+    `<!--> ${"x"} --><!-- <p>${words}</p> -->`,
+    `<input type="checkbox" aria-label="${words}">`,
+    `<button title='${words}' data-label="${words}">Send</button>`,
+    `<input value="${words}" placeholder="${words}">`,
+    `<a title="a > b ${words}">Home</a>`,
+    `<textarea>${words}</textarea>`,
+    `<iframe>${words}</iframe>`,
+    `<p>A tag that never ends</p><p title="${words}`,
+  ];
+  for (const code of unseen) {
+    const html = `<!doctype html><html><head><title>${words}</title></head><body><h1>Golden Crumb</h1>${code}</body></html>`;
+    assert.ok(!pageHas(html, words), code);
+  }
+  // Words on the page still count, whatever code, comments and attributes are around them.
+  const seen = [
+    `<label><input type="checkbox" aria-label="news">${words}</label>`,
+    `<script>if (a < b && c > d) document.title = "</p>";</script><p>${words}</p>`,
+    `<a title="a > b" href='/x?a=1>2'>Email me news</a> and <b class=x>offers</b> from <!-- the shop -->Golden Crumb`,
+    `<template><p>Not this</p></template><label>${words}</label><style>p > a { color: red }</style>`,
+    `<p>Ages <12 &amp; up. ${words}</p>`,
+  ];
+  for (const html of seen) assert.ok(pageHas(html, words), html);
+  assert.equal(pageWords(`<p>One</p><script>Two</script><style>Three</style><!-- Four --><template>Five</template><b title="Six">Seven</b>`), "one seven");
+
+  // A form sent with wording that's only in the app's code keeps no agreement.
+  await site("coded", "owner", `<!doctype html><html><body><div id="root"></div><script type="text/babel">const t = "${NEWS}";</script></body></html>`);
+  await send("coded", { email: "hal@example.com" }, { consent: { text: NEWS } }, "203.0.113.60");
+  const [hal] = await contactsOf("coded");
+  assert.equal(hal.email, "hal@example.com", "the contact is still kept");
+  assert.equal(hal.consent_at, 0);
+  assert.equal(hal.consent_text, "");
 });
 
 test("the list stops at 10,000 people, but the people on it still update", async () => {
@@ -554,6 +646,97 @@ test("only the app's owner can see or change its contacts", async () => {
   await fresh();
   await run("INSERT OR REPLACE INTO rate_limits (key, count, reset_at) VALUES (?, 60, ?)", [`contacts-search:${owner.id}`, Date.now() + 60_000]);
   assert.equal((await call("GET", owner, "mine", "?q=ana")).status, 429);
+  await fresh();
+});
+
+test("the owner's reads have a limit too: the board and list, one contact, and each download", async () => {
+  await fresh();
+  await site("reads", "owner");
+  const ana = await contacts.addContact("reads", { email: "ana@x.co" });
+  assert.ok("id" in ana);
+  const limitOf = (key: string) => one<{ count: number }>("SELECT count FROM rate_limits WHERE key = ?", [`${key}:${owner.id}`]);
+  const nearly = (key: string, count: number, window = 3_600_000) =>
+    run("INSERT OR REPLACE INTO rate_limits (key, count, reset_at) VALUES (?, ?, ?)", [`${key}:${owner.id}`, count, Date.now() + window]);
+  // Each kind of read counts on its own: what one does never uses another's.
+  const reads: [string, string, number, RegExp][] = [
+    ["contacts-list", "?mode=board", 600, /Too many requests\. Try again in an hour\./],
+    ["contacts-list", "?mode=list", 600, /Too many requests\. Try again in an hour\./],
+    ["contacts-contact", `?id=${ana.id}`, 600, /Too many requests\. Try again in an hour\./],
+    ["contacts-csv", "?format=csv", 10, /Too many requests\. Try again in an hour\./],
+    ["contacts-export", `?id=${ana.id}&format=json`, 20, /Too many requests\. Try again in an hour\./],
+    ["contacts-search", "?q=ana", 60, /Too many searches\. Please wait a minute\./],
+  ];
+  for (const [key, query, max, error] of reads) {
+    await fresh();
+    assert.equal((await call("GET", owner, "reads", query)).status, 200, query);
+    assert.equal(Number((await limitOf(key))?.count), 1, `${query} counts as ${key}`);
+    assert.equal((await all("SELECT key FROM rate_limits WHERE key LIKE 'contacts-%' AND key NOT LIKE 'contacts-orders:%'")).length, 1, `${query} uses no other limit`);
+    await nearly(key, max - 1, key === "contacts-search" ? 60_000 : undefined);
+    assert.equal((await call("GET", owner, "reads", query)).status, 200, `${query}: the last one of ${max}`);
+    const limited = await call("GET", owner, "reads", query);
+    assert.equal(limited.status, 429, query);
+    assert.match((await limited.json()).error, error);
+  }
+  // The real count: ten downloads of the whole list an hour, then a friendly no.
+  await fresh();
+  for (let i = 0; i < 10; i++) assert.equal((await call("GET", owner, "reads", "?format=csv")).status, 200, `download ${i + 1}`);
+  assert.equal((await call("GET", owner, "reads", "?format=csv")).status, 429);
+  assert.equal((await call("GET", owner, "reads", "?mode=board")).status, 200, "the board still opens");
+  // Another owner's limit is their own.
+  await site("reads2", "stranger");
+  assert.equal((await call("GET", stranger, "reads2", "?format=csv")).status, 200);
+  await fresh();
+});
+
+test("a new contact checks the 10,000 cap with the app's count, not by counting its whole list", async () => {
+  await fresh();
+  await site("count", "owner");
+  const n = async () => (await one<{ n: number }>("SELECT n FROM site_contact_counts WHERE site_slug = 'count'"))?.n ?? null;
+  const real = async () => Number((await one<{ n: number }>("SELECT COUNT(*) AS n FROM site_contacts WHERE site_slug = 'count'"))?.n);
+  assert.equal(await n(), null, "no count before anyone");
+  await send("count", { email: "a@x.co" }, {}, "1.1.7.1");
+  assert.equal(await n(), 1, "counted once");
+  // The people from before are copied in, all at once, and the next new contact counts again.
+  await run("INSERT INTO site_users (id, site_slug, email, name, password_hash, created_at) VALUES ('cm1', 'count', 'old@x.co', 'Old', 'h', 1)");
+  await run("INSERT INTO site_messages (id, site_slug, form, data, created_at) VALUES ('cg1', 'count', 'contact', '{\"email\":\"older@x.co\"}', 2)");
+  assert.equal((await call("GET", owner, "count")).status, 200, "the first look copies them in");
+  assert.equal(await real(), 3);
+  await send("count", { email: "b@x.co" }, {}, "1.1.7.2");
+  assert.equal(await n(), 4);
+
+  // What the cap reads is the count: with it at 10,000, nobody new joins, though four people are there.
+  await run("UPDATE site_contact_counts SET n = 10000 WHERE site_slug = 'count'");
+  assert.deepEqual(await send("count", { email: "c@x.co", message: "hi" }, {}, "1.1.7.3"), { ok: true }, "the message is still saved");
+  await send("count", { phone: "+15550107001" }, {}, "1.1.7.4");
+  assert.equal((await call("POST", owner, "count", "", { email: "c@x.co" })).status, 409);
+  assert.equal(await real(), 4, "nobody new joined");
+  await send("count", { email: "A@x.co", name: "Ann" }, {}, "1.1.7.5");
+  assert.equal((await one<{ name: string }>("SELECT name FROM site_contacts WHERE site_slug = 'count' AND email = 'a@x.co'"))?.name, "Ann", "people on it still update");
+  await run("UPDATE site_contact_counts SET n = 9999 WHERE site_slug = 'count'");
+  await send("count", { phone: "+15550107001" }, {}, "1.1.7.6");
+  assert.equal(await n(), 10_000, "one more joined and was counted");
+  await send("count", { email: "d@x.co" }, {}, "1.1.7.7");
+  assert.equal(await real(), 5);
+  await run("UPDATE site_contact_counts SET n = 5 WHERE site_slug = 'count'");
+
+  // Every way in and out keeps it right: forms, sign-ups, and the owner adding and deleting.
+  await send("count", { email: "e@x.co" }, {}, "1.1.7.8");
+  assert.equal((await siteAuth("count", "signup", { email: "f@x.co", password: "longenough1" }, "1.1.7.9", "/p/count", true, null)).result, "ok");
+  const added = await (await call("POST", owner, "count", "", { email: "g@x.co" })).json();
+  assert.equal((await call("POST", owner, "count", "", { email: "G@x.co" })).status, 200, "someone already there");
+  await send("count", { email: "g@x.co" }, {}, "1.1.7.10");
+  assert.equal(await real(), 8);
+  assert.equal(await n(), 8);
+  assert.equal((await call("DELETE", owner, "count", `?id=${added.id}`)).status, 200);
+  assert.equal(await n(), 7);
+  assert.equal(await n(), await real());
+  await run("PRAGMA foreign_keys = OFF");
+  try {
+    assert.equal(await unpublishSite("owner", "count"), true);
+  } finally {
+    await run("PRAGMA foreign_keys = ON");
+  }
+  assert.equal(await one("SELECT 1 FROM site_contact_counts WHERE site_slug = 'count'"), null, "the count goes with the app");
   await fresh();
 });
 

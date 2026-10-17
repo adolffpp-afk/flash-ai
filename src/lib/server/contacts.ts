@@ -8,10 +8,13 @@
  * owner is in charge of this data, and unpublishing the app deletes it with everything else.
  *
  * Agreeing to an app's news counts only when the person ticked a box themselves (see flashdb-shim.ts)
- * whose wording is really on the app's page. Flash keeps that wording, the time, the form, and a
- * hash of their address keyed by the app's own secret, never the address. The same secret signs
- * each contact's unsubscribe link, which is worked out again whenever it's shown, so no usable link
- * is stored. Flash sends no news itself: the list shows who agreed and who unsubscribed.
+ * whose wording a visitor sees on the app's page. Flash keeps that wording, the time, the form, and
+ * a hash of their address keyed by the app's own secret, never the address. Anyone can send a form
+ * with someone else's address, so a ticked box never undoes an unsubscribe: once someone has
+ * unsubscribed, only the owner can record that they asked for news again, with a note saying how.
+ * The same secret signs each contact's unsubscribe link, which is worked out again whenever it's
+ * shown, so no usable link is stored. Flash sends no news itself: the list shows who agreed and
+ * who unsubscribed.
  *
  * It costs only database rows, within the caps below, and fills without slowing anyone down: a
  * contact that can't be saved never stops the form, the sign-up or the order it came with.
@@ -25,6 +28,7 @@ import { toCsv } from "../csv.ts";
 import { formatMoney } from "../shop.ts";
 import {
   DEFAULT_STAGES,
+  MAX_CONSENT_NOTE,
   MAX_CONTACTS,
   MAX_NAME,
   MAX_NOTES,
@@ -61,7 +65,9 @@ export type Contact = {
   source: string;
   firstSeen: number;
   lastSeen: number;
-  consent: { text: string; at: number; form: string } | null;
+  // What they agreed to: the wording they saw on a form (by "form"), or the owner's note on how they
+  // asked for news again after unsubscribing (by "owner", with no form).
+  consent: { text: string; at: number; form: string; by: "form" | "owner" } | null;
   unsubscribedAt: number;
   // They agreed to news, and haven't unsubscribed since: the latest of the two counts.
   subscribed: boolean;
@@ -83,11 +89,12 @@ type Row = {
   consent_ip?: string;
   consent_channel?: string;
   consent_form: string;
+  consent_by: string;
   unsubscribed_at: number;
 };
 
 // The list and the board leave out the hashed address; the export and the file have it.
-const LISTED = "id, email, phone, name, stage, tags, notes, source, first_seen, last_seen, consent_text, consent_at, consent_form, unsubscribed_at";
+const LISTED = "id, email, phone, name, stage, tags, notes, source, first_seen, last_seen, consent_text, consent_at, consent_form, consent_by, unsubscribed_at";
 // How many the list and a search show at once, how many the board shows per stage, and below how
 // many the whole list comes at once (the page then searches and lays out the board itself).
 const SHOWN = 500;
@@ -95,11 +102,17 @@ const PER_STAGE = 100;
 // A reply can't be much over 4.5 MB on the host, so a contact's export stays under 4 MB.
 const EXPORT_BYTES = 3_600_000;
 
+// A box ticked on a form counts only for someone who never unsubscribed. Anyone can send a form with
+// someone else's address, so it can't bring back someone who said no: after an unsubscribe, only
+// the owner can record that they asked for news again (see recordConsent).
+const FORM_AGREES = "excluded.consent_at > consent_at AND unsubscribed_at = 0";
+
 /**
  * What a new sighting changes on a contact already on the list: the name and phone fill in only
  * while it has none, the earliest sighting says where they came from, and a newer agreement to news
- * replaces an older one. The owner's own stage, tags and notes never change, an unsubscribe stays,
- * and the owner adding someone who is already there doesn't count as seeing them.
+ * replaces an older one while they've never unsubscribed. The owner's own stage, tags and notes
+ * never change, an unsubscribe stays, and the owner adding someone who is already there doesn't
+ * count as seeing them.
  */
 const MERGE = `
   name = CASE WHEN name = '' THEN excluded.name ELSE name END,
@@ -107,15 +120,30 @@ const MERGE = `
   source = CASE WHEN excluded.first_seen < first_seen THEN excluded.source ELSE source END,
   first_seen = min(first_seen, excluded.first_seen),
   last_seen = CASE WHEN excluded.source = 'owner' THEN last_seen ELSE max(last_seen, excluded.last_seen) END,
-  consent_text = CASE WHEN excluded.consent_at > consent_at THEN excluded.consent_text ELSE consent_text END,
-  consent_ip = CASE WHEN excluded.consent_at > consent_at THEN excluded.consent_ip ELSE consent_ip END,
-  consent_channel = CASE WHEN excluded.consent_at > consent_at THEN excluded.consent_channel ELSE consent_channel END,
-  consent_form = CASE WHEN excluded.consent_at > consent_at THEN excluded.consent_form ELSE consent_form END,
-  consent_at = max(consent_at, excluded.consent_at)`;
+  consent_text = CASE WHEN ${FORM_AGREES} THEN excluded.consent_text ELSE consent_text END,
+  consent_ip = CASE WHEN ${FORM_AGREES} THEN excluded.consent_ip ELSE consent_ip END,
+  consent_channel = CASE WHEN ${FORM_AGREES} THEN excluded.consent_channel ELSE consent_channel END,
+  consent_form = CASE WHEN ${FORM_AGREES} THEN excluded.consent_form ELSE consent_form END,
+  consent_by = CASE WHEN ${FORM_AGREES} THEN '' ELSE consent_by END,
+  consent_at = CASE WHEN ${FORM_AGREES} THEN excluded.consent_at ELSE consent_at END`;
 const COLUMNS = "id, site_slug, email, phone, name, source, first_seen, last_seen, consent_text, consent_at, consent_ip, consent_channel, consent_form";
+/**
+ * Counts the app's contacts when it has no count yet: the first time someone may join them, and
+ * once more after the people it had before are copied in (see fillFrom). From then on the database
+ * keeps the count as people are added and deleted (site_contact_counts in db.ts), so a new contact
+ * checks the cap by reading one row, not by counting the whole list.
+ */
+const counted = (slug: string): InStatement => ({
+  sql: `INSERT INTO site_contact_counts (site_slug, n)
+        SELECT slug, (SELECT COUNT(*) FROM site_contacts WHERE site_slug = ?) FROM sites
+        WHERE slug = ? AND NOT EXISTS (SELECT 1 FROM site_contact_counts WHERE site_slug = ?)
+        ON CONFLICT(site_slug) DO NOTHING`,
+  args: [slug, slug, slug],
+});
 // Room for one more, unless they are on the list already (key is the condition that finds them).
+// counted goes first in the same write, so the count is there; without one there's no room.
 const room = (key: string) =>
-  `(EXISTS (SELECT 1 FROM site_contacts WHERE site_slug = ? AND ${key}) OR (SELECT COUNT(*) FROM site_contacts WHERE site_slug = ?) < ${MAX_CONTACTS})`;
+  `(EXISTS (SELECT 1 FROM site_contacts WHERE site_slug = ? AND ${key}) OR (SELECT n FROM site_contact_counts WHERE site_slug = ?) < ${MAX_CONTACTS})`;
 // The contact with an email address, and the one known by a phone number alone.
 const BY_EMAIL = "email = ? AND email <> ''";
 const ID_BY_EMAIL = `SELECT id FROM site_contacts WHERE site_slug = ? AND ${BY_EMAIL}`;
@@ -141,8 +169,8 @@ export const hashedIp = (secret: string, ip: string) => hmac(secret, `ip|${ip}`)
 
 /**
  * What someone agreed to get, when a form says they ticked the news box ({ text } from flashDB.send):
- * kept only when that wording is on the app's page, so made-up wording is never stored. null
- * otherwise; it never stops the message.
+ * kept only when a visitor sees that wording on the app's published page (not just in its code),
+ * so made-up wording is never stored. null otherwise; it never stops the message.
  */
 export async function checkedConsent(slug: string, raw: unknown, ip: string, form: string): Promise<Consent | null> {
   const given = raw && typeof raw === "object" ? (raw as { text?: unknown }).text : undefined;
@@ -162,7 +190,7 @@ export async function checkedConsent(slug: string, raw: unknown, ip: string, for
  * passed as messageId is linked to its contact.
  */
 function contactStatements(slug: string, who: Who, { source, at, consent = null, messageId = "" }: Seen, select = true): InStatement[] {
-  const statements: InStatement[] = [];
+  const statements: InStatement[] = [counted(slug)];
   if (who.email) {
     const agreed: InValue[] = consent ? [consent.text, at, consent.ipHash, "email", consent.form] : ["", 0, "", "", ""];
     statements.push({
@@ -282,7 +310,15 @@ async function fillFrom(slug: string, rows: string) {
     WHERE n = 1 AND e ${which} (SELECT email FROM site_contacts WHERE site_slug = ? AND email <> '') ORDER BY first_at ${limit}
     ON CONFLICT(site_slug, email) WHERE email <> '' DO UPDATE SET ${MERGE}`;
   await run(insert("IN", ""), [slug, slug, slug]);
-  await run(insert("NOT IN", `LIMIT max(0, ${MAX_CONTACTS} - (SELECT COUNT(*) FROM site_contacts WHERE site_slug = ?))`), [slug, slug, slug, slug]);
+  // Up to 10,000 people at once: the app's count goes in the same write, rather than being kept up to
+  // date one row at a time, and the next contact counts the list once again (see counted).
+  await (await db()).batch(
+    [
+      { sql: "DELETE FROM site_contact_counts WHERE site_slug = ?", args: [slug] },
+      { sql: insert("NOT IN", `LIMIT max(0, ${MAX_CONTACTS} - (SELECT COUNT(*) FROM site_contacts WHERE site_slug = ?))`), args: [slug, slug, slug, slug] },
+    ],
+    "write",
+  );
 }
 
 const tagsOf = (json: string): string[] => {
@@ -308,7 +344,7 @@ function toContact(r: Row, stages: readonly Stage[]): Contact {
     source: r.source,
     firstSeen: Number(r.first_seen),
     lastSeen: Number(r.last_seen),
-    consent: agreedAt > 0 ? { text: r.consent_text, at: agreedAt, form: r.consent_form } : null,
+    consent: agreedAt > 0 ? { text: r.consent_text, at: agreedAt, form: r.consent_form, by: r.consent_by === "owner" ? "owner" : "form" } : null,
     unsubscribedAt,
     subscribed: agreedAt > 0 && agreedAt > unsubscribedAt,
   };
@@ -516,6 +552,25 @@ export async function updateContact(
 }
 
 /**
+ * The owner records that someone who unsubscribed asked them for news again, and how (note: "they
+ * asked at the till", "they replied to my email"). A ticked box on a form can't do this (see
+ * FORM_AGREES), as anyone can type someone else's address. The record says the owner made it, with
+ * their note, and never claims wording the person saw. A later unsubscribe wins again. "bad" for a
+ * note that's empty or too long, or someone who has no email or hasn't unsubscribed.
+ */
+export async function recordConsent(slug: string, id: string, note: unknown): Promise<"ok" | "bad" | "missing"> {
+  const text = typeof note === "string" && note.length <= 2000 ? note.replace(/\s+/g, " ").trim() : "";
+  if (!text || text.length > MAX_CONSENT_NOTE) return "bad";
+  const r = await run(
+    `UPDATE site_contacts SET consent_text = ?, consent_at = max(?, unsubscribed_at + 1), consent_ip = '', consent_channel = 'email', consent_form = '', consent_by = 'owner'
+     WHERE site_slug = ? AND id = ? AND email <> '' AND unsubscribed_at > 0 AND unsubscribed_at >= consent_at`,
+    [text, now(), slug, id],
+  );
+  if (r.rowsAffected) return "ok";
+  return (await one("SELECT 1 FROM site_contacts WHERE site_slug = ? AND id = ?", [slug, id])) ? "bad" : "missing";
+}
+
+/**
  * The owner adds someone by hand: an email address, a phone number or both, and a name. Someone
  * already on the list stays one contact, and their id comes back. "full" at MAX_CONTACTS.
  */
@@ -667,9 +722,11 @@ export async function exportContact(slug: string, id: string, base: string, t: T
       source: sourceLabel(row.source, t),
       firstSeen: iso(Number(row.first_seen)),
       lastSeen: iso(Number(row.last_seen)),
-      consent: agreedAt
-        ? { text: row.consent_text, at: iso(agreedAt), form: row.consent_form, channel: row.consent_channel, ipHash: row.consent_ip }
-        : null,
+      consent: !agreedAt
+        ? null
+        : row.consent_by === "owner"
+          ? { recordedBy: "owner", note: row.consent_text, at: iso(agreedAt), channel: row.consent_channel }
+          : { text: row.consent_text, at: iso(agreedAt), form: row.consent_form, channel: row.consent_channel, ipHash: row.consent_ip },
       unsubscribedAt: iso(Number(row.unsubscribed_at)),
       unsubscribeLink: unsubLink(base, secret, slug, row),
     },
@@ -768,7 +825,7 @@ export async function contactCsv(slug: string, t: Translate, base: string, maxBy
       when(c.lastSeen),
       c.subscribed ? t("Yes") : t("No"),
       when(c.consent?.at ?? 0),
-      c.consent?.text ?? "",
+      c.consent?.by === "owner" ? t("Recorded by you: {note}", { note: c.consent.text }) : (c.consent?.text ?? ""),
       c.consent?.form ?? "",
       c.consent ? (r.consent_ip ?? "") : "",
       when(c.unsubscribedAt),
@@ -803,8 +860,10 @@ export async function tokenContact(token: string): Promise<{ id: string; slug: s
 }
 
 /**
- * Someone stops an app's news with their link. The time is kept, and stays: agreeing again later
- * counts from then, and a later unsubscribe is kept again. false for a link that doesn't work.
+ * Someone stops an app's news with their link. The time is kept, and stays: a box ticked on a form
+ * afterwards doesn't undo it (see FORM_AGREES), the owner recording that they asked for news again
+ * counts from then (recordConsent), and a later unsubscribe is kept again. false for a link that
+ * doesn't work.
  */
 export async function unsubscribe(token: string): Promise<boolean> {
   const found = await tokenContact(token);
