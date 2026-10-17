@@ -19,6 +19,10 @@ const SCHEMA = [
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     expires_at INTEGER NOT NULL
   )`,
+  // One browser can hold sessions for several accounts (see auth.ts), so sessions are looked up by
+  // user (logging out everywhere) and by expiry (clearing out old ones) more often.
+  `CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id)`,
+  `CREATE INDEX IF NOT EXISTS sessions_expires ON sessions(expires_at)`,
   `CREATE TABLE IF NOT EXISTS credit_ledger (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -716,6 +720,8 @@ const MIGRATIONS = [
   // Whether the app's link preview says "Made with Flash ∞ AI" (see made-with.ts). On until its owner,
   // on a paid plan, turns it off.
   "ALTER TABLE sites ADD COLUMN made_with INTEGER NOT NULL DEFAULT 1",
+  // When a sign-in started, for housekeeping only (the order of a browser's accounts is its cookie's).
+  "ALTER TABLE sessions ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0",
 ];
 
 async function init(c: Client) {
