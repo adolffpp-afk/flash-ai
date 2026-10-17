@@ -14,6 +14,7 @@ import { ProjectInstructions } from "./ProjectInstructions";
 import { Settings, SKIP_COST_CHECK, settingsTabFor, type SettingsTab } from "./Settings";
 import { AccountMenu } from "./AccountMenu";
 import { AccountChooser, SwitchAnyway } from "./AccountChooser";
+import { EmailLabel } from "./EmailLabel";
 import { Automations } from "./Automations";
 import { Creations } from "./Creations";
 import { Companion } from "./Companion";
@@ -27,7 +28,7 @@ import { TEMPLATES, type Template, type TemplateValues } from "@/lib/templates";
 import { ENGINES, ENGINE_LABELS, PENDING_LIMIT_MS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types";
 import { applyEvent } from "@/lib/apply-event";
 import { api, authedFetch, newId, type AccountSummary, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
-import { adoptAccountFromUrl, announce, getPin, isolate, onAnnounce, setPin } from "@/lib/account-pin";
+import { adoptAccountFromUrl, announce, getPin, getPinEmail, isolate, onAnnounce, setPin, setPinEmail } from "@/lib/account-pin";
 import { isLocalPath } from "@/lib/local-path";
 import { PROJECT_TOO_LARGE } from "@/lib/project-size";
 import type { ChatHit } from "@/lib/server/search";
@@ -93,8 +94,16 @@ const MAX_OFFICE_MB = 20;
 
 // A team invitation opened before signing in waits here until the account loads.
 const INVITE_KEY = "flash_invite";
-// A note this tab shows after reloading as another account, kept in this tab's sessionStorage.
+// A note this tab shows after reloading as another account, kept in this tab's sessionStorage: who
+// was logged out and who it uses now, put into words once the next account's language is shown.
 const NOTICE_KEY = "flash-notice";
+type LeftNote = { email: string; next: string };
+/**
+ * Why the account chooser shows: a link for an account that isn't signed in here, this tab's
+ * account logged out here (email: which, when known), or a switch to an account that turned out
+ * not to be signed in here anymore.
+ */
+type Chooser = { reason: "link" | "gone" | "notHere"; email?: string; accounts: AccountSummary[] };
 const storage = {
   get: (key: string) => {
     try {
@@ -268,13 +277,16 @@ export function Flash({
   // a switch waiting on "Switch anyway"; add mode (signing in to another account) and where it goes
   // after; and an invitation for another account signed in here.
   const [switching, setSwitching] = useState<string | null>(null);
-  const [chooser, setChooser] = useState<{ title: string; accounts: AccountSummary[] } | null>(null);
+  const [chooser, setChooser] = useState<Chooser | null>(null);
   const [unsaved, setUnsaved] = useState<string | null>(null);
-  const [adding, setAdding] = useState<{ next?: string; error?: string } | null>(null);
+  // back: the chooser that opened add mode, which Back returns to.
+  const [adding, setAdding] = useState<{ next?: string; error?: string; back?: Chooser } | null>(null);
   const [addNext, setAddNext] = useState<string | undefined>(undefined);
   const [inviteFor, setInviteFor] = useState<{ id: string; email: string } | null>(null);
   // The account a link opened this tab as (?as=), until it is known to be signed in here.
   const linkedRef = useRef<string | null>(null);
+  // "Logged out of …", said once the next account has loaded (see reloadAs).
+  const leftRef = useRef<LeftNote | null>(null);
   // Set when sign-up couldn't send the confirmation email, so the banner asks to send it again.
   const [emailFailed, setEmailFailed] = useState(false);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -393,8 +405,10 @@ export function Flash({
   async function adoptMe(fetched: Me) {
     // Play's billing rule: nothing is for sale inside the Android app (see android-shell.ts), whichever account.
     const data = inAndroidApp() ? { ...fetched, paymentsEnabled: false, testPurchases: false } : fetched;
-    // This tab shows this account from now on (the default's, when it showed none).
+    // This tab shows this account from now on (the default's, when it showed none), and remembers
+    // its email to say which account it was if it is logged out before a reload.
     setPin(data.account);
+    setPinEmail(data.user.email);
     if (linkedRef.current === data.account) linkedRef.current = null;
     // Flash's own words switch to the account's language before its first screen shows.
     await showLanguage(data.user.language);
@@ -450,16 +464,8 @@ export function Flash({
       setPin(list.default);
       return "retry";
     }
-    const shown = meRef.current?.user.id === mine ? meRef.current.user.email : "";
-    setChooser({
-      title:
-        linkedRef.current === mine
-          ? tNow("This link is for another Flash account. Sign in to it to open the link.")
-          : shown
-            ? tNow("{email} was logged out on this browser.", { email: isolate(shown) })
-            : tNow("Choose an account to keep going."),
-      accounts: list.accounts,
-    });
+    const shown = meRef.current?.user.id === mine ? meRef.current.user.email : getPinEmail();
+    setChooser({ reason: linkedRef.current === mine ? "link" : "gone", email: shown, accounts: list.accounts });
     return "gone";
   }
 
@@ -485,6 +491,10 @@ export function Flash({
   async function start() {
     const data = await refreshMe();
     if (!data) return;
+    // Put into words in this account's language, now shown (see reloadAs).
+    const left = leftRef.current;
+    leftRef.current = null;
+    if (left) setNotice(tNow("Logged out of {email}. You're now using {next}.", { email: isolate(left.email), next: isolate(left.next) }));
     setSignedOut(false);
     acceptInvite();
     setPreferences(data.user.preferences);
@@ -501,7 +511,8 @@ export function Flash({
 
   // The language picked in Settings. Signed out, the sign-in and sign-up screen follows the
   // browser's language (""), while the landing page stays in English, even right after a session ends.
-  const savedLanguage = signedOut && !authMode ? "en" : me ? (me.user.language ?? "") : signedOut ? "" : "en";
+  // So do the account chooser and add mode before any account has loaded here.
+  const savedLanguage = signedOut && !authMode ? "en" : me ? (me.user.language ?? "") : signedOut || chooser || adding ? "" : "en";
   useEffect(() => {
     void showLanguage(savedLanguage);
   }, [savedLanguage]);
@@ -521,15 +532,17 @@ export function Flash({
       }
       window.history.replaceState(null, "", window.location.pathname);
     }
-    // A note left for this tab before it reloaded as another account ("Logged out of …").
+    // A note left for this tab before it reloaded as another account ("Logged out of …"), said
+    // once that account has loaded, in its language.
     try {
       const left = sessionStorage.getItem(NOTICE_KEY);
       if (left) {
         sessionStorage.removeItem(NOTICE_KEY);
-        setNotice(left);
+        const note = JSON.parse(left) as Partial<LeftNote> | null;
+        if (typeof note?.email === "string" && typeof note.next === "string") leftRef.current = { email: note.email, next: note.next };
       }
     } catch {
-      // Storage blocked: no note.
+      // Storage blocked, or not a note: none.
     }
     // Loading the account must wait for the browser, so this runs once after mount.
     if (signedIn) start();
@@ -1011,11 +1024,11 @@ export function Flash({
   }
 
   /** Reloads Flash as another account signed in here, saying so once it has (a note for this tab). */
-  function reloadAs(id: string, note?: string) {
+  function reloadAs(id: string, note?: LeftNote) {
     setPin(id);
     if (note) {
       try {
-        sessionStorage.setItem(NOTICE_KEY, note);
+        sessionStorage.setItem(NOTICE_KEY, JSON.stringify(note));
       } catch {
         // Storage blocked: no note.
       }
@@ -1060,7 +1073,7 @@ export function Flash({
       if (!list.accounts.length) return void signedOutHere();
       setMe((m) => (m ? { ...m, accounts: list.accounts } : m));
       if (chooser || !list.accounts.some((a) => a.id === getPin())) {
-        setChooser({ title: t("That account isn't signed in on this browser anymore."), accounts: list.accounts.filter((a) => a.id !== id) });
+        setChooser({ reason: "notHere", accounts: list.accounts.filter((a) => a.id !== id) });
       } else setNotice(t("That account isn't signed in on this browser anymore."));
     } catch {
       setNotice(t("That account isn't signed in on this browser anymore."));
@@ -1088,7 +1101,7 @@ export function Flash({
       }
     }
     // Another account is still signed in here: Flash goes on as it, and says so.
-    if (next) return reloadAs(next.id, t("Logged out of {email}. You're now using {next}.", { email: isolate(leaving), next: isolate(next.email) }));
+    if (next) return reloadAs(next.id, { email: leaving, next: next.email });
     setPin(null);
     announce({ type: "changed" });
     signedOutHere();
@@ -1495,7 +1508,9 @@ export function Flash({
       responded = true;
       if (!res.ok || !res.body) {
         const err = await res.json().catch(() => ({ error: t("Request failed ({status})", { status: res.status }) }));
-        if (res.status === 401) setSignedOut(true);
+        // Signed out: for a tab that names its account, authedFetch has Flash check who is still
+        // signed in here (the chooser while others are, the landing page when nobody is).
+        if (res.status === 401 && !getPin()) setSignedOut(true);
         throw Object.assign(new Error(err.error), { code: err.code as string | undefined, decided: err.decided as UIMessage["decided"] });
       }
       accepted = acceptedRef.current = true;
@@ -1865,30 +1880,48 @@ export function Flash({
   const liveCount = ENGINES.filter(isLive).length;
   const allOff = status && !liveCount;
 
+  /** What the chooser says happened, in the language shown now. */
+  const chooserTitle = ({ reason, email }: Chooser) =>
+    reason === "link"
+      ? t("This link is for another Flash account. Sign in to it to open the link.")
+      : reason === "gone" && email
+        ? t("{email} was logged out on this browser.", { email: isolate(email) })
+        : t("That account isn't signed in on this browser anymore.");
+
   // This tab's account was logged out here before its data loaded: which account now.
   if (chooser && !me) {
     return (
       <AccountChooser
-        title={chooser.title}
+        title={chooserTitle(chooser)}
         accounts={chooser.accounts}
         switching={switching}
         onChoose={(id) => void switchAccount(id, { gone: true })}
         onAdd={() => {
           setChooser(null);
-          setSignedOut(true);
-          setAuthMode("login");
+          setAdding({ back: chooser });
         }}
       />
     );
   }
-  // Signing in to another account as well as this one.
-  if (adding && me) {
+  // Signing in to another account as well as this one. Back returns to the chooser that opened
+  // it, to the Connect to Flash page it came from, or to the account shown.
+  if (adding && (me || adding.back)) {
+    const { back, next } = adding;
     return (
       <AuthScreen
         initialMode="login"
         initialError={adding.error}
-        next={adding.next}
-        adding={{ email: me.user.email, onBack: () => setAdding(null) }}
+        next={next}
+        adding={{
+          email: back ? undefined : me?.user.email,
+          onBack: () => {
+            if (back) {
+              setAdding(null);
+              setChooser(back);
+            } else if (next) window.location.replace(next);
+            else setAdding(null);
+          },
+        }}
         onDone={(result) => {
           if (result?.account) setPin(result.account);
           announce({ type: "changed" });
@@ -2703,13 +2736,13 @@ export function Flash({
       )}
       {chooser && (
         <AccountChooser
-          title={chooser.title}
+          title={chooserTitle(chooser)}
           accounts={chooser.accounts}
           switching={switching}
           onChoose={(id) => void switchAccount(id, { gone: true })}
           onAdd={() => {
             setChooser(null);
-            setAdding({});
+            setAdding({ back: chooser });
           }}
         />
       )}
@@ -2750,9 +2783,9 @@ export function Flash({
                 <button
                   onClick={() => void switchAccount(inviteFor.id)}
                   disabled={Boolean(switching)}
-                  className="min-h-10 max-w-full truncate rounded-lg bg-brand px-3 text-sm font-medium text-on-brand transition hover:brightness-110 disabled:opacity-50"
+                  className="flex min-h-10 max-w-full items-center rounded-lg bg-brand px-3 text-sm font-medium text-on-brand transition hover:brightness-110 disabled:opacity-50"
                 >
-                  {switching === inviteFor.id ? t("Switching…") : t("Switch to {email}", { email: isolate(inviteFor.email) })}
+                  {switching === inviteFor.id ? t("Switching…") : <EmailLabel text={msg("Switch to {email}")} email={inviteFor.email} />}
                 </button>
               </div>
             )}

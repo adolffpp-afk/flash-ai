@@ -79,10 +79,11 @@ export function AccountChooser({
   onAdd: () => void;
 }) {
   const t = useT();
+  const ask = t("Choose an account to keep going.");
   return (
     <Sheet label={title}>
       <h2 className="break-words text-lg font-medium tracking-tight text-balance">{title}</h2>
-      <p className="mt-1 text-sm text-zinc-400">{t("Choose an account to keep going.")}</p>
+      {ask !== title && <p className="mt-1 text-sm text-zinc-400">{ask}</p>}
       <div className="mt-4 grid gap-1">
         {accounts.map((a) => {
           const going = switching === a.id;

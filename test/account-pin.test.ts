@@ -150,3 +150,29 @@ test("a link's ?next= (Add another account) is followed only to a path on Flash"
   const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
   assert.match(page, /const back = opened\.get\("next"\);\n\s*const safeNext = isLocalPath\(back\) \? back : undefined;/);
 });
+
+test("a tab remembers its account's email through a reload, to say which one was logged out", async () => {
+  pin.setPin("acct_e");
+  pin.setPinEmail("e@x.io");
+  assert.equal(pin.getPinEmail(), "e@x.io");
+  // The page again after a reload: a fresh copy of the module, the same tab's storage.
+  const reloaded = (await import(new URL("../src/lib/account-pin.ts?reload", import.meta.url).href)) as typeof pin;
+  assert.equal(reloaded.getPin(), "acct_e");
+  assert.equal(reloaded.getPinEmail(), "e@x.io");
+  // Showing another account, or none, forgets it.
+  pin.setPin("acct_f");
+  assert.equal(pin.getPinEmail(), "");
+  assert.equal(storage.data.has("flash-account-email"), false);
+  pin.setPinEmail("f@x.io");
+  pin.setPin(null);
+  assert.equal(pin.getPinEmail(), "");
+  pin.setPinEmail("nobody@x.io");
+  assert.equal(pin.getPinEmail(), "", "no account shown, nothing kept");
+  // Storage that refuses keeps it for this page.
+  storage.refuse = true;
+  pin.setPin("acct_g");
+  pin.setPinEmail("g@x.io");
+  assert.equal(pin.getPinEmail(), "g@x.io");
+  storage.refuse = false;
+  pin.setPin(null);
+});

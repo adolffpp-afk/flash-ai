@@ -3,11 +3,11 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { api } from "@/lib/store";
-import { isolate } from "@/lib/account-pin";
 import { LogoMark, Wordmark } from "@/app/brand";
 import { msg } from "@/lib/i18n";
 import { TAGLINE } from "@/lib/product";
 import { useT } from "@/lib/use-t";
+import { EmailLabel } from "./EmailLabel";
 
 const FEATURES = [
   msg("🛠️ Build and publish apps"),
@@ -82,8 +82,9 @@ export function AuthScreen({
   onBack?: () => void;
   // Where to return after a "Continue with …" or email-link sign-in (a path on this site).
   next?: string;
-  // Adding another account while signed in to this one (email), which Back returns to.
-  adding?: { email: string; onBack: () => void };
+  // Adding another account while signed in to this one (email), which Back returns to; with no
+  // email, Back returns to the account chooser.
+  adding?: { email?: string; onBack: () => void };
 }) {
   const t = useT();
   const router = useRouter();
@@ -146,14 +147,15 @@ export function AuthScreen({
   return (
     <div className="flex min-h-full items-center justify-center bg-[radial-gradient(ellipse_at_top,rgba(16,185,129,0.12),transparent_60%)] px-4 py-12">
       <div className="grid w-full max-w-4xl items-center gap-12 md:grid-cols-2 md:gap-16">
-        <div>
+        {/* min-w-0: a long email in Back shortens rather than widening the page past a phone's screen. */}
+        <div className="min-w-0">
           {adding ? (
             <button
               onClick={adding.onBack}
               className="mb-4 -ms-2 inline-flex min-h-11 max-w-full items-center gap-1 rounded-lg px-2 text-sm text-zinc-400 hover:text-zinc-100"
             >
               <span aria-hidden className="rtl:-scale-x-100">←</span>
-              <span className="truncate">{t("Back to {email}", { email: isolate(adding.email) })}</span>
+              {adding.email ? <EmailLabel text={msg("Back to {email}")} email={adding.email} /> : t("Back")}
             </button>
           ) : (
             onBack && (

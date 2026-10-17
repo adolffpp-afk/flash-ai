@@ -11,12 +11,16 @@
  */
 
 const KEY = "flash-account";
+// The email of the account the tab shows, so after a reload it can say which one was logged out.
+const EMAIL_KEY = "flash-account-email";
 const HEADER = "X-Flash-Account";
 // A user id, as the server checks it (ACCOUNT_ID in server/auth.ts).
 const ID = /^[A-Za-z0-9_-]{1,64}$/;
 
 // undefined until read from storage; null for no pin.
 let pin: string | null | undefined;
+// The pin's email, kept here too for when storage refuses.
+let pinEmail: string | null = null;
 
 function storage(): Storage | null {
   try {
@@ -42,12 +46,36 @@ export function getPin(): string | null {
 
 /** Makes this tab show an account from now on (null: none). */
 export function setPin(id: string | null | undefined): void {
+  const before = getPin();
   pin = id && ID.test(id) ? id : null;
+  if (pin !== before) pinEmail = null;
   try {
     if (pin) storage()?.setItem(KEY, pin);
     else storage()?.removeItem(KEY);
+    if (pin !== before) storage()?.removeItem(EMAIL_KEY);
   } catch {
     // Kept for this page only.
+  }
+}
+
+/** Remembers the email of the account this tab shows (its pin), for after a reload. */
+export function setPinEmail(email: string): void {
+  if (!getPin()) return;
+  pinEmail = email;
+  try {
+    storage()?.setItem(EMAIL_KEY, email);
+  } catch {
+    // Kept for this page only.
+  }
+}
+
+/** The email of the account this tab shows, when known ("" otherwise). */
+export function getPinEmail(): string {
+  if (!getPin()) return "";
+  try {
+    return storage()?.getItem(EMAIL_KEY) ?? pinEmail ?? "";
+  } catch {
+    return pinEmail ?? "";
   }
 }
 
