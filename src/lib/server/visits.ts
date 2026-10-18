@@ -522,6 +522,8 @@ export async function pruneDaily(at = Date.now()): Promise<boolean> {
         // A checkout's source waits for its order at most 14 days, as a voucher or a bank debit can be
         // paid days later (see funnel.ts).
         { sql: "DELETE FROM site_checkouts WHERE created_at < ?", args: [at - CHECKOUT_DAYS * DAY] },
+        // Stripe resends an event for 3 days at most, and lists it for 30 (see connectEvent in shop.ts).
+        { sql: "DELETE FROM stripe_events WHERE created_at < ?", args: [at - 30 * DAY] },
       ],
       "write",
     );

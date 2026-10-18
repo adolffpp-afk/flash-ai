@@ -17,7 +17,7 @@ export async function GET(request: Request, ctx: RouteContext<"/api/sites/[slug]
   const site = await one<{ title: string }>("SELECT title FROM sites WHERE slug = ?", [slug]);
   const orders = await listOrders(user.id, slug);
   const csv = toCsv([
-    [t("Date"), t("Item"), t("Quantity"), t("Total"), t("Name"), t("Email"), t("Address"), t("Done"), t("Stripe checkout")],
+    [t("Date"), t("Item"), t("Quantity"), t("Total"), t("Name"), t("Email"), t("Address"), t("Done"), t("Refunds and disputes"), t("Stripe checkout")],
     ...orders.map((o) => [
       new Date(o.createdAt).toISOString().slice(0, 16).replace("T", " "),
       o.item,
@@ -27,6 +27,9 @@ export async function GET(request: Request, ctx: RouteContext<"/api/sites/[slug]
       o.email,
       o.address,
       o.done ? t("Yes") : t("No"),
+      [o.refund === "full" ? t("Refunded") : o.refund === "part" ? t("Partly refunded: {amount}", { amount: o.refunded }) : "", o.disputed ? t("Disputed") : ""]
+        .filter(Boolean)
+        .join("; "),
       o.id,
     ]),
   ]);

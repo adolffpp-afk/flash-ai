@@ -334,6 +334,11 @@ export type FunnelStats = {
   rest: FunnelCounts | null;
   /** Sends Flash couldn't tie to a visit, and paid orders no source covers: sends and orders, never people. */
   unmatched: Omit<FunnelCounts, "visitors">;
+  /**
+   * The paid orders refunded since, in part or in full, and what went back to their buyers. Paid and
+   * revenue stay what buyers paid: nothing ties an order to its source, so refunds can't come off one.
+   */
+  refunded: { orders: number; revenue: Money[] };
   /** The steps the app reported, the 10 with the most people. */
   appSteps: { step: string; people: number }[];
   /** Days this app missed people at the owner's daily limit, newest first, and the limit today when it is reached now. */
@@ -400,8 +405,9 @@ export async function funnelStats(slug: string, days: FunnelRange, at = Date.now
        WHERE site_slug = ? AND day >= ? GROUP BY source, medium, campaign, currency`,
       [slug, first],
     ),
-    all<{ currency: string; orders: number; amount: number }>(
-      "SELECT currency, COUNT(*) AS orders, SUM(amount) AS amount FROM site_orders WHERE site_slug = ? AND created_at >= ? GROUP BY currency",
+    all<{ currency: string; orders: number; amount: number; refunds: number; refunded: number }>(
+      `SELECT currency, COUNT(*) AS orders, SUM(amount) AS amount, SUM(refunded_amount > 0) AS refunds, SUM(refunded_amount) AS refunded
+       FROM site_orders WHERE site_slug = ? AND created_at >= ? GROUP BY currency`,
       [slug, Date.parse(`${first}T00:00:00Z`)],
     ),
     one<{ people: number; steps: number }>("SELECT people, steps FROM owner_people WHERE user_id = ? AND day = ?", [site.owner, today]),
@@ -467,7 +473,10 @@ export async function funnelStats(slug: string, days: FunnelRange, at = Date.now
     attributed.set(r.currency, { ...a, amount: a.amount + amount, orders: a.orders + orders });
   }
   // Every paid order counts; those no source covers are not matched.
+  const refunded: FunnelStats["refunded"] = { orders: 0, revenue: [] };
   for (const p of paid) {
+    refunded.orders += Number(p.refunds);
+    if (Number(p.refunded)) addMoney(refunded.revenue, p.currency, Number(p.refunded));
     const [orders, amount] = [Number(p.orders), Number(p.amount)];
     totals.orders += orders;
     addMoney(totals.revenue, p.currency, amount);
@@ -520,6 +529,7 @@ export async function funnelStats(slug: string, days: FunnelRange, at = Date.now
     sources: named,
     rest,
     unmatched: { form: unmatched.form, signup: unmatched.signup, checkout: unmatched.checkout, orders: unmatched.orders, revenue: byMoney(unmatched.revenue) },
+    refunded: { orders: refunded.orders, revenue: byMoney(refunded.revenue) },
     appSteps: [...appSteps]
       .map(([step, n]) => ({ step, people: n }))
       .sort((a, b) => b.people - a.people || a.step.localeCompare(b.step))

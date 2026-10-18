@@ -312,6 +312,7 @@ test("a checkout keeps only its buyer's source beside the session, and its order
     shopRoute.POST(call("cake-1", "shop", { headers: { "content-type": "application/json", ...headers }, body: JSON.stringify({ item: "Cake", page: onPage }) }), ctx("cake-1"));
   const paid = (id: string, amount: number, currency = "cad") => ({
     id,
+    livemode: false,
     payment_status: "paid",
     amount_total: amount,
     currency,
@@ -427,6 +428,7 @@ test("an order paid later, whose buyer never came back from Stripe, keeps its so
   // Paid 3 days later; nobody comes back to the app from Stripe, and the daily prune runs the day after.
   sessions.cs_test_oxxo = {
     id: "cs_test_oxxo",
+    livemode: false,
     payment_status: "paid",
     amount_total: 25000,
     currency: "mxn",

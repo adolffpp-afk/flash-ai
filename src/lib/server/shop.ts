@@ -1,7 +1,7 @@
 import { all, one, run, now } from "./db.ts";
 import { isAdmin, type User } from "./auth.ts";
 import { activeSubscription } from "./subscriptions.ts";
-import { paymentsEnabled, stripe } from "./stripe.ts";
+import { liveKey, paymentsEnabled, stripe } from "./stripe.ts";
 import { domainsForSite } from "./domains.ts";
 import { randomId } from "./ids.ts";
 import { overLimit } from "./limits.ts";
@@ -268,6 +268,7 @@ export async function startCheckout(
 
 type Session = {
   id: string;
+  livemode?: boolean;
   payment_status?: string;
   amount_total?: number;
   currency?: string;
@@ -289,9 +290,14 @@ function addressText(s: Session): string {
     .join(", ");
 }
 
-/** Saves a paid order once, with its buyer on the app's contact list; true when it is new. */
+/**
+ * Saves a paid order once, with its buyer on the app's contact list; true when it is new. The return
+ * page (finishCheckout), the owner's sync (syncOrders) and Stripe's webhook (connectEvent) all save
+ * through here, so a sale is one order, new once, whichever of them sees it first.
+ */
 async function recordOrder(slug: string, s: Session): Promise<boolean> {
-  if (s.payment_status !== "paid" || s.metadata?.flash_site !== slug) return false;
+  // A test-mode payment is never an order under a live key, nor a live one under a test key.
+  if (s.payment_status !== "paid" || s.metadata?.flash_site !== slug || s.livemode !== liveKey()) return false;
   const item = s.metadata.flash_item ?? "";
   const created = s.created ? s.created * 1000 : now();
   const given = s.customer_details?.email ?? "";
@@ -325,6 +331,27 @@ async function recordOrder(slug: string, s: Session): Promise<boolean> {
   return true;
 }
 
+type Shop = NonNullable<Awaited<ReturnType<typeof shopOf>>>;
+
+/** Saves a paid order, and the first time emails its owner. True when it is new. */
+async function orderPaid(slug: string, session: Session, shop: Shop, appOrigin: string): Promise<boolean> {
+  if (!(await recordOrder(slug, session))) return false;
+  const summary = [
+    `${session.line_items?.data?.[0]?.quantity ?? 1} × ${session.metadata?.flash_item ?? ""}`,
+    `Paid: ${formatMoney(session.amount_total ?? 0, session.currency ?? "usd")}`,
+    session.customer_details?.name && `Name: ${session.customer_details.name}`,
+    session.customer_details?.email && `Email: ${session.customer_details.email}`,
+    addressText(session) && `Deliver to: ${addressText(session)}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+  // Orders aren't held to the owner's cap for form messages (see EMAIL_BUDGET), only the day's budget.
+  await sendEmail(shop.email, EMAILS.siteOrder(shop.title, summary, `${appOrigin}/?apps=1`), "other").catch((err) =>
+    console.error("[flash] order email failed", err),
+  );
+  return true;
+}
+
 /**
  * A visitor comes back from paying: saves the order, emails the owner, and gives the page to send
  * the visitor back to. The session is read from Stripe, so a made-up link records nothing.
@@ -342,22 +369,10 @@ export async function finishCheckout(slug: string, sessionId: string, back: unkn
     console.error("[flash] site checkout lookup failed", err);
     return null;
   });
-  if (!session || session.payment_status !== "paid" || session.metadata?.flash_site !== slug) return { page, paid: false };
-  if (await recordOrder(slug, session)) {
-    const summary = [
-      `${session.line_items?.data?.[0]?.quantity ?? 1} × ${session.metadata.flash_item}`,
-      `Paid: ${formatMoney(session.amount_total ?? 0, session.currency ?? "usd")}`,
-      session.customer_details?.name && `Name: ${session.customer_details.name}`,
-      session.customer_details?.email && `Email: ${session.customer_details.email}`,
-      addressText(session) && `Deliver to: ${addressText(session)}`,
-    ]
-      .filter(Boolean)
-      .join("\n");
-    // Orders aren't held to the owner's cap for form messages (see EMAIL_BUDGET), only the day's budget.
-    await sendEmail(shop.email, EMAILS.siteOrder(shop.title, summary, `${appOrigin}/?apps=1`), "other").catch((err) =>
-      console.error("[flash] order email failed", err),
-    );
+  if (!session || session.payment_status !== "paid" || session.metadata?.flash_site !== slug || session.livemode !== liveKey()) {
+    return { page, paid: false };
   }
+  await orderPaid(slug, session, shop, appOrigin);
   return { page, paid: true };
 }
 
@@ -371,6 +386,11 @@ export type Order = {
   address: string;
   createdAt: number;
   done: boolean;
+  /** Refunded in full, in part (with how much went back, in refunded), or not ('') as far as Stripe's webhook said. */
+  refund: "" | "part" | "full";
+  refunded: string;
+  /** The buyer asked their bank to take the payment back. */
+  disputed: boolean;
 };
 
 /**
@@ -407,22 +427,118 @@ export async function listOrders(userId: string, slug: string): Promise<Order[]>
     address: string;
     created_at: number;
     done_at: number;
+    refunded_amount: number;
+    disputed_at: number;
   }>("SELECT * FROM site_orders WHERE site_slug = ? ORDER BY created_at DESC LIMIT 500", [slug]);
-  return rows.map((r) => ({
-    id: r.session_id,
-    item: r.item,
-    quantity: Number(r.quantity),
-    total: formatMoney(Number(r.amount), r.currency),
-    email: r.email,
-    name: r.name,
-    address: r.address,
-    createdAt: Number(r.created_at),
-    done: Boolean(Number(r.done_at)),
-  }));
+  return rows.map((r): Order => {
+    const refunded = Number(r.refunded_amount);
+    return {
+      id: r.session_id,
+      item: r.item,
+      quantity: Number(r.quantity),
+      total: formatMoney(Number(r.amount), r.currency),
+      email: r.email,
+      name: r.name,
+      address: r.address,
+      createdAt: Number(r.created_at),
+      done: Boolean(Number(r.done_at)),
+      refund: refunded <= 0 ? "" : refunded >= Number(r.amount) ? "full" : "part",
+      refunded: refunded > 0 ? formatMoney(refunded, r.currency) : "",
+      disputed: Number(r.disputed_at) > 0,
+    };
+  });
 }
 
 /** Marks an order as handled (sent or picked up), or not. False if the site has no such order. */
 export async function markOrder(slug: string, id: string, done: boolean): Promise<boolean> {
   const res = await run("UPDATE site_orders SET done_at = ? WHERE site_slug = ? AND session_id = ?", [done ? now() : 0, slug, id]);
   return res.rowsAffected > 0;
+}
+
+/** An event Stripe sent the Connect webhook, as it came: nothing in it counts until it is checked. */
+export type ConnectEvent = { id?: unknown; type?: unknown; account?: unknown; livemode?: unknown; created?: unknown; data?: { object?: unknown } | null };
+/** What the webhook did with an event (its answer says it, for Stripe's event log and the tests). */
+export type ConnectOutcome = "ignored" | "not-ours" | "duplicate" | "unpaid" | "recorded" | "unchanged" | "refunded" | "disputed";
+
+/** The events the webhook is pointed at; Stripe is answered 200 for any other, so it stops sending it. */
+const CONNECT_EVENTS = ["checkout.session.completed", "checkout.session.async_payment_succeeded", "charge.refunded", "charge.dispute.created"];
+const isId = (v: unknown, prefix: string): v is string => typeof v === "string" && v.length <= 255 && new RegExp(`^${prefix}_\\w+$`).test(v);
+
+/**
+ * Handles an event from a seller's connected Stripe account, sent to Stripe's Connect webhook (see
+ * api/stripe/connect), its signature already checked: a checkout paid, or paid days later (a bank
+ * debit, a voucher), saves its order and emails the owner, as the return page would have; a refund
+ * or a dispute is kept with its order. Each event changes something once, and only for an app whose
+ * owner's account sent it, in the key's own mode. Throws when Stripe or the database fails, so
+ * Stripe sends it again later.
+ */
+export async function connectEvent(event: ConnectEvent, appOrigin: string): Promise<ConnectOutcome> {
+  const { type, account } = event;
+  const object = event.data?.object;
+  if (typeof type !== "string" || !CONNECT_EVENTS.includes(type) || !isId(event.id, "evt") || !object || typeof object !== "object") return "ignored";
+  // Stripe also sends a live endpoint its connected accounts' test-mode events: those never become
+  // orders under a live key (nor live ones under a test key). Nor does an event of Flash's own account.
+  if (event.livemode !== liveKey() || !isId(account, "acct")) return "ignored";
+  // A seller's account can sell elsewhere too: Stripe isn't asked about the accounts Flash didn't connect.
+  if (!(await one("SELECT 1 FROM seller_accounts WHERE stripe_account = ? AND ready = 1", [account]))) return "not-ours";
+  if (await one("SELECT 1 FROM stripe_events WHERE id = ?", [event.id])) return "duplicate";
+  const at = typeof event.created === "number" && event.created > 0 ? event.created * 1000 : now();
+  const outcome =
+    type === "charge.refunded" || type === "charge.dispute.created"
+      ? await chargeEvent(type, account, object as Record<string, unknown>, at)
+      : await sessionEvent(account, object as Session, appOrigin);
+  // Kept only once handled, so an event that failed halfway is handled again when Stripe resends it.
+  // A seller's sales elsewhere change nothing, sent again or not, and write nothing.
+  if (outcome !== "not-ours") await run("INSERT OR IGNORE INTO stripe_events (id, created_at) VALUES (?, ?)", [event.id, now()]);
+  return outcome;
+}
+
+/** The app a checkout session is for, when that app's owner's connected account is the one that sent it. */
+async function shopFor(account: string, session: Session | undefined) {
+  const slug = session?.metadata?.flash_site;
+  if (!session || !isId(session.id, "cs") || typeof slug !== "string" || !slug) return null;
+  const shop = await shopOf(slug);
+  return shop && shop.stripe_account === account ? { slug, shop } : null;
+}
+
+async function sessionEvent(account: string, sent: Session, appOrigin: string): Promise<ConnectOutcome> {
+  // A bank debit's checkout completes unpaid; checkout.session.async_payment_succeeded follows once it's paid.
+  if (sent.payment_status !== "paid") return "unpaid";
+  const mine = await shopFor(account, sent);
+  if (!mine) return "not-ours";
+  // Read from Stripe again on that account, with what was bought: an event leaves the line items out.
+  const session = await stripe<Session>("GET", `/checkout/sessions/${encodeURIComponent(sent.id)}?expand[]=line_items`, undefined, account);
+  return (await orderPaid(mine.slug, session, mine.shop, appOrigin)) ? "recorded" : "unchanged";
+}
+
+async function chargeEvent(type: "charge.refunded" | "charge.dispute.created", account: string, object: Record<string, unknown>, at: number): Promise<ConnectOutcome> {
+  let payment = object.payment_intent;
+  // A dispute names its charge, and its payment only on newer API versions.
+  if (!isId(payment, "pi") && type === "charge.dispute.created" && isId(object.charge, "ch")) {
+    payment = (await stripe<{ payment_intent?: string | null }>("GET", `/charges/${encodeURIComponent(object.charge)}`, undefined, account)).payment_intent;
+  }
+  if (!isId(payment, "pi")) return "not-ours";
+  const found = await stripe<{ data?: Session[] }>(
+    "GET",
+    `/checkout/sessions?${new URLSearchParams({ payment_intent: payment, limit: "1", "expand[]": "data.line_items" })}`,
+    undefined,
+    account,
+  );
+  const session = found.data?.[0];
+  const mine = await shopFor(account, session);
+  if (!session || !mine) return "not-ours";
+  // Refunded or disputed before its order was saved (the buyer closed the tab, an event was lost):
+  // saved now, the same order the other ways save, without a new-order email.
+  await recordOrder(mine.slug, session);
+  if (type === "charge.refunded") {
+    // How much of the charge has gone back so far, with each refund. One sent late never lowers it.
+    const refunded = Math.max(0, Math.floor(Number(object.amount_refunded) || 0));
+    await run(
+      "UPDATE site_orders SET refunded_amount = MIN(?, amount), refunded_at = ? WHERE session_id = ? AND site_slug = ? AND refunded_amount < MIN(?, amount)",
+      [refunded, at, session.id, mine.slug, refunded],
+    );
+    return "refunded";
+  }
+  await run("UPDATE site_orders SET disputed_at = ? WHERE session_id = ? AND site_slug = ? AND disputed_at = 0", [at, session.id, mine.slug]);
+  return "disputed";
 }

@@ -46,7 +46,20 @@ type Domains = { available: boolean; allowed: boolean; domains: DomainInfo[] };
 type Seller = { connected: boolean; ready: boolean; currency: string; country: string };
 type Payments = { available: boolean; allowed: boolean; seller: Seller };
 type Product = { id: string; name: string; label: string; delivery: boolean };
-type Order = { id: string; item: string; quantity: number; total: string; email: string; name: string; address: string; createdAt: number; done: boolean };
+type Order = {
+  id: string;
+  item: string;
+  quantity: number;
+  total: string;
+  email: string;
+  name: string;
+  address: string;
+  createdAt: number;
+  done: boolean;
+  refund: "" | "part" | "full";
+  refunded: string;
+  disputed: boolean;
+};
 type Shop = { products: Product[]; unpriced: string[]; orders: Order[] };
 // "Made with Flash ∞ AI" on the app's link preview. on: the owner's choice; allowed: their plan lets
 // them turn it off; shown: link previews say it now (always, without a paid plan).
@@ -1104,13 +1117,13 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
                     <h3 className="text-sm font-medium text-zinc-200">
                       {t("Orders")}
                       {shop.orders.some((o) => !o.done) && (
-                        <span className="ml-2 text-xs font-normal text-gold-soft">
+                        <span className="ms-2 text-xs font-normal text-gold-soft">
                           {t("{count} to handle", { count: shop.orders.filter((o) => !o.done).length })}
                         </span>
                       )}
                     </h3>
                     {shop.orders.length > 0 && (
-                      <a href={`/api/sites/${open.slug}/orders`} download className="ml-auto text-xs text-primary-soft hover:underline">
+                      <a href={`/api/sites/${open.slug}/orders`} download className="ms-auto text-xs text-primary-soft hover:underline">
                         ⬇ {t("Download (CSV)")}
                       </a>
                     )}
@@ -1126,7 +1139,13 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
                               {o.quantity} × {o.item}
                             </span>
                             <span className="tabular-nums text-primary-soft">{o.total}</span>
-                            <span className="ml-auto text-xs text-zinc-500">{dateLabel(o.createdAt, t.locale)}</span>
+                            {o.refund && (
+                              <span className="rounded-full bg-amber-400/15 px-2 py-0.5 text-xs text-amber-300">
+                                {o.refund === "full" ? t("Refunded") : t("Partly refunded: {amount}", { amount: o.refunded })}
+                              </span>
+                            )}
+                            {o.disputed && <span className="rounded-full bg-red-400/15 px-2 py-0.5 text-xs text-red-300">{t("Disputed")}</span>}
+                            <span className="ms-auto text-xs text-zinc-500">{dateLabel(o.createdAt, t.locale)}</span>
                             <button
                               onClick={() => markOrder(o)}
                               className={`rounded-md border px-2 py-0.5 text-xs ${o.done ? "border-white/10 text-zinc-400 hover:text-zinc-100" : "border-primary/40 text-primary-soft hover:bg-primary/10"}`}
@@ -1138,6 +1157,9 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
                           <p className="mt-1 break-words text-xs text-zinc-400">
                             {[o.name, o.email, o.address].filter(Boolean).join(" · ")}
                           </p>
+                          {o.disputed && (
+                            <p className="mt-1 text-xs text-red-300">{t("The buyer asked their bank to take this payment back. Answer it in your Stripe dashboard.")}</p>
+                          )}
                         </li>
                       ))}
                     </ul>
