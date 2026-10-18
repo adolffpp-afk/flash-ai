@@ -112,6 +112,29 @@ test("emails to new addresses stop at their own daily share; members' sign-in em
   assert.equal(await sendEmail("owner@x.co", appEmail(3), { owner: "o3" }), true, "orders and invites keep their share");
 });
 
+test("low-credit emails stop at their own daily share, count with app emails, and never take what sign-in emails keep", async () => {
+  clock = NOON + 4 * DAY;
+  const before = sent.length;
+  const alert = (n: number) => EMAILS.lowCredits(n, "https://x/?credits=1");
+  let n = 0;
+  while (await sendEmail(`low${n}@x.co`, alert(n), "alert")) n++;
+  assert.equal(n, EMAIL_BUDGET.alerts);
+  assert.ok(EMAIL_BUDGET.alerts > 0 && EMAIL_BUDGET.alerts < forOthers, "app emails and invites keep most of their share");
+  // They counted with app emails: those have what's left of the share.
+  let apps = 0;
+  while (await sendEmail(`app${apps}@x.co`, appEmail(apps), { owner: `alert-day-${apps}` })) apps++;
+  assert.equal(apps, forOthers - EMAIL_BUDGET.alerts);
+  // Every sign-in email kept for the day still goes.
+  for (let i = 0; i < EMAIL_BUDGET.keptForAccounts; i++) assert.equal(await sendEmail(`s${i}@x.co`, EMAILS.signin("https://x/s"), "account"), true);
+  assert.equal(sent.length - before, forOthers + EMAIL_BUDGET.keptForAccounts);
+
+  // With app emails using up the share first, low-credit emails wait too, under their own count.
+  clock = NOON + 5 * DAY;
+  for (let i = 0; i < forOthers; i++) await sendEmail(`busy${i}@x.co`, appEmail(i), { owner: `busy-day-${i}` });
+  assert.equal(await sendEmail("low@x.co", alert(1), "alert"), false);
+  assert.equal(await sendEmail("member@x.co", EMAILS.signin("https://x/s"), "account"), true);
+});
+
 const { network } = await import("../src/lib/server/limits.ts");
 
 test("IPv6 addresses count by their /64 network", () => {
