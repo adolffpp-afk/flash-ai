@@ -7,7 +7,7 @@ import { useT, type T } from "@/lib/use-t";
 import { BAND_TEXT, band, labBand, timeLabel, type Band } from "@/lib/seo-band";
 import { fixContext, fixableIds, stillToFix, type Check, type CheckId, type SeoContext, type SeoReport } from "@/lib/seo-rules";
 import { labelOf, messageOf, whyOf } from "@/lib/seo-words";
-import { fixPrice, type FixHold } from "@/lib/seo-chat";
+import { fixAllTerms, fixPrice, type FixHold } from "@/lib/seo-chat";
 import type { PageSpeedError, PageSpeedRecord, PageSpeedRun, Rating } from "@/lib/server/pagespeed";
 
 /*
@@ -346,7 +346,7 @@ export function SeoView({
       ctx: data.ctx,
       at: Date.now(),
       shown: plan.sent,
-      ...(all && { all, ...(plan.hold && { cap: plan.hold.credits }) }),
+      ...fixAllTerms(all, plan.hold),
     });
     setSending(false);
     if (!answer) return;
@@ -411,31 +411,31 @@ export function SeoView({
                 {t("Only the first {count} fit in one change. Press Fix all again after this one for the rest.", { count: points.sent.length.toLocaleString(t.locale) })}
               </p>
             )}
-            {price.kind === "pending" && (
-              <p role="status" className="mt-2 text-zinc-500">
-                {t(PRICING)}
-              </p>
-            )}
-            {price.kind === "most" && (
-              <>
-                <p className="mt-2 font-medium text-zinc-100">{t(MOST, { count: price.credits.toLocaleString(t.locale) })}</p>
-                <p className="mt-1 text-zinc-400">{t(MOST_WHY)}</p>
-              </>
-            )}
-            {price.kind === "typical" && <p className="mt-2 text-zinc-400">{t(PRICE, { count: price.credits.toLocaleString(t.locale) })}</p>}
-            {balance !== undefined && (
-              <p className="mt-2 text-gold-soft">
-                {t(price.kind === "most" ? SHORT : LOW, { credits: balance.toLocaleString(t.locale) })}
-                {onCredits && (
-                  <>
-                    {" "}
-                    <button onClick={onCredits} className="font-medium text-primary-soft hover:underline">
-                      {t("Get more credits")}
-                    </button>
-                  </>
-                )}
-              </p>
-            )}
+            {/* One live region, there from when the panel lists the points, so a screen reader hears Fix all's
+                price (and the balance when it's short) once it's worked out, not only that it's being worked out. */}
+            <div role="status">
+              {price.kind === "pending" && <p className="mt-2 text-zinc-500">{t(PRICING)}</p>}
+              {price.kind === "most" && (
+                <>
+                  <p className="mt-2 font-medium text-zinc-100">{t(MOST, { count: price.credits.toLocaleString(t.locale) })}</p>
+                  <p className="mt-1 text-zinc-400">{t(MOST_WHY)}</p>
+                </>
+              )}
+              {price.kind === "typical" && <p className="mt-2 text-zinc-400">{t(PRICE, { count: price.credits.toLocaleString(t.locale) })}</p>}
+              {balance !== undefined && (
+                <p className="mt-2 text-gold-soft">
+                  {t(price.kind === "most" ? SHORT : LOW, { credits: balance.toLocaleString(t.locale) })}
+                  {onCredits && (
+                    <>
+                      {" "}
+                      <button onClick={onCredits} className="font-medium text-primary-soft hover:underline">
+                        {t("Get more credits")}
+                      </button>
+                    </>
+                  )}
+                </p>
+              )}
+            </div>
             <p className="mt-2 text-zinc-400">{t(WHERE)}</p>
           </>
         )}

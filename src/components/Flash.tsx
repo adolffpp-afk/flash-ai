@@ -20,7 +20,7 @@ import { Templates } from "./Templates";
 import { MyApps } from "./MyApps";
 import type { FixPlan, SiteFix } from "./SeoView";
 import type { CheckId } from "@/lib/seo-rules";
-import { chatForFix, chatWithSite, fixAllHold, newestApp, siteOf, stillAnswering } from "@/lib/seo-chat";
+import { chatForFix, chatWithSite, fixAllHold, fixMessage, newestApp, siteOf, stillAnswering } from "@/lib/seo-chat";
 import { chatRequestBody } from "@/lib/chat-request";
 import { chatSaves } from "@/lib/chat-saves";
 import { BuildPanel, useMedia } from "./BuildPanel";
@@ -1108,7 +1108,7 @@ export function Flash({
     if ("why" in plan) setNotice(plan.why);
     // On the server's copy of the chat, so the change lands after a reply asked in another tab. Fix all's
     // holds at most what its panel said ("Up to N credits"), on Retry too (see the chat route's maxCredits).
-    else await respond(project, chat.messages, fix.cap ? { ...plan.message, cap: fix.cap } : plan.message);
+    else await respond(project, chat.messages, fixMessage(plan.message, fix));
   }
   const sendFixRef = useRef(sendFix);
   useEffect(() => {

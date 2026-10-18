@@ -31,7 +31,7 @@ const { afterwards } = await import("./support/next-server.mjs");
 const { one, run: sql } = await import("../src/lib/server/db.ts");
 const chatRoute = await import("../src/app/api/chat/route.ts");
 const { chatRequestBody } = await import("../src/lib/chat-request.ts");
-const { fixAllHold, fixPrice } = await import("../src/lib/seo-chat.ts");
+const { fixAllHold, fixAllTerms, fixMessage, fixPrice } = await import("../src/lib/seo-chat.ts");
 const { fixForCopy } = await import("../src/lib/seo-fix.ts");
 const { scanPage } = await import("../src/lib/seo-scan.ts");
 const { evaluate, fixableIds } = await import("../src/lib/seo-rules.ts");
@@ -39,6 +39,7 @@ const { requestTurn } = await import("../src/lib/server/turns.ts");
 const { requestStop } = await import("../src/lib/server/stops.ts");
 const { english } = await import("../src/lib/i18n.ts");
 const { TYPICAL_CREDITS } = await import("../src/lib/credits.ts");
+const { readFileSync } = await import("node:fs");
 type UIMessage = import("../src/lib/store.ts").UIMessage;
 
 beforeEach(async () => {
@@ -87,6 +88,11 @@ function fixAllMessage(): UIMessage {
   assert.ok(planned && planned.sent.length >= 2, "the page has several things to fix");
   return { id: id(), role: "user", content: planned.content, build: "app", picked: { label: "SEO", context: planned.context } };
 }
+/**
+ * Fix all's message as Send sends it, with the price its panel said: SeoView's send adds fixAllTerms to
+ * the change, and Flash's sendFix makes the message with fixMessage (see the wiring test below).
+ */
+const sentAs = (message: UIMessage, hold: Parameters<typeof fixAllTerms>[1], all = true) => fixMessage(message, fixAllTerms(all, hold));
 /** The request Flash's chat page makes for message after earlier (see requestFor in Flash.tsx). */
 const bodyFor = (who: Who, earlier: UIMessage[], message: UIMessage, level?: string) =>
   chatRequestBody(earlier, message, {
@@ -161,6 +167,8 @@ async function send(who: Who, body: object, reply: Omit<ClaudeReply, "hold"> = {
 const charged = async (chargeId: number) => -Number((await one<{ amount: number }>("SELECT amount FROM credit_ledger WHERE id = ?", [chargeId]))!.amount);
 const chargeOf = (events: Event[]) => events.find((e) => e.type === "route")!.charge!;
 const claudeCalls = () => stand.state.claude.sent.length;
+/** What the last reply Claude was asked for may write (max_tokens): less when the hold pays for less. */
+const lastMaxTokens = () => Number(stand.state.claude.sent.at(-1)?.max_tokens);
 const counted = () => stand.state.seen.filter((s) => s.service === "anthropic" && s.path.endsWith("/count_tokens"));
 
 const LEVELS = ["auto", "sonic", "ascend", "vision", "ultra"];
@@ -190,7 +198,10 @@ test("Fix all's price is the hold the chat route places for the message it sends
         if (credits >= quoted.needed) assert.equal(priced.needed, quoted.needed);
         // With a balance between, all of it, as a reply sent then would hold.
         if (credits === quoted.needed + 7) assert.equal(priced.credits, credits);
-        const r = await send(who, bodyFor(who, earlier, { ...message, ...(capped && { cap: priced.credits }) }, level));
+        // With fewer than it needs, nothing would be held: the most is what it holds with enough credits,
+        // never the least it needs.
+        if (priced.available < priced.needed) assert.equal(priced.credits, quoted.credits, `${level} ${credits}: said ${priced.credits}`);
+        const r = await send(who, bodyFor(who, earlier, capped ? sentAs(message, priced) : message, level));
         if (credits < priced.needed) {
           assert.equal(r.status, 402, `${level} ${credits}: sent without the credits it needs`);
           assert.equal(await balance(who.id), credits);
@@ -239,7 +250,7 @@ test("a long reply, one a refusal fallback answered, never charges more than Fix
   }
 });
 
-test("more credits bought after the price was said don't raise the hold, and a reply stopped part way pays no more either", async () => {
+test("more credits bought after the price was said don't raise what it holds: it isn't sent, and a reply stopped part way pays no more", async () => {
   const earlier = builtChat();
   const message = fixAllMessage();
   const rich = await account(1_000_000);
@@ -248,45 +259,132 @@ test("more credits bought after the price was said don't raise the hold, and a r
   const who = await account(most.needed + 20);
   const priced = (await fixAllHold(bodyFor(who, earlier, message, "vision"), pageFetch(who)))!;
   assert.ok(priced.credits === most.needed + 20 && priced.credits < most.credits, JSON.stringify({ most, priced }));
-  // A top-up between the panel and Send: the same change would now hold more, but Fix all's holds what it said.
+  // A top-up between the panel and Send: the same change would now hold more than the panel said, so it
+  // isn't sent, rather than run on the hold it said, which would cut it short with credits to spare.
   await sql("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES (?, 1000000, 'top-up', 0)", [who.id]);
   const uncapped = (await fixAllHold(bodyFor(who, earlier, message, "vision"), pageFetch(who)))!;
   assert.ok(uncapped.credits > priced.credits);
-  const body = bodyFor(who, earlier, { ...message, cap: priced.credits }, "vision") as { replyId: string };
+  const calls = claudeCalls();
+  const rows = await ledgerRows(who.id);
+  const topped = await send(who, bodyFor(who, earlier, sentAs(message, priced), "vision"));
+  assert.equal(topped.status, 409);
+  assert.equal(topped.error?.code, "over_cap");
+  assert.equal(claudeCalls(), calls, "Claude was asked for the reply");
+  assert.equal(await ledgerRows(who.id), rows, "something was held or charged");
+  // Fix all again says what it holds now, and that goes.
+  const again = await send(who, bodyFor(who, earlier, sentAs(message, uncapped), "vision"));
+  assert.equal(again.status, 200);
+  assert.equal(again.held, uncapped.credits);
+  // Stop is pressed while the reply is being written: it pays no more than was said either.
+  const body = bodyFor(rich, earlier, sentAs(message, most), "vision") as { replyId: string };
   const r = await send(
-    who,
+    rich,
     body,
     { blocks: [{ type: "text", text: "Changing your page…" }], stop: "end_turn", usage: { input_tokens: 900_000, output_tokens: 64_000 } },
-    // Stop is pressed while the reply is being written.
-    async () => void (await requestStop(who.id, body.replyId)),
+    async () => void (await requestStop(rich.id, body.replyId)),
   );
-  assert.equal(r.held, priced.credits);
-  assert.ok((await charged(chargeOf(r.events))) <= priced.credits);
+  assert.equal(r.held, most.credits);
+  assert.ok((await charged(chargeOf(r.events))) <= most.credits);
 });
 
-test("a change that now needs more than Fix all said isn't sent, and costs nothing", async () => {
+test("a change that would now hold more than Fix all said isn't sent and costs nothing, rather than run cut short", async () => {
   const who = await account(1_000_000);
   const earlier = builtChat();
   const message = fixAllMessage();
   const priced = (await fixAllHold(bodyFor(who, earlier, message, "vision"), pageFetch(who)))!;
-  // Said less than it needs now (its chat or level changed since the panel worked it out).
-  const calls = claudeCalls();
-  const r = await send(who, bodyFor(who, earlier, { ...message, cap: priced.needed - 1 }, "vision"));
-  assert.equal(r.status, 409);
-  assert.equal(r.error?.code, "over_cap");
-  assert.match(r.error!.error, new RegExp(`more than the ${(priced.needed - 1).toLocaleString("en-US")} credits`));
-  assert.equal(claudeCalls(), calls, "Claude was asked for the reply");
-  assert.equal(await balance(who.id), 1_000_000);
-  assert.equal((await one<{ messages: string }>("SELECT messages FROM projects WHERE id = ?", [who.projectId]))!.messages, "[]");
-  // A larger level than the one priced: its hold would be more, so it isn't sent either.
-  const ultra = await send(who, bodyFor(who, earlier, { ...message, cap: priced.credits }, "ultra"));
-  const ultraPrice = (await fixAllHold(bodyFor(who, earlier, message, "ultra"), pageFetch(who)))!;
-  if (ultraPrice.needed > priced.credits) assert.equal(ultra.status, 409);
-  else assert.ok(ultra.held! <= priced.credits);
-  // Within it: sent, and held at most what was said.
-  const ok = await send(who, bodyFor(who, earlier, { ...message, cap: priced.needed }, "vision"));
+  // Sent at the level it was priced at, as it was priced: it runs on the hold it said, and may write as
+  // much as the same message sent without a price.
+  const plain = await send(who, bodyFor(who, earlier, message, "vision"));
+  const room = lastMaxTokens();
+  const ok = await send(who, bodyFor(who, earlier, sentAs(message, priced), "vision"));
   assert.equal(ok.status, 200);
-  assert.equal(ok.held, priced.needed);
+  assert.equal(ok.held, priced.credits);
+  assert.equal(ok.held, plain.held);
+  assert.equal(lastMaxTokens(), room, "the reply may write less than the same message sent without a price");
+  const chatNow = async () => (await one<{ messages: string }>("SELECT messages FROM projects WHERE id = ?", [who.projectId]))!.messages;
+  const before = await chatNow();
+  // Said less than it would hold now (its chat or level changed since the panel worked it out): less than
+  // it needs, or between that and its hold. Neither runs on a hold cut down to what was said.
+  for (const cap of [priced.needed - 1, priced.needed, priced.credits - 1]) {
+    const calls = claudeCalls();
+    const rows = await ledgerRows(who.id);
+    const r = await send(who, bodyFor(who, earlier, sentAs(message, { ...priced, credits: cap }), "vision"));
+    assert.equal(r.status, 409, `cap ${cap}: ${r.status}`);
+    assert.equal(r.error?.code, "over_cap");
+    assert.match(r.error!.error, new RegExp(`more than the ${cap.toLocaleString("en-US")} credits`));
+    assert.equal(claudeCalls(), calls, "Claude was asked for the reply");
+    assert.equal(await ledgerRows(who.id), rows, "something was held or charged");
+  }
+  // Priced on one level and sent on a dearer one, picked in the composer before Retry: not sent either.
+  const ultraPrice = (await fixAllHold(bodyFor(who, earlier, message, "ultra"), pageFetch(who)))!;
+  assert.ok(ultraPrice.credits > priced.credits && ultraPrice.needed <= priced.credits, JSON.stringify({ priced, ultraPrice }));
+  const calls = claudeCalls();
+  const ultra = await send(who, bodyFor(who, earlier, sentAs(message, priced), "ultra"));
+  assert.equal(ultra.status, 409);
+  assert.equal(claudeCalls(), calls);
+  // None of them was saved as a turn either.
+  assert.equal(await chatNow(), before);
+  assert.equal(await balance(who.id), 1_000_000 - (await charged(chargeOf(plain.events))) - (await charged(chargeOf(ok.events))));
+});
+
+test("with too few credits, Fix all says what the change holds with enough, and Retry after a top-up runs on that, not on the least it needs", async () => {
+  const earlier = builtChat();
+  const message = fixAllMessage();
+  const rich = await account(1_000_000);
+  const full = (await fixAllHold(bodyFor(rich, earlier, message), pageFetch(rich)))!;
+  const plain = await send(rich, bodyFor(rich, earlier, message));
+  const room = lastMaxTokens();
+  assert.equal(plain.held, full.credits);
+  // Fewer credits than the change needs at all.
+  const who = await account(full.needed - 1);
+  const priced = (await fixAllHold(bodyFor(who, earlier, message), pageFetch(who)))!;
+  assert.deepEqual(priced, { credits: full.credits, needed: full.needed, available: full.needed - 1 });
+  assert.deepEqual(fixPrice(true, priced, TYPICAL_CREDITS.app!, full.needed - 1), { kind: "most", credits: full.credits, short: full.needed - 1 });
+  // Sent anyway: there aren't the credits, so nothing goes and nothing is charged. The message keeps its cap.
+  const short = await send(who, bodyFor(who, earlier, sentAs(message, priced)));
+  assert.equal(short.status, 402);
+  assert.equal(await balance(who.id), full.needed - 1);
+  // A top-up, then Retry on that message (which sends its cap again): the change holds what was said and
+  // may write as much as it would have with the credits from the start.
+  await sql("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES (?, 1000000, 'top-up', 0)", [who.id]);
+  const retry = sentAs(message, priced);
+  assert.equal(retry.cap, full.credits);
+  const r = await send(who, bodyFor(who, earlier, retry));
+  assert.equal(r.status, 200, JSON.stringify(r.error));
+  assert.equal(r.held, full.credits);
+  assert.equal(lastMaxTokens(), room, "the reply may write only what the least it needs pays for");
+  assert.ok((await charged(chargeOf(r.events))) <= full.credits);
+});
+
+test("Fix all's message is sent with the price its panel said, and only Fix all's: SeoView and Flash make it with the same helpers", async () => {
+  const message = fixAllMessage();
+  const hold = { credits: 345, needed: 210, available: 5000 };
+  assert.deepEqual(fixAllTerms(true, hold), { all: true, cap: 345 });
+  // When the price couldn't be worked out, Fix all goes as it does today, with no cap.
+  assert.deepEqual(fixAllTerms(true, null), { all: true });
+  // Fix it and Add it never carry one.
+  assert.deepEqual(fixAllTerms(false, hold), {});
+  assert.equal(fixMessage(message, fixAllTerms(false, hold)), message);
+  assert.equal(fixMessage(message, fixAllTerms(true, null)), message);
+  assert.equal(fixMessage(message, fixAllTerms(true, hold)).cap, 345);
+  assert.equal(message.cap, undefined, "the message made for the chat isn't changed");
+  // A top-up between the panel and Send: the message built only through the helpers isn't sent, as the
+  // change would now hold more than was said. Without the cap it would go and hold all it could.
+  const earlier = builtChat();
+  const rich = await account(1_000_000);
+  const most = (await fixAllHold(bodyFor(rich, earlier, message), pageFetch(rich)))!;
+  const who = await account(most.needed + 3);
+  const priced = (await fixAllHold(bodyFor(who, earlier, message), pageFetch(who)))!;
+  assert.ok(priced.credits < most.credits);
+  await sql("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES (?, 1000000, 'top-up', 0)", [who.id]);
+  const rows = await ledgerRows(who.id);
+  const r = await send(who, bodyFor(who, earlier, sentAs(message, priced)));
+  assert.equal(r.status, 409, `held ${r.held}, said ${priced.credits}`);
+  assert.equal(await ledgerRows(who.id), rows, "something was held or charged");
+  // The components send through them: SeoView's Send adds fixAllTerms, and Flash's sendFix sends fixMessage.
+  const src = (path: string) => readFileSync(new URL(`../src/${path}`, import.meta.url), "utf8");
+  assert.match(src("components/SeoView.tsx"), /await onFix\(\{[^}]*shown: plan\.sent,\s*\.\.\.fixAllTerms\(all, plan\.hold\),\s*\}\)/);
+  assert.match(src("components/Flash.tsx"), /else await respond\(project, chat\.messages, fixMessage\(plan\.message, fix\)\);/);
 });
 
 test("working out the price runs nothing, charges nothing and saves nothing", async () => {

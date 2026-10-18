@@ -76,9 +76,10 @@ export async function chatForFix(
 /**
  * What Fix all's change would hold if it were sent now, worked out by the chat route itself from the
  * very request Send makes (quote, see the chat route): credits is the most it can be charged, needed what
- * it needs at least, and available the balance it's held from. Null when it can't be worked out (offline,
- * the count failed, an error, or nothing would be held), so the panel says the usual price instead of a
- * number Flash didn't work out. post is fetch, or a stand-in in tests.
+ * it needs at least, and available the balance it's held from. With fewer credits than it needs, credits
+ * is what it holds once there are enough, never the least it needs. Null when it can't be worked out
+ * (offline, the count failed, an error, or nothing would be held), so the panel says the usual price
+ * instead of a number Flash didn't work out. post is fetch, or a stand-in in tests.
  */
 export type FixHold = { credits: number; needed: number; available: number };
 
@@ -110,4 +111,20 @@ export function fixPrice(all: boolean, hold: FixHold | null | undefined, typical
   if (all && hold === undefined) return { kind: "pending" };
   if (all && hold) return { kind: "most", credits: hold.credits, ...(hold.available < hold.needed && { short: hold.available }) };
   return { kind: "typical", credits: typical, ...(balance !== undefined && balance < typical && { low: balance }) };
+}
+
+/**
+ * What Send adds to a change the panel sends (see SiteFix): for Fix all, that it is Fix all, and the most
+ * the panel said it can be charged (cap) when it said one. Nothing for Fix it and Add it.
+ */
+export function fixAllTerms(all: boolean, hold: FixHold | null | undefined): { all?: true; cap?: number } {
+  return all ? { all: true, ...(hold && { cap: hold.credits }) } : {};
+}
+
+/**
+ * The message Flash sends for a change the panel sent (see sendFix in Flash.tsx): with Fix all's cap, so
+ * the chat route never holds or charges more than the panel said, on Retry too (see its maxCredits).
+ */
+export function fixMessage(message: UIMessage, fix: { cap?: number }): UIMessage {
+  return fix.cap ? { ...message, cap: fix.cap } : message;
 }

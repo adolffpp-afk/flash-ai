@@ -153,7 +153,7 @@ import { maybeAutoTopUp } from "@/lib/server/auto-topup.ts";
 const PRICE_QUESTIONS_AN_HOUR = 20;
 // Fix all's prices (quote) one user can ask for in an hour: each is a token count at Anthropic.
 const QUOTES_AN_HOUR = 120;
-// A request that now needs more than the most Fix all said it would hold (maxCredits).
+// A request that would now hold more than the most Fix all said it would (maxCredits).
 const OVER_CAP = msg(
   "This change now needs more than the {credits} credits shown before you sent it, so Flash didn't send it and no credits were used. Press Fix all in the search check again to see what it needs now.",
 );
@@ -224,6 +224,7 @@ type ChatRequest = {
   // priced exactly as it would be sent, and nothing is run, charged or saved (see quote below).
   quote?: boolean;
   // The most the request may hold, and so be charged, as Fix all said before it was sent ("Up to N credits").
+  // One that would now hold more isn't sent (see cap below).
   maxCredits?: number;
 };
 
@@ -1084,10 +1085,10 @@ export async function POST(request: Request) {
   // A team member spends the shared pool first. One ledger pays for each request, so the hold
   // is sized to the larger balance.
   const available = (await spendable(user.id)).largest;
-  // The most Fix all said it would hold (maxCredits): a Claude reply is planned as if that were all the
-  // user had, so it holds no more (see planHold), and a request that needs more isn't sent (see below).
+  // The most Fix all said it would hold (maxCredits). The request is planned as any is, and one that would
+  // now hold more isn't sent (see below): it never runs on a hold cut down to the cap, which could stop a
+  // long reply part way with credits to spare.
   const cap = typeof body.maxCredits === "number" && Number.isSafeInteger(body.maxCredits) && body.maxCredits > 0 ? body.maxCredits : null;
-  const holdable = cap === null ? available : Math.min(available, cap);
 
   // "Fix the spelling" sent with the picture above fixes the words in that picture. With a photo the
   // user attached, the same words are about the photo's own text, so they get words.
@@ -1207,8 +1208,9 @@ export async function POST(request: Request) {
    * may spend. A Claude engine's hold also pays for the helpers that already ran, and extraCents for
    * one still to run; a priced job's listed price already includes them (see CHECK_ALLOWANCE_CENTS).
    * forecast: priced with the live forecast, as the router's "weather" answer runs (see toolsFor).
+   * balance: what a Claude reply's hold is planned from (the user's credits; see Fix all's price below).
    */
-  const planFor = async (engine: Engine, editing: boolean, extraCents = 0, forecast = false) => {
+  const planFor = async (engine: Engine, editing: boolean, extraCents = 0, forecast = false, balance = available) => {
     const helperCents = helperSpend() + extraCents;
     // The model whose price was agreed to, while it's still there (otherwise the new price is asked about).
     const wanted = decided?.engine === engine && decided.model ? decided.model : body.model;
@@ -1259,7 +1261,7 @@ export async function POST(request: Request) {
           const choice = claudeChoice(engine, level, { careful });
           const inputTokens = (await countOnce(choice.model, systemFor(engine, preferences, history, prompting, withTools), connectTools(withTools))) + dataRoom(withTools);
           const scale = claudePrice(choice.model, inputTokens).output / claudePrice(defaultChoice(engine).model, inputTokens).output;
-          return { choice, tools: withTools, hold: planHold(engine, choice.model, inputTokens, holdable, scale, helperCents, toolPlan(engine, withTools)) };
+          return { choice, tools: withTools, hold: planHold(engine, choice.model, inputTokens, balance, scale, helperCents, toolPlan(engine, withTools)) };
         };
         // The level picked, or Auto's when the user can't pay for the one picked; Research the user
         // picked searches quickly when their credits pay only for that. fellBack: either happened.
@@ -1432,9 +1434,13 @@ export async function POST(request: Request) {
   let { held, needed, budget, claudeRun } = plan;
   // Fix all's price: the credits this request holds when it's sent as it is now (what it needs at least,
   // and the balance it's held from), worked out above exactly as for sending it. Nothing is run, charged
-  // or saved. A count Anthropic couldn't make is a guess, which is never shown as a price.
+  // or saved. A count Anthropic couldn't make is a guess, which is never shown as a price. With fewer
+  // credits than it needs, nothing would be held, and the most it can cost is what it holds once there
+  // are enough: planned again as if the balance paid for all of it (the level and tools are chosen on
+  // the real balance, and what it needs doesn't change), never the least it needs.
   if (quote) {
     if (countFailed) return Response.json({ error: t("Flash is busy right now. Please try again in a moment.") }, { status: 503 });
+    if (live && metered && available < needed) ({ held } = await planFor(engine, editing, 0, false, Number.MAX_SAFE_INTEGER));
     return Response.json({ held: live && metered ? held : 0, needed, available });
   }
   // Out of credits: chat-style requests and images fall back to free models,
@@ -1514,8 +1520,9 @@ export async function POST(request: Request) {
   if (countFailed && metered && !free) {
     return Response.json({ error: t("Flash is busy right now. Please try again in a moment.") }, { status: 503 });
   }
-  // Never more than Fix all said: a reply planned within the cap holds at most it, so only a request that
-  // now needs more (its chat, level or instructions changed since) gets here, and it isn't sent.
+  // Never more than Fix all said: a request that would now hold more (its chat, level, instructions or the
+  // balance changed since) isn't sent, and nothing is charged. One within it holds what any would, and
+  // settling never charges more than the hold.
   if (cap !== null && held > cap) {
     return Response.json({ error: t(OVER_CAP, { credits: cap.toLocaleString(t.locale) }), code: "over_cap", needed }, { status: 409 });
   }
