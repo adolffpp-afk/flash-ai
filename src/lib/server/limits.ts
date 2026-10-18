@@ -22,20 +22,32 @@ export async function overLimit(key: string, max: number, windowMs: number, atte
 
 /**
  * Takes one of key's max in its window in one statement, so requests at the same moment can't both
- * take the last one: false, changing nothing, once they're all used. With max 1 it holds key until
- * clearLimit or the window ends.
+ * take the last one: null, changing nothing, once they're all used. Otherwise when the window it
+ * took from ends (its reset_at), for giveBackOne. With max 1 it holds key until clearLimit or the
+ * window ends.
  */
-export async function takeOne(key: string, max: number, windowMs: number): Promise<boolean> {
+export async function takeOne(key: string, max: number, windowMs: number): Promise<number | null> {
   const t = now();
   const r = await run(
     `INSERT INTO rate_limits (key, count, reset_at) VALUES (?, 1, ?)
      ON CONFLICT(key) DO UPDATE SET
        count = CASE WHEN reset_at < ? THEN 1 ELSE count + 1 END,
        reset_at = CASE WHEN reset_at < ? THEN excluded.reset_at ELSE reset_at END
-     WHERE reset_at < ? OR count < ?`,
+     WHERE reset_at < ? OR count < ?
+     RETURNING reset_at`,
     [key, t + windowMs, t, t, t, max],
   );
-  return r.rowsAffected === 1;
+  return r.rows.length ? Number(r.rows[0].reset_at) : null;
+}
+
+/**
+ * Gives back one count of each key taken with takeOne, into the window it was taken from (until, as
+ * takeOne said), in one statement: once that window has ended and another begun, nothing, so a count
+ * taken just before a window ends is never handed to the next one.
+ */
+export async function giveBackOne(taken: [key: string, until: number][]): Promise<void> {
+  if (!taken.length) return;
+  await run(`UPDATE rate_limits SET count = count - 1 WHERE (${taken.map(() => "(key = ? AND reset_at = ?)").join(" OR ")}) AND count > 0`, taken.flat());
 }
 
 /**
