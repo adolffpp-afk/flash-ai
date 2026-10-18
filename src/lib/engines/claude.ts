@@ -464,9 +464,24 @@ const QUICK_RESEARCH = "One good search is enough here: answer as soon as you ha
 const IMAGE_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"] as const;
 type ImageType = (typeof IMAGE_TYPES)[number];
 
+/**
+ * The client's fetch: the global one (Next's, in the app), read at each call. When the connection to
+ * Claude was never made, the error is wrapped so the client keeps it as the cause: it reads "timed
+ * out" anywhere in a failed fetch (fetch's own connect timeout, connect ETIMEDOUT) as its own timeout
+ * and drops the cause, which would count a question that never left Flash as one that may have run
+ * (see mayHaveRun).
+ */
+const claudeFetch = async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+  try {
+    return await globalThis.fetch(input, init);
+  } catch (err) {
+    throw neverConnected(err) ? new Error("Claude wasn't reached", { cause: err }) : err;
+  }
+};
+
 let client: Anthropic | null = null;
 export function getClient(): Anthropic {
-  client ??= new Anthropic();
+  client ??= new Anthropic({ fetch: claudeFetch });
   return client;
 }
 
@@ -1254,16 +1269,38 @@ export async function writeScenes(request: string, scenes: number, seconds: numb
   return parseScenes(text, scenes);
 }
 
+// Node's codes for a server certificate Flash refused. It is checked before the request is written.
+const REFUSED_CERT = /^(?:CERT_[A-Z_]+|DEPTH_ZERO_SELF_SIGNED_CERT|SELF_SIGNED_CERT_IN_CHAIN|UNABLE_TO_GET_ISSUER_CERT(?:_LOCALLY)?|UNABLE_TO_VERIFY_LEAF_SIGNATURE|ERR_TLS_CERT_ALTNAME_INVALID)$/;
+
 /**
- * A helper call that ended without an answer because the connection failed, it timed out or the
- * answer was cut off part way may still have run, and Claude bills it, so it is metered at the most
- * it can cost before the error goes on. A call Claude refused with an error status never ran, nor
- * did one the client itself refused before sending it (its own errors that aren't an APIError), so
- * those cost nothing.
+ * Whether err, or what caused it, says the connection to Claude was never made, so no request was
+ * written: the name didn't resolve, connecting failed (refused, no route, or fetch's connect timeout),
+ * or the server's certificate was refused. The same codes on a connection already made (a reset, say)
+ * say nothing about whether the request got there.
  */
+function neverConnected(err: unknown, depth = 0): boolean {
+  if (!(err instanceof Error) || depth > 4) return false;
+  // Node tried each of the name's addresses in turn.
+  if (err instanceof AggregateError) return err.errors.length > 0 && err.errors.every((e) => neverConnected(e, depth + 1));
+  const { code, syscall } = err as { code?: unknown; syscall?: unknown };
+  if (syscall === "connect" || syscall === "getaddrinfo") return true;
+  if (typeof code === "string" && (code === "UND_ERR_CONNECT_TIMEOUT" || REFUSED_CERT.test(code))) return true;
+  return neverConnected(err.cause, depth + 1);
+}
+
+/**
+ * Whether a Claude call that ended with err may still have run, and been billed: the connection
+ * failed after it was made, it timed out or the answer was cut off part way. A call Claude refused
+ * with an error status never ran, nor did one the client itself refused before sending it (its own
+ * errors that aren't an APIError), nor one that never reached Claude (see neverConnected), so those
+ * cost nothing.
+ */
+export const mayHaveRun = (err: unknown): boolean =>
+  err instanceof Anthropic.APIError ? err.status === undefined && !neverConnected(err.cause) : !(err instanceof Anthropic.AnthropicError);
+
+/** A helper call that may have run (see mayHaveRun) is metered at the most it can cost before the error goes on. */
 export function meterLost(err: unknown, meter: Meter, mostCents: number, model = HELPER_MODEL): never {
-  const mayHaveRun = err instanceof Anthropic.APIError ? err.status === undefined : !(err instanceof Anthropic.AnthropicError);
-  if (mayHaveRun) meter("anthropic", model, mostCents);
+  if (mayHaveRun(err)) meter("anthropic", model, mostCents);
   throw err;
 }
 
