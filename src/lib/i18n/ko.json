@@ -2067,6 +2067,7 @@
  "Why you're a good fit": "내가 적합한 이유",
  "Wide": "가로형",
  "Wide, open letters that are easier to tell apart": "넓고 열린 글자 모양으로 구별하기 쉬워요",
+ "With auto top-up on, it stops when your balance gets down to {level} credits, so your visitors never set off a top-up.": "자동 충전이 켜져 있으면 잔액이 {level} 크레딧까지 내려갈 때 멈춰요. 그래서 방문자 때문에 충전되는 일은 없어요.",
  "With noindex, the page never shows up on Google, whatever else you fix. Keep it only for a page you want kept off Google.": "noindex가 있으면 다른 걸 아무리 고쳐도 페이지가 Google에 나오지 않아요. Google에 보이고 싶지 않은 페이지에만 두세요.",
  "Without display=swap, text stays blank until its font arrives.": "display=swap이 없으면 글꼴이 도착할 때까지 글자가 비어 있어요.",
  "Without it, browsers fall back to a layout mode from the 1990s, and parts of the page can look broken.": "이게 없으면 브라우저가 1990년대 표시 방식으로 돌아가서 페이지 일부가 깨져 보일 수 있어요.",

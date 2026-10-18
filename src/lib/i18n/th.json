@@ -2067,6 +2067,7 @@
  "Why you're a good fit": "ทำไมคุณถึงเหมาะกับตำแหน่งนี้",
  "Wide": "แนวนอน",
  "Wide, open letters that are easier to tell apart": "ตัวอักษรกว้างและโปร่ง แยกแยะได้ง่ายกว่า",
+ "With auto top-up on, it stops when your balance gets down to {level} credits, so your visitors never set off a top-up.": "เมื่อเปิดการเติมอัตโนมัติ จะหยุดเมื่อยอดคงเหลือของคุณลดลงเหลือ {level} เครดิต เพื่อไม่ให้ผู้เข้าชมทำให้เกิดการเติมเงิน",
  "With noindex, the page never shows up on Google, whatever else you fix. Keep it only for a page you want kept off Google.": "ถ้ามี noindex หน้านี้จะไม่แสดงบน Google เลย ไม่ว่าจะแก้อย่างอื่นแค่ไหน ใช้เฉพาะกับหน้าที่ไม่อยากให้อยู่บน Google",
  "Without display=swap, text stays blank until its font arrives.": "ถ้าไม่มี display=swap ข้อความจะว่างอยู่จนกว่าฟอนต์จะโหลดมา",
  "Without it, browsers fall back to a layout mode from the 1990s, and parts of the page can look broken.": "ถ้าไม่มี เบราว์เซอร์จะกลับไปใช้โหมดการจัดหน้าแบบยุค 1990 และบางส่วนของหน้าอาจดูพัง",

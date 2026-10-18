@@ -1205,8 +1205,9 @@ export async function improvePrompt(
         system: rewriterSystem(kind, brand),
         messages: [{ role: "user", content: request.slice(0, MEDIA_REQUEST_CHARS) }],
       },
-      // Kept short so a slow rewrite can't eat the time a video needs.
-      { timeout: 15_000, maxRetries: 0 },
+      // Kept short so a slow rewrite can't eat the time a video needs. The client's timeout ends when
+      // the answer starts to arrive; the signal bounds reading it too.
+      { timeout: 15_000, maxRetries: 0, signal: AbortSignal.timeout(15_000) },
     )
     .catch((err: unknown) => meterLost(err, meter, PROMPT_WRITER_MAX_CENTS));
   meterClaude(meter, res, HELPER_MODEL);
@@ -1245,7 +1246,7 @@ export async function writeScenes(request: string, scenes: number, seconds: numb
         system: scenesSystem(scenes, seconds),
         messages: [{ role: "user", content: request.slice(0, MOVIE_REQUEST_CHARS) }],
       },
-      { timeout: 30_000, maxRetries: 0 },
+      { timeout: 30_000, maxRetries: 0, signal: AbortSignal.timeout(30_000) },
     )
     .catch((err: unknown) => meterLost(err, meter, SCENE_WRITER_MAX_CENTS));
   meterClaude(meter, res, HELPER_MODEL);
@@ -1254,12 +1255,15 @@ export async function writeScenes(request: string, scenes: number, seconds: numb
 }
 
 /**
- * A helper call that ended without an answer because the connection failed or timed out may still
- * have run, and Claude bills it, so it is metered at the most it can cost before the error goes on.
- * A call Claude refused with an error status never ran, so it costs nothing.
+ * A helper call that ended without an answer because the connection failed, it timed out or the
+ * answer was cut off part way may still have run, and Claude bills it, so it is metered at the most
+ * it can cost before the error goes on. A call Claude refused with an error status never ran, nor
+ * did one the client itself refused before sending it (its own errors that aren't an APIError), so
+ * those cost nothing.
  */
 export function meterLost(err: unknown, meter: Meter, mostCents: number, model = HELPER_MODEL): never {
-  if (err instanceof Anthropic.APIConnectionError) meter("anthropic", model, mostCents);
+  const mayHaveRun = err instanceof Anthropic.APIError ? err.status === undefined : !(err instanceof Anthropic.AnthropicError);
+  if (mayHaveRun) meter("anthropic", model, mostCents);
   throw err;
 }
 
@@ -1367,7 +1371,7 @@ export async function classifyRequest(
     const res = await getClient()
       .messages.create(
         { model: HELPER_MODEL, max_tokens: CHECK_TOKENS, ...HELPER_SETTINGS, system, messages: [{ role: "user", content }] },
-        { timeout: timeoutMs, maxRetries: 0 },
+        { timeout: timeoutMs, maxRetries: 0, signal: AbortSignal.timeout(timeoutMs) },
       )
       .catch((err: unknown) => meterLost(err, meter, ROUTER_MAX_CENTS));
     meter("anthropic", res.model, claudeCostCents(res.model, res.usage, HELPER_MODEL));
@@ -1481,7 +1485,7 @@ export async function pictureRequest(message: string, above: boolean, meter: Met
           system: pictureSystem(above),
           messages: [{ role: "user", content: message.slice(0, CHECK_MESSAGE_CHARS) }],
         },
-        { timeout: 4000, maxRetries: 0 },
+        { timeout: 4000, maxRetries: 0, signal: AbortSignal.timeout(4000) },
       )
       .catch((err: unknown) => meterLost(err, meter, PICTURE_CHECK_MAX_CENTS));
     meter("anthropic", res.model, claudeCostCents(res.model, res.usage, HELPER_MODEL));

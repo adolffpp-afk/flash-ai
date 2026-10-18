@@ -165,7 +165,7 @@ export async function deleteUpload(slug: string, id: string): Promise<boolean> {
  */
 export async function uploadUse(slug: string): Promise<{ files: number; bytes: number; maxFiles: number; maxBytes: number }> {
   const use = await one<{ n: number; bytes: number; user_id: string | null }>(
-    "SELECT COUNT(u.id) AS n, COALESCE(SUM(u.size), 0) AS bytes, s.user_id FROM sites s LEFT JOIN site_uploads u ON u.site_slug = s.slug WHERE s.slug = ?",
+    "SELECT COUNT(u.size) AS n, COALESCE(SUM(u.size), 0) AS bytes, s.user_id FROM sites s LEFT JOIN site_uploads u ON u.site_slug = s.slug WHERE s.slug = ?",
     [slug],
   );
   const bytes = Number(use?.bytes ?? 0);

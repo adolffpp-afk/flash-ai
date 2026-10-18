@@ -2067,6 +2067,7 @@
  "Why you're a good fit": "Vì sao bạn phù hợp",
  "Wide": "Ngang",
  "Wide, open letters that are easier to tell apart": "Chữ rộng, thoáng, dễ phân biệt hơn",
+ "With auto top-up on, it stops when your balance gets down to {level} credits, so your visitors never set off a top-up.": "Khi bật tự động nạp, tính năng sẽ dừng khi số dư của bạn giảm còn {level} tín dụng, để khách truy cập không bao giờ khiến tài khoản bị nạp thêm.",
  "With noindex, the page never shows up on Google, whatever else you fix. Keep it only for a page you want kept off Google.": "Có noindex, trang sẽ không bao giờ xuất hiện trên Google, dù bạn sửa gì khác. Chỉ giữ nó cho trang bạn muốn để ngoài Google.",
  "Without display=swap, text stays blank until its font arrives.": "Không có display=swap, chữ sẽ để trống cho đến khi phông chữ tải xong.",
  "Without it, browsers fall back to a layout mode from the 1990s, and parts of the page can look broken.": "Không có nó, trình duyệt quay về chế độ bố cục từ thập niên 1990, và một số phần của trang có thể trông bị lỗi.",

@@ -2067,6 +2067,7 @@
  "Why you're a good fit": "چرا برای این کار مناسب هستید",
  "Wide": "افقی",
  "Wide, open letters that are easier to tell apart": "حروف پهن و باز که راحت‌تر از هم تشخیص داده می‌شوند",
+ "With auto top-up on, it stops when your balance gets down to {level} credits, so your visitors never set off a top-up.": "وقتی شارژ خودکار روشن است، با رسیدن موجودی شما به {level} اعتبار متوقف می‌شود تا بازدیدکنندگانتان هرگز باعث شارژ نشوند.",
  "With noindex, the page never shows up on Google, whatever else you fix. Keep it only for a page you want kept off Google.": "با noindex، صفحه هرگز در Google نمایش داده نمی‌شود، هر چیز دیگری را هم که درست کنید. آن را فقط برای صفحه‌ای نگه دارید که می‌خواهید از Google دور بماند.",
  "Without display=swap, text stays blank until its font arrives.": "بدون display=swap، متن تا رسیدن قلمش خالی می‌ماند.",
  "Without it, browsers fall back to a layout mode from the 1990s, and parts of the page can look broken.": "بدون آن، مرورگرها به حالت نمایشی از دههٔ ۱۹۹۰ برمی‌گردند، و بخش‌هایی از صفحه ممکن است خراب به نظر برسد.",

@@ -2067,6 +2067,7 @@
  "Why you're a good fit": "あなたが適任である理由",
  "Wide": "横長",
  "Wide, open letters that are easier to tell apart": "幅広でゆったりした、見分けやすい文字",
+ "With auto top-up on, it stops when your balance gets down to {level} credits, so your visitors never set off a top-up.": "自動チャージがオンのときは、残高が{level}クレジットまで減ると停止します。訪問者の利用で自動チャージが行われることはありません。",
  "With noindex, the page never shows up on Google, whatever else you fix. Keep it only for a page you want kept off Google.": "noindexがあると、ほかをどれだけ直してもページはGoogleに表示されません。Googleに出したくないページにだけ使ってください。",
  "Without display=swap, text stays blank until its font arrives.": "display=swapがないと、フォントが届くまで文字が表示されません。",
  "Without it, browsers fall back to a layout mode from the 1990s, and parts of the page can look broken.": "これがないと、ブラウザは1990年代の表示モードに戻り、ページの一部が崩れて見えることがあります。",

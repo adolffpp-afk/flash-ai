@@ -218,7 +218,8 @@ async function count(slug: string, match: Match, list: Step[], at: number, retry
     const used = Number(gate.used ?? 0);
     // Always by the owner's plan (read at most every 15 minutes per server): the free plan's app steps,
     // a tenth of its people, leave too little room to count by the free number until near it. One that
-    // can't be read counts by the free plan's numbers, without the note (see countingPlan).
+    // can't be read counts by the plan this server read last, or else the free plan's numbers,
+    // without the note (see countingPlan).
     read = app.length ? await countingPlan(gate.owner, at) : null;
     const plan = read ?? { steps: freeSteps(), paid: false };
     budget = plan.steps;

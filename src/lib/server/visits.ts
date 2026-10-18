@@ -51,6 +51,9 @@ export const NETWORK_SOURCES = 3;
 const GUARDED_TOUCHES = 20;
 // How long a server goes by what it read of an owner's plan.
 const PLAN_MEMORY = 15 * MINUTE;
+// How long a server goes by a plan read that failed (see countingPlan), and how often it logs one.
+const UNREAD_PLAN_MEMORY = 30_000;
+const UNREAD_PLAN_LOG = MINUTE;
 // Past this many owners' plans in memory, the one read or used longest ago is forgotten.
 const MAX_PLANS = 10_000;
 // Past this many connections in memory, the older half is forgotten.
@@ -100,7 +103,8 @@ export function isPersonVisit(request: Request): boolean {
 /*
  * What each server remembers, so most loads read nothing extra: the day's keys (today's and
  * yesterday's), the day counting began, whether it tried the daily prune today, owners' plans for
- * 15 minutes (and the reads of them under way), the marks it wrote today, and how many new people
+ * 15 minutes (and the reads of them under way, and for 30 seconds the ones that failed, with when
+ * one was last logged), the marks it wrote today, and how many new people
  * and app steps it counted today per owner from each connection and how many new sources each
  * connection added to an app's day (under a code made with the day's key, never the address).
  */
@@ -111,6 +115,8 @@ let triedPrune = "";
 type Plan = { cap: number; steps: number; paid: boolean };
 const plans = new Map<string, Plan & { until: number }>();
 const planReads = new Map<string, Promise<Plan>>();
+const unreadPlans = new Map<string, number>();
+let unreadLoggedAt = -Infinity;
 const marked = new Set<string>();
 const networks = new Map<string, number>();
 const opened = new Map<string, number>();
@@ -125,6 +131,8 @@ export function forgetServerMemory(): void {
   triedPrune = "";
   plans.clear();
   planReads.clear();
+  unreadPlans.clear();
+  unreadLoggedAt = -Infinity;
   marked.clear();
   networks.clear();
   opened.clear();
@@ -265,6 +273,7 @@ export async function peopleCap(ownerId: string, at = Date.now(), fresh = false)
       plans.delete(ownerId);
       plans.set(ownerId, { until: at + PLAN_MEMORY, ...plan });
       while (plans.size > maxPlans()) plans.delete(plans.keys().next().value!);
+      unreadPlans.delete(ownerId);
     }
     return plan;
   } finally {
@@ -273,18 +282,40 @@ export async function peopleCap(ownerId: string, at = Date.now(), fresh = false)
 }
 
 /**
- * The owner's plan as peopleCap reads it, for counting a new person or an app step, or null when it
- * can't be read (the database failed): then they count by the free plan's numbers rather than not at
+ * The owner's plan as peopleCap reads it, for counting a new person or an app step. When it can't be
+ * read (the database failed), the last plan this server read for the owner is used, even one past
+ * its 15 minutes; with none, null: then they count by the free plan's numbers rather than not at
  * all, without the note that counting paused, which would put the free plan's number on a paid
- * owner's day. Nothing is kept of a failed read, so the next one asks again.
+ * owner's day. A failed read is kept for 30 seconds, so a database hiccup isn't asked again on every
+ * visit (a plan read meanwhile ends it, and one that worked while this one waited is used instead),
+ * and logged at most once a minute per server.
  */
 export async function countingPlan(ownerId: string, at: number): Promise<Plan | null> {
+  if ((unreadPlans.get(ownerId) ?? -Infinity) > at) return lastPlan(ownerId);
   try {
     return await peopleCap(ownerId, at);
   } catch (err) {
-    console.error("[flash] owner's plan not read, counted by the free plan's numbers", err);
-    return null;
+    // A newer read that worked while this one waited (the owner's own view reads fresh) wins.
+    const known = plans.get(ownerId);
+    if (known && known.until > at) return lastPlan(ownerId);
+    unreadPlans.delete(ownerId);
+    unreadPlans.set(ownerId, at + UNREAD_PLAN_MEMORY);
+    while (unreadPlans.size > maxPlans()) unreadPlans.delete(unreadPlans.keys().next().value!);
+    if (at - unreadLoggedAt >= UNREAD_PLAN_LOG) {
+      unreadLoggedAt = at;
+      console.error(
+        "[flash] owner's plan not read, counted for 30 seconds by the plan last read, or the free plan's numbers. Said at most once a minute per server process.",
+        err,
+      );
+    }
+    return lastPlan(ownerId);
   }
+}
+
+/** The last plan this server read for an owner, even one past its 15 minutes, or null when it has none. */
+function lastPlan(ownerId: string): Plan | null {
+  const known = plans.get(ownerId);
+  return known ? { cap: known.cap, steps: known.steps, paid: known.paid } : null;
 }
 
 async function readPlan(ownerId: string): Promise<Plan> {
@@ -460,7 +491,7 @@ async function countVisit(slug: string, request: Request, viewerId: string | rea
       // Always by the owner's plan (read at most every 15 minutes per server, and at once after the
       // owner's own view read it), as app steps are: the free number, read without it, would stop a
       // paid plan's loads counted at the same moment there. One that can't be read counts by the
-      // free plan's numbers (see countingPlan).
+      // plan this server read last, or else the free plan's numbers (see countingPlan).
       const plan = await countingPlan(row.owner, at);
       const cap = plan?.cap ?? freePeople();
       const pause = Number(row.people ?? 0) >= cap;
