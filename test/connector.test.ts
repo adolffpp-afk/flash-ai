@@ -82,7 +82,7 @@ test("the tools list only set-up models and never the Movie maker", () => {
   const video = list.find((t) => t.name === "flash_create_video")!;
   const models = (video.inputSchema.properties as { model: { enum: string[] } }).model.enum;
   assert.deepEqual(models, ["veo-3.1", "kling-3"]);
-  assert.doesNotMatch(video.description, /sora/i);
+  assert.doesNotMatch(JSON.stringify(video), /sora/i, "nor does its input");
   // The prices the tools give are the ones they charge.
   assert.match(video.description, /176 for 5 seconds, 526 for 15/);
   assert.match(list.find((t) => t.name === "flash_speak")!.description, /about 13 credits per 1,000 characters/);

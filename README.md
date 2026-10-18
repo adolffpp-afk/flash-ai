@@ -15,7 +15,7 @@ an image, or speech, sends it to the right engine, and keeps the result in a pro
 | Translate     | Translation between languages                     | Claude                           | `ANTHROPIC_API_KEY`  |
 | Docs & Sheets | Spreadsheets (download as CSV), letters, reports  | Claude                           | `ANTHROPIC_API_KEY`  |
 | Image         | Pictures, logos, illustrations                    | OpenAI `gpt-image-2.5-sunburst`           | `OPENAI_API_KEY`     |
-| Video         | 8 second video clips                              | OpenAI Sora (`sora-2-pro`)         | `OPENAI_API_KEY`     |
+| Video         | 8 second clips with sound, longer clips, short films | fal.ai Veo 3.1 (`veo-3.1`), Kling 3 | `FAL_KEY`            |
 | Voice         | Reading text aloud                                | ElevenLabs `eleven_v4`          | `ELEVENLABS_API_KEY` |
 | Music         | 30 second songs, jingles and beats                | ElevenLabs `music_v2_5`          | `ELEVENLABS_API_KEY` |
 | Transcribe    | Turning audio or video files into text            | ElevenLabs `scribe_v2`           | `ELEVENLABS_API_KEY` |

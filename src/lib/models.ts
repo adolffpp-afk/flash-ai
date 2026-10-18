@@ -55,8 +55,9 @@ export const PACK_VIDEO_ENDPOINT = "fal-ai/kling-video/v3/pro/image-to-video";
 
 /**
  * Image, video and music models Flash can use. For each engine the first model whose
- * provider has a key is the default; a model with `match` wins when the request fits it.
- * Cheaper models come first, so a dearer one is the default only when nothing cheaper is set up.
+ * provider has a key is the default (for videos, VIDEO_MODEL in engines/media.ts when it is set
+ * up); a model with `match` wins when the request fits it. Cheaper models come first, so a dearer
+ * one is the default only when nothing cheaper is set up.
  */
 export const MODELS: ModelInfo[] = [
   {
@@ -159,19 +160,12 @@ export const MODELS: ModelInfo[] = [
     edits: true,
   },
   {
-    id: "sora-2-pro",
-    engine: "video",
-    label: "Sora 2 Pro",
-    provider: "openai",
-    costCents: 240, // 8 seconds at $0.30 a second
-    blurb: msg("Polished 8 second clips"),
-  },
-  {
+    // Every video is made on fal.ai: OpenAI's video API ended on 2026-09-24.
     id: "veo-3.1",
     engine: "video",
     label: "Veo 3.1",
     provider: "fal",
-    costCents: 320, // 8 seconds with sound at $0.40 a second
+    costCents: 320, // 8 seconds with sound at $0.40 a second (fal.ai, checked 2026-10-18)
     blurb: msg("Video with sound: speech, music and effects"),
     endpoint: "fal-ai/veo3.1",
     match: /\b(sound|audio|dialogue|talking|speaking|says?|saying|voice|narrat\w*|music|singing|noise)\b/i,
@@ -275,7 +269,8 @@ export const modelById = (id: string | undefined) => MODELS.find((m) => m.id ===
 /**
  * Chooses the model for a media request: the one the user asked for if it is set up,
  * else the first set-up model whose strengths match the request, else the engine's
- * first set-up model. Returns null when no provider for the engine has a key.
+ * default (preferred, when it is set up and may be a default), else its first set-up model.
+ * Returns null when no provider for the engine has a key.
  */
 export function pickModel(
   engine: MediaEngine,
@@ -284,6 +279,8 @@ export function pickModel(
   requested?: string,
   // A photo is attached to edit, so only editing models apply (and none of the others).
   editing = false,
+  // The server's default for the engine (VIDEO_MODEL for videos, see engines/media.ts).
+  preferred?: string,
 ): { model: ModelInfo; why: string } | null {
   const ready = MODELS.filter((m) => m.engine === engine && available.has(m.provider) && Boolean(m.edits) === editing);
   const chosen = ready.find((m) => m.id === requested);
@@ -292,7 +289,7 @@ export function pickModel(
   const said = messageWindow(message);
   const matched = ready.find((m) => m.match?.test(said));
   if (matched) return { model: matched, why: matched.blurb.toLowerCase() };
-  const fallback = ready.find((m) => !m.notDefault);
+  const fallback = ready.find((m) => m.id === preferred && !m.notDefault) ?? ready.find((m) => !m.notDefault);
   return fallback ? { model: fallback, why: "the default" } : null;
 }
 

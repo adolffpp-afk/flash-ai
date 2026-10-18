@@ -6,10 +6,9 @@ import { DEFAULT_VOICE, VOICES } from "../voices.ts";
 import { imageDimensions, MAX_EDIT_PIXELS } from "../imageSize.ts";
 import {
   composeMusic,
-  downloadVideo,
+  defaultModel,
   elevenConfigured,
   generateImage,
-  generateVideo,
   openaiConfigured,
   speechProvider,
   synthesizeSpeech,
@@ -58,9 +57,9 @@ const offered = (engine: MediaEngine) =>
 
 /** The model for a request, like the chat picks it, never one that only runs in a chat. */
 function chooseModel(engine: MediaEngine, request: string, requested?: string): ModelInfo | null {
-  const picked = pickModel(engine, request, providers(), requested)?.model;
+  const picked = pickModel(engine, request, providers(), requested, false, defaultModel(engine))?.model;
   if (!picked?.chatOnly) return picked ?? null;
-  return pickModel(engine, "", providers())?.model ?? null;
+  return pickModel(engine, "", providers(), undefined, false, defaultModel(engine))?.model ?? null;
 }
 
 const priceList = (engine: MediaEngine, example = "") =>
@@ -105,7 +104,7 @@ export const tools = () => [
       type: "object",
       properties: {
         prompt: { type: "string", description: "The shot: subject, action, camera movement, mood, any sound.", maxLength: MAX_PROMPT },
-        seconds: { type: "integer", minimum: 3, maximum: 15, description: "Length in seconds. Kling makes 3 to 15; Veo and Sora make 8." },
+        seconds: { type: "integer", minimum: 3, maximum: 15, description: "Length in seconds. Kling makes 3 to 15; Veo makes 8." },
         model: { type: "string", enum: offered("video").map((m) => m.id) },
       },
       required: ["prompt"],
@@ -323,10 +322,8 @@ async function generate(model: ModelInfo, prompt: string, request: string, ctx: 
   }
   if (model.engine === "image") return generateImage(prompt);
   if (model.engine === "music") return composeMusic(prompt);
-  const id = await generateVideo(prompt, (pct) => pct && ctx.progress(`Filming… ${pct}%`));
-  return downloadVideo(id).catch(() => {
-    throw new JobAbandoned("Flash couldn't fetch the video. Please try again.", true);
-  });
+  // Every video model is on fal.ai (see models.ts).
+  throw new Error(`${model.id} has no way to run`);
 }
 
 const EXT: Record<string, string> = { image: "jpg", video: "mp4", music: "mp3" };
