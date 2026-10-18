@@ -20,6 +20,7 @@ import { english, type Translate } from "../i18n.ts";
  */
 
 const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
 /** Flash's share of each sale, in basis points (200 = 2%). */
 export const feeBps = () => Number(process.env.FLASH_SALE_FEE_BPS ?? 200);
 
@@ -500,8 +501,8 @@ const isId = (v: unknown, prefix: string): v is string => typeof v === "string" 
  * debit, a voucher), saves its order and emails the owner, as the return page would have; a refund
  * or a dispute is kept with its order. Each event changes something once, and only for an app whose
  * owner's account sent it, in the key's own mode. Throws when Stripe or the database fails, or when
- * Stripe can't list the checkout of an app's refunded or disputed payment yet, so Stripe sends it
- * again later.
+ * Stripe can't list the checkout of an app's refunded or disputed payment yet (for a day after the
+ * event), so Stripe sends it again later.
  */
 export async function connectEvent(event: ConnectEvent, appOrigin: string): Promise<ConnectOutcome> {
   const { type, account } = event;
@@ -567,8 +568,15 @@ async function chargeEvent(type: "charge.refunded" | "charge.dispute.created", a
     // (see startCheckout), so for those this throws: Stripe is answered 500 and sends the event
     // again later, and the refund or dispute isn't lost. Any other payment is not Flash's, and is
     // answered 200 so Stripe doesn't keep sending it.
-    const intent = await stripe<{ metadata?: Record<string, string> | null }>("GET", `/payment_intents/${encodeURIComponent(payment)}`, undefined, account);
-    const app = await appOf(account, intent.metadata?.flash_site);
+    // The seller can edit a payment's metadata (they have the full Dashboard and their own keys),
+    // so the name alone isn't enough: the payment must also have been made through a Connect
+    // platform, as Flash's checkouts are (a seller's own key or Dashboard leaves `application`
+    // empty), and the event must be under a day old. A lagging list catches up in seconds, so a
+    // payment still not listed after a day never will be, and Stripe stops sending it then
+    // rather than for 3 days.
+    if (now() - at >= DAY) return "not-ours";
+    const intent = await stripe<{ application?: unknown; metadata?: Record<string, string> | null }>("GET", `/payment_intents/${encodeURIComponent(payment)}`, undefined, account);
+    const app = isId(intent.application, "ca") ? await appOf(account, intent.metadata?.flash_site) : null;
     if (app) throw new Error(`Stripe listed no checkout yet for ${payment}, a payment of the app ${app.slug}`);
     return "not-ours";
   }

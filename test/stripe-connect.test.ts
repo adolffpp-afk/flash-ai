@@ -48,6 +48,8 @@ const event = (type: string, object: Record<string, unknown>, extra: Partial<Eve
   data: { object },
   ...extra,
 });
+/** An event made just now: Stripe is only made to send one again for a day after it was made (see chargeEvent). */
+const recent = (type: string, object: Record<string, unknown>, extra: Partial<Event> = {}) => event(type, object, { created: nowSec(), ...extra });
 /** Sends the event signed, and gives back the status and what the webhook said it did. */
 async function send(e: Event): Promise<{ status: number; outcome?: string }> {
   const res = await deliver(JSON.stringify(e));
@@ -69,6 +71,9 @@ const charges: Record<string, string> = {};
 // by payment doesn't show yet.
 const intents: Record<string, Record<string, string>> = {};
 const unlisted = new Set<string>();
+// The Connect platform that made each payment (its `application`): Flash's for its checkouts' payments,
+// none for what the seller took with their own keys or Dashboard, unless another platform is named here.
+const platforms: Record<string, string> = {};
 const calls: { path: string; account?: string }[] = [];
 const emails: { to: string[]; subject: string }[] = [];
 let stripeDown = false;
@@ -114,7 +119,8 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
   }
   if (path.startsWith("/payment_intents/")) {
     const id = decodeURIComponent(path.split("/")[2]);
-    return Response.json({ id, object: "payment_intent", metadata: intents[`${account}:${id}`] ?? {} });
+    const application = platforms[`${account}:${id}`] ?? (sessions.some((s) => s.payment_intent === id) ? "ca_flash" : null);
+    return Response.json({ id, object: "payment_intent", application, metadata: intents[`${account}:${id}`] ?? {} });
   }
   if (path.startsWith("/charges/")) {
     const pi = charges[`${account}:${path.split("/")[2]}`];
@@ -550,7 +556,7 @@ test("a refund or dispute of an app's payment whose checkout Stripe doesn't list
   accounts.acct_A.push(paid("cs_lag", "pi_lag"));
   intents["acct_A:pi_lag"] = { flash_site: "cake-1" };
   unlisted.add("cs_lag");
-  const refund = event("charge.refunded", { id: "ch_lag", object: "charge", amount: 2500, amount_refunded: 1000, payment_intent: "pi_lag" });
+  const refund = recent("charge.refunded", { id: "ch_lag", object: "charge", amount: 2500, amount_refunded: 1000, payment_intent: "pi_lag" });
   assert.deepEqual(await send(refund), { status: 500, outcome: undefined });
   assert.deepEqual(calls.at(-1), { path: "/payment_intents/pi_lag", account: "acct_A" }, "the payment is read on the seller's account");
   assert.equal(await order("cs_lag"), null);
@@ -571,7 +577,7 @@ test("a refund or dispute of an app's payment whose checkout Stripe doesn't list
     intents[`acct_A:pi_${id}`] = { flash_site: "cake-1" };
     charges[`acct_A:ch_${id}`] = `pi_${id}`;
     unlisted.add(`cs_${id}`);
-    const dispute = event("charge.dispute.created", object);
+    const dispute = recent("charge.dispute.created", object);
     assert.equal((await send(dispute)).status, 500, id);
     assert.equal(await order(`cs_${id}`), null);
     assert.equal(await kept(dispute.id!), 0);
@@ -584,34 +590,84 @@ test("a refund or dispute of an app's payment whose checkout Stripe doesn't list
   // payment naming an app, so 200 at once, every time Stripe sends it, and nothing kept.
   intents["acct_A:pi_outside"] = { order: "1001" };
   for (const outside of [
-    event("charge.refunded", { id: "ch_outside", amount: 900, amount_refunded: 900, payment_intent: "pi_outside" }),
-    event("charge.dispute.created", { id: "dp_outside", charge: "ch_outside", payment_intent: "pi_outside" }),
-    event("charge.refunded", { id: "ch_bare", amount: 900, amount_refunded: 900, payment_intent: "pi_bare" }),
+    recent("charge.refunded", { id: "ch_outside", amount: 900, amount_refunded: 900, payment_intent: "pi_outside" }),
+    recent("charge.dispute.created", { id: "dp_outside", charge: "ch_outside", payment_intent: "pi_outside" }),
+    recent("charge.refunded", { id: "ch_bare", amount: 900, amount_refunded: 900, payment_intent: "pi_bare" }),
   ]) {
     for (let i = 0; i < 2; i++) assert.deepEqual(await send(outside), { status: 200, outcome: "not-ours" }, outside.type);
     assert.equal(await kept(outside.id!), 0);
   }
-  // A payment naming another owner's app, or an app that isn't there, is no app of this account's to wait for.
+  // A payment naming another owner's app, or an app that isn't there, is no app of this account's to
+  // wait for, even one made through Flash's platform.
   for (const [pi, slug] of [["pi_names_b", "shop-b"], ["pi_names_none", "no-such-app"]]) {
     intents[`acct_A:${pi}`] = { flash_site: slug };
-    assert.deepEqual(await send(event("charge.refunded", { id: `ch_${pi}`, amount: 900, amount_refunded: 900, payment_intent: pi })), { status: 200, outcome: "not-ours" }, slug);
+    platforms[`acct_A:${pi}`] = "ca_flash";
+    assert.deepEqual(await send(recent("charge.refunded", { id: `ch_${pi}`, amount: 900, amount_refunded: 900, payment_intent: pi })), { status: 200, outcome: "not-ours" }, slug);
   }
   // Nor is one another seller's account sends naming this app.
   intents["acct_B:pi_b_names_a"] = { flash_site: "cake-1" };
-  const fromB = event("charge.refunded", { id: "ch_b_names_a", amount: 900, amount_refunded: 900, payment_intent: "pi_b_names_a" }, { account: "acct_B" });
+  platforms["acct_B:pi_b_names_a"] = "ca_flash";
+  const fromB = recent("charge.refunded", { id: "ch_b_names_a", amount: 900, amount_refunded: 900, payment_intent: "pi_b_names_a" }, { account: "acct_B" });
   assert.deepEqual(await send(fromB), { status: 200, outcome: "not-ours" });
   assert.deepEqual(calls.at(-1), { path: "/payment_intents/pi_b_names_a", account: "acct_B" });
 
   // A payment from before checkouts named the app on it is answered as before: not Flash's.
   accounts.acct_A.push(paid("cs_lag_older", "pi_lag_older"));
   unlisted.add("cs_lag_older");
-  assert.deepEqual(await send(event("charge.refunded", { id: "ch_lag_older", amount: 2500, amount_refunded: 2500, payment_intent: "pi_lag_older" })), {
+  assert.deepEqual(await send(recent("charge.refunded", { id: "ch_lag_older", amount: 2500, amount_refunded: 2500, payment_intent: "pi_lag_older" })), {
     status: 200,
     outcome: "not-ours",
   });
   assert.equal(await order("cs_lag_older"), null);
   unlisted.delete("cs_lag_older");
   assert.equal(emails.length, 0);
+});
+
+test("a payment the seller named an app on themselves, or an event over a day old, isn't waited for: 200 at once, and Stripe stops", async () => {
+  const kept = (id: string) => n("SELECT COUNT(*) AS n FROM stripe_events WHERE id = ?", [id]);
+  // A sale the seller took outside Flash (an invoice, their own site), with an app's name put on its
+  // payment afterwards (they have the full Dashboard and their own keys): no Connect platform made it,
+  // so it is no app's checkout, however many refunds and disputes it has and however often they come.
+  intents["acct_A:pi_tagged"] = { flash_site: "cake-1" };
+  charges["acct_A:ch_tagged"] = "pi_tagged";
+  for (const tagged of [
+    ...[1, 2, 3].map((cents) => recent("charge.refunded", { id: "ch_tagged", object: "charge", amount: 100, amount_refunded: cents, payment_intent: "pi_tagged" })),
+    recent("charge.dispute.created", { id: "dp_tagged", object: "dispute", charge: "ch_tagged", payment_intent: null }),
+  ]) {
+    for (let i = 0; i < 3; i++) assert.deepEqual(await send(tagged), { status: 200, outcome: "not-ours" }, tagged.type);
+    assert.equal(await kept(tagged.id!), 0);
+  }
+  assert.deepEqual(calls.at(-1), { path: "/payment_intents/pi_tagged", account: "acct_A" }, "its payment was read");
+
+  // An app's payment whose checkout Stripe still doesn't list: Stripe is made to send it again for a
+  // day after the event was made, and is answered 200 after that, without asking Stripe anything.
+  accounts.acct_A.push(paid("cs_never", "pi_never"));
+  intents["acct_A:pi_never"] = { flash_site: "cake-1" };
+  unlisted.add("cs_never");
+  const day = 86_400;
+  const almost = recent("charge.refunded", { id: "ch_never", amount: 2500, amount_refunded: 500, payment_intent: "pi_never" }, { created: nowSec() - day + 60 });
+  assert.equal((await send(almost)).status, 500, "under a day old");
+  for (const [created, label] of [
+    [nowSec() - day, "a day old"],
+    [nowSec() - 4 * day, "4 days old"],
+  ] as const) {
+    const old = recent("charge.refunded", { id: "ch_never", amount: 2500, amount_refunded: 1000, payment_intent: "pi_never" }, { created });
+    const before = calls.length;
+    assert.deepEqual(await send(old), { status: 200, outcome: "not-ours" }, label);
+    assert.deepEqual(
+      calls.slice(before).map((c) => c.path.split("?")[0]),
+      ["/checkout/sessions"],
+      `${label}: only the list is asked`,
+    );
+    assert.equal(await kept(old.id!), 0);
+    const dispute = recent("charge.dispute.created", { id: "dp_never", charge: "ch_never", payment_intent: "pi_never" }, { created });
+    assert.deepEqual(await send(dispute), { status: 200, outcome: "not-ours" }, `${label} dispute`);
+  }
+  // Listed at last, an old event is handled as any other.
+  unlisted.delete("cs_never");
+  const late = recent("charge.refunded", { id: "ch_never", amount: 2500, amount_refunded: 1000, payment_intent: "pi_never" }, { created: nowSec() - 2 * day });
+  assert.deepEqual(await send(late), { status: 200, outcome: "refunded" });
+  assert.equal((await order("cs_never"))?.refunded_amount, 1000);
 });
 
 test("the funnel keeps Paid and Revenue as what buyers paid, and says what was refunded on its own line", async () => {
