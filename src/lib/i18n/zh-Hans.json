@@ -520,6 +520,8 @@
  "Each step is counted on its own, not only for people who did the step above it.": "每一步都单独统计，并不只统计完成了上一步的人。",
  "Each time you update this site, the version it replaces is kept here (the last 10). Bring one back if an update went wrong. Its data, messages and orders stay as they are, but who can see or change that data follows the version you bring back.": "每次更新此网站时，被替换的版本都会保存在这里（最近 10 个）。如果更新出了问题，可以恢复其中一个。网站的数据、消息和订单都会保持不变，但谁能查看或修改这些数据将以你恢复的版本为准。",
  "Each tool asks you before it runs, until you choose Always allow for it.": "在你选择“始终允许此工具”之前，每个工具运行前都会询问你。",
+ "Earlier today, counting paused at {count} people across your apps, your previous plan's daily limit. Your new plan counts more. People who came while it was paused aren't in today's numbers, and their forms, sign-ups and checkouts show as Not matched.": "今天早些时候，统计在你所有应用合计 {count} 人时暂停（你之前套餐的每日上限）。你的新套餐统计得更多。暂停期间来的人不在今天的数据中，他们的表单、注册和结账显示在“未匹配到访问”中。",
+ "Earlier today, your apps' own steps stopped counting at {count}, your previous plan's daily limit. Your new plan counts more. Steps your apps sent while counting was paused aren't in today's numbers.": "今天早些时候，你的应用自有步骤在 {count} 次时停止统计（你之前套餐的每日上限）。你的新套餐统计得更多。暂停期间你的应用发送的步骤不在今天的数据中。",
  "Earlier versions of this site": "此网站的早期版本",
  "Edit": "编辑",
  "Edit a Photo": "编辑照片",

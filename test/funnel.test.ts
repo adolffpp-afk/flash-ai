@@ -509,17 +509,23 @@ test("the track route counts the steps an app reports, without a source, and alw
 
   await recordVisit("track-1", page("track-1", { referer: "https://www.google.com/" }));
   const client = await db();
-  const execute = client.execute.bind(client);
+  const [execute, batch] = [client.execute.bind(client), client.batch.bind(client)];
   let lists = 0;
+  const list = (s: { sql: string } | string) => typeof s === "object" && s.sql.startsWith("UPDATE site_people SET steps") && lists++;
   client.execute = ((s: { sql: string }, ...rest: unknown[]) => {
-    if (typeof s === "object" && s.sql.startsWith("UPDATE site_people SET steps")) lists++;
+    list(s);
     return (execute as (...a: unknown[]) => unknown)(s, ...rest);
   }) as typeof client.execute;
+  client.batch = ((statements: { sql: string }[], ...rest: unknown[]) => {
+    statements.forEach(list);
+    return (batch as (...a: unknown[]) => unknown)(statements, ...rest);
+  }) as typeof client.batch;
   try {
     assert.equal((await track("booking\nPlan-Chosen\ncall-us-now\ncheckout\norder-1234567\n" + "a1b2c3d4e5f6a7b8\nnot ok\n" + "x".repeat(41))).status, 204);
     await afterwards();
   } finally {
     client.execute = execute;
+    client.batch = batch;
   }
   assert.equal(lists, 1, "one write to the person's list for the whole request");
   assert.deepEqual(

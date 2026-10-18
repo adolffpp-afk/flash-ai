@@ -6,6 +6,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { register } from "node:module";
+import type { InValue } from "@libsql/client";
 
 register("./support/route-hooks.mjs", import.meta.url);
 process.env.DATABASE_URL = ":memory:";
@@ -355,29 +356,82 @@ test("track requests at the same moment never take the rate limit past its numbe
   } finally {
     Date.now = () => NOW;
   }
-  // The connection's 10 taken by its request to another server just before: nothing counts here, and
-  // what this one took of the app's 30 is given back.
+  // The connection's 10 taken by its request to another server after this one read the limit: nothing
+  // counts here, and nothing is written but that other server's take, not even of the app's 30.
   await site("burst2", "free10", names("q"));
   const other = await visitor("burst2", "10.232.0.1");
   const client = await db();
-  const execute = client.execute.bind(client);
-  client.execute = (async (s: { sql: string; args?: unknown[] } | string, ...rest: unknown[]) => {
-    const key = typeof s === "string" ? "" : String(s.args?.[0] ?? "");
-    if (typeof s !== "string" && s.sql.includes("INSERT INTO rate_limits") && key.startsWith("track-net:")) {
-      await execute({ sql: "INSERT INTO rate_limits (key, count, reset_at) VALUES (?, 10, ?) ON CONFLICT DO UPDATE SET count = 10", args: [key, NOW + 60_000] });
-    }
-    return (execute as (...a: unknown[]) => unknown)(s, ...rest);
-  }) as typeof client.execute;
+  const batch = client.batch.bind(client);
+  client.batch = (async (list: { sql: string; args: InValue[] }[], ...rest: unknown[]) => {
+    const take = list.find((s) => s.sql.startsWith("INSERT INTO rate_limits"));
+    const key = take?.args.find((a) => String(a).startsWith("track-net:"));
+    if (key) await run("INSERT INTO rate_limits (key, count, reset_at) VALUES (?, 10, ?) ON CONFLICT DO UPDATE SET count = 10", [key, NOW + 60_000]);
+    return (batch as (...a: unknown[]) => unknown)(list, ...rest);
+  }) as typeof client.batch;
   try {
-    await track("burst2", other, names("q").join("\n"));
+    assert.equal(await rowsWritten(() => track("burst2", other, names("q").join("\n"))), 1, "only the other server's take");
   } finally {
-    client.execute = execute;
+    client.batch = batch;
   }
   assert.equal(await appStepsOf("burst2"), 0);
-  assert.equal(await n("SELECT count AS n FROM rate_limits WHERE key = 'track-app:burst2'"), 0);
+  assert.equal(await n("SELECT COUNT(*) AS n FROM rate_limits WHERE key = 'track-app:burst2'"), 0);
+  // The same with the connection's 10 counted on another server before this one read it, though this
+  // server has 9 of its share of the day left: a request it turns away writes nothing, and with 1 of
+  // the 10 left, the first of 2 names counts.
+  await site("burst3", "free10", names("q"));
+  const near = await visitor("burst3", "10.233.0.1");
+  await track("burst3", near, "q0");
+  await run("UPDATE rate_limits SET count = 10 WHERE key LIKE 'track-net:burst3:%'");
+  assert.equal(await rowsWritten(() => track("burst3", near, "q1")), 0);
+  assert.equal(await appStepsOf("burst3"), 1);
+  await run("UPDATE rate_limits SET count = 9 WHERE key LIKE 'track-net:burst3:%'");
+  await track("burst3", near, "q1\nq2");
+  assert.deepEqual(
+    (await all<{ step: string }>("SELECT step FROM site_events WHERE site_slug = 'burst3' AND step LIKE 'app:%' ORDER BY step")).map((r) => r.step),
+    ["app:q0", "app:q1"],
+  );
+  assert.equal(await n("SELECT count AS n FROM rate_limits WHERE key LIKE 'track-net:burst3:%'"), 10);
 });
 
-test("a track request that loses the race for the person's list counts again only what the rate limit let it", async () => {
+test("the same step sent many times at once by one person counts once, and the copies that lose the race write nothing", async () => {
+  forgetServerMemory();
+  await run("DELETE FROM rate_limits");
+  await owner("free14");
+  await site("dup", "free14", names("d"));
+  await site("dup-once", "free14", names("d"));
+  const who = await visitor("dup", "10.250.0.1");
+  // A double tap, a re-run effect, or 10 copies sent on purpose, each of one name.
+  const copies = (slug: string, name: string, times: number) =>
+    rowsWritten(async () => {
+      await Promise.all(Array.from({ length: times }, () => trackRoute.POST(call(slug, who, name), ctx(slug))));
+      await afterwards();
+    });
+  const once = await copies("dup", "d0", 1);
+  assert.equal(await copies("dup", "d1", 10), once, "10 copies write what 1 does");
+  assert.equal(await appStepsOf("dup"), 2);
+  assert.equal(await stepsOf("free14"), 2);
+  assert.equal(await n("SELECT count AS n FROM rate_limits WHERE key = 'track-app:dup'"), 2);
+  assert.equal(await n("SELECT count AS n FROM rate_limits WHERE key LIKE 'track-net:dup:%'"), 2);
+  // A minute apart, the rest of the app's names, each sent 10 times at once, write what they write
+  // sent once each on another app.
+  let tenEach = 0;
+  let oneEach = 0;
+  const one = await visitor("dup-once", "10.250.1.1");
+  try {
+    for (const [i, name] of names("d").slice(2).entries()) {
+      Date.now = () => NOW + (i + 1) * 61_000;
+      tenEach += await copies("dup", name, 10);
+      oneEach += await rowsWritten(() => track("dup-once", one, name));
+    }
+  } finally {
+    Date.now = () => NOW;
+  }
+  assert.equal(await appStepsOf("dup"), 10);
+  assert.equal(await appStepsOf("dup-once"), 8);
+  assert.equal(tenEach, oneEach);
+});
+
+test("a track request that loses the race for the person's list takes nothing of the rate limit, and counts again what still fits", async () => {
   forgetServerMemory();
   await run("DELETE FROM rate_limits");
   await owner("free11");
@@ -394,24 +448,25 @@ test("a track request that loses the race for the person's list counts again onl
   assert.equal(await appStepsOf("race"), 1);
   assert.equal(await markOf("race", "form"), 1);
   assert.equal(await n("SELECT count AS n FROM rate_limits WHERE key = 'track-app:race'"), 30);
-  // The same name twice at once: one counts it, and the other gives back what it took of the limit.
+  // The same name twice at once: one counts it, and the other takes nothing of the limit.
   await run("DELETE FROM rate_limits");
   const again = await matchVisit("race", call("race", who), NOW);
   await Promise.all([1, 2].map(() => countSteps("race", again, ["app:r5"], NOW, { rateLimit: true })));
   assert.equal(await appStepsOf("race"), 2);
   assert.equal(await n("SELECT count AS n FROM rate_limits WHERE key = 'track-app:race'"), 1);
   assert.equal(await n("SELECT count AS n FROM rate_limits WHERE key LIKE 'track-net:race:%'"), 1);
-  // Lost on the retry too: nothing counted, and all it took given back.
+  // Lost on the retry too: nothing counted, and nothing taken or written.
   const client = await db();
-  const execute = client.execute.bind(client);
-  client.execute = ((s: { sql: string } | string, ...rest: unknown[]) => {
-    if ((typeof s === "string" ? s : s.sql).startsWith("UPDATE site_people SET steps")) return Promise.resolve({ rows: [] });
-    return (execute as (...a: unknown[]) => unknown)(s, ...rest);
-  }) as typeof client.execute;
+  const batch = client.batch.bind(client);
+  client.batch = ((list: { sql: string }[], ...rest: unknown[]) => {
+    if (list[0]?.sql.startsWith("UPDATE site_people SET steps")) return Promise.resolve(list.map(() => ({ rows: [], rowsAffected: 0 })));
+    return (batch as (...a: unknown[]) => unknown)(list, ...rest);
+  }) as typeof client.batch;
   try {
-    await countSteps("race", await matchVisit("race", call("race", who), NOW), ["app:r6", "app:r7"], NOW, { rateLimit: true });
+    const lost = await matchVisit("race", call("race", who), NOW);
+    assert.equal(await rowsWritten(() => countSteps("race", lost, ["app:r6", "app:r7"], NOW, { rateLimit: true })), 0);
   } finally {
-    client.execute = execute;
+    client.batch = batch;
   }
   assert.equal(await appStepsOf("race"), 2);
   assert.equal(await n("SELECT count AS n FROM rate_limits WHERE key = 'track-app:race'"), 1);
@@ -576,6 +631,8 @@ test("the upgrade offer goes away as soon as the owner buys a plan, though this 
   );
   const after = (await funnelStats("w9", 30, NOW + 1_000))!;
   assert.deepEqual([after.pausedWeek, after.pausedToday, after.free], [null, null, false]);
+  // Today's mark stays, for the note that counting paused earlier today (see funnel-notes.test.ts).
+  assert.deepEqual(after.paused[0], { day: TODAY, people: 1_000 });
   assert.deepEqual(await peopleCap("free9", NOW + 2_000), { cap: PLAN_PEOPLE.lite, steps: PLAN_PEOPLE.lite, paid: true });
   const visitors = await visitorsOf("w9");
   await recordVisit("w9", page("w9", person()), null, NOW + 3_000);

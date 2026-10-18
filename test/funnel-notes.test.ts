@@ -1,7 +1,8 @@
 /*
  * The Visitors view's notes on its limits (FunnelNotes), rendered as the page shows them: the upgrade
  * offer for a free owner whose counting paused on 2 or more of the last 7 days, the paused note's own
- * upgrade link on a single day, and none for a paid plan.
+ * upgrade link on a single day, none for a paid plan, and today's pause under the plan the owner had
+ * before buying one.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -82,4 +83,21 @@ test("the offer's button is aligned with its note, so a long label (French, Russ
     const button = html.match(/<button[^>]*>/)![0];
     assert.match(button, /class="[^"]*\btext-start\b/, button);
   }
+});
+
+test("after a plan bought today, today's pause is said as earlier today under the previous plan, never as that plan's limit on a past day", () => {
+  // As funnelStats gives it right after the purchase (see visit-limits.test.ts): today's marks, with
+  // counting going on today, and an earlier day.
+  const after = render({ free: false, paused: [{ day: "2026-10-18", people: 1_000 }, { day: "2026-10-13", people: 1_000 }], stepsPaused: [{ day: "2026-10-18", steps: 100 }] });
+  assert.ok(after.includes("Earlier today, counting paused at 1,000 people across your apps, your previous plan&#x27;s daily limit. Your new plan counts more."), after);
+  assert.ok(after.includes("Earlier today, your apps&#x27; own steps stopped counting at 100, your previous plan&#x27;s daily limit. Your new plan counts more."), after);
+  assert.ok(!after.includes("Oct 18"), after);
+  assert.ok(!after.includes(TODAY), after);
+  assert.ok(after.includes("On Oct 13, counting paused at 1,000 people across your apps"), after);
+  assert.deepEqual(buttons(after), []);
+  // Still paused today: today's note only, said once.
+  const still = render({ free: true, pausedToday: 1_000, paused: [{ day: "2026-10-18", people: 1_000 }], stepsPausedToday: 100, stepsPaused: [{ day: "2026-10-18", steps: 100 }] });
+  assert.ok(still.includes(TODAY), still);
+  assert.ok(still.includes("Your apps&#x27; own steps stopped counting at 100 (your plan&#x27;s daily limit)."), still);
+  assert.ok(!still.includes("Earlier today") && !still.includes("Oct 18"), still);
 });

@@ -9,9 +9,9 @@
  * its buyer's source waits beside it (site_checkouts), with nothing about the buyer.
  */
 import { createHmac } from "node:crypto";
-import { all, db, one, run } from "./db.ts";
+import { all, db, now, one, run } from "./db.ts";
 import { domainsForSite } from "./domains.ts";
-import { countOf, giveBack, takeWithin } from "./limits.ts";
+import { countOf, fitsWithin, takeAfter } from "./limits.ts";
 import {
   dayOf,
   daysBetween,
@@ -39,11 +39,14 @@ const MINUTE = 60_000;
  * The track route's rate limit on the free plan: app steps counted a minute from one internet
  * connection to an app (under a code made with the day's key for that app, never its address, so
  * nothing ties one connection's use of two apps together) and to an app from everyone. Steps, not
- * requests, as one request can carry 10 of them. Each is read first, and taken only while it fits,
- * so a request turned away, also by requests at the same moment, writes nothing, and the counts never
- * pass the limits. Taken only for steps that count: at most two rows for each request whose steps
- * count, so for each of the free plan's 100 app steps a day. Paid plans' apps aren't limited: their
- * daily numbers stay as they are, and counting it would add those rows to each of their requests.
+ * requests, as one request can carry 10 of them. Both are read first, for how many fit, and taken in
+ * the transaction that writes the person's list of steps, only while they still fit (see count): a
+ * request turned away, also by requests at the same moment, or one that loses the race for the list
+ * to another of the same person's (the same step sent twice at once, on any server), writes nothing,
+ * and the counts never pass the limits. Taken only for steps that count: two rows for each request
+ * whose steps count, so at most for each of the free plan's 100 app steps a day. Paid plans' apps
+ * aren't limited: their daily numbers stay as they are, and counting it would add those rows to each
+ * of their requests.
  * The daily prune deletes them (see visits.ts).
  */
 export const TRACK_STEPS_PER_CONNECTION = 10;
@@ -58,34 +61,17 @@ const trackLimits = (slug: string, network: string): [string, number][] => {
 };
 
 /**
- * How many of `wanted` app steps may count under the track route's rate limit, the first of them;
- * 0 when another request took the room since it was read. Never throws: a limit not read counts none.
+ * How many of `wanted` app steps fit under the track route's rate limit, read before anything is
+ * written; the list of the person's steps takes them only while they still fit (see count). Never
+ * throws: a limit not read counts none.
  */
-async function trackRoom(slug: string, network: string, wanted: number): Promise<number> {
-  const [app, net] = trackLimits(slug, network);
+async function trackRoom(limits: [string, number][], wanted: number): Promise<number> {
   try {
-    const counts = await Promise.all([countOf(app[0]), countOf(net[0])]);
-    const n = Math.min(wanted, app[1] - counts[0], net[1] - counts[1]);
-    if (n <= 0) return 0;
-    // The app's first, as many requests at once from everywhere miss it; the connection's misses only
-    // when that connection sends several at once, and then the app's is given back.
-    if (!(await takeWithin(app[0], app[1], MINUTE, n))) return 0;
-    if (await takeWithin(net[0], net[1], MINUTE, n)) return n;
-    await giveBack(app[0], n);
-    return 0;
+    const counts = await Promise.all(limits.map(([key]) => countOf(key)));
+    return Math.max(0, Math.min(wanted, ...limits.map(([, max], i) => max - counts[i])));
   } catch (err) {
     console.error("[flash] track limit not read", err);
     return 0;
-  }
-}
-
-/** Gives back what trackRoom let count that wasn't counted. Never throws. */
-async function trackGiveBack(slug: string, network: string, n: number): Promise<void> {
-  if (n <= 0) return;
-  try {
-    for (const [key] of trackLimits(slug, network)) await giveBack(key, n);
-  } catch (err) {
-    console.error("[flash] track limit not given back", err);
   }
 }
 
@@ -183,8 +169,7 @@ export async function countSteps(slug: string, match: Match, list: Step[], at = 
   }
 }
 
-/** granted: on a retry, how many app steps the first try was let count by the track route's rate limit. */
-async function count(slug: string, match: Match, list: Step[], at: number, retry: boolean, rateLimit: boolean, granted?: number): Promise<void> {
+async function count(slug: string, match: Match, list: Step[], at: number, retry: boolean, rateLimit: boolean): Promise<void> {
   if (match.kind === "robot") return;
   const today = dayOf(at);
   if (match.kind === "none" || match.kind === "owner") {
@@ -203,7 +188,7 @@ async function count(slug: string, match: Match, list: Step[], at: number, retry
   let budget = 0;
   let owner = "";
   let paid = false;
-  let limited = granted;
+  let limits: [string, number][] = [];
   if (app.length) {
     // The gates, read before anything is written, so a name that isn't counted writes nothing: the
     // names in the app's code (see stepsInHtml), the names it reported that day (at most 10), and how
@@ -243,12 +228,12 @@ async function count(slug: string, match: Match, list: Step[], at: number, retry
     }
     // Past what this server counts from the person's connection today, the rest aren't counted.
     counting.splice(takeSteps(owner, match.network, counting.length, at, paid));
-    // Nor, on the free plan, those past the track route's rate limit this minute; on a retry, those
-    // past what the first try was let count.
-    if (counting.length && rateLimit && !paid) limited = await trackRoom(slug, match.network, counting.length);
-    if (limited !== undefined && counting.length > limited) {
-      giveSteps(owner, match.network, counting.length - limited);
-      counting.splice(limited);
+    // Nor, on the free plan, those past the track route's rate limit this minute.
+    if (counting.length && rateLimit && !paid) {
+      limits = trackLimits(slug, match.network);
+      const room = await trackRoom(limits, counting.length);
+      giveSteps(owner, match.network, counting.length - room);
+      counting.splice(room);
     }
     // The note that the day's app steps stopped counting, only when these reach the day's number (not
     // when the limits above cut them short of it).
@@ -257,9 +242,6 @@ async function count(slug: string, match: Match, list: Step[], at: number, retry
       if (mark) writes.push(mark);
     }
   }
-  // What the first try was let count and a retry doesn't (another request counted those names) goes
-  // back to the rate limit.
-  if (granted !== undefined) await trackGiveBack(slug, match.network, granted - counting.length);
   const taken = counting.length;
   const fresh = [...builtIn, ...counting.map((x) => `app:${x.name}`)];
   const c = await db();
@@ -273,19 +255,28 @@ async function count(slug: string, match: Match, list: Step[], at: number, retry
       giveSteps(owner, match.network, taken);
       throw err;
     });
-  // Written only if nobody changed the list since it was read, so two requests can't count one step twice.
-  const saved = await orGiveBack(
-    c.execute({
-      sql: "UPDATE site_people SET steps = ? WHERE site_slug = ? AND day = ? AND visitor = ? AND steps = ? RETURNING 1",
-      args: [JSON.stringify([...match.steps, ...fresh]), slug, match.day, match.visitor, JSON.stringify(match.steps)],
-    }),
+  // Written only if nobody changed the list since it was read, so two requests can't count one step
+  // twice; under the rate limit, only while its steps still fit, which are taken in the same
+  // transaction. So a request that loses the race, or is turned away at the same moment, takes and
+  // writes nothing, and tries once more with the list and the limit read again.
+  const t = now();
+  const fit = taken ? limits.map(([key, max]) => fitsWithin(key, max, taken, t)) : [];
+  const [saved] = await orGiveBack(
+    c.batch(
+      [
+        {
+          sql: `UPDATE site_people SET steps = ? WHERE site_slug = ? AND day = ? AND visitor = ? AND steps = ?${fit.map((f) => ` AND ${f.sql}`).join("")} RETURNING 1`,
+          args: [JSON.stringify([...match.steps, ...fresh]), slug, match.day, match.visitor, JSON.stringify(match.steps), ...fit.flatMap((f) => f.args)],
+        },
+        ...(fit.length ? [takeAfter(limits.map(([key]) => key), taken, MINUTE, t)] : []),
+      ],
+      "write",
+    ),
   );
   if (!saved.rows.length) {
     giveSteps(owner, match.network, taken);
     const again = retry ? await matchByCode(slug, match) : null;
-    // Counted again against what this try took of the rate limit, no more; or that is given back.
-    if (again) await count(slug, again, list, at, false, false, limited === undefined ? undefined : taken);
-    else if (limited !== undefined) await trackGiveBack(slug, match.network, taken);
+    if (again) await count(slug, again, list, at, false, rateLimit);
     return;
   }
   for (const s of builtIn) writes.push(countUp(slug, match.day, s, match.touch));

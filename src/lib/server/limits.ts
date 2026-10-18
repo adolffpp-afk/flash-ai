@@ -1,4 +1,7 @@
+import type { InValue } from "@libsql/client";
 import { one, run, now } from "./db.ts";
+
+type Statement = { sql: string; args: InValue[] };
 
 /**
  * Counts an attempt (or several at once, like a batch of calls) against key and says whether it
@@ -18,29 +21,27 @@ export async function overLimit(key: string, max: number, windowMs: number, atte
 }
 
 /**
- * Counts attempts against key only while they fit within max in the window, in one statement, so
- * requests at the same moment can't push it past max: one that doesn't fit writes nothing and
- * leaves the count as it was. Says whether they were counted.
+ * A condition that is true while `attempts` more fit within max on key in its current window, for a
+ * statement whose writes take them with takeAfter in the same transaction, so requests at the same
+ * moment can't push it past max.
  */
-export async function takeWithin(key: string, max: number, windowMs: number, attempts = 1): Promise<boolean> {
-  if (attempts > max) return false;
-  const t = now();
-  const r = await run(
-    `INSERT INTO rate_limits (key, count, reset_at) VALUES (?, ?, ?)
-     ON CONFLICT(key) DO UPDATE SET
-       count = CASE WHEN reset_at < ? THEN excluded.count ELSE count + excluded.count END,
-       reset_at = CASE WHEN reset_at < ? THEN excluded.reset_at ELSE reset_at END
-     WHERE reset_at < ? OR count + excluded.count <= ?
-     RETURNING count`,
-    [key, attempts, t + windowMs, t, t, t, max],
-  );
-  return r.rows.length > 0;
-}
+export const fitsWithin = (key: string, max: number, attempts: number, t = now()): Statement => ({
+  sql: "COALESCE((SELECT count FROM rate_limits WHERE key = ? AND reset_at >= ?), 0) + ? <= ?",
+  args: [key, t, attempts, max],
+});
 
-/** Gives back attempts counted against key in its current window that weren't used. */
-export async function giveBack(key: string, attempts: number): Promise<void> {
-  if (attempts > 0) await run("UPDATE rate_limits SET count = MAX(0, count - ?) WHERE key = ? AND reset_at >= ?", [attempts, key, now()]);
-}
+/**
+ * Counts attempts against each key in its window, as the next statement of a batch after the one it
+ * is for, and only when that one changed a row (one conditioned on fitsWithin, say): a statement
+ * that changed nothing takes nothing.
+ */
+export const takeAfter = (keys: string[], attempts: number, windowMs: number, t = now()): Statement => ({
+  sql: `INSERT INTO rate_limits (key, count, reset_at) SELECT column1, ?, ? FROM (VALUES ${keys.map(() => "(?)").join(", ")}) WHERE changes() > 0
+        ON CONFLICT(key) DO UPDATE SET
+          count = CASE WHEN reset_at < ? THEN excluded.count ELSE count + excluded.count END,
+          reset_at = CASE WHEN reset_at < ? THEN excluded.reset_at ELSE reset_at END`,
+  args: [attempts, t + windowMs, ...keys, t, t],
+});
 
 /** How many attempts key has counted in its current window, without counting one. */
 export async function countOf(key: string): Promise<number> {

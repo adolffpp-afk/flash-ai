@@ -520,6 +520,8 @@
  "Each step is counted on its own, not only for people who did the step above it.": "各ステップは個別に数えています。前のステップを行った人だけを数えているわけではありません。",
  "Each time you update this site, the version it replaces is kept here (the last 10). Bring one back if an update went wrong. Its data, messages and orders stay as they are, but who can see or change that data follows the version you bring back.": "このサイトを更新するたびに、置き換えられたバージョンがここに保存されます（最新10件）。更新で問題が起きたら復元できます。データ、メッセージ、注文はそのまま残りますが、そのデータを誰が閲覧・変更できるかは、復元したバージョンに従います。",
  "Each tool asks you before it runs, until you choose Always allow for it.": "「このツールを常に許可」を選ぶまで、各ツールは実行前に確認します。",
+ "Earlier today, counting paused at {count} people across your apps, your previous plan's daily limit. Your new plan counts more. People who came while it was paused aren't in today's numbers, and their forms, sign-ups and checkouts show as Not matched.": "本日先ほど、すべてのアプリの合計{count}人で集計が一時停止しました（以前のプランの1日の上限）。新しいプランではより多く集計されます。一時停止中に訪れた人は本日の数値に含まれず、その人たちのフォーム、登録、チェックアウトは「訪問と紐づかない」に表示されます。",
+ "Earlier today, your apps' own steps stopped counting at {count}, your previous plan's daily limit. Your new plan counts more. Steps your apps sent while counting was paused aren't in today's numbers.": "本日先ほど、アプリ独自のステップが{count}件で集計を停止しました（以前のプランの1日の上限）。新しいプランではより多く集計されます。停止中にアプリが送信したステップは本日の数値に含まれません。",
  "Earlier versions of this site": "このサイトの以前のバージョン",
  "Edit": "編集",
  "Edit a Photo": "写真を編集",
