@@ -20,8 +20,8 @@ import { Templates } from "./Templates";
 import { MyApps } from "./MyApps";
 import type { FixPlan, SiteFix } from "./SeoView";
 import type { CheckId } from "@/lib/seo-rules";
-import { chatForFix, chatWithSite, fixAllHold, fixMessage, newestApp, siteOf, stillAnswering } from "@/lib/seo-chat";
-import { chatRequestBody } from "@/lib/chat-request";
+import { chatForFix, chatWithSite, fixAllHold, fixMessage, newestApp, pricedAgain, siteOf, stillAnswering } from "@/lib/seo-chat";
+import { chatRequestBody, editedMessage } from "@/lib/chat-request";
 import { chatSaves } from "@/lib/chat-saves";
 import { BuildPanel, useMedia } from "./BuildPanel";
 import { draftShown, draftStore, startsWriting } from "@/lib/live-draft";
@@ -1016,9 +1016,13 @@ export function Flash({
    */
   async function priced(fix: SiteFix, messages: UIMessage[], plan: { message: UIMessage; sent: CheckId[]; left: number }): Promise<FixPlan> {
     if (!fix.all) return { sent: plan.sent, left: plan.left };
+    return { sent: plan.sent, left: plan.left, hold: await quote(fix, messages, plan.message) };
+  }
+
+  /** What the chat route would hold for Fix all's message after messages, sent now (see fixAllHold). */
+  async function quote(fix: SiteFix, messages: UIMessage[], message: UIMessage) {
     const project = projects.find((p) => p.id === fix.projectId) ?? { id: fix.projectId, name: "", updated_at: 0 };
-    const hold = await fixAllHold(requestFor(project, messages, plan.message, { replyId: newId() }));
-    return { sent: plan.sent, left: plan.left, hold };
+    return fixAllHold(requestFor(project, messages, message, { replyId: newId() }));
   }
 
   /**
@@ -1026,9 +1030,10 @@ export function Flash({
    * pressed Send. The chat that built the site is looked at first, while My websites & apps is still
    * open: when nothing would be sent (see fixFor), or Flash is still answering something else, the
    * answer is why, shown where Send was pressed. When what would be sent isn't what the panel listed
-   * (shown: a reply changed that chat's newest version since), nothing is sent and the answer is what
-   * would go now, for the panel to list. Otherwise My websites & apps closes, the chat opens, and
-   * exactly what was listed goes there (sendFix): the answer is null.
+   * (shown: a reply changed that chat's newest version since), or Fix all's change would now hold more
+   * than its panel said (cap, see pricedAgain), nothing is sent and the answer is what would go now and
+   * its price, for the panel to list. Otherwise My websites & apps closes, the chat opens, and exactly
+   * what was listed goes there (sendFix): the answer is null.
    */
   async function fixSite(fix: SiteFix): Promise<FixPlan | null> {
     const busyNote = { why: t(BUSY_FIX), busy: true as const };
@@ -1041,6 +1046,12 @@ export function Flash({
     if ("why" in plan) return plan;
     // Listed again, and for Fix all priced again: what it says it costs is for what would go now.
     if (fix.shown && plan.sent.join() !== fix.shown.join()) return priced(fix, chat.messages, plan);
+    // Fix all's price is looked at again on this copy of the chat (a reply still being written there when
+    // the panel priced it has finished since, or the level or credits changed): when the change would now
+    // hold more than the panel said, the panel says what it holds now, for Send again, and the chat never
+    // gets a change it would refuse.
+    const dearer = await pricedAgain(fix.cap, plan, () => quote(fix, chat.messages, plan.message));
+    if (dearer) return dearer;
     if (runningRef.current) return busyNote;
     closeApps();
     showChat(fix.projectId);
@@ -1257,9 +1268,8 @@ export function Flash({
     if (lastUser === -1) return;
     const earlier = messages.slice(0, lastUser);
     const { pictureAbove: had, ...old } = messages[lastUser];
-    // Typed words replace what was heard, so they're routed and answered as typed. What Fix all said a
-    // change would hold was for its own words, not these.
-    let edited: UIMessage = { ...old, content: text, voice: undefined, cap: undefined };
+    // Typed words replace what was heard, and Fix all's cap was for its own words (see editedMessage).
+    let edited = editedMessage(old, text);
     // The new words decide whether it goes with the picture above, as when typing. Files sent with
     // it stay, and a change the user sent without the picture (the ✕) doesn't gain it.
     if (had || (!old.attachmentName && !old.build && !old.template && !pictureFollowUp(old.content))) {

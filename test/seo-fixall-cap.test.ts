@@ -30,8 +30,8 @@ for (const level of ["log", "error", "warn", "info"] as const) console[level] = 
 const { afterwards } = await import("./support/next-server.mjs");
 const { one, run: sql } = await import("../src/lib/server/db.ts");
 const chatRoute = await import("../src/app/api/chat/route.ts");
-const { chatRequestBody } = await import("../src/lib/chat-request.ts");
-const { fixAllHold, fixAllTerms, fixMessage, fixPrice } = await import("../src/lib/seo-chat.ts");
+const { chatRequestBody, editedMessage } = await import("../src/lib/chat-request.ts");
+const { fixAllHold, fixAllTerms, fixMessage, fixPrice, pricedAgain } = await import("../src/lib/seo-chat.ts");
 const { fixForCopy } = await import("../src/lib/seo-fix.ts");
 const { scanPage } = await import("../src/lib/seo-scan.ts");
 const { evaluate, fixableIds } = await import("../src/lib/seo-rules.ts");
@@ -81,13 +81,15 @@ const builtChat = (): UIMessage[] => [
   { id: id(), role: "user", content: "Make a website for my bakery, Golden Crumb" },
   { id: id(), role: "assistant", content: "Here's your bakery site.", engine: "app", app: { title: "Golden Crumb", html: PAGE, kind: "app", slug: CTX.slug } },
 ];
-/** Fix all's message, made as Flash.tsx's fixFor makes it for that chat's newest version. */
-function fixAllMessage(): UIMessage {
-  const ask = fixableIds(evaluate(scanPage(PAGE), CTX));
-  const planned = fixForCopy(english, PAGE, CTX, ask, SITE);
+/** Fix all's message and the points it lists, made as Flash.tsx's fixFor makes them for that chat's newest version (html). */
+function fixAllPlan(html = PAGE): { message: UIMessage; sent: string[]; left: number } {
+  const ask = fixableIds(evaluate(scanPage(html), CTX));
+  const planned = fixForCopy(english, html, CTX, ask, SITE);
   assert.ok(planned && planned.sent.length >= 2, "the page has several things to fix");
-  return { id: id(), role: "user", content: planned.content, build: "app", picked: { label: "SEO", context: planned.context } };
+  const message: UIMessage = { id: id(), role: "user", content: planned.content, build: "app", picked: { label: "SEO", context: planned.context } };
+  return { message, sent: planned.sent, left: planned.left };
 }
+const fixAllMessage = () => fixAllPlan().message;
 /**
  * Fix all's message as Send sends it, with the price its panel said: SeoView's send adds fixAllTerms to
  * the change, and Flash's sendFix makes the message with fixMessage (see the wiring test below).
@@ -394,13 +396,74 @@ test("Fix all's message is sent with the price its panel said, and only Fix all'
     assert.ok(start >= 0, name);
     return flash.slice(start, flash.indexOf("\n  }\n", start));
   };
-  assert.match(fn("priced"), /fixAllHold\(requestFor\(project, messages, plan\.message, \{ replyId: newId\(\) \}\)\)/);
+  assert.match(fn("priced"), /hold: await quote\(fix, messages, plan\.message\)/);
+  assert.match(fn("quote"), /return fixAllHold\(requestFor\(project, messages, message, \{ replyId: newId\(\) \}\)\);/);
+  assert.equal(flash.match(/\bfixAllHold\(/g)?.length, 1, "a price is asked for another way");
   for (const name of ["planFix", "fixSite", "sendFix"]) {
     assert.match(fn(name), /const chat = await chatToFix\(fix\.projectId\);[\s\S]*const plan = await fixFor\(fix, chat\.messages\);/, name);
   }
   for (const name of ["planFix", "fixSite"]) assert.match(fn(name), /priced\(fix, chat\.messages, plan\)/, name);
   assert.equal(flash.match(/\bpriced\(/g)?.length, 3, "a price is asked for something else");
   assert.match(fn("respond"), /const body = requestFor\(project, earlier, userMsg, \{ replyId: reply\.id, files: sent, confirmed, decided, connect \}\);/);
+});
+
+test("Fix all priced while Flash was still writing a reply in its chat is priced again on Send: said again when it would hold more, never sent to be refused", async () => {
+  const who = await account(1_000_000);
+  const earlier = builtChat();
+  // "Make the header blue", asked in that chat, and Flash is still writing the answer, which adds a gallery
+  // too. The search check is opened meanwhile (another tab, a reload, a phone) and Fix all is pressed.
+  const ask: UIMessage = { id: id(), role: "user", content: "Make the header blue", build: "app" };
+  const writing: UIMessage[] = [...earlier, ask, { id: id(), role: "assistant", content: "", pending: true }];
+  const gallery = Array.from({ length: 40 }, (_, i) => `<figure><img src="https://images.example/bake-${i}.jpg" alt="Loaf number ${i} from this morning's bake, on the counter by the window"><figcaption>Fresh from the oven: sourdough, seeded rye and cinnamon knots, baked by hand before the shop opens at seven.</figcaption></figure>`).join("\n");
+  const grown = PAGE.replace("<h2>", '<header style="background:#1d4ed8;color:#fff"><h2>').replace("</h2>", "</h2></header>").replace("</body>", `<section>${gallery}</section></body>`);
+  const done: UIMessage[] = [...earlier, ask, { id: id(), role: "assistant", content: "Here's the blue header, with a gallery.", engine: "app", app: { title: "Golden Crumb", html: grown, kind: "app" } }];
+  const before = fixAllPlan();
+  const said = (await fixAllHold(bodyFor(who, writing, before.message, "vision"), pageFetch(who)))!;
+  assert.ok(said);
+  // The reply is done ("Send this when it's done"), and the points Fix all lists are the same.
+  const now = fixAllPlan(grown);
+  assert.deepEqual(now.sent, before.sent);
+  const quoteNow = () => fixAllHold(bodyFor(who, done, now.message, "vision"), pageFetch(who));
+  // Sent with the price said while the reply was being written, the chat would refuse it.
+  const calls = claudeCalls();
+  const rows = await ledgerRows(who.id);
+  const stale = await send(who, bodyFor(who, done, sentAs(now.message, said), "vision"));
+  assert.equal(stale.status, 409);
+  assert.equal(stale.error?.code, "over_cap");
+  assert.equal(claudeCalls(), calls);
+  assert.equal(await ledgerRows(who.id), rows);
+  // So Send prices it again on that chat first: the panel says what it holds now, and nothing is sent.
+  const again = await pricedAgain(said.credits, now, quoteNow);
+  assert.ok(again && again.hold.credits > said.credits, JSON.stringify({ said, again }));
+  assert.deepEqual(again.sent, before.sent);
+  assert.equal(again.left, now.left);
+  // Send pressed again goes at that price, and holds it.
+  assert.equal(await pricedAgain(again.hold.credits, now, quoteNow), null);
+  const r = await send(who, bodyFor(who, done, sentAs(now.message, again.hold), "vision"));
+  assert.equal(r.status, 200, JSON.stringify(r.error));
+  assert.equal(r.held, again.hold.credits);
+  // Credits bought between the panel and Send (which let the change hold more) are said again too.
+  const low = await account(said.needed + 20);
+  const lowPrice = (await fixAllHold(bodyFor(low, done, now.message, "vision"), pageFetch(low)))!;
+  assert.equal(lowPrice.credits, said.needed + 20);
+  await sql("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES (?, 1000000, 'top-up', 0)", [low.id]);
+  const topped = await pricedAgain(lowPrice.credits, now, () => fixAllHold(bodyFor(low, done, now.message, "vision"), pageFetch(low)));
+  assert.ok(topped && topped.hold.credits > lowPrice.credits);
+  // With no price said (it couldn't be worked out) nothing is asked, and when it can't be worked out now,
+  // it goes as the panel said: the chat route still refuses it, with nothing charged, if it holds more.
+  assert.equal(await pricedAgain(undefined, now, () => assert.fail("priced without a price said")), null);
+  assert.equal(await pricedAgain(said.credits, now, async () => null), null);
+  // Flash's Send (fixSite) does this once the list would still go, before the chat opens, and the panel
+  // says why it's asked again when the list is the same.
+  const flash = readFileSync(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
+  const start = flash.indexOf("  async function fixSite(");
+  const fixSite = flash.slice(start, flash.indexOf("\n  }\n", start));
+  assert.match(
+    fixSite,
+    /if \(fix\.shown && plan\.sent\.join\(\) !== fix\.shown\.join\(\)\) return priced\(fix, chat\.messages, plan\);\s*(\/\/[^\n]*\n\s*)*const dearer = await pricedAgain\(fix\.cap, plan, \(\) => quote\(fix, chat\.messages, plan\.message\)\);\s*if \(dearer\) return dearer;[\s\S]*closeApps\(\);/,
+  );
+  const seo = readFileSync(new URL("../src/components/SeoView.tsx", import.meta.url), "utf8");
+  assert.match(seo, /setNote\(t\(answer\.sent\.join\(\) === plan\.sent\.join\(\) \? DEARER : CHANGED\)\);/);
 });
 
 test("working out the price runs nothing, charges nothing and saves nothing", async () => {
@@ -480,6 +543,39 @@ test("a Fix it message goes with no cap, and Fix all's keeps its cap on Retry an
   assert.equal(r.status, 200);
 });
 
+test("Edit on Fix all's message drops its cap: the owner's own words are priced as any typed change, never refused as over it", async () => {
+  const who = await account(1_000_000);
+  const earlier = builtChat();
+  const message = fixAllMessage();
+  const priced = (await fixAllHold(bodyFor(who, earlier, message, "vision"), pageFetch(who)))!;
+  const sent = sentAs(message, priced);
+  // The owner edits it (it's the last message, so it has Edit) and pastes a lot more: the change now holds
+  // more than Fix all said, which was for its own words.
+  const longer = `${message.content}\n\n${"Our opening hours, menu and story, pasted in full. ".repeat(700)}`;
+  const edited = editedMessage({ ...sent, voice: true }, longer);
+  assert.equal(edited.cap, undefined);
+  assert.equal(edited.voice, undefined, "typed words are answered as heard");
+  assert.equal(edited.content, longer);
+  assert.equal(edited.picked, message.picked, "the change still goes with what it's about");
+  assert.equal(sent.cap, priced.credits, "the message on the chat isn't changed");
+  const r = await send(who, bodyFor(who, earlier, edited, "vision"));
+  assert.equal(r.status, 200, JSON.stringify(r.error));
+  assert.ok(r.held! > priced.credits, `held ${r.held}, said ${priced.credits}`);
+  // Kept, the cap would refuse the owner's own words.
+  const kept = await send(who, bodyFor(who, earlier, { ...edited, cap: sent.cap }, "vision"));
+  assert.equal(kept.status, 409);
+  assert.equal(kept.error?.code, "over_cap");
+  // Flash's Edit makes the message it sends only through editedMessage.
+  const flash = readFileSync(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
+  const start = flash.indexOf("  async function editLast(");
+  assert.ok(start >= 0);
+  const editLast = flash.slice(start, flash.indexOf("\n  }\n", start));
+  assert.match(editLast, /const \{ pictureAbove: had, \.\.\.old \} = messages\[lastUser\];\s*(\/\/[^\n]*\n\s*)*let edited = editedMessage\(old, text\);/);
+  assert.equal(editLast.match(/\bedited = /g)?.length, 2, "the edited message is made another way");
+  assert.match(editLast, /edited = withPicture\(\{ \.\.\.edited, attachmentName: undefined \}, url\);/);
+  assert.match(editLast, /await respond\(active, earlier, edited, false,/);
+});
+
 test("only a change to an app or slides takes a cap: on any other request it's ignored, so no paid helper runs for a request it would refuse", async () => {
   const who = await account(1_000_000);
   // The router is a helper Claude answers at once (not streamed): it reads a request on Auto the keyword
@@ -487,12 +583,19 @@ test("only a change to an app or slides takes a cap: on any other request it's i
   const helperCalls = () => stand.state.seen.filter((s) => s.service === "anthropic" && s.path.endsWith("/messages") && s.body.stream !== true).length;
   const usageRows = async () => Number((await one<{ n: number }>("SELECT COUNT(*) AS n FROM usage WHERE user_id = ?", [who.id]))!.n);
   const ask = { messages: [{ role: "user", content: "something for my bakery's opening day" }], projectId: who.projectId, timeZone: "Europe/London", maxCredits: 1 };
-  for (const engine of ["auto", "text"]) {
+  // Marked as a change (build), too: it's one only with the app or slides engine picked, so a request on
+  // Auto that says it's a build is still read by the router and isn't refused after it paid for that.
+  for (const [engine, build] of [
+    ["auto", false],
+    ["text", false],
+    ["auto", true],
+    ["text", true],
+  ] as const) {
     const helpers = helperCalls();
     const rows = await usageRows();
     const before = await balance(who.id);
-    const r = await send(who, { ...ask, engine });
-    assert.equal(r.status, 200, `${engine}: ${JSON.stringify(r.error)}`);
+    const r = await send(who, { ...ask, engine, ...(build && { build }) });
+    assert.equal(r.status, 200, `${engine}${build ? " build" : ""}: ${JSON.stringify(r.error)}`);
     if (engine === "auto") assert.equal(helperCalls(), helpers + 1, "the router didn't read it");
     // What the router cost is in what the reply was charged, and logged with it.
     assert.ok((await balance(who.id)) < before);

@@ -79,6 +79,9 @@ const NO_CHAT = msg("Couldn't find the chat that built this site.");
 const NO_CHAT_APP = msg("Flash can't change this app from here: the chat that built it was deleted, or it was published from another app.");
 // Said when Send found that chat's newest version changed since the panel listed what goes.
 const CHANGED = msg("That chat's newest version changed, so this list did too. Press Send to Flash again to ask for these.");
+// Said when Send found that Fix all's change would now hold more than its panel said (a reply finished in
+// that chat since, or the level or credits changed): the panel says what it holds now.
+const DEARER = msg("The most this change can cost went up since it was worked out, so Flash didn't send it. Press Send to Flash again to ask for it at the price above.");
 // What each mark in the list says to a screen reader.
 const MARKS: Partial<Record<Check["status"], [string, string, string]>> = {
   fail: ["✕", "text-red-400", msg("Problem")],
@@ -361,10 +364,11 @@ export function SeoView({
       }
       return;
     }
-    // That chat changed since the list was made: the panel lists what would go now, for Send again.
+    // That chat changed since the list was made, or Fix all's change would now hold more than the panel
+    // said: the panel lists what would go now, and its price, for Send again.
     setAsking((open) => (open?.key === asking.key ? { ...open, plan: answer } : open));
     if (asking.key === "all") setAllPlan(answer);
-    setNote(t(CHANGED));
+    setNote(t(answer.sent.join() === plan.sent.join() ? DEARER : CHANGED));
   }
 
   async function draft(check: Check) {

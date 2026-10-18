@@ -96,6 +96,26 @@ export async function fixAllHold(body: object, post: typeof fetch = fetch): Prom
 }
 
 /**
+ * Fix all's price looked at again when Send is pressed, on the chat its change is about to go in, once
+ * the list the panel showed would still go (see fixSite in Flash.tsx). cap: the most the panel said, if
+ * it said one. quote: what that change would hold now (fixAllHold for the request Send makes). When it
+ * would hold more than cap (a reply Flash was still writing in that chat when the panel priced it has
+ * finished since, or the level or the credits changed), the answer is the list with what it holds now,
+ * for the panel to say before Send is pressed again: sent with cap, the chat route would refuse it. Null
+ * to send it: it holds no more than was said, nothing was said, or it can't be worked out now (the chat
+ * route still refuses it, with nothing charged, if it would hold more).
+ */
+export async function pricedAgain<L extends { sent: unknown[]; left: number }>(
+  cap: number | undefined,
+  listed: L,
+  quote: () => Promise<FixHold | null>,
+): Promise<{ sent: L["sent"]; left: number; hold: FixHold } | null> {
+  if (cap === undefined) return null;
+  const hold = await quote();
+  return hold && hold.credits > cap ? { sent: listed.sent, left: listed.left, hold } : null;
+}
+
+/**
  * The price a change's panel says before Send. Fix it and Add it say what a change typically costs
  * (typical, the pricing table's), with the balance when it's below that (low). Fix all says the most its
  * change can be charged once that's worked out (most), with the balance when it's below what the change

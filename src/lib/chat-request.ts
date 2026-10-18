@@ -14,6 +14,15 @@ export function turnText(m: UIMessage): string {
   return m.picked ? `${text}\n\n${m.picked.context}` : text;
 }
 
+/**
+ * The latest message as Edit asks again with new words (see editLast in Flash.tsx). Typed words replace
+ * what was heard, so they're routed and answered as typed. What Fix all said its change would hold (cap)
+ * was for its own words, not these: the edited message goes without it, priced as any typed change.
+ */
+export function editedMessage(old: UIMessage, text: string): UIMessage {
+  return { ...old, content: text, voice: undefined, cap: undefined };
+}
+
 /** What the page sends with a message besides the chat itself, read when it's sent. */
 export type ChatSettings = {
   // The tool picked in the composer, for a message that names none of its own.
