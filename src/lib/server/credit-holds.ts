@@ -77,7 +77,8 @@ export async function resizeHold(ref: string, held: number, leftCents: number): 
  * and day limits count them): other runs' steps priced at the same moment (read through the open holds
  * only, credit_holds_open), and chat replies still being written (their charge is held, unsettled and
  * with no ref, until the reply ends, as monthlyCredits counts them), each held at its worst case and
- * settled within its own time, mostly far lower.
+ * settled within its own time, mostly far lower. exceptRef: the asking step's own hold, left out (it has no
+ * ledger row while its charge is refused, so this only matters should it ever have one).
  */
 export async function heldElsewhere(account: string, automationId: string, exceptRef = ""): Promise<{ account: number; automation: number }> {
   const [row, chat] = await Promise.all([

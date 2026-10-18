@@ -912,6 +912,7 @@ test("a late run claimed and started by another tick between the late-run pass's
   // A one-off whose slot was taken (next_at 0), its run queued and past its grace window.
   const aid = await F.automation({ userId: u.id, spec, nextAt: 0 });
   const rid = await F.runRow({ automationId: aid, userId: u.id, origin: "schedule", runKey: "sched:1", graceUntil: Date.now() - 60_000 });
+  let report: Awaited<ReturnType<typeof tick>>["report"] | null = null;
   const landed = await beforeBatch(
     (s) => s.includes("SET status = 'skipped', outcome = 'missed', finished_at"),
     async () => {
@@ -919,9 +920,10 @@ test("a late run claimed and started by another tick between the late-run pass's
       await sql(`UPDATE automation_runs SET status = 'running', lease_owner = 'w:x', lease_until = ${NOW} + 600000 WHERE id = ?`, [rid]);
       await sql("INSERT INTO automation_run_steps (run_id, step_id, attempt, user_id, kind, status, started_at) VALUES (?, 'a1', 1, ?, 'ai', 'running', 1)", [rid, u.id]);
     },
-    tick,
+    async () => void ({ report } = await tick()),
   );
   assert.equal(landed, true);
+  assert.equal(report!.missed, 0, "not counted as missed");
   assert.deepEqual(
     [(await one<{ status: string }>("SELECT status FROM automation_runs WHERE id = ?", [rid]))!.status, (await one<{ status: string }>("SELECT status FROM automation_run_steps WHERE run_id = ?", [rid]))!.status],
     ["running", "running"],

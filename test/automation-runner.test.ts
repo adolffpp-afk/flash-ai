@@ -1854,3 +1854,16 @@ test("a step whose call was sent keeps what it sent and to which model then, so 
   assert.ok(Number(step.credits) > 0, "charged");
   assert.deepEqual([step.input, step.model], [sent.input, sent.model]);
 });
+
+test("a work call that comes after its run's lease lapsed does nothing: the run is left for the tick to claim again", async () => {
+  const u = await F.account("run91", 100);
+  const aid = await F.automation({ userId: u.id });
+  const rid = await F.runRow({ automationId: aid, userId: u.id });
+  // Its claim gave it to w:late, whose lease ran out before this call came.
+  await sql(`UPDATE automation_runs SET status = 'running', lease_owner = 'w:late', lease_until = ${NOW} - 1000 WHERE id = ?`, [rid]);
+  const streams = claude.streamed().length;
+  await R.advanceRun(rid, "w:late", Date.now() + 760_000);
+  assert.deepEqual(await stepsOf(rid), [], "no step started");
+  assert.equal((await runOf(rid))!.lease_owner, "w:late", "its lease isn't taken");
+  assert.equal(claude.streamed().length, streams);
+});

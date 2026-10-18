@@ -399,6 +399,7 @@ export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResul
     if (!WAITS_FOR.has(outcome) || Number(c.waits ?? 0) >= MAX_WAITS) return false;
     const [r, other] = await Promise.all([room(), heldElsewhere(auto.pay_account, auto.id, ref)]);
     if (!other.account) return false;
+    // (Its run limit is always met when this is asked, as a step short of it never waits: it stays in the sum all the same.)
     const fits = Math.max(0, Math.min(r.have + other.account - r.floor, r.runLeft, r.monthLeft + other.automation, r.dayLeft + other.automation));
     return fits >= planFor(fits).needed;
   };
