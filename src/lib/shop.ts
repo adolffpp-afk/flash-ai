@@ -92,11 +92,13 @@ export function itemsInHtml(html: string): string[] {
 }
 
 /**
- * What in a page's address can say where its visitor came from: link tags (utm_…, ref), Flash's own
- * notes (flash_…), and ad networks' and email tools' click IDs (gclid, fbclid, msclkid, mc_eid, _hsenc…).
+ * What in a page's address can say where its visitor came from, or who they are: link tags (utm_…,
+ * ref, and analytics tools' own: Matomo's mtm_… and pk_…, HubSpot's ad tags), Flash's own notes
+ * (flash_…), ad and affiliate networks' click IDs (gclid, fbclid, msclkid, cjevent…), and email
+ * tools' subscriber IDs (mc_eid, _hsenc, ml_subscriber, vgo_ee, elqTrackId…).
  */
 const SOURCE_PARAM =
-  /^(?:utm_.*|ref|ref_src|flash_.*|.*(?:clid|clkid|click_?id)|gclsrc|gbraid|wbraid|gad_.*|_ga|_gl|igshid|igsh|li_fat_id|srsltid|epik|sccid|s_cid|rdt_cid|mc_.*|_hs.*|__hs.*|hsctatracking|mkt_tok|vero_.*|oly_.*|_kx|ck_subscriber_id|wickedid|_branch_.*)$/i;
+  /^(?:utm_.*|ref|ref_src|flash_.*|.*(?:clid|clkid|click_?id)|gclsrc|gbraid|wbraid|gad_.*|_ga|_gl|igshid|igsh|li_fat_id|srsltid|epik|sccid|s_cid|rdt_cid|mc_.*|_hs.*|__hs.*|hsctatracking|mkt_tok|vero_.*|oly_.*|_kx|ck_subscriber_id|wickedid|_branch_.*|mtm_.*|pk_(?:campaign|kwd|keyword|source|medium|content|cid|group|placement)|matomo_.*|piwik_.*|hsa_.*|fb_.*|_openstat|ef_id|s_kwcid|cjevent|irgwc|ranmid|raneaid|ransiteid|sscid|awc|ml_subscriber.*|__s|elq.*|vgo_ee|omnisendcontactid|_bta_.*|dm_i|trk_.*|sfmc_.*|_bhlid|sc_(?:customer|eh|uid|src|lid|llid))$/i;
 
 /**
  * Where to send a visitor after paying: the page they bought from, if it is one of the site's own

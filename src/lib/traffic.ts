@@ -31,9 +31,10 @@ const ARABIC_LETTER = "[\\u0622-\\u064A\\u066E-\\u06D3\\u06D5\\u06EE\\u06EF\\u06
 // from joining the next, as it shows there.
 const INVISIBLE = new RegExp(`(?!(?<=${JOINS_NEXT})\\u200C(?=${ARABIC_LETTER}))\\p{Default_Ignorable_Code_Point}`, "gu");
 // A letter of another alphabet than Latin, or than Japanese, Chinese, Korean, Thai, Lao, Khmer and
-// Burmese, which are written without spaces and have no letters that pass for Latin ones.
+// Burmese, which are written without spaces and have no letters that pass for Latin ones, but for
+// Burmese ဝ, drawn as an o, which counts as another alphabet's.
 const OTHER_SCRIPT =
-  /[^\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u;
+  /ဝ|[^\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u;
 // Letters that look like a Latin one from a to z: Cyrillic, Greek and Armenian ones, and Latin's own
 // rarer forms (a script g, small capitals).
 const LIKE_LATIN: Readonly<Record<string, string>> = {

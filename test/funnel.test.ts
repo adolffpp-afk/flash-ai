@@ -464,6 +464,34 @@ test("an order paid later, whose buyer never came back from Stripe, keeps its so
   assert.equal(await n("SELECT COUNT(*) AS n FROM site_checkouts WHERE session_id = 'cs_old'"), 0);
 });
 
+test("a checkout nobody paid doesn't make each funnel load ask Stripe for 14 days: once in 10 minutes per app", async () => {
+  forgetServerMemory();
+  await run("INSERT INTO users (id, email, password_hash, created_at, verified_at) VALUES ('u8', 'y@x.co', 'h', 0, 1)");
+  await site("cake-y", "u8");
+  await run("INSERT INTO seller_accounts (user_id, stripe_account, country, currency, ready, created_at) VALUES ('u8', 'acct_8', 'US', 'usd', 1, 0)");
+  // A buyer left at Stripe yesterday: their checkout's source waits for an order that never comes.
+  await run("INSERT INTO site_checkouts (session_id, site_slug, source, medium, campaign, created_at) VALUES ('cs_left', 'cake-y', 'newsletter', '', '', ?)", [Date.now() - 86_400_000]);
+  let listed = 0;
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    if (new URL(String(input)).pathname === "/v1/checkout/sessions") listed++;
+    return Response.json({ data: [] });
+  }) as typeof fetch;
+  const cookie = (await createSession("u8", true)).split(";")[0];
+  const load = (days: number) => funnelRoute.GET(new Request(`https://www.flash-app.dev/api/sites/cake-y/funnel?days=${days}`, { headers: { cookie } }), ctx("cake-y"));
+  // The owner opens Visits, then tries each range.
+  for (const days of [30, 7, 90, 30]) assert.equal((await load(days)).status, 200);
+  assert.equal(listed, 1);
+  // 10 minutes later, the next load asks again.
+  const realNow = Date.now;
+  Date.now = () => realNow() + 10 * 60_000 + 1000;
+  try {
+    assert.equal((await load(7)).status, 200);
+  } finally {
+    Date.now = realNow;
+  }
+  assert.equal(listed, 2);
+});
+
 test("the track route counts the steps an app reports, without a source, and always answers 204 at once", async () => {
   forgetServerMemory();
   await site("track-1", "u1", ["booking", "plan-chosen", "menu-opened", "survey", "after-the-cut"]);

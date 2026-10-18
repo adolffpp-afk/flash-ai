@@ -385,6 +385,14 @@ test("Thai, Lao, Khmer and Burmese, written without spaces, may run into a Latin
   assert.equal(passesForLatin("х.com"), true);
   assert.equal(passesForLatin("ana@example.com"), false, "left out for another reason");
   assert.equal(passesForLatin("instagram"), false);
+  // Burmese ဝ is drawn as an o, so a Latin word with it is no source, as with a Cyrillic о.
+  for (const value of ["gဝဝgle.com", "faceboဝk", "yahဝဝ"]) {
+    assert.equal(cleanTag(value), "", value);
+    assert.equal(passesForLatin(value), true, value);
+    assert.deepEqual(touch(`?utm_source=${encodeURIComponent(value)}`, "https://www.bing.com/"), { source: "bing.com", medium: "", campaign: "" }, value);
+  }
+  assert.equal(cleanTag("ဝယ်"), "ဝယ်", "a Burmese word with it is a word");
+  assert.equal(cleanTag("Facebookဝယ်"), "", "but not run into a Latin one");
 });
 
 test("the commas and dots Japanese and Chinese write between words are a dash too", () => {

@@ -51,6 +51,15 @@ test("buyers only go back to the site's own addresses", () => {
     ),
     "https://www.flash-app.dev/p/crumb-1#/menu",
   );
+  // So do analytics tools' campaign tags (Matomo's, HubSpot's ad tags), affiliate networks' click IDs
+  // and email tools' subscriber IDs, which the address dropped whole before it kept the app's query.
+  assert.equal(
+    safeReturn(
+      "https://www.flash-app.dev/p/crumb-1?table=12&mtm_source=newsletter&mtm_campaign=autumn&pk_campaign=autumn&pk_kwd=cake&matomo_campaign=x&piwik_campaign=x&hsa_src=g&hsa_cam=1&fb_source=feed&fb_action_ids=1&_openstat=a&ef_id=b&s_kwcid=c&ml_subscriber=123&ml_subscriber_hash=abc&__s=d&elqTrackId=e&elq=f&vgo_ee=YW5h&omnisendContactID=h&_bta_tid=i&dm_i=j&trk_contact=k&sfmc_sub=l&_bhlid=m&sc_customer=n&cjevent=o&irgwc=1&ranMID=p&ranEAID=q&ranSiteID=r&sscid=s&awc=t#/menu",
+      sites,
+    ),
+    "https://www.flash-app.dev/p/crumb-1?table=12#/menu",
+  );
   // The app's own query, like a table's QR code, a language or an event, comes back with the buyer.
   assert.equal(safeReturn("https://www.flash-app.dev/p/crumb-1?table=12&utm_source=qr#/menu", sites), "https://www.flash-app.dev/p/crumb-1?table=12#/menu");
   assert.equal(safeReturn("https://crumbbakery.com/?lang=es&event=2026-11-28&gclid=x", sites), "https://crumbbakery.com/?lang=es&event=2026-11-28");

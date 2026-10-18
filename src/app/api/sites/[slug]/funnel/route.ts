@@ -7,7 +7,8 @@ import { syncOrders } from "@/lib/server/shop.ts";
 
 export const dynamic = "force-dynamic";
 
-const HOUR = 3600_000;
+const MINUTE = 60_000;
+const HOUR = 60 * MINUTE;
 
 /**
  * The owner's funnel for one published app (?days=7, 30 or 90; anything else is 30): from visit
@@ -23,8 +24,11 @@ export async function GET(request: Request, ctx: RouteContext<"/api/sites/[slug]
   const { slug } = await ctx.params;
   const owns = await ownsSite(user.id, slug);
   // While a checkout waits for its order, the orders whose buyer didn't come back from Stripe (or
-  // whose payment went through later) are fetched first, as Orders does, so Paid has them under their source.
-  if (owns && (await checkoutWaiting(slug))) await syncOrders(user.id, slug).catch((err) => console.error("[flash] funnel order sync failed", err));
+  // whose payment went through later) are fetched first, as Orders does, so Paid has them under their
+  // source. At most once in 10 minutes per app: most checkouts are never paid, so one nearly always waits.
+  if (owns && (await checkoutWaiting(slug)) && !(await overLimit(`funnel-orders:${slug}`, 1, 10 * MINUTE))) {
+    await syncOrders(user.id, slug).catch((err) => console.error("[flash] funnel order sync failed", err));
+  }
   const stats = owns ? await funnelStats(slug, funnelRange(new URL(request.url).searchParams.get("days"))) : null;
   if (!stats) return Response.json({ error: t("Not found") }, { status: 404 });
   return Response.json(stats);
