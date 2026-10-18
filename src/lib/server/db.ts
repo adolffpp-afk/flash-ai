@@ -750,6 +750,8 @@ const SCHEMA = [
   // a duplicate cron call or a double tap gives one run. step is the next step's id ('' for the first),
   // next_paid 1 when that is an AI step (the claim's two pools), parked 1 while the automation is paused.
   // A slot not started by grace_until is missed, for free. The lease is a worker's (see leases.ts).
+  // receipt is the compact receipt its fingerprint (receipt_hash) was made from, kept when old detail
+  // is compacted, so a receipt can still be checked against the chain (see automation-runner.ts).
   `CREATE TABLE IF NOT EXISTS automation_runs (
     id TEXT PRIMARY KEY,
     automation_id TEXT NOT NULL,
@@ -775,6 +777,7 @@ const SCHEMA = [
     stop_requested INTEGER NOT NULL DEFAULT 0,
     credits INTEGER NOT NULL DEFAULT 0,
     summary TEXT NOT NULL DEFAULT '',
+    receipt TEXT NOT NULL DEFAULT '',
     receipt_hash TEXT NOT NULL DEFAULT '',
     scheduled_at INTEGER NOT NULL DEFAULT 0,
     started_at INTEGER NOT NULL DEFAULT 0,

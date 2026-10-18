@@ -241,14 +241,17 @@ export function parseSpec(input: unknown): { spec: Spec } | Refusal {
   return { spec: { v: 1, trigger, steps } };
 }
 
-/** The step a run is at: its id, or the first step for "". */
+/** Where a run is once its last step is done: not a step id (those are letters, digits, _ and -). */
+export const END_STEP = ".";
+
+/** The step a run is at: its id, the first step for "", or null at the end. */
 export const stepAt = (spec: Spec, id: string): Step | null => (id === "" ? (spec.steps[0] ?? null) : (spec.steps.find((s) => s.id === id) ?? null));
 
-/** The step after one: its next, or the one below it in the list ('' at the end). */
+/** The step after one: its next, or the one below it in the list (END_STEP after the last). */
 export function nextStepId(spec: Spec, step: Step): string {
   if (step.next) return step.next;
   const i = spec.steps.findIndex((s) => s.id === step.id);
-  return spec.steps[i + 1]?.id ?? "";
+  return spec.steps[i + 1]?.id ?? END_STEP;
 }
 
 // The sentences that say when a schedule runs.

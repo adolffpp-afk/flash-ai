@@ -39,13 +39,18 @@ export type Hold = {
   created_at: number;
 };
 
-/** Records a hold before any credits move, with the whole worst case of its plan as what is left. */
-export async function recordHold(h: { ref: string; userId: string; runId: string; held: number; model: string; inputCents: number; leftCents: number }) {
-  await sql(
+/**
+ * Records a hold before any credits move, with the whole worst case of its plan as what is left.
+ * A hold with this ref already recorded is kept as it is (false): the charge then finds its replay.
+ */
+export async function recordHold(h: { ref: string; userId: string; runId: string; held: number; model: string; inputCents: number; leftCents: number }): Promise<boolean> {
+  const r = await sql(
     `INSERT INTO credit_holds (ref, user_id, run_id, held, model, input_cents, left_cents, lease_until, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ${DB_NOW} + ?, ${DB_NOW})`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ${DB_NOW} + ?, ${DB_NOW})
+     ON CONFLICT(ref) DO NOTHING`,
     [h.ref, h.userId, h.runId, h.held, h.model, h.inputCents, h.leftCents, HOLD_LEASE_MS],
   );
+  return r.rowsAffected === 1;
 }
 
 /** Keeps the id of the ledger row the hold took. */

@@ -170,3 +170,21 @@ test("a hold is settled once: the second settle (a reaper after a finisher) chan
   assert.equal(Number(h!.credits), 12);
   assert.equal(await H.heartbeat("auto:r20:a1:1", 1, 1), 0, "a heartbeat after the settle changes nothing: the step stops");
 });
+
+test("a step's charge needs its hold open: none when the reaper settled the hold first, and a hold is recorded once", async () => {
+  const u = await F.account("c9", 100);
+  const aid = await F.automation({ userId: u.id });
+  const hold = { userId: u.id, runId: "r21", held: 30, model: "m", inputCents: 0, leftCents: 1 };
+  assert.deepEqual(await once(u.id, aid, "auto:r21:a1:1", 30, { hold: true }), { refused: "hold" }, "no hold recorded: nothing taken");
+  assert.equal(await H.recordHold({ ...hold, ref: "auto:r21:a1:1" }), true);
+  assert.equal(await H.recordHold({ ...hold, ref: "auto:r21:a1:1", held: 99 }), false, "a second record keeps the first");
+  // The reaper settles the hold (a server that stopped before charging) before the charge lands.
+  assert.equal(await H.settleHold("auto:r21:a1:1", 0), true);
+  assert.deepEqual(await once(u.id, aid, "auto:r21:a1:1", 30, { hold: true }), { refused: "hold" });
+  assert.equal(await F.balance(u.id), 100, "nothing taken after the hold was settled");
+  await H.recordHold({ ...hold, ref: "auto:r21:a1:2" });
+  const charged = await once(u.id, aid, "auto:r21:a1:2", 30, { hold: true });
+  assert.ok("id" in charged && !charged.replay);
+  assert.equal(Number((await one<{ held: number }>("SELECT held FROM credit_holds WHERE ref = 'auto:r21:a1:2'"))!.held), 30);
+  assert.equal(await F.balance(u.id), 70);
+});

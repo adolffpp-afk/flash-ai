@@ -122,7 +122,7 @@ export async function topUpFloor(account: string): Promise<number> {
   return Math.max(0, Number(row?.below ?? 0));
 }
 
-export type ChargeOnce = { id: number; replay: boolean } | { refused: "credits" | "topup_floor" | "month" | "day" };
+export type ChargeOnce = { id: number; replay: boolean } | { refused: "credits" | "topup_floor" | "month" | "day" | "hold" };
 
 /**
  * Takes an automation step's credits from exactly one account, once per ref, in one statement (so
@@ -131,7 +131,9 @@ export type ChargeOnce = { id: number; replay: boolean } | { refused: "credits" 
  * - never below the account's auto top-up level when keepTopUpLevel (holds count at full size until
  *   settled), so automation spending can never set off auto top-up (see auto-topup.ts);
  * - never past the automation's month limit, nor its day limit when it has one: its charges since
- *   monthStart (and dayStart) plus this one.
+ *   monthStart (and dayStart) plus this one;
+ * - with hold, only while the credit hold with the same ref is still open (see credit-holds.ts), so a
+ *   step that stalled while the reaper settled its hold can't take credits afterwards.
  * A ref that is already in the ledger isn't charged again: its row comes back as a replay. Otherwise,
  * when nothing was taken, it says which rule refused.
  */
@@ -147,9 +149,11 @@ export async function chargeOnce(o: {
   dayCap?: number;
   dayStart?: number;
   keepTopUpLevel: boolean;
+  hold?: boolean;
 }): Promise<ChargeOnce> {
   const amount = Math.max(1, Math.ceil(o.amount));
   const keep = o.keepTopUpLevel ? 1 : 0;
+  const hold = o.hold ? 1 : 0;
   const dayCap = o.dayCap ?? 0;
   const dayStart = o.dayStart ?? 0;
   const r = await run(
@@ -162,6 +166,7 @@ export async function chargeOnce(o: {
              WHERE automation_id = ? AND automation_id <> '' AND amount < 0 AND created_at >= ?) + ? <= ?
        AND (? = 0 OR (SELECT COALESCE(-SUM(amount), 0) FROM credit_ledger
              WHERE automation_id = ? AND automation_id <> '' AND amount < 0 AND created_at >= ?) + ? <= ?)
+       AND (? = 0 OR EXISTS (SELECT 1 FROM credit_holds WHERE ref = ? AND settled_at = 0))
      ON CONFLICT(ref) WHERE ref IS NOT NULL DO NOTHING`,
     [
       o.account,
@@ -185,11 +190,14 @@ export async function chargeOnce(o: {
       dayStart,
       amount,
       dayCap,
+      hold,
+      o.ref,
     ],
   );
   if (r.rowsAffected === 1) return { id: Number(r.lastInsertRowid), replay: false };
   const seen = await one<{ id: number }>("SELECT id FROM credit_ledger WHERE ref = ?", [o.ref]);
   if (seen) return { id: Number(seen.id), replay: true };
+  if (o.hold && !(await one("SELECT 1 FROM credit_holds WHERE ref = ? AND settled_at = 0", [o.ref]))) return { refused: "hold" };
   const held = await balance(o.account);
   if (held < amount) return { refused: "credits" };
   if (o.keepTopUpLevel && held - (await topUpFloor(o.account)) < amount) return { refused: "topup_floor" };
