@@ -10,7 +10,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { one, run, now } from "./db.ts";
 import { charge, logUsage, settle, spendable, topUpLevel } from "./credits.ts";
 import { overLimit } from "./limits.ts";
-import { CHAT_MODEL, claudeConfigured, getClient } from "../engines/claude.ts";
+import { CHAT_MODEL, claudeConfigured, getClient, mayHaveRun } from "../engines/claude.ts";
 import { MARKUP, callMaxCents, claudeCostCents, claudePrice, creditsFor, worstTokens } from "../credits.ts";
 
 export const MAX_PROMPT_CHARS = 2000;
@@ -195,15 +195,16 @@ export async function askSiteAi(
   } catch (err) {
     // The owner never pays for a failed answer.
     await settle(chargeId, 0);
-    if (err instanceof Anthropic.APIError && err.status !== undefined) {
-      // An error status says Claude made no answer, so it cost nothing: the hold goes back to the day.
-      await giveBack(slug, reserved, hold);
-    } else {
+    if (mayHaveRun(err)) {
       // One that timed out, lost its connection or was cut off part way may still have been made, and
       // Claude bills it: Flash pays that, logged at the most it can cost, and the hold keeps its place
       // in the day's budget, so failed answers can't cost Flash more in a day than that budget.
       const costCents = callMaxCents(CHAT_MODEL, chars, maxTokens);
       await logUsage({ userId: site.user_id, engine: "text", model: "app AI", provider: "anthropic", credits: 0, costCents, ok: false });
+    } else {
+      // Claude refused it with an error status, or the client did before sending it (see mayHaveRun):
+      // no answer was made and it cost nothing, so nothing is logged and the hold goes back to the day.
+      await giveBack(slug, reserved, hold);
     }
     return fail("The AI couldn't answer that. Please try again.", 502);
   }

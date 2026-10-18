@@ -1211,15 +1211,17 @@ export async function writeScenes(request: string, scenes: number, seconds: numb
 }
 
 /**
- * A helper call that ended without an answer because the connection failed, it timed out or the
- * answer was cut off part way may still have run, and Claude bills it, so it is metered at the most
- * it can cost before the error goes on. A call Claude refused with an error status never ran, nor
- * did one the client itself refused before sending it (its own errors that aren't an APIError), so
- * those cost nothing.
+ * Whether a Claude call that ended with err may still have run, and been billed: the connection
+ * failed, it timed out or the answer was cut off part way. A call Claude refused with an error status
+ * never ran, nor did one the client itself refused before sending it (its own errors that aren't an
+ * APIError), so those cost nothing.
  */
+export const mayHaveRun = (err: unknown): boolean =>
+  err instanceof Anthropic.APIError ? err.status === undefined : !(err instanceof Anthropic.AnthropicError);
+
+/** A helper call that may have run (see mayHaveRun) is metered at the most it can cost before the error goes on. */
 export function meterLost(err: unknown, meter: Meter, mostCents: number, model = HELPER_MODEL): never {
-  const mayHaveRun = err instanceof Anthropic.APIError ? err.status === undefined : !(err instanceof Anthropic.AnthropicError);
-  if (mayHaveRun) meter("anthropic", model, mostCents);
+  if (mayHaveRun(err)) meter("anthropic", model, mostCents);
   throw err;
 }
 

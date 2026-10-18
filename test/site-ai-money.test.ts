@@ -149,6 +149,32 @@ test("a dropped call may still have run: it is logged at the most it can cost, a
   assert.equal(Number((await one<{ n: number }>("SELECT COUNT(*) AS n FROM usage"))?.n), rows);
 });
 
+test("an answer the client refused before sending it never left Flash: as with meterLost, no cost is logged for it, and its hold goes back to the day", async () => {
+  const { default: Anthropic } = await import("@anthropic-ai/sdk");
+  const { getClient, meterLost } = await import("../src/lib/engines/claude.ts");
+  await saveAiSettings("shop", true, 500);
+  await setBalance("owner", 500);
+  const refused = new Anthropic.AnthropicError("Streaming is required for operations that may take longer than 10 minutes.");
+  let metered = 0;
+  assert.throws(() => meterLost(refused, () => void metered++, 7));
+  assert.equal(metered, 0, "meterLost meters nothing for it");
+  const [before, day, rows] = [await balance(), await today(), await usageCount()];
+  const messages = getClient().beta.messages;
+  const create = messages.create;
+  messages.create = (() => Promise.reject(refused)) as unknown as typeof create;
+  hits = 0;
+  try {
+    assert.equal((await ask()).status, 502);
+  } finally {
+    messages.create = create;
+  }
+  assert.equal(hits, 0, "nothing reached Claude");
+  assert.equal(await usageCount(), rows, "no cost is logged");
+  assert.deepEqual(await today(), day, "the day's budget is as it was");
+  assert.equal(await balance(), before, "and the owner pays nothing");
+  assert.equal((await ask()).status, 200, "the next question is sent as usual");
+});
+
 test("an answer gives up in time for the request to settle its hold", async () => {
   await ask();
   assert.equal(Number(timeoutHeader), ANSWER_TIMEOUT_MS / 1000, "the client's own 10 minutes aren't used");
