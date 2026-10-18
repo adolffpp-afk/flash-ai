@@ -42,6 +42,98 @@ test("a PDF's text is read page by page", async () => {
   assert.match(text, /Item Monthly\nRent \$2,400\nFlour \$600\n/);
 });
 
+/** A real PDF in Helvetica, one page for each list of lines, made here so a big one needn't be kept. */
+function makePdf(pages: string[][]): Uint8Array {
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    `<< /Type /Pages /Kids [${pages.map((_, i) => `${4 + 2 * i} 0 R`).join(" ")}] /Count ${pages.length} >>`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+  ];
+  pages.forEach((lines, i) => {
+    const height = 40 + 10 * lines.length;
+    const content = `BT /F1 8 Tf 10 TL 20 ${height - 20} Td\n${lines.map((l) => `(${l}) Tj T*`).join("\n")}\nET`;
+    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 ${height}] /Resources << /Font << /F1 3 0 R >> >> /Contents ${5 + 2 * i} 0 R >>`);
+    objects.push(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
+  });
+  let pdf = "%PDF-1.4\n";
+  const offsets = objects.map((body, i) => {
+    const at = pdf.length;
+    pdf += `${i + 1} 0 obj\n${body}\nendobj\n`;
+    return at;
+  });
+  const xref = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, "0")} 00000 n \n`).join("")}`;
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return new Uint8Array(Buffer.from(pdf, "latin1"));
+}
+
+test("a real PDF read with pdf.js gives the text of its pages read whole and cut, and a long page is read only up to the limit", async () => {
+  const { CUT_NOTE, MAX_TEXT } = await import("../src/lib/office.ts");
+  // A short page, a page of 4,000 lines (about 240,000 characters, past a chat's limit), and a short page.
+  const pdf = makePdf([
+    ["Golden Crumb, Montr\\351al", "A plan for the year ahead."],
+    Array.from({ length: 4000 }, (_, n) => `Line ${n + 1}: Golden Crumb bakes rye and sourdough every morning.`),
+    ["The last page."],
+  ]);
+  // How the chat read a PDF before #126 (each page whole, then cut), at any limit.
+  const readWhole = async (limit: number) => {
+    const task = pdfjs.getDocument({ data: pdf.slice() });
+    const doc = await task.promise;
+    const pages: string[] = [];
+    let length = 0;
+    for (let n = 1; n <= doc.numPages && length < limit; n++) {
+      const text = pageText((await (await doc.getPage(n)).getTextContent()).items);
+      pages.push(`--- Page ${n} ---\n${text}`);
+      length += text.length;
+    }
+    await task.destroy();
+    const text = pages.join("\n\n");
+    return text.length > limit || pages.length < doc.numPages ? `${text.slice(0, limit)}${CUT_NOTE}` : text;
+  };
+  // pdf.js as pdfText uses it, counting the pages opened and the text pieces it sent.
+  let opened: number[] = [];
+  let pieces = 0;
+  const counted = {
+    getDocument: (src: { data: Uint8Array }) => {
+      const task = pdfjs.getDocument(src);
+      const promise = task.promise.then((doc) => ({
+        numPages: doc.numPages,
+        getPage: async (n: number) => {
+          opened.push(n);
+          const page = await doc.getPage(n);
+          const count = new TransformStream<{ items: object[] }, { items: object[] }>({
+            transform(chunk, controller) {
+              pieces += chunk.items.length;
+              controller.enqueue(chunk);
+            },
+          });
+          return { streamTextContent: () => (page.streamTextContent() as unknown as ReadableStream<{ items: object[] }>).pipeThrough(count) };
+        },
+      }));
+      return { promise, destroy: () => task.destroy() };
+    },
+  };
+  const all = await readWhole(10_000_000);
+  assert.match(all, /^--- Page 1 ---\nGolden Crumb, Montréal\nA plan for the year ahead\.\n\n--- Page 2 ---\nLine 1: Golden Crumb/);
+  assert.ok(all.endsWith("Line 4000: Golden Crumb bakes rye and sourdough every morning.\n\n--- Page 3 ---\nThe last page."));
+  assert.ok(all.length > MAX_TEXT);
+  opened = [];
+  pieces = 0;
+  assert.equal(await pdfText(pdf.slice(), counted, 10_000_000), all, "read whole when it fits");
+  assert.deepEqual(opened, [1, 2, 3]);
+  const everyPiece = pieces;
+  for (const limit of [300, 2_000, 20_000, MAX_TEXT]) {
+    opened = [];
+    pieces = 0;
+    const text = await pdfText(pdf.slice(), counted, limit);
+    assert.equal(text, await readWhole(limit), `the same text at ${limit} characters`);
+    assert.ok(text.endsWith(CUT_NOTE));
+    assert.deepEqual(opened, [1, 2], "the page after the cut isn't opened");
+    assert.ok(pieces < everyPiece * (limit === MAX_TEXT ? 0.95 : 0.2), `${pieces} of ${everyPiece} pieces read at ${limit}`);
+  }
+  assert.equal(await pdfText(pdf.slice(), pdfjs), await readWhole(MAX_TEXT), "a chat's usual limit");
+});
+
 test("text pieces join into lines", () => {
   assert.equal(pageText([{ str: "Hello", hasEOL: false }, { str: " world  ", hasEOL: true }, { str: "", hasEOL: true }, { str: "", hasEOL: true }, { str: "Bye" }]), "Hello world\n\nBye");
 });
