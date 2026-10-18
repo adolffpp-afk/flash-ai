@@ -13,7 +13,6 @@
  * a run's steps do (automation-steps.ts).
  */
 import { after } from "next/server";
-import { gunzipSync } from "node:zlib";
 import { FINISHED, isPaid, MAX_NAME_CHARS, MAX_ON, MAX_SUB_DAILY, MONTH_LEFT, NO_CREDITS, NOTICES, ONCE_PASSED, parseSpec, PRICE_CHANGED, QUEUED, runnerFor, SPEC_INVALID, TOO_MANY_ON, TOO_MANY_SUB_DAILY, describeNext, describeWhen, type Spec } from "../automations.ts";
 import { validTimeZone } from "../context-note.ts";
 import { LEVELS } from "../levels.ts";
@@ -21,7 +20,7 @@ import { monthStart, nextFire, nextFires, nextMonthStart, ONCE_MAX_AHEAD_MS, ONC
 import { isVerified } from "./account.ts";
 import { fromOwnPage, getUser, unauthorized, type User } from "./auth.ts";
 import { estimateSpec, type Estimate } from "./automation-estimate.ts";
-import { advanceRun, finish, savedReceipt, SELF_ENDING, triesOf, verifyReceipt, versionSpec, type CompactReceipt, type SavedReceipt } from "./automation-runner.ts";
+import { advanceRun, finish, savedReceipt, SELF_ENDING, sourcesOf, triesOf, verifyReceipt, versionSpec, type CompactReceipt, type SavedReceipt } from "./automation-runner.ts";
 import { outputText, type AutoRow, type RunRow } from "./automation-steps.ts";
 import { deleteAutomationNow } from "./automation-tick.ts";
 import { liveHealth } from "./automation-admin.ts";
@@ -31,6 +30,7 @@ import { automationSpent, balance, ensureMonthlyCredits, topUpFloor } from "./cr
 import { all, db, one, run as sql } from "./db.ts";
 import { translatorFor, type ServerT } from "./i18n.ts";
 import { randomId, sha256 } from "./ids.ts";
+import { canonicalJson } from "./mcp-client.ts";
 import { DB_NOW, insertOwnerRun } from "./leases.ts";
 import { overLimit } from "./limits.ts";
 import { automationLink, noticeText } from "./notifications.ts";
@@ -357,8 +357,11 @@ export async function editAutomation(g: Gate, id: string, body: Record<string, u
   // ends at its new time): a rename or a new instruction keeps a slot that is due and not yet taken by the
   // tick (an automation that is on has a next slot unless it is run by hand or a one-off whose slot was
   // taken, and those have none to work out).
+  // Kept, the column is left as it is, not written back as read: the tick may take that slot meanwhile
+  // (next_at 0, its run made), and writing it back would bring a taken slot back.
   const moved = JSON.stringify(f.spec.trigger) !== JSON.stringify(spec?.trigger) || f.timeZone !== a.time_zone;
-  const nextAt = runGoesOn ? 0 : (status === "on" && (turningOn || moved)) || (status === "paused" && moved) ? nextSlot(f.spec, f.timeZone) : Number(a.next_at);
+  const keepsNext = !runGoesOn && !((status === "on" && (turningOn || moved)) || (status === "paused" && moved));
+  const nextAt = runGoesOn ? 0 : keepsNext ? Number(a.next_at) : nextSlot(f.spec, f.timeZone);
   // A pause that ends by itself, moved, is looked at again as its run's end would have set it: a wait for
   // credits at the new next slot, and a one-off's at its new time whatever paused it (see resumePaused).
   const once = f.spec.trigger.type === "schedule" && f.spec.trigger.when.kind === "once";
@@ -375,7 +378,7 @@ export async function editAutomation(g: Gate, id: string, body: Record<string, u
     [
       {
         // Only over the automation as it was read: a run pausing it meanwhile, or another edit, wins.
-        sql: `UPDATE automations SET name = ?, time_zone = ?, version = ?, trigger_kind = ?, status = ?, next_at = ?, cap_run = ?, cap_month = ?, quoted_max = ?,
+        sql: `UPDATE automations SET name = ?, time_zone = ?, version = ?, trigger_kind = ?, status = ?, next_at = CASE WHEN ? = 1 THEN next_at ELSE ? END, cap_run = ?, cap_month = ?, quoted_max = ?,
                      paused_reason = ?, paused_at = ?, resume_at = ?, need_credits = ?, fail_streak = CASE WHEN ? = 1 THEN 0 ELSE fail_streak END, updated_at = ${DB_NOW}
                WHERE id = ? AND user_id = ? AND version = ? AND status = ?`,
         args: [
@@ -384,6 +387,7 @@ export async function editAutomation(g: Gate, id: string, body: Record<string, u
           version,
           f.spec.trigger.type,
           status,
+          keepsNext ? 1 : 0,
           nextAt,
           capRun,
           capMonth,
@@ -555,14 +559,6 @@ export async function receipt(g: Gate, runId: string) {
   // A step under way shows what its hold keeps (its row gets its own held when it settles), and a step
   // whose call was sent the model its hold names (its row gets its own when it settles).
   const holdOf = new Map(holds.map((h) => [h.ref, h]));
-  const sourcesOf = (output: Uint8Array | null) => {
-    try {
-      const parsed = output ? (JSON.parse(gunzipSync(Buffer.from(output)).toString("utf8")) as { sources?: { url: string; title?: string }[] }) : {};
-      return (parsed.sources ?? []).map((s) => ({ url: s.url, title: s.title ?? "" }));
-    } catch {
-      return [];
-    }
-  };
   const view = (s: (typeof steps)[number], attempt: number) => ({
     stepId: s.step_id,
     // Its try (waits aren't tries); 0 for waits, which say how many in a row (waits).
@@ -600,7 +596,8 @@ export async function receipt(g: Gate, runId: string) {
     run: {
       id: r.id,
       automationId: r.automation_id,
-      name: a?.name ?? "",
+      // Once it ended, the name it ran under (fingerprinted), else its automation's.
+      name: saved?.receipt.name ?? a?.name ?? "",
       version: Number(r.version),
       origin: r.origin,
       trigger: JSON.parse(r.trigger_json || "{}") as unknown,
@@ -631,41 +628,65 @@ export async function receipt(g: Gate, runId: string) {
   };
 }
 
-/** A step's waits in a row as a receipt shows them (see receipt()). */
-type WaitLine = { stepId: string; waits: number; held: number; credits: number; status: string };
+type Shown = NonNullable<Awaited<ReturnType<typeof receipt>>>;
+type Line = Record<string, unknown>;
 
 /**
- * Whether the readable part of a downloaded receipt (its run and steps, as receipt() gives them) says
- * what its fingerprinted compact receipt says: the run's credits, status and outcome, and each attempt
- * of each step, with its output (left out of the check once compacted to nothing). Its wait lines
- * (waits for other requests' holds, which aren't tries) add up to the waits the fingerprint counts,
- * each over and free, and are the ones Flash's record shows (waits: from receipt()). A file with only
- * the compact receipt has nothing more to check.
+ * Whether a downloaded receipt (receipt() as it was then) says what Flash's record says now and what its
+ * fingerprinted compact receipt says:
+ * - every line (its run, each try and wait, its holds, its fingerprint) is Flash's, its automation
+ *   deleted since aside. What Flash compacted away since (what a step sent, wrote and cited) is the
+ *   file's if it is what was fingerprinted, so a line left empty matches only where Flash's is empty too;
+ * - each try's kind, status, level, model, note, hold and charge, and the SHA-256 of what it sent, wrote
+ *   and cited, are the fingerprint's, as are the run's name, version, trigger, charge, status, outcome and
+ *   summary, and its wait lines add up to the waits it counts.
+ * A file with only the compact receipt has nothing more to check. (The words of its notes are Flash's in
+ * the reader's language, as receipt() gives them.)
  */
-function readableMatches(file: Record<string, unknown>, compact: CompactReceipt, waits: WaitLine[]): boolean {
+function readableMatches(file: Line, compact: CompactReceipt, mine: Shown): boolean {
   if (file.run === undefined && file.steps === undefined) return true;
-  const run = file.run as Record<string, unknown> | null;
+  const run = file.run as Line | null;
   const rows = Array.isArray(file.steps) ? (file.steps as unknown[]) : null;
   if (!run || typeof run !== "object" || !rows || !rows.every((x) => Boolean(x) && typeof x === "object")) return false;
-  const lines = (rows as Record<string, unknown>[]).filter((x) => x.note === "waiting");
-  const counted = lines.reduce((n, x) => n + (Number.isInteger(x.waits) && Number(x.waits) > 0 ? Number(x.waits) : NaN), 0);
-  if (counted !== (compact.waited ?? 0) || lines.length !== waits.length) return false;
-  const same = (x: Record<string, unknown>, w: WaitLine) =>
-    x.stepId === w.stepId && x.waits === w.waits && x.held === w.held && x.credits === 0 && w.credits === 0 && x.status === "waited" && w.status === "waited" && !x.noteText;
-  if (!lines.every((x, i) => same(x, waits[i]))) return false;
-  // Its tries: each is one of the fingerprint's.
-  const steps = (rows as Record<string, unknown>[]).filter((x) => x.note !== "waiting");
-  if (steps.length !== compact.steps.length) return false;
-  if (run.id !== compact.run || run.credits !== compact.credits || run.status !== compact.status || run.outcome !== compact.outcome) return false;
-  return compact.steps.every((c) => {
-    const s = steps.find((x) => x && typeof x === "object" && x.stepId === c.id && x.attempt === c.attempt);
-    return Boolean(s) && s!.status === c.status && s!.held === c.held && s!.credits === c.credits && typeof s!.output === "string" && (s!.output === "" || sha256(s!.output) === c.output);
+  const steps = rows as Line[];
+  if (steps.length !== mine.steps.length) return false;
+  const tryOf = (s: { stepId: unknown; attempt: unknown; waits: unknown }) => (Number(s.waits) === 0 ? compact.steps.find((c) => c.id === s.stepId && c.attempt === s.attempt) : undefined);
+  const fits = (x: unknown, hash: string) => typeof x === "string" && x !== "" && sha256(x) === hash;
+  // Flash's record, with what it compacted since taken from the file where the fingerprint says it is so.
+  const expected = structuredClone(mine) as unknown as { run: Line; steps: Line[] };
+  delete expected.run.deleted;
+  for (const [i, s] of expected.steps.entries()) {
+    const c = tryOf(s as Shown["steps"][number]);
+    const f = steps[i];
+    if (!c) continue;
+    if (s.input === "" && fits(f.input, c.input)) s.input = f.input;
+    if (s.output === "" && fits(f.output, c.output)) s.output = f.output;
+    if (Array.isArray(s.sources) && !s.sources.length && Array.isArray(f.sources) && f.sources.length && sha256(canonicalJson(f.sources)) === c.sources) s.sources = f.sources;
+  }
+  const shownRun = { ...run };
+  delete shownRun.deleted;
+  if (canonicalJson({ ...file, run: shownRun }) !== canonicalJson(expected)) return false;
+  // The fingerprint says the same.
+  const waits = steps.filter((x) => Number(x.waits) > 0);
+  if (waits.reduce((n, x) => n + Number(x.waits), 0) !== (compact.waited ?? 0) || !waits.every((x) => x.credits === 0 && x.status === "waited")) return false;
+  const tries = steps.filter((x) => Number(x.waits) === 0);
+  if (tries.length !== compact.steps.length) return false;
+  if (run.id !== compact.run || run.automationId !== compact.automation || run.name !== compact.name || run.version !== compact.version) return false;
+  if (run.origin !== compact.trigger.origin || run.scheduledAt !== compact.trigger.at || sha256(String(run.summary)) !== compact.summary) return false;
+  if (run.credits !== compact.credits || run.status !== compact.status || run.outcome !== compact.outcome) return false;
+  return tries.every((s) => {
+    const c = tryOf(s as Shown["steps"][number]);
+    if (!c || s.kind !== c.kind || s.status !== c.status || s.level !== c.level || s.model !== c.model || s.note !== c.note || s.held !== c.held || s.credits !== c.credits) return false;
+    // Empty where Flash's record is empty too (above): compacted (the fingerprint has what it was), or nothing there.
+    const text = (x: unknown, hash: string) => x === "" || fits(x, hash);
+    return text(s.input, c.input) && text(s.output, c.output) && Array.isArray(s.sources) && (!s.sources.length || sha256(canonicalJson(s.sources)) === c.sources);
   });
 }
 
 /**
  * Checks a receipt the user saved earlier: its fingerprint is in the automation's chain (see
- * verifyReceipt), it is this run's, and what it shows in words is what was fingerprinted.
+ * verifyReceipt), it is this run's, and what it shows in words is Flash's record and what was fingerprinted.
+ * A file with no fingerprinted receipt (saved before the run ended) says so (unfinished).
  */
 export async function checkReceipt(g: Gate, runId: string, body: Record<string, unknown>) {
   // Reads only: also a run of an automation being deleted, as its receipt is.
@@ -674,10 +695,11 @@ export async function checkReceipt(g: Gate, runId: string, body: Record<string, 
   const file = body.receipt as Record<string, unknown> | undefined;
   // The whole download, or just its { prev, receipt, hash }.
   const saved = (!file || typeof file !== "object" ? null : "hash" in file && "prev" in file ? file : file.receipt) as SavedReceipt | null;
+  if (!saved && file && typeof file === "object" && (file.run as { id?: unknown } | null)?.id === r.id && !file.fingerprint) return json({ matches: false, reason: "unfinished" });
   if (!saved || typeof saved !== "object" || saved.receipt?.run !== r.id) return json({ matches: false });
   if (!(await verifyReceipt(r.automation_id, saved).catch(() => false))) return json({ matches: false });
-  const waits = ((await receipt(g, r.id))?.steps ?? []).filter((x) => x.waits > 0);
-  return json({ matches: readableMatches(file!, saved.receipt, waits) });
+  const mine = await receipt(g, r.id);
+  return json({ matches: Boolean(mine) && readableMatches(file!, saved.receipt, mine!) });
 }
 
 /** Stop, Retry (a new run, its price confirmed) and read (seen) on a run; only read on one of an automation being deleted. */

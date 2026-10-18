@@ -27,7 +27,7 @@ await sql("PRAGMA journal_mode = WAL");
 const F = await import("./support/automation-fixtures.ts");
 const { RUNNER_VERSION } = await import("../src/lib/automations.ts");
 const { reaperCredits } = await import("../src/lib/server/credit-holds.ts");
-const { creditsFor, claudePrice } = await import("../src/lib/credits.ts");
+const { creditsFor, claudePrice, readCostCents } = await import("../src/lib/credits.ts");
 const { LEVEL_MODELS } = await import("../src/lib/engines/claude.ts");
 
 const workers: Worker[] = [];
@@ -252,3 +252,49 @@ test("killed after Claude's reply, before the settle: charged exactly its final 
   assert.equal(Number(r.ledger[0].amount), -sonicBill(), "what chat would have charged for that reply");
   assert.deepEqual([r.run.status, r.run.outcome], ["interrupted", "interrupted"]);
 });
+
+for (const credits of [100, 1000]) {
+  test(`stepped down (Ultra busy, then Vision), killed mid-call with ${credits} credits: the reaper charges by the Vision call that was sent, and names it`, async () => {
+    const user = await F.account(`stepdown${credits}`, credits);
+    const name = `Stepped down ${credits}`;
+    const spec = { v: 1, trigger: { type: "manual" }, steps: [{ id: "a1", do: "ai", mode: "write", level: "ultra", prompt: "Write one line about the weather." }, { id: "n1", do: "notify" }] };
+    const aid = await F.automation({ userId: user.id, spec: spec as never, capRun: 2000, capMonth: 20000, name });
+    const rid = await F.runRow({ automationId: aid, userId: user.id });
+    // Ultra answers 529 before it starts, so the step steps down to Vision, whose reply never ends.
+    claude.state.replies = [{ status: 529 }, { never: true }];
+    const k = await F.startWorker(dbFile);
+    workers.push(k);
+    const mine = (await k.call<{ id: string; owner: string }[]>("claim", `wsd${credits}`, LIMITS)).find((c) => c.id === rid)!;
+    void k.call("advance", rid, mine.owner, Date.now() + 760_000).catch(() => {});
+    const until = Date.now() + 5000;
+    while (claude.state.open < 1 && Date.now() < until) await new Promise((r) => setTimeout(r, 10));
+    assert.equal(claude.state.open, 1, "Vision's reply had begun");
+    const sent = claude.streamed().filter((x) => String(x.body.system).includes(`"${name}"`));
+    assert.deepEqual(sent.map((x) => x.body.model), [LEVEL_MODELS.ultra, LEVEL_MODELS.vision]);
+    const maxTokens = Number(sent[1].body.max_tokens);
+    assert.equal(JSON.stringify(sent[1].body).includes("fallback"), false, "the Vision call asks for no fallback");
+    await k.kill();
+    while (claude.state.open > 0 && Date.now() < until + 5000) await new Promise((r) => setTimeout(r, 10));
+    const hold = (await one<Record<string, number | string>>("SELECT * FROM credit_holds WHERE run_id = ?", [rid]))!;
+    // Before the Vision call was sent, its hold named it, at its prices, with the most it may cost.
+    // (Its input as counted: Claude's 1200 tokens and the room the step's tools take.)
+    const tokens = Math.round((Number(hold.input_cents) * 1e6) / claudePrice(LEVEL_MODELS.vision).input);
+    assert.ok(tokens >= 1200 && Math.abs(Number(hold.input_cents) - readCostCents(LEVEL_MODELS.vision, tokens)) < 1e-9, `read at Vision's price (${hold.input_cents})`);
+    const visionMost = readCostCents(LEVEL_MODELS.vision, tokens) + (maxTokens * claudePrice(LEVEL_MODELS.vision, tokens).output) / 1e6;
+    assert.equal(hold.model, LEVEL_MODELS.vision);
+    assert.ok(Math.abs(Number(hold.cap_cents) - visionMost) < 1e-9, `${hold.cap_cents} vs ${visionMost}`);
+    const shift = Number(hold.lease_until) - Date.now() + 1000;
+    await sql("UPDATE credit_holds SET lease_until = lease_until - ?, checked_at = checked_at - ?, created_at = created_at - ? WHERE run_id = ?", [shift, shift, shift, rid]);
+    await sql("UPDATE automation_runs SET lease_until = 1 WHERE id = ?", [rid]);
+    await B.call("tick", `tsd${credits}`);
+    const charged = -Number((await one<{ s: number }>("SELECT COALESCE(SUM(amount), 0) AS s FROM credit_ledger WHERE ref LIKE ?", [`auto:${rid}:%`]))!.s);
+    assert.ok(charged > 0 && charged <= creditsFor(visionMost), `charged ${charged}, at most ${creditsFor(visionMost)} for the Vision call`);
+    assert.ok(charged < Number(hold.held), "less than the hold sized for Ultra");
+    const usage = await all<{ model: string }>("SELECT model FROM usage WHERE automation_id = ?", [aid]);
+    assert.deepEqual(usage.map((u) => u.model), [LEVEL_MODELS.vision], "/admin names the model that was called");
+    const step = (await one<{ model: string; status: string }>("SELECT model, status FROM automation_run_steps WHERE run_id = ? AND step_id = 'a1'", [rid]))!;
+    assert.deepEqual([step.model, step.status], [LEVEL_MODELS.vision, "interrupted"], "so does its receipt");
+    const run = (await one<{ status: string; credits: number }>("SELECT status, credits FROM automation_runs WHERE id = ?", [rid]))!;
+    assert.deepEqual([run.status, Number(run.credits)], ["interrupted", charged]);
+  });
+}

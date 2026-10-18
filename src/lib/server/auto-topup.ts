@@ -10,8 +10,8 @@
  * added on top, as at checkout.
  */
 import { CREDIT_PACKS } from "../credits.ts";
-import { addPurchase, disputed, topUpBalance } from "./credits.ts";
-import { one, run, now } from "./db.ts";
+import { addPurchase, autoHoldsKeptOut, disputed, topUpBalance } from "./credits.ts";
+import { db, one, run, now } from "./db.ts";
 import { currency, paymentsEnabled, stripe, taxOn } from "./stripe.ts";
 
 export const MAX_PER_MONTH = 4;
@@ -73,11 +73,18 @@ export async function setAutoTopUp(
   if (!CREDIT_PACKS.some((p) => p.id === choice.pack) || !TOP_UP_LEVELS.some((l) => l === choice.below)) return { error: "bad choice" };
   const row = await one<Row>("SELECT * FROM auto_topups WHERE user_id = ?", [user.id]);
   const card = Boolean(row?.payment_method);
-  await run(
-    `INSERT INTO auto_topups (user_id, enabled, pack, below, updated_at) VALUES (?, ?, ?, ?, ?)
-     ON CONFLICT(user_id) DO UPDATE SET enabled = excluded.enabled, pack = excluded.pack, below = excluded.below,
-       failed = CASE WHEN excluded.enabled = 1 THEN '' ELSE failed END, updated_at = excluded.updated_at`,
-    [user.id, choice.enabled && card ? 1 : 0, choice.pack, choice.below, now()],
+  // With the automation holds open now (in the same transaction): each was kept above the level before.
+  await (await db()).batch(
+    [
+      {
+        sql: `INSERT INTO auto_topups (user_id, enabled, pack, below, updated_at) VALUES (?, ?, ?, ?, ?)
+              ON CONFLICT(user_id) DO UPDATE SET enabled = excluded.enabled, pack = excluded.pack, below = excluded.below,
+                failed = CASE WHEN excluded.enabled = 1 THEN '' ELSE failed END, updated_at = excluded.updated_at`,
+        args: [user.id, choice.enabled && card ? 1 : 0, choice.pack, choice.below, now()],
+      },
+      autoHoldsKeptOut(user.id),
+    ],
+    "write",
   );
   if (!choice.enabled || card) return {};
   if (!paymentsEnabled()) return { error: "payments off" };
@@ -120,9 +127,16 @@ export async function saveCard(sessionId: string): Promise<boolean> {
   const user = session.metadata?.user;
   const pm = session.setup_intent?.payment_method;
   if (!user || session.metadata?.auto_topup !== "1" || !pm || session.setup_intent?.status !== "succeeded") return false;
-  const r = await run(
-    "UPDATE auto_topups SET payment_method = ?, customer = COALESCE(?, customer), enabled = 1, failed = '', updated_at = ? WHERE user_id = ?",
-    [pm, session.customer ?? null, now(), user],
+  // Turned on: with the automation holds open now, in the same transaction (see autoHoldsKeptOut).
+  const [r] = await (await db()).batch(
+    [
+      {
+        sql: "UPDATE auto_topups SET payment_method = ?, customer = COALESCE(?, customer), enabled = 1, failed = '', updated_at = ? WHERE user_id = ?",
+        args: [pm, session.customer ?? null, now(), user],
+      },
+      autoHoldsKeptOut(user),
+    ],
+    "write",
   );
   return r.rowsAffected === 1;
 }
@@ -161,7 +175,7 @@ export async function maybeAutoTopUp(userId: string): Promise<boolean> {
   if (!paymentsEnabled()) return false;
   const row = await one<Row>("SELECT * FROM auto_topups WHERE user_id = ? AND enabled = 1 AND payment_method IS NOT NULL", [userId]);
   const pack = CREDIT_PACKS.find((p) => p.id === row?.pack);
-  // An automation's open hold counts as not spent here (see topUpBalance): automations never set this off.
+  // An automation's open hold counts as not spent here, nor one open when the level was set (see topUpBalance): automations never set this off.
   if (!row || !pack || (await topUpBalance(userId)) >= Number(row.below)) return false;
   if ((await topUpsThisMonth(userId)) >= MAX_PER_MONTH || (await disputed(userId))) return false;
   const at = now();

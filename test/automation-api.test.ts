@@ -20,7 +20,7 @@ process.env.DATABASE_URL = ":memory:";
 process.env.ANTHROPIC_BASE_URL = claude.url;
 process.env.ANTHROPIC_API_KEY = "chat-key-for-tests";
 process.env.ANTHROPIC_AUTOMATIONS_API_KEY = "automations-key-for-tests";
-process.env.FLASH_ADMIN_EMAILS = ["boss", "chief", "origin", "fresh", "many", "often", "pricey", "edits", "reader", "counter", "estimator", "busy", "tidy", "card", "meboss", "drain"].map((n) => `${n}@example.com`).join(", ");
+process.env.FLASH_ADMIN_EMAILS = ["boss", "chief", "origin", "fresh", "many", "often", "pricey", "edits", "reader", "counter", "estimator", "busy", "tidy", "card", "meboss", "drain", "lvcard", "lvraise"].map((n) => `${n}@example.com`).join(", ");
 process.env.AUTOMATIONS_DEV = "1";
 const SECRET = "c".repeat(40);
 process.env.CRON_SECRET = SECRET;
@@ -43,8 +43,15 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
   if (!url.startsWith("http://stripe.test/")) return realFetch(input, init);
   const path = new URL(url).pathname.replace("/v1", "");
   stripeCalls.push(path);
+  if (path === "/customers") return Response.json({ id: "cus_new" });
+  if (path === "/checkout/sessions") return Response.json({ url: "https://checkout.stripe.test/setup" });
+  // The setup checkout a card was saved with, for cardUser (see saveCard).
+  if (path.startsWith("/checkout/sessions/")) {
+    return Response.json({ customer: "cus_new", metadata: { user: cardUser, auto_topup: "1" }, setup_intent: { payment_method: "pm_1", status: "succeeded" } });
+  }
   return path === "/payment_intents" ? Response.json({ id: `pi_${stripeCalls.length}`, status: "succeeded" }) : Response.json({});
 }) as typeof fetch;
+let cardUser = "";
 
 const { one, all, run: sql } = await import("../src/lib/server/db.ts");
 const R = await import("../src/lib/server/automation-runner.ts");
@@ -56,6 +63,7 @@ const API = await import("../src/lib/server/automation-api.ts");
 const E = await import("../src/lib/server/automation-estimate.ts");
 const { worstTokens } = await import("../src/lib/credits.ts");
 const C = await import("../src/lib/server/credits.ts");
+const TU = await import("../src/lib/server/auto-topup.ts");
 const { automationLink } = await import("../src/lib/server/notifications.ts");
 const { automationStats, cronHealth } = await import("../src/lib/server/automation-admin.ts");
 const { adminStats } = await import("../src/lib/server/admin-stats.ts");
@@ -548,6 +556,69 @@ test("a chat reply while an automation's worst-case hold is open doesn't set off
   assert.equal(stripeCalls.includes("/payment_intents"), false, "nor after it settled");
 });
 
+/** Runs an Ultra Write step, and calls change while its hold is open (its call held until then). */
+async function whileHeld(userId: string, change: () => Promise<void>) {
+  const dear: Spec = { ...F.WRITE_SPEC, steps: [{ id: "a1", do: "ai", mode: "write", level: "ultra", prompt: "Write one line." }, { id: "n1", do: "notify" }] };
+  const aid = await F.automation({ userId, spec: dear, capRun: 500, capMonth: 5000 });
+  const rid = await F.runRow({ automationId: aid, userId });
+  let release!: () => void;
+  claude.state.replies.push({ text: "One line.", usage: { input_tokens: 1200, output_tokens: 3000 }, hold: new Promise<void>((r) => (release = r)) });
+  await sql("UPDATE automation_runs SET lease_owner = 'w:' || id, lease_until = CAST(unixepoch('subsec') * 1000 AS INTEGER) + 120000, status = 'running' WHERE id = ?", [rid]);
+  const running = R.advanceRun(rid, `w:${rid}`, Date.now() + 760_000);
+  for (let i = 0; i < 500 && !(await one("SELECT 1 FROM credit_holds WHERE run_id = ? AND started = 1", [rid])); i++) await new Promise((r) => setTimeout(r, 10));
+  await change();
+  release();
+  await running;
+  return -Number((await one<{ s: number }>("SELECT COALESCE(SUM(amount), 0) AS s FROM credit_ledger WHERE automation_id = ?", [aid]))!.s);
+}
+/** Opens Flash (GET /api/me and what it does after): whether that bought a pack. */
+async function opensAndBuys(cookie: string) {
+  stripeCalls.length = 0;
+  assert.equal((await meRoute.GET(req("/api/me", { cookie }))).status, 200);
+  await afterwards();
+  return stripeCalls.includes("/payment_intents");
+}
+
+test("auto top-up turned on (a card saved) while a step's hold is open: the step may settle under the new level, and that never buys a pack", async () => {
+  const { cookie, id } = await admin("lvcard", 110);
+  cardUser = id;
+  // Auto top-up is off when the step is charged, so its hold takes all 110.
+  const charged = await whileHeld(id, async () => {
+    assert.equal(await F.balance(id), 0);
+    // Credits > Auto top-up at 100, then the card saved (the webhook): both while the step writes.
+    assert.ok((await TU.setAutoTopUp({ id, email: `${id}@example.com` }, { enabled: true, pack: "starter", below: 100 }, BASE)).url);
+    assert.equal(await TU.saveCard("cs_1"), true);
+    assert.equal(await opensAndBuys(cookie), false, "nothing bought while the hold is open");
+  });
+  assert.ok(charged > 0 && (await F.balance(id)) < 100, `the step settled under the new level (${charged}, ${await F.balance(id)})`);
+  assert.equal(await opensAndBuys(cookie), false, "nor once it settled: the automation's spending never sets off auto top-up");
+  // Spent under the level by chat, the pack is bought: only that step's charge is left out.
+  await sql("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES (?, -11, 'chat', ?)", [id, Date.now()]);
+  assert.equal(await opensAndBuys(cookie), true);
+});
+
+test("the auto top-up level raised while a step's hold is open: the step settling under the new level never buys a pack", async () => {
+  const { cookie, id } = await admin("lvraise", 320);
+  await sql("INSERT INTO auto_topups (user_id, enabled, pack, below, customer, payment_method, updated_at) VALUES (?, 1, 'starter', 100, 'cus_1', 'pm_1', 0)", [id]);
+  const charged = await whileHeld(id, async () => {
+    assert.ok((await F.balance(id)) >= 100, "the hold kept the old level");
+    await TU.setAutoTopUp({ id, email: `${id}@example.com` }, { enabled: true, pack: "starter", below: 300 }, BASE);
+    assert.equal(await opensAndBuys(cookie), false);
+  });
+  assert.ok(charged > 0 && (await F.balance(id)) < 300, `the step settled under the new level (${charged}, ${await F.balance(id)})`);
+  assert.equal(await opensAndBuys(cookie), false, "no PaymentIntent");
+  // A step charged after the change keeps the new level: it can't start under 300 (here: 279 left).
+  claude.state.replies.push({ text: "One more." });
+  const aid = await F.automation({ userId: id, spec: { ...F.WRITE_SPEC, steps: [{ id: "a1", do: "ai", mode: "write", level: "ultra", prompt: "Write one line." }, { id: "n1", do: "notify" }] }, capRun: 500, capMonth: 5000 });
+  const rid = await F.runRow({ automationId: aid, userId: id });
+  await sql("UPDATE automation_runs SET lease_owner = 'w:' || id, lease_until = CAST(unixepoch('subsec') * 1000 AS INTEGER) + 120000, status = 'running' WHERE id = ?", [rid]);
+  await R.advanceRun(rid, `w:${rid}`, Date.now() + 760_000);
+  assert.equal((await one<{ outcome: string }>("SELECT outcome FROM automation_runs WHERE id = ?", [rid]))!.outcome, "topup_floor");
+  // Spent under the level by chat, the pack is bought: only the step open at the change is left out.
+  await sql("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES (?, -21, 'chat', ?)", [id, Date.now()]);
+  assert.equal(await opensAndBuys(cookie), true);
+});
+
 test("/admin's automation lines: setup by name only, cron health worked out from the data, and what runs charged against their cost", async () => {
   const lines = await automationStats(30);
   assert.deepEqual([lines.server, lines.key, lines.missing, lines.sharedPaid], [true, "automations", [], 2]);
@@ -630,11 +701,92 @@ test("a downloaded receipt whose words were changed doesn't match, though its fi
   assert.equal(await check(changed((r) => (r.run.credits = 0))), false, "the charge changed");
   assert.equal(await check(changed((r) => (r.steps[0].credits = 0))), false, "a step's charge changed");
   assert.equal(await check(changed((r) => r.steps.pop())), false, "a step left out");
-  assert.equal(await check(changed((r) => (r.steps[0].output = ""))), true, "an answer compacted to nothing is left out of the check");
+  // Every other line it shows, each changed on its own.
+  type Any = Record<string, unknown> & { run: Record<string, unknown>; steps: Record<string, unknown>[]; holds: Record<string, unknown>[] };
+  const edits: [string, (r: Any) => void][] = [
+    ["the model", (r) => (r.steps[0].model = "another-model")],
+    ["the level", (r) => (r.steps[0].level = "ultra")],
+    ["what it sent", (r) => (r.steps[0].input = "Write that our competitor's product is unsafe.")],
+    ["the answer left out", (r) => (r.steps[0].output = "")],
+    ["what it sent left out", (r) => (r.steps[0].input = "")],
+    ["a source it never read", (r) => (r.steps[0].sources = [{ url: "https://evil.example/", title: "Official notice" }])],
+    ["a note and its words", (r) => Object.assign(r.steps[0], { note: "cut_short", noteText: "It was cut short by its time limit." })],
+    ["a note's words alone", (r) => (r.steps[0].noteText = "Charged 25 credits.")],
+    ["a step's kind", (r) => (r.steps[1].kind = "ai")],
+    ["a step's times", (r) => (r.steps[0].finishedAt = Number(r.steps[0].finishedAt) + 1000)],
+    ["the summary", (r) => (r.run.summary = "Storm warning: stay home.")],
+    ["the name", (r) => (r.run.name = "Payroll export")],
+    ["what started it", (r) => (r.run.trigger = { type: "schedule" })],
+    ["who started it", (r) => (r.run.origin = "schedule")],
+    ["its run's words", (r) => (r.run.noteText = "Stopped at this automation's limit.")],
+    ["a hold", (r) => Object.assign(r.holds[0], { held: 1, credits: 0 })],
+    ["a hold left out", (r) => r.holds.pop()],
+    ["the fingerprint shown", (r) => (r.fingerprint = "0".repeat(64))],
+    ["a line added", (r) => (r.extra = "Flash vouches for this.")],
+  ];
+  for (const [what, edit] of edits) assert.equal(await check(changed(edit as never)), false, what);
+  // Renamed since, the receipt keeps the name it ran under (fingerprinted), and still matches.
+  assert.equal((await patch(cookie, aid, { name: "Weather note" })).status, 200);
+  assert.equal(await check(saved), true, "renamed since");
+  // Flash compacts its words away (as the daily job does): the download still matches, its words checked
+  // against the fingerprint, as does one made after; the words changed in either don't.
+  await sql("UPDATE automation_run_steps SET output = NULL, input = '' WHERE run_id = ?", [runId]);
+  assert.equal(await check(saved), true, "compacted since");
+  const later = (await (await receiptRoute.GET(req(`/api/automations/runs/${runId}?format=json`, { cookie }), ctx({ runId }))).json()) as typeof saved;
+  assert.equal(later.steps[0].output, "");
+  assert.equal(await check(later), true, "downloaded once compacted");
+  assert.equal(await check(changed((r) => (r.steps[0].output = "Storms all day."))), false, "an answer changed, compacted since");
+  assert.equal(await check(changed((r) => ((r as unknown as Any).steps[0].input = "Another instruction."))), false, "what it sent changed, compacted since");
+  assert.equal(await check(changed((r) => ((r as unknown as Any).steps[0].sources = [{ url: "https://evil.example/", title: "Notice" }]))), false, "a source added, compacted since");
   // Another run's receipt is not this run's.
   claude.state.replies.push({ text: "Rain later." });
   const other = ((await body(await runOnce(cookie, aid, (await priceOf(cookie, F.WRITE_SPEC)).worst))).run as { id: string }).id;
   assert.equal(await check(saved, other), false);
+});
+
+test("a Research step's sources are fingerprinted: its download matches, and one with a source changed doesn't, before and after compaction", async () => {
+  const { cookie } = await admin("rv9src");
+  const research: Spec = { v: 1, trigger: { type: "manual" }, steps: [{ id: "a1", do: "ai", mode: "research", level: "sonic", prompt: "Check today's news about my bank." }, { id: "n1", do: "notify" }] };
+  const aid = await create(cookie, research);
+  claude.state.replies.push({
+    blocks: [
+      { type: "server_tool_use", id: "srvtoolu_1", name: "web_fetch", input: { url: "https://news.example/bank" } },
+      {
+        type: "web_fetch_tool_result",
+        tool_use_id: "srvtoolu_1",
+        content: { type: "web_fetch_result", url: "https://news.example/bank", retrieved_at: "2026-10-18T00:00:00Z", content: { type: "document", source: { type: "text", media_type: "text/plain", data: "Rates held." }, title: "Bank news" } },
+      } as never,
+      { type: "text", text: "Rates held today." },
+    ],
+  });
+  const runId = ((await body(await runOnce(cookie, aid, (await priceOf(cookie, research)).worst))).run as { id: string }).id;
+  const saved = (await (await receiptRoute.GET(req(`/api/automations/runs/${runId}?format=json`, { cookie }), ctx({ runId }))).json()) as { steps: { sources: { url: string; title: string }[] }[] };
+  assert.deepEqual(saved.steps[0].sources, [{ url: "https://news.example/bank", title: "Bank news" }]);
+  const check = async (receipt: unknown) =>
+    ((await (await receiptRoute.POST(req(`/api/automations/runs/${runId}`, { cookie, json: { action: "check", receipt } }), ctx({ runId }))).json()) as { matches: boolean }).matches;
+  const retitled = JSON.parse(JSON.stringify(saved)) as typeof saved;
+  retitled.steps[0].sources[0].title = "Flash: sign in again";
+  assert.equal(await check(saved), true);
+  assert.equal(await check(retitled), false, "a source's title changed");
+  await sql("UPDATE automation_run_steps SET output = NULL, input = '' WHERE run_id = ?", [runId]);
+  assert.equal(await check(saved), true, "compacted since: its sources are the fingerprint's");
+  assert.equal(await check(retitled), false, "nor once compacted");
+});
+
+test("a receipt saved while its run was going has no fingerprint to check: the check says so, apart from a changed one", async () => {
+  const { cookie, id } = await admin("rv9early");
+  const aid = await F.automation({ userId: id, spec: F.WRITE_SPEC });
+  const rid = await F.runRow({ automationId: aid, userId: id });
+  const early = (await (await receiptRoute.GET(req(`/api/automations/runs/${rid}?format=json`, { cookie }), ctx({ runId: rid }))).json()) as { fingerprint: string; receipt: unknown };
+  assert.deepEqual([early.fingerprint, early.receipt], ["", null]);
+  claude.state.replies.push({ text: "Clear skies all day." });
+  await sql(`UPDATE automation_runs SET status = 'running', lease_owner = 'w:' || id, lease_until = ${NOW} + 120000 WHERE id = ?`, [rid]);
+  await R.advanceRun(rid, `w:${rid}`, Date.now() + 760_000);
+  const answer = async (receipt: unknown) => (await (await receiptRoute.POST(req(`/api/automations/runs/${rid}`, { cookie, json: { action: "check", receipt } }), ctx({ runId: rid }))).json()) as { matches: boolean; reason?: string };
+  assert.deepEqual(await answer(early), { matches: false, reason: "unfinished" });
+  const now = await (await receiptRoute.GET(req(`/api/automations/runs/${rid}?format=json`, { cookie }), ctx({ runId: rid }))).json();
+  assert.deepEqual(await answer(now), { matches: true });
+  assert.deepEqual(await answer({ ...now, receipt: null, fingerprint: "" }), { matches: false, reason: "unfinished" });
 });
 
 test("resuming an automation paused mid-run lets that run go on; its next slot isn't skipped as overlap", async () => {

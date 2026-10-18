@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { linkHost } from "@/lib/safe-markdown";
 import { api as appApi } from "@/lib/store";
 import { textDirection } from "@/lib/use-t";
 import type { burnIn, receipt } from "@/lib/server/automation-api.ts";
@@ -424,15 +425,23 @@ function RunReceipt({ runId, language, onChange }: { runId: string; language: st
       setCheck(errorOf(err));
     }
   };
+  // Each pick is checked, the same file picked again too (the input is emptied after each), and the
+  // answer names the file it is about; nothing is shown while a check is under way.
   const compare = async (file: File | undefined) => {
     if (!file) return;
-    setCheck("");
+    setCheck(`Checking ${file.name}…`);
     try {
       const saved = JSON.parse(await file.text()) as unknown;
-      const res = await api<{ matches: boolean }>(`/api/automations/runs/${runId}`, { method: "POST", json: { action: "check", receipt: saved } });
-      setCheck(res.matches ? "This receipt matches Flash's record." : "This receipt doesn't match Flash's record.");
+      const res = await api<{ matches: boolean; reason?: string }>(`/api/automations/runs/${runId}`, { method: "POST", json: { action: "check", receipt: saved } });
+      setCheck(
+        res.matches
+          ? `${file.name}: this receipt matches Flash's record.`
+          : res.reason === "unfinished"
+            ? `${file.name} was saved before the run ended, so it has no fingerprint to check. Download it again now.`
+            : `${file.name}: this receipt doesn't match Flash's record.`,
+      );
     } catch (err) {
-      setCheck(errorOf(err));
+      setCheck(`${file.name}: ${errorOf(err)}`);
     }
   };
   const stop = async () => {
@@ -532,15 +541,23 @@ function RunReceipt({ runId, language, onChange }: { runId: string; language: st
                     {s.output}
                   </div>
                 )}
-                {s.sources.length > 0 && (
+                {/* Only web links, each showing the host it goes to: a title is the page's own words (as chat's sources, see safe-markdown.ts). */}
+                {s.sources.some((src) => linkHost(src.url)) && (
                   <ul className="mt-1 space-y-0.5">
-                    {s.sources.slice(0, 10).map((src) => (
-                      <li key={src.url} className="truncate">
-                        <a href={src.url} target="_blank" rel="noreferrer noopener" className="text-primary-soft hover:underline">
-                          {src.title || src.url}
-                        </a>
-                      </li>
-                    ))}
+                    {s.sources
+                      .filter((src) => linkHost(src.url))
+                      .slice(0, 10)
+                      .map((src) => {
+                        const host = linkHost(src.url);
+                        return (
+                          <li key={src.url} className="flex min-w-0 gap-1">
+                            <a href={src.url} target="_blank" rel="noreferrer noopener" className="truncate text-primary-soft hover:underline">
+                              {src.title || host}
+                            </a>
+                            {src.title && src.title.toLowerCase() !== host && <span className="shrink-0 text-zinc-500">· {host}</span>}
+                          </li>
+                        );
+                      })}
                   </ul>
                 )}
               </li>
@@ -593,16 +610,33 @@ function RunReceipt({ runId, language, onChange }: { runId: string; language: st
             {JSON.stringify(r.receipt, null, 1)}
           </pre>
         )}
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <button onClick={() => void download()} className={button}>
-            Download receipt JSON
-          </button>
-          <label className={`${button} cursor-pointer`}>
-            Compare with a downloaded receipt
-            <input type="file" accept="application/json,.json" className="sr-only" onChange={(e) => void compare(e.target.files?.[0])} />
-          </label>
-        </div>
-        {check && <p className="mt-1 text-zinc-300">{check}</p>}
+        {/* Only once it has a fingerprint: a copy saved before would have nothing to check. */}
+        {r.fingerprint && (
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <button onClick={() => void download()} className={button}>
+              Download receipt JSON
+            </button>
+            <label className={`${button} cursor-pointer`}>
+              Compare with a downloaded receipt
+              <input
+                type="file"
+                accept="application/json,.json"
+                className="sr-only"
+                onClick={() => setCheck("")}
+                onChange={(e) => {
+                  const file = e.currentTarget.files?.[0];
+                  e.currentTarget.value = "";
+                  void compare(file);
+                }}
+              />
+            </label>
+          </div>
+        )}
+        {check && (
+          <p role="status" className="mt-1 break-words text-zinc-300">
+            {check}
+          </p>
+        )}
       </div>
     </div>
   );

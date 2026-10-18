@@ -20,8 +20,8 @@ import type { InStatement } from "@libsql/client";
 import { gunzipSync, gzipSync } from "node:zlib";
 import { budgetOf, describeWhen, END_STEP, engineOf, fillTemplate, isPaid, NO_CHANGE, NOTICES, nextStepId, runTimeText, stepAt, type AiStep, type NotifyStep, type Spec, type Step } from "../automations.ts";
 import { contextNote, longDate, validTimeZone, type Where } from "../context-note.ts";
-import { finalCredits, planHold, readCostCents } from "../credits.ts";
-import { Running, streamSearch, streamText, withStepDown, type Budget, type ClaudeChoice, type Meter, type SystemOptions } from "../engines/claude.ts";
+import { claudePrice, finalCredits, planHold, readCostCents } from "../credits.ts";
+import { Running, streamSearch, streamText, usesFallback, withStepDown, type Budget, type ClaudeChoice, type Meter, type SystemOptions } from "../engines/claude.ts";
 import { english } from "../i18n.ts";
 import { languageById } from "../languages.ts";
 import { profileNote } from "../names.ts";
@@ -424,7 +424,8 @@ export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResul
   }
 
   // 2. The hold, recorded before any credits move, with the whole worst case of its plan still to come.
-  const model = price.choice.model;
+  // (The model called: a step-down changes it before its call is sent, see steppedDown.)
+  let model = price.choice.model;
   const results = price.plan?.results ?? [];
   const left = (running?: StepRunning) => {
     const done = !running ? 0 : engine === "search" ? running.found : Math.max(0, running.calls - 1);
@@ -604,16 +605,37 @@ export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResul
   let sources: Source[] = [];
   let ok = true;
   let failure: unknown = null;
+  const call = (choice: ClaudeChoice) =>
+    engine === "search"
+      ? streamSearch(history, preferences, meter, budget, choice, t, watch, { system: options, where, quick: price.quick, data })
+      : streamText(history, preferences, "text", meter, budget, choice, t, watch, { system: options, data });
+  /**
+   * Stepped down (its level's model busy before it started, see withStepDown): before that call is
+   * sent, its hold and step name the model called, with its read cost and the most that call may cost
+   * (its max_tokens at that model's prices; with tools, or a fallback it asks for, the hold), so a reaper
+   * settling it charges by the call that was sent. A write that never lands sends nothing: the step
+   * fails for nothing, as nothing was called. A hold settled meanwhile (reaped) stops the step.
+   */
+  async function* steppedDown(choice: ClaudeChoice) {
+    model = choice.model;
+    const capCents = price.plan || usesFallback(choice) ? 0 : readCostCents(model, price.tokens) + (plan.maxTokens * claudePrice(model, price.tokens).output) / 1e6;
+    const statements: InStatement[] = [
+      { sql: "UPDATE credit_holds SET model = ?, input_cents = ?, cap_cents = ?, left_cents = ? WHERE ref = ? AND settled_at = 0", args: [model, readCostCents(model, price.tokens), capCents, left(running), ref] },
+      { sql: "UPDATE automation_run_steps SET model = ? WHERE run_id = ? AND step_id = ? AND attempt = ? AND status = 'running'", args: [model, run.id, step.id, started.attempt] },
+    ];
+    let rows = -1;
+    for (let i = 0; rows < 0; i++) {
+      try {
+        rows = (await (await db()).batch(statements, "write"))[0].rowsAffected;
+      } catch (err) {
+        if (i >= 2) throw err;
+      }
+    }
+    if (rows === 0) return halt("lost");
+    yield* call(choice);
+  }
   try {
-    const events = withStepDown(
-      asked,
-      (choice) =>
-        engine === "search"
-          ? streamSearch(history, preferences, meter, budget, choice, t, watch, { system: options, where, quick: price.quick, data })
-          : streamText(history, preferences, "text", meter, budget, choice, t, watch, { system: options, data }),
-      (choice) => (answered = choice),
-      t,
-    );
+    const events = withStepDown(asked, (choice) => (choice === asked ? call(choice) : steppedDown(choice)), (choice) => (answered = choice), t);
     for await (const e of events) {
       if (e.type === "text") text += e.delta;
       else if (e.type === "sources") sources = e.items;

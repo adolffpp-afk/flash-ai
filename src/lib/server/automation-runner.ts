@@ -13,6 +13,7 @@
  * finish() writes the run's end, its receipt and fingerprint, what it changes on the automation
  * (failures in a row, a pause for credits or a limit, a one-off finished) and its notices.
  */
+import { gunzipSync } from "node:zlib";
 import { budgetOf, engineOf, isPaid, MAX_STEPS, NOTICES, parseSpec, stepAt, type Spec, type Step } from "../automations.ts";
 import { nextMonthStart, utcDay } from "../schedule.ts";
 import { isVerified } from "./account.ts";
@@ -223,7 +224,17 @@ export async function reapLapsed(limit = 50): Promise<number> {
   return n;
 }
 
-type StepReceipt = { step_id: string; attempt: number; kind: string; status: string; held: number; credits: number; level: string; model: string; note: string; output: ArrayBuffer | Uint8Array | null };
+type StepReceipt = { step_id: string; attempt: number; kind: string; status: string; held: number; credits: number; level: string; model: string; note: string; input: string; output: ArrayBuffer | Uint8Array | null };
+
+/** The sources a stored output cites, as a receipt shows them. */
+export function sourcesOf(output: ArrayBuffer | Uint8Array | null | undefined): { url: string; title: string }[] {
+  try {
+    const parsed = output ? (JSON.parse(gunzipSync(Buffer.from(output as ArrayBuffer)).toString("utf8")) as { sources?: { url: string; title?: string }[] }) : {};
+    return (parsed.sources ?? []).map((s) => ({ url: s.url, title: s.title ?? "" }));
+  } catch {
+    return [];
+  }
+}
 
 /**
  * A step's tries in order, each numbered among its step's tries: a wait for other runs' holds (see
@@ -239,13 +250,23 @@ export function triesOf<S extends { step_id: string; note: string }>(steps: S[])
   return { tries, waits: steps.length - tries.length };
 }
 
-/** The compact receipt a run's fingerprint is made from: what started it, each try of each step (and how many waits), and the totals. */
-export function compactReceipt(run: Pick<RunRow, "id" | "automation_id" | "version" | "origin" | "run_key" | "scheduled_at">, steps: StepReceipt[], end: { status: string; outcome: string; credits: number }) {
+/**
+ * The compact receipt a run's fingerprint is made from: what started it and the name it ran under, each
+ * try of each step (and how many waits) with its level, model and note and the SHA-256 of what it sent,
+ * wrote and cited (so compacting them away later keeps what a download says checkable), and the totals
+ * with the SHA-256 of the summary.
+ */
+export function compactReceipt(
+  run: Pick<RunRow, "id" | "automation_id" | "version" | "origin" | "run_key" | "scheduled_at">,
+  steps: StepReceipt[],
+  end: { status: string; outcome: string; credits: number; name: string; summary: string },
+) {
   const { tries, waits } = triesOf(steps);
   return {
     v: 1,
     run: run.id,
     automation: run.automation_id,
+    name: end.name,
     version: Number(run.version),
     trigger: { origin: run.origin, key: run.run_key, at: Number(run.scheduled_at) },
     steps: tries.map((s) => ({
@@ -253,14 +274,20 @@ export function compactReceipt(run: Pick<RunRow, "id" | "automation_id" | "versi
       attempt: s.try,
       kind: s.kind,
       status: s.status,
+      level: s.level,
+      model: s.model,
+      note: s.note,
       held: Number(s.held),
       credits: Number(s.credits),
+      input: sha256(s.input ?? ""),
       output: sha256(outputText(s.output)),
+      sources: sha256(canonicalJson(sourcesOf(s.output))),
     })),
     ...(waits > 0 && { waited: waits }),
     credits: end.credits,
     status: end.status,
     outcome: end.outcome,
+    summary: sha256(end.summary),
   };
 }
 export type CompactReceipt = ReturnType<typeof compactReceipt>;
@@ -322,15 +349,20 @@ export async function finish(
     if (!run || Number(run.finished_at)) return false;
     if (!o.reaper && run.lease_owner !== o.me) return false;
     const auto = await automationRow(run.automation_id);
+    // Its model as its receipt shows it (see receipt() in automation-api.ts): the step's, else, for a call
+    // that was sent, its hold's.
     const steps = await all<StepReceipt>(
-      "SELECT step_id, attempt, kind, status, held, credits, level, model, note, output FROM automation_run_steps WHERE run_id = ? ORDER BY started_at, attempt",
+      `SELECT s.step_id, s.attempt, s.kind, s.status, s.held, s.credits, s.level, s.note, s.input, s.output,
+              CASE WHEN s.model <> '' THEN s.model WHEN h.started = 1 THEN h.model ELSE '' END AS model
+         FROM automation_run_steps s LEFT JOIN credit_holds h ON h.ref = s.hold_ref AND s.hold_ref <> ''
+        WHERE s.run_id = ? ORDER BY s.started_at, s.attempt`,
       [run.id],
     );
     const vars = varsOf(run);
     const lastText = [...steps].reverse().find((s) => s.kind === "ai" && s.status === "done");
     const summary = (o.summary ?? (lastText ? vars[lastText.step_id] ?? outputText(lastText.output) : "")).replace(/\s+/g, " ").trim().slice(0, 500);
     const credits = Number(run.credits);
-    const receipt = compactReceipt(run, steps, { status, outcome, credits });
+    const receipt = compactReceipt(run, steps, { status, outcome, credits, name: auto?.name ?? "", summary });
     const prev = auto?.receipt_hash ?? "";
     const hash = receiptHash(prev, receipt);
     const now = Date.now();

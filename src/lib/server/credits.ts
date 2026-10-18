@@ -18,15 +18,34 @@ export async function balance(userId: string): Promise<number> {
  * spent, as the free monthly credits count it. It is held at its worst case and settled for sure,
  * mostly far lower, and automations already keep the balance above the level with their holds at full
  * size (chargeOnce), so an open hold never sets off a top-up; once it settles, the next check sees
- * what it cost. (ref IS NOT NULL: a NULL inside NOT would leave the row out of the sum.)
+ * what it cost. Nor, settled or not, does one that was open when auto top-up was turned on or its level
+ * set (topup_kept_out, see autoHoldsKeptOut): it was kept above the level before, which may have been
+ * lower or off, so it may settle below the new one. (ref IS NOT NULL: a NULL inside NOT would leave the
+ * row out of the sum.)
  */
 export async function topUpBalance(userId: string): Promise<number> {
   const row = await one<{ total: number }>(
     `SELECT COALESCE(SUM(amount), 0) AS total FROM credit_ledger
-      WHERE user_id = ? AND NOT (amount < 0 AND settled_at = 0 AND ref IS NOT NULL AND ref LIKE 'auto:%')`,
+      WHERE user_id = ? AND NOT (amount < 0 AND ref IS NOT NULL AND ref LIKE 'auto:%' AND (settled_at = 0 OR topup_kept_out = 1))`,
     [userId],
   );
   return Number(row?.total ?? 0);
+}
+
+/**
+ * Sent in the same batch as the write that turns auto top-up on or sets its level, after it: marks the
+ * automation holds open then (topup_kept_out), so auto top-up never counts them, settled or not (see
+ * topUpBalance). One batch is one transaction, so no hold settles or is charged between the two, and a
+ * charge after it is checked against the new level (chargeOnce). Only while auto top-up is on with a
+ * card. The open holds are read through credit_holds_open (an open hold's lease_until is never 0).
+ */
+export function autoHoldsKeptOut(userId: string): { sql: string; args: string[] } {
+  return {
+    sql: `UPDATE credit_ledger SET topup_kept_out = 1
+           WHERE ref IN (SELECT ref FROM credit_holds WHERE settled_at = 0 AND lease_until > 0 AND user_id = ?)
+             AND EXISTS (SELECT 1 FROM auto_topups WHERE user_id = ? AND enabled = 1 AND payment_method IS NOT NULL)`,
+    args: [userId, userId],
+  };
 }
 
 /**
