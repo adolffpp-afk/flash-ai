@@ -78,8 +78,17 @@ test("names Flash keeps for itself are refused, in any case and with any spacing
   const alike = ["Fl\u0430sh support", "Fla\u0455h", "FL\u0410SH", "\u0391I-Flash Inc.", "FIash support", "Flásh", "Fla\u0336sh team"];
   for (const name of [...blank, ...alike]) assert.deepEqual(validateAssistant(fields({ name })), { code: "name_kept" }, JSON.stringify(name));
   assert.equal(fields({ name: "Flash\u3164support" }).name, "Flash support", "a blank letter is a space");
-  for (const name of ["\u3164", "\u3164 \uFFA0", "\u2800"]) assert.deepEqual(validateAssistant(fields({ name })), { code: "name_missing" }, JSON.stringify(name));
-  for (const name of ["Flashcards tutor", "Flash fiction coach", "My Flash helper", "Support", "Флэш помощник", "Fresh support", "Café helper", "한글 도우미"]) {
+  // Letters from other alphabets that look like Latin ones, whatever the alphabet: Latin small
+  // capitals, Lisu, Cherokee, Armenian, an f with a hook.
+  const others = ["ꜰʟᴀꜱʜ", "Flᴀsh", "ꜰʟᴀꜱʜ ꜱᴜᴘᴘᴏʀᴛ", "ꓝꓡꓮꓢꓧ", "FLꓮSH", "FLᎪᏚᎻ", "Flash Ꮪupport", "ƒlash", "Flasհ", "Flash Suppօrt", "ꓝꓡꓮꓢꓧ ∞ ꓮꓲ", "Flash Infinity ᎪI"];
+  // Each of Flash's names, with the words that make it read as Flash's own help before or after it.
+  const roles = ["Flash ∞ AI Support", "Flash ∞ AI official", "Flash AI team", "Flash Infinity AI Support", "Flash Infinity AI™ Official", "AI-Flash Inc. Support", "AI-Flash", "AI-Flash support", "Official Flash", "Flash Support Team", "Flash help", "Admin Flash"];
+  for (const name of [...others, ...roles]) assert.deepEqual(validateAssistant(fields({ name })), { code: "name_kept" }, JSON.stringify(name));
+  // Nothing that shows: blank letters, zero-width characters, a word joiner, a soft hyphen, tags.
+  for (const name of ["\u3164", "\u3164 \uFFA0", "\u2800", "\u200B", "\u2060", "\u00AD", "\u{E0041}\u{E0042}", "\u200B\u0301"]) {
+    assert.deepEqual(validateAssistant(fields({ name })), { code: "name_missing" }, JSON.stringify(name));
+  }
+  for (const name of ["Flashcards tutor", "Flash fiction coach", "My Flash helper", "Support", "Флэш помощник", "Fresh support", "Café helper", "한글 도우미", "Slash support", "Flash Infinity", "Help desk", "👨\u200D👩\u200D👧", "\u2764\uFE0F"]) {
     assert.equal(isKeptName(name), false, name);
     assert.equal(validateAssistant(fields({ name })), null, name);
   }

@@ -105,18 +105,23 @@ const segments = new Intl.Segmenter("en", { granularity: "word" });
 // Longer runs (a key, a long number, base64) are never what someone asks about.
 const MAX_WORD = 64;
 
+// Latin accents, Hebrew points, and Arabic vowel marks, hamzas and tatweel: words are written with
+// and without them, and typed without.
+const MARKS = /[\u0300-\u036f\u0591-\u05c7\u0610-\u061a\u0640\u064b-\u065f\u0670\u06d6-\u06ed]/g;
+
 /**
- * The words of a text, as the search index keeps them: NFKC, lower case and without Latin accents
- * ("Café" is "cafe"), split the way Intl.Segmenter splits words, so Japanese, Chinese and Thai
- * split into words too, then at anything that isn't a letter, digit or mark, so an apostrophe
- * ("l'été") leaves two words, each of which gets its assistant's tag.
+ * The words of a text, as the search index keeps them: NFKC, lower case and without accents or
+ * vowel marks ("Café" is "cafe", "يُرجى" is "يرجى", "أولًا" is "اولا"), split the way Intl.Segmenter
+ * splits words, so Japanese, Chinese and Thai split into words too, then at anything that isn't a
+ * letter, digit or mark, so an apostrophe ("l'été") leaves two words, each of which gets its
+ * assistant's tag.
  */
 export function words(text: string): string[] {
   const out: string[] = [];
   for (const s of segments.segment(text.normalize("NFKC").toLowerCase())) {
     if (!s.isWordLike) continue;
     for (const piece of s.segment.split(/[^\p{L}\p{N}\p{M}]+/u)) {
-      const word = /^[\x00-\x7f]*$/.test(piece) ? piece : piece.normalize("NFD").replace(/[\u0300-\u036f]/g, "").normalize("NFC");
+      const word = /^[\x00-\x7f]*$/.test(piece) ? piece : piece.normalize("NFD").replace(MARKS, "").normalize("NFC");
       if (word && word.length <= MAX_WORD && /[\p{L}\p{N}]/u.test(word)) out.push(word);
     }
   }
@@ -140,9 +145,20 @@ const SHORT_MESSAGE = 40;
 const MAX_TERMS = 16;
 // Words this long also find longer ones ("refund" finds "refunds" and "refunded").
 const PREFIX_FROM = 5;
+// Korean writes a particle onto the word it follows ("환불은", "환불을": refund + a particle).
+const HANGUL = /^\p{Script=Hangul}{2,}$/u;
+const PARTICLE = /(?:에서|에게|으로|까지|부터|은|는|이|가|을|를|의|에|도|와|과|로|만)$/u;
 
-/** A word as searched: from 5 letters on, a prefix, and without a plural s ("refunds" finds "refund"). */
+/**
+ * A word as searched: from 5 letters on, a prefix, and without a plural s ("refunds" finds
+ * "refund"). A Korean word of two syllables or more loses one particle, if two syllables are left,
+ * and is always a prefix: "기간은" is searched as "기간", which finds "기간이" and "기간은".
+ */
 function termOf(word: string): Term {
+  if (HANGUL.test(word)) {
+    const stem = word.replace(PARTICLE, "");
+    return { word: stem.length >= 2 ? stem : word, prefix: true };
+  }
   if ([...word].length < PREFIX_FROM) return { word, prefix: false };
   return { word: /^[a-z]{4,}s$/.test(word) && !word.endsWith("ss") ? word.slice(0, -1) : word, prefix: true };
 }

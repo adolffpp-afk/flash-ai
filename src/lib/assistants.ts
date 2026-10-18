@@ -39,8 +39,11 @@ export const FREE_PASSAGE_CHARS = 6_000;
  * An assistant's text takes more room in the database than its own bytes: its chunks, plus the
  * search index, which keeps no copy of the text. Each file counts STORE_FACTOR times its UTF-8
  * bytes against the owner's storage (see storageLimit in server/site-files.ts). A test measures
- * the real factor and fails if it goes over. Storing costs no credits only while search is the
- * database's own full-text index: any embedding or paid call at upload would have to charge.
+ * the real factor and fails if it goes over (about 1.8 for text in any language), except for a
+ * list of short codes (SKUs, vouchers), where every word is new and the index costs about as much
+ * as the text: up to about 3.5, counted as 3 all the same. Storing costs no credits only while
+ * search is the database's own full-text index: any embedding or paid call at upload would have to
+ * charge.
  */
 export const STORE_FACTOR = 3;
 
@@ -99,37 +102,57 @@ export function cleanAssistant(input: unknown): AssistantFields {
 }
 
 // Flash's own names, which an assistant can't take, compared without case, accents, spaces or
-// punctuation, and with the letters that look like theirs: Cyrillic "а" for "a", "I" for "l".
+// punctuation, and with the letters that look like theirs: Cyrillic "а" for "a", Cherokee "Ꮪ" for
+// "S", a small capital "ꜰ" for "f", "I" for "l".
 const nameKey = (name: string) =>
   name.normalize("NFKC").toLowerCase().normalize("NFD").replace(/\p{M}+/gu, "").replace(/[^\p{L}\p{N}]+/gu, "");
+// The letters and digits that look like each Latin letter, as nameKey leaves them: from Unicode's
+// confusables.txt (10.0), with the Latin small capitals. Printed by scripts/lookalikes.ts.
 const LOOKALIKES: Record<string, string> = {
-  a: "аαɑ",
-  c: "сϲᴄ",
-  e: "еε",
-  f: "ғϝ",
-  h: "һнη",
-  i: "іιıɩӏl1",
-  l: "ӏιıǀʟi1",
-  m: "мμ",
-  n: "νп",
-  o: "оοσ0",
-  p: "рρ",
-  r: "г",
-  s: "ѕꜱ",
-  t: "тτ",
-  u: "υս",
-  y: "уүυ",
+  a: "\u{251}\u{3b1}\u{430}\u{15c5}\u{1d00}\u{a4ee}\u{ab7a}\u{102a0}\u{16f40}",
+  b: "\u{180}\u{183}\u{185}\u{253}\u{299}\u{3b2}\u{431}\u{432}\u{44c}\u{463}\u{48d}\u{13fc}\u{15af}\u{15f7}\u{a4d0}\u{a7b5}\u{ab9f}\u{10282}\u{102a1}\u{10301}",
+  c: "\u{23c}\u{3c2}\u{3c3}\u{3db}\u{441}\u{4ab}\u{1d04}\u{2ca5}\u{a4da}\u{abaf}\u{102a2}\u{10302}\u{1043d}\u{1051c}\u{118e9}\u{118f2}",
+  d: "\u{f0}\u{111}\u{18c}\u{256}\u{257}\u{501}\u{146f}\u{15de}\u{15ea}\u{1d05}\u{a4d2}\u{a4d3}\u{ab70}\u{abb7}",
+  e: "\u{247}\u{3b5}\u{435}\u{4bd}\u{4bf}\u{1d07}\u{2d39}\u{a4f0}\u{ab32}\u{ab7c}\u{10286}\u{118c6}\u{118ce}",
+  f: "\u{192}\u{3dd}\u{493}\u{584}\u{15b4}\u{1d6e}\u{1e9d}\u{a4dd}\u{a730}\u{a799}\u{ab35}\u{10287}\u{102a5}\u{10525}\u{118c2}",
+  g: "\u{18d}\u{1e5}\u{260}\u{261}\u{262}\u{50d}\u{581}\u{13fb}\u{1d83}\u{a4d6}\u{ab90}",
+  h: "\u{127}\u{266}\u{29c}\u{3b7}\u{43d}\u{45b}\u{4a3}\u{4bb}\u{4c8}\u{4ca}\u{570}\u{13fa}\u{157c}\u{2c68}\u{2c8f}\u{a4e7}\u{a695}\u{ab8b}\u{ab92}\u{102cf}\u{104f5}",
+  i: "1l\u{131}\u{142}\u{19a}\u{1c0}\u{268}\u{269}\u{26a}\u{26b}\u{26d}\u{29f}\u{3b9}\u{456}\u{4cf}\u{5d5}\u{5df}\u{627}\u{661}\u{673}\u{6f1}\u{7ca}\u{14aa}\u{16c1}\u{1d7b}\u{1d7c}\u{2c93}\u{2cd1}\u{2d4f}\u{a4e1}\u{a4f2}\u{a647}\u{ab75}\u{abae}\u{1028a}\u{10309}\u{10320}\u{10443}\u{10526}\u{118c3}\u{118d2}\u{16f16}\u{16f28}\u{1e8c7}",
+  j: "\u{249}\u{29d}\u{3f3}\u{458}\u{148d}\u{1d0a}\u{a4d9}\u{ab7b}",
+  k: "\u{199}\u{3ba}\u{43a}\u{49b}\u{49f}\u{16d5}\u{1d0b}\u{2c6a}\u{2c95}\u{a4d7}\u{a741}\u{abb6}\u{10518}",
+  l: "1i\u{131}\u{142}\u{19a}\u{1c0}\u{268}\u{269}\u{26a}\u{26b}\u{26d}\u{29f}\u{3b9}\u{456}\u{4cf}\u{5d5}\u{5df}\u{627}\u{661}\u{673}\u{6f1}\u{7ca}\u{14aa}\u{16c1}\u{1d7b}\u{1d7c}\u{2c93}\u{2cd1}\u{2d4f}\u{a4e1}\u{a4f2}\u{a647}\u{ab75}\u{abae}\u{1028a}\u{10309}\u{10320}\u{10443}\u{10526}\u{118c3}\u{118d2}\u{16f16}\u{16f28}\u{1e8c7}",
+  m: "\u{3bc}\u{3fb}\u{43c}\u{4ce}\u{15f0}\u{16d6}\u{1d0d}\u{2c99}\u{a4df}\u{ab87}\u{102b0}\u{10311}",
+  n: "\u{19e}\u{272}\u{273}\u{274}\u{3b7}\u{3bd}\u{43f}\u{578}\u{57c}\u{1260}\u{144e}\u{1d70}\u{2c9b}\u{a4e0}\u{a4f5}\u{10513}",
+  o: "0\u{f8}\u{275}\u{3b8}\u{3bf}\u{3c3}\u{43e}\u{473}\u{4e9}\u{585}\u{5e1}\u{647}\u{665}\u{6be}\u{6c1}\u{6d5}\u{6f5}\u{6ff}\u{7c0}\u{966}\u{9e6}\u{a66}\u{ae6}\u{b20}\u{b66}\u{be6}\u{c66}\u{ce6}\u{d20}\u{d66}\u{e50}\u{ed0}\u{1010}\u{101d}\u{1040}\u{10ff}\u{12d0}\u{1d0f}\u{1d11}\u{2c9f}\u{2d31}\u{2d41}\u{2d54}\u{3007}\u{a4f3}\u{a74b}\u{ab3d}\u{ab3e}\u{ab74}\u{ab8e}\u{abbb}\u{10292}\u{102ab}\u{1042c}\u{104ea}\u{10516}\u{114d0}\u{118c8}\u{118d5}\u{118d7}\u{118e0}",
+  p: "\u{1a5}\u{3c1}\u{440}\u{146d}\u{1d18}\u{1d29}\u{1d7d}\u{2ca3}\u{a4d1}\u{abb2}\u{10295}",
+  q: "\u{2a0}\u{51b}\u{563}\u{566}\u{2d55}\u{a7af}",
+  r: "\u{24d}\u{27c}\u{27d}\u{280}\u{433}\u{493}\u{1587}\u{1d26}\u{1d72}\u{2c85}\u{a4e3}\u{ab47}\u{ab48}\u{ab71}\u{ab81}\u{aba2}\u{104dc}\u{16f35}",
+  s: "\u{1bd}\u{282}\u{455}\u{57f}\u{1d74}\u{a4e2}\u{a731}\u{aba5}\u{abaa}\u{10296}\u{10448}\u{118c1}\u{16f3a}",
+  t: "\u{167}\u{1ad}\u{288}\u{3c4}\u{442}\u{4ad}\u{1d1b}\u{1d75}\u{2c66}\u{2ca7}\u{a4d4}\u{ab72}\u{10297}\u{102b1}\u{10315}\u{118dc}\u{16f0a}",
+  u: "\u{289}\u{28b}\u{3c5}\u{57d}\u{1200}\u{144c}\u{1d1c}\u{1d7e}\u{a4f4}\u{a79f}\u{ab4e}\u{ab52}\u{ab9c}\u{104f6}\u{118d8}\u{16f42}",
+  v: "\u{3bd}\u{475}\u{5d8}\u{667}\u{6f7}\u{142f}\u{1d20}\u{2d38}\u{a4e6}\u{a6df}\u{aba9}\u{1051d}\u{11706}\u{118c0}\u{16f08}",
+  w: "\u{26f}\u{461}\u{47d}\u{51d}\u{561}\u{15ef}\u{1d21}\u{a4ea}\u{a761}\u{ab83}\u{ab97}\u{aba4}\u{114c5}\u{1170a}\u{1170e}\u{1170f}\u{118e6}\u{118ef}",
+  x: "\u{3c7}\u{445}\u{4b3}\u{1541}\u{157d}\u{16b7}\u{2cad}\u{2d5d}\u{a4eb}\u{ab53}\u{ab55}\u{10290}\u{102b4}\u{10317}\u{10322}\u{10527}\u{118ec}",
+  y: "\u{1b4}\u{24f}\u{263}\u{28f}\u{3b3}\u{3c5}\u{433}\u{443}\u{493}\u{4af}\u{4b1}\u{10e7}\u{14a5}\u{1d8c}\u{1eff}\u{2c85}\u{2ca9}\u{a4ec}\u{ab5a}\u{ab79}\u{ab81}\u{ab8d}\u{102b2}\u{118c4}\u{118dc}\u{16f07}\u{16f43}",
+  z: "\u{1b6}\u{225}\u{290}\u{3b6}\u{1d22}\u{1d76}\u{a4dc}\u{ab93}\u{102f5}\u{118c4}\u{118c9}\u{118e5}",
 };
-const KEPT_NAMES = ["Flash", "Flash support", "Flash team", "Flash official", PRODUCT_NAME, BRAND_NAME, LEGAL_NAME, TRADEMARK].map(
-  (name) => new RegExp(`^${[...nameKey(name)].map((ch) => `[${ch}${LOOKALIKES[ch] ?? ""}]`).join("")}$`, "u"),
-);
+// Flash's names, alone or with words that make them read as Flash's own help, before or after:
+// "Flash support", "Official Flash ∞ AI", "AI-Flash Inc. Support", "Flash Support Team".
+const OWN = ["Flash", PRODUCT_NAME, BRAND_NAME, LEGAL_NAME, TRADEMARK, "AI-Flash"];
+const ROLES = ["support", "team", "official", "help", "admin"];
+const alike = (names: string[]) => names.map((name) => [...nameKey(name)].map((ch) => `[${ch}${LOOKALIKES[ch] ?? ""}]`).join("")).join("|");
+const KEPT = new RegExp(`^(?:${alike(ROLES)})*(?:${alike(OWN)})(?:${alike(ROLES)})*$`, "u");
 
 /** Whether a name is one Flash keeps for itself ("Flash support", "FLASH ∞ AI", "flash-team", "Flаsh" with a Cyrillic "а"). */
-export const isKeptName = (name: string) => KEPT_NAMES.some((kept) => kept.test(nameKey(name)));
+export const isKeptName = (name: string) => KEPT.test(nameKey(name));
+
+// Something that shows: not only invisible characters (zero-width ones, joiners, soft hyphens,
+// tags), marks or blanks.
+const SHOWS = /[^\p{Default_Ignorable_Code_Point}\p{M}\s\u2800]/u;
 
 /** The first reason these fields can't be saved, or null when they can. */
 export function validateAssistant(a: AssistantFields): AssistantProblem | null {
-  if (!a.name) return { code: "name_missing" };
+  if (!SHOWS.test(a.name)) return { code: "name_missing" };
   if (a.name.length > MAX_NAME) return { code: "name_long", max: MAX_NAME };
   if (isKeptName(a.name)) return { code: "name_kept" };
   if (a.description.length > MAX_DESCRIPTION) return { code: "description_long", max: MAX_DESCRIPTION };

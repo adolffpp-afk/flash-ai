@@ -106,13 +106,16 @@ test("no chunk is over its size and none overlaps: joined, they give back the te
   for (const c of chunkText(prose).slice(0, -1)) assert.ok(c.body.endsWith("\n\n"), JSON.stringify(c.body.slice(-20)));
 });
 
-test("words are split for Japanese, Chinese and Thai, folded for accents and case, and each gets the tag", () => {
+test("words are split for Japanese, Chinese and Thai, folded for accents, vowel marks and case, and each gets the tag", () => {
   assert.deepEqual(words("返金ポリシーについて"), ["返金", "ポリシー", "について"]);
   assert.deepEqual(words("退款政策是什么"), ["退款", "政策", "是", "什么"]);
   assert.deepEqual(words("ราคาสินค้ารวมภาษี"), ["ราคา", "สินค้า", "รวม", "ภาษี"]);
   assert.deepEqual(words("नमस्ते दुनिया"), ["नमस्ते", "दुनिया"], "vowel signs stay in the word");
   assert.deepEqual(words("Café CAFE cafe\u0301 Naïve"), ["cafe", "cafe", "cafe", "naive"]);
   assert.deepEqual(words("ﬁle ＡＢＣ ① -- ... !!"), ["file", "abc", "1"]);
+  // Arabic and Persian vowel marks, shadda, tanween, hamzas and tatweel, and Hebrew points, which
+  // some words are written with and people type without.
+  assert.deepEqual(words("يُرجى تعذّر أولًا جدًا لطفاً إرسال كتـــاب كِتَابٌ שָׁלוֹם"), ["يرجى", "تعذر", "اولا", "جدا", "لطفا", "ارسال", "كتاب", "كتاب", "שלום"]);
   assert.ok(!words(`k${"x".repeat(80)} ok`).some((w) => w.length > 64), "a run too long to ask about isn't a word");
   const tag = tagOf(A);
   assert.equal(tag, "a0123456789abcdefx");
@@ -156,6 +159,15 @@ test("a short message is searched with the one before it, at most 16 different w
   assert.deepEqual(queryTerms("refunds"), [{ word: "refund", prefix: true }], "a plural s goes, so the singular is found");
   assert.deepEqual(queryTerms("refund refunds"), [{ word: "refund", prefix: true }]);
   assert.deepEqual(queryTerms("glass cups"), [{ word: "glass", prefix: true }, { word: "cups", prefix: false }]);
+  // A Korean word loses the particle written onto it, and is always a prefix, keeping two syllables.
+  assert.deepEqual(queryTerms("환불 기간은? 영수증이 서울에서 도로 앱을"), [
+    { word: "영수증", prefix: true },
+    { word: "서울", prefix: true },
+    { word: "기간", prefix: true },
+    { word: "환불", prefix: true },
+    { word: "도로", prefix: true },
+    { word: "앱을", prefix: true },
+  ]);
   assert.deepEqual(queryTerms("!!! ???"), []);
   assert.equal(matchQuery(tagOf(A), "?!"), "");
 });

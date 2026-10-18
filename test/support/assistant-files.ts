@@ -5,10 +5,10 @@
  */
 import type { Client } from "@libsql/client";
 
-/** The same "random" numbers every run. */
+/** The same "random" numbers every run, from integer arithmetic that stays exact (Math.imul). */
 export function seeded(seed: number) {
   let s = seed;
-  return () => (s = (s * 1103515245 + 12345) % 2147483648) / 2147483648;
+  return () => (s = (Math.imul(s, 1103515245) + 12345) & 0x7fffffff) / 2147483648;
 }
 
 const SYLLABLES = ["ka", "ro", "mi", "te", "lan", "sor", "vi", "de", "pu", "ne", "shi", "tor", "al", "en", "qui", "bra", "ul", "mo", "zan", "pe"];

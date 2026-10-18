@@ -866,8 +866,19 @@ const ASSISTANT_INDEX =
 // Deleting a chunk deletes its index rows. Made only once the index exists: with no index to
 // delete from, the trigger would make every delete of a chunk fail. Without it, the index isn't
 // used (see indexState in assistant-search.ts), and storing a file makes it.
-export const ASSISTANT_INDEX_TRIGGER =
+const ASSISTANT_INDEX_TRIGGER =
   "CREATE TRIGGER IF NOT EXISTS assistant_chunks_gone AFTER DELETE ON assistant_chunks BEGIN DELETE FROM assistant_chunks_fts WHERE rowid = old.id; END";
+
+/**
+ * Makes the trigger when the index is without it, and in the same write deletes the index rows of
+ * chunks deleted while it was missing, the only time an index row can outlive its chunk: so the
+ * index's own counts are its chunks'. Only once the index exists.
+ */
+export async function mendAssistantIndex(c: Client): Promise<void> {
+  const made = await c.execute("SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND name = 'assistant_chunks_gone'");
+  if (made.rows.length) return;
+  await c.batch([ASSISTANT_INDEX_TRIGGER, "DELETE FROM assistant_chunks_fts WHERE rowid NOT IN (SELECT id FROM assistant_chunks)"], "write");
+}
 
 async function init(c: Client) {
   await c.execute("PRAGMA foreign_keys = ON");
@@ -882,7 +893,7 @@ async function init(c: Client) {
   await c.execute("CREATE INDEX IF NOT EXISTS site_messages_contact ON site_messages(site_slug, contact_id)");
   // Each on its own, outside SCHEMA's one batch, so a database without FTS5 still gets everything else.
   await c.execute("CREATE INDEX IF NOT EXISTS projects_assistant ON projects(assistant_id) WHERE assistant_id != ''").catch(() => {});
-  await c.execute(ASSISTANT_INDEX).then(() => c.execute(ASSISTANT_INDEX_TRIGGER)).catch(() => {});
+  await c.execute(ASSISTANT_INDEX).then(() => mendAssistantIndex(c)).catch(() => {});
 }
 
 /** Returns the database client, creating the tables on first use. */

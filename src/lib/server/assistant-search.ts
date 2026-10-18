@@ -8,12 +8,14 @@
  * find the same chunks; they can order them differently (see rankChunks).
  *
  * Nothing here deletes by cascade: Turso runs with foreign keys off. A chunk's index rows go with
- * it through the trigger on assistant_chunks (see db.ts), and every result and count is joined back
- * to its chunk and to a file the asking assistant lists, so a stray index row or a chunk left by a
- * failed upload can only ever find nothing.
+ * it through the trigger on assistant_chunks, and those left while the trigger was missing go when
+ * it's made (see mendAssistantIndex in db.ts). A failed upload's chunks are deleted with it, or at
+ * the assistant's next upload. Word counts are the index's own; every result is joined back to its
+ * chunk and to a file the asking assistant lists, so a stray index row or a chunk left by a failed
+ * upload can only ever find nothing.
  */
 import type { InStatement } from "@libsql/client";
-import { all, ASSISTANT_INDEX_TRIGGER, db, one, run } from "./db.ts";
+import { all, db, mendAssistantIndex, one, run } from "./db.ts";
 import { MAX_PASSAGES, PASSAGE_TOKENS, type SearchMode } from "../assistants.ts";
 import { chunkText, labelEnds, matchTerms, phraseOf, queryTerms, rankChunks, tagOf, tagged, tells, type Term } from "../assistant-chunks.ts";
 
@@ -62,7 +64,8 @@ const BATCH = 200;
  * count. The file's row is written first, and deleted by the caller if this throws: only the
  * chunks of a file the assistant lists are ever read. `tokens` is the file's count; each chunk
  * gets its share, rounded up. If any part fails, the file's chunks are deleted and the error is
- * thrown.
+ * thrown. Chunks of the assistant's that no file it lists has (a failed upload's, if deleting them
+ * failed too) are deleted first, so they can't make its words look common (see telling).
  */
 export async function indexFile(assistantId: string, fileId: string, text: string, tokens: number): Promise<{ chunks: number; indexed: boolean }> {
   const tag = tagOf(assistantId);
@@ -70,11 +73,17 @@ export async function indexFile(assistantId: string, fileId: string, text: strin
   const { index, trigger } = await indexState();
   // An index without its trigger would keep the rows of every chunk deleted from now on.
   if (index && !trigger) {
-    await run(ASSISTANT_INDEX_TRIGGER);
+    await mendAssistantIndex(await db());
     checked = null;
   }
+  const statements: InStatement[] = [
+    {
+      sql: "DELETE FROM assistant_chunks WHERE assistant_id = ? AND file_id NOT IN (SELECT id FROM assistant_files WHERE assistant_id = ?)",
+      args: [assistantId, assistantId],
+    },
+  ];
   // Without the index, mark first that chunks exist which it doesn't hold.
-  const statements: InStatement[] = index ? [] : [{ sql: "INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')", args: [UNINDEXED] }];
+  if (!index) statements.push({ sql: "INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')", args: [UNINDEXED] });
   for (const c of chunks) {
     statements.push({
       sql: "INSERT INTO assistant_chunks (assistant_id, file_id, seq, label, chars, tokens, body) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -206,7 +215,9 @@ function passagesOf(runs: Run[], files: FileRow[], named: boolean): Passage[] {
 
 /**
  * Takes chunks best first while their padded estimates fit PASSAGE_TOKENS and they make at most
- * MAX_PASSAGES passages, then cuts the passages to the exact cap: the lowest-ranked go first.
+ * MAX_PASSAGES passages, then cuts the passages to the exact cap: the lowest-ranked go first. They
+ * are counted at most twice: over the cap, runs go until their bytes, at the tokens per byte that
+ * count found (padded), fit, and what's left is counted again. Still over, they're cut by bytes.
  */
 async function choose(ranked: Row[], files: FileRow[], o: ReadOptions): Promise<Passage[]> {
   const fileIndex = new Map(files.map((f, i) => [f.id, i]));
@@ -235,7 +246,7 @@ async function choose(ranked: Row[], files: FileRow[], o: ReadOptions): Promise<
     return passages.filter((p) => p.text);
   };
   if (o.maxChars !== undefined) return fit(o.maxChars, (s) => s.length, (s, n) => s.slice(0, n).replace(/[\uD800-\uDBFF]$/, ""));
-  while (runs.length && o.count) {
+  for (let round = 0; round < 2 && runs.length && o.count; round++) {
     const passages = passagesOf(runs, files, named);
     let tokens: number;
     try {
@@ -244,8 +255,9 @@ async function choose(ranked: Row[], files: FileRow[], o: ReadOptions): Promise<
       break;
     }
     if (tokens <= PASSAGE_TOKENS) return passages;
-    if (runs.length === 1) break;
-    runs = runs.slice(0, -1);
+    if (round === 1 || runs.length === 1) break;
+    const perByte = (tokens / size(passages, bytes)) * ESTIMATE;
+    while (runs.length > 1 && size(passagesOf(runs, files, named), bytes) * perByte > PASSAGE_TOKENS) runs = runs.slice(0, -1);
   }
   return fit(PASSAGE_TOKENS, bytes, cutBytes);
 }
@@ -259,16 +271,15 @@ const MATCHED = `${INDEX} f CROSS JOIN assistant_chunks c ON c.id = f.rowid ${LI
 
 /**
  * The terms that help choose between the assistant's `total` chunks (see tells), each counted in
- * the index through the chunks it finds, so a stray index row never makes a word look common.
+ * the index alone: joining every match of a common word to its chunk and file would read thousands
+ * of rows a message. Its rows are its chunks', and a failed upload's chunks go at the assistant's
+ * next upload (see mendAssistantIndex in db.ts, and indexFile).
  */
-async function telling(terms: Term[], tag: string, assistantId: string, total: number): Promise<Term[]> {
+async function telling(terms: Term[], tag: string, total: number): Promise<Term[]> {
   const counts = await (
     await db()
   ).batch(
-    terms.map((t) => ({
-      sql: `SELECT COUNT(*) AS n FROM ${MATCHED} WHERE f.seg MATCH ? AND c.assistant_id = ?`,
-      args: [phraseOf(tag, t), assistantId],
-    })),
+    terms.map((t) => ({ sql: `SELECT COUNT(*) AS n FROM ${INDEX} WHERE seg MATCH ?`, args: [phraseOf(tag, t)] })),
     "read",
   );
   const found = counts.map((r) => Number(r.rows[0]?.n ?? 0));
@@ -290,7 +301,7 @@ export async function searchChunks(assistantId: string, terms: Term[], mode?: Se
   }
   const tag = tagOf(assistantId);
   const chunks = total ?? Number((await one<{ n: number }>("SELECT COALESCE(SUM(chunks), 0) AS n FROM assistant_files WHERE assistant_id = ?", [assistantId]))?.n);
-  const kept = await telling(terms, tag, assistantId, chunks);
+  const kept = await telling(terms, tag, chunks);
   if (!kept.length) return [];
   return all<Row>(
     `SELECT c.id, c.file_id, c.seq, c.label, c.tokens, c.body

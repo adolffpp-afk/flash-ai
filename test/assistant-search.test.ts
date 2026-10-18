@@ -127,17 +127,6 @@ test("only the asking assistant's chunks come back, even with a planted stray in
   await run("DELETE FROM assistant_chunks WHERE id = ?", [their]);
   await run("DELETE FROM assistant_chunks_fts WHERE rowid = ?", [10 ** 9]);
   assert.deepEqual(await matching(bakery, "zebrafinch"), []);
-
-  // Stray rows for a word the bakery really has, more than it has chunks: the word is counted
-  // through the chunks it finds, so it still tells, and page 3 is still read.
-  const strays = Array.from({ length: 120 }, (_, i) => 2 * 10 ** 9 + i);
-  for (const id of strays) await run("INSERT INTO assistant_chunks_fts (rowid, seg) VALUES (?, ?)", [id, tagged(tagOf(bakery), "refunds refund")]);
-  try {
-    const refunds = await passagesFor({ id: bakery }, "How do refunds work?", "", { named: true });
-    assert.ok(refunds.passages.some((p) => p.title === "Handbook.pdf, page 3" && /paid within 14 days/.test(p.text)), JSON.stringify(refunds.passages.map((p) => p.title)));
-  } finally {
-    for (const id of strays) await run("DELETE FROM assistant_chunks_fts WHERE rowid = ?", [id]);
-  }
 });
 
 test("chunks of a file the assistant doesn't list (a failed upload's) are never read", async () => {
@@ -201,7 +190,7 @@ test("passages are cut to 6,000 tokens after counting, and to 6,000 bytes when c
     return n;
   };
   const counted = await passagesFor({ id: bakery }, broad, "", { count: perChar });
-  assert.ok(seen.length > 1 && seen.at(-1)! <= PASSAGE_TOKENS && seen.slice(0, -1).every((n) => n > PASSAGE_TOKENS), seen.join(" "));
+  assert.ok(seen.length === 2 && seen[1] <= PASSAGE_TOKENS && seen[0] > PASSAGE_TOKENS, seen.join(" "));
   assert.ok(counted.passages.length < all8.passages.length);
   assert.ok(counted.passages.some((p) => p.text.includes(best.body.trim().slice(0, 40))), "the best match stays");
 
@@ -215,16 +204,50 @@ test("passages are cut to 6,000 tokens after counting, and to 6,000 bytes when c
     const cut = await passagesFor({ id: bakery }, broad, "", { count });
     assert.ok(cut.passages.length > 0 && size(cut.passages) <= PASSAGE_TOKENS, String(size(cut.passages)));
   }
-  // Whatever the count, one passage is always left, cut to the bytes cap.
-  const huge = await passagesFor({ id: bakery }, broad, "", { count: async () => 10 ** 9 });
+  // Whatever the count, one passage is always left, cut to the bytes cap, after two counts at most.
+  let counts = 0;
+  const huge = await passagesFor({ id: bakery }, broad, "", { count: async () => (counts++, 10 ** 9) });
   assert.equal(huge.passages.length, 1);
   assert.ok(size(huge.passages) <= PASSAGE_TOKENS);
+  assert.equal(counts, 2);
+
+  // A file of English and then Japanese, whose Japanese chunks take twice the tokens their share of
+  // the file's count says: the second count fits, and keeps most of what the first held.
+  const mixed = await assistant("owner", "Mixed");
+  const kana = "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをん";
+  const rnd = seeded(17);
+  const block = (i: number) => Array.from({ length: 1100 }, () => kana[Math.floor(rnd() * kana.length)]).join("") + (i % 2 ? "。\n\n" : "。返金について。\n\n");
+  const jaText = Array.from({ length: 30 }, (_, i) => block(i)).join("");
+  const cost = (t: string) => (t.match(/[\u3040-\u30ff\u4e00-\u9fff]/g)?.length ?? 0) + Math.ceil(t.replace(/[\u3040-\u30ff\u4e00-\u9fff]/g, "").length / 4);
+  const both = `${filler(60_000, 18)}\n\n${jaText}`;
+  await file(mixed, "Handbook.txt", both, { tokens: cost(both), exact: 0 });
+  const rounds: number[] = [];
+  const read = await passagesFor({ id: mixed }, "返金", "", { count: async (ps) => (rounds.push(ps.reduce((n, p) => n + cost(p.title) + cost(p.text), 0)), rounds.at(-1)!) });
+  assert.ok(rounds.length === 2 && rounds[0] > PASSAGE_TOKENS && rounds[1] <= PASSAGE_TOKENS, rounds.join(" "));
+  assert.ok(rounds[1] > PASSAGE_TOKENS * 0.7 && read.passages.length > 1, `${rounds[1]} tokens in ${read.passages.length} passages`);
   // Multi-byte text is cut at a character's edge.
   const ja = await assistant("owner", "Japanese");
   const plain = "商品の価格と配送の説明です。".repeat(360);
   await file(ja, "ja.txt", `${plain}${"返金ポリシーについて説明します。".repeat(220)}${plain}`, { tokens: 7000 });
   const jaRead = await passagesFor({ id: ja }, "返金", "", { count: async () => 10 ** 9 });
   assert.ok(size(jaRead.passages) <= PASSAGE_TOKENS && !jaRead.passages[0].text.includes("�"));
+  // Characters outside the BMP (emoji, rarer Chinese characters) are two code units: no cut, by
+  // bytes or by characters at an odd or even limit, leaves half of one.
+  const half = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+  const halves: string[] = [];
+  for (let lead = 1; lead <= 4; lead++) {
+    const astral = await assistant("owner", `Astral ${lead}`);
+    await file(astral, "astral.txt", Array.from({ length: 5 }, () => `${"x".repeat(lead)} refund ${"\u{2000B}".repeat(590)}`).join("\n\n"), { exact: 0 });
+    const failing = async () => {
+      throw new Error("counting is down");
+    };
+    for (const [how, o] of [["bytes", { count: failing }], ["3001 characters", { maxChars: 3001 }], ["3002 characters", { maxChars: 3002 }]] as const) {
+      const read = await passagesFor({ id: astral }, "refund", "", o);
+      assert.ok(read.passages.length > 0, how);
+      for (const p of read.passages) if (half.test(p.text)) halves.push(`${how}, lead ${lead}: ${JSON.stringify(p.text.slice(-2))}`);
+    }
+  }
+  assert.deepEqual(halves, []);
 });
 
 test("at most 8 passages, with neighbouring chunks merged into one", async () => {
@@ -288,13 +311,16 @@ test("when nothing matches nothing is read, and Read the start of each file read
   assert.deepEqual([...new Set(result.passages.map((p) => p.fileId))], ids.slice(0, MAX_PASSAGES));
 });
 
-test("a searched message reads the chunk count from the files, not by counting the chunks", async () => {
+test("a searched message reads the chunk count from the files, and counts its words in the index alone", async () => {
   for (const f of [handbook, prices, notes]) {
     assert.equal(Number((await one<{ chunks: number }>("SELECT chunks FROM assistant_files WHERE id = ?", [f]))?.chunks), (await chunksOf(f)).length);
   }
-  for (const message of ["How do refunds work?", "thanks!"]) {
+  for (const message of ["How do refunds work?", "thanks!", "and the price of the loaves in the shop"]) {
     const { seen } = await watched(() => passagesFor({ id: bakery }, message));
     assert.ok(!seen.some((q) => /COUNT\(\*\)[^]*FROM assistant_chunks WHERE/.test(q.sql)), seen.map((q) => q.sql).join("\n"));
+    // Not every match of "the" joined to its chunk and its file.
+    const counts = seen.filter((q) => /COUNT\(\*\)/.test(q.sql));
+    assert.ok(counts.length > 0 && counts.every((q) => !/JOIN|assistant_chunks\b(?!_fts)/.test(q.sql)), counts.map((q) => q.sql).join("\n"));
   }
 });
 
@@ -315,6 +341,24 @@ test("the fallback ranker finds the same chunks as the full-text index, and the 
     assert.deepEqual(new Set(ranked.map((r) => r.id)), new Set(indexed.map((r) => r.id)), `${message}: the same chunks match`);
     const everything = await all<{ id: number; body: string }>("SELECT id, body FROM assistant_chunks WHERE assistant_id = ? ORDER BY id", [bakery]);
     assert.equal(rankChunks(everything, terms)[0].id, indexed[0].id);
+  }
+});
+
+test("Korean and Arabic questions find words written with a particle or vowel marks, in both searches", async () => {
+  const shop = await assistant("owner", "Shop");
+  const ko = "환불은 결제 후 14일 이내에 가능합니다. 환불을 받으려면 영수증이 필요합니다. 배송비는 환불되지 않습니다.";
+  const ar = "سياسة الإرجاع: يُرجى إرسال الإيصال أولًا. تعذّر الاسترداد بعد ثلاثين يومًا. لطفاً";
+  await file(shop, "Guide.pdf", pdf(8, { 3: ko, 6: ar }, 9), { exact: 0 });
+  const asked = [
+    ["환불 기간", "3"],
+    ["배송비 환불", "3"],
+    ["영수증이 필요한가요?", "3"],
+    ["يرجى ارسال الايصال", "6"],
+    ["تعذر الاسترداد", "6"],
+    ["أولا لطفا", "6"],
+  ];
+  for (const [question, page] of asked) {
+    for (const mode of ["index", "fallback"] as const) assert.equal((await searchChunks(shop, queryTerms(question), mode))[0]?.label, page, `${mode}: ${question}`);
   }
 });
 
@@ -353,18 +397,25 @@ test("explicit deletes leave no chunk or index row behind, with foreign keys off
   assert.equal((await chunksOf(keep)).length, 0);
 });
 
-test("an index without the trigger that keeps it clean isn't used, and storing a file makes the trigger", async () => {
+test("an index without the trigger that keeps it clean isn't used, and storing a file makes the trigger and clears what was left meanwhile", async () => {
   const { adminStats } = await import("../src/lib/server/admin-stats.ts");
+  const left = await assistant("owner", "Left");
+  await file(left, "left.txt", `${filler(6000, 61)}\n\nMarmalade on Mondays.`);
   await run("DROP TRIGGER assistant_chunks_gone");
   try {
     assert.equal(await searchMode(true), "fallback");
     assert.equal(JSON.parse(JSON.stringify(await adminStats(30))).assistantSearch.mode, "fallback");
     assert.match((await passagesFor({ id: bakery }, "How do refunds work?")).passages.map((p) => p.text).join(""), /paid within 14 days/, "search still works");
+    // Chunks deleted now leave their index rows behind.
+    await run("DELETE FROM assistant_chunks WHERE assistant_id = ?", [left]);
+    assert.equal((await matching(left, "marmalade")).length, 1);
   } finally {
     const mended = await assistant("owner", "Mended");
     await file(mended, "a.txt", "Quince jam on Sundays.");
   }
   assert.ok(await one("SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND name = 'assistant_chunks_gone'"));
+  assert.deepEqual(await matching(left, "marmalade"), [], "the rows left behind went with it");
+  assert.equal(await indexRows(), Number((await one<{ n: number }>("SELECT COUNT(*) AS n FROM assistant_chunks"))?.n), "an index row for every chunk, and no more");
   assert.equal(await searchMode(true), "index");
 });
 
@@ -383,13 +434,20 @@ test("a file that fails part way is taken out again, and chunks get their share 
   assert.equal((await one<{ n: number }>("SELECT COUNT(*) AS n FROM assistant_chunks WHERE assistant_id = ?", [half]))?.n, 0);
   assert.equal(await indexRows(), before);
 
+  // Chunks a failed upload left when deleting them failed too: the next upload deletes them, with
+  // their index rows, so they can't make a word look common.
+  await run("INSERT INTO assistant_chunks (assistant_id, file_id, seq, chars, tokens, body) VALUES (?, 'failed-upload', 0, 9, 3, 'Gooseberry')", [half]);
+  await run("INSERT INTO assistant_chunks_fts (rowid, seg) SELECT MAX(id), ? FROM assistant_chunks", [tagged(tagOf(half), "Gooseberry")]);
+  assert.equal((await matching(half, "gooseberry")).length, 1);
   const ok = await file(half, "ok.txt", text, { tokens: 50_000 });
+  assert.equal((await one<{ n: number }>("SELECT COUNT(*) AS n FROM assistant_chunks WHERE file_id = 'failed-upload'"))?.n, 0);
+  assert.deepEqual(await matching(half, "gooseberry"), []);
   const stored = await chunksOf(ok);
   assert.equal(stored.map((c) => c.body).join(""), text);
   for (const c of stored) assert.equal(c.tokens, Math.ceil((50_000 * c.body.length) / text.length));
 });
 
-test("assistant text takes no more than STORE_FACTOR times its bytes in the database, as /admin measures it", async () => {
+test("assistant text takes no more than STORE_FACTOR times its bytes in the database, lists of short codes aside, as /admin measures it", async () => {
   const client = await db();
   // Starting with no assistant text, so /admin's measure of all of it is the growth measured here.
   await run("DELETE FROM assistant_chunks");
@@ -404,19 +462,25 @@ test("assistant text takes no more than STORE_FACTOR times its bytes in the data
   const rnd = seeded(9);
   let ja = "";
   while (ja.length < 150_000) ja += Array.from({ length: 30 }, () => kana[Math.floor(rnd() * kana.length)]).join("") + (rnd() < 0.1 ? "。\n\n" : "。");
-  for (const [name, text] of [
-    ["prose", filler(400_000, 51, 20_000)],
-    ["spreadsheet", csv],
-    ["japanese", ja],
+  // Every 3-character code, ten to a row: each word is new, and costs the index about its own size.
+  const ALNUM = "ABCDEFGHJKLMNPQRSTUVWXYZ0123456789";
+  const codes = [...ALNUM].flatMap((a) => [...ALNUM].flatMap((b) => [...ALNUM].map((c) => a + b + c)));
+  const codeSheet = sheet("Codes", Array.from({ length: Math.ceil(codes.length / 10) }, (_, i) => codes.slice(i * 10, i * 10 + 10)));
+  for (const [name, text, most] of [
+    ["prose", filler(400_000, 51, 20_000), STORE_FACTOR],
+    ["spreadsheet", csv, STORE_FACTOR],
+    ["japanese", ja, STORE_FACTOR],
     // A marker line as long as a page of text is text, not a label copied into every chunk.
-    ["marker line", `--- Sheet: ${"x".repeat(20_000)} ---\n${filler(100_000, 52)}`],
+    ["marker line", `--- Sheet: ${"x".repeat(20_000)} ---\n${filler(100_000, 52)}`, STORE_FACTOR],
+    // Lists of short codes take more than is counted (see STORE_FACTOR), but not without bound.
+    ["codes", codeSheet, 4],
   ] as const) {
     await run("VACUUM");
     const start = await pagesUsed(client);
     await file(sized, name, text);
     const grown = ((await pagesUsed(client)) - start) * page;
     const factor = grown / bytes(text);
-    assert.ok(factor <= STORE_FACTOR, `${name}: ${factor.toFixed(2)}x`);
+    assert.ok(factor <= most, `${name}: ${factor.toFixed(2)}x`);
     assert.ok(factor > 1, `${name}: the text itself is kept (${factor.toFixed(2)}x)`);
     stored += bytes(text);
   }
