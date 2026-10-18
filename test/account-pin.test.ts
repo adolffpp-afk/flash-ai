@@ -1154,3 +1154,32 @@ test("while a log out is under way, Settings offers no log out of every device, 
   assert.match(account, /<button className=\{`\$\{button\} disabled:cursor-default`\} disabled=\{leaving\} onClick=\{\(\) => setConfirm\("everywhere"\)\}>\n\s+\{t\("Log out of all devices"\)\}/);
   assert.equal(account.match(/onClick=\{signOutEverywhere\}/g)?.length, 1, "no other way to it");
 });
+
+test("Visitors, its funnel, the app list's counts and the apps' downloads in My websites & apps name the tab's account", async () => {
+  const { readFile } = await import("node:fs/promises");
+  // Ana's tab shows her account while Ben's is the browser's default: the Visitors view of her
+  // app, a range of its funnel, and the list's counts past its first 20 apps are hers, not Ben's.
+  for (const file of ["MyApps.tsx", "FunnelView.tsx"]) {
+    const page = await readFile(new URL(`../src/components/${file}`, import.meta.url), "utf8");
+    // Every address of Flash's API there is asked for with api() or authedFetch(), or linked with withAccount().
+    for (const m of page.matchAll(/["`]\/api\//g)) {
+      const before = page.slice(page.lastIndexOf("\n", m.index) + 1, m.index);
+      assert.match(before, /(?:\bapi(?:<.*>)?|\bauthedFetch|\bwithAccount)\($/, `${file}: ${page.slice(m.index, m.index + 60).split("\n")[0]}`);
+    }
+  }
+  const apps = await readFile(new URL("../src/components/MyApps.tsx", import.meta.url), "utf8");
+  assert.match(apps, /api<Visits>\(`\/api\/sites\/\$\{site\.slug\}\/visits`\)/);
+  assert.match(apps, /api<FunnelStats>\(`\/api\/sites\/\$\{slug\}\/funnel\?days=\$\{days\}`\)/);
+  assert.match(apps, /api<\{ counts: Record<string, Counts> \}>\(`\/api\/sites\?counts=/);
+  pin.setPin("acct_ana");
+  sent.length = 0;
+  for (const path of ["/api/sites/ana-cafe/visits", "/api/sites/ana-cafe/funnel?days=90", "/api/sites?counts=ana-cafe"]) await store.api(path);
+  assert.deepEqual(
+    sent.map((s) => [s.url, s.headers.get("x-flash-account")]),
+    [
+      ["/api/sites/ana-cafe/visits", "acct_ana"],
+      ["/api/sites/ana-cafe/funnel?days=90", "acct_ana"],
+      ["/api/sites?counts=ana-cafe", "acct_ana"],
+    ],
+  );
+});

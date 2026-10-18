@@ -67,6 +67,10 @@ const madeWithRoute = await import("../src/app/api/sites/[slug]/made-with/route.
 const adminReportsRoute = await import("../src/app/api/admin/reports/route.ts");
 const contactsRoute = await import("../src/app/api/sites/[slug]/contacts/route.ts");
 const inboxRoute = await import("../src/app/api/sites/[slug]/inbox/route.ts");
+// Added on main with visit sources and funnels: the owner's Visitors, its funnel, and the app list with its caps.
+const visitsRoute = await import("../src/app/api/sites/[slug]/visits/route.ts");
+const funnelRoute = await import("../src/app/api/sites/[slug]/funnel/route.ts");
+const sitesRoute = await import("../src/app/api/sites/route.ts");
 const { addContact } = await import("../src/lib/server/contacts.ts");
 const { registerClient } = await import("../src/lib/server/connector.ts");
 const { sendVerification } = await import("../src/lib/server/account.ts");
@@ -1246,20 +1250,101 @@ test("a file of any account signed in here loads, but only the tab's own account
   assert.equal((await del(b)).status, 200);
 });
 
+// A person's browser opening an app's page: it says which languages its person reads, as visits need.
+const BROWSER = { "user-agent": "Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0", "accept-language": "en" };
+
 test("an app's owner looking at it isn't counted as a visitor, whichever account here is the default", async () => {
   const a = await account("pva");
   const b = await account("pvb");
   await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES ('pv-b', ?, 'B', '<p>b</p>', 0, 0)", [b]);
   const views = async () => count("SELECT COALESCE(SUM(views), 0) AS n FROM site_visits WHERE site_slug = 'pv-b'");
+  const people = async (kind: string) => count("SELECT COUNT(*) AS n FROM site_people WHERE site_slug = 'pv-b' AND kind = ?", [kind]);
   const look = async (cookie: string) => {
-    const res = await pageRoute.GET(req("/p/pv-b", { cookie, headers: { "user-agent": "Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0" } }), ctx({ slug: "pv-b" }));
+    const res = await pageRoute.GET(req("/p/pv-b", { cookie, headers: BROWSER }), ctx({ slug: "pv-b" }));
     assert.equal(res.status, 200);
     await afterwards();
   };
   await look((await browser(b, a)).cookie);
   assert.equal(await views(), 0, "the owner, signed in here though not the default");
+  // Noted as the owner's visit, so their forms, sign-ups and checkouts that day count as not matched.
+  assert.deepEqual([await people("owner"), await people("visit")], [1, 0]);
   await look((await browser(a)).cookie);
   assert.equal(await views(), 1);
+  assert.deepEqual([await people("owner"), await people("visit")], [1, 1], "someone signed in only to another account is a visitor");
+});
+
+test("Visitors, its funnel, the app list and publishing act as the tab's account, never as one not signed in here", async () => {
+  const a = await account("fva");
+  const b = await account("fvb");
+  const stranger = await account("fvc");
+  await session(stranger);
+  // b is the browser's default and on Pro; the tab shows a, on the free plan.
+  const { cookie } = await browser(a, b);
+  await run(
+    `INSERT INTO subscriptions (id, user_id, plan, interval, status, amount_cents, anchor, paid_until, test, created_at, updated_at)
+     VALUES ('sub_fvb', ?, 'pro', 'month', 'active', 2000, ?, ?, 1, 0, 0)`,
+    [b, Date.now(), Date.now() + 30 * 86_400_000],
+  );
+  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES ('fv-a', ?, 'A', '<p>a</p>', ?, 2)", [a, Date.now()]);
+  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES ('fv-b', ?, 'B', '<p>b</p>', ?, 1)", [b, Date.now()]);
+  // Two people open a's app and one opens b's, from browsers signed in to no account.
+  for (const slug of ["fv-a", "fv-a", "fv-b"]) assert.equal((await pageRoute.GET(req(`/p/${slug}`, { headers: BROWSER }), ctx({ slug }))).status, 200);
+  await afterwards();
+  // The same browser's cookie with only b in it, naming a: a isn't signed in there.
+  const onlyB = (await browser(b)).cookie;
+
+  // Visitors: the tab's account's app's numbers, and nobody else's.
+  const visits = (slug: string, account?: string, cookieOf = cookie) => visitsRoute.GET(req(`/api/sites/${slug}/visits`, { cookie: cookieOf, account }), ctx({ slug }));
+  const mine = await (await visits("fv-a", a)).json();
+  assert.deepEqual([mine.views, mine.visitors], [2, 2]);
+  const theirs = await (await visits("fv-b", b)).json();
+  assert.deepEqual([theirs.views, theirs.visitors], [1, 1]);
+  assert.equal((await visits("fv-a")).status, 404, "with no account named, a read is the default's (b), which doesn't own a's app");
+  assert.equal((await visits("fv-a", b)).status, 404);
+  assert.equal((await visits("fv-a", stranger)).status, 401, "never an account not signed in here");
+  assert.equal((await visits("fv-a", a, onlyB)).status, 401, "nor one this browser isn't signed in to any more");
+  assert.equal((await visits("fv-a", "../fva")).status, 401);
+
+  // The funnel: the same, and its hourly limit is the tab's account's.
+  const funnel = (slug: string, account?: string, cookieOf = cookie) =>
+    funnelRoute.GET(req(`/api/sites/${slug}/funnel?days=7`, { cookie: cookieOf, account }), ctx({ slug }));
+  const limits = async (id: string) => count("SELECT COALESCE(SUM(count), 0) AS n FROM rate_limits WHERE key = ?", [`funnel:${id}`]);
+  const stats = await (await funnel("fv-a", a)).json();
+  assert.equal(stats.totals.visitors, 2);
+  assert.equal((await (await funnel("fv-b", b)).json()).totals.visitors, 1);
+  assert.equal((await funnel("fv-a")).status, 404);
+  assert.equal((await funnel("fv-a", b)).status, 404);
+  assert.equal((await funnel("fv-a", stranger)).status, 401);
+  assert.equal((await funnel("fv-a", a, onlyB)).status, 401);
+  assert.deepEqual([await limits(a), await limits(b), await limits(stranger)], [1, 3, 0], "each load counts against the account it read as");
+
+  // The app list: the tab's account's apps, with its own plan's number of apps.
+  const list = (account?: string, query = "") => sitesRoute.GET(req(`/api/sites${query}`, { cookie, account }));
+  const listed = await (await list(a)).json();
+  assert.deepEqual([listed.sites.map((s: { slug: string }) => s.slug), listed.maxSites], [["fv-a"], 20]);
+  const listedB = await (await list()).json();
+  assert.deepEqual([listedB.sites.map((s: { slug: string }) => s.slug), listedB.maxSites], [["fv-b"], 60], "with no account named, the default's");
+  assert.equal((await list(stranger)).status, 401);
+  assert.deepEqual(Object.keys((await (await list(a, "?counts=fv-a,fv-b")).json()).counts), ["fv-a"], "counts only for the tab's account's apps");
+  assert.equal((await list(stranger, "?counts=fv-a")).status, 401);
+
+  // Publishing, held to the tab's account's plan: a change must name the tab's account.
+  const publish = (account?: string) => sitesRoute.POST(req("/api/sites", { cookie, account, json: { html: "<p>new</p>", title: "New" } }));
+  assert.equal((await publish()).status, 401, "a change must name the tab's account");
+  assert.equal((await publish(stranger)).status, 401);
+  const before = await count("SELECT COUNT(*) AS n FROM sites WHERE user_id IN (?, ?, ?)", [a, b, stranger]);
+  assert.equal(before, 2, "nothing was published");
+  const made = await publish(a);
+  assert.equal(made.status, 200);
+  const { slug } = (await made.json()) as { slug: string };
+  assert.equal((await one<{ user_id: string }>("SELECT user_id FROM sites WHERE slug = ?", [slug]))?.user_id, a);
+  // And unpublishing.
+  const unpublish = (account?: string) => sitesRoute.DELETE(req(`/api/sites?slug=${slug}`, { method: "DELETE", cookie, account }));
+  assert.equal((await unpublish()).status, 401);
+  await unpublish(b);
+  assert.equal(await count("SELECT COUNT(*) AS n FROM sites WHERE slug = ?", [slug]), 1, "b can't unpublish a's app");
+  assert.equal((await unpublish(a)).status, 200);
+  assert.equal(await count("SELECT COUNT(*) AS n FROM sites WHERE slug = ?", [slug]), 0);
 });
 
 test("Stripe's seller sign-up link opens for the account it was made for, and never for another", async () => {

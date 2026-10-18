@@ -568,6 +568,7 @@ export function Message({
             onEditCode={onEditApp}
             onFix={onFixApp}
             onPick={onPickApp}
+            onPlans={paymentsOn ? onBuyCredits : undefined}
           />
         )}
         {m.after?.trim() && (

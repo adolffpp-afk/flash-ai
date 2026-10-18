@@ -2436,6 +2436,7 @@ export function Flash({
       onEditCode={editAppCode}
       onFix={fixApp}
       onPick={pickApp}
+      onPlans={me.paymentsEnabled || me.testPurchases ? () => setShowCredits(true) : undefined}
     />
   );
   // The connected accounts on in the open chat (or for the chat Home's next message starts).

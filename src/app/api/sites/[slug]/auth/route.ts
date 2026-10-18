@@ -1,8 +1,10 @@
 import { timingSafeEqual } from "node:crypto";
+import { after } from "next/server";
 import { isSecure, readCookie } from "@/lib/server/auth.ts";
 import { clientIp } from "@/lib/server/limits.ts";
 import { FORM_COOKIE, SITE_COOKIE, siteAuth } from "@/lib/server/site-auth.ts";
 import { siteForDomain } from "@/lib/server/domains.ts";
+import { countSteps, matchVisit } from "@/lib/server/funnel.ts";
 import { isOwnHost } from "@/lib/site-host.ts";
 
 export const dynamic = "force-dynamic";
@@ -34,7 +36,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug
     url.searchParams.set("flash_auth", "unknown");
     return new Response(null, { status: 303, headers: { Location: url.pathname + url.search, "Cache-Control": "no-store" } });
   }
-  const { result, cookie } = await siteAuth(
+  const { result, cookie, joined } = await siteAuth(
     slug,
     field("action"),
     { email: field("email"), password: field("password"), name: field("name"), page: field("page") },
@@ -47,6 +49,8 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug
   url.searchParams.set("flash_auth", result);
   const headers = new Headers({ Location: url.pathname + url.search, "Cache-Control": "no-store" });
   if (cookie) headers.append("Set-Cookie", cookie);
+  // A new member counts as a sign-up for the visit they came on (see funnel.ts), after the answer.
+  if (joined && result === "ok") after(async () => countSteps(slug, await matchVisit(slug, request), ["signup"]));
   // 303 so the browser follows with a plain page request, not another form send.
   return new Response(null, { status: 303, headers });
 }

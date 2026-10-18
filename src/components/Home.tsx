@@ -16,7 +16,9 @@ import { useT } from "@/lib/use-t";
 import { EngineIcon } from "./EngineIcon";
 import { Everything } from "./Everything";
 
-type Site = { slug: string; title: string; updated_at: number; views: number; messages: number; unread: number };
+// views and messages are null for apps past the 20 the list counts (see sitesWithMessages); the home
+// screen shows only the first 4.
+type Site = { slug: string; title: string; updated_at: number; views: number | null; messages: number | null; unread: number };
 type Usage = { tools: { engine: string; credits: number; requests: number }[]; total: number };
 
 /** Line icons on a 24-unit grid, in the style of the sidebar's. */
