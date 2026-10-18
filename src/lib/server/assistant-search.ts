@@ -234,13 +234,34 @@ export async function indexFile(assistantId: string, fileId: string, text: strin
 
 const OWNED = "EXISTS (SELECT 1 FROM assistants WHERE id = ? AND user_id = ?)";
 
+/*
+ * Every table that keeps something for an assistant's file by its file_id, each also by its
+ * assistant_id, so deleting the assistant takes it too (see ASSISTANT_TABLES). Deleted with the
+ * file, before the file's own row in assistant_files. A test checks every assistant table with a
+ * file_id column is here.
+ */
+export const FILE_TABLES = ["assistant_chunks"] as const;
+
+/**
+ * The statements that delete what FILE_TABLES keeps for one file, then the file's own row, last.
+ * `owned` adds a check to each that the assistant is the user's.
+ */
+export function fileDeletes(assistantId: string, fileId: string, owned?: { userId: string }): InStatement[] {
+  const mine = owned ? ` AND ${OWNED}` : "";
+  const theirs = owned ? [assistantId, owned.userId] : [];
+  return [
+    ...FILE_TABLES.map((table): InStatement => ({ sql: `DELETE FROM ${table} WHERE assistant_id = ? AND file_id = ?${mine}`, args: [assistantId, fileId, ...theirs] })),
+    { sql: `DELETE FROM assistant_files WHERE assistant_id = ? AND id = ?${mine}`, args: [assistantId, fileId, ...theirs] },
+  ];
+}
+
 /**
  * The statements that delete one file of an assistant: a new version for the assistant, as its
- * answers and price change, then the file's chunks (the trigger takes their index rows), then the
- * file, last, so the batch's result for it says whether there was one. Each does nothing unless the
- * assistant is the user's, and the version moves only while the file is there, so two deletes of
- * one file at once give it one new version. For a batch with whatever else the delete changes,
- * followed by purgeIndex.
+ * answers and price change, then what FILE_TABLES keeps for it (the trigger takes its chunks' index
+ * rows), then the file, last, so the batch's result for it says whether there was one. Each does
+ * nothing unless the assistant is the user's, and the version moves only while the file is there,
+ * so two deletes of one file at once give it one new version. For a batch with whatever else the
+ * delete changes, followed by purgeIndex.
  */
 export function removeFileRows(userId: string, assistantId: string, fileId: string): InStatement[] {
   return [
@@ -248,8 +269,7 @@ export function removeFileRows(userId: string, assistantId: string, fileId: stri
       sql: "UPDATE assistants SET version = version + 1, updated_at = ? WHERE id = ? AND user_id = ? AND EXISTS (SELECT 1 FROM assistant_files WHERE id = ? AND assistant_id = ?)",
       args: [now(), assistantId, userId, fileId, assistantId],
     },
-    { sql: `DELETE FROM assistant_chunks WHERE assistant_id = ? AND file_id = ? AND ${OWNED}`, args: [assistantId, fileId, assistantId, userId] },
-    { sql: `DELETE FROM assistant_files WHERE assistant_id = ? AND id = ? AND ${OWNED}`, args: [assistantId, fileId, assistantId, userId] },
+    ...fileDeletes(assistantId, fileId, { userId }),
   ];
 }
 

@@ -77,6 +77,7 @@ const { CUT_NOTE } = await import("../src/lib/office.ts");
 const server = await import("../src/lib/server/assistants.ts");
 const { ASSISTANT_TABLES, DAILY_TEXT_FREE, DAILY_TEXT_PAID, EXACT_CHARS, countInstructionTokens, createAssistant, deleteUserAssistants, fileTokens } = server;
 const { UPLOAD_CAP } = await import("../src/lib/server/assistant-routes.ts");
+const { FILE_TABLES } = await import("../src/lib/server/assistant-search.ts");
 const { sha256 } = await import("../src/lib/server/ids.ts");
 const listRoute = await import("../src/app/api/_assistants/route.ts");
 const oneRoute = await import("../src/app/api/_assistants/[id]/route.ts");
@@ -176,6 +177,24 @@ const fresh = (chars: number) => {
   const head = `File ${++texts}. `;
   return (head + "Bread and butter. ".repeat(Math.ceil(chars / 18))).slice(0, chars);
 };
+/** A row for an assistant in a table, with something in each column that must have a value. */
+let seeded = 0;
+async function seed(table: string, assistantId: string, extra: Record<string, string> = {}) {
+  const columns = await all<{ name: string; type: string; notnull: number; dflt_value: unknown; pk: number }>(`PRAGMA table_info(${table})`);
+  // Every column that must have a value, and a primary key that isn't a row number.
+  const filled = columns.filter((c) => c.name === "assistant_id" || c.name in extra || ((Number(c.notnull) || (Number(c.pk) && !/INT/i.test(c.type))) && c.dflt_value === null));
+  const value = (c: { name: string; type: string }) => (c.name === "assistant_id" ? assistantId : c.name in extra ? extra[c.name] : /INT/i.test(c.type) ? ++seeded : `${table}-${c.name}-${++seeded}`);
+  await run(`INSERT INTO ${table} (${filled.map((c) => c.name).join(", ")}) VALUES (${filled.map(() => "?").join(", ")})`, filled.map(value));
+}
+/** The tables in the database with a column of this name; for file_id, only the assistants' own. */
+async function tablesWith(column: string): Promise<string[]> {
+  const tables: string[] = [];
+  for (const { name } of await all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")) {
+    if (column === "file_id" && !name.startsWith("assistant")) continue;
+    if ((await all<{ name: string }>(`PRAGMA table_info(${name})`)).some((c) => c.name === column)) tables.push(name);
+  }
+  return tables;
+}
 
 test("assistants are on here only through the test's loader, and off as shipped", async () => {
   assert.equal(ASSISTANTS_ON, true, "support/assistants-on.mjs turned the switch on for this test");
@@ -244,6 +263,10 @@ test("making an assistant: cleaned, refused with its reason at every limit and n
     [{ name: "Flash ∞ AI Summit" }, "That name is kept for Flash itself. Pick another."],
     [{ name: "Flash Infinity AI Vision" }, "That name is kept for Flash itself. Pick another."],
     [{ name: "AI-Flash Summit" }, "That name is kept for Flash itself. Pick another."],
+    [{ name: "Flash Summit AI" }, "That name is kept for Flash itself. Pick another."],
+    [{ name: "Flash Vision ∞ AI" }, "That name is kept for Flash itself. Pick another."],
+    [{ name: "Flash Sonic Infinity AI" }, "That name is kept for Flash itself. Pick another."],
+    [{ name: "Flash Ultra AI" }, "That name is kept for Flash itself. Pick another."],
     [{ description: "x".repeat(301) }, "Descriptions can be up to 300 characters."],
     [{ instructions: "x".repeat(8001) }, "Instructions can be up to 8,000 characters. Yours has 8,001."],
     [{ starters: ["1", "2", "3", "4", "5", "6", "7"] }, "Up to 6 conversation starters, each up to 200 characters."],
@@ -832,7 +855,7 @@ test("a failed upload whose delete fails too is deleted on a later try; one the 
 });
 
 // A body that never ends would hang a request that reads it all: this fails instead.
-test("an upload over 3,000,000 bytes is refused before it's read, however it comes", { timeout: 60_000 }, async () => {
+test("an upload's request over UPLOAD_CAP (3,000,000 bytes and 64 KB) is refused before it's read, however it comes; a text over 3,000,000 bytes in a smaller one is read, then refused before anything is written", { timeout: 60_000 }, async () => {
   const owner = await account("lite");
   const a = await made(owner);
   const path = `/api/assistants/${a.id}/files`;
@@ -887,6 +910,22 @@ test("an upload over 3,000,000 bytes is refused before it's read, however it com
   assert.equal(await count("SELECT COUNT(*) AS n FROM assistant_files WHERE assistant_id = ?", [a.id]), 0);
   assert.equal(await used(`assistant-chars:${owner.id}`), 0);
 
+  // Its text as a plain field of 3,000,001 bytes, in a request under UPLOAD_CAP, which leaves room
+  // for the other fields: the request is read and parsed, and then its text is refused as too big,
+  // before it's counted or stored and before the day's text is taken.
+  const plain = new FormData();
+  for (const [key, value] of Object.entries({ name: "Notes.txt", kind: "text", pages: "0", text: "a".repeat(lib.MAX_UPLOAD_BYTES + 1) })) plain.set(key, value);
+  const sent = new Response(plain);
+  const raw = new Uint8Array(await sent.arrayBuffer());
+  assert.ok(raw.byteLength > lib.MAX_UPLOAD_BYTES + 1 && raw.byteLength <= UPLOAD_CAP, `${raw.byteLength} bytes`);
+  const headers = { cookie: owner.cookie, origin: ORIGIN, "content-type": sent.headers.get("content-type")!, "content-length": String(raw.byteLength) };
+  const r4 = await read(await filesRoute.POST(new Request(`${ORIGIN}${path}`, { method: "POST", headers, body: raw }), ctx({ id: a.id })));
+  assert.equal(r4.status, 413);
+  assert.equal(r4.body.error, "Files must be 3 MB or smaller.");
+  assert.equal(asked.length, 0);
+  assert.equal(await count("SELECT COUNT(*) AS n FROM assistant_files WHERE assistant_id = ?", [a.id]), 0);
+  assert.equal(await used(`assistant-chars:${owner.id}`), 0);
+
   // Asked of directly, the same holds: more bytes than that is refused as too big.
   await assert.rejects(server.addAssistantFile(owner.id, a.id, { name: "big.txt", kind: "text", text: "面".repeat(1_000_001) }), (err: InstanceType<typeof server.AssistantError>) => err.refusal.code === "upload_big");
   // 3,000,000 bytes of Chinese is 1,000,000 characters: it fits.
@@ -896,50 +935,52 @@ test("an upload over 3,000,000 bytes is refused before it's read, however it com
 
 });
 
-test("deleting a file takes its chunks and their index rows, and gives the assistant a new version", async () => {
+test("deleting a file takes its chunks and their index rows, and what every table in FILE_TABLES keeps for it, and gives the assistant a new version", async () => {
+  // Every assistant table with a file_id column, read from the database itself, so one added later
+  // without being listed in FILE_TABLES fails here; and each is deleted with its assistant too.
+  assert.deepEqual([...FILE_TABLES].sort(), await tablesWith("file_id"), "deleting a file knows every table that keeps something for it");
+  for (const table of FILE_TABLES) assert.ok((ASSISTANT_TABLES as readonly string[]).includes(table), `${table} goes with its assistant`);
+
   const owner = await account();
   const stranger = await account();
   const a = await made(owner);
   const keep = await upload(owner, a.id, fresh(5000));
   const gone = await upload(owner, a.id, fresh(5000));
   const fileId = (gone.body.file as { id: string }).id;
+  const keptId = (keep.body.file as { id: string }).id;
   const ids = (await all<{ id: number }>("SELECT id FROM assistant_chunks WHERE file_id = ?", [fileId])).map((c) => Number(c.id));
   assert.ok(ids.length > 1);
+  for (const table of FILE_TABLES) for (const id of [fileId, keptId]) await seed(table, a.id, { file_id: id });
+  // One at a time: a second query at once would open a connection with foreign keys on.
+  const kept = async (id: string) => {
+    const out: Record<string, number> = {};
+    for (const table of FILE_TABLES) out[table] = await count(`SELECT COUNT(*) AS n FROM ${table} WHERE file_id = ?`, [id]);
+    return out;
+  };
+  const [goneBefore, keptBefore] = [await kept(fileId), await kept(keptId)];
   const indexed = () => count(`SELECT COUNT(*) AS n FROM assistant_chunks_fts WHERE rowid IN (${ids.join(",")})`);
   assert.equal(await indexed(), ids.length);
 
   assert.equal((await removeFile(stranger, a.id, fileId)).status, 404);
-  assert.equal(await count("SELECT COUNT(*) AS n FROM assistant_chunks WHERE file_id = ?", [fileId]), ids.length);
+  assert.deepEqual(await kept(fileId), goneBefore, "a stranger's delete takes nothing");
   const r = await removeFile(owner, a.id, fileId);
   assert.equal(r.status, 200);
   assert.equal(r.body.version, 3, "made, two uploads, a delete");
   assert.equal(await count("SELECT COUNT(*) AS n FROM assistant_chunks WHERE file_id = ?", [fileId]), 0);
   assert.equal(await count("SELECT COUNT(*) AS n FROM assistant_files WHERE id = ?", [fileId]), 0);
+  assert.deepEqual(await kept(fileId), Object.fromEntries(FILE_TABLES.map((t) => [t, 0])), "nothing is left for it in any of FILE_TABLES");
   assert.equal(await indexed(), 0);
   assert.equal((await removeFile(owner, a.id, fileId)).status, 404, "it's gone");
   assert.equal(Number((await row(a.id))!.version), 3, "and deleting it again gives no new version");
-  assert.equal(await count("SELECT COUNT(*) AS n FROM assistant_files WHERE id = ?", [(keep.body.file as { id: string }).id]), 1);
+  assert.equal(await count("SELECT COUNT(*) AS n FROM assistant_files WHERE id = ?", [keptId]), 1);
+  assert.deepEqual(await kept(keptId), keptBefore, "the other file keeps what it has");
 });
 
 test("deleting an assistant, or all of an account's, leaves no row behind with foreign keys off, in every table that keeps one", async () => {
   assert.equal(Number((await one<{ foreign_keys: number }>("PRAGMA foreign_keys"))?.foreign_keys), 0);
   // Every table with an assistant_id column, read from the database itself, so one added later
   // without being listed in ASSISTANT_TABLES fails here. A chat keeps its messages on purpose.
-  const tables: string[] = [];
-  for (const { name } of await all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")) {
-    if ((await all<{ name: string }>(`PRAGMA table_info(${name})`)).some((c) => c.name === "assistant_id")) tables.push(name);
-  }
-  assert.deepEqual([...ASSISTANT_TABLES, "projects"].sort(), tables, "deleting knows every table that keeps something for an assistant");
-
-  /** A row for the assistant in a table, with something in each column that must have a value. */
-  let n = 0;
-  const seed = async (table: string, assistantId: string, extra: Record<string, string> = {}) => {
-    const columns = await all<{ name: string; type: string; notnull: number; dflt_value: unknown; pk: number }>(`PRAGMA table_info(${table})`);
-    // Every column that must have a value, and a primary key that isn't a row number.
-    const filled = columns.filter((c) => c.name === "assistant_id" || c.name in extra || ((Number(c.notnull) || (Number(c.pk) && !/INT/i.test(c.type))) && c.dflt_value === null));
-    const value = (c: { name: string; type: string }) => (c.name === "assistant_id" ? assistantId : c.name in extra ? extra[c.name] : /INT/i.test(c.type) ? ++n : `${table}-${c.name}-${++n}`);
-    await run(`INSERT INTO ${table} (${filled.map((c) => c.name).join(", ")}) VALUES (${filled.map(() => "?").join(", ")})`, filled.map(value));
-  };
+  assert.deepEqual([...ASSISTANT_TABLES, "projects"].sort(), await tablesWith("assistant_id"), "deleting knows every table that keeps something for an assistant");
   const rowsFor = async (ids: string[]) => {
     const out: Record<string, number> = {};
     for (const table of ASSISTANT_TABLES) out[table] = await count(`SELECT COUNT(*) AS n FROM ${table} WHERE assistant_id IN (${ids.map(() => "?").join(",")})`, ids);

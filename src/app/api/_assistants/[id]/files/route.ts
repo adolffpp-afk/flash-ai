@@ -8,8 +8,10 @@ import { MAX_UPLOAD_BYTES } from "@/lib/assistants.ts";
 /*
  * Adds a file to one of the user's assistants, as the text the browser read from it: a form with
  * name, kind (pdf, docx, xlsx, pptx or text), pages and text, the text up to MAX_UPLOAD_BYTES. A
- * bigger request is refused before it's read, once the proxy doesn't run before this route (see
- * readForm). Only the owner, only from Flash's own page; nothing answers while assistants are off.
+ * request over UPLOAD_CAP (MAX_UPLOAD_BYTES and 64 KB for the other fields) is refused before it's
+ * read, once the proxy doesn't run before this route (see readForm). A smaller one whose text is
+ * over MAX_UPLOAD_BYTES is read, then refused as too big. Only the owner, only from Flash's own
+ * page; nothing answers while assistants are off.
  */
 export const dynamic = "force-dynamic";
 // A file of 1,000,000 characters is counted and stored in about a thousand chunks.

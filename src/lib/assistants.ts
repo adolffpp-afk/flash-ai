@@ -155,9 +155,10 @@ const LOOKALIKES: Record<string, string> = {
 // "Flash's Help Desk". Only those: "flash" is an everyday word, and "Flash sale helper" or
 // "Flashcards support" are someone's own. "Flash ∞" is "Flash", as "∞" goes the way punctuation
 // goes, and "Flash Infinity" is how it's spelled out. Any of these with a level's name after it
-// is Flash's own level ("Flash Summit", "Flash ∞ AI Vision", "AI-Flash Summit"), and so is
-// "Ultra", the top level's name before it was Summit; the level's name alone ("Summit coach") is
-// someone's own.
+// is Flash's own level ("Flash Summit", "Flash ∞ AI Vision", "AI-Flash Summit"), also with the
+// rest of Flash's own names after the level ("Flash Summit AI", "Flash Vision ∞ AI", "Flash Sonic
+// Infinity AI"), and so is "Ultra", the top level's name before it was Summit; the level's name
+// alone ("Summit coach") is someone's own.
 const OWN = ["Flash", "Flash Infinity", PRODUCT_NAME, BRAND_NAME, LEGAL_NAME, "AI-Flash"];
 const LEVEL_NAMES = [...LEVELS.filter((l) => l.id !== "auto").map((l) => l.short), "Ultra"];
 const ROLES = [
@@ -166,7 +167,8 @@ const ROLES = [
 ];
 const alike = (names: string[]) => names.map((name) => [...nameKey(name)].map((ch) => `[${ch}${LOOKALIKES[ch] ?? ""}]`).join("")).join("|");
 const ROLE = `(?:${alike(ROLES)})(?:${alike(["s"])})?`;
-const KEPT = new RegExp(`^(?:${ROLE})*(?:${alike(OWN)})(?:(?:${alike(["s"])})?(?:${alike(LEVEL_NAMES)}))?(?:${alike(["s"])})?(?:${ROLE})*$`, "u");
+const LEVEL = `(?:${alike(["s"])})?(?:${alike(LEVEL_NAMES)})(?:(?:${alike(["s"])})?(?:${alike(["ai", "infinity ai", "infinity"])}))?`;
+const KEPT = new RegExp(`^(?:${ROLE})*(?:${alike(OWN)})(?:${LEVEL})?(?:${alike(["s"])})?(?:${ROLE})*$`, "u");
 
 /** Whether a name is one Flash keeps for itself ("Flash support", "FLASH ∞ AI", "flash-team", "Flаsh" with a Cyrillic "а"). */
 export const isKeptName = (name: string) => KEPT.test(nameKey(name));

@@ -14,7 +14,7 @@ import type { Client, InStatement } from "@libsql/client";
 import { all, db, now, one } from "./db.ts";
 import { randomId, sha256 } from "./ids.ts";
 import { FREE_STORAGE_BYTES, USED_STORAGE_SQL, storageLimit, usedStorage } from "./site-files.ts";
-import { indexFile, purgeIndex, removeFileRows } from "./assistant-search.ts";
+import { fileDeletes, indexFile, purgeIndex, removeFileRows } from "./assistant-search.ts";
 import { LEVEL_MODELS, countTextTokens } from "../engines/claude.ts";
 import { CUT_NOTE } from "../office.ts";
 import { isLevel, type Level } from "../levels.ts";
@@ -94,9 +94,10 @@ export function refusalStatus(r: Refusal): number {
 }
 
 /*
- * Every table that keeps something for an assistant by its assistant_id, deleted with it. A test
- * checks every table with an assistant_id column is here, except projects: a chat started with an
- * assistant keeps its messages when the assistant goes (its next message is refused instead).
+ * Every table that keeps something for an assistant by its assistant_id, deleted with it, those
+ * that keep something for one of its files (FILE_TABLES) among them. A test checks every table
+ * with an assistant_id column is here, except projects: a chat started with an assistant keeps its
+ * messages when the assistant goes (its next message is refused instead).
  */
 export const ASSISTANT_TABLES = ["assistant_visitors", "assistant_chunks", "assistant_files"] as const;
 
@@ -447,21 +448,15 @@ async function fileRefusal(userId: string, assistantId: string, chars: number, s
 const DROP_WAITS = [250, 1000];
 
 /**
- * Deletes a file that isn't kept: its chunks first (their index rows go with them), then its row,
- * tried again after each of DROP_WAITS. False when even the last try failed: the file is then
- * listed with what was stored of it, for its owner to delete.
+ * Deletes a file that isn't kept: what FILE_TABLES keeps for it first (its chunks' index rows go
+ * with them), then its row, tried again after each of DROP_WAITS. False when even the last try
+ * failed: the file is then listed with what was stored of it, for its owner to delete.
  */
 async function dropFile(client: Client, assistantId: string, fileId: string): Promise<boolean> {
   for (const wait of [0, ...DROP_WAITS]) {
     if (wait) await new Promise((done) => setTimeout(done, wait));
     try {
-      await client.batch(
-        [
-          { sql: "DELETE FROM assistant_chunks WHERE assistant_id = ? AND file_id = ?", args: [assistantId, fileId] },
-          { sql: "DELETE FROM assistant_files WHERE assistant_id = ? AND id = ?", args: [assistantId, fileId] },
-        ],
-        "write",
-      );
+      await client.batch(fileDeletes(assistantId, fileId), "write");
       return true;
     } catch {
       // Tried again, if there's a try left.

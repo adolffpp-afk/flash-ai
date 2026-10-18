@@ -95,7 +95,9 @@ test("names Flash keeps for itself are refused, in any case and with any spacing
   const built = ["Flⱥsh", "Flⱥsh Support", "Flᶏsh", "Fȴash", "Fɬash", "Fⱡash", "Flaȿh", "Flaꞩh", "Flaᶊh", "ᶂlash", "Fȴash ∞ AI"];
   // The names of Flash's levels, and the top level's name before it was Summit, after any of Flash's names.
   const levels = ["Flash Summit", "Flash Vision", "Flash Ascend", "Flash Sonic", "Flash Ultra", "Official Flash Summit", "Flash Summit Support", "FLASH VISION team", "Flаsh Ascend",
-    "Flash ∞ AI Summit", "Flash Infinity AI Vision", "AI-Flash Summit", "AI-Flash Vision", "Flash ∞ AI Vision Support", "Flash Infinity Ascend", "AI-Flash Inc. Sonic", "Flash ∞ Ultra", "Flash's Summit"];
+    "Flash ∞ AI Summit", "Flash Infinity AI Vision", "AI-Flash Summit", "AI-Flash Vision", "Flash ∞ AI Vision Support", "Flash Infinity Ascend", "AI-Flash Inc. Sonic", "Flash ∞ Ultra", "Flash's Summit",
+    // and with the rest of Flash's own names after the level.
+    "Flash Summit AI", "Flash Vision AI", "Flash Vision ∞ AI", "Flash Summit ∞ AI", "Flash Sonic Infinity AI", "Flash Ascend Infinity", "Flash Ultra AI", "Flash Ѕummit AI", "Official Flash Summit AI Support", "Flash Summit's AI"];
   // Flash's own, with any apostrophe, also a modifier letter that shows as one ("ʼ"), or a comma ("ꓹ").
   // "Flash ∞" spelled out, as screen readers read it, alone or with those words.
   const spelled = ["Flash ∞", "Flash ∞ Support", "Official Flash ∞", "Flash Infinity", "Flash Infinity Support", "Official Flash Infinity", "Flash Infinity Team", "FLASH INFINITY", "Flash Infinity's Help Desk"];
@@ -106,7 +108,7 @@ test("names Flash keeps for itself are refused, in any case and with any spacing
     assert.deepEqual(validateAssistant(fields({ name })), { code: "name_missing" }, JSON.stringify(name));
   }
   // Other words with Flash's are someone's own: "flash" is an everyday word.
-  for (const name of ["Flashcards tutor", "Flash fiction coach", "My Flash helper", "Support", "Флэш помощник", "Fresh support", "Café helper", "한글 도우미", "Slash support", "Infinity helper", "Flash Infinite Loop", "Help desk", "👨\u200D👩\u200D👧", "\u2764\uFE0F", "Flash sale helper", "Flashcards support", "The Flash fan club", "Flash photography tips", "Flashlight bot", "Flash's fan club", "Flash Store", "Hawaiʻi helper", "Summit coach", "Sonic helper", "Vision board coach"]) {
+  for (const name of ["Flashcards tutor", "Flash fiction coach", "My Flash helper", "Support", "Флэш помощник", "Fresh support", "Café helper", "한글 도우미", "Slash support", "Infinity helper", "Flash Infinite Loop", "Help desk", "👨\u200D👩\u200D👧", "\u2764\uFE0F", "Flash sale helper", "Flashcards support", "The Flash fan club", "Flash photography tips", "Flashlight bot", "Flash's fan club", "Flash Store", "Hawaiʻi helper", "Summit coach", "Sonic helper", "Vision board coach", "Summit AI coach", "Flash Summit Airlines"]) {
     assert.equal(isKeptName(name), false, name);
     assert.equal(validateAssistant(fields({ name })), null, name);
   }
