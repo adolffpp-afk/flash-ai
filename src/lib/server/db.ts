@@ -995,6 +995,9 @@ const MIGRATIONS = [
   "ALTER TABLE site_orders ADD COLUMN refunded_at INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE site_orders ADD COLUMN refunded_amount INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE site_orders ADD COLUMN disputed_at INTEGER NOT NULL DEFAULT 0",
+  // 1 once an assistant that wasn't the user's own (or was deleted) was taken off the chat ("Continue
+  // without it"): its replies stay in the chat, so the user's own things stay out of it (see the chat route).
+  "ALTER TABLE projects ADD COLUMN assistant_theirs INTEGER NOT NULL DEFAULT 0",
 ];
 
 /*

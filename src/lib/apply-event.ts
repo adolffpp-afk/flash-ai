@@ -28,6 +28,8 @@ export function applyEvent(m: UIMessage, e: StreamEvent): UIMessage {
       return m;
     case "sources":
       return { ...m, sources: e.items };
+    case "read":
+      return { ...m, read: { items: e.items, ...(e.nomatch && { nomatch: true }) } };
     case "connector_used":
       return { ...m, connectors: e.items };
     case "approve_action":
