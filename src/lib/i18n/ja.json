@@ -105,7 +105,7 @@
  "Agreed on form": "同意したフォーム",
  "Agreed to news": "お知らせに同意",
  "Agreed to news by email on {date}": "{date}にメールでのお知らせに同意",
- "Alerts need iOS or iPadOS 16.4 or later. Update this iPhone or iPad to get them.": "通知を受け取るには iOS または iPadOS 16.4 以降が必要です。この iPhone または iPad をアップデートしてください。",
+ "Alerts need iOS or iPadOS 16.4 or later. If this iPhone or iPad can run it, update it to get them.": "通知を受け取るには iOS または iPadOS 16.4 以降が必要です。この iPhone または iPad が対応している場合は、アップデートしてください。",
  "Alerts when Flash is closed": "Flashを閉じているときの通知",
  "Alerts work on this device.": "このデバイスで通知を受け取れます。",
  "All": "すべて",

@@ -71,7 +71,9 @@ const HIDDEN = "flash-hidden";
 // replaces it and still alerts; one with none shows on its own. Browsers require every push to show
 // something, so one that can't be read, or whose sign-in here isn't live, shows Flash's name only.
 // When that sign-in has ended, the alerts it already showed here go too, so the next person on a
-// shared computer doesn't see them.
+// shared computer doesn't see them. Safari keeps a tag but never lets it replace anything
+// (webkit.org/b/258922), so once the new alert shows, any earlier one with its tag still there is
+// closed; elsewhere the browser has replaced it already, and there's none.
 self.addEventListener("push", (event) => {
   const text = (value) => (typeof value === "string" ? value : "");
   const show = async () => {
@@ -85,12 +87,18 @@ self.addEventListener("push", (event) => {
       for (const shown of await self.registration.getNotifications().catch(() => [])) if (shown.tag !== HIDDEN) shown.close();
     }
     const tag = text(alert.tag);
+    // Tells this alert from the earlier ones with its tag.
+    const id = `${Date.now()}-${Math.random()}`;
     await self.registration.showNotification(text(alert.title) || "Flash ∞ AI", {
       body: text(alert.body),
       icon: "/app-icon/192?v=3",
-      data: { url: flashPage(alert.url) },
+      data: { url: flashPage(alert.url), id },
       ...(tag ? { tag, renotify: tag !== HIDDEN } : {}),
     });
+    if (!tag) return;
+    for (const shown of await self.registration.getNotifications().catch(() => [])) {
+      if (shown.tag === tag && shown.data && shown.data.id && shown.data.id !== id) shown.close();
+    }
   };
   // A dot on the installed app's icon until Flash is opened again (it clears it); none while Flash is
   // on the screen and in front, where the person sees the alert come in.

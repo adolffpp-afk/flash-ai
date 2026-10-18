@@ -1,5 +1,6 @@
 import { translatorFor } from "@/lib/server/i18n.ts";
-import { fromOwnPage, hashPassword } from "@/lib/server/auth.ts";
+import { SESSION_COOKIE, fromOwnPage, hashPassword, readCookie } from "@/lib/server/auth.ts";
+import { sha256 } from "@/lib/server/ids.ts";
 import { redeemToken, resetLinkEmail } from "@/lib/server/account.ts";
 import { mayUse } from "@/lib/server/link-browser.ts";
 import { resetPassword } from "@/lib/server/signin.ts";
@@ -23,8 +24,10 @@ export async function POST(request: Request) {
   if (!userId) {
     return Response.json({ error: t("This link has expired or was already used. Ask for a new one.") }, { status: 400 });
   }
-  // Opening the link proved they own the inbox: what an unconfirmed account had set up goes.
-  await resetPassword(userId, await hashPassword(password));
+  // Opening the link proved they own the inbox: what an unconfirmed account had set up goes. This
+  // browser gets no wordless push (see clearScreens): it's signed in again below (after its two-step
+  // code, if that's on), and Flash then turns its alerts back on there, as after a password change.
+  await resetPassword(userId, await hashPassword(password), sha256(readCookie(request, SESSION_COOKIE) ?? ""));
   // A reset link only proves the inbox, so with two-step sign-in on the code is still asked for.
   const { cookie, twoFactor } = await signInCookie(userId, request, "/?reset=1");
   return Response.json({ ok: true, twoFactor }, { headers: { "Set-Cookie": cookie } });

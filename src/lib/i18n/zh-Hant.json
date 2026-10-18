@@ -105,7 +105,7 @@
  "Agreed on form": "同意時使用的表單",
  "Agreed to news": "已同意接收消息",
  "Agreed to news by email on {date}": "已於 {date} 同意透過電子郵件接收消息",
- "Alerts need iOS or iPadOS 16.4 or later. Update this iPhone or iPad to get them.": "提醒需要 iOS 或 iPadOS 16.4 以上版本。請更新這部 iPhone 或 iPad 以接收提醒。",
+ "Alerts need iOS or iPadOS 16.4 or later. If this iPhone or iPad can run it, update it to get them.": "提醒需要 iOS 或 iPadOS 16.4 以上版本。如果這部 iPhone 或 iPad 支援該版本，請更新以接收提醒。",
  "Alerts when Flash is closed": "Flash 關閉時的提醒",
  "Alerts work on this device.": "這部裝置可以收到提醒。",
  "All": "全部",

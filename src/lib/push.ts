@@ -67,6 +67,15 @@ export function blockedWords(t: Translate): string {
 }
 
 /**
+ * What both notification switches in Settings (alerts and Response completions) say when the
+ * browser's answer wasn't "granted": where to allow them once blocked, or, for a question closed
+ * without an answer ("default"), that nothing is blocked and the next tap asks again.
+ */
+export function refusedWords(answer: NotificationPermission, t: Translate): string {
+  return answer === "denied" ? blockedWords(t) : t("Allow notifications when your browser asks, then try again.");
+}
+
+/**
  * Takes Flash's alerts off this screen: all of them with nobody signed in here, else every one but
  * userId's (the page an alert opens names its account, as=), so the next person on a shared
  * computer can't read the last one's.
@@ -159,8 +168,7 @@ export async function turnOnPush(userId: string, key: string, t: Translate): Pro
   // Asked first, while the tap still counts as one (browsers ask only from a tap). "default" is a
   // question closed without an answer: nothing is blocked, and the next tap asks again.
   const allowed = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
-  if (allowed === "denied") throw new Error(blocked);
-  if (allowed !== "granted") throw new Error(t("Allow notifications when your browser asks, then try again."));
+  if (allowed !== "granted") throw new Error(refusedWords(allowed, t));
   let sub: PushSubscription;
   try {
     sub = await subscribe(key);

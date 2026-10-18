@@ -105,7 +105,7 @@
  "Agreed on form": "동의한 양식",
  "Agreed to news": "소식 수신 동의",
  "Agreed to news by email on {date}": "{date}에 이메일 소식 수신에 동의함",
- "Alerts need iOS or iPadOS 16.4 or later. Update this iPhone or iPad to get them.": "알림을 받으려면 iOS 또는 iPadOS 16.4 이상이 필요해요. 이 iPhone이나 iPad를 업데이트하세요.",
+ "Alerts need iOS or iPadOS 16.4 or later. If this iPhone or iPad can run it, update it to get them.": "알림을 받으려면 iOS 또는 iPadOS 16.4 이상이 필요해요. 이 iPhone이나 iPad가 지원한다면 업데이트하세요.",
  "Alerts when Flash is closed": "Flash가 닫혀 있을 때 알림",
  "Alerts work on this device.": "이 기기에서 알림이 작동해요.",
  "All": "전체",

@@ -28,7 +28,7 @@ import { hasBuiltInRecognition } from "@/lib/listen";
 import { msg, type Translate } from "@/lib/i18n";
 import { useT } from "@/lib/use-t";
 import { useInAndroidApp } from "@/lib/android-shell";
-import { blockedWords, pushStatus, sendTestPush, syncPush, turnOffPush, turnOnPush, type PushStatus } from "@/lib/push";
+import { pushStatus, refusedWords, sendTestPush, syncPush, turnOffPush, turnOnPush, type PushStatus } from "@/lib/push";
 
 export { settingsTabFor, type SettingsTab } from "@/lib/settings-tabs";
 
@@ -358,10 +358,8 @@ function General({
     if (typeof Notification === "undefined") return setNotifyRefused(t("This browser can't show notifications."));
     const allowed = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
     if (allowed === "granted") setNotify("1");
-    // Where to allow them, as the alerts switch under it says on this device.
-    else if (allowed === "denied") setNotifyRefused(blockedWords(t));
-    // The browser's question was closed without an answer: nothing is blocked, and it asks again next time.
-    else setNotifyRefused(t("Allow notifications when your browser asks, then try again."));
+    // The same words as the alerts switch under it, on this device.
+    else setNotifyRefused(refusedWords(allowed, t));
   }
 
   /** Turns "Hey Flash" on (after the browser allows the microphone) or off, on this device. */
@@ -677,7 +675,7 @@ function PushAlerts({ me }: { me: Me }) {
           status.support === "home-screen"
             ? t("On iPhone and iPad, add Flash to your Home Screen first, then turn on alerts in the app you added.")
             : status.support === "update"
-              ? t("Alerts need iOS or iPadOS 16.4 or later. Update this iPhone or iPad to get them.")
+              ? t("Alerts need iOS or iPadOS 16.4 or later. If this iPhone or iPad can run it, update it to get them.")
               : status.support === "no"
                 ? t("This browser can't get alerts when Flash is closed.")
                 : waiting

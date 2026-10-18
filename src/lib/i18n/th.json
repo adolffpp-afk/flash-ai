@@ -105,7 +105,7 @@
  "Agreed on form": "ฟอร์มที่ยินยอม",
  "Agreed to news": "ยินยอมรับข่าวสาร",
  "Agreed to news by email on {date}": "ยินยอมรับข่าวสารทางอีเมลเมื่อ {date}",
- "Alerts need iOS or iPadOS 16.4 or later. Update this iPhone or iPad to get them.": "การแจ้งเตือนต้องใช้ iOS หรือ iPadOS 16.4 ขึ้นไป อัปเดต iPhone หรือ iPad เครื่องนี้เพื่อรับการแจ้งเตือน",
+ "Alerts need iOS or iPadOS 16.4 or later. If this iPhone or iPad can run it, update it to get them.": "การแจ้งเตือนต้องใช้ iOS หรือ iPadOS 16.4 ขึ้นไป หาก iPhone หรือ iPad เครื่องนี้รองรับเวอร์ชันดังกล่าว ให้อัปเดตเพื่อรับการแจ้งเตือน",
  "Alerts when Flash is closed": "การแจ้งเตือนเมื่อปิด Flash อยู่",
  "Alerts work on this device.": "การแจ้งเตือนใช้งานได้บนอุปกรณ์นี้",
  "All": "ทั้งหมด",

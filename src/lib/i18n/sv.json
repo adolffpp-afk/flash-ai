@@ -105,7 +105,7 @@
  "Agreed on form": "Godkänt i formulär",
  "Agreed to news": "Godkänt nyheter",
  "Agreed to news by email on {date}": "Godkände nyheter via e-post {date}",
- "Alerts need iOS or iPadOS 16.4 or later. Update this iPhone or iPad to get them.": "Aviseringar kräver iOS eller iPadOS 16.4 eller senare. Uppdatera den här iPhonen eller iPaden för att få dem.",
+ "Alerts need iOS or iPadOS 16.4 or later. If this iPhone or iPad can run it, update it to get them.": "Aviseringar kräver iOS eller iPadOS 16.4 eller senare. Om den här iPhonen eller iPaden kan köra det, uppdatera den för att få dem.",
  "Alerts when Flash is closed": "Aviseringar när Flash är stängt",
  "Alerts work on this device.": "Aviseringar fungerar på den här enheten.",
  "All": "Alla",

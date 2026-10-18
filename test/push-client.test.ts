@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { register } from "node:module";
 import { createECDH, generateKeyPairSync } from "node:crypto";
+import { readFileSync } from "node:fs";
 
 /*
  * Alerts when Flash is closed, in the browser (src/lib/push.ts) against Flash's own /api/push: a
@@ -363,7 +364,10 @@ test("every browser on an iPhone or iPad is told to add Flash to the Home Screen
     // Added to the Home Screen: alerts work there (iOS 16.4 and later).
     assert.equal(as(iphone("Version/18.6"), { worker: true, push: true, standalone: true }), "yes");
     // Before iOS 16.4 even the Home Screen app has none, so the trip there would be for nothing: they're
-    // told to update, in a tab and in the app alike.
+    // told to update, in a tab and in the app alike, if the device can run it. iOS 15.8 came only to
+    // the ones that can't (iPhone 6s, 7 and SE, iPad Air 2 and mini 4), where Software Update finds nothing.
+    const settings = readFileSync(new URL("../src/components/Settings.tsx", import.meta.url), "utf8");
+    assert.match(settings, /status\.support === "update"\s*\? t\("Alerts need iOS or iPadOS 16\.4 or later\. If this iPhone or iPad can run it, update it to get them\."\)/);
     const old = (os: string, browser: string) => `Mozilla/5.0 (iPhone; CPU iPhone OS ${os} like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) ${browser} Mobile/15E148 Safari/604.1`;
     assert.equal(as(old("16_1", "Version/16.1"), { worker: true }), "update", "Safari on 16.1");
     assert.equal(as(old("16_1", "Version/16.1"), { worker: true, standalone: true }), "update", "the Home Screen app on 16.1");
@@ -383,14 +387,17 @@ test("a block says where to allow notifications: the iPhone's Settings in the Ho
   await account("ida");
   await signIn("ida");
   const was = globalThis.navigator;
+  // What the alerts switch says, checked against what Response completions' switch says there.
   const said = async (userAgent: string, standalone = false, touch = 5) => {
     Object.defineProperty(globalThis, "navigator", { configurable: true, value: { ...was, userAgent, maxTouchPoints: touch, standalone } });
+    let words = "on";
     try {
       await client.turnOnPush("ida", key, t);
-      return "on";
     } catch (e) {
-      return (e as Error).message;
+      words = (e as Error).message;
     }
+    assert.equal(client.refusedWords("denied", t), words, "Response completions says the same");
+    return words;
   };
   // A real block: the browser asks nothing more.
   permission.now = permission.answer = "denied";
@@ -412,8 +419,13 @@ test("a block says where to allow notifications: the iPhone's Settings in the Ho
     const browser = "Notifications are blocked for Flash. Private windows can't show them; in a normal window, allow them in your browser's site settings, then try again.";
     assert.equal(await said(mac, false, 0), browser);
     assert.equal(await said(was.userAgent), browser);
-    // Response completions' switch (Settings) says the same, from the same words.
-    assert.equal(client.blockedWords(t), browser);
+    // A question closed without an answer blocks nothing, on either switch.
+    assert.equal(client.refusedWords("default", t), "Allow notifications when your browser asks, then try again.");
+    // Response completions' switch (Settings) takes its words from there.
+    const settings = readFileSync(new URL("../src/components/Settings.tsx", import.meta.url), "utf8");
+    const toggleNotify = settings.slice(settings.indexOf("async function toggleNotify"), settings.indexOf("async function toggleWake"));
+    assert.match(toggleNotify, /else setNotifyRefused\(refusedWords\(allowed, t\)\);/);
+    assert.ok(!/t\("Notifications are blocked|t\("Allow notifications/.test(toggleNotify), "no words of its own");
   } finally {
     permission.now = permission.answer = "granted";
     delete (globalThis as { matchMedia?: unknown }).matchMedia;

@@ -67,12 +67,14 @@ async function claim(account: Account): Promise<void> {
 /**
  * A new password from a reset link: opening it proved the inbox is theirs, so an account never
  * confirmed is claimed as with a sign-in link (see dropUnconfirmed), and every device is signed out.
+ * here is the sign-in (its hash) of the browser doing it, which is signed in again and keeps its
+ * alerts (see endAllSessions).
  */
-export async function resetPassword(userId: string, passwordHash: string): Promise<void> {
+export async function resetPassword(userId: string, passwordHash: string, here = ""): Promise<void> {
   const account = await one<{ verified_at: number }>("SELECT verified_at FROM users WHERE id = ?", [userId]);
   if (account && !Number(account.verified_at) && verificationRequired()) await dropUnconfirmed(userId);
   await run("UPDATE users SET password_hash = ? WHERE id = ?", [passwordHash, userId]);
-  await endAllSessions(userId);
+  await endAllSessions(userId, here);
   await markVerified(userId);
 }
 

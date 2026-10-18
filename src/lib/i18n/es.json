@@ -105,7 +105,7 @@
  "Agreed on form": "Formulario del consentimiento",
  "Agreed to news": "Acepta novedades",
  "Agreed to news by email on {date}": "Aceptó recibir novedades por correo el {date}",
- "Alerts need iOS or iPadOS 16.4 or later. Update this iPhone or iPad to get them.": "Las alertas necesitan iOS o iPadOS 16.4 o posterior. Actualiza este iPhone o iPad para recibirlas.",
+ "Alerts need iOS or iPadOS 16.4 or later. If this iPhone or iPad can run it, update it to get them.": "Las alertas necesitan iOS o iPadOS 16.4 o posterior. Si este iPhone o iPad es compatible, actualízalo para recibirlas.",
  "Alerts when Flash is closed": "Alertas con Flash cerrado",
  "Alerts work on this device.": "Las alertas funcionan en este dispositivo.",
  "All": "Todo",

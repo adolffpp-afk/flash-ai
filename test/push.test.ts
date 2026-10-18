@@ -46,8 +46,9 @@ const linkRoute = await import("../src/app/api/auth/email-link/route.ts");
 const signupRoute = await import("../src/app/api/auth/signup/route.ts");
 const { createSignInLink } = await import("../src/lib/server/signin.ts");
 const passwordRoute = await import("../src/app/api/me/password/route.ts");
+const resetRoute = await import("../src/app/api/auth/reset/route.ts");
 const { createSession, hashPassword } = await import("../src/lib/server/auth.ts");
-const { endAllSessions } = await import("../src/lib/server/account.ts");
+const { endAllSessions, sendReset } = await import("../src/lib/server/account.ts");
 const { run, all, one } = await import("../src/lib/server/db.ts");
 
 const b64 = (s: string) => Buffer.from(s, "base64url");
@@ -590,12 +591,13 @@ type Window = { url: string; visibilityState?: "visible" | "hidden"; focused?: b
  * with cookie(), the browser's session cookie now): what it shows, the windows a tap opens or
  * focuses, and whether its push subscription is kept.
  */
-function serviceWorker(endpoint: string, cookie: () => string, windows: (string | Window)[] = []) {
+function serviceWorker(endpoint: string, cookie: () => string, windows: (string | Window)[] = [], replacesByTag = true) {
   const listeners: Record<string, (event: object) => void> = {};
-  type Options = { body: string; tag?: string; renotify?: boolean; data: { url: string } };
+  type Options = { body: string; tag?: string; renotify?: boolean; data: { url: string; id?: string } };
   const shown: { title: string; options: Options }[] = [];
-  // What's on the screen now: a new alert with the tag of one there takes its place, as in browsers.
-  const tray: { title: string; body: string; tag: string; close(): void }[] = [];
+  // What's on the screen now: a new alert with the tag of one there takes its place, as in Chrome,
+  // Edge and Firefox; with replacesByTag false, as in Safari, it shows beside it.
+  const tray: { title: string; body: string; tag: string; data: Options["data"]; close(): void }[] = [];
   const opened: string[] = [];
   const focused: string[] = [];
   const told: { url: string; message: unknown }[] = [];
@@ -609,18 +611,20 @@ function serviceWorker(endpoint: string, cookie: () => string, windows: (string 
       // As plain objects of this realm (the worker's are its own), so they compare as they look.
       showNotification: async (title: string, options: object) => {
         const plain = JSON.parse(JSON.stringify(options)) as Options;
-        shown.push({ title, options: plain });
+        // Its id only tells it from earlier alerts (sw.js), so what's checked is the rest.
+        shown.push({ title, options: { ...plain, data: { url: plain.data.url } } });
         const tag = plain.tag ?? "";
         const notification = {
           title,
           body: plain.body,
           tag,
+          data: plain.data,
           close: () => {
             const at = tray.indexOf(notification);
             if (at >= 0) tray.splice(at, 1);
           },
         };
-        const same = tag ? tray.findIndex((n) => n.tag === tag) : -1;
+        const same = tag && replacesByTag ? tray.findIndex((n) => n.tag === tag) : -1;
         if (same >= 0) tray[same] = notification;
         else tray.push(notification);
       },
@@ -762,9 +766,46 @@ test("alerts whose words are held back show as one, and a sign-in that ended tak
   );
 });
 
-test("\"Log out of all devices\" or a password change takes her alerts off the screens of her other browsers", async () => {
+test("in Safari, where a tag replaces nothing, an alert closes the earlier one with its tag, so they never pile up", async () => {
+  const ana = await account("ana.safari@example.com");
+  const phoneCookie = await signIn(ana);
+  const mac = browser("https://web.push.apple.com/ana-mac");
+  await pushRoute.POST(call("POST", ana.cookie, mac.sub));
+  const worker = serviceWorker(mac.endpoint, () => ana.cookie, [], false);
+  const alertOf = async (notice: { title: string; body: string; tag?: string }) => {
+    sent = [];
+    await push.sendPush(ana.id, notice);
+    return mac.open(sent[0].body);
+  };
+  // "Send a test alert" pressed three times, one automation run that alerted twice, and two without a tag.
+  const test = JSON.stringify({ title: "Flash ∞ AI", body: "Alerts work on this device.", tag: "flash-test" });
+  for (let i = 0; i < 3; i++) await worker.push(test);
+  for (let i = 0; i < 2; i++) await worker.push(await alertOf({ title: "Weekly summary", body: "Ready", tag: "flash-run-r9" }));
+  for (const title of ["Invoice check", "Invoice check"]) await worker.push(await alertOf({ title, body: "Paid" }));
+  const summary = { title: "Weekly summary", body: "Ready", tag: "flash-run-r9" };
+  const invoice = { title: "Invoice check", body: "Paid", tag: "" };
+  assert.deepEqual(worker.tray(), [{ title: "Flash ∞ AI", body: "Alerts work on this device.", tag: "flash-test" }, summary, invoice, invoice]);
+
+  // No answer from Flash as four arrive: one "Flash ∞ AI" beside hers.
+  worker.state.offline = true;
+  for (const run of ["r1", "r2", "r3", "r4"]) await worker.push(await alertOf({ title: "Ana's money check", body: run, tag: `flash-run-${run}` }));
+  const hidden = { title: "Flash ∞ AI", body: "", tag: "flash-hidden" };
+  assert.deepEqual(worker.tray(), [{ title: "Flash ∞ AI", body: "Alerts work on this device.", tag: "flash-test" }, summary, invoice, invoice, hidden]);
+  worker.state.offline = false;
+
+  // Five waiting through "Log out of all devices" leave one "Flash ∞ AI", and none of hers.
+  const waiting = [];
+  for (const run of ["r5", "r6", "r7", "r8", "r9"]) waiting.push(await alertOf({ title: "Ana's money check", body: run, tag: `flash-run-${run}` }));
+  await logoutRoute.POST(
+    new Request(`${ORIGIN}/api/auth/logout`, { method: "POST", headers: { "content-type": "application/json", cookie: phoneCookie }, body: JSON.stringify({ everywhere: true }) }),
+  );
+  for (const alert of waiting) await worker.push(alert);
+  assert.deepEqual(worker.tray(), [hidden]);
+});
+
+test("\"Log out of all devices\", a password change or a reset takes her alerts off the screens of her other browsers", async () => {
   const payroll = { title: "Payroll check", body: "Your salary of $4,210 arrived", tag: "flash-run-r1" };
-  for (const how of ["everywhere", "password"]) {
+  for (const how of ["everywhere", "password", "reset"]) {
     const ana = await account(`ana.library.${how}@example.com`);
     const phoneCookie = await signIn(ana);
     // Alerts on at a library computer, which she leaves with Flash closed, and on her phone.
@@ -784,19 +825,21 @@ test("\"Log out of all devices\" or a password change takes her alerts off the s
     await worker.push(library.open(sent.find((s) => s.url === library.endpoint)!.body));
     assert.deepEqual(worker.tray(), [payroll]);
 
-    // At home, on her phone.
+    // At home, on her phone (a reset link she opened there, still signed in).
+    const token = how === "reset" ? new URL((await sendReset(ana, ORIGIN))!).searchParams.get("token") : "";
     sent = [];
+    const fromPhone = (path: string, body: object) =>
+      new Request(`${ORIGIN}${path}`, { method: "POST", headers: { "content-type": "application/json", origin: ORIGIN, cookie: phoneCookie }, body: JSON.stringify(body) });
     const out =
       how === "everywhere"
-        ? await logoutRoute.POST(
-            new Request(`${ORIGIN}/api/auth/logout`, { method: "POST", headers: { "content-type": "application/json", origin: ORIGIN, cookie: phoneCookie }, body: JSON.stringify({ everywhere: true }) }),
-          )
-        : await passwordRoute.POST(
-            new Request(`${ORIGIN}/api/me/password`, { method: "POST", headers: { "content-type": "application/json", origin: ORIGIN, cookie: phoneCookie }, body: JSON.stringify({ current: "old password", next: "a brand new password" }) }),
-          );
+        ? await logoutRoute.POST(fromPhone("/api/auth/logout", { everywhere: true }))
+        : how === "password"
+          ? await passwordRoute.POST(fromPhone("/api/me/password", { current: "old password", next: "a brand new password" }))
+          : await resetRoute.POST(fromPhone("/api/auth/reset", { token, password: "a brand new password", email: ana.email }));
     assert.equal(out.status, 200, how);
     // One push with no words to the library computer; none to the phone she pressed it on (its own
-    // screen is its page's to clear), nor to the browser that's Ben's now.
+    // screen is its page's to clear, and after a password change or a reset it's signed in again and
+    // turns its alerts back on), nor to the browser that's Ben's now.
     assert.deepEqual(sent.map((s) => s.url), [library.endpoint], how);
     assert.deepEqual(library.read(sent[0].body), {});
     assert.deepEqual(await rowsOf(ana.id), []);
@@ -805,7 +848,7 @@ test("\"Log out of all devices\" or a password change takes her alerts off the s
     assert.deepEqual(worker.tray(), [{ title: "Flash ∞ AI", body: "", tag: "flash-hidden" }], how);
     assert.equal(worker.state.subscribed, false, how);
   }
-  // A password reset from an emailed link, or anything else that ends every sign-in, does the same.
+  // Anything else that ends every sign-in, from no browser of hers, does the same to all of them.
   const cy = await account("cy.library@example.com");
   const pc = browser(`${FCM}cy-library`);
   await pushRoute.POST(call("POST", cy.cookie, pc.sub));

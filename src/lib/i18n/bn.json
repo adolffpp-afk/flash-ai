@@ -105,7 +105,7 @@
  "Agreed on form": "সম্মতির ফর্ম",
  "Agreed to news": "খবর পেতে সম্মত",
  "Agreed to news by email on {date}": "{date} তারিখে ইমেলে খবর পেতে সম্মতি দিয়েছেন",
- "Alerts need iOS or iPadOS 16.4 or later. Update this iPhone or iPad to get them.": "অ্যালার্টের জন্য iOS বা iPadOS 16.4 বা তার পরের সংস্করণ লাগে। অ্যালার্ট পেতে এই iPhone বা iPad আপডেট করুন।",
+ "Alerts need iOS or iPadOS 16.4 or later. If this iPhone or iPad can run it, update it to get them.": "অ্যালার্টের জন্য iOS বা iPadOS 16.4 বা তার পরের সংস্করণ লাগে। এই iPhone বা iPad এই সংস্করণ সমর্থন করলে, অ্যালার্ট পেতে এটি আপডেট করুন।",
  "Alerts when Flash is closed": "Flash বন্ধ থাকলে অ্যালার্ট",
  "Alerts work on this device.": "এই ডিভাইসে অ্যালার্ট কাজ করছে।",
  "All": "সব",

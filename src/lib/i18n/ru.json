@@ -105,7 +105,7 @@
  "Agreed on form": "Форма согласия",
  "Agreed to news": "Согласие на новости",
  "Agreed to news by email on {date}": "Согласие на новости по электронной почте: {date}",
- "Alerts need iOS or iPadOS 16.4 or later. Update this iPhone or iPad to get them.": "Для оповещений нужна iOS или iPadOS 16.4 или новее. Обновите этот iPhone или iPad, чтобы получать их.",
+ "Alerts need iOS or iPadOS 16.4 or later. If this iPhone or iPad can run it, update it to get them.": "Для оповещений нужна iOS или iPadOS 16.4 или новее. Если этот iPhone или iPad её поддерживает, обновите его, чтобы получать их.",
  "Alerts when Flash is closed": "Оповещения, когда Flash закрыт",
  "Alerts work on this device.": "Оповещения работают на этом устройстве.",
  "All": "Все",
