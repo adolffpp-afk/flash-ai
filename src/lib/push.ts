@@ -8,7 +8,8 @@
  *    signed in here: nothing can arrive for someone who signed out, even if a row was missed;
  *  - after a sign-in ends by itself (every 30 days, a password change, "Log out of all devices" on
  *    another device), alerts come back on for that account when it's signed in here again, while
- *    logging out here on purpose forgets them (logOutHere);
+ *    logging out here on purpose forgets them (logOutHere); after a new subscription (new keys on
+ *    the server, or one the browser renewed), for every account signed in here that had them on;
  *  - turning them on while no other account here gets them makes a new subscription, so nothing
  *    turned on with the old one can follow;
  *  - alerts still on the screen go with the sign-in they came for (closeAlerts);
@@ -301,6 +302,18 @@ async function syncNow(userId: string | null, accounts: readonly string[]): Prom
   }
   const fresh = sub && here && madeWith(sub, key) ? sub : await subscribe(key);
   await api("/api/push", { method: "POST", json: fresh.toJSON() });
+  if (fresh === sub) return;
+  // A new subscription, so the other accounts signed in here that had alerts on (by the old one,
+  // which no longer works) get them by it too, as from a tab of their own. One that can't (its email
+  // isn't confirmed, say) stays as it is.
+  for (const other of accounts.filter((id) => id !== userId && wanted().includes(id))) {
+    await fetch("/api/push", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json", "X-Flash-Account": other },
+      body: JSON.stringify(fresh.toJSON()),
+    }).catch(() => null);
+  }
 }
 
 /**
@@ -319,15 +332,17 @@ export async function logOutHere(userIds: readonly string[]): Promise<void> {
 /**
  * Keeps this browser's alerts in step with who is signed in (see syncPush): userId is this tab's
  * account, null once nobody is signed in here, and undefined while it's still loading; accounts,
- * every account signed in here. A sign-in that ends by itself, with Flash open or closed, keeps this
+ * every account signed in here; signedInAgain, a count that goes up whenever this tab's account
+ * signs in here again with the tab open (Sign in again from the account chooser), which is a new
+ * sign-in with the same account. A sign-in that ends by itself, with Flash open or closed, keeps this
  * device's wish for alerts; only logOutHere forgets it. Opening Flash also clears the dot alerts put
  * on its app icon.
  */
-export function usePushSync(userId: string | null | undefined, accounts: readonly string[] = []): void {
+export function usePushSync(userId: string | null | undefined, accounts: readonly string[] = [], signedInAgain = 0): void {
   const all = accounts.join(" ");
   useEffect(() => {
     if (userId !== undefined) syncPush(userId, all.split(" ").filter(Boolean)).catch(() => {});
-  }, [userId, all]);
+  }, [userId, all, signedInAgain]);
   useEffect(() => {
     const clear = () => {
       if (document.visibilityState === "visible") navigator.clearAppBadge?.().catch(() => {});

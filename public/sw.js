@@ -51,18 +51,19 @@ function accountOf(url) {
 // gets alerts here, asked of Flash, as that account, before the alert shows its words: one may have
 // waited at the push service (a phone or laptop that was off) through a log out, "Log out of all
 // devices", a password change or the sign-in ending. "on": its sign-in here is live and turned them
-// on. "off": it isn't; "nobody": no account at all is signed in here. Either drops this browser's
+// on; "named": the same, with other accounts signed in here too, so the alert says whose it is.
+// "off": it isn't; "nobody": no account at all is signed in here. Either drops this browser's
 // subscription once no account signed in here gets alerts by it, so nothing else waiting for it
 // arrives (Flash makes a new one when an account signs in here again and wants alerts). "unknown"
 // (no answer, or an alert that names no account) keeps it. ended: the push itself says that
 // account's sign-in ended (clearScreens in push.ts), with nothing to ask: only Flash can send one
-// this browser can read, it's sent only where no other account gets alerts, and nothing else would
-// come to clear the screen if Flash didn't answer.
-async function stillOn(ended, account) {
+// this browser can read, and nothing else would come to clear the screen if Flash didn't answer.
+// keep: another account still gets alerts here, so the subscription they come by stays.
+async function stillOn(ended, account, keep) {
   try {
     const sub = await self.registration.pushManager.getSubscription();
     if (ended) {
-      await sub?.unsubscribe().catch(() => false);
+      if (!keep) await sub?.unsubscribe().catch(() => false);
       return account ? "off" : "nobody";
     }
     if (!sub) return "off";
@@ -79,7 +80,7 @@ async function stillOn(ended, account) {
     }
     if (!res.ok) return "unknown";
     const answer = await res.json();
-    if (answer.on === true) return "on";
+    if (answer.on === true) return answer.several === true ? "named" : "on";
     if (answer.here !== true) await sub.unsubscribe().catch(() => false);
     return "off";
   } catch {
@@ -102,9 +103,11 @@ const HIDDEN = "flash-hidden";
 // one stays, whichever of their checks Flash answers first.
 let showing = Promise.resolve();
 
-// An alert: {title, body, url, tag}, already in the account's language, its url naming the account
-// (as=), or {ended: true, as} once the sign-in of that account that turned alerts on here has ended.
-// A later one with the same tag replaces it and still alerts; one with none shows on its own.
+// An alert: {title, body, who, url, tag}, already in the account's language, its url naming the
+// account (as=) and who the line that names it ("For ana@example.com"), put first when other accounts
+// are signed in here too; or {ended: true, as, keep} once the sign-in of that account that turned
+// alerts on here has ended. A later one with the same tag replaces it and still alerts; one with
+// none shows on its own.
 // Browsers require every push to show something, so one that can't be read, or whose account's
 // sign-in here isn't live, shows Flash's name only. When that sign-in has ended, the alerts that
 // account already showed here go too (every alert, once nobody is signed in here), so the next
@@ -121,10 +124,11 @@ self.addEventListener("push", (event) => {
     const ended = alert.ended === true;
     const account = ended ? (ACCOUNT.test(text(alert.as)) ? alert.as : "") : accountOf(alert.url);
     // Asked at once, while its place in line is taken now, before any answer comes back.
-    const asked = stillOn(ended, account);
+    const asked = stillOn(ended, account, ended && alert.keep === true);
     const turn = showing.then(async () => {
       const on = await asked;
-      if (on !== "on") alert = { tag: HIDDEN };
+      if (on === "named") alert.body = [text(alert.who), text(alert.body)].filter(Boolean).join("\n");
+      else if (on !== "on") alert = { tag: HIDDEN };
       if (on === "off" || on === "nobody") {
         for (const shown of await self.registration.getNotifications().catch(() => [])) {
           if (shown.tag !== HIDDEN && (on === "nobody" || accountOf(shown.data && shown.data.url) === account)) shown.close();

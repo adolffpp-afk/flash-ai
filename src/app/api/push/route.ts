@@ -26,9 +26,10 @@ const accountsHere = (jar: Jar, endpointHash: string) =>
  * and then the setting stays hidden); on, whether they're on in this browser (?e=, the SHA-256 of
  * its push address) for the account the request names (X-Flash-Account: the tab's, or the alert's);
  * and here, whether any account signed in to this browser still gets them there, so the subscription
- * they share stays. An account that isn't signed in here gets on false. With no account signed in
- * here at all, 401. The account's rows from sign-ins that expired go here too, without waiting for
- * an alert.
+ * they share stays. An account that isn't signed in here gets on false. several: whether more than
+ * one account is signed in here, so the service worker puts the line naming the account first on
+ * its alert. With no account signed in here at all, 401. The account's rows from sign-ins that
+ * expired go here too, without waiting for an alert.
  */
 export async function GET(request: Request) {
   const jar = await jarSessions(request);
@@ -38,7 +39,10 @@ export async function GET(request: Request) {
   const key = pushPublicKey();
   const e = new URL(request.url).searchParams.get("e") ?? "";
   const accounts = key && /^[0-9a-f]{64}$/.test(e) ? await accountsHere(jar, e) : [];
-  return Response.json({ key, on: Boolean(entry && accounts.includes(entry.user.id)), here: accounts.length > 0 }, { headers: { "Cache-Control": "no-store" } });
+  return Response.json(
+    { key, on: Boolean(entry && accounts.includes(entry.user.id)), here: accounts.length > 0, several: jar.entries.length > 1 },
+    { headers: { "Cache-Control": "no-store" } },
+  );
 }
 
 /**

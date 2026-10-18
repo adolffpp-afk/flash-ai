@@ -164,7 +164,7 @@ const client = await import("../src/lib/push.ts");
 const { api } = await import("../src/lib/store.ts");
 // The account this tab shows, which Flash's requests name (see account-pin.ts).
 const { getPin, setPin } = await import("../src/lib/account-pin.ts");
-const { render } = (await import(HOOKS)) as { render: (hook: () => void) => void };
+const { render } = (await import(HOOKS)) as { render: (hook: () => void, options?: { mount?: boolean }) => void };
 const push = await import("../src/lib/server/push.ts");
 const { createSession, hashPassword } = await import("../src/lib/server/auth.ts");
 const { run, all } = await import("../src/lib/server/db.ts");
@@ -243,7 +243,7 @@ test("a sign-in that ends while Flash is open keeps this device's wish for alert
   storage.clear();
   current = null;
   await signIn("cy");
-  render(() => client.usePushSync("cy"));
+  render(() => client.usePushSync("cy"), { mount: true });
   await settle();
   await client.turnOnPush("cy", key);
   assert.equal(await alertsHere("cy"), 1);
@@ -489,7 +489,7 @@ test("Flash on the screen and in front clears the dot alerts put on its app icon
   const page = { visibilityState: "visible", addEventListener: (type: string, f: () => void) => void (heard[`page ${type}`] = f), removeEventListener() {} };
   Object.assign(globalThis, { document: page, addEventListener: (type: string, f: () => void) => void (heard[`window ${type}`] = f) });
   try {
-    render(() => client.usePushSync(undefined));
+    render(() => client.usePushSync(undefined), { mount: true });
     assert.equal(clears, 1, "opening Flash");
     // A window that was on the screen behind another app's is clicked into.
     heard["window focus"]();
@@ -601,7 +601,7 @@ test("logging one account out here keeps the other's alerts; logging out the las
   // Flash's own log outs do this (signOut and signOutAll), and leave the account in an alert's page
   // (as=) to the account switcher, which opens the tab as it (adoptAccountFromUrl).
   const flash = readFileSync(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
-  assert.match(flash, /usePushSync\(signedOut \? null : me\?\.user\.id, me\?\.accounts\.map\(\(a\) => a\.id\)\)/);
+  assert.match(flash, /usePushSync\(signedOut \? null : me\?\.user\.id, me\?\.accounts\.map\(\(a\) => a\.id\), signedInAgain\)/);
   const signOut = flash.slice(flash.indexOf("async function signOut("), flash.indexOf("async function signOutAll("));
   assert.match(signOut, /logOutHere\(\[gone\]\)/);
   assert.match(flash.slice(flash.indexOf("async function signOutAll(")), /logOutHere\(\(me\?\.accounts \?\? \[\]\)\.map\(\(a\) => a\.id\)\)/);
@@ -680,10 +680,81 @@ test("a tap on an alert while Flash is open tells the tab the service worker bro
     const flash = readFileSync(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
     const handler = flash.slice(flash.indexOf("alertTapped.current = (account) =>"), flash.indexOf("useEffect(() => onAlertTapped("));
     assert.match(handler, /if \(adding \|\| leavingRef\.current \|\| \(!chooser && account === me\?\.user\.id\)\) return;/);
+    // Not with a dialog open over Flash (Settings, say), whose typed words a switch would lose.
+    assert.match(handler, /if \(!chooser && document\.querySelector\('\[aria-modal="true"\]'\)\) return;/);
     assert.match(handler, /\(chooser\?\.accounts \?\? me\?\.accounts \?\? \[\]\)\.some\(\(a\) => a\.id === account\)\) void switchAccount\(account, \{ gone: Boolean\(chooser\) \}\)/);
     assert.match(flash, /useEffect\(\(\) => onAlertTapped\(\(account\) => alertTapped\.current\(account\)\), \[\]\);/);
   } finally {
     Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: was.container });
     Object.assign(globalThis, { location: was.location });
+  }
+});
+
+test("signing in again from the account chooser, with Flash open, turns that account's alerts back on there", async () => {
+  await account("rue");
+  await account("sol");
+  storage.clear();
+  current = null;
+  cookie = "";
+  // A laptop signed in to Rue, then Sol (the default, and last in the list), with Sol's tab open.
+  await signIn("rue");
+  await addAccount("sol");
+  setPin("sol");
+  render(() => client.usePushSync("sol", ["rue", "sol"]), { mount: true });
+  await settle();
+  await client.turnOnPush("sol", key);
+  assert.equal(await alertsHere("sol"), 1);
+  // Her sign-in there ends by itself with Flash open, and her row goes with it.
+  await run("UPDATE sessions SET expires_at = 1 WHERE user_id = 'sol'");
+  assert.equal(await alertsHere("sol"), 0);
+  // "Sign in again" in the chooser: a new sign-in, last in the list as before, so the tab's account
+  // and the list are what they were. Flash counts it (signedInAgain), and the sync runs again.
+  const token = (await createSession("sol", true)).split(";")[0].split("=")[1];
+  const list = held().get(LIST)!.slice(2).split(".");
+  cookie = `flash_session=${token}; ${LIST}=1.${[list[0], token].join(".")}`;
+  render(() => client.usePushSync("sol", ["rue", "sol"], 1));
+  await settle();
+  assert.equal(await alertsHere("sol"), 1, "back on, with no reload");
+  assert.equal((await client.pushStatus()).on, true);
+  // Flash counts each time this tab's account signs in here again: Sign in again (addDone), and its
+  // sign-in found while the chooser asked, or while signing in from it (checkAccounts).
+  const flash = readFileSync(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
+  const addDone = flash.slice(flash.indexOf("async function addDone("), flash.indexOf("async function addLeave("));
+  assert.match(addDone, /if \(shown\) setSignedInAgain\(\(n\) => n \+ 1\);/);
+  const check = flash.slice(flash.indexOf("async function checkAccounts("), flash.indexOf("function showChooser("));
+  assert.equal(check.match(/setSignedInAgain\(\(n\) => n \+ 1\);\n\s+return "back";/g)?.length, 2);
+  setPin(null);
+});
+
+test("new keys on the server bring back, from one tab, the alerts of every account signed in here that had them on", async () => {
+  await account("tam");
+  await account("uma");
+  storage.clear();
+  current = null;
+  cookie = "";
+  // A family laptop signed in to Tam and Uma, both with alerts on, by one subscription.
+  await signIn("tam");
+  setPin("tam");
+  await client.turnOnPush("tam", key);
+  await addAccount("uma");
+  setPin("uma");
+  await client.turnOnPush("uma", key);
+  const old = subNow()!.endpoint;
+  // Adolff makes new push keys; Flash then opens on the laptop as Uma, the default.
+  const was = { pub: process.env.VAPID_PUBLIC_KEY, priv: process.env.VAPID_PRIVATE_KEY };
+  const fresh = generateKeyPairSync("ec", { namedCurve: "prime256v1" }).privateKey.export({ format: "jwk" });
+  process.env.VAPID_PUBLIC_KEY = Buffer.concat([Buffer.from([4]), Buffer.from(fresh.x!, "base64url"), Buffer.from(fresh.y!, "base64url")]).toString("base64url");
+  process.env.VAPID_PRIVATE_KEY = fresh.d!;
+  try {
+    assert.notEqual(push.pushPublicKey(), key);
+    await client.syncPush("uma", ["tam", "uma"]);
+    assert.notEqual(subNow()?.endpoint, old, "a new subscription, with the new key");
+    assert.deepEqual([await alertsHere("tam"), await alertsHere("uma")], [1, 1], "Tam's come back too");
+    setPin("tam");
+    assert.equal((await client.pushStatus()).on, true, "and Tam's switch reads On");
+  } finally {
+    process.env.VAPID_PUBLIC_KEY = was.pub;
+    process.env.VAPID_PRIVATE_KEY = was.priv;
+    setPin(null);
   }
 });

@@ -316,8 +316,8 @@ function PushKeyMaker({ setUp, keysOk, missing, problem, browsers }: NonNullable
       </p>
       {setUp && !values.length && (
         <p className="text-xs text-zinc-500">
-          Keep these keys as they are. New keys stop alerts in every browser until its person opens Flash there again, which turns
-          them back on by itself.
+          Keep these keys as they are. New keys stop alerts in every browser until Flash is opened there again as an account that
+          had them on, which turns them back on by itself for each account there that had them on.
         </p>
       )}
       {subjectOnly ? (

@@ -316,7 +316,6 @@ function retryAfter(value: string | null): number | null {
   return Number.isFinite(ms) ? Math.max(0, ms) : null;
 }
 
-type Row = Subscription & { others: number };
 type Outcome = "sent" | "gone" | "failed";
 
 async function deliver(row: Subscription, payload: object): Promise<Outcome> {
@@ -374,8 +373,10 @@ async function deliver(row: Subscription, payload: object): Promise<Outcome> {
 
 /**
  * Sends an alert to every browser where this account turned alerts on and is still signed in, or
- * only to the one with the push address only. A browser signed in to several accounts that turned
- * alerts on gets the account named on the alert's first line ("For ana@example.com"). Addresses the
+ * only to the one with the push address only. Each alert carries the line that names the account
+ * ("For ana@example.com", who), which the service worker puts first when the browser is signed in to
+ * several accounts (public/sw.js asks, as it asks whether the sign-in there is live): only the
+ * browser knows who else is signed in there, whether they turned alerts on or not. Addresses the
  * push service says are gone (404, 410) are deleted for every account; a busy one (429, 5xx) or a
  * lost connection gets a second try. Does nothing until the keys are set. rows counts the browsers
  * it tried, sent those that took it, and gone those deleted.
@@ -383,14 +384,10 @@ async function deliver(row: Subscription, payload: object): Promise<Outcome> {
 export async function sendPush(userId: string, notice: PushNotice, only?: string): Promise<{ rows: number; sent: number; gone: number }> {
   if (!setup().keys) return { rows: 0, sent: 0, gone: 0 };
   await dropEnded(userId);
-  const at = now();
-  const rows = await all<Row>(
-    `SELECT p.endpoint, p.p256dh, p.auth,
-       (SELECT COUNT(*) FROM push_subscriptions o JOIN sessions so ON so.token_hash = o.session_hash AND so.user_id = o.user_id
-        WHERE o.endpoint = p.endpoint AND o.user_id <> p.user_id AND so.expires_at > ?) AS others
-     FROM push_subscriptions p JOIN sessions s ON s.token_hash = p.session_hash AND s.user_id = p.user_id
+  const rows = await all<Subscription>(
+    `SELECT p.endpoint, p.p256dh, p.auth FROM push_subscriptions p JOIN sessions s ON s.token_hash = p.session_hash AND s.user_id = p.user_id
      WHERE p.user_id = ? AND s.expires_at > ?${only === undefined ? "" : " AND p.endpoint = ?"}`,
-    only === undefined ? [at, userId, at] : [at, userId, at, only],
+    only === undefined ? [userId, now()] : [userId, now(), only],
   );
   if (!rows.length) return { rows: 0, sent: 0, gone: 0 };
   const user = await one<{ email: string; language: string }>("SELECT email, language FROM users WHERE id = ?", [userId]);
@@ -399,13 +396,9 @@ export async function sendPush(userId: string, notice: PushNotice, only?: string
   const body = clip(notice.body, BODY_CHARS);
   const url = pagePath(notice.url, userId);
   const tag = notice.tag && /^[\w:.-]{1,64}$/.test(notice.tag) ? notice.tag : undefined;
-  const outcomes = await Promise.all(
-    rows.map((row) => {
-      // The address kept apart (as isolate in account-pin.ts does), so the line reads in order in Arabic, Hebrew, Persian and Urdu.
-      const named = Number(row.others) > 0 && user ? [t("For {email}", { email: `\u2068${user.email}\u2069` }), body].filter(Boolean).join("\n") : body;
-      return deliver(row, { title, body: named, url, tag }).then((outcome) => ({ row, outcome }));
-    }),
-  );
+  // The address kept apart (as isolate in account-pin.ts does), so the line reads in order in Arabic, Hebrew, Persian and Urdu.
+  const who = user ? t("For {email}", { email: `\u2068${user.email}\u2069` }) : "";
+  const outcomes = await Promise.all(rows.map((row) => deliver(row, { title, body, who, url, tag }).then((outcome) => ({ row, outcome }))));
   const gone = outcomes.filter((o) => o.outcome === "gone").map((o) => o.row.endpoint);
   const sent = outcomes.filter((o) => o.outcome === "sent").map((o) => o.row.endpoint);
   const writes = [
@@ -429,33 +422,38 @@ export async function dropEnded(userId?: string): Promise<void> {
   );
 }
 
+export type Screen = Subscription & { keep: boolean };
+
 /**
  * Before every sign-in of an account ends (endAllSessions): the browsers where it turned alerts on,
- * for clearScreens. Not the one doing it (here, its sign-in's hash), whose page clears its own
- * screen, nor one where another account still gets alerts (its sign-in there is live, as sendPush
- * counts them): the push would drop the subscription that account's alerts come by. One whose
- * sign-in there ended gets none there, so it doesn't count.
+ * for clearScreens, but not the one doing it (here, its sign-in's hash), whose page clears its own
+ * screen. keep: another account still gets alerts there (its sign-in there is live), so the
+ * subscription its alerts come by stays. One whose sign-in there ended gets none there, so it
+ * doesn't count.
  */
-export async function screensOf(userId: string, here = ""): Promise<Subscription[]> {
+export async function screensOf(userId: string, here = ""): Promise<Screen[]> {
   if (!setup().keys) return [];
-  return all<Subscription>(
-    `SELECT p.endpoint, p.p256dh, p.auth FROM push_subscriptions p WHERE p.user_id = ? AND p.session_hash <> ?
-       AND NOT EXISTS (SELECT 1 FROM push_subscriptions o JOIN sessions so ON so.token_hash = o.session_hash AND so.user_id = o.user_id
-         WHERE o.endpoint = p.endpoint AND o.user_id <> p.user_id AND so.expires_at > ?)`,
-    [userId, here, now()],
+  const rows = await all<Subscription & { keep: number }>(
+    `SELECT p.endpoint, p.p256dh, p.auth, EXISTS (SELECT 1 FROM push_subscriptions o JOIN sessions so ON so.token_hash = o.session_hash AND so.user_id = o.user_id
+         WHERE o.endpoint = p.endpoint AND o.user_id <> p.user_id AND so.expires_at > ?) AS keep
+     FROM push_subscriptions p WHERE p.user_id = ? AND p.session_hash <> ?`,
+    [now(), userId, here],
   );
+  return rows.map((r) => ({ endpoint: r.endpoint, p256dh: r.p256dh, auth: r.auth, keep: Boolean(Number(r.keep)) }));
 }
 
 /**
  * One push with no words to each of these browsers, once their rows are gone, saying the account's
  * sign-in there ended (as: its id, like the as= on its alerts' pages): the service worker takes that
  * account's alerts still on the screen off it, shows only "Flash ∞ AI" and drops the subscription
- * (public/sw.js), without asking Flash, since nothing else would come to clear them. So "Log out of
- * all devices" or a password change leaves none of them on a shared computer for the next person.
+ * (public/sw.js), without asking Flash, since nothing else would come to clear them. With keep, it
+ * keeps the subscription, which another account's alerts come by, and that account's alerts on the
+ * screen stay. So "Log out of all devices" or a password change leaves none of them on a shared
+ * computer for the next person, nor for the other people signed in there.
  */
-export async function clearScreens(userId: string, browsers: Subscription[]): Promise<void> {
+export async function clearScreens(userId: string, browsers: Screen[]): Promise<void> {
   if (!setup().keys) return;
-  await Promise.all(browsers.map((b) => deliver(b, { ended: true, as: userId }).catch(() => "failed")));
+  await Promise.all(browsers.map((b) => deliver(b, { ended: true, as: userId, ...(b.keep ? { keep: true } : {}) }).catch(() => "failed")));
 }
 
 /** For /admin: how many browsers have alerts on, counting only rows whose sign-in is still live (the only ones sent to). */

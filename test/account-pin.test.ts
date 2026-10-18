@@ -571,7 +571,7 @@ test("Add another account over the page: nothing under it listens on, and it is 
   // in now; once the tab's account is signed in here again (an emailed link, another tab), the
   // sign-in from the chooser closes and the tab goes on, after a reload too.
   const check = body(page, "async function checkAccounts(");
-  assert.match(check, /if \(signingIn\?\.back\) \{\n\s+closeAdding\(\);\n\s+return "back";\n\s+\}\n\s+if \(!chooserRef\.current\) return "here";/);
+  assert.match(check, /if \(signingIn\?\.back\) \{\n\s+closeAdding\(\);\n\s+setSignedInAgain\(\(n\) => n \+ 1\);\n\s+return "back";\n\s+\}\n\s+if \(!chooserRef\.current\) return "here";/);
   assert.match(check, /if \(signingIn\) \{\n\s+const next = \{ \.\.\.signingIn, back: signingIn\.back \? \{ \.\.\.signingIn\.back, accounts: list\.accounts \} : gone \};\n\s+addingRef\.current = next;\n\s+setAdding\(next\);\n\s+return "gone";\n\s+\}\n\s+showChooser\(gone\);/);
   assert.equal(check.match(/setChooser\(\{/g), null, "the chooser shows only when nothing is being signed in to");
   assert.match(page, /if \(!meRef\.current && !chooserRef\.current && !addingRef\.current\?\.back\) return;/);
@@ -1021,7 +1021,7 @@ test("adding the account the tab already uses keeps the tab where it was, and sa
   // Home, no "Switch anyway?" about code not saved, and a notice that Ana is already in use here.
   const done = body(page, "async function addDone(");
   const same = done.slice(done.indexOf("if (id && id === getPin()"), done.indexOf("if (!id) return window.location.reload();"));
-  assert.match(same, /^if \(id && id === getPin\(\) && \(from\.again \|\| !from\.next\)\) \{\n\s+closeAdding\(\);\n\s+const shown = meRef\.current\?\.user;\n\s+if \(shown\) void refreshMe\(\);\n\s+else void start\(\);\n\s+if \(shown && !from\.again && !from\.back\) setNotice\(tNow\("You're already using \{email\} in this tab\.", \{ email: isolate\(shown\.email\) \}\)\);\n\s+return;\n\s+\}/);
+  assert.match(same, /^if \(id && id === getPin\(\) && \(from\.again \|\| !from\.next\)\) \{\n\s+closeAdding\(\);\n\s+const shown = meRef\.current\?\.user;\n\s+if \(shown\) void refreshMe\(\);\n\s+else void start\(\);\n\s+if \(shown\) setSignedInAgain\(\(n\) => n \+ 1\);\n\s+if \(shown && !from\.again && !from\.back\) setNotice\(tNow\("You're already using \{email\} in this tab\.", \{ email: isolate\(shown\.email\) \}\)\);\n\s+return;\n\s+\}/);
   assert.doesNotMatch(same, /leaveCheck|flushSaves|goOnAs|reloadAs/);
   // It comes before anything is saved or asked; a link's page (Connect to Flash) still opens.
   assert.ok(done.indexOf("if (id && id === getPin()") < done.indexOf("await leaveCheck()"));

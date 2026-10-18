@@ -330,8 +330,11 @@ export function Flash({
   const roomy = useMedia("(min-width: 1760px)");
   // Installing Flash from "Everything Flash can do" or the search; nothing to install inside the installed app.
   const install = useInstall();
-  // Alerts when Flash is closed follow who is signed in here: none for nobody (see push.ts).
-  usePushSync(signedOut ? null : me?.user.id, me?.accounts.map((a) => a.id));
+  // Alerts when Flash is closed follow who is signed in here: none for nobody (see push.ts). This
+  // tab's account signing in here again (from the chooser) is a new sign-in, whose alerts come back
+  // on then, though the account and the list are the same.
+  const [signedInAgain, setSignedInAgain] = useState(0);
+  usePushSync(signedOut ? null : me?.user.id, me?.accounts.map((a) => a.id), signedInAgain);
   // This tab's account isn't signed in here anymore while others are (the chooser asks which to go
   // on with, with Flash open or after a reload, or signing in from it does): its alerts on the
   // screen go, and those of the accounts still signed in here stay.
@@ -540,10 +543,12 @@ export function Flash({
       // account to use, or while signing in from it: this tab goes on as it.
       if (signingIn?.back) {
         closeAdding();
+        setSignedInAgain((n) => n + 1);
         return "back";
       }
       if (!chooserRef.current) return "here";
       setChooser(null);
+      setSignedInAgain((n) => n + 1);
       return "back";
     }
     if (!list.accounts.length) {
@@ -1299,6 +1304,7 @@ export function Flash({
       const shown = meRef.current?.user;
       if (shown) void refreshMe();
       else void start();
+      if (shown) setSignedInAgain((n) => n + 1);
       if (shown && !from.again && !from.back) setNotice(tNow("You're already using {email} in this tab.", { email: isolate(shown.email) }));
       return;
     }
@@ -1523,11 +1529,14 @@ export function Flash({
 
   // A tap on an alert of another account signed in here, with this tab the Flash the service worker
   // brought to the front: the tab goes on as that account, as Switch (or picking it in the chooser)
-  // does, asking first when something here isn't saved (see onAlertTapped).
+  // does, asking first when something here isn't saved (see onAlertTapped). With a dialog open over
+  // Flash (Settings, say), whose typed words nothing would keep, the tab only comes to the front, as
+  // with the profile menu's Switch out of reach under it.
   const alertTapped = useRef<(account: string) => void>(() => {});
   useEffect(() => {
     alertTapped.current = (account) => {
       if (adding || leavingRef.current || (!chooser && account === me?.user.id)) return;
+      if (!chooser && document.querySelector('[aria-modal="true"]')) return;
       if ((chooser?.accounts ?? me?.accounts ?? []).some((a) => a.id === account)) void switchAccount(account, { gone: Boolean(chooser) });
     };
   });
