@@ -53,6 +53,10 @@ const SCHEMA = [
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL
   )`,
+  // One owner's apps, newest first, without reading every app on Flash: the app list, publishing's
+  // count, the companion and storage all look apps up by owner. Built on the existing database by
+  // hand before it shipped, as building it reads every app's page.
+  `CREATE INDEX IF NOT EXISTS sites_user ON sites(user_id, updated_at)`,
   `CREATE TABLE IF NOT EXISTS site_records (
     id TEXT PRIMARY KEY,
     site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
@@ -126,6 +130,9 @@ const SCHEMA = [
     read_at INTEGER NOT NULL DEFAULT 0
   )`,
   `CREATE INDEX IF NOT EXISTS site_messages_site ON site_messages(site_slug, created_at)`,
+  // Only the unread messages, so the app list counts them for every app without stepping through
+  // the read ones.
+  `CREATE INDEX IF NOT EXISTS site_messages_unread ON site_messages(site_slug) WHERE read_at = 0`,
   // One list per app of the people it heard from (forms, sign-ups, paid orders, or added by its
   // owner), one per email address (see contacts.ts). source is how it first heard from them; the
   // consent columns say what they agreed to get (by ticking a box themselves, or, after they
@@ -191,8 +198,7 @@ const SCHEMA = [
     created_at INTEGER NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS site_versions_site ON site_versions(site_slug, created_at)`,
-  // Visits to published sites (see visits.ts): page loads per day and source, and a daily list of
-  // anonymous visitor fingerprints (no cookies, deleted after a month) to count people, not loads.
+  // Visits to published sites (see visits.ts): page loads per day and source, kept 100 days.
   `CREATE TABLE IF NOT EXISTS site_visits (
     site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
     day TEXT NOT NULL,
@@ -200,12 +206,99 @@ const SCHEMA = [
     views INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (site_slug, day, source)
   )`,
+  // The people counted before site_people, with codes made without a key. Nothing writes it now:
+  // the daily prune turns its days into totals (site_events' 'visit-old') and empties it.
   `CREATE TABLE IF NOT EXISTS site_visitors (
     site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
     day TEXT NOT NULL,
     visitor TEXT NOT NULL,
     PRIMARY KEY (site_slug, day, visitor)
   )`,
+  // The tables below are WITHOUT ROWID: each row is kept once, in its primary key, where an ordinary
+  // table also keeps the key in an automatic index, which Turso bills as another row written.
+  //
+  // Daily counts per app of people who took each step (see visits.ts and funnel.ts), never who they
+  // were. step is one of:
+  //   'visit', 'form', 'signup', 'checkout';
+  //   'app:<name>': a step the app reported with flashDB.track;
+  //   'visit-old': people counted before site_people, from site_visitors;
+  //   'capped': the owner's daily people limit was reached and this app missed people that day;
+  //   'capped-app': the owner's daily limit of app steps was reached;
+  //   'capped-net': one network passed its number of new people that day, and later ones were views only.
+  // source is '' for Direct and for every 'app:' step (those are counted without a source), '?' for
+  // a form, sign-up or checkout that couldn't be matched to a visit that day or the day before, and
+  // '(other)' past the day's limit of sources. n is people, each counted once a day per step; in '?'
+  // rows it is sends, and in the marks it is the limit. Kept 100 days.
+  `CREATE TABLE IF NOT EXISTS site_events (
+    site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
+    day TEXT NOT NULL,
+    step TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT '',
+    medium TEXT NOT NULL DEFAULT '',
+    campaign TEXT NOT NULL DEFAULT '',
+    n INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (site_slug, day, step, source, medium, campaign)
+  ) WITHOUT ROWID`,
+  // Paid orders per day, source and currency (see funnel.ts): how many and what they took, never
+  // which. Kept 100 days.
+  `CREATE TABLE IF NOT EXISTS site_revenue (
+    site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
+    day TEXT NOT NULL,
+    source TEXT NOT NULL,
+    medium TEXT NOT NULL,
+    campaign TEXT NOT NULL,
+    currency TEXT NOT NULL,
+    orders INTEGER NOT NULL DEFAULT 0,
+    amount INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (site_slug, day, source, medium, campaign, currency)
+  ) WITHOUT ROWID`,
+  // Where an open checkout's buyer came from, until its order is saved or 14 days pass (see
+  // funnel.ts). No buyer details. Looked up by app when its funnel is read (see the funnel route).
+  `CREATE TABLE IF NOT EXISTS site_checkouts (
+    session_id TEXT NOT NULL PRIMARY KEY,
+    site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
+    source TEXT NOT NULL,
+    medium TEXT NOT NULL,
+    campaign TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  ) WITHOUT ROWID`,
+  `CREATE INDEX IF NOT EXISTS site_checkouts_site ON site_checkouts(site_slug)`,
+  // The names an app reported with flashDB.track each day: at most 10 (see funnel.ts). Kept 2 days.
+  `CREATE TABLE IF NOT EXISTS site_step_names (
+    site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
+    day TEXT NOT NULL,
+    name TEXT NOT NULL,
+    PRIMARY KEY (site_slug, day, name)
+  ) WITHOUT ROWID`,
+  // Each person's visit to an app on one day (see visits.ts). It keeps a code made with that day's
+  // key (never their address), where they first came from that day, and the steps they were counted
+  // for (a JSON list of at most 15). kind is 'visit'; 'owner' for the app's owner (signed in to
+  // Flash on /p/, or with a working Open as owner code), who is never counted; or 'before' for someone
+  // the counter before this one counted on the day it was replaced, whose steps count as not
+  // matched. Deleted after 2 days, with the key.
+  `CREATE TABLE IF NOT EXISTS site_people (
+    site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
+    day TEXT NOT NULL,
+    visitor TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    source TEXT NOT NULL DEFAULT '',
+    medium TEXT NOT NULL DEFAULT '',
+    campaign TEXT NOT NULL DEFAULT '',
+    steps TEXT NOT NULL DEFAULT '[]',
+    PRIMARY KEY (site_slug, day, visitor)
+  ) WITHOUT ROWID`,
+  // How many people, and how many app steps, were counted each day across all of one owner's apps
+  // (see visits.ts and funnel.ts), for their plan's daily limits. Deleted after 2 days.
+  `CREATE TABLE IF NOT EXISTS owner_people (
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    day TEXT NOT NULL,
+    people INTEGER NOT NULL DEFAULT 0,
+    steps INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (user_id, day)
+  ) WITHOUT ROWID`,
+  // The random key that makes each day's visitor codes (see visits.ts). Deleted after 2 days, with
+  // the codes it made, so no code can be traced back to an address after that.
+  `CREATE TABLE IF NOT EXISTS visit_keys (day TEXT PRIMARY KEY, secret TEXT NOT NULL) WITHOUT ROWID`,
   // Selling from published sites (see shop.ts): each seller's own Stripe account, the items a
   // site sells with their prices, and the orders paid.
   `CREATE TABLE IF NOT EXISTS seller_accounts (
@@ -851,6 +944,9 @@ const MIGRATIONS = [
   // Who recorded that a contact agreed to news: '' for a box they ticked on a form, 'owner' for the
   // owner recording that they asked for news again after unsubscribing (see recordConsent).
   "ALTER TABLE site_contacts ADD COLUMN consent_by TEXT NOT NULL DEFAULT ''",
+  // The step names the app's code reports with flashDB.track, as JSON, worked out when it is
+  // published (see stepsInHtml): the only ones Flash counts for it.
+  "ALTER TABLE sites ADD COLUMN step_names TEXT NOT NULL DEFAULT ''",
   // The assistant a chat was started with (see assistants.ts); '' for none.
   "ALTER TABLE projects ADD COLUMN assistant_id TEXT NOT NULL DEFAULT ''",
 ];

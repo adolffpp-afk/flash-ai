@@ -86,6 +86,7 @@ export function AppPreview({
   onEditCode,
   onFix,
   onPick,
+  onPlans,
 }: {
   app: BuiltApp & { slug?: string };
   // Fills the live preview beside the chat (see BuildPanel), which draws its own frame around it.
@@ -99,6 +100,8 @@ export function AppPreview({
   onFix?: (request: string) => void;
   // Hands a part of the app the user clicked to the message box, to say what to change.
   onPick?: (picked: PickedElement) => void;
+  // Opens the plans, offered when publishing is refused at the free plan's number of apps.
+  onPlans?: () => void;
 }) {
   const t = useT();
   const [view, setView] = useState<"preview" | "code">("preview");
@@ -107,7 +110,7 @@ export function AppPreview({
   const [reload, setReload] = useState(0);
   const [publishing, setPublishing] = useState(false);
   const [publishedHtml, setPublishedHtml] = useState("");
-  const [publishError, setPublishError] = useState("");
+  const [publishError, setPublishError] = useState<{ message: string; code?: string } | null>(null);
   // Who may change the published app's data, said once it's published.
   const [dataNote, setDataNote] = useState<DataSummary | null>(null);
   const [copied, setCopied] = useState(false);
@@ -179,7 +182,7 @@ export function AppPreview({
 
   async function publish(asNew = false) {
     setPublishing(true);
-    setPublishError("");
+    setPublishError(null);
     try {
       const res = await api<{ slug: string; data?: DataSummary }>("/api/sites", {
         method: "POST",
@@ -189,7 +192,7 @@ export function AppPreview({
       setPublishedHtml(app.html);
       setDataNote(res.data ?? null);
     } catch (err) {
-      setPublishError(err instanceof Error ? err.message : t("Couldn't publish."));
+      setPublishError(err instanceof Error ? { message: err.message, code: (err as Error & { code?: string }).code } : { message: t("Couldn't publish.") });
     } finally {
       setPublishing(false);
     }
@@ -347,7 +350,14 @@ export function AppPreview({
       {(link || publishError) && (
         <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800 bg-zinc-950/60 px-3 py-2 text-xs">
           {publishError ? (
-            <span className="text-red-300">{publishError}</span>
+            <>
+              <span className="text-red-300">{publishError.message}</span>
+              {publishError.code === "site_cap" && onPlans && (
+                <button className={`${btn} text-primary-soft`} onClick={onPlans}>
+                  {t("Upgrade plan")}
+                </button>
+              )}
+            </>
           ) : (
             <>
               <span className="flex min-w-0 items-center gap-2 text-emerald-300">

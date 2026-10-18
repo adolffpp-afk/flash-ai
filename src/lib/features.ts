@@ -100,7 +100,7 @@ export const FEATURES: Feature[] = [
   { title: msg("Code"), about: msg("Write, explain and fix code"), group: "Build", icon: "code", action: { tool: "code" }, needs: "code" },
   { title: msg("My Websites"), about: msg("Your published sites, updated in one click"), group: "Build", icon: "globe", action: { open: "websites" }, also: "apps publish" },
   { title: msg("Form Inbox"), about: msg("Messages people send through your sites"), group: "Build", icon: "inbox", action: { open: "websites" }, also: "messages contact" },
-  { title: msg("Visitor Stats"), about: msg("Who visits your sites, without cookies"), group: "Build", icon: "chart", action: { open: "websites" }, also: "analytics" },
+  { title: msg("Visitor Stats"), about: msg("Who visits your sites, without cookies"), group: "Build", icon: "chart", action: { open: "websites" }, also: "analytics utm campaign funnel conversion revenue source" },
   { title: msg("Your Own Domain"), about: msg("Put a site on a domain you own"), group: "Build", icon: "link", action: { open: "websites" }, setup: "domains", paid: true },
   { title: msg("Sell on Your Site"), about: msg("Take payments with Stripe"), group: "Build", icon: "card", action: { open: "websites" }, setup: "payments", paid: true, also: "shop payments" },
   { title: msg("Sign-in, AI and Uploads"), about: msg("Ask the builder to add members, AI or file uploads to an app"), group: "Build", icon: "users", action: { tool: "app" }, needs: "app", also: "login members" },
