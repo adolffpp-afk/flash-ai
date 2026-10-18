@@ -14,7 +14,8 @@ export const OTHER: Touch = { source: "(other)", medium: "", campaign: "" };
 /** The source of a form, sign-up or order Flash couldn't tie to a visit that day or the day before. */
 export const UNMATCHED = "?";
 
-const MAX_TAG = 40;
+/** The most characters of a tag Flash keeps (the link maker takes no more). */
+export const MAX_TAG = 40;
 const MAX_SOURCE = 60;
 // An email address, a phone number (in any digits), or a subscriber's or click's ID: a tag holding one isn't used.
 const PERSONAL = /@|\p{Nd}{7,}|[0-9a-f]{16,}/iu;
@@ -54,7 +55,9 @@ export function cleanTag(value: string | null | undefined): string {
     .replace(/ +/g, "-");
   // Looked for before cleaning, and after it with dots, dashes and underscores taken out too, which
   // joins what they and other characters kept apart: (415) 555-0123, +44 7911 123456, a UUID.
-  return PERSONAL.test(cut) || PERSONAL.test(clean.replace(/[._-]/g, "")) ? "" : clean.slice(0, MAX_TAG);
+  if (PERSONAL.test(cut) || PERSONAL.test(clean.replace(/[._-]/g, ""))) return "";
+  // A name cut in the middle doesn't end in a dot or a dash.
+  return clean.length > MAX_TAG ? clean.slice(0, MAX_TAG).replace(/[._-]+$/, "") : clean;
 }
 
 /** A website's name as Flash shows it: search engines and social apps by their main name (m.facebook.com is facebook.com). */

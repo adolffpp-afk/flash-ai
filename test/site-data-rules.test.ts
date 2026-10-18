@@ -903,7 +903,7 @@ test("paid plans publish more apps; free stays at 20, and an app at the cap can 
   assert.equal("status" in refused && refused.status, 409);
   assert.equal(
     "error" in refused && refused.error,
-    "You can publish up to 20 apps. Unpublish one to publish another. Paid plans can publish more apps.",
+    "You can publish up to 20 apps. Unpublish one to publish another. Paid plans can publish more apps: 25 on Lite, up to 500 on Agency.",
   );
   assert.equal("code" in refused && refused.code, "site_cap", "so the preview offers a paid plan");
   const updated = await publishSite(capper, { html: "<p>changed</p>", title: "Cap", slug: "cap-3" });
@@ -927,7 +927,7 @@ test("paid plans publish more apps; free stays at 20, and an app at the cap can 
   const over = await publishSite(capper, { html: "<p>new</p>", title: "New" });
   assert.equal(
     "error" in over && over.error,
-    "You have 60 apps published and your plan allows 20. Unpublish 41 of them to publish another. Paid plans can publish more apps.",
+    "You have 60 apps published and your plan allows 20. Unpublish 41 of them to publish another. Paid plans can publish more apps: 25 on Lite, up to 500 on Agency.",
   );
   // In the reader's own digits, as the app list writes them.
   await run("DELETE FROM rate_limits");
@@ -935,7 +935,7 @@ test("paid plans publish more apps; free stays at 20, and an app at the cap can 
   const arabic = await publishSite(capper, { html: "<p>new</p>", title: "New" }, arabicDigits);
   assert.equal(
     "error" in arabic && arabic.error,
-    "You have ٦٠ apps published and your plan allows ٢٠. Unpublish ٤١ of them to publish another. Paid plans can publish more apps.",
+    "You have ٦٠ apps published and your plan allows ٢٠. Unpublish ٤١ of them to publish another. Paid plans can publish more apps: ٢٥ on Lite, up to ٥٠٠ on Agency.",
   );
   for (const { slug } of await all<{ slug: string }>("SELECT slug FROM sites WHERE user_id = 'capper' LIMIT 41")) await unpublishSite("capper", slug);
   await run("DELETE FROM rate_limits");

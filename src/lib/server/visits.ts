@@ -13,6 +13,7 @@ import { clientIp } from "./limits.ts";
 import { isAdmin } from "./auth.ts";
 import { activeSubscription } from "./subscriptions.ts";
 import { OTHER, isReturnTrip, touchOf, visitSource, type Touch } from "../traffic.ts";
+import { FREE_PEOPLE_PER_DAY, PLAN_PEOPLE } from "../plan-limits.ts";
 
 export { visitSource };
 
@@ -24,21 +25,8 @@ const DAYS_SHOWN = 30;
 /** How many days of daily totals (views, people) are kept: today and the 99 before it. */
 export const KEEP_DAYS = 100;
 
-/*
- * How many people are counted each UTC day across all of one owner's apps, by their plan (set by
- * Flash's plans). Past it the apps work as before and views still count, but new people that day
- * aren't counted, so their forms, sign-ups and checkouts show as not matched. A team member's apps
- * count against the member's own plan.
- */
-export const FREE_PEOPLE_PER_DAY = 10_000;
-export const PLAN_PEOPLE: Record<string, number> = {
-  lite: 20_000,
-  pro: 50_000,
-  power: 100_000,
-  business: 150_000,
-  max: 300_000,
-  agency: 500_000,
-};
+// How many people are counted each UTC day across all of one owner's apps, by their plan.
+export { FREE_PEOPLE_PER_DAY, PLAN_PEOPLE };
 /**
  * New people each server counts per owner per day from one internet connection, so one stranger
  * can't use up the owner's day. An IPv6 connection is its /56, the block a home is usually given.
@@ -87,19 +75,25 @@ export function isRobot(request: Request): boolean {
 /**
  * Whether a page request is a person looking at the page, not a robot or a prefetch. Browsers, and
  * the web views inside apps, always say which languages their person reads; most scripts don't.
+ * It must open the page in a tab or a frame: another website fetching it as an image, a script or
+ * with fetch() would count its own visitors as the app's. Browsers too old to say how a page was
+ * asked for still count.
  */
 export function isPersonVisit(request: Request): boolean {
   if (isRobot(request) || !request.headers.get("accept-language")) return false;
   const purpose = request.headers.get("sec-purpose") ?? request.headers.get("purpose") ?? "";
-  return !/prefetch|prerender/i.test(purpose);
+  if (/prefetch|prerender/i.test(purpose)) return false;
+  const mode = request.headers.get("sec-fetch-mode");
+  const dest = request.headers.get("sec-fetch-dest");
+  return (mode === null || mode === "navigate") && (dest === null || dest === "document" || dest === "iframe" || dest === "frame");
 }
 
 /*
  * What each server remembers, so most loads read nothing extra: the day's keys (today's and
  * yesterday's), the day counting began, whether it tried the daily prune today, owners' plans and
- * "paused for today" for 15 minutes, the marks it wrote today, and how many new people it counted
- * today per owner from each connection and how many new sources each connection added to an app's
- * day (under a code made with the day's key, never the address).
+ * "paused for today" for 15 minutes, the marks it wrote today, and how many new people and app steps
+ * it counted today per owner from each connection and how many new sources each connection added to
+ * an app's day (under a code made with the day's key, never the address).
  */
 const keys = new Map<string, Buffer>();
 const noKey = new Map<string, number>();
@@ -110,6 +104,7 @@ const paused = new Map<string, { until: number; cap: number }>();
 const marked = new Set<string>();
 const networks = new Map<string, number>();
 const opened = new Map<string, number>();
+const stepped = new Map<string, number>();
 let memoryDay = "";
 
 /** Forgets what this server remembers, as a new server would start. For tests. */
@@ -123,11 +118,12 @@ export function forgetServerMemory(): void {
   marked.clear();
   networks.clear();
   opened.clear();
+  stepped.clear();
   memoryDay = "";
 }
 
 /** What this server keeps about connections, for tests to check it holds no address. */
-export const networkMemory = () => [...networks.keys(), ...opened.keys()];
+export const networkMemory = () => [...networks.keys(), ...opened.keys(), ...stepped.keys()];
 
 /** Today's marks and connection counts start empty each day. */
 function startDay(day: string) {
@@ -136,6 +132,7 @@ function startDay(day: string) {
   marked.clear();
   networks.clear();
   opened.clear();
+  stepped.clear();
   for (const key of paused.keys()) if (!key.endsWith(`|${day}`)) paused.delete(key);
 }
 
@@ -206,9 +203,14 @@ export async function funnelSince(today: string): Promise<string> {
   return since.value;
 }
 
-/** The owner's own visit to their app on one day, so they aren't counted and their steps that day don't count. */
+/**
+ * The owner's own visit to their app on one day, so they aren't counted again and their steps that
+ * day don't count, also when the same browser was counted as a visitor earlier that day (on their
+ * own domain, where Flash's sign-in cookie isn't sent).
+ */
 const ownerRow = (slug: string, day: string, visitor: string): Statement => ({
-  sql: "INSERT OR IGNORE INTO site_people (site_slug, day, visitor, kind) SELECT slug, ?, ?, 'owner' FROM sites WHERE slug = ?",
+  sql: `INSERT INTO site_people (site_slug, day, visitor, kind) SELECT slug, ?, ?, 'owner' FROM sites WHERE slug = ?
+        ON CONFLICT (site_slug, day, visitor) DO UPDATE SET kind = 'owner' WHERE kind <> 'owner'`,
   args: [day, visitor, slug],
 });
 
@@ -297,6 +299,32 @@ export const connectionOf = (request: Request): string => {
 const networkOf = (key: Buffer, owner: string, request: Request) =>
   createHmac("sha256", key).update(`network|${owner}|${connectionOf(request)}`).digest("hex").slice(0, 24);
 
+/** The code this server counts app steps from one connection under (see takeSteps), made with a day's key. */
+export const stepsNetworkOf = (key: Buffer, request: Request) =>
+  createHmac("sha256", key).update(`steps|${connectionOf(request)}`).digest("hex").slice(0, 24);
+
+/**
+ * Takes up to `wanted` of the app steps this server counts per owner per day from one connection,
+ * as many as its new people (NETWORK_PEOPLE), so a stranger with a few connections can't use up the
+ * owner's day of app steps either. Taken with nothing waiting since it was read; returns how many.
+ */
+export function takeSteps(owner: string, network: string, wanted: number, at: number): number {
+  startDay(dayOf(at));
+  const key = `${network}|${owner}`;
+  const used = stepped.get(key) ?? 0;
+  const n = Math.max(0, Math.min(wanted, networkPeople() - used));
+  if (!n) return 0;
+  stepped.set(key, used + n);
+  if (stepped.size > MAX_NETWORKS) for (const old of [...stepped.keys()].slice(0, MAX_NETWORKS / 2)) stepped.delete(old);
+  return n;
+}
+
+/** Gives back app steps taken with takeSteps that weren't counted. */
+export function giveSteps(owner: string, network: string, n: number): void {
+  const key = `${network}|${owner}`;
+  if (n && stepped.has(key)) stepped.set(key, Math.max(0, stepped.get(key)! - n));
+}
+
 /**
  * Counts one load of a published app: a view, and the person once a day, under where they first
  * came from that day. viewerId is who is signed in to Flash, on /p/ only. Never throws: stats must
@@ -345,10 +373,6 @@ async function countVisit(slug: string, request: Request, viewerId: string | nul
   if (row.kind === "owner") return;
 
   const writes: Statement[] = [];
-  const person = (t: Touch): Statement => ({
-    sql: "INSERT OR IGNORE INTO site_people (site_slug, day, visitor, kind, source, medium, campaign) SELECT slug, ?, ?, 'visit', ?, ?, ? FROM sites WHERE slug = ?",
-    args: [day, visitor, t.source, t.medium, t.campaign, slug],
-  });
   // Someone counted already today keeps the source they first came from.
   let touch: Touch = row.kind
     ? { source: row.source ?? "", medium: row.medium ?? "", campaign: row.campaign ?? "" }
@@ -357,9 +381,13 @@ async function countVisit(slug: string, request: Request, viewerId: string | nul
   let network = "";
   try {
     if (!row.kind && row.before) {
-      // Counted already today, by the counter before this one.
+      // Counted already today, by the counter before this one, so in no source: their views go under
+      // this source, but their forms, sign-ups and checkouts count as not matched (see matchVisit).
       touch = await withinTouches(slug, day, touch);
-      writes.push(person(touch));
+      writes.push({
+        sql: "INSERT OR IGNORE INTO site_people (site_slug, day, visitor, kind, source, medium, campaign) SELECT slug, ?, ?, 'before', ?, ?, ? FROM sites WHERE slug = ?",
+        args: [day, visitor, touch.source, touch.medium, touch.campaign, slug],
+      });
       counted = true;
     } else if (!row.kind) {
       const pausedFor = `${row.owner}|${day}`;

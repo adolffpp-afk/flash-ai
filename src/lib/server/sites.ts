@@ -8,14 +8,11 @@ import { isAdmin, type User } from "./auth.ts";
 import type { DataSummary } from "../data-rules.ts";
 import { english, type Translate } from "../i18n.ts";
 import { stepsInHtml } from "../traffic.ts";
+import { FREE_SITES, PLAN_SITES } from "../plan-limits.ts";
 
 export const MAX_HTML = 2 * 1024 * 1024;
-// Published apps are public pages on Flash's domain, so publishing is limited to slow abuse: a free
-// account publishes up to 20, and paid plans more, set by Flash's plans so that even the worst case
-// (every app full, every credit used, yearly billing) can't make a plan lose money. A team member's
-// apps count against their own plan, as their domains and storage do.
-export const FREE_SITES = 20;
-export const PLAN_SITES: Record<string, number> = { lite: 25, pro: 60, power: 120, max: 300, business: 150, agency: 500 };
+// How many apps each plan publishes (see plan-limits.ts).
+export { FREE_SITES, PLAN_SITES };
 const ADMIN_SITES = 1000;
 const HOUR = 3600_000;
 // Earlier versions kept per site, newest first; older ones are deleted.
@@ -191,7 +188,8 @@ export async function publishSite(
         ? t("You have {count} apps published and your plan allows {max}. Unpublish {extra} of them to publish another.", { count: n(count), max: n(max), extra: n(count - max + 1) })
         : t("You can publish up to {max} apps. Unpublish one to publish another.", { max: n(max) });
     // On the free number, a paid plan publishes more (the app shows Upgrade plan for site_cap).
-    return max === FREE_SITES ? { error: `${refused} ${t("Paid plans can publish more apps.")}`, status: 409, code: "site_cap" } : { error: refused, status: 409 };
+    const more = t("Paid plans can publish more apps: {count} on Lite, up to {most} on Agency.", { count: n(PLAN_SITES.lite), most: n(PLAN_SITES.agency) });
+    return max === FREE_SITES ? { error: `${refused} ${more}`, status: 409, code: "site_cap" } : { error: refused, status: 409 };
   }
   if (await overLimit(`publish:${user.id}`, 10, HOUR)) return { error: t("You've published a lot this hour. Try again later."), status: 429 };
   let fresh = makeSlug(title);

@@ -7,6 +7,7 @@ import { OTHER } from "@/lib/traffic";
 import { DATA_RULES, DEFAULT_KEY, RULE_TEXT, blockProblem, dataLine, type DataRule, type DataSummary, type RuleSource } from "@/lib/data-rules";
 import { msg } from "@/lib/i18n";
 import { inOrder } from "@/lib/in-order";
+import { PLAN_SITES } from "@/lib/plan-limits";
 import { tNow, useT, type T } from "@/lib/use-t";
 import type { FunnelRange, FunnelStats } from "@/lib/server/funnel.ts";
 import { ContactsView } from "./ContactsView";
@@ -665,6 +666,8 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
     try {
       await api(`/api/sites?slug=${encodeURIComponent(slug)}`, { method: "DELETE" });
       setSites((all) => all?.filter((s) => s.slug !== slug) ?? null);
+      // The app that moves up into the list shows its numbers too.
+      countApps(found.filter((s) => s.slug !== slug).slice(0, listed));
     } catch {
       setError(t("Couldn't unpublish that. Please try again."));
     }
@@ -674,18 +677,9 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
   // The funnel shown: only the open app's. While another range loads, the one before stays (dimmed).
   const shownFunnel = open && funnel?.slug === open.slug ? funnel.stats : null;
   const funnelLoading = Boolean(shownFunnel) && funnel?.days !== funnelDays;
-  // An app with no visits in 30 days shows only the link maker, while no range could show more: its
-  // funnel has nothing, and it is younger than 30 days (or counting is), so 90 days are those days too.
-  const noFunnel =
-    shownFunnel !== null &&
-    shownFunnel.shownDays < 30 &&
-    !shownFunnel.totals.visitors &&
-    !shownFunnel.totals.orders &&
-    !shownFunnel.unmatched.form &&
-    !shownFunnel.unmatched.signup &&
-    !shownFunnel.unmatched.checkout &&
-    !shownFunnel.unmatched.orders &&
-    !shownFunnel.appSteps.length;
+  // An app with no visits in 30 days shows only the link maker while no range could show more: its
+  // 90 days hold nothing, whichever range is shown.
+  const noFunnel = shownFunnel !== null && shownFunnel.empty;
 
   return (
     <div className="fixed inset-0 z-40 flex items-stretch justify-center bg-black/60 backdrop-blur-sm sm:items-center sm:p-6" onClick={() => mayLeave() && onClose()}>
@@ -1354,7 +1348,10 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
                   )}
                   {maxSites <= LIST_STEP && sites.length >= 15 && (
                     <p className="text-sm text-gold-soft">
-                      {t("Paid plans can publish more apps.")}
+                      {t("Paid plans can publish more apps: {count} on Lite, up to {most} on Agency.", {
+                        count: PLAN_SITES.lite.toLocaleString(t.locale),
+                        most: PLAN_SITES.agency.toLocaleString(t.locale),
+                      })}
                       {onPlans && (
                         <>
                           {" "}
@@ -1751,7 +1748,7 @@ function VisitsView({ visits }: { visits: Visits }) {
         <ul className="divide-y divide-white/6 rounded-xl border border-white/8">
           {visits.sources.map((s) => (
             <li key={s.source} className="flex items-center justify-between gap-3 px-4 py-2 text-sm">
-              <bdi dir="auto" className="min-w-0 truncate text-zinc-200">
+              <bdi dir="auto" className="min-w-0 text-zinc-200 [overflow-wrap:anywhere]">
                 {s.source === OTHER.source ? t("Other sources") : s.source || t("Direct (typed, bookmarked or shared in a message)")}
               </bdi>
               <span className="shrink-0 tabular-nums text-zinc-400">{s.views.toLocaleString(t.locale)}</span>

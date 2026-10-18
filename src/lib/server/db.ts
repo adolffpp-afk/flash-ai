@@ -272,9 +272,10 @@ const SCHEMA = [
   ) WITHOUT ROWID`,
   // Each person's visit to an app on one day (see visits.ts). It keeps a code made with that day's
   // key (never their address), where they first came from that day, and the steps they were counted
-  // for (a JSON list of at most 15). kind is 'visit', or 'owner' for the app's owner (signed in to
-  // Flash on /p/, or with a working Open as owner code), who is never counted. Deleted after 2 days,
-  // with the key.
+  // for (a JSON list of at most 15). kind is 'visit'; 'owner' for the app's owner (signed in to
+  // Flash on /p/, or with a working Open as owner code), who is never counted; or 'before' for someone
+  // the counter before this one counted on the day it was replaced, whose steps count as not
+  // matched. Deleted after 2 days, with the key.
   `CREATE TABLE IF NOT EXISTS site_people (
     site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
     day TEXT NOT NULL,

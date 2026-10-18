@@ -84,6 +84,24 @@ test("robots and prefetches aren't visitors", () => {
   assert.equal(isPersonVisit(visit({ "accept-language": "" })), false, "browsers always say which languages their person reads");
 });
 
+test("only a page opened in a tab or a frame is a visit, never one another website fetches as an image, a script or with fetch()", () => {
+  // What Chromium sends for each, Accept-Language included.
+  const as = (dest: string, mode: string, site = "cross-site") => visit({ "sec-fetch-dest": dest, "sec-fetch-mode": mode, "sec-fetch-site": site });
+  assert.equal(isPersonVisit(as("document", "navigate", "none")), true, "typed or bookmarked");
+  assert.equal(isPersonVisit(as("document", "navigate")), true, "a link on another site");
+  assert.equal(isPersonVisit(as("iframe", "navigate")), true, "shown in a frame on the owner's other site");
+  assert.equal(isPersonVisit(as("image", "no-cors")), false, "a hidden <img> on another site");
+  assert.equal(isPersonVisit(as("empty", "no-cors")), false, "fetch(url, { mode: 'no-cors' })");
+  assert.equal(isPersonVisit(as("empty", "cors")), false);
+  assert.equal(isPersonVisit(as("script", "no-cors")), false);
+  assert.equal(isPersonVisit(as("style", "no-cors")), false);
+  assert.equal(isPersonVisit(as("object", "navigate")), false);
+  assert.equal(isPersonVisit(as("embed", "navigate")), false);
+  assert.equal(isPersonVisit(visit({ "sec-fetch-dest": "image" })), false);
+  assert.equal(isPersonVisit(visit({ "sec-fetch-mode": "no-cors" })), false);
+  assert.equal(isPersonVisit(visit()), true, "a browser too old to say how a page was asked for");
+});
+
 test("visits are counted per day and source, people once a day, without the owner", async () => {
   await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES ('crumb-1', 'u1', 'Crumb', '<p>', 0, 0)");
   const today = Date.UTC(2026, 9, 4, 15);
@@ -305,10 +323,17 @@ test("on the day this counter takes over, nobody is counted twice, and the peopl
   const people = async () => Object.fromEntries(await peoplePerDay("old-1", day(2)));
   assert.deepEqual(await people(), { [day(2)]: 1, [day(1)]: 2, [day(0)]: 1 }, "no day reads zero before the roll-up");
 
-  // Someone the old counter counted this morning comes back: their row, but no second count.
-  await recordVisit("old-1", browser("8.8.8.8"), null, deploy);
-  assert.equal(await count("SELECT COUNT(*) AS n FROM site_people WHERE site_slug = 'old-1' AND kind = 'visit'"), 1);
+  // Someone the old counter counted this morning comes back from Google: their row, but no second count.
+  await recordVisit("old-1", visit({ "x-forwarded-for": "8.8.8.8", referer: "https://www.google.com/" }, "/p/old-1"), null, deploy);
+  assert.equal(await count("SELECT COUNT(*) AS n FROM site_people WHERE site_slug = 'old-1' AND kind = 'before'"), 1);
   assert.equal(await count("SELECT COALESCE(SUM(n), 0) AS n FROM site_events WHERE site_slug = 'old-1' AND step = 'visit'"), 0);
+  // They're in no source, so their form counts as not matched, never as google.com's with 0 visitors.
+  const { matchVisit, countSteps } = await import("../src/lib/server/funnel.ts");
+  const form = new Request("https://www.flash-app.dev/api/sites/old-1/inbox", { method: "POST", headers: { "user-agent": BROWSER, "x-forwarded-for": "8.8.8.8" } });
+  const match = await matchVisit("old-1", form, deploy + 500);
+  assert.deepEqual(match, { kind: "none" });
+  await countSteps("old-1", match, ["form"], deploy + 500);
+  assert.deepEqual(await all("SELECT source, n FROM site_events WHERE site_slug = 'old-1' AND step = 'form'"), [{ source: "?", n: 1 }]);
   // That visit's prune rolled up the days before today, and kept today's old rows.
   assert.deepEqual((await all<{ day: string }>("SELECT day FROM site_visitors WHERE site_slug = 'old-1'")).map((r) => r.day), [day(0)]);
   assert.deepEqual(

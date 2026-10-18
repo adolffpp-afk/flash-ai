@@ -57,6 +57,9 @@ test("without tags the referring website is the source, as before", () => {
 
 test("tags are cleaned, and ones that look like personal data are left out", () => {
   assert.ok(cleanTag("a".repeat(300)).length <= 40);
+  assert.equal(cleanTag("community-forum.bakers-and-pastry-chefs-association.example"), "community-forum.bakers-and-pastry-chefs", "a name cut in the middle ends in no dash");
+  assert.equal(cleanTag(`${"x".repeat(39)}.com`), "x".repeat(39), "nor in a dot");
+  assert.equal(cleanTag("spring-sale-"), "spring-sale-", "a name that fits is kept as it is");
   assert.equal(cleanTag("🎉🎉 party 🎉"), "party");
   assert.equal(cleanTag("春セール"), "春セール", "campaign names in any script");
   assert.equal(cleanTag("दिवाली ऑफ़र"), "दिवाली-ऑफ़र", "with their vowel signs");

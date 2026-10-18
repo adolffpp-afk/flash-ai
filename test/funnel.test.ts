@@ -36,6 +36,12 @@ const call = (slug: string, path: string, init: { headers?: Record<string, strin
   });
 const ctx = (slug: string) => ({ params: Promise.resolve({ slug }) }) as never;
 const n = async (sql: string, args: (string | number)[] = []) => Number((await one<{ n: number }>(sql, args))?.n ?? 0);
+/** Rows written while fn runs (SQLite's total_changes(): every row inserted, updated or deleted). */
+async function rowsWritten(fn: () => Promise<unknown>): Promise<number> {
+  const before = await n("SELECT total_changes() AS n");
+  await fn();
+  return (await n("SELECT total_changes() AS n")) - before;
+}
 const events = (slug: string) =>
   all<{ day: string; step: string; source: string; medium: string; campaign: string; n: number }>(
     "SELECT day, step, source, medium, campaign, n FROM site_events WHERE site_slug = ? AND step NOT IN ('visit') ORDER BY day, step, source",
@@ -79,6 +85,31 @@ test("a form counts once a day for the person who sent it, under where their vis
   assert.deepEqual(owner, { kind: "owner" });
   await countSteps("form-1", owner, ["form", "signup", "app:booking"], at);
   assert.equal((await events("form-1")).reduce((sum, e) => sum + e.n, 0), 3, "nothing more was counted");
+});
+
+test("the owner opening their app as owner after a visit counted earlier that day: their steps from then on don't count", async () => {
+  forgetServerMemory();
+  await site("own-1");
+  const at = Date.now();
+  const { recordOwnerVisit } = await import("../src/lib/server/visits.ts");
+  // Morning: the owner opens their own domain like anyone (Flash's sign-in cookie isn't sent there).
+  const domain = { host: "crumbbakery.com", "x-forwarded-for": "5.6.7.8" };
+  await recordVisit("own-1", page("own-1", domain), null, at);
+  assert.equal((await matchVisit("own-1", call("own-1", "inbox", { headers: domain }), at)).kind, "visit");
+  // Later: Open as owner with a working code; then they test the form, sign-up and an app step.
+  await recordOwnerVisit("own-1", page("own-1", domain, "?flash_owner=abc"), at + 60_000);
+  assert.deepEqual(await all("SELECT kind FROM site_people WHERE site_slug = 'own-1'"), [{ kind: "owner" }]);
+  const match = await matchVisit("own-1", call("own-1", "inbox", { headers: domain }), at + 120_000);
+  assert.deepEqual(match, { kind: "owner" });
+  await countSteps("own-1", match, ["form", "signup", "app:booked"], at + 120_000);
+  assert.deepEqual(await events("own-1"), []);
+  // Opening it as owner again writes nothing more.
+  assert.equal(await rowsWritten(() => recordOwnerVisit("own-1", page("own-1", domain, "?flash_owner=abc"), at + 180_000)), 0);
+  // The same on /p/: signed in to Flash after a signed-out visit that day.
+  const flash = { "x-forwarded-for": "5.6.7.9" };
+  await recordVisit("own-1", page("own-1", flash), null, at);
+  await recordVisit("own-1", page("own-1", flash), "u1", at + 60_000);
+  assert.deepEqual(await matchVisit("own-1", call("own-1", "inbox", { headers: flash }), at + 120_000), { kind: "owner" });
 });
 
 test("a step just after midnight counts on the day of the visit it found, and a new visit today counts again", async () => {
@@ -391,7 +422,7 @@ test("the track route counts the steps an app reports, without a source, and alw
   assert.ok(!names.includes("app:survey") && !names.includes("app:after-the-cut"), names.join());
 });
 
-test("an app counts 10 names a day, a person 15 tries, and the owner's apps their plan's number of app steps", async () => {
+test("an app counts 10 names a day, a person each name once, and the owner's apps their plan's number of app steps", async () => {
   forgetServerMemory();
   // More names than one page can have (10), as when the app is changed during the day.
   await site("names-1", "u1", [..."123456789", "10", "11"].map((i) => `n${i}`).concat(["m1", "m2", "m3", "m4", "m5", "z1"]));
@@ -404,10 +435,11 @@ test("an app counts 10 names a day, a person 15 tries, and the owner's apps thei
   const counted = await all<{ step: string }>("SELECT step FROM site_events WHERE site_slug = 'names-1' AND step LIKE 'app:%'");
   assert.equal(counted.length, 10, "the 11th name of the day isn't counted");
   assert.equal(await n("SELECT COUNT(*) AS n FROM site_step_names WHERE site_slug = 'names-1'"), 10);
-  // The refused name used one of the person's 15 tries; after 15, nothing else is read.
-  await step(1, ["n1", "m1", "m2", "m3", "m4", "m5"]);
+  // Names that aren't counted (past the day's 10, or not in the app's code) write nothing, not even
+  // on the person's list.
+  assert.equal(await rowsWritten(() => step(1, ["n1", "m1", "m2", "m3", "m4", "m5", "not-in-code"])), 0);
   const row = await one<{ steps: string }>("SELECT steps FROM site_people WHERE site_slug = 'names-1'");
-  assert.equal(JSON.parse(row!.steps).length, 15);
+  assert.equal(JSON.parse(row!.steps).length, 10);
   const client = await db();
   const execute = client.execute.bind(client);
   const batch = client.batch.bind(client);
@@ -417,13 +449,13 @@ test("an app counts 10 names a day, a person 15 tries, and the owner's apps thei
   try {
     const match = await matchVisit("names-1", call("names-1", "track", { headers: { "x-forwarded-for": ip(1) } }), at);
     sent = 0;
-    await countSteps("names-1", match, ["app:z1"], at);
+    await countSteps("names-1", match, ["app:n1", "app:n2"], at);
   } finally {
     client.execute = execute;
     client.batch = batch;
   }
-  assert.equal(sent, 0, "a person who used their 15 tries costs nothing more past the match");
-  // Their form, sign-up and checkout still count: the tries are for the app's own names.
+  assert.equal(sent, 0, "names a person was counted for cost nothing more past the match");
+  // Their form, sign-up and checkout still count.
   await step(1, ["z1"]);
   await countSteps("names-1", await matchVisit("names-1", call("names-1", "inbox", { headers: { "x-forwarded-for": ip(1) } }), at), ["app:z1", "form"], at);
   await countSteps("names-1", await matchVisit("names-1", call("names-1", "shop", { headers: { "x-forwarded-for": ip(1) } }), at), ["checkout"], at);
@@ -466,6 +498,78 @@ test("an app counts 10 names a day, a person 15 tries, and the owner's apps thei
     assert.equal(await n("SELECT steps AS n FROM owner_people WHERE user_id = 'u2' AND day = ?", [dayOf(later)]), 3);
   } finally {
     visitTests.freePeople = 0;
+  }
+});
+
+test("past the owner's daily app steps, or for names the app's code doesn't have, a person's steps write nothing", async () => {
+  forgetServerMemory();
+  await run("INSERT INTO users (id, email, password_hash, created_at, verified_at) VALUES ('cost1', 'cost1@x.co', 'h', 0, 1)");
+  await site("cost-1", "cost1", ["booked"]);
+  const at = Date.now();
+  // The owner's app steps for today (free: 10,000) are used up.
+  await run("INSERT INTO owner_people (user_id, day, people, steps) VALUES ('cost1', ?, 0, 10000)", [dayOf(at)]);
+  const track = (ip: string, body: string) =>
+    trackRoute.POST(call("cost-1", "track", { headers: { "x-forwarded-for": ip, "content-type": "text/plain" }, body }), ctx("cost-1"));
+  let written = 0;
+  for (let p = 0; p < 5; p++) {
+    const ip = `10.6.${p}.1`;
+    await recordVisit("cost-1", page("cost-1", { "x-forwarded-for": ip }), null, at);
+    // 15 requests, one name each: the app's own, then 14 its code doesn't have.
+    written += await rowsWritten(async () => {
+      for (let i = 0; i < 15; i++) {
+        await track(ip, i === 0 ? "booked" : `x${i}`);
+        await afterwards();
+      }
+    });
+  }
+  assert.equal(await n("SELECT COALESCE(SUM(n), 0) AS n FROM site_events WHERE site_slug = 'cost-1' AND step LIKE 'app:%'"), 0);
+  assert.equal(await n("SELECT steps AS n FROM owner_people WHERE user_id = 'cost1'"), 10000);
+  assert.equal(written, 1, "only the mark saying the app's steps stopped counting");
+  assert.equal(await n("SELECT n FROM site_events WHERE site_slug = 'cost-1' AND step = 'capped-app'"), 10000);
+  assert.deepEqual(
+    (await all<{ steps: string }>("SELECT steps FROM site_people WHERE site_slug = 'cost-1'")).map((r) => r.steps),
+    Array(5).fill("[]"),
+  );
+});
+
+test("one internet connection counts as many app steps a day as new people, so a stranger can't use up the owner's day of them", async () => {
+  visitTests.networkPeople = 3;
+  try {
+    forgetServerMemory();
+    await run("INSERT INTO users (id, email, password_hash, created_at, verified_at) VALUES ('net1', 'net1@x.co', 'h', 0, 1)");
+    const names = [..."abcdefghij"];
+    await site("conn-1", "net1", names);
+    await site("conn-2", "net1", ["subscribed"]);
+    const at = Date.now();
+    const browser = (i: number) => `Mozilla/5.0 (Windows NT 10.0; rv:${130 + i}.0) Gecko/20100101 Firefox/${130 + i}.0`;
+    // From one connection, 2 people (within its 3 new people), each sending the app's 10 names.
+    for (let i = 0; i < 2; i++) {
+      const who = { "x-forwarded-for": "10.7.0.1", "user-agent": browser(i) };
+      await recordVisit("conn-1", page("conn-1", who), null, at);
+      await countSteps("conn-1", await matchVisit("conn-1", call("conn-1", "track", { headers: who }), at), names.map((s) => `app:${s}` as const), at);
+    }
+    assert.equal(await n("SELECT COALESCE(SUM(n), 0) AS n FROM site_events WHERE site_slug = 'conn-1' AND step LIKE 'app:%'"), 3);
+    assert.equal(await n("SELECT steps AS n FROM owner_people WHERE user_id = 'net1'"), 3);
+    // A third person from it, on the owner's other app, is counted, with their form, but not their app
+    // step; a person on another connection counts.
+    const same = { "x-forwarded-for": "10.7.0.1", "user-agent": browser(9) };
+    await recordVisit("conn-2", page("conn-2", same), null, at);
+    await countSteps("conn-2", await matchVisit("conn-2", call("conn-2", "track", { headers: same }), at), ["app:subscribed", "form"], at);
+    const other = { "x-forwarded-for": "10.7.0.2" };
+    await recordVisit("conn-2", page("conn-2", other), null, at);
+    await countSteps("conn-2", await matchVisit("conn-2", call("conn-2", "track", { headers: other }), at), ["app:subscribed"], at);
+    assert.deepEqual(
+      (await events("conn-2")).map((e) => [e.step, e.source, e.n]),
+      [
+        ["app:subscribed", "", 1],
+        ["form", "", 1],
+      ],
+    );
+    assert.equal(await n("SELECT people AS n FROM owner_people WHERE user_id = 'net1'"), 4);
+    const { networkMemory } = await import("../src/lib/server/visits.ts");
+    assert.ok(networkMemory().length > 0 && networkMemory().every((k) => !k.includes("10.7.0")), networkMemory().join());
+  } finally {
+    visitTests.networkPeople = 0;
   }
 });
 
@@ -688,6 +792,29 @@ test("the funnel adds up each step for people matched to a visit, per source wit
   assert.equal(quarter.shownDays, 81);
   assert.deepEqual(["7", "30", "90", 90, "14", "abc", null, undefined].map(funnelRange), [7, 30, 90, 90, 30, 30, 30, 30]);
   assert.equal(await funnelStats("nobody-1", 30, NOW), null);
+});
+
+test("whatever range is shown, the funnel says whether the app's 90 days hold anything", async () => {
+  await since("2026-07-01");
+  for (const slug of ["fun-quiet", "fun-none"]) {
+    await site(slug, "u4");
+    await run("UPDATE sites SET created_at = ? WHERE slug = ?", [Date.UTC(2026, 6, 1), slug]);
+  }
+  // Visitors 40 to 80 days ago, and nothing in the last 30.
+  await event("fun-quiet", "2026-08-15", "visit", "google.com", 10);
+  for (const days of [7, 30, 90] as const) {
+    assert.equal((await funnelStats("fun-quiet", days, NOW))!.empty, false, `${days} days: there is more than this range`);
+    assert.equal((await funnelStats("fun-none", days, NOW))!.empty, true, `${days} days: nothing in 90 days`);
+  }
+  // A limit mark alone is nothing to show; a form nobody could match is.
+  await event("fun-none", D1, "capped", "", 10_000);
+  assert.equal((await funnelStats("fun-none", 7, NOW))!.empty, true);
+  await event("fun-none", "2026-08-01", "form", "?", 1);
+  assert.equal((await funnelStats("fun-none", 7, NOW))!.empty, false);
+  // Nor anything older than 90 days, or from before counting began.
+  await event("fun-quiet", "2026-07-20", "visit", "", 3);
+  await since("2026-08-20");
+  assert.equal((await funnelStats("fun-quiet", 30, NOW))!.empty, true);
 });
 
 test("a tagged link with a few visitors shows by name beside busier sources; past 100 sources and 30 campaigns, the rest are added up", async () => {

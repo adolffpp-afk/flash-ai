@@ -4,7 +4,8 @@ import { useState, type ChangeEvent, type ReactNode } from "react";
 import type { FunnelCounts, FunnelRange, FunnelSource, FunnelStats, Money } from "@/lib/server/funnel.ts";
 import { formatMoney } from "@/lib/shop";
 import { msg } from "@/lib/i18n";
-import { cleanTag, percent, share, taggedLink } from "@/lib/traffic";
+import { PLAN_PEOPLE } from "@/lib/plan-limits";
+import { MAX_TAG, cleanTag, percent, share, taggedLink } from "@/lib/traffic";
 import { useT, type T } from "@/lib/use-t";
 
 const DAY = 86_400_000;
@@ -103,7 +104,11 @@ export function FunnelNotes({ stats, onPlans }: { stats: FunnelStats; onPlans?: 
   }
   if (earlier.length > NOTED_DAYS) notes.push(more(earlier.length - NOTED_DAYS));
   for (const g of byLimit(stepsEarlier.slice(0, NOTED_DAYS), (p) => p.steps)) {
-    notes.push(t("On {date}, your apps' own steps stopped counting at {count} (your plan's daily limit).", { date: dayList(g.days, t), count: count(g.limit, t) }));
+    notes.push(
+      g.days.length === 1
+        ? t("On {date}, your apps' own steps stopped counting at {count} (your plan's daily limit).", { date: dayLabel(g.days[0], t.locale), count: count(g.limit, t) })
+        : t("On {dates}, your apps' own steps stopped counting at {count} (your plan's daily limit).", { dates: dayList(g.days, t), count: count(g.limit, t) }),
+    );
   }
   if (stepsEarlier.length > NOTED_DAYS) notes.push(more(stepsEarlier.length - NOTED_DAYS));
   if (stats.netCapped !== null) {
@@ -126,7 +131,10 @@ export function FunnelNotes({ stats, onPlans }: { stats: FunnelStats; onPlans?: 
           {stats.free && (
             <>
               {" "}
-              {t("Paid plans count more people.")}
+              {t("Paid plans count more people: {count} a day on Lite, up to {most} on Agency.", {
+                count: count(PLAN_PEOPLE.lite, t),
+                most: count(PLAN_PEOPLE.agency, t),
+              })}
               {onPlans && (
                 <>
                   {" "}
@@ -139,8 +147,9 @@ export function FunnelNotes({ stats, onPlans }: { stats: FunnelStats; onPlans?: 
           )}
         </p>
       )}
-      {notes.map((n) => (
-        <p key={n}>{n}</p>
+      {/* By place: two notes can say the same ("…and on 1 other day."), and the list is made anew each time. */}
+      {notes.map((n, i) => (
+        <p key={i}>{n}</p>
       ))}
     </div>
   );
@@ -237,8 +246,8 @@ function SourceTable({ stats }: { stats: FunnelStats }) {
       </td>
     </>
   );
-  // In the table a long name is cut (its title shows it whole); on a card, where there's no hovering, it wraps.
-  const nameCell = (name: string, source?: FunnelSource, muted?: boolean, wrap = false) => {
+  // A long name wraps, in the table as on a card, so it can be read without hovering (on a tablet too).
+  const nameCell = (name: string, source?: FunnelSource, muted?: boolean) => {
     const open = source ? opened.includes(source.source) : false;
     return (
       <div className="flex min-w-0 items-center gap-1">
@@ -252,7 +261,7 @@ function SourceTable({ stats }: { stats: FunnelStats }) {
             <Chevron open={open} />
           </button>
         ) : null}
-        <bdi dir="auto" title={wrap ? undefined : name} className={`min-w-0 ${wrap ? "[overflow-wrap:anywhere]" : "truncate"} ${muted ? "text-zinc-400" : "text-zinc-200"}`}>
+        <bdi dir="auto" className={`min-w-0 [overflow-wrap:anywhere] ${muted ? "text-zinc-400" : "text-zinc-200"}`}>
           {name}
         </bdi>
       </div>
@@ -309,7 +318,7 @@ function SourceTable({ stats }: { stats: FunnelStats }) {
           const open = r.source ? opened.includes(r.source.source) : false;
           return (
             <li key={r.key} className="rounded-xl border border-white/8 bg-white/[0.02] p-3">
-              <div className="text-sm">{nameCell(r.name, r.source, r.muted, true)}</div>
+              <div className="text-sm">{nameCell(r.name, r.source, r.muted)}</div>
               <SourceNumbers c={r.c} visitors={r.c.visitors} t={t} />
               {open &&
                 r.source?.campaigns.map((c) => (
@@ -351,7 +360,7 @@ function SourceRows({
 }: {
   r: { name: string; c: FunnelCounts; source?: FunnelSource; muted?: boolean };
   opened: string[];
-  nameCell: (name: string, source?: FunnelSource, muted?: boolean, wrap?: boolean) => ReactNode;
+  nameCell: (name: string, source?: FunnelSource, muted?: boolean) => ReactNode;
   numbers: (c: Omit<FunnelCounts, "visitors">, visitors: number | null) => ReactNode;
 }) {
   const t = useT();
@@ -367,7 +376,7 @@ function SourceRows({
         r.source?.campaigns.map((c) => (
           <tr key={`${c.medium}|${c.campaign}`} className="text-xs text-zinc-400">
             <td className="py-1.5 pe-3 ps-8">
-              <bdi dir="auto" title={campaignName(c)} className="block truncate">
+              <bdi dir="auto" className="block [overflow-wrap:anywhere]">
                 {campaignName(c)}
               </bdi>
             </td>
@@ -377,7 +386,7 @@ function SourceRows({
       {others && (
         <tr className="text-xs text-zinc-400">
           <td className="py-1.5 pe-3 ps-8">
-            <span className="block truncate">{t("Other campaigns")}</span>
+            <span className="block [overflow-wrap:anywhere]">{t("Other campaigns")}</span>
           </td>
           {numbers(others, others.visitors)}
         </tr>
@@ -434,13 +443,13 @@ export function LinkMaker({ addresses }: { addresses: string[] }) {
         <div className={`grid grid-cols-1 gap-3 ${addresses.length > 1 ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
           <label className="block min-w-0 text-xs text-zinc-500">
             {t("Where you'll share it")}
-            <input value={source} onChange={edit(setSource)} placeholder="instagram" dir="auto" className={`mt-1 ${field}`} />
+            <input value={source} onChange={edit(setSource)} placeholder="instagram" maxLength={MAX_TAG} dir="auto" className={`mt-1 ${field}`} />
             {dropped(source) && leftOut}
             {noSource && <span className="mt-1 block text-xs text-gold-soft">{t("Type where you'll share it too. Without it, the link leaves out the campaign.")}</span>}
           </label>
           <label className="block min-w-0 text-xs text-zinc-500">
             {t("Campaign (optional)")}
-            <input value={campaign} onChange={edit(setCampaign)} dir="auto" className={`mt-1 ${field}`} />
+            <input value={campaign} onChange={edit(setCampaign)} maxLength={MAX_TAG} dir="auto" className={`mt-1 ${field}`} />
             {dropped(campaign) && leftOut}
           </label>
           {addresses.length > 1 && (
