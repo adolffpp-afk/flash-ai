@@ -83,23 +83,23 @@ export async function spendable(
 }
 
 // Longer than any request runs (the chat route's maxDuration is 800 seconds).
-const HOLD_MINUTES = 15;
+export const HOLD_MINUTES = 15;
 
 /**
  * The balance auto top-up compares with its level (see maybeAutoTopUp). Spending that keeps the
  * level (keepTopUpLevel, see charge) isn't the account holder's own, so it never sets off a top-up:
- * - a hold still running doesn't count: most of it comes back when the answer ends;
+ * - a hold still open doesn't count: most of it comes back when the answer ends, and one a stopped
+ *   server left open, however old, is settled to 0 later (see settleLeftHolds in site-ai.ts);
  * - nor, settled or not, does one that was running when auto top-up was turned on or its level set
  *   (see visitorHoldsKeptOut): it was checked against the level before, which may have been lower or
  *   off, so it may have settled below the new one.
- * So a visitor's question never makes Flash buy a pack, then or on the owner's next visit. A hold left
- * running for longer than any request, and not running at such a change, counts again.
+ * So a visitor's question never makes Flash buy a pack, then or on the owner's next visit.
  */
 export async function topUpBalance(userId: string): Promise<number> {
   const row = await one<{ total: number }>(
     `SELECT COALESCE(SUM(amount), 0) AS total FROM credit_ledger
-     WHERE user_id = ? AND NOT (keeps_level = 2 OR (keeps_level = 1 AND settled_at = 0 AND created_at > ?))`,
-    [userId, now() - HOLD_MINUTES * 60_000],
+     WHERE user_id = ? AND NOT (keeps_level = 2 OR (keeps_level = 1 AND settled_at = 0))`,
+    [userId],
   );
   return Number(row?.total ?? 0);
 }
@@ -149,10 +149,12 @@ async function monthlyCredits(userId: string): Promise<void> {
   const ref = `free:${userId}:${monthKey()}`;
   if (await one("SELECT 1 FROM credit_ledger WHERE ref = ?", [ref])) return;
   // Credits held by a request still running count as not spent yet: most of a hold comes back when
-  // the reply ends, so counting it as spent would top up past the monthly amount.
+  // the reply ends, so counting it as spent would top up past the monthly amount. A visitor's hold
+  // (keeps_level 1, or 2 once marked by visitorHoldsKeptOut) counts so however old: one a stopped
+  // server left is settled to 0 later (see settleLeftHolds in site-ai.ts).
   const row = await one<{ total: number }>(
     `SELECT COALESCE(SUM(amount), 0) AS total FROM credit_ledger
-     WHERE user_id = ? AND NOT (amount < 0 AND ref IS NULL AND settled_at = 0 AND created_at > ?)`,
+     WHERE user_id = ? AND NOT (amount < 0 AND ref IS NULL AND settled_at = 0 AND (keeps_level > 0 OR created_at > ?))`,
     [userId, now() - HOLD_MINUTES * 60_000],
   );
   const topUp = Math.max(0, FREE_MONTHLY_CREDITS - Math.max(0, Number(row?.total ?? 0)));

@@ -57,10 +57,11 @@ const HOLD_MS = 15 * 60_000;
 const SENDING_MS = 15 * 60_000;
 /*
  * The balance the alert goes by (two parameters: the account, and now less HOLD_MS): what is settled,
- * and holds older than HOLD_MS. A request still running holds credits that mostly come back.
+ * and holds older than HOLD_MS. A request still running holds credits that mostly come back, and a
+ * visitor's hold (keeps_level) a stopped server left open comes back whole (settleLeftHolds in site-ai.ts).
  */
 const SETTLED_BALANCE = `(SELECT COALESCE(SUM(amount), 0) FROM credit_ledger WHERE user_id = ?
-    AND NOT (amount < 0 AND ref IS NULL AND settled_at = 0 AND created_at > ?))`;
+    AND NOT (amount < 0 AND ref IS NULL AND settled_at = 0 AND (keeps_level > 0 OR created_at > ?)))`;
 // How often an app's AI marks a refusal (and looks at its owner's email), at most.
 const MARK_EVERY = 10 * 60_000;
 
@@ -142,13 +143,17 @@ export async function deleteUserAlerts(userId: string): Promise<void> {
  */
 export type CheckOptions = { topUp?: boolean };
 
+/** After the response, never waited for: its errors are logged, so the spend or refusal never fails by it. */
+const later = (work: () => Promise<unknown>): void =>
+  void afterResponse(() => work().catch((err: unknown) => console.error("[flash] low-credit check after the response failed", err)));
+
 /**
  * Called once a spend is settled: account is the ledger it came from (a team member's spend is the
  * pool owner's), used what it took. Looks after the response is sent (see afterResponse).
  */
 export function watchBalance(account: string, used: number, options: CheckOptions = {}): void {
   if (!(used > 0)) return;
-  afterResponse(() => checkLowBalance(account, options));
+  later(() => checkLowBalance(account, options));
 }
 
 /**
@@ -160,7 +165,7 @@ export function watchBalance(account: string, used: number, options: CheckOption
  * response, and the full check only when an email is owed or auto top-up is on (and topUp).
  */
 export function watchRefusal(accounts: string[], { topUp = true }: CheckOptions = {}): void {
-  afterResponse(async () => {
+  later(async () => {
     for (const account of accounts) {
       const due = await one<{ due: number }>(
         `SELECT EXISTS (SELECT 1 FROM credit_alerts WHERE user_id = ? AND retry_at > 0 AND retry_at <= ?)
@@ -287,7 +292,7 @@ export async function checkLowBalance(account: string, { topUp = true }: CheckOp
  * answers again) and emails the owner, after the response.
  */
 export function noteAppAiOutOfCredits(slug: string, owner: string, title: string, atLevel = false): void {
-  afterResponse(async () => {
+  later(async () => {
     // At most every few minutes per app, so a busy app's visitors don't each cost a look, and when
     // the reason changes.
     const level = atLevel ? 1 : 0;

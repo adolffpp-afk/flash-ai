@@ -1,17 +1,18 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
+import { createServer as netServer, type AddressInfo, type Socket } from "node:net";
 import { register } from "node:module";
 
 /*
  * window.flashAI: one attempt per hold, the owner's auto top-up level, and saying it is an AI. A
  * stand-in Claude counts every request it is sent, keeps its system prompt, and can answer, fail
  * with an error, drop the connection, cut its answer off part way, send its answer slowly, or
- * answer after 800 ms (late).
+ * answer after 800 ms (late), noting when Flash hangs up before a late answer comes.
  */
 let mode: "answer" | "error" | "drop" | "cut" | "slow" | "late" = "answer";
 let hits = 0;
+let hungUp = 0;
 let timeoutHeader = "";
 let system = "";
 const answerBody = JSON.stringify({
@@ -43,18 +44,24 @@ const server = createServer((req, res) => {
       res.on("close", () => clearTimeout(rest));
       return;
     }
-    if (mode === "late") return void setTimeout(() => res.writeHead(200, { "Content-Type": "application/json" }).end(answerBody), 800);
+    if (mode === "late") {
+      res.on("close", () => void (res.writableEnded || hungUp++));
+      return void setTimeout(() => res.writeHead(200, { "Content-Type": "application/json" }).end(answerBody), 800);
+    }
     res.writeHead(200, { "Content-Type": "application/json" }).end(answerBody);
   });
 });
 await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
 after(() => server.close());
 
-// A stand-in Stripe: records what auto top-up would buy.
+// A stand-in Stripe: records what auto top-up would buy. fetchFails: what fetch rejects with for
+// Claude instead, while it is set.
 let stripeCalls: string[] = [];
+let fetchFails: Error | null = null;
 const realFetch = globalThis.fetch;
 globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
   const url = String(input);
+  if (fetchFails && url.startsWith(process.env.ANTHROPIC_BASE_URL!)) throw fetchFails;
   if (!url.startsWith("https://stripe.test/")) return realFetch(input, init);
   stripeCalls.push(`${init?.method ?? "GET"} ${new URL(url).pathname}`);
   return Response.json({ id: `pi_${stripeCalls.length}`, status: "succeeded" });
@@ -73,12 +80,18 @@ const aiRoute = await import("../src/app/api/sites/[slug]/ai/route.ts");
 const { createSession } = await import("../src/lib/server/auth.ts");
 const { buildSystem } = await import("../src/lib/engines/builder.ts");
 const { maybeAutoTopUp } = await import("../src/lib/server/auto-topup.ts");
-const { CREDIT_PACKS } = await import("../src/lib/credits.ts");
+const { CREDIT_PACKS, MARKUP } = await import("../src/lib/credits.ts");
 const { charge, spendable } = await import("../src/lib/server/credits.ts");
 const { afterwards } = await import("./support/next-server.mjs");
 
 const balance = async (user = "owner") =>
   Number((await one<{ c: number }>("SELECT COALESCE(SUM(amount), 0) AS c FROM credit_ledger WHERE user_id = ?", [user]))?.c);
+const usageCount = async (user = "owner") => Number((await one<{ n: number }>("SELECT COUNT(*) AS n FROM usage WHERE user_id = ?", [user]))?.n);
+// The app's day row: the credits its answers hold or used today, and how many questions it took.
+const today = async (slug = "shop") => {
+  const { usedToday, askedToday } = await aiSettings(slug);
+  return { used: usedToday, asked: askedToday };
+};
 let ip = 0;
 // A new address each time, so the per-visitor limit never gets in the way.
 const ask = (prompt = "When should I book?", instructions = "", slug = "shop") => askSiteAi(slug, { prompt, instructions }, `10.0.${Math.floor(++ip / 250)}.${ip % 250}`);
@@ -140,6 +153,170 @@ test("a dropped call may still have run: it is logged at the most it can cost, a
   assert.equal(Number((await one<{ n: number }>("SELECT COUNT(*) AS n FROM usage"))?.n), rows);
 });
 
+test("an answer the client refused before sending it never left Flash: as with meterLost, no cost is logged for it, and its hold goes back to the day", async () => {
+  const { default: Anthropic } = await import("@anthropic-ai/sdk");
+  const { getClient, meterLost } = await import("../src/lib/engines/claude.ts");
+  await saveAiSettings("shop", true, 500);
+  await setBalance("owner", 500);
+  const refused = new Anthropic.AnthropicError("Streaming is required for operations that may take longer than 10 minutes.");
+  let metered = 0;
+  assert.throws(() => meterLost(refused, () => void metered++, 7));
+  assert.equal(metered, 0, "meterLost meters nothing for it");
+  const [before, day, rows] = [await balance(), await today(), await usageCount()];
+  const messages = getClient().beta.messages;
+  const create = messages.create;
+  messages.create = (() => Promise.reject(refused)) as unknown as typeof create;
+  hits = 0;
+  try {
+    assert.equal((await ask()).status, 502);
+  } finally {
+    messages.create = create;
+  }
+  assert.equal(hits, 0, "nothing reached Claude");
+  assert.equal(await usageCount(), rows, "no cost is logged");
+  assert.deepEqual(await today(), day, "the day's budget is as it was");
+  assert.equal(await balance(), before, "and the owner pays nothing");
+  assert.equal((await ask()).status, 200, "the next question is sent as usual");
+});
+
+test("Claude out of reach (nothing answers the connection, the name doesn't resolve, or the connection never finishes) never got the question: no cost is logged, the day's budget is untouched, and the app answers again once Claude is back", async () => {
+  const { default: Anthropic } = await import("@anthropic-ai/sdk");
+  const { getClient, meterLost, mayHaveRun } = await import("../src/lib/engines/claude.ts");
+  const { DEFAULT_DAILY_CREDITS } = await import("../src/lib/server/site-ai.ts");
+  await saveAiSettings("shop", true, DEFAULT_DAILY_CREDITS);
+  // An app of its own for the stalled connection, so its questions fill a day of their own.
+  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES ('far', 'owner', 'Far', '<p>', 0, 0)");
+  await saveAiSettings("far", true, DEFAULT_DAILY_CREDITS);
+  await setBalance("owner", 500);
+  // A port nothing listens on, for now.
+  const spare = createServer();
+  await new Promise<void>((r) => spare.listen(0, "127.0.0.1", r));
+  const port = (spare.address() as AddressInfo).port;
+  await new Promise<void>((r) => spare.close(() => r()));
+  // An address that takes the connection but never finishes the TLS handshake (a stalled load
+  // balancer, a firewall dropping packets): fetch gives up after its own 10-second connect timeout,
+  // and the question was never written. The client reads that as a timeout of its own.
+  const stalled: Socket[] = [];
+  const stall = netServer((s) => void stalled.push(s));
+  await new Promise<void>((r) => stall.listen(0, "127.0.0.1", r));
+  const stallURL = `https://127.0.0.1:${(stall.address() as AddressInfo).port}`;
+  const messages = getClient().beta.messages;
+  const create = messages.create;
+  // Flash's own client and the real fetch, sent to where Claude can't be reached.
+  const sendTo = (baseURL: string) => {
+    const elsewhere = getClient().withOptions({ baseURL });
+    messages.create = ((body: never, options: never) => elsewhere.beta.messages.create(body, options)) as unknown as typeof create;
+  };
+  const call = (baseURL: string) =>
+    getClient()
+      .withOptions({ baseURL, maxRetries: 0 })
+      .beta.messages.create({ model: "m", max_tokens: 1, messages: [{ role: "user", content: "x" }] })
+      .then(() => assert.fail("answered"), (err: unknown) => err);
+  const [before, day, farDay, rows] = [await balance(), await today(), await today("far"), await usageCount()];
+  hits = 0;
+  try {
+    for (const where of [`http://127.0.0.1:${port}`, "http://flash-test.invalid"]) {
+      sendTo(where);
+      // More questions than the day's budget holds.
+      for (let i = 0; i < 40; i++) assert.equal((await ask()).status, 502, `${where}: ${i}`);
+    }
+    // Asked all at once, as each waits out the connect timeout: those the day can hold get "couldn't
+    // answer", the rest are refused while those hold it.
+    sendTo(stallURL);
+    const [timedOut, ...answers] = await Promise.all([call(stallURL), ...Array.from({ length: 40 }, () => ask(undefined, undefined, "far"))]);
+    assert.ok(stalled.length > 0, "the stalled address took the connections");
+    const statuses = answers.map((a) => a.status);
+    assert.ok(statuses.includes(502) && statuses.every((s) => s === 502 || s === 429), String(statuses));
+    assert.equal(hits, 0, "nothing reached Claude");
+    assert.equal(await usageCount(), rows, "no cost is logged");
+    assert.deepEqual(await today(), day, "the day's budget is as it was");
+    assert.deepEqual(await today("far"), farDay, "for the stalled app too");
+    assert.equal(await balance(), before, "and the owner pays nothing");
+    const causes: string[] = [];
+    for (let e = timedOut as { cause?: unknown; code?: unknown } | undefined; e; e = e.cause as typeof e) causes.push(String(e.code ?? e.constructor.name));
+    assert.ok(causes.includes("UND_ERR_CONNECT_TIMEOUT"), `fetch's connect timeout, kept as the cause: ${causes}`);
+    for (const refused of [await call(`http://127.0.0.1:${port}`), await call("http://flash-test.invalid"), timedOut]) {
+      assert.ok(refused instanceof Anthropic.APIConnectionError, String(refused));
+      assert.equal(mayHaveRun(refused), false, String(refused));
+      let metered = 0;
+      assert.throws(() => meterLost(refused, () => void metered++, 7));
+      assert.equal(metered, 0, "meterLost meters nothing for it either");
+    }
+    // Claude is back, at the same address.
+    const back = createServer((req, res) => {
+      req.resume();
+      req.on("end", () => res.writeHead(200, { "Content-Type": "application/json" }).end(answerBody));
+    });
+    await new Promise<void>((r) => back.listen(port, "127.0.0.1", r));
+    try {
+      sendTo(`http://127.0.0.1:${port}`);
+      assert.equal((await ask()).status, 200, "the app answers again");
+      assert.equal((await ask(undefined, undefined, "far")).status, 200, "and so does the stalled one");
+    } finally {
+      back.closeAllConnections();
+      await new Promise<void>((r) => back.close(() => r()));
+    }
+  } finally {
+    messages.create = create;
+    for (const s of stalled) s.destroy();
+    stall.close();
+    await saveAiSettings("shop", true, 500);
+  }
+});
+
+test("only a failure while connecting says the question never left Flash: a connection lost after it was sent, a timeout or a cut-off answer may still have run", async () => {
+  const { default: Anthropic } = await import("@anthropic-ai/sdk");
+  const { getClient, mayHaveRun } = await import("../src/lib/engines/claude.ts");
+  const nodeError = (code: string, syscall?: string) => Object.assign(new Error(`${syscall ?? ""} ${code}`), { code, ...(syscall && { syscall }) });
+  // What Flash's client throws when fetch fails the way Node's does: TypeError("fetch failed") with
+  // what undici said as its cause. The client reads "timed out" in any of it as its own timeout.
+  const lost = async (cause: Error) => {
+    fetchFails = new TypeError("fetch failed", { cause });
+    try {
+      return await getClient()
+        .withOptions({ maxRetries: 0 })
+        .beta.messages.create({ model: "m", max_tokens: 1, messages: [{ role: "user", content: "x" }] })
+        .then(() => assert.fail("answered"), (err: unknown) => err);
+    } finally {
+      fetchFails = null;
+    }
+  };
+  const neverSent = [
+    nodeError("ECONNREFUSED", "connect"),
+    nodeError("EHOSTUNREACH", "connect"),
+    nodeError("ENETUNREACH", "connect"),
+    nodeError("ETIMEDOUT", "connect"),
+    nodeError("ENOTFOUND", "getaddrinfo"),
+    nodeError("EAI_AGAIN", "getaddrinfo"),
+    // Every address of the name refused (Node tries each in turn).
+    Object.assign(new AggregateError([nodeError("ECONNREFUSED", "connect"), nodeError("EAFNOSUPPORT", "connect")]), { code: "ECONNREFUSED" }),
+    // fetch's own connect timeout, as undici words it (a real one: see "Claude out of reach").
+    Object.assign(new Error("Connect Timeout Error (attempted address: api.anthropic.com:443, timeout: 10000ms)"), { name: "ConnectTimeoutError", code: "UND_ERR_CONNECT_TIMEOUT" }),
+    // Flash refused the server's certificate: the request is only written once it is accepted.
+    nodeError("DEPTH_ZERO_SELF_SIGNED_CERT"),
+    nodeError("CERT_HAS_EXPIRED"),
+    nodeError("UNABLE_TO_VERIFY_LEAF_SIGNATURE"),
+    nodeError("ERR_TLS_CERT_ALTNAME_INVALID"),
+  ];
+  for (const cause of neverSent) assert.equal(mayHaveRun(await lost(cause)), false, `${cause.name}: ${cause.message}`);
+  const lostAfterSending = [
+    Object.assign(new Error("other side closed"), { code: "UND_ERR_SOCKET" }),
+    nodeError("ECONNRESET", "read"),
+    nodeError("EPIPE", "write"),
+    // The same codes on a connection already made say nothing about whether the question got there.
+    nodeError("EHOSTUNREACH"),
+    nodeError("ETIMEDOUT", "read"),
+    Object.assign(new AggregateError([nodeError("ECONNREFUSED", "connect"), nodeError("ECONNRESET", "read")]), { code: "ECONNREFUSED" }),
+    nodeError("ERR_SSL_TLSV13_ALERT_CERTIFICATE_REQUIRED"),
+  ];
+  for (const cause of lostAfterSending) assert.equal(mayHaveRun(await lost(cause)), true, `${cause.name}: ${cause.message}`);
+  const mayHave = [new Anthropic.APIConnectionError({}), new Anthropic.APIConnectionTimeoutError(), new Anthropic.APIUserAbortError(), new Error("terminated")];
+  for (const err of mayHave) assert.equal(mayHaveRun(err), true, String(err));
+  // Claude answering with an error status, or the client refusing before sending, as before.
+  assert.equal(mayHaveRun(new Anthropic.InternalServerError(500, undefined, "nope", new Headers())), false);
+  assert.equal(mayHaveRun(new Anthropic.AnthropicError("refused")), false);
+});
+
 test("an answer gives up in time for the request to settle its hold", async () => {
   await ask();
   assert.equal(Number(timeoutHeader), ANSWER_TIMEOUT_MS / 1000, "the client's own 10 minutes aren't used");
@@ -168,6 +345,169 @@ test("an answer cut off part way, or still coming at the deadline, was made and 
     assert.deepEqual([Number(lost?.credits), Number(lost?.ok)], [0, 0]);
     assert.ok(Number(lost?.cost_cents) > 0);
   }
+});
+
+test("a failed answer costs the owner nothing; one Claude may have made keeps its hold in the day's budget, and one Claude refused gives it back", async () => {
+  await saveAiSettings("shop", true, 500);
+  await setBalance("owner", 500);
+  for (const how of ["drop", "cut", "slow", "error"] as const) {
+    const [before, day, rows] = [await balance(), await today(), await usageCount()];
+    mode = how;
+    const answer = await askSiteAi("shop", { prompt: "Open on Sunday?" }, `10.7.0.${++ip % 250}`, 500);
+    mode = "answer";
+    assert.equal(answer.status, 502, how);
+    assert.equal(await balance(), before, `${how}: the owner pays nothing`);
+    const after = await today();
+    if (how === "error") {
+      assert.deepEqual(after, day, "an error status: no answer was made, so the day's budget is as it was");
+      assert.equal(await usageCount(), rows);
+      continue;
+    }
+    assert.equal(after.asked, day.asked + 1, `${how}: the question counts`);
+    assert.ok(after.used > day.used, `${how}: its hold stays in the day's budget`);
+    // What Flash may have paid for it, at the credits' price, is within what it keeps out of the budget.
+    const lost = await one<{ cost_cents: number }>("SELECT cost_cents FROM usage ORDER BY rowid DESC LIMIT 1");
+    assert.ok(Number(lost?.cost_cents) * MARKUP <= after.used - day.used, `${how}: ${lost?.cost_cents}¢ within ${after.used - day.used} credits`);
+  }
+});
+
+test("however often Claude is cut off, an app's failed answers stop at its daily budget, so what Flash may pay for them is at most what that budget is worth", async () => {
+  await run("INSERT INTO users (id, email, password_hash, created_at, verified_at) VALUES ('cafe-owner', 'c@x.io', '', 0, 1)");
+  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES ('cafe', 'cafe-owner', 'Cafe', '<p>', 0, 0)");
+  await setBalance("cafe-owner", 1000);
+  const budget = 20;
+  await saveAiSettings("cafe", true, budget);
+  mode = "drop";
+  let failed = 0;
+  let last = await ask(undefined, undefined, "cafe");
+  for (; last.status === 502 && failed < 200; failed++) last = await ask(undefined, undefined, "cafe");
+  mode = "answer";
+  assert.equal(last.status, 429, `still failing after ${failed} answers: the day's budget never ran out`);
+  assert.match((last.body as { error: string }).error, /used everything it may today/);
+  assert.ok(failed > 0);
+  const lost = await one<{ n: number; cents: number }>("SELECT COUNT(*) AS n, COALESCE(SUM(cost_cents), 0) AS cents FROM usage WHERE user_id = 'cafe-owner'");
+  assert.equal(Number(lost?.n), failed, "each is logged at the most it can cost");
+  assert.ok(Number(lost?.cents) * MARKUP <= budget, `${lost?.cents}¢ for a ${budget}-credit day`);
+  assert.equal(await balance("cafe-owner"), 1000, "and the owner paid for none of them");
+  // Answers refused before the call still give everything back: the day's limit, and switched off.
+  const day = await today("cafe");
+  assert.equal((await ask(undefined, undefined, "cafe")).status, 429);
+  assert.deepEqual(await today("cafe"), day);
+  await saveAiSettings("cafe", false, budget);
+  assert.equal((await ask(undefined, undefined, "cafe")).status, 403);
+  assert.deepEqual(await today("cafe"), day);
+});
+
+test("an answer a server stopped in the middle of (a crash or a restart) is settled to 0 by a later question: the owner pays nothing for it, and Flash's cost is logged at the most it can be", async () => {
+  const { db } = await import("../src/lib/server/db.ts");
+  await saveAiSettings("shop", true, 500);
+  await setBalance("owner", 500);
+  // What a server that stopped while Claude answered leaves: the question's hold, never settled, and
+  // its place in the day's budget. One from longer ago than any question runs, and one that may still
+  // be running on another server.
+  const left = Number(await charge("owner", 3, 'AI in "Bakery"', { keepTopUpLevel: true }));
+  const running = Number(await charge("owner", 4, 'AI in "Bakery"', { keepTopUpLevel: true }));
+  await run("UPDATE credit_ledger SET created_at = ? WHERE id = ?", [Date.now() - 16 * 60_000, left]);
+  const [day, rows] = [await today(), await usageCount()];
+  const client = await db();
+  const execute = client.execute.bind(client);
+  const sql: string[] = [];
+  client.execute = ((s: { sql: string }, ...rest: unknown[]) => {
+    if (typeof s === "object" && /^SELECT .* FROM credit_ledger WHERE keeps_level > 0/.test(s.sql)) sql.push(s.sql);
+    return (execute as (...a: unknown[]) => unknown)(s, ...rest);
+  }) as typeof client.execute;
+  try {
+    assert.equal((await ask()).status, 200);
+  } finally {
+    client.execute = execute;
+  }
+  const hold = async (id: number) => one<{ amount: number; settled_at: number }>("SELECT amount, settled_at FROM credit_ledger WHERE id = ?", [id]);
+  const settled = await hold(left);
+  assert.equal(Number(settled?.amount), 0, "the owner pays nothing for it");
+  assert.ok(Number(settled?.settled_at) > 0);
+  assert.deepEqual(await hold(running), { amount: -4, settled_at: 0 }, "one that may still be running is left alone");
+  const logged = await one<{ n: number; credits: number; cents: number; ok: number }>(
+    "SELECT COUNT(*) AS n, SUM(credits) AS credits, SUM(cost_cents) AS cents, MAX(ok) AS ok FROM usage WHERE rowid > (SELECT MAX(rowid) - 2 FROM usage) AND ok = 0",
+  );
+  assert.equal(await usageCount(), rows + 2, "the new answer, and the one left");
+  assert.deepEqual([Number(logged?.n), Number(logged?.credits), Number(logged?.ok)], [1, 0, 0]);
+  assert.ok(Number(logged?.cents) > 0 && Number(logged?.cents) * MARKUP <= 3, `${logged?.cents}¢ within its 3-credit hold`);
+  const answered = await one<{ credits: number }>("SELECT credits FROM usage WHERE ok = 1 ORDER BY rowid DESC LIMIT 1");
+  assert.equal(await balance(), 500 - 4 - Number(answered?.credits));
+  // Claude may still have made it, so it keeps its place in the day's budget, where it already is.
+  assert.deepEqual(await today(), { used: day.used + Number(answered?.credits), asked: day.asked + 1 });
+  // Settled once: the next question logs only its own answer.
+  assert.equal((await ask()).status, 200);
+  assert.equal(await usageCount(), rows + 3);
+  // Turso bills rows read: looking for them reads only the holds still open, by index.
+  assert.equal(sql.length, 1, sql.join("\n"));
+  const plan = (await (await db()).execute({ sql: `EXPLAIN QUERY PLAN ${sql[0]}`, args: [0] })).rows.map((r) => String(r.detail));
+  assert.ok(plan.some((d) => /USING (COVERING )?INDEX credit_ledger_open_visitor_holds/.test(d)), plan.join("\n"));
+  await setBalance("owner", 500);
+});
+
+test("a hold a stopped server left isn't spent until it is settled: the free monthly credits don't refill it and auto top-up doesn't buy a pack for it", async () => {
+  const { FREE_MONTHLY_CREDITS } = await import("../src/lib/credits.ts");
+  const { ensureMonthlyCredits } = await import("../src/lib/server/credits.ts");
+  for (const user of ["free-owner", "auto-owner"]) {
+    await run("INSERT INTO users (id, email, password_hash, created_at, verified_at) VALUES (?, ?, '', 0, 1)", [user, `${user}@x.io`]);
+  }
+  await setBalance("free-owner", 50);
+  await setBalance("auto-owner", 102);
+  await autoTopUpOn("auto-owner", 100);
+  // What a server that stopped while Claude answered leaves: a 3-credit hold, 16 minutes old.
+  for (const user of ["free-owner", "auto-owner"]) {
+    await run(`INSERT INTO credit_ledger (user_id, amount, reason, keeps_level, created_at) VALUES (?, -3, 'AI in "App"', 1, ?)`, [user, Date.now() - 16 * 60_000]);
+  }
+  // The free owner's first /api/me of the month, and the other owner's next one.
+  await ensureMonthlyCredits("free-owner");
+  assert.equal(await balance("free-owner"), FREE_MONTHLY_CREDITS - 3, "topped up to the month's credits, with the hold still out");
+  stripeCalls = [];
+  assert.equal(await maybeAutoTopUp("auto-owner"), false, "102 credits are over the level of 100");
+  assert.deepEqual(stripeCalls, [], "no payment was made");
+  // The next question to any app settles both holds to 0.
+  assert.equal((await ask()).status, 200);
+  assert.equal(await balance("free-owner"), FREE_MONTHLY_CREDITS, "the month's free credits, no more");
+  assert.equal(await balance("auto-owner"), 102);
+  assert.equal(await maybeAutoTopUp("auto-owner"), false);
+  assert.deepEqual(stripeCalls, []);
+  await run("UPDATE auto_topups SET enabled = 0 WHERE user_id = 'auto-owner'");
+});
+
+test("a visitor who closes the page while Claude answers can't stop the call: the route never hands it the request's signal, so the answer is charged at what it used", async () => {
+  await saveAiSettings("shop", true, 500);
+  await setBalance("owner", 500);
+  const [day, rows] = [await today(), await usageCount()];
+  const visitor = new AbortController();
+  const ctx = { params: Promise.resolve({ slug: "shop" }) } as never;
+  mode = "late";
+  [hits, hungUp] = [0, 0];
+  const asking = aiRoute.POST(
+    new Request("https://www.flash-app.dev/api/sites/shop/ai", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: "Open on Sunday?" }),
+      signal: visitor.signal,
+    }),
+    ctx,
+  );
+  for (const until = Date.now() + 5000; hits === 0 && Date.now() < until; ) await new Promise((r) => setTimeout(r, 10));
+  assert.equal(hits, 1, "Claude has the question");
+  // What Next does when the visitor's side closes the connection: the request's signal aborts.
+  visitor.abort();
+  const res = await asking;
+  mode = "answer";
+  assert.equal(res.status, 200, "the answer was still made");
+  assert.equal(hungUp, 0, "and Flash didn't hang up on Claude");
+  assert.equal(await usageCount(), rows + 1);
+  const used = await one<{ credits: number; ok: number }>("SELECT credits, ok FROM usage ORDER BY rowid DESC LIMIT 1");
+  assert.equal(Number(used?.ok), 1);
+  assert.ok(Number(used?.credits) > 0);
+  assert.equal(await balance(), 500 - Number(used?.credits), "the owner pays what it used, as for any answer");
+  assert.deepEqual(await today(), { used: day.used + Number(used?.credits), asked: day.asked + 1 });
+  const { readFile } = await import("node:fs/promises");
+  const route = await readFile(new URL("../src/app/api/sites/[slug]/ai/route.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(route, /\bsignal\b/, "the route doesn't read the request's signal");
 });
 
 test("every paid Claude call that isn't streamed is sent once, with a deadline over its whole answer: a retry or a stalled answer could cost more than its hold", async () => {
@@ -416,16 +756,16 @@ test("auto top-up turned on, or its level raised, while a visitor's question is 
   mode = "answer";
   assert.ok((await balance()) >= 1000, `settled, the answer left ${await balance()} credits, over the level`);
   assert.equal(await maybeAutoTopUp("owner"), false);
-  // As before, the owner's own request still running counts, and so does a visitor's hold left
-  // running for longer than any request.
+  // As before, the owner's own request still running counts. A visitor's hold left open for longer
+  // than any request doesn't: a later question settles it to 0 (see "a hold a stopped server left").
   for (const own of [true, false]) {
     await setBalance("owner", 1002);
     await run("UPDATE auto_topups SET last_at = 0 WHERE user_id = 'owner'");
     if (own) assert.notEqual(await charge("owner", 5, "the owner's own chat"), null);
     else await run(`INSERT INTO credit_ledger (user_id, amount, reason, keeps_level, created_at) VALUES ('owner', -5, 'AI in "Bakery"', 1, 0)`);
     stripeCalls = [];
-    assert.equal(await maybeAutoTopUp("owner"), true, own ? "the owner's own request" : "a hold left running");
-    assert.deepEqual(stripeCalls, ["POST /v1/payment_intents"]);
+    assert.equal(await maybeAutoTopUp("owner"), own, own ? "the owner's own request" : "a hold left open");
+    assert.deepEqual(stripeCalls, own ? ["POST /v1/payment_intents"] : []);
   }
   await run("UPDATE auto_topups SET enabled = 0 WHERE user_id = 'owner'");
 });
