@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { randomBytes } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 import { register } from "node:module";
 
 /*
@@ -1437,6 +1437,8 @@ test("an app's order email opens Flash as the app's owner", async () => {
     if (url.pathname.startsWith("/v1/checkout/sessions/cs_eob")) {
       return Response.json({
         id: "cs_eob",
+        // In the key's mode, as Stripe sends it (a test key's sessions are test mode; see recordOrder).
+        livemode: false,
         payment_status: "paid",
         amount_total: 1250,
         currency: "cad",
@@ -1459,6 +1461,141 @@ test("an app's order email opens Flash as the app's owner", async () => {
     else process.env.RESEND_API_KEY = saved.resend;
     if (saved.stripe === undefined) delete process.env.STRIPE_SECRET_KEY;
     else process.env.STRIPE_SECRET_KEY = saved.stripe;
+  }
+});
+
+test("an order Stripe's Connect webhook saves, refunds and disputes shows only to the tab of the account that owns the app", async () => {
+  const a = await account("cwa");
+  const b = await account("cwb");
+  const stranger = await account("cwc");
+  await session(stranger);
+  for (const [slug, owner] of [["cw-a", a], ["cw-b", b]]) {
+    await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES (?, ?, 'Shop', '<p>s</p>', 0, 0)", [slug, owner]);
+    await run("INSERT INTO seller_accounts (user_id, stripe_account, country, currency, ready, created_at) VALUES (?, ?, 'CA', 'cad', 1, 0)", [owner, `acct_${owner}`]);
+  }
+  // b is the browser's default; the tab shows a, whose app the order is for.
+  const { cookie } = await browser(a, b);
+  const connectRoute = await import("../src/app/api/stripe/connect/route.ts");
+  const productsRoute = await import("../src/app/api/sites/[slug]/products/route.ts");
+  const ordersRoute = await import("../src/app/api/sites/[slug]/orders/route.ts");
+  const { websitesSummary } = await import("../src/lib/server/companion.ts");
+  const SECRET = "whsec_cw";
+  const saved = {
+    resend: process.env.RESEND_API_KEY,
+    stripe: process.env.STRIPE_SECRET_KEY,
+    secret: process.env.STRIPE_CONNECT_WEBHOOK_SECRET,
+    fetch: globalThis.fetch,
+  };
+  process.env.RESEND_API_KEY = "re_test";
+  process.env.STRIPE_SECRET_KEY = "rk_test";
+  process.env.STRIPE_CONNECT_WEBHOOK_SECRET = SECRET;
+  const checkout = {
+    id: "cs_cwa",
+    object: "checkout.session",
+    livemode: false,
+    payment_status: "paid",
+    amount_total: 2500,
+    currency: "cad",
+    created: Math.floor(Date.now() / 1000),
+    payment_intent: "pi_cwa",
+    metadata: { flash_site: "cw-a", flash_item: "Cake" },
+    customer_details: { email: "buyer-cw@x.co", name: "Rosa" },
+    line_items: { data: [{ quantity: 1 }] },
+  };
+  const sent: { text: string }[] = [];
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(String(input));
+    if (url.hostname === "api.resend.com") {
+      sent.push(JSON.parse(String(init?.body)) as { text: string });
+      return Response.json({ id: "e" });
+    }
+    // Only a's connected account has the checkout.
+    const mine = ((init?.headers ?? {}) as Record<string, string>)["Stripe-Account"] === `acct_${a}` ? [checkout] : [];
+    if (url.pathname === "/v1/checkout/sessions/cs_cwa" && mine.length) return Response.json(checkout);
+    if (url.pathname === "/v1/checkout/sessions") {
+      const pi = url.searchParams.get("payment_intent");
+      return Response.json({ data: mine.filter((s) => !pi || s.payment_intent === pi) });
+    }
+    return Response.json({ error: { message: "unexpected" } }, { status: 400 });
+  }) as typeof fetch;
+  let events = 0;
+  /** Stripe's call, signed with the endpoint's secret: it signs in to no Flash account. */
+  const deliver = async (type: string, object: Record<string, unknown>) => {
+    const body = JSON.stringify({ id: `evt_cw_${++events}`, type, account: `acct_${a}`, livemode: false, created: Math.floor(Date.now() / 1000), data: { object } });
+    const t = Math.floor(Date.now() / 1000);
+    const signature = `t=${t},v1=${createHmac("sha256", SECRET).update(`${t}.${body}`).digest("hex")}`;
+    const res = await connectRoute.POST(new Request(`${ORIGIN}/api/stripe/connect`, { method: "POST", body, headers: { "content-type": "application/json", "stripe-signature": signature } }));
+    assert.equal(res.status, 200, type);
+    return ((await res.json()) as { outcome: string }).outcome;
+  };
+  try {
+    // An event leaves the line items out.
+    const unexpanded: Record<string, unknown> = { ...checkout };
+    delete unexpanded.line_items;
+    assert.equal(await deliver("checkout.session.completed", unexpanded), "recorded");
+    assert.equal(await deliver("charge.refunded", { id: "ch_cwa", object: "charge", amount: 2500, amount_refunded: 500, payment_intent: "pi_cwa" }), "refunded");
+    assert.equal(await deliver("charge.dispute.created", { id: "dp_cwa", object: "dispute", charge: "ch_cwa", payment_intent: "pi_cwa" }), "disputed");
+    // The new-order email opens Flash as the app's owner, whichever account the browser shows.
+    assert.equal(sent.length, 1);
+    assert.ok(sent[0].text.includes(`${ORIGIN}/?apps=1&as=${a}`), sent[0].text);
+
+    // Orders, with the refund and the dispute: the tab's account's app's only.
+    const products = (slug: string, account?: string) => productsRoute.GET(req(`/api/sites/${slug}/products`, { cookie, account }), ctx({ slug }));
+    const listed = await products("cw-a", a);
+    assert.equal(listed.status, 200);
+    type Listed = { orders: { id: string; refund: string; refunded: string; disputed: boolean }[] };
+    assert.deepEqual(((await listed.json()) as Listed).orders.map((o) => [o.id, o.refund, o.refunded, o.disputed]), [["cs_cwa", "part", "CA$5.00", true]]);
+    assert.equal((await products("cw-a")).status, 404, "with no account named, the default (b) owns no such app");
+    assert.equal((await products("cw-a", b)).status, 404);
+    assert.equal((await products("cw-a", stranger)).status, 401);
+    const theirs = await products("cw-b", b);
+    assert.deepEqual(((await theirs.json()) as Listed).orders, [], "b's tab lists b's own app's orders, none of a's");
+
+    // The CSV is a link (?as=, see auth.ts), with its refunds and disputes column.
+    const csv = (as?: string) => ordersRoute.GET(req("/api/sites/cw-a/orders", { cookie, as }), ctx({ slug: "cw-a" }));
+    const file = await csv(a);
+    assert.equal(file.status, 200);
+    assert.ok((await file.text()).includes("Partly refunded: CA$5.00; Disputed"));
+    assert.equal((await csv()).status, 404);
+    assert.equal((await csv(b)).status, 404);
+    assert.equal((await csv(stranger)).status, 401);
+
+    // Mark done: a change, so only as the tab's account, and only its own app's order.
+    const mark = (account?: string) =>
+      ordersRoute.PATCH(req("/api/sites/cw-a/orders", { method: "PATCH", cookie, account, json: { id: "cs_cwa", done: true } }), ctx({ slug: "cw-a" }));
+    const done = () => count("SELECT COUNT(*) AS n FROM site_orders WHERE session_id = 'cs_cwa' AND done_at > 0");
+    assert.equal((await mark()).status, 401, "a change must name the tab's account");
+    assert.equal((await mark(b)).status, 404);
+    assert.equal(await done(), 0);
+    assert.equal((await mark(a)).status, 200);
+    assert.equal(await done(), 1);
+
+    // The buyer's contact card and its JSON export carry the refund and the dispute, for a's tab only.
+    const contact = (await one<{ id: string }>("SELECT id FROM site_contacts WHERE site_slug = 'cw-a' AND email = 'buyer-cw@x.co'"))!.id;
+    const card = (query: string, account?: string) => contactsRoute.GET(req(`/api/sites/cw-a/contacts?${query}`, { cookie, account }), ctx({ slug: "cw-a" }));
+    for (const query of [`id=${contact}`, `id=${contact}&format=json`]) {
+      const mine = await card(query, a);
+      assert.equal(mine.status, 200, query);
+      const data = JSON.parse(await mine.text()) as Listed;
+      assert.deepEqual(data.orders.map((o) => [o.refund, o.refunded, o.disputed]), [["part", "CA$5.00", true]], query);
+      assert.equal((await card(query)).status, 404, query);
+      assert.equal((await card(query, b)).status, 404, query);
+      assert.equal((await card(query, stranger)).status, 401, query);
+    }
+
+    // The companion's sales line is the account's own (its route reads the account through getUser).
+    assert.match(await websitesSummary(a, ORIGIN), /1 orders, CA\$25\.00 \(CA\$5\.00 of it refunded since, 1 disputed\)/);
+    assert.doesNotMatch(await websitesSummary(b, ORIGIN), /refunded|disputed|CA\$25/);
+  } finally {
+    globalThis.fetch = saved.fetch;
+    for (const [name, value] of [
+      ["RESEND_API_KEY", saved.resend],
+      ["STRIPE_SECRET_KEY", saved.stripe],
+      ["STRIPE_CONNECT_WEBHOOK_SECRET", saved.secret],
+    ] as const) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
   }
 });
 

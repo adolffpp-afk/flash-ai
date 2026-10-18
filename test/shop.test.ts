@@ -84,6 +84,7 @@ test("a seller connects Stripe, prices items, and buyers pay through Checkout", 
   let chargesEnabled = false;
   const paidSession = {
     id: "cs_test_1",
+    livemode: false,
     payment_status: "paid",
     amount_total: 2500,
     currency: "cad",
@@ -181,6 +182,9 @@ test("a seller connects Stripe, prices items, and buyers pay through Checkout", 
     address: "",
     createdAt: 0,
     done: false,
+    refund: "",
+    refunded: "",
+    disputed: false,
   });
 
   // Unpublishing a site takes its items and orders with it.

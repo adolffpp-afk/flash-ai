@@ -67,6 +67,21 @@ export function formatMoney(minor: number, currency: string, locale = "en-US"): 
   }
 }
 
+/**
+ * What Stripe's Connect webhook said of an order since it was paid, as the owner's Orders, a
+ * contact's orders and their export say it: refunded in full, in part (with how much went back, in
+ * refunded), or not (''), and whether the buyer asked their bank to take the payment back.
+ */
+export type OrderRefund = { refund: "" | "part" | "full"; refunded: string; disputed: boolean };
+export function orderRefund(o: { amount: number; currency: string; refunded_amount: number; disputed_at: number }): OrderRefund {
+  const refunded = Number(o.refunded_amount);
+  return {
+    refund: refunded <= 0 ? "" : refunded >= Number(o.amount) ? "full" : "part",
+    refunded: refunded > 0 ? formatMoney(refunded, o.currency) : "",
+    disputed: Number(o.disputed_at) > 0,
+  };
+}
+
 /** The smallest price, in the smallest unit: Stripe takes about 50 cents (or 50 yen and the like). */
 export const MIN_PRICE = 50;
 

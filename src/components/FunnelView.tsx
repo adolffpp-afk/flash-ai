@@ -218,18 +218,20 @@ export function FunnelNotes({ stats, onPlans }: { stats: FunnelStats; onPlans?: 
   );
 }
 
-/** One step of the funnel: its count, and a bar of it against the visitors. */
-function StepRow({ label, n, visitors, detail }: { label: string; n: number; visitors: number; detail?: string }) {
+/** One step of the funnel: its count, and a bar of it against the visitors (none for refunds, which aren't a step). */
+function StepRow({ label, n, visitors, detail }: { label: string; n: number; visitors: number | null; detail?: string }) {
   const t = useT();
   return (
     <li className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 sm:grid-cols-[11rem_4.5rem_minmax(0,1fr)]">
       <span className="min-w-0 text-sm text-zinc-300">{label}</span>
       <span className="text-end text-sm font-medium tabular-nums text-zinc-100">{count(n, t)}</span>
       <div className="col-span-2 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 sm:col-span-1">
-        <div className="h-2 min-w-[4rem] flex-1 rounded-full bg-white/[0.04]" role="img" aria-label={detail ?? label}>
-          <div className="h-2 rounded-full bg-primary/70" style={{ width: visitors ? `max(2px, ${Math.min(100, (n / visitors) * 100)}%)` : "2px" }} />
-        </div>
-        {detail && <span className="shrink-0 text-xs tabular-nums text-zinc-500">{detail}</span>}
+        {visitors !== null && (
+          <div className="h-2 min-w-[4rem] flex-1 rounded-full bg-white/[0.04]" role="img" aria-label={detail ?? label}>
+            <div className="h-2 rounded-full bg-primary/70" style={{ width: visitors ? `max(2px, ${Math.min(100, (n / visitors) * 100)}%)` : "2px" }} />
+          </div>
+        )}
+        {detail && <span className="ms-auto shrink-0 text-xs tabular-nums text-zinc-500">{detail}</span>}
       </div>
     </li>
   );
@@ -629,6 +631,9 @@ export function FunnelView({
                 <StepRow label={t("Started a checkout")} n={totals.checkout} visitors={totals.visitors} detail={ofVisitors(totals.checkout, totals.visitors, t)} />
               )}
               {totals.orders > 0 && <StepRow label={t("Paid")} n={totals.orders} visitors={totals.visitors} detail={ordersText(totals.orders, totals.revenue, t)} />}
+              {stats.refunded.orders > 0 && (
+                <StepRow label={t("Refunded")} n={stats.refunded.orders} visitors={null} detail={ordersText(stats.refunded.orders, stats.refunded.revenue, t)} />
+              )}
               {!steps && <li className="text-sm text-zinc-500">{t("No forms, sign-ups or orders in these days yet.")}</li>}
             </ul>
             <p className="text-xs text-zinc-500">{t("Each step is counted on its own, not only for people who did the step above it.")}</p>
@@ -661,6 +666,9 @@ export function FunnelView({
             <p>{t("Forms, sign-ups and checkouts count people matched to their visit the same day or the day before.")}</p>
             <p>{t('"Not matched" counts sends and orders Flash couldn\'t tie to a visit, for example when a phone switched networks.')}</p>
             <p>{t("Paid is every order Stripe confirmed: what buyers paid, before Stripe's and Flash's fees and any refunds.")}</p>
+            {stats.refunded.orders > 0 && (
+              <p>{t("Refunded counts these days' orders that were refunded later, in part or in full, and what went back to buyers. Paid and Revenue stay what buyers paid.")}</p>
+            )}
             {totals.visitors < 100 && <p>{t("Rates show once there are 100 visitors.")}</p>}
           </div>
         </div>
