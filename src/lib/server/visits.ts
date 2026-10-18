@@ -272,6 +272,8 @@ async function readPlan(ownerId: string): Promise<Plan> {
 /**
  * A mark on the app's day that its numbers missed people (or app steps), with the limit reached.
  * Each server writes it once per app and day; the higher limit stays, for a plan bought that day.
+ * Taken when it is handed out, so requests answered at once don't all write it: one whose write
+ * doesn't happen (it failed, or lost a race and wrote nothing) gives it back with unmark.
  */
 export function markOnce(slug: string, step: string, limit: number, day: string): Statement | null {
   const key = `${slug}|${step}|${day}`;
@@ -282,6 +284,11 @@ export function markOnce(slug: string, step: string, limit: number, day: string)
           ON CONFLICT DO UPDATE SET n = MAX(n, excluded.n)`,
     args: [day, step, limit, slug],
   };
+}
+
+/** Gives back a mark taken with markOnce that wasn't written, so the next request past the limit writes it. */
+export function unmark(slug: string, step: string, day: string): void {
+  marked.delete(`${slug}|${step}|${day}`);
 }
 
 /**
@@ -404,6 +411,7 @@ async function countVisit(slug: string, request: Request, viewerId: string | nul
     : touchOf(new URL(request.url), request.headers.get("referer"), request.headers.get("host"));
   let counted = Boolean(row.kind);
   let network = "";
+  let marking = "";
   try {
     if (!row.kind && row.before) {
       // Counted already today, by the counter before this one, so in no source: their views go under
@@ -424,8 +432,12 @@ async function countVisit(slug: string, request: Request, viewerId: string | nul
       const overNetwork = !pause && (networks.get(network) ?? 0) >= networkPeople();
       if (pause || overNetwork) {
         // Not counted: a view only (see below), and a mark on the app's day saying why.
-        const mark = pause ? markOnce(slug, "capped", cap, day) : markOnce(slug, "capped-net", networkPeople(), day);
-        if (mark) writes.push(mark);
+        const step = pause ? "capped" : "capped-net";
+        const mark = markOnce(slug, step, pause ? cap : networkPeople(), day);
+        if (mark) {
+          writes.push(mark);
+          marking = step;
+        }
         network = "";
       } else {
         // Taken with nothing waiting since it was read, so loads this server answers at once can't
@@ -480,8 +492,9 @@ async function countVisit(slug: string, request: Request, viewerId: string | nul
     );
     await (await db()).batch(writes, "write");
   } catch (err) {
-    // Nobody was counted, so the connection's place is given back.
+    // Nobody was counted, so the connection's place is given back, and the note wasn't written.
     if (network && networks.has(network)) networks.set(network, Math.max(0, networks.get(network)! - 1));
+    if (marking) unmark(slug, marking, day);
     throw err;
   }
 }

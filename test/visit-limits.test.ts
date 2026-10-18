@@ -493,6 +493,106 @@ test("a step the rate limit turns away writes no note that the day's app steps s
   assert.equal(await markOf("note", "capped-app"), 100);
 });
 
+/** Runs fn while before() runs ahead of each batch whose first statement starts with start. */
+async function beforeBatches(start: string, before: () => Promise<unknown>, fn: () => Promise<unknown>) {
+  const client = await db();
+  const batch = client.batch.bind(client);
+  client.batch = (async (list: ({ sql: string } | string)[], ...rest: unknown[]) => {
+    const first = list[0];
+    if ((typeof first === "string" ? first : first?.sql)?.startsWith(start)) await before();
+    return (batch as (...a: unknown[]) => unknown)(list, ...rest);
+  }) as typeof client.batch;
+  try {
+    await fn();
+  } finally {
+    client.batch = batch;
+  }
+}
+
+test("the note that the day's app steps stopped counting is written though the request that first had it wrote nothing", async () => {
+  forgetServerMemory();
+  await run("DELETE FROM rate_limits");
+  await owner("free15");
+  await site("mark-lost", "free15", names("m"));
+  const a = await visitor("mark-lost", "10.253.0.1");
+  // 99 of the day's 100 counted, and 29 of the app's 30 this minute used by others.
+  await run("UPDATE owner_people SET steps = 99 WHERE user_id = 'free15' AND day = ?", [TODAY]);
+  await run("INSERT INTO rate_limits (key, count, reset_at) VALUES ('track-app:mark-lost', 29, ?)", [NOW + 60_000]);
+  // m0 would be the 100th and m1 past it, but another server takes the app's last place this minute
+  // just before this request writes, so it writes nothing, its retry too.
+  let taken = false;
+  const takeLast = async () => {
+    if (taken) return;
+    taken = true;
+    await run("UPDATE rate_limits SET count = 30 WHERE key = 'track-app:mark-lost'");
+  };
+  await beforeBatches("UPDATE site_people SET steps", takeLast, () => track("mark-lost", a, "m0\nm1"));
+  assert.deepEqual([await stepsOf("free15"), await appStepsOf("mark-lost"), await markOf("mark-lost", "capped-app")], [99, 0, null]);
+  // A minute later someone's step is the 100th, and the next request past it writes the note.
+  await run("UPDATE rate_limits SET reset_at = 0 WHERE key >= 'track-' AND key < 'track.'");
+  await track("mark-lost", await visitor("mark-lost", "10.253.0.2"), "m2");
+  assert.equal(await stepsOf("free15"), 100);
+  await track("mark-lost", await visitor("mark-lost", "10.253.0.3"), "m3\nm4");
+  assert.equal(await markOf("mark-lost", "capped-app"), 100);
+  assert.deepEqual((await funnelStats("mark-lost", 30, NOW + DAY))!.stepsPaused, [{ day: TODAY, steps: 100 }]);
+
+  // A double tap on the 100th step, the copy that has the note writing after the other: its retry
+  // writes the note, and the step counts once.
+  forgetServerMemory();
+  await owner("free16");
+  await site("mark-tap", "free16", names("m"));
+  const b = await visitor("mark-tap", "10.253.1.1");
+  await run("UPDATE owner_people SET steps = 99 WHERE user_id = 'free16' AND day = ?", [TODAY]);
+  let first = true;
+  const later = async () => {
+    if (!first) return;
+    first = false;
+    await new Promise((r) => setTimeout(r, 50));
+  };
+  await beforeBatches("UPDATE site_people SET steps", later, async () => {
+    await Promise.all([1, 2].map(() => trackRoute.POST(call("mark-tap", b, "m0\nm1"), ctx("mark-tap"))));
+    await afterwards();
+  });
+  assert.deepEqual([await stepsOf("free16"), await appStepsOf("mark-tap"), await markOf("mark-tap", "capped-app")], [100, 1, 100]);
+
+  // Two people at once with the app's last place this minute: the one who gets it counts the 100th,
+  // and the other, who had the note, writes it on its retry.
+  forgetServerMemory();
+  await run("DELETE FROM rate_limits");
+  await owner("free17");
+  await site("mark-two", "free17", ["a", "b"]);
+  const [p1, p2] = [await visitor("mark-two", "10.253.2.1"), await visitor("mark-two", "10.253.2.2")];
+  await run("UPDATE owner_people SET steps = 99 WHERE user_id = 'free17' AND day = ?", [TODAY]);
+  await run("INSERT INTO rate_limits (key, count, reset_at) VALUES ('track-app:mark-two', 29, ?)", [NOW + 60_000]);
+  const [m1, m2] = [await matchVisit("mark-two", call("mark-two", p1), NOW), await matchVisit("mark-two", call("mark-two", p2), NOW)];
+  await Promise.all([
+    countSteps("mark-two", m2, ["app:a"], NOW, { rateLimit: true }),
+    countSteps("mark-two", m1, ["app:a", "app:b"], NOW, { rateLimit: true }),
+  ]);
+  assert.deepEqual([await stepsOf("free17"), await appStepsOf("mark-two"), await markOf("mark-two", "capped-app")], [100, 1, 100]);
+  await run("DELETE FROM rate_limits");
+});
+
+test("the note that counting paused is written though the load that first had it failed to write", async () => {
+  forgetServerMemory();
+  await owner("free18");
+  await site("paused-lost", "free18");
+  await visitor("paused-lost");
+  await run("UPDATE owner_people SET people = 1000 WHERE user_id = 'free18' AND day = ?", [TODAY]);
+  let failed = false;
+  const failOnce = async () => {
+    if (failed) return;
+    failed = true;
+    throw new Error("the database is busy");
+  };
+  await beforeBatches("INSERT INTO site_events", failOnce, () => visitor("paused-lost"));
+  assert.ok(failed);
+  assert.equal(await markOf("paused-lost", "capped"), null);
+  await visitor("paused-lost");
+  assert.equal(await markOf("paused-lost", "capped"), 1_000);
+  assert.equal(await peopleOf("free18"), 1_000);
+});
+
 test("one connection's rate limit has a code of its own on each app, so nothing ties its use of two apps together", async () => {
   forgetServerMemory();
   await run("DELETE FROM rate_limits");

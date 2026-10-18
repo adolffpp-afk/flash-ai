@@ -26,6 +26,7 @@ import {
   peoplePerDay,
   stepsNetworkOf,
   takeSteps,
+  unmark,
   visitorCode,
   type Statement,
 } from "./visits.ts";
@@ -189,6 +190,7 @@ async function count(slug: string, match: Match, list: Step[], at: number, retry
   let owner = "";
   let paid = false;
   let limits: [string, number][] = [];
+  let marking = false;
   if (app.length) {
     // The gates, read before anything is written, so a name that isn't counted writes nothing: the
     // names in the app's code (see stepsInHtml), the names it reported that day (at most 10), and how
@@ -240,19 +242,30 @@ async function count(slug: string, match: Match, list: Step[], at: number, retry
     if (full && used + counting.length >= budget) {
       const mark = markOnce(slug, "capped-app", budget, today);
       if (mark) writes.push(mark);
+      marking = Boolean(mark);
     }
   }
+  // This server's one note for the day, given back when this request doesn't write it, so the next
+  // request past the day's number does (this one's retry, or another's).
+  const giveMarkBack = () => {
+    if (marking) unmark(slug, "capped-app", today);
+  };
   const taken = counting.length;
   const fresh = [...builtIn, ...counting.map((x) => `app:${x.name}`)];
   const c = await db();
   if (!fresh.length) {
-    if (writes.length) await c.batch(writes, "write");
+    if (writes.length)
+      await c.batch(writes, "write").catch((err) => {
+        giveMarkBack();
+        throw err;
+      });
     return;
   }
-  // What the connection's place was taken for is given back when it isn't counted.
+  // What the connection's place was taken for is given back when it isn't counted, and so is the note.
   const orGiveBack = <R>(done: Promise<R>) =>
     done.catch((err) => {
       giveSteps(owner, match.network, taken);
+      giveMarkBack();
       throw err;
     });
   // Written only if nobody changed the list since it was read, so two requests can't count one step
@@ -275,6 +288,7 @@ async function count(slug: string, match: Match, list: Step[], at: number, retry
   );
   if (!saved.rows.length) {
     giveSteps(owner, match.network, taken);
+    giveMarkBack();
     const again = retry ? await matchByCode(slug, match) : null;
     if (again) await count(slug, again, list, at, false, rateLimit);
     return;
