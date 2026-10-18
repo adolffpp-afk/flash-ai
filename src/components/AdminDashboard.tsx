@@ -353,8 +353,17 @@ function PushKeyMaker({ setUp, missing, problem, browsers }: NonNullable<Stats["
         <ol className="list-decimal space-y-1 ps-5 text-xs text-zinc-400">
           <li>Press {setUp ? "Make new push keys" : "Make push keys"} here.</li>
           <li>Open Vercel, then the flash-ai project, then Settings, then Environment Variables.</li>
-          <li>Add the three values for Production, each with its name as shown and marked Sensitive.</li>
-          <li>Redeploy. The alerts setting appears in Settings once the new deployment is live. No Google project is needed.</li>
+          {setUp ? (
+            <>
+              <li>Edit each of the three and paste its new value, still marked Sensitive.</li>
+              <li>Redeploy. Each browser moves to the new keys the next time its person opens Flash there.</li>
+            </>
+          ) : (
+            <>
+              <li>Add the three values for Production, each with its name as shown and marked Sensitive.</li>
+              <li>Redeploy. The alerts setting appears in Settings once the new deployment is live. No Google project is needed.</li>
+            </>
+          )}
         </ol>
       )}
     </div>
