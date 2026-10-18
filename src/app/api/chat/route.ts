@@ -1087,8 +1087,13 @@ export async function POST(request: Request) {
   const available = (await spendable(user.id)).largest;
   // The most Fix all said it would hold (maxCredits). The request is planned as any is, and one that would
   // now hold more isn't sent (see below): it never runs on a hold cut down to the cap, which could stop a
-  // long reply part way with credits to spare.
-  const cap = typeof body.maxCredits === "number" && Number.isSafeInteger(body.maxCredits) && body.maxCredits > 0 ? body.maxCredits : null;
+  // long reply part way with credits to spare. Only a change to an app or deck takes one, as only that is
+  // priced (quote): no paid helper reads it before the cap is checked, while the router and the picture
+  // check would be paid for by a request the cap then refuses with nothing charged.
+  const cap =
+    body.build === true && (override === "app" || override === "slides") && typeof body.maxCredits === "number" && Number.isSafeInteger(body.maxCredits) && body.maxCredits > 0
+      ? body.maxCredits
+      : null;
 
   // "Fix the spelling" sent with the picture above fixes the words in that picture. With a photo the
   // user attached, the same words are about the photo's own text, so they get words.
@@ -1524,7 +1529,7 @@ export async function POST(request: Request) {
   // balance changed since) isn't sent, and nothing is charged. One within it holds what any would, and
   // settling never charges more than the hold.
   if (cap !== null && held > cap) {
-    return Response.json({ error: t(OVER_CAP, { credits: cap.toLocaleString(t.locale) }), code: "over_cap", needed }, { status: 409 });
+    return Response.json({ error: t(OVER_CAP, { credits: cap.toLocaleString(t.locale) }), code: "over_cap" }, { status: 409 });
   }
   const freeUse = { provider: "", model: "" };
   const freeAudio: { reserved?: number } = {};

@@ -385,6 +385,22 @@ test("Fix all's message is sent with the price its panel said, and only Fix all'
   const src = (path: string) => readFileSync(new URL(`../src/${path}`, import.meta.url), "utf8");
   assert.match(src("components/SeoView.tsx"), /await onFix\(\{[^}]*shown: plan\.sent,\s*\.\.\.fixAllTerms\(all, plan\.hold\),\s*\}\)/);
   assert.match(src("components/Flash.tsx"), /else await respond\(project, chat\.messages, fixMessage\(plan\.message, fix\)\);/);
+  // And the price the panel says is asked for that same request: priced quotes the message fixFor made
+  // from the server's copy of the chat, after that copy, through requestFor as respond sends it, and the
+  // panel's list (planFix) and the list made again on Send (fixSite) are priced as they're made.
+  const flash = src("components/Flash.tsx");
+  const fn = (name: string) => {
+    const start = flash.indexOf(`  async function ${name}(`);
+    assert.ok(start >= 0, name);
+    return flash.slice(start, flash.indexOf("\n  }\n", start));
+  };
+  assert.match(fn("priced"), /fixAllHold\(requestFor\(project, messages, plan\.message, \{ replyId: newId\(\) \}\)\)/);
+  for (const name of ["planFix", "fixSite", "sendFix"]) {
+    assert.match(fn(name), /const chat = await chatToFix\(fix\.projectId\);[\s\S]*const plan = await fixFor\(fix, chat\.messages\);/, name);
+  }
+  for (const name of ["planFix", "fixSite"]) assert.match(fn(name), /priced\(fix, chat\.messages, plan\)/, name);
+  assert.equal(flash.match(/\bpriced\(/g)?.length, 3, "a price is asked for something else");
+  assert.match(fn("respond"), /const body = requestFor\(project, earlier, userMsg, \{ replyId: reply\.id, files: sent, confirmed, decided, connect \}\);/);
 });
 
 test("working out the price runs nothing, charges nothing and saves nothing", async () => {
@@ -462,4 +478,70 @@ test("a Fix it message goes with no cap, and Fix all's keeps its cap on Retry an
   // A cap that isn't a whole number of credits isn't one.
   const r = await send(who, { ...bodyFor(who, earlier, message, "vision"), maxCredits: 0.5 });
   assert.equal(r.status, 200);
+});
+
+test("only a change to an app or slides takes a cap: on any other request it's ignored, so no paid helper runs for a request it would refuse", async () => {
+  const who = await account(1_000_000);
+  // The router is a helper Claude answers at once (not streamed): it reads a request on Auto the keyword
+  // rules can't place, and the reply it decides pays for it.
+  const helperCalls = () => stand.state.seen.filter((s) => s.service === "anthropic" && s.path.endsWith("/messages") && s.body.stream !== true).length;
+  const usageRows = async () => Number((await one<{ n: number }>("SELECT COUNT(*) AS n FROM usage WHERE user_id = ?", [who.id]))!.n);
+  const ask = { messages: [{ role: "user", content: "something for my bakery's opening day" }], projectId: who.projectId, timeZone: "Europe/London", maxCredits: 1 };
+  for (const engine of ["auto", "text"]) {
+    const helpers = helperCalls();
+    const rows = await usageRows();
+    const before = await balance(who.id);
+    const r = await send(who, { ...ask, engine });
+    assert.equal(r.status, 200, `${engine}: ${JSON.stringify(r.error)}`);
+    if (engine === "auto") assert.equal(helperCalls(), helpers + 1, "the router didn't read it");
+    // What the router cost is in what the reply was charged, and logged with it.
+    assert.ok((await balance(who.id)) < before);
+    assert.ok((await usageRows()) > rows);
+  }
+  // A change to an app with the same cap is refused before anything runs, and costs nothing.
+  const helpers = helperCalls();
+  const rows = await ledgerRows(who.id);
+  const capped = await send(who, { ...bodyFor(who, builtChat(), fixAllMessage()), maxCredits: 1 });
+  assert.equal(capped.status, 409);
+  assert.equal(capped.error?.code, "over_cap");
+  assert.equal(capped.error?.needed, undefined, "the refusal says what the change needs");
+  assert.equal(helperCalls(), helpers);
+  assert.equal(await ledgerRows(who.id), rows);
+});
+
+test("each person gets 120 prices an hour: then the route counts nothing more for them, and the panel says the usual price", async () => {
+  const who = await account(1_000_000);
+  const earlier = builtChat();
+  const message = fixAllMessage();
+  for (let i = 0; i < 120; i++) assert.ok(await fixAllHold(bodyFor(who, earlier, message), pageFetch(who)), `price ${i + 1}`);
+  const counts = counted().length;
+  const over = await post(who, { ...bodyFor(who, earlier, message), quote: true });
+  assert.equal(over.status, 429);
+  assert.equal(await fixAllHold(bodyFor(who, earlier, message), pageFetch(who)), null);
+  assert.equal(counted().length, counts, "Anthropic was asked to count it");
+  assert.deepEqual(fixPrice(true, null, TYPICAL_CREDITS.app!, 1_000_000), { kind: "typical", credits: TYPICAL_CREDITS.app! });
+  assert.equal(claudeCalls(), 0);
+  // Someone else still gets theirs.
+  const other = await account(1_000_000);
+  assert.ok(await fixAllHold(bodyFor(other, earlier, message), pageFetch(other)));
+});
+
+test("Fix all's price is said in a live region that's there from when its panel opens, even when the list comes with the price", () => {
+  const seo = readFileSync(new URL("../src/components/SeoView.tsx", import.meta.url), "utf8");
+  const panel = seo.slice(seo.indexOf("const panel = (key: string) =>"), seo.indexOf("const button = "));
+  // What's shown only once the points are listed: from "{points && (" to the parenthesis that closes it.
+  const start = panel.indexOf("{points && (") + "{points && ".length;
+  let depth = 0;
+  let end = start;
+  for (; end < panel.length; end++) {
+    if (panel[end] === "(") depth++;
+    else if (panel[end] === ")" && --depth === 0) break;
+  }
+  const listed = panel.slice(start, end);
+  assert.ok(listed.includes("points.sent.map"), "the list wasn't found");
+  // Pressed before Fix all's count loaded (or after it failed), the list and the price come together: the
+  // region holding the price is there already, saying it's being worked out, so the price is a change to it.
+  assert.equal((panel.match(/<div role="status">/g) ?? []).length, 1);
+  assert.ok(!listed.includes('role="status"'), "the price's live region comes and goes with the list");
+  assert.match(panel, /key === "all" && !asking\.plan && !project\?\.error \? \{ kind: "pending" \}/);
 });
