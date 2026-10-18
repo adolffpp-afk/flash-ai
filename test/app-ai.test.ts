@@ -51,6 +51,7 @@ const { runLock } = await import("../src/lib/server/pagespeed.ts");
 const { clearLimit, overLimit } = await import("../src/lib/server/limits.ts");
 const pagespeedRoute = await import("../src/app/api/sites/[slug]/pagespeed/route.ts");
 const { FETCHERS_URL } = await import("../src/lib/server/lighthouse.ts");
+const { afterwards } = await import("./support/next-server.mjs");
 
 // A stand-in for Google's list of its user-triggered fetchers' addresses: the blocks every address
 // Google's test was seen at is in (user-triggered-fetchers-google.json, 2026-10-16), and one of its
@@ -80,7 +81,7 @@ test("an app's AI is off until its owner turns it on", async () => {
   assert.equal(await balance(), 500, "nothing is charged while it's off");
 
   const settings = await saveAiSettings("shop", true, 60);
-  assert.deepEqual(settings, { enabled: true, dailyCredits: 60, usedToday: 0, askedToday: 0, answers: 30 });
+  assert.deepEqual(settings, { enabled: true, dailyCredits: 60, usedToday: 0, askedToday: 0, answers: 30, outOfCreditsAt: 0 });
 });
 
 test("an answer costs the owner credits, and only what it really used", async () => {
@@ -301,11 +302,26 @@ test("the day's limit stops it, and nothing is charged when the answer fails", a
 
 test("an owner with no credits gets a message the app can show", async () => {
   const used = (await aiSettings("shop")).usedToday;
+  const credits = await balance();
   await run("UPDATE credit_ledger SET amount = 0 WHERE user_id = 'owner'");
   const broke = await ask("Anything?");
   assert.equal(broke.status, 402);
   assert.match((broke.body as { error: string }).error, /out of credits/);
   assert.equal((await aiSettings("shop")).usedToday, used, "a reserve that wasn't spent is given back");
+
+  // The app is marked for its owner's bell (after the answer), until its AI answers again.
+  await afterwards();
+  const marked = (await aiSettings("shop")).outOfCreditsAt;
+  assert.ok(marked > 0, "marked as turning visitors away");
+  // A few credits, not enough for the smallest answer: still turned away, still marked.
+  await run("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES ('owner', 1, 'test', 0)");
+  assert.equal((await ask("Anything?")).status, 402);
+  await afterwards();
+  assert.equal((await aiSettings("shop")).outOfCreditsAt, marked, "marked at most every few minutes");
+  await run("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES ('owner', ?, 'test', 0)", [credits]);
+  assert.equal((await ask("Anything?")).status, 200);
+  assert.equal((await aiSettings("shop")).outOfCreditsAt, 0, "answering again clears it");
+  await run("UPDATE credit_ledger SET amount = 0 WHERE user_id = 'owner'");
 });
 
 test("an app takes files only once its owner turns that on", async () => {

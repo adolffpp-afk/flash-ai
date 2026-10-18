@@ -8,6 +8,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { one, run, now } from "./db.ts";
 import { charge, logUsage, settle, spendable } from "./credits.ts";
 import { overLimit } from "./limits.ts";
+import { noteAppAiOutOfCredits } from "./low-balance.ts";
 import { CHAT_MODEL, claudeConfigured, getClient } from "../engines/claude.ts";
 import { MARKUP, callMaxCents, claudeCostCents, claudePrice, creditsFor, worstTokens } from "../credits.ts";
 
@@ -23,8 +24,9 @@ export const MAX_DAILY_CREDITS = 5000;
 export const TYPICAL_ANSWER_CREDITS = 2;
 const HOUR = 3600_000;
 
-// answers: about how many answers the daily budget pays for.
-export type AiSettings = { enabled: boolean; dailyCredits: number; usedToday: number; askedToday: number; answers: number };
+// answers: about how many answers the daily budget pays for. outOfCreditsAt: when it last turned a
+// visitor away because the owner is out of credits, 0 once it answers again.
+export type AiSettings = { enabled: boolean; dailyCredits: number; usedToday: number; askedToday: number; answers: number; outOfCreditsAt: number };
 export type AiAnswer = { status: number; body: { text: string } | { error: string } };
 
 const day = (t = Date.now()) => new Date(t).toISOString().slice(0, 10);
@@ -61,7 +63,7 @@ function tokensFor(credits: number, inputChars: number, model = CHAT_MODEL): num
 export const MIN_DAILY_CREDITS = worstCaseCredits(CHAT_MODEL, siteSystem("").length + 1, MIN_ANSWER_TOKENS);
 
 export async function aiSettings(slug: string): Promise<AiSettings> {
-  const row = await one<{ enabled: number; daily_credits: number }>("SELECT enabled, daily_credits FROM site_ai WHERE site_slug = ?", [slug]);
+  const row = await one<{ enabled: number; daily_credits: number; out_at: number }>("SELECT enabled, daily_credits, out_at FROM site_ai WHERE site_slug = ?", [slug]);
   const used = await one<{ credits: number; requests: number }>(
     "SELECT credits, requests FROM site_ai_usage WHERE site_slug = ? AND day = ?",
     [slug, day()],
@@ -73,6 +75,7 @@ export async function aiSettings(slug: string): Promise<AiSettings> {
     usedToday: Number(used?.credits ?? 0),
     askedToday: Number(used?.requests ?? 0),
     answers: Math.floor(dailyCredits / TYPICAL_ANSWER_CREDITS),
+    outOfCreditsAt: Number(row?.out_at ?? 0),
   };
 }
 
@@ -147,9 +150,10 @@ export async function askSiteAi(
   const hold = Math.min(worstCaseCredits(CHAT_MODEL, chars), left, owner);
   const maxTokens = Math.min(MAX_ANSWER_TOKENS, tokensFor(hold, chars));
   if (!(maxTokens >= MIN_ANSWER_TOKENS)) {
-    return owner < left
-      ? fail("This app's AI is out of credits. Its owner can add more in Flash.", 402)
-      : fail("This app's AI has used everything it may today. It works again tomorrow.", 429);
+    if (owner >= left) return fail("This app's AI has used everything it may today. It works again tomorrow.", 429);
+    // The owner hears of it (the bell, and an email at most once a day), after this answer.
+    noteAppAiOutOfCredits(slug, site.user_id, site.title);
+    return fail("This app's AI is out of credits. Its owner can add more in Flash.", 402);
   }
   const reserved = await reserveToday(slug, hold, settings.dailyCredits);
   if (!reserved) {
@@ -158,8 +162,11 @@ export async function askSiteAi(
   const chargeId = await charge(site.user_id, hold, `AI in "${site.title}"`);
   if (chargeId === null) {
     await giveBack(slug, reserved, hold);
+    noteAppAiOutOfCredits(slug, site.user_id, site.title);
     return fail("This app's AI is out of credits. Its owner can add more in Flash.", 402);
   }
+  // Paid for again: the bell stops saying it turns visitors away.
+  if (settings.outOfCreditsAt) await run("UPDATE site_ai SET out_at = 0 WHERE site_slug = ?", [slug]);
 
   let message: Anthropic.Beta.BetaMessage;
   try {

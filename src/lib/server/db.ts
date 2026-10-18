@@ -396,6 +396,22 @@ const SCHEMA = [
     failed TEXT NOT NULL DEFAULT '',
     updated_at INTEGER NOT NULL
   )`,
+  // Low-credit emails (see low-balance.ts): whether they're on and below what balance, and where each
+  // alert is. alerted_at is when the last drop below the level was emailed (0 once the balance is back
+  // at or above it), sent_at when the last of these emails went out (one a week at most), retry_at
+  // when one held back (the day's email budget, a failed send, the week's email) may go, and
+  // app_ai_at when the last "your app's AI is out of credits" email went or was tried (one a day).
+  // No row means on, at the default level, and nothing sent yet.
+  `CREATE TABLE IF NOT EXISTS credit_alerts (
+    user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    below INTEGER NOT NULL DEFAULT 100,
+    alerted_at INTEGER NOT NULL DEFAULT 0,
+    sent_at INTEGER NOT NULL DEFAULT 0,
+    retry_at INTEGER NOT NULL DEFAULT 0,
+    app_ai_at INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL DEFAULT 0
+  )`,
   // Monthly plans. paid_until is how far the subscriber has paid; credits arrive once a month
   // from anchor (the subscription's start) for as long as that month began before paid_until.
   `CREATE TABLE IF NOT EXISTS subscriptions (
@@ -971,6 +987,9 @@ const MIGRATIONS = [
   "ALTER TABLE site_orders ADD COLUMN refunded_at INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE site_orders ADD COLUMN refunded_amount INTEGER NOT NULL DEFAULT 0",
   "ALTER TABLE site_orders ADD COLUMN disputed_at INTEGER NOT NULL DEFAULT 0",
+  // When the app's AI last turned a visitor away because its owner is out of credits, or 0 once it
+  // answers again (see site-ai.ts): the bell shows it, and its owner gets an email (low-balance.ts).
+  "ALTER TABLE site_ai ADD COLUMN out_at INTEGER NOT NULL DEFAULT 0",
 ];
 
 /*

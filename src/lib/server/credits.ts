@@ -4,6 +4,7 @@ import { activeSubscription, grantPlanCredits } from "./subscriptions.ts";
 import { verificationRequired } from "./email.ts";
 import { teamPool } from "./teams.ts";
 import { releaseReferralBonuses } from "./referrals.ts";
+import { watchBalance } from "./low-balance.ts";
 
 export async function balance(userId: string): Promise<number> {
   const row = await one<{ total: number }>(
@@ -103,10 +104,20 @@ export async function charge(userId: string, amount: number, reason: string): Pr
   return null;
 }
 
-/** Lowers a held charge to what the request really used (never raises it). */
+/**
+ * Lowers a held charge to what the request really used (never raises it). Every spend is settled, so
+ * this is where a balance falling below someone's low-credit level is noticed (see low-balance.ts),
+ * after the response.
+ */
 export async function settle(chargeId: number, used: number): Promise<void> {
   if (!chargeId) return;
-  await run("UPDATE credit_ledger SET amount = MAX(amount, ?), settled_at = ? WHERE id = ?", [-Math.max(0, used), now(), chargeId]);
+  const r = await run("UPDATE credit_ledger SET amount = MAX(amount, ?), settled_at = ? WHERE id = ? RETURNING user_id, amount", [
+    -Math.max(0, used),
+    now(),
+    chargeId,
+  ]);
+  const row = r.rows[0];
+  if (row) watchBalance(String(row.user_id), -Number(row.amount));
 }
 
 /**

@@ -113,6 +113,7 @@ type ListRow = {
   contacts: number | null;
   data_rules: string;
   seo: string | null;
+  ai_out: number | null;
 };
 
 /**
@@ -131,6 +132,7 @@ function listRows(userId: string, only?: string[]): Promise<ListRow[]> {
             CASE WHEN ${counted} THEN s.seo END AS seo,
             CASE WHEN ${counted} THEN (SELECT COUNT(*) FROM site_messages m WHERE m.site_slug = s.slug) END AS messages,
             (SELECT COUNT(*) FROM site_messages m WHERE m.site_slug = s.slug AND m.read_at = 0) AS unread,
+            (SELECT a.out_at FROM site_ai a WHERE a.site_slug = s.slug) AS ai_out,
             CASE WHEN ${counted} THEN (SELECT COALESCE(SUM(v.views), 0) FROM site_visits v WHERE v.site_slug = s.slug AND v.day >= ?) END AS views,
             CASE WHEN ${counted} THEN (SELECT COUNT(*) FROM site_users u WHERE u.site_slug = s.slug) END AS members,
             CASE WHEN s.contacts_filled AND ${counted}
@@ -168,6 +170,8 @@ async function seoOf(r: ListRow, domains: Awaited<ReturnType<typeof ownerDomains
  * are null for the rest (siteCounts gives theirs); unread comes for every app, from an index that
  * holds only unread messages. contacts is also null until the app's list was first filled with the
  * people it had before (see fillContacts). seo, the search check's score, comes with the counts (see seoOf).
+ * aiOutOfCredits, for every app from one key lookup, is when its AI last turned a visitor away because
+ * the owner is out of credits (0 once it answers again).
  */
 export async function sitesWithMessages(userId: string) {
   const rows = await listRows(userId);
@@ -186,6 +190,8 @@ export async function sitesWithMessages(userId: string) {
       title: r.title,
       updated_at: Number(r.updated_at),
       unread: Number(r.unread),
+      // When the app's AI last turned a visitor away because the owner is out of credits (0: it answers), for the bell.
+      aiOutOfCredits: Number(r.ai_out ?? 0),
       ...counts(r),
       openData: computed ? anyOpen(computed, Object.fromEntries(mine)) : false,
       ...(await seoOf(r, domains)),
