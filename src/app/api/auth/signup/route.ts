@@ -1,5 +1,5 @@
 import { translatorFor } from "@/lib/server/i18n.ts";
-import { appUrl, createSession, fromOwnPage, hashPassword, isSecure } from "@/lib/server/auth.ts";
+import { MAX_ACCOUNTS, TooManyAccounts, addToJar, appUrl, fromOwnPage, hashPassword, jarSessions, tooManyAccounts } from "@/lib/server/auth.ts";
 import { backfillEmailKeys, emailKey, sendVerification } from "@/lib/server/account.ts";
 import { one } from "@/lib/server/db.ts";
 import { clientIp, overLimit } from "@/lib/server/limits.ts";
@@ -26,6 +26,8 @@ export async function POST(request: Request) {
     return Response.json({ error: t("Too many new accounts from here. Try again in an hour.") }, { status: 429 });
   }
   if (await tooManyFromNetwork(clientIp(request))) return Response.json({ error: t("Too many tries today. Please try again tomorrow.") }, { status: 429 });
+  // A browser holds at most 5 accounts (see auth.ts): checked before the account is made.
+  if ((await jarSessions(request)).entries.length >= MAX_ACCOUNTS) return tooManyAccounts(t);
   await backfillEmailKeys();
   const key = emailKey(email);
   if (await one("SELECT 1 FROM users WHERE email = ? OR email_key = ?", [email, key])) {
@@ -40,8 +42,16 @@ export async function POST(request: Request) {
     emailFailed = true;
     return undefined;
   });
+  let added: Awaited<ReturnType<typeof addToJar>>;
+  try {
+    added = await addToJar(request, id);
+  } catch (err) {
+    // Another tab filled the browser's 5 in the meantime: the account is made, and signs in later.
+    if (err instanceof TooManyAccounts) return tooManyAccounts(t);
+    throw err;
+  }
   const headers = new Headers();
-  headers.append("Set-Cookie", await createSession(id, isSecure(request)));
+  for (const c of [added.cookie, ...added.also]) headers.append("Set-Cookie", c);
   headers.append("Set-Cookie", CLEAR_REF_COOKIE);
-  return Response.json({ ok: true, devLink, emailFailed }, { headers });
+  return Response.json({ ok: true, devLink, emailFailed, account: added.account }, { headers });
 }

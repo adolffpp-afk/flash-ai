@@ -1,5 +1,5 @@
 import { after } from "next/server";
-import { getUser } from "@/lib/server/auth.ts";
+import { jarSessions } from "@/lib/server/auth.ts";
 import { serveSite } from "@/lib/server/serve-site.ts";
 import { recordOwnerVisit, recordVisit } from "@/lib/server/visits.ts";
 import { OWNER_CODE_PARAM } from "@/lib/flashdb-shim.ts";
@@ -11,6 +11,7 @@ export async function GET(request: Request, ctx: RouteContext<"/p/[slug]">) {
   // worked, the owner's steps that day aren't counted either.
   const asOwner = new URL(request.url).searchParams.has(OWNER_CODE_PARAM);
   if (page.ok && page.ownerView) after(() => recordOwnerVisit(slug, request));
-  if (page.ok && !asOwner) after(async () => recordVisit(slug, request, (await getUser(request).catch(() => null))?.id));
+  // Nor is a load by the app's owner when that is any of the accounts signed in to this browser.
+  if (page.ok && !asOwner) after(async () => recordVisit(slug, request, (await jarSessions(request).catch(() => null))?.entries.map((e) => e.user.id)));
   return page;
 }

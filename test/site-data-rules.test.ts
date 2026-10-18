@@ -230,6 +230,40 @@ test("read-only collections: visitors read, only the owner adds", async () => {
   assert.doesNotMatch(cut.csv, /Dish 0/);
 });
 
+test("owner mode lasts through switching accounts, and ends only when its own account logs out", async () => {
+  const { register } = await import("node:module");
+  register("./support/route-hooks.mjs", import.meta.url);
+  const switchRoute = await import("../src/app/api/auth/switch/route.ts");
+  const logoutRoute = await import("../src/app/api/auth/logout/route.ts");
+  const slug = await publish(flashData({ menu: "read" }), "Switching");
+  const mine = cookieToken(await createSession("owner", true));
+  const theirs = cookieToken(await createSession("other", true));
+  const key = (await ownerKeyForCode(slug, (await newOwnerCode(slug, "owner", mine))!))!.key;
+  // Two accounts in one browser: other is the default.
+  let cookie = `flash_session=${theirs}; __Host-flash_accounts=1.${mine}.${theirs}`;
+  const send = (route: { POST: (r: Request) => Promise<Response> }, body: object, account?: string) =>
+    route.POST(
+      new Request("https://flash-app.dev/api/auth/x", {
+        method: "POST",
+        headers: { cookie, origin: "https://flash-app.dev", "content-type": "application/json", ...(account && { "x-flash-account": account }) },
+        body: JSON.stringify(body),
+      }),
+    );
+  for (const to of ["owner", "other"]) {
+    const res = await send(switchRoute, { account: to });
+    assert.equal(res.status, 200);
+    const set = res.headers.getSetCookie().find((c) => c.startsWith("flash_session="));
+    if (set) cookie = cookie.replace(/flash_session=[^;]+/, set.split(";")[0]);
+    assert.equal(await isOwnerKey(slug, key), true, `after switching to ${to}`);
+  }
+  assert.equal((await send(logoutRoute, {}, "other")).status, 200);
+  assert.equal(await isOwnerKey(slug, key), true, "another account logging out leaves it");
+  cookie = `flash_session=${mine}`;
+  assert.equal((await send(logoutRoute, {}, "owner")).status, 200);
+  assert.equal(await isOwnerKey(slug, key), false, "its own account logging out ends it");
+  assert.equal(await unpublishSite("owner", slug), true);
+});
+
 test("Open as owner's code works once for one app, and its key ends with the Flash sign-in or after an hour", async () => {
   const slug = await publish(flashData({ menu: "read", signups: "private" }), "Keys");
   const otherSlug = await publish("<p>other</p>", "Other");

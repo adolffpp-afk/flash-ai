@@ -4,6 +4,7 @@ import { LogoMark, WithWordmark } from "@/app/brand";
 import Link from "next/link";
 import { useState } from "react";
 import { api } from "@/lib/store";
+import { announce, setPin } from "@/lib/account-pin";
 import { useBrowserLanguage, useT } from "@/lib/use-t";
 
 /**
@@ -24,10 +25,14 @@ export function SignInLink({ token }: { token: string }) {
     setBusy(true);
     setError("");
     try {
-      const { next, twoFactor } = await api<{ next?: string; twoFactor?: boolean }>("/api/auth/email-link", {
+      const { next, twoFactor, account } = await api<{ next?: string; twoFactor?: boolean; account?: string }>("/api/auth/email-link", {
         method: "POST",
         json: { token, ...(askEmail && { email }) },
       });
+      // This tab shows the account it just signed in to (others in this browser stay signed in), and
+      // Flash's other tabs check at once: the tab that asked for the link (Sign in again) goes on as it.
+      if (account) setPin(account);
+      if (!twoFactor) announce({ type: "changed" });
       // Two-step sign-in is on: the code page finishes signing in, then goes on to next.
       window.location.assign(twoFactor ? "/signin/code" : next || "/");
     } catch (err) {

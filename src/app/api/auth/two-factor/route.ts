@@ -1,5 +1,5 @@
 import { translatorFor } from "@/lib/server/i18n.ts";
-import { fromOwnPage } from "@/lib/server/auth.ts";
+import { fromOwnPage, tooManyAccounts } from "@/lib/server/auth.ts";
 import { clearPendingCookie, finishSignIn } from "@/lib/server/two-factor.ts";
 
 /** The second step of signing in: the code from the authenticator app, or a recovery code. */
@@ -12,10 +12,12 @@ export async function POST(request: Request) {
   const result = await finishSignIn(request, String(body.code ?? "").slice(0, 40));
   if (result.ok) {
     const headers = new Headers();
-    headers.append("Set-Cookie", result.cookie);
+    for (const c of [result.cookie, ...result.also]) headers.append("Set-Cookie", c);
     headers.append("Set-Cookie", clearPendingCookie());
-    return Response.json({ ok: true, next: result.next }, { headers });
+    return Response.json({ ok: true, next: result.next, account: result.account }, { headers });
   }
+  // The browser holds 5 accounts: the sign-in waits (and its code still works) until one logs out.
+  if (result.reason === "full") return tooManyAccounts(t);
   if (result.reason === "busy") return Response.json({ error: t("Too many attempts. Try again in 15 minutes.") }, { status: 429 });
   if (result.reason === "expired") {
     return Response.json(

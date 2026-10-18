@@ -17,7 +17,7 @@ const cookieValue = (header: string) => header.split(";")[0].split("=").slice(1)
 
 test("only relative paths are allowed after signing in", () => {
   assert.equal(oauth.safeNext("/projects?x=1"), "/projects?x=1");
-  for (const bad of [null, "", "https://evil.example", "//evil.example", "/\\evil.example", "evil", "/a\nb"]) {
+  for (const bad of [null, "", "https://evil.example", "//evil.example", "/\\evil.example", "evil", "/a\nb", "/\t/evil.example"]) {
     assert.equal(oauth.safeNext(bad), "/", String(bad));
   }
 });
@@ -35,6 +35,14 @@ test("PKCE challenge is the S256 of the verifier", () => {
   assert.equal(url.searchParams.get("nonce"), s.nonce);
   assert.equal(url.searchParams.get("redirect_uri"), "https://www.flash-app.dev/api/auth/oauth/google/callback");
   assert.equal(url.toString().includes("gsecret"), false, "the secret never goes to the browser");
+});
+
+test("GitHub shows its account picker, so another GitHub account can be added", () => {
+  process.env.GITHUB_CLIENT_ID = "hid";
+  process.env.GITHUB_CLIENT_SECRET = "hsecret";
+  const url = new URL(oauth.authorizeUrl(oauth.newState("github", "/"), "https://www.flash-app.dev")!);
+  assert.equal(url.searchParams.get("prompt"), "select_account");
+  assert.equal(url.searchParams.get("nonce"), null);
 });
 
 test("providers appear only when their client id and secret are set", () => {
@@ -171,6 +179,12 @@ test("a referral cookie is recorded on every way of signing up, never for the re
   // The same Gmail inbox (dots, +tag) can't refer itself, whichever way it signs up.
   assert.equal(await referredBy(await signInWithEmail("hostperson+2@gmail.com", req)), null);
   assert.equal(await referredBy(await createUser({ email: "plain@x.io", passwordHash: "" })), null, "no cookie");
+  // Someone already signed in on this browser adding another account of their own isn't referred.
+  const { createSession } = await import("../src/lib/server/auth.ts");
+  const signedIn = (await createSession(referrer, true)).split(";")[0];
+  const adding = new Request("https://www.flash-app.dev/", { headers: { cookie: `${signedIn}; flash_ref=${code}` } });
+  assert.equal(await referredBy(await createUser({ email: "second-own@x.io", passwordHash: "scrypt$x$y", request: adding })), null, "signed in already");
+  assert.equal(await referredBy(await signInWithEmail("third-own@x.io", adding)), null);
 });
 
 test("signing in only works from Flash's own pages, sent as JSON", async () => {
