@@ -1145,14 +1145,17 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
                               </span>
                             )}
                             {o.disputed && <span className="rounded-full bg-red-400/15 px-2 py-0.5 text-xs text-red-300">{t("Disputed")}</span>}
-                            <span className="ms-auto text-xs text-zinc-500">{dateLabel(o.createdAt, t.locale)}</span>
-                            <button
-                              onClick={() => markOrder(o)}
-                              className={`rounded-md border px-2 py-0.5 text-xs ${o.done ? "border-white/10 text-zinc-400 hover:text-zinc-100" : "border-primary/40 text-primary-soft hover:bg-primary/10"}`}
-                              title={o.done ? t("Mark as not handled yet") : t("Mark as sent or picked up")}
-                            >
-                              {o.done ? <>✓ {t("Done")}</> : t("Mark done")}
-                            </button>
+                            {/* The date and its button wrap together, at the end of the row. */}
+                            <span className="ms-auto flex shrink-0 items-center gap-3">
+                              <span className="text-xs text-zinc-500">{dateLabel(o.createdAt, t.locale)}</span>
+                              <button
+                                onClick={() => markOrder(o)}
+                                className={`rounded-md border px-2 py-0.5 text-xs ${o.done ? "border-white/10 text-zinc-400 hover:text-zinc-100" : "border-primary/40 text-primary-soft hover:bg-primary/10"}`}
+                                title={o.done ? t("Mark as not handled yet") : t("Mark as sent or picked up")}
+                              >
+                                {o.done ? <>✓ {t("Done")}</> : t("Mark done")}
+                              </button>
+                            </span>
                           </div>
                           <p className="mt-1 break-words text-xs text-zinc-400">
                             {[o.name, o.email, o.address].filter(Boolean).join(" · ")}

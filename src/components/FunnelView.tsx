@@ -192,7 +192,7 @@ function StepRow({ label, n, visitors, detail }: { label: string; n: number; vis
             <div className="h-2 rounded-full bg-primary/70" style={{ width: visitors ? `max(2px, ${Math.min(100, (n / visitors) * 100)}%)` : "2px" }} />
           </div>
         )}
-        {detail && <span className="shrink-0 text-xs tabular-nums text-zinc-500">{detail}</span>}
+        {detail && <span className="ms-auto shrink-0 text-xs tabular-nums text-zinc-500">{detail}</span>}
       </div>
     </li>
   );
