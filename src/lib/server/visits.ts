@@ -359,16 +359,17 @@ export function giveSteps(owner: string, network: string, n: number): void {
 
 /**
  * Counts one load of a published app: a view, and the person once a day, under where they first
- * came from that day. viewerId is who is signed in to Flash, on /p/ only. Never throws: stats must
- * not break an app.
+ * came from that day. viewerId is who is signed in to Flash, on /p/ only: every account signed in to
+ * that browser (several, sometimes), so the owner is no visitor whichever account a tab shows. Never
+ * throws: stats must not break an app.
  */
-export async function recordVisit(slug: string, request: Request, viewerId?: string | null, at = Date.now()): Promise<void> {
+export async function recordVisit(slug: string, request: Request, viewerId?: string | readonly string[] | null, at = Date.now()): Promise<void> {
   if (!isPersonVisit(request) || isReturnTrip(new URL(request.url), request.headers.get("referer"))) return;
   await countVisit(slug, request, viewerId, at).catch((err) => console.error("[flash] visit not counted", err));
   await pruneDaily(at);
 }
 
-async function countVisit(slug: string, request: Request, viewerId: string | null | undefined, at: number): Promise<void> {
+async function countVisit(slug: string, request: Request, viewerId: string | readonly string[] | null | undefined, at: number): Promise<void> {
   const day = dayOf(at);
   startDay(day);
   const key = await dayKey(day);
@@ -397,7 +398,7 @@ async function countVisit(slug: string, request: Request, viewerId: string | nul
   // The app was just unpublished.
   if (!row) return;
   // The owner checking their own app isn't a visitor.
-  if (viewerId && viewerId === row.owner) {
+  if (viewerId && (typeof viewerId === "string" ? viewerId === row.owner : viewerId.includes(row.owner))) {
     const s = ownerRow(slug, day, visitor);
     await run(s.sql, s.args);
     return;

@@ -7,6 +7,7 @@
  */
 import { createHash, timingSafeEqual } from "node:crypto";
 import { randomId } from "./ids.ts";
+import { isLocalPath } from "../local-path.ts";
 
 export type ProviderId = "google" | "github" | "microsoft";
 
@@ -38,6 +39,8 @@ export const PROVIDERS: Record<ProviderId, Provider> = {
     authorize: "https://github.com/login/oauth/authorize",
     token: "https://github.com/login/oauth/access_token",
     scope: "read:user user:email",
+    // Shows GitHub's account picker, so adding a second Flash account can pick another GitHub account.
+    params: { prompt: "select_account" },
   },
   microsoft: {
     name: "Microsoft",
@@ -66,9 +69,7 @@ export const callbackUrl = (origin: string, id: ProviderId) => `${origin}/api/au
 
 /** Only paths on this site, so a crafted link can't send people elsewhere after signing in. */
 export function safeNext(next: string | null | undefined): string {
-  if (!next || !next.startsWith("/") || next.startsWith("//") || next.includes("\\")) return "/";
-  // Control characters could turn the path into something a browser reads differently.
-  if ([...next].some((c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127)) return "/";
+  if (!isLocalPath(next)) return "/";
   // Long enough for a connector's sign-in page, which carries its OAuth request in the query.
   return next.slice(0, 2000);
 }

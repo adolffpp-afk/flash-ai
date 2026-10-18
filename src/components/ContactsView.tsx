@@ -1,7 +1,7 @@
 "use client";
 
 import { memo, useCallback, useDeferredValue, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { api } from "@/lib/store";
+import { api, authedFetch } from "@/lib/store";
 import {
   MAX_CONSENT_NOTE,
   MAX_NAME,
@@ -89,9 +89,9 @@ const chip = "rounded-full border px-2 py-0.5 text-[11px]";
 const textButton = "text-xs text-zinc-300 hover:text-white disabled:opacity-50";
 const primary = "h-10 shrink-0 rounded-lg bg-brand px-4 text-sm font-medium text-on-brand transition hover:brightness-110 disabled:opacity-50";
 
-/** Saves a file the server sent (a CSV or JSON download) under the name it gave. When it can't, the server's reason (see failedText). */
+/** Saves a file the server sent (a CSV or JSON download) under the name it gave, as the tab's account. When it can't, the server's reason (see failedText). */
 async function download(url: string, fallback: string): Promise<{ included: number; total: number }> {
-  const res = await fetch(url);
+  const res = await authedFetch(url);
   if (!res.ok) {
     const error = await res.json().then((d: { error?: unknown }) => (typeof d.error === "string" ? d.error : ""), () => "");
     throw Object.assign(new Error(error), { status: res.status });

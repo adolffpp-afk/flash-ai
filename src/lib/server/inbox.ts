@@ -70,7 +70,7 @@ export async function receiveMessage(
   );
   if (!(await overLimit(`inbox-mail:${slug}`, 20, DAY))) {
     // Also limited per owner, and by the day's email budget (see email.ts).
-    const email = EMAILS.siteMessage(site.title, preview(data as Record<string, unknown>), `${origin}/?apps=1`);
+    const email = EMAILS.siteMessage(site.title, preview(data as Record<string, unknown>), `${origin}/?apps=1&as=${encodeURIComponent(site.user_id)}`);
     await sendEmail(site.email, email, { owner: site.user_id }).catch((err) =>
       console.error("[flash] site message email failed", err),
     );
