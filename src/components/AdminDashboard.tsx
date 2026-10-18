@@ -729,7 +729,7 @@ export function AdminDashboard({ initialTab }: { initialTab?: string }) {
                 <div className="mt-1 text-xs text-zinc-500">
                   {stats.assistantSearch.mode === "index"
                     ? "The database finds the passages a message needs by itself."
-                    : "This database can't make the full-text index, so each message reads all of an assistant's file text to find its passages. It works, but it is slower for big files."}
+                    : "This database has no full-text index for assistant files, or holds files stored before it had one, so each message reads all of an assistant's file text to find its passages. It works, but is slower for big files."}
                   {stats.assistantSearch.factor !== null &&
                     ` Their files take ${stats.assistantSearch.factor.toFixed(1)}× their text in the database, and count ${STORE_FACTOR}× against plan storage.`}
                 </div>
