@@ -161,6 +161,8 @@ test("a seller connects Stripe, prices items, and buyers pay through Checkout", 
   assert.equal(session.account, "acct_seller", "the charge is made on the seller's own account");
   assert.equal(session.body.get("line_items[0][price_data][unit_amount]"), "1250", "the price comes from Flash, not the page");
   assert.equal(session.body.get("payment_intent_data[application_fee_amount]"), "50", "Flash keeps 2%");
+  assert.equal(session.body.get("payment_intent_data[metadata][flash_site]"), "crumb-1", "the payment names its app, for a refund whose checkout Stripe can't list yet");
+  assert.equal(session.body.get("metadata[flash_site]"), "crumb-1");
   assert.equal(session.body.get("cancel_url"), `${origin}/p/crumb-1`, "an unknown page sends buyers to the site");
   assert.equal(session.body.get("shipping_address_collection[allowed_countries][0]"), null, "delivery was switched off");
 

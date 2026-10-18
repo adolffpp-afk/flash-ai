@@ -20,6 +20,7 @@ import { english, type Translate } from "../i18n.ts";
  */
 
 const HOUR = 3_600_000;
+const DAY = 24 * HOUR;
 /** Flash's share of each sale, in basis points (200 = 2%). */
 export const feeBps = () => Number(process.env.FLASH_SALE_FEE_BPS ?? 200);
 
@@ -247,6 +248,8 @@ export async function startCheckout(
     "line_items[0][price_data][product_data][name]": product.name,
     "payment_intent_data[application_fee_amount]": String(saleFee(total, feeBps())),
     "payment_intent_data[description]": `${shop.title.slice(0, 80)}: ${product.name}`,
+    // On the payment too, so a refund or dispute whose checkout Stripe can't list yet is still known as this app's (see chargeEvent).
+    "payment_intent_data[metadata][flash_site]": slug,
     "metadata[flash_site]": slug,
     "metadata[flash_item]": product.name,
     success_url: `${appOrigin}/api/sites/${slug}/shop/done?session={CHECKOUT_SESSION_ID}&back=${encodeURIComponent(back)}`,
@@ -291,6 +294,30 @@ function addressText(s: Session): string {
     .join(", ");
 }
 
+/** The kinds of payment refused for their mode that the server log has been told of (see inKeyMode). */
+const modeWarned = new Set<"event" | "order">();
+const modeName = (livemode: unknown) => (livemode === true ? "in live mode" : livemode === false ? "in test mode" : "without a mode");
+
+/**
+ * Whether an event, or the checkout of an order, is in STRIPE_SECRET_KEY's own mode, the only one
+ * that becomes an order (see liveKey). The first time one of each kind isn't, the server log says
+ * which mode came and which the key reads as, and nothing of the key: a mock Stripe or a key whose
+ * name doesn't read as live would otherwise stop orders being saved without a word.
+ */
+function inKeyMode(kind: "event" | "order", livemode: unknown): boolean {
+  const live = liveKey();
+  if (livemode === live) return true;
+  if (!modeWarned.has(kind)) {
+    modeWarned.add(kind);
+    console.warn(
+      `[flash] ${kind === "event" ? "Ignored a Stripe event" : "Didn't save a paid Stripe checkout as an order"}: it came ${modeName(livemode)}, and STRIPE_SECRET_KEY reads as a ${live ? "live" : "test"} key. Only payments in the key's own mode become orders.` +
+        (kind === "event" && live && livemode === false ? " Stripe sends a live webhook its sellers' test-mode events too, so one now and then is expected." : "") +
+        " If no orders are being saved, check STRIPE_SECRET_KEY and STRIPE_API_BASE. Said once per server process.",
+    );
+  }
+  return false;
+}
+
 /** What a refund or a dispute said of an order it is the first to save (see chargeEvent). */
 type Since = { at: number; refunded?: number; disputed?: boolean };
 
@@ -303,7 +330,7 @@ type Since = { at: number; refunded?: number; disputed?: boolean };
  */
 async function recordOrder(slug: string, s: Session, since?: Since): Promise<boolean> {
   // A test-mode payment is never an order under a live key, nor a live one under a test key.
-  if (s.payment_status !== "paid" || s.metadata?.flash_site !== slug || s.livemode !== liveKey()) return false;
+  if (s.payment_status !== "paid" || s.metadata?.flash_site !== slug || !inKeyMode("order", s.livemode)) return false;
   const item = s.metadata.flash_item ?? "";
   const created = s.created ? s.created * 1000 : now();
   const given = s.customer_details?.email ?? "";
@@ -381,7 +408,7 @@ export async function finishCheckout(slug: string, sessionId: string, back: unkn
     console.error("[flash] site checkout lookup failed", err);
     return null;
   });
-  if (!session || session.payment_status !== "paid" || session.metadata?.flash_site !== slug || session.livemode !== liveKey()) {
+  if (!session || session.payment_status !== "paid" || session.metadata?.flash_site !== slug || !inKeyMode("order", session.livemode)) {
     return { page, paid: false };
   }
   await orderPaid(slug, session, shop, appOrigin);
@@ -473,16 +500,17 @@ const isId = (v: unknown, prefix: string): v is string => typeof v === "string" 
  * api/stripe/connect), its signature already checked: a checkout paid, or paid days later (a bank
  * debit, a voucher), saves its order and emails the owner, as the return page would have; a refund
  * or a dispute is kept with its order. Each event changes something once, and only for an app whose
- * owner's account sent it, in the key's own mode. Throws when Stripe or the database fails, so
- * Stripe sends it again later.
+ * owner's account sent it, in the key's own mode. Throws when Stripe or the database fails, or when
+ * Stripe can't list the checkout of an app's refunded or disputed payment yet (for a day after the
+ * event), so Stripe sends it again later.
  */
 export async function connectEvent(event: ConnectEvent, appOrigin: string): Promise<ConnectOutcome> {
   const { type, account } = event;
   const object = event.data?.object;
   if (typeof type !== "string" || !CONNECT_EVENTS.includes(type) || !isId(event.id, "evt") || !object || typeof object !== "object") return "ignored";
-  // Stripe also sends a live endpoint its connected accounts' test-mode events: those never become
-  // orders under a live key (nor live ones under a test key). Nor does an event of Flash's own account.
-  if (event.livemode !== liveKey() || !isId(account, "acct")) return "ignored";
+  // An event of Flash's own account changes nothing. Stripe also sends a live endpoint its connected
+  // accounts' test-mode events: those never become orders under a live key (nor live ones under a test key).
+  if (!isId(account, "acct") || !inKeyMode("event", event.livemode)) return "ignored";
   // A seller's account can sell elsewhere too: Stripe isn't asked about the accounts Flash didn't connect.
   if (!(await one("SELECT 1 FROM seller_accounts WHERE stripe_account = ? AND ready = 1", [account]))) return "not-ours";
   if (await one("SELECT 1 FROM stripe_events WHERE id = ?", [event.id])) return "duplicate";
@@ -497,12 +525,17 @@ export async function connectEvent(event: ConnectEvent, appOrigin: string): Prom
   return outcome;
 }
 
-/** The app a checkout session is for, when that app's owner's connected account is the one that sent it. */
-async function shopFor(account: string, session: Session | undefined) {
-  const slug = session?.metadata?.flash_site;
-  if (!session || !isId(session.id, "cs") || typeof slug !== "string" || !slug) return null;
+/** The app slug names, when that app's owner's connected account is the one that sent the event. */
+async function appOf(account: string, slug: unknown) {
+  if (typeof slug !== "string" || !slug) return null;
   const shop = await shopOf(slug);
   return shop && shop.stripe_account === account ? { slug, shop } : null;
+}
+
+/** The app a checkout session is for, when that app's owner's connected account is the one that sent it. */
+async function shopFor(account: string, session: Session | undefined) {
+  if (!session || !isId(session.id, "cs")) return null;
+  return appOf(account, session.metadata?.flash_site);
 }
 
 async function sessionEvent(account: string, sent: Session, appOrigin: string): Promise<ConnectOutcome> {
@@ -529,8 +562,26 @@ async function chargeEvent(type: "charge.refunded" | "charge.dispute.created", a
     account,
   );
   const session = found.data?.[0];
+  if (!session) {
+    // No checkout for the payment: a sale the seller made outside Flash, or one of an app's whose
+    // checkout Stripe's list doesn't show yet. An app's checkout names the app on its payment too
+    // (see startCheckout), so for those this throws: Stripe is answered 500 and sends the event
+    // again later, and the refund or dispute isn't lost. Any other payment is not Flash's, and is
+    // answered 200 so Stripe doesn't keep sending it.
+    // The seller can edit a payment's metadata (they have the full Dashboard and their own keys),
+    // so the name alone isn't enough: the payment must also have been made through a Connect
+    // platform, as Flash's checkouts are (a seller's own key or Dashboard leaves `application`
+    // empty), and the event must be under a day old. A lagging list catches up in seconds, so a
+    // payment still not listed after a day never will be, and Stripe stops sending it then
+    // rather than for 3 days.
+    if (now() - at >= DAY) return "not-ours";
+    const intent = await stripe<{ application?: unknown; metadata?: Record<string, string> | null }>("GET", `/payment_intents/${encodeURIComponent(payment)}`, undefined, account);
+    const app = isId(intent.application, "ca") ? await appOf(account, intent.metadata?.flash_site) : null;
+    if (app) throw new Error(`Stripe listed no checkout yet for ${payment}, a payment of the app ${app.slug}`);
+    return "not-ours";
+  }
   const mine = await shopFor(account, session);
-  if (!session || !mine) return "not-ours";
+  if (!mine) return "not-ours";
   // How much of the charge has gone back so far, with each refund. One sent late never lowers it.
   const refunded = type === "charge.refunded" ? Math.max(0, Math.floor(Number(object.amount_refunded) || 0)) : 0;
   // Refunded or disputed before its order was saved (the buyer closed the tab, an event was lost):
