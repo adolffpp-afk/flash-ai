@@ -21,6 +21,11 @@ const ID = /^[A-Za-z0-9_-]{1,64}$/;
 let pin: string | null | undefined;
 // The pin's email, kept here too for when storage refuses.
 let pinEmail: string | null = null;
+// Where the link that named this tab's account was going (its path and query, without ?as=), until
+// that account loads here: kept with the pin (LINK_KEY), so a reload of the link's chooser still
+// knows, and here too for when storage refuses. Showing another account lets it go.
+const LINK_KEY = "flash-account-link";
+let linked: string | null = null;
 
 function storage(): Storage | null {
   try {
@@ -48,11 +53,17 @@ export function getPin(): string | null {
 export function setPin(id: string | null | undefined): void {
   const before = getPin();
   pin = id && ID.test(id) ? id : null;
-  if (pin !== before) pinEmail = null;
+  if (pin !== before) {
+    pinEmail = null;
+    linked = null;
+  }
   try {
     if (pin) storage()?.setItem(KEY, pin);
     else storage()?.removeItem(KEY);
-    if (pin !== before) storage()?.removeItem(EMAIL_KEY);
+    if (pin !== before) {
+      storage()?.removeItem(EMAIL_KEY);
+      storage()?.removeItem(LINK_KEY);
+    }
   } catch {
     // Kept for this page only.
   }
@@ -106,8 +117,6 @@ export function withAccount(url: string): string {
   return `${path}${path.includes("?") ? "&" : "?"}as=${encodeURIComponent(id)}${hash}`;
 }
 
-// Where the link that named this page's account was going (its path and query, without ?as=).
-let linked: string | null = null;
 
 /**
  * The account a link opened this page as (?as=, from an email, Stripe or a callback): this tab
@@ -135,9 +144,36 @@ export function adoptAccountFromUrl(): string | null {
   }
   if (!ID.test(named)) return null;
   setPin(named);
-  if (switched) return null;
+  if (switched) {
+    forgetLink();
+    return null;
+  }
   linked = `${url.pathname}${url.search}`;
+  try {
+    storage()?.setItem(LINK_KEY, linked);
+  } catch {
+    // Kept for this page only.
+  }
   return named;
+}
+
+/**
+ * The account a link opened this tab as, on a reload of that tab before the account loaded here
+ * (its chooser still asks to sign in to it): the page then says it is the link's, and signing in
+ * to it opens the link's page. Null when no link waits.
+ */
+export function linkedAccount(): string | null {
+  return linkTarget() === null ? null : getPin();
+}
+
+/** The account a link named has loaded here (or the tab moved on): nothing waits on that link anymore. */
+export function forgetLink(): void {
+  linked = null;
+  try {
+    storage()?.removeItem(LINK_KEY);
+  } catch {
+    // This page's copy is gone.
+  }
 }
 
 /**
@@ -195,11 +231,20 @@ export function takeLeftNote(): LeftNote | null {
 }
 
 /**
- * Where the link that named this page's account was going (like /?apps=1), to go on to after
- * signing in to that account from the account chooser; null when no link named one. The page
- * takes those parts out of the address once it has opened them.
+ * Where the link that named this tab's account was going (like /?apps=1), to go on to after
+ * signing in to that account from the account chooser, after a reload too; null when no link named
+ * one. The page takes those parts out of the address once it has opened them.
  */
-export const linkTarget = (): string | null => linked;
+export function linkTarget(): string | null {
+  if (!getPin()) return null;
+  try {
+    const kept = storage()?.getItem(LINK_KEY);
+    if (kept) return kept;
+  } catch {
+    // Storage refused: this page's copy.
+  }
+  return linked;
+}
 
 /** What one tab tells Flash's other tabs: an account is about to log out here, or the accounts changed. */
 export type Announcement = { type: "leaving"; account: string } | { type: "changed" };

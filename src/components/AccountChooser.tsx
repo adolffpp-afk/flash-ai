@@ -7,7 +7,7 @@ import { MAX_ACCOUNTS } from "@/lib/accounts";
 import { fullName } from "@/lib/names";
 import { useT } from "@/lib/use-t";
 import { isolate } from "@/lib/account-pin";
-import { AccountBadge, accountTone } from "./AccountMenu";
+import { AccountBadge, NAME_ALIGN, accountTone } from "./AccountMenu";
 
 /**
  * A dialog that must be answered: a sheet from the bottom on a phone, a card in the middle on a
@@ -19,6 +19,12 @@ import { AccountBadge, accountTone } from "./AccountMenu";
  */
 function Sheet({ label, onEscape, children }: { label: string; onEscape?: () => void; children: ReactNode }) {
   const box = useRef<HTMLDivElement>(null);
+  // The latest Escape, so a page that renders again (a reply coming in) never takes the focus back
+  // to the dialog: it is focused once, as it opens.
+  const escape = useRef(onEscape);
+  useEffect(() => {
+    escape.current = onEscape;
+  });
   useEffect(() => {
     const el = box.current;
     if (!el) return;
@@ -27,9 +33,9 @@ function Sheet({ label, onEscape, children }: { label: string; onEscape?: () => 
     const keep = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
-        if (!onEscape) return;
+        if (!escape.current) return;
         e.preventDefault();
-        onEscape();
+        escape.current();
         return;
       }
       if (e.key !== "Tab") return;
@@ -48,7 +54,7 @@ function Sheet({ label, onEscape, children }: { label: string; onEscape?: () => 
     };
     window.addEventListener("keydown", keep, true);
     return () => window.removeEventListener("keydown", keep, true);
-  }, [onEscape]);
+  }, []);
   return createPortal(
     <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center sm:p-4">
       <div
@@ -154,7 +160,7 @@ export function AccountChooser({
             >
               <AccountBadge account={a} tone={accountTone(accounts, a.id)} />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium text-zinc-100">{fullName(a)}</span>
+                <bdi className={`block truncate text-sm font-medium text-zinc-100 ${NAME_ALIGN}`}>{fullName(a)}</bdi>
                 <bdi className="block truncate text-xs text-zinc-500 rtl:text-right" title={a.email}>
                   {going ? t("Switching…") : a.email}
                 </bdi>

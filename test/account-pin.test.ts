@@ -500,7 +500,7 @@ test("code changed in a Code view and not saved yet makes a switch ask first", a
   assert.match(editor, /const unsaved = changed && Boolean\(onSave\);\n\s+useEffect\(\(\) => \{\n\s+markCodeDraft\(editor, unsaved\);\n\s+return \(\) => markCodeDraft\(editor, false\);\n\s+\}, \[editor, unsaved\]\);/);
   // Switch asks ("Switch anyway?") when flushSaves says something isn't saved.
   const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
-  assert.match(body(page, "async function switchAccount("), /if \(!gone && !anyway && !\(await flushSaves\(\)\)\) \{\n\s+setUnsaved\(\{ go: \(\) => void switchAccount\(id, \{ anyway: true \}\) \}\);/);
+  assert.match(body(page, "async function switchAccount("), /if \(!gone && !anyway && !\(await flushSaves\(\)\)\) \{\n(\s*\/\/.*\n)*\s+if \(chooserRef\.current\) setSwitching\(null\);\n\s+else setUnsaved\(\{ go: \(\) => void switchAccount\(id, \{ anyway: true \}\) \}\);/);
   assert.match(page, /<SwitchAnyway\n\s+onSwitch=\{unsaved\.go\}/);
 });
 
@@ -516,7 +516,9 @@ test("the page around a switch: what Flash says stays in view, the menu closes w
   // It never takes the chat's room on a screen with little height (a phone held sideways, with a
   // notice and an invitation): it shares a grid with the chat (or the preview) and takes at most
   // half of it, then scrolls on its own, its edge faded.
-  assert.match(page.slice(said - 400, said), /\n\s+<div className="grid min-h-0 flex-1 grid-rows-\[fit-content\(50%\)_minmax\(0,1fr\)\]">\n$/);
+  // Its one column is the width it is given: a long line of code, a link or a table in the chat
+  // scrolls inside it and never widens the page past a phone's screen, nor the chat under the preview.
+  assert.match(page.slice(said - 400, said), /\n\s+<div className="grid min-h-0 flex-1 grid-cols-\[minmax\(0,1fr\)\] grid-rows-\[fit-content\(50%\)_minmax\(0,1fr\)\]">\n$/);
   assert.match(page.slice(said, scroller), /^\s+\{said && \(\n\s+<div className=\{`mx-auto w-full overflow-y-auto overscroll-contain \[mask-image:linear-gradient\(to_bottom,#000_calc\(100%-0\.5rem\),transparent\)\] \$\{tab === "preview" \? "[^"]+ pb-2" : `[^`]+ pb-2 [^`]+`\}`\}>\{said\}<\/div>\n\s+\)\}\n\s+<div className="relative row-start-2 flex min-h-0 flex-col">\n/);
   assert.doesNotMatch(page.slice(said, scroller), /shrink-0/);
   assert.equal(page.match(/\{said\}/g)?.length, 1, "shown in one place");
@@ -567,7 +569,7 @@ test("Add another account over the page: nothing under it listens on, and it is 
   // sign-in from the chooser closes and the tab goes on, after a reload too.
   const check = body(page, "async function checkAccounts(");
   assert.match(check, /if \(signingIn\?\.back\) \{\n\s+closeAdding\(\);\n\s+return "back";\n\s+\}\n\s+if \(!chooserRef\.current\) return "here";/);
-  assert.match(check, /if \(signingIn\) \{\n\s+const next = \{ \.\.\.signingIn, back: signingIn\.back \? \{ \.\.\.signingIn\.back, accounts: list\.accounts \} : gone \};\n\s+addingRef\.current = next;\n\s+setAdding\(next\);\n\s+return "gone";\n\s+\}\n\s+setChooser\(gone\);/);
+  assert.match(check, /if \(signingIn\) \{\n\s+const next = \{ \.\.\.signingIn, back: signingIn\.back \? \{ \.\.\.signingIn\.back, accounts: list\.accounts \} : gone \};\n\s+addingRef\.current = next;\n\s+setAdding\(next\);\n\s+return "gone";\n\s+\}\n\s+showChooser\(gone\);/);
   assert.equal(check.match(/setChooser\(\{/g), null, "the chooser shows only when nothing is being signed in to");
   assert.match(page, /if \(!meRef\.current && !chooserRef\.current && !addingRef\.current\?\.back\) return;/);
   // The pages an emailed link and two-step sign-in finish on tell Flash's other tabs at once.
@@ -594,7 +596,7 @@ test("Add another account over the page: nothing under it listens on, and it is 
   // "Switch anyway?" and the account chooser: Escape is theirs (Cancel, when there is one) and goes
   // no further, so Ask Flash under them stays open with its answer, and so does the code not saved.
   const sheet = body(chooser, "function Sheet(");
-  assert.match(sheet, /if \(e\.key === "Escape"\) \{\n\s+e\.stopPropagation\(\);\n\s+if \(!onEscape\) return;\n\s+e\.preventDefault\(\);\n\s+onEscape\(\);\n\s+return;\n\s+\}/);
+  assert.match(sheet, /if \(e\.key === "Escape"\) \{\n\s+e\.stopPropagation\(\);\n\s+if \(!escape\.current\) return;\n\s+e\.preventDefault\(\);\n\s+escape\.current\(\);\n\s+return;\n\s+\}/);
   assert.match(sheet, /window\.addEventListener\("keydown", keep, true\);/);
   assert.match(sheet, /window\.removeEventListener\("keydown", keep, true\);/);
   assert.doesNotMatch(sheet, /document\.addEventListener/);
@@ -666,4 +668,142 @@ test("a log out says it's under way while it saves what it can, and runs once", 
     assert.match(body(page, start), /\{\n(\s*\/\/.*\n)*\s+if \(leavingRef\.current\) return false;\n\s+leavingRef\.current = true;/, start);
   }
   assert.match(body(page, "function signedOutHere("), /leavingRef\.current = false;/);
+});
+
+test("a dialog keeps the focus where the keyboard put it while the page under it renders again", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const chooser = await readFile(new URL("../src/components/AccountChooser.tsx", import.meta.url), "utf8");
+  // "Switch anyway?" is given a new Cancel each time Flash renders (a reply coming in): the dialog is
+  // focused once, as it opens, never again, so Tab to Cancel or Switch anyway stays there for Enter.
+  for (const name of ["function Sheet(", "export function AddOver("]) {
+    const dialog = body(chooser, name);
+    const effects = [...dialog.matchAll(/useEffect\(\(\) => \{([\s\S]*?)\n {2}\}(?:, (\[[^\]]*\]))?\);/g)];
+    const focusing = effects.filter((m) => /\bel\.focus\(\)/.test(m[1]));
+    assert.equal(focusing.length, 1, name);
+    assert.equal(focusing[0][2], "[]", `${name}: focused once, whatever it is given`);
+  }
+  const sheet = body(chooser, "function Sheet(");
+  assert.match(sheet, /const escape = useRef\(onEscape\);\n\s+useEffect\(\(\) => \{\n\s+escape\.current = onEscape;\n\s+\}\);/);
+  assert.doesNotMatch(sheet, /\[onEscape\]/);
+  assert.doesNotMatch(sheet.slice(sheet.indexOf("const keep")), /\bonEscape\b/, "Escape is the latest one, read as the key goes down");
+});
+
+test("one account signing in alone after every account here logged out has Flash's own colour, a returning one too", async () => {
+  const { accountTones, forgetTones } = await import("../src/lib/account-tones.ts");
+  browserStorage.data.clear();
+  assert.deepEqual([...accountTones(["ana", "ben"], 5)], [["ana", 0], ["ben", 1]]);
+  // Ana logs out of this account: Ben, the last one left, keeps his colour.
+  assert.deepEqual([...accountTones(["ben"], 5)], [["ben", 1], ["ana", 0]]);
+  // Log out of all accounts (or the last one logging out, or every session ended): nothing is kept,
+  // and Ben, signing in alone again later, is in Flash's own colour, as on a fresh browser.
+  forgetTones();
+  assert.equal(browserStorage.data.get("flash-account-tones"), undefined);
+  assert.deepEqual([...accountTones(["ben"], 5)], [["ben", 0]]);
+  assert.deepEqual([...accountTones(["ben", "ana"], 5)], [["ben", 0], ["ana", 1]]);
+  browserStorage.refuse = true;
+  accountTones(["kim", "lee"], 5);
+  forgetTones();
+  assert.deepEqual([...accountTones(["lee"], 5)], [["lee", 0]], "storage that refuses too");
+  browserStorage.refuse = false;
+  browserStorage.data.clear();
+  // Flash lets the colours go wherever it finds no account signed in here: a log out that leaves
+  // none (signedOutHere: this account, all of them, or one another tab ended), the account check,
+  // and a page that opens signed out.
+  const { readFile } = await import("node:fs/promises");
+  const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
+  assert.match(body(page, "function signedOutHere("), /^function signedOutHere\(\) \{\n\s+forgetTones\(\);/);
+  assert.match(body(page, "async function checkAccounts("), /if \(!list\.accounts\.length\) \{\n\s+setPin\(null\);\n\s+forgetTones\(\);\n\s+return "none";\n\s+\}/);
+  assert.match(page, /\n\s+if \(signedIn\) start\(\);\n\s+else forgetTones\(\);\n/);
+  for (const start of ["async function signOut(", "async function signOutAll("]) assert.match(body(page, start), /setPin\(null\);\n\s+announce\(\{ type: "changed" \}\);\n\s+signedOutHere\(\);/, start);
+});
+
+test("a link's chooser is still the link's after a reload, and signing in to its account opens the link's page", async () => {
+  pin.setPin("acct_a");
+  address = "https://flash-app.test/?apps=1&as=acct_l";
+  assert.equal(pin.adoptAccountFromUrl(), "acct_l");
+  assert.equal(address, "https://flash-app.test/?apps=1");
+  // The tab reloads before acct_l is signed in here: a fresh copy of the module, the same tab's storage.
+  address = "https://flash-app.test/";
+  const reloaded = (await import(new URL("../src/lib/account-pin.ts?reload-link", import.meta.url).href)) as typeof pin;
+  assert.equal(reloaded.adoptAccountFromUrl(), null, "no ?as= in the address now");
+  assert.equal(reloaded.linkedAccount(), "acct_l", "the chooser still says the link is for another account");
+  assert.equal(reloaded.linkTarget(), "/?apps=1", "and Use another account opens its page once signed in");
+  // Once that account loads here, nothing waits on the link: a reload then is an ordinary one.
+  reloaded.forgetLink();
+  assert.equal(reloaded.linkedAccount(), null);
+  assert.equal(reloaded.linkTarget(), null);
+  assert.equal(storage.data.has("flash-account-link"), false);
+  // Showing another account lets it go, and so does the tab's own switch to that account.
+  address = "https://flash-app.test/?credits=1&as=acct_m";
+  pin.adoptAccountFromUrl();
+  assert.equal(pin.linkTarget(), "/?credits=1");
+  pin.setPin("acct_b");
+  assert.equal(pin.linkTarget(), null);
+  assert.equal(pin.linkedAccount(), null);
+  address = "https://flash-app.test/?credits=1&as=acct_m";
+  pin.adoptAccountFromUrl();
+  address = `https://flash-app.test${pin.switchAddress("acct_m", "/?credits=1")}`;
+  assert.equal(pin.adoptAccountFromUrl(), null);
+  assert.equal(pin.linkedAccount(), null, "a switch to it: no link waits");
+  // Storage that refuses keeps it for this page.
+  storage.refuse = true;
+  pin.setPin("acct_a");
+  address = "https://flash-app.test/?apps=1&as=acct_n";
+  assert.equal(pin.adoptAccountFromUrl(), "acct_n");
+  assert.equal(pin.linkTarget(), "/?apps=1");
+  storage.refuse = false;
+  pin.setPin(null);
+  address = "https://flash-app.test/";
+  // The page asks for it on every load, and lets it go once an account loads.
+  const { readFile } = await import("node:fs/promises");
+  const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
+  assert.match(page, /linkedRef\.current = adoptAccountFromUrl\(\) \?\? linkedAccount\(\);/);
+  assert.match(body(page, "async function adoptMe("), /setPin\(data\.account\);\n\s+setPinEmail\(data\.user\.email\);\n(\s*\/\/.*\n)*\s+forgetLink\(\);/);
+});
+
+test("the account chooser over \"Switch anyway?\" is in charge: the question and its switch are dropped", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
+  // This tab's account was logged out elsewhere while Flash asked: nothing of it can be saved, so the
+  // question goes, and the chooser's accounts, Sign in again and Use another account can be chosen.
+  assert.match(body(page, "function showChooser("), /\{\n\s+setUnsaved\(null\);\n\s+setSwitching\(null\);\n\s+setChooser\(next\);\n\s+\}$/);
+  assert.match(body(page, "async function checkAccounts("), /\n\s+showChooser\(gone\);\n\s+return "gone";/);
+  assert.match(body(page, "async function checkAccountsFor("), /showChooser\(\{ reason: "notHere"/);
+  // The chooser opens nowhere else; it only closes, or comes back from add mode (where nothing is asked).
+  const opened = [...page.matchAll(/setChooser\(([^)]*)\)/g)].map((m) => m[1]);
+  assert.deepEqual([...new Set(opened)].sort(), ["from.back", "next", "null"]);
+  // A switch whose saves end after the chooser opened asks nothing either.
+  assert.match(body(page, "async function switchAccount("), /if \(chooserRef\.current\) setSwitching\(null\);/);
+});
+
+test("names in the profile menu and the account chooser shorten at their own end, in either direction", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const menu = await readFile(new URL("../src/components/AccountMenu.tsx", import.meta.url), "utf8");
+  const chooser = await readFile(new URL("../src/components/AccountChooser.tsx", import.meta.url), "utf8");
+  // A <bdi> lays a name out in its own direction (a Latin name in Arabic keeps its first name, an
+  // Arabic name in English its first words), lined up with the page's side, as the email under it.
+  assert.match(menu, /export const NAME_ALIGN = "text-left in-\[\[dir=rtl\]\]:text-right";/);
+  const names = (source: string) => [...source.matchAll(/<(\w+) className=\{?["`]block [^>]*truncate[^>]*>\{(?:greet && called !== "there" \? called : )?fullName\((?:me\.user|a)\)\}<\/\1>/g)].map((m) => m[0]);
+  const shown = [...names(menu), ...names(chooser)];
+  // The menu's own row, its other accounts, its button with several accounts, and the chooser's rows;
+  // the one-account sidebar button is as it was before several accounts.
+  assert.equal(shown.length, 5);
+  const isolated = shown.filter((tag) => /^<bdi className=\{`block [^`]*truncate[^`]* \$\{NAME_ALIGN\}`\}>/.test(tag));
+  assert.equal(isolated.length, 4, shown.join("\n"));
+  assert.match(menu, /<span className="block max-w-\[10rem\] truncate text-sm font-medium text-zinc-100">\{fullName\(me\.user\)\}<\/span>/);
+});
+
+test("with one account, a tab signed out by a log out in another tab opens the account once it is signed in again", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
+  // The landing page (not its sign-in form) keeps listening: an account signed in on this browser
+  // again (another tab's announcement, or the tab shown again) loads here, as a reload would.
+  assert.match(page, /useEffect\(\(\) => \{\n\s+landingRef\.current = signedOut && !authMode;\n\s+\}, \[signedOut, authMode\]\);/);
+  const checking = page.slice(page.indexOf("    const check = (now = false) => {"), page.indexOf("    const shown = () => {"));
+  assert.match(checking, /if \(landingRef\.current\) \{\n\s+void api<\{ accounts: AccountSummary\[\] \}>\("\/api\/auth\/accounts"\)\.then\(\n\s+\(list\) => void \(list\.accounts\.length && landingRef\.current && start\(\)\),\n\s+\(\) => \{\},\n\s+\);\n\s+return;\n\s+\}\n(\s*\/\/.*\n)*\s+if \(!meRef\.current && !chooserRef\.current && !addingRef\.current\?\.back\) return;/);
+  // A sign-in from the signed-out screen tells the other tabs, as Add another account does.
+  assert.match(page, /onDone=\{\(result\) => \{\n(\s*\/\/.*\n)*\s+announce\(\{ type: "changed" \}\);\n(\s*\/\/.*\n)*\s+if \(addNext && result\?\.account\) return goOnAs\(result\.account, addNext\);/);
+  // The tab that signs out is a landing page from then on too, with nothing of the account before.
+  const out = body(page, "function signedOutHere(");
+  for (const cleared of ["setMe(null);", "setProjects([]);", 'setActiveId("");', "setAuthMode(null);", "setSignedOut(true);"]) assert.ok(out.includes(cleared), cleared);
 });

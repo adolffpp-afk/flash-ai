@@ -26,6 +26,13 @@ const TONES = [
   "bg-[linear-gradient(140deg,#a5f3fc,#60a5fa_70%,#818cf8)]",
 ] as const;
 
+/**
+ * An account's name, in a <bdi> so it is laid out in its own direction and shortens at its own end
+ * (a Latin name in Arabic keeps its first name, an Arabic name in English its first words), lined
+ * up with the page's side whichever direction it reads in, as the email under it is.
+ */
+export const NAME_ALIGN = "text-left in-[[dir=rtl]]:text-right";
+
 /** An account's colour among the browser's accounts, kept when the others log out (see accountTones). */
 export function accountTone(accounts: { id: string }[] | undefined, id: string): string {
   const at = accounts?.length ? accountTones(accounts.map((a) => a.id), TONES.length).get(id) : 0;
@@ -150,7 +157,7 @@ export function AccountMenu({
     <>
       <AccountBadge account={shown} current tone={tone} />
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-medium text-zinc-100">{fullName(me.user)}</span>
+        <bdi className={`block truncate text-sm font-medium text-zinc-100 ${NAME_ALIGN}`}>{fullName(me.user)}</bdi>
         <bdi className="block truncate text-xs text-zinc-500 rtl:text-right" title={me.user.email}>
           {me.user.email}
         </bdi>
@@ -204,7 +211,7 @@ export function AccountMenu({
                     >
                       <AccountBadge account={a} size="sm" tone={accountTone(me.accounts, a.id)} />
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm text-zinc-200">{fullName(a)}</span>
+                        <bdi className={`block truncate text-sm text-zinc-200 ${NAME_ALIGN}`}>{fullName(a)}</bdi>
                         <bdi className="block truncate text-xs text-zinc-500 rtl:text-right" title={a.email}>
                           {going ? t("Switching…") : a.email}
                         </bdi>
@@ -313,7 +320,7 @@ export function AccountMenu({
           {several ? (
             // Several accounts here: which one this tab is on, under the name (the same name can be on two).
             <>
-              <span className="block max-w-[12rem] truncate text-[15px] font-semibold leading-tight text-zinc-100">{greet && called !== "there" ? called : fullName(me.user)}</span>
+              <bdi className={`block max-w-[12rem] truncate text-[15px] font-semibold leading-tight text-zinc-100 ${NAME_ALIGN}`}>{greet && called !== "there" ? called : fullName(me.user)}</bdi>
               <bdi aria-hidden className="block max-w-[12rem] truncate text-xs text-zinc-400 rtl:text-right">
                 {me.user.email}
               </bdi>

@@ -31,7 +31,8 @@ import { ENGINES, ENGINE_LABELS, PENDING_LIMIT_MS, type Attachment, type ChatTur
 import { applyEvent } from "@/lib/apply-event";
 import { api, authedFetch, newId, type AccountSummary, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
 import { PRODUCT_NAME } from "@/lib/product";
-import { adoptAccountFromUrl, announce, getPin, getPinEmail, isolate, isTabAccount, linkTarget, onAnnounce, reloadAs, setPin, setPinEmail, takeLeftNote, type LeftNote } from "@/lib/account-pin";
+import { adoptAccountFromUrl, announce, forgetLink, getPin, getPinEmail, isolate, isTabAccount, linkedAccount, linkTarget, onAnnounce, reloadAs, setPin, setPinEmail, takeLeftNote, type LeftNote } from "@/lib/account-pin";
+import { forgetTones } from "@/lib/account-tones";
 import { stopMic } from "@/lib/listen";
 import { isLocalPath } from "@/lib/local-path";
 import { forgetInvite, keepInviteInTab, saveInvite, waitingInvite } from "@/lib/invite-keep";
@@ -417,6 +418,12 @@ export function Flash({
   useEffect(() => {
     addingRef.current = adding;
   }, [adding]);
+  // Signed out, on the landing page (not in its sign-in form): the account check opens an account
+  // signed in on this browser again meanwhile (in another tab), as a reload would.
+  const landingRef = useRef(false);
+  useEffect(() => {
+    landingRef.current = signedOut && !authMode;
+  }, [signedOut, authMode]);
   useEffect(() => {
     projectsRef.current = projects;
   }, [projects]);
@@ -432,6 +439,8 @@ export function Flash({
     // its email to say which account it was if it is logged out before a reload.
     setPin(data.account);
     setPinEmail(data.user.email);
+    // A link for this account opened its page, or opens it now: nothing waits on it after a reload.
+    forgetLink();
     if (linkedRef.current === data.account) linkedRef.current = null;
     // Flash's own words switch to the account's language before its first screen shows.
     await showLanguage(data.user.language);
@@ -499,6 +508,7 @@ export function Flash({
     }
     if (!list.accounts.length) {
       setPin(null);
+      forgetTones();
       return "none";
     }
     if (!mine) {
@@ -515,8 +525,19 @@ export function Flash({
       setAdding(next);
       return "gone";
     }
-    setChooser(gone);
+    showChooser(gone);
     return "gone";
+  }
+
+  /**
+   * The account chooser, once this tab's account isn't signed in here: it is in charge. "Switch
+   * anyway?" and the switch waiting on it are dropped, as nothing of a logged-out account can be
+   * saved, so every choice in the chooser can be taken.
+   */
+  function showChooser(next: Chooser) {
+    setUnsaved(null);
+    setSwitching(null);
+    setChooser(next);
   }
 
   /** Joins the team from a saved invitation link, once signed in. */
@@ -586,7 +607,8 @@ export function Flash({
 
   useEffect(() => {
     // A link that names its account (?as=, from an email, Stripe or a callback) opens as it.
-    linkedRef.current = adoptAccountFromUrl();
+    // After a reload of that tab, before the link's account loaded here, it is still the link's.
+    linkedRef.current = adoptAccountFromUrl() ?? linkedAccount();
     const opened = new URLSearchParams(window.location.search);
     // Add another account (from the Connect to Flash page): then back to where it came from.
     const back = opened.get("next");
@@ -602,8 +624,10 @@ export function Flash({
     // A note left for this tab before it reloaded as another account ("Logged out of …"), said
     // once that account has loaded, in its language.
     leftRef.current = takeLeftNote();
-    // Loading the account must wait for the browser, so this runs once after mount.
+    // Loading the account must wait for the browser, so this runs once after mount. With no account
+    // signed in here, whoever signs in alone next has Flash's own colour.
     if (signedIn) start();
+    else forgetTones();
     if (!initialStatus) {
       fetch("/api/status")
         .then((r) => r.json())
@@ -1104,7 +1128,9 @@ export function Flash({
     if (switching && !anyway) return false;
     setSwitching(id);
     if (!gone && !anyway && !(await flushSaves())) {
-      setUnsaved({ go: () => void switchAccount(id, { anyway: true }) });
+      // Unless this tab's account was logged out meanwhile: then the chooser asks, and nothing else.
+      if (chooserRef.current) setSwitching(null);
+      else setUnsaved({ go: () => void switchAccount(id, { anyway: true }) });
       return false;
     }
     setUnsaved(null);
@@ -1223,7 +1249,7 @@ export function Flash({
       if (!list.accounts.length) return void signedOutHere();
       setMe((m) => (m ? { ...m, accounts: list.accounts } : m));
       if (chooser || !list.accounts.some((a) => a.id === getPin())) {
-        setChooser({ reason: "notHere", accounts: list.accounts.filter((a) => a.id !== id) });
+        showChooser({ reason: "notHere", accounts: list.accounts.filter((a) => a.id !== id) });
       } else setNotice(t("That account isn't signed in on this browser anymore."));
     } catch {
       setNotice(t("That account isn't signed in on this browser anymore."));
@@ -1281,8 +1307,9 @@ export function Flash({
     return true;
   }
 
-  /** What this tab keeps of an account that's no longer signed in here: nothing. */
+  /** What this tab keeps of an account that's no longer signed in here: nothing. No account is, so no badge colour is kept either. */
   function signedOutHere() {
+    forgetTones();
     // Nothing of this account keeps running, or runs later for whoever signs in next.
     abortRef.current?.abort();
     jobRef.current = null;
@@ -1307,8 +1334,17 @@ export function Flash({
     const check = (now = false) => {
       if (!now && Date.now() - last < 15_000) return;
       last = Date.now();
-      // Signed out, nothing to check; the chooser shown before this tab's account loaded checks too,
-      // and so does signing in from it.
+      // Signed out, on the landing page: once an account is signed in on this browser again (in
+      // another tab), this tab opens it, as a reload would. It has nothing of an account before.
+      if (landingRef.current) {
+        void api<{ accounts: AccountSummary[] }>("/api/auth/accounts").then(
+          (list) => void (list.accounts.length && landingRef.current && start()),
+          () => {},
+        );
+        return;
+      }
+      // Nothing loaded yet, nothing to check; the chooser shown before this tab's account loaded
+      // checks too, and so does signing in from it.
       if (!meRef.current && !chooserRef.current && !addingRef.current?.back) return;
       void checkAccounts().then((found) => {
         if (found === "none") signedOutHere();
@@ -2144,6 +2180,8 @@ export function Flash({
         initialError={authError}
         next={addNext}
         onDone={(result) => {
+          // Flash's other tabs signed out here open this account too.
+          announce({ type: "changed" });
           // Signed in from the Connect to Flash page's "Sign in to another account": back there.
           if (addNext && result?.account) return goOnAs(result.account, addNext);
           if (result?.account) setPin(result.account);
@@ -3082,8 +3120,9 @@ export function Flash({
         )}
         {/* What's said takes up to half the room it shares with the chat (or the preview), so a screen
             with little height (a phone held sideways) keeps the chat in view; beyond that it scrolls
-            on its own, its edge faded. */}
-        <div className="grid min-h-0 flex-1 grid-rows-[fit-content(50%)_minmax(0,1fr)]">
+            on its own, its edge faded. Its one column is the width it is given, never wider: a long
+            line of code, a link or a table in the chat scrolls inside it, as in the flex column it replaced. */}
+        <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[fit-content(50%)_minmax(0,1fr)]">
         {said && (
           <div className={`mx-auto w-full overflow-y-auto overscroll-contain [mask-image:linear-gradient(to_bottom,#000_calc(100%-0.5rem),transparent)] ${tab === "preview" ? "max-w-3xl space-y-2 px-3 pb-2" : `space-y-3 px-4 pb-2 pt-2 ${isHome ? "max-w-[1600px] sm:px-6 lg:px-8" : "max-w-3xl"}`}`}>{said}</div>
         )}

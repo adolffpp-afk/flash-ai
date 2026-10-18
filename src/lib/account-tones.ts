@@ -57,7 +57,12 @@ function read(): Tones {
   return memory;
 }
 
-function forget(): void {
+/**
+ * Lets every colour go: this browser has no account signed in anymore (Log out of all accounts,
+ * the last one logging out, or every session ended), so whoever signs in alone next, one of those
+ * accounts too, has Flash's own colour, as on a fresh browser.
+ */
+export function forgetTones(): void {
   memory = [];
   try {
     localStorage.removeItem(KEY);
@@ -75,7 +80,7 @@ function forget(): void {
 export function accountTones(ids: string[], count: number): Map<string, number> {
   const before = read();
   if (ids.length < 2 && !before.some(([id]) => ids.includes(id))) {
-    if (before.length) forget();
+    if (before.length) forgetTones();
     return new Map(ids.map((id) => [id, 0]));
   }
   const next = keepTones(before, ids, count);
