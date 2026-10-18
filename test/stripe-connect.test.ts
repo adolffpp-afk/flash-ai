@@ -12,7 +12,9 @@ delete process.env.FLASH_APP_URL;
 const SECRET = "whsec_connect_test";
 process.env.STRIPE_CONNECT_WEBHOOK_SECRET = SECRET;
 console.error = () => {};
-console.warn = () => {};
+/** What the server log was told (see inKeyMode in shop.ts). */
+const warnings: string[] = [];
+console.warn = (...args: unknown[]) => void warnings.push(args.map(String).join(" "));
 const { run, one } = await import("../src/lib/server/db.ts");
 const shop = await import("../src/lib/server/shop.ts");
 const { funnelStats } = await import("../src/lib/server/funnel.ts");
@@ -359,12 +361,17 @@ test("a test-mode event never becomes a paid order in live mode, nor a live one 
   const testSession = paid("cs_test_mode", "pi_test_mode", "cake-1", { livemode: false });
   accounts.acct_A.push(testSession);
   const before = calls.length;
+  assert.deepEqual(warnings, [], "nothing so far was refused for its mode");
   for (const livemode of [false, undefined, "true", 1]) {
     assert.deepEqual(await send(event("checkout.session.completed", sent(testSession), { livemode })), { status: 200, outcome: "ignored" }, String(livemode));
     assert.equal((await send(event("charge.refunded", { id: "ch_t", amount: 2500, amount_refunded: 2500, payment_intent: "pi_keep" }, { livemode }))).outcome, "ignored");
   }
   assert.equal(calls.length, before, "Stripe isn't asked about them");
   assert.equal((await order("cs_keep"))?.refunded_amount, 0, "a test-mode refund doesn't touch a live order");
+  // The server log says so once, for all eight, with the mode that came and the key's.
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0], /^\[flash\] Ignored a Stripe event: it came in test mode, and STRIPE_SECRET_KEY reads as a live key\. /);
+  assert.match(warnings[0], /Stripe sends a live webhook its sellers' test-mode events too, so one now and then is expected\./);
   // A live event whose session Stripe says is a test one: recordOrder checks the session itself.
   assert.equal((await send(event("checkout.session.completed", { ...sent(testSession), livemode: true }))).outcome, "unchanged");
   // The return page and the owner's sync check the session's mode too.
@@ -372,6 +379,9 @@ test("a test-mode event never becomes a paid order in live mode, nor a live one 
   await shop.syncOrders("u1", "cake-1");
   assert.equal(await order("cs_test_mode"), null);
   assert.equal(emails.length, 0);
+  // An order refused for its mode is said once too, apart from the events.
+  assert.equal(warnings.length, 2);
+  assert.match(warnings[1], /^\[flash\] Didn't save a paid Stripe checkout as an order: it came in test mode, and STRIPE_SECRET_KEY reads as a live key\. /);
   // Under a test key, it's the other way round.
   process.env.STRIPE_SECRET_KEY = "rk_test_flash";
   try {
@@ -388,6 +398,8 @@ test("a test-mode event never becomes a paid order in live mode, nor a live one 
     process.env.STRIPE_SECRET_KEY = "sk_live_flash";
     await run("DELETE FROM site_orders WHERE session_id IN ('cs_test_mode', 'cs_test_too')");
   }
+  assert.equal(warnings.length, 2, "once per server process for each");
+  for (const said of warnings) assert.doesNotMatch(said, /[rs]k_|_flash/, "nothing of the key");
 });
 
 test("refunds, in part and in full, and disputes are kept with the order, and the owner sees a plain label", async () => {
