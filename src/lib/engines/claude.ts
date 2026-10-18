@@ -27,6 +27,7 @@ import { tokensAtMost } from "../tokens.ts";
 import type { Where } from "../context-note.ts";
 import { CONNECT_LINE, connectorCalls, type ConnectState, type ConnectorKit, type ConnectorTool } from "./connect.ts";
 import { claudeTool, failText, FRED_NOTE, limitText, toolFlags, ToolLedger, type ClientTool, type ToolResult } from "../research.ts";
+import { PASSAGE_CONTEXT } from "../assistant-prompt.ts";
 
 /*
  * Flash uses three Claude models, to keep quality high where it shows and costs low elsewhere:
@@ -302,6 +303,17 @@ export async function countTextTokens(model: string, text: string): Promise<numb
 }
 
 /**
+ * The tokens passages from an assistant's files come to on a model, as the documents they're sent
+ * as (see toContent), with a one-character message after them. Throws when counting fails; the
+ * search then cuts them by bytes (see passagesFor in server/assistant-search.ts).
+ */
+export async function countPassageTokens(model: string, passages: { title: string; text: string }[]): Promise<number> {
+  const content: Anthropic.Beta.BetaContentBlockParam[] = [...passages.map(passageBlock), { type: "text", text: "?" }];
+  const res = await getClient().beta.messages.countTokens({ model, messages: [{ role: "user", content }] }, { timeout: COUNT_TIMEOUT_MS, maxRetries: 1 });
+  return res.input_tokens;
+}
+
+/**
  * Meters a Claude call at what it really cost, every attempt included (a refusal fallback bills the
  * declined attempt too), and returns that cost in cents. requested is the model asked for. Searches
  * are counted from the results in the reply too, since the usage leaves out a declined attempt's.
@@ -465,12 +477,19 @@ function fileBlock(a: Attachment): Anthropic.Beta.BetaContentBlockParam {
   return { type: "document", title: a.name, source: { type: "text", media_type: "text/plain", data: text } };
 }
 
+/** A passage from an assistant's files, as Claude reads it: a document, said to be reference material. */
+function passageBlock(p: { title: string; text: string }): Anthropic.Beta.BetaContentBlockParam {
+  return { type: "document", title: p.title, context: PASSAGE_CONTEXT, source: { type: "text", media_type: "text/plain", data: p.text } };
+}
+
 function toContent(turn: ChatTurn): string | Anthropic.Beta.BetaContentBlockParam[] {
-  if (!turn.attachment) return turn.content;
+  const passages = (turn.passages ?? []).map(passageBlock);
+  if (!turn.attachment) return passages.length ? [...passages, ...(turn.content ? [{ type: "text" as const, text: turn.content }] : [])] : turn.content;
   const files = [turn.attachment, ...(turn.more ?? [])];
   // Pictures have no title, so several are named in the text to tell them apart.
   const named = files.length > 1 ? `Attached files, in order: ${files.map((f) => f.name).join(", ")}.\n\n` : "";
-  return [...files.map(fileBlock), { type: "text", text: named + (turn.content || (files.length > 1 ? "Please look at these files." : "Please look at this file.")) }];
+  // The person's files first, then the assistant's passages, then what they wrote.
+  return [...files.map(fileBlock), ...passages, { type: "text", text: named + (turn.content || (files.length > 1 ? "Please look at these files." : "Please look at this file.")) }];
 }
 
 function assistantContent(t: ChatTurn): string {
@@ -492,7 +511,7 @@ function withTools(t: ChatTurn, content: string | Anthropic.Beta.BetaContentBloc
 
 export function toMessages(history: ChatTurn[]): Anthropic.Beta.BetaMessageParam[] {
   return history
-    .filter((t) => t.content.trim() || t.attachment || t.app || t.toolCalls?.length || t.toolResults?.length)
+    .filter((t) => t.content.trim() || t.attachment || t.app || t.toolCalls?.length || t.toolResults?.length || t.passages?.length)
     .map((t) => ({ role: t.role, content: withTools(t, t.role === "user" ? toContent(t) : assistantContent(t)) }));
 }
 
@@ -532,7 +551,9 @@ const MODE_PROMPTS: Record<WritingMode, string> = {
  * (the other Claude modes) or is a free model; weather: get_weather is attached; quick: Research's
  * quick plan; tools: otherToolsLine(engineStatus()), built in route.ts since this file can't import
  * server code; context: contextNote(where, now). search: a free model has web_search; filings and
- * economy: the SEC EDGAR and FRED tools are attached (see research.ts).
+ * economy: the SEC EDGAR and FRED tools are attached (see research.ts). assistant: the chat's
+ * assistant's section (assistantSection in assistant-prompt.ts), for the engines that answer as it.
+ * noFetch: Research without its page reader (in someone else's assistant, see streamSearch).
  */
 export type SystemOptions = {
   web?: "search" | "none" | "free";
@@ -544,7 +565,14 @@ export type SystemOptions = {
   search?: boolean;
   filings?: boolean;
   economy?: boolean;
+  assistant?: string;
+  noFetch?: boolean;
 };
+
+/** Research without its page reader: what it's told instead of reading the pages it finds. */
+export const NO_FETCH_LINE =
+  "In this chat you can search the web but can't open web pages: answer from what the searches return, and if the user links a page, " +
+  "say you can't open it here.";
 
 /**
  * A chat engine's system prompt. The text that never changes comes first and the per-minute context
@@ -565,6 +593,9 @@ export function system(preferences: string, mode: WritingMode | "search" = "text
     o.economy ? FRED_LINE : "",
     o.connect ? CONNECT_LINE : "",
     mode === "search" ? RESEARCH_PROMPT + (o.quick ? ` ${QUICK_RESEARCH}` : "") : MODE_PROMPTS[mode],
+    mode === "search" && o.noFetch ? NO_FETCH_LINE : "",
+    // The chat's assistant comes after the mode and before the user's own settings.
+    o.assistant ?? "",
   ];
   // Settings > General (the language to answer in, what to call them) comes first, then their memory.
   if (prefs) parts.push(`About the user, from their settings and what they asked Flash to remember. Follow their language setting in every answer:\n${prefs}`);
@@ -938,8 +969,12 @@ function lengthNote(budget: Budget, t: Translate): StreamEvent {
   return { type: "text", delta: `\n\n_${note}_` };
 }
 
-/** Research's options: quick asks for one search and one page (see researchPlan), where is the user's rough place. */
-export type ResearchOptions = ReplyOptions & { quick?: boolean; where?: Where };
+/**
+ * Research's options: quick asks for one search and one page (see researchPlan), where is the user's
+ * rough place, and noFetch leaves out the page reader (someone else's assistant: a page it opened could
+ * be one its instructions or files point to), keeping web search.
+ */
+export type ResearchOptions = ReplyOptions & { quick?: boolean; where?: Where; noFetch?: boolean };
 
 /** Where the user is, for web search, from the checked values only (see where.ts), or undefined when nothing is known. */
 export function searchLocation(where?: Where): Anthropic.Beta.BetaUserLocation | undefined {
@@ -981,7 +1016,8 @@ export async function* streamSearch(
   const own = Boolean(tool) || data.length > 0;
   const quick = Boolean(o.quick);
   const plan = researchPlan(quick, own);
-  const instructions = system(preferences, "search", { ...o.system, quick, weather: Boolean(tool), ...toolFlags(data) });
+  const noFetch = Boolean(o.noFetch);
+  const instructions = system(preferences, "search", { ...o.system, quick, noFetch, weather: Boolean(tool), ...toolFlags(data) });
   const messages = toMessages(history);
   const cited = new Map<string, Source>();
   const read = new Map<string, Source>();
@@ -989,7 +1025,7 @@ export async function* streamSearch(
   let location = searchLocation(o.where);
   const tools = () => [
     { type: "web_search_20260209" as const, name: "web_search" as const, max_uses: quick ? 1 : 3, ...(location && { user_location: location }) },
-    webFetch(choice.model, quick ? 1 : 2),
+    ...(noFetch ? [] : [webFetch(choice.model, quick ? 1 : 2)]),
     ...(tool ? [WEATHER_TOOL] : []),
     ...data.map(claudeTool),
   ];

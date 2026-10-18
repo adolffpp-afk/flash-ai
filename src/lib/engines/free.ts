@@ -6,6 +6,8 @@ import { FriendlyError } from "./errors.ts";
 import { MAX_FORECASTS, TOO_MANY, WEATHER_FUNCTION, type WeatherAnswer, type WeatherTool } from "../weather.ts";
 import { freeFacts, freeOrder } from "../free-order.ts";
 import { failText, FRED_NOTE, functionTool, limitText, toolFlags, ToolLedger, type CallCounts, type ClientTool, type ToolResult } from "../research.ts";
+import { PASSAGE_HEADING } from "../assistant-prompt.ts";
+import { FREE_PASSAGE_CHARS } from "../assistants.ts";
 
 /*
  * The free lane: models on providers' free tiers (mostly open-source), used when a user has run out of
@@ -205,14 +207,20 @@ type FreeFunction = { name: string; description: string; parameters: object };
 function requestBody(
   p: ChatProvider,
   messages: Message[],
-  { stream = true, tools, functions = [WEATHER_FUNCTION], after = [] }: { stream?: boolean; tools?: ToolChoice; functions?: FreeFunction[]; after?: object[] } = {},
+  {
+    stream = true,
+    tools,
+    functions = [WEATHER_FUNCTION],
+    after = [],
+    maxTokens = FREE_MAX_TOKENS,
+  }: { stream?: boolean; tools?: ToolChoice; functions?: FreeFunction[]; after?: object[]; maxTokens?: number } = {},
 ): string {
   if (p.format === "gemini") {
     const [first, ...rest] = messages;
     return JSON.stringify({
       systemInstruction: { parts: [{ text: first.content }] },
       contents: [...rest.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] })), ...after],
-      generationConfig: { maxOutputTokens: FREE_MAX_TOKENS },
+      generationConfig: { maxOutputTokens: maxTokens },
       ...(tools && { tools: [{ functionDeclarations: functions }], toolConfig: { functionCallingConfig: { mode: tools === "auto" ? "AUTO" : "NONE" } } }),
     });
   }
@@ -220,7 +228,7 @@ function requestBody(
     model: p.model(),
     messages: [...messages, ...after],
     stream,
-    max_tokens: FREE_MAX_TOKENS,
+    max_tokens: maxTokens,
     ...(stream && p.streamOptions !== false && { stream_options: { include_usage: true } }),
     ...(tools && { tools: functions.map((f) => ({ type: "function", function: f })), tool_choice: tools }),
   });
@@ -270,19 +278,51 @@ function readChunk(p: ChatProvider, data: string): Chunk | null {
   }
 }
 
-/** The conversation as the free models read it: the last 10 turns, with text files in them. */
+// The most a turn holds for the free models, in characters, and the most its text files take of it.
+const TURN_CHARS = 24000;
+const FILE_CHARS = 20000;
+const APP_NOTE = "\n\n(An app was built here.)";
+
+/** A turn's text files as the free models read them: several share the same room as one. */
+function fileTexts(t: ChatTurn): string {
+  if (!t.attachment) return "";
+  const files = [t.attachment, ...(t.more ?? [])];
+  const room = Math.floor(FILE_CHARS / files.length);
+  return files.map((f) => `File "${f.name}":\n${Buffer.from(f.data, "base64").toString("utf8").slice(0, room)}`).join("\n\n");
+}
+
+/** What a turn asks, as the free models read it: its words, or a request to look at its files. */
+const askOf = (t: ChatTurn) => (t.attachment ? t.content || (t.more?.length ? "Please look at these files." : "Please look at this file.") : t.content);
+
+/**
+ * The room in a turn for passages from an assistant's files, in characters, with the line between
+ * each passage's title and text and the blank lines between passages, but not the heading: what the
+ * turn's files and words leave of TURN_CHARS, and FREE_PASSAGE_CHARS at most. The person's words
+ * are never cut for them.
+ */
+export function freePassageRoom(t: ChatTurn): number {
+  const used = (t.attachment ? fileTexts(t).length + 2 : 0) + askOf(t).length + (t.app ? APP_NOTE.length : 0);
+  return Math.max(0, Math.min(FREE_PASSAGE_CHARS, TURN_CHARS - used - PASSAGE_HEADING.length - 4));
+}
+
+/** Passages as a free model reads them, under their heading, cut to the turn's room. */
+function passagesText(t: ChatTurn): string {
+  const body = (t.passages ?? []).map((p) => `${p.title}:\n${p.text}`).join("\n\n").slice(0, freePassageRoom(t)).replace(/[\uD800-\uDBFF]$/, "");
+  return body.trim() ? `${PASSAGE_HEADING}\n\n${body}` : "";
+}
+
+/**
+ * The conversation as the free models read it: the last 10 turns, with text files in them, and on
+ * the newest, the passages from the chat's assistant's files, after the files and before the words.
+ */
 function toTurns(history: ChatTurn[]): Message[] {
   const turns = history.slice(-10).map((t): Message => {
+    const read = t.passages?.length ? passagesText(t) : "";
     let content = t.content;
-    if (t.attachment) {
-      const files = [t.attachment, ...(t.more ?? [])];
-      // The free models read less, so several files share the same room as one.
-      const room = Math.floor(20000 / files.length);
-      const texts = files.map((f) => `File "${f.name}":\n${Buffer.from(f.data, "base64").toString("utf8").slice(0, room)}`);
-      content = `${texts.join("\n\n")}\n\n${content || (files.length > 1 ? "Please look at these files." : "Please look at this file.")}`;
-    }
-    if (t.app) content += "\n\n(An app was built here.)";
-    return { role: t.role, content: content.slice(0, 24000) };
+    if (t.attachment) content = `${fileTexts(t)}\n\n${read ? `${read}\n\n` : ""}${askOf(t)}`;
+    else if (read) content = `${read}\n\n${content}`;
+    if (t.app) content += APP_NOTE;
+    return { role: t.role, content: content.slice(0, TURN_CHARS) };
   });
   return turns.filter((t) => t.content.trim());
 }
@@ -301,7 +341,8 @@ export type RecordUse = (provider: FreeProvider, tokens: number, neurons: number
  * are set to ("" for the one they write in), which helps pick the provider (see free-order.ts).
  * tools: web search and the SEC EDGAR and FRED tools (see research.ts), offered to the same
  * providers, and onTool is called once for each whose data the reply used. signal: the request's, so
- * a reply stopped stops its look-ups too.
+ * a reply stopped stops its look-ups too. system.assistant: the chat's assistant's section (its
+ * free form, see assistantSection). maxTokens: the most a reply writes, FREE_MAX_TOKENS unless less.
  */
 export type FreeChatOptions = {
   systemPrompt?: string;
@@ -313,6 +354,7 @@ export type FreeChatOptions = {
   tools?: ClientTool[];
   onTool?: (name: string) => void;
   signal?: AbortSignal;
+  maxTokens?: number;
 };
 
 /** One reply at once (a call that may ask for the forecast): its words, the calls it asked for, and its tokens. */
@@ -425,6 +467,7 @@ export async function* streamFreeChat(
 ): AsyncGenerator<StreamEvent> {
   const country = o.country ?? "";
   const turns = toTurns(history);
+  const maxTokens = Math.min(FREE_MAX_TOKENS, o.maxTokens ?? FREE_MAX_TOKENS);
   const tool = o.weather;
   const data = o.tools ?? [];
   const facts = freeFacts({
@@ -477,7 +520,7 @@ export async function* streamFreeChat(
     }
     /** Asks for one reply at once, with the tools: what it asked for, or null when it couldn't be read. */
     const ask = async (): Promise<Asked | null> => {
-      const res = await send(p, key, requestBody(p, messages, { stream: false, tools: "auto", functions, after }), false);
+      const res = await send(p, key, requestBody(p, messages, { stream: false, tools: "auto", functions, after, maxTokens }), false);
       const asked = typeof res === "string" ? null : await res.json().then((json) => readAsked(p, json), () => null);
       if (!asked) {
         lastError = typeof res === "string" ? res : `${p.id} sent a reply Flash couldn't read`;
@@ -550,7 +593,7 @@ export async function* streamFreeChat(
         }
       }
     }
-    const res = await send(p, key, requestBody(p, messages, offer ? { tools: "none", functions, after } : {}), true);
+    const res = await send(p, key, requestBody(p, messages, offer ? { tools: "none", functions, after, maxTokens } : { maxTokens }), true);
     if (typeof res === "string") {
       lastError = res;
       // The first call is paid for in the provider's daily count all the same.
