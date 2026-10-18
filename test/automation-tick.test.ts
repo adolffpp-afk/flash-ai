@@ -54,6 +54,7 @@ const runsOf = (aid: string) => all<{ id: string; status: string; outcome: strin
   [aid],
 );
 const changes = async () => Number((await one<{ n: number }>("SELECT total_changes() AS n"))!.n);
+const count = async (table: string, where: string, args: string[]) => Number((await one<{ n: number }>(`SELECT COUNT(*) AS n FROM ${table} WHERE ${where}`, args))!.n);
 const bearer = (secret = SECRET) => ({ authorization: `Bearer ${secret}` });
 const NOW = "CAST(unixepoch('subsec') * 1000 AS INTEGER)";
 
@@ -171,7 +172,11 @@ test("pauses that end by themselves: a month limit at the reset, and a wait for 
   await tick();
   const a = await one<{ status: string; next_at: number }>("SELECT status, next_at FROM automations WHERE id = ?", [aid]);
   assert.equal(a!.status, "on");
-  assert.ok(Number(a!.next_at) > Date.now(), "the next slot after now");
+  const daily = DAILY.trigger.type === "schedule" ? DAILY.trigger.when : (null as never);
+  // A slot still in its grace window runs at once (between 08:00 and 11:00 UTC); the next one after now is next.
+  const inGrace = nextFire(daily, "UTC", Date.now() - 3 * 3_600_000);
+  assert.deepEqual((await runsOf(aid)).map((r) => r.run_key).filter((k) => k.startsWith("sched:")), inGrace <= Date.now() ? [`sched:${inGrace}`] : []);
+  assert.equal(Number(a!.next_at), nextFire(daily, "UTC", Date.now()), "the next slot after now");
   assert.equal(Number((await one<{ parked: number }>("SELECT parked FROM automation_runs WHERE id = ?", [parked]))!.parked), 0);
 
   // A free account waiting for 10 credits, whose month's free credits aren't given yet (as on the 1st).
@@ -187,6 +192,45 @@ test("pauses that end by themselves: a month limit at the reset, and a wait for 
   await tick();
   w = await one<{ status: string; resume_at: number }>("SELECT status, resume_at FROM automations WHERE id = ?", [waiting]);
   assert.equal(w!.status, "on");
+});
+
+for (const kind of ["daily", "weekly"] as const) {
+  test(`a ${kind} wait for credits still short at one look runs the slot of the day it comes back on, in its grace window`, async () => {
+    const u = await F.account(`tick8${kind}`, 0);
+    // Its slot is 30 s ago (its time of day in UTC, and for weekly its weekday).
+    const slot = Math.floor((Date.now() - 30_000) / 60_000) * 60_000;
+    const d = new Date(slot);
+    const at = `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
+    const when = kind === "daily" ? { kind: "daily" as const, at } : { kind: "weekly" as const, days: [((d.getUTCDay() + 6) % 7) + 1], at };
+    const spec: Spec = { ...F.WRITE_SPEC, trigger: { type: "schedule", when } };
+    const period = (kind === "daily" ? 1 : 7) * 86_400_000;
+    // As a refused run one period ago leaves it: paused for credits, looked at again at this slot.
+    const aid = await F.automation({ userId: u.id, spec, status: "paused", pausedReason: "credits", resumeAt: slot, nextAt: slot });
+    await sql("UPDATE automations SET need_credits = 50 WHERE id = ?", [aid]);
+    await tick();
+    assert.equal((await one<{ status: string }>("SELECT status FROM automations WHERE id = ?", [aid]))!.status, "paused", "still short");
+    // One period on (every time it keeps moved back by one, as if the clock moved on), with credits bought.
+    await sql("UPDATE automations SET next_at = next_at - ?, resume_at = resume_at - ? WHERE id = ?", [period, period, aid]);
+    await sql("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES (?, 500, 'purchase', 0)", [u.id]);
+    await tick();
+    assert.equal((await one<{ status: string }>("SELECT status FROM automations WHERE id = ?", [aid]))!.status, "on");
+    assert.deepEqual((await runsOf(aid)).map((r) => [r.run_key, r.status]), [[`sched:${slot}`, "running"]], "the slot itself runs");
+  });
+}
+
+test("an older deployment's tick (a rollback) leaves alone a schedule saved for a newer runner: never on with no next slot", async () => {
+  const u = await F.account("tick8r", 100);
+  const due = await F.automation({ userId: u.id, spec: DAILY, nextAt: Date.now() - 1000, runner: 99 });
+  const resumes = await F.automation({ userId: u.id, spec: DAILY, status: "paused", pausedReason: "month_cap", resumeAt: Date.now() - 1000, nextAt: 1, runner: 99 });
+  // A spec this runner can't read (a step kind of a later PR).
+  const newer = { ...DAILY, steps: [...DAILY.steps, { id: "e1", do: "email", subject: "Today" }] };
+  await sql("UPDATE automation_versions SET spec = ? WHERE automation_id IN (?, ?)", [JSON.stringify(newer), due, resumes]);
+  await tick();
+  const a = await one<{ status: string; next_at: number }>("SELECT status, next_at FROM automations WHERE id = ?", [due]);
+  assert.deepEqual([a!.status, Number(a!.next_at) > 0], ["on", true], "its slot is kept for the newer runner");
+  assert.deepEqual(await runsOf(due), []);
+  const b = await one<{ status: string; next_at: number; resume_at: number }>("SELECT status, next_at, resume_at FROM automations WHERE id = ?", [resumes]);
+  assert.deepEqual([b!.status, Number(b!.next_at), Number(b!.resume_at) > 0], ["paused", 1, true], "its pause is left for the newer runner to end");
 });
 
 test("the daily job runs once a day, and deletes what was being deleted by hand (foreign keys are off), keeping the money record", async () => {
@@ -327,7 +371,7 @@ async function plansOf(work: () => Promise<unknown>) {
  * Indexes that hold only open rows (unfinished runs, live leases, open holds, running steps), or the
  * steps whose detail is still kept (30 days at most, read by the daily job): reading all of one reads no history.
  */
-const OPEN_ONLY = new Set(["automation_runs_due", "automation_runs_open", "automation_runs_lease", "credit_holds_open", "credit_holds_run", "automation_run_steps_one", "automation_run_steps_detail"]);
+const OPEN_ONLY = new Set(["automation_runs_due", "automation_runs_open", "automation_runs_lease", "credit_holds_open", "automation_run_steps_one", "automation_run_steps_detail"]);
 /**
  * A plan line that reads a whole table of runs, steps, holds or charges (their aliases in these files
  * included), straight or through an index of every row (the account index: every run it ever had).
@@ -426,6 +470,40 @@ test("a slot's checks and the daily job read through indexes, never an automatio
   assert.equal(writes, undefined, "the month's writes are read from the daily job's count");
 });
 
+test("the burn-in card, a receipt, /admin's lines and an 'only if changed' step's previous result never read every hold or run", async () => {
+  const u = await F.account("tick24", 100);
+  const aid = await F.automation({ userId: u.id, spec: HOURLY });
+  await history({ prefix: "h24_", count: 2000, automationId: () => aid, userId: () => u.id, at: (i) => Date.now() - (i + 2) * 3_600_000, detail: true });
+  // Each run with the one settled hold its AI step leaves (holds are never deleted), and another account's too.
+  const holds: InStatement[] = [];
+  for (let i = 0; i < 2000; i++) {
+    holds.push({ sql: "INSERT INTO credit_holds (ref, user_id, run_id, held, lease_until, settled_at, credits, created_at) VALUES (?, ?, ?, 5, 0, 1, 1, ?)", args: [`auto:h24_${i}:a1:1`, u.id, `h24_${i}`, i] });
+    holds.push({ sql: "INSERT INTO credit_holds (ref, user_id, run_id, held, lease_until, settled_at, credits, created_at) VALUES (?, 'other', ?, 5, 0, 1, 1, ?)", args: [`auto:o24_${i}:a1:1`, `o24_${i}`, i] });
+  }
+  await (await db()).batch(holds, "write");
+  const API = await import("../src/lib/server/automation-api.ts");
+  const { automationStats } = await import("../src/lib/server/automation-admin.ts");
+  const { previousResult } = await import("../src/lib/server/automation-steps.ts");
+  const g = { user: (await S.userById(u.id))!, t: await (await import("../src/lib/server/i18n.ts")).translatorIn("en"), deadline: Date.now() + 60_000 };
+  const plans = await plansOf(async () => {
+    const card = await API.burnIn(g);
+    assert.equal(card.runs.length, 20);
+    assert.deepEqual([card.runs[0].id, card.runs[0].held, card.runs[0].holds, card.runs[0].openHolds], ["h24_0", 5, 1, 0]);
+    assert.equal((await API.receipt(g, "h24_7"))!.holds.length, 1);
+    await automationStats(30);
+    assert.equal(await previousResult(aid, "new", "a1"), "x".repeat(200));
+  });
+  assert.ok(plans.length > 10);
+  for (const p of plans) assert.ok(!p.plan.some(wholeTable), `${p.sql}\n${p.plan.join(" | ")}`);
+  // The card works out each run's holds for the 20 it shows only, and a previous result is the newest run's, read in order.
+  const card = plans.find((p) => p.sql.includes("FROM (SELECT * FROM automation_runs WHERE user_id = ?"))!;
+  assert.ok(card.plan.some((l) => l.includes("credit_holds_by_run")), card.plan.join(" | "));
+  const previous = plans.find((p) => p.sql.includes("SELECT s.output FROM automation_runs r"))!;
+  assert.ok(previous.plan.some((l) => l.includes("automation_runs_list")) && !previous.plan.includes("USE TEMP B-TREE FOR ORDER BY"), previous.plan.join(" | "));
+  await sql("DELETE FROM automation_runs");
+  await sql("DELETE FROM automation_run_steps");
+});
+
 test("old receipt detail is compacted past the first 5,000 runs in one daily job, and runs past 13 months all go", async () => {
   await sql("DELETE FROM automation_run_steps");
   await sql("DELETE FROM automation_runs");
@@ -508,6 +586,90 @@ test("a one-off whose run was missed past its grace window is finished, not left
   assert.equal((await tick()).report.missed, 1);
   assert.deepEqual((await runsOf(aid)).map((r) => [r.status, r.outcome]), [["skipped", "missed"]]);
   assert.equal((await one<{ status: string }>("SELECT status FROM automations WHERE id = ?", [aid]))!.status, "finished");
+});
+
+test("a one-off whose slot is skipped as it is taken (missed, a day late) is finished, not left on with no next run", async () => {
+  const u = await F.account("tick32b", 100);
+  const day = new Date(Date.now() - 2 * 86_400_000).toISOString();
+  const once: Spec = { ...F.WRITE_SPEC, trigger: { type: "schedule", when: { kind: "once", date: day.slice(0, 10), at: day.slice(11, 16) } } };
+  const aid = await F.automation({ userId: u.id, spec: once, nextAt: Date.parse(day.slice(0, 16) + ":00Z") });
+  await tick();
+  assert.deepEqual((await runsOf(aid)).map((r) => [r.status, r.outcome]), [["skipped", "missed"]]);
+  assert.equal((await one<{ status: string }>("SELECT status FROM automations WHERE id = ?", [aid]))!.status, "finished");
+});
+
+test("the daily job's version prune keeps a version a run still follows, and that run can still be claimed", async () => {
+  const u = await F.account("tick32c", 100);
+  const aid = await F.automation({ userId: u.id });
+  // Edited twice while a run of version 1 waited (released, or parked).
+  const v1 = (await one<{ spec: string; runner: number }>("SELECT spec, runner FROM automation_versions WHERE automation_id = ?", [aid]))!;
+  for (const v of [2, 3]) await sql("INSERT INTO automation_versions (automation_id, version, user_id, spec, runner, created_at) VALUES (?, ?, ?, ?, ?, 0)", [aid, v, u.id, v1.spec, v1.runner]);
+  await sql("UPDATE automations SET version = 3 WHERE id = ?", [aid]);
+  const rid = await F.runRow({ automationId: aid, userId: u.id });
+  await sql("DELETE FROM settings");
+  assert.equal(await T.dailyJob(utcDay(Date.now())), true);
+  const kept = await all<{ version: number }>("SELECT version FROM automation_versions WHERE automation_id = ? ORDER BY version", [aid]);
+  assert.deepEqual(kept.map((v) => Number(v.version)), [1, 3], "only the version nothing follows goes");
+  assert.deepEqual((await tick()).sent.map((c) => c.id), [rid]);
+});
+
+test("past 90% of the month's writes, hourly slots are skipped for free, with one notice a month; a daily slot still runs", async () => {
+  const before = process.env.AUTOMATION_MONTHLY_WRITES;
+  process.env.AUTOMATION_MONTHLY_WRITES = "100";
+  try {
+    const u = await F.account("tick32d", 100);
+    const hourly = await F.automation({ userId: u.id, spec: HOURLY, nextAt: Date.now() - 1000 });
+    const daily = await F.automation({ userId: u.id, spec: DAILY, nextAt: Date.now() - 1000 });
+    // 3 runs this month: about 90 writes of 100.
+    for (let i = 0; i < 3; i++) await F.runRow({ automationId: hourly, userId: u.id, status: "done" });
+    await sql("DELETE FROM settings");
+    assert.equal(await T.dailyJob(utcDay(Date.now())), true);
+    await tick();
+    await sql("UPDATE automations SET next_at = ? WHERE id = ?", [Date.now() - 500, hourly]);
+    await tick();
+    const skipped = (await runsOf(hourly)).filter((r) => r.run_key.startsWith("sched:"));
+    assert.deepEqual(skipped.map((r) => [r.status, r.outcome, Number(r.credits)]), [["skipped", "capacity", 0], ["skipped", "capacity", 0]]);
+    assert.equal(await count("notifications", "user_id = ? AND ref LIKE 'capacity:%'", [u.id]), 1);
+    assert.deepEqual((await runsOf(daily)).map((r) => r.outcome), [""], "only hourly slots are skipped");
+  } finally {
+    if (before === undefined) delete process.env.AUTOMATION_MONTHLY_WRITES;
+    else process.env.AUTOMATION_MONTHLY_WRITES = before;
+  }
+});
+
+test("a scheduled run past its grace window with a hold still open isn't missed (the reaper settles the hold first)", async () => {
+  const u = await F.account("tick32e", 100);
+  const aid = await F.automation({ userId: u.id, spec: DAILY });
+  const rid = await F.runRow({ automationId: aid, userId: u.id, origin: "schedule", graceUntil: Date.now() - 60_000 });
+  await sql(
+    `INSERT INTO credit_holds (ref, user_id, run_id, held, model, input_cents, left_cents, lease_until, created_at) VALUES (?, ?, ?, 20, 'm', 0, 0, ${NOW} + 120000, ${NOW})`,
+    [`auto:${rid}:a1:1`, u.id, rid],
+  );
+  assert.equal((await tick()).report.missed, 0);
+  assert.deepEqual((await runsOf(aid)).map((r) => [r.status, r.outcome]), [["queued", ""]]);
+});
+
+test("a Run once now waiting in the queue isn't superseded by the next slot: only a schedule's own runs are", async () => {
+  const u = await F.account("tick32f", 100);
+  const aid = await F.automation({ userId: u.id, spec: DAILY, nextAt: Date.now() - 1000 });
+  const mine = await F.runRow({ automationId: aid, userId: u.id });
+  await tick();
+  const runs = await runsOf(aid);
+  assert.equal(runs.find((r) => r.id === mine)?.outcome, "", "the owner's run goes on");
+  assert.equal(runs.filter((r) => r.run_key.startsWith("sched:")).length, 1);
+});
+
+test("a wait for credits isn't over while the balance is only at the auto top-up level: it stays paused until it is above", async () => {
+  const u = await F.account("tick32g", 100);
+  await sql("INSERT INTO auto_topups (user_id, enabled, pack, below, customer, payment_method, updated_at) VALUES (?, 1, 'starter', 80, 'cus_1', 'pm_1', 0)", [u.id]);
+  const aid = await F.automation({ userId: u.id, spec: DAILY, status: "paused", pausedReason: "credits", resumeAt: Date.now() - 1000, nextAt: Date.now() + 3_600_000 });
+  await sql("UPDATE automations SET need_credits = 30 WHERE id = ?", [aid]);
+  await tick();
+  assert.equal((await one<{ status: string }>("SELECT status FROM automations WHERE id = ?", [aid]))!.status, "paused", "100 credits less a top-up level of 80 is short of 30");
+  await sql("UPDATE auto_topups SET below = 50 WHERE user_id = ?", [u.id]);
+  await sql("UPDATE automations SET resume_at = 1 WHERE id = ?", [aid]);
+  await tick();
+  assert.equal((await one<{ status: string }>("SELECT status FROM automations WHERE id = ?", [aid]))!.status, "on");
 });
 
 test("an automation being deleted keeps its rows while a step of it runs, and they go once nothing runs", async () => {

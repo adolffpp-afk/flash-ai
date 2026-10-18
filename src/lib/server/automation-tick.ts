@@ -15,7 +15,7 @@
  * anythingDue answers whether a tick has anything to do with indexed reads only, so an empty tick
  * writes nothing.
  */
-import { isPaid, NOTICES, parseSpec, type Spec } from "../automations.ts";
+import { isPaid, NOTICES, parseSpec, RUNNER_VERSION, type Spec } from "../automations.ts";
 import { graceFor, monthStart, nextFire, nextMonthStart, utcDay } from "../schedule.ts";
 import { reapLapsed } from "./automation-runner.ts";
 import { claimLimits, cronSecret } from "./automations.ts";
@@ -156,7 +156,8 @@ async function resumePaused(): Promise<number> {
   }>(
     `SELECT a.id, a.pay_account, a.paused_reason, a.resume_at, a.need_credits, a.next_at, a.time_zone, v.spec
        FROM automations a JOIN automation_versions v ON v.automation_id = a.id AND v.version = a.version
-      WHERE a.status = 'paused' AND a.resume_at > 0 AND a.resume_at <= ${DB_NOW} LIMIT 100`,
+      WHERE a.status = 'paused' AND a.resume_at > 0 AND a.resume_at <= ${DB_NOW} AND v.runner <= ? LIMIT 100`,
+    [RUNNER_VERSION],
   );
   let resumed = 0;
   for (const a of rows) {
@@ -167,9 +168,11 @@ async function resumePaused(): Promise<number> {
       await ensureMonthlyCredits(a.pay_account);
       turnOn = (await balance(a.pay_account)) - (await topUpFloor(a.pay_account)) >= Number(a.need_credits);
     }
-    const grace = spec?.trigger.type === "schedule" ? graceFor(spec.trigger.when) : 0;
-    // A slot still in its grace window runs; otherwise the next one after now.
-    const next = Number(a.next_at) && Number(a.next_at) + grace >= now ? Number(a.next_at) : nextSlot(spec, a.time_zone, now);
+    const when = spec?.trigger.type === "schedule" ? spec.trigger.when : null;
+    const grace = when ? graceFor(when) : 0;
+    // The first slot still in its grace window runs (its run key stops one that ran from running again),
+    // otherwise the next one after now; a one-off keeps its slot while it is in grace.
+    const next = when?.kind === "once" ? (Number(a.next_at) + grace >= now ? Number(a.next_at) : 0) : nextSlot(spec, a.time_zone, now - grace);
     if (turnOn) {
       const rs = await (await db()).batch(
         [
@@ -218,7 +221,8 @@ async function enqueueDue(): Promise<number> {
   const due = await all<{ id: string; user_id: string; name: string; next_at: number; time_zone: string; spec: string }>(
     `SELECT a.id, a.user_id, a.name, a.next_at, a.time_zone, v.spec
        FROM automations a JOIN automation_versions v ON v.automation_id = a.id AND v.version = a.version
-      WHERE a.status = 'on' AND a.next_at > 0 AND a.next_at <= ${DB_NOW} ORDER BY a.next_at LIMIT 200`,
+      WHERE a.status = 'on' AND a.next_at > 0 AND a.next_at <= ${DB_NOW} AND v.runner <= ? ORDER BY a.next_at LIMIT 200`,
+    [RUNNER_VERSION],
   );
   if (!due.length) return 0;
   const full = await capacityFull();

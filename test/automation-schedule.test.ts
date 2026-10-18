@@ -116,6 +116,34 @@ test("a bad zone is refused, so is more often than hourly, and a day has at most
   assert.ok(S.firesBetween(all, "Europe/Paris", at("2027-03-27T23:00:00Z"), at("2027-03-28T21:59:00Z")) <= 24);
 });
 
+test("counting an hourly schedule's month works each local date out once: the same runs, a few thousand Intl calls, not 100,000", () => {
+  const all = { kind: "hourly" as const, every: 1, from: "00:00", to: "23:00" };
+  const parts = Intl.DateTimeFormat.prototype.formatToParts;
+  let calls = 0;
+  Intl.DateTimeFormat.prototype.formatToParts = function (this: Intl.DateTimeFormat, d?: Date | number) {
+    calls++;
+    return parts.call(this, d);
+  };
+  try {
+    for (const zone of ["Europe/London", "Australia/Lord_Howe", "America/St_Johns"]) {
+      // Across a change of the clocks in each zone (London and St John's in March, Lord Howe in October).
+      const from = at(zone === "Australia/Lord_Howe" ? "2026-09-25T00:00:00Z" : "2027-03-01T00:00:00Z");
+      calls = 0;
+      const n = S.firesBetween(all, zone, from, from + 30 * 86_400_000);
+      assert.ok(calls < 10_000, `${zone}: ${calls} Intl calls`);
+      let one = 0;
+      for (let t = S.nextFire(all, zone, from); t && t <= from + 30 * 86_400_000; t = S.nextFire(all, zone, t)) one++;
+      assert.equal(n, one, `${zone}: the same count as one slot at a time`);
+      assert.ok(n >= 30 * 24 - 2 && n <= 30 * 24, `${zone}: ${n}`);
+      const chain: number[] = [];
+      for (let t = from, i = 0; i < 60; i++) chain.push((t = S.nextFire(all, zone, t)));
+      assert.deepEqual(S.nextFires(all, zone, from, 60), chain);
+    }
+  } finally {
+    Intl.DateTimeFormat.prototype.formatToParts = parts;
+  }
+});
+
 test("only a schedule that runs more than once a day counts against the three sub-daily automations", () => {
   assert.equal(A.MAX_SUB_DAILY, 3);
   assert.equal(S.subDaily({ kind: "hourly", every: 2, from: "08:00", to: "18:00" }), true);

@@ -29,10 +29,12 @@ const KINDS = ["once", "daily", "manual"] as const;
 const DEFAULT_PROMPT = "Write two sentences about today's date and one thing that happened on this day in history.";
 
 export async function POST(request: Request) {
-  const g = await gate(request, { write: true, limit: "admin" });
+  const body = await bodyOf(request);
+  // Pricing as the form changes counts against the estimate's limit (as the editor's does), so writing
+  // an instruction never uses up what making a test may.
+  const g = await gate(request, { write: true, limit: body.action === "price" ? "estimate" : "admin" });
   if (g instanceof Response) return g;
   if (!isAdmin(g.user)) return Response.json({ error: "Only the owner can see this." }, { status: 403 });
-  const body = await bodyOf(request);
   const timeZone = validTimeZone(body.timeZone) ?? "UTC";
   const prompt = typeof body.prompt === "string" && body.prompt.trim() ? body.prompt.trim().slice(0, 4000) : DEFAULT_PROMPT;
   const level = LEVELS.find((l) => l === body.level) ?? "sonic";

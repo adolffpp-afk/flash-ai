@@ -99,9 +99,8 @@ export function localToUtc(year: number, month: number, day: number, minutes: nu
   return before;
 }
 
-/** The local date of a moment in a zone, moved by some days, as [year, month, day]. */
-function localDate(utcMs: number, timeZone: string, addDays = 0): [number, number, number] {
-  const w = wallClock(utcMs, timeZone);
+/** A local date (a wall clock's), moved by some days, as [year, month, day]. */
+function localDate(w: { year: number; month: number; day: number }, addDays = 0): [number, number, number] {
   const d = new Date(Date.UTC(w.year, w.month - 1, w.day + addDays));
   return [d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()];
 }
@@ -153,6 +152,11 @@ const horizon = (when: When) => (when.kind === "monthly" ? 400 : when.kind === "
  * (a one-off that is past). Worked out again after every run and every edit.
  */
 export function nextFire(when: When, timeZone: string, afterUtc: number): number {
+  return nextFireIn(when, timeZone, afterUtc, new Map());
+}
+
+/** nextFire, with each local date's run times kept in days, so a chain of calls works each date out once. */
+function nextFireIn(when: When, timeZone: string, afterUtc: number, days: Map<number, number[]>): number {
   if (when.kind === "once") {
     const date = calendarDate(when.date);
     const at = clockMinutes(when.at);
@@ -161,8 +165,13 @@ export function nextFire(when: When, timeZone: string, afterUtc: number): number
     return t > afterUtc ? t : 0;
   }
   // From the day before (a zone behind UTC may still be on it), until one is found.
+  const today = wallClock(afterUtc, timeZone);
   for (let i = -1; i <= horizon(when); i++) {
-    for (const t of onDate(when, timeZone, localDate(afterUtc, timeZone, i))) if (t > afterUtc) return t;
+    const date = localDate(today, i);
+    const key = date[0] * 10_000 + date[1] * 100 + date[2];
+    let times = days.get(key);
+    if (!times) days.set(key, (times = onDate(when, timeZone, date)));
+    for (const t of times) if (t > afterUtc) return t;
   }
   return 0;
 }
@@ -170,19 +179,21 @@ export function nextFire(when: When, timeZone: string, afterUtc: number): number
 /** The next few run times after a moment (at most count), for "Next:" and the month's estimate. */
 export function nextFires(when: When, timeZone: string, afterUtc: number, count: number): number[] {
   const out: number[] = [];
+  const days = new Map<number, number[]>();
   let t = afterUtc;
   while (out.length < count) {
-    t = nextFire(when, timeZone, t);
+    t = nextFireIn(when, timeZone, t, days);
     if (!t) break;
     out.push(t);
   }
   return out;
 }
 
-/** How many times a schedule runs between two moments (at most 24 a day, so this stays small). */
+/** How many times a schedule runs between two moments (at most 24 a day; each local date is worked out once). */
 export function firesBetween(when: When, timeZone: string, fromUtc: number, toUtc: number): number {
   let n = 0;
-  for (let t = nextFire(when, timeZone, fromUtc); t && t <= toUtc; t = nextFire(when, timeZone, t)) n++;
+  const days = new Map<number, number[]>();
+  for (let t = nextFireIn(when, timeZone, fromUtc, days); t && t <= toUtc; t = nextFireIn(when, timeZone, t, days)) n++;
   return n;
 }
 

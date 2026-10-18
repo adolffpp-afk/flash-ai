@@ -789,12 +789,15 @@ const SCHEMA = [
   `CREATE UNIQUE INDEX IF NOT EXISTS automation_runs_key ON automation_runs(automation_id, run_key)`,
   `CREATE INDEX IF NOT EXISTS automation_runs_due ON automation_runs(due_at) WHERE parked = 0 AND status IN ('queued','waiting','running','approval')`,
   `CREATE INDEX IF NOT EXISTS automation_runs_lease ON automation_runs(lease_until) WHERE lease_until > 0`,
-  `CREATE INDEX IF NOT EXISTS automation_runs_list ON automation_runs(automation_id, created_at)`,
+  // An automation's runs, newest first (ties broken by id, as an "only if changed" step finds its previous result).
+  `CREATE INDEX IF NOT EXISTS automation_runs_list ON automation_runs(automation_id, created_at, id)`,
   `CREATE INDEX IF NOT EXISTS automation_runs_user ON automation_runs(user_id, finished_at)`,
   // An automation's runs still going (each slot's supersede and overlap checks, pauses), and runs by
   // age (the month's count, retention, the lag line), so neither reads an automation's whole history.
   `CREATE INDEX IF NOT EXISTS automation_runs_open ON automation_runs(automation_id) WHERE finished_at = 0`,
   `CREATE INDEX IF NOT EXISTS automation_runs_created ON automation_runs(created_at)`,
+  // Runs by when they ended (/admin's outcomes and function time over a day or a week).
+  `CREATE INDEX IF NOT EXISTS automation_runs_finished ON automation_runs(finished_at) WHERE finished_at > 0`,
   // The receipt: one row per attempt of a step. output is gzip of {text, sources}; note an English
   // phrase (why it was skipped or cut short); hold_ref the credit hold and ledger ref of a paid attempt.
   `CREATE TABLE IF NOT EXISTS automation_run_steps (
@@ -846,7 +849,8 @@ const SCHEMA = [
     created_at INTEGER NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS credit_holds_open ON credit_holds(lease_until) WHERE settled_at = 0`,
-  `CREATE INDEX IF NOT EXISTS credit_holds_run ON credit_holds(run_id) WHERE settled_at = 0 AND run_id <> ''`,
+  // A run's holds, open or settled (its receipt, the burn-in card, and the claim's check for an open one).
+  `CREATE INDEX IF NOT EXISTS credit_holds_by_run ON credit_holds(run_id, created_at)`,
   // Notices for the Bell: phrase is an English key with its blanks, translated when read, in the
   // reader's language; link an in-app query (automations=<id>&run=<runId>); ref a "tell once" key.
   `CREATE TABLE IF NOT EXISTS notifications (

@@ -3,7 +3,7 @@
  * health lines (worked out from data, so they cost no writes), and what runs did and cost. Reads
  * only. The burn-in card's own automations, runs and holds are burnIn in automation-api.ts.
  */
-import { RUNNER_VERSION } from "../automations.ts";
+import { RUNNER_VERSION, STEP_BUDGET_MS } from "../automations.ts";
 import { monthWrites } from "./automation-tick.ts";
 import { automationsServer, AUTOMATION_SHARED_PAID, cronSecretTooShort, keyInUse, maxPaid, missingSetup, paidOpen, RATE_LIMITED_KEY } from "./automations.ts";
 import { all, one } from "./db.ts";
@@ -24,11 +24,13 @@ const p95 = (values: number[]) => {
 export async function automationStats(days: number) {
   const now = Date.now();
   const since = now - days * DAY;
-  const outcomes = async (from: number) =>
-    (await all<{ status: string; outcome: string; runs: number }>(
-      "SELECT status, outcome, COUNT(*) AS runs FROM automation_runs WHERE finished_at >= ? GROUP BY status, outcome ORDER BY runs DESC",
-      [from],
-    )).map((r) => ({ status: r.status, outcome: r.outcome, runs: n(r.runs) }));
+  // Runs that ended in the last 7 days by outcome, with those of the last 24 hours, read through the
+  // runs that ended then only (automation_runs_finished).
+  const outcomes = await all<{ status: string; outcome: string; day: number; week: number }>(
+    `SELECT status, outcome, SUM(CASE WHEN finished_at >= ? THEN 1 ELSE 0 END) AS day, COUNT(*) AS week
+       FROM automation_runs WHERE finished_at >= ? AND finished_at > 0 GROUP BY status, outcome ORDER BY week DESC`,
+    [now - DAY, now - 7 * DAY],
+  );
   const usage = await one<{ requests: number; credits: number; cost: number; losses: number; lostCents: number }>(
     `SELECT SUM(CASE WHEN part = 0 THEN 1 ELSE 0 END) AS requests, COALESCE(SUM(credits), 0) AS credits, COALESCE(SUM(cost_cents), 0) AS cost,
             SUM(CASE WHEN part = 0 AND credits = 0 AND cost_cents > 0 THEN 1 ELSE 0 END) AS losses,
@@ -36,8 +38,14 @@ export async function automationStats(days: number) {
        FROM usage WHERE automation_id <> '' AND created_at >= ?`,
     [since],
   );
-  // Function time: each run from its start to its end (the work calls' own time is a few ms more).
-  const time = await one<{ ms: number }>("SELECT COALESCE(SUM(finished_at - started_at), 0) AS ms FROM automation_runs WHERE finished_at >= ? AND started_at > 0", [since]);
+  // Function time: each step of the runs that ended, from its start to its end, so the time a run waits
+  // between tries or while paused (in no function) isn't counted; a step left behind by a server that
+  // stopped counts at most the longest a step may take (the work calls' own time is a few ms more).
+  const time = await one<{ ms: number }>(
+    `SELECT COALESCE(SUM(MIN(s.finished_at - s.started_at, ?)), 0) AS ms FROM automation_runs r JOIN automation_run_steps s ON s.run_id = r.id
+      WHERE r.finished_at >= ? AND r.finished_at > 0 AND s.started_at > 0 AND s.finished_at > s.started_at`,
+    [Math.max(...Object.values(STEP_BUDGET_MS)), since],
+  );
   const active = await one<{ active: number; paused: number }>(
     "SELECT SUM(CASE WHEN status = 'on' THEN 1 ELSE 0 END) AS active, SUM(CASE WHEN status = 'paused' THEN 1 ELSE 0 END) AS paused FROM automations",
   );
@@ -49,8 +57,7 @@ export async function automationStats(days: number) {
     cronSecretShort: cronSecretTooShort(),
     active: n(active?.active),
     paused: n(active?.paused),
-    outcomesDay: await outcomes(now - DAY),
-    outcomesWeek: await outcomes(now - 7 * DAY),
+    outcomes: outcomes.map((r) => ({ status: r.status, outcome: r.outcome, day: n(r.day), week: n(r.week) })),
     requests: n(usage?.requests),
     credits: n(usage?.credits),
     costCents: n(usage?.cost),

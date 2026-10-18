@@ -32,8 +32,14 @@ for (const name of ["VERCEL_ENV", "VERCEL", "RESEND_API_KEY", "FLASH_DEMO_EMAILS
 // Stripe, stood in for: every call is kept, and a PaymentIntent succeeds. Everything else goes through.
 const stripeCalls: string[] = [];
 const realFetch = globalThis.fetch;
+// Token counts this many from now on take a second each (Anthropic busy).
+let slowCounts = 0;
 globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
   const url = input instanceof Request ? input.url : String(input);
+  if (url.includes("/count_tokens") && slowCounts > 0) {
+    slowCounts--;
+    await new Promise((r) => setTimeout(r, 1000));
+  }
   if (!url.startsWith("http://stripe.test/")) return realFetch(input, init);
   const path = new URL(url).pathname.replace("/v1", "");
   stripeCalls.push(path);
@@ -480,15 +486,21 @@ test("draining credits through automations, then opening Flash (GET /api/me), ne
   const aid = await create(cookie, dear);
   const worst = (await priceOf(cookie, dear)).worst;
   // Long answers at Ultra, so a few runs reach the top-up level.
+  let refused: { status: number; code?: string } | null = null;
   for (let i = 0; i < 8; i++) {
     claude.state.replies.push({ text: "A long answer.", usage: { input_tokens: 1200, output_tokens: 3000 } });
     const r = await runOnce(cookie, aid, worst);
-    if (r.status !== 202) break;
+    if (r.status !== 202) {
+      refused = { status: r.status, code: ((await r.json()) as { code?: string }).code };
+      break;
+    }
   }
   const spent = -Number((await one<{ s: number }>("SELECT COALESCE(SUM(amount), 0) AS s FROM credit_ledger WHERE user_id = ? AND automation_id <> ''", [id]))!.s);
   assert.ok(spent > 30, `the runs spent credits (${spent})`);
   assert.ok((await F.balance(id)) >= 100, `never under the top-up level (${await F.balance(id)})`);
-  assert.ok(await count("automation_runs", "automation_id = ? AND outcome = 'topup_floor' AND credits = 0", [aid]), "the level stopped a run, for free");
+  // The level stops it for free: a run whose step didn't fit above it, or Run once now refusing before one starts.
+  const stopped = await count("automation_runs", "automation_id = ? AND outcome = 'topup_floor' AND credits = 0", [aid]);
+  assert.ok(stopped > 0 || (refused?.status === 409 && refused.code === "no_credits"), "the level stopped a run, for free");
   stripeCalls.length = 0;
   const me = await meRoute.GET(req("/api/me", { cookie }));
   assert.equal(me.status, 200);
@@ -534,7 +546,18 @@ test("/admin's automation lines: setup by name only, cron health worked out from
   assert.deepEqual([lines.server, lines.key, lines.missing, lines.sharedPaid], [true, "automations", [], 2]);
   assert.equal(lines.active, Number((await one<{ n: number }>("SELECT COUNT(*) AS n FROM automations WHERE status = 'on'"))!.n));
   assert.ok(lines.credits > 0 && lines.costCents > 0 && lines.requests > 0, "the runs above, charged and costed");
-  assert.ok(lines.outcomesWeek.some((o) => o.status === "done" && o.runs > 0));
+  assert.ok(lines.outcomes.some((o) => o.status === "done" && o.week > 0 && o.day > 0));
+  // Function time counts each step's own time, not a run's wait between tries: three tries of 2 s over 8 minutes are 6 s.
+  const u = await admin("fntime");
+  const aid = await F.automation({ userId: u.id });
+  const rid = await F.runRow({ automationId: aid, userId: u.id, status: "failed" });
+  const t0 = Date.now() - 600_000;
+  await sql("UPDATE automation_runs SET started_at = ?, finished_at = ? WHERE id = ?", [t0, t0 + 480_000, rid]);
+  for (const [attempt, at] of [[1, 0], [2, 180_000], [3, 478_000]]) {
+    await sql("INSERT INTO automation_run_steps (run_id, step_id, attempt, user_id, kind, status, started_at, finished_at) VALUES (?, 'a1', ?, ?, 'ai', 'retried', ?, ?)", [rid, attempt, u.id, t0 + at, t0 + at + 2000]);
+  }
+  const more = (await automationStats(30)).functionSeconds - lines.functionSeconds;
+  assert.ok(more >= 5 && more <= 7, `${more} s`);
   // A call that cost Flash money and charged nothing is a loss.
   await sql("INSERT INTO usage (user_id, engine, model, provider, credits, cost_cents, ok, part, automation_id, created_at) VALUES ('boss', 'write', 'm', 'anthropic', 0, 2.5, 1, 0, 'lost', ?)", [Date.now()]);
   const after1 = await automationStats(30);
@@ -628,6 +651,28 @@ test("resuming an automation paused mid-run lets that run go on; its next slot i
   assert.notEqual(slot!.outcome, "overlap");
 });
 
+test("Run once now times its run from the request: time spent pricing it comes out of the steps' time, never on top", async () => {
+  const u = await admin("rv2deadline");
+  // Its own words, so the estimate's count isn't one kept from another test.
+  const spec: Spec = { ...F.WRITE_SPEC, steps: [{ id: "a1", do: "ai", mode: "write", level: "sonic", prompt: "Write one line about the deadline." }, { id: "n1", do: "notify" }] };
+  const aid = await F.automation({ userId: u.id, spec, capRun: 100_000, capMonth: 100_000 });
+  // A step whose budget needs all but half a second of the time a request's run may use; pricing takes a second.
+  const budget = A.STEP_BUDGET_MS.write;
+  A.STEP_BUDGET_MS.write = API.OWNER_RUN_MS - 500;
+  slowCounts = 1;
+  try {
+    const r = await runRoute.POST(req(`/api/automations/${aid}/run`, { cookie: u.cookie, json: { requestId: "req_deadline", seenMax: 100_000 } }), ctx({ id: aid }));
+    assert.equal(r.status, 202);
+    await afterwards();
+  } finally {
+    A.STEP_BUDGET_MS.write = budget;
+    slowCounts = 0;
+  }
+  // Too little time is left in this request for the step: it is handed on to a work call, not started.
+  assert.equal(await count("automation_run_steps s JOIN automation_runs r ON r.id = s.run_id", "r.automation_id = ?", [aid]), 0);
+  assert.equal((await one<{ lease_owner: string }>("SELECT lease_owner FROM automation_runs WHERE automation_id = ?", [aid]))!.lease_owner, "", "handed on");
+});
+
 test("a one-off whose time has come can still be paused or renamed; turning it on checks its time", async () => {
   const { cookie } = await admin("rv3");
   const soon = new Date(Date.now() + 10 * 60_000).toISOString();
@@ -646,6 +691,22 @@ test("a one-off whose time has come can still be paused or renamed; turning it o
   assert.equal((await cardOf(cookie)).automations.find((a) => a.id === aid)?.timePassed, true);
   assert.equal((await one<{ status: string }>("SELECT status FROM automations WHERE id = ?", [aid]))!.status, "paused", "nothing changed");
 });
+
+for (const kind of ["once", "daily"] as const) {
+  test(`a ${kind} renamed after its slot came, before the tick took it, still runs that slot`, async () => {
+    const u = await admin(`rv3${kind}`);
+    // The slot came 20 s ago; ticks are a minute apart.
+    const slot = Math.floor((Date.now() - 20_000) / 60_000) * 60_000;
+    const iso = new Date(slot).toISOString();
+    const when = kind === "once" ? { kind: "once" as const, date: iso.slice(0, 10), at: iso.slice(11, 16) } : { kind: "daily" as const, at: iso.slice(11, 16) };
+    const aid = await F.automation({ userId: u.id, spec: { ...F.WRITE_SPEC, trigger: { type: "schedule", when } }, nextAt: slot });
+    assert.equal((await patch(u.cookie, aid, { name: "Renamed" })).status, 200);
+    assert.equal(Number((await one<{ next_at: number }>("SELECT next_at FROM automations WHERE id = ?", [aid]))!.next_at), slot, "its slot is kept");
+    const T = await import("../src/lib/server/automation-tick.ts");
+    await T.runTick(`tk-rename-${kind}`, { dispatch: async () => {} });
+    assert.equal(await count("automation_runs", "automation_id = ? AND run_key = ?", [aid, `sched:${slot}`]), 1);
+  });
+}
 
 test("a one-off paused while its run is going can be resumed: that run goes on and delivers, and the one-off is finished", async () => {
   const { cookie } = await admin("rv3b");
@@ -807,6 +868,47 @@ test("Run once now at an automation's month limit says so in words, and starts n
   await sql("UPDATE automation_runs SET outcome = 'month_cap', finished_at = ? WHERE id = ?", [Date.now(), rid]);
   const got = (await (await receiptRoute.GET(req(`/api/automations/runs/${rid}`, { cookie }), ctx({ runId: rid }))).json()) as { run: { noteText: string } };
   assert.ok(got.run.noteText.startsWith("Not enough of this month's limit"), got.run.noteText);
+});
+
+test("Run once now and Retry without the credits its AI step needs say so in words and start nothing; a run skipped for credits says why", async () => {
+  const { cookie, id } = await admin("lim4b", 0);
+  const aid = await create(cookie, F.WRITE_SPEC);
+  const est = await priceOf(cookie, F.WRITE_SPEC);
+  const { english } = await import("../src/lib/i18n.ts");
+  // One credit less than its AI step needs to start.
+  await sql("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES (?, ?, 'purchase', 0)", [id, est.least - 1]);
+  let r = await runOnce(cookie, aid, est.worst);
+  assert.equal(r.status, 409);
+  let said = await body(r);
+  assert.deepEqual([said.code, said.error], ["no_credits", english(A.NO_CREDITS, { credits: est.least })]);
+  assert.equal(await count("automation_runs", "automation_id = ?", [aid]), 0, "nothing started");
+  // Enough credits, but not above the auto top-up level: it says that instead.
+  await sql("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES (?, 100, 'purchase', 0)", [id]);
+  await sql("INSERT INTO auto_topups (user_id, enabled, pack, below, customer, payment_method, updated_at) VALUES (?, 1, 'starter', 100, 'cus_1', 'pm_1', 0)", [id]);
+  r = await runOnce(cookie, aid, est.worst);
+  said = await body(r);
+  assert.deepEqual([r.status, said.code, said.error], [409, "no_credits", english(A.NOTICES.topupFloor, { credits: 100 })]);
+  // Retry of a run that was skipped for credits: the same, and its receipt says why.
+  const rid = await F.runRow({ automationId: aid, userId: id, status: "skipped" });
+  await sql("UPDATE automation_runs SET outcome = 'no_credits', finished_at = ? WHERE id = ?", [Date.now(), rid]);
+  const again = await receiptRoute.POST(req(`/api/automations/runs/${rid}`, { cookie, json: { action: "retry", seenMax: est.worst } }), ctx({ runId: rid }));
+  assert.equal(again.status, 409);
+  assert.equal((await body(again)).code, "no_credits");
+  assert.equal(await count("automation_runs", "automation_id = ?", [aid]), 1, "nothing started");
+  const got = (await (await receiptRoute.GET(req(`/api/automations/runs/${rid}`, { cookie }), ctx({ runId: rid }))).json()) as { run: { noteText: string } };
+  assert.equal(got.run.noteText, A.NOTICES.noCredits);
+  await sql("DELETE FROM auto_topups WHERE user_id = ?", [id]);
+});
+
+test("the burn-in form's pricing has the estimate's limit: writing an instruction never uses up making a test, nor the other way round", async () => {
+  const { cookie, id } = await admin("lim4c");
+  // Making tests has used up its 60 in 10 minutes.
+  await sql("INSERT INTO rate_limits (key, count, reset_at) VALUES (?, 60, ?)", [`auto:admin:${id}`, Date.now() + 600_000]);
+  const price = await adminRoute.POST(req("/api/admin/automations", { cookie, json: { action: "price", timeZone: "UTC" } }));
+  assert.equal(price.status, 200, "pricing still answers");
+  const make = await adminRoute.POST(req("/api/admin/automations", { cookie, json: { action: "make", kind: "daily", timeZone: "UTC", seenMax: 100_000 } }));
+  assert.equal(make.status, 429);
+  assert.equal(Number((await one<{ count: number }>("SELECT count FROM rate_limits WHERE key = ?", [`auto:estimate:${id}`]))!.count), 1);
 });
 
 test("a notice names its automation once: in its title, not again in its line", async () => {

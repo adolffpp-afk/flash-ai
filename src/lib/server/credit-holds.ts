@@ -62,10 +62,19 @@ export async function markCharged(ref: string, chargeId: number) {
   await sql("UPDATE credit_holds SET charge_id = ? WHERE ref = ? AND settled_at = 0", [chargeId, ref]);
 }
 
-/** Marks the provider call as sent, just before it is. False when the hold was settled meanwhile (don't send it). */
-export async function markStarted(ref: string): Promise<boolean> {
-  const r = await sql(`UPDATE credit_holds SET started = 1, lease_until = ${DB_NOW} + ?, checked_at = ${DB_NOW} WHERE ref = ? AND settled_at = 0`, [HOLD_LEASE_MS, ref]);
-  return r.rowsAffected === 1;
+/**
+ * Marks the provider call as sent, just before it is, unless the hold was settled meanwhile ("settled")
+ * or its run was asked to stop ("stopped", say while the step was being priced): either way, don't send it.
+ */
+export async function markStarted(ref: string): Promise<"started" | "settled" | "stopped"> {
+  const r = await sql(
+    `UPDATE credit_holds SET started = 1, lease_until = ${DB_NOW} + ?, checked_at = ${DB_NOW} WHERE ref = ? AND settled_at = 0
+        AND NOT EXISTS (SELECT 1 FROM automation_runs WHERE id = credit_holds.run_id AND stop_requested = 1)`,
+    [HOLD_LEASE_MS, ref],
+  );
+  if (r.rowsAffected === 1) return "started";
+  const h = await one<{ settled_at: number }>("SELECT settled_at FROM credit_holds WHERE ref = ?", [ref]);
+  return !h || Number(h.settled_at) ? "settled" : "stopped";
 }
 
 /**
@@ -156,6 +165,17 @@ export function reaperCredits(h: Pick<Hold, "held" | "started" | "done" | "spent
   const gap = (seconds * PEAK_TOKENS_PER_SECOND * outputPrice) / 1e6;
   const incurred = Math.max(Number(h.spent_cents), Number(h.input_cents)) + gap + Number(h.left_cents);
   return Math.min(held, creditsFor(incurred));
+}
+
+/**
+ * What a hold's call is known to have cost when it is settled by the reaper: its final cost once it
+ * ended, else its last checkpoint (at least reading its input once); 0 if it was never sent. The
+ * reaper logs this as the call's AI cost on /admin, and a worker that finds its hold reaped adds only
+ * what it cost on top.
+ */
+export function reapedCents(h: Pick<Hold, "started" | "done" | "spent_cents" | "input_cents">): number {
+  if (!Number(h.started)) return 0;
+  return Number(h.done) ? Number(h.spent_cents) : Math.max(Number(h.spent_cents), Number(h.input_cents));
 }
 
 /**

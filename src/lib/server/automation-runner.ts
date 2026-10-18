@@ -13,17 +13,17 @@
  * finish() writes the run's end, its receipt and fingerprint, what it changes on the automation
  * (failures in a row, a pause for credits or a limit, a one-off finished) and its notices.
  */
-import { budgetOf, isPaid, MAX_STEPS, NOTICES, parseSpec, stepAt, type Spec, type Step } from "../automations.ts";
+import { budgetOf, engineOf, isPaid, MAX_STEPS, NOTICES, parseSpec, stepAt, type Spec, type Step } from "../automations.ts";
 import { nextMonthStart, utcDay } from "../schedule.ts";
 import { isVerified } from "./account.ts";
 import { automationsOpenTo, maxPaid, userById } from "./automations.ts";
-import { lapsedHolds, reaperCredits, settleHold, type Hold } from "./credit-holds.ts";
+import { lapsedHolds, reapedCents, reaperCredits, settleHold, type Hold } from "./credit-holds.ts";
 import { topUpFloor } from "./credits.ts";
 import { all, db, one, run as sql } from "./db.ts";
 import { sha256 } from "./ids.ts";
 import { DB_NOW, parkRun, probe, releaseRun, startStep } from "./leases.ts";
 import { canonicalJson } from "./mcp-client.ts";
-import { automationLink, NOTICE_TEXT_CHARS, notify, type Notice } from "./notifications.ts";
+import { automationLink, NOTICE_TEXT_CHARS, noticeStatement, type Notice } from "./notifications.ts";
 import { MAX_ATTEMPTS, outputText, runStep, varsOf, type AutoRow, type Offer, type RunEnd, type RunRow } from "./automation-steps.ts";
 
 /** The spec a run follows: its own version, frozen when the run was made. */
@@ -146,6 +146,7 @@ export async function reapHold(h: Hold, o: { inline?: boolean } = {}): Promise<b
   const charged = Boolean(await one("SELECT 1 FROM credit_ledger WHERE ref = ?", [h.ref]));
   const credits = reaperCredits(h, charged);
   const started = charged && Number(h.started) === 1;
+  const engine = started && h.run_id ? await engineOfHold(h) : "";
   const won = await settleHold(h.ref, credits, (w) =>
     h.run_id
       ? [
@@ -163,6 +164,16 @@ export async function reapHold(h: Hold, o: { inline?: boolean } = {}): Promise<b
                    WHERE id = ? AND finished_at = 0 AND ${w.sql}`,
             args: [credits, o.inline || started ? 1 : 0, o.inline || started ? 1 : 0, o.inline || started ? 1 : 0, h.run_id, ...w.args],
           },
+          // A call that was sent is one AI request on /admin's Runs and money: what the reaper charged, and what it is known to have cost.
+          ...(started
+            ? [
+                {
+                  sql: `INSERT INTO usage (user_id, engine, model, provider, credits, cost_cents, ok, part, automation_id, created_at)
+                        SELECT user_id, ?, ?, 'anthropic', ?, ?, 0, 0, automation_id, ${DB_NOW} FROM automation_runs WHERE id = ? AND ${w.sql}`,
+                  args: [engine, h.model, credits, reapedCents(h), h.run_id, ...w.args],
+                },
+              ]
+            : []),
         ]
       : [],
     { leaseUntil: Number(h.lease_until) },
@@ -172,6 +183,17 @@ export async function reapHold(h: Hold, o: { inline?: boolean } = {}): Promise<b
     if (run && !Number(run.finished_at)) await finish(run, "interrupted", "interrupted", { reaper: true });
   }
   return won;
+}
+
+/** The engine a hold's step ran on, as its worker logs it (text when its step can't be read). */
+async function engineOfHold(h: Hold): Promise<string> {
+  const row = await one<{ step_id: string; automation_id: string; version: number }>(
+    "SELECT s.step_id, r.automation_id, r.version FROM automation_run_steps s JOIN automation_runs r ON r.id = s.run_id WHERE s.run_id = ? AND s.hold_ref = ? LIMIT 1",
+    [h.run_id, h.ref],
+  );
+  const spec = row ? await versionSpec(row.automation_id, Number(row.version)) : null;
+  const step = spec && row ? stepAt(spec, row.step_id) : null;
+  return step?.do === "ai" ? engineOf(step) : "text";
 }
 
 /** The reaper's pass (the tick's first step): every hold whose lease ran out, settled once. */
@@ -285,6 +307,13 @@ export async function finish(
     const once = spec?.trigger.type === "schedule" && spec.trigger.when.kind === "once" && run.origin === "schedule";
     const streak = status === "failed" ? Number(auto?.fail_streak ?? 0) + 1 : status === "done" ? 0 : Number(auto?.fail_streak ?? 0);
     const ended = { sql: "EXISTS (SELECT 1 FROM automation_runs WHERE id = ? AND receipt_hash = ? AND finished_at > 0)", args: [run.id, hash] };
+    // Its notices go in the same batch, so a batch that lands with its answer lost still sends them.
+    const notices = auto
+      ? await noticesFor(run, auto, status, outcome, { credits, need: o.need ?? 0, pause: once ? null : pause, once, spec: spec ?? undefined, summary, offer: o.offer }).catch((err) => {
+          console.error("[flash] automation notice failed", err instanceof Error ? err.name : "error");
+          return [];
+        })
+      : [];
     const lease = o.reaper ? { sql: "1 = 1", args: [] } : { sql: "lease_owner = ?", args: [o.me ?? ""] };
     await probe("before-finish", { runId: run.id, prev });
     const rs = await (await db()).batch(
@@ -322,24 +351,24 @@ export async function finish(
         ...(outcome === "nothing_new"
           ? [{ sql: `UPDATE automation_run_steps SET output = NULL, input = '' WHERE run_id = ? AND ${ended.sql}`, args: [run.id, ...ended.args] }]
           : []),
+        ...notices.map((n) => noticeStatement(n, ended)),
       ],
       "write",
     );
     if (rs[0].rowsAffected !== 1) continue;
-    if (auto) await tell(run, auto, status, outcome, { credits, need: o.need ?? 0, pause: once ? null : pause, spec: spec ?? undefined, summary, offer: o.offer }).catch((err) => console.error("[flash] automation notice failed", err instanceof Error ? err.name : "error"));
     return true;
   }
   return false;
 }
 
 /** The notices a run's end sends (each once per ref, so a storm makes one). */
-async function tell(
+async function noticesFor(
   run: RunRow,
   auto: AutoRow,
   status: RunEnd,
   outcome: string,
-  o: { credits: number; need: number; pause: { reason: string; resumeAt: number } | null; spec?: Spec; summary: string; offer?: Offer },
-) {
+  o: { credits: number; need: number; pause: { reason: string; resumeAt: number } | null; once?: boolean; spec?: Spec; summary: string; offer?: Offer },
+): Promise<Notice[]> {
   const base = { userId: auto.user_id, link: automationLink(auto.id, run.id) };
   const name = auto.name;
   const month = utcDay(Date.now()).slice(0, 7);
@@ -365,5 +394,12 @@ async function tell(
   if (o.pause?.reason === "price_up") notices.push({ ...base, kind: "paused", phrase: NOTICES.priceUp, blanks: { name, credits: o.need, cap: Number(auto.cap_run) }, ref: `price:${auto.id}:${o.need}` });
   if (o.pause?.reason === "failing") notices.push({ ...base, kind: "paused", phrase: NOTICES.failing, blanks: { name }, ref: `failing:${auto.id}:${utcDay(Date.now())}` });
   if (outcome === "unconfirmed") notices.push({ ...base, kind: "paused", phrase: NOTICES.unconfirmed, blanks: { name }, ref: `unconfirmed:${auto.id}` });
-  for (const n of notices) await notify(n);
+  // A one-off doesn't wait or pause: it is finished, and says why it didn't run.
+  if (o.once) {
+    const ref = `run:${run.id}:skipped`;
+    if (outcome === "no_credits") notices.push({ ...base, kind: "credits", phrase: NOTICES.noCredits, blanks: { name }, ref });
+    else if (outcome === "topup_floor") notices.push({ ...base, kind: "credits", phrase: NOTICES.topupFloor, blanks: { name, credits: await topUpFloor(auto.pay_account) }, ref });
+    else if (outcome === "month_cap" || outcome === "day_cap" || outcome === "price_up") notices.push({ ...base, kind: "stopped", phrase: NOTICES.onceSkipped, blanks: { name }, ref });
+  }
+  return notices;
 }

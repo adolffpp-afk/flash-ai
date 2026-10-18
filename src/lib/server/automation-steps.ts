@@ -30,7 +30,7 @@ import type { ChatTurn, Source } from "../types.ts";
 import { priceStep, typicalCredits, type StepPrice } from "./automation-price.ts";
 import { automationClient, backOff } from "./automations.ts";
 import type { User } from "./auth.ts";
-import { heartbeat, leftCents, markCharged, markDone, markStarted, recordHold, settleHold } from "./credit-holds.ts";
+import { heartbeat, leftCents, markCharged, markDone, markStarted, reapedCents, recordHold, settleHold, type Hold } from "./credit-holds.ts";
 import { automationSpent, balance, chargeOnce, ensureMonthlyCredits, logUsage, topUpFloor, type ChargeOnce, type UsagePart } from "./credits.ts";
 import { db, one, run as sql } from "./db.ts";
 import { translatorIn } from "./i18n.ts";
@@ -116,7 +116,7 @@ export const retryDelay = (attempt: number) => Math.round(RETRY_WAITS[Math.min(R
 /** When tokens couldn't be counted: another try a minute later, as chat answers 503. */
 const COUNT_RETRY_MS = 60_000;
 /** The most one token count may take, with one retry. */
-const COUNT_TIMEOUT_MS = 30_000;
+export const COUNT_TIMEOUT_MS = 30_000;
 
 // What a step keeps: its input up to 8 KB, its output up to 64 KB (gzip), and what later steps of the
 // run may use of it ({{steps.<id>.text}}), 16 KB each and 32 KB in all.
@@ -205,8 +205,9 @@ export function stepTurn(step: AiStep, today: string, previous: string | null): 
   const task = fillTemplate(step.prompt, { today, steps: {} });
   if (!step.onlyIfChanged) return task;
   if (!previous) return `${task}\n\nThere is no previous result yet, so answer in full.`;
-  // Any tag of its own name is taken out (in any case or spacing), so the data can't close its block.
-  const data = previous.slice(0, PREVIOUS_CHARS).replace(/<\s*\/?\s*previous_result\b[^>]*>/gi, "");
+  // Its < and > are written as &lt; and &gt;, so no tag can be made of the data (however one nests in
+  // another), and it can't close its block.
+  const data = previous.replace(/</g, "&lt;").replace(/>/g, "&gt;").slice(0, PREVIOUS_CHARS);
   return (
     `${task}\n\n` +
     `If nothing important changed since the previous result below, answer with ${NO_CHANGE} alone on the first line, then one sentence that says so. Otherwise answer in full.\n\n` +
@@ -215,7 +216,7 @@ export function stepTurn(step: AiStep, today: string, previous: string | null): 
 }
 
 /** The text of this step in the automation's last run that delivered it (an "only if changed" step compares with it). */
-async function previousResult(automationId: string, runId: string, stepId: string): Promise<string | null> {
+export async function previousResult(automationId: string, runId: string, stepId: string): Promise<string | null> {
   const row = await one<{ output: ArrayBuffer | Uint8Array | null }>(
     `SELECT s.output FROM automation_runs r JOIN automation_run_steps s ON s.run_id = r.id AND s.step_id = ? AND s.status = 'done'
       WHERE r.automation_id = ? AND r.id <> ? AND r.status = 'done' AND r.outcome = 'ok'
@@ -263,12 +264,12 @@ class StepRunning extends Running {
 /**
  * Marks the hold started just before Claude is called, tried again when its answer is lost (the mark
  * is idempotent: a retry after one that landed lands again). "settled": the hold was settled meanwhile,
- * so Claude must not be called; "unknown": the mark couldn't be confirmed.
+ * and "stopped": Stop was tapped, so Claude must not be called; "unknown": the mark couldn't be confirmed.
  */
-async function startMark(ref: string): Promise<"started" | "settled" | "unknown"> {
+async function startMark(ref: string): Promise<"started" | "settled" | "stopped" | "unknown"> {
   for (let i = 0; i < 3; i++) {
     try {
-      return (await markStarted(ref)) ? "started" : "settled";
+      return await markStarted(ref);
     } catch (err) {
       console.error("[flash] automation: the start mark failed", failName(err));
     }
@@ -459,6 +460,16 @@ export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResul
   await markCharged(ref, charge.id);
   const mark = await startMark(ref);
   if (mark === "settled") return { kind: "lost" };
+  if (mark === "stopped") {
+    // Stop was tapped while the step was priced or charged: Claude is never called, and it is free.
+    const won = await settleHold(ref, 0, (w) => [
+      {
+        sql: `UPDATE automation_run_steps SET status = 'stopped', input = ?, held = ?, finished_at = ${DB_NOW} WHERE run_id = ? AND step_id = ? AND attempt = ? AND ${w.sql}`,
+        args: [turn.slice(0, INPUT_CHARS), plan.held, run.id, step.id, started.attempt, ...w.args],
+      },
+    ]).catch(() => false);
+    return won ? { kind: "end", status: "stopped", outcome: "stopped_by_user" } : { kind: "lost" };
+  }
   // Whether the start mark landed is unknown, but Claude was never called: settled at 0 by the worker
   // (never at the reaper's worst case for a call that might have started).
   if (mark === "unknown") return tryLater(retryDelay(Number(run.attempts)));
@@ -502,6 +513,8 @@ export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResul
     setInterval(beat, STEP_TIMING.heartbeatMs),
     setInterval(() => {
       if (Date.now() - lastGood > STEP_TIMING.staleMs) return halt("stale");
+      // A heartbeat that failed is tried again at the next check, not a whole interval later.
+      if (Date.now() - lastGood >= STEP_TIMING.heartbeatMs) beat();
       if (checking) return;
       checking = true;
       one<{ stop: number }>("SELECT stop_requested AS stop FROM automation_runs WHERE id = ?", [run.id])
@@ -560,12 +573,23 @@ export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResul
       parts: spend,
       automationId: auto.id,
     }).catch((err) => console.error("[flash] automation usage log failed", failName(err)));
-  // The reaper settled the hold under this step: it writes nothing more, and its cost shows on /admin as a loss.
+  // The reaper settled the hold under this step, and logged the call with what it charged and what it
+  // was known to cost then (see reapHold): this step writes nothing more but what the call cost on top,
+  // as a part of that same request, so /admin counts it once.
+  const reaped = async () => {
+    const h = await one<Hold>("SELECT * FROM credit_holds WHERE ref = ?", [ref]).catch(() => null);
+    const more = h ? costCents + pending - reapedCents(h) : 0;
+    if (more > 0)
+      await sql(
+        `INSERT INTO usage (user_id, engine, model, provider, credits, cost_cents, ok, part, automation_id, created_at) VALUES (?, ?, ?, 'anthropic', 0, ?, 0, 1, ?, ${DB_NOW})`,
+        [auto.user_id, engine, spend.at(-1)?.model ?? answered.model, more, auto.id],
+      ).catch((err) => console.error("[flash] automation usage log failed", failName(err)));
+  };
   // A write that fails is tried again; if it never lands, the settle below still goes ahead.
   let marked: boolean | null = null;
   for (let i = 0; i < 3 && marked === null && why !== "lost"; i++) marked = await markDone(ref, costCents + pending).catch(() => null);
   if (why === "lost" || marked === false) {
-    await usage(0);
+    await reaped();
     return { kind: "lost" };
   }
   const retry = !ok && costCents === 0 && pending === 0 ? retryable(failure) : { retry: false, rateLimited: false };
@@ -634,7 +658,8 @@ export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResul
     return null;
   });
   if (won === null) return { kind: "lost" };
-  await usage(won ? credits : 0);
+  if (won) await usage(credits);
+  else await reaped();
   return won ? result : { kind: "lost" };
 }
 

@@ -71,6 +71,7 @@ export const PRICE_CHANGED = msg("The price changed. Check the new price and try
 export const FINISHED = msg("This automation finished. It won't run again.");
 export const ONCE_PASSED = msg("This automation's time has passed. Choose a new time to turn it on again.");
 export const MONTH_LEFT = msg("Not enough of this month's limit ({credits} credits) is left for a run. It can run again on {date}.");
+export const NO_CREDITS = msg("Not enough credits to start it: a run needs at least {credits} credits.");
 export const QUEUED = msg("Queued: Flash is busy. It starts soon.");
 
 /**
@@ -94,6 +95,8 @@ export const NOTICES = {
   failing: msg("Paused after 3 failed runs"),
   unconfirmed: msg("Confirm your email to use automations."),
   capacity: msg("Skipped: Flash's automation capacity for this month is reached. It runs again on {date}."),
+  noCredits: msg("Not enough credits: the step that didn't fit wasn't run, and nothing was charged for it."),
+  onceSkipped: msg("Skipped: it was over its limits when it was due, so it didn't run."),
 } as const;
 
 type Obj = Record<string, unknown>;

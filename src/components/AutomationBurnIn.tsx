@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { api as appApi } from "@/lib/store";
 import { textDirection } from "@/lib/use-t";
 import type { burnIn, receipt } from "@/lib/server/automation-api.ts";
 import type { Estimate } from "@/lib/server/automation-estimate.ts";
@@ -73,16 +74,18 @@ const waitNote = (r: RunState, now: number) => (r.finishedAt ? "" : r.parked ? "
 const goingNow = (r: RunState, now: number) => !r.finishedAt && !r.parked && r.dueAt <= now;
 
 type Failed = Error & { status?: number; code?: string; estimate?: Estimate };
-/** A call to Flash's API: GET without json, else that method with a JSON body. A refusal throws with its code and, for price_changed, the new estimate. */
+/**
+ * A call to Flash's API through the app's own (store's api, so it names the tab's account as the rest
+ * of /admin does): GET without json, else that method with a JSON body. A refusal throws with its code
+ * and, for price_changed, the new estimate.
+ */
 async function api<T>(path: string, init?: { method?: string; json?: unknown }): Promise<T> {
-  const res = await fetch(path, {
-    method: init?.method ?? "GET",
-    headers: init?.json !== undefined ? { "Content-Type": "application/json" } : undefined,
-    body: init?.json !== undefined ? JSON.stringify(init.json) : undefined,
-  });
-  const data = (await res.json().catch(() => ({}))) as { error?: string; code?: string; estimate?: Estimate };
-  if (!res.ok) throw Object.assign(new Error(data.error ?? `Request failed (${res.status})`), { status: res.status, code: data.code, estimate: data.estimate }) as Failed;
-  return data as T;
+  try {
+    return await appApi<T>(path, init);
+  } catch (err) {
+    const data = (err as { data?: { estimate?: Estimate } }).data;
+    throw Object.assign(err as Failed, { estimate: data?.estimate });
+  }
 }
 
 const button = "rounded-lg border border-white/10 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/[0.05] disabled:opacity-50";
@@ -143,14 +146,14 @@ function MakeTest({ ready, onMade }: { ready: boolean; onMade: () => void }) {
   const key = JSON.stringify([prompt, level, mode]);
   const prices = priced?.key === key ? priced.prices : null;
 
-  // Priced a moment after the instruction, level or mode changes; a button is pressed only at the price shown.
+  // Priced after an 800 ms pause in changing the instruction, level or mode; a button is pressed only at the price shown.
   useEffect(() => {
     let live = true;
     const timer = setTimeout(() => {
       api<{ prices: Prices }>("/api/admin/automations", { method: "POST", json: { action: "price", prompt, level, mode, timeZone: browserZone() } })
         .then((res) => live && (setPriced({ key: JSON.stringify([prompt, level, mode]), prices: res.prices }), setError("")))
         .catch((err) => live && setError(errorOf(err)));
-    }, 600);
+    }, 800);
     return () => {
       live = false;
       clearTimeout(timer);
@@ -272,7 +275,8 @@ function TestAutomation({ a, language, ready, onChange }: { a: Card["automations
     <li className="border-b border-zinc-900 py-3 last:border-b-0">
       <div className="flex flex-wrap items-center gap-2">
         <span className="min-w-0 font-medium break-words text-zinc-100">{a.name}</span>
-        <Pill status={a.status} outcome={a.pausedReason || undefined} />
+        {/* A finished one-off says how its run ended, so one skipped doesn't read like one that delivered. */}
+        <Pill status={a.status} outcome={a.pausedReason || (a.status === "finished" && a.lastStatus && a.lastStatus !== "done" ? a.lastStatus : undefined)} />
       </div>
       {(a.schedule || a.next) && (
         <Theirs language={language} className="mt-1 w-fit max-w-full text-xs text-zinc-400">
@@ -379,6 +383,20 @@ function RunReceipt({ runId, language, onChange }: { runId: string; language: st
     };
   }, [runId, finished, going, again]);
 
+  // Fetched through the app's api (so it names the tab's account) and saved as the route's ?format=json writes it.
+  const download = async () => {
+    try {
+      const got = await api<Receipt>(`/api/automations/runs/${runId}`);
+      const url = URL.createObjectURL(new Blob([JSON.stringify(got, null, 1)], { type: "application/json" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `receipt-${runId.replace(/[^A-Za-z0-9_-]/g, "")}.json`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      setCheck(errorOf(err));
+    }
+  };
   const compare = async (file: File | undefined) => {
     if (!file) return;
     setCheck("");
@@ -500,7 +518,9 @@ function RunReceipt({ runId, language, onChange }: { runId: string; language: st
       <div>
         <div className="mb-1 font-medium text-zinc-300">Holds</div>
         {r.holds.length === 0 ? (
-          <p className="text-zinc-500">None: no AI step has priced its call.</p>
+          <p className="text-zinc-500">
+            {r.steps.some((s) => s.kind === "ai" && s.status === "skipped") ? "None: the step didn't fit, so nothing was held." : "None: no AI step has priced its call."}
+          </p>
         ) : (
           <ul className="space-y-1.5">
             {r.holds.map((h) => (
@@ -532,9 +552,9 @@ function RunReceipt({ runId, language, onChange }: { runId: string; language: st
           </pre>
         )}
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          <a href={`/api/automations/runs/${runId}?format=json`} download className={button}>
+          <button onClick={() => void download()} className={button}>
             Download receipt JSON
-          </a>
+          </button>
           <label className={`${button} cursor-pointer`}>
             Compare with a downloaded receipt
             <input type="file" accept="application/json,.json" className="sr-only" onChange={(e) => void compare(e.target.files?.[0])} />

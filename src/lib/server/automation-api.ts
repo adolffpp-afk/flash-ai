@@ -14,7 +14,7 @@
  */
 import { after } from "next/server";
 import { gunzipSync } from "node:zlib";
-import { FINISHED, isPaid, MAX_NAME_CHARS, MAX_ON, MAX_SUB_DAILY, MONTH_LEFT, NOTICES, ONCE_PASSED, parseSpec, PRICE_CHANGED, QUEUED, runnerFor, SPEC_INVALID, TOO_MANY_ON, TOO_MANY_SUB_DAILY, describeNext, describeWhen, type Spec } from "../automations.ts";
+import { FINISHED, isPaid, MAX_NAME_CHARS, MAX_ON, MAX_SUB_DAILY, MONTH_LEFT, NO_CREDITS, NOTICES, ONCE_PASSED, parseSpec, PRICE_CHANGED, QUEUED, runnerFor, SPEC_INVALID, TOO_MANY_ON, TOO_MANY_SUB_DAILY, describeNext, describeWhen, type Spec } from "../automations.ts";
 import { validTimeZone } from "../context-note.ts";
 import { LEVELS } from "../levels.ts";
 import { monthStart, nextFire, nextFires, nextMonthStart, ONCE_MAX_AHEAD_MS, ONCE_MIN_AHEAD_MS, subDaily, type When } from "../schedule.ts";
@@ -26,7 +26,7 @@ import { outputText, type AutoRow, type RunRow } from "./automation-steps.ts";
 import { deleteAutomationNow } from "./automation-tick.ts";
 import { cronHealth } from "./automation-admin.ts";
 import { AUTOMATION_SHARED_PAID, automationsOpenTo, automationsServer, claimLimits, keyInUse, missingSetup } from "./automations.ts";
-import { automationSpent } from "./credits.ts";
+import { automationSpent, balance, ensureMonthlyCredits, topUpFloor } from "./credits.ts";
 import { all, db, one, run as sql } from "./db.ts";
 import { translatorFor, type ServerT } from "./i18n.ts";
 import { randomId, sha256 } from "./ids.ts";
@@ -59,7 +59,8 @@ export const LIMITS = {
   card: [300, 10 * MINUTE],
 } as const satisfies Record<string, readonly [number, number]>;
 
-export type Gate = { user: User; t: ServerT };
+/** deadline: when a run this request moves on must be done by, OWNER_RUN_MS after the request came. */
+export type Gate = { user: User; t: ServerT; deadline: number };
 const json = (body: unknown, status = 200) => Response.json(body, { status });
 const n = (v: unknown) => Number(v ?? 0);
 
@@ -68,6 +69,7 @@ const n = (v: unknown) => Number(v ?? 0);
  * makes it per automation as well as per account.
  */
 export async function gate(request: Request, o: { write?: boolean; limit: keyof typeof LIMITS; key?: string }): Promise<Gate | Response> {
+  const deadline = Date.now() + OWNER_RUN_MS;
   const user = await getUser(request);
   if (!user) return unauthorized();
   const t = await translatorFor(request, user.language);
@@ -80,7 +82,7 @@ export async function gate(request: Request, o: { write?: boolean; limit: keyof 
   if (await overLimit(`auto:${o.limit}:${o.key ?? user.id}`, max, windowMs)) {
     return json({ error: windowMs >= HOUR ? t("Too many requests. Try again in an hour.") : t("Too many tries. Please wait a few minutes.") }, 429);
   }
-  return { user, t };
+  return { user, t, deadline };
 }
 
 /** The request's JSON body, or {} when there is none or it isn't an object. */
@@ -208,6 +210,18 @@ async function monthLeftRefusal(t: ServerT, a: Row, estimate: Estimate): Promise
   return json({ error: said, code: "month_cap" }, 409);
 }
 
+/**
+ * 409 no_credits, in words, when the balance above the auto top-up level can't hold its first AI step
+ * (after any monthly credits due are given, as a run does): the run would only be skipped, so it doesn't start.
+ */
+async function creditsRefusal(t: ServerT, a: Row, estimate: Estimate): Promise<Response | null> {
+  await ensureMonthlyCredits(a.pay_account);
+  const [have, floor] = await Promise.all([balance(a.pay_account), topUpFloor(a.pay_account)]);
+  if (have - floor >= estimate.least) return null;
+  const said = floor > 0 && have >= estimate.least ? t(NOTICES.topupFloor, { credits: floor }) : t(NO_CREDITS, { credits: estimate.least });
+  return json({ error: said, code: "no_credits" }, 409);
+}
+
 /** 409 price_changed: the worst case went up since the user saw it (or they never saw one). */
 const priceChanged = (t: ServerT, estimate: Estimate) => json({ error: t(PRICE_CHANGED), code: "price_changed", estimate }, 409);
 const seenEnough = (seenMax: unknown, estimate: Estimate) => typeof seenMax === "number" && Number.isFinite(seenMax) && estimate.worst <= seenMax;
@@ -305,7 +319,10 @@ export async function editAutomation(g: Gate, id: string, body: Record<string, u
   const capMonth = capOf(body.capMonth, Number(a.cap_month));
   if (!capRun || !capMonth || capMonth < capRun) return json({ error: g.t(SPEC_INVALID) }, 400);
   const version = body.spec !== undefined ? Number(a.version) + 1 : Number(a.version);
-  const nextAt = runGoesOn ? 0 : status === "on" && (turningOn || edited) ? nextSlot(f.spec, f.timeZone) : Number(a.next_at);
+  // Worked out again only when it is turned on or its schedule or zone changes: a rename or a new
+  // instruction keeps a slot that is due and not yet taken by the tick.
+  const moved = JSON.stringify(f.spec.trigger) !== JSON.stringify(spec?.trigger) || f.timeZone !== a.time_zone || !Number(a.next_at);
+  const nextAt = runGoesOn ? 0 : status === "on" && (turningOn || moved) ? nextSlot(f.spec, f.timeZone) : Number(a.next_at);
   // A pause by its owner never ends by itself; turned on, every pause is over.
   const pause =
     status === a.status
@@ -401,7 +418,7 @@ export async function runNow(g: Gate, id: string, body: Record<string, unknown>)
   if (!spec) return json({ error: g.t(SPEC_INVALID) }, 409);
   const est = await estimateSpec(spec, g.user, a);
   if (!seenEnough(body.seenMax, est)) return priceChanged(g.t, est);
-  const used = await monthLeftRefusal(g.t, a, est);
+  const used = (await monthLeftRefusal(g.t, a, est)) ?? (await creditsRefusal(g.t, a, est));
   if (used) return used;
   return startOwnerRun(g, a, spec, `manual:${requestId}`, { type: "owner" });
 }
@@ -419,10 +436,11 @@ async function startOwnerRun(g: Gate, a: Row, spec: Spec, runKey: string, trigge
     triggerJson: JSON.stringify(trigger),
   });
   if (!run) return json({ error: g.t("Not found") }, 404);
-  // Leased to this request: it moves the run on after answering, within this route's time.
+  // Leased to this request: it moves the run on after answering, within this route's time (timed from
+  // the request, so pricing it first takes nothing from the steps).
   if (run.owner) {
     const { id, owner } = run;
-    after(() => advanceRun(id, owner, Date.now() + OWNER_RUN_MS).catch((err) => console.error("[flash] automation run failed", err instanceof Error ? err.name : "error")));
+    after(() => advanceRun(id, owner, g.deadline).catch((err) => console.error("[flash] automation run failed", err instanceof Error ? err.name : "error")));
   }
   return json({ run: { id: run.id, status: run.status }, ...(run.status === "queued" && { note: g.t(QUEUED) }) }, run.existing ? 200 : 202);
 }
@@ -467,10 +485,12 @@ const RUN_NOTES: Record<string, string> = {
   unconfirmed: NOTICES.unconfirmed,
   run_cap: NOTICES.runCap,
   month_cap: MONTH_LEFT,
+  no_credits: NOTICES.noCredits,
+  topup_floor: NOTICES.topupFloor,
 };
-/** The credits a run's note names: the limit it stopped at, else what it was charged. */
-const noteCredits = (outcome: string, run: { credits: number }, a: { cap_run: number; cap_month: number } | null) =>
-  Number(outcome === "run_cap" ? (a?.cap_run ?? 0) : outcome === "month_cap" ? (a?.cap_month ?? 0) : run.credits);
+/** The credits a run's note names: the limit it stopped at, the auto top-up level (floor), else what it was charged. */
+const noteCredits = (outcome: string, run: { credits: number }, a: { cap_run: number; cap_month: number } | null, floor: number) =>
+  Number(outcome === "run_cap" ? (a?.cap_run ?? 0) : outcome === "month_cap" ? (a?.cap_month ?? 0) : outcome === "topup_floor" ? floor : run.credits);
 
 /** A run's receipt: what started it, each attempt of each step with its hold, and its fingerprint. Reads only. */
 export async function receipt(g: Gate, runId: string) {
@@ -484,7 +504,8 @@ export async function receipt(g: Gate, runId: string) {
     "SELECT ref, held, credits, started, done, settled_at, created_at FROM credit_holds WHERE run_id = ? ORDER BY created_at",
     [r.id],
   );
-  const a = await one<{ name: string; status: string; cap_run: number; cap_month: number }>("SELECT name, status, cap_run, cap_month FROM automations WHERE id = ?", [r.automation_id]);
+  const a = await one<{ name: string; status: string; cap_run: number; cap_month: number; pay_account: string }>("SELECT name, status, cap_run, cap_month, pay_account FROM automations WHERE id = ?", [r.automation_id]);
+  const floor = r.outcome === "topup_floor" && a ? await topUpFloor(a.pay_account) : 0;
   const saved = savedReceipt(r);
   // A step under way shows what its hold keeps (its row gets its own held when it settles).
   const holdOf = new Map(holds.map((h) => [h.ref, Number(h.held)]));
@@ -518,7 +539,7 @@ export async function receipt(g: Gate, runId: string) {
       deleted: a?.status === "deleting",
       // Why it ended this way, in the reader's words, where Flash says so.
       noteText: RUN_NOTES[r.outcome]
-        ? noticeText({ phrase: RUN_NOTES[r.outcome], blanks: JSON.stringify({ credits: noteCredits(r.outcome, r, a), date: nextMonthStart(Number(r.created_at)) }) }, g.t).text
+        ? noticeText({ phrase: RUN_NOTES[r.outcome], blanks: JSON.stringify({ credits: noteCredits(r.outcome, r, a, floor), date: nextMonthStart(Number(r.created_at)) }) }, g.t).text
         : "",
     },
     steps: steps.map((s) => ({
@@ -606,7 +627,7 @@ export async function actOnRun(g: Gate, runId: string, body: Record<string, unkn
     if (!spec) return json({ error: g.t(SPEC_INVALID) }, 409);
     const est = await estimateSpec(spec, g.user, a);
     if (!seenEnough(body.seenMax, est)) return priceChanged(g.t, est);
-    const used = await monthLeftRefusal(g.t, a, est);
+    const used = (await monthLeftRefusal(g.t, a, est)) ?? (await creditsRefusal(g.t, a, est));
     if (used) return used;
     return startOwnerRun(g, a, spec, `retry:${r.id}`, { type: "retry", of: r.id });
   }
@@ -644,13 +665,15 @@ export async function burnIn(g: Gate) {
   );
   // Runs of automations being deleted stay listed (marked) until their rows go, so a delete mid-run can be checked.
   // held: the largest hold of the run (its steps' holds come one after another, never together).
+  // Worked out for the 20 runs shown only, each through its own holds (credit_holds_by_run).
   const runs = await all<{ id: string; automation_id: string; name: string; deleting: number; status: string; outcome: string; origin: string; credits: number; scheduled_at: number; started_at: number; finished_at: number; created_at: number; parked: number; due_at: number; held: number; holds: number; open: number }>(
-    `SELECT r.id, r.automation_id, a.name, a.status = 'deleting' AS deleting, r.status, r.outcome, r.origin, r.credits, r.scheduled_at, r.started_at, r.finished_at, r.created_at, r.parked, r.due_at,
-            (SELECT COALESCE(MAX(held), 0) FROM credit_holds h WHERE h.run_id = r.id) AS held,
-            (SELECT COUNT(*) FROM credit_holds h WHERE h.run_id = r.id) AS holds,
-            (SELECT COUNT(*) FROM credit_holds h WHERE h.run_id = r.id AND h.settled_at = 0) AS open
-       FROM automation_runs r JOIN automations a ON a.id = r.automation_id
-      WHERE r.user_id = ? ORDER BY r.created_at DESC LIMIT 20`,
+    `SELECT latest.id, latest.automation_id, a.name, a.status = 'deleting' AS deleting, latest.status, latest.outcome, latest.origin, latest.credits, latest.scheduled_at,
+            latest.started_at, latest.finished_at, latest.created_at, latest.parked, latest.due_at,
+            COALESCE(MAX(h.held), 0) AS held, COUNT(h.ref) AS holds, COALESCE(SUM(CASE WHEN h.settled_at = 0 THEN 1 ELSE 0 END), 0) AS open
+       FROM (SELECT * FROM automation_runs WHERE user_id = ? ORDER BY created_at DESC LIMIT 20) latest
+       JOIN automations a ON a.id = latest.automation_id
+       LEFT JOIN credit_holds h ON h.run_id = latest.id
+      GROUP BY latest.id ORDER BY latest.created_at DESC`,
     [g.user.id],
   );
   const month = await chargedAndHeld({ sql: "user_id = ?", args: [g.user.id] }, monthStart(Date.now()));

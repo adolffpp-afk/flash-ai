@@ -452,18 +452,7 @@ function AutomationLines({ a, days, health }: { a: NonNullable<Stats["automation
   // The burn-in card's newer lines, while it polls, else those of the stats.
   const h = health ?? a.health;
   // Runs by outcome: the last 24 hours beside the last 7 days.
-  const outcomes = new Map<string, { status: string; outcome: string; day: number; week: number }>();
-  for (const [list, field] of [
-    [a.outcomesDay, "day"],
-    [a.outcomesWeek, "week"],
-  ] as const) {
-    for (const r of list) {
-      const key = `${r.status}:${r.outcome}`;
-      const row = outcomes.get(key) ?? { status: r.status, outcome: r.outcome, day: 0, week: 0 };
-      row[field] += r.runs;
-      outcomes.set(key, row);
-    }
-  }
+  const outcomes = a.outcomes;
   // What isn't set at all (a CRON_SECRET too short is said apart).
   const absent = a.missing.filter((m) => !(m === "CRON_SECRET" && a.cronSecretShort));
   const writesShare = h.writes.limit ? Math.round((h.writes.writes / h.writes.limit) * 100) : 0;
@@ -535,12 +524,12 @@ function AutomationLines({ a, days, health }: { a: NonNullable<Stats["automation
             note={`${usd(a.credits)} at list price · ${cost(a.costCents)} AI cost · ${a.costCents ? `${(a.credits / a.costCents).toFixed(1)}×` : "–"} cost`}
           />
           <Tile label="Losses" value={num(a.losses)} note={a.losses ? `${cost(a.lostCents)} AI cost charged 0 credits` : "None"} />
-          <Tile label="Function time" value={`${num(Math.round(a.functionSeconds / 60))} min`} note="Estimated from each run's start and end" />
+          <Tile label="Function time" value={`${num(Math.round(a.functionSeconds / 60))} min`} note="Estimated from each step's start and end (waits between tries and pauses left out)" />
         </div>
         <div className="mt-4">
           <Table
             head={["Runs by outcome", "24 hours", "7 days"]}
-            rows={[...outcomes.values()]
+            rows={[...outcomes]
               .sort((x, y) => y.week - x.week)
               .map((r) => [
                 <span key="o">
