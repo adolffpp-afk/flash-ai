@@ -8,6 +8,8 @@
  * batch that names every table, each statement checking the assistant is the user's, followed by
  * purgeIndex. Every change to an assistant gives it a new version: an editor sends back the version
  * it read, and a change made since (on another device, or by an upload there) is refused, not lost.
+ * Adding or deleting a file takes the editor's version too, and gives back a new one only when the
+ * assistant was at the editor's version just before (see versionAfter).
  */
 import { randomBytes } from "node:crypto";
 import type { Client, InStatement } from "@libsql/client";
@@ -257,6 +259,18 @@ export async function getAssistant(userId: string, id: string): Promise<Assistan
   };
 }
 
+// A version an editor read: a whole number, from 0.
+const isVersion = (version: unknown): version is number => Number.isSafeInteger(version) && (version as number) >= 0;
+
+/**
+ * The version an editor that read `seen` saves at next, once a file it added or deleted has given
+ * the assistant version `now`: `now` when the assistant was at `seen` just before, as nothing else
+ * changed it since the editor read it; else `seen`, so that its next save is refused with the
+ * version now and it reloads, and a change made on another device isn't saved over. Never a version
+ * that takes in a change the editor hasn't seen.
+ */
+const versionAfter = (seen: number, now: number) => (now === seen + 1 ? now : seen);
+
 // A level was sent that isn't one of Flash's ("summit" for "ultra", say): refused, never saved as
 // another level.
 const unknownLevel = (sent: unknown) =>
@@ -315,7 +329,7 @@ const EDITABLE = ["name", "description", "instructions", "starters", "level", "c
  * again when its name or instructions change.
  */
 export async function updateAssistant(userId: string, id: string, patch: unknown, version: number): Promise<Assistant> {
-  if (!Number.isSafeInteger(version) || version < 0 || unknownLevel(patch)) refuse({ code: "bad_request" });
+  if (!isVersion(version) || unknownLevel(patch)) refuse({ code: "bad_request" });
   const row = (await ownRow(userId, id)) ?? refuse({ code: "not_found" });
   if (Number(row.version) !== version) refuse({ code: "version_conflict", version: Number(row.version) });
   const was = fieldsOf(row);
@@ -364,16 +378,19 @@ export async function deleteAssistant(userId: string, id: string): Promise<boole
 
 /**
  * Deletes one file of the user's assistant, its chunks and their index rows with it, and gives the
- * assistant a new version, in one batch that checks the file is there (see removeFileRows). The
- * new version, or null when there's no such file of theirs, or another delete took it first.
+ * assistant a new version, in one batch that checks the file is there (see removeFileRows).
+ * `version` is the one the editor read: the delete goes through whatever it is, and the version
+ * given back is the one the editor saves at next (versionAfter). Null when there's no such file of
+ * theirs, or another delete took it first.
  */
-export async function deleteAssistantFile(userId: string, assistantId: string, fileId: string): Promise<number | null> {
+export async function deleteAssistantFile(userId: string, assistantId: string, fileId: string, version: number): Promise<number | null> {
+  if (!isVersion(version)) refuse({ code: "bad_request" });
   const rows = removeFileRows(userId, assistantId, fileId);
   const done = await (await db()).batch([...rows, { sql: "SELECT version FROM assistants WHERE id = ? AND user_id = ?", args: [assistantId, userId] }], "write");
   // The file's own row is deleted last.
   if (!done[rows.length - 1].rowsAffected) return null;
   await purgeIndex().catch(() => {});
-  return Number(done.at(-1)!.rows[0]?.version ?? 0);
+  return versionAfter(version, Number(done.at(-1)!.rows[0]?.version ?? 0));
 }
 
 /**
@@ -473,10 +490,13 @@ async function dropFile(client: Client, assistantId: string, fileId: string): Pr
  * again in the statement that adds it. Then counted and stored in chunks with their index rows
  * (indexFile), and only then does the assistant get a new version. If storing fails, the file is
  * deleted (see dropFile) and the assistant keeps its version. The day's text is given back only
- * when nothing was written; a file whose chunks were being written uses it, kept or not. The file,
- * and the assistant's new version.
+ * when nothing was written; a file whose chunks were being written uses it, kept or not.
+ * `version` is the one the editor read: the file is added whatever it is. The file, and the version
+ * the editor saves at next: the new one only when nothing else changed the assistant since its
+ * version (versionAfter).
  */
-export async function addAssistantFile(userId: string, assistantId: string, upload: Upload): Promise<{ file: AssistantFile; version: number }> {
+export async function addAssistantFile(userId: string, assistantId: string, upload: Upload, version: number): Promise<{ file: AssistantFile; version: number }> {
+  if (!isVersion(version)) refuse({ code: "bad_request" });
   if (!(await ownRow(userId, assistantId))) refuse({ code: "not_found" });
   if (!isFileKind(upload.kind)) refuse({ code: "bad_file" });
   const kind = upload.kind as AssistantFileKind;
@@ -526,7 +546,7 @@ export async function addAssistantFile(userId: string, assistantId: string, uplo
     written = true;
     // The new version once the file is all there, so an upload that fails leaves the assistant as
     // the editor read it, version and all.
-    let version = 0;
+    let next = version;
     try {
       await indexFile(assistantId, fileId, text, tokens);
       const done = await client.batch(
@@ -539,7 +559,7 @@ export async function addAssistantFile(userId: string, assistantId: string, uplo
         ],
         "write",
       );
-      version = Number(done[1].rows[0]?.version ?? 0);
+      next = versionAfter(version, Number(done[1].rows[0]?.version ?? 0));
     } catch (err) {
       console.error("[flash] storing an assistant's file failed", err instanceof Error ? err.message : "error");
       // No new version.
@@ -549,7 +569,7 @@ export async function addAssistantFile(userId: string, assistantId: string, uplo
     }
     const file = await one<FileRow>(`SELECT ${FILE_FIELDS} FROM assistant_files WHERE id = ?`, [fileId]);
     if (!file) return refuse({ code: "failed" });
-    return { file: fileOf(file), version };
+    return { file: fileOf(file), version: next };
   } finally {
     if (!written) await giveBack().catch(() => {});
   }

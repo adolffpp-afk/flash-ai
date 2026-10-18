@@ -1,13 +1,14 @@
 import { after } from "next/server";
 import { overLimit } from "@/lib/server/limits.ts";
-import { NO_STORE, answer, gate, readForm, refusal } from "@/lib/server/assistant-routes.ts";
+import { NO_STORE, answer, gate, readForm, refusal, versionOf } from "@/lib/server/assistant-routes.ts";
 import { addAssistantFile } from "@/lib/server/assistants.ts";
 import { catchUpIndex } from "@/lib/server/assistant-search.ts";
 import { MAX_UPLOAD_BYTES } from "@/lib/assistants.ts";
 
 /*
  * Adds a file to one of the user's assistants, as the text the browser read from it: a form with
- * name, kind (pdf, docx, xlsx, pptx or text), pages and text, the text up to MAX_UPLOAD_BYTES. A
+ * name, kind (pdf, docx, xlsx, pptx or text), pages, text (up to MAX_UPLOAD_BYTES) and the version
+ * the editor read. The answer has the file and the version the editor saves at next. A
  * request over UPLOAD_CAP (MAX_UPLOAD_BYTES and 64 KB for the other fields) is refused before it's
  * read, once the proxy doesn't run before this route (see readForm). A smaller one whose text is
  * over MAX_UPLOAD_BYTES is read, then refused as too big. Only the owner, only from Flash's own
@@ -38,7 +39,7 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
   const text = typeof part === "string" ? part : part ? await part.text() : "";
   const pages = Number(form.get("pages"));
   return answer(t, async () => {
-    const added = await addAssistantFile(user.id, id, { name: form.get("name"), kind: form.get("kind"), pages, text });
+    const added = await addAssistantFile(user.id, id, { name: form.get("name"), kind: form.get("kind"), pages, text }, versionOf(form.get("version")));
     // Chunks stored while the database had no index go in it, a bounded step at a time.
     after(() => catchUpIndex().catch(() => {}));
     return Response.json(added, { headers: NO_STORE });

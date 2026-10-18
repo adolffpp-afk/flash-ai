@@ -61,6 +61,12 @@ export async function gate(request: Request, write?: WriteBody): Promise<{ user:
   return { user, t };
 }
 
+/**
+ * The version an editor read, sent as text (a form's field, or a delete's ?version=): its number,
+ * or NaN for anything but digits, which is refused as a bad request.
+ */
+export const versionOf = (sent: unknown): number => (typeof sent === "string" && /^\d{1,15}$/.test(sent) ? Number(sent) : NaN);
+
 const MB = 1024 * 1024;
 
 /** A size as storage is shown: in MB from 1 MB, else in KB. */

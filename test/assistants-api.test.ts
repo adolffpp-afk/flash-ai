@@ -88,6 +88,15 @@ const { afterwards } = await import("./support/next-server.mjs");
 
 await db();
 await run("PRAGMA foreign_keys = OFF");
+/**
+ * Turns foreign keys off, as Turso runs, for what a test does next one query at a time, and checks.
+ * The client keeps a pool of connections, and one it opens for a query asked while another runs has
+ * them on; queries asked one at a time all use the connection used last, which this turns them off on.
+ */
+async function keysOff() {
+  await run("PRAGMA foreign_keys = OFF");
+  assert.equal(Number((await one<{ foreign_keys: number }>("PRAGMA foreign_keys"))?.foreign_keys), 0, "foreign keys off, as on Turso");
+}
 
 // Every level's model, each once, with a weight of its own: the largest isn't the first or last asked.
 const MODELS = [...new Set(Object.values(LEVEL_MODELS))];
@@ -146,23 +155,35 @@ const put = async (who: Who | null, id: string, json: Record<string, unknown>, o
   read(await oneRoute.PUT(request("PUT", `/api/assistants/${id}`, who, { json, ...o }), ctx({ id })));
 const remove = async (who: Who | null, id: string, o: Sent = {}) => read(await oneRoute.DELETE(request("DELETE", `/api/assistants/${id}`, who, o), ctx({ id })));
 
-/** An upload as the editor sends it: the file's text as a part of its own, with its name, kind and pages. */
-function form(text: string | Blob, o: { name?: string; kind?: string; pages?: number } = {}) {
+type FileForm = { name?: string; kind?: string; pages?: number; version?: number | string | null };
+/**
+ * An upload as the editor sends it: the file's text as a part of its own, with its name, kind and
+ * pages, and the version the editor read (0 unless told; none for null).
+ */
+function form(text: string | Blob, o: FileForm = {}) {
   const f = new FormData();
   f.set("name", o.name ?? "Notes.txt");
   f.set("kind", o.kind ?? "text");
   f.set("pages", String(o.pages ?? 0));
+  if (o.version !== null) f.set("version", String(o.version ?? 0));
   f.set("text", typeof text === "string" ? new Blob([text], { type: "text/plain" }) : text, "text.txt");
   return f;
 }
-async function upload(who: Who | null, id: string, text: string, o: { name?: string; kind?: string; pages?: number } & Sent = {}) {
-  const res = await filesRoute.POST(request("POST", `/api/assistants/${id}/files`, who, { form: form(text, o), ...o }), ctx({ id }));
+// The version an editor that has just read the assistant has, unless told.
+const versionNow = async (id: string) => Number((await row(id))?.version ?? 0);
+async function upload(who: Who | null, id: string, text: string, o: FileForm & Sent = {}) {
+  const version = o.version === undefined ? await versionNow(id) : o.version;
+  const res = await filesRoute.POST(request("POST", `/api/assistants/${id}/files`, who, { form: form(text, { ...o, version }), ...o }), ctx({ id }));
   await afterwards();
   return read(res);
 }
 const fileText = (who: Who | null, id: string, fileId: string) => fileRoute.GET(request("GET", `/api/assistants/${id}/files/${fileId}`, who), ctx({ id, fileId }));
-const removeFile = async (who: Who | null, id: string, fileId: string, o: Sent = {}) =>
-  read(await fileRoute.DELETE(request("DELETE", `/api/assistants/${id}/files/${fileId}`, who, o), ctx({ id, fileId })));
+/** A file's delete as the editor sends it, with the version it read (?version=; none for null). */
+async function removeFile(who: Who | null, id: string, fileId: string, o: Sent & { version?: number | string | null } = {}) {
+  const version = o.version === undefined ? await versionNow(id) : o.version;
+  const query = version === null ? "" : `?version=${encodeURIComponent(String(version))}`;
+  return read(await fileRoute.DELETE(request("DELETE", `/api/assistants/${id}/files/${fileId}${query}`, who, o), ctx({ id, fileId })));
+}
 const startChat = async (who: Who | null, id: string, o: Sent = {}) => read(await chatsRoute.POST(request("POST", `/api/assistants/${id}/chats`, who, { json: {}, ...o }), ctx({ id })));
 const row = (id: string) =>
   one<{ name: string; description: string; instructions: string; starters: string; level: string; version: number; instr_tokens: number }>("SELECT * FROM assistants WHERE id = ?", [id]);
@@ -186,19 +207,23 @@ async function seed(table: string, assistantId: string, extra: Record<string, st
   const value = (c: { name: string; type: string }) => (c.name === "assistant_id" ? assistantId : c.name in extra ? extra[c.name] : /INT/i.test(c.type) ? ++seeded : `${table}-${c.name}-${++seeded}`);
   await run(`INSERT INTO ${table} (${filled.map((c) => c.name).join(", ")}) VALUES (${filled.map(() => "?").join(", ")})`, filled.map(value));
 }
-/** The tables in the database with a column of this name; for file_id, only the assistants' own. */
+/** The tables in the database with a column of this name, whatever they're called. */
 async function tablesWith(column: string): Promise<string[]> {
   const tables: string[] = [];
   for (const { name } of await all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")) {
-    if (column === "file_id" && !name.startsWith("assistant")) continue;
     if ((await all<{ name: string }>(`PRAGMA table_info(${name})`)).some((c) => c.name === column)) tables.push(name);
   }
   return tables;
 }
+// The tables with a file_id column that keep nothing for an assistant's file: a connected app's
+// public links to an owner's files, and the Google files a connection picked.
+const NOT_ASSISTANT_FILE_TABLES = ["connection_files", "public_files"];
+/** Every table with a file_id column, less those listed in FILE_TABLES or as not the assistants'. */
+const unlistedFileTables = async () => (await tablesWith("file_id")).filter((t) => !(FILE_TABLES as readonly string[]).includes(t) && !NOT_ASSISTANT_FILE_TABLES.includes(t));
 
 test("assistants are on here only through the test's loader, and off as shipped", async () => {
   assert.equal(ASSISTANTS_ON, true, "support/assistants-on.mjs turned the switch on for this test");
-  assert.equal(Number((await one<{ foreign_keys: number }>("PRAGMA foreign_keys"))?.foreign_keys), 0, "foreign keys off, as on Turso");
+  await keysOff();
 });
 
 test("a text's tokens are Anthropic's free count on every level's model, each asked once, the largest kept; its bytes when counting fails", async () => {
@@ -508,6 +533,58 @@ test("changing an assistant: only what's sent, with the version it was read at, 
   assert.equal(limited.body.error, "Too many updates. Try again in an hour.");
 });
 
+test("adding or deleting a file takes the editor's version: after a change on another device it gives the editor's own back, so its next save is a 409, not a save over that change", async () => {
+  const owner = await account();
+  const a = await made(owner, { instructions: "Answer about bread." });
+  const name = async () => (await row(a.id))!.name;
+
+  // Device A reads it at version 0; device B renames it.
+  const b1 = await put(owner, a.id, { version: 0, name: "Bread coach" });
+  assert.equal((b1.body.assistant as Made).version, 1);
+  // A adds a file: it's kept, and A gets its own version back, not one with B's rename in it.
+  const up = await upload(owner, a.id, fresh(600), { version: 0 });
+  assert.equal(up.status, 200, up.body.error);
+  assert.equal(up.body.version, 0, "the editor's own version");
+  assert.equal(Number((await row(a.id))!.version), 2, "the file gave the assistant a new version all the same");
+  const fileId = (up.body.file as { id: string }).id;
+  // So A's save from its form, at the version the upload gave, is refused: B's rename stays.
+  const save = await put(owner, a.id, { version: up.body.version, name: "Bakery helper", instructions: "Answer about bread and cakes." });
+  assert.equal(save.status, 409);
+  assert.deepEqual([save.body.code, save.body.version], ["version_conflict", 2]);
+  assert.equal(await name(), "Bread coach");
+
+  // Reloaded, nothing else changes it: A's upload gives the new version, and its save goes through.
+  const up2 = await upload(owner, a.id, fresh(600), { version: 2 });
+  assert.equal(up2.body.version, 3);
+  assert.equal((await put(owner, a.id, { version: 3, description: "Bread and cakes" })).status, 200);
+
+  // The same for a file's delete: B renames it again, then A deletes a file at the version it has.
+  assert.equal((await put(owner, a.id, { version: 4, name: "Rye coach" })).status, 200);
+  const del = await removeFile(owner, a.id, fileId, { version: 4 });
+  assert.equal(del.status, 200, del.body.error);
+  assert.equal(del.body.version, 4, "the editor's own version");
+  assert.equal(await count("SELECT COUNT(*) AS n FROM assistant_files WHERE id = ?", [fileId]), 0, "the file is deleted all the same");
+  const save2 = await put(owner, a.id, { version: del.body.version, name: "Bakery helper" });
+  assert.deepEqual([save2.status, save2.body.version], [409, 6]);
+  assert.equal(await name(), "Rye coach");
+  const del2 = await removeFile(owner, a.id, (up2.body.file as { id: string }).id, { version: 6 });
+  assert.equal(del2.body.version, 7, "nothing else changed it");
+  assert.equal((await put(owner, a.id, { version: 7, name: "Bakery helper" })).status, 200);
+
+  // Without the version it read, or with one that isn't a whole number, nothing is added or deleted.
+  const third = await upload(owner, a.id, fresh(600));
+  const thirdId = (third.body.file as { id: string }).id;
+  const files = () => count("SELECT COUNT(*) AS n FROM assistant_files WHERE assistant_id = ?", [a.id]);
+  for (const version of [null, "", "abc", "-1", "1.5", "1e3", " 9"]) {
+    const added = await upload(owner, a.id, fresh(600), { version });
+    assert.deepEqual([added.status, added.body.code], [400, "bad_request"], `upload with ${JSON.stringify(version)}`);
+    const deleted = await removeFile(owner, a.id, thirdId, { version });
+    assert.deepEqual([deleted.status, deleted.body.code], [400, "bad_request"], `delete with ${JSON.stringify(version)}`);
+  }
+  assert.equal(await files(), 1);
+  assert.equal(Number((await row(a.id))!.version), 9);
+});
+
 test("a file: kept as its text with its counts, readable back as plain text, and never cut", async () => {
   const owner = await account();
   const a = await made(owner);
@@ -703,7 +780,7 @@ test("the day's text is taken in the statement that counts it: two uploads at on
   await spent(key, DAILY_TEXT_FREE - 2500, DAY);
   const same = fresh(1000);
   holdFor = 2 * MODELS.length;
-  const twice = await Promise.allSettled([0, 1].map(() => server.addAssistantFile(owner.id, a.id, { name: "Notes.txt", kind: "text", text: same })));
+  const twice = await Promise.allSettled([0, 1].map(() => server.addAssistantFile(owner.id, a.id, { name: "Notes.txt", kind: "text", text: same }, 0)));
   assert.deepEqual(twice.map(outcome).sort(), ["duplicate", "kept"]);
   assert.equal(await used(key), DAILY_TEXT_FREE - 1500, "1,000 characters added, 1,000 counted");
   assert.equal((await upload(owner, a.id, fresh(1400))).status, 200, "so 1,400 more still fit");
@@ -711,7 +788,7 @@ test("the day's text is taken in the statement that counts it: two uploads at on
   // Two files at once that each fit in what's left, but not both: the first is kept and the other
   // refused, with only the first counted, so a small file still fits after.
   await spent(key, DAILY_TEXT_FREE - 1500, DAY);
-  const both = await Promise.allSettled([fresh(1000), fresh(1000)].map((text) => server.addAssistantFile(owner.id, a.id, { name: "Notes.txt", kind: "text", text })));
+  const both = await Promise.allSettled([fresh(1000), fresh(1000)].map((text) => server.addAssistantFile(owner.id, a.id, { name: "Notes.txt", kind: "text", text }, 2)));
   assert.deepEqual(both.map(outcome).sort(), ["daily_text", "kept"]);
   assert.equal(await used(key), DAILY_TEXT_FREE - 500);
   assert.equal((await upload(owner, a.id, fresh(500))).status, 200);
@@ -805,7 +882,7 @@ test("two deletes of one file at once: one deletes it, the other finds nothing, 
   const up = await upload(owner, a.id, fresh(3000));
   assert.equal(up.body.version, 1);
   const fileId = (up.body.file as { id: string }).id;
-  const both = await Promise.all([removeFile(owner, a.id, fileId), removeFile(owner, a.id, fileId)]);
+  const both = await Promise.all([removeFile(owner, a.id, fileId, { version: 1 }), removeFile(owner, a.id, fileId, { version: 1 })]);
   assert.deepEqual(both.map((r) => r.status).sort(), [200, 404]);
   assert.equal(both.find((r) => r.status === 200)!.body.version, 2);
   assert.equal(Number((await row(a.id))!.version), 2, "one new version");
@@ -914,7 +991,7 @@ test("an upload's request over UPLOAD_CAP (3,000,000 bytes and 64 KB) is refused
   // for the other fields: the request is read and parsed, and then its text is refused as too big,
   // before it's counted or stored and before the day's text is taken.
   const plain = new FormData();
-  for (const [key, value] of Object.entries({ name: "Notes.txt", kind: "text", pages: "0", text: "a".repeat(lib.MAX_UPLOAD_BYTES + 1) })) plain.set(key, value);
+  for (const [key, value] of Object.entries({ name: "Notes.txt", kind: "text", pages: "0", version: "0", text: "a".repeat(lib.MAX_UPLOAD_BYTES + 1) })) plain.set(key, value);
   const sent = new Response(plain);
   const raw = new Uint8Array(await sent.arrayBuffer());
   assert.ok(raw.byteLength > lib.MAX_UPLOAD_BYTES + 1 && raw.byteLength <= UPLOAD_CAP, `${raw.byteLength} bytes`);
@@ -927,7 +1004,7 @@ test("an upload's request over UPLOAD_CAP (3,000,000 bytes and 64 KB) is refused
   assert.equal(await used(`assistant-chars:${owner.id}`), 0);
 
   // Asked of directly, the same holds: more bytes than that is refused as too big.
-  await assert.rejects(server.addAssistantFile(owner.id, a.id, { name: "big.txt", kind: "text", text: "面".repeat(1_000_001) }), (err: InstanceType<typeof server.AssistantError>) => err.refusal.code === "upload_big");
+  await assert.rejects(server.addAssistantFile(owner.id, a.id, { name: "big.txt", kind: "text", text: "面".repeat(1_000_001) }, 0), (err: InstanceType<typeof server.AssistantError>) => err.refusal.code === "upload_big");
   // 3,000,000 bytes of Chinese is 1,000,000 characters: it fits.
   const chinese = "面".repeat(1_000_000);
   assert.equal(bytes(chinese), lib.MAX_UPLOAD_BYTES);
@@ -936,10 +1013,22 @@ test("an upload's request over UPLOAD_CAP (3,000,000 bytes and 64 KB) is refused
 });
 
 test("deleting a file takes its chunks and their index rows, and what every table in FILE_TABLES keeps for it, and gives the assistant a new version", async () => {
-  // Every assistant table with a file_id column, read from the database itself, so one added later
-  // without being listed in FILE_TABLES fails here; and each is deleted with its assistant too.
-  assert.deepEqual([...FILE_TABLES].sort(), await tablesWith("file_id"), "deleting a file knows every table that keeps something for it");
+  await keysOff();
+  // Every table with a file_id column, whatever its name, read from the database itself, so one
+  // added later fails here until it's listed in FILE_TABLES, or on purpose as not the assistants';
+  // and each of FILE_TABLES is deleted with its assistant too.
+  assert.deepEqual(await unlistedFileTables(), [], "deleting a file knows every table that keeps something for it");
+  for (const table of [...FILE_TABLES, ...NOT_ASSISTANT_FILE_TABLES]) assert.ok((await tablesWith("file_id")).includes(table), `${table} has a file_id`);
   for (const table of FILE_TABLES) assert.ok((ASSISTANT_TABLES as readonly string[]).includes(table), `${table} goes with its assistant`);
+  // A table for assistants' files under another name, with or without an assistant_id, is caught.
+  for (const columns of ["assistant_id TEXT NOT NULL, file_id TEXT NOT NULL, vote INTEGER NOT NULL", "file_id TEXT NOT NULL, vote INTEGER NOT NULL"]) {
+    await run(`CREATE TABLE passage_votes (${columns})`);
+    try {
+      assert.deepEqual(await unlistedFileTables(), ["passage_votes"]);
+    } finally {
+      await run("DROP TABLE passage_votes");
+    }
+  }
 
   const owner = await account();
   const stranger = await account();
@@ -977,7 +1066,7 @@ test("deleting a file takes its chunks and their index rows, and what every tabl
 });
 
 test("deleting an assistant, or all of an account's, leaves no row behind with foreign keys off, in every table that keeps one", async () => {
-  assert.equal(Number((await one<{ foreign_keys: number }>("PRAGMA foreign_keys"))?.foreign_keys), 0);
+  await keysOff();
   // Every table with an assistant_id column, read from the database itself, so one added later
   // without being listed in ASSISTANT_TABLES fails here. A chat keeps its messages on purpose.
   assert.deepEqual([...ASSISTANT_TABLES, "projects"].sort(), await tablesWith("assistant_id"), "deleting knows every table that keeps something for an assistant");
