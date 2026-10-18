@@ -29,6 +29,7 @@ import { hasBuiltInRecognition } from "@/lib/listen";
 import { msg, type Translate } from "@/lib/i18n";
 import { useT } from "@/lib/use-t";
 import { useInAndroidApp } from "@/lib/android-shell";
+import { pushStatus, refusedWords, sendTestPush, syncPush, turnOffPush, turnOnPush, type PushStatus } from "@/lib/push";
 
 export { settingsTabFor, type SettingsTab } from "@/lib/settings-tabs";
 
@@ -61,7 +62,7 @@ function Row({ title, about, children }: { title: string; about?: ReactNode; chi
         <p className="text-sm text-zinc-200">{title}</p>
         {about && <p className={`mt-0.5 break-words ${hint}`}>{about}</p>}
       </div>
-      <div className="shrink-0">{children}</div>
+      {children != null && <div className="shrink-0">{children}</div>}
     </div>
   );
 }
@@ -302,6 +303,11 @@ function General({
   // translated where it's shown, so it appears in the language Flash switches to.
   const [languageSaved, setLanguageSaved] = useState<{ text: string; ok: boolean } | null>(null);
   const [notify, setNotify] = useDeviceSetting("notifyDone");
+  // What the notification switch last used says, right under it (Settings' own line is at the bottom):
+  // why Response completions couldn't turn on, or what the alerts switch did. One line for both, so
+  // a permission one of them gets (they share it) never leaves the other's refusal behind. Flash's own
+  // words are kept in English and translated where they're shown, as languageSaved is.
+  const [notifySaid, setNotifySaid] = useState<{ under: "completions" | "alerts"; text: string; ok: boolean } | null>(null);
   const [theme, setTheme] = useDeviceSetting("theme");
   const [font, setFont] = useDeviceSetting("font");
   const [size, setSize] = useDeviceSetting("textSize");
@@ -355,13 +361,14 @@ function General({
   }
 
   async function toggleNotify(on: boolean) {
+    setNotifySaid(null);
     if (!on) return setNotify("");
-    if (typeof Notification === "undefined") {
-      return setMessage({ text: t("This browser can't show notifications."), ok: false });
-    }
-    const allowed = Notification.permission === "granted" || (await Notification.requestPermission()) === "granted";
-    if (allowed) setNotify("1");
-    else setMessage({ text: t("Notifications are blocked for Flash. Allow them in your browser's site settings, then try again."), ok: false });
+    const refused = (text: string) => setNotifySaid({ under: "completions", text, ok: false });
+    if (typeof Notification === "undefined") return refused(msg("This browser can't show notifications."));
+    const allowed = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+    if (allowed === "granted") setNotify("1");
+    // The same words as the alerts switch under it, on this device.
+    else refused(refusedWords(allowed));
   }
 
   /** Turns "Hey Flash" on (after the browser allows the microphone) or off, on this device. */
@@ -497,6 +504,12 @@ function General({
         >
           <Toggle on={notify === "1"} onChange={toggleNotify} label={t("Notify me when a response is done")} />
         </Row>
+        {notifySaid?.under === "completions" && (
+          <p role="status" className="-mt-2 text-xs text-red-400">
+            {t(notifySaid.text)}
+          </p>
+        )}
+        <PushAlerts me={me} said={notifySaid?.under === "alerts" ? notifySaid : null} onSaid={(said) => setNotifySaid(said && { under: "alerts", ...said })} />
       </Section>
 
       <Section title={t("Appearance")}>
@@ -605,6 +618,104 @@ function General({
   );
 }
 
+type Said = { text: string; ok: boolean };
+
+/**
+ * Alerts on this phone or computer when Flash is closed (see push.ts). Hidden until Flash's server
+ * has its push keys. What happened (said, kept by General with Response completions' line) shows
+ * right under it, since Settings' own line is at the bottom.
+ */
+function PushAlerts({ me, said, onSaid }: { me: Me; said: Said | null; onSaid: (said: Said | null) => void }) {
+  const t = useT();
+  const [status, setStatus] = useState<PushStatus | null>(null);
+  const [working, setWorking] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    pushStatus()
+      .then((s) => live && setStatus(s))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  if (!status?.key) return null;
+  const key = status.key;
+  // Alerts carry what the account does, so they wait for a confirmed email (the server checks too):
+  // until then nothing asks the browser for anything.
+  const waiting = !me.verified && !status.on;
+
+  async function run(work: () => Promise<string>) {
+    if (working) return;
+    setWorking(true);
+    onSaid(null);
+    try {
+      onSaid({ text: await work(), ok: true });
+    } catch (e) {
+      onSaid({ text: e instanceof Error ? e.message : msg("Something went wrong. Please try again."), ok: false });
+    }
+    setWorking(false);
+  }
+
+  const toggle = (on: boolean) =>
+    run(async () => {
+      if (on) await turnOnPush(me.user.id, key);
+      else await turnOffPush(me.user.id);
+      setStatus((s) => s && { ...s, on });
+      return "";
+    });
+
+  const test = () =>
+    run(async () => {
+      try {
+        await sendTestPush();
+      } catch (e) {
+        // Off here after all (the push service dropped this browser's address): the switch shows it.
+        if ((e as { code?: string }).code === "off") setStatus(await pushStatus().catch(() => status));
+        throw e;
+      }
+      return msg("Test alert sent. It should show in a few seconds.");
+    });
+
+  return (
+    <>
+      <Row
+        title={t("Alerts when Flash is closed")}
+        about={
+          status.support === "home-screen"
+            ? t("On iPhone and iPad, add Flash to your Home Screen first, then turn on alerts in the app you added.")
+            : status.support === "update"
+              ? t("Alerts need iOS or iPadOS 16.4 or later. If this iPhone or iPad can run it, update it to get them.")
+              : status.support === "no"
+                ? t("This browser can't get alerts when Flash is closed.")
+                : waiting
+                  ? t("Confirm your email to turn on alerts.")
+                  : t("Flash can alert this phone or computer when something you asked for is ready, even with Flash closed. Alerts stop when you log out here.")
+        }
+      >
+        {status.support === "update" ? null : status.support !== "yes" ? (
+          <span className={hint}>{t("Not in this browser")}</span>
+        ) : waiting ? null : (
+          <Toggle on={status.on} onChange={toggle} label={t("Send alerts to this device")} />
+        )}
+      </Row>
+      {status.on && (
+        <div>
+          <button className={button} disabled={working} onClick={test}>
+            {t("Send a test alert")}
+          </button>
+        </div>
+      )}
+      {said?.text && (
+        <p role="status" className={`-mt-2 text-xs ${said.ok ? "text-emerald-300" : "text-red-400"}`}>
+          {t(said.text)}
+        </p>
+      )}
+    </>
+  );
+}
+
 function Account({ me, busy, attempt, leaving, onSignOut }: Shared & { leaving: boolean; onSignOut: (everywhere?: boolean, next?: { id: string; email: string } | null) => void }) {
   const t = useT();
   const [current, setCurrent] = useState("");
@@ -617,6 +728,8 @@ function Account({ me, busy, attempt, leaving, onSignOut }: Shared & { leaving: 
       await api("/api/me/password", { method: "POST", json: { current, next } });
       setCurrent("");
       setNext("");
+      // Every device's alerts stopped with their sign-ins; this one's come back on (see push.ts).
+      syncPush(me.user.id, me.accounts.map((a) => a.id)).catch(() => {});
       return t("Password changed. Your other devices were signed out.");
     });
 

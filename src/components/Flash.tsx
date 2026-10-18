@@ -64,6 +64,7 @@ import { pictureFollowUp } from "@/lib/router";
 import { firstName } from "@/lib/names";
 import { timeAgo } from "@/lib/when";
 import { applyAppearance, applyTheme, notifiesWhenDone, readSetting, writeSetting } from "@/lib/device-settings";
+import { closeAlertsExcept, logOutHere, onAlertTapped, usePushSync } from "@/lib/push";
 import { LEVEL_ENGINES, isLevel, type Level } from "@/lib/levels";
 import { showLanguage, tNow, useT } from "@/lib/use-t";
 import { msg, type Translate } from "@/lib/i18n";
@@ -275,11 +276,12 @@ export function Flash({
   // Several accounts in one browser (see account-pin.ts): the account a switch is under way to; the
   // chooser shown when this tab's account was logged out here, or a link was for another account;
   // a switch waiting on "Switch anyway" (go: what it does then; added: after Add another account,
-  // whose account is signed in here already); add mode (signing in to another account); a log out
-  // under way; and an invitation for another account signed in here.
+  // whose account is signed in here already; to: the email of an alert's account, tapped with a
+  // dialog open); add mode (signing in to another account); a log out under way; and an invitation
+  // for another account signed in here.
   const [switching, setSwitching] = useState<string | null>(null);
   const [chooser, setChooser] = useState<Chooser | null>(null);
-  const [unsaved, setUnsaved] = useState<{ go: () => void; added?: boolean; writing?: boolean } | null>(null);
+  const [unsaved, setUnsaved] = useState<{ go: () => void; added?: boolean; writing?: boolean; to?: string } | null>(null);
   const [adding, setAdding] = useState<Adding | null>(null);
   // Which log out is under way, from the profile menu or Settings: the menu and Settings say so.
   const leavingRef = useRef(false);
@@ -334,6 +336,18 @@ export function Flash({
   const roomy = useMedia("(min-width: 1760px)");
   // Installing Flash from "Everything Flash can do" or the search; nothing to install inside the installed app.
   const install = useInstall();
+  // Alerts when Flash is closed follow who is signed in here: none for nobody (see push.ts). This
+  // tab's account signing in here again (from the chooser) is a new sign-in, whose alerts come back
+  // on then, though the account and the list are the same.
+  const [signedInAgain, setSignedInAgain] = useState(0);
+  usePushSync(signedOut ? null : me?.user.id, me?.accounts.map((a) => a.id), signedInAgain);
+  // This tab's account isn't signed in here anymore while others are (the chooser asks which to go
+  // on with, with Flash open or after a reload, or signing in from it does): its alerts on the
+  // screen go, and those of the accounts still signed in here stay.
+  const stillHere = (chooser ?? adding?.back)?.accounts.map((a) => a.id).join(" ");
+  useEffect(() => {
+    if (stillHere !== undefined) closeAlertsExcept(stillHere.split(" ").filter(Boolean)).catch(() => {});
+  }, [stillHere]);
   // The Ask Flash button can be hidden in Settings > Capabilities (read after mount: it lives on the device).
   const [hideCompanion, setHideCompanion] = useState(false);
   // A voice conversation, docked where the message box is; woke when "Hey Flash" opened it.
@@ -541,10 +555,12 @@ export function Flash({
       // account to use, or while signing in from it: this tab goes on as it.
       if (signingIn?.back) {
         closeAdding();
+        setSignedInAgain((n) => n + 1);
         return "back";
       }
       if (!chooserRef.current) return "here";
       setChooser(null);
+      setSignedInAgain((n) => n + 1);
       return "back";
     }
     if (!list.accounts.length) {
@@ -1373,6 +1389,7 @@ export function Flash({
       const shown = meRef.current?.user;
       if (shown) void refreshMe();
       else void start();
+      if (shown) setSignedInAgain((n) => n + 1);
       if (shown && !from.again && !from.back) setNotice(tNow("You're already using {email} in this tab.", { email: isolate(shown.email) }));
       return;
     }
@@ -1453,6 +1470,10 @@ export function Flash({
         }
       }
     }
+    // Logging out on purpose also turns this account's alerts off here for good (a sign-in that ends
+    // by itself doesn't), and takes its alerts off the screen.
+    const gone = me?.user.id ?? mine;
+    if (gone) await logOutHere([gone]).catch(() => {});
     // Another account is still signed in here: Flash goes on as it, and says so.
     if (next) {
       reloadAs(next.id, { email: leaving, next: next.email });
@@ -1477,6 +1498,7 @@ export function Flash({
     for (const a of me?.accounts ?? []) announce({ type: "leaving", account: a.id });
     await flushSaves().catch(() => false);
     await api("/api/auth/logout", { method: "POST", json: { all: true } }).catch(() => {});
+    await logOutHere((me?.accounts ?? []).map((a) => a.id)).catch(() => {});
     setPin(null);
     announce({ type: "changed" });
     signedOutHere();
@@ -1592,6 +1614,25 @@ export function Flash({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // A tap on an alert of another account signed in here, with this tab the Flash the service worker
+  // brought to the front: the tab goes on as that account, as Switch (or picking it in the chooser)
+  // does, asking first when something here isn't saved (see onAlertTapped). With a dialog open over
+  // Flash (Settings, say), which may hold typed words nothing here can check, it asks first too,
+  // naming the account; then a message being written still asks as it does. While a switch is under
+  // way, or waiting on its own question, the tap leaves it as it is (a question in its place would
+  // have a Switch that did nothing, as that switch still runs).
+  const alertTapped = useRef<(account: string) => void>(() => {});
+  useEffect(() => {
+    alertTapped.current = (account) => {
+      if (adding || leavingRef.current || switching || (!chooser && account === me?.user.id)) return;
+      const to = (chooser?.accounts ?? me?.accounts ?? []).find((a) => a.id === account);
+      if (!to) return;
+      if (!chooser && document.querySelector('[aria-modal="true"]')) setUnsaved({ go: () => void switchAccount(account), to: to.email });
+      else void switchAccount(account, { gone: Boolean(chooser) });
+    };
+  });
+  useEffect(() => onAlertTapped((account) => alertTapped.current(account)), []);
 
   function setAppSlug(messageId: string, slug: string) {
     if (active) updateMessage(active.id, messageId, (m) => (m.app ? { ...m, app: { ...m.app, slug } } : m));
@@ -3478,6 +3519,7 @@ export function Flash({
             if (unsaved.added) void checkAccounts();
           }}
           writing={unsaved.writing}
+          to={unsaved.to}
         />
       )}
       {showInstructions && active && (
