@@ -655,9 +655,11 @@ function Account({ me, busy, attempt, leaving, onSignOut }: Shared & { leaving: 
               : t("Signs you out everywhere, this device included, and disconnects apps connected to Flash, like Claude.")
           }
         >
+          {/* Not while Log out is under way: by the time it asked, the account could be gone from
+              this browser, and its other devices would stay signed in. */}
           {confirm === "everywhere" ? (
             <span className="flex gap-2">
-              <button className={danger} disabled={busy} onClick={signOutEverywhere}>
+              <button className={`${danger} disabled:cursor-default`} disabled={busy || leaving} onClick={signOutEverywhere}>
                 {t("Log out everywhere")}
               </button>
               <button className={button} onClick={() => setConfirm("")}>
@@ -665,7 +667,7 @@ function Account({ me, busy, attempt, leaving, onSignOut }: Shared & { leaving: 
               </button>
             </span>
           ) : (
-            <button className={button} onClick={() => setConfirm("everywhere")}>
+            <button className={`${button} disabled:cursor-default`} disabled={leaving} onClick={() => setConfirm("everywhere")}>
               {t("Log out of all devices")}
             </button>
           )}

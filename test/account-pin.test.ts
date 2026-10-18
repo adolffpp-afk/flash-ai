@@ -1141,3 +1141,16 @@ test("a log out from Settings says it's under way there and in the profile menu,
   assert.match(settings, /\{tab === "account" && <Account \{\.\.\.shared\} leaving=\{leaving\} onSignOut=\{onSignOut\} \/>\}/);
   assert.match(body(settings, "function Account("), /disabled=\{leaving\} aria-busy=\{leaving \|\| undefined\} onClick=\{\(\) => onSignOut\(\)\}>\n\s+\{leaving \? t\("Logging out…"\) : t\("Log out"\)\}/);
 });
+
+test("while a log out is under way, Settings offers no log out of every device, which would find the account gone and leave its other devices signed in", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const settings = await readFile(new URL("../src/components/Settings.tsx", import.meta.url), "utf8");
+  // Settings stays open while Log out saves what it can (see the test above). Ana, on a slow
+  // connection, then asks to log out of all devices: her session here is already gone, the
+  // server answers "That account isn't signed in on this browser anymore", the tab goes on as
+  // Ben, and her phone stays signed in. Neither of its buttons can be pressed meanwhile.
+  const account = body(settings, "function Account(");
+  assert.match(account, /<button className=\{`\$\{danger\} disabled:cursor-default`\} disabled=\{busy \|\| leaving\} onClick=\{signOutEverywhere\}>\n\s+\{t\("Log out everywhere"\)\}/);
+  assert.match(account, /<button className=\{`\$\{button\} disabled:cursor-default`\} disabled=\{leaving\} onClick=\{\(\) => setConfirm\("everywhere"\)\}>\n\s+\{t\("Log out of all devices"\)\}/);
+  assert.equal(account.match(/onClick=\{signOutEverywhere\}/g)?.length, 1, "no other way to it");
+});
