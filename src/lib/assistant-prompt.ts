@@ -35,11 +35,34 @@ export const ASSISTANT_RULES =
   "card numbers or sign-in codes.";
 
 // The tags the instructions go between. A tag like either one written in the name or the instructions
-// is shown in square brackets, so they can't end their own section early or start another.
+// is shown in square brackets, so they can't end their own section early or start another. It's
+// spotted as a reader would see it: each character as NFKC writes it (wide and small "<", "/", ">"
+// and letters as plain ones), in lower case, and without spaces or invisible characters (zero-width
+// spaces and joiners, word joiners, soft hyphens). Everything else is sent as it was written.
 const OPEN = "<assistant_instructions>";
 const CLOSE = "</assistant_instructions>";
-const TAG = /<\s*\/?\s*assistant_instructions\s*>/gi;
-const untagged = (text: string) => text.replace(TAG, (tag) => `[${tag.replace(/[<>\s]/g, "")}]`);
+const TAG = /<\/?assistant_instructions>/g;
+const looks = (ch: string) => ch.normalize("NFKC").toLowerCase().replace(/[\s\p{Cf}\p{DI}]/gu, "");
+function untagged(text: string): string {
+  const chars = Array.from(text);
+  // What the text looks like, and which character each of its code units came from.
+  let seen = "";
+  const from: number[] = [];
+  chars.forEach((ch, i) => {
+    const look = looks(ch);
+    seen += look;
+    for (let k = 0; k < look.length; k++) from.push(i);
+  });
+  const out: string[] = [];
+  let next = 0;
+  for (const m of seen.matchAll(TAG)) {
+    const first = from[m.index];
+    if (first < next) continue;
+    out.push(...chars.slice(next, first), `[${m[0].slice(1, -1)}]`);
+    next = from[m.index + m[0].length - 1] + 1;
+  }
+  return out.concat(chars.slice(next)).join("");
+}
 
 export type AssistantVoice = {
   name: string;

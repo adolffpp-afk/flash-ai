@@ -1193,7 +1193,8 @@ export async function POST(request: Request) {
   if (ASSISTANTS_ON && project?.assistant_id) {
     const access = await loadAssistantFor(user.id, project.assistant_id);
     if ("gone" in access) {
-      const name = access.name || project.name || "";
+      // Named after the chat, which was named after the assistant when it started: never its name now.
+      const name = project.name || "";
       const error =
         access.gone === "deleted" ? t("{name} was deleted, so it can't answer here.", { name }) : t("{name} isn't shared any more, so it can't answer here.", { name });
       return Response.json({ error, code: "assistant_gone", reason: access.gone }, { status: 410 });

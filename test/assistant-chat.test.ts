@@ -34,7 +34,7 @@ test("the owner may always chat with their assistant; anyone else only through i
   assert.equal(own.a.instructions, "Answer as Golden Crumb's baker. Quote prices from the price list.");
 
   // Not shared: no one else.
-  assert.deepEqual(await loadAssistantFor(visitor.id, id), { gone: "unshared", name: "Crumb helper" });
+  assert.deepEqual(await loadAssistantFor(visitor.id, id), { gone: "unshared" });
   // Shared, and they came in through the link.
   await share(id, "link1", visitor);
   const theirs = await loadAssistantFor(visitor.id, id);
@@ -43,18 +43,18 @@ test("the owner may always chat with their assistant; anyone else only through i
   assert.ok("gone" in (await loadAssistantFor(stranger.id, id)));
   // A new link ends access through the old one.
   await share(id, "link2");
-  assert.deepEqual(await loadAssistantFor(visitor.id, id), { gone: "unshared", name: "Crumb helper" });
+  assert.deepEqual(await loadAssistantFor(visitor.id, id), { gone: "unshared" });
   await share(id, "link2", visitor);
   assert.ok("a" in (await loadAssistantFor(visitor.id, id)));
   // Taken down: no one else, but the owner still may.
   await run("UPDATE assistants SET removed_at = 1 WHERE id = ?", [id]);
-  assert.deepEqual(await loadAssistantFor(visitor.id, id), { gone: "unshared", name: "Crumb helper" });
+  assert.deepEqual(await loadAssistantFor(visitor.id, id), { gone: "unshared" });
   assert.ok("a" in (await loadAssistantFor(owner.id, id)));
   await run("UPDATE assistants SET removed_at = 0, share_id = NULL WHERE id = ?", [id]);
   assert.ok("gone" in (await loadAssistantFor(visitor.id, id)), "link turned off");
   // Deleted.
   await run("DELETE FROM assistants WHERE id = ?", [id]);
-  assert.deepEqual(await loadAssistantFor(owner.id, id), { gone: "deleted", name: "" });
+  assert.deepEqual(await loadAssistantFor(owner.id, id), { gone: "deleted" });
 });
 
 test("what a chat shows of an assistant: never its instructions, its id only to its owner, its files' names only where they may be shown", async () => {
@@ -249,6 +249,13 @@ test("a gone or changed assistant, or a visitor over today's messages, is refuse
   assert.deepEqual([unshared.json.code, unshared.json.reason], ["assistant_gone", "unshared"]);
   assert.match(String(unshared.json.error), /Crumb helper isn't shared any more, so it can't answer here\./);
   await nothingRan("unshared");
+  // Renamed after its link went: the former visitor still sees only the chat's own name.
+  await run("UPDATE assistants SET name = 'Divorce papers 2026' WHERE id = ?", [b.id]);
+  const renamed = await chat(b.visitor, b.theirs, "How much is rye?", { assistantVersion: 3, engine: "auto", level: "auto" });
+  assert.equal(renamed.status, 410);
+  assert.match(String(renamed.json.error), /Crumb helper isn't shared any more/);
+  assert.ok(!JSON.stringify(renamed.json).includes("Divorce papers"), "nothing current about it reaches them");
+  await nothingRan("renamed");
   // Deleted: named after the chat, which was named after it.
   stand.reset();
   await run("DELETE FROM assistant_files WHERE assistant_id = ?", [b.id]);

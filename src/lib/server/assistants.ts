@@ -619,9 +619,10 @@ export type ChatAssistant = AssistantFields & {
 /**
  * Whether the user may chat with an assistant: as theirs (mine), as someone else's they came to
  * through its link, or not (gone): deleted, or not shared with them any more (its link turned off,
- * changed since they used it, or taken down). name is the assistant's, when there still is one.
+ * changed since they used it, or taken down). Gone says nothing about the assistant as it is now:
+ * someone who may no longer use it doesn't learn its new name.
  */
-export type AssistantAccess = { a: ChatAssistant; mine: boolean } | { gone: "deleted" | "unshared"; name: string };
+export type AssistantAccess = { a: ChatAssistant; mine: boolean } | { gone: "deleted" | "unshared" };
 
 /**
  * The assistant a chat was started with, as the user may use it. Its owner always may. Anyone else
@@ -635,10 +636,10 @@ export async function loadAssistantFor(userId: string, assistantId: string): Pro
      FROM assistants WHERE id = ?`,
     [userId, assistantId],
   );
-  if (!row) return { gone: "deleted", name: "" };
+  if (!row) return { gone: "deleted" };
   const fields = fieldsOf(row);
   const mine = row.user_id === userId;
-  if (!mine && !(row.share_id && Number(row.removed_at) === 0 && row.visitor_share === row.share_id)) return { gone: "unshared", name: fields.name };
+  if (!mine && !(row.share_id && Number(row.removed_at) === 0 && row.visitor_share === row.share_id)) return { gone: "unshared" };
   return {
     mine,
     a: {
