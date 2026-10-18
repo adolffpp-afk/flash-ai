@@ -9,6 +9,11 @@ import { createAssistant, listAssistants } from "@/lib/server/assistants.ts";
  */
 export const dynamic = "force-dynamic";
 
+// HEAD is GET without its body. Every other method is a 404 too while assistants are off, so this
+// route can't be told from a path Flash doesn't have, and a 405 once they're on.
+export { GET as HEAD };
+export { notTaken as PUT, notTaken as PATCH, notTaken as DELETE, notTaken as OPTIONS } from "@/lib/server/assistant-routes.ts";
+
 export async function GET(request: Request) {
   const asked = await gate(request);
   if (asked instanceof Response) return asked;

@@ -13,12 +13,11 @@ import { randomBytes } from "node:crypto";
 import type { InStatement } from "@libsql/client";
 import { all, db, now, one } from "./db.ts";
 import { randomId, sha256 } from "./ids.ts";
-import { countOf, overLimit } from "./limits.ts";
 import { FREE_STORAGE_BYTES, USED_STORAGE_SQL, storageLimit, usedStorage } from "./site-files.ts";
 import { indexFile, purgeIndex, removeFileRows } from "./assistant-search.ts";
 import { LEVEL_MODELS, countTextTokens } from "../engines/claude.ts";
 import { CUT_NOTE } from "../office.ts";
-import type { Level } from "../levels.ts";
+import { isLevel, type Level } from "../levels.ts";
 import {
   ASSISTANT_COLORS,
   MAX_ASSISTANTS,
@@ -257,17 +256,23 @@ export async function getAssistant(userId: string, id: string): Promise<Assistan
   };
 }
 
+// A level was sent that isn't one of Flash's ("summit" for "ultra", say): refused, never saved as
+// another level.
+const unknownLevel = (sent: unknown) =>
+  Boolean(sent && typeof sent === "object" && Object.hasOwn(sent, "level") && !isLevel((sent as { level: unknown }).level));
+
 const assistantCount = async (userId: string) => Number((await one<{ n: number }>("SELECT COUNT(*) AS n FROM assistants WHERE user_id = ?", [userId]))?.n ?? 0);
 const unique = (err: unknown) => err instanceof Error && /UNIQUE/i.test(err.message);
 
 /**
  * Makes an assistant for the user from what was sent (cleaned, then refused with its reason if
- * over a limit), with a colour of its own if none was picked. Refused once the user has
- * MAX_ASSISTANTS. Its id is new and starts with 16 digits no other assistant's does, so its words
- * are tagged as its own (see tagOf in assistant-chunks.ts); an id whose 16 are taken is made again.
- * `newId` is for tests.
+ * over a limit, and as a bad request for a level Flash doesn't have), with a colour of its own if
+ * none was picked. Refused once the user has MAX_ASSISTANTS. Its id is new and starts with 16
+ * digits no other assistant's does, so its words are tagged as its own (see tagOf in
+ * assistant-chunks.ts); an id whose 16 are taken is made again. `newId` is for tests.
  */
 export async function createAssistant(userId: string, input: unknown, o: { newId?: () => string } = {}): Promise<Assistant> {
+  if (unknownLevel(input)) refuse({ code: "bad_request" });
   const fields = cleanAssistant(input);
   const problem = validateAssistant(fields);
   if (problem) refuse(problem);
@@ -304,11 +309,12 @@ const EDITABLE = ["name", "description", "instructions", "starters", "level", "c
 /**
  * Changes the fields of one of the user's assistants that were sent, the others staying as they
  * are. `version` is the one the editor read: if the assistant changed since, nothing is written and
- * the refusal carries its version now. A change gives it a new version; sending what it already
- * has changes nothing. Its instructions are counted again when its name or instructions change.
+ * the refusal carries its version now. A level Flash doesn't have is a bad request. A change gives
+ * it a new version; sending what it already has changes nothing. Its instructions are counted
+ * again when its name or instructions change.
  */
 export async function updateAssistant(userId: string, id: string, patch: unknown, version: number): Promise<Assistant> {
-  if (!Number.isSafeInteger(version) || version < 0) refuse({ code: "bad_request" });
+  if (!Number.isSafeInteger(version) || version < 0 || unknownLevel(patch)) refuse({ code: "bad_request" });
   const row = (await ownRow(userId, id)) ?? refuse({ code: "not_found" });
   if (Number(row.version) !== version) refuse({ code: "version_conflict", version: Number(row.version) });
   const was = fieldsOf(row);
@@ -393,11 +399,31 @@ export async function deleteUserAssistants(userId: string): Promise<void> {
   await purgeIndex().catch(() => {});
 }
 
-/** The text an owner may still add to their assistants today, and how much they may add in a day. */
-async function dailyRoom(userId: string, limit: number): Promise<{ key: string; max: number; left: number }> {
+/**
+ * Takes `chars` of the text an owner may add to their assistants today, only if they fit in what's
+ * left: in one statement, so two uploads at once can't both take the last of it, and nothing is
+ * counted when they don't fit. A function that gives them back (to the same day only), for a file
+ * that isn't kept after all; null when they don't fit.
+ */
+async function takeDailyText(userId: string, limit: number, chars: number): Promise<(() => Promise<void>) | null> {
   const key = `assistant-chars:${userId}`;
   const max = limit > FREE_STORAGE_BYTES ? DAILY_TEXT_PAID : DAILY_TEXT_FREE;
-  return { key, max, left: max - (await countOf(key)) };
+  const t = now();
+  const client = await db();
+  const taken = await client.execute({
+    sql: `INSERT INTO rate_limits (key, count, reset_at) SELECT ?, ?, ? WHERE ? <= ?
+          ON CONFLICT(key) DO UPDATE SET
+            count = (CASE WHEN reset_at < ? THEN 0 ELSE count END) + excluded.count,
+            reset_at = CASE WHEN reset_at < ? THEN excluded.reset_at ELSE reset_at END
+          WHERE (CASE WHEN reset_at < ? THEN 0 ELSE count END) + excluded.count <= ?
+          RETURNING reset_at`,
+    args: [key, chars, t + DAY, chars, max, t, t, t, max],
+  });
+  const day = taken.rows[0]?.reset_at;
+  if (day === undefined || day === null) return null;
+  return async () => {
+    await client.execute({ sql: "UPDATE rate_limits SET count = MAX(0, count - ?) WHERE key = ? AND reset_at = ?", args: [chars, key, day] });
+  };
 }
 
 type Upload = { name: unknown; kind: unknown; pages?: unknown; text: string };
@@ -429,7 +455,9 @@ async function fileRefusal(userId: string, assistantId: string, chars: number, s
  * MAX_ASSISTANT_CHARS, when it already has the same text, when the owner's storage can't take
  * STORE_FACTOR times its bytes, or when they've added their day's text. The limits are checked
  * again in the statement that adds it. Then counted and stored in chunks with their index rows
- * (indexFile); if that fails, the file is deleted. The file, and the assistant's new version.
+ * (indexFile), and only then does the assistant get a new version. If storing fails, the file is
+ * deleted and the assistant is as it was, version and all. A file that isn't kept, whatever the
+ * reason, doesn't use the day's text. The file, and the assistant's new version.
  */
 export async function addAssistantFile(userId: string, assistantId: string, upload: Upload): Promise<{ file: AssistantFile; version: number }> {
   if (!(await ownRow(userId, assistantId))) refuse({ code: "not_found" });
@@ -448,53 +476,71 @@ export async function addAssistantFile(userId: string, assistantId: string, uplo
   const problem = await fileRefusal(userId, assistantId, text.length, stored, hash, limit);
   if (problem) refuse(problem);
 
-  // The day's text, counted before the file's tokens are, so a day's uploads are only ever counted once.
-  const day = await dailyRoom(userId, limit);
-  if (text.length > day.left || (await overLimit(day.key, day.max, DAY, text.length))) refuse({ code: "daily_text" });
-
-  const { tokens, exact } = await fileTokens(text);
-  const fileId = randomId();
-  const at = now();
-  const client = await db();
-  const added = await client.batch(
-    [
-      {
-        sql: `INSERT INTO assistant_files (id, assistant_id, name, kind, pages, chars, bytes, stored, tokens, exact, cut, hash, created_at)
-              SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-              WHERE ${OWNED}
-                AND (SELECT COUNT(*) FROM assistant_files WHERE assistant_id = ?) < ?
-                AND (SELECT COALESCE(SUM(chars), 0) FROM assistant_files WHERE assistant_id = ?) + ? <= ?
-                AND NOT EXISTS (SELECT 1 FROM assistant_files WHERE assistant_id = ? AND hash = ?)
-                AND ${USED_STORAGE_SQL} + ? <= ?`,
-        args: [
-          fileId, assistantId, name, kind, pages, text.length, bytes, stored, tokens, exact ? 1 : 0, text.endsWith(CUT_NOTE) ? 1 : 0, hash, at,
-          assistantId, userId,
-          assistantId, MAX_ASSISTANT_FILES,
-          assistantId, text.length, MAX_ASSISTANT_CHARS,
-          assistantId, hash,
-          userId, userId, stored, limit,
-        ],
-      },
-      {
-        sql: "UPDATE assistants SET version = version + 1, updated_at = ? WHERE id = ? AND user_id = ? AND EXISTS (SELECT 1 FROM assistant_files WHERE id = ? AND assistant_id = ?)",
-        args: [at, assistantId, userId, fileId, assistantId],
-      },
-      { sql: "SELECT version FROM assistants WHERE id = ? AND user_id = ?", args: [assistantId, userId] },
-    ],
-    "write",
-  );
-  // Another request got there first: say which limit it took.
-  if (!added[0].rowsAffected) refuse((await fileRefusal(userId, assistantId, text.length, stored, hash, limit)) ?? { code: "failed" });
+  // The day's text, taken before the file's tokens are counted, so a day's uploads are only ever
+  // counted once, and given back when the file isn't kept after all.
+  const giveBack = (await takeDailyText(userId, limit, text.length)) ?? refuse({ code: "daily_text" });
+  let kept = false;
   try {
-    await indexFile(assistantId, fileId, text, tokens);
-  } catch (err) {
-    console.error("[flash] storing an assistant's file failed", err instanceof Error ? err.message : "error");
-    await client.batch(removeFileRows(userId, assistantId, fileId), "write").catch(() => {});
-    await purgeIndex().catch(() => {});
-    refuse({ code: "failed" });
+    const { tokens, exact } = await fileTokens(text);
+    const fileId = randomId();
+    const client = await db();
+    const added = await client.execute({
+      sql: `INSERT INTO assistant_files (id, assistant_id, name, kind, pages, chars, bytes, stored, tokens, exact, cut, hash, created_at)
+            SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            WHERE ${OWNED}
+              AND (SELECT COUNT(*) FROM assistant_files WHERE assistant_id = ?) < ?
+              AND (SELECT COALESCE(SUM(chars), 0) FROM assistant_files WHERE assistant_id = ?) + ? <= ?
+              AND NOT EXISTS (SELECT 1 FROM assistant_files WHERE assistant_id = ? AND hash = ?)
+              AND ${USED_STORAGE_SQL} + ? <= ?`,
+      args: [
+        fileId, assistantId, name, kind, pages, text.length, bytes, stored, tokens, exact ? 1 : 0, text.endsWith(CUT_NOTE) ? 1 : 0, hash, now(),
+        assistantId, userId,
+        assistantId, MAX_ASSISTANT_FILES,
+        assistantId, text.length, MAX_ASSISTANT_CHARS,
+        assistantId, hash,
+        userId, userId, stored, limit,
+      ],
+    });
+    // Another request got there first: say which limit it took.
+    if (!added.rowsAffected) refuse((await fileRefusal(userId, assistantId, text.length, stored, hash, limit)) ?? { code: "failed" });
+    // The new version once the file is all there, so an upload that fails leaves the assistant as
+    // the editor read it, version and all.
+    let version = 0;
+    try {
+      await indexFile(assistantId, fileId, text, tokens);
+      const done = await client.batch(
+        [
+          {
+            sql: "UPDATE assistants SET version = version + 1, updated_at = ? WHERE id = ? AND user_id = ? AND EXISTS (SELECT 1 FROM assistant_files WHERE id = ? AND assistant_id = ?)",
+            args: [now(), assistantId, userId, fileId, assistantId],
+          },
+          { sql: "SELECT version FROM assistants WHERE id = ? AND user_id = ?", args: [assistantId, userId] },
+        ],
+        "write",
+      );
+      version = Number(done[1].rows[0]?.version ?? 0);
+    } catch (err) {
+      console.error("[flash] storing an assistant's file failed", err instanceof Error ? err.message : "error");
+      // Its chunks first (their index rows go with them), then its row; no new version.
+      await client
+        .batch(
+          [
+            { sql: "DELETE FROM assistant_chunks WHERE assistant_id = ? AND file_id = ?", args: [assistantId, fileId] },
+            { sql: "DELETE FROM assistant_files WHERE assistant_id = ? AND id = ?", args: [assistantId, fileId] },
+          ],
+          "write",
+        )
+        .catch(() => {});
+      await purgeIndex().catch(() => {});
+      refuse({ code: "failed" });
+    }
+    const file = await one<FileRow>(`SELECT ${FILE_FIELDS} FROM assistant_files WHERE id = ?`, [fileId]);
+    if (!file) return refuse({ code: "failed" });
+    kept = true;
+    return { file: fileOf(file), version };
+  } finally {
+    if (!kept) await giveBack().catch(() => {});
   }
-  const file = await one<FileRow>(`SELECT ${FILE_FIELDS} FROM assistant_files WHERE id = ?`, [fileId]);
-  return { file: file ? fileOf(file) : refuse({ code: "failed" }), version: Number(added[2].rows[0]?.version ?? 0) };
 }
 
 /** A file's text as it was stored, its chunks in order; null when it isn't a file of the user's assistant. */

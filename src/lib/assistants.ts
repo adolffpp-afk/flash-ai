@@ -6,7 +6,7 @@
  * Nothing about assistants reaches anyone while ASSISTANTS_ON is false: no route answers and the
  * chat ignores a chat's assistant, so nobody can be charged for one before its price line shows.
  */
-import { isLevel, type Level } from "./levels.ts";
+import { LEVELS, isLevel, type Level } from "./levels.ts";
 import { CUT_NOTE } from "./office.ts";
 import { BRAND_NAME, LEGAL_NAME, PRODUCT_NAME } from "./product.ts";
 
@@ -154,8 +154,13 @@ const LOOKALIKES: Record<string, string> = {
 // "Official Flash ∞ AI", "AI-Flash Inc. Support", "Flash Customer Support", "Contact Flash Admins",
 // "Flash's Help Desk". Only those: "flash" is an everyday word, and "Flash sale helper" or
 // "Flashcards support" are someone's own. "Flash ∞" is "Flash", as "∞" goes the way punctuation
-// goes, and "Flash Infinity" is how it's spelled out.
-const OWN = ["Flash", "Flash Infinity", PRODUCT_NAME, BRAND_NAME, LEGAL_NAME, "AI-Flash"];
+// goes, and "Flash Infinity" is how it's spelled out. The names of Flash's levels are its own too
+// ("Flash Summit", "Flash Vision"), and so is "Flash Ultra", the top level's name before it was
+// Summit.
+const OWN = [
+  "Flash", "Flash Infinity", PRODUCT_NAME, BRAND_NAME, LEGAL_NAME, "AI-Flash",
+  ...LEVELS.filter((l) => l.id !== "auto").map((l) => l.name), "Flash Ultra",
+];
 const ROLES = [
   "support", "team", "official", "help", "desk", "admin", "administrator", "moderator", "staff", "customer", "service", "contact", "billing",
   "account", "security", "assistant", "bot", "inc", "incorporated", "ltd", "llc", "corp", "corporation", "hq",

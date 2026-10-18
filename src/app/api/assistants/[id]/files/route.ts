@@ -15,6 +15,10 @@ export const dynamic = "force-dynamic";
 // A file of 1,000,000 characters is counted and stored in about a thousand chunks.
 export const maxDuration = 60;
 
+// Every other method is a 404 too while assistants are off, so this route can't be told from a path
+// Flash doesn't have, and a 405 once they're on.
+export { notTaken as GET, notTaken as HEAD, notTaken as PUT, notTaken as PATCH, notTaken as DELETE, notTaken as OPTIONS } from "@/lib/server/assistant-routes.ts";
+
 export async function POST(request: Request, ctx: RouteContext<"/api/assistants/[id]/files">) {
   const asked = await gate(request, "form");
   if (asked instanceof Response) return asked;

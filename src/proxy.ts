@@ -40,6 +40,14 @@ function protect(path: string, response: NextResponse): NextResponse {
   return response;
 }
 
+/*
+ * Everything but Next's own files, and an assistant's file upload: while a proxy runs, Next reads
+ * the whole body of the request first (keeping up to 10 MB, see proxyClientMaxBodySize) so both can
+ * read it, which would let a bigger upload in before the route can refuse it unread (readForm in
+ * assistant-routes.ts). That route needs nothing from here: it answers only someone signed in to
+ * Flash, whose cookie neither a custom domain nor Flash's own requests out carry, and nothing while
+ * assistants are off.
+ */
 export const config = {
-  matcher: ["/((?!_next/).*)"],
+  matcher: ["/((?!_next/|api/assistants/[^/]+/files$).*)"],
 };

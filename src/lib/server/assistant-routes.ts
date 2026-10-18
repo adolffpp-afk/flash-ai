@@ -1,7 +1,8 @@
 /*
  * What every assistant route does first, and how it says no (see server/assistants.ts for the work
  * itself). Nothing answers while ASSISTANTS_ON is false: each route is a 404 before it reads the
- * database. A write is taken only from Flash's own page with its exact Origin, as connectors' are.
+ * database, for every method, the ones it doesn't take too (notTaken). A write is taken only from
+ * Flash's own page with its exact Origin, as connectors' are.
  */
 import { appUrl, getUser, unauthorized, type User } from "./auth.ts";
 import { translatorFor, type ServerT } from "./i18n.ts";
@@ -28,13 +29,28 @@ export function fromFlash(request: Request, body: WriteBody): boolean {
   return Boolean(origin) && origin !== "null" && own.includes(origin!);
 }
 
+// What an assistant route answers while assistants are off, whatever is asked: the same as a path
+// Flash doesn't have.
+const notFound = async (request: Request) => Response.json({ error: (await translatorFor(request))("Not found") }, { status: 404, headers: NO_STORE });
+
+/**
+ * A method an assistant route doesn't take, which each route exports for every such method (HEAD,
+ * OPTIONS and PATCH among them): Next would otherwise answer OPTIONS with the route's methods and
+ * the others with 405, so a route that's off could be told from a path that isn't there. The same
+ * 404 as everything else while assistants are off; 405 once they're on.
+ */
+export async function notTaken(request: Request): Promise<Response> {
+  if (!ASSISTANTS_ON) return notFound(request);
+  return new Response(null, { status: 405, headers: NO_STORE });
+}
+
 /**
  * The signed-in user and their words for a request to an assistant route, or the answer that ends
  * it: 404 while assistants are off (before anything is read), 401 for nobody signed in, and 403 for
  * a write from anywhere but Flash's own page. `write` says how a write's body comes; none for a read.
  */
 export async function gate(request: Request, write?: WriteBody): Promise<{ user: User; t: ServerT } | Response> {
-  if (!ASSISTANTS_ON) return Response.json({ error: (await translatorFor(request))("Not found") }, { status: 404, headers: NO_STORE });
+  if (!ASSISTANTS_ON) return notFound(request);
   const user = await getUser(request);
   if (!user) return unauthorized();
   const t = await translatorFor(request, user.language);

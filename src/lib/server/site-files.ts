@@ -96,22 +96,25 @@ export async function saveUpload(
     "SELECT COUNT(*) AS n, COALESCE(SUM(size), 0) AS bytes FROM site_uploads WHERE site_slug = ?",
     [slug],
   );
+  const room = await storageLimit(site.user_id);
+  const fullText = "This app can't hold more files. Its owner can remove some in Flash.";
   const full =
     Number(use?.n ?? 0) >= MAX_FILES_PER_SITE ||
     Number(use?.bytes ?? 0) + file.bytes.length > MAX_BYTES_PER_SITE ||
-    (await usedStorage(site.user_id)) + file.bytes.length > (await storageLimit(site.user_id));
-  if (full) {
-    return fail("This app can't hold more files. Its owner can remove some in Flash.", 507);
-  }
+    (await usedStorage(site.user_id)) + file.bytes.length > room;
+  if (full) return fail(fullText, 507);
   const name = cleanName(file.name, file.type);
   if (await infectedFile([{ name, bytes: file.bytes }])) return fail("This file contains a virus, so the app can't take it.", 422);
   const id = randomId(12);
-  // INSERT … SELECT, so a file sent just as the app is unpublished, or as its owner turns files off, isn't kept.
+  // INSERT … SELECT, so a file sent just as the app is unpublished, or as its owner turns files off,
+  // isn't kept. The owner's storage is checked again in it: their assistants share the room, and a
+  // file added to one while this one was scanned would otherwise take it past the plan's.
   const r = await run(
-    "INSERT INTO site_uploads (id, site_slug, owner, mime, name, data, size, created_at) SELECT ?, slug, ?, ?, ?, ?, ?, ? FROM sites WHERE slug = ? AND uploads_on = 1",
-    [id, owner, file.type, name, file.bytes, file.bytes.length, now(), slug],
+    `INSERT INTO site_uploads (id, site_slug, owner, mime, name, data, size, created_at) SELECT ?, slug, ?, ?, ?, ?, ?, ? FROM sites
+     WHERE slug = ? AND uploads_on = 1 AND ${USED_STORAGE_SQL} + ? <= ?`,
+    [id, owner, file.type, name, file.bytes, file.bytes.length, now(), slug, site.user_id, site.user_id, file.bytes.length, room],
   );
-  if (!r.rowsAffected) return fail("App not found.", 404);
+  if (!r.rowsAffected) return (await uploadsOn(slug)) ? fail(fullText, 507) : fail("App not found.", 404);
   return { status: 201, body: { url: `/api/sites/${slug}/files/${id}`, name, size: file.bytes.length } };
 }
 

@@ -11,6 +11,11 @@ import type { ServerT } from "@/lib/server/i18n.ts";
  */
 export const dynamic = "force-dynamic";
 
+// HEAD is GET without its body. Every other method is a 404 too while assistants are off, so this
+// route can't be told from a path Flash doesn't have, and a 405 once they're on.
+export { GET as HEAD };
+export { notTaken as POST, notTaken as PATCH, notTaken as OPTIONS } from "@/lib/server/assistant-routes.ts";
+
 type Ctx = RouteContext<"/api/assistants/[id]">;
 
 const saved = async (userId: string, t: ServerT) =>
