@@ -1719,6 +1719,8 @@
  "Use Flash in other apps": "অন্য অ্যাপে Flash ব্যবহার করুন",
  "Use Flash's images, videos, music and voice from Claude, ChatGPT and other AI apps. Add Flash as a custom connector with this address, then sign in. It spends your credits at the same prices.": "Claude, ChatGPT ও অন্যান্য AI অ্যাপ থেকে Flash-এর ছবি, ভিডিও, মিউজিক ও ভয়েস ব্যবহার করুন। এই ঠিকানা দিয়ে Flash-কে একটি কাস্টম কানেক্টর হিসেবে যোগ করুন, তারপর সাইন ইন করুন। এতে একই দামে আপনার ক্রেডিট খরচ হয়।",
  "Use Flash's tools from other AI apps": "অন্য AI অ্যাপ থেকে Flash-এর টুল ব্যবহার করুন",
+ "Use Quick research instead (up to {credits} credits)": "এর বদলে দ্রুত রিসার্চ ব্যবহার করুন (সর্বোচ্চ {credits} ক্রেডিট)",
+ "Use Sonic instead (up to {credits} credits)": "এর বদলে Sonic ব্যবহার করুন (সর্বোচ্চ {credits} ক্রেডিট)",
  "Use Your Accounts in Chat": "চ্যাটে আপনার অ্যাকাউন্ট ব্যবহার করুন",
  "Use a code from the app instead": "এর বদলে অ্যাপের কোড ব্যবহার করুন",
  "Use a key instead": "এর বদলে একটি কী ব্যবহার করুন",

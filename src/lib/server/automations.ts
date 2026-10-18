@@ -14,6 +14,7 @@ import { claudeConfigured, getClient } from "../engines/claude.ts";
 import { isAdmin, type User } from "./auth.ts";
 import { one, run as sql } from "./db.ts";
 import { DB_NOW, type ClaimLimits } from "./leases.ts";
+import { overLimit } from "./limits.ts";
 
 /** Whether this deployment runs automations: production, or a laptop that asked to (never a Vercel preview). */
 export const automationsServer = () => process.env.VERCEL_ENV === "production" || (!process.env.VERCEL && process.env.AUTOMATIONS_DEV === "1");
@@ -74,13 +75,17 @@ export function maxPaid(): number {
 export const BACKOFF_MS = 60_000;
 const BACKOFF_KEY = "auto:backoff_until";
 
-/** Any 429 stops paid claims Flash-wide for a minute (never shortening a wait already set). */
+/** The 429s of the last hour, counted for /admin's cron health (a rate_limits row, pruned by the daily job). */
+export const RATE_LIMITED_KEY = "auto:429s";
+
+/** Any 429 stops paid claims Flash-wide for a minute (never shortening a wait already set), and is counted. */
 export async function backOff(): Promise<void> {
   await sql(
     `INSERT INTO settings (key, value) VALUES (?, CAST(${DB_NOW} + ? AS TEXT))
      ON CONFLICT(key) DO UPDATE SET value = excluded.value WHERE CAST(settings.value AS INTEGER) < CAST(excluded.value AS INTEGER)`,
     [BACKOFF_KEY, BACKOFF_MS],
   );
+  await overLimit(RATE_LIMITED_KEY, Number.MAX_SAFE_INTEGER, 3_600_000);
 }
 
 /** Whether paid claims are open now: no 429 in the last minute. */
@@ -95,9 +100,15 @@ export async function claimLimits(): Promise<ClaimLimits> {
   return { perUser: 3, maxPaid: maxPaid(), maxOther: other > 0 ? other : 100, paidOpen: await paidOpen(), perTick: 30, runnerVersion: RUNNER_VERSION };
 }
 
-/** Whether automations can run for this user here: everything set up, and in PR 1a only for admins. */
+/**
+ * Who automations are open to: in PR 1a only admins (the burn-in on /admin), so everyone else gets
+ * 404 from every automation route; from PR 1b everyone with a confirmed email.
+ */
+export const automationsOpenTo = (user: Pick<User, "email" | "verified_at">): boolean => isAdmin(user);
+
+/** Whether automations can run for this user here: everything set up, and open to them. */
 export function automationsReady(user: Pick<User, "email" | "verified_at">): boolean {
-  return automationsServer() && Boolean(cronSecret()) && keyInUse() !== "none" && Boolean(process.env.FLASH_APP_URL) && isAdmin(user);
+  return automationsServer() && Boolean(cronSecret()) && keyInUse() !== "none" && Boolean(process.env.FLASH_APP_URL) && automationsOpenTo(user);
 }
 
 /** What /admin lists as missing before automations can run (environment variable names only, never values). */

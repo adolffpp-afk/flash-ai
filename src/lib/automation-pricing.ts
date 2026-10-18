@@ -7,7 +7,8 @@
  *   by its own default;
  * - per month: the larger of one run's worst case and a typical run × the runs it makes in the next
  *   30 days × MONTH_HEADROOM.
- * Price question 3 in the automations plan; the profitability thread confirmed both (2026-10-18).
+ * Price question 3 in the automations plan (its answers agree), pending the profitability thread's
+ * final confirmation: change them here, never in src/lib/credits.ts.
  */
 
 /** Room on top of the typical month, so a few long runs don't pause it. */

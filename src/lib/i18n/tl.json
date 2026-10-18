@@ -1719,6 +1719,8 @@
  "Use Flash in other apps": "Gamitin ang Flash sa ibang app",
  "Use Flash's images, videos, music and voice from Claude, ChatGPT and other AI apps. Add Flash as a custom connector with this address, then sign in. It spends your credits at the same prices.": "Gamitin ang mga larawan, video, musika at boses ng Flash mula sa Claude, ChatGPT at iba pang AI app. Idagdag ang Flash bilang custom connector gamit ang address na ito, tapos mag-sign in. Gagamitin nito ang credits mo sa parehong presyo.",
  "Use Flash's tools from other AI apps": "Gamitin ang mga tool ng Flash mula sa ibang AI app",
+ "Use Quick research instead (up to {credits} credits)": "Gamitin na lang ang mabilis na research (hanggang {credits} credits)",
+ "Use Sonic instead (up to {credits} credits)": "Gamitin na lang ang Sonic (hanggang {credits} credits)",
  "Use Your Accounts in Chat": "Gamitin ang mga Account Mo sa Chat",
  "Use a code from the app instead": "Gumamit na lang ng code mula sa app",
  "Use a key instead": "Gumamit na lang ng key",

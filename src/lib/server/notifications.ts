@@ -8,6 +8,7 @@
  * dropped, so a storm of failures makes one notice.
  */
 import type { InStatement, InValue } from "@libsql/client";
+import { msg, type Translate } from "../i18n.ts";
 import { run as sql } from "./db.ts";
 import { randomId } from "./ids.ts";
 import { DB_NOW } from "./leases.ts";
@@ -49,3 +50,36 @@ export async function notify(o: Notice): Promise<boolean> {
 /** The in-app link a notice about an automation (and one of its runs) opens. */
 export const automationLink = (automationId: string, runId?: string) =>
   `automations=${encodeURIComponent(automationId)}${runId ? `&run=${encodeURIComponent(runId)}` : ""}`;
+
+/** The cheaper way a "waiting for credits" notice offers (see cheaperOffer in automation-steps.ts). */
+export const OFFERS = {
+  quick: msg("Use Quick research instead (up to {credits} credits)"),
+  sonic: msg("Use Sonic instead (up to {credits} credits)"),
+} as const;
+
+/**
+ * A stored notice in the reader's words: its title (the automation's name), its line, the run's
+ * answer when it carries one (as written, never translated), and the cheaper way it offers.
+ */
+export function noticeText(n: { phrase: string; blanks: string }, t: Translate & { locale: string }) {
+  let blanks: Record<string, unknown> = {};
+  try {
+    const parsed = JSON.parse(n.blanks || "{}") as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) blanks = parsed as Record<string, unknown>;
+  } catch {
+    // Nothing to fill.
+  }
+  const filled: Record<string, string | number> = {};
+  for (const [key, value] of Object.entries(blanks)) {
+    if (key === "date" && typeof value === "number") filled.date = new Intl.DateTimeFormat(t.locale, { dateStyle: "long", timeZone: "UTC" }).format(value);
+    else if (typeof value === "number") filled[key] = value.toLocaleString(t.locale);
+    else if (typeof value === "string") filled[key] = value;
+  }
+  const offer = blanks.offer === "quick" || blanks.offer === "sonic" ? blanks.offer : null;
+  return {
+    title: typeof blanks.name === "string" ? blanks.name : "",
+    text: t(n.phrase, filled),
+    ...(typeof blanks.text === "string" && blanks.text && { body: blanks.text }),
+    ...(offer && { offer: { kind: offer, text: t(OFFERS[offer], { credits: Number(blanks.offerCredits ?? 0).toLocaleString(t.locale) }) } }),
+  };
+}

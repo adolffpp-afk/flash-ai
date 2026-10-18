@@ -50,10 +50,15 @@ export function levelScale(engine: "text" | "search", model: string, tokens?: nu
   return claudePrice(model, tokens).output / claudePrice(defaultChoice(engine).model, tokens).output;
 }
 
+/** Counts what a call reads (countInputTokens, or an estimate's counter with its kept counts). */
+export type Counter = (model: string, history: ChatTurn[], systemPrompt: string, client: Anthropic) => Promise<number>;
+const countWith: Counter = (model, history, systemPrompt, client) => countInputTokens(model, history, systemPrompt, undefined, client);
+
 /**
  * Prices an AI step for this turn: counted by Anthropic with the client given (the automations key's,
  * so estimates and runs never use chat's limits). Throws when counting fails: a guess could be under
- * what the step reads, so a run isn't charged or sent on one.
+ * what the step reads, so a run isn't charged or sent on one (an estimate's counter prices the text
+ * at its most instead, see automation-estimate.ts).
  */
 export async function priceStep(
   step: AiStep,
@@ -62,6 +67,7 @@ export async function priceStep(
   options: SystemOptions,
   data: ClientTool[],
   client: Anthropic,
+  count: Counter = countWith,
 ): Promise<StepPrice> {
   const engine = engineOf(step);
   const choice = claudeChoice(engine, step.level);
@@ -69,7 +75,7 @@ export async function priceStep(
   const definitions = claudeData(data).map(claudeTool);
   // What the data tools' definitions add, on top of the room countInputTokens leaves for tools.
   const dataRoom = definitions.length ? tokensAtMost(JSON.stringify(definitions)) : 0;
-  const tokens = (await countInputTokens(choice.model, history, systemText, undefined, client)) + dataRoom;
+  const tokens = (await count(choice.model, history, systemText, client)) + dataRoom;
   const scale = levelScale(engine, choice.model, tokens);
   return {
     engine,

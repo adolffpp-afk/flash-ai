@@ -186,6 +186,7 @@ test("pauses that end by themselves: a month limit at the reset, and a wait for 
 
 test("the daily job runs once a day, and deletes what was being deleted by hand (foreign keys are off), keeping the money record", async () => {
   await sql("DELETE FROM settings");
+  await sql("DELETE FROM rate_limits");
   const u = await F.account("tick9", 100);
   const aid = await F.automation({ userId: u.id, status: "deleting" });
   const rid = await F.runRow({ automationId: aid, userId: u.id, status: "done" });

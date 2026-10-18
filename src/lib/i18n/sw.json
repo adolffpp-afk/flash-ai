@@ -1719,6 +1719,8 @@
  "Use Flash in other apps": "Tumia Flash kwenye programu nyingine",
  "Use Flash's images, videos, music and voice from Claude, ChatGPT and other AI apps. Add Flash as a custom connector with this address, then sign in. It spends your credits at the same prices.": "Tumia picha, video, muziki na sauti za Flash kutoka Claude, ChatGPT na programu nyingine za AI. Ongeza Flash kama kiunganishi maalum kwa anwani hii, kisha uingie. Inatumia krediti zako kwa bei zilezile.",
  "Use Flash's tools from other AI apps": "Tumia zana za Flash kutoka programu nyingine za AI",
+ "Use Quick research instead (up to {credits} credits)": "Tumia utafiti wa haraka badala yake (hadi krediti {credits})",
+ "Use Sonic instead (up to {credits} credits)": "Tumia Sonic badala yake (hadi krediti {credits})",
  "Use Your Accounts in Chat": "Tumia akaunti zako kwenye gumzo",
  "Use a code from the app instead": "Tumia msimbo kutoka kwenye programu badala yake",
  "Use a key instead": "Tumia ufunguo badala yake",

@@ -1719,6 +1719,8 @@
  "Use Flash in other apps": "在其他應用程式中使用 Flash",
  "Use Flash's images, videos, music and voice from Claude, ChatGPT and other AI apps. Add Flash as a custom connector with this address, then sign in. It spends your credits at the same prices.": "在 Claude、ChatGPT 和其他 AI 應用程式中使用 Flash 的圖片、影片、音樂和語音功能。用這個網址將 Flash 新增為自訂連接器，然後登入即可。點數的計價和在 Flash 中相同。",
  "Use Flash's tools from other AI apps": "在其他 AI 應用程式中使用 Flash 的工具",
+ "Use Quick research instead (up to {credits} credits)": "改用快速研究（最多 {credits} 點）",
+ "Use Sonic instead (up to {credits} credits)": "改用 Sonic（最多 {credits} 點）",
  "Use Your Accounts in Chat": "在對話中使用你的帳戶",
  "Use a code from the app instead": "改用應用程式中的驗證碼",
  "Use a key instead": "改用金鑰",

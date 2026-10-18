@@ -345,25 +345,33 @@ export async function dailyJob(today = utcDay(Date.now())): Promise<boolean> {
   return true;
 }
 
-/** Deletes automations marked deleting once none of their runs holds a lease: steps, runs, versions, its notices, then it. Ledger rows and holds stay. */
+/** Nothing of this automation runs: no run holds a live lease. */
+const NOTHING_RUNS = `NOT EXISTS (SELECT 1 FROM automation_runs r WHERE r.automation_id = automations.id AND r.lease_until > 0 AND r.lease_until >= ${DB_NOW})`;
+
+/** Deletes automations marked deleting once none of their runs holds a lease (see deleteAutomationNow). */
 async function deleteAutomations() {
-  const gone = await all<{ id: string; user_id: string }>(
-    `SELECT id, user_id FROM automations WHERE status = 'deleting'
-        AND NOT EXISTS (SELECT 1 FROM automation_runs r WHERE r.automation_id = automations.id AND r.lease_until > 0 AND r.lease_until >= ${DB_NOW}) LIMIT 50`,
+  const gone = await all<{ id: string; user_id: string }>(`SELECT id, user_id FROM automations WHERE status = 'deleting' AND ${NOTHING_RUNS} LIMIT 50`);
+  for (const a of gone) await deleteAutomationNow(a);
+}
+
+/**
+ * Deletes an automation marked deleting, if nothing of it runs: its steps, runs, versions and notices,
+ * then it, each table by hand (foreign keys are off). Ledger rows and holds stay. Returns whether it went.
+ */
+export async function deleteAutomationNow(a: { id: string; user_id: string }): Promise<boolean> {
+  const link = `automations=${encodeURIComponent(a.id)}`;
+  const deletable = { sql: `EXISTS (SELECT 1 FROM automations WHERE id = ? AND status = 'deleting' AND ${NOTHING_RUNS})`, args: [a.id] };
+  const rs = await (await db()).batch(
+    [
+      { sql: `DELETE FROM automation_run_steps WHERE run_id IN (SELECT id FROM automation_runs WHERE automation_id = ?) AND ${deletable.sql}`, args: [a.id, ...deletable.args] },
+      { sql: `DELETE FROM automation_runs WHERE automation_id = ? AND ${deletable.sql}`, args: [a.id, ...deletable.args] },
+      { sql: `DELETE FROM automation_versions WHERE automation_id = ? AND ${deletable.sql}`, args: [a.id, ...deletable.args] },
+      { sql: `DELETE FROM notifications WHERE user_id = ? AND (link = ? OR link LIKE ?) AND ${deletable.sql}`, args: [a.user_id, link, `${link}&%`, ...deletable.args] },
+      { sql: `DELETE FROM automations WHERE id = ? AND status = 'deleting' AND ${NOTHING_RUNS}`, args: [a.id] },
+    ],
+    "write",
   );
-  for (const a of gone) {
-    const link = `automations=${encodeURIComponent(a.id)}`;
-    await (await db()).batch(
-      [
-        { sql: "DELETE FROM automation_run_steps WHERE run_id IN (SELECT id FROM automation_runs WHERE automation_id = ?)", args: [a.id] },
-        { sql: "DELETE FROM automation_runs WHERE automation_id = ?", args: [a.id] },
-        { sql: "DELETE FROM automation_versions WHERE automation_id = ?", args: [a.id] },
-        { sql: "DELETE FROM notifications WHERE user_id = ? AND (link = ? OR link LIKE ?)", args: [a.user_id, link, `${link}&%`] },
-        { sql: "DELETE FROM automations WHERE id = ? AND status = 'deleting'", args: [a.id] },
-      ],
-      "write",
-    );
-  }
+  return rs.at(-1)!.rowsAffected === 1;
 }
 
 /** Clears the inputs and outputs of these runs' steps; their receipts and fingerprints stay. */

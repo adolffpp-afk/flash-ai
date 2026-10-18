@@ -288,6 +288,32 @@ async function cheaperOffer(step: AiStep, history: ChatTurn[], preferences: stri
   }
 }
 
+/**
+ * What an AI step sends, as one of its runs would send it now: its turn (the instruction, and for
+ * "only if changed" the previous result as data), the user's preferences, the automation line and
+ * the context note, and its data tools. The estimate prices a draft with the same.
+ */
+export async function stepInputs(o: {
+  auto: Pick<AutoRow, "name" | "language" | "time_zone" | "where_json">;
+  spec: Spec;
+  run: Pick<RunRow, "origin">;
+  user: User;
+  step: AiStep;
+  now: Date;
+  previous: string | null;
+}) {
+  const { auto, spec, run, user, step, now } = o;
+  const t = await translatorIn(user.language || auto.language);
+  const where = whereOf(auto);
+  const turn = stepTurn(step, longDate(where.timeZone, now), o.previous);
+  const history: ChatTurn[] = [{ role: "user", content: turn }];
+  const engine = engineOf(step);
+  const preferences = [profileNote(user, engine), (user.preferences ?? "").slice(0, MAX_PREFERENCES_CHARS)].filter((p) => p.trim()).join("\n");
+  const options: SystemOptions = { context: `${automationLine(auto, spec, run, user, now)}\n\n${contextNote(where, now)}` };
+  const data = dataTools({ filings: step.data?.filings, economy: step.data?.economy && fredReady() }, { userId: user.id, t });
+  return { t, where, turn, history, engine, preferences, options, data };
+}
+
 /** Runs an AI step of a run this worker holds (see the steps at the top of this file). */
 export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResult> {
   const { run, auto, user, spec, started, me } = c;
@@ -295,16 +321,9 @@ export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResul
   const stepStart = Date.now();
   // Free credits, the later months of yearly plans and team grants due this month come first (as chat does).
   await ensureMonthlyCredits(auto.pay_account);
-  const t = await translatorIn(user.language || auto.language);
   const now = new Date();
-  const where = whereOf(auto);
   const previous = step.onlyIfChanged ? await previousResult(auto.id, run.id, step.id) : null;
-  const turn = stepTurn(step, longDate(where.timeZone, now), previous);
-  const history: ChatTurn[] = [{ role: "user", content: turn }];
-  const engine = engineOf(step);
-  const preferences = [profileNote(user, engine), (user.preferences ?? "").slice(0, MAX_PREFERENCES_CHARS)].filter((p) => p.trim()).join("\n");
-  const options: SystemOptions = { context: `${automationLine(auto, spec, run, user, now)}\n\n${contextNote(where, now)}` };
-  const data = dataTools({ filings: step.data?.filings, economy: step.data?.economy && fredReady() }, { userId: user.id, t });
+  const { t, where, turn, history, engine, preferences, options, data } = await stepInputs({ auto, spec, run, user, step, now, previous });
   const client = automationClient();
 
   // 1. The price. Counting needs Anthropic: when it fails, the step is tried again in a minute, for free.

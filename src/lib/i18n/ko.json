@@ -1719,6 +1719,8 @@
  "Use Flash in other apps": "다른 앱에서 Flash 사용",
  "Use Flash's images, videos, music and voice from Claude, ChatGPT and other AI apps. Add Flash as a custom connector with this address, then sign in. It spends your credits at the same prices.": "Claude, ChatGPT 및 기타 AI 앱에서 Flash의 이미지, 동영상, 음악, 음성을 사용하세요. 이 주소로 Flash를 맞춤 커넥터로 추가한 다음 로그인하면 돼요. 크레딧은 같은 가격으로 사용돼요.",
  "Use Flash's tools from other AI apps": "다른 AI 앱에서 Flash 도구 사용하기",
+ "Use Quick research instead (up to {credits} credits)": "대신 빠른 리서치 사용 (최대 {credits} 크레딧)",
+ "Use Sonic instead (up to {credits} credits)": "대신 Sonic 사용 (최대 {credits} 크레딧)",
  "Use Your Accounts in Chat": "채팅에서 내 계정 사용",
  "Use a code from the app instead": "대신 앱의 코드 사용",
  "Use a key instead": "대신 키 사용",

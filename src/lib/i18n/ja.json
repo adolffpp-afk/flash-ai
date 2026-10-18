@@ -1719,6 +1719,8 @@
  "Use Flash in other apps": "他のアプリで Flash を使う",
  "Use Flash's images, videos, music and voice from Claude, ChatGPT and other AI apps. Add Flash as a custom connector with this address, then sign in. It spends your credits at the same prices.": "Claude、ChatGPTなどのAIアプリから、Flashの画像・動画・音楽・音声機能を使えます。このアドレスでFlashをカスタムコネクタとして追加し、ログインしてください。クレジットはFlashと同じ料金で消費されます。",
  "Use Flash's tools from other AI apps": "他のAIアプリからFlashのツールを使う",
+ "Use Quick research instead (up to {credits} credits)": "代わりにクイックリサーチを使う（最大{credits}クレジット）",
+ "Use Sonic instead (up to {credits} credits)": "代わりにSonicを使う（最大{credits}クレジット）",
  "Use Your Accounts in Chat": "チャットで自分のアカウントを使う",
  "Use a code from the app instead": "代わりにアプリのコードを使う",
  "Use a key instead": "代わりにキーを使う",
