@@ -314,3 +314,11 @@ test("assistant text takes no more than STORE_FACTOR times its bytes in the data
   const measured = await storageFactor();
   assert.ok(measured !== null && measured > 1 && measured <= STORE_FACTOR, String(measured));
 });
+
+test("/admin says the full-text index is in use, with the measured storage factor", async () => {
+  const { adminStats } = await import("../src/lib/server/admin-stats.ts");
+  const { assistantSearch } = JSON.parse(JSON.stringify(await adminStats(30)));
+  assert.equal(assistantSearch.mode, "index");
+  assert.equal(assistantSearch.factor, await storageFactor());
+  assert.ok(assistantSearch.factor > 1);
+});

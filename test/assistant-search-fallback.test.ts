@@ -86,6 +86,11 @@ test("without the index, deleting a file still deletes all of it", async () => {
   assert.deepEqual((await passagesFor({ id: BAKERY }, "platypus")).passages, []);
 });
 
+test("/admin says the slower fallback is in use, with no storage factor until there is enough to measure", async () => {
+  const { adminStats } = await import("../src/lib/server/admin-stats.ts");
+  assert.deepEqual(JSON.parse(JSON.stringify(await adminStats(30))).assistantSearch, { mode: "fallback", factor: null });
+});
+
 test("once the database can make the index, chunks stored without it keep search on the fallback", async () => {
   Sqlite3Client.prototype.execute = execute;
   // As init() would on the next start.
@@ -121,4 +126,12 @@ test("once the old chunks are in the index too, search uses it, after the 10 min
   assert.equal(await searchMode(), "index", "then asked again");
   const read = await passagesFor({ id: BAKERY }, "How do refunds work?", "", { named: true });
   assert.ok(read.passages.length > 0 && read.passages.every((p) => p.title.startsWith("Handbook.pdf, page 3")));
+});
+
+test("/admin asks the database afresh, not this server's kept answer", async () => {
+  // Chunks stored outside the index again, after this server last asked.
+  await run("INSERT OR REPLACE INTO settings (key, value) VALUES ('assistant_unindexed', '1')");
+  assert.equal(await searchMode(), "index", "this server's kept answer");
+  const { adminStats } = await import("../src/lib/server/admin-stats.ts");
+  assert.equal(JSON.parse(JSON.stringify(await adminStats(30))).assistantSearch.mode, "fallback");
 });

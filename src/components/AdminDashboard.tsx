@@ -8,6 +8,7 @@ import { LogoMark } from "@/app/brand";
 import { AdminReports } from "@/components/AdminReports";
 import type { FixedCost, ProfitReport } from "@/lib/server/profit.ts";
 import type { ReportedItem } from "@/lib/server/reports.ts";
+import { STORE_FACTOR } from "@/lib/assistants";
 
 type Stats = {
   days: number;
@@ -49,6 +50,9 @@ type Stats = {
   };
   // Virus scanning of uploads (see docs/virus-scan-setup.md): missing variables, and whether the scanner answers.
   virusScan?: { missing: string[]; ready: boolean | null };
+  // Assistants' file search on this database (not switched on for anyone yet): the full-text index or the
+  // slower fallback, and the space their files take for each byte of text (null until there is enough).
+  assistantSearch?: { mode: "index" | "fallback"; factor: number | null };
   byModel: { model: string; provider: string; requests: number; costCents: number }[];
   series: { day: number; requests: number; costCents: number }[];
   topUsers: { email: string; requests: number; credits: number; costCents: number }[];
@@ -713,6 +717,22 @@ export function AdminDashboard({ initialTab }: { initialTab?: string }) {
                     Set, but the scanner isn&apos;t answering. Files go through unscanned until it does. Check the scanner on Railway (it takes a few minutes to start).
                   </div>
                 )}
+              </Panel>
+            )}
+            {stats.assistantSearch && (
+              <Panel title="Assistants" note="Not switched on for anyone yet. How their files will be searched on this database.">
+                {stats.assistantSearch.mode === "index" ? (
+                  <div className="text-sm text-emerald-300">Assistant search: full-text index</div>
+                ) : (
+                  <div className="text-sm text-amber-300">Assistant search: slower fallback</div>
+                )}
+                <div className="mt-1 text-xs text-zinc-500">
+                  {stats.assistantSearch.mode === "index"
+                    ? "The database finds the passages a message needs by itself."
+                    : "This database can't make the full-text index, so each message reads all of an assistant's file text to find its passages. It works, but it is slower for big files."}
+                  {stats.assistantSearch.factor !== null &&
+                    ` Their files take ${stats.assistantSearch.factor.toFixed(1)}× their text in the database, and count ${STORE_FACTOR}× against plan storage.`}
+                </div>
               </Panel>
             )}
             <Panel title="Other bills" note="Payments and the bills you added under Net profit">
