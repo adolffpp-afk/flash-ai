@@ -29,9 +29,11 @@ Sqlite3Client.prototype.execute = function (this: InstanceType<typeof Sqlite3Cli
 
 const { db, run, one, all } = await import("../src/lib/server/db.ts");
 const { catchUpIndex, indexFile, passagesFor, purgeIndex, searchChunks, searchMode, removeFileRows } = await import("../src/lib/server/assistant-search.ts");
-const { queryTerms, rankChunks, tagOf, tagged, words } = await import("../src/lib/assistant-chunks.ts");
+const { queryTerms, rankChunks, words } = await import("../src/lib/assistant-chunks.ts");
 const { STORE_FACTOR } = await import("../src/lib/assistants.ts");
 const { DELIVERY, GLUTEN, REFUNDS, TOP_PAGES, filler, pdf } = await import("./support/assistant-files.ts");
+/** Another copy of the search module, as another server has, with its own memory of what it found. */
+const anotherServer = (name: string) => import(`../src/lib/server/assistant-search.ts?${name}`) as Promise<typeof import("../src/lib/server/assistant-search.ts")>;
 
 const BAKERY = "00000001".repeat(4);
 async function file(id: string, name: string, text: string, tokens = Math.ceil(Buffer.byteLength(text) / 4)) {
@@ -141,7 +143,7 @@ test("catchUpIndex puts the chunks stored without the index into it, a bounded s
   // This server has asked, and keeps its answer; another server (its own copy of the module) does the work.
   t.mock.timers.enable({ apis: ["Date"], now: Date.now() });
   assert.equal(await searchMode(true), "fallback");
-  const other = await import("../src/lib/server/assistant-search.ts?another-server");
+  const other = await anotherServer("another-server");
   const before = await missing();
   assert.ok(before.length > 12, `the handbook's ${before.length} chunks aren't in the index`);
   const indexed = await index();
@@ -168,7 +170,7 @@ test("catchUpIndex puts the chunks stored without the index into it, a bounded s
 
   // The next step's chunks are read; then, before it writes, one of them is deleted, and a third
   // server takes the same step from the same place.
-  const third = await import("../src/lib/server/assistant-search.ts?a-third-server");
+  const third = await anotherServer("a-third-server");
   const client = await db();
   const batch = client.batch;
   let raced = 0;
