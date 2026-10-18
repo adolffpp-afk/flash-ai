@@ -13,6 +13,9 @@ import { feeBps } from "./shop.ts";
 import { scannerMissing, scannerReady } from "./virus-scan.ts";
 import { searchMode, storageFactor } from "./assistant-search.ts";
 import { startEnv } from "./start-env.ts";
+import { alertEmailsToday } from "./low-balance.ts";
+import { EMAIL_BUDGET } from "./email.ts";
+import { providerBalances } from "./provider-balances.ts";
 import { pushBrowsers, pushSetup } from "./push.ts";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -66,6 +69,8 @@ export async function adminStats(days: number) {
   );
   // What makes a variable that is set unusable (an http SearXNG address, a FRED or Google key of the wrong shape), by name.
   const problems: Record<string, string> = { searxng: searxngUrlProblem(), fred: fredKeyProblem(), pagespeed: pagespeedKeyProblem() };
+  // What is left on Flash's own account, where the provider's docs give a way to read it with Flash's key.
+  const balances = await providerBalances();
   // Every provider Flash can call, used or not, then any other provider the usage log names.
   const byProvider = [
     ...PROVIDER_LIST.map((p) => {
@@ -79,7 +84,7 @@ export async function adminStats(days: number) {
     .map((p) => {
       const use = providerUse.find((r) => r.provider === p.id);
       const sent = sourceUse.find((r) => r.provider === p.id);
-      return { ...p, provider: providerName(p.id), requests: n(use?.requests) + n(sent?.requests), costCents: n(use?.cost) };
+      return { ...p, provider: providerName(p.id), requests: n(use?.requests) + n(sent?.requests), costCents: n(use?.cost), balance: balances[p.id] };
     })
     .sort((a, b) => b.costCents - a.costCents || b.requests - a.requests || Number(a.free) - Number(b.free));
   const byModel = await all<{ model: string; provider: string; requests: number; cost: number }>(
@@ -171,6 +176,9 @@ export async function adminStats(days: number) {
     costCents: n(usage?.cost),
     byEngine: byEngine.map((r) => ({ engine: r.engine, requests: n(r.requests), credits: n(r.credits), costCents: n(r.cost) })),
     byProvider,
+    // Today's low-credit and app-AI emails (see low-balance.ts): sent, and held back by the day's share
+    // (EMAIL_BUDGET.alerts and appAiAlerts), the one-a-week limit or a failed send.
+    alertEmails: { ...(await alertEmailsToday()), share: EMAIL_BUDGET.alerts, appAiShare: EMAIL_BUDGET.appAiAlerts },
     // Whether connectors can be used: CONNECTOR_KEYS is set and holds a usable key (never its value).
     // With the version sealing new secrets and the entries that can't be used (by name), so a mistyped rotation shows.
     connectors: {

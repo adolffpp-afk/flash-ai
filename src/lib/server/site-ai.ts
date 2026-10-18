@@ -8,9 +8,10 @@
  */
 import Anthropic from "@anthropic-ai/sdk";
 import { all, one, run, now } from "./db.ts";
-import { HOLD_MINUTES, charge, logUsage, settle, spendable, topUpLevel } from "./credits.ts";
+import { HOLD_MINUTES, balance, charge, logUsage, settle, spendable, topUpLevel } from "./credits.ts";
 import { afterResponse } from "./after-response.ts";
 import { overLimit } from "./limits.ts";
+import { noteAppAiOutOfCredits } from "./low-balance.ts";
 import { CHAT_MODEL, claudeConfigured, getClient, mayHaveRun } from "../engines/claude.ts";
 import { MARKUP, callMaxCents, claudeCostCents, claudePrice, creditsFor, worstTokens } from "../credits.ts";
 
@@ -25,13 +26,25 @@ export const MAX_DAILY_CREDITS = 5000;
 // About what one answer costs, for the owner's "about N answers a day".
 export const TYPICAL_ANSWER_CREDITS = 2;
 const HOUR = 3600_000;
+// How a visitor's spend is charged and settled (see credits.ts's SpendBy).
+const VISITOR = { visitor: true, keepTopUpLevel: true };
 // How long an answer is waited for: well inside the route's 60 seconds (maxDuration), so a slow one
 // still ends here and its hold is settled. The client's own default is 10 minutes.
 export const ANSWER_TIMEOUT_MS = 40_000;
 
-// answers: about how many answers the daily budget pays for. stopsAt: the owner's auto top-up level,
-// where it stops while auto top-up can buy a pack (see charge's keepTopUpLevel), else 0.
-export type AiSettings = { enabled: boolean; dailyCredits: number; usedToday: number; askedToday: number; answers: number; stopsAt: number };
+// answers: about how many answers the daily budget pays for. outOfCreditsAt: when it last turned a
+// visitor away because the owner is out of credits or at their auto top-up level (site_ai.at_level
+// says which), 0 once it answers again. stopsAt: the owner's
+// auto top-up level, where it stops while auto top-up can buy a pack (see charge's keepTopUpLevel), else 0.
+export type AiSettings = {
+  enabled: boolean;
+  dailyCredits: number;
+  usedToday: number;
+  askedToday: number;
+  answers: number;
+  outOfCreditsAt: number;
+  stopsAt: number;
+};
 export type AiAnswer = { status: number; body: { text: string } | { error: string } };
 
 const day = (t = Date.now()) => new Date(t).toISOString().slice(0, 10);
@@ -77,7 +90,7 @@ export const MIN_DAILY_CREDITS = worstCaseCredits(CHAT_MODEL, siteSystem("").len
 
 /** The app's AI settings and today's use; with ownerId (the owner reading them in Flash), where it stops. */
 export async function aiSettings(slug: string, ownerId?: string): Promise<AiSettings> {
-  const row = await one<{ enabled: number; daily_credits: number }>("SELECT enabled, daily_credits FROM site_ai WHERE site_slug = ?", [slug]);
+  const row = await one<{ enabled: number; daily_credits: number; out_at: number }>("SELECT enabled, daily_credits, out_at FROM site_ai WHERE site_slug = ?", [slug]);
   const used = await one<{ credits: number; requests: number }>(
     "SELECT credits, requests FROM site_ai_usage WHERE site_slug = ? AND day = ?",
     [slug, day()],
@@ -89,6 +102,7 @@ export async function aiSettings(slug: string, ownerId?: string): Promise<AiSett
     usedToday: Number(used?.credits ?? 0),
     askedToday: Number(used?.requests ?? 0),
     answers: Math.floor(dailyCredits / TYPICAL_ANSWER_CREDITS),
+    outOfCreditsAt: Number(row?.out_at ?? 0),
     stopsAt: ownerId ? await topUpLevel(ownerId) : 0,
   };
 }
@@ -136,6 +150,16 @@ async function giveBack(slug: string, d: string, credits: number, asked = false)
 const fail = (error: string, status: number): AiAnswer => ({ status, body: { error } });
 
 /**
+ * Whether an app's AI that its owner's credits can't pay for stopped at the owner's own auto top-up
+ * level: it is on (TOP_UP_LEVEL) and their own whole balance would pay (pays). A team member's app
+ * that the shared pool's level stops, with the member's own credits gone, is out of credits: the level
+ * is the team owner's, which the member can't change, and the member's own credits did run out.
+ */
+async function stoppedAtOwnLevel(owner: string, pays: (credits: number) => boolean): Promise<boolean> {
+  return (await topUpLevel(owner)) > 0 && pays(await balance(owner));
+}
+
+/**
  * Settles to 0 the holds a server left when it stopped in the middle of an answer (a crash, a
  * restart, or the platform ending the function), which nothing else would settle: the owner pays
  * nothing for a failed answer. Claude may still have made it, so it is logged at what its hold is
@@ -143,7 +167,8 @@ const fail = (error: string, status: number): AiAnswer => ({ status, body: { err
  */
 async function settleLeftHolds(): Promise<void> {
   const left = await all<{ id: number; user_id: string; actor: string | null; amount: number }>(
-    "SELECT id, user_id, actor, amount FROM credit_ledger WHERE keeps_level = 1 AND settled_at = 0 AND created_at < ?",
+    // keeps_level 1 or 2: every visitor's hold, including one marked while it ran (see visitorHoldsKeptOut).
+    "SELECT id, user_id, actor, amount FROM credit_ledger WHERE keeps_level > 0 AND settled_at = 0 AND created_at < ?",
     [now() - HOLD_MINUTES * 60_000],
   );
   for (const hold of left) {
@@ -192,18 +217,36 @@ export async function askSiteAi(
   const hold = Math.min(worstCaseCredits(CHAT_MODEL, chars), left, owner);
   const maxTokens = Math.min(MAX_ANSWER_TOKENS, tokensFor(hold, chars));
   if (!(maxTokens >= MIN_ANSWER_TOKENS)) {
-    return owner < left
-      ? fail("This app's AI is out of credits. Its owner can add more in Flash.", 402)
-      : fail("This app's AI has used everything it may today. It works again tomorrow.", 429);
+    if (owner >= left) return fail("This app's AI has used everything it may today. It works again tomorrow.", 429);
+    // The owner hears of it (the bell, and an email at most once a day), after this answer, when it is
+    // credits that stop it (their whole balance would pay for the answer, or is less than today's
+    // budget left): that it stopped at their auto top-up level, else that their credits ran out (see
+    // stoppedAtOwnLevel). Stopped at the level can last: auto top-up buys only below it, and only this
+    // month's few times, and a visitor's question never sets it off.
+    const pays = (credits: number) => tokensFor(Math.min(worstCaseCredits(CHAT_MODEL, chars), left, credits), chars) >= MIN_ANSWER_TOKENS;
+    const all = (await spendable(site.user_id)).largest;
+    if (pays(all) || all < left) noteAppAiOutOfCredits(slug, site.user_id, site.title, pays(all) && (await stoppedAtOwnLevel(site.user_id, pays)));
+    return fail("This app's AI is out of credits. Its owner can add more in Flash.", 402);
   }
   const reserved = await reserveToday(slug, hold, settings.dailyCredits);
   if (!reserved) {
     return fail("This app's AI has used everything it may today. It works again tomorrow.", 429);
   }
-  const chargeId = await charge(site.user_id, hold, `AI in "${site.title}"`, { keepTopUpLevel: true });
+  // A visitor's question: it never sets off the owner's auto top-up, and it stops at the top-up
+  // level while auto top-up can buy, so it never brings a pack nearer either (see credits.ts).
+  const chargeId = await charge(site.user_id, hold, `AI in "${site.title}"`, VISITOR);
   if (chargeId === null) {
     await giveBack(slug, reserved, hold);
+    // As above: stopped at the owner's own level while their whole balance pays for the hold, else out of credits.
+    noteAppAiOutOfCredits(slug, site.user_id, site.title, await stoppedAtOwnLevel(site.user_id, (credits) => credits >= hold));
     return fail("This app's AI is out of credits. Its owner can add more in Flash.", 402);
+  }
+  // Paid for again: the bell stops saying it turns visitors away. After the answer, so the visitor
+  // never waits for it or loses the answer to it once credits are held.
+  if (settings.outOfCreditsAt) {
+    void afterResponse(() =>
+      run("UPDATE site_ai SET out_at = 0 WHERE site_slug = ?", [slug]).catch((err: unknown) => console.error("[flash] clearing an app AI's out-of-credits mark failed", err)),
+    );
   }
 
   let message: Anthropic.Beta.BetaMessage;
@@ -217,7 +260,7 @@ export async function askSiteAi(
     );
   } catch (err) {
     // The owner never pays for a failed answer (see settleLeftHolds for one a server stopped in).
-    await settle(chargeId, 0);
+    await settle(chargeId, 0, VISITOR);
     if (mayHaveRun(err)) {
       // One that timed out, lost its connection or was cut off part way may still have been made, and
       // Claude bills it: Flash pays that, logged at the most it can cost, and the hold keeps its place
@@ -238,7 +281,7 @@ export async function askSiteAi(
     .trim();
   const costCents = claudeCostCents(message.model, message.usage, CHAT_MODEL);
   const used = Math.min(hold, creditsFor(costCents));
-  await settle(chargeId, used);
+  await settle(chargeId, used, VISITOR);
   await giveBack(slug, reserved, hold - used, true);
   await logUsage({ userId: site.user_id, engine: "text", model: "app AI", provider: "anthropic", credits: used, costCents, ok: Boolean(text) });
   if (!text) return fail("The AI had nothing to say. Please try again.", 502);

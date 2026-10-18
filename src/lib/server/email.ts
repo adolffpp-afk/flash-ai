@@ -1,5 +1,5 @@
 import { now } from "./db.ts";
-import { countOf, overLimit } from "./limits.ts";
+import { countOf, giveBackOne, overLimit, takeOne, takeSome } from "./limits.ts";
 import { BRAND_NAME } from "../product.ts";
 
 /*
@@ -34,6 +34,13 @@ export const EMAIL_BUDGET = {
   // admin at once and counts once here (once per admin in the day's total). Every report is still
   // listed in /admin > Reports.
   reports: 10,
+  // Low-credit emails, a day (see low-balance.ts): someone's credits falling below the level they
+  // picked. They come out of what app emails and invites share, never what sign-in emails keep, and
+  // stop at this many: one that can't go out waits for a later day, and Flash still shows it in the app.
+  alerts: 10,
+  // "Your app's AI is out of credits" emails to app owners, a day (see low-balance.ts), the same way.
+  // Visitors set these off, so they have a share of their own and never use up the low-credit emails'.
+  appAiAlerts: 5,
 };
 
 const DAY = 86_400_000;
@@ -50,8 +57,11 @@ const DAY = 86_400_000;
  *   forms, so these also stop at the owner's own daily cap.
  * - "report": a new report, to Flash's admins. Anyone can report, so these also stop at
  *   EMAIL_BUDGET.reports a day.
+ * - "alert": a low-credit email (see low-balance.ts). These also stop at EMAIL_BUDGET.alerts a day.
+ * - "app-ai": an "app's AI is out of credits" email (low-balance.ts). These also stop at
+ *   EMAIL_BUDGET.appAiAlerts a day.
  */
-export type EmailKind = "account" | "new" | "other" | "report" | { owner: string };
+export type EmailKind = "account" | "new" | "other" | "report" | "alert" | "app-ai" | { owner: string };
 
 /**
  * Whether today's budget lets an email of this kind go out, counting it when it does. Account
@@ -74,8 +84,20 @@ async function withinBudget(kind: EmailKind, recipients: number): Promise<boolea
   // Checked first, so one person's busy apps (or a flood of reports) can't use up everyone else's share.
   if (typeof kind === "object" && (await overLimit(`email-owner:${kind.owner}`, EMAIL_BUDGET.perOwner, DAY))) return false;
   if (kind === "report" && (await overLimit(`email-report:${day}`, EMAIL_BUDGET.reports, DAY))) return false;
+  // An alert's own share, then the day's shared emails, each taken in one statement, so emails at the
+  // same moment get every place there is (and no more), and one refused takes nothing: an alert's
+  // place is handed back when the shared emails then refuse it.
+  const share =
+    kind === "alert"
+      ? { key: `email-alert:${day}`, max: EMAIL_BUDGET.alerts }
+      : kind === "app-ai"
+        ? { key: `email-app-ai:${day}`, max: EMAIL_BUDGET.appAiAlerts }
+        : null;
+  const shareUntil = share ? await takeOne(share.key, share.max, DAY) : null;
+  if (share && shareUntil === null) return false;
   const full = (await countOf(accounts)) + (await countOf(others)) + recipients > EMAIL_BUDGET.perDay;
-  if (full || (await overLimit(others, EMAIL_BUDGET.perDay - EMAIL_BUDGET.keptForAccounts, DAY, recipients))) {
+  if (full || (await takeSome(others, EMAIL_BUDGET.perDay - EMAIL_BUDGET.keptForAccounts, DAY, recipients)) === null) {
+    if (share && shareUntil !== null) await giveBackOne([[share.key, shareUntil]]);
     console.warn("[flash] today's emails for apps and invites are used up; raise EMAIL_BUDGET in email.ts on a bigger email plan");
     return false;
   }
@@ -92,7 +114,9 @@ export const verificationRequired = () => emailEnabled() || demoEmails();
 
 const FROM = () => process.env.FLASH_EMAIL_FROM || `${BRAND_NAME} <hello@flash-app.dev>`;
 
-function layout(heading: string, body: string, button: string, link: string): string {
+const IGNORE = "If you didn't ask for this, you can ignore this email.";
+
+function layout(heading: string, body: string, button: string, link: string, footer = IGNORE): string {
   return `<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;background:#f4f4f5;font-family:system-ui,-apple-system,Segoe UI,sans-serif">
 <div style="max-width:480px;margin:32px auto;background:#fff;border-radius:16px;padding:32px">
 <div style="font-size:20px;font-weight:700;color:#047857">Flash ∞ AI</div>
@@ -100,14 +124,68 @@ function layout(heading: string, body: string, button: string, link: string): st
 <p style="color:#52525b;line-height:1.5">${body}</p>
 <p style="margin:24px 0"><a href="${link}" style="background:#047857;color:#fff;padding:12px 20px;border-radius:10px;text-decoration:none;font-weight:600">${button}</a></p>
 <p style="color:#a1a1aa;font-size:12px;line-height:1.5">Or paste this link into your browser:<br>${link}</p>
-<p style="color:#a1a1aa;font-size:12px">If you didn't ask for this, you can ignore this email.</p>
+<p style="color:#a1a1aa;font-size:12px">${footer}</p>
 </div></body></html>`;
 }
 
 const escapeHtml = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
+/*
+ * The low-credit emails' words (see low-balance.ts). LOW_CREDITS_LINE is the wording Flash's owner
+ * approved, which the app shows too (the bell and Home, in each language).
+ */
+export const LOW_CREDITS_LINE =
+  "Your Flash credits are running low. Your apps and websites keep running, but they only get new updates while you have credits. Top up to keep them updating.";
+const ALERTS_OFF = "You get this because low-credit emails are on. To stop them, open Credits in Flash and untick “Email me when my credits run low”.";
+
 export const EMAILS = {
+  lowCredits: (credits: number, link: string) => {
+    const left = `You have ${Math.max(0, credits).toLocaleString("en-US")} credits left.`;
+    return {
+      subject: "Your Flash credits are running low",
+      html: layout(
+        "Your Flash credits are running low",
+        `${LOW_CREDITS_LINE}<br><br><span style="color:#18181b">${left}</span>`,
+        "Top up in Flash",
+        link,
+        ALERTS_OFF,
+      ),
+      text: `${LOW_CREDITS_LINE}\n\n${left}\n\nTop up in Flash: ${link}\n\n${ALERTS_OFF}`,
+    };
+  },
+  // site is the app's title, which its owner typed: escaped, and kept to one line.
+  appAiOutOfCredits: (site: string, link: string) => {
+    const name = site.replace(/[\r\n\t]+/g, " ").trim().slice(0, 80) || "your app";
+    const line = `Visitors are asking the AI in your app ${name}, but their questions aren't being answered because your Flash credits have run out. The rest of the app keeps working. Top up so it can answer them again.`;
+    return {
+      subject: `The AI in ${name.slice(0, 60)} is out of credits`,
+      html: layout(
+        `The AI in ${escapeHtml(name)} is out of credits`,
+        escapeHtml(line),
+        "Top up in Flash",
+        link,
+        ALERTS_OFF,
+      ),
+      text: `${line}\n\nTop up in Flash: ${link}\n\n${ALERTS_OFF}`,
+    };
+  },
+  // The same when it stopped at the owner's auto top-up level (see site-ai.ts): their credits haven't run out.
+  appAiAtLevel: (site: string, link: string) => {
+    const name = site.replace(/[\r\n\t]+/g, " ").trim().slice(0, 80) || "your app";
+    const line = `Visitors are asking the AI in your app ${name}, but their questions aren't being answered: with auto top-up on, it stops when your balance gets down to your top-up level, so your visitors never set off a top-up. The rest of the app keeps working. Top up so it can answer them again.`;
+    return {
+      subject: `The AI in ${name.slice(0, 60)} stopped at your auto top-up level`,
+      html: layout(
+        `The AI in ${escapeHtml(name)} stopped at your auto top-up level`,
+        escapeHtml(line),
+        "Top up in Flash",
+        link,
+        ALERTS_OFF,
+      ),
+      text: `${line}\n\nTop up in Flash: ${link}\n\n${ALERTS_OFF}`,
+    };
+  },
   teamInvite: (inviter: string, link: string) => ({
     subject: `${inviter.slice(0, 60)} invited you to their Flash ∞ AI team`,
     html: layout(

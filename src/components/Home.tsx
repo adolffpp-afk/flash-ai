@@ -11,7 +11,8 @@ import type { FeatureAction } from "@/lib/features";
 import type { Level } from "@/lib/levels";
 import type { Choice } from "./ComposerTools";
 import { onSettingChange, readSetting } from "@/lib/device-settings";
-import { msg } from "@/lib/i18n";
+import { afterSentence, msg } from "@/lib/i18n";
+import { runningLow } from "@/lib/bell";
 import { useT } from "@/lib/use-t";
 import { EngineIcon } from "./EngineIcon";
 import { Everything } from "./Everything";
@@ -278,6 +279,13 @@ export function Home({
   const planLabel = me.plan ? t("{plan} plan", { plan: me.plan.name }) : inTeam ? t("Team plan") : t("Free plan");
   // Packs, rewards, rollover and team credits can take the balance past the monthly amount.
   const overAllowance = me.credits > allowance;
+  // Below the person's low-credit level (see low-balance.ts), what the bell and the email say.
+  const lowLine = runningLow(me)
+    ? [
+        t("Your Flash credits are running low."),
+        t("Your apps and websites keep running, but they only get new updates while you have credits. Top up to keep them updating."),
+      ]
+    : [t("Your AI creativity engine is running strong.")];
 
   const chips: { label: string; d: string; hue: string; run: () => void; live: boolean }[] = [
     { label: msg("Deep Research"), d: ICONS.search, hue: "text-violet-300 light:text-violet-600", run: () => onTool("search"), live: isLive("search") },
@@ -617,7 +625,7 @@ export function Home({
             }
           >
             <p className="-mt-1 mb-4 text-sm text-zinc-400">
-              {me.credits < 10 ? t("You're running low on credits.") : t("Your AI creativity engine is running strong.")}{" "}
+              {lowLine.map((sentence) => sentence + afterSentence(sentence)).join("")}
               <span className="tabular-nums text-zinc-200">
                 {overAllowance
                   ? t("{count} credits left.", { count: me.credits.toLocaleString(t.locale) })

@@ -39,7 +39,7 @@ process.env.DATABASE_URL = ":memory:";
 process.env.ANTHROPIC_API_KEY = "sk-fake";
 process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
-const { run, one } = await import("../src/lib/server/db.ts");
+const { run, one, db } = await import("../src/lib/server/db.ts");
 const { askSiteAi, aiSettings, saveAiSettings, worstCaseCredits, MAX_INSTRUCTIONS_CHARS, MAX_PROMPT_CHARS, MIN_DAILY_CREDITS } = await import(
   "../src/lib/server/site-ai.ts"
 );
@@ -51,6 +51,7 @@ const { runLock } = await import("../src/lib/server/pagespeed.ts");
 const { clearLimit, overLimit } = await import("../src/lib/server/limits.ts");
 const pagespeedRoute = await import("../src/app/api/sites/[slug]/pagespeed/route.ts");
 const { FETCHERS_URL } = await import("../src/lib/server/lighthouse.ts");
+const { afterwards } = await import("./support/next-server.mjs");
 
 // A stand-in for Google's list of its user-triggered fetchers' addresses: the blocks every address
 // Google's test was seen at is in (user-triggered-fetchers-google.json, 2026-10-16), and one of its
@@ -81,7 +82,7 @@ test("an app's AI is off until its owner turns it on", async () => {
 
   const settings = await saveAiSettings("shop", true, 60);
   // stopsAt: no auto top-up level to stop at (see site-ai-money.test.ts).
-  assert.deepEqual(settings, { enabled: true, dailyCredits: 60, usedToday: 0, askedToday: 0, answers: 30, stopsAt: 0 });
+  assert.deepEqual(settings, { enabled: true, dailyCredits: 60, usedToday: 0, askedToday: 0, answers: 30, outOfCreditsAt: 0, stopsAt: 0 });
 });
 
 test("an answer costs the owner credits, and only what it really used", async () => {
@@ -302,11 +303,47 @@ test("the day's limit stops it, and nothing is charged when the answer fails", a
 
 test("an owner with no credits gets a message the app can show", async () => {
   const used = (await aiSettings("shop")).usedToday;
+  const credits = await balance();
   await run("UPDATE credit_ledger SET amount = 0 WHERE user_id = 'owner'");
   const broke = await ask("Anything?");
   assert.equal(broke.status, 402);
   assert.match((broke.body as { error: string }).error, /out of credits/);
   assert.equal((await aiSettings("shop")).usedToday, used, "a reserve that wasn't spent is given back");
+
+  // The app is marked for its owner's bell (after the answer), until its AI answers again.
+  await afterwards();
+  const marked = (await aiSettings("shop")).outOfCreditsAt;
+  assert.ok(marked > 0, "marked as turning visitors away");
+  // A few credits, not enough for the smallest answer: still turned away, still marked.
+  await run("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES ('owner', 1, 'test', 0)");
+  assert.equal((await ask("Anything?")).status, 402);
+  await afterwards();
+  assert.equal((await aiSettings("shop")).outOfCreditsAt, marked, "marked at most every few minutes");
+  await run("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES ('owner', ?, 'test', 0)", [credits]);
+  // Answering again clears it, after the answer: a database error there never fails the answer or
+  // leaves its credits held.
+  const database = await db();
+  const execute = database.execute.bind(database);
+  const logged = mock.method(console, "error", () => {});
+  (database as unknown as { execute: unknown }).execute = (stmt: string | { sql: string }) =>
+    typeof stmt === "object" && stmt.sql.startsWith("UPDATE site_ai SET out_at = 0")
+      ? Promise.reject(new Error("SQLITE_BUSY: database is locked"))
+      : execute(stmt as never);
+  try {
+    assert.equal((await ask("Anything?")).status, 200);
+    const held = await one<{ n: number }>("SELECT COUNT(*) AS n FROM credit_ledger WHERE user_id = 'owner' AND amount < 0 AND settled_at = 0");
+    assert.equal(held?.n, 0, "the answer's credits are settled");
+    await afterwards();
+    assert.equal(logged.mock.callCount(), 1, "the failed clear is logged");
+    assert.equal((await aiSettings("shop")).outOfCreditsAt, marked, "and tried again on the next answer");
+  } finally {
+    (database as unknown as { execute: unknown }).execute = execute;
+    logged.mock.restore();
+  }
+  assert.equal((await ask("Anything?")).status, 200);
+  await afterwards();
+  assert.equal((await aiSettings("shop")).outOfCreditsAt, 0, "answering again clears it");
+  await run("UPDATE credit_ledger SET amount = 0 WHERE user_id = 'owner'");
 });
 
 test("an app takes files only once its owner turns that on", async () => {

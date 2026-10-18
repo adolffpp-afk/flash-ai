@@ -33,7 +33,21 @@ type Stats = {
     noKey?: boolean;
     requests: number;
     costCents: number;
+    // What is left on Flash's account there, where its docs give a way to read it (see provider-balances.ts).
+    balance?: { text: string; error?: boolean };
   }[];
+  // Today's low-credit and app-AI emails: sent, and held back (the day's share, the weekly limit, a failed send).
+  alertEmails?: {
+    lowSent: number;
+    lowBudget: number;
+    lowWeekly: number;
+    lowFailed: number;
+    appAiSent: number;
+    appAiBudget: number;
+    appAiFailed: number;
+    share: number;
+    appAiShare: number;
+  };
   // CONNECTOR_KEYS: whether connectors can be used, and what's missing (never the value).
   connectors: {
     setUp: boolean;
@@ -134,6 +148,21 @@ function Table({ head, rows }: { head: string[]; rows: React.ReactNode[][] }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+/** Today's low-credit and app-AI emails (see low-balance.ts), under the Overview's numbers. */
+function AlertEmailsLine({ a }: { a: NonNullable<Stats["alertEmails"]> }) {
+  const held = (budget: number, failed: number, weekly?: number) =>
+    [budget && `${num(budget)} waiting for the day's share`, weekly && `${num(weekly)} held by the one-a-week limit`, failed && `${num(failed)} failed`]
+      .filter(Boolean)
+      .join(", ") || "none held back";
+  return (
+    <p className="mt-3 text-xs text-zinc-500">
+      Alert emails today: low credits {num(a.lowSent)} sent ({held(a.lowBudget, a.lowFailed, a.lowWeekly)}) · app AI out of credits{" "}
+      {num(a.appAiSent)} sent ({held(a.appAiBudget, a.appAiFailed)}). Their shares of EMAIL_BUDGET are {num(a.share)} and{" "}
+      {num(a.appAiShare)} a day; a low-credit email held back goes on a later day while the person is still low.
+    </p>
   );
 }
 
@@ -741,6 +770,8 @@ export function AdminDashboard({ initialTab }: { initialTab?: string }) {
               />
             </div>
 
+            {stats.alertEmails && <AlertEmailsLine a={stats.alertEmails} />}
+
             <div className="mt-4">
               <Panel title="AI cost per day">
                 <CostChart series={stats.series} />
@@ -788,6 +819,7 @@ export function AdminDashboard({ initialTab }: { initialTab?: string }) {
                   <div key="name">
                     <div>{r.provider}</div>
                     {r.does && <div className="text-xs text-zinc-500">{r.does}</div>}
+                    {r.balance && <div className={`text-xs ${r.balance.error ? "text-amber-400" : "text-emerald-400"}`}>{r.balance.text}</div>}
                   </div>,
                   r.free ? "Free tier" : "Pay per use",
                   r.setUp ? (
