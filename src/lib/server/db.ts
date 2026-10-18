@@ -694,6 +694,165 @@ const SCHEMA = [
     created_at INTEGER NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS report_actions_item ON report_actions(item_kind, item_id)`,
+  // Automations (see automations.ts): tasks Flash runs by itself on a schedule, kept in Turso alone. No
+  // REFERENCES: foreign keys are off in production, so every delete is done by hand (see the daily job
+  // in automation-tick.ts, and dropUnconfirmed). Every claim, lease and heartbeat is written from the
+  // database's own clock (see leases.ts). status: draft, on, paused, finished or deleting.
+  // paused_reason: user, credits, month_cap, price_up, failing or unconfirmed. resume_at is when the
+  // tick looks again by itself (0: only its owner resumes it), need_credits the last refused run's
+  // minimum. next_at is the next scheduled slot (0: none); cap_run and cap_month the credits one run and
+  // one UTC month may use; quoted_max the worst case per run its owner saw. receipt_hash is the newest
+  // receipt's fingerprint, the head of the automation's chain (see automation-runner.ts).
+  `CREATE TABLE IF NOT EXISTS automations (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    pay_account TEXT NOT NULL,
+    name TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'draft',
+    paused_reason TEXT NOT NULL DEFAULT '',
+    paused_at INTEGER NOT NULL DEFAULT 0,
+    resume_at INTEGER NOT NULL DEFAULT 0,
+    need_credits INTEGER NOT NULL DEFAULT 0,
+    version INTEGER NOT NULL DEFAULT 1,
+    trigger_kind TEXT NOT NULL,
+    trigger_key TEXT NOT NULL DEFAULT '',
+    time_zone TEXT NOT NULL,
+    where_json TEXT NOT NULL DEFAULT '{}',
+    language TEXT NOT NULL DEFAULT '',
+    next_at INTEGER NOT NULL DEFAULT 0,
+    cap_run INTEGER NOT NULL,
+    cap_month INTEGER NOT NULL,
+    cap_day INTEGER NOT NULL DEFAULT 0,
+    quoted_max INTEGER NOT NULL DEFAULT 0,
+    fail_streak INTEGER NOT NULL DEFAULT 0,
+    last_run_at INTEGER NOT NULL DEFAULT 0,
+    last_status TEXT NOT NULL DEFAULT '',
+    receipt_hash TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS automations_user ON automations(user_id, updated_at)`,
+  `CREATE INDEX IF NOT EXISTS automations_due ON automations(next_at) WHERE status = 'on' AND next_at > 0`,
+  `CREATE INDEX IF NOT EXISTS automations_resume ON automations(resume_at) WHERE status = 'paused' AND resume_at > 0`,
+  `CREATE INDEX IF NOT EXISTS automations_trigger ON automations(trigger_key) WHERE status = 'on' AND trigger_key <> ''`,
+  // What a run follows: each saved edit is a new version, so an edit never changes a run under way.
+  // runner is the oldest runner that knows every step in it (runnerFor), so an older deployment skips it.
+  `CREATE TABLE IF NOT EXISTS automation_versions (
+    automation_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    user_id TEXT NOT NULL,
+    spec TEXT NOT NULL,
+    runner INTEGER NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (automation_id, version)
+  )`,
+  // One run of an automation. run_key is sched:<slot> or manual:<requestId>, unique per automation, so
+  // a duplicate cron call or a double tap gives one run. step is the next step's id ('' for the first),
+  // next_paid 1 when that is an AI step (the claim's two pools), parked 1 while the automation is paused.
+  // A slot not started by grace_until is missed, for free. The lease is a worker's (see leases.ts).
+  `CREATE TABLE IF NOT EXISTS automation_runs (
+    id TEXT PRIMARY KEY,
+    automation_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    version INTEGER NOT NULL,
+    run_key TEXT NOT NULL,
+    origin TEXT NOT NULL,
+    root_origin TEXT NOT NULL,
+    trigger_json TEXT NOT NULL DEFAULT '{}',
+    contact_id TEXT NOT NULL DEFAULT '',
+    depth INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'queued',
+    outcome TEXT NOT NULL DEFAULT '',
+    step TEXT NOT NULL DEFAULT '',
+    next_paid INTEGER NOT NULL DEFAULT 0,
+    parked INTEGER NOT NULL DEFAULT 0,
+    vars_json TEXT NOT NULL DEFAULT '{}',
+    due_at INTEGER NOT NULL,
+    grace_until INTEGER NOT NULL DEFAULT 0,
+    lease_owner TEXT NOT NULL DEFAULT '',
+    lease_until INTEGER NOT NULL DEFAULT 0,
+    attempts INTEGER NOT NULL DEFAULT 0,
+    stop_requested INTEGER NOT NULL DEFAULT 0,
+    credits INTEGER NOT NULL DEFAULT 0,
+    summary TEXT NOT NULL DEFAULT '',
+    receipt_hash TEXT NOT NULL DEFAULT '',
+    scheduled_at INTEGER NOT NULL DEFAULT 0,
+    started_at INTEGER NOT NULL DEFAULT 0,
+    finished_at INTEGER NOT NULL DEFAULT 0,
+    seen_at INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS automation_runs_key ON automation_runs(automation_id, run_key)`,
+  `CREATE INDEX IF NOT EXISTS automation_runs_due ON automation_runs(due_at) WHERE parked = 0 AND status IN ('queued','waiting','running','approval')`,
+  `CREATE INDEX IF NOT EXISTS automation_runs_lease ON automation_runs(lease_until) WHERE lease_until > 0`,
+  `CREATE INDEX IF NOT EXISTS automation_runs_list ON automation_runs(automation_id, created_at)`,
+  `CREATE INDEX IF NOT EXISTS automation_runs_user ON automation_runs(user_id, finished_at)`,
+  // The receipt: one row per attempt of a step. output is gzip of {text, sources}; note an English
+  // phrase (why it was skipped or cut short); hold_ref the credit hold and ledger ref of a paid attempt.
+  `CREATE TABLE IF NOT EXISTS automation_run_steps (
+    run_id TEXT NOT NULL,
+    step_id TEXT NOT NULL,
+    attempt INTEGER NOT NULL,
+    user_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    status TEXT NOT NULL,
+    input TEXT NOT NULL DEFAULT '',
+    output BLOB,
+    note TEXT NOT NULL DEFAULT '',
+    hold_ref TEXT NOT NULL DEFAULT '',
+    delivery_id TEXT NOT NULL DEFAULT '',
+    held INTEGER NOT NULL DEFAULT 0,
+    credits INTEGER NOT NULL DEFAULT 0,
+    level TEXT NOT NULL DEFAULT '',
+    model TEXT NOT NULL DEFAULT '',
+    approval_id TEXT NOT NULL DEFAULT '',
+    started_at INTEGER NOT NULL,
+    finished_at INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (run_id, step_id, attempt)
+  )`,
+  // At most one step of a run runs at a time, whoever tries to start it.
+  `CREATE UNIQUE INDEX IF NOT EXISTS automation_run_steps_one ON automation_run_steps(run_id) WHERE status = 'running'`,
+  // Every credit hold that must be settled even if the function holding it dies (see credit-holds.ts).
+  // ref is its ledger ref (auto:<runId>:<stepId>:<attempt>). started is 1 once the provider call was
+  // sent, done 1 once it ended; spent_cents and left_cents are the meter's last checkpoint. Past
+  // lease_until the tick's reaper settles it; settle_token says who did, so it is settled once.
+  `CREATE TABLE IF NOT EXISTS credit_holds (
+    ref TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    run_id TEXT NOT NULL DEFAULT '',
+    charge_id INTEGER NOT NULL DEFAULT 0,
+    held INTEGER NOT NULL,
+    model TEXT NOT NULL DEFAULT '',
+    input_cents REAL NOT NULL DEFAULT 0,
+    started INTEGER NOT NULL DEFAULT 0,
+    done INTEGER NOT NULL DEFAULT 0,
+    spent_cents REAL NOT NULL DEFAULT 0,
+    left_cents REAL NOT NULL DEFAULT 0,
+    checked_at INTEGER NOT NULL DEFAULT 0,
+    lease_until INTEGER NOT NULL,
+    settle_token TEXT NOT NULL DEFAULT '',
+    settled_at INTEGER NOT NULL DEFAULT 0,
+    credits INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS credit_holds_open ON credit_holds(lease_until) WHERE settled_at = 0`,
+  `CREATE INDEX IF NOT EXISTS credit_holds_run ON credit_holds(run_id) WHERE settled_at = 0 AND run_id <> ''`,
+  // Notices for the Bell: phrase is an English key with its blanks, translated when read, in the
+  // reader's language; link an in-app query (automations=<id>&run=<runId>); ref a "tell once" key.
+  `CREATE TABLE IF NOT EXISTS notifications (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    phrase TEXT NOT NULL,
+    blanks TEXT NOT NULL DEFAULT '{}',
+    link TEXT NOT NULL DEFAULT '',
+    ref TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL,
+    read_at INTEGER NOT NULL DEFAULT 0
+  )`,
+  `CREATE INDEX IF NOT EXISTS notifications_user ON notifications(user_id, read_at, created_at)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS notifications_ref ON notifications(user_id, ref) WHERE ref <> ''`,
 ];
 
 let client: Client | null = null;
@@ -781,6 +940,12 @@ const MIGRATIONS = [
   // Who recorded that a contact agreed to news: '' for a box they ticked on a form, 'owner' for the
   // owner recording that they asked for news again after unsubscribing (see recordConsent).
   "ALTER TABLE site_contacts ADD COLUMN consent_by TEXT NOT NULL DEFAULT ''",
+  // The automation a charge was for (see chargeOnce), for its run and month limits and its receipts.
+  "ALTER TABLE credit_ledger ADD COLUMN automation_id TEXT NOT NULL DEFAULT ''",
+  // The same on what a request cost Flash, so /admin shows each automation's cost against its credits.
+  "ALTER TABLE usage ADD COLUMN automation_id TEXT NOT NULL DEFAULT ''",
+  // The time zone the user's new automations start in, saved from their browser the first time.
+  "ALTER TABLE users ADD COLUMN time_zone TEXT NOT NULL DEFAULT ''",
 ];
 
 async function init(c: Client) {
@@ -794,12 +959,15 @@ async function init(c: Client) {
   await c.execute("CREATE INDEX IF NOT EXISTS credit_ledger_actor ON credit_ledger(actor)");
   await c.execute("CREATE INDEX IF NOT EXISTS site_records_owner ON site_records(site_slug, owner, collection, created_at)");
   await c.execute("CREATE INDEX IF NOT EXISTS site_messages_contact ON site_messages(site_slug, contact_id)");
+  await c.execute("CREATE INDEX IF NOT EXISTS credit_ledger_auto ON credit_ledger(automation_id, created_at) WHERE automation_id <> ''");
 }
 
 /** Returns the database client, creating the tables on first use. */
 export async function db(): Promise<Client> {
   if (!client) {
-    client = createClient({ url, authToken: process.env.DATABASE_AUTH_TOKEN });
+    // A local file waits up to 10 s for another connection's write instead of failing at once (the
+    // client opens several, and the tick, work calls and pages write at the same time). Turso ignores it.
+    client = createClient({ url, authToken: process.env.DATABASE_AUTH_TOKEN, timeout: 10_000 });
     ready = init(client);
   }
   await ready;

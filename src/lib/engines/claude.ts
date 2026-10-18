@@ -146,7 +146,7 @@ export const NO_BUDGET: Budget = { maxTokens: MAX_OUTPUT_TOKENS, capCents: Infin
 
 // Claude writes at most about this many tokens a second. Thinking isn't shown, so a call stopped or
 // failed while it thinks is charged as if it had thought this fast, up to its max_tokens (see Running).
-const PEAK_TOKENS_PER_SECOND = 200;
+export const PEAK_TOKENS_PER_SECOND = 200;
 /** About how many tokens streamed text is: 3 bytes of UTF-8 a token, a little high for English, right for Chinese. */
 const streamedTokens = (text: string) => Buffer.byteLength(text) / 3;
 const isPriced = (model: string) => Object.hasOwn(CLAUDE_PRICES, model);

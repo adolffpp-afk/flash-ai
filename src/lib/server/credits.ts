@@ -70,10 +70,13 @@ async function monthlyCredits(userId: string): Promise<void> {
   const ref = `free:${userId}:${monthKey()}`;
   if (await one("SELECT 1 FROM credit_ledger WHERE ref = ?", [ref])) return;
   // Credits held by a request still running count as not spent yet: most of a hold comes back when
-  // the reply ends, so counting it as spent would top up past the monthly amount.
+  // the reply ends, so counting it as spent would top up past the monthly amount. An automation's hold
+  // (auto:…) counts as not spent however old it is: a tick that stopped can leave one open for longer,
+  // and each one is settled for sure (see credit-holds.ts). (Each side names ref IS [NOT] NULL: a NULL
+  // inside NOT would leave the row out of the sum.)
   const row = await one<{ total: number }>(
     `SELECT COALESCE(SUM(amount), 0) AS total FROM credit_ledger
-     WHERE user_id = ? AND NOT (amount < 0 AND ref IS NULL AND settled_at = 0 AND created_at > ?)`,
+     WHERE user_id = ? AND NOT (amount < 0 AND settled_at = 0 AND ((ref IS NULL AND created_at > ?) OR (ref IS NOT NULL AND ref LIKE 'auto:%')))`,
     [userId, now() - HOLD_MINUTES * 60_000],
   );
   const topUp = Math.max(0, FREE_MONTHLY_CREDITS - Math.max(0, Number(row?.total ?? 0)));
@@ -101,6 +104,97 @@ export async function charge(userId: string, amount: number, reason: string): Pr
     if (r.rowsAffected === 1) return Number(r.lastInsertRowid);
   }
   return null;
+}
+
+/** What an automation's charges came to since a moment (its holds at full size until settled). */
+export async function automationSpent(automationId: string, since: number): Promise<number> {
+  const row = await one<{ total: number }>(
+    `SELECT COALESCE(-SUM(amount), 0) AS total FROM credit_ledger
+     WHERE automation_id = ? AND automation_id <> '' AND amount < 0 AND created_at >= ?`,
+    [automationId, since],
+  );
+  return Number(row?.total ?? 0);
+}
+
+/** The balance an account keeps for its auto top-up: its level while auto top-up is on with a card, else 0. */
+export async function topUpFloor(account: string): Promise<number> {
+  const row = await one<{ below: number }>("SELECT below FROM auto_topups WHERE user_id = ? AND enabled = 1 AND payment_method IS NOT NULL", [account]);
+  return Math.max(0, Number(row?.below ?? 0));
+}
+
+export type ChargeOnce = { id: number; replay: boolean } | { refused: "credits" | "topup_floor" | "month" | "day" };
+
+/**
+ * Takes an automation step's credits from exactly one account, once per ref, in one statement (so
+ * parallel runs, team members and chat requests can't take a balance below zero or a limit past it):
+ * - only from account (the automation's paying account), never falling through to another;
+ * - never below the account's auto top-up level when keepTopUpLevel (holds count at full size until
+ *   settled), so automation spending can never set off auto top-up (see auto-topup.ts);
+ * - never past the automation's month limit, nor its day limit when it has one: its charges since
+ *   monthStart (and dayStart) plus this one.
+ * A ref that is already in the ledger isn't charged again: its row comes back as a replay. Otherwise,
+ * when nothing was taken, it says which rule refused.
+ */
+export async function chargeOnce(o: {
+  account: string;
+  actor: string;
+  amount: number;
+  reason: string;
+  ref: string;
+  automationId: string;
+  monthCap: number;
+  monthStart: number;
+  dayCap?: number;
+  dayStart?: number;
+  keepTopUpLevel: boolean;
+}): Promise<ChargeOnce> {
+  const amount = Math.max(1, Math.ceil(o.amount));
+  const keep = o.keepTopUpLevel ? 1 : 0;
+  const dayCap = o.dayCap ?? 0;
+  const dayStart = o.dayStart ?? 0;
+  const r = await run(
+    `INSERT INTO credit_ledger (user_id, amount, reason, ref, actor, automation_id, created_at)
+     SELECT ?, ?, ?, ?, ?, ?, ?
+     WHERE (SELECT COALESCE(SUM(amount), 0) FROM credit_ledger WHERE user_id = ?)
+           - CASE WHEN ? = 1 THEN COALESCE((SELECT below FROM auto_topups
+                    WHERE user_id = ? AND enabled = 1 AND payment_method IS NOT NULL), 0) ELSE 0 END >= ?
+       AND (SELECT COALESCE(-SUM(amount), 0) FROM credit_ledger
+             WHERE automation_id = ? AND automation_id <> '' AND amount < 0 AND created_at >= ?) + ? <= ?
+       AND (? = 0 OR (SELECT COALESCE(-SUM(amount), 0) FROM credit_ledger
+             WHERE automation_id = ? AND automation_id <> '' AND amount < 0 AND created_at >= ?) + ? <= ?)
+     ON CONFLICT(ref) WHERE ref IS NOT NULL DO NOTHING`,
+    [
+      o.account,
+      -amount,
+      o.reason,
+      o.ref,
+      // As charge() writes it: an actor only when someone other than the account's owner spent it.
+      o.actor === o.account ? null : o.actor,
+      o.automationId,
+      now(),
+      o.account,
+      keep,
+      o.account,
+      amount,
+      o.automationId,
+      o.monthStart,
+      amount,
+      o.monthCap,
+      dayCap,
+      o.automationId,
+      dayStart,
+      amount,
+      dayCap,
+    ],
+  );
+  if (r.rowsAffected === 1) return { id: Number(r.lastInsertRowid), replay: false };
+  const seen = await one<{ id: number }>("SELECT id FROM credit_ledger WHERE ref = ?", [o.ref]);
+  if (seen) return { id: Number(seen.id), replay: true };
+  const held = await balance(o.account);
+  if (held < amount) return { refused: "credits" };
+  if (o.keepTopUpLevel && held - (await topUpFloor(o.account)) < amount) return { refused: "topup_floor" };
+  if ((await automationSpent(o.automationId, o.monthStart)) + amount > o.monthCap) return { refused: "month" };
+  return { refused: "day" };
 }
 
 /** Lowers a held charge to what the request really used (never raises it). */
@@ -137,6 +231,8 @@ export async function logUsage(entry: {
   costCents: number;
   ok: boolean;
   parts?: UsagePart[];
+  // The automation the request ran for, if any (see automation-steps.ts).
+  automationId?: string;
 }): Promise<void> {
   const others = new Map<string, UsagePart>();
   for (const p of entry.parts ?? []) {
@@ -148,10 +244,11 @@ export async function logUsage(entry: {
   const helpers = [...others.values()];
   const mainCents = Math.max(0, entry.costCents - helpers.reduce((sum, p) => sum + p.cents, 0));
   const at = now();
-  const insert = "INSERT INTO usage (user_id, engine, model, provider, credits, cost_cents, ok, part, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+  const insert = "INSERT INTO usage (user_id, engine, model, provider, credits, cost_cents, ok, part, automation_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
   const ok = entry.ok ? 1 : 0;
-  await run(insert, [entry.userId, entry.engine, entry.model, entry.provider, entry.credits, mainCents, ok, 0, at]);
-  for (const p of helpers) await run(insert, [entry.userId, entry.engine, p.model, p.provider, 0, p.cents, ok, 1, at]);
+  const automation = entry.automationId ?? "";
+  await run(insert, [entry.userId, entry.engine, entry.model, entry.provider, entry.credits, mainCents, ok, 0, automation, at]);
+  for (const p of helpers) await run(insert, [entry.userId, entry.engine, p.model, p.provider, 0, p.cents, ok, 1, automation, at]);
 }
 
 export async function refund(userId: string, amount: number, reason: string): Promise<void> {
