@@ -1,9 +1,14 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { register } from "node:module";
+import { createHash } from "node:crypto";
 
 // Spends settle inside requests: next/server's after() is the stand-in, which keeps the work for afterwards().
 register("./support/route-hooks.mjs", import.meta.url);
+// The server's translation tables are JSON files it imports as Next does (see i18n-tables.ts).
+register(
+  `data:text/javascript,${encodeURIComponent("export const load = (url, context, next) => next(url, url.endsWith('.json') ? { ...context, importAttributes: { type: 'json' } } : context);")}`,
+);
 process.env.DATABASE_URL = ":memory:";
 process.env.RESEND_API_KEY = "test-key";
 process.env.STRIPE_SECRET_KEY = "rk_test";
@@ -16,9 +21,11 @@ const { EMAIL_BUDGET, EMAILS, LOW_CREDITS_LINE } = await import("../src/lib/serv
 const { MAX_PER_MONTH } = await import("../src/lib/server/auto-topup.ts");
 const { sitesWithMessages } = await import("../src/lib/server/inbox.ts");
 const lowBalance = await import("../src/lib/server/low-balance.ts");
-const { ALERT_LEVELS, DEFAULT_LEVEL, alertEmailsToday, alertSettings, appAiAlert, checkLowBalance, creditsLink, deleteUserAlerts, noteAppAiOutOfCredits, saveAlertSettings, watchBalance } =
+const { ALERT_LEVELS, DEFAULT_LEVEL, alertEmailsToday, lowCreditsLevel, alertForPush, alertSettings, appAiAlert, checkLowBalance, creditsLink, deleteUserAlerts, noteAppAiOutOfCredits, saveAlertSettings, watchBalance } =
   lowBalance;
 const { afterwards } = await import("./support/next-server.mjs");
+const settingsRoute = await import("../src/app/api/billing/low-credit-emails/route.ts");
+const { bellState, runningLow, NEARLY_OUT } = await import("../src/lib/bell.ts");
 
 // Midday, so the day doesn't change halfway through a test.
 const NOON = Date.UTC(2026, 9, 9, 12);
@@ -314,12 +321,21 @@ test("an app's AI out of credits: the app is marked for the bell and its owner e
   assert.equal(to("shopkeeper@x.co").length, 3);
 });
 
-test("the emails keep a title to one line and never show a negative balance", async () => {
+test("the emails keep a title to one line, never show a negative balance, and the words for phones are the bell's", async () => {
   const email = EMAILS.appAiOutOfCredits("Shop\r\nBcc: x@y.z", "https://flash.test/?credits=1");
   assert.equal(email.subject, "The AI in Shop Bcc: x@y.z is out of credits");
   assert.equal(EMAILS.appAiOutOfCredits("  ", "l").subject, "The AI in your app is out of credits");
   assert.ok(EMAILS.lowCredits(-5, "l").text.includes("You have 0 credits left."));
   assert.ok(EMAILS.lowCredits(1234, "l").text.includes("You have 1,234 credits left."));
+
+  const push = await alertForPush("ana", { kind: "low-credits" });
+  assert.equal(push.title, "Your Flash credits are running low.");
+  assert.equal(`${push.title} ${push.body}`, LOW_CREDITS_LINE);
+  assert.equal(push.url, "https://flash.test/?credits=1&as=ana");
+  await run("UPDATE users SET language = 'de' WHERE id = 'ana'");
+  const de = await alertForPush("ana", { kind: "app-ai", site: "Bäckerei" });
+  assert.ok(de.title.includes("Bäckerei") && !de.title.includes("out of credits"), "in their language");
+  await run("UPDATE users SET language = '' WHERE id = 'ana'");
 });
 
 test("deleting an account's alerts removes its row (foreign keys are off on Turso)", async () => {
@@ -327,4 +343,62 @@ test("deleting an account's alerts removes its row (foreign keys are off on Turs
   await deleteUserAlerts("ana");
   assert.equal(await state("ana"), null);
   assert.ok(await state("set"), "only theirs");
+});
+
+test("Credits' setting: only for the signed-in person, only levels from the list, and the bell and Home say \"low\" at the same level", async () => {
+  await user("me");
+  const token = "tok_me";
+  await run("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, 'me', ?)", [createHash("sha256").update(token).digest("hex"), clock + DAY]);
+  const call = (method: "GET" | "POST", body?: object, cookie = `flash_session=${token}`) =>
+    settingsRoute[method](
+      new Request("http://localhost/api/billing/low-credit-emails", {
+        method,
+        headers: { "content-type": "application/json", origin: "http://localhost", cookie },
+        body: body ? JSON.stringify(body) : undefined,
+      }),
+    );
+  assert.equal((await call("GET", undefined, "")).status, 401);
+  assert.deepEqual(await (await call("GET")).json(), { enabled: true, below: DEFAULT_LEVEL, levels: ALERT_LEVELS, emails: true });
+  assert.equal(await lowCreditsLevel("me"), DEFAULT_LEVEL);
+
+  const bad = await call("POST", { enabled: true, below: 5 });
+  assert.equal(bad.status, 400);
+  assert.deepEqual(await bad.json(), { error: "Pick a level from the list." });
+  assert.deepEqual(await (await call("POST", { enabled: true, below: 1000 })).json(), { enabled: true, below: 1000, levels: ALERT_LEVELS, emails: true });
+  assert.equal(await lowCreditsLevel("me"), 1000);
+  assert.deepEqual(await (await call("POST", { enabled: false, below: 1000 })).json(), { enabled: false, below: 1000, levels: ALERT_LEVELS, emails: true });
+  assert.equal(await lowCreditsLevel("me"), NEARLY_OUT, "emails off: only nearly nothing left is low");
+  await saveAlertSettings("me", { enabled: true, below: 300 });
+  delete process.env.STRIPE_SECRET_KEY;
+  assert.equal(await lowCreditsLevel("me"), NEARLY_OUT, "payments off");
+  process.env.STRIPE_SECRET_KEY = "rk_test";
+  delete process.env.RESEND_API_KEY;
+  assert.equal((await (await call("GET")).json()).emails, false, "no email provider: Credits hides the setting");
+  process.env.RESEND_API_KEY = "test-key";
+});
+
+test("the bell: low below the person's level, with its dot until opened once; an app's AI out of credits until credits come", () => {
+  const T = NOON;
+  const me = (credits: number, lowCredits = 100, activity: { amount: number; reason: string; created_at: number }[] = []) => ({ credits, lowCredits, activity });
+  assert.equal(runningLow(me(99)), true);
+  assert.equal(runningLow(me(100)), false);
+  assert.equal(runningLow({ credits: 9, activity: [] }), true, "before the server says a level: nearly nothing left");
+  assert.equal(runningLow({ credits: 10, activity: [] }), false);
+
+  const low = bellState(me(80), [], T, T - 1, false);
+  assert.deepEqual([low.low, low.fresh, low.empty], [true, true, false]);
+  assert.equal(bellState(me(80), [], T, T - 1, true).fresh, false, "opened since it went low: no dot");
+  assert.equal(bellState(me(5), [], T, T - 1, true).fresh, true, "nearly nothing left: the dot stays");
+  assert.deepEqual([bellState(me(150), [], T, T - 1, false).low, bellState(me(150), [], T, T - 1, false).empty], [false, true]);
+
+  const site = (aiOutOfCredits: number) => ({ slug: "bakery", title: "Bakery", unread: 0, aiOutOfCredits });
+  const out = bellState(me(500), [site(T - 3600_000)], T, T - 7200_000, true);
+  assert.deepEqual(out.aiOut.map((s) => s.slug), ["bakery"]);
+  assert.deepEqual([out.fresh, out.empty], [true, false]);
+  assert.equal(bellState(me(500), [site(T - 3600_000)], T, T, true).fresh, false, "seen already");
+  assert.equal(bellState(me(500), [site(0)], T, 0, true).aiOut.length, 0, "it answers again");
+  assert.equal(bellState(me(500), [site(T - 8 * DAY)], T, 0, true).aiOut.length, 0, "more than a week ago");
+  const toppedUp = me(500, 100, [{ amount: 500, reason: "Top up", created_at: T - 60_000 }]);
+  assert.equal(bellState(toppedUp, [site(T - 3600_000)], T, 0, true).aiOut.length, 0, "credits came since");
+  assert.equal(bellState(me(500), [site(T - 3600_000)], 0, 0, true).aiOut.length, 0, "not before the browser knows the time");
 });

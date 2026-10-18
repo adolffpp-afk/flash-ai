@@ -18,6 +18,7 @@
  * Accounts are deleted by hand (see /delete-account): deleteUserAlerts removes what is kept here.
  */
 import { SITE_URL } from "../../app/site.ts";
+import { translatorIn } from "./i18n.ts";
 import { one, run, now } from "./db.ts";
 import { EMAILS, emailEnabled, sendEmail } from "./email.ts";
 import { countOf, overLimit } from "./limits.ts";
@@ -35,6 +36,8 @@ export const ALERT_LEVELS = [50, 100, 300, 1000] as const;
  * (under 10) is for "nearly nothing left".
  */
 export const DEFAULT_LEVEL = 100;
+// Below this the app says credits are running low even with the emails off (and the top bar's balance turns red).
+export const NEARLY_OUT = 10;
 const DAY = 86_400_000;
 const WEEK = 7 * DAY;
 // A charge held this long without settling counts as spent (credits.ts holds for its requests' longest run).
@@ -75,6 +78,17 @@ export async function alertEmailsToday() {
 export async function alertSettings(userId: string): Promise<AlertSettings> {
   const row = await one<{ enabled: number; below: number }>("SELECT enabled, below FROM credit_alerts WHERE user_id = ?", [userId]);
   return { enabled: row ? Boolean(row.enabled) : true, below: Number(row?.below ?? DEFAULT_LEVEL), levels: ALERT_LEVELS };
+}
+
+/**
+ * Below what balance the app says the credits are running low (the bell, Home): the level the
+ * person's emails go at, so what an email says the app says too, also while an email waits for the
+ * day's budget. NEARLY_OUT with the emails off, or with payments off (there are none).
+ */
+export async function lowCreditsLevel(userId: string): Promise<number> {
+  if (!paymentsEnabled()) return NEARLY_OUT;
+  const s = await alertSettings(userId);
+  return s.enabled ? s.below : NEARLY_OUT;
 }
 
 /** Saves the person's choice, or null for a level that isn't on the list. */
@@ -239,4 +253,25 @@ export async function appAiAlert(owner: string, title: string): Promise<AppAiOut
   }
   await tally("ai-sent");
   return "sent";
+}
+
+/**
+ * A low-credit alert's words in the account's language, with where a tap should go, for sending it
+ * another way than email. Phone alerts (web push) are a later PR, on the web-push branch: it can call
+ * this where checkLowBalance and appAiAlert send their emails. The words are the bell's.
+ */
+export async function alertForPush(
+  userId: string,
+  alert: { kind: "low-credits" } | { kind: "app-ai"; site: string },
+): Promise<{ title: string; body: string; url: string }> {
+  const user = await one<{ language: string }>("SELECT language FROM users WHERE id = ?", [userId]);
+  const t = await translatorIn(user?.language || "en");
+  const url = creditsLink(userId);
+  return alert.kind === "low-credits"
+    ? {
+        title: t("Your Flash credits are running low."),
+        body: t("Your apps and websites keep running, but they only get new updates while you have credits. Top up to keep them updating."),
+        url,
+      }
+    : { title: t("The AI in {name} is out of credits", { name: alert.site }), body: t("Visitors' questions aren't being answered. The rest of the app keeps working."), url };
 }

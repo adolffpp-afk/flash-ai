@@ -129,6 +129,9 @@ export type Me = Pricing & {
   activity: { amount: number; reason: string; created_at: number }[];
   // A team member's shared pool balance (included in credits), or null.
   teamCredits: number | null;
+  // Below this balance the bell and Home say the credits are running low: the level the person's
+  // low-credit emails go at (see low-balance.ts).
+  lowCredits?: number;
   team: TeamInfo;
   referral: {
     link: string;

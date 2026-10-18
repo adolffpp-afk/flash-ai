@@ -8,6 +8,7 @@ import { planSummary } from "@/lib/server/subscriptions.ts";
 import { isVerified } from "@/lib/server/account.ts";
 import { referralStats } from "@/lib/server/referrals.ts";
 import { teamSummary } from "@/lib/server/teams.ts";
+import { lowCreditsLevel } from "@/lib/server/low-balance.ts";
 import { WORK_OPTIONS } from "@/lib/names.ts";
 import { isLanguage } from "@/lib/languages.ts";
 import { translatorFor } from "@/lib/server/i18n.ts";
@@ -42,6 +43,8 @@ export async function GET(request: Request) {
     // Everything the user can spend, a team's shared pool included.
     credits: credits.total,
     teamCredits: credits.pool,
+    // Below this the bell and Home say the credits are running low (see low-balance.ts).
+    lowCredits: await lowCreditsLevel(user.id),
     plan: await planSummary(user.id),
     team: await teamSummary(user.id),
     referral: {
