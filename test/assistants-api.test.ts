@@ -634,7 +634,7 @@ test("files are refused, never cut: over 1,000,000 characters, over 2,000,000 fo
   assert.equal(over.body.error, "A file can keep up to 1,000,000 characters.");
   // Chinese takes 3 bytes a character, so 1,000,001 of them are 3,000,003 bytes: the reason is
   // still the characters, not a size the owner's file isn't, whether the text comes as a file part
-  // (measured, not read) or as a plain field.
+  // or as a plain field.
   const chinese = "中".repeat(1_000_001);
   assert.equal(bytes(chinese), 3_000_003);
   const cjk = await upload(owner, a.id, chinese);
@@ -992,17 +992,10 @@ test("an upload's request over UPLOAD_CAP (3,000,000 bytes and 64 KB) is refused
   assert.equal(r2.status, 413);
   assert.ok(quiet.pulled.bytes <= UPLOAD_CAP + 3 * 64 * 1024, `read ${quiet.pulled.bytes} bytes`);
 
-  // The form fits, its text doesn't: measured, not read, and refused for its characters, which
-  // 3,000,001 bytes are necessarily more than 1,000,000 of.
+  // The form fits, its text doesn't: refused for its characters, which 3,000,001 bytes of Latin
+  // text are more than 1,000,000 of, before it's counted or stored.
   const big = new Blob([new Uint8Array(lib.MAX_UPLOAD_BYTES + 1).fill(97)], { type: "text/plain" });
-  const blobText = Blob.prototype.text;
-  let readParts = 0;
-  Blob.prototype.text = function (this: Blob) {
-    readParts++;
-    return blobText.call(this);
-  };
-  const r3 = await read(await filesRoute.POST(request("POST", path, owner, { form: form(big) }), ctx({ id: a.id }))).finally(() => (Blob.prototype.text = blobText));
-  assert.equal(readParts, 0, "the text part wasn't read");
+  const r3 = await read(await filesRoute.POST(request("POST", path, owner, { form: form(big) }), ctx({ id: a.id })));
   assert.equal(r3.status, 413);
   assert.equal(r3.body.error, "A file can keep up to 1,000,000 characters.");
   assert.equal(asked.length, 0);
@@ -1032,6 +1025,36 @@ test("an upload's request over UPLOAD_CAP (3,000,000 bytes and 64 KB) is refused
   assert.equal(bytes(chinese), lib.MAX_UPLOAD_BYTES);
   assert.equal((await upload(owner, a.id, chinese)).status, 200);
 
+});
+
+test("a file part is judged by the text it holds, as a plain field is: over 3,000,000 bytes, a part whose byte order mark and NULs aren't kept is taken when what's left fits", { timeout: 60_000 }, async () => {
+  const owner = await account("lite");
+  const a = await made(owner);
+  const send = async (part: Blob) => {
+    const res = await filesRoute.POST(request("POST", `/api/assistants/${a.id}/files`, owner, { form: form(part, { version: await versionNow(a.id) }) }), ctx({ id: a.id }));
+    await afterwards();
+    return read(res);
+  };
+  const sizes = (r: Reply) => {
+    const { chars, bytes } = r.body.file as { chars: number; bytes: number };
+    return { chars, bytes };
+  };
+  // A byte order mark, which reading the part drops, and 1,000,000 Chinese characters: 3,000,003
+  // bytes, and a text of 1,000,000 characters, which can't be refused as more than that.
+  const marked = new Blob([new Uint8Array([0xef, 0xbb, 0xbf]), "中".repeat(1_000_000)], { type: "text/plain" });
+  assert.equal(marked.size, lib.MAX_UPLOAD_BYTES + 3);
+  const kept = await send(marked);
+  assert.equal(kept.status, 200, kept.body.error);
+  assert.deepEqual(sizes(kept), { chars: 1_000_000, bytes: lib.MAX_UPLOAD_BYTES });
+  // 2,000,001 NULs, which a file never keeps, after 1,000,000 characters: 3,000,001 bytes, and a
+  // text of 1,000,000 characters.
+  const text = fresh(1_000_000);
+  const nuls = new Blob([text, "\u0000".repeat(2_000_001)], { type: "text/plain" });
+  assert.equal(nuls.size, lib.MAX_UPLOAD_BYTES + 1);
+  const taken = await send(nuls);
+  assert.equal(taken.status, 200, taken.body.error);
+  assert.deepEqual(sizes(taken), { chars: 1_000_000, bytes: 1_000_000 });
+  assert.equal(await (await fileText(owner, a.id, (taken.body.file as { id: string }).id)).text(), text);
 });
 
 test("deleting a file takes its chunks and their index rows, and what every table in FILE_TABLES keeps for it, and gives the assistant a new version", async () => {

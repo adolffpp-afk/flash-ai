@@ -106,20 +106,52 @@ test("a page is read only up to the limit: once its text is past it, pdf.js is t
     seen.pulled = 0;
     seen.cancelled = false;
     const text = await pdfText(new Uint8Array(), lib, limit);
-    assert.ok(seen.pulled <= limit / 41 + 200, `${seen.pulled} pieces read for ${limit} characters`);
+    assert.ok(seen.pulled <= limit / 40 + 300, `${seen.pulled} pieces read for ${limit} characters`);
     assert.ok(seen.cancelled, "the rest of the page is left unread");
     assert.equal(opened, 1, "the next page isn't opened");
     const lines = `--- Page 1 ---\n${`${"A".repeat(40)}\n`.repeat(limit / 40 + 1)}`;
     assert.equal(text, `${lines.slice(0, limit)}${CUT_NOTE}`, "the text up to the limit, and the note");
   }
-  // Its only page, cut where its pieces pass the limit, is marked cut even when the spaces taken out
-  // of its lines leave it shorter than the limit.
+  // Pieces that are mostly spaces, which pageText takes out of the end of a line, don't count: the
+  // page keeps the limit's characters all the same, and the rest of it is still left unread.
   const spaced = { str: `A${" ".repeat(39)}`, hasEOL: true };
-  const one = { getDocument: () => ({ promise: Promise.resolve({ numPages: 1, getPage: async () => textPage((i) => (i < 2_000_000 ? spaced : null)) }), destroy: async () => {} }) };
+  const read = { pulled: 0, cancelled: false };
+  const one = { getDocument: () => ({ promise: Promise.resolve({ numPages: 1, getPage: async () => textPage((i) => (i < 2_000_000 ? spaced : null), read) }), destroy: async () => {} }) };
   const cut = await pdfText(new Uint8Array(), one, 200_000);
-  assert.ok(cut.length < 200_000);
-  assert.ok(cut.endsWith(`A\nA${CUT_NOTE}`), "the cut is said");
+  assert.equal(cut, `${`--- Page 1 ---\n${"A\n".repeat(200_000)}`.slice(0, 200_000)}${CUT_NOTE}`);
+  assert.ok(read.cancelled && read.pulled < 500_000, `${read.pulled} of 2,000,000 pieces read`);
   // A page that fits is read to its end, and isn't marked cut.
   const short = { getDocument: () => ({ promise: Promise.resolve({ numPages: 1, getPage: async () => textPage((i) => (i < 3 ? piece : null)) }), destroy: async () => {} }) };
   assert.equal(await pdfText(new Uint8Array(), short), `--- Page 1 ---\n${["A".repeat(40), "A".repeat(40), "A".repeat(40)].join("\n")}`);
+});
+
+test("what pageText takes out (spaces before a line's end, blank lines past two) doesn't count toward the limit: the text is the page's read whole, cut to the limit", async () => {
+  const { CUT_NOTE, MAX_TEXT } = await import("../src/lib/office.ts");
+  const seen = { pulled: 0, cancelled: false };
+  const one = (items: (i: number) => object | null) => ({
+    getDocument: () => ({ promise: Promise.resolve({ numPages: 1, getPage: async () => textPage(items, seen) }), destroy: async () => {} }),
+  });
+  // The page read whole, as before pdfText stopped part way.
+  const whole = (items: (i: number) => object | null) => {
+    const all: object[] = [];
+    for (let i = 0, item; (item = items(i)); i++) all.push(item);
+    return `--- Page 1 ---\n${pageText(all)}`;
+  };
+  // A report whose lines are padded to 80 columns, with two blank lines after each: 83 characters a
+  // line in its pieces, but about 16 in its text. 5,000 lines are more than a chat's 200,000 in
+  // their pieces, but fit.
+  const report = (lines: number) => (i: number) => (i >= 3 * lines ? null : i % 3 ? { str: "", hasEOL: true } : { str: `Rye loaf ${i / 3}`.padEnd(80), hasEOL: true });
+  const fits = await pdfText(new Uint8Array(), one(report(5_000)));
+  assert.ok(fits.length < MAX_TEXT / 2);
+  assert.equal(fits, whole(report(5_000)), "read whole, and not marked cut");
+  // 50,000 of them don't: cut at the limit, and the rest of the page isn't read.
+  seen.pulled = 0;
+  seen.cancelled = false;
+  const long = await pdfText(new Uint8Array(), one(report(50_000)));
+  assert.equal(long, `${whole(report(50_000)).slice(0, MAX_TEXT)}${CUT_NOTE}`);
+  assert.ok(seen.cancelled, "the rest of the page is left unread");
+  assert.ok(seen.pulled < 75_000, `${seen.pulled} of 150,000 pieces read`);
+  // A page whose first pieces are more blank lines than the limit has its text all the same.
+  const blank = (i: number) => (i < 100_100 ? { str: " ", hasEOL: true } : i === 100_100 ? { str: "Golden Crumb" } : null);
+  assert.equal(await pdfText(new Uint8Array(), one(blank)), "--- Page 1 ---\nGolden Crumb");
 });

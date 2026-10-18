@@ -27,22 +27,24 @@ export function pageText(items: object[]): string {
 
 /**
  * A page's text pieces as pdf.js sends them, a hundred or so at a time, until they hold more than
- * `room` characters (cut). Then pdf.js is told to stop, so the rest of the page isn't read.
+ * `room` characters that aren't spaces or line breaks. pageText keeps those whatever comes after
+ * them, so the page's text is then past `room` too, and pdf.js is told to stop: the rest of the page
+ * isn't read.
  */
-async function pageItems(page: PdfPage, room: number): Promise<{ items: object[]; cut: boolean }> {
+async function pageItems(page: PdfPage, room: number): Promise<object[]> {
   const reader = page.streamTextContent().getReader();
   const items: object[] = [];
   let chars = 0;
   try {
-    for (;;) {
+    while (chars <= room) {
       const { done, value } = await reader.read();
-      if (done) return { items, cut: false };
+      if (done) break;
       for (const item of value.items) {
         items.push(item);
-        chars += ((item as TextItem).str ?? "").length + ((item as TextItem).hasEOL ? 1 : 0);
+        chars += ((item as TextItem).str ?? "").replace(/\s+/g, "").length;
       }
-      if (chars > room) return { items, cut: true };
     }
+    return items;
   } finally {
     // pdf.js wants an Error as the reason: without one, it goes on sending into a closed stream.
     reader.cancel(new Error("enough text")).catch(() => {});
@@ -51,7 +53,8 @@ async function pageItems(page: PdfPage, room: number): Promise<{ items: object[]
 
 /**
  * A PDF's text, page by page, cut to `limit` characters (a chat's MAX_TEXT unless given), with
- * CUT_NOTE after a cut. Once the text is past the limit, no more of it is read: not the rest of
+ * CUT_NOTE after a cut: the same text as reading each page whole and cutting it after. Once its
+ * characters other than spaces and line breaks are past the limit, no more is read: not the rest of
  * that page, nor the pages after it. That bounds the text, not all the work: pdf.js unpacks a
  * page's content whole before it sends any of its text, and a page whose content is mostly not
  * text takes as long as that content does. Throws when it has no text (a scan).
@@ -61,19 +64,16 @@ export async function pdfText(bytes: Uint8Array, lib: PdfLib, limit = MAX_TEXT):
   const doc = await task.promise;
   const pages: string[] = [];
   let length = 0;
-  let cut = false;
   try {
-    for (let n = 1; n <= doc.numPages && !cut && length < limit; n++) {
-      const read = await pageItems(await doc.getPage(n), limit - length);
-      const text = pageText(read.items);
+    for (let n = 1; n <= doc.numPages && length < limit; n++) {
+      const text = pageText(await pageItems(await doc.getPage(n), limit - length));
       pages.push(`--- Page ${n} ---\n${text}`);
       length += text.length;
-      cut = read.cut;
     }
   } finally {
     await task.destroy();
   }
   if (!length) throw new Error("no text found");
   const text = pages.join("\n\n");
-  return cut || text.length > limit || pages.length < doc.numPages ? `${text.slice(0, limit)}${CUT_NOTE}` : text;
+  return text.length > limit || pages.length < doc.numPages ? `${text.slice(0, limit)}${CUT_NOTE}` : text;
 }
