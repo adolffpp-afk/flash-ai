@@ -73,6 +73,7 @@ export function BuildPanel({
   onEditCode,
   onFix,
   onPick,
+  onPlans,
 }: {
   drafts: DraftStore;
   // The latest message with an app, which Flash builds on.
@@ -89,6 +90,8 @@ export function BuildPanel({
   onEditCode: (messageId: string, html: string) => void;
   onFix: (kind: "app" | "slides", request: string) => void;
   onPick: (kind: "app" | "slides", part: PickedElement) => void;
+  // Opens the plans, where plans can be bought.
+  onPlans?: () => void;
 }) {
   const t = useT();
   // Only this panel reads the draft, so only it renders again as the file grows.
@@ -112,6 +115,7 @@ export function BuildPanel({
             onEditCode={done ? (html) => onEditCode(appMsg.id, html) : undefined}
             onFix={done && !busy ? (request) => onFix(app.kind, request) : undefined}
             onPick={done ? (part) => onPick(app.kind, part) : undefined}
+            onPlans={onPlans}
           />
         </div>
         {building && covered && (

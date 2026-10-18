@@ -1,6 +1,8 @@
+import { after } from "next/server";
 import { appUrl } from "@/lib/server/auth.ts";
 import { clientIp } from "@/lib/server/limits.ts";
 import { publicItems, startCheckout } from "@/lib/server/shop.ts";
+import { countSteps, matchVisit, saveCheckoutTouch } from "@/lib/server/funnel.ts";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +27,16 @@ export async function GET(_request: Request, ctx: RouteContext<"/api/sites/[slug
 export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug]/shop">) {
   const { slug } = await ctx.params;
   const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+  // Which visit the buyer came on is looked up beside the checkout, so the buyer never waits for it
+  // (it never throws).
+  const matching = matchVisit(slug, request);
   const result = await startCheckout(slug, body, clientIp(request), appUrl(request));
   if ("error" in result) return Response.json({ error: result.error }, { status: result.status, headers: CORS });
-  return Response.json(result, { headers: CORS });
+  after(async () => {
+    const match = await matching;
+    await saveCheckoutTouch(slug, result.id, match);
+    await countSteps(slug, match, ["checkout"]);
+  });
+  // Only the link: the page never sees the session's id.
+  return Response.json({ url: result.url }, { headers: CORS });
 }

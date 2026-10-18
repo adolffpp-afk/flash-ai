@@ -7,6 +7,7 @@ import { randomId } from "./ids.ts";
 import { overLimit } from "./limits.ts";
 import { EMAILS, sendEmail } from "./email.ts";
 import { noteContact } from "./contacts.ts";
+import { saleBySource } from "./funnel.ts";
 import { cleanContact } from "../contacts.ts";
 import { MAX_QUANTITY, MIN_PRICE, SELLER_COUNTRIES, cleanItemName, formatMoney, safeReturn, saleFee, toMinor } from "../shop.ts";
 import { english, type Translate } from "../i18n.ts";
@@ -219,7 +220,7 @@ export async function startCheckout(
   input: { item?: unknown; quantity?: unknown; page?: unknown },
   ip: string,
   appOrigin: string,
-): Promise<{ url: string } | { error: string; status: number }> {
+): Promise<{ url: string; id: string } | { error: string; status: number }> {
   if (!sellingAvailable()) return { error: "This site can't take payments yet.", status: 503 };
   const name = cleanItemName(input.item);
   if (!name) return { error: "Which item? Pass its name to flashDB.buy.", status: 400 };
@@ -255,9 +256,10 @@ export async function startCheckout(
     form.set("phone_number_collection[enabled]", "true");
   }
   try {
-    const session = await stripe<{ url?: string }>("POST", "/checkout/sessions", form, shop.stripe_account);
+    const session = await stripe<{ id?: string; url?: string }>("POST", "/checkout/sessions", form, shop.stripe_account);
     if (!session.url) throw new Error("Stripe didn't return a checkout link");
-    return { url: session.url };
+    // The session's id keeps where the buyer came from until the order is saved (see funnel.ts); the page only gets the link.
+    return { url: session.url, id: session.id ?? "" };
   } catch (err) {
     console.error("[flash] site checkout failed", slug, err);
     return { error: "Payments aren't working right now. Please try again later.", status: 502 };
@@ -315,6 +317,9 @@ async function recordOrder(slug: string, s: Session): Promise<boolean> {
     ],
   );
   if (!res.rowsAffected) return false;
+  // The sale goes into its day's total under where its buyer came from, and nothing about the buyer
+  // with it (see funnel.ts). One that can't be counted never stops the order.
+  await saleBySource(slug, s.id, created, s.currency ?? "", s.amount_total ?? 0).catch((err) => console.error("[flash] sale not counted", err));
   // Paying isn't agreeing to news, so no consent is kept. A contact that can't be saved never stops the order.
   if (buyer) await noteContact(slug, buyer, { source: `order:${item.slice(0, 60)}`, at: created }).catch((err) => console.error("[flash] contact not saved", err));
   return true;

@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { existsSync, readFileSync } from "node:fs";
 
-const { english, fill, localeOf, translate, uiLanguage } = await import("../src/lib/i18n.ts");
+const { afterSentence, english, fill, localeOf, translate, uiLanguage } = await import("../src/lib/i18n.ts");
 const { LANGUAGES } = await import("../src/lib/languages.ts");
 const { findPhrases } = await import("../scripts/i18n-keys.ts");
 const { findFeatures } = await import("../src/lib/features.ts");
@@ -22,6 +22,14 @@ test("a phrase comes from the table, else in English, with its blanks filled", (
   assert.equal(translate(null, "{n} left", { n: 3 }), "3 left");
   assert.equal(translate({ "{n} left": "il en reste {n}" }, "{n} left", { n: 3 }), "il en reste 3");
   assert.equal(english("Close"), "Close");
+});
+
+test("a sentence is followed by a space, except after a full-width stop", () => {
+  assert.equal(afterSentence("Counting starts again at 5:00 PM."), " ");
+  assert.equal(afterSentence("لوگوں کی گنتی دوبارہ شروع ہوگی۔"), " ", "Urdu's stop is followed by a space");
+  assert.equal(afterSentence("人数の集計は明日の20:00に再開します。"), "");
+  assert.equal(afterSentence("人数统计将于明天 20:00 重新开始。"), "");
+  assert.equal(afterSentence("本当ですか？"), "");
 });
 
 test("a text that isn't one of Flash's phrases is shown as it is, even one named like an object's own fields", async () => {
