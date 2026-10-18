@@ -751,4 +751,18 @@ test("Google's page speed test isn't counted as visitors, whoever started it", a
   // Once Google is done, a Mac is a visitor again.
   await load(computer13, "8.8.4.4");
   assert.equal(await people(), 3);
+  // The owner signed in to Flash on a Mac while Google tests the app is still the owner: Google never
+  // sends Flash's sign-in. Seen earlier that day on the app's domain, they become the owner too.
+  const ownerMac = visit({ "user-agent": computer13, "x-forwarded-for": "7.7.7.7" }, "/p/crumb-2");
+  const ownerCode = await visitorCode("crumb-2", ownerMac, dayOf(Date.now()));
+  const kindOf = async () => (await one<{ kind: string }>("SELECT kind FROM site_people WHERE site_slug = 'crumb-2' AND visitor = ?", [ownerCode]))?.kind;
+  await recordVisit("crumb-2", ownerMac);
+  assert.equal(await kindOf(), "visit");
+  await overLimit(runLock("crumb-2"), 1, 120_000);
+  await recordVisit("crumb-2", ownerMac, "u2");
+  assert.equal(await kindOf(), "owner", "signed in during Flash's check with Google");
+  await clearLimit(runLock("crumb-2"));
+  // And outside a test, the owner's load costs no lookup of whether Google is testing.
+  const sent = await statementsDuring(() => recordVisit("crumb-2", ownerMac, "u2"));
+  assert.equal(sent.length, 2, `the person's read and the owner's row: ${sent.join(" | ")}`);
 });

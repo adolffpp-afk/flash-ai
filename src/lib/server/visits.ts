@@ -337,9 +337,10 @@ export function giveSteps(owner: string, network: string, n: number): void {
 export async function recordVisit(slug: string, request: Request, viewerId?: string | null, at = Date.now()): Promise<void> {
   if (!isPersonVisit(request) || isReturnTrip(new URL(request.url), request.headers.get("referer"))) return;
   // Nor is Google's page speed test of the app a visitor: its computer looks like any Mac's Chrome,
-  // so only while Google is testing the app (see lighthouse.ts).
+  // so only while Google is testing the app (see lighthouse.ts). It's never signed in to Flash, so
+  // someone who is (the owner above all, see countVisit) is a person.
   const agent = request.headers.get("user-agent") ?? "";
-  if (mayBeLighthouseComputer(agent) && (await googleTesting(slug).catch(() => false))) return;
+  if (!viewerId && mayBeLighthouseComputer(agent) && (await googleTesting(slug).catch(() => false))) return;
   await countVisit(slug, request, viewerId, at).catch((err) => console.error("[flash] visit not counted", err));
   await pruneDaily(at);
 }
