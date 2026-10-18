@@ -402,3 +402,13 @@ test("the bell: low below the person's level, with its dot until opened once; an
   assert.equal(bellState(toppedUp, [site(T - 3600_000)], T, 0, true).aiOut.length, 0, "credits came since");
   assert.equal(bellState(me(500), [site(T - 3600_000)], 0, 0, true).aiOut.length, 0, "not before the browser knows the time");
 });
+
+test("the bell's list opens from the bell toward the page, in right-to-left languages too", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const bell = await readFile(new URL("../src/components/Bell.tsx", import.meta.url), "utf8");
+  // In Arabic, Hebrew, Persian and Urdu the bell sits near the left edge: a list pinned to its right
+  // side would run off the screen there.
+  assert.match(bell, /<div role="menu" aria-label=\{t\("Notifications"\)\} className="absolute end-0 top-full /);
+  assert.match(bell, /const row = "flex w-full items-start gap-3 rounded-xl px-3 py-2\.5 text-start /);
+  assert.doesNotMatch(bell, /\b(right|left)-0\b|\btext-(left|right)\b/);
+});

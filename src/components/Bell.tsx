@@ -112,7 +112,7 @@ export function Bell({ me, onSites, onCredits }: { me: Me; onSites: () => void; 
     setOpen(false);
     run();
   };
-  const row = "flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition hover:bg-white/[0.06]";
+  const row = "flex w-full items-start gap-3 rounded-xl px-3 py-2.5 text-start text-sm transition hover:bg-white/[0.06]";
 
   return (
     <div ref={box} className="relative shrink-0">
@@ -128,7 +128,7 @@ export function Bell({ me, onSites, onCredits }: { me: Me; onSites: () => void; 
         {fresh && <span className="absolute right-3 top-3 h-2.5 w-2.5 rounded-full bg-rose-500 ring-2 ring-zinc-950" aria-hidden />}
       </button>
       {open && (
-        <div role="menu" aria-label={t("Notifications")} className="absolute right-0 top-full z-30 mt-2 w-80 rounded-2xl border border-white/10 bg-zinc-900 p-1.5 shadow-2xl light:shadow-black/10">
+        <div role="menu" aria-label={t("Notifications")} className="absolute end-0 top-full z-30 mt-2 w-80 rounded-2xl border border-white/10 bg-zinc-900 p-1.5 shadow-2xl light:shadow-black/10">
           <p className="px-3 pb-1 pt-2 text-xs font-medium uppercase tracking-wider text-zinc-500">{t("Notifications")}</p>
           {empty && <p className="px-3 py-4 text-sm text-zinc-400">{t("You're all caught up.")}</p>}
           {unread.map((s) => (
