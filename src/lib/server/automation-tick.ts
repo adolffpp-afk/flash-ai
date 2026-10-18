@@ -23,7 +23,7 @@ import { balance, ensureMonthlyCredits, topUpFloor } from "./credits.ts";
 import { all, db, one, run as sql } from "./db.ts";
 import { randomId } from "./ids.ts";
 import { claimRuns, DB_NOW, probe } from "./leases.ts";
-import { automationLink, notify } from "./notifications.ts";
+import { automationLink, noticeStatement, notify } from "./notifications.ts";
 
 const DAY = 86_400_000;
 
@@ -215,7 +215,9 @@ async function capacityFull(): Promise<boolean> {
  * Turns due schedules into runs (at most 200 a tick), each in one batch: an older slot that never
  * started (queued, claimed or waiting to try again, see NEVER_STARTED) is superseded, the slot's run is
  * inserted (queued, or skipped as missed, overlapping or over capacity) once per slot, and next_at moves
- * to the first slot after now by compare-and-set. Each reads only the automation's unfinished runs.
+ * to the first slot after now by compare-and-set. Each reads only the automation's unfinished runs. A
+ * one-off's slot is never skipped as overlapping (it is its only one): it runs alongside, as Run once
+ * now does.
  */
 async function enqueueDue(): Promise<number> {
   const due = await all<{ id: string; user_id: string; name: string; next_at: number; time_zone: string; spec: string }>(
@@ -259,7 +261,7 @@ async function enqueueDue(): Promise<number> {
                   FROM automations a,
                        (SELECT c.now, CASE WHEN ? = 1 THEN 'capacity'
                                            WHEN ? < c.now THEN 'missed'
-                                           WHEN EXISTS (SELECT 1 FROM automation_runs r WHERE r.automation_id = ? AND r.finished_at = 0
+                                           WHEN ? = 0 AND EXISTS (SELECT 1 FROM automation_runs r WHERE r.automation_id = ? AND r.finished_at = 0
                                                           AND r.status IN ('running','waiting','approval')) THEN 'overlap'
                                            ELSE '' END AS why
                           FROM (SELECT ${DB_NOW} AS now) c) k
@@ -275,6 +277,7 @@ async function enqueueDue(): Promise<number> {
             slot,
             overCapacity,
             slot + graceFor(when),
+            once,
             a.id,
             a.id,
             slot,
@@ -309,41 +312,56 @@ async function enqueueDue(): Promise<number> {
 /**
  * Scheduled runs past their grace window that never started a step (queued, claimed but never sent,
  * or waiting to try again after Claude was busy): missed, never charged (told once a day). A one-off
- * whose run was missed is finished, as finish() finishes one that ran.
+ * whose run was missed is finished, as finish() finishes one that ran. Each run's miss, its one-off's
+ * finish and its notice are one batch, so a write that fails leaves the run for the next tick.
  */
+const LATE = `parked = 0 AND status IN ('queued','waiting','running','approval') AND status IN ('queued','running') AND grace_until > 0 AND grace_until < ${DB_NOW} AND ${NEVER_STARTED}`;
+
 async function missLate(): Promise<number> {
-  const r = await sql(
-    `UPDATE automation_runs SET status = 'skipped', outcome = 'missed', finished_at = ${DB_NOW}, updated_at = ${DB_NOW}, lease_owner = '', lease_until = 0
-      WHERE id IN (SELECT id FROM automation_runs
-                    WHERE parked = 0 AND status IN ('queued','waiting','running','approval') AND status IN ('queued','running')
-                      AND grace_until > 0 AND grace_until < ${DB_NOW} AND ${NEVER_STARTED} LIMIT 500)
-     RETURNING id, automation_id, user_id`,
+  const late = await all<{ id: string; automation_id: string; user_id: string; name: string; spec: string | null }>(
+    `SELECT r.id, r.automation_id, r.user_id, a.name, v.spec
+       FROM automation_runs r JOIN automations a ON a.id = r.automation_id LEFT JOIN automation_versions v ON v.automation_id = a.id AND v.version = a.version
+      WHERE r.id IN (SELECT id FROM automation_runs WHERE ${LATE} LIMIT 500)`,
   );
-  if (r.rows.length) await closeLeftSteps(r.rows.map((row) => String(row.id)));
-  const told = new Set<string>();
-  for (const row of r.rows as unknown as { id: string; automation_id: string; user_id: string }[]) {
-    if (told.has(row.automation_id)) continue;
-    told.add(row.automation_id);
-    const auto = await one<{ name: string; status: string; next_at: number; spec: string }>(
-      "SELECT a.name, a.status, a.next_at, v.spec FROM automations a LEFT JOIN automation_versions v ON v.automation_id = a.id AND v.version = a.version WHERE a.id = ?",
-      [row.automation_id],
+  let missed = 0;
+  for (const row of late) {
+    const spec = specOf(row.spec ?? "");
+    const once = spec?.trigger.type === "schedule" && spec.trigger.when.kind === "once" ? 1 : 0;
+    const isMissed = { sql: "EXISTS (SELECT 1 FROM automation_runs WHERE id = ? AND status = 'skipped' AND outcome = 'missed')", args: [row.id] };
+    const rs = await (await db()).batch(
+      [
+        {
+          sql: `UPDATE automation_runs SET status = 'skipped', outcome = 'missed', finished_at = ${DB_NOW}, updated_at = ${DB_NOW}, lease_owner = '', lease_until = 0
+                 WHERE id = ? AND ${LATE}`,
+          args: [row.id],
+        },
+        // Step rows a server that stopped before its hold left running.
+        {
+          sql: `UPDATE automation_run_steps SET status = 'interrupted', note = 'interrupted', finished_at = ${DB_NOW} WHERE run_id = ? AND status = 'running' AND ${isMissed.sql}`,
+          args: [row.id, ...isMissed.args],
+        },
+        // A one-off whose slot was taken (next_at 0) has nothing more to run.
+        {
+          sql: `UPDATE automations SET status = 'finished', updated_at = ${DB_NOW} WHERE id = ? AND ? = 1 AND status = 'on' AND next_at = 0 AND ${isMissed.sql}`,
+          args: [row.automation_id, once, ...isMissed.args],
+        },
+        noticeStatement(
+          {
+            userId: row.user_id,
+            kind: "missed",
+            phrase: NOTICES.missed,
+            blanks: { name: row.name },
+            link: automationLink(row.automation_id, row.id),
+            ref: `missed:${row.automation_id}:${utcDay(Date.now())}`,
+          },
+          isMissed,
+        ),
+      ],
+      "write",
     );
-    if (!auto) continue;
-    // A one-off whose slot was taken (next_at 0) has nothing more to run.
-    const spec = specOf(auto.spec ?? "");
-    if (auto.status === "on" && !Number(auto.next_at) && spec?.trigger.type === "schedule" && spec.trigger.when.kind === "once") {
-      await sql(`UPDATE automations SET status = 'finished', updated_at = ${DB_NOW} WHERE id = ? AND status = 'on' AND next_at = 0`, [row.automation_id]);
-    }
-    await notify({
-      userId: row.user_id,
-      kind: "missed",
-      phrase: NOTICES.missed,
-      blanks: { name: auto.name },
-      link: automationLink(row.automation_id, row.id),
-      ref: `missed:${row.automation_id}:${utcDay(Date.now())}`,
-    });
+    missed += rs[0].rowsAffected;
   }
-  return r.rows.length;
+  return missed;
 }
 
 /**

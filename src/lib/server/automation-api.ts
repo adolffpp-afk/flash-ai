@@ -24,8 +24,9 @@ import { estimateSpec, type Estimate } from "./automation-estimate.ts";
 import { advanceRun, finish, savedReceipt, verifyReceipt, versionSpec, type CompactReceipt, type SavedReceipt } from "./automation-runner.ts";
 import { outputText, type AutoRow, type RunRow } from "./automation-steps.ts";
 import { deleteAutomationNow } from "./automation-tick.ts";
-import { cronHealth } from "./automation-admin.ts";
+import { liveHealth } from "./automation-admin.ts";
 import { AUTOMATION_SHARED_PAID, automationsOpenTo, automationsServer, claimLimits, keyInUse, missingSetup } from "./automations.ts";
+import { heldElsewhere } from "./credit-holds.ts";
 import { automationSpent, balance, ensureMonthlyCredits, topUpFloor } from "./credits.ts";
 import { all, db, one, run as sql } from "./db.ts";
 import { translatorFor, type ServerT } from "./i18n.ts";
@@ -130,11 +131,8 @@ async function chargedAndHeld(where: { sql: string; args: (string | number)[] },
   return { charged: n(row?.charged), held: n(row?.held) };
 }
 
-/** Whether a one-off's time is too near or gone to turn it on (2 minutes ahead at least, as when saved). */
-const onceTooLate = (when: When, timeZone: string) => {
-  const slot = nextFire(when, timeZone, Date.now());
-  return !slot || slot < Date.now() + ONCE_MIN_AHEAD_MS;
-};
+/** Whether a one-off's saved time is gone, so it can't be turned on as it is (a new time is 2 minutes ahead at least). */
+const oncePassed = (when: When, timeZone: string) => !nextFire(when, timeZone, Date.now());
 /** Whether an automation has a scheduled run not finished: a one-off paused part way, whose run goes on when it's turned on. */
 const scheduledRunOpen = async (id: string) =>
   Boolean(await one("SELECT 1 AS x FROM automation_runs WHERE automation_id = ? AND origin = 'schedule' AND finished_at = 0 LIMIT 1", [id]));
@@ -147,7 +145,7 @@ export async function automationView(a: Row, t: ServerT) {
   const spec = await versionSpec(a.id, Number(a.version));
   const when = spec?.trigger.type === "schedule" ? spec.trigger.when : null;
   // A one-off paused (or a draft) whose time has passed can't be turned on as it is: it needs a new time.
-  const timePassed = when?.kind === "once" && (a.status === "paused" || a.status === "draft") && onceTooLate(when, a.time_zone) && !(await scheduledRunOpen(a.id));
+  const timePassed = when?.kind === "once" && (a.status === "paused" || a.status === "draft") && oncePassed(when, a.time_zone) && !(await scheduledRunOpen(a.id));
   const schedule = when ? describeWhen(when, a.time_zone, t, t.locale) : null;
   const upcoming = when && a.status === "on" ? nextFires(when, a.time_zone, Date.now(), 3) : [];
   // Runs ended and not opened yet, up to UNSEEN_MAX, read through those runs only (automation_runs_unseen).
@@ -202,13 +200,15 @@ function fieldsOf(body: Record<string, unknown>, t: ServerT, was?: Row & { spec:
   const name = body.name === undefined && was ? was.name : typeof body.name === "string" ? body.name.replace(/\s+/g, " ").trim() : "";
   const timeZone = body.timeZone === undefined && was ? was.time_zone : validTimeZone(body.timeZone);
   if (!name || name.length > MAX_NAME_CHARS || !timeZone) return json({ error: t(SPEC_INVALID) }, 400);
-  // A one-off between 2 minutes and a year ahead (a time already gone has no slot).
+  // A one-off between 2 minutes and a year ahead (a time already gone has no slot); turned on as it is,
+  // its saved time only needs to be still ahead.
   const when = parsed.spec.trigger.type === "schedule" ? parsed.spec.trigger.when : null;
   if (when?.kind === "once" && once) {
-    // Its saved time gone (turning it on as it is): it needs a new time, which says so.
-    if (body.spec === undefined && onceTooLate(when, timeZone)) return json({ error: t(ONCE_PASSED), code: "once_passed" }, 409);
     const slot = nextFire(when, timeZone, Date.now());
-    if (!slot || slot < Date.now() + ONCE_MIN_AHEAD_MS || slot > Date.now() + ONCE_MAX_AHEAD_MS) return json({ error: t(SPEC_INVALID) }, 400);
+    const least = body.spec === undefined && timeZone === was?.time_zone ? 0 : ONCE_MIN_AHEAD_MS;
+    // Its saved time gone (turning it on as it is, or in another zone): it needs a new time, which says so.
+    if (body.spec === undefined && (!slot || slot < Date.now() + least)) return json({ error: t(ONCE_PASSED), code: "once_passed" }, 409);
+    if (!slot || slot < Date.now() + least || slot > Date.now() + ONCE_MAX_AHEAD_MS) return json({ error: t(SPEC_INVALID) }, 400);
   }
   return { spec: parsed.spec, name, timeZone };
 }
@@ -221,22 +221,26 @@ function capOf(v: unknown, fallback: number): number | null {
 
 /**
  * 409 month_cap, in words, when what's left of the automation's month limit is less than its first AI
- * step needs to start: the run would only be skipped at the limit, so it doesn't start.
+ * step needs to start: the run would only be skipped at the limit, so it doesn't start. Its other runs'
+ * open holds count as nothing here: a run they are in the way of waits for them (see runAiStep).
  */
 async function monthLeftRefusal(t: ServerT, a: Row, estimate: Estimate): Promise<Response | null> {
   const now = Date.now();
-  if (Number(a.cap_month) - (await automationSpent(a.id, monthStart(now))) >= estimate.least) return null;
+  const [spent, other] = await Promise.all([automationSpent(a.id, monthStart(now)), heldElsewhere(a.pay_account, a.id)]);
+  if (Number(a.cap_month) - spent + other.automation >= estimate.least) return null;
   const said = noticeText({ phrase: MONTH_LEFT, blanks: JSON.stringify({ credits: Number(a.cap_month), date: nextMonthStart(now) }) }, t).text;
   return json({ error: said, code: "month_cap" }, 409);
 }
 
 /**
  * 409 no_credits, in words, when the balance above the auto top-up level can't hold its first AI step
- * (after any monthly credits due are given, as a run does): the run would only be skipped, so it doesn't start.
+ * (after any monthly credits due are given, as a run does): the run would only be skipped, so it doesn't
+ * start. Other runs' open holds count as nothing here, as in monthLeftRefusal.
  */
 async function creditsRefusal(t: ServerT, a: Row, estimate: Estimate): Promise<Response | null> {
   await ensureMonthlyCredits(a.pay_account);
-  const [have, floor] = await Promise.all([balance(a.pay_account), topUpFloor(a.pay_account)]);
+  const [held, floor, other] = await Promise.all([balance(a.pay_account), topUpFloor(a.pay_account), heldElsewhere(a.pay_account, a.id)]);
+  const have = held + other.account;
   if (have - floor >= estimate.least) return null;
   // Numbers in the reader's digits, as noticeText writes them.
   const credits = (floor > 0 && have >= estimate.least ? floor : estimate.least).toLocaleString(t.locale);
@@ -615,7 +619,8 @@ function readableMatches(file: Record<string, unknown>, compact: CompactReceipt)
  * verifyReceipt), it is this run's, and what it shows in words is what was fingerprinted.
  */
 export async function checkReceipt(g: Gate, runId: string, body: Record<string, unknown>) {
-  const r = await ownRun(g.user, runId);
+  // Reads only: also a run of an automation being deleted, as its receipt is.
+  const r = await ownRun(g.user, runId, { deleting: true });
   if (!r) return json({ error: g.t("Not found") }, 404);
   const file = body.receipt as Record<string, unknown> | undefined;
   // The whole download, or just its { prev, receipt, hash }.
@@ -625,9 +630,9 @@ export async function checkReceipt(g: Gate, runId: string, body: Record<string, 
   return json({ matches: ok });
 }
 
-/** Stop, Retry (a new run, its price confirmed) and read (seen) on a run. */
+/** Stop, Retry (a new run, its price confirmed) and read (seen) on a run; only read on one of an automation being deleted. */
 export async function actOnRun(g: Gate, runId: string, body: Record<string, unknown>) {
-  const r = await ownRun(g.user, runId);
+  const r = await ownRun(g.user, runId, { deleting: body.action === "read" });
   if (!r) return json({ error: g.t("Not found") }, 404);
   if (body.action === "stop") {
     if (Number(r.finished_at)) return json({ ok: true, status: r.status });
@@ -733,7 +738,8 @@ export async function burnIn(g: Gate) {
     noticeLanguage: g.t.language,
     // The notices' language as Intl formats it (its digits too), for their times.
     noticeLocale: g.t.locale,
-    health: await cronHealth(),
+    // The live cron health lines only: the week's lag and peak spend come with /admin's lines (see cronHealth).
+    health: await liveHealth(),
     setup: { server: automationsServer(), key: keyInUse(), missing: missingSetup(), sharedPaid: AUTOMATION_SHARED_PAID },
   };
 }

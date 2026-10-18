@@ -7,6 +7,7 @@
  * step, and a worker whose lease was taken over writes nothing.
  */
 import { db, one, run as sql } from "./db.ts";
+import { randomId } from "./ids.ts";
 
 /** The database's clock in UTC ms, for every claim, lease and heartbeat. */
 export const DB_NOW = "CAST(unixepoch('subsec') * 1000 AS INTEGER)";
@@ -78,6 +79,17 @@ export async function claimRuns(worker: string, limits: ClaimLimits): Promise<{ 
     [limits.runnerVersion, limits.perUser, worker, CLAIM_LEASE_MS, limits.paidOpen, limits.maxPaid, limits.maxOther, limits.perTick],
   );
   return r.rows.map((row) => ({ id: String(row.id), owner: String(row.lease_owner) }));
+}
+
+/**
+ * Takes a run's lease for this one call: the owner token its claim (or Run now) gave it becomes one
+ * only this call knows, so the same work call delivered twice moves the run once and the second never
+ * touches the first's step or hold. Returns the call's token, or null when the lease isn't that owner's.
+ */
+export async function takeLease(runId: string, owner: string): Promise<string | null> {
+  const me = `${owner}~${randomId(8)}`;
+  const r = await sql(`UPDATE automation_runs SET lease_owner = ? WHERE id = ? AND lease_owner = ? AND lease_until > ${DB_NOW}`, [me, runId, owner]);
+  return r.rowsAffected === 1 ? me : null;
 }
 
 export type Started = { attempt: number; ref: string };

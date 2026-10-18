@@ -30,7 +30,7 @@ import type { ChatTurn, Source } from "../types.ts";
 import { priceStep, typicalCredits, type StepPrice } from "./automation-price.ts";
 import { automationClient, backOff } from "./automations.ts";
 import type { User } from "./auth.ts";
-import { heartbeat, leftCents, markCharged, markDone, markStarted, reapedCents, recordHold, resizeHold, settleHold, type Hold } from "./credit-holds.ts";
+import { heartbeat, heldElsewhere, leftCents, markCharged, markDone, markStarted, reapedCents, recordHold, resizeHold, settleHold, type Hold } from "./credit-holds.ts";
 import { automationSpent, balance, chargeOnce, ensureMonthlyCredits, logUsage, topUpFloor, type ChargeOnce, type UsagePart } from "./credits.ts";
 import { db, one, run as sql } from "./db.ts";
 import { translatorIn } from "./i18n.ts";
@@ -82,7 +82,8 @@ export type AutoRow = {
   receipt_hash: string;
 };
 
-export type StepContext = { run: RunRow; auto: AutoRow; user: User; spec: Spec; started: Started; me: string; deadline: number };
+/** waits: how many times this step already waited for other runs' holds (see runAiStep), which aren't attempts. */
+export type StepContext = { run: RunRow; auto: AutoRow; user: User; spec: Spec; started: Started; me: string; deadline: number; waits?: number };
 
 /** Why a run stops before its last step (see finish in automation-runner.ts). */
 export type RunEnd = "done" | "skipped" | "stopped" | "failed" | "interrupted";
@@ -117,6 +118,15 @@ const RETRY_WAITS = [60_000, 300_000, 1_800_000];
 export const retryDelay = (attempt: number) => Math.round(RETRY_WAITS[Math.min(RETRY_WAITS.length - 1, Math.max(0, attempt - 1))] * (0.8 + Math.random() * 0.4));
 /** When tokens couldn't be counted: another try a minute later, as chat answers 503. */
 const COUNT_RETRY_MS = 60_000;
+/**
+ * A step short of credits (or of its month or day limit) only because other runs of its account hold
+ * them right now waits this long and is priced again, at most MAX_WAITS times (a hold settles within its
+ * step's time), rather than being skipped and its automation paused. A wait isn't an attempt.
+ */
+export const HOLD_WAIT_MS = 60_000;
+export const MAX_WAITS = 15;
+/** The limits other runs' holds count against (the run's own limit and a price rise are this run's alone). */
+const WAITS_FOR = new Set(["no_credits", "topup_floor", "month_cap", "day_cap"]);
 
 // What a step keeps: its input up to 8 KB, its output up to 64 KB (gzip), and what later steps of the
 // run may use of it ({{steps.<id>.text}}), 16 KB each and 32 KB in all.
@@ -277,13 +287,13 @@ async function startMark(ref: string): Promise<"started" | "settled" | "stopped"
   return "unknown";
 }
 
-/** Ends a step that never reached Claude: its row says why, and nothing was charged for it. */
-async function closeStep(c: StepContext, status: string, note: string, input = ""): Promise<void> {
+/** Ends a step that never reached Claude: its row says why, and nothing was charged or sent for it (so it keeps no input). */
+async function closeStep(c: StepContext, status: string, note: string): Promise<void> {
   const step = stepAt(c.spec, c.run.step)!;
   await sql(
-    `UPDATE automation_run_steps SET status = ?, note = ?, input = ?, finished_at = ${DB_NOW}
+    `UPDATE automation_run_steps SET status = ?, note = ?, finished_at = ${DB_NOW}
       WHERE run_id = ? AND step_id = ? AND attempt = ? AND status = 'running'`,
-    [status, note, input.slice(0, INPUT_CHARS), c.run.id, step.id, c.started.attempt],
+    [status, note, c.run.id, step.id, c.started.attempt],
   );
 }
 
@@ -361,7 +371,7 @@ export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResul
     console.error("[flash] automation: counting tokens failed", failName(err));
     if (retryable(err).rateLimited) await backOff().catch(() => {});
     const again = Number(run.attempts) < MAX_ATTEMPTS;
-    await closeStep(c, again ? "retried" : "failed", "count_failed", turn);
+    await closeStep(c, again ? "retried" : "failed", "count_failed");
     return again ? { kind: "retry", delayMs: COUNT_RETRY_MS } : { kind: "end", status: "failed", outcome: "failed" };
   }
   const monthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
@@ -377,20 +387,35 @@ export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResul
     const runLeft = Number(auto.cap_run) - Number(run.credits);
     const monthLeft = Number(auto.cap_month) - spentMonth;
     const dayLeft = Number(auto.cap_day) > 0 ? Number(auto.cap_day) - spentDay : Infinity;
-    return { have, runLeft, monthLeft, dayLeft, available: Math.max(0, Math.min(have - floor, runLeft, monthLeft, dayLeft)) };
+    return { have, floor, runLeft, monthLeft, dayLeft, available: Math.max(0, Math.min(have - floor, runLeft, monthLeft, dayLeft)) };
   };
   const planFor = (available: number) => planHold(engine, price.choice.model, price.tokens, available, price.scale, 0, price.plan);
+  /**
+   * Whether a step short at this limit is short only because of other runs' open holds (it would fit
+   * with them settled at nothing): it then waits for them rather than being skipped (see HOLD_WAIT_MS).
+   */
+  const waitsForHolds = async (outcome: string): Promise<boolean> => {
+    if (!WAITS_FOR.has(outcome) || Number(c.waits ?? 0) >= MAX_WAITS) return false;
+    const [r, other] = await Promise.all([room(), heldElsewhere(auto.pay_account, auto.id, ref)]);
+    if (!other.account) return false;
+    const fits = Math.max(0, Math.min(r.have + other.account - r.floor, r.runLeft, r.monthLeft + other.automation, r.dayLeft + other.automation));
+    return fits >= planFor(fits).needed;
+  };
   const { have: held0, runLeft, monthLeft, dayLeft, available } = await room();
   let plan = planFor(available);
   if (plan.needed > Number(auto.cap_run)) {
     // Chat's prices rose since it was turned on: one step now needs more than a whole run may use.
-    await closeStep(c, "skipped", "price_up", turn);
+    await closeStep(c, "skipped", "price_up");
     return { kind: "end", status: Number(run.credits) > 0 ? "stopped" : "skipped", outcome: "price_up", need: plan.needed };
   }
   if (available < plan.needed) {
     const outcome =
       runLeft < plan.needed ? "run_cap" : monthLeft < plan.needed ? "month_cap" : dayLeft < plan.needed ? "day_cap" : held0 < plan.needed ? "no_credits" : "topup_floor";
-    await closeStep(c, "skipped", outcome, turn);
+    if (await waitsForHolds(outcome)) {
+      await closeStep(c, "retried", "waiting");
+      return { kind: "retry", delayMs: HOLD_WAIT_MS };
+    }
+    await closeStep(c, "skipped", outcome);
     const offer = outcome === "no_credits" || outcome === "topup_floor" ? await cheaperOffer(step, history, preferences, options, data, counting) : undefined;
     return { kind: "end", status: Number(run.credits) > 0 || outcome === "run_cap" ? "stopped" : "skipped", outcome, need: plan.needed, ...(offer && { offer }) };
   }
@@ -429,36 +454,38 @@ export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResul
     }
     return null;
   };
-  let charge = await chargeHold();
-  // Refused at a limit: another run's hold (of this account, or of this automation) came between this
-  // step's reads and its charge. Nothing was taken under its ref, so it is planned once more within what
-  // that hold left, and charged at that if its least still fits; otherwise it ends at the limit below.
-  if (charge && "refused" in charge && charge.refused in REFUSED) {
-    const availableNow = (await room()).available;
-    const again = planFor(availableNow);
-    if (availableNow >= again.needed) {
-      plan = again;
-      if (!(await resizeHold(ref, plan.held, left()))) return { kind: "lost" };
-      charge = await chargeHold();
-    }
-  }
-  // Whether the charge landed is unknown: the hold stays open and unstarted, so the reaper settles it at
-  // what was charged for nothing, 0, and the run is tried again.
-  if (!charge) return { kind: "lost" };
-  await probe("after-charge", { runId: run.id, ref });
   // Claude wasn't called: the hold is settled at 0 here and the step is tried again later, for free
-  // (the run fails after its last attempt).
-  const tryLater = async (delayMs: number): Promise<StepResult> => {
-    const again = Number(run.attempts) < MAX_ATTEMPTS;
+  // (busy: the run fails after its last attempt; waiting, for other runs' holds: not an attempt).
+  const tryLater = async (delayMs: number, note: "busy" | "waiting" = "busy"): Promise<StepResult> => {
+    const again = note === "waiting" || Number(run.attempts) < MAX_ATTEMPTS;
     const won = await settleHold(ref, 0, (w) => [
       {
-        sql: `UPDATE automation_run_steps SET status = ?, note = 'busy', input = ?, held = ?, finished_at = ${DB_NOW} WHERE run_id = ? AND step_id = ? AND attempt = ? AND ${w.sql}`,
-        args: [again ? "retried" : "failed", turn.slice(0, INPUT_CHARS), plan.held, run.id, step.id, started.attempt, ...w.args],
+        sql: `UPDATE automation_run_steps SET status = ?, note = ?, held = ?, finished_at = ${DB_NOW} WHERE run_id = ? AND step_id = ? AND attempt = ? AND ${w.sql}`,
+        args: [again ? "retried" : "failed", note, plan.held, run.id, step.id, started.attempt, ...w.args],
       },
     ]).catch(() => false);
     if (!won) return { kind: "lost" };
     return again ? { kind: "retry", delayMs } : { kind: "end", status: "failed", outcome: "failed" };
   };
+  let charge = await chargeHold();
+  // Refused at a limit: another run's hold (of this account, or of this automation) came between this
+  // step's reads and its charge. Nothing was taken under its ref, so it is planned once more within what
+  // that hold left, and charged at that if its least still fits; if it doesn't, it waits for that hold
+  // when that is all that is in its way, and otherwise ends at the limit below.
+  if (charge && "refused" in charge && charge.refused in REFUSED) {
+    const availableNow = (await room()).available;
+    const again = planFor(availableNow);
+    if (availableNow >= again.needed) {
+      plan = again;
+      // A hold settled meanwhile is refused by the charge below ("hold"), which takes only while it is open.
+      await resizeHold(ref, plan.held, left());
+      charge = await chargeHold();
+    } else if (await waitsForHolds(REFUSED[charge.refused as keyof typeof REFUSED])) return tryLater(HOLD_WAIT_MS, "waiting");
+  }
+  // Whether the charge landed is unknown: the hold stays open and unstarted, so the reaper settles it at
+  // what was charged for nothing, 0, and the run is tried again.
+  if (!charge) return { kind: "lost" };
+  await probe("after-charge", { runId: run.id, ref });
   if ("refused" in charge) {
     const refused = charge.refused;
     if (refused === "hold") return { kind: "lost" };
@@ -466,8 +493,8 @@ export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResul
     if (refused === "changed") return tryLater(COUNT_RETRY_MS);
     await settleHold(ref, 0, (won) => [
       {
-        sql: `UPDATE automation_run_steps SET status = 'skipped', note = ?, input = ?, held = ?, finished_at = ${DB_NOW} WHERE run_id = ? AND step_id = ? AND attempt = ? AND ${won.sql}`,
-        args: [REFUSED[refused], turn.slice(0, INPUT_CHARS), plan.held, run.id, step.id, started.attempt, ...won.args],
+        sql: `UPDATE automation_run_steps SET status = 'skipped', note = ?, held = ?, finished_at = ${DB_NOW} WHERE run_id = ? AND step_id = ? AND attempt = ? AND ${won.sql}`,
+        args: [REFUSED[refused], plan.held, run.id, step.id, started.attempt, ...won.args],
       },
     ]);
     return { kind: "end", status: Number(run.credits) > 0 ? "stopped" : "skipped", outcome: REFUSED[refused], need: plan.needed };
@@ -484,8 +511,8 @@ export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResul
     // Stop was tapped while the step was priced or charged: Claude is never called, and it is free.
     const won = await settleHold(ref, 0, (w) => [
       {
-        sql: `UPDATE automation_run_steps SET status = 'stopped', input = ?, held = ?, finished_at = ${DB_NOW} WHERE run_id = ? AND step_id = ? AND attempt = ? AND ${w.sql}`,
-        args: [turn.slice(0, INPUT_CHARS), plan.held, run.id, step.id, started.attempt, ...w.args],
+        sql: `UPDATE automation_run_steps SET status = 'stopped', held = ?, finished_at = ${DB_NOW} WHERE run_id = ? AND step_id = ? AND attempt = ? AND ${w.sql}`,
+        args: [plan.held, run.id, step.id, started.attempt, ...w.args],
       },
     ]).catch(() => false);
     return won ? { kind: "end", status: "stopped", outcome: "stopped_by_user" } : { kind: "lost" };
@@ -589,7 +616,9 @@ export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResul
       provider: "anthropic",
       credits,
       costCents: costCents + pending,
-      ok: ok && !stopped,
+      // Whether the call itself went through, as chat logs it: a step stopped or cut short by its time
+      // was charged for what it did (its run's status and outcome say it was stopped).
+      ok,
       parts: spend,
       automationId: auto.id,
     }).catch((err) => console.error("[flash] automation usage log failed", failName(err)));

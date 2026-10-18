@@ -679,7 +679,7 @@ test("a one-off whose time has come can still be paused or renamed; turning it o
   const once: Spec = { ...F.WRITE_SPEC, trigger: { type: "schedule", when: { kind: "once", date: soon.slice(0, 10), at: soon.slice(11, 16) } } };
   const aid = await create(cookie, once);
   // Its time comes (the version keeps the time it was saved with).
-  const gone = new Date(Date.now() + 60_000).toISOString();
+  const gone = new Date(Date.now() - 60_000).toISOString();
   await sql("UPDATE automation_versions SET spec = ? WHERE automation_id = ?", [JSON.stringify({ ...once, trigger: { type: "schedule", when: { kind: "once", date: gone.slice(0, 10), at: gone.slice(11, 16) } } }), aid]);
   assert.equal((await patch(cookie, aid, { name: "Renamed" })).status, 200);
   assert.equal((await patch(cookie, aid, { status: "paused" })).status, 200);
@@ -690,6 +690,25 @@ test("a one-off whose time has come can still be paused or renamed; turning it o
   assert.deepEqual([said.code, said.error], ["once_passed", A.ONCE_PASSED]);
   assert.equal((await cardOf(cookie)).automations.find((a) => a.id === aid)?.timePassed, true);
   assert.equal((await one<{ status: string }>("SELECT status FROM automations WHERE id = ?", [aid]))!.status, "paused", "nothing changed");
+});
+
+test("a paused one-off whose time is under 2 minutes away but still to come isn't said to have passed: turned on as it is, it runs then", async () => {
+  const { cookie } = await admin("rv3near");
+  const soon = new Date(Date.now() + 10 * 60_000).toISOString();
+  const once: Spec = { ...F.WRITE_SPEC, trigger: { type: "schedule", when: { kind: "once", date: soon.slice(0, 10), at: soon.slice(11, 16) } } };
+  const worst = (await priceOf(cookie, once)).worst;
+  const aid = await create(cookie, once);
+  assert.equal((await patch(cookie, aid, { status: "paused" })).status, 200);
+  // Its saved time is now 30 to 90 seconds away.
+  const near = new Date(Date.now() + 90_000).toISOString();
+  const when = { kind: "once" as const, date: near.slice(0, 10), at: near.slice(11, 16) };
+  await sql("UPDATE automation_versions SET spec = ? WHERE automation_id = ?", [JSON.stringify({ ...once, trigger: { type: "schedule", when } }), aid]);
+  assert.equal((await cardOf(cookie)).automations.find((a) => a.id === aid)?.timePassed, false, "Turn on is offered");
+  const on = await patch(cookie, aid, { status: "on", seenMax: worst });
+  assert.equal(on.status, 200, JSON.stringify(await on.clone().json()));
+  assert.equal(Number((await one<{ next_at: number }>("SELECT next_at FROM automations WHERE id = ?", [aid]))!.next_at), Date.parse(`${when.date}T${when.at}:00Z`));
+  // A new time still needs to be 2 minutes ahead.
+  assert.equal((await patch(cookie, aid, { spec: { ...once, trigger: { type: "schedule", when } }, seenMax: worst })).status, 400);
 });
 
 for (const kind of ["once", "daily"] as const) {
@@ -789,6 +808,11 @@ test("the card: a run's largest hold (not their sum), runs of an automation bein
   assert.equal(card.runs.find((r) => r.id === rid)?.deleted, true);
   assert.equal((await receiptRoute.GET(req(`/api/automations/runs/${rid}`, { cookie }), ctx({ runId: rid }))).status, 200);
   assert.equal((await receiptRoute.POST(req(`/api/automations/runs/${rid}`, { cookie, json: { action: "retry", seenMax: 1000 } }), ctx({ runId: rid }))).status, 404);
+  // Its saved receipt can still be compared, and the run marked seen.
+  const check = await receiptRoute.POST(req(`/api/automations/runs/${rid}`, { cookie, json: { action: "check", receipt: { prev: "", receipt: { run: rid }, hash: "x" } } }), ctx({ runId: rid }));
+  assert.deepEqual([check.status, (await body(check)).matches], [200, false]);
+  assert.equal((await receiptRoute.POST(req(`/api/automations/runs/${rid}`, { cookie, json: { action: "read" } }), ctx({ runId: rid }))).status, 200);
+  assert.ok(Number((await one<{ seen_at: number }>("SELECT seen_at FROM automation_runs WHERE id = ?", [rid]))!.seen_at) > 0);
 });
 
 test("a skipped run's receipt says why, in the reader's words", async () => {
@@ -898,6 +922,44 @@ test("Run once now and Retry without the credits its AI step needs say so in wor
   const got = (await (await receiptRoute.GET(req(`/api/automations/runs/${rid}`, { cookie }), ctx({ runId: rid }))).json()) as { run: { noteText: string } };
   assert.equal(got.run.noteText, A.NOTICES.noCredits);
   await sql("DELETE FROM auto_topups WHERE user_id = ?", [id]);
+});
+
+test("Run once now while another run's hold takes the account's credits starts: that hold counts as nothing, and the run waits for it", async () => {
+  const { cookie, id } = await admin("lim4h", 0);
+  const aid = await create(cookie, F.WRITE_SPEC);
+  const est = await priceOf(cookie, F.WRITE_SPEC);
+  await sql("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES (?, ?, 'purchase', 0)", [id, est.least + 40]);
+  // Another automation's step holds 50 of them right now.
+  const other = await F.automation({ userId: id });
+  const busy = await F.runRow({ automationId: other, userId: id, status: "running" });
+  await sql(`UPDATE automation_runs SET lease_owner = 'x', lease_until = ${NOW} + 600000 WHERE id = ?`, [busy]);
+  const ref = `auto:${busy}:a1:1`;
+  await sql(`INSERT INTO credit_holds (ref, user_id, run_id, held, model, input_cents, left_cents, lease_until, created_at) VALUES (?, ?, ?, 50, 'm', 0, 0, ${NOW} + 600000, ${NOW})`, [ref, id, busy]);
+  await sql("INSERT INTO credit_ledger (user_id, amount, reason, ref, automation_id, created_at) VALUES (?, -50, 'automation', ?, ?, ?)", [id, ref, other, Date.now()]);
+  assert.ok((await F.balance(id)) < est.least);
+  const r = await runOnce(cookie, aid, est.worst);
+  assert.equal(r.status, 202, JSON.stringify(await r.clone().json()));
+  const run = (await one<{ status: string; outcome: string; credits: number }>("SELECT status, outcome, credits FROM automation_runs WHERE automation_id = ?", [aid]))!;
+  assert.deepEqual([run.status, run.outcome, Number(run.credits)], ["queued", "", 0], "it waits for the other hold, for free");
+});
+
+test("Run once now while its own other run's hold takes the month's limit starts: that hold counts as nothing there too", async () => {
+  const { cookie, id } = await admin("lim4m");
+  const aid = await create(cookie, F.WRITE_SPEC);
+  const est = await priceOf(cookie, F.WRITE_SPEC);
+  const a = (await one<{ cap_month: number }>("SELECT cap_month FROM automations WHERE id = ?", [aid]))!;
+  // Its scheduled run's step holds all but one credit less than its AI step needs of the month.
+  const busy = await F.runRow({ automationId: aid, userId: id, status: "running" });
+  await sql(`UPDATE automation_runs SET lease_owner = 'x', lease_until = ${NOW} + 600000 WHERE id = ?`, [busy]);
+  const ref = `auto:${busy}:a1:1`;
+  const held = Number(a.cap_month) - est.least + 1;
+  await sql(`INSERT INTO credit_holds (ref, user_id, run_id, held, model, input_cents, left_cents, lease_until, created_at) VALUES (?, ?, ?, ?, 'm', 0, 0, ${NOW} + 600000, ${NOW})`, [ref, id, busy, held]);
+  await sql("INSERT INTO credit_ledger (user_id, amount, reason, ref, automation_id, created_at) VALUES (?, ?, 'automation', ?, ?, ?)", [id, -held, ref, aid, Date.now()]);
+  assert.ok((await F.balance(id)) >= est.least, "the account has the credits");
+  const r = await runOnce(cookie, aid, est.worst);
+  assert.equal(r.status, 202, JSON.stringify(await r.clone().json()));
+  const run = (await one<{ status: string; outcome: string }>("SELECT status, outcome FROM automation_runs WHERE automation_id = ? AND id <> ?", [aid, busy]))!;
+  assert.deepEqual([run.status, run.outcome], ["queued", ""], "it waits for the other hold, for free");
 });
 
 test("the burn-in form's pricing has the estimate's limit: writing an instruction never uses up making a test, nor the other way round", async () => {
@@ -1083,5 +1145,23 @@ test("a failed run's receipt, and a cut-short one's, say why", async () => {
     const r = (await (await receiptRoute.GET(req(`/api/automations/runs/${rid}`, { cookie }), ctx({ runId: rid }))).json()) as { run: { noteText: string } };
     assert.equal(r.run.noteText, said);
     assert.ok(!/[A-Za-z]{4}/.test(said.replace("Flash", "")), `in the reader's words: ${said}`);
+  }
+});
+
+test("the admin card's one-off in 3 minutes, made in the repeated hour of a fall-back night, is made for 3 minutes ahead", async () => {
+  const realNow = Date.now;
+  for (const [zone, moment] of [["America/Toronto", "2026-11-01T06:10:00Z"], ["Europe/London", "2026-10-25T01:20:00Z"], ["Australia/Lord_Howe", "2027-04-03T15:10:00Z"]] as const) {
+    Date.now = () => Date.parse(moment) + (realNow() % 1000);
+    try {
+      // Signed in that night (a session doesn't last until 2027).
+      const { cookie } = await admin(`fallback${zone.length}`);
+      const prices = (await body(await adminRoute.POST(req("/api/admin/automations", { cookie, json: { action: "price", timeZone: zone } })))).prices as Record<"once", Estimate>;
+      const made = await adminRoute.POST(req("/api/admin/automations", { cookie, json: { action: "make", kind: "once", timeZone: zone, seenMax: prices.once.worst } }));
+      assert.equal(made.status, 201, zone);
+      const ahead = ((await body(made)).automation as { nextAt: number }).nextAt - Date.now();
+      assert.ok(ahead > 2 * 60_000 && ahead <= 4 * 60_000, `${zone}: about 3 minutes ahead (${ahead} ms)`);
+    } finally {
+      Date.now = realNow;
+    }
   }
 });

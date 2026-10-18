@@ -21,10 +21,10 @@ import { lapsedHolds, reapedCents, reaperCredits, settleHold, type Hold } from "
 import { topUpFloor } from "./credits.ts";
 import { all, db, one, run as sql } from "./db.ts";
 import { sha256 } from "./ids.ts";
-import { DB_NOW, parkRun, probe, releaseRun, startStep } from "./leases.ts";
+import { DB_NOW, parkRun, probe, releaseRun, startStep, takeLease } from "./leases.ts";
 import { canonicalJson } from "./mcp-client.ts";
 import { automationLink, NOTICE_TEXT_CHARS, noticeStatement, type Notice } from "./notifications.ts";
-import { MAX_ATTEMPTS, outputText, runStep, varsOf, type AutoRow, type Offer, type RunEnd, type RunRow } from "./automation-steps.ts";
+import { MAX_ATTEMPTS, outputText, runStep, STEP_TIMING, varsOf, type AutoRow, type Offer, type RunEnd, type RunRow } from "./automation-steps.ts";
 
 /** The spec a run follows: its own version, frozen when the run was made. */
 export async function versionSpec(automationId: string, version: number): Promise<Spec | null> {
@@ -42,10 +42,13 @@ const automationRow = (id: string) => one<AutoRow>("SELECT * FROM automations WH
 const runRow = (id: string) => one<RunRow>("SELECT * FROM automation_runs WHERE id = ?", [id]);
 
 /**
- * Moves a run forward while this worker holds it (me is its owner token) and the call has time,
- * until the run ends, waits or is handed on. deadline is when the call's own time runs out.
+ * Moves a run forward while this worker holds it (owner is the token its claim gave it, taken for this
+ * call alone, see takeLease) and the call has time, until the run ends, waits or is handed on.
+ * deadline is when the call's own time runs out.
  */
-export async function advanceRun(runId: string, me: string, deadline: number): Promise<void> {
+export async function advanceRun(runId: string, owner: string, deadline: number): Promise<void> {
+  const me = await takeLease(runId, owner);
+  if (!me) return;
   // Each pass starts at most one step; a spec has at most MAX_STEPS, each tried at most MAX_ATTEMPTS times.
   for (let pass = 0; pass <= MAX_STEPS * MAX_ATTEMPTS; pass++) {
     const run = await one<RunRow>(`SELECT * FROM automation_runs WHERE id = ? AND lease_owner = ? AND lease_until > ${DB_NOW}`, [runId, me]);
@@ -67,13 +70,17 @@ export async function advanceRun(runId: string, me: string, deadline: number): P
     // At the end: after its last step, or after an AI step that ended it (failed, stopped or nothing
     // new) whose finish didn't land: it ends as that step said, and nothing runs again.
     if (!step) return void (await finish(run, END_STATUS[run.outcome] ?? "done", run.outcome || "ok", { me, spec, ...(run.summary && { summary: run.summary }) }));
-    // Not enough time left in this call: the next tick hands it to a fresh one, in its place.
-    if (deadline - Date.now() < budgetOf(step)) return void (await releaseRun(runId, me));
+    // Not enough time left in this call for the step and the gap it keeps for settling (see runAiStep):
+    // the next tick hands it to a fresh one, in its place.
+    if (deadline - Date.now() < budgetOf(step) + STEP_TIMING.deadlineGapMs) return void (await releaseRun(runId, me));
     const earlier = await earlierAttempts(run, step);
     if (earlier === "started") return void (await finish(run, "interrupted", "interrupted", { me, spec }));
     // A hold left behind changed while it was being settled (its worker is still going): the run waits.
     if (earlier === "busy") return void (await releaseRun(runId, me));
-    if (Number(run.attempts) >= MAX_ATTEMPTS) return void (await finish(run, "failed", "failed", { me, spec }));
+    // A step's waits for other runs' holds (see runAiStep) aren't attempts: only its tries count.
+    const waits = Number(run.attempts) > 0 ? await waitsOf(runId, step.id) : 0;
+    const tries = Number(run.attempts) - waits;
+    if (tries >= MAX_ATTEMPTS) return void (await finish(run, "failed", "failed", { me, spec }));
     const started = await startStep(runId, me, {
       stepId: step.id,
       kind: step.do,
@@ -85,9 +92,9 @@ export async function advanceRun(runId: string, me: string, deadline: number): P
     if (started === "lost") return;
     // The paid pool is full (or waits out a 429): it waits in its place, in that pool, as queued if it hasn't done anything yet.
     if (started === "no_paid_slot") return void (await releaseRun(runId, me, { ...waitingAs(run), nextPaid: 1 }));
-    // The run as it is now (attempts counts this one).
-    const now = { ...run, attempts: Number(run.attempts) + 1 };
-    const r = await runStep({ run: now, auto, user, spec, started, me, deadline }, step);
+    // The run as it is now (attempts counts this try).
+    const now = { ...run, attempts: tries + 1 };
+    const r = await runStep({ run: now, auto, user, spec, started, me, deadline, waits }, step);
     if (r.kind === "next") continue;
     if (r.kind === "lost") return;
     if (r.kind === "retry") return void (await releaseRun(runId, me, { ...waitingAs(run), dueAt: Date.now() + r.delayMs }));
@@ -96,6 +103,12 @@ export async function advanceRun(runId: string, me: string, deadline: number): P
     const outcome = deleting ? "deleted" : r.outcome;
     return void (await finish((await runRow(runId)) ?? run, r.status, outcome, { me, spec, summary: r.summary, need: r.need, offer: r.offer }));
   }
+}
+
+/** How many times a run's step waited for other runs' holds (its attempts noted waiting). */
+async function waitsOf(runId: string, stepId: string): Promise<number> {
+  const row = await one<{ n: number }>("SELECT COUNT(*) AS n FROM automation_run_steps WHERE run_id = ? AND step_id = ? AND note = 'waiting'", [runId, stepId]);
+  return Number(row?.n ?? 0);
 }
 
 /** How a run that an AI step ended ends, by the outcome it kept (see runAiStep); any other ends done. */
@@ -164,13 +177,14 @@ export async function reapHold(h: Hold, o: { inline?: boolean } = {}): Promise<b
                    WHERE id = ? AND finished_at = 0 AND ${w.sql}`,
             args: [credits, o.inline || started ? 1 : 0, o.inline || started ? 1 : 0, o.inline || started ? 1 : 0, h.run_id, ...w.args],
           },
-          // A call that was sent is one AI request on /admin's Runs and money: what the reaper charged, and what it is known to have cost.
+          // A call that was sent is one AI request on /admin's Runs and money: what the reaper charged, and what it is known to have cost
+          // (failed only when it charged nothing: one charged for the work it did isn't a refund on /admin's Overview).
           ...(started
             ? [
                 {
                   sql: `INSERT INTO usage (user_id, engine, model, provider, credits, cost_cents, ok, part, automation_id, created_at)
-                        SELECT user_id, ?, ?, 'anthropic', ?, ?, 0, 0, automation_id, ${DB_NOW} FROM automation_runs WHERE id = ? AND ${w.sql}`,
-                  args: [engine, h.model, credits, reapedCents(h), h.run_id, ...w.args],
+                        SELECT user_id, ?, ?, 'anthropic', ?, ?, ?, 0, automation_id, ${DB_NOW} FROM automation_runs WHERE id = ? AND ${w.sql}`,
+                  args: [engine, h.model, credits, reapedCents(h), credits > 0 ? 1 : 0, h.run_id, ...w.args],
                 },
               ]
             : []),

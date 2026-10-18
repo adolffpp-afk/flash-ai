@@ -203,3 +203,15 @@ test("a charge refused while another request settles in between is tried again; 
   // Really out of credits, it says so; and a day limit refuses only when there is one.
   assert.deepEqual(await once(u.id, aid, "auto:c30:a1:2", 50, { dayCap: 0 }), { refused: "credits" });
 });
+
+test("a hold is sized again only before anything is taken under its ref: once charged, resizeHold changes nothing", async () => {
+  const u = await F.account("c31", 100);
+  const aid = await F.automation({ userId: u.id });
+  const ref = "auto:c31:a1:1";
+  assert.equal(await H.recordHold({ ref, userId: u.id, runId: "c31", held: 40, model: LEVEL_MODELS.sonic, inputCents: 0.1, leftCents: 5 }), true);
+  assert.equal(await H.resizeHold(ref, 30, 4), true, "refused at a limit, nothing taken: planned again");
+  assert.ok("id" in (await once(u.id, aid, ref, 30, { hold: true })));
+  assert.equal(await H.resizeHold(ref, 10, 1), false, "charged: its size stays what was charged");
+  const h = (await one<{ held: number; left_cents: number }>("SELECT held, left_cents FROM credit_holds WHERE ref = ?", [ref]))!;
+  assert.deepEqual([Number(h.held), Number(h.left_cents)], [30, 4]);
+});

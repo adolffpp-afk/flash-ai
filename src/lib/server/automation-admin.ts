@@ -68,30 +68,46 @@ export async function automationStats(days: number) {
   };
 }
 
-/** The cron health lines (the plan's §4.2): lag, queues, the paid pool, 429s, spend and writes. Parked runs are left out. */
+/**
+ * The cron health lines (the plan's §4.2): lag, queues, the paid pool, 429s, spend and writes. Parked
+ * runs are left out. The week's lag and peak spend read that week's runs and charges Flash-wide, so
+ * they come with /admin's lines only (on load, and again when a run on the burn-in card ends); the
+ * card's own poll carries the live lines (liveHealth), which read only what is due, open or live now.
+ */
 export async function cronHealth() {
   const now = Date.now();
-  const schedule = await one<{ at: number }>(`SELECT MIN(next_at) AS at FROM automations WHERE status = 'on' AND next_at > 0 AND next_at <= ${DB_NOW}`);
-  const run = await one<{ at: number }>(
-    `SELECT MIN(due_at) AS at FROM automation_runs WHERE parked = 0 AND status IN ('queued','waiting','running','approval') AND due_at <= ${DB_NOW} AND lease_until < ${DB_NOW}`,
-  );
-  // Each line reads through an index: runs of the last week by age (the newest 5,000, so a tick late
-  // now shows), the live queue, the live leases.
+  // Runs of the last week by age (the newest 5,000, so a tick late now shows).
   const lags = await all<{ lag: number }>(
     "SELECT started_at - scheduled_at AS lag FROM automation_runs WHERE created_at >= ? AND origin = 'schedule' AND started_at > 0 AND scheduled_at > 0 ORDER BY created_at DESC LIMIT 5000",
     [now - 7 * DAY],
   );
-  // Runs due now that wait for room (a run waiting for its next try after Claude was busy isn't due yet).
-  const queued = await one<{ n: number }>(
-    `SELECT COUNT(*) AS n FROM automation_runs WHERE parked = 0 AND status IN ('queued','waiting','running','approval') AND status = 'queued' AND due_at <= ${DB_NOW}`,
-  );
-  const paid = await one<{ n: number }>(`SELECT COUNT(*) AS n FROM automation_runs WHERE lease_until > 0 AND lease_until > ${DB_NOW} AND next_paid = 1 AND finished_at = 0`);
   // What was charged (settled holds only: an open one keeps a step's worst case, and settles far lower).
   const peak = await one<{ credits: number }>(
     `SELECT COALESCE(MAX(spent), 0) AS credits FROM (SELECT -SUM(amount) AS spent FROM credit_ledger
        WHERE automation_id <> '' AND amount < 0 AND created_at >= ? AND settled_at > 0 GROUP BY created_at / 60000)`,
     [now - 7 * DAY],
   );
+  return {
+    ...(await liveHealth()),
+    lagP95Sec: Math.round(p95(lags.map((l) => n(l.lag))) / 1000),
+    lagRuns: lags.length,
+    peakCreditsPerMinute: n(peak?.credits),
+  };
+}
+
+/** The cron health lines that are about now: each reads through an index of what is due, open or live (the burn-in card polls these). */
+export async function liveHealth() {
+  const now = Date.now();
+  const schedule = await one<{ at: number }>(`SELECT MIN(next_at) AS at FROM automations WHERE status = 'on' AND next_at > 0 AND next_at <= ${DB_NOW}`);
+  const run = await one<{ at: number }>(
+    `SELECT MIN(due_at) AS at FROM automation_runs WHERE parked = 0 AND status IN ('queued','waiting','running','approval') AND due_at <= ${DB_NOW} AND lease_until < ${DB_NOW}`,
+  );
+  // Each line reads through an index: the live queue, the live leases, the open holds.
+  // Runs due now that wait for room (a run waiting for its next try after Claude was busy isn't due yet).
+  const queued = await one<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM automation_runs WHERE parked = 0 AND status IN ('queued','waiting','running','approval') AND status = 'queued' AND due_at <= ${DB_NOW}`,
+  );
+  const paid = await one<{ n: number }>(`SELECT COUNT(*) AS n FROM automation_runs WHERE lease_until > 0 AND lease_until > ${DB_NOW} AND next_paid = 1 AND finished_at = 0`);
   const holds = await one<{ open: number; lapsed: number }>(
     `SELECT COUNT(*) AS open, SUM(CASE WHEN lease_until < ${DB_NOW} THEN 1 ELSE 0 END) AS lapsed FROM credit_holds WHERE settled_at = 0`,
   );
@@ -104,14 +120,11 @@ export async function cronHealth() {
   return {
     overdueScheduleMin: schedule?.at ? Math.max(0, Math.floor((now - n(schedule.at)) / 60_000)) : 0,
     overdueRunMin: run?.at ? Math.max(0, Math.floor((now - n(run.at)) / 60_000)) : 0,
-    lagP95Sec: Math.round(p95(lags.map((l) => n(l.lag))) / 1000),
-    lagRuns: lags.length,
     queued: n(queued?.n),
     paidNow: n(paid?.n),
     maxPaid: maxPaid(),
     paidOpen: (await paidOpen()) === 1,
     rateLimitedLastHour: await countOf(RATE_LIMITED_KEY),
-    peakCreditsPerMinute: n(peak?.credits),
     writes: await monthWrites(),
     openHolds: n(holds?.open),
     lapsedHolds: n(holds?.lapsed),

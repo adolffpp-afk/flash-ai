@@ -455,7 +455,8 @@ function RunReceipt({ runId, language, onChange }: { runId: string; language: st
         </div>
         {run.deleted && <div className="text-zinc-400">Its automation was deleted; this run goes with it.</div>}
         {waits && <div className="text-amber-300 sm:col-span-2">{waits}</div>}
-        {!run.finishedAt && (
+        {/* Delete already asked a run of an automation being deleted to stop. */}
+        {!run.finishedAt && !run.deleted && (
           <div>
             <button onClick={stop} disabled={run.stopRequested} className={button}>
               {run.stopRequested ? "Stopping…" : "Stop"}

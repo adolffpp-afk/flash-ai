@@ -449,8 +449,8 @@ const minutes = (m: number) => (m ? `${num(m)} min` : "None");
  * never values), the cron health lines, and what runs did and cost over the range.
  */
 function AutomationLines({ a, days, health }: { a: NonNullable<Stats["automations"]>; days: number; health: Health | null }) {
-  // The burn-in card's newer lines, while it polls, else those of the stats.
-  const h = health ?? a.health;
+  // The burn-in card's newer live lines, while it polls; the week's lag and peak spend come with the stats.
+  const h = { ...a.health, ...health };
   // Runs by outcome: the last 24 hours beside the last 7 days.
   const outcomes = a.outcomes;
   // What isn't set at all (a CRON_SECRET too short is said apart).
@@ -494,7 +494,7 @@ function AutomationLines({ a, days, health }: { a: NonNullable<Stats["automation
         </ul>
       </Panel>
 
-      <Panel title="Cron health" note="Worked out from the data, so it costs no writes, and kept up to date with the burn-in below. Paused automations are left out.">
+      <Panel title="Cron health" note="Worked out from the data, so it costs no writes, and kept up to date with the burn-in below (the week's lag and peak spend each time a run there ends). Paused automations are left out.">
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <Tile label="Schedules overdue" value={minutes(h.overdueScheduleMin)} note="The oldest automation past its next run" />
           <Tile label="Runs overdue" value={minutes(h.overdueRunMin)} note="The oldest run due that nothing is working on" />

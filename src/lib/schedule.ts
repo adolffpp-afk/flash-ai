@@ -88,15 +88,19 @@ function offsetAt(utcMs: number, timeZone: string): number {
  * back, and later by the gap when they spring forward over it.
  */
 export function localToUtc(year: number, month: number, day: number, minutes: number, timeZone: string): number {
+  return localTimes(year, month, day, minutes, timeZone)[0];
+}
+
+/** Each moment a local date and time happens in a zone, in order: two when clocks fall back over it. */
+function localTimes(year: number, month: number, day: number, minutes: number, timeZone: string): number[] {
   const wall = Date.UTC(year, month - 1, day, Math.floor(minutes / 60), minutes % 60);
   // The offsets a day either side of it: one of them is in force at that local time, or both are (twice).
   const before = wall - offsetAt(wall - DAY, timeZone);
   const after = wall - offsetAt(wall + DAY, timeZone);
   const fits = (t: number) => t + offsetAt(t, timeZone) === wall;
-  const found = [before, after].filter(fits);
-  if (found.length) return Math.min(...found);
+  const found = [...new Set([before, after].filter(fits))].sort((a, b) => a - b);
   // In the gap: with the offset from before it, the clock reads the same time plus the gap.
-  return before;
+  return found.length ? found : [before];
 }
 
 /** A local date (a wall clock's), moved by some days, as [year, month, day]. */
@@ -161,8 +165,9 @@ function nextFireIn(when: When, timeZone: string, afterUtc: number, days: Map<nu
     const date = calendarDate(when.date);
     const at = clockMinutes(when.at);
     if (!date || at === null) return 0;
-    const t = localToUtc(date[0], date[1], date[2], at, timeZone);
-    return t > afterUtc ? t : 0;
+    // A time that happens twice (clocks falling back) is the first still ahead: one saved in the
+    // repeated hour runs in it. It still runs once (see nextFires and firesBetween).
+    return localTimes(date[0], date[1], date[2], at, timeZone).find((t) => t > afterUtc) ?? 0;
   }
   // From the day before (a zone behind UTC may still be on it), until one is found.
   const today = wallClock(afterUtc, timeZone);
@@ -181,7 +186,7 @@ export function nextFires(when: When, timeZone: string, afterUtc: number, count:
   const out: number[] = [];
   const days = new Map<number, number[]>();
   let t = afterUtc;
-  while (out.length < count) {
+  while (out.length < (when.kind === "once" ? Math.min(count, 1) : count)) {
     t = nextFireIn(when, timeZone, t, days);
     if (!t) break;
     out.push(t);
@@ -191,6 +196,10 @@ export function nextFires(when: When, timeZone: string, afterUtc: number, count:
 
 /** How many times a schedule runs between two moments (at most 24 a day; each local date is worked out once). */
 export function firesBetween(when: When, timeZone: string, fromUtc: number, toUtc: number): number {
+  if (when.kind === "once") {
+    const t = nextFire(when, timeZone, fromUtc);
+    return t && t <= toUtc ? 1 : 0;
+  }
   let n = 0;
   const days = new Map<number, number[]>();
   for (let t = nextFireIn(when, timeZone, fromUtc, days); t && t <= toUtc; t = nextFireIn(when, timeZone, t, days)) n++;

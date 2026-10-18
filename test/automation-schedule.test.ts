@@ -7,8 +7,8 @@ register("./support/route-hooks.mjs", import.meta.url);
 /*
  * When an automation runs (src/lib/schedule.ts): every kind of schedule, the time zone's own rules
  * across daylight saving (a time that doesn't exist runs later by the gap, one that happens twice runs
- * once, at the first), zones with half and quarter hours, short months, and the sentences that say a
- * schedule in the reader's language.
+ * once, at the first; a one-off made between the two, at the second), zones with half and quarter
+ * hours, short months, and the sentences that say a schedule in the reader's language.
  */
 const S = await import("../src/lib/schedule.ts");
 const A = await import("../src/lib/automations.ts");
@@ -51,6 +51,21 @@ test("Toronto: 02:30 on the night clocks spring forward runs at 03:30, and 01:30
   // 1 November 2026: 02:00 EDT becomes 01:00 EST, so 01:30 happens twice: it runs at the first.
   assert.equal(next({ kind: "daily", at: "01:30" }, "America/Toronto", "2026-10-31T12:00:00Z"), "2026-11-01T05:30:00Z");
   assert.equal(next({ kind: "daily", at: "01:30" }, "America/Toronto", "2026-11-01T05:30:00Z"), "2026-11-02T06:30:00Z", "not again an hour later");
+});
+
+test("a one-off at a time that happens twice runs once, at the first still ahead: one made in the repeated hour runs in it", () => {
+  for (const [tz, date, time, first, second] of [
+    ["America/Toronto", "2026-11-01", "01:13", "2026-11-01T05:13:00Z", "2026-11-01T06:13:00Z"],
+    ["Europe/London", "2026-10-25", "01:23", "2026-10-25T00:23:00Z", "2026-10-25T01:23:00Z"],
+    ["Australia/Lord_Howe", "2027-04-04", "01:43", "2027-04-03T14:43:00Z", "2027-04-03T15:13:00Z"],
+  ] as const) {
+    const once = { kind: "once" as const, date, at: time };
+    assert.equal(next(once, tz, "2026-10-01T00:00:00Z"), first, `${tz}: the first, made before`);
+    assert.equal(next(once, tz, first), second, `${tz}: made in the repeated hour, it runs in it`);
+    assert.equal(S.nextFire(once, tz, at(second)), 0, `${tz}: then never again`);
+    assert.deepEqual(nexts(once, tz, "2026-10-01T00:00:00Z", 3), [first], `${tz}: one run, not two`);
+    assert.equal(S.firesBetween(once, tz, at("2026-10-01T00:00:00Z"), at("2027-05-01T00:00:00Z")), 1, `${tz}: counted once`);
+  }
 });
 
 test("Paris: the same on 25 October 2026 and 28 March 2027", () => {

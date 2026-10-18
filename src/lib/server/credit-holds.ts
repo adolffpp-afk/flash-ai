@@ -59,15 +59,31 @@ export async function recordHold(h: { ref: string; userId: string; runId: string
 
 /**
  * Sizes a hold again before anything was taken under it (its charge was refused at a limit, and its step
- * is planned once more within what is left): only while it is open, uncharged and unstarted.
+ * is planned once more within what is left): only while it is open and nothing is in the ledger under
+ * its ref (its charge, its charge id and its start mark all come after that row, which is never deleted).
  */
 export async function resizeHold(ref: string, held: number, leftCents: number): Promise<boolean> {
   const r = await sql(
-    `UPDATE credit_holds SET held = ?, left_cents = ? WHERE ref = ? AND settled_at = 0 AND started = 0 AND charge_id = 0
+    `UPDATE credit_holds SET held = ?, left_cents = ? WHERE ref = ? AND settled_at = 0
         AND NOT EXISTS (SELECT 1 FROM credit_ledger WHERE ref = ?)`,
     [held, leftCents, ref, ref],
   );
   return r.rowsAffected === 1;
+}
+
+/**
+ * What other runs' open holds take now from an account, and of that from one automation (its month and
+ * day limits count them): steps priced at the same moment, held at their worst case until they settle
+ * within their step's time, mostly far lower. Read through the open holds only (credit_holds_open).
+ */
+export async function heldElsewhere(account: string, automationId: string, exceptRef = ""): Promise<{ account: number; automation: number }> {
+  const row = await one<{ account: number; automation: number }>(
+    `SELECT COALESCE(-SUM(l.amount), 0) AS account, COALESCE(-SUM(CASE WHEN l.automation_id = ? THEN l.amount ELSE 0 END), 0) AS automation
+       FROM credit_holds h JOIN credit_ledger l ON l.ref = h.ref
+      WHERE h.settled_at = 0 AND h.lease_until > 0 AND h.user_id = ? AND h.ref <> ? AND l.amount < 0`,
+    [automationId, account, exceptRef],
+  );
+  return { account: Math.max(0, Number(row?.account ?? 0)), automation: Math.max(0, Number(row?.automation ?? 0)) };
 }
 
 /** Keeps the id of the ledger row the hold took. */

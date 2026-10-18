@@ -520,6 +520,20 @@ test("the burn-in card, a receipt, /admin's lines and an 'only if changed' step'
   await sql("DELETE FROM automation_run_steps");
 });
 
+test("the burn-in card's poll never reads the week's runs or charges Flash-wide: it carries the live cron health lines, and /admin's lines the week's", async () => {
+  const u = await F.account("tick24b", 100);
+  const API = await import("../src/lib/server/automation-api.ts");
+  const { cronHealth } = await import("../src/lib/server/automation-admin.ts");
+  const g = { user: (await S.userById(u.id))!, t: await (await import("../src/lib/server/i18n.ts")).translatorIn("en"), deadline: Date.now() + 60_000 };
+  let card!: Awaited<ReturnType<typeof API.burnIn>>;
+  const polled = await plansOf(async () => void (card = await API.burnIn(g)));
+  const week = (p: { sql: string }) => p.sql.includes("started_at - scheduled_at") || p.sql.includes("GROUP BY created_at / 60000");
+  assert.deepEqual(polled.filter(week).map((p) => p.sql), [], "no lag or peak spend in the poll");
+  assert.ok(!("lagP95Sec" in card.health) && !("peakCreditsPerMinute" in card.health) && "queued" in card.health && "openHolds" in card.health);
+  const lines = await plansOf(async () => void (await cronHealth()));
+  assert.equal(lines.filter(week).length, 2, "/admin's own lines read them");
+});
+
 test("old receipt detail is compacted past the first 5,000 runs in one daily job, and runs past 13 months all go", async () => {
   await sql("DELETE FROM automation_run_steps");
   await sql("DELETE FROM automation_runs");
@@ -719,4 +733,113 @@ test("a slot whose automation changed between the tick's read and its write make
   }
   assert.deepEqual(await runsOf(aid), [], "no run of the old slot");
   assert.equal(Number((await one<{ next_at: number }>("SELECT next_at FROM automations WHERE id = ?", [aid]))!.next_at), later, "the edit stays");
+});
+
+/** Makes the first database call (a statement or a batch) whose SQL matches fail once, as a Turso 5xx would. */
+async function failOnce(match: (sql: string) => boolean, work: () => Promise<unknown>): Promise<number> {
+  const c = await db();
+  const execute = c.execute.bind(c);
+  const batch = c.batch.bind(c);
+  let failed = 0;
+  const text = (st: InStatement) => (typeof st === "string" ? st : st.sql);
+  c.execute = (async (st: InStatement, args?: InValue[]) => {
+    if (!failed && match(text(st))) {
+      failed++;
+      throw new Error("SERVER_ERROR: 502");
+    }
+    return args === undefined ? execute(st) : execute(st as string, args);
+  }) as typeof c.execute;
+  c.batch = (async (sts: InStatement[], mode?: "write" | "read" | "deferred") => {
+    if (!failed && sts.some((st) => match(text(st)))) {
+      failed++;
+      throw new Error("SERVER_ERROR: 502");
+    }
+    return batch(sts, mode);
+  }) as typeof c.batch;
+  try {
+    await work();
+  } finally {
+    c.execute = execute;
+    c.batch = batch;
+  }
+  return failed;
+}
+
+test("a one-off's late run is missed, the one-off finished and its owner told together: a write that fails is all done again by the next tick", async () => {
+  const u = await F.account("tick35", 100);
+  const slot = Math.floor((Date.now() - 25 * 3_600_000) / 60_000) * 60_000;
+  const iso = new Date(slot).toISOString();
+  const once: Spec = { ...F.WRITE_SPEC, trigger: { type: "schedule", when: { kind: "once", date: iso.slice(0, 10), at: iso.slice(11, 16) } } };
+  const aid = await F.automation({ userId: u.id, spec: once, nextAt: 0 });
+  await F.runRow({ automationId: aid, userId: u.id, origin: "schedule", runKey: `sched:${slot}`, dueAt: slot, graceUntil: slot + 86_400_000 });
+  // A tick with nothing to send (no claims), as the run would otherwise be claimed.
+  assert.equal(await failOnce((s) => s.includes("SET status = 'finished'"), () => T.runTick("tk")), 1);
+  await tick();
+  await tick();
+  assert.deepEqual((await runsOf(aid)).map((r) => [r.status, r.outcome]), [["skipped", "missed"]]);
+  assert.equal((await one<{ status: string }>("SELECT status FROM automations WHERE id = ?", [aid]))!.status, "finished");
+  assert.equal(await count("notifications", "user_id = ? AND ref LIKE 'missed:%'", [u.id]), 1);
+});
+
+test("a one-off's slot that comes while its Run once now is still going is queued, not skipped as overlapping: it is its only slot", async () => {
+  const u = await F.account("tick36", 100);
+  const slot = Math.floor((Date.now() - 1000) / 60_000) * 60_000;
+  const iso = new Date(slot).toISOString();
+  const once: Spec = { ...F.WRITE_SPEC, trigger: { type: "schedule", when: { kind: "once", date: iso.slice(0, 10), at: iso.slice(11, 16) } } };
+  const aid = await F.automation({ userId: u.id, spec: once, nextAt: slot });
+  const own = await F.runRow({ automationId: aid, userId: u.id, origin: "owner", status: "running" });
+  await sql(`UPDATE automation_runs SET lease_owner = 'n:' || id, lease_until = ${NOW} + 300000 WHERE id = ?`, [own]);
+  // A repeating schedule's slot is still skipped while a run of it goes.
+  const daily = await F.automation({ userId: u.id, spec: DAILY, nextAt: Date.now() - 1000 });
+  const going = await F.runRow({ automationId: daily, userId: u.id, origin: "owner", status: "running" });
+  await sql(`UPDATE automation_runs SET lease_owner = 'n:' || id, lease_until = ${NOW} + 300000 WHERE id = ?`, [going]);
+  await T.runTick("tk");
+  const scheduled = (await runsOf(aid)).filter((r) => r.run_key.startsWith("sched:"));
+  assert.deepEqual(scheduled.map((r) => [r.status, r.outcome]), [["queued", ""]]);
+  const a = await one<{ status: string; next_at: number }>("SELECT status, next_at FROM automations WHERE id = ?", [aid]);
+  assert.deepEqual([a!.status, Number(a!.next_at)], ["on", 0]);
+  assert.deepEqual((await runsOf(daily)).filter((r) => r.run_key.startsWith("sched:")).map((r) => r.outcome), ["overlap"]);
+});
+
+/** Runs `before` just ahead of the first batch with a statement whose SQL matches (a write that lands in between). */
+async function beforeBatch(match: (sql: string) => boolean, before: () => Promise<unknown>, work: () => Promise<unknown>) {
+  const c = await db();
+  const batch = c.batch.bind(c);
+  let done = false;
+  c.batch = (async (sts: InStatement[], mode?: "write" | "read" | "deferred") => {
+    if (!done && sts.some((st) => match(typeof st === "string" ? st : st.sql))) {
+      done = true;
+      await before();
+    }
+    return batch(sts, mode);
+  }) as typeof c.batch;
+  try {
+    await work();
+  } finally {
+    c.batch = batch;
+  }
+  return done;
+}
+
+test("a slot past its grace window is skipped as missed as it is taken: even when the late-run pass fails, it is never sent", async () => {
+  const u = await F.account("tick37", 100);
+  const aid = await F.automation({ userId: u.id, spec: DAILY, nextAt: Date.now() - 3 * 86_400_000 });
+  let sent: { id: string }[] = [];
+  assert.equal(await failOnce((s) => s.includes("FROM automation_runs r JOIN automations a ON a.id = r.automation_id"), async () => void (sent = (await tick()).sent)), 1);
+  assert.deepEqual(sent, []);
+  assert.deepEqual((await runsOf(aid)).map((r) => [r.status, r.outcome]), [["skipped", "missed"]]);
+});
+
+test("a pause that changed between the tick's read and its write (the owner paused it again) keeps its runs parked", async () => {
+  const u = await F.account("tick38", 100);
+  const aid = await F.automation({ userId: u.id, spec: DAILY, status: "paused", pausedReason: "month_cap", resumeAt: Date.now() - 1000, nextAt: 1 });
+  const parked = await F.runRow({ automationId: aid, userId: u.id, parked: 1 });
+  const landed = await beforeBatch(
+    (s) => s.includes("SET parked = 0"),
+    () => sql("UPDATE automations SET paused_reason = 'user', resume_at = 0 WHERE id = ?", [aid]),
+    tick,
+  );
+  assert.equal(landed, true);
+  assert.equal((await one<{ status: string }>("SELECT status FROM automations WHERE id = ?", [aid]))!.status, "paused");
+  assert.equal(Number((await one<{ parked: number }>("SELECT parked FROM automation_runs WHERE id = ?", [parked]))!.parked), 1);
 });
