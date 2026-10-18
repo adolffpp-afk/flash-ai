@@ -16,8 +16,9 @@ import type { Client, InStatement } from "@libsql/client";
 import { all, db, now, one } from "./db.ts";
 import { randomId, sha256 } from "./ids.ts";
 import { FREE_STORAGE_BYTES, USED_STORAGE_SQL, storageLimit, usedStorage } from "./site-files.ts";
-import { fileDeletes, indexFile, purgeIndex, removeFileRows } from "./assistant-search.ts";
-import { LEVEL_MODELS, countTextTokens } from "../engines/claude.ts";
+import { fileDeletes, indexFile, purgeIndex, removeFileRows, type PassageCounter } from "./assistant-search.ts";
+import { LEVEL_MODELS, countPassageTokens, countTextTokens } from "../engines/claude.ts";
+import { levelCosts } from "../assistant-cost.ts";
 import { CUT_NOTE } from "../office.ts";
 import { isLevel, type Level } from "../levels.ts";
 import {
@@ -599,3 +600,105 @@ export async function startAssistantChat(userId: string, assistantId: string): P
   const row = await one<{ name: string }>("SELECT name FROM projects WHERE id = ?", [id]);
   return { id, name: row?.name ?? "", updated_at: at, assistantId };
 }
+
+/**
+ * An assistant as a chat with it reads it (see loadAssistantFor): the fields the model is told and
+ * what decides who may use it and how. Its instructions are never sent to the browser from here.
+ */
+export type ChatAssistant = AssistantFields & {
+  id: string;
+  version: number;
+  // The name and instructions' tokens (see countInstructionTokens).
+  instrTokens: number;
+  // Its maker lets other people's messages to it go to the free models.
+  freeOk: boolean;
+  // Its maker shows its files' names to other people.
+  showFiles: boolean;
+};
+
+/**
+ * Whether the user may chat with an assistant: as theirs (mine), as someone else's they came to
+ * through its link, or not (gone): deleted, or not shared with them any more (its link turned off,
+ * changed since they used it, or taken down). name is the assistant's, when there still is one.
+ */
+export type AssistantAccess = { a: ChatAssistant; mine: boolean } | { gone: "deleted" | "unshared"; name: string };
+
+/**
+ * The assistant a chat was started with, as the user may use it. Its owner always may. Anyone else
+ * only while it's shared (share_id set), not taken down (removed_at 0), and through the link it has
+ * now: the one they came in by (assistant_visitors.share_id). One read, by the assistant's id.
+ */
+export async function loadAssistantFor(userId: string, assistantId: string): Promise<AssistantAccess> {
+  const row = await one<AssistantRow & { user_id: string; instr_tokens: number; share_id: string | null; free_ok: number; show_files: number; removed_at: number; visitor_share: string | null }>(
+    `SELECT ${FIELDS}, user_id, instr_tokens, share_id, free_ok, show_files, removed_at,
+       (SELECT v.share_id FROM assistant_visitors v WHERE v.assistant_id = assistants.id AND v.user_id = ?) AS visitor_share
+     FROM assistants WHERE id = ?`,
+    [userId, assistantId],
+  );
+  if (!row) return { gone: "deleted", name: "" };
+  const fields = fieldsOf(row);
+  const mine = row.user_id === userId;
+  if (!mine && !(row.share_id && Number(row.removed_at) === 0 && row.visitor_share === row.share_id)) return { gone: "unshared", name: fields.name };
+  return {
+    mine,
+    a: {
+      id: row.id,
+      ...fields,
+      version: Number(row.version),
+      instrTokens: Number(row.instr_tokens),
+      freeOk: Number(row.free_ok) === 1,
+      showFiles: Number(row.show_files) === 1,
+    },
+  };
+}
+
+/**
+ * What a chat with an assistant shows of it (GET /api/projects/[id], and the chat route's 409 when
+ * it changed): never its instructions, nor its files' text. Its id only to its owner; its files'
+ * names only where they may be shown (theirs, or its maker shows them). addOn and about are the
+ * most it adds to a message, and about what a whole message costs, on each level (see
+ * assistant-cost.ts).
+ */
+export type ChatAssistantSummary = {
+  id?: string;
+  name: string;
+  description: string;
+  starters: string[];
+  level: Level;
+  color: string;
+  version: number;
+  mine: boolean;
+  showFiles: boolean;
+  files: number;
+  fileNames?: string[];
+  addOn: Record<Level, number>;
+  about: Record<Level, number>;
+};
+
+export async function assistantSummary(a: ChatAssistant, mine: boolean): Promise<ChatAssistantSummary> {
+  const files = await all<{ name: string; tokens: number; exact: number }>("SELECT name, tokens, exact FROM assistant_files WHERE assistant_id = ? ORDER BY created_at, id", [a.id]);
+  const showFiles = mine || a.showFiles;
+  const costs = levelCosts({ instrTokens: a.instrTokens, files: files.map((f) => ({ name: f.name, tokens: Number(f.tokens), exact: Number(f.exact) === 1 })) }, LEVEL_MODELS);
+  return {
+    ...(mine && { id: a.id }),
+    name: a.name,
+    description: a.description,
+    starters: a.starters,
+    level: a.level,
+    color: a.color,
+    version: a.version,
+    mine,
+    showFiles,
+    files: files.length,
+    ...(showFiles && { fileNames: files.map((f) => f.name) }),
+    addOn: costs.addOn,
+    about: costs.about,
+  };
+}
+
+/**
+ * Counts passages as Claude reads them, the largest count over every level's model, so they're
+ * cut to PASSAGE_TOKENS on whichever level answers (see passagesFor). Throws when a count fails.
+ */
+export const countPassages: PassageCounter = async (passages) =>
+  Math.max(...(await Promise.all(countModels().map((model) => countPassageTokens(model, passages)))));
