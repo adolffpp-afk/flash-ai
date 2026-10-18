@@ -7,7 +7,7 @@ import { useT, type T } from "@/lib/use-t";
 import { BAND_TEXT, band, labBand, timeLabel, type Band } from "@/lib/seo-band";
 import { fixContext, fixableIds, stillToFix, type Check, type CheckId, type SeoContext, type SeoReport } from "@/lib/seo-rules";
 import { labelOf, messageOf, whyOf } from "@/lib/seo-words";
-import { fixAllTerms, fixPrice, type FixHold, type FixPrice } from "@/lib/seo-chat";
+import { canSend, fixAllTerms, fixPrice, type FixHold, type FixPrice } from "@/lib/seo-chat";
 import type { PageSpeedError, PageSpeedRecord, PageSpeedRun, Rating } from "@/lib/server/pagespeed";
 
 /*
@@ -201,8 +201,9 @@ export function SeoView({
   // What Flash would send for a change, from the chat's newest version of the site (which the builder changes), listed before Send.
   onPlanFix?: (fix: SiteFix) => Promise<FixPlan>;
   // Hands the change to Flash: null once it's on its way, else why nothing was sent, or what would go
-  // now when it isn't what was listed (shown).
-  onFix?: (fix: SiteFix) => Promise<FixPlan | null>;
+  // now when it isn't what was listed (shown). signal: aborted once the panel that sent it closed or
+  // another opened, and then Flash sends nothing (and the answer is ignored).
+  onFix?: (fix: SiteFix, signal?: AbortSignal) => Promise<FixPlan | null>;
   // Puts text in the message box of the chat that built the site, without sending it: null once it's
   // there, else why it isn't (that chat's newest app is another site), and what that chat says if opened.
   onDraft?: (draft: { projectId: string; slug: string; text: string }) => Promise<{ why: string; chat?: string } | null>;
@@ -225,6 +226,9 @@ export function SeoView({
   // Why Send sent nothing, said in the panel.
   const [note, setNote] = useState("");
   const [sending, setSending] = useState(false);
+  // The Send on its way to Flash, if any: dropped when its panel closes, another opens, or this check goes
+  // (see dropSend), so Flash sends nothing for it and its answer changes nothing here.
+  const going = useRef<AbortController | null>(null);
   // Why the owner's details weren't put in the chat, and what that chat says when it's opened from here
   // (only when it can be).
   const [draftNote, setDraftNote] = useState<{ text: string; chat?: string } | null>(null);
@@ -247,6 +251,10 @@ export function SeoView({
   useEffect(() => {
     if (askingKey) panelRef.current?.focus();
   }, [askingKey]);
+
+  // This check is gone (My websites & apps closed, another app or version shown): a Send it started goes
+  // no further either.
+  useEffect(() => () => going.current?.abort(), []);
 
   useEffect(() => {
     const want = refocus.current;
@@ -311,13 +319,23 @@ export function SeoView({
     }));
   }
 
+  /** Drops the Send on its way, if any: Flash sends nothing for it (see fixSite), and its answer is ignored. */
+  function dropSend() {
+    going.current?.abort();
+    going.current = null;
+    setSending(false);
+  }
+
   /** Closes the panel, with keyboard and screen reader focus back on the button that opened it. */
   function close() {
+    dropSend();
     setAsking(null);
     refocus.current = "opener";
   }
 
   function ask(key: string, ids: CheckId[], from: HTMLElement) {
+    // The panel open before is replaced: a Send it started (Flash still looking at the price) goes no further.
+    dropSend();
     opener.current = from;
     // Flash gets every point asked for: it leaves out what the chat's newest version already fixes and
     // sends what fits of the rest, so Fix all again after a change sends the points that didn't fit.
@@ -338,19 +356,28 @@ export function SeoView({
     if (!asking || !plan || !("sent" in plan) || !project?.id || !onFix || sending) return;
     const all = asking.key === "all";
     // Fix all goes once its price is worked out (or couldn't be), never at a price it didn't say.
-    if (all && plan.hold === undefined) return;
+    if (!canSend(all, plan.hold)) return;
+    const run = new AbortController();
+    going.current = run;
     setSending(true);
     setNote("");
-    const answer = await onFix({
-      projectId: project.id,
-      slug,
-      title: data.title,
-      ids: asking.ids,
-      ctx: data.ctx,
-      at: Date.now(),
-      shown: plan.sent,
-      ...fixAllTerms(all, plan.hold),
-    });
+    const answer = await onFix(
+      {
+        projectId: project.id,
+        slug,
+        title: data.title,
+        ids: asking.ids,
+        ctx: data.ctx,
+        at: Date.now(),
+        shown: plan.sent,
+        ...fixAllTerms(all, plan.hold),
+      },
+      run.signal,
+    );
+    // Cancelled, or another change asked for, while Flash looked (Fix all's price is looked at again): it
+    // sent nothing, and what it found is for a panel that's gone.
+    if (run.signal.aborted) return;
+    going.current = null;
     setSending(false);
     if (!answer) return;
     refocus.current = "panel";
@@ -459,7 +486,7 @@ export function SeoView({
           {!project?.error && (!asking.plan || points) && (
             <button
               onClick={send}
-              disabled={!points || price?.kind === "pending" || !project?.id || sending}
+              disabled={!points || !canSend(key === "all", points.hold) || !project?.id || sending}
               className="rounded-md bg-brand px-3 py-1.5 font-medium text-on-brand hover:brightness-110 disabled:opacity-50"
             >
               {t("Send to Flash")}

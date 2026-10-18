@@ -134,6 +134,15 @@ export function fixPrice(all: boolean, hold: FixHold | null | undefined, typical
 }
 
 /**
+ * Whether a change's panel can send it now (see SeoView's Send and its button): Fix all only once its price
+ * is worked out, or couldn't be (hold null), so it never goes at a price the panel didn't say, nor with no
+ * cap while one is still being worked out. Fix it and Add it at once.
+ */
+export function canSend(all: boolean, hold: FixHold | null | undefined): boolean {
+  return !all || hold !== undefined;
+}
+
+/**
  * What Send adds to a change the panel sends (see SiteFix): for Fix all, that it is Fix all, and the most
  * the panel said it can be charged (cap) when it said one. Nothing for Fix it and Add it.
  */

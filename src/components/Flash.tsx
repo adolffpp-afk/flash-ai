@@ -1033,9 +1033,11 @@ export function Flash({
    * (shown: a reply changed that chat's newest version since), or Fix all's change would now hold more
    * than its panel said (cap, see pricedAgain), nothing is sent and the answer is what would go now and
    * its price, for the panel to list. Otherwise My websites & apps closes, the chat opens, and exactly
-   * what was listed goes there (sendFix): the answer is null.
+   * what was listed goes there (sendFix): the answer is null. signal: the panel's Send, aborted once that
+   * panel closed or another opened while this looked (Fix all's price is asked for again): then nothing
+   * is sent, and the answer (null) is for a panel that's gone.
    */
-  async function fixSite(fix: SiteFix): Promise<FixPlan | null> {
+  async function fixSite(fix: SiteFix, signal?: AbortSignal): Promise<FixPlan | null> {
     const busyNote = { why: t(BUSY_FIX), busy: true as const };
     if (busy || runningRef.current) return busyNote;
     const chat = await chatToFix(fix.projectId);
@@ -1053,6 +1055,8 @@ export function Flash({
     const dearer = await pricedAgain(fix.cap, plan, () => quote(fix, chat.messages, plan.message));
     if (dearer) return dearer;
     if (runningRef.current) return busyNote;
+    // Cancelled, or another change asked for, while this looked: the owner no longer wants it sent.
+    if (signal?.aborted) return null;
     closeApps();
     showChat(fix.projectId);
     // Only what was listed: sendFix asks for what the chat's newest version still needs of it, never more,
