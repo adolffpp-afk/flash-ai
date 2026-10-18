@@ -30,11 +30,19 @@ export async function websitesSummary(userId: string, base: string, at = Date.no
     [week, month, userId],
   );
   if (!sites.length) return "The user hasn't published any website or app yet.";
-  const sales = await all<{ slug: string; currency: string; n: number; total: number }>(
-    `SELECT o.site_slug AS slug, o.currency, COUNT(*) AS n, SUM(o.amount) AS total FROM site_orders o
-     JOIN sites s ON s.slug = o.site_slug WHERE s.user_id = ? AND o.created_at >= ? GROUP BY o.site_slug, o.currency`,
+  // What buyers paid, as the Visitors view counts it, and how much of it went back since (see connectEvent in shop.ts).
+  const sales = await all<{ slug: string; currency: string; n: number; total: number; refunded: number; disputed: number }>(
+    `SELECT o.site_slug AS slug, o.currency, COUNT(*) AS n, SUM(o.amount) AS total, SUM(o.refunded_amount) AS refunded, SUM(o.disputed_at > 0) AS disputed
+     FROM site_orders o JOIN sites s ON s.slug = o.site_slug WHERE s.user_id = ? AND o.created_at >= ? GROUP BY o.site_slug, o.currency`,
     [userId, at - 7 * DAY],
   );
+  const sale = (x: (typeof sales)[number]) => {
+    const since = [
+      Number(x.refunded) > 0 && `${formatMoney(Number(x.refunded), x.currency)} of it refunded since`,
+      Number(x.disputed) > 0 && `${Number(x.disputed)} disputed`,
+    ].filter(Boolean);
+    return `${Number(x.n)} orders, ${formatMoney(Number(x.total), x.currency)}${since.length ? ` (${since.join(", ")})` : ""}`;
+  };
   const lines = sites
     .map((s) => {
       const sold = sales.filter((x) => x.slug === s.slug);
@@ -42,7 +50,7 @@ export async function websitesSummary(userId: string, base: string, at = Date.no
         `"${s.title}" at ${base}/p/${s.slug} (updated ${date(Number(s.updated_at))}): ` +
         `${Number(s.week)} page views in the last 7 days, ${Number(s.month)} in 30 days; ` +
         `${Number(s.unread)} unread form messages; ${Number(s.open)} orders not marked done` +
-        (sold.length ? `; sold in the last 7 days: ${sold.map((x) => `${Number(x.n)} orders, ${formatMoney(Number(x.total), x.currency)}`).join(" and ")}` : "") +
+        (sold.length ? `; sold in the last 7 days: ${sold.map(sale).join(" and ")}` : "") +
         "."
       );
     })

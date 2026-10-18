@@ -16,6 +16,7 @@ console.warn = () => {};
 const { run, one } = await import("../src/lib/server/db.ts");
 const shop = await import("../src/lib/server/shop.ts");
 const { funnelStats } = await import("../src/lib/server/funnel.ts");
+const { contactDetail, exportContact } = await import("../src/lib/server/contacts.ts");
 const { forgetServerMemory, pruneDaily } = await import("../src/lib/server/visits.ts");
 const { unpublishSite } = await import("../src/lib/server/sites.ts");
 const { createSession } = await import("../src/lib/server/auth.ts");
@@ -380,17 +381,77 @@ test("refunds, in part and in full, and disputes are kept with the order, and th
   await send(event("charge.dispute.created", { id: "dp_both", charge: "ch_both", payment_intent: "pi_both" }));
   const both = await (await ordersRoute.GET(new Request(`${ORIGIN}/api/sites/cake-1/orders`, { headers: { cookie } }), { params: Promise.resolve({ slug: "cake-1" }) } as never)).text();
   assert.match(both, /,Partly refunded: CA\$10\.00; Disputed,cs_both\r\n/);
+
+  // So do the buyer's contact card and the export of everything kept about them.
+  const contactOf = async (email: string) => (await one<{ id: string }>("SELECT id FROM site_contacts WHERE site_slug = 'cake-1' AND email = ?", [email]))!.id;
+  const card = (await contactDetail("cake-1", await contactOf("cs_both@example.com"), ORIGIN))!;
+  assert.deepEqual(
+    card.orders.map((o) => [o.id, o.refund, o.refunded, o.disputed]),
+    [["cs_both", "part", "CA$10.00", true]],
+  );
+  assert.deepEqual(
+    (await contactDetail("cake-1", await contactOf("cs_ref@example.com"), ORIGIN))!.orders.map((o) => [o.refund, o.refunded, o.disputed]),
+    [["full", "CA$25.00", false]],
+  );
+  assert.deepEqual(
+    (await contactDetail("cake-1", await contactOf("cs_one@example.com"), ORIGIN))!.orders.map((o) => [o.refund, o.refunded, o.disputed]),
+    [["", "", false]],
+  );
+  const exported = (await exportContact("cake-1", await contactOf("cs_both@example.com"), ORIGIN))!;
+  assert.deepEqual(
+    (exported.orders as { refund: string; refunded: string; disputed: boolean }[]).map((o) => [o.refund, o.refunded, o.disputed]),
+    [["part", "CA$10.00", true]],
+  );
 });
 
-test("a payment refunded before its order was saved is saved then, refunded, without a new-order email", async () => {
+test("a payment refunded or disputed before its order was saved is saved then, already refunded or disputed, without a new-order email", async () => {
   emails.length = 0;
-  accounts.acct_A.push(paid("cs_early", "pi_early"));
-  assert.equal((await send(event("charge.refunded", { id: "ch_early", amount: 2500, amount_refunded: 2500, refunded: true, payment_intent: "pi_early" }))).outcome, "refunded");
-  assert.deepEqual({ ...(await order("cs_early")), refunded_at: 0 }, { site_slug: "cake-1", quantity: 2, refunded_amount: 2500, refunded_at: 0, disputed_at: 0 });
-  assert.equal(emails.length, 0);
+  // What each new order held the moment it was inserted, before anything updated it: a new order is
+  // where order.paid starts (PR 3a), so one a refund or a dispute saves must never look like a plain sale.
+  await run("CREATE TABLE inserted (session_id TEXT, refunded_amount INTEGER, refunded_at INTEGER, disputed_at INTEGER)");
+  await run(
+    "CREATE TRIGGER orders_inserted AFTER INSERT ON site_orders BEGIN INSERT INTO inserted VALUES (NEW.session_id, NEW.refunded_amount, NEW.refunded_at, NEW.disputed_at); END",
+  );
+  const inserted = (id: string) => one<{ refunded_amount: number; refunded_at: number; disputed_at: number }>("SELECT refunded_amount, refunded_at, disputed_at FROM inserted WHERE session_id = ?", [id]);
+  try {
+    accounts.acct_A.push(paid("cs_early", "pi_early"));
+    const refund = event("charge.refunded", { id: "ch_early", amount: 2500, amount_refunded: 2500, refunded: true, payment_intent: "pi_early" });
+    assert.equal((await send(refund)).outcome, "refunded");
+    const refunded = { refunded_amount: 2500, refunded_at: refund.created! * 1000, disputed_at: 0 };
+    assert.deepEqual({ ...(await order("cs_early")) }, { site_slug: "cake-1", quantity: 2, ...refunded });
+    assert.deepEqual({ ...(await inserted("cs_early")) }, refunded, "saved refunded, in the same INSERT");
+    // A refund of part of it, and more than the order (capped), the same way.
+    accounts.acct_A.push(paid("cs_early_part", "pi_early_part"), paid("cs_early_over", "pi_early_over"));
+    const part = event("charge.refunded", { id: "ch_early_part", amount: 2500, amount_refunded: 700, payment_intent: "pi_early_part" });
+    await send(part);
+    assert.deepEqual({ ...(await inserted("cs_early_part")) }, { refunded_amount: 700, refunded_at: part.created! * 1000, disputed_at: 0 });
+    await send(event("charge.refunded", { id: "ch_early_over", amount: 9000, amount_refunded: 9000, payment_intent: "pi_early_over" }));
+    assert.equal((await inserted("cs_early_over"))?.refunded_amount, 2500);
+    // A dispute first: saved disputed.
+    accounts.acct_A.push(paid("cs_early_disp", "pi_early_disp"));
+    const dispute = event("charge.dispute.created", { id: "dp_early", object: "dispute", charge: "ch_early_disp", payment_intent: "pi_early_disp" });
+    assert.equal((await send(dispute)).outcome, "disputed");
+    const disputed = { refunded_amount: 0, refunded_at: 0, disputed_at: dispute.created! * 1000 };
+    assert.deepEqual({ ...(await inserted("cs_early_disp")) }, disputed, "saved disputed, in the same INSERT");
+    assert.deepEqual({ ...(await order("cs_early_disp")) }, { site_slug: "cake-1", quantity: 2, ...disputed });
+    // Still a sale that was made: its buyer is a contact, and it counts as paid (with its refund on its own line).
+    assert.equal(await n("SELECT COUNT(*) AS n FROM site_contacts WHERE site_slug = 'cake-1' AND email IN ('cs_early@example.com', 'cs_early_disp@example.com')"), 2);
+    assert.equal(emails.length, 0);
+    // A paid order saved the usual way is inserted with nothing refunded or disputed.
+    accounts.acct_A.push(paid("cs_plain", "pi_plain"));
+    await shop.finishCheckout("cake-1", "cs_plain", null, ORIGIN);
+    assert.deepEqual({ ...(await inserted("cs_plain")) }, { refunded_amount: 0, refunded_at: 0, disputed_at: 0 });
+    assert.equal(emails.length, 1);
+    emails.length = 0;
+  } finally {
+    await run("DROP TRIGGER orders_inserted");
+    await run("DROP TABLE inserted");
+  }
   // The checkout event coming after is the same order, and still no email.
   assert.equal((await send(event("checkout.session.completed", sent(paid("cs_early", "pi_early"))))).outcome, "unchanged");
+  assert.equal((await send(event("checkout.session.async_payment_succeeded", sent(paid("cs_early_disp", "pi_early_disp"))))).outcome, "unchanged");
   assert.equal(emails.length, 0);
+  assert.equal((await order("cs_early"))?.refunded_amount, 2500);
   // A refund of a sale Flash didn't make (no session for it) changes nothing.
   assert.equal((await send(event("charge.refunded", { id: "ch_x", amount: 900, amount_refunded: 900, payment_intent: "pi_not_flash" }))).outcome, "not-ours");
   assert.equal((await send(event("charge.refunded", { id: "ch_y", amount: 900, amount_refunded: 900 }))).outcome, "not-ours");

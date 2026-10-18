@@ -1117,7 +1117,8 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
                     <h3 className="text-sm font-medium text-zinc-200">
                       {t("Orders")}
                       {shop.orders.some((o) => !o.done) && (
-                        <span className="ms-2 text-xs font-normal text-gold-soft">
+                        // Its own box, so the heading's last letter in a joining script (Arabic) isn't joined to the count.
+                        <span className="ms-2 inline-block text-xs font-normal text-gold-soft">
                           {t("{count} to handle", { count: shop.orders.filter((o) => !o.done).length })}
                         </span>
                       )}

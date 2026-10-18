@@ -9,7 +9,7 @@ import { EMAILS, sendEmail } from "./email.ts";
 import { noteContact } from "./contacts.ts";
 import { saleBySource } from "./funnel.ts";
 import { cleanContact } from "../contacts.ts";
-import { MAX_QUANTITY, MIN_PRICE, SELLER_COUNTRIES, cleanItemName, formatMoney, safeReturn, saleFee, toMinor } from "../shop.ts";
+import { MAX_QUANTITY, MIN_PRICE, SELLER_COUNTRIES, cleanItemName, formatMoney, orderRefund, safeReturn, saleFee, toMinor, type OrderRefund } from "../shop.ts";
 import { english, type Translate } from "../i18n.ts";
 
 /*
@@ -290,12 +290,17 @@ function addressText(s: Session): string {
     .join(", ");
 }
 
+/** What a refund or a dispute said of an order it is the first to save (see chargeEvent). */
+type Since = { at: number; refunded?: number; disputed?: boolean };
+
 /**
  * Saves a paid order once, with its buyer on the app's contact list; true when it is new. The return
  * page (finishCheckout), the owner's sync (syncOrders) and Stripe's webhook (connectEvent) all save
- * through here, so a sale is one order, new once, whichever of them sees it first.
+ * through here, so a sale is one order, new once, whichever of them sees it first. An order a refund
+ * or a dispute is the first to save is saved already refunded or disputed (since), in the same
+ * INSERT, so nothing that reads a new order ever takes it for a plain sale.
  */
-async function recordOrder(slug: string, s: Session): Promise<boolean> {
+async function recordOrder(slug: string, s: Session, since?: Since): Promise<boolean> {
   // A test-mode payment is never an order under a live key, nor a live one under a test key.
   if (s.payment_status !== "paid" || s.metadata?.flash_site !== slug || s.livemode !== liveKey()) return false;
   const item = s.metadata.flash_item ?? "";
@@ -306,9 +311,11 @@ async function recordOrder(slug: string, s: Session): Promise<boolean> {
   // the case of A to Z (all the database's lower() changes), is saved in the contacts' spelling: the
   // buyer's contact then finds the order, and deleting them clears their address from it.
   const email = buyer?.email && buyer.email !== given.replace(/[A-Z]+/g, (s) => s.toLowerCase()) ? buyer.email : given;
+  // A refund is never more than the order (as in chargeEvent's UPDATE).
+  const refunded = Math.min(since?.refunded ?? 0, s.amount_total ?? 0);
   const res = await run(
-    `INSERT INTO site_orders (session_id, site_slug, item, quantity, amount, currency, email, name, address, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(session_id) DO NOTHING`,
+    `INSERT INTO site_orders (session_id, site_slug, item, quantity, amount, currency, email, name, address, created_at, refunded_amount, refunded_at, disputed_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(session_id) DO NOTHING`,
     [
       s.id,
       slug,
@@ -320,6 +327,9 @@ async function recordOrder(slug: string, s: Session): Promise<boolean> {
       s.customer_details?.name ?? "",
       addressText(s),
       created,
+      refunded,
+      since && refunded > 0 ? since.at : 0,
+      since?.disputed ? since.at : 0,
     ],
   );
   if (!res.rowsAffected) return false;
@@ -386,12 +396,7 @@ export type Order = {
   address: string;
   createdAt: number;
   done: boolean;
-  /** Refunded in full, in part (with how much went back, in refunded), or not ('') as far as Stripe's webhook said. */
-  refund: "" | "part" | "full";
-  refunded: string;
-  /** The buyer asked their bank to take the payment back. */
-  disputed: boolean;
-};
+} & OrderRefund;
 
 /**
  * Saves the site's recent paid checkouts from Stripe, with their buyers on its contact list, so
@@ -430,9 +435,8 @@ export async function listOrders(userId: string, slug: string): Promise<Order[]>
     refunded_amount: number;
     disputed_at: number;
   }>("SELECT * FROM site_orders WHERE site_slug = ? ORDER BY created_at DESC LIMIT 500", [slug]);
-  return rows.map((r): Order => {
-    const refunded = Number(r.refunded_amount);
-    return {
+  return rows.map(
+    (r): Order => ({
       id: r.session_id,
       item: r.item,
       quantity: Number(r.quantity),
@@ -442,11 +446,9 @@ export async function listOrders(userId: string, slug: string): Promise<Order[]>
       address: r.address,
       createdAt: Number(r.created_at),
       done: Boolean(Number(r.done_at)),
-      refund: refunded <= 0 ? "" : refunded >= Number(r.amount) ? "full" : "part",
-      refunded: refunded > 0 ? formatMoney(refunded, r.currency) : "",
-      disputed: Number(r.disputed_at) > 0,
-    };
-  });
+      ...orderRefund(r),
+    }),
+  );
 }
 
 /** Marks an order as handled (sent or picked up), or not. False if the site has no such order. */
@@ -527,12 +529,13 @@ async function chargeEvent(type: "charge.refunded" | "charge.dispute.created", a
   const session = found.data?.[0];
   const mine = await shopFor(account, session);
   if (!session || !mine) return "not-ours";
+  // How much of the charge has gone back so far, with each refund. One sent late never lowers it.
+  const refunded = type === "charge.refunded" ? Math.max(0, Math.floor(Number(object.amount_refunded) || 0)) : 0;
   // Refunded or disputed before its order was saved (the buyer closed the tab, an event was lost):
-  // saved now, the same order the other ways save, without a new-order email.
-  await recordOrder(mine.slug, session);
+  // saved now, the same order the other ways save, already refunded or disputed, without a
+  // new-order email (see recordOrder).
+  await recordOrder(mine.slug, session, type === "charge.refunded" ? { at, refunded } : { at, disputed: true });
   if (type === "charge.refunded") {
-    // How much of the charge has gone back so far, with each refund. One sent late never lowers it.
-    const refunded = Math.max(0, Math.floor(Number(object.amount_refunded) || 0));
     await run(
       "UPDATE site_orders SET refunded_amount = MIN(?, amount), refunded_at = ? WHERE session_id = ? AND site_slug = ? AND refunded_amount < MIN(?, amount)",
       [refunded, at, session.id, mine.slug, refunded],
