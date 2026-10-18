@@ -7,6 +7,7 @@
  * chat ignores a chat's assistant, so nobody can be charged for one before its price line shows.
  */
 import { isLevel, type Level } from "./levels.ts";
+import { CUT_NOTE } from "./office.ts";
 import { BRAND_NAME, LEGAL_NAME, PRODUCT_NAME } from "./product.ts";
 
 export const ASSISTANTS_ON = false;
@@ -24,6 +25,9 @@ export const MAX_FILE_CHARS = 1_000_000;
 export const MAX_ASSISTANT_CHARS = 2_000_000;
 // One file's text as uploaded, in UTF-8 bytes: room for 1,000,000 characters of most languages.
 export const MAX_UPLOAD_BYTES = 3_000_000;
+// What the file readers (pdfText, officeText) keep of a file for an assistant: MAX_FILE_CHARS with
+// room for the note they add after a cut.
+export const READ_LIMIT = MAX_FILE_CHARS - CUT_NOTE.length;
 
 // What one message reads from an assistant's files: up to this many tokens on every level, in at
 // most this many passages, from chunks of about this many characters.
