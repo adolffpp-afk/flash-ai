@@ -19,7 +19,7 @@ after(async () => {
   await mock.close();
   await kit.close();
 });
-const { account, assistant, file, share, chatWith, chat, claudeSent, run, stand, PRICES } = kit;
+const { account, assistant, file, share, chatWith, chat, claudeSent, putProject, run, stand, PRICES } = kit;
 const { addConnection } = await import("../src/lib/server/connections.ts");
 const { NO_FETCH_LINE } = await import("../src/lib/engines/claude.ts");
 const { VISITOR_REPLY_TOKENS } = await import("../src/lib/assistant-cost.ts");
@@ -108,4 +108,49 @@ test("Research in someone else's assistant searches without opening pages, and i
   }
   // A build doesn't answer as it, and isn't capped.
   assert.ok((await ask(s.visitor, s.theirs, { assistantVersion: 3, engine: "app", connectors: [] })).max_tokens > VISITOR_REPLY_TOKENS, "app");
+});
+
+test("after Continue without it, a chat that had someone else's assistant still keeps the visitor's own things out; the owner's own chat gets them back", async () => {
+  const s = await setUp();
+  await ask(s.visitor, s.theirs, { assistantVersion: 3 });
+  // Its link turned off, then "Continue without it". The chat holds replies its maker's instructions shaped.
+  await share(s.id, `safe2${s.id.slice(0, 6)}`);
+  assert.equal((await chat(s.visitor, s.theirs, "Still there?", { assistantVersion: 3 })).json.code, "assistant_gone");
+  assert.equal((await putProject(s.visitor, s.theirs, { assistantId: "" })).status, 200);
+  const after = await ask(s.visitor, s.theirs, { preferences: "My PIN is 4321." });
+  assert.ok(!after.system.includes("answering as"), "without the assistant");
+  assert.deepEqual(connectorTools(), [], "no connected account");
+  assert.deepEqual(mock.calls, []);
+  for (const secret of ["4321", "bees in Utrecht", "Sam's Honey Co", "lin_api"]) assert.ok(!JSON.stringify(after).includes(secret), secret);
+  assert.ok(after.system.includes('Call the user "Sam"'), "what they're called stays");
+  const research = await ask(s.visitor, s.theirs, { engine: "search", connectors: [] });
+  assert.ok(!(research.tools ?? []).some((t) => t.name === "web_fetch"), "no page reader");
+  assert.ok(research.system.includes(NO_FETCH_LINE));
+  const counted = stand.state.seen.filter((x) => x.path.endsWith("/count_tokens") && "system" in x.body).map((x) => x.body.system);
+  assert.deepEqual(counted, [research.system], "the hold counts it as it's sent");
+  // Continued while it's still shared, or once it's deleted: the same.
+  const shared = await chatWith(s.visitor, s.id);
+  await share(s.id, `safe3${s.id.slice(0, 6)}`, s.visitor);
+  await ask(s.visitor, shared, { assistantVersion: 3 });
+  assert.equal((await putProject(s.visitor, shared, { assistantId: "" })).status, 200);
+  assert.ok(!JSON.stringify(await ask(s.visitor, shared, { preferences: "My PIN is 4321." })).includes("4321"));
+  assert.deepEqual(connectorTools(), []);
+  const deleted = await chatWith(s.visitor, s.id);
+  await run("DELETE FROM assistants WHERE id = ?", [s.id]);
+  assert.equal((await putProject(s.visitor, deleted, { assistantId: "" })).status, 200);
+  assert.ok(!JSON.stringify(await ask(s.visitor, deleted, { preferences: "My PIN is 4321." })).includes("4321"));
+  assert.deepEqual(connectorTools(), []);
+
+  // The owner's own assistant, taken off their chat with it: their own things, as in any chat of theirs.
+  const owner = await withOwnThings("I'm the owner and bake on Sundays.", "Robin", "Golden Crumb Ltd");
+  const mine = await assistant(owner);
+  const own = await chatWith(owner, mine);
+  assert.equal((await putProject(owner, own, { assistantId: "" })).status, 200);
+  const back = await ask(owner, own);
+  assert.ok(connectorTools().length > 0, "the owner's connected account");
+  for (const theirs of ["bake on Sundays", "Golden Crumb Ltd", 'Call the user "Robin"']) assert.ok(back.system.includes(theirs), theirs);
+  assert.ok((await ask(owner, own, { engine: "search", connectors: [] })).tools!.some((t) => t.name === "web_fetch"));
+  // And the visitor's own chat, as before.
+  await ask(s.visitor, s.visitor.projectId);
+  assert.ok(connectorTools().length > 0);
 });

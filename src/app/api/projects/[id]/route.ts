@@ -81,8 +81,15 @@ export async function PUT(request: Request, ctx: RouteContext<"/api/projects/[id
     sets.push("instructions = ?");
     args.push(cleanInstructions(body.instructions));
   }
-  // Nor does taking its assistant off.
-  if (dropAssistant) sets.push("assistant_id = ''");
+  // Nor does taking its assistant off. One that isn't the user's own, or was deleted (whose it was
+  // can't be told), is remembered: the replies it wrote stay in the chat, so the user's own things
+  // stay out of it as they did (assistant_theirs, see the chat route). Both read the row as it was.
+  if (dropAssistant) {
+    sets.push(
+      "assistant_theirs = CASE WHEN assistant_theirs = 1 OR (assistant_id != '' AND NOT EXISTS (SELECT 1 FROM assistants a WHERE a.id = projects.assistant_id AND a.user_id = projects.user_id)) THEN 1 ELSE 0 END",
+      "assistant_id = ''",
+    );
+  }
   // Messages (with the name) were saved above.
   if (!Array.isArray(body.messages)) {
     if (body.name !== undefined || !sets.length) {

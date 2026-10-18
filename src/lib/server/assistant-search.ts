@@ -302,7 +302,8 @@ export type Passage = { fileId: string; file: string; label: string; title: stri
 
 export type Reading = {
   // whole: every file, as the files all fit; search: the best matches; start: the start of each
-  // file (readStart); none: nothing, as no passage matched (nomatch) or there are no files.
+  // file (readStart); none: nothing, as no chunk matched (nomatch), there are no files, or none fit
+  // a free model's room (maxChars).
   mode: "whole" | "search" | "start" | "none";
   passages: Passage[];
   nomatch: boolean;
@@ -516,7 +517,8 @@ export async function searchChunks(assistantId: string, terms: Term[], mode?: Se
  *    their titles, counted by their bytes (a token is never shorter than a byte);
  *  - otherwise the chunks that best match the message (and, when it's short, the person's message
  *    before it), neighbours merged, at most MAX_PASSAGES passages and PASSAGE_TOKENS tokens;
- *  - nothing when no chunk matches (nomatch), or the start of each file with readStart.
+ *  - nothing when no chunk matches (nomatch), or the start of each file with readStart;
+ *  - nothing, without nomatch, when chunks match but none fits maxChars.
  * Only this assistant's chunks can come back. Nothing the person types can add text: the options
  * only choose which of its chunks are read.
  */
@@ -564,7 +566,8 @@ export async function passagesFor(a: { id: string }, message: string, earlier = 
   const ranked = await searchChunks(a.id, queryTerms(message, earlier), undefined, files.reduce((sum, f) => sum + Number(f.chunks), 0));
   if (!ranked.length) return { mode: "none", passages: [], nomatch: true };
   const passages = await choose(ranked, files, o);
-  return { mode: passages.length ? "search" : "none", passages, nomatch: !passages.length };
+  // Chunks matched: none read is a turn with no room for them (maxChars), never "nothing matched".
+  return { mode: passages.length ? "search" : "none", passages, nomatch: false };
 }
 
 // Below this much assistant text, the database's fixed pages would make any measure meaningless.

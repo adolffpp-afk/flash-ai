@@ -183,3 +183,35 @@ test("someone else's assistant its maker lets answer free writes at most a visit
   assert.ok(content.endsWith(words), "the words are whole");
   assert.ok(content.length <= 24_000, "within the turn's room");
 });
+
+test("a message that leaves the free models no room for passages reads none, and isn't told its files didn't match", async () => {
+  const owner = await account(0);
+  const id = await assistant(owner, { instructions: INSTRUCTIONS });
+  await file(id, "Prices.txt", "A sourdough loaf is 4 euros. Rye is baked on Fridays.");
+  const own = await chatWith(owner, id);
+  // With room, the file is read, and the read line names it.
+  const short = await chat(owner, own, "How much is sourdough?", { assistantVersion: 3 });
+  assert.equal(short.status, 200, JSON.stringify(short.json));
+  assert.deepEqual(short.events.find((e) => e.type === "read"), { type: "read", items: [{ label: "Prices.txt" }] });
+  assert.ok(freeSent().at(-1)!.messages.at(-1)!.content.includes("A sourdough loaf is 4 euros."));
+  // A long message and a long file of the person's own fill the turn: the file still matches, but
+  // nothing of it fits, so nothing is read and no read line comes (not "nothing matched").
+  stand.reset();
+  const words = `How much is sourdough? ${"Tell me about every loaf you bake. ".repeat(114)}`.trim();
+  // The file and the words come to just under the turn's 24,000 characters.
+  const turn = { role: "user", content: words, attachment: attached("notes.txt", "n".repeat(23_900 - words.length - 'File "notes.txt":\n'.length - 2)) };
+  assert.ok(freePassageRoom(turn as ChatTurn) < 60, "no room for a passage");
+  const full = await chat(owner, own, words, { assistantVersion: 3, messages: [turn] });
+  assert.equal(full.status, 200, JSON.stringify(full.json));
+  assert.equal(full.events.find((e) => e.type === "route")?.free, true);
+  assert.equal(full.events.find((e) => e.type === "read"), undefined, "no read line");
+  const last = freeSent().at(-1)!.messages.at(-1)!.content;
+  assert.ok(!last.includes(PASSAGE_HEADING) && !last.includes("sourdough loaf is"), "no passages");
+  assert.ok(last.endsWith(words), "the words are whole");
+  // A word none of a searched assistant's files has is still told so.
+  stand.reset();
+  const b = await outOfCredits();
+  const none = await chat(b.owner, b.own, "Do you sell zebrafinch biscuits?", { assistantVersion: 3 });
+  assert.equal(none.events.find((e) => e.type === "route")?.free, true);
+  assert.deepEqual(none.events.find((e) => e.type === "read"), { type: "read", items: [], nomatch: true });
+});

@@ -365,7 +365,8 @@ type Prompting = {
   build: string;
   where?: Where;
   // In a chat with an assistant: its section, for Claude and the free models (see assistant-prompt.ts),
-  // and whether Research leaves out its page reader (someone else's assistant).
+  // and whether Research leaves out its page reader (someone else's assistant, now or before
+  // "Continue without it").
   assistant?: string;
   freeAssistant?: string;
   noFetch?: boolean;
@@ -390,12 +391,14 @@ function freeSystem(prompting: Prompting): SystemOptions {
 /**
  * What a Claude chat engine's system prompt adds to its mode: the tools line and the context note,
  * and in a chat with an assistant, its section, with Research's page reader left out in someone
- * else's. Only the engines that answer as it send this prompt (a build has its own, see systemFor).
- * The engine and systemFor both use it, so the hold counts what's sent.
+ * else's (and in a chat that had someone else's). Only the engines that answer as it send this
+ * prompt (a build has its own, see systemFor). The engine and systemFor both use it, so the hold
+ * counts what's sent.
  */
 function systemOptions(engine: Engine, prompting: Prompting): SystemOptions {
-  if (!prompting.assistant) return prompting.system;
-  return { ...prompting.system, assistant: prompting.assistant, ...(engine === "search" && prompting.noFetch && { noFetch: true }) };
+  const noFetch = engine === "search" && prompting.noFetch === true;
+  if (!prompting.assistant && !noFetch) return prompting.system;
+  return { ...prompting.system, ...(prompting.assistant && { assistant: prompting.assistant }), ...(noFetch && { noFetch: true }) };
 }
 
 function promptingFor(where: Where, now: Date, picked: boolean): Prompting {
@@ -1165,13 +1168,14 @@ export async function POST(request: Request) {
   }
 
   // Its size in bytes, as it's sent when the chat is opened or saved, and with assistants on, the
-  // assistant it was started with and its name. While they're off, it's read as it always was.
-  const project: { instructions: string; size: number; assistant_id?: string; name?: string } | null =
+  // assistant it was started with, its name, and whether it had someone else's (assistant_theirs).
+  // While they're off, it's read as it always was.
+  const project: { instructions: string; size: number; assistant_id?: string; name?: string; assistant_theirs?: number } | null =
     typeof body.projectId !== "string"
       ? null
       : ASSISTANTS_ON
-        ? await one<{ instructions: string; size: number; assistant_id: string; name: string }>(
-            "SELECT instructions, length(CAST(messages AS BLOB)) AS size, assistant_id, name FROM projects WHERE id = ? AND user_id = ?",
+        ? await one<{ instructions: string; size: number; assistant_id: string; name: string; assistant_theirs: number }>(
+            "SELECT instructions, length(CAST(messages AS BLOB)) AS size, assistant_id, name, assistant_theirs FROM projects WHERE id = ? AND user_id = ?",
             [body.projectId, user.id],
           )
         : await one<{ instructions: string; size: number }>("SELECT instructions, length(CAST(messages AS BLOB)) AS size FROM projects WHERE id = ? AND user_id = ?", [
@@ -1211,14 +1215,18 @@ export async function POST(request: Request) {
     }
     chosen = access;
     // Who the model answers as, with its maker's instructions; passages are titled by their files'
-    // names where those may be shown. Someone else's has no page reader in Research.
+    // names where those may be shown.
     const voice = { name, instructions: access.a.instructions, mine: access.mine, named: access.mine || access.a.showFiles };
-    Object.assign(prompting, { assistant: assistantSection(voice), freeAssistant: assistantSection(voice, { free: true }), noFetch: !access.mine });
+    Object.assign(prompting, { assistant: assistantSection(voice), freeAssistant: assistantSection(voice, { free: true }) });
   }
-  // Someone else's assistant: the user's own things stay out of the chat (connected accounts, their
-  // approved results, their brand kit, their memory), so its maker's instructions and files can't
-  // reach them. What they're called, their language, the chat's own instructions and the voice style stay.
-  const theirs = chosen !== null && !chosen.mine;
+  // Someone else's assistant answers: its replies write at most a visitor's reply.
+  const visiting = chosen !== null && !chosen.mine;
+  // Someone else's assistant, now or before "Continue without it" (its replies are still in the chat):
+  // the user's own things stay out of the chat (connected accounts, their approved results, their
+  // brand kit, their memory), and Research has no page reader, so its maker's instructions and files
+  // can't reach them. What they're called, their language, the chat's own instructions and the voice style stay.
+  const theirs = visiting || Number(project?.assistant_theirs) === 1;
+  if (theirs) prompting.noFetch = true;
   // The connected accounts the chat has on: only the user's own, and only while connectors are set up
   // (CONNECTOR_KEYS). This reads the database only; their servers are reached when the reply starts.
   const connectorIds = theirs ? [] : requestedConnections(body.connectors);
@@ -1556,7 +1564,7 @@ export async function POST(request: Request) {
   let { held, needed, budget, claudeRun } = plan;
   // A reply as someone else's assistant writes at most VISITOR_REPLY_TOKENS, so its maker's "always
   // write long answers" can't run up their bills (they can ask it to continue). Held as before.
-  if (theirs && metered && answersAsAssistant(engine) && budget.maxTokens > VISITOR_REPLY_TOKENS) {
+  if (visiting && metered && answersAsAssistant(engine) && budget.maxTokens > VISITOR_REPLY_TOKENS) {
     budget = { ...budget, maxTokens: VISITOR_REPLY_TOKENS, byCredits: false };
   }
   // Fix all's price: the credits this request holds when it's sent as it is now (what it needs at least,
@@ -1865,7 +1873,7 @@ export async function POST(request: Request) {
           language: user.language ?? "",
           // Stop ends the free model's look-ups too: they'd use slots and daily counts every reply shares.
           signal: abort.signal,
-          ...(theirs && { maxTokens: VISITOR_REPLY_TOKENS }),
+          ...(visiting && { maxTokens: VISITOR_REPLY_TOKENS }),
         })
       : run(engine, replyHistory, preferences, store, model, meter, budget, mediaNotes, claudeRun, steppedDown, track, t, prompting, {
           ...(tools.weather && { weather: weatherTool(where, t), onUsed: forecastUsed }),
