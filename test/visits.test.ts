@@ -452,7 +452,8 @@ test("people are counted per owner per day across all their apps, up to their pl
       await recordVisit("cap-a", someone("cap-a", {}, "?utm_source=newsletter"), null, at);
       await recordVisit("cap-b", someone("cap-b"), null, at);
     });
-    assert.deepEqual(sent.filter((sql) => /subscriptions|FROM users/.test(sql)), [], "below the free number, no plan is read");
+    // Their plan is read once, and kept, also below the free number (see countVisit).
+    assert.equal(sent.filter((sql) => /subscriptions/.test(sql)).length, 1, "the plan read once");
     assert.equal(await ownerCount("capper", day), 3, "two apps, one count");
     assert.equal(await mark("cap-a", "capped"), null);
 

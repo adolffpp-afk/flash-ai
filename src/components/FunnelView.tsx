@@ -161,7 +161,8 @@ export function FunnelNotes({ stats, onPlans }: { stats: FunnelStats; onPlans?: 
         {onPlans && (
           <>
             {afterSentence(offer)}
-            <button onClick={onPlans} className="text-primary-soft hover:underline">
+            {/* A label too long for the line (French, Russian...) wraps aligned with the note, not centred. */}
+            <button onClick={onPlans} className="text-start text-primary-soft hover:underline">
               {often ? t("Upgrade to count more visitors") : t("Upgrade plan")}
             </button>
           </>

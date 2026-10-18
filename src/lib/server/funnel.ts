@@ -8,6 +8,7 @@
  * orders go into daily totals per source and currency (site_revenue); while a checkout is open,
  * its buyer's source waits beside it (site_checkouts), with nothing about the buyer.
  */
+import { createHmac } from "node:crypto";
 import { all, db, one, run } from "./db.ts";
 import { domainsForSite } from "./domains.ts";
 import { countOf, overLimit } from "./limits.ts";
@@ -35,31 +36,36 @@ const DAY = 86_400_000;
 const MINUTE = 60_000;
 
 /**
- * The track route's rate limit on the free plan: requests whose app steps count, a minute, from one
- * internet connection to an app (under its code made with the day's key, never its address) and to
- * an app from everyone. Each is read first, so a request turned away writes nothing, and counted only
- * for a request whose steps count: at most two rows for each of the free plan's 100 app steps a day.
- * Paid plans' apps aren't limited: their daily numbers stay as they are, and counting it would add
- * those rows to each of their requests. The daily prune deletes them (see visits.ts).
+ * The track route's rate limit on the free plan: app steps counted a minute from one internet
+ * connection to an app (under a code made with the day's key for that app, never its address, so
+ * nothing ties one connection's use of two apps together) and to an app from everyone. Steps, not
+ * requests, as one request can carry 10 of them. Each is read first, so a request turned away writes
+ * nothing, and counted only for steps that count: at most two rows for each request whose steps
+ * count, so for each of the free plan's 100 app steps a day. Paid plans' apps aren't limited: their daily numbers stay as they are, and counting it would
+ * add those rows to each of their requests. The daily prune deletes them (see visits.ts).
  */
-export const TRACK_PER_CONNECTION = 10;
-export const TRACK_PER_APP = 30;
-export const trackTests = { perConnection: 0, perApp: 0 };
+export const TRACK_STEPS_PER_CONNECTION = 10;
+export const TRACK_STEPS_PER_APP = 30;
 
-/** Whether one more request's app steps may count under the track route's rate limit. Never throws: a limit not read counts nothing. */
-async function trackRoom(slug: string, network: string): Promise<boolean> {
+/**
+ * How many of `wanted` app steps may count under the track route's rate limit, the first of them;
+ * 0 when another request took the room since it was read. Never throws: a limit not read counts none.
+ */
+async function trackRoom(slug: string, network: string, wanted: number): Promise<number> {
+  const code = createHmac("sha256", network).update(`track|${slug}`).digest("hex").slice(0, 24);
   const limits: [string, number][] = [
-    [`track-net:${slug}:${network}`, trackTests.perConnection || TRACK_PER_CONNECTION],
-    [`track-app:${slug}`, trackTests.perApp || TRACK_PER_APP],
+    [`track-net:${slug}:${code}`, TRACK_STEPS_PER_CONNECTION],
+    [`track-app:${slug}`, TRACK_STEPS_PER_APP],
   ];
   try {
     const counts = await Promise.all(limits.map(([key]) => countOf(key)));
-    if (limits.some(([, max], i) => counts[i] >= max)) return false;
-    for (const [key, max] of limits) if (await overLimit(key, max, MINUTE)) return false;
-    return true;
+    const n = Math.min(wanted, ...limits.map(([, max], i) => max - counts[i]));
+    if (n <= 0) return 0;
+    for (const [key, max] of limits) if (await overLimit(key, max, MINUTE, n)) return 0;
+    return n;
   } catch (err) {
     console.error("[flash] track limit not read", err);
-    return false;
+    return 0;
   }
 }
 
@@ -214,11 +220,12 @@ async function count(slug: string, match: Match, list: Step[], at: number, retry
       room--;
     }
     // Past what this server counts from the person's connection today, the rest aren't counted.
-    counting.splice(takeSteps(owner, match.network, counting.length, at));
-    // Past the track route's rate limit, on the free plan, none of them are.
-    if (counting.length && rateLimit && !paid && !(await trackRoom(slug, match.network))) {
-      giveSteps(owner, match.network, counting.length);
-      counting.length = 0;
+    counting.splice(takeSteps(owner, match.network, counting.length, at, paid));
+    // Nor, on the free plan, those past the track route's rate limit this minute.
+    if (counting.length && rateLimit && !paid) {
+      const room = await trackRoom(slug, match.network, counting.length);
+      giveSteps(owner, match.network, counting.length - room);
+      counting.splice(room);
     }
   }
   const taken = counting.length;
@@ -558,14 +565,15 @@ export async function funnelStats(slug: string, days: FunnelRange, at = Date.now
   }
 
   // Today's limits, from the owner's count across their apps. Their plan is read only past the free
-  // numbers, or when counting paused on 2 or more of the last 7 days.
+  // numbers, or when counting paused on 2 or more of the last 7 days, and read now, not as this server
+  // last read it, so a plan bought a moment ago is never offered again.
   let pausedToday: number | null = null;
   let stepsPausedToday: number | null = null;
   let free = false;
   let pausedWeek: FunnelStats["pausedWeek"] = null;
   const [counted, steps, often] = [Number(owner?.people ?? 0), Number(owner?.steps ?? 0), Number(pausedDays?.n ?? 0)];
   if (counted >= freePeople() || steps >= freeSteps() || often >= PAUSED_DAYS_OFFER) {
-    const plan = await peopleCap(site.owner, at);
+    const plan = await peopleCap(site.owner, at, true);
     free = !plan.paid;
     if (counted >= plan.cap) pausedToday = plan.cap;
     if (steps >= plan.steps) stepsPausedToday = plan.steps;

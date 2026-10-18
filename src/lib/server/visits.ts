@@ -31,9 +31,15 @@ export const CHECKOUT_DAYS = 14;
 export { FREE_PEOPLE_PER_DAY, FREE_STEPS_PER_DAY, PLAN_PEOPLE };
 /**
  * New people each server counts per owner per day from one internet connection, so one stranger
- * can't use up the owner's day. An IPv6 connection is its /56, the block a home is usually given.
+ * can't use up the owner's day: a tenth of the free plan's. An IPv6 connection is its /56, the block
+ * a home is usually given.
  */
 export const NETWORK_PEOPLE = 100;
+/**
+ * App steps each server counts per owner per day from one connection on the free plan: a tenth of
+ * its day too (see takeSteps). On a paid plan, as many as its new people.
+ */
+export const NETWORK_STEPS = FREE_STEPS_PER_DAY / 10;
 /** Sources (each with its medium and campaign) per app per day; past them, people count under "(other)". */
 export const MAX_TOUCHES = 30;
 /**
@@ -53,13 +59,6 @@ export const visitTests = { freePeople: 0, freeSteps: 0, networkPeople: 0, failP
 export const freePeople = () => visitTests.freePeople || FREE_PEOPLE_PER_DAY;
 /** The free plan's number of app steps a day (see funnel.ts): a tenth of its people. */
 export const freeSteps = () => visitTests.freeSteps || FREE_STEPS_PER_DAY;
-/**
- * Below this many people today, counting goes by the free number without reading the owner's plan:
- * nine tenths of it, so loads counted at the same moment on a paid plan never reach the free number
- * with their plan unread. (App steps always go by the plan, see funnel.ts: a tenth of the free
- * people leaves too little room for that.)
- */
-export const planFrom = () => freePeople() * 0.9;
 const networkPeople = () => visitTests.networkPeople || NETWORK_PEOPLE;
 // Crawlers, link previews, uptime checkers, browsers run by scripts, and AI assistants fetching a
 // page for someone aren't people looking at it.
@@ -238,11 +237,12 @@ export async function recordOwnerVisit(slug: string, request: Request, at = Date
  * How many people (cap) and app steps (steps) an owner's apps may count a day, by their plan (an
  * admin's is Agency's), and whether they have a paid plan. The free plan's app steps are a tenth of
  * its people; a paid plan's are its people. Each server reads it at most every 15 minutes per owner,
- * so a plan bought during the day counts within 15 minutes.
+ * so a plan bought during the day counts within 15 minutes; fresh reads it now (the owner's own view,
+ * which must not offer an upgrade they just bought), and this server then counts by it too.
  */
-export async function peopleCap(ownerId: string, at = Date.now()): Promise<{ cap: number; steps: number; paid: boolean }> {
+export async function peopleCap(ownerId: string, at = Date.now(), fresh = false): Promise<{ cap: number; steps: number; paid: boolean }> {
   const known = plans.get(ownerId);
-  if (known && known.until > at) return { cap: known.cap, steps: known.steps, paid: known.paid };
+  if (known && known.until > at && !fresh) return { cap: known.cap, steps: known.steps, paid: known.paid };
   const sub = await activeSubscription(ownerId);
   let [cap, steps, paid] = [freePeople(), freeSteps(), false];
   if (sub && Object.hasOwn(PLAN_PEOPLE, sub.plan)) [cap, steps, paid] = [PLAN_PEOPLE[sub.plan], PLAN_PEOPLE[sub.plan], true];
@@ -313,16 +313,17 @@ export const stepsNetworkOf = (key: Buffer, request: Request) =>
 
 /**
  * Takes up to `wanted` of the app steps this server counts per owner per day from one connection,
- * as many as its new people (NETWORK_PEOPLE), so on a paid plan a stranger with a few connections
- * can't use up the owner's day of app steps either. (The free plan's whole day is fewer: there the
- * track route's rate limit spreads them, see funnel.ts.) Taken with nothing waiting since it was
- * read; returns how many.
+ * as many as its new people (NETWORK_PEOPLE) on a paid plan, and a tenth of the day (NETWORK_STEPS)
+ * on the free plan, so a stranger with a few connections can't use up the owner's day of app steps
+ * either. (On the free plan the track route's rate limit also spreads them, see funnel.ts.) Taken
+ * with nothing waiting since it was read; returns how many.
  */
-export function takeSteps(owner: string, network: string, wanted: number, at: number): number {
+export function takeSteps(owner: string, network: string, wanted: number, at: number, paid: boolean): number {
   startDay(dayOf(at));
   const key = `${network}|${owner}`;
   const used = stepped.get(key) ?? 0;
-  const n = Math.max(0, Math.min(wanted, networkPeople() - used));
+  const most = paid ? networkPeople() : Math.min(networkPeople(), NETWORK_STEPS);
+  const n = Math.max(0, Math.min(wanted, most - used));
   if (!n) return 0;
   stepped.set(key, used + n);
   if (stepped.size > MAX_NETWORKS) for (const old of [...stepped.keys()].slice(0, MAX_NETWORKS / 2)) stepped.delete(old);
@@ -406,7 +407,9 @@ async function countVisit(slug: string, request: Request, viewerId: string | nul
       if (pause && pause.until <= at) pause = undefined;
       let cap = 0;
       if (!pause) {
-        cap = people < planFrom() ? freePeople() : (await peopleCap(row.owner, at)).cap;
+        // Always by the owner's plan (read at most every 15 minutes per server), as app steps are: the
+        // free number, read without it, would stop a paid plan's loads counted at the same moment there.
+        cap = (await peopleCap(row.owner, at)).cap;
         if (people >= cap) {
           pause = { until: at + PLAN_MEMORY, cap };
           paused.set(pausedFor, pause);

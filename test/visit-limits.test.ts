@@ -14,8 +14,8 @@ console.error = () => {};
 console.info = () => {};
 const { run, one, all, db } = await import("../src/lib/server/db.ts");
 const visits = await import("../src/lib/server/visits.ts");
-const { recordVisit, forgetServerMemory, dayOf, peopleCap, pruneDaily, FREE_PEOPLE_PER_DAY, FREE_STEPS_PER_DAY, PLAN_PEOPLE } = visits;
-const { matchVisit, countSteps, funnelStats, TRACK_PER_CONNECTION, TRACK_PER_APP, PAUSED_DAYS_OFFER } = await import("../src/lib/server/funnel.ts");
+const { recordVisit, forgetServerMemory, dayOf, peopleCap, pruneDaily, FREE_PEOPLE_PER_DAY, FREE_STEPS_PER_DAY, PLAN_PEOPLE, NETWORK_PEOPLE, NETWORK_STEPS } = visits;
+const { matchVisit, countSteps, funnelStats, TRACK_STEPS_PER_CONNECTION, TRACK_STEPS_PER_APP, PAUSED_DAYS_OFFER } = await import("../src/lib/server/funnel.ts");
 const { PLANS } = await import("../src/lib/credits.ts");
 const pageRoute = await import("../src/app/p/[slug]/route.ts");
 const trackRoute = await import("../src/app/api/sites/[slug]/track/route.ts");
@@ -206,7 +206,7 @@ test("paid plans' daily numbers are what they were, for people and app steps ali
 
 test("the track route's rate limit on the free plan: past it a request still answers 204 at once and writes nothing", async () => {
   forgetServerMemory();
-  assert.deepEqual([TRACK_PER_CONNECTION, TRACK_PER_APP], [10, 30]);
+  assert.deepEqual([TRACK_STEPS_PER_CONNECTION, TRACK_STEPS_PER_APP], [10, 30]);
   await owner("free4");
   await site("quiz", "free4", names("q"));
   const office = "10.200.0.1";
@@ -232,15 +232,18 @@ test("the track route's rate limit on the free plan: past it a request still ans
   const carla = await visitor("quiz", "10.200.9.1");
   assert.equal(await rowsWritten(() => track("quiz", carla, "q5")), 0, "the app's 31st in the minute");
   assert.equal(await appStepsOf("quiz"), 30);
-  // A minute later both count again: the turned-away names were never put on the person's list.
+  // A minute later it counts again: the turned-away name was never put on the person's list. The
+  // office's connection has used its share of the day on this server (see the next test), though.
   await run("UPDATE rate_limits SET reset_at = 0 WHERE key >= 'track-' AND key < 'track.'");
-  await track("quiz", ben, "q0");
   await track("quiz", carla, "q5");
-  assert.equal(await appStepsOf("quiz"), 32);
-  // Requests that count nothing (a name already counted, or one not in the app's code) use none of it.
-  const before = await n("SELECT COALESCE(SUM(count), 0) AS n FROM rate_limits WHERE key >= 'track-' AND key < 'track.'");
   await track("quiz", ben, "q0");
-  await track("quiz", ben, "not-in-the-code");
+  assert.equal(await appStepsOf("quiz"), 31);
+  // Requests that count nothing (a name already counted, one not in the app's code, or one past the
+  // connection's share of the day) use none of it.
+  const before = await n("SELECT COALESCE(SUM(count), 0) AS n FROM rate_limits WHERE key >= 'track-' AND key < 'track.'");
+  await track("quiz", carla, "q5");
+  await track("quiz", carla, "not-in-the-code");
+  await track("quiz", ben, "q1");
   assert.equal(await n("SELECT COALESCE(SUM(count), 0) AS n FROM rate_limits WHERE key >= 'track-' AND key < 'track.'"), before);
   // The limit is kept under a code made with the day's key, never the address.
   const keys = (await all<{ key: string }>("SELECT key FROM rate_limits WHERE key >= 'track-' AND key < 'track.'")).map((r) => r.key);
@@ -259,7 +262,7 @@ test("the track route's rate limit on the free plan: past it a request still ans
   } finally {
     client.execute = execute;
   }
-  assert.equal(await appStepsOf("quiz"), 32);
+  assert.equal(await appStepsOf("quiz"), 31);
 
   // A paid plan's apps aren't limited, and keep no rate limit rows.
   await owner("pro4", "pro");
@@ -278,6 +281,69 @@ test("the track route's rate limit on the free plan: past it a request still ans
   assert.equal(await pruneDaily(NOW + DAY), true);
   assert.equal(await n("SELECT COUNT(*) AS n FROM rate_limits WHERE key >= 'track-' AND key < 'track.'"), 0);
   assert.equal(await n("SELECT COUNT(*) AS n FROM rate_limits WHERE key = 'funnel:someone'"), 1);
+});
+
+test("the rate limit counts app steps, not requests, and one connection counts at most a tenth of the free plan's day of them", async () => {
+  forgetServerMemory();
+  await run("DELETE FROM rate_limits");
+  // A tenth of the free day from one connection, for people and app steps alike.
+  assert.deepEqual([NETWORK_PEOPLE, NETWORK_STEPS], [FREE_PEOPLE_PER_DAY / 10, FREE_STEPS_PER_DAY / 10]);
+  await owner("free6");
+  await site("quiz6", "free6", names("q"));
+  // One connection, 10 browsers, each sending all 10 of the app's names (anyone can read them in its
+  // page) in one request: 10 steps, not 100.
+  const ip = "10.210.0.1";
+  for (let i = 0; i < 10; i++) assert.equal((await track("quiz6", await visitor("quiz6", ip), names("q").join("\n"))).status, 204);
+  assert.equal(await appStepsOf("quiz6"), 10);
+  assert.equal(await stepsOf("free6"), 10);
+  assert.equal(await n("SELECT count AS n FROM rate_limits WHERE key LIKE 'track-net:quiz6:%'"), 10, "counted in steps");
+  // A minute later, none more from it today on this server: it has its share of the day.
+  await run("UPDATE rate_limits SET reset_at = 0 WHERE key >= 'track-' AND key < 'track.'");
+  await track("quiz6", await visitor("quiz6", ip), "q0");
+  assert.equal(await appStepsOf("quiz6"), 10);
+  // Other connections, 30 steps a minute to the app from all of them: a request past it counts the
+  // part that fits, and the rest of its names can count later.
+  for (const [i, list] of [names("q"), names("q"), names("q").slice(0, 5)].entries()) await track("quiz6", await visitor("quiz6", `10.210.${i + 1}.1`), list.join("\n"));
+  assert.equal(await appStepsOf("quiz6"), 35);
+  const last = await visitor("quiz6", "10.210.9.1");
+  await track("quiz6", last, names("q").join("\n"));
+  assert.equal(await appStepsOf("quiz6"), 40);
+  assert.equal(await n("SELECT count AS n FROM rate_limits WHERE key = 'track-app:quiz6'"), 30);
+  await track("quiz6", await visitor("quiz6", "10.210.10.1"), "q0");
+  assert.equal(await appStepsOf("quiz6"), 40, "the app's 31st step in the minute");
+  await run("UPDATE rate_limits SET reset_at = 0 WHERE key >= 'track-' AND key < 'track.'");
+  await track("quiz6", last, names("q").join("\n"));
+  assert.equal(await appStepsOf("quiz6"), 45, "the 5 that didn't fit, a minute later");
+  assert.equal(await stepsOf("free6"), 45);
+});
+
+test("one connection's rate limit has a code of its own on each app, so nothing ties its use of two apps together", async () => {
+  forgetServerMemory();
+  await run("DELETE FROM rate_limits");
+  await owner("free7a");
+  await owner("free7b");
+  await site("app7a", "free7a", ["go"]);
+  await site("app7b", "free7b", ["go"]);
+  await site("app7c", "free7a", ["go"]);
+  for (const slug of ["app7a", "app7b", "app7c"]) await track(slug, await visitor(slug, "10.220.0.1"), "go");
+  const keys = (await all<{ key: string }>("SELECT key FROM rate_limits WHERE key LIKE 'track-net:%' ORDER BY key")).map((r) => r.key);
+  assert.equal(keys.length, 3, keys.join());
+  const codes = keys.map((k) => k.split(":")[2]);
+  assert.ok(codes.every((c) => /^[0-9a-f]{24}$/.test(c)), codes.join());
+  assert.equal(new Set(codes).size, 3, "a code per app, also for one owner's two apps");
+});
+
+test("a paid owner near the free number counts every new person answered at the same moment", async () => {
+  forgetServerMemory();
+  await owner("lite8", "lite");
+  await site("big8", "lite8");
+  await visitor("big8");
+  // 899 people today: within a hundred of the free plan's 1,000.
+  await run("UPDATE owner_people SET people = 899 WHERE user_id = 'lite8' AND day = ?", [TODAY]);
+  await Promise.all(Array.from({ length: 150 }, () => recordVisit("big8", page("big8", person()), null, NOW)));
+  assert.equal(await visitorsOf("big8"), 151);
+  assert.equal(await peopleOf("lite8"), 1_049);
+  assert.equal(await markOf("big8", "capped"), null);
 });
 
 test("a free owner whose counting paused on 2 or more of the last 7 days is offered an upgrade, on every app; one day, older days, other notes or a paid plan aren't", async () => {
@@ -327,4 +393,24 @@ test("a free owner whose counting paused on 2 or more of the last 7 days is offe
   );
   forgetServerMemory();
   for (const slug of ["w-a", "w-b", "w-c"]) assert.deepEqual(await week(slug), [null, false], slug);
+});
+
+test("the upgrade offer goes away as soon as the owner buys a plan, though this server read their plan a moment before", async () => {
+  forgetServerMemory();
+  await owner("free9");
+  await site("w9", "free9");
+  for (const daysAgo of [1, 3]) {
+    await run("INSERT INTO site_events (site_slug, day, step, source, medium, campaign, n) VALUES ('w9', ?, 'capped', '', '', '', 1000)", [dayOf(NOW - daysAgo * DAY)]);
+  }
+  const before = (await funnelStats("w9", 30, NOW))!;
+  assert.deepEqual([before.pausedWeek, before.free], [{ days: 2, people: 1_000 }, true]);
+  // Lite, bought right after: the view offers nothing, and this server counts by Lite from now on.
+  await run(
+    `INSERT INTO subscriptions (id, user_id, plan, interval, status, amount_cents, anchor, paid_until, test, created_at, updated_at)
+     VALUES ('sub-free9', 'free9', 'lite', 'month', 'active', 100, 0, ?, 1, 0, 0)`,
+    [Date.UTC(2100, 0, 1)],
+  );
+  const after = (await funnelStats("w9", 30, NOW + 1_000))!;
+  assert.deepEqual([after.pausedWeek, after.free], [null, false]);
+  assert.deepEqual(await peopleCap("free9", NOW + 2_000), { cap: PLAN_PEOPLE.lite, steps: PLAN_PEOPLE.lite, paid: true });
 });
