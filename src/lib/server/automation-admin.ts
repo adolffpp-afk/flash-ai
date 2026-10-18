@@ -67,12 +67,13 @@ export async function cronHealth() {
   const run = await one<{ at: number }>(
     `SELECT MIN(due_at) AS at FROM automation_runs WHERE parked = 0 AND status IN ('queued','waiting','running','approval') AND due_at <= ${DB_NOW} AND lease_until < ${DB_NOW}`,
   );
+  // Each line reads through an index: runs of the last week by age, the live queue, the live leases.
   const lags = await all<{ lag: number }>(
-    "SELECT started_at - scheduled_at AS lag FROM automation_runs WHERE origin = 'schedule' AND started_at > 0 AND scheduled_at > 0 AND started_at >= ? LIMIT 5000",
+    "SELECT started_at - scheduled_at AS lag FROM automation_runs WHERE created_at >= ? AND origin = 'schedule' AND started_at > 0 AND scheduled_at > 0 LIMIT 5000",
     [now - 7 * DAY],
   );
-  const queued = await one<{ n: number }>("SELECT COUNT(*) AS n FROM automation_runs WHERE parked = 0 AND status = 'queued'");
-  const paid = await one<{ n: number }>(`SELECT COUNT(*) AS n FROM automation_runs WHERE next_paid = 1 AND finished_at = 0 AND lease_until > ${DB_NOW}`);
+  const queued = await one<{ n: number }>("SELECT COUNT(*) AS n FROM automation_runs WHERE parked = 0 AND status IN ('queued','waiting','running','approval') AND status = 'queued'");
+  const paid = await one<{ n: number }>(`SELECT COUNT(*) AS n FROM automation_runs WHERE lease_until > 0 AND lease_until > ${DB_NOW} AND next_paid = 1 AND finished_at = 0`);
   const peak = await one<{ credits: number }>(
     `SELECT COALESCE(MAX(spent), 0) AS credits FROM (SELECT -SUM(amount) AS spent FROM credit_ledger
        WHERE automation_id <> '' AND amount < 0 AND created_at >= ? GROUP BY created_at / 60000)`,

@@ -66,6 +66,12 @@ test("zones on half and quarter hours, and a half-hour daylight saving change", 
   // and 01:45 on 4 April 2027 happens twice (runs once, at the first).
   assert.equal(next({ kind: "daily", at: "02:15" }, "Australia/Lord_Howe", "2026-10-03T00:00:00Z"), "2026-10-03T15:45:00Z");
   assert.deepEqual(nexts({ kind: "daily", at: "01:45" }, "Australia/Lord_Howe", "2027-04-03T00:00:00Z", 2), ["2027-04-03T14:45:00Z", "2027-04-04T15:15:00Z"]);
+  // An hourly window across Lord Howe's spring-forward night: never two runs less than an hour apart
+  // (02:00 doesn't exist and runs at 02:30, so 03:00, 30 minutes later, is left out).
+  const hourly = { kind: "hourly", every: 1, from: "00:00", to: "05:00" } as const;
+  const runs = S.nextFires(hourly, "Australia/Lord_Howe", at("2026-10-03T12:00:00Z"), 5);
+  assert.deepEqual(runs.map(iso), ["2026-10-03T13:30:00Z", "2026-10-03T14:30:00Z", "2026-10-03T15:30:00Z", "2026-10-03T17:00:00Z", "2026-10-03T18:00:00Z"]);
+  for (let i = 1; i < runs.length; i++) assert.ok(runs[i] - runs[i - 1] >= S.MIN_GAP_MS);
   // The Chatham Islands are 12:45 ahead in winter and 13:45 in summer.
   assert.equal(next({ kind: "daily", at: "08:00" }, "Pacific/Chatham", "2026-07-01T00:00:00Z"), "2026-07-01T19:15:00Z");
   assert.equal(next({ kind: "daily", at: "08:00" }, "Pacific/Chatham", "2027-01-10T00:00:00Z"), "2027-01-10T18:15:00Z");
@@ -152,5 +158,5 @@ test("schedules said in English, French, Arabic and Japanese, with the zone name
   assert.equal(A.describeWhen({ kind: "hourly", every: 1, from: "09:00", to: "17:00" }, "UTC", en, en.locale).sentence, "Every hour from 9:00 AM to 5:00 PM");
   assert.equal(A.describeWhen({ kind: "hourly", every: 3, from: "09:00", to: "18:00" }, "UTC", en, en.locale).sentence, "Every 3 hours from 9:00 AM to 6:00 PM");
   assert.equal(A.describeWhen({ kind: "once", date: "2026-12-24", at: "18:00" }, "UTC", en, en.locale).sentence, "Once, on December 24, 2026 at 6:00 PM");
-  assert.equal(A.describeNext([at("2026-10-19T12:00:00Z"), at("2026-10-20T12:00:00Z")], "America/Toronto", en, en.locale), "Next: Mon, Oct 19, 8:00 AM and Tue, Oct 20, 8:00 AM");
+  assert.equal(A.describeNext([at("2026-10-19T12:00:00Z"), at("2026-10-20T12:00:00Z")], "America/Toronto", en, en.locale), "Next: Mon, Oct 19, 8:00 AM · Tue, Oct 20, 8:00 AM");
 });

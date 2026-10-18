@@ -133,6 +133,30 @@ test("20 charges at once from two servers never take a balance below zero", asyn
   assert.equal(await F.balance(user.id), 0);
 });
 
+test("two runs of one automation finishing at once on two servers keep one receipt chain: the later names the earlier", async () => {
+  const user = await F.account("racer6", 100);
+  const aid = await F.automation({ userId: user.id });
+  const first = await F.runRow({ automationId: aid, userId: user.id });
+  const [a] = (await A.call<{ id: string; owner: string }[]>("claim", "wa", LIMITS)).filter((c) => c.id === first);
+  const second = await F.runRow({ automationId: aid, userId: user.id });
+  const [b] = (await B.call<{ id: string; owner: string }[]>("claim", "wb", LIMITS)).filter((c) => c.id === second);
+  assert.ok(a && b, "each server holds one of the runs");
+  // A reads the chain's head and waits there; B's run ends meanwhile, moving the head on.
+  await A.call("arm", "before-finish");
+  const going = A.call("advance", first, a.owner, Date.now() + 760_000);
+  assert.deepEqual(await A.reached("before-finish"), { runId: first, prev: "" });
+  await B.call("advance", second, b.owner, Date.now() + 760_000);
+  A.go();
+  await going;
+  const rows = await all<{ id: string; receipt: string; receipt_hash: string }>("SELECT id, receipt, receipt_hash FROM automation_runs WHERE id IN (?, ?)", [first, second]);
+  const byId = Object.fromEntries(rows.map((r) => [r.id, r]));
+  assert.ok(byId[first].receipt_hash && byId[second].receipt_hash, "both runs ended with a fingerprint");
+  assert.equal(JSON.parse(byId[second].receipt).prev, "", "the run that ended first starts the chain");
+  assert.equal(JSON.parse(byId[first].receipt).prev, byId[second].receipt_hash, "the later run's receipt names the earlier one");
+  const head = await one<{ receipt_hash: string }>("SELECT receipt_hash FROM automations WHERE id = ?", [aid]);
+  assert.equal(head!.receipt_hash, byId[first].receipt_hash, "the chain's head is the last run's fingerprint");
+});
+
 
 /*
  * A server killed in each window of a paid step: after its hold is recorded, after the charge (before

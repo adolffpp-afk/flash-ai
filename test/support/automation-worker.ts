@@ -35,7 +35,9 @@ leases.probes.at = async (point, info) => {
   await new Promise<void>((resolve) => (go = resolve));
 };
 
-process.on("message", async (m: { id?: number; cmd: string; args?: unknown[] }) => {
+process.on("message", async (m: { id?: number; cmd: string; args?: unknown[]; admins?: string }) => {
+  // The parent's admins as they are now (its test accounts are made as it goes).
+  if (typeof m.admins === "string") process.env.FLASH_ADMIN_EMAILS = m.admins;
   if (m.cmd === "go") {
     const resume = go;
     go = null;

@@ -25,7 +25,7 @@ const LEVELS = [
   { id: "sonic", label: "Sonic" },
   { id: "ascend", label: "Ascend" },
   { id: "vision", label: "Vision" },
-  { id: "ultra", label: "Ultra" },
+  { id: "ultra", label: "Summit" },
 ] as const;
 const MODES = [
   { id: "write", label: "Write" },
@@ -44,10 +44,10 @@ const num = (v: number) => v.toLocaleString("en-US");
 const credits = (v: number) => `${num(v)} ${v === 1 ? "credit" : "credits"}`;
 const when = (t: number) =>
   t ? new Date(t).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" }) : "–";
-/** A notice's time as its user sees it, in their language. */
-const whenIn = (t: number, language: string) => {
+/** A notice's time as its user sees it, in their language as Flash formats it (its digits too). */
+const whenIn = (t: number, locale: string) => {
   try {
-    return new Date(t).toLocaleString(language, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+    return new Date(t).toLocaleString(locale, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
   } catch {
     return when(t);
   }
@@ -235,14 +235,18 @@ function TestAutomation({ a, language, ready, onChange }: { a: Card["automations
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [confirming, setConfirming] = useState(false);
+  // What the server said back, such as "Queued: Flash is busy" (in the admin's language).
+  const [note, setNote] = useState("");
   // The price shown on Run now and Resume: what it was saved at, or the new one the server answered with.
   const [seen, setSeen] = useState(a.quotedMax);
 
   const send = async (path: string, init: { method: string; json?: unknown }) => {
     setBusy(true);
     setError("");
+    setNote("");
     try {
-      await api(path, init);
+      const res = await api<{ note?: string }>(path, init);
+      setNote(res.note ?? "");
       setConfirming(false);
       onChange();
     } catch (err) {
@@ -274,8 +278,14 @@ function TestAutomation({ a, language, ready, onChange }: { a: Card["automations
           {a.next && <div>{a.next}</div>}
         </Theirs>
       )}
+      {a.status === "paused" && a.resumeAt > 0 && (
+        <div className="mt-1 text-xs text-amber-300">
+          {a.pausedReason === "credits" ? `Tries again by itself on ${when(a.resumeAt)} if the credits are there.` : `Turns back on by itself on ${when(a.resumeAt)}.`}
+        </div>
+      )}
       <div className="mt-1 text-xs text-zinc-500">
-        At most {num(a.quotedMax)} credits a run · limits {num(a.capRun)} a run, {num(a.capMonth)} a month · {num(a.spentThisMonth)} spent this month
+        At most {num(a.quotedMax)} credits a run · limits {num(a.capRun)} a run, {num(a.capMonth)} a month · {num(a.spentThisMonth)} charged this month
+        {a.heldNow > 0 && ` · ${num(a.heldNow)} held now`}
       </div>
       <div className="mt-2 flex flex-wrap gap-2">
         {a.status !== "paused" && (
@@ -309,6 +319,7 @@ function TestAutomation({ a, language, ready, onChange }: { a: Card["automations
           </span>
         )}
       </div>
+      {note && <p className="mt-2 text-xs text-zinc-300">{note}</p>}
       {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
     </li>
   );
@@ -372,7 +383,8 @@ function RunReceipt({ runId, language, onChange }: { runId: string; language: st
   if (error) return <p className="mt-2 text-xs text-red-400">{error}</p>;
   if (!r) return <p className="mt-2 text-xs text-zinc-500">Loading the receipt…</p>;
   const { run } = r;
-  const held = r.holds.reduce((sum, h) => sum + h.held, 0);
+  // A run's steps hold one after another, never together: its largest hold is the most it held at once.
+  const held = Math.max(0, ...r.holds.map((h) => h.held));
   return (
     <div className="mt-3 space-y-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 text-xs">
       <div className="grid gap-x-4 gap-y-1 text-zinc-400 sm:grid-cols-2">
@@ -386,8 +398,10 @@ function RunReceipt({ runId, language, onChange }: { runId: string; language: st
         <div>Finished {when(run.finishedAt)}</div>
         <div>Took {took(run.startedAt, run.finishedAt)}</div>
         <div className="text-zinc-200">
-          {credits(held)} held, {num(run.credits)} charged
+          Largest hold {credits(held)}
+          {r.holds.length > 1 && <span className="text-zinc-400"> (of {r.holds.length}, one at a time)</span>}, {num(run.credits)} charged
         </div>
+        {run.deleted && <div className="text-zinc-400">Its automation was deleted; this run goes with it.</div>}
         {!run.finishedAt && (
           <div>
             <button onClick={stop} disabled={run.stopRequested} className={button}>
@@ -396,6 +410,12 @@ function RunReceipt({ runId, language, onChange }: { runId: string; language: st
           </div>
         )}
       </div>
+
+      {run.noteText && (
+        <Theirs language={language} className="w-fit max-w-full text-amber-300">
+          {run.noteText}
+        </Theirs>
+      )}
 
       <div>
         <div className="mb-1 font-medium text-zinc-300">Steps</div>
@@ -413,11 +433,20 @@ function RunReceipt({ runId, language, onChange }: { runId: string; language: st
                   </span>
                   <Pill status={s.status} outcome={s.note || undefined} />
                   {s.kind === "ai" && (
-                    <span className="text-zinc-500">
-                      {LEVELS.find((l) => l.id === s.level)?.label ?? s.level} · {num(s.held)} held · {num(s.credits)} charged
+                    <span className="break-all text-zinc-500">
+                      {LEVELS.find((l) => l.id === s.level)?.label ?? s.level}
+                      {s.model && ` · ${s.model}`} · {num(s.held)} held · {num(s.credits)} charged
                     </span>
                   )}
                 </div>
+                {s.input && (
+                  <details className="mt-1 text-zinc-400">
+                    <summary className="cursor-pointer select-none">What it sent</summary>
+                    <div dir="auto" className="mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap break-words rounded border border-zinc-800 bg-zinc-950 p-2 text-zinc-300">
+                      {s.input}
+                    </div>
+                  </details>
+                )}
                 {s.noteText && <Theirs language={language} className="mt-1 w-fit max-w-full text-amber-300">{s.noteText}</Theirs>}
                 {s.output && (
                   <div dir="auto" className="mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap break-words text-zinc-300">
@@ -490,8 +519,14 @@ function RunReceipt({ runId, language, onChange }: { runId: string; language: st
   );
 }
 
-/** The burn-in card. ready: automations can run here (production, with its setup complete). */
-export function AutomationBurnIn() {
+export type Health = Card["health"];
+
+/**
+ * The burn-in card. ready: automations can run here (production, with its setup complete). onHealth
+ * gets the cron health lines with each load, and onRunEnded is called when a run it shows ends, so
+ * the tab's other lines can follow.
+ */
+export function AutomationBurnIn({ onHealth, onRunEnded }: { onHealth?: (health: Health) => void; onRunEnded?: () => void } = {}) {
   const [card, setCard] = useState<Card | null>(null);
   const [error, setError] = useState("");
   const [open, setOpen] = useState<string | null>(null);
@@ -499,13 +534,27 @@ export function AutomationBurnIn() {
   // Bumped to load the card again now (after a change).
   const [again, setAgain] = useState(0);
   const load = useCallback(() => setAgain((n) => n + 1), []);
+  // The runs that had ended at the last load (null before the first).
+  const ended = useRef<Set<string> | null>(null);
+  const callbacks = useRef({ onHealth, onRunEnded });
+  useEffect(() => {
+    callbacks.current = { onHealth, onRunEnded };
+  });
 
   const going = card?.runs.some((r) => !r.finishedAt) ?? false;
   useEffect(() => {
     let live = true;
+    const got = (c: Card) => {
+      setCard(c);
+      setError("");
+      callbacks.current.onHealth?.(c.health);
+      const now = new Set(c.runs.filter((r) => r.finishedAt).map((r) => r.id));
+      if (ended.current && [...now].some((id) => !ended.current!.has(id))) callbacks.current.onRunEnded?.();
+      ended.current = now;
+    };
     const get = () =>
       api<Card>("/api/admin/automations")
-        .then((c) => live && (setCard(c), setError("")))
+        .then((c) => live && got(c))
         .catch((err) => live && setError(errorOf(err)));
     void get();
     // Every 5 s while a run goes on, else every 30 s (a scheduled run may start), only while the tab is shown.
@@ -520,6 +569,7 @@ export function AutomationBurnIn() {
   if (!card) return <p className="text-sm text-zinc-500">Loading the burn-in…</p>;
   const ready = card.setup.server && card.setup.missing.length === 0;
   const language = card.noticeLanguage;
+  const charged = `${credits(card.spentThisMonth)} charged on automations this month`;
   return (
     <div className="space-y-4">
       <Section
@@ -529,7 +579,7 @@ export function AutomationBurnIn() {
         <MakeTest ready={ready} onMade={load} />
       </Section>
 
-      <Section title="Your test automations" note={`${credits(card.spentThisMonth)} spent on automations this month`}>
+      <Section title="Your test automations" note={card.heldNow > 0 ? `${charged}, and ${credits(card.heldNow)} held now by steps under way` : charged}>
         {card.automations.length === 0 ? (
           <p className="text-sm text-zinc-500">None yet.</p>
         ) : (
@@ -559,9 +609,10 @@ export function AutomationBurnIn() {
                 <button onClick={() => setOpen(open === r.id ? null : r.id)} aria-expanded={open === r.id} className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 text-start">
                   <span className="min-w-0 break-words text-zinc-100">{r.name}</span>
                   <Pill status={r.status} outcome={r.outcome || undefined} />
+                  {r.deleted && <span className="text-xs text-zinc-500">automation deleted</span>}
                   <span className="text-xs text-zinc-500">{when(r.startedAt || r.scheduledAt || r.createdAt)}</span>
                   <span className="ms-auto text-xs tabular-nums text-zinc-300">
-                    {num(r.held)} held · {num(r.credits)} charged
+                    largest hold {num(r.held)} · {num(r.credits)} charged
                     {r.openHolds > 0 && <span className="text-amber-300"> · {r.openHolds} open</span>}
                   </span>
                 </button>
@@ -589,7 +640,7 @@ export function AutomationBurnIn() {
                       {n.offer && <div className="mt-1 text-xs text-primary-soft">{n.offer.text}</div>}
                     </div>
                     <span className={`basis-full text-[11px] text-zinc-500 sm:basis-auto sm:shrink-0 sm:ps-0 ${n.read ? "" : "ps-4"}`}>
-                      {whenIn(n.createdAt, language)}
+                      {whenIn(n.createdAt, card.noticeLocale)}
                     </span>
                   </div>
                 </li>

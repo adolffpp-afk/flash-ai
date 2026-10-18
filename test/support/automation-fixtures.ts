@@ -10,11 +10,15 @@ import { runnerFor, type Spec } from "../../src/lib/automations.ts";
 const monthOf = (t = new Date()) => `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, "0")}`;
 
 /** A signed-in account with credits (their free credits for this month already given, so none are added). */
-export async function account(id: string, credits: number, o: { verified?: boolean; email?: string } = {}) {
+export async function account(id: string, credits: number, o: { verified?: boolean; email?: string; admin?: boolean } = {}) {
   const token = `tok_${id}_${randomBytes(6).toString("hex")}`;
+  const email = o.email ?? `${id}@example.com`;
+  // Automations are open to admins only for now (automationsOpenTo), and the runner checks it too:
+  // a test account is one unless told otherwise (the race workers get the list with each command).
+  if (o.admin !== false) process.env.FLASH_ADMIN_EMAILS = [process.env.FLASH_ADMIN_EMAILS, email].filter(Boolean).join(",");
   await sql("INSERT INTO users (id, email, name, password_hash, preferences, created_at, last_free_grant, verified_at) VALUES (?, ?, '', 'x', '', 0, 0, ?)", [
     id,
-    o.email ?? `${id}@example.com`,
+    email,
     o.verified === false ? 0 : 1,
   ]);
   await sql("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)", [createHash("sha256").update(token).digest("hex"), id, Date.now() + 3600_000]);
@@ -173,7 +177,7 @@ export async function startWorker(dbFile: string, env: Record<string, string> = 
       new Promise<T>((resolve, reject) => {
         const id = ++n;
         waiting.set(id, { resolve: resolve as (v: unknown) => void, reject });
-        child.send({ id, cmd, args });
+        child.send({ id, cmd, args, admins: process.env.FLASH_ADMIN_EMAILS ?? "" });
       }),
     reached: (point) =>
       seenAt.has(point) ? Promise.resolve(seenAt.get(point)) : new Promise((resolve) => atPoint.set(point, resolve)),

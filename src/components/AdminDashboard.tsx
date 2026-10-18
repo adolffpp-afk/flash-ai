@@ -6,7 +6,7 @@ import { ENGINE_LABELS, type Engine } from "@/lib/types";
 import { api } from "@/lib/store";
 import { LogoMark } from "@/app/brand";
 import { AdminReports } from "@/components/AdminReports";
-import { AutomationBurnIn } from "@/components/AutomationBurnIn";
+import { AutomationBurnIn, type Health } from "@/components/AutomationBurnIn";
 import type { automationStats } from "@/lib/server/automation-admin.ts";
 import type { FixedCost, ProfitReport } from "@/lib/server/profit.ts";
 import type { ReportedItem } from "@/lib/server/reports.ts";
@@ -448,8 +448,9 @@ const minutes = (m: number) => (m ? `${num(m)} min` : "None");
  * The Automations tab's lines from adminStats: whether they can run here and with which key (names,
  * never values), the cron health lines, and what runs did and cost over the range.
  */
-function AutomationLines({ a, days }: { a: NonNullable<Stats["automations"]>; days: number }) {
-  const h = a.health;
+function AutomationLines({ a, days, health }: { a: NonNullable<Stats["automations"]>; days: number; health: Health | null }) {
+  // The burn-in card's newer lines, while it polls, else those of the stats.
+  const h = health ?? a.health;
   // Runs by outcome: the last 24 hours beside the last 7 days.
   const outcomes = new Map<string, { status: string; outcome: string; day: number; week: number }>();
   for (const [list, field] of [
@@ -495,7 +496,7 @@ function AutomationLines({ a, days }: { a: NonNullable<Stats["automations"]>; da
         </ul>
       </Panel>
 
-      <Panel title="Cron health" note="Worked out from the data each time this opens, so it costs no writes. Paused automations are left out.">
+      <Panel title="Cron health" note="Worked out from the data, so it costs no writes, and kept up to date with the burn-in below. Paused automations are left out.">
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <Tile label="Schedules overdue" value={minutes(h.overdueScheduleMin)} note="The oldest automation past its next run" />
           <Tile label="Runs overdue" value={minutes(h.overdueRunMin)} note="The oldest run due that nothing is working on" />
@@ -504,7 +505,11 @@ function AutomationLines({ a, days }: { a: NonNullable<Stats["automations"]>; da
           <Tile label="AI runs now" value={`${num(h.paidNow)} of ${num(h.maxPaid)}`} note={h.paidOpen ? "Open" : "Paused for a minute after a 429"} />
           <Tile label="429s in the last hour" value={num(h.rateLimitedLastHour)} note="Each pauses AI runs for a minute" />
           <Tile label="Peak spend" value={plural(h.peakCreditsPerMinute, "credit", "credits")} note="The highest minute in 7 days" />
-          <Tile label="Turso writes this month" value={num(h.writes.writes)} note={`Estimated from runs · ${writesShare}% of the ${num(h.writes.limit)} a month automations may use`} />
+          <Tile
+            label="Turso writes this month"
+            value={num(h.writes.writes)}
+            note={`Estimated from runs by the daily job${h.writes.day ? ` (${h.writes.day})` : ""} · ${writesShare}% of the ${num(h.writes.limit)} a month automations may use`}
+          />
           <Tile label="Holds open" value={num(h.openHolds)} note={h.lapsedHolds ? `${num(h.lapsedHolds)} past their lease (the next tick settles them)` : "None past its lease"} />
           <Tile label="Waiting for a newer runner" value={num(h.newerRunner)} note="Runs saved by a newer deployment" />
           <Tile label="Daily job" value={h.dailyJob || "Not yet"} note="The last day it ran (UTC)" />
@@ -550,6 +555,8 @@ export function AdminDashboard({ initialTab }: { initialTab?: string }) {
   const [stats, setStats] = useState<Stats | null>(null);
   const [error, setError] = useState("");
   const [reload, setReload] = useState(0);
+  // The cron health lines as the burn-in card last loaded them.
+  const [health, setHealth] = useState<Health | null>(null);
   // Reports don't depend on the time range, and their count shows on the tab, so they load once.
   const [reports, setReports] = useState<ReportedItem[] | null>(null);
   const [reportsError, setReportsError] = useState("");
@@ -862,8 +869,9 @@ export function AdminDashboard({ initialTab }: { initialTab?: string }) {
           </div>
         ) : tab === "automations" ? (
           <div className="mt-6 space-y-4">
-            {stats.automations && <AutomationLines a={stats.automations} days={stats.days} />}
-            <AutomationBurnIn />
+            {stats.automations && <AutomationLines a={stats.automations} days={stats.days} health={health} />}
+            {/* A run that ends changes the runs and money lines too: they load again. */}
+            <AutomationBurnIn onHealth={setHealth} onRunEnded={() => setReload((r) => r + 1)} />
           </div>
         ) : (
           <div className="mt-6 grid gap-4 lg:grid-cols-2">

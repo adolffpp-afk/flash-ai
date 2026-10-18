@@ -75,6 +75,7 @@ export type AutoRow = {
   cap_run: number;
   cap_month: number;
   cap_day: number;
+  quoted_max: number;
   fail_streak: number;
   receipt_hash: string;
 };
@@ -112,6 +113,8 @@ const RETRY_WAITS = [60_000, 300_000, 1_800_000];
 export const retryDelay = (attempt: number) => Math.round(RETRY_WAITS[Math.min(RETRY_WAITS.length - 1, Math.max(0, attempt - 1))] * (0.8 + Math.random() * 0.4));
 /** When tokens couldn't be counted: another try a minute later, as chat answers 503. */
 const COUNT_RETRY_MS = 60_000;
+/** The most one token count may take, with one retry. */
+const COUNT_TIMEOUT_MS = 30_000;
 
 // What a step keeps: its input up to 8 KB, its output up to 64 KB (gzip), and what later steps of the
 // run may use of it ({{steps.<id>.text}}), 16 KB each and 32 KB in all.
@@ -200,7 +203,8 @@ export function stepTurn(step: AiStep, today: string, previous: string | null): 
   const task = fillTemplate(step.prompt, { today, steps: {} });
   if (!step.onlyIfChanged) return task;
   if (!previous) return `${task}\n\nThere is no previous result yet, so answer in full.`;
-  const data = previous.slice(0, PREVIOUS_CHARS).replaceAll("</previous_result>", "");
+  // Any tag of its own name is taken out (in any case or spacing), so the data can't close its block.
+  const data = previous.slice(0, PREVIOUS_CHARS).replace(/<\s*\/?\s*previous_result\b[^>]*>/gi, "");
   return (
     `${task}\n\n` +
     `If nothing important changed since the previous result below, answer with ${NO_CHANGE} alone on the first line, then one sentence that says so. Otherwise answer in full.\n\n` +
@@ -325,16 +329,20 @@ export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResul
   const previous = step.onlyIfChanged ? await previousResult(auto.id, run.id, step.id) : null;
   const { t, where, turn, history, engine, preferences, options, data } = await stepInputs({ auto, spec, run, user, step, now, previous });
   const client = automationClient();
+  // Counting tokens gets a short time of its own, well inside the run's lease (the SDK's default is 10 minutes).
+  const counting = client.withOptions({ timeout: COUNT_TIMEOUT_MS, maxRetries: 1 });
 
   // 1. The price. Counting needs Anthropic: when it fails, the step is tried again in a minute, for free.
   let price: StepPrice;
+  await probe("before-count", { runId: run.id, ref });
   try {
-    price = await priceStep(step, history, preferences, options, data, client);
+    price = await priceStep(step, history, preferences, options, data, counting);
   } catch (err) {
     console.error("[flash] automation: counting tokens failed", failName(err));
     if (retryable(err).rateLimited) await backOff().catch(() => {});
-    await closeStep(c, "retried", "count_failed", turn);
-    return Number(run.attempts) < MAX_ATTEMPTS ? { kind: "retry", delayMs: COUNT_RETRY_MS } : { kind: "end", status: "failed", outcome: "failed" };
+    const again = Number(run.attempts) < MAX_ATTEMPTS;
+    await closeStep(c, again ? "retried" : "failed", "count_failed", turn);
+    return again ? { kind: "retry", delayMs: COUNT_RETRY_MS } : { kind: "end", status: "failed", outcome: "failed" };
   }
   const monthStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1);
   const dayStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
@@ -358,7 +366,7 @@ export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResul
     const outcome =
       runLeft < plan.needed ? "run_cap" : monthLeft < plan.needed ? "month_cap" : dayLeft < plan.needed ? "day_cap" : held0 < plan.needed ? "no_credits" : "topup_floor";
     await closeStep(c, "skipped", outcome, turn);
-    const offer = outcome === "no_credits" || outcome === "topup_floor" ? await cheaperOffer(step, history, preferences, options, data, client) : undefined;
+    const offer = outcome === "no_credits" || outcome === "topup_floor" ? await cheaperOffer(step, history, preferences, options, data, counting) : undefined;
     return { kind: "end", status: Number(run.credits) > 0 || outcome === "run_cap" ? "stopped" : "skipped", outcome, need: plan.needed, ...(offer && { offer }) };
   }
 
@@ -370,7 +378,8 @@ export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResul
     const done = !running ? 0 : engine === "search" ? running.found : Math.max(0, running.calls - 1);
     return leftCents({ model, largestInput, resultsLeft: results.length - done, searchesLeft: (price.plan?.searches ?? 0) - (running?.searches ?? 0), fallback: plan.fallback });
   };
-  await recordHold({ ref, userId: auto.pay_account, runId: run.id, held: plan.held, model, inputCents: readCostCents(model, price.tokens), leftCents: left() });
+  // Only while this worker still holds the run: one that outlived its lease stops here, for free.
+  if (!(await recordHold({ ref, userId: auto.pay_account, runId: run.id, held: plan.held, model, inputCents: readCostCents(model, price.tokens), leftCents: left(), owner: me }))) return { kind: "lost" };
   await probe("after-hold", { runId: run.id, ref });
   let charge: ChargeOnce | null = null;
   for (let i = 0; i < 3 && !charge; i++) {
@@ -467,14 +476,17 @@ export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResul
   ];
   const budget: Budget = { maxTokens: plan.maxTokens, capCents: plan.capCents, byCredits: plan.byCredits };
   const watch = { signal: abort.signal, running, client };
-  let answered: ClaudeChoice = price.choice;
+  // A refusal fallback only when the hold pays for it (see planHold), as chat does; its step-down too.
+  const paidFor = (choice: ClaudeChoice): ClaudeChoice => ({ ...choice, fallback: plan.fallback, ...(choice.stepDown && { stepDown: paidFor(choice.stepDown) }) });
+  const asked = paidFor(price.choice);
+  let answered: ClaudeChoice = asked;
   let text = "";
   let sources: Source[] = [];
   let ok = true;
   let failure: unknown = null;
   try {
     const events = withStepDown(
-      price.choice,
+      asked,
       (choice) =>
         engine === "search"
           ? streamSearch(history, preferences, meter, budget, choice, t, watch, { system: options, where, quick: price.quick, data })
@@ -511,7 +523,10 @@ export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResul
       automationId: auto.id,
     }).catch((err) => console.error("[flash] automation usage log failed", failName(err)));
   // The reaper settled the hold under this step: it writes nothing more, and its cost shows on /admin as a loss.
-  if (why === "lost" || !(await markDone(ref, costCents + pending).catch(() => false))) {
+  // A write that fails is tried again; if it never lands, the settle below still goes ahead.
+  let marked: boolean | null = null;
+  for (let i = 0; i < 3 && marked === null && why !== "lost"; i++) marked = await markDone(ref, costCents + pending).catch(() => null);
+  if (why === "lost" || marked === false) {
     await usage(0);
     return { kind: "lost" };
   }
@@ -537,7 +552,7 @@ export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResul
           : nothingNew
             ? { kind: "end", status: "done", outcome: "nothing_new", summary: text.trimStart().split("\n").slice(1).join(" ").trim().slice(0, 500) }
             : { kind: "next" };
-  const status = retry.retry ? "retried" : !ok ? "failed" : why === "stop" ? "stopped" : why === "stale" ? "interrupted" : "done";
+  const status = result.kind === "retry" ? "retried" : !ok ? "failed" : why === "stop" ? "stopped" : why === "stale" ? "interrupted" : "done";
   const note = why === "deadline" ? "cut_short" : retry.retry ? "busy" : "";
   const advance = result.kind === "next";
   const nextId = advance ? nextStepId(spec, step) : "";

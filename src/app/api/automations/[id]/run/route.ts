@@ -13,6 +13,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/automations
   if (g instanceof Response) return g;
   const { id } = await ctx.params;
   const [max, windowMs] = LIMITS.runAutomation;
-  if (await overLimit(`auto:runAutomation:${id}`, max, windowMs)) return Response.json({ error: g.t("Too many requests. Try again in an hour.") }, { status: 429 });
+  // Per automation of this account, so another account's tries (404s) never use it up.
+  if (await overLimit(`auto:runAutomation:${g.user.id}:${id}`, max, windowMs)) return Response.json({ error: g.t("Too many requests. Try again in an hour.") }, { status: 429 });
   return runNow(g, id, await bodyOf(request));
 }

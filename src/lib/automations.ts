@@ -317,7 +317,8 @@ export const runTimeText = (utcMs: number, timeZone: string, locale: string) =>
 
 /** "Next: …" for the next few run times. */
 export function describeNext(times: number[], timeZone: string, t: Translate, locale: string): string {
-  const dates = new Intl.ListFormat(locale, { type: "conjunction" }).format(times.map((x) => runTimeText(x, timeZone, locale)));
+  // Each time has commas of its own ("Tue, Oct 20, 8:00 AM"), so they are set apart with a middle dot.
+  const dates = times.map((x) => runTimeText(x, timeZone, locale)).join(" · ");
   return t(WHEN_WORDS.next, { dates });
 }
 

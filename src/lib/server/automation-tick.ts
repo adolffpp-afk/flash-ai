@@ -6,7 +6,8 @@
  *      compare-and-set on next_at): a slot past its grace window is missed, one that would overlap a
  *      run still going is skipped, an older slot that never started is superseded, all for free, and
  *      the next slot is always the first after now, so an outage never makes a burst;
- *   3. marks runs that waited in the queue past their grace window as missed (never started, never charged);
+ *   3. marks scheduled runs that never started a step by the end of their grace window (queued, claimed
+ *      but never sent, or waiting to try again) as missed, never charged;
  *   4. claims what it can start now, within the account's and Flash's limits (see claimRuns), and
  *   5. sends each claimed run to its own work call at once;
  *   6. once a day: deletes automations being deleted, compacts old receipts, prunes notices, versions
@@ -39,6 +40,27 @@ export const DUE_CHECKS = [
 ];
 const DAILY_KEY = "auto:daily";
 const CAPACITY_KEY = "auto:capacity";
+/** This month's estimated writes, counted by the daily job ({ month, writes }), for /admin. */
+const WRITES_KEY = "auto:writes";
+
+/**
+ * A run that never started a step: nothing done or charged, no lease and no hold open. Claimed runs are
+ * 'running' from their claim, so this is what a slot whose work call never arrived looks like too.
+ */
+const NEVER_STARTED = `step = '' AND credits = 0 AND lease_until < ${DB_NOW}
+  AND NOT EXISTS (SELECT 1 FROM credit_holds h WHERE h.run_id = automation_runs.id AND h.settled_at = 0 AND h.run_id <> '')`;
+
+/** Step rows a never-started run left running (a server that stopped before its hold), closed with it. */
+async function closeLeftSteps(runIds: string[]) {
+  for (let i = 0; i < runIds.length; i += 200) {
+    const chunk = runIds.slice(i, i + 200);
+    await sql(
+      `UPDATE automation_run_steps SET status = 'interrupted', note = 'interrupted', finished_at = ${DB_NOW}
+        WHERE status = 'running' AND run_id IN (${chunk.map(() => "?").join(",")})`,
+      chunk,
+    );
+  }
+}
 
 export async function anythingDue(): Promise<boolean> {
   for (const check of DUE_CHECKS) if (await one(check)) return true;
@@ -157,7 +179,7 @@ async function resumePaused(): Promise<number> {
             args: [next, a.id, a.paused_reason, a.resume_at],
           },
           {
-            sql: `UPDATE automation_runs SET parked = 0, updated_at = ${DB_NOW} WHERE automation_id = ? AND parked = 1 AND EXISTS (SELECT 1 FROM automations WHERE id = ? AND status = 'on')`,
+            sql: `UPDATE automation_runs SET parked = 0, updated_at = ${DB_NOW} WHERE automation_id = ? AND finished_at = 0 AND parked = 1 AND EXISTS (SELECT 1 FROM automations WHERE id = ? AND status = 'on')`,
             args: [a.id, a.id],
           },
         ],
@@ -188,8 +210,9 @@ async function capacityFull(): Promise<boolean> {
 
 /**
  * Turns due schedules into runs (at most 200 a tick), each in one batch: an older slot that never
- * started is superseded, the slot's run is inserted (queued, or skipped as missed, overlapping or over
- * capacity) once per slot, and next_at moves to the first slot after now by compare-and-set.
+ * started (queued, claimed or waiting to try again, see NEVER_STARTED) is superseded, the slot's run is
+ * inserted (queued, or skipped as missed, overlapping or over capacity) once per slot, and next_at moves
+ * to the first slot after now by compare-and-set. Each reads only the automation's unfinished runs.
  */
 async function enqueueDue(): Promise<number> {
   const due = await all<{ id: string; user_id: string; name: string; next_at: number; time_zone: string; spec: string }>(
@@ -217,9 +240,10 @@ async function enqueueDue(): Promise<number> {
     const rs = await (await db()).batch(
       [
         {
-          sql: `UPDATE automation_runs SET status = 'skipped', outcome = 'superseded', finished_at = ${DB_NOW}, updated_at = ${DB_NOW}
-                 WHERE automation_id = ? AND origin = 'schedule' AND status = 'queued' AND attempts = 0 AND lease_until < ${DB_NOW} AND run_key <> ?
-                   AND EXISTS (SELECT 1 FROM automations WHERE id = ? AND next_at = ? AND status = 'on')`,
+          sql: `UPDATE automation_runs SET status = 'skipped', outcome = 'superseded', finished_at = ${DB_NOW}, updated_at = ${DB_NOW}, lease_owner = '', lease_until = 0
+                 WHERE automation_id = ? AND finished_at = 0 AND origin = 'schedule' AND status IN ('queued','running') AND ${NEVER_STARTED} AND run_key <> ?
+                   AND EXISTS (SELECT 1 FROM automations WHERE id = ? AND next_at = ? AND status = 'on')
+                RETURNING id`,
           args: [a.id, key, a.id, slot],
         },
         {
@@ -262,6 +286,7 @@ async function enqueueDue(): Promise<number> {
       ],
       "write",
     );
+    if (rs[0].rows.length) await closeLeftSteps(rs[0].rows.map((r) => String(r.id)));
     const inserted = rs[1].rows[0] as unknown as { id: string; status: string; outcome: string } | undefined;
     if (!inserted) continue;
     made++;
@@ -276,15 +301,19 @@ async function enqueueDue(): Promise<number> {
   return made;
 }
 
-/** Runs that waited in the queue past their grace window: missed, never started, never charged (told once a day). */
+/**
+ * Scheduled runs past their grace window that never started a step (queued, claimed but never sent,
+ * or waiting to try again after Claude was busy): missed, never charged (told once a day).
+ */
 async function missLate(): Promise<number> {
   const r = await sql(
-    `UPDATE automation_runs SET status = 'skipped', outcome = 'missed', finished_at = ${DB_NOW}, updated_at = ${DB_NOW}
+    `UPDATE automation_runs SET status = 'skipped', outcome = 'missed', finished_at = ${DB_NOW}, updated_at = ${DB_NOW}, lease_owner = '', lease_until = 0
       WHERE id IN (SELECT id FROM automation_runs
-                    WHERE parked = 0 AND status IN ('queued','waiting','running','approval') AND status = 'queued' AND attempts = 0
-                      AND lease_until < ${DB_NOW} AND grace_until > 0 AND grace_until < ${DB_NOW} LIMIT 500)
+                    WHERE parked = 0 AND status IN ('queued','waiting','running','approval') AND status IN ('queued','running')
+                      AND grace_until > 0 AND grace_until < ${DB_NOW} AND ${NEVER_STARTED} LIMIT 500)
      RETURNING id, automation_id, user_id`,
   );
+  if (r.rows.length) await closeLeftSteps(r.rows.map((row) => String(row.id)));
   const told = new Set<string>();
   for (const row of r.rows as unknown as { id: string; automation_id: string; user_id: string }[]) {
     if (told.has(row.automation_id)) continue;
@@ -303,7 +332,7 @@ async function missLate(): Promise<number> {
   return r.rows.length;
 }
 
-/** Receipt detail kept: 30 days or the last 50 runs per automation, whichever keeps less, and 20 MB per account. */
+/** Receipt detail kept: 30 days or the last 50 runs with detail per automation, whichever keeps less, and 20 MB per account. */
 export const RECEIPT_DAYS = 30;
 export const RECEIPT_RUNS = 50;
 export const RECEIPT_BYTES = 20 * 1024 * 1024;
@@ -376,14 +405,35 @@ export async function deleteAutomationNow(a: { id: string; user_id: string }): P
 
 /** Clears the inputs and outputs of these runs' steps; their receipts and fingerprints stay. */
 const COMPACT = `UPDATE automation_run_steps SET output = NULL, input = '' WHERE output IS NOT NULL AND run_id IN`;
+/** Runs whose steps still have detail (the automation_run_steps_detail index): a pass reads only those, never the same twice. */
+const DETAILED = "SELECT run_id FROM automation_run_steps WHERE output IS NOT NULL";
+/** The daily passes go in batches of this many runs, at most BATCHES of them a day. */
+const BATCH = 5000;
+const BATCHES = 20;
+
+/** Runs a pass until a batch comes back short (nothing more to do) or the day's batches are used. */
+async function inBatches(pass: () => Promise<number>) {
+  for (let batch = 0; batch < BATCHES; batch++) if ((await pass()) < BATCH) break;
+}
 
 async function compactReceipts() {
   const now = Date.now();
-  await sql(`${COMPACT} (SELECT id FROM automation_runs WHERE finished_at > 0 AND finished_at < ? LIMIT 5000)`, [now - RECEIPT_DAYS * DAY]);
-  await sql(
-    `${COMPACT} (SELECT id FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY automation_id ORDER BY created_at DESC) AS k
-                                    FROM automation_runs WHERE finished_at > 0) WHERE k > ? LIMIT 5000)`,
-    [RECEIPT_RUNS],
+  // Older than 30 days.
+  await inBatches(
+    async () =>
+      (await sql(`${COMPACT} (SELECT id FROM automation_runs WHERE id IN (${DETAILED}) AND finished_at > 0 AND finished_at < ? LIMIT ${BATCH})`, [now - RECEIPT_DAYS * DAY]))
+        .rowsAffected,
+  );
+  // Beyond the newest 50 runs with detail of each automation.
+  await inBatches(
+    async () =>
+      (
+        await sql(
+          `${COMPACT} (SELECT id FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY automation_id ORDER BY created_at DESC) AS k
+                                          FROM automation_runs WHERE id IN (${DETAILED}) AND finished_at > 0) WHERE k > ? LIMIT ${BATCH})`,
+          [RECEIPT_RUNS],
+        )
+      ).rowsAffected,
   );
   // Accounts over their receipt space: oldest detail first.
   const over = await all<{ user_id: string; bytes: number }>(
@@ -393,8 +443,8 @@ async function compactReceipts() {
   for (const u of over) {
     let extra = Number(u.bytes) - RECEIPT_BYTES;
     const runs = await all<{ id: string; bytes: number }>(
-      `SELECT r.id, SUM(LENGTH(s.output)) + SUM(LENGTH(s.input)) AS bytes FROM automation_runs r JOIN automation_run_steps s ON s.run_id = r.id
-        WHERE r.user_id = ? AND r.finished_at > 0 AND s.output IS NOT NULL GROUP BY r.id ORDER BY r.created_at LIMIT 1000`,
+      `SELECT s.run_id AS id, SUM(LENGTH(s.output)) + SUM(LENGTH(s.input)) AS bytes FROM automation_run_steps s CROSS JOIN automation_runs r ON r.id = s.run_id
+        WHERE s.user_id = ? AND s.output IS NOT NULL AND r.finished_at > 0 GROUP BY s.run_id ORDER BY MIN(r.created_at) LIMIT 1000`,
       [u.user_id],
     );
     const ids: string[] = [];
@@ -408,15 +458,18 @@ async function compactReceipts() {
       await sql(`${COMPACT} (${chunk.map(() => "?").join(",")})`, chunk);
     }
   }
-  // After 13 months even the fingerprint goes.
-  const old = `SELECT id FROM automation_runs WHERE finished_at > 0 AND finished_at < ? LIMIT 5000`;
-  await (await db()).batch(
-    [
-      { sql: `DELETE FROM automation_run_steps WHERE run_id IN (${old})`, args: [now - RUN_DAYS * DAY] },
-      { sql: `DELETE FROM automation_runs WHERE id IN (${old})`, args: [now - RUN_DAYS * DAY] },
-    ],
-    "write",
-  );
+  // After 13 months even the fingerprint goes, oldest first (the automation_runs_created index).
+  const old = `SELECT id FROM automation_runs WHERE created_at < ? AND finished_at > 0 ORDER BY created_at LIMIT ${BATCH}`;
+  await inBatches(async () => {
+    const rs = await (await db()).batch(
+      [
+        { sql: `DELETE FROM automation_run_steps WHERE run_id IN (${old})`, args: [now - RUN_DAYS * DAY] },
+        { sql: `DELETE FROM automation_runs WHERE id IN (${old})`, args: [now - RUN_DAYS * DAY] },
+      ],
+      "write",
+    );
+    return rs[1].rowsAffected;
+  });
 }
 
 /** Flash's Turso writes a month (AUTOMATION_MONTHLY_WRITES, the plan's included writes), for the capacity check. */
@@ -425,16 +478,34 @@ const monthlyWrites = () => {
   return set > 0 ? set : 25_000_000;
 };
 
-/** Estimated writes this month from runs: past 90% of the plan, hourly slots are skipped for free until the month ends. */
-export async function monthWrites(): Promise<{ writes: number; limit: number }> {
-  const row = await one<{ n: number }>("SELECT COUNT(*) AS n FROM automation_runs WHERE created_at >= ?", [monthStart(Date.now())]);
-  return { writes: Number(row?.n ?? 0) * WRITES_PER_RUN, limit: monthlyWrites() };
+/**
+ * Estimated writes this month from runs, as the daily job last counted them (a new month counts from
+ * 0 until its first daily job): past 90% of the plan, hourly slots are skipped for free until the month ends.
+ */
+export async function monthWrites(): Promise<{ writes: number; limit: number; day: string }> {
+  const row = await one<{ value: string }>("SELECT value FROM settings WHERE key = ?", [WRITES_KEY]);
+  let saved: { month?: unknown; writes?: unknown; day?: unknown } = {};
+  try {
+    saved = JSON.parse(row?.value || "{}") as typeof saved;
+  } catch {
+    // Not counted yet.
+  }
+  const current = saved.month === utcDay(Date.now()).slice(0, 7);
+  return { writes: current ? Number(saved.writes) || 0 : 0, limit: monthlyWrites(), day: current && typeof saved.day === "string" ? saved.day : "" };
 }
 
+/** The daily count of this month's runs (the automation_runs_created index), kept for monthWrites and the capacity check. */
 async function checkCapacity() {
-  const { writes, limit } = await monthWrites();
-  await sql("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", [
-    CAPACITY_KEY,
-    writes >= limit * 0.9 ? utcDay(Date.now()).slice(0, 7) : "",
-  ]);
+  const now = Date.now();
+  const row = await one<{ n: number }>("SELECT COUNT(*) AS n FROM automation_runs WHERE created_at >= ?", [monthStart(now)]);
+  const writes = Number(row?.n ?? 0) * WRITES_PER_RUN;
+  const month = utcDay(now).slice(0, 7);
+  const save = "INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value";
+  await (await db()).batch(
+    [
+      { sql: save, args: [WRITES_KEY, JSON.stringify({ month, writes, day: utcDay(now) })] },
+      { sql: save, args: [CAPACITY_KEY, writes >= monthlyWrites() * 0.9 ? month : ""] },
+    ],
+    "write",
+  );
 }

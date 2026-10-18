@@ -41,6 +41,8 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
 }) as typeof fetch;
 
 const { one, run: sql } = await import("../src/lib/server/db.ts");
+const R = await import("../src/lib/server/automation-runner.ts");
+const { localeOf } = await import("../src/lib/i18n.ts");
 const F = await import("./support/automation-fixtures.ts");
 const A = await import("../src/lib/automations.ts");
 const API = await import("../src/lib/server/automation-api.ts");
@@ -116,7 +118,7 @@ async function runOnce(cookie: string, id: string, seenMax: number) {
 }
 
 test("who may call: 401 signed out, and in PR 1a 404 for everyone but an admin, on every automation route", async () => {
-  const pat = await F.account("pat", 100);
+  const pat = await F.account("pat", 100, { admin: false });
   const boss = await admin("boss");
   assert.equal((await listRoute.GET(req("/api/automations"))).status, 401);
   assert.equal((await listRoute.POST(req("/api/automations", { json: { spec: DAILY } }))).status, 401);
@@ -191,7 +193,7 @@ test("each route counts against its own limit, per account, and Run now per auto
   assert.equal(await count("automations", "user_id = ?", [id]), 0);
   assert.equal((await listRoute.GET(req("/api/automations", { cookie }))).status, 200, "listing has its own limit");
   const aid = await F.automation({ userId: id });
-  await full(`auto:runAutomation:${aid}`, 10);
+  await full(`auto:runAutomation:${id}:${aid}`, 10);
   const ran = await runRoute.POST(req(`/api/automations/${aid}/run`, { cookie, json: { requestId: "abcdefgh12", seenMax: 1000 } }), ctx({ id: aid }));
   assert.equal(ran.status, 429);
   assert.equal(await count("automation_runs", "automation_id = ?", [aid]), 0);
@@ -439,14 +441,21 @@ test("the admin card prices its test automations first and makes one only at the
     runs: { id: string; held: number; openHolds: number; credits: number }[];
     notices: { title: string; text: string }[];
   };
-  assert.deepEqual(card.automations.map((a) => a.name).sort(), ["Burn-in: one-off in 3 minutes", "Burn-in: run by hand"]);
+  // Each named with its kind, level, mode and the start of its instruction, so test automations tell apart.
+  const names = card.automations.map((a) => a.name).sort();
+  assert.equal(names.length, 2);
+  assert.match(names[0], /^Burn-in: one-off in 3 minutes · "Write two sentences .+…" · Sonic Write$/);
+  assert.match(names[1], /^Burn-in: run by hand · "Write two sentences .+…" · Sonic Write$/);
+  assert.ok(names.every((n) => n.length <= 80));
+  assert.equal(API.burnInSpec("daily", "UTC", "Overlap test", "ultra", "quick").name, 'Burn-in: every day · "Overlap test" · Summit Quick research');
+  assert.equal(API.burnInSpec("daily", "UTC", "x".repeat(200), "ultra", "research").name.length, 80);
   assert.equal(card.runs[0].id, runId);
   assert.ok(card.runs[0].held >= card.runs[0].credits && card.runs[0].credits > 0 && card.runs[0].openHolds === 0);
-  assert.deepEqual(card.notices.map((n) => [n.title, n.text]), [["Burn-in: run by hand", "Burn-in: run by hand is ready"]]);
+  assert.deepEqual(card.notices.map((n) => [n.title, n.text]), [[names[1], `${names[1]} is ready`]]);
 });
 
 test("api/me says automationsEnabled only for admins, and only once automations are set up here", async () => {
-  const pat = await F.account("pat_me", 100);
+  const pat = await F.account("pat_me", 100, { admin: false });
   const boss = await admin("meboss", 100);
   const enabled = async (cookie: string) => ((await (await meRoute.GET(req("/api/me", { cookie }))).json()) as { automationsEnabled: boolean }).automationsEnabled;
   assert.equal(await enabled(pat.cookie), false);
@@ -520,4 +529,130 @@ test("/admin's automation lines: setup by name only, cron health worked out from
     process.env.FLASH_APP_URL = "http://flash.test";
     process.env.ANTHROPIC_AUTOMATIONS_API_KEY = key;
   }
+});
+
+// The review's regressions (each failed before its fix).
+
+const NOW = "CAST(unixepoch('subsec') * 1000 AS INTEGER)";
+const patch = (cookie: string, id: string, json: Record<string, unknown>) => oneRoute.PATCH(req(`/api/automations/${id}`, { cookie, method: "PATCH", json }), ctx({ id }));
+type Card = { automations: { id: string; spentThisMonth: number; heldNow: number }[]; runs: { id: string; held: number; holds: number; deleted: boolean }[]; spentThisMonth: number; heldNow: number; noticeLocale: string };
+const cardOf = async (cookie: string) => (await body(await adminRoute.GET(req("/api/admin/automations", { cookie })))) as unknown as Card;
+
+test("a downloaded receipt whose words were changed doesn't match, though its fingerprint is Flash's", async () => {
+  const { cookie } = await admin("rv1");
+  const aid = await create(cookie, F.WRITE_SPEC);
+  claude.state.replies.push({ text: "Clear skies all day." });
+  const started = await runOnce(cookie, aid, (await priceOf(cookie, F.WRITE_SPEC)).worst);
+  const runId = ((await body(started)).run as { id: string }).id;
+  const saved = (await (await receiptRoute.GET(req(`/api/automations/runs/${runId}?format=json`, { cookie }), ctx({ runId }))).json()) as {
+    run: { credits: number; status: string };
+    steps: { output: string; credits: number }[];
+    receipt: Record<string, unknown>;
+  };
+  const check = async (receipt: unknown, id = runId) =>
+    ((await (await receiptRoute.POST(req(`/api/automations/runs/${id}`, { cookie, json: { action: "check", receipt } }), ctx({ runId: id }))).json()) as { matches: boolean }).matches;
+  const changed = (edit: (r: typeof saved) => void) => {
+    const copy = JSON.parse(JSON.stringify(saved)) as typeof saved;
+    edit(copy);
+    return copy;
+  };
+  assert.equal(await check(saved), true);
+  assert.equal(await check(saved.receipt), true, "its { prev, receipt, hash } alone");
+  assert.equal(await check(changed((r) => (r.steps[0].output = "Storms all day."))), false, "an answer changed");
+  assert.equal(await check(changed((r) => (r.run.credits = 0))), false, "the charge changed");
+  assert.equal(await check(changed((r) => (r.steps[0].credits = 0))), false, "a step's charge changed");
+  assert.equal(await check(changed((r) => r.steps.pop())), false, "a step left out");
+  assert.equal(await check(changed((r) => (r.steps[0].output = ""))), true, "an answer compacted to nothing is left out of the check");
+  // Another run's receipt is not this run's.
+  claude.state.replies.push({ text: "Rain later." });
+  const other = ((await body(await runOnce(cookie, aid, (await priceOf(cookie, F.WRITE_SPEC)).worst))).run as { id: string }).id;
+  assert.equal(await check(saved, other), false);
+});
+
+test("resuming an automation paused mid-run lets that run go on; its next slot isn't skipped as overlap", async () => {
+  const { cookie, id } = await admin("rv2");
+  const aid = await create(cookie, DAILY);
+  const worst = (await priceOf(cookie, DAILY)).worst;
+  // Its run had done its AI step when the owner paused it: the runner parked it after that step.
+  const rid = await F.runRow({ automationId: aid, userId: id, origin: "schedule", status: "running", step: "n1", runKey: "sched:1" });
+  await sql(`UPDATE automation_runs SET credits = 3, vars_json = '{"a1":"Sunny today."}' WHERE id = ?`, [rid]);
+  assert.equal((await patch(cookie, aid, { status: "paused" })).status, 200);
+  await sql("UPDATE automation_runs SET parked = 1 WHERE id = ?", [rid]);
+  assert.equal((await patch(cookie, aid, { status: "on", seenMax: worst })).status, 200);
+  assert.equal((await one<{ parked: number }>("SELECT parked FROM automation_runs WHERE id = ?", [rid]))!.parked, 0, "it goes on");
+  await sql(`UPDATE automation_runs SET lease_owner = 'w:' || id, lease_until = ${NOW} + 120000 WHERE id = ?`, [rid]);
+  await R.advanceRun(rid, `w:${rid}`, Date.now() + 760_000);
+  assert.equal((await one<{ status: string }>("SELECT status FROM automation_runs WHERE id = ?", [rid]))!.status, "done", "and delivers");
+  const T = await import("../src/lib/server/automation-tick.ts");
+  await sql("UPDATE automations SET next_at = ? WHERE id = ?", [Date.now() - 1000, aid]);
+  await T.runTick("tk", { dispatch: async () => {} });
+  const slot = await one<{ status: string; outcome: string }>("SELECT status, outcome FROM automation_runs WHERE automation_id = ? AND id <> ? ORDER BY created_at DESC LIMIT 1", [aid, rid]);
+  assert.notEqual(slot!.outcome, "overlap");
+});
+
+test("a one-off whose time has come can still be paused or renamed; turning it on checks its time", async () => {
+  const { cookie } = await admin("rv3");
+  const soon = new Date(Date.now() + 10 * 60_000).toISOString();
+  const once: Spec = { ...F.WRITE_SPEC, trigger: { type: "schedule", when: { kind: "once", date: soon.slice(0, 10), at: soon.slice(11, 16) } } };
+  const aid = await create(cookie, once);
+  // Its time comes (the version keeps the time it was saved with).
+  const gone = new Date(Date.now() + 60_000).toISOString();
+  await sql("UPDATE automation_versions SET spec = ? WHERE automation_id = ?", [JSON.stringify({ ...once, trigger: { type: "schedule", when: { kind: "once", date: gone.slice(0, 10), at: gone.slice(11, 16) } } }), aid]);
+  assert.equal((await patch(cookie, aid, { name: "Renamed" })).status, 200);
+  assert.equal((await patch(cookie, aid, { status: "paused" })).status, 200);
+  assert.equal((await patch(cookie, aid, { status: "on", seenMax: 100_000 })).status, 400, "too late to turn on");
+});
+
+test("another account's tries at Run now never use up the owner's limit for it", async () => {
+  const owner = await admin("rv4");
+  const other = await admin("rv5");
+  const aid = await create(owner.cookie, F.WRITE_SPEC);
+  for (let i = 0; i < 10; i++) {
+    const r = await runRoute.POST(req(`/api/automations/${aid}/run`, { cookie: other.cookie, json: { requestId: `abcdefgh${100 + i}`, seenMax: 1000 } }), ctx({ id: aid }));
+    assert.equal(r.status, 404);
+  }
+  claude.state.replies.push({ text: "Mine." });
+  assert.equal((await runOnce(owner.cookie, aid, (await priceOf(owner.cookie, F.WRITE_SPEC)).worst)).status, 202);
+});
+
+test("charged this month counts only settled charges; an open hold shows apart, as held now", async () => {
+  const { cookie, id } = await admin("rv6");
+  const aid = await create(cookie, F.WRITE_SPEC);
+  await sql("INSERT INTO credit_ledger (user_id, amount, reason, ref, automation_id, created_at, settled_at) VALUES (?, -5, 'automation', 'auto:x1:a1:1', ?, ?, ?)", [id, aid, Date.now(), Date.now()]);
+  await sql("INSERT INTO credit_ledger (user_id, amount, reason, ref, automation_id, created_at) VALUES (?, -30, 'automation', 'auto:x2:a1:1', ?, ?)", [id, aid, Date.now()]);
+  const one_ = (await body(await oneRoute.GET(req(`/api/automations/${aid}`, { cookie }), ctx({ id: aid })))).automation as { spentThisMonth: number; heldNow: number };
+  assert.deepEqual([one_.spentThisMonth, one_.heldNow], [5, 30]);
+  const card = await cardOf(cookie);
+  assert.deepEqual([card.spentThisMonth, card.heldNow], [5, 30]);
+});
+
+test("the card: a run's largest hold (not their sum), runs of an automation being deleted still shown and readable, and the notices' locale", async () => {
+  const { cookie, id } = await admin("rv7");
+  await sql("UPDATE users SET language = 'ar' WHERE id = ?", [id]);
+  const aid = await F.automation({ userId: id });
+  const rid = await F.runRow({ automationId: aid, userId: id, status: "done" });
+  await sql("UPDATE automation_runs SET finished_at = ? WHERE id = ?", [Date.now(), rid]);
+  for (const [n, held] of [[1, 20], [2, 30]]) {
+    await sql("INSERT INTO credit_holds (ref, user_id, run_id, held, lease_until, settled_at, credits, created_at) VALUES (?, ?, ?, ?, 0, ?, 1, ?)", [`auto:${rid}:a1:${n}`, id, rid, held, Date.now(), Date.now() + n]);
+  }
+  let card = await cardOf(cookie);
+  const run = card.runs.find((r) => r.id === rid)!;
+  assert.deepEqual([run.held, run.holds, run.deleted], [30, 2, false]);
+  assert.equal(card.noticeLocale, localeOf("ar"), "the notices' times are written as their text is");
+  // Deleted while it ran: its run stays on the card, marked, and its receipt can be read (not acted on).
+  await sql("UPDATE automations SET status = 'deleting' WHERE id = ?", [aid]);
+  card = await cardOf(cookie);
+  assert.equal(card.runs.find((r) => r.id === rid)?.deleted, true);
+  assert.equal((await receiptRoute.GET(req(`/api/automations/runs/${rid}`, { cookie }), ctx({ runId: rid }))).status, 200);
+  assert.equal((await receiptRoute.POST(req(`/api/automations/runs/${rid}`, { cookie, json: { action: "retry", seenMax: 1000 } }), ctx({ runId: rid }))).status, 404);
+});
+
+test("a skipped run's receipt says why, in the reader's words", async () => {
+  const { cookie, id } = await admin("rv8");
+  const aid = await F.automation({ userId: id, spec: DAILY });
+  const rid = await F.runRow({ automationId: aid, userId: id, origin: "schedule", status: "skipped" });
+  await sql("UPDATE automation_runs SET outcome = 'missed', finished_at = ? WHERE id = ?", [Date.now(), rid]);
+  const r = (await (await receiptRoute.GET(req(`/api/automations/runs/${rid}`, { cookie }), ctx({ runId: rid }))).json()) as { run: { noteText: string }; steps: unknown[] };
+  assert.equal(r.steps.length, 0);
+  assert.equal(r.run.noteText, A.NOTICES.missed);
 });

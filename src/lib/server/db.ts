@@ -791,6 +791,10 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS automation_runs_lease ON automation_runs(lease_until) WHERE lease_until > 0`,
   `CREATE INDEX IF NOT EXISTS automation_runs_list ON automation_runs(automation_id, created_at)`,
   `CREATE INDEX IF NOT EXISTS automation_runs_user ON automation_runs(user_id, finished_at)`,
+  // An automation's runs still going (each slot's supersede and overlap checks, pauses), and runs by
+  // age (the month's count, retention, the lag line), so neither reads an automation's whole history.
+  `CREATE INDEX IF NOT EXISTS automation_runs_open ON automation_runs(automation_id) WHERE finished_at = 0`,
+  `CREATE INDEX IF NOT EXISTS automation_runs_created ON automation_runs(created_at)`,
   // The receipt: one row per attempt of a step. output is gzip of {text, sources}; note an English
   // phrase (why it was skipped or cut short); hold_ref the credit hold and ledger ref of a paid attempt.
   `CREATE TABLE IF NOT EXISTS automation_run_steps (
@@ -816,6 +820,8 @@ const SCHEMA = [
   )`,
   // At most one step of a run runs at a time, whoever tries to start it.
   `CREATE UNIQUE INDEX IF NOT EXISTS automation_run_steps_one ON automation_run_steps(run_id) WHERE status = 'running'`,
+  // Steps that still have their input and output (the daily compaction reads only these).
+  `CREATE INDEX IF NOT EXISTS automation_run_steps_detail ON automation_run_steps(user_id, run_id) WHERE output IS NOT NULL`,
   // Every credit hold that must be settled even if the function holding it dies (see credit-holds.ts).
   // ref is its ledger ref (auto:<runId>:<stepId>:<attempt>). started is 1 once the provider call was
   // sent, done 1 once it ended; spent_cents and left_cents are the meter's last checkpoint. Past
@@ -963,6 +969,8 @@ async function init(c: Client) {
   await c.execute("CREATE INDEX IF NOT EXISTS site_records_owner ON site_records(site_slug, owner, collection, created_at)");
   await c.execute("CREATE INDEX IF NOT EXISTS site_messages_contact ON site_messages(site_slug, contact_id)");
   await c.execute("CREATE INDEX IF NOT EXISTS credit_ledger_auto ON credit_ledger(automation_id, created_at) WHERE automation_id <> ''");
+  // Automations' charges by time, Flash-wide (the peak spend line on /admin).
+  await c.execute("CREATE INDEX IF NOT EXISTS credit_ledger_auto_time ON credit_ledger(created_at) WHERE automation_id <> ''");
 }
 
 /** Returns the database client, creating the tables on first use. */

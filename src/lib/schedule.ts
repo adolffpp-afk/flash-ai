@@ -136,9 +136,13 @@ function onDate(when: When, timeZone: string, [y, m, d]: [number, number, number
     const date = calendarDate(when.date);
     if (date && date[0] === y && date[1] === m && date[2] === d) times = [at!];
   }
-  const utc = times.filter((t) => t !== null).map((t) => localToUtc(y, m, d, t, timeZone));
-  // Two hourly slots can land on one moment when the clocks spring forward between them.
-  return [...new Set(utc)].sort((a, b) => a - b);
+  const utc = [...new Set(times.filter((t) => t !== null).map((t) => localToUtc(y, m, d, t, timeZone)))].sort((a, b) => a - b);
+  if (when.kind !== "hourly") return utc;
+  // When the clocks spring forward between two hourly slots, they can land on one moment, or closer
+  // than MIN_GAP_MS (Lord Howe moves by 30 minutes): the later one is left out.
+  const kept: number[] = [];
+  for (const t of utc) if (!kept.length || t - kept.at(-1)! >= MIN_GAP_MS) kept.push(t);
+  return kept;
 }
 
 /** How many local days to look ahead for a schedule's next run. */

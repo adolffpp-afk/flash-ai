@@ -16,12 +16,12 @@
 import { budgetOf, isPaid, MAX_STEPS, NOTICES, parseSpec, stepAt, type Spec, type Step } from "../automations.ts";
 import { nextMonthStart, utcDay } from "../schedule.ts";
 import { isVerified } from "./account.ts";
-import { maxPaid, userById } from "./automations.ts";
+import { automationsOpenTo, maxPaid, userById } from "./automations.ts";
 import { lapsedHolds, reaperCredits, settleHold, type Hold } from "./credit-holds.ts";
 import { topUpFloor } from "./credits.ts";
 import { all, db, one, run as sql } from "./db.ts";
 import { sha256 } from "./ids.ts";
-import { DB_NOW, parkRun, releaseRun, startStep } from "./leases.ts";
+import { DB_NOW, parkRun, probe, releaseRun, startStep } from "./leases.ts";
 import { canonicalJson } from "./mcp-client.ts";
 import { automationLink, NOTICE_TEXT_CHARS, notify, type Notice } from "./notifications.ts";
 import { MAX_ATTEMPTS, outputText, runStep, varsOf, type AutoRow, type Offer, type RunEnd, type RunRow } from "./automation-steps.ts";
@@ -50,21 +50,27 @@ export async function advanceRun(runId: string, me: string, deadline: number): P
   for (let pass = 0; pass <= MAX_STEPS * MAX_ATTEMPTS; pass++) {
     const run = await one<RunRow>(`SELECT * FROM automation_runs WHERE id = ? AND lease_owner = ? AND lease_until > ${DB_NOW}`, [runId, me]);
     if (!run || Number(run.finished_at)) return;
-    if (Number(run.stop_requested)) return void (await finish(run, "stopped", "stopped_by_user", { me }));
+    // Delete also asks its runs to stop: a run of an automation being deleted ends as deleted.
     const auto = await automationRow(run.automation_id);
     if (!auto || auto.status === "deleting") return void (await finish(run, "stopped", "deleted", { me }));
+    if (Number(run.stop_requested)) return void (await finish(run, "stopped", "stopped_by_user", { me }));
     // The step in flight finished; the next one waits until the automation is turned back on.
     if (auto.status === "paused") return void (await parkRun(runId, me));
     const user = await userById(auto.user_id);
     if (!user) return void (await finish(run, "stopped", "deleted", { me }));
     if (!isVerified(user)) return void (await finish(run, "stopped", "unconfirmed", { me }));
+    // Automations are no longer open to this account (in PR 1a: no longer an admin): nothing more runs.
+    if (!automationsOpenTo(user)) return void (await finish(run, "stopped", "closed", { me }));
     const spec = await versionSpec(run.automation_id, Number(run.version));
     if (!spec) return void (await finish(run, "failed", "invalid", { me }));
     const step = stepAt(spec, run.step);
     if (!step) return void (await finish(run, "done", run.outcome || "ok", { me, spec }));
     // Not enough time left in this call: the next tick hands it to a fresh one, in its place.
     if (deadline - Date.now() < budgetOf(step)) return void (await releaseRun(runId, me));
-    if ((await earlierAttempts(run, step)) === "started") return void (await finish(run, "interrupted", "interrupted", { me, spec }));
+    const earlier = await earlierAttempts(run, step);
+    if (earlier === "started") return void (await finish(run, "interrupted", "interrupted", { me, spec }));
+    // A hold left behind changed while it was being settled (its worker is still going): the run waits.
+    if (earlier === "busy") return void (await releaseRun(runId, me));
     if (Number(run.attempts) >= MAX_ATTEMPTS) return void (await finish(run, "failed", "failed", { me, spec }));
     const started = await startStep(runId, me, {
       stepId: step.id,
@@ -97,15 +103,16 @@ const waitingAs = (run: Pick<RunRow, "credits" | "step">) => (Number(run.credits
  * Settles what an earlier attempt of this run left behind (a server that stopped mid-step): its
  * step rows still running, and their open holds by the reaper's rule. Says "started" when an
  * attempt of this step had called Claude: the run then ends interrupted, and is never re-run by itself.
+ * "busy" when a hold changed under the settle (its worker is still writing): nothing is settled then.
  */
-async function earlierAttempts(run: RunRow, step: Step): Promise<"started" | "none"> {
+async function earlierAttempts(run: RunRow, step: Step): Promise<"started" | "busy" | "none"> {
   const left = await all<{ step_id: string; attempt: number; hold_ref: string }>(
     "SELECT step_id, attempt, hold_ref FROM automation_run_steps WHERE run_id = ? AND status = 'running'",
     [run.id],
   );
   for (const s of left) {
     const hold = s.hold_ref ? await one<Hold>("SELECT * FROM credit_holds WHERE ref = ?", [s.hold_ref]) : null;
-    if (hold && !Number(hold.settled_at)) await reapHold(hold, { inline: true });
+    if (hold && !Number(hold.settled_at) && !(await reapHold(hold, { inline: true }))) return "busy";
     // No hold (a notice, or a step stopped before its hold was recorded), or one already settled.
     await sql(`UPDATE automation_run_steps SET status = 'interrupted', note = 'interrupted', finished_at = ${DB_NOW} WHERE run_id = ? AND step_id = ? AND attempt = ? AND status = 'running'`, [
       run.id,
@@ -126,7 +133,9 @@ async function earlierAttempts(run: RunRow, step: Step): Promise<"started" | "no
  * Settles a hold left behind (the reaper, see reaperCredits), once: its step is marked interrupted
  * and the credits go on its run. A hold whose call had started ends its run interrupted ("Retry" is
  * the owner's tap); one that never started puts its run back in the queue, in its place. inline: the
- * runner settles it before a step of a run it holds, and decides about the run itself.
+ * runner settles it before a step of a run it holds, and decides about the run itself. Settled only
+ * if the hold is still as it was read (see settleHold's leaseUntil): a worker that marked it started
+ * or renewed it since is left to settle it itself.
  */
 export async function reapHold(h: Hold, o: { inline?: boolean } = {}): Promise<boolean> {
   const charged = Boolean(await one("SELECT 1 FROM credit_ledger WHERE ref = ?", [h.ref]));
@@ -151,6 +160,7 @@ export async function reapHold(h: Hold, o: { inline?: boolean } = {}): Promise<b
           },
         ]
       : [],
+    { leaseUntil: Number(h.lease_until) },
   );
   if (won && started && !o.inline && h.run_id) {
     const run = await runRow(h.run_id);
@@ -231,6 +241,7 @@ function pauseFor(outcome: string, status: RunEnd, auto: AutoRow, now: number): 
   if (outcome === "day_cap") return { reason: "day_cap", resumeAt: Math.floor(now / 86_400_000 + 1) * 86_400_000 };
   if (outcome === "price_up") return { reason: "price_up", resumeAt: 0 };
   if (outcome === "unconfirmed") return { reason: "unconfirmed", resumeAt: 0 };
+  if (outcome === "closed") return { reason: "closed", resumeAt: 0 };
   if (status === "failed" && Number(auto.fail_streak) + 1 >= 3) return { reason: "failing", resumeAt: 0 };
   return null;
 }
@@ -270,6 +281,7 @@ export async function finish(
     const streak = status === "failed" ? Number(auto?.fail_streak ?? 0) + 1 : status === "done" ? 0 : Number(auto?.fail_streak ?? 0);
     const ended = { sql: "EXISTS (SELECT 1 FROM automation_runs WHERE id = ? AND receipt_hash = ? AND finished_at > 0)", args: [run.id, hash] };
     const lease = o.reaper ? { sql: "1 = 1", args: [] } : { sql: "lease_owner = ?", args: [o.me ?? ""] };
+    await probe("before-finish", { runId: run.id, prev });
     const rs = await (await db()).batch(
       [
         {
@@ -296,7 +308,7 @@ export async function finish(
               // Its queued and waiting runs wait with it.
               {
                 sql: `UPDATE automation_runs SET parked = 1, updated_at = ${DB_NOW}
-                       WHERE automation_id = ? AND parked = 0 AND status IN ('queued','waiting') AND lease_until < ${DB_NOW} AND ${ended.sql}`,
+                       WHERE automation_id = ? AND finished_at = 0 AND parked = 0 AND status IN ('queued','waiting') AND lease_until < ${DB_NOW} AND ${ended.sql}`,
                 args: [run.automation_id, ...ended.args],
               },
             ]
@@ -340,7 +352,8 @@ async function tell(
     notices.push(
       outcome === "topup_floor"
         ? { ...base, kind: "credits", phrase: NOTICES.topupFloor, blanks: { name, credits: floor, ...offer }, ref: `credits:${auto.id}:${month}` }
-        : { ...base, kind: "credits", phrase: NOTICES.waitingCredits, blanks: { name, credits: o.need, ...offer }, ref: `credits:${auto.id}:${month}` },
+        : // "Up to": a whole run's worst case (as quoted), never more than the run limit.
+          { ...base, kind: "credits", phrase: NOTICES.waitingCredits, blanks: { name, credits: Math.min(Number(auto.cap_run), Math.max(o.need, Number(auto.quoted_max) || 0)), ...offer }, ref: `credits:${auto.id}:${month}` },
     );
   }
   if (o.pause?.reason === "month_cap") notices.push({ ...base, kind: "paused", phrase: NOTICES.monthCap, blanks: { name, date: o.pause.resumeAt, credits: Number(auto.cap_month) }, ref: `month:${auto.id}:${month}` });

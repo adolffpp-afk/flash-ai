@@ -1,19 +1,20 @@
 /*
  * Credit holds that are settled exactly once, even when the function holding one dies (an automation's
  * paid step; later a chat reply finished with the tab closed). The order inside a paid step:
- *   1. the hold is recorded (recordHold) before any credits move;
+ *   1. the hold is recorded (recordHold) before any credits move, only while the worker holds the run's lease;
  *   2. the credits are taken (chargeOnce, server/credits.ts), then the charge's id is kept (markCharged);
  *   3. started is set just before the provider call is sent (markStarted);
  *   4. while it runs, the hold's lease is renewed with the meter's checkpoint (heartbeat), and when the
  *      call ends its final cost goes in with done = 1 (markDone);
  *   5. it is settled in one batch with a token of its own (settleHold): only the writer whose token
  *      landed lowers the ledger, so a worker finishing and the reaper can't both settle it.
- * Past its lease the tick's reaper settles it (see reaperCredits for what it charges).
+ * Past its lease the tick's reaper settles it (see reaperCredits for what it charges), only as it read
+ * it: a heartbeat that lands first keeps the hold open.
  */
 import type { InStatement, InValue } from "@libsql/client";
 import { claudePrice, creditsFor, fallbackModel, WEB_SEARCH_CENTS } from "../credits.ts";
 import { PEAK_TOKENS_PER_SECOND } from "../engines/claude.ts";
-import { db, run as sql } from "./db.ts";
+import { db, one, run as sql } from "./db.ts";
 import { randomId } from "./ids.ts";
 import { DB_NOW } from "./leases.ts";
 
@@ -41,14 +42,17 @@ export type Hold = {
 
 /**
  * Records a hold before any credits move, with the whole worst case of its plan as what is left.
- * A hold with this ref already recorded is kept as it is (false): the charge then finds its replay.
+ * owner: only while that worker still holds the run's lease (a worker that outlived its lease, say
+ * on a slow token count, records nothing, so it can't charge or call Claude next to the run's new
+ * worker). False when it wasn't recorded: the lease is gone, or a hold with this ref is kept as it is.
  */
-export async function recordHold(h: { ref: string; userId: string; runId: string; held: number; model: string; inputCents: number; leftCents: number }): Promise<boolean> {
+export async function recordHold(h: { ref: string; userId: string; runId: string; held: number; model: string; inputCents: number; leftCents: number; owner?: string }): Promise<boolean> {
+  const lease = h.owner === undefined ? "1 = 1" : `EXISTS (SELECT 1 FROM automation_runs WHERE id = ? AND lease_owner = ? AND lease_until > ${DB_NOW})`;
   const r = await sql(
     `INSERT INTO credit_holds (ref, user_id, run_id, held, model, input_cents, left_cents, lease_until, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ${DB_NOW} + ?, ${DB_NOW})
+     SELECT ?, ?, ?, ?, ?, ?, ?, ${DB_NOW} + ?, ${DB_NOW} WHERE ${lease}
      ON CONFLICT(ref) DO NOTHING`,
-    [h.ref, h.userId, h.runId, h.held, h.model, h.inputCents, h.leftCents, HOLD_LEASE_MS],
+    [h.ref, h.userId, h.runId, h.held, h.model, h.inputCents, h.leftCents, HOLD_LEASE_MS, ...(h.owner === undefined ? [] : [h.runId, h.owner])],
   );
   return r.rowsAffected === 1;
 }
@@ -93,20 +97,30 @@ export type Won = { sql: string; args: InValue[] };
  * Settles a hold at credits, once: in one batch, the hold takes this writer's token if nobody settled
  * it yet, the ledger row is lowered to credits (never raised), and the statements from `then` run,
  * each conditioned on the token (won). Returns whether this writer settled it.
+ * leaseUntil: only if the hold's lease is still the one this writer read (the reaper settles what it
+ * read; every markStarted, heartbeat and markDone moves the lease, so a hold that changed since is left).
+ * When the batch fails, the hold says whether it landed (its token), and it is sent again only if not.
  */
-export async function settleHold(ref: string, credits: number, then: (won: Won) => InStatement[] = () => []): Promise<boolean> {
+export async function settleHold(ref: string, credits: number, then: (won: Won) => InStatement[] = () => [], o: { leaseUntil?: number } = {}): Promise<boolean> {
   const token = randomId(9);
   const won: Won = { sql: "EXISTS (SELECT 1 FROM credit_holds WHERE ref = ? AND settle_token = ?)", args: [ref, token] };
   const c = Math.max(0, Math.round(credits));
-  const rs = await (await db()).batch(
-    [
-      { sql: `UPDATE credit_holds SET settle_token = ?, settled_at = ${DB_NOW}, credits = ? WHERE ref = ? AND settled_at = 0`, args: [token, c, ref] },
-      { sql: `UPDATE credit_ledger SET amount = MAX(amount, ?), settled_at = ${DB_NOW} WHERE ref = ? AND ${won.sql}`, args: [-c, ref, ...won.args] },
-      ...then(won),
-    ],
-    "write",
-  );
-  return rs[0].rowsAffected === 1;
+  const same = o.leaseUntil === undefined ? { sql: "", args: [] } : { sql: " AND lease_until = ?", args: [o.leaseUntil] };
+  const statements: InStatement[] = [
+    { sql: `UPDATE credit_holds SET settle_token = ?, settled_at = ${DB_NOW}, credits = ? WHERE ref = ? AND settled_at = 0${same.sql}`, args: [token, c, ref, ...same.args] },
+    { sql: `UPDATE credit_ledger SET amount = MAX(amount, ?), settled_at = ${DB_NOW} WHERE ref = ? AND ${won.sql}`, args: [-c, ref, ...won.args] },
+    ...then(won),
+  ];
+  for (let attempt = 1; ; attempt++) {
+    try {
+      const rs = await (await db()).batch(statements, "write");
+      return rs[0].rowsAffected === 1;
+    } catch (err) {
+      const h = await one<{ settled_at: number; settle_token: string }>("SELECT settled_at, settle_token FROM credit_holds WHERE ref = ?", [ref]).catch(() => null);
+      if (h && Number(h.settled_at)) return h.settle_token === token;
+      if (!h || attempt >= 3) throw err;
+    }
+  }
 }
 
 /** Holds the reaper should settle: still open, with their lease run out. */

@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { register } from "node:module";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
+import { gzipSync } from "node:zlib";
+import type { InStatement, InValue } from "@libsql/client";
 
 register("./support/route-hooks.mjs", import.meta.url);
 
@@ -19,7 +21,7 @@ for (const name of ["VERCEL_ENV", "VERCEL", "RESEND_API_KEY", "FLASH_DEMO_EMAILS
 }
 const SECRET = "s".repeat(40);
 
-const { one, all, run: sql } = await import("../src/lib/server/db.ts");
+const { db, one, all, run: sql } = await import("../src/lib/server/db.ts");
 const F = await import("./support/automation-fixtures.ts");
 const T = await import("../src/lib/server/automation-tick.ts");
 const S = await import("../src/lib/server/automations.ts");
@@ -53,6 +55,7 @@ const runsOf = (aid: string) => all<{ id: string; status: string; outcome: strin
 );
 const changes = async () => Number((await one<{ n: number }>("SELECT total_changes() AS n"))!.n);
 const bearer = (secret = SECRET) => ({ authorization: `Bearer ${secret}` });
+const NOW = "CAST(unixepoch('subsec') * 1000 AS INTEGER)";
 
 test("an empty tick only reads: anythingDue's checks use their indexes, and the route answers 204 with no writes", async () => {
   process.env.AUTOMATIONS_DEV = "1";
@@ -106,7 +109,9 @@ test("a run still queued past its grace window when it would be claimed is misse
 test("a slot while the last run is still going is skipped; an older slot that never started is superseded", async () => {
   const u = await F.account("tick4", 100);
   const aid = await F.automation({ userId: u.id, spec: HOURLY, nextAt: Date.now() - 1000 });
-  await F.runRow({ automationId: aid, userId: u.id, origin: "schedule", status: "running", runKey: "sched:1" });
+  // Going: a worker holds it.
+  const going = await F.runRow({ automationId: aid, userId: u.id, origin: "schedule", status: "running", runKey: "sched:1" });
+  await sql(`UPDATE automation_runs SET lease_owner = 'w:' || id, lease_until = ${NOW} + 120000 WHERE id = ?`, [going]);
   await tick();
   let runs = await runsOf(aid);
   assert.deepEqual(runs.map((r) => [r.status, r.outcome]), [["running", ""], ["skipped", "overlap"]]);
@@ -285,4 +290,144 @@ test("each claimed run gets its own work call to Flash itself, with the cron sec
     assert.equal(s.outbound, false);
   }
   assert.deepEqual(JSON.parse(seen[0].body), { runId: "run_a", owner: "tk:run_a" });
+});
+
+// The review's regressions (each failed before its fix).
+
+const DAY = 86_400_000;
+/** Every statement some work sends, with the plan SQLite uses for each. */
+async function plansOf(work: () => Promise<unknown>) {
+  const c = await db();
+  const execute = c.execute.bind(c);
+  const batch = c.batch.bind(c);
+  const seen: { sql: string; args: InValue[] }[] = [];
+  const keep = (st: InStatement) => seen.push(typeof st === "string" ? { sql: st, args: [] } : { sql: st.sql, args: (st.args ?? []) as InValue[] });
+  c.execute = (async (st: InStatement) => (keep(st), execute(st))) as typeof c.execute;
+  c.batch = (async (sts: InStatement[], mode?: Parameters<typeof batch>[1]) => (sts.forEach(keep), batch(sts, mode))) as typeof c.batch;
+  try {
+    await work();
+  } finally {
+    c.execute = execute;
+    c.batch = batch;
+  }
+  // Planned on a copy of the schema (no ANALYZE, so the plans are the same): libsql leaves an EXPLAIN of
+  // a write open, and the database the tests use must stay writable.
+  const { createClient } = await import("@libsql/client");
+  const shadow = createClient({ url: ":memory:" });
+  for (const r of (await execute("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY rowid")).rows) await shadow.execute(String(r.sql));
+  const out: { sql: string; plan: string[] }[] = [];
+  for (const st of seen) {
+    const plan = (await shadow.execute({ sql: `EXPLAIN QUERY PLAN ${st.sql}`, args: st.args })).rows.map((r) => String(r.detail));
+    out.push({ sql: st.sql.replace(/\s+/g, " "), plan });
+  }
+  shadow.close();
+  return out;
+}
+/** A plan line that reads a whole table of runs, steps, holds or charges (their aliases in these files included). */
+const wholeTable = (line: string) => /^SCAN (automation_runs|automation_run_steps|credit_holds|credit_ledger|r|s|h)$/.test(line);
+/** Finished runs (and a step with detail each) for history. */
+async function history(o: { automationId: (i: number) => string; userId: (i: number) => string; count: number; at: (i: number) => number; detail?: boolean; prefix: string }) {
+  const out = gzipSync(JSON.stringify({ text: "x".repeat(200) }));
+  const stmts: InStatement[] = [];
+  for (let i = 0; i < o.count; i++) {
+    const id = `${o.prefix}${i}`;
+    stmts.push({
+      sql: "INSERT INTO automation_runs (id, automation_id, user_id, version, run_key, origin, root_origin, status, outcome, due_at, finished_at, created_at, updated_at) VALUES (?, ?, ?, 1, ?, 'schedule', 'schedule', 'done', 'ok', ?, ?, ?, ?)",
+      args: [id, o.automationId(i), o.userId(i), `k:${id}`, o.at(i), o.at(i) + 60_000, o.at(i), o.at(i)],
+    });
+    if (o.detail) stmts.push({ sql: "INSERT INTO automation_run_steps (run_id, step_id, attempt, user_id, kind, status, input, output, started_at) VALUES (?, 'a1', 1, ?, 'ai', 'done', 'in', ?, ?)", args: [id, o.userId(i), out, o.at(i)] });
+  }
+  const c = await db();
+  for (let i = 0; i < stmts.length; i += 4000) await c.batch(stmts.slice(i, i + 4000), "write");
+}
+
+test("a slot claimed but never sent is missed past its grace window, for free, and never holds up the next slot", async () => {
+  const u = await F.account("tick20", 100);
+  const aid = await F.automation({ userId: u.id, spec: HOURLY, nextAt: Date.now() - 1000 });
+  // The slot becomes a run and is claimed, but its work call never arrives.
+  assert.equal((await tick()).sent.length, 1);
+  assert.deepEqual((await runsOf(aid)).map((r) => r.status), ["running"]);
+  // Past its grace window, its claim's lease long gone.
+  await sql(`UPDATE automation_runs SET lease_until = ${NOW} - 1, grace_until = ${NOW} - 60000 WHERE automation_id = ?`, [aid]);
+  const later = await tick();
+  assert.equal(later.report.missed, 1);
+  assert.equal(later.sent.length, 0, "never claimed again");
+  const [run] = await runsOf(aid);
+  assert.deepEqual([run.status, run.outcome, Number(run.credits), run.lease_owner], ["skipped", "missed", 0, ""]);
+  // The next slot is queued, not skipped as overlap.
+  await sql("UPDATE automations SET next_at = ? WHERE id = ?", [Date.now() - 1000, aid]);
+  await tick();
+  const runs = await runsOf(aid);
+  assert.deepEqual(runs.map((r) => r.outcome), ["missed", ""]);
+});
+
+test("a scheduled run waiting to try again (Claude was busy before it started) is missed past its grace window, never two at once", async () => {
+  const u = await F.account("tick21", 100);
+  const aid = await F.automation({ userId: u.id, spec: HOURLY, nextAt: Date.now() + 3_600_000 });
+  const rid = await F.runRow({ automationId: aid, userId: u.id, origin: "schedule", runKey: "sched:800", attempts: 1, graceUntil: Date.now() - 60_000, dueAt: Date.now() - 1000 });
+  await sql("INSERT INTO automation_run_steps (run_id, step_id, attempt, user_id, kind, status, started_at) VALUES (?, 'a1', 1, ?, 'ai', 'running', 0)", [rid, u.id]);
+  const { report, sent } = await tick();
+  assert.equal(report.missed, 1);
+  assert.equal(sent.length, 0);
+  assert.deepEqual((await runsOf(aid)).map((r) => [r.status, r.outcome]), [["skipped", "missed"]]);
+  assert.equal((await one<{ status: string }>("SELECT status FROM automation_run_steps WHERE run_id = ?", [rid]))!.status, "interrupted", "its step row left running is closed");
+});
+
+test("an older slot claimed but never started is superseded by the next, which is queued (not overlap); one under way still blocks it", async () => {
+  const u = await F.account("tick22", 100);
+  const aid = await F.automation({ userId: u.id, spec: HOURLY, nextAt: Date.now() - 1000 });
+  await tick();
+  // Claimed, never sent, its lease run out (still in its grace window).
+  await sql(`UPDATE automation_runs SET lease_until = ${NOW} - 1 WHERE automation_id = ?`, [aid]);
+  await sql("UPDATE automations SET next_at = ? WHERE id = ?", [Date.now() - 500, aid]);
+  await tick();
+  assert.deepEqual((await runsOf(aid)).map((r) => [r.status, r.outcome]), [["skipped", "superseded"], ["running", ""]]);
+  // One that charged a step is never superseded (and its slot after it is skipped as overlap).
+  const aid2 = await F.automation({ userId: u.id, spec: HOURLY, nextAt: Date.now() - 1000 });
+  const busy = await F.runRow({ automationId: aid2, userId: u.id, origin: "schedule", status: "running", runKey: "sched:1" });
+  await sql("UPDATE automation_runs SET credits = 3 WHERE id = ?", [busy]);
+  await tick();
+  assert.deepEqual((await runsOf(aid2)).map((r) => [r.status, r.outcome]), [["running", ""], ["skipped", "overlap"]]);
+});
+
+test("a slot's checks and the daily job read through indexes, never an automation's whole history", async () => {
+  const u = await F.account("tick23", 100);
+  const aid = await F.automation({ userId: u.id, spec: HOURLY, nextAt: Date.now() - 1000 });
+  await history({ prefix: "h23_", count: 3000, automationId: () => aid, userId: () => u.id, at: (i) => Date.now() - (i + 2) * 3_600_000, detail: true });
+  await sql("DELETE FROM settings WHERE key = 'auto:daily'");
+  const plans = await plansOf(() => T.runTick("tk"));
+  assert.ok(plans.length > 10);
+  for (const p of plans) assert.ok(!p.plan.some(wholeTable), `${p.sql}\n${p.plan.join(" | ")}`);
+  const slot = plans.filter((p) => /outcome = 'superseded'|INSERT INTO automation_runs/.test(p.sql));
+  assert.equal(slot.length, 2);
+  for (const p of slot) assert.ok(p.plan.some((l) => l.includes("automation_runs_open")), `${p.sql}\n${p.plan.join(" | ")}`);
+  const health = await plansOf(async () => (await import("../src/lib/server/automation-admin.ts")).cronHealth());
+  for (const p of health) assert.ok(!p.plan.some(wholeTable), `${p.sql}\n${p.plan.join(" | ")}`);
+  const writes = health.find((p) => p.sql.includes("COUNT(*) AS n FROM automation_runs WHERE created_at >= ?"));
+  assert.equal(writes, undefined, "the month's writes are read from the daily job's count");
+});
+
+test("old receipt detail is compacted past the first 5,000 runs in one daily job, and runs past 13 months all go", async () => {
+  await sql("DELETE FROM automation_run_steps");
+  await sql("DELETE FROM automation_runs");
+  // 6,000 runs finished 40 days ago, with detail, over 200 automations (30 each: under the 50-run rule).
+  await history({ prefix: "c_", count: 6000, automationId: (i) => `ca${i % 200}`, userId: (i) => `cu${i % 60}`, at: (i) => Date.now() - 40 * DAY + i, detail: true });
+  // 6,000 newer runs of one automation, with detail: only its newest 50 keep theirs.
+  await history({ prefix: "w_", count: 6000, automationId: () => "wide", userId: () => "wu", at: (i) => Date.now() - 10 * DAY + i, detail: true });
+  // 12,000 runs past 13 months.
+  await history({ prefix: "x_", count: 12_000, automationId: (i) => `xa${i % 500}`, userId: () => "xu", at: (i) => Date.now() - 400 * DAY + i });
+  await sql("DELETE FROM settings WHERE key = 'auto:daily'");
+  assert.equal(await T.dailyJob("2099-01-01"), true);
+  const detailed = await all<{ id: string }>("SELECT DISTINCT run_id AS id FROM automation_run_steps WHERE output IS NOT NULL");
+  assert.equal(detailed.length, 50, "only the wide automation's newest 50");
+  assert.ok(detailed.every((d) => d.id.startsWith("w_") && Number(d.id.slice(2)) >= 5950));
+  assert.equal(Number((await one<{ n: number }>("SELECT COUNT(*) AS n FROM automation_runs WHERE id LIKE 'x_%'"))!.n), 0, "every run past 13 months went");
+  assert.equal(Number((await one<{ n: number }>("SELECT COUNT(*) AS n FROM automation_runs"))!.n), 12_000, "the rest stay, with their receipts");
+  // The month's estimated writes are what the daily job counted.
+  const counted = Number((await one<{ n: number }>("SELECT COUNT(*) AS n FROM automation_runs WHERE created_at >= ?", [Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)]))!.n);
+  const w = await T.monthWrites();
+  assert.equal(w.writes, counted * T.WRITES_PER_RUN);
+  assert.equal(w.day, utcDay(Date.now()));
+  await sql("DELETE FROM automation_runs");
+  await sql("DELETE FROM automation_run_steps");
 });
