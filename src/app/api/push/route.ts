@@ -3,7 +3,7 @@ import { isVerified } from "@/lib/server/account.ts";
 import { sha256 } from "@/lib/server/ids.ts";
 import { translatorFor } from "@/lib/server/i18n.ts";
 import { overLimit } from "@/lib/server/limits.ts";
-import { checkSubscription, pushOnHere, pushPublicKey, removePush, savePush, sendPush } from "@/lib/server/push.ts";
+import { checkSubscription, dropEnded, pushOnHere, pushPublicKey, removePush, savePush, sendPush } from "@/lib/server/push.ts";
 import { PRODUCT_NAME } from "@/lib/product.ts";
 
 export const dynamic = "force-dynamic";
@@ -17,10 +17,12 @@ const sessionHash = (request: Request) => sha256(readCookie(request, SESSION_COO
  * Alerts when Flash is closed (Settings > General > Notifications): the public key browsers
  * subscribe with (null while alerts aren't set up, and then the setting stays hidden), and whether
  * they're on for this account in this browser (?e=, the SHA-256 of the browser's push address).
+ * The account's rows from sign-ins that expired go here too, without waiting for an alert.
  */
 export async function GET(request: Request) {
   const user = await getUser(request);
   if (!user) return unauthorized();
+  await dropEnded(user.id);
   const key = pushPublicKey();
   const e = new URL(request.url).searchParams.get("e") ?? "";
   const on = Boolean(key && /^[0-9a-f]{64}$/.test(e) && (await pushOnHere(user.id, sessionHash(request), e)));

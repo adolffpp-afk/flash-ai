@@ -294,6 +294,30 @@ test("an alert reaches the browser that turned alerts on, and 404 or 410 deletes
   assert.equal(phone.read(sent[0].body).url, `/?as=${ben.id}`);
 });
 
+test("a title or summary that's cut never splits a character, like a flag or a family emoji", async () => {
+  const zoe = await account("zoe.clip@example.com");
+  const phone = browser(`${FCM}zoe-clip`);
+  await pushRoute.POST(call("POST", zoe.cookie, phone.sub));
+  const shown = async (title: string, body: string) => {
+    sent = [];
+    await push.sendPush(zoe.id, { title, body });
+    return phone.read(sent[0].body);
+  };
+  // The 80th character of the name is the first half of a flag (two code points), and the 119th of
+  // the summary starts a family (man, joiner, woman, joiner, girl): each goes whole.
+  let alert = await shown(`${"a".repeat(78)}🇫🇷 trip`, `${"b".repeat(118)}👨‍👩‍👧 booked`);
+  assert.equal(alert.title, `${"a".repeat(78)}…`);
+  assert.equal(alert.body, `${"b".repeat(118)}…`);
+  // Whole ones before the cut stay.
+  alert = await shown(`${"a".repeat(77)}🇫🇷 trip to Paris`, `${"b".repeat(114)}👨‍👩‍👧 booked`);
+  assert.equal(alert.title, `${"a".repeat(77)}🇫🇷…`);
+  assert.equal(alert.body, `${"b".repeat(114)}👨‍👩‍👧…`);
+  // Joined emoji count every code point toward the limit, so an alert always fits in one record.
+  alert = await shown("👨‍👩‍👧".repeat(40), "👍🏽".repeat(100));
+  assert.equal(alert.title, `${"👨‍👩‍👧".repeat(15)}…`);
+  assert.equal(alert.body, `${"👍🏽".repeat(59)}…`);
+});
+
 test("a browser signed in to several accounts names the account on its alert", async () => {
   const cara = await account("cara@example.com", { language: "fr" });
   const dev = await account("dev@example.com");
@@ -443,10 +467,27 @@ test("one row per sign-in, and /admin counts only browsers alerts can still reac
   await pushRoute.POST(call("POST", nia.cookie, renewed.sub));
   assert.deepEqual((await rowsOf(nia.id)).map((r) => r.endpoint), [renewed.endpoint]);
   assert.equal(await push.pushBrowsers(), before + 1);
-  // A sign-in that ended by itself isn't counted, though its row waits for the next alert to go.
+  // A sign-in that ended by itself isn't counted, and /admin's count deletes its row.
   await run("UPDATE sessions SET expires_at = 1 WHERE user_id = ?", [nia.id]);
   assert.equal((await rowsOf(nia.id)).length, 1);
   assert.equal(await push.pushBrowsers(), before);
+  assert.deepEqual(await rowsOf(nia.id), []);
+});
+
+test("a sign-in that ended by itself loses its push address and keys without waiting for an alert", async () => {
+  const ed = await account("ed.expired@example.com");
+  const laptop = browser(`${FCM}ed-old-laptop`);
+  await pushRoute.POST(call("POST", ed.cookie, laptop.sub));
+  const phone = browser(`${FCM}ed-phone`);
+  const phoneCookie = await signIn(ed);
+  await pushRoute.POST(call("POST", phoneCookie, phone.sub));
+  // Thirty days on, the laptop's sign-in ends by itself; Ed only uses Flash on his phone.
+  await run("UPDATE sessions SET expires_at = 1 WHERE token_hash = ?", [(await rowsOf(ed.id)).find((r) => r.endpoint === laptop.endpoint)!.session_hash]);
+  sent = [];
+  const res = await pushRoute.GET(new Request(`${ORIGIN}/api/push?e=${createHash("sha256").update(phone.endpoint).digest("hex")}`, { headers: { cookie: phoneCookie } }));
+  assert.equal((await res.json()).on, true);
+  assert.deepEqual((await rowsOf(ed.id)).map((r) => r.endpoint), [phone.endpoint], "the laptop's row went, the phone's stays");
+  assert.deepEqual(sent, [], "no alert was needed for it");
 });
 
 test("the route: who may turn alerts on, the switch's state, a test alert, and turning them off", async () => {
@@ -719,6 +760,70 @@ test("alerts whose words are held back show as one, and a sign-in that ended tak
     [false, false, false, false, false, false, false, false],
     "one that takes another's place doesn't alert again",
   );
+});
+
+test("\"Log out of all devices\" or a password change takes her alerts off the screens of her other browsers", async () => {
+  const payroll = { title: "Payroll check", body: "Your salary of $4,210 arrived", tag: "flash-run-r1" };
+  for (const how of ["everywhere", "password"]) {
+    const ana = await account(`ana.library.${how}@example.com`);
+    const phoneCookie = await signIn(ana);
+    // Alerts on at a library computer, which she leaves with Flash closed, and on her phone.
+    const library = browser(`${FCM}library-pc-${how}`);
+    const phone = browser(`${FCM}ana-phone-${how}`);
+    await pushRoute.POST(call("POST", ana.cookie, library.sub));
+    await pushRoute.POST(call("POST", phoneCookie, phone.sub));
+    // A browser where Ben has alerts on too: a push there would be checked against his sign-in, show
+    // him an empty alert and leave hers, so none goes there.
+    const ben = await account(`ben.library.${how}@example.com`);
+    const shared = browser(`${FCM}shared-pc-${how}`);
+    await pushRoute.POST(call("POST", await signIn(ana), shared.sub));
+    await pushRoute.POST(call("POST", ben.cookie, shared.sub));
+    const worker = serviceWorker(library.endpoint, () => ana.cookie);
+    sent = [];
+    await push.sendPush(ana.id, payroll);
+    await worker.push(library.open(sent.find((s) => s.url === library.endpoint)!.body));
+    assert.deepEqual(worker.tray(), [payroll]);
+
+    // At home, on her phone.
+    sent = [];
+    const out =
+      how === "everywhere"
+        ? await logoutRoute.POST(
+            new Request(`${ORIGIN}/api/auth/logout`, { method: "POST", headers: { "content-type": "application/json", origin: ORIGIN, cookie: phoneCookie }, body: JSON.stringify({ everywhere: true }) }),
+          )
+        : await passwordRoute.POST(
+            new Request(`${ORIGIN}/api/me/password`, { method: "POST", headers: { "content-type": "application/json", origin: ORIGIN, cookie: phoneCookie }, body: JSON.stringify({ current: "old password", next: "a brand new password" }) }),
+          );
+    assert.equal(out.status, 200, how);
+    // One push with no words to the library computer; none to the phone she pressed it on (its own
+    // screen is its page's to clear), nor to the browser that's Ben's now.
+    assert.deepEqual(sent.map((s) => s.url), [library.endpoint], how);
+    assert.deepEqual(library.read(sent[0].body), {});
+    assert.deepEqual(await rowsOf(ana.id), []);
+    // Its service worker hears her sign-in is gone: her alert leaves the screen, and so does the subscription.
+    await worker.push(library.open(sent[0].body));
+    assert.deepEqual(worker.tray(), [{ title: "Flash ∞ AI", body: "", tag: "flash-hidden" }], how);
+    assert.equal(worker.state.subscribed, false, how);
+  }
+  // A password reset from an emailed link, or anything else that ends every sign-in, does the same.
+  const cy = await account("cy.library@example.com");
+  const pc = browser(`${FCM}cy-library`);
+  await pushRoute.POST(call("POST", cy.cookie, pc.sub));
+  sent = [];
+  await endAllSessions(cy.id);
+  assert.deepEqual(sent.map((s) => s.url), [pc.endpoint]);
+  // With the keys taken off the server, the rows still go, and nothing is sent.
+  const di = await account("di.library@example.com");
+  await pushRoute.POST(call("POST", di.cookie, browser(`${FCM}di-library`).sub));
+  setKeys(false);
+  try {
+    sent = [];
+    await endAllSessions(di.id);
+    assert.deepEqual(sent, []);
+    assert.deepEqual(await rowsOf(di.id), []);
+  } finally {
+    setKeys(true);
+  }
 });
 
 test("an alert puts a dot on the app's icon, unless Flash is on the screen and in front", async () => {

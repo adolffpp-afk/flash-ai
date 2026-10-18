@@ -1,5 +1,6 @@
-import { createSession, getUser, hashPassword, isSecure, unauthorized, verifyPassword } from "@/lib/server/auth.ts";
+import { SESSION_COOKIE, createSession, getUser, hashPassword, isSecure, readCookie, unauthorized, verifyPassword } from "@/lib/server/auth.ts";
 import { endAllSessions } from "@/lib/server/account.ts";
+import { sha256 } from "@/lib/server/ids.ts";
 import { one, run } from "@/lib/server/db.ts";
 import { clearLimit, overLimit } from "@/lib/server/limits.ts";
 import { translatorFor } from "@/lib/server/i18n.ts";
@@ -26,8 +27,9 @@ export async function POST(request: Request) {
   }
   await clearLimit(`password:${user.id}`);
   await run("UPDATE users SET password_hash = ? WHERE id = ?", [await hashPassword(next), user.id]);
-  // Anyone signed in elsewhere with the old password is signed out; this device stays signed in.
-  await endAllSessions(user.id);
+  // Anyone signed in elsewhere with the old password is signed out; this device stays signed in,
+  // with its alerts on the screen, and turns them back on (Settings calls syncPush).
+  await endAllSessions(user.id, sha256(readCookie(request, SESSION_COOKIE) ?? ""));
   const cookie = await createSession(user.id, isSecure(request));
   return Response.json({ ok: true }, { headers: { "Set-Cookie": cookie } });
 }

@@ -252,8 +252,14 @@ test("what the switch says when the browser asks, blocks, or has no push service
   asks = 0;
   assert.equal(await said(), "Allow notifications when your browser asks, then try again.");
   assert.equal(asks, 1);
+  // Blocked, or a private window: Chrome and Edge answer "denied" there themselves, without asking,
+  // and nothing can allow them, so the words say that too.
+  const blocked = "Notifications are blocked for Flash. Private windows can't show them; in a normal window, allow them in your browser's site settings, then try again.";
   permission.answer = "denied";
-  assert.equal(await said(), "Notifications are blocked for Flash. Allow them in your browser's site settings, then try again.");
+  asks = 0;
+  assert.equal(await said(), blocked, "the first tap, which asked");
+  assert.equal(await said(), blocked, "and every tap after it");
+  assert.equal(asks, 2);
   permission.now = "granted";
 
   // A browser without a push service (a private window, Brave with push messaging off) says so.
@@ -262,7 +268,7 @@ test("what the switch says when the browser asks, blocks, or has no push service
     assert.equal(await said(), "This browser couldn't turn on alerts. Private windows can't get them, and some browsers, like Brave, need push messaging turned on in their settings first.", name);
   }
   refuse = new DOMException("Registration failed - permission denied", "NotAllowedError");
-  assert.equal(await said(), "Notifications are blocked for Flash. Allow them in your browser's site settings, then try again.");
+  assert.equal(await said(), blocked);
   refuse = new Error("no service worker");
   assert.equal(await said(), "Couldn't turn on alerts. Please try again.");
   refuse = null;
@@ -354,9 +360,17 @@ test("every browser on an iPhone or iPad is told to add Flash to the Home Screen
     for (const browser of ["CriOS/141.0.7390.41", "EdgiOS/141.0.3537.71", "FxiOS/143.0"]) assert.equal(as(iphone(browser)), "home-screen", browser);
     assert.equal(as(iphone("Version/18.6"), { worker: true }), "home-screen", "Safari");
     assert.equal(as("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/141.0 Mobile/15E148 Safari/604.1"), "home-screen", "an iPad");
-    // Added to the Home Screen: alerts work there (iOS 16.4 and later), and not before.
+    // Added to the Home Screen: alerts work there (iOS 16.4 and later).
     assert.equal(as(iphone("Version/18.6"), { worker: true, push: true, standalone: true }), "yes");
-    assert.equal(as(iphone("Version/16.1"), { worker: true, standalone: true }), "no");
+    // Before iOS 16.4 even the Home Screen app has none, so the trip there would be for nothing: they're
+    // told to update, in a tab and in the app alike.
+    const old = (os: string, browser: string) => `Mozilla/5.0 (iPhone; CPU iPhone OS ${os} like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) ${browser} Mobile/15E148 Safari/604.1`;
+    assert.equal(as(old("16_1", "Version/16.1"), { worker: true }), "update", "Safari on 16.1");
+    assert.equal(as(old("16_1", "Version/16.1"), { worker: true, standalone: true }), "update", "the Home Screen app on 16.1");
+    assert.equal(as(old("15_8", "CriOS/141.0.7390.41")), "update", "Chrome on 15.8");
+    assert.equal(as(old("16_4", "Version/16.4"), { worker: true }), "home-screen", "Safari on 16.4");
+    // An iPad asking for desktop sites says its version only in Safari's Version/.
+    assert.equal(as("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6 Safari/605.1.15", { worker: true }), "update", "an iPad on 15.6");
     // Anywhere else a browser without them can't get alerts.
     assert.equal(as("Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Mobile Safari/537.36", { touch: 5 }), "no");
   } finally {
@@ -369,8 +383,8 @@ test("a block says where to allow notifications: the iPhone's Settings in the Ho
   await account("ida");
   await signIn("ida");
   const was = globalThis.navigator;
-  const said = async (userAgent: string, standalone = false) => {
-    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { ...was, userAgent, maxTouchPoints: 5, standalone } });
+  const said = async (userAgent: string, standalone = false, touch = 5) => {
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { ...was, userAgent, maxTouchPoints: touch, standalone } });
     try {
       await client.turnOnPush("ida", key, t);
       return "on";
@@ -389,10 +403,20 @@ test("a block says where to allow notifications: the iPhone's Settings in the Ho
     Object.assign(globalThis, { location: { search: "?app=android" }, sessionStorage: { getItem: () => null, setItem() {} } });
     const android = "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Mobile Safari/537.36";
     assert.equal(await said(android), "Notifications are blocked for Flash. Allow them in Settings > Apps > Flash ∞ AI > Notifications, then try again.");
-    // In a browser it's still that browser's site settings.
-    assert.equal(await said(was.userAgent), "Notifications are blocked for Flash. Allow them in your browser's site settings, then try again.");
+    // Flash added to the Dock from Safari on a Mac answers for itself, in the Mac's System Settings.
+    const mac = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15";
+    Object.assign(globalThis, { matchMedia: (query: string) => ({ matches: query === "(display-mode: standalone)" }) });
+    assert.equal(await said(mac, false, 0), "Notifications are blocked for Flash. Allow them in System Settings > Notifications > Flash ∞ AI, then try again.");
+    delete (globalThis as { matchMedia?: unknown }).matchMedia;
+    // In a browser it's still that browser's site settings, Safari on a Mac included.
+    const browser = "Notifications are blocked for Flash. Private windows can't show them; in a normal window, allow them in your browser's site settings, then try again.";
+    assert.equal(await said(mac, false, 0), browser);
+    assert.equal(await said(was.userAgent), browser);
+    // Response completions' switch (Settings) says the same, from the same words.
+    assert.equal(client.blockedWords(t), browser);
   } finally {
     permission.now = permission.answer = "granted";
+    delete (globalThis as { matchMedia?: unknown }).matchMedia;
     Object.defineProperty(globalThis, "navigator", { configurable: true, value: was });
   }
 });

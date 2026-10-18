@@ -12,8 +12,9 @@
  * Each row of push_subscriptions (db.ts) is one account in one browser, tied to that account's
  * sign-in there: it goes when they log out there (endSession), when someone else signs in on top of
  * it there (leaveBrowser), on endAllSessions (a password reset or change, "Log out of all devices"),
- * and alerts only ever go to browsers where that sign-in is still live, so on a shared computer
- * nobody who signs in next sees them.
+ * which also clears its alerts off those browsers' screens (clearScreens), and once that sign-in
+ * expires (dropEnded). Alerts only ever go to browsers where that sign-in is still live, so on a
+ * shared computer nobody who signs in next sees them.
  */
 import { createCipheriv, createECDH, createHmac, createPrivateKey, randomBytes, sign, type KeyObject } from "node:crypto";
 import { all, db, one, run, now } from "./db.ts";
@@ -259,10 +260,24 @@ export type PushNotice = {
   tag?: string;
 };
 
-/** Text on one line, cut to max characters (whole characters, so an emoji is never split). */
+const graphemes = new Intl.Segmenter("en", { granularity: "grapheme" });
+
+/**
+ * Text on one line, cut to max characters (code points, so every alert fits in one record). A cut
+ * keeps only whole characters as people see them: a flag, a family or a skin tone is several code
+ * points, and goes whole or not at all.
+ */
 function clip(text: string, max: number): string {
-  const chars = Array.from(text.replace(/\s+/g, " ").trim());
-  return chars.length > max ? `${chars.slice(0, max - 1).join("").trimEnd()}…` : chars.join("");
+  const line = text.replace(/\s+/g, " ").trim();
+  if (Array.from(line).length <= max) return line;
+  let kept = "";
+  let size = 0;
+  for (const { segment } of graphemes.segment(line)) {
+    size += Array.from(segment).length;
+    if (size > max - 1) break;
+    kept += segment;
+  }
+  return `${kept.trimEnd()}…`;
 }
 
 /** A path on Flash with as=<userId>, or "/" with it for anything that would leave Flash or is too long. */
@@ -287,10 +302,10 @@ function retryAfter(value: string | null): number | null {
   return Number.isFinite(ms) ? Math.max(0, ms) : null;
 }
 
-type Row = { endpoint: string; p256dh: string; auth: string; others: number };
+type Row = Subscription & { others: number };
 type Outcome = "sent" | "gone" | "failed";
 
-async function deliver(row: Row, payload: object): Promise<Outcome> {
+async function deliver(row: Subscription, payload: object): Promise<Outcome> {
   if (!pushEndpointOk(row.endpoint)) return "gone";
   const plaintext = Buffer.from(JSON.stringify(payload));
   // Too long for one record (the limits above keep every alert shorter): this alert fails, the browser stays.
@@ -353,13 +368,8 @@ async function deliver(row: Row, payload: object): Promise<Outcome> {
  */
 export async function sendPush(userId: string, notice: PushNotice, only?: string): Promise<{ rows: number; sent: number; gone: number }> {
   if (!setup().keys) return { rows: 0, sent: 0, gone: 0 };
+  await dropEnded(userId);
   const at = now();
-  // Rows from a sign-in that ended without one of the deletes above (it expired) go first.
-  await run(
-    `DELETE FROM push_subscriptions WHERE user_id = ? AND NOT EXISTS (SELECT 1 FROM sessions s
-       WHERE s.token_hash = push_subscriptions.session_hash AND s.user_id = push_subscriptions.user_id AND s.expires_at > ?)`,
-    [userId, at],
-  );
   const rows = await all<Row>(
     `SELECT p.endpoint, p.p256dh, p.auth,
        (SELECT COUNT(*) FROM push_subscriptions o JOIN sessions so ON so.token_hash = o.session_hash AND so.user_id = o.user_id
@@ -391,8 +401,48 @@ export async function sendPush(userId: string, notice: PushNotice, only?: string
   return { rows: rows.length, sent: sent.length, gone: gone.length };
 }
 
+/**
+ * Deletes the rows of sign-ins that ended without one of the deletes above (they expired), with
+ * their push addresses and keys: for one account (sendPush, and GET /api/push, which Flash and its
+ * service worker ask), or for everyone (/admin's count).
+ */
+export async function dropEnded(userId?: string): Promise<void> {
+  await run(
+    `DELETE FROM push_subscriptions WHERE ${userId === undefined ? "" : "user_id = ? AND "}NOT EXISTS (SELECT 1 FROM sessions s
+       WHERE s.token_hash = push_subscriptions.session_hash AND s.user_id = push_subscriptions.user_id AND s.expires_at > ?)`,
+    userId === undefined ? [now()] : [userId, now()],
+  );
+}
+
+/**
+ * Before every sign-in of an account ends (endAllSessions): the browsers where it turned alerts on,
+ * for clearScreens. Not the one doing it (here, its sign-in's hash), whose page clears its own
+ * screen, nor one where another account turned them on too: a push there is checked against that
+ * account's sign-in, so it would show them an empty alert and close nothing.
+ */
+export async function screensOf(userId: string, here = ""): Promise<Subscription[]> {
+  if (!setup().keys) return [];
+  return all<Subscription>(
+    `SELECT p.endpoint, p.p256dh, p.auth FROM push_subscriptions p WHERE p.user_id = ? AND p.session_hash <> ?
+       AND NOT EXISTS (SELECT 1 FROM push_subscriptions o WHERE o.endpoint = p.endpoint AND o.user_id <> p.user_id)`,
+    [userId, here],
+  );
+}
+
+/**
+ * One push with no words to each of these browsers, once their rows are gone: the service worker
+ * asks Flash, hears the sign-in there ended, takes that account's alerts still on the screen off
+ * it, shows only "Flash ∞ AI" and drops the subscription (public/sw.js). So "Log out of all devices"
+ * or a password change leaves none of them on a shared computer for the next person.
+ */
+export async function clearScreens(browsers: Subscription[]): Promise<void> {
+  if (!setup().keys) return;
+  await Promise.all(browsers.map((b) => deliver(b, {}).catch(() => "failed")));
+}
+
 /** For /admin: how many browsers have alerts on, counting only rows whose sign-in is still live (the only ones sent to). */
 export async function pushBrowsers(): Promise<number> {
+  await dropEnded();
   const row = await one<{ n: number }>(
     `SELECT COUNT(DISTINCT p.endpoint) AS n FROM push_subscriptions p
      JOIN sessions s ON s.token_hash = p.session_hash AND s.user_id = p.user_id WHERE s.expires_at > ?`,

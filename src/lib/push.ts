@@ -21,27 +21,49 @@ import { inAndroidApp } from "./android-shell.ts";
 import type { Translate } from "./i18n.ts";
 
 // "home-screen": an iPhone or iPad, which has alerts only in Flash added to the Home Screen.
-export type PushSupport = "yes" | "home-screen" | "no";
+// "update": one on iOS before 16.4, where not even the Home Screen app has them.
+export type PushSupport = "yes" | "home-screen" | "update" | "no";
 
 const platform = () => installPlatform(navigator.userAgent, navigator.maxTouchPoints);
 // Flash added to the Home Screen (or installed as an app), not in a browser tab.
 const standalone = () => window.matchMedia?.("(display-mode: standalone)").matches || (navigator as { standalone?: boolean }).standalone === true;
 
+/**
+ * Whether an iPhone or iPad is on iOS 16.4 or later, where Home Screen apps get alerts: its user
+ * agent says "OS 16_1", or only Safari's "Version/16.1" on an iPad asking for desktop sites.
+ * Unknown (true) when it says neither.
+ */
+function iosHasPush(userAgent: string): boolean {
+  const found = /OS (\d+)_(\d+)/.exec(userAgent) ?? /Version\/(\d+)\.(\d+)/.exec(userAgent);
+  if (!found) return true;
+  const [major, minor] = [Number(found[1]), Number(found[2])];
+  return major > 16 || (major === 16 && minor >= 4);
+}
+
 export function pushSupport(): PushSupport {
   if (typeof window === "undefined") return "no";
   if ("serviceWorker" in navigator && "PushManager" in window && "Notification" in window) return "yes";
+  if (platform() !== "ios") return "no";
+  if (!iosHasPush(navigator.userAgent)) return "update";
   // Every browser on an iPhone or iPad can add Flash to the Home Screen, where alerts work, though in
   // a tab Safari has no push and Chrome, Edge and Firefox there have no service worker at all.
-  return platform() === "ios" && !standalone() ? "home-screen" : "no";
+  return standalone() ? "no" : "home-screen";
 }
 
-/** Where to allow notifications once they're blocked: the device's Settings in Flash's apps, else the browser's. */
-function blockedWords(t: Translate): string {
+/**
+ * Where to allow notifications once they're blocked: the device's Settings in Flash's apps (on an
+ * iPhone or iPad, Android, or a Mac's Dock, from Safari), else the browser's. Private windows answer
+ * "blocked" by themselves, without asking (Chrome and Edge do), and can't allow them at all.
+ */
+export function blockedWords(t: Translate): string {
   if (platform() === "ios" && standalone()) return t("Notifications are blocked for Flash. Allow them in Settings > Notifications > Flash ∞ AI, then try again.");
   if (platform() === "android" && inAndroidApp()) {
     return t("Notifications are blocked for Flash. Allow them in Settings > Apps > Flash ∞ AI > Notifications, then try again.");
   }
-  return t("Notifications are blocked for Flash. Allow them in your browser's site settings, then try again.");
+  if (platform() === "mac-safari" && standalone()) {
+    return t("Notifications are blocked for Flash. Allow them in System Settings > Notifications > Flash ∞ AI, then try again.");
+  }
+  return t("Notifications are blocked for Flash. Private windows can't show them; in a normal window, allow them in your browser's site settings, then try again.");
 }
 
 /**
