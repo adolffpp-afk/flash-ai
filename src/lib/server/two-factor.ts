@@ -8,7 +8,7 @@
  * The app's secret is sealed like connector secrets (secret-box.ts), so two-step sign-in needs
  * CONNECTOR_KEYS. Recovery codes are kept only as hashes. Codes work once each.
  */
-import { createSession, isSecure, readCookie } from "./auth.ts";
+import { createSession, isSecure, leaveBrowser, readCookie } from "./auth.ts";
 import { db, one, run, now } from "./db.ts";
 import { randomId, sha256 } from "./ids.ts";
 import { clearLimit, clientIp, overLimit } from "./limits.ts";
@@ -148,7 +148,7 @@ export const clearPendingCookie = () => `${PENDING_COOKIE}=; Path=/api/auth; Htt
  * waits for the code (twoFactor true; the page then goes to /signin/code). next is where to go after.
  */
 export async function signInCookie(userId: string, request: Request, next = "/"): Promise<{ cookie: string; twoFactor: boolean }> {
-  if (!(await twoFactorOn(userId))) return { cookie: await createSession(userId, isSecure(request)), twoFactor: false };
+  if (!(await twoFactorOn(userId))) return { cookie: await sessionHere(userId, request), twoFactor: false };
   const token = randomId(32);
   await run("DELETE FROM two_factor_pending WHERE expires_at < ?", [now()]);
   await run("INSERT INTO two_factor_pending (token_hash, user_id, next, attempts, expires_at) VALUES (?, ?, ?, 0, ?)", [
@@ -186,5 +186,11 @@ export async function finishSignIn(request: Request, typed: string): Promise<Fin
   const used = await run("DELETE FROM two_factor_pending WHERE token_hash = ?", [sha256(token)]);
   if (used.rowsAffected !== 1) return { ok: false, reason: "expired" };
   await clearLimit(`2fa:${pending.user_id}`);
-  return { ok: true, cookie: await createSession(pending.user_id, isSecure(request)), next: pending.next || "/" };
+  return { ok: true, cookie: await sessionHere(pending.user_id, request), next: pending.next || "/" };
+}
+
+/** A new session for this browser, in place of the one it holds (see leaveBrowser). */
+async function sessionHere(userId: string, request: Request): Promise<string> {
+  await leaveBrowser(request);
+  return createSession(userId, isSecure(request));
 }

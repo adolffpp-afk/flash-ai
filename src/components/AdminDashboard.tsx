@@ -351,7 +351,7 @@ function PushKeyMaker({ setUp, missing, problem, browsers }: NonNullable<Stats["
       {error && <p className="text-xs text-red-400">{error}</p>}
       {(!setUp || values.length > 0) && (
         <ol className="list-decimal space-y-1 ps-5 text-xs text-zinc-400">
-          <li>Press {setUp ? "Make new push keys" : "Make push keys"} here.</li>
+          <li>{values.length ? "Copy each value with its Copy button." : `Press ${setUp ? "Make new push keys" : "Make push keys"} here.`}</li>
           <li>Open Vercel, then the flash-ai project, then Settings, then Environment Variables.</li>
           {setUp ? (
             <>

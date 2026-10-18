@@ -1,5 +1,5 @@
 import { translatorFor } from "@/lib/server/i18n.ts";
-import { appUrl, createSession, fromOwnPage, hashPassword, isSecure } from "@/lib/server/auth.ts";
+import { appUrl, createSession, fromOwnPage, hashPassword, isSecure, leaveBrowser } from "@/lib/server/auth.ts";
 import { backfillEmailKeys, emailKey, sendVerification } from "@/lib/server/account.ts";
 import { one } from "@/lib/server/db.ts";
 import { clientIp, overLimit } from "@/lib/server/limits.ts";
@@ -41,6 +41,7 @@ export async function POST(request: Request) {
     return undefined;
   });
   const headers = new Headers();
+  await leaveBrowser(request);
   headers.append("Set-Cookie", await createSession(id, isSecure(request)));
   headers.append("Set-Cookie", CLEAR_REF_COOKIE);
   return Response.json({ ok: true, devLink, emailFailed }, { headers });

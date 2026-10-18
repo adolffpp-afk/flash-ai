@@ -48,7 +48,7 @@ import { pictureFollowUp } from "@/lib/router";
 import { firstName } from "@/lib/names";
 import { timeAgo } from "@/lib/when";
 import { applyAppearance, applyTheme, notifiesWhenDone, readSetting, writeSetting } from "@/lib/device-settings";
-import { usePushSync } from "@/lib/push";
+import { forgetPush, usePushSync } from "@/lib/push";
 import { LEVEL_ENGINES, isLevel, type Level } from "@/lib/levels";
 import { showLanguage, tNow, useT } from "@/lib/use-t";
 import { msg, type Translate } from "@/lib/i18n";
@@ -884,6 +884,8 @@ export function Flash({
 
   // everywhere: Settings already signed out every device, this one included.
   async function signOut(everywhere = false) {
+    // Logging out on purpose turns alerts off here for good (a sign-in that ends by itself doesn't).
+    if (me) forgetPush(me.user.id);
     if (!everywhere) await api("/api/auth/logout", { method: "POST" }).catch(() => {});
     // Nothing of this account keeps running, or runs later for whoever signs in next.
     abortRef.current?.abort();

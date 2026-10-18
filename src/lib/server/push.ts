@@ -10,9 +10,10 @@
  * alerts setting (the GET in api/push has no key to give) and sendPush does nothing.
  *
  * Each row of push_subscriptions (db.ts) is one account in one browser, tied to that account's
- * sign-in there: it goes when they log out there (endSession), on endAllSessions (a password reset
- * or change, "Log out of all devices"), and alerts only ever go to browsers where that sign-in is
- * still live, so on a shared computer nobody who signs in next sees them.
+ * sign-in there: it goes when they log out there (endSession), when someone else signs in on top of
+ * it there (leaveBrowser), on endAllSessions (a password reset or change, "Log out of all devices"),
+ * and alerts only ever go to browsers where that sign-in is still live, so on a shared computer
+ * nobody who signs in next sees them.
  */
 import { createCipheriv, createECDH, createHmac, createPrivateKey, randomBytes, sign, type KeyObject } from "node:crypto";
 import { all, db, one, run, now } from "./db.ts";
@@ -28,6 +29,12 @@ const TTL = 24 * 3600;
 // What the title and text of an alert keep: an automation's name, and its summary (plan §11).
 const TITLE_CHARS = 80;
 const BODY_CHARS = 120;
+// The longest page address an alert opens (a longer one opens Flash's home), so every alert fits in one record.
+const URL_CHARS = 1024;
+// How long one alert may take at the push service, a second try included.
+const SEND_MS = 10_000;
+// The longest wait before that second try: a push service that asks for longer gets no second try.
+const RETRY_MS = 3_000;
 
 /*
  * The push services browsers use, and the only addresses Flash sends alerts to, so a made-up
@@ -183,10 +190,14 @@ export function checkSubscription(value: unknown): Subscription | null {
   return { endpoint: sub.endpoint, p256dh: b64(p256dh), auth: b64(auth) };
 }
 
-/** Turns alerts on for this account in this browser (sessionHash: its sign-in here). */
+/**
+ * Turns alerts on for this account in this browser (sessionHash: its sign-in here). A sign-in is in
+ * one browser, which has one push address at a time, so an older address of this sign-in goes.
+ */
 export async function savePush(userId: string, sessionHash: string, sub: Subscription): Promise<void> {
   await (await db()).batch(
     [
+      { sql: "DELETE FROM push_subscriptions WHERE session_hash = ? AND user_id = ? AND endpoint <> ?", args: [sessionHash, userId, sub.endpoint] },
       {
         sql: `INSERT INTO push_subscriptions (endpoint, user_id, p256dh, auth, session_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)
               ON CONFLICT(endpoint, user_id) DO UPDATE SET p256dh = excluded.p256dh, auth = excluded.auth, session_hash = excluded.session_hash`,
@@ -227,7 +238,8 @@ export type PushNotice = {
   // The summary under it; at most 120 characters are kept.
   body: string;
   // The Flash page a tap opens, like "/?automations=<id>&run=<runId>"; as=<userId> is added, so it
-  // opens as this account in a browser signed in to several. Anything that isn't Flash's opens "/".
+  // opens as this account in a browser signed in to several. Anything that isn't Flash's, or is
+  // longer than 1024 characters, opens "/".
   url?: string;
   // A later alert with the same tag replaces this one, like "flash-run-<runId>".
   tag?: string;
@@ -239,7 +251,7 @@ function clip(text: string, max: number): string {
   return chars.length > max ? `${chars.slice(0, max - 1).join("").trimEnd()}…` : chars.join("");
 }
 
-/** A path on Flash with as=<userId>, or "/" with it for anything that would leave Flash. */
+/** A path on Flash with as=<userId>, or "/" with it for anything that would leave Flash or is too long. */
 function pagePath(url: string | undefined, userId: string): string {
   const base = "https://flash.invalid";
   let page: URL;
@@ -250,7 +262,15 @@ function pagePath(url: string | undefined, userId: string): string {
   }
   if (page.origin !== base) page = new URL("/", base);
   page.searchParams.set("as", userId);
-  return `${page.pathname}${page.search}${page.hash}`;
+  const path = `${page.pathname}${page.search}${page.hash}`;
+  return path.length > URL_CHARS ? pagePath("/", userId) : path;
+}
+
+/** A Retry-After header (seconds, or a date) in milliseconds, or null without one. */
+function retryAfter(value: string | null): number | null {
+  if (!value) return null;
+  const ms = /^\d+$/.test(value.trim()) ? Number(value.trim()) * 1000 : Date.parse(value) - Date.now();
+  return Number.isFinite(ms) ? Math.max(0, ms) : null;
 }
 
 type Row = { endpoint: string; p256dh: string; auth: string; others: number };
@@ -258,35 +278,53 @@ type Outcome = "sent" | "gone" | "failed";
 
 async function deliver(row: Row, payload: object): Promise<Outcome> {
   if (!pushEndpointOk(row.endpoint)) return "gone";
+  const plaintext = Buffer.from(JSON.stringify(payload));
+  // Too long for one record (the limits above keep every alert shorter): this alert fails, the browser stays.
+  if (plaintext.length > MAX_PLAINTEXT) return "failed";
   let body: Buffer;
   try {
-    body = encryptPush(Buffer.from(JSON.stringify(payload)), Buffer.from(row.p256dh, "base64url"), Buffer.from(row.auth, "base64url"));
+    body = encryptPush(plaintext, Buffer.from(row.p256dh, "base64url"), Buffer.from(row.auth, "base64url"));
   } catch {
+    // The browser's key isn't a point on P-256: no alert can ever reach it.
     return "gone";
   }
-  try {
-    const res = await fetch(row.endpoint, {
-      method: "POST",
-      // A push service never redirects; following one could lead anywhere.
-      redirect: "error",
-      signal: AbortSignal.timeout(10_000),
-      headers: {
-        Authorization: vapidHeader(row.endpoint),
-        TTL: String(TTL),
-        Urgency: "normal",
-        "Content-Encoding": "aes128gcm",
-        "Content-Type": "application/octet-stream",
-      },
-      body: new Uint8Array(body),
-    });
-    await res.body?.cancel().catch(() => {});
-    // The browser unsubscribed, or the address expired: it will never work again.
-    if (res.status === 404 || res.status === 410) return "gone";
-    if (res.ok) return "sent";
+  const deadline = Date.now() + SEND_MS;
+  for (let tries = 1; ; tries++) {
+    // 0 for no answer: a network error, or none in time.
+    let status = 0;
+    let wait = 500;
+    try {
+      const res = await fetch(row.endpoint, {
+        method: "POST",
+        // A push service never redirects; following one could lead anywhere.
+        redirect: "error",
+        signal: AbortSignal.timeout(Math.max(1, deadline - Date.now())),
+        headers: {
+          Authorization: vapidHeader(row.endpoint),
+          TTL: String(TTL),
+          Urgency: "normal",
+          "Content-Encoding": "aes128gcm",
+          "Content-Type": "application/octet-stream",
+        },
+        body: new Uint8Array(body),
+      });
+      await res.body?.cancel().catch(() => {});
+      // The browser unsubscribed, or the address expired: it will never work again.
+      if (res.status === 404 || res.status === 410) return "gone";
+      if (res.ok) return "sent";
+      status = res.status;
+      wait = retryAfter(res.headers.get("retry-after")) ?? wait;
+    } catch {
+      // Tried once more below, like a busy push service.
+    }
+    // A busy push service (429, 5xx) or a lost connection gets one more try, within the same 10 seconds.
+    const busy = status === 0 || status === 429 || status >= 500;
+    if (tries === 1 && busy && wait <= RETRY_MS && Date.now() + wait + 1000 < deadline) {
+      await new Promise((done) => setTimeout(done, wait));
+      continue;
+    }
     // The host and status only: the address itself works like a password for this browser.
-    console.warn(`A push to ${new URL(row.endpoint).hostname} was refused (${res.status}).`);
-    return "failed";
-  } catch {
+    if (status) console.warn(`A push to ${new URL(row.endpoint).hostname} was refused (${status}).`);
     return "failed";
   }
 }
@@ -295,8 +333,9 @@ async function deliver(row: Row, payload: object): Promise<Outcome> {
  * Sends an alert to every browser where this account turned alerts on and is still signed in, or
  * only to the one with the push address only. A browser signed in to several accounts that turned
  * alerts on gets the account named on the alert's first line ("For ana@example.com"). Addresses the
- * push service says are gone (404, 410) are deleted for every account. Does nothing until the keys
- * are set. rows counts the browsers it tried, and sent those that took it.
+ * push service says are gone (404, 410) are deleted for every account; a busy one (429, 5xx) or a
+ * lost connection gets a second try. Does nothing until the keys are set. rows counts the browsers
+ * it tried, sent those that took it, and gone those deleted.
  */
 export async function sendPush(userId: string, notice: PushNotice, only?: string): Promise<{ rows: number; sent: number; gone: number }> {
   if (!setup().keys) return { rows: 0, sent: 0, gone: 0 };
@@ -338,8 +377,12 @@ export async function sendPush(userId: string, notice: PushNotice, only?: string
   return { rows: rows.length, sent: sent.length, gone: gone.length };
 }
 
-/** For /admin: how many browsers have alerts on. */
+/** For /admin: how many browsers have alerts on, counting only rows whose sign-in is still live (the only ones sent to). */
 export async function pushBrowsers(): Promise<number> {
-  const row = await one<{ n: number }>("SELECT COUNT(DISTINCT endpoint) AS n FROM push_subscriptions");
+  const row = await one<{ n: number }>(
+    `SELECT COUNT(DISTINCT p.endpoint) AS n FROM push_subscriptions p
+     JOIN sessions s ON s.token_hash = p.session_hash AND s.user_id = p.user_id WHERE s.expires_at > ?`,
+    [now()],
+  );
   return Number(row?.n ?? 0);
 }

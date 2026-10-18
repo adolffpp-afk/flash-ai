@@ -6,8 +6,9 @@ import { readFileSync } from "node:fs";
 
 /*
  * Alerts when Flash is closed (Web Push, src/lib/server/push.ts): the VAPID signature, RFC 8291's
- * encryption against its own example, dead addresses deleted, the account named in a browser shared
- * by several, alerts stopping with a sign-out, and alerts going only to known push services.
+ * encryption against its own example, dead addresses deleted, a busy push service tried twice, the
+ * account named in a browser shared by several, alerts stopping with a sign-out or a sign-in on top,
+ * and alerts going only to known push services.
  */
 register("./support/route-hooks.mjs", import.meta.url);
 // Flash's word tables load as Next loads them, so the account's language can be checked here too.
@@ -38,6 +39,10 @@ setKeys(true);
 const push = await import("../src/lib/server/push.ts");
 const pushRoute = await import("../src/app/api/push/route.ts");
 const logoutRoute = await import("../src/app/api/auth/logout/route.ts");
+const loginRoute = await import("../src/app/api/auth/login/route.ts");
+const linkRoute = await import("../src/app/api/auth/email-link/route.ts");
+const signupRoute = await import("../src/app/api/auth/signup/route.ts");
+const { createSignInLink } = await import("../src/lib/server/signin.ts");
 const passwordRoute = await import("../src/app/api/me/password/route.ts");
 const { createSession, hashPassword } = await import("../src/lib/server/auth.ts");
 const { endAllSessions } = await import("../src/lib/server/account.ts");
@@ -81,14 +86,20 @@ function browser(endpoint: string) {
   };
 }
 
-// Push services, stood in for: every POST is kept, and answered with the status set for its address.
+// Push services, stood in for: every POST is kept, and answered with what's set for its address (201
+// by default): a status, a status with headers, or an error for a lost connection. A list is answered
+// in turn, its last answer staying.
 type Sent = { url: string; headers: Headers; body: Buffer };
+type Answer = number | Error | { status: number; headers: Record<string, string> };
 let sent: Sent[] = [];
-const answers = new Map<string, number>();
+const answers = new Map<string, Answer | Answer[]>();
 globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
   const url = String(input);
   sent.push({ url, headers: new Headers(init?.headers), body: Buffer.from(init?.body as Uint8Array) });
-  return new Response(null, { status: answers.get(url) ?? 201 });
+  const set = answers.get(url) ?? 201;
+  const answer = Array.isArray(set) ? (set.length > 1 ? set.shift()! : set[0]) : set;
+  if (answer instanceof Error) throw answer;
+  return typeof answer === "number" ? new Response(null, { status: answer }) : new Response(null, answer);
 }) as typeof fetch;
 
 const ORIGIN = "https://www.flash-app.dev";
@@ -228,7 +239,8 @@ test("an alert reaches the browser that turned alerts on, and 404 or 410 deletes
   const phone = browser(`${FCM}ben-phone`);
   const laptop = browser("https://updates.push.services.mozilla.com/wpush/v2/ben-laptop");
   const old = browser("https://web.push.apple.com/ben-old");
-  for (const b of [phone, laptop, old]) assert.equal((await pushRoute.POST(call("POST", ben.cookie, b.sub))).status, 200);
+  // Each browser with its own sign-in.
+  for (const b of [phone, laptop, old]) assert.equal((await pushRoute.POST(call("POST", await signIn(ben), b.sub))).status, 200);
   assert.equal((await rowsOf(ben.id)).length, 3);
 
   answers.set(laptop.endpoint, 410);
@@ -257,11 +269,17 @@ test("an alert reaches the browser that turned alerts on, and 404 or 410 deletes
   assert.deepEqual(left.map((r) => r.endpoint), [phone.endpoint], "the gone addresses were deleted");
   assert.ok(left[0].last_ok_at > 0);
 
-  // A refusal that isn't "gone" (a busy push service) keeps the address for next time.
+  // A refusal that isn't "gone" (a busy push service, twice) keeps the address for next time.
   answers.set(phone.endpoint, 503);
   assert.deepEqual(await push.sendPush(ben.id, { title: "x", body: "y" }), { rows: 1, sent: 0, gone: 0 });
   assert.equal((await rowsOf(ben.id)).length, 1);
   answers.delete(phone.endpoint);
+
+  // A page address too long for one alert opens Flash's home, and the alert still goes.
+  sent = [];
+  assert.deepEqual(await push.sendPush(ben.id, { title: "x", body: "y", url: `/?automations=a1&q=${"x".repeat(4000)}` }), { rows: 1, sent: 1, gone: 0 });
+  assert.equal(phone.read(sent[0].body).url, `/?as=${ben.id}`);
+  assert.deepEqual((await rowsOf(ben.id)).map((r) => r.endpoint), [phone.endpoint]);
 
   // A link that leaves Flash opens Flash's home instead.
   sent = [];
@@ -280,7 +298,7 @@ test("a browser signed in to several accounts names the account on its alert", a
   // One browser where both turned alerts on (one sign-in after the other here, each with its own row).
   assert.equal((await pushRoute.POST(call("POST", cara.cookie, shared.sub))).status, 200);
   assert.equal((await pushRoute.POST(call("POST", dev.cookie, shared.sub))).status, 200);
-  assert.equal((await pushRoute.POST(call("POST", cara.cookie, own.sub))).status, 200);
+  assert.equal((await pushRoute.POST(call("POST", await signIn(cara), own.sub))).status, 200);
 
   sent = [];
   await push.sendPush(cara.id, { title: "Veille", body: "Rien de neuf" });
@@ -348,6 +366,83 @@ test("a sign-in that ended by itself gets no alerts, and its rows go", async () 
   assert.deepEqual(await push.sendPush(gus.id, { title: "x", body: "y" }), { rows: 0, sent: 0, gone: 0 });
   assert.deepEqual(sent, []);
   assert.deepEqual(await rowsOf(gus.id), []);
+});
+
+test("a busy push service or a lost connection gets one more try, and a 4xx none", async () => {
+  const max = await account("max@example.com");
+  const phone = browser(`${FCM}max-phone`);
+  await pushRoute.POST(call("POST", max.cookie, phone.sub));
+  const tries = async (answer: Answer[]) => {
+    answers.set(phone.endpoint, answer);
+    sent = [];
+    const result = await push.sendPush(max.id, { title: "x", body: "y" });
+    return { ...result, requests: sent.length };
+  };
+  assert.deepEqual(await tries([503, 201]), { rows: 1, sent: 1, gone: 0, requests: 2 });
+  assert.deepEqual(await tries([new TypeError("fetch failed"), 201]), { rows: 1, sent: 1, gone: 0, requests: 2 });
+  assert.deepEqual(await tries([{ status: 429, headers: { "retry-after": "0" } }, 201]), { rows: 1, sent: 1, gone: 0, requests: 2 });
+  assert.deepEqual(await tries([500, 410]), { rows: 1, sent: 0, gone: 1, requests: 2 }, "a second answer of gone still deletes it");
+  await pushRoute.POST(call("POST", max.cookie, phone.sub));
+  assert.deepEqual(await tries([503, 503, 201]), { rows: 1, sent: 0, gone: 0, requests: 2 }, "two tries at most");
+  // A push service that asks for a longer wait, or refuses the alert itself, isn't asked again.
+  assert.deepEqual(await tries([{ status: 503, headers: { "retry-after": "60" } }, 201]), { rows: 1, sent: 0, gone: 0, requests: 1 });
+  assert.deepEqual(await tries([400, 201]), { rows: 1, sent: 0, gone: 0, requests: 1 });
+  assert.equal((await rowsOf(max.id)).length, 1, "the address stays for next time");
+  answers.delete(phone.endpoint);
+});
+
+test("a sign-in on top of another in a browser stops the alerts the one before turned on there", async () => {
+  const kim = await account("kim@example.com");
+  const lee = await account("lee@example.com");
+  const laptop = browser(`${FCM}family-laptop`);
+  const phone = browser(`${FCM}kim-phone`);
+  await pushRoute.POST(call("POST", kim.cookie, laptop.sub));
+  await pushRoute.POST(call("POST", await signIn(kim), phone.sub));
+  const cookieOf = (res: Response) => (res.headers.get("set-cookie") ?? "").split(";")[0];
+  const signInOnTop = async (route: { POST: (r: Request) => Promise<Response> }, path: string, cookie: string, body: object) => {
+    const res = await route.POST(
+      new Request(`${ORIGIN}${path}`, { method: "POST", headers: { "content-type": "application/json", origin: ORIGIN, cookie }, body: JSON.stringify(body) }),
+    );
+    assert.equal(res.status, 200, path);
+    return cookieOf(res);
+  };
+  const reaches = async (userId: string) => {
+    sent = [];
+    await push.sendPush(userId, { title: "Payroll check", body: "Your salary arrived" });
+    return sent.map((s) => s.url);
+  };
+
+  // Lee opens an emailed sign-in link on the laptop while Kim is still signed in there.
+  const leeCookie = await signInOnTop(linkRoute, "/api/auth/email-link", kim.cookie, { token: await createSignInLink(lee.email, "/"), email: lee.email });
+  assert.deepEqual(await reaches(kim.id), [phone.endpoint], "Kim's phone still gets hers, the laptop doesn't");
+  // Lee turns alerts on there (the same push address), then Kim signs in on top with her password.
+  await pushRoute.POST(call("POST", leeCookie, laptop.sub));
+  const kimCookie = await signInOnTop(loginRoute, "/api/auth/login", leeCookie, { email: kim.email, password: "old password" });
+  assert.deepEqual(await reaches(lee.id), []);
+  // Kim turns them on there again, and someone makes a new account on top.
+  await pushRoute.POST(call("POST", kimCookie, laptop.sub));
+  assert.deepEqual((await reaches(kim.id)).sort(), [laptop.endpoint, phone.endpoint].sort());
+  await signInOnTop(signupRoute, "/api/auth/signup", kimCookie, { email: "mo@example.com", password: "a long password", name: "Mo" });
+  assert.deepEqual(await reaches(kim.id), [phone.endpoint]);
+  // Nobody was signed out by it: only alerts stopped.
+  assert.equal((await all("SELECT 1 FROM sessions WHERE user_id = ?", [kim.id])).length, 3);
+});
+
+test("one row per sign-in, and /admin counts only browsers alerts can still reach", async () => {
+  const before = await push.pushBrowsers();
+  const nia = await account("nia@example.com");
+  const old = browser(`${FCM}nia-old`);
+  const renewed = browser(`${FCM}nia-new`);
+  await pushRoute.POST(call("POST", nia.cookie, old.sub));
+  assert.equal(await push.pushBrowsers(), before + 1);
+  // The same sign-in with a new push address (new keys, or the browser renewed it): the old one goes.
+  await pushRoute.POST(call("POST", nia.cookie, renewed.sub));
+  assert.deepEqual((await rowsOf(nia.id)).map((r) => r.endpoint), [renewed.endpoint]);
+  assert.equal(await push.pushBrowsers(), before + 1);
+  // A sign-in that ended by itself isn't counted, though its row waits for the next alert to go.
+  await run("UPDATE sessions SET expires_at = 1 WHERE user_id = ?", [nia.id]);
+  assert.equal((await rowsOf(nia.id)).length, 1);
+  assert.equal(await push.pushBrowsers(), before);
 });
 
 test("the route: who may turn alerts on, the switch's state, a test alert, and turning them off", async () => {

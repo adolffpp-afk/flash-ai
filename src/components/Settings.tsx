@@ -61,7 +61,7 @@ function Row({ title, about, children }: { title: string; about?: ReactNode; chi
         <p className="text-sm text-zinc-200">{title}</p>
         {about && <p className={`mt-0.5 ${hint}`}>{about}</p>}
       </div>
-      <div className="shrink-0">{children}</div>
+      {children != null && <div className="shrink-0">{children}</div>}
     </div>
   );
 }
@@ -355,9 +355,11 @@ function General({
     if (typeof Notification === "undefined") {
       return setMessage({ text: t("This browser can't show notifications."), ok: false });
     }
-    const allowed = Notification.permission === "granted" || (await Notification.requestPermission()) === "granted";
-    if (allowed) setNotify("1");
-    else setMessage({ text: t("Notifications are blocked for Flash. Allow them in your browser's site settings, then try again."), ok: false });
+    const allowed = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+    if (allowed === "granted") setNotify("1");
+    else if (allowed === "denied") setMessage({ text: t("Notifications are blocked for Flash. Allow them in your browser's site settings, then try again."), ok: false });
+    // The browser's question was closed without an answer: nothing is blocked, and it asks again next time.
+    else setMessage({ text: t("Allow notifications when your browser asks, then try again."), ok: false });
   }
 
   /** Turns "Hey Flash" on (after the browser allows the microphone) or off, on this device. */
@@ -624,6 +626,9 @@ function PushAlerts({ me }: { me: Me }) {
 
   if (!status?.key) return null;
   const key = status.key;
+  // Alerts carry what the account does, so they wait for a confirmed email (the server checks too):
+  // until then nothing asks the browser for anything.
+  const waiting = !me.verified && !status.on;
 
   async function run(work: () => Promise<string>) {
     if (working) return;
@@ -660,13 +665,15 @@ function PushAlerts({ me }: { me: Me }) {
             ? t("On iPhone and iPad, add Flash to your Home Screen first, then turn on alerts in the app you added.")
             : status.support === "no"
               ? t("This browser can't get alerts when Flash is closed.")
-              : t("Flash can alert this phone or computer when something you asked for is ready, even with Flash closed. Alerts stop when you log out here.")
+              : waiting
+                ? t("Confirm your email to turn on alerts.")
+                : t("Flash can alert this phone or computer when something you asked for is ready, even with Flash closed. Alerts stop when you log out here.")
         }
       >
-        {status.support === "yes" ? (
-          <Toggle on={status.on} onChange={toggle} label={t("Send alerts to this device")} />
-        ) : (
+        {status.support !== "yes" ? (
           <span className={hint}>{t("Not in this browser")}</span>
+        ) : waiting ? null : (
+          <Toggle on={status.on} onChange={toggle} label={t("Send alerts to this device")} />
         )}
       </Row>
       {status.on && (

@@ -697,7 +697,8 @@ const SCHEMA = [
   // Alerts when Flash is closed (Web Push, see push.ts): one row per account in each browser that
   // turned them on, with the browser's push address and the keys that encrypt each alert for it.
   // session_hash is that account's sign-in in that browser: logging out there deletes the row
-  // (endSession), endAllSessions deletes all of the account's, and alerts only go where it's live.
+  // (endSession), so does another sign-in on top of it there (leaveBrowser), endAllSessions deletes
+  // all of the account's, and alerts only go where it's live.
   // One browser signed in to several accounts has a row for each, so an alert can name its account.
   `CREATE TABLE IF NOT EXISTS push_subscriptions (
     endpoint TEXT NOT NULL,

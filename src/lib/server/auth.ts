@@ -91,6 +91,16 @@ export async function endSession(request: Request): Promise<void> {
   await run("DELETE FROM sessions WHERE token_hash = ?", [sha256(token)]);
 }
 
+/**
+ * Before a new sign-in's cookie replaces the one this browser holds. On main a browser holds one
+ * account, so the account signed in here until now leaves it, and the alerts its sign-in turned on
+ * here stop (see push.ts), as when it logs out here: none reach whoever signed in on top of it.
+ */
+export async function leaveBrowser(request: Request): Promise<void> {
+  const token = readCookie(request, SESSION_COOKIE);
+  if (token) await run("DELETE FROM push_subscriptions WHERE session_hash = ?", [sha256(token)]);
+}
+
 export const isSecure = (request: Request) =>
   new URL(request.url).protocol === "https:" || request.headers.get("x-forwarded-proto") === "https";
 

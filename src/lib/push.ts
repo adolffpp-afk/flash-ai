@@ -6,10 +6,13 @@
  * device-settings.ts), so that:
  *  - with nobody signed in here, the browser's subscription is dropped: nothing can arrive for
  *    someone who signed out, even if a row was missed;
- *  - after Flash ends a sign-in by itself (every 30 days) or the password changes, alerts come back
- *    on for that account when it's signed in here again, while logging out here forgets them.
+ *  - after a sign-in ends by itself (every 30 days, a password change, "Log out of all devices" on
+ *    another device), alerts come back on for that account when it's signed in here again, while
+ *    logging out here on purpose forgets them (forgetPush);
+ *  - turning them on makes a new subscription, so nothing another account turned on with the old one
+ *    can follow (on main a browser holds one account).
  */
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { api } from "./store.ts";
 import { readSetting, writeSetting } from "./device-settings.ts";
 import { installPlatform } from "./install.ts";
@@ -71,16 +74,17 @@ type ServerState = { key: string | null; on: boolean };
 const serverState = async (sub: PushSubscription | null) =>
   api<ServerState>(`/api/push${sub ? `?e=${await endpointHash(sub.endpoint)}` : ""}`);
 
-/** Subscribes this browser with the server's key, replacing a subscription made with another one. */
+/**
+ * A new subscription with the server's key, in place of any this browser had: alerts sent to the old
+ * address (another account's, or ones made with old keys) then never arrive, and the push service
+ * answers "gone" for it, which deletes it on the server.
+ */
 async function subscribe(key: string): Promise<PushSubscription> {
   const reg = await worker();
   if (!reg) throw new Error("no service worker");
-  let sub = await reg.pushManager.getSubscription();
-  if (sub && !madeWith(sub, key)) {
-    await sub.unsubscribe().catch(() => false);
-    sub = null;
-  }
-  return sub ?? reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: bytes(key) });
+  const old = await reg.pushManager.getSubscription().catch(() => null);
+  await old?.unsubscribe().catch(() => false);
+  return reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: bytes(key) });
 }
 
 export type PushStatus = { key: string | null; on: boolean; support: PushSupport };
@@ -98,13 +102,20 @@ export async function pushStatus(): Promise<PushStatus> {
 export async function turnOnPush(userId: string, key: string, t: Translate): Promise<void> {
   if (pushSupport() !== "yes") throw new Error(t("This browser can't get alerts when Flash is closed."));
   const blocked = t("Notifications are blocked for Flash. Allow them in your browser's site settings, then try again.");
-  // Asked first, while the tap still counts as one (browsers ask only from a tap).
-  if (Notification.permission !== "granted" && (await Notification.requestPermission()) !== "granted") throw new Error(blocked);
+  // Asked first, while the tap still counts as one (browsers ask only from a tap). "default" is a
+  // question closed without an answer: nothing is blocked, and the next tap asks again.
+  const allowed = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+  if (allowed === "denied") throw new Error(blocked);
+  if (allowed !== "granted") throw new Error(t("Allow notifications when your browser asks, then try again."));
   let sub: PushSubscription;
   try {
     sub = await subscribe(key);
   } catch (e) {
-    throw new Error(e instanceof DOMException && e.name === "NotAllowedError" ? blocked : t("Couldn't turn on alerts. Please try again."));
+    const name = e instanceof DOMException ? e.name : "";
+    // The browser has no push service to sign up with, which can't be told before trying: a private
+    // window, or Brave with push messaging off. Trying again won't help there.
+    const none = t("This browser couldn't turn on alerts. Private windows can't get them, and some browsers, like Brave, need push messaging turned on in their settings first.");
+    throw new Error(name === "NotAllowedError" ? blocked : name === "AbortError" || name === "NotSupportedError" ? none : t("Couldn't turn on alerts. Please try again."));
   }
   await api("/api/push", { method: "POST", json: sub.toJSON() });
   want(userId, true);
@@ -162,18 +173,22 @@ export async function syncPush(userId: string | null): Promise<void> {
 }
 
 /**
+ * When this account logs out here on purpose (Flash's sign-out, "Log out of all devices" here): this
+ * device forgets that it wanted alerts, so they stay off when it signs in here again.
+ */
+export function forgetPush(userId: string): void {
+  want(userId, false);
+}
+
+/**
  * Keeps this browser's alerts in step with who is signed in (see syncPush): userId is the account,
- * null once nobody is, and undefined while it's still loading. When the account signs out here, this
- * device forgets that it wanted alerts. Opening Flash also clears the dot alerts put on its app icon.
+ * null once nobody is, and undefined while it's still loading. A sign-in that ends by itself, with
+ * Flash open or closed, keeps this device's wish for alerts; only forgetPush forgets it. Opening
+ * Flash also clears the dot alerts put on its app icon.
  */
 export function usePushSync(userId: string | null | undefined): void {
-  const last = useRef<string | null | undefined>(undefined);
   useEffect(() => {
-    const before = last.current;
-    last.current = userId;
-    if (userId === undefined) return;
-    if (userId === null && before) want(before, false);
-    syncPush(userId).catch(() => {});
+    if (userId !== undefined) syncPush(userId).catch(() => {});
   }, [userId]);
   useEffect(() => {
     const clear = () => {
