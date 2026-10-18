@@ -11,7 +11,9 @@
  *    logging out here on purpose forgets them (logOutHere);
  *  - turning them on while no other account here gets them makes a new subscription, so nothing
  *    turned on with the old one can follow;
- *  - alerts still on the screen go with the sign-in they came for (closeAlerts).
+ *  - alerts still on the screen go with the sign-in they came for (closeAlerts);
+ *  - a tap on an alert while Flash is open reaches the tab the service worker brings to the front,
+ *    which goes on as the alert's account when it shows another (onAlertTapped).
  */
 import { useEffect } from "react";
 import { api } from "./store.ts";
@@ -92,6 +94,41 @@ async function closeAlerts(close: (account: string | null) => boolean): Promise<
     } catch {}
     if (close(account)) alert.close();
   }
+}
+
+/**
+ * Once this tab's account isn't signed in here anymore while others are (Flash shows the account
+ * chooser, open or after a reload): the alerts on the screen of every account but these, the ones
+ * signed in here, go, as when Flash opens (syncPush). Theirs stay, and so does the subscription
+ * their alerts come by.
+ */
+export async function closeAlertsExcept(accounts: readonly string[]): Promise<void> {
+  await closeAlerts((account) => !accounts.includes(account ?? ""));
+}
+
+// An account id, as an alert's page names it (as=; ACCOUNT_ID in server/auth.ts).
+const ACCOUNT = /^[A-Za-z0-9_-]{1,64}$/;
+
+/**
+ * Calls tapped with the account an alert names (its page's as=) when it's tapped while this tab is
+ * the Flash the service worker brings to the front (public/sw.js), which can't tell which account a
+ * tab shows. Returns what stops listening.
+ */
+export function onAlertTapped(tapped: (account: string) => void): () => void {
+  const container = typeof navigator !== "undefined" && "serviceWorker" in navigator ? navigator.serviceWorker : undefined;
+  if (!container) return () => {};
+  const heard = (event: MessageEvent) => {
+    const message = event.data as { type?: unknown; url?: unknown } | null;
+    if (message?.type !== "flash:open" || typeof message.url !== "string") return;
+    let account: string | null = null;
+    try {
+      const page = new URL(message.url, window.location.href);
+      if (page.origin === window.location.origin) account = page.searchParams.get("as");
+    } catch {}
+    if (account && ACCOUNT.test(account)) tapped(account);
+  };
+  container.addEventListener("message", heard);
+  return () => container.removeEventListener("message", heard);
 }
 
 const wanted = () => readSetting("pushAccounts").split(" ").filter(Boolean);

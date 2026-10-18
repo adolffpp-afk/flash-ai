@@ -59,7 +59,7 @@ import { pictureFollowUp } from "@/lib/router";
 import { firstName } from "@/lib/names";
 import { timeAgo } from "@/lib/when";
 import { applyAppearance, applyTheme, notifiesWhenDone, readSetting, writeSetting } from "@/lib/device-settings";
-import { logOutHere, usePushSync } from "@/lib/push";
+import { closeAlertsExcept, logOutHere, onAlertTapped, usePushSync } from "@/lib/push";
 import { LEVEL_ENGINES, isLevel, type Level } from "@/lib/levels";
 import { showLanguage, tNow, useT } from "@/lib/use-t";
 import { msg, type Translate } from "@/lib/i18n";
@@ -332,6 +332,13 @@ export function Flash({
   const install = useInstall();
   // Alerts when Flash is closed follow who is signed in here: none for nobody (see push.ts).
   usePushSync(signedOut ? null : me?.user.id, me?.accounts.map((a) => a.id));
+  // This tab's account isn't signed in here anymore while others are (the chooser asks which to go
+  // on with, with Flash open or after a reload, or signing in from it does): its alerts on the
+  // screen go, and those of the accounts still signed in here stay.
+  const stillHere = (chooser ?? adding?.back)?.accounts.map((a) => a.id).join(" ");
+  useEffect(() => {
+    if (stillHere !== undefined) closeAlertsExcept(stillHere.split(" ").filter(Boolean)).catch(() => {});
+  }, [stillHere]);
   // The Ask Flash button can be hidden in Settings > Capabilities (read after mount: it lives on the device).
   const [hideCompanion, setHideCompanion] = useState(false);
   // A voice conversation, docked where the message box is; woke when "Hey Flash" opened it.
@@ -1513,6 +1520,18 @@ export function Flash({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // A tap on an alert of another account signed in here, with this tab the Flash the service worker
+  // brought to the front: the tab goes on as that account, as Switch (or picking it in the chooser)
+  // does, asking first when something here isn't saved (see onAlertTapped).
+  const alertTapped = useRef<(account: string) => void>(() => {});
+  useEffect(() => {
+    alertTapped.current = (account) => {
+      if (adding || leavingRef.current || (!chooser && account === me?.user.id)) return;
+      if ((chooser?.accounts ?? me?.accounts ?? []).some((a) => a.id === account)) void switchAccount(account, { gone: Boolean(chooser) });
+    };
+  });
+  useEffect(() => onAlertTapped((account) => alertTapped.current(account)), []);
 
   function setAppSlug(messageId: string, slug: string) {
     if (active) updateMessage(active.id, messageId, (m) => (m.app ? { ...m, app: { ...m.app, slug } } : m));

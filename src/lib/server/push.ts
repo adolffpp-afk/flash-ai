@@ -269,6 +269,9 @@ export type PushNotice = {
   // A later alert with the same tag replaces this one (and still alerts), like "flash-run-<runId>".
   // Without one, or with one that isn't 1-64 letters, digits, "_", ":", "." or "-", each alert shows on its own.
   tag?: string;
+  // The language the title and body are in, when it isn't the account's (the test alert's, which
+  // follows the browser's with Automatic picked), so the line naming the account is in it too.
+  language?: string;
 };
 
 const graphemes = new Intl.Segmenter("en", { granularity: "grapheme" });
@@ -391,14 +394,15 @@ export async function sendPush(userId: string, notice: PushNotice, only?: string
   );
   if (!rows.length) return { rows: 0, sent: 0, gone: 0 };
   const user = await one<{ email: string; language: string }>("SELECT email, language FROM users WHERE id = ?", [userId]);
-  const t = await translatorIn(user?.language || "en");
+  const t = await translatorIn(notice.language || user?.language || "en");
   const title = clip(notice.title, TITLE_CHARS) || PRODUCT_NAME;
   const body = clip(notice.body, BODY_CHARS);
   const url = pagePath(notice.url, userId);
   const tag = notice.tag && /^[\w:.-]{1,64}$/.test(notice.tag) ? notice.tag : undefined;
   const outcomes = await Promise.all(
     rows.map((row) => {
-      const named = Number(row.others) > 0 && user ? [t("For {email}", { email: user.email }), body].filter(Boolean).join("\n") : body;
+      // The address kept apart (as isolate in account-pin.ts does), so the line reads in order in Arabic, Hebrew, Persian and Urdu.
+      const named = Number(row.others) > 0 && user ? [t("For {email}", { email: `\u2068${user.email}\u2069` }), body].filter(Boolean).join("\n") : body;
       return deliver(row, { title, body: named, url, tag }).then((outcome) => ({ row, outcome }));
     }),
   );
@@ -428,15 +432,17 @@ export async function dropEnded(userId?: string): Promise<void> {
 /**
  * Before every sign-in of an account ends (endAllSessions): the browsers where it turned alerts on,
  * for clearScreens. Not the one doing it (here, its sign-in's hash), whose page clears its own
- * screen, nor one where another account turned them on too: the push would drop the subscription
- * that account's alerts come by.
+ * screen, nor one where another account still gets alerts (its sign-in there is live, as sendPush
+ * counts them): the push would drop the subscription that account's alerts come by. One whose
+ * sign-in there ended gets none there, so it doesn't count.
  */
 export async function screensOf(userId: string, here = ""): Promise<Subscription[]> {
   if (!setup().keys) return [];
   return all<Subscription>(
     `SELECT p.endpoint, p.p256dh, p.auth FROM push_subscriptions p WHERE p.user_id = ? AND p.session_hash <> ?
-       AND NOT EXISTS (SELECT 1 FROM push_subscriptions o WHERE o.endpoint = p.endpoint AND o.user_id <> p.user_id)`,
-    [userId, here],
+       AND NOT EXISTS (SELECT 1 FROM push_subscriptions o JOIN sessions so ON so.token_hash = o.session_hash AND so.user_id = o.user_id
+         WHERE o.endpoint = p.endpoint AND o.user_id <> p.user_id AND so.expires_at > ?)`,
+    [userId, here, now()],
   );
 }
 

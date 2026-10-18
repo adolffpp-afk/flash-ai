@@ -156,6 +156,10 @@ const stateAt = async (cookie: string, endpoint: string, account?: string) =>
     here: boolean;
   };
 const FCM = "https://fcm.googleapis.com/fcm/send/";
+/** One of Flash's word tables (src/lib/i18n). */
+const table = (language: string) => JSON.parse(readFileSync(new URL(`../src/lib/i18n/${language}.json`, import.meta.url), "utf8")) as Record<string, string>;
+/** An email address as an alert's first line holds it: kept apart (FSI ... PDI), so it reads in order in any language. */
+const isolated = (email: string) => `⁨${email}⁩`;
 
 test("the VAPID header is a JWT signed with ES256 for the push service, with Flash's public key", async () => {
   // The checker used here, on RFC 8292's own example token and key.
@@ -360,8 +364,8 @@ test("a browser signed in to several accounts names the account on its alert", a
   await push.sendPush(cara.id, { title: "Veille", body: "Rien de neuf" });
   const onShared = shared.read(sent.find((s) => s.url === shared.endpoint)!.body);
   const onOwn = own.read(sent.find((s) => s.url === own.endpoint)!.body);
-  const fr = JSON.parse(readFileSync(new URL("../src/lib/i18n/fr.json", import.meta.url), "utf8"));
-  assert.equal(onShared.body, `${fr["For {email}"].replace("{email}", "cara@example.com")}\nRien de neuf`, "named, in the account's language");
+  const fr = table("fr");
+  assert.equal(onShared.body, `${fr["For {email}"].replace("{email}", isolated("cara@example.com"))}\nRien de neuf`, "named, in the account's language");
   assert.equal(onOwn.body, "Rien de neuf", "a browser only she uses doesn't name her");
   assert.equal(onShared.url, `/?as=${cara.id}`);
 
@@ -370,6 +374,37 @@ test("a browser signed in to several accounts names the account on its alert", a
   sent = [];
   await push.sendPush(cara.id, { title: "Veille", body: "Rien de neuf" });
   assert.equal(shared.read(sent.find((s) => s.url === shared.endpoint)!.body).body, "Rien de neuf");
+
+  // In Urdu (as in Arabic, Hebrew and Persian), the address is kept apart, so the line reads right
+  // to left from its first word, as the rest of Flash shows an email in a sentence (isolate in
+  // account-pin.ts): a line that started with the address's Latin letters would be laid out left to right.
+  const kiran = await account("kiran.ur@example.com", { language: "ur" });
+  const lee = await account("lee.ur@example.com");
+  const desk = browser(`${FCM}kiran-lee-desk`);
+  const both = jarOf(kiran.cookie, lee.cookie);
+  await pushRoute.POST(call("POST", both, desk.sub, as(kiran.id)));
+  await pushRoute.POST(call("POST", both, desk.sub, as(lee.id)));
+  sent = [];
+  await push.sendPush(kiran.id, { title: "ہفتہ وار خلاصہ", body: "آپ کی تنخواہ آ گئی۔" });
+  const urdu = desk.read(sent.find((s) => s.url === desk.endpoint)!.body).body;
+  assert.equal(urdu, `${table("ur")["For {email}"].replace("{email}", isolated("kiran.ur@example.com"))}\nآپ کی تنخواہ آ گئی۔`);
+  // A line's direction comes from its first strong letter outside isolates (Unicode's bidi rule P2).
+  const firstStrong = urdu.replace(/⁨[^⁩]*⁩/g, "").match(/[\p{L}]/u)?.[0] ?? "";
+  assert.match(firstStrong, /\p{Script=Arabic}/u);
+
+  // A test alert, with Automatic picked and a browser in Arabic: its words follow the browser's
+  // language, and so does the line naming the account, so the alert is in one language.
+  const noor = await account("noor.auto@example.com");
+  const omar = await account("omar.auto@example.com");
+  const tablet = browser(`${FCM}noor-omar-tablet`);
+  const family = jarOf(noor.cookie, omar.cookie);
+  await pushRoute.POST(call("POST", family, tablet.sub, as(noor.id)));
+  await pushRoute.POST(call("POST", family, tablet.sub, as(omar.id)));
+  sent = [];
+  const tested = await pushRoute.POST(call("POST", family, { action: "test", endpoint: tablet.endpoint }, { ...as(noor.id), "accept-language": "ar" }));
+  assert.equal(tested.status, 200);
+  const ar = table("ar");
+  assert.equal(tablet.read(sent[0].body).body, `${ar["For {email}"].replace("{email}", isolated("noor.auto@example.com"))}\n${ar["Alerts work on this device."]}`);
 });
 
 test("logging out deletes that sign-in's rows; endAllSessions and a password change delete them everywhere", async () => {
@@ -972,7 +1007,7 @@ test("the service worker asks about each alert as its own account, so another ac
   // Cara turns them on too, with the same subscription; each alert there names its account now.
   await pushRoute.POST(call("POST", cookie, laptop.sub, as(cara.id)));
   await worker.push(await alertOf(cara, { title: "Cara's weekly summary", body: "Ready", tag: "flash-run-c1" }));
-  const caras = { title: "Cara's weekly summary", body: "For cara.sw@example.com\nReady", tag: "flash-run-c1" };
+  const caras = { title: "Cara's weekly summary", body: `For ${isolated("cara.sw@example.com")}\nReady`, tag: "flash-run-c1" };
   assert.deepEqual(worker.tray(), [dans, caras]);
 
   // Dan logs out of the laptop, with an alert of his still on its way: it shows no words, his
@@ -992,6 +1027,48 @@ test("the service worker asks about each alert as its own account, so another ac
   cookie = "";
   await worker.push(last);
   assert.deepEqual(worker.tray(), [hidden]);
+  assert.equal(worker.state.subscribed, false);
+});
+
+test("an alert for an account whose sign-in there ended drops the subscription once no account still signed in there gets alerts by it", async () => {
+  const gus = await account("gus.sw.off@example.com");
+  const hal = await account("hal.sw.off@example.com");
+  const laptop = browser(`${FCM}gus-hal-sw-off`);
+  // Gus turned alerts on there; Hal, signed in there too, never did.
+  const cookie = jarOf(gus.cookie, hal.cookie);
+  await pushRoute.POST(call("POST", cookie, laptop.sub, as(gus.id)));
+  sent = [];
+  await push.sendPush(gus.id, { title: "Gus's invoice check", body: "Overdue", tag: "flash-run-g1" });
+  const waiting = laptop.open(sent[0].body);
+  // His sign-in there ends by itself while the laptop is off; Hal is still signed in.
+  await run("UPDATE sessions SET expires_at = 1 WHERE token_hash = ?", [hashOf(tokenOf(gus.cookie))]);
+  const worker = serviceWorker(laptop.endpoint, () => cookie);
+  await worker.push(waiting);
+  assert.deepEqual(worker.tray(), [{ title: "Flash ∞ AI", body: "", tag: "flash-hidden" }]);
+  assert.equal(worker.state.subscribed, false, "nobody signed in there gets alerts by it");
+});
+
+test("once nobody is signed in there, an alert takes every account's alerts off the screen", async () => {
+  const ivy = await account("ivy.sw.nobody@example.com");
+  const jon = await account("jon.sw.nobody@example.com");
+  const laptop = browser(`${FCM}ivy-jon-sw-nobody`);
+  const cookie = jarOf(ivy.cookie, jon.cookie);
+  await pushRoute.POST(call("POST", cookie, laptop.sub, as(ivy.id)));
+  await pushRoute.POST(call("POST", cookie, laptop.sub, as(jon.id)));
+  const worker = serviceWorker(laptop.endpoint, () => cookie);
+  const alertOf = async (user: { id: string }, title: string, tag: string) => {
+    sent = [];
+    await push.sendPush(user.id, { title, body: "Ready", tag });
+    return laptop.open(sent.find((s) => s.url === laptop.endpoint)!.body);
+  };
+  await worker.push(await alertOf(ivy, "Ivy's payroll check", "flash-run-i1"));
+  await worker.push(await alertOf(jon, "Jon's weekly summary", "flash-run-j1"));
+  assert.deepEqual(worker.tray().map((n) => n.title), ["Ivy's payroll check", "Jon's weekly summary"]);
+  // Both sign-ins there end by themselves with Flash closed, and one more of Ivy's arrives.
+  const last = await alertOf(ivy, "Ivy's payroll check", "flash-run-i2");
+  await run("UPDATE sessions SET expires_at = 1 WHERE token_hash IN (?, ?)", [hashOf(tokenOf(ivy.cookie)), hashOf(tokenOf(jon.cookie))]);
+  await worker.push(last);
+  assert.deepEqual(worker.tray().map((n) => n.title), ["Flash ∞ AI"], "Jon's goes too");
   assert.equal(worker.state.subscribed, false);
 });
 
@@ -1069,6 +1146,15 @@ test("\"Log out of all devices\", a password change or a reset takes her alerts 
     const shared = browser(`${FCM}shared-pc-${how}`);
     await pushRoute.POST(call("POST", await signIn(ana), shared.sub));
     await pushRoute.POST(call("POST", ben.cookie, shared.sub));
+    // A family laptop where Cal turned alerts on too, but his sign-in there has since ended by itself
+    // (his row stays until something of his runs): he gets no alerts there, so it's hers alone, and
+    // it's told too.
+    const cal = await account(`cal.library.${how}@example.com`);
+    const family = browser(`${FCM}family-pc-${how}`);
+    await pushRoute.POST(call("POST", await signIn(ana), family.sub));
+    await pushRoute.POST(call("POST", cal.cookie, family.sub));
+    await run("UPDATE sessions SET expires_at = 1 WHERE token_hash = ?", [hashOf(tokenOf(cal.cookie))]);
+    assert.equal((await rowsOf(cal.id)).length, 1, "Cal's row is still there");
     const worker = serviceWorker(library.endpoint, () => ana.cookie);
     sent = [];
     await push.sendPush(ana.id, payroll);
@@ -1087,16 +1173,18 @@ test("\"Log out of all devices\", a password change or a reset takes her alerts 
           ? await passwordRoute.POST(fromPhone("/api/me/password", { current: "old password", next: "a brand new password" }))
           : await resetRoute.POST(fromPhone("/api/auth/reset", { token, password: "a brand new password", email: ana.email }));
     assert.equal(out.status, 200, how);
-    // One push with no words to the library computer; none to the phone she pressed it on (its own
-    // screen is its page's to clear, and after a password change or a reset it's signed in again and
-    // turns its alerts back on), nor to the browser that's Ben's now.
-    assert.deepEqual(sent.map((s) => s.url), [library.endpoint], how);
-    assert.deepEqual(library.read(sent[0].body), { ended: true, as: ana.id });
+    // One push with no words to the library computer and the family laptop; none to the phone she
+    // pressed it on (its own screen is its page's to clear, and after a password change or a reset
+    // it's signed in again and turns its alerts back on), nor to the browser that's Ben's now.
+    assert.deepEqual(sent.map((s) => s.url).sort(), [library.endpoint, family.endpoint].sort(), how);
+    const told = sent.find((s) => s.url === library.endpoint)!.body;
+    assert.deepEqual(library.read(told), { ended: true, as: ana.id });
+    assert.deepEqual(family.read(sent.find((s) => s.url === family.endpoint)!.body), { ended: true, as: ana.id });
     assert.deepEqual(await rowsOf(ana.id), []);
     // Its service worker is told her sign-in there ended: her alert leaves the screen, and so does
     // the subscription. That needs no answer from Flash, since nothing would come later to clear them.
     worker.state.offline = how === "everywhere";
-    await worker.push(library.open(sent[0].body));
+    await worker.push(library.open(told));
     assert.deepEqual(worker.tray(), [{ title: "Flash ∞ AI", body: "", tag: "flash-hidden" }], how);
     assert.equal(worker.state.subscribed, false, how);
   }

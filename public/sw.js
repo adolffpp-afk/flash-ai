@@ -158,7 +158,9 @@ self.addEventListener("push", (event) => {
   event.waitUntil(Promise.all([show(), badge().catch(() => {})]));
 });
 
-// A tap brings an open Flash to the front, which is told the page to show; with none open, it opens one.
+// A tap brings an open Flash to the front, which is told the page to show: a tab showing another
+// account than the alert's goes on as it (onAlertTapped in src/lib/push.ts), since a tab's address
+// doesn't say which account it shows. With none open, it opens one.
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const url = flashPage(event.notification.data && event.notification.data.url);

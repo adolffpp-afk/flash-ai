@@ -11,7 +11,8 @@ import { readFileSync } from "node:fs";
  * alerts on when none of them gets alerts by it makes a new one, so no alerts of an account that
  * isn't signed in here follow; a sign-in that ends by itself keeps this device's wish for alerts, and
  * only logging out here forgets it; what the switch says when the browser asks, blocks, or has no
- * push service; and a test alert to an address the push service dropped.
+ * push service; a test alert to an address the push service dropped; the account chooser taking only
+ * its gone account's alerts off the screen; and a tap on an alert reaching the tab in front.
  */
 register("./support/route-hooks.mjs", import.meta.url);
 const HOOKS = new URL("./support/push-react.mjs", import.meta.url).href;
@@ -605,4 +606,84 @@ test("logging one account out here keeps the other's alerts; logging out the las
   assert.match(signOut, /logOutHere\(\[gone\]\)/);
   assert.match(flash.slice(flash.indexOf("async function signOutAll(")), /logOutHere\(\(me\?\.accounts \?\? \[\]\)\.map\(\(a\) => a\.id\)\)/);
   assert.ok(!flash.includes('params.delete("as")'));
+});
+
+test("a tab whose account isn't signed in here anymore, while another is, takes only that account's alerts off the screen", async () => {
+  const titles = () => tray.map((n) => n.title);
+  await account("nia");
+  await account("oli");
+  storage.clear();
+  current = null;
+  cookie = "";
+  tray.length = 0;
+  // A family laptop signed in to both, each with alerts on from a tab of its own.
+  await signIn("nia");
+  setPin("nia");
+  await client.turnOnPush("nia", key);
+  await addAccount("oli");
+  setPin("oli");
+  await client.turnOnPush("oli", key);
+  const shared = subNow()!.endpoint;
+  showAlert("Nia's payroll check: your salary of $4,210 arrived", "nia");
+  showAlert("Oli's weekly summary", "oli");
+  // On her phone, Nia presses "Log out of all devices". The laptop gets no wordless push, since Oli
+  // gets alerts by its subscription; Nia's tab there, still open (or reloaded), finds her gone and
+  // shows the account chooser with who is signed in here now (checkAccounts in Flash.tsx).
+  await endAllSessions("nia");
+  setPin("nia");
+  const accountsRoute = await import("../src/app/api/auth/accounts/route.ts");
+  const { accounts } = (await (await accountsRoute.GET(new Request(`${ORIGIN}/api/auth/accounts`, { headers: { cookie } }))).json()) as { accounts: { id: string }[] };
+  assert.deepEqual(accounts.map((a) => a.id), ["oli"]);
+  await client.closeAlertsExcept(accounts.map((a) => a.id));
+  assert.deepEqual(titles(), ["Oli's weekly summary"], "hers go, Oli's stay");
+  assert.equal(subNow()?.endpoint, shared, "the subscription Oli's alerts come by stays");
+  assert.equal(await alertsHere("oli"), 1);
+  // Flash does this whenever the chooser shows, with Flash open or after a reload, and while
+  // signing in from it, with the accounts it lists.
+  const flash = readFileSync(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
+  assert.match(flash, /const stillHere = \(chooser \?\? adding\?\.back\)\?\.accounts\.map\(\(a\) => a\.id\)\.join\(" "\);/);
+  assert.match(flash, /if \(stillHere !== undefined\) closeAlertsExcept\(stillHere\.split\(" "\)\.filter\(Boolean\)\)/);
+  tray.length = 0;
+  setPin(null);
+});
+
+test("a tap on an alert while Flash is open tells the tab the service worker brought to the front which account it's for", () => {
+  const was = { location: (globalThis as { location?: unknown }).location, container: navigator.serviceWorker };
+  const heard = new Set<(event: { data: unknown }) => void>();
+  Object.defineProperty(navigator, "serviceWorker", {
+    configurable: true,
+    value: {
+      ...was.container,
+      addEventListener: (type: string, f: (event: { data: unknown }) => void) => void (type === "message" && heard.add(f)),
+      removeEventListener: (type: string, f: (event: { data: unknown }) => void) => void heard.delete(f),
+    },
+  });
+  Object.assign(globalThis, { location: new URL(`${ORIGIN}/?chat=p1`) });
+  try {
+    const tapped: string[] = [];
+    const stop = client.onAlertTapped((account) => tapped.push(account));
+    const post = (data: unknown) => heard.forEach((f) => f({ data }));
+    // What public/sw.js posts to the Flash it focuses.
+    post({ type: "flash:open", url: `${ORIGIN}/?automations=a1&as=ana` });
+    post({ type: "flash:open", url: `${ORIGIN}/` });
+    post({ type: "flash:open", url: "https://evil.example/?as=bea" });
+    post({ type: "flash:open", url: `${ORIGIN}/?as=${encodeURIComponent("no such id!")}` });
+    post({ type: "changed", url: `${ORIGIN}/?as=cy` });
+    post(null);
+    assert.deepEqual(tapped, ["ana"], "only an alert of Flash's, naming an account");
+    stop();
+    post({ type: "flash:open", url: `${ORIGIN}/?as=dee` });
+    assert.deepEqual(tapped, ["ana"]);
+    assert.equal(heard.size, 0);
+    // Flash goes on as that account, as Switch does (asking first when something isn't saved), unless
+    // the tab shows it already; from the chooser, as picking it there does.
+    const flash = readFileSync(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
+    const handler = flash.slice(flash.indexOf("alertTapped.current = (account) =>"), flash.indexOf("useEffect(() => onAlertTapped("));
+    assert.match(handler, /if \(adding \|\| leavingRef\.current \|\| \(!chooser && account === me\?\.user\.id\)\) return;/);
+    assert.match(handler, /\(chooser\?\.accounts \?\? me\?\.accounts \?\? \[\]\)\.some\(\(a\) => a\.id === account\)\) void switchAccount\(account, \{ gone: Boolean\(chooser\) \}\)/);
+    assert.match(flash, /useEffect\(\(\) => onAlertTapped\(\(account\) => alertTapped\.current\(account\)\), \[\]\);/);
+  } finally {
+    Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: was.container });
+    Object.assign(globalThis, { location: was.location });
+  }
 });

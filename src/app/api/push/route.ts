@@ -56,7 +56,7 @@ export async function POST(request: Request) {
   if (await overLimit(`push:${user.id}`, 20, HOUR)) return Response.json({ error: t("Too many requests. Try again in an hour.") }, { status: 429 });
   if (body.action === "test") {
     const endpoint = typeof body.endpoint === "string" ? body.endpoint : "";
-    const { rows, sent, gone } = await sendPush(user.id, { title: PRODUCT_NAME, body: t("Alerts work on this device."), url: "/", tag: "flash-test" }, endpoint);
+    const { rows, sent, gone } = await sendPush(user.id, { title: PRODUCT_NAME, body: t("Alerts work on this device."), url: "/", tag: "flash-test", language: t.language }, endpoint);
     // Off here: never turned on, or the push service just said this browser's address is gone (and
     // it was deleted). "off" tells the switch to show it.
     if (!rows || gone) return Response.json({ error: t("Turn on alerts on this device first."), code: "off" }, { status: 400 });
