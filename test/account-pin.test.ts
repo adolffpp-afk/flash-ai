@@ -391,7 +391,7 @@ test("an invitation for another account signed in here waits in its tab only, an
   const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
   assert.doesNotMatch(page, /flash_invite|INVITE_KEY/);
   const accept = body(page, "async function acceptInvite(");
-  assert.match(accept, /const token = waitingInvite\(\);/);
+  assert.match(accept, /const token = waitingInvite\(!elsewhereRef\.current\);\n\s+elsewhereRef\.current = false;\n\s+if \(!token\) return;/);
   assert.match(accept, /if \(code === "other_account" && data\?\.forAccount\) \{\n\s+keepInviteInTab\(token\);\n\s+return setInviteFor\(data\.forAccount\);/);
   assert.match(page, /if \(invite\) \{\n\s+saveInvite\(invite\);/);
 });
@@ -530,8 +530,10 @@ test("the page around a switch: what Flash says stays in view, the menu closes w
   const switching = body(page, "async function switchAccount(");
   assert.equal(switching.match(/return false;/g)?.length, 3);
   assert.match(switching, /reloadAs\(id\);[\s\S]*return true;\n\s+\}$/);
-  // The browser tab's title names the tab's account only while it is signed in here.
-  assert.match(page, /const tabEmail = me && !chooser && \(me\.accounts\?\.length \?\? 0\) > 1 \? me\.user\.email : null;/);
+  // The browser tab's title names the tab's account only while it is signed in here: not under the
+  // chooser, nor while signing in from it (Use another account, Sign in again: add mode whose Back
+  // leads to the chooser).
+  assert.match(page, /const tabEmail = me && !chooser && !adding\?\.back && \(me\.accounts\?\.length \?\? 0\) > 1 \? me\.user\.email : null;/);
   // Add another account shows over the page, which stays as it was (unsaved code, the running app,
   // Ask Flash), out of reach until Back; only before an account has loaded is it the whole page.
   assert.match(page, /if \(addScreen && !me\) return addScreen;/);
@@ -562,8 +564,8 @@ test("Add another account over the page: nothing under it listens on, and it is 
   assert.equal(page.match(/setAdding\(/g)?.length, 3, "openAdding, closeAdding and the account check, which keeps it open");
   assert.equal(page.match(/openAdding\(\{/g)?.length, 5, "the menu, the chooser's two, ?add=1 and a sign-in error");
   assert.match(page, /onAdd=\{\(\) => openAdding\(\{\}\)\}/);
-  // "Hey Flash" stays off meanwhile.
-  assert.match(page, /useWakeWord\(wakeOn && !voice && !dictating && Boolean\(me\) && !signedOut && !adding,/);
+  // "Hey Flash" stays off meanwhile, and under the account chooser too.
+  assert.match(page, /useWakeWord\(wakeOn && !voice && !dictating && Boolean\(me\) && !signedOut && !adding && !chooser,/);
   // The account check never puts the chooser over it: Back leads to the chooser, with who is signed
   // in now; once the tab's account is signed in here again (an emailed link, another tab), the
   // sign-in from the chooser closes and the tab goes on, after a reload too.
@@ -757,7 +759,7 @@ test("a link's chooser is still the link's after a reload, and signing in to its
   // The page asks for it on every load, and lets it go once an account loads.
   const { readFile } = await import("node:fs/promises");
   const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
-  assert.match(page, /linkedRef\.current = adoptAccountFromUrl\(\) \?\? linkedAccount\(\);/);
+  assert.match(page, /const named = adoptAccountFromUrl\(\);\n\s+linkedRef\.current = named \?\? linkedAccount\(\);/);
   assert.match(body(page, "async function adoptMe("), /setPin\(data\.account\);\n\s+setPinEmail\(data\.user\.email\);\n(\s*\/\/.*\n)*\s+forgetLink\(\);/);
 });
 
@@ -766,7 +768,8 @@ test("the account chooser over \"Switch anyway?\" is in charge: the question and
   const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
   // This tab's account was logged out elsewhere while Flash asked: nothing of it can be saved, so the
   // question goes, and the chooser's accounts, Sign in again and Use another account can be chosen.
-  assert.match(body(page, "function showChooser("), /\{\n\s+setUnsaved\(null\);\n\s+setSwitching\(null\);\n\s+setChooser\(next\);\n\s+\}$/);
+  // Nothing of that account listens on under it either (a voice conversation, the mic), as under add mode.
+  assert.match(body(page, "function showChooser("), /\{\n\s+setUnsaved\(null\);\n\s+setSwitching\(null\);\n(\s*\/\/.*\n)*\s+setVoice\(null\);\n\s+stopMic\(\);\n\s+setChooser\(next\);\n\s+\}$/);
   assert.match(body(page, "async function checkAccounts("), /\n\s+showChooser\(gone\);\n\s+return "gone";/);
   assert.match(body(page, "async function checkAccountsFor("), /showChooser\(\{ reason: "notHere"/);
   // The chooser opens nowhere else; it only closes, or comes back from add mode (where nothing is asked).
@@ -797,13 +800,127 @@ test("with one account, a tab signed out by a log out in another tab opens the a
   const { readFile } = await import("node:fs/promises");
   const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
   // The landing page (not its sign-in form) keeps listening: an account signed in on this browser
-  // again (another tab's announcement, or the tab shown again) loads here, as a reload would.
+  // again (another tab's announcement, or the tab shown again) opens here, with a reload.
   assert.match(page, /useEffect\(\(\) => \{\n\s+landingRef\.current = signedOut && !authMode;\n\s+\}, \[signedOut, authMode\]\);/);
-  const checking = page.slice(page.indexOf("    const check = (now = false) => {"), page.indexOf("    const shown = () => {"));
-  assert.match(checking, /if \(landingRef\.current\) \{\n\s+void api<\{ accounts: AccountSummary\[\] \}>\("\/api\/auth\/accounts"\)\.then\(\n\s+\(list\) => void \(list\.accounts\.length && landingRef\.current && start\(\)\),\n\s+\(\) => \{\},\n\s+\);\n\s+return;\n\s+\}\n(\s*\/\/.*\n)*\s+if \(!meRef\.current && !chooserRef\.current && !addingRef\.current\?\.back\) return;/);
+  assert.match(landingCheck(page), /\n(\s*\/\/.*\n)*\s+if \(!meRef\.current && !chooserRef\.current && !addingRef\.current\?\.back\) return;/);
   // A sign-in from the signed-out screen tells the other tabs, as Add another account does.
   assert.match(page, /onDone=\{\(result\) => \{\n(\s*\/\/.*\n)*\s+announce\(\{ type: "changed" \}\);\n(\s*\/\/.*\n)*\s+if \(addNext && result\?\.account\) return goOnAs\(result\.account, addNext\);/);
   // The tab that signs out is a landing page from then on too, with nothing of the account before.
   const out = body(page, "function signedOutHere(");
   for (const cleared of ["setMe(null);", "setProjects([]);", 'setActiveId("");', "setAuthMode(null);", "setSignedOut(true);"]) assert.ok(out.includes(cleared), cleared);
+});
+
+/** The account check's part for a signed-out landing page, in Flash.tsx. */
+function landingCheck(page: string): string {
+  const checking = page.slice(page.indexOf("    const check = (now = false) => {"), page.indexOf("    const shown = () => {"));
+  assert.ok(checking.includes("if (landingRef.current) {"), "the landing page checks");
+  return checking.slice(checking.indexOf("if (landingRef.current) {"));
+}
+
+test("a signed-out tab that opens an account signed in elsewhere reloads: nothing of the person before comes back", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
+  // Found an account signed in here (Ben, after Ana logged out in another tab): a fresh page, once,
+  // so Ana's message being written, its files, a voice conversation ("Hey Flash, …" sent again as
+  // Ben) or a "Switch anyway?" left open can't come back on Ben's account.
+  const landing = landingCheck(page);
+  assert.match(landing, /^if \(landingRef\.current\) \{\n\s+void api<\{ accounts: AccountSummary\[\] \}>\("\/api\/auth\/accounts"\)\.then\(\n\s+\(list\) => \{\n\s+if \(!list\.accounts\.length \|\| !landingRef\.current\) return;\n\s+landingRef\.current = false;\n\s+leaveInviteToSignIn\(\);\n\s+window\.location\.reload\(\);\n\s+\},\n\s+\(\) => \{\},\n\s+\);\n\s+return;\n\s+\}/);
+  assert.doesNotMatch(landing.slice(0, landing.indexOf("return;\n")), /start\(\)/, "never loaded in place");
+  // And whoever signs in next in this very tab (its own sign-in form) finds nothing of it either:
+  // the voice conversation ends with its mic, the message box, its files and picked part empty, no
+  // question about a switch, and nothing said.
+  const out = body(page, "function signedOutHere(");
+  for (const cleared of ["setVoice(null);", "stopMic();", 'setInput("");', "setFiles([]);", "setPicked(null);", "setUnsaved(null);", "setSwitching(null);", 'setNotice("");', "filesRef.current.clear();", "setQueue([]);"]) {
+    assert.ok(out.includes(cleared), cleared);
+  }
+});
+
+test("a tab that reloads because another tab signed in leaves the browser's invitation to that tab, so only one joins", async () => {
+  const invite = await import("../src/lib/invite-keep.ts");
+  invite.forgetInvite();
+  // An invitation link opened signed out waits for the browser; tab S signs in, tab L is on the landing page.
+  invite.saveInvite("tok_s");
+  const tabL = new MemoryStorage();
+  const tabS = storage;
+  g.sessionStorage = tabL;
+  invite.leaveInviteToSignIn();
+  // Both pages start their account at once: each reads what it may join, as acceptInvite does.
+  const asks = (tab: MemoryStorage) => {
+    g.sessionStorage = tab;
+    return invite.waitingInvite(!invite.signedInElsewhere());
+  };
+  assert.deepEqual([asks(tabL), asks(tabS)], [null, "tok_s"], "only the tab that signed in asks the server");
+  assert.equal(browserStorage.data.get("flash_invite"), "tok_s", "L left it where S finds it");
+  // Read once: L's next start (a switch, a reload) is an ordinary one.
+  assert.equal(asks(tabL), "tok_s");
+  // L's own invitation (for the account it shows, kept in L only) is still L's to join.
+  tabL.data.set("flash_invite", "tok_l");
+  g.sessionStorage = tabL;
+  invite.leaveInviteToSignIn();
+  assert.equal(asks(tabL), "tok_l");
+  tabL.data.delete("flash_invite");
+  // Storage that refuses keeps no mark, and breaks nothing.
+  tabL.refuse = true;
+  invite.leaveInviteToSignIn();
+  assert.equal(invite.signedInElsewhere(), false);
+  tabL.refuse = false;
+  g.sessionStorage = storage;
+  invite.forgetInvite();
+  // The page: the mark is read before the account starts, and acceptInvite reads the invitation with it.
+  const { readFile } = await import("node:fs/promises");
+  const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
+  const mount = page.slice(page.indexOf("    const named = adoptAccountFromUrl();"), page.indexOf("    if (signedIn) start();"));
+  assert.match(mount, /\n\s+elsewhereRef\.current = signedInElsewhere\(\);\n/);
+  assert.match(body(page, "async function acceptInvite("), /const token = waitingInvite\(!elsewhereRef\.current\);/);
+  assert.match(landingCheck(page), /leaveInviteToSignIn\(\);\n\s+window\.location\.reload\(\);/);
+});
+
+test("a sign-in that ends on Flash's page from the server (Google, GitHub, Microsoft) or a password reset tells the other tabs", async () => {
+  // The provider's callback sends the tab to /?as=<its account> (not a switch): that page names it.
+  pin.setPin(null);
+  address = "https://flash-app.test/?as=acct_o";
+  assert.equal(pin.adoptAccountFromUrl(), "acct_o");
+  address = `https://flash-app.test${pin.switchAddress("acct_o")}`;
+  assert.equal(pin.adoptAccountFromUrl(), null, "a switch announced itself before it reloaded");
+  pin.setPin(null);
+  address = "https://flash-app.test/";
+  const { readFile } = await import("node:fs/promises");
+  const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
+  // Opened signed in by such a link, the page tells Flash's other tabs, so a landing page in another
+  // window opens the account too, as after a password sign-in.
+  assert.match(page, /const named = adoptAccountFromUrl\(\);\n\s+linkedRef\.current = named \?\? linkedAccount\(\);\n(\s*\/\/.*\n)*\s+if \(named && signedIn\) announce\(\{ type: "changed" \}\);/);
+  // A password reset signs in (without two-step sign-in, whose code page tells them itself).
+  const reset = await readFile(new URL("../src/components/ResetForm.tsx", import.meta.url), "utf8");
+  assert.match(reset, /if \(twoFactor\) router\.push\("\/signin\/code"\);\n\s+else \{\n(\s*\/\/.*\n)*\s+announce\(\{ type: "changed" \}\);\n\s+router\.push\("\/\?reset=1"\);/);
+  const code = await readFile(new URL("../src/components/TwoFactorForm.tsx", import.meta.url), "utf8");
+  assert.match(code, /announce\(\{ type: "changed" \}\);/);
+});
+
+test("an invitation for another account here stops offering a switch once that account is logged out", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
+  // Its account gone from the list (logged out in another tab): the server is asked again, and the
+  // banner gives way to its answer now, as after a reload, never a Switch that only fails.
+  assert.match(body(page, "function recheckInvite("), /\{\n\s+const invited = inviteForRef\.current;\n\s+if \(!invited \|\| accounts\.some\(\(a\) => a\.id === invited\.id\)\) return;\n\s+inviteForRef\.current = null;\n\s+setInviteFor\(null\);\n\s+void acceptInvite\(\);\n\s+\}$/);
+  assert.match(page, /useEffect\(\(\) => \{\n\s+inviteForRef\.current = inviteFor;\n\s+\}, \[inviteFor\]\);/);
+  // Whenever the list is read while this tab's account is still signed in here: the account check,
+  // and the banner's own Switch finding its account gone.
+  assert.match(body(page, "async function checkAccounts("), /if \(mine && list\.accounts\.some\(\(a\) => a\.id === mine\)\) \{\n\s+setMe\(\(m\) => \(m \? \{ \.\.\.m, accounts: list\.accounts \} : m\)\);\n\s+recheckInvite\(list\.accounts\);/);
+  assert.match(body(page, "async function checkAccountsFor("), /\} else \{\n\s+setNotice\(t\("That account isn't signed in on this browser anymore\."\)\);\n(\s*\/\/.*\n)*\s+recheckInvite\(list\.accounts\);\n\s+\}/);
+});
+
+test("nothing listens under the account chooser: \"Hey Flash\" is off and a voice conversation ends", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
+  assert.match(page, /const wakeState = useWakeWord\(wakeOn && !voice && !dictating && Boolean\(me\) && !signedOut && !adding && !chooser,/);
+  assert.match(body(page, "function showChooser("), /setVoice\(null\);\n\s+stopMic\(\);\n\s+setChooser\(next\);/);
+});
+
+test("signing in from the account chooser leaves the browser tab's title plain, as the chooser does", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
+  // Use another account and Sign in again open add mode with a Back to the chooser: the tab's
+  // account isn't signed in here, so its email isn't the tab's title.
+  assert.match(page, /const tabEmail = me && !chooser && !adding\?\.back && /);
+  for (const opens of ["function addFromChooser(", "function signInAgain("]) assert.match(body(page, opens), /openAdding\(\{ back: from,/, opens);
 });

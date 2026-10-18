@@ -35,7 +35,7 @@ import { adoptAccountFromUrl, announce, forgetLink, getPin, getPinEmail, isolate
 import { forgetTones } from "@/lib/account-tones";
 import { stopMic } from "@/lib/listen";
 import { isLocalPath } from "@/lib/local-path";
-import { forgetInvite, keepInviteInTab, saveInvite, waitingInvite } from "@/lib/invite-keep";
+import { forgetInvite, keepInviteInTab, leaveInviteToSignIn, saveInvite, signedInElsewhere, waitingInvite } from "@/lib/invite-keep";
 import { saveTracker } from "@/lib/save-tracker";
 import { hasCodeDraft } from "@/lib/code-drafts";
 import { PROJECT_TOO_LARGE } from "@/lib/project-size";
@@ -278,6 +278,9 @@ export function Flash({
   const leavingRef = useRef(false);
   const [addNext, setAddNext] = useState<string | undefined>(undefined);
   const [inviteFor, setInviteFor] = useState<{ id: string; email: string } | null>(null);
+  // This page opened because another tab signed in (the landing page's reload): until its account
+  // loads, the browser's invitation is that tab's to join, not this one's.
+  const elsewhereRef = useRef(false);
   // The account a link opened this tab as (?as=), until it is known to be signed in here.
   const linkedRef = useRef<string | null>(null);
   // "Logged out of …", said once the next account has loaded (see reloadAs).
@@ -418,6 +421,10 @@ export function Flash({
   useEffect(() => {
     addingRef.current = adding;
   }, [adding]);
+  const inviteForRef = useRef<{ id: string; email: string } | null>(null);
+  useEffect(() => {
+    inviteForRef.current = inviteFor;
+  }, [inviteFor]);
   // Signed out, on the landing page (not in its sign-in form): the account check opens an account
   // signed in on this browser again meanwhile (in another tab), as a reload would.
   const landingRef = useRef(false);
@@ -496,6 +503,7 @@ export function Flash({
     const signingIn = addingRef.current;
     if (mine && list.accounts.some((a) => a.id === mine)) {
       setMe((m) => (m ? { ...m, accounts: list.accounts } : m));
+      recheckInvite(list.accounts);
       // Signed in here again (in another tab, or by an emailed link) while the chooser asked which
       // account to use, or while signing in from it: this tab goes on as it.
       if (signingIn?.back) {
@@ -537,12 +545,30 @@ export function Flash({
   function showChooser(next: Chooser) {
     setUnsaved(null);
     setSwitching(null);
+    // Nothing of that account listens on under it either, as under add mode.
+    setVoice(null);
+    stopMic();
     setChooser(next);
+  }
+
+  /**
+   * The invitation offered to another account here, once that account isn't signed in here anymore:
+   * the server is asked again, so what shows is its answer now, as after a reload, never a Switch
+   * to an account that isn't here.
+   */
+  function recheckInvite(accounts: AccountSummary[]) {
+    const invited = inviteForRef.current;
+    if (!invited || accounts.some((a) => a.id === invited.id)) return;
+    inviteForRef.current = null;
+    setInviteFor(null);
+    void acceptInvite();
   }
 
   /** Joins the team from a saved invitation link, once signed in. */
   async function acceptInvite() {
-    const token = waitingInvite();
+    // Opened because another tab signed in: that tab joins the browser's invitation, this one only its own.
+    const token = waitingInvite(!elsewhereRef.current);
+    elsewhereRef.current = false;
     if (!token) return;
     try {
       await api("/api/team/accept", { method: "POST", json: { token } });
@@ -594,8 +620,8 @@ export function Flash({
   }, [savedLanguage]);
 
   // With several accounts here, the browser's tab says which one this tab is on; not once that one
-  // isn't signed in here anymore (the chooser asks which account to use).
-  const tabEmail = me && !chooser && (me.accounts?.length ?? 0) > 1 ? me.user.email : null;
+  // isn't signed in here anymore (the chooser asks which account to use, or signing in from it does).
+  const tabEmail = me && !chooser && !adding?.back && (me.accounts?.length ?? 0) > 1 ? me.user.email : null;
   useEffect(() => {
     if (!tabEmail) return;
     const before = document.title;
@@ -608,7 +634,13 @@ export function Flash({
   useEffect(() => {
     // A link that names its account (?as=, from an email, Stripe or a callback) opens as it.
     // After a reload of that tab, before the link's account loaded here, it is still the link's.
-    linkedRef.current = adoptAccountFromUrl() ?? linkedAccount();
+    const named = adoptAccountFromUrl();
+    linkedRef.current = named ?? linkedAccount();
+    // Signed in by such a link (Continue with Google, GitHub or Microsoft ends here, signed in by the
+    // server): Flash's other tabs signed out here open the account too.
+    if (named && signedIn) announce({ type: "changed" });
+    // Reloaded because another tab signed in: the browser's invitation is that tab's to join.
+    elsewhereRef.current = signedInElsewhere();
     const opened = new URLSearchParams(window.location.search);
     // Add another account (from the Connect to Flash page): then back to where it came from.
     const back = opened.get("next");
@@ -755,8 +787,9 @@ export function Flash({
     };
   }, [searchOpen]);
 
-  // "Hey Flash" listens while Flash is open, except while the mic button or a conversation is listening.
-  const wakeState = useWakeWord(wakeOn && !voice && !dictating && Boolean(me) && !signedOut && !adding, (rest) =>
+  // "Hey Flash" listens while Flash is open, except while the mic button or a conversation is listening,
+  // and never under the account chooser or add mode.
+  const wakeState = useWakeWord(wakeOn && !voice && !dictating && Boolean(me) && !signedOut && !adding && !chooser, (rest) =>
     setVoice({ woke: true, first: rest }),
   );
 
@@ -1250,7 +1283,11 @@ export function Flash({
       setMe((m) => (m ? { ...m, accounts: list.accounts } : m));
       if (chooser || !list.accounts.some((a) => a.id === getPin())) {
         showChooser({ reason: "notHere", accounts: list.accounts.filter((a) => a.id !== id) });
-      } else setNotice(t("That account isn't signed in on this browser anymore."));
+      } else {
+        setNotice(t("That account isn't signed in on this browser anymore."));
+        // The invitation's Switch, say: what the server says of it now takes its place.
+        recheckInvite(list.accounts);
+      }
     } catch {
       setNotice(t("That account isn't signed in on this browser anymore."));
     }
@@ -1319,6 +1356,17 @@ export function Flash({
     setProjects([]);
     setActiveId("");
     filesRef.current.clear();
+    // Nor does anything of it wait for whoever signs in next in this tab: a voice conversation (its
+    // mic off), a message being written with its files and the part picked for it, a question
+    // about a switch, or what Flash said.
+    setVoice(null);
+    stopMic();
+    setInput("");
+    setFiles([]);
+    setPicked(null);
+    setUnsaved(null);
+    setSwitching(null);
+    setNotice("");
     setAuthMode(null);
     setChooser(null);
     closeAdding();
@@ -1335,10 +1383,16 @@ export function Flash({
       if (!now && Date.now() - last < 15_000) return;
       last = Date.now();
       // Signed out, on the landing page: once an account is signed in on this browser again (in
-      // another tab), this tab opens it, as a reload would. It has nothing of an account before.
+      // another tab), this tab reloads to open it, so nothing of the page before comes back. The
+      // tab that signed in joins an invitation waiting in this browser; this one doesn't try too.
       if (landingRef.current) {
         void api<{ accounts: AccountSummary[] }>("/api/auth/accounts").then(
-          (list) => void (list.accounts.length && landingRef.current && start()),
+          (list) => {
+            if (!list.accounts.length || !landingRef.current) return;
+            landingRef.current = false;
+            leaveInviteToSignIn();
+            window.location.reload();
+          },
           () => {},
         );
         return;

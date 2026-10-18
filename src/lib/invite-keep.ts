@@ -30,8 +30,36 @@ function write(area: () => Storage, token: string | null): void {
 /** An invitation link just opened: joined once an account loads. */
 export const saveInvite = (token: string) => write(browserArea, token);
 
-/** The invitation waiting to be joined: this tab's own first (one for the account it switched to), else the browser's. */
-export const waitingInvite = (): string | null => read(tabArea) ?? read(browserArea);
+/**
+ * The invitation waiting to be joined: this tab's own first (one for the account it switched to),
+ * else the browser's, unless shared is false (this page opened because another tab signed in).
+ */
+export const waitingInvite = (shared = true): string | null => read(tabArea) ?? (shared ? read(browserArea) : null);
+
+// Set in a tab that reloads because another tab signed in (Flash's signed-out landing page): the
+// browser's invitation is the signing-in tab's to join, as both trying would tell one of them it
+// was already used. Kept in this tab through the reload, and read once.
+const ELSEWHERE_KEY = "flash_invite_elsewhere";
+
+/** This tab reloads to open an account another tab just signed in to: that tab joins the browser's invitation. */
+export function leaveInviteToSignIn(): void {
+  try {
+    tabArea().setItem(ELSEWHERE_KEY, "1");
+  } catch {
+    // Storage refuses: so does the invitation's (it was never kept).
+  }
+}
+
+/** Whether this page opened because another tab signed in (leaveInviteToSignIn), once. */
+export function signedInElsewhere(): boolean {
+  try {
+    const left = tabArea().getItem(ELSEWHERE_KEY) === "1";
+    tabArea().removeItem(ELSEWHERE_KEY);
+    return left;
+  } catch {
+    return false;
+  }
+}
 
 /** An invitation for another account signed in here: kept in this tab only, until it switches to that account. */
 export function keepInviteInTab(token: string): void {
