@@ -34,6 +34,8 @@ export type Estimate = {
   // Never more than this a run, and usually about this (an estimate).
   worst: number;
   typical: number;
+  // The least its first AI step holds to start (with less left of its month limit, it's skipped).
+  least: number;
   // Runs in the next 30 days (0 for one its owner starts), and about what they cost.
   runs: number;
   month: number;
@@ -94,6 +96,7 @@ export async function estimateSpec(
   const state = { counted: true };
   const count = estimateCounter(state);
   const steps: StepEstimate[] = [];
+  let least = 0;
   const origin = spec.trigger.type === "schedule" ? "schedule" : "owner";
   for (const step of spec.steps) {
     if (!isPaid(step)) continue;
@@ -102,12 +105,13 @@ export async function estimateSpec(
     const price = await priceStep(step, inputs.history, inputs.preferences, inputs.options, inputs.data, client, count);
     const tokens = price.tokens + RUN_SLACK_TOKENS + (step.onlyIfChanged ? worstTokens(PREVIOUS_CHARS) : 0);
     const worst = planHold(price.engine, price.choice.model, tokens, Infinity, price.scale, 0, price.plan).held;
+    if (!steps.length) least = planHold(price.engine, price.choice.model, tokens, 0, price.scale, 0, price.plan).needed;
     steps.push({ id: step.id, worst, typical: typicalStep(step, price.choice.model, tokens), tokens });
   }
   const worst = steps.reduce((sum, s) => sum + s.worst, 0);
   const typical = steps.reduce((sum, s) => sum + s.typical, 0);
   const runs = spec.trigger.type === "schedule" ? firesBetween(spec.trigger.when, auto.time_zone, now, now + 30 * DAY) : 0;
-  return { worst, typical, runs, month: typical * runs, limits: defaultLimits(worst, typical, runs), counted: state.counted, steps };
+  return { worst, typical, least, runs, month: typical * runs, limits: defaultLimits(worst, typical, runs), counted: state.counted, steps };
 }
 
 /** Forgets the kept counts (tests). */

@@ -45,47 +45,54 @@ export type ClaimLimits = {
  * Claims due runs for this worker in one statement on the database's clock: at most perUser at once
  * per account and the paid and other pools Flash-wide, oldest first, never a parked run, a run with
  * a credit hold still open (the reaper settles it first) or one whose version needs a newer runner.
- * A queued run becomes running. Returns each run with its owner token.
+ * The account limit is applied before the pools are counted out, so runs an account can't start yet
+ * never take another account's place in a pool. A queued run becomes running. Returns each run with
+ * its owner token. Live leases are counted through the lease index (INDEXED BY: through the account
+ * index instead, SQLite would read every run each account ever had).
  */
 export async function claimRuns(worker: string, limits: ClaimLimits): Promise<{ id: string; owner: string }[]> {
   const r = await sql(
     `WITH clock AS (SELECT ${DB_NOW} AS now),
-          busy AS (SELECT user_id, COUNT(*) AS n FROM automation_runs, clock WHERE lease_until > 0 AND lease_until >= clock.now GROUP BY user_id),
-          pools AS (SELECT next_paid, COUNT(*) AS n FROM automation_runs, clock WHERE lease_until > 0 AND lease_until >= clock.now GROUP BY next_paid),
-          cand AS (SELECT r.id, r.user_id, r.next_paid, r.due_at,
-                          ROW_NUMBER() OVER (PARTITION BY r.user_id ORDER BY r.due_at) AS k,
-                          ROW_NUMBER() OVER (PARTITION BY r.next_paid ORDER BY r.due_at) AS q
+          busy AS (SELECT user_id, COUNT(*) AS n FROM automation_runs INDEXED BY automation_runs_lease, clock WHERE lease_until > 0 AND lease_until >= clock.now GROUP BY user_id),
+          pools AS (SELECT next_paid, COUNT(*) AS n FROM automation_runs INDEXED BY automation_runs_lease, clock WHERE lease_until > 0 AND lease_until >= clock.now GROUP BY next_paid),
+          cand AS (SELECT r.id, r.user_id, r.next_paid, r.due_at, ROW_NUMBER() OVER (PARTITION BY r.user_id ORDER BY r.due_at) AS k
                    FROM automation_runs r, clock
                    WHERE r.parked = 0 AND r.status IN ('queued','waiting','running','approval')
                      AND r.due_at <= clock.now AND r.lease_until < clock.now
                      AND NOT EXISTS (SELECT 1 FROM credit_holds h WHERE h.run_id = r.id AND h.settled_at = 0 AND h.run_id <> '')
-                     AND (SELECT runner FROM automation_versions v WHERE v.automation_id = r.automation_id AND v.version = r.version) <= ?
-                   ORDER BY r.due_at LIMIT 500)
+                     AND (SELECT runner FROM automation_versions v WHERE v.automation_id = r.automation_id AND v.version = r.version) <= ?),
+          fit AS (SELECT c.id, c.next_paid, c.due_at, ROW_NUMBER() OVER (PARTITION BY c.next_paid ORDER BY c.due_at) AS q
+                  FROM cand c LEFT JOIN busy b ON b.user_id = c.user_id
+                  WHERE c.k + COALESCE(b.n, 0) <= ?)
      UPDATE automation_runs
         SET lease_owner = ? || ':' || id, lease_until = (SELECT now FROM clock) + ?, updated_at = (SELECT now FROM clock),
             status = CASE status WHEN 'queued' THEN 'running' ELSE status END,
             started_at = CASE started_at WHEN 0 THEN (SELECT now FROM clock) ELSE started_at END
       WHERE lease_until < (SELECT now FROM clock) AND id IN (
-            SELECT c.id FROM cand c LEFT JOIN busy b ON b.user_id = c.user_id
-             WHERE c.k + COALESCE(b.n, 0) <= ?
-               AND c.q <= CASE c.next_paid
+            SELECT f.id FROM fit f
+             WHERE f.q <= CASE f.next_paid
                             WHEN 1 THEN ? * (? - COALESCE((SELECT n FROM pools WHERE next_paid = 1), 0))
                             ELSE ? - COALESCE((SELECT n FROM pools WHERE next_paid = 0), 0) END
-             ORDER BY c.due_at LIMIT ?)
+             ORDER BY f.due_at LIMIT ?)
      RETURNING id, lease_owner`,
-    [limits.runnerVersion, worker, CLAIM_LEASE_MS, limits.perUser, limits.paidOpen, limits.maxPaid, limits.maxOther, limits.perTick],
+    [limits.runnerVersion, limits.perUser, worker, CLAIM_LEASE_MS, limits.paidOpen, limits.maxPaid, limits.maxOther, limits.perTick],
   );
   return r.rows.map((row) => ({ id: String(row.id), owner: String(row.lease_owner) }));
 }
 
 export type Started = { attempt: number; ref: string };
 
+/** Where a 429 from Anthropic keeps paid steps waiting until (see backOff in automations.ts). */
+export const BACKOFF_KEY = "auto:backoff_until";
+
 /**
- * Starts a step of a run this worker holds: renews the lease to cover the step's budget (and, for a
- * paid step, only while the Flash-wide paid pool has room) and writes the step's row as running, in
- * one batch. "lost" when the lease is gone or another worker runs a step of this run (it writes
- * nothing then); "no_paid_slot" when the paid pool is full (the run is released with its place kept).
- * A paid step's hold and ledger ref is auto:<runId>:<stepId>:<attempt>.
+ * Starts a step of a run this worker holds: renews the lease to cover the step's budget and writes the
+ * step's row as running, in one batch. A paid step of a run already in the paid pool (claimed for it,
+ * or after another paid step) goes on; one that moves a run into it (after a notice, say) needs room in
+ * the pool and no 429 back-off, as a claim would. "lost" when the lease is gone or another worker runs
+ * a step of this run (it writes nothing then); "no_paid_slot" when it can't go into the paid pool now
+ * (the run is released with its place kept). A paid step's hold and ledger ref is
+ * auto:<runId>:<stepId>:<attempt>.
  */
 export async function startStep(
   runId: string,
@@ -102,8 +109,9 @@ export async function startStep(
                    SET lease_until = ${DB_NOW} + ?, attempts = attempts + 1, next_paid = ?, updated_at = ${DB_NOW}
                  WHERE id = ? AND lease_owner = ? AND lease_until > ${DB_NOW}
                    AND (? = 0 OR next_paid = 1
-                        OR (SELECT COUNT(*) FROM automation_runs WHERE next_paid = 1 AND ${LIVE}) < ?)`,
-          args: [o.budgetMs + STEP_LEASE_EXTRA_MS, paid, runId, me, paid, o.maxPaid],
+                        OR ((SELECT COUNT(*) FROM automation_runs WHERE next_paid = 1 AND ${LIVE}) < ?
+                            AND NOT EXISTS (SELECT 1 FROM settings WHERE key = ? AND CAST(value AS INTEGER) > ${DB_NOW})))`,
+          args: [o.budgetMs + STEP_LEASE_EXTRA_MS, paid, runId, me, paid, o.maxPaid, BACKOFF_KEY],
         },
         {
           sql: `INSERT INTO automation_run_steps (run_id, step_id, attempt, user_id, kind, status, hold_ref, delivery_id, level, started_at)
@@ -130,14 +138,15 @@ export async function startStep(
 
 /**
  * Gives a run's lease back, keeping its place (due_at) unless a new time is given. status is what it
- * waits as: queued before its first step, running when it is part way.
+ * waits as: queued before its first step, running when it is part way. nextPaid: the pool the claim
+ * counts it in from now (a run waiting for room in the paid pool waits in it).
  */
-export async function releaseRun(runId: string, me: string, o: { status?: string; dueAt?: number } = {}): Promise<boolean> {
+export async function releaseRun(runId: string, me: string, o: { status?: string; dueAt?: number; nextPaid?: 0 | 1 } = {}): Promise<boolean> {
   const r = await sql(
     `UPDATE automation_runs SET lease_owner = '', lease_until = 0,
-            status = COALESCE(?, status), due_at = COALESCE(?, due_at), updated_at = ${DB_NOW}
+            status = COALESCE(?, status), due_at = COALESCE(?, due_at), next_paid = COALESCE(?, next_paid), updated_at = ${DB_NOW}
       WHERE id = ? AND lease_owner = ?`,
-    [o.status ?? null, o.dueAt ?? null, runId, me],
+    [o.status ?? null, o.dueAt ?? null, o.nextPaid ?? null, runId, me],
   );
   return r.rowsAffected === 1;
 }
@@ -173,8 +182,9 @@ export async function insertOwnerRun(o: {
   triggerJson: string;
 }): Promise<{ id: string; owner: string; status: string; existing: boolean } | null> {
   const paid = o.firstPaid ? 1 : 0;
-  // Whether this run may start now: the account's runs at once, then its pool's room.
-  const fits = `((SELECT COUNT(*) FROM automation_runs WHERE user_id = ? AND ${LIVE}) < ?
+  // Whether this run may start now: the account's runs at once (its open runs only, through the
+  // account index, never its whole history), then its pool's room.
+  const fits = `((SELECT COUNT(*) FROM automation_runs WHERE user_id = ? AND finished_at = 0 AND ${LIVE}) < ?
                  AND CASE WHEN ? = 1 THEN ? * (? - (SELECT COUNT(*) FROM automation_runs WHERE next_paid = 1 AND ${LIVE}))
                           ELSE ? - (SELECT COUNT(*) FROM automation_runs WHERE next_paid = 0 AND ${LIVE}) END > 0)`;
   const fitArgs = [o.userId, o.limits.perUser, paid, o.limits.paidOpen, o.limits.maxPaid, o.limits.maxOther];

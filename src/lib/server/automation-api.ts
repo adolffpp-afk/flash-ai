@@ -14,10 +14,10 @@
  */
 import { after } from "next/server";
 import { gunzipSync } from "node:zlib";
-import { FINISHED, isPaid, MAX_NAME_CHARS, MAX_ON, MAX_SUB_DAILY, NOTICES, parseSpec, PRICE_CHANGED, QUEUED, runnerFor, SPEC_INVALID, TOO_MANY_ON, TOO_MANY_SUB_DAILY, describeNext, describeWhen, type Spec } from "../automations.ts";
+import { FINISHED, isPaid, MAX_NAME_CHARS, MAX_ON, MAX_SUB_DAILY, MONTH_LEFT, NOTICES, ONCE_PASSED, parseSpec, PRICE_CHANGED, QUEUED, runnerFor, SPEC_INVALID, TOO_MANY_ON, TOO_MANY_SUB_DAILY, describeNext, describeWhen, type Spec } from "../automations.ts";
 import { validTimeZone } from "../context-note.ts";
 import { LEVELS } from "../levels.ts";
-import { monthStart, nextFire, nextFires, nextMonthStart, ONCE_MAX_AHEAD_MS, ONCE_MIN_AHEAD_MS, subDaily } from "../schedule.ts";
+import { monthStart, nextFire, nextFires, nextMonthStart, ONCE_MAX_AHEAD_MS, ONCE_MIN_AHEAD_MS, subDaily, type When } from "../schedule.ts";
 import { isVerified } from "./account.ts";
 import { fromOwnPage, getUser, unauthorized, type User } from "./auth.ts";
 import { estimateSpec, type Estimate } from "./automation-estimate.ts";
@@ -26,6 +26,7 @@ import { outputText, type AutoRow, type RunRow } from "./automation-steps.ts";
 import { deleteAutomationNow } from "./automation-tick.ts";
 import { cronHealth } from "./automation-admin.ts";
 import { AUTOMATION_SHARED_PAID, automationsOpenTo, automationsServer, claimLimits, keyInUse, missingSetup } from "./automations.ts";
+import { automationSpent } from "./credits.ts";
 import { all, db, one, run as sql } from "./db.ts";
 import { translatorFor, type ServerT } from "./i18n.ts";
 import { randomId, sha256 } from "./ids.ts";
@@ -38,7 +39,11 @@ const HOUR = 60 * MINUTE;
 /** A run started by hand moves on in its own request for this long (its route's maxDuration is 800 s). */
 export const OWNER_RUN_MS = 760_000;
 
-/** Each route's limit: [most, per window in ms]. */
+/**
+ * Each route's limit: [most, per window in ms]. Stop has its own (nothing else may use it up), and so
+ * do marking runs and notices seen, and the /admin card's GET, which polls every 5 s while a run goes
+ * on (its buttons keep admin's 60).
+ */
 export const LIMITS = {
   list: [300, 10 * MINUTE],
   create: [30, HOUR],
@@ -48,7 +53,10 @@ export const LIMITS = {
   runUser: [30, HOUR],
   read: [300, 10 * MINUTE],
   act: [60, 10 * MINUTE],
+  stop: [300, 10 * MINUTE],
+  seen: [300, 10 * MINUTE],
   admin: [60, 10 * MINUTE],
+  card: [300, 10 * MINUTE],
 } as const satisfies Record<string, readonly [number, number]>;
 
 export type Gate = { user: User; t: ServerT };
@@ -107,10 +115,21 @@ async function chargedAndHeld(where: { sql: string; args: (string | number)[] },
   return { charged: n(row?.charged), held: n(row?.held) };
 }
 
+/** Whether a one-off's time is too near or gone to turn it on (2 minutes ahead at least, as when saved). */
+const onceTooLate = (when: When, timeZone: string) => {
+  const slot = nextFire(when, timeZone, Date.now());
+  return !slot || slot < Date.now() + ONCE_MIN_AHEAD_MS;
+};
+/** Whether an automation has a scheduled run not finished: a one-off paused part way, whose run goes on when it's turned on. */
+const scheduledRunOpen = async (id: string) =>
+  Boolean(await one("SELECT 1 AS x FROM automation_runs WHERE automation_id = ? AND origin = 'schedule' AND finished_at = 0 LIMIT 1", [id]));
+
 /** An automation as the routes return it, in the reader's language. */
 export async function automationView(a: Row, t: ServerT) {
   const spec = await versionSpec(a.id, Number(a.version));
   const when = spec?.trigger.type === "schedule" ? spec.trigger.when : null;
+  // A one-off paused (or a draft) whose time has passed can't be turned on as it is: it needs a new time.
+  const timePassed = when?.kind === "once" && (a.status === "paused" || a.status === "draft") && onceTooLate(when, a.time_zone) && !(await scheduledRunOpen(a.id));
   const schedule = when ? describeWhen(when, a.time_zone, t, t.locale) : null;
   const upcoming = when && a.status === "on" ? nextFires(when, a.time_zone, Date.now(), 3) : [];
   const unseen = await one<{ n: number }>("SELECT COUNT(*) AS n FROM automation_runs WHERE automation_id = ? AND finished_at > 0 AND seen_at = 0", [a.id]);
@@ -126,6 +145,7 @@ export async function automationView(a: Row, t: ServerT) {
     timeZone: a.time_zone,
     schedule,
     nextAt: Number(a.next_at),
+    timePassed,
     next: upcoming.length ? describeNext(upcoming, a.time_zone, t, t.locale) : "",
     capRun: Number(a.cap_run),
     capMonth: Number(a.cap_month),
@@ -163,6 +183,8 @@ function fieldsOf(body: Record<string, unknown>, t: ServerT, was?: Row & { spec:
   // A one-off between 2 minutes and a year ahead (a time already gone has no slot).
   const when = parsed.spec.trigger.type === "schedule" ? parsed.spec.trigger.when : null;
   if (when?.kind === "once" && once) {
+    // Its saved time gone (turning it on as it is): it needs a new time, which says so.
+    if (body.spec === undefined && onceTooLate(when, timeZone)) return json({ error: t(ONCE_PASSED), code: "once_passed" }, 409);
     const slot = nextFire(when, timeZone, Date.now());
     if (!slot || slot < Date.now() + ONCE_MIN_AHEAD_MS || slot > Date.now() + ONCE_MAX_AHEAD_MS) return json({ error: t(SPEC_INVALID) }, 400);
   }
@@ -173,6 +195,17 @@ function fieldsOf(body: Record<string, unknown>, t: ServerT, was?: Row & { spec:
 function capOf(v: unknown, fallback: number): number | null {
   if (v === undefined || v === null) return fallback;
   return typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 100_000 ? v : null;
+}
+
+/**
+ * 409 month_cap, in words, when what's left of the automation's month limit is less than its first AI
+ * step needs to start: the run would only be skipped at the limit, so it doesn't start.
+ */
+async function monthLeftRefusal(t: ServerT, a: Row, estimate: Estimate): Promise<Response | null> {
+  const now = Date.now();
+  if (Number(a.cap_month) - (await automationSpent(a.id, monthStart(now))) >= estimate.least) return null;
+  const said = noticeText({ phrase: MONTH_LEFT, blanks: JSON.stringify({ credits: Number(a.cap_month), date: nextMonthStart(now) }) }, t).text;
+  return json({ error: said, code: "month_cap" }, 409);
 }
 
 /** 409 price_changed: the worst case went up since the user saw it (or they never saw one). */
@@ -256,9 +289,11 @@ export async function editAutomation(g: Gate, id: string, body: Record<string, u
   const edited = body.spec !== undefined || body.name !== undefined || body.timeZone !== undefined;
   const status = body.status === "on" || body.status === "paused" ? body.status : a.status;
   const turningOn = status === "on" && a.status !== "on";
-  const f = fieldsOf(body, g.t, { ...a, spec }, body.spec !== undefined || body.timeZone !== undefined || turningOn);
-  if (f instanceof Response) return f;
   if (status === "on" && a.status === "finished" && !edited) return json({ error: g.t(FINISHED) }, 409);
+  // A one-off paused while its run was going: turned on as it is, that run goes on (its time, taken, isn't checked again).
+  const runGoesOn = turningOn && body.spec === undefined && body.timeZone === undefined && spec?.trigger.type === "schedule" && spec.trigger.when.kind === "once" && (await scheduledRunOpen(a.id));
+  const f = fieldsOf(body, g.t, { ...a, spec }, !runGoesOn && (body.spec !== undefined || body.timeZone !== undefined || turningOn));
+  if (f instanceof Response) return f;
   if (turningOn || (status === "on" && edited)) {
     const refused = await onRefusal(g.user, f.spec, g.t, a.id);
     if (refused) return refused;
@@ -270,7 +305,7 @@ export async function editAutomation(g: Gate, id: string, body: Record<string, u
   const capMonth = capOf(body.capMonth, Number(a.cap_month));
   if (!capRun || !capMonth || capMonth < capRun) return json({ error: g.t(SPEC_INVALID) }, 400);
   const version = body.spec !== undefined ? Number(a.version) + 1 : Number(a.version);
-  const nextAt = status === "on" && (turningOn || edited) ? nextSlot(f.spec, f.timeZone) : Number(a.next_at);
+  const nextAt = runGoesOn ? 0 : status === "on" && (turningOn || edited) ? nextSlot(f.spec, f.timeZone) : Number(a.next_at);
   // A pause by its owner never ends by itself; turned on, every pause is over.
   const pause =
     status === a.status
@@ -366,6 +401,8 @@ export async function runNow(g: Gate, id: string, body: Record<string, unknown>)
   if (!spec) return json({ error: g.t(SPEC_INVALID) }, 409);
   const est = await estimateSpec(spec, g.user, a);
   if (!seenEnough(body.seenMax, est)) return priceChanged(g.t, est);
+  const used = await monthLeftRefusal(g.t, a, est);
+  if (used) return used;
   return startOwnerRun(g, a, spec, `manual:${requestId}`, { type: "owner" });
 }
 
@@ -428,7 +465,12 @@ const RUN_NOTES: Record<string, string> = {
   interrupted: NOTICES.interrupted,
   capacity: NOTICES.capacity,
   unconfirmed: NOTICES.unconfirmed,
+  run_cap: NOTICES.runCap,
+  month_cap: MONTH_LEFT,
 };
+/** The credits a run's note names: the limit it stopped at, else what it was charged. */
+const noteCredits = (outcome: string, run: { credits: number }, a: { cap_run: number; cap_month: number } | null) =>
+  Number(outcome === "run_cap" ? (a?.cap_run ?? 0) : outcome === "month_cap" ? (a?.cap_month ?? 0) : run.credits);
 
 /** A run's receipt: what started it, each attempt of each step with its hold, and its fingerprint. Reads only. */
 export async function receipt(g: Gate, runId: string) {
@@ -442,7 +484,7 @@ export async function receipt(g: Gate, runId: string) {
     "SELECT ref, held, credits, started, done, settled_at, created_at FROM credit_holds WHERE run_id = ? ORDER BY created_at",
     [r.id],
   );
-  const a = await one<{ name: string; status: string }>("SELECT name, status FROM automations WHERE id = ?", [r.automation_id]);
+  const a = await one<{ name: string; status: string; cap_run: number; cap_month: number }>("SELECT name, status, cap_run, cap_month FROM automations WHERE id = ?", [r.automation_id]);
   const saved = savedReceipt(r);
   // A step under way shows what its hold keeps (its row gets its own held when it settles).
   const holdOf = new Map(holds.map((h) => [h.ref, Number(h.held)]));
@@ -471,10 +513,12 @@ export async function receipt(g: Gate, runId: string) {
       finishedAt: Number(r.finished_at),
       createdAt: Number(r.created_at),
       stopRequested: Number(r.stop_requested) > 0,
+      parked: Number(r.parked) === 1,
+      dueAt: Number(r.due_at),
       deleted: a?.status === "deleting",
       // Why it ended this way, in the reader's words, where Flash says so.
       noteText: RUN_NOTES[r.outcome]
-        ? noticeText({ phrase: RUN_NOTES[r.outcome], blanks: JSON.stringify({ credits: Number(r.credits), date: nextMonthStart(Number(r.created_at)) }) }, g.t).text
+        ? noticeText({ phrase: RUN_NOTES[r.outcome], blanks: JSON.stringify({ credits: noteCredits(r.outcome, r, a), date: nextMonthStart(Number(r.created_at)) }) }, g.t).text
         : "",
     },
     steps: steps.map((s) => ({
@@ -562,6 +606,8 @@ export async function actOnRun(g: Gate, runId: string, body: Record<string, unkn
     if (!spec) return json({ error: g.t(SPEC_INVALID) }, 409);
     const est = await estimateSpec(spec, g.user, a);
     if (!seenEnough(body.seenMax, est)) return priceChanged(g.t, est);
+    const used = await monthLeftRefusal(g.t, a, est);
+    if (used) return used;
     return startOwnerRun(g, a, spec, `retry:${r.id}`, { type: "retry", of: r.id });
   }
   return json({ error: g.t(SPEC_INVALID) }, 400);
@@ -598,8 +644,8 @@ export async function burnIn(g: Gate) {
   );
   // Runs of automations being deleted stay listed (marked) until their rows go, so a delete mid-run can be checked.
   // held: the largest hold of the run (its steps' holds come one after another, never together).
-  const runs = await all<{ id: string; automation_id: string; name: string; deleting: number; status: string; outcome: string; origin: string; credits: number; scheduled_at: number; started_at: number; finished_at: number; created_at: number; held: number; holds: number; open: number }>(
-    `SELECT r.id, r.automation_id, a.name, a.status = 'deleting' AS deleting, r.status, r.outcome, r.origin, r.credits, r.scheduled_at, r.started_at, r.finished_at, r.created_at,
+  const runs = await all<{ id: string; automation_id: string; name: string; deleting: number; status: string; outcome: string; origin: string; credits: number; scheduled_at: number; started_at: number; finished_at: number; created_at: number; parked: number; due_at: number; held: number; holds: number; open: number }>(
+    `SELECT r.id, r.automation_id, a.name, a.status = 'deleting' AS deleting, r.status, r.outcome, r.origin, r.credits, r.scheduled_at, r.started_at, r.finished_at, r.created_at, r.parked, r.due_at,
             (SELECT COALESCE(MAX(held), 0) FROM credit_holds h WHERE h.run_id = r.id) AS held,
             (SELECT COUNT(*) FROM credit_holds h WHERE h.run_id = r.id) AS holds,
             (SELECT COUNT(*) FROM credit_holds h WHERE h.run_id = r.id AND h.settled_at = 0) AS open
@@ -626,6 +672,9 @@ export async function burnIn(g: Gate) {
       startedAt: n(r.started_at),
       finishedAt: n(r.finished_at),
       createdAt: n(r.created_at),
+      // Not finished: parked (its automation paused, it waits for Resume), or due again at dueAt (a try later).
+      parked: n(r.parked) === 1,
+      dueAt: n(r.due_at),
     })),
     spentThisMonth: month.charged,
     heldNow: month.held,

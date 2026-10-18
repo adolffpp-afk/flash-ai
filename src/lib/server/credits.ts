@@ -14,6 +14,22 @@ export async function balance(userId: string): Promise<number> {
 }
 
 /**
+ * The balance auto top-up compares with its level: an automation's open hold (auto:…) counts as not
+ * spent, as the free monthly credits count it. It is held at its worst case and settled for sure,
+ * mostly far lower, and automations already keep the balance above the level with their holds at full
+ * size (chargeOnce), so an open hold never sets off a top-up; once it settles, the next check sees
+ * what it cost. (ref IS NOT NULL: a NULL inside NOT would leave the row out of the sum.)
+ */
+export async function topUpBalance(userId: string): Promise<number> {
+  const row = await one<{ total: number }>(
+    `SELECT COALESCE(SUM(amount), 0) AS total FROM credit_ledger
+      WHERE user_id = ? AND NOT (amount < 0 AND settled_at = 0 AND ref IS NOT NULL AND ref LIKE 'auto:%')`,
+    [userId],
+  );
+  return Number(row?.total ?? 0);
+}
+
+/**
  * The ledgers a user spends from, in order: a team member's shared pool (the owner's balance,
  * while the owner's Business plan is paid up), then their own credits.
  */
@@ -122,7 +138,7 @@ export async function topUpFloor(account: string): Promise<number> {
   return Math.max(0, Number(row?.below ?? 0));
 }
 
-export type ChargeOnce = { id: number; replay: boolean } | { refused: "credits" | "topup_floor" | "month" | "day" | "hold" };
+export type ChargeOnce = { id: number; replay: boolean } | { refused: "credits" | "topup_floor" | "month" | "day" | "hold" | "changed" };
 
 /**
  * Takes an automation step's credits from exactly one account, once per ref, in one statement (so
@@ -135,7 +151,9 @@ export type ChargeOnce = { id: number; replay: boolean } | { refused: "credits" 
  * - with hold, only while the credit hold with the same ref is still open (see credit-holds.ts), so a
  *   step that stalled while the reaper settled its hold can't take credits afterwards.
  * A ref that is already in the ledger isn't charged again: its row comes back as a replay. Otherwise,
- * when nothing was taken, it says which rule refused.
+ * when nothing was taken, it says which rule refused. When none does any more (another request
+ * settled between the refusal and the reads), it is tried once more, then "changed": nothing was
+ * taken, and the caller tries again later.
  */
 export async function chargeOnce(o: {
   account: string;
@@ -156,7 +174,7 @@ export async function chargeOnce(o: {
   const hold = o.hold ? 1 : 0;
   const dayCap = o.dayCap ?? 0;
   const dayStart = o.dayStart ?? 0;
-  const r = await run(
+  const insert = () => run(
     `INSERT INTO credit_ledger (user_id, amount, reason, ref, actor, automation_id, created_at)
      SELECT ?, ?, ?, ?, ?, ?, ?
      WHERE (SELECT COALESCE(SUM(amount), 0) FROM credit_ledger WHERE user_id = ?)
@@ -194,15 +212,19 @@ export async function chargeOnce(o: {
       o.ref,
     ],
   );
-  if (r.rowsAffected === 1) return { id: Number(r.lastInsertRowid), replay: false };
-  const seen = await one<{ id: number }>("SELECT id FROM credit_ledger WHERE ref = ?", [o.ref]);
-  if (seen) return { id: Number(seen.id), replay: true };
-  if (o.hold && !(await one("SELECT 1 FROM credit_holds WHERE ref = ? AND settled_at = 0", [o.ref]))) return { refused: "hold" };
-  const held = await balance(o.account);
-  if (held < amount) return { refused: "credits" };
-  if (o.keepTopUpLevel && held - (await topUpFloor(o.account)) < amount) return { refused: "topup_floor" };
-  if ((await automationSpent(o.automationId, o.monthStart)) + amount > o.monthCap) return { refused: "month" };
-  return { refused: "day" };
+  for (let attempt = 0; ; attempt++) {
+    const r = await insert();
+    if (r.rowsAffected === 1) return { id: Number(r.lastInsertRowid), replay: false };
+    const seen = await one<{ id: number }>("SELECT id FROM credit_ledger WHERE ref = ?", [o.ref]);
+    if (seen) return { id: Number(seen.id), replay: true };
+    if (o.hold && !(await one("SELECT 1 FROM credit_holds WHERE ref = ? AND settled_at = 0", [o.ref]))) return { refused: "hold" };
+    const held = await balance(o.account);
+    if (held < amount) return { refused: "credits" };
+    if (o.keepTopUpLevel && held - (await topUpFloor(o.account)) < amount) return { refused: "topup_floor" };
+    if ((await automationSpent(o.automationId, o.monthStart)) + amount > o.monthCap) return { refused: "month" };
+    if (dayCap > 0 && (await automationSpent(o.automationId, dayStart)) + amount > dayCap) return { refused: "day" };
+    if (attempt >= 1) return { refused: "changed" };
+  }
 }
 
 /** Lowers a held charge to what the request really used (never raises it). */

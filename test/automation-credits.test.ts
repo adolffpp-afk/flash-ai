@@ -188,3 +188,18 @@ test("a step's charge needs its hold open: none when the reaper settled the hold
   assert.equal(Number((await one<{ held: number }>("SELECT held FROM credit_holds WHERE ref = 'auto:r21:a1:2'"))!.held), 30);
   assert.equal(await F.balance(u.id), 70);
 });
+
+test("a charge refused while another request settles in between is tried again; with no day limit it is never refused as one", async () => {
+  const u = await F.account("c30", 20);
+  const aid = await F.automation({ userId: u.id });
+  // A chat reply holds 15 of the 20; the step asks for 10 (refused at the insert), and the reply settles at 1 right after.
+  const other = (await C.charge(u.id, 15, "chat"))!;
+  const asked = once(u.id, aid, "auto:c30:a1:1", 10, { dayCap: 0, dayStart: 0 });
+  const settled = C.settle(other, 1);
+  const r = await asked;
+  await settled;
+  assert.ok("id" in r && !r.replay, JSON.stringify(r));
+  assert.equal(await C.balance(u.id), 9);
+  // Really out of credits, it says so; and a day limit refuses only when there is one.
+  assert.deepEqual(await once(u.id, aid, "auto:c30:a1:2", 50, { dayCap: 0 }), { refused: "credits" });
+});

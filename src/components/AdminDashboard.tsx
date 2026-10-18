@@ -464,6 +464,8 @@ function AutomationLines({ a, days, health }: { a: NonNullable<Stats["automation
       outcomes.set(key, row);
     }
   }
+  // What isn't set at all (a CRON_SECRET too short is said apart).
+  const absent = a.missing.filter((m) => !(m === "CRON_SECRET" && a.cronSecretShort));
   const writesShare = h.writes.limit ? Math.round((h.writes.writes / h.writes.limit) * 100) : 0;
   return (
     <>
@@ -485,9 +487,16 @@ function AutomationLines({ a, days, health }: { a: NonNullable<Stats["automation
           </li>
           {a.missing.length ? (
             <li className="text-amber-300">
-              <div>Missing {a.missing.join(", ")}. Add {a.missing.length === 1 ? "it" : "them"} in Vercel (Production) and redeploy.</div>
+              {absent.length > 0 && (
+                <div>
+                  Missing {absent.join(", ")}. Add {absent.length === 1 ? "it" : "them"} in Vercel (Production) and redeploy.
+                </div>
+              )}
+              {a.cronSecretShort && <div>CRON_SECRET is set but shorter than 32 characters. Set a longer one in Vercel (Production) and redeploy.</div>}
               {a.missing.includes("CRON_SECRET") && (
-                <div className="text-xs text-zinc-500">Until CRON_SECRET is set, the tick answers 503 every minute and nothing runs.</div>
+                <div className="text-xs text-zinc-500">
+                  Until CRON_SECRET is set{a.cronSecretShort ? " to 32 characters or more" : ""}, the tick answers 503 every minute and nothing runs.
+                </div>
               )}
             </li>
           ) : (

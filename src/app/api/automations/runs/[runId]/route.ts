@@ -21,9 +21,10 @@ export async function GET(request: Request, ctx: RouteContext<"/api/automations/
 }
 
 export async function POST(request: Request, ctx: RouteContext<"/api/automations/runs/[runId]">) {
-  const g = await gate(request, { write: true, limit: "act" });
+  // Stop and read count against their own limits, so no other action (or the Bell) can use up Stop's.
+  const body = await bodyOf(request);
+  const g = await gate(request, { write: true, limit: body.action === "stop" ? "stop" : body.action === "read" ? "seen" : "act" });
   if (g instanceof Response) return g;
   const { runId } = await ctx.params;
-  const body = await bodyOf(request);
   return body.action === "check" ? checkReceipt(g, runId, body) : actOnRun(g, runId, body);
 }

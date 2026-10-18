@@ -16,7 +16,8 @@ import { randomId } from "@/lib/server/ids.ts";
 export const maxDuration = 800;
 
 export async function GET(request: Request) {
-  const g = await gate(request, { limit: "admin" });
+  // The card polls this every 5 s while a run goes on: its own limit, so its buttons (POST) keep theirs.
+  const g = await gate(request, { limit: "card" });
   if (g instanceof Response) return g;
   if (!isAdmin(g.user)) return Response.json({ error: "Only the owner can see this." }, { status: 403 });
   return Response.json(await burnIn(g));

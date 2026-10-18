@@ -5,7 +5,7 @@
  */
 import { RUNNER_VERSION } from "../automations.ts";
 import { monthWrites } from "./automation-tick.ts";
-import { automationsServer, AUTOMATION_SHARED_PAID, keyInUse, maxPaid, missingSetup, paidOpen, RATE_LIMITED_KEY } from "./automations.ts";
+import { automationsServer, AUTOMATION_SHARED_PAID, cronSecretTooShort, keyInUse, maxPaid, missingSetup, paidOpen, RATE_LIMITED_KEY } from "./automations.ts";
 import { all, one } from "./db.ts";
 import { countOf } from "./limits.ts";
 import { DB_NOW } from "./leases.ts";
@@ -46,6 +46,7 @@ export async function automationStats(days: number) {
     key: keyInUse(),
     sharedPaid: AUTOMATION_SHARED_PAID,
     missing: missingSetup(),
+    cronSecretShort: cronSecretTooShort(),
     active: n(active?.active),
     paused: n(active?.paused),
     outcomesDay: await outcomes(now - DAY),

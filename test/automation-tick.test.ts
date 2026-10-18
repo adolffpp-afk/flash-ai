@@ -323,8 +323,19 @@ async function plansOf(work: () => Promise<unknown>) {
   shadow.close();
   return out;
 }
-/** A plan line that reads a whole table of runs, steps, holds or charges (their aliases in these files included). */
-const wholeTable = (line: string) => /^SCAN (automation_runs|automation_run_steps|credit_holds|credit_ledger|r|s|h)$/.test(line);
+/**
+ * Indexes that hold only open rows (unfinished runs, live leases, open holds, running steps), or the
+ * steps whose detail is still kept (30 days at most, read by the daily job): reading all of one reads no history.
+ */
+const OPEN_ONLY = new Set(["automation_runs_due", "automation_runs_open", "automation_runs_lease", "credit_holds_open", "credit_holds_run", "automation_run_steps_one", "automation_run_steps_detail"]);
+/**
+ * A plan line that reads a whole table of runs, steps, holds or charges (their aliases in these files
+ * included), straight or through an index of every row (the account index: every run it ever had).
+ */
+const wholeTable = (line: string) => {
+  const m = /^SCAN (automation_runs|automation_run_steps|credit_holds|credit_ledger|r|s|h)(?: USING (?:COVERING )?INDEX (\w+))?$/.exec(line);
+  return Boolean(m) && !(m![2] && OPEN_ONLY.has(m![2]));
+};
 /** Finished runs (and a step with detail each) for history. */
 async function history(o: { automationId: (i: number) => string; userId: (i: number) => string; count: number; at: (i: number) => number; detail?: boolean; prefix: string }) {
   const out = gzipSync(JSON.stringify({ text: "x".repeat(200) }));
@@ -394,9 +405,17 @@ test("a slot's checks and the daily job read through indexes, never an automatio
   const u = await F.account("tick23", 100);
   const aid = await F.automation({ userId: u.id, spec: HOURLY, nextAt: Date.now() - 1000 });
   await history({ prefix: "h23_", count: 3000, automationId: () => aid, userId: () => u.id, at: (i) => Date.now() - (i + 2) * 3_600_000, detail: true });
+  // Another account with runs going and a long history of its own, and a run due to be claimed.
+  const other = await F.account("tick23b", 100);
+  const oid = await F.automation({ userId: other.id });
+  await history({ prefix: "h23b_", count: 3000, automationId: () => oid, userId: () => other.id, at: (i) => Date.now() - (i + 2) * 3_600_000 });
+  await F.runRow({ automationId: oid, userId: other.id, status: "running" }).then((id) => sql(`UPDATE automation_runs SET lease_owner = 'x', lease_until = ${NOW} + 60000 WHERE id = ?`, [id]));
+  await F.runRow({ automationId: oid, userId: other.id });
   await sql("DELETE FROM settings WHERE key = 'auto:daily'");
-  const plans = await plansOf(() => T.runTick("tk"));
+  // With a dispatch, as on production, so the claim runs too.
+  const plans = await plansOf(() => T.runTick("tk", { dispatch: async () => {} }));
   assert.ok(plans.length > 10);
+  assert.ok(plans.some((p) => p.sql.startsWith("WITH clock AS")), "the claim was planned");
   for (const p of plans) assert.ok(!p.plan.some(wholeTable), `${p.sql}\n${p.plan.join(" | ")}`);
   const slot = plans.filter((p) => /outcome = 'superseded'|INSERT INTO automation_runs/.test(p.sql));
   assert.equal(slot.length, 2);
@@ -419,8 +438,9 @@ test("old receipt detail is compacted past the first 5,000 runs in one daily job
   await sql("DELETE FROM settings WHERE key = 'auto:daily'");
   assert.equal(await T.dailyJob("2099-01-01"), true);
   const detailed = await all<{ id: string }>("SELECT DISTINCT run_id AS id FROM automation_run_steps WHERE output IS NOT NULL");
-  assert.equal(detailed.length, 50, "only the wide automation's newest 50");
-  assert.ok(detailed.every((d) => d.id.startsWith("w_") && Number(d.id.slice(2)) >= 5950));
+  // The wide automation's newest 50, and each other automation's latest run that delivered (an "only if changed" step reads it).
+  assert.equal(detailed.length, 250);
+  assert.ok(detailed.every((d) => (d.id.startsWith("w_") && Number(d.id.slice(2)) >= 5950) || (d.id.startsWith("c_") && Number(d.id.slice(2)) >= 5800)));
   assert.equal(Number((await one<{ n: number }>("SELECT COUNT(*) AS n FROM automation_runs WHERE id LIKE 'x_%'"))!.n), 0, "every run past 13 months went");
   assert.equal(Number((await one<{ n: number }>("SELECT COUNT(*) AS n FROM automation_runs"))!.n), 12_000, "the rest stay, with their receipts");
   // The month's estimated writes are what the daily job counted.
@@ -430,4 +450,95 @@ test("old receipt detail is compacted past the first 5,000 runs in one daily job
   assert.equal(w.day, utcDay(Date.now()));
   await sql("DELETE FROM automation_runs");
   await sql("DELETE FROM automation_run_steps");
+});
+
+// The third review's regressions (each failed before its fix).
+
+test("the account limit comes before the pools: accounts with long queues never hold up another account's run", async () => {
+  process.env.ANTHROPIC_AUTOMATIONS_API_KEY = "auto-key-for-tests";
+  try {
+    assert.equal(S.maxPaid(), 30);
+    const a = await F.account("tick30a", 10_000);
+    const a2 = await F.account("tick30b", 10_000);
+    const b = await F.account("tick30c", 10_000);
+    const aid = await F.automation({ userId: a.id });
+    const aid2 = await F.automation({ userId: a2.id });
+    // Two accounts with 25 runs each queued at 08:00 (25 automations at one time), and one run of another account due later.
+    for (let i = 0; i < 25; i++) await F.runRow({ automationId: aid, userId: a.id, dueAt: Date.now() - 60_000 + i });
+    for (let i = 0; i < 25; i++) await F.runRow({ automationId: aid2, userId: a2.id, dueAt: Date.now() - 50_000 + i });
+    const bRun = await F.runRow({ automationId: await F.automation({ userId: b.id }), userId: b.id, dueAt: Date.now() - 1000 });
+    const first = await tick();
+    assert.ok(first.sent.some((c) => c.id === bRun), "the third account's run is claimed");
+    assert.equal(first.sent.length, 7, "3 + 3 + 1");
+    // With the two accounts at their 3 at once, nothing more of theirs is claimed.
+    assert.equal((await tick()).sent.length, 0);
+  } finally {
+    delete process.env.ANTHROPIC_AUTOMATIONS_API_KEY;
+  }
+});
+
+test("an account with 3 runs going gets none more claimed; a run with an open hold isn't claimed even with its lease run out", async () => {
+  const u = await F.account("tick31", 100);
+  const aid = await F.automation({ userId: u.id, spec: NOTIFY_FIRST });
+  for (let i = 0; i < 3; i++) {
+    const id = await F.runRow({ automationId: aid, userId: u.id, status: "running", nextPaid: 0 });
+    await sql(`UPDATE automation_runs SET lease_owner = 'w:' || id, lease_until = ${NOW} + 120000 WHERE id = ?`, [id]);
+  }
+  await F.runRow({ automationId: aid, userId: u.id, nextPaid: 0 });
+  assert.equal((await tick()).sent.length, 0, "the account is at its 3 at once");
+
+  const v = await F.account("tick31b", 100);
+  const held = await F.runRow({ automationId: await F.automation({ userId: v.id }), userId: v.id, status: "running" });
+  // Its step's hold is still open (its lease not run out), though the run's own lease has.
+  await sql("INSERT INTO credit_holds (ref, user_id, run_id, held, model, lease_until, created_at) VALUES (?, ?, ?, 10, 'm', ?, ?)", [`auto:${held}:a1:1`, v.id, held, Date.now() + 120_000, Date.now()]);
+  assert.equal((await tick()).sent.length, 0, "the reaper settles it first");
+  await sql("UPDATE credit_holds SET settled_at = 1 WHERE run_id = ?", [held]);
+  assert.deepEqual((await tick()).sent.map((c) => c.id), [held]);
+});
+
+test("a one-off whose run was missed past its grace window is finished, not left on with no next run", async () => {
+  const u = await F.account("tick32", 100);
+  const once: Spec = { ...F.WRITE_SPEC, trigger: { type: "schedule", when: { kind: "once", date: "2026-10-18", at: "08:00" } } };
+  const aid = await F.automation({ userId: u.id, spec: once, nextAt: Date.now() - 1000 });
+  // Its slot becomes a run, claimed, but its work call never arrives.
+  assert.equal((await tick()).sent.length, 1);
+  const taken = await one<{ status: string; next_at: number }>("SELECT status, next_at FROM automations WHERE id = ?", [aid]);
+  assert.deepEqual([taken!.status, Number(taken!.next_at)], ["on", 0]);
+  await sql(`UPDATE automation_runs SET lease_until = ${NOW} - 1, grace_until = ${NOW} - 60000 WHERE automation_id = ?`, [aid]);
+  assert.equal((await tick()).report.missed, 1);
+  assert.deepEqual((await runsOf(aid)).map((r) => [r.status, r.outcome]), [["skipped", "missed"]]);
+  assert.equal((await one<{ status: string }>("SELECT status FROM automations WHERE id = ?", [aid]))!.status, "finished");
+});
+
+test("an automation being deleted keeps its rows while a step of it runs, and they go once nothing runs", async () => {
+  const u = await F.account("tick33", 100);
+  const aid = await F.automation({ userId: u.id, status: "deleting" });
+  const rid = await F.runRow({ automationId: aid, userId: u.id, status: "running" });
+  await sql(`UPDATE automation_runs SET lease_owner = 'w:' || id, lease_until = ${NOW} + 120000 WHERE id = ?`, [rid]);
+  await sql("INSERT INTO automation_run_steps (run_id, step_id, attempt, user_id, kind, status, started_at) VALUES (?, 'a1', 1, ?, 'ai', 'running', 0)", [rid, u.id]);
+  assert.equal(await T.deleteAutomationNow({ id: aid, user_id: u.id }), false);
+  for (const [table, where, id] of [["automations", "id", aid], ["automation_versions", "automation_id", aid], ["automation_runs", "id", rid], ["automation_run_steps", "run_id", rid]]) {
+    assert.ok(await one(`SELECT 1 FROM ${table} WHERE ${where} = ?`, [id]), `${table} kept while its step runs`);
+  }
+  await sql("UPDATE automation_runs SET lease_owner = '', lease_until = 0, finished_at = 1 WHERE id = ?", [rid]);
+  assert.equal(await T.deleteAutomationNow({ id: aid, user_id: u.id }), true);
+  assert.equal(await one("SELECT 1 FROM automation_runs WHERE id = ?", [rid]), null);
+});
+
+test("a slot whose automation changed between the tick's read and its write makes no run and keeps the change", async () => {
+  const L = await import("../src/lib/server/leases.ts");
+  const u = await F.account("tick34", 100);
+  const aid = await F.automation({ userId: u.id, spec: HOURLY, nextAt: Date.now() - 1000 });
+  const later = Date.now() + 3 * 3_600_000;
+  // The owner's edit lands while the tick works on the slot.
+  L.probes.at = async (point, info) => {
+    if (point === "before-enqueue" && info?.automationId === aid) await sql("UPDATE automations SET next_at = ? WHERE id = ?", [later, aid]);
+  };
+  try {
+    await tick();
+  } finally {
+    L.probes.at = () => {};
+  }
+  assert.deepEqual(await runsOf(aid), [], "no run of the old slot");
+  assert.equal(Number((await one<{ next_at: number }>("SELECT next_at FROM automations WHERE id = ?", [aid]))!.next_at), later, "the edit stays");
 });

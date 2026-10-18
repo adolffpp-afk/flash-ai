@@ -69,6 +69,8 @@ export const TOO_MANY_ON = msg("You have {count} automations on, the most for no
 export const TOO_MANY_SUB_DAILY = msg("At most 3 automations can run more often than once a day.");
 export const PRICE_CHANGED = msg("The price changed. Check the new price and try again.");
 export const FINISHED = msg("This automation finished. It won't run again.");
+export const ONCE_PASSED = msg("This automation's time has passed. Choose a new time to turn it on again.");
+export const MONTH_LEFT = msg("Not enough of this month's limit ({credits} credits) is left for a run. It can run again on {date}.");
 export const QUEUED = msg("Queued: Flash is busy. It starts soon.");
 
 /**
@@ -76,7 +78,8 @@ export const QUEUED = msg("Queued: Flash is busy. It starts soon.");
  * and the receipt's notes on a step or a run.
  */
 export const NOTICES = {
-  ready: msg("{name} is ready"),
+  // The notice's title is the automation's name, so its line doesn't say it again.
+  ready: msg("The latest result is ready"),
   nothingNew: msg("{name} found nothing new"),
   paused: msg("{name} is paused"),
   waitingCredits: msg("Waiting for credits: the next run needs up to {credits} credits. It starts again by itself once you have them."),

@@ -13,7 +13,7 @@ import { RUNNER_VERSION } from "../automations.ts";
 import { claudeConfigured, getClient } from "../engines/claude.ts";
 import { isAdmin, type User } from "./auth.ts";
 import { one, run as sql } from "./db.ts";
-import { DB_NOW, type ClaimLimits } from "./leases.ts";
+import { BACKOFF_KEY, DB_NOW, type ClaimLimits } from "./leases.ts";
 import { overLimit } from "./limits.ts";
 
 /** Whether this deployment runs automations: production, or a laptop that asked to (never a Vercel preview). */
@@ -24,6 +24,9 @@ export function cronSecret(): string {
   const secret = process.env.CRON_SECRET ?? "";
   return secret.length >= 32 ? secret : "";
 }
+
+/** CRON_SECRET is set but too short to be used: /admin says so, rather than that it's missing. */
+export const cronSecretTooShort = () => Boolean(process.env.CRON_SECRET) && !cronSecret();
 
 /** Compares two strings in constant time, whatever their lengths (their SHA-256s are compared). */
 export function sameSecret(a: string, b: string): boolean {
@@ -73,7 +76,6 @@ export function maxPaid(): number {
 
 /** How long paid claims wait after a 429 from Anthropic, Flash-wide. */
 export const BACKOFF_MS = 60_000;
-const BACKOFF_KEY = "auto:backoff_until";
 
 /** The 429s of the last hour, counted for /admin's cron health (a rate_limits row, pruned by the daily job). */
 export const RATE_LIMITED_KEY = "auto:429s";

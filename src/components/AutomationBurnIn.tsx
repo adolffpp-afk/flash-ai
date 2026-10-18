@@ -66,6 +66,12 @@ const browserZone = () => {
 };
 const errorOf = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
+type RunState = { finishedAt: number; parked: boolean; dueAt: number };
+/** What a run not finished waits for, if anything: Resume (parked with its automation), or its next try. */
+const waitNote = (r: RunState, now: number) => (r.finishedAt ? "" : r.parked ? "Waiting for you to resume" : r.dueAt > now ? `Tries again at ${when(r.dueAt)}` : "");
+/** A run under way or due now (not one that waits): the card and its receipt follow it every 5 s. */
+const goingNow = (r: RunState, now: number) => !r.finishedAt && !r.parked && r.dueAt <= now;
+
 type Failed = Error & { status?: number; code?: string; estimate?: Estimate };
 /** A call to Flash's API: GET without json, else that method with a JSON body. A refusal throws with its code and, for price_changed, the new estimate. */
 async function api<T>(path: string, init?: { method?: string; json?: unknown }): Promise<T> {
@@ -278,6 +284,7 @@ function TestAutomation({ a, language, ready, onChange }: { a: Card["automations
           {a.next && <div>{a.next}</div>}
         </Theirs>
       )}
+      {a.timePassed && <div className="mt-1 text-xs text-amber-300">Its time has passed, so it can&apos;t be turned on again. Make a new one-off to test again.</div>}
       {a.status === "paused" && a.resumeAt > 0 && (
         <div className="mt-1 text-xs text-amber-300">
           {a.pausedReason === "credits" ? `Tries again by itself on ${when(a.resumeAt)} if the credits are there.` : `Turns back on by itself on ${when(a.resumeAt)}.`}
@@ -298,7 +305,7 @@ function TestAutomation({ a, language, ready, onChange }: { a: Card["automations
             Pause
           </button>
         )}
-        {a.status === "paused" && (
+        {a.status === "paused" && !a.timePassed && (
           <button onClick={resume} disabled={busy} className={button}>
             Resume · at most {num(seen)}
           </button>
@@ -319,8 +326,17 @@ function TestAutomation({ a, language, ready, onChange }: { a: Card["automations
           </span>
         )}
       </div>
-      {note && <p className="mt-2 text-xs text-zinc-300">{note}</p>}
-      {error && <p className="mt-2 text-xs text-red-400">{error}</p>}
+      {/* The server's words come in the admin's own language, so they take its direction. */}
+      {note && (
+        <p dir="auto" className="mt-2 text-xs text-zinc-300">
+          {note}
+        </p>
+      )}
+      {error && (
+        <p dir="auto" className="mt-2 text-xs text-red-400">
+          {error}
+        </p>
+      )}
     </li>
   );
 }
@@ -333,8 +349,11 @@ function RunReceipt({ runId, language, onChange }: { runId: string; language: st
   const read = useRef(false);
   // Bumped to load it again now (after Stop).
   const [again, setAgain] = useState(0);
+  // When it last loaded (what "tries again at" is compared with).
+  const [loadedAt, setLoadedAt] = useState(0);
 
   const finished = Boolean(r?.run.finishedAt);
+  const going = r ? goingNow(r.run, loadedAt) : true;
   useEffect(() => {
     let live = true;
     const get = () =>
@@ -342,6 +361,7 @@ function RunReceipt({ runId, language, onChange }: { runId: string; language: st
         .then((got) => {
           if (!live) return;
           setR(got);
+          setLoadedAt(Date.now());
           setError("");
           // Opening a receipt marks it seen (the GET itself writes nothing).
           if (!read.current && got.run.finishedAt) {
@@ -351,13 +371,13 @@ function RunReceipt({ runId, language, onChange }: { runId: string; language: st
         })
         .catch((err) => live && setError(errorOf(err)));
     void get();
-    // Polled every 5 s while the run goes on and the tab is shown.
-    const timer = finished ? undefined : setInterval(() => document.visibilityState === "visible" && void get(), 5000);
+    // Polled while the tab is shown: every 5 s while the run goes on, every 30 s while it waits.
+    const timer = finished ? undefined : setInterval(() => document.visibilityState === "visible" && void get(), going ? 5000 : 30_000);
     return () => {
       live = false;
       clearInterval(timer);
     };
-  }, [runId, finished, again]);
+  }, [runId, finished, going, again]);
 
   const compare = async (file: File | undefined) => {
     if (!file) return;
@@ -380,13 +400,19 @@ function RunReceipt({ runId, language, onChange }: { runId: string; language: st
     }
   };
 
-  if (error) return <p className="mt-2 text-xs text-red-400">{error}</p>;
+  if (error && !r) return <p className="mt-2 text-xs text-red-400">{error}</p>;
   if (!r) return <p className="mt-2 text-xs text-zinc-500">Loading the receipt…</p>;
   const { run } = r;
+  const waits = waitNote(run, loadedAt);
   // A run's steps hold one after another, never together: its largest hold is the most it held at once.
   const held = Math.max(0, ...r.holds.map((h) => h.held));
   return (
     <div className="mt-3 space-y-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 text-xs">
+      {error && (
+        <p role="status" className="text-red-400">
+          Not up to date (loaded {when(loadedAt)}): {error}
+        </p>
+      )}
       <div className="grid gap-x-4 gap-y-1 text-zinc-400 sm:grid-cols-2">
         <div>Started by: {run.origin === "schedule" ? "its schedule" : run.origin === "owner" ? "you" : run.origin}</div>
         <div>Version {run.version}</div>
@@ -402,6 +428,7 @@ function RunReceipt({ runId, language, onChange }: { runId: string; language: st
           {r.holds.length > 1 && <span className="text-zinc-400"> (of {r.holds.length}, one at a time)</span>}, {num(run.credits)} charged
         </div>
         {run.deleted && <div className="text-zinc-400">Its automation was deleted; this run goes with it.</div>}
+        {waits && <div className="text-amber-300 sm:col-span-2">{waits}</div>}
         {!run.finishedAt && (
           <div>
             <button onClick={stop} disabled={run.stopRequested} className={button}>
@@ -530,6 +557,8 @@ export function AutomationBurnIn({ onHealth, onRunEnded }: { onHealth?: (health:
   const [card, setCard] = useState<Card | null>(null);
   const [error, setError] = useState("");
   const [open, setOpen] = useState<string | null>(null);
+  // When the card last loaded: shown when a load fails, and what "tries again at" is compared with.
+  const [loadedAt, setLoadedAt] = useState(0);
 
   // Bumped to load the card again now (after a change).
   const [again, setAgain] = useState(0);
@@ -541,11 +570,12 @@ export function AutomationBurnIn({ onHealth, onRunEnded }: { onHealth?: (health:
     callbacks.current = { onHealth, onRunEnded };
   });
 
-  const going = card?.runs.some((r) => !r.finishedAt) ?? false;
+  const going = card?.runs.some((r) => goingNow(r, loadedAt)) ?? false;
   useEffect(() => {
     let live = true;
     const got = (c: Card) => {
       setCard(c);
+      setLoadedAt(Date.now());
       setError("");
       callbacks.current.onHealth?.(c.health);
       const now = new Set(c.runs.filter((r) => r.finishedAt).map((r) => r.id));
@@ -557,7 +587,7 @@ export function AutomationBurnIn({ onHealth, onRunEnded }: { onHealth?: (health:
         .then((c) => live && got(c))
         .catch((err) => live && setError(errorOf(err)));
     void get();
-    // Every 5 s while a run goes on, else every 30 s (a scheduled run may start), only while the tab is shown.
+    // Every 5 s while a run goes on, else every 30 s (a scheduled run may start, or one waiting tries again), only while the tab is shown.
     const timer = setInterval(() => document.visibilityState === "visible" && void get(), going ? 5000 : 30_000);
     return () => {
       live = false;
@@ -595,9 +625,16 @@ export function AutomationBurnIn({ onHealth, onRunEnded }: { onHealth?: (health:
         title="Runs"
         note="The last 20. Open one for its steps, holds and receipt."
         right={
-          <button onClick={load} className={button}>
-            Refresh
-          </button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {error && (
+              <span role="status" className="text-xs text-red-400">
+                Not up to date (loaded {when(loadedAt)}): {error}
+              </span>
+            )}
+            <button onClick={load} className={button}>
+              Refresh
+            </button>
+          </div>
         }
       >
         {card.runs.length === 0 ? (
@@ -609,6 +646,7 @@ export function AutomationBurnIn({ onHealth, onRunEnded }: { onHealth?: (health:
                 <button onClick={() => setOpen(open === r.id ? null : r.id)} aria-expanded={open === r.id} className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 text-start">
                   <span className="min-w-0 break-words text-zinc-100">{r.name}</span>
                   <Pill status={r.status} outcome={r.outcome || undefined} />
+                  {waitNote(r, loadedAt) && <span className="text-xs text-amber-300">{waitNote(r, loadedAt)}</span>}
                   {r.deleted && <span className="text-xs text-zinc-500">automation deleted</span>}
                   <span className="text-xs text-zinc-500">{when(r.startedAt || r.scheduledAt || r.createdAt)}</span>
                   <span className="ms-auto text-xs tabular-nums text-zinc-300">
@@ -649,7 +687,6 @@ export function AutomationBurnIn({ onHealth, onRunEnded }: { onHealth?: (health:
           </Theirs>
         )}
       </Section>
-      {error && <p className="text-xs text-red-400">{error}</p>}
     </div>
   );
 }

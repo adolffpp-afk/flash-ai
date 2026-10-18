@@ -22,7 +22,7 @@ import { claimLimits, cronSecret } from "./automations.ts";
 import { balance, ensureMonthlyCredits, topUpFloor } from "./credits.ts";
 import { all, db, one, run as sql } from "./db.ts";
 import { randomId } from "./ids.ts";
-import { claimRuns, DB_NOW } from "./leases.ts";
+import { claimRuns, DB_NOW, probe } from "./leases.ts";
 import { automationLink, notify } from "./notifications.ts";
 
 const DAY = 86_400_000;
@@ -237,6 +237,7 @@ async function enqueueDue(): Promise<number> {
     const key = `sched:${slot}`;
     const trigger = JSON.stringify({ type: "schedule", slot });
     const overCapacity = full && when.kind === "hourly" ? 1 : 0;
+    await probe("before-enqueue", { automationId: a.id });
     const rs = await (await db()).batch(
       [
         {
@@ -303,7 +304,8 @@ async function enqueueDue(): Promise<number> {
 
 /**
  * Scheduled runs past their grace window that never started a step (queued, claimed but never sent,
- * or waiting to try again after Claude was busy): missed, never charged (told once a day).
+ * or waiting to try again after Claude was busy): missed, never charged (told once a day). A one-off
+ * whose run was missed is finished, as finish() finishes one that ran.
  */
 async function missLate(): Promise<number> {
   const r = await sql(
@@ -318,8 +320,16 @@ async function missLate(): Promise<number> {
   for (const row of r.rows as unknown as { id: string; automation_id: string; user_id: string }[]) {
     if (told.has(row.automation_id)) continue;
     told.add(row.automation_id);
-    const auto = await one<{ name: string }>("SELECT name FROM automations WHERE id = ?", [row.automation_id]);
+    const auto = await one<{ name: string; status: string; next_at: number; spec: string }>(
+      "SELECT a.name, a.status, a.next_at, v.spec FROM automations a LEFT JOIN automation_versions v ON v.automation_id = a.id AND v.version = a.version WHERE a.id = ?",
+      [row.automation_id],
+    );
     if (!auto) continue;
+    // A one-off whose slot was taken (next_at 0) has nothing more to run.
+    const spec = specOf(auto.spec ?? "");
+    if (auto.status === "on" && !Number(auto.next_at) && spec?.trigger.type === "schedule" && spec.trigger.when.kind === "once") {
+      await sql(`UPDATE automations SET status = 'finished', updated_at = ${DB_NOW} WHERE id = ? AND status = 'on' AND next_at = 0`, [row.automation_id]);
+    }
     await notify({
       userId: row.user_id,
       kind: "missed",
@@ -332,7 +342,10 @@ async function missLate(): Promise<number> {
   return r.rows.length;
 }
 
-/** Receipt detail kept: 30 days or the last 50 runs with detail per automation, whichever keeps less, and 20 MB per account. */
+/**
+ * Receipt detail kept: 30 days or the last 50 runs with detail per automation, whichever keeps less, and
+ * 20 MB per account; and always each automation's latest run that delivered (see notLatestOk).
+ */
 export const RECEIPT_DAYS = 30;
 export const RECEIPT_RUNS = 50;
 export const RECEIPT_BYTES = 20 * 1024 * 1024;
@@ -407,6 +420,14 @@ export async function deleteAutomationNow(a: { id: string; user_id: string }): P
 const COMPACT = `UPDATE automation_run_steps SET output = NULL, input = '' WHERE output IS NOT NULL AND run_id IN`;
 /** Runs whose steps still have detail (the automation_run_steps_detail index): a pass reads only those, never the same twice. */
 const DETAILED = "SELECT run_id FROM automation_run_steps WHERE output IS NOT NULL";
+/**
+ * Not an automation's latest run that delivered (of runs as `r`): that one keeps its detail, however old,
+ * since an "only if changed" step compares with it (a monthly one's is 31 days old). Newest by created_at, then id, as
+ * previousResult reads it.
+ */
+const notLatestOk = (r: string) =>
+  `NOT (${r}.status = 'done' AND ${r}.outcome = 'ok' AND NOT EXISTS (SELECT 1 FROM automation_runs n WHERE n.automation_id = ${r}.automation_id AND n.created_at >= ${r}.created_at AND (n.created_at > ${r}.created_at OR n.id > ${r}.id)
+                 AND n.status = 'done' AND n.outcome = 'ok'))`;
 /** The daily passes go in batches of this many runs, at most BATCHES of them a day. */
 const BATCH = 5000;
 const BATCHES = 20;
@@ -421,7 +442,7 @@ async function compactReceipts() {
   // Older than 30 days.
   await inBatches(
     async () =>
-      (await sql(`${COMPACT} (SELECT id FROM automation_runs WHERE id IN (${DETAILED}) AND finished_at > 0 AND finished_at < ? LIMIT ${BATCH})`, [now - RECEIPT_DAYS * DAY]))
+      (await sql(`${COMPACT} (SELECT id FROM automation_runs WHERE id IN (${DETAILED}) AND finished_at > 0 AND finished_at < ? AND ${notLatestOk("automation_runs")} LIMIT ${BATCH})`, [now - RECEIPT_DAYS * DAY]))
         .rowsAffected,
   );
   // Beyond the newest 50 runs with detail of each automation.
@@ -429,8 +450,8 @@ async function compactReceipts() {
     async () =>
       (
         await sql(
-          `${COMPACT} (SELECT id FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY automation_id ORDER BY created_at DESC) AS k
-                                          FROM automation_runs WHERE id IN (${DETAILED}) AND finished_at > 0) WHERE k > ? LIMIT ${BATCH})`,
+          `${COMPACT} (SELECT id FROM (SELECT id, automation_id, created_at, status, outcome, ROW_NUMBER() OVER (PARTITION BY automation_id ORDER BY created_at DESC) AS k
+                                          FROM automation_runs WHERE id IN (${DETAILED}) AND finished_at > 0) x WHERE k > ? AND ${notLatestOk("x")} LIMIT ${BATCH})`,
           [RECEIPT_RUNS],
         )
       ).rowsAffected,
@@ -444,7 +465,7 @@ async function compactReceipts() {
     let extra = Number(u.bytes) - RECEIPT_BYTES;
     const runs = await all<{ id: string; bytes: number }>(
       `SELECT s.run_id AS id, SUM(LENGTH(s.output)) + SUM(LENGTH(s.input)) AS bytes FROM automation_run_steps s CROSS JOIN automation_runs r ON r.id = s.run_id
-        WHERE s.user_id = ? AND s.output IS NOT NULL AND r.finished_at > 0 GROUP BY s.run_id ORDER BY MIN(r.created_at) LIMIT 1000`,
+        WHERE s.user_id = ? AND s.output IS NOT NULL AND r.finished_at > 0 AND ${notLatestOk("r")} GROUP BY s.run_id ORDER BY MIN(r.created_at) LIMIT 1000`,
       [u.user_id],
     );
     const ids: string[] = [];

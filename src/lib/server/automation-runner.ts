@@ -64,7 +64,9 @@ export async function advanceRun(runId: string, me: string, deadline: number): P
     const spec = await versionSpec(run.automation_id, Number(run.version));
     if (!spec) return void (await finish(run, "failed", "invalid", { me }));
     const step = stepAt(spec, run.step);
-    if (!step) return void (await finish(run, "done", run.outcome || "ok", { me, spec }));
+    // At the end: after its last step, or after an AI step that ended it (failed, stopped or nothing
+    // new) whose finish didn't land: it ends as that step said, and nothing runs again.
+    if (!step) return void (await finish(run, END_STATUS[run.outcome] ?? "done", run.outcome || "ok", { me, spec, ...(run.summary && { summary: run.summary }) }));
     // Not enough time left in this call: the next tick hands it to a fresh one, in its place.
     if (deadline - Date.now() < budgetOf(step)) return void (await releaseRun(runId, me));
     const earlier = await earlierAttempts(run, step);
@@ -81,8 +83,8 @@ export async function advanceRun(runId: string, me: string, deadline: number): P
       level: isPaid(step) ? step.level : "",
     });
     if (started === "lost") return;
-    // The paid pool is full: it waits in its place, as queued if it hasn't done anything yet.
-    if (started === "no_paid_slot") return void (await releaseRun(runId, me, waitingAs(run)));
+    // The paid pool is full (or waits out a 429): it waits in its place, in that pool, as queued if it hasn't done anything yet.
+    if (started === "no_paid_slot") return void (await releaseRun(runId, me, { ...waitingAs(run), nextPaid: 1 }));
     // The run as it is now (attempts counts this one).
     const now = { ...run, attempts: Number(run.attempts) + 1 };
     const r = await runStep({ run: now, auto, user, spec, started, me, deadline }, step);
@@ -95,6 +97,9 @@ export async function advanceRun(runId: string, me: string, deadline: number): P
     return void (await finish((await runRow(runId)) ?? run, r.status, outcome, { me, spec, summary: r.summary, need: r.need, offer: r.offer }));
   }
 }
+
+/** How a run that an AI step ended ends, by the outcome it kept (see runAiStep); any other ends done. */
+const END_STATUS: Record<string, RunEnd> = { failed: "failed", stopped_by_user: "stopped", nothing_new: "done" };
 
 /** How a released run waits: queued when it hasn't done anything yet, otherwise as it is. */
 const waitingAs = (run: Pick<RunRow, "credits" | "step">) => (Number(run.credits) === 0 && run.step === "" ? { status: "queued" } : {});

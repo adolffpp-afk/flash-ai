@@ -8,7 +8,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const g = await gate(request, { write: true, limit: "act" });
+  const g = await gate(request, { write: true, limit: "seen" });
   if (g instanceof Response) return g;
   return Response.json(await readNotices(g, await bodyOf(request)));
 }
