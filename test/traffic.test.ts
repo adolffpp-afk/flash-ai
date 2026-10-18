@@ -63,7 +63,7 @@ test("tags are cleaned, and ones that look like personal data are left out", () 
   assert.equal(cleanTag("🎉🎉 party 🎉"), "party");
   assert.equal(cleanTag("春セール"), "春セール", "campaign names in any script");
   assert.equal(cleanTag("दिवाली ऑफ़र"), "दिवाली-ऑफ़र", "with their vowel signs");
-  assert.equal(cleanTag("<script>alert(1)</script>"), "scriptalert1script");
+  assert.equal(cleanTag("<script>alert(1)</script>"), "scriptalert1-script");
   assert.equal(cleanTag("  Spring   Sale  "), "spring-sale");
   assert.equal(cleanTag(""), "");
   assert.equal(cleanTag(null), "");
@@ -176,6 +176,35 @@ test("a campaign named with its date keeps it, while phone numbers and IDs writt
   }
 });
 
+test("a campaign named for a season, a year and a number, or a date written with slashes keeps it, while phone numbers holding a year are still left out", () => {
+  for (const [value, kept] of [
+    ["season-2026-2027", "season-2026-2027"],
+    ["ski season 2026-2027", "ski-season-2026-2027"],
+    ["tax-year-2025-2026", "tax-year-2025-2026"],
+    ["school-year-2026-2027", "school-year-2026-2027"],
+    ["season-2025-26", "season-2025-26"],
+    ["2026-2027-enrolment", "2026-2027-enrolment"],
+    ["season 2025–2026", "season-2025-2026"],
+    ["2026-100-day-challenge", "2026-100-day-challenge"],
+    ["summer-2026-500-giveaway", "summer-2026-500-giveaway"],
+    ["giveaway-1000-2026", "giveaway-1000-2026"],
+    ["top-100-2026", "top-100-2026"],
+    ["newsletter 10/18/2026", "newsletter-10-18-2026"],
+    ["black-friday-11/27/2026", "black-friday-11-27-2026"],
+    ["fete-18/10/2026", "fete-18-10-2026"],
+    // Klaviyo's own campaign name, with its campaign's code: the date and time it was made.
+    ["Email Campaign - Oct 18, 2026, 2:15 PM (RjXWsJ)", "email-campaign-oct-18-2026-2-15-pm-rjxws"],
+  ]) {
+    assert.equal(cleanTag(value), kept, value);
+    assert.equal(cleanTag(kept), kept, `${value}, read again from the link`);
+  }
+  assert.deepEqual(touch("?utm_source=newsletter&utm_medium=email&utm_campaign=season-2026-2027"), { source: "newsletter", medium: "email", campaign: "season-2026-2027" });
+  assert.equal(taggedLink(APP, { source: "newsletter", campaign: "newsletter 10/18/2026" }), `${APP}?utm_source=newsletter&utm_campaign=newsletter-10-18-2026`);
+  for (const value of ["415-2026-2027", "555-123-2026", "+1 415 555 2026", "(415) 555-1999", "415/555/0123", "415:555:0123", "415–555–0123", "+852 2019 1234"]) {
+    assert.equal(cleanTag(value), "", value);
+  }
+});
+
 test("a machine's code is left out like an ID, and so is an email address written in base64, while names people write are kept", () => {
   for (const value of [
     "01GDDKASAP8TKDDA2GRZDSVP4H", // a ULID, as Klaviyo's profile IDs are
@@ -211,9 +240,23 @@ test("a machine's code is left out like an ID, and so is an email address writte
     "newsletter",
     "producthunt",
     "BFCM26EarlyBird",
+    // Two-letter words and acronyms, alone or with a number.
+    "LinkedInB2BLeadsQ3",
+    "LinkedInAdsQ4US",
+    "B2BWebinarQ1EMEA",
+    "BackToSchoolUSA2026Email",
+    "BlackFridayUSA2026EmailV2",
+    "GoToMarketQ4UK",
+    "HowToBakeBreadAtHomeQ4",
+    "GoogleAdsPMaxQ4US",
+    "iOSAppLaunchUSandCA",
+    "iOS iPadOS macOS launch",
+    "YouTubeTV-AppleTV-iOS",
   ]) {
     assert.notEqual(cleanTag(value), "", value);
   }
+  assert.deepEqual(touch("?utm_source=linkedin&utm_medium=paid&utm_campaign=LinkedInB2BLeadsQ3"), { source: "linkedin.com", medium: "paid", campaign: "linkedinb2bleadsq3" });
+  assert.equal(taggedLink(APP, { source: "LinkedIn", campaign: "iOS iPadOS macOS launch" }), `${APP}?utm_source=linkedin&utm_campaign=ios-ipados-macos-launch`);
 });
 
 test("a tag keeps no character that draws nothing, so it can't pass for another source or for none", () => {
@@ -227,6 +270,44 @@ test("a tag keeps no character that draws nothing, so it can't pass for another 
   assert.equal(cleanTag("415͏555͏0123"), "", "nor does one keep a phone number's digits apart");
   assert.equal(cleanTag("دیوار‌نوشته"), "دیوارنوشته", "Persian's joiner-free spelling, as before");
   assert.equal(cleanTag("दिवाली ऑफ़र"), "दिवाली-ऑफ़र", "vowel signs after their letter stay");
+  assert.equal(cleanTag("+1 4́1́5́ 5́5́5́ 0́1́2́3́"), "", "marks on a phone number's digits don't hide it, as they aren't kept");
+  assert.deepEqual(touch(`?utm_source=newsletter&utm_campaign=${encodeURIComponent("+1 4́1́5́ 5́5́5́ 0́1́2́3́")}`), { source: "newsletter", medium: "", campaign: "" });
+});
+
+test("a word mixing Latin letters with another alphabet's lookalikes is no source", () => {
+  for (const query of ["?utm_source=%D1%96nstagram.com", "?utm_source=instagr%D0%B0m.com", "?utm_source=g%CE%BF%CE%BFgle.com&utm_medium=paid"]) {
+    assert.deepEqual(touch(query, "https://www.bing.com/"), { source: "bing.com", medium: "", campaign: "" }, query);
+  }
+  assert.equal(cleanTag("ѕpring-sale"), "", "a Cyrillic ѕ");
+  for (const [value, kept] of [
+    ["sale распродажа", "sale-распродажа"],
+    ["распродажа", "распродажа"],
+    ["Tシャツセール", "tシャツセール"],
+    ["kpop콘서트", "kpop콘서트"],
+    ["Ωmega", ""],
+  ]) {
+    assert.equal(cleanTag(value), kept, value);
+  }
+});
+
+test("an email address encoded twice in a link is still an email address, and a name encoded twice reads as written", () => {
+  assert.deepEqual(touch("?utm_source=newsletter&utm_campaign=ana.lopez%2540gmail.com"), { source: "newsletter", medium: "", campaign: "" });
+  assert.equal(touch("?ref=maria.garcia%2540outlook.com", "https://www.google.com/").source, "google.com");
+  assert.equal(cleanTag("ana.lopez%2540gmail.com"), "");
+  assert.equal(touch("?utm_source=newsletter&utm_campaign=spring%2520sale").campaign, "spring-sale");
+  assert.equal(cleanTag("100%off"), "100off", "a % that is no escape is left out as before");
+  assert.equal(cleanTag("%E0%A4"), "e0a4", "nor is a broken one read");
+});
+
+test("what people write between words in a tag is a dash", () => {
+  assert.equal(cleanTag("Facebook/Instagram"), "facebook-instagram");
+  assert.equal(cleanTag("flyer/poster"), "flyer-poster");
+  assert.equal(cleanTag("Spring | Facebook"), "spring-facebook");
+  assert.equal(cleanTag("ads+organic"), "ads-organic");
+  assert.equal(cleanTag("Spring - Sale"), "spring-sale");
+  assert.equal(cleanTag("H&M"), "hm");
+  assert.equal(taggedLink(APP, { source: "Facebook/Instagram", campaign: "flyer/poster" }), `${APP}?utm_source=facebook-instagram&utm_campaign=flyer-poster`);
+  assert.deepEqual(touch("?utm_source=Facebook/Instagram&utm_campaign=flyer/poster"), { source: "facebook-instagram", medium: "", campaign: "flyer-poster" });
 });
 
 test("a web address typed as where a link is shared counts under its site's name, as the link shows", () => {

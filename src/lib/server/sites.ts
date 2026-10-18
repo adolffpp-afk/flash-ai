@@ -6,7 +6,7 @@ import { dataSummary, rulesForPage } from "./site-data.ts";
 import { activeSubscription } from "./subscriptions.ts";
 import { isAdmin, type User } from "./auth.ts";
 import type { DataSummary } from "../data-rules.ts";
-import { english, type Translate } from "../i18n.ts";
+import { afterSentence, english, type Translate } from "../i18n.ts";
 import { stepsInHtml } from "../traffic.ts";
 import { FREE_SITES, PLAN_SITES } from "../plan-limits.ts";
 
@@ -189,7 +189,7 @@ export async function publishSite(
         : t("You can publish up to {max} apps. Unpublish one to publish another.", { max: n(max) });
     // On the free number, a paid plan publishes more (the app shows Upgrade plan for site_cap).
     const more = t("Paid plans can publish more apps: {count} on Lite, up to {most} on Agency.", { count: n(PLAN_SITES.lite), most: n(PLAN_SITES.agency) });
-    return max === FREE_SITES ? { error: `${refused} ${more}`, status: 409, code: "site_cap" } : { error: refused, status: 409 };
+    return max === FREE_SITES ? { error: `${refused}${afterSentence(refused)}${more}`, status: 409, code: "site_cap" } : { error: refused, status: 409 };
   }
   if (await overLimit(`publish:${user.id}`, 10, HOUR)) return { error: t("You've published a lot this hour. Try again later."), status: 429 };
   let fresh = makeSlug(title);

@@ -3,7 +3,7 @@
 import { useState, type ChangeEvent, type ReactNode } from "react";
 import type { FunnelCounts, FunnelRange, FunnelSource, FunnelStats, Money } from "@/lib/server/funnel.ts";
 import { formatMoney } from "@/lib/shop";
-import { msg } from "@/lib/i18n";
+import { afterSentence, msg } from "@/lib/i18n";
 import { PLAN_PEOPLE } from "@/lib/plan-limits";
 import { MAX_TAG, cleanTag, percent, share, shareSource, taggedLink } from "@/lib/traffic";
 import { useT, type T } from "@/lib/use-t";
@@ -89,7 +89,15 @@ export function FunnelNotes({ stats, onPlans }: { stats: FunnelStats; onPlans?: 
   const stepsEarlier = stats.stepsPaused.filter((p) => !(p.day === stats.today && stats.stepsPausedToday !== null));
   const more = (n: number) => (n === 1 ? t("…and on 1 other day.") : t("…and on {count} other days.", { count: count(n, t) }));
   const notes: string[] = [];
-  if (stats.stepsPausedToday !== null) notes.push(t("Your apps' own steps stopped counting for today at {count} (your plan's daily limit).", { count: count(stats.stepsPausedToday, t) }));
+  if (stats.stepsPausedToday !== null) {
+    // App steps start again with people, at midnight UTC.
+    const blanks = { count: count(stats.stepsPausedToday, t), time };
+    notes.push(
+      tomorrow
+        ? t("Your apps' own steps stopped counting at {count} (your plan's daily limit). They count again tomorrow at {time}.", blanks)
+        : t("Your apps' own steps stopped counting at {count} (your plan's daily limit). They count again at {time}.", blanks),
+    );
+  }
   // Earlier days in one sentence per limit, so a month of them doesn't fill a phone's screen.
   for (const g of byLimit(earlier.slice(0, NOTED_DAYS), (p) => p.people)) {
     notes.push(
@@ -122,29 +130,31 @@ export function FunnelNotes({ stats, onPlans }: { stats: FunnelStats; onPlans?: 
     );
   }
   if (stats.pausedToday === null && !notes.length) return null;
+  const paused =
+    stats.pausedToday === null
+      ? ""
+      : tomorrow
+        ? t(
+            "Counting paused at {count} people across your apps (your plan's daily limit). Your apps keep working and page visits still count. Counting people starts again tomorrow at {time}.",
+            { count: count(stats.pausedToday, t), time },
+          )
+        : t(
+            "Counting paused at {count} people across your apps (your plan's daily limit). Your apps keep working and page visits still count. Counting people starts again at {time}.",
+            { count: count(stats.pausedToday, t), time },
+          );
+  const paid = t("Paid plans count more people: {count} a day on Lite, up to {most} on Agency.", { count: count(PLAN_PEOPLE.lite, t), most: count(PLAN_PEOPLE.agency, t) });
   return (
     <div role="status" className="space-y-2 text-sm text-gold-soft">
-      {stats.pausedToday !== null && (
+      {paused && (
         <p>
-          {tomorrow
-            ? t(
-                "Counting paused at {count} people across your apps (your plan's daily limit). Your apps keep working and page visits still count. Counting people starts again tomorrow at {time}.",
-                { count: count(stats.pausedToday, t), time },
-              )
-            : t(
-                "Counting paused at {count} people across your apps (your plan's daily limit). Your apps keep working and page visits still count. Counting people starts again at {time}.",
-                { count: count(stats.pausedToday, t), time },
-              )}
+          {paused}
           {stats.free && (
             <>
-              {" "}
-              {t("Paid plans count more people: {count} a day on Lite, up to {most} on Agency.", {
-                count: count(PLAN_PEOPLE.lite, t),
-                most: count(PLAN_PEOPLE.agency, t),
-              })}
+              {afterSentence(paused)}
+              {paid}
               {onPlans && (
                 <>
-                  {" "}
+                  {afterSentence(paid)}
                   <button onClick={onPlans} className="text-primary-soft hover:underline">
                     {t("Upgrade plan")}
                   </button>

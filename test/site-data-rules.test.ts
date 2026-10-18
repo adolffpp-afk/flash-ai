@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";
+import { readFileSync } from "node:fs";
 
 process.env.DATABASE_URL = ":memory:";
 
@@ -23,7 +24,7 @@ const {
 } = await import("../src/lib/server/site-data.ts");
 const { newOwnerCode, ownerKeyForCode, isOwnerKey, callerFor } = await import("../src/lib/server/site-owner.ts");
 const { publishSite, restoreVersion, listVersions, versionHtml, unpublishSite, slugTaken, SITE_TABLES } = await import("../src/lib/server/sites.ts");
-const { english } = await import("../src/lib/i18n.ts");
+const { english, translate } = await import("../src/lib/i18n.ts");
 const { readUpload } = await import("../src/lib/server/site-files.ts");
 const { serveSite } = await import("../src/lib/server/serve-site.ts");
 const { flashDbShim, injectHead, MEMORY_DB } = await import("../src/lib/flashdb-shim.ts");
@@ -937,6 +938,14 @@ test("paid plans publish more apps; free stays at 20, and an app at the cap can 
     "error" in arabic && arabic.error,
     "You have ٦٠ apps published and your plan allows ٢٠. Unpublish ٤١ of them to publish another. Paid plans can publish more apps: ٢٥ on Lite, up to ٥٠٠ on Agency.",
   );
+  // With no space after a full-width stop, as Japanese and Chinese write.
+  for (const language of ["ja", "zh-Hans", "zh-Hant"]) {
+    await run("DELETE FROM rate_limits");
+    const table = JSON.parse(readFileSync(new URL(`../src/lib/i18n/${language}.json`, import.meta.url), "utf8"));
+    const inLanguage = Object.assign((text: string, blanks?: Record<string, string | number>) => translate(table, text, blanks), { locale: language });
+    const refusal = await publishSite(capper, { html: "<p>new</p>", title: "New" }, inLanguage);
+    assert.ok("error" in refusal && /。[^ ]/.test(refusal.error) && !refusal.error.includes("。 "), language);
+  }
   for (const { slug } of await all<{ slug: string }>("SELECT slug FROM sites WHERE user_id = 'capper' LIMIT 41")) await unpublishSite("capper", slug);
   await run("DELETE FROM rate_limits");
   const back = await publishSite(capper, { html: "<p>new</p>", title: "New" });

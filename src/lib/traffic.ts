@@ -19,10 +19,14 @@ export const MAX_TAG = 40;
 const MAX_SOURCE = 60;
 // An email address, a phone number (in any digits), or a subscriber's or click's ID: a tag holding one isn't used.
 const PERSONAL = /@|\p{Nd}{7,}|[0-9a-f]{16,}/iu;
-// A date written with separators (2026-10-18, 18.10.2026, 10_18_2026), which isn't a phone number's digits.
+// A date written with separators (2026-10-18, 18.10.2026, 10_18_2026, 10/18/2026), which isn't a phone number's digits.
 const DATE = /(?<!\d)(?:(?:19|20)\d\d[-_.](?:0?[1-9]|1[0-2])[-_.](?:0?[1-9]|[12]\d|3[01])|(?:0?[1-9]|[12]\d|3[01])[-_.](?:0?[1-9]|[12]\d|3[01])[-_.](?:19|20)\d\d)(?!\d)/g;
+// A year as a group of its own among digits (the 2026 in 2026-2027 or 2026-100).
+const YEAR = /(?:^|[._-])(?:19|20)\d\d(?=$|[._-])/;
 // Characters that draw nothing (variation selectors, Hangul fillers, joiners), so a tag can't pass for another.
 const INVISIBLE = /\p{Default_Ignorable_Code_Point}/gu;
+// A letter of another alphabet than Latin, Japanese, Chinese or Korean.
+const OTHER_SCRIPT = /[^\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
 // What people type in utm_source, as the name a referrer from there would give. Looked up only by
 // its own names, so a tag like "constructor" is a name like any other.
 const ALIASES: Readonly<Record<string, string>> = {
@@ -45,37 +49,69 @@ const ALIASES: Readonly<Record<string, string>> = {
 };
 
 /**
+ * A tag's text in small letters, with what people write between words (/ | + , ; : and dashes of
+ * any length) as a space or a dash, and without other punctuation and symbols.
+ */
+const words = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/(?!-)\p{Pd}/gu, "-")
+    .replace(/[/\\|+,;:]/g, " ")
+    .replace(/[^\p{L}\p{M}\p{N}._ -]/gu, "");
+
+/**
  * Whether a tag's text holds an email address, a phone number or an ID: looked for as it is, and
- * with dots, dashes and underscores taken out too (dates aside), which joins what they and other
- * characters kept apart: (415) 555-0123, +44 7911 123456, a UUID.
+ * across separators too, which joins what they kept apart: (415) 555-0123, +44 7911 123456, a
+ * UUID. Digits kept apart (dates aside) are a phone number from 10 of them, or from 7 with no year
+ * as a group of its own among them, so season-2026-2027 and 2026-100-day-challenge are names.
  */
 function personal(text: string): boolean {
-  const joined = text
-    .toLowerCase()
-    .replace(/[^\p{L}\p{M}\p{N}._ -]/gu, "")
-    .replace(/ +/g, "-")
-    .replace(DATE, "")
-    .replace(/[._ -]/g, "");
-  return PERSONAL.test(text) || PERSONAL.test(joined);
+  const kept = words(text).replace(/ +/g, "-").replace(DATE, "");
+  const phone = (kept.match(/\p{Nd}+(?:[._-]+\p{Nd}+)*/gu) ?? []).some((run) => {
+    const digits = run.replace(/[._-]/g, "").length;
+    return digits >= 10 || (digits >= 7 && !YEAR.test(run));
+  });
+  return PERSONAL.test(text) || phone || /[0-9a-f]{16,}/.test(kept.replace(/[._-]/g, ""));
 }
+
+/**
+ * Whether a word mixes Latin letters with another alphabet's, as a lookalike of a site's name does
+ * (іnstagram with a Cyrillic і, gοοgle with Greek ο). Japanese, Chinese or Korean beside Latin are words.
+ */
+const lookalike = (text: string) => text.split(/[^\p{L}\p{M}]+/u).some((word) => /\p{Script=Latin}/u.test(word) && OTHER_SCRIPT.test(word));
 
 /**
  * Whether a tag is a code a machine made, like an ID (a ULID, a nanoid, Stripe's or Firebase's),
  * rather than a name. Such codes switch between small letters, capitals and digits at random: a
  * small letter runs into a capital that starts no word (rF and eU in NffrFeUf), and digits sit
- * between letters (the 8 in AP8TK). A tag is one when that happens 3 times in a run of 14 or more
- * letters and digits, or a small letter runs into such a capital 3 times in all. Names people
- * write, like InstagramStory, SpringSale2026, iPhoneLaunch or FY26Q4Launch, don't do it that often.
+ * between letters (the 8 in AP8TK). A capital starts a word when it starts a capitalised word
+ * (Sale), an acronym at the end, before a number or before a word (iOS, USA2026, USAEmail), a
+ * letter with a number (Q4, B2B, V2), or a two-letter word before a word (To in GoToMarket). A tag
+ * is a code when that happens 3 times in a run of 14 or more letters and digits, or a small letter
+ * runs into a capital that starts no word 3 times in all. Names people write, like
+ * FacebookAdsSpringSale2026, LinkedInB2BLeadsQ3 or FY26Q4Launch, don't do it that often.
  */
 function machineCode(text: string): boolean {
   let humps = 0;
   for (const run of text.match(/[A-Za-z0-9]+/g) ?? []) {
-    const intoCapital = run.match(/[a-z](?=[A-Z](?![a-z]{2}))/g)?.length ?? 0;
+    const intoCapital = run.match(/[a-z](?=[A-Z])(?![A-Z](?:[a-z]{2}|[A-Z]+(?:$|\d\d|[A-Z][a-z]{2})|\d+(?:$|[A-Z])|[a-z][A-Z][a-z]{2}))/g)?.length ?? 0;
     const betweenLetters = run.match(/(?<=[A-Za-z])\d+(?=[A-Za-z])/g)?.length ?? 0;
     if (run.length >= 14 && intoCapital + betweenLetters >= 3) return true;
     humps += intoCapital;
   }
   return humps >= 3;
+}
+
+/** A link's value with the escapes left in it by encoding it twice (%2540 read once is %40) read too. */
+function decoded(text: string): string {
+  for (let i = 0; i < 2 && /%[0-9a-f]{2}/i.test(text); i++) {
+    try {
+      text = decodeURIComponent(text);
+    } catch {
+      break;
+    }
+  }
+  return text;
 }
 
 /** A tag's text read as base64, when it is that and holds only plain text (as an email address would), else "". */
@@ -93,21 +129,22 @@ function base64Text(text: string): string {
 
 /**
  * A link tag's value as Flash keeps it: lowercase letters, digits, dots, - and _ in any script, at
- * most 40 characters, or "" when it is missing, shows nothing, or looks like personal data or an ID.
+ * most 40 characters, or "" when it is missing, shows nothing, looks like personal data or an ID,
+ * or holds a lookalike of another alphabet's letters.
  */
 export function cleanTag(value: string | null | undefined): string {
   if (!value) return "";
-  // Cut first, so no pattern runs on a long value; then written one way (ｉｇ is ig, ＠ is @), without
-  // the characters that draw nothing.
-  const cut = value.slice(0, 200).normalize("NFKC").replace(INVISIBLE, "");
-  const clean = cut
-    .toLowerCase()
-    .replace(/[^\p{L}\p{M}\p{N}._ -]/gu, "")
+  // Cut first, so no pattern runs on a long value; then written one way (ｉｇ is ig, ＠ is @, and
+  // %40 left by a link encoded twice is @), without the characters that draw nothing.
+  const cut = decoded(value.slice(0, 200)).normalize("NFKC").replace(INVISIBLE, "");
+  const clean = words(cut)
     // A mark (an accent, a vowel sign) only on a letter.
     .replace(/(?<![\p{L}\p{M}])\p{M}+/gu, "")
     .trim()
-    .replace(/ +/g, "-");
-  if (!/[\p{L}\p{N}]/u.test(clean) || personal(cut) || machineCode(cut) || personal(base64Text(cut))) return "";
+    // Spaces between words, with any dashes around them (Spring - Sale), as one dash.
+    .replace(/[ -]* [ -]*/g, "-");
+  // Looked for as written and as kept, so what is kept is what was looked at.
+  if (!/[\p{L}\p{N}]/u.test(clean) || personal(cut) || personal(clean) || machineCode(cut) || personal(base64Text(cut)) || lookalike(clean)) return "";
   // A name cut in the middle doesn't end in a dot or a dash.
   return clean.length > MAX_TAG ? clean.slice(0, MAX_TAG).replace(/[._-]+$/, "") : clean;
 }

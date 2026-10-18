@@ -5,7 +5,7 @@ import { api } from "@/lib/store";
 import { SELLER_COUNTRIES } from "@/lib/shop";
 import { OTHER } from "@/lib/traffic";
 import { DATA_RULES, DEFAULT_KEY, RULE_TEXT, blockProblem, dataLine, type DataRule, type DataSummary, type RuleSource } from "@/lib/data-rules";
-import { msg } from "@/lib/i18n";
+import { afterSentence, msg } from "@/lib/i18n";
 import { inOrder } from "@/lib/in-order";
 import { PLAN_SITES } from "@/lib/plan-limits";
 import { tNow, useT, type T } from "@/lib/use-t";
@@ -97,6 +97,11 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
   const [maxSites, setMaxSites] = useState<number | null>(null);
   const [listed, setListed] = useState(LIST_STEP);
   const [find, setFind] = useState("");
+  // What a paid plan publishes, said by the list as it nears the free number.
+  const morePaid = t("Paid plans can publish more apps: {count} on Lite, up to {most} on Agency.", {
+    count: PLAN_SITES.lite.toLocaleString(t.locale),
+    most: PLAN_SITES.agency.toLocaleString(t.locale),
+  });
   // Apps whose counts were asked for already, so each is asked for once.
   const asked = useRef(new Set<string>());
   const [open, setOpen] = useState<Site | null>(null);
@@ -1348,13 +1353,10 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
                   )}
                   {maxSites <= LIST_STEP && sites.length >= 15 && (
                     <p className="text-sm text-gold-soft">
-                      {t("Paid plans can publish more apps: {count} on Lite, up to {most} on Agency.", {
-                        count: PLAN_SITES.lite.toLocaleString(t.locale),
-                        most: PLAN_SITES.agency.toLocaleString(t.locale),
-                      })}
+                      {morePaid}
                       {onPlans && (
                         <>
-                          {" "}
+                          {afterSentence(morePaid)}
                           <button onClick={onPlans} className="text-primary-soft hover:underline">
                             {t("Upgrade plan")}
                           </button>
