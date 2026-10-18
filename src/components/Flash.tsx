@@ -1930,6 +1930,7 @@ export function Flash({
       onFix={fixApp}
       onPick={pickApp}
       onSeo={openSeo}
+      onPlans={me.paymentsEnabled || me.testPurchases ? () => setShowCredits(true) : undefined}
     />
   );
   // The connected accounts on in the open chat (or for the chat Home's next message starts).

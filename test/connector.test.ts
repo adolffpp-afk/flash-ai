@@ -87,6 +87,10 @@ test("the tools list only set-up models and never the Movie maker", () => {
   assert.match(video.description, /176 for 5 seconds, 526 for 15/);
   assert.match(list.find((t) => t.name === "flash_speak")!.description, /about 13 credits per 1,000 characters/);
   assert.match(list.find((t) => t.name === "flash_animate_photo")!.description, /a 5 second clip: 141 credits, or 211 with sound/);
+  // The app cap the publish tool gives is each plan's.
+  const publish = list.find((t) => t.name === "flash_publish_app")!.description;
+  assert.match(publish, /up to 20 apps on the free plan and more on paid plans \(25 on Lite, up to 500 on Agency\)/);
+  assert.doesNotMatch(publish, /20 apps per account/);
 });
 
 /** Pretends to be fal.ai: every job finishes and returns a tiny file, or fails when asked. */

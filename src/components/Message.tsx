@@ -564,6 +564,7 @@ export function Message({
             onFix={onFixApp}
             onPick={onPickApp}
             onSeo={onSeoApp}
+            onPlans={paymentsOn ? onBuyCredits : undefined}
           />
         )}
         {m.after?.trim() && (

@@ -57,11 +57,11 @@ export function toMinor(input: string, currency: string): number | null {
   return zero ? Number(text) : Math.round(Number(text) * 100);
 }
 
-/** A price for people to read, like "$12.50" or "€8.00". */
-export function formatMoney(minor: number, currency: string): string {
+/** A price for people to read, like "$12.50" or "€8.00", written the reader's way when given their locale. */
+export function formatMoney(minor: number, currency: string, locale = "en-US"): string {
   const zero = ZERO_DECIMAL.has(currency.toLowerCase());
   try {
-    return new Intl.NumberFormat("en-US", { style: "currency", currency: currency.toUpperCase() }).format(zero ? minor : minor / 100);
+    return new Intl.NumberFormat(locale, { style: "currency", currency: currency.toUpperCase() }).format(zero ? minor : minor / 100);
   } catch {
     return `${zero ? minor : (minor / 100).toFixed(2)} ${currency.toUpperCase()}`;
   }
@@ -92,6 +92,15 @@ export function itemsInHtml(html: string): string[] {
 }
 
 /**
+ * What in a page's address can say where its visitor came from, or who they are: link tags (utm_…,
+ * ref, and analytics tools' own: Matomo's mtm_… and pk_…, HubSpot's ad tags), Flash's own notes
+ * (flash_…), ad and affiliate networks' click IDs (gclid, fbclid, msclkid, cjevent…), and email
+ * tools' subscriber IDs (mc_eid, _hsenc, ml_subscriber, vgo_ee, elqTrackId…).
+ */
+const SOURCE_PARAM =
+  /^(?:utm_.*|ref|ref_src|flash_.*|.*(?:clid|clkid|click_?id)|gclsrc|gbraid|wbraid|gad_.*|_ga|_gl|igshid|igsh|li_fat_id|srsltid|epik|sccid|s_cid|rdt_cid|mc_.*|_hs.*|__hs.*|hsctatracking|mkt_tok|vero_.*|oly_.*|_kx|ck_subscriber_id|wickedid|_branch_.*|mtm_.*|pk_(?:campaign|kwd|keyword|source|medium|content|cid|group|placement)|matomo_.*|piwik_.*|hsa_.*|fb_.*|_openstat|ef_id|s_kwcid|cjevent|irgwc|ranmid|raneaid|ransiteid|sscid|awc|ml_subscriber.*|__s|elq.*|vgo_ee|omnisendcontactid|_bta_.*|dm_i|trk_.*|sfmc_.*|_bhlid|sc_(?:customer|eh|uid|src|lid|llid))$/i;
+
+/**
  * Where to send a visitor after paying: the page they bought from, if it is one of the site's own
  * addresses, else the site's first address. Stops a checkout being used to send people elsewhere.
  */
@@ -101,7 +110,9 @@ export function safeReturn(page: unknown, addresses: string[]): string {
       const url = new URL(page);
       const base = `${url.origin}${url.pathname}`.replace(/\/$/, "");
       if (url.protocol.startsWith("http") && addresses.some((a) => a.replace(/\/$/, "") === base)) {
-        url.searchParams.delete("flash_paid");
+        // The page, its #/route and the app's own query (?table=12), without what can say where the
+        // buyer came from, which mustn't go to Stripe with their name.
+        for (const name of [...new Set(url.searchParams.keys())]) if (SOURCE_PARAM.test(name)) url.searchParams.delete(name);
         return url.toString();
       }
     } catch {

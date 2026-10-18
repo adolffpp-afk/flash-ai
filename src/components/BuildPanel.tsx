@@ -74,6 +74,7 @@ export function BuildPanel({
   onFix,
   onPick,
   onSeo,
+  onPlans,
 }: {
   drafts: DraftStore;
   // The latest message with an app, which Flash builds on.
@@ -92,6 +93,8 @@ export function BuildPanel({
   onPick: (kind: "app" | "slides", part: PickedElement) => void;
   // Opens a published app's search check (SEO).
   onSeo?: (slug: string) => void;
+  // Opens the plans, where plans can be bought.
+  onPlans?: () => void;
 }) {
   const t = useT();
   // Only this panel reads the draft, so only it renders again as the file grows.
@@ -116,6 +119,7 @@ export function BuildPanel({
             onFix={done && !busy ? (request) => onFix(app.kind, request) : undefined}
             onPick={done ? (part) => onPick(app.kind, part) : undefined}
             onSeo={onSeo}
+            onPlans={onPlans}
           />
         </div>
         {building && covered && (

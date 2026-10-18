@@ -16,12 +16,15 @@ import { SITE_URL } from "../../app/site.ts";
 // email and is rate limited. TODO: serve them from a separate domain once one is bought.
 const SANDBOX_CSP = "sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads allow-pointer-lock";
 
+/** A published app's page. ownerView is set when a working Open as owner code opened it; it never reaches the browser. */
+export type SitePage = Response & { ownerView?: true };
+
 /**
  * A published app's page, with flashDB set up to talk to its own data, inbox and shop, a share
  * card for its address (pageUrl) unless the site has its own, and its main address for search
  * engines (canonical) unless it names one itself.
  */
-export async function serveSite(slug: string | null, pageUrl?: string, request?: Request, canonical?: string): Promise<Response> {
+export async function serveSite(slug: string | null, pageUrl?: string, request?: Request, canonical?: string): Promise<SitePage> {
   const site = slug ? await previewSite(slug) : null;
   if (!slug || !site) {
     return new Response("<!doctype html><title>Not found</title><p style='font-family:sans-serif'>This app doesn't exist or was unpublished.</p>", {
@@ -67,6 +70,7 @@ export async function serveSite(slug: string | null, pageUrl?: string, request?:
     `/api/sites/${slug}/files`,
     owner,
     formKey,
+    `/api/sites/${slug}/track`,
   ));
   const headers = new Headers({
     "Content-Type": "text/html; charset=utf-8",
@@ -76,7 +80,11 @@ export async function serveSite(slug: string | null, pageUrl?: string, request?:
     "Cache-Control": "no-store, private",
   });
   if (formKey !== known) headers.append("Set-Cookie", formCookie(slug, formKey));
-  return new Response(html, { headers });
+  const page: SitePage = new Response(html, { headers });
+  // So the route notes the owner's visit (see recordOwnerVisit), which isn't done here: after() needs
+  // a request Next is answering.
+  if (owner?.key) page.ownerView = true;
+  return page;
 }
 
 /**

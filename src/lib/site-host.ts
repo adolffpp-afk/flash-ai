@@ -1,8 +1,9 @@
 // Flash's own addresses; any other host is a custom domain showing a published site.
 const OWN_HOST = /(^|\.)flash-app\.dev$|\.vercel\.app$|^localhost$|^127\.0\.0\.1$|^\[::1\]$/;
 // What a site on its own domain may call: its flashDB data (shared and each person's own), its
-// form inbox, its shop, its own assistant, the files sent to it, and signing visitors in and out.
-const SITE_API = /^\/api\/sites\/([\w-]+)\/(data|mine|inbox|shop|auth|ai|files(\/[\w-]+)?)$/;
+// form inbox, its shop, its own assistant, the files sent to it, signing visitors in and out, and
+// the steps it reports (flashDB.track).
+const SITE_API = /^\/api\/sites\/([\w-]+)\/(data|mine|inbox|shop|auth|ai|files(\/[\w-]+)?|track)$/;
 
 // siteApi: a site API call on a custom domain, which goes through only for the site connected to
 // that domain (checked in src/proxy.ts), so another app's files can't be shown under it.

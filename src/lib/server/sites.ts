@@ -5,13 +5,17 @@ import { overLimit } from "./limits.ts";
 import { dataSummary, rulesForPage } from "./site-data.ts";
 import { parseFacts, seoContext, seoFactsFor, seoSummary } from "./seo.ts";
 import { scanPage, type SeoFacts } from "../seo-scan.ts";
-import type { User } from "./auth.ts";
+import { activeSubscription } from "./subscriptions.ts";
+import { isAdmin, type User } from "./auth.ts";
 import type { DataSummary } from "../data-rules.ts";
-import { english, type Translate } from "../i18n.ts";
+import { afterSentence, english, type Translate } from "../i18n.ts";
+import { stepsInHtml } from "../traffic.ts";
+import { FREE_SITES, PLAN_SITES } from "../plan-limits.ts";
 
 export const MAX_HTML = 2 * 1024 * 1024;
-// Published apps are public pages on Flash's domain, so publishing is limited to slow abuse.
-export const MAX_SITES_PER_USER = 20;
+// How many apps each plan publishes (see plan-limits.ts).
+export { FREE_SITES, PLAN_SITES };
+const ADMIN_SITES = 1000;
 const HOUR = 3600_000;
 // Earlier versions kept per site, newest first; older ones are deleted.
 export const MAX_VERSIONS = 10;
@@ -44,6 +48,11 @@ export const SITE_TABLES = [
   "site_versions",
   "site_visits",
   "site_visitors",
+  "site_events",
+  "site_people",
+  "site_revenue",
+  "site_checkouts",
+  "site_step_names",
   "site_products",
   "site_orders",
   "site_owner_keys",
@@ -52,7 +61,8 @@ export const SITE_TABLES = [
 ];
 // The ones a new site must never take over from an old site of the same name (records, members,
 // files, messages, contacts, orders, history, settings, visits and the AI it used today), each
-// looked up by an index on site_slug.
+// looked up by an index on site_slug. site_people and site_step_names last at most 2 days, and
+// site_checkouts 14, and they hold nothing to take over.
 const INHERITABLE = [
   "site_records",
   "site_users",
@@ -68,6 +78,8 @@ const INHERITABLE = [
   "site_ai_usage",
   "site_visits",
   "site_visitors",
+  "site_events",
+  "site_revenue",
   "site_collection_rules",
 ];
 
@@ -90,6 +102,13 @@ export async function unpublishSite(userId: string, slug: string): Promise<boole
     "write",
   );
   return results.at(-1)!.rowsAffected > 0;
+}
+
+/** How many apps the user may have published at once, by their plan. */
+export async function siteLimit(user: User): Promise<number> {
+  if (isAdmin(user)) return ADMIN_SITES;
+  const sub = await activeSubscription(user.id);
+  return sub && Object.hasOwn(PLAN_SITES, sub.plan) ? PLAN_SITES[sub.plan] : FREE_SITES;
 }
 
 export async function listSites(userId: string) {
@@ -159,7 +178,7 @@ async function seoBefore(slug: string, userId: string): Promise<{ facts: SeoFact
 export async function publishSite(
   user: User,
   input: { html?: unknown; title?: unknown; slug?: unknown },
-  t: Translate = english,
+  t: Translate & { locale?: string } = english,
 ): Promise<PublishResult> {
   const html = typeof input.html === "string" ? input.html : "";
   const title = (typeof input.title === "string" ? input.title : "My app").trim().slice(0, 100) || "My app";
@@ -174,28 +193,41 @@ export async function publishSite(
     const old = await seoBefore(slug, user.id);
     const before = old ? await dataSummary(slug).catch(() => null) : null;
     await saveVersion(slug, user.id, html);
-    // The rules the page names, and what the search check reads in it, are saved with it, so they change together.
+    // The rules the page names, its own steps, and what the search check reads in it, are saved with it, so they change together.
     const seo = seoFactsFor(html);
-    const r = await run("UPDATE sites SET html = ?, title = ?, updated_at = ?, data_rules = ?, seo = ? WHERE slug = ? AND user_id = ?", [
+    const r = await run("UPDATE sites SET html = ?, title = ?, updated_at = ?, data_rules = ?, step_names = ?, seo = ? WHERE slug = ? AND user_id = ?", [
       html,
       title,
       now(),
       await rulesForPage(slug, html),
+      JSON.stringify(stepsInHtml(html)),
       seo,
       slug,
       user.id,
     ]);
     if (r.rowsAffected) return published(slug, before, { now: seo, before: old?.facts ?? null });
   }
-  const count = await one<{ n: number }>("SELECT COUNT(*) AS n FROM sites WHERE user_id = ?", [user.id]);
-  if (Number(count?.n ?? 0) >= MAX_SITES_PER_USER) {
-    return { error: t("You can publish up to {max} apps. Unpublish one to publish another.", { max: MAX_SITES_PER_USER }), status: 409 };
+  // Updates are never held to the cap, so someone back on free keeps every app and can change them.
+  const count = Number((await one<{ n: number }>("SELECT COUNT(*) AS n FROM sites WHERE user_id = ?", [user.id]))?.n ?? 0);
+  // The plan is read only from the free number on.
+  const max = count < FREE_SITES ? FREE_SITES : await siteLimit(user);
+  if (count >= max) {
+    // Numbers in the reader's own digits, like the rest of what they read.
+    const n = (x: number) => x.toLocaleString(t.locale ?? "en-US");
+    // Someone back on a smaller plan may have more than one app too many.
+    const refused =
+      count > max
+        ? t("You have {count} apps published and your plan allows {max}. Unpublish {extra} of them to publish another.", { count: n(count), max: n(max), extra: n(count - max + 1) })
+        : t("You can publish up to {max} apps. Unpublish one to publish another.", { max: n(max) });
+    // On the free number, a paid plan publishes more (the app shows Upgrade plan for site_cap).
+    const more = t("Paid plans can publish more apps: {count} on Lite, up to {most} on Agency.", { count: n(PLAN_SITES.lite), most: n(PLAN_SITES.agency) });
+    return max === FREE_SITES ? { error: `${refused}${afterSentence(refused)}${more}`, status: 409, code: "site_cap" } : { error: refused, status: 409 };
   }
   if (await overLimit(`publish:${user.id}`, 10, HOUR)) return { error: t("You've published a lot this hour. Try again later."), status: 429 };
   let fresh = makeSlug(title);
   while (await slugTaken(fresh)) fresh = makeSlug(title);
   const seo = seoFactsFor(html);
-  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at, data_rules, seo) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", [
+  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at, data_rules, step_names, seo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [
     fresh,
     user.id,
     title,
@@ -203,6 +235,7 @@ export async function publishSite(
     now(),
     now(),
     await rulesForPage(null, html),
+    JSON.stringify(stepsInHtml(html)),
     seo,
   ]);
   return published(fresh, null, { now: seo });
@@ -272,11 +305,12 @@ export async function restoreVersion(userId: string, slug: string, id: string): 
   await saveVersion(slug, userId, version.html);
   // Checked again, as any page that goes live is.
   const seo = seoFactsFor(version.html);
-  const r = await run("UPDATE sites SET html = ?, title = ?, updated_at = ?, data_rules = ?, seo = ? WHERE slug = ? AND user_id = ?", [
+  const r = await run("UPDATE sites SET html = ?, title = ?, updated_at = ?, data_rules = ?, step_names = ?, seo = ? WHERE slug = ? AND user_id = ?", [
     version.html,
     version.title,
     now(),
     await rulesForPage(slug, version.html),
+    JSON.stringify(stepsInHtml(version.html)),
     seo,
     slug,
     userId,

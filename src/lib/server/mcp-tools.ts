@@ -19,6 +19,7 @@ import { FriendlyError, JobAbandoned } from "../engines/errors.ts";
 import { charge, ensureMonthlyCredits, logUsage, settle, spendable } from "./credits.ts";
 import { saveFile } from "./files.ts";
 import { listSites, publishSite } from "./sites.ts";
+import { FREE_SITES, PLAN_SITES } from "../plan-limits.ts";
 import { dataLine } from "../data-rules.ts";
 import { publicFile, publicFileLink } from "./connector.ts";
 import { infectedFile } from "./virus-scan.ts";
@@ -225,7 +226,7 @@ export const tools = () => [
       "read (only the owner adds or changes), add (anyone adds; a record is changed only by the owner or by whoever added it while signed in), own (signed-in people manage their own), private (anyone adds; only the owner reads, in Flash) or open (anyone changes anything). " +
       "The block must be strict JSON (no comments, no trailing commas). Collections it doesn't name are read-only for visitors, and so is everything while Flash can't read the block; \"*\" sets the rule for every collection it doesn't name (for names made at run time). " +
       "flashDB.isOwner is true when the app's owner opens it with Open as owner in Flash, so show editing controls only then. " +
-      "External scripts may load from CDNs. Up to 2 MB; up to 20 apps per account.",
+      `External scripts may load from CDNs. Up to 2 MB; up to ${FREE_SITES} apps on the free plan and more on paid plans (${PLAN_SITES.lite} on Lite, up to ${PLAN_SITES.agency} on Agency).`,
     inputSchema: {
       type: "object",
       properties: {

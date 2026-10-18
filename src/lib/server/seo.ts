@@ -109,11 +109,18 @@ export async function refreshSeo(slug: string): Promise<{ facts: SeoFacts | null
 }
 
 /**
- * Reads again the user's sites whose facts are missing or old, one at a time (up to 20, the most a
- * user publishes), after the list was answered: the next look at the list shows their scores.
+ * Reads again the user's sites whose facts are missing or old, one at a time, after the list was
+ * answered: the next look at the list shows their scores. Those are the 20 most recently updated, the
+ * ones the list gives scores for, or the ones named in only (at most 20, and only the user's own: the
+ * ones the list counted past them, see siteCounts in inbox.ts).
  */
-export async function refreshStale(userId: string): Promise<void> {
-  const rows = await all<{ slug: string; seo: string }>("SELECT slug, seo FROM sites WHERE user_id = ? ORDER BY updated_at DESC LIMIT 20", [userId]);
+export async function refreshStale(userId: string, only?: string[]): Promise<void> {
+  const named = only?.slice(0, 20) ?? [];
+  const rows = only
+    ? named.length
+      ? await all<{ slug: string; seo: string }>(`SELECT slug, seo FROM sites WHERE user_id = ? AND slug IN (${named.map(() => "?").join(", ")})`, [userId, ...named])
+      : []
+    : await all<{ slug: string; seo: string }>("SELECT slug, seo FROM sites WHERE user_id = ? ORDER BY updated_at DESC LIMIT 20", [userId]);
   for (const row of rows) {
     if (parseFacts(row.seo)) continue;
     await refreshSeo(row.slug).catch((err) => console.error("[flash] search check failed", err));
