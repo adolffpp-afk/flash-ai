@@ -450,6 +450,13 @@ export function Flash({
         .catch(() => {});
     }
     const params = new URLSearchParams(window.location.search);
+    // The account an alert's page is for (as=, see server/push.ts), which nothing here reads yet: it
+    // leaves the address bar and this page's history entry, keeping the rest of the page's address.
+    if (params.has("as")) {
+      params.delete("as");
+      const rest = params.toString();
+      window.history.replaceState(null, "", `${window.location.pathname}${rest ? `?${rest}` : ""}${window.location.hash}`);
+    }
     // A referral link: the code waits in a cookie until sign-up (30 days).
     const ref = params.get("ref");
     if (ref && /^[A-Za-z0-9_-]{4,32}$/.test(ref)) {

@@ -298,8 +298,11 @@ function General({
   // translated where it's shown, so it appears in the language Flash switches to.
   const [languageSaved, setLanguageSaved] = useState<{ text: string; ok: boolean } | null>(null);
   const [notify, setNotify] = useDeviceSetting("notifyDone");
-  // Why Response completions couldn't turn on, shown right under it (Settings' own line is at the bottom).
-  const [notifyRefused, setNotifyRefused] = useState("");
+  // What the notification switch last used says, right under it (Settings' own line is at the bottom):
+  // why Response completions couldn't turn on, or what the alerts switch did. One line for both, so
+  // a permission one of them gets (they share it) never leaves the other's refusal behind. Flash's own
+  // words are kept in English and translated where they're shown, as languageSaved is.
+  const [notifySaid, setNotifySaid] = useState<{ under: "completions" | "alerts"; text: string; ok: boolean } | null>(null);
   const [theme, setTheme] = useDeviceSetting("theme");
   const [font, setFont] = useDeviceSetting("font");
   const [size, setSize] = useDeviceSetting("textSize");
@@ -353,13 +356,14 @@ function General({
   }
 
   async function toggleNotify(on: boolean) {
-    setNotifyRefused("");
+    setNotifySaid(null);
     if (!on) return setNotify("");
-    if (typeof Notification === "undefined") return setNotifyRefused(t("This browser can't show notifications."));
+    const refused = (text: string) => setNotifySaid({ under: "completions", text, ok: false });
+    if (typeof Notification === "undefined") return refused(msg("This browser can't show notifications."));
     const allowed = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
     if (allowed === "granted") setNotify("1");
     // The same words as the alerts switch under it, on this device.
-    else setNotifyRefused(refusedWords(allowed, t));
+    else refused(refusedWords(allowed));
   }
 
   /** Turns "Hey Flash" on (after the browser allows the microphone) or off, on this device. */
@@ -495,12 +499,12 @@ function General({
         >
           <Toggle on={notify === "1"} onChange={toggleNotify} label={t("Notify me when a response is done")} />
         </Row>
-        {notifyRefused && (
+        {notifySaid?.under === "completions" && (
           <p role="status" className="-mt-2 text-xs text-red-400">
-            {notifyRefused}
+            {t(notifySaid.text)}
           </p>
         )}
-        <PushAlerts me={me} />
+        <PushAlerts me={me} said={notifySaid?.under === "alerts" ? notifySaid : null} onSaid={(said) => setNotifySaid(said && { under: "alerts", ...said })} />
       </Section>
 
       <Section title={t("Appearance")}>
@@ -609,15 +613,17 @@ function General({
   );
 }
 
+type Said = { text: string; ok: boolean };
+
 /**
  * Alerts on this phone or computer when Flash is closed (see push.ts). Hidden until Flash's server
- * has its push keys. What happened shows right under it, since Settings' own line is at the bottom.
+ * has its push keys. What happened (said, kept by General with Response completions' line) shows
+ * right under it, since Settings' own line is at the bottom.
  */
-function PushAlerts({ me }: { me: Me }) {
+function PushAlerts({ me, said, onSaid }: { me: Me; said: Said | null; onSaid: (said: Said | null) => void }) {
   const t = useT();
   const [status, setStatus] = useState<PushStatus | null>(null);
   const [working, setWorking] = useState(false);
-  const [said, setSaid] = useState<{ text: string; ok: boolean } | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -638,18 +644,18 @@ function PushAlerts({ me }: { me: Me }) {
   async function run(work: () => Promise<string>) {
     if (working) return;
     setWorking(true);
-    setSaid(null);
+    onSaid(null);
     try {
-      setSaid({ text: await work(), ok: true });
+      onSaid({ text: await work(), ok: true });
     } catch (e) {
-      setSaid({ text: e instanceof Error ? e.message : t("Something went wrong. Please try again."), ok: false });
+      onSaid({ text: e instanceof Error ? e.message : msg("Something went wrong. Please try again."), ok: false });
     }
     setWorking(false);
   }
 
   const toggle = (on: boolean) =>
     run(async () => {
-      if (on) await turnOnPush(me.user.id, key, t);
+      if (on) await turnOnPush(me.user.id, key);
       else await turnOffPush(me.user.id);
       setStatus((s) => s && { ...s, on });
       return "";
@@ -664,7 +670,7 @@ function PushAlerts({ me }: { me: Me }) {
         if ((e as { code?: string }).code === "off") setStatus(await pushStatus().catch(() => status));
         throw e;
       }
-      return t("Test alert sent. It should show in a few seconds.");
+      return msg("Test alert sent. It should show in a few seconds.");
     });
 
   return (
@@ -698,7 +704,7 @@ function PushAlerts({ me }: { me: Me }) {
       )}
       {said?.text && (
         <p role="status" className={`-mt-2 text-xs ${said.ok ? "text-emerald-300" : "text-red-400"}`}>
-          {said.text}
+          {t(said.text)}
         </p>
       )}
     </>

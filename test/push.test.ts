@@ -585,6 +585,8 @@ test("until the three keys are set and belong together, nothing shows and nothin
 
 // A window of Flash's: its path, and whether it's showing and in front (neither, for a path alone).
 type Window = { url: string; visibilityState?: "visible" | "hidden"; focused?: boolean };
+// What a browser's notification calls take: each is a round trip to its own process.
+const moment = () => new Promise((done) => setTimeout(done, 5));
 
 /**
  * public/sw.js run as a browser runs it, with Flash's real GET /api/push for its questions (sent
@@ -613,6 +615,7 @@ function serviceWorker(endpoint: string, cookie: () => string, windows: (string 
         const plain = JSON.parse(JSON.stringify(options)) as Options;
         // Its id only tells it from earlier alerts (sw.js), so what's checked is the rest.
         shown.push({ title, options: { ...plain, data: { url: plain.data.url } } });
+        await moment();
         const tag = plain.tag ?? "";
         const notification = {
           title,
@@ -628,7 +631,7 @@ function serviceWorker(endpoint: string, cookie: () => string, windows: (string 
         if (same >= 0) tray[same] = notification;
         else tray.push(notification);
       },
-      getNotifications: async () => [...tray],
+      getNotifications: async () => (await moment(), [...tray]),
       pushManager: {
         getSubscription: async () => (state.subscribed ? { endpoint, unsubscribe: async () => !(state.subscribed = false) } : null),
       },
@@ -803,6 +806,59 @@ test("in Safari, where a tag replaces nothing, an alert closes the earlier one w
   assert.deepEqual(worker.tray(), [hidden]);
 });
 
+test("two alerts with the same tag that arrive together leave the later one on the screen, never neither", async () => {
+  const ana = await account("ana.together@example.com");
+  const laptop = browser(`${FCM}ana-together`);
+  await pushRoute.POST(call("POST", ana.cookie, laptop.sub));
+  const alertOf = async (body: string) => {
+    sent = [];
+    await push.sendPush(ana.id, { title: "Weekly summary", body, tag: "flash-run-r1" });
+    return laptop.open(sent[0].body);
+  };
+  const started = await alertOf("Started");
+  const ready = await alertOf("Ready: 3 competitors changed prices");
+  const test = JSON.stringify({ title: "Flash ∞ AI", body: "Alerts work on this device.", tag: "flash-test" });
+  for (const replacesByTag of [true, false]) {
+    const where = replacesByTag ? "Chrome, Edge and Firefox" : "Safari";
+    // The laptop wakes, and the push service hands over both alerts of one run it held; or "Send a
+    // test alert" pressed twice. Each is checked with Flash at once, so they show at the same time.
+    const worker = serviceWorker(laptop.endpoint, () => ana.cookie, [], replacesByTag);
+    await Promise.all([worker.push(started), worker.push(ready)]);
+    assert.deepEqual(worker.tray(), [{ title: "Weekly summary", body: worker.shown.at(-1)!.options.body, tag: "flash-run-r1" }], where);
+    await Promise.all([worker.push(test), worker.push(test), worker.push(test)]);
+    assert.deepEqual(worker.tray().map((n) => n.tag), ["flash-run-r1", "flash-test"], where);
+  }
+});
+
+test("a reset with two-step sign-in on takes her alerts off the screen it's opened on too, since it's signed out until the code", async () => {
+  const payroll = { title: "Payroll check", body: "Your salary of $4,210 arrived", tag: "flash-run-r1" };
+  const ana = await account("ana.reset.twostep@example.com");
+  await run("INSERT INTO two_factor (user_id, enc_secret, enabled_at, created_at) VALUES (?, 'sealed', 1, 0)", [ana.id]);
+  // Alerts on at a library computer, where she opens the reset link and then leaves without her phone.
+  const library = browser(`${FCM}library-pc-reset-twostep`);
+  await pushRoute.POST(call("POST", ana.cookie, library.sub));
+  const worker = serviceWorker(library.endpoint, () => ana.cookie);
+  sent = [];
+  await push.sendPush(ana.id, payroll);
+  await worker.push(library.open(sent[0].body));
+  const token = new URL((await sendReset(ana, ORIGIN))!).searchParams.get("token");
+  sent = [];
+  const out = await resetRoute.POST(
+    new Request(`${ORIGIN}/api/auth/reset`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: ORIGIN, cookie: ana.cookie },
+      body: JSON.stringify({ token, password: "a brand new password", email: ana.email }),
+    }),
+  );
+  assert.deepEqual([out.status, (await out.json()).twoFactor], [200, true]);
+  assert.equal((await pushRoute.GET(new Request(`${ORIGIN}/api/push`, { headers: { cookie: ana.cookie } }))).status, 401, "signed out there");
+  // Nothing on the code page touches alerts, so the push that ended her sign-in clears them.
+  assert.deepEqual(sent.map((s) => s.url), [library.endpoint]);
+  await worker.push(library.open(sent[0].body));
+  assert.deepEqual(worker.tray(), [{ title: "Flash ∞ AI", body: "", tag: "flash-hidden" }]);
+  assert.equal(worker.state.subscribed, false);
+});
+
 test("\"Log out of all devices\", a password change or a reset takes her alerts off the screens of her other browsers", async () => {
   const payroll = { title: "Payroll check", body: "Your salary of $4,210 arrived", tag: "flash-run-r1" };
   for (const how of ["everywhere", "password", "reset"]) {
@@ -813,8 +869,8 @@ test("\"Log out of all devices\", a password change or a reset takes her alerts 
     const phone = browser(`${FCM}ana-phone-${how}`);
     await pushRoute.POST(call("POST", ana.cookie, library.sub));
     await pushRoute.POST(call("POST", phoneCookie, phone.sub));
-    // A browser where Ben has alerts on too: a push there would be checked against his sign-in, show
-    // him an empty alert and leave hers, so none goes there.
+    // A browser where Ben has alerts on too: a push there would close his alerts as well and drop the
+    // subscription his come by, so none goes there.
     const ben = await account(`ben.library.${how}@example.com`);
     const shared = browser(`${FCM}shared-pc-${how}`);
     await pushRoute.POST(call("POST", await signIn(ana), shared.sub));
@@ -841,9 +897,11 @@ test("\"Log out of all devices\", a password change or a reset takes her alerts 
     // screen is its page's to clear, and after a password change or a reset it's signed in again and
     // turns its alerts back on), nor to the browser that's Ben's now.
     assert.deepEqual(sent.map((s) => s.url), [library.endpoint], how);
-    assert.deepEqual(library.read(sent[0].body), {});
+    assert.deepEqual(library.read(sent[0].body), { ended: true });
     assert.deepEqual(await rowsOf(ana.id), []);
-    // Its service worker hears her sign-in is gone: her alert leaves the screen, and so does the subscription.
+    // Its service worker is told her sign-in there ended: her alert leaves the screen, and so does
+    // the subscription. That needs no answer from Flash, since nothing would come later to clear them.
+    worker.state.offline = how === "everywhere";
     await worker.push(library.open(sent[0].body));
     assert.deepEqual(worker.tray(), [{ title: "Flash ∞ AI", body: "", tag: "flash-hidden" }], how);
     assert.equal(worker.state.subscribed, false, how);

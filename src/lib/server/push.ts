@@ -417,8 +417,8 @@ export async function dropEnded(userId?: string): Promise<void> {
 /**
  * Before every sign-in of an account ends (endAllSessions): the browsers where it turned alerts on,
  * for clearScreens. Not the one doing it (here, its sign-in's hash), whose page clears its own
- * screen, nor one where another account turned them on too: a push there is checked against that
- * account's sign-in, so it would show them an empty alert and close nothing.
+ * screen, nor one where another account turned them on too: the push would close that account's
+ * alerts as well, and drop the subscription its alerts come by.
  */
 export async function screensOf(userId: string, here = ""): Promise<Subscription[]> {
   if (!setup().keys) return [];
@@ -430,14 +430,15 @@ export async function screensOf(userId: string, here = ""): Promise<Subscription
 }
 
 /**
- * One push with no words to each of these browsers, once their rows are gone: the service worker
- * asks Flash, hears the sign-in there ended, takes that account's alerts still on the screen off
- * it, shows only "Flash ∞ AI" and drops the subscription (public/sw.js). So "Log out of all devices"
- * or a password change leaves none of them on a shared computer for the next person.
+ * One push with no words to each of these browsers, once their rows are gone, saying the sign-in
+ * there ended: the service worker takes that account's alerts still on the screen off it, shows only
+ * "Flash ∞ AI" and drops the subscription (public/sw.js), without asking Flash, since nothing else
+ * would come to clear them. So "Log out of all devices" or a password change leaves none of them on
+ * a shared computer for the next person.
  */
 export async function clearScreens(browsers: Subscription[]): Promise<void> {
   if (!setup().keys) return;
-  await Promise.all(browsers.map((b) => deliver(b, {}).catch(() => "failed")));
+  await Promise.all(browsers.map((b) => deliver(b, { ended: true }).catch(() => "failed")));
 }
 
 /** For /admin: how many browsers have alerts on, counting only rows whose sign-in is still live (the only ones sent to). */

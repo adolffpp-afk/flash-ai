@@ -18,7 +18,7 @@ import { api } from "./store.ts";
 import { readSetting, writeSetting } from "./device-settings.ts";
 import { installPlatform } from "./install.ts";
 import { inAndroidApp } from "./android-shell.ts";
-import type { Translate } from "./i18n.ts";
+import { msg } from "./i18n.ts";
 
 // "home-screen": an iPhone or iPad, which has alerts only in Flash added to the Home Screen.
 // "update": one on iOS before 16.4, where not even the Home Screen app has them.
@@ -53,17 +53,19 @@ export function pushSupport(): PushSupport {
 /**
  * Where to allow notifications once they're blocked: the device's Settings in Flash's apps (on an
  * iPhone or iPad, Android, or a Mac's Dock, from Safari), else the browser's. Private windows answer
- * "blocked" by themselves, without asking (Chrome and Edge do), and can't allow them at all.
+ * "blocked" by themselves, without asking (Chrome and Edge do), and can't allow them at all. Its
+ * words, like refusedWords' and turnOnPush's, are in English and translated where they're shown, so
+ * they follow a language picked after.
  */
-export function blockedWords(t: Translate): string {
-  if (platform() === "ios" && standalone()) return t("Notifications are blocked for Flash. Allow them in Settings > Notifications > Flash ∞ AI, then try again.");
+export function blockedWords(): string {
+  if (platform() === "ios" && standalone()) return msg("Notifications are blocked for Flash. Allow them in Settings > Notifications > Flash ∞ AI, then try again.");
   if (platform() === "android" && inAndroidApp()) {
-    return t("Notifications are blocked for Flash. Allow them in Settings > Apps > Flash ∞ AI > Notifications, then try again.");
+    return msg("Notifications are blocked for Flash. Allow them in Settings > Apps > Flash ∞ AI > Notifications, then try again.");
   }
   if (platform() === "mac-safari" && standalone()) {
-    return t("Notifications are blocked for Flash. Allow them in System Settings > Notifications > Flash ∞ AI, then try again.");
+    return msg("Notifications are blocked for Flash. Allow them in System Settings > Notifications > Flash ∞ AI, then try again.");
   }
-  return t("Notifications are blocked for Flash. Private windows can't show them; in a normal window, allow them in your browser's site settings, then try again.");
+  return msg("Notifications are blocked for Flash. Private windows can't show them; in a normal window, allow them in your browser's site settings, then try again.");
 }
 
 /**
@@ -71,8 +73,8 @@ export function blockedWords(t: Translate): string {
  * browser's answer wasn't "granted": where to allow them once blocked, or, for a question closed
  * without an answer ("default"), that nothing is blocked and the next tap asks again.
  */
-export function refusedWords(answer: NotificationPermission, t: Translate): string {
-  return answer === "denied" ? blockedWords(t) : t("Allow notifications when your browser asks, then try again.");
+export function refusedWords(answer: NotificationPermission): string {
+  return answer === "denied" ? blockedWords() : msg("Allow notifications when your browser asks, then try again.");
 }
 
 /**
@@ -161,14 +163,17 @@ export async function pushStatus(): Promise<PushStatus> {
   return { key, support, on: Boolean(on && sub && key && granted && madeWith(sub, key)) };
 }
 
-/** Turns alerts on for this account here; throws with the words to show when it can't. Call it from a tap. */
-export async function turnOnPush(userId: string, key: string, t: Translate): Promise<void> {
-  if (pushSupport() !== "yes") throw new Error(t("This browser can't get alerts when Flash is closed."));
-  const blocked = blockedWords(t);
+/**
+ * Turns alerts on for this account here; throws with the words to show when it can't (in English
+ * from here, or the server's own). Call it from a tap.
+ */
+export async function turnOnPush(userId: string, key: string): Promise<void> {
+  if (pushSupport() !== "yes") throw new Error(msg("This browser can't get alerts when Flash is closed."));
+  const blocked = blockedWords();
   // Asked first, while the tap still counts as one (browsers ask only from a tap). "default" is a
   // question closed without an answer: nothing is blocked, and the next tap asks again.
   const allowed = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
-  if (allowed !== "granted") throw new Error(refusedWords(allowed, t));
+  if (allowed !== "granted") throw new Error(refusedWords(allowed));
   let sub: PushSubscription;
   try {
     sub = await subscribe(key);
@@ -176,8 +181,8 @@ export async function turnOnPush(userId: string, key: string, t: Translate): Pro
     const name = e instanceof DOMException ? e.name : "";
     // The browser has no push service to sign up with, which can't be told before trying: a private
     // window, or Brave with push messaging off. Trying again won't help there.
-    const none = t("This browser couldn't turn on alerts. Private windows can't get them, and some browsers, like Brave, need push messaging turned on in their settings first.");
-    throw new Error(name === "NotAllowedError" ? blocked : name === "AbortError" || name === "NotSupportedError" ? none : t("Couldn't turn on alerts. Please try again."));
+    const none = msg("This browser couldn't turn on alerts. Private windows can't get them, and some browsers, like Brave, need push messaging turned on in their settings first.");
+    throw new Error(name === "NotAllowedError" ? blocked : name === "AbortError" || name === "NotSupportedError" ? none : msg("Couldn't turn on alerts. Please try again."));
   }
   await api("/api/push", { method: "POST", json: sub.toJSON() });
   want(userId, true);

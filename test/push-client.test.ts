@@ -145,7 +145,6 @@ const { createSession, hashPassword } = await import("../src/lib/server/auth.ts"
 const { run, all } = await import("../src/lib/server/db.ts");
 const { endAllSessions } = await import("../src/lib/server/account.ts");
 
-const t = ((text: string) => text) as never;
 // The browser's subscription now (a function, as the code under test changes it).
 const subNow = (): Sub | null => current;
 const key = push.pushPublicKey()!;
@@ -169,7 +168,7 @@ test("turning alerts on, or back on, makes a new subscription, so no other accou
   await account("bea");
   // Bea turns alerts on here; later her sign-in ends by itself, and the page drops the subscription.
   await signIn("bea");
-  await client.turnOnPush("bea", key, t);
+  await client.turnOnPush("bea", key);
   await run("UPDATE sessions SET expires_at = 1 WHERE user_id = 'bea'");
   await client.syncPush(null);
   assert.equal(current, null);
@@ -179,7 +178,7 @@ test("turning alerts on, or back on, makes a new subscription, so no other accou
   // so nothing on the server knows Ann left when Bea signs in again.
   await signIn("ann");
   await client.syncPush("ann");
-  await client.turnOnPush("ann", key, t);
+  await client.turnOnPush("ann", key);
   const anns = subNow()!.endpoint;
   assert.equal(await alertsHere("ann"), 1);
   cookie = "";
@@ -195,7 +194,7 @@ test("turning alerts on, or back on, makes a new subscription, so no other accou
   // The switch, too: turning alerts on never reuses a subscription someone else turned on.
   cookie = "";
   await signIn("ann");
-  await client.turnOnPush("ann", key, t);
+  await client.turnOnPush("ann", key);
   assert.notEqual(subNow()?.endpoint, beas);
   assert.equal(await alertsHere("bea"), 0);
 });
@@ -207,7 +206,7 @@ test("a sign-in that ends while Flash is open keeps this device's wish for alert
   await signIn("cy");
   render(() => client.usePushSync("cy"));
   await settle();
-  await client.turnOnPush("cy", key, t);
+  await client.turnOnPush("cy", key);
   assert.equal(await alertsHere("cy"), 1);
 
   // The sign-in ends by itself (30 days, or "Log out of all devices" on another device) while
@@ -241,7 +240,7 @@ test("what the switch says when the browser asks, blocks, or has no push service
   await signIn("dee");
   const said = async () => {
     try {
-      await client.turnOnPush("dee", key, t);
+      await client.turnOnPush("dee", key);
       return "on";
     } catch (e) {
       return (e as Error).message;
@@ -279,7 +278,7 @@ test("what the switch says when the browser asks, blocks, or has no push service
 test("a test alert to an address the push service dropped says alerts are off here, as the switch then does", async () => {
   await account("eli");
   await signIn("eli");
-  await client.turnOnPush("eli", key, t);
+  await client.turnOnPush("eli", key);
   assert.equal((await client.pushStatus()).on, true);
   // The push service expired this browser's address, which the browser still holds.
   dropped.add(current!.endpoint);
@@ -294,7 +293,7 @@ test("a test alert to an address the push service dropped says alerts are off he
   for (const tryNumber of [1, 2]) assert.deepEqual(await said(), { message: "Turn on alerts on this device first.", code: "off" }, `try ${tryNumber}`);
   assert.equal((await client.pushStatus()).on, false);
   // One tap turns them on again, with a new address.
-  await client.turnOnPush("eli", key, t);
+  await client.turnOnPush("eli", key);
   assert.deepEqual(await said(), { message: "sent", code: "" });
 });
 
@@ -302,7 +301,7 @@ test("logging out of all devices here forgets this device's wish too", async () 
   await account("fin");
   storage.clear();
   await signIn("fin");
-  await client.turnOnPush("fin", key, t);
+  await client.turnOnPush("fin", key);
   // Settings already signed every device out, this one included, before Flash's signOut runs.
   await endAllSessions("fin");
   await client.logOutHere("fin", true);
@@ -318,7 +317,7 @@ test("alerts still on the screen go when this browser stops being their account'
   storage.clear();
   const titles = () => tray.map((n) => n.title);
   await signIn("gus");
-  await client.turnOnPush("gus", key, t);
+  await client.turnOnPush("gus", key);
   showAlert("Gus's weekly money check", "gus");
   // Opening Flash while he's still signed in keeps his.
   await client.syncPush("gus");
@@ -392,11 +391,11 @@ test("a block says where to allow notifications: the iPhone's Settings in the Ho
     Object.defineProperty(globalThis, "navigator", { configurable: true, value: { ...was, userAgent, maxTouchPoints: touch, standalone } });
     let words = "on";
     try {
-      await client.turnOnPush("ida", key, t);
+      await client.turnOnPush("ida", key);
     } catch (e) {
       words = (e as Error).message;
     }
-    assert.equal(client.refusedWords("denied", t), words, "Response completions says the same");
+    assert.equal(client.refusedWords("denied"), words, "Response completions says the same");
     return words;
   };
   // A real block: the browser asks nothing more.
@@ -420,12 +419,17 @@ test("a block says where to allow notifications: the iPhone's Settings in the Ho
     assert.equal(await said(mac, false, 0), browser);
     assert.equal(await said(was.userAgent), browser);
     // A question closed without an answer blocks nothing, on either switch.
-    assert.equal(client.refusedWords("default", t), "Allow notifications when your browser asks, then try again.");
+    assert.equal(client.refusedWords("default"), "Allow notifications when your browser asks, then try again.");
     // Response completions' switch (Settings) takes its words from there.
     const settings = readFileSync(new URL("../src/components/Settings.tsx", import.meta.url), "utf8");
     const toggleNotify = settings.slice(settings.indexOf("async function toggleNotify"), settings.indexOf("async function toggleWake"));
-    assert.match(toggleNotify, /else setNotifyRefused\(refusedWords\(allowed, t\)\);/);
+    assert.match(toggleNotify, /else refused\(refusedWords\(allowed\)\);/);
     assert.ok(!/t\("Notifications are blocked|t\("Allow notifications/.test(toggleNotify), "no words of its own");
+    // Both switches' words stay in English until shown, so a language picked after shows them in it,
+    // and share one line, so a permission one of them gets never leaves the other's refusal behind.
+    assert.match(settings, /\{t\(notifySaid\.text\)\}/);
+    assert.match(settings, /\{t\(said\.text\)\}/);
+    assert.match(settings, /said=\{notifySaid\?\.under === "alerts" \? notifySaid : null\}/);
   } finally {
     permission.now = permission.answer = "granted";
     delete (globalThis as { matchMedia?: unknown }).matchMedia;

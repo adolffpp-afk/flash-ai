@@ -38,22 +38,27 @@ async function addressHash(sub) {
 // its words: one may have waited at the push service (a phone or laptop that was off) through a log
 // out, "Log out of all devices", a password change or the sign-in ending. "off" also drops this
 // browser's subscription, so nothing else waiting for it arrives (Flash makes a new one when that
-// account signs in here again and wants alerts); "unknown" (no answer) keeps it.
-async function stillOn() {
+// account signs in here again and wants alerts); "unknown" (no answer) keeps it. ended: the push
+// itself says that sign-in ended (clearScreens in push.ts), with nothing to ask: only Flash can send
+// one this browser can read, and nothing else would come to clear the screen if Flash didn't answer.
+async function stillOn(ended) {
   try {
     const sub = await self.registration.pushManager.getSubscription();
     if (!sub) return "off";
-    const res = await fetch(`/api/push?e=${await addressHash(sub)}`, {
-      credentials: "same-origin",
-      cache: "no-store",
-      ...(AbortSignal.timeout ? { signal: AbortSignal.timeout(8000) } : {}),
-    });
-    if (res.status !== 401 && !res.ok) return "unknown";
-    const on = res.ok && (await res.json()).on === true;
+    let on = false;
+    if (!ended) {
+      const res = await fetch(`/api/push?e=${await addressHash(sub)}`, {
+        credentials: "same-origin",
+        cache: "no-store",
+        ...(AbortSignal.timeout ? { signal: AbortSignal.timeout(8000) } : {}),
+      });
+      if (res.status !== 401 && !res.ok) return "unknown";
+      on = res.ok && (await res.json()).on === true;
+    }
     if (!on) await sub.unsubscribe().catch(() => false);
     return on ? "on" : "off";
   } catch {
-    return "unknown";
+    return ended ? "off" : "unknown";
   }
 }
 
@@ -67,38 +72,47 @@ const isFlash = (w) => {
 // The tag of an alert whose words are held back: each takes the last one's place, so they never pile up.
 const HIDDEN = "flash-hidden";
 
-// An alert: {title, body, url, tag}, already in the account's language. A later one with the same tag
-// replaces it and still alerts; one with none shows on its own. Browsers require every push to show
-// something, so one that can't be read, or whose sign-in here isn't live, shows Flash's name only.
-// When that sign-in has ended, the alerts it already showed here go too, so the next person on a
-// shared computer doesn't see them. Safari keeps a tag but never lets it replace anything
-// (webkit.org/b/258922), so once the new alert shows, any earlier one with its tag still there is
-// closed; elsewhere the browser has replaced it already, and there's none.
+// Alerts show one at a time, each with the closing it does, so two that arrive together (a laptop
+// waking with two of one run's alerts) never close each other: the one shown last stays.
+let showing = Promise.resolve();
+
+// An alert: {title, body, url, tag}, already in the account's language, or {ended: true} once the
+// sign-in that turned alerts on here has ended. A later one with the same tag replaces it and still
+// alerts; one with none shows on its own. Browsers require every push to show something, so one that
+// can't be read, or whose sign-in here isn't live, shows Flash's name only. When that sign-in has
+// ended, the alerts it already showed here go too, so the next person on a shared computer doesn't
+// see them. Safari keeps a tag but never lets it replace anything (webkit.org/b/258922), so once the
+// new alert shows, any earlier one with its tag still there is closed; elsewhere the browser has
+// replaced it already, and there's none.
 self.addEventListener("push", (event) => {
   const text = (value) => (typeof value === "string" ? value : "");
   const show = async () => {
     let alert = {};
     try {
-      alert = event.data ? event.data.json() : {};
+      alert = (event.data && event.data.json()) || {};
     } catch {}
-    const on = await stillOn();
+    const on = await stillOn(alert.ended === true);
     if (on !== "on") alert = { tag: HIDDEN };
-    if (on === "off") {
-      for (const shown of await self.registration.getNotifications().catch(() => [])) if (shown.tag !== HIDDEN) shown.close();
-    }
-    const tag = text(alert.tag);
-    // Tells this alert from the earlier ones with its tag.
-    const id = `${Date.now()}-${Math.random()}`;
-    await self.registration.showNotification(text(alert.title) || "Flash ∞ AI", {
-      body: text(alert.body),
-      icon: "/app-icon/192?v=3",
-      data: { url: flashPage(alert.url), id },
-      ...(tag ? { tag, renotify: tag !== HIDDEN } : {}),
+    const turn = showing.then(async () => {
+      if (on === "off") {
+        for (const shown of await self.registration.getNotifications().catch(() => [])) if (shown.tag !== HIDDEN) shown.close();
+      }
+      const tag = text(alert.tag);
+      // Tells this alert from the earlier ones with its tag.
+      const id = `${Date.now()}-${Math.random()}`;
+      await self.registration.showNotification(text(alert.title) || "Flash ∞ AI", {
+        body: text(alert.body),
+        icon: "/app-icon/192?v=3",
+        data: { url: flashPage(alert.url), id },
+        ...(tag ? { tag, renotify: tag !== HIDDEN } : {}),
+      });
+      if (!tag) return;
+      for (const shown of await self.registration.getNotifications().catch(() => [])) {
+        if (shown.tag === tag && shown.data && shown.data.id && shown.data.id !== id) shown.close();
+      }
     });
-    if (!tag) return;
-    for (const shown of await self.registration.getNotifications().catch(() => [])) {
-      if (shown.tag === tag && shown.data && shown.data.id && shown.data.id !== id) shown.close();
-    }
+    showing = turn.catch(() => {});
+    await turn;
   };
   // A dot on the installed app's icon until Flash is opened again (it clears it); none while Flash is
   // on the screen and in front, where the person sees the alert come in.
