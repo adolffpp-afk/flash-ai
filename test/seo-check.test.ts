@@ -10,7 +10,8 @@ const { SEO_VERSION, scanPage, textWidth } = await import("../src/lib/seo-scan.t
 const { MAX_CONTEXT, band, evaluate, fixContext, fixableIds, issueCount, mainDomain, stillToFix, testDomain } = await import("../src/lib/seo-rules.ts");
 const { LABELS, WHY, fixMessage, listOf, messageOf } = await import("../src/lib/seo-words.ts");
 const { fixForCopy } = await import("../src/lib/seo-fix.ts");
-const { chatForFix, newestApp, stillAnswering } = await import("../src/lib/seo-chat.ts");
+const { chatForFix, chatWithSite, newestApp, stillAnswering } = await import("../src/lib/seo-chat.ts");
+const { chatSaves } = await import("../src/lib/chat-saves.ts");
 const { hasOwnCanonical, hasOwnPreview } = await import("../src/lib/site-preview.ts");
 const { cleanUserMessage } = await import("../src/lib/server/turns.ts");
 const { translate } = await import("../src/lib/i18n.ts");
@@ -892,6 +893,69 @@ test("a fix is decided on the server's copy of a chat this page already has open
   const offline = await chatForFix(here, () => Promise.reject(new Error("offline")), false);
   assert.deepEqual([offline.busy, offline.adopt, offline.messages], [false, false, here]);
   assert.equal((await chatForFix(writing, () => Promise.reject(new Error("offline")), false)).busy, true, "a reply pending here");
+});
+
+test("a chat whose save is still uploading, or failed, keeps this page's copy for a fix", async () => {
+  const app = (html: string, slug?: string) => ({ title: "Golden Crumb", html, kind: "app" as const, slug });
+  const fixed = BAKERY.replace("</body>", "<p>Call us on 0113 496 0000</p></body>");
+  assert.notEqual(fixed, BAKERY);
+  // The server has the chat as it was: the fix not put live yet.
+  const server: UIMessage[] = [
+    { id: "u1", role: "user", content: "Build a website for my bakery" },
+    { id: "a1", role: "assistant", content: "Here it is.", app: app(BAKERY, "golden-crumb-x1") },
+    { id: "u2", role: "user", content: "Fix the search check's points" },
+    { id: "a2", role: "assistant", content: "I fixed them.", app: app(BAKERY) },
+  ];
+  // Here, Update site put it live (its version now names the site) and the owner typed the phone number in by hand.
+  const here: UIMessage[] = [...server.slice(0, 3), { ...server[3], app: app(fixed, "golden-crumb-x1") }];
+  const load = async () => structuredClone(server);
+  const saves = chatSaves();
+  const forFix = () => chatForFix(here, load, saves.unsaved("c1"));
+  assert.equal(saves.unsaved("c1"), false, "nothing changed here yet");
+  saves.changed("c1");
+  assert.deepEqual(saves.waiting(), ["c1"]);
+  assert.deepEqual((await forFix()).messages, here, "changed, not sent yet");
+
+  // The save goes, and takes a while to upload: the page's copy is still the newer one.
+  let answer!: (ok: boolean) => void;
+  const uploading = saves.send("c1", () => new Promise((ok, fail) => (answer = (sent) => (sent ? ok(undefined) : fail(new Error("offline"))))));
+  assert.deepEqual(saves.waiting(), []);
+  const slow = await forFix();
+  assert.deepEqual([slow.adopt, slow.messages], [false, here], "an upload in progress keeps the version put live and the edit");
+  // It fails (the connection was lost): still the page's copy, until a save of it gets through.
+  answer(false);
+  await assert.rejects(uploading, /offline/);
+  const failed = await forFix();
+  assert.deepEqual([failed.adopt, failed.messages], [false, here], "a failed save keeps the page's copy");
+  assert.equal(saves.unsaved("c1"), true);
+
+  // Two saves at once: only the newer one's answer says what the server holds.
+  let first!: () => void;
+  const older = saves.send("c1", () => new Promise<void>((ok) => (first = ok)));
+  await assert.rejects(saves.send("c1", () => Promise.reject(new Error("offline"))));
+  first();
+  await older;
+  assert.equal(saves.unsaved("c1"), true, "an older save getting through doesn't make up for a newer one that failed");
+  await saves.send("c1", async () => {});
+  assert.equal(saves.unsaved("c1"), false);
+  // Saved: the server's copy is read again, and adopted when another tab changed it since.
+  const saved = await chatForFix(here, async () => [...structuredClone(here), { id: "u3", role: "user", content: "Add a gallery" }], saves.unsaved("c1"));
+  assert.deepEqual([saved.adopt, saved.messages.length], [true, 5]);
+  // A deleted chat has nothing left to send.
+  saves.changed("c2");
+  saves.drop("c2");
+  assert.deepEqual([saves.waiting(), saves.unsaved("c2")], [[], false]);
+});
+
+test("a site published a moment ago is found in this page's chat before the server has that chat saved", () => {
+  const app = (slug?: string) => ({ title: "Golden Crumb", html: BAKERY, kind: "app" as const, slug });
+  const built = (id: string, slug?: string) => ({ id, messages: [{ id: `${id}-u`, role: "user" as const, content: "Build it" }, { id: `${id}-a`, role: "assistant" as const, content: "Here.", app: app(slug) }] });
+  // Publish just answered in the open chat: its version names the site here, and the save goes shortly.
+  const chats = [built("other", "golden-crumb-x1"), { id: "unloaded" }, built("open", "golden-crumb-x1"), built("draft")];
+  assert.equal(chatWithSite(chats, "open", "golden-crumb-x1"), "open", "the open chat first");
+  assert.equal(chatWithSite(chats, "draft", "golden-crumb-x1"), "other", "else any chat here that published it");
+  assert.equal(chatWithSite(chats, "open", "another-site"), null, "none here: the server's answer stands");
+  assert.equal(chatWithSite([built("open")], "open", "golden-crumb-x1"), null, "a version not published");
 });
 
 test("a page where everything fails sends what fits, says how many didn't, and the chat keeps it whole", () => {

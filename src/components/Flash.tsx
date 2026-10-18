@@ -20,7 +20,8 @@ import { Templates } from "./Templates";
 import { MyApps } from "./MyApps";
 import type { FixPlan, SiteFix } from "./SeoView";
 import type { CheckId } from "@/lib/seo-rules";
-import { chatForFix, newestApp, stillAnswering } from "@/lib/seo-chat";
+import { chatForFix, chatWithSite, newestApp, stillAnswering } from "@/lib/seo-chat";
+import { chatSaves } from "@/lib/chat-saves";
 import { BuildPanel, useMedia } from "./BuildPanel";
 import { draftShown, draftStore, startsWriting } from "@/lib/live-draft";
 import { OFFICE_TYPES, officeKind, officeText } from "@/lib/office";
@@ -367,8 +368,8 @@ export function Flash({
   // The templates window: "" shows them all, a template's id opens its form.
   const [templates, setTemplates] = useState<string | null>(null);
   const [showApps, setShowApps] = useState(false);
-  // My websites & apps opened on one app's search check (SEO), from the SEO button under a published app.
-  const [appsStart, setAppsStart] = useState<{ slug: string; view: "seo" } | undefined>(undefined);
+  // My websites & apps opened on one app's search check (SEO), from the SEO button under a published app (title: its version's).
+  const [appsStart, setAppsStart] = useState<{ slug: string; view: "seo"; title?: string } | undefined>(undefined);
   // A change the search check asked for, sent in the chat that built the site once it's open (see sendFix).
   const [pendingFix, setPendingFix] = useState<SiteFix | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -378,8 +379,8 @@ export function Flash({
   const runningRef = useRef(false);
   // Attachments stay in memory only (too large to save), keyed by user message id, for Retry.
   const filesRef = useRef(new Map<string, Attachment[]>());
-  // Projects whose messages changed and still need saving to the server.
-  const dirtyRef = useRef(new Set<string>());
+  // Projects whose messages changed and still need saving to the server, or whose save hasn't got through yet.
+  const savesRef = useRef(chatSaves());
   // When a reply the server was finishing was first found missing from its chat (see the watch below).
   const missedRef = useRef(new Map<string, number>());
   // Replies whose request got no answer at all (Stop before it, or the connection lost), so it may
@@ -583,21 +584,25 @@ export function Flash({
 
   // Saves changed projects shortly after a reply finishes.
   useEffect(() => {
-    if (busy || !dirtyRef.current.size) return;
+    const saves = savesRef.current;
+    if (busy || !saves.waiting().length) return;
     const timer = setTimeout(() => {
-      for (const id of dirtyRef.current) {
+      for (const id of saves.waiting()) {
         const p = projects.find((x) => x.id === id);
         // A reply that may never have reached the server waits until the watch knows, so it isn't
         // saved as one the server is working on.
         if (p?.messages?.some((m) => m.pending && unsureRef.current.has(m.id))) continue;
-        dirtyRef.current.delete(id);
-        if (!p?.messages) continue;
+        if (!p?.messages) {
+          saves.drop(id);
+          continue;
+        }
         // A reply the server is still finishing is sent as pending: the server keeps its own copy of
         // it (see keepRunning in turns.ts), and saves everything else as it is here.
         const messages = p.messages.map((m) => ({ ...m, pending: m.pending || undefined, status: undefined }));
-        api(`/api/projects/${id}`, { method: "PUT", json: { name: p.name, messages } }).catch((err) => {
+        // Until it gets through, the chat counts as unsaved (see chatSaves), so the search check keeps this copy.
+        saves.send(id, () => api(`/api/projects/${id}`, { method: "PUT", json: { name: p.name, messages } })).catch((err) => {
           // Saved by the server at the same moment: tried again with the next change.
-          if (err?.status === 409) return void dirtyRef.current.add(id);
+          if (err?.status === 409) return void saves.changed(id);
           // Over 4.5 MB, Vercel refuses the save before Flash can say why.
           setNotice(err?.status === 413 ? tNow(PROJECT_TOO_LARGE) : err instanceof Error ? err.message : tNow("Couldn't save your project."));
         });
@@ -753,13 +758,13 @@ export function Flash({
       return messages && { messages, busy: stillAnswering(messages) };
     }
     const load = async () => watched((await api<{ project: Project }>(`/api/projects/${id}`)).project.messages ?? []);
-    const chat = await chatForFix(here, load, dirtyRef.current.has(id));
+    const chat = await chatForFix(here, load, savesRef.current.unsaved(id));
     if (chat.adopt) setProjects((list) => list.map((p) => (p.id === id && p.messages === here ? { ...p, messages: chat.messages } : p)));
     return chat;
   }
 
   function updateProject(id: string, fn: (p: Project) => Project) {
-    dirtyRef.current.add(id);
+    savesRef.current.changed(id);
     setProjects((list) => list.map((p) => (p.id === id ? fn(p) : p)));
   }
 
@@ -899,7 +904,7 @@ export function Flash({
       setNotice(t("Couldn't delete that project. Please try again."));
       return;
     }
-    dirtyRef.current.delete(id);
+    savesRef.current.drop(id);
     setProjects((list) => list.filter((p) => p.id !== id));
     if (id === activeId) setActiveId("");
   }
@@ -963,9 +968,9 @@ export function Flash({
     await respond(active, active.messages, { id: newId(), role: "user", content: request, build: kind });
   }
 
-  /** My websites & apps, open on a published app's search check (SEO). */
+  /** My websites & apps, open on a published app's search check (SEO), pressed under one of its versions in the open chat. */
   function openSeo(slug: string) {
-    setAppsStart({ slug, view: "seo" });
+    setAppsStart({ slug, view: "seo", title: active?.messages?.findLast((m) => m.app?.slug === slug)?.app?.title });
     setShowApps(true);
   }
 
@@ -2618,6 +2623,9 @@ export function Flash({
             onFix={fixSite}
             onPlanFix={planFix}
             onDraft={draftInChat}
+            // The search check asks the server which chat built a site, and falls back on this page's chats:
+            // one that published it a moment ago may not be saved yet.
+            chatHere={(slug) => chatWithSite(projects, activeId, slug)}
             onOpenChat={(id, note) => {
               closeApps();
               setNotice(note ?? "");

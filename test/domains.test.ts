@@ -275,12 +275,6 @@ test("www. names its bare domain as the main address only once the bare domain l
   assert.equal(before.domainTest, "www.crumb.pt", "Check with Google tests the domain that works");
   assert.deepEqual(before.canonical, [messageOf({ id: "canonical", problem: "domains" }), "https://www.crumb.pt/"], "the page is on Flash's address and on www.");
 
-  // A Vercel outage while the owner looks changes nothing Flash knows.
-  vercelDown = true;
-  await domainsRoute.GET(new Request("http://localhost/api/sites/crumb-7/domains", { headers: cookie }), { params: Promise.resolve({ slug: "crumb-7" }) } as never);
-  vercelDown = false;
-  assert.equal(await canonical("www.crumb.pt"), "https://www.crumb.pt/");
-
   // The bare domain's A record is fixed, and the owner presses Check again: from then on both name it.
   apexMoved = true;
   const checked = await (await domainsRoute.GET(new Request("http://localhost/api/sites/crumb-7/domains", { headers: cookie }), { params: Promise.resolve({ slug: "crumb-7" }) } as never)).json();
@@ -292,6 +286,16 @@ test("www. names its bare domain as the main address only once the bare domain l
   assert.doesNotMatch(await file("www.crumb.pt", "sitemap.xml"), /<loc>/);
   const after = await seo();
   assert.deepEqual([after.sitemap, after.domainTest, after.canonical[1]], ["https://crumb.pt/sitemap.xml", "crumb.pt", "https://crumb.pt/"]);
+
+  // A Vercel outage while the owner looks changes nothing Flash knows: both still name the bare domain.
+  vercelDown = true;
+  await domainsRoute.GET(new Request("http://localhost/api/sites/crumb-7/domains", { headers: cookie }), { params: Promise.resolve({ slug: "crumb-7" }) } as never);
+  vercelDown = false;
+  for (const host of ["crumb.pt", "www.crumb.pt"]) {
+    assert.equal(await canonical(host), "https://crumb.pt/", `${host} after an outage`);
+    assert.equal(await file(host, "robots.txt"), "User-agent: *\nAllow: /\nSitemap: https://crumb.pt/sitemap.xml\n", `${host} after an outage`);
+  }
+  assert.doesNotMatch(await file("www.crumb.pt", "sitemap.xml"), /<loc>/);
 
   // It moves back to its old host: seen when Flash next looks (here, Check again), www. names itself again.
   apexMoved = false;

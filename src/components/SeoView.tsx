@@ -168,6 +168,7 @@ export function SeoView({
   onFix,
   onDraft,
   onOpenChat,
+  chatHere,
   onPreview,
 }: {
   slug: string;
@@ -184,6 +185,8 @@ export function SeoView({
   onDraft?: (draft: { projectId: string; slug: string; text: string }) => Promise<{ why: string; chat?: string } | null>;
   // Opens the chat that built the site, saying note there (why nothing was sent, in the chat's terms).
   onOpenChat?: (projectId: string, note?: string) => void;
+  // A chat on this page that published the site, for when the server has none saved yet (see chatWithSite).
+  chatHere?: (slug: string) => string | null;
   onPreview: () => void;
 }) {
   const t = useT();
@@ -245,8 +248,14 @@ export function SeoView({
         return id;
       },
       (err) => {
-        // None (404) is the answer; anything else can be tried again.
+        // None (404) is the answer, unless this page has it: published a moment ago, its save not there yet.
         const missing = (err as { status?: number })?.status === 404;
+        const here = missing ? (chatHere?.(slug) ?? null) : null;
+        if (here) {
+          setProject({ id: here });
+          return here;
+        }
+        // Anything else can be tried again.
         if (!missing) lookup.current = null;
         setProject({ error: err instanceof Error ? err.message : t(NO_CHAT), missing });
         return null;
@@ -628,26 +637,38 @@ function PageSpeed({ slug, data }: { slug: string; data: SeoData }) {
       {!available ? (
         <p className="text-sm text-gold-soft">{t(RUN_ERRORS.quota)}</p>
       ) : (
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="space-y-1">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Which address Google tests, by kind: a closed picker shows only part of its text, and an
+                address cut at its start (in a right-to-left language) would read as another one. The
+                address itself is under it, cut at its end. */}
+            {domainUrl && (
+              <select
+                value={address}
+                onChange={(e) => setAddress(e.target.value === "domain" ? "domain" : "flash")}
+                aria-label={t("Test: {address}", { address: shortUrl(target) })}
+                className="min-w-0 max-w-full rounded-md border border-white/10 bg-zinc-900 px-2 py-1.5 text-sm text-zinc-200"
+              >
+                <option value="flash">{t("Flash's address")}</option>
+                <option value="domain">{t("Your domain")}</option>
+              </select>
+            )}
+            {!fresh && (
+              <button
+                onClick={check}
+                disabled={checking || waiting}
+                className="rounded-md border border-primary/40 px-3 py-1.5 text-sm text-primary-soft hover:bg-primary/10 disabled:opacity-50"
+              >
+                {t("Check with Google")}
+              </button>
+            )}
+          </div>
           {domainUrl && (
-            <select
-              value={address}
-              onChange={(e) => setAddress(e.target.value === "domain" ? "domain" : "flash")}
-              aria-label={t("Test: {address}", { address: shortUrl(target) })}
-              className="min-w-0 max-w-full rounded-md border border-white/10 bg-zinc-900 px-2 py-1.5 text-sm text-zinc-200"
-            >
-              <option value="flash">{t("Test: {address}", { address: shortUrl(flashUrl) })}</option>
-              <option value="domain">{t("Test: {address}", { address: shortUrl(domainUrl) })}</option>
-            </select>
-          )}
-          {!fresh && (
-            <button
-              onClick={check}
-              disabled={checking || waiting}
-              className="rounded-md border border-primary/40 px-3 py-1.5 text-sm text-primary-soft hover:bg-primary/10 disabled:opacity-50"
-            >
-              {t("Check with Google")}
-            </button>
+            <p className="flex text-xs text-zinc-500" aria-hidden>
+              <bdi dir="ltr" className="min-w-0 truncate">
+                {shortUrl(target)}
+              </bdi>
+            </p>
           )}
         </div>
       )}

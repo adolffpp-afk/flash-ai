@@ -96,6 +96,7 @@ const isOpen = (data: AppData) => data.collections.some((c) => c.rule === "open"
  * list is in (from an app's own page in the chat); editCredits, onPlanFix, onFix and onDraft let that
  * check ask the builder for a change, or put the owner's own details in the chat's message box, and
  * onOpenChat opens that chat from there, saying why nothing was sent (not Edit's "ask for your changes").
+ * chatHere names a chat on this page that published a site, for one the server hasn't saved yet.
  */
 export function MyApps({
   onClose,
@@ -107,16 +108,18 @@ export function MyApps({
   onFix,
   onDraft,
   onOpenChat,
+  chatHere,
 }: {
   onClose: () => void;
   onEdit?: (projectId: string) => void;
   onPlans?: () => void;
-  start?: { slug: string; view: "seo" };
+  start?: { slug: string; view: "seo"; title?: string };
   editCredits?: number;
   onPlanFix?: (fix: SiteFix) => Promise<FixPlan>;
   onFix?: (fix: SiteFix) => Promise<FixPlan | null>;
   onDraft?: (draft: { projectId: string; slug: string; text: string }) => Promise<{ why: string; chat?: string } | null>;
   onOpenChat?: (projectId: string, note?: string) => void;
+  chatHere?: (slug: string) => string | null;
 }) {
   const t = useT();
   const [sites, setSites] = useState<Site[] | null>(null);
@@ -149,8 +152,9 @@ export function MyApps({
   const [messages, setMessages] = useState<SiteMessage[] | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [error, setError] = useState("");
-  // The app it was opened for (its search check, from the chat) isn't published any more.
-  const [gone, setGone] = useState(false);
+  // The app it was opened for (its search check, from the chat) isn't published any more: said, with
+  // its title, above the list until the owner opens an app.
+  const [gone, setGone] = useState<{ title?: string } | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   // Whether a contact's page, Add contact or Edit stages has changes not saved: leaving the app or
   // closing My websites & apps then asks first, as the contact's own way back does.
@@ -192,7 +196,7 @@ export function MyApps({
       .then(({ sites: list }) => {
         setSites(list);
         const site = start && !started.current ? list.find((s) => s.slug === start.slug) : undefined;
-        if (start && !started.current && !site) setGone(true);
+        if (start && !started.current && !site) setGone({ title: start.title });
         started.current = true;
         if (site) void showSeo(site);
       })
@@ -685,7 +689,15 @@ export function MyApps({
       >
         <div className="flex items-center gap-3 border-b border-white/6 px-5 py-4">
           {open && (
-            <button onClick={() => mayLeave() && setOpen(null)} className="text-sm text-zinc-400 hover:text-zinc-100" aria-label={t("Back to my apps")}>
+            <button
+              onClick={() => {
+                if (!mayLeave()) return;
+                setOpen(null);
+                setGone(null);
+              }}
+              className="text-sm text-zinc-400 hover:text-zinc-100"
+              aria-label={t("Back to my apps")}
+            >
               <span className="inline-block rtl:-scale-x-100" aria-hidden>
                 ←
               </span>
@@ -720,7 +732,9 @@ export function MyApps({
           {error && <p role="alert" className="mb-3 text-sm text-red-400">{error}</p>}
           {gone && !open && (
             <p role="status" className="mb-3 text-sm text-gold-soft">
-              {t("This app isn't published any more.")}
+              {gone.title
+                ? t.node("{title} isn't published any more.", { title: <bdi dir="auto">{gone.title}</bdi> })
+                : t("This app isn't published any more.")}
             </p>
           )}
           {open && view === "data" ? (
@@ -970,6 +984,7 @@ export function MyApps({
                 onFix={onFix}
                 onDraft={onDraft}
                 onOpenChat={onOpenChat}
+                chatHere={chatHere}
                 onPreview={() => showPreview(open)}
               />
             )
