@@ -2,7 +2,9 @@
  * AI inside a published app: window.flashAI.ask("…"). The app's owner pays for it with their Flash
  * credits, so it is off until they turn it on, and they set how many credits it may use in a day.
  * Nothing here runs at a loss: every answer is charged at Flash's usual rate, held before the call
- * and settled to what it really cost.
+ * and settled to what it really cost. A failed answer costs the owner nothing; one Claude may still
+ * have made (and billed) keeps its hold in the day's budget, so the most Flash can lose on an app in
+ * a day is that app's daily budget.
  */
 import Anthropic from "@anthropic-ai/sdk";
 import { one, run, now } from "./db.ts";
@@ -23,7 +25,7 @@ export const MAX_DAILY_CREDITS = 5000;
 export const TYPICAL_ANSWER_CREDITS = 2;
 const HOUR = 3600_000;
 // How long an answer is waited for: well inside the route's 60 seconds (maxDuration), so a slow one
-// still ends here and its hold is put back. The client's own default is 10 minutes.
+// still ends here and its hold is settled. The client's own default is 10 minutes.
 export const ANSWER_TIMEOUT_MS = 40_000;
 
 // answers: about how many answers the daily budget pays for. stopsAt: the owner's auto top-up level,
@@ -116,7 +118,10 @@ async function reserveToday(slug: string, credits: number, limit: number): Promi
   return r.rowsAffected === 1 ? d : null;
 }
 
-/** Puts back what an answer didn't use (or all of it, when the answer failed), on the day it was taken from. */
+/**
+ * Puts back what an answer didn't use, on the day it was taken from, or all of it with the question
+ * (asked false) when no call that could cost anything was made: one refused before it, or by Claude.
+ */
 async function giveBack(slug: string, d: string, credits: number, asked = false): Promise<void> {
   if (credits <= 0 && asked) return;
   await run("UPDATE site_ai_usage SET credits = MAX(0, credits - ?), requests = MAX(0, requests - ?) WHERE site_slug = ? AND day = ?", [
@@ -188,12 +193,15 @@ export async function askSiteAi(
       { timeout: waitMs, maxRetries: 0, signal: AbortSignal.timeout(waitMs) },
     );
   } catch (err) {
+    // The owner never pays for a failed answer.
     await settle(chargeId, 0);
-    await giveBack(slug, reserved, hold);
-    // Only an error status says Claude made no answer. One that timed out, lost its connection or was
-    // cut off part way may still have been made, and Claude bills it: Flash pays that, logged at the
-    // most it can cost. The owner never pays for a failed answer.
-    if (!(err instanceof Anthropic.APIError) || err.status === undefined) {
+    if (err instanceof Anthropic.APIError && err.status !== undefined) {
+      // An error status says Claude made no answer, so it cost nothing: the hold goes back to the day.
+      await giveBack(slug, reserved, hold);
+    } else {
+      // One that timed out, lost its connection or was cut off part way may still have been made, and
+      // Claude bills it: Flash pays that, logged at the most it can cost, and the hold keeps its place
+      // in the day's budget, so failed answers can't cost Flash more in a day than that budget.
       const costCents = callMaxCents(CHAT_MODEL, chars, maxTokens);
       await logUsage({ userId: site.user_id, engine: "text", model: "app AI", provider: "anthropic", credits: 0, costCents, ok: false });
     }

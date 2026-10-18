@@ -8,10 +8,11 @@ import { register } from "node:module";
  * window.flashAI: one attempt per hold, the owner's auto top-up level, and saying it is an AI. A
  * stand-in Claude counts every request it is sent, keeps its system prompt, and can answer, fail
  * with an error, drop the connection, cut its answer off part way, send its answer slowly, or
- * answer after 800 ms (late).
+ * answer after 800 ms (late), noting when Flash hangs up before a late answer comes.
  */
 let mode: "answer" | "error" | "drop" | "cut" | "slow" | "late" = "answer";
 let hits = 0;
+let hungUp = 0;
 let timeoutHeader = "";
 let system = "";
 const answerBody = JSON.stringify({
@@ -43,7 +44,10 @@ const server = createServer((req, res) => {
       res.on("close", () => clearTimeout(rest));
       return;
     }
-    if (mode === "late") return void setTimeout(() => res.writeHead(200, { "Content-Type": "application/json" }).end(answerBody), 800);
+    if (mode === "late") {
+      res.on("close", () => void (res.writableEnded || hungUp++));
+      return void setTimeout(() => res.writeHead(200, { "Content-Type": "application/json" }).end(answerBody), 800);
+    }
     res.writeHead(200, { "Content-Type": "application/json" }).end(answerBody);
   });
 });
@@ -73,11 +77,17 @@ const aiRoute = await import("../src/app/api/sites/[slug]/ai/route.ts");
 const { createSession } = await import("../src/lib/server/auth.ts");
 const { buildSystem } = await import("../src/lib/engines/builder.ts");
 const { maybeAutoTopUp } = await import("../src/lib/server/auto-topup.ts");
-const { CREDIT_PACKS } = await import("../src/lib/credits.ts");
+const { CREDIT_PACKS, MARKUP } = await import("../src/lib/credits.ts");
 const { charge, spendable } = await import("../src/lib/server/credits.ts");
 
 const balance = async (user = "owner") =>
   Number((await one<{ c: number }>("SELECT COALESCE(SUM(amount), 0) AS c FROM credit_ledger WHERE user_id = ?", [user]))?.c);
+const usageCount = async (user = "owner") => Number((await one<{ n: number }>("SELECT COUNT(*) AS n FROM usage WHERE user_id = ?", [user]))?.n);
+// The app's day row: the credits its answers hold or used today, and how many questions it took.
+const today = async (slug = "shop") => {
+  const { usedToday, askedToday } = await aiSettings(slug);
+  return { used: usedToday, asked: askedToday };
+};
 let ip = 0;
 // A new address each time, so the per-visitor limit never gets in the way.
 const ask = (prompt = "When should I book?", instructions = "", slug = "shop") => askSiteAi(slug, { prompt, instructions }, `10.0.${Math.floor(++ip / 250)}.${ip % 250}`);
@@ -167,6 +177,93 @@ test("an answer cut off part way, or still coming at the deadline, was made and 
     assert.deepEqual([Number(lost?.credits), Number(lost?.ok)], [0, 0]);
     assert.ok(Number(lost?.cost_cents) > 0);
   }
+});
+
+test("a failed answer costs the owner nothing; one Claude may have made keeps its hold in the day's budget, and one Claude refused gives it back", async () => {
+  await saveAiSettings("shop", true, 500);
+  await setBalance("owner", 500);
+  for (const how of ["drop", "cut", "slow", "error"] as const) {
+    const [before, day, rows] = [await balance(), await today(), await usageCount()];
+    mode = how;
+    const answer = await askSiteAi("shop", { prompt: "Open on Sunday?" }, `10.7.0.${++ip % 250}`, 500);
+    mode = "answer";
+    assert.equal(answer.status, 502, how);
+    assert.equal(await balance(), before, `${how}: the owner pays nothing`);
+    const after = await today();
+    if (how === "error") {
+      assert.deepEqual(after, day, "an error status: no answer was made, so the day's budget is as it was");
+      assert.equal(await usageCount(), rows);
+      continue;
+    }
+    assert.equal(after.asked, day.asked + 1, `${how}: the question counts`);
+    assert.ok(after.used > day.used, `${how}: its hold stays in the day's budget`);
+    // What Flash may have paid for it, at the credits' price, is within what it keeps out of the budget.
+    const lost = await one<{ cost_cents: number }>("SELECT cost_cents FROM usage ORDER BY rowid DESC LIMIT 1");
+    assert.ok(Number(lost?.cost_cents) * MARKUP <= after.used - day.used, `${how}: ${lost?.cost_cents}¢ within ${after.used - day.used} credits`);
+  }
+});
+
+test("however often Claude is cut off, an app's failed answers stop at its daily budget, so what Flash may pay for them is at most what that budget is worth", async () => {
+  await run("INSERT INTO users (id, email, password_hash, created_at, verified_at) VALUES ('cafe-owner', 'c@x.io', '', 0, 1)");
+  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES ('cafe', 'cafe-owner', 'Cafe', '<p>', 0, 0)");
+  await setBalance("cafe-owner", 1000);
+  const budget = 20;
+  await saveAiSettings("cafe", true, budget);
+  mode = "drop";
+  let failed = 0;
+  let last = await ask(undefined, undefined, "cafe");
+  for (; last.status === 502 && failed < 200; failed++) last = await ask(undefined, undefined, "cafe");
+  mode = "answer";
+  assert.equal(last.status, 429, `still failing after ${failed} answers: the day's budget never ran out`);
+  assert.match((last.body as { error: string }).error, /used everything it may today/);
+  assert.ok(failed > 0);
+  const lost = await one<{ n: number; cents: number }>("SELECT COUNT(*) AS n, COALESCE(SUM(cost_cents), 0) AS cents FROM usage WHERE user_id = 'cafe-owner'");
+  assert.equal(Number(lost?.n), failed, "each is logged at the most it can cost");
+  assert.ok(Number(lost?.cents) * MARKUP <= budget, `${lost?.cents}¢ for a ${budget}-credit day`);
+  assert.equal(await balance("cafe-owner"), 1000, "and the owner paid for none of them");
+  // Answers refused before the call still give everything back: the day's limit, and switched off.
+  const day = await today("cafe");
+  assert.equal((await ask(undefined, undefined, "cafe")).status, 429);
+  assert.deepEqual(await today("cafe"), day);
+  await saveAiSettings("cafe", false, budget);
+  assert.equal((await ask(undefined, undefined, "cafe")).status, 403);
+  assert.deepEqual(await today("cafe"), day);
+});
+
+test("a visitor who closes the page while Claude answers can't stop the call: the route never hands it the request's signal, so the answer is charged at what it used", async () => {
+  await saveAiSettings("shop", true, 500);
+  await setBalance("owner", 500);
+  const [day, rows] = [await today(), await usageCount()];
+  const visitor = new AbortController();
+  const ctx = { params: Promise.resolve({ slug: "shop" }) } as never;
+  mode = "late";
+  [hits, hungUp] = [0, 0];
+  const asking = aiRoute.POST(
+    new Request("https://www.flash-app.dev/api/sites/shop/ai", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ prompt: "Open on Sunday?" }),
+      signal: visitor.signal,
+    }),
+    ctx,
+  );
+  for (const until = Date.now() + 5000; hits === 0 && Date.now() < until; ) await new Promise((r) => setTimeout(r, 10));
+  assert.equal(hits, 1, "Claude has the question");
+  // What Next does when the visitor's side closes the connection: the request's signal aborts.
+  visitor.abort();
+  const res = await asking;
+  mode = "answer";
+  assert.equal(res.status, 200, "the answer was still made");
+  assert.equal(hungUp, 0, "and Flash didn't hang up on Claude");
+  assert.equal(await usageCount(), rows + 1);
+  const used = await one<{ credits: number; ok: number }>("SELECT credits, ok FROM usage ORDER BY rowid DESC LIMIT 1");
+  assert.equal(Number(used?.ok), 1);
+  assert.ok(Number(used?.credits) > 0);
+  assert.equal(await balance(), 500 - Number(used?.credits), "the owner pays what it used, as for any answer");
+  assert.deepEqual(await today(), { used: day.used + Number(used?.credits), asked: day.asked + 1 });
+  const { readFile } = await import("node:fs/promises");
+  const route = await readFile(new URL("../src/app/api/sites/[slug]/ai/route.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(route, /\bsignal\b/, "the route doesn't read the request's signal");
 });
 
 test("every paid Claude call that isn't streamed is sent once, with a deadline over its whole answer: a retry or a stalled answer could cost more than its hold", async () => {
