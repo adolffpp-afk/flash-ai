@@ -5,7 +5,7 @@ import type { FunnelCounts, FunnelRange, FunnelSource, FunnelStats, Money } from
 import { formatMoney } from "@/lib/shop";
 import { msg } from "@/lib/i18n";
 import { PLAN_PEOPLE } from "@/lib/plan-limits";
-import { MAX_TAG, cleanTag, percent, share, taggedLink } from "@/lib/traffic";
+import { MAX_TAG, cleanTag, percent, share, shareSource, taggedLink } from "@/lib/traffic";
 import { useT, type T } from "@/lib/use-t";
 
 const DAY = 86_400_000;
@@ -81,8 +81,10 @@ function sumCounts(list: FunnelCounts[]): FunnelCounts {
  */
 export function FunnelNotes({ stats, onPlans }: { stats: FunnelStats; onPlans?: () => void }) {
   const t = useT();
-  // When the owner's day starts again (midnight UTC), in their own clock.
-  const time = new Intl.DateTimeFormat(t.locale, { hour: "numeric", minute: "2-digit" }).format(new Date(Date.parse(`${stats.today}T00:00:00Z`) + DAY));
+  // When the owner's day starts again (midnight UTC), in their own clock: later on their day, or on the next.
+  const restart = new Date(Date.parse(`${stats.today}T00:00:00Z`) + DAY);
+  const time = new Intl.DateTimeFormat(t.locale, { hour: "numeric", minute: "2-digit" }).format(restart);
+  const tomorrow = restart.toDateString() !== new Date().toDateString();
   const earlier = stats.paused.filter((p) => !(p.day === stats.today && stats.pausedToday !== null));
   const stepsEarlier = stats.stepsPaused.filter((p) => !(p.day === stats.today && stats.stepsPausedToday !== null));
   const more = (n: number) => (n === 1 ? t("…and on 1 other day.") : t("…and on {count} other days.", { count: count(n, t) }));
@@ -124,10 +126,15 @@ export function FunnelNotes({ stats, onPlans }: { stats: FunnelStats; onPlans?: 
     <div role="status" className="space-y-2 text-sm text-gold-soft">
       {stats.pausedToday !== null && (
         <p>
-          {t(
-            "Counting paused for today at {count} people across your apps (your plan's limit). Your apps keep working and page visits still count. Counting people starts again at {time}.",
-            { count: count(stats.pausedToday, t), time },
-          )}
+          {tomorrow
+            ? t(
+                "Counting paused at {count} people across your apps (your plan's daily limit). Your apps keep working and page visits still count. Counting people starts again tomorrow at {time}.",
+                { count: count(stats.pausedToday, t), time },
+              )
+            : t(
+                "Counting paused at {count} people across your apps (your plan's daily limit). Your apps keep working and page visits still count. Counting people starts again at {time}.",
+                { count: count(stats.pausedToday, t), time },
+              )}
           {stats.free && (
             <>
               {" "}
@@ -410,7 +417,8 @@ export function LinkMaker({ addresses }: { addresses: string[] }) {
   // Made the way visits are read (see traffic.ts), so what is copied is what gets counted.
   const link = taggedLink(addresses.includes(address) ? address : (addresses[0] ?? ""), { source, campaign });
   // What was typed but can't be a tag, which the link leaves out.
-  const dropped = (typed: string) => typed.trim() !== "" && !cleanTag(typed);
+  const droppedSource = source.trim() !== "" && !shareSource(source);
+  const droppedCampaign = campaign.trim() !== "" && !cleanTag(campaign);
   const leftOut = <span className="mt-1 block text-xs text-gold-soft">{t("Use letters or digits. Flash leaves out names with an @, 7 or more digits or a long code, as they could identify someone.")}</span>;
   // A campaign is read only with a source, so without one the link leaves it out.
   const noSource = source.trim() === "" && campaign.trim() !== "";
@@ -444,13 +452,13 @@ export function LinkMaker({ addresses }: { addresses: string[] }) {
           <label className="block min-w-0 text-xs text-zinc-500">
             {t("Where you'll share it")}
             <input value={source} onChange={edit(setSource)} placeholder="instagram" maxLength={MAX_TAG} dir="auto" className={`mt-1 ${field}`} />
-            {dropped(source) && leftOut}
+            {droppedSource && leftOut}
             {noSource && <span className="mt-1 block text-xs text-gold-soft">{t("Type where you'll share it too. Without it, the link leaves out the campaign.")}</span>}
           </label>
           <label className="block min-w-0 text-xs text-zinc-500">
             {t("Campaign (optional)")}
             <input value={campaign} onChange={edit(setCampaign)} maxLength={MAX_TAG} dir="auto" className={`mt-1 ${field}`} />
-            {dropped(campaign) && leftOut}
+            {droppedCampaign && leftOut}
           </label>
           {addresses.length > 1 && (
             <label className="block min-w-0 text-xs text-zinc-500">
@@ -471,7 +479,7 @@ export function LinkMaker({ addresses }: { addresses: string[] }) {
         <button
           onClick={copy}
           // A link without the tags typed would count as Direct, so it isn't copied as if it had them.
-          disabled={dropped(source) || noSource}
+          disabled={droppedSource || noSource}
           className="h-10 w-full rounded-lg bg-brand px-4 text-sm font-medium text-on-brand transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:brightness-100 sm:w-auto"
         >
           {copied ? t("Copied") : t("Copy link")}

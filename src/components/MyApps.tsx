@@ -1364,7 +1364,8 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
                   )}
                 </div>
               )}
-              {sites.length > LIST_STEP && (
+              {/* Kept while it holds text, so a list filtered down to 20 or fewer can still be cleared. */}
+              {(sites.length > LIST_STEP || find !== "") && (
                 <input
                   type="search"
                   value={find}

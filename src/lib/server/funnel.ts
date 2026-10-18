@@ -3,9 +3,10 @@
  * signing up, starting a checkout, and the steps an app reports with flashDB.track. Each is counted
  * once a day per person, for someone matched to the visit their browser made to the app that day or
  * the day before (see visits.ts), under where that visit came from. What is kept are daily totals
- * (site_events), never who took a step. Paid orders go into daily totals per source and currency
- * (site_revenue); while a checkout is open, its buyer's source waits beside it (site_checkouts),
- * with nothing about the buyer.
+ * (site_events), never who took a step, though on a quiet day or range a source's 1 form, sign-up
+ * or order can point at the contact, member or order behind it (the privacy page says so). Paid
+ * orders go into daily totals per source and currency (site_revenue); while a checkout is open,
+ * its buyer's source waits beside it (site_checkouts), with nothing about the buyer.
  */
 import { all, db, one, run } from "./db.ts";
 import { domainsForSite } from "./domains.ts";

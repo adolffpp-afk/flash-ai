@@ -19,6 +19,10 @@ export const MAX_TAG = 40;
 const MAX_SOURCE = 60;
 // An email address, a phone number (in any digits), or a subscriber's or click's ID: a tag holding one isn't used.
 const PERSONAL = /@|\p{Nd}{7,}|[0-9a-f]{16,}/iu;
+// A date written with separators (2026-10-18, 18.10.2026, 10_18_2026), which isn't a phone number's digits.
+const DATE = /(?<!\d)(?:(?:19|20)\d\d[-_.](?:0?[1-9]|1[0-2])[-_.](?:0?[1-9]|[12]\d|3[01])|(?:0?[1-9]|[12]\d|3[01])[-_.](?:0?[1-9]|[12]\d|3[01])[-_.](?:19|20)\d\d)(?!\d)/g;
+// Characters that draw nothing (variation selectors, Hangul fillers, joiners), so a tag can't pass for another.
+const INVISIBLE = /\p{Default_Ignorable_Code_Point}/gu;
 // What people type in utm_source, as the name a referrer from there would give. Looked up only by
 // its own names, so a tag like "constructor" is a name like any other.
 const ALIASES: Readonly<Record<string, string>> = {
@@ -41,21 +45,69 @@ const ALIASES: Readonly<Record<string, string>> = {
 };
 
 /**
+ * Whether a tag's text holds an email address, a phone number or an ID: looked for as it is, and
+ * with dots, dashes and underscores taken out too (dates aside), which joins what they and other
+ * characters kept apart: (415) 555-0123, +44 7911 123456, a UUID.
+ */
+function personal(text: string): boolean {
+  const joined = text
+    .toLowerCase()
+    .replace(/[^\p{L}\p{M}\p{N}._ -]/gu, "")
+    .replace(/ +/g, "-")
+    .replace(DATE, "")
+    .replace(/[._ -]/g, "");
+  return PERSONAL.test(text) || PERSONAL.test(joined);
+}
+
+/**
+ * Whether a tag is a code a machine made, like an ID (a ULID, a nanoid, Stripe's or Firebase's),
+ * rather than a name. Such codes switch between small letters, capitals and digits at random: a
+ * small letter runs into a capital that starts no word (rF and eU in NffrFeUf), and digits sit
+ * between letters (the 8 in AP8TK). A tag is one when that happens 3 times in a run of 14 or more
+ * letters and digits, or a small letter runs into such a capital 3 times in all. Names people
+ * write, like InstagramStory, SpringSale2026, iPhoneLaunch or FY26Q4Launch, don't do it that often.
+ */
+function machineCode(text: string): boolean {
+  let humps = 0;
+  for (const run of text.match(/[A-Za-z0-9]+/g) ?? []) {
+    const intoCapital = run.match(/[a-z](?=[A-Z](?![a-z]{2}))/g)?.length ?? 0;
+    const betweenLetters = run.match(/(?<=[A-Za-z])\d+(?=[A-Za-z])/g)?.length ?? 0;
+    if (run.length >= 14 && intoCapital + betweenLetters >= 3) return true;
+    humps += intoCapital;
+  }
+  return humps >= 3;
+}
+
+/** A tag's text read as base64, when it is that and holds only plain text (as an email address would), else "". */
+function base64Text(text: string): string {
+  // A + in a link's address reads as a space.
+  const code = text.trim().replace(/ /g, "+");
+  if (!/^[A-Za-z0-9+/_-]{8,}={0,2}$/.test(code)) return "";
+  try {
+    const plain = atob(code.replace(/-/g, "+").replace(/_/g, "/").replace(/=+$/, ""));
+    return /^[\x20-\x7e]+$/.test(plain) ? plain : "";
+  } catch {
+    return "";
+  }
+}
+
+/**
  * A link tag's value as Flash keeps it: lowercase letters, digits, dots, - and _ in any script, at
- * most 40 characters, or "" when it is missing or looks like personal data.
+ * most 40 characters, or "" when it is missing, shows nothing, or looks like personal data or an ID.
  */
 export function cleanTag(value: string | null | undefined): string {
   if (!value) return "";
-  // Cut first, so no pattern runs on a long value.
-  const cut = value.slice(0, 200);
+  // Cut first, so no pattern runs on a long value; then written one way (ｉｇ is ig, ＠ is @), without
+  // the characters that draw nothing.
+  const cut = value.slice(0, 200).normalize("NFKC").replace(INVISIBLE, "");
   const clean = cut
     .toLowerCase()
     .replace(/[^\p{L}\p{M}\p{N}._ -]/gu, "")
+    // A mark (an accent, a vowel sign) only on a letter.
+    .replace(/(?<![\p{L}\p{M}])\p{M}+/gu, "")
     .trim()
     .replace(/ +/g, "-");
-  // Looked for before cleaning, and after it with dots, dashes and underscores taken out too, which
-  // joins what they and other characters kept apart: (415) 555-0123, +44 7911 123456, a UUID.
-  if (PERSONAL.test(cut) || PERSONAL.test(clean.replace(/[._-]/g, ""))) return "";
+  if (!/[\p{L}\p{N}]/u.test(clean) || personal(cut) || machineCode(cut) || personal(base64Text(cut))) return "";
   // A name cut in the middle doesn't end in a dot or a dash.
   return clean.length > MAX_TAG ? clean.slice(0, MAX_TAG).replace(/[._-]+$/, "") : clean;
 }
@@ -116,11 +168,27 @@ export function isReturnTrip(url: URL, referer: string | null): boolean {
 }
 
 /**
+ * Where a link will be shared, as typed in the link maker, as Flash will read it: a web address
+ * (https://mybakeryblog.com/autumn-post, facebook.com/groups/bakers) as its site's name.
+ */
+export function shareSource(typed: string): string {
+  const text = typed.trim();
+  if (text.includes("/")) {
+    const site = text
+      .replace(/^[a-z][a-z\d+.-]*:\/\//i, "")
+      .split(/[/?#]/, 1)[0]
+      .replace(/:\d*$/, "");
+    if (/\S\.\S/.test(site) && !/\s/.test(site)) return site.includes("@") ? "" : cleanTag(foldHost(site));
+  }
+  return cleanTag(text);
+}
+
+/**
  * The app's address with tags saying where it was shared, cleaned as Flash will read them, so the
  * link counts under exactly the names shown. base as it is when the source is empty.
  */
 export function taggedLink(base: string, tags: { source: string; campaign?: string }): string {
-  const source = cleanTag(tags.source);
+  const source = shareSource(tags.source);
   if (!source) return base;
   try {
     const url = new URL(base);
@@ -156,12 +224,13 @@ export function stepName(step: unknown): string {
 }
 
 /**
- * The step names an app's code reports, written out in its flashDB.track("name") calls: the only
- * names Flash counts for the app (kept with it when it is published), at most 10.
+ * The step names an app's code reports, written out in its flashDB.track("name") calls (also as
+ * flashDB?.track?.("name")): the only names Flash counts for the app (kept with it when it is
+ * published), at most 10.
  */
 export function stepsInHtml(html: string): string[] {
   const found = new Set<string>();
-  for (const m of html.matchAll(/flashDB\??\.track\(\s*(["'`])([^"'`\n]{1,40})\1/g)) {
+  for (const m of html.matchAll(/\bflashDB\s*\??\.\s*track\s*(?:\?\.)?\s*\(\s*(["'`])([^"'`\n]{1,40})\1/g)) {
     const name = stepName(m[2]);
     if (name) found.add(name);
     if (found.size >= MAX_STEP_NAMES) break;
