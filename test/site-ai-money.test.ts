@@ -175,6 +175,106 @@ test("an answer the client refused before sending it never left Flash: as with m
   assert.equal((await ask()).status, 200, "the next question is sent as usual");
 });
 
+test("Claude out of reach (nothing answers the connection, or the name doesn't resolve) never got the question: no cost is logged, the day's budget is untouched, and the app answers again once Claude is back", async () => {
+  const { default: Anthropic } = await import("@anthropic-ai/sdk");
+  const { getClient, meterLost, mayHaveRun } = await import("../src/lib/engines/claude.ts");
+  const { DEFAULT_DAILY_CREDITS } = await import("../src/lib/server/site-ai.ts");
+  await saveAiSettings("shop", true, DEFAULT_DAILY_CREDITS);
+  await setBalance("owner", 500);
+  // A port nothing listens on, for now.
+  const spare = createServer();
+  await new Promise<void>((r) => spare.listen(0, "127.0.0.1", r));
+  const port = (spare.address() as AddressInfo).port;
+  await new Promise<void>((r) => spare.close(() => r()));
+  const messages = getClient().beta.messages;
+  const create = messages.create;
+  // The real client and fetch, sent to where Claude can't be reached.
+  const sendTo = (baseURL: string) => {
+    const elsewhere = new Anthropic({ apiKey: "sk-fake", baseURL });
+    messages.create = ((body: never, options: never) => elsewhere.beta.messages.create(body, options)) as unknown as typeof create;
+  };
+  const [before, day, rows] = [await balance(), await today(), await usageCount()];
+  hits = 0;
+  try {
+    for (const where of [`http://127.0.0.1:${port}`, "http://flash-test.invalid"]) {
+      sendTo(where);
+      // More questions than the day's budget holds at once.
+      for (let i = 0; i < 40; i++) assert.equal((await ask()).status, 502, `${where}: ${i}`);
+    }
+    const refused = await new Anthropic({ apiKey: "sk-fake", baseURL: `http://127.0.0.1:${port}`, maxRetries: 0 }).beta.messages
+      .create({ model: "m", max_tokens: 1, messages: [{ role: "user", content: "x" }] })
+      .catch((err: unknown) => err);
+    assert.ok(refused instanceof Anthropic.APIConnectionError, String(refused));
+    assert.equal(mayHaveRun(refused), false);
+    let metered = 0;
+    assert.throws(() => meterLost(refused, () => void metered++, 7));
+    assert.equal(metered, 0, "meterLost meters nothing for it either");
+    assert.equal(hits, 0, "nothing reached Claude");
+    assert.equal(await usageCount(), rows, "no cost is logged");
+    assert.deepEqual(await today(), day, "the day's budget is as it was");
+    assert.equal(await balance(), before, "and the owner pays nothing");
+    // Claude is back, at the same address.
+    const back = createServer((req, res) => {
+      req.resume();
+      req.on("end", () => res.writeHead(200, { "Content-Type": "application/json" }).end(answerBody));
+    });
+    await new Promise<void>((r) => back.listen(port, "127.0.0.1", r));
+    try {
+      sendTo(`http://127.0.0.1:${port}`);
+      assert.equal((await ask()).status, 200, "the app answers again");
+    } finally {
+      back.closeAllConnections();
+      await new Promise<void>((r) => back.close(() => r()));
+    }
+  } finally {
+    messages.create = create;
+    await saveAiSettings("shop", true, 500);
+  }
+});
+
+test("only a failure while connecting says the question never left Flash: a connection lost after it was sent, a timeout or a cut-off answer may still have run", async () => {
+  const { default: Anthropic } = await import("@anthropic-ai/sdk");
+  const { mayHaveRun } = await import("../src/lib/engines/claude.ts");
+  const nodeError = (code: string, syscall?: string) => Object.assign(new Error(`${syscall ?? ""} ${code}`), { code, ...(syscall && { syscall }) });
+  // What the client throws for a failed fetch: Connection error. <- fetch failed <- what Node said.
+  const lost = (cause: Error) => new Anthropic.APIConnectionError({ cause: new TypeError("fetch failed", { cause }) });
+  const neverSent = [
+    nodeError("ECONNREFUSED", "connect"),
+    nodeError("EHOSTUNREACH", "connect"),
+    nodeError("ENETUNREACH", "connect"),
+    nodeError("ETIMEDOUT", "connect"),
+    nodeError("ENOTFOUND", "getaddrinfo"),
+    nodeError("EAI_AGAIN", "getaddrinfo"),
+    // Every address of the name refused (Node tries each in turn).
+    Object.assign(new AggregateError([nodeError("ECONNREFUSED", "connect"), nodeError("EAFNOSUPPORT", "connect")]), { code: "ECONNREFUSED" }),
+    nodeError("UND_ERR_CONNECT_TIMEOUT"),
+    // Flash refused the server's certificate: the request is only written once it is accepted.
+    nodeError("DEPTH_ZERO_SELF_SIGNED_CERT"),
+    nodeError("CERT_HAS_EXPIRED"),
+    nodeError("UNABLE_TO_VERIFY_LEAF_SIGNATURE"),
+    nodeError("ERR_TLS_CERT_ALTNAME_INVALID"),
+  ];
+  for (const cause of neverSent) assert.equal(mayHaveRun(lost(cause)), false, cause.message);
+  const mayHave = [
+    lost(Object.assign(new Error("other side closed"), { code: "UND_ERR_SOCKET" })),
+    lost(nodeError("ECONNRESET", "read")),
+    lost(nodeError("EPIPE", "write")),
+    // The same codes on a connection already made say nothing about whether the question got there.
+    lost(nodeError("EHOSTUNREACH")),
+    lost(nodeError("ETIMEDOUT", "read")),
+    lost(Object.assign(new AggregateError([nodeError("ECONNREFUSED", "connect"), nodeError("ECONNRESET", "read")]), { code: "ECONNREFUSED" })),
+    lost(nodeError("ERR_SSL_TLSV13_ALERT_CERTIFICATE_REQUIRED")),
+    new Anthropic.APIConnectionError({}),
+    new Anthropic.APIConnectionTimeoutError(),
+    new Anthropic.APIUserAbortError(),
+    new Error("terminated"),
+  ];
+  for (const err of mayHave) assert.equal(mayHaveRun(err), true, String((err.cause as Error | undefined)?.cause ?? err));
+  // Claude answering with an error status, or the client refusing before sending, as before.
+  assert.equal(mayHaveRun(new Anthropic.InternalServerError(500, undefined, "nope", new Headers())), false);
+  assert.equal(mayHaveRun(new Anthropic.AnthropicError("refused")), false);
+});
+
 test("an answer gives up in time for the request to settle its hold", async () => {
   await ask();
   assert.equal(Number(timeoutHeader), ANSWER_TIMEOUT_MS / 1000, "the client's own 10 minutes aren't used");

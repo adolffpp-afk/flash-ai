@@ -1210,14 +1210,34 @@ export async function writeScenes(request: string, scenes: number, seconds: numb
   return parseScenes(text, scenes);
 }
 
+// Node's codes for a server certificate Flash refused. It is checked before the request is written.
+const REFUSED_CERT = /^(?:CERT_[A-Z_]+|DEPTH_ZERO_SELF_SIGNED_CERT|SELF_SIGNED_CERT_IN_CHAIN|UNABLE_TO_GET_ISSUER_CERT(?:_LOCALLY)?|UNABLE_TO_VERIFY_LEAF_SIGNATURE|ERR_TLS_CERT_ALTNAME_INVALID)$/;
+
+/**
+ * Whether err, or what caused it, says the connection to Claude was never made, so no request was
+ * written: the name didn't resolve, connecting failed (refused, no route, or fetch's connect timeout),
+ * or the server's certificate was refused. The same codes on a connection already made (a reset, say)
+ * say nothing about whether the request got there.
+ */
+function neverConnected(err: unknown, depth = 0): boolean {
+  if (!(err instanceof Error) || depth > 4) return false;
+  // Node tried each of the name's addresses in turn.
+  if (err instanceof AggregateError) return err.errors.length > 0 && err.errors.every((e) => neverConnected(e, depth + 1));
+  const { code, syscall } = err as { code?: unknown; syscall?: unknown };
+  if (syscall === "connect" || syscall === "getaddrinfo") return true;
+  if (typeof code === "string" && (code === "UND_ERR_CONNECT_TIMEOUT" || REFUSED_CERT.test(code))) return true;
+  return neverConnected(err.cause, depth + 1);
+}
+
 /**
  * Whether a Claude call that ended with err may still have run, and been billed: the connection
- * failed, it timed out or the answer was cut off part way. A call Claude refused with an error status
- * never ran, nor did one the client itself refused before sending it (its own errors that aren't an
- * APIError), so those cost nothing.
+ * failed after it was made, it timed out or the answer was cut off part way. A call Claude refused
+ * with an error status never ran, nor did one the client itself refused before sending it (its own
+ * errors that aren't an APIError), nor one that never reached Claude (see neverConnected), so those
+ * cost nothing.
  */
 export const mayHaveRun = (err: unknown): boolean =>
-  err instanceof Anthropic.APIError ? err.status === undefined : !(err instanceof Anthropic.AnthropicError);
+  err instanceof Anthropic.APIError ? err.status === undefined && !neverConnected(err.cause) : !(err instanceof Anthropic.AnthropicError);
 
 /** A helper call that may have run (see mayHaveRun) is metered at the most it can cost before the error goes on. */
 export function meterLost(err: unknown, meter: Meter, mostCents: number, model = HELPER_MODEL): never {
