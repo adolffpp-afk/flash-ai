@@ -2067,6 +2067,7 @@
  "Why you're a good fit": "Чому ви підходите",
  "Wide": "Горизонтальний",
  "Wide, open letters that are easier to tell apart": "Широкі, відкриті літери, які легше розрізняти",
+ "With auto top-up on, it stops when your balance gets down to {level} credits, so your visitors never set off a top-up.": "Коли автопоповнення ввімкнене, ШІ зупиняється, щойно баланс знижується до {level} кредитів, щоб відвідувачі ніколи не спричиняли поповнення.",
  "With noindex, the page never shows up on Google, whatever else you fix. Keep it only for a page you want kept off Google.": "З noindex сторінка ніколи не з’явиться в Google, хоч би що ви виправили. Залишайте його лише на сторінці, яку хочете приховати від Google.",
  "Without display=swap, text stays blank until its font arrives.": "Без display=swap текст лишається порожнім, доки не завантажиться шрифт.",
  "Without it, browsers fall back to a layout mode from the 1990s, and parts of the page can look broken.": "Без нього браузери переходять у режим відображення з 1990-х, і частини сторінки можуть виглядати зламаними.",

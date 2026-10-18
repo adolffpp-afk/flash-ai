@@ -2067,6 +2067,7 @@
  "Why you're a good fit": "你为什么适合这个职位",
  "Wide": "横版",
  "Wide, open letters that are easier to tell apart": "字形宽阔舒展，更易分辨",
+ "With auto top-up on, it stops when your balance gets down to {level} credits, so your visitors never set off a top-up.": "开启自动充值时，余额降到 {level} 积分就会暂停，这样访客永远不会触发充值。",
  "With noindex, the page never shows up on Google, whatever else you fix. Keep it only for a page you want kept off Google.": "有了 noindex，无论你修好其他什么，页面都不会出现在 Google 上。只在你想让 Google 看不到的页面上保留它。",
  "Without display=swap, text stays blank until its font arrives.": "没有 display=swap，文字会一直空白，直到字体加载完成。",
  "Without it, browsers fall back to a layout mode from the 1990s, and parts of the page can look broken.": "没有它，浏览器会退回到 1990 年代的排版模式，页面的某些部分可能看起来是坏的。",

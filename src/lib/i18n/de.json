@@ -2067,6 +2067,7 @@
  "Why you're a good fit": "Warum du gut passt",
  "Wide": "Querformat",
  "Wide, open letters that are easier to tell apart": "Breite, offene Buchstaben, die leichter zu unterscheiden sind",
+ "With auto top-up on, it stops when your balance gets down to {level} credits, so your visitors never set off a top-up.": "Mit automatischem Aufladen pausiert es, sobald dein Guthaben auf {level} Credits sinkt, damit deine Besucher nie ein Aufladen auslösen.",
  "With noindex, the page never shows up on Google, whatever else you fix. Keep it only for a page you want kept off Google.": "Mit noindex erscheint die Seite nie bei Google, egal was du sonst behebst. Nutze es nur für eine Seite, die nicht bei Google auftauchen soll.",
  "Without display=swap, text stays blank until its font arrives.": "Ohne display=swap bleibt Text leer, bis seine Schrift geladen ist.",
  "Without it, browsers fall back to a layout mode from the 1990s, and parts of the page can look broken.": "Ohne ihn fallen Browser in einen Darstellungsmodus aus den 1990ern zurück, und Teile der Seite können kaputt aussehen.",
