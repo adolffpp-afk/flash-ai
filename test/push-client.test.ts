@@ -45,6 +45,7 @@ let asks = 0;
 let refuse: Error | null = null; // what pushManager.subscribe rejects with, if anything
 const unsubscribed = new Set<string>();
 let made = 0;
+let lag = 0; // how long the push service takes to give a new subscription, in ms
 type Sub = { endpoint: string; options: { applicationServerKey: ArrayBuffer }; toJSON(): object; unsubscribe(): Promise<boolean> };
 let current: Sub | null = null;
 // Alerts on the screen, as the service worker showed them: the page each opens names its account (as=).
@@ -66,6 +67,7 @@ const registration = {
   pushManager: {
     getSubscription: async () => current,
     subscribe: async ({ applicationServerKey }: { applicationServerKey: Uint8Array }) => {
+      if (lag) await new Promise((done) => setTimeout(done, lag));
       if (refuse) throw refuse;
       const ua = createECDH("prime256v1");
       ua.generateKeys();
@@ -460,4 +462,24 @@ test("Flash on the screen and in front clears the dot alerts put on its app icon
     Object.defineProperty(globalThis, "navigator", { configurable: true, value: was.navigator });
     Object.assign(globalThis, { document: was.document, addEventListener() {} });
   }
+});
+
+test("Settings opened while alerts come back on after a password change shows them on", async () => {
+  await account("ivy");
+  storage.clear();
+  current = null;
+  await signIn("ivy");
+  await client.turnOnPush("ivy", key);
+  // Her password changed here: every sign-in of hers ended with its alerts, and this browser is
+  // signed in again. Settings starts turning them back on, without waiting (changePassword).
+  await endAllSessions("ivy");
+  await signIn("ivy");
+  lag = 300;
+  const syncing = client.syncPush("ivy");
+  // General opened at once, while the push service is still making the new subscription.
+  const status = client.pushStatus();
+  await syncing;
+  lag = 0;
+  assert.equal((await status).on, true, "the switch shows what the sync left, not what it found before");
+  assert.equal(await alertsHere("ivy"), 1);
 });

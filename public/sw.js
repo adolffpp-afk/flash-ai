@@ -72,8 +72,9 @@ const isFlash = (w) => {
 // The tag of an alert whose words are held back: each takes the last one's place, so they never pile up.
 const HIDDEN = "flash-hidden";
 
-// Alerts show one at a time, each with the closing it does, so two that arrive together (a laptop
-// waking with two of one run's alerts) never close each other: the one shown last stays.
+// Alerts show one at a time, in the order they arrived, each with the closing it does, so two that
+// arrive together (a laptop waking with two of one run's alerts) never close each other and the later
+// one stays, whichever of their checks Flash answers first.
 let showing = Promise.resolve();
 
 // An alert: {title, body, url, tag}, already in the account's language, or {ended: true} once the
@@ -91,9 +92,11 @@ self.addEventListener("push", (event) => {
     try {
       alert = (event.data && event.data.json()) || {};
     } catch {}
-    const on = await stillOn(alert.ended === true);
-    if (on !== "on") alert = { tag: HIDDEN };
+    // Asked at once, while its place in line is taken now, before any answer comes back.
+    const asked = stillOn(alert.ended === true);
     const turn = showing.then(async () => {
+      const on = await asked;
+      if (on !== "on") alert = { tag: HIDDEN };
       if (on === "off") {
         for (const shown of await self.registration.getNotifications().catch(() => [])) if (shown.tag !== HIDDEN) shown.close();
       }

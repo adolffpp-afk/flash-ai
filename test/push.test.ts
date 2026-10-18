@@ -603,7 +603,8 @@ function serviceWorker(endpoint: string, cookie: () => string, windows: (string 
   const opened: string[] = [];
   const focused: string[] = [];
   const told: { url: string; message: unknown }[] = [];
-  const state = { subscribed: true, offline: false, badges: 0 };
+  // delays: how long Flash takes to answer each of the next questions, in the order they're asked, in ms.
+  const state = { subscribed: true, offline: false, badges: 0, delays: [] as number[] };
   const self = {
     location: { origin: ORIGIN },
     addEventListener: (type: string, listener: (event: object) => void) => void (listeners[type] = listener),
@@ -654,7 +655,10 @@ function serviceWorker(endpoint: string, cookie: () => string, windows: (string 
   };
   const ask = async (path: string) => {
     if (state.offline) throw new TypeError("Failed to fetch");
-    return pushRoute.GET(new Request(new URL(path, ORIGIN), { headers: { cookie: cookie() } }));
+    const delay = state.delays.shift() ?? 0;
+    const answer = await pushRoute.GET(new Request(new URL(path, ORIGIN), { headers: { cookie: cookie() } }));
+    if (delay) await new Promise((done) => setTimeout(done, delay));
+    return answer;
   };
   vm.runInContext(readFileSync(new URL("../public/sw.js", import.meta.url), "utf8"), vm.createContext({ self, URL, Promise, Response, TextEncoder, crypto, AbortSignal, fetch: ask }));
   const fire = (type: string, event: object) => {
@@ -824,10 +828,38 @@ test("two alerts with the same tag that arrive together leave the later one on t
     // test alert" pressed twice. Each is checked with Flash at once, so they show at the same time.
     const worker = serviceWorker(laptop.endpoint, () => ana.cookie, [], replacesByTag);
     await Promise.all([worker.push(started), worker.push(ready)]);
-    assert.deepEqual(worker.tray(), [{ title: "Weekly summary", body: worker.shown.at(-1)!.options.body, tag: "flash-run-r1" }], where);
+    const later = { title: "Weekly summary", body: "Ready: 3 competitors changed prices", tag: "flash-run-r1" };
+    assert.deepEqual(worker.tray(), [later], where);
     await Promise.all([worker.push(test), worker.push(test), worker.push(test)]);
     assert.deepEqual(worker.tray().map((n) => n.tag), ["flash-run-r1", "flash-test"], where);
+    // Flash answers the check for "Started" last (two requests in flight, either may come back
+    // first): they still show in the order they arrived, so "Ready" stays.
+    const slow = serviceWorker(laptop.endpoint, () => ana.cookie, [], replacesByTag);
+    slow.state.delays = [30, 0];
+    await Promise.all([slow.push(started), slow.push(ready)]);
+    assert.deepEqual(slow.tray(), [later], `${where}, the earlier one's check answered last`);
+    assert.deepEqual(slow.shown.map((n) => n.options.body), ["Started", "Ready: 3 competitors changed prices"], where);
   }
+});
+
+test("an alert whose check answers late still shows before a later one that found the sign-in ended", async () => {
+  const ana = await account("ana.late.check@example.com");
+  const laptop = browser(`${FCM}ana-late-check`);
+  await pushRoute.POST(call("POST", ana.cookie, laptop.sub));
+  sent = [];
+  await push.sendPush(ana.id, { title: "Payroll check", body: "Your salary arrived", tag: "flash-run-r1" });
+  const salary = laptop.open(sent[0].body);
+  let cookie = ana.cookie;
+  const worker = serviceWorker(laptop.endpoint, () => cookie);
+  // Her alert's check is asked while she's still signed in there, but answers late; the next one's
+  // is asked after the sign-in ended there, and answers at once.
+  worker.state.delays = [40, 0];
+  const first = worker.push(salary);
+  await moment();
+  cookie = "";
+  const second = worker.push(salary);
+  await Promise.all([first, second]);
+  assert.deepEqual(worker.tray(), [{ title: "Flash ∞ AI", body: "", tag: "flash-hidden" }], "her words don't stay after the sign-in ended there");
 });
 
 test("a reset with two-step sign-in on takes her alerts off the screen it's opened on too, since it's signed out until the code", async () => {

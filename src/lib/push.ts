@@ -154,8 +154,16 @@ async function subscribe(key: string): Promise<PushSubscription> {
 
 export type PushStatus = { key: string | null; on: boolean; support: PushSupport };
 
-/** For Settings: whether alerts are set up on Flash's server at all, and on for this account here. */
+// The sync under way (syncPush), if any. Syncs run one at a time, and pushStatus waits for them, so
+// Settings opened meanwhile (right after a password change) shows what the sync leaves.
+let syncing: Promise<void> = Promise.resolve();
+
+/**
+ * For Settings: whether alerts are set up on Flash's server at all, and on for this account here,
+ * once the sync under way is done.
+ */
 export async function pushStatus(): Promise<PushStatus> {
+  await syncing;
   const support = pushSupport();
   const sub = await subscription();
   const { key, on } = await serverState(sub);
@@ -212,7 +220,13 @@ export async function sendTestPush(): Promise<void> {
  * here, they're turned on again when the server lost them (a password change, a new sign-in, new
  * keys on the server); a subscription that no one signed in here wants goes.
  */
-export async function syncPush(userId: string | null): Promise<void> {
+export function syncPush(userId: string | null): Promise<void> {
+  const done = syncing.then(() => syncNow(userId));
+  syncing = done.catch(() => {});
+  return done;
+}
+
+async function syncNow(userId: string | null): Promise<void> {
   if (pushSupport() !== "yes") return;
   await closeAlerts(userId);
   const sub = await subscription();
