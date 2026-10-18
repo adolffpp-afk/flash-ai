@@ -72,7 +72,14 @@ test("names Flash keeps for itself are refused, in any case and with any spacing
     assert.ok(isKeptName(name), name);
     assert.deepEqual(validateAssistant(fields({ name })), { code: "name_kept" }, name);
   }
-  for (const name of ["Flashcards tutor", "Flash fiction coach", "My Flash helper", "Support"]) {
+  // With a letter that shows as a blank (the Hangul fillers), an accent, or letters that look
+  // like Latin ones (Cyrillic "а" and "ѕ", Greek "Α", a capital I for an l).
+  const blank = ["Flash\u3164", "Flash\u3164support", "Flash\uFFA0team", "Flash\u115Fofficial", "Flash ∞ AI\u3164", "Flash\u2800support", "\u200EFlash\u200F"];
+  const alike = ["Fl\u0430sh support", "Fla\u0455h", "FL\u0410SH", "\u0391I-Flash Inc.", "FIash support", "Flásh", "Fla\u0336sh team"];
+  for (const name of [...blank, ...alike]) assert.deepEqual(validateAssistant(fields({ name })), { code: "name_kept" }, JSON.stringify(name));
+  assert.equal(fields({ name: "Flash\u3164support" }).name, "Flash support", "a blank letter is a space");
+  for (const name of ["\u3164", "\u3164 \uFFA0", "\u2800"]) assert.deepEqual(validateAssistant(fields({ name })), { code: "name_missing" }, JSON.stringify(name));
+  for (const name of ["Flashcards tutor", "Flash fiction coach", "My Flash helper", "Support", "Флэш помощник", "Fresh support", "Café helper", "한글 도우미"]) {
     assert.equal(isKeptName(name), false, name);
     assert.equal(validateAssistant(fields({ name })), null, name);
   }

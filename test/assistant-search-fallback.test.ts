@@ -7,7 +7,7 @@ import { join } from "node:path";
 /*
  * A database without FTS5 (Turso might be one): its index can't be made, as simulated here by the
  * database refusing it. Everything else is still made, search falls back to ranking the chunks in
- * JavaScript with the same results, and deleting still works.
+ * JavaScript and finds the same chunks, and deleting still works.
  */
 const dir = mkdtempSync(join(tmpdir(), "flash-assistants-"));
 process.env.DATABASE_URL = `file:${join(dir, "fallback.db")}`;

@@ -19,6 +19,7 @@ const search = await import("../src/lib/server/assistant-search.ts");
 const { indexFile, passagesFor, searchChunks, searchMode, removeFileRows, storageFactor } = search;
 const { chunkText, queryTerms, rankChunks, tagOf, tagged } = await import("../src/lib/assistant-chunks.ts");
 const { PASSAGE_TOKENS, MAX_PASSAGES, STORE_FACTOR } = await import("../src/lib/assistants.ts");
+type Statement = Parameters<Awaited<ReturnType<typeof db>>["batch"]>[0][number];
 const { DELIVERY, GLUTEN, REFUNDS, TOP_PAGES, filler, pdf, sheet, pagesUsed, seeded } = await import("./support/assistant-files.ts");
 
 await db();
@@ -46,6 +47,29 @@ async function file(assistantId: string, name: string, text: string, o: { tokens
 }
 const chunksOf = (fileId: string) => all<{ id: number; seq: number; body: string; tokens: number }>("SELECT id, seq, body, tokens FROM assistant_chunks WHERE file_id = ? ORDER BY seq", [fileId]);
 const indexRows = async () => Number((await one<{ n: number }>("SELECT COUNT(*) AS n FROM assistant_chunks_fts"))?.n);
+/** What `f` asks the database: each statement, with how many rows it gave back. */
+async function watched<T>(f: () => Promise<T>): Promise<{ result: T; seen: { sql: string; rows: number }[] }> {
+  const client = await db();
+  const { execute, batch } = client;
+  const seen: { sql: string; rows: number }[] = [];
+  const sqlOf = (s: Statement) => (typeof s === "string" ? s : Array.isArray(s) ? s[0] : s.sql);
+  client.execute = (async (s: Statement, args?: never) => {
+    const r = await execute.call(client, s as string, args);
+    seen.push({ sql: sqlOf(s), rows: r.rows.length });
+    return r;
+  }) as typeof execute;
+  client.batch = (async (ss: Statement[], mode?: "read" | "write") => {
+    const rs = await batch.call(client, ss, mode);
+    ss.forEach((s, i) => seen.push({ sql: sqlOf(s), rows: rs[i].rows.length }));
+    return rs;
+  }) as typeof batch;
+  try {
+    return { result: await f(), seen };
+  } finally {
+    client.execute = execute;
+    client.batch = batch;
+  }
+}
 const matching = async (assistantId: string, word: string) =>
   (await all<{ rowid: number }>("SELECT rowid FROM assistant_chunks_fts WHERE seg MATCH ?", [`"${tagOf(assistantId)}${word}"`])).map((r) => Number(r.rowid));
 
@@ -103,6 +127,33 @@ test("only the asking assistant's chunks come back, even with a planted stray in
   await run("DELETE FROM assistant_chunks WHERE id = ?", [their]);
   await run("DELETE FROM assistant_chunks_fts WHERE rowid = ?", [10 ** 9]);
   assert.deepEqual(await matching(bakery, "zebrafinch"), []);
+
+  // Stray rows for a word the bakery really has, more than it has chunks: the word is counted
+  // through the chunks it finds, so it still tells, and page 3 is still read.
+  const strays = Array.from({ length: 120 }, (_, i) => 2 * 10 ** 9 + i);
+  for (const id of strays) await run("INSERT INTO assistant_chunks_fts (rowid, seg) VALUES (?, ?)", [id, tagged(tagOf(bakery), "refunds refund")]);
+  try {
+    const refunds = await passagesFor({ id: bakery }, "How do refunds work?", "", { named: true });
+    assert.ok(refunds.passages.some((p) => p.title === "Handbook.pdf, page 3" && /paid within 14 days/.test(p.text)), JSON.stringify(refunds.passages.map((p) => p.title)));
+  } finally {
+    for (const id of strays) await run("DELETE FROM assistant_chunks_fts WHERE rowid = ?", [id]);
+  }
+});
+
+test("chunks of a file the assistant doesn't list (a failed upload's) are never read", async () => {
+  const payroll = "Payroll: Dana earns 9,000 a month, paid on the 25th.";
+  await run("INSERT INTO assistant_chunks (assistant_id, file_id, seq, label, chars, tokens, body) VALUES (?, 'failed-upload', 0, '1', ?, 20, ?)", [bakery, payroll.length, payroll]);
+  const orphan = (await one<{ id: number }>("SELECT MAX(id) AS id FROM assistant_chunks"))!.id;
+  await run("INSERT INTO assistant_chunks_fts (rowid, seg) VALUES (?, ?)", [orphan, tagged(tagOf(bakery), payroll)]);
+  try {
+    for (const mode of ["index", "fallback"] as const) assert.deepEqual(await searchChunks(bakery, queryTerms("What does Dana earn?"), mode), [], mode);
+    const asked = await passagesFor({ id: bakery }, "What does Dana earn? Payroll", "", { named: true });
+    assert.ok(!asked.passages.some((p) => p.text.includes("Dana")), JSON.stringify(asked.passages.map((p) => p.title)));
+    const start = await passagesFor({ id: bakery }, "", "", { readStart: true, count: async () => 0 });
+    assert.ok(start.passages.length > 0 && !start.passages.some((p) => p.text.includes("Dana")));
+  } finally {
+    await run("DELETE FROM assistant_chunks WHERE id = ?", [orphan]);
+  }
 });
 
 test("files that fit are read whole, in order, on every message, without a search", async () => {
@@ -198,6 +249,15 @@ test("at most 8 passages, with neighbouring chunks merged into one", async () =>
   assert.equal(merged.passages[0].title, "Wombats.pdf, pages 4-5");
   const hidden = await passagesFor({ id: run3 }, "wombat", "", { count: async () => 0 });
   assert.equal(hidden.passages[0].title, "Passage 1, pages 4-5", "without file names, a number");
+
+  // A short page or slide that shares a chunk is named in the title of what's read from it.
+  const short = await assistant("owner", "Short pages");
+  await file(short, "Handbook.pdf", `--- Page 1 ---\n${filler(1500, 24)}\n\n--- Page 2 ---\nRefunds are paid within 14 days.`, { exact: 0 });
+  await file(short, "Deck.pptx", Array.from({ length: 10 }, (_, i) => `--- Slide ${i + 1} ---\n${i === 6 ? "Wombat pricing: 4 euros." : `Slide ${i + 1} heading`}`).join("\n\n"), { exact: 0 });
+  const refund = await passagesFor({ id: short }, "How are refunds paid?", "", { named: true, count: async () => 0 });
+  assert.deepEqual(refund.passages.map((p) => p.title), ["Handbook.pdf, pages 1-2"]);
+  const wombat = await passagesFor({ id: short }, "wombat pricing", "", { named: true, count: async () => 0 });
+  assert.deepEqual(wombat.passages.map((p) => p.title), ["Deck.pptx, Slide 1 to Slide 10"]);
 });
 
 test("when nothing matches nothing is read, and Read the start of each file reads each file's start", async () => {
@@ -216,9 +276,29 @@ test("when nothing matches nothing is read, and Read the start of each file read
   // It only chooses among the assistant's own chunks: a matching message still reads the starts.
   const matched = await passagesFor({ id: bakery }, "refunds", "", { readStart: true, count: async () => 0 });
   assert.deepEqual(matched.passages.map((p) => p.text), (await passagesFor({ id: bakery }, "", "", { readStart: true, count: async () => 0 })).passages.map((p) => p.text));
+
+  // With 20 files, it reads only what it can use: the start of the first 8, 24 chunks between them.
+  const twenty = await assistant("owner", "Twenty files");
+  const ids: string[] = [];
+  for (let n = 1; n <= 20; n++) ids.push(await file(twenty, `f${n}.txt`, filler(6000, 70 + n), { exact: 0 }));
+  const { result, seen } = await watched(() => passagesFor({ id: twenty }, "", "", { readStart: true, count: async () => 0 }));
+  const read = seen.filter((q) => /FROM assistant_chunks/.test(q.sql));
+  assert.equal(read.length, 1);
+  assert.ok(read[0].rows <= 24, `${read[0].rows} chunks read`);
+  assert.deepEqual([...new Set(result.passages.map((p) => p.fileId))], ids.slice(0, MAX_PASSAGES));
 });
 
-test("the fallback ranker gives the same top result as the full-text index", async () => {
+test("a searched message reads the chunk count from the files, not by counting the chunks", async () => {
+  for (const f of [handbook, prices, notes]) {
+    assert.equal(Number((await one<{ chunks: number }>("SELECT chunks FROM assistant_files WHERE id = ?", [f]))?.chunks), (await chunksOf(f)).length);
+  }
+  for (const message of ["How do refunds work?", "thanks!"]) {
+    const { seen } = await watched(() => passagesFor({ id: bakery }, message));
+    assert.ok(!seen.some((q) => /COUNT\(\*\)[^]*FROM assistant_chunks WHERE/.test(q.sql)), seen.map((q) => q.sql).join("\n"));
+  }
+});
+
+test("the fallback ranker finds the same chunks as the full-text index, and the same best page", async () => {
   for (const [message, page] of TOP_PAGES) assert.equal((await searchChunks(bakery, queryTerms(message), "index"))[0].label, page, message);
   // A word on one page counts for more than a word on five, in both.
   const rye = await assistant("owner", "Rye");
@@ -273,6 +353,21 @@ test("explicit deletes leave no chunk or index row behind, with foreign keys off
   assert.equal((await chunksOf(keep)).length, 0);
 });
 
+test("an index without the trigger that keeps it clean isn't used, and storing a file makes the trigger", async () => {
+  const { adminStats } = await import("../src/lib/server/admin-stats.ts");
+  await run("DROP TRIGGER assistant_chunks_gone");
+  try {
+    assert.equal(await searchMode(true), "fallback");
+    assert.equal(JSON.parse(JSON.stringify(await adminStats(30))).assistantSearch.mode, "fallback");
+    assert.match((await passagesFor({ id: bakery }, "How do refunds work?")).passages.map((p) => p.text).join(""), /paid within 14 days/, "search still works");
+  } finally {
+    const mended = await assistant("owner", "Mended");
+    await file(mended, "a.txt", "Quince jam on Sundays.");
+  }
+  assert.ok(await one("SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND name = 'assistant_chunks_gone'"));
+  assert.equal(await searchMode(true), "index");
+});
+
 test("a file that fails part way is taken out again, and chunks get their share of the tokens", async () => {
   const half = await assistant("owner", "Half");
   const text = filler(200_000, 41);
@@ -294,8 +389,15 @@ test("a file that fails part way is taken out again, and chunks get their share 
   for (const c of stored) assert.equal(c.tokens, Math.ceil((50_000 * c.body.length) / text.length));
 });
 
-test("assistant text takes no more than STORE_FACTOR times its bytes in the database", async () => {
+test("assistant text takes no more than STORE_FACTOR times its bytes in the database, as /admin measures it", async () => {
   const client = await db();
+  // Starting with no assistant text, so /admin's measure of all of it is the growth measured here.
+  await run("DELETE FROM assistant_chunks");
+  await run("DELETE FROM assistant_files");
+  await run("VACUUM");
+  const page = Number((await one<{ page_size: number }>("PRAGMA page_size"))?.page_size);
+  const empty = await pagesUsed(client);
+  let stored = 0;
   const sized = await assistant("owner", "Sized");
   const csv = sheet("Orders", Array.from({ length: 9000 }, (_, i) => [`${100000 + i}`, `Customer ${i % 997}`, `${(i * 7.31) % 400}`, `2026-0${(i % 9) + 1}-1${i % 9}`]));
   const kana = "あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほまみむめもやゆよらりるれろわをん返金方針商品価格配送注文確認";
@@ -306,23 +408,35 @@ test("assistant text takes no more than STORE_FACTOR times its bytes in the data
     ["prose", filler(400_000, 51, 20_000)],
     ["spreadsheet", csv],
     ["japanese", ja],
+    // A marker line as long as a page of text is text, not a label copied into every chunk.
+    ["marker line", `--- Sheet: ${"x".repeat(20_000)} ---\n${filler(100_000, 52)}`],
   ] as const) {
     await run("VACUUM");
     const start = await pagesUsed(client);
     await file(sized, name, text);
-    const grown = ((await pagesUsed(client)) - start) * Number((await one<{ page_size: number }>("PRAGMA page_size"))?.page_size);
+    const grown = ((await pagesUsed(client)) - start) * page;
     const factor = grown / bytes(text);
     assert.ok(factor <= STORE_FACTOR, `${name}: ${factor.toFixed(2)}x`);
     assert.ok(factor > 1, `${name}: the text itself is kept (${factor.toFixed(2)}x)`);
+    stored += bytes(text);
   }
-  const measured = await storageFactor();
-  assert.ok(measured !== null && measured > 1 && measured <= STORE_FACTOR, String(measured));
+  const grown = ((await pagesUsed(client)) - empty) * page;
+  const measured = await storageFactor(true);
+  assert.ok(measured !== null && measured <= STORE_FACTOR, String(measured));
+  assert.ok(Math.abs(measured - grown / stored) < 0.15, `/admin says ${measured.toFixed(2)}x, the database grew ${(grown / stored).toFixed(2)}x`);
 });
 
-test("/admin says the full-text index is in use, with the measured storage factor", async () => {
+test("/admin says the full-text index is in use, with the storage factor measured at most once a day", async (t) => {
   const { adminStats } = await import("../src/lib/server/admin-stats.ts");
-  const { assistantSearch } = JSON.parse(JSON.stringify(await adminStats(30)));
+  const measures = (seen: { sql: string }[]) => seen.filter((q) => /\bdbstat\b/.test(q.sql)).length;
+  const { result, seen } = await watched(() => adminStats(30));
+  const { assistantSearch } = JSON.parse(JSON.stringify(result));
   assert.equal(assistantSearch.mode, "index");
   assert.equal(assistantSearch.factor, await storageFactor());
   assert.ok(assistantSearch.factor > 1);
+  assert.equal(measures(seen), 0, "the measure the storage test took today");
+  t.mock.timers.enable({ apis: ["Date"], now: Date.now() + 25 * 3600_000 });
+  const later = await watched(() => storageFactor());
+  assert.equal(measures(later.seen), 1, "a day later, measured again");
+  assert.equal(measures((await watched(() => adminStats(30))).seen), 0);
 });

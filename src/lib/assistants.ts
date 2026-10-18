@@ -72,11 +72,13 @@ export type AssistantProblem =
   | { code: "starters"; max: number; chars: number };
 
 // Control characters other than tabs and line breaks, and the marks that turn text around
-// (bidirectional overrides), which could make a name read as something else.
-const HIDDEN = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u202A-\u202E\u2066-\u2069]/g;
+// (bidirectional overrides and marks), which could make a name read as something else.
+const HIDDEN = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069]/g;
+// Letters that show as a blank (the Hangul fillers, a blank Braille cell): a space on one line.
+const BLANK = /[\u115F\u1160\u2800\u3164\uFFA0]/g;
 
 const text = (value: unknown) => (typeof value === "string" ? value.replace(/\r\n?/g, "\n").replace(HIDDEN, "") : "");
-const line = (value: unknown) => text(value).replace(/\s+/g, " ").trim();
+const line = (value: unknown) => text(value).replace(BLANK, " ").replace(/\s+/g, " ").trim();
 
 /**
  * An assistant's fields from what was sent: text only, without hidden characters, names and
@@ -96,14 +98,34 @@ export function cleanAssistant(input: unknown): AssistantFields {
   };
 }
 
-// Flash's own names, which an assistant can't take, compared without case, spaces or punctuation.
-const nameKey = (name: string) => name.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
-const KEPT_NAMES = new Set(
-  ["Flash", "Flash support", "Flash team", "Flash official", PRODUCT_NAME, BRAND_NAME, LEGAL_NAME, TRADEMARK].map(nameKey),
+// Flash's own names, which an assistant can't take, compared without case, accents, spaces or
+// punctuation, and with the letters that look like theirs: Cyrillic "а" for "a", "I" for "l".
+const nameKey = (name: string) =>
+  name.normalize("NFKC").toLowerCase().normalize("NFD").replace(/\p{M}+/gu, "").replace(/[^\p{L}\p{N}]+/gu, "");
+const LOOKALIKES: Record<string, string> = {
+  a: "аαɑ",
+  c: "сϲᴄ",
+  e: "еε",
+  f: "ғϝ",
+  h: "һнη",
+  i: "іιıɩӏl1",
+  l: "ӏιıǀʟi1",
+  m: "мμ",
+  n: "νп",
+  o: "оοσ0",
+  p: "рρ",
+  r: "г",
+  s: "ѕꜱ",
+  t: "тτ",
+  u: "υս",
+  y: "уүυ",
+};
+const KEPT_NAMES = ["Flash", "Flash support", "Flash team", "Flash official", PRODUCT_NAME, BRAND_NAME, LEGAL_NAME, TRADEMARK].map(
+  (name) => new RegExp(`^${[...nameKey(name)].map((ch) => `[${ch}${LOOKALIKES[ch] ?? ""}]`).join("")}$`, "u"),
 );
 
-/** Whether a name is one Flash keeps for itself ("Flash support", "FLASH ∞ AI", "flash-team"). */
-export const isKeptName = (name: string) => KEPT_NAMES.has(nameKey(name));
+/** Whether a name is one Flash keeps for itself ("Flash support", "FLASH ∞ AI", "flash-team", "Flаsh" with a Cyrillic "а"). */
+export const isKeptName = (name: string) => KEPT_NAMES.some((kept) => kept.test(nameKey(name)));
 
 /** The first reason these fields can't be saved, or null when they can. */
 export function validateAssistant(a: AssistantFields): AssistantProblem | null {

@@ -7,7 +7,7 @@ import { createClient } from "@libsql/client";
  * exactly, labels from the readers' page, slide and sheet markers, words split for every
  * language, and a query nothing typed can break out of.
  */
-const { chunkText, words, tagOf, tagged, queryTerms, matchQuery, matchTerms, rankChunks, tells } = await import("../src/lib/assistant-chunks.ts");
+const { chunkText, labelEnds, words, tagOf, tagged, queryTerms, matchQuery, matchTerms, rankChunks, tells } = await import("../src/lib/assistant-chunks.ts");
 const { CHUNK_CHARS } = await import("../src/lib/assistants.ts");
 
 const A = "0123456789abcdef0123456789abcdef";
@@ -30,7 +30,7 @@ function wellCut(text: string, size = CHUNK_CHARS) {
   return chunks;
 }
 
-test("chunks are labelled with the page, slide or sheet they start on, and part n without one", () => {
+test("chunks are labelled with the pages, slides or sheets they start and end on, and part n without one", () => {
   const pdf = wellCut(pages(6));
   assert.equal(pdf[0].label, "1");
   assert.deepEqual(
@@ -46,10 +46,22 @@ test("chunks are labelled with the page, slide or sheet they start on, and part 
   const pageThree = pdf.filter((c) => c.label === "3");
   assert.ok(pageThree[0].body.startsWith("--- Page 3 ---"));
   for (let n = 1; n <= 6; n++) assert.ok(pdf.some((c) => c.body.startsWith(`--- Page ${n} ---`) && c.label === `${n}`), `page ${n} starts a chunk`);
-  // Short pages share a chunk, labelled with the page it starts on.
+  // Short pages share a chunk, labelled with its first and last page.
   const short = wellCut(Array.from({ length: 40 }, (_, i) => `--- Page ${i + 1} ---\nPage ${i + 1} is short.`).join("\n\n"));
   assert.ok(short.length < 10);
-  for (const c of short) assert.equal(c.label, c.body.match(/--- Page (\d+) ---/)![1]);
+  for (const c of short) {
+    const own = [...c.body.matchAll(/--- Page (\d+) ---/g)].map((m) => m[1]);
+    assert.deepEqual(labelEnds(c.label), [own[0], own.at(-1)]);
+  }
+  // A short page after a long one, at the end or before another long page, is named with it.
+  const long1 = `--- Page 1 ---\n${para(1, 120)}\n\n${para(2, 60)}`;
+  const two = wellCut(`${long1}\n\n--- Page 2 ---\nRefunds are paid within 14 days.`);
+  assert.deepEqual(two.map((c) => c.label), ["1", "1\n2"]);
+  const three = wellCut(`${long1}\n\n--- Page 2 ---\nRefunds are paid within 14 days.\n\n--- Page 3 ---\n${para(3, 300)}`);
+  assert.equal(three.find((c) => c.body.includes("Refunds"))!.label, "1\n2");
+  const deck = wellCut(Array.from({ length: 10 }, (_, i) => `--- Slide ${i + 1} ---\n${i === 6 ? "Wombat pricing" : `Slide ${i + 1} title`}`).join("\n\n"));
+  assert.deepEqual(deck.map((c) => c.label), ["Slide 1\nSlide 10"]);
+  assert.deepEqual(labelEnds("Sheet: A --- B"), ["Sheet: A --- B", "Sheet: A --- B"]);
 
   const slides = wellCut([para(1, 75), para(2, 75), para(3, 75)].map((t, i) => `--- Slide ${i + 1} ---\n${t}`).join("\n\n"));
   assert.deepEqual([...new Set(slides.map((c) => c.label))], ["Slide 1", "Slide 2", "Slide 3"]);
@@ -59,6 +71,12 @@ test("chunks are labelled with the page, slide or sheet they start on, and part 
   assert.deepEqual([...new Set(sheets.map((c) => c.label))], ["Sheet: Prices", "Sheet: A --- B"]);
   assert.ok(sheets.find((c) => c.label === "Sheet: A --- B")!.body.startsWith("--- Sheet: A --- B ---"));
   for (const c of sheets.slice(0, -1)) assert.ok(c.body.endsWith("\n"), "a sheet is cut between rows");
+
+  // A marker line longer than a heading is text, not a label.
+  const pasted = wellCut(`--- Sheet: ${"x".repeat(200_000)} ---\n${para(4, 400)}\n--- Page 1234567 ---\n${para(5, 400)}\n--- Sheet: ${"y".repeat(101)} ---\n`);
+  assert.ok(pasted.every((c) => /^part \d+$/.test(c.label)), "every label a part");
+  const kept = chunkText(`--- Sheet: ${"z".repeat(100)} ---\n${para(6, 400)}`);
+  assert.equal(kept[0].label, `Sheet: ${"z".repeat(100)}`);
 
   const plain = wellCut([para(1, 200), para(2, 200)].join("\n\n"));
   assert.deepEqual(
@@ -75,6 +93,11 @@ test("no chunk is over its size and none overlaps: joined, they give back the te
   wellCut("ราคาสินค้ารวมภาษีแล้ว".repeat(500));
   wellCut("🍞🥐🥖".repeat(1500), 301);
   wellCut("e\u0301".repeat(3000), 999);
+  // A run of marks with no letter is cut inside, not mark by mark.
+  const marks = wellCut("\u0301".repeat(10_000));
+  assert.ok(marks.length <= Math.ceil(10_000 / (CHUNK_CHARS / 2)) + 1, `${marks.length} chunks`);
+  wellCut(`x${"\u0301".repeat(5000)}y`, 999);
+  wellCut("\u{1D165}".repeat(3000), 999);
   wellCut("\n\n\n".repeat(900) + "end");
   wellCut("short");
   assert.deepEqual(chunkText(""), []);

@@ -720,7 +720,8 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS assistants_user ON assistants(user_id, updated_at)`,
   // stored is what the file counts against its owner's storage: STORE_FACTOR times its UTF-8 bytes.
   // tokens is the largest count over the level models when exact is 1, else an estimate; hash is
-  // the text's SHA-256, so the same file can't be added twice.
+  // the text's SHA-256, so the same file can't be added twice; chunks is how many it was cut into,
+  // set once they are all stored (see indexFile).
   `CREATE TABLE IF NOT EXISTS assistant_files (
     id TEXT PRIMARY KEY,
     assistant_id TEXT NOT NULL REFERENCES assistants(id),
@@ -734,6 +735,7 @@ const SCHEMA = [
     exact INTEGER NOT NULL DEFAULT 0,
     cut INTEGER NOT NULL DEFAULT 0,
     hash TEXT NOT NULL,
+    chunks INTEGER NOT NULL DEFAULT 0,
     created_at INTEGER NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS assistant_files_assistant ON assistant_files(assistant_id)`,
@@ -862,8 +864,9 @@ const MIGRATIONS = [
 const ASSISTANT_INDEX =
   "CREATE VIRTUAL TABLE IF NOT EXISTS assistant_chunks_fts USING fts5(seg, content='', contentless_delete=1, tokenize=\"unicode61 remove_diacritics 2 categories 'L* N* Co M*'\")";
 // Deleting a chunk deletes its index rows. Made only once the index exists: with no index to
-// delete from, the trigger would make every delete of a chunk fail.
-const ASSISTANT_INDEX_TRIGGER =
+// delete from, the trigger would make every delete of a chunk fail. Without it, the index isn't
+// used (see indexState in assistant-search.ts), and storing a file makes it.
+export const ASSISTANT_INDEX_TRIGGER =
   "CREATE TRIGGER IF NOT EXISTS assistant_chunks_gone AFTER DELETE ON assistant_chunks BEGIN DELETE FROM assistant_chunks_fts WHERE rowid = old.id; END";
 
 async function init(c: Client) {

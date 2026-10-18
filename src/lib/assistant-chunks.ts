@@ -4,20 +4,38 @@
  *
  * Chunks don't overlap: in order, they are the file's text. Every word goes into one search index
  * shared by every assistant, tagged with its assistant (tagOf), so a search reads only that
- * assistant's words, ranks by that assistant's own word counts, and can't match anyone else's.
+ * assistant's words and can't match anyone else's, and which words count is decided by how many of
+ * that assistant's own chunks have them (tells). How the matches are ordered is BM25 (rankChunks).
  */
 import { CHUNK_CHARS } from "./assistants.ts";
 
+/**
+ * A chunk of a file. Its label says where in the file it is: "4" for page 4, "Slide 3" or "Sheet:
+ * Prices", from the markers the file readers write, or "part n" before any marker. A chunk that
+ * runs from one page, slide or sheet into the next is labelled with its first and last, on two
+ * lines ("4\n6"): see labelEnds.
+ */
 export type Chunk = { seq: number; label: string; body: string };
 
-// The markers the file readers write (see pdf-text.ts and office.ts): a chunk's label is the one
-// it starts under, "4" for page 4, "Slide 3" or "Sheet: Prices"; with none, "part n".
-const MARKER = /^--- (?:Page (\d+)|Slide (\d+)|Sheet: (.*?)) ---$/gm;
+// The markers the file readers write (see pdf-text.ts and office.ts). A longer line is not one: a
+// label is a heading, never a copy of the file's text (Excel keeps sheet names to 31 characters).
+const MARKER = /^--- (?:Page (\d{1,6})|Slide (\d{1,6})|Sheet: (.{1,100}?)) ---$/gm;
+
+/** The first and last page, slide or sheet of a chunk's label (see Chunk). */
+export function labelEnds(label: string): [string, string] {
+  const [first, last = first] = label.split("\n");
+  return [first, last];
+}
 
 const sentences = new Intl.Segmenter("en", { granularity: "sentence" });
+const low = (c: string | undefined) => c !== undefined && /[\uDC00-\uDFFF]/.test(c);
 
-/** Where the chunk that starts at `start` ends: at a page, paragraph, line, sentence or word break when one is near enough. */
-function cutAt(text: string, start: number, size: number, markers: number[]): number {
+/**
+ * Where the chunk that starts at `start` ends: at `marker`, the start of the last page, slide or
+ * sheet before `start + size`, if there is one, else at a paragraph, line, sentence or word break
+ * when one is near enough.
+ */
+function cutAt(text: string, start: number, size: number, marker: number | undefined): number {
   const end = start + size;
   const window = text.slice(start, end);
   const last = (re: RegExp, from: number) => {
@@ -25,11 +43,8 @@ function cutAt(text: string, start: number, size: number, markers: number[]): nu
     for (const m of window.matchAll(re)) if (m.index + m[0].length >= from) found = m.index + m[0].length;
     return found;
   };
-  // A new page, slide or sheet starts the next chunk, so a chunk never starts under one label and
-  // runs on into the next page.
-  const marker = markers.filter((at) => at > start && at < end).at(-1);
   if (marker !== undefined) return marker;
-  const half = size / 2;
+  const half = Math.ceil(size / 2);
   for (const re of [/\n[^\S\n]*\n\s*/g, /\n\s*/g]) {
     const at = last(re, half);
     if (at > 0) return start + at;
@@ -39,27 +54,47 @@ function cutAt(text: string, start: number, size: number, markers: number[]): nu
   if (sentence > 0) return start + sentence;
   const word = last(/\s+/g, half);
   if (word > 0) return start + word;
-  // One long run with no break: cut, but not inside a character or before a mark that belongs to it.
+  // One long run with no break: cut, but not inside a character, and not before a mark that
+  // belongs to the letter before it, unless the marks run on for half a chunk.
+  const mark = (at: number) => low(text[at]) || /\p{M}/u.test(text[at]);
   let at = end;
-  while (at > start + 1 && (/[\uDC00-\uDFFF]/.test(text[at]) || /\p{M}/u.test(text[at]))) at--;
-  return at;
+  while (at > start + half && mark(at)) at--;
+  if (!mark(at)) return at;
+  return low(text[end]) ? end - 1 : end;
 }
 
 /**
- * The text in chunks of at most `size` characters, cut at a page, paragraph, line, sentence or
- * word break where it can be. Joined in order, the chunks give back the text exactly.
+ * The text in chunks of at most `size` characters, cut where a page, slide or sheet starts, or at a
+ * paragraph, line, sentence or word break where it can be. Joined in order, the chunks give back
+ * the text exactly. Short pages share a chunk, labelled with its first and last page.
  */
 export function chunkText(text: string, size = CHUNK_CHARS): Chunk[] {
   const marks = [...text.matchAll(MARKER)].map((m) => ({
     at: m.index,
     label: m[1] ?? (m[2] ? `Slide ${m[2]}` : `Sheet: ${m[3]}`),
   }));
+  /** The last marker that starts before `at`, or -1. */
+  const before = (at: number) => {
+    let lo = 0;
+    let hi = marks.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (marks[mid].at < at) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo - 1;
+  };
   const chunks: Chunk[] = [];
   for (let start = 0; start < text.length; ) {
-    const end = text.length - start <= size ? text.length : cutAt(text, start, size, marks.map((m) => m.at));
+    let end = text.length;
+    if (text.length - start > size) {
+      const m = marks[before(start + size)];
+      end = cutAt(text, start, size, m && m.at > start ? m.at : undefined);
+    }
     const body = text.slice(start, end);
-    const first = start + body.search(/\S|$/);
-    const label = marks.filter((m) => m.at <= first).at(-1)?.label ?? `part ${chunks.length + 1}`;
+    const first = before(start + Math.max(0, body.search(/\S/)) + 1);
+    const last = before(start + Math.max(0, body.search(/\S\s*$/)) + 1);
+    const label = first < 0 ? `part ${chunks.length + 1}` : last > first ? `${marks[first].label}\n${marks[last].label}` : marks[first].label;
     chunks.push({ seq: chunks.length, label, body });
     start = end;
   }
@@ -150,9 +185,12 @@ export const tells = (found: number, total: number) => found > 0 && (total < COM
 
 /**
  * The chunks that hold any of the terms that tell (see tells), best first, ranked with BM25 as the
- * full-text index ranks them (k1 1.2, b 0.75, a prefix term counting every word it starts; the
- * index also counts other assistants' chunks in its totals, which can reorder close results).
- * Used when the database has no full-text index, over all of one assistant's chunks.
+ * full-text index ranks them (k1 1.2, b 0.75, a prefix term counting every word it starts), with
+ * the number and average length of this assistant's chunks. Used when the database has no
+ * full-text index, over all of one assistant's chunks. Both find the same chunks, but not always in
+ * the same order: the index takes that number and length from every assistant's chunks, so the
+ * more other chunks it holds, the less a word being rare in this assistant's files counts against
+ * a chunk having a word many times.
  */
 export function rankChunks<T extends { body: string }>(chunks: T[], terms: Term[]): T[] {
   if (!chunks.length || !terms.length) return [];

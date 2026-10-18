@@ -4,18 +4,21 @@
  * Each file is kept as chunks in assistant_chunks, and each chunk's words, tagged with its
  * assistant, in the full-text index assistant_chunks_fts, which keeps no copy of the text. A
  * database without FTS5 has no index: then the same search runs in JavaScript over the
- * assistant's chunks (rankChunks), which is slower and reads more rows. /admin says which.
+ * assistant's chunks (rankChunks), which is slower and reads more rows. /admin says which. Both
+ * find the same chunks; they can order them differently (see rankChunks).
  *
  * Nothing here deletes by cascade: Turso runs with foreign keys off. A chunk's index rows go with
- * it through the trigger on assistant_chunks (see db.ts), and every result is joined back to its
- * chunk with the asking assistant's id, so a stray index row can only ever find nothing.
+ * it through the trigger on assistant_chunks (see db.ts), and every result and count is joined back
+ * to its chunk and to a file the asking assistant lists, so a stray index row or a chunk left by a
+ * failed upload can only ever find nothing.
  */
 import type { InStatement } from "@libsql/client";
-import { all, db, one, run } from "./db.ts";
+import { all, ASSISTANT_INDEX_TRIGGER, db, one, run } from "./db.ts";
 import { MAX_PASSAGES, PASSAGE_TOKENS, type SearchMode } from "../assistants.ts";
-import { chunkText, matchTerms, phraseOf, queryTerms, rankChunks, tagOf, tagged, tells, type Term } from "../assistant-chunks.ts";
+import { chunkText, labelEnds, matchTerms, phraseOf, queryTerms, rankChunks, tagOf, tagged, tells, type Term } from "../assistant-chunks.ts";
 
 const INDEX = "assistant_chunks_fts";
+const TRIGGER = "assistant_chunks_gone";
 // Set once a file's chunks were stored while the index was missing: those chunks aren't in it,
 // so searching it would miss them, and every search uses the fallback from then on.
 const UNINDEXED = "assistant_unindexed";
@@ -23,25 +26,30 @@ const UNINDEXED = "assistant_unindexed";
 let checked: { mode: SearchMode; at: number } | null = null;
 const CHECK_EVERY = 10 * 60_000;
 
-/** Whether the database has the index, and whether any chunk was stored without it. One read. */
-async function indexState(): Promise<{ index: boolean; behind: boolean }> {
-  const row = await one<{ index: number; behind: number }>(
+/**
+ * Whether the database has the index, whether it has the trigger that deletes a chunk's index rows
+ * with it (init() makes the two one after the other, and the second can fail), and whether any
+ * chunk was stored without the index. One read.
+ */
+async function indexState(): Promise<{ index: boolean; trigger: boolean; behind: boolean }> {
+  const row = await one<{ index: number; trigger: number; behind: number }>(
     `SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? AND sql LIKE '%fts5%') AS "index",
+            EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND name = ?) AS "trigger",
             EXISTS (SELECT 1 FROM settings WHERE key = ?) AS behind`,
-    [INDEX, UNINDEXED],
+    [INDEX, TRIGGER, UNINDEXED],
   );
-  return { index: Boolean(Number(row?.index)), behind: Boolean(Number(row?.behind)) };
+  return { index: Boolean(Number(row?.index)), trigger: Boolean(Number(row?.trigger)), behind: Boolean(Number(row?.behind)) };
 }
 
 /**
- * How this database searches assistants' files: "index" with its full-text index, "fallback"
- * without. Asked of the database itself (not remembered from when this server started), and kept
- * for 10 minutes; `fresh` asks again now.
+ * How this database searches assistants' files: "index" with its full-text index and its trigger,
+ * "fallback" without either. Asked of the database itself (not remembered from when this server
+ * started), and kept for 10 minutes; `fresh` asks again now.
  */
 export async function searchMode(fresh = false): Promise<SearchMode> {
   if (!fresh && checked && Date.now() - checked.at < CHECK_EVERY) return checked.mode;
-  const { index, behind } = await indexState();
-  checked = { mode: index && !behind ? "index" : "fallback", at: Date.now() };
+  const { index, trigger, behind } = await indexState();
+  checked = { mode: index && trigger && !behind ? "index" : "fallback", at: Date.now() };
   return checked.mode;
 }
 
@@ -50,14 +58,21 @@ const BATCH = 200;
 
 /**
  * Stores a file's text as chunks, with their index rows when the database has the index (checked
- * again first, so no chunk is ever left out of an index that exists). `tokens` is the file's
- * count; each chunk gets its share, rounded up. If any part fails, the file's chunks are deleted
- * and the error is thrown.
+ * again first, so no chunk is ever left out of an index that exists), then sets the file's chunk
+ * count. The file's row is written first, and deleted by the caller if this throws: only the
+ * chunks of a file the assistant lists are ever read. `tokens` is the file's count; each chunk
+ * gets its share, rounded up. If any part fails, the file's chunks are deleted and the error is
+ * thrown.
  */
 export async function indexFile(assistantId: string, fileId: string, text: string, tokens: number): Promise<{ chunks: number; indexed: boolean }> {
   const tag = tagOf(assistantId);
   const chunks = chunkText(text);
-  const { index } = await indexState();
+  const { index, trigger } = await indexState();
+  // An index without its trigger would keep the rows of every chunk deleted from now on.
+  if (index && !trigger) {
+    await run(ASSISTANT_INDEX_TRIGGER);
+    checked = null;
+  }
   // Without the index, mark first that chunks exist which it doesn't hold.
   const statements: InStatement[] = index ? [] : [{ sql: "INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')", args: [UNINDEXED] }];
   for (const c of chunks) {
@@ -72,6 +87,7 @@ export async function indexFile(assistantId: string, fileId: string, text: strin
       });
     }
   }
+  statements.push({ sql: "UPDATE assistant_files SET chunks = ? WHERE id = ? AND assistant_id = ?", args: [chunks.length, fileId, assistantId] });
   try {
     const client = await db();
     for (let i = 0; i < statements.length; i += BATCH) await client.batch(statements.slice(i, i + BATCH), "write");
@@ -125,7 +141,7 @@ export type ReadOptions = {
 };
 
 type Row = ChunkRow;
-type FileRow = { id: string; name: string; exact: number; tokens: number };
+type FileRow = { id: string; name: string; exact: number; tokens: number; chunks: number };
 // Chunks of one file next to each other, read as one passage; rank is its best chunk's place.
 type Run = { file: number; rows: Row[]; rank: number };
 
@@ -154,11 +170,12 @@ function where(first: string, last: string): string {
   return first === last ? first : `${first} to ${last}`;
 }
 
-/** Merges each file's neighbouring chunks (seq next to each other) into runs, in the order they were chosen. */
+/** Merges each file's neighbouring chunks (seq next to each other) into runs, in the order they were chosen. Only chunks of `fileIndex`'s files. */
 function runsOf(rows: Row[], fileIndex: Map<string, number>): Run[] {
   const runs: Run[] = [];
   rows.forEach((row, rank) => {
-    const file = fileIndex.get(row.file_id) ?? 0;
+    const file = fileIndex.get(row.file_id);
+    if (file === undefined) return;
     const near = runs.filter((r) => r.file === file && r.rows.some((x) => Math.abs(x.seq - row.seq) === 1));
     if (!near.length) return void runs.push({ file, rows: [row], rank });
     // A chunk can join two runs into one (seq 3 between 2 and 4).
@@ -175,7 +192,7 @@ function passagesOf(runs: Run[], files: FileRow[], named: boolean): Passage[] {
   return [...runs]
     .sort((a, b) => a.file - b.file || a.rows[0].seq - b.rows[0].seq)
     .map((r, i) => {
-      const place = where(r.rows[0].label, r.rows.at(-1)!.label);
+      const place = where(labelEnds(r.rows[0].label)[0], labelEnds(r.rows.at(-1)!.label)[1]);
       const file = files[r.file];
       return {
         fileId: file.id,
@@ -197,6 +214,7 @@ async function choose(ranked: Row[], files: FileRow[], o: ReadOptions): Promise<
   let estimate = 0;
   for (const row of ranked) {
     if (estimate >= PASSAGE_TOKENS) break;
+    if (!fileIndex.has(row.file_id)) continue;
     const cost = row.tokens * ESTIMATE;
     if (estimate + cost > PASSAGE_TOKENS) continue;
     if (runsOf([...taken, row], fileIndex).length > MAX_PASSAGES) continue;
@@ -232,18 +250,28 @@ async function choose(ranked: Row[], files: FileRow[], o: ReadOptions): Promise<
   return fit(PASSAGE_TOKENS, bytes, cutBytes);
 }
 
-/** The terms that help choose between the assistant's chunks (see tells), from the index's own counts. */
-async function telling(terms: Term[], tag: string, assistantId: string): Promise<Term[]> {
+// A chunk of a file the assistant lists: never one left by a failed upload, nor one an index row
+// points at that is gone or someone else's.
+const LISTED = "JOIN assistant_files af ON af.id = c.file_id AND af.assistant_id = c.assistant_id";
+// The index's matches, each joined to its chunk (CROSS JOIN keeps SQLite to this order, rather than
+// asking the index about every one of the assistant's chunks in turn).
+const MATCHED = `${INDEX} f CROSS JOIN assistant_chunks c ON c.id = f.rowid ${LISTED}`;
+
+/**
+ * The terms that help choose between the assistant's `total` chunks (see tells), each counted in
+ * the index through the chunks it finds, so a stray index row never makes a word look common.
+ */
+async function telling(terms: Term[], tag: string, assistantId: string, total: number): Promise<Term[]> {
   const counts = await (
     await db()
   ).batch(
-    [
-      { sql: "SELECT COUNT(*) AS n FROM assistant_chunks WHERE assistant_id = ?", args: [assistantId] },
-      ...terms.map((t) => ({ sql: `SELECT COUNT(*) AS n FROM ${INDEX} WHERE seg MATCH ?`, args: [phraseOf(tag, t)] })),
-    ],
+    terms.map((t) => ({
+      sql: `SELECT COUNT(*) AS n FROM ${MATCHED} WHERE f.seg MATCH ? AND c.assistant_id = ?`,
+      args: [phraseOf(tag, t), assistantId],
+    })),
     "read",
   );
-  const [total, ...found] = counts.map((r) => Number(r.rows[0]?.n ?? 0));
+  const found = counts.map((r) => Number(r.rows[0]?.n ?? 0));
   return terms.filter((_, i) => tells(found[i], total));
 }
 
@@ -252,19 +280,21 @@ export type ChunkRow = { id: number; file_id: string; seq: number; label: string
 /**
  * The assistant's chunks that match the terms, best first, at most 24: from the index, or with
  * rankChunks over all its chunks when the database has none (`mode` says which, else searchMode).
+ * `total` is how many chunks its files have (their chunks column), read from them when not given.
  */
-export async function searchChunks(assistantId: string, terms: Term[], mode?: SearchMode): Promise<ChunkRow[]> {
+export async function searchChunks(assistantId: string, terms: Term[], mode?: SearchMode, total?: number): Promise<ChunkRow[]> {
   if (!terms.length) return [];
   if ((mode ?? (await searchMode())) === "fallback") {
-    const rows = await all<Row>("SELECT id, file_id, seq, label, tokens, body FROM assistant_chunks WHERE assistant_id = ? ORDER BY id", [assistantId]);
+    const rows = await all<Row>(`SELECT c.id, c.file_id, c.seq, c.label, c.tokens, c.body FROM assistant_chunks c ${LISTED} WHERE c.assistant_id = ? ORDER BY c.id`, [assistantId]);
     return rankChunks(rows, terms).slice(0, CANDIDATES);
   }
   const tag = tagOf(assistantId);
-  const kept = await telling(terms, tag, assistantId);
+  const chunks = total ?? Number((await one<{ n: number }>("SELECT COALESCE(SUM(chunks), 0) AS n FROM assistant_files WHERE assistant_id = ?", [assistantId]))?.n);
+  const kept = await telling(terms, tag, assistantId, chunks);
   if (!kept.length) return [];
   return all<Row>(
     `SELECT c.id, c.file_id, c.seq, c.label, c.tokens, c.body
-     FROM ${INDEX} f JOIN assistant_chunks c ON c.id = f.rowid
+     FROM ${MATCHED}
      WHERE f.seg MATCH ? AND c.assistant_id = ?
      ORDER BY bm25(${INDEX}), c.id LIMIT ${CANDIDATES}`,
     [matchTerms(tag, kept), assistantId],
@@ -281,12 +311,19 @@ export async function searchChunks(assistantId: string, terms: Term[], mode?: Se
  * only choose which of its chunks are read.
  */
 export async function passagesFor(a: { id: string }, message: string, earlier = "", o: ReadOptions = {}): Promise<Reading> {
-  const files = await all<FileRow>("SELECT id, name, exact, tokens FROM assistant_files WHERE assistant_id = ? ORDER BY created_at, id", [a.id]);
+  const files = await all<FileRow>("SELECT id, name, exact, tokens, chunks FROM assistant_files WHERE assistant_id = ? ORDER BY created_at, id", [a.id]);
   if (!files.length) return { mode: "none", passages: [], nomatch: false };
   const cols = "id, file_id, seq, label, tokens, body";
+  // The chunks of these files (the first `perFile` of each), by the index on file and seq: the +
+  // keeps SQLite off the one on assistant.
+  const ofFiles = (fs: FileRow[], perFile?: number) =>
+    all<Row>(
+      `SELECT ${cols} FROM assistant_chunks WHERE +assistant_id = ? AND file_id IN (${fs.map(() => "?").join(", ")})${perFile ? " AND seq < ?" : ""} ORDER BY seq, id`,
+      [a.id, ...fs.map((f) => f.id), ...(perFile ? [perFile] : [])],
+    );
 
   if (files.every((f) => Number(f.exact) === 1) && files.reduce((sum, f) => sum + Number(f.tokens), 0) <= PASSAGE_TOKENS) {
-    const rows = await all<Row>(`SELECT ${cols} FROM assistant_chunks WHERE assistant_id = ? ORDER BY seq, id`, [a.id]);
+    const rows = await ofFiles(files);
     const passages = files
       .map((f, i) => ({
         fileId: f.id,
@@ -303,14 +340,17 @@ export async function passagesFor(a: { id: string }, message: string, earlier = 
 
   if (o.readStart) {
     // The first chunks of each file in turn: the first of every file, then the second, and so on.
-    const rows = await all<Row>(`SELECT ${cols} FROM assistant_chunks WHERE assistant_id = ? AND seq < ? ORDER BY seq, id`, [a.id, CANDIDATES]);
+    // Only what choose can take: the first 8 files (a ninth would be a ninth passage), and 24
+    // chunks between them.
+    const starts = files.slice(0, MAX_PASSAGES);
+    const rows = await ofFiles(starts, Math.ceil(CANDIDATES / starts.length));
     const order = new Map(files.map((f, i) => [f.id, i]));
     rows.sort((x, y) => x.seq - y.seq || (order.get(x.file_id) ?? 0) - (order.get(y.file_id) ?? 0));
     const passages = await choose(rows, files, o);
     return { mode: passages.length ? "start" : "none", passages, nomatch: false };
   }
 
-  const ranked = await searchChunks(a.id, queryTerms(message, earlier));
+  const ranked = await searchChunks(a.id, queryTerms(message, earlier), undefined, files.reduce((sum, f) => sum + Number(f.chunks), 0));
   if (!ranked.length) return { mode: "none", passages: [], nomatch: true };
   const passages = await choose(ranked, files, o);
   return { mode: passages.length ? "search" : "none", passages, nomatch: !passages.length };
@@ -318,13 +358,25 @@ export async function passagesFor(a: { id: string }, message: string, earlier = 
 
 // Below this much assistant text, the database's fixed pages would make any measure meaningless.
 const MEASURE_FROM = 1024 * 1024;
+// The last measure and when it was taken, kept in settings: measuring reads every page of every
+// assistant's text, and the factor moves slowly.
+const FACTOR = "assistant_store_factor";
+const MEASURE_EVERY = 24 * 3600_000;
 
 /**
  * How many times its UTF-8 size assistant text takes in the database (chunks, index and file
  * rows), measured from the database's own pages, or null before there is enough text or where the
- * database can't tell (no dbstat). Counted against storage as STORE_FACTOR.
+ * database can't tell (no dbstat). Counted against storage as STORE_FACTOR. Measured at most once
+ * a day, unless `fresh`.
  */
-export async function storageFactor(): Promise<number | null> {
+export async function storageFactor(fresh = false): Promise<number | null> {
+  try {
+    const kept = fresh ? null : await one<{ value: string }>("SELECT value FROM settings WHERE key = ?", [FACTOR]);
+    const last = kept ? (JSON.parse(kept.value) as { factor: number; at: number }) : null;
+    if (last && typeof last.factor === "number" && Date.now() - last.at < MEASURE_EVERY) return last.factor;
+  } catch {
+    // Measured again below.
+  }
   try {
     const text = await one<{ bytes: number }>("SELECT COALESCE(SUM(bytes), 0) AS bytes FROM assistant_files");
     if (Number(text?.bytes) < MEASURE_FROM) return null;
@@ -333,7 +385,9 @@ export async function storageFactor(): Promise<number | null> {
       `SELECT COALESCE(SUM(pgsize), 0) AS bytes FROM dbstat
        WHERE name IN (SELECT name FROM sqlite_master WHERE tbl_name LIKE 'assistant\\_chunks%' ESCAPE '\\' OR tbl_name = 'assistant_files')`,
     );
-    return Number(used?.bytes) / Number(text?.bytes);
+    const factor = Number(used?.bytes) / Number(text?.bytes);
+    await run("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", [FACTOR, JSON.stringify({ factor, at: Date.now() })]).catch(() => {});
+    return factor;
   } catch {
     return null;
   }
