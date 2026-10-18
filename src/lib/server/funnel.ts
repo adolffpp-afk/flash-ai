@@ -13,6 +13,7 @@ import { all, db, now, one, run } from "./db.ts";
 import { domainsForSite } from "./domains.ts";
 import { countOf, fitsWithin, takeAfter } from "./limits.ts";
 import {
+  countingPlan,
   dayOf,
   daysBetween,
   freePeople,
@@ -61,17 +62,23 @@ const trackLimits = (slug: string, network: string): [string, number][] => {
   ];
 };
 
+// Whether this server has logged a track limit it couldn't read (see trackRoom).
+let roomUnread = false;
+
 /**
  * How many of `wanted` app steps fit under the track route's rate limit, read before anything is
  * written; the list of the person's steps takes them only while they still fit (see count). Never
- * throws: a limit not read counts none.
+ * throws: a limit not read counts none, and the server log says so the first time.
  */
 async function trackRoom(limits: [string, number][], wanted: number): Promise<number> {
   try {
     const counts = await Promise.all(limits.map(([key]) => countOf(key)));
     return Math.max(0, Math.min(wanted, ...limits.map(([, max], i) => max - counts[i])));
   } catch (err) {
-    console.error("[flash] track limit not read", err);
+    if (!roomUnread) {
+      roomUnread = true;
+      console.error("[flash] track limit not read, so app steps on the free plan aren't counted while it can't be. Said once per server process.", err);
+    }
     return 0;
   }
 }
@@ -191,6 +198,7 @@ async function count(slug: string, match: Match, list: Step[], at: number, retry
   let paid = false;
   let limits: [string, number][] = [];
   let marking = false;
+  let read: Awaited<ReturnType<typeof countingPlan>> = null;
   if (app.length) {
     // The gates, read before anything is written, so a name that isn't counted writes nothing: the
     // names in the app's code (see stepsInHtml), the names it reported that day (at most 10), and how
@@ -209,8 +217,10 @@ async function count(slug: string, match: Match, list: Step[], at: number, retry
     const names = steps(gate.names);
     const used = Number(gate.used ?? 0);
     // Always by the owner's plan (read at most every 15 minutes per server): the free plan's app steps,
-    // a tenth of its people, leave too little room to count by the free number until near it.
-    const plan = app.length ? await peopleCap(gate.owner, at) : { steps: freeSteps(), paid: false };
+    // a tenth of its people, leave too little room to count by the free number until near it. One that
+    // can't be read counts by the free plan's numbers, without the note (see countingPlan).
+    read = app.length ? await countingPlan(gate.owner, at) : null;
+    const plan = read ?? { steps: freeSteps(), paid: false };
     budget = plan.steps;
     paid = plan.paid;
     let room = Math.max(0, budget - used);
@@ -238,8 +248,8 @@ async function count(slug: string, match: Match, list: Step[], at: number, retry
       counting.splice(room);
     }
     // The note that the day's app steps stopped counting, only when these reach the day's number (not
-    // when the limits above cut them short of it).
-    if (full && used + counting.length >= budget) {
+    // when the limits above cut them short of it, nor by the free plan's for a plan that wasn't read).
+    if (full && read && used + counting.length >= budget) {
       const mark = markOnce(slug, "capped-app", budget, today);
       if (mark) writes.push(mark);
       marking = Boolean(mark);

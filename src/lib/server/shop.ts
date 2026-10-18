@@ -494,6 +494,15 @@ export type ConnectOutcome = "ignored" | "not-ours" | "duplicate" | "unpaid" | "
 /** The events the webhook is pointed at; Stripe is answered 200 for any other, so it stops sending it. */
 const CONNECT_EVENTS = ["checkout.session.completed", "checkout.session.async_payment_succeeded", "charge.refunded", "charge.dispute.created"];
 const isId = (v: unknown, prefix: string): v is string => typeof v === "string" && v.length <= 255 && new RegExp(`^${prefix}_\\w+$`).test(v);
+/**
+ * Whether a payment was made through Flash's own Connect platform, by its `application`: Flash's
+ * client ID (ca_...) when STRIPE_CONNECT_CLIENT_ID is set, so no other platform's payment passes;
+ * any Connect platform's when it isn't.
+ */
+function flashMade(application: unknown): boolean {
+  const own = process.env.STRIPE_CONNECT_CLIENT_ID?.trim();
+  return own ? application === own : isId(application, "ca");
+}
 
 /**
  * Handles an event from a seller's connected Stripe account, sent to Stripe's Connect webhook (see
@@ -514,10 +523,12 @@ export async function connectEvent(event: ConnectEvent, appOrigin: string): Prom
   // A seller's account can sell elsewhere too: Stripe isn't asked about the accounts Flash didn't connect.
   if (!(await one("SELECT 1 FROM seller_accounts WHERE stripe_account = ? AND ready = 1", [account]))) return "not-ours";
   if (await one("SELECT 1 FROM stripe_events WHERE id = ?", [event.id])) return "duplicate";
-  const at = typeof event.created === "number" && event.created > 0 ? event.created * 1000 : now();
+  // When Stripe made the event: null when it doesn't say, or says a time still to come (past the few
+  // minutes a clock can be off).
+  const created = typeof event.created === "number" && event.created > 0 && event.created * 1000 <= now() + 5 * 60_000 ? event.created * 1000 : null;
   const outcome =
     type === "charge.refunded" || type === "charge.dispute.created"
-      ? await chargeEvent(type, account, object as Record<string, unknown>, at)
+      ? await chargeEvent(type, account, object as Record<string, unknown>, created)
       : await sessionEvent(account, object as Session, appOrigin);
   // Kept only once handled, so an event that failed halfway is handled again when Stripe resends it.
   // A seller's sales elsewhere change nothing, sent again or not, and write nothing.
@@ -548,7 +559,9 @@ async function sessionEvent(account: string, sent: Session, appOrigin: string): 
   return (await orderPaid(mine.slug, session, mine.shop, appOrigin)) ? "recorded" : "unchanged";
 }
 
-async function chargeEvent(type: "charge.refunded" | "charge.dispute.created", account: string, object: Record<string, unknown>, at: number): Promise<ConnectOutcome> {
+async function chargeEvent(type: "charge.refunded" | "charge.dispute.created", account: string, object: Record<string, unknown>, created: number | null): Promise<ConnectOutcome> {
+  // The time kept with the order: when Stripe made the event, or now when it doesn't say.
+  const at = created ?? now();
   let payment = object.payment_intent;
   // A dispute names its charge, and its payment only on newer API versions.
   if (!isId(payment, "pi") && type === "charge.dispute.created" && isId(object.charge, "ch")) {
@@ -569,14 +582,14 @@ async function chargeEvent(type: "charge.refunded" | "charge.dispute.created", a
     // again later, and the refund or dispute isn't lost. Any other payment is not Flash's, and is
     // answered 200 so Stripe doesn't keep sending it.
     // The seller can edit a payment's metadata (they have the full Dashboard and their own keys),
-    // so the name alone isn't enough: the payment must also have been made through a Connect
-    // platform, as Flash's checkouts are (a seller's own key or Dashboard leaves `application`
-    // empty), and the event must be under a day old. A lagging list catches up in seconds, so a
-    // payment still not listed after a day never will be, and Stripe stops sending it then
-    // rather than for 3 days.
-    if (now() - at >= DAY) return "not-ours";
+    // so the name alone isn't enough: the payment must also have been made through Flash's Connect
+    // platform (see flashMade), as Flash's checkouts are (a seller's own key or Dashboard leaves
+    // `application` empty), and the event must be under a day old (one that doesn't say when it was made counts
+    // as older). A lagging list catches up in seconds, so a payment still not listed after a day
+    // never will be, and Stripe stops sending it then rather than for 3 days.
+    if (created === null || now() - created >= DAY) return "not-ours";
     const intent = await stripe<{ application?: unknown; metadata?: Record<string, string> | null }>("GET", `/payment_intents/${encodeURIComponent(payment)}`, undefined, account);
-    const app = isId(intent.application, "ca") ? await appOf(account, intent.metadata?.flash_site) : null;
+    const app = flashMade(intent.application) ? await appOf(account, intent.metadata?.flash_site) : null;
     if (app) throw new Error(`Stripe listed no checkout yet for ${payment}, a payment of the app ${app.slug}`);
     return "not-ours";
   }

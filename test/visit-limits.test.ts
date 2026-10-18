@@ -11,7 +11,9 @@ import type { InValue } from "@libsql/client";
 register("./support/route-hooks.mjs", import.meta.url);
 process.env.DATABASE_URL = ":memory:";
 delete process.env.FLASH_APP_URL;
-console.error = () => {};
+/** What the server log was told, for the once-only lines. */
+const errors: string[] = [];
+console.error = (...args: unknown[]) => void errors.push(args.map(String).join(" "));
 console.info = () => {};
 const { run, one, all, db } = await import("../src/lib/server/db.ts");
 const visits = await import("../src/lib/server/visits.ts");
@@ -250,7 +252,7 @@ test("the track route's rate limit on the free plan: past it a request still ans
   const keys = (await all<{ key: string }>("SELECT key FROM rate_limits WHERE key >= 'track-' AND key < 'track.'")).map((r) => r.key);
   assert.ok(keys.length > 0 && keys.every((k) => /^track-(net:quiz:[0-9a-f]{24}|app:quiz)$/.test(k)), keys.join());
 
-  // A limit that can't be read counts nothing, quietly.
+  // A limit that can't be read counts nothing (and the server log says so once, see the last test).
   const client = await db();
   const execute = client.execute.bind(client);
   client.execute = ((s: { sql: string } | string, ...rest: unknown[]) => {
@@ -738,4 +740,90 @@ test("the upgrade offer goes away as soon as the owner buys a plan, though this 
   await recordVisit("w9", page("w9", person()), null, NOW + 3_000);
   assert.equal(await peopleOf("free9"), 1_001, "the next new person counts at once");
   assert.equal(await visitorsOf("w9"), visitors + 1);
+});
+
+/** Makes the database refuse the statements fails picks while fn runs, as if it were down for them. */
+async function failing(fails: (sql: string, args: unknown) => boolean, fn: () => Promise<unknown>): Promise<void> {
+  const client = await db();
+  const execute = client.execute.bind(client);
+  client.execute = ((s: { sql: string; args?: unknown } | string, ...rest: unknown[]) => {
+    const sql = typeof s === "string" ? s : s.sql;
+    if (fails(sql, typeof s === "string" ? [] : s.args)) return Promise.reject(new Error("database unavailable"));
+    return (execute as (...a: unknown[]) => unknown)(s, ...rest);
+  }) as typeof client.execute;
+  try {
+    await fn();
+  } finally {
+    client.execute = execute;
+  }
+}
+
+test("an owner's plan that can't be read counts new people and app steps by the free plan's numbers rather than none, without the note that counting paused", async () => {
+  forgetServerMemory();
+  await owner("unread-free");
+  await site("unread-loaf", "unread-free", ["go"]);
+  await owner("unread-lite", "lite");
+  await site("unread-big", "unread-lite");
+  await visitor("unread-big");
+  // The paid owner has counted 1,500 people today, past the free plan's 1,000.
+  await run("UPDATE owner_people SET people = 1500 WHERE user_id = 'unread-lite' AND day = ?", [TODAY]);
+  forgetServerMemory();
+  const views = await viewsOf("unread-big");
+  await failing(
+    (sql) => sql.includes("FROM subscriptions"),
+    async () => {
+      // The free owner's new person and their app step count.
+      const who = await visitor("unread-loaf");
+      assert.deepEqual([await visitorsOf("unread-loaf"), await peopleOf("unread-free"), await viewsOf("unread-loaf")], [1, 1, 1]);
+      await track("unread-loaf", who, "go");
+      assert.equal(await appStepsOf("unread-loaf"), 1);
+      // The paid owner's is a view, as past any day's number, and no note says counting paused at 1,000.
+      await visitor("unread-big");
+      assert.deepEqual([await visitorsOf("unread-big"), await viewsOf("unread-big")], [1, views + 1]);
+      assert.equal(await markOf("unread-big", "capped"), null);
+    },
+  );
+  // Nothing was kept of the reads that failed: the next new person counts by Lite's number.
+  await visitor("unread-big");
+  assert.deepEqual([await visitorsOf("unread-big"), await peopleOf("unread-lite")], [2, 1_501]);
+  assert.equal(await markOf("unread-big", "capped"), null);
+});
+
+test("past the owners it keeps, a server's plan memory forgets the owner whose plan was used longest ago, not the one read first", async () => {
+  forgetServerMemory();
+  visits.visitTests.maxPlans = 3;
+  try {
+    for (const id of ["cache-mem1", "cache-mem2", "cache-mem3", "cache-mem4"]) await owner(id);
+    for (const id of ["cache-mem1", "cache-mem2", "cache-mem3"]) await peopleCap(id, NOW);
+    const reads = async (id: string, at: number) => (await statementsDuring(() => peopleCap(id, at))).filter((sql) => /FROM subscriptions/.test(sql)).length;
+    // The first owner's plan is used again (a new person on one of their apps), then a fourth owner's is read.
+    assert.equal(await reads("cache-mem1", NOW + 1_000), 0);
+    assert.equal(await reads("cache-mem4", NOW + 2_000), 1);
+    assert.equal(await reads("cache-mem1", NOW + 3_000), 0, "used a moment ago: still known");
+    assert.equal(await reads("cache-mem3", NOW + 3_000), 0);
+    assert.equal(await reads("cache-mem2", NOW + 3_000), 1, "used longest ago: forgotten");
+  } finally {
+    visits.visitTests.maxPlans = 0;
+  }
+});
+
+test("a track limit that can't be read counts no app steps on the free plan, and the server log says so once", async () => {
+  forgetServerMemory();
+  await owner("room-free");
+  await site("room-roll", "room-free", ["go", "buy"]);
+  const [a, b] = [await visitor("room-roll"), await visitor("room-roll")];
+  await failing(
+    (sql, args) => /FROM rate_limits WHERE key = \? AND reset_at >= \?/.test(sql) && String((args as unknown[])?.[0]).startsWith("track-"),
+    async () => {
+      for (const [who, name] of [[a, "go"], [b, "buy"], [a, "buy"]] as const) await track("room-roll", who, name);
+    },
+  );
+  assert.equal(await appStepsOf("room-roll"), 0, "none counted while the limit can't be read");
+  // Once for this server, with this test's limits and the earlier one's (when it ran) alike.
+  const said = errors.filter((line) => line.includes("track limit not read"));
+  assert.equal(said.length, 1, said.join("\n"));
+  assert.match(said[0], /Said once per server process/);
+  // Once it can be read, the same step counts.
+  await track("room-roll", a, "go");
+  assert.equal(await appStepsOf("room-roll"), 1);
 });

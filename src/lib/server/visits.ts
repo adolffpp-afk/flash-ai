@@ -51,16 +51,19 @@ export const NETWORK_SOURCES = 3;
 const GUARDED_TOUCHES = 20;
 // How long a server goes by what it read of an owner's plan.
 const PLAN_MEMORY = 15 * MINUTE;
+// Past this many owners' plans in memory, the one read or used longest ago is forgotten.
+const MAX_PLANS = 10_000;
 // Past this many connections in memory, the older half is forgotten.
 const MAX_NETWORKS = 50_000;
 
 /** What tests change (see test/visits.test.ts): smaller limits, and a prune that fails. Flash itself never does. */
-export const visitTests = { freePeople: 0, freeSteps: 0, networkPeople: 0, failPrune: false };
+export const visitTests = { freePeople: 0, freeSteps: 0, networkPeople: 0, maxPlans: 0, failPrune: false };
 /** The free plan's number of people a day. */
 export const freePeople = () => visitTests.freePeople || FREE_PEOPLE_PER_DAY;
 /** The free plan's number of app steps a day (see funnel.ts): a tenth of its people. */
 export const freeSteps = () => visitTests.freeSteps || FREE_STEPS_PER_DAY;
 const networkPeople = () => visitTests.networkPeople || NETWORK_PEOPLE;
+const maxPlans = () => visitTests.maxPlans || MAX_PLANS;
 // Crawlers, link previews, uptime checkers, browsers run by scripts, and AI assistants fetching a
 // page for someone aren't people looking at it.
 const ROBOT =
@@ -245,7 +248,12 @@ export async function recordOwnerVisit(slug: string, request: Request, at = Date
  */
 export async function peopleCap(ownerId: string, at = Date.now(), fresh = false): Promise<Plan> {
   const known = plans.get(ownerId);
-  if (known && known.until > at && !fresh) return { cap: known.cap, steps: known.steps, paid: known.paid };
+  if (known && known.until > at && !fresh) {
+    // Moved to the newest end, so past MAX_PLANS the owner whose plan was used longest ago goes first.
+    plans.delete(ownerId);
+    plans.set(ownerId, known);
+    return { cap: known.cap, steps: known.steps, paid: known.paid };
+  }
   const reading = planReads.get(ownerId);
   if (reading && !fresh) return reading;
   const read = readPlan(ownerId);
@@ -254,12 +262,28 @@ export async function peopleCap(ownerId: string, at = Date.now(), fresh = false)
     const plan = await read;
     // Kept unless a newer read started meanwhile (a fresh one), which keeps its own.
     if (planReads.get(ownerId) === read) {
+      plans.delete(ownerId);
       plans.set(ownerId, { until: at + PLAN_MEMORY, ...plan });
-      while (plans.size > 10_000) plans.delete(plans.keys().next().value!);
+      while (plans.size > maxPlans()) plans.delete(plans.keys().next().value!);
     }
     return plan;
   } finally {
     if (planReads.get(ownerId) === read) planReads.delete(ownerId);
+  }
+}
+
+/**
+ * The owner's plan as peopleCap reads it, for counting a new person or an app step, or null when it
+ * can't be read (the database failed): then they count by the free plan's numbers rather than not at
+ * all, without the note that counting paused, which would put the free plan's number on a paid
+ * owner's day. Nothing is kept of a failed read, so the next one asks again.
+ */
+export async function countingPlan(ownerId: string, at: number): Promise<Plan | null> {
+  try {
+    return await peopleCap(ownerId, at);
+  } catch (err) {
+    console.error("[flash] owner's plan not read, counted by the free plan's numbers", err);
+    return null;
   }
 }
 
@@ -435,15 +459,18 @@ async function countVisit(slug: string, request: Request, viewerId: string | rea
     } else if (!row.kind) {
       // Always by the owner's plan (read at most every 15 minutes per server, and at once after the
       // owner's own view read it), as app steps are: the free number, read without it, would stop a
-      // paid plan's loads counted at the same moment there.
-      const cap = (await peopleCap(row.owner, at)).cap;
+      // paid plan's loads counted at the same moment there. One that can't be read counts by the
+      // free plan's numbers (see countingPlan).
+      const plan = await countingPlan(row.owner, at);
+      const cap = plan?.cap ?? freePeople();
       const pause = Number(row.people ?? 0) >= cap;
       network = networkOf(key, row.owner, request);
       const overNetwork = !pause && (networks.get(network) ?? 0) >= networkPeople();
       if (pause || overNetwork) {
-        // Not counted: a view only (see below), and a mark on the app's day saying why.
+        // Not counted: a view only (see below), and a mark on the app's day saying why (none for a
+        // plan that couldn't be read, see countingPlan).
         const step = pause ? "capped" : "capped-net";
-        const mark = markOnce(slug, step, pause ? cap : networkPeople(), day);
+        const mark = pause && !plan ? null : markOnce(slug, step, pause ? cap : networkPeople(), day);
         if (mark) {
           writes.push(mark);
           marking = step;
