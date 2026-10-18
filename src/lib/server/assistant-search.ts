@@ -87,13 +87,15 @@ const OWNED = "EXISTS (SELECT 1 FROM assistants WHERE id = ? AND user_id = ?)";
 
 /**
  * The statements that delete one file of an assistant: its chunks (the trigger takes their index
- * rows), then the file. Each does nothing unless the assistant is the user's. For a batch with
- * whatever else the delete changes.
+ * rows), then the file, then a new version for the assistant, as its answers and price change.
+ * Each does nothing unless the assistant is the user's. For a batch with whatever else the delete
+ * changes.
  */
 export function removeFileRows(userId: string, assistantId: string, fileId: string): InStatement[] {
   return [
     { sql: `DELETE FROM assistant_chunks WHERE assistant_id = ? AND file_id = ? AND ${OWNED}`, args: [assistantId, fileId, assistantId, userId] },
     { sql: `DELETE FROM assistant_files WHERE assistant_id = ? AND id = ? AND ${OWNED}`, args: [assistantId, fileId, assistantId, userId] },
+    { sql: "UPDATE assistants SET version = version + 1 WHERE id = ? AND user_id = ?", args: [assistantId, userId] },
   ];
 }
 

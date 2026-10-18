@@ -247,11 +247,15 @@ test("explicit deletes leave no chunk or index row behind, with foreign keys off
   assert.ok((await matching(gone, "platypus")).length === 1);
 
   const client = await db();
+  const version = async () => Number((await one<{ version: number }>("SELECT version FROM assistants WHERE id = ?", [gone]))?.version);
   await client.batch(removeFileRows("someone-else", gone, drop), "write");
   assert.equal((await chunksOf(drop)).length, dropped.length, "only the owner can");
+  assert.ok(await one("SELECT 1 FROM assistant_files WHERE id = ?", [drop]));
   assert.equal(await indexRows(), before);
+  assert.equal(await version(), 0);
 
   await client.batch(removeFileRows("owner", gone, drop), "write");
+  assert.equal(await version(), 1, "a new version, as its answers change");
   assert.deepEqual(await chunksOf(drop), []);
   assert.equal(await one("SELECT 1 FROM assistant_files WHERE id = ?", [drop]), null);
   assert.equal(await indexRows(), before - dropped.length, "the trigger took each chunk's index row");
