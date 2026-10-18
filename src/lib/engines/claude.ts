@@ -286,6 +286,21 @@ export async function countInputTokens(model: string, history: ChatTurn[], syste
   return res.input_tokens + (withTools ? 0 : 3000);
 }
 
+// How long one count may take, and how often it's tried again, so a slow count can't hold up the
+// request that waits for it: whoever counts has a safe answer for when it fails.
+const COUNT_TIMEOUT_MS = 20_000;
+
+/**
+ * The tokens a text comes to on a model when sent as a message: Anthropic's own count, which costs
+ * nothing, and a few tokens more than the text alone for the message around it. Throws when
+ * counting fails; the caller then counts the text's UTF-8 bytes instead, as a token is never
+ * shorter than a byte (see tokensMaxCents in credits.ts).
+ */
+export async function countTextTokens(model: string, text: string): Promise<number> {
+  const res = await getClient().beta.messages.countTokens({ model, messages: [{ role: "user", content: text }] }, { timeout: COUNT_TIMEOUT_MS, maxRetries: 1 });
+  return res.input_tokens;
+}
+
 /**
  * Meters a Claude call at what it really cost, every attempt included (a refusal fallback bills the
  * declined attempt too), and returns that cost in cents. requested is the model asked for. Searches
