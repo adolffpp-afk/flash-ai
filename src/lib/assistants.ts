@@ -25,6 +25,11 @@ export const MAX_FILE_CHARS = 1_000_000;
 export const MAX_ASSISTANT_CHARS = 2_000_000;
 // One file's text as uploaded, in UTF-8 bytes: room for 1,000,000 characters of most languages.
 export const MAX_UPLOAD_BYTES = 3_000_000;
+// What a file was read from (PDF, Word, Excel, PowerPoint, or text as it is), and how long its
+// name can be.
+export const ASSISTANT_FILE_KINDS = ["pdf", "docx", "xlsx", "pptx", "text"] as const;
+export type AssistantFileKind = (typeof ASSISTANT_FILE_KINDS)[number];
+export const MAX_FILE_NAME = 120;
 // What the file readers (pdfText, officeText) keep of a file for an assistant: MAX_FILE_CHARS with
 // room for the note they add after a cut.
 export const READ_LIMIT = MAX_FILE_CHARS - CUT_NOTE.length;
@@ -165,6 +170,24 @@ export const isKeptName = (name: string) => KEPT.test(nameKey(name));
 // Something that shows: not only invisible characters (zero-width ones, joiners, soft hyphens,
 // tags), marks or blanks.
 const SHOWS = /[^\p{Default_Ignorable_Code_Point}\p{M}\s\u2800]/u;
+
+/** Whether a kind is one an assistant's file can be. */
+export const isFileKind = (kind: unknown): kind is AssistantFileKind => (ASSISTANT_FILE_KINDS as readonly unknown[]).includes(kind);
+
+/**
+ * A file's name as an assistant keeps it: without the folders before it, on one line, without
+ * hidden characters, and up to MAX_FILE_NAME characters, a longer one cut before its extension so
+ * the extension stays. "file" when nothing that shows is left. A name is only a label, so a long
+ * one is cut, not refused.
+ */
+export function cleanFileName(name: unknown): string {
+  const base = line(typeof name === "string" ? name.split(/[\\/]/).pop() : "");
+  if (!SHOWS.test(base)) return "file";
+  const chars = [...base];
+  if (chars.length <= MAX_FILE_NAME) return base;
+  const ext = /\.[\p{L}\p{N}]{1,8}$/u.exec(base)?.[0] ?? "";
+  return chars.slice(0, MAX_FILE_NAME - [...ext].length).join("").trimEnd() + ext;
+}
 
 /** The first reason these fields can't be saved, or null when they can. */
 export function validateAssistant(a: AssistantFields): AssistantProblem | null {
