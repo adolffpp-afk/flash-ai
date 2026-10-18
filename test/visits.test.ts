@@ -15,11 +15,19 @@ const { serveSite } = await import("../src/lib/server/serve-site.ts");
 const visits = await import("../src/lib/server/visits.ts");
 const { recordVisit, recordOwnerVisit, visitStats, visitSource, isPersonVisit, dayOf, visitorCode, peoplePerDay, pruneDaily, forgetServerMemory, visitTests } = visits;
 const { sitesWithMessages } = await import("../src/lib/server/inbox.ts");
+const { FETCHERS_URL } = await import("../src/lib/server/lighthouse.ts");
+const { runLock } = await import("../src/lib/server/pagespeed.ts");
+const { clearLimit, overLimit } = await import("../src/lib/server/limits.ts");
 const pageRoute = await import("../src/app/p/[slug]/route.ts");
 const domainRoute = await import("../src/app/d/[host]/route.ts");
 const { afterwards } = await import("./support/next-server.mjs");
 
 const DAY = 86_400_000;
+// A stand-in for Google's list of its user-triggered fetchers' addresses (see lighthouse.ts).
+const realFetch = globalThis.fetch;
+globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
+  String(input) === FETCHERS_URL ? Response.json({ prefixes: [{ ipv4Prefix: "66.102.9.32/27" }, { ipv4Prefix: "66.249.81.64/27" }] }) : realFetch(input, init)) as typeof fetch;
+
 const BROWSER = "Mozilla/5.0 (Windows NT 10.0; rv:140.0) Gecko/20100101 Firefox/140.0";
 const visit = (headers: Record<string, string> = {}, path = "/p/crumb-1") =>
   new Request(`https://www.flash-app.dev${path}`, {
@@ -378,7 +386,7 @@ test("the 30-day chart starts on the day the app was made", async () => {
   assert.deepEqual(stats.days[4], { day: dayOf(at), views: 1, visitors: 1 });
 });
 
-const { FREE_PEOPLE_PER_DAY, PLAN_PEOPLE, MAX_TOUCHES, peopleCap, networkMemory } = visits;
+const { FREE_PEOPLE_PER_DAY, FREE_STEPS_PER_DAY, PLAN_PEOPLE, MAX_TOUCHES, peopleCap, networkMemory } = visits;
 /** A new browser each time: another person on the same network. */
 let browsers = 0;
 const someone = (slug: string, headers: Record<string, string> = {}, query = "") =>
@@ -452,7 +460,8 @@ test("people are counted per owner per day across all their apps, up to their pl
       await recordVisit("cap-a", someone("cap-a", {}, "?utm_source=newsletter"), null, at);
       await recordVisit("cap-b", someone("cap-b"), null, at);
     });
-    assert.deepEqual(sent.filter((sql) => /subscriptions|FROM users/.test(sql)), [], "below the free number, no plan is read");
+    // Their plan is read once, and kept, also below the free number (see countVisit).
+    assert.equal(sent.filter((sql) => /subscriptions/.test(sql)).length, 1, "the plan read once");
     assert.equal(await ownerCount("capper", day), 3, "two apps, one count");
     assert.equal(await mark("cap-a", "capped"), null);
 
@@ -506,8 +515,8 @@ test("a paid plan counts more people a day, a team member counts against their o
     assert.equal(await ownerCount("team-owner", day), 5, "the team's owner: Business");
     assert.equal(await ownerCount("member", day), 2, "a team member: their own free number, not the team's");
     assert.equal(await ownerCount("boss", day), 6, "an admin: Agency's number");
-    assert.deepEqual(await peopleCap("member", at), { cap: 2, paid: false });
-    assert.deepEqual(await peopleCap("pro-owner", at), { cap: 4, paid: true });
+    assert.deepEqual(await peopleCap("member", at), { cap: 2, steps: FREE_STEPS_PER_DAY, paid: false });
+    assert.deepEqual(await peopleCap("pro-owner", at), { cap: 4, steps: 4, paid: true });
   } finally {
     visitTests.freePeople = 0;
     Object.assign(PLAN_PEOPLE, real);
@@ -585,7 +594,7 @@ test("one internet connection adds at most its number of new people a day per ow
     for (let n = 1; n <= 4; n++) await recordVisit("net-1", visit({ "x-forwarded-for": `2001:db8:1:2::${n}`, "user-agent": `${BROWSER} phone/${n}` }, "/p/net-1"), null, at);
     assert.equal(await peopleRows("net-1"), 7);
     assert.ok(networkMemory().every((k) => /^[0-9a-f]{24}(\|net-1)?$/.test(k) && !k.includes("13.0.0")), networkMemory().join());
-    assert.equal(FREE_PEOPLE_PER_DAY, 10_000);
+    assert.equal(FREE_PEOPLE_PER_DAY, 1_000);
     // The next day the first connection counts again.
     await school(5, at + DAY);
     assert.equal(await count("SELECT COUNT(*) AS n FROM site_people WHERE site_slug = 'net-1' AND day = ?", [dayOf(at + DAY)]), 1);
@@ -721,4 +730,94 @@ test('views past the day\'s sources stay "(other)" in the stats, which the Visit
   const view = readFileSync(new URL("../src/components/MyApps.tsx", import.meta.url), "utf8");
   assert.match(view, /s\.source === OTHER\.source \? t\("Other sources"\)/);
   assert.match(view, /<bdi dir="auto"[^>]*>\s*\{s\.source === OTHER\.source/, "each source written in its own direction");
+});
+
+test("Google's page speed test isn't counted as visitors, whoever started it, and visitors are, even while it runs", async () => {
+  await run("INSERT INTO users (id, email, password_hash, created_at) VALUES ('u2', 'p@x.co', 'h', 0)");
+  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES ('crumb-2', 'u2', 'Crumb', '<p>', 0, 0)");
+  // Google's test as its servers were seen sending it (other sites' logs), and Lighthouse's own agents
+  // (core/config/constants.js): 9.6's phone, and 13's phone and computer, which is any Mac's Chrome.
+  const psiPhone = "Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Mobile Safari/537.36 Chrome-Lighthouse";
+  const psiComputer = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36 Chrome-Lighthouse";
+  const phone9 = "Mozilla/5.0 (Linux; Android 7.0; Moto G (4)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4695.0 Mobile Safari/537.36 Chrome-Lighthouse";
+  const phone13 = "Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Mobile Safari/537.36";
+  const mac = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36";
+  const counts = async () => [await peopleRows("crumb-2"), await viewsOf("crumb-2")];
+  const load = async (agent: string, ip: string) => {
+    const [people, views] = await counts();
+    await recordVisit("crumb-2", visit({ "user-agent": agent, "x-forwarded-for": ip }));
+    const [peopleAfter, viewsAfter] = await counts();
+    return [peopleAfter - people, viewsAfter - views];
+  };
+  for (const agent of [psiPhone, psiComputer, phone9, phone13]) assert.equal(isPersonVisit(visit({ "user-agent": agent })), false, agent);
+  assert.equal(isPersonVisit(visit({ "user-agent": mac })), true, "a Mac's Chrome can be a person");
+  for (const [i, running] of [false, true].entries()) {
+    if (running) await overLimit(runLock("crumb-2"), 1, 180_000);
+    const when = running ? "while Flash's check runs" : "any time";
+    assert.deepEqual(await load(psiPhone, "66.249.81.68"), [0, 0], `${when}: Google's phone`);
+    assert.deepEqual(await load(psiComputer, "66.102.9.33"), [0, 0], `${when}: Google's computer`);
+    assert.deepEqual(await load(phone13, "198.51.100.1"), [0, 0], `${when}: Lighthouse's phone`);
+    assert.deepEqual(await load(mac, "66.102.9.40"), [0, 0], `${when}: Lighthouse's computer from Google's fetchers' addresses`);
+    // People meanwhile: Chrome on a Mac, and another browser.
+    assert.deepEqual(await load(mac, `203.0.113.${i}`), [1, 1], `${when}: a visitor on a Mac`);
+    assert.deepEqual(await load(BROWSER, `10.0.0.${i}`), [1, 1], `${when}: a visitor on another browser`);
+    if (running) await clearLimit(runLock("crumb-2"));
+  }
+  // The owner signed in to Flash on a Mac is the owner, even from an address on Google's list: Google
+  // never sends Flash's sign-in. Seen earlier that day on the app's domain, they become the owner too.
+  const kindOf = async (request: Request) =>
+    (await one<{ kind: string }>("SELECT kind FROM site_people WHERE site_slug = 'crumb-2' AND visitor = ?", [await visitorCode("crumb-2", request, dayOf(Date.now()))]))?.kind;
+  const fromGoogle = visit({ "user-agent": mac, "x-forwarded-for": "66.102.9.41" }, "/p/crumb-2");
+  await recordVisit("crumb-2", fromGoogle);
+  assert.equal(await kindOf(fromGoogle), undefined, "not signed in, it's taken for Google's test");
+  await recordVisit("crumb-2", fromGoogle, "u2");
+  assert.equal(await kindOf(fromGoogle), "owner", "signed in, from Google's fetchers' addresses");
+  const ownerMac = visit({ "user-agent": mac, "x-forwarded-for": "7.7.7.7" }, "/p/crumb-2");
+  await recordVisit("crumb-2", ownerMac);
+  assert.equal(await kindOf(ownerMac), "visit");
+  await overLimit(runLock("crumb-2"), 1, 120_000);
+  await recordVisit("crumb-2", ownerMac, "u2");
+  assert.equal(await kindOf(ownerMac), "owner", "signed in during Flash's check with Google");
+  await clearLimit(runLock("crumb-2"));
+  // And the owner's load costs no lookup of Google's addresses.
+  const sent = await statementsDuring(() => recordVisit("crumb-2", ownerMac, "u2"));
+  assert.equal(sent.length, 2, `the person's read and the owner's row: ${sent.join(" | ")}`);
+});
+
+test("Google's page speed test through /p/, whose browser holds no Flash account, isn't a person and uses none of the owner's daily people", async () => {
+  await run("INSERT INTO users (id, email, password_hash, created_at) VALUES ('u3', 'q@x.co', 'h', 0)");
+  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES ('crumb-3', 'u3', 'Crumb', '<p>Hi</p>', 0, 0)");
+  const mac = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36";
+  const ctx = (params: object) => ({ params: Promise.resolve(params) }) as never;
+  const session = async (id: string) => (await createSession(id, true)).split(";")[0];
+  // The /p/ route names every account signed in to the browser (none for Google's test: an empty list).
+  const load = async (ip: string, cookie?: string) => {
+    await pageRoute.GET(visit({ "user-agent": mac, "x-forwarded-for": ip, ...(cookie && { cookie }) }, "/p/crumb-3"), ctx({ slug: "crumb-3" }));
+    await afterwards();
+  };
+  const kindOf = async (ip: string) =>
+    (await one<{ kind: string }>("SELECT kind FROM site_people WHERE site_slug = 'crumb-3' AND visitor = ?", [
+      await visitorCode("crumb-3", visit({ "user-agent": mac, "x-forwarded-for": ip }, "/p/crumb-3"), dayOf(Date.now())),
+    ]))?.kind;
+  const ownersPeople = async () => count("SELECT COALESCE(SUM(people), 0) AS n FROM owner_people WHERE user_id = 'u3' AND day = ?", [dayOf(Date.now())]);
+
+  await load("66.102.9.42");
+  assert.equal(await peopleRows("crumb-3"), 0, "Lighthouse's computer from Google's fetchers' addresses, signed in to nothing");
+  assert.equal(await viewsOf("crumb-3"), 0);
+  assert.equal(await ownersPeople(), 0, "and it isn't one of the owner's people for the day (the free plan's cap)");
+  // Not from Google's addresses, the same Mac is a visitor, and one of the owner's people.
+  await load("203.0.113.40");
+  assert.equal(await kindOf("203.0.113.40"), "visit");
+  assert.equal(await ownersPeople(), 1);
+  // Signed in to Flash in that browser (Google's test never is): the owner is the owner, and someone
+  // else is a person, from Google's addresses too.
+  await load("66.102.9.43", await session("u3"));
+  assert.equal(await kindOf("66.102.9.43"), "owner");
+  await load("66.102.9.44", await session("u1"));
+  assert.equal(await kindOf("66.102.9.44"), "visit");
+  assert.equal(await ownersPeople(), 2);
+  // The same list straight to recordVisit: empty is nobody signed in.
+  await recordVisit("crumb-3", visit({ "user-agent": mac, "x-forwarded-for": "66.102.9.45" }, "/p/crumb-3"), []);
+  assert.equal(await kindOf("66.102.9.45"), undefined);
+  assert.equal(await ownersPeople(), 2);
 });

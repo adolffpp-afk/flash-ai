@@ -502,9 +502,12 @@ export async function callTool(name: string, args: Args, ctx: ToolContext): Prom
       }
       // Who may change the app's data, as the person sees it in Flash after publishing.
       const rules = result.data ? dataLine(result.data) : "";
+      // Its search check (SEO), read from the page for free (see seo.ts).
+      const seo = result.seo?.score != null ? ` Search check: ${result.seo.score}/100, ${result.seo.issues} things to fix in Flash › My websites & apps › SEO.` : "";
       return text(
         `Published "${str(args.title) || "My app"}" at ${ctx.origin}${result.url} (slug: ${result.slug}). Anyone with the link can open it. Free, no credits used.` +
-          (rules ? ` ${rules}` : ""),
+          (rules ? ` ${rules}` : "") +
+          seo,
       );
     }
     case "flash_list_apps": {

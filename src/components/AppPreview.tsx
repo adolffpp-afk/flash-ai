@@ -2,12 +2,13 @@
 
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { BuiltApp } from "@/lib/types";
-import { api } from "@/lib/store";
+import { api, onRestored, onSeoScore, onUnpublished } from "@/lib/store";
 import { flashDbShim, injectHead } from "@/lib/flashdb-shim";
 import { dataLine, type DataSummary } from "@/lib/data-rules";
 import { appSlug, projectZip } from "@/lib/app-project";
 import { PREVIEW_BRIDGE, fixRequest, friendlyError, isPreviewMessage, linesIn, type PickedElement, type PreviewError } from "@/lib/preview-bridge";
 import { useT } from "@/lib/use-t";
+import { BAND_PILL, band } from "@/lib/seo-band";
 import { markCodeDraft } from "@/lib/code-drafts";
 
 // No allow-same-origin: generated code can't read Flash's storage or cookies.
@@ -94,6 +95,7 @@ export function AppPreview({
   onEditCode,
   onFix,
   onPick,
+  onSeo,
   onPlans,
 }: {
   app: BuiltApp & { slug?: string };
@@ -108,6 +110,8 @@ export function AppPreview({
   onFix?: (request: string) => void;
   // Hands a part of the app the user clicked to the message box, to say what to change.
   onPick?: (picked: PickedElement) => void;
+  // Opens the published app's search check (SEO) in My websites & apps.
+  onSeo?: (slug: string) => void;
   // Opens the plans, offered when publishing is refused at the free plan's number of apps.
   onPlans?: () => void;
 }) {
@@ -121,6 +125,10 @@ export function AppPreview({
   const [publishError, setPublishError] = useState<{ message: string; code?: string } | null>(null);
   // Who may change the published app's data, said once it's published.
   const [dataNote, setDataNote] = useState<DataSummary | null>(null);
+  // The search check of the page this publish put live, with the score of the one it replaced.
+  const [publishSeo, setPublishSeo] = useState<{ score: number | null; issues: number; before?: number | null } | null>(null);
+  // The site unpublished in My websites & apps since: it has no search check to open.
+  const [unpublished, setUnpublished] = useState("");
   const [copied, setCopied] = useState(false);
   const [menu, setMenu] = useState(false);
   const [picking, setPicking] = useState(false);
@@ -139,6 +147,33 @@ export function AppPreview({
 
   // A new version of an already published app updates the same site, so its link, domain and prices stay.
   const target = app.slug ?? publishedEarlier;
+
+  useEffect(
+    () =>
+      onUnpublished((slug) => {
+        if (slug !== app.slug) return;
+        setUnpublished(slug);
+        setPublishSeo(null);
+      }),
+    [app.slug],
+  );
+  // After History > Bring back in My websites & apps, this version isn't the live one any more: its button reads Update again.
+  useEffect(
+    () =>
+      onRestored((slug) => {
+        if (slug === app.slug) setPublishedHtml("");
+      }),
+    [app.slug],
+  );
+  // The score shown follows the live page's as My websites & apps reads it (after History > Bring back,
+  // or a look at the check): the one before stays only while the score is still this publish's.
+  useEffect(
+    () =>
+      onSeoScore((slug, seo) => {
+        if (slug === app.slug) setPublishSeo((shown) => shown && (shown.score === seo.score ? { ...shown, issues: seo.issues } : seo));
+      }),
+    [app.slug],
+  );
 
   // What the preview reports: the errors it hits, and the part picked while choosing.
   const pick = useRef(onPick);
@@ -192,13 +227,15 @@ export function AppPreview({
     setPublishing(true);
     setPublishError(null);
     try {
-      const res = await api<{ slug: string; data?: DataSummary }>("/api/sites", {
+      const res = await api<{ slug: string; data?: DataSummary; seo?: { score: number | null; issues: number; before?: number | null } }>("/api/sites", {
         method: "POST",
         json: { html: app.html, title: app.title, slug: asNew ? undefined : target },
       });
       onPublished?.(res.slug);
+      setUnpublished("");
       setPublishedHtml(app.html);
       setDataNote(res.data ?? null);
+      setPublishSeo(res.seo ?? null);
     } catch (err) {
       setPublishError(err instanceof Error ? { message: err.message, code: (err as Error & { code?: string }).code } : { message: t("Couldn't publish.") });
     } finally {
@@ -361,7 +398,14 @@ export function AppPreview({
             <>
               <span className="text-red-300">{publishError.message}</span>
               {publishError.code === "site_cap" && onPlans && (
-                <button className={`${btn} text-primary-soft`} onClick={onPlans}>
+                <button
+                  className={`${btn} text-primary-soft`}
+                  onClick={() => {
+                    // The plans open under a full-screen preview, so the preview leaves full screen first.
+                    setFull(false);
+                    onPlans();
+                  }}
+                >
                   {t("Upgrade plan")}
                 </button>
               )}
@@ -380,6 +424,30 @@ export function AppPreview({
               <button className={btn} onClick={copyLink}>
                 {copied ? t("Copied") : t("Copy link")}
               </button>
+              {onSeo && app.slug && unpublished !== app.slug && (
+                <button
+                  className={`${btn} inline-flex items-center gap-1`}
+                  onClick={() => {
+                    // My websites & apps opens under a full-screen preview, so the preview leaves full screen first.
+                    setFull(false);
+                    onSeo(app.slug!);
+                  }}
+                  title={publishSeo?.score != null ? t("To fix: {count}", { count: publishSeo.issues.toLocaleString(t.locale) }) : t("How easy your app is to find on Google, and what to fix")}
+                >
+                  <span aria-hidden>🔎</span> {t("SEO")}
+                  {publishSeo?.score != null && (
+                    <>
+                      <span aria-hidden className={`rounded-full px-1.5 py-0.5 text-[10px] tabular-nums ${BAND_PILL[band(publishSeo.score)]}`}>
+                        {publishSeo.score.toLocaleString(t.locale)}
+                      </span>
+                      <span className="sr-only">{t("Search check: {score} out of 100", { score: publishSeo.score.toLocaleString(t.locale) })}</span>
+                      {publishSeo.before != null && publishSeo.before !== publishSeo.score && (
+                        <span className="text-zinc-500">· {t("Was {score}", { score: publishSeo.before.toLocaleString(t.locale) })}</span>
+                      )}
+                    </>
+                  )}
+                </button>
+              )}
               {dataText && <span className="basis-full text-zinc-400">{dataText}</span>}
             </>
           )}

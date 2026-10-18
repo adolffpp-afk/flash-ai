@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { Me, Pricing } from "@/lib/store";
 import type { Translate } from "@/lib/i18n";
 import { useT } from "@/lib/use-t";
+import { FREE_PEOPLE_PER_DAY, FREE_SITES, PLAN_PEOPLE, PLAN_SITES } from "@/lib/plan-limits";
 
 export type Interval = "month" | "year";
 
@@ -133,6 +134,15 @@ export function PlanCards({
       </div>
     );
   };
+  // How many apps a plan publishes and how many of their visitors a day it counts (null: free).
+  const limitRows = (planId: string | null) => {
+    const sites = planId === null ? FREE_SITES : PLAN_SITES[planId];
+    const people = planId === null ? FREE_PEOPLE_PER_DAY : PLAN_PEOPLE[planId];
+    return [
+      sites && t("Up to {count} published apps", { count: sites.toLocaleString(t.locale) }),
+      people && t("Visit sources and funnels for {count} people a day", { count: people.toLocaleString(t.locale) }),
+    ].filter((row): row is string => Boolean(row));
+  };
   return (
     <>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
@@ -142,7 +152,9 @@ export function PlanCards({
           <div className="text-sm text-zinc-400">{t("{count} credits a month", { count: pricing.freeMonthly })}</div>
           <ul className="mb-4 mt-3 space-y-1 text-xs text-zinc-400">
             <li>✓ {t("Try every live tool")}</li>
-            <li>✓ {t("Publish apps")}</li>
+            {limitRows(null).map((row) => (
+              <li key={row}>✓ {row}</li>
+            ))}
             <li>✓ {t("Tops up on the 1st")}</li>
             {pricing.freeLane.chats > 0 && <li>✓ {freeLaneLine(t, pricing.freeLane)}</li>}
           </ul>
@@ -175,6 +187,9 @@ export function PlanCards({
                 {p.features.map((f) => (
                   <li key={f}>✓ {t(f)}</li>
                 ))}
+                {limitRows(p.id).map((row) => (
+                  <li key={row}>✓ {row}</li>
+                ))}
               </ul>
               {button(p)}
             </div>
@@ -196,6 +211,9 @@ export function PlanCards({
             <ul className="mt-2 grid gap-1 text-xs text-zinc-300 sm:grid-cols-2">
               {p.features.map((f) => (
                 <li key={f}>✓ {t(f)}</li>
+              ))}
+              {limitRows(p.id).map((row) => (
+                <li key={row}>✓ {row}</li>
               ))}
             </ul>
             {seatPicker(p)}

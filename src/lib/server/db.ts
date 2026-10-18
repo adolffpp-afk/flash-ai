@@ -338,6 +338,10 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS site_orders_site ON site_orders(site_slug, created_at)`,
   // The same for orders whose address has a character outside ASCII.
   `CREATE INDEX IF NOT EXISTS site_orders_unicode ON site_orders(site_slug) WHERE email GLOB '*[^ -~]*'`,
+  // The events from sellers' Stripe accounts the Connect webhook handled (see connectEvent in
+  // shop.ts), so the same event sent again changes nothing. Only Stripe's ids, nothing about an
+  // app or a buyer, kept 30 days (see pruneDaily).
+  `CREATE TABLE IF NOT EXISTS stripe_events (id TEXT PRIMARY KEY, created_at INTEGER NOT NULL) WITHOUT ROWID`,
   `CREATE TABLE IF NOT EXISTS usage (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL,
@@ -954,6 +958,12 @@ const MIGRATIONS = [
   // Whether the app's link preview says "Made with Flash ∞ AI" (see made-with.ts). On until its owner,
   // on a paid plan, turns it off.
   "ALTER TABLE sites ADD COLUMN made_with INTEGER NOT NULL DEFAULT 1",
+  // What Flash's search check (SEO) read from the app's page (see seo-scan.ts), saved with the page. Empty until worked out.
+  "ALTER TABLE sites ADD COLUMN seo TEXT NOT NULL DEFAULT ''",
+  // The app's last Google PageSpeed Insights result (see pagespeed.ts). Empty until its owner runs one.
+  "ALTER TABLE sites ADD COLUMN pagespeed TEXT NOT NULL DEFAULT ''",
+  // When Flash last saw a custom domain point at it (see domainStatus); 0 when it last saw it didn't, or hasn't looked yet.
+  "ALTER TABLE site_domains ADD COLUMN connected_at INTEGER NOT NULL DEFAULT 0",
   // The stages of the app's contact list, as JSON [{id, name}]; '' is New, Contacted, Won, Lost.
   "ALTER TABLE sites ADD COLUMN contact_stages TEXT NOT NULL DEFAULT ''",
   // The app's own key for its unsubscribe links and its contacts' hashed addresses, made on first use.
@@ -973,6 +983,12 @@ const MIGRATIONS = [
   "ALTER TABLE projects ADD COLUMN assistant_id TEXT NOT NULL DEFAULT ''",
   // When a sign-in started, for housekeeping only (the order of a browser's accounts is its cookie's).
   "ALTER TABLE sessions ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0",
+  // What Stripe's Connect webhook said of an order since (see connectEvent in shop.ts): when it was
+  // last refunded and how much in all (in the order's currency's smallest unit), and when the buyer
+  // disputed it, or 0.
+  "ALTER TABLE site_orders ADD COLUMN refunded_at INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE site_orders ADD COLUMN refunded_amount INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE site_orders ADD COLUMN disputed_at INTEGER NOT NULL DEFAULT 0",
 ];
 
 /*

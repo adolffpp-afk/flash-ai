@@ -29,6 +29,13 @@ variables are set (steps in `docs/research-sources-setup.md`):
 | SEC EDGAR | A listed company's filings and reported figures            | none (`FLASH_CONTACT_EMAIL` goes in its User-Agent)    |
 | FRED      | Economic indicators: unemployment, inflation, GDP, rates     | `FRED_API_KEY`                                         |
 
+Published apps can also be checked with Google's free PageSpeed Insights from My websites & apps ›
+SEO (it isn't something answers look up; steps in the same file):
+
+| Source             | Used for                                                    | Key                            |
+| ------------------ | ----------------------------------------------------------- | ------------------------------ |
+| PageSpeed Insights | Speed, accessibility and SEO scores for a published app     | `PAGESPEED_API_KEY` (optional) |
+
 Three keys switch on all twelve engines. An optional fourth key, `FAL_KEY` from
 [fal.ai](https://fal.ai), adds more models, and Flash picks the best one for each request:
 
@@ -166,6 +173,13 @@ at `/api/billing/webhook` for the `checkout.session.completed`, `invoice.paid`,
 portal (card, invoices, cancel at period end) is set up automatically on first use, with
 plan changes switched off; switching plans goes through a new checkout and starts a new
 month, so a switch can never refund credits already used.
+
+Apps that sell through their owners' own Stripe accounts (Stripe Connect) need a second
+webhook that listens to **events on connected accounts**, at `/api/stripe/connect`, for
+`checkout.session.completed`, `checkout.session.async_payment_succeeded`, `charge.refunded`
+and `charge.dispute.created`, with its signing secret in `STRIPE_CONNECT_WEBHOOK_SECRET`. It
+saves an order when it is paid even if the buyer closes the tab, and keeps refunds and disputes
+with it. Test-mode events never become orders under a live key.
 
 Published apps run under a sandbox header that blocks them from reading Flash's cookies,
 but they are served from the same domain. For a public launch, serve `/p/*` from a

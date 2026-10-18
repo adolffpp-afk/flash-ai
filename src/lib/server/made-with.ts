@@ -15,8 +15,9 @@ import { english, type Translate } from "../i18n.ts";
  */
 
 type Owner = Pick<User, "id" | "email" | "verified_at">;
-// What a link preview reads from an app's row.
-type PreviewSite = { slug: string; title: string; html: string; user_id: string; made_with: number };
+// What a link preview reads from an app's row, and what the search check read in its page (seo, for
+// its main address, with the version it's about).
+type PreviewSite = { slug: string; title: string; html: string; user_id: string; made_with: number; seo: string | null; updated_at: number };
 
 /** Whether the user's plan lets them turn it off: a paid plan, as for custom domains and selling. */
 export async function canHideMadeWith(user: Owner): Promise<boolean> {
@@ -35,7 +36,7 @@ export const plainTitle = (site: Pick<PreviewSite, "slug" | "title">) => site.ti
 
 /** An app's row, with what its link preview needs. */
 export const previewSite = (slug: string) =>
-  one<PreviewSite>("SELECT slug, title, html, user_id, made_with FROM sites WHERE slug = ?", [slug]);
+  one<PreviewSite>("SELECT slug, title, html, user_id, made_with, seo, updated_at FROM sites WHERE slug = ?", [slug]);
 
 // madeWith: the foot of the picture says "Made with Flash ∞ AI". Otherwise it shows address, the
 // app's own domain, or nothing when it has none.
