@@ -1,8 +1,8 @@
 import { translatorFor } from "@/lib/server/i18n.ts";
-import { fromOwnPage, verifyPassword } from "@/lib/server/auth.ts";
+import { TooManyAccounts, canAdd, fromOwnPage, tooManyAccounts, verifyPassword } from "@/lib/server/auth.ts";
 import { one } from "@/lib/server/db.ts";
 import { clearLimit, clientIp, overLimit } from "@/lib/server/limits.ts";
-import { PROVIDERS, isProvider } from "@/lib/server/oauth.ts";
+import { PROVIDERS, isProvider, safeNext } from "@/lib/server/oauth.ts";
 import { linkedProviders } from "@/lib/server/signin.ts";
 import { signInCookie } from "@/lib/server/two-factor.ts";
 
@@ -13,7 +13,7 @@ export async function POST(request: Request) {
   const t = await translatorFor(request);
   // Only Flash's own sign-in page may sign someone in (see fromOwnPage).
   if (!fromOwnPage(request)) return Response.json({ error: t("Please sign in on Flash's own page.") }, { status: 403 });
-  const body = (await request.json().catch(() => ({}))) as { email?: string; password?: string };
+  const body = (await request.json().catch(() => ({}))) as { email?: string; password?: string; next?: string };
   const email = (body.email ?? "").trim().toLowerCase();
   // Slows password guessing on one account from one network, on one account from many networks,
   // and one network trying many accounts. The first is cleared by a right password, so a stranger
@@ -43,7 +43,17 @@ export async function POST(request: Request) {
     return Response.json({ error: t("That email and password don't match.") }, { status: 401 });
   }
   await clearLimit(`login:${email}:${ip}`);
-  // With two-step sign-in on, this only gets them to the code page (see two-factor.ts).
-  const { cookie, twoFactor } = await signInCookie(user.id, request);
-  return Response.json({ ok: true, twoFactor }, { headers: { "Set-Cookie": cookie } });
+  // A browser holds at most 5 accounts (see auth.ts): checked before anything is stored.
+  if (!(await canAdd(request, user.id))) return tooManyAccounts(t);
+  try {
+    // With two-step sign-in on, this only gets them to the code page (see two-factor.ts), which
+    // then goes on to next: the page the sign-in was for (a link's, say), only ever a path on Flash.
+    const { cookie, also, twoFactor, account } = await signInCookie(user.id, request, safeNext(body.next));
+    const headers = new Headers();
+    for (const c of [cookie, ...also]) headers.append("Set-Cookie", c);
+    return Response.json({ ok: true, twoFactor, ...(account && { account }) }, { headers });
+  } catch (err) {
+    if (err instanceof TooManyAccounts) return tooManyAccounts(t);
+    throw err;
+  }
 }

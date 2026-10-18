@@ -32,6 +32,33 @@ test("signing out everywhere also ends apps connected to Flash", async () => {
   assert.equal(await one("SELECT 1 FROM oauth_codes WHERE user_id = 'c1'"), null);
 });
 
+test("a Connect to Flash answer for an account no longer signed in here makes no code", async () => {
+  const { register } = await import("node:module");
+  register("./support/route-hooks.mjs", import.meta.url);
+  const { registerClient } = await import("../src/lib/server/connector.ts");
+  const { createSession } = await import("../src/lib/server/auth.ts");
+  const route = await import("../src/app/api/oauth/authorize/route.ts");
+  await run("INSERT INTO users (id, email, password_hash, created_at) VALUES ('m1', 'm1@b.io', 'x', 0), ('m2', 'm2@b.io', 'x', 0)");
+  const [one1, two] = [await createSession("m1", true), await createSession("m2", true)].map((c) => c.split(";")[0].split("=")[1]);
+  const reg = await registerClient({ client_name: "App", redirect_uris: ["https://app.example/cb"] });
+  assert.ok(!("error" in reg));
+  const answer = (account: string) =>
+    route.POST(
+      new Request("https://flash-app.dev/api/oauth/authorize", {
+        method: "POST",
+        headers: { cookie: `flash_session=${two}; __Host-flash_accounts=1.${one1}.${two}`, "sec-fetch-site": "same-origin", "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ client_id: reg.client.id, response_type: "code", code_challenge: "x".repeat(43), code_challenge_method: "S256", account, decision: "allow" }),
+      }),
+    );
+  // The page showed m3, who has since logged out here (or was never signed in).
+  const res = await answer("m3");
+  assert.equal(res.status, 303);
+  assert.match(res.headers.get("location")!, /^\/oauth\/authorize\?.*changed=1/);
+  assert.equal(await one("SELECT 1 FROM oauth_codes WHERE user_id IN ('m1', 'm2')"), null);
+  assert.match((await answer("m1")).headers.get("location")!, /^https:\/\/app\.example\/cb\?code=/);
+  assert.ok(await one("SELECT 1 FROM oauth_codes WHERE user_id = 'm1'"));
+});
+
 test("the Connect to Flash answer must come from Flash's own page", () => {
   const req = (headers: Record<string, string>) => new Request("https://flash-app.dev/api/oauth/authorize", { method: "POST", headers });
   const own = "https://flash-app.dev";

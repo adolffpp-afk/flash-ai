@@ -1,4 +1,4 @@
-import { SESSION_COOKIE, fromOwnPage, getUser, readCookie, unauthorized } from "@/lib/server/auth.ts";
+import { fromOwnPage, resolveSession, unauthorized } from "@/lib/server/auth.ts";
 import { translatorFor } from "@/lib/server/i18n.ts";
 import { ownsSite } from "@/lib/server/inbox.ts";
 import { domainsForSite, pointsAtFlash } from "@/lib/server/domains.ts";
@@ -18,8 +18,10 @@ const MINUTE = 60_000;
  * reach this (see site-host.ts).
  */
 export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug]/owner">) {
-  const user = await getUser(request);
-  if (!user) return unauthorized();
+  // The tab's account and its own session: owner mode ends when that account logs out here.
+  const session = await resolveSession(request);
+  if (!session) return unauthorized();
+  const user = session.user;
   const t = await translatorFor(request, user.language);
   if (!fromOwnPage(request)) return Response.json({ error: t("Open your app as its owner from Flash's own page.") }, { status: 403 });
   const { slug } = await ctx.params;
@@ -37,7 +39,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug
       { status: 409 },
     );
   }
-  const code = await newOwnerCode(slug, user.id, readCookie(request, SESSION_COOKIE) ?? "", domain);
+  const code = await newOwnerCode(slug, user.id, session.token, domain);
   if (!code) return Response.json({ error: t("Not found") }, { status: 404 });
   const query = `?${OWNER_CODE_PARAM}=${encodeURIComponent(code)}`;
   return Response.json({ url: domain ? `https://${domain}/${query}` : `/p/${slug}${query}` });

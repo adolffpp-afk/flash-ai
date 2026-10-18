@@ -7,6 +7,7 @@ import { randomId } from "./ids.ts";
 import { overLimit } from "./limits.ts";
 import { EMAILS, sendEmail } from "./email.ts";
 import { noteContact } from "./contacts.ts";
+import { saleBySource } from "./funnel.ts";
 import { cleanContact } from "../contacts.ts";
 import { MAX_QUANTITY, MIN_PRICE, SELLER_COUNTRIES, cleanItemName, formatMoney, safeReturn, saleFee, toMinor } from "../shop.ts";
 import { english, type Translate } from "../i18n.ts";
@@ -125,8 +126,9 @@ export async function sellerOnboardingLink(
         account: row.stripe_account,
         type: "account_onboarding",
         // Stripe's links expire after a few minutes; the refresh address makes a new one.
-        refresh_url: `${origin}/api/payments/link`,
-        return_url: `${origin}/?apps=1`,
+        // Both name the account, so they open as it in a browser signed in to several (see auth.ts).
+        refresh_url: `${origin}/api/payments/link?as=${encodeURIComponent(user.id)}`,
+        return_url: `${origin}/?apps=1&as=${encodeURIComponent(user.id)}`,
       }),
     );
     return { url: link.url };
@@ -193,8 +195,8 @@ export async function deleteProduct(slug: string, id: string): Promise<void> {
 
 /** The owner and Stripe account behind a site, when it can take payments. */
 async function shopOf(slug: string) {
-  return one<{ title: string; email: string; stripe_account: string; country: string }>(
-    `SELECT s.title, u.email, a.stripe_account, a.country FROM sites s
+  return one<{ title: string; email: string; user_id: string; stripe_account: string; country: string }>(
+    `SELECT s.title, u.email, s.user_id, a.stripe_account, a.country FROM sites s
        JOIN users u ON u.id = s.user_id
        JOIN seller_accounts a ON a.user_id = s.user_id AND a.ready = 1
      WHERE s.slug = ?`,
@@ -219,7 +221,7 @@ export async function startCheckout(
   input: { item?: unknown; quantity?: unknown; page?: unknown },
   ip: string,
   appOrigin: string,
-): Promise<{ url: string } | { error: string; status: number }> {
+): Promise<{ url: string; id: string } | { error: string; status: number }> {
   if (!sellingAvailable()) return { error: "This site can't take payments yet.", status: 503 };
   const name = cleanItemName(input.item);
   if (!name) return { error: "Which item? Pass its name to flashDB.buy.", status: 400 };
@@ -255,9 +257,10 @@ export async function startCheckout(
     form.set("phone_number_collection[enabled]", "true");
   }
   try {
-    const session = await stripe<{ url?: string }>("POST", "/checkout/sessions", form, shop.stripe_account);
+    const session = await stripe<{ id?: string; url?: string }>("POST", "/checkout/sessions", form, shop.stripe_account);
     if (!session.url) throw new Error("Stripe didn't return a checkout link");
-    return { url: session.url };
+    // The session's id keeps where the buyer came from until the order is saved (see funnel.ts); the page only gets the link.
+    return { url: session.url, id: session.id ?? "" };
   } catch (err) {
     console.error("[flash] site checkout failed", slug, err);
     return { error: "Payments aren't working right now. Please try again later.", status: 502 };
@@ -315,6 +318,9 @@ async function recordOrder(slug: string, s: Session): Promise<boolean> {
     ],
   );
   if (!res.rowsAffected) return false;
+  // The sale goes into its day's total under where its buyer came from, and nothing about the buyer
+  // with it (see funnel.ts). One that can't be counted never stops the order.
+  await saleBySource(slug, s.id, created, s.currency ?? "", s.amount_total ?? 0).catch((err) => console.error("[flash] sale not counted", err));
   // Paying isn't agreeing to news, so no consent is kept. A contact that can't be saved never stops the order.
   if (buyer) await noteContact(slug, buyer, { source: `order:${item.slice(0, 60)}`, at: created }).catch((err) => console.error("[flash] contact not saved", err));
   return true;
@@ -349,7 +355,7 @@ export async function finishCheckout(slug: string, sessionId: string, back: unkn
       .filter(Boolean)
       .join("\n");
     // Orders aren't held to the owner's cap for form messages (see EMAIL_BUDGET), only the day's budget.
-    await sendEmail(shop.email, EMAILS.siteOrder(shop.title, summary, `${appOrigin}/?apps=1`), "other").catch((err) =>
+    await sendEmail(shop.email, EMAILS.siteOrder(shop.title, summary, `${appOrigin}/?apps=1&as=${encodeURIComponent(shop.user_id)}`), "other").catch((err) =>
       console.error("[flash] order email failed", err),
     );
   }

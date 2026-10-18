@@ -25,6 +25,7 @@ import { readAloudVoice } from "@/lib/device-settings";
 import { speechLang } from "@/lib/languages";
 import { msg } from "@/lib/i18n";
 import { tNow, useT } from "@/lib/use-t";
+import { authedFetch } from "@/lib/store";
 
 /**
  * What Flash says after a request, whether it asked to go ahead with a costly one (and which: the
@@ -478,7 +479,7 @@ class Conversation {
     // A stuck upload or transcription mustn't leave Flash deaf on "Thinking…".
     const stuck = setTimeout(() => abort.abort(), 30_000);
     try {
-      const res = await fetch("/api/voice/hear", { method: "POST", headers: { "Content-Type": type }, body: new Blob(chunks, { type }), signal: abort.signal });
+      const res = await authedFetch("/api/voice/hear", { method: "POST", headers: { "Content-Type": type }, body: new Blob(chunks, { type }), signal: abort.signal });
       const data = (await res.json().catch(() => ({}))) as { text?: string; error?: string };
       if (!this.alive) return null;
       if (!res.ok) {

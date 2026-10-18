@@ -1,9 +1,9 @@
 import { translatorFor } from "@/lib/server/i18n.ts";
-import { fromOwnPage } from "@/lib/server/auth.ts";
+import { TooManyAccounts, canAdd, fromOwnPage, tooManyAccounts } from "@/lib/server/auth.ts";
 import { clientIp, overLimit } from "@/lib/server/limits.ts";
 import { CLEAR_REF_COOKIE } from "@/lib/server/referrals.ts";
 import { mayUse } from "@/lib/server/link-browser.ts";
-import { redeemSignInLink, signInLinkEmail, signInWithEmail } from "@/lib/server/signin.ts";
+import { accountIdForEmail, redeemSignInLink, signInLinkEmail, signInWithEmail } from "@/lib/server/signin.ts";
 import { signInCookie } from "@/lib/server/two-factor.ts";
 
 /**
@@ -24,16 +24,23 @@ export async function POST(request: Request) {
   const use = sentTo ? mayUse(sentTo, request, body.email) : "ok";
   if (use === "ask") return Response.json({ error: t("To keep your account safe, type the email address this link was sent to."), code: "confirm_email" }, { status: 400 });
   if (use === "wrong") return Response.json({ error: t("That isn't the email address this link was sent to."), code: "confirm_email" }, { status: 400 });
+  // A browser holds at most 5 accounts (see auth.ts): checked before the link is used up or an account made.
+  if (sentTo && !(await canAdd(request, await accountIdForEmail(sentTo)))) return tooManyAccounts(t);
   const link = await redeemSignInLink(body.token ?? "");
   if (!link) {
     return Response.json({ error: t("This link has expired or was already used. Ask for a new one.") }, { status: 400 });
   }
   const userId = await signInWithEmail(link.email, request);
-  // With two-step sign-in on, this only gets them to the code page (see two-factor.ts).
-  const { cookie, twoFactor } = await signInCookie(userId, request, link.next);
-  const headers = new Headers();
-  headers.append("Set-Cookie", cookie);
-  // Signed in, so a referral code (used if this made the account) is no longer needed.
-  headers.append("Set-Cookie", CLEAR_REF_COOKIE);
-  return Response.json({ ok: true, next: link.next, twoFactor }, { headers });
+  try {
+    // With two-step sign-in on, this only gets them to the code page (see two-factor.ts).
+    const { cookie, also, twoFactor, account } = await signInCookie(userId, request, link.next);
+    const headers = new Headers();
+    for (const c of [cookie, ...also]) headers.append("Set-Cookie", c);
+    // Signed in, so a referral code (used if this made the account) is no longer needed.
+    headers.append("Set-Cookie", CLEAR_REF_COOKIE);
+    return Response.json({ ok: true, next: link.next, twoFactor, ...(account && { account }) }, { headers });
+  } catch (err) {
+    if (err instanceof TooManyAccounts) return tooManyAccounts(t);
+    throw err;
+  }
 }

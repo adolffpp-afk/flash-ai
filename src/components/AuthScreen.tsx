@@ -1,12 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "@/lib/store";
+import { signInBody } from "@/lib/accounts";
 import { LogoMark, Wordmark } from "@/app/brand";
 import { msg } from "@/lib/i18n";
 import { TAGLINE } from "@/lib/product";
 import { useT } from "@/lib/use-t";
+import { EmailLabel } from "./EmailLabel";
 
 const FEATURES = [
   msg("🛠️ Build and publish apps"),
@@ -62,6 +64,7 @@ const AUTH_ERRORS: Record<string, string> = {
   unavailable: msg("That sign-in option isn't available right now."),
   failed: msg("Sign-in didn't work. Please try again."),
   verify_signin: msg("To confirm your email, sign in to that account, then open the link in the email again."),
+  too_many_accounts: msg("You're signed in to 5 accounts on this browser. Log out of one first."),
 };
 
 export function AuthScreen({
@@ -70,27 +73,37 @@ export function AuthScreen({
   initialError,
   onBack,
   next,
+  adding,
 }: {
-  // Sign-up says when the confirmation email couldn't be sent.
-  onDone: (result?: { emailFailed?: boolean }) => void;
+  // Sign-up says when the confirmation email couldn't be sent; account is the one signed in to. The
+  // form stays busy until it settles (saving what changed on the page under it, say).
+  onDone: (result?: { emailFailed?: boolean; account?: string }) => void | Promise<void>;
   initialMode?: "signup" | "login";
   // An auth_error code from a "Continue with …" sign-in that didn't finish.
   initialError?: string;
   onBack?: () => void;
   // Where to return after a "Continue with …" or email-link sign-in (a path on this site).
   next?: string;
+  // Adding another account while signed in to this one (email), which Back returns to; with no
+  // email, Back returns to the account chooser. again: signing in again to the account this tab
+  // showed, whose email is filled in. leave: before this page goes elsewhere to finish signing in
+  // (the two-step code page, a "Continue with …" sign-in), Flash saves what changed under it, or
+  // asks, as before a switch, and goes on (go) only once that's settled.
+  adding?: { email?: string; again?: string; onBack: () => void; leave?: (go: () => void) => void | Promise<void> };
 }) {
   const t = useT();
   const router = useRouter();
   const [mode, setMode] = useState<"signup" | "login" | "forgot" | "link">(initialMode);
   const [sent, setSent] = useState<{ devLink?: string } | null>(null);
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(adding?.again ?? "");
   const [password, setPassword] = useState("");
   const [error, setError] = useState(initialError ? (AUTH_ERRORS[initialError] ?? AUTH_ERRORS.failed) : "");
   const [busy, setBusy] = useState(false);
   // Which sign-in options the server has set up; their buttons appear once this loads.
   const [options, setOptions] = useState<{ providers: ProviderId[]; emailLink: boolean }>({ providers: [], emailLink: false });
+  const form = useRef<HTMLFormElement>(null);
+  const switched = useRef(false);
 
   useEffect(() => {
     fetch("/api/auth/providers")
@@ -100,9 +113,34 @@ export function AuthScreen({
   }, []);
 
   function switchMode(next: typeof mode) {
+    switched.current = true;
     setMode(next);
     setError("");
     setSent(null);
+  }
+
+  // The button chosen ("Email me a sign-in link", "Forgot password?") is gone with the form it was
+  // in: the focus moves to the new form's first field, not to the page under it.
+  useEffect(() => {
+    if (!switched.current) return;
+    switched.current = false;
+    if (!document.activeElement || document.activeElement === document.body) form.current?.querySelector<HTMLElement>("input")?.focus();
+  }, [mode]);
+
+  /** Off this page to finish signing in: while adding another account, once Flash has saved what changed under it, or asked. */
+  async function leave(go: () => void) {
+    if (adding?.leave) await adding.leave(go);
+    else go();
+  }
+
+  /** A link that leaves this page (a "Continue with …" sign-in), while adding another account: through leave. */
+  function leaveBy(e: React.MouseEvent<HTMLAnchorElement>) {
+    if (!adding?.leave || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    if (busy) return;
+    const href = e.currentTarget.href;
+    setBusy(true);
+    void leave(() => window.location.assign(href)).finally(() => setBusy(false));
   }
 
   async function submit(e: React.FormEvent) {
@@ -119,16 +157,17 @@ export function AuthScreen({
         );
         return;
       }
-      const result = await api<{ emailFailed?: boolean; twoFactor?: boolean }>(`/api/auth/${mode}`, {
+      const result = await api<{ emailFailed?: boolean; twoFactor?: boolean; account?: string }>(`/api/auth/${mode}`, {
         method: "POST",
-        json: { name, email, password },
+        // next: where the code page goes once signed in, when two-step sign-in is on.
+        json: signInBody(mode, { name, email, password, next }),
       });
-      // Two-step sign-in is on: the code page finishes signing in.
+      // Two-step sign-in is on: the code page finishes signing in, then opens next.
       if (result.twoFactor) {
-        router.push("/signin/code");
+        await leave(() => router.push("/signin/code"));
         return;
       }
-      onDone(result);
+      await onDone(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Something went wrong."));
     } finally {
@@ -141,14 +180,25 @@ export function AuthScreen({
   return (
     <div className="flex min-h-full items-center justify-center bg-[radial-gradient(ellipse_at_top,rgba(16,185,129,0.12),transparent_60%)] px-4 py-12">
       <div className="grid w-full max-w-4xl items-center gap-12 md:grid-cols-2 md:gap-16">
-        <div>
-          {onBack && (
+        {/* min-w-0: a long email in Back shortens rather than widening the page past a phone's screen. */}
+        <div className="min-w-0">
+          {adding ? (
             <button
-              onClick={onBack}
-              className="mb-6 text-sm text-zinc-400 hover:text-zinc-100"
+              onClick={adding.onBack}
+              className="mb-4 -ms-2 inline-flex min-h-11 max-w-full items-center gap-1 rounded-lg px-2 text-sm text-zinc-400 hover:text-zinc-100"
             >
-              ← {t("Back to home")}
+              <span aria-hidden className="rtl:-scale-x-100">←</span>
+              {adding.email ? <EmailLabel text={msg("Back to {email}")} email={adding.email} /> : t("Back")}
             </button>
+          ) : (
+            onBack && (
+              <button
+                onClick={onBack}
+                className="mb-6 text-sm text-zinc-400 hover:text-zinc-100"
+              >
+                ← {t("Back to home")}
+              </button>
+            )
           )}
           <LogoMark size={56} className="mb-6" />
           <h1 className="text-3xl font-semibold tracking-[-0.03em] text-white">
@@ -167,11 +217,14 @@ export function AuthScreen({
           </div>
         </div>
         <form
+          ref={form}
           onSubmit={submit}
           className="rounded-2xl border border-white/8 bg-zinc-950/70 p-6 backdrop-blur sm:p-8"
         >
           <h2 className="text-lg font-medium tracking-tight">
-            {mode === "signup"
+            {adding && !adding.again && (mode === "signup" || mode === "login")
+              ? t("Add another account")
+              : mode === "signup"
               ? t("Create your account")
               : mode === "login"
                 ? t("Welcome back")
@@ -194,6 +247,7 @@ export function AuthScreen({
                 <a
                   key={id}
                   href={`/api/auth/oauth/${id}${next ? `?next=${encodeURIComponent(next)}` : ""}`}
+                  onClick={leaveBy}
                   aria-label={t("Continue with {provider}", { provider: PROVIDER_NAMES[id] })}
                   className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] text-sm text-zinc-200 transition hover:border-white/15 hover:bg-white/[0.06]"
                 >
@@ -275,6 +329,7 @@ export function AuthScreen({
               {sent.devLink && (
                 <a
                   href={sent.devLink}
+                  onClick={leaveBy}
                   className="mt-1 block break-all text-xs text-emerald-300 underline"
                 >
                   {mode === "link" ? t("Demo mode: open the sign-in link") : t("Demo mode: open the reset link")}

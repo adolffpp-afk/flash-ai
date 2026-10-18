@@ -139,8 +139,11 @@ async function endSession(slug: string, cookieToken: string | null, pageToken: s
 }
 
 export type AuthAction = "signup" | "signin" | "signout";
-/** What the app shows the visitor afterwards: ok, or a short reason the sign-in didn't work. */
-export type AuthOutcome = { result: string; cookie?: string };
+/**
+ * What the app shows the visitor afterwards: ok, or a short reason the sign-in didn't work. joined
+ * is set when a new member was added (not when an account that exists signed in instead).
+ */
+export type AuthOutcome = { result: string; cookie?: string; joined?: true };
 
 const outcome = (result: string): AuthOutcome => ({ result });
 
@@ -206,7 +209,7 @@ export async function siteAuth(
     await noteContact(slug, { email: cleanEmail(typed), name: cleanName(name), phone: "" }, { source: "signup", at: now() }).catch((err) =>
       console.error("[flash] contact not saved", err),
     );
-    return signedIn(id, slug, path, secure);
+    return { ...(await signedIn(id, slug, path, secure)), joined: true };
   }
   if (!existing || !(await verifyPassword(password, existing.password_hash))) return outcome("wrong");
   return signedIn(existing.id, slug, path, secure);

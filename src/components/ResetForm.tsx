@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { api } from "@/lib/store";
+import { announce, setPin } from "@/lib/account-pin";
 import { LogoMark } from "@/app/brand";
 import { useBrowserLanguage, useT } from "@/lib/use-t";
 
@@ -23,10 +24,15 @@ export function ResetForm({ token }: { token: string }) {
     setBusy(true);
     setError("");
     try {
-      const { twoFactor } = await api<{ twoFactor?: boolean }>("/api/auth/reset", { method: "POST", json: { token, password, ...(askEmail && { email }) } });
+      const { twoFactor, account } = await api<{ twoFactor?: boolean; account?: string }>("/api/auth/reset", { method: "POST", json: { token, password, ...(askEmail && { email }) } });
+      if (account) setPin(account);
       // Two-step sign-in is on: a reset link alone doesn't sign in; the code page does.
       if (twoFactor) router.push("/signin/code");
-      else router.push("/?reset=1");
+      else {
+        // Signed in: Flash's other tabs signed out here open the account too (the code page tells them itself).
+        announce({ type: "changed" });
+        router.push("/?reset=1");
+      }
     } catch (err) {
       if ((err as { code?: string }).code === "confirm_email") setAskEmail(true);
       setError(err instanceof Error ? err.message : t("Something went wrong."));

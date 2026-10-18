@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { BuiltApp } from "@/lib/types";
 import { api } from "@/lib/store";
 import { flashDbShim, injectHead } from "@/lib/flashdb-shim";
@@ -8,6 +8,7 @@ import { dataLine, type DataSummary } from "@/lib/data-rules";
 import { appSlug, projectZip } from "@/lib/app-project";
 import { PREVIEW_BRIDGE, fixRequest, friendlyError, isPreviewMessage, linesIn, type PickedElement, type PreviewError } from "@/lib/preview-bridge";
 import { useT } from "@/lib/use-t";
+import { markCodeDraft } from "@/lib/code-drafts";
 
 // No allow-same-origin: generated code can't read Flash's storage or cookies.
 const SANDBOX = "allow-scripts allow-forms allow-modals allow-popups allow-pointer-lock allow-downloads";
@@ -29,6 +30,13 @@ function CodeEditor({ html, full, onSave }: { html: string; full: boolean; onSav
   const t = useT();
   const [draft, setDraft] = useState(html);
   const changed = draft !== html;
+  // Unsaved code, which Flash asks about before switching account away from it.
+  const editor = useId();
+  const unsaved = changed && Boolean(onSave);
+  useEffect(() => {
+    markCodeDraft(editor, unsaved);
+    return () => markCodeDraft(editor, false);
+  }, [editor, unsaved]);
   const btn = "rounded-md px-2 py-1 hover:bg-zinc-800 hover:text-zinc-100 disabled:opacity-40 disabled:hover:bg-transparent";
   return (
     <div className={`flex flex-col ${full ? "min-h-0 flex-1" : "h-[560px]"}`}>
@@ -86,6 +94,7 @@ export function AppPreview({
   onEditCode,
   onFix,
   onPick,
+  onPlans,
 }: {
   app: BuiltApp & { slug?: string };
   // Fills the live preview beside the chat (see BuildPanel), which draws its own frame around it.
@@ -99,6 +108,8 @@ export function AppPreview({
   onFix?: (request: string) => void;
   // Hands a part of the app the user clicked to the message box, to say what to change.
   onPick?: (picked: PickedElement) => void;
+  // Opens the plans, offered when publishing is refused at the free plan's number of apps.
+  onPlans?: () => void;
 }) {
   const t = useT();
   const [view, setView] = useState<"preview" | "code">("preview");
@@ -107,7 +118,7 @@ export function AppPreview({
   const [reload, setReload] = useState(0);
   const [publishing, setPublishing] = useState(false);
   const [publishedHtml, setPublishedHtml] = useState("");
-  const [publishError, setPublishError] = useState("");
+  const [publishError, setPublishError] = useState<{ message: string; code?: string } | null>(null);
   // Who may change the published app's data, said once it's published.
   const [dataNote, setDataNote] = useState<DataSummary | null>(null);
   const [copied, setCopied] = useState(false);
@@ -179,7 +190,7 @@ export function AppPreview({
 
   async function publish(asNew = false) {
     setPublishing(true);
-    setPublishError("");
+    setPublishError(null);
     try {
       const res = await api<{ slug: string; data?: DataSummary }>("/api/sites", {
         method: "POST",
@@ -189,7 +200,7 @@ export function AppPreview({
       setPublishedHtml(app.html);
       setDataNote(res.data ?? null);
     } catch (err) {
-      setPublishError(err instanceof Error ? err.message : t("Couldn't publish."));
+      setPublishError(err instanceof Error ? { message: err.message, code: (err as Error & { code?: string }).code } : { message: t("Couldn't publish.") });
     } finally {
       setPublishing(false);
     }
@@ -347,7 +358,14 @@ export function AppPreview({
       {(link || publishError) && (
         <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800 bg-zinc-950/60 px-3 py-2 text-xs">
           {publishError ? (
-            <span className="text-red-300">{publishError}</span>
+            <>
+              <span className="text-red-300">{publishError.message}</span>
+              {publishError.code === "site_cap" && onPlans && (
+                <button className={`${btn} text-primary-soft`} onClick={onPlans}>
+                  {t("Upgrade plan")}
+                </button>
+              )}
+            </>
           ) : (
             <>
               <span className="flex min-w-0 items-center gap-2 text-emerald-300">

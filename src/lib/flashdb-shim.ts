@@ -4,6 +4,7 @@
  * the preview inside Flash keeps them in memory so trying an app never touches real data.
  */
 import { UNSEEN } from "./contacts.ts";
+import { MAX_TRACKED, RESERVED_STEPS, STEP_ID, STEP_NAME } from "./traffic.ts";
 
 /**
  * flashDB.send(form, fields, { news: checkbox }): what the person agreed to by ticking a box, for the
@@ -69,8 +70,24 @@ const NEWS = `
     return null;
   }`;
 
+/**
+ * flashDB.track(step): a step a person took in the app, which Flash counts once a day per visitor
+ * (see the track route). stepName is the server's own check (stepName in traffic.ts), so a name
+ * Flash would refuse is refused in the page too, with the reason in the console.
+ */
+const TRACK = `
+  function stepName(step) {
+    const name = typeof step === "string" ? step.trim().toLowerCase() : "";
+    const warn = function (why) { if (typeof console === "object" && console.warn) console.warn("flashDB.track: " + JSON.stringify(String(step)) + " isn't counted: " + why); };
+    if (!${STEP_NAME}.test(name)) warn("use a fixed name of lowercase letters, digits, - or _ (up to 40)");
+    else if (${STEP_ID}.test(name)) warn("a step name can't carry a number or an ID");
+    else if (${JSON.stringify(RESERVED_STEPS)}.indexOf(name) !== -1) warn("Flash counts this one itself");
+    else return name;
+    return "";
+  }`;
+
 /** flashDB kept in memory: for trying an app in Flash's preview, or running a downloaded app anywhere. */
-export const MEMORY_DB = `${NEWS}
+export const MEMORY_DB = `${NEWS}${TRACK}
   const store = {};
   const id = () => Math.random().toString(36).slice(2, 12);
   const col = (c) => (store[c] = store[c] || []);
@@ -93,6 +110,7 @@ export const MEMORY_DB = `${NEWS}
     paid: false,
     async items() { return []; },
     async buy() { throw new Error("Payments work once the site is published and its owner sets the prices in Flash."); },
+    async track(step) { const name = stepName(step); if (name) console.info("flashDB.track: counted once the app is published", name); return Boolean(name); },
   };
   window.flashDB.mine = {
     async list(collection) { return clone(col("mine:" + collection)); },
@@ -152,8 +170,10 @@ export function flashDbShim(
   owner: OwnerView = null,
   // The key this browser's sign-in forms carry, matching its form cookie (see serve-site.ts).
   formKey = "",
+  // Where flashDB.track sends the steps the app reports.
+  track: string | null = null,
 ): string {
-  const remote = `${NEWS}
+  const remote = `${NEWS}${TRACK}
   // The page's own fetch and tools, kept before the app's code runs, and every address made whole
   // from the page's own address: markup that gets into the page later (a <base> tag, a changed
   // fetch) can't send a request, or the key it carries, anywhere else.
@@ -169,6 +189,7 @@ export function flashDbShim(
   const mineUrl = whole(${js(mine)});
   const aiUrl = whole(${js(ai)});
   const filesUrl = whole(${js(files)});
+  const trackUrl = whole(${js(track)});
   const me = ${js(visitor?.user ?? null)};
   const key = ${js(visitor?.token ?? "")};
   const ownerKey = ${js(owner?.key ?? "")};
@@ -179,11 +200,29 @@ export function flashDbShim(
   if (ownerKey && document.currentScript) document.currentScript.remove();
   // fetch reads its options by name, which code in the page could watch through Object.prototype,
   // so the options and headers of every request have no prototype at all.
-  function request(url, method, auth, body, type) {
+  // keepalive lets a request finish after the page is gone. With no type, a text body goes as text/plain.
+  function request(url, method, auth, body, type, keepalive) {
     const headers = { __proto__: null };
     if (type) headers["Content-Type"] = type;
     if (auth) headers.Authorization = "Bearer " + auth;
-    return send(url, { __proto__: null, method: method, headers: headers, body: body });
+    const options = { __proto__: null, method: method, headers: headers, body: body };
+    if (keepalive) options.keepalive = true;
+    return send(url, options);
+  }
+  // The page's own timers, kept before the app's code runs, like fetch. Pages without them (tests,
+  // downloads run elsewhere) send at once.
+  const later = typeof setTimeout === "function" ? setTimeout : null;
+  const unlater = typeof clearTimeout === "function" ? clearTimeout : null;
+  const tracked = new Set();
+  const queued = [];
+  let trackTimer = 0;
+  // Sends the steps waiting, in one request: 5 s after the last flashDB.track call, and at once when
+  // the page is hidden or goes away (a phone can discard a hidden tab without telling it).
+  function flushSteps() {
+    if (trackTimer && unlater) unlater(trackTimer);
+    trackTimer = 0;
+    if (!trackUrl || !queued.length) return;
+    try { request(trackUrl, "POST", "", queued.splice(0).join("\\n"), "", true).catch(function () {}); } catch (e) {}
   }
   let paid = false;
   let authResult = "";
@@ -258,10 +297,26 @@ export function flashDbShim(
       const res = await request(shop, "POST", "", toJson({ item, quantity: (options && options.quantity) || 1, page: location.href }), "application/json");
       const json = await res.json().catch(() => ({}));
       if (!res.ok || !json.url) throw new Error(json.error || "Couldn't start the payment. Please try again.");
+      flushSteps();
       location.href = json.url;
       return new Promise(() => {});
     },
+    // Counts a key step a person took in the app (once per page): a fixed name like "booking-started".
+    // Never throws; true when it will be sent.
+    track(step) {
+      const name = stepName(step);
+      if (!name || !trackUrl || (!tracked.has(name) && tracked.size >= ${MAX_TRACKED})) return Promise.resolve(false);
+      if (!tracked.has(name)) { tracked.add(name); queued.push(name); }
+      if (trackTimer && unlater) unlater(trackTimer);
+      if (later) trackTimer = later(flushSteps, 5000);
+      else flushSteps();
+      return Promise.resolve(true);
+    },
   };
+  if (typeof addEventListener === "function") addEventListener("pagehide", flushSteps);
+  if (typeof document === "object" && document && typeof document.addEventListener === "function") {
+    document.addEventListener("visibilitychange", function () { if (document.visibilityState === "hidden") flushSteps(); });
+  }
   // Each signed-in person's own records: nobody else, not even the app's other users, can read them.
   async function mineCall(method, query, body) {
     if (!me) throw new Error("Sign in first to use your own data.");
@@ -325,6 +380,7 @@ export function flashDbShim(
     add("action", action);
     for (const name in fields) if (name !== "form_key") add(name, fields[name]);
     document.body.appendChild(form);
+    flushSteps();
     form.submit();
     // The page is leaving; nothing after this runs.
     return new Promise(function () {});
