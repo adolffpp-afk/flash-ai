@@ -28,6 +28,7 @@ import { hasBuiltInRecognition } from "@/lib/listen";
 import { msg, type Translate } from "@/lib/i18n";
 import { useT } from "@/lib/use-t";
 import { useInAndroidApp } from "@/lib/android-shell";
+import { pushStatus, sendTestPush, syncPush, turnOffPush, turnOnPush, type PushStatus } from "@/lib/push";
 
 export { settingsTabFor, type SettingsTab } from "@/lib/settings-tabs";
 
@@ -492,6 +493,7 @@ function General({
         >
           <Toggle on={notify === "1"} onChange={toggleNotify} label={t("Notify me when a response is done")} />
         </Row>
+        <PushAlerts me={me} />
       </Section>
 
       <Section title={t("Appearance")}>
@@ -600,6 +602,89 @@ function General({
   );
 }
 
+/**
+ * Alerts on this phone or computer when Flash is closed (see push.ts). Hidden until Flash's server
+ * has its push keys. What happened shows right under it, since Settings' own line is at the bottom.
+ */
+function PushAlerts({ me }: { me: Me }) {
+  const t = useT();
+  const [status, setStatus] = useState<PushStatus | null>(null);
+  const [working, setWorking] = useState(false);
+  const [said, setSaid] = useState<{ text: string; ok: boolean } | null>(null);
+
+  useEffect(() => {
+    let live = true;
+    pushStatus()
+      .then((s) => live && setStatus(s))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  if (!status?.key) return null;
+  const key = status.key;
+
+  async function run(work: () => Promise<string>) {
+    if (working) return;
+    setWorking(true);
+    setSaid(null);
+    try {
+      setSaid({ text: await work(), ok: true });
+    } catch (e) {
+      setSaid({ text: e instanceof Error ? e.message : t("Something went wrong. Please try again."), ok: false });
+    }
+    setWorking(false);
+  }
+
+  const toggle = (on: boolean) =>
+    run(async () => {
+      if (on) await turnOnPush(me.user.id, key, t);
+      else await turnOffPush(me.user.id);
+      setStatus((s) => s && { ...s, on });
+      return "";
+    });
+
+  const test = () =>
+    run(async () => {
+      await sendTestPush();
+      return t("Test alert sent. It should show in a few seconds.");
+    });
+
+  return (
+    <>
+      <Row
+        title={t("Alerts when Flash is closed")}
+        about={
+          status.support === "home-screen"
+            ? t("On iPhone and iPad, add Flash to your Home Screen first, then turn on alerts in the app you added.")
+            : status.support === "no"
+              ? t("This browser can't get alerts when Flash is closed.")
+              : t("Flash can alert this phone or computer when something you asked for is ready, even with Flash closed. Alerts stop when you log out here.")
+        }
+      >
+        {status.support === "yes" ? (
+          <Toggle on={status.on} onChange={toggle} label={t("Send alerts to this device")} />
+        ) : (
+          <span className={hint}>{t("Not in this browser")}</span>
+        )}
+      </Row>
+      {status.on && (
+        <div>
+          <button className={button} disabled={working} onClick={test}>
+            {t("Send a test alert")}
+          </button>
+        </div>
+      )}
+      {said?.text && (
+        <p role="status" className={`-mt-2 text-xs ${said.ok ? "text-emerald-300" : "text-red-400"}`}>
+          {said.text}
+        </p>
+      )}
+    </>
+  );
+}
+
 function Account({ me, busy, attempt, onSignOut }: Shared & { onSignOut: (everywhere?: boolean) => void }) {
   const t = useT();
   const [current, setCurrent] = useState("");
@@ -612,6 +697,8 @@ function Account({ me, busy, attempt, onSignOut }: Shared & { onSignOut: (everyw
       await api("/api/me/password", { method: "POST", json: { current, next } });
       setCurrent("");
       setNext("");
+      // Every device's alerts stopped with their sign-ins; this one's come back on (see push.ts).
+      syncPush(me.user.id).catch(() => {});
       return t("Password changed. Your other devices were signed out.");
     });
 

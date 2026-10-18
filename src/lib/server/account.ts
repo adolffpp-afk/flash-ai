@@ -102,12 +102,14 @@ export async function markVerified(userId: string): Promise<void> {
 /**
  * Signs a user out everywhere (after a password reset or change, or "Sign out everywhere"),
  * including apps like Claude connected to Flash: their tokens could have been given out by
- * whoever was signed in before, and would otherwise keep working for 30 days at a time.
+ * whoever was signed in before, and would otherwise keep working for 30 days at a time. Alerts
+ * stop in every browser too (see push.ts), so none reach a browser someone else was signed in on.
  */
 export async function endAllSessions(userId: string): Promise<void> {
   await run("DELETE FROM sessions WHERE user_id = ?", [userId]);
   await run("DELETE FROM oauth_tokens WHERE user_id = ?", [userId]);
   await run("DELETE FROM oauth_codes WHERE user_id = ?", [userId]);
+  await run("DELETE FROM push_subscriptions WHERE user_id = ?", [userId]);
 }
 
 /** Accounts created before email keys existed get theirs filled in. */

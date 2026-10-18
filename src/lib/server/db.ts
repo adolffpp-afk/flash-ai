@@ -694,6 +694,23 @@ const SCHEMA = [
     created_at INTEGER NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS report_actions_item ON report_actions(item_kind, item_id)`,
+  // Alerts when Flash is closed (Web Push, see push.ts): one row per account in each browser that
+  // turned them on, with the browser's push address and the keys that encrypt each alert for it.
+  // session_hash is that account's sign-in in that browser: logging out there deletes the row
+  // (endSession), endAllSessions deletes all of the account's, and alerts only go where it's live.
+  // One browser signed in to several accounts has a row for each, so an alert can name its account.
+  `CREATE TABLE IF NOT EXISTS push_subscriptions (
+    endpoint TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    session_hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_ok_at INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (endpoint, user_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS push_user ON push_subscriptions(user_id)`,
+  `CREATE INDEX IF NOT EXISTS push_session ON push_subscriptions(session_hash)`,
 ];
 
 let client: Client | null = null;

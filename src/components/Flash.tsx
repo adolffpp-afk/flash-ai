@@ -48,6 +48,7 @@ import { pictureFollowUp } from "@/lib/router";
 import { firstName } from "@/lib/names";
 import { timeAgo } from "@/lib/when";
 import { applyAppearance, applyTheme, notifiesWhenDone, readSetting, writeSetting } from "@/lib/device-settings";
+import { usePushSync } from "@/lib/push";
 import { LEVEL_ENGINES, isLevel, type Level } from "@/lib/levels";
 import { showLanguage, tNow, useT } from "@/lib/use-t";
 import { msg, type Translate } from "@/lib/i18n";
@@ -301,6 +302,8 @@ export function Flash({
   const roomy = useMedia("(min-width: 1760px)");
   // Installing Flash from "Everything Flash can do" or the search; nothing to install inside the installed app.
   const install = useInstall();
+  // Alerts when Flash is closed follow who is signed in here: none for nobody (see push.ts).
+  usePushSync(signedOut ? null : me?.user.id);
   // The Ask Flash button can be hidden in Settings > Capabilities (read after mount: it lives on the device).
   const [hideCompanion, setHideCompanion] = useState(false);
   // A voice conversation, docked where the message box is; woke when "Hey Flash" opened it.

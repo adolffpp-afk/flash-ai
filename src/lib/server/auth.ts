@@ -83,9 +83,12 @@ export async function userForSession(token: string | null | undefined): Promise<
   );
 }
 
+/** Signs this browser out, and stops the alerts this sign-in turned on here (see push.ts). */
 export async function endSession(request: Request): Promise<void> {
   const token = readCookie(request, SESSION_COOKIE);
-  if (token) await run("DELETE FROM sessions WHERE token_hash = ?", [sha256(token)]);
+  if (!token) return;
+  await run("DELETE FROM push_subscriptions WHERE session_hash = ?", [sha256(token)]);
+  await run("DELETE FROM sessions WHERE token_hash = ?", [sha256(token)]);
 }
 
 export const isSecure = (request: Request) =>
