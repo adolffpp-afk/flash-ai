@@ -8,7 +8,7 @@
  *    someone who signed out, even if a row was missed;
  *  - after a sign-in ends by itself (every 30 days, a password change, "Log out of all devices" on
  *    another device), alerts come back on for that account when it's signed in here again, while
- *    logging out here on purpose forgets them (forgetPush);
+ *    logging out here on purpose forgets them (logOutHere);
  *  - turning them on makes a new subscription, so nothing another account turned on with the old one
  *    can follow (on main a browser holds one account).
  */
@@ -173,17 +173,20 @@ export async function syncPush(userId: string | null): Promise<void> {
 }
 
 /**
- * When this account logs out here on purpose (Flash's sign-out, "Log out of all devices" here): this
- * device forgets that it wanted alerts, so they stay off when it signs in here again.
+ * Logging out here on purpose (Flash's sign-out; everywhere: "Log out of all devices" in Settings,
+ * which already signed out every device, this one included). This device forgets that this account
+ * wanted alerts, so they stay off when it signs in here again; a sign-in that ends by itself keeps
+ * the wish (usePushSync).
  */
-export function forgetPush(userId: string): void {
-  want(userId, false);
+export async function logOutHere(userId: string | undefined, everywhere = false): Promise<void> {
+  if (userId) want(userId, false);
+  if (!everywhere) await api("/api/auth/logout", { method: "POST" }).catch(() => {});
 }
 
 /**
  * Keeps this browser's alerts in step with who is signed in (see syncPush): userId is the account,
  * null once nobody is, and undefined while it's still loading. A sign-in that ends by itself, with
- * Flash open or closed, keeps this device's wish for alerts; only forgetPush forgets it. Opening
+ * Flash open or closed, keeps this device's wish for alerts; only logOutHere forgets it. Opening
  * Flash also clears the dot alerts put on its app icon.
  */
 export function usePushSync(userId: string | null | undefined): void {

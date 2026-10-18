@@ -3,12 +3,14 @@ import assert from "node:assert/strict";
 import { register } from "node:module";
 import { createDecipheriv, createECDH, createHash, createHmac, createPublicKey, generateKeyPairSync, verify, type KeyObject } from "node:crypto";
 import { readFileSync } from "node:fs";
+import vm from "node:vm";
 
 /*
  * Alerts when Flash is closed (Web Push, src/lib/server/push.ts): the VAPID signature, RFC 8291's
  * encryption against its own example, dead addresses deleted, a busy push service tried twice, the
  * account named in a browser shared by several, alerts stopping with a sign-out or a sign-in on top,
- * and alerts going only to known push services.
+ * alerts going only to known push services, and the service worker (public/sw.js): an alert's words
+ * shown only while that sign-in is live, tags, and where a tap goes.
  */
 register("./support/route-hooks.mjs", import.meta.url);
 // Flash's word tables load as Next loads them, so the account's language can be checked here too.
@@ -82,7 +84,9 @@ function browser(endpoint: string) {
   return {
     endpoint,
     sub: { endpoint, keys: { p256dh: ua.getPublicKey().toString("base64url"), auth: auth.toString("base64url") } },
-    read: (body: Buffer) => JSON.parse(decrypt(body, ua.getPrivateKey(), auth)) as { title: string; body: string; url: string; tag: string },
+    // The alert as the browser gives it to the service worker, and read.
+    open: (body: Buffer) => decrypt(body, ua.getPrivateKey(), auth),
+    read: (body: Buffer) => JSON.parse(decrypt(body, ua.getPrivateKey(), auth)) as { title: string; body: string; url: string; tag?: string },
   };
 }
 
@@ -512,4 +516,156 @@ test("until the three keys are set and belong together, nothing shows and nothin
   assert.deepEqual(push.pushSetup(), { setUp: true, missing: [], problem: "" });
   assert.equal(push.pushPublicKey(), KEYS.VAPID_PUBLIC_KEY);
   assert.equal((await one<{ n: number }>("SELECT COUNT(*) AS n FROM push_subscriptions WHERE user_id = ?", [jo.id]))?.n, 1, "rows wait for the keys");
+});
+
+/**
+ * public/sw.js run as a browser runs it, with Flash's real GET /api/push for its questions (sent
+ * with cookie(), the browser's session cookie now): what it shows, the windows a tap opens or
+ * focuses, and whether its push subscription is kept.
+ */
+function serviceWorker(endpoint: string, cookie: () => string, windows: string[] = []) {
+  const listeners: Record<string, (event: object) => void> = {};
+  const shown: { title: string; options: { body: string; tag?: string; renotify?: boolean; data: { url: string } } }[] = [];
+  const opened: string[] = [];
+  const focused: string[] = [];
+  const told: { url: string; message: unknown }[] = [];
+  const state = { subscribed: true, offline: false };
+  const self = {
+    location: { origin: ORIGIN },
+    addEventListener: (type: string, listener: (event: object) => void) => void (listeners[type] = listener),
+    skipWaiting() {},
+    navigator: {},
+    registration: {
+      // As plain objects of this realm (the worker's are its own), so they compare as they look.
+      showNotification: async (title: string, options: object) => void shown.push({ title, options: JSON.parse(JSON.stringify(options)) }),
+      pushManager: {
+        getSubscription: async () => (state.subscribed ? { endpoint, unsubscribe: async () => !(state.subscribed = false) } : null),
+      },
+    },
+    clients: {
+      claim: async () => {},
+      matchAll: async () =>
+        windows.map((url) => ({ url: ORIGIN + url, postMessage: (message: unknown) => void told.push({ url, message: JSON.parse(JSON.stringify(message)) }), focus: async () => void focused.push(url) })),
+      openWindow: async (url: string) => void opened.push(url),
+    },
+  };
+  const ask = async (path: string) => {
+    if (state.offline) throw new TypeError("Failed to fetch");
+    return pushRoute.GET(new Request(new URL(path, ORIGIN), { headers: { cookie: cookie() } }));
+  };
+  vm.runInContext(readFileSync(new URL("../public/sw.js", import.meta.url), "utf8"), vm.createContext({ self, URL, Promise, Response, TextEncoder, crypto, AbortSignal, fetch: ask }));
+  const fire = (type: string, event: object) => {
+    let waited: Promise<unknown> = Promise.resolve();
+    listeners[type]({ ...event, waitUntil: (p: Promise<unknown>) => void (waited = p) });
+    return waited;
+  };
+  return {
+    shown,
+    opened,
+    focused,
+    told,
+    state,
+    push: (data: string) => fire("push", { data: { json: () => JSON.parse(data) } }),
+    tap: (url: string) => fire("notificationclick", { notification: { close() {}, data: { url } } }),
+  };
+}
+
+test("an alert that waited at the push service shows its words only if the sign-in there is still live", async () => {
+  const ana = await account("ana.laptop@example.com");
+  const phoneCookie = await signIn(ana);
+  const laptop = browser(`${FCM}family-laptop-asleep`);
+  assert.equal((await pushRoute.POST(call("POST", ana.cookie, laptop.sub))).status, 200);
+  let cookie = ana.cookie;
+  const worker = serviceWorker(laptop.endpoint, () => cookie);
+  // Alerts the push service holds while the laptop sleeps (up to its TTL), opened as the browser gets them.
+  const waiting = async (body: string) => {
+    sent = [];
+    await push.sendPush(ana.id, { title: "Payroll check", body, url: "/?automations=a1", tag: "flash-run-r1" });
+    return laptop.open(sent[0].body);
+  };
+
+  // Still signed in there: the alert shows as it was sent.
+  await worker.push(await waiting("Your salary arrived"));
+  assert.deepEqual(worker.shown.at(-1), {
+    title: "Payroll check",
+    options: { body: "Your salary arrived", icon: "/app-icon/192?v=3", tag: "flash-run-r1", renotify: true, data: { url: `${ORIGIN}/?automations=a1&as=${ana.id}` } },
+  });
+  // No answer from Flash: Flash's name only, and the subscription stays.
+  const later = await waiting("Your salary of $4,210 arrived");
+  worker.state.offline = true;
+  await worker.push(later);
+  assert.deepEqual(worker.shown.at(-1), { title: "Flash ∞ AI", options: { body: "", icon: "/app-icon/192?v=3", data: { url: `${ORIGIN}/` } } });
+  assert.equal(worker.state.subscribed, true);
+  worker.state.offline = false;
+
+  // From her phone, "Log out of all devices", while the laptop sleeps; then someone else opens it.
+  const out = await logoutRoute.POST(
+    new Request(`${ORIGIN}/api/auth/logout`, { method: "POST", headers: { "content-type": "application/json", cookie: phoneCookie }, body: JSON.stringify({ everywhere: true }) }),
+  );
+  assert.equal(out.status, 200);
+  await worker.push(later);
+  assert.deepEqual(worker.shown.at(-1), { title: "Flash ∞ AI", options: { body: "", icon: "/app-icon/192?v=3", data: { url: `${ORIGIN}/` } } }, "none of her words");
+  assert.equal(worker.state.subscribed, false, "and nothing else waiting for that address arrives");
+
+  // The same for a sign-in that ended by itself, or a browser no longer signed in at all.
+  for (const end of ["expired", "signed out"]) {
+    const bo = await account(`bo.${end.replace(" ", "")}@example.com`);
+    const pc = browser(`${FCM}bo-${end.replace(" ", "")}`);
+    await pushRoute.POST(call("POST", bo.cookie, pc.sub));
+    sent = [];
+    await push.sendPush(bo.id, { title: "Invoice check", body: "Paid" });
+    const alert = pc.open(sent[0].body);
+    cookie = bo.cookie;
+    const sw = serviceWorker(pc.endpoint, () => cookie);
+    if (end === "expired") await run("UPDATE sessions SET expires_at = 1 WHERE user_id = ?", [bo.id]);
+    else cookie = "";
+    await sw.push(alert);
+    assert.deepEqual(sw.shown.map((n) => [n.title, n.options.body]), [["Flash ∞ AI", ""]], end);
+    assert.equal(sw.state.subscribed, false, end);
+  }
+});
+
+test("an alert without a tag shows on its own; one with a tag replaces the last and still alerts", async () => {
+  const cy = await account("cy.tags@example.com");
+  const phone = browser(`${FCM}cy-tags`);
+  await pushRoute.POST(call("POST", cy.cookie, phone.sub));
+  const tagOf = async (tag?: string) => {
+    sent = [];
+    await push.sendPush(cy.id, { title: "Weekly summary", body: "Ready", ...(tag === undefined ? {} : { tag }) });
+    return phone.read(sent[0].body).tag;
+  };
+  assert.equal(await tagOf(), undefined, "none given: none sent, so it doesn't replace another alert");
+  assert.equal(await tagOf("flash run 1"), undefined, "nor for one Flash doesn't take");
+  assert.equal(await tagOf(`flash-run-${"r".repeat(60)}`), undefined);
+  assert.equal(await tagOf("flash-run-r1"), "flash-run-r1");
+
+  const worker = serviceWorker(phone.endpoint, () => cy.cookie);
+  await worker.push(JSON.stringify({ title: "Weekly summary", body: "Ready" }));
+  await worker.push(JSON.stringify({ title: "Invoice check", body: "Paused: credits ran out" }));
+  await worker.push(JSON.stringify({ title: "Flash ∞ AI", body: "Alerts work on this device.", tag: "flash-test" }));
+  assert.deepEqual(
+    worker.shown.map((n) => [n.title, n.options.tag, n.options.renotify]),
+    [
+      ["Weekly summary", undefined, undefined],
+      ["Invoice check", undefined, undefined],
+      ["Flash ∞ AI", "flash-test", true],
+    ],
+  );
+});
+
+test("a tap on an alert opens Flash itself, never another Flash page that's open", async () => {
+  const url = `${ORIGIN}/?automations=a1&as=u1`;
+  // Only Flash's privacy page, a shared chat and /admin are open: Flash opens on the alert's page.
+  const others = serviceWorker(`${FCM}x`, () => "", ["/privacy", "/s/abc123", "/admin"]);
+  await others.tap(url);
+  assert.deepEqual(others.opened, [url]);
+  assert.deepEqual([others.focused, others.told], [[], []]);
+  // With Flash open too, that's the one brought to the front.
+  const both = serviceWorker(`${FCM}x`, () => "", ["/privacy", "/?chat=p1"]);
+  await both.tap(url);
+  assert.deepEqual([both.opened, both.focused, both.told], [[], ["/?chat=p1"], [{ url: "/?chat=p1", message: { type: "flash:open", url } }]]);
+  // A link that isn't Flash's opens Flash's home.
+  const none = serviceWorker(`${FCM}x`, () => "");
+  await none.tap("https://evil.example/");
+  assert.deepEqual(none.opened, [`${ORIGIN}/`]);
 });

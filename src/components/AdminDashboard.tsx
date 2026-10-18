@@ -256,6 +256,11 @@ const PUSH_SUBJECT = "mailto:hello@flash-app.dev";
  * and Flash reads it only from its environment.
  */
 function PushKeyMaker({ setUp, missing, problem, browsers }: NonNullable<Stats["push"]>) {
+  // Only the subject is missing or wrong (push.ts names the variable first): the keys in Vercel stay.
+  const subjectOnly = !setUp && (missing.join() === "VAPID_SUBJECT" || problem.startsWith("VAPID_SUBJECT"));
+  // The VAPID_* in Vercel already (all three when one is wrong): new values are edited into them,
+  // since Vercel won't add a second variable of the same name.
+  const there = ["VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "VAPID_SUBJECT"].filter((name) => !missing.includes(name));
   const [values, setValues] = useState<{ name: string; value: string }[]>([]);
   const [copied, setCopied] = useState("");
   const [error, setError] = useState("");
@@ -300,7 +305,8 @@ function PushKeyMaker({ setUp, missing, problem, browsers }: NonNullable<Stats["
           <span className="text-amber-300">{problem}. Fix it in Vercel and redeploy. Until then, nobody sees the alerts setting.</span>
         ) : (
           <span className="text-zinc-400">
-            Not set. Missing {missing.join(", ")}. Until they are, nobody sees the alerts setting and Flash sends no alerts.
+            Not set. Missing {missing.join(", ")}. Until {missing.length === 1 ? "it is" : "they are"}, nobody sees the alerts setting and
+            Flash sends no alerts.
           </span>
         )}
       </p>
@@ -310,7 +316,16 @@ function PushKeyMaker({ setUp, missing, problem, browsers }: NonNullable<Stats["
           them back on by itself.
         </p>
       )}
-      {!values.length ? (
+      {subjectOnly ? (
+        <ol className="list-decimal space-y-1 ps-5 text-xs text-zinc-400">
+          <li>Open Vercel, then the flash-ai project, then Settings, then Environment Variables.</li>
+          <li>
+            {missing.length ? "Add VAPID_SUBJECT for Production, marked Sensitive, with the value" : "Edit VAPID_SUBJECT so its value is"}{" "}
+            <span className="font-mono text-zinc-300">{PUSH_SUBJECT}</span>. Keep the two keys as they are.
+          </li>
+          <li>Redeploy. The alerts setting appears in Settings once the new deployment is live.</li>
+        </ol>
+      ) : !values.length ? (
         <button
           onClick={make}
           className={
@@ -349,7 +364,7 @@ function PushKeyMaker({ setUp, missing, problem, browsers }: NonNullable<Stats["
         </div>
       )}
       {error && <p className="text-xs text-red-400">{error}</p>}
-      {(!setUp || values.length > 0) && (
+      {!subjectOnly && (!setUp || values.length > 0) && (
         <ol className="list-decimal space-y-1 ps-5 text-xs text-zinc-400">
           <li>{values.length ? "Copy each value with its Copy button." : `Press ${setUp ? "Make new push keys" : "Make push keys"} here.`}</li>
           <li>Open Vercel, then the flash-ai project, then Settings, then Environment Variables.</li>
@@ -360,7 +375,13 @@ function PushKeyMaker({ setUp, missing, problem, browsers }: NonNullable<Stats["
             </>
           ) : (
             <>
-              <li>Add the three values for Production, each with its name as shown and marked Sensitive.</li>
+              <li>
+                {!there.length
+                  ? "Add the three values for Production, each with its name as shown and marked Sensitive."
+                  : !missing.length
+                    ? "Edit each of the three and paste its new value, still marked Sensitive."
+                    : `Edit ${there.join(" and ")} and paste the new ${there.length === 1 ? "value" : "values"}, then add ${missing.join(" and ")} for Production with the name as shown. Each is marked Sensitive.`}
+              </li>
               <li>Redeploy. The alerts setting appears in Settings once the new deployment is live. No Google project is needed.</li>
             </>
           )}

@@ -28,24 +28,65 @@ function flashPage(url) {
   return new URL("/", self.location.origin).href;
 }
 
-// An alert: {title, body, url, tag}, already in the account's language. A later one with the same tag
-// replaces it. Browsers require every push to show something, so one that can't be read still shows Flash's name.
-self.addEventListener("push", (event) => {
-  let alert = {};
+// The SHA-256 of this browser's push address, as the page sends it (src/lib/push.ts), so the address stays out of logs.
+async function addressHash(sub) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(sub.endpoint));
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// Whether the sign-in that turned alerts on here is still live, asked of Flash before an alert shows
+// its words: one may have waited at the push service (a phone or laptop that was off) through a log
+// out, "Log out of all devices", a password change or the sign-in ending. "off" also drops this
+// browser's subscription, so nothing else waiting for it arrives (Flash makes a new one when that
+// account signs in here again and wants alerts); "unknown" (no answer) keeps it.
+async function stillOn() {
   try {
-    alert = event.data ? event.data.json() : {};
-  } catch {}
+    const sub = await self.registration.pushManager.getSubscription();
+    if (!sub) return "off";
+    const res = await fetch(`/api/push?e=${await addressHash(sub)}`, {
+      credentials: "same-origin",
+      cache: "no-store",
+      ...(AbortSignal.timeout ? { signal: AbortSignal.timeout(8000) } : {}),
+    });
+    if (res.status !== 401 && !res.ok) return "unknown";
+    const on = res.ok && (await res.json()).on === true;
+    if (!on) await sub.unsubscribe().catch(() => false);
+    return on ? "on" : "off";
+  } catch {
+    return "unknown";
+  }
+}
+
+// An alert: {title, body, url, tag}, already in the account's language. A later one with the same tag
+// replaces it and still alerts; one with none shows on its own. Browsers require every push to show
+// something, so one that can't be read, or whose sign-in here isn't live, shows Flash's name only.
+self.addEventListener("push", (event) => {
   const text = (value) => (typeof value === "string" ? value : "");
-  const shown = self.registration.showNotification(text(alert.title) || "Flash ∞ AI", {
-    body: text(alert.body),
-    tag: text(alert.tag) || "flash",
-    icon: "/app-icon/192?v=3",
-    data: { url: flashPage(alert.url) },
-  });
+  const show = async () => {
+    let alert = {};
+    try {
+      alert = event.data ? event.data.json() : {};
+    } catch {}
+    if ((await stillOn()) !== "on") alert = {};
+    const tag = text(alert.tag);
+    await self.registration.showNotification(text(alert.title) || "Flash ∞ AI", {
+      body: text(alert.body),
+      icon: "/app-icon/192?v=3",
+      data: { url: flashPage(alert.url) },
+      ...(tag ? { tag, renotify: true } : {}),
+    });
+  };
   // A dot on the installed app's icon until Flash is opened again (it clears it).
   const badge = self.navigator.setAppBadge ? self.navigator.setAppBadge().catch(() => {}) : Promise.resolve();
-  event.waitUntil(Promise.all([shown, badge]));
+  event.waitUntil(Promise.all([show(), badge]));
 });
+
+// Flash itself is its home page; its other pages (privacy, a shared chat, /admin) aren't, and a tap
+// never lands on them.
+const isFlash = (w) => {
+  const page = new URL(w.url);
+  return page.origin === self.location.origin && page.pathname === "/";
+};
 
 // A tap brings an open Flash to the front, which is told the page to show; with none open, it opens one.
 self.addEventListener("notificationclick", (event) => {
@@ -53,7 +94,7 @@ self.addEventListener("notificationclick", (event) => {
   const url = flashPage(event.notification.data && event.notification.data.url);
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
-      const open = windows.find((w) => new URL(w.url).origin === self.location.origin);
+      const open = windows.find(isFlash);
       if (!open) return self.clients.openWindow(url);
       open.postMessage({ type: "flash:open", url });
       return open.focus();

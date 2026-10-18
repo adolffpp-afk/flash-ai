@@ -8,7 +8,8 @@ import { createECDH, generateKeyPairSync } from "node:crypto";
  * stand-in browser (its push subscription, notification permission, storage and session cookie) and
  * stand-in push services. Turning alerts on makes a new subscription, so no other account's alerts
  * follow; a sign-in that ends by itself keeps this device's wish for alerts, and only logging out
- * here forgets it; and what the switch says when the browser asks, blocks, or has no push service.
+ * here forgets it; what the switch says when the browser asks, blocks, or has no push service; and
+ * a test alert to an address the push service dropped.
  */
 register("./support/route-hooks.mjs", import.meta.url);
 const HOOKS = new URL("./support/push-react.mjs", import.meta.url).href;
@@ -98,15 +99,23 @@ Object.defineProperty(globalThis, "navigator", {
 });
 
 // ---- Flash's server, and the push services ----
-const pushRoute = await import("../src/app/api/push/route.ts");
+const routes: Record<string, unknown> = {
+  "/api/push": await import("../src/app/api/push/route.ts"),
+  "/api/auth/logout": await import("../src/app/api/auth/logout/route.ts"),
+};
 const reached: string[] = []; // push addresses an alert was sent to and taken
+const dropped = new Set<string>(); // addresses the push service dropped, though the browser still holds them
 globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
   const url = String(input);
-  if (url.startsWith("/api/push")) {
+  if (url.startsWith("/")) {
     const request = new Request(ORIGIN + url, { method: init?.method ?? "GET", headers: { ...(init?.headers as Record<string, string>), origin: ORIGIN, cookie }, body: init?.body as string | undefined });
-    return (pushRoute as unknown as Record<string, (r: Request) => Promise<Response>>)[request.method](request);
+    const route = routes[new URL(request.url).pathname] as Record<string, (r: Request) => Promise<Response>>;
+    const res = await route[request.method](request);
+    // The browser drops a cookie it's told to clear.
+    if (/flash_session=;/.test(res.headers.get("set-cookie") ?? "")) cookie = "";
+    return res;
   }
-  if (unsubscribed.has(url)) return new Response(null, { status: 410 });
+  if (unsubscribed.has(url) || dropped.has(url)) return new Response(null, { status: 410 });
   reached.push(url);
   return new Response(null, { status: 201 });
 }) as typeof fetch;
@@ -116,6 +125,7 @@ const { render } = (await import(HOOKS)) as { render: (hook: () => void) => void
 const push = await import("../src/lib/server/push.ts");
 const { createSession, hashPassword } = await import("../src/lib/server/auth.ts");
 const { run, all } = await import("../src/lib/server/db.ts");
+const { endAllSessions } = await import("../src/lib/server/account.ts");
 
 const t = ((text: string) => text) as never;
 // The browser's subscription now (a function, as the code under test changes it).
@@ -196,7 +206,9 @@ test("a sign-in that ends while Flash is open keeps this device's wish for alert
   assert.equal(await alertsHere("cy"), 1);
 
   // Logging out here on purpose (Flash's signOut) forgets it: signed in again, alerts stay off.
-  client.forgetPush("cy");
+  await client.logOutHere("cy");
+  assert.equal(cookie, "", "signed out");
+  assert.equal((await all("SELECT 1 FROM sessions WHERE user_id = 'cy'")).length, 0);
   render(() => client.usePushSync(null));
   await settle();
   assert.equal(wanted(), "");
@@ -238,4 +250,40 @@ test("what the switch says when the browser asks, blocks, or has no push service
   assert.equal(await said(), "Couldn't turn on alerts. Please try again.");
   refuse = null;
   assert.equal(await said(), "on");
+});
+
+test("a test alert to an address the push service dropped says alerts are off here, as the switch then does", async () => {
+  await account("eli");
+  await signIn("eli");
+  await client.turnOnPush("eli", key, t);
+  assert.equal((await client.pushStatus()).on, true);
+  // The push service expired this browser's address, which the browser still holds.
+  dropped.add(current!.endpoint);
+  const said = async () => {
+    try {
+      await client.sendTestPush();
+      return { message: "sent", code: "" };
+    } catch (e) {
+      return { message: (e as Error).message, code: (e as { code?: string }).code };
+    }
+  };
+  for (const tryNumber of [1, 2]) assert.deepEqual(await said(), { message: "Turn on alerts on this device first.", code: "off" }, `try ${tryNumber}`);
+  assert.equal((await client.pushStatus()).on, false);
+  // One tap turns them on again, with a new address.
+  await client.turnOnPush("eli", key, t);
+  assert.deepEqual(await said(), { message: "sent", code: "" });
+});
+
+test("logging out of all devices here forgets this device's wish too", async () => {
+  await account("fin");
+  storage.clear();
+  await signIn("fin");
+  await client.turnOnPush("fin", key, t);
+  // Settings already signed every device out, this one included, before Flash's signOut runs.
+  await endAllSessions("fin");
+  await client.logOutHere("fin", true);
+  assert.equal(wanted(), "");
+  await signIn("fin");
+  await client.syncPush("fin");
+  assert.equal(current, null, "alerts stay off when fin signs in here again");
 });

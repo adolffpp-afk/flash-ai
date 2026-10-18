@@ -298,6 +298,8 @@ function General({
   // translated where it's shown, so it appears in the language Flash switches to.
   const [languageSaved, setLanguageSaved] = useState<{ text: string; ok: boolean } | null>(null);
   const [notify, setNotify] = useDeviceSetting("notifyDone");
+  // Why Response completions couldn't turn on, shown right under it (Settings' own line is at the bottom).
+  const [notifyRefused, setNotifyRefused] = useState("");
   const [theme, setTheme] = useDeviceSetting("theme");
   const [font, setFont] = useDeviceSetting("font");
   const [size, setSize] = useDeviceSetting("textSize");
@@ -351,15 +353,14 @@ function General({
   }
 
   async function toggleNotify(on: boolean) {
+    setNotifyRefused("");
     if (!on) return setNotify("");
-    if (typeof Notification === "undefined") {
-      return setMessage({ text: t("This browser can't show notifications."), ok: false });
-    }
+    if (typeof Notification === "undefined") return setNotifyRefused(t("This browser can't show notifications."));
     const allowed = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
     if (allowed === "granted") setNotify("1");
-    else if (allowed === "denied") setMessage({ text: t("Notifications are blocked for Flash. Allow them in your browser's site settings, then try again."), ok: false });
+    else if (allowed === "denied") setNotifyRefused(t("Notifications are blocked for Flash. Allow them in your browser's site settings, then try again."));
     // The browser's question was closed without an answer: nothing is blocked, and it asks again next time.
-    else setMessage({ text: t("Allow notifications when your browser asks, then try again."), ok: false });
+    else setNotifyRefused(t("Allow notifications when your browser asks, then try again."));
   }
 
   /** Turns "Hey Flash" on (after the browser allows the microphone) or off, on this device. */
@@ -495,6 +496,11 @@ function General({
         >
           <Toggle on={notify === "1"} onChange={toggleNotify} label={t("Notify me when a response is done")} />
         </Row>
+        {notifyRefused && (
+          <p role="status" className="-mt-2 text-xs text-red-400">
+            {notifyRefused}
+          </p>
+        )}
         <PushAlerts me={me} />
       </Section>
 
@@ -652,7 +658,13 @@ function PushAlerts({ me }: { me: Me }) {
 
   const test = () =>
     run(async () => {
-      await sendTestPush();
+      try {
+        await sendTestPush();
+      } catch (e) {
+        // Off here after all (the push service dropped this browser's address): the switch shows it.
+        if ((e as { code?: string }).code === "off") setStatus(await pushStatus().catch(() => status));
+        throw e;
+      }
       return t("Test alert sent. It should show in a few seconds.");
     });
 

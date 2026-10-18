@@ -241,7 +241,8 @@ export type PushNotice = {
   // opens as this account in a browser signed in to several. Anything that isn't Flash's, or is
   // longer than 1024 characters, opens "/".
   url?: string;
-  // A later alert with the same tag replaces this one, like "flash-run-<runId>".
+  // A later alert with the same tag replaces this one (and still alerts), like "flash-run-<runId>".
+  // Without one, or with one that isn't 1-64 letters, digits, "_", ":", "." or "-", each alert shows on its own.
   tag?: string;
 };
 
@@ -360,7 +361,7 @@ export async function sendPush(userId: string, notice: PushNotice, only?: string
   const title = clip(notice.title, TITLE_CHARS) || PRODUCT_NAME;
   const body = clip(notice.body, BODY_CHARS);
   const url = pagePath(notice.url, userId);
-  const tag = /^[\w:.-]{1,64}$/.test(notice.tag ?? "") ? notice.tag : "flash";
+  const tag = notice.tag && /^[\w:.-]{1,64}$/.test(notice.tag) ? notice.tag : undefined;
   const outcomes = await Promise.all(
     rows.map((row) => {
       const named = Number(row.others) > 0 && user ? [t("For {email}", { email: user.email }), body].filter(Boolean).join("\n") : body;
