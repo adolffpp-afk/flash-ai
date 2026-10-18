@@ -175,10 +175,11 @@ export type CreditEmailTo = { name?: string | null; free?: FreeUse };
  * - Free daily chats: chat, writing, code and translation go to a free model when the balance doesn't
  *   cover a request (the chat route, freeEligible and FREE_DAILY_CHATS in free.ts), for a confirmed
  *   email; pictures too, up to FREE_DAILY_IMAGES, when free pictures are set up.
- * - Waiting: building or changing an app (the app engine has no free model), a reply on a paid level,
- *   pictures on paid models, videos, music and voiceovers (each holds credits first: charge() in
- *   credits.ts, which refuses with none), and an app's AI answering visitors (site-ai.ts refuses
- *   when the owner's credits don't pay for an answer).
+ * - Waiting: Flash building or changing an app (the app engine has no free model; changes the owner
+ *   makes in an app's code, and publishing them, use no credits: publishSite in sites.ts), a reply on
+ *   a paid level, pictures on paid models, videos, music and voiceovers (each holds credits first:
+ *   charge() in credits.ts, which refuses with none), and an app's AI answering visitors (site-ai.ts
+ *   refuses when the owner's credits don't pay for an answer).
  */
 export function creditLists(free: FreeUse = null): { working: string[]; waiting: string[] } {
   const chats = free && free.chats > 0 ? free.chats : 0;
@@ -193,7 +194,7 @@ export function creditLists(free: FreeUse = null): { working: string[]; waiting:
           : []),
     ],
     waiting: [
-      "New builds and changes to your apps.",
+      "New builds, and changes Flash makes to your apps.",
       "Chats on paid levels.",
       images ? "Pictures on paid models, videos, music and voiceovers." : "Pictures, videos, music and voiceovers.",
       "The AI inside your apps answering visitors.",

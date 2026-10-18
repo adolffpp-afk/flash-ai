@@ -7,6 +7,17 @@ import type { Engine } from "./types.ts";
  * Only what Flash does today is listed; Automations is the one planned feature, marked as coming.
  */
 
+/**
+ * What Landing's Create says, for the media tools that are live: videos are made on fal.ai only, while
+ * pictures can come from OpenAI as well, and music and voice-overs share their providers (status.ts).
+ */
+export function createLine(isLive: (engine: Engine) => boolean): string {
+  const sound = isLive("music") && isLive("voice");
+  if (!isLive("image")) return sound ? msg("Music and voice-overs from a few words.") : msg("Pictures, video, music and voice-overs from a few words.");
+  if (isLive("video")) return sound ? msg("Pictures, video, music and voice-overs from a few words.") : msg("Pictures and video from a few words.");
+  return sound ? msg("Pictures, music and voice-overs from a few words.") : msg("Pictures from a few words.");
+}
+
 export type FeatureGroup = "Chat & research" | "Create" | "Build" | "Files" | "Voice" | "Workspace";
 
 export const FEATURE_GROUPS: FeatureGroup[] = [msg("Chat & research"), msg("Create"), msg("Build"), msg("Files"), msg("Voice"), msg("Workspace")];

@@ -12,14 +12,16 @@
  * - When the balance runs out: at or below 0, where nothing paid can run (every paid request holds at
  *   least a credit first: creditsFor in credits.ts, charge() in server/credits.ts). Flash refuses a
  *   paid request whose credits the balance doesn't cover, so with a few credits left some small ones
- *   still fit, and that isn't "run out" (the low-credit email told them). Noticed as a spend settles
- *   with the balance there, or as a request of the account holder's own is refused while it is there
- *   (a refund or a disputed payment can take it there with no spend). Once each time it runs out,
- *   again only after credits came back above 0 (a purchase, auto top-up, plan or monthly credits, a
- *   refund: see the credit_alerts_out_rearm trigger in db.ts). It is sent instead of the low-credit
- *   email, with the same opt-out, the same share of the day's emails (EMAIL_BUDGET.alerts) and none
- *   while auto top-up can buy, and never from a visitor's refused question (their app's AI has its own
- *   email, below).
+ *   still fit, and that isn't "run out" (the low-credit email told them). Only credits that came in
+ *   run out (an account that never had any isn't told so), only for a confirmed email (one that isn't
+ *   may be someone else's address), and a team member's own credits only while the team's pool, which
+ *   pays for them first, has none either (outOf). Noticed as a spend settles with the balance there,
+ *   or as a request of the account holder's own is refused while it is there (a refund or a disputed
+ *   payment can take it there with no spend). Once each time it runs out, again only after credits
+ *   came back above 0 (a purchase, auto top-up, plan or monthly credits, a refund: see the
+ *   credit_alerts_out_rearm trigger in db.ts). It is sent instead of the low-credit email, with the
+ *   same opt-out, the same share of the day's emails (EMAIL_BUDGET.alerts) and none while auto top-up
+ *   can buy, and never from a visitor's refused question (their app's AI has its own email, below).
  * - When an app's AI turns a visitor away because its owner is out of credits, or because it stopped
  *   at their auto top-up level (site-ai.ts): at most one a day.
  * All stop when the person turns them off, and need payments (they say to top up) and emails on. The
@@ -46,6 +48,7 @@ import { FREE_DAILY_CHATS, FREE_DAILY_IMAGES, freeChatConfigured, freeImageConfi
 import { countOf, overLimit } from "./limits.ts";
 import { paymentsEnabled } from "./stripe.ts";
 import { MAX_PER_MONTH, maybeAutoTopUp } from "./auto-topup.ts";
+import { teamPool } from "./teams.ts";
 import { afterResponse } from "./after-response.ts";
 
 // The levels a person can pick: auto top-up's three (auto-topup.ts) and a lower one.
@@ -74,6 +77,8 @@ const SENDING_MS = 15 * 60_000;
  */
 const SETTLED_BALANCE = `(SELECT COALESCE(SUM(amount), 0) FROM credit_ledger WHERE user_id = ?
     AND NOT (amount < 0 AND ref IS NULL AND settled_at = 0 AND (keeps_level > 0 OR created_at > ?)))`;
+// Whether credits ever came in (the account is its one parameter): only those can run out.
+const EVER_FUNDED = "EXISTS (SELECT 1 FROM credit_ledger WHERE user_id = ? AND amount > 0)";
 // How often an app's AI marks a refusal (and looks at its owner's email), at most.
 const MARK_EVERY = 10 * 60_000;
 
@@ -180,18 +185,36 @@ export function watchBalance(account: string, used: number, options: CheckOption
  * next try, as after a spend: a top-up whose credits were spent within its gap between top-ups can't
  * buy again until it has passed, and from then on requests may all be refused. And the out-of-credits
  * email, when the balance is at or below 0 and this time it ran out wasn't emailed (out): a refund or a
- * disputed payment can take it there with no spend. One read, after the response, and the full check
+ * disputed payment can take it there with no spend: only when it can go (emails on and not turned off,
+ * and outOf's rules, in the same read: a team member's own ledger comes after the pool in accounts, so
+ * it has run out only with the pool's at 0 too). One read, after the response, and the full check
  * only when an email is owed, or auto top-up is on (and topUp).
  */
 export function watchRefusal(accounts: string[], { topUp = true, out = true }: CheckOptions = {}): void {
+  const outOk = out && paymentsEnabled() && emailEnabled();
   later(async () => {
-    for (const account of accounts) {
+    for (const [i, account] of accounts.entries()) {
       const t = now();
+      const ledgers = accounts.slice(0, i + 1);
       const due = await one<{ due: number }>(
         `SELECT EXISTS (SELECT 1 FROM credit_alerts WHERE user_id = ? AND retry_at > 0 AND retry_at <= ?)
              OR (? AND EXISTS (SELECT 1 FROM auto_topups WHERE user_id = ? AND enabled = 1 AND payment_method IS NOT NULL))
-             OR (? AND NOT EXISTS (SELECT 1 FROM credit_alerts WHERE user_id = ? AND (out_at > 0 OR out_retry_at > ?)) AND ${SETTLED_BALANCE} <= 0) AS due`,
-        [account, t, topUp ? 1 : 0, account, out ? 1 : 0, account, t, account, t - HOLD_MS],
+             OR (? AND NOT EXISTS (SELECT 1 FROM credit_alerts WHERE user_id = ? AND (enabled = 0 OR out_at > 0 OR out_retry_at > ?))
+                 AND EXISTS (SELECT 1 FROM users WHERE id = ? AND (? OR verified_at > 0)) AND ${EVER_FUNDED}
+                 AND ${ledgers.map(() => `${SETTLED_BALANCE} <= 0`).join(" AND ")}) AS due`,
+        [
+          account,
+          t,
+          topUp ? 1 : 0,
+          account,
+          outOk ? 1 : 0,
+          account,
+          t,
+          account,
+          verificationRequired() ? 0 : 1,
+          account,
+          ...ledgers.flatMap((ledger) => [ledger, t - HOLD_MS]),
+        ],
       );
       if (Number(due?.due) === 1) await checkLowBalance(account, { topUp, out });
     }
@@ -203,6 +226,7 @@ type State = {
   name: string | null;
   verified_at: number | null;
   balance: number;
+  funded: number;
   enabled: number | null;
   below: number | null;
   alerted_at: number | null;
@@ -232,6 +256,20 @@ const freeUse = (verifiedAt: number | null) =>
     : null;
 
 /**
+ * Whether a balance at or below 0 means the account holder has run out of credits: credits came in
+ * before (funded: an account that never had any has nothing to run out of), their email is confirmed
+ * when Flash asks for that (one that isn't may be someone else's address, and gets no free credits),
+ * and, for a team member's own credits, the team's pool, which their requests take from first, has
+ * none either. Otherwise the balance is only low, as before this email.
+ */
+async function outOf(account: string, s: State, t: number): Promise<boolean> {
+  if (Number(s.balance) > 0 || Number(s.funded) !== 1 || (verificationRequired() && !(Number(s.verified_at) > 0))) return false;
+  const pool = await teamPool(account);
+  if (!pool) return true;
+  return Number((await one<{ b: number }>(`SELECT ${SETTLED_BALANCE} AS b`, [pool.user_id, t - HOLD_MS]))?.b ?? 0) <= 0;
+}
+
+/**
  * Emails the account when its balance is below its level and this drop hasn't been emailed, or when
  * it ran out (out) and this time hasn't been emailed. One read for everything it needs; writes only
  * when something changes. The balance counts what is settled: a request still running holds credits
@@ -241,14 +279,14 @@ const freeUse = (verifiedAt: number | null) =>
 export async function checkLowBalance(account: string, { topUp = true, out: outOk = true }: CheckOptions = {}): Promise<LowBalanceOutcome> {
   const t = now();
   const s = await one<State>(
-    `SELECT u.email, COALESCE(NULLIF(TRIM(u.nickname), ''), u.name) AS name, u.verified_at, ${SETTLED_BALANCE} AS balance,
+    `SELECT u.email, COALESCE(NULLIF(TRIM(u.nickname), ''), u.name) AS name, u.verified_at, ${SETTLED_BALANCE} AS balance, ${EVER_FUNDED} AS funded,
             a.enabled, a.below, a.alerted_at, a.sent_at, a.retry_at, a.out_at, a.out_retry_at,
             (p.enabled = 1 AND p.payment_method IS NOT NULL AND p.pack IN (${CREDIT_PACKS.map((k) => `'${k.id}'`).join(", ")})
               AND (SELECT COUNT(*) FROM credit_ledger WHERE user_id = ? AND ref LIKE 'stripe:auto:%' AND created_at >= ?) < ?
               AND NOT EXISTS (SELECT 1 FROM credit_ledger WHERE user_id = ? AND substr(ref, 1, 15) = 'stripe-dispute:')) AS auto,
             p.below AS auto_below
      FROM (SELECT 1) LEFT JOIN users u ON u.id = ? LEFT JOIN credit_alerts a ON a.user_id = ? LEFT JOIN auto_topups p ON p.user_id = ?`,
-    [account, t - HOLD_MS, account, monthStart(t), MAX_PER_MONTH, account, account, account, account],
+    [account, t - HOLD_MS, account, account, monthStart(t), MAX_PER_MONTH, account, account, account, account],
   );
   // An account deleted (by hand, see deleteUserAlerts) while a spend of it was still running: nothing to
   // email, and nothing written back for it.
@@ -273,9 +311,9 @@ export async function checkLowBalance(account: string, { topUp = true, out: outO
     }
     return "above";
   }
-  // Run out: at or below 0, nothing paid can be held (see the top of this file). Above it again, the
-  // next time it runs out is emailed, here or as credits come in (credit_alerts_out_rearm in db.ts).
-  const out = balance <= 0;
+  // Run out: at or below 0, nothing paid can be held (see the top of this file and outOf). Above it
+  // again, the next time it runs out is emailed, here or as credits come in (credit_alerts_out_rearm in db.ts).
+  const out = await outOf(account, s, t);
   if (!out && (outAt || outRetryAt)) await run("UPDATE credit_alerts SET out_at = 0, out_retry_at = 0 WHERE user_id = ?", [account]);
   if (s?.enabled === 0 || !paymentsEnabled() || !emailEnabled()) return "off";
   const to: CreditEmailTo = { name: s.name, free: freeUse(s.verified_at) };
@@ -283,6 +321,10 @@ export async function checkLowBalance(account: string, { topUp = true, out: outO
     // The out-of-credits email in place of the low-credit one, which says the same and more. None while
     // auto top-up can buy (as below), once for each time it runs out, and never from a check that may
     // not send it (a visitor's refused question): it waits for the account holder's own spend or refusal.
+    // A low-credit email owed (due at retry_at) isn't sent while the credits are out, so it is let go:
+    // refusals then don't look for it. With credits back under the level, the next spend sends it as
+    // before (nothing re-armed it, and the week's limit goes by sent_at).
+    if (retryAt > 0 && retryAt <= t) await run("UPDATE credit_alerts SET alerted_at = 0, retry_at = 0 WHERE user_id = ? AND retry_at = ?", [account, retryAt]);
     if (auto) return "auto";
     if (outAt) return "alerted";
     if (outRetryAt > t || !outOk) return "waiting";

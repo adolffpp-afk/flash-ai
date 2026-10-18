@@ -78,6 +78,24 @@ test("every video is made on fal.ai: the old video model is gone, and the defaul
   assert.equal(pick("video", "Waves at sunset", all, "sora-2-pro"), "veo-3.1", "a pick of the old model gets the default");
 });
 
+test("Video shows as working only with fal.ai set up, where every video model is: with OpenAI alone it is coming soon", async () => {
+  const { engineStatus } = await import("../src/lib/server/status.ts");
+  const keys = { OPENAI_API_KEY: process.env.OPENAI_API_KEY, FAL_KEY: process.env.FAL_KEY };
+  try {
+    process.env.OPENAI_API_KEY = "sk-test";
+    delete process.env.FAL_KEY;
+    assert.deepEqual([engineStatus().video, pick("video", "Waves at sunset", new Set<Provider>(["openai"]))], [false, null]);
+    assert.equal(engineStatus().image, true, "pictures still work with OpenAI");
+    process.env.FAL_KEY = "k";
+    assert.equal(engineStatus().video, true);
+  } finally {
+    for (const [key, value] of Object.entries(keys)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
 test("requestedSeconds reads and clamps durations", () => {
   assert.equal(requestedSeconds("a 12 second clip", 3, 15, 10), 12);
   assert.equal(requestedSeconds("a 30-second clip", 3, 15, 10), 15);

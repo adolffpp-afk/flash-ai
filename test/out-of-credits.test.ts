@@ -118,7 +118,7 @@ const STILL_WORKING = [
 ].join("\n");
 const WAITING = [
   "Waiting until you top up:",
-  "- New builds and changes to your apps.",
+  "- New builds, and changes Flash makes to your apps.",
   "- Chats on paid levels.",
   "- Pictures, videos, music and voiceovers.",
   "- The AI inside your apps answering visitors.",
@@ -306,12 +306,13 @@ test("the low-credit email: greeting, the approved line, the balance, then what 
 });
 
 test("the lists follow what free models give: none for an email not confirmed yet, and free pictures when they are set up", async () => {
-  // Unconfirmed: no free models for them, so no free chats are promised.
+  // Unconfirmed: no free models for them, so no free chats are promised (in the low-credit email: an
+  // email not confirmed yet is never told its credits ran out, see below).
   await user("new", { verified: false });
-  await give("new", 40);
-  await spend("new", 40);
+  await give("new", 150, "stripe:pack:new1");
+  await spend("new", 70);
   const [email] = to("new");
-  assert.equal(email.subject, OUT);
+  assert.equal(email.subject, LOW);
   assert.ok(!email.text.includes("Free chats"), "verification is on (emails are), and this email isn't confirmed");
   assert.ok(email.text.includes("Still working:\n- Your published apps and websites stay online for visitors, with their pages, forms, sign-ins and shop orders.\n\nWaiting"));
 
@@ -321,11 +322,118 @@ test("the lists follow what free models give: none for an email not confirmed ye
       "Your published apps and websites stay online for visitors, with their pages, forms, sign-ins and shop orders.",
       "Free chats and pictures on free models, up to 25 chats and 3 pictures a day.",
     ],
-    waiting: ["New builds and changes to your apps.", "Chats on paid levels.", "Pictures on paid models, videos, music and voiceovers.", "The AI inside your apps answering visitors."],
+    waiting: ["New builds, and changes Flash makes to your apps.", "Chats on paid levels.", "Pictures on paid models, videos, music and voiceovers.", "The AI inside your apps answering visitors."],
   });
   assert.deepEqual(creditLists(null).working, ["Your published apps and websites stay online for visitors, with their pages, forms, sign-ins and shop orders."]);
   // A name is kept to one line and escaped.
   const odd = EMAILS.outOfCredits("https://flash.test/?credits=1&as=x", { name: "Jo <b>\r\nBcc: x@y.z" });
   assert.ok(odd.text.includes("Hi Jo <b> Bcc: x@y.z,\n\n"));
   assert.ok(odd.html.includes("Hi Jo &lt;b&gt; Bcc: x@y.z,"));
+});
+
+// How many full low-credit checks (checkLowBalance's one read) the requests since the last reset cost.
+const { db } = await import("../src/lib/server/db.ts");
+const client = await db();
+let fullChecks = 0;
+const execute = client.execute.bind(client) as (...args: unknown[]) => unknown;
+(client as { execute: unknown }).execute = (q: string | { sql: string }, ...rest: unknown[]) => {
+  if ((typeof q === "string" ? q : q.sql).includes("AS auto_below")) fullChecks++;
+  return execute(q, ...rest);
+};
+const alertPlaces = async () =>
+  Number((await one<{ count: number }>("SELECT count FROM rate_limits WHERE key = ?", [`email-alert:${new Date(clock).toISOString().slice(0, 10)}`]))?.count ?? 0);
+
+test("only credits that were there run out: an account that never had any, or whose email isn't confirmed, isn't told so, and takes none of the day's alert emails", async () => {
+  clock = NOON + 100 * DAY;
+  // Signed up with an address nobody confirmed (it may be someone else's): no free credits, so 0 from
+  // the start. Its paid requests are refused, and nothing is emailed.
+  await user("stranger", { verified: false });
+  await refused("stranger", 8);
+  await refused("stranger");
+  // Confirmed, but no credits ever came in (no free credits on this server, say).
+  await user("never");
+  await refused("never");
+  assert.deepEqual([to("stranger").length, to("never").length], [0, 0]);
+  assert.equal(await alertPlaces(), 0, "none of the day's alert emails taken");
+  // Not confirmed, with credits bought: at 0 it gets the low-credit email, as before, not this one.
+  await user("unconfirmed", { verified: false });
+  await give("unconfirmed", 40, "stripe:pack:unconfirmed1");
+  await spend("unconfirmed", 40);
+  await refused("unconfirmed");
+  assert.deepEqual(to("unconfirmed").map((e) => e.subject), [LOW]);
+});
+
+test("a refusal at 0 looks no further when no email can be owed: emails turned off, or the out-of-credits email sent with a low one still owed", async () => {
+  clock = NOON + 110 * DAY;
+  await user("optout");
+  await saveAlertSettings("optout", { enabled: false, below: 100 });
+  await give("optout", 50);
+  await spend("optout", 50);
+  fullChecks = 0;
+  for (let i = 0; i < 20; i++) await refused("optout");
+  assert.equal(fullChecks, 0, "turned off: one read a refusal, as before");
+  assert.equal(to("optout").length, 0);
+
+  await user("noemail");
+  await give("noemail", 50);
+  const key = process.env.RESEND_API_KEY;
+  delete process.env.RESEND_API_KEY;
+  try {
+    await spend("noemail", 50);
+    fullChecks = 0;
+    for (let i = 0; i < 5; i++) await refused("noemail");
+    assert.equal(fullChecks, 0, "no emails on this server");
+  } finally {
+    process.env.RESEND_API_KEY = key;
+  }
+
+  // A low-credit email the day's share held back, then a spend the next day that leaves nothing: the
+  // out-of-credits email goes in its place, and refusals after it don't look for the low one.
+  await user("owed");
+  await give("owed", 150);
+  await useUpAlertEmails();
+  await spend("owed", 70);
+  assert.equal(to("owed").length, 0, "held back");
+  clock += DAY;
+  await spend("owed", 80);
+  assert.deepEqual(to("owed").map((e) => e.subject), [OUT]);
+  fullChecks = 0;
+  for (let i = 0; i < 10; i++) await refused("owed");
+  assert.equal(fullChecks, 0);
+  assert.equal(to("owed").length, 1);
+  // Credits back, still under the level: the next drop is emailed as before.
+  await give("owed", 60, "stripe:pack:owed1");
+  await spend("owed", 10);
+  assert.deepEqual(to("owed").map((e) => e.subject), [OUT, LOW]);
+});
+
+test("a team member's own credits at 0 haven't run out while the team's pool has some: it pays for them first", async () => {
+  clock = NOON + 120 * DAY;
+  await user("boss2", { name: "Bea" });
+  await user("mia", { name: "Mia" });
+  await run(
+    `INSERT INTO subscriptions (id, user_id, plan, interval, status, amount_cents, anchor, paid_until, test, created_at, updated_at)
+     VALUES ('sub_boss2', 'boss2', 'business', 'month', 'active', 10000, ?, ?, 1, ?, ?)`,
+    [clock, clock + 30 * DAY, clock, clock],
+  );
+  await run("INSERT INTO teams (id, owner_id, created_at) VALUES ('team_boss2', 'boss2', 0)");
+  await run("INSERT INTO team_members (team_id, user_id, joined_at) VALUES ('team_boss2', 'mia', 0)");
+  // Her own credits never came in, the pool has 100, and a build of 300 is refused.
+  await give("boss2", 100);
+  await refused("mia", 300);
+  assert.equal(to("mia").length, 0);
+  // Her own 50 spent on a request the pool's 10 didn't cover: her own are at 0, the pool still pays.
+  await give("boss2", -90, "stripe-refund:ch_boss2:1");
+  await give("mia", 50);
+  await spend("mia", 50);
+  assert.equal(await balance("mia"), 0);
+  await refused("mia", 300);
+  assert.ok(!to("mia").some((e) => e.subject === OUT), "the pool's 10 still pay for her small requests");
+  assert.equal(to("boss2").length, 0);
+  // The pool spent too: nothing she can spend from has credits, so both have run out.
+  await spend("mia", 10);
+  assert.deepEqual(to("boss2").map((e) => e.subject), [OUT]);
+  await refused("mia", 300);
+  assert.ok(to("mia").at(-1)?.text.startsWith(`${OUT}\n\nHi Mia,\n\n`));
+  assert.ok(to("mia").at(-1)?.text.includes("Top up in Flash: https://flash.test/?credits=1&as=mia"));
 });

@@ -55,9 +55,11 @@ export const PACK_VIDEO_ENDPOINT = "fal-ai/kling-video/v3/pro/image-to-video";
 
 /**
  * Image, video and music models Flash can use. For each engine the first model whose
- * provider has a key is the default (for videos, VIDEO_MODEL in engines/media.ts when it is set
- * up); a model with `match` wins when the request fits it. Cheaper models come first, so a dearer
- * one is the default only when nothing cheaper is set up.
+ * provider has a key is the default; a model with `match` wins when the request fits it. For
+ * pictures and music, cheaper models come first, so a dearer one is the default only when nothing
+ * cheaper is set up. Videos are the exception: their default is VIDEO_MODEL (engines/media.ts) when
+ * it is set up, the one with sound, though the one listed after it costs less for 10 seconds. Its
+ * price is shown and asked about like any other (price-question.ts).
  */
 export const MODELS: ModelInfo[] = [
   {
