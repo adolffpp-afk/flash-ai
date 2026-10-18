@@ -317,6 +317,127 @@ test("the rate limit counts app steps, not requests, and one connection counts a
   assert.equal(await stepsOf("free6"), 45);
 });
 
+test("track requests at the same moment never take the rate limit past its numbers, and those turned away write nothing", async () => {
+  forgetServerMemory();
+  await run("DELETE FROM rate_limits");
+  await owner("free10");
+  await site("burst", "free10", names("q"));
+  // 40 connections, each sending all 10 of the app's names at once, while the app has room for 30.
+  const crowd: Record<string, string>[] = [];
+  for (let i = 0; i < 40; i++) crowd.push(await visitor("burst", `10.230.${i}.1`));
+  const appCount = () => n("SELECT count AS n FROM rate_limits WHERE key = 'track-app:burst'");
+  const burst = () =>
+    rowsWritten(async () => {
+      await Promise.all(crowd.map((who) => trackRoute.POST(call("burst", who, names("q").join("\n")), ctx("burst"))));
+      await afterwards();
+    });
+  const first = await burst();
+  assert.equal(await appStepsOf("burst"), 30);
+  assert.equal(await stepsOf("free10"), 30);
+  assert.equal(await appCount(), 30, "never past the app's 30");
+  assert.equal(await n("SELECT COUNT(*) AS n FROM rate_limits WHERE key LIKE 'track-net:burst:%'"), 3, "only the 3 requests that counted");
+  // What the 3 counted wrote, and nothing for the 37 turned away: 2 limits, the list, the owner's count
+  // and 10 steps each, and the day's 10 names once.
+  assert.equal(first, 3 * 14 + 10);
+  // Later that minute someone else's step still counts nowhere, as the app had its 30; a minute on,
+  // it counts, and the crowd again writes only for the requests that count.
+  const real = await visitor("burst", "10.231.0.1");
+  assert.equal(await rowsWritten(() => track("burst", real, "q0")), 0);
+  await run("UPDATE rate_limits SET reset_at = 0 WHERE key >= 'track-' AND key < 'track.'");
+  Date.now = () => NOW + 61_000;
+  try {
+    await burst();
+    assert.equal(await appCount(), 30);
+    assert.equal(await appStepsOf("burst"), 60);
+    await run("UPDATE rate_limits SET reset_at = 0 WHERE key >= 'track-' AND key < 'track.'");
+    await track("burst", real, "q0");
+    assert.equal(await appStepsOf("burst"), 61);
+  } finally {
+    Date.now = () => NOW;
+  }
+  // The connection's 10 taken by its request to another server just before: nothing counts here, and
+  // what this one took of the app's 30 is given back.
+  await site("burst2", "free10", names("q"));
+  const other = await visitor("burst2", "10.232.0.1");
+  const client = await db();
+  const execute = client.execute.bind(client);
+  client.execute = (async (s: { sql: string; args?: unknown[] } | string, ...rest: unknown[]) => {
+    const key = typeof s === "string" ? "" : String(s.args?.[0] ?? "");
+    if (typeof s !== "string" && s.sql.includes("INSERT INTO rate_limits") && key.startsWith("track-net:")) {
+      await execute({ sql: "INSERT INTO rate_limits (key, count, reset_at) VALUES (?, 10, ?) ON CONFLICT DO UPDATE SET count = 10", args: [key, NOW + 60_000] });
+    }
+    return (execute as (...a: unknown[]) => unknown)(s, ...rest);
+  }) as typeof client.execute;
+  try {
+    await track("burst2", other, names("q").join("\n"));
+  } finally {
+    client.execute = execute;
+  }
+  assert.equal(await appStepsOf("burst2"), 0);
+  assert.equal(await n("SELECT count AS n FROM rate_limits WHERE key = 'track-app:burst2'"), 0);
+});
+
+test("a track request that loses the race for the person's list counts again only what the rate limit let it", async () => {
+  forgetServerMemory();
+  await run("DELETE FROM rate_limits");
+  await owner("free11");
+  await site("race", "free11", names("r"));
+  const who = await visitor("race", "10.240.0.1");
+  // Others used 29 of the app's 30 this minute: 1 more step fits.
+  await run("INSERT INTO rate_limits (key, count, reset_at) VALUES ('track-app:race', 29, ?)", [NOW + 60_000]);
+  const match = await matchVisit("race", call("race", who), NOW);
+  // The same person's form at the same moment changes their list first.
+  await Promise.all([
+    countSteps("race", match, names("r").map((s) => `app:${s}` as const), NOW, { rateLimit: true }),
+    countSteps("race", match, ["form"], NOW),
+  ]);
+  assert.equal(await appStepsOf("race"), 1);
+  assert.equal(await markOf("race", "form"), 1);
+  assert.equal(await n("SELECT count AS n FROM rate_limits WHERE key = 'track-app:race'"), 30);
+  // The same name twice at once: one counts it, and the other gives back what it took of the limit.
+  await run("DELETE FROM rate_limits");
+  const again = await matchVisit("race", call("race", who), NOW);
+  await Promise.all([1, 2].map(() => countSteps("race", again, ["app:r5"], NOW, { rateLimit: true })));
+  assert.equal(await appStepsOf("race"), 2);
+  assert.equal(await n("SELECT count AS n FROM rate_limits WHERE key = 'track-app:race'"), 1);
+  assert.equal(await n("SELECT count AS n FROM rate_limits WHERE key LIKE 'track-net:race:%'"), 1);
+  // Lost on the retry too: nothing counted, and all it took given back.
+  const client = await db();
+  const execute = client.execute.bind(client);
+  client.execute = ((s: { sql: string } | string, ...rest: unknown[]) => {
+    if ((typeof s === "string" ? s : s.sql).startsWith("UPDATE site_people SET steps")) return Promise.resolve({ rows: [] });
+    return (execute as (...a: unknown[]) => unknown)(s, ...rest);
+  }) as typeof client.execute;
+  try {
+    await countSteps("race", await matchVisit("race", call("race", who), NOW), ["app:r6", "app:r7"], NOW, { rateLimit: true });
+  } finally {
+    client.execute = execute;
+  }
+  assert.equal(await appStepsOf("race"), 2);
+  assert.equal(await n("SELECT count AS n FROM rate_limits WHERE key = 'track-app:race'"), 1);
+  assert.equal(await n("SELECT count AS n FROM rate_limits WHERE key LIKE 'track-net:race:%'"), 1);
+});
+
+test("a step the rate limit turns away writes no note that the day's app steps stopped counting", async () => {
+  forgetServerMemory();
+  await run("DELETE FROM rate_limits");
+  await owner("free12");
+  await site("note", "free12", names("n"));
+  const who = await visitor("note", "10.252.0.1");
+  // 95 of the day's 100 counted, and the app's 30 this minute used by others.
+  await run("UPDATE owner_people SET steps = 95 WHERE user_id = 'free12' AND day = ?", [TODAY]);
+  await run("INSERT INTO rate_limits (key, count, reset_at) VALUES ('track-app:note', 30, ?)", [NOW + 60_000]);
+  assert.equal(await rowsWritten(() => track("note", who, names("n").join("\n"))), 0);
+  assert.equal(await markOf("note", "capped-app"), null);
+  const f = (await funnelStats("note", 30, NOW))!;
+  assert.deepEqual([f.stepsPausedToday, f.stepsPaused], [null, []]);
+  // A minute later the request that reaches the 100 writes it.
+  await run("UPDATE rate_limits SET reset_at = 0 WHERE key >= 'track-' AND key < 'track.'");
+  await track("note", who, names("n").join("\n"));
+  assert.equal(await stepsOf("free12"), 100);
+  assert.equal(await markOf("note", "capped-app"), 100);
+});
+
 test("one connection's rate limit has a code of its own on each app, so nothing ties its use of two apps together", async () => {
   forgetServerMemory();
   await run("DELETE FROM rate_limits");
@@ -344,6 +465,44 @@ test("a paid owner near the free number counts every new person answered at the 
   assert.equal(await visitorsOf("big8"), 151);
   assert.equal(await peopleOf("lite8"), 1_049);
   assert.equal(await markOf("big8", "capped"), null);
+});
+
+test("new people answered at the same moment on a server that hasn't read the plan wait for one read of it", async () => {
+  forgetServerMemory();
+  await owner("free13");
+  await site("stamp", "free13");
+  await visitor("stamp");
+  forgetServerMemory();
+  const sent = await statementsDuring(() => Promise.all(Array.from({ length: 50 }, () => recordVisit("stamp", page("stamp", person()), null, NOW))));
+  assert.equal(sent.filter((sql) => /FROM subscriptions/.test(sql)).length, 1);
+  assert.equal(sent.filter((sql) => /FROM users/.test(sql)).length, 1);
+  assert.equal(await visitorsOf("stamp"), 51);
+  // A read that answers after the owner's view read the plan they just bought keeps nothing.
+  forgetServerMemory();
+  const client = await db();
+  const execute = client.execute.bind(client);
+  let release = () => {};
+  const held = new Promise<void>((done) => (release = done));
+  client.execute = ((s: { sql: string } | string, ...rest: unknown[]) => {
+    const r = (execute as (...a: unknown[]) => Promise<unknown>)(s, ...rest);
+    return (typeof s === "string" ? s : s.sql).includes("FROM subscriptions") ? r.then((x) => held.then(() => x)) : r;
+  }) as typeof client.execute;
+  try {
+    const late = peopleCap("free13", NOW);
+    await new Promise((done) => setTimeout(done, 20));
+    await run(
+      `INSERT INTO subscriptions (id, user_id, plan, interval, status, amount_cents, anchor, paid_until, test, created_at, updated_at)
+       VALUES ('sub-free13', 'free13', 'lite', 'month', 'active', 100, 0, ?, 1, 0, 0)`,
+      [Date.UTC(2100, 0, 1)],
+    );
+    const bought = peopleCap("free13", NOW, true);
+    release();
+    assert.equal((await bought).paid, true);
+    assert.equal((await late).paid, false, "read before the purchase");
+  } finally {
+    client.execute = execute;
+  }
+  assert.deepEqual(await peopleCap("free13", NOW + 1_000), { cap: PLAN_PEOPLE.lite, steps: PLAN_PEOPLE.lite, paid: true });
 });
 
 test("a free owner whose counting paused on 2 or more of the last 7 days is offered an upgrade, on every app; one day, older days, other notes or a paid plan aren't", async () => {
@@ -402,8 +561,13 @@ test("the upgrade offer goes away as soon as the owner buys a plan, though this 
   for (const daysAgo of [1, 3]) {
     await run("INSERT INTO site_events (site_slug, day, step, source, medium, campaign, n) VALUES ('w9', ?, 'capped', '', '', '', 1000)", [dayOf(NOW - daysAgo * DAY)]);
   }
+  // Paused today too, on this server: the 1,001st person wasn't counted.
+  await visitor("w9");
+  await run("UPDATE owner_people SET people = 1000 WHERE user_id = 'free9' AND day = ?", [TODAY]);
+  await visitor("w9");
+  assert.equal(await peopleOf("free9"), 1_000);
   const before = (await funnelStats("w9", 30, NOW))!;
-  assert.deepEqual([before.pausedWeek, before.free], [{ days: 2, people: 1_000 }, true]);
+  assert.deepEqual([before.pausedWeek, before.pausedToday, before.free], [{ days: 3, people: 1_000 }, 1_000, true]);
   // Lite, bought right after: the view offers nothing, and this server counts by Lite from now on.
   await run(
     `INSERT INTO subscriptions (id, user_id, plan, interval, status, amount_cents, anchor, paid_until, test, created_at, updated_at)
@@ -411,6 +575,10 @@ test("the upgrade offer goes away as soon as the owner buys a plan, though this 
     [Date.UTC(2100, 0, 1)],
   );
   const after = (await funnelStats("w9", 30, NOW + 1_000))!;
-  assert.deepEqual([after.pausedWeek, after.free], [null, false]);
+  assert.deepEqual([after.pausedWeek, after.pausedToday, after.free], [null, null, false]);
   assert.deepEqual(await peopleCap("free9", NOW + 2_000), { cap: PLAN_PEOPLE.lite, steps: PLAN_PEOPLE.lite, paid: true });
+  const visitors = await visitorsOf("w9");
+  await recordVisit("w9", page("w9", person()), null, NOW + 3_000);
+  assert.equal(await peopleOf("free9"), 1_001, "the next new person counts at once");
+  assert.equal(await visitorsOf("w9"), visitors + 1);
 });

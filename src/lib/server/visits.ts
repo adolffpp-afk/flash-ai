@@ -48,7 +48,7 @@ export const MAX_TOUCHES = 30;
  */
 export const NETWORK_SOURCES = 3;
 const GUARDED_TOUCHES = 20;
-// How long a server goes by what it read of an owner's plan, and by "paused for today".
+// How long a server goes by what it read of an owner's plan.
 const PLAN_MEMORY = 15 * MINUTE;
 // Past this many connections in memory, the older half is forgotten.
 const MAX_NETWORKS = 50_000;
@@ -94,17 +94,18 @@ export function isPersonVisit(request: Request): boolean {
 
 /*
  * What each server remembers, so most loads read nothing extra: the day's keys (today's and
- * yesterday's), the day counting began, whether it tried the daily prune today, owners' plans and
- * "paused for today" for 15 minutes, the marks it wrote today, and how many new people and app steps
- * it counted today per owner from each connection and how many new sources each connection added to
- * an app's day (under a code made with the day's key, never the address).
+ * yesterday's), the day counting began, whether it tried the daily prune today, owners' plans for
+ * 15 minutes (and the reads of them under way), the marks it wrote today, and how many new people
+ * and app steps it counted today per owner from each connection and how many new sources each
+ * connection added to an app's day (under a code made with the day's key, never the address).
  */
 const keys = new Map<string, Buffer>();
 const noKey = new Map<string, number>();
 let since: { day: string; value: string } | null = null;
 let triedPrune = "";
-const plans = new Map<string, { until: number; cap: number; steps: number; paid: boolean }>();
-const paused = new Map<string, { until: number; cap: number }>();
+type Plan = { cap: number; steps: number; paid: boolean };
+const plans = new Map<string, Plan & { until: number }>();
+const planReads = new Map<string, Promise<Plan>>();
 const marked = new Set<string>();
 const networks = new Map<string, number>();
 const opened = new Map<string, number>();
@@ -118,7 +119,7 @@ export function forgetServerMemory(): void {
   since = null;
   triedPrune = "";
   plans.clear();
-  paused.clear();
+  planReads.clear();
   marked.clear();
   networks.clear();
   opened.clear();
@@ -137,7 +138,6 @@ function startDay(day: string) {
   networks.clear();
   opened.clear();
   stepped.clear();
-  for (const key of paused.keys()) if (!key.endsWith(`|${day}`)) paused.delete(key);
 }
 
 function keep(day: string, key: Buffer) {
@@ -237,22 +237,36 @@ export async function recordOwnerVisit(slug: string, request: Request, at = Date
  * How many people (cap) and app steps (steps) an owner's apps may count a day, by their plan (an
  * admin's is Agency's), and whether they have a paid plan. The free plan's app steps are a tenth of
  * its people; a paid plan's are its people. Each server reads it at most every 15 minutes per owner,
- * so a plan bought during the day counts within 15 minutes; fresh reads it now (the owner's own view,
- * which must not offer an upgrade they just bought), and this server then counts by it too.
+ * so a plan bought during the day counts within 15 minutes, and loads answered while it is being read
+ * wait for that read; fresh reads it now (the owner's own view, which must not offer an upgrade they
+ * just bought), and this server then counts by it too.
  */
-export async function peopleCap(ownerId: string, at = Date.now(), fresh = false): Promise<{ cap: number; steps: number; paid: boolean }> {
+export async function peopleCap(ownerId: string, at = Date.now(), fresh = false): Promise<Plan> {
   const known = plans.get(ownerId);
   if (known && known.until > at && !fresh) return { cap: known.cap, steps: known.steps, paid: known.paid };
-  const sub = await activeSubscription(ownerId);
-  let [cap, steps, paid] = [freePeople(), freeSteps(), false];
-  if (sub && Object.hasOwn(PLAN_PEOPLE, sub.plan)) [cap, steps, paid] = [PLAN_PEOPLE[sub.plan], PLAN_PEOPLE[sub.plan], true];
-  else {
-    const user = await one<{ email: string; verified_at: number }>("SELECT email, verified_at FROM users WHERE id = ?", [ownerId]);
-    if (user && isAdmin(user)) [cap, steps, paid] = [PLAN_PEOPLE.agency, PLAN_PEOPLE.agency, true];
+  const reading = planReads.get(ownerId);
+  if (reading && !fresh) return reading;
+  const read = readPlan(ownerId);
+  planReads.set(ownerId, read);
+  try {
+    const plan = await read;
+    // Kept unless a newer read started meanwhile (a fresh one), which keeps its own.
+    if (planReads.get(ownerId) === read) {
+      plans.set(ownerId, { until: at + PLAN_MEMORY, ...plan });
+      while (plans.size > 10_000) plans.delete(plans.keys().next().value!);
+    }
+    return plan;
+  } finally {
+    if (planReads.get(ownerId) === read) planReads.delete(ownerId);
   }
-  plans.set(ownerId, { until: at + PLAN_MEMORY, cap, steps, paid });
-  while (plans.size > 10_000) plans.delete(plans.keys().next().value!);
-  return { cap, steps, paid };
+}
+
+async function readPlan(ownerId: string): Promise<Plan> {
+  const sub = await activeSubscription(ownerId);
+  if (sub && Object.hasOwn(PLAN_PEOPLE, sub.plan)) return { cap: PLAN_PEOPLE[sub.plan], steps: PLAN_PEOPLE[sub.plan], paid: true };
+  const user = await one<{ email: string; verified_at: number }>("SELECT email, verified_at FROM users WHERE id = ?", [ownerId]);
+  if (user && isAdmin(user)) return { cap: PLAN_PEOPLE.agency, steps: PLAN_PEOPLE.agency, paid: true };
+  return { cap: freePeople(), steps: freeSteps(), paid: false };
 }
 
 /**
@@ -401,25 +415,16 @@ async function countVisit(slug: string, request: Request, viewerId: string | nul
       });
       counted = true;
     } else if (!row.kind) {
-      const pausedFor = `${row.owner}|${day}`;
-      const people = Number(row.people ?? 0);
-      let pause = paused.get(pausedFor);
-      if (pause && pause.until <= at) pause = undefined;
-      let cap = 0;
-      if (!pause) {
-        // Always by the owner's plan (read at most every 15 minutes per server), as app steps are: the
-        // free number, read without it, would stop a paid plan's loads counted at the same moment there.
-        cap = (await peopleCap(row.owner, at)).cap;
-        if (people >= cap) {
-          pause = { until: at + PLAN_MEMORY, cap };
-          paused.set(pausedFor, pause);
-        }
-      }
+      // Always by the owner's plan (read at most every 15 minutes per server, and at once after the
+      // owner's own view read it), as app steps are: the free number, read without it, would stop a
+      // paid plan's loads counted at the same moment there.
+      const cap = (await peopleCap(row.owner, at)).cap;
+      const pause = Number(row.people ?? 0) >= cap;
       network = networkOf(key, row.owner, request);
       const overNetwork = !pause && (networks.get(network) ?? 0) >= networkPeople();
       if (pause || overNetwork) {
         // Not counted: a view only (see below), and a mark on the app's day saying why.
-        const mark = pause ? markOnce(slug, "capped", pause.cap, day) : markOnce(slug, "capped-net", networkPeople(), day);
+        const mark = pause ? markOnce(slug, "capped", cap, day) : markOnce(slug, "capped-net", networkPeople(), day);
         if (mark) writes.push(mark);
         network = "";
       } else {
