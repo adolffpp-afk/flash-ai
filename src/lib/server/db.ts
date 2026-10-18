@@ -959,8 +959,8 @@ const MIGRATIONS = [
   // When a held charge was settled to what the request really cost, or 0 while it runs.
   "ALTER TABLE credit_ledger ADD COLUMN settled_at INTEGER NOT NULL DEFAULT 0",
   // 1 for a hold that keeps the auto top-up level (an app's AI that visitors ask, see charge), which
-  // auto top-up doesn't count while it is open; 2 for one that was running when auto top-up was turned
-  // on or its level set, which it never counts (see topUpBalance). Either is a visitor's hold, which
+  // auto top-up doesn't count while it is open (see topUpBalance). 2 is the same: an older Flash marked
+  // so one that was running when auto top-up was turned on. Either is a visitor's hold, which
   // settleLeftHolds (site-ai.ts) settles to 0 when a stopped server left it open.
   "ALTER TABLE credit_ledger ADD COLUMN keeps_level INTEGER NOT NULL DEFAULT 0",
   // People added to a team plan on top of its own seats, each with more monthly credits (EXTRA_SEAT).
@@ -1068,7 +1068,7 @@ async function init(c: Client) {
   await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_ref_code ON users(ref_code) WHERE ref_code IS NOT NULL");
   await c.execute("CREATE INDEX IF NOT EXISTS users_referred_by ON users(referred_by)");
   await c.execute("CREATE INDEX IF NOT EXISTS credit_ledger_actor ON credit_ledger(actor)");
-  // The holds of app AI answers still open (keeps_level 1, or 2 once marked: see visitorHoldsKeptOut),
+  // The holds of app AI answers still open (keeps_level 1, or 2 as an older Flash marked some),
   // so finding the ones a stopped server left reads only them (see site-ai.ts). It replaces one that
   // held only keeps_level 1.
   await c.execute("DROP INDEX IF EXISTS credit_ledger_open_app_holds");
