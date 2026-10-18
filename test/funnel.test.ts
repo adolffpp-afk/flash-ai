@@ -509,17 +509,23 @@ test("the track route counts the steps an app reports, without a source, and alw
 
   await recordVisit("track-1", page("track-1", { referer: "https://www.google.com/" }));
   const client = await db();
-  const execute = client.execute.bind(client);
+  const [execute, batch] = [client.execute.bind(client), client.batch.bind(client)];
   let lists = 0;
+  const list = (s: { sql: string } | string) => typeof s === "object" && s.sql.startsWith("UPDATE site_people SET steps") && lists++;
   client.execute = ((s: { sql: string }, ...rest: unknown[]) => {
-    if (typeof s === "object" && s.sql.startsWith("UPDATE site_people SET steps")) lists++;
+    list(s);
     return (execute as (...a: unknown[]) => unknown)(s, ...rest);
   }) as typeof client.execute;
+  client.batch = ((statements: { sql: string }[], ...rest: unknown[]) => {
+    statements.forEach(list);
+    return (batch as (...a: unknown[]) => unknown)(statements, ...rest);
+  }) as typeof client.batch;
   try {
     assert.equal((await track("booking\nPlan-Chosen\ncall-us-now\ncheckout\norder-1234567\n" + "a1b2c3d4e5f6a7b8\nnot ok\n" + "x".repeat(41))).status, 204);
     await afterwards();
   } finally {
     client.execute = execute;
+    client.batch = batch;
   }
   assert.equal(lists, 1, "one write to the person's list for the whole request");
   assert.deepEqual(
@@ -607,7 +613,7 @@ test("an app counts 10 names a day, a person each name once, and the owner's app
   );
 
   // The owner's daily app steps, here 3, across all their apps; built-in steps still count.
-  visitTests.freePeople = 3;
+  visitTests.freeSteps = 3;
   try {
     forgetServerMemory();
     await site("budget-1", "u2", ["a", "b"]);
@@ -633,7 +639,7 @@ test("an app counts 10 names a day, a person each name once, and the owner's app
     );
     assert.equal(await n("SELECT steps AS n FROM owner_people WHERE user_id = 'u2' AND day = ?", [dayOf(later)]), 3);
   } finally {
-    visitTests.freePeople = 0;
+    visitTests.freeSteps = 0;
   }
 });
 
@@ -642,8 +648,8 @@ test("past the owner's daily app steps, or for names the app's code doesn't have
   await run("INSERT INTO users (id, email, password_hash, created_at, verified_at) VALUES ('cost1', 'cost1@x.co', 'h', 0, 1)");
   await site("cost-1", "cost1", ["booked"]);
   const at = Date.now();
-  // The owner's app steps for today (free: 10,000) are used up.
-  await run("INSERT INTO owner_people (user_id, day, people, steps) VALUES ('cost1', ?, 0, 10000)", [dayOf(at)]);
+  // The owner's app steps for today (free: 100) are used up.
+  await run("INSERT INTO owner_people (user_id, day, people, steps) VALUES ('cost1', ?, 0, 100)", [dayOf(at)]);
   const track = (ip: string, body: string) =>
     trackRoute.POST(call("cost-1", "track", { headers: { "x-forwarded-for": ip, "content-type": "text/plain" }, body }), ctx("cost-1"));
   let written = 0;
@@ -659,9 +665,9 @@ test("past the owner's daily app steps, or for names the app's code doesn't have
     });
   }
   assert.equal(await n("SELECT COALESCE(SUM(n), 0) AS n FROM site_events WHERE site_slug = 'cost-1' AND step LIKE 'app:%'"), 0);
-  assert.equal(await n("SELECT steps AS n FROM owner_people WHERE user_id = 'cost1'"), 10000);
+  assert.equal(await n("SELECT steps AS n FROM owner_people WHERE user_id = 'cost1'"), 100);
   assert.equal(written, 1, "only the mark saying the app's steps stopped counting");
-  assert.equal(await n("SELECT n FROM site_events WHERE site_slug = 'cost-1' AND step = 'capped-app'"), 10000);
+  assert.equal(await n("SELECT n FROM site_events WHERE site_slug = 'cost-1' AND step = 'capped-app'"), 100);
   assert.deepEqual(
     (await all<{ steps: string }>("SELECT steps FROM site_people WHERE site_slug = 'cost-1'")).map((r) => r.steps),
     Array(5).fill("[]"),
@@ -710,7 +716,7 @@ test("one internet connection counts as many app steps a day as new people, so a
 });
 
 test("a paid owner whose apps reach the free number of app steps within one request counts them all, with no limit note", async () => {
-  visitTests.freePeople = 3;
+  visitTests.freeSteps = 3;
   const { PLAN_PEOPLE } = await import("../src/lib/server/visits.ts");
   const pro = PLAN_PEOPLE.pro;
   PLAN_PEOPLE.pro = 100;
@@ -736,13 +742,13 @@ test("a paid owner whose apps reach the free number of app steps within one requ
     ]);
     assert.equal((await funnelStats("cross-1", 30, at))!.stepsPaused.length, 0, "no note saying their steps stopped at the free number");
   } finally {
-    visitTests.freePeople = 0;
+    visitTests.freeSteps = 0;
     PLAN_PEOPLE.pro = pro;
   }
 });
 
 test("app steps sent at once by many people stay within the owner's daily number", async () => {
-  visitTests.freePeople = 5;
+  visitTests.freeSteps = 5;
   try {
     forgetServerMemory();
     await run("INSERT INTO users (id, email, password_hash, created_at, verified_at) VALUES ('par1', 'par1@x.co', 'h', 0, 1)");
@@ -758,7 +764,7 @@ test("app steps sent at once by many people stay within the owner's daily number
     const f = (await funnelStats("par-1", 30, at))!;
     assert.equal(f.stepsPausedToday, 5);
   } finally {
-    visitTests.freePeople = 0;
+    visitTests.freeSteps = 0;
   }
 });
 
@@ -1003,6 +1009,7 @@ test("the funnel starts on the day counting began, or the app's first day, and n
 
 test("today's limit notes come from the owner's count across their apps, and their plan is read only past the free number", async () => {
   visitTests.freePeople = 3;
+  visitTests.freeSteps = 3;
   try {
     await since("2026-08-01");
     await run("INSERT INTO users (id, email, password_hash, created_at, verified_at) VALUES ('u5', 's@x.co', 'h', 0, 1)");
@@ -1046,6 +1053,7 @@ test("today's limit notes come from the owner's count across their apps, and the
     assert.deepEqual([paid.pausedToday, paid.stepsPausedToday, paid.free], [null, null, false]);
   } finally {
     visitTests.freePeople = 0;
+    visitTests.freeSteps = 0;
   }
 });
 

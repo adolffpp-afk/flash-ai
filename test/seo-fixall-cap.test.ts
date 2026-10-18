@@ -117,9 +117,14 @@ const bodyFor = (who: Who, earlier: UIMessage[], message: UIMessage, level?: str
     files: [],
   });
 
-const post = (who: Who, body: object) =>
+// account: the account a tab names (X-Flash-Account), as authedFetch sends it once a browser holds several.
+const post = (who: Who & { account?: string }, body: object) =>
   chatRoute.POST(
-    new Request(`${ORIGIN}/api/chat`, { method: "POST", headers: { "content-type": "application/json", origin: ORIGIN, cookie: who.cookie }, body: JSON.stringify(body) }),
+    new Request(`${ORIGIN}/api/chat`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: ORIGIN, cookie: who.cookie, ...(who.account && { "x-flash-account": who.account }) },
+      body: JSON.stringify(body),
+    }),
   );
 /** fetch for fixAllHold, as the page's: the chat route itself, signed in as who. */
 const pageFetch = (who: Who) => (async (url: string | URL | Request, init?: RequestInit) => {
@@ -411,7 +416,8 @@ test("Fix all's message is sent with the price its panel said, and only Fix all'
     return flash.slice(start, flash.indexOf("\n  }\n", start));
   };
   assert.match(fn("priced"), /hold: await quote\(fix, messages, plan\.message\)/);
-  assert.match(fn("quote"), /return fixAllHold\(requestFor\(project, messages, message, \{ replyId: newId\(\) \}\)\);/);
+  // As the tab's account (authedFetch names it, see account-pin.ts).
+  assert.match(fn("quote"), /return fixAllHold\(requestFor\(project, messages, message, \{ replyId: newId\(\) \}\), authedFetch\);/);
   assert.equal(flash.match(/\bfixAllHold\(/g)?.length, 1, "a price is asked for another way");
   for (const name of ["planFix", "fixSite", "sendFix"]) {
     assert.match(fn(name), /const chat = await chatToFix\(fix\.projectId\);[\s\S]*const plan = await fixFor\(fix, chat\.messages\);/, name);
@@ -731,4 +737,35 @@ test("Cancel, or another Fix pressed, while Send looks at Fix all's price again 
   assert.match(flash, /onFix=\{fixSite\}/);
   const myApps = readFileSync(new URL("../src/components/MyApps.tsx", import.meta.url), "utf8");
   assert.match(myApps, /onFix=\{onFix\}/);
+});
+
+test("with two accounts in one browser, each tab's Fix all is priced, capped and charged as the account it names, never the default", async () => {
+  const { createSession } = await import("../src/lib/server/auth.ts");
+  const ana = await account(5_000);
+  const ben = await account(1_000_000);
+  const tokenOf = async (who: Who) => (await createSession(who.id, false)).split(";")[0].split("=")[1];
+  const [anaToken, benToken] = [await tokenOf(ana), await tokenOf(ben)];
+  // Ben's account is the browser's default; each tab names its own, as authedFetch does.
+  const cookie = `flash_session=${benToken}; flash_accounts=1.${anaToken}.${benToken}`;
+  const anaTab = { ...ana, cookie, account: ana.id };
+  const benTab = { ...ben, cookie, account: ben.id };
+  const earlier = builtChat();
+  const message = fixAllMessage();
+  const forAna = (await fixAllHold(bodyFor(ana, earlier, message), pageFetch(anaTab)))!;
+  const forBen = (await fixAllHold(bodyFor(ben, earlier, message), pageFetch(benTab)))!;
+  assert.equal(forAna.available, 5_000, "Ana's tab is priced on Ana's credits");
+  assert.equal(forBen.available, 1_000_000, "and Ben's tab on his");
+  // A price asked for naming no account (a bare fetch) gets nobody once the browser holds two: no price,
+  // never the default account's.
+  assert.equal(await fixAllHold(bodyFor(ana, earlier, message), pageFetch({ ...ana, cookie })), null);
+  // Ana's tab sends it with her price as its cap: held from and charged to her, never more than it said,
+  // and nothing of it reaches Ben's credits.
+  const r = await send(anaTab, bodyFor(ana, earlier, sentAs(message, forAna)));
+  assert.equal(r.status, 200);
+  assert.equal(r.held, forAna.credits);
+  const paid = await charged(chargeOf(r.events));
+  assert.ok(paid > 0 && paid <= forAna.credits, `charged ${paid}, said ${forAna.credits}`);
+  assert.equal(await balance(ana.id), 5_000 - paid);
+  assert.equal(await balance(ben.id), 1_000_000);
+  assert.equal(await ledgerRows(ben.id), 1);
 });

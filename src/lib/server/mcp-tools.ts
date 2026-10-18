@@ -272,7 +272,7 @@ async function paid(
   if (chargeId === null) {
     const { largest } = await spendable(ctx.user.id);
     return failed(
-      `This needs ${job.credits} Flash credits and the user has ${largest}. They can get more at ${ctx.origin}/?credits=1`,
+      `This needs ${job.credits} Flash credits and the user has ${largest}. They can get more at ${ctx.origin}/?credits=1&as=${encodeURIComponent(ctx.user.id)}`,
     );
   }
   let ok = false;
@@ -521,7 +521,7 @@ export async function callTool(name: string, args: Args, ctx: ToolContext): Prom
       return text(
         `${fullName(ctx.user)} has ${total.toLocaleString("en-US")} Flash credits` +
           (pool !== null ? ` (${pool.toLocaleString("en-US")} of them in their team's shared pool)` : "") +
-          `. More credits: ${ctx.origin}/?credits=1`,
+          `. More credits: ${ctx.origin}/?credits=1&as=${encodeURIComponent(ctx.user.id)}`,
       );
     }
     default:

@@ -79,11 +79,12 @@ export async function chatForFix(
  * it needs at least, and available the balance it's held from. With fewer credits than it needs, credits
  * is what it holds once there are enough, never the least it needs. Null when it can't be worked out
  * (offline, the count failed, an error, or nothing would be held), so the panel says the usual price
- * instead of a number Flash didn't work out. post is fetch, or a stand-in in tests.
+ * instead of a number Flash didn't work out. post: the page's authedFetch, so the price is for the
+ * account the tab shows (see account-pin.ts), or a stand-in in tests; never a bare fetch, which names none.
  */
 export type FixHold = { credits: number; needed: number; available: number };
 
-export async function fixAllHold(body: object, post: typeof fetch = fetch): Promise<FixHold | null> {
+export async function fixAllHold(body: object, post: (url: string, init: RequestInit) => Promise<Response>): Promise<FixHold | null> {
   try {
     const res = await post("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, quote: true }) });
     if (!res.ok) return null;

@@ -8,13 +8,21 @@ import { ICONS, Icon } from "./Home";
 
 type Site = { slug: string; title: string; unread: number };
 
+// When the list was last looked at, per account (a browser can be signed in to several).
 const SEEN_KEY = "flash:bell-seen";
+const seenKey = (userId: string) => `${SEEN_KEY}:${userId}`;
 // Credits added in the last two weeks show in the list; older ones are in Settings > Usage.
 const RECENT = 14 * 24 * 60 * 60 * 1000;
 
-function seenAt(): number {
+function seenAt(userId: string): number {
   try {
-    return Number(localStorage.getItem(SEEN_KEY)) || 0;
+    // Kept for everyone before it was kept per account: the first account to read it takes it over.
+    const kept = localStorage.getItem(seenKey(userId)) ?? localStorage.getItem(SEEN_KEY);
+    if (localStorage.getItem(SEEN_KEY) !== null) {
+      localStorage.setItem(seenKey(userId), kept ?? "0");
+      localStorage.removeItem(SEEN_KEY);
+    }
+    return Number(kept) || 0;
   } catch {
     return 0;
   }
@@ -36,12 +44,12 @@ export function Bell({ me, onSites, onCredits }: { me: Me; onSites: () => void; 
   useEffect(() => {
     // Known only in the browser, not while rendering on the server.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setSeen(seenAt());
+    setSeen(seenAt(me.user.id));
     setNow(Date.now());
     api<{ sites: Site[] }>("/api/sites")
       .then(({ sites }) => setSites(sites))
       .catch(() => {});
-  }, []);
+  }, [me.user.id]);
 
   useEffect(() => {
     if (!open) return;
@@ -70,7 +78,7 @@ export function Bell({ me, onSites, onCredits }: { me: Me; onSites: () => void; 
         .then(({ sites }) => setSites(sites))
         .catch(() => {});
       try {
-        localStorage.setItem(SEEN_KEY, String(now));
+        localStorage.setItem(seenKey(me.user.id), String(now));
       } catch {
         // Storage blocked: the dot shows again next visit.
       }

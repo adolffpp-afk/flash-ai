@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { announceRestored, announceSeoScore, announceUnpublished, api } from "@/lib/store";
+import { announceRestored, announceSeoScore, announceUnpublished, api, authedFetch } from "@/lib/store";
+import { withAccount } from "@/lib/account-pin";
 import { SELLER_COUNTRIES } from "@/lib/shop";
 import { OTHER } from "@/lib/traffic";
 import { DATA_RULES, DEFAULT_KEY, RULE_TEXT, blockProblem, dataLine, type DataRule, type DataSummary, type RuleSource } from "@/lib/data-rules";
@@ -669,7 +670,7 @@ export function MyApps({
     const { slug, collection } = records;
     setError("");
     try {
-      const res = await fetch(`/api/sites/${slug}/records?collection=${encodeURIComponent(collection)}&format=csv`);
+      const res = await authedFetch(`/api/sites/${slug}/records?collection=${encodeURIComponent(collection)}&format=csv`);
       if (!res.ok) throw new Error();
       const name = res.headers.get("content-disposition")?.match(/filename="([^"]+)"/)?.[1] ?? "data.csv";
       const [included, total] = (res.headers.get("x-flash-truncated") ?? "").split("/").map(Number);
@@ -924,7 +925,7 @@ export function MyApps({
                           </span>
                         ) : (
                           <span className="flex items-center gap-3 text-xs">
-                            <a href={`/api/sites/${open.slug}/versions?view=${v.id}`} target="_blank" rel="noreferrer" className="text-zinc-300 hover:text-white">
+                            <a href={withAccount(`/api/sites/${open.slug}/versions?view=${v.id}`)} target="_blank" rel="noreferrer" className="text-zinc-300 hover:text-white">
                               {t("View")} ↗
                             </a>
                             <button onClick={() => setRestoring(v.id)} className="rounded-md border border-primary/40 px-2 py-0.5 text-primary-soft hover:bg-primary/10">
@@ -1076,7 +1077,7 @@ export function MyApps({
                       ? t("1 person has signed up.")
                       : t("{count} people have signed up.", { count: members.length.toLocaleString(t.locale) })}
                   </span>
-                  <a href={`/api/sites/${open.slug}/members?format=csv`} download className="text-primary-soft hover:underline">
+                  <a href={withAccount(`/api/sites/${open.slug}/members?format=csv`)} download className="text-primary-soft hover:underline">
                     ⬇ {t("Download all (CSV)")}
                   </a>
                 </li>
@@ -1247,7 +1248,7 @@ export function MyApps({
                       )}
                     </h3>
                     {shop.orders.length > 0 && (
-                      <a href={`/api/sites/${open.slug}/orders`} download className="ml-auto text-xs text-primary-soft hover:underline">
+                      <a href={withAccount(`/api/sites/${open.slug}/orders`)} download className="ml-auto text-xs text-primary-soft hover:underline">
                         ⬇ {t("Download (CSV)")}
                       </a>
                     )}
@@ -1435,7 +1436,7 @@ export function MyApps({
             ) : (
               <ul className="space-y-3">
                 <li className="flex justify-end">
-                  <a href={`/api/sites/${open.slug}/inbox?format=csv`} download className="text-xs text-primary-soft hover:underline">
+                  <a href={withAccount(`/api/sites/${open.slug}/inbox?format=csv`)} download className="text-xs text-primary-soft hover:underline">
                     ⬇ {t("Download all (CSV)")}
                   </a>
                 </li>
