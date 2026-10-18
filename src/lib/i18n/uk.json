@@ -2130,7 +2130,7 @@
  "Your test plan will renew again.": "Тестовий тариф знову продовжуватиметься.",
  "Your text read aloud, as an audio file": "Ваш текст уголос у вигляді аудіофайлу",
  "Your title is {count} characters, so Google will cut it off. Keep it to about {max}.": "Заголовок задовгий (символів: {count}), тож Google його обріже. Тримайтеся близько {max}.",
- "Your title starts with “Home”, which tells Google nothing. Put your name and what you offer first.": "Заголовок починається з «Home», що нічого не каже Google. Поставте на початок свою назву й те, що ви пропонуєте.",
+ "Your title starts with “{word}”, which tells Google nothing. Put your name and what you offer first.": "Заголовок починається з «{word}», що нічого не каже Google. Поставте на початок свою назву й те, що ви пропонуєте.",
  "Your title “{title}” is short. Say what you offer, and where if it matters.": "Заголовок «{title}» короткий. Скажіть, що ви пропонуєте, і де, якщо це важливо.",
  "Your video is ready. It's on your screen.": "Ваше відео готове. Воно на екрані.",
  "Your videos are ready. They're on your screen.": "Ваші відео готові. Вони на екрані.",

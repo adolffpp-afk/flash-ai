@@ -2130,7 +2130,7 @@
  "Your test plan will renew again.": "Dein Testtarif verlängert sich wieder.",
  "Your text read aloud, as an audio file": "Dein Text vorgelesen, als Audiodatei",
  "Your title is {count} characters, so Google will cut it off. Keep it to about {max}.": "Dein Titel hat {count} Zeichen, Google schneidet ihn also ab. Bleib bei etwa {max}.",
- "Your title starts with “Home”, which tells Google nothing. Put your name and what you offer first.": "Dein Titel beginnt mit „Home“, das sagt Google nichts. Stell deinen Namen und dein Angebot an den Anfang.",
+ "Your title starts with “{word}”, which tells Google nothing. Put your name and what you offer first.": "Dein Titel beginnt mit „{word}“, das sagt Google nichts. Stell deinen Namen und dein Angebot an den Anfang.",
  "Your title “{title}” is short. Say what you offer, and where if it matters.": "Dein Titel „{title}“ ist kurz. Sag, was du anbietest, und wo, wenn es wichtig ist.",
  "Your video is ready. It's on your screen.": "Dein Video ist fertig. Es ist auf deinem Bildschirm.",
  "Your videos are ready. They're on your screen.": "Deine Videos sind fertig. Sie sind auf deinem Bildschirm.",

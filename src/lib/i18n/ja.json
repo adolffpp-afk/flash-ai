@@ -2130,7 +2130,7 @@
  "Your test plan will renew again.": "テストプランは再び自動更新されます。",
  "Your text read aloud, as an audio file": "テキストを読み上げて音声ファイルに",
  "Your title is {count} characters, so Google will cut it off. Keep it to about {max}.": "タイトルが{count}文字あるため、Googleで途中から省略されます。{max}文字程度にしてください。",
- "Your title starts with “Home”, which tells Google nothing. Put your name and what you offer first.": "タイトルが「Home」で始まっていて、Googleには何も伝わりません。名前と提供しているものを先に書いてください。",
+ "Your title starts with “{word}”, which tells Google nothing. Put your name and what you offer first.": "タイトルが「{word}」で始まっていて、Googleには何も伝わりません。名前と提供しているものを先に書いてください。",
  "Your title “{title}” is short. Say what you offer, and where if it matters.": "タイトル「{title}」が短めです。何を提供しているか、必要なら場所も書いてください。",
  "Your video is ready. It's on your screen.": "動画ができました。画面に表示されています。",
  "Your videos are ready. They're on your screen.": "動画ができました。画面に表示されています。",

@@ -168,6 +168,62 @@ test("the title: missing, more than one, generic, starting with Home, too long o
   assert.equal(check(page({ title: `<title>${wide}</title>` }), "title")?.values.count, 62);
   assert.equal(said(page({ title: "<title>Golden Crumb &amp; Co · Sourdough</title>" }), "title"), "pass pass");
   assert.equal(check(page({ title: "<title>Golden Crumb &amp; Co · Sourdough</title>" }), "title")?.values.title, "Golden Crumb & Co · Sourdough");
+  // Characters written by name are counted, shown and sent as the browser shows them: 45, not 64.
+  const named = check(page({ title: "<title>Golden Crumb &mdash; Leeds&rsquo; Sourdough Bakery &amp; Caf&eacute;</title>" }), "title")!;
+  assert.deepEqual([named.status, named.values], ["pass", { title: "Golden Crumb — Leeds’ Sourdough Bakery & Café", count: 45 }]);
+  assert.equal(check(page({ title: "<title>Golden Crumb &amp;mdash; &unknown; Sourdough</title>" }), "title")?.values.title, "Golden Crumb &mdash; &unknown; Sourdough", "read once, as the browser does");
+  // A title longer than what the facts keep of it is measured whole.
+  const longer = "Golden Crumb Bakery ".repeat(11).trim();
+  const cut = check(page({ title: `<title>${longer}</title>` }), "title")!;
+  assert.equal(longer.length, 219);
+  assert.equal(cut.values.count, 219);
+  assert.ok(cut.fix?.startsWith("The <title> is 219 characters"), cut.fix ?? "");
+  // A home page called home in the owner's language, as the builder writes it, says nothing either.
+  for (const [title, word] of [
+    ["Inicio · Panadería Sol de Sevilla", "Inicio"],
+    ["Accueil · Boulangerie du Marché", "Accueil"],
+    ["Startseite · Bäckerei am Markt", "Startseite"],
+    ["Início · Padaria Miolo Dourado", "Início"],
+    ["Главная — Пекарня Золотая корочка", "Главная"],
+    ["الرئيسية · مطعم الياسمين في عمّان", "الرئيسية"],
+    ["דף הבית | מאפיית פירור הזהב", "דף הבית"],
+    ["ホーム｜ゴールデンクラム ベーカリー", "ホーム"],
+    ["首页 | 金色面包店 里斯本", "首页"],
+    ["Trang chủ - Tiệm bánh Vàng Giòn", "Trang chủ"],
+  ]) {
+    const home = check(page({ title: `<title>${title}</title>` }), "title")!;
+    assert.deepEqual([home.status, home.problem, home.values], ["warn", "home", { title, word }], title);
+    assert.ok(home.fix?.startsWith(`The title starts with "${word}"`), home.fix ?? "");
+  }
+  assert.equal(said(page({ title: "<title>Inicio</title>" }), "title"), "fail generic");
+  assert.equal(said(page({ title: "<title>Homemade bread · Golden Crumb</title>" }), "title"), "pass pass");
+  assert.equal(said(page({ title: "<title>Startup Studio · Product design</title>" }), "title"), "pass pass");
+});
+
+test("the title a router gives the home page as it loads is the one Google shows", async () => {
+  const router = (code: string) =>
+    page({ body: `<section data-page="home">${BODY}</section><section data-page="menu"><h1>Menu</h1></section><script>${code}</script>` });
+  const names = 'const NAMES = { home: "Home", menu: "Menu" }; function route() { const name = location.hash.slice(2); const page = NAMES[name] ? name : "home";';
+  // As builder.ts asked routers to set it until now: "Page name · Site name" on load, for home too.
+  const set = check(router(`${names}\n  document.title = NAMES[page] + " · Golden Crumb";\n}\nroute();`), "title")!;
+  assert.deepEqual([set.status, set.problem, set.values], ["warn", "home", { title: "Home · Golden Crumb", word: "Home" }]);
+  assert.ok(set.fix?.includes('sets document.title to "Home · Golden Crumb" for the home page'), set.fix ?? "");
+  assert.ok(set.fix?.includes('Keep the <title> as it is: "Golden Crumb · Sourdough bakery in Lisbon"'), set.fix ?? "");
+  assert.deepEqual(check(router(`${names} document.title = \`\${NAMES[page]} | Golden Crumb\`; } route();`), "title")?.values, { title: "Home | Golden Crumb", word: "Home" });
+  assert.deepEqual(check(router('const TITLES = { "home": "Inicio", menu: "Carta" }; const show = (p) => { document.title = TITLES[p] + " · " + SITE; };'), "title")?.values, { title: "Inicio · …", word: "Inicio" });
+  // One that keeps the page's own title for home, as builder.ts asks now, or names home after the site.
+  for (const fine of [
+    `const HOME_TITLE = document.title; ${names} document.title = page === "home" ? HOME_TITLE : NAMES[page] + " · Golden Crumb"; } route();`,
+    `${names}\n  if (page !== "home")\n    document.title = NAMES[page] + " · Golden Crumb";\n} route();`,
+    `${names} document.title = page === "home" ? "Golden Crumb · Sourdough bakery in Lisbon" : NAMES[page] + " · Golden Crumb"; } route();`,
+    `// Sets document.title for each page.\nconst NAMES = { home: "Golden Crumb", menu: "Menu" }; const route = (page) => { document.title = NAMES[page] + " · Sourdough in Lisbon"; };`,
+    'const show = (name) => { document.querySelectorAll("[data-page]").forEach((s) => (s.hidden = s.dataset.page !== name)); };',
+  ]) {
+    assert.equal(said(router(fine), "title"), "pass pass", fine);
+  }
+  assert.equal(said(BAKERY, "title"), "pass pass");
+  const { buildSystem } = await import("../src/lib/engines/builder.ts");
+  assert.ok(buildSystem("app", "").includes("set document.title: the page's own <title> on home"), "new sites keep the home page's own title");
 });
 
 test("the description: missing, more than one, the title again, too long or short", () => {
@@ -179,6 +235,11 @@ test("the description: missing, more than one, the title again, too long or shor
   assert.equal(said(page({ description: `<meta name="description" content="${"Fresh bread and cakes. ".repeat(9)}">` }), "description"), "warn long");
   assert.deepEqual(check(page({ description: '<meta name="description" content="Fresh bread daily.">' }), "description")?.values, { count: 18, text: "Fresh bread daily.", min: 70, max: 160 });
   assert.equal(said(page({ description: `<meta content="${"Golden Crumb bakes sourdough and pastries every morning in Lisbon for the whole street."}" name="description">` }), "description"), "pass pass");
+  // Longer than what the facts keep of it: measured whole.
+  const whole = check(page({ description: `<meta name="description" content="${"Fresh bread, cakes and coffee. ".repeat(9).trim()}">` }), "description")!;
+  assert.deepEqual([whole.problem, whole.values.count], ["long", 278]);
+  assert.ok(whole.fix?.startsWith("The meta description is 278 characters."), whole.fix ?? "");
+  assert.equal(check(page({ description: '<meta name="description" content="Leeds&rsquo; slow-fermented sourdough &middot; croissants &middot; caf&eacute; &mdash; baked fresh daily.">' }), "description")?.values.text, "Leeds’ slow-fermented sourdough · croissants · café — baked fresh daily.");
 });
 
 test("the limits a length message gives are numbers, written in the same digits as the count in every language", async () => {
@@ -294,6 +355,27 @@ test("the language and reading direction", () => {
   assert.equal(said(page({ lang: 'lang="he"', body: "<h1>שלום</h1>" }), "direction"), "warn missing");
   assert.equal(said(page({ lang: "", body: arabic }), "direction"), "warn missing", "no language said, but written right to left");
   assert.equal(said(page(), "direction"), "absent");
+  // English said, Arabic written: the text reads right to left all the same.
+  assert.equal(said(page({ lang: 'lang="en"', body: arabic }), "direction"), "warn missing");
+  // A script subtag says which alphabet the text is in: Roman Urdu (ur-Latn) and Hinglish (hi-Latn) are
+  // fine and read left to right; lang="ur" alone gets the subtag added, never another language or dir="rtl".
+  const romanUrdu =
+    "<h1>Chai Adda mein khush aamdeed</h1><p>Hamari doodh patti poore shehar mein mash-hoor hai. Har subah taaza paratha, anday aur kabab ke saath. Aaj hi aayein aur apne doston ke saath garam chai ka maza lein.</p>";
+  assert.equal(said(page({ lang: 'lang="ur-Latn"', body: romanUrdu }), "language"), "pass pass");
+  assert.equal(said(page({ lang: 'lang="ur-Latn"', body: romanUrdu }), "direction"), "absent");
+  assert.equal(said(page({ lang: 'lang="hi-Latn"', body: romanUrdu }), "language"), "pass pass");
+  assert.equal(said(page({ lang: 'lang="ur-Latn"', body: "<h1>Chai Adda</h1>" }), "direction"), "absent", "too little text to tell, and lang says Latin letters");
+  const ur = check(page({ lang: 'lang="ur"', body: romanUrdu }), "language")!;
+  assert.equal(`${ur.status} ${ur.problem}`, "warn mismatch");
+  assert.ok(ur.fix?.includes('add the script: lang="ur-Latn"'), ur.fix ?? "");
+  assert.equal(said(page({ lang: 'lang="ur"', body: romanUrdu }), "direction"), "absent");
+  const uzbek = "<h1>Тошкент нонвойхонаси</h1><p>Ҳар куни эрталаб янги нон, сомса ва ширинликлар пиширамиз. Бизга келинг ва дўстларингиз билан иссиқ чой ичинг, биз сизни кутамиз.</p>";
+  assert.equal(said(page({ lang: 'lang="uz-Cyrl"', body: uzbek }), "language"), "pass pass");
+  assert.ok(check(page({ lang: 'lang="uz"', body: uzbek }), "language")?.fix?.includes('lang="uz-Cyrl"'));
+  assert.equal(said(page({ lang: 'lang="ur-Latn"', body: arabic }), "language"), "warn mismatch", "the subtag names another alphabet than the text's");
+  assert.equal(said(page({ lang: 'lang="ur-Latn"', body: arabic }), "direction"), "warn missing");
+  assert.equal(said(page({ lang: 'lang="ur-Arab"', body: "<h1>خوش آمدید</h1>" }), "direction"), "warn missing");
+  assert.equal(said(page({ lang: 'lang="zh-Hant"', body: "<h1>金色麵包店</h1><p>我們每天早上在里斯本烘焙酸種麵包和糕點。週二至週日早上七點到下午三點營業，歡迎光臨。季節限定的蛋糕也有販售。</p>" }), "language"), "pass pass");
   assert.equal(said(page({ lang: 'lang="ja"', body: "<h1>ゴールデンクラム</h1><p>毎朝リスボンでサワードウとペストリーを焼いています。火曜日から日曜日まで、朝七時から午後三時まで営業しています。ぜひお越しください。季節のケーキもございます。</p>" }), "language"), "pass pass");
 });
 
@@ -378,6 +460,11 @@ test("blanks the builder left for the owner, but not numbers, capitals or code",
     'console.log("[App] ready"); throw new Error("[Cart] is empty");',
     "// Fill in [Phone number] when the owner sends it.",
     'const md = "[Read more](https://example.com)";',
+    // A one-name array, as libraries' docs write them: Chart.js plugins, Tiptap extensions, Phaser scenes.
+    'new Chart(el, { type: "bar", plugins: [ChartDataLabels], data: { labels: ["Mon"] } });',
+    "const editor = new Editor({ element: box, extensions: [StarterKit], content: notes });",
+    "new Phaser.Game({ type: Phaser.AUTO,\n  scene: [MainScene]\n});",
+    "function screens() { return [HomeScreen]; } const all = [[MainScene], [Boot]]; init([Plugin]);",
   ].join("\n");
   assert.equal(said(page({ body: `${BODY}<script>${code}</script>` }), "placeholders"), "pass pass");
   assert.equal(said(page({ body: `${BODY}<script type="text/babel">${code}</script>` }), "placeholders"), "pass pass");
@@ -396,6 +483,10 @@ test("blanks the builder left for the owner, but not numbers, capitals or code",
   const jsx = (code: string) => scanPage(page({ body: `${BODY}<div id="root"></div><script type="text/babel">${code}</script>` })).placeholders;
   assert.deepEqual(jsx("const App = () => <p>ساعات: [ساعت‌های کاری] · טלפון: [מס׳ טלפון]</p>;"), ["[ساعت‌های کاری]", "[מס׳ טלפון]"]);
   assert.deepEqual(jsx('const re = /[A-Za-z/&]+/; const m = s.match(/[Ab&]+$/); const q = x["[Cd"] + y["Ef]"];'), []);
+  // A one-word blank is still one in a string, a template or JSX text, after ":" and before "," too.
+  assert.deepEqual(jsx('const a = "Call: [Phone], or email us"; const b = `<li>Email: [Email]</li>`;\nconst C = () => (\n  <p>\n    Address: [Address]\n  </p>\n);'), ["[Phone]", "[Email]", "[Address]"]);
+  // And in a link's address the script writes.
+  assert.deepEqual(jsx('const Contact = () => <a href="tel:[Phone number]">Call</a>; const W = () => <a href={"https://wa.me/[WhatsApp number]"}>WhatsApp</a>;'), ["[Phone number]", "[WhatsApp number]"]);
   // The page's own words in brackets aren't blanks: keys a game names (in <kbd> or not), a form's
   // [Optional], a menu's [New] and a song's parts, in the page's words and in its script's.
   const own = page({
@@ -412,6 +503,19 @@ test("blanks the builder left for the owner, but not numbers, capitals or code",
     '<meta property="og:title" content="[Business name] · Bakery"><meta property="og:description" content="Call [Phone number]."><meta property="og:image" content="https://x.example/[Image].jpg"><meta property="og:site_name" content="[Site name]"><meta name="twitter:title" content="[Shop name]"><meta name="twitter:description" content="Open [Opening hours]">';
   assert.deepEqual(scanPage(page({ head: card })).placeholders, ["[Business name]", "[Phone number]", "[Site name]", "[Shop name]", "[Opening hours]"]);
   assert.deepEqual(scanPage(page({ body: `${BODY}<img src="https://x.example/a.jpg" alt="[Photo of the owner]" class="h-48">` })).placeholders, ["[Photo of the owner]"]);
+  assert.deepEqual(blanks("[Price in &euro;] · [Price in &pound;]"), ["[Price in €]", "[Price in £]"]);
+  // In a link's or a map's address: Call us dialling [Phone number], WhatsApp, a map of [Address]
+  // (written as it is or %-encoded), and a booking link that is only a blank, which is a blank to
+  // write in the chat, never a link for the builder to change.
+  const addresses = page({
+    body: `${BODY}<a href="#/menu">Menu</a> <a href="tel:[Phone number]">Call us</a> <a href="mailto:[Email address]">Email us</a> <a href="https://wa.me/[WhatsApp number]">WhatsApp</a> <a href="%5BBooking%20link%5D">Book a table</a><iframe title="Map" src="https://maps.google.com/maps?q=[Street+address]&amp;output=embed"></iframe><iframe title="Video" src="https://www.youtube.com/embed/%5BYouTube%20video%5D"></iframe>`,
+  });
+  assert.deepEqual(scanPage(addresses).placeholders, ["[Phone number]", "[Email address]", "[WhatsApp number]", "[Booking link]", "[Street address]", "[YouTube video]"]);
+  assert.equal(said(addresses, "placeholders"), "fail found");
+  assert.deepEqual(scanPage(addresses).links.outside, []);
+  assert.equal(said(addresses, "links"), "pass pass");
+  assert.equal(said(page({ body: `${BODY}<a href="[Booking link]">Book</a>` }), "links"), "absent");
+  assert.deepEqual(scanPage(page({ body: `${BODY}<a href="tel:+351210000000">Call</a><a href="https://wa.me/351210000000">WhatsApp</a>` })).placeholders, []);
   // Every blank the page shows is listed, so the owner can give them all in one go (and the draft has a line for each).
   const ten = ["[Phone number]", "[Email address]", "[Street address]", "[Postcode]", "[Opening hours]", "[Instagram handle]", "[Owner name]", "[Year founded]", "[Parking details]", "[Wi-Fi password]"];
   const many = page({ body: `${BODY}${ten.map((b) => `<p>${b}</p>`).join("")}<script>el.textContent = "[Delivery area]";</script>` });
@@ -480,11 +584,17 @@ test("speed: page weight, scripts that hold up the page, fonts and insecure addr
     '<script type="text/babel" src="https://x.example/app.jsx"></script>',
     '<script src="https://cdn.tailwindcss.com"></script>',
     '<script src="https://cdn.tailwindcss.com?plugins=forms"></script>',
+    // Tailwind 4's Play CDN, from jsDelivr or unpkg.
+    '<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>',
+    '<script src="https://unpkg.com/@tailwindcss/browser@4.1.11"></script>',
     '<script type="application/ld+json">{"@context":"https://schema.org","@type":"Bakery"}</script>',
   ]) {
     assert.equal(said(head(fine), "blocking"), "pass pass", fine);
   }
   assert.equal(said(page({ body: `${BODY}<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>` }), "blocking"), "pass pass", "a script at the end of the page doesn't hold it up");
+  for (const other of ["https://cdn.tailwindcss.com.example.net/a.js", "https://cdn.jsdelivr.net/npm/@tailwindcss/browser-extra@1"]) {
+    assert.equal(said(head(`<script src="${other}"></script>`), "blocking"), "warn found", other);
+  }
   assert.equal(said(head('<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:wght@400;700">'), "fonts"), "warn noSwap");
   assert.equal(said(head('<style>@import url("https://fonts.googleapis.com/css2?family=Lora");</style>'), "fonts"), "warn noSwap");
   assert.equal(said(head('<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora&amp;display=swap">'), "fonts"), "pass pass");
@@ -768,7 +878,7 @@ test("each fix says what was found and what to change, short enough to send", ()
   assert.ok(alt.fix?.includes("1 of 1"));
   const blocking = check(page({ head: '<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>' }), "blocking")!;
   assert.ok(blocking.fix?.includes("jquery-3.7.1.min.js"));
-  assert.ok(blocking.fix?.includes("Leave https://cdn.tailwindcss.com as it is"));
+  assert.ok(blocking.fix?.includes("Leave Tailwind's Play CDN (https://cdn.tailwindcss.com, or @tailwindcss/browser from jsDelivr or unpkg) as it is"));
   const mixed = check(page({ body: `${BODY}<img src="http://x.example/loaf.jpg" alt="Loaf" class="h-48">` }), "mixed")!;
   assert.ok(mixed.fix?.includes("http://x.example/loaf.jpg"));
   // Long text from the page is clipped, and every fix stays under 450 characters.

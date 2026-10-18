@@ -2130,7 +2130,7 @@
  "Your test plan will renew again.": "Je testabonnement wordt weer verlengd.",
  "Your text read aloud, as an audio file": "Je tekst voorgelezen, als audiobestand",
  "Your title is {count} characters, so Google will cut it off. Keep it to about {max}.": "Je titel is {count} tekens, dus Google kapt hem af. Houd het rond de {max}.",
- "Your title starts with “Home”, which tells Google nothing. Put your name and what you offer first.": "Je titel begint met ‘Home’, en dat zegt Google niets. Zet je naam en wat je aanbiedt vooraan.",
+ "Your title starts with “{word}”, which tells Google nothing. Put your name and what you offer first.": "Je titel begint met ‘{word}’, en dat zegt Google niets. Zet je naam en wat je aanbiedt vooraan.",
  "Your title “{title}” is short. Say what you offer, and where if it matters.": "Je titel ‘{title}’ is kort. Zeg wat je aanbiedt, en waar als dat telt.",
  "Your video is ready. It's on your screen.": "Je video is klaar en staat op je scherm.",
  "Your videos are ready. They're on your screen.": "Je video's zijn klaar. Ze staan op je scherm.",

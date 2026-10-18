@@ -2130,7 +2130,7 @@
  "Your test plan will renew again.": "你的測試方案將恢復續訂。",
  "Your text read aloud, as an audio file": "將你的文字朗讀成音訊檔",
  "Your title is {count} characters, so Google will cut it off. Keep it to about {max}.": "你的標題有 {count} 個字元，Google 會把它截斷。控制在 {max} 左右。",
- "Your title starts with “Home”, which tells Google nothing. Put your name and what you offer first.": "你的標題以「Home」開頭，這對 Google 毫無意義。把你的名稱和你提供的東西放在前面。",
+ "Your title starts with “{word}”, which tells Google nothing. Put your name and what you offer first.": "你的標題以「{word}」開頭，這對 Google 毫無意義。把你的名稱和你提供的東西放在前面。",
  "Your title “{title}” is short. Say what you offer, and where if it matters.": "你的標題「{title}」有點短。寫出你提供什麼，如果地點重要也寫上。",
  "Your video is ready. It's on your screen.": "你的影片準備好了，已顯示在螢幕上。",
  "Your videos are ready. They're on your screen.": "你的影片準備好了，都顯示在螢幕上。",

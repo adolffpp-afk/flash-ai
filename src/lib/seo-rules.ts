@@ -10,7 +10,7 @@
  * checks that don't apply never count. Only the page's own code decides it, never the owner's plan
  * or domain (except whether a main address the page names itself is one of its own).
  */
-import { textWidth, type Alphabet, type SeoFacts } from "./seo-scan.ts";
+import type { Alphabet, SeoFacts } from "./seo-scan.ts";
 
 export type CheckId =
   | "title"
@@ -126,9 +126,18 @@ const fixText = (...parts: (string | false | 0 | null | undefined)[]) => {
 };
 const fold = (text: string) => text.trim().toLowerCase().replace(/\s+/g, " ");
 
+// What a site calls its home page, in the languages Flash is shown in (as a builder names it in the nav).
+const HOME_WORDS = [
+  "home", "start", "inicio", "página principal", "accueil", "startseite", "início", "página inicial", "startpagina", "pagina iniziale",
+  "strona główna", "ana sayfa", "anasayfa", "acasă", "pagina principală", "hem", "startsida", "beranda", "halaman utama", "nyumbani",
+  "mwanzo", "tahanan", "trang chủ", "akèy", "lakay", "αρχική", "αρχική σελίδα", "главная", "главная страница", "головна",
+  "головна сторінка", "الرئيسية", "الصفحة الرئيسية", "דף הבית", "בית", "ראשי", "خانه", "صفحه اصلی", "صفحهٔ اصلی", "ہوم", "صفحہ اول",
+  "مرکزی صفحہ", "होम", "मुखपृष्ठ", "मुख्य पृष्ठ", "হোম", "প্রথম পাতা", "মূল পাতা", "หน้าแรก", "หน้าหลัก", "ホーム", "トップページ", "トップ",
+  "홈", "首页", "主页", "首頁", "主頁",
+];
 // Titles that say nothing about what the site is.
 const GENERIC_TITLES = new Set([
-  "home",
+  ...HOME_WORDS,
   "untitled",
   "document",
   "index",
@@ -144,8 +153,8 @@ const GENERIC_TITLES = new Set([
   "vite app",
   "made with flash",
 ]);
-// A many-page site's "Home · Name" (as site-preview.ts strips it for the share card).
-const HOME_TITLE = /^home\s*[·|:–—-]/i;
+// A many-page site's "Home · Name" (as site-preview.ts strips it for the share card), "Inicio · Nombre", "ホーム｜名前".
+const HOME_TITLE = new RegExp(`^(${[...HOME_WORDS].sort((a, b) => b.length - a.length).join("|")})\\s*[·|:–—\\-｜・]`, "iu");
 const LANG_CODE = /^[a-z]{2,3}(-[a-z0-9]{2,8})*$/i;
 const RTL = new Set(["ar", "he", "fa", "ur", "ps", "yi"]);
 const ALPHABET_OF: Record<string, Alphabet> = {};
@@ -166,6 +175,22 @@ for (const [alphabet, codes] of [
 ] as const) {
   for (const code of codes.split(" ")) ALPHABET_OF[code] = alphabet;
 }
+
+// A script subtag (BCP 47), which says the alphabet the text is in: ur-Latn, sr-Cyrl, zh-Hant.
+const SCRIPT_SUBTAG = /^[a-z]{2,3}-(latn|arab|hebr|cyrl|grek|deva|beng|thai|hang|kore|hans|hant|jpan)\b/i;
+const SCRIPT_OF: Record<string, Alphabet> = {
+  latn: "latin", arab: "arabic", hebr: "hebrew", cyrl: "cyrillic", grek: "greek", deva: "devanagari", beng: "bengali", thai: "thai",
+  hang: "hangul", kore: "hangul", hans: "cjk", hant: "cjk", jpan: "cjk",
+};
+// The subtag for text in an alphabet that isn't its language's usual one (Korean and Chinese have several).
+const SUBTAG_OF: Partial<Record<Alphabet, string>> = {
+  latin: "Latn", arabic: "Arab", hebrew: "Hebr", cyrillic: "Cyrl", greek: "Grek", devanagari: "Deva", bengali: "Beng", thai: "Thai",
+};
+// An alphabet's name in the builder's instructions.
+const ALPHABET_NAME: Record<Alphabet, string> = {
+  latin: "Latin letters", arabic: "the Arabic alphabet", hebrew: "the Hebrew alphabet", cyrillic: "Cyrillic", greek: "the Greek alphabet",
+  devanagari: "Devanagari", bengali: "the Bengali alphabet", thai: "the Thai alphabet", hangul: "Hangul", cjk: "Chinese or Japanese characters",
+};
 
 const hostOf = (url: string) => {
   try {
@@ -210,9 +235,12 @@ export function evaluate(facts: SeoFacts | null | undefined, ctx: SeoContext): S
   ) => checks.push({ id, weight, status, problem, values, fix, action });
   const { imgs, links } = facts;
 
-  // 1. The title.
+  // 1. The title, and the one a script gives the home page as it loads, which Google shows instead.
   const title = facts.titles[0]?.trim() ?? "";
-  const width = textWidth(title);
+  const width = facts.titleWidth;
+  const router = facts.routerTitle ?? "";
+  const routerHome = router && (HOME_TITLE.exec(router)?.[1] ?? (GENERIC_TITLES.has(fold(router)) ? router.trim() : ""));
+  const homeWord = HOME_TITLE.exec(title)?.[1];
   if (!facts.titleCount || !title) {
     add("title", 3, "fail", "none", {}, "Add a <title> inside <head>: the site's name plus what it offers, at most 60 characters.");
   } else if (facts.titleCount > 1) {
@@ -229,15 +257,28 @@ export function evaluate(facts: SeoFacts | null | undefined, ctx: SeoContext): S
         "and give the home page the same kind of title wherever the script sets document.title.",
       ),
     );
-  } else if (HOME_TITLE.test(title)) {
+  } else if (routerHome) {
     add(
       "title",
       3,
       "warn",
       "home",
-      { title },
+      { title: router, word: routerHome },
       fixText(
-        `The title starts with "Home" ("${sample(title)}"). Make the home page's title "<site name> · <what it offers>", at most 60 characters,`,
+        `As the page loads, its script sets document.title to "${sample(router)}" for the home page, and that is the title Google shows.`,
+        `Make the router keep the page's own <title> on the home page (save it in a variable when the script starts) and set "<Page> · <site name>" only for the other pages.`,
+        !homeWord && `Keep the <title> as it is: "${sample(title)}".`,
+      ),
+    );
+  } else if (homeWord) {
+    add(
+      "title",
+      3,
+      "warn",
+      "home",
+      { title, word: homeWord },
+      fixText(
+        `The title starts with "${homeWord}" ("${sample(title)}"). Make the home page's title "<site name> · <what it offers>", at most 60 characters,`,
         `in <title> and wherever the script sets document.title for the home page. Keep "<Page> · <site name>" for the other pages.`,
       ),
     );
@@ -249,7 +290,7 @@ export function evaluate(facts: SeoFacts | null | undefined, ctx: SeoContext): S
 
   // 2. The description.
   const description = facts.descriptions[0]?.trim() ?? "";
-  const dWidth = textWidth(description);
+  const dWidth = facts.descriptionWidth;
   const describe = "one or two sentences, 70 to 160 characters, saying what the site offers and for whom";
   if (!facts.descriptionCount || !description) {
     add("description", 3, "fail", "none", {}, `Add <meta name="description" content="…"> inside <head>: ${describe}.`);
@@ -323,15 +364,31 @@ export function evaluate(facts: SeoFacts | null | undefined, ctx: SeoContext): S
     add("structured", 2, "warn", "incomplete", {}, `In each <script type="application/ld+json">, set "@context": "https://schema.org" and an "@type" for what it describes, keeping the same facts.`);
   } else add("structured", 2, "pass", "pass", { types: ld.types.join(", ") });
 
-  // 7. The language.
+  // 7. The language, and the alphabet it says the text is in: the language's own, or the one its
+  // script subtag names (Roman Urdu is ur-Latn, Hinglish hi-Latn, Serbian in Latin letters sr-Latn).
   const lang = facts.lang?.trim() ?? "";
   const base = lang.toLowerCase().split("-")[0];
-  const expected = ALPHABET_OF[base];
+  const subtag = SCRIPT_SUBTAG.exec(lang)?.[1].toLowerCase();
+  const expected = subtag ? SCRIPT_OF[subtag] : ALPHABET_OF[base];
+  const main = facts.script.main;
   if (!lang) add("language", 2, "fail", "none", {}, 'Add a lang attribute to the <html> tag with the language the text is written in (like lang="es").');
   else if (!LANG_CODE.test(lang)) {
     add("language", 2, "fail", "invalid", { lang }, fixText(`The <html> tag has lang="${sample(lang)}", which isn't a valid code. Change it to the code of the language the text is written in (like "en", "es" or "pt-BR").`));
-  } else if (expected && facts.script.main && facts.script.main !== expected) {
-    add("language", 2, "warn", "mismatch", { lang }, fixText(`The <html> tag has lang="${sample(lang)}", but the text is mostly in another language. Change lang to the code of the language the text is written in.`));
+  } else if (expected && main && main !== expected) {
+    const written = SUBTAG_OF[main];
+    add(
+      "language",
+      2,
+      "warn",
+      "mismatch",
+      { lang },
+      fixText(
+        `The <html> tag has lang="${sample(lang)}", but the text is mostly written in ${ALPHABET_NAME[main]}, not ${ALPHABET_NAME[expected]}.`,
+        subtag || !written
+          ? "Change lang to the code of the language (and script, when it isn't the language's usual one) the text is written in."
+          : `If the text is in that language, written in ${ALPHABET_NAME[main]}, add the script: lang="${base}-${written}". Otherwise change lang to the code of the language the text is written in.`,
+      ),
+    );
   } else add("language", 2, "pass", "pass", { lang });
 
   // 8 and 9. Headings, read only where the page's code shows them.
@@ -486,7 +543,9 @@ export function evaluate(facts: SeoFacts | null | undefined, ctx: SeoContext): S
       fixText(`Make these at least 24 by 24 pixels to tap (44 is better; padding counts), keeping their look: ${samples(facts.smallTargets, 3)}.`),
     );
   } else add("tapTargets", 0, "na", "none");
-  const rtl = RTL.has(base) || (!lang && (facts.script.main === "arabic" || facts.script.main === "hebrew"));
+  // Right to left: text in Arabic or Hebrew letters, or a right-to-left language whose text the check
+  // couldn't tell, unless lang names a left-to-right script for it (ur-Latn). Never a Latin page.
+  const rtl = main ? main === "arabic" || main === "hebrew" : RTL.has(base) && (!subtag || subtag === "arab" || subtag === "hebr");
   if (rtl) {
     if (facts.dir === "rtl") add("direction", 1, "pass", "pass");
     else {
@@ -496,7 +555,7 @@ export function evaluate(facts: SeoFacts | null | undefined, ctx: SeoContext): S
         "warn",
         "missing",
         { lang, tag: 'dir="rtl"' },
-        fixText(`The page is in ${lang ? sample(lang) : "a right-to-left language"}, which reads right to left. Add dir="rtl" to <html> and make the layout mirror (margin-inline and padding-inline instead of left and right where it matters).`),
+        fixText(`The page is ${main ? `written in ${ALPHABET_NAME[main]}` : `in ${sample(lang)}`}, which reads right to left. Add dir="rtl" to <html> and make the layout mirror (margin-inline and padding-inline instead of left and right where it matters).`),
       );
     }
   }
@@ -515,7 +574,7 @@ export function evaluate(facts: SeoFacts | null | undefined, ctx: SeoContext): S
       { list: samples(facts.blocking, 3) },
       fixText(
         `These <script src> tags in <head> stop the page showing until they load: ${samples(facts.blocking, 3)}.`,
-        "Add defer to each (keeping their order), or move them in order to just before </body> together with any inline script that uses them, so nothing runs before what it needs. Leave https://cdn.tailwindcss.com as it is.",
+        "Add defer to each (keeping their order), or move them in order to just before </body> together with any inline script that uses them, so nothing runs before what it needs. Leave Tailwind's Play CDN (https://cdn.tailwindcss.com, or @tailwindcss/browser from jsDelivr or unpkg) as it is.",
       ),
     );
   } else add("blocking", 2, "pass", "pass");

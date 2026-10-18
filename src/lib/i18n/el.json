@@ -2130,7 +2130,7 @@
  "Your test plan will renew again.": "Το δοκιμαστικό σου πρόγραμμα θα ανανεώνεται ξανά.",
  "Your text read aloud, as an audio file": "Το κείμενό σου σε εκφώνηση, ως αρχείο ήχου",
  "Your title is {count} characters, so Google will cut it off. Keep it to about {max}.": "Ο τίτλος σου έχει {count} χαρακτήρες, οπότε το Google θα τον κόψει. Κράτα τον γύρω στους {max}.",
- "Your title starts with “Home”, which tells Google nothing. Put your name and what you offer first.": "Ο τίτλος σου ξεκινά με «Home», που δεν λέει τίποτα στο Google. Βάλε πρώτα το όνομά σου και τι προσφέρεις.",
+ "Your title starts with “{word}”, which tells Google nothing. Put your name and what you offer first.": "Ο τίτλος σου ξεκινά με «{word}», που δεν λέει τίποτα στο Google. Βάλε πρώτα το όνομά σου και τι προσφέρεις.",
  "Your title “{title}” is short. Say what you offer, and where if it matters.": "Ο τίτλος σου «{title}» είναι σύντομος. Πες τι προσφέρεις, και πού, αν έχει σημασία.",
  "Your video is ready. It's on your screen.": "Το βίντεό σου είναι έτοιμο. Είναι στην οθόνη σου.",
  "Your videos are ready. They're on your screen.": "Τα βίντεό σου είναι έτοιμα. Είναι στην οθόνη σου.",

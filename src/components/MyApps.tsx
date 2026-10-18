@@ -173,6 +173,8 @@ export function MyApps({
   const mayLeave = useCallback(() => !contactsEdited.current || window.confirm(tNow("Leave without saving your changes?")), []);
   // Counts the Data view's loads, so only the newest one's answer is shown.
   const dataLoads = useRef(0);
+  // The same for the search check: an answer for an app the owner has left (Back, or another app's SEO) only updates its score in the list.
+  const seoLoads = useRef(0);
   // The rules chosen in the Data view reach the server one at a time for each app, and the view shows
   // what the server holds after the last one, or after one fails (see in-order.ts).
   const [ruleSaves] = useState(() =>
@@ -422,20 +424,21 @@ export function MyApps({
   }
 
   async function showSeo(site: Site) {
+    const asked = ++seoLoads.current;
     setOpen(site);
     setView("seo");
     setSeo(null);
     setError("");
     try {
       const data = await api<Omit<SeoData, "loadedAt">>(`/api/sites/${site.slug}/seo`);
-      setSeo({ slug: site.slug, data: { ...data, loadedAt: Date.now() } });
+      if (asked === seoLoads.current) setSeo({ slug: site.slug, data: { ...data, loadedAt: Date.now() } });
       // The list shows the score of the page checked now (an app published before the check gets its first here).
       const score = data.report.score;
       const issues = issueCount(data.report);
       setSites((all) => all?.map((s) => (s.slug === site.slug ? { ...s, seo: score === null ? null : { score, issues } } : s)) ?? null);
       announceSeoScore(site.slug, { score, issues });
     } catch {
-      setError(t("Couldn't load the search check. Please try again."));
+      if (asked === seoLoads.current) setError(t("Couldn't load the search check. Please try again."));
     }
   }
 
@@ -719,6 +722,8 @@ export function MyApps({
                   setView("seo");
                   return;
                 }
+                // A search check still loading doesn't show once the owner has left it.
+                seoLoads.current++;
                 setOpen(null);
                 setGone(null);
               }}

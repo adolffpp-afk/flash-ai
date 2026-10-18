@@ -2130,7 +2130,7 @@
  "Your test plan will renew again.": "תוכנית הבדיקה שלך תתחדש שוב.",
  "Your text read aloud, as an audio file": "הטקסט שלך בהקראה, כקובץ אודיו",
  "Your title is {count} characters, so Google will cut it off. Keep it to about {max}.": "הכותרת באורך {count} תווים, ולכן Google יקצץ אותה. כדאי בערך {max}.",
- "Your title starts with “Home”, which tells Google nothing. Put your name and what you offer first.": "הכותרת מתחילה ב-„Home”, וזה לא אומר ל-Google כלום. כדאי לשים קודם את השם ואת מה שמוצע.",
+ "Your title starts with “{word}”, which tells Google nothing. Put your name and what you offer first.": "הכותרת מתחילה ב-„{word}”, וזה לא אומר ל-Google כלום. כדאי לשים קודם את השם ואת מה שמוצע.",
  "Your title “{title}” is short. Say what you offer, and where if it matters.": "הכותרת „{title}” קצרה. כדאי לכתוב מה מוצע, ואיפה אם זה חשוב.",
  "Your video is ready. It's on your screen.": "הסרטון שלך מוכן. הוא מופיע על המסך.",
  "Your videos are ready. They're on your screen.": "הסרטונים שלך מוכנים. הם מופיעים על המסך.",

@@ -2130,7 +2130,7 @@
  "Your test plan will renew again.": "Magre-renew ulit ang test plan mo.",
  "Your text read aloud, as an audio file": "Ang text mo, binasa nang malakas bilang audio file",
  "Your title is {count} characters, so Google will cut it off. Keep it to about {max}.": "May {count} character ang pamagat mo, kaya puputulin ito ng Google. Panatilihin sa mga {max}.",
- "Your title starts with “Home”, which tells Google nothing. Put your name and what you offer first.": "Nagsisimula sa “Home” ang pamagat mo, na walang sinasabi sa Google. Unahin ang pangalan mo at ang inaalok mo.",
+ "Your title starts with “{word}”, which tells Google nothing. Put your name and what you offer first.": "Nagsisimula sa “{word}” ang pamagat mo, na walang sinasabi sa Google. Unahin ang pangalan mo at ang inaalok mo.",
  "Your title “{title}” is short. Say what you offer, and where if it matters.": "Maikli ang pamagat mong “{title}”. Sabihin kung ano ang inaalok mo, at kung saan kung mahalaga.",
  "Your video is ready. It's on your screen.": "Handa na ang video mo. Nasa screen mo na.",
  "Your videos are ready. They're on your screen.": "Handa na ang mga video mo. Nasa screen mo na.",

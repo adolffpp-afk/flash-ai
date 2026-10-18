@@ -2130,7 +2130,7 @@
  "Your test plan will renew again.": "Planul de test se va reînnoi din nou.",
  "Your text read aloud, as an audio file": "Textul tău citit cu voce tare, ca fișier audio",
  "Your title is {count} characters, so Google will cut it off. Keep it to about {max}.": "Titlul tău e prea lung (caractere: {count}), așa că Google îl va tăia. Rămâi pe la {max}.",
- "Your title starts with “Home”, which tells Google nothing. Put your name and what you offer first.": "Titlul tău începe cu „Home”, care nu-i spune nimic lui Google. Pune întâi numele tău și ce oferi.",
+ "Your title starts with “{word}”, which tells Google nothing. Put your name and what you offer first.": "Titlul tău începe cu „{word}”, care nu-i spune nimic lui Google. Pune întâi numele tău și ce oferi.",
  "Your title “{title}” is short. Say what you offer, and where if it matters.": "Titlul tău „{title}” e scurt. Spune ce oferi și unde, dacă contează.",
  "Your video is ready. It's on your screen.": "Videoclipul tău e gata. Îl vezi pe ecran.",
  "Your videos are ready. They're on your screen.": "Videoclipurile tale sunt gata. Le vezi pe ecran.",

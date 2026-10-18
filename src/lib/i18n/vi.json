@@ -2130,7 +2130,7 @@
  "Your test plan will renew again.": "Gói thử nghiệm của bạn sẽ được gia hạn lại.",
  "Your text read aloud, as an audio file": "Đọc to văn bản của bạn, xuất thành tệp âm thanh",
  "Your title is {count} characters, so Google will cut it off. Keep it to about {max}.": "Tiêu đề dài {count} ký tự, nên Google sẽ cắt bớt. Hãy giữ khoảng {max}.",
- "Your title starts with “Home”, which tells Google nothing. Put your name and what you offer first.": "Tiêu đề bắt đầu bằng “Home”, không cho Google biết gì. Hãy đặt tên của bạn và điều bạn cung cấp lên trước.",
+ "Your title starts with “{word}”, which tells Google nothing. Put your name and what you offer first.": "Tiêu đề bắt đầu bằng “{word}”, không cho Google biết gì. Hãy đặt tên của bạn và điều bạn cung cấp lên trước.",
  "Your title “{title}” is short. Say what you offer, and where if it matters.": "Tiêu đề “{title}” hơi ngắn. Hãy nói bạn cung cấp gì, và ở đâu nếu cần.",
  "Your video is ready. It's on your screen.": "Video của bạn đã sẵn sàng. Video có trên màn hình của bạn.",
  "Your videos are ready. They're on your screen.": "Các video của bạn đã sẵn sàng. Video có trên màn hình của bạn.",

@@ -2130,7 +2130,7 @@
  "Your test plan will renew again.": "테스트 요금제가 다시 갱신될 거예요.",
  "Your text read aloud, as an audio file": "텍스트를 읽어 오디오 파일로 만들기",
  "Your title is {count} characters, so Google will cut it off. Keep it to about {max}.": "제목이 {count}자라서 Google에서 잘려요. {max}자 정도로 줄이세요.",
- "Your title starts with “Home”, which tells Google nothing. Put your name and what you offer first.": "제목이 “Home”으로 시작해서 Google에 아무것도 알려 주지 않아요. 이름과 제공하는 것을 앞에 두세요.",
+ "Your title starts with “{word}”, which tells Google nothing. Put your name and what you offer first.": "제목이 “{word}”(으)로 시작해서 Google에 아무것도 알려 주지 않아요. 이름과 제공하는 것을 앞에 두세요.",
  "Your title “{title}” is short. Say what you offer, and where if it matters.": "제목 “{title}”이(가) 짧아요. 무엇을 제공하는지, 필요하면 어디인지도 적으세요.",
  "Your video is ready. It's on your screen.": "동영상이 준비됐어요. 화면에서 확인하세요.",
  "Your videos are ready. They're on your screen.": "동영상이 준비됐어요. 화면에서 확인하세요.",

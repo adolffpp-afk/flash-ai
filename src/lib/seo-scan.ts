@@ -10,11 +10,11 @@
  * page of its size. Every list is capped and every text clipped, so the facts stay small whatever
  * the page holds. Pure, with no DOM, so the browser can check a chat's newest copy the same way.
  */
-import { decode, hasOwnPreview, sitePreview } from "./site-preview.ts";
+import { hasOwnPreview, sitePreview } from "./site-preview.ts";
 import { imageDimensions } from "./imageSize.ts";
 
 /** Changes when the reading changes, so facts saved before are read again (see server/seo.ts). */
-export const SEO_VERSION = 6;
+export const SEO_VERSION = 7;
 
 export type Alphabet = "latin" | "arabic" | "hebrew" | "cyrillic" | "greek" | "devanagari" | "bengali" | "thai" | "hangul" | "cjk";
 
@@ -34,8 +34,17 @@ export type SeoFacts = {
   /** <title> outside SVG icons, and how many there are. */
   titles: string[];
   titleCount: number;
+  /** How wide the first title and description are (see textWidth), measured before they're clipped. */
+  titleWidth: number;
   descriptions: string[];
   descriptionCount: number;
+  descriptionWidth: number;
+  /**
+   * The title the page's script gives its home page when it loads (a router's "Home · Golden Crumb",
+   * from its { home: "Home" } names), which is what the tab and Google show; null when no script sets
+   * one, or it keeps the page's own <title> for the home page.
+   */
+  routerTitle: string | null;
   viewport: string | null;
   /** What meta robots and googlebot tags say. */
   robots: string[];
@@ -129,15 +138,36 @@ const addOnce = (list: string[], value: string, max: number) => {
   if (list.length < max && !list.includes(value)) list.push(value);
 };
 
-/** Numbers written as &#8217; or &#x2019;, as well as the common named ones. */
+// The characters pages write by name (&mdash;, &rsquo;, &eacute;, &euro;), as the browser shows them:
+// HTML's Latin-1 names in the order of their code points from 160, then the others pages use.
+const CHARACTERS = new Map<string, string>([["amp", "&"], ["lt", "<"], ["gt", ">"], ["quot", '"'], ["apos", "'"]]);
+const LATIN1 =
+  "nbsp iexcl cent pound curren yen brvbar sect uml copy ordf laquo not shy reg macr deg plusmn sup2 sup3 acute micro para middot cedil sup1 ordm raquo frac14 frac12 frac34 iquest Agrave Aacute Acirc Atilde Auml Aring AElig Ccedil Egrave Eacute Ecirc Euml Igrave Iacute Icirc Iuml ETH Ntilde Ograve Oacute Ocirc Otilde Ouml times Oslash Ugrave Uacute Ucirc Uuml Yacute THORN szlig agrave aacute acirc atilde auml aring aelig ccedil egrave eacute ecirc euml igrave iacute icirc iuml eth ntilde ograve oacute ocirc otilde ouml divide oslash ugrave uacute ucirc uuml yacute thorn yuml";
+for (const [k, name] of LATIN1.split(" ").entries()) CHARACTERS.set(name, String.fromCharCode(160 + k));
+// A space, as the page's other spaces.
+CHARACTERS.set("nbsp", " ");
+for (const [name, code] of Object.entries({
+  OElig: 338, oelig: 339, Scaron: 352, scaron: 353, Yuml: 376, fnof: 402, circ: 710, tilde: 732, Cacute: 262, cacute: 263, Ccaron: 268, ccaron: 269,
+  Eogon: 280, eogon: 281, Ecaron: 282, ecaron: 283, Gbreve: 286, gbreve: 287, Idot: 304, imath: 305, inodot: 305, Lstrok: 321, lstrok: 322, Nacute: 323,
+  nacute: 324, Rcaron: 344, rcaron: 345, Sacute: 346, sacute: 347, Scedil: 350, scedil: 351, Zacute: 377, zacute: 378, Zdot: 379, zdot: 380, Zcaron: 381,
+  zcaron: 382, Aogon: 260, aogon: 261, ensp: 8194, emsp: 8195, thinsp: 8201, zwnj: 8204, zwj: 8205, lrm: 8206, rlm: 8207, ndash: 8211, mdash: 8212,
+  lsquo: 8216, rsquo: 8217, sbquo: 8218, ldquo: 8220, rdquo: 8221, bdquo: 8222, dagger: 8224, Dagger: 8225, bull: 8226, hellip: 8230, permil: 8240,
+  prime: 8242, Prime: 8243, lsaquo: 8249, rsaquo: 8250, oline: 8254, euro: 8364, trade: 8482, larr: 8592, uarr: 8593, rarr: 8594, darr: 8595,
+  harr: 8596, lArr: 8656, rArr: 8658, hArr: 8660, minus: 8722, infin: 8734, asymp: 8776, ne: 8800, le: 8804, ge: 8805, loz: 9674, starf: 9733, star: 9734,
+  spades: 9824, clubs: 9827, hearts: 9829, diams: 9830, check: 10003, cross: 10007,
+})) {
+  CHARACTERS.set(name, String.fromCodePoint(code));
+}
+
+/** Characters written as &#8217;, &#x2019; or &rsquo;, read in one pass (so &amp;mdash; stays "&mdash;"), as the browser shows them. */
 const decodeText = (text: string) =>
   !text.includes("&")
     ? text
-    : decode(
-        text
-          .replace(/&#(\d{1,7});/g, (all, n: string) => (Number(n) <= 0x10ffff ? String.fromCodePoint(Number(n)) : all))
-          .replace(/&#x([0-9a-f]{1,6});/gi, (all, n: string) => (parseInt(n, 16) <= 0x10ffff ? String.fromCodePoint(parseInt(n, 16)) : all)),
-      );
+    : text.replace(/&(?:#(\d{1,7})|#[xX]([0-9a-fA-F]{1,6})|([A-Za-z][A-Za-z0-9]{1,31}));/g, (all, dec?: string, hex?: string, name?: string) => {
+        if (name !== undefined) return CHARACTERS.get(name) ?? all;
+        const code = dec !== undefined ? Number(dec) : parseInt(hex!, 16);
+        return code <= 0x10ffff ? String.fromCodePoint(code) : all;
+      });
 const oneLine = (text: string) => decodeText(text).replace(/\s+/g, " ").trim();
 
 // Only A to Z lowercased, so every position in it is the same position in the page.
@@ -230,6 +260,8 @@ const GOOGLE_FONTS = /^\s*(?:https?:)?\/\/fonts\.googleapis\.com\/css2?\?/i;
 // like one; in the words a page shows, also " (Hebrew's דוא"ל), / & and currency signs ([Price in €]).
 const SCRIPT_PLACEHOLDER = /\[[\p{Lu}\p{Lo}][\p{L}\p{M}\p{N} '’.\u200c\u200d\u05f3\u05f4-]{1,38}\]/gu;
 const PLACEHOLDER = /\[[\p{Lu}\p{Lo}][\p{L}\p{M}\p{N}\p{Sc} '’".\/&\u200c\u200d\u05f3\u05f4-]{1,38}\]/gu;
+// An address that is only a blank: href="[Booking link]".
+const WHOLE_PLACEHOLDER = new RegExp(`^${PLACEHOLDER.source}$`, "u");
 // Bracketed words that are a page's own content, never blanks: keys a game or a guide names ([Space],
 // [Enter]), a form's [Optional] and [New], and a song's parts ([Chorus], [Verse 1]).
 const NOT_BLANK = new RegExp(
@@ -260,6 +292,8 @@ const NAMED = /(?<![\w$.])([A-Za-z_$][\w$]{0,39})\s*=(?![=>])\s*$/;
 const NOT_SHOWN_LINE = /console\.|\bthrow\b|Error\(|^\s*(?:\/\/|\/?\*)/;
 // A picture or other file a script's HTML or JSX loads over http:// (src="http://…", src={"http://…"}).
 const SCRIPT_HTTP_SRC = /\bsrc\s*=\s*(?:\{\s*)?["'`](http:\/\/[^"'`\s<>]{1,200})/gi;
+// Tailwind's Play CDN: Tailwind 3's, and Tailwind 4's browser build from jsDelivr or unpkg (which builder.ts allows).
+const TAILWIND_PLAY = /^(?:https?:)?\/\/(?:cdn\.tailwindcss\.com|cdn\.jsdelivr\.net\/npm\/@tailwindcss\/browser|unpkg\.com\/@tailwindcss\/browser)(?![\w.-])/i;
 const JS_TYPE = /^(?:(?:text|application)\/(?:x-)?(?:java|ecma)script|module)?$/;
 const OTHER_SCHEME = /^[a-z][a-z0-9+.-]{0,30}:/i;
 // What Alpine.js and Vue (which builder.ts lets apps load) fill an element's words or a picture's alt text from.
@@ -293,8 +327,11 @@ function empty(bytes: number): SeoFacts {
     jsBuilt: false,
     titles: [],
     titleCount: 0,
+    titleWidth: 0,
     descriptions: [],
     descriptionCount: 0,
+    descriptionWidth: 0,
+    routerTitle: null,
     viewport: null,
     robots: [],
     noindex: false,
@@ -373,6 +410,8 @@ function scan(html: string): SeoFacts {
   let thaiChars = 0;
   let inWord = false;
   let jsScripts = 0;
+  // Scripts that set the page's title, read for the title its home page gets (see routerTitle).
+  const titleScripts: string[] = [];
   let reactish = false;
   let seenToken = false;
   let inBody = false;
@@ -513,8 +552,25 @@ function scan(html: string): SeoFacts {
     if (/^http:\/\//i.test(url.trim())) addOnce(facts.mixed, clip(url.trim(), SAMPLE), 8);
   };
 
+  /**
+   * Blanks in an address the page opens: Call us dialling tel:[Phone number], wa.me/[WhatsApp number],
+   * a map of [Address] (written as it is, or %-encoded). Whether the whole address is one.
+   */
+  const addressBlanks = (url: string) => {
+    if (codeDepth || (!url.includes("[") && !/%5b/i.test(url))) return false;
+    let plain = url;
+    try {
+      plain = decodeURIComponent(url);
+    } catch {}
+    findPlaceholders(plain, facts.placeholders);
+    if (plain.includes("+")) findPlaceholders(plain.replace(/\+/g, " "), facts.placeholders);
+    return WHOLE_PLACEHOLDER.test(plain) && isBlank(plain);
+  };
+
   const onLinkHref = (raw: string) => {
     const href = decodeText(raw).trim();
+    // An address left for the owner ([Booking link]) is a blank to fill in, not a link that leads nowhere.
+    if (addressBlanks(href)) return;
     if (!href || href.startsWith("?")) return;
     if (href.startsWith("#")) {
       if (href === "#" || href === "#top" || href === "#0" || href.startsWith("#!")) return;
@@ -687,7 +743,7 @@ function scan(html: string): SeoFacts {
       if (/babel/i.test(src)) reactish = true;
       const later = attrs.has("async") || attrs.has("defer") || type === "module";
       // Tailwind's Play CDN has to run before the page shows (builder.ts allows it), and has nothing better.
-      if (!inBody && !later && !/^(?:https?:)?\/\/cdn\.tailwindcss\.com/i.test(src.trim())) addOnce(facts.blocking, tagSample(from, to), 10);
+      if (!inBody && !later && !TAILWIND_PLAY.test(src.trim())) addOnce(facts.blocking, tagSample(from, to), 10);
     } else if (content.includes("createRoot(") || content.includes("ReactDOM.render(")) reactish = true;
   };
 
@@ -698,6 +754,7 @@ function scan(html: string): SeoFacts {
    * script's blanks in sample entries go apart (see scriptPlaceholders); a template's are shown.
    */
   const onScriptWords = (code: string, script = false) => {
+    if (script && titleScripts.length < 5 && code.includes("document.title")) titleScripts.push(code);
     findScriptPlaceholders(code, facts.placeholders, script ? { blanks: facts.scriptPlaceholders, fields: facts.sampleFields } : undefined);
     checkClasses(code);
     if (code.includes("http://")) for (const m of code.matchAll(SCRIPT_HTTP_SRC)) addOnce(facts.mixed, clip(m[1], SAMPLE), 8);
@@ -717,7 +774,7 @@ function scan(html: string): SeoFacts {
     const name = (attrs.get("name") ?? attrs.get("property") ?? "").trim().toLowerCase();
     const content = oneLine(attrs.get("content") ?? "");
     if (name === "description") {
-      facts.descriptionCount++;
+      if (!facts.descriptionCount++) facts.descriptionWidth = textWidth(content);
       if (facts.descriptions.length < 3) facts.descriptions.push(clip(content));
       findPlaceholders(content, facts.placeholders);
     } else if (name === "viewport") {
@@ -881,6 +938,8 @@ function scan(html: string): SeoFacts {
       case "source":
       case "embed":
         markMixed(attrs.get("src") ?? "");
+        // A map of [Address], a video of [YouTube link].
+        addressBlanks(decodeText(attrs.get("src") ?? "").trim());
         break;
       default:
         if (/^h[1-6]$/.test(name) && !selfClosing) {
@@ -1050,8 +1109,8 @@ function scan(html: string): SeoFacts {
       }
       const content = html.slice(i, close);
       if (raw === "title") {
-        facts.titleCount++;
         const title = oneLine(content);
+        if (!facts.titleCount++) facts.titleWidth = textWidth(title);
         if (facts.titles.length < 3) facts.titles.push(clip(title));
         findPlaceholders(title, facts.placeholders);
       } else if (raw === "script") onScript(attrs, content, lt, end + 1);
@@ -1115,7 +1174,55 @@ function scan(html: string): SeoFacts {
   // A blank the page shows elsewhere too is shown, whatever its lists hold.
   facts.scriptPlaceholders = facts.scriptPlaceholders.filter((p) => !facts.placeholders.includes(p));
   if (facts.scriptPlaceholders.length && html.includes("flashDB")) facts.lists = listsRead(html);
+  if (titleScripts.length) facts.routerTitle = homeTitleSet(titleScripts, facts.titles[0] ?? "");
   return facts;
+}
+
+// A script setting the page's title (document.title = …), up to the end of its statement.
+const TITLE_SET = /\bdocument\.title\s*=(?!=)\s*([^;\n]{1,200})/g;
+// A script reading the title as a value (const SITE = document.title), which it may then give the home page back.
+const READS_TITLE = /(?:[=(,:?]|\breturn)\s*document\.title\b(?!\s*=(?!=))/;
+// Where the title it sets depends on whether the page is home: if (page !== "home"), page === "home" ? …, isHome.
+const HOME_CASE = /["'`](?:home|index|#?\/?)["'`]|\bis_?home\b|\bhome\s*[?)]/i;
+// The name a script's page names give the home page: { home: "Home", menu: "Menu" }, { "": "Inicio" }.
+const HOME_NAME = /(?:^|[{,\s])(?:home|(["'`])(?:home|#?\/?)\1)\s*:\s*(["'`])([^"'`\n]{1,60})\2/i;
+// The words of a string or template in a script's code ("…", '…', `… ${…} …`), in order.
+const STRING_WORDS = /"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)'|`([^`]*)`/g;
+
+/**
+ * The title a page's script gives its home page as it loads, as Google shows it: a router that sets
+ * document.title to "<page name> · <site>" from page names whose home is "Home" (as builder.ts asked
+ * routers to) gives "Home · <site>". null when no script sets it from those names, or one keeps the
+ * page's own <title> for the home page: it reads document.title, names that title, or sets the title
+ * apart for home.
+ */
+function homeTitleSet(scripts: string[], title: string): string | null {
+  let set: string | null = null;
+  for (const code of scripts) {
+    if (READS_TITLE.test(code) || (title.length >= 10 && code.includes(title.slice(0, 24)))) return null;
+    let looked = 0;
+    for (const m of code.matchAll(TITLE_SET)) {
+      if (++looked > 10) break;
+      const before = code.slice(Math.max(0, m.index - 160), m.index);
+      const statement = before.slice(Math.max(before.lastIndexOf(";"), before.lastIndexOf("{"), before.lastIndexOf("}")) + 1);
+      const value = m[1].trim();
+      if (HOME_CASE.test(statement) || HOME_CASE.test(value)) return null;
+      if (set !== null) continue;
+      const words: string[] = [];
+      for (const s of value.matchAll(STRING_WORDS)) words.push(...(s[3] !== undefined ? s[3].split(/\$\{[^}]*\}/) : [s[1] ?? s[2]]));
+      // One string: the title of every page.
+      if (/^(["'`])[^"'`$]*\1$/.test(value)) {
+        set = words[0] ?? "";
+        continue;
+      }
+      // A name looked up in the page names: what it gives home, with the words after it.
+      const home = /[[$]/.test(value) ? HOME_NAME.exec(code)?.[3]?.trim() : undefined;
+      if (!home) continue;
+      const rest = words.find((w) => /^\s*[·|:–—\-｜・]/.test(w));
+      set = rest === undefined ? (/[+`]/.test(value) ? `${home} · …` : home) : /\p{L}/u.test(rest) ? home + rest : `${home}${rest.trimEnd()} …`;
+    }
+  }
+  return set && clip(set.replace(/\s+/g, " ").trim(), 80);
 }
 
 /**
@@ -1224,12 +1331,13 @@ function findScriptPlaceholders(code: string, found: string[], samples?: { blank
     if (++looked > 2000) return;
     const at = m.index;
     const inner = m[0].slice(1, -1);
-    if (at > 0 && !SCRIPT_TEXT_BEFORE.test(code[at - 1])) continue;
+    const head = code.slice(Math.max(0, at - 160), at);
+    // In an address too: href="tel:[Phone number]", wa.me/[WhatsApp number], ?q=[Street address].
+    if (at > 0 && !SCRIPT_TEXT_BEFORE.test(code[at - 1]) && !(/[:/=]/.test(code[at - 1]) && (inner.includes(" ") || /\b(?:tel|mailto|sms):$/i.test(head)))) continue;
     if (/^[A-Z]-[A-Z]/.test(inner) || /\p{L}\.\p{L}/u.test(inner)) continue;
     if (/[({+*?]/.test(code[at + m[0].length] ?? "")) continue;
-    const head = code.slice(Math.max(0, at - 160), at);
     const line = head.slice(head.lastIndexOf("\n") + 1);
-    if (NOT_SHOWN_LINE.test(line) || !isBlank(m[0])) continue;
+    if (NOT_SHOWN_LINE.test(line) || !isBlank(m[0]) || nameArray(code, inner, line, at + m[0].length)) continue;
     const field = samples && SAMPLE_FIELD.exec(line)?.[1];
     if (samples && field && (sampled ??= sampleArrays(code)).some(([from, to]) => at > from && at < to)) {
       addOnce(samples.blanks, m[0], MAX_BLANKS);
@@ -1237,6 +1345,20 @@ function findScriptPlaceholders(code: string, found: string[], samples?: { blank
     } else addOnce(found, m[0], MAX_BLANKS);
     if (found.length >= MAX_BLANKS && (!samples || samples.blanks.length >= MAX_BLANKS)) return;
   }
+}
+
+/**
+ * Whether a [Name] in a script is code: an array of one name (plugins: [ChartDataLabels], scene:
+ * [MainScene], return [Header];), outside any string on its line and any tag, after what starts a
+ * value and followed by what ends one. A blank in a string, a template or JSX text has a quote or a
+ * tag on its line, or words or a tag after it.
+ */
+function nameArray(code: string, inner: string, line: string, end: number): boolean {
+  if (!/^[A-Za-z_$][\w$]*$/.test(inner) || /<[A-Za-z/]/.test(line)) return false;
+  for (const quote of ['"', "'", "`"]) if (line.split(quote).length % 2 === 0) return false;
+  if (!/(?:[:=,[]|[\w$)\]]\(|(?<![\w$])return)\s*$/.test(line)) return false;
+  const after = /\S/.exec(code.slice(end, end + 200));
+  return !after || ",])};".includes(after[0]);
 }
 
 /**

@@ -2130,7 +2130,7 @@
  "Your test plan will renew again.": "طرح آزمایشی شما دوباره تمدید می‌شود.",
  "Your text read aloud, as an audio file": "متن شما با صدای بلند، به‌صورت فایل صوتی",
  "Your title is {count} characters, so Google will cut it off. Keep it to about {max}.": "عنوان شما {count} نویسه است، پس Google آن را کوتاه می‌کند. آن را حدود {max} نویسه نگه دارید.",
- "Your title starts with “Home”, which tells Google nothing. Put your name and what you offer first.": "عنوان شما با «Home» شروع می‌شود، که چیزی به Google نمی‌گوید. اول نامتان و آنچه ارائه می‌دهید را بیاورید.",
+ "Your title starts with “{word}”, which tells Google nothing. Put your name and what you offer first.": "عنوان شما با «{word}» شروع می‌شود، که چیزی به Google نمی‌گوید. اول نامتان و آنچه ارائه می‌دهید را بیاورید.",
  "Your title “{title}” is short. Say what you offer, and where if it matters.": "عنوان شما «{title}» کوتاه است. بگویید چه چیزی ارائه می‌دهید، و اگر مهم است، کجا.",
  "Your video is ready. It's on your screen.": "ویدیوی شما آماده است. روی صفحهٔ شماست.",
  "Your videos are ready. They're on your screen.": "ویدیوهایتان آماده‌اند. روی صفحهٔ شما هستند.",

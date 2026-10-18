@@ -2130,7 +2130,7 @@
  "Your test plan will renew again.": "Test planın yeniden yenilenecek.",
  "Your text read aloud, as an audio file": "Metnin sesli okunur, ses dosyası olarak",
  "Your title is {count} characters, so Google will cut it off. Keep it to about {max}.": "Başlığın {count} karakter, bu yüzden Google onu kesecek. {max} civarında tut.",
- "Your title starts with “Home”, which tells Google nothing. Put your name and what you offer first.": "Başlığın “Home” ile başlıyor; bu Google'a hiçbir şey söylemez. Önce adını ve ne sunduğunu yaz.",
+ "Your title starts with “{word}”, which tells Google nothing. Put your name and what you offer first.": "Başlığın “{word}” ile başlıyor; bu Google'a hiçbir şey söylemez. Önce adını ve ne sunduğunu yaz.",
  "Your title “{title}” is short. Say what you offer, and where if it matters.": "Başlığın “{title}” kısa. Ne sunduğunu, önemliyse de nerede olduğunu yaz.",
  "Your video is ready. It's on your screen.": "Videon hazır. Ekranında görebilirsin.",
  "Your videos are ready. They're on your screen.": "Videoların hazır. Ekranında görebilirsin.",

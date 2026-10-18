@@ -720,8 +720,12 @@ export function Flash({
     const first = text.indexOf("\n");
     const end = first === -1 ? -1 : text.indexOf("\n", first + 1);
     const caret = at + (end === -1 ? text.length : end);
-    el.focus();
+    // The cursor first, then focus, which scrolls the box to it. A box that already has focus (the
+    // chat's, kept while My websites & apps was open) is left first, as focus alone wouldn't scroll it
+    // back up from the end, where setting its text left it.
     el.setSelectionRange(caret, caret);
+    if (document.activeElement === el) el.blur();
+    el.focus();
   });
 
   async function openProject(id: string) {

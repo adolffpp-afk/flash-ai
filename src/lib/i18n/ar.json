@@ -2130,7 +2130,7 @@
  "Your test plan will renew again.": "ستتجدد خطتك التجريبية مرة أخرى.",
  "Your text read aloud, as an audio file": "نصك مقروءًا بصوت عالٍ، كملف صوتي",
  "Your title is {count} characters, so Google will cut it off. Keep it to about {max}.": "عدد أحرف عنوانك {count}، لذلك سيقطعه Google. اجعله نحو {max}.",
- "Your title starts with “Home”, which tells Google nothing. Put your name and what you offer first.": "يبدأ عنوانك بكلمة «Home»، وهي لا تقول شيئًا لـ Google. ضع اسمك وما تقدّمه أولًا.",
+ "Your title starts with “{word}”, which tells Google nothing. Put your name and what you offer first.": "يبدأ عنوانك بكلمة «{word}»، وهي لا تقول شيئًا لـ Google. ضع اسمك وما تقدّمه أولًا.",
  "Your title “{title}” is short. Say what you offer, and where if it matters.": "عنوانك «{title}» قصير. قل ما تقدّمه، وأين إن كان ذلك مهمًا.",
  "Your video is ready. It's on your screen.": "الفيديو جاهز، تجده على شاشتك.",
  "Your videos are ready. They're on your screen.": "الفيديوهات جاهزة، تجدها على شاشتك.",

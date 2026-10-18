@@ -2130,7 +2130,7 @@
  "Your test plan will renew again.": "Mpango wako wa majaribio utasasishwa tena.",
  "Your text read aloud, as an audio file": "Maandishi yako yakisomwa kwa sauti, kama faili ya sauti",
  "Your title is {count} characters, so Google will cut it off. Keep it to about {max}.": "Kichwa chako kina herufi {count}, kwa hivyo Google itakikata. Kiweke karibu {max}.",
- "Your title starts with “Home”, which tells Google nothing. Put your name and what you offer first.": "Kichwa chako kinaanza na “Home”, ambacho hakiiambii Google chochote. Weka jina lako na unachotoa mwanzoni.",
+ "Your title starts with “{word}”, which tells Google nothing. Put your name and what you offer first.": "Kichwa chako kinaanza na “{word}”, ambacho hakiiambii Google chochote. Weka jina lako na unachotoa mwanzoni.",
  "Your title “{title}” is short. Say what you offer, and where if it matters.": "Kichwa chako “{title}” ni kifupi. Sema unatoa nini, na wapi ikiwa ni muhimu.",
  "Your video is ready. It's on your screen.": "Video yako iko tayari. Iko kwenye skrini yako.",
  "Your videos are ready. They're on your screen.": "Video zako ziko tayari. Ziko kwenye skrini yako.",

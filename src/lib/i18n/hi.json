@@ -2130,7 +2130,7 @@
  "Your test plan will renew again.": "आपका टेस्ट प्लान फिर से रिन्यू होगा।",
  "Your text read aloud, as an audio file": "आपका टेक्स्ट बोलकर, ऑडियो फ़ाइल के रूप में",
  "Your title is {count} characters, so Google will cut it off. Keep it to about {max}.": "आपका टाइटल {count} कैरेक्टर का है, इसलिए Google इसे काट देगा। इसे लगभग {max} रखें।",
- "Your title starts with “Home”, which tells Google nothing. Put your name and what you offer first.": "आपका टाइटल “Home” से शुरू होता है, जिससे Google को कुछ पता नहीं चलता। पहले अपना नाम और आप क्या देते हैं, वह लिखें।",
+ "Your title starts with “{word}”, which tells Google nothing. Put your name and what you offer first.": "आपका टाइटल “{word}” से शुरू होता है, जिससे Google को कुछ पता नहीं चलता। पहले अपना नाम और आप क्या देते हैं, वह लिखें।",
  "Your title “{title}” is short. Say what you offer, and where if it matters.": "आपका टाइटल “{title}” छोटा है। बताएँ कि आप क्या देते हैं, और ज़रूरी हो तो कहाँ।",
  "Your video is ready. It's on your screen.": "आपका वीडियो तैयार है। यह आपकी स्क्रीन पर है।",
  "Your videos are ready. They're on your screen.": "आपके वीडियो तैयार हैं। ये आपकी स्क्रीन पर हैं।",

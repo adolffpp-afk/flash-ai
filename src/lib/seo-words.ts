@@ -82,7 +82,7 @@ const MESSAGES: Record<string, string> = {
   "title:none": msg("Your page has no title."),
   "title:several": SEVERAL,
   "title:generic": msg("Your page's title is just “{title}”, which doesn't say what you offer."),
-  "title:home": msg("Your title starts with “Home”, which tells Google nothing. Put your name and what you offer first."),
+  "title:home": msg("Your title starts with “{word}”, which tells Google nothing. Put your name and what you offer first."),
   "title:long": msg("Your title is {count} characters, so Google will cut it off. Keep it to about {max}."),
   "title:short": msg("Your title “{title}” is short. Say what you offer, and where if it matters."),
   "title:pass": msg("“{title}” ({count} characters)"),

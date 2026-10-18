@@ -2130,7 +2130,7 @@
  "Your test plan will renew again.": "Ditt testabonnemang förnyas igen.",
  "Your text read aloud, as an audio file": "Din text uppläst, som ljudfil",
  "Your title is {count} characters, so Google will cut it off. Keep it to about {max}.": "Din titel är {count} tecken, så Google kortar av den. Håll den runt {max}.",
- "Your title starts with “Home”, which tells Google nothing. Put your name and what you offer first.": "Din titel börjar med ”Home”, som inte säger Google något. Sätt ditt namn och vad du erbjuder först.",
+ "Your title starts with “{word}”, which tells Google nothing. Put your name and what you offer first.": "Din titel börjar med ”{word}”, som inte säger Google något. Sätt ditt namn och vad du erbjuder först.",
  "Your title “{title}” is short. Say what you offer, and where if it matters.": "Din titel ”{title}” är kort. Säg vad du erbjuder, och var om det spelar roll.",
  "Your video is ready. It's on your screen.": "Din video är klar. Den finns på skärmen.",
  "Your videos are ready. They're on your screen.": "Dina videor är klara. De finns på skärmen.",

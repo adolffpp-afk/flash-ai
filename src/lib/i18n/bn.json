@@ -2130,7 +2130,7 @@
  "Your test plan will renew again.": "আপনার টেস্ট প্ল্যান আবার নবায়ন হবে।",
  "Your text read aloud, as an audio file": "আপনার লেখা পড়ে শোনানো, অডিও ফাইল হিসেবে",
  "Your title is {count} characters, so Google will cut it off. Keep it to about {max}.": "আপনার টাইটেল {count} অক্ষরের, তাই Google এটি কেটে দেবে। প্রায় {max}-এর মধ্যে রাখুন।",
- "Your title starts with “Home”, which tells Google nothing. Put your name and what you offer first.": "আপনার টাইটেল “Home” দিয়ে শুরু, যা Google-কে কিছুই বলে না। আগে আপনার নাম আর আপনি কী অফার করেন তা লিখুন।",
+ "Your title starts with “{word}”, which tells Google nothing. Put your name and what you offer first.": "আপনার টাইটেল “{word}” দিয়ে শুরু, যা Google-কে কিছুই বলে না। আগে আপনার নাম আর আপনি কী অফার করেন তা লিখুন।",
  "Your title “{title}” is short. Say what you offer, and where if it matters.": "আপনার টাইটেল “{title}” ছোট। বলুন আপনি কী অফার করেন, আর দরকার হলে কোথায়।",
  "Your video is ready. It's on your screen.": "আপনার ভিডিও তৈরি। এটি আপনার স্ক্রিনে আছে।",
  "Your videos are ready. They're on your screen.": "আপনার ভিডিওগুলো তৈরি। সেগুলো আপনার স্ক্রিনে আছে।",
