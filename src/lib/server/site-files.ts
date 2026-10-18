@@ -16,7 +16,8 @@ export const MAX_BYTES_PER_SITE = 100 * 1024 * 1024;
 /*
  * Files are kept in Flash's database, which bills by the gigabyte, and no credit pays for that. So
  * all of an owner's apps together hold at most their plan's room: 100 MB on the free plan, more on
- * paid plans, whatever each app's own limit.
+ * paid plans, whatever each app's own limit. Their assistants' files count against the same room,
+ * each at STORE_FACTOR times its text's bytes (see assistants.ts), so the two share it.
  */
 const MB = 1024 * 1024;
 export const FREE_STORAGE_BYTES = 100 * MB;
@@ -29,18 +30,23 @@ export const PLAN_STORAGE_BYTES: Record<string, number> = {
   agency: 10240 * MB,
 };
 
-/** How many bytes of files all of a user's apps may hold together, by their plan. */
+/** How many bytes of files all of a user's apps and assistants may hold together, by their plan. */
 export async function storageLimit(userId: string): Promise<number> {
   const sub = await activeSubscription(userId);
   return sub && Object.hasOwn(PLAN_STORAGE_BYTES, sub.plan) ? PLAN_STORAGE_BYTES[sub.plan] : FREE_STORAGE_BYTES;
 }
 
-/** The bytes of files all of a user's apps hold. */
-async function ownerBytes(userId: string): Promise<number> {
-  const row = await one<{ bytes: number }>(
-    "SELECT COALESCE(SUM(u.size), 0) AS bytes FROM site_uploads u JOIN sites s ON s.slug = u.site_slug WHERE s.user_id = ?",
-    [userId],
-  );
+/**
+ * What a user's files take of their storage, in SQL with the user's id twice: the files all their
+ * apps hold, and their assistants' text as it's counted (the stored column, STORE_FACTOR times its
+ * bytes). For a check that must hold in the same statement as a write.
+ */
+export const USED_STORAGE_SQL =
+  "((SELECT COALESCE(SUM(u.size), 0) FROM site_uploads u JOIN sites s ON s.slug = u.site_slug WHERE s.user_id = ?) + (SELECT COALESCE(SUM(f.stored), 0) FROM assistant_files f JOIN assistants a ON a.id = f.assistant_id WHERE a.user_id = ?))";
+
+/** The bytes a user's files take of their storage: their apps' files and their assistants' text (see USED_STORAGE_SQL). */
+export async function usedStorage(userId: string): Promise<number> {
+  const row = await one<{ bytes: number }>(`SELECT ${USED_STORAGE_SQL} AS bytes`, [userId, userId]);
   return Number(row?.bytes ?? 0);
 }
 
@@ -93,7 +99,7 @@ export async function saveUpload(
   const full =
     Number(use?.n ?? 0) >= MAX_FILES_PER_SITE ||
     Number(use?.bytes ?? 0) + file.bytes.length > MAX_BYTES_PER_SITE ||
-    (await ownerBytes(site.user_id)) + file.bytes.length > (await storageLimit(site.user_id));
+    (await usedStorage(site.user_id)) + file.bytes.length > (await storageLimit(site.user_id));
   if (full) {
     return fail("This app can't hold more files. Its owner can remove some in Flash.", 507);
   }
@@ -160,7 +166,7 @@ export async function uploadUse(slug: string): Promise<{ files: number; bytes: n
     [slug],
   );
   const bytes = Number(use?.bytes ?? 0);
-  const room = use?.user_id ? (await storageLimit(use.user_id)) - (await ownerBytes(use.user_id)) + bytes : MAX_BYTES_PER_SITE;
+  const room = use?.user_id ? (await storageLimit(use.user_id)) - (await usedStorage(use.user_id)) + bytes : MAX_BYTES_PER_SITE;
   return {
     files: Number(use?.n ?? 0),
     bytes,

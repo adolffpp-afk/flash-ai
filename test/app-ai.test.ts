@@ -212,6 +212,29 @@ test("all of an owner's apps together hold at most their plan's room", async () 
   await run("DELETE FROM site_uploads WHERE site_slug IN ('shop', 'shop2')");
 });
 
+test("an owner's assistants' text counts against the same room, as it's counted: STORE_FACTOR times its bytes", async () => {
+  const { FREE_STORAGE_BYTES, usedStorage } = await import("../src/lib/server/site-files.ts");
+  const { STORE_FACTOR } = await import("../src/lib/assistants.ts");
+  await run("INSERT INTO users (id, email, password_hash, created_at, verified_at) VALUES ('other', 'x@x.io', '', 0, 1)");
+  await run("INSERT INTO assistants (id, user_id, name, created_at, updated_at) VALUES ('a1', 'owner', 'Helper', 0, 0), ('a2', 'other', 'Theirs', 0, 0)");
+  // All but 1,000 bytes of the free room, once counted.
+  const text = (FREE_STORAGE_BYTES - 1000) / STORE_FACTOR;
+  assert.ok(Number.isInteger(text));
+  await run(
+    "INSERT INTO assistant_files (id, assistant_id, name, kind, chars, bytes, stored, tokens, hash, created_at) VALUES ('f1', 'a1', 'big.txt', 'text', ?, ?, ?, 1, 'h1', 0), ('f2', 'a2', 'x.txt', 'text', 9, 9, 99999999, 1, 'h2', 0)",
+    [text, text, STORE_FACTOR * text],
+  );
+  await run("INSERT INTO site_uploads (id, site_slug, owner, mime, name, data, size, created_at) VALUES ('small', 'shop', '', 'image/png', 's.png', x'00', 100, 0)");
+  assert.equal(await usedStorage("owner"), STORE_FACTOR * text + 100, "their apps' files and their own assistants', not anyone else's");
+  assert.equal((await uploadUse("shop")).maxBytes, 1000, "the room left for this app's files, with the 100 bytes it holds");
+  assert.equal((await saveUpload("shop", { name: "a.png", type: "image/png", bytes: Buffer.alloc(901) }, "")).status, 507);
+  assert.equal((await saveUpload("shop", { name: "a.png", type: "image/png", bytes: Buffer.alloc(900) }, "")).status, 201);
+  await run("DELETE FROM site_uploads WHERE site_slug = 'shop'");
+  await run("DELETE FROM assistant_files");
+  await run("DELETE FROM assistants");
+  assert.equal(await usedStorage("owner"), 0);
+});
+
 test("apps are given the AI and upload addresses, and the preview pretends", () => {
   const page = flashDbShim("/d", "/in", "/shop", false, "/auth", "/mine", null, "/api/sites/shop/ai", "/api/sites/shop/files");
   assert.match(page, /window\.flashAI = \{/);
