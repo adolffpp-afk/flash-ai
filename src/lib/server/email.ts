@@ -41,6 +41,9 @@ export const EMAIL_BUDGET = {
   // "Your app's AI is out of credits" emails to app owners, a day (see low-balance.ts), the same way.
   // Visitors set these off, so they have a share of their own and never use up the low-credit emails'.
   appAiAlerts: 5,
+  // Of those, what one owner may get in a day, whichever of their apps' visitors set it off, so one
+  // busy app never takes more than its owner's own place in the share above.
+  appAiPerOwner: 1,
 };
 
 const DAY = 86_400_000;
@@ -57,11 +60,12 @@ const DAY = 86_400_000;
  *   forms, so these also stop at the owner's own daily cap.
  * - "report": a new report, to Flash's admins. Anyone can report, so these also stop at
  *   EMAIL_BUDGET.reports a day.
- * - "alert": a low-credit email (see low-balance.ts). These also stop at EMAIL_BUDGET.alerts a day.
- * - "app-ai": an "app's AI is out of credits" email (low-balance.ts). These also stop at
- *   EMAIL_BUDGET.appAiAlerts a day.
+ * - "alert": a low-credit or out-of-credits email (see low-balance.ts). These also stop at
+ *   EMAIL_BUDGET.alerts a day.
+ * - { appAi }: an "app's AI is out of credits" email (low-balance.ts) to that owner. These also stop
+ *   at EMAIL_BUDGET.appAiPerOwner a day for the owner, and EMAIL_BUDGET.appAiAlerts a day for all.
  */
-export type EmailKind = "account" | "new" | "other" | "report" | "alert" | "app-ai" | { owner: string };
+export type EmailKind = "account" | "new" | "other" | "report" | "alert" | { appAi: string } | { owner: string };
 
 /**
  * Whether today's budget lets an email of this kind go out, counting it when it does. Account
@@ -70,7 +74,8 @@ export type EmailKind = "account" | "new" | "other" | "report" | "alert" | "app-
  * an email to several never takes more than the provider allows.
  */
 async function withinBudget(kind: EmailKind, recipients: number): Promise<boolean> {
-  const day = new Date(now()).toISOString().slice(0, 10);
+  const t = now();
+  const day = new Date(t).toISOString().slice(0, 10);
   const accounts = `email-day-acct:${day}`;
   const others = `email-day:${day}`;
   if (kind === "new" && (await overLimit(`email-new:${day}`, EMAIL_BUDGET.forNewAddresses, DAY))) {
@@ -82,22 +87,35 @@ async function withinBudget(kind: EmailKind, recipients: number): Promise<boolea
     return true;
   }
   // Checked first, so one person's busy apps (or a flood of reports) can't use up everyone else's share.
-  if (typeof kind === "object" && (await overLimit(`email-owner:${kind.owner}`, EMAIL_BUDGET.perOwner, DAY))) return false;
+  if (typeof kind === "object" && "owner" in kind && (await overLimit(`email-owner:${kind.owner}`, EMAIL_BUDGET.perOwner, DAY))) return false;
   if (kind === "report" && (await overLimit(`email-report:${day}`, EMAIL_BUDGET.reports, DAY))) return false;
-  // An alert's own share, then the day's shared emails, each taken in one statement, so emails at the
-  // same moment get every place there is (and no more), and one refused takes nothing: an alert's
-  // place is handed back when the shared emails then refuse it.
-  const share =
+  // An alert's own share (for an app-AI email, its owner's own place first, so one busy app never
+  // takes another owner's), then the day's shared emails, each taken in one statement, so emails at
+  // the same moment get every place there is (and no more), and one refused takes nothing: the places
+  // it took are handed back when a later one refuses it. The owner's place lasts until the day's end
+  // (UTC), as the day's shares do, on one row per owner.
+  const restOfDay = (Math.floor(t / DAY) + 1) * DAY - 1 - t;
+  const shares =
     kind === "alert"
-      ? { key: `email-alert:${day}`, max: EMAIL_BUDGET.alerts }
-      : kind === "app-ai"
-        ? { key: `email-app-ai:${day}`, max: EMAIL_BUDGET.appAiAlerts }
-        : null;
-  const shareUntil = share ? await takeOne(share.key, share.max, DAY) : null;
-  if (share && shareUntil === null) return false;
+      ? [{ key: `email-alert:${day}`, max: EMAIL_BUDGET.alerts, window: DAY }]
+      : typeof kind === "object" && "appAi" in kind
+        ? [
+            { key: `email-app-ai-owner:${kind.appAi}`, max: EMAIL_BUDGET.appAiPerOwner, window: restOfDay },
+            { key: `email-app-ai:${day}`, max: EMAIL_BUDGET.appAiAlerts, window: DAY },
+          ]
+        : [];
+  const taken: [string, number][] = [];
+  for (const share of shares) {
+    const until = await takeOne(share.key, share.max, share.window);
+    if (until === null) {
+      await giveBackOne(taken);
+      return false;
+    }
+    taken.push([share.key, until]);
+  }
   const full = (await countOf(accounts)) + (await countOf(others)) + recipients > EMAIL_BUDGET.perDay;
   if (full || (await takeSome(others, EMAIL_BUDGET.perDay - EMAIL_BUDGET.keptForAccounts, DAY, recipients)) === null) {
-    if (share && shareUntil !== null) await giveBackOne([[share.key, shareUntil]]);
+    await giveBackOne(taken);
     console.warn("[flash] today's emails for apps and invites are used up; raise EMAIL_BUDGET in email.ts on a bigger email plan");
     return false;
   }

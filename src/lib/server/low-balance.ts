@@ -313,7 +313,9 @@ export type AppAiOutcome = "off" | "daily" | "budget" | "failed" | "sent";
 /**
  * Emails an app's owner that its AI is turning visitors away, out of credits or (atLevel) stopped at
  * their auto top-up level, at most once a day whichever it is. Visitors set these off, so they have
- * their own share of the day's emails (EMAIL_BUDGET.appAiAlerts), never the low-credit emails'.
+ * their own share of the day's emails (EMAIL_BUDGET.appAiAlerts), never the low-credit emails', and
+ * each owner has a place of their own in it (EMAIL_BUDGET.appAiPerOwner), so one busy app's visitors
+ * can only ever take its owner's.
  */
 export async function appAiAlert(owner: string, title: string, atLevel = false): Promise<AppAiOutcome> {
   if (!paymentsEnabled() || !emailEnabled()) return "off";
@@ -335,7 +337,7 @@ export async function appAiAlert(owner: string, title: string, atLevel = false):
   if (claim.rowsAffected !== 1) return "daily";
   try {
     const email = atLevel ? EMAILS.appAiAtLevel(title, creditsLink(owner)) : EMAILS.appAiOutOfCredits(title, creditsLink(owner));
-    if (!(await sendEmail(row.email, email, "app-ai"))) {
+    if (!(await sendEmail(row.email, email, { appAi: owner }))) {
       await tally("ai-budget");
       return "budget";
     }

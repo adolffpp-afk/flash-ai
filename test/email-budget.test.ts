@@ -140,7 +140,7 @@ test("app-AI emails stop at a share of their own, so visitors setting them off n
   assert.ok(EMAIL_BUDGET.alerts + EMAIL_BUDGET.appAiAlerts < forOthers / 2, "app emails and invites keep most of their share");
   const ai = (n: number) => EMAILS.appAiOutOfCredits(`App ${n}`, "https://x/?credits=1");
   let n = 0;
-  while (await sendEmail(`ai${n}@x.co`, ai(n), "app-ai")) n++;
+  while (await sendEmail(`ai${n}@x.co`, ai(n), { appAi: `ai-owner-${n}` })) n++;
   assert.equal(n, EMAIL_BUDGET.appAiAlerts);
   let low = 0;
   while (await sendEmail(`low-ai${low}@x.co`, EMAILS.lowCredits(50, "https://x/?credits=1"), "alert")) low++;
@@ -177,6 +177,32 @@ test("the day's shared emails are taken in one statement: one place left goes to
   assert.equal(went("form") + went("other") + went("report") + went("alert"), forOthers);
   assert.ok(went("alert") > 0 && went("alert") <= EMAIL_BUDGET.alerts);
   assert.equal(sent.length - before, EMAIL_BUDGET.perDay);
+});
+
+test("each owner has a place of their own in the app-AI emails' share: one busy app never takes another owner's", async () => {
+  const { countOf } = await import("../src/lib/server/limits.ts");
+  clock = NOON + 20 * DAY;
+  const day = new Date(clock).toISOString().slice(0, 10);
+  const ai = EMAILS.appAiOutOfCredits("Bakery", "https://x/?credits=1");
+  assert.ok(EMAIL_BUDGET.appAiPerOwner >= 1 && EMAIL_BUDGET.appAiPerOwner < EMAIL_BUDGET.appAiAlerts);
+  // One owner's busy app: its visitors set off far more than the share, and the owner gets their own place only.
+  const busy = [];
+  for (let i = 0; i < EMAIL_BUDGET.appAiAlerts * 2; i++) busy.push(await sendEmail("baker@x.co", ai, { appAi: "baker" }));
+  assert.equal(busy.filter(Boolean).length, EMAIL_BUDGET.appAiPerOwner);
+  assert.equal(await countOf(`email-app-ai:${day}`), EMAIL_BUDGET.appAiPerOwner, "the refused ones took no place in the share");
+  // Every other owner still gets theirs, at the same moment too.
+  const others = await Promise.all(
+    Array.from({ length: EMAIL_BUDGET.appAiAlerts - EMAIL_BUDGET.appAiPerOwner }, (_, i) => sendEmail(`o${i}@x.co`, ai, { appAi: `other-owner-${i}` })),
+  );
+  assert.deepEqual(others, others.map(() => true));
+  // The share used up: an owner refused by it keeps their own place for when there's room.
+  assert.equal(await sendEmail("late@x.co", ai, { appAi: "late-owner" }), false);
+  assert.equal(await countOf("email-app-ai-owner:late-owner"), 0, "handed back");
+  // The next day (UTC), from its first moment.
+  clock = Math.floor(clock / DAY + 1) * DAY;
+  assert.equal(await sendEmail("late@x.co", ai, { appAi: "late-owner" }), true, "the next day it goes");
+  assert.equal(await sendEmail("baker@x.co", ai, { appAi: "baker" }), true, "and the busy app's owner gets one again");
+  assert.equal(await sendEmail("baker@x.co", ai, { appAi: "baker" }), false, "one");
 });
 
 const { network } = await import("../src/lib/server/limits.ts");
