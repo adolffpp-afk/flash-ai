@@ -179,7 +179,9 @@ webhook that listens to **events on connected accounts**, at `/api/stripe/connec
 `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `charge.refunded`
 and `charge.dispute.created`, with its signing secret in `STRIPE_CONNECT_WEBHOOK_SECRET`. It
 saves an order when it is paid even if the buyer closes the tab, and keeps refunds and disputes
-with it. Test-mode events never become orders under a live key.
+with it. Test-mode events never become orders under a live key. Optionally, set
+`STRIPE_CONNECT_CLIENT_ID` to Flash's own Connect client ID (`ca_...`, for the key's mode) so the
+webhook only waits for refunds and disputes of payments Flash's own platform made.
 
 Published apps run under a sandbox header that blocks them from reading Flash's cookies,
 but they are served from the same domain. For a public launch, serve `/p/*` from a

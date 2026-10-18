@@ -929,6 +929,20 @@ export async function POST(request: Request) {
   }
   const filesProblem = checkFiles(last.attachment, last.more, t);
   if (filesProblem) return Response.json({ error: filesProblem }, { status: 413 });
+  const override =
+    body.engine && body.engine !== "auto" && (ENGINES as readonly string[]).includes(body.engine) ? body.engine : null;
+  // A quote is only for a change to an app or deck (Fix all), which no paid helper reads first: the
+  // router only reads a request on Auto, and the picture check a picture or video request. Anthropic
+  // counts its tokens for free, but only so often, so each user gets QUOTES_AN_HOUR, counted before
+  // the virus scan or anything else that costs, so a quote past them costs nothing. A request that
+  // isn't a quote passes both checks untouched.
+  const quote = body.quote === true;
+  if (quote && !(body.build === true && (override === "app" || override === "slides"))) {
+    return Response.json({ error: t("Only a change to an app or slides can be priced before it's sent.") }, { status: 400 });
+  }
+  if (quote && (await overLimit(`quote:${user.id}`, QUOTES_AN_HOUR, 3600_000))) {
+    return Response.json({ error: t("Too many requests. Try again in an hour.") }, { status: 429 });
+  }
   // Every file in the conversation goes to the AI again, so each is checked (a clean one only once a week).
   const sent = history
     .flatMap((turn) => (turn.attachment ? [turn.attachment, ...(Array.isArray(turn.more) ? turn.more : [])] : []))
@@ -955,20 +969,8 @@ export async function POST(request: Request) {
   const earlier = [...history.slice(0, -1)].reverse().find((turn) => turn.role === "user")?.content;
   const earlierText = typeof earlier === "string" ? earlier : "";
   const auto = followsForecast(route(last.content, last.attachment?.mediaType, previous, { spoken }), last.content, earlierText, Boolean(last.attachment), previous);
-  const override =
-    body.engine && body.engine !== "auto" && (ENGINES as readonly string[]).includes(body.engine) ? body.engine : null;
   // The request the user agreed to the price of: the router and the picture check aren't asked again.
   const decided = decidedFor(body, override);
-  // A quote is only for a change to an app or deck (Fix all), which no paid helper reads first: the
-  // router only reads a request on Auto, and the picture check a picture or video request. Anthropic
-  // counts its tokens for free, but only so often, so each user gets QUOTES_AN_HOUR.
-  const quote = body.quote === true;
-  if (quote && !(body.build === true && (override === "app" || override === "slides"))) {
-    return Response.json({ error: t("Only a change to an app or slides can be priced before it's sent.") }, { status: 400 });
-  }
-  if (quote && (await overLimit(`quote:${user.id}`, QUOTES_AN_HOUR, 3600_000))) {
-    return Response.json({ error: t("Too many requests. Try again in an hour.") }, { status: 429 });
-  }
   // Where and when the user is, taken once, so the hold counts the same instructions the reply sends.
   const where = whereFrom(request, body.timeZone);
   const prompting = promptingFor(where, new Date(startedAt), override !== null);

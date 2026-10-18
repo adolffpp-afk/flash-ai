@@ -670,6 +670,72 @@ test("a payment the seller named an app on themselves, or an event over a day ol
   assert.equal((await order("cs_never"))?.refunded_amount, 1000);
 });
 
+test("with STRIPE_CONNECT_CLIENT_ID set, only a payment Flash's own Connect platform made is waited for; without it, any platform's is", async () => {
+  // An app's payment whose checkout Stripe doesn't list yet, made through the platform named here.
+  accounts.acct_A.push(paid("cs_plat", "pi_plat"));
+  intents["acct_A:pi_plat"] = { flash_site: "cake-1" };
+  unlisted.add("cs_plat");
+  const refund = () => recent("charge.refunded", { id: "ch_plat", amount: 2500, amount_refunded: 500, payment_intent: "pi_plat" });
+  try {
+    for (const [own, platform, status] of [
+      [undefined, "ca_other", 500],
+      ["  ", "ca_other", 500],
+      ["ca_flash", "ca_other", 200],
+      ["ca_flash", "ca_flash", 500],
+      [" ca_flash ", "ca_flash", 500],
+      // Made with the seller's own key or Dashboard: no platform.
+      ["ca_flash", "", 200],
+    ] as const) {
+      if (own === undefined) delete process.env.STRIPE_CONNECT_CLIENT_ID;
+      else process.env.STRIPE_CONNECT_CLIENT_ID = own;
+      platforms["acct_A:pi_plat"] = platform;
+      const r = await send(refund());
+      assert.deepEqual(r, status === 500 ? { status: 500, outcome: undefined } : { status: 200, outcome: "not-ours" }, `${own} / ${platform}`);
+      assert.deepEqual(calls.at(-1), { path: "/payment_intents/pi_plat", account: "acct_A" });
+    }
+    assert.equal(await order("cs_plat"), null);
+  } finally {
+    delete process.env.STRIPE_CONNECT_CLIENT_ID;
+    unlisted.delete("cs_plat");
+  }
+});
+
+test("an event that doesn't say when it was made counts as old: an app's refund Stripe can't match yet isn't waited for, and one it can is kept with the time it came", async () => {
+  accounts.acct_A.push(paid("cs_undated", "pi_undated"));
+  intents["acct_A:pi_undated"] = { flash_site: "cake-1" };
+  unlisted.add("cs_undated");
+  const refund = (created: unknown) =>
+    event("charge.refunded", { id: "ch_undated", amount: 2500, amount_refunded: 800, payment_intent: "pi_undated" }, { created: created as number | undefined });
+  // No time, or one that isn't a time, or one still to come: 200 at once, only the list asked, nothing kept.
+  for (const [created, label] of [
+    [undefined, "no time"],
+    [null, "null"],
+    ["1760000000", "a string"],
+    [0, "zero"],
+    [-5, "before 1970"],
+    [nowSec() + 86_400, "tomorrow"],
+  ] as const) {
+    const before = calls.length;
+    const sent = refund(created);
+    assert.deepEqual(await send(sent), { status: 200, outcome: "not-ours" }, label);
+    assert.deepEqual(
+      calls.slice(before).map((c) => c.path.split("?")[0]),
+      ["/checkout/sessions"],
+      `${label}: only the list is asked`,
+    );
+    assert.equal(await n("SELECT COUNT(*) AS n FROM stripe_events WHERE id = ?", [sent.id!]), 0);
+  }
+  // A clock a minute ahead of Flash's is still a time.
+  assert.equal((await send(refund(nowSec() + 60))).status, 500);
+  // Once listed, an undated refund is kept with the order, at the time it came.
+  unlisted.delete("cs_undated");
+  const at = Date.now();
+  assert.deepEqual(await send(refund(undefined)), { status: 200, outcome: "refunded" });
+  const kept = await order("cs_undated");
+  assert.equal(kept?.refunded_amount, 800);
+  assert.ok(kept!.refunded_at >= at && kept!.refunded_at <= Date.now(), "the time it came");
+});
+
 test("the funnel keeps Paid and Revenue as what buyers paid, and says what was refunded on its own line", async () => {
   const stats = (await funnelStats("cake-1", 7))!;
   const orders = await n("SELECT COUNT(*) AS n FROM site_orders WHERE site_slug = 'cake-1'");

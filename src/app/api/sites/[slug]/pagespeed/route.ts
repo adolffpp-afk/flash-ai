@@ -1,7 +1,7 @@
 import { getUser, unauthorized } from "@/lib/server/auth.ts";
 import { one, run } from "@/lib/server/db.ts";
 import { translatorFor } from "@/lib/server/i18n.ts";
-import { clearLimit, countOf, takeOne } from "@/lib/server/limits.ts";
+import { clearLimit, countOf, giveBackOne, takeOne } from "@/lib/server/limits.ts";
 import { pointsAtFlash, siteDomains } from "@/lib/server/domains.ts";
 import { cacheGet, cacheKey, cachePut } from "@/lib/server/source-fetch.ts";
 import { appBase } from "@/lib/server/seo.ts";
@@ -28,12 +28,6 @@ function failed(t: Translate, error: PageSpeedError): Response {
   const [status, message] = said[error];
   return Response.json({ code: error, error: message }, { status });
 }
-
-/**
- * Takes one of key's max in its window, or says no without writing anything once they're all used: in
- * one statement (takeOne), so of two presses at the same moment for the last one, one takes it.
- */
-const take = async (key: string, max: number, windowMs: number) => (await countOf(key)) < max && (await takeOne(key, max, windowMs));
 
 /**
  * How many times an owner may be told here, in an hour, that their domain doesn't point at Flash, and
@@ -68,7 +62,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug
   let url = `${appBase()}/p/${site.slug}`;
   const domain = body?.address === "domain" ? testDomain(await siteDomains(site.slug)) : null;
   if (body?.address === "domain") {
-    if (!domain) return Response.json({ error: t("Not found") }, { status: 400 });
+    if (!domain) return Response.json({ error: t("Not found") }, { status: 404 });
     url = `https://${domain}/`;
   }
 
@@ -109,8 +103,22 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug
   const usedToday = await countOf(daily);
   if (usedToday >= caps.day) return today();
   const lookups = `pagespeed-domain:${user.id}`;
-  /** Gives back one of each key's counts this press took. */
-  const giveBack = (...keys: string[]) => run(`UPDATE rate_limits SET count = count - 1 WHERE key IN (${keys.map(() => "?").join(", ")}) AND count > 0`, keys);
+  // When the window ends that each of this press's counts was taken from.
+  const took = new Map<string, number>();
+  /**
+   * Takes one of key's max in its window, or says no without writing anything once they're all used:
+   * in one statement (takeOne), so of two presses at the same moment for the last one, one takes it.
+   */
+  const take = async (key: string, max: number, windowMs: number) => {
+    const until = (await countOf(key)) < max ? await takeOne(key, max, windowMs) : null;
+    if (until !== null) took.set(key, until);
+    return until !== null;
+  };
+  /**
+   * Gives back one of each key's counts this press took, into the window it took it from: a press
+   * that runs past the end of the hour (or the UTC day) gives nothing to the next one.
+   */
+  const giveBack = (...keys: string[]) => giveBackOne(keys.flatMap((key) => (took.has(key) ? [[key, took.get(key)!] as [string, number]] : [])));
   if (domain) {
     // Asking Vercel (whose answer is noted with the domain, see domainStatus) has a limit of its own,
     // so a domain that doesn't point at Flash yet uses up none of the owner's checks. A domain that
@@ -124,7 +132,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug
   }
   // Taken in one statement: of two presses of the app at the same moment, one holds it, and only its
   // finally lets go.
-  if (!(await takeOne(lock, 1, 3 * MINUTE))) {
+  if ((await takeOne(lock, 1, 3 * MINUTE)) === null) {
     if (domain) await giveBack(lookups);
     return running();
   }
