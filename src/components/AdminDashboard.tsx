@@ -510,7 +510,8 @@ function AutomationLines({ a, days, health }: { a: NonNullable<Stats["automation
           />
           <Tile label="Holds open" value={num(h.openHolds)} note={h.lapsedHolds ? `${num(h.lapsedHolds)} past their lease (the next tick settles them)` : "None past its lease"} />
           <Tile label="Waiting for a newer runner" value={num(h.newerRunner)} note="Runs saved by a newer deployment" />
-          <Tile label="Daily job" value={h.dailyJob || "Not yet"} note="The last day it ran (UTC)" />
+          {/* Its day (YYYY-MM-DD, UTC) as "Oct 18", which fits a tile on a phone. */}
+          <Tile label="Daily job" value={!h.dailyJob ? "Not yet" : Number.isNaN(Date.parse(h.dailyJob)) ? h.dailyJob : day(Date.parse(h.dailyJob))} note="The last day it ran (UTC)" />
         </div>
       </Panel>
 

@@ -51,6 +51,7 @@ const R = await import("../src/lib/server/automation-runner.ts");
 const { localeOf } = await import("../src/lib/i18n.ts");
 const F = await import("./support/automation-fixtures.ts");
 const A = await import("../src/lib/automations.ts");
+const { nextFire } = await import("../src/lib/schedule.ts");
 const API = await import("../src/lib/server/automation-api.ts");
 const E = await import("../src/lib/server/automation-estimate.ts");
 const { worstTokens } = await import("../src/lib/credits.ts");
@@ -234,6 +235,12 @@ test("ownership: another account's automation and runs are not found, to read, e
   assert.equal((await one<{ stop_requested: number }>("SELECT stop_requested FROM automation_runs WHERE id = ?", [rid]))!.stop_requested, 0);
   const listed = (await body(await listRoute.GET(req("/api/automations", { cookie: c })))).automations as { id: string }[];
   assert.equal(listed.some((x) => x.id === aid), false);
+  // Another account's notice can't be marked read either, by its id.
+  const { notify } = await import("../src/lib/server/notifications.ts");
+  assert.ok(await notify({ userId: boss.id, kind: "missed", phrase: A.NOTICES.missed, blanks: { name: "Boss's own" }, ref: "boss:own" }));
+  const notice = (await one<{ id: string }>("SELECT id FROM notifications WHERE user_id = ? AND ref = 'boss:own'", [boss.id]))!.id;
+  assert.equal((await noticesRoute.POST(req("/api/notifications", { cookie: c, json: { read: [notice] } }))).status, 200);
+  assert.equal(Number((await one<{ read_at: number }>("SELECT read_at FROM notifications WHERE id = ?", [notice]))!.read_at), 0, "still unread");
 });
 
 test("at most 25 automations on, and at most 3 that run more often than once a day", async () => {
@@ -596,7 +603,7 @@ test("/admin's automation lines: setup by name only, cron health worked out from
 
 const NOW = "CAST(unixepoch('subsec') * 1000 AS INTEGER)";
 const patch = (cookie: string, id: string, json: Record<string, unknown>) => oneRoute.PATCH(req(`/api/automations/${id}`, { cookie, method: "PATCH", json }), ctx({ id }));
-type Card = { automations: { id: string; spentThisMonth: number; heldNow: number; timePassed: boolean }[]; runs: { id: string; held: number; holds: number; deleted: boolean }[]; spentThisMonth: number; heldNow: number; noticeLocale: string };
+type Card = { automations: { id: string; spentThisMonth: number; heldNow: number; timePassed: boolean }[]; runs: { id: string; held: number; holds: number; deleted: boolean; waiting: boolean }[]; spentThisMonth: number; heldNow: number; noticeLocale: string };
 const cardOf = async (cookie: string) => (await body(await adminRoute.GET(req("/api/admin/automations", { cookie })))) as unknown as Card;
 
 test("a downloaded receipt whose words were changed doesn't match, though its fingerprint is Flash's", async () => {
@@ -710,6 +717,77 @@ test("a paused one-off whose time is under 2 minutes away but still to come isn'
   // A new time still needs to be 2 minutes ahead.
   assert.equal((await patch(cookie, aid, { spec: { ...once, trigger: { type: "schedule", when } }, seenMax: worst })).status, 400);
 });
+
+test("a paused one-off turned on in another time zone needs its time there 2 minutes ahead, as a new time does", async () => {
+  const { cookie } = await admin("rv3zone");
+  // Its time is 40 to 100 s from now in UTC+1, an hour later in UTC (its zone now).
+  const there = Math.floor((Date.now() + 100_000) / 60_000) * 60_000;
+  const wall = new Date(there + 3_600_000).toISOString();
+  const once: Spec = { ...F.WRITE_SPEC, trigger: { type: "schedule", when: { kind: "once", date: wall.slice(0, 10), at: wall.slice(11, 16) } } };
+  const worst = (await priceOf(cookie, once)).worst;
+  const aid = await create(cookie, once);
+  assert.equal((await patch(cookie, aid, { status: "paused" })).status, 200);
+  const moved = await patch(cookie, aid, { status: "on", timeZone: "Etc/GMT-1", seenMax: worst });
+  assert.equal(moved.status, 409);
+  assert.equal((await body(moved)).code, "once_passed");
+  const kept = (await one<{ status: string; time_zone: string }>("SELECT status, time_zone FROM automations WHERE id = ?", [aid]))!;
+  assert.deepEqual([kept.status, kept.time_zone], ["paused", "UTC"], "nothing changed");
+});
+
+for (const edit of ["daily", "later", "manual"] as const) {
+  test(`a one-off edited while its run is going (${{ daily: "into a daily", later: "to a later time", manual: "to run by hand" }[edit]}) keeps what the edit gave it when that run ends`, async () => {
+    const T = await import("../src/lib/server/automation-tick.ts");
+    const L = await import("../src/lib/server/leases.ts");
+    const { cookie } = await admin(`rv3edit${edit}`);
+    const soon = new Date(Date.now() + 10 * 60_000).toISOString();
+    const later = new Date(Date.now() + 3 * 3_600_000).toISOString();
+    const once: Spec = { ...F.WRITE_SPEC, trigger: { type: "schedule", when: { kind: "once", date: soon.slice(0, 10), at: soon.slice(11, 16) } } };
+    const next: Spec =
+      edit === "daily"
+        ? { ...F.WRITE_SPEC, trigger: { type: "schedule", when: { kind: "daily", at: "08:00" } } }
+        : edit === "later"
+          ? { ...F.WRITE_SPEC, trigger: { type: "schedule", when: { kind: "once", date: later.slice(0, 10), at: later.slice(11, 16) } } }
+          : F.WRITE_SPEC;
+    const aid = await create(cookie, once);
+    // Its time comes: the tick takes its slot (next_at 0) and claims its run.
+    await sql("UPDATE automations SET next_at = ? WHERE id = ?", [Date.now() - 1000, aid]);
+    const sent: { id: string; owner: string }[] = [];
+    const rid = async () => (await one<{ id: string }>("SELECT id FROM automation_runs WHERE automation_id = ?", [aid]))?.id;
+    await T.runTick(`tk-edit-${edit}`, { dispatch: async (c) => void (c.id === (await rid()) && sent.push(c)) });
+    assert.equal(sent.length, 1);
+    // The owner edits it while the run's AI step is charged and about to call Claude.
+    claude.state.replies.push({ text: "Remember the dentist." });
+    let go!: () => void;
+    const held = new Promise<void>((r) => (go = r));
+    let reached!: () => void;
+    const atCharge = new Promise<void>((r) => (reached = r));
+    L.probes.at = async (point) => {
+      if (point === "after-charge") {
+        reached();
+        await held;
+      }
+    };
+    try {
+      const going = R.advanceRun(sent[0].id, sent[0].owner, Date.now() + 760_000);
+      await atCharge;
+      const edited = await patch(cookie, aid, { spec: next, seenMax: (await priceOf(cookie, next)).worst });
+      assert.equal(edited.status, 200, JSON.stringify(await edited.clone().json()));
+      go();
+      await going;
+    } finally {
+      L.probes.at = () => {};
+    }
+    assert.equal((await one<{ status: string }>("SELECT status FROM automation_runs WHERE id = ?", [sent[0].id]))!.status, "done", "the run follows its own version");
+    const a = (await one<{ status: string; next_at: number; version: number }>("SELECT status, next_at, version FROM automations WHERE id = ?", [aid]))!;
+    const want = edit === "daily" ? nextFire({ kind: "daily", at: "08:00" }, "UTC", Date.now()) : edit === "later" ? Date.parse(`${later.slice(0, 16)}:00Z`) : 0;
+    assert.deepEqual([a.status, Number(a.next_at), Number(a.version)], ["on", want, 2]);
+    if (edit === "manual") return;
+    // That slot is still to come: a tick then makes its run.
+    await sql("UPDATE automations SET next_at = ? WHERE id = ?", [Date.now() - 1000, aid]);
+    await T.runTick(`tk-edit-${edit}-2`, { dispatch: async () => {} });
+    assert.equal(await count("automation_runs", "automation_id = ?", [aid]), 2);
+  });
+}
 
 for (const kind of ["once", "daily"] as const) {
   test(`a ${kind} renamed after its slot came, before the tick took it, still runs that slot`, async () => {
@@ -1164,4 +1242,61 @@ test("the admin card's one-off in 3 minutes, made in the repeated hour of a fall
       Date.now = realNow;
     }
   }
+});
+
+test("a receipt shows a step's waits for other runs' holds in a row once, with why, never as tries; its fingerprint counts them, and the card says the run waits", async () => {
+  const { cookie, id } = await admin("rv7wait");
+  const aid = await create(cookie, F.WRITE_SPEC);
+  // It waited twice, tried once (busy), and waited again.
+  const rid = await F.runRow({ automationId: aid, userId: id, attempts: 4 });
+  const row = (attempt: number, note: string) =>
+    sql("INSERT INTO automation_run_steps (run_id, step_id, attempt, user_id, kind, status, note, started_at, finished_at) VALUES (?, 'a1', ?, ?, 'ai', 'retried', ?, ?, ?)", [rid, attempt, id, note, attempt, attempt]);
+  for (const [attempt, note] of [[1, "waiting"], [2, "waiting"], [3, "busy"], [4, "waiting"]] as const) await row(attempt, note);
+  await sql("UPDATE automation_runs SET due_at = ? WHERE id = ?", [Date.now() + 60_000, rid]);
+  type Got = {
+    run: { status: string; waiting: boolean };
+    steps: { stepId: string; status: string; attempt: number; waits: number; noteText: string }[];
+    receipt: { receipt: { steps: { id: string; attempt: number; status: string }[]; waited?: number } } | null;
+  };
+  const get = async () => (await (await receiptRoute.GET(req(`/api/automations/runs/${rid}`, { cookie }), ctx({ runId: rid }))).json()) as Got;
+  const shown = (r: Got) => r.steps.map((s) => [s.stepId, s.status, s.attempt, s.waits]);
+  let r = await get();
+  assert.equal(r.run.waiting, true, "it waits for another run's hold");
+  assert.equal((await cardOf(cookie)).runs.find((x) => x.id === rid)!.waiting, true, "the card says so too");
+  // Its last wait goes on now, and says why; the earlier ones were waited.
+  assert.deepEqual(shown(r), [["a1", "waited", 0, 2], ["a1", "retried", 1, 0], ["a1", "waiting", 0, 1]]);
+  assert.deepEqual(r.steps.map((s) => s.noteText), ["", "", A.NOTICES.waitingHold], "with why");
+  // It runs: its waits stay out of its tries and its fingerprinted steps, which count them.
+  claude.state.replies.push({ text: "Clear skies all day." });
+  await sql(`UPDATE automation_runs SET due_at = 0, status = 'running', lease_owner = 'w:' || id, lease_until = ${NOW} + 120000 WHERE id = ?`, [rid]);
+  await R.advanceRun(rid, `w:${rid}`, Date.now() + 760_000);
+  r = await get();
+  assert.deepEqual([r.run.status, r.run.waiting], ["done", false]);
+  assert.equal((await cardOf(cookie)).runs.find((x) => x.id === rid)!.waiting, false);
+  assert.deepEqual(shown(r), [["a1", "waited", 0, 2], ["a1", "retried", 1, 0], ["a1", "waited", 0, 1], ["a1", "done", 2, 0], ["n1", "done", 1, 0]]);
+  assert.deepEqual(r.receipt!.receipt.steps.map((s) => [s.id, s.attempt, s.status]), [["a1", 1, "retried"], ["a1", 2, "done"], ["n1", 1, "done"]]);
+  assert.equal(r.receipt!.receipt.waited, 3);
+  // Its download is checked against that fingerprint.
+  const saved = await (await receiptRoute.GET(req(`/api/automations/runs/${rid}?format=json`, { cookie }), ctx({ runId: rid }))).json();
+  const check = async (receipt: unknown) => ((await (await receiptRoute.POST(req(`/api/automations/runs/${rid}`, { cookie, json: { action: "check", receipt } }), ctx({ runId: rid }))).json()) as { matches: boolean }).matches;
+  assert.equal(await check(saved), true);
+  const changed = JSON.parse(JSON.stringify(saved)) as Got;
+  changed.steps[3].status = "failed";
+  assert.equal(await check(changed), false, "a try changed");
+});
+
+test("a blank burn-in instruction is refused (400), never priced or made with another text in its place", async () => {
+  const { cookie, id } = await admin("rv7blank");
+  const counts = counted();
+  for (const prompt of ["", "   \n\t "]) {
+    const price = await adminRoute.POST(req("/api/admin/automations", { cookie, json: { action: "price", prompt, timeZone: "UTC" } }));
+    assert.equal(price.status, 400, JSON.stringify(prompt));
+    assert.equal((await body(price)).error, "Write an instruction first.");
+    const make = await adminRoute.POST(req("/api/admin/automations", { cookie, json: { action: "make", kind: "manual", run: true, prompt, timeZone: "UTC", seenMax: 100_000 } }));
+    assert.equal(make.status, 400, JSON.stringify(prompt));
+  }
+  assert.equal(counted(), counts, "nothing counted");
+  assert.equal(await count("automations", "user_id = ?", [id]), 0, "nothing made");
+  // Left out, it is the card's own example.
+  assert.equal((await adminRoute.POST(req("/api/admin/automations", { cookie, json: { action: "price", timeZone: "UTC" } }))).status, 200);
 });

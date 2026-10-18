@@ -1712,3 +1712,145 @@ test("on its last attempt, a step whose start mark can't be confirmed ends the r
   assert.equal(claude.streamed().length, streams);
   assert.ok((await charged(rid)) === 0, "nothing charged");
 });
+
+/** Another run of an account (of `automationId`) under way with an open hold of `held`, as a step mid-call leaves it. */
+async function heldBy(account: string, automationId: string, held: number) {
+  const busy = await F.runRow({ automationId, userId: account, status: "running" });
+  await sql(`UPDATE automation_runs SET lease_owner = 'x', lease_until = ${NOW} + 600000 WHERE id = ?`, [busy]);
+  const ref = `auto:${busy}:a1:1`;
+  assert.ok(await H.recordHold({ ref, userId: account, runId: busy, held, model: LEVEL_MODELS.sonic, inputCents: 0.1, leftCents: 0 }));
+  await sql("INSERT INTO credit_ledger (user_id, amount, reason, ref, automation_id, created_at) VALUES (?, ?, 'automation', ?, ?, ?)", [account, -held, ref, automationId, Date.now()]);
+  await sql(`UPDATE credit_holds SET lease_until = ${NOW} + 600000 WHERE ref = ?`, [ref]);
+  return ref;
+}
+const waitsNow = async (rid: string) => {
+  const run = (await runOf(rid))!;
+  return [run.status, run.outcome, (await stepsOf(rid)).at(-1)!.note];
+};
+
+test("a step short only while a chat reply of the account holds credits waits for it: never skipped, paused or told it's short", async () => {
+  const C = await import("../src/lib/server/credits.ts");
+  const { worst, least } = await sizes("run80p", ULTRA_DAILY("Morning brief."));
+  const u = await F.account("run80", least + 10);
+  const aid = await F.automation({ userId: u.id, spec: ULTRA_DAILY("Morning brief."), capRun: worst + 50, capMonth: 100_000, nextAt: Date.now() + 86_400_000 });
+  // A chat reply holds 30 while it is written, as the chat route charges it.
+  const chat = (await C.charge(u.id, 30, "ultra request"))!;
+  assert.ok(chat && (await F.balance(u.id)) < least);
+  const rid = await F.runRow({ automationId: aid, userId: u.id, origin: "schedule" });
+  await advance(rid);
+  assert.deepEqual(await waitsNow(rid), ["queued", "", "waiting"]);
+  const a = (await one<{ status: string }>("SELECT status FROM automations WHERE id = ?", [aid]))!;
+  assert.equal(a.status, "on", "not paused");
+  assert.equal((await noticesOf(u.id)).filter((n) => n.kind === "credits").length, 0);
+  // The reply ends, charging 2: the step runs.
+  await C.settle(chat, 2);
+  claude.state.replies.push({ text: "Brief." });
+  await sql("UPDATE automation_runs SET due_at = 0 WHERE id = ?", [rid]);
+  await advance(rid);
+  assert.deepEqual([(await runOf(rid))!.status, (await runOf(rid))!.outcome], ["done", "ok"]);
+});
+
+test("waits aren't tries: after two waits, a token count that fails, or a busy answer, is still tried again", async () => {
+  const u = await F.account("run81", 100);
+  const aid = await F.automation({ userId: u.id });
+  for (const fail of ["count", "busy"] as const) {
+    const rid = await F.runRow({ automationId: aid, userId: u.id, attempts: 2 });
+    for (let i = 1; i <= 2; i++) {
+      await sql("INSERT INTO automation_run_steps (run_id, step_id, attempt, user_id, kind, status, note, started_at, finished_at) VALUES (?, 'a1', ?, ?, 'ai', 'retried', 'waiting', ?, ?)", [rid, i, u.id, i, i]);
+    }
+    if (fail === "count") claude.state.count = { tokens: 1200, status: 500 };
+    else claude.state.replies.push({ status: 529 });
+    await advance(rid);
+    claude.state.count = { tokens: 1200, status: 0 };
+    assert.deepEqual(await waitsNow(rid), ["queued", "", fail === "count" ? "count_failed" : "busy"], fail);
+    assert.equal((await stepsOf(rid)).at(-1)!.status, "retried", fail);
+  }
+});
+
+test("a charge refused on a step's last try because another run's hold landed meanwhile waits for that hold: it doesn't fail the run", async () => {
+  const { worst, least } = await sizes("run82p", ULTRA_DAILY("Morning brief."));
+  const u = await F.account("run82", worst + 10);
+  const aid = await F.automation({ userId: u.id, spec: ULTRA_DAILY("Morning brief."), capRun: worst + 50, capMonth: 100_000, nextAt: Date.now() + 86_400_000 });
+  const other = await F.automation({ userId: u.id });
+  // Two tries already ended busy before Claude started: this is its last.
+  const rid = await F.runRow({ automationId: aid, userId: u.id, origin: "schedule", attempts: 2 });
+  for (let i = 1; i <= 2; i++) {
+    await sql("INSERT INTO automation_run_steps (run_id, step_id, attempt, user_id, kind, status, note, started_at, finished_at) VALUES (?, 'a1', ?, ?, 'ai', 'retried', 'busy', ?, ?)", [rid, i, u.id, i, i]);
+  }
+  // Between its hold and its charge, another run's hold takes all but a few credits.
+  L.probes.at = async (point, info) => {
+    if (point === "after-hold" && info?.runId === rid) await heldBy(u.id, other, worst + 10 - Math.floor(least / 2));
+  };
+  try {
+    await advance(rid);
+  } finally {
+    L.probes.at = () => {};
+  }
+  assert.deepEqual(await waitsNow(rid), ["queued", "", "waiting"]);
+  assert.equal(Number((await runOf(rid))!.credits), 0);
+});
+
+test("a step short at the auto top-up level, or at its day limit, only because other runs hold credits waits for them", async () => {
+  const { worst, least } = await sizes("run83p", ULTRA_DAILY("Morning brief."));
+  // At the top-up level: with the other hold settled at nothing, it is above the level by its least.
+  const u = await F.account("run83", least + 5);
+  await sql("INSERT INTO auto_topups (user_id, enabled, pack, below, customer, payment_method, updated_at) VALUES (?, 1, 'starter', 10, 'cus_1', 'pm_1', 0)", [u.id]);
+  const aid = await F.automation({ userId: u.id, spec: ULTRA_DAILY("Morning brief."), capRun: worst + 50, capMonth: 100_000, nextAt: Date.now() + 86_400_000 });
+  await sql("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES (?, 20, 'test', 0)", [u.id]);
+  await heldBy(u.id, await F.automation({ userId: u.id }), 20);
+  const rid = await F.runRow({ automationId: aid, userId: u.id, origin: "schedule" });
+  await advance(rid);
+  assert.deepEqual(await waitsNow(rid), ["queued", "", "waiting"], "top-up level");
+  // At its day limit: another run of the same automation holds most of its day.
+  const v = await F.account("run84", 100_000);
+  const bid = await F.automation({ userId: v.id, spec: ULTRA_DAILY("Morning brief."), capRun: worst + 50, capMonth: 100_000, nextAt: Date.now() + 86_400_000 });
+  await sql("UPDATE automations SET cap_day = ? WHERE id = ?", [least + 5, bid]);
+  await heldBy(v.id, bid, 20);
+  const second = await F.runRow({ automationId: bid, userId: v.id, origin: "schedule" });
+  await advance(second);
+  assert.deepEqual(await waitsNow(second), ["queued", "", "waiting"], "day limit");
+});
+
+test("a step that can't fit even with other runs' holds settled at nothing doesn't wait: short above the top-up level, or at its own month limit while another automation holds", async () => {
+  const { worst, least } = await sizes("run85p", ULTRA_DAILY("Morning brief."));
+  // With the other hold at nothing it would still be under the top-up level.
+  const u = await F.account("run85", least - 10);
+  await sql("INSERT INTO auto_topups (user_id, enabled, pack, below, customer, payment_method, updated_at) VALUES (?, 1, 'starter', 20, 'cus_1', 'pm_1', 0)", [u.id]);
+  await sql("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES (?, 15, 'test', 0)", [u.id]);
+  await heldBy(u.id, await F.automation({ userId: u.id }), 15);
+  const aid = await F.automation({ userId: u.id, spec: ULTRA_DAILY("Morning brief."), capRun: worst + 50, capMonth: 100_000, nextAt: Date.now() + 86_400_000 });
+  const rid = await F.runRow({ automationId: aid, userId: u.id, origin: "schedule" });
+  await advance(rid);
+  assert.deepEqual(await waitsNow(rid), ["skipped", "no_credits", "no_credits"], "top-up level");
+  // Its own month limit is used up but for a little; another automation's hold doesn't count toward it.
+  const v = await F.account("run86", 100_000);
+  const bid = await F.automation({ userId: v.id, spec: ULTRA_DAILY("Morning brief."), capRun: worst + 50, capMonth: worst + 50, nextAt: Date.now() + 86_400_000 });
+  await sql("INSERT INTO credit_ledger (user_id, amount, reason, ref, automation_id, settled_at, created_at) VALUES (?, ?, 'automation', 'auto:old:a1:1', ?, 1, ?)", [v.id, -(worst + 50 - Math.floor(least / 2)), bid, Date.now()]);
+  await heldBy(v.id, await F.automation({ userId: v.id }), 2 * least);
+  const second = await F.runRow({ automationId: bid, userId: v.id, origin: "schedule" });
+  await advance(second);
+  assert.deepEqual(await waitsNow(second), ["skipped", "month_cap", "month_cap"], "month limit");
+});
+
+test("a step whose call was sent keeps what it sent and to which model then, so one interrupted (its worker gone) and charged still shows them", { timeout: 30_000 }, async () => {
+  Object.assign(S.STEP_TIMING, { heartbeatMs: 40, staleMs: 300, checkMs: 20 });
+  const u = await F.account("run90", 100);
+  const aid = await F.automation({ userId: u.id });
+  const rid = await F.runRow({ automationId: aid, userId: u.id });
+  claude.state.replies.push({ text: "Still going", never: true });
+  const going = R.advanceRun(rid, await lease(rid), Date.now() + 760_000);
+  await waitFor(() => claude.state.open === 1);
+  const sent = (await stepsOf(rid))[0];
+  assert.equal(sent.status, "running");
+  assert.match(String(sent.input), /Write one line about the weather\./);
+  assert.equal(sent.model, LEVEL_MODELS.sonic);
+  // Its worker is gone: the reaper settles its hold at what the call may have cost.
+  const h = (await one<Record<string, unknown>>("SELECT * FROM credit_holds WHERE run_id = ?", [rid]))!;
+  assert.equal(await R.reapHold(h as never), true);
+  await going;
+  await waitFor(() => claude.state.open === 0);
+  const step = (await stepsOf(rid))[0];
+  assert.equal(step.status, "interrupted");
+  assert.ok(Number(step.credits) > 0, "charged");
+  assert.deepEqual([step.input, step.model], [sent.input, sent.model]);
+});

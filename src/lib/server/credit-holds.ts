@@ -14,6 +14,7 @@
 import type { InStatement, InValue } from "@libsql/client";
 import { claudePrice, creditsFor, fallbackModel, WEB_SEARCH_CENTS } from "../credits.ts";
 import { PEAK_TOKENS_PER_SECOND } from "../engines/claude.ts";
+import { HOLD_MINUTES } from "./credits.ts";
 import { db, one, run as sql } from "./db.ts";
 import { randomId } from "./ids.ts";
 import { DB_NOW } from "./leases.ts";
@@ -72,18 +73,29 @@ export async function resizeHold(ref: string, held: number, leftCents: number): 
 }
 
 /**
- * What other runs' open holds take now from an account, and of that from one automation (its month and
- * day limits count them): steps priced at the same moment, held at their worst case until they settle
- * within their step's time, mostly far lower. Read through the open holds only (credit_holds_open).
+ * What other requests' open holds take now from an account, and of that from one automation (its month
+ * and day limits count them): other runs' steps priced at the same moment (read through the open holds
+ * only, credit_holds_open), and chat replies still being written (their charge is held, unsettled and
+ * with no ref, until the reply ends, as monthlyCredits counts them), each held at its worst case and
+ * settled within its own time, mostly far lower.
  */
 export async function heldElsewhere(account: string, automationId: string, exceptRef = ""): Promise<{ account: number; automation: number }> {
-  const row = await one<{ account: number; automation: number }>(
-    `SELECT COALESCE(-SUM(l.amount), 0) AS account, COALESCE(-SUM(CASE WHEN l.automation_id = ? THEN l.amount ELSE 0 END), 0) AS automation
-       FROM credit_holds h JOIN credit_ledger l ON l.ref = h.ref
-      WHERE h.settled_at = 0 AND h.lease_until > 0 AND h.user_id = ? AND h.ref <> ? AND l.amount < 0`,
-    [automationId, account, exceptRef],
-  );
-  return { account: Math.max(0, Number(row?.account ?? 0)), automation: Math.max(0, Number(row?.automation ?? 0)) };
+  const [row, chat] = await Promise.all([
+    one<{ account: number; automation: number }>(
+      `SELECT COALESCE(-SUM(l.amount), 0) AS account, COALESCE(-SUM(CASE WHEN l.automation_id = ? THEN l.amount ELSE 0 END), 0) AS automation
+         FROM credit_holds h JOIN credit_ledger l ON l.ref = h.ref
+        WHERE h.settled_at = 0 AND h.lease_until > 0 AND h.user_id = ? AND h.ref <> ? AND l.amount < 0`,
+      [automationId, account, exceptRef],
+    ),
+    one<{ held: number }>(
+      "SELECT COALESCE(-SUM(amount), 0) AS held FROM credit_ledger WHERE user_id = ? AND amount < 0 AND settled_at = 0 AND ref IS NULL AND created_at > ?",
+      [account, Date.now() - HOLD_MINUTES * 60_000],
+    ),
+  ]);
+  return {
+    account: Math.max(0, Number(row?.account ?? 0)) + Math.max(0, Number(chat?.held ?? 0)),
+    automation: Math.max(0, Number(row?.automation ?? 0)),
+  };
 }
 
 /** Keeps the id of the ledger row the hold took. */

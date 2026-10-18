@@ -53,7 +53,7 @@ export async function spendable(userId: string): Promise<{ largest: number; tota
 }
 
 // Longer than any request runs (the chat route's maxDuration is 800 seconds).
-const HOLD_MINUTES = 15;
+export const HOLD_MINUTES = 15;
 
 const monthKey = (t = new Date()) => `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, "0")}`;
 

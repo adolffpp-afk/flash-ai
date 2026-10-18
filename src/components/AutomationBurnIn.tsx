@@ -67,9 +67,10 @@ const browserZone = () => {
 };
 const errorOf = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
-type RunState = { finishedAt: number; parked: boolean; dueAt: number };
-/** What a run not finished waits for, if anything: Resume (parked with its automation), or its next try. */
-const waitNote = (r: RunState, now: number) => (r.finishedAt ? "" : r.parked ? "Waiting for you to resume" : r.dueAt > now ? `Tries again at ${when(r.dueAt)}` : "");
+type RunState = { finishedAt: number; parked: boolean; dueAt: number; waiting: boolean };
+/** What a run not finished waits for, if anything: Resume (parked with its automation), or its next try (and why, when it waits for another run's hold). */
+const waitNote = (r: RunState, now: number) =>
+  r.finishedAt ? "" : r.parked ? "Waiting for you to resume" : r.dueAt > now ? `${r.waiting ? "Waiting for another run's hold: tries" : "Tries"} again at ${when(r.dueAt)}` : "";
 /** A run under way or due now (not one that waits): the card and its receipt follow it every 5 s. */
 const goingNow = (r: RunState, now: number) => !r.finishedAt && !r.parked && r.dueAt <= now;
 
@@ -144,10 +145,13 @@ function MakeTest({ ready, onMade }: { ready: boolean; onMade: () => void }) {
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
   const key = JSON.stringify([prompt, level, mode]);
-  const prices = priced?.key === key ? priced.prices : null;
+  // A blank instruction is never priced or made (the server refuses it too).
+  const blank = !prompt.trim();
+  const prices = priced?.key === key && !blank ? priced.prices : null;
 
   // Priced after an 800 ms pause in changing the instruction, level or mode; a button is pressed only at the price shown.
   useEffect(() => {
+    if (!prompt.trim()) return;
     let live = true;
     const timer = setTimeout(() => {
       api<{ prices: Prices }>("/api/admin/automations", { method: "POST", json: { action: "price", prompt, level, mode, timeZone: browserZone() } })
@@ -221,16 +225,19 @@ function MakeTest({ ready, onMade }: { ready: boolean; onMade: () => void }) {
             >
               <div className="font-medium text-zinc-100">{busy === k.id ? "Working…" : k.label}</div>
               <div className="mt-0.5 text-xs text-zinc-400">
-                {!p
-                  ? "Pricing…"
-                  : k.id === "daily"
-                    ? `At most ${num(p.worst)} credits a run, usually about ${num(p.typical)}. About ${num(p.month)} a month.`
-                    : `At most ${num(p.worst)} credits, usually about ${num(p.typical)}.`}
+                {blank
+                  ? "Not priced"
+                  : !p
+                    ? "Pricing…"
+                    : k.id === "daily"
+                      ? `At most ${num(p.worst)} credits a run, usually about ${num(p.typical)}. About ${num(p.month)} a month.`
+                      : `At most ${num(p.worst)} credits, usually about ${num(p.typical)}.`}
               </div>
             </button>
           );
         })}
       </div>
+      {blank && <p className="text-xs text-amber-300">Write an instruction first.</p>}
       {!counted && <p className="text-xs text-amber-300">Counting the words failed, so these are the most the text could cost.</p>}
       {!ready && <p className="text-xs text-zinc-500">Test automations can be made once the setup above is complete.</p>}
       {note && (
@@ -477,15 +484,16 @@ function RunReceipt({ runId, language, onChange }: { runId: string; language: st
           <p className="text-zinc-500">No step has started.</p>
         ) : (
           <ul className="space-y-2">
-            {r.steps.map((s) => (
-              <li key={`${s.stepId}:${s.attempt}`} className="rounded-lg border border-zinc-800 p-2">
+            {r.steps.map((s, i) => (
+              <li key={`${i}:${s.stepId}:${s.attempt}`} className="rounded-lg border border-zinc-800 p-2">
                 <div className="flex flex-wrap items-center gap-2 text-zinc-300">
                   <span className="font-mono">{s.stepId}</span>
                   <span>
                     {STEP_KINDS[s.kind] ?? s.kind}
-                    {s.attempt > 1 ? ` · attempt ${s.attempt}` : ""}
+                    {/* Waits for other runs' holds in a row come as one line; they aren't tries. */}
+                    {s.waits > 0 ? (s.waits === 1 ? " · waited" : ` · waited ${s.waits} times`) : s.attempt > 1 ? ` · attempt ${s.attempt}` : ""}
                   </span>
-                  <Pill status={s.status} outcome={s.note || undefined} />
+                  <Pill status={s.status} outcome={s.waits > 0 ? undefined : s.note || undefined} />
                   {s.kind === "ai" && (
                     <span className="break-all text-zinc-500">
                       {LEVELS.find((l) => l.id === s.level)?.label ?? s.level}
@@ -502,6 +510,7 @@ function RunReceipt({ runId, language, onChange }: { runId: string; language: st
                   </details>
                 )}
                 {s.noteText && <Theirs language={language} className="mt-1 w-fit max-w-full text-amber-300">{s.noteText}</Theirs>}
+                {s.status === "waited" && <p className="mt-1 text-zinc-500">It waited for other runs&apos; holds on this account: waits are free, and aren&apos;t tries.</p>}
                 {s.output && (
                   <div dir="auto" className="mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap break-words text-zinc-300">
                     {s.output}
@@ -528,7 +537,13 @@ function RunReceipt({ runId, language, onChange }: { runId: string; language: st
         <div className="mb-1 font-medium text-zinc-300">Holds</div>
         {r.holds.length === 0 ? (
           <p className="text-zinc-500">
-            {r.steps.some((s) => s.kind === "ai" && s.status === "skipped") ? "None: the step didn't fit, so nothing was held." : "None: no AI step has priced its call."}
+            {r.steps.some((s) => s.kind === "ai" && s.status === "skipped")
+              ? "None: the step didn't fit, so nothing was held."
+              : r.steps.some((s) => s.waits > 0)
+                ? run.finishedAt
+                  ? "None: its step waited for other runs' holds and never held."
+                  : "None yet: its step waits for another run's hold."
+                : "None: no AI step has priced its call."}
           </p>
         ) : (
           <ul className="space-y-1.5">

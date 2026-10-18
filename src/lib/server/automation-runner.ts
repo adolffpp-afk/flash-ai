@@ -225,23 +225,39 @@ export async function reapLapsed(limit = 50): Promise<number> {
 
 type StepReceipt = { step_id: string; attempt: number; kind: string; status: string; held: number; credits: number; level: string; model: string; note: string; output: ArrayBuffer | Uint8Array | null };
 
-/** The compact receipt a run's fingerprint is made from: what started it, each attempt of each step, and the totals. */
+/**
+ * A step's tries in order, each numbered among its step's tries: a wait for other runs' holds (see
+ * runAiStep) isn't a try, so it is left out (and counted, waits). The receipt and its fingerprint show these.
+ */
+export function triesOf<S extends { step_id: string; note: string }>(steps: S[]): { tries: (S & { try: number })[]; waits: number } {
+  const seen = new Map<string, number>();
+  const tries = steps.filter((s) => s.note !== "waiting").map((s) => {
+    const n = (seen.get(s.step_id) ?? 0) + 1;
+    seen.set(s.step_id, n);
+    return { ...s, try: n };
+  });
+  return { tries, waits: steps.length - tries.length };
+}
+
+/** The compact receipt a run's fingerprint is made from: what started it, each try of each step (and how many waits), and the totals. */
 export function compactReceipt(run: Pick<RunRow, "id" | "automation_id" | "version" | "origin" | "run_key" | "scheduled_at">, steps: StepReceipt[], end: { status: string; outcome: string; credits: number }) {
+  const { tries, waits } = triesOf(steps);
   return {
     v: 1,
     run: run.id,
     automation: run.automation_id,
     version: Number(run.version),
     trigger: { origin: run.origin, key: run.run_key, at: Number(run.scheduled_at) },
-    steps: steps.map((s) => ({
+    steps: tries.map((s) => ({
       id: s.step_id,
-      attempt: Number(s.attempt),
+      attempt: s.try,
       kind: s.kind,
       status: s.status,
       held: Number(s.held),
       credits: Number(s.credits),
       output: sha256(outputText(s.output)),
     })),
+    ...(waits > 0 && { waited: waits }),
     credits: end.credits,
     status: end.status,
     outcome: end.outcome,
@@ -317,8 +333,10 @@ export async function finish(
     const now = Date.now();
     const pause = auto ? pauseFor(outcome, status, auto, now) : null;
     const spec = o.spec ?? (await versionSpec(run.automation_id, Number(run.version)));
-    // A one-off that ran (or was skipped) is finished.
-    const once = spec?.trigger.type === "schedule" && spec.trigger.when.kind === "once" && run.origin === "schedule";
+    // A one-off that ran (or was skipped) is finished: while its automation is still that one-off, whose
+    // slot was taken (next_at 0). Edited while this run went (into a daily, to a new time, or to run by
+    // hand), it has more to run, and goes on as it is now.
+    const once = spec?.trigger.type === "schedule" && spec.trigger.when.kind === "once" && run.origin === "schedule" && auto?.trigger_kind === "schedule" && Number(auto.next_at) === 0;
     const streak = status === "failed" ? Number(auto?.fail_streak ?? 0) + 1 : status === "done" ? 0 : Number(auto?.fail_streak ?? 0);
     const ended = { sql: "EXISTS (SELECT 1 FROM automation_runs WHERE id = ? AND receipt_hash = ? AND finished_at > 0)", args: [run.id, hash] };
     // Its notices go in the same batch, so a batch that lands with its answer lost still sends them.
@@ -340,11 +358,11 @@ export async function finish(
           args: [status, outcome, summary, canonicalJson({ prev, receipt }), hash, run.id, ...lease.args, run.automation_id, run.automation_id, prev],
         },
         {
+          // (next_at 0 and a schedule again here, as the automation is now: an edit meanwhile keeps its next run.)
           sql: `UPDATE automations SET receipt_hash = ?, last_status = ?, fail_streak = ?, updated_at = ${DB_NOW},
-                       status = CASE WHEN ? = 1 AND status = 'on' THEN 'finished' ELSE status END,
-                       next_at = CASE WHEN ? = 1 AND status = 'on' THEN 0 ELSE next_at END
+                       status = CASE WHEN ? = 1 AND status = 'on' AND next_at = 0 AND trigger_kind = 'schedule' THEN 'finished' ELSE status END
                  WHERE id = ? AND receipt_hash = ? AND ${ended.sql}`,
-          args: [hash, outcome === "ok" ? status : outcome, streak, once ? 1 : 0, once ? 1 : 0, run.automation_id, prev, ...ended.args],
+          args: [hash, outcome === "ok" ? status : outcome, streak, once ? 1 : 0, run.automation_id, prev, ...ended.args],
         },
         ...(pause && !once
           ? [

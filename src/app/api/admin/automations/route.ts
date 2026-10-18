@@ -9,7 +9,7 @@ import { overLimit } from "@/lib/server/limits.ts";
  * The burn-in card on /admin (admins only). GET is the card: setup, cron health, the admin's test
  * automations, their runs with holds, and the notices they made. POST:
  * - { action: "price", prompt?, level?, mode?, timeZone } prices the three test automations, saving
- *   nothing;
+ *   nothing (a blank prompt is refused, 400; one left out is the card's example);
  * - { action: "make", kind: "once" | "daily" | "manual", prompt?, level?, mode?, timeZone, seenMax }
  *   makes one at the price the admin saw (409 price_changed when it went up), and with kind "manual"
  *   and run: true runs it once now as well. Making counts against Save's limit and running against
@@ -39,7 +39,9 @@ export async function POST(request: Request) {
   if (g instanceof Response) return g;
   if (!isAdmin(g.user)) return Response.json({ error: "Only the owner can see this." }, { status: 403 });
   const timeZone = validTimeZone(body.timeZone) ?? "UTC";
-  const prompt = typeof body.prompt === "string" && body.prompt.trim() ? body.prompt.trim().slice(0, 4000) : DEFAULT_PROMPT;
+  // Left out, the card's example; given, it is used as written, and a blank one is refused (never another text in its place).
+  const prompt = body.prompt === undefined ? DEFAULT_PROMPT : typeof body.prompt === "string" ? body.prompt.trim().slice(0, 4000) : "";
+  if (!prompt) return Response.json({ error: "Write an instruction first." }, { status: 400 });
   const level = LEVELS.find((l) => l === body.level) ?? "sonic";
   const mode = MODES.find((m) => m === body.mode) ?? "write";
   const priced = async (kind: (typeof KINDS)[number]) => {

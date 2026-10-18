@@ -21,7 +21,7 @@ import { monthStart, nextFire, nextFires, nextMonthStart, ONCE_MAX_AHEAD_MS, ONC
 import { isVerified } from "./account.ts";
 import { fromOwnPage, getUser, unauthorized, type User } from "./auth.ts";
 import { estimateSpec, type Estimate } from "./automation-estimate.ts";
-import { advanceRun, finish, savedReceipt, verifyReceipt, versionSpec, type CompactReceipt, type SavedReceipt } from "./automation-runner.ts";
+import { advanceRun, finish, savedReceipt, triesOf, verifyReceipt, versionSpec, type CompactReceipt, type SavedReceipt } from "./automation-runner.ts";
 import { outputText, type AutoRow, type RunRow } from "./automation-steps.ts";
 import { deleteAutomationNow } from "./automation-tick.ts";
 import { liveHealth } from "./automation-admin.ts";
@@ -502,7 +502,7 @@ export async function listRuns(g: Gate, id: string, cursor: string | null) {
 }
 
 /** What a step's note says, in the reader's words, where it has one. */
-const NOTE_PHRASES: Record<string, string> = { cut_short: NOTICES.cutShort, interrupted: NOTICES.interrupted, missed: NOTICES.missed, overlap: NOTICES.overlap };
+const NOTE_PHRASES: Record<string, string> = { cut_short: NOTICES.cutShort, interrupted: NOTICES.interrupted, missed: NOTICES.missed, overlap: NOTICES.overlap, waiting: NOTICES.waitingHold };
 /** What a run's outcome says, in the reader's words, where Flash has a phrase for it. */
 const RUN_NOTES: Record<string, string> = {
   missed: NOTICES.missed,
@@ -521,7 +521,10 @@ const RUN_NOTES: Record<string, string> = {
 const noteCredits = (outcome: string, run: { credits: number }, a: { cap_run: number; cap_month: number } | null, floor: number) =>
   Number(outcome === "run_cap" ? (a?.cap_run ?? 0) : outcome === "month_cap" ? (a?.cap_month ?? 0) : outcome === "topup_floor" ? floor : run.credits);
 
-/** A run's receipt: what started it, each attempt of each step with its hold, and its fingerprint. Reads only. */
+/**
+ * A run's receipt: what started it, each try of each step with its hold (a step's waits for other runs'
+ * holds in a row shown once, with how many, never as tries), and its fingerprint. Reads only.
+ */
 export async function receipt(g: Gate, runId: string) {
   const r = await ownRun(g.user, runId, { deleting: true });
   if (!r) return null;
@@ -529,15 +532,16 @@ export async function receipt(g: Gate, runId: string) {
     "SELECT * FROM automation_run_steps WHERE run_id = ? ORDER BY started_at, attempt",
     [r.id],
   );
-  const holds = await all<{ ref: string; held: number; credits: number; started: number; done: number; settled_at: number; created_at: number }>(
-    "SELECT ref, held, credits, started, done, settled_at, created_at FROM credit_holds WHERE run_id = ? ORDER BY created_at",
+  const holds = await all<{ ref: string; held: number; credits: number; model: string; started: number; done: number; settled_at: number; created_at: number }>(
+    "SELECT ref, held, credits, model, started, done, settled_at, created_at FROM credit_holds WHERE run_id = ? ORDER BY created_at",
     [r.id],
   );
   const a = await one<{ name: string; status: string; cap_run: number; cap_month: number; pay_account: string }>("SELECT name, status, cap_run, cap_month, pay_account FROM automations WHERE id = ?", [r.automation_id]);
   const floor = r.outcome === "topup_floor" && a ? await topUpFloor(a.pay_account) : 0;
   const saved = savedReceipt(r);
-  // A step under way shows what its hold keeps (its row gets its own held when it settles).
-  const holdOf = new Map(holds.map((h) => [h.ref, Number(h.held)]));
+  // A step under way shows what its hold keeps (its row gets its own held when it settles), and a step
+  // whose call was sent the model its hold names (its row gets its own when it settles).
+  const holdOf = new Map(holds.map((h) => [h.ref, h]));
   const sourcesOf = (output: Uint8Array | null) => {
     try {
       const parsed = output ? (JSON.parse(gunzipSync(Buffer.from(output)).toString("utf8")) as { sources?: { url: string; title?: string }[] }) : {};
@@ -546,6 +550,36 @@ export async function receipt(g: Gate, runId: string) {
       return [];
     }
   };
+  const view = (s: (typeof steps)[number], attempt: number) => ({
+    stepId: s.step_id,
+    // Its try (waits aren't tries); 0 for waits, which say how many in a row (waits).
+    attempt,
+    waits: 0,
+    kind: s.kind,
+    status: s.status,
+    level: s.level,
+    model: s.model || (Number(holdOf.get(s.hold_ref)?.started) ? (holdOf.get(s.hold_ref)?.model ?? "") : ""),
+    held: Number(s.held) || (s.status === "running" ? Number(holdOf.get(s.hold_ref)?.held ?? 0) : 0),
+    credits: Number(s.credits),
+    note: s.note,
+    noteText: NOTE_PHRASES[s.note] ? g.t(NOTE_PHRASES[s.note], { credits: Number(s.credits).toLocaleString(g.t.locale) }) : "",
+    input: s.input,
+    output: outputText(s.output),
+    sources: sourcesOf(s.output),
+    holdRef: s.hold_ref,
+    startedAt: Number(s.started_at),
+    finishedAt: Number(s.finished_at),
+  });
+  const tryOf = new Map(triesOf(steps).tries.map((s) => [`${s.step_id}:${s.attempt}`, s.try]));
+  const shown: ReturnType<typeof view>[] = [];
+  for (const s of steps) {
+    const last = shown.at(-1);
+    if (s.note !== "waiting") shown.push(view(s, tryOf.get(`${s.step_id}:${s.attempt}`) ?? 0));
+    else if (last?.note === "waiting" && last.stepId === s.step_id) Object.assign(last, { waits: last.waits + 1, held: Math.max(last.held, Number(s.held)), finishedAt: Number(s.finished_at) });
+    else shown.push({ ...view(s, 0), status: "waiting", waits: 1 });
+  }
+  // Only the run's last row, while it goes on, waits now (and says why); earlier waits were waited.
+  for (const [i, s] of shown.entries()) if (s.waits > 0 && (i < shown.length - 1 || Number(r.finished_at))) Object.assign(s, { status: "waited", noteText: "" });
   return {
     run: {
       id: r.id,
@@ -565,30 +599,15 @@ export async function receipt(g: Gate, runId: string) {
       stopRequested: Number(r.stop_requested) > 0,
       parked: Number(r.parked) === 1,
       dueAt: Number(r.due_at),
+      // Its step waits for another run's hold, to try again at dueAt.
+      waiting: !Number(r.finished_at) && steps.at(-1)?.note === "waiting",
       deleted: a?.status === "deleting",
       // Why it ended this way, in the reader's words, where Flash says so.
       noteText: RUN_NOTES[r.outcome]
         ? noticeText({ phrase: r.outcome === "failed" && Number(r.credits) > 0 ? NOTICES.failedCharged : RUN_NOTES[r.outcome], blanks: JSON.stringify({ credits: noteCredits(r.outcome, r, a, floor), date: nextMonthStart(Number(r.created_at)) }) }, g.t).text
         : "",
     },
-    steps: steps.map((s) => ({
-      stepId: s.step_id,
-      attempt: Number(s.attempt),
-      kind: s.kind,
-      status: s.status,
-      level: s.level,
-      model: s.model,
-      held: Number(s.held) || (s.status === "running" ? (holdOf.get(s.hold_ref) ?? 0) : 0),
-      credits: Number(s.credits),
-      note: s.note,
-      noteText: NOTE_PHRASES[s.note] ? g.t(NOTE_PHRASES[s.note], { credits: Number(s.credits).toLocaleString(g.t.locale) }) : "",
-      input: s.input,
-      output: outputText(s.output),
-      sources: sourcesOf(s.output),
-      holdRef: s.hold_ref,
-      startedAt: Number(s.started_at),
-      finishedAt: Number(s.finished_at),
-    })),
+    steps: shown,
     holds: holds.map((h) => ({ ref: h.ref, held: Number(h.held), credits: Number(h.credits), started: Number(h.started) > 0, done: Number(h.done) > 0, settledAt: Number(h.settled_at), createdAt: Number(h.created_at) })),
     // The fingerprint and the compact receipt it was made from (empty until the run ends).
     fingerprint: r.receipt_hash,
@@ -605,7 +624,8 @@ export async function receipt(g: Gate, runId: string) {
 function readableMatches(file: Record<string, unknown>, compact: CompactReceipt): boolean {
   if (file.run === undefined && file.steps === undefined) return true;
   const run = file.run as Record<string, unknown> | null;
-  const steps = file.steps as Record<string, unknown>[] | null;
+  // Its tries: waits for other runs' holds aren't in the fingerprint (it counts them, waited).
+  const steps = Array.isArray(file.steps) ? (file.steps as Record<string, unknown>[]).filter((x) => !(x && typeof x === "object" && x.note === "waiting")) : null;
   if (!run || typeof run !== "object" || !Array.isArray(steps) || steps.length !== compact.steps.length) return false;
   if (run.id !== compact.run || run.credits !== compact.credits || run.status !== compact.status || run.outcome !== compact.outcome) return false;
   return compact.steps.every((c) => {
@@ -699,10 +719,12 @@ export async function burnIn(g: Gate) {
   // Runs of automations being deleted stay listed (marked) until their rows go, so a delete mid-run can be checked.
   // held: the largest hold of the run (its steps' holds come one after another, never together).
   // Worked out for the 20 runs shown only, each through its own holds (credit_holds_by_run).
-  const runs = await all<{ id: string; automation_id: string; name: string; deleting: number; status: string; outcome: string; origin: string; credits: number; scheduled_at: number; started_at: number; finished_at: number; created_at: number; parked: number; due_at: number; held: number; holds: number; open: number }>(
+  // waiting: its latest step row waits for another run's hold (read through that run's own steps).
+  const runs = await all<{ id: string; automation_id: string; name: string; deleting: number; status: string; outcome: string; origin: string; credits: number; scheduled_at: number; started_at: number; finished_at: number; created_at: number; parked: number; due_at: number; held: number; holds: number; open: number; waiting: number }>(
     `SELECT latest.id, latest.automation_id, a.name, a.status = 'deleting' AS deleting, latest.status, latest.outcome, latest.origin, latest.credits, latest.scheduled_at,
             latest.started_at, latest.finished_at, latest.created_at, latest.parked, latest.due_at,
-            COALESCE(MAX(h.held), 0) AS held, COUNT(h.ref) AS holds, COALESCE(SUM(CASE WHEN h.settled_at = 0 THEN 1 ELSE 0 END), 0) AS open
+            COALESCE(MAX(h.held), 0) AS held, COUNT(h.ref) AS holds, COALESCE(SUM(CASE WHEN h.settled_at = 0 THEN 1 ELSE 0 END), 0) AS open,
+            latest.finished_at = 0 AND (SELECT s.note FROM automation_run_steps s WHERE s.run_id = latest.id ORDER BY s.started_at DESC, s.attempt DESC LIMIT 1) = 'waiting' AS waiting
        FROM (SELECT * FROM automation_runs WHERE user_id = ? ORDER BY created_at DESC LIMIT 20) latest
        JOIN automations a ON a.id = latest.automation_id
        LEFT JOIN credit_holds h ON h.run_id = latest.id
@@ -731,6 +753,7 @@ export async function burnIn(g: Gate) {
       // Not finished: parked (its automation paused, it waits for Resume), or due again at dueAt (a try later).
       parked: n(r.parked) === 1,
       dueAt: n(r.due_at),
+      waiting: n(r.waiting) === 1,
     })),
     spentThisMonth: month.charged,
     heldNow: month.held,

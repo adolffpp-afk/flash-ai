@@ -18,6 +18,7 @@
 import { isPaid, NOTICES, parseSpec, RUNNER_VERSION, type Spec } from "../automations.ts";
 import { graceFor, monthStart, nextFire, nextMonthStart, utcDay } from "../schedule.ts";
 import { reapLapsed } from "./automation-runner.ts";
+import { heldElsewhere } from "./credit-holds.ts";
 import { claimLimits, cronSecret } from "./automations.ts";
 import { balance, ensureMonthlyCredits, topUpFloor } from "./credits.ts";
 import { all, db, one, run as sql } from "./db.ts";
@@ -141,11 +142,14 @@ const nextSlot = (spec: Spec | null, timeZone: string, after: number) =>
 
 /**
  * Pauses that end now: a month (or day) limit at its reset, and a wait for credits, checked at the
- * next slot (at most once a day) after granting any monthly credits due. Their parked runs go on.
+ * next slot (at most once a day) after granting any monthly credits due. Their parked runs go on. A
+ * one-off whose time went by while it was paused is finished instead, with a notice.
  */
 async function resumePaused(): Promise<number> {
   const rows = await all<{
     id: string;
+    user_id: string;
+    name: string;
     pay_account: string;
     paused_reason: string;
     resume_at: number;
@@ -154,7 +158,7 @@ async function resumePaused(): Promise<number> {
     time_zone: string;
     spec: string;
   }>(
-    `SELECT a.id, a.pay_account, a.paused_reason, a.resume_at, a.need_credits, a.next_at, a.time_zone, v.spec
+    `SELECT a.id, a.user_id, a.name, a.pay_account, a.paused_reason, a.resume_at, a.need_credits, a.next_at, a.time_zone, v.spec
        FROM automations a JOIN automation_versions v ON v.automation_id = a.id AND v.version = a.version
       WHERE a.status = 'paused' AND a.resume_at > 0 AND a.resume_at <= ${DB_NOW} AND v.runner <= ? LIMIT 100`,
     [RUNNER_VERSION],
@@ -163,16 +167,20 @@ async function resumePaused(): Promise<number> {
   for (const a of rows) {
     const spec = specOf(a.spec);
     const now = Date.now();
-    let turnOn = a.paused_reason === "month_cap" || a.paused_reason === "day_cap";
-    if (a.paused_reason === "credits") {
-      await ensureMonthlyCredits(a.pay_account);
-      turnOn = (await balance(a.pay_account)) - (await topUpFloor(a.pay_account)) >= Number(a.need_credits);
-    }
     const when = spec?.trigger.type === "schedule" ? spec.trigger.when : null;
     const grace = when ? graceFor(when) : 0;
     // The first slot still in its grace window runs (its run key stops one that ran from running again),
     // otherwise the next one after now; a one-off keeps its slot while it is in grace.
     const next = when?.kind === "once" ? (Number(a.next_at) + grace >= now ? Number(a.next_at) : 0) : nextSlot(spec, a.time_zone, now - grace);
+    if (when?.kind === "once" && !next && (await finishPassedOnce(a))) continue;
+    let turnOn = a.paused_reason === "month_cap" || a.paused_reason === "day_cap";
+    if (a.paused_reason === "credits") {
+      await ensureMonthlyCredits(a.pay_account);
+      // Other requests' open holds count as nothing, as Run once now's check counts them: a step they are
+      // in the way of waits for them (see runAiStep), so they never keep the pause on a day longer.
+      const [have, floor, other] = await Promise.all([balance(a.pay_account), topUpFloor(a.pay_account), heldElsewhere(a.pay_account, a.id)]);
+      turnOn = have + other.account - floor >= Number(a.need_credits);
+    }
     if (turnOn) {
       const rs = await (await db()).batch(
         [
@@ -203,6 +211,36 @@ async function resumePaused(): Promise<number> {
     }
   }
   return resumed;
+}
+
+/**
+ * A one-off paused for credits or a limit whose time and grace went by meanwhile has nothing left to run:
+ * it is finished and its owner told it was missed, in one batch (as a late run's one-off is), never left
+ * on with no next run. Its other parked runs (a Run once now) go on. One whose scheduled run is still
+ * open (paused part way) isn't (false): it is turned on as usual, that run goes on, and its end finishes it.
+ */
+async function finishPassedOnce(a: { id: string; user_id: string; name: string; paused_reason: string; resume_at: number }): Promise<boolean> {
+  const finished = { sql: "EXISTS (SELECT 1 FROM automations WHERE id = ? AND status = 'finished')", args: [a.id] };
+  const rs = await (await db()).batch(
+    [
+      {
+        sql: `UPDATE automations SET status = 'finished', paused_reason = '', paused_at = 0, resume_at = 0, need_credits = 0, next_at = 0, updated_at = ${DB_NOW}
+               WHERE id = ? AND status = 'paused' AND paused_reason = ? AND resume_at = ?
+                 AND NOT EXISTS (SELECT 1 FROM automation_runs WHERE automation_id = ? AND origin = 'schedule' AND finished_at = 0)`,
+        args: [a.id, a.paused_reason, a.resume_at, a.id],
+      },
+      {
+        sql: `UPDATE automation_runs SET parked = 0, updated_at = ${DB_NOW} WHERE automation_id = ? AND finished_at = 0 AND parked = 1 AND ${finished.sql}`,
+        args: [a.id, ...finished.args],
+      },
+      noticeStatement(
+        { userId: a.user_id, kind: "missed", phrase: NOTICES.missed, blanks: { name: a.name }, link: automationLink(a.id), ref: `missed:${a.id}:${utcDay(Date.now())}` },
+        finished,
+      ),
+    ],
+    "write",
+  );
+  return rs[0].rowsAffected === 1;
 }
 
 /** Whether this month's automation capacity is reached: hourly slots are then skipped, for free. */

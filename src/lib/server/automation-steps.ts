@@ -70,6 +70,7 @@ export type AutoRow = {
   name: string;
   status: string;
   trigger_kind: string;
+  version: number;
   time_zone: string;
   where_json: string;
   language: string;
@@ -520,6 +521,15 @@ export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResul
   // Whether the start mark landed is unknown, but Claude was never called: settled at 0 by the worker
   // (never at the reaper's worst case for a call that might have started).
   if (mark === "unknown") return tryLater(retryDelay(Number(run.attempts)));
+  // What it sends and to which model, kept before the call: a step interrupted mid-call (its worker
+  // gone, its hold settled by the reaper) still shows them. Its settle writes them again, as answered.
+  await sql("UPDATE automation_run_steps SET input = ?, model = ? WHERE run_id = ? AND step_id = ? AND attempt = ? AND status = 'running'", [
+    turn.slice(0, INPUT_CHARS),
+    model,
+    run.id,
+    step.id,
+    started.attempt,
+  ]).catch((err) => console.error("[flash] automation: keeping a step's input failed", failName(err)));
 
   // 3. The step itself.
   type Halt = "deadline" | "stop" | "lost" | "stale";
