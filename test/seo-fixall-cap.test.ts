@@ -656,6 +656,50 @@ test("each person gets 120 prices an hour: then the route counts nothing more fo
   assert.ok(await fixAllHold(bodyFor(other, earlier, message), pageFetch(other)));
 });
 
+test("a price asked for past the hour's 120 is refused before the virus scanner reads the chat's files, and a send is scanned as it always was", async () => {
+  const who = await account(1_000_000);
+  const earlier = builtChat();
+  const message = fixAllMessage();
+  // A file sent earlier in the chat goes again with every request, and is scanned with each (a scanner
+  // that finds a virus in everything: only a clean file isn't scanned again).
+  const withFile = (body: ReturnType<typeof bodyFor>) => ({
+    ...body,
+    messages: body.messages.map((turn, i) => (i === 0 ? { ...turn, attachment: { name: "menu.txt", mediaType: "text/plain", data: Buffer.from("Sourdough 4.50").toString("base64") } } : turn)),
+  });
+  const scans: string[] = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    if (!url.startsWith("https://scan.test/")) return realFetch(input, init);
+    scans.push(url);
+    return Response.json({ clean: false, virus: "Eicar-Test-Signature" });
+  }) as typeof fetch;
+  process.env.VIRUS_SCAN_URL = "https://scan.test";
+  process.env.VIRUS_SCAN_KEY = "k".repeat(32);
+  try {
+    // Within the hour's prices, a price is scanned as a send is.
+    assert.equal((await post(who, { ...withFile(bodyFor(who, earlier, message)), quote: true })).status, 422);
+    assert.equal(scans.length, 1);
+    // Past them: refused before anything is scanned, or counted at Anthropic.
+    await sql("UPDATE rate_limits SET count = ? WHERE key = ?", [120, `quote:${who.id}`]);
+    const counts = counted().length;
+    const over = await post(who, { ...withFile(bodyFor(who, earlier, message)), quote: true });
+    assert.equal(over.status, 429);
+    assert.equal(((await over.json()) as { error: string }).error, "Too many requests. Try again in an hour.");
+    assert.equal(scans.length, 1, "the scanner wasn't asked");
+    assert.equal(counted().length, counts);
+    // The change itself is scanned and refused for the virus, whatever prices were asked.
+    const sent = await post(who, withFile(bodyFor(who, earlier, message)));
+    assert.equal(sent.status, 422);
+    assert.equal(scans.length, 2);
+    assert.equal(claudeCalls(), 0);
+  } finally {
+    globalThis.fetch = realFetch;
+    delete process.env.VIRUS_SCAN_URL;
+    delete process.env.VIRUS_SCAN_KEY;
+  }
+});
+
 test("Fix all's price is said in a live region that's there from when its panel opens, even when the list comes with the price", () => {
   const seo = readFileSync(new URL("../src/components/SeoView.tsx", import.meta.url), "utf8");
   const panel = seo.slice(seo.indexOf("const panel = (key: string) =>"), seo.indexOf("const button = "));

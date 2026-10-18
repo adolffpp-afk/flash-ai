@@ -23,7 +23,7 @@ delete process.env.FLASH_TEST_PAGESPEED_URL;
 const { all, db, one, run } = await import("../src/lib/server/db.ts");
 const { pagespeedKeyProblem, runLock, runPageSpeed, REFUSED } = await import("../src/lib/server/pagespeed.ts");
 const { adminStats } = await import("../src/lib/server/admin-stats.ts");
-const { countOf, overLimit } = await import("../src/lib/server/limits.ts");
+const { countOf, overLimit, takeOne } = await import("../src/lib/server/limits.ts");
 const { FETCHERS_URL } = await import("../src/lib/server/lighthouse.ts");
 const { cachePut } = await import("../src/lib/server/source-fetch.ts");
 const route = await import("../src/app/api/sites/[slug]/pagespeed/route.ts");
@@ -203,7 +203,7 @@ test("Google is asked about the app's own address, phone and computer, with the 
 
   // With no domain, there's nothing to check there.
   const bare = await owner("req-bare");
-  assert.equal((await check(bare, { address: "domain" })).status, 400);
+  assert.deepEqual(await check(bare, { address: "domain" }), { status: 404, body: { error: "Not found" } });
 });
 
 test("a domain that doesn't point at Flash isn't checked", async () => {
@@ -571,6 +571,33 @@ test("a press Flash's own limits keep from Google once it was counted gives the 
     }
   } finally {
     await used(Number(before?.requests ?? 0));
+  }
+});
+
+test("a press that runs past the end of the hour gives its check and its lookup back only to the hour it took them from, never to the next", async () => {
+  await fresh();
+  process.env.FLASH_PAGESPEED_DAILY_REQUESTS = "1000000";
+  const who = await owner("busy-hour", ["hour.pt"]);
+  vercel["hour.pt"] = true;
+  const hourly = `pagespeed:${who.id}`;
+  const daily = `pagespeed-day:${who.id}:${new Date().toISOString().slice(0, 10)}`;
+  const lookups = `pagespeed-domain:${who.id}`;
+  try {
+    // Other owners' checks hold Flash's 3 requests a second for longer than a press waits: it ends busy.
+    const pressing = check(who, { address: "domain" }, who.slug, 7000);
+    while ((await countOf(hourly)) !== 1) await new Promise((r) => setTimeout(r, 5));
+    // While it waits, the hour it took its check and its lookup from ends, and a press of another of the
+    // owner's apps takes the next hour's first check and lookup.
+    await run("UPDATE rate_limits SET reset_at = ? WHERE key IN (?, ?)", [Date.now() - 1, hourly, lookups]);
+    assert.ok(await takeOne(hourly, 3, HOUR));
+    assert.ok(await takeOne(lookups, 10, HOUR));
+    const busy = await pressing;
+    assert.deepEqual([busy.status, busy.body.code], [503, "busy"]);
+    assert.equal(google.length, 0);
+    assert.deepEqual([await countOf(hourly), await countOf(lookups)], [1, 1], "the next hour's check and lookup stay used");
+    assert.equal(await countOf(daily), 0, "today's check, taken from today, is given back");
+  } finally {
+    delete process.env.FLASH_PAGESPEED_DAILY_REQUESTS;
   }
 });
 
