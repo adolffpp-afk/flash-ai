@@ -143,10 +143,12 @@ export async function askSiteAi(
 
   // The hold is what this question can cost at most. When what is left of today's budget or the owner's
   // credits is less, the answer is kept shorter to fit, so the last credits of a day still answer.
+  // With auto top-up on, the owner's credits are only those above its level: a visitor's question
+  // never makes Flash buy the owner a pack they didn't choose to buy for visitors.
   const system = siteSystem(instructions);
   const chars = system.length + prompt.length;
   const left = settings.dailyCredits - settings.usedToday;
-  const owner = (await spendable(site.user_id)).largest;
+  const owner = (await spendable(site.user_id, { keepTopUpLevel: true })).largest;
   const hold = Math.min(worstCaseCredits(CHAT_MODEL, chars), left, owner);
   const maxTokens = Math.min(MAX_ANSWER_TOKENS, tokensFor(hold, chars));
   if (!(maxTokens >= MIN_ANSWER_TOKENS)) {
@@ -158,7 +160,7 @@ export async function askSiteAi(
   if (!reserved) {
     return fail("This app's AI has used everything it may today. It works again tomorrow.", 429);
   }
-  const chargeId = await charge(site.user_id, hold, `AI in "${site.title}"`);
+  const chargeId = await charge(site.user_id, hold, `AI in "${site.title}"`, { keepTopUpLevel: true });
   if (chargeId === null) {
     await giveBack(slug, reserved, hold);
     return fail("This app's AI is out of credits. Its owner can add more in Flash.", 402);

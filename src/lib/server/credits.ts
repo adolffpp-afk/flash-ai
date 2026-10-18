@@ -22,13 +22,34 @@ export async function spendAccounts(userId: string): Promise<string[]> {
   return pool ? [pool.user_id, userId] : [userId];
 }
 
+/*
+ * SQL for an account's auto top-up level (the account is its one parameter): the level while auto
+ * top-up is on with a saved card, else 0. Under it, the next /api/me or chat reply buys the pack
+ * the person picked (see maybeAutoTopUp), so spending the person didn't start themselves (an app's
+ * AI that visitors ask, keepTopUpLevel) stops at it instead.
+ */
+const TOP_UP_LEVEL = "COALESCE((SELECT below FROM auto_topups WHERE user_id = ? AND enabled = 1 AND payment_method IS NOT NULL), 0)";
+
+/** A balance, less the auto top-up level while auto top-up is on: what can be spent without buying a pack. */
+async function aboveTopUpLevel(account: string): Promise<number> {
+  const row = await one<{ room: number }>(
+    `SELECT COALESCE(SUM(amount), 0) - ${TOP_UP_LEVEL} AS room FROM credit_ledger WHERE user_id = ?`,
+    [account, account],
+  );
+  return Number(row?.room ?? 0);
+}
+
 /**
  * What a user can spend: the most one request can hold (one ledger pays for each request) and
- * the total to show, the team pool included.
+ * the total to show, the team pool included. keepTopUpLevel: only what is above each ledger's
+ * auto top-up level counts (see charge).
  */
-export async function spendable(userId: string): Promise<{ largest: number; total: number; pool: number | null }> {
+export async function spendable(
+  userId: string,
+  { keepTopUpLevel = false }: { keepTopUpLevel?: boolean } = {},
+): Promise<{ largest: number; total: number; pool: number | null }> {
   const accounts = await spendAccounts(userId);
-  const balances = await Promise.all(accounts.map(balance));
+  const balances = await Promise.all(accounts.map(keepTopUpLevel ? aboveTopUpLevel : balance));
   return {
     largest: Math.max(...balances),
     total: balances.reduce((a, b) => a + b, 0),
@@ -88,15 +109,22 @@ async function monthlyCredits(userId: string): Promise<void> {
  * own. Each ledger's check and insert are one statement, so parallel requests (several team
  * members at once) can't take a balance below zero. Returns the ledger entry's id, or null when
  * no balance covers the amount. Pass the id to settle() to lower the charge once the real cost is known.
+ * keepTopUpLevel: each balance must stay at or above its own auto top-up level while auto top-up
+ * is on, in the same statement, so the charge can never make Flash buy a pack.
  */
-export async function charge(userId: string, amount: number, reason: string): Promise<number | null> {
+export async function charge(
+  userId: string,
+  amount: number,
+  reason: string,
+  { keepTopUpLevel = false }: { keepTopUpLevel?: boolean } = {},
+): Promise<number | null> {
   if (amount <= 0) return 0;
   for (const account of await spendAccounts(userId)) {
     const r = await run(
       `INSERT INTO credit_ledger (user_id, amount, reason, actor, created_at)
        SELECT ?, ?, ?, ?, ?
-       WHERE (SELECT COALESCE(SUM(amount), 0) FROM credit_ledger WHERE user_id = ?) >= ?`,
-      [account, -amount, reason, account === userId ? null : userId, now(), account, amount],
+       WHERE (SELECT COALESCE(SUM(amount), 0) FROM credit_ledger WHERE user_id = ?) >= ?${keepTopUpLevel ? ` + ${TOP_UP_LEVEL}` : ""}`,
+      [account, -amount, reason, account === userId ? null : userId, now(), account, amount, ...(keepTopUpLevel ? [account] : [])],
     );
     if (r.rowsAffected === 1) return Number(r.lastInsertRowid);
   }

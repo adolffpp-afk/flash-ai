@@ -35,20 +35,53 @@ const server = createServer((req, res) => {
 await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
 after(() => server.close());
 
+// A stand-in Stripe: records what auto top-up would buy.
+let stripeCalls: string[] = [];
+const realFetch = globalThis.fetch;
+globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+  const url = String(input);
+  if (!url.startsWith("https://stripe.test/")) return realFetch(input, init);
+  stripeCalls.push(`${init?.method ?? "GET"} ${new URL(url).pathname}`);
+  return Response.json({ id: `pi_${stripeCalls.length}`, status: "succeeded" });
+}) as typeof fetch;
+
 register("./support/route-hooks.mjs", import.meta.url);
 process.env.DATABASE_URL = ":memory:";
+process.env.STRIPE_SECRET_KEY = "rk_test";
+process.env.STRIPE_API_BASE = "https://stripe.test/v1";
 process.env.ANTHROPIC_API_KEY = "sk-fake";
 process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
 const { run, one } = await import("../src/lib/server/db.ts");
 const { askSiteAi, saveAiSettings, worstCaseCredits, ANSWER_TIMEOUT_MS } = await import("../src/lib/server/site-ai.ts");
 const { maxDuration } = await import("../src/app/api/sites/[slug]/ai/route.ts");
+const { maybeAutoTopUp } = await import("../src/lib/server/auto-topup.ts");
+const { CREDIT_PACKS } = await import("../src/lib/credits.ts");
+const { charge, spendable } = await import("../src/lib/server/credits.ts");
 
 const balance = async (user = "owner") =>
   Number((await one<{ c: number }>("SELECT COALESCE(SUM(amount), 0) AS c FROM credit_ledger WHERE user_id = ?", [user]))?.c);
 let ip = 0;
 // A new address each time, so the per-visitor limit never gets in the way.
-const ask = (prompt = "When should I book?", instructions = "") => askSiteAi("shop", { prompt, instructions }, `10.0.0.${++ip}`);
+const ask = (prompt = "When should I book?", instructions = "", slug = "shop") => askSiteAi(slug, { prompt, instructions }, `10.0.${Math.floor(++ip / 250)}.${ip % 250}`);
+// Asks until the app's AI stops answering, and returns how many answers it gave and its last refusal.
+async function askUntilRefused(slug = "shop") {
+  for (let answers = 0; answers < 500; answers++) {
+    const answer = await ask(undefined, undefined, slug);
+    if (answer.status !== 200) return { answers, refusal: answer };
+  }
+  throw new Error("never stopped");
+}
+const autoTopUpOn = (user: string, below: number) =>
+  run(
+    `INSERT INTO auto_topups (user_id, enabled, pack, below, customer, payment_method, updated_at) VALUES (?, 1, ?, ?, 'cus_1', 'pm_1', 0)
+     ON CONFLICT (user_id) DO UPDATE SET enabled = 1, below = excluded.below, payment_method = excluded.payment_method`,
+    [user, CREDIT_PACKS[0].id, below],
+  );
+const setBalance = async (user: string, credits: number) => {
+  await run("DELETE FROM credit_ledger WHERE user_id = ?", [user]);
+  await run("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES (?, ?, 'test', 0)", [user, credits]);
+};
 
 test("set up an app with its AI on", async () => {
   await run("INSERT INTO users (id, email, password_hash, created_at, verified_at) VALUES ('owner', 'o@x.io', '', 0, 1)");
@@ -119,4 +152,68 @@ test("every paid Claude call that isn't streamed is sent once: a retry could cos
   }
   // site-ai, post-pack, and claude.ts's prompt and scene writers, router and picture check.
   assert.ok(calls.length >= 6, calls.join(", "));
+});
+
+test("with auto top-up on, the app's AI stops at its level, so a visitor never makes Flash buy the owner a pack", async () => {
+  await saveAiSettings("shop", true, 5000);
+  await setBalance("owner", 115);
+  await autoTopUpOn("owner", 100);
+  const { answers, refusal } = await askUntilRefused();
+  assert.ok(answers > 0, "it answers while the balance is over the level");
+  assert.equal(refusal.status, 402);
+  assert.match((refusal.body as { error: string }).error, /out of credits/, "the usual out-of-credits answer");
+  assert.ok((await balance()) >= 100, `${await balance()} credits left, never under the level`);
+  // What /api/me and every chat reply run afterwards: nothing to buy.
+  stripeCalls = [];
+  assert.equal(await maybeAutoTopUp("owner"), false);
+  assert.deepEqual(stripeCalls, [], "no payment was made");
+
+  // With auto top-up off, it spends what there is, as before.
+  await run("UPDATE auto_topups SET enabled = 0 WHERE user_id = 'owner'");
+  assert.equal((await ask()).status, 200);
+  assert.equal((await askUntilRefused()).refusal.status, 402);
+  assert.ok((await balance()) < 100);
+  // Nor does a level without a saved card hold anything back.
+  await setBalance("owner", 115);
+  await run("UPDATE auto_topups SET payment_method = NULL, enabled = 1 WHERE user_id = 'owner'");
+  await askUntilRefused();
+  assert.ok((await balance()) < 100, "a level without a card buys nothing, so it isn't kept");
+});
+
+test("keeping the level is checked in the same statement as the charge, and other spending is as before", async () => {
+  await setBalance("owner", 106);
+  await autoTopUpOn("owner", 100);
+  assert.deepEqual(await spendable("owner", { keepTopUpLevel: true }), { largest: 6, total: 6, pool: null });
+  assert.deepEqual(await spendable("owner"), { largest: 106, total: 106, pool: null }, "what the owner sees and spends themselves");
+  const held = await Promise.all([1, 2, 3].map(() => charge("owner", 3, "visitor question", { keepTopUpLevel: true })));
+  assert.equal(held.filter((id) => id !== null).length, 2, "two of three questions fit above the level");
+  assert.equal(await balance(), 100);
+  assert.notEqual(await charge("owner", 3, "the owner's own chat"), null, "the owner's own spending isn't held back");
+  assert.equal(await balance(), 97);
+});
+
+test("a team member's app keeps the team owner's level on the shared pool, then spends the member's own credits", async () => {
+  await run("INSERT INTO users (id, email, password_hash, created_at, verified_at) VALUES ('boss', 'b@x.io', '', 0, 1), ('member', 'm@x.io', '', 0, 1)");
+  await run(
+    `INSERT INTO subscriptions (id, user_id, plan, interval, status, amount_cents, anchor, paid_until, test, created_at, updated_at)
+     VALUES ('sub-boss', 'boss', 'business', 'month', 'active', 100, 0, ?, 1, 0, 0)`,
+    [Date.UTC(2100, 0, 1)],
+  );
+  await run("INSERT INTO teams (id, owner_id, created_at) VALUES ('t1', 'boss', 0)");
+  await run("INSERT INTO team_members (user_id, team_id, joined_at) VALUES ('member', 't1', 0)");
+  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES ('team-app', 'member', 'Team app', '<p>', 0, 0)");
+  await saveAiSettings("team-app", true, 5000);
+  await setBalance("boss", 115);
+  await autoTopUpOn("boss", 100);
+  await setBalance("member", 20);
+  await autoTopUpOn("member", 100);
+  await run("UPDATE auto_topups SET enabled = 0 WHERE user_id = 'member'");
+  const { refusal } = await askUntilRefused("team-app");
+  assert.equal(refusal.status, 402);
+  assert.ok((await balance("boss")) >= 100, `the pool keeps the owner's level (${await balance("boss")})`);
+  assert.ok((await balance("boss")) < 110, "and spends down to it");
+  assert.ok((await balance("member")) < 20, "the member's own credits paid for the rest");
+  stripeCalls = [];
+  assert.equal(await maybeAutoTopUp("boss"), false);
+  assert.deepEqual(stripeCalls, []);
 });
