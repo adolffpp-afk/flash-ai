@@ -122,7 +122,7 @@ export function MyApps({
   editCredits?: number;
   credits?: number;
   onPlanFix?: (fix: SiteFix) => Promise<FixPlan>;
-  onFix?: (fix: SiteFix) => Promise<FixPlan | null>;
+  onFix?: (fix: SiteFix, signal?: AbortSignal) => Promise<FixPlan | null>;
   onDraft?: (draft: { projectId: string; slug: string; text: string }) => Promise<{ why: string; chat?: string } | null>;
   onOpenChat?: (projectId: string, note?: string) => void;
   chatHere?: (slug: string) => string | null;

@@ -7,6 +7,7 @@ import { useT, type T } from "@/lib/use-t";
 import { BAND_TEXT, band, labBand, timeLabel, type Band } from "@/lib/seo-band";
 import { fixContext, fixableIds, stillToFix, type Check, type CheckId, type SeoContext, type SeoReport } from "@/lib/seo-rules";
 import { labelOf, messageOf, whyOf } from "@/lib/seo-words";
+import { canSend, fixAllTerms, fixPrice, type FixHold, type FixPrice } from "@/lib/seo-chat";
 import type { PageSpeedError, PageSpeedRecord, PageSpeedRun, Rating } from "@/lib/server/pagespeed";
 
 /*
@@ -34,14 +35,18 @@ export type SeoData = {
 /**
  * A change asked for here, for Flash to send in the chat that built the site (at: when it was asked).
  * shown: the points the panel listed, when Send was pressed: nothing is sent when others would go.
+ * all: it's Fix all, which says the most its change can be charged; cap: that most, as the panel said it
+ * when Send was pressed, which the change never holds more than.
  */
-export type SiteFix = { projectId: string; slug: string; title: string; ids: CheckId[]; ctx: SeoContext; at: number; shown?: CheckId[] };
+export type SiteFix = { projectId: string; slug: string; title: string; ids: CheckId[]; ctx: SeoContext; at: number; shown?: CheckId[]; all?: boolean; cap?: number };
 /**
  * What Flash would send for a change in the chat that built the site: the points that fit and how many
  * more were asked for, or why none would go. busy: Flash is still answering there, so it would go later.
  * chat: what that chat says when it's opened from here (Open the chat that built this site), if anything.
+ * hold: for Fix all, what its change would hold (see fixAllHold), null when that couldn't be worked out,
+ * and missing while it hasn't been.
  */
-export type FixPlan = { sent: CheckId[]; left: number } | { why: string; busy?: true; chat?: string };
+export type FixPlan = { sent: CheckId[]; left: number; hold?: FixHold | null } | { why: string; busy?: true; chat?: string };
 
 const BAND_WORDS: Record<Band, string> = { good: msg("Good"), needs: msg("Needs work"), poor: msg("Poor") };
 const HOW = msg(
@@ -53,6 +58,14 @@ const PRICE = msg(
 const WHERE = msg("Flash makes the change in the chat that built this site. Press Update site there to put it live, and this check runs again.");
 // Said with the price when the owner has fewer credits than a change usually costs.
 const LOW = msg("You have {credits} credits, which may not be enough for this change.");
+// Fix all's price: the most its change can be charged, worked out for exactly what Send sends (see
+// fixAllHold), said while it's worked out, and with the balance when it's less than the change needs.
+const MOST = msg("Up to {count} credits");
+const MOST_WHY = msg(
+  "It's a normal change to your app, charged for what it really uses at your level, and never more than this. Nothing is charged until you press Send to Flash, and failed requests are free.",
+);
+const PRICING = msg("Working out the most this change can cost…");
+const SHORT = msg("You have {credits} credits, which isn't enough for this change.");
 const RUN_ERRORS: Record<PageSpeedError, string> = {
   quota: msg("Google's speed check isn't available right now. Flash's own check above still works."),
   busy: msg("Google's free speed check is busy right now. Try again later."),
@@ -66,6 +79,9 @@ const NO_CHAT = msg("Couldn't find the chat that built this site.");
 const NO_CHAT_APP = msg("Flash can't change this app from here: the chat that built it was deleted, or it was published from another app.");
 // Said when Send found that chat's newest version changed since the panel listed what goes.
 const CHANGED = msg("That chat's newest version changed, so this list did too. Press Send to Flash again to ask for these.");
+// Said when Send found that Fix all's change would now hold more than its panel said (a reply finished in
+// that chat since, or the level or credits changed): the panel says what it holds now.
+const DEARER = msg("The most this change can cost went up since it was worked out, so Flash didn't send it. Press Send to Flash again to ask for it at the price above.");
 // What each mark in the list says to a screen reader.
 const MARKS: Partial<Record<Check["status"], [string, string, string]>> = {
   fail: ["✕", "text-red-400", msg("Problem")],
@@ -185,8 +201,9 @@ export function SeoView({
   // What Flash would send for a change, from the chat's newest version of the site (which the builder changes), listed before Send.
   onPlanFix?: (fix: SiteFix) => Promise<FixPlan>;
   // Hands the change to Flash: null once it's on its way, else why nothing was sent, or what would go
-  // now when it isn't what was listed (shown).
-  onFix?: (fix: SiteFix) => Promise<FixPlan | null>;
+  // now when it isn't what was listed (shown). signal: aborted once the panel that sent it closed or
+  // another opened, and then Flash sends nothing (and the answer is ignored).
+  onFix?: (fix: SiteFix, signal?: AbortSignal) => Promise<FixPlan | null>;
   // Puts text in the message box of the chat that built the site, without sending it: null once it's
   // there, else why it isn't (that chat's newest app is another site), and what that chat says if opened.
   onDraft?: (draft: { projectId: string; slug: string; text: string }) => Promise<{ why: string; chat?: string } | null>;
@@ -209,6 +226,9 @@ export function SeoView({
   // Why Send sent nothing, said in the panel.
   const [note, setNote] = useState("");
   const [sending, setSending] = useState(false);
+  // The Send on its way to Flash, if any: dropped when its panel closes, another opens, or this check goes
+  // (see dropSend), so Flash sends nothing for it and its answer changes nothing here.
+  const going = useRef<AbortController | null>(null);
   // Why the owner's details weren't put in the chat, and what that chat says when it's opened from here
   // (only when it can be).
   const [draftNote, setDraftNote] = useState<{ text: string; chat?: string } | null>(null);
@@ -231,6 +251,10 @@ export function SeoView({
   useEffect(() => {
     if (askingKey) panelRef.current?.focus();
   }, [askingKey]);
+
+  // This check is gone (My websites & apps closed, another app or version shown): a Send it started goes
+  // no further either.
+  useEffect(() => () => going.current?.abort(), []);
 
   useEffect(() => {
     const want = refocus.current;
@@ -283,30 +307,44 @@ export function SeoView({
     return lookup.current;
   }
 
-  /** What Flash would send for ids in the chat that built the site, or null when there's no such chat (project says why). */
-  async function planFor(ids: CheckId[]): Promise<FixPlan | null> {
+  /**
+   * What Flash would send for ids in the chat that built the site, or null when there's no such chat
+   * (project says why). all: for Fix all's panel, priced too (see FixPlan's hold).
+   */
+  async function planFor(ids: CheckId[], all = false): Promise<FixPlan | null> {
     const id = await projectId();
     if (!id || !onPlanFix) return null;
-    return onPlanFix({ projectId: id, slug, title: data.title, ids, ctx: data.ctx, at: Date.now() }).catch(() => ({
+    return onPlanFix({ projectId: id, slug, title: data.title, ids, ctx: data.ctx, at: Date.now(), ...(all && { all }) }).catch(() => ({
       why: t("Couldn't load the search check. Please try again."),
     }));
   }
 
+  /** Drops the Send on its way, if any: Flash sends nothing for it (see fixSite), and its answer is ignored. */
+  function dropSend() {
+    going.current?.abort();
+    going.current = null;
+    setSending(false);
+  }
+
   /** Closes the panel, with keyboard and screen reader focus back on the button that opened it. */
   function close() {
+    dropSend();
     setAsking(null);
     refocus.current = "opener";
   }
 
   function ask(key: string, ids: CheckId[], from: HTMLElement) {
+    // The panel open before is replaced: a Send it started (Flash still looking at the price) goes no further.
+    dropSend();
     opener.current = from;
     // Flash gets every point asked for: it leaves out what the chat's newest version already fixes and
     // sends what fits of the rest, so Fix all again after a change sends the points that didn't fit.
-    // The panel lists exactly that, looked at in that chat now.
-    setAsking({ key, ids, plan: key === "all" ? allPlan : null });
+    // The panel lists exactly that, looked at in that chat now, and Fix all's price is worked out again
+    // for it: the list looked at before shows meanwhile, without a price.
+    setAsking({ key, ids, plan: key === "all" && allPlan && "sent" in allPlan ? { sent: allPlan.sent, left: allPlan.left } : key === "all" ? allPlan : null });
     setNote("");
     if (!project?.id) setProject(null);
-    void planFor(ids).then((plan) => {
+    void planFor(ids, key === "all").then((plan) => {
       if (!plan) return;
       setAsking((open) => (open?.key === key ? { ...open, plan } : open));
       if (key === "all") setAllPlan(plan);
@@ -316,9 +354,30 @@ export function SeoView({
   async function send() {
     const plan = asking?.plan;
     if (!asking || !plan || !("sent" in plan) || !project?.id || !onFix || sending) return;
+    const all = asking.key === "all";
+    // Fix all goes once its price is worked out (or couldn't be), never at a price it didn't say.
+    if (!canSend(all, plan.hold)) return;
+    const run = new AbortController();
+    going.current = run;
     setSending(true);
     setNote("");
-    const answer = await onFix({ projectId: project.id, slug, title: data.title, ids: asking.ids, ctx: data.ctx, at: Date.now(), shown: plan.sent });
+    const answer = await onFix(
+      {
+        projectId: project.id,
+        slug,
+        title: data.title,
+        ids: asking.ids,
+        ctx: data.ctx,
+        at: Date.now(),
+        shown: plan.sent,
+        ...fixAllTerms(all, plan.hold),
+      },
+      run.signal,
+    );
+    // Cancelled, or another change asked for, while Flash looked (Fix all's price is looked at again): it
+    // sent nothing, and what it found is for a panel that's gone.
+    if (run.signal.aborted) return;
+    going.current = null;
     setSending(false);
     if (!answer) return;
     refocus.current = "panel";
@@ -332,10 +391,11 @@ export function SeoView({
       }
       return;
     }
-    // That chat changed since the list was made: the panel lists what would go now, for Send again.
+    // That chat changed since the list was made, or Fix all's change would now hold more than the panel
+    // said: the panel lists what would go now, and its price, for Send again.
     setAsking((open) => (open?.key === asking.key ? { ...open, plan: answer } : open));
     if (asking.key === "all") setAllPlan(answer);
-    setNote(t(CHANGED));
+    setNote(t(answer.sent.join() === plan.sent.join() ? DEARER : CHANGED));
   }
 
   async function draft(check: Check) {
@@ -357,6 +417,11 @@ export function SeoView({
     const points = asking.plan && "sent" in asking.plan ? asking.plan : null;
     const whyNot = asking.plan && "why" in asking.plan ? asking.plan : null;
     const said = note || whyNot?.why || "";
+    // Fix it says what a change typically costs; Fix all the most its change can be charged, once worked out.
+    // Fix all's is worked out with its list, so it says that while the list loads too (pressed before
+    // Fix all's count loaded, or after it failed); Fix it's price shows with its list.
+    const price: FixPrice | null = points ? fixPrice(key === "all", points.hold, editCredits ?? 0, credits) : key === "all" && !asking.plan && !project?.error ? { kind: "pending" } : null;
+    const balance = price?.kind === "most" ? price.short : price?.kind === "typical" ? price.low : undefined;
     return (
       <div
         ref={panelRef}
@@ -379,23 +444,34 @@ export function SeoView({
                 {t("Only the first {count} fit in one change. Press Fix all again after this one for the rest.", { count: points.sent.length.toLocaleString(t.locale) })}
               </p>
             )}
-            <p className="mt-2 text-zinc-400">{t(PRICE, { count: (editCredits ?? 0).toLocaleString(t.locale) })}</p>
-            {credits !== undefined && editCredits !== undefined && credits < editCredits && (
-              <p className="mt-2 text-gold-soft">
-                {t(LOW, { credits: credits.toLocaleString(t.locale) })}
-                {onCredits && (
-                  <>
-                    {" "}
-                    <button onClick={onCredits} className="font-medium text-primary-soft hover:underline">
-                      {t("Get more credits")}
-                    </button>
-                  </>
-                )}
-              </p>
-            )}
-            <p className="mt-2 text-zinc-400">{t(WHERE)}</p>
           </>
         )}
+        {/* One live region, there for as long as the panel is open, so a screen reader hears Fix all's price
+            (and the balance when it's short) once it's worked out, even when the list comes with it. */}
+        <div role="status">
+          {price?.kind === "pending" && <p className="mt-2 text-zinc-500">{t(PRICING)}</p>}
+          {price?.kind === "most" && (
+            <>
+              <p className="mt-2 font-medium text-zinc-100">{t(MOST, { count: price.credits.toLocaleString(t.locale) })}</p>
+              <p className="mt-1 text-zinc-400">{t(MOST_WHY)}</p>
+            </>
+          )}
+          {price?.kind === "typical" && <p className="mt-2 text-zinc-400">{t(PRICE, { count: price.credits.toLocaleString(t.locale) })}</p>}
+          {balance !== undefined && (
+            <p className="mt-2 text-gold-soft">
+              {t(price?.kind === "most" ? SHORT : LOW, { credits: balance.toLocaleString(t.locale) })}
+              {onCredits && (
+                <>
+                  {" "}
+                  <button onClick={onCredits} className="font-medium text-primary-soft hover:underline">
+                    {t("Get more credits")}
+                  </button>
+                </>
+              )}
+            </p>
+          )}
+        </div>
+        {points && <p className="mt-2 text-zinc-400">{t(WHERE)}</p>}
         {project?.error && (
           <p role="alert" className="mt-2 text-red-400">
             {project.error}
@@ -410,7 +486,7 @@ export function SeoView({
           {!project?.error && (!asking.plan || points) && (
             <button
               onClick={send}
-              disabled={!points || !project?.id || sending}
+              disabled={!points || !canSend(key === "all", points.hold) || !project?.id || sending}
               className="rounded-md bg-brand px-3 py-1.5 font-medium text-on-brand hover:brightness-110 disabled:opacity-50"
             >
               {t("Send to Flash")}

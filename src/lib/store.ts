@@ -27,6 +27,9 @@ export type UIMessage = {
   pictureAbove?: boolean | string;
   // A Continue on approved cards: their ids, so Retry continues with the same results, after a reload too.
   continues?: string[];
+  // Sent by Fix all in the search check (SEO): the most it said this change would hold ("Up to N
+  // credits"), so it never holds or is charged more, on Retry and after a reload too.
+  cap?: number;
   engine?: Engine;
   // A spoken reply about the app or deck before it, which the next follow-up may still change.
   about?: Engine;

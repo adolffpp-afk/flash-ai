@@ -151,6 +151,12 @@ import { maybeAutoTopUp } from "@/lib/server/auto-topup.ts";
 // Price questions (409 confirm_cost) one user gets in an hour before the paid helpers stop deciding
 // their requests (see askedOften).
 const PRICE_QUESTIONS_AN_HOUR = 20;
+// Fix all's prices (quote) one user can ask for in an hour: each is a token count at Anthropic.
+const QUOTES_AN_HOUR = 120;
+// A request that would now hold more than the most Fix all said it would (maxCredits).
+const OVER_CAP = msg(
+  "This change now needs more than the {credits} credits shown before you sent it, so Flash didn't send it and no credits were used. Press Fix all in the search check again to see what it needs now.",
+);
 
 export const maxDuration = 800;
 // Claude replies end as stopped this long after the request started, so they're saved and settled
@@ -214,6 +220,12 @@ type ChatRequest = {
   // only while CONNECTOR_KEYS is set. actions: approved connector results to continue the answer with.
   connectors?: unknown;
   actions?: unknown;
+  // Fix all in the search check (SEO) asks what its change would hold before it's sent: the request is
+  // priced exactly as it would be sent, and nothing is run, charged or saved (see quote below).
+  quote?: boolean;
+  // The most the request may hold, and so be charged, as Fix all said before it was sent ("Up to N credits").
+  // One that would now hold more isn't sent (see cap below).
+  maxCredits?: number;
 };
 
 function providers(): Set<Provider> {
@@ -947,6 +959,16 @@ export async function POST(request: Request) {
     body.engine && body.engine !== "auto" && (ENGINES as readonly string[]).includes(body.engine) ? body.engine : null;
   // The request the user agreed to the price of: the router and the picture check aren't asked again.
   const decided = decidedFor(body, override);
+  // A quote is only for a change to an app or deck (Fix all), which no paid helper reads first: the
+  // router only reads a request on Auto, and the picture check a picture or video request. Anthropic
+  // counts its tokens for free, but only so often, so each user gets QUOTES_AN_HOUR.
+  const quote = body.quote === true;
+  if (quote && !(body.build === true && (override === "app" || override === "slides"))) {
+    return Response.json({ error: t("Only a change to an app or slides can be priced before it's sent.") }, { status: 400 });
+  }
+  if (quote && (await overLimit(`quote:${user.id}`, QUOTES_AN_HOUR, 3600_000))) {
+    return Response.json({ error: t("Too many requests. Try again in an hour.") }, { status: 429 });
+  }
   // Where and when the user is, taken once, so the hold counts the same instructions the reply sends.
   const where = whereFrom(request, body.timeZone);
   const prompting = promptingFor(where, new Date(startedAt), override !== null);
@@ -1063,6 +1085,15 @@ export async function POST(request: Request) {
   // A team member spends the shared pool first. One ledger pays for each request, so the hold
   // is sized to the larger balance.
   const available = (await spendable(user.id)).largest;
+  // The most Fix all said it would hold (maxCredits). The request is planned as any is, and one that would
+  // now hold more isn't sent (see below): it never runs on a hold cut down to the cap, which could stop a
+  // long reply part way with credits to spare. Only a change to an app or deck takes one, as only that is
+  // priced (quote): no paid helper reads it before the cap is checked, while the router and the picture
+  // check would be paid for by a request the cap then refuses with nothing charged.
+  const cap =
+    body.build === true && (override === "app" || override === "slides") && typeof body.maxCredits === "number" && Number.isSafeInteger(body.maxCredits) && body.maxCredits > 0
+      ? body.maxCredits
+      : null;
 
   // "Fix the spelling" sent with the picture above fixes the words in that picture. With a photo the
   // user attached, the same words are about the photo's own text, so they get words.
@@ -1182,8 +1213,9 @@ export async function POST(request: Request) {
    * may spend. A Claude engine's hold also pays for the helpers that already ran, and extraCents for
    * one still to run; a priced job's listed price already includes them (see CHECK_ALLOWANCE_CENTS).
    * forecast: priced with the live forecast, as the router's "weather" answer runs (see toolsFor).
+   * balance: what a Claude reply's hold is planned from (the user's credits; see Fix all's price below).
    */
-  const planFor = async (engine: Engine, editing: boolean, extraCents = 0, forecast = false) => {
+  const planFor = async (engine: Engine, editing: boolean, extraCents = 0, forecast = false, balance = available) => {
     const helperCents = helperSpend() + extraCents;
     // The model whose price was agreed to, while it's still there (otherwise the new price is asked about).
     const wanted = decided?.engine === engine && decided.model ? decided.model : body.model;
@@ -1234,7 +1266,7 @@ export async function POST(request: Request) {
           const choice = claudeChoice(engine, level, { careful });
           const inputTokens = (await countOnce(choice.model, systemFor(engine, preferences, history, prompting, withTools), connectTools(withTools))) + dataRoom(withTools);
           const scale = claudePrice(choice.model, inputTokens).output / claudePrice(defaultChoice(engine).model, inputTokens).output;
-          return { choice, tools: withTools, hold: planHold(engine, choice.model, inputTokens, available, scale, helperCents, toolPlan(engine, withTools)) };
+          return { choice, tools: withTools, hold: planHold(engine, choice.model, inputTokens, balance, scale, helperCents, toolPlan(engine, withTools)) };
         };
         // The level picked, or Auto's when the user can't pay for the one picked; Research the user
         // picked searches quickly when their credits pay only for that. fellBack: either happened.
@@ -1405,6 +1437,17 @@ export async function POST(request: Request) {
   }
   const { picked, model, live, metered, preferences, priceCents, levelWhy, tools } = plan;
   let { held, needed, budget, claudeRun } = plan;
+  // Fix all's price: the credits this request holds when it's sent as it is now (what it needs at least,
+  // and the balance it's held from), worked out above exactly as for sending it. Nothing is run, charged
+  // or saved. A count Anthropic couldn't make is a guess, which is never shown as a price. With fewer
+  // credits than it needs, nothing would be held, and the most it can cost is what it holds once there
+  // are enough: planned again as if the balance paid for all of it (the level and tools are chosen on
+  // the real balance, and what it needs doesn't change), never the least it needs.
+  if (quote) {
+    if (countFailed) return Response.json({ error: t("Flash is busy right now. Please try again in a moment.") }, { status: 503 });
+    if (live && metered && available < needed) ({ held } = await planFor(engine, editing, 0, false, Number.MAX_SAFE_INTEGER));
+    return Response.json({ held: live && metered ? held : 0, needed, available });
+  }
   // Out of credits: chat-style requests and images fall back to free models,
   // up to a daily allowance per user.
   let free: FreeLane | null = null;
@@ -1481,6 +1524,12 @@ export async function POST(request: Request) {
   // A Claude reply whose length couldn't be counted isn't run: nothing is charged or sent.
   if (countFailed && metered && !free) {
     return Response.json({ error: t("Flash is busy right now. Please try again in a moment.") }, { status: 503 });
+  }
+  // Never more than Fix all said: a request that would now hold more (its chat, level, instructions or the
+  // balance changed since) isn't sent, and nothing is charged. One within it holds what any would, and
+  // settling never charges more than the hold.
+  if (cap !== null && held > cap) {
+    return Response.json({ error: t(OVER_CAP, { credits: cap.toLocaleString(t.locale) }), code: "over_cap" }, { status: 409 });
   }
   const freeUse = { provider: "", model: "" };
   const freeAudio: { reserved?: number } = {};

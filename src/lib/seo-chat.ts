@@ -2,7 +2,8 @@ import type { UIMessage } from "./store.ts";
 
 /*
  * Where a change the search check (SEO) asks for would go, in the chat that built the site (see
- * fixSite in Flash.tsx). Kept apart from seo-fix.ts, which reads the page and loads only when used.
+ * fixSite in Flash.tsx), and the price its panel says. Kept apart from seo-fix.ts, which reads the page
+ * and loads only when used.
  */
 
 /**
@@ -70,4 +71,89 @@ export async function chatForFix(
   if (!server || unsaved) return { messages: here, busy: stillAnswering(here) || (server ? stillAnswering(server) : false), adopt: false };
   const same = server.length === here.length && server.every((m, i) => saved(m) === saved(here[i]));
   return { messages: server, busy: stillAnswering(server), adopt: !same };
+}
+
+/**
+ * What Fix all's change would hold if it were sent now, worked out by the chat route itself from the
+ * very request Send makes (quote, see the chat route): credits is the most it can be charged, needed what
+ * it needs at least, and available the balance it's held from. With fewer credits than it needs, credits
+ * is what it holds once there are enough, never the least it needs. Null when it can't be worked out
+ * (offline, the count failed, an error, or nothing would be held), so the panel says the usual price
+ * instead of a number Flash didn't work out. post is fetch, or a stand-in in tests.
+ */
+export type FixHold = { credits: number; needed: number; available: number };
+
+export async function fixAllHold(body: object, post: typeof fetch = fetch): Promise<FixHold | null> {
+  try {
+    const res = await post("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, quote: true }) });
+    if (!res.ok) return null;
+    const { held, needed, available } = (await res.json()) as Record<string, unknown>;
+    const count = (n: unknown): n is number => typeof n === "number" && Number.isSafeInteger(n) && n >= 0;
+    return count(held) && held > 0 && count(needed) && count(available) ? { credits: held, needed, available } : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fix all's price looked at again when Send is pressed, on the chat its change is about to go in, once
+ * the list the panel showed would still go (see fixSite in Flash.tsx). cap: the most the panel said, if
+ * it said one. quote: what that change would hold now (fixAllHold for the request Send makes). When it
+ * would hold more than cap (a reply Flash was still writing in that chat when the panel priced it has
+ * finished since, or the level or the credits changed), the answer is the list with what it holds now,
+ * for the panel to say before Send is pressed again: sent with cap, the chat route would refuse it. Null
+ * to send it: it holds no more than was said, nothing was said, or it can't be worked out now (the chat
+ * route still refuses it, with nothing charged, if it would hold more).
+ */
+export async function pricedAgain<L extends { sent: unknown[]; left: number }>(
+  cap: number | undefined,
+  listed: L,
+  quote: () => Promise<FixHold | null>,
+): Promise<{ sent: L["sent"]; left: number; hold: FixHold } | null> {
+  if (cap === undefined) return null;
+  const hold = await quote();
+  return hold && hold.credits > cap ? { sent: listed.sent, left: listed.left, hold } : null;
+}
+
+/**
+ * The price a change's panel says before Send. Fix it and Add it say what a change typically costs
+ * (typical, the pricing table's), with the balance when it's below that (low). Fix all says the most its
+ * change can be charged once that's worked out (most), with the balance when it's below what the change
+ * needs (short), and while it's being worked out, that (pending); when it can't be, it says what Fix it
+ * says. balance is the owner's credits, when known.
+ */
+export type FixPrice =
+  | { kind: "pending" }
+  | { kind: "most"; credits: number; short?: number }
+  | { kind: "typical"; credits: number; low?: number };
+
+export function fixPrice(all: boolean, hold: FixHold | null | undefined, typical: number, balance?: number): FixPrice {
+  if (all && hold === undefined) return { kind: "pending" };
+  if (all && hold) return { kind: "most", credits: hold.credits, ...(hold.available < hold.needed && { short: hold.available }) };
+  return { kind: "typical", credits: typical, ...(balance !== undefined && balance < typical && { low: balance }) };
+}
+
+/**
+ * Whether a change's panel can send it now (see SeoView's Send and its button): Fix all only once its price
+ * is worked out, or couldn't be (hold null), so it never goes at a price the panel didn't say, nor with no
+ * cap while one is still being worked out. Fix it and Add it at once.
+ */
+export function canSend(all: boolean, hold: FixHold | null | undefined): boolean {
+  return !all || hold !== undefined;
+}
+
+/**
+ * What Send adds to a change the panel sends (see SiteFix): for Fix all, that it is Fix all, and the most
+ * the panel said it can be charged (cap) when it said one. Nothing for Fix it and Add it.
+ */
+export function fixAllTerms(all: boolean, hold: FixHold | null | undefined): { all?: true; cap?: number } {
+  return all ? { all: true, ...(hold && { cap: hold.credits }) } : {};
+}
+
+/**
+ * The message Flash sends for a change the panel sent (see sendFix in Flash.tsx): with Fix all's cap, so
+ * the chat route never holds or charges more than the panel said, on Retry too (see its maxCredits).
+ */
+export function fixMessage(message: UIMessage, fix: { cap?: number }): UIMessage {
+  return fix.cap ? { ...message, cap: fix.cap } : message;
 }
