@@ -507,10 +507,15 @@ test("handled events are forgotten after 30 days, and an unpublished app's order
   const day = 86_400_000;
   const at = Date.now() + 2 * day;
   await run("INSERT INTO stripe_events (id, created_at) VALUES ('evt_old', ?), ('evt_recent', ?)", [at - 31 * day, at - 29 * day]);
+  // The same batch also prunes the track route's rate limits past their minute (#121), and no others.
+  await run("INSERT INTO rate_limits (key, count, reset_at) VALUES ('track-app:cake-1', 3, ?), ('funnel:someone', 1, ?)", [at - 60_000, at - 60_000]);
   forgetServerMemory();
   assert.equal(await pruneDaily(at), true);
   assert.equal(await n("SELECT COUNT(*) AS n FROM stripe_events WHERE id = 'evt_old'"), 0);
   assert.equal(await n("SELECT COUNT(*) AS n FROM stripe_events WHERE id = 'evt_recent'"), 1);
+  assert.equal(await n("SELECT COUNT(*) AS n FROM rate_limits WHERE key = 'track-app:cake-1'"), 0);
+  assert.equal(await n("SELECT COUNT(*) AS n FROM rate_limits WHERE key = 'funnel:someone'"), 1, "only the track route's");
+  await run("DELETE FROM rate_limits WHERE key = 'funnel:someone'");
 
   assert.equal(await unpublishSite("u1", "cake-1"), true);
   assert.equal(await n("SELECT COUNT(*) AS n FROM site_orders WHERE site_slug = 'cake-1'"), 0);

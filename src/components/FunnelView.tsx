@@ -76,8 +76,11 @@ function sumCounts(list: FunnelCounts[]): FunnelCounts {
 }
 
 /**
- * Why some of the funnel's days are incomplete: counting paused at the owner's daily limit today or
- * on earlier days, the apps' own steps past theirs, or one connection bringing many new people.
+ * Why some of the funnel's days are incomplete: counting paused at the owner's daily limit today (or
+ * earlier today, under the plan they had before), or on earlier days, the apps' own steps past
+ * theirs, or one connection bringing many new people. A free owner whose counting paused on 2 or
+ * more of the last 7 days is offered an upgrade to count more visitors, even on a day it hasn't
+ * paused yet.
  */
 export function FunnelNotes({ stats, onPlans }: { stats: FunnelStats; onPlans?: () => void }) {
   const t = useT();
@@ -85,10 +88,30 @@ export function FunnelNotes({ stats, onPlans }: { stats: FunnelStats; onPlans?: 
   const restart = new Date(Date.parse(`${stats.today}T00:00:00Z`) + DAY);
   const time = new Intl.DateTimeFormat(t.locale, { hour: "numeric", minute: "2-digit" }).format(restart);
   const tomorrow = restart.toDateString() !== new Date().toDateString();
-  const earlier = stats.paused.filter((p) => !(p.day === stats.today && stats.pausedToday !== null));
-  const stepsEarlier = stats.stepsPaused.filter((p) => !(p.day === stats.today && stats.stepsPausedToday !== null));
+  // Today's marks are today's notes. One with counting going on today was left by a plan that counted
+  // less: counting paused earlier today, and the plan bought since counts more.
+  const earlier = stats.paused.filter((p) => p.day !== stats.today);
+  const stepsEarlier = stats.stepsPaused.filter((p) => p.day !== stats.today);
+  const resumed = stats.pausedToday === null ? stats.paused.find((p) => p.day === stats.today) : undefined;
+  const stepsResumed = stats.stepsPausedToday === null ? stats.stepsPaused.find((p) => p.day === stats.today) : undefined;
   const more = (n: number) => (n === 1 ? t("…and on 1 other day.") : t("…and on {count} other days.", { count: count(n, t) }));
   const notes: string[] = [];
+  if (resumed) {
+    notes.push(
+      t(
+        "Earlier today, counting paused at {count} people across your apps, your previous plan's daily limit. Your new plan counts more. People who came while it was paused aren't in today's numbers, and their forms, sign-ups and checkouts show as Not matched.",
+        { count: count(resumed.people, t) },
+      ),
+    );
+  }
+  if (stepsResumed) {
+    notes.push(
+      t(
+        "Earlier today, your apps' own steps stopped counting at {count}, your previous plan's daily limit. Your new plan counts more. Steps your apps sent while counting was paused aren't in today's numbers.",
+        { count: count(stepsResumed.steps, t) },
+      ),
+    );
+  }
   // App steps start again with people, at midnight UTC.
   const steps =
     stats.stepsPausedToday === null
@@ -127,7 +150,9 @@ export function FunnelNotes({ stats, onPlans }: { stats: FunnelStats; onPlans?: 
       ),
     );
   }
-  if (stats.pausedToday === null && !steps && !notes.length) return null;
+  // On the free plan, paused on 2 or more of the last 7 days (see funnelStats).
+  const often = stats.pausedWeek;
+  if (stats.pausedToday === null && !steps && !notes.length && !often) return null;
   const paused =
     stats.pausedToday === null
       ? ""
@@ -141,7 +166,14 @@ export function FunnelNotes({ stats, onPlans }: { stats: FunnelStats; onPlans?: 
             { count: count(stats.pausedToday, t), time },
           );
   const numbers = { count: count(PLAN_PEOPLE.lite, t), most: count(PLAN_PEOPLE.agency, t) };
-  // A paid plan raises both daily limits: said once, after the people note, or after the steps note alone.
+  const morePeople = t("Paid plans count more people: {count} a day on Lite, up to {most} on Agency.", numbers);
+  // Counting paused on several days this week, but not (yet) today: said first, with the offer.
+  const week =
+    often && stats.pausedToday === null
+      ? t("Your apps reached the free plan's {count} people a day on {days} of the last 7 days.", { count: count(often.people, t), days: count(often.days, t) })
+      : "";
+  // A paid plan raises both daily limits: said once, after today's people note, or after the week's,
+  // or after the steps note alone. The button names what it brings when counting keeps pausing.
   const upsell = (note: string, offer: string) =>
     stats.free && (
       <>
@@ -150,8 +182,9 @@ export function FunnelNotes({ stats, onPlans }: { stats: FunnelStats; onPlans?: 
         {onPlans && (
           <>
             {afterSentence(offer)}
-            <button onClick={onPlans} className="text-primary-soft hover:underline">
-              {t("Upgrade plan")}
+            {/* A label too long for the line (French, Russian...) wraps aligned with the note, not centred. */}
+            <button onClick={onPlans} className="text-start text-primary-soft hover:underline">
+              {often ? t("Upgrade to count more visitors") : t("Upgrade plan")}
             </button>
           </>
         )}
@@ -159,16 +192,22 @@ export function FunnelNotes({ stats, onPlans }: { stats: FunnelStats; onPlans?: 
     );
   return (
     <div role="status" className="space-y-2 text-sm text-gold-soft">
+      {week && (
+        <p>
+          {week}
+          {upsell(week, morePeople)}
+        </p>
+      )}
       {paused && (
         <p>
           {paused}
-          {upsell(paused, t("Paid plans count more people: {count} a day on Lite, up to {most} on Agency.", numbers))}
+          {upsell(paused, morePeople)}
         </p>
       )}
       {steps && (
         <p>
           {steps}
-          {!paused && upsell(steps, t("Paid plans count more app steps: {count} a day on Lite, up to {most} on Agency.", numbers))}
+          {!paused && !week && upsell(steps, t("Paid plans count more app steps: {count} a day on Lite, up to {most} on Agency.", numbers))}
         </p>
       )}
       {/* By place: two notes can say the same ("…and on 1 other day."), and the list is made anew each time. */}

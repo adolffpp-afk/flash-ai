@@ -18,7 +18,12 @@ export const PLAN_SITES: Record<string, number> = { lite: 25, pro: 60, power: 12
  * views still count, but new people that day aren't counted, so their forms, sign-ups and checkouts
  * show as not matched. A team member's apps count against the member's own plan.
  */
-export const FREE_PEOPLE_PER_DAY = 10_000;
+export const FREE_PEOPLE_PER_DAY = 1_000;
+/**
+ * The app steps (flashDB.track) counted each UTC day across all of one owner's apps on the free plan:
+ * a tenth of its people. A paid plan's are its number of people (PLAN_PEOPLE).
+ */
+export const FREE_STEPS_PER_DAY = FREE_PEOPLE_PER_DAY / 10;
 export const PLAN_PEOPLE: Record<string, number> = {
   lite: 20_000,
   pro: 50_000,

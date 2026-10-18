@@ -8,12 +8,15 @@
  * orders go into daily totals per source and currency (site_revenue); while a checkout is open,
  * its buyer's source waits beside it (site_checkouts), with nothing about the buyer.
  */
-import { all, db, one, run } from "./db.ts";
+import { createHmac } from "node:crypto";
+import { all, db, now, one, run } from "./db.ts";
 import { domainsForSite } from "./domains.ts";
+import { countOf, fitsWithin, takeAfter } from "./limits.ts";
 import {
   dayOf,
   daysBetween,
   freePeople,
+  freeSteps,
   funnelSince,
   giveSteps,
   isRobot,
@@ -21,9 +24,9 @@ import {
   pastKey,
   peopleCap,
   peoplePerDay,
-  planFrom,
   stepsNetworkOf,
   takeSteps,
+  unmark,
   visitorCode,
   type Statement,
 } from "./visits.ts";
@@ -31,6 +34,47 @@ import { MAX_STEP_NAMES, MAX_TRACKED, OTHER, UNMATCHED, type Touch } from "../tr
 import { SITE_URL } from "../../app/site.ts";
 
 const DAY = 86_400_000;
+const MINUTE = 60_000;
+
+/**
+ * The track route's rate limit on the free plan: app steps counted a minute from one internet
+ * connection to an app (under a code made with the day's key for that app, never its address, so
+ * nothing ties one connection's use of two apps together) and to an app from everyone. Steps, not
+ * requests, as one request can carry 10 of them. Both are read first, for how many fit, and taken in
+ * the transaction that writes the person's list of steps, only while they still fit (see count): a
+ * request turned away, also by requests at the same moment, or one that loses the race for the list
+ * to another of the same person's (the same step sent twice at once, on any server), writes nothing,
+ * and the counts never pass the limits. Taken only for steps that count: two rows for each request
+ * whose steps count, so at most for each of the free plan's 100 app steps a day. Paid plans' apps
+ * aren't limited: their daily numbers stay as they are, and counting it would add those rows to each
+ * of their requests.
+ * The daily prune deletes them (see visits.ts).
+ */
+export const TRACK_STEPS_PER_CONNECTION = 10;
+export const TRACK_STEPS_PER_APP = 30;
+
+const trackLimits = (slug: string, network: string): [string, number][] => {
+  const code = createHmac("sha256", network).update(`track|${slug}`).digest("hex").slice(0, 24);
+  return [
+    [`track-app:${slug}`, TRACK_STEPS_PER_APP],
+    [`track-net:${slug}:${code}`, TRACK_STEPS_PER_CONNECTION],
+  ];
+};
+
+/**
+ * How many of `wanted` app steps fit under the track route's rate limit, read before anything is
+ * written; the list of the person's steps takes them only while they still fit (see count). Never
+ * throws: a limit not read counts none.
+ */
+async function trackRoom(limits: [string, number][], wanted: number): Promise<number> {
+  try {
+    const counts = await Promise.all(limits.map(([key]) => countOf(key)));
+    return Math.max(0, Math.min(wanted, ...limits.map(([, max], i) => max - counts[i])));
+  } catch (err) {
+    console.error("[flash] track limit not read", err);
+    return 0;
+  }
+}
 
 /** A step Flash counts: a form sent, a sign-up, a checkout started, or one the app reported ("app:<name>"). */
 export type Step = "form" | "signup" | "checkout" | `app:${string}`;
@@ -116,16 +160,17 @@ const countUp = (slug: string, day: string, step: string, t: Touch): Statement =
  * So do those from the owner's address and browser that day: the owner's own, as their test orders
  * are not matched too, or someone's on the same Wi-Fi with the same browser, whose sends are never
  * lost. Never under a source. Never throws: stats must not break a form, a sign-up or a sale.
+ * rateLimit is the track route's, for app steps on the free plan (see trackRoom).
  */
-export async function countSteps(slug: string, match: Match, list: Step[], at = Date.now()): Promise<void> {
+export async function countSteps(slug: string, match: Match, list: Step[], at = Date.now(), opts: { rateLimit?: boolean } = {}): Promise<void> {
   try {
-    await count(slug, match, list, at, true);
+    await count(slug, match, list, at, true, Boolean(opts.rateLimit));
   } catch (err) {
     console.error("[flash] steps not counted", err);
   }
 }
 
-async function count(slug: string, match: Match, list: Step[], at: number, retry: boolean): Promise<void> {
+async function count(slug: string, match: Match, list: Step[], at: number, retry: boolean, rateLimit: boolean): Promise<void> {
   if (match.kind === "robot") return;
   const today = dayOf(at);
   if (match.kind === "none" || match.kind === "owner") {
@@ -143,6 +188,9 @@ async function count(slug: string, match: Match, list: Step[], at: number, retry
   const counting: { name: string; isNew: boolean }[] = [];
   let budget = 0;
   let owner = "";
+  let paid = false;
+  let limits: [string, number][] = [];
+  let marking = false;
   if (app.length) {
     // The gates, read before anything is written, so a name that isn't counted writes nothing: the
     // names in the app's code (see stepsInHtml), the names it reported that day (at most 10), and how
@@ -160,17 +208,20 @@ async function count(slug: string, match: Match, list: Step[], at: number, retry
     app = app.filter((name) => allowed.includes(name)).slice(0, MAX_TRACKED - tried);
     const names = steps(gate.names);
     const used = Number(gate.used ?? 0);
-    // The plan is read only when this request could come near the free number.
-    budget = used + app.length < planFrom() ? freePeople() : (await peopleCap(gate.owner, at)).cap;
+    // Always by the owner's plan (read at most every 15 minutes per server): the free plan's app steps,
+    // a tenth of its people, leave too little room to count by the free number until near it.
+    const plan = app.length ? await peopleCap(gate.owner, at) : { steps: freeSteps(), paid: false };
+    budget = plan.steps;
+    paid = plan.paid;
     let room = Math.max(0, budget - used);
     let known = names.length;
+    let full = false;
     for (const name of app) {
       const isNew = !names.includes(name);
       // An 11th name of the day isn't counted.
       if (isNew && known >= MAX_STEP_NAMES) continue;
       if (!room) {
-        const mark = markOnce(slug, "capped-app", budget, today);
-        if (mark) writes.push(mark);
+        full = true;
         break;
       }
       if (isNew) known++;
@@ -178,33 +229,68 @@ async function count(slug: string, match: Match, list: Step[], at: number, retry
       room--;
     }
     // Past what this server counts from the person's connection today, the rest aren't counted.
-    counting.splice(takeSteps(owner, match.network, counting.length, at));
+    counting.splice(takeSteps(owner, match.network, counting.length, at, paid));
+    // Nor, on the free plan, those past the track route's rate limit this minute.
+    if (counting.length && rateLimit && !paid) {
+      limits = trackLimits(slug, match.network);
+      const room = await trackRoom(limits, counting.length);
+      giveSteps(owner, match.network, counting.length - room);
+      counting.splice(room);
+    }
+    // The note that the day's app steps stopped counting, only when these reach the day's number (not
+    // when the limits above cut them short of it).
+    if (full && used + counting.length >= budget) {
+      const mark = markOnce(slug, "capped-app", budget, today);
+      if (mark) writes.push(mark);
+      marking = Boolean(mark);
+    }
   }
+  // This server's one note for the day, given back when this request doesn't write it, so the next
+  // request past the day's number does (this one's retry, or another's).
+  const giveMarkBack = () => {
+    if (marking) unmark(slug, "capped-app", today);
+  };
   const taken = counting.length;
   const fresh = [...builtIn, ...counting.map((x) => `app:${x.name}`)];
   const c = await db();
   if (!fresh.length) {
-    if (writes.length) await c.batch(writes, "write");
+    if (writes.length)
+      await c.batch(writes, "write").catch((err) => {
+        giveMarkBack();
+        throw err;
+      });
     return;
   }
-  // What the connection's place was taken for is given back when it isn't counted.
+  // What the connection's place was taken for is given back when it isn't counted, and so is the note.
   const orGiveBack = <R>(done: Promise<R>) =>
     done.catch((err) => {
       giveSteps(owner, match.network, taken);
+      giveMarkBack();
       throw err;
     });
-  // Written only if nobody changed the list since it was read, so two requests can't count one step twice.
-  const saved = await orGiveBack(
-    c.execute({
-      sql: "UPDATE site_people SET steps = ? WHERE site_slug = ? AND day = ? AND visitor = ? AND steps = ? RETURNING 1",
-      args: [JSON.stringify([...match.steps, ...fresh]), slug, match.day, match.visitor, JSON.stringify(match.steps)],
-    }),
+  // Written only if nobody changed the list since it was read, so two requests can't count one step
+  // twice; under the rate limit, only while its steps still fit, which are taken in the same
+  // transaction. So a request that loses the race, or is turned away at the same moment, takes and
+  // writes nothing, and tries once more with the list and the limit read again.
+  const t = now();
+  const fit = taken ? limits.map(([key, max]) => fitsWithin(key, max, taken, t)) : [];
+  const [saved] = await orGiveBack(
+    c.batch(
+      [
+        {
+          sql: `UPDATE site_people SET steps = ? WHERE site_slug = ? AND day = ? AND visitor = ? AND steps = ?${fit.map((f) => ` AND ${f.sql}`).join("")} RETURNING 1`,
+          args: [JSON.stringify([...match.steps, ...fresh]), slug, match.day, match.visitor, JSON.stringify(match.steps), ...fit.flatMap((f) => f.args)],
+        },
+        ...(fit.length ? [takeAfter(limits.map(([key]) => key), taken, MINUTE, t)] : []),
+      ],
+      "write",
+    ),
   );
   if (!saved.rows.length) {
     giveSteps(owner, match.network, taken);
-    if (!retry) return;
-    const again = await matchByCode(slug, match);
-    if (again) await count(slug, again, list, at, false);
+    giveMarkBack();
+    const again = retry ? await matchByCode(slug, match) : null;
+    if (again) await count(slug, again, list, at, false, rateLimit);
     return;
   }
   for (const s of builtIn) writes.push(countUp(slug, match.day, s, match.touch));
@@ -349,8 +435,14 @@ export type FunnelStats = {
   stepsPausedToday: number | null;
   /** How many new people are counted from one connection a day, when some day in the range passed it; else null. */
   netCapped: number | null;
-  /** The owner has no paid plan (known when counting is paused today). */
+  /** The owner has no paid plan (known when counting is paused today, or pausedWeek is given). */
   free: boolean;
+  /**
+   * On the free plan, when counting paused at its daily number of people on 2 or more of the last 7
+   * days (today among them) across the owner's apps: on how many, and that number, for the view's
+   * upgrade offer. Null otherwise, and always on a paid plan.
+   */
+  pausedWeek: { days: number; people: number } | null;
   /** The app's addresses, for tagged links. */
   addresses: string[];
   /** Nothing at all in the app's longest range (90 days, or since counting began): no visitor, step or order. */
@@ -358,6 +450,8 @@ export type FunnelStats = {
 };
 
 const MARKS = ["capped", "capped-app", "capped-net"];
+/** Days of the last 7 with counting paused, from which a free owner is offered an upgrade. */
+export const PAUSED_DAYS_OFFER = 2;
 const zero = (): FunnelCounts => ({ visitors: 0, form: 0, signup: 0, checkout: 0, orders: 0, revenue: [] });
 const addMoney = (list: Money[], currency: string, amount: number) => {
   const known = list.find((m) => m.currency === currency);
@@ -392,7 +486,8 @@ export async function funnelStats(slug: string, days: FunnelRange, at = Date.now
   const longest = firstOf(Math.max(...FUNNEL_RANGES));
   const shownDays = daysBetween(first, today) + 1;
   const people = await peoplePerDay(slug, first);
-  const [events, revenue, paid, owner, domains, any] = await Promise.all([
+  const week = Array.from({ length: 7 }, (_, i) => dayOf(at - i * DAY));
+  const [events, revenue, paid, owner, domains, any, pausedDays] = await Promise.all([
     // Marks stay per day; everything else is added up over the range.
     all<{ on_day: string; step: string; source: string; medium: string; campaign: string; n: number }>(
       `SELECT CASE WHEN step IN (${MARKS.map(() => "?").join(", ")}) THEN day ELSE '' END AS on_day, step, source, medium, campaign, SUM(n) AS n
@@ -418,6 +513,14 @@ export async function funnelStats(slug: string, days: FunnelRange, at = Date.now
            OR EXISTS (SELECT 1 FROM site_visitors WHERE site_slug = ? AND day >= ?)
            OR EXISTS (SELECT 1 FROM site_orders WHERE site_slug = ? AND created_at >= ?) AS any`,
       [slug, longest, ...MARKS, slug, longest, slug, Date.parse(`${longest}T00:00:00Z`)],
+    ),
+    // Days of the last 7 on which counting paused across the owner's apps: a mark on any of them at the
+    // free number or more. One look-up by key per app and day.
+    one<{ n: number }>(
+      `SELECT COUNT(DISTINCT e.day) AS n FROM sites s JOIN site_events e
+         ON e.site_slug = s.slug AND e.day IN (${week.map(() => "?").join(", ")}) AND e.step = 'capped' AND e.source = '' AND e.medium = '' AND e.campaign = ''
+       WHERE s.user_id = ? AND e.n >= ?`,
+      [...week, site.owner, freePeople()],
     ),
   ]);
 
@@ -507,16 +610,20 @@ export async function funnelStats(slug: string, days: FunnelRange, at = Date.now
     for (const c of s.campaigns) byMoney(c.revenue);
   }
 
-  // Today's limits, from the owner's count across their apps. Their plan is read only past the free number.
+  // Today's limits, from the owner's count across their apps. Their plan is read only past the free
+  // numbers, or when counting paused on 2 or more of the last 7 days, and read now, not as this server
+  // last read it, so a plan bought a moment ago is never offered again.
   let pausedToday: number | null = null;
   let stepsPausedToday: number | null = null;
   let free = false;
-  const [counted, steps] = [Number(owner?.people ?? 0), Number(owner?.steps ?? 0)];
-  if (counted >= freePeople() || steps >= freePeople()) {
-    const plan = await peopleCap(site.owner, at);
+  let pausedWeek: FunnelStats["pausedWeek"] = null;
+  const [counted, steps, often] = [Number(owner?.people ?? 0), Number(owner?.steps ?? 0), Number(pausedDays?.n ?? 0)];
+  if (counted >= freePeople() || steps >= freeSteps() || often >= PAUSED_DAYS_OFFER) {
+    const plan = await peopleCap(site.owner, at, true);
     free = !plan.paid;
     if (counted >= plan.cap) pausedToday = plan.cap;
-    if (steps >= plan.cap) stepsPausedToday = plan.cap;
+    if (steps >= plan.steps) stepsPausedToday = plan.steps;
+    if (free && often >= PAUSED_DAYS_OFFER) pausedWeek = { days: often, people: plan.cap };
   }
   const newest = <T extends { day: string }>(list: T[]) => list.sort((a, b) => b.day.localeCompare(a.day));
   const base = (process.env.FLASH_APP_URL || SITE_URL).replace(/\/+$/, "");
@@ -540,6 +647,7 @@ export async function funnelStats(slug: string, days: FunnelRange, at = Date.now
     stepsPausedToday,
     netCapped,
     free,
+    pausedWeek,
     addresses: [`${base}/p/${slug}`, ...domains.map((d) => `https://${d}/`)],
     empty: !Number(any?.any),
   };
