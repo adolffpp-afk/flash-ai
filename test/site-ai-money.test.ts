@@ -356,6 +356,54 @@ test("however often Claude is cut off, an app's failed answers stop at its daily
   assert.deepEqual(await today("cafe"), day);
 });
 
+test("an answer a server stopped in the middle of (a crash or a restart) is settled to 0 by a later question: the owner pays nothing for it, and Flash's cost is logged at the most it can be", async () => {
+  const { db } = await import("../src/lib/server/db.ts");
+  await saveAiSettings("shop", true, 500);
+  await setBalance("owner", 500);
+  // What a server that stopped while Claude answered leaves: the question's hold, never settled, and
+  // its place in the day's budget. One from longer ago than any question runs, and one that may still
+  // be running on another server.
+  const left = Number(await charge("owner", 3, 'AI in "Bakery"', { keepTopUpLevel: true }));
+  const running = Number(await charge("owner", 4, 'AI in "Bakery"', { keepTopUpLevel: true }));
+  await run("UPDATE credit_ledger SET created_at = ? WHERE id = ?", [Date.now() - 16 * 60_000, left]);
+  const [day, rows] = [await today(), await usageCount()];
+  const client = await db();
+  const execute = client.execute.bind(client);
+  const sql: string[] = [];
+  client.execute = ((s: { sql: string }, ...rest: unknown[]) => {
+    if (typeof s === "object" && /^SELECT .* FROM credit_ledger WHERE keeps_level = 1/.test(s.sql)) sql.push(s.sql);
+    return (execute as (...a: unknown[]) => unknown)(s, ...rest);
+  }) as typeof client.execute;
+  try {
+    assert.equal((await ask()).status, 200);
+  } finally {
+    client.execute = execute;
+  }
+  const hold = async (id: number) => one<{ amount: number; settled_at: number }>("SELECT amount, settled_at FROM credit_ledger WHERE id = ?", [id]);
+  const settled = await hold(left);
+  assert.equal(Number(settled?.amount), 0, "the owner pays nothing for it");
+  assert.ok(Number(settled?.settled_at) > 0);
+  assert.deepEqual(await hold(running), { amount: -4, settled_at: 0 }, "one that may still be running is left alone");
+  const logged = await one<{ n: number; credits: number; cents: number; ok: number }>(
+    "SELECT COUNT(*) AS n, SUM(credits) AS credits, SUM(cost_cents) AS cents, MAX(ok) AS ok FROM usage WHERE rowid > (SELECT MAX(rowid) - 2 FROM usage) AND ok = 0",
+  );
+  assert.equal(await usageCount(), rows + 2, "the new answer, and the one left");
+  assert.deepEqual([Number(logged?.n), Number(logged?.credits), Number(logged?.ok)], [1, 0, 0]);
+  assert.ok(Number(logged?.cents) > 0 && Number(logged?.cents) * MARKUP <= 3, `${logged?.cents}¢ within its 3-credit hold`);
+  const answered = await one<{ credits: number }>("SELECT credits FROM usage WHERE ok = 1 ORDER BY rowid DESC LIMIT 1");
+  assert.equal(await balance(), 500 - 4 - Number(answered?.credits));
+  // Claude may still have made it, so it keeps its place in the day's budget, where it already is.
+  assert.deepEqual(await today(), { used: day.used + Number(answered?.credits), asked: day.asked + 1 });
+  // Settled once: the next question logs only its own answer.
+  assert.equal((await ask()).status, 200);
+  assert.equal(await usageCount(), rows + 3);
+  // Turso bills rows read: looking for them reads only the holds still open, by index.
+  assert.equal(sql.length, 1, sql.join("\n"));
+  const plan = (await (await db()).execute({ sql: `EXPLAIN QUERY PLAN ${sql[0]}`, args: [0] })).rows.map((r) => String(r.detail));
+  assert.ok(plan.some((d) => /USING (COVERING )?INDEX credit_ledger_open_app_holds/.test(d)), plan.join("\n"));
+  await setBalance("owner", 500);
+});
+
 test("a visitor who closes the page while Claude answers can't stop the call: the route never hands it the request's signal, so the answer is charged at what it used", async () => {
   await saveAiSettings("shop", true, 500);
   await setBalance("owner", 500);

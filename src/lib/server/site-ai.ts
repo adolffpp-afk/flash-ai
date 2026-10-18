@@ -2,13 +2,14 @@
  * AI inside a published app: window.flashAI.ask("…"). The app's owner pays for it with their Flash
  * credits, so it is off until they turn it on, and they set how many credits it may use in a day.
  * Nothing here runs at a loss: every answer is charged at Flash's usual rate, held before the call
- * and settled to what it really cost. A failed answer costs the owner nothing; one Claude may still
- * have made (and billed) keeps its hold in the day's budget, so the most Flash can lose on an app in
- * a day is that app's daily budget.
+ * and settled to what it really cost. A failed answer costs the owner nothing, even one a server
+ * stopped in the middle of; one Claude may still have made (and billed) keeps its hold in the day's
+ * budget, so the most Flash can lose on an app in a day is that app's daily budget.
  */
 import Anthropic from "@anthropic-ai/sdk";
-import { one, run, now } from "./db.ts";
-import { charge, logUsage, settle, spendable, topUpLevel } from "./credits.ts";
+import { all, one, run, now } from "./db.ts";
+import { HOLD_MINUTES, charge, logUsage, settle, spendable, topUpLevel } from "./credits.ts";
+import { afterResponse } from "./after-response.ts";
 import { overLimit } from "./limits.ts";
 import { CHAT_MODEL, claudeConfigured, getClient, mayHaveRun } from "../engines/claude.ts";
 import { MARKUP, callMaxCents, claudeCostCents, claudePrice, creditsFor, worstTokens } from "../credits.ts";
@@ -135,6 +136,26 @@ async function giveBack(slug: string, d: string, credits: number, asked = false)
 const fail = (error: string, status: number): AiAnswer => ({ status, body: { error } });
 
 /**
+ * Settles to 0 the holds a server left when it stopped in the middle of an answer (a crash, a
+ * restart, or the platform ending the function), which nothing else would settle: the owner pays
+ * nothing for a failed answer. Claude may still have made it, so it is logged at what its hold is
+ * worth, the most it can cost, and it keeps its place in that day's budget like any failed answer.
+ */
+async function settleLeftHolds(): Promise<void> {
+  const left = await all<{ id: number; user_id: string; actor: string | null; amount: number }>(
+    "SELECT id, user_id, actor, amount FROM credit_ledger WHERE keeps_level = 1 AND settled_at = 0 AND created_at < ?",
+    [now() - HOLD_MINUTES * 60_000],
+  );
+  for (const hold of left) {
+    // Once, when two servers find it.
+    const r = await run("UPDATE credit_ledger SET amount = 0, settled_at = ? WHERE id = ? AND settled_at = 0", [now(), hold.id]);
+    if (r.rowsAffected !== 1) continue;
+    const costCents = -Number(hold.amount) / MARKUP;
+    await logUsage({ userId: hold.actor ?? hold.user_id, engine: "text", model: "app AI", provider: "anthropic", credits: 0, costCents, ok: false });
+  }
+}
+
+/**
  * One question from a published app. `instructions` is the app's own wording for what the AI
  * should do; `prompt` is whatever the person using the app typed, which is never trusted to
  * change those instructions. waitMs: how long the whole answer is waited for (ANSWER_TIMEOUT_MS).
@@ -157,6 +178,8 @@ export async function askSiteAi(
   if (!claudeConfigured()) return fail("The AI isn't available right now. Please try again later.", 503);
   // One person can't spend the owner's whole day in a minute.
   if (await overLimit(`site-ai-ip:${slug}:${ip}`, 20, HOUR)) return fail("You've asked a lot just now. Please wait a few minutes.", 429);
+  // Once the answer has gone, so the visitor doesn't wait for it.
+  await afterResponse(() => settleLeftHolds().catch((err: unknown) => console.error("[flash] settling app AI holds left open failed", err)));
 
   // The hold is what this question can cost at most. When what is left of today's budget or the owner's
   // credits is less, the answer is kept shorter to fit, so the last credits of a day still answer.
@@ -193,7 +216,7 @@ export async function askSiteAi(
       { timeout: waitMs, maxRetries: 0, signal: AbortSignal.timeout(waitMs) },
     );
   } catch (err) {
-    // The owner never pays for a failed answer.
+    // The owner never pays for a failed answer (see settleLeftHolds for one a server stopped in).
     await settle(chargeId, 0);
     if (mayHaveRun(err)) {
       // One that timed out, lost its connection or was cut off part way may still have been made, and

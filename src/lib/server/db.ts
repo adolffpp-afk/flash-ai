@@ -1032,6 +1032,8 @@ async function init(c: Client) {
   await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_ref_code ON users(ref_code) WHERE ref_code IS NOT NULL");
   await c.execute("CREATE INDEX IF NOT EXISTS users_referred_by ON users(referred_by)");
   await c.execute("CREATE INDEX IF NOT EXISTS credit_ledger_actor ON credit_ledger(actor)");
+  // The holds of app AI answers still open, so finding the ones a stopped server left reads only them (see site-ai.ts).
+  await c.execute("CREATE INDEX IF NOT EXISTS credit_ledger_open_app_holds ON credit_ledger(created_at) WHERE keeps_level = 1 AND settled_at = 0");
   await c.execute("CREATE INDEX IF NOT EXISTS site_records_owner ON site_records(site_slug, owner, collection, created_at)");
   await c.execute("CREATE INDEX IF NOT EXISTS site_messages_contact ON site_messages(site_slug, contact_id)");
   // Each on its own, outside SCHEMA's one batch, so a database without FTS5 still gets everything else.

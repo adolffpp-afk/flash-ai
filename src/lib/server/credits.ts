@@ -72,7 +72,7 @@ export async function spendable(
 }
 
 // Longer than any request runs (the chat route's maxDuration is 800 seconds).
-const HOLD_MINUTES = 15;
+export const HOLD_MINUTES = 15;
 
 /**
  * The balance auto top-up compares with its level (see maybeAutoTopUp). A hold still running for
