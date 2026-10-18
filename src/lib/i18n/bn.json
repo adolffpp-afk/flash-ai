@@ -1711,6 +1711,7 @@
  "That's a lot of talking at once. Take a short break and try again.": "একসাথে অনেক কথা হয়ে গেছে। একটু বিরতি নিয়ে আবার চেষ্টা করুন।",
  "That's as far as this answer can go. Ask again to continue.": "এই উত্তর এর বেশি এগোতে পারবে না। চালিয়ে যেতে আবার জিজ্ঞেস করুন।",
  "The AI in {name} is out of credits": "{name}-এর AI-এর ক্রেডিট শেষ",
+ "The AI in {name} stopped at your auto top-up level": "{name}-এর AI আপনার অটো টপ আপ লেভেলে থেমে গেছে",
  "The AI provider charged for the work already done, so this used {credits} credits.": "যে কাজ হয়ে গেছে তার জন্য AI প্রোভাইডার চার্জ করেছে, তাই এতে {credits} ক্রেডিট খরচ হয়েছে।",
  "The Flash AI app isn't installed on any of your GitHub repositories. Connect again and pick the repositories it may use.": "আপনার কোনো GitHub রিপোজিটরিতে Flash AI অ্যাপ ইনস্টল করা নেই। আবার সংযোগ করুন এবং যে রিপোজিটরিগুলো এটি ব্যবহার করতে পারবে সেগুলো বেছে নিন।",
  "The action couldn't run.": "কাজটি চালানো যায়নি।",

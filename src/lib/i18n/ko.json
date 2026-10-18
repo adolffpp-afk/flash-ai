@@ -1711,6 +1711,7 @@
  "That's a lot of talking at once. Take a short break and try again.": "한 번에 너무 많이 말씀하셨어요. 잠시 쉬었다가 다시 시도해 주세요.",
  "That's as far as this answer can go. Ask again to continue.": "이 답변은 여기까지예요. 계속하려면 다시 물어보세요.",
  "The AI in {name} is out of credits": "{name}의 AI 크레딧이 모두 소진됐어요",
+ "The AI in {name} stopped at your auto top-up level": "{name}의 AI가 자동 충전 기준 금액에서 멈췄어요",
  "The AI provider charged for the work already done, so this used {credits} credits.": "AI 제공업체가 이미 완료된 작업에 대해 요금을 청구해서 {credits} 크레딧이 사용됐어요.",
  "The Flash AI app isn't installed on any of your GitHub repositories. Connect again and pick the repositories it may use.": "Flash AI 앱이 어떤 GitHub 저장소에도 설치되어 있지 않아요. 다시 연결하고 앱이 사용할 수 있는 저장소를 선택하세요.",
  "The action couldn't run.": "작업을 실행할 수 없었어요.",

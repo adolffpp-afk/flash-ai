@@ -1711,6 +1711,7 @@
  "That's a lot of talking at once. Take a short break and try again.": "一次說太多了。請稍微休息一下再試。",
  "That's as far as this answer can go. Ask again to continue.": "這個回答只能到這裡了。再問一次即可繼續。",
  "The AI in {name} is out of credits": "{name} 中的 AI 點數已用完",
+ "The AI in {name} stopped at your auto top-up level": "{name} 中的 AI 已在自動儲值線處暫停",
  "The AI provider charged for the work already done, so this used {credits} credits.": "AI 服務供應商已就完成的部分收費，因此這次用掉了 {credits} 點。",
  "The Flash AI app isn't installed on any of your GitHub repositories. Connect again and pick the repositories it may use.": "Flash AI 應用程式沒有安裝在你的任何 GitHub 儲存庫上。請重新連結，並選擇它可以使用的儲存庫。",
  "The action couldn't run.": "無法執行此動作。",

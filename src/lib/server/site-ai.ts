@@ -31,7 +31,8 @@ const VISITOR = { visitor: true, keepTopUpLevel: true };
 export const ANSWER_TIMEOUT_MS = 40_000;
 
 // answers: about how many answers the daily budget pays for. outOfCreditsAt: when it last turned a
-// visitor away because the owner is out of credits, 0 once it answers again. stopsAt: the owner's
+// visitor away because the owner is out of credits or at their auto top-up level (site_ai.at_level
+// says which), 0 once it answers again. stopsAt: the owner's
 // auto top-up level, where it stops while auto top-up can buy a pack (see charge's keepTopUpLevel), else 0.
 export type AiSettings = {
   enabled: boolean;
@@ -179,12 +180,13 @@ export async function askSiteAi(
   const maxTokens = Math.min(MAX_ANSWER_TOKENS, tokensFor(hold, chars));
   if (!(maxTokens >= MIN_ANSWER_TOKENS)) {
     if (owner >= left) return fail("This app's AI has used everything it may today. It works again tomorrow.", 429);
-    // The owner hears of it (the bell, and an email at most once a day), after this answer, when their
-    // credits really ran out: not when it stopped at their auto top-up level, which their AI panel shows.
+    // The owner hears of it (the bell, and an email at most once a day), after this answer: that it
+    // stopped at their auto top-up level when their whole balance would pay for the answer, else that
+    // their credits ran out. Stopped at the level can last: auto top-up buys only below it, and only
+    // this month's few times, and a visitor's question never sets it off.
     const all = (await spendable(site.user_id)).largest;
-    if (all < left && !(tokensFor(Math.min(worstCaseCredits(CHAT_MODEL, chars), left, all), chars) >= MIN_ANSWER_TOKENS)) {
-      noteAppAiOutOfCredits(slug, site.user_id, site.title);
-    }
+    const atLevel = tokensFor(Math.min(worstCaseCredits(CHAT_MODEL, chars), left, all), chars) >= MIN_ANSWER_TOKENS;
+    if (atLevel || all < left) noteAppAiOutOfCredits(slug, site.user_id, site.title, atLevel);
     return fail("This app's AI is out of credits. Its owner can add more in Flash.", 402);
   }
   const reserved = await reserveToday(slug, hold, settings.dailyCredits);
@@ -196,8 +198,8 @@ export async function askSiteAi(
   const chargeId = await charge(site.user_id, hold, `AI in "${site.title}"`, VISITOR);
   if (chargeId === null) {
     await giveBack(slug, reserved, hold);
-    // As above: only when the owner's credits ran out, not at the level.
-    if ((await spendable(site.user_id)).largest < hold) noteAppAiOutOfCredits(slug, site.user_id, site.title);
+    // As above: stopped at the level while the whole balance pays for the hold, else out of credits.
+    noteAppAiOutOfCredits(slug, site.user_id, site.title, (await spendable(site.user_id)).largest >= hold);
     return fail("This app's AI is out of credits. Its owner can add more in Flash.", 402);
   }
   // Paid for again: the bell stops saying it turns visitors away. After the answer, so the visitor

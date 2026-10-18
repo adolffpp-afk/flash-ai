@@ -1711,6 +1711,7 @@
  "That's a lot of talking at once. Take a short break and try again.": "S-a vorbit mult dintr-odată. Ia o scurtă pauză și încearcă din nou.",
  "That's as far as this answer can go. Ask again to continue.": "Acest răspuns nu poate merge mai departe. Întreabă din nou ca să continui.",
  "The AI in {name} is out of credits": "AI-ul din {name} a rămas fără credite",
+ "The AI in {name} stopped at your auto top-up level": "AI-ul din {name} s-a oprit la pragul tău de reîncărcare automată",
  "The AI provider charged for the work already done, so this used {credits} credits.": "Furnizorul AI a taxat munca deja făcută, așa că s-au folosit credite: {credits}.",
  "The Flash AI app isn't installed on any of your GitHub repositories. Connect again and pick the repositories it may use.": "Aplicația Flash AI nu este instalată în niciunul dintre depozitele tale GitHub. Reconectează GitHub și alege depozitele pe care le poate folosi.",
  "The action couldn't run.": "Acțiunea nu a putut rula.",

@@ -1711,6 +1711,7 @@
  "That's a lot of talking at once. Take a short break and try again.": "Sa se anpil pale an menm tan. Pran yon ti poz epi eseye ankò.",
  "That's as far as this answer can go. Ask again to continue.": "Repons sa a pa ka ale pi lwen. Mande ankò pou kontinye.",
  "The AI in {name} is out of credits": "IA nan {name} pa gen kredi ankò",
+ "The AI in {name} stopped at your auto top-up level": "IA nan {name} kanpe nan nivo rechaj otomatik ou a",
  "The AI provider charged for the work already done, so this used {credits} credits.": "Founisè IA a fè peye pou travay ki te deja fèt, kidonk sa a itilize {credits} kredi.",
  "The Flash AI app isn't installed on any of your GitHub repositories. Connect again and pick the repositories it may use.": "App Flash AI a pa enstale sou okenn nan depo GitHub ou yo. Rekonekte GitHub epi chwazi depo li ka itilize yo.",
  "The action couldn't run.": "Aksyon an pa t ka kouri.",

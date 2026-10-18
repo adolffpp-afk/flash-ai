@@ -1711,6 +1711,7 @@
  "That's a lot of talking at once. Take a short break and try again.": "זה הרבה דיבור בבת אחת. כדאי לקחת הפסקה קצרה ולנסות שוב.",
  "That's as far as this answer can go. Ask again to continue.": "עד כאן התשובה הזו יכולה להגיע. אפשר לשאול שוב כדי להמשיך.",
  "The AI in {name} is out of credits": "נגמרו הקרדיטים של ה-AI ב-{name}",
+ "The AI in {name} stopped at your auto top-up level": "ה-AI ב-{name} נעצר בסף הטעינה האוטומטית שלך",
  "The AI provider charged for the work already done, so this used {credits} credits.": "ספק ה-AI חייב על העבודה שכבר נעשתה, ולכן נוצלו {credits} קרדיטים.",
  "The Flash AI app isn't installed on any of your GitHub repositories. Connect again and pick the repositories it may use.": "האפליקציה Flash AI לא מותקנת באף אחד ממאגרי ה-GitHub שלך. יש לחבר מחדש את GitHub ולבחור את המאגרים שהיא יכולה להשתמש בהם.",
  "The action couldn't run.": "לא ניתן היה לבצע את הפעולה.",

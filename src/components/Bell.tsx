@@ -164,7 +164,11 @@ export function Bell({ me, onSites, onCredits }: { me: Me; onSites: () => void; 
             <button key={`ai-${s.slug}`} role="menuitem" onClick={pick(onCredits)} className={row}>
               <Icon d={ICONS.sparkle} className="mt-0.5 h-[18px] w-[18px] shrink-0 text-amber-400 light:text-amber-600" />
               <span className="min-w-0 flex-1">
-                <span className="block text-zinc-100">{t("The AI in {name} is out of credits", { name: s.title || s.slug })}</span>
+                <span className="block text-zinc-100">
+                  {s.aiAtLevel
+                    ? t("The AI in {name} stopped at your auto top-up level", { name: s.title || s.slug })
+                    : t("The AI in {name} is out of credits", { name: s.title || s.slug })}
+                </span>
                 <span className="block text-xs text-zinc-500">{t("Visitors' questions aren't being answered. The rest of the app keeps working.")}</span>
               </span>
               <span className="shrink-0 text-xs text-zinc-500">{shortAgo(s.aiOutOfCredits ?? 0, now, t.locale)}</span>

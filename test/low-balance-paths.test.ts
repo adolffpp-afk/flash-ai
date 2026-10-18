@@ -12,10 +12,16 @@ import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 
-// A stand-in Claude for an app's AI: every answer costs a few credits.
+// A stand-in Claude for an app's AI: every answer costs a few credits. hold: answers wait until it is
+// released (arrived resolves once one is waiting).
+let hold: { arrived: () => void; released: Promise<void> } | null = null;
 const claude = createServer((req, res) => {
   req.resume();
-  req.on("end", () =>
+  req.on("end", async () => {
+    if (hold) {
+      hold.arrived();
+      await hold.released;
+    }
     res.writeHead(200, { "Content-Type": "application/json" }).end(
       JSON.stringify({
         id: "m",
@@ -27,8 +33,8 @@ const claude = createServer((req, res) => {
         stop_sequence: null,
         usage: { input_tokens: 4000, output_tokens: 3000 },
       }),
-    ),
-  );
+    );
+  });
 });
 await new Promise<void>((r) => claude.listen(0, "127.0.0.1", r));
 after(() => claude.close());
@@ -268,6 +274,32 @@ test("a visitor's question to an app's AI never buys its owner a pack, answered 
   await afterwards();
   assert.deepEqual(stripeCalls, ["/v1/payment_intents"]);
   assert.ok((await balance("shop")) > 500);
+});
+
+test("a visitor's answer that settles below the level (auto top-up turned on while it ran) never buys its owner a pack", async () => {
+  await user("shop2");
+  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES ('rolls', 'shop2', 'Rolls', '<p>', 0, 0)");
+  await give("shop2", 101);
+  await saveAiSettings("rolls", true, 1000);
+  stripeCalls.length = 0;
+  let arrived!: () => void;
+  let release!: () => void;
+  const waiting = new Promise<void>((r) => (arrived = r));
+  hold = { arrived, released: new Promise<void>((r) => (release = r)) };
+  try {
+    // Auto top-up off when the question's hold is taken, so it isn't kept above a level.
+    const asking = askSiteAi("rolls", { prompt: "When should I book?" }, "203.0.113.10");
+    await waiting;
+    await autoTopUpOn("shop2", 100);
+    release();
+    assert.equal((await asking).status, 200);
+  } finally {
+    hold = null;
+  }
+  await afterwards();
+  assert.ok((await balance("shop2")) < 100, `the answer settled below the level (${await balance("shop2")} left)`);
+  assert.deepEqual(stripeCalls, [], "nothing bought for a visitor");
+  assert.equal(to("shop2").length, 0, "and no email: auto top-up still buys, on the owner's own next request");
 });
 
 test("the alerts' daily share holds under a burst: 11 at once send 10, and 2 at once with one place left send 1", async () => {

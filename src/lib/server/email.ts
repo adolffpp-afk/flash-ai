@@ -170,6 +170,22 @@ export const EMAILS = {
       text: `${line}\n\nTop up in Flash: ${link}\n\n${ALERTS_OFF}`,
     };
   },
+  // The same when it stopped at the owner's auto top-up level (see site-ai.ts): their credits haven't run out.
+  appAiAtLevel: (site: string, link: string) => {
+    const name = site.replace(/[\r\n\t]+/g, " ").trim().slice(0, 80) || "your app";
+    const line = `Visitors are asking the AI in your app ${name}, but their questions aren't being answered: with auto top-up on, it stops when your balance gets down to your top-up level, so your visitors never set off a top-up. The rest of the app keeps working. Top up so it can answer them again.`;
+    return {
+      subject: `The AI in ${name.slice(0, 60)} stopped at your auto top-up level`,
+      html: layout(
+        `The AI in ${escapeHtml(name)} stopped at your auto top-up level`,
+        escapeHtml(line),
+        "Top up in Flash",
+        link,
+        ALERTS_OFF,
+      ),
+      text: `${line}\n\nTop up in Flash: ${link}\n\n${ALERTS_OFF}`,
+    };
+  },
   teamInvite: (inviter: string, link: string) => ({
     subject: `${inviter.slice(0, 60)} invited you to their Flash ∞ AI team`,
     html: layout(

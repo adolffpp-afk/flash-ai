@@ -1711,6 +1711,7 @@
  "That's a lot of talking at once. Take a short break and try again.": "هذا كلام كثير في وقت واحد. خذ استراحة قصيرة وحاول مرة أخرى.",
  "That's as far as this answer can go. Ask again to continue.": "هذا أقصى ما يمكن أن تصل إليه هذه الإجابة. اسأل مجددًا للمتابعة.",
  "The AI in {name} is out of credits": "نفد رصيد الذكاء الاصطناعي في {name}",
+ "The AI in {name} stopped at your auto top-up level": "توقف الذكاء الاصطناعي في {name} عند حد الشحن التلقائي",
  "The AI provider charged for the work already done, so this used {credits} credits.": "احتسب مزوّد الذكاء الاصطناعي تكلفة العمل المنجز، لذا استُخدم {credits} رصيد.",
  "The Flash AI app isn't installed on any of your GitHub repositories. Connect again and pick the repositories it may use.": "تطبيق Flash AI غير مثبّت على أي من مستودعاتك في GitHub. اربط GitHub مرة أخرى واختر المستودعات التي يمكنه استخدامها.",
  "The action couldn't run.": "تعذّر تنفيذ الإجراء.",

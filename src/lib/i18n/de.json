@@ -1711,6 +1711,7 @@
  "That's a lot of talking at once. Take a short break and try again.": "Das ist viel Gerede auf einmal. Mach eine kurze Pause und versuch es noch einmal.",
  "That's as far as this answer can go. Ask again to continue.": "Weiter geht diese Antwort nicht. Frag noch einmal, um fortzufahren.",
  "The AI in {name} is out of credits": "Die KI in {name} hat keine Credits mehr",
+ "The AI in {name} stopped at your auto top-up level": "Die KI in {name} pausiert bei deiner Grenze für automatisches Aufladen",
  "The AI provider charged for the work already done, so this used {credits} credits.": "Der KI-Anbieter hat die bereits erledigte Arbeit berechnet, deshalb wurden {credits} Credits verbraucht.",
  "The Flash AI app isn't installed on any of your GitHub repositories. Connect again and pick the repositories it may use.": "Die App Flash AI ist in keinem deiner GitHub-Repositorys installiert. Verbinde GitHub neu und wähle die Repositorys aus, die sie nutzen darf.",
  "The action couldn't run.": "Die Aktion konnte nicht ausgeführt werden.",

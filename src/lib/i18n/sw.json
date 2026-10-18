@@ -1711,6 +1711,7 @@
  "That's a lot of talking at once. Take a short break and try again.": "Umeongea mengi kwa wakati mmoja. Pumzika kidogo kisha ujaribu tena.",
  "That's as far as this answer can go. Ask again to continue.": "Jibu hili haliwezi kuendelea zaidi. Uliza tena ili kuendelea.",
  "The AI in {name} is out of credits": "AI ya {name} imeishiwa na krediti",
+ "The AI in {name} stopped at your auto top-up level": "AI ya {name} imesimama kwenye kiwango chako cha kuongeza kiotomatiki",
  "The AI provider charged for the work already done, so this used {credits} credits.": "Mtoa huduma wa AI alitoza kwa kazi iliyokwisha fanyika, kwa hiyo hili limetumia krediti {credits}.",
  "The Flash AI app isn't installed on any of your GitHub repositories. Connect again and pick the repositories it may use.": "Programu ya Flash AI haijasakinishwa kwenye hazina yoyote yako ya GitHub. Unganisha upya na uchague hazina inazoweza kutumia.",
  "The action couldn't run.": "Kitendo hakikuweza kuendeshwa.",

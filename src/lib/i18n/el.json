@@ -1711,6 +1711,7 @@
  "That's a lot of talking at once. Take a short break and try again.": "Πολλή κουβέντα μονομιάς. Κάνε ένα μικρό διάλειμμα και δοκίμασε ξανά.",
  "That's as far as this answer can go. Ask again to continue.": "Μέχρι εδώ μπορεί να φτάσει αυτή η απάντηση. Ρώτα ξανά για να συνεχίσεις.",
  "The AI in {name} is out of credits": "Το AI στο {name} έμεινε χωρίς πιστώσεις",
+ "The AI in {name} stopped at your auto top-up level": "Το AI στο {name} σταμάτησε στο όριο αυτόματης αγοράς σου",
  "The AI provider charged for the work already done, so this used {credits} credits.": "Ο πάροχος AI χρέωσε τη δουλειά που είχε ήδη γίνει, οπότε χρησιμοποιήθηκαν {credits} πιστώσεις.",
  "The Flash AI app isn't installed on any of your GitHub repositories. Connect again and pick the repositories it may use.": "Η εφαρμογή Flash AI δεν είναι εγκατεστημένη σε κανένα από τα αποθετήριά σου στο GitHub. Σύνδεσε ξανά το GitHub και διάλεξε τα αποθετήρια που μπορεί να χρησιμοποιεί.",
  "The action couldn't run.": "Η ενέργεια δεν μπόρεσε να εκτελεστεί.",

@@ -371,6 +371,39 @@ test("an app's AI out of credits: the app is marked for the bell and its owner e
   assert.equal(to("shopkeeper@x.co").length, 3);
 });
 
+test("an app's AI stopped at its owner's auto top-up level: the bell and the email say it stopped there, not that their credits ran out", async () => {
+  clock = Math.floor(clock / DAY + 1) * DAY + 3600_000;
+  await user("leveler");
+  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES ('buns', 'leveler', 'Buns <Hot>', '<p>', 0, 0)");
+  await run("INSERT INTO site_ai (site_slug, enabled, updated_at) VALUES ('buns', 1, 0)");
+  noteAppAiOutOfCredits("buns", "leveler", "Buns <Hot>", true);
+  await afterwards();
+  const [email, ...more] = to("leveler@x.co");
+  assert.equal(more.length, 0);
+  assert.equal(email.subject, "The AI in Buns <Hot> stopped at your auto top-up level");
+  assert.ok(email.text.includes("Visitors are asking the AI in your app Buns <Hot>, but their questions aren't being answered"));
+  assert.ok(email.text.includes("with auto top-up on, it stops when your balance gets down to your top-up level, so your visitors never set off a top-up"));
+  assert.ok(!/run out|out of credits/.test(email.text + email.subject), "their credits haven't run out");
+  assert.ok(email.html.includes("Buns &lt;Hot&gt;") && !email.html.includes("<Hot>"), "the title is escaped");
+  const [site] = await sitesWithMessages("leveler");
+  assert.deepEqual([site.aiOutOfCredits, site.aiAtLevel], [clock, true], "the bell shows it, as stopped at the level");
+  // Then its credits run out (auto top-up turned off, say): the mark says so at once, within the few
+  // minutes a mark otherwise waits. The day's one email has gone, whichever it was.
+  clock += 60_000;
+  noteAppAiOutOfCredits("buns", "leveler", "Buns <Hot>");
+  await afterwards();
+  const [later] = await sitesWithMessages("leveler");
+  assert.deepEqual([later.aiOutOfCredits, later.aiAtLevel], [clock, false]);
+  assert.equal(to("leveler@x.co").length, 1, "one a day");
+  clock += DAY;
+  assert.equal(await appAiAlert("leveler", "Buns", true), "sent");
+  assert.equal(to("leveler@x.co")[1].subject, "The AI in Buns stopped at your auto top-up level");
+  // The bell's words.
+  const { readFile } = await import("node:fs/promises");
+  const bell = await readFile(new URL("../src/components/Bell.tsx", import.meta.url), "utf8");
+  assert.match(bell, /s\.aiAtLevel\s*\?\s*t\("The AI in \{name\} stopped at your auto top-up level"/);
+});
+
 test("visitors setting off app-AI emails never use up the low-credit emails' share", async () => {
   // Owners out of credits whose apps' AI visitors ask, more of them than the app-AI emails' share.
   clock = Math.floor(clock / DAY + 1) * DAY + 3600_000;
@@ -401,6 +434,9 @@ test("the emails keep a title to one line, never show a negative balance, and th
   await run("UPDATE users SET language = 'de' WHERE id = 'ana'");
   const de = await alertForPush("ana", { kind: "app-ai", site: "Bäckerei" });
   assert.ok(de.title.includes("Bäckerei") && !de.title.includes("out of credits"), "in their language");
+  const stopped = await alertForPush("ana", { kind: "app-ai", site: "Bäckerei", atLevel: true });
+  assert.ok(stopped.title.includes("Bäckerei") && stopped.title !== de.title, "stopped at the level, in their language");
+  assert.ok(EMAILS.appAiAtLevel("Shop\r\nBcc: x@y.z", "l").subject === "The AI in Shop Bcc: x@y.z stopped at your auto top-up level");
   await run("UPDATE users SET language = '' WHERE id = 'ana'");
 });
 

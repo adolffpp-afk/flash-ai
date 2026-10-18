@@ -1711,6 +1711,7 @@
  "That's a lot of talking at once. Take a short break and try again.": "Ang daming sinabi nang sabay-sabay. Magpahinga sandali at subukan ulit.",
  "That's as far as this answer can go. Ask again to continue.": "Hanggang dito lang ang sagot na ito. Magtanong ulit para magpatuloy.",
  "The AI in {name} is out of credits": "Ubos na ang credits ng AI sa {name}",
+ "The AI in {name} stopped at your auto top-up level": "Huminto ang AI sa {name} sa antas ng awtomatikong top-up mo",
  "The AI provider charged for the work already done, so this used {credits} credits.": "Naningil ang AI provider para sa trabahong natapos na, kaya gumamit ito ng {credits} credits.",
  "The Flash AI app isn't installed on any of your GitHub repositories. Connect again and pick the repositories it may use.": "Hindi naka-install ang Flash AI app sa alinman sa mga GitHub repository mo. Mag-reconnect at piliin ang mga repository na puwede nitong gamitin.",
  "The action couldn't run.": "Hindi napatakbo ang aksyon.",

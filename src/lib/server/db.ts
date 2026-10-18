@@ -1023,6 +1023,9 @@ const MIGRATIONS = [
   // When the app's AI last turned a visitor away because its owner is out of credits, or 0 once it
   // answers again (see site-ai.ts): the bell shows it, and its owner gets an email (low-balance.ts).
   "ALTER TABLE site_ai ADD COLUMN out_at INTEGER NOT NULL DEFAULT 0",
+  // 1 when that visitor was turned away at the owner's auto top-up level (their credits hadn't run
+  // out: see site-ai.ts), so the bell and the email say it stopped there.
+  "ALTER TABLE site_ai ADD COLUMN at_level INTEGER NOT NULL DEFAULT 0",
 ];
 
 /*

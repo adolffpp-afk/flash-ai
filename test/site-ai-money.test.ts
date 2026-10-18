@@ -222,24 +222,106 @@ test("with auto top-up on, the app's AI stops at its level, so a visitor never m
   assert.ok((await balance()) < 100, "a level without a card buys nothing, so it isn't kept");
 });
 
-test("stopped at the auto top-up level, the owner isn't told their credits ran out (the bell, the email); once they really run out, they are", async () => {
+// The app's mark for the bell and the email: when it last turned a visitor away, and whether at the level.
+const mark = async (slug = "shop") => {
+  const row = await one<{ out_at: number; at_level: number }>("SELECT out_at, at_level FROM site_ai WHERE site_slug = ?", [slug]);
+  return { out_at: Number(row?.out_at ?? 0), at_level: Number(row?.at_level ?? 0) };
+};
+
+test("stopped at the auto top-up level, the owner is told it stopped there, not that their credits ran out; once they really run out, they are", async () => {
   await saveAiSettings("shop", true, 5000);
   await afterwards();
   await run("UPDATE site_ai SET out_at = 0 WHERE site_slug = 'shop'");
   await setBalance("owner", 100 + worstCaseCredits());
   await autoTopUpOn("owner", 100);
-  // Several at once, so one may be refused by the charge itself as well as before it: none marks the app.
+  // Several at once: each is turned away by the check before the charge (the charge's own refusal is
+  // the next test but one).
   const answers = await Promise.all([ask(), ask(), ask()]);
   assert.ok(answers.some((a) => a.status === 402), "turned away at the level");
   assert.equal((await askUntilRefused()).refusal.status, 402);
   await afterwards();
-  assert.equal((await aiSettings("shop")).outOfCreditsAt, 0, "the owner's credits haven't run out: their AI panel says where it stops");
+  assert.ok((await aiSettings("shop")).outOfCreditsAt > 0, "the bell and the email say it stopped");
+  assert.equal((await mark()).at_level, 1, "at the level: the owner's credits haven't run out");
   // Auto top-up off: visitors spend what there is, then the owner hears their AI is out of credits.
   await run("UPDATE auto_topups SET enabled = 0 WHERE user_id = 'owner'");
   assert.equal((await askUntilRefused()).refusal.status, 402);
   await afterwards();
   assert.ok((await aiSettings("shop")).outOfCreditsAt > 0, "marked for the bell and the email");
+  assert.equal((await mark()).at_level, 0, "out of credits");
   await run("UPDATE site_ai SET out_at = 0 WHERE site_slug = 'shop'");
+});
+
+test("stopped at the level with nothing to buy (the balance at or over it, or this month's top-ups used), the owner is told it stopped there", async () => {
+  await saveAiSettings("shop", true, 5000);
+  await afterwards();
+  await run("UPDATE site_ai SET out_at = 0 WHERE site_slug = 'shop'");
+  // Within one answer of the level, and over it: auto top-up buys only below it.
+  await setBalance("owner", 101);
+  await autoTopUpOn("owner", 100);
+  await run("UPDATE auto_topups SET last_at = 0 WHERE user_id = 'owner'");
+  assert.equal((await ask()).status, 402);
+  await afterwards();
+  stripeCalls = [];
+  assert.equal(await maybeAutoTopUp("owner"), false, "nothing to buy");
+  assert.deepEqual(stripeCalls, []);
+  const over = await mark();
+  assert.ok(over.out_at > 0, "marked for the bell and the email");
+  assert.equal(over.at_level, 1, "as stopped at the level, not as out of credits");
+  // Below the level with this month's top-ups used: none can come until next month.
+  await run("UPDATE site_ai SET out_at = 0, at_level = 0 WHERE site_slug = 'shop'");
+  await setBalance("owner", 60);
+  for (let i = 0; i < 4; i++)
+    await run("INSERT INTO credit_ledger (user_id, amount, reason, ref, created_at) VALUES ('owner', 0, 'Auto top-up', ?, ?)", [`stripe:auto:pi_cap${i}`, Date.now()]);
+  assert.equal((await ask()).status, 402);
+  await afterwards();
+  assert.equal(await maybeAutoTopUp("owner"), false, "this month's top-ups are used");
+  assert.deepEqual(stripeCalls, []);
+  assert.deepEqual(await mark().then((m) => [m.out_at > 0, m.at_level]), [true, 1]);
+  await run("UPDATE site_ai SET out_at = 0, at_level = 0 WHERE site_slug = 'shop'");
+});
+
+test("refused by the charge itself after the check before it passed (another answer took the credits): stopped at the level while the full balance pays, out of credits once it can't", async () => {
+  await saveAiSettings("shop", true, 5000);
+  const { db } = await import("../src/lib/server/db.ts");
+  const client = await db();
+  const execute = client.execute.bind(client);
+  // Just before the visitor's charge, another answer's charge of `credits` lands.
+  let raced = 0;
+  const race = (credits: number) => {
+    (client as unknown as { execute: unknown }).execute = async (stmt: string | { sql: string; args?: unknown[] }) => {
+      if (typeof stmt === "object" && stmt.sql.includes("INSERT INTO credit_ledger (user_id, amount, reason, actor, keeps_level") && String(stmt.args?.[2]).startsWith("AI in")) {
+        client.execute = execute;
+        raced++;
+        await execute({ sql: "INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES ('owner', ?, 'another answer', ?)", args: [-credits, Date.now()] });
+      }
+      return execute(stmt as never);
+    };
+  };
+  try {
+    // Auto top-up on: the other answer leaves the balance at the level, which the charge keeps.
+    await run("UPDATE site_ai SET out_at = 0, at_level = 0 WHERE site_slug = 'shop'");
+    await setBalance("owner", 100 + worstCaseCredits());
+    await autoTopUpOn("owner", 100);
+    race(worstCaseCredits());
+    assert.equal((await ask()).status, 402);
+    await afterwards();
+    assert.equal(raced, 1, "refused by the charge, not before it");
+    assert.equal(await balance(), 100);
+    assert.deepEqual(await mark().then((m) => [m.out_at > 0, m.at_level]), [true, 1], "stopped at the level, not out of credits");
+    // Auto top-up off: the other answer took the last credits.
+    await run("UPDATE site_ai SET out_at = 0, at_level = 0 WHERE site_slug = 'shop'");
+    await run("UPDATE auto_topups SET enabled = 0 WHERE user_id = 'owner'");
+    await setBalance("owner", worstCaseCredits());
+    race(worstCaseCredits());
+    assert.equal((await ask()).status, 402);
+    await afterwards();
+    assert.equal(raced, 2);
+    assert.equal(await balance(), 0);
+    assert.deepEqual(await mark().then((m) => [m.out_at > 0, m.at_level]), [true, 0], "out of credits");
+  } finally {
+    client.execute = execute;
+    await run("UPDATE site_ai SET out_at = 0, at_level = 0 WHERE site_slug = 'shop'");
+  }
 });
 
 test("the owner's AI settings in Flash say where it stops while auto top-up is on, and a visitor's question doesn't look it up", async () => {

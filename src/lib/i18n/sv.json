@@ -1711,6 +1711,7 @@
  "That's a lot of talking at once. Take a short break and try again.": "Det var mycket prat på en gång. Ta en kort paus och försök igen.",
  "That's as far as this answer can go. Ask again to continue.": "Längre än så kan det här svaret inte bli. Fråga igen för att fortsätta.",
  "The AI in {name} is out of credits": "AI:n i {name} har inga krediter kvar",
+ "The AI in {name} stopped at your auto top-up level": "AI:n i {name} har stannat vid din gräns för automatisk påfyllning",
  "The AI provider charged for the work already done, so this used {credits} credits.": "AI-leverantören tog betalt för det arbete som redan gjorts, så det här kostade {credits} krediter.",
  "The Flash AI app isn't installed on any of your GitHub repositories. Connect again and pick the repositories it may use.": "Appen Flash AI är inte installerad i något av dina GitHub-repositorier. Anslut GitHub igen och välj de repositorier den får använda.",
  "The action couldn't run.": "Åtgärden kunde inte köras.",

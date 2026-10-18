@@ -1711,6 +1711,7 @@
  "That's a lot of talking at once. Take a short break and try again.": "พูดเยอะเกินไปในคราวเดียว พักสักครู่แล้วลองอีกครั้ง",
  "That's as far as this answer can go. Ask again to continue.": "คำตอบนี้ไปได้ไกลที่สุดแค่นี้ ถามอีกครั้งเพื่อตอบต่อ",
  "The AI in {name} is out of credits": "AI ใน {name} เครดิตหมดแล้ว",
+ "The AI in {name} stopped at your auto top-up level": "AI ใน {name} หยุดที่ระดับการเติมอัตโนมัติของคุณ",
  "The AI provider charged for the work already done, so this used {credits} credits.": "ผู้ให้บริการ AI คิดค่าบริการสำหรับงานที่ทำไปแล้ว รายการนี้จึงใช้ไป {credits} เครดิต",
  "The Flash AI app isn't installed on any of your GitHub repositories. Connect again and pick the repositories it may use.": "แอป Flash AI ยังไม่ได้ติดตั้งในรีโพสิทอรี GitHub ใดๆ ของคุณ เชื่อมต่อใหม่แล้วเลือกรีโพสิทอรีที่แอปใช้ได้",
  "The action couldn't run.": "ไม่สามารถดำเนินการได้",

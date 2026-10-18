@@ -1711,6 +1711,7 @@
  "That's a lot of talking at once. Take a short break and try again.": "一度にたくさん話しすぎです。少し休んでからもう一度お試しください。",
  "That's as far as this answer can go. Ask again to continue.": "この回答はここまでです。続きはもう一度質問してください。",
  "The AI in {name} is out of credits": "{name}のAIのクレジットがなくなりました",
+ "The AI in {name} stopped at your auto top-up level": "{name}のAIが自動チャージの基準額で停止しました",
  "The AI provider charged for the work already done, so this used {credits} credits.": "完了した処理分がAIプロバイダーから請求されたため、{credits}クレジットを使用しました。",
  "The Flash AI app isn't installed on any of your GitHub repositories. Connect again and pick the repositories it may use.": "Flash AIアプリは、どのGitHubリポジトリにもインストールされていません。もう一度接続して、使用を許可するリポジトリを選んでください。",
  "The action couldn't run.": "操作を実行できませんでした。",

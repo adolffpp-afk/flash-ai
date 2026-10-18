@@ -1711,6 +1711,7 @@
  "That's a lot of talking at once. Take a short break and try again.": "Bạn đã nói quá nhiều cùng lúc. Hãy nghỉ một chút rồi thử lại.",
  "That's as far as this answer can go. Ask again to continue.": "Câu trả lời này chỉ đi được đến đây. Hãy hỏi lại để tiếp tục.",
  "The AI in {name} is out of credits": "AI trong {name} đã hết tín dụng",
+ "The AI in {name} stopped at your auto top-up level": "AI trong {name} đã dừng ở mức tự động nạp của bạn",
  "The AI provider charged for the work already done, so this used {credits} credits.": "Nhà cung cấp AI đã tính phí cho phần việc đã làm, nên yêu cầu này đã dùng {credits} tín dụng.",
  "The Flash AI app isn't installed on any of your GitHub repositories. Connect again and pick the repositories it may use.": "Ứng dụng Flash AI chưa được cài đặt trên bất kỳ kho mã GitHub nào của bạn. Hãy kết nối lại và chọn các kho mã mà ứng dụng được dùng.",
  "The action couldn't run.": "Không thể chạy thao tác.",

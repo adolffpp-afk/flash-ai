@@ -9,7 +9,8 @@
  *   on and can buy (a card saved, this month's top-ups not used up, no disputed payment): the check
  *   tries it first (never for a visitor's spend: see credits.ts), and a try that fails turns it off
  *   and checks again (see auto-topup.ts).
- * - When an app's AI turns a visitor away because its owner is out of credits: at most one a day.
+ * - When an app's AI turns a visitor away because its owner is out of credits, or because it stopped
+ *   at their auto top-up level (site-ai.ts): at most one a day.
  * Both stop when the person turns them off, and need payments (they say to top up) and emails on. The
  * app shows the same thing in the bell and on Home, so nothing is lost when an email can't go.
  *
@@ -280,14 +281,23 @@ export async function checkLowBalance(account: string, { topUp = true }: CheckOp
 }
 
 /**
- * Called when an app's AI turns a visitor away because its owner is out of credits: marks the app
- * (the bell shows it until the AI answers again) and emails the owner, after the response.
+ * Called when an app's AI turns a visitor away because its owner is out of credits, or (atLevel)
+ * because it stopped at their auto top-up level: marks the app (the bell shows it until the AI
+ * answers again) and emails the owner, after the response.
  */
-export function noteAppAiOutOfCredits(slug: string, owner: string, title: string): void {
+export function noteAppAiOutOfCredits(slug: string, owner: string, title: string, atLevel = false): void {
   afterResponse(async () => {
-    // At most every few minutes per app, so a busy app's visitors don't each cost a look.
-    const marked = await run("UPDATE site_ai SET out_at = ? WHERE site_slug = ? AND out_at < ?", [now(), slug, now() - MARK_EVERY]);
-    if (marked.rowsAffected === 1) await appAiAlert(owner, title);
+    // At most every few minutes per app, so a busy app's visitors don't each cost a look, and when
+    // the reason changes.
+    const level = atLevel ? 1 : 0;
+    const marked = await run("UPDATE site_ai SET out_at = ?, at_level = ? WHERE site_slug = ? AND (out_at < ? OR at_level <> ?)", [
+      now(),
+      level,
+      slug,
+      now() - MARK_EVERY,
+      level,
+    ]);
+    if (marked.rowsAffected === 1) await appAiAlert(owner, title, atLevel);
   });
 }
 
@@ -295,11 +305,11 @@ export function noteAppAiOutOfCredits(slug: string, owner: string, title: string
 export type AppAiOutcome = "off" | "daily" | "budget" | "failed" | "sent";
 
 /**
- * Emails an app's owner that its AI is turning visitors away, at most once a day. Visitors set these
- * off, so they have their own share of the day's emails (EMAIL_BUDGET.appAiAlerts), never the
- * low-credit emails'.
+ * Emails an app's owner that its AI is turning visitors away, out of credits or (atLevel) stopped at
+ * their auto top-up level, at most once a day whichever it is. Visitors set these off, so they have
+ * their own share of the day's emails (EMAIL_BUDGET.appAiAlerts), never the low-credit emails'.
  */
-export async function appAiAlert(owner: string, title: string): Promise<AppAiOutcome> {
+export async function appAiAlert(owner: string, title: string, atLevel = false): Promise<AppAiOutcome> {
   if (!paymentsEnabled() || !emailEnabled()) return "off";
   const t = now();
   const row = await one<{ email: string; enabled: number | null; app_ai_at: number | null }>(
@@ -318,7 +328,8 @@ export async function appAiAlert(owner: string, title: string): Promise<AppAiOut
   );
   if (claim.rowsAffected !== 1) return "daily";
   try {
-    if (!(await sendEmail(row.email, EMAILS.appAiOutOfCredits(title, creditsLink(owner)), "app-ai"))) {
+    const email = atLevel ? EMAILS.appAiAtLevel(title, creditsLink(owner)) : EMAILS.appAiOutOfCredits(title, creditsLink(owner));
+    if (!(await sendEmail(row.email, email, "app-ai"))) {
       await tally("ai-budget");
       return "budget";
     }
@@ -333,12 +344,13 @@ export async function appAiAlert(owner: string, title: string): Promise<AppAiOut
 
 /**
  * A low-credit alert's words in the account's language, with where a tap should go, for sending it
- * another way than email. Phone alerts (web push) are a later PR, on the web-push branch: it can call
- * this where checkLowBalance and appAiAlert send their emails. The words are the bell's.
+ * another way than email. Nothing calls it yet: web push (push.ts) is in, but low-credit alerts go by
+ * email and the bell only; a phone alert would call this where checkLowBalance and appAiAlert send
+ * their emails. The words are the bell's.
  */
 export async function alertForPush(
   userId: string,
-  alert: { kind: "low-credits" } | { kind: "app-ai"; site: string },
+  alert: { kind: "low-credits" } | { kind: "app-ai"; site: string; atLevel?: boolean },
 ): Promise<{ title: string; body: string; url: string }> {
   const user = await one<{ language: string }>("SELECT language FROM users WHERE id = ?", [userId]);
   const t = await translatorIn(user?.language || "en");
@@ -349,5 +361,11 @@ export async function alertForPush(
         body: t("Your apps and websites keep running, but they only get new updates while you have credits. Top up to keep them updating."),
         url,
       }
-    : { title: t("The AI in {name} is out of credits", { name: alert.site }), body: t("Visitors' questions aren't being answered. The rest of the app keeps working."), url };
+    : {
+        title: alert.atLevel
+          ? t("The AI in {name} stopped at your auto top-up level", { name: alert.site })
+          : t("The AI in {name} is out of credits", { name: alert.site }),
+        body: t("Visitors' questions aren't being answered. The rest of the app keeps working."),
+        url,
+      };
 }

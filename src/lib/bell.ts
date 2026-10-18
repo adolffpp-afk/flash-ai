@@ -15,7 +15,8 @@ export const RECENT = 14 * DAY;
 export const AI_OUT_SHOWN = 7 * DAY;
 
 // aiOutOfCredits: when the app's AI last turned a visitor away because the owner is out of credits (0: it answers).
-export type BellSite = { slug: string; title: string; unread: number; aiOutOfCredits?: number };
+// aiAtLevel: it turned them away at the owner's auto top-up level instead.
+export type BellSite = { slug: string; title: string; unread: number; aiOutOfCredits?: number; aiAtLevel?: boolean };
 
 type Account = Pick<Me, "credits" | "lowCredits" | "activity">;
 

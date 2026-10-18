@@ -1711,6 +1711,7 @@
  "That's a lot of talking at once. Take a short break and try again.": "یک‌جا خیلی زیاد صحبت شد. کمی استراحت کنید و دوباره امتحان کنید.",
  "That's as far as this answer can go. Ask again to continue.": "این پاسخ بیشتر از این نمی‌تواند ادامه پیدا کند. برای ادامه دوباره بپرسید.",
  "The AI in {name} is out of credits": "اعتبار هوش مصنوعی {name} تمام شده است",
+ "The AI in {name} stopped at your auto top-up level": "هوش مصنوعی {name} در سطح شارژ خودکار شما متوقف شد",
  "The AI provider charged for the work already done, so this used {credits} credits.": "ارائه‌دهندهٔ هوش مصنوعی هزینهٔ کار انجام‌شده را گرفت، برای همین {credits} اعتبار مصرف شد.",
  "The Flash AI app isn't installed on any of your GitHub repositories. Connect again and pick the repositories it may use.": "برنامهٔ Flash AI روی هیچ‌کدام از مخزن‌های GitHub شما نصب نیست. GitHub را دوباره متصل کنید و مخزن‌هایی را که می‌تواند استفاده کند انتخاب کنید.",
  "The action couldn't run.": "این کار اجرا نشد.",

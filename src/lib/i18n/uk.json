@@ -1711,6 +1711,7 @@
  "That's a lot of talking at once. Take a short break and try again.": "Забагато розмов за раз. Зробіть невелику паузу й спробуйте знову.",
  "That's as far as this answer can go. Ask again to continue.": "Це максимальна довжина відповіді. Запитайте ще раз, щоб продовжити.",
  "The AI in {name} is out of credits": "У ШІ в {name} закінчилися кредити",
+ "The AI in {name} stopped at your auto top-up level": "ШІ в {name} зупинився на порозі автопоповнення",
  "The AI provider charged for the work already done, so this used {credits} credits.": "Сервіс ШІ взяв плату за вже виконану роботу, тому списано кредитів: {credits}.",
  "The Flash AI app isn't installed on any of your GitHub repositories. Connect again and pick the repositories it may use.": "Застосунок Flash AI не встановлено в жодному з ваших репозиторіїв GitHub. Перепід’єднайте GitHub і виберіть репозиторії, які він може використовувати.",
  "The action couldn't run.": "Не вдалося виконати дію.",

@@ -1711,6 +1711,7 @@
  "That's a lot of talking at once. Take a short break and try again.": "Aynı anda çok fazla konuşma oldu. Kısa bir mola verip tekrar dene.",
  "That's as far as this answer can go. Ask again to continue.": "Bu yanıt ancak buraya kadar. Devam etmek için tekrar sor.",
  "The AI in {name} is out of credits": "{name} içindeki yapay zekânın kredisi bitti",
+ "The AI in {name} stopped at your auto top-up level": "{name} içindeki yapay zekâ otomatik yükleme sınırında durdu",
  "The AI provider charged for the work already done, so this used {credits} credits.": "Yapay zekâ sağlayıcısı yapılan iş için ücret aldı, bu yüzden bu işlem {credits} kredi harcadı.",
  "The Flash AI app isn't installed on any of your GitHub repositories. Connect again and pick the repositories it may use.": "Flash AI uygulaması GitHub depolarının hiçbirinde yüklü değil. Yeniden bağla ve kullanabileceği depoları seç.",
  "The action couldn't run.": "İşlem çalıştırılamadı.",

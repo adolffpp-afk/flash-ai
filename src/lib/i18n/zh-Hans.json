@@ -1711,6 +1711,7 @@
  "That's a lot of talking at once. Take a short break and try again.": "一次说得太多了。请稍作休息后再试。",
  "That's as far as this answer can go. Ask again to continue.": "这个回答只能到这里了。再问一次即可继续。",
  "The AI in {name} is out of credits": "{name} 中的 AI 积分已用完",
+ "The AI in {name} stopped at your auto top-up level": "{name} 中的 AI 已在自动充值线处暂停",
  "The AI provider charged for the work already done, so this used {credits} credits.": "AI 服务商已对已完成的部分收费，因此本次消耗了 {credits} 积分。",
  "The Flash AI app isn't installed on any of your GitHub repositories. Connect again and pick the repositories it may use.": "Flash AI 应用没有安装在你的任何 GitHub 仓库上。请重新连接，并选择它可以使用的仓库。",
  "The action couldn't run.": "无法执行该操作。",
