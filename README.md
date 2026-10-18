@@ -174,6 +174,13 @@ portal (card, invoices, cancel at period end) is set up automatically on first u
 plan changes switched off; switching plans goes through a new checkout and starts a new
 month, so a switch can never refund credits already used.
 
+Apps that sell through their owners' own Stripe accounts (Stripe Connect) need a second
+webhook that listens to **events on connected accounts**, at `/api/stripe/connect`, for
+`checkout.session.completed`, `checkout.session.async_payment_succeeded`, `charge.refunded`
+and `charge.dispute.created`, with its signing secret in `STRIPE_CONNECT_WEBHOOK_SECRET`. It
+saves an order when it is paid even if the buyer closes the tab, and keeps refunds and disputes
+with it. Test-mode events never become orders under a live key.
+
 Published apps run under a sandbox header that blocks them from reading Flash's cookies,
 but they are served from the same domain. For a public launch, serve `/p/*` from a
 separate domain.

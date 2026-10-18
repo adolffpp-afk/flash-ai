@@ -182,8 +182,13 @@ test("what the companion can look up about the user's own account", async () => 
   assert.match(sites, /7 page views in the last 7 days, 12 in 30 days/);
   assert.match(sites, /1 unread form messages/);
   assert.match(sites, /1 orders not marked done/);
-  assert.match(sites, /2 orders, CA\$30\.00/);
+  assert.match(sites, /2 orders, CA\$30\.00\./);
   assert.match(sites, /can miss a very recent sale/);
+  // Refunds and disputes Stripe told Flash of since are said with the sales, which stay what buyers paid.
+  await run("UPDATE site_orders SET refunded_amount = 1000, refunded_at = ? WHERE session_id = 's2'", [at]);
+  assert.match(await websitesSummary("u1", "https://f.dev", at), /2 orders, CA\$30\.00 \(CA\$10\.00 of it refunded since\)\./);
+  await run("UPDATE site_orders SET disputed_at = ? WHERE session_id = 's1'", [at]);
+  assert.match(await websitesSummary("u1", "https://f.dev", at), /2 orders, CA\$30\.00 \(CA\$10\.00 of it refunded since, 1 disputed\)\./);
   assert.doesNotMatch(sites, /Not mine/, "another user's site is never shown");
 
   assert.match(await creationsSummary("u1", "https://f.dev"), /hasn't made any pictures/);
