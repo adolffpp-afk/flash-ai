@@ -150,12 +150,15 @@ const ASCII = /^[\x00-\x7f]*$/;
 const APART = /[^\p{L}\p{N}\p{M}]+/u;
 // Digits written small. In "CO₂" or "m²" they belong to the word, as typed ("co2", "m2"); in a
 // footnote's "fee²" they don't ("fee"). Which it is can't be told, so a word with them is kept
-// both ways: "co2" and "co", "fee2" and "fee". Only a word of Latin, Greek or Cyrillic letters and
-// digits: Chinese, Japanese and Thai have no spaces, and a run of their letters is a whole clause
-// ("减少CO₂排放" keeps "CO₂" both ways, and each of its other words once).
+// both ways: "co2" and "co", "fee2" and "fee", "سعر2" and "سعر". Not in Chinese, Japanese, Thai, Lao,
+// Khmer or Burmese, which have no spaces, so a run of their letters is a whole clause ("减少CO₂排放"
+// keeps "CO₂" both ways, and each of its other words once), nor in Korean: the splitter cuts a digit
+// from a Chinese, Japanese or Korean word, and from a Thai, Lao, Khmer or Burmese one it's kept
+// apart (GLUED), so "ราคา¹" is "ราคา" and "1".
 const SMALL = /[⁰¹²³⁴-⁹₀-₉]/u;
 const SMALLS = /[⁰¹²³⁴-⁹₀-₉]/gu;
-const RUN = /[\p{Script=Latin}\p{Script=Greek}\p{Script=Cyrillic}\p{N}][\p{Script=Latin}\p{Script=Greek}\p{Script=Cyrillic}\p{N}\p{M}]*/gu;
+const RUN = /(?:(?![\p{scx=Han}\p{scx=Hiragana}\p{scx=Katakana}\p{scx=Hangul}\p{scx=Thai}\p{scx=Lao}\p{scx=Khmer}\p{scx=Myanmar}])[\p{L}\p{M}\p{N}])+/gu;
+const GLUED = /([\p{scx=Thai}\p{scx=Lao}\p{scx=Khmer}\p{scx=Myanmar}])(?=[⁰¹²³⁴-⁹₀-₉])/gu;
 // Symbols NFKC writes with Latin letters or digits ("™" is "TM", "№" "No", "㎏" "kg", "①" "1") are
 // words of their own, not the end of the word they're written onto: "Visa™" is "visa" and "tm".
 // Not a radical NFKC writes as a Chinese character, which belongs to its word.
@@ -181,7 +184,7 @@ function apart(c: string): string {
 export function words(text: string): string[] {
   const out: string[] = [];
   let spaced = text.normalize("NFC").replace(AM, "$1\u0E33").replace(LAO_AM, "$1\u0EB3").replace(TWO_LETTERS, (l) => ONE_LETTER[l]);
-  if (SMALL.test(spaced)) spaced = spaced.replace(RUN, (w) => (SMALL.test(w) ? `${w} ${w.replace(SMALLS, " ")}` : w));
+  if (SMALL.test(spaced)) spaced = spaced.replace(GLUED, "$1 ").replace(RUN, (w) => (SMALL.test(w) ? `${w} ${w.replace(SMALLS, " ")}` : w));
   const folded = spaced
     .replace(SYMBOL, apart)
     .replace(NFKC_FIRST, (s) => s.normalize("NFKC"))
@@ -194,7 +197,12 @@ export function words(text: string): string[] {
     // split. Lower case again, as NFKD can make capitals.
     const segment = ascii ? s.segment : s.segment.normalize("NFKD").toLowerCase();
     const pieces = segment.split(APART);
-    if (JOINER.test(segment)) pieces.push(...segment.replace(JOINERS, "").split(APART).filter((p) => !pieces.includes(p)));
+    if (JOINER.test(segment)) {
+      // Looked up in a set: one segment can be a whole message ("a\u200Cb." again and again is one
+      // word to the splitter).
+      const split = new Set(pieces);
+      for (const p of segment.replace(JOINERS, "").split(APART)) if (!split.has(p)) pieces.push(p);
+    }
     for (const piece of pieces) {
       const word = ascii ? piece : piece.replace(MARKS, "").normalize("NFC").replace(STROKED, (c) => STROKES[c]).replace(DIGITS, digit);
       if (word && word.length <= MAX_WORD && /[\p{L}\p{N}]/u.test(word)) out.push(word);

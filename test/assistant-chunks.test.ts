@@ -183,6 +183,17 @@ test("a word with a half-space or a joiner in it is kept split there and joined,
   assert.ok(words("क्‍ष").includes(words("क्ष")[0]));
 });
 
+test("a message as long as the chat takes, with half-spaces and dots between its letters, is split as fast as any other", () => {
+  // 100,000 characters, one word to the splitter: each joined piece was looked for among all the
+  // split ones, some 25,000 by 50,000 comparisons.
+  const long = "a\u200Cb.".repeat(25_000);
+  const started = performance.now();
+  const split = words(long);
+  assert.ok(performance.now() - started < 1000, `${Math.round(performance.now() - started)} ms`);
+  assert.deepEqual(new Set(split), new Set(["a", "b", "ab"]));
+  assert.equal(split.length, 75_000);
+});
+
 test("a small digit doubles only the Latin, Greek or Cyrillic word it's written on, not a Chinese, Japanese or Thai clause around it", () => {
   const counts = (t: string) => words(t).reduce((m, w) => m.set(w, (m.get(w) ?? 0) + 1), new Map<string, number>());
   for (const text of ["我们的二氧化碳CO₂排放量下降了三成，明年继续减少。", "当社のCO₂排出量は前年比で三割減少しました。", "建筑面积89m²，每年可减少CO₂排放约1200吨", "โครงการนี้ช่วยลดการปล่อย CO₂ ได้ปีละ 1200 ตัน"]) {
@@ -193,6 +204,24 @@ test("a small digit doubles only the Latin, Greek or Cyrillic word it's written 
     assert.deepEqual([...small.keys()].filter((w) => !typed.has(w)).sort(), (text.includes("m²") ? ["89m", "co"] : ["co"]).sort(), text);
   }
   assert.deepEqual(words("Площадь 75 м², CO₂"), ["площадь", "75", "м2", "м", "co2", "co"]);
+});
+
+test("a footnote's small digit on an Arabic, Persian, Hebrew, Hindi, Armenian or Georgian word is kept both ways, as on a Latin one, and is a word apart in Thai, Lao, Khmer and Burmese", () => {
+  // "price" in each: short words, searched as they are, not as the start of longer ones.
+  for (const word of ["سعر", "قیمت", "מחיר", "दाम", "Գին", "ფასი"]) {
+    const [bare] = words(word);
+    assert.deepEqual(words(`${word}¹`), [`${bare}1`, bare], word);
+    assert.ok(queryTerms(word).some((t) => !t.prefix && t.word === bare), word);
+  }
+  assert.deepEqual(words("المساحة 75 م²"), ["المساحه", "75", "م2", "م"]);
+  // Thai, Lao, Khmer and Burmese have no spaces, and the splitter writes a digit onto the word
+  // before it: the digit is a word apart, as in Chinese and Japanese ("price¹ includes tax").
+  for (const [word, next] of [["ราคา", "รวมภาษี"], ["ລາຄາ", "ລວມ"], ["ថ្លៃ", "រួម"], ["ဈေး", "ပါ"]]) {
+    assert.deepEqual(words(`${word}¹${next}`), [...words(word), "1", ...words(next)], word);
+    assert.ok(queryTerms(word).some((t) => !t.prefix && t.word === words(word)[0]), word);
+  }
+  // Korean is spaced, but its letters are split from a digit anyway: each word once.
+  assert.deepEqual(words("환불¹ 기간은 7일, CO₂는"), ["환불", "1", "기간은", "7", "일", "co2", "co", "는"]);
 });
 
 test("an id that isn't hex can't make a tag", () => {

@@ -861,3 +861,13 @@ test("a small digit in a Chinese clause doubles only the word it's on: the page 
   for (const mode of ["index", "fallback"] as const) assert.equal((await searchChunks(shop, queryTerms("退款多久到账？"), mode))[0]?.label, "3", mode);
   for (const mode of ["index", "fallback"] as const) assert.equal((await searchChunks(shop, queryTerms("CO2排放"), mode))[0]?.label, "7", mode);
 });
+
+test("a footnote's small digit on a short Arabic, Persian, Hebrew or Thai word is found by the word alone, in both searches", async () => {
+  // "The price¹ includes tax", "The price² of the goods is fixed", "The price¹ includes shipping",
+  // "Price¹ includes tax".
+  const shop = await assistant("owner", "Footnotes");
+  await file(shop, "Guide.pdf", pdf(10, { 3: "السعر يشمل الضريبة، سعر¹ ثابت.", 6: "قیمت² کالا ثابت است.", 8: "המחיר כולל משלוח, מחיר¹ קבוע.", 9: "ราคา¹รวมภาษีแล้ว" }, 6), { exact: 0 });
+  for (const [question, page] of [["سعر", "3"], ["قیمت", "6"], ["מחיר", "8"], ["ราคา", "9"]]) {
+    for (const mode of ["index", "fallback"] as const) assert.equal((await searchChunks(shop, queryTerms(question), mode))[0]?.label, page, `${mode}: ${question}`);
+  }
+});
