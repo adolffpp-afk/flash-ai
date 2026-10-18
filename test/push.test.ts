@@ -688,8 +688,9 @@ function serviceWorker(endpoint: string, cookie: () => string, windows: (string 
   const opened: string[] = [];
   const focused: string[] = [];
   const told: { url: string; message: unknown }[] = [];
-  // delays: how long Flash takes to answer each of the next questions, in the order they're asked, in ms.
-  const state = { subscribed: true, offline: false, badges: 0, delays: [] as number[] };
+  // delays: how long Flash takes to answer each of the next questions, in the order they're asked, in
+  // ms; asked: how many questions it has been asked.
+  const state = { subscribed: true, offline: false, badges: 0, delays: [] as number[], asked: 0 };
   const self = {
     location: { origin: ORIGIN },
     addEventListener: (type: string, listener: (event: object) => void) => void (listeners[type] = listener),
@@ -740,6 +741,7 @@ function serviceWorker(endpoint: string, cookie: () => string, windows: (string 
   };
   const ask = async (path: string, init: { headers?: Record<string, string> } = {}) => {
     if (state.offline) throw new TypeError("Failed to fetch");
+    state.asked++;
     const delay = state.delays.shift() ?? 0;
     const answer = await pushRoute.GET(new Request(new URL(path, ORIGIN), { headers: { ...init.headers, cookie: cookie() } }));
     if (delay) await new Promise((done) => setTimeout(done, delay));
@@ -940,7 +942,7 @@ test("an alert whose check answers late still shows before a later one that foun
   // is asked after the sign-in ended there, and answers at once.
   worker.state.delays = [40, 0];
   const first = worker.push(salary);
-  await moment();
+  while (worker.state.asked < 1) await moment();
   cookie = "";
   const second = worker.push(salary);
   await Promise.all([first, second]);
