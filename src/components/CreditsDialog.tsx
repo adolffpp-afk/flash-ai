@@ -240,6 +240,14 @@ export function CreditsDialog({ me, onClose, onChanged }: { me: Me; onClose: () 
           </>
         )}
 
+        {/* The Android app hides Top up, but not this: it isn't a purchase, and the emails say to untick it
+            here. me.paymentsEnabled is false in the app, so the setting asks the server whether these emails go. */}
+        {inApp && (
+          <div className="mt-10">
+            <LowCreditEmails onChanged={onChanged} />
+          </div>
+        )}
+
         {me.freeLane.chats > 0 && (
           <p className="mt-4 rounded-lg border border-primary/15 bg-primary/[0.05] px-3 py-2 text-xs text-emerald-200">{freeLaneLine(t, me.freeLane)}</p>
         )}

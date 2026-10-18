@@ -4,7 +4,7 @@ import { activeSubscription, grantPlanCredits } from "./subscriptions.ts";
 import { verificationRequired } from "./email.ts";
 import { teamPool } from "./teams.ts";
 import { releaseReferralBonuses } from "./referrals.ts";
-import { watchBalance } from "./low-balance.ts";
+import { watchBalance, watchRefusal } from "./low-balance.ts";
 
 export async function balance(userId: string): Promise<number> {
   const row = await one<{ total: number }>(
@@ -89,10 +89,12 @@ async function monthlyCredits(userId: string): Promise<void> {
  * own. Each ledger's check and insert are one statement, so parallel requests (several team
  * members at once) can't take a balance below zero. Returns the ledger entry's id, or null when
  * no balance covers the amount. Pass the id to settle() to lower the charge once the real cost is known.
+ * A refusal settles nothing, so it is where a low-credit email still owed goes (see low-balance.ts).
  */
 export async function charge(userId: string, amount: number, reason: string): Promise<number | null> {
   if (amount <= 0) return 0;
-  for (const account of await spendAccounts(userId)) {
+  const accounts = await spendAccounts(userId);
+  for (const account of accounts) {
     const r = await run(
       `INSERT INTO credit_ledger (user_id, amount, reason, actor, created_at)
        SELECT ?, ?, ?, ?, ?
@@ -101,6 +103,7 @@ export async function charge(userId: string, amount: number, reason: string): Pr
     );
     if (r.rowsAffected === 1) return Number(r.lastInsertRowid);
   }
+  watchRefusal(accounts);
   return null;
 }
 

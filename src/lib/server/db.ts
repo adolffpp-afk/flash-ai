@@ -412,6 +412,14 @@ const SCHEMA = [
     app_ai_at INTEGER NOT NULL DEFAULT 0,
     updated_at INTEGER NOT NULL DEFAULT 0
   )`,
+  // Credits that come in (a purchase, auto top-up, plan or monthly credits, a referral bonus, a refund)
+  // re-arm the low-credit email once the balance is back at or above its level, whatever adds them, so
+  // the next drop below it is emailed even when no spend saw the balance up before it.
+  `CREATE TRIGGER IF NOT EXISTS credit_alerts_rearm AFTER INSERT ON credit_ledger WHEN NEW.amount > 0 BEGIN
+    UPDATE credit_alerts SET alerted_at = 0, retry_at = 0
+    WHERE user_id = NEW.user_id AND (alerted_at > 0 OR retry_at > 0)
+      AND (SELECT COALESCE(SUM(amount), 0) FROM credit_ledger WHERE user_id = NEW.user_id) >= below;
+  END`,
   // Monthly plans. paid_until is how far the subscriber has paid; credits arrive once a month
   // from anchor (the subscription's start) for as long as that month began before paid_until.
   `CREATE TABLE IF NOT EXISTS subscriptions (

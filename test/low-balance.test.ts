@@ -138,9 +138,12 @@ test("the next drop is emailed only after the balance was back at or above the l
   assert.equal(to("ana@x.co").length, 3);
 });
 
-test("no email while auto top-up is on and working; one when its last try failed or this month's are used up", async () => {
+test("no email while auto top-up is on and can buy; one when its last try failed or this month's are used up", async () => {
+  // Emails at 300, auto top-up at 100: it buys at its own level (see test/low-balance-paths.test.ts
+  // for a top-up the check tries), so 249 left sends no email.
   await user("auto");
-  await give("auto", 90);
+  await saveAlertSettings("auto", { enabled: true, below: 300 });
+  await give("auto", 250);
   await run("INSERT INTO auto_topups (user_id, enabled, pack, below, customer, payment_method, updated_at) VALUES ('auto', 1, 'starter', 100, 'cus', 'pm', 0)");
   assert.equal(await spent("auto", 1), "auto");
   // A declined card turns it off with the reason (see auto-topup.ts).
@@ -157,7 +160,8 @@ test("no email while auto top-up is on and working; one when its last try failed
   assert.equal(await spent("nocard", 1), "sent", "no card to buy with");
 
   await user("monthly");
-  await give("monthly", 90);
+  await saveAlertSettings("monthly", { enabled: true, below: 300 });
+  await give("monthly", 250);
   await run("INSERT INTO auto_topups (user_id, enabled, pack, below, customer, payment_method, updated_at) VALUES ('monthly', 1, 'starter', 100, 'cus', 'pm', 0)");
   for (let i = 0; i < MAX_PER_MONTH - 1; i++) await give("monthly", 0, `stripe:auto:pi_${i}`);
   assert.equal(await spent("monthly", 1), "auto");
@@ -375,6 +379,11 @@ test("Credits' setting: only for the signed-in person, only levels from the list
   delete process.env.RESEND_API_KEY;
   assert.equal((await (await call("GET")).json()).emails, false, "no email provider: Credits hides the setting");
   process.env.RESEND_API_KEY = "test-key";
+  // The Android app's page is told payments are off, so the server says whether these emails go.
+  delete process.env.STRIPE_SECRET_KEY;
+  assert.equal((await (await call("GET")).json()).emails, false, "payments off: no emails, and no setting");
+  process.env.STRIPE_SECRET_KEY = "rk_test";
+  assert.equal((await (await call("GET")).json()).emails, true);
 });
 
 test("the bell: low below the person's level, with its dot until opened once; an app's AI out of credits until credits come", () => {

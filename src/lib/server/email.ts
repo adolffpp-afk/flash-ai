@@ -1,5 +1,5 @@
 import { now } from "./db.ts";
-import { countOf, overLimit } from "./limits.ts";
+import { countOf, giveBackOne, overLimit, takeOne } from "./limits.ts";
 import { BRAND_NAME } from "../product.ts";
 
 /*
@@ -80,9 +80,14 @@ async function withinBudget(kind: EmailKind, recipients: number): Promise<boolea
   // Checked first, so one person's busy apps (or a flood of reports) can't use up everyone else's share.
   if (typeof kind === "object" && (await overLimit(`email-owner:${kind.owner}`, EMAIL_BUDGET.perOwner, DAY))) return false;
   if (kind === "report" && (await overLimit(`email-report:${day}`, EMAIL_BUDGET.reports, DAY))) return false;
-  if (kind === "alert" && (await overLimit(`email-alert:${day}`, EMAIL_BUDGET.alerts, DAY))) return false;
+  // Taken in one statement, so alerts at the same moment get every place there is (and no more), and
+  // handed back when the day's shared emails then refuse it.
+  const alert = kind === "alert" ? `email-alert:${day}` : "";
+  const alertUntil = alert ? await takeOne(alert, EMAIL_BUDGET.alerts, DAY) : null;
+  if (alert && alertUntil === null) return false;
   const full = (await countOf(accounts)) + (await countOf(others)) + recipients > EMAIL_BUDGET.perDay;
   if (full || (await overLimit(others, EMAIL_BUDGET.perDay - EMAIL_BUDGET.keptForAccounts, DAY, recipients))) {
+    if (alertUntil !== null) await giveBackOne([[alert, alertUntil]]);
     console.warn("[flash] today's emails for apps and invites are used up; raise EMAIL_BUDGET in email.ts on a bigger email plan");
     return false;
   }
