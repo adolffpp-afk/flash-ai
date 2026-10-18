@@ -28,6 +28,9 @@ export type UIMessage = {
   pictureAbove?: boolean | string;
   // A Continue on approved cards: their ids, so Retry continues with the same results, after a reload too.
   continues?: string[];
+  // Sent by Fix all in the search check (SEO): the most it said this change would hold ("Up to N
+  // credits"), so it never holds or is charged more, on Retry and after a reload too.
+  cap?: number;
   engine?: Engine;
   // A spoken reply about the app or deck before it, which the next follow-up may still change.
   about?: Engine;
@@ -224,4 +227,56 @@ export async function api<T>(path: string, init?: RequestInit & { json?: unknown
     throw Object.assign(new Error(data.error ?? tNow("Request failed ({status})", { status: res.status })), { status: res.status, code: data.code, data });
   }
   return data as T;
+}
+
+const UNPUBLISHED = "flash:unpublished";
+
+/** Tells what's on screen (an app's own page in the chat) that a site was unpublished in My websites & apps. */
+export function announceUnpublished(slug: string): void {
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(UNPUBLISHED, { detail: slug }));
+}
+
+/** Calls back with each site unpublished on this page; returns what stops it. */
+export function onUnpublished(callback: (slug: string) => void): () => void {
+  const listener = (e: Event) => callback(String((e as CustomEvent).detail));
+  window.addEventListener(UNPUBLISHED, listener);
+  return () => window.removeEventListener(UNPUBLISHED, listener);
+}
+
+const RESTORED = "flash:restored";
+
+/**
+ * Tells what's on screen (an app's own page in the chat) that an earlier version of a site was brought
+ * back in My websites & apps (History): the version published from there isn't the live one any more.
+ */
+export function announceRestored(slug: string): void {
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(RESTORED, { detail: slug }));
+}
+
+/** Calls back with each site an earlier version was brought back for on this page; returns what stops it. */
+export function onRestored(callback: (slug: string) => void): () => void {
+  const listener = (e: Event) => callback(String((e as CustomEvent).detail));
+  window.addEventListener(RESTORED, listener);
+  return () => window.removeEventListener(RESTORED, listener);
+}
+
+const SEO = "flash:seo";
+type SeoScore = { score: number | null; issues: number };
+
+/**
+ * Tells what's on screen (an app's own page in the chat) the search check's score of a site's live
+ * page, read in My websites & apps: after a version was brought back there, or the check was opened.
+ */
+export function announceSeoScore(slug: string, seo: SeoScore): void {
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(SEO, { detail: { slug, seo } }));
+}
+
+/** Calls back with each site's score announced on this page; returns what stops it. */
+export function onSeoScore(callback: (slug: string, seo: SeoScore) => void): () => void {
+  const listener = (e: Event) => {
+    const { slug, seo } = (e as CustomEvent<{ slug: string; seo: SeoScore }>).detail;
+    callback(slug, seo);
+  };
+  window.addEventListener(SEO, listener);
+  return () => window.removeEventListener(SEO, listener);
 }

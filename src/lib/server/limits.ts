@@ -1,4 +1,7 @@
+import type { InValue } from "@libsql/client";
 import { one, run, now } from "./db.ts";
+
+type Statement = { sql: string; args: InValue[] };
 
 /**
  * Counts an attempt (or several at once, like a batch of calls) against key and says whether it
@@ -17,6 +20,47 @@ export async function overLimit(key: string, max: number, windowMs: number, atte
   return Number(row?.count ?? 0) > max;
 }
 
+/**
+ * Takes one of key's max in its window in one statement, so requests at the same moment can't both
+ * take the last one: false, changing nothing, once they're all used. With max 1 it holds key until
+ * clearLimit or the window ends.
+ */
+export async function takeOne(key: string, max: number, windowMs: number): Promise<boolean> {
+  const t = now();
+  const r = await run(
+    `INSERT INTO rate_limits (key, count, reset_at) VALUES (?, 1, ?)
+     ON CONFLICT(key) DO UPDATE SET
+       count = CASE WHEN reset_at < ? THEN 1 ELSE count + 1 END,
+       reset_at = CASE WHEN reset_at < ? THEN excluded.reset_at ELSE reset_at END
+     WHERE reset_at < ? OR count < ?`,
+    [key, t + windowMs, t, t, t, max],
+  );
+  return r.rowsAffected === 1;
+}
+
+/**
+ * A condition that is true while `attempts` more fit within max on key in its current window, for a
+ * statement whose writes take them with takeAfter in the same transaction, so requests at the same
+ * moment can't push it past max.
+ */
+export const fitsWithin = (key: string, max: number, attempts: number, t = now()): Statement => ({
+  sql: "COALESCE((SELECT count FROM rate_limits WHERE key = ? AND reset_at >= ?), 0) + ? <= ?",
+  args: [key, t, attempts, max],
+});
+
+/**
+ * Counts attempts against each key in its window, as the next statement of a batch after the one it
+ * is for, and only when that one changed a row (one conditioned on fitsWithin, say): a statement
+ * that changed nothing takes nothing.
+ */
+export const takeAfter = (keys: string[], attempts: number, windowMs: number, t = now()): Statement => ({
+  sql: `INSERT INTO rate_limits (key, count, reset_at) SELECT column1, ?, ? FROM (VALUES ${keys.map(() => "(?)").join(", ")}) WHERE changes() > 0
+        ON CONFLICT(key) DO UPDATE SET
+          count = CASE WHEN reset_at < ? THEN excluded.count ELSE count + excluded.count END,
+          reset_at = CASE WHEN reset_at < ? THEN excluded.reset_at ELSE reset_at END`,
+  args: [attempts, t + windowMs, ...keys, t, t],
+});
+
 /** How many attempts key has counted in its current window, without counting one. */
 export async function countOf(key: string): Promise<number> {
   const row = await one<{ count: number }>("SELECT count FROM rate_limits WHERE key = ? AND reset_at >= ?", [key, now()]);
@@ -27,13 +71,15 @@ export async function clearLimit(key: string): Promise<void> {
   await run("DELETE FROM rate_limits WHERE key = ?", [key]);
 }
 
+/** The client's own address, from the proxy header when there is one, or "" when there's none. */
+export const clientAddress = (request: Request) => (request.headers.get("x-forwarded-for") ?? "").split(",")[0].trim() || request.headers.get("x-real-ip") || "";
+
 /**
  * The client's address, from the proxy header when there is one. An IPv6 address counts by its
  * /64 network, the block one home or server is given, so rotating addresses inside it doesn't
  * get a fresh allowance.
  */
-export const clientIp = (request: Request) =>
-  network((request.headers.get("x-forwarded-for") ?? "").split(",")[0].trim() || request.headers.get("x-real-ip") || "local");
+export const clientIp = (request: Request) => network(clientAddress(request) || "local");
 
 export function network(ip: string): string {
   if (!ip.includes(":") || /^::ffff:\d/i.test(ip)) return ip;

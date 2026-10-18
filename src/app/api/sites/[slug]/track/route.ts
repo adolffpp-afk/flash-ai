@@ -48,11 +48,23 @@ async function firstBytes(request: Request): Promise<string> {
 /**
  * Steps the app reports with flashDB.track: up to 15 names, one per line, as plain text (so the
  * browser sends no preflight). Each counts once a day for a person matched to their visit (see
- * funnel.ts). It always answers 204 at once, so it tells nobody anything and the page never waits.
+ * funnel.ts), within the free plan's rate limit per connection and per app (see trackRoom there).
+ * It always answers 204 at once, also past the limit, so it tells nobody anything and the page
+ * never waits or breaks.
  */
 export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug]/track">) {
   const { slug } = await ctx.params;
   const names = [...new Set((await firstBytes(request)).split("\n").map(stepName).filter(Boolean))].slice(0, MAX_TRACKED);
-  if (names.length) after(async () => countSteps(slug, await matchVisit(slug, request), names.map((n) => `app:${n}` as const)));
+  if (names.length) {
+    after(async () =>
+      countSteps(
+        slug,
+        await matchVisit(slug, request),
+        names.map((n) => `app:${n}` as const),
+        Date.now(),
+        { rateLimit: true },
+      ),
+    );
+  }
   return new Response(null, { status: 204, headers: CORS });
 }

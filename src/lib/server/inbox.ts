@@ -4,6 +4,8 @@ import { overLimit } from "./limits.ts";
 import { EMAILS, sendEmail } from "./email.ts";
 import { refreshRules } from "./site-data.ts";
 import { noteSender } from "./contacts.ts";
+import { parseFacts, seoContext, seoSummary } from "./seo.ts";
+import { siteDomainsOf } from "./domains.ts";
 import { anyOpen, isDataRule, parseComputed, type DataRule } from "../data-rules.ts";
 import { english, type Translate } from "../i18n.ts";
 
@@ -97,7 +99,7 @@ export async function deleteMessage(slug: string, id: string): Promise<void> {
   await run("DELETE FROM site_messages WHERE site_slug = ? AND id = ?", [slug, id]);
 }
 
-/** How many apps the list counts messages, visits, members and contacts for at once (see sitesWithMessages). */
+/** How many apps the list counts messages, visits, members and contacts for at once, and gives search check scores for (see sitesWithMessages). */
 export const COUNTED_SITES = 20;
 
 type ListRow = {
@@ -110,12 +112,13 @@ type ListRow = {
   members: number | null;
   contacts: number | null;
   data_rules: string;
+  seo: string | null;
 };
 
 /**
- * The user's apps, newest first, with their counts: for the 20 most recently updated, or for the
- * ones named in only (at most 20, and only the user's own); null for the rest. unread comes for
- * every app.
+ * The user's apps, newest first, with their counts and their search check's facts: for the 20 most
+ * recently updated, or for the ones named in only (at most 20, and only the user's own); null for the
+ * rest. unread comes for every app.
  */
 function listRows(userId: string, only?: string[]): Promise<ListRow[]> {
   const since = new Date(Date.now() - 29 * 86_400_000).toISOString().slice(0, 10);
@@ -125,6 +128,7 @@ function listRows(userId: string, only?: string[]): Promise<ListRow[]> {
   return all<ListRow>(
     `WITH recent AS MATERIALIZED (SELECT slug FROM sites WHERE user_id = ? ORDER BY updated_at DESC LIMIT ${COUNTED_SITES})
      SELECT s.slug, s.title, s.updated_at, s.data_rules,
+            CASE WHEN ${counted} THEN s.seo END AS seo,
             CASE WHEN ${counted} THEN (SELECT COUNT(*) FROM site_messages m WHERE m.site_slug = s.slug) END AS messages,
             (SELECT COUNT(*) FROM site_messages m WHERE m.site_slug = s.slug AND m.read_at = 0) AS unread,
             CASE WHEN ${counted} THEN (SELECT COALESCE(SUM(v.views), 0) FROM site_visits v WHERE v.site_slug = s.slug AND v.day >= ?) END AS views,
@@ -132,7 +136,7 @@ function listRows(userId: string, only?: string[]): Promise<ListRow[]> {
             CASE WHEN s.contacts_filled AND ${counted}
                  THEN COALESCE((SELECT n FROM site_contact_counts k WHERE k.site_slug = s.slug), (SELECT COUNT(*) FROM site_contacts k WHERE k.site_slug = s.slug)) END AS contacts
      FROM sites s WHERE s.user_id = ?${only ? ` AND ${counted}` : ""} ORDER BY s.updated_at DESC`,
-    [userId, ...c, ...c, since, ...c, ...c, userId, ...c],
+    [userId, ...c, ...c, ...c, since, ...c, ...c, userId, ...c],
   );
 }
 
@@ -141,6 +145,21 @@ const counts = (r: Pick<ListRow, "messages" | "views" | "members" | "contacts">)
   return { messages: n(r.messages), views: n(r.views), members: n(r.members), contacts: n(r.contacts) };
 };
 
+/** The domains of the user's apps, for their search check's score (see seoContext). */
+const ownerDomains = (userId: string) =>
+  all<{ site_slug: string; domain: string; connected_at: number }>("SELECT site_slug, domain, connected_at FROM site_domains WHERE user_id = ? ORDER BY created_at", [userId]);
+
+/**
+ * A counted app's search check: its score and how many things there are to fix, null until worked
+ * out (missing or old facts are, after the list is answered: see refreshStale). Left out for an app
+ * the list didn't count, as its score may read the app's data (see seoContext).
+ */
+async function seoOf(r: ListRow, domains: Awaited<ReturnType<typeof ownerDomains>>) {
+  if (r.messages === null) return {};
+  const facts = parseFacts(r.seo);
+  return { seo: seoSummary(facts, await seoContext(r.slug, siteDomainsOf(domains.filter((d) => d.site_slug === r.slug)), facts)) };
+}
+
 /**
  * The user's published sites, newest first, with how many messages each has and how many are
  * unread. openData says anyone at all could change or delete some of a site's data (see
@@ -148,7 +167,7 @@ const counts = (r: Pick<ListRow, "messages" | "views" | "members" | "contacts">)
  * in the last 30 days, members and contacts come only for the 20 most recently updated apps, and
  * are null for the rest (siteCounts gives theirs); unread comes for every app, from an index that
  * holds only unread messages. contacts is also null until the app's list was first filled with the
- * people it had before (see fillContacts).
+ * people it had before (see fillContacts). seo, the search check's score, comes with the counts (see seoOf).
  */
 export async function sitesWithMessages(userId: string) {
   const rows = await listRows(userId);
@@ -156,10 +175,11 @@ export async function sitesWithMessages(userId: string) {
     "SELECT r.site_slug, r.collection, r.rule FROM site_collection_rules r JOIN sites s ON s.slug = r.site_slug WHERE s.user_id = ?",
     [userId],
   );
+  const domains = await ownerDomains(userId);
   const sites = [];
-  for (const { data_rules, ...r } of rows) {
+  for (const r of rows) {
     // Sites published before data rules existed get theirs worked out here, once.
-    const computed = parseComputed(data_rules) ?? (await refreshRules(r.slug));
+    const computed = parseComputed(r.data_rules) ?? (await refreshRules(r.slug));
     const mine: [string, DataRule][] = chosen.filter((c) => c.site_slug === r.slug && isDataRule(c.rule)).map((c) => [c.collection, c.rule as DataRule]);
     sites.push({
       slug: r.slug,
@@ -168,15 +188,22 @@ export async function sitesWithMessages(userId: string) {
       unread: Number(r.unread),
       ...counts(r),
       openData: computed ? anyOpen(computed, Object.fromEntries(mine)) : false,
+      ...(await seoOf(r, domains)),
     });
   }
   return sites;
 }
 
-/** The counts of up to 20 of the user's apps the list shows past its first 20; another owner's apps give nothing. */
+/**
+ * The counts and search check scores of up to 20 of the user's apps the list shows past its first
+ * 20; another owner's apps give nothing.
+ */
 export async function siteCounts(userId: string, slugs: string[]) {
   const rows = await listRows(userId, [...new Set(slugs)]);
-  return Object.fromEntries(rows.map((r) => [r.slug, counts(r)]));
+  const domains = rows.length ? await ownerDomains(userId) : [];
+  const out: Record<string, ReturnType<typeof counts> & { seo?: { score: number; issues: number } | null }> = {};
+  for (const r of rows) out[r.slug] = { ...counts(r), ...(await seoOf(r, domains)) };
+  return out;
 }
 
 /**

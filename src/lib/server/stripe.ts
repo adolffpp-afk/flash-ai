@@ -5,6 +5,11 @@ import { one, run } from "./db.ts";
 const STRIPE_API = process.env.STRIPE_API_BASE || "https://api.stripe.com/v1";
 
 export const paymentsEnabled = () => Boolean(process.env.STRIPE_SECRET_KEY);
+/**
+ * Whether STRIPE_SECRET_KEY is a live key (sk_live_ or rk_live_). Anything else is test mode, and a
+ * payment is only an order in its key's own mode (see recordOrder in shop.ts).
+ */
+export const liveKey = () => /^[rs]k_live_/.test(process.env.STRIPE_SECRET_KEY ?? "");
 // Lets you test the buy flow before Stripe is set up. Never turn this on for real users.
 export const demoPurchases = () => !paymentsEnabled() && process.env.FLASH_DEMO_PURCHASES === "true";
 
