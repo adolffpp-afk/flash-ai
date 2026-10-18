@@ -1,6 +1,6 @@
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createClient } from "@libsql/client";
@@ -83,8 +83,17 @@ async function watched<T>(f: () => Promise<T>): Promise<{ result: T; seen: Seen[
 }
 const matching = async (assistantId: string, word: string) =>
   (await all<{ rowid: number }>("SELECT rowid FROM assistant_chunks_fts WHERE seg MATCH ?", [`"${tagOf(assistantId)}${word}"`])).map((r) => Number(r.rowid));
-/** Whether the index's own pages hold a word, searched or not: what anyone with the database file can read. */
+/** Whether the index's own pages hold a word, searched or not: what SQL, a dump or a copy of the database reads. */
 const inIndexPages = async (word: string) => (await all<{ block: ArrayBuffer }>("SELECT block FROM assistant_chunks_fts_data")).some((r) => Buffer.from(r.block).includes(word));
+let copies = 0;
+/** The bytes of a copy of the database, as VACUUM INTO writes it: its rows, without its free pages. */
+async function copied(): Promise<Buffer> {
+  const path = join(dir, `copy${++copies}.db`);
+  await run("VACUUM INTO ?", [path]);
+  const bytes = readFileSync(path);
+  rmSync(path);
+  return bytes;
+}
 
 // The bakery's handbook (searched: far over 6,000 tokens) and another user's assistant with the same words.
 const bakery = await assistant("owner");
@@ -340,19 +349,29 @@ test("a searched message reads the chunk count from the files, and counts its wo
   for (const f of [handbook, prices, notes]) {
     assert.equal(Number((await one<{ chunks: number }>("SELECT chunks FROM assistant_files WHERE id = ?", [f]))?.chunks), (await chunksOf(f)).length);
   }
+  // A product named in the same 20 of 100 chunks: its three words' counts come to 60, more than
+  // the index ranks, though only 20 chunks match.
+  const manual = await assistant("owner", "Manual");
+  await file(manual, "Manual.txt", Array.from({ length: 100 }, (_, i) => `${filler(1000, 700 + i)}\n\n${i % 5 === 0 ? `The Wombat Turbo Blender, section ${i}.` : `Section ${i}.`}`).join("\n\n"), { exact: 0 });
   // Which search the database has is asked at most once every 10 minutes, not for each message.
   await searchMode(true);
-  for (const message of ["How do refunds work?", "thanks!", "and the price of the loaves in the shop"]) {
-    const { seen, calls } = await watched(() => passagesFor({ id: bakery }, message));
+  for (const [id, message] of [
+    [bakery, "How do refunds work?"],
+    [bakery, "thanks!"],
+    [bakery, "and the price of the loaves in the shop"],
+    [manual, "How loud is the Wombat Turbo Blender?"],
+  ]) {
+    const { seen, calls } = await watched(() => passagesFor({ id }, message));
     assert.ok(!seen.some((q) => /COUNT\(\*\)[^]*FROM assistant_chunks WHERE/.test(q.sql)), seen.map((q) => q.sql).join("\n"));
     // Not every match of "the" joined to its chunk and its file.
-    const counts = seen.filter((q) => /COUNT\(\*\)/.test(q.sql));
+    const counts = seen.filter((q) => /COUNT\(\*\)/.test(q.sql) && !/bm25/.test(q.sql));
     assert.ok(counts.length > 0 && counts.every((q) => !/JOIN|assistant_chunks\b(?!_fts)/.test(q.sql)), counts.map((q) => q.sql).join("\n"));
     // One after the other, each waiting for the last: the files, all the word counts in one batch,
     // then the ranked search.
     const trips = calls.map((c) => c.map((q) => q.sql.slice(0, 40)).join(" + "));
     assert.ok(calls.length <= 3, `${message}: ${trips.join(" | ")}`);
-    assert.equal(calls.filter((c) => c.some((q) => /COUNT\(\*\)/.test(q.sql))).length, 1, `${message}: ${trips.join(" | ")}`);
+    assert.equal(calls.filter((c) => c.some((q) => /COUNT\(\*\)/.test(q.sql) && !/bm25/.test(q.sql))).length, 1, `${message}: ${trips.join(" | ")}`);
+    if (id === manual) assert.equal(seen.filter((q) => /bm25/.test(q.sql))[0]?.rows, 20, "every chunk that names it, from one ranked search");
   }
 });
 
@@ -446,6 +465,22 @@ test("CO2, letters typed without their stroke and digits typed on a Persian or A
   }
 });
 
+test("a short word with ™, № or a footnote's small digit written onto it is found by the word alone, in both searches", async () => {
+  const shop = await assistant("owner", "Marks");
+  const own: Record<number, string> = {
+    3: "The Acme™ blender has a 2 litre jug and a five year warranty.",
+    5: "We accept Visa™ and Mastercard® at the counter.",
+    6: "Orders over 50 euros ship free; a handling fee² applies to bulky items.",
+    9: "Breakfast is served in Room №12 from seven.",
+  };
+  await file(shop, "Guide.pdf", pdf(12, own, 4), { exact: 0 });
+  for (const [question, page] of [["acme", "3"], ["Do you take Visa?", "5"], ["fee", "6"], ["room 12", "9"]]) {
+    for (const mode of ["index", "fallback"] as const) assert.equal((await searchChunks(shop, queryTerms(question), mode))[0]?.label, page, `${mode}: ${question}`);
+  }
+  const read = await passagesFor({ id: shop }, "Do you take Visa?");
+  assert.deepEqual([read.mode, read.passages.map((p) => p.label)], ["search", ["page 5"]]);
+});
+
 test("explicit deletes leave no chunk or index row behind, with foreign keys off, nor any of the file's words in the index's pages", async () => {
   const gone = await assistant("owner", "Going");
   const keep = await file(gone, "keep.txt", `${filler(4000, 31)}\n\nNarwhal keepsakes.`);
@@ -472,13 +507,25 @@ test("explicit deletes leave no chunk or index row behind, with foreign keys off
   assert.equal(await indexRows(), before - dropped.length, "the trigger took each chunk's index row");
   assert.deepEqual(await matching(gone, "platypus"), []);
   assert.equal((await matching(gone, "narwhal")).length, 1, "the other file stays");
-  // The trigger only marks the rows deleted: their words are gone from the index's pages once it
-  // has been rewritten without them.
-  await purgeIndex();
+  // The trigger only marks the rows deleted: their words stay in the index's pages, and so in any
+  // copy of the database, until it has been rewritten without them.
+  for (const word of secret) assert.ok(await inIndexPages(word), word);
+  assert.ok((await copied()).includes("wolframite"));
+  assert.equal(await purgeIndex(), true, "rewritten");
   for (const word of secret) assert.equal(await inIndexPages(word), false, word);
+  const copy = await copied();
+  for (const word of [...secret, "Wolframite"]) assert.equal(copy.includes(word), false, `${word} in a copy`);
   assert.ok(await inIndexPages("narwhal"));
   assert.equal(await indexRows(), before - dropped.length);
   assert.equal((await matching(gone, "narwhal")).length, 1, "and search still finds the rest");
+  // Rewriting takes the whole index, so it's done at most once a day: the words of a file deleted
+  // later that day stay until the first delete a day after.
+  const later = await file(gone, "later.txt", `${filler(6000, 33)}\n\nQuokka quillwort.`);
+  await client.batch(removeFileRows("owner", gone, later), "write");
+  assert.equal(await purgeIndex(), false, "not again the same day");
+  assert.ok(await inIndexPages("quillwort"));
+  assert.equal(await purgeIndex(Date.now() + 24 * 3600_000), true);
+  assert.equal(await inIndexPages("quillwort"), false);
 
   // An id is never given out again, so an index row left behind can't point at new text.
   const next = await file(gone, "new.txt", "Echidna egg cups.");

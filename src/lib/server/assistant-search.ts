@@ -14,8 +14,8 @@
  * Word counts are the index's own, and a file's chunk count goes up with each batch of its chunks
  * and their index rows, so the two always agree. Every result is joined back to its chunk and to a
  * file the asking assistant lists, so a stray index row or a chunk left by a failed upload can only
- * ever find nothing. Deleting a chunk only marks its index rows deleted, so every delete is
- * followed by purgeIndex, which rewrites the index without them.
+ * ever find nothing. Deleting a chunk only marks its index rows deleted, so a delete is followed by
+ * purgeIndex, which rewrites the index without them at most once a day.
  */
 import type { InStatement } from "@libsql/client";
 import { all, db, mendAssistantIndex, one, run } from "./db.ts";
@@ -150,16 +150,29 @@ export function removeFileRows(userId: string, assistantId: string, fileId: stri
   ];
 }
 
+// When purgeIndex last rewrote the index, kept in settings.
+const PURGED = "assistant_index_purged";
+const PURGE_EVERY = 24 * 3600_000;
+
 /**
- * Rewrites the index without the words of deleted chunks. Deleting a chunk only marks its index
- * rows deleted: their words stay in the index's own pages, which search skips but anyone with the
- * database file can read, until FTS5 happens to merge those pages, which may be never (VACUUM keeps
- * them too). Run after deleting a file (removeFileRows) or a failed upload's (see indexFile), once
- * the batch that deletes is done, so the delete doesn't wait for it. It rewrites the whole index:
- * about 1 s per 20 MB of assistant text, measured locally. Does nothing where there is no index.
+ * Rewrites the index without the words of deleted chunks, at most once a day. Deleting a chunk
+ * only marks its index rows deleted: their words stay in the index's own rows, which search skips
+ * but SQL, a dump or a copy of the database reads, even after VACUUM, until FTS5 happens to merge
+ * those rows, which may be never. The rewrite takes the whole index, every assistant's (about 1 s
+ * per 20 MB of assistant text, measured locally), and every other write to the database waits for
+ * it, so it isn't run for each delete. Run this after deleting a file (removeFileRows) or a failed
+ * upload's (see indexFile), once the batch that deletes is done: it rewrites when a day has passed
+ * since it last did, so a deleted file's words leave the index at the first delete a day or more
+ * after the last rewrite. Like any deleted row's, their bytes and the chunks' text stay on the
+ * database file's free pages until SQLite writes over them or VACUUM runs. True when it rewrote;
+ * nothing where there is no index.
  */
-export async function purgeIndex(): Promise<void> {
-  if ((await indexState()).index) await run(`INSERT INTO ${INDEX} (${INDEX}) VALUES ('optimize')`);
+export async function purgeIndex(now = Date.now()): Promise<boolean> {
+  if (!(await indexState()).index) return false;
+  const last = Number((await one<{ value: string }>("SELECT value FROM settings WHERE key = ?", [PURGED]))?.value ?? 0);
+  if (now - last < PURGE_EVERY) return false;
+  await (await db()).batch([`INSERT INTO ${INDEX} (${INDEX}) VALUES ('optimize')`, { sql: "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", args: [PURGED, String(now)] }], "write");
+  return true;
 }
 
 export type Passage = { fileId: string; file: string; label: string; title: string; text: string };
@@ -314,7 +327,8 @@ const LISTED = "JOIN assistant_files af ON af.id = c.file_id AND af.assistant_id
 // files (CROSS JOIN keeps SQLite to this order): joining every chunk a word is in before ranking
 // would read most of an assistant's chunks for an ordinary question. Twice the candidates, so a few
 // stray index rows (see LISTED) don't take a place from the assistant's own chunks; when more do,
-// the search is run again with every match (see searchChunks).
+// and there were more matches than were ranked, the search is run again with every match (see
+// searchChunks).
 const RANKED = 2 * CANDIDATES;
 
 /**
@@ -322,7 +336,8 @@ const RANKED = 2 * CANDIDATES;
  * the index alone: joining every match of a common word to its chunk and file would read thousands
  * of rows a message. Its rows are its chunks', and a failed upload's chunks go at the assistant's
  * next upload (see mendAssistantIndex in db.ts, and indexFile). `matches` is the most index rows
- * the terms can match together: the sum of their counts.
+ * the terms can match together: the sum of their counts, which counts a chunk once for each term
+ * it has.
  */
 async function telling(terms: Term[], tag: string, total: number): Promise<{ kept: Term[]; matches: number }> {
   const counts = await (
@@ -353,20 +368,23 @@ export async function searchChunks(assistantId: string, terms: Term[], mode?: Se
   const chunks = total ?? Number((await one<{ n: number }>("SELECT COALESCE(SUM(chunks), 0) AS n FROM assistant_files WHERE assistant_id = ?", [assistantId]))?.n);
   const { kept, matches } = await telling(terms, tag, chunks);
   if (!kept.length) return [];
-  // The best `ranked` matches (-1: all of them) joined to the assistant's listed chunks.
+  // The best `ranked` matches (-1: all of them) joined to the assistant's listed chunks, each row
+  // with how many matches were ranked (m is ranked once, and read twice).
   const best = (ranked: number) =>
-    all<Row>(
-      `SELECT c.id, c.file_id, c.seq, c.label, c.tokens, c.body
-       FROM (SELECT rowid AS id, bm25(${INDEX}) AS score FROM ${INDEX} WHERE seg MATCH ? ORDER BY score, rowid LIMIT ${ranked}) m
-       CROSS JOIN assistant_chunks c ON c.id = m.id ${LISTED}
+    all<Row & { ranked: number }>(
+      `WITH m AS MATERIALIZED (SELECT rowid AS id, bm25(${INDEX}) AS score FROM ${INDEX} WHERE seg MATCH ? ORDER BY score, rowid LIMIT ${ranked})
+       SELECT c.id, c.file_id, c.seq, c.label, c.tokens, c.body, (SELECT COUNT(*) FROM m) AS ranked
+       FROM m CROSS JOIN assistant_chunks c ON c.id = m.id ${LISTED}
        WHERE c.assistant_id = ?
        ORDER BY m.score, c.id LIMIT ${CANDIDATES}`,
       [matchTerms(tag, kept), assistantId],
     );
   const rows = await best(RANKED);
-  // Fewer than the candidates, when there can be more matches than were ranked: stray index rows
-  // took places, and the assistant's own chunks below them were left out. Then every match.
-  return rows.length < CANDIDATES && matches > RANKED ? best(-1) : rows;
+  // Fewer than the candidates, though the index ranked as many matches as it could take: stray
+  // index rows took places, and the assistant's own chunks below them may have been left out. Then
+  // every match. With no row back, whether there were more matches than that is told by `matches`.
+  const full = rows.length ? Number(rows[0].ranked) >= RANKED : matches > RANKED;
+  return rows.length < CANDIDATES && full ? best(-1) : rows;
 }
 
 /**

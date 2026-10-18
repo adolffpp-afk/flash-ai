@@ -119,8 +119,15 @@ test("words are split for Japanese, Chinese and Thai, folded for accents, stroke
   assert.deepEqual(words("नमस्ते दुनिया"), ["नमस्ते", "दुनिया"], "vowel signs stay in the word");
   assert.deepEqual(words("Café CAFE cafe\u0301 Naïve"), ["cafe", "cafe", "cafe", "naive"]);
   assert.deepEqual(words("ﬁle ＡＢＣ ｶﾀｶﾅ 𝐅𝐥𝐚𝐬𝐡 -- ... !! ① ™"), ["file", "abc", "カタカナ", "flash", "1", "tm"], "in NFKC before the split");
-  // Digits written small, as in CO₂, are digits of the word: as typed, "CO2".
-  assert.deepEqual(words("Scope 1 CO₂ emissions, N₂O, 75 m², 30 m³/h of H₂O"), ["scope", "1", "co2", "emissions", "n2o", "75", "m2", "30", "m3", "h", "of", "h2o"]);
+  // Digits written small, as in CO₂, are digits of the word, as typed ("CO2"), or a footnote's
+  // after it ("fee²"): the word is kept both ways.
+  assert.deepEqual(words("Scope 1 CO₂ emissions, N₂O, 75 m², 30 m³/h of H₂O"), ["scope", "1", "co2", "co", "emissions", "n2o", "n", "o", "75", "m2", "m", "30", "m3", "m", "h", "of", "h2o", "h", "o"]);
+  assert.deepEqual(words("a handling fee² applies"), ["a", "handling", "fee2", "fee", "applies"]);
+  // A symbol NFKC writes with letters or digits is a word of its own, not the end of the word
+  // before it: "Visa" and "12" are found as typed.
+  assert.deepEqual(words("We accept Visa™ and Mastercard®, Acme℠, Room №12, a 5㎏ bag of 75㎡, Step①"), ["we", "accept", "visa", "tm", "and", "mastercard", "acme", "sm", "room", "no", "12", "a", "5", "kg", "bag", "of", "75", "m2", "step", "1"]);
+  // A radical that NFKC writes as a Chinese character, as some PDFs give it, stays in its word.
+  assert.deepEqual(words("⽇本語"), ["日本語"]);
   // Latin letters with a stroke or a slash, which have no accent to take off, and those written
   // as two: as they're typed without them.
   assert.deepEqual(words("Płatność ŁÓDŹ đơn được købe fiyatı Größe GRÖSSE cœur Æble"), ["platnosc", "lodz", "don", "duoc", "kobe", "fiyati", "grosse", "grosse", "coeur", "aeble"]);

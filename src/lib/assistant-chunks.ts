@@ -133,6 +133,22 @@ function digit(d: string): string {
 // splitter doesn't expect ("สินค้า" would come out as "สิน" and "ค้า").
 const NFKC_FIRST = /[^\p{Script=Thai}\p{Script=Lao}]+/gu;
 const ASCII = /^[\x00-\x7f]*$/;
+// Digits written small. In "CO₂" or "m²" they belong to the word, as typed ("co2", "m2"); in a
+// footnote's "fee²" they don't ("fee"). Which it is can't be told, so a word with them is kept
+// both ways: "co2" and "co", "fee2" and "fee". Not a longer run of letters, such as a line of
+// Chinese, which would be counted twice.
+const SMALL = /[⁰¹²³⁴-⁹₀-₉]/u;
+const SMALLS = /[⁰¹²³⁴-⁹₀-₉]/gu;
+const RUN = /[\p{L}\p{M}\p{N}]+/gu;
+// Symbols NFKC writes with Latin letters or digits ("™" is "TM", "№" "No", "㎏" "kg", "①" "1") are
+// words of their own, not the end of the word they're written onto: "Visa™" is "visa" and "tm".
+// Not a radical NFKC writes as a Chinese character, which belongs to its word.
+const SYMBOL = /[\p{So}\p{No}]/gu;
+const LATIN = /[A-Za-z0-9]/;
+function apart(c: string): string {
+  const k = c.normalize("NFKC");
+  return SMALL.test(c) || !LATIN.test(k) ? c : ` ${k} `;
+}
 
 /**
  * The words of a text, as the search index keeps them: in NFKC but for Thai and Lao (see
@@ -142,11 +158,15 @@ const ASCII = /^[\x00-\x7f]*$/;
  * accents or vowel marks, with one form of the Arabic and Persian letters written two ways, the
  * Latin letters with a stroke as the letter without it, and every script's digits as 0-9 ("Café"
  * is "cafe", "يُرجى" is "يرجي", "أولًا" is "اولا", "کالا" is "كالا", "łódź" is "lodz", "۱۲" is "12").
+ * A word with digits written small is kept with them and without, and "™" and the like are words
+ * apart (see SMALL and SYMBOL).
  */
 export function words(text: string): string[] {
   const out: string[] = [];
-  const folded = text
-    .normalize("NFC")
+  let spaced = text.normalize("NFC");
+  if (SMALL.test(spaced)) spaced = spaced.replace(RUN, (w) => (w.length <= MAX_WORD && SMALL.test(w) ? `${w} ${w.replace(SMALLS, " ")}` : w));
+  const folded = spaced
+    .replace(SYMBOL, apart)
     .replace(NFKC_FIRST, (s) => s.normalize("NFKC"))
     .toLowerCase()
     .replace(VARIANTS, (c) => LETTERS[c]);
