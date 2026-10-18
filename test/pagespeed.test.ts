@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { mock, test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
@@ -20,7 +20,7 @@ delete process.env.PAGESPEED_API_KEY;
 delete process.env.FLASH_PAGESPEED_DAILY_REQUESTS;
 delete process.env.FLASH_TEST_PAGESPEED_URL;
 
-const { db, one, run } = await import("../src/lib/server/db.ts");
+const { all, db, one, run } = await import("../src/lib/server/db.ts");
 const { pagespeedKeyProblem, runLock, runPageSpeed, REFUSED } = await import("../src/lib/server/pagespeed.ts");
 const { adminStats } = await import("../src/lib/server/admin-stats.ts");
 const { countOf, overLimit } = await import("../src/lib/server/limits.ts");
@@ -135,9 +135,16 @@ async function owner(id: string, domains: string[] = []) {
 }
 type Owner = Awaited<ReturnType<typeof owner>>;
 
-/** The owner presses Check with Google. Each test starts with Google's per-second slots free. */
-async function check(who: Owner, body: unknown = {}, slug = who.slug) {
+/**
+ * The owner presses Check with Google. Each press starts with Flash's 3 requests a second to Google
+ * free, unless other owners' checks hold them for the next othersHoldMs.
+ */
+async function check(who: Owner, body: unknown = {}, slug = who.slug, othersHoldMs = 0) {
   await run("DELETE FROM rate_limits WHERE key LIKE 'source:pagespeed:%'");
+  const until = Date.now() + othersHoldMs;
+  for (let second = Math.floor(Date.now() / 1000); othersHoldMs > 0 && second * 1000 < until; second++) {
+    await run("INSERT INTO rate_limits (key, count, reset_at) VALUES (?, 3, ?)", [`source:pagespeed:${second}`, (second + 1) * 1000]);
+  }
   watching = true;
   const res = await route.POST(
     new Request(`http://localhost/api/sites/${slug}/pagespeed`, {
@@ -327,6 +334,57 @@ test("without a key each owner has 3 checks an hour and 5 a day, with one 10 and
   }
 });
 
+test("without a key an owner's 5 checks a day are counted by the UTC day Flash's 200 requests are counted by, so they're at most 10 of a day's", async () => {
+  await fresh();
+  const who = await owner("utc-day");
+  await run("UPDATE sessions SET expires_at = ? WHERE user_id = ?", [Date.UTC(2100, 0, 1), who.id]);
+  // The clock is set to days no other test uses: 2031-03-03 to 03-05, UTC.
+  const midnight = Date.UTC(2031, 2, 4);
+  const SECOND = 1000;
+  const presses: [string, number, string?][] = [];
+  const at = async (ms: number) => {
+    mock.timers.setTime(ms);
+    await republish(who.slug);
+    const { status, body } = await check(who);
+    const time = new Date(ms).toISOString().slice(0, 19);
+    presses.push(status === 429 ? [time, status, body.error] : [time, status]);
+  };
+  mock.timers.enable({ apis: ["Date"], now: midnight - 3 * HOUR });
+  try {
+    // A check the evening before, then the day's 5 (3 in its first hour, 2 in its second), and none
+    // after, also once 24 hours have passed since the evening's: only the next UTC day has more.
+    for (const ms of [-3 * HOUR, SECOND, 2 * SECOND, 3 * SECOND, HOUR + 5 * SECOND, HOUR + 6 * SECOND, HOUR + 7 * SECOND, 21 * HOUR + SECOND, 24 * HOUR - SECOND, 24 * HOUR]) {
+      await at(midnight + ms);
+    }
+  } finally {
+    mock.timers.reset();
+  }
+  try {
+    assert.deepEqual(presses, [
+      ["2031-03-03T21:00:00", 200],
+      ["2031-03-04T00:00:01", 200],
+      ["2031-03-04T00:00:02", 200],
+      ["2031-03-04T00:00:03", 200],
+      ["2031-03-04T01:00:05", 200],
+      ["2031-03-04T01:00:06", 200],
+      ["2031-03-04T01:00:07", 429, today(5)],
+      ["2031-03-04T21:00:01", 429, today(5)],
+      ["2031-03-04T23:59:59", 429, today(5)],
+      ["2031-03-05T00:00:00", 200],
+    ]);
+    const requests = await one<{ requests: number }>("SELECT requests FROM free_quota WHERE day = '2031-03-04' AND provider = 'pagespeed'");
+    assert.equal(requests?.requests, 10, "one owner's checks are 10 of the day's 200");
+    // The owner's counts of earlier days are cleared by their first check of a day.
+    const kept = await all<{ key: string }>("SELECT key FROM rate_limits WHERE key LIKE ?", [`pagespeed-day:${who.id}:%`]);
+    assert.deepEqual(
+      kept.map((r) => r.key),
+      [`pagespeed-day:${who.id}:2031-03-05`],
+    );
+  } finally {
+    await run("DELETE FROM free_quota WHERE day LIKE '2031-%'");
+  }
+});
+
 test("a check on the app's domain asks Vercel only when Google is about to test it, and a kept answer, a remembered failure or a press over a limit asks and writes nothing", async () => {
   await fresh();
   const who = await owner("vercel", ["count.pt"]);
@@ -437,7 +495,7 @@ test("while Flash's daily allowance can't take a press, Google is busy for every
   const used = (requests: number) =>
     run("INSERT INTO free_quota (day, provider, requests) VALUES (?, 'pagespeed', ?) ON CONFLICT(day, provider) DO UPDATE SET requests = excluded.requests", [day, requests]);
   const before = await one<{ requests: number }>("SELECT requests FROM free_quota WHERE day = ? AND provider = 'pagespeed'", [day]);
-  const checksUsed = async () => [await countOf(`pagespeed:${who.id}`), await countOf(`pagespeed-day:${who.id}`)];
+  const checksUsed = async () => [await countOf(`pagespeed:${who.id}`), await countOf(`pagespeed-day:${who.id}:${day}`)];
   try {
     // Without a key every owner shares 200 requests a day, all used today: pressed more often than the
     // owner's 3 checks an hour, each press is told it's busy, for free.
@@ -468,6 +526,47 @@ test("while Flash's daily allowance can't take a press, Google is busy for every
     assert.deepEqual(await checksUsed(), [2, 2], "only the presses Google was asked for used a check");
   } finally {
     googleReply = ok;
+    await used(Number(before?.requests ?? 0));
+  }
+});
+
+test("a press Flash's own limits keep from Google once it was counted gives the owner's check back: its 3 requests a second, or the day's last requests, taken by other presses", async () => {
+  await fresh();
+  const who = await owner("busy-back");
+  const day = new Date().toISOString().slice(0, 10);
+  const used = (requests: number) =>
+    run("INSERT INTO free_quota (day, provider, requests) VALUES (?, 'pagespeed', ?) ON CONFLICT(day, provider) DO UPDATE SET requests = excluded.requests", [day, requests]);
+  const before = await one<{ requests: number }>("SELECT requests FROM free_quota WHERE day = ? AND provider = 'pagespeed'", [day]);
+  // The owner's counts this hour and today, as kept: 0 is a check counted, then given back.
+  const counts = () =>
+    Promise.all([`pagespeed:${who.id}`, `pagespeed-day:${who.id}:${day}`].map(async (key) => (await one<{ count: number }>("SELECT count FROM rate_limits WHERE key = ?", [key]))?.count));
+  try {
+    // Other owners' checks hold Flash's 3 requests a second for longer than a press waits (5 seconds).
+    await used(0);
+    const slots = await check(who, {}, who.slug, 7000);
+    assert.deepEqual([slots.status, slots.body.code, slots.body.error], [503, "busy", "Google's free speed check is busy right now. Try again later."]);
+    assert.equal(google.length, 0);
+    assert.deepEqual(await counts(), [0, 0], "counted, then given back");
+    // The day's last 2 requests, there when the press was counted, are taken by another press while
+    // this one waits a few seconds for Flash's requests a second.
+    await used(198);
+    const pressing = check(who, {}, who.slug, 3000);
+    while ((await counts())[0] !== 1) await new Promise((r) => setTimeout(r, 5));
+    await used(200);
+    const race = await pressing;
+    assert.deepEqual([race.status, race.body.code], [503, "busy"]);
+    assert.equal(google.length, 0);
+    assert.deepEqual(await counts(), [0, 0]);
+    // Then a press Google is asked for uses one, and the hour's 3 are all still there.
+    await used(0);
+    assert.equal((await check(who)).status, 200);
+    assert.equal(google.length, 2);
+    assert.deepEqual(await counts(), [1, 1]);
+    for (let i = 2; i <= 3; i++) {
+      await republish(who.slug);
+      assert.equal((await check(who)).status, 200, `check ${i}`);
+    }
+  } finally {
     await used(Number(before?.requests ?? 0));
   }
 });

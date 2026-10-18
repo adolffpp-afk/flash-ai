@@ -41,8 +41,9 @@ const DOMAIN_LOOKUPS = 10;
  * version at the same address within a day is answered from the one saved, unless Google couldn't do
  * the phone's or the computer's half: then only that half is asked again. A saved check, a failure
  * remembered, Google refusing, a check already going and Flash's daily allowance being used up are
- * answered for free, before anything is asked or counted. One app is checked once at a time, and each
- * owner a few times an hour and a day (ownerChecks). Free: it never charges anything.
+ * answered for free, before anything is asked or counted, and a press Flash's own limits keep from
+ * Google once it was counted gives the owner's check back. One app is checked once at a time, and each
+ * owner a few times an hour and a UTC day (ownerChecks). Free: it never charges anything.
  */
 export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug]/pagespeed">) {
   const user = await getUser(request);
@@ -82,19 +83,25 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug
     Response.json({ code: "running", error: t("Google is still checking this page. The result shows here when it's done.") }, { status: 409 });
   // Waiting for a check already going doesn't use up one of the owner's.
   if ((await countOf(lock)) > 0) return running();
+  // The owner's checks today are counted by the UTC day Flash's daily allowance counts by, from this
+  // moment, and this press's requests come from that day's allowance: one owner's 5 keyless checks a
+  // day are at most 10 of that day's 200.
+  const pressed = Date.now();
   // Flash's daily allowance for every owner together (read only) can't take what this press would ask
   // Google, both halves or the one that failed: busy, without using one of the owner's checks.
-  if (!(await pagespeedRoom(same ? [same.mobile, same.desktop].filter((r) => !r.ok).length : 2))) return failed(t, "busy");
+  if (!(await pagespeedRoom(same ? [same.mobile, same.desktop].filter((r) => !r.ok).length : 2, pressed))) return failed(t, "busy");
   const caps = ownerChecks();
   const hourly = `pagespeed:${user.id}`;
-  const daily = `pagespeed-day:${user.id}`;
+  const days = `pagespeed-day:${user.id}:`;
+  const daily = `${days}${new Date(pressed).toISOString().slice(0, 10)}`;
   const thisHour = () =>
     Response.json({ error: t("You've used this hour's checks with Google ({count} an hour). Try again in an hour.", { count: caps.hour.toLocaleString(t.locale) }) }, { status: 429 });
   const today = () =>
     Response.json({ error: t("You've used today's checks with Google ({count} a day). Try again tomorrow.", { count: caps.day.toLocaleString(t.locale) }) }, { status: 429 });
   // Over a limit, nothing is asked or written.
   if ((await countOf(hourly)) >= caps.hour) return thisHour();
-  if ((await countOf(daily)) >= caps.day) return today();
+  const usedToday = await countOf(daily);
+  if (usedToday >= caps.day) return today();
   if (domain) {
     // Asking Vercel (whose answer is noted with the domain, see domainStatus) has a limit of its own,
     // so a domain that doesn't point at Flash yet uses up none of the owner's checks. A domain that
@@ -109,17 +116,25 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug
   try {
     // Counted once this press holds the app's check, so a press that lost the race to another uses none.
     if (!(await take(hourly, caps.hour, HOUR))) return thisHour();
-    if (!(await take(daily, caps.day, DAY))) return today();
+    // Until the next UTC midnight. The owner's first check of a day clears their counts of earlier days.
+    if (!(await take(daily, caps.day, DAY - (pressed % DAY)))) return today();
+    if (!usedToday) await run("DELETE FROM rate_limits WHERE key >= ? AND key < ?", [days, daily]);
     // Both side by side, or only the half that failed last time, each with when Google ran it (a kept
     // half saved before halves had their own time is as old as its check). Never the request's
     // signal: the result is kept even when the owner closes the page.
+    let reachedGoogle = false;
     const ask = async (strategy: "mobile" | "desktop"): Promise<PageSpeedRun> => {
       const kept = same?.[strategy];
       if (kept?.ok) return { ...kept, at: kept.at ?? same!.at };
-      const result = await runPageSpeed(url, strategy);
+      const result = await runPageSpeed(url, strategy, { at: pressed });
+      if (result.ok || result.error !== "busy") reachedGoogle = true;
       return result.ok ? { ...result, at: Date.now() } : result;
     };
     const [mobile, desktop] = await Promise.all([ask("mobile"), ask("desktop")]);
+    // Busy is the one answer that never reached Google: Flash's few requests a second, or the day's last
+    // requests, were taken by other presses meanwhile. When every half asked was busy, the owner's
+    // check is given back, as when the allowance had no room.
+    if (!reachedGoogle) await run("UPDATE rate_limits SET count = count - 1 WHERE key IN (?, ?) AND count > 0", [hourly, daily]);
     // Google couldn't load or finish this version: the same answer for a while, without asking again.
     const error = !mobile.ok ? mobile.error : !desktop.ok ? desktop.error : null;
     if (error === "unreachable" || error === "slow") await cachePut(failKey, error, 10 * MINUTE);
