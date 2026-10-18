@@ -17,16 +17,20 @@
  * ever find nothing. Deleting a chunk only marks its index rows deleted, so a delete is followed by
  * purgeIndex, which rewrites the index without them at most once a day.
  */
+import { randomBytes } from "node:crypto";
 import type { InStatement } from "@libsql/client";
-import { all, db, mendAssistantIndex, one, run } from "./db.ts";
+import { all, db, mendAssistantIndex, now, one, run } from "./db.ts";
 import { MAX_PASSAGES, PASSAGE_TOKENS, type SearchMode } from "../assistants.ts";
 import { chunkText, labelEnds, matchTerms, phraseOf, queryTerms, rankChunks, tagOf, tagged, tells, type Term } from "../assistant-chunks.ts";
 
 const INDEX = "assistant_chunks_fts";
 const TRIGGER = "assistant_chunks_gone";
 // Set once a file's chunks were stored while the index was missing: those chunks aren't in it,
-// so searching it would miss them, and every search uses the fallback from then on.
+// so searching it would miss them, and every search uses the fallback until catchUpIndex has put
+// them in. Each batch stored that way sets it anew, to a value of its own, so catchUpIndex can tell
+// whether chunks were stored that way while it was putting the earlier ones in.
 const UNINDEXED = "assistant_unindexed";
+const unindexedMark = () => `${Date.now()}.${randomBytes(6).toString("hex")}`;
 
 let checked: { mode: SearchMode; at: number } | null = null;
 const CHECK_EVERY = 10 * 60_000;
@@ -61,6 +65,99 @@ export async function searchMode(fresh = false): Promise<SearchMode> {
 // Chunks per batch when storing a file, each with its index row, and the file's chunk count so far.
 const PER_BATCH = 100;
 
+// Kept in settings while catchUpIndex puts chunks stored without the index into it, as JSON: the
+// last chunk id it covers ("to", the newest when it began: later chunks get their index rows as
+// they're stored), the last it has done ("from"), and the UNINDEXED value it began from ("mark").
+const CATCH_UP = "assistant_index_catch_up";
+// The chunk ids one step of catchUpIndex looks at, and the most chunks it puts in the index.
+const CATCH_UP_SPAN = 2000;
+const CATCH_UP_CHUNKS = PER_BATCH;
+
+export type CatchUp = { state: "none" | "current" | "behind"; done?: number; of?: number };
+
+/**
+ * Puts the chunks stored while the database had no index (see UNINDEXED) into the index, one
+ * bounded step after another until `budgetMs` has passed: each step looks at 2,000 chunk ids, in
+ * order, and writes the index rows of at most 100 chunks that have none, with how far it has come,
+ * in one batch. Once every chunk up to the newest there was when it began is in, the mark goes in
+ * the same batch, and search uses the index again (this server at once; others within the 10
+ * minutes they keep their answer). If chunks were stored without the index meanwhile (an upload
+ * that began before the index existed), the mark has changed: it stays, and the next step goes on
+ * to the newest chunk there is now.
+ *
+ * Safe beside anything else: an index row is written only for a chunk that's still there and has
+ * none, in the same statement, so a chunk deleted meanwhile gets none and none gets two; a step
+ * whose place another server took writes only what that one didn't. Search uses the fallback until
+ * it's done, so a half-made index is never searched. Run after an upload (the upload route does,
+ * once it has answered); "none" without an index, "current" when nothing is behind, else
+ * "behind", with the last chunk id done and the last to do.
+ */
+export async function catchUpIndex(o: { budgetMs?: number; span?: number; chunks?: number } = {}): Promise<CatchUp> {
+  const started = Date.now();
+  const span = o.span ?? CATCH_UP_SPAN;
+  const most = o.chunks ?? CATCH_UP_CHUNKS;
+  const { index, trigger, behind } = await indexState();
+  if (!index) return { state: "none" };
+  if (!behind) return { state: "current" };
+  const client = await db();
+  // Its rows would otherwise stay when their chunks are deleted.
+  if (!trigger) await mendAssistantIndex(client);
+  await run(
+    "INSERT OR IGNORE INTO settings (key, value) SELECT ?, json_object('to', (SELECT COALESCE(MAX(id), 0) FROM assistant_chunks), 'from', 0, 'mark', (SELECT value FROM settings WHERE key = ?))",
+    [CATCH_UP, UNINDEXED],
+  );
+  for (;;) {
+    const kept = await one<{ value: string }>("SELECT value FROM settings WHERE key = ?", [CATCH_UP]);
+    if (!kept) break;
+    const { to, from, mark } = JSON.parse(kept.value) as { to: number; from: number; mark: string | null };
+    const upTo = Math.min(to, from + span);
+    const missing = await all<{ id: number; assistant_id: string; body: string }>(
+      `SELECT c.id, c.assistant_id, c.body FROM assistant_chunks c WHERE c.id > ? AND c.id <= ? AND NOT EXISTS (SELECT 1 FROM ${INDEX} f WHERE f.rowid = c.id) ORDER BY c.id LIMIT ?`,
+      [from, upTo, most],
+    );
+    const reached = missing.length < most ? upTo : Number(missing.at(-1)!.id);
+    const step: InStatement[] = missing.flatMap((c) => {
+      let tag: string;
+      try {
+        tag = tagOf(c.assistant_id);
+      } catch {
+        return [];
+      }
+      return [
+        {
+          sql: `INSERT INTO ${INDEX} (rowid, seg) SELECT ?, ? WHERE EXISTS (SELECT 1 FROM assistant_chunks WHERE id = ?) AND NOT EXISTS (SELECT 1 FROM ${INDEX} WHERE rowid = ?)`,
+          args: [c.id, tagged(tag, c.body), c.id, c.id],
+        },
+      ];
+    });
+    // Only from this step's place: a server that took it already moved on.
+    const here = "key = ? AND json_extract(value, '$.to') = ? AND json_extract(value, '$.from') = ?";
+    step.push({ sql: `UPDATE settings SET value = json_set(value, '$.from', ?) WHERE ${here}`, args: [reached, CATCH_UP, to, from] });
+    if (reached >= to) {
+      step.push(
+        // Every chunk up to `to` is in the index. If no chunk was stored without it since this
+        // began, nothing is behind; else this goes on to the newest chunk there is now.
+        { sql: `DELETE FROM settings WHERE key = ? AND value IS ? AND EXISTS (SELECT 1 FROM settings WHERE ${here})`, args: [UNINDEXED, mark, CATCH_UP, to, reached] },
+        {
+          sql: `UPDATE settings SET value = json_object('to', (SELECT COALESCE(MAX(id), 0) FROM assistant_chunks), 'from', ?, 'mark', (SELECT value FROM settings WHERE key = ?)) WHERE ${here} AND EXISTS (SELECT 1 FROM settings WHERE key = ?)`,
+          args: [to, UNINDEXED, CATCH_UP, to, reached, UNINDEXED],
+        },
+        { sql: `DELETE FROM settings WHERE ${here} AND NOT EXISTS (SELECT 1 FROM settings WHERE key = ?)`, args: [CATCH_UP, to, reached, UNINDEXED] },
+      );
+    }
+    await client.batch(step, "write");
+    if (reached >= to) checked = null;
+    if (Date.now() - started >= (o.budgetMs ?? 10_000)) {
+      const left = await one<{ value: string }>("SELECT value FROM settings WHERE key = ?", [CATCH_UP]);
+      if (!left) break;
+      const place = JSON.parse(left.value) as { to: number; from: number };
+      return { state: "behind", done: place.from, of: place.to };
+    }
+  }
+  checked = null;
+  return { state: (await indexState()).behind ? "behind" : "current" };
+}
+
 /**
  * Stores a file's text as chunks, with their index rows when the database has the index (checked
  * again first, so no chunk is ever left out of an index that exists), 100 to a batch. Each batch
@@ -90,8 +187,8 @@ export async function indexFile(assistantId: string, fileId: string, text: strin
       args: [assistantId, assistantId],
     },
   ];
-  // Without the index, mark first that chunks exist which it doesn't hold.
-  if (!index) first.push({ sql: "INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')", args: [UNINDEXED] });
+  // Without the index, each batch marks first that chunks exist which it doesn't hold.
+  const mark = (): InStatement[] => (index ? [] : [{ sql: "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", args: [UNINDEXED, unindexedMark()] }]);
   const rows = (c: (typeof chunks)[number]): InStatement[] => [
     {
       // Its index row is made from the chunk just stored, so neither is when the file is gone.
@@ -106,6 +203,7 @@ export async function indexFile(assistantId: string, fileId: string, text: strin
   for (let from = 0; from === 0 || from < chunks.length; from += PER_BATCH) {
     const part = chunks.slice(from, from + PER_BATCH);
     batches.push([
+      ...mark(),
       ...(from === 0 ? first : []),
       ...part.flatMap(rows),
       { sql: "UPDATE assistant_files SET chunks = ? WHERE id = ? AND assistant_id = ?", args: [from + part.length, fileId, assistantId] },
@@ -136,17 +234,42 @@ export async function indexFile(assistantId: string, fileId: string, text: strin
 
 const OWNED = "EXISTS (SELECT 1 FROM assistants WHERE id = ? AND user_id = ?)";
 
+/*
+ * Every table that keeps something for an assistant's file by its file_id, each also by its
+ * assistant_id, so deleting the assistant takes it too (see ASSISTANT_TABLES). Deleted with the
+ * file, before the file's own row in assistant_files. A test checks every assistant table with a
+ * file_id column is here.
+ */
+export const FILE_TABLES = ["assistant_chunks"] as const;
+
 /**
- * The statements that delete one file of an assistant: its chunks (the trigger takes their index
- * rows), then the file, then a new version for the assistant, as its answers and price change.
- * Each does nothing unless the assistant is the user's. For a batch with whatever else the delete
- * changes, followed by purgeIndex.
+ * The statements that delete what FILE_TABLES keeps for one file, then the file's own row, last.
+ * `owned` adds a check to each that the assistant is the user's.
+ */
+export function fileDeletes(assistantId: string, fileId: string, owned?: { userId: string }): InStatement[] {
+  const mine = owned ? ` AND ${OWNED}` : "";
+  const theirs = owned ? [assistantId, owned.userId] : [];
+  return [
+    ...FILE_TABLES.map((table): InStatement => ({ sql: `DELETE FROM ${table} WHERE assistant_id = ? AND file_id = ?${mine}`, args: [assistantId, fileId, ...theirs] })),
+    { sql: `DELETE FROM assistant_files WHERE assistant_id = ? AND id = ?${mine}`, args: [assistantId, fileId, ...theirs] },
+  ];
+}
+
+/**
+ * The statements that delete one file of an assistant: a new version for the assistant, as its
+ * answers and price change, then what FILE_TABLES keeps for it (the trigger takes its chunks' index
+ * rows), then the file, last, so the batch's result for it says whether there was one. Each does
+ * nothing unless the assistant is the user's, and the version moves only while the file is there,
+ * so two deletes of one file at once give it one new version. For a batch with whatever else the
+ * delete changes, followed by purgeIndex.
  */
 export function removeFileRows(userId: string, assistantId: string, fileId: string): InStatement[] {
   return [
-    { sql: `DELETE FROM assistant_chunks WHERE assistant_id = ? AND file_id = ? AND ${OWNED}`, args: [assistantId, fileId, assistantId, userId] },
-    { sql: `DELETE FROM assistant_files WHERE assistant_id = ? AND id = ? AND ${OWNED}`, args: [assistantId, fileId, assistantId, userId] },
-    { sql: "UPDATE assistants SET version = version + 1 WHERE id = ? AND user_id = ?", args: [assistantId, userId] },
+    {
+      sql: "UPDATE assistants SET version = version + 1, updated_at = ? WHERE id = ? AND user_id = ? AND EXISTS (SELECT 1 FROM assistant_files WHERE id = ? AND assistant_id = ?)",
+      args: [now(), assistantId, userId, fileId, assistantId],
+    },
+    ...fileDeletes(assistantId, fileId, { userId }),
   ];
 }
 
@@ -447,7 +570,9 @@ export async function passagesFor(a: { id: string }, message: string, earlier = 
 // Below this much assistant text, the database's fixed pages would make any measure meaningless.
 const MEASURE_FROM = 1024 * 1024;
 // The last measure and when it was taken, kept in settings: measuring reads every page of every
-// assistant's text, and the factor moves slowly.
+// assistant's text, and the factor moves slowly. A measure that failed is kept too, as null: a
+// database without dbstat fails every time, and one that failed part way could fail again after
+// reading as many pages.
 const FACTOR = "assistant_store_factor";
 const MEASURE_EVERY = 24 * 3600_000;
 
@@ -455,28 +580,45 @@ const MEASURE_EVERY = 24 * 3600_000;
  * How many times its UTF-8 size assistant text takes in the database (chunks, index and file
  * rows), measured from the database's own pages, or null before there is enough text or where the
  * database can't tell (no dbstat). Counted against storage as STORE_FACTOR. Measured at most once
- * a day, unless `fresh`.
+ * a day, unless `fresh`; a failed measure isn't tried again for a day either.
+ *
+ * Each table and index of the chunks and files is asked for by its own name, with dbstat's
+ * aggregate, in one round trip: dbstat then reads only their pages and answers one row for each,
+ * where a list of names (name IN (…)) can make it read every page of the database and give one row
+ * per page.
  */
 export async function storageFactor(fresh = false): Promise<number | null> {
   try {
     const kept = fresh ? null : await one<{ value: string }>("SELECT value FROM settings WHERE key = ?", [FACTOR]);
-    const last = kept ? (JSON.parse(kept.value) as { factor: number; at: number }) : null;
-    if (last && typeof last.factor === "number" && Date.now() - last.at < MEASURE_EVERY) return last.factor;
+    const last = kept ? (JSON.parse(kept.value) as { factor: number | null; at: number }) : null;
+    if (last && (typeof last.factor === "number" || last.factor === null) && Date.now() - last.at < MEASURE_EVERY) return last.factor;
   } catch {
     // Measured again below.
   }
+  const keep = (factor: number | null) => run("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", [FACTOR, JSON.stringify({ factor, at: Date.now() })]).catch(() => {});
+  let text: number;
   try {
-    const text = await one<{ bytes: number }>("SELECT COALESCE(SUM(bytes), 0) AS bytes FROM assistant_files");
-    if (Number(text?.bytes) < MEASURE_FROM) return null;
-    // Every table, index and index part of the chunks and files, by the table each belongs to.
-    const used = await one<{ bytes: number }>(
-      `SELECT COALESCE(SUM(pgsize), 0) AS bytes FROM dbstat
-       WHERE name IN (SELECT name FROM sqlite_master WHERE tbl_name LIKE 'assistant\\_chunks%' ESCAPE '\\' OR tbl_name = 'assistant_files')`,
+    text = Number((await one<{ bytes: number }>("SELECT COALESCE(SUM(bytes), 0) AS bytes FROM assistant_files"))?.bytes);
+  } catch {
+    return null;
+  }
+  // Not kept: asking again is one cheap read, and the text may grow.
+  if (!(text >= MEASURE_FROM)) return null;
+  try {
+    // The tables and indexes (a virtual table has no pages: rootpage 0), by the table each belongs to.
+    const names = await all<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE rootpage > 0 AND (tbl_name LIKE 'assistant\\_chunks%' ESCAPE '\\' OR tbl_name = 'assistant_files') ORDER BY name",
     );
-    const factor = Number(used?.bytes) / Number(text?.bytes);
-    await run("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", [FACTOR, JSON.stringify({ factor, at: Date.now() })]).catch(() => {});
+    const sizes = await (await db()).batch(
+      names.map((n) => ({ sql: "SELECT pgsize FROM dbstat WHERE name = ? AND aggregate = TRUE", args: [n.name] })),
+      "read",
+    );
+    const used = sizes.reduce((sum, r) => sum + Number(r.rows[0]?.pgsize ?? 0), 0);
+    const factor = used / text;
+    await keep(factor);
     return factor;
   } catch {
+    await keep(null);
     return null;
   }
 }

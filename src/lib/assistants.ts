@@ -6,7 +6,8 @@
  * Nothing about assistants reaches anyone while ASSISTANTS_ON is false: no route answers and the
  * chat ignores a chat's assistant, so nobody can be charged for one before its price line shows.
  */
-import { isLevel, type Level } from "./levels.ts";
+import { LEVELS, isLevel, type Level } from "./levels.ts";
+import { CUT_NOTE } from "./office.ts";
 import { BRAND_NAME, LEGAL_NAME, PRODUCT_NAME } from "./product.ts";
 
 export const ASSISTANTS_ON = false;
@@ -24,6 +25,14 @@ export const MAX_FILE_CHARS = 1_000_000;
 export const MAX_ASSISTANT_CHARS = 2_000_000;
 // One file's text as uploaded, in UTF-8 bytes: room for 1,000,000 characters of most languages.
 export const MAX_UPLOAD_BYTES = 3_000_000;
+// What a file was read from (PDF, Word, Excel, PowerPoint, or text as it is), and how long its
+// name can be.
+export const ASSISTANT_FILE_KINDS = ["pdf", "docx", "xlsx", "pptx", "text"] as const;
+export type AssistantFileKind = (typeof ASSISTANT_FILE_KINDS)[number];
+export const MAX_FILE_NAME = 120;
+// What the file readers (pdfText, officeText) keep of a file for an assistant: MAX_FILE_CHARS with
+// room for the note they add after a cut.
+export const READ_LIMIT = MAX_FILE_CHARS - CUT_NOTE.length;
 
 // What one message reads from an assistant's files: up to this many tokens on every level, in at
 // most this many passages, from chunks of about this many characters.
@@ -145,15 +154,21 @@ const LOOKALIKES: Record<string, string> = {
 // "Official Flash ∞ AI", "AI-Flash Inc. Support", "Flash Customer Support", "Contact Flash Admins",
 // "Flash's Help Desk". Only those: "flash" is an everyday word, and "Flash sale helper" or
 // "Flashcards support" are someone's own. "Flash ∞" is "Flash", as "∞" goes the way punctuation
-// goes, and "Flash Infinity" is how it's spelled out.
+// goes, and "Flash Infinity" is how it's spelled out. Any of these with a level's name after it
+// is Flash's own level ("Flash Summit", "Flash ∞ AI Vision", "AI-Flash Summit"), also with the
+// rest of Flash's own names after the level ("Flash Summit AI", "Flash Vision ∞ AI", "Flash Sonic
+// Infinity AI"), and so is "Ultra", the top level's name before it was Summit; the level's name
+// alone ("Summit coach") is someone's own.
 const OWN = ["Flash", "Flash Infinity", PRODUCT_NAME, BRAND_NAME, LEGAL_NAME, "AI-Flash"];
+const LEVEL_NAMES = [...LEVELS.filter((l) => l.id !== "auto").map((l) => l.short), "Ultra"];
 const ROLES = [
   "support", "team", "official", "help", "desk", "admin", "administrator", "moderator", "staff", "customer", "service", "contact", "billing",
   "account", "security", "assistant", "bot", "inc", "incorporated", "ltd", "llc", "corp", "corporation", "hq",
 ];
 const alike = (names: string[]) => names.map((name) => [...nameKey(name)].map((ch) => `[${ch}${LOOKALIKES[ch] ?? ""}]`).join("")).join("|");
 const ROLE = `(?:${alike(ROLES)})(?:${alike(["s"])})?`;
-const KEPT = new RegExp(`^(?:${ROLE})*(?:${alike(OWN)})(?:${alike(["s"])})?(?:${ROLE})*$`, "u");
+const LEVEL = `(?:${alike(["s"])})?(?:${alike(LEVEL_NAMES)})(?:(?:${alike(["s"])})?(?:${alike(["ai", "infinity ai", "infinity"])}))?`;
+const KEPT = new RegExp(`^(?:${ROLE})*(?:${alike(OWN)})(?:${LEVEL})?(?:${alike(["s"])})?(?:${ROLE})*$`, "u");
 
 /** Whether a name is one Flash keeps for itself ("Flash support", "FLASH ∞ AI", "flash-team", "Flаsh" with a Cyrillic "а"). */
 export const isKeptName = (name: string) => KEPT.test(nameKey(name));
@@ -161,6 +176,24 @@ export const isKeptName = (name: string) => KEPT.test(nameKey(name));
 // Something that shows: not only invisible characters (zero-width ones, joiners, soft hyphens,
 // tags), marks or blanks.
 const SHOWS = /[^\p{Default_Ignorable_Code_Point}\p{M}\s\u2800]/u;
+
+/** Whether a kind is one an assistant's file can be. */
+export const isFileKind = (kind: unknown): kind is AssistantFileKind => (ASSISTANT_FILE_KINDS as readonly unknown[]).includes(kind);
+
+/**
+ * A file's name as an assistant keeps it: without the folders before it, on one line, without
+ * hidden characters, and up to MAX_FILE_NAME characters, a longer one cut before its extension so
+ * the extension stays. "file" when nothing that shows is left. A name is only a label, so a long
+ * one is cut, not refused.
+ */
+export function cleanFileName(name: unknown): string {
+  const base = line(typeof name === "string" ? name.split(/[\\/]/).pop() : "");
+  if (!SHOWS.test(base)) return "file";
+  const chars = [...base];
+  if (chars.length <= MAX_FILE_NAME) return base;
+  const ext = /\.[\p{L}\p{N}]{1,8}$/u.exec(base)?.[0] ?? "";
+  return chars.slice(0, MAX_FILE_NAME - [...ext].length).join("").trimEnd() + ext;
+}
 
 /** The first reason these fields can't be saved, or null when they can. */
 export function validateAssistant(a: AssistantFields): AssistantProblem | null {

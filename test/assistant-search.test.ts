@@ -17,7 +17,7 @@ after(() => rmSync(dir, { recursive: true, force: true }));
 
 const { db, run, one, all } = await import("../src/lib/server/db.ts");
 const search = await import("../src/lib/server/assistant-search.ts");
-const { indexFile, passagesFor, purgeIndex, searchChunks, searchMode, removeFileRows, storageFactor } = search;
+const { catchUpIndex, indexFile, passagesFor, purgeIndex, searchChunks, searchMode, removeFileRows, storageFactor } = search;
 const { chunkText, queryTerms, rankChunks, tagOf, tagged, words } = await import("../src/lib/assistant-chunks.ts");
 const { PASSAGE_TOKENS, MAX_PASSAGES, STORE_FACTOR } = await import("../src/lib/assistants.ts");
 type Statement = Parameters<Awaited<ReturnType<typeof db>>["batch"]>[0][number];
@@ -105,6 +105,8 @@ const theirs = await file(other, "Theirs.pdf", pdf(10, { 2: REFUNDS, 5: DELIVERY
 
 test("the database makes the full-text index and the trigger that keeps it clean", async () => {
   assert.equal(await searchMode(true), "index");
+  assert.deepEqual(await catchUpIndex(), { state: "current" }, "every chunk went into the index as it was stored");
+  assert.equal(await one("SELECT 1 FROM settings WHERE key = 'assistant_index_catch_up'"), null);
   const made = await all<{ name: string; type: string }>("SELECT name, type FROM sqlite_master WHERE name IN ('assistant_chunks_fts', 'assistant_chunks_gone', 'projects_assistant')");
   assert.deepEqual(made.map((r) => r.name).sort(), ["assistant_chunks_fts", "assistant_chunks_gone", "projects_assistant"]);
   assert.equal(Number((await one<{ foreign_keys: number }>("PRAGMA foreign_keys"))?.foreign_keys), 0, "foreign keys off, as on Turso");
@@ -646,19 +648,71 @@ test("assistant text takes no more than STORE_FACTOR times its bytes in the data
   assert.ok(Math.abs(measured - grown / stored) < 0.15, `/admin says ${measured.toFixed(2)}x, the database grew ${(grown / stored).toFixed(2)}x`);
 });
 
+// The round trips that ask dbstat (one batch is one).
+const measures = (calls: Seen[][]) => calls.filter((c) => c.some((q) => /\bdbstat\b/.test(q.sql))).length;
+
 test("/admin says the full-text index is in use, with the storage factor measured at most once a day", async (t) => {
   const { adminStats } = await import("../src/lib/server/admin-stats.ts");
-  const measures = (seen: { sql: string }[]) => seen.filter((q) => /\bdbstat\b/.test(q.sql)).length;
-  const { result, seen } = await watched(() => adminStats(30));
+  const { result, calls } = await watched(() => adminStats(30));
   const { assistantSearch } = JSON.parse(JSON.stringify(result));
   assert.equal(assistantSearch.mode, "index");
   assert.equal(assistantSearch.factor, await storageFactor());
   assert.ok(assistantSearch.factor > 1);
-  assert.equal(measures(seen), 0, "the measure the storage test took today");
+  assert.equal(measures(calls), 0, "the measure the storage test took today");
   t.mock.timers.enable({ apis: ["Date"], now: Date.now() + 25 * 3600_000 });
   const later = await watched(() => storageFactor());
-  assert.equal(measures(later.seen), 1, "a day later, measured again");
-  assert.equal(measures((await watched(() => adminStats(30))).seen), 0);
+  assert.equal(measures(later.calls), 1, "a day later, measured again, in one round trip");
+  assert.equal(measures((await watched(() => adminStats(30))).calls), 0);
+});
+
+test("the storage measure asks dbstat for each table of the assistants' text by name, one row each, and a failed measure waits a day", async (t) => {
+  const measured = await watched(() => storageFactor(true));
+  const asked = measured.seen.filter((q) => /\bdbstat\b/.test(q.sql));
+  const btrees = await all<{ name: string }>(
+    "SELECT name FROM sqlite_master WHERE rootpage > 0 AND (tbl_name LIKE 'assistant\\_chunks%' ESCAPE '\\' OR tbl_name = 'assistant_files')",
+  );
+  assert.deepEqual(asked.map((q) => q.args[0]).sort(), btrees.map((b) => b.name).sort(), "every table and index of the chunks, the index and the files, and nothing else");
+  for (const q of asked) {
+    // A list of names (IN) can make dbstat read every page of the database, one row a page.
+    assert.match(q.sql, /\bname = \?/);
+    assert.doesNotMatch(q.sql, /\bIN\b/i);
+    assert.match(q.sql, /\baggregate = TRUE\b/);
+    assert.ok(q.rows <= 1, "one row for the whole table");
+  }
+  assert.ok(btrees.some((b) => b.name === "assistant_chunks_fts_data") && btrees.some((b) => b.name === "assistant_chunks_file"), "the index's own tables and the chunks' indexes count");
+  const pages = await all<{ name: string; pgsize: number }>("SELECT name, SUM(pgsize) AS pgsize FROM dbstat GROUP BY name");
+  const theirs = pages.filter((p) => btrees.some((b) => b.name === p.name)).reduce((sum, p) => sum + Number(p.pgsize), 0);
+  const text = Number((await one<{ bytes: number }>("SELECT SUM(bytes) AS bytes FROM assistant_files"))?.bytes);
+  assert.ok(Math.abs(measured.result! - theirs / text) < 1e-9, "the same as adding up their pages");
+
+  // A database where dbstat fails (or has none): no factor, and not asked again on every /admin load.
+  const client = await db();
+  const batch = client.batch;
+  let tried = 0;
+  client.batch = (async (...args: Parameters<typeof batch>) => {
+    if (args[0].some((s) => /\bdbstat\b/.test(sqlOf(s)))) {
+      tried++;
+      throw new Error("SQLITE_ERROR: no such table: dbstat");
+    }
+    return batch.apply(client, args);
+  }) as typeof batch;
+  try {
+    assert.equal(await storageFactor(true), null);
+    assert.equal(tried, 1);
+    const again = await watched(() => storageFactor());
+    assert.equal(again.result, null);
+    assert.equal(tried, 1, "the failure is kept");
+    assert.equal(again.calls.length, 1, "one read of what was kept");
+    t.mock.timers.enable({ apis: ["Date"], now: Date.now() + 23 * 3600_000 });
+    assert.equal(await storageFactor(), null);
+    assert.equal(tried, 1, "for a day");
+    t.mock.timers.tick(2 * 3600_000);
+    assert.equal(await storageFactor(), null);
+    assert.equal(tried, 2, "then tried again");
+  } finally {
+    client.batch = batch;
+  }
+  assert.ok((await storageFactor(true))! > 1, "and measured once dbstat answers");
 });
 
 test("an upload stores 100 chunks a batch, each with its index row and the file's count so far: search works while it runs and after it stops", async () => {

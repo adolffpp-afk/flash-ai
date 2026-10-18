@@ -1012,6 +1012,10 @@ async function init(c: Client) {
   await c.execute("CREATE INDEX IF NOT EXISTS site_messages_contact ON site_messages(site_slug, contact_id)");
   // Each on its own, outside SCHEMA's one batch, so a database without FTS5 still gets everything else.
   await c.execute("CREATE INDEX IF NOT EXISTS projects_assistant ON projects(assistant_id) WHERE assistant_id != ''").catch(() => {});
+  // No two assistants share the first 16 digits of their id, which tag their words in the search
+  // index (see tagOf in assistant-chunks.ts). On its own too, so assistants made before it (none
+  // share them: createAssistant checks) can never stop the rest.
+  await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS assistants_tag ON assistants(substr(id, 1, 16))").catch(() => {});
   await c.execute(ASSISTANT_INDEX).then(() => mendAssistantIndex(c)).catch(() => {});
 }
 
