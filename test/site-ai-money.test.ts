@@ -445,6 +445,34 @@ test("an answer a server stopped in the middle of (a crash or a restart) is sett
   await setBalance("owner", 500);
 });
 
+test("a hold a stopped server left isn't spent until it is settled: the free monthly credits don't refill it and auto top-up doesn't buy a pack for it", async () => {
+  const { FREE_MONTHLY_CREDITS } = await import("../src/lib/credits.ts");
+  const { ensureMonthlyCredits } = await import("../src/lib/server/credits.ts");
+  for (const user of ["free-owner", "auto-owner"]) {
+    await run("INSERT INTO users (id, email, password_hash, created_at, verified_at) VALUES (?, ?, '', 0, 1)", [user, `${user}@x.io`]);
+  }
+  await setBalance("free-owner", 50);
+  await setBalance("auto-owner", 102);
+  await autoTopUpOn("auto-owner", 100);
+  // What a server that stopped while Claude answered leaves: a 3-credit hold, 16 minutes old.
+  for (const user of ["free-owner", "auto-owner"]) {
+    await run(`INSERT INTO credit_ledger (user_id, amount, reason, keeps_level, created_at) VALUES (?, -3, 'AI in "App"', 1, ?)`, [user, Date.now() - 16 * 60_000]);
+  }
+  // The free owner's first /api/me of the month, and the other owner's next one.
+  await ensureMonthlyCredits("free-owner");
+  assert.equal(await balance("free-owner"), FREE_MONTHLY_CREDITS - 3, "topped up to the month's credits, with the hold still out");
+  stripeCalls = [];
+  assert.equal(await maybeAutoTopUp("auto-owner"), false, "102 credits are over the level of 100");
+  assert.deepEqual(stripeCalls, [], "no payment was made");
+  // The next question to any app settles both holds to 0.
+  assert.equal((await ask()).status, 200);
+  assert.equal(await balance("free-owner"), FREE_MONTHLY_CREDITS, "the month's free credits, no more");
+  assert.equal(await balance("auto-owner"), 102);
+  assert.equal(await maybeAutoTopUp("auto-owner"), false);
+  assert.deepEqual(stripeCalls, []);
+  await run("UPDATE auto_topups SET enabled = 0 WHERE user_id = 'auto-owner'");
+});
+
 test("a visitor who closes the page while Claude answers can't stop the call: the route never hands it the request's signal, so the answer is charged at what it used", async () => {
   await saveAiSettings("shop", true, 500);
   await setBalance("owner", 500);
@@ -625,16 +653,16 @@ test("auto top-up turned on, or its level raised, while a visitor's question is 
   mode = "answer";
   assert.ok((await balance()) >= 1000, `settled, the answer left ${await balance()} credits, over the level`);
   assert.equal(await maybeAutoTopUp("owner"), false);
-  // As before, the owner's own request still running counts, and so does a visitor's hold left
-  // running for longer than any request.
+  // As before, the owner's own request still running counts. A visitor's hold left open for longer
+  // than any request doesn't: a later question settles it to 0 (see "a hold a stopped server left").
   for (const own of [true, false]) {
     await setBalance("owner", 1002);
     await run("UPDATE auto_topups SET last_at = 0 WHERE user_id = 'owner'");
     if (own) assert.notEqual(await charge("owner", 5, "the owner's own chat"), null);
     else await run(`INSERT INTO credit_ledger (user_id, amount, reason, keeps_level, created_at) VALUES ('owner', -5, 'AI in "Bakery"', 1, 0)`);
     stripeCalls = [];
-    assert.equal(await maybeAutoTopUp("owner"), true, own ? "the owner's own request" : "a hold left running");
-    assert.deepEqual(stripeCalls, ["POST /v1/payment_intents"]);
+    assert.equal(await maybeAutoTopUp("owner"), own, own ? "the owner's own request" : "a hold left open");
+    assert.deepEqual(stripeCalls, own ? ["POST /v1/payment_intents"] : []);
   }
   await run("UPDATE auto_topups SET enabled = 0 WHERE user_id = 'owner'");
 });

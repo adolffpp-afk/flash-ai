@@ -75,17 +75,18 @@ export async function spendable(
 export const HOLD_MINUTES = 15;
 
 /**
- * The balance auto top-up compares with its level (see maybeAutoTopUp). A hold still running for
+ * The balance auto top-up compares with its level (see maybeAutoTopUp). A hold still open for
  * spending that keeps the level (keepTopUpLevel, see charge) doesn't count: it was checked against
  * the level when it was taken, which may have been lower or off, and most of it comes back when the
  * answer ends. So a visitor's question never sets off a top-up, even when the level was turned on
- * or raised while it ran. A hold left running for longer than any request counts again.
+ * or raised while it ran. Nor does one a stopped server left open, however old: it is settled to 0
+ * later (see settleLeftHolds in site-ai.ts).
  */
 export async function topUpBalance(userId: string): Promise<number> {
   const row = await one<{ total: number }>(
     `SELECT COALESCE(SUM(amount), 0) AS total FROM credit_ledger
-     WHERE user_id = ? AND NOT (keeps_level = 1 AND settled_at = 0 AND created_at > ?)`,
-    [userId, now() - HOLD_MINUTES * 60_000],
+     WHERE user_id = ? AND NOT (keeps_level = 1 AND settled_at = 0)`,
+    [userId],
   );
   return Number(row?.total ?? 0);
 }
@@ -121,10 +122,12 @@ async function monthlyCredits(userId: string): Promise<void> {
   const ref = `free:${userId}:${monthKey()}`;
   if (await one("SELECT 1 FROM credit_ledger WHERE ref = ?", [ref])) return;
   // Credits held by a request still running count as not spent yet: most of a hold comes back when
-  // the reply ends, so counting it as spent would top up past the monthly amount.
+  // the reply ends, so counting it as spent would top up past the monthly amount. A visitor's hold
+  // (keeps_level) counts so however old: one a stopped server left is settled to 0 later (see
+  // settleLeftHolds in site-ai.ts).
   const row = await one<{ total: number }>(
     `SELECT COALESCE(SUM(amount), 0) AS total FROM credit_ledger
-     WHERE user_id = ? AND NOT (amount < 0 AND ref IS NULL AND settled_at = 0 AND created_at > ?)`,
+     WHERE user_id = ? AND NOT (amount < 0 AND ref IS NULL AND settled_at = 0 AND (keeps_level = 1 OR created_at > ?))`,
     [userId, now() - HOLD_MINUTES * 60_000],
   );
   const topUp = Math.max(0, FREE_MONTHLY_CREDITS - Math.max(0, Number(row?.total ?? 0)));
