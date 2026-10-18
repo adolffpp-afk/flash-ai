@@ -940,6 +940,12 @@ const MIGRATIONS = [
   // Whether the app's link preview says "Made with Flash ∞ AI" (see made-with.ts). On until its owner,
   // on a paid plan, turns it off.
   "ALTER TABLE sites ADD COLUMN made_with INTEGER NOT NULL DEFAULT 1",
+  // What Flash's search check (SEO) read from the app's page (see seo-scan.ts), saved with the page. Empty until worked out.
+  "ALTER TABLE sites ADD COLUMN seo TEXT NOT NULL DEFAULT ''",
+  // The app's last Google PageSpeed Insights result (see pagespeed.ts). Empty until its owner runs one.
+  "ALTER TABLE sites ADD COLUMN pagespeed TEXT NOT NULL DEFAULT ''",
+  // When Flash last saw a custom domain point at it (see domainStatus); 0 when it last saw it didn't, or hasn't looked yet.
+  "ALTER TABLE site_domains ADD COLUMN connected_at INTEGER NOT NULL DEFAULT 0",
   // The stages of the app's contact list, as JSON [{id, name}]; '' is New, Contacted, Won, Lost.
   "ALTER TABLE sites ADD COLUMN contact_stages TEXT NOT NULL DEFAULT ''",
   // The app's own key for its unsubscribe links and its contacts' hashed addresses, made on first use.

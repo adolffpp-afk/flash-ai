@@ -29,6 +29,13 @@ variables are set (steps in `docs/research-sources-setup.md`):
 | SEC EDGAR | A listed company's filings and reported figures            | none (`FLASH_CONTACT_EMAIL` goes in its User-Agent)    |
 | FRED      | Economic indicators: unemployment, inflation, GDP, rates     | `FRED_API_KEY`                                         |
 
+Published apps can also be checked with Google's free PageSpeed Insights from My websites & apps ›
+SEO (it isn't something answers look up; steps in the same file):
+
+| Source             | Used for                                                    | Key                            |
+| ------------------ | ----------------------------------------------------------- | ------------------------------ |
+| PageSpeed Insights | Speed, accessibility and SEO scores for a published app     | `PAGESPEED_API_KEY` (optional) |
+
 Three keys switch on all twelve engines. An optional fourth key, `FAL_KEY` from
 [fal.ai](https://fal.ai), adds more models, and Flash picks the best one for each request:
 

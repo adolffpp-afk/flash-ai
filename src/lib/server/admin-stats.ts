@@ -3,6 +3,7 @@ import { CREDIT_PACKS, MARKUP, PLANS, paymentFeeCents, planPrice, worstCaseProfi
 import { CONNECTOR_SETUP, DATA_SOURCES, GITHUB_SETUP, PROVIDER_LIST, missingKeys, providerName } from "../providers.ts";
 import { searxngUrlProblem } from "./searxng.ts";
 import { fredKeyProblem } from "./fred.ts";
+import { pagespeedKeyProblem } from "./pagespeed.ts";
 import { githubReady } from "./github.ts";
 import { googleMissing, googleReady } from "./google.ts";
 import { connectorsReady, keyVersions } from "./secret-box.ts";
@@ -56,14 +57,14 @@ export async function adminStats(days: number) {
      FROM usage WHERE created_at >= ? AND provider != '' GROUP BY provider`,
     [since],
   );
-  // The data sources' requests (web search, SEC EDGAR, FRED), counted per day as they're sent.
+  // The data sources' requests (web search, SEC EDGAR, FRED, PageSpeed Insights), counted per day as they're sent.
   const sourceUse = await all<{ provider: string; requests: number }>(
     `SELECT provider, COALESCE(SUM(requests), 0) AS requests FROM free_quota
      WHERE day >= ? AND provider IN (${DATA_SOURCES.map(() => "?").join(", ")}) GROUP BY provider`,
     [new Date(since).toISOString().slice(0, 10), ...DATA_SOURCES],
   );
-  // What makes a variable that is set unusable (an http SearXNG address, a FRED key of the wrong shape), by name.
-  const problems: Record<string, string> = { searxng: searxngUrlProblem(), fred: fredKeyProblem() };
+  // What makes a variable that is set unusable (an http SearXNG address, a FRED or Google key of the wrong shape), by name.
+  const problems: Record<string, string> = { searxng: searxngUrlProblem(), fred: fredKeyProblem(), pagespeed: pagespeedKeyProblem() };
   // Every provider Flash can call, used or not, then any other provider the usage log names.
   const byProvider = [
     ...PROVIDER_LIST.map((p) => {

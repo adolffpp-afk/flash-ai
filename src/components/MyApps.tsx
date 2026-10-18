@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { api, authedFetch } from "@/lib/store";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { announceRestored, announceSeoScore, announceUnpublished, api, authedFetch } from "@/lib/store";
 import { withAccount } from "@/lib/account-pin";
 import { SELLER_COUNTRIES } from "@/lib/shop";
 import { OTHER } from "@/lib/traffic";
@@ -13,9 +13,14 @@ import { tNow, useT, type T } from "@/lib/use-t";
 import type { FunnelRange, FunnelStats } from "@/lib/server/funnel.ts";
 import { ContactsView } from "./ContactsView";
 import { FunnelNotes, FunnelView, LinkMaker, dayLabel } from "./FunnelView";
+import { SeoView, type FixPlan, type SeoData, type SiteFix } from "./SeoView";
+import { BAND_PILL, band } from "@/lib/seo-band";
+import { issueCount } from "@/lib/seo-rules";
 
 // messages, views, members and contacts: null until counted, as the list counts only 20 apps at a
-// time (see sitesWithMessages); contacts also until the app's contact list was first filled.
+// time (see sitesWithMessages); contacts also until the app's contact list was first filled. seo: its
+// search check's score and how many things it found to fix, null until worked out (see server/seo.ts),
+// and left out until counted, with the counts.
 type Counts = { messages: number | null; views: number | null; members: number | null; contacts: number | null };
 type Site = Counts & {
   slug: string;
@@ -23,6 +28,7 @@ type Site = Counts & {
   updated_at: number;
   unread: number;
   openData?: boolean;
+  seo?: { score: number; issues: number } | null;
 };
 // The list shows this many apps at a time, the most the server counts in one go.
 const LIST_STEP = 20;
@@ -87,6 +93,7 @@ const VIEW_TITLES = {
   visits: msg("Visitors"),
   history: msg("History"),
   members: msg("Members"),
+  seo: msg("SEO"),
   ai: msg("AI"),
   files: msg("Files"),
   data: msg("Data"),
@@ -102,9 +109,38 @@ const isOpen = (data: AppData) => data.collections.some((c) => c.rule === "open"
 
 /**
  * My websites and apps: every published app, its link, and the forms visitors sent to it. onPlans
- * opens the plans, for what comes with a paid one.
+ * opens the plans, for what comes with a paid one. start opens one app's search check (SEO) once the
+ * list is in (from an app's own page in the chat); editCredits, onPlanFix, onFix and onDraft let that
+ * check ask the builder for a change (credits: the owner's balance, said when it's lower than a change
+ * usually costs), or put the owner's own details in the chat's message box, and
+ * onOpenChat opens that chat from there, saying why nothing was sent (not Edit's "ask for your changes").
+ * chatHere names a chat on this page that published a site, for one the server hasn't saved yet.
  */
-export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEdit?: (projectId: string) => void; onPlans?: () => void }) {
+export function MyApps({
+  onClose,
+  onEdit,
+  onPlans,
+  start,
+  editCredits,
+  credits,
+  onPlanFix,
+  onFix,
+  onDraft,
+  onOpenChat,
+  chatHere,
+}: {
+  onClose: () => void;
+  onEdit?: (projectId: string) => void;
+  onPlans?: () => void;
+  start?: { slug: string; view: "seo"; title?: string };
+  editCredits?: number;
+  credits?: number;
+  onPlanFix?: (fix: SiteFix) => Promise<FixPlan>;
+  onFix?: (fix: SiteFix, signal?: AbortSignal) => Promise<FixPlan | null>;
+  onDraft?: (draft: { projectId: string; slug: string; text: string }) => Promise<{ why: string; chat?: string } | null>;
+  onOpenChat?: (projectId: string, note?: string) => void;
+  chatHere?: (slug: string) => string | null;
+}) {
   const t = useT();
   const [sites, setSites] = useState<Site[] | null>(null);
   // How many apps the user may publish, how many the list shows, and what the filter box holds.
@@ -119,7 +155,9 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
   // Apps whose counts were asked for already, so each is asked for once.
   const asked = useRef(new Set<string>());
   const [open, setOpen] = useState<Site | null>(null);
-  const [view, setView] = useState<"messages" | "contacts" | "domains" | "preview" | "payments" | "visits" | "history" | "members" | "ai" | "files" | "data">("messages");
+  const [view, setView] = useState<"messages" | "contacts" | "domains" | "preview" | "payments" | "visits" | "history" | "members" | "ai" | "files" | "data" | "seo">(
+    "messages",
+  );
   const [appData, setAppData] = useState<ShownData | null>(null);
   const [records, setRecords] = useState<Records | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
@@ -138,6 +176,8 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
   const [funnelError, setFunnelError] = useState("");
   const visitLoads = useRef(0);
   const funnelLoads = useRef(0);
+  // The search check carries the app it's for, so a late answer for another app never shows.
+  const [seo, setSeo] = useState<{ slug: string; data: SeoData } | null>(null);
   const [payments, setPayments] = useState<Payments | null>(null);
   const [shop, setShop] = useState<Shop | null>(null);
   const [country, setCountry] = useState("CA");
@@ -150,6 +190,14 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
   const [messages, setMessages] = useState<SiteMessage[] | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
   const [error, setError] = useState("");
+  // The app it was opened for (its search check, from the chat) isn't published any more: said, with
+  // its title, above the list until the owner opens an app.
+  const [gone, setGone] = useState<{ title?: string } | null>(null);
+  // The Link preview opened from the app's search check: its back arrow goes back there, to where it
+  // was scrolled (scrollTop), with the check already loaded. null when it was opened from the list.
+  const [fromSeo, setFromSeo] = useState<{ scrollTop: number } | null>(null);
+  const backToSeo = useRef<number | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   // Whether a contact's page, Add contact or Edit stages has changes not saved: leaving the app or
   // closing My websites & apps then asks first, as the contact's own way back does.
@@ -160,6 +208,8 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
   const mayLeave = useCallback(() => !contactsEdited.current || window.confirm(tNow("Leave without saving your changes?")), []);
   // Counts the Data view's loads, so only the newest one's answer is shown.
   const dataLoads = useRef(0);
+  // The same for the search check: an answer for an app the owner has left (Back, or another app's SEO) only updates its score in the list.
+  const seoLoads = useRef(0);
   // The rules chosen in the Data view reach the server one at a time for each app, and the view shows
   // what the server holds after the last one, or after one fails (see in-order.ts).
   const [ruleSaves] = useState(() =>
@@ -173,8 +223,12 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
     }),
   );
 
+  // Focus starts on Close, once: Flash hands a new onClose on each of its renders, which mustn't move it.
   useEffect(() => {
     closeRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
     // Escape closes, except while typing: in a text field, or choosing a word with an input method.
     const typing = (e: KeyboardEvent) =>
       e.isComposing ||
@@ -184,17 +238,32 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, mayLeave]);
 
+  // An app's search check asked for from its page in the chat: opened once the list is in.
+  const started = useRef(false);
   useEffect(() => {
     api<{ sites: Site[]; maxSites?: number }>("/api/sites")
       .then(({ sites: list, maxSites: max }) => {
         setSites(list);
         setMaxSites(max ?? null);
+        const site = start && !started.current ? list.find((s) => s.slug === start.slug) : undefined;
+        if (start && !started.current && !site) setGone({ title: start.title });
+        started.current = true;
+        if (site) void showSeo(site);
       })
       .catch(() => {
         setError(tNow("Couldn't load your apps. Please try again."));
         setSites([]);
       });
+    // Only the app it opened with: My websites & apps opens afresh each time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Back on the search check from its Link preview: scrolled where it was, before it shows.
+  useLayoutEffect(() => {
+    if (view !== "seo" || backToSeo.current === null || !scrollRef.current) return;
+    scrollRef.current.scrollTop = backToSeo.current;
+    backToSeo.current = null;
+  }, [view]);
 
   async function showDomains(site: Site) {
     // Domains waiting for proof aren't saved yet, so they stay listed while this app is open.
@@ -242,7 +311,8 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
     }
   }
 
-  async function showPreview(site: Site) {
+  async function showPreview(site: Site, seoView = false) {
+    setFromSeo(seoView ? { scrollTop: scrollRef.current?.scrollTop ?? 0 } : null);
     setOpen(site);
     setView("preview");
     setMadeWith(null);
@@ -356,8 +426,19 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
     setBusy(true);
     setError("");
     try {
-      const { data } = await api<{ data?: DataSummary }>(`/api/sites/${open.slug}/versions`, { method: "POST", json: { id } });
-      setVersions((await api<{ versions: Version[] }>(`/api/sites/${open.slug}/versions`)).versions);
+      const slug = open.slug;
+      const { data, seo: check } = await api<{ data?: DataSummary; seo?: { score: number | null; issues: number } }>(`/api/sites/${slug}/versions`, {
+        method: "POST",
+        json: { id },
+      });
+      // The app's page in the chat: the version published from there isn't the live one any more.
+      announceRestored(slug);
+      // The search check read the page now live again: the list shows its score, and so does the app's page in the chat.
+      if (check) {
+        setSites((all) => all?.map((s) => (s.slug === slug ? { ...s, seo: check.score === null ? null : { score: check.score, issues: check.issues } } : s)) ?? null);
+        announceSeoScore(slug, { score: check.score, issues: check.issues });
+      }
+      setVersions((await api<{ versions: Version[] }>(`/api/sites/${slug}/versions`)).versions);
       setRestored({ data });
     } catch (err) {
       setError(err instanceof Error ? err.message : t("Couldn't bring that version back."));
@@ -402,6 +483,25 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
     if (!open) return;
     setFunnelDays(days);
     loadFunnel(open.slug, days, funnel?.slug === open.slug ? funnel.days : undefined);
+  }
+
+  async function showSeo(site: Site) {
+    const asked = ++seoLoads.current;
+    setOpen(site);
+    setView("seo");
+    setSeo(null);
+    setError("");
+    try {
+      const data = await api<Omit<SeoData, "loadedAt">>(`/api/sites/${site.slug}/seo`);
+      if (asked === seoLoads.current) setSeo({ slug: site.slug, data: { ...data, loadedAt: Date.now() } });
+      // The list shows the score of the page checked now (an app published before the check gets its first here).
+      const score = data.report.score;
+      const issues = issueCount(data.report);
+      setSites((all) => all?.map((s) => (s.slug === site.slug ? { ...s, seo: score === null ? null : { score, issues } } : s)) ?? null);
+      announceSeoScore(site.slug, { score, issues });
+    } catch {
+      if (asked === seoLoads.current) setError(t("Couldn't load the search check. Please try again."));
+    }
   }
 
   async function markOrder(order: Order) {
@@ -652,15 +752,15 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
   }
 
   /**
-   * Asks for the counts of listed apps past the 20 the list came with, 20 at a time, each once. Until
-   * they come, those apps show no numbers.
+   * Asks for the counts of listed apps past the 20 the list came with, 20 at a time, each once, with
+   * their search check scores. Until they come, those apps show no numbers.
    */
   function countApps(list: Site[]) {
     const slugs = list.filter((s) => s.views === null && !asked.current.has(s.slug)).map((s) => s.slug);
     for (let i = 0; i < slugs.length; i += LIST_STEP) {
       const part = slugs.slice(i, i + LIST_STEP);
       for (const slug of part) asked.current.add(slug);
-      api<{ counts: Record<string, Counts> }>(`/api/sites?counts=${encodeURIComponent(part.join(","))}`)
+      api<{ counts: Record<string, Counts & Pick<Site, "seo">> }>(`/api/sites?counts=${encodeURIComponent(part.join(","))}`)
         .then(({ counts }) => setSites((all) => all?.map((s) => (counts[s.slug] ? { ...s, ...counts[s.slug] } : s)) ?? null))
         .catch(() => {
           for (const slug of part) asked.current.delete(slug);
@@ -685,6 +785,8 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
     try {
       await api(`/api/sites?slug=${encodeURIComponent(slug)}`, { method: "DELETE" });
       setSites((all) => all?.filter((s) => s.slug !== slug) ?? null);
+      // Its page in the chat stops offering its search check.
+      announceUnpublished(slug);
       // The app that moves up into the list shows its numbers too.
       countApps(found.filter((s) => s.slug !== slug).slice(0, listed));
     } catch {
@@ -711,17 +813,42 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
       >
         <div className="flex items-center gap-3 border-b border-white/6 px-5 py-4">
           {open && (
-            <button onClick={() => mayLeave() && setOpen(null)} className="text-sm text-zinc-400 hover:text-zinc-100" aria-label={t("Back to my apps")}>
-              ←
+            <button
+              onClick={() => {
+                if (!mayLeave()) return;
+                if (view === "preview" && fromSeo) {
+                  // Back to the search check it was opened from, where it was.
+                  backToSeo.current = fromSeo.scrollTop;
+                  setFromSeo(null);
+                  setView("seo");
+                  return;
+                }
+                // A search check still loading doesn't show once the owner has left it.
+                seoLoads.current++;
+                setOpen(null);
+                setGone(null);
+              }}
+              className="text-sm text-zinc-400 hover:text-zinc-100"
+              aria-label={view === "preview" && fromSeo ? t("Back") : t("Back to my apps")}
+            >
+              <span className="inline-block rtl:-scale-x-100" aria-hidden>
+                ←
+              </span>
             </button>
           )}
-          <h2 className="min-w-0 flex-1 truncate text-lg font-medium tracking-tight">
+          {/* The view's name stays at the start, in right-to-left languages too, and whole unless it's wider
+              than the heading: only the app's title is cut. */}
+          <h2 className="flex min-w-0 flex-1 text-lg font-medium tracking-tight">
             {open ? (
               <>
-                {t(VIEW_TITLES[view])} · {open.title}
+                <span className="max-w-full shrink-0 truncate">{t(VIEW_TITLES[view])}</span>
+                <span className="flex min-w-0 overflow-hidden">
+                  <span className="shrink-0 px-1">·</span>
+                  <bdi className="min-w-0 truncate">{open.title}</bdi>
+                </span>
               </>
             ) : (
-              t("My websites and apps")
+              <span className="truncate">{t("My websites and apps")}</span>
             )}
           </h2>
           <button
@@ -734,10 +861,17 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 sm:p-5">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 sm:p-5">
           {error && (
             <p role="alert" className="mb-3 text-sm text-red-400">
               {error}
+            </p>
+          )}
+          {gone && !open && (
+            <p role="status" className="mb-3 text-sm text-gold-soft">
+              {gone.title
+                ? t.node("{title} isn't published any more.", { title: <bdi dir="auto">{gone.title}</bdi> })
+                : t("This app isn't published any more.")}
             </p>
           )}
           {open && view === "data" ? (
@@ -974,6 +1108,9 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
                 ))}
               </ul>
             )
+          ) : open && view === "seo" ? (
+            // The check itself is below, kept while its Link preview shows.
+            seo?.slug !== open.slug && !error && <p className="text-sm text-zinc-500">{t("Loading…")}</p>
           ) : open && view === "visits" ? (
             visits?.slug !== open.slug ? (
               !error && <p className="text-sm text-zinc-500">{t("Loading…")}</p>
@@ -1451,6 +1588,18 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
                           📈 {t("Visitors")}
                           {s.views ? <> ({s.views.toLocaleString(t.locale)})</> : null}
                         </button>
+                        <button onClick={() => showSeo(s)} className="text-zinc-200 hover:text-white" title={t("How easy your app is to find on Google, and what to fix")}>
+                          🔎 {t("SEO")}
+                          {s.seo && (
+                            <>
+                              {/* bdi: the score stays after "SEO" in right-to-left languages too. */}
+                              <bdi aria-hidden className={`ms-1 rounded-full px-1.5 py-0.5 text-[10px] tabular-nums ${BAND_PILL[band(s.seo.score)]}`}>
+                                {s.seo.score.toLocaleString(t.locale)}
+                              </bdi>
+                              <span className="sr-only"> {t("Search check: {score} out of 100", { score: s.seo.score.toLocaleString(t.locale) })}</span>
+                            </>
+                          )}
+                        </button>
                         <button onClick={() => showFiles(s)} className="text-zinc-200 hover:text-white" title={t("Files people sent to this app")}>
                           📁 {t("Files")}
                         </button>
@@ -1498,6 +1647,26 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
                 </button>
               )}
             </>
+          )}
+          {/* The search check, kept (hidden) while the Link preview opened from it shows, so its back
+              arrow returns to it as it was: what it looked up, an open panel, where it was scrolled. */}
+          {open && seo?.slug === open.slug && (view === "seo" || (view === "preview" && fromSeo)) && (
+            <div hidden={view !== "seo"}>
+              <SeoView
+                key={`${open.slug}:${seo.data.checkedAt}`}
+                slug={open.slug}
+                data={seo.data}
+                editCredits={editCredits}
+                credits={credits}
+                onCredits={onPlans}
+                onPlanFix={onPlanFix}
+                onFix={onFix}
+                onDraft={onDraft}
+                onOpenChat={onOpenChat}
+                chatHere={chatHere}
+                onPreview={() => showPreview(open, true)}
+              />
+            </div>
           )}
         </div>
       </div>

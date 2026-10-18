@@ -26,7 +26,11 @@ test("updating a site keeps the version it replaces, and it can come back", asyn
   await publishSite(stranger, { html: "<p>evil</p>", title: "X", slug });
   assert.equal((await listVersions(slug)).length, 1);
 
-  assert.deepEqual(await restoreVersion("u1", slug, versions[0].id), { slug, url: `/p/${slug}`, data: { collections: [], other: "read" } });
+  const restored = await restoreVersion("u1", slug, versions[0].id);
+  const { seo, ...rest } = restored ?? {};
+  assert.deepEqual(rest, { slug, url: `/p/${slug}`, data: { collections: [], other: "read" } });
+  // Checked again for search, as any page that goes live is, with the score of the one it replaced.
+  assert.deepEqual(Object.keys(seo ?? {}).sort(), ["before", "issues", "score"]);
   assert.equal(await live(slug), "<p>v1</p>");
   const after = await listVersions(slug);
   assert.equal(after.length, 1, "v1 is live, so only the replaced v2 is listed");

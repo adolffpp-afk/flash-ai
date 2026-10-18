@@ -63,6 +63,8 @@ export function cleanUserMessage(raw: unknown): UIMessage | null {
   // The approved results a Continue asked for, so Retry asks for them again after a reload.
   const continues = continuedIds(m.continues);
   if (continues.length) out.continues = continues;
+  // The most Fix all said the change would hold, so Retry after a reload holds no more either.
+  if (typeof m.cap === "number" && Number.isSafeInteger(m.cap) && m.cap > 0) out.cap = m.cap;
   return out;
 }
 

@@ -479,9 +479,10 @@ test("before a tab leaves its account, Flash waits for the saves already under w
   const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
   const saves = [...page.matchAll(/api\([^)]*\{ method: "(?:PUT|PATCH|POST|DELETE)"/g)].filter((m) => /\/api\/projects\/\$\{id\}`|"\/api\/me"/.test(m[0]) && !/DELETE/.test(m[0]));
   assert.equal(saves.length, 5);
-  for (const m of saves) assert.match(page.slice(m.index - 30, m.index), /saving\.track\(\s*$/, m[0]);
+  // A chat's save is also chatSaves' (see chat-saves.ts), which the search check reads.
+  for (const m of saves) assert.match(page.slice(m.index - 60, m.index), /saving\.track\(\s*(?:saves\.send\(id, \(\) => )?$/, m[0]);
   const flush = body(page, "async function flushSaves(");
-  assert.match(flush, /const kept = await saving\.settled\(3000\);\n\s+return kept && dirtyRef\.current\.size === 0 && !hasCodeDraft\(\);/);
+  assert.match(flush, /const kept = await saving\.settled\(3000\);\n\s+return kept && !savesRef\.current\.waiting\(\)\.length && !hasCodeDraft\(\);/);
 });
 
 test("code changed in a Code view and not saved yet makes a switch ask first", async () => {
@@ -1076,7 +1077,8 @@ test("an answer asked for before this tab signed out is for nobody: it names no 
   assert.match(invite, /forgetInvite\(\);\n\s+if \(signedOutSince\(mark\)\) return;\n\s+setNotice/);
   assert.match(invite, /\} catch \(err\) \{\n\s+if \(signedOutSince\(mark\)\) return;/);
   assert.match(page, /const mark = signOutMark\(\);\n\s+api<\{ ready: boolean; connections: ConnectionView\[\] \}>\("\/api\/connect"\)\n(\s*\/\/.*\n)*\s+\.then\(\(r\) => signedOutSince\(mark\) \|\| setAccounts\(/);
-  assert.equal(page.match(/const mark = signOutMark\(\);/g)?.length, 5);
+  // And the search check's: a chat it opens (openProject), the owner's details it adds, the change it sends.
+  assert.equal(page.match(/const mark = signOutMark\(\);/g)?.length, 8);
   assert.equal(page.match(/setMe\(data\)/g)?.length, 1);
 });
 
@@ -1170,7 +1172,7 @@ test("Visitors, its funnel, the app list's counts and the apps' downloads in My 
   const apps = await readFile(new URL("../src/components/MyApps.tsx", import.meta.url), "utf8");
   assert.match(apps, /api<Visits>\(`\/api\/sites\/\$\{site\.slug\}\/visits`\)/);
   assert.match(apps, /api<FunnelStats>\(`\/api\/sites\/\$\{slug\}\/funnel\?days=\$\{days\}`\)/);
-  assert.match(apps, /api<\{ counts: Record<string, Counts> \}>\(`\/api\/sites\?counts=/);
+  assert.match(apps, /api<\{ counts: Record<string, Counts(?: & Pick<Site, "seo">)?> \}>\(`\/api\/sites\?counts=/);
   pin.setPin("acct_ana");
   sent.length = 0;
   for (const path of ["/api/sites/ana-cafe/visits", "/api/sites/ana-cafe/funnel?days=90", "/api/sites?counts=ana-cafe"]) await store.api(path);
@@ -1182,4 +1184,67 @@ test("Visitors, its funnel, the app list's counts and the apps' downloads in My 
       ["/api/sites?counts=ana-cafe", "acct_ana"],
     ],
   );
+});
+
+test("the search check, Fix it and Fix all name the tab's account, and what they open or line up is for nobody once the tab signs out", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const { fixAllHold } = await import("../src/lib/seo-chat.ts");
+  const read = (path: string) => readFile(new URL(`../src/${path}`, import.meta.url), "utf8");
+  // Ana's tab shows her account while Ben's is the browser's default: her app's search check, Google's
+  // speed check of it, the chat a fix goes in, Fix all's price and the change it sends are all hers.
+  const files = ["components/SeoView.tsx", "components/AppPreview.tsx", "components/BuildPanel.tsx", "components/Message.tsx", "components/Flash.tsx", "lib/seo-chat.ts", "lib/chat-request.ts"];
+  for (const file of files) {
+    const page = await read(file);
+    for (const m of page.matchAll(/["`]\/api\//g)) {
+      const before = page.slice(page.lastIndexOf("\n", m.index) + 1, m.index);
+      // Flash's status is the same for everyone; fixAllHold posts with the fetch it is given (below).
+      if (file === "components/Flash.tsx" && page.startsWith('"/api/status")', m.index) && before.endsWith("fetch(")) continue;
+      if (file === "lib/seo-chat.ts" && before.endsWith("await post(")) continue;
+      assert.match(before, /(?:\bapi(?:<.*>)?|\bauthedFetch|\bwithAccount)\($/, `${file}: ${page.slice(m.index, m.index + 60).split("\n")[0]}`);
+    }
+  }
+  const view = await read("components/SeoView.tsx");
+  assert.match(view, /api<SeoData>\(`\/api\/sites\/\$\{slug\}\/seo`\)/);
+  assert.match(view, /api<\{ pagespeed: PageSpeedRecord \}>\(`\/api\/sites\/\$\{slug\}\/pagespeed`, \{ method: "POST", json: \{ address \} \}\)/);
+  assert.match(view, /api<\{ project: string \}>\(`\/api\/sites\/\$\{slug\}\/project`\)/);
+  // Fix all's price is asked for as the tab's account: fixAllHold has no fetch of its own, which would
+  // name none (with two accounts here, the chat route then answers nobody, and Fix all went uncapped).
+  assert.match(await read("lib/seo-chat.ts"), /export async function fixAllHold\(body: object, post: \(url: string, init: RequestInit\) => Promise<Response>\): Promise<FixHold \| null> \{/);
+  const page = await read("components/Flash.tsx");
+  assert.match(body(page, "async function quote("), /return fixAllHold\(requestFor\(project, messages, message, \{ replyId: newId\(\) \}\), authedFetch\);/);
+  assert.equal(page.match(/fixAllHold\(/g)?.length, 1, "the only price asked for");
+  pin.setPin("acct_ana");
+  sent.length = 0;
+  events.length = 0;
+  await fixAllHold({ messages: [], build: true }, store.authedFetch);
+  for (const path of ["/api/sites/ana-cafe/seo", "/api/sites/ana-cafe/project"]) await store.api(path);
+  await store.api("/api/sites/ana-cafe/pagespeed", { method: "POST", json: { address: "flash" } });
+  assert.deepEqual(
+    sent.map((s) => [s.url, s.method, s.headers.get("x-flash-account")]),
+    [
+      ["/api/chat", "POST", "acct_ana"],
+      ["/api/sites/ana-cafe/seo", "GET", "acct_ana"],
+      ["/api/sites/ana-cafe/project", "GET", "acct_ana"],
+      ["/api/sites/ana-cafe/pagespeed", "POST", "acct_ana"],
+    ],
+  );
+  assert.equal(JSON.parse(String(sent[0].body)).quote, true);
+  // Ana logs out while the search check is looking at her chat: a chat that comes back joins nobody's
+  // list, her details go into nobody's message box, her change isn't sent, and Flash says nothing of it
+  // to whoever signs in next in that tab. Nor does My websites & apps open on her app's check for them.
+  const loaded = body(page, "async function chatMessages(");
+  assert.match(loaded, /^async function chatMessages\(id: string, mark = signOutMark\(\)\)/);
+  assert.match(loaded, /await api<\{ project: Project \}>\(`\/api\/projects\/\$\{id\}`\);\n\s+if \(signedOutSince\(mark\)\) return null;\n\s+const messages = watched/);
+  assert.match(body(page, "async function openProject("), /const mark = signOutMark\(\);\n\s+if \(!\(await chatMessages\(id, mark\)\) && !signedOutSince\(mark\)\) setNotice\(/);
+  // To the end of the function (draftInChat's parameters have braces of their own).
+  const whole = (name: string) => page.slice(page.indexOf(name), page.indexOf("\n  }\n", page.indexOf(name)));
+  for (const name of ["async function draftInChat(", "async function sendFix("]) {
+    assert.match(whole(name), /const mark = signOutMark\(\);\n\s+const chat = await chatToFix\([^)]*\);\n\s+if \(signedOutSince\(mark\)\) return(?: null)?;/, name);
+  }
+  const out = body(page, "function signedOutHere(");
+  for (const cleared of ["setAppsStart(undefined);", "setPendingFix(null);"]) assert.ok(out.includes(cleared), cleared);
+  // A Send still looking when the check goes away (as it does when the tab signs out) sends nothing.
+  assert.match(body(page, "async function fixSite("), /if \(signal\?\.aborted\) return null;\n\s+closeApps\(\);/);
+  pin.setPin(null);
+  events.length = 0;
 });

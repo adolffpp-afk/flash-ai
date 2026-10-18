@@ -42,5 +42,5 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug
   const { id } = (await request.json().catch(() => ({}))) as { id?: unknown };
   const restored = typeof id === "string" ? await restoreVersion(user.id, slug, id) : null;
   if (!restored) return Response.json({ error: t("That version was deleted.") }, { status: 404 });
-  return Response.json({ ok: true, ...(restored.data && { data: restored.data }) });
+  return Response.json({ ok: true, ...(restored.data && { data: restored.data }), ...(restored.seo && { seo: restored.seo }) });
 }
