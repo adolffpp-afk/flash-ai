@@ -107,21 +107,31 @@ const MAX_WORD = 64;
 
 // Latin accents, Hebrew points, and Arabic vowel marks, hamzas and tatweel: words are written with
 // and without them, and typed without.
-const MARKS = /[\u0300-\u036f\u0591-\u05c7\u0610-\u061a\u0640\u064b-\u065f\u0670\u06d6-\u06ed]/g;
+const MARKS = /[̀-֑ͯ-ׇؐ-ؚـً-ٰٟۖ-ۭ]/g;
+// Letters Arabic and Persian write two ways, as one: Persian yeh "ی" and alef maqsura "ى" as yeh
+// "ي", keheh "ک" as kaf "ك", teh marbuta "ة" and heh with yeh above "ۀ" as heh "ه".
+const LETTERS: Record<string, string> = { "ی": "ي", "ى": "ي", "ک": "ك", "ة": "ه", "ۀ": "ه" };
+const VARIANTS = /[ةىکۀی]/g;
+const ASCII = /^[\x00-\x7f]*$/;
 
 /**
- * The words of a text, as the search index keeps them: NFKC, lower case and without accents or
- * vowel marks ("Café" is "cafe", "يُرجى" is "يرجى", "أولًا" is "اولا"), split the way Intl.Segmenter
- * splits words, so Japanese, Chinese and Thai split into words too, then at anything that isn't a
- * letter, digit or mark, so an apostrophe ("l'été") leaves two words, each of which gets its
- * assistant's tag.
+ * The words of a text, as the search index keeps them: lower case, split the way Intl.Segmenter
+ * splits words, so Japanese, Chinese and Thai split into words too; then each in NFKC (only after
+ * the split: NFKC cuts Thai "ำ" in two, which the splitter doesn't expect, and "สินค้า" would come
+ * out as "สิน" and "ค้า"), split again at anything that isn't a letter, digit or mark, so an
+ * apostrophe ("l'été") leaves two words, each of which gets its assistant's tag; and without
+ * accents or vowel marks, with one form of the Arabic and Persian letters written two ways ("Café"
+ * is "cafe", "يُرجى" is "يرجي", "أولًا" is "اولا", "کالا" is "كالا").
  */
 export function words(text: string): string[] {
   const out: string[] = [];
-  for (const s of segments.segment(text.normalize("NFKC").toLowerCase())) {
+  for (const s of segments.segment(text.normalize("NFC").toLowerCase().replace(VARIANTS, (c) => LETTERS[c]))) {
     if (!s.isWordLike) continue;
-    for (const piece of s.segment.split(/[^\p{L}\p{N}\p{M}]+/u)) {
-      const word = /^[\x00-\x7f]*$/.test(piece) ? piece : piece.normalize("NFD").replace(MARKS, "").normalize("NFC");
+    const ascii = ASCII.test(s.segment);
+    // NFKD, and NFC once the marks are gone: NFKC, with one step less. Lower case again, as NFKD
+    // can make capitals ("𝐅" is "F").
+    for (const piece of (ascii ? s.segment : s.segment.normalize("NFKD").toLowerCase()).split(/[^\p{L}\p{N}\p{M}]+/u)) {
+      const word = ascii ? piece : piece.replace(MARKS, "").normalize("NFC");
       if (word && word.length <= MAX_WORD && /[\p{L}\p{N}]/u.test(word)) out.push(word);
     }
   }

@@ -1,12 +1,15 @@
 /*
  * Prints LOOKALIKES for src/lib/assistants.ts: the letters and digits that look like each Latin
  * letter, so a name like "FLꓮSH" (Lisu A) or "Flash Ꮪupport" (Cherokee S) reads as the name it
- * copies. From Unicode's list of confusable characters (UTS #39):
- *   node --experimental-strip-types scripts/lookalikes.ts confusables.txt
- * with confusables.txt from https://www.unicode.org/Public/security/latest/. Every letter or digit
- * it maps to one Latin letter, both as nameKey sees them (NFKC, lower case, no marks), and the Latin
- * small capitals ("ꜰʟᴀꜱʜ"), which it keeps as letters of their own. "i", "l" and "1" look like each
- * other. A character can look like two letters (Greek "Η" like "h", "η" like "n").
+ * copies. From Unicode's list of confusable characters (UTS #39) and its list of characters:
+ *   node --experimental-strip-types scripts/lookalikes.ts confusables.txt UnicodeData.txt
+ * with confusables.txt from https://www.unicode.org/Public/security/latest/ and UnicodeData.txt
+ * from https://www.unicode.org/Public/UCD/latest/ucd/. Every letter or digit the first maps to one
+ * Latin letter, both as nameKey sees them (NFKC, lower case, no marks); every Latin letter with a
+ * stroke, hook, curl or tail built in, which NFD can't take off and the first doesn't list ("ⱥ",
+ * "ȴ", "ȿ": from its name, "LATIN SMALL LETTER A WITH STROKE"); and the Latin small capitals
+ * ("ꜰʟᴀꜱʜ"), which it keeps as letters of their own. "i", "l" and "1" look like each other. A
+ * character can look like two letters (Greek "Η" like "h", "η" like "n").
  */
 import { readFileSync } from "node:fs";
 
@@ -41,6 +44,16 @@ function latin(ch: string, seen = new Set<string>()): string[] {
 }
 const table: Record<string, Set<string>> = {};
 for (const ch of like.keys()) for (const letter of latin(ch)) (table[letter] ??= new Set()).add(ch);
+// "LATIN SMALL LETTER A WITH STROKE", "LATIN LETTER SMALL CAPITAL L WITH STROKE", "LATIN SMALL
+// LETTER DOTLESS J WITH STROKE": that letter, if nameKey leaves something else. Not through the
+// list above: what looks like "ꞓ" (c with a bar), such as "ɛ", doesn't look like a "c".
+const NAMED = /^LATIN (?:SMALL |CAPITAL )?LETTER (?:SMALL CAPITAL |DOTLESS )?([A-Z]) WITH /;
+for (const line of readFileSync(process.argv[3], "utf8").split("\n")) {
+  const [hex, name] = line.split(";");
+  const letter = name?.match(NAMED)?.[1];
+  const key = letter ? fold(chars(hex)) : "";
+  if ([...key].length === 1 && /^\p{L}$/u.test(key) && !/^[a-z]$/.test(key)) (table[letter!.toLowerCase()] ??= new Set()).add(key);
+}
 for (const ch of ["l", "1", ...(table.l ?? [])]) (table.i ??= new Set()).add(ch);
 for (const ch of ["i", ...(table.i ?? [])]) if (ch !== "l") (table.l ??= new Set()).add(ch);
 

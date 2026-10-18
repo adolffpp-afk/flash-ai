@@ -110,12 +110,25 @@ test("words are split for Japanese, Chinese and Thai, folded for accents, vowel 
   assert.deepEqual(words("返金ポリシーについて"), ["返金", "ポリシー", "について"]);
   assert.deepEqual(words("退款政策是什么"), ["退款", "政策", "是", "什么"]);
   assert.deepEqual(words("ราคาสินค้ารวมภาษี"), ["ราคา", "สินค้า", "รวม", "ภาษี"]);
+  // Thai and Lao "ำ", one of their commonest vowels, which NFKC cuts in two: split as it's written,
+  // then folded.
+  const nfkc = (ws: string[]) => ws.map((w) => w.normalize("NFKC"));
+  assert.deepEqual(words("สินค้าจำนวนมากสำหรับลูกค้า"), nfkc(["สินค้า", "จำนวน", "มาก", "สำหรับ", "ลูกค้า"]));
+  assert.deepEqual(words("การคืนสินค้าทำได้"), nfkc(["การ", "คืน", "สินค้า", "ทำได้"]));
+  assert.deepEqual(words("ສິນຄ້າຈຳນວນ"), nfkc(["ສິນຄ້າ", "ຈຳນວນ"]));
   assert.deepEqual(words("नमस्ते दुनिया"), ["नमस्ते", "दुनिया"], "vowel signs stay in the word");
   assert.deepEqual(words("Café CAFE cafe\u0301 Naïve"), ["cafe", "cafe", "cafe", "naive"]);
-  assert.deepEqual(words("ﬁle ＡＢＣ ① -- ... !!"), ["file", "abc", "1"]);
+  assert.deepEqual(words("ﬁle ＡＢＣ ｶﾀｶﾅ 𝐅𝐥𝐚𝐬𝐡 -- ... !! ① ™"), ["file", "abc", "カタカナ", "flash"], "a symbol isn't a word, even one NFKC makes a letter or digit");
   // Arabic and Persian vowel marks, shadda, tanween, hamzas and tatweel, and Hebrew points, which
   // some words are written with and people type without.
-  assert.deepEqual(words("يُرجى تعذّر أولًا جدًا لطفاً إرسال كتـــاب كِتَابٌ שָׁלוֹם"), ["يرجى", "تعذر", "اولا", "جدا", "لطفا", "ارسال", "كتاب", "كتاب", "שלום"]);
+  assert.deepEqual(words("يُرجى تعذّر أولًا جدًا لطفاً إرسال كتـــاب كِتَابٌ שָׁלוֹם"), ["يرجي", "تعذر", "اولا", "جدا", "لطفا", "ارسال", "كتاب", "كتاب", "שלום"]);
+  // Letters written two ways: Persian yeh and keheh as typed on a Persian keyboard, and the Arabic
+  // yeh and kaf of text from Word or older sites; alef maqsura and teh marbuta, often typed as yeh
+  // and heh; heh with yeh above, or heh and a hamza.
+  for (const [a, b] of [["رسيد", "رسید"], ["كالا", "کالا"], ["المستشفى", "المستشفي"], ["مدة", "مده"], ["خانۀ", "خانه"], ["خانهٔ", "خانه"], ["تحويل", "تحویل"]]) {
+    assert.deepEqual(words(a), words(b), `${a} ${b}`);
+    assert.equal(words(a).length, 1);
+  }
   assert.ok(!words(`k${"x".repeat(80)} ok`).some((w) => w.length > 64), "a run too long to ask about isn't a word");
   const tag = tagOf(A);
   assert.equal(tag, "a0123456789abcdefx");

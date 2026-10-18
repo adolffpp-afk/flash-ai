@@ -720,8 +720,8 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS assistants_user ON assistants(user_id, updated_at)`,
   // stored is what the file counts against its owner's storage: STORE_FACTOR times its UTF-8 bytes.
   // tokens is the largest count over the level models when exact is 1, else an estimate; hash is
-  // the text's SHA-256, so the same file can't be added twice; chunks is how many it was cut into,
-  // set once they are all stored (see indexFile).
+  // the text's SHA-256, so the same file can't be added twice; chunks is how many of its chunks are
+  // stored, set with each batch of them (see indexFile).
   `CREATE TABLE IF NOT EXISTS assistant_files (
     id TEXT PRIMARY KEY,
     assistant_id TEXT NOT NULL REFERENCES assistants(id),

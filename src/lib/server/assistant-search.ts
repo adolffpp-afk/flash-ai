@@ -10,9 +10,10 @@
  * Nothing here deletes by cascade: Turso runs with foreign keys off. A chunk's index rows go with
  * it through the trigger on assistant_chunks, and those left while the trigger was missing go when
  * it's made (see mendAssistantIndex in db.ts). A failed upload's chunks are deleted with it, or at
- * the assistant's next upload. Word counts are the index's own; every result is joined back to its
- * chunk and to a file the asking assistant lists, so a stray index row or a chunk left by a failed
- * upload can only ever find nothing.
+ * the assistant's next upload. Word counts are the index's own, and a file's chunk count goes up
+ * with each batch of its chunks and their index rows, so the two always agree. Every result is
+ * joined back to its chunk and to a file the asking assistant lists, so a stray index row or a
+ * chunk left by a failed upload can only ever find nothing.
  */
 import type { InStatement } from "@libsql/client";
 import { all, db, mendAssistantIndex, one, run } from "./db.ts";
@@ -55,17 +56,20 @@ export async function searchMode(fresh = false): Promise<SearchMode> {
   return checked.mode;
 }
 
-// Statements per batch when storing a file: a chunk and its index row always go in the same one.
-const BATCH = 200;
+// Chunks per batch when storing a file, each with its index row, and the file's chunk count so far.
+const PER_BATCH = 100;
 
 /**
  * Stores a file's text as chunks, with their index rows when the database has the index (checked
- * again first, so no chunk is ever left out of an index that exists), then sets the file's chunk
- * count. The file's row is written first, and deleted by the caller if this throws: only the
- * chunks of a file the assistant lists are ever read. `tokens` is the file's count; each chunk
- * gets its share, rounded up. If any part fails, the file's chunks are deleted and the error is
- * thrown. Chunks of the assistant's that no file it lists has (a failed upload's, if deleting them
- * failed too) are deleted first, so they can't make its words look common (see telling).
+ * again first, so no chunk is ever left out of an index that exists), 100 to a batch. Each batch
+ * also sets the file's chunk count to the chunks stored so far, so the count words are weighed
+ * against (see telling) always has every chunk the index has: during an upload, and after one
+ * that was stopped part way, whose chunks are then searched as they are. The file's row is written
+ * first, and deleted by the caller if this throws: only the chunks of a file the assistant lists
+ * are ever read. `tokens` is the file's count; each chunk gets its share, rounded up. If any part
+ * fails, the file's chunks are deleted, its count set back to 0, and the error is thrown. Chunks
+ * of the assistant's that no file it lists has (a failed upload's, if deleting them failed too)
+ * are deleted first, so they can't make its words look common.
  */
 export async function indexFile(assistantId: string, fileId: string, text: string, tokens: number): Promise<{ chunks: number; indexed: boolean }> {
   const tag = tagOf(assistantId);
@@ -76,32 +80,45 @@ export async function indexFile(assistantId: string, fileId: string, text: strin
     await mendAssistantIndex(await db());
     checked = null;
   }
-  const statements: InStatement[] = [
+  const first: InStatement[] = [
     {
       sql: "DELETE FROM assistant_chunks WHERE assistant_id = ? AND file_id NOT IN (SELECT id FROM assistant_files WHERE assistant_id = ?)",
       args: [assistantId, assistantId],
     },
   ];
   // Without the index, mark first that chunks exist which it doesn't hold.
-  if (!index) statements.push({ sql: "INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')", args: [UNINDEXED] });
-  for (const c of chunks) {
-    statements.push({
+  if (!index) first.push({ sql: "INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')", args: [UNINDEXED] });
+  const rows = (c: (typeof chunks)[number]): InStatement[] => [
+    {
       sql: "INSERT INTO assistant_chunks (assistant_id, file_id, seq, label, chars, tokens, body) VALUES (?, ?, ?, ?, ?, ?, ?)",
       args: [assistantId, fileId, c.seq, c.label, c.body.length, Math.ceil((tokens * c.body.length) / text.length), c.body],
-    });
-    if (index) {
-      statements.push({
-        sql: `INSERT INTO ${INDEX} (rowid, seg) SELECT id, ? FROM assistant_chunks WHERE file_id = ? AND seq = ? ORDER BY id DESC LIMIT 1`,
-        args: [tagged(tag, c.body), fileId, c.seq],
-      });
-    }
+    },
+    ...(index
+      ? [{ sql: `INSERT INTO ${INDEX} (rowid, seg) SELECT id, ? FROM assistant_chunks WHERE file_id = ? AND seq = ? ORDER BY id DESC LIMIT 1`, args: [tagged(tag, c.body), fileId, c.seq] }]
+      : []),
+  ];
+  const batches: InStatement[][] = [];
+  for (let from = 0; from === 0 || from < chunks.length; from += PER_BATCH) {
+    const part = chunks.slice(from, from + PER_BATCH);
+    batches.push([
+      ...(from === 0 ? first : []),
+      ...part.flatMap(rows),
+      { sql: "UPDATE assistant_files SET chunks = ? WHERE id = ? AND assistant_id = ?", args: [from + part.length, fileId, assistantId] },
+    ]);
   }
-  statements.push({ sql: "UPDATE assistant_files SET chunks = ? WHERE id = ? AND assistant_id = ?", args: [chunks.length, fileId, assistantId] });
+  const client = await db();
   try {
-    const client = await db();
-    for (let i = 0; i < statements.length; i += BATCH) await client.batch(statements.slice(i, i + BATCH), "write");
+    for (const batch of batches) await client.batch(batch, "write");
   } catch (err) {
-    await run("DELETE FROM assistant_chunks WHERE assistant_id = ? AND file_id = ?", [assistantId, fileId]).catch(() => {});
+    await client
+      .batch(
+        [
+          { sql: "DELETE FROM assistant_chunks WHERE assistant_id = ? AND file_id = ?", args: [assistantId, fileId] },
+          { sql: "UPDATE assistant_files SET chunks = 0 WHERE id = ? AND assistant_id = ?", args: [fileId, assistantId] },
+        ],
+        "write",
+      )
+      .catch(() => {});
     throw err;
   }
   if (!index) checked = null;
@@ -217,7 +234,8 @@ function passagesOf(runs: Run[], files: FileRow[], named: boolean): Passage[] {
  * Takes chunks best first while their padded estimates fit PASSAGE_TOKENS and they make at most
  * MAX_PASSAGES passages, then cuts the passages to the exact cap: the lowest-ranked go first. They
  * are counted at most twice: over the cap, runs go until their bytes, at the tokens per byte that
- * count found (padded), fit, and what's left is counted again. Still over, they're cut by bytes.
+ * count found (padded), fit, or one run is left and is cut to fit at that rate, and what's left is
+ * counted again. Still over, or not counted, they're cut by bytes.
  */
 async function choose(ranked: Row[], files: FileRow[], o: ReadOptions): Promise<Passage[]> {
   const fileIndex = new Map(files.map((f, i) => [f.id, i]));
@@ -246,18 +264,24 @@ async function choose(ranked: Row[], files: FileRow[], o: ReadOptions): Promise<
     return passages.filter((p) => p.text);
   };
   if (o.maxChars !== undefined) return fit(o.maxChars, (s) => s.length, (s, n) => s.slice(0, n).replace(/[\uD800-\uDBFF]$/, ""));
+  // The bytes the one run left keeps, when it's cut at the rate the first count found.
+  let keep: number | undefined;
   for (let round = 0; round < 2 && runs.length && o.count; round++) {
     const passages = passagesOf(runs, files, named);
+    if (keep !== undefined) passages[0].text = cutBytes(passages[0].text, keep);
     let tokens: number;
     try {
       tokens = await o.count(passages.map((p) => ({ title: p.title, text: p.text })));
     } catch {
       break;
     }
-    if (tokens <= PASSAGE_TOKENS) return passages;
-    if (round === 1 || runs.length === 1) break;
+    if (tokens <= PASSAGE_TOKENS) return passages.filter((p) => p.text);
+    if (round === 1) break;
     const perByte = (tokens / size(passages, bytes)) * ESTIMATE;
     while (runs.length > 1 && size(passagesOf(runs, files, named), bytes) * perByte > PASSAGE_TOKENS) runs = runs.slice(0, -1);
+    const [only] = passagesOf(runs, files, named);
+    // Never less than the cut by bytes, which always fits.
+    if (runs.length === 1 && size([only], bytes) * perByte > PASSAGE_TOKENS) keep = Math.max(0, Math.max(Math.floor(PASSAGE_TOKENS / perByte), PASSAGE_TOKENS) - bytes(only.title) - 1);
   }
   return fit(PASSAGE_TOKENS, bytes, cutBytes);
 }
@@ -265,9 +289,11 @@ async function choose(ranked: Row[], files: FileRow[], o: ReadOptions): Promise<
 // A chunk of a file the assistant lists: never one left by a failed upload, nor one an index row
 // points at that is gone or someone else's.
 const LISTED = "JOIN assistant_files af ON af.id = c.file_id AND af.assistant_id = c.assistant_id";
-// The index's matches, each joined to its chunk (CROSS JOIN keeps SQLite to this order, rather than
-// asking the index about every one of the assistant's chunks in turn).
-const MATCHED = `${INDEX} f CROSS JOIN assistant_chunks c ON c.id = f.rowid ${LISTED}`;
+// The index's best matches, ranked in the index alone, and only those joined to their chunks and
+// files (CROSS JOIN keeps SQLite to this order): joining every chunk a word is in before ranking
+// would read most of an assistant's chunks for an ordinary question. Twice the candidates, so up
+// to 24 stray index rows (see LISTED) can't take a place from the assistant's own chunks.
+const RANKED = 2 * CANDIDATES;
 
 /**
  * The terms that help choose between the assistant's `total` chunks (see tells), each counted in
@@ -305,9 +331,10 @@ export async function searchChunks(assistantId: string, terms: Term[], mode?: Se
   if (!kept.length) return [];
   return all<Row>(
     `SELECT c.id, c.file_id, c.seq, c.label, c.tokens, c.body
-     FROM ${MATCHED}
-     WHERE f.seg MATCH ? AND c.assistant_id = ?
-     ORDER BY bm25(${INDEX}), c.id LIMIT ${CANDIDATES}`,
+     FROM (SELECT rowid AS id, bm25(${INDEX}) AS score FROM ${INDEX} WHERE seg MATCH ? ORDER BY score, rowid LIMIT ${RANKED}) m
+     CROSS JOIN assistant_chunks c ON c.id = m.id ${LISTED}
+     WHERE c.assistant_id = ?
+     ORDER BY m.score, c.id LIMIT ${CANDIDATES}`,
     [matchTerms(tag, kept), assistantId],
   );
 }

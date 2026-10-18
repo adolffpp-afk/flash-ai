@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createClient } from "@libsql/client";
 
 /*
  * What a message reads from an assistant's files, on a libSQL file database with foreign keys off,
@@ -17,7 +18,7 @@ after(() => rmSync(dir, { recursive: true, force: true }));
 const { db, run, one, all } = await import("../src/lib/server/db.ts");
 const search = await import("../src/lib/server/assistant-search.ts");
 const { indexFile, passagesFor, searchChunks, searchMode, removeFileRows, storageFactor } = search;
-const { chunkText, queryTerms, rankChunks, tagOf, tagged } = await import("../src/lib/assistant-chunks.ts");
+const { chunkText, queryTerms, rankChunks, tagOf, tagged, words } = await import("../src/lib/assistant-chunks.ts");
 const { PASSAGE_TOKENS, MAX_PASSAGES, STORE_FACTOR } = await import("../src/lib/assistants.ts");
 type Statement = Parameters<Awaited<ReturnType<typeof db>>["batch"]>[0][number];
 const { DELIVERY, GLUTEN, REFUNDS, TOP_PAGES, filler, pdf, sheet, pagesUsed, seeded } = await import("./support/assistant-files.ts");
@@ -47,20 +48,22 @@ async function file(assistantId: string, name: string, text: string, o: { tokens
 }
 const chunksOf = (fileId: string) => all<{ id: number; seq: number; body: string; tokens: number }>("SELECT id, seq, body, tokens FROM assistant_chunks WHERE file_id = ? ORDER BY seq", [fileId]);
 const indexRows = async () => Number((await one<{ n: number }>("SELECT COUNT(*) AS n FROM assistant_chunks_fts"))?.n);
-/** What `f` asks the database: each statement, with how many rows it gave back. */
-async function watched<T>(f: () => Promise<T>): Promise<{ result: T; seen: { sql: string; rows: number }[] }> {
+type Seen = { sql: string; args: unknown[]; rows: number };
+const sqlOf = (s: Statement) => (typeof s === "string" ? s : Array.isArray(s) ? s[0] : s.sql);
+const argsOf = (s: Statement): unknown[] => (typeof s === "string" ? [] : (((Array.isArray(s) ? s[1] : s.args) ?? []) as unknown[]));
+/** What `f` asks the database: each statement and its arguments, with how many rows it gave back. */
+async function watched<T>(f: () => Promise<T>): Promise<{ result: T; seen: Seen[] }> {
   const client = await db();
   const { execute, batch } = client;
-  const seen: { sql: string; rows: number }[] = [];
-  const sqlOf = (s: Statement) => (typeof s === "string" ? s : Array.isArray(s) ? s[0] : s.sql);
+  const seen: Seen[] = [];
   client.execute = (async (s: Statement, args?: never) => {
     const r = await execute.call(client, s as string, args);
-    seen.push({ sql: sqlOf(s), rows: r.rows.length });
+    seen.push({ sql: sqlOf(s), args: args ?? argsOf(s), rows: r.rows.length });
     return r;
   }) as typeof execute;
   client.batch = (async (ss: Statement[], mode?: "read" | "write") => {
     const rs = await batch.call(client, ss, mode);
-    ss.forEach((s, i) => seen.push({ sql: sqlOf(s), rows: rs[i].rows.length }));
+    ss.forEach((s, i) => seen.push({ sql: sqlOf(s), args: argsOf(s), rows: rs[i].rows.length }));
     return rs;
   }) as typeof batch;
   try {
@@ -211,6 +214,18 @@ test("passages are cut to 6,000 tokens after counting, and to 6,000 bytes when c
   assert.ok(size(huge.passages) <= PASSAGE_TOKENS);
   assert.equal(counts, 2);
 
+  // One passage a little over at the first count, as the start of a single file always is (its
+  // chunks are neighbours), with a count that was scaled up from the file's start: cut at the
+  // tokens per byte that count found and counted again, not cut to 6,000 bytes.
+  const manual = await assistant("owner", "Manual");
+  await file(manual, "Manual.txt", filler(200_000, 19), { exact: 0 });
+  const tally: number[] = [];
+  const counter = async (ps: { title: string; text: string }[]) => (tally.push(Math.ceil(size(ps) / 3.4)), tally.at(-1)!);
+  const startRead = await passagesFor({ id: manual }, "", "", { readStart: true, count: counter });
+  assert.equal(startRead.passages.length, 1);
+  assert.ok(tally.length === 2 && tally[0] > PASSAGE_TOKENS && tally[1] <= PASSAGE_TOKENS, tally.join(" "));
+  assert.ok(tally[1] > PASSAGE_TOKENS * 0.8, `${tally[1]} tokens kept`);
+
   // A file of English and then Japanese, whose Japanese chunks take twice the tokens their share of
   // the file's count says: the second count fits, and keeps most of what the first held.
   const mixed = await assistant("owner", "Mixed");
@@ -344,11 +359,18 @@ test("the fallback ranker finds the same chunks as the full-text index, and the 
   }
 });
 
-test("Korean and Arabic questions find words written with a particle or vowel marks, in both searches", async () => {
+test("Korean, Arabic, Persian and Thai questions find words written with a particle, vowel marks, another form of a letter or ำ, in both searches", async () => {
   const shop = await assistant("owner", "Shop");
   const ko = "환불은 결제 후 14일 이내에 가능합니다. 환불을 받으려면 영수증이 필요합니다. 배송비는 환불되지 않습니다.";
   const ar = "سياسة الإرجاع: يُرجى إرسال الإيصال أولًا. تعذّر الاسترداد بعد ثلاثين يومًا. لطفاً";
-  await file(shop, "Guide.pdf", pdf(8, { 3: ko, 6: ar }, 9), { exact: 0 });
+  // Persian written with the Arabic yeh and kaf, as text from Word and older sites often is, and
+  // Arabic with alef maqsura and teh marbuta, which are often typed as yeh and heh.
+  const fa = "سياست بازگشت: كالا تا هفت روز پس از تحويل قابل بازگشت است. لطفاً رسيد خريد را نگه داريد.";
+  const ar2 = "المستشفى مفتوح يوميا. مدة الإقامة القصوى في الغرفة سبعة أيام.";
+  // "Goods can be returned within seven days. Large orders of goods ship free for every customer."
+  const th = "การคืนสินค้าทำได้ภายในเจ็ดวัน สินค้าจำนวนมากส่งฟรีสำหรับลูกค้าทุกคน";
+  await file(shop, "Guide.pdf", pdf(12, { 3: ko, 6: ar, 8: fa, 10: ar2, 11: th }, 9), { exact: 0 });
+  assert.ok(words(th).includes(words("สินค้า")[0]), "ำ doesn't cut the words next to it");
   const asked = [
     ["환불 기간", "3"],
     ["배송비 환불", "3"],
@@ -356,6 +378,13 @@ test("Korean and Arabic questions find words written with a particle or vowel ma
     ["يرجى ارسال الايصال", "6"],
     ["تعذر الاسترداد", "6"],
     ["أولا لطفا", "6"],
+    ["رسید خرید", "8"],
+    ["تحویل کالا", "8"],
+    ["المستشفي", "10"],
+    ["مده الاقامه", "10"],
+    ["สินค้า", "11"],
+    ["จำนวน", "11"],
+    ["สำหรับลูกค้า", "11"],
   ];
   for (const [question, page] of asked) {
     for (const mode of ["index", "fallback"] as const) assert.equal((await searchChunks(shop, queryTerms(question), mode))[0]?.label, page, `${mode}: ${question}`);
@@ -503,4 +532,107 @@ test("/admin says the full-text index is in use, with the storage factor measure
   const later = await watched(() => storageFactor());
   assert.equal(measures(later.seen), 1, "a day later, measured again");
   assert.equal(measures((await watched(() => adminStats(30))).seen), 0);
+});
+
+test("an upload stores 100 chunks a batch, each with its index row and the file's count so far: search works while it runs and after it stops", async () => {
+  const shop = await assistant("owner", "Uploading");
+  await file(shop, "Handbook.pdf", pdf(14, { 3: REFUNDS, 7: DELIVERY, 11: GLUTEN }));
+  // A big file that mentions refunds every 4,000 characters: part of it already holds them in more
+  // chunks than half of what the handbook has.
+  const big = Array.from({ length: 75 }, (_, i) => `${filler(4000, 300 + i)}\n\nRefund note ${i}: refunds for order batch ${i} go through the desk.`).join("\n\n");
+  const listed = async (id: string) => {
+    await run(
+      "INSERT INTO assistant_files (id, assistant_id, name, kind, chars, bytes, stored, tokens, exact, hash, created_at) VALUES (?, ?, 'Orders.txt', 'text', ?, ?, ?, ?, 0, ?, ?)",
+      [id, shop, big.length, bytes(big), STORE_FACTOR * bytes(big), Math.ceil(bytes(big) / 4), id, ++files],
+    );
+  };
+  const counted = async () => ({
+    files: Number((await one<{ n: number }>("SELECT SUM(chunks) AS n FROM assistant_files WHERE assistant_id = ?", [shop]))?.n),
+    chunks: Number((await one<{ n: number }>("SELECT COUNT(*) AS n FROM assistant_chunks WHERE assistant_id = ?", [shop]))?.n),
+  });
+  const client = await db();
+  const { batch } = client;
+  const writes: Statement[][] = [];
+  const during: { nomatch: boolean; files: number; chunks: number }[] = [];
+  client.batch = (async (ss: Statement[], mode?: "read" | "write") => {
+    const rs = await batch.call(client, ss, mode);
+    if (mode === "write") {
+      writes.push(ss);
+      // A message that comes while the upload runs.
+      during.push({ nomatch: (await passagesFor({ id: shop }, "How do refunds work?")).nomatch, ...(await counted()) });
+    }
+    return rs;
+  }) as typeof batch;
+  try {
+    await listed("uploading");
+    await indexFile(shop, "uploading", big, Math.ceil(bytes(big) / 4));
+  } finally {
+    client.batch = batch;
+  }
+  const chunks = chunkText(big);
+  assert.equal(writes.length, Math.ceil(chunks.length / 100));
+  writes.forEach((w, i) => {
+    const sqls = w.map(sqlOf);
+    const stored = sqls.filter((q) => q.startsWith("INSERT INTO assistant_chunks ")).length;
+    assert.equal(stored, Math.min(100, chunks.length - 100 * i), `batch ${i + 1}`);
+    // Each chunk with its index row, in the same batch.
+    sqls.forEach((q, j) => {
+      if (q.startsWith("INSERT INTO assistant_chunks ")) assert.ok(sqls[j + 1]?.startsWith("INSERT INTO assistant_chunks_fts") && argsOf(w[j + 1])[2] === argsOf(w[j])[2], `batch ${i + 1}, chunk ${j}`);
+    });
+    assert.match(sqls.at(-1)!, /^UPDATE assistant_files SET chunks = \?/);
+    assert.equal(argsOf(w.at(-1)!)[0], Math.min(100 * (i + 1), chunks.length));
+  });
+  assert.equal(during.length, writes.length);
+  for (const [i, d] of during.entries()) {
+    assert.equal(d.files, d.chunks, `after batch ${i + 1}, the files count the chunks the index has`);
+    assert.equal(d.nomatch, false, `after batch ${i + 1}, refunds are still a word that tells`);
+  }
+
+  // Stopped after its second batch, as a function past its time limit is: nothing after it runs,
+  // not even the delete. What it stored is searched as it is, the same in both searches.
+  let n = 0;
+  client.batch = (async (ss: Statement[], mode?: "read" | "write") => {
+    if (mode === "write" && ++n > 2) throw new Error("stopped");
+    return batch.call(client, ss, mode);
+  }) as typeof batch;
+  try {
+    await listed("stopped");
+    await assert.rejects(indexFile(shop, "stopped", big, Math.ceil(bytes(big) / 4)), /stopped/);
+  } finally {
+    client.batch = batch;
+  }
+  assert.equal(Number((await one<{ chunks: number }>("SELECT chunks FROM assistant_files WHERE id = 'stopped'"))?.chunks), 200);
+  const left = await counted();
+  assert.equal(left.files, left.chunks);
+  assert.equal((await passagesFor({ id: shop }, "How do refunds work?")).nomatch, false);
+  for (const mode of ["index", "fallback"] as const) assert.ok((await searchChunks(shop, queryTerms("How do refunds work?"), mode)).length > 0, mode);
+  for (const id of ["uploading", "stopped"]) await client.batch(removeFileRows("owner", shop, id), "write");
+});
+
+test("a search ranks its matches in the index and joins only the best of them to their chunks: the same ones as joining them all", async () => {
+  // Words of an ordinary question in nearly half the chunks, which tell all the same.
+  const wide = await assistant("owner", "Wide");
+  const text = Array.from({ length: 120 }, (_, i) => `${filler(1000, 500 + i)}\n\n${i % 12 < 5 ? "The oven timer rings twice." : i % 3 === 0 ? "Set the timer first." : "Wipe the counter."}`).join("\n\n");
+  await file(wide, "Kitchen.txt", text, { exact: 0 });
+  const terms = queryTerms("How do I set the oven timer?");
+  const { result, seen } = await watched(() => searchChunks(wide, terms, "index"));
+  const query = seen.find((q) => /bm25/.test(q.sql))!;
+  const matched = await all<{ rowid: number }>("SELECT rowid FROM assistant_chunks_fts WHERE seg MATCH ?", [query.args[0] as string]);
+  assert.ok(matched.length > 48 && result.length === 24, `${matched.length} chunks match`);
+  // On a client of its own: libSQL leaves an EXPLAIN in progress, which would stop a VACUUM.
+  const side = createClient({ url: process.env.DATABASE_URL! });
+  const plan = (await side.execute({ sql: `EXPLAIN QUERY PLAN ${query.sql}`, args: query.args as string[] })).rows as unknown as { id: number; parent: number; detail: string }[];
+  side.close();
+  const ranked = plan.find((r) => /^(CO-ROUTINE|MATERIALIZE) m$/.test(r.detail));
+  assert.ok(ranked && plan.some((r) => r.parent === ranked.id && /^SCAN assistant_chunks_fts\b/.test(r.detail)), plan.map((r) => r.detail).join("\n"));
+  const loops = plan.filter((r) => r.parent === 0 && /^(SCAN|SEARCH) /.test(r.detail)).map((r) => r.detail);
+  assert.match(loops[0], /^SCAN m\b/, "the best matches first");
+  assert.match(loops[1], /^SEARCH c USING INTEGER PRIMARY KEY/, "then each one's chunk");
+  const joinedAll = await all<{ id: number }>(
+    `SELECT c.id FROM assistant_chunks_fts f CROSS JOIN assistant_chunks c ON c.id = f.rowid
+     JOIN assistant_files af ON af.id = c.file_id AND af.assistant_id = c.assistant_id
+     WHERE f.seg MATCH ? AND c.assistant_id = ? ORDER BY bm25(assistant_chunks_fts), c.id LIMIT 24`,
+    query.args as string[],
+  );
+  assert.deepEqual(result.map((r) => Number(r.id)), joinedAll.map((r) => Number(r.id)));
 });
