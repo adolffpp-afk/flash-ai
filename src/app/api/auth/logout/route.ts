@@ -15,6 +15,7 @@ import { endAllSessions } from "@/lib/server/account.ts";
 import { run } from "@/lib/server/db.ts";
 import { sha256 } from "@/lib/server/ids.ts";
 import { translatorFor } from "@/lib/server/i18n.ts";
+import { dropSignIns } from "@/lib/server/push.ts";
 
 /**
  * Log out. {} logs the tab's account out of this browser, { everywhere: true } logs it out of every
@@ -24,7 +25,8 @@ import { translatorFor } from "@/lib/server/i18n.ts";
  * change nothing without it, so a tab showing one account can never log out another. Only Flash's
  * own pages may ask (see fromOwnPage), so another site can't sign a visitor out. A tab loaded
  * before this change logs out with no body (oldPageLogout): that still works from this site while
- * the browser holds one account and names none, as it did then.
+ * the browser holds one account and names none, as it did then. The alerts each sign-in that ends
+ * here turned on in this browser stop with it (see push.ts); the other accounts' stay.
  */
 export async function POST(request: Request) {
   const jar = await jarSessions(request);
@@ -38,6 +40,7 @@ export async function POST(request: Request) {
   if (body.all === true) {
     // Every session this browser holds, live or not; the accounts' other devices stay signed in.
     const hashes = heldTokens(request).map((token) => sha256(token));
+    await dropSignIns(hashes);
     if (hashes.length) await run(`DELETE FROM sessions WHERE token_hash IN (${hashes.map(() => "?").join(", ")})`, hashes);
     headers.append("Set-Cookie", clearSessionCookie());
     headers.append("Set-Cookie", accountsCookie([], secure));
@@ -61,8 +64,12 @@ export async function POST(request: Request) {
       { status: 409, headers },
     );
   }
-  if (everywhere) await endAllSessions(target.user.id);
-  else await run("DELETE FROM sessions WHERE token_hash = ?", [sha256(target.token)]);
+  // This browser's page takes the account's alerts off its own screen (logOutHere in push.ts).
+  if (everywhere) await endAllSessions(target.user.id, sha256(target.token));
+  else {
+    await dropSignIns([sha256(target.token)]);
+    await run("DELETE FROM sessions WHERE token_hash = ?", [sha256(target.token)]);
+  }
   const { cookies, next } = await removeFromJar(request, [target.user.id]);
   for (const cookie of cookies) headers.append("Set-Cookie", cookie);
   return Response.json({ ok: true, next: next ? { id: next.user.id, email: next.user.email } : null }, { headers });
