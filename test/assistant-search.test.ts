@@ -167,19 +167,22 @@ test("chunks of a file the assistant doesn't list (a failed upload's) are never 
   }
 });
 
-test("files that fit are read whole, in order, on every message, without a search", async () => {
+test("files that fit are read whole, with their names, in order, on every message, without a search", async () => {
   const small = await assistant("owner", "Small");
   const a = filler(1800, 11);
   const b = `${filler(1500, 12)}\n\nOpening hours: 7 to 19.`;
-  await file(small, "Menu.txt", a, { tokens: 2500 });
-  await file(small, "Hours.txt", b, { tokens: 3500 });
+  // 5,980 tokens, and the names "File 1" and "File 2" (or "Menu.txt" and "Hours.txt"), which go
+  // with the files, counted by their bytes: a token is never shorter than a byte.
+  await file(small, "Menu.txt", a, { tokens: 2490 });
+  await file(small, "Hours.txt", b, { tokens: 3490 });
   for (const message of ["thanks!", "", "What are the opening hours?"]) {
     const read = await passagesFor({ id: small }, message);
     assert.equal(read.mode, "whole", message);
     assert.deepEqual(read.passages.map((p) => [p.title, p.text]), [["File 1", a], ["File 2", b]]);
   }
   assert.deepEqual((await passagesFor({ id: small }, "", "", { named: true })).passages.map((p) => p.title), ["Menu.txt", "Hours.txt"]);
-  // One token more, or a count that was only an estimate, and the files are searched instead.
+  // One more file, of a token and its name: over, and the files are searched instead. So are they
+  // when a count was only an estimate.
   await file(small, "Extra.txt", "One more line.", { tokens: 1 });
   assert.equal((await passagesFor({ id: small }, "thanks!")).mode, "none");
   const estimated = await assistant("owner", "Estimated");
@@ -196,6 +199,18 @@ test("files that fit are read whole, in order, on every message, without a searc
   assert.ok(fits.passages.reduce((n, p) => n + p.title.length + 1 + p.text.length, 0) <= 6000);
   const tight = await passagesFor({ id: roomy }, "opening hours", "", { maxChars: 300 });
   assert.ok(tight.passages.length === 1 && tight.passages[0].title.length + 1 + tight.passages[0].text.length <= 300);
+  // Long names, which go with each file: under the cap without them, over with them, and searched
+  // when they're sent. "File 1" and "File 2" fit.
+  const named = await assistant("owner", "Long names");
+  const long = (n: number) => `社内マニュアル第${n}版`.padEnd(116, "（営業部・店舗運営・返品と交換の手続き）") + ".pdf";
+  await file(named, long(1), filler(2000, 16), { tokens: 2900 });
+  await file(named, long(2), `${filler(2000, 17)}\n\nOpening hours: 7 to 19.`, { tokens: 2900 });
+  assert.equal((await passagesFor({ id: named }, "opening hours")).mode, "whole");
+  let counted = 0;
+  const count = async (ps: { title: string; text: string }[]) => ((counted += 1), ps.reduce((n, p) => n + bytes(p.title) + 1 + Math.ceil(bytes(p.text) / 4), 0));
+  const read = await passagesFor({ id: named }, "opening hours", "", { named: true, count });
+  assert.equal(read.mode, "search");
+  assert.ok(counted > 0 && (await count(read.passages)) <= PASSAGE_TOKENS);
 });
 
 test("passages are cut to 6,000 tokens after counting, and to 6,000 bytes when counting fails", async () => {
@@ -808,4 +823,41 @@ test("stray index rows that outrank the assistant's own chunks don't take their 
   } finally {
     await run("DELETE FROM assistant_chunks WHERE file_id = 'failed-upload'");
   }
+});
+
+test("Thai and Lao written with ำ or its halves, Lao ໜ and ໝ or their two letters, and Persian with or without its half-space find each other, in both searches", async () => {
+  // "Fresh fruit every day", "Large orders of goods ship free for every customer", "Staff
+  // duties", "Returns are due within seven days", "We can send the goods", "The books are on the
+  // shelf".
+  const written: Record<number, string> = {
+    2: "ໝາກໄມ້ສົດທຸກມື້",
+    4: "สินค้าจำนวนมากส่งฟรีสำหรับลูกค้าทุกคน",
+    6: "ໜ້າທີ່ຂອງພະນັກງານ",
+    8: "กำหนดส่งคืนสินค้าภายในเจ็ดวัน",
+    10: "ما می\u200Cتوانیم کالا را ارسال کنیم.",
+    12: "کتاب\u200Cها در قفسه هستند.",
+  };
+  // The other way: ำ as ํ and า, as many Thai PDFs give it, ໝ and ໜ as two letters, and no half-space.
+  const other = (t: string) => t.replaceAll("ำ", "ํา").replaceAll("ໝ", "ຫມ").replaceAll("ໜ", "ຫນ").replaceAll("\u200C", "");
+  const one = await assistant("owner", "Written one way");
+  await file(one, "Guide.pdf", pdf(14, written, 16), { exact: 0 });
+  const two = await assistant("owner", "Written the other");
+  await file(two, "Guide.pdf", pdf(14, Object.fromEntries(Object.entries(written).map(([page, t]) => [page, other(t)])), 16), { exact: 0 });
+  const asked = [["ໝາກໄມ້", "2"], ["จำนวน", "4"], ["สินค้า จำนวนมาก", "4"], ["สำหรับลูกค้า", "4"], ["ໜ້າທີ່", "6"], ["กำหนด", "8"], ["می\u200Cتوانیم", "10"], ["کتاب\u200Cها", "12"]];
+  for (const [question, page] of asked) {
+    for (const id of [one, two]) {
+      for (const q of [question, other(question)]) {
+        for (const mode of ["index", "fallback"] as const) assert.equal((await searchChunks(id, queryTerms(q), mode))[0]?.label, page, `${mode}, ${id === one ? "one way" : "the other"}: ${q}`);
+      }
+    }
+  }
+});
+
+test("a small digit in a Chinese clause doubles only the word it's on: the page that answers comes first, in both searches", async () => {
+  // "Refunds reach the card within three working days" and "Buy the carbon-neutral package to cut
+  // CO₂ emissions every year, refunds arrive".
+  const shop = await assistant("owner", "Carbon");
+  await file(shop, "Guide.pdf", pdf(12, { 3: "退款在三个工作日内到账，退款会退回原卡。", 7: "购买碳中和套餐每年可减少CO₂排放退款到账" }, 5), { exact: 0 });
+  for (const mode of ["index", "fallback"] as const) assert.equal((await searchChunks(shop, queryTerms("退款多久到账？"), mode))[0]?.label, "3", mode);
+  for (const mode of ["index", "fallback"] as const) assert.equal((await searchChunks(shop, queryTerms("CO2排放"), mode))[0]?.label, "7", mode);
 });

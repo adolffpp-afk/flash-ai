@@ -154,9 +154,45 @@ test("words are split for Japanese, Chinese and Thai, folded for accents, stroke
 test("apostrophes split a word before tagging, so no piece goes untagged", () => {
   assert.deepEqual(words("l'été we're O\u2019Brien's"), ["l", "ete", "we", "re", "o", "brien", "s"]);
   const tag = tagOf(A);
-  for (const text of ["l'été", "rock'n'roll", "O\u2019Brien", "x-y_z", "a.b.c", "co-op's"]) {
+  for (const text of ["l'été", "rock'n'roll", "O\u2019Brien", "x-y_z", "a.b.c", "co-op's", "کتاب\u200Cها", "ශ්\u200Dරී"]) {
     for (const piece of tagged(tag, text).split(" ")) assert.ok(piece.startsWith(tag) && /^[\p{L}\p{N}\p{M}]+$/u.test(piece), `${text}: ${piece}`);
   }
+});
+
+test("words written two ways are split the same way: Thai and Lao ำ in two halves, Lao ໜ and ໝ as two letters, Malayalam's older chillus", () => {
+  // Text from many Thai PDFs writes ำ as its two halves, ํ and า, a tone mark before or between
+  // them: "Large orders of goods ship free for every customer, returns within seven days, water".
+  const thai = "สินค้าจำนวนมากส่งฟรีสำหรับลูกค้าทุกคน กำหนดส่งคืนภายในเจ็ดวัน น้ำดื่ม";
+  assert.deepEqual(words(thai.replaceAll("ำ", "ํา")), words(thai));
+  assert.deepEqual(words(thai.replaceAll("้ำ", "ํ้า")), words(thai));
+  assert.ok(words(thai.replaceAll("ำ", "ํา")).includes(words("จำนวน")[0]));
+  assert.deepEqual(words("ສິນຄ້າຈໍານວນ ນ້ໍາ"), words("ສິນຄ້າຈຳນວນ ນ້ຳ"));
+  // Lao ໜ and ໝ are written as one letter or two: "fresh fruit every day", "staff duties".
+  for (const [one, two] of [["ໝາກໄມ້ສົດທຸກມື້", "ຫມາກໄມ້ສົດທຸກມື້"], ["ໜ້າທີ່ຂອງພະນັກງານ", "ຫນ້າທີ່ຂອງພະນັກງານ"]]) assert.deepEqual(words(two), words(one), two);
+  // Malayalam's chillus, as one letter and as consonant, virama and joiner: "you", "fish".
+  assert.deepEqual(words("നിങ്ങള്‍ മീന്‍"), words("നിങ്ങൾ മീൻ"));
+});
+
+test("a word with a half-space or a joiner in it is kept split there and joined, as both are typed", () => {
+  // Persian writes plurals, the verb prefix می and -تر with a half-space (ZWNJ), and many type
+  // them joined: "books", "we can", "better".
+  assert.deepEqual(words("کتاب‌ها می‌توانیم بهتر"), ["كتاب", "ها", "كتابها", "مي", "توانيم", "ميتوانيم", "بهتر"]);
+  assert.deepEqual(words("می‌"), ["مي"], "a joiner at the end is not a second word");
+  // Sinhala and Devanagari write joiners inside a word that many type without.
+  assert.ok(words("ශ්‍රී").includes(words("ශ්රී")[0]));
+  assert.ok(words("क्‍ष").includes(words("क्ष")[0]));
+});
+
+test("a small digit doubles only the Latin, Greek or Cyrillic word it's written on, not a Chinese, Japanese or Thai clause around it", () => {
+  const counts = (t: string) => words(t).reduce((m, w) => m.set(w, (m.get(w) ?? 0) + 1), new Map<string, number>());
+  for (const text of ["我们的二氧化碳CO₂排放量下降了三成，明年继续减少。", "当社のCO₂排出量は前年比で三割減少しました。", "建筑面积89m²，每年可减少CO₂排放约1200吨", "โครงการนี้ช่วยลดการปล่อย CO₂ ได้ปีละ 1200 ตัน"]) {
+    const typed = counts(text.replace("CO₂", "CO2").replace("m²", "m2"));
+    const small = counts(text);
+    assert.ok([...small].every(([, n]) => n === 1), `${text}: ${JSON.stringify([...small])}`);
+    // The same words as with "CO2" typed, and "co" (and "89m") besides.
+    assert.deepEqual([...small.keys()].filter((w) => !typed.has(w)).sort(), (text.includes("m²") ? ["89m", "co"] : ["co"]).sort(), text);
+  }
+  assert.deepEqual(words("Площадь 75 м², CO₂"), ["площадь", "75", "м2", "м", "co2", "co"]);
 });
 
 test("an id that isn't hex can't make a tag", () => {

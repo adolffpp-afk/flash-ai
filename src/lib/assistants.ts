@@ -144,8 +144,9 @@ const LOOKALIKES: Record<string, string> = {
 // or after, one or many, each also with an s, and the name too, as in "Flash's": "Flash support",
 // "Official Flash ∞ AI", "AI-Flash Inc. Support", "Flash Customer Support", "Contact Flash Admins",
 // "Flash's Help Desk". Only those: "flash" is an everyday word, and "Flash sale helper" or
-// "Flashcards support" are someone's own.
-const OWN = ["Flash", PRODUCT_NAME, BRAND_NAME, LEGAL_NAME, "AI-Flash"];
+// "Flashcards support" are someone's own. "Flash ∞" is "Flash", as "∞" goes the way punctuation
+// goes, and "Flash Infinity" is how it's spelled out.
+const OWN = ["Flash", "Flash Infinity", PRODUCT_NAME, BRAND_NAME, LEGAL_NAME, "AI-Flash"];
 const ROLES = [
   "support", "team", "official", "help", "desk", "admin", "administrator", "moderator", "staff", "customer", "service", "contact", "billing",
   "account", "security", "assistant", "bot", "inc", "incorporated", "ltd", "llc", "corp", "corporation", "hq",

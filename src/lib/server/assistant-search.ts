@@ -389,7 +389,8 @@ export async function searchChunks(assistantId: string, terms: Term[], mode?: Se
 
 /**
  * What one message reads from an assistant's files:
- *  - every file, whole, when all were counted exactly and come to PASSAGE_TOKENS or less;
+ *  - every file, whole, when all were counted exactly and come to PASSAGE_TOKENS or less with
+ *    their titles, counted by their bytes (a token is never shorter than a byte);
  *  - otherwise the chunks that best match the message (and, when it's short, the person's message
  *    before it), neighbours merged, at most MAX_PASSAGES passages and PASSAGE_TOKENS tokens;
  *  - nothing when no chunk matches (nomatch), or the start of each file with readStart.
@@ -408,14 +409,15 @@ export async function passagesFor(a: { id: string }, message: string, earlier = 
       [a.id, ...fs.map((f) => f.id), ...(perFile ? [perFile] : [])],
     );
 
-  if (files.every((f) => Number(f.exact) === 1) && files.reduce((sum, f) => sum + Number(f.tokens), 0) <= PASSAGE_TOKENS) {
+  const titleOf = (f: FileRow, i: number) => (o.named ? f.name : `File ${i + 1}`);
+  if (files.every((f) => Number(f.exact) === 1) && files.reduce((sum, f, i) => sum + Number(f.tokens) + bytes(titleOf(f, i)) + 1, 0) <= PASSAGE_TOKENS) {
     const rows = await ofFiles(files);
     const passages = files
       .map((f, i) => ({
         fileId: f.id,
         file: f.name,
         label: "",
-        title: o.named ? f.name : `File ${i + 1}`,
+        title: titleOf(f, i),
         text: rows.filter((r) => r.file_id === f.id).map((r) => r.body).join("").trim(),
       }))
       .filter((p) => p.text);

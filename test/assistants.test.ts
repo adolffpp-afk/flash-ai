@@ -94,14 +94,16 @@ test("names Flash keeps for itself are refused, in any case and with any spacing
   // Latin letters with a stroke, hook, curl or tail built in, which NFD can't take off.
   const built = ["Flⱥsh", "Flⱥsh Support", "Flᶏsh", "Fȴash", "Fɬash", "Fⱡash", "Flaȿh", "Flaꞩh", "Flaᶊh", "ᶂlash", "Fȴash ∞ AI"];
   // Flash's own, with any apostrophe, also a modifier letter that shows as one ("ʼ"), or a comma ("ꓹ").
+  // "Flash ∞" spelled out, as screen readers read it, alone or with those words.
+  const spelled = ["Flash ∞", "Flash ∞ Support", "Official Flash ∞", "Flash Infinity", "Flash Infinity Support", "Official Flash Infinity", "Flash Infinity Team", "FLASH INFINITY", "Flash Infinity's Help Desk"];
   const owned = ["Flash's Support", "Flash’s Help Desk", "Flash ∞ AI's Support Team", "AI-Flash's Help Desk", "Flash Infinity AI's Support", "Flash's", "Official Flash's Team", "Flashʼs Support", "Flaʼsh", "Flashꓹs Support", "Flash support's"];
-  for (const name of [...others, ...roles, ...more, ...signs, ...built, ...owned]) assert.deepEqual(validateAssistant(fields({ name })), { code: "name_kept" }, JSON.stringify(name));
+  for (const name of [...others, ...roles, ...more, ...signs, ...built, ...spelled, ...owned]) assert.deepEqual(validateAssistant(fields({ name })), { code: "name_kept" }, JSON.stringify(name));
   // Nothing that shows: blank letters, zero-width characters, a word joiner, a soft hyphen, tags.
   for (const name of ["\u3164", "\u3164 \uFFA0", "\u2800", "\u200B", "\u2060", "\u00AD", "\u{E0041}\u{E0042}", "\u200B\u0301", "\u0080\u0081", "\u009B\u0085"]) {
     assert.deepEqual(validateAssistant(fields({ name })), { code: "name_missing" }, JSON.stringify(name));
   }
   // Other words with Flash's are someone's own: "flash" is an everyday word.
-  for (const name of ["Flashcards tutor", "Flash fiction coach", "My Flash helper", "Support", "Флэш помощник", "Fresh support", "Café helper", "한글 도우미", "Slash support", "Flash Infinity", "Help desk", "👨\u200D👩\u200D👧", "\u2764\uFE0F", "Flash sale helper", "Flashcards support", "The Flash fan club", "Flash photography tips", "Flashlight bot", "Flash's fan club", "Flash Store", "Hawaiʻi helper"]) {
+  for (const name of ["Flashcards tutor", "Flash fiction coach", "My Flash helper", "Support", "Флэш помощник", "Fresh support", "Café helper", "한글 도우미", "Slash support", "Infinity helper", "Flash Infinite Loop", "Help desk", "👨\u200D👩\u200D👧", "\u2764\uFE0F", "Flash sale helper", "Flashcards support", "The Flash fan club", "Flash photography tips", "Flashlight bot", "Flash's fan club", "Flash Store", "Hawaiʻi helper"]) {
     assert.equal(isKeptName(name), false, name);
     assert.equal(validateAssistant(fields({ name })), null, name);
   }

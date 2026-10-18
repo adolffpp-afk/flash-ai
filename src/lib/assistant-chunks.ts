@@ -132,14 +132,30 @@ function digit(d: string): string {
 // those two: NFKC cuts Thai and Lao "ำ" in two and writes Lao "ໜ" as two letters, which the
 // splitter doesn't expect ("สินค้า" would come out as "สิน" and "ค้า").
 const NFKC_FIRST = /[^\p{Script=Thai}\p{Script=Lao}]+/gu;
+// For the same reason, what's written that way goes back to one letter before the split: Thai and
+// Lao "ำ" as its two halves (as many Thai PDFs give it, a tone mark before or between them), Lao
+// "ໜ" and "ໝ" as two letters, and Malayalam's chillus as consonant, virama and joiner (the older
+// way, which "നിങ്ങൾ" is still often written).
+const ONE_LETTER: Record<string, string> = { "ຫນ": "ໜ", "ຫມ": "ໝ", "ണ്\u200D": "ൺ", "ന്\u200D": "ൻ", "ര്\u200D": "ർ", "ല്\u200D": "ൽ", "ള്\u200D": "ൾ", "ക്\u200D": "ൿ" };
+const TWO_LETTERS = /ຫ[ນມ]|[ണനരലളക]്\u200D/g;
+const AM = /\u0E4D([\u0E48-\u0E4B]?)\u0E32/g;
+const LAO_AM = /\u0ECD([\u0EC8-\u0ECB]?)\u0EB2/g;
+// A half-space (ZWNJ) or a joiner inside a word, which Persian writes in plurals and after "می"
+// ("کتاب‌ها", "می‌توانیم") and Sinhala and Devanagari in some letters, and which many people
+// type without: the word is kept split there and joined ("كتاب", "ها", "كتابها").
+const JOINER = /[\u200C\u200D]/;
+const JOINERS = /[\u200C\u200D]/g;
 const ASCII = /^[\x00-\x7f]*$/;
+// What a word is split again at: anything that isn't a letter, digit or mark.
+const APART = /[^\p{L}\p{N}\p{M}]+/u;
 // Digits written small. In "CO₂" or "m²" they belong to the word, as typed ("co2", "m2"); in a
 // footnote's "fee²" they don't ("fee"). Which it is can't be told, so a word with them is kept
-// both ways: "co2" and "co", "fee2" and "fee". Not a longer run of letters, such as a line of
-// Chinese, which would be counted twice.
+// both ways: "co2" and "co", "fee2" and "fee". Only a word of Latin, Greek or Cyrillic letters and
+// digits: Chinese, Japanese and Thai have no spaces, and a run of their letters is a whole clause
+// ("减少CO₂排放" keeps "CO₂" both ways, and each of its other words once).
 const SMALL = /[⁰¹²³⁴-⁹₀-₉]/u;
 const SMALLS = /[⁰¹²³⁴-⁹₀-₉]/gu;
-const RUN = /[\p{L}\p{M}\p{N}]+/gu;
+const RUN = /[\p{Script=Latin}\p{Script=Greek}\p{Script=Cyrillic}\p{N}][\p{Script=Latin}\p{Script=Greek}\p{Script=Cyrillic}\p{N}\p{M}]*/gu;
 // Symbols NFKC writes with Latin letters or digits ("™" is "TM", "№" "No", "㎏" "kg", "①" "1") are
 // words of their own, not the end of the word they're written onto: "Visa™" is "visa" and "tm".
 // Not a radical NFKC writes as a Chinese character, which belongs to its word.
@@ -158,13 +174,14 @@ function apart(c: string): string {
  * accents or vowel marks, with one form of the Arabic and Persian letters written two ways, the
  * Latin letters with a stroke as the letter without it, and every script's digits as 0-9 ("Café"
  * is "cafe", "يُرجى" is "يرجي", "أولًا" is "اولا", "کالا" is "كالا", "łódź" is "lodz", "۱۲" is "12").
- * A word with digits written small is kept with them and without, and "™" and the like are words
- * apart (see SMALL and SYMBOL).
+ * Letters written two ways are split as one (see ONE_LETTER). A word with digits written small, or
+ * with a half-space or a joiner in it, is kept both ways, and "™" and the like are words apart
+ * (see SMALL, JOINER and SYMBOL).
  */
 export function words(text: string): string[] {
   const out: string[] = [];
-  let spaced = text.normalize("NFC");
-  if (SMALL.test(spaced)) spaced = spaced.replace(RUN, (w) => (w.length <= MAX_WORD && SMALL.test(w) ? `${w} ${w.replace(SMALLS, " ")}` : w));
+  let spaced = text.normalize("NFC").replace(AM, "$1\u0E33").replace(LAO_AM, "$1\u0EB3").replace(TWO_LETTERS, (l) => ONE_LETTER[l]);
+  if (SMALL.test(spaced)) spaced = spaced.replace(RUN, (w) => (SMALL.test(w) ? `${w} ${w.replace(SMALLS, " ")}` : w));
   const folded = spaced
     .replace(SYMBOL, apart)
     .replace(NFKC_FIRST, (s) => s.normalize("NFKC"))
@@ -175,7 +192,10 @@ export function words(text: string): string[] {
     const ascii = ASCII.test(s.segment);
     // NFKD, and NFC once the marks are gone: NFKC, which Thai and Lao only get now that they're
     // split. Lower case again, as NFKD can make capitals.
-    for (const piece of (ascii ? s.segment : s.segment.normalize("NFKD").toLowerCase()).split(/[^\p{L}\p{N}\p{M}]+/u)) {
+    const segment = ascii ? s.segment : s.segment.normalize("NFKD").toLowerCase();
+    const pieces = segment.split(APART);
+    if (JOINER.test(segment)) pieces.push(...segment.replace(JOINERS, "").split(APART).filter((p) => !pieces.includes(p)));
+    for (const piece of pieces) {
       const word = ascii ? piece : piece.replace(MARKS, "").normalize("NFC").replace(STROKED, (c) => STROKES[c]).replace(DIGITS, digit);
       if (word && word.length <= MAX_WORD && /[\p{L}\p{N}]/u.test(word)) out.push(word);
     }
