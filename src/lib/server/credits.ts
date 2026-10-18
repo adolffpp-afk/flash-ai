@@ -156,8 +156,9 @@ async function monthlyCredits(userId: string): Promise<void> {
  * no balance covers the amount. Pass the id to settle() to lower the charge once the real cost is known.
  * keepTopUpLevel: each balance must stay at or above its own auto top-up level while auto top-up
  * can buy a pack (see TOP_UP_LEVEL), in the same statement, so the charge can never make Flash buy one.
- * A refusal settles nothing, so it is where a low-credit email still owed goes, and where auto
- * top-up tries again (see low-balance.ts), except for a visitor's spend.
+ * A refusal settles nothing, so it is where a low-credit email still owed goes, the out-of-credits
+ * email once the balance is at or below 0, and where auto top-up tries again (see low-balance.ts),
+ * except for a visitor's spend.
  */
 export async function charge(
   userId: string,
@@ -177,8 +178,10 @@ export async function charge(
     );
     if (r.rowsAffected === 1) return Number(r.lastInsertRowid);
   }
-  // Spending that keeps the level isn't the account holder's own either, so it never tries a top-up.
-  watchRefusal(accounts, { topUp: !visitor && !keepTopUpLevel });
+  // Spending that keeps the level isn't the account holder's own either, so it never tries a top-up,
+  // nor sends the out-of-credits email: an app's AI refusing visitors has its own (see low-balance.ts).
+  const own = !visitor && !keepTopUpLevel;
+  watchRefusal(accounts, { topUp: own, out: own });
   return null;
 }
 

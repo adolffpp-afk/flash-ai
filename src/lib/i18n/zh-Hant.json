@@ -1165,7 +1165,7 @@
  "On. {count} recovery codes left.": "已開啟。剩餘 {count} 組復原碼。",
  "One Workspace.": "一個工作區。",
  "One Workspace. Infinite Possibilities.": "一個工作區，無限可能。",
- "One email each time your balance drops below it, at most one a week, and none while auto top-up is on. Flash also emails you, at most once a day, when an app's AI can't answer its visitors because you're out of credits.": "每次餘額低於這個數值時寄送一封電子郵件，每週最多一封，開啟自動儲值期間不會寄送。當某個應用程式的 AI 因你的點數用完而無法回答訪客時，Flash 也會寄電子郵件給你，每天最多一次。",
+ "One email each time your balance drops below it (at most one a week), and one when your credits run out. None while auto top-up is on. Flash also emails you, at most once a day, when an app's AI can't answer its visitors because you're out of credits.": "每次餘額低於這個數值時寄送一封電子郵件（每週最多一封），點數用完時再寄一封。開啟自動儲值期間不會寄送。當某個應用程式的 AI 因你的點數用完而無法回答訪客時，Flash 也會寄電子郵件給你，每天最多一次。",
  "One file that opens in any browser.": "單一檔案，任何瀏覽器都能開啟。",
  "One moment…": "請稍候…",
  "One-off top-ups that never expire.": "單次儲值，永不過期。",

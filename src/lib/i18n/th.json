@@ -1165,7 +1165,7 @@
  "On. {count} recovery codes left.": "เปิดอยู่ เหลือรหัสกู้คืน {count} รหัส",
  "One Workspace.": "พื้นที่ทำงานเดียว",
  "One Workspace. Infinite Possibilities.": "พื้นที่ทำงานเดียว ความเป็นไปได้ไม่สิ้นสุด",
- "One email each time your balance drops below it, at most one a week, and none while auto top-up is on. Flash also emails you, at most once a day, when an app's AI can't answer its visitors because you're out of credits.": "ส่งอีเมลหนึ่งฉบับทุกครั้งที่ยอดคงเหลือต่ำกว่าค่านี้ ไม่เกินสัปดาห์ละหนึ่งฉบับ และไม่ส่งเลยขณะที่เปิดการเติมอัตโนมัติ นอกจากนี้ Flash จะส่งอีเมลถึงคุณไม่เกินวันละครั้ง เมื่อ AI ของแอปตอบผู้เข้าชมไม่ได้เพราะเครดิตของคุณหมด",
+ "One email each time your balance drops below it (at most one a week), and one when your credits run out. None while auto top-up is on. Flash also emails you, at most once a day, when an app's AI can't answer its visitors because you're out of credits.": "ส่งอีเมลหนึ่งฉบับทุกครั้งที่ยอดคงเหลือต่ำกว่าค่านี้ (ไม่เกินสัปดาห์ละหนึ่งฉบับ) และอีกหนึ่งฉบับเมื่อเครดิตของคุณหมด ไม่ส่งเลยขณะที่เปิดการเติมอัตโนมัติ นอกจากนี้ Flash จะส่งอีเมลถึงคุณไม่เกินวันละครั้ง เมื่อ AI ของแอปตอบผู้เข้าชมไม่ได้เพราะเครดิตของคุณหมด",
  "One file that opens in any browser.": "ไฟล์เดียวที่เปิดได้ในทุกเบราว์เซอร์",
  "One moment…": "สักครู่…",
  "One-off top-ups that never expire.": "เติมเครดิตครั้งเดียว ไม่มีวันหมดอายุ",

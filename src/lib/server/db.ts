@@ -1031,7 +1031,23 @@ const MIGRATIONS = [
   // 1 once an assistant that wasn't the user's own (or was deleted) was taken off the chat ("Continue
   // without it"): its replies stay in the chat, so the user's own things stay out of it (see the chat route).
   "ALTER TABLE projects ADD COLUMN assistant_theirs INTEGER NOT NULL DEFAULT 0",
+  // The out-of-credits email (see low-balance.ts): when it went, or was claimed, for this time the
+  // balance ran out (0 again once credits come back), and when one held back (the day's share, a failed
+  // send) may go.
+  "ALTER TABLE credit_alerts ADD COLUMN out_at INTEGER NOT NULL DEFAULT 0",
+  "ALTER TABLE credit_alerts ADD COLUMN out_retry_at INTEGER NOT NULL DEFAULT 0",
 ];
+
+/*
+ * Credits that come in re-arm the out-of-credits email once the balance is above 0 again, whatever adds
+ * them (a purchase, auto top-up, plan or monthly credits, a refund), as credit_alerts_rearm does the
+ * low-credit email: the next time the balance runs out is emailed. Made after MIGRATIONS, which add its columns.
+ */
+const OUT_REARM = `CREATE TRIGGER IF NOT EXISTS credit_alerts_out_rearm AFTER INSERT ON credit_ledger WHEN NEW.amount > 0 BEGIN
+    UPDATE credit_alerts SET out_at = 0, out_retry_at = 0
+    WHERE user_id = NEW.user_id AND (out_at > 0 OR out_retry_at > 0)
+      AND (SELECT COALESCE(SUM(amount), 0) FROM credit_ledger WHERE user_id = NEW.user_id) > 0;
+  END`;
 
 /*
  * The assistants' search index (see assistant-search.ts): each chunk's words, tagged with its
@@ -1063,6 +1079,7 @@ async function init(c: Client) {
   await c.execute("PRAGMA foreign_keys = ON");
   await c.batch(SCHEMA, "write");
   for (const sql of MIGRATIONS) await c.execute(sql).catch(() => {});
+  await c.execute(OUT_REARM);
   await c.execute("CREATE INDEX IF NOT EXISTS users_email_key ON users(email_key)");
   await c.execute("CREATE INDEX IF NOT EXISTS purchases_payment_intent ON purchases(payment_intent)");
   await c.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_ref_code ON users(ref_code) WHERE ref_code IS NOT NULL");

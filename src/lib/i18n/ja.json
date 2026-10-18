@@ -1165,7 +1165,7 @@
  "On. {count} recovery codes left.": "オン。復旧コードは残り{count}個です。",
  "One Workspace.": "ひとつのワークスペース。",
  "One Workspace. Infinite Possibilities.": "ひとつのワークスペースで、無限の可能性を。",
- "One email each time your balance drops below it, at most one a week, and none while auto top-up is on. Flash also emails you, at most once a day, when an app's AI can't answer its visitors because you're out of credits.": "残高がこれを下回るたびにメールを1通、多くても週に1通お送りします。自動チャージがオンの間は送りません。また、クレジット切れでアプリのAIが訪問者に回答できないときも、多くても1日1回Flashからメールでお知らせします。",
+ "One email each time your balance drops below it (at most one a week), and one when your credits run out. None while auto top-up is on. Flash also emails you, at most once a day, when an app's AI can't answer its visitors because you're out of credits.": "残高がこれを下回るたびにメールを1通（多くても週に1通）、クレジットがなくなったときにも1通お送りします。自動チャージがオンの間は送りません。また、クレジット切れでアプリのAIが訪問者に回答できないときも、多くても1日1回Flashからメールでお知らせします。",
  "One file that opens in any browser.": "どのブラウザでも開ける1つのファイルです。",
  "One moment…": "お待ちください…",
  "One-off top-ups that never expire.": "有効期限のない都度チャージ。",

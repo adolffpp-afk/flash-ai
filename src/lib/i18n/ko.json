@@ -1165,7 +1165,7 @@
  "On. {count} recovery codes left.": "켜짐. 복구 코드가 {count}개 남았어요.",
  "One Workspace.": "하나의 워크스페이스.",
  "One Workspace. Infinite Possibilities.": "하나의 워크스페이스, 무한한 가능성.",
- "One email each time your balance drops below it, at most one a week, and none while auto top-up is on. Flash also emails you, at most once a day, when an app's AI can't answer its visitors because you're out of credits.": "잔액이 이 값보다 적어질 때마다 이메일을 한 통 보내며, 일주일에 최대 한 통이고 자동 충전이 켜져 있는 동안에는 보내지 않아요. 크레딧이 없어 앱의 AI가 방문자에게 답하지 못할 때도 Flash가 하루에 최대 한 번 이메일을 보내 드려요.",
+ "One email each time your balance drops below it (at most one a week), and one when your credits run out. None while auto top-up is on. Flash also emails you, at most once a day, when an app's AI can't answer its visitors because you're out of credits.": "잔액이 이 값보다 적어질 때마다 이메일을 한 통(일주일에 최대 한 통), 크레딧이 다 떨어지면 한 통 보내 드려요. 자동 충전이 켜져 있는 동안에는 보내지 않아요. 크레딧이 없어 앱의 AI가 방문자에게 답하지 못할 때도 Flash가 하루에 최대 한 번 이메일을 보내 드려요.",
  "One file that opens in any browser.": "어떤 브라우저에서나 열리는 단일 파일이에요.",
  "One moment…": "잠시만요…",
  "One-off top-ups that never expire.": "만료되지 않는 일회성 충전이에요.",

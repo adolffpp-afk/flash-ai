@@ -1165,7 +1165,7 @@
  "On. {count} recovery codes left.": "Attivo. Restano {count} codici di recupero.",
  "One Workspace.": "Un'unica area di lavoro.",
  "One Workspace. Infinite Possibilities.": "Un'unica area di lavoro. Infinite possibilità.",
- "One email each time your balance drops below it, at most one a week, and none while auto top-up is on. Flash also emails you, at most once a day, when an app's AI can't answer its visitors because you're out of credits.": "Un'email ogni volta che il saldo scende sotto questo valore, al massimo una a settimana, e nessuna finché la ricarica automatica è attiva. Flash ti scrive anche, al massimo una volta al giorno, quando l'IA di un'app non riesce a rispondere ai visitatori perché hai esaurito i crediti.",
+ "One email each time your balance drops below it (at most one a week), and one when your credits run out. None while auto top-up is on. Flash also emails you, at most once a day, when an app's AI can't answer its visitors because you're out of credits.": "Un'email ogni volta che il saldo scende sotto questo valore (al massimo una a settimana) e una quando esaurisci i crediti. Nessuna finché la ricarica automatica è attiva. Flash ti scrive anche, al massimo una volta al giorno, quando l'IA di un'app non riesce a rispondere ai visitatori perché hai esaurito i crediti.",
  "One file that opens in any browser.": "Un unico file che si apre in qualsiasi browser.",
  "One moment…": "Un attimo…",
  "One-off top-ups that never expire.": "Ricariche singole che non scadono mai.",

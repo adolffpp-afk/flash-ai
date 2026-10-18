@@ -320,7 +320,7 @@ test("today's alert emails are counted for /admin", async () => {
   await user("count2");
   await give("count2", 50);
   assert.equal(await spent("count2", 1), "budget");
-  assert.deepEqual(await alertEmailsToday(), { lowSent: 1, lowBudget: 1, lowWeekly: 1, lowFailed: 0, appAiSent: 0, appAiBudget: 0, appAiFailed: 0 });
+  assert.deepEqual(await alertEmailsToday(), { lowSent: 1, lowBudget: 1, lowWeekly: 1, lowFailed: 0, outSent: 0, outBudget: 0, outFailed: 0, appAiSent: 0, appAiBudget: 0, appAiFailed: 0 });
   await run("DELETE FROM rate_limits WHERE key LIKE 'email-alert:%'");
 });
 

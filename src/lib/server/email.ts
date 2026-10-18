@@ -34,9 +34,10 @@ export const EMAIL_BUDGET = {
   // admin at once and counts once here (once per admin in the day's total). Every report is still
   // listed in /admin > Reports.
   reports: 10,
-  // Low-credit emails, a day (see low-balance.ts): someone's credits falling below the level they
-  // picked. They come out of what app emails and invites share, never what sign-in emails keep, and
-  // stop at this many: one that can't go out waits for a later day, and Flash still shows it in the app.
+  // Low-credit and out-of-credits emails, a day (see low-balance.ts): someone's credits falling below
+  // the level they picked, or running out. They come out of what app emails and invites share, never
+  // what sign-in emails keep, and stop at this many: one that can't go out waits for a later day, and
+  // Flash still shows it in the app.
   alerts: 10,
   // "Your app's AI is out of credits" emails to app owners, a day (see low-balance.ts), the same way.
   // Visitors set these off, so they have a share of their own and never use up the low-credit emails'.
@@ -134,12 +135,13 @@ const FROM = () => process.env.FLASH_EMAIL_FROM || `${BRAND_NAME} <hello@flash-a
 
 const IGNORE = "If you didn't ask for this, you can ignore this email.";
 
-function layout(heading: string, body: string, button: string, link: string, footer = IGNORE): string {
+/** An email's page: body is one paragraph's HTML, or (blocks) paragraphs and lists already made with block(). */
+function layout(heading: string, body: string | { blocks: string }, button: string, link: string, footer = IGNORE): string {
   return `<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;background:#f4f4f5;font-family:system-ui,-apple-system,Segoe UI,sans-serif">
 <div style="max-width:480px;margin:32px auto;background:#fff;border-radius:16px;padding:32px">
 <div style="font-size:20px;font-weight:700;color:#047857">Flash ∞ AI</div>
 <h1 style="font-size:20px;margin:24px 0 8px">${heading}</h1>
-<p style="color:#52525b;line-height:1.5">${body}</p>
+${typeof body === "string" ? `<p style="color:#52525b;line-height:1.5">${body}</p>` : body.blocks}
 <p style="margin:24px 0"><a href="${link}" style="background:#047857;color:#fff;padding:12px 20px;border-radius:10px;text-decoration:none;font-weight:600">${button}</a></p>
 <p style="color:#a1a1aa;font-size:12px;line-height:1.5">Or paste this link into your browser:<br>${link}</p>
 <p style="color:#a1a1aa;font-size:12px">${footer}</p>
@@ -156,20 +158,98 @@ const escapeHtml = (s: string) =>
 export const LOW_CREDITS_LINE =
   "Your Flash credits are running low. Your apps and websites keep running, but they only get new updates while you have credits. Top up to keep them updating.";
 const ALERTS_OFF = "You get this because low-credit emails are on. To stop them, open Credits in Flash and untick “Email me when my credits run low”.";
+export const OUT_OF_CREDITS_HEADING = "Your Flash credits have run out: top up to keep your apps updating";
+export const OUT_OF_CREDITS_LINE = "Your Flash account has run out of credits.";
+
+/** What the account can still use on free models with no credits (see free.ts), or null when it can't (no free models set up, or an email not confirmed yet). */
+export type FreeUse = { chats: number; images: number } | null;
+/** Who the credit emails are to: the name Flash calls them (none: no greeting), and what free models give them. */
+export type CreditEmailTo = { name?: string | null; free?: FreeUse };
+
+/*
+ * What keeps working with no credits, and what waits for credits, as the credit emails list them.
+ * Every line is true of Flash at 0 credits, whatever the person asks (check the code it names when
+ * Flash changes):
+ * - Published apps and websites are served (serve-site.ts), and their forms (inbox.ts), sign-ins
+ *   (site-auth.ts) and shop orders (shop.ts, paid to the owner's Stripe) go on, none of them using credits.
+ * - Free daily chats: chat, writing, code and translation go to a free model when the balance doesn't
+ *   cover a request (the chat route, freeEligible and FREE_DAILY_CHATS in free.ts), for a confirmed
+ *   email; pictures too, up to FREE_DAILY_IMAGES, when free pictures are set up.
+ * - Waiting: building or changing an app (the app engine has no free model), a reply on a paid level,
+ *   pictures on paid models, videos, music and voiceovers (each holds credits first: charge() in
+ *   credits.ts, which refuses with none), and an app's AI answering visitors (site-ai.ts refuses
+ *   when the owner's credits don't pay for an answer).
+ */
+export function creditLists(free: FreeUse = null): { working: string[]; waiting: string[] } {
+  const chats = free && free.chats > 0 ? free.chats : 0;
+  const images = chats && free && free.images > 0 ? free.images : 0;
+  return {
+    working: [
+      "Your published apps and websites stay online for visitors, with their pages, forms, sign-ins and shop orders.",
+      ...(images
+        ? [`Free chats and pictures on free models, up to ${chats.toLocaleString("en-US")} chats and ${images.toLocaleString("en-US")} pictures a day.`]
+        : chats
+          ? [`Free chats on free models, up to ${chats.toLocaleString("en-US")} a day.`]
+          : []),
+    ],
+    waiting: [
+      "New builds and changes to your apps.",
+      "Chats on paid levels.",
+      images ? "Pictures on paid models, videos, music and voiceovers." : "Pictures, videos, music and voiceovers.",
+      "The AI inside your apps answering visitors.",
+    ],
+  };
+}
+
+const PARAGRAPH = "margin:0 0 12px;color:#52525b;line-height:1.5";
+/** One line of a credit email, kept to one line of text: a name someone typed could hold anything. */
+const oneLine = (s: string, max: number) => s.replace(/[\u0000-\u001f\u007f\u2028\u2029]+/g, " ").replace(/\s+/g, " ").trim().slice(0, max).trim();
+
+/**
+ * A credit email's body, in HTML and text alike: "Hi <name>," when Flash knows a name, the lines, and
+ * each labelled list, so the text version says everything the HTML does.
+ */
+function creditBody(to: CreditEmailTo, lines: string[], lists: { label: string; items: string[] }[], intro?: string) {
+  const name = oneLine(to.name ?? "", 60);
+  const paragraphs = [...(name ? [`Hi ${name},`] : []), ...lines];
+  const html = [
+    ...paragraphs.map((p) => `<p style="${PARAGRAPH}">${escapeHtml(p)}</p>`),
+    ...(intro ? [`<p style="margin:20px 0 0;color:#18181b;line-height:1.5;font-weight:600">${escapeHtml(intro)}</p>`] : []),
+    ...lists.map(
+      (list) =>
+        `<p style="margin:16px 0 4px;color:#18181b;line-height:1.5;font-weight:600">${escapeHtml(list.label)}</p>\n<ul style="margin:0;padding-left:20px;color:#52525b;line-height:1.5">${list.items.map((item) => `<li style="margin:2px 0">${escapeHtml(item)}</li>`).join("")}</ul>`,
+    ),
+  ].join("\n");
+  const text = [...paragraphs, ...(intro ? [intro] : []), ...lists.map((list) => `${list.label}\n${list.items.map((item) => `- ${item}`).join("\n")}`)].join("\n\n");
+  return { html, text };
+}
+
+const creditLabels = (free: FreeUse) => {
+  const { working, waiting } = creditLists(free);
+  return [
+    { label: "Still working:", items: working },
+    { label: "Waiting until you top up:", items: waiting },
+  ];
+};
 
 export const EMAILS = {
-  lowCredits: (credits: number, link: string) => {
+  lowCredits: (credits: number, link: string, to: CreditEmailTo = {}) => {
     const left = `You have ${Math.max(0, credits).toLocaleString("en-US")} credits left.`;
+    const heading = "Your Flash credits are running low";
+    const body = creditBody(to, [LOW_CREDITS_LINE, left], creditLabels(to.free ?? null), "If they run out:");
     return {
-      subject: "Your Flash credits are running low",
-      html: layout(
-        "Your Flash credits are running low",
-        `${LOW_CREDITS_LINE}<br><br><span style="color:#18181b">${left}</span>`,
-        "Top up in Flash",
-        link,
-        ALERTS_OFF,
-      ),
-      text: `${LOW_CREDITS_LINE}\n\n${left}\n\nTop up in Flash: ${link}\n\n${ALERTS_OFF}`,
+      subject: heading,
+      html: layout(heading, { blocks: body.html }, "Top up in Flash", link, ALERTS_OFF),
+      text: `${heading}\n\n${body.text}\n\nTop up in Flash: ${link}\n\n${ALERTS_OFF}`,
+    };
+  },
+  // Once the balance is at or below 0, when nothing paid can be held (see low-balance.ts).
+  outOfCredits: (link: string, to: CreditEmailTo = {}) => {
+    const body = creditBody(to, [OUT_OF_CREDITS_LINE], creditLabels(to.free ?? null));
+    return {
+      subject: OUT_OF_CREDITS_HEADING,
+      html: layout(OUT_OF_CREDITS_HEADING, { blocks: body.html }, "Top up in Flash", link, ALERTS_OFF),
+      text: `${OUT_OF_CREDITS_HEADING}\n\n${body.text}\n\nTop up in Flash: ${link}\n\n${ALERTS_OFF}`,
     };
   },
   // site is the app's title, which its owner typed: escaped, and kept to one line.
