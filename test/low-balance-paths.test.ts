@@ -1,13 +1,37 @@
 /*
  * Low-credit emails on every path a spend can take: the app's AI, connectors, voice and the companion
  * as well as chat, a team's shared pool, auto top-up that fails or can't buy, a request refused for
- * lack of credits while an email is still owed, several alerts at once, and credits that come back
- * (a purchase, the monthly credits) with no spend between to see them.
+ * lack of credits while an email is still owed or auto top-up can try again, several alerts at once,
+ * credits that come back (a purchase, the monthly credits) with no spend between to see them, and a
+ * visitor's question to an app's AI, which never buys its owner a pack.
  */
-import { test } from "node:test";
+import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { register } from "node:module";
 import { readFileSync } from "node:fs";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+
+// A stand-in Claude for an app's AI: every answer costs a few credits.
+const claude = createServer((req, res) => {
+  req.resume();
+  req.on("end", () =>
+    res.writeHead(200, { "Content-Type": "application/json" }).end(
+      JSON.stringify({
+        id: "m",
+        type: "message",
+        role: "assistant",
+        model: "claude-sonnet-5-5",
+        content: [{ type: "text", text: "Tuesday." }],
+        stop_reason: "end_turn",
+        stop_sequence: null,
+        usage: { input_tokens: 4000, output_tokens: 3000 },
+      }),
+    ),
+  );
+});
+await new Promise<void>((r) => claude.listen(0, "127.0.0.1", r));
+after(() => claude.close());
 
 register("./support/route-hooks.mjs", import.meta.url);
 register(
@@ -17,6 +41,8 @@ process.env.DATABASE_URL = ":memory:";
 process.env.RESEND_API_KEY = "test-key";
 process.env.STRIPE_SECRET_KEY = "rk_test";
 process.env.FLASH_APP_URL = "https://flash.test/";
+process.env.ANTHROPIC_API_KEY = "sk-fake";
+process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${(claude.address() as AddressInfo).port}`;
 delete process.env.FLASH_DEMO_EMAILS;
 delete process.env.FLASH_STRIPE_TAX;
 
@@ -25,10 +51,12 @@ const { addPurchase, charge, ensureMonthlyCredits, refund, settle } = await impo
 const { EMAIL_BUDGET, sendEmail } = await import("../src/lib/server/email.ts");
 const { maybeAutoTopUp } = await import("../src/lib/server/auto-topup.ts");
 const { checkLowBalance } = await import("../src/lib/server/low-balance.ts");
+const { askSiteAi, saveAiSettings } = await import("../src/lib/server/site-ai.ts");
 const { afterwards } = await import("./support/next-server.mjs");
 
 const NOON = Date.UTC(2026, 9, 9, 12);
 const DAY = 86_400_000;
+const MINUTE = 60_000;
 let clock = NOON;
 Date.now = () => clock;
 
@@ -37,8 +65,10 @@ const sent: { to: string; subject: string }[] = [];
 const stripeCalls: string[] = [];
 let decline = false;
 let intents = 0;
+const realFetch = globalThis.fetch;
 globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
   const url = new URL(String(input));
+  if (url.hostname === "127.0.0.1") return realFetch(input, init);
   if (url.host === "api.resend.com") {
     const body = JSON.parse(String(init?.body)) as { to: string[]; subject: string };
     sent.push({ to: body.to[0], subject: body.subject });
@@ -167,6 +197,70 @@ test("an email held back by the day's share goes the next day on a request refus
   assert.equal(to("held").length, 1);
 });
 
+test("a top-up's credits spent within its gap: the first request refused after the gap tries again, and the email goes if it can't buy", async () => {
+  for (const id of ["gap", "gap2"]) {
+    await user(id);
+    await give(id, 130);
+    await autoTopUpOn(id);
+  }
+  const bought = () => stripeCalls.filter((p) => p === "/v1/payment_intents").length;
+  stripeCalls.length = 0;
+  await spend("gap", 40);
+  await afterwards();
+  assert.equal(await balance("gap"), 90 + 500, "below the level: auto top-up buys");
+  // A big build within the gap between top-ups: nothing more is bought, and no email (it can still buy).
+  clock += 3 * MINUTE;
+  await spend("gap", 580);
+  await afterwards();
+  assert.equal(bought(), 1);
+  // Every paid request is refused from now on. The first one after the gap buys again.
+  clock += 11 * MINUTE;
+  assert.equal(await charge("gap", 50, "a build"), null);
+  await afterwards();
+  assert.equal(bought(), 2);
+  assert.equal(await balance("gap"), 10 + 500);
+  assert.ok(await charge("gap", 50, "a build"), "and the next request goes");
+  assert.equal(to("gap").length, 0);
+
+  // The same with the card declined after the gap: auto top-up turns off and the email goes.
+  clock += 11 * MINUTE;
+  await spend("gap2", 40);
+  await afterwards();
+  clock += 3 * MINUTE;
+  await spend("gap2", 580);
+  await afterwards();
+  clock += 11 * MINUTE;
+  decline = true;
+  assert.equal(await charge("gap2", 50, "a build"), null);
+  await afterwards();
+  decline = false;
+  assert.equal(Number((await one<{ enabled: number }>("SELECT enabled FROM auto_topups WHERE user_id = 'gap2'"))?.enabled), 0);
+  assert.deepEqual(to("gap2").map((e) => e.subject), [LOW]);
+});
+
+test("a visitor's question to an app's AI never buys its owner a pack, answered or refused; the owner's own next request does", async () => {
+  clock += DAY;
+  await user("shop");
+  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES ('bakery', 'shop', 'Bakery', '<p>', 0, 0)");
+  await give("shop", 102);
+  await autoTopUpOn("shop");
+  await saveAiSettings("bakery", true, 1000);
+  stripeCalls.length = 0;
+  assert.equal((await askSiteAi("bakery", { prompt: "When should I book?" }, "203.0.113.9")).status, 200);
+  await afterwards();
+  assert.ok((await balance("shop")) < 100, "the answer took the balance below the auto top-up level");
+  // One refused by charge() (another visitor's question took the credits first, say).
+  assert.equal(await charge("shop", 500, 'AI in "Bakery"', { visitor: true }), null);
+  await afterwards();
+  assert.deepEqual(stripeCalls, [], "nothing bought for visitors");
+  assert.equal(to("shop").length, 0, "and no email: auto top-up still buys, on the owner's own next request");
+  // The owner's own request, refused: auto top-up buys.
+  assert.equal(await charge("shop", 500, "a build"), null);
+  await afterwards();
+  assert.deepEqual(stripeCalls, ["/v1/payment_intents"]);
+  assert.ok((await balance("shop")) > 500);
+});
+
 test("the alerts' daily share holds under a burst: 11 at once send 10, and 2 at once with one place left send 1", async () => {
   clock += DAY;
   const before = sent.length;
@@ -195,7 +289,7 @@ test("credits that come back with no spend to see them re-arm the alert: the nex
   // One request settles three paid jobs before any of their checks runs (an MCP batch, say).
   for (let i = 0; i < 3; i++)
     await run("INSERT INTO credit_ledger (user_id, amount, reason, created_at, settled_at) VALUES ('free', -55, 'job', ?, ?)", [clock, clock]);
-  const outcomes = await Promise.all([checkLowBalance("free", 55), checkLowBalance("free", 55), checkLowBalance("free", 55)]);
+  const outcomes = await Promise.all([checkLowBalance("free"), checkLowBalance("free"), checkLowBalance("free")]);
   assert.deepEqual(outcomes.sort(), ["alerted", "alerted", "sent"]);
   assert.equal(to("free").length, 2);
 
@@ -204,13 +298,13 @@ test("credits that come back with no spend to see them re-arm the alert: the nex
   await addPurchase("free", "starter", "stripe:pack:free");
   for (let i = 0; i < 2; i++)
     await run("INSERT INTO credit_ledger (user_id, amount, reason, created_at, settled_at) VALUES ('free', -260, 'job', ?, ?)", [clock, clock]);
-  assert.deepEqual((await Promise.all([checkLowBalance("free", 260), checkLowBalance("free", 260)])).sort(), ["alerted", "sent"]);
+  assert.deepEqual((await Promise.all([checkLowBalance("free"), checkLowBalance("free")])).sort(), ["alerted", "sent"]);
   assert.equal(to("free").length, 3);
 
   // Credits back that leave the balance below the level aren't a new drop.
   clock += 8 * DAY;
   await refund("free", 5, "a failed request");
-  assert.equal(await checkLowBalance("free", 1), "alerted");
+  assert.equal(await checkLowBalance("free"), "alerted");
   assert.equal(to("free").length, 3);
 });
 

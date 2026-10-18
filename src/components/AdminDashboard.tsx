@@ -46,6 +46,7 @@ type Stats = {
     appAiBudget: number;
     appAiFailed: number;
     share: number;
+    appAiShare: number;
   };
   // CONNECTOR_KEYS: whether connectors can be used, and what's missing (never the value).
   connectors: {
@@ -157,8 +158,8 @@ function AlertEmailsLine({ a }: { a: NonNullable<Stats["alertEmails"]> }) {
   return (
     <p className="mt-3 text-xs text-zinc-500">
       Alert emails today: low credits {num(a.lowSent)} sent ({held(a.lowBudget, a.lowFailed, a.lowWeekly)}) · app AI out of credits{" "}
-      {num(a.appAiSent)} sent ({held(a.appAiBudget, a.appAiFailed)}). Their share is {num(a.share)} a day of EMAIL_BUDGET; one held back
-      goes on a later day while the person is still low.
+      {num(a.appAiSent)} sent ({held(a.appAiBudget, a.appAiFailed)}). Their shares of EMAIL_BUDGET are {num(a.share)} and{" "}
+      {num(a.appAiShare)} a day; a low-credit email held back goes on a later day while the person is still low.
     </p>
   );
 }

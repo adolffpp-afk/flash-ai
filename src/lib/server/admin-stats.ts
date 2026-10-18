@@ -176,8 +176,8 @@ export async function adminStats(days: number) {
     byEngine: byEngine.map((r) => ({ engine: r.engine, requests: n(r.requests), credits: n(r.credits), costCents: n(r.cost) })),
     byProvider,
     // Today's low-credit and app-AI emails (see low-balance.ts): sent, and held back by the day's share
-    // (EMAIL_BUDGET.alerts), the one-a-week limit or a failed send.
-    alertEmails: { ...(await alertEmailsToday()), share: EMAIL_BUDGET.alerts },
+    // (EMAIL_BUDGET.alerts and appAiAlerts), the one-a-week limit or a failed send.
+    alertEmails: { ...(await alertEmailsToday()), share: EMAIL_BUDGET.alerts, appAiShare: EMAIL_BUDGET.appAiAlerts },
     // Whether connectors can be used: CONNECTOR_KEYS is set and holds a usable key (never its value).
     // With the version sealing new secrets and the entries that can't be used (by name), so a mistyped rotation shows.
     connectors: {

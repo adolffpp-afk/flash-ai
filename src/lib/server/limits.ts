@@ -26,16 +26,20 @@ export async function overLimit(key: string, max: number, windowMs: number, atte
  * took from ends (its reset_at), for giveBackOne. With max 1 it holds key until clearLimit or the
  * window ends.
  */
-export async function takeOne(key: string, max: number, windowMs: number): Promise<number | null> {
+export const takeOne = (key: string, max: number, windowMs: number) => takeSome(key, max, windowMs, 1);
+
+/** takeOne for several at once (an email to several people, say): all of them, or none and null. */
+export async function takeSome(key: string, max: number, windowMs: number, count: number): Promise<number | null> {
+  if (count > max) return null;
   const t = now();
   const r = await run(
-    `INSERT INTO rate_limits (key, count, reset_at) VALUES (?, 1, ?)
+    `INSERT INTO rate_limits (key, count, reset_at) VALUES (?, ?, ?)
      ON CONFLICT(key) DO UPDATE SET
-       count = CASE WHEN reset_at < ? THEN 1 ELSE count + 1 END,
+       count = CASE WHEN reset_at < ? THEN excluded.count ELSE count + excluded.count END,
        reset_at = CASE WHEN reset_at < ? THEN excluded.reset_at ELSE reset_at END
-     WHERE reset_at < ? OR count < ?
+     WHERE reset_at < ? OR count + excluded.count <= ?
      RETURNING reset_at`,
-    [key, t + windowMs, t, t, t, max],
+    [key, count, t + windowMs, t, t, t, max],
   );
   return r.rows.length ? Number(r.rows[0].reset_at) : null;
 }

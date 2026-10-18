@@ -155,7 +155,7 @@ async function taxFor(row: Row, priceCents: number): Promise<{ total: number; ca
  */
 async function stop(userId: string, reason: string): Promise<void> {
   await run("UPDATE auto_topups SET enabled = 0, failed = ?, updated_at = ? WHERE user_id = ?", [reason.slice(0, 200), now(), userId]);
-  await checkLowBalance(userId, 0).catch((err) => console.error("[flash] low-credit check failed", err));
+  await checkLowBalance(userId).catch((err) => console.error("[flash] low-credit check failed", err));
 }
 
 /**

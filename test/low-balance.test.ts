@@ -35,12 +35,16 @@ let clock = NOON;
 Date.now = () => clock;
 
 // What Resend was asked to send. down: it answers with an error. gate: it waits for this first.
+// sending: called once as the next send reaches Resend.
 type Sent = { to: string; subject: string; text: string; html: string };
 const sent: Sent[] = [];
 let down = false;
 let gate: Promise<void> | null = null;
+let sending: (() => void) | null = null;
 globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
   assert.match(String(input), /^https:\/\/api\.resend\.com\//, "only Resend is called");
+  sending?.();
+  sending = null;
   if (gate) await gate;
   if (down) return new Response("unavailable", { status: 503 });
   const body = JSON.parse(String(init?.body)) as { to: string[]; subject: string; text: string; html: string };
@@ -65,13 +69,13 @@ async function spend(id: string, credits: number) {
 /** A spend already settled, then the check settling it starts: its outcome. */
 async function spent(id: string, credits: number) {
   await run("INSERT INTO credit_ledger (user_id, amount, reason, created_at, settled_at) VALUES (?, ?, 'test', ?, ?)", [id, -credits, clock, clock]);
-  return checkLowBalance(id, credits);
+  return checkLowBalance(id);
 }
-/** Uses up today's alert emails (EMAIL_BUDGET.alerts). */
-const useUpAlertEmails = () =>
+/** Uses up today's low-credit emails (EMAIL_BUDGET.alerts), or app-AI emails (EMAIL_BUDGET.appAiAlerts). */
+const useUpAlertEmails = (kind: "alert" | "app-ai" = "alert") =>
   run("INSERT INTO rate_limits (key, count, reset_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET count = excluded.count, reset_at = excluded.reset_at", [
-    `email-alert:${new Date(clock).toISOString().slice(0, 10)}`,
-    EMAIL_BUDGET.alerts,
+    `email-${kind}:${new Date(clock).toISOString().slice(0, 10)}`,
+    kind === "alert" ? EMAIL_BUDGET.alerts : EMAIL_BUDGET.appAiAlerts,
     clock + DAY,
   ]);
 const state = (id: string) =>
@@ -130,8 +134,8 @@ test("the next drop is emailed only after the balance was back at or above the l
   assert.ok(to("ana@x.co")[1].text.includes("You have 48 credits left."));
   assert.equal(await spent("ana", 1), "alerted");
 
-  // A purchase and then one big spend, with no spend between to see the balance above: this spend
-  // took it from the level to below it, so it's a new drop.
+  // A purchase and then one big spend, with no spend between to see the balance above: the purchase
+  // re-armed it as it came in (credit_alerts_rearm), so it's a new drop.
   clock += WEEK;
   await give("ana", 500, "stripe:pack:2");
   assert.equal(await spent("ana", 520), "sent");
@@ -208,9 +212,39 @@ test("two spends settling at once send one email", async () => {
   await user("twice");
   await give("twice", 150);
   await run("INSERT INTO credit_ledger (user_id, amount, reason, created_at, settled_at) VALUES ('twice', -60, 'a', ?, ?), ('twice', -60, 'b', ?, ?)", [clock, clock, clock, clock]);
-  const outcomes = await Promise.all([checkLowBalance("twice", 60), checkLowBalance("twice", 60)]);
+  const outcomes = await Promise.all([checkLowBalance("twice"), checkLowBalance("twice")]);
   assert.deepEqual(outcomes.sort(), ["alerted", "sent"]);
   assert.equal(to("twice@x.co").length, 1);
+});
+
+test("spends near the level settling together, each enough alone to cross it, email the drop once: during the send, after it, and a week on", async () => {
+  // 107, then two settled spends of 4: 99, and each spend alone took it from the level to below it.
+  await user("near");
+  await give("near", 107);
+  await run("INSERT INTO credit_ledger (user_id, amount, reason, created_at, settled_at) VALUES ('near', -4, 'a', ?, ?), ('near', -4, 'b', ?, ?)", [clock, clock, clock, clock]);
+  let release = () => {};
+  gate = new Promise((r) => (release = r));
+  const reached = new Promise<void>((r) => (sending = r));
+  const first = checkLowBalance("near");
+  await reached;
+  // The second check, while the first one's email is on its way: done, or sending a second one.
+  const secondSends = new Promise<void>((r) => (sending = r));
+  const second = checkLowBalance("near");
+  await Promise.race([second, secondSends]);
+  sending = null;
+  release();
+  gate = null;
+  assert.deepEqual([await first, await second], ["sent", "alerted"]);
+  assert.equal(await checkLowBalance("near"), "alerted", "and once it went");
+  assert.deepEqual({ ...(await state("near")) }, { alerted_at: clock, sent_at: clock, retry_at: 0, app_ai_at: 0 }, "nothing held for a week on");
+  assert.equal((await alertEmailsToday()).lowWeekly, 0);
+  // More than a week on, the balance never back at the level: a request refused for lack of credits
+  // and another spend send nothing more for this drop.
+  clock += WEEK + DAY;
+  assert.equal(await charge("near", 500, "a build"), null);
+  await afterwards();
+  await spend("near", 1);
+  assert.equal(to("near@x.co").length, 1);
 });
 
 test("settling hands the check to after the response: the spend never waits for the email, and never fails with it", async () => {
@@ -318,11 +352,27 @@ test("an app's AI out of credits: the app is marked for the bell and its owner e
   assert.equal(await appAiAlert("shopkeeper", "Bakery"), "off");
   // Held back by the day's budget: it waits a day like a sent one, and is counted.
   await saveAlertSettings("shopkeeper", { enabled: true, below: 100 });
-  await useUpAlertEmails();
+  await useUpAlertEmails("app-ai");
   assert.equal(await appAiAlert("shopkeeper", "Bakery"), "budget");
   assert.equal(await appAiAlert("shopkeeper", "Bakery"), "daily");
   assert.equal((await alertEmailsToday()).appAiBudget, 1);
   assert.equal(to("shopkeeper@x.co").length, 3);
+});
+
+test("visitors setting off app-AI emails never use up the low-credit emails' share", async () => {
+  // Owners out of credits whose apps' AI visitors ask, more of them than the app-AI emails' share.
+  clock = Math.floor(clock / DAY + 1) * DAY + 3600_000;
+  const outcomes = [];
+  for (let i = 0; i <= EMAIL_BUDGET.appAiAlerts; i++) {
+    await user(`broke${i}`);
+    outcomes.push(await appAiAlert(`broke${i}`, `App ${i}`));
+  }
+  assert.deepEqual(outcomes, [...Array(EMAIL_BUDGET.appAiAlerts).fill("sent"), "budget"]);
+  // Someone's own spend takes their balance below their level: the email still goes.
+  await user("own");
+  await give("own", 150);
+  await spend("own", 60);
+  assert.deepEqual(to("own@x.co").map((e) => e.subject), ["Your Flash credits are running low"]);
 });
 
 test("the emails keep a title to one line, never show a negative balance, and the words for phones are the bell's", async () => {

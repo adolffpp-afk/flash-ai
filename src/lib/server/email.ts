@@ -1,5 +1,5 @@
 import { now } from "./db.ts";
-import { countOf, giveBackOne, overLimit, takeOne } from "./limits.ts";
+import { countOf, giveBackOne, overLimit, takeOne, takeSome } from "./limits.ts";
 import { BRAND_NAME } from "../product.ts";
 
 /*
@@ -35,10 +35,12 @@ export const EMAIL_BUDGET = {
   // listed in /admin > Reports.
   reports: 10,
   // Low-credit emails, a day (see low-balance.ts): someone's credits falling below the level they
-  // picked, and an app's AI turning visitors away because its owner is out of credits. They come out
-  // of what app emails and invites share, never what sign-in emails keep, and stop at this many: one
-  // that can't go out waits for a later day, and Flash still shows it in the app.
+  // picked. They come out of what app emails and invites share, never what sign-in emails keep, and
+  // stop at this many: one that can't go out waits for a later day, and Flash still shows it in the app.
   alerts: 10,
+  // "Your app's AI is out of credits" emails to app owners, a day (see low-balance.ts), the same way.
+  // Visitors set these off, so they have a share of their own and never use up the low-credit emails'.
+  appAiAlerts: 5,
 };
 
 const DAY = 86_400_000;
@@ -56,8 +58,10 @@ const DAY = 86_400_000;
  * - "report": a new report, to Flash's admins. Anyone can report, so these also stop at
  *   EMAIL_BUDGET.reports a day.
  * - "alert": a low-credit email (see low-balance.ts). These also stop at EMAIL_BUDGET.alerts a day.
+ * - "app-ai": an "app's AI is out of credits" email (low-balance.ts). These also stop at
+ *   EMAIL_BUDGET.appAiAlerts a day.
  */
-export type EmailKind = "account" | "new" | "other" | "report" | "alert" | { owner: string };
+export type EmailKind = "account" | "new" | "other" | "report" | "alert" | "app-ai" | { owner: string };
 
 /**
  * Whether today's budget lets an email of this kind go out, counting it when it does. Account
@@ -80,14 +84,20 @@ async function withinBudget(kind: EmailKind, recipients: number): Promise<boolea
   // Checked first, so one person's busy apps (or a flood of reports) can't use up everyone else's share.
   if (typeof kind === "object" && (await overLimit(`email-owner:${kind.owner}`, EMAIL_BUDGET.perOwner, DAY))) return false;
   if (kind === "report" && (await overLimit(`email-report:${day}`, EMAIL_BUDGET.reports, DAY))) return false;
-  // Taken in one statement, so alerts at the same moment get every place there is (and no more), and
-  // handed back when the day's shared emails then refuse it.
-  const alert = kind === "alert" ? `email-alert:${day}` : "";
-  const alertUntil = alert ? await takeOne(alert, EMAIL_BUDGET.alerts, DAY) : null;
-  if (alert && alertUntil === null) return false;
+  // An alert's own share, then the day's shared emails, each taken in one statement, so emails at the
+  // same moment get every place there is (and no more), and one refused takes nothing: an alert's
+  // place is handed back when the shared emails then refuse it.
+  const share =
+    kind === "alert"
+      ? { key: `email-alert:${day}`, max: EMAIL_BUDGET.alerts }
+      : kind === "app-ai"
+        ? { key: `email-app-ai:${day}`, max: EMAIL_BUDGET.appAiAlerts }
+        : null;
+  const shareUntil = share ? await takeOne(share.key, share.max, DAY) : null;
+  if (share && shareUntil === null) return false;
   const full = (await countOf(accounts)) + (await countOf(others)) + recipients > EMAIL_BUDGET.perDay;
-  if (full || (await overLimit(others, EMAIL_BUDGET.perDay - EMAIL_BUDGET.keptForAccounts, DAY, recipients))) {
-    if (alertUntil !== null) await giveBackOne([[alert, alertUntil]]);
+  if (full || (await takeSome(others, EMAIL_BUDGET.perDay - EMAIL_BUDGET.keptForAccounts, DAY, recipients)) === null) {
+    if (share && shareUntil !== null) await giveBackOne([[share.key, shareUntil]]);
     console.warn("[flash] today's emails for apps and invites are used up; raise EMAIL_BUDGET in email.ts on a bigger email plan");
     return false;
   }

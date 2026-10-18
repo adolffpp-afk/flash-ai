@@ -7,7 +7,8 @@
  *   only after the balance has been back at or above it (a purchase, the monthly credits: see the
  *   credit_alerts_rearm trigger in db.ts), and at most one a week. None while their auto top-up is
  *   on and can buy (a card saved, this month's top-ups not used up, no disputed payment): the check
- *   tries it first, and a try that fails turns it off and checks again (see auto-topup.ts).
+ *   tries it first (never for a visitor's spend: see credits.ts), and a try that fails turns it off
+ *   and checks again (see auto-topup.ts).
  * - When an app's AI turns a visitor away because its owner is out of credits: at most one a day.
  * Both stop when the person turns them off, and need payments (they say to top up) and emails on. The
  * app shows the same thing in the bell and on Home, so nothing is lost when an email can't go.
@@ -16,7 +17,8 @@
  * of the balance and the alert's state, after the response (afterResponse), so the spend is never
  * slowed or failed by it. An email the day's budget (EMAIL_BUDGET.alerts) or the provider held back,
  * or the weekly limit, waits: the next spend from then on sends it, while the balance is still low,
- * and so does a request refused for lack of credits (watchRefusal), which spends nothing.
+ * and so does a request refused for lack of credits (watchRefusal), which spends nothing. A refusal
+ * also lets auto top-up try again, as a spend does, once its gap between top-ups has passed.
  *
  * Accounts are deleted by hand (see /delete-account): deleteUserAlerts removes what is kept here.
  */
@@ -111,25 +113,37 @@ export async function deleteUserAlerts(userId: string): Promise<void> {
 }
 
 /**
+ * What a check may do besides email. topUp: try auto top-up (see checkLowBalance). Off for a
+ * visitor's spend (credits.ts): a pack is bought only for what the account holder does.
+ */
+export type CheckOptions = { topUp?: boolean };
+
+/**
  * Called once a spend is settled: account is the ledger it came from (a team member's spend is the
  * pool owner's), used what it took. Looks after the response is sent (see afterResponse).
  */
-export function watchBalance(account: string, used: number): void {
+export function watchBalance(account: string, used: number, options: CheckOptions = {}): void {
   if (!(used > 0)) return;
-  afterResponse(() => checkLowBalance(account, used));
+  afterResponse(() => checkLowBalance(account, options));
 }
 
 /**
  * Called when a request is refused because no balance covers it (charge() in credits.ts): accounts
  * are the ledgers it was refused from. Nothing is settled, so an email still owed (held back by the
- * day's budget, a failed send or the week's limit, and due now) goes from here. One read of
- * credit_alerts, after the response, and the full check only when an email is owed.
+ * day's budget, a failed send or the week's limit, and due now) goes from here. So does auto top-up's
+ * next try, as after a spend: a top-up whose credits were spent within its gap between top-ups can't
+ * buy again until it has passed, and from then on requests may all be refused. One read, after the
+ * response, and the full check only when an email is owed or auto top-up is on (and topUp).
  */
-export function watchRefusal(accounts: string[]): void {
+export function watchRefusal(accounts: string[], { topUp = true }: CheckOptions = {}): void {
   afterResponse(async () => {
     for (const account of accounts) {
-      const owed = await one("SELECT 1 FROM credit_alerts WHERE user_id = ? AND retry_at > 0 AND retry_at <= ?", [account, now()]);
-      if (owed) await checkLowBalance(account, 0);
+      const due = await one<{ due: number }>(
+        `SELECT EXISTS (SELECT 1 FROM credit_alerts WHERE user_id = ? AND retry_at > 0 AND retry_at <= ?)
+             OR (? AND EXISTS (SELECT 1 FROM auto_topups WHERE user_id = ? AND enabled = 1 AND payment_method IS NOT NULL)) AS due`,
+        [account, now(), topUp ? 1 : 0, account],
+      );
+      if (Number(due?.due) === 1) await checkLowBalance(account, { topUp });
     }
   });
 }
@@ -158,9 +172,9 @@ export type LowBalanceOutcome = "above" | "off" | "alerted" | "auto" | "waiting"
  * Emails the account when its balance is below its level and this drop hasn't been emailed. One read
  * for everything it needs; writes only when something changes. The balance counts what is settled:
  * a request still running holds credits that mostly come back, and is looked at when it settles.
- * used is what the spend took, or 0 when no spend asks (a refusal, a failed auto top-up).
+ * Called after a spend, a refusal (watchRefusal) and an auto top-up that failed (auto-topup.ts).
  */
-export async function checkLowBalance(account: string, used: number): Promise<LowBalanceOutcome> {
+export async function checkLowBalance(account: string, { topUp = true }: CheckOptions = {}): Promise<LowBalanceOutcome> {
   const t = now();
   const s = await one<State>(
     `SELECT (SELECT COALESCE(SUM(amount), 0) FROM credit_ledger WHERE user_id = ?
@@ -178,22 +192,24 @@ export async function checkLowBalance(account: string, used: number): Promise<Lo
   const alertedAt = Number(s?.alerted_at ?? 0);
   const retryAt = Number(s?.retry_at ?? 0);
   // Auto top-up can buy (on, a card saved, this month's top-ups not used up, no disputed payment, as
-  // maybeAutoTopUp allows). Below its own level it tries now, on every spend (the app's AI, connectors,
+  // maybeAutoTopUp allows). Below its own level it tries now, on every spend and refusal (connectors,
   // voice and the companion too, and a team's pool, whose ledger this is), before anything is emailed.
+  // Not for a visitor's spend (topUp off): it buys on the account holder's own next spend or visit.
   // A try that fails turns it off and runs this check again (see auto-topup.ts), which emails then.
   const auto = Number(s?.auto) === 1;
-  if (auto && balance < Number(s?.auto_below)) await maybeAutoTopUp(account).catch((err) => console.error("[flash] auto top-up failed", err));
+  if (topUp && auto && balance < Number(s?.auto_below)) await maybeAutoTopUp(account).catch((err) => console.error("[flash] auto top-up failed", err));
   if (balance >= below) {
     // Back at or above the level: the next drop below it is emailed again.
     if (alertedAt || retryAt) await run("UPDATE credit_alerts SET alerted_at = 0, retry_at = 0 WHERE user_id = ?", [account]);
     return "above";
   }
   if (s?.enabled === 0 || !paymentsEnabled() || !emailEnabled()) return "off";
-  // This spend took it from the level to below it: a new drop, even if the balance went back up
-  // since the last email without a spend to see it (a purchase, then one big reply).
-  const fresh = balance + used >= below;
-  if (alertedAt && !fresh) return "alerted";
-  // Auto top-up bought, is buying, or will buy at its own level (one set below this one).
+  // This drop was emailed (or is being emailed): only the balance back at or above the level re-arms
+  // it, here or as credits come in (credit_alerts_rearm in db.ts), so spends settling together, or
+  // checked one after another, never email one drop twice.
+  if (alertedAt) return "alerted";
+  // Auto top-up bought, is buying, or will buy at its own level (one set below this one), or on the
+  // account holder's own next spend or visit after a visitor's spend.
   if (auto) return "auto";
   if (retryAt > t) return "waiting";
   const sentAt = Number(s?.sent_at ?? 0);
@@ -249,7 +265,11 @@ export function noteAppAiOutOfCredits(slug: string, owner: string, title: string
 /** What an "app's AI is out of credits" email did: "off", "daily" (one went in the last day), "budget", "failed" or "sent". */
 export type AppAiOutcome = "off" | "daily" | "budget" | "failed" | "sent";
 
-/** Emails an app's owner that its AI is turning visitors away, at most once a day. */
+/**
+ * Emails an app's owner that its AI is turning visitors away, at most once a day. Visitors set these
+ * off, so they have their own share of the day's emails (EMAIL_BUDGET.appAiAlerts), never the
+ * low-credit emails'.
+ */
 export async function appAiAlert(owner: string, title: string): Promise<AppAiOutcome> {
   if (!paymentsEnabled() || !emailEnabled()) return "off";
   const t = now();
@@ -269,7 +289,7 @@ export async function appAiAlert(owner: string, title: string): Promise<AppAiOut
   );
   if (claim.rowsAffected !== 1) return "daily";
   try {
-    if (!(await sendEmail(row.email, EMAILS.appAiOutOfCredits(title, creditsLink(owner)), "alert"))) {
+    if (!(await sendEmail(row.email, EMAILS.appAiOutOfCredits(title, creditsLink(owner)), "app-ai"))) {
       await tally("ai-budget");
       return "budget";
     }

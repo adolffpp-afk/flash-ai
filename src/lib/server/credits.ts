@@ -6,6 +6,13 @@ import { teamPool } from "./teams.ts";
 import { releaseReferralBonuses } from "./referrals.ts";
 import { watchBalance, watchRefusal } from "./low-balance.ts";
 
+/*
+ * Who started a spend, for charge() and settle(). visitor: someone using the account holder's
+ * published app (its AI, window.flashAI), not the account holder. Such a spend never sets off the
+ * account's auto top-up (see low-balance.ts): a pack is only bought for what the person does.
+ */
+type SpendBy = { visitor?: boolean };
+
 export async function balance(userId: string): Promise<number> {
   const row = await one<{ total: number }>(
     "SELECT COALESCE(SUM(amount), 0) AS total FROM credit_ledger WHERE user_id = ?",
@@ -89,9 +96,10 @@ async function monthlyCredits(userId: string): Promise<void> {
  * own. Each ledger's check and insert are one statement, so parallel requests (several team
  * members at once) can't take a balance below zero. Returns the ledger entry's id, or null when
  * no balance covers the amount. Pass the id to settle() to lower the charge once the real cost is known.
- * A refusal settles nothing, so it is where a low-credit email still owed goes (see low-balance.ts).
+ * A refusal settles nothing, so it is where a low-credit email still owed goes, and where auto
+ * top-up tries again (see low-balance.ts).
  */
-export async function charge(userId: string, amount: number, reason: string): Promise<number | null> {
+export async function charge(userId: string, amount: number, reason: string, { visitor = false }: SpendBy = {}): Promise<number | null> {
   if (amount <= 0) return 0;
   const accounts = await spendAccounts(userId);
   for (const account of accounts) {
@@ -103,7 +111,7 @@ export async function charge(userId: string, amount: number, reason: string): Pr
     );
     if (r.rowsAffected === 1) return Number(r.lastInsertRowid);
   }
-  watchRefusal(accounts);
+  watchRefusal(accounts, { topUp: !visitor });
   return null;
 }
 
@@ -112,7 +120,7 @@ export async function charge(userId: string, amount: number, reason: string): Pr
  * this is where a balance falling below someone's low-credit level is noticed (see low-balance.ts),
  * after the response.
  */
-export async function settle(chargeId: number, used: number): Promise<void> {
+export async function settle(chargeId: number, used: number, { visitor = false }: SpendBy = {}): Promise<void> {
   if (!chargeId) return;
   const r = await run("UPDATE credit_ledger SET amount = MAX(amount, ?), settled_at = ? WHERE id = ? RETURNING user_id, amount", [
     -Math.max(0, used),
@@ -120,7 +128,7 @@ export async function settle(chargeId: number, used: number): Promise<void> {
     chargeId,
   ]);
   const row = r.rows[0];
-  if (row) watchBalance(String(row.user_id), -Number(row.amount));
+  if (row) watchBalance(String(row.user_id), -Number(row.amount), { topUp: !visitor });
 }
 
 /**

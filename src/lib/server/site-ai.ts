@@ -159,7 +159,8 @@ export async function askSiteAi(
   if (!reserved) {
     return fail("This app's AI has used everything it may today. It works again tomorrow.", 429);
   }
-  const chargeId = await charge(site.user_id, hold, `AI in "${site.title}"`);
+  // A visitor's question: it never sets off the owner's auto top-up (see credits.ts).
+  const chargeId = await charge(site.user_id, hold, `AI in "${site.title}"`, { visitor: true });
   if (chargeId === null) {
     await giveBack(slug, reserved, hold);
     noteAppAiOutOfCredits(slug, site.user_id, site.title);
@@ -177,7 +178,7 @@ export async function askSiteAi(
       messages: [{ role: "user", content: prompt }],
     });
   } catch {
-    await settle(chargeId, 0);
+    await settle(chargeId, 0, { visitor: true });
     await giveBack(slug, reserved, hold);
     return fail("The AI couldn't answer that. Please try again.", 502);
   }
@@ -188,7 +189,7 @@ export async function askSiteAi(
     .trim();
   const costCents = claudeCostCents(message.model, message.usage, CHAT_MODEL);
   const used = Math.min(hold, creditsFor(costCents));
-  await settle(chargeId, used);
+  await settle(chargeId, used, { visitor: true });
   await giveBack(slug, reserved, hold - used, true);
   await logUsage({ userId: site.user_id, engine: "text", model: "app AI", provider: "anthropic", credits: used, costCents, ok: Boolean(text) });
   if (!text) return fail("The AI had nothing to say. Please try again.", 502);
