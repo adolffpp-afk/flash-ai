@@ -110,6 +110,24 @@ test("Research in someone else's assistant searches without opening pages, and i
   assert.ok((await ask(s.visitor, s.theirs, { assistantVersion: 3, engine: "app", connectors: [] })).max_tokens > VISITOR_REPLY_TOKENS, "app");
 });
 
+test("a capped reply in someone else's assistant still gets every look-up round: Docs, whose least answer is above the cap, asks for the forecast twice", async () => {
+  const s = await setUp();
+  const forecast = { type: "tool_use" as const, name: "get_weather", input: { where: "named_place", place: "Oslo", latitude: 59.91, longitude: 10.75 } };
+  stand.state.claude.replies.push(
+    { blocks: [{ ...forecast, id: "w1" }], stop: "tool_use" },
+    { blocks: [{ ...forecast, id: "w2" }], stop: "tool_use" },
+    { blocks: [{ type: "text", text: "Here is the table." }], stop: "end_turn" },
+  );
+  const r = await chat(s.visitor, s.theirs, "What's the weather in Oslo tomorrow? Put it in a table.", { engine: "docs", assistantVersion: 3 });
+  assert.equal(r.status, 200, JSON.stringify(r.json));
+  const calls = (claudeSent() as unknown as { max_tokens: number; tool_choice?: { type: string } }[]).map((c) => [c.max_tokens, c.tool_choice?.type]);
+  assert.deepEqual(calls, [
+    [VISITOR_REPLY_TOKENS, "auto"],
+    [VISITOR_REPLY_TOKENS, "auto"],
+    [VISITOR_REPLY_TOKENS, "none"],
+  ]);
+});
+
 test("after Continue without it, a chat that had someone else's assistant still keeps the visitor's own things out; the owner's own chat gets them back", async () => {
   const s = await setUp();
   await ask(s.visitor, s.theirs, { assistantVersion: 3 });

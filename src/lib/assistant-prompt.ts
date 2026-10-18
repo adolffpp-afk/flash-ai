@@ -64,6 +64,11 @@ function untagged(text: string): string {
   return out.concat(chars.slice(next)).join("");
 }
 
+// What could read as the end of the quotes around the name, each put as "'": every quotation mark
+// (Unicode's Quotation_Mark: straight, curly, low, angle, corner and wide ones), and the double primes
+// and marks drawn like one. None is shorter than "'", so the name never grows.
+const QUOTES = /[\p{Quotation_Mark}\u02BA\u02EE\u05F4\u2033\u2036\u275D\u275E\u{1F676}-\u{1F678}]/gu;
+
 export type AssistantVoice = {
   name: string;
   instructions: string;
@@ -80,7 +85,7 @@ export type AssistantVoice = {
  * free: for the free models, whose room for the instructions is FREE_INSTRUCTION_CHARS.
  */
 export function assistantSection(a: AssistantVoice, { free = false }: { free?: boolean } = {}): string {
-  const name = untagged(a.name).replace(/"/g, "'");
+  const name = untagged(a.name).replace(QUOTES, "'");
   const instructions = untagged(free ? a.instructions.slice(0, FREE_INSTRUCTION_CHARS) : a.instructions).trim();
   return [
     `You are answering as "${name}", an assistant ${a.mine ? "the person you're talking to" : "another Flash user, not the person you're talking to,"} made with Flash.`,
