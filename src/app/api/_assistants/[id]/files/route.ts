@@ -3,15 +3,16 @@ import { overLimit } from "@/lib/server/limits.ts";
 import { NO_STORE, answer, gate, readForm, refusal, versionOf } from "@/lib/server/assistant-routes.ts";
 import { addAssistantFile } from "@/lib/server/assistants.ts";
 import { catchUpIndex } from "@/lib/server/assistant-search.ts";
-import { MAX_UPLOAD_BYTES } from "@/lib/assistants.ts";
+import { MAX_FILE_CHARS, MAX_UPLOAD_BYTES } from "@/lib/assistants.ts";
 
 /*
  * Adds a file to one of the user's assistants, as the text the browser read from it: a form with
  * name, kind (pdf, docx, xlsx, pptx or text), pages, text (up to MAX_UPLOAD_BYTES) and the version
  * the editor read. The answer has the file and the version the editor saves at next. A
  * request over UPLOAD_CAP (MAX_UPLOAD_BYTES and 64 KB for the other fields) is refused before it's
- * read, once the proxy doesn't run before this route (see readForm). A smaller one whose text is
- * over MAX_UPLOAD_BYTES is read, then refused as too big. Only the owner, only from Flash's own
+ * read, once the proxy doesn't run before this route (see readForm), as too big: its text can't be
+ * counted yet. In a smaller one, a text over MAX_FILE_CHARS is refused as too long, and a file part
+ * over MAX_UPLOAD_BYTES is too, by its size, before it's read. Only the owner, only from Flash's own
  * page; nothing answers while assistants are off.
  */
 export const dynamic = "force-dynamic";
@@ -34,8 +35,9 @@ export async function POST(request: Request, ctx: { params: Promise<{ id: string
   if (form === "too_big") return refusal({ code: "upload_big", bytes: MAX_UPLOAD_BYTES }, t);
   if (form === "bad") return refusal({ code: "bad_file" }, t);
   const part = form.get("text");
-  // A file part is measured before it's read.
-  if (typeof part !== "string" && part && part.size > MAX_UPLOAD_BYTES) return refusal({ code: "upload_big", bytes: MAX_UPLOAD_BYTES }, t);
+  // A file part is measured before it's read. Over MAX_UPLOAD_BYTES, its text is over MAX_FILE_CHARS
+  // too (no character takes more than 3 bytes for each of its UTF-16 units), so that's the reason.
+  if (typeof part !== "string" && part && part.size > MAX_UPLOAD_BYTES) return refusal({ code: "file_long", chars: MAX_FILE_CHARS }, t);
   const text = typeof part === "string" ? part : part ? await part.text() : "";
   const pages = Number(form.get("pages"));
   return answer(t, async () => {

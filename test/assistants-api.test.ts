@@ -242,7 +242,13 @@ test("a text's tokens are Anthropic's free count on every level's model, each as
   assert.equal(asked.length, 0, "and nothing asked");
   countDown = true;
   const hindi = "हिंदी में जवाब दें";
-  assert.equal(await countInstructionTokens(hindi), bytes(hindi), "its UTF-8 bytes, which a count never goes over");
+  assert.equal(await countInstructionTokens(hindi), bytes(hindi), "its UTF-8 bytes: no text has more tokens than that");
+  // A count takes in the message around the text too, so a name of two letters counts more than its
+  // 2 bytes; when counting fails, it's still its bytes, which bound the text's own tokens.
+  countDown = false;
+  assert.ok((await countInstructionTokens("Bo")) > bytes("Bo"));
+  countDown = true;
+  assert.equal(await countInstructionTokens("Bo"), 2);
 });
 
 test("a file's tokens: counted whole up to 50,000 characters; a longer one by its start, scaled by what grows more, never over its bytes", async () => {
@@ -626,6 +632,21 @@ test("files are refused, never cut: over 1,000,000 characters, over 2,000,000 fo
   const over = await upload(owner, a.id, fresh(1_000_001));
   assert.equal(over.status, 413);
   assert.equal(over.body.error, "A file can keep up to 1,000,000 characters.");
+  // Chinese takes 3 bytes a character, so 1,000,001 of them are 3,000,003 bytes: the reason is
+  // still the characters, not a size the owner's file isn't, whether the text comes as a file part
+  // (measured, not read) or as a plain field.
+  const chinese = "中".repeat(1_000_001);
+  assert.equal(bytes(chinese), 3_000_003);
+  const cjk = await upload(owner, a.id, chinese);
+  assert.equal(cjk.status, 413);
+  assert.equal(cjk.body.code, "file_long");
+  assert.equal(cjk.body.error, "A file can keep up to 1,000,000 characters.");
+  const plain = new FormData();
+  for (const [key, value] of Object.entries({ name: "Notes.txt", kind: "text", pages: "0", version: "0", text: chinese })) plain.set(key, value);
+  const field = await read(await filesRoute.POST(request("POST", `/api/assistants/${a.id}/files`, owner, { form: plain }), ctx({ id: a.id })));
+  assert.equal(field.status, 413);
+  assert.equal(field.body.error, "A file can keep up to 1,000,000 characters.");
+  await assert.rejects(server.addAssistantFile(owner.id, a.id, { name: "big.txt", kind: "text", text: chinese }, 0), (err: InstanceType<typeof server.AssistantError>) => err.refusal.code === "file_long");
   assert.equal(await count("SELECT COUNT(*) AS n FROM assistant_files WHERE assistant_id = ?", [a.id]), 0);
 
   const million = fresh(1_000_000);
@@ -932,7 +953,7 @@ test("a failed upload whose delete fails too is deleted on a later try; one the 
 });
 
 // A body that never ends would hang a request that reads it all: this fails instead.
-test("an upload's request over UPLOAD_CAP (3,000,000 bytes and 64 KB) is refused before it's read, however it comes; a text over 3,000,000 bytes in a smaller one is read, then refused before anything is written", { timeout: 60_000 }, async () => {
+test("an upload's request over UPLOAD_CAP (3,000,000 bytes and 64 KB) is refused before it's read, however it comes; a text over 3,000,000 bytes in a smaller one is refused as over 1,000,000 characters, before anything is written", { timeout: 60_000 }, async () => {
   const owner = await account("lite");
   const a = await made(owner);
   const path = `/api/assistants/${a.id}/files`;
@@ -971,7 +992,8 @@ test("an upload's request over UPLOAD_CAP (3,000,000 bytes and 64 KB) is refused
   assert.equal(r2.status, 413);
   assert.ok(quiet.pulled.bytes <= UPLOAD_CAP + 3 * 64 * 1024, `read ${quiet.pulled.bytes} bytes`);
 
-  // The form fits, its text doesn't: measured, not read.
+  // The form fits, its text doesn't: measured, not read, and refused for its characters, which
+  // 3,000,001 bytes are necessarily more than 1,000,000 of.
   const big = new Blob([new Uint8Array(lib.MAX_UPLOAD_BYTES + 1).fill(97)], { type: "text/plain" });
   const blobText = Blob.prototype.text;
   let readParts = 0;
@@ -982,13 +1004,13 @@ test("an upload's request over UPLOAD_CAP (3,000,000 bytes and 64 KB) is refused
   const r3 = await read(await filesRoute.POST(request("POST", path, owner, { form: form(big) }), ctx({ id: a.id }))).finally(() => (Blob.prototype.text = blobText));
   assert.equal(readParts, 0, "the text part wasn't read");
   assert.equal(r3.status, 413);
-  assert.equal(r3.body.error, "Files must be 3 MB or smaller.");
+  assert.equal(r3.body.error, "A file can keep up to 1,000,000 characters.");
   assert.equal(asked.length, 0);
   assert.equal(await count("SELECT COUNT(*) AS n FROM assistant_files WHERE assistant_id = ?", [a.id]), 0);
   assert.equal(await used(`assistant-chars:${owner.id}`), 0);
 
   // Its text as a plain field of 3,000,001 bytes, in a request under UPLOAD_CAP, which leaves room
-  // for the other fields: the request is read and parsed, and then its text is refused as too big,
+  // for the other fields: the request is read and parsed, and then its text is refused as too long,
   // before it's counted or stored and before the day's text is taken.
   const plain = new FormData();
   for (const [key, value] of Object.entries({ name: "Notes.txt", kind: "text", pages: "0", version: "0", text: "a".repeat(lib.MAX_UPLOAD_BYTES + 1) })) plain.set(key, value);
@@ -998,13 +1020,13 @@ test("an upload's request over UPLOAD_CAP (3,000,000 bytes and 64 KB) is refused
   const headers = { cookie: owner.cookie, origin: ORIGIN, "content-type": sent.headers.get("content-type")!, "content-length": String(raw.byteLength) };
   const r4 = await read(await filesRoute.POST(new Request(`${ORIGIN}${path}`, { method: "POST", headers, body: raw }), ctx({ id: a.id })));
   assert.equal(r4.status, 413);
-  assert.equal(r4.body.error, "Files must be 3 MB or smaller.");
+  assert.equal(r4.body.error, "A file can keep up to 1,000,000 characters.");
   assert.equal(asked.length, 0);
   assert.equal(await count("SELECT COUNT(*) AS n FROM assistant_files WHERE assistant_id = ?", [a.id]), 0);
   assert.equal(await used(`assistant-chars:${owner.id}`), 0);
 
-  // Asked of directly, the same holds: more bytes than that is refused as too big.
-  await assert.rejects(server.addAssistantFile(owner.id, a.id, { name: "big.txt", kind: "text", text: "面".repeat(1_000_001) }, 0), (err: InstanceType<typeof server.AssistantError>) => err.refusal.code === "upload_big");
+  // Asked of directly, the same holds: more bytes than that is more characters too.
+  await assert.rejects(server.addAssistantFile(owner.id, a.id, { name: "big.txt", kind: "text", text: "面".repeat(1_000_001) }, 0), (err: InstanceType<typeof server.AssistantError>) => err.refusal.code === "file_long");
   // 3,000,000 bytes of Chinese is 1,000,000 characters: it fits.
   const chinese = "面".repeat(1_000_000);
   assert.equal(bytes(chinese), lib.MAX_UPLOAD_BYTES);

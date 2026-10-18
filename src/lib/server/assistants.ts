@@ -193,8 +193,9 @@ async function largestCount(text: string): Promise<number> {
 
 /**
  * The tokens an assistant's instructions take, the largest count over every level's model: what a
- * message on any level pays for them. Their UTF-8 bytes when counting fails, which a count never
- * goes over. 0 for none.
+ * message on any level pays for them. Their UTF-8 bytes when counting fails: no text has more
+ * tokens than bytes. (A count also takes in the few tokens of the message around the text, so a
+ * text of a few characters can count a few more than its bytes.) 0 for none.
  */
 export async function countInstructionTokens(text: string): Promise<number> {
   if (!text) return 0;
@@ -209,8 +210,9 @@ const instructionText = (a: Pick<AssistantFields, "name" | "instructions">) => [
  * The tokens a file's text takes, the largest count over every level's model. Counted whole up to
  * EXACT_CHARS characters (exact); a longer text by its first EXACT_CHARS characters, scaled up by
  * whichever of its characters or bytes grows more, so a start that's mostly Latin can't make a
- * Chinese tail look small. Never more than its bytes, which a count never goes over, and its bytes
- * when counting fails.
+ * Chinese tail look small, and never more than its bytes. Its bytes when counting fails. No text
+ * has more tokens than bytes; a count also takes in the few tokens of the message around the text
+ * (see countInstructionTokens).
  */
 export async function fileTokens(text: string): Promise<{ tokens: number; exact: boolean }> {
   const bytes = utf8(text);
@@ -502,9 +504,11 @@ export async function addAssistantFile(userId: string, assistantId: string, uplo
   const kind = upload.kind as AssistantFileKind;
   const text = typeof upload.text === "string" ? upload.text.replace(/\u0000/g, "") : "";
   if (!text.trim()) refuse({ code: "bad_file" });
+  // The characters first: a UTF-8 character takes at most 3 bytes for each of its UTF-16 units, so
+  // a text over MAX_UPLOAD_BYTES is over MAX_FILE_CHARS too, and that's its reason.
+  if (text.length > MAX_FILE_CHARS) refuse({ code: "file_long", chars: MAX_FILE_CHARS });
   const bytes = utf8(text);
   if (bytes > MAX_UPLOAD_BYTES) refuse({ code: "upload_big", bytes: MAX_UPLOAD_BYTES });
-  if (text.length > MAX_FILE_CHARS) refuse({ code: "file_long", chars: MAX_FILE_CHARS });
   const name = cleanFileName(upload.name);
   const pages = Number.isSafeInteger(upload.pages) && (upload.pages as number) > 0 ? Math.min(upload.pages as number, 1_000_000) : 0;
   const stored = STORE_FACTOR * bytes;
