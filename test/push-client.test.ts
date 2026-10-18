@@ -776,10 +776,11 @@ test("a tap on an alert while Flash is open tells the tab the service worker bro
     assert.deepEqual(tapped, ["ana"]);
     assert.equal(heard.size, 0);
     // Flash goes on as that account, as Switch does (asking first when something isn't saved), unless
-    // the tab shows it already; from the chooser, as picking it there does.
+    // the tab shows it already, or a switch is under way (see the next test); from the chooser, as
+    // picking it there does.
     const flash = readFileSync(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
     const handler = flash.slice(flash.indexOf("alertTapped.current = (account) =>"), flash.indexOf("useEffect(() => onAlertTapped("));
-    assert.match(handler, /if \(adding \|\| leavingRef\.current \|\| \(!chooser && account === me\?\.user\.id\)\) return;/);
+    assert.match(handler, /if \(adding \|\| leavingRef\.current \|\| switching \|\| \(!chooser && account === me\?\.user\.id\)\) return;/);
     assert.match(handler, /const to = \(chooser\?\.accounts \?\? me\?\.accounts \?\? \[\]\)\.find\(\(a\) => a\.id === account\);\s+if \(!to\) return;/);
     // With a dialog open over Flash (Settings, say), whose typed words a switch would lose, it asks
     // first, naming the account; the switch then asks again for a message being written.
@@ -795,6 +796,54 @@ test("a tap on an alert while Flash is open tells the tab the service worker bro
     Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: was.container });
     Object.assign(globalThis, { location: was.location });
   }
+});
+
+test("a tap on another account's alert while a switch waits on its question leaves that question, whose button still switches", () => {
+  // Flash's own tap handler, run as one render of Ana's tab has it: switchAccount, and the Switch of
+  // a question set from that render, see that render's switch under way (switching).
+  const flash = readFileSync(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
+  const from = flash.indexOf("alertTapped.current = (account) =>");
+  const handler = flash.slice(from, flash.indexOf("\n    };", from) + "\n    };".length);
+  assert.match(flash, /async function switchAccount\(id: string, \{ gone = false, anyway = false \} = \{\}\): Promise<boolean> \{\n\s+if \(switching && !anyway\) return false;/);
+  type Question = { go: () => void; writing?: boolean; to?: string } | null;
+  const accounts = ["ana", "ben", "cy"].map((id) => ({ id, email: `${id}@example.com` }));
+  function anasTab(switching: string | null, question: Question, dialog: boolean) {
+    const went: string[] = [];
+    const switchAccount = (id: string, { anyway = false } = {}) => {
+      if (switching && !anyway) return false;
+      went.push(id);
+      return true;
+    };
+    const alertTapped = { current: (account: string) => void account };
+    new Function("alertTapped", "adding", "leavingRef", "chooser", "me", "switching", "document", "setUnsaved", "switchAccount", handler)(
+      alertTapped,
+      null,
+      { current: false },
+      null,
+      { user: { id: "ana" }, accounts },
+      switching,
+      { querySelector: (s: string) => (dialog && s === '[aria-modal="true"]' ? {} : null) },
+      (next: Question) => void (question = next),
+      switchAccount,
+    );
+    return { tap: alertTapped.current, went, question: () => question };
+  }
+  // Settings open, no switch under way: Cy's alert asks, naming her, and its Switch account goes to her.
+  const settings = anasTab(null, null, true);
+  settings.tap("cy");
+  assert.equal(settings.question()?.to, "cy@example.com");
+  settings.question()!.go();
+  assert.deepEqual(settings.went, ["cy"]);
+  // Ana, writing a message, pressed Switch to Ben, and "Your message hasn't been sent yet. Switch
+  // anyway?" is up (a dialog itself) when she taps Cy's alert: the question stays, and its button
+  // still goes to Ben. One naming Cy would have a Switch account that did nothing.
+  const asked: Question = { go: () => void 0, writing: true };
+  const writing = anasTab("ben", asked, true);
+  asked.go = () => void writing.went.push("ben");
+  writing.tap("cy");
+  writing.question()!.go();
+  assert.deepEqual(writing.went, ["ben"], "the question's button switches");
+  assert.equal(writing.question(), asked);
 });
 
 test("signing in again from the account chooser, with Flash open, turns that account's alerts back on there", async () => {

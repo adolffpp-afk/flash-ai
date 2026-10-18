@@ -1617,11 +1617,13 @@ export function Flash({
   // brought to the front: the tab goes on as that account, as Switch (or picking it in the chooser)
   // does, asking first when something here isn't saved (see onAlertTapped). With a dialog open over
   // Flash (Settings, say), which may hold typed words nothing here can check, it asks first too,
-  // naming the account; then a message being written still asks as it does.
+  // naming the account; then a message being written still asks as it does. While a switch is under
+  // way, or waiting on its own question, the tap leaves it as it is (a question in its place would
+  // have a Switch that did nothing, as that switch still runs).
   const alertTapped = useRef<(account: string) => void>(() => {});
   useEffect(() => {
     alertTapped.current = (account) => {
-      if (adding || leavingRef.current || (!chooser && account === me?.user.id)) return;
+      if (adding || leavingRef.current || switching || (!chooser && account === me?.user.id)) return;
       const to = (chooser?.accounts ?? me?.accounts ?? []).find((a) => a.id === account);
       if (!to) return;
       if (!chooser && document.querySelector('[aria-modal="true"]')) setUnsaved({ go: () => void switchAccount(account), to: to.email });
