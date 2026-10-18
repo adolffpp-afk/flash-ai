@@ -378,7 +378,7 @@ test("the 30-day chart starts on the day the app was made", async () => {
   assert.deepEqual(stats.days[4], { day: dayOf(at), views: 1, visitors: 1 });
 });
 
-const { FREE_PEOPLE_PER_DAY, PLAN_PEOPLE, MAX_TOUCHES, peopleCap, networkMemory } = visits;
+const { FREE_PEOPLE_PER_DAY, FREE_STEPS_PER_DAY, PLAN_PEOPLE, MAX_TOUCHES, peopleCap, networkMemory } = visits;
 /** A new browser each time: another person on the same network. */
 let browsers = 0;
 const someone = (slug: string, headers: Record<string, string> = {}, query = "") =>
@@ -506,8 +506,8 @@ test("a paid plan counts more people a day, a team member counts against their o
     assert.equal(await ownerCount("team-owner", day), 5, "the team's owner: Business");
     assert.equal(await ownerCount("member", day), 2, "a team member: their own free number, not the team's");
     assert.equal(await ownerCount("boss", day), 6, "an admin: Agency's number");
-    assert.deepEqual(await peopleCap("member", at), { cap: 2, paid: false });
-    assert.deepEqual(await peopleCap("pro-owner", at), { cap: 4, paid: true });
+    assert.deepEqual(await peopleCap("member", at), { cap: 2, steps: FREE_STEPS_PER_DAY, paid: false });
+    assert.deepEqual(await peopleCap("pro-owner", at), { cap: 4, steps: 4, paid: true });
   } finally {
     visitTests.freePeople = 0;
     Object.assign(PLAN_PEOPLE, real);
@@ -585,7 +585,7 @@ test("one internet connection adds at most its number of new people a day per ow
     for (let n = 1; n <= 4; n++) await recordVisit("net-1", visit({ "x-forwarded-for": `2001:db8:1:2::${n}`, "user-agent": `${BROWSER} phone/${n}` }, "/p/net-1"), null, at);
     assert.equal(await peopleRows("net-1"), 7);
     assert.ok(networkMemory().every((k) => /^[0-9a-f]{24}(\|net-1)?$/.test(k) && !k.includes("13.0.0")), networkMemory().join());
-    assert.equal(FREE_PEOPLE_PER_DAY, 10_000);
+    assert.equal(FREE_PEOPLE_PER_DAY, 1_000);
     // The next day the first connection counts again.
     await school(5, at + DAY);
     assert.equal(await count("SELECT COUNT(*) AS n FROM site_people WHERE site_slug = 'net-1' AND day = ?", [dayOf(at + DAY)]), 1);

@@ -13,7 +13,7 @@ import { clientIp } from "./limits.ts";
 import { isAdmin } from "./auth.ts";
 import { activeSubscription } from "./subscriptions.ts";
 import { OTHER, isReturnTrip, touchOf, visitSource, type Touch } from "../traffic.ts";
-import { FREE_PEOPLE_PER_DAY, PLAN_PEOPLE } from "../plan-limits.ts";
+import { FREE_PEOPLE_PER_DAY, FREE_STEPS_PER_DAY, PLAN_PEOPLE } from "../plan-limits.ts";
 
 export { visitSource };
 
@@ -27,8 +27,8 @@ export const KEEP_DAYS = 100;
 /** How many days a checkout's source waits beside it for its order (see funnel.ts). */
 export const CHECKOUT_DAYS = 14;
 
-// How many people are counted each UTC day across all of one owner's apps, by their plan.
-export { FREE_PEOPLE_PER_DAY, PLAN_PEOPLE };
+// How many people, and app steps, are counted each UTC day across all of one owner's apps, by their plan.
+export { FREE_PEOPLE_PER_DAY, FREE_STEPS_PER_DAY, PLAN_PEOPLE };
 /**
  * New people each server counts per owner per day from one internet connection, so one stranger
  * can't use up the owner's day. An IPv6 connection is its /56, the block a home is usually given.
@@ -48,13 +48,16 @@ const PLAN_MEMORY = 15 * MINUTE;
 const MAX_NETWORKS = 50_000;
 
 /** What tests change (see test/visits.test.ts): smaller limits, and a prune that fails. Flash itself never does. */
-export const visitTests = { freePeople: 0, networkPeople: 0, failPrune: false };
-/** The free plan's number of people a day, which is also its number of app steps (see funnel.ts). */
+export const visitTests = { freePeople: 0, freeSteps: 0, networkPeople: 0, failPrune: false };
+/** The free plan's number of people a day. */
 export const freePeople = () => visitTests.freePeople || FREE_PEOPLE_PER_DAY;
+/** The free plan's number of app steps a day (see funnel.ts): a tenth of its people. */
+export const freeSteps = () => visitTests.freeSteps || FREE_STEPS_PER_DAY;
 /**
- * Below this many people (or app steps) today, counting goes by the free number without reading
- * the owner's plan: nine tenths of it, so loads counted at the same moment on a paid plan never
- * reach the free number with their plan unread.
+ * Below this many people today, counting goes by the free number without reading the owner's plan:
+ * nine tenths of it, so loads counted at the same moment on a paid plan never reach the free number
+ * with their plan unread. (App steps always go by the plan, see funnel.ts: a tenth of the free
+ * people leaves too little room for that.)
  */
 export const planFrom = () => freePeople() * 0.9;
 const networkPeople = () => visitTests.networkPeople || NETWORK_PEOPLE;
@@ -101,7 +104,7 @@ const keys = new Map<string, Buffer>();
 const noKey = new Map<string, number>();
 let since: { day: string; value: string } | null = null;
 let triedPrune = "";
-const plans = new Map<string, { until: number; cap: number; paid: boolean }>();
+const plans = new Map<string, { until: number; cap: number; steps: number; paid: boolean }>();
 const paused = new Map<string, { until: number; cap: number }>();
 const marked = new Set<string>();
 const networks = new Map<string, number>();
@@ -232,24 +235,24 @@ export async function recordOwnerVisit(slug: string, request: Request, at = Date
 }
 
 /**
- * How many people an owner's apps may count a day, by their plan (an admin's is Agency's), and
- * whether they have a paid plan. Each server reads it at most every 15 minutes per owner, so a plan
- * bought during the day counts within 15 minutes.
+ * How many people (cap) and app steps (steps) an owner's apps may count a day, by their plan (an
+ * admin's is Agency's), and whether they have a paid plan. The free plan's app steps are a tenth of
+ * its people; a paid plan's are its people. Each server reads it at most every 15 minutes per owner,
+ * so a plan bought during the day counts within 15 minutes.
  */
-export async function peopleCap(ownerId: string, at = Date.now()): Promise<{ cap: number; paid: boolean }> {
+export async function peopleCap(ownerId: string, at = Date.now()): Promise<{ cap: number; steps: number; paid: boolean }> {
   const known = plans.get(ownerId);
-  if (known && known.until > at) return { cap: known.cap, paid: known.paid };
+  if (known && known.until > at) return { cap: known.cap, steps: known.steps, paid: known.paid };
   const sub = await activeSubscription(ownerId);
-  let cap = freePeople();
-  let paid = false;
-  if (sub && Object.hasOwn(PLAN_PEOPLE, sub.plan)) [cap, paid] = [PLAN_PEOPLE[sub.plan], true];
+  let [cap, steps, paid] = [freePeople(), freeSteps(), false];
+  if (sub && Object.hasOwn(PLAN_PEOPLE, sub.plan)) [cap, steps, paid] = [PLAN_PEOPLE[sub.plan], PLAN_PEOPLE[sub.plan], true];
   else {
     const user = await one<{ email: string; verified_at: number }>("SELECT email, verified_at FROM users WHERE id = ?", [ownerId]);
-    if (user && isAdmin(user)) [cap, paid] = [PLAN_PEOPLE.agency, true];
+    if (user && isAdmin(user)) [cap, steps, paid] = [PLAN_PEOPLE.agency, PLAN_PEOPLE.agency, true];
   }
-  plans.set(ownerId, { until: at + PLAN_MEMORY, cap, paid });
+  plans.set(ownerId, { until: at + PLAN_MEMORY, cap, steps, paid });
   while (plans.size > 10_000) plans.delete(plans.keys().next().value!);
-  return { cap, paid };
+  return { cap, steps, paid };
 }
 
 /**
@@ -301,14 +304,19 @@ export const connectionOf = (request: Request): string => {
 const networkOf = (key: Buffer, owner: string, request: Request) =>
   createHmac("sha256", key).update(`network|${owner}|${connectionOf(request)}`).digest("hex").slice(0, 24);
 
-/** The code this server counts app steps from one connection under (see takeSteps), made with a day's key. */
+/**
+ * The code this server counts app steps from one connection under (see takeSteps), made with a day's
+ * key; the track route's rate limit on the free plan counts under it too (see funnel.ts).
+ */
 export const stepsNetworkOf = (key: Buffer, request: Request) =>
   createHmac("sha256", key).update(`steps|${connectionOf(request)}`).digest("hex").slice(0, 24);
 
 /**
  * Takes up to `wanted` of the app steps this server counts per owner per day from one connection,
- * as many as its new people (NETWORK_PEOPLE), so a stranger with a few connections can't use up the
- * owner's day of app steps either. Taken with nothing waiting since it was read; returns how many.
+ * as many as its new people (NETWORK_PEOPLE), so on a paid plan a stranger with a few connections
+ * can't use up the owner's day of app steps either. (The free plan's whole day is fewer: there the
+ * track route's rate limit spreads them, see funnel.ts.) Taken with nothing waiting since it was
+ * read; returns how many.
  */
 export function takeSteps(owner: string, network: string, wanted: number, at: number): number {
   startDay(dayOf(at));
@@ -522,6 +530,9 @@ export async function pruneDaily(at = Date.now()): Promise<boolean> {
         // A checkout's source waits for its order at most 14 days, as a voucher or a bank debit can be
         // paid days later (see funnel.ts).
         { sql: "DELETE FROM site_checkouts WHERE created_at < ?", args: [at - CHECKOUT_DAYS * DAY] },
+        // The track route's rate limits past their minute (see funnel.ts), as each day's connection
+        // codes are new keys.
+        { sql: "DELETE FROM rate_limits WHERE key >= 'track-' AND key < 'track.' AND reset_at < ?", args: [at] },
       ],
       "write",
     );
