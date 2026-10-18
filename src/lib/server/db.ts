@@ -71,6 +71,9 @@ const SCHEMA = [
     created_at INTEGER NOT NULL
   )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS site_users_email ON site_users(site_slug, email)`,
+  // Members whose address has a character outside ASCII, which contacts may keep in another spelling:
+  // a contact's page finds them without reading every member (see withAddress in contacts.ts).
+  `CREATE INDEX IF NOT EXISTS site_users_unicode ON site_users(site_slug) WHERE email GLOB '*[^ -~]*'`,
   `CREATE TABLE IF NOT EXISTS site_sessions (
     token_hash TEXT PRIMARY KEY,
     site_user_id TEXT NOT NULL REFERENCES site_users(id) ON DELETE CASCADE,
@@ -125,8 +128,9 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS site_messages_site ON site_messages(site_slug, created_at)`,
   // One list per app of the people it heard from (forms, sign-ups, paid orders, or added by its
   // owner), one per email address (see contacts.ts). source is how it first heard from them; the
-  // consent columns say what they agreed to get (only ever by ticking a box themselves), with the
-  // wording, the form and a keyed hash of their address, never the address itself.
+  // consent columns say what they agreed to get (by ticking a box themselves, or, after they
+  // unsubscribed, by asking the owner, who recorded it: consent_by), with the wording, the form and
+  // a keyed hash of their address, never the address itself.
   `CREATE TABLE IF NOT EXISTS site_contacts (
     id TEXT PRIMARY KEY,
     site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
@@ -153,6 +157,23 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS site_contacts_phone ON site_contacts(site_slug, phone) WHERE phone <> ''`,
   `CREATE INDEX IF NOT EXISTS site_contacts_seen ON site_contacts(site_slug, last_seen)`,
   `CREATE INDEX IF NOT EXISTS site_contacts_stage ON site_contacts(site_slug, stage, last_seen)`,
+  // Who unsubscribed, so a box ticked for their mailbox under another address is found without
+  // reading the whole list (see mailboxUnsubscribed in contacts.ts).
+  `CREATE INDEX IF NOT EXISTS site_contacts_unsubscribed ON site_contacts(site_slug, email) WHERE unsubscribed_at > 0`,
+  // How many contacts each app has, so a new one checks the 10,000 cap by reading one row instead of
+  // counting the whole list. An app's row is made by counting once (see counted in contacts.ts), and
+  // the two triggers keep it right from then on, whatever adds or deletes a contact. An app without
+  // a row is counted again.
+  `CREATE TABLE IF NOT EXISTS site_contact_counts (
+    site_slug TEXT PRIMARY KEY REFERENCES sites(slug) ON DELETE CASCADE,
+    n INTEGER NOT NULL
+  )`,
+  `CREATE TRIGGER IF NOT EXISTS site_contacts_added AFTER INSERT ON site_contacts BEGIN
+    UPDATE site_contact_counts SET n = n + 1 WHERE site_slug = NEW.site_slug;
+  END`,
+  `CREATE TRIGGER IF NOT EXISTS site_contacts_removed AFTER DELETE ON site_contacts BEGIN
+    UPDATE site_contact_counts SET n = n - 1 WHERE site_slug = OLD.site_slug;
+  END`,
   // Custom domains that show a published site (see domains.ts and proxy.ts).
   `CREATE TABLE IF NOT EXISTS site_domains (
     domain TEXT PRIMARY KEY,
@@ -218,6 +239,8 @@ const SCHEMA = [
     created_at INTEGER NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS site_orders_site ON site_orders(site_slug, created_at)`,
+  // The same for orders whose address has a character outside ASCII.
+  `CREATE INDEX IF NOT EXISTS site_orders_unicode ON site_orders(site_slug) WHERE email GLOB '*[^ -~]*'`,
   `CREATE TABLE IF NOT EXISTS usage (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL,
@@ -756,10 +779,14 @@ const MIGRATIONS = [
   "ALTER TABLE sites ADD COLUMN contact_stages TEXT NOT NULL DEFAULT ''",
   // The app's own key for its unsubscribe links and its contacts' hashed addresses, made on first use.
   "ALTER TABLE sites ADD COLUMN contact_secret TEXT NOT NULL DEFAULT ''",
-  // 1 once the members, orders and messages the app had before contacts existed were copied in.
+  // 1 once the members, orders and messages the app had before contacts existed were copied in, and 2
+  // once an unsubscribe #114 took also reached the same mailbox's other contacts (see fillContacts).
   "ALTER TABLE sites ADD COLUMN contacts_filled INTEGER NOT NULL DEFAULT 0",
   // Whose message it is (see contacts.ts); '' when the form had no email or phone number.
   "ALTER TABLE site_messages ADD COLUMN contact_id TEXT NOT NULL DEFAULT ''",
+  // Who recorded that a contact agreed to news: '' for a box they ticked on a form, 'owner' for the
+  // owner recording that they asked for news again after unsubscribing (see recordConsent).
+  "ALTER TABLE site_contacts ADD COLUMN consent_by TEXT NOT NULL DEFAULT ''",
 ];
 
 async function init(c: Client) {
