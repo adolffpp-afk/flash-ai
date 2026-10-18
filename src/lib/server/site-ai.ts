@@ -6,7 +6,7 @@
  */
 import Anthropic from "@anthropic-ai/sdk";
 import { one, run, now } from "./db.ts";
-import { charge, logUsage, settle, spendable, topUpLevel } from "./credits.ts";
+import { balance, charge, logUsage, settle, spendable, topUpLevel } from "./credits.ts";
 import { overLimit } from "./limits.ts";
 import { noteAppAiOutOfCredits } from "./low-balance.ts";
 import { afterResponse } from "./after-response.ts";
@@ -145,6 +145,16 @@ async function giveBack(slug: string, d: string, credits: number, asked = false)
 const fail = (error: string, status: number): AiAnswer => ({ status, body: { error } });
 
 /**
+ * Whether an app's AI that its owner's credits can't pay for stopped at the owner's own auto top-up
+ * level: it is on (TOP_UP_LEVEL) and their own whole balance would pay (pays). A team member's app
+ * that the shared pool's level stops, with the member's own credits gone, is out of credits: the level
+ * is the team owner's, which the member can't change, and the member's own credits did run out.
+ */
+async function stoppedAtOwnLevel(owner: string, pays: (credits: number) => boolean): Promise<boolean> {
+  return (await topUpLevel(owner)) > 0 && pays(await balance(owner));
+}
+
+/**
  * One question from a published app. `instructions` is the app's own wording for what the AI
  * should do; `prompt` is whatever the person using the app typed, which is never trusted to
  * change those instructions. waitMs: how long the whole answer is waited for (ANSWER_TIMEOUT_MS).
@@ -180,13 +190,14 @@ export async function askSiteAi(
   const maxTokens = Math.min(MAX_ANSWER_TOKENS, tokensFor(hold, chars));
   if (!(maxTokens >= MIN_ANSWER_TOKENS)) {
     if (owner >= left) return fail("This app's AI has used everything it may today. It works again tomorrow.", 429);
-    // The owner hears of it (the bell, and an email at most once a day), after this answer: that it
-    // stopped at their auto top-up level when their whole balance would pay for the answer, else that
-    // their credits ran out. Stopped at the level can last: auto top-up buys only below it, and only
-    // this month's few times, and a visitor's question never sets it off.
+    // The owner hears of it (the bell, and an email at most once a day), after this answer, when it is
+    // credits that stop it (their whole balance would pay for the answer, or is less than today's
+    // budget left): that it stopped at their auto top-up level, else that their credits ran out (see
+    // stoppedAtOwnLevel). Stopped at the level can last: auto top-up buys only below it, and only this
+    // month's few times, and a visitor's question never sets it off.
+    const pays = (credits: number) => tokensFor(Math.min(worstCaseCredits(CHAT_MODEL, chars), left, credits), chars) >= MIN_ANSWER_TOKENS;
     const all = (await spendable(site.user_id)).largest;
-    const atLevel = tokensFor(Math.min(worstCaseCredits(CHAT_MODEL, chars), left, all), chars) >= MIN_ANSWER_TOKENS;
-    if (atLevel || all < left) noteAppAiOutOfCredits(slug, site.user_id, site.title, atLevel);
+    if (pays(all) || all < left) noteAppAiOutOfCredits(slug, site.user_id, site.title, pays(all) && (await stoppedAtOwnLevel(site.user_id, pays)));
     return fail("This app's AI is out of credits. Its owner can add more in Flash.", 402);
   }
   const reserved = await reserveToday(slug, hold, settings.dailyCredits);
@@ -198,8 +209,8 @@ export async function askSiteAi(
   const chargeId = await charge(site.user_id, hold, `AI in "${site.title}"`, VISITOR);
   if (chargeId === null) {
     await giveBack(slug, reserved, hold);
-    // As above: stopped at the level while the whole balance pays for the hold, else out of credits.
-    noteAppAiOutOfCredits(slug, site.user_id, site.title, (await spendable(site.user_id)).largest >= hold);
+    // As above: stopped at the owner's own level while their whole balance pays for the hold, else out of credits.
+    noteAppAiOutOfCredits(slug, site.user_id, site.title, await stoppedAtOwnLevel(site.user_id, (credits) => credits >= hold));
     return fail("This app's AI is out of credits. Its owner can add more in Flash.", 402);
   }
   // Paid for again: the bell stops saying it turns visitors away. After the answer, so the visitor

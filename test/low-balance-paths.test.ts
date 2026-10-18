@@ -55,7 +55,7 @@ delete process.env.FLASH_STRIPE_TAX;
 const { run, one } = await import("../src/lib/server/db.ts");
 const { addPurchase, charge, ensureMonthlyCredits, refund, settle } = await import("../src/lib/server/credits.ts");
 const { EMAIL_BUDGET, sendEmail } = await import("../src/lib/server/email.ts");
-const { maybeAutoTopUp } = await import("../src/lib/server/auto-topup.ts");
+const { maybeAutoTopUp, saveCard, setAutoTopUp } = await import("../src/lib/server/auto-topup.ts");
 const { checkLowBalance } = await import("../src/lib/server/low-balance.ts");
 const { askSiteAi, saveAiSettings } = await import("../src/lib/server/site-ai.ts");
 const { afterwards } = await import("./support/next-server.mjs");
@@ -71,6 +71,8 @@ const sent: { to: string; subject: string }[] = [];
 const stripeCalls: string[] = [];
 let decline = false;
 let intents = 0;
+// The setup checkout Stripe shows for a completed card save (saveCard reads it back).
+let checkout: Record<string, unknown> = {};
 const realFetch = globalThis.fetch;
 globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
   const url = new URL(String(input));
@@ -86,6 +88,7 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
     if (decline) return Response.json({ error: { message: "Your card was declined." } }, { status: 402 });
     return Response.json({ id: `pi_${++intents}`, status: "succeeded" });
   }
+  if (url.pathname.startsWith("/v1/checkout/sessions/")) return Response.json(checkout);
   return Response.json({});
 }) as typeof fetch;
 console.error = () => {};
@@ -276,30 +279,96 @@ test("a visitor's question to an app's AI never buys its owner a pack, answered 
   assert.ok((await balance("shop")) > 500);
 });
 
-test("a visitor's answer that settles below the level (auto top-up turned on while it ran) never buys its owner a pack", async () => {
-  await user("shop2");
-  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES ('rolls', 'shop2', 'Rolls', '<p>', 0, 0)");
-  await give("shop2", 101);
-  await saveAiSettings("rolls", true, 1000);
-  stripeCalls.length = 0;
+/**
+ * Asks the app's AI while Claude's answer is held back, runs change while it is held (the owner
+ * changing their auto top-up, say), then lets the answer finish. Returns the answer's status.
+ */
+async function askDuring(slug: string, ip: string, change: () => Promise<unknown>) {
   let arrived!: () => void;
   let release!: () => void;
   const waiting = new Promise<void>((r) => (arrived = r));
   hold = { arrived, released: new Promise<void>((r) => (release = r)) };
   try {
-    // Auto top-up off when the question's hold is taken, so it isn't kept above a level.
-    const asking = askSiteAi("rolls", { prompt: "When should I book?" }, "203.0.113.10");
+    const asking = askSiteAi(slug, { prompt: "When should I book?" }, ip);
     await waiting;
-    await autoTopUpOn("shop2", 100);
+    await change();
     release();
-    assert.equal((await asking).status, 200);
+    return (await asking).status;
   } finally {
     hold = null;
   }
+}
+// A card saved earlier for top-ups, with auto top-up off for now.
+const cardSaved = (id: string, below = 100) =>
+  run("INSERT INTO auto_topups (user_id, enabled, pack, below, customer, payment_method, updated_at) VALUES (?, 0, 'starter', ?, 'cus', 'pm', 0)", [id, below]);
+
+test("a visitor's answer that settles below the level (auto top-up turned on while it ran) never buys its owner a pack, then or on their next visit", async () => {
+  await user("shop2");
+  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES ('rolls', 'shop2', 'Rolls', '<p>', 0, 0)");
+  await give("shop2", 101);
+  await cardSaved("shop2");
+  await saveAiSettings("rolls", true, 1000);
+  stripeCalls.length = 0;
+  // Auto top-up off when the question's hold is taken, so it isn't kept above a level. The owner
+  // turns it on in Credits (101 is over 100) while Claude answers.
+  const on = () => setAutoTopUp({ id: "shop2", email: "shop2@x.co" }, { enabled: true, pack: "starter", below: 100 }, "https://flash.test");
+  assert.equal(await askDuring("rolls", "203.0.113.10", on), 200);
   await afterwards();
   assert.ok((await balance("shop2")) < 100, `the answer settled below the level (${await balance("shop2")} left)`);
   assert.deepEqual(stripeCalls, [], "nothing bought for a visitor");
-  assert.equal(to("shop2").length, 0, "and no email: auto top-up still buys, on the owner's own next request");
+  assert.equal(to("shop2").length, 0, "and no email: auto top-up still buys, on the owner's own next spend");
+  // The owner's next visit (what /api/me runs), with no spend of theirs: without the visitor's
+  // question the balance is over the level, so nothing is bought.
+  assert.equal(await maybeAutoTopUp("shop2"), false, "the owner's next visit buys nothing");
+  assert.deepEqual(stripeCalls, []);
+  // The owner's own spend that takes the balance below the level, the visitor's question left out, buys.
+  await spend("shop2", 5);
+  await afterwards();
+  assert.deepEqual(stripeCalls, ["/v1/payment_intents"], "the owner's own spend buys");
+  assert.ok((await balance("shop2")) > 500);
+});
+
+test("the level raised, or the card saved again, while a visitor's question is answered: that question never buys the owner a pack", async () => {
+  await user("shop3");
+  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES ('buns', 'shop3', 'Buns', '<p>', 0, 0)");
+  await saveAiSettings("buns", true, 1000);
+  // On at 100 with 302 credits, raised to 300 while Claude answers.
+  await give("shop3", 302);
+  await cardSaved("shop3");
+  await run("UPDATE auto_topups SET enabled = 1 WHERE user_id = 'shop3'");
+  stripeCalls.length = 0;
+  const raise = () => setAutoTopUp({ id: "shop3", email: "shop3@x.co" }, { enabled: true, pack: "starter", below: 300 }, "https://flash.test");
+  assert.equal(await askDuring("buns", "203.0.113.11", raise), 200);
+  await afterwards();
+  assert.ok((await balance("shop3")) < 300, `the answer settled below the new level (${await balance("shop3")} left)`);
+  assert.equal(await maybeAutoTopUp("shop3"), false, "the owner's next visit buys nothing");
+  assert.deepEqual(stripeCalls, []);
+  // Turned off by a declined card (with the balance over the level), then the card saved again, which
+  // turns it on (the webhook's saveCard), while Claude answers.
+  await run("DELETE FROM credit_ledger WHERE user_id = 'shop3'");
+  await give("shop3", 101);
+  await run("UPDATE auto_topups SET enabled = 0, below = 100, failed = 'Your card was declined.' WHERE user_id = 'shop3'");
+  checkout = { customer: "cus", metadata: { user: "shop3", auto_topup: "1" }, setup_intent: { payment_method: "pm2", status: "succeeded" } };
+  assert.equal(await askDuring("buns", "203.0.113.12", () => saveCard("cs_1").then((ok) => assert.ok(ok))), 200);
+  await afterwards();
+  assert.ok((await balance("shop3")) < 100, `the answer settled below the level (${await balance("shop3")} left)`);
+  assert.deepEqual(stripeCalls.filter((p) => p === "/v1/payment_intents"), [], "nothing bought for a visitor");
+  assert.equal(await maybeAutoTopUp("shop3"), false, "the owner's next visit buys nothing");
+  assert.deepEqual(stripeCalls.filter((p) => p === "/v1/payment_intents"), []);
+});
+
+test("a saved pack Flash no longer sells: auto top-up can't buy, so the low-credit email goes, once", async () => {
+  await user("oldpack");
+  await give("oldpack", 140);
+  await run("INSERT INTO auto_topups (user_id, enabled, pack, below, customer, payment_method, updated_at) VALUES ('oldpack', 1, 'retired-pack', 100, 'cus', 'pm', 0)");
+  stripeCalls.length = 0;
+  await spend("oldpack", 100);
+  await afterwards();
+  assert.deepEqual(to("oldpack").map((e) => e.subject), [LOW]);
+  await spend("oldpack", 10);
+  await afterwards();
+  assert.deepEqual(to("oldpack").map((e) => e.subject), [LOW], "one email for the drop");
+  assert.deepEqual(stripeCalls, [], "nothing bought");
 });
 
 test("the alerts' daily share holds under a burst: 11 at once send 10, and 2 at once with one place left send 1", async () => {

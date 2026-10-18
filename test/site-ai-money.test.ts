@@ -456,6 +456,53 @@ test("a team member's app keeps the team owner's level on the shared pool, then 
   assert.deepEqual(stripeCalls, []);
 });
 
+test("a team member's app stopped by the pool's level with the member's own credits gone: the member is told it ran out, not that it stopped at a level of theirs", async () => {
+  // The team above: the pool at the boss's level, the member's own credits spent.
+  const mark = () => one<{ out_at: number; at_level: number }>("SELECT out_at, at_level FROM site_ai WHERE site_slug = 'team-app'");
+  await run("UPDATE site_ai SET out_at = 0, at_level = 0 WHERE site_slug = 'team-app'");
+  assert.equal((await ask(undefined, undefined, "team-app")).status, 402);
+  await afterwards();
+  assert.ok(Number((await mark())?.out_at) > 0, "the member's app is marked");
+  assert.equal(Number((await mark())?.at_level), 0, "out of credits: the member has no level of their own");
+  // The member's own auto top-up on at 100, with 50 credits of their own: it stops at their level.
+  await setBalance("member", 50);
+  await run("UPDATE auto_topups SET enabled = 1 WHERE user_id = 'member'");
+  await run("UPDATE site_ai SET out_at = 0, at_level = 0 WHERE site_slug = 'team-app'");
+  assert.equal((await ask(undefined, undefined, "team-app")).status, 402);
+  await afterwards();
+  assert.equal(Number((await mark())?.at_level), 1, "stopped at the member's own level");
+  // Refused by the charge itself (the check before it passed, then another answer took the pool's
+  // credits above the boss's level), the member's own credits gone: out of credits too.
+  await run("UPDATE auto_topups SET enabled = 0 WHERE user_id = 'member'");
+  await setBalance("member", 1);
+  await setBalance("boss", 100 + worstCaseCredits());
+  await run("UPDATE site_ai SET out_at = 0, at_level = 1 WHERE site_slug = 'team-app'");
+  const { db } = await import("../src/lib/server/db.ts");
+  const client = await db();
+  const execute = client.execute.bind(client);
+  let raced = 0;
+  (client as unknown as { execute: unknown }).execute = async (stmt: string | { sql: string; args?: unknown[] }) => {
+    if (typeof stmt === "object" && stmt.sql.includes("INSERT INTO credit_ledger (user_id, amount, reason, actor, keeps_level") && String(stmt.args?.[2]).startsWith("AI in")) {
+      client.execute = execute;
+      raced++;
+      await execute({ sql: "INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES ('boss', ?, 'another answer', ?)", args: [-worstCaseCredits(), Date.now()] });
+    }
+    return execute(stmt as never);
+  };
+  try {
+    assert.equal((await ask(undefined, undefined, "team-app")).status, 402);
+    await afterwards();
+  } finally {
+    client.execute = execute;
+  }
+  assert.equal(raced, 1, "refused by the charge, not before it");
+  assert.equal(await balance("boss"), 100);
+  assert.deepEqual(await mark().then((m) => [Number(m?.out_at) > 0, Number(m?.at_level)]), [true, 0], "out of credits");
+  stripeCalls = [];
+  assert.equal(await maybeAutoTopUp("boss"), false);
+  assert.deepEqual(stripeCalls, []);
+});
+
 test("it says it is an AI when asked or when it matters, whatever the app's instructions say, and keeps them otherwise", async () => {
   await setBalance("owner", 500);
   await run("UPDATE auto_topups SET enabled = 0");

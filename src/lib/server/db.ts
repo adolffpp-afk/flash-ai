@@ -959,7 +959,8 @@ const MIGRATIONS = [
   // When a held charge was settled to what the request really cost, or 0 while it runs.
   "ALTER TABLE credit_ledger ADD COLUMN settled_at INTEGER NOT NULL DEFAULT 0",
   // 1 for a hold that keeps the auto top-up level (an app's AI that visitors ask, see charge), which
-  // auto top-up doesn't count while it runs.
+  // auto top-up doesn't count while it runs; 2 for one that was running when auto top-up was turned on
+  // or its level set, which it never counts (see topUpBalance).
   "ALTER TABLE credit_ledger ADD COLUMN keeps_level INTEGER NOT NULL DEFAULT 0",
   // People added to a team plan on top of its own seats, each with more monthly credits (EXTRA_SEAT).
   "ALTER TABLE subscriptions ADD COLUMN extra_seats INTEGER NOT NULL DEFAULT 0",

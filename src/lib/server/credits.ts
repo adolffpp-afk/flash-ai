@@ -86,19 +86,36 @@ export async function spendable(
 const HOLD_MINUTES = 15;
 
 /**
- * The balance auto top-up compares with its level (see maybeAutoTopUp). A hold still running for
- * spending that keeps the level (keepTopUpLevel, see charge) doesn't count: it was checked against
- * the level when it was taken, which may have been lower or off, and most of it comes back when the
- * answer ends. So a visitor's question never sets off a top-up, even when the level was turned on
- * or raised while it ran. A hold left running for longer than any request counts again.
+ * The balance auto top-up compares with its level (see maybeAutoTopUp). Spending that keeps the
+ * level (keepTopUpLevel, see charge) isn't the account holder's own, so it never sets off a top-up:
+ * - a hold still running doesn't count: most of it comes back when the answer ends;
+ * - nor, settled or not, does one that was running when auto top-up was turned on or its level set
+ *   (see visitorHoldsKeptOut): it was checked against the level before, which may have been lower or
+ *   off, so it may have settled below the new one.
+ * So a visitor's question never makes Flash buy a pack, then or on the owner's next visit. A hold left
+ * running for longer than any request, and not running at such a change, counts again.
  */
 export async function topUpBalance(userId: string): Promise<number> {
   const row = await one<{ total: number }>(
     `SELECT COALESCE(SUM(amount), 0) AS total FROM credit_ledger
-     WHERE user_id = ? AND NOT (keeps_level = 1 AND settled_at = 0 AND created_at > ?)`,
+     WHERE user_id = ? AND NOT (keeps_level = 2 OR (keeps_level = 1 AND settled_at = 0 AND created_at > ?))`,
     [userId, now() - HOLD_MINUTES * 60_000],
   );
   return Number(row?.total ?? 0);
+}
+
+/**
+ * Called once auto top-up was turned on or its level set (Credits, a card saved), with at taken before
+ * that change was written: the holds for spending that keeps the level (keepTopUpLevel) running then
+ * were checked against the level before it, so auto top-up never counts them, settled or not (see
+ * topUpBalance). Marked keeps_level = 2.
+ */
+export async function visitorHoldsKeptOut(userId: string, at: number): Promise<void> {
+  await run(
+    `UPDATE credit_ledger SET keeps_level = 2
+     WHERE user_id = ? AND keeps_level = 1 AND created_at > ? AND (settled_at = 0 OR settled_at >= ?)`,
+    [userId, at - HOLD_MINUTES * 60_000, at],
+  );
 }
 
 const monthKey = (t = new Date()) => `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, "0")}`;

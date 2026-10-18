@@ -6,9 +6,9 @@
  *   credits run low", on at DEFAULT_LEVEL until they change it): once for each drop below it, again
  *   only after the balance has been back at or above it (a purchase, the monthly credits: see the
  *   credit_alerts_rearm trigger in db.ts), and at most one a week. None while their auto top-up is
- *   on and can buy (a card saved, this month's top-ups not used up, no disputed payment): the check
- *   tries it first (never for a visitor's spend: see credits.ts), and a try that fails turns it off
- *   and checks again (see auto-topup.ts).
+ *   on and can buy (a card saved, a pack Flash still sells, this month's top-ups not used up, no
+ *   disputed payment): the check tries it first (never for a visitor's spend: see credits.ts), and a
+ *   try that fails turns it off and checks again (see auto-topup.ts).
  * - When an app's AI turns a visitor away because its owner is out of credits, or because it stopped
  *   at their auto top-up level (site-ai.ts): at most one a day.
  * Both stop when the person turns them off, and need payments (they say to top up) and emails on. The
@@ -27,6 +27,7 @@
  * and a spend that settles after the account is gone writes nothing back.
  */
 import { SITE_URL } from "../../app/site.ts";
+import { CREDIT_PACKS } from "../credits.ts";
 import { translatorIn } from "./i18n.ts";
 import { one, run, now } from "./db.ts";
 import { EMAILS, emailEnabled, sendEmail } from "./email.ts";
@@ -203,7 +204,7 @@ export async function checkLowBalance(account: string, { topUp = true }: CheckOp
   const s = await one<State>(
     `SELECT u.email, ${SETTLED_BALANCE} AS balance,
             a.enabled, a.below, a.alerted_at, a.sent_at, a.retry_at,
-            (p.enabled = 1 AND p.payment_method IS NOT NULL
+            (p.enabled = 1 AND p.payment_method IS NOT NULL AND p.pack IN (${CREDIT_PACKS.map((k) => `'${k.id}'`).join(", ")})
               AND (SELECT COUNT(*) FROM credit_ledger WHERE user_id = ? AND ref LIKE 'stripe:auto:%' AND created_at >= ?) < ?
               AND NOT EXISTS (SELECT 1 FROM credit_ledger WHERE user_id = ? AND substr(ref, 1, 15) = 'stripe-dispute:')) AS auto,
             p.below AS auto_below
@@ -217,8 +218,8 @@ export async function checkLowBalance(account: string, { topUp = true }: CheckOp
   const below = Number(s?.below ?? DEFAULT_LEVEL);
   const alertedAt = Number(s?.alerted_at ?? 0);
   const retryAt = Number(s?.retry_at ?? 0);
-  // Auto top-up can buy (on, a card saved, this month's top-ups not used up, no disputed payment, as
-  // maybeAutoTopUp allows). Below its own level it tries now, on every spend and refusal (connectors,
+  // Auto top-up can buy (on, a card saved, a pack Flash still sells, this month's top-ups not used up,
+  // no disputed payment, as maybeAutoTopUp and TOP_UP_LEVEL in credits.ts allow). Below its own level it tries now, on every spend and refusal (connectors,
   // voice and the companion too, and a team's pool, whose ledger this is), before anything is emailed.
   // Not for a visitor's spend (topUp off): it buys on the account holder's own next spend or visit.
   // A try that fails turns it off and runs this check again (see auto-topup.ts), which emails then.
