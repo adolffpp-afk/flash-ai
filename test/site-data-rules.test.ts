@@ -951,3 +951,13 @@ test("paid plans publish more apps; free stays at 20, and an app at the cap can 
   const back = await publishSite(capper, { html: "<p>new</p>", title: "New" });
   assert.ok("slug" in back, "unpublishing as many as it said is enough");
 });
+
+test("Upgrade plan at the cap leaves a full-screen preview first, so the plans don't open under it", () => {
+  const preview = readFileSync(new URL("../src/components/AppPreview.tsx", import.meta.url), "utf8");
+  const dialog = readFileSync(new URL("../src/components/CreditsDialog.tsx", import.meta.url), "utf8");
+  // The plans open below the full-screen preview's layer.
+  const layer = (src: string, re: RegExp) => Number(re.exec(src)?.[1]);
+  assert.ok(layer(dialog, /"fixed inset-0 z-(\d+)/) < layer(preview, /"fixed inset-0 z-(\d+) flex flex-col/));
+  const button = /publishError\.code === "site_cap" && onPlans && \(\s*<button[^>]*onClick=\{([^]*?)\}\s*>/.exec(preview)?.[1] ?? "";
+  assert.match(button, /setFull\(false\);\s*onPlans\(\)/);
+});

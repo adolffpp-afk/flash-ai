@@ -390,7 +390,14 @@ export function AppPreview({
             <>
               <span className="text-red-300">{publishError.message}</span>
               {publishError.code === "site_cap" && onPlans && (
-                <button className={`${btn} text-primary-soft`} onClick={onPlans}>
+                <button
+                  className={`${btn} text-primary-soft`}
+                  onClick={() => {
+                    // The plans open under a full-screen preview, so the preview leaves full screen first.
+                    setFull(false);
+                    onPlans();
+                  }}
+                >
                   {t("Upgrade plan")}
                 </button>
               )}
