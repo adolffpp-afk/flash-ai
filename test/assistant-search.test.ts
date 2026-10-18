@@ -17,7 +17,7 @@ after(() => rmSync(dir, { recursive: true, force: true }));
 
 const { db, run, one, all } = await import("../src/lib/server/db.ts");
 const search = await import("../src/lib/server/assistant-search.ts");
-const { indexFile, passagesFor, purgeIndex, searchChunks, searchMode, removeFileRows, storageFactor } = search;
+const { catchUpIndex, indexFile, passagesFor, purgeIndex, searchChunks, searchMode, removeFileRows, storageFactor } = search;
 const { chunkText, queryTerms, rankChunks, tagOf, tagged, words } = await import("../src/lib/assistant-chunks.ts");
 const { PASSAGE_TOKENS, MAX_PASSAGES, STORE_FACTOR } = await import("../src/lib/assistants.ts");
 type Statement = Parameters<Awaited<ReturnType<typeof db>>["batch"]>[0][number];
@@ -105,6 +105,8 @@ const theirs = await file(other, "Theirs.pdf", pdf(10, { 2: REFUNDS, 5: DELIVERY
 
 test("the database makes the full-text index and the trigger that keeps it clean", async () => {
   assert.equal(await searchMode(true), "index");
+  assert.deepEqual(await catchUpIndex(), { state: "current" }, "every chunk went into the index as it was stored");
+  assert.equal(await one("SELECT 1 FROM settings WHERE key = 'assistant_index_catch_up'"), null);
   const made = await all<{ name: string; type: string }>("SELECT name, type FROM sqlite_master WHERE name IN ('assistant_chunks_fts', 'assistant_chunks_gone', 'projects_assistant')");
   assert.deepEqual(made.map((r) => r.name).sort(), ["assistant_chunks_fts", "assistant_chunks_gone", "projects_assistant"]);
   assert.equal(Number((await one<{ foreign_keys: number }>("PRAGMA foreign_keys"))?.foreign_keys), 0, "foreign keys off, as on Turso");

@@ -17,6 +17,7 @@
  * ever find nothing. Deleting a chunk only marks its index rows deleted, so a delete is followed by
  * purgeIndex, which rewrites the index without them at most once a day.
  */
+import { randomBytes } from "node:crypto";
 import type { InStatement } from "@libsql/client";
 import { all, db, mendAssistantIndex, one, run } from "./db.ts";
 import { MAX_PASSAGES, PASSAGE_TOKENS, type SearchMode } from "../assistants.ts";
@@ -25,8 +26,11 @@ import { chunkText, labelEnds, matchTerms, phraseOf, queryTerms, rankChunks, tag
 const INDEX = "assistant_chunks_fts";
 const TRIGGER = "assistant_chunks_gone";
 // Set once a file's chunks were stored while the index was missing: those chunks aren't in it,
-// so searching it would miss them, and every search uses the fallback from then on.
+// so searching it would miss them, and every search uses the fallback until catchUpIndex has put
+// them in. Each batch stored that way sets it anew, to a value of its own, so catchUpIndex can tell
+// whether chunks were stored that way while it was putting the earlier ones in.
 const UNINDEXED = "assistant_unindexed";
+const unindexedMark = () => `${Date.now()}.${randomBytes(6).toString("hex")}`;
 
 let checked: { mode: SearchMode; at: number } | null = null;
 const CHECK_EVERY = 10 * 60_000;
@@ -61,6 +65,99 @@ export async function searchMode(fresh = false): Promise<SearchMode> {
 // Chunks per batch when storing a file, each with its index row, and the file's chunk count so far.
 const PER_BATCH = 100;
 
+// Kept in settings while catchUpIndex puts chunks stored without the index into it, as JSON: the
+// last chunk id it covers ("to", the newest when it began: later chunks get their index rows as
+// they're stored), the last it has done ("from"), and the UNINDEXED value it began from ("mark").
+const CATCH_UP = "assistant_index_catch_up";
+// The chunk ids one step of catchUpIndex looks at, and the most chunks it puts in the index.
+const CATCH_UP_SPAN = 2000;
+const CATCH_UP_CHUNKS = PER_BATCH;
+
+export type CatchUp = { state: "none" | "current" | "behind"; done?: number; of?: number };
+
+/**
+ * Puts the chunks stored while the database had no index (see UNINDEXED) into the index, one
+ * bounded step after another until `budgetMs` has passed: each step looks at 2,000 chunk ids, in
+ * order, and writes the index rows of at most 100 chunks that have none, with how far it has come,
+ * in one batch. Once every chunk up to the newest there was when it began is in, the mark goes in
+ * the same batch, and search uses the index again (this server at once; others within the 10
+ * minutes they keep their answer). If chunks were stored without the index meanwhile (an upload
+ * that began before the index existed), the mark has changed: it stays, and the next step goes on
+ * to the newest chunk there is now.
+ *
+ * Safe beside anything else: an index row is written only for a chunk that's still there and has
+ * none, in the same statement, so a chunk deleted meanwhile gets none and none gets two; a step
+ * whose place another server took writes only what that one didn't. Search uses the fallback until
+ * it's done, so a half-made index is never searched. Run after an upload (the upload route does,
+ * once it has answered); "none" without an index, "current" when nothing is behind, else
+ * "behind", with the last chunk id done and the last to do.
+ */
+export async function catchUpIndex(o: { budgetMs?: number; span?: number; chunks?: number } = {}): Promise<CatchUp> {
+  const started = Date.now();
+  const span = o.span ?? CATCH_UP_SPAN;
+  const most = o.chunks ?? CATCH_UP_CHUNKS;
+  const { index, trigger, behind } = await indexState();
+  if (!index) return { state: "none" };
+  if (!behind) return { state: "current" };
+  const client = await db();
+  // Its rows would otherwise stay when their chunks are deleted.
+  if (!trigger) await mendAssistantIndex(client);
+  await run(
+    "INSERT OR IGNORE INTO settings (key, value) SELECT ?, json_object('to', (SELECT COALESCE(MAX(id), 0) FROM assistant_chunks), 'from', 0, 'mark', (SELECT value FROM settings WHERE key = ?))",
+    [CATCH_UP, UNINDEXED],
+  );
+  for (;;) {
+    const kept = await one<{ value: string }>("SELECT value FROM settings WHERE key = ?", [CATCH_UP]);
+    if (!kept) break;
+    const { to, from, mark } = JSON.parse(kept.value) as { to: number; from: number; mark: string | null };
+    const upTo = Math.min(to, from + span);
+    const missing = await all<{ id: number; assistant_id: string; body: string }>(
+      `SELECT c.id, c.assistant_id, c.body FROM assistant_chunks c WHERE c.id > ? AND c.id <= ? AND NOT EXISTS (SELECT 1 FROM ${INDEX} f WHERE f.rowid = c.id) ORDER BY c.id LIMIT ?`,
+      [from, upTo, most],
+    );
+    const reached = missing.length < most ? upTo : Number(missing.at(-1)!.id);
+    const step: InStatement[] = missing.flatMap((c) => {
+      let tag: string;
+      try {
+        tag = tagOf(c.assistant_id);
+      } catch {
+        return [];
+      }
+      return [
+        {
+          sql: `INSERT INTO ${INDEX} (rowid, seg) SELECT ?, ? WHERE EXISTS (SELECT 1 FROM assistant_chunks WHERE id = ?) AND NOT EXISTS (SELECT 1 FROM ${INDEX} WHERE rowid = ?)`,
+          args: [c.id, tagged(tag, c.body), c.id, c.id],
+        },
+      ];
+    });
+    // Only from this step's place: a server that took it already moved on.
+    const here = "key = ? AND json_extract(value, '$.to') = ? AND json_extract(value, '$.from') = ?";
+    step.push({ sql: `UPDATE settings SET value = json_set(value, '$.from', ?) WHERE ${here}`, args: [reached, CATCH_UP, to, from] });
+    if (reached >= to) {
+      step.push(
+        // Every chunk up to `to` is in the index. If no chunk was stored without it since this
+        // began, nothing is behind; else this goes on to the newest chunk there is now.
+        { sql: `DELETE FROM settings WHERE key = ? AND value IS ? AND EXISTS (SELECT 1 FROM settings WHERE ${here})`, args: [UNINDEXED, mark, CATCH_UP, to, reached] },
+        {
+          sql: `UPDATE settings SET value = json_object('to', (SELECT COALESCE(MAX(id), 0) FROM assistant_chunks), 'from', ?, 'mark', (SELECT value FROM settings WHERE key = ?)) WHERE ${here} AND EXISTS (SELECT 1 FROM settings WHERE key = ?)`,
+          args: [to, UNINDEXED, CATCH_UP, to, reached, UNINDEXED],
+        },
+        { sql: `DELETE FROM settings WHERE ${here} AND NOT EXISTS (SELECT 1 FROM settings WHERE key = ?)`, args: [CATCH_UP, to, reached, UNINDEXED] },
+      );
+    }
+    await client.batch(step, "write");
+    if (reached >= to) checked = null;
+    if (Date.now() - started >= (o.budgetMs ?? 10_000)) {
+      const left = await one<{ value: string }>("SELECT value FROM settings WHERE key = ?", [CATCH_UP]);
+      if (!left) break;
+      const now = JSON.parse(left.value) as { to: number; from: number };
+      return { state: "behind", done: now.from, of: now.to };
+    }
+  }
+  checked = null;
+  return { state: (await indexState()).behind ? "behind" : "current" };
+}
+
 /**
  * Stores a file's text as chunks, with their index rows when the database has the index (checked
  * again first, so no chunk is ever left out of an index that exists), 100 to a batch. Each batch
@@ -90,8 +187,8 @@ export async function indexFile(assistantId: string, fileId: string, text: strin
       args: [assistantId, assistantId],
     },
   ];
-  // Without the index, mark first that chunks exist which it doesn't hold.
-  if (!index) first.push({ sql: "INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')", args: [UNINDEXED] });
+  // Without the index, each batch marks first that chunks exist which it doesn't hold.
+  const mark = (): InStatement[] => (index ? [] : [{ sql: "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", args: [UNINDEXED, unindexedMark()] }]);
   const rows = (c: (typeof chunks)[number]): InStatement[] => [
     {
       // Its index row is made from the chunk just stored, so neither is when the file is gone.
@@ -106,6 +203,7 @@ export async function indexFile(assistantId: string, fileId: string, text: strin
   for (let from = 0; from === 0 || from < chunks.length; from += PER_BATCH) {
     const part = chunks.slice(from, from + PER_BATCH);
     batches.push([
+      ...mark(),
       ...(from === 0 ? first : []),
       ...part.flatMap(rows),
       { sql: "UPDATE assistant_files SET chunks = ? WHERE id = ? AND assistant_id = ?", args: [from + part.length, fileId, assistantId] },
