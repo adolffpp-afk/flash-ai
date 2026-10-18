@@ -118,6 +118,17 @@ export async function assistantKit({ on }: { on: boolean }) {
     return id;
   }
 
+  const PRICES = "Sourdough loaf: 4 euros. Rye loaf: 5 euros. Croissant: 2 euros.";
+  /** An owner's assistant with a price list, shared with a visitor, and a chat each with it. */
+  async function bakery(o: AssistantRow = {}) {
+    const owner = await account();
+    const visitor = await account();
+    const id = await assistant(owner, o);
+    await file(id, "Prices.txt", PRICES);
+    await share(id, `l${id.slice(0, 8)}`, visitor);
+    return { owner, visitor, id, own: await chatWith(owner, id), theirs: await chatWith(visitor, id) };
+  }
+
   const balance = async (id: string) => Number((await one<{ b: number }>("SELECT COALESCE(SUM(amount), 0) AS b FROM credit_ledger WHERE user_id = ?", [id]))!.b);
   const ledger = async (id: string) => all<{ amount: number; reason: string }>("SELECT amount, reason FROM credit_ledger WHERE user_id = ? ORDER BY rowid", [id]);
 
@@ -186,6 +197,9 @@ export async function assistantKit({ on }: { on: boolean }) {
   type FreeBody = { messages: { role: string; content: string }[]; max_tokens: number };
   const freeSent = () => stand.state.free.sent as unknown as FreeBody[];
   const said = (events: ChatEvent[]) => events.filter((e) => e.type === "text").map((e) => e.delta).join("");
+  type Doc = { type: string; title?: string; context?: string; source?: { data: string }; text?: string };
+  /** The documents (passages) in a message's content as Claude is sent it. */
+  const docs = (content: unknown) => (Array.isArray(content) ? (content as Doc[]).filter((b) => b.type === "document") : []);
 
   return {
     stand,
@@ -198,6 +212,8 @@ export async function assistantKit({ on }: { on: boolean }) {
     file,
     share,
     chatWith,
+    PRICES,
+    bakery,
     balance,
     ledger,
     chat,
@@ -206,6 +222,7 @@ export async function assistantKit({ on }: { on: boolean }) {
     claudeSent,
     freeSent,
     said,
+    docs,
     async close() {
       await stand.close();
       rmSync(dir, { recursive: true, force: true });

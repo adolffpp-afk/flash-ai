@@ -58,6 +58,7 @@ import {
   freeImageConfigured,
   freeTranscribe,
   freeTranscribeConfigured,
+  freePassageRoom,
   streamFreeChat,
   type FreeLane,
 } from "@/lib/engines/free.ts";
@@ -146,6 +147,11 @@ import { approvedResults, releaseResults } from "@/lib/server/pending-actions.ts
 import { accountReplies, continuedIds } from "@/lib/connectors.ts";
 import { messageWindow } from "@/lib/message-window.ts";
 import { maybeAutoTopUp } from "@/lib/server/auto-topup.ts";
+import { ASSISTANTS_ON, MAX_ASSISTANT_FILES, MAX_PASSAGES } from "@/lib/assistants.ts";
+import { answersAsAssistant, assistantSection } from "@/lib/assistant-prompt.ts";
+import { VISITOR_DAILY_MESSAGES, VISITOR_REPLY_TOKENS } from "@/lib/assistant-cost.ts";
+import { assistantSummary, countPassages, loadAssistantFor, type ChatAssistant } from "@/lib/server/assistants.ts";
+import { passagesFor, type Reading } from "@/lib/server/assistant-search.ts";
 
 // Vercel Pro allows up to 800 seconds, which the Movie maker needs (scenes, filming and joining).
 // Price questions (409 confirm_cost) one user gets in an hour before the paid helpers stop deciding
@@ -226,6 +232,11 @@ type ChatRequest = {
   // The most the request may hold, and so be charged, as Fix all said before it was sent ("Up to N credits").
   // One that would now hold more isn't sent (see cap below).
   maxCredits?: number;
+  // In a chat started with an assistant (see assistants.ts): the version of it the page shows, whose
+  // price line the user saw, and readStart, "Read the start of each file" instead of searching them.
+  // Ignored while assistants are off.
+  assistantVersion?: number;
+  readStart?: boolean;
 };
 
 function providers(): Set<Provider> {
@@ -348,7 +359,44 @@ const spokenText = (message: string) => textToSpeak(message).slice(0, MAX_SPEECH
  * user's date, time and rough place, taken once so every call in the request sends the same words.
  * build is the builders' note, without the clock; free is the free models' (see otherToolsLine).
  */
-type Prompting = { system: SystemOptions; free: SystemOptions; build: string; where?: Where };
+type Prompting = {
+  system: SystemOptions;
+  free: SystemOptions;
+  build: string;
+  where?: Where;
+  // In a chat with an assistant: its section, for Claude and the free models (see assistant-prompt.ts),
+  // and whether Research leaves out its page reader (someone else's assistant).
+  assistant?: string;
+  freeAssistant?: string;
+  noFetch?: boolean;
+};
+
+const DAY_MS = 24 * 3600_000;
+
+/** The history with passages from an assistant's files on its newest turn; without any, as it was. */
+function withPassages(history: ChatTurn[], passages: { title: string; text: string }[]): ChatTurn[] {
+  if (!passages.length) return history;
+  return [...history.slice(0, -1), { ...history[history.length - 1], passages: passages.map(({ title, text }) => ({ title, text })) }];
+}
+
+/**
+ * The free models' system options: their tools line and context note, with the chat's assistant's
+ * section in its free form. Only their chat lane writes words, on engines that all answer as it.
+ */
+function freeSystem(prompting: Prompting): SystemOptions {
+  return prompting.freeAssistant ? { ...prompting.free, assistant: prompting.freeAssistant } : prompting.free;
+}
+
+/**
+ * What a Claude chat engine's system prompt adds to its mode: the tools line and the context note,
+ * and in a chat with an assistant, its section, with Research's page reader left out in someone
+ * else's. Only the engines that answer as it send this prompt (a build has its own, see systemFor).
+ * The engine and systemFor both use it, so the hold counts what's sent.
+ */
+function systemOptions(engine: Engine, prompting: Prompting): SystemOptions {
+  if (!prompting.assistant) return prompting.system;
+  return { ...prompting.system, assistant: prompting.assistant, ...(engine === "search" && prompting.noFetch && { noFetch: true }) };
+}
 
 function promptingFor(where: Where, now: Date, picked: boolean): Prompting {
   const status = engineStatus();
@@ -419,9 +467,9 @@ function systemFor(engine: Engine, preferences: string, history: ChatTurn[], pro
   const { weather, quick } = tools;
   // The data tools' lines, as the engine adds them for the tools it gets (see toolFlags).
   const data = { ...(tools.filings && { filings: true }), ...(tools.economy && { economy: true }) };
-  if (engine === "search") return system(preferences, "search", { ...prompting.system, weather, quick, ...data });
+  if (engine === "search") return system(preferences, "search", { ...systemOptions(engine, prompting), weather, quick, ...data });
   return system(preferences, engine === "code" || engine === "translate" || engine === "docs" ? engine : "text", {
-    ...prompting.system,
+    ...systemOptions(engine, prompting),
     weather,
     connect: Boolean(tools.connect),
     ...data,
@@ -610,7 +658,7 @@ async function* run(
     case "docs":
       yield* withStepDown(
         choice ?? claudeChoice(engine, "ascend"),
-        (c) => streamText(history, preferences, engine, meter, budget, c, t, watch, { system: prompting.system, weather, onUsed, connect, data, onTool }),
+        (c) => streamText(history, preferences, engine, meter, budget, c, t, watch, { system: systemOptions(engine, prompting), weather, onUsed, connect, data, onTool }),
         onStepDown,
         t,
       );
@@ -618,7 +666,17 @@ async function* run(
     case "search":
       yield* withStepDown(
         choice ?? claudeChoice(engine, "ascend"),
-        (c) => streamSearch(history, preferences, meter, budget, c, t, watch, { system: prompting.system, where: prompting.where, weather, onUsed, quick, data, onTool }),
+        (c) =>
+          streamSearch(history, preferences, meter, budget, c, t, watch, {
+            system: systemOptions(engine, prompting),
+            where: prompting.where,
+            noFetch: prompting.noFetch === true,
+            weather,
+            onUsed,
+            quick,
+            data,
+            onTool,
+          }),
         onStepDown,
         t,
       );
@@ -844,7 +902,7 @@ async function* runFree(
   system: SystemOptions = {},
   // The live forecast, what to do once it's used, the language the user's answers are set to, the data
   // tools (web search, SEC EDGAR, FRED) with what to do once each is used, and the request's signal.
-  chat: { weather?: WeatherTool; onUsed?: () => void; language?: string; tools?: ClientTool[]; onTool?: (name: string) => void; signal?: AbortSignal } = {},
+  chat: { weather?: WeatherTool; onUsed?: () => void; language?: string; tools?: ClientTool[]; onTool?: (name: string) => void; signal?: AbortSignal; maxTokens?: number } = {},
 ): AsyncGenerator<StreamEvent> {
   const last = history[history.length - 1];
   if (lane === "image") {
@@ -918,8 +976,11 @@ export async function POST(request: Request) {
   } catch {
     return Response.json({ error: t("Invalid JSON") }, { status: 400 });
   }
-  // Tool blocks are put on turns by the server only (a reply continued with approved results).
-  const history: ChatTurn[] = (Array.isArray(body.messages) ? body.messages : []).slice(-30).map((turn) => ({ ...turn, toolCalls: undefined, toolResults: undefined }));
+  // Tool blocks and passages from an assistant's files are put on turns by the server only (a reply
+  // continued with approved results, a chat with an assistant).
+  const history: ChatTurn[] = (Array.isArray(body.messages) ? body.messages : [])
+    .slice(-30)
+    .map((turn) => ({ ...turn, toolCalls: undefined, toolResults: undefined, passages: undefined }));
   const last = history[history.length - 1];
   if (!last || last.role !== "user") {
     return Response.json({ error: t("The last message must be from the user.") }, { status: 400 });
@@ -1103,14 +1164,20 @@ export async function POST(request: Request) {
     engine = "image";
   }
 
-  const project =
-    typeof body.projectId === "string"
-      ? await one<{ instructions: string; size: number }>(
-          // Its size in bytes, as it's sent when the chat is opened or saved.
-          "SELECT instructions, length(CAST(messages AS BLOB)) AS size FROM projects WHERE id = ? AND user_id = ?",
-          [body.projectId, user.id],
-        )
-      : null;
+  // Its size in bytes, as it's sent when the chat is opened or saved, and with assistants on, the
+  // assistant it was started with and its name. While they're off, it's read as it always was.
+  const project: { instructions: string; size: number; assistant_id?: string; name?: string } | null =
+    typeof body.projectId !== "string"
+      ? null
+      : ASSISTANTS_ON
+        ? await one<{ instructions: string; size: number; assistant_id: string; name: string }>(
+            "SELECT instructions, length(CAST(messages AS BLOB)) AS size, assistant_id, name FROM projects WHERE id = ? AND user_id = ?",
+            [body.projectId, user.id],
+          )
+        : await one<{ instructions: string; size: number }>("SELECT instructions, length(CAST(messages AS BLOB)) AS size FROM projects WHERE id = ? AND user_id = ?", [
+            body.projectId,
+            user.id,
+          ]);
   // The server saves the turn itself (see turns.ts), so the answer is kept when the page is closed.
   // A page loaded before this sends no turn, and keeps its answers itself as before.
   const replyId = typeof body.replyId === "string" && MESSAGE_ID.test(body.replyId) ? body.replyId : null;
@@ -1119,14 +1186,46 @@ export async function POST(request: Request) {
   if (turn && !roomForTurn(Number(project!.size), turn.user, latestApp(history) ?? "")) {
     return Response.json({ error: t(PROJECT_FULL), code: "project_too_large" }, { status: 413 });
   }
+  // The assistant the chat was started with, before any helper, hold or free message: gone (deleted, or
+  // not shared with the user any more), changed since the page showed its price, or someone else's
+  // the user has sent too much today, and nothing is run or charged.
+  let chosen: { a: ChatAssistant; mine: boolean } | null = null;
+  if (ASSISTANTS_ON && project?.assistant_id) {
+    const access = await loadAssistantFor(user.id, project.assistant_id);
+    if ("gone" in access) {
+      const name = access.name || project.name || "";
+      const error =
+        access.gone === "deleted" ? t("{name} was deleted, so it can't answer here.", { name }) : t("{name} isn't shared any more, so it can't answer here.", { name });
+      return Response.json({ error, code: "assistant_gone", reason: access.gone }, { status: 410 });
+    }
+    const name = access.a.name;
+    if (body.assistantVersion !== access.a.version) {
+      return Response.json(
+        { error: t("{name} changed since this chat opened. Check its new price, then send again.", { name }), code: "assistant_changed", assistant: await assistantSummary(access.a, access.mine) },
+        { status: 409 },
+      );
+    }
+    if (!access.mine && !quote && (await overLimit(`assistant-msg:${user.id}:${access.a.id}`, VISITOR_DAILY_MESSAGES, DAY_MS))) {
+      return Response.json({ error: t("You've sent {name} a lot of messages today. Try again tomorrow.", { name }), code: "assistant_limit" }, { status: 429 });
+    }
+    chosen = access;
+    // Who the model answers as, with its maker's instructions; passages are titled by their files'
+    // names where those may be shown. Someone else's has no page reader in Research.
+    const voice = { name, instructions: access.a.instructions, mine: access.mine, named: access.mine || access.a.showFiles };
+    Object.assign(prompting, { assistant: assistantSection(voice), freeAssistant: assistantSection(voice, { free: true }), noFetch: !access.mine });
+  }
+  // Someone else's assistant: the user's own things stay out of the chat (connected accounts, their
+  // approved results, their brand kit, their memory), so its maker's instructions and files can't
+  // reach them. What they're called, their language, the chat's own instructions and the voice style stay.
+  const theirs = chosen !== null && !chosen.mine;
   // The connected accounts the chat has on: only the user's own, and only while connectors are set up
   // (CONNECTOR_KEYS). This reads the database only; their servers are reached when the reply starts.
-  const connectorIds = requestedConnections(body.connectors);
+  const connectorIds = theirs ? [] : requestedConnections(body.connectors);
   kit = connectorIds.length ? await chatKit(user.id, connectorIds, { replyId: replyId ?? "", signal: abort.signal }) : null;
   // Results the user approved and asked to continue the answer with (Continue on an action card):
   // their calls go on the reply before and what came back on this message, as tool blocks, so Claude
   // reads them as that account's data, never as the user's words. Marked used once the reply is paid for.
-  const asked = continuedIds(body.actions);
+  const asked = theirs ? [] : continuedIds(body.actions);
   const continued =
     kit && asked.length && history.length >= 2 && history[history.length - 2].role === "assistant" ? continuedCalls(kit, await approvedResults(user.id, asked)) : [];
   // A Continue, or its Retry, without any of the results it asks for (used by an answer already,
@@ -1171,28 +1270,43 @@ export async function POST(request: Request) {
     engine = "text";
     reason = t("You named one of your connected accounts, so Flash answers with it.");
   }
-  const brand = await getBrand(user.id, appUrl(request));
+  const brand = theirs ? null : await getBrand(user.id, appUrl(request));
   // What the user asked to be called, their work and their language (Settings > General), then their memory.
-  const memory = (typeof body.preferences === "string" ? body.preferences : user.preferences).slice(0, MAX_PREFERENCES_CHARS);
+  const memory = theirs ? "" : (typeof body.preferences === "string" ? body.preferences : user.preferences).slice(0, MAX_PREFERENCES_CHARS);
   // For the picture and video prompt writer: the brand kit, and the language of words in pictures.
   const mediaNotes = [brandForMedia(brand), pictureWordsNote(user.language)].filter(Boolean).join("\n\n");
   // What Claude helpers (the router, the picture check) have cost this request so far, in cents.
   const helperSpend = () => spend.reduce((sum, s) => sum + (s.provider === "anthropic" ? s.cents : 0), 0);
-  // A conversation's size depends only on the model and the system prompt, so it is counted once.
+  // What a message to the chat's assistant reads from its files (see passagesFor), read once, the
+  // first time an engine that answers as it is priced, with the passages counted on every level's model.
+  let reading: Promise<Reading> | null = null;
+  const readingFor = (a: ChatAssistant, named: boolean) =>
+    (reading ??= passagesFor(a, last.content, earlierText, { readStart: body.readStart === true, named, count: countPassages }));
+  /** The history an engine that answers as the chat's assistant reads: with the passages on its newest turn. */
+  const historyFor = async (): Promise<ChatTurn[]> => {
+    if (!chosen) return history;
+    return withPassages(history, (await readingFor(chosen.a, chosen.mine || chosen.a.showFiles)).passages);
+  };
+  // A conversation's size depends only on the model, the system prompt and, with an assistant, the
+  // passages, so it is counted once.
   const counts = new Map<string, Promise<number>>();
   // With connectors, the tools the reply may send are counted exactly too.
   // Set when Anthropic couldn't count a request: planning goes on with a guess, but a Claude reply
   // priced on it isn't sent (see below), since a guess can be far under what the reply reads.
   let countFailed = false;
-  const countOnce = (model: string, systemText: string, tools?: Parameters<typeof countInputTokens>[3]) => {
-    const key = `${model}\n${systemText}\n${tools?.map((tool) => tool.name).join(",") ?? ""}`;
+  const countOnce = (e: Engine, model: string, systemText: string, tools?: Parameters<typeof countInputTokens>[3]) => {
+    const reads = chosen !== null && answersAsAssistant(e);
+    const key = `${model}\n${systemText}\n${tools?.map((tool) => tool.name).join(",") ?? ""}${reads ? "\n+passages" : ""}`;
     if (!counts.has(key)) {
+      let sent = history;
       counts.set(
         key,
-        countInputTokens(model, history, systemText, tools).catch(() => {
-          countFailed = true;
-          return worstTokens(systemText.length + JSON.stringify(history).length + (tools ? JSON.stringify(tools).length : 0));
-        }),
+        (reads ? historyFor() : Promise.resolve(history))
+          .then((h) => countInputTokens(model, (sent = h), systemText, tools))
+          .catch(() => {
+            countFailed = true;
+            return worstTokens(systemText.length + JSON.stringify(sent).length + (tools ? JSON.stringify(tools).length : 0));
+          }),
       );
     }
     return counts.get(key)!;
@@ -1266,7 +1380,7 @@ export async function POST(request: Request) {
         // The reply may only spend what the held credits pay for, so no request runs at a loss.
         const plan = async (level: ModelLevel, withTools: Tools) => {
           const choice = claudeChoice(engine, level, { careful });
-          const inputTokens = (await countOnce(choice.model, systemFor(engine, preferences, history, prompting, withTools), connectTools(withTools))) + dataRoom(withTools);
+          const inputTokens = (await countOnce(engine, choice.model, systemFor(engine, preferences, history, prompting, withTools), connectTools(withTools))) + dataRoom(withTools);
           const scale = claudePrice(choice.model, inputTokens).output / claudePrice(defaultChoice(engine).model, inputTokens).output;
           return { choice, tools: withTools, hold: planHold(engine, choice.model, inputTokens, balance, scale, helperCents, toolPlan(engine, withTools)) };
         };
@@ -1439,6 +1553,11 @@ export async function POST(request: Request) {
   }
   const { picked, model, live, metered, preferences, priceCents, levelWhy, tools } = plan;
   let { held, needed, budget, claudeRun } = plan;
+  // A reply as someone else's assistant writes at most VISITOR_REPLY_TOKENS, so its maker's "always
+  // write long answers" can't run up their bills (they can ask it to continue). Held as before.
+  if (theirs && metered && answersAsAssistant(engine) && budget.maxTokens > VISITOR_REPLY_TOKENS) {
+    budget = { ...budget, maxTokens: VISITOR_REPLY_TOKENS, byCredits: false };
+  }
   // Fix all's price: the credits this request holds when it's sent as it is now (what it needs at least,
   // and the balance it's held from), worked out above exactly as for sending it. Nothing is run, charged
   // or saved. A count Anthropic couldn't make is a guess, which is never shown as a price. With fewer
@@ -1488,10 +1607,26 @@ export async function POST(request: Request) {
       return Response.json({ error, code: "out_of_credits", needed }, { status: 402 });
     }
   }
+  // What a free model reads from the chat's assistant's files: as much as the turn has room for, uncounted.
+  let freeReading: Reading | null = null;
   if (live && available < needed && verified) {
     // A post pack has no free version: one free picture isn't what was asked for.
     const lane = model?.id === "post-pack" ? null : freeEligible(engine, last);
     if (lane) {
+      // Someone else's assistant answers on the free models only when its maker allows it; no free message is used up.
+      if (lane === "chat" && chosen && !chosen.mine && !chosen.a.freeOk) {
+        return Response.json({ error: t("{name} needs credits: its maker hasn't allowed free messages for it.", { name: chosen.a.name }), code: "assistant_needs_credits", needed }, { status: 402 });
+      }
+      if (lane === "chat" && chosen) {
+        // Room for the line between each passage's title and text and the blank lines between them, for as many as can come back.
+        const maxChars = Math.max(0, freePassageRoom(last) - 3 * Math.max(MAX_ASSISTANT_FILES, MAX_PASSAGES));
+        try {
+          freeReading = await passagesFor(chosen.a, last.content, earlierText, { readStart: body.readStart === true, named: chosen.mine || chosen.a.showFiles, maxChars });
+        } catch (err) {
+          console.error("[flash] reading an assistant's files failed", err instanceof Error ? err.name : "error");
+          return Response.json({ error: t("Flash is busy right now. Please try again in a moment.") }, { status: 503 });
+        }
+      }
       if (!(await reserveFreeUser(user.id, lane))) return Response.json({ error: usedUp(lane), code: "out_of_credits", needed }, { status: 402 });
       free = lane;
       held = needed = 0;
@@ -1532,6 +1667,24 @@ export async function POST(request: Request) {
   // settling never charges more than the hold.
   if (cap !== null && held > cap) {
     return Response.json({ error: t(OVER_CAP, { credits: cap.toLocaleString(t.locale) }), code: "over_cap" }, { status: 409 });
+  }
+  // In a chat with an assistant: what the reply reads from its files, read before anything is
+  // charged (planning read it already for an engine that answers as it), and a reply made without it
+  // says so.
+  let replyHistory = history;
+  let read: Reading | null = freeReading;
+  if (chosen && live) {
+    if (!answersAsAssistant(engine)) reason = `${reason} ${t("{name} only answers in writing, so this was made without it.", { name: chosen.a.name })}`;
+    else if (free === "chat" && freeReading) replyHistory = withPassages(history, freeReading.passages);
+    else if (!free) {
+      try {
+        read = await readingFor(chosen.a, chosen.mine || chosen.a.showFiles);
+        replyHistory = await historyFor();
+      } catch (err) {
+        console.error("[flash] reading an assistant's files failed", err instanceof Error ? err.name : "error");
+        return Response.json({ error: t("Flash is busy right now. Please try again in a moment.") }, { status: 503 });
+      }
+    }
   }
   const freeUse = { provider: "", model: "" };
   const freeAudio: { reserved?: number } = {};
@@ -1646,6 +1799,8 @@ export async function POST(request: Request) {
             claudeRun && { model: levelName(claudeRun.level), modelWhy: levelWhy }),
     };
     send(routed);
+    // What the reply read from the assistant's files: each passage's title, or that none matched.
+    if (read && (read.passages.length || read.nomatch)) send({ type: "read", items: read.passages.map((p) => ({ label: p.title })), ...(read.nomatch && { nomatch: true }) });
     // Saved at once, so the user's message and the reply in progress are in the chat if the page is closed.
     const saving = turn
       ? saveTurn(user.id, projectId, { ...turn, reply: { ...reply, pendingSince: startedAt } }).catch((err) => {
@@ -1703,14 +1858,15 @@ export async function POST(request: Request) {
     // A paid reply's are those its hold paid for.
     const paidData = free ? [] : dataTools({ filings: tools.filings, economy: tools.economy }, { userId: user.id, t });
     const events = free
-      ? runFree(free, engine, history, preferences, store, freeUse, where.country ?? "", t, freeAudio, prompting.free, {
+      ? runFree(free, engine, replyHistory, preferences, store, freeUse, where.country ?? "", t, freeAudio, freeSystem(prompting), {
           ...(freeTools.weather && { weather: weatherTool(where, t), onUsed: forecastUsed }),
           ...(freeData.length && { tools: freeData, onTool: freeToolUsed }),
           language: user.language ?? "",
           // Stop ends the free model's look-ups too: they'd use slots and daily counts every reply shares.
           signal: abort.signal,
+          ...(theirs && { maxTokens: VISITOR_REPLY_TOKENS }),
         })
-      : run(engine, history, preferences, store, model, meter, budget, mediaNotes, claudeRun, steppedDown, track, t, prompting, {
+      : run(engine, replyHistory, preferences, store, model, meter, budget, mediaNotes, claudeRun, steppedDown, track, t, prompting, {
           ...(tools.weather && { weather: weatherTool(where, t), onUsed: forecastUsed }),
           quick: tools.quick,
           ...(tools.connect && kit && { connect: kit }),
