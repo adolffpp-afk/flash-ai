@@ -2083,6 +2083,7 @@
  "Your page has {count} main headings (h1). Keep one.": "หน้าของคุณมีหัวข้อหลัก (h1) {count} รายการ ให้เหลือไว้รายการเดียว",
  "Your page has {count} {tag} tags. Keep one.": "หน้าของคุณมีแท็ก {tag} {count} รายการ ให้เหลือไว้รายการเดียว",
  "Your page is in a right-to-left language but doesn't say so ({tag}).": "หน้าของคุณเป็นภาษาที่อ่านจากขวาไปซ้าย แต่ไม่ได้ระบุไว้ ({tag})",
+ "Your page is served at {url} and at {domain}, and Flash names each one as its own main address (canonical). Google shows one of the two, and may pick Flash's.": "หน้าของคุณเปิดได้ทั้งที่ {url} และที่ {domain} และ Flash ระบุแต่ละที่เป็นที่อยู่หลักของตัวเอง (canonical) Google จะแสดงที่ใดที่หนึ่ง และอาจเลือกที่อยู่บน Flash",
  "Your page is served over https, so browsers block scripts and styles from http:// addresses, and switch pictures to https or drop them.": "หน้าของคุณให้บริการผ่าน https เบราว์เซอร์จึงบล็อกสคริปต์และสไตล์จากที่อยู่ http:// และเปลี่ยนรูปเป็น https หรือไม่แสดง",
  "Your page isn't set up for phones (it has no viewport tag).": "หน้าของคุณยังไม่ได้ตั้งค่าสำหรับมือถือ (ไม่มีแท็ก viewport)",
  "Your page says it's in “{lang}”, but its text is written in another alphabet.": "หน้าของคุณบอกว่าเป็นภาษา “{lang}” แต่ข้อความเขียนด้วยตัวอักษรอื่น",

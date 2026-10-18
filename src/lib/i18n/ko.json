@@ -2083,6 +2083,7 @@
  "Your page has {count} main headings (h1). Keep one.": "페이지에 대표 제목(h1)이 {count}개 있어요. 하나만 남기세요.",
  "Your page has {count} {tag} tags. Keep one.": "페이지에 {tag} 태그가 {count}개 있어요. 하나만 남기세요.",
  "Your page is in a right-to-left language but doesn't say so ({tag}).": "페이지가 오른쪽에서 왼쪽으로 읽는 언어인데 그렇게 표시하지 않았어요({tag}).",
+ "Your page is served at {url} and at {domain}, and Flash names each one as its own main address (canonical). Google shows one of the two, and may pick Flash's.": "페이지가 {url}와 {domain} 두 곳에서 제공되고, Flash는 각각을 자기 대표 주소(canonical)로 알려 줘요. Google은 둘 중 하나를 보여 주며, Flash 쪽을 고를 수도 있어요.",
  "Your page is served over https, so browsers block scripts and styles from http:// addresses, and switch pictures to https or drop them.": "페이지가 https로 제공되므로 브라우저는 http:// 주소의 스크립트와 스타일을 차단하고, 이미지는 https로 바꾸거나 빼 버려요.",
  "Your page isn't set up for phones (it has no viewport tag).": "페이지가 휴대폰에 맞게 설정되지 않았어요(viewport 태그가 없어요).",
  "Your page says it's in “{lang}”, but its text is written in another alphabet.": "페이지는 “{lang}”이라고 하지만 본문은 다른 문자로 쓰여 있어요.",

@@ -18,3 +18,26 @@ export function newestApp(messages: UIMessage[]) {
  * the copy before that reply, and the reply would land above it, so the change waits until it's done.
  */
 export const stillAnswering = (messages: UIMessage[]) => messages.some((m) => m.pending);
+
+// A message as it's saved: what only this page shows (status) and an unset pending left out.
+const saved = (m: UIMessage) => JSON.stringify({ ...m, status: undefined, pending: m.pending || undefined });
+
+/**
+ * The copy of a chat that a change the search check asks for is decided on and sent from. This page
+ * doesn't hear about what another tab or device does in a chat it has open, so the server's copy is
+ * read again (load) and used: it has a reply asked there, finished or still being written. This page's
+ * own copy is used when it has changes of its own not saved yet (unsaved: they're saved in a moment,
+ * and the server's copy would lose them), or when the server's can't be read. busy: Flash is still
+ * writing a reply in either copy (see stillAnswering), so nothing should be sent yet. adopt: the
+ * server's copy has something this page's doesn't, so the page should show it.
+ */
+export async function chatForFix(
+  here: UIMessage[],
+  load: () => Promise<UIMessage[]>,
+  unsaved: boolean,
+): Promise<{ messages: UIMessage[]; busy: boolean; adopt: boolean }> {
+  const server = await load().catch(() => null);
+  if (!server || unsaved) return { messages: here, busy: stillAnswering(here) || (server ? stillAnswering(server) : false), adopt: false };
+  const same = server.length === here.length && server.every((m, i) => saved(m) === saved(here[i]));
+  return { messages: server, busy: stillAnswering(server), adopt: !same };
+}

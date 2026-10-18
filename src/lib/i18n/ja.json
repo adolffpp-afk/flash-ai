@@ -2083,6 +2083,7 @@
  "Your page has {count} main headings (h1). Keep one.": "ページにメインの見出し（h1）が{count}個あります。1つにしてください。",
  "Your page has {count} {tag} tags. Keep one.": "ページに{tag}タグが{count}個あります。1つにしてください。",
  "Your page is in a right-to-left language but doesn't say so ({tag}).": "ページは右から左に読む言語ですが、それを示していません（{tag}）。",
+ "Your page is served at {url} and at {domain}, and Flash names each one as its own main address (canonical). Google shows one of the two, and may pick Flash's.": "ページは{url}と{domain}の両方で配信されていて、Flashはそれぞれを自分のメインのアドレス（canonical）としてGoogleに伝えます。Googleはどちらか一方を表示し、Flashのほうを選ぶこともあります。",
  "Your page is served over https, so browsers block scripts and styles from http:// addresses, and switch pictures to https or drop them.": "ページはhttpsで配信されるため、ブラウザはhttp://のアドレスからのスクリプトやスタイルをブロックし、画像はhttpsに切り替えるか表示しません。",
  "Your page isn't set up for phones (it has no viewport tag).": "ページがスマホ向けに設定されていません（viewportタグがありません）。",
  "Your page says it's in “{lang}”, but its text is written in another alphabet.": "ページは「{lang}」だと示していますが、本文は別の文字で書かれています。",

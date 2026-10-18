@@ -2083,6 +2083,7 @@
  "Your page has {count} main headings (h1). Keep one.": "Pagina ta are {count} titluri principale (h1). Păstrează unul.",
  "Your page has {count} {tag} tags. Keep one.": "Pagina ta are {count} taguri {tag}. Păstrează unul.",
  "Your page is in a right-to-left language but doesn't say so ({tag}).": "Pagina ta e într-o limbă care se citește de la dreapta la stânga, dar nu spune asta ({tag}).",
+ "Your page is served at {url} and at {domain}, and Flash names each one as its own main address (canonical). Google shows one of the two, and may pick Flash's.": "Pagina ta e servită la {url} și la {domain}, iar Flash o indică pe fiecare drept propria adresă principală (canonical). Google o arată pe una dintre cele două și o poate alege pe cea de pe Flash.",
  "Your page is served over https, so browsers block scripts and styles from http:// addresses, and switch pictures to https or drop them.": "Pagina ta e servită prin https, așa că browserele blochează scripturile și stilurile de la adrese http:// și trec imaginile pe https sau le elimină.",
  "Your page isn't set up for phones (it has no viewport tag).": "Pagina ta nu e pregătită pentru telefoane (nu are tagul viewport).",
  "Your page says it's in “{lang}”, but its text is written in another alphabet.": "Pagina ta spune că e în „{lang}”, dar textul e scris în alt alfabet.",

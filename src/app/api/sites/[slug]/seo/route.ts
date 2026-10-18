@@ -4,7 +4,7 @@ import { translatorFor } from "@/lib/server/i18n.ts";
 import { countOf } from "@/lib/server/limits.ts";
 import { seoReport } from "@/lib/server/seo.ts";
 import { pagespeedAvailable, parseRecord, runLock } from "@/lib/server/pagespeed.ts";
-import { preferredDomain } from "@/lib/seo-rules.ts";
+import { testDomain } from "@/lib/seo-rules.ts";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +35,6 @@ export async function GET(request: Request, ctx: RouteContext<"/api/sites/[slug]
     pagespeedStale: pagespeed !== null && pagespeed.for !== checkedAt,
     pagespeedAvailable: await pagespeedAvailable(),
     pagespeedRunning: (await countOf(runLock(site.slug))) > 0,
-    domainTest: preferredDomain(context.domains) || null,
+    domainTest: testDomain(context) || null,
   });
 }

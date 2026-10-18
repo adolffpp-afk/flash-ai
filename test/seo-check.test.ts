@@ -7,10 +7,10 @@ import assert from "node:assert/strict";
  */
 process.env.DATABASE_URL = ":memory:";
 const { SEO_VERSION, scanPage, textWidth } = await import("../src/lib/seo-scan.ts");
-const { MAX_CONTEXT, band, evaluate, fixContext, fixableIds, issueCount, stillToFix } = await import("../src/lib/seo-rules.ts");
+const { MAX_CONTEXT, band, evaluate, fixContext, fixableIds, issueCount, mainDomain, stillToFix, testDomain } = await import("../src/lib/seo-rules.ts");
 const { LABELS, WHY, fixMessage, listOf, messageOf } = await import("../src/lib/seo-words.ts");
 const { fixForCopy } = await import("../src/lib/seo-fix.ts");
-const { newestApp, stillAnswering } = await import("../src/lib/seo-chat.ts");
+const { chatForFix, newestApp, stillAnswering } = await import("../src/lib/seo-chat.ts");
 const { hasOwnCanonical, hasOwnPreview } = await import("../src/lib/site-preview.ts");
 const { cleanUserMessage } = await import("../src/lib/server/turns.ts");
 const { translate } = await import("../src/lib/i18n.ts");
@@ -216,6 +216,28 @@ test("the sitemap: the app's own domain has one, Flash's address doesn't", () =>
   assert.equal(said(page(), "sitemap"), "na flash");
   assert.equal(said(page(), "sitemap", { ...CTX, domains: ["www.crumbbakery.com", "crumbbakery.com"] }), "flash domain");
   assert.deepEqual(check(page(), "sitemap", { ...CTX, domains: ["www.crumbbakery.com", "crumbbakery.com"] })?.values, { url: "https://crumbbakery.com/sitemap.xml" });
+  // Only a domain that shows the app has it: the bare one still leads to its old host, so www.'s lists the app.
+  const wwwOnly = { ...CTX, domains: ["crumbbakery.com", "www.crumbbakery.com"], live: ["www.crumbbakery.com"] };
+  assert.deepEqual(check(page(), "sitemap", wwwOnly)?.values, { url: "https://www.crumbbakery.com/sitemap.xml" });
+  assert.equal(said(page(), "sitemap", { ...CTX, domains: ["crumbbakery.com"], live: [] }), "na flash", "a domain still waiting for its DNS");
+  assert.equal(testDomain(wwwOnly), "www.crumbbakery.com", "Check with Google tests the one that works");
+  assert.equal(testDomain({ domains: ["crumbbakery.com"], live: [] }), "crumbbakery.com", "else one waiting, which Google's check says isn't connected yet");
+  assert.equal(testDomain(CTX), "");
+  assert.deepEqual(["www.crumbbakery.com", "crumbbakery.com"].map((d) => mainDomain(d, ["crumbbakery.com", "www.crumbbakery.com"])), ["crumbbakery.com", "crumbbakery.com"]);
+  assert.equal(mainDomain("www.crumbbakery.com", wwwOnly.live), "www.crumbbakery.com");
+});
+
+test("an app on its own domain is two pages to Google, and the check says so", () => {
+  const data = page({ body: '<ul id="menu"></ul><script>flashDB.list("menu").then(show)</script>' });
+  const onDomain = { ...CTX, domains: ["crumbbakery.com", "www.crumbbakery.com"] };
+  // Flash names each address as its own main one, so Google shows one of the two copies.
+  assert.equal(said(page(), "canonical", onDomain), "flash domains");
+  assert.deepEqual(check(page(), "canonical", onDomain)?.values, { url: ADDRESS, domain: "https://crumbbakery.com/" });
+  assert.match(messageOf(check(page(), "canonical", onDomain)!)!, /Google shows one of the two, and may pick Flash's/);
+  assert.equal(said(page(), "canonical", { ...onDomain, live: [] }), "flash flash", "not until a domain shows the app");
+  // Google may pick Flash's copy, where it can't fetch the app's data, so that's still said with a domain.
+  assert.equal(said(data, "loadsData"), "tip tip");
+  assert.equal(said(data, "loadsData", onDomain), "tip tip");
 });
 
 test("structured data that can't be read, says too little, or describes the page", () => {
@@ -834,6 +856,42 @@ test("a fix waits while Flash is still writing a reply in that chat, here or on 
   const asNew = [...done.slice(0, -1), { ...done.at(-1)!, app: { ...done.at(-1)!.app!, slug: "golden-crumb-2" } }];
   assert.equal(newestApp(asNew).site, "golden-crumb-2");
   assert.equal(newestApp([]).latest, undefined);
+});
+
+test("a fix is decided on the server's copy of a chat this page already has open, so a reply asked in another tab comes first", async () => {
+  const app = (html: string) => ({ title: "Golden Crumb", html, kind: "app" as const, slug: "golden-crumb-x1" });
+  // This tab built and published the bakery, and has that chat open: [build].
+  const here: UIMessage[] = [
+    { id: "u1", role: "user", content: "Build a website for my bakery" },
+    { id: "a1", role: "assistant", content: "Here it is.", app: app(BAKERY) },
+  ];
+  // Another tab asked "Make the header blue" in it, and Flash is writing that reply on the server.
+  const blue = BAKERY.replace("<header ", "<header data-blue ");
+  const asked: UIMessage[] = [...here, { id: "u2", role: "user", content: "Make the header blue" }];
+  const writing: UIMessage[] = [...asked, { id: "a2", role: "assistant", content: "", pending: true, pendingSince: 1, status: "Flash is still finishing this on the server." }];
+  const done: UIMessage[] = [...asked, { id: "a2", role: "assistant", content: "Made the header blue.", app: { ...app(blue), slug: undefined } }];
+  const server = (messages: UIMessage[]) => async () => structuredClone(messages);
+  // This tab's copy alone has no pending reply, so it can't tell.
+  assert.equal(stillAnswering(here), false);
+  // The server's copy is read again: Flash is busy there, so nothing is sent yet, and this tab shows it.
+  const busy = await chatForFix(here, server(writing), false);
+  assert.deepEqual([busy.busy, busy.adopt, busy.messages.map((m) => m.id)], [true, true, ["u1", "a1", "u2", "a2"]]);
+  // Once it's done, the fix is made on the blue copy and sent after it, from the server's copy.
+  const after = await chatForFix(here, server(done), false);
+  assert.deepEqual([after.busy, after.adopt, after.messages.map((m) => m.id)], [false, true, ["u1", "a1", "u2", "a2"]]);
+  assert.equal(newestApp(after.messages).latest?.html, blue);
+  assert.equal(newestApp(after.messages).site, "golden-crumb-x1");
+  // Nothing new there: this tab's copy is the same (what only this page shows doesn't count).
+  const same = await chatForFix(here.map((m) => ({ ...m, status: "shown here" })), server(here), false);
+  assert.deepEqual([same.busy, same.adopt], [false, false]);
+  // This tab's own changes not saved yet are kept, but a reply the server is writing still waits.
+  const unsaved = await chatForFix(here, server(writing), true);
+  assert.deepEqual([unsaved.busy, unsaved.adopt, unsaved.messages], [true, false, here]);
+  assert.equal((await chatForFix(here, server(done), true)).busy, false);
+  // The server can't be reached: this tab's copy, as before.
+  const offline = await chatForFix(here, () => Promise.reject(new Error("offline")), false);
+  assert.deepEqual([offline.busy, offline.adopt, offline.messages], [false, false, here]);
+  assert.equal((await chatForFix(writing, () => Promise.reject(new Error("offline")), false)).busy, true, "a reply pending here");
 });
 
 test("a page where everything fails sends what fits, says how many didn't, and the chat keeps it whole", () => {

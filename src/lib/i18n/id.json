@@ -2083,6 +2083,7 @@
  "Your page has {count} main headings (h1). Keep one.": "Halaman Anda punya {count} judul utama (h1). Sisakan satu.",
  "Your page has {count} {tag} tags. Keep one.": "Halaman Anda punya {count} tag {tag}. Sisakan satu.",
  "Your page is in a right-to-left language but doesn't say so ({tag}).": "Halaman Anda berbahasa yang dibaca dari kanan ke kiri, tetapi tidak menyebutkannya ({tag}).",
+ "Your page is served at {url} and at {domain}, and Flash names each one as its own main address (canonical). Google shows one of the two, and may pick Flash's.": "Halaman Anda disajikan di {url} dan di {domain}, dan Flash menyebut masing-masing sebagai alamat utamanya sendiri (canonical). Google menampilkan salah satunya, dan bisa memilih yang di Flash.",
  "Your page is served over https, so browsers block scripts and styles from http:// addresses, and switch pictures to https or drop them.": "Halaman Anda disajikan lewat https, jadi browser memblokir skrip dan gaya dari alamat http://, serta mengalihkan gambar ke https atau membuangnya.",
  "Your page isn't set up for phones (it has no viewport tag).": "Halaman Anda belum disiapkan untuk ponsel (tidak ada tag viewport).",
  "Your page says it's in “{lang}”, but its text is written in another alphabet.": "Halaman Anda menyebutkan bahasanya “{lang}”, tetapi teksnya ditulis dengan alfabet lain.",

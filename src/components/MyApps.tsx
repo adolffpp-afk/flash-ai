@@ -691,13 +691,16 @@ export function MyApps({
               </span>
             </button>
           )}
-          {/* The view's name stays at the start, in right-to-left languages too, and only the app's title is cut. */}
-          <h2 className="flex min-w-0 flex-1 gap-1 text-lg font-medium tracking-tight">
+          {/* The view's name stays at the start, in right-to-left languages too, and whole unless it's wider
+              than the heading: only the app's title is cut. */}
+          <h2 className="flex min-w-0 flex-1 text-lg font-medium tracking-tight">
             {open ? (
               <>
-                <span className="max-w-[60%] shrink-0 truncate">{t(VIEW_TITLES[view])}</span>
-                <span className="shrink-0">·</span>
-                <bdi className="min-w-0 truncate">{open.title}</bdi>
+                <span className="max-w-full shrink-0 truncate">{t(VIEW_TITLES[view])}</span>
+                <span className="flex min-w-0 overflow-hidden">
+                  <span className="shrink-0 px-1">·</span>
+                  <bdi className="min-w-0 truncate">{open.title}</bdi>
+                </span>
               </>
             ) : (
               <span className="truncate">{t("My websites and apps")}</span>

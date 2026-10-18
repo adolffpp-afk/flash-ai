@@ -2083,6 +2083,7 @@
  "Your page has {count} main headings (h1). Keep one.": "Trang của bạn có {count} tiêu đề chính (h1). Hãy giữ một.",
  "Your page has {count} {tag} tags. Keep one.": "Trang của bạn có {count} thẻ {tag}. Hãy giữ một.",
  "Your page is in a right-to-left language but doesn't say so ({tag}).": "Trang của bạn viết bằng ngôn ngữ đọc từ phải sang trái nhưng không khai báo ({tag}).",
+ "Your page is served at {url} and at {domain}, and Flash names each one as its own main address (canonical). Google shows one of the two, and may pick Flash's.": "Trang của bạn được phục vụ ở {url} và ở {domain}, và Flash ghi mỗi nơi là địa chỉ chính của riêng nó (canonical). Google hiển thị một trong hai, và có thể chọn địa chỉ trên Flash.",
  "Your page is served over https, so browsers block scripts and styles from http:// addresses, and switch pictures to https or drop them.": "Trang của bạn được phục vụ qua https, nên trình duyệt chặn script và kiểu từ địa chỉ http://, và chuyển ảnh sang https hoặc bỏ đi.",
  "Your page isn't set up for phones (it has no viewport tag).": "Trang của bạn chưa được thiết lập cho điện thoại (không có thẻ viewport).",
  "Your page says it's in “{lang}”, but its text is written in another alphabet.": "Trang của bạn nói là bằng “{lang}”, nhưng chữ lại viết bằng bảng chữ cái khác.",

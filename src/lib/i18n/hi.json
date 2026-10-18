@@ -2083,6 +2083,7 @@
  "Your page has {count} main headings (h1). Keep one.": "आपके पेज में {count} मुख्य हेडिंग (h1) हैं। एक ही रखें।",
  "Your page has {count} {tag} tags. Keep one.": "आपके पेज में {count} {tag} टैग हैं। एक ही रखें।",
  "Your page is in a right-to-left language but doesn't say so ({tag}).": "आपका पेज दाएँ से बाएँ पढ़ी जाने वाली भाषा में है, पर यह बताता नहीं ({tag})।",
+ "Your page is served at {url} and at {domain}, and Flash names each one as its own main address (canonical). Google shows one of the two, and may pick Flash's.": "आपका पेज {url} पर भी खुलता है और {domain} पर भी, और Flash हर एक को उसका अपना मुख्य पता (canonical) बताता है। Google इन दोनों में से एक दिखाता है, और Flash वाला भी चुन सकता है।",
  "Your page is served over https, so browsers block scripts and styles from http:// addresses, and switch pictures to https or drop them.": "आपका पेज https पर चलता है, इसलिए ब्राउज़र http:// पतों की स्क्रिप्ट और स्टाइल ब्लॉक कर देते हैं, और तस्वीरों को https पर बदल देते हैं या हटा देते हैं।",
  "Your page isn't set up for phones (it has no viewport tag).": "आपका पेज फ़ोन के लिए सेट नहीं है (इसमें viewport टैग नहीं है)।",
  "Your page says it's in “{lang}”, but its text is written in another alphabet.": "आपका पेज कहता है कि वह “{lang}” में है, पर उसका टेक्स्ट किसी दूसरी लिपि में लिखा है।",

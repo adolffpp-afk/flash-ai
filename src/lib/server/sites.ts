@@ -137,7 +137,7 @@ async function seoResult(slug: string, now: string, before: SeoFacts | null | un
   return {
     score: summary?.score ?? null,
     issues: summary?.issues ?? 0,
-    ...(before !== undefined && { before: before ? (seoSummary(before, await seoContext(slug, ctx.domains, before))?.score ?? null) : null }),
+    ...(before !== undefined && { before: before ? (seoSummary(before, await seoContext(slug, { domains: ctx.domains, live: ctx.live ?? ctx.domains }, before))?.score ?? null) : null }),
   };
 }
 

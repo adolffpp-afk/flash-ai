@@ -40,7 +40,7 @@ const GOOD = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta n
 <img src="https://images.example/loaf.jpg" alt="A crusty sourdough loaf on a board" width="800" height="600">
 <h2>Visit us</h2><p>Rua das Flores 12, Lisbon. Open every day from seven until the bread runs out.</p></body></html>`;
 const BAD = "<h1>Hi</h1><img src=x.png><a href='#/menu'></a>";
-const CTX = (slug: string, domains: string[] = []) => ({ slug, appBase: "https://www.flash-app.dev", domains });
+const CTX = (slug: string, domains: string[] = [], live = domains) => ({ slug, appBase: "https://www.flash-app.dev", domains, live });
 const scoreOf = (html: string, slug: string) => evaluate(scanPage(html), CTX(slug)).score;
 type Check = import("../src/lib/seo-rules.ts").Check;
 
@@ -161,10 +161,11 @@ test("the check is for the app's owner only, and an app published before it is c
   assert.equal(((await (await getSeo(who, "old-look")).json()) as { report: { score: number } }).report.score, scoreOf(GOOD, "old-look"));
   assert.equal(JSON.parse(await savedSeo("old-look")).v, SEO_VERSION);
 
-  // A connected domain is in the context, and is the one a Google check would test.
+  // A connected domain is in the context, and is the one a Google check would test (one still
+  // waiting for its DNS too: Google's check then says it doesn't point at Flash yet).
   await run("INSERT INTO site_domains (domain, site_slug, user_id, created_at) VALUES ('crumb.pt', 'old-look', ?, 0)", [who.id]);
-  const withDomain = (await (await getSeo(who, "old-look")).json()) as { ctx: { domains: string[] }; domainTest: string };
-  assert.deepEqual(withDomain.ctx.domains, ["crumb.pt"]);
+  const withDomain = (await (await getSeo(who, "old-look")).json()) as { ctx: { domains: string[]; live: string[] }; domainTest: string };
+  assert.deepEqual([withDomain.ctx.domains, withDomain.ctx.live], [["crumb.pt"], []]);
   assert.equal(withDomain.domainTest, "crumb.pt");
 });
 
@@ -350,15 +351,20 @@ test("publishing through the connector says the app's search check", async () =>
 test("each app's page names its main address for Google: Flash's main domain, or the domain it's opened on (the bare one for its www.)", async () => {
   const who = await owner("canon");
   await legacy(who, "canon-app", GOOD);
-  await run("INSERT INTO site_domains (domain, site_slug, user_id, created_at) VALUES ('crumb.lisbon', 'canon-app', ?, 0), ('www.crumb.lisbon', 'canon-app', ?, 1)", [who.id, who.id]);
+  // Both domains lead to Flash (it last saw them connected).
+  await run("INSERT INTO site_domains (domain, site_slug, user_id, created_at, connected_at) VALUES ('crumb.lisbon', 'canon-app', ?, 0, 5), ('www.crumb.lisbon', 'canon-app', ?, 1, 5)", [
+    who.id,
+    who.id,
+  ]);
   const canonicals = (html: string) => [...html.matchAll(/<link rel="canonical" href="([^"]*)">/g)].map((m) => m[1]);
 
   // A copy on another of Flash's addresses points at the main one; its share card keeps the address it was opened at.
   const copy = await (await appRoute.GET(new Request("https://flash-ai-pi.vercel.app/p/canon-app"), params("canon-app"))).text();
   assert.deepEqual(canonicals(copy), ["https://www.flash-app.dev/p/canon-app"]);
   assert.match(copy, /property="og:url" content="https:\/\/flash-ai-pi\.vercel\.app\/p\/canon-app"/);
-  // A domain names itself, and www. names the bare domain when that's the app's too, so the two
-  // copies don't compete; each share card keeps the address it was opened at. A www. alone names itself.
+  // A domain names itself, and www. names the bare domain when that shows the app too, so the two
+  // copies don't compete; each share card keeps the address it was opened at. A www. alone names
+  // itself, and so does one whose bare domain still leads somewhere else.
   const onDomain = async (domain: string) =>
     (await domainRoute.GET(new Request(`http://localhost/d/${domain}`), { params: Promise.resolve({ host: domain }) } as never)).text();
   for (const domain of ["crumb.lisbon", "www.crumb.lisbon"]) {
@@ -366,9 +372,14 @@ test("each app's page names its main address for Google: Flash's main domain, or
     assert.deepEqual(canonicals(html), ["https://crumb.lisbon/"], domain);
     assert.ok(html.includes(`property="og:url" content="https://${domain}/"`), domain);
   }
-  await run("INSERT INTO site_domains (domain, site_slug, user_id, created_at) VALUES ('www.crumb.porto', 'canon-app', ?, 2), ('crumb.porto.example', 'canon-app', ?, 3)", [who.id, who.id]);
+  await run("INSERT INTO site_domains (domain, site_slug, user_id, created_at, connected_at) VALUES ('www.crumb.porto', 'canon-app', ?, 2, 5), ('crumb.porto.example', 'canon-app', ?, 3, 5)", [
+    who.id,
+    who.id,
+  ]);
   assert.deepEqual(canonicals(await onDomain("www.crumb.porto")), ["https://www.crumb.porto/"]);
   assert.deepEqual(canonicals(await onDomain("crumb.porto.example")), ["https://crumb.porto.example/"]);
+  await run("INSERT INTO site_domains (domain, site_slug, user_id, created_at, connected_at) VALUES ('crumb.porto', 'canon-app', ?, 4, 0)", [who.id]);
+  assert.deepEqual(canonicals(await onDomain("www.crumb.porto")), ["https://www.crumb.porto/"], "its bare domain doesn't show the app");
   await afterwards();
 
   // A page that names its own keeps it, with no second one (a new version the check hasn't read yet:

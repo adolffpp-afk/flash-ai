@@ -2083,6 +2083,7 @@
  "Your page has {count} main headings (h1). Keep one.": "في صفحتك {count} من العناوين الرئيسية (h1). أبقِ واحدًا.",
  "Your page has {count} {tag} tags. Keep one.": "في صفحتك {count} من وسوم {tag}. أبقِ واحدًا.",
  "Your page is in a right-to-left language but doesn't say so ({tag}).": "صفحتك بلغة تُقرأ من اليمين إلى اليسار لكنها لا تذكر ذلك ({tag}).",
+ "Your page is served at {url} and at {domain}, and Flash names each one as its own main address (canonical). Google shows one of the two, and may pick Flash's.": "تُعرض صفحتك على {url} وعلى {domain}، ويحدد Flash كلًّا منهما رابطًا رئيسيًا لنفسه (canonical). يعرض Google واحدًا منهما، وقد يختار رابط Flash.",
  "Your page is served over https, so browsers block scripts and styles from http:// addresses, and switch pictures to https or drop them.": "تُقدَّم صفحتك عبر https، لذلك تحظر المتصفحات السكربتات والأنماط من عناوين http://، وتحوّل الصور إلى https أو تحذفها.",
  "Your page isn't set up for phones (it has no viewport tag).": "صفحتك غير مهيأة للهواتف (ليس فيها وسم viewport).",
  "Your page says it's in “{lang}”, but its text is written in another alphabet.": "تقول صفحتك إنها بلغة «{lang}»، لكن نصها مكتوب بأبجدية أخرى.",

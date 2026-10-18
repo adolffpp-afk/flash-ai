@@ -95,6 +95,7 @@ const MESSAGES: Record<string, string> = {
   "indexing:noindex": msg("Your page tells Google not to list it (noindex)."),
   "indexing:nofollow": msg("Your page tells Google not to follow its links (nofollow)."),
   "canonical:flash": msg("Flash names your page's main address (canonical) for Google wherever it's served, like {url}."),
+  "canonical:domains": msg("Your page is served at {url} and at {domain}, and Flash names each one as its own main address (canonical). Google shows one of the two, and may pick Flash's."),
   "canonical:several": SEVERAL,
   "canonical:invalid": msg("Your page's main address (canonical) “{url}” isn't a full https:// address."),
   "canonical:elsewhere": msg("Your page tells Google its main address is {url}, which isn't this app, so Google may leave this page out."),

@@ -100,10 +100,11 @@ export type Check = {
 };
 /**
  * slug, Flash's address without a trailing slash (FLASH_APP_URL or SITE_URL), and the app's own
- * domains. listsFilled: every shared list the page reads has entries without the blanks its scripts
+ * domains; live: those of them Flash last saw pointing at it, which show the app (all of domains when
+ * left out). listsFilled: every shared list the page reads has entries without the blanks its scripts
  * hold (see server/seo.ts), so those are in sample entries visitors don't see.
  */
-export type SeoContext = { slug: string; appBase: string; domains: string[]; listsFilled?: boolean };
+export type SeoContext = { slug: string; appBase: string; domains: string[]; live?: string[]; listsFilled?: boolean };
 /** score is null when the page couldn't be read: no number is ever shown then. */
 export type SeoReport = { score: number | null; passed: number; total: number; checks: Check[] };
 
@@ -177,12 +178,22 @@ const hostOf = (url: string) => {
 /** The domain an app's address shows: the one without www., else the first (as its share card does). */
 export const preferredDomain = (domains: string[]) => domains.find((d) => !d.startsWith("www.")) ?? domains[0] ?? "";
 
+/** The app's domains that show it: those Flash last saw pointing at it (see SeoContext). */
+export const liveOf = (ctx: Pick<SeoContext, "domains" | "live">) => ctx.live ?? ctx.domains;
+
+/**
+ * The domain Check with Google tests the app on: one that shows the app, else one still waiting for
+ * its DNS (Google is then told it isn't connected yet, which looks again). "" without a domain.
+ */
+export const testDomain = (ctx: Pick<SeoContext, "domains" | "live">) => preferredDomain(liveOf(ctx)) || preferredDomain(ctx.domains);
+
 /**
  * The address a page served on domain names as its main one (canonical, and the sitemap's): the
- * domain itself, except www.X when X is connected to the same app too, which names X, so the two
- * copies don't compete. Any other domain names itself, as it may lapse or be sold on its own.
+ * domain itself, except www.X when X shows the same app too (live: the app's domains Flash last saw
+ * pointing at it), which names X, so the two copies don't compete. Any other domain names itself, as
+ * it may lapse or be sold on its own, and so does www.X while X still leads somewhere else.
  */
-export const mainDomain = (domain: string, domains: string[]) => (domain.startsWith("www.") && domains.includes(domain.slice(4)) ? domain.slice(4) : domain);
+export const mainDomain = (domain: string, live: string[]) => (domain.startsWith("www.") && live.includes(domain.slice(4)) ? domain.slice(4) : domain);
 
 /** What the page's facts mean, check by check, with the score. */
 export function evaluate(facts: SeoFacts | null | undefined, ctx: SeoContext): SeoReport {
@@ -262,7 +273,12 @@ export function evaluate(facts: SeoFacts | null | undefined, ctx: SeoContext): S
   // 4. The main address. Flash names it when the page doesn't (serve-site.ts).
   const flashUrl = `${ctx.appBase}/p/${ctx.slug}`;
   const removeCanonical = "Remove every <link rel=\"canonical\"> from the page. Flash adds the right one when it serves the page.";
-  if (!facts.ownCanonical || !facts.canonicals.length) add("canonical", 2, "flash", "flash", { url: flashUrl });
+  const live = liveOf(ctx);
+  if (!facts.ownCanonical || !facts.canonicals.length) {
+    // On its own domain too, the app is two pages to Google, each naming itself (see mainDomain).
+    if (live.length) add("canonical", 2, "flash", "domains", { url: flashUrl, domain: `https://${preferredDomain(live)}/` });
+    else add("canonical", 2, "flash", "flash", { url: flashUrl });
+  }
   else if (facts.canonicalCount > 1) add("canonical", 2, "fail", "several", { count: facts.canonicalCount, tag: '<link rel="canonical">' }, removeCanonical);
   else {
     const url = facts.canonicals[0];
@@ -282,7 +298,7 @@ export function evaluate(facts: SeoFacts | null | undefined, ctx: SeoContext): S
   }
 
   // 5. Sitemaps: never scored. Flash's own sitemap lists only Flash's pages; a domain has its own.
-  const domain = preferredDomain(ctx.domains);
+  const domain = preferredDomain(live);
   if (facts.noindex) add("sitemap", 0, "na", "noindex");
   else if (domain) add("sitemap", 0, "flash", "domain", { url: `https://${domain}/sitemap.xml` });
   else add("sitemap", 0, "na", "flash");
@@ -532,7 +548,8 @@ export function evaluate(facts: SeoFacts | null | undefined, ctx: SeoContext): S
   if (facts.pages.length >= 2) add("hashPages", 0, "tip", "tip", { page: `#/${facts.pages[1]}` });
   if (facts.jsBuilt) add("jsBuilt", 0, "na", "na");
   if (links.external) add("externalLinks", 0, "na", "na");
-  if (facts.loadsData && !ctx.domains.length) add("loadsData", 0, "tip", "tip");
+  // On a domain too, as Google may show Flash's copy of the page.
+  if (facts.loadsData) add("loadsData", 0, "tip", "tip");
 
   const scored = checks.filter((c) => c.status === "pass" || c.status === "warn" || c.status === "fail");
   const possible = scored.reduce((sum, c) => sum + c.weight, 0);

@@ -2,12 +2,12 @@ import { getUser, unauthorized } from "@/lib/server/auth.ts";
 import { one, run } from "@/lib/server/db.ts";
 import { translatorFor } from "@/lib/server/i18n.ts";
 import { clearLimit, countOf, overLimit } from "@/lib/server/limits.ts";
-import { domainsForSite, pointsAtFlash } from "@/lib/server/domains.ts";
+import { pointsAtFlash, siteDomains } from "@/lib/server/domains.ts";
 import { cacheGet, cacheKey, cachePut } from "@/lib/server/source-fetch.ts";
 import { appBase } from "@/lib/server/seo.ts";
 import { parseRecord, REFUSED, runLock, runPageSpeed, type PageSpeedError, type PageSpeedRecord, type PageSpeedRun } from "@/lib/server/pagespeed.ts";
 import { openedOutside } from "@/lib/server/lighthouse.ts";
-import { preferredDomain } from "@/lib/seo-rules.ts";
+import { testDomain } from "@/lib/seo-rules.ts";
 import type { Translate } from "@/lib/i18n.ts";
 
 export const dynamic = "force-dynamic";
@@ -52,7 +52,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug
 
   let url = `${appBase()}/p/${site.slug}`;
   if (body?.address === "domain") {
-    const domain = preferredDomain(await domainsForSite(site.slug));
+    const domain = testDomain(await siteDomains(site.slug));
     if (!domain) return Response.json({ error: t("Not found") }, { status: 400 });
     // A domain that lapsed or points elsewhere would have Google test someone else's page.
     if (!(await pointsAtFlash(domain))) {

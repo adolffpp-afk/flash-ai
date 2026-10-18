@@ -2083,6 +2083,7 @@
  "Your page has {count} main headings (h1). Keep one.": "Din sida har {count} huvudrubriker (h1). Behåll en.",
  "Your page has {count} {tag} tags. Keep one.": "Din sida har {count} {tag}-taggar. Behåll en.",
  "Your page is in a right-to-left language but doesn't say so ({tag}).": "Din sida är på ett språk som läses från höger till vänster, men säger inte det ({tag}).",
+ "Your page is served at {url} and at {domain}, and Flash names each one as its own main address (canonical). Google shows one of the two, and may pick Flash's.": "Din sida visas på {url} och på {domain}, och Flash anger var och en som sin egen huvudadress (canonical). Google visar en av de två och kan välja den på Flash.",
  "Your page is served over https, so browsers block scripts and styles from http:// addresses, and switch pictures to https or drop them.": "Din sida skickas över https, så webbläsare blockerar skript och stilar från http://-adresser, och byter bilder till https eller tar bort dem.",
  "Your page isn't set up for phones (it has no viewport tag).": "Din sida är inte anpassad för mobiler (den har ingen viewport-tagg).",
  "Your page says it's in “{lang}”, but its text is written in another alphabet.": "Din sida säger att den är på ”{lang}”, men texten är skriven med ett annat alfabet.",

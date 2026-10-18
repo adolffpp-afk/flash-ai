@@ -27,7 +27,7 @@ const { countOf } = await import("../src/lib/server/limits.ts");
 const route = await import("../src/app/api/sites/[slug]/pagespeed/route.ts");
 const seoRoute = await import("../src/app/api/sites/[slug]/seo/route.ts");
 const aiRoute = await import("../src/app/api/sites/[slug]/ai/route.ts");
-const { labBand } = await import("../src/lib/seo-band.ts");
+const { labBand, timeLabel } = await import("../src/lib/seo-band.ts");
 
 const GOOGLE = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed";
 const KEY = `AIza${"Sy0_k-".repeat(5)}abcde`;
@@ -474,6 +474,32 @@ test("Google's test numbers are banded as its report bands them: stricter on a c
   assert.equal(said("mobile", "tbt", [150, 200, 500, 601]), "good good needs poor");
   assert.equal(said("desktop", "tbt", [150, 200, 500]), "good needs poor");
   for (const strategy of ["mobile", "desktop"] as const) assert.equal(said(strategy, "cls", [0.05, 0.1, 0.2, 0.3]), "good good needs poor");
+});
+
+test("Google's times always show their number, in every language", () => {
+  assert.deepEqual([0.98, 3.1].map((s) => timeLabel(s, "second", "en")), ["1 sec", "3.1 sec"]);
+  assert.equal(timeLabel(30, "millisecond", "en"), "30 ms");
+  assert.equal(timeLabel(0.5, "second", "ru"), "0,5 с");
+  // Chromium writes Hebrew's short seconds without the number for one (1, and 0.1 to 0.9) and in words
+  // for two, as its CLDR data has them: "שנ׳" and "שתי שנ׳". Node's data writes the number, so that's
+  // what's stood in for here.
+  const Real = Intl.NumberFormat;
+  const Chromium = function (locale: string, options?: Intl.NumberFormatOptions) {
+    const real = new Real(locale, options);
+    if (locale !== "he" || options?.unit !== "second") return real;
+    const plain = new Real("he", { maximumFractionDigits: options.maximumFractionDigits });
+    const parts = (n: number): Intl.NumberFormatPart[] =>
+      n === 2 ? [{ type: "unit", value: "שתי שנ׳" }] : n === 1 || (n > 0 && n < 1) ? [{ type: "unit", value: "שנ׳" }] : [...plain.formatToParts(n), { type: "literal", value: " " }, { type: "unit", value: "שנ׳" }];
+    return { formatToParts: parts, format: (n: number) => parts(n).map((p) => p.value).join("") } as unknown as Intl.NumberFormat;
+  } as unknown as typeof Intl.NumberFormat;
+  Intl.NumberFormat = Chromium;
+  try {
+    assert.equal(new Intl.NumberFormat("he", { style: "unit", unit: "second", unitDisplay: "short", maximumFractionDigits: 1 }).format(0.98), "שנ׳", "the stand-in");
+    assert.deepEqual([0.98, 0.52, 1, 2, 3.1, 12].map((s) => timeLabel(s, "second", "he")), ["1 שנ׳", "0.5 שנ׳", "1 שנ׳", "2 שנ׳", "3.1 שנ׳", "12 שנ׳"]);
+    assert.equal(timeLabel(30, "millisecond", "he"), "30 ms");
+  } finally {
+    Intl.NumberFormat = Real;
+  }
 });
 
 test("the key never shows in the logs or in what's kept", async () => {

@@ -1,5 +1,5 @@
 import { all, one, run } from "./db.ts";
-import { domainsForSite } from "./domains.ts";
+import { siteDomains } from "./domains.ts";
 import { SEO_VERSION, scanPage, type SeoFacts } from "../seo-scan.ts";
 import { evaluate, issueCount, type SeoContext, type SeoReport } from "../seo-rules.ts";
 import { hasOwnCanonical } from "../site-preview.ts";
@@ -57,11 +57,13 @@ export async function namesOwnCanonical(site: { slug: string; html: string; seo:
 export const appBase = () => (process.env.FLASH_APP_URL || SITE_URL).replace(/\/+$/, "");
 
 /**
- * What the check needs to know besides the page: its address on Flash, its own domains, and (for a
- * page whose scripts hold blanks like [Price]) whether every shared list it reads has entries.
+ * What the check needs to know besides the page: its address on Flash, its own domains and those of
+ * them that show it (see siteDomains), and (for a page whose scripts hold blanks like [Price]) whether
+ * every shared list it reads has entries.
  */
-export async function seoContext(slug: string, domains?: string[], facts?: SeoFacts | null): Promise<SeoContext> {
-  const ctx: SeoContext = { slug, appBase: appBase(), domains: domains ?? (await domainsForSite(slug)) };
+export async function seoContext(slug: string, known?: { domains: string[]; live: string[] }, facts?: SeoFacts | null): Promise<SeoContext> {
+  const { domains, live } = known ?? (await siteDomains(slug));
+  const ctx: SeoContext = { slug, appBase: appBase(), domains, live };
   if (await listsFilled(slug, facts)) ctx.listsFilled = true;
   return ctx;
 }

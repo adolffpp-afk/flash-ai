@@ -2083,6 +2083,7 @@
  "Your page has {count} main headings (h1). Keep one.": "Главных заголовков (h1) на странице: {count}. Оставьте один.",
  "Your page has {count} {tag} tags. Keep one.": "Тегов {tag} на странице: {count}. Оставьте один.",
  "Your page is in a right-to-left language but doesn't say so ({tag}).": "Страница на языке, который читается справа налево, но не указывает этого ({tag}).",
+ "Your page is served at {url} and at {domain}, and Flash names each one as its own main address (canonical). Google shows one of the two, and may pick Flash's.": "Ваша страница открывается по адресу {url} и по адресу {domain}, и Flash указывает каждый из них как собственный основной адрес (canonical). Google показывает один из двух и может выбрать адрес Flash.",
  "Your page is served over https, so browsers block scripts and styles from http:// addresses, and switch pictures to https or drop them.": "Ваша страница открывается по https, поэтому браузеры блокируют скрипты и стили с адресов http://, а изображения переводят на https или убирают.",
  "Your page isn't set up for phones (it has no viewport tag).": "Страница не настроена для телефонов (нет тега viewport).",
  "Your page says it's in “{lang}”, but its text is written in another alphabet.": "Страница указывает язык «{lang}», но ее текст написан другим алфавитом.",

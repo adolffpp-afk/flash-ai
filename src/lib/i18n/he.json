@@ -2083,6 +2083,7 @@
  "Your page has {count} main headings (h1). Keep one.": "בדף יש {count} כותרות ראשיות (h1). צריך להשאיר אחת.",
  "Your page has {count} {tag} tags. Keep one.": "בדף יש {count} תגי {tag}. צריך להשאיר אחד.",
  "Your page is in a right-to-left language but doesn't say so ({tag}).": "הדף בשפה שנקראת מימין לשמאל, אבל לא מציין זאת ({tag}).",
+ "Your page is served at {url} and at {domain}, and Flash names each one as its own main address (canonical). Google shows one of the two, and may pick Flash's.": "הדף שלך מוגש בכתובת {url} וגם בכתובת {domain}, ו-Flash מציין כל אחת מהן ככתובת הראשית של עצמה (canonical). Google מציג אחת מהשתיים, ועשוי לבחור את זו של Flash.",
  "Your page is served over https, so browsers block scripts and styles from http:// addresses, and switch pictures to https or drop them.": "הדף מוגש ב-https, ולכן דפדפנים חוסמים סקריפטים וסגנונות מכתובות http://, ומעבירים תמונות ל-https או משמיטים אותן.",
  "Your page isn't set up for phones (it has no viewport tag).": "הדף לא מוגדר לטלפונים (אין בו תג viewport).",
  "Your page says it's in “{lang}”, but its text is written in another alphabet.": "הדף אומר שהוא ב-„{lang}”, אבל הטקסט שלו כתוב באלפבית אחר.",

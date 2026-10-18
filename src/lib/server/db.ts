@@ -750,6 +750,8 @@ const MIGRATIONS = [
   "ALTER TABLE sites ADD COLUMN seo TEXT NOT NULL DEFAULT ''",
   // The app's last Google PageSpeed Insights result (see pagespeed.ts). Empty until its owner runs one.
   "ALTER TABLE sites ADD COLUMN pagespeed TEXT NOT NULL DEFAULT ''",
+  // When Flash last saw a custom domain point at it (see domainStatus); 0 when it last saw it didn't, or hasn't looked yet.
+  "ALTER TABLE site_domains ADD COLUMN connected_at INTEGER NOT NULL DEFAULT 0",
   // The stages of the app's contact list, as JSON [{id, name}]; '' is New, Contacted, Won, Lost.
   "ALTER TABLE sites ADD COLUMN contact_stages TEXT NOT NULL DEFAULT ''",
   // The app's own key for its unsubscribe links and its contacts' hashed addresses, made on first use.

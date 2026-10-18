@@ -120,7 +120,13 @@ export async function domainStatus(domain: string): Promise<DomainStatus> {
       records.push({ type: "A", name: "@", value: top<string[]>(config.json.recommendedIPv4)?.[0] || FALLBACK_IP });
     }
   }
-  return { domain, connected: info.status === 200 && info.json.verified !== false && !misconfigured, records };
+  const connected = info.status === 200 && info.json.verified !== false && !misconfigured;
+  // Kept with the domain, so what's served on the app's other domains knows whether this one shows the
+  // app too (see siteDomains), without asking Vercel on every visit. Only a sure answer is kept.
+  if ((info.status === 200 && config.status === 200) || info.status === 404) {
+    await run("UPDATE site_domains SET connected_at = ? WHERE domain = ?", [connected ? now() : 0, domain]);
+  }
+  return { domain, connected, records };
 }
 
 /**
@@ -139,8 +145,23 @@ export async function siteForDomain(domain: string): Promise<string | null> {
 }
 
 export async function domainsForSite(slug: string): Promise<string[]> {
-  return (await all<{ domain: string }>("SELECT domain FROM site_domains WHERE site_slug = ? ORDER BY created_at", [slug])).map((r) => r.domain);
+  return (await siteDomains(slug)).domains;
 }
+
+/**
+ * A site's custom domains, oldest first, and those of them Flash last saw pointing at it (live, see
+ * domainStatus): only those show the app. A domain connected before Flash kept this counts once it's
+ * looked at again (My websites & apps > Domain, a check with Google there, or opening it as owner).
+ */
+export async function siteDomains(slug: string): Promise<{ domains: string[]; live: string[] }> {
+  return siteDomainsOf(await all<{ domain: string; connected_at: number }>("SELECT domain, connected_at FROM site_domains WHERE site_slug = ? ORDER BY created_at", [slug]));
+}
+
+/** One site's site_domains rows as siteDomains gives them. */
+export const siteDomainsOf = (rows: { domain: string; connected_at: number }[]) => ({
+  domains: rows.map((r) => r.domain),
+  live: rows.filter((r) => Number(r.connected_at) > 0).map((r) => r.domain),
+});
 
 /**
  * Connects a domain to one of the user's sites, once its DNS proves it is theirs (see

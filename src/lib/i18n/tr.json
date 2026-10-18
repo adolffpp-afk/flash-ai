@@ -2083,6 +2083,7 @@
  "Your page has {count} main headings (h1). Keep one.": "Sayfanda {count} ana başlık (h1) var. Birini bırak.",
  "Your page has {count} {tag} tags. Keep one.": "Sayfanda {count} {tag} etiketi var. Birini bırak.",
  "Your page is in a right-to-left language but doesn't say so ({tag}).": "Sayfan sağdan sola okunan bir dilde ama bunu belirtmiyor ({tag}).",
+ "Your page is served at {url} and at {domain}, and Flash names each one as its own main address (canonical). Google shows one of the two, and may pick Flash's.": "Sayfan hem {url} hem de {domain} adresinde sunuluyor ve Flash her birini kendi ana adresi (canonical) olarak bildiriyor. Google ikisinden birini gösterir ve Flash'takini seçebilir.",
  "Your page is served over https, so browsers block scripts and styles from http:// addresses, and switch pictures to https or drop them.": "Sayfan https üzerinden sunuluyor, bu yüzden tarayıcılar http:// adreslerinden gelen betikleri ve stilleri engeller, görselleri https'e çevirir ya da kaldırır.",
  "Your page isn't set up for phones (it has no viewport tag).": "Sayfan telefonlar için ayarlanmamış (viewport etiketi yok).",
  "Your page says it's in “{lang}”, but its text is written in another alphabet.": "Sayfan “{lang}” dilinde olduğunu söylüyor ama metni başka bir alfabeyle yazılmış.",

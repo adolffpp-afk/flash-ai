@@ -20,7 +20,7 @@ import { Templates } from "./Templates";
 import { MyApps } from "./MyApps";
 import type { FixPlan, SiteFix } from "./SeoView";
 import type { CheckId } from "@/lib/seo-rules";
-import { newestApp, stillAnswering } from "@/lib/seo-chat";
+import { chatForFix, newestApp, stillAnswering } from "@/lib/seo-chat";
 import { BuildPanel, useMedia } from "./BuildPanel";
 import { draftShown, draftStore, startsWriting } from "@/lib/live-draft";
 import { OFFICE_TYPES, officeKind, officeText } from "@/lib/office";
@@ -722,8 +722,7 @@ export function Flash({
     if (known) return known;
     try {
       const { project } = await api<{ project: Project }>(`/api/projects/${id}`);
-      // A reply still pending there is one the server is working on; the watch below shows it once it's done.
-      const messages = project.messages?.map((m) => (m.pending ? { ...m, status: t(STILL_WORKING) } : m)) ?? [];
+      const messages = watched(project.messages ?? []);
       const instructions = project.instructions ?? "";
       setProjects((list) =>
         list.some((p) => p.id === id)
@@ -734,6 +733,29 @@ export function Flash({
     } catch {
       return null;
     }
+  }
+
+  // A reply still pending in a chat loaded from the server is one the server is working on; the watch
+  // above shows it once it's done.
+  const watched = (messages: UIMessage[]) => messages.map((m) => (m.pending ? { ...m, status: t(STILL_WORKING) } : m));
+
+  /**
+   * A chat's messages for a change the search check asks for, read from the server again even when
+   * this page has them: another tab or device may have added a reply since, or still be writing one,
+   * and this page doesn't hear about either (see chatForFix). The page then shows the server's copy,
+   * unless its own changed meanwhile. busy: Flash is still writing a reply there. Null when the chat
+   * can't be loaded.
+   */
+  async function chatToFix(id: string): Promise<{ messages: UIMessage[]; busy: boolean } | null> {
+    const here = projects.find((p) => p.id === id)?.messages;
+    if (!here) {
+      const messages = await chatMessages(id);
+      return messages && { messages, busy: stillAnswering(messages) };
+    }
+    const load = async () => watched((await api<{ project: Project }>(`/api/projects/${id}`)).project.messages ?? []);
+    const chat = await chatForFix(here, load, dirtyRef.current.has(id));
+    if (chat.adopt) setProjects((list) => list.map((p) => (p.id === id && p.messages === here ? { ...p, messages: chat.messages } : p)));
+    return chat;
   }
 
   function updateProject(id: string, fn: (p: Project) => Project) {
@@ -957,9 +979,9 @@ export function Flash({
    * (see fixFor): the points that fit, or why none would go. The panel lists it before Send is pressed.
    */
   async function planFix(fix: SiteFix): Promise<FixPlan> {
-    const messages = await chatMessages(fix.projectId);
-    if (!messages) return { why: t("Couldn't find the chat that built this site.") };
-    const plan = await fixFor(fix, messages);
+    const chat = await chatToFix(fix.projectId);
+    if (!chat) return { why: t("Couldn't find the chat that built this site.") };
+    const plan = await fixFor(fix, chat.messages);
     return "why" in plan ? plan : { sent: plan.sent, left: plan.left };
   }
 
@@ -975,11 +997,11 @@ export function Flash({
   async function fixSite(fix: SiteFix): Promise<FixPlan | null> {
     const busyNote = { why: t(BUSY_FIX), busy: true as const };
     if (busy || runningRef.current) return busyNote;
-    const messages = await chatMessages(fix.projectId);
-    if (!messages) return { why: t("Couldn't find the chat that built this site.") };
+    const chat = await chatToFix(fix.projectId);
+    if (!chat) return { why: t("Couldn't find the chat that built this site.") };
     // A reply Flash is finishing there (asked in another tab, or before this page was left) comes first.
-    if (stillAnswering(messages)) return busyNote;
-    const plan = await fixFor(fix, messages);
+    if (chat.busy) return busyNote;
+    const plan = await fixFor(fix, chat.messages);
     if ("why" in plan) return plan;
     if (fix.shown && plan.sent.join() !== fix.shown.join()) return { sent: plan.sent, left: plan.left };
     if (runningRef.current) return busyNote;
@@ -996,9 +1018,9 @@ export function Flash({
    * nothing is added and the answer is why, as for Fix it, so the details never go to the wrong site.
    */
   async function draftInChat({ projectId, slug, text }: { projectId: string; slug: string; text: string }): Promise<{ why: string; chat?: string } | null> {
-    const messages = await chatMessages(projectId);
-    if (!messages) return { why: t("Couldn't find the chat that built this site.") };
-    if (newestApp(messages).site !== slug) return { why: t("The newest app in that chat is a different site, so Flash didn't add your details there."), chat: t(OTHER_SITE) };
+    const chat = await chatToFix(projectId);
+    if (!chat) return { why: t("Couldn't find the chat that built this site.") };
+    if (newestApp(chat.messages).site !== slug) return { why: t("The newest app in that chat is a different site, so Flash didn't add your details there."), chat: t(OTHER_SITE) };
     closeApps();
     showChat(projectId);
     // After anything already typed there, never in its place.
@@ -1034,17 +1056,20 @@ export function Flash({
 
   /**
    * Sends a change the search check asked for in the chat that built the site, as a normal change to
-   * its newest app, priced and charged exactly like one typed here. That copy is checked again first
-   * (fixSite did, but the chat may have changed since): when nothing would be sent, a notice says why.
+   * its newest app, priced and charged exactly like one typed here. The server's copy of that chat is
+   * checked again first (fixSite did, but the chat may have changed since, here or in another tab):
+   * when nothing would be sent, a notice says why.
    */
   async function sendFix(fix: SiteFix) {
-    const chat = projects.find((p) => p.id === fix.projectId);
-    const messages = chat?.messages;
-    if (!chat || !messages || busy || runningRef.current) return;
-    if (stillAnswering(messages)) return setNotice(t(BUSY_FIX));
-    const plan = await fixFor(fix, messages);
+    const project = projects.find((p) => p.id === fix.projectId);
+    if (!project?.messages || busy || runningRef.current) return;
+    const chat = await chatToFix(fix.projectId);
+    if (!chat) return setNotice(t("Couldn't find the chat that built this site."));
+    if (chat.busy) return setNotice(t(BUSY_FIX));
+    const plan = await fixFor(fix, chat.messages);
     if ("why" in plan) setNotice(plan.why);
-    else await respond(chat, messages, plan.message);
+    // On the server's copy of the chat, so the change lands after a reply asked in another tab.
+    else await respond(project, chat.messages, plan.message);
   }
   const sendFixRef = useRef(sendFix);
   useEffect(() => {

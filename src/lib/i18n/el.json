@@ -2083,6 +2083,7 @@
  "Your page has {count} main headings (h1). Keep one.": "Η σελίδα σου έχει {count} κύριες επικεφαλίδες (h1). Κράτα μία.",
  "Your page has {count} {tag} tags. Keep one.": "Η σελίδα σου έχει {count} ετικέτες {tag}. Κράτα μία.",
  "Your page is in a right-to-left language but doesn't say so ({tag}).": "Η σελίδα σου είναι σε γλώσσα που διαβάζεται από δεξιά προς τα αριστερά, αλλά δεν το δηλώνει ({tag}).",
+ "Your page is served at {url} and at {domain}, and Flash names each one as its own main address (canonical). Google shows one of the two, and may pick Flash's.": "Η σελίδα σου σερβίρεται στο {url} και στο {domain}, και το Flash δηλώνει την καθεμία ως τη δική της κύρια διεύθυνση (canonical). Το Google δείχνει μία από τις δύο και μπορεί να διαλέξει του Flash.",
  "Your page is served over https, so browsers block scripts and styles from http:// addresses, and switch pictures to https or drop them.": "Η σελίδα σου σερβίρεται μέσω https, οπότε τα προγράμματα περιήγησης μπλοκάρουν σενάρια και στυλ από διευθύνσεις http://, και γυρίζουν τις εικόνες σε https ή τις παραλείπουν.",
  "Your page isn't set up for phones (it has no viewport tag).": "Η σελίδα σου δεν είναι ρυθμισμένη για κινητά (δεν έχει ετικέτα viewport).",
  "Your page says it's in “{lang}”, but its text is written in another alphabet.": "Η σελίδα σου λέει ότι είναι στα «{lang}», αλλά το κείμενό της είναι γραμμένο σε άλλο αλφάβητο.",

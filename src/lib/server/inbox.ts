@@ -5,6 +5,7 @@ import { EMAILS, sendEmail } from "./email.ts";
 import { refreshRules } from "./site-data.ts";
 import { noteSender } from "./contacts.ts";
 import { parseFacts, seoContext, seoSummary } from "./seo.ts";
+import { siteDomainsOf } from "./domains.ts";
 import { anyOpen, isDataRule, parseComputed, type DataRule } from "../data-rules.ts";
 import { english, type Translate } from "../i18n.ts";
 
@@ -131,7 +132,10 @@ export async function sitesWithMessages(userId: string) {
     "SELECT r.site_slug, r.collection, r.rule FROM site_collection_rules r JOIN sites s ON s.slug = r.site_slug WHERE s.user_id = ?",
     [userId],
   );
-  const domains = await all<{ site_slug: string; domain: string }>("SELECT site_slug, domain FROM site_domains WHERE user_id = ? ORDER BY created_at", [userId]);
+  const domains = await all<{ site_slug: string; domain: string; connected_at: number }>(
+    "SELECT site_slug, domain, connected_at FROM site_domains WHERE user_id = ? ORDER BY created_at",
+    [userId],
+  );
   const sites = [];
   for (const { data_rules, seo, ...r } of rows) {
     // Sites published before data rules existed get theirs worked out here, once.
@@ -148,7 +152,7 @@ export async function sitesWithMessages(userId: string) {
       contacts: r.contacts === null ? null : Number(r.contacts),
       openData: computed ? anyOpen(computed, Object.fromEntries(mine)) : false,
       // Missing or old facts are worked out after the list is answered (see refreshStale).
-      seo: seoSummary(facts, await seoContext(r.slug, domains.filter((d) => d.site_slug === r.slug).map((d) => d.domain), facts)),
+      seo: seoSummary(facts, await seoContext(r.slug, siteDomainsOf(domains.filter((d) => d.site_slug === r.slug)), facts)),
     });
   }
   return sites;

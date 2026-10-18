@@ -2083,6 +2083,7 @@
  "Your page has {count} main headings (h1). Keep one.": "May {count} na pangunahing heading (h1) ang page mo. Mag-iwan ng isa.",
  "Your page has {count} {tag} tags. Keep one.": "May {count} na {tag} tag ang page mo. Mag-iwan ng isa.",
  "Your page is in a right-to-left language but doesn't say so ({tag}).": "Nasa wikang binabasa mula kanan pakaliwa ang page mo pero hindi ito sinasabi ({tag}).",
+ "Your page is served at {url} and at {domain}, and Flash names each one as its own main address (canonical). Google shows one of the two, and may pick Flash's.": "Naka-serve ang page mo sa {url} at sa {domain}, at sinasabi ng Flash na ang bawat isa ang sarili nitong pangunahing address (canonical). Isa lang sa dalawa ang ipinapakita ng Google, at maaaring ang sa Flash ang piliin nito.",
  "Your page is served over https, so browsers block scripts and styles from http:// addresses, and switch pictures to https or drop them.": "Sine-serve ang page mo sa https, kaya bina-block ng mga browser ang mga script at style mula sa mga http:// address, at inililipat sa https o tinatanggal ang mga larawan.",
  "Your page isn't set up for phones (it has no viewport tag).": "Hindi naka-set up para sa phone ang page mo (walang viewport tag).",
  "Your page says it's in “{lang}”, but its text is written in another alphabet.": "Sinasabi ng page mo na nasa “{lang}” ito, pero nakasulat ang text sa ibang alpabeto.",

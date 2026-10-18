@@ -2083,6 +2083,7 @@
  "Your page has {count} main headings (h1). Keep one.": "Paj ou gen {count} tit prensipal (h1). Kenbe youn.",
  "Your page has {count} {tag} tags. Keep one.": "Paj ou gen {count} etikèt {tag}. Kenbe youn.",
  "Your page is in a right-to-left language but doesn't say so ({tag}).": "Paj ou nan yon lang yo li soti adwat ale agoch, men li pa di sa ({tag}).",
+ "Your page is served at {url} and at {domain}, and Flash names each one as its own main address (canonical). Google shows one of the two, and may pick Flash's.": "Yo sèvi paj ou a sou {url} ak sou {domain}, epi Flash bay chak youn kòm pwòp adrès prensipal li (canonical). Google montre youn nan de yo, e li ka chwazi sa Flash la.",
  "Your page is served over https, so browsers block scripts and styles from http:// addresses, and switch pictures to https or drop them.": "Paj ou sèvi sou https, kidonk navigatè yo bloke script ak stil ki soti nan adrès http://, epi yo chanje foto yo pou https oswa yo retire yo.",
  "Your page isn't set up for phones (it has no viewport tag).": "Paj ou pa prepare pou telefòn (li pa gen etikèt viewport).",
  "Your page says it's in “{lang}”, but its text is written in another alphabet.": "Paj ou di li an “{lang}”, men tèks li ekri ak yon lòt alfabè.",

@@ -2083,6 +2083,7 @@
  "Your page has {count} main headings (h1). Keep one.": "Ukurasa wako una vichwa vikuu {count} (h1). Acha kimoja.",
  "Your page has {count} {tag} tags. Keep one.": "Ukurasa wako una lebo {count} za {tag}. Acha moja.",
  "Your page is in a right-to-left language but doesn't say so ({tag}).": "Ukurasa wako uko kwa lugha inayosomwa kutoka kulia kwenda kushoto lakini hausemi hivyo ({tag}).",
+ "Your page is served at {url} and at {domain}, and Flash names each one as its own main address (canonical). Google shows one of the two, and may pick Flash's.": "Ukurasa wako unatolewa kwenye {url} na kwenye {domain}, na Flash inataja kila moja kama anwani kuu yake yenyewe (canonical). Google huonyesha mojawapo, na inaweza kuchagua ile ya Flash.",
  "Your page is served over https, so browsers block scripts and styles from http:// addresses, and switch pictures to https or drop them.": "Ukurasa wako hutolewa kupitia https, kwa hivyo vivinjari huzuia hati na mitindo kutoka anwani za http://, na hubadilisha picha ziwe https au kuziacha.",
  "Your page isn't set up for phones (it has no viewport tag).": "Ukurasa wako haujawekwa kwa ajili ya simu (hauna lebo ya viewport).",
  "Your page says it's in “{lang}”, but its text is written in another alphabet.": "Ukurasa wako unasema uko kwa “{lang}”, lakini maandishi yake yameandikwa kwa alfabeti nyingine.",

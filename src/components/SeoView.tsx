@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "@/lib/store";
 import { msg } from "@/lib/i18n";
 import { useT, type T } from "@/lib/use-t";
-import { band, labBand, type Band } from "@/lib/seo-band";
+import { BAND_TEXT, band, labBand, timeLabel, type Band } from "@/lib/seo-band";
 import { fixContext, fixableIds, stillToFix, type Check, type CheckId, type SeoContext, type SeoReport } from "@/lib/seo-rules";
 import { labelOf, messageOf, whyOf } from "@/lib/seo-words";
 import type { PageSpeedError, PageSpeedRecord, PageSpeedRun, Rating } from "@/lib/server/pagespeed";
@@ -44,7 +44,6 @@ export type SiteFix = { projectId: string; slug: string; title: string; ids: Che
 export type FixPlan = { sent: CheckId[]; left: number } | { why: string; busy?: true; chat?: string };
 
 const BAND_WORDS: Record<Band, string> = { good: msg("Good"), needs: msg("Needs work"), poor: msg("Poor") };
-const BAND_TEXT: Record<Band, string> = { good: "text-emerald-400", needs: "text-gold-soft", poor: "text-red-400" };
 const HOW = msg(
   "Flash reads your published page's code and checks what Google and visitors need. Important checks, like having a title, count three times as much as small ones; a check that needs only a small change gets half its points. Checks that don't apply to your page don't count. It's Flash's own check of your page's code, it's free, and it isn't your place in Google's results.",
 );
@@ -94,17 +93,9 @@ const sizeLabel = (bytes: number, t: T) =>
 const shortUrl = (url: string) => url.replace(/^https?:\/\//, "").replace(/\/$/, "");
 const isIssue = (c: Check) => c.status === "fail" || c.status === "warn";
 
-function unit(n: number, name: "second" | "millisecond", locale: string) {
-  try {
-    return new Intl.NumberFormat(locale, { style: "unit", unit: name, unitDisplay: "short", maximumFractionDigits: name === "second" ? 1 : 0 }).format(n);
-  } catch {
-    return `${n} ${name === "second" ? "s" : "ms"}`;
-  }
-}
-
 // Blanks filled with a piece of the page's code (a tag, an address, a CSS size), shown as code: left
 // to right in every language.
-const CODE_BLANKS = new Set(["tag", "tags", "url", "links", "value"]);
+const CODE_BLANKS = new Set(["tag", "tags", "url", "domain", "links", "value"]);
 const CODE_LISTS = new Set<CheckId>(["textSize", "tapTargets", "blocking", "mixed"]);
 
 /** What a check found, in the owner's words, with what came from the page shown as it's written. */
@@ -712,8 +703,8 @@ function PageSpeed({ slug, data }: { slug: string; data: SeoData }) {
 function Run({ run, strategy }: { run: PageSpeedRun; strategy: "mobile" | "desktop" }) {
   const t = useT();
   if (!run.ok) return <p className="text-sm text-gold-soft">{t(RUN_ERRORS[run.error])}</p>;
-  const seconds = (ms: number) => unit(ms / 1000, "second", t.locale);
-  const millis = (ms: number) => unit(Math.round(ms), "millisecond", t.locale);
+  const seconds = (ms: number) => timeLabel(ms / 1000, "second", t.locale);
+  const millis = (ms: number) => timeLabel(Math.round(ms), "millisecond", t.locale);
   const shift = (n: number) => n.toLocaleString(t.locale, { maximumFractionDigits: 2 });
   const heading = "text-xs font-medium uppercase tracking-wider text-zinc-500";
   const { field, lab } = run;

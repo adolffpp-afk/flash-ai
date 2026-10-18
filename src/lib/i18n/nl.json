@@ -2083,6 +2083,7 @@
  "Your page has {count} main headings (h1). Keep one.": "Je pagina heeft {count} hoofdkoppen (h1). Houd er één.",
  "Your page has {count} {tag} tags. Keep one.": "Je pagina heeft {count} {tag}-tags. Houd er één.",
  "Your page is in a right-to-left language but doesn't say so ({tag}).": "Je pagina is in een taal die van rechts naar links leest, maar zegt dat niet ({tag}).",
+ "Your page is served at {url} and at {domain}, and Flash names each one as its own main address (canonical). Google shows one of the two, and may pick Flash's.": "Je pagina wordt getoond op {url} en op {domain}, en Flash geeft elk ervan op als zijn eigen hoofdadres (canonical). Google toont een van de twee, en kiest misschien die van Flash.",
  "Your page is served over https, so browsers block scripts and styles from http:// addresses, and switch pictures to https or drop them.": "Je pagina wordt via https geleverd, dus browsers blokkeren scripts en stijlen van http://-adressen, en zetten afbeeldingen om naar https of laten ze weg.",
  "Your page isn't set up for phones (it has no viewport tag).": "Je pagina is niet ingericht voor telefoons (ze heeft geen viewport-tag).",
  "Your page says it's in “{lang}”, but its text is written in another alphabet.": "Je pagina zegt dat ze in ‘{lang}’ is, maar de tekst is in een ander alfabet geschreven.",

@@ -2083,6 +2083,7 @@
  "Your page has {count} main headings (h1). Keep one.": "你的頁面有 {count} 個主標題（h1）。只保留一個。",
  "Your page has {count} {tag} tags. Keep one.": "你的頁面有 {count} 個 {tag} 標記。只保留一個。",
  "Your page is in a right-to-left language but doesn't say so ({tag}).": "你的頁面使用由右往左閱讀的語言，但沒有標明（{tag}）。",
+ "Your page is served at {url} and at {domain}, and Flash names each one as its own main address (canonical). Google shows one of the two, and may pick Flash's.": "你的頁面同時在 {url} 和 {domain} 提供，Flash 把每個網址都標為它自己的主要網址（canonical）。Google 只會顯示其中一個，也可能選 Flash 上的那個。",
  "Your page is served over https, so browsers block scripts and styles from http:// addresses, and switch pictures to https or drop them.": "你的頁面透過 https 提供，所以瀏覽器會封鎖來自 http:// 網址的指令碼和樣式，並把圖片切換成 https 或直接不顯示。",
  "Your page isn't set up for phones (it has no viewport tag).": "你的頁面沒有針對手機設定（沒有 viewport 標記）。",
  "Your page says it's in “{lang}”, but its text is written in another alphabet.": "你的頁面說自己是「{lang}」，但內文是用另一種文字寫的。",

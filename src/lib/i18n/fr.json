@@ -2083,6 +2083,7 @@
  "Your page has {count} main headings (h1). Keep one.": "Votre page a {count} titres principaux (h1). Gardez-en un.",
  "Your page has {count} {tag} tags. Keep one.": "Votre page a {count} balises {tag}. Gardez-en une.",
  "Your page is in a right-to-left language but doesn't say so ({tag}).": "Votre page est dans une langue qui se lit de droite à gauche, mais ne l'indique pas ({tag}).",
+ "Your page is served at {url} and at {domain}, and Flash names each one as its own main address (canonical). Google shows one of the two, and may pick Flash's.": "Votre page est servie à {url} et à {domain}, et Flash indique chacune comme sa propre adresse principale (canonical). Google affiche l'une des deux, et peut choisir celle de Flash.",
  "Your page is served over https, so browsers block scripts and styles from http:// addresses, and switch pictures to https or drop them.": "Votre page est servie en https, donc les navigateurs bloquent les scripts et les styles venant d'adresses http://, et passent les images en https ou les retirent.",
  "Your page isn't set up for phones (it has no viewport tag).": "Votre page n'est pas prévue pour les téléphones (elle n'a pas de balise viewport).",
  "Your page says it's in “{lang}”, but its text is written in another alphabet.": "Votre page dit être en « {lang} », mais son texte est écrit dans un autre alphabet.",

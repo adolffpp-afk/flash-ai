@@ -12,6 +12,11 @@ const { cleanDomain, isSubdomain, addDomain, siteForDomain, removeDomain, domain
   await import("../src/lib/server/domains.ts");
 const { routeHost } = await import("../src/lib/site-host.ts");
 const domainFile = await import("../src/app/d/[host]/[file]/route.ts");
+const domainPage = await import("../src/app/d/[host]/route.ts");
+const domainsRoute = await import("../src/app/api/sites/[slug]/domains/route.ts");
+const seoRoute = await import("../src/app/api/sites/[slug]/seo/route.ts");
+const { messageOf } = await import("../src/lib/seo-words.ts");
+const { createHash } = await import("node:crypto");
 
 test("domains people type are cleaned, and Flash's own can't be claimed", () => {
   assert.equal(cleanDomain(" https://WWW.CrumbBakery.com/menu "), "www.crumbbakery.com");
@@ -183,8 +188,12 @@ test("a site on its own domain has a robots.txt that lets Google in and a sitema
   assert.match(await (await get("robotsbakery.com", "sitemap.xml")).text(), /<loc>/, "listed again once it's reviewed");
 
   // With www. connected too, both name the bare domain's sitemap, and only that one lists the page,
-  // under the bare address (as the page names it), so the two copies don't compete.
-  await run("INSERT INTO site_domains (domain, site_slug, user_id, created_at) VALUES ('www.robotsbakery.com', 'robots-1', 'u9', 1)");
+  // under the bare address (as the page names it), so the two copies don't compete: once Flash saw the
+  // bare domain lead to it. Until then www. is the address that shows the app, and lists itself.
+  await run("INSERT INTO site_domains (domain, site_slug, user_id, created_at, connected_at) VALUES ('www.robotsbakery.com', 'robots-1', 'u9', 1, 5)");
+  assert.equal(await (await get("www.robotsbakery.com", "robots.txt")).text(), "User-agent: *\nAllow: /\nSitemap: https://www.robotsbakery.com/sitemap.xml\n");
+  assert.match(await (await get("www.robotsbakery.com", "sitemap.xml")).text(), /<loc>https:\/\/www.robotsbakery.com\/<\/loc>/);
+  await run("UPDATE site_domains SET connected_at = 5 WHERE domain = 'robotsbakery.com'");
   for (const host of ["robotsbakery.com", "www.robotsbakery.com"]) {
     assert.equal(await (await get(host, "robots.txt")).text(), "User-agent: *\nAllow: /\nSitemap: https://robotsbakery.com/sitemap.xml\n", host);
   }
@@ -222,4 +231,70 @@ test("only a domain that leads to Flash now counts as pointing at it", async () 
   delete process.env.VERCEL_API_TOKEN;
   assert.equal(await pointsAtFlash("crumbbakery.com"), false, "without Vercel nothing can be checked");
   process.env.VERCEL_API_TOKEN = token;
+});
+
+test("www. names its bare domain as the main address only once the bare domain leads to Flash too", async () => {
+  process.env.FLASH_APP_URL = "https://www.flash-app.dev";
+  process.env.FLASH_ADMIN_EMAILS = "owner@x.co,crumb@x.co";
+  await run("INSERT INTO users (id, email, password_hash, created_at, verified_at) VALUES ('u7', 'crumb@x.co', 'h', 0, 1)");
+  await run("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, 'u7', ?)", [createHash("sha256").update("tok-u7").digest("hex"), Date.now() + 3600_000]);
+  const page = '<!doctype html><html lang="en"><head><title>Golden Crumb · Sourdough bakery</title></head><body><h1>Bread</h1></body></html>';
+  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES ('crumb-7', 'u7', 'Crumb', ?, 0, 1)", [page]);
+  // Vercel: www.'s CNAME is set, so www. shows the app; the bare domain's A record still leads to its old host.
+  let apexMoved = false;
+  let vercelDown = false;
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    if (vercelDown) return Response.json({ error: { code: "internal" } }, { status: 500 });
+    if (url.includes("/config")) return Response.json({ misconfigured: !url.includes("www.crumb.pt") && !apexMoved });
+    if (init?.method === "POST") return Response.json({ name: "x", verified: true });
+    return Response.json({ verified: true });
+  }) as typeof fetch;
+  const owner = { id: "u7", email: "crumb@x.co", name: "", verified_at: 1 } as never;
+  const proved = async () => [[ownershipValue("u7")]];
+  // The owner connects crumb.pt ("Waiting for the DNS record"), follows the tip and connects www. too.
+  const bare = await addDomain(owner, "crumb-7", "crumb.pt", proved);
+  const www = await addDomain(owner, "crumb-7", "www.crumb.pt", proved);
+  assert.deepEqual(["connected" in bare && bare.connected, "connected" in www && www.connected], [false, true]);
+
+  const cookie = { cookie: "flash_session=tok-u7" };
+  const canonical = async (host: string) =>
+    /<link rel="canonical" href="([^"]+)"/.exec(await (await domainPage.GET(new Request(`http://localhost/d/${host}`), { params: Promise.resolve({ host }) } as never)).text())?.[1];
+  const file = async (host: string, name: string) => (await domainFile.GET(new Request(`http://localhost/d/${host}/${name}`), { params: Promise.resolve({ host, file: name }) } as never)).text();
+  const seo = async () => {
+    const body = await (await seoRoute.GET(new Request("http://localhost/api/sites/crumb-7/seo", { headers: cookie }), { params: Promise.resolve({ slug: "crumb-7" }) } as never)).json();
+    const of = (id: string) => body.report.checks.find((c: { id: string }) => c.id === id);
+    return { sitemap: of("sitemap").values.url, canonical: [messageOf(of("canonical")), of("canonical").values.domain], domainTest: body.domainTest };
+  };
+  // www. is the only address that shows the app, so it names itself and lists itself; so does the SEO view.
+  assert.equal(await canonical("www.crumb.pt"), "https://www.crumb.pt/");
+  assert.equal(await file("www.crumb.pt", "robots.txt"), "User-agent: *\nAllow: /\nSitemap: https://www.crumb.pt/sitemap.xml\n");
+  assert.match(await file("www.crumb.pt", "sitemap.xml"), /<loc>https:\/\/www\.crumb\.pt\/<\/loc>/);
+  const before = await seo();
+  assert.equal(before.sitemap, "https://www.crumb.pt/sitemap.xml");
+  assert.equal(before.domainTest, "www.crumb.pt", "Check with Google tests the domain that works");
+  assert.deepEqual(before.canonical, [messageOf({ id: "canonical", problem: "domains" }), "https://www.crumb.pt/"], "the page is on Flash's address and on www.");
+
+  // A Vercel outage while the owner looks changes nothing Flash knows.
+  vercelDown = true;
+  await domainsRoute.GET(new Request("http://localhost/api/sites/crumb-7/domains", { headers: cookie }), { params: Promise.resolve({ slug: "crumb-7" }) } as never);
+  vercelDown = false;
+  assert.equal(await canonical("www.crumb.pt"), "https://www.crumb.pt/");
+
+  // The bare domain's A record is fixed, and the owner presses Check again: from then on both name it.
+  apexMoved = true;
+  const checked = await (await domainsRoute.GET(new Request("http://localhost/api/sites/crumb-7/domains", { headers: cookie }), { params: Promise.resolve({ slug: "crumb-7" }) } as never)).json();
+  assert.deepEqual(checked.domains.map((d: { connected: boolean }) => d.connected), [true, true]);
+  for (const host of ["crumb.pt", "www.crumb.pt"]) {
+    assert.equal(await canonical(host), "https://crumb.pt/", host);
+    assert.equal(await file(host, "robots.txt"), "User-agent: *\nAllow: /\nSitemap: https://crumb.pt/sitemap.xml\n", host);
+  }
+  assert.doesNotMatch(await file("www.crumb.pt", "sitemap.xml"), /<loc>/);
+  const after = await seo();
+  assert.deepEqual([after.sitemap, after.domainTest, after.canonical[1]], ["https://crumb.pt/sitemap.xml", "crumb.pt", "https://crumb.pt/"]);
+
+  // It moves back to its old host: seen when Flash next looks (here, Check again), www. names itself again.
+  apexMoved = false;
+  await domainsRoute.GET(new Request("http://localhost/api/sites/crumb-7/domains", { headers: cookie }), { params: Promise.resolve({ slug: "crumb-7" }) } as never);
+  assert.equal(await canonical("www.crumb.pt"), "https://www.crumb.pt/");
 });

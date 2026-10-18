@@ -402,7 +402,11 @@ export function AppPreview({
               {onSeo && app.slug && unpublished !== app.slug && (
                 <button
                   className={`${btn} inline-flex items-center gap-1`}
-                  onClick={() => onSeo(app.slug!)}
+                  onClick={() => {
+                    // My websites & apps opens under a full-screen preview, so the preview leaves full screen first.
+                    setFull(false);
+                    onSeo(app.slug!);
+                  }}
                   title={publishSeo?.score != null ? t("To fix: {count}", { count: publishSeo.issues.toLocaleString(t.locale) }) : t("How easy your app is to find on Google, and what to fix")}
                 >
                   <span aria-hidden>🔎</span> {t("SEO")}
