@@ -1006,6 +1006,8 @@
  "Nothing to publish.": "چیزی برای انتشار نیست.",
  "Nothing used yet this month.": "این ماه هنوز چیزی مصرف نشده است.",
  "Notifications": "اعلان‌ها",
+ "Notifications are blocked for Flash. Allow them in Settings > Apps > Flash ∞ AI > Notifications, then try again.": "اعلان‌ها برای Flash مسدود شده‌اند. در تنظیمات > برنامه‌ها > Flash ∞ AI > اعلان‌ها اجازه دهید و دوباره امتحان کنید.",
+ "Notifications are blocked for Flash. Allow them in Settings > Notifications > Flash ∞ AI, then try again.": "اعلان‌ها برای Flash مسدود شده‌اند. در تنظیمات > اعلان‌ها > Flash ∞ AI اجازه دهید و دوباره امتحان کنید.",
  "Notifications are blocked for Flash. Allow them in your browser's site settings, then try again.": "اعلان‌ها برای Flash مسدود شده‌اند. در تنظیمات سایت مرورگرتان اجازه دهید و دوباره امتحان کنید.",
  "Notifications: something new": "اعلان‌ها: مورد جدید",
  "Notify me when a response is done": "وقتی پاسخ آماده شد به من اطلاع بده",

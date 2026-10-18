@@ -1006,6 +1006,8 @@
  "Nothing to publish.": "Walang ipa-publish.",
  "Nothing used yet this month.": "Wala pang nagamit ngayong buwan.",
  "Notifications": "Mga notification",
+ "Notifications are blocked for Flash. Allow them in Settings > Apps > Flash ∞ AI > Notifications, then try again.": "Naka-block ang mga notification para sa Flash. Payagan ang mga ito sa Settings > Apps > Flash ∞ AI > Notifications, tapos subukan ulit.",
+ "Notifications are blocked for Flash. Allow them in Settings > Notifications > Flash ∞ AI, then try again.": "Naka-block ang mga notification para sa Flash. Payagan ang mga ito sa Settings > Notifications > Flash ∞ AI, tapos subukan ulit.",
  "Notifications are blocked for Flash. Allow them in your browser's site settings, then try again.": "Naka-block ang mga notification para sa Flash. Payagan ang mga ito sa site settings ng browser mo, tapos subukan ulit.",
  "Notifications: something new": "Mga notification: may bago",
  "Notify me when a response is done": "Abisuhan ako kapag tapos na ang sagot",

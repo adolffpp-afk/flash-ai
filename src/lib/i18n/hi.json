@@ -1006,6 +1006,8 @@
  "Nothing to publish.": "पब्लिश करने के लिए कुछ नहीं है।",
  "Nothing used yet this month.": "इस महीने अभी कुछ इस्तेमाल नहीं हुआ।",
  "Notifications": "नोटिफ़िकेशन",
+ "Notifications are blocked for Flash. Allow them in Settings > Apps > Flash ∞ AI > Notifications, then try again.": "Flash के लिए नोटिफ़िकेशन ब्लॉक हैं। सेटिंग्स > ऐप्लिकेशन > Flash ∞ AI > सूचनाएं में अनुमति दें, फिर से कोशिश करें।",
+ "Notifications are blocked for Flash. Allow them in Settings > Notifications > Flash ∞ AI, then try again.": "Flash के लिए नोटिफ़िकेशन ब्लॉक हैं। सेटिंग्स > सूचनाएँ > Flash ∞ AI में अनुमति दें, फिर से कोशिश करें।",
  "Notifications are blocked for Flash. Allow them in your browser's site settings, then try again.": "Flash के लिए नोटिफ़िकेशन ब्लॉक हैं। अपने ब्राउज़र की साइट सेटिंग्स में अनुमति दें, फिर से कोशिश करें।",
  "Notifications: something new": "नोटिफ़िकेशन: कुछ नया है",
  "Notify me when a response is done": "जवाब पूरा होने पर मुझे बताएँ",

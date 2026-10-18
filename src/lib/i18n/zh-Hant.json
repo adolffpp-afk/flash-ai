@@ -1006,6 +1006,8 @@
  "Nothing to publish.": "沒有可發布的內容。",
  "Nothing used yet this month.": "本月尚未使用。",
  "Notifications": "通知",
+ "Notifications are blocked for Flash. Allow them in Settings > Apps > Flash ∞ AI > Notifications, then try again.": "Flash 的通知已被封鎖。請在「設定 > 應用程式 > Flash ∞ AI > 通知」中允許，然後再試一次。",
+ "Notifications are blocked for Flash. Allow them in Settings > Notifications > Flash ∞ AI, then try again.": "Flash 的通知已被封鎖。請在「設定 > 通知 > Flash ∞ AI」中允許，然後再試一次。",
  "Notifications are blocked for Flash. Allow them in your browser's site settings, then try again.": "Flash 的通知已被封鎖。請在瀏覽器的網站設定中允許，然後再試一次。",
  "Notifications: something new": "通知：有新動態",
  "Notify me when a response is done": "回覆完成時通知我",

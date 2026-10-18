@@ -50,7 +50,7 @@ type Stats = {
   // Virus scanning of uploads (see docs/virus-scan-setup.md): missing variables, and whether the scanner answers.
   virusScan?: { missing: string[]; ready: boolean | null };
   // Alerts when Flash is closed (see push.ts): whether VAPID_* are set and belong together (names only), and browsers with alerts on.
-  push?: { setUp: boolean; missing: string[]; problem: string; browsers: number };
+  push?: { setUp: boolean; keysOk: boolean; missing: string[]; problem: string; browsers: number };
   byModel: { model: string; provider: string; requests: number; costCents: number }[];
   series: { day: number; requests: number; costCents: number }[];
   topUsers: { email: string; requests: number; credits: number; costCents: number }[];
@@ -255,11 +255,11 @@ const PUSH_SUBJECT = "mailto:hello@flash-app.dev";
  * copy into Vercel with the subject. The private key never leaves this page: nothing here sends it,
  * and Flash reads it only from its environment.
  */
-function PushKeyMaker({ setUp, missing, problem, browsers }: NonNullable<Stats["push"]>) {
-  // Only the subject is missing or wrong (push.ts names the variable first): the keys in Vercel stay.
-  const subjectOnly = !setUp && (missing.join() === "VAPID_SUBJECT" || problem.startsWith("VAPID_SUBJECT"));
-  // The VAPID_* in Vercel already (all three when one is wrong): new values are edited into them,
-  // since Vercel won't add a second variable of the same name.
+function PushKeyMaker({ setUp, keysOk, missing, problem, browsers }: NonNullable<Stats["push"]>) {
+  // The two keys work and only the subject is missing or wrong: the keys in Vercel stay.
+  const subjectOnly = !setUp && keysOk;
+  // The VAPID_* in Vercel already, right or wrong: new values are edited into them, since Vercel
+  // won't add a second variable of the same name.
   const there = ["VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "VAPID_SUBJECT"].filter((name) => !missing.includes(name));
   const [values, setValues] = useState<{ name: string; value: string }[]>([]);
   const [copied, setCopied] = useState("");

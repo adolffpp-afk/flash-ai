@@ -1006,6 +1006,8 @@
  "Nothing to publish.": "公開する内容がありません。",
  "Nothing used yet this month.": "今月はまだ使用していません。",
  "Notifications": "通知",
+ "Notifications are blocked for Flash. Allow them in Settings > Apps > Flash ∞ AI > Notifications, then try again.": "Flashの通知がブロックされています。[設定] > [アプリ] > [Flash ∞ AI] > [通知] で許可してから、もう一度お試しください。",
+ "Notifications are blocked for Flash. Allow them in Settings > Notifications > Flash ∞ AI, then try again.": "Flashの通知がブロックされています。[設定] > [通知] > [Flash ∞ AI] で許可してから、もう一度お試しください。",
  "Notifications are blocked for Flash. Allow them in your browser's site settings, then try again.": "Flashの通知がブロックされています。ブラウザのサイト設定で許可してから、もう一度お試しください。",
  "Notifications: something new": "通知：新着あり",
  "Notify me when a response is done": "回答が完了したら通知する",

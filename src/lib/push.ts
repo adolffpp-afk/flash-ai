@@ -10,23 +10,55 @@
  *    another device), alerts come back on for that account when it's signed in here again, while
  *    logging out here on purpose forgets them (logOutHere);
  *  - turning them on makes a new subscription, so nothing another account turned on with the old one
- *    can follow (on main a browser holds one account).
+ *    can follow (on main a browser holds one account);
+ *  - alerts still on the screen go with the sign-in they came for (closeAlerts).
  */
 import { useEffect } from "react";
 import { api } from "./store.ts";
 import { readSetting, writeSetting } from "./device-settings.ts";
 import { installPlatform } from "./install.ts";
+import { inAndroidApp } from "./android-shell.ts";
 import type { Translate } from "./i18n.ts";
 
 // "home-screen": an iPhone or iPad, which has alerts only in Flash added to the Home Screen.
 export type PushSupport = "yes" | "home-screen" | "no";
 
+const platform = () => installPlatform(navigator.userAgent, navigator.maxTouchPoints);
+// Flash added to the Home Screen (or installed as an app), not in a browser tab.
+const standalone = () => window.matchMedia?.("(display-mode: standalone)").matches || (navigator as { standalone?: boolean }).standalone === true;
+
 export function pushSupport(): PushSupport {
-  if (typeof window === "undefined" || !("serviceWorker" in navigator)) return "no";
-  const has = (name: string) => name in window;
-  if (has("PushManager") && has("Notification")) return "yes";
-  const standalone = window.matchMedia?.("(display-mode: standalone)").matches || (navigator as { standalone?: boolean }).standalone === true;
-  return installPlatform(navigator.userAgent, navigator.maxTouchPoints) === "ios" && !standalone ? "home-screen" : "no";
+  if (typeof window === "undefined") return "no";
+  if ("serviceWorker" in navigator && "PushManager" in window && "Notification" in window) return "yes";
+  // Every browser on an iPhone or iPad can add Flash to the Home Screen, where alerts work, though in
+  // a tab Safari has no push and Chrome, Edge and Firefox there have no service worker at all.
+  return platform() === "ios" && !standalone() ? "home-screen" : "no";
+}
+
+/** Where to allow notifications once they're blocked: the device's Settings in Flash's apps, else the browser's. */
+function blockedWords(t: Translate): string {
+  if (platform() === "ios" && standalone()) return t("Notifications are blocked for Flash. Allow them in Settings > Notifications > Flash ∞ AI, then try again.");
+  if (platform() === "android" && inAndroidApp()) {
+    return t("Notifications are blocked for Flash. Allow them in Settings > Apps > Flash ∞ AI > Notifications, then try again.");
+  }
+  return t("Notifications are blocked for Flash. Allow them in your browser's site settings, then try again.");
+}
+
+/**
+ * Takes Flash's alerts off this screen: all of them with nobody signed in here, else every one but
+ * userId's (the page an alert opens names its account, as=), so the next person on a shared
+ * computer can't read the last one's.
+ */
+async function closeAlerts(userId: string | null): Promise<void> {
+  if (pushSupport() !== "yes") return;
+  const reg = await navigator.serviceWorker.getRegistration().catch(() => undefined);
+  for (const alert of (await reg?.getNotifications().catch(() => [])) ?? []) {
+    let account: string | null = null;
+    try {
+      account = new URL(String((alert.data as { url?: unknown } | null)?.url)).searchParams.get("as");
+    } catch {}
+    if (!userId || account !== userId) alert.close();
+  }
 }
 
 const wanted = () => readSetting("pushAccounts").split(" ").filter(Boolean);
@@ -101,7 +133,7 @@ export async function pushStatus(): Promise<PushStatus> {
 /** Turns alerts on for this account here; throws with the words to show when it can't. Call it from a tap. */
 export async function turnOnPush(userId: string, key: string, t: Translate): Promise<void> {
   if (pushSupport() !== "yes") throw new Error(t("This browser can't get alerts when Flash is closed."));
-  const blocked = t("Notifications are blocked for Flash. Allow them in your browser's site settings, then try again.");
+  const blocked = blockedWords(t);
   // Asked first, while the tap still counts as one (browsers ask only from a tap). "default" is a
   // question closed without an answer: nothing is blocked, and the next tap asks again.
   const allowed = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
@@ -140,13 +172,14 @@ export async function sendTestPush(): Promise<void> {
 }
 
 /**
- * Puts this browser in step with who is signed in (userId, or null for nobody): with nobody, the
- * subscription goes; for an account that turned alerts on here, they're turned on again when the
- * server lost them (a password change, a new sign-in, new keys on the server); a subscription that
- * no one signed in here wants goes.
+ * Puts this browser in step with who is signed in (userId, or null for nobody): alerts on the screen
+ * that aren't theirs go; with nobody, the subscription goes; for an account that turned alerts on
+ * here, they're turned on again when the server lost them (a password change, a new sign-in, new
+ * keys on the server); a subscription that no one signed in here wants goes.
  */
 export async function syncPush(userId: string | null): Promise<void> {
   if (pushSupport() !== "yes") return;
+  await closeAlerts(userId);
   const sub = await subscription();
   if (!userId) {
     await sub?.unsubscribe().catch(() => false);
@@ -176,10 +209,11 @@ export async function syncPush(userId: string | null): Promise<void> {
  * Logging out here on purpose (Flash's sign-out; everywhere: "Log out of all devices" in Settings,
  * which already signed out every device, this one included). This device forgets that this account
  * wanted alerts, so they stay off when it signs in here again; a sign-in that ends by itself keeps
- * the wish (usePushSync).
+ * the wish (usePushSync). Its alerts still on the screen go.
  */
 export async function logOutHere(userId: string | undefined, everywhere = false): Promise<void> {
   if (userId) want(userId, false);
+  await closeAlerts(null);
   if (!everywhere) await api("/api/auth/logout", { method: "POST" }).catch(() => {});
 }
 
@@ -199,6 +233,11 @@ export function usePushSync(userId: string | null | undefined): void {
     };
     clear();
     document.addEventListener("visibilitychange", clear);
-    return () => document.removeEventListener("visibilitychange", clear);
+    // A window that was on the screen behind another app's, clicked into.
+    window.addEventListener("focus", clear);
+    return () => {
+      document.removeEventListener("visibilitychange", clear);
+      window.removeEventListener("focus", clear);
+    };
   }, []);
 }

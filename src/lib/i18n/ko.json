@@ -1006,6 +1006,8 @@
  "Nothing to publish.": "게시할 항목이 없어요.",
  "Nothing used yet this month.": "이번 달에는 아직 사용한 내역이 없어요.",
  "Notifications": "알림",
+ "Notifications are blocked for Flash. Allow them in Settings > Apps > Flash ∞ AI > Notifications, then try again.": "Flash의 알림이 차단되어 있어요. 설정 > 앱 > Flash ∞ AI > 알림에서 알림을 허용한 다음 다시 시도하세요.",
+ "Notifications are blocked for Flash. Allow them in Settings > Notifications > Flash ∞ AI, then try again.": "Flash의 알림이 차단되어 있어요. 설정 > 알림 > Flash ∞ AI에서 알림을 허용한 다음 다시 시도하세요.",
  "Notifications are blocked for Flash. Allow them in your browser's site settings, then try again.": "Flash의 알림이 차단되어 있어요. 브라우저의 사이트 설정에서 알림을 허용한 다음 다시 시도하세요.",
  "Notifications: something new": "알림: 새 소식이 있어요",
  "Notify me when a response is done": "응답이 완료되면 알림 받기",

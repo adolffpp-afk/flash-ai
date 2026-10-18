@@ -1006,6 +1006,8 @@
  "Nothing to publish.": "Hakuna cha kuchapisha.",
  "Nothing used yet this month.": "Bado hakuna kilichotumika mwezi huu.",
  "Notifications": "Arifa",
+ "Notifications are blocked for Flash. Allow them in Settings > Apps > Flash ∞ AI > Notifications, then try again.": "Arifa za Flash zimezuiwa. Ziruhusu kwenye Mipangilio > Programu > Flash ∞ AI > Arifa, kisha ujaribu tena.",
+ "Notifications are blocked for Flash. Allow them in Settings > Notifications > Flash ∞ AI, then try again.": "Arifa za Flash zimezuiwa. Ziruhusu kwenye Mipangilio > Arifa > Flash ∞ AI, kisha ujaribu tena.",
  "Notifications are blocked for Flash. Allow them in your browser's site settings, then try again.": "Arifa za Flash zimezuiwa. Ziruhusu kwenye mipangilio ya tovuti ya kivinjari chako, kisha ujaribu tena.",
  "Notifications: something new": "Arifa: kuna jambo jipya",
  "Notify me when a response is done": "Niarifu jibu likikamilika",

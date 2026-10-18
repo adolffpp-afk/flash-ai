@@ -1006,6 +1006,8 @@
  "Nothing to publish.": "Yayınlanacak bir şey yok.",
  "Nothing used yet this month.": "Bu ay henüz bir şey kullanılmadı.",
  "Notifications": "Bildirimler",
+ "Notifications are blocked for Flash. Allow them in Settings > Apps > Flash ∞ AI > Notifications, then try again.": "Flash için bildirimler engellenmiş. Ayarlar > Uygulamalar > Flash ∞ AI > Bildirimler'den izin ver, sonra tekrar dene.",
+ "Notifications are blocked for Flash. Allow them in Settings > Notifications > Flash ∞ AI, then try again.": "Flash için bildirimler engellenmiş. Ayarlar > Bildirimler > Flash ∞ AI'dan izin ver, sonra tekrar dene.",
  "Notifications are blocked for Flash. Allow them in your browser's site settings, then try again.": "Flash için bildirimler engellenmiş. Tarayıcının site ayarlarından izin ver, sonra tekrar dene.",
  "Notifications: something new": "Bildirimler: yeni bir şey var",
  "Notify me when a response is done": "Bir yanıt tamamlandığında bana bildir",

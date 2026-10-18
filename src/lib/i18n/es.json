@@ -1006,6 +1006,8 @@
  "Nothing to publish.": "No hay nada que publicar.",
  "Nothing used yet this month.": "Todavía no has usado nada este mes.",
  "Notifications": "Notificaciones",
+ "Notifications are blocked for Flash. Allow them in Settings > Apps > Flash ∞ AI > Notifications, then try again.": "Las notificaciones están bloqueadas para Flash. Permítelas en Ajustes > Aplicaciones > Flash ∞ AI > Notificaciones e inténtalo de nuevo.",
+ "Notifications are blocked for Flash. Allow them in Settings > Notifications > Flash ∞ AI, then try again.": "Las notificaciones están bloqueadas para Flash. Permítelas en Ajustes > Notificaciones > Flash ∞ AI e inténtalo de nuevo.",
  "Notifications are blocked for Flash. Allow them in your browser's site settings, then try again.": "Las notificaciones están bloqueadas para Flash. Permítelas en la configuración del sitio de tu navegador e inténtalo de nuevo.",
  "Notifications: something new": "Notificaciones: hay novedades",
  "Notify me when a response is done": "Avisarme cuando una respuesta esté lista",

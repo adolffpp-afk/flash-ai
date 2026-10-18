@@ -1006,6 +1006,8 @@
  "Nothing to publish.": "ไม่มีอะไรให้เผยแพร่",
  "Nothing used yet this month.": "เดือนนี้ยังไม่ได้ใช้อะไร",
  "Notifications": "การแจ้งเตือน",
+ "Notifications are blocked for Flash. Allow them in Settings > Apps > Flash ∞ AI > Notifications, then try again.": "การแจ้งเตือนของ Flash ถูกบล็อก อนุญาตใน การตั้งค่า > แอป > Flash ∞ AI > การแจ้งเตือน แล้วลองอีกครั้ง",
+ "Notifications are blocked for Flash. Allow them in Settings > Notifications > Flash ∞ AI, then try again.": "การแจ้งเตือนของ Flash ถูกบล็อก อนุญาตใน การตั้งค่า > การแจ้งเตือน > Flash ∞ AI แล้วลองอีกครั้ง",
  "Notifications are blocked for Flash. Allow them in your browser's site settings, then try again.": "การแจ้งเตือนของ Flash ถูกบล็อก อนุญาตในการตั้งค่าเว็บไซต์ของเบราว์เซอร์ แล้วลองอีกครั้ง",
  "Notifications: something new": "การแจ้งเตือน: มีรายการใหม่",
  "Notify me when a response is done": "แจ้งเตือนเมื่อคำตอบเสร็จ",

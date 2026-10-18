@@ -1006,6 +1006,8 @@
  "Nothing to publish.": "Tidak ada yang bisa dipublikasikan.",
  "Nothing used yet this month.": "Belum ada penggunaan bulan ini.",
  "Notifications": "Notifikasi",
+ "Notifications are blocked for Flash. Allow them in Settings > Apps > Flash ∞ AI > Notifications, then try again.": "Notifikasi untuk Flash diblokir. Izinkan di Setelan > Aplikasi > Flash ∞ AI > Notifikasi, lalu coba lagi.",
+ "Notifications are blocked for Flash. Allow them in Settings > Notifications > Flash ∞ AI, then try again.": "Notifikasi untuk Flash diblokir. Izinkan di Pengaturan > Pemberitahuan > Flash ∞ AI, lalu coba lagi.",
  "Notifications are blocked for Flash. Allow them in your browser's site settings, then try again.": "Notifikasi untuk Flash diblokir. Izinkan di pengaturan situs browser Anda, lalu coba lagi.",
  "Notifications: something new": "Notifikasi: ada yang baru",
  "Notify me when a response is done": "Beri tahu saya saat respons selesai",

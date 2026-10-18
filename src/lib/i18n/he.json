@@ -1006,6 +1006,8 @@
  "Nothing to publish.": "אין מה לפרסם.",
  "Nothing used yet this month.": "עדיין לא נוצל כלום החודש.",
  "Notifications": "התראות",
+ "Notifications are blocked for Flash. Allow them in Settings > Apps > Flash ∞ AI > Notifications, then try again.": "ההתראות של Flash חסומות. יש לאשר אותן בהגדרות > אפליקציות > Flash ∞ AI > התראות ולנסות שוב.",
+ "Notifications are blocked for Flash. Allow them in Settings > Notifications > Flash ∞ AI, then try again.": "ההתראות של Flash חסומות. יש לאשר אותן בהגדרות > עדכונים > Flash ∞ AI ולנסות שוב.",
  "Notifications are blocked for Flash. Allow them in your browser's site settings, then try again.": "ההתראות של Flash חסומות. יש לאשר אותן בהגדרות האתר בדפדפן ולנסות שוב.",
  "Notifications: something new": "התראות: יש משהו חדש",
  "Notify me when a response is done": "התראה כשתשובה מוכנה",

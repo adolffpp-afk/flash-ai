@@ -69,7 +69,8 @@ function bytesOf(value: unknown): Buffer | null {
 }
 
 type Keys = { publicKey: Buffer; publicText: string; privateKey: KeyObject; subject: string };
-type Setup = { keys: Keys | null; missing: string[]; problem: string };
+// keysOk: the two keys are set and belong together, so only VAPID_SUBJECT can be what's wrong.
+type Setup = { keys: Keys | null; keysOk: boolean; missing: string[]; problem: string };
 
 let cached: { from: string; setup: Setup } | null = null;
 
@@ -83,36 +84,48 @@ function setup(env: Record<string, string | undefined> = process.env): Setup {
   return result;
 }
 
-function readKeys(pub: string, priv: string, subject: string): Setup {
-  const missing = VAPID_NAMES.filter((_, i) => ![pub, priv, subject][i]);
-  if (missing.length) return { keys: null, missing, problem: "" };
-  const fail = (problem: string): Setup => ({ keys: null, missing: [], problem });
+/** The key pair in the two VAPID keys, or what's wrong with them. */
+function keyPair(pub: string, priv: string): { publicKey: Buffer; privateKey: KeyObject } | string {
   const publicKey = bytesOf(pub);
   const d = bytesOf(priv);
-  if (!publicKey || publicKey.length !== 65 || publicKey[0] !== 4) return fail("VAPID_PUBLIC_KEY isn't a P-256 public key (65 bytes in base64url)");
-  if (!d || d.length !== 32) return fail("VAPID_PRIVATE_KEY isn't a P-256 private key (32 bytes in base64url)");
-  if (!/^(mailto:[^\s@]+@[^\s@]+|https:\/\/\S+)$/.test(subject)) return fail("VAPID_SUBJECT must be a mailto: address or an https:// address");
+  if (!publicKey || publicKey.length !== 65 || publicKey[0] !== 4) return "VAPID_PUBLIC_KEY isn't a P-256 public key (65 bytes in base64url)";
+  if (!d || d.length !== 32) return "VAPID_PRIVATE_KEY isn't a P-256 private key (32 bytes in base64url)";
   try {
     const ecdh = createECDH("prime256v1");
     ecdh.setPrivateKey(d);
-    if (!ecdh.getPublicKey().equals(publicKey)) return fail("VAPID_PRIVATE_KEY doesn't belong to VAPID_PUBLIC_KEY (make both again, together)");
+    if (!ecdh.getPublicKey().equals(publicKey)) return "VAPID_PRIVATE_KEY doesn't belong to VAPID_PUBLIC_KEY (make both again, together)";
     const privateKey = createPrivateKey({
       key: { kty: "EC", crv: "P-256", d: b64(d), x: b64(publicKey.subarray(1, 33)), y: b64(publicKey.subarray(33)) },
       format: "jwk",
     });
-    return { keys: { publicKey, publicText: b64(publicKey), privateKey, subject }, missing: [], problem: "" };
+    return { publicKey, privateKey };
   } catch {
-    return fail("VAPID_PRIVATE_KEY isn't a P-256 private key");
+    return "VAPID_PRIVATE_KEY isn't a P-256 private key";
   }
+}
+
+function readKeys(pub: string, priv: string, subject: string): Setup {
+  const missing = VAPID_NAMES.filter((_, i) => ![pub, priv, subject][i]);
+  // The two keys first, even with VAPID_SUBJECT missing or wrong: /admin says to keep them only when they work.
+  const pair = pub && priv ? keyPair(pub, priv) : null;
+  if (typeof pair === "string") return { keys: null, keysOk: false, missing, problem: pair };
+  if (!pair || missing.length) return { keys: null, keysOk: Boolean(pair), missing, problem: "" };
+  if (!/^(mailto:[^\s@]+@[^\s@]+|https:\/\/\S+)$/.test(subject)) {
+    return { keys: null, keysOk: true, missing: [], problem: "VAPID_SUBJECT must be a mailto: address or an https:// address" };
+  }
+  return { keys: { publicKey: pair.publicKey, publicText: b64(pair.publicKey), privateKey: pair.privateKey, subject }, keysOk: true, missing: [], problem: "" };
 }
 
 /** The public key browsers subscribe with, or null while alerts aren't set up on this server. */
 export const pushPublicKey = (): string | null => setup().keys?.publicText ?? null;
 
-/** For /admin: whether alerts are set up, and the variables missing or wrong (names only, never values). */
-export function pushSetup(): { setUp: boolean; missing: string[]; problem: string } {
-  const { keys, missing, problem } = setup();
-  return { setUp: Boolean(keys), missing, problem };
+/**
+ * For /admin: whether alerts are set up, whether the two keys work (then only VAPID_SUBJECT is left
+ * to fix), and the variables missing or wrong (names only, never values).
+ */
+export function pushSetup(): { setUp: boolean; keysOk: boolean; missing: string[]; problem: string } {
+  const { keys, keysOk, missing, problem } = setup();
+  return { setUp: Boolean(keys), keysOk, missing, problem };
 }
 
 /**

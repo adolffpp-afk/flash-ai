@@ -46,7 +46,22 @@ const unsubscribed = new Set<string>();
 let made = 0;
 type Sub = { endpoint: string; options: { applicationServerKey: ArrayBuffer }; toJSON(): object; unsubscribe(): Promise<boolean> };
 let current: Sub | null = null;
+// Alerts on the screen, as the service worker showed them: the page each opens names its account (as=).
+type Shown = { title: string; data: { url: string }; close(): void };
+const tray: Shown[] = [];
+function showAlert(title: string, userId?: string) {
+  const alert: Shown = {
+    title,
+    data: { url: `${ORIGIN}/${userId ? `?as=${userId}` : ""}` },
+    close: () => {
+      const at = tray.indexOf(alert);
+      if (at >= 0) tray.splice(at, 1);
+    },
+  };
+  tray.push(alert);
+}
 const registration = {
+  getNotifications: async () => [...tray],
   pushManager: {
     getSubscription: async () => current,
     subscribe: async ({ applicationServerKey }: { applicationServerKey: Uint8Array }) => {
@@ -87,6 +102,8 @@ Object.assign(globalThis, {
     removeItem: (k: string) => void storage.delete(k),
   },
   document: { visibilityState: "hidden", addEventListener() {}, removeEventListener() {} },
+  addEventListener() {},
+  removeEventListener() {},
   dispatchEvent: () => true,
 });
 Object.defineProperty(globalThis, "navigator", {
@@ -286,4 +303,121 @@ test("logging out of all devices here forgets this device's wish too", async () 
   await signIn("fin");
   await client.syncPush("fin");
   assert.equal(current, null, "alerts stay off when fin signs in here again");
+});
+
+test("alerts still on the screen go when this browser stops being their account's", async () => {
+  await account("gus");
+  await account("hal");
+  storage.clear();
+  const titles = () => tray.map((n) => n.title);
+  await signIn("gus");
+  await client.turnOnPush("gus", key, t);
+  showAlert("Gus's weekly money check", "gus");
+  // Opening Flash while he's still signed in keeps his.
+  await client.syncPush("gus");
+  assert.deepEqual(titles(), ["Gus's weekly money check"]);
+  // Logging out here takes them off the screen with the sign-in, so the next person can't read them.
+  await client.logOutHere("gus");
+  assert.deepEqual(titles(), []);
+  // So does a sign-in that ended by itself, with nobody signed in here now.
+  await signIn("gus");
+  showAlert("Gus's weekly money check", "gus");
+  showAlert("Flash ∞ AI");
+  await client.syncPush(null);
+  assert.deepEqual(titles(), []);
+  // Someone else signed in on top: only that account's own stay.
+  showAlert("Gus's weekly money check", "gus");
+  showAlert("Hal's invoice check", "hal");
+  cookie = "";
+  await signIn("hal");
+  await client.syncPush("hal");
+  assert.deepEqual(titles(), ["Hal's invoice check"]);
+  tray.length = 0;
+});
+
+test("every browser on an iPhone or iPad is told to add Flash to the Home Screen, where alerts work", () => {
+  const was = { navigator: globalThis.navigator, PushManager: (globalThis as { PushManager?: unknown }).PushManager, Notification: globalThis.Notification };
+  const as = (userAgent: string, options: { worker?: boolean; push?: boolean; standalone?: boolean; touch?: number } = {}) => {
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: { userAgent, maxTouchPoints: options.touch ?? 5, standalone: options.standalone ?? false, ...(options.worker ? { serviceWorker: was.navigator.serviceWorker } : {}) },
+    });
+    for (const name of ["PushManager", "Notification"] as const) {
+      if (options.push) Object.assign(globalThis, { [name]: was[name] });
+      else delete (globalThis as Record<string, unknown>)[name];
+    }
+    return client.pushSupport();
+  };
+  const iphone = (browser: string) => `Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) ${browser} Mobile/15E148 Safari/604.1`;
+  try {
+    // Chrome, Edge and Firefox on an iPhone have no service workers in a tab; Safari has no push in one.
+    for (const browser of ["CriOS/141.0.7390.41", "EdgiOS/141.0.3537.71", "FxiOS/143.0"]) assert.equal(as(iphone(browser)), "home-screen", browser);
+    assert.equal(as(iphone("Version/18.6"), { worker: true }), "home-screen", "Safari");
+    assert.equal(as("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/141.0 Mobile/15E148 Safari/604.1"), "home-screen", "an iPad");
+    // Added to the Home Screen: alerts work there (iOS 16.4 and later), and not before.
+    assert.equal(as(iphone("Version/18.6"), { worker: true, push: true, standalone: true }), "yes");
+    assert.equal(as(iphone("Version/16.1"), { worker: true, standalone: true }), "no");
+    // Anywhere else a browser without them can't get alerts.
+    assert.equal(as("Mozilla/5.0 (Linux; Android 15) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Mobile Safari/537.36", { touch: 5 }), "no");
+  } finally {
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: was.navigator });
+    Object.assign(globalThis, { PushManager: was.PushManager, Notification: was.Notification });
+  }
+});
+
+test("a block says where to allow notifications: the iPhone's Settings in the Home Screen app, the phone's in the Android app", async () => {
+  await account("ida");
+  await signIn("ida");
+  const was = globalThis.navigator;
+  const said = async (userAgent: string, standalone = false) => {
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { ...was, userAgent, maxTouchPoints: 5, standalone } });
+    try {
+      await client.turnOnPush("ida", key, t);
+      return "on";
+    } catch (e) {
+      return (e as Error).message;
+    }
+  };
+  // A real block: the browser asks nothing more.
+  permission.now = permission.answer = "denied";
+  try {
+    assert.equal(
+      await said("Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148", true),
+      "Notifications are blocked for Flash. Allow them in Settings > Notifications > Flash ∞ AI, then try again.",
+    );
+    // The Android app opens Flash at /?app=android, and the tab remembers it.
+    Object.assign(globalThis, { location: { search: "?app=android" }, sessionStorage: { getItem: () => null, setItem() {} } });
+    const android = "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Mobile Safari/537.36";
+    assert.equal(await said(android), "Notifications are blocked for Flash. Allow them in Settings > Apps > Flash ∞ AI > Notifications, then try again.");
+    // In a browser it's still that browser's site settings.
+    assert.equal(await said(was.userAgent), "Notifications are blocked for Flash. Allow them in your browser's site settings, then try again.");
+  } finally {
+    permission.now = permission.answer = "granted";
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: was });
+  }
+});
+
+test("Flash on the screen and in front clears the dot alerts put on its app icon", () => {
+  const was = { navigator: globalThis.navigator, document: globalThis.document };
+  const heard: Record<string, () => void> = {};
+  let clears = 0;
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: { ...was.navigator, clearAppBadge: async () => void clears++ } });
+  const page = { visibilityState: "visible", addEventListener: (type: string, f: () => void) => void (heard[`page ${type}`] = f), removeEventListener() {} };
+  Object.assign(globalThis, { document: page, addEventListener: (type: string, f: () => void) => void (heard[`window ${type}`] = f) });
+  try {
+    render(() => client.usePushSync(undefined));
+    assert.equal(clears, 1, "opening Flash");
+    // A window that was on the screen behind another app's is clicked into.
+    heard["window focus"]();
+    assert.equal(clears, 2);
+    page.visibilityState = "hidden";
+    heard["page visibilitychange"]();
+    assert.equal(clears, 2, "not while it's hidden");
+    page.visibilityState = "visible";
+    heard["page visibilitychange"]();
+    assert.equal(clears, 3);
+  } finally {
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: was.navigator });
+    Object.assign(globalThis, { document: was.document, addEventListener() {} });
+  }
 });

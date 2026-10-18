@@ -1006,6 +1006,8 @@
  "Nothing to publish.": "لا يوجد ما يُنشر.",
  "Nothing used yet this month.": "لم يُستخدم شيء هذا الشهر بعد.",
  "Notifications": "الإشعارات",
+ "Notifications are blocked for Flash. Allow them in Settings > Apps > Flash ∞ AI > Notifications, then try again.": "الإشعارات محظورة لـ Flash. اسمح بها في الإعدادات > التطبيقات > Flash ∞ AI > الإشعارات، ثم حاول مرة أخرى.",
+ "Notifications are blocked for Flash. Allow them in Settings > Notifications > Flash ∞ AI, then try again.": "الإشعارات محظورة لـ Flash. اسمح بها في الإعدادات > الإشعارات > Flash ∞ AI، ثم حاول مرة أخرى.",
  "Notifications are blocked for Flash. Allow them in your browser's site settings, then try again.": "الإشعارات محظورة لـ Flash. اسمح بها في إعدادات الموقع في متصفحك، ثم حاول مرة أخرى.",
  "Notifications: something new": "الإشعارات: هناك جديد",
  "Notify me when a response is done": "أعلمني عند اكتمال الرد",

@@ -1006,6 +1006,8 @@
  "Nothing to publish.": "Inget att publicera.",
  "Nothing used yet this month.": "Inget använt än den här månaden.",
  "Notifications": "Aviseringar",
+ "Notifications are blocked for Flash. Allow them in Settings > Apps > Flash ∞ AI > Notifications, then try again.": "Aviseringar är blockerade för Flash. Tillåt dem i Inställningar > Appar > Flash ∞ AI > Aviseringar och försök igen.",
+ "Notifications are blocked for Flash. Allow them in Settings > Notifications > Flash ∞ AI, then try again.": "Aviseringar är blockerade för Flash. Tillåt dem i Inställningar > Notiser > Flash ∞ AI och försök igen.",
  "Notifications are blocked for Flash. Allow them in your browser's site settings, then try again.": "Aviseringar är blockerade för Flash. Tillåt dem i webbläsarens webbplatsinställningar och försök igen.",
  "Notifications: something new": "Aviseringar: något nytt",
  "Notify me when a response is done": "Meddela mig när ett svar är klart",

@@ -1006,6 +1006,8 @@
  "Nothing to publish.": "Pa gen anyen pou pibliye.",
  "Nothing used yet this month.": "Ou poko itilize anyen mwa sa a.",
  "Notifications": "Notifikasyon",
+ "Notifications are blocked for Flash. Allow them in Settings > Apps > Flash ∞ AI > Notifications, then try again.": "Notifikasyon yo bloke pou Flash. Pèmèt yo nan Paramèt > Aplikasyon > Flash ∞ AI > Notifikasyon, epi eseye ankò.",
+ "Notifications are blocked for Flash. Allow them in Settings > Notifications > Flash ∞ AI, then try again.": "Notifikasyon yo bloke pou Flash. Pèmèt yo nan Paramèt > Notifikasyon > Flash ∞ AI, epi eseye ankò.",
  "Notifications are blocked for Flash. Allow them in your browser's site settings, then try again.": "Notifikasyon yo bloke pou Flash. Pèmèt yo nan paramèt sit navigatè ou a, epi eseye ankò.",
  "Notifications: something new": "Notifikasyon: gen yon bagay nouvo",
  "Notify me when a response is done": "Avèti m lè yon repons fini",

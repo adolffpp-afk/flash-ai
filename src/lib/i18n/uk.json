@@ -1006,6 +1006,8 @@
  "Nothing to publish.": "Нічого публікувати.",
  "Nothing used yet this month.": "Цього місяця поки нічого не використано.",
  "Notifications": "Сповіщення",
+ "Notifications are blocked for Flash. Allow them in Settings > Apps > Flash ∞ AI > Notifications, then try again.": "Сповіщення для Flash заблоковано. Дозвольте їх у розділі «Налаштування > Додатки > Flash ∞ AI > Сповіщення» й спробуйте знову.",
+ "Notifications are blocked for Flash. Allow them in Settings > Notifications > Flash ∞ AI, then try again.": "Сповіщення для Flash заблоковано. Дозвольте їх у розділі «Параметри > Сповіщення > Flash ∞ AI» й спробуйте знову.",
  "Notifications are blocked for Flash. Allow them in your browser's site settings, then try again.": "Сповіщення для Flash заблоковано. Дозвольте їх у налаштуваннях сайту в браузері й спробуйте знову.",
  "Notifications: something new": "Сповіщення: є нові",
  "Notify me when a response is done": "Сповіщати, коли відповідь готова",

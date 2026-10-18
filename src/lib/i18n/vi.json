@@ -1006,6 +1006,8 @@
  "Nothing to publish.": "Không có gì để xuất bản.",
  "Nothing used yet this month.": "Tháng này chưa dùng gì.",
  "Notifications": "Thông báo",
+ "Notifications are blocked for Flash. Allow them in Settings > Apps > Flash ∞ AI > Notifications, then try again.": "Thông báo của Flash đang bị chặn. Hãy cho phép trong Cài đặt > Ứng dụng > Flash ∞ AI > Thông báo, rồi thử lại.",
+ "Notifications are blocked for Flash. Allow them in Settings > Notifications > Flash ∞ AI, then try again.": "Thông báo của Flash đang bị chặn. Hãy cho phép trong Cài đặt > Thông báo > Flash ∞ AI, rồi thử lại.",
  "Notifications are blocked for Flash. Allow them in your browser's site settings, then try again.": "Thông báo của Flash đang bị chặn. Hãy cho phép trong phần cài đặt trang web của trình duyệt, rồi thử lại.",
  "Notifications: something new": "Thông báo: có nội dung mới",
  "Notify me when a response is done": "Thông báo cho tôi khi câu trả lời xong",

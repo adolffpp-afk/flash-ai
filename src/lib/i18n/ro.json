@@ -1006,6 +1006,8 @@
  "Nothing to publish.": "Nu există nimic de publicat.",
  "Nothing used yet this month.": "Nimic folosit încă în această lună.",
  "Notifications": "Notificări",
+ "Notifications are blocked for Flash. Allow them in Settings > Apps > Flash ∞ AI > Notifications, then try again.": "Notificările sunt blocate pentru Flash. Permite-le în Setări > Aplicații > Flash ∞ AI > Notificări, apoi încearcă din nou.",
+ "Notifications are blocked for Flash. Allow them in Settings > Notifications > Flash ∞ AI, then try again.": "Notificările sunt blocate pentru Flash. Permite-le în Configurări > Notificări > Flash ∞ AI, apoi încearcă din nou.",
  "Notifications are blocked for Flash. Allow them in your browser's site settings, then try again.": "Notificările sunt blocate pentru Flash. Permite-le în setările site-ului din browser, apoi încearcă din nou.",
  "Notifications: something new": "Notificări: ceva nou",
  "Notify me when a response is done": "Anunță-mă când un răspuns e gata",

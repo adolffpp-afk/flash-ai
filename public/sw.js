@@ -57,9 +57,21 @@ async function stillOn() {
   }
 }
 
+// Flash itself is its home page; its other pages (privacy, a shared chat, /admin) aren't, and a tap
+// never lands on them.
+const isFlash = (w) => {
+  const page = new URL(w.url);
+  return page.origin === self.location.origin && page.pathname === "/";
+};
+
+// The tag of an alert whose words are held back: each takes the last one's place, so they never pile up.
+const HIDDEN = "flash-hidden";
+
 // An alert: {title, body, url, tag}, already in the account's language. A later one with the same tag
 // replaces it and still alerts; one with none shows on its own. Browsers require every push to show
 // something, so one that can't be read, or whose sign-in here isn't live, shows Flash's name only.
+// When that sign-in has ended, the alerts it already showed here go too, so the next person on a
+// shared computer doesn't see them.
 self.addEventListener("push", (event) => {
   const text = (value) => (typeof value === "string" ? value : "");
   const show = async () => {
@@ -67,26 +79,29 @@ self.addEventListener("push", (event) => {
     try {
       alert = event.data ? event.data.json() : {};
     } catch {}
-    if ((await stillOn()) !== "on") alert = {};
+    const on = await stillOn();
+    if (on !== "on") alert = { tag: HIDDEN };
+    if (on === "off") {
+      for (const shown of await self.registration.getNotifications().catch(() => [])) if (shown.tag !== HIDDEN) shown.close();
+    }
     const tag = text(alert.tag);
     await self.registration.showNotification(text(alert.title) || "Flash ∞ AI", {
       body: text(alert.body),
       icon: "/app-icon/192?v=3",
       data: { url: flashPage(alert.url) },
-      ...(tag ? { tag, renotify: true } : {}),
+      ...(tag ? { tag, renotify: tag !== HIDDEN } : {}),
     });
   };
-  // A dot on the installed app's icon until Flash is opened again (it clears it).
-  const badge = self.navigator.setAppBadge ? self.navigator.setAppBadge().catch(() => {}) : Promise.resolve();
-  event.waitUntil(Promise.all([show(), badge]));
+  // A dot on the installed app's icon until Flash is opened again (it clears it); none while Flash is
+  // on the screen and in front, where the person sees the alert come in.
+  const badge = async () => {
+    if (!self.navigator.setAppBadge) return;
+    const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    if (windows.some((w) => isFlash(w) && w.visibilityState === "visible" && w.focused)) return;
+    await self.navigator.setAppBadge();
+  };
+  event.waitUntil(Promise.all([show(), badge().catch(() => {})]));
 });
-
-// Flash itself is its home page; its other pages (privacy, a shared chat, /admin) aren't, and a tap
-// never lands on them.
-const isFlash = (w) => {
-  const page = new URL(w.url);
-  return page.origin === self.location.origin && page.pathname === "/";
-};
 
 // A tap brings an open Flash to the front, which is told the page to show; with none open, it opens one.
 self.addEventListener("notificationclick", (event) => {

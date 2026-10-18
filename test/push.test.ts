@@ -491,7 +491,7 @@ test("until the three keys are set and belong together, nothing shows and nothin
   assert.equal((await rowsOf(jo.id)).length, 1);
   try {
     setKeys(false);
-    assert.deepEqual(push.pushSetup(), { setUp: false, missing: ["VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "VAPID_SUBJECT"], problem: "" });
+    assert.deepEqual(push.pushSetup(), { setUp: false, keysOk: false, missing: ["VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "VAPID_SUBJECT"], problem: "" });
     const shown = (await (await pushRoute.GET(new Request(`${ORIGIN}/api/push`, { headers: { cookie: jo.cookie } }))).json()) as { key: string | null };
     assert.equal(shown.key, null, "Settings hides the switch");
     assert.equal((await pushRoute.POST(call("POST", jo.cookie, browser(`${FCM}jo-2`).sub))).status, 404);
@@ -507,37 +507,83 @@ test("until the three keys are set and belong together, nothing shows and nothin
     assert.match(mismatch.problem, /doesn't belong to VAPID_PUBLIC_KEY/);
     assert.ok(!mismatch.problem.includes(process.env.VAPID_PRIVATE_KEY));
     assert.equal(push.pushPublicKey(), null);
-    process.env.VAPID_PRIVATE_KEY = KEYS.VAPID_PRIVATE_KEY;
+    // With VAPID_SUBJECT missing or wrong as well, the two keys are still checked first: /admin says
+    // to keep them only when they work, so adding the subject is never followed by new keys and a
+    // second redeploy.
+    for (const subject of [undefined, "hello@flash-app.dev"]) {
+      if (subject === undefined) delete process.env.VAPID_SUBJECT;
+      else process.env.VAPID_SUBJECT = subject;
+      const both = push.pushSetup();
+      assert.match(both.problem, /doesn't belong to VAPID_PUBLIC_KEY/, String(subject));
+      assert.deepEqual([both.keysOk, both.missing], [false, subject === undefined ? ["VAPID_SUBJECT"] : []], String(subject));
+    }
+    process.env.VAPID_PUBLIC_KEY = "not-a-key";
+    process.env.VAPID_PRIVATE_KEY = "also-not-a-key";
+    delete process.env.VAPID_SUBJECT;
+    assert.deepEqual(push.pushSetup(), {
+      setUp: false,
+      keysOk: false,
+      missing: ["VAPID_SUBJECT"],
+      problem: "VAPID_PUBLIC_KEY isn't a P-256 public key (65 bytes in base64url)",
+    });
+    // Keys that work, with only the subject missing or wrong: those are the only cases where /admin
+    // says to keep them.
+    setKeys(true);
+    delete process.env.VAPID_SUBJECT;
+    assert.deepEqual(push.pushSetup(), { setUp: false, keysOk: true, missing: ["VAPID_SUBJECT"], problem: "" });
     process.env.VAPID_SUBJECT = "hello@flash-app.dev";
-    assert.match(push.pushSetup().problem, /VAPID_SUBJECT/);
+    assert.deepEqual(push.pushSetup(), { setUp: false, keysOk: true, missing: [], problem: "VAPID_SUBJECT must be a mailto: address or an https:// address" });
   } finally {
     setKeys(true);
   }
-  assert.deepEqual(push.pushSetup(), { setUp: true, missing: [], problem: "" });
+  assert.deepEqual(push.pushSetup(), { setUp: true, keysOk: true, missing: [], problem: "" });
   assert.equal(push.pushPublicKey(), KEYS.VAPID_PUBLIC_KEY);
   assert.equal((await one<{ n: number }>("SELECT COUNT(*) AS n FROM push_subscriptions WHERE user_id = ?", [jo.id]))?.n, 1, "rows wait for the keys");
 });
+
+// A window of Flash's: its path, and whether it's showing and in front (neither, for a path alone).
+type Window = { url: string; visibilityState?: "visible" | "hidden"; focused?: boolean };
 
 /**
  * public/sw.js run as a browser runs it, with Flash's real GET /api/push for its questions (sent
  * with cookie(), the browser's session cookie now): what it shows, the windows a tap opens or
  * focuses, and whether its push subscription is kept.
  */
-function serviceWorker(endpoint: string, cookie: () => string, windows: string[] = []) {
+function serviceWorker(endpoint: string, cookie: () => string, windows: (string | Window)[] = []) {
   const listeners: Record<string, (event: object) => void> = {};
-  const shown: { title: string; options: { body: string; tag?: string; renotify?: boolean; data: { url: string } } }[] = [];
+  type Options = { body: string; tag?: string; renotify?: boolean; data: { url: string } };
+  const shown: { title: string; options: Options }[] = [];
+  // What's on the screen now: a new alert with the tag of one there takes its place, as in browsers.
+  const tray: { title: string; body: string; tag: string; close(): void }[] = [];
   const opened: string[] = [];
   const focused: string[] = [];
   const told: { url: string; message: unknown }[] = [];
-  const state = { subscribed: true, offline: false };
+  const state = { subscribed: true, offline: false, badges: 0 };
   const self = {
     location: { origin: ORIGIN },
     addEventListener: (type: string, listener: (event: object) => void) => void (listeners[type] = listener),
     skipWaiting() {},
-    navigator: {},
+    navigator: { setAppBadge: async () => void state.badges++ },
     registration: {
       // As plain objects of this realm (the worker's are its own), so they compare as they look.
-      showNotification: async (title: string, options: object) => void shown.push({ title, options: JSON.parse(JSON.stringify(options)) }),
+      showNotification: async (title: string, options: object) => {
+        const plain = JSON.parse(JSON.stringify(options)) as Options;
+        shown.push({ title, options: plain });
+        const tag = plain.tag ?? "";
+        const notification = {
+          title,
+          body: plain.body,
+          tag,
+          close: () => {
+            const at = tray.indexOf(notification);
+            if (at >= 0) tray.splice(at, 1);
+          },
+        };
+        const same = tag ? tray.findIndex((n) => n.tag === tag) : -1;
+        if (same >= 0) tray[same] = notification;
+        else tray.push(notification);
+      },
+      getNotifications: async () => [...tray],
       pushManager: {
         getSubscription: async () => (state.subscribed ? { endpoint, unsubscribe: async () => !(state.subscribed = false) } : null),
       },
@@ -545,7 +591,16 @@ function serviceWorker(endpoint: string, cookie: () => string, windows: string[]
     clients: {
       claim: async () => {},
       matchAll: async () =>
-        windows.map((url) => ({ url: ORIGIN + url, postMessage: (message: unknown) => void told.push({ url, message: JSON.parse(JSON.stringify(message)) }), focus: async () => void focused.push(url) })),
+        windows.map((w) => {
+          const { url, visibilityState = "hidden", focused: inFront = false } = typeof w === "string" ? { url: w } : w;
+          return {
+            url: ORIGIN + url,
+            visibilityState,
+            focused: inFront,
+            postMessage: (message: unknown) => void told.push({ url, message: JSON.parse(JSON.stringify(message)) }),
+            focus: async () => void focused.push(url),
+          };
+        }),
       openWindow: async (url: string) => void opened.push(url),
     },
   };
@@ -561,6 +616,8 @@ function serviceWorker(endpoint: string, cookie: () => string, windows: string[]
   };
   return {
     shown,
+    // What's on the screen: title, text and tag.
+    tray: () => tray.map(({ title, body, tag }) => ({ title, body, tag })),
     opened,
     focused,
     told,
@@ -594,7 +651,7 @@ test("an alert that waited at the push service shows its words only if the sign-
   const later = await waiting("Your salary of $4,210 arrived");
   worker.state.offline = true;
   await worker.push(later);
-  assert.deepEqual(worker.shown.at(-1), { title: "Flash ∞ AI", options: { body: "", icon: "/app-icon/192?v=3", data: { url: `${ORIGIN}/` } } });
+  assert.deepEqual(worker.shown.at(-1), { title: "Flash ∞ AI", options: { body: "", icon: "/app-icon/192?v=3", data: { url: `${ORIGIN}/` }, tag: "flash-hidden", renotify: false } });
   assert.equal(worker.state.subscribed, true);
   worker.state.offline = false;
 
@@ -604,7 +661,7 @@ test("an alert that waited at the push service shows its words only if the sign-
   );
   assert.equal(out.status, 200);
   await worker.push(later);
-  assert.deepEqual(worker.shown.at(-1), { title: "Flash ∞ AI", options: { body: "", icon: "/app-icon/192?v=3", data: { url: `${ORIGIN}/` } } }, "none of her words");
+  assert.deepEqual(worker.shown.at(-1), { title: "Flash ∞ AI", options: { body: "", icon: "/app-icon/192?v=3", data: { url: `${ORIGIN}/` }, tag: "flash-hidden", renotify: false } }, "none of her words");
   assert.equal(worker.state.subscribed, false, "and nothing else waiting for that address arrives");
 
   // The same for a sign-in that ended by itself, or a browser no longer signed in at all.
@@ -623,6 +680,63 @@ test("an alert that waited at the push service shows its words only if the sign-
     assert.deepEqual(sw.shown.map((n) => [n.title, n.options.body]), [["Flash ∞ AI", ""]], end);
     assert.equal(sw.state.subscribed, false, end);
   }
+});
+
+test("alerts whose words are held back show as one, and a sign-in that ended takes its earlier alerts off the screen", async () => {
+  const ana = await account("ana.hourly@example.com");
+  const phoneCookie = await signIn(ana);
+  const laptop = browser(`${FCM}family-laptop-hourly`);
+  await pushRoute.POST(call("POST", ana.cookie, laptop.sub));
+  const worker = serviceWorker(laptop.endpoint, () => ana.cookie);
+  // An hourly automation's alerts, each run with its own tag.
+  const alertOf = async (run: string) => {
+    sent = [];
+    await push.sendPush(ana.id, { title: "Ana's weekly money check", body: `Overdraft in 3 days (${run})`, tag: `flash-run-${run}` });
+    return laptop.open(sent[0].body);
+  };
+  // Signed in there: it shows, and stays on the screen until she dismisses it.
+  await worker.push(await alertOf("r1"));
+  const hers = { title: "Ana's weekly money check", body: "Overdraft in 3 days (r1)", tag: "flash-run-r1" };
+  const hidden = { title: "Flash ∞ AI", body: "", tag: "flash-hidden" };
+  assert.deepEqual(worker.tray(), [hers]);
+
+  // No answer from Flash as three arrive: one "Flash ∞ AI", and hers stays, since she may still be signed in.
+  worker.state.offline = true;
+  for (const run of ["r2", "r3", "r4"]) await worker.push(await alertOf(run));
+  assert.deepEqual(worker.tray(), [hers, hidden]);
+  worker.state.offline = false;
+
+  // "Log out of all devices" from her phone while the laptop sleeps with five alerts waiting for it.
+  const waiting = [];
+  for (const run of ["r5", "r6", "r7", "r8", "r9"]) waiting.push(await alertOf(run));
+  await logoutRoute.POST(
+    new Request(`${ORIGIN}/api/auth/logout`, { method: "POST", headers: { "content-type": "application/json", cookie: phoneCookie }, body: JSON.stringify({ everywhere: true }) }),
+  );
+  for (const alert of waiting) await worker.push(alert);
+  assert.deepEqual(worker.tray(), [hidden], "none of her words stay for the next person, and no pile of empty alerts");
+  assert.deepEqual(
+    worker.shown.filter((n) => n.options.tag === "flash-hidden").map((n) => n.options.renotify),
+    [false, false, false, false, false, false, false, false],
+    "one that takes another's place doesn't alert again",
+  );
+});
+
+test("an alert puts a dot on the app's icon, unless Flash is on the screen and in front", async () => {
+  const di = await account("di.badge@example.com");
+  const phone = browser(`${FCM}di-badge`);
+  await pushRoute.POST(call("POST", di.cookie, phone.sub));
+  const test = JSON.stringify({ title: "Flash ∞ AI", body: "Alerts work on this device.", tag: "flash-test" });
+  const dots = async (windows: (string | Window)[]) => {
+    const worker = serviceWorker(phone.endpoint, () => di.cookie, windows);
+    await worker.push(test);
+    assert.equal(worker.shown.length, 1);
+    return worker.state.badges;
+  };
+  assert.equal(await dots([{ url: "/", visibilityState: "visible", focused: true }]), 0, "the test alert pressed in Flash");
+  assert.equal(await dots([]), 1, "Flash closed");
+  assert.equal(await dots([{ url: "/?chat=p1", visibilityState: "hidden" }]), 1, "Flash in a tab behind another");
+  assert.equal(await dots([{ url: "/", visibilityState: "visible", focused: false }]), 1, "Flash's window behind another app's");
+  assert.equal(await dots([{ url: "/privacy", visibilityState: "visible", focused: true }]), 1, "another Flash page, which doesn't clear it");
 });
 
 test("an alert without a tag shows on its own; one with a tag replaces the last and still alerts", async () => {

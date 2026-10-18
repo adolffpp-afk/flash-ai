@@ -1006,6 +1006,8 @@
  "Nothing to publish.": "没有可发布的内容。",
  "Nothing used yet this month.": "本月尚未使用。",
  "Notifications": "通知",
+ "Notifications are blocked for Flash. Allow them in Settings > Apps > Flash ∞ AI > Notifications, then try again.": "Flash 的通知已被阻止。请在“设置 > 应用 > Flash ∞ AI > 通知”中允许，然后重试。",
+ "Notifications are blocked for Flash. Allow them in Settings > Notifications > Flash ∞ AI, then try again.": "Flash 的通知已被阻止。请在“设置 > 通知 > Flash ∞ AI”中允许，然后重试。",
  "Notifications are blocked for Flash. Allow them in your browser's site settings, then try again.": "Flash 的通知已被阻止。请在浏览器的网站设置中允许，然后重试。",
  "Notifications: something new": "通知：有新动态",
  "Notify me when a response is done": "回复完成时通知我",
