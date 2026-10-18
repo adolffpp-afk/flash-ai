@@ -155,6 +155,7 @@
  "Apps like Claude and ChatGPT can use Flash with your credits.": "Claude 和 ChatGPT 等應用程式可以使用你的點數來呼叫 Flash。",
  "Apps you build can answer questions, write and sort things out with AI. You pay for it with your Flash credits, so it stays off until you turn it on, and it never spends more in a day than you allow here.": "你建置的應用程式可以運用 AI 回答問題、撰寫內容和整理資訊。這會使用你的 Flash 點數，因此預設為關閉，需要你自行開啟，而且每天的花費絕不會超過你在這裡設定的上限。",
  "Apps, slides and research for a busy week": "滿足忙碌一週的應用程式、簡報和研究需求",
+ "As your page opens, its script changes the title to “{title}”, and Google shows that one. A title starting with “{word}” tells Google nothing. Keep your own title on the home page.": "你的頁面開啟時，它的指令碼會把標題改成「{title}」，而 Google 顯示的就是這個。以「{word}」開頭的標題對 Google 毫無意義。在首頁保留你自己的標題。",
  "Ask Flash": "問 Flash",
  "Ask Flash anything…": "問 Flash 任何問題…",
  "Ask Flash to build a website or app, then press Publish under the preview. It shows up here with its link and any messages visitors send.": "請 Flash 建置網站或應用程式，然後按下預覽下方的「發布」。它會連同連結和訪客傳送的訊息一起顯示在這裡。",

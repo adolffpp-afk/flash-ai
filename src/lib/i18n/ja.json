@@ -155,6 +155,7 @@
  "Apps like Claude and ChatGPT can use Flash with your credits.": "ClaudeやChatGPTなどのアプリから、あなたのクレジットでFlashを使えます。",
  "Apps you build can answer questions, write and sort things out with AI. You pay for it with your Flash credits, so it stays off until you turn it on, and it never spends more in a day than you allow here.": "作成したアプリで、AIを使って質問に答えたり、文章を書いたり、情報を整理したりできます。Flashのクレジットを使うため、オンにするまではオフのままで、1日の消費量がここで設定した上限を超えることはありません。",
  "Apps, slides and research for a busy week": "忙しい1週間のアプリ、スライド、リサーチに",
+ "As your page opens, its script changes the title to “{title}”, and Google shows that one. A title starting with “{word}” tells Google nothing. Keep your own title on the home page.": "ページを開くと、スクリプトがタイトルを「{title}」に変え、Googleにはそれが表示されます。「{word}」で始まるタイトルはGoogleに何も伝えません。ホームページでは元のタイトルのままにしてください。",
  "Ask Flash": "Flashに質問",
  "Ask Flash anything…": "Flashに何でも聞いてください…",
  "Ask Flash to build a website or app, then press Publish under the preview. It shows up here with its link and any messages visitors send.": "Flashにサイトやアプリの作成を頼み、プレビューの下にある「公開」を押してください。リンクや訪問者からのメッセージとともに、ここに表示されます。",

@@ -12,7 +12,7 @@ const { LABELS, WHY, fixMessage, listOf, messageOf } = await import("../src/lib/
 const { fixForCopy } = await import("../src/lib/seo-fix.ts");
 const { chatForFix, chatWithSite, newestApp, siteOf, stillAnswering } = await import("../src/lib/seo-chat.ts");
 const { chatSaves } = await import("../src/lib/chat-saves.ts");
-const { hasOwnCanonical, hasOwnPreview } = await import("../src/lib/site-preview.ts");
+const { hasOwnCanonical, hasOwnPreview, sitePreview } = await import("../src/lib/site-preview.ts");
 const { cleanUserMessage } = await import("../src/lib/server/turns.ts");
 const { translate } = await import("../src/lib/i18n.ts");
 type Check = import("../src/lib/seo-rules.ts").Check;
@@ -172,56 +172,146 @@ test("the title: missing, more than one, generic, starting with Home, too long o
   const named = check(page({ title: "<title>Golden Crumb &mdash; Leeds&rsquo; Sourdough Bakery &amp; Caf&eacute;</title>" }), "title")!;
   assert.deepEqual([named.status, named.values], ["pass", { title: "Golden Crumb — Leeds’ Sourdough Bakery & Café", count: 45 }]);
   assert.equal(check(page({ title: "<title>Golden Crumb &amp;mdash; &unknown; Sourdough</title>" }), "title")?.values.title, "Golden Crumb &mdash; &unknown; Sourdough", "read once, as the browser does");
+  // The share card Flash adds, which the check counts as taken care of, reads them the same way.
+  for (const title of ["Caf&eacute; Lumi&egrave;re &mdash; Brunch &amp; coffee in Lyon", "Golden Crumb &amp;mdash; &unknown; Sourdough", "Leeds&#8217; finest &#x2014; bread"]) {
+    const html = page({ title: `<title>${title}</title>` });
+    assert.equal(check(html, "card")?.status, "flash");
+    assert.equal(sitePreview(html).title, check(html, "title")?.values.title, title);
+  }
   // A title longer than what the facts keep of it is measured whole.
   const longer = "Golden Crumb Bakery ".repeat(11).trim();
   const cut = check(page({ title: `<title>${longer}</title>` }), "title")!;
   assert.equal(longer.length, 219);
   assert.equal(cut.values.count, 219);
   assert.ok(cut.fix?.startsWith("The <title> is 219 characters"), cut.fix ?? "");
-  // A home page called home in the owner's language, as the builder writes it, says nothing either.
-  for (const [title, word] of [
-    ["Inicio · Panadería Sol de Sevilla", "Inicio"],
-    ["Accueil · Boulangerie du Marché", "Accueil"],
-    ["Startseite · Bäckerei am Markt", "Startseite"],
-    ["Início · Padaria Miolo Dourado", "Início"],
-    ["Главная — Пекарня Золотая корочка", "Главная"],
-    ["الرئيسية · مطعم الياسمين في عمّان", "الرئيسية"],
-    ["דף הבית | מאפיית פירור הזהב", "דף הבית"],
-    ["ホーム｜ゴールデンクラム ベーカリー", "ホーム"],
-    ["首页 | 金色面包店 里斯本", "首页"],
-    ["Trang chủ - Tiệm bánh Vàng Giòn", "Trang chủ"],
+  // A home page called home in the page's language, as the builder writes it, says nothing either.
+  const titled = (lang: string, title: string) => page({ lang: `lang="${lang}"`, title: `<title>${title}</title>` });
+  for (const [lang, title, word] of [
+    ["es", "Inicio · Panadería Sol de Sevilla", "Inicio"],
+    ["fr", "Accueil · Boulangerie du Marché", "Accueil"],
+    ["de", "Startseite · Bäckerei am Markt", "Startseite"],
+    ["pt-BR", "Início · Padaria Miolo Dourado", "Início"],
+    ["ru", "Главная — Пекарня Золотая корочка", "Главная"],
+    ["ar", "الرئيسية · مطعم الياسمين في عمّان", "الرئيسية"],
+    ["he", "דף הבית | מאפיית פירור הזהב", "דף הבית"],
+    ["ja", "ホーム｜ゴールデンクラム ベーカリー", "ホーム"],
+    ["zh-Hans", "首页 | 金色面包店 里斯本", "首页"],
+    ["vi", "Trang chủ - Tiệm bánh Vàng Giòn", "Trang chủ"],
+    ["de", "Start - Bäckerei am Markt", "Start"],
+    ["es", "Home · Panadería Sol de Sevilla", "Home"],
   ]) {
-    const home = check(page({ title: `<title>${title}</title>` }), "title")!;
+    const home = check(titled(lang, title), "title")!;
     assert.deepEqual([home.status, home.problem, home.values], ["warn", "home", { title, word }], title);
     assert.ok(home.fix?.startsWith(`The title starts with "${word}"`), home.fix ?? "");
   }
-  assert.equal(said(page({ title: "<title>Inicio</title>" }), "title"), "fail generic");
+  assert.equal(said(titled("es", "Inicio"), "title"), "fail generic");
   assert.equal(said(page({ title: "<title>Homemade bread · Golden Crumb</title>" }), "title"), "pass pass");
   assert.equal(said(page({ title: "<title>Startup Studio · Product design</title>" }), "title"), "pass pass");
+  assert.equal(said(page({ title: "<title>Home - Golden Crumb Coworking</title>" }), "title"), "warn home", "a dash after a space is a separator");
+  // A name joined to a home word by a dash is a name, in any language; and a word for home in
+  // another language than the page's is the business's name (Lakay, Nyumbani, Tahanan in English).
+  for (const [lang, title] of [
+    ["en", "Start-Up Lisboa · Coworking in Alfama"],
+    ["de", "Start-Up Lisboa · Coworking in Alfama"],
+    ["sv", "Hem-Tek · Elektriker i Göteborg"],
+    ["he", "בית-שמש פיצה · משלוחים בבית שמש"],
+    ["en", "Home-Grown Farm Shop · Organic veg in Leeds"],
+    ["en", "Start-to-Finish Plumbing · Leeds emergency plumbers"],
+    ["en", "Nyumbani · Kenyan kitchen and bar in Leeds"],
+    ["en", "Lakay · Haitian restaurant in Little Haiti, Miami"],
+    ["en", "Tahanan · Filipino bakery and café in Daly City"],
+    ["en", "Start · Coworking and events for founders"],
+  ]) {
+    assert.equal(said(titled(lang, title), "title"), "pass pass", `${lang} ${title}`);
+  }
+  assert.equal(said(titled("sw", "Nyumbani · Mkahawa wa Kenya"), "title"), "warn home");
 });
 
 test("the title a router gives the home page as it loads is the one Google shows", async () => {
-  const router = (code: string) =>
-    page({ body: `<section data-page="home">${BODY}</section><section data-page="menu"><h1>Menu</h1></section><script>${code}</script>` });
+  const router = (code: string, title = TITLE, lang = "en") =>
+    page({ lang: `lang="${lang}"`, title, body: `<nav><a href="#/">Home</a> <a href="#/menu">Menu</a></nav><section data-page="home">${BODY}</section><section data-page="menu"><h1>Menu</h1></section><script>${code}</script>` });
   const names = 'const NAMES = { home: "Home", menu: "Menu" }; function route() { const name = location.hash.slice(2); const page = NAMES[name] ? name : "home";';
   // As builder.ts asked routers to set it until now: "Page name · Site name" on load, for home too.
   const set = check(router(`${names}\n  document.title = NAMES[page] + " · Golden Crumb";\n}\nroute();`), "title")!;
-  assert.deepEqual([set.status, set.problem, set.values], ["warn", "home", { title: "Home · Golden Crumb", word: "Home" }]);
+  assert.deepEqual([set.status, set.problem, set.values], ["warn", "router", { title: "Home · Golden Crumb", word: "Home" }]);
   assert.ok(set.fix?.includes('sets document.title to "Home · Golden Crumb" for the home page'), set.fix ?? "");
   assert.ok(set.fix?.includes('Keep the <title> as it is: "Golden Crumb · Sourdough bakery in Lisbon"'), set.fix ?? "");
+  // Its message says it's the script that changes the title, not the one Flash shows the owner.
+  assert.equal(
+    translate(null, messageOf(set)!, set.values),
+    "As your page opens, its script changes the title to “Home · Golden Crumb”, and Google shows that one. A title starting with “Home” tells Google nothing. Keep your own title on the home page.",
+  );
   assert.deepEqual(check(router(`${names} document.title = \`\${NAMES[page]} | Golden Crumb\`; } route();`), "title")?.values, { title: "Home | Golden Crumb", word: "Home" });
-  assert.deepEqual(check(router('const TITLES = { "home": "Inicio", menu: "Carta" }; const show = (p) => { document.title = TITLES[p] + " · " + SITE; };'), "title")?.values, { title: "Inicio · …", word: "Inicio" });
-  // One that keeps the page's own title for home, as builder.ts asks now, or names home after the site.
+  const spanish = 'const TITLES = { "home": "Inicio", menu: "Carta" }; const show = (p) => { document.title = TITLES[p] + " · " + SITE; }; addEventListener("hashchange", () => show(location.hash.slice(2) || "home")); show("home");';
+  assert.deepEqual(check(router(spanish, TITLE, "es"), "title")?.values, { title: "Inicio · …", word: "Inicio" });
+  // The other ways routers name home: in a choice, the page's id capitalised, from page objects, in a
+  // React effect; with a Share button reading the title, and with the site's name as the <title>.
+  const route = (title: string) => `function route() { const name = location.hash.replace("#/", "") || "home"; document.title = ${title}; } addEventListener("hashchange", route); route();`;
+  for (const [form, code, html] of [
+    ["a choice", route('(name === "home" ? "Home" : name.charAt(0).toUpperCase() + name.slice(1)) + " · Golden Crumb"'), TITLE],
+    ["the id capitalised", route('name.charAt(0).toUpperCase() + name.slice(1) + " · Golden Crumb"'), TITLE],
+    ["page objects", `const PAGES = { home: { title: "Home", el: "#home" }, menu: { title: "Menu" } }; ${route('`${PAGES[name].title} · Golden Crumb`')}`, TITLE],
+    ["a React effect", 'function App() { const [page, setPage] = React.useState(location.hash.slice(2) || "home"); React.useEffect(() => { document.title = `${NAMES[page]} · Golden Crumb`; }, [page]); return null; } const NAMES = { home: "Home", menu: "Menu" };', TITLE],
+    ["a Share button", `${names} document.title = NAMES[page] + " · Golden Crumb"; } route(); share.onclick = () => navigator.share({ title: document.title, url: location.href }); wa.href = "https://wa.me/?text=" + encodeURIComponent(document.title);`, TITLE],
+    ["the site's name", `${names} document.title = NAMES[page] + " · Golden Crumb Artisan Bakery Leeds"; } route();`, "<title>Golden Crumb Artisan Bakery Leeds</title>"],
+  ]) {
+    const found = check(router(code, html), "title")!;
+    assert.deepEqual([found.problem, found.values.word], ["router", "Home"], form);
+    assert.match(String(found.values.title), /^Home · Golden Crumb/, form);
+  }
+  // One that keeps the page's own title for home, as builder.ts asks now, or names home after the site;
+  // and scripts that set the title only for something else than the home page as it opens.
+  const sections = `<section data-page="home">${BODY}</section><section data-page="blog" hidden><h1>Blog</h1></section>`;
   for (const fine of [
     `const HOME_TITLE = document.title; ${names} document.title = page === "home" ? HOME_TITLE : NAMES[page] + " · Golden Crumb"; } route();`,
     `${names}\n  if (page !== "home")\n    document.title = NAMES[page] + " · Golden Crumb";\n} route();`,
     `${names} document.title = page === "home" ? "Golden Crumb · Sourdough bakery in Lisbon" : NAMES[page] + " · Golden Crumb"; } route();`,
-    `// Sets document.title for each page.\nconst NAMES = { home: "Golden Crumb", menu: "Menu" }; const route = (page) => { document.title = NAMES[page] + " · Sourdough in Lisbon"; };`,
+    `// Sets document.title for each page.\nconst NAMES = { home: "Golden Crumb", menu: "Menu" }; const route = (page) => { document.title = NAMES[page] + " · Sourdough in Lisbon"; }; route("home");`,
     'const show = (name) => { document.querySelectorAll("[data-page]").forEach((s) => (s.hidden = s.dataset.page !== name)); };',
+    // A blog whose router leaves the title alone: only opening a post names it in the tab.
+    `const PAGES = { home: "Home", blog: "Blog" };\nfunction route() { const name = location.hash.slice(2) || "home"; document.querySelectorAll("[data-page]").forEach((s) => (s.hidden = s.dataset.page !== name)); }\nasync function openPost(id) {\n  const post = (await flashDB.list("posts")).find((p) => p.id === id);\n  document.title = \`\${post.title} · Golden Crumb\`;\n}\naddEventListener("hashchange", route); route();`,
+    // A timer with no router: a countdown in the tab, and "" : "Start" in a label.
+    'let left = 1500, running = false;\nfunction draw() {\n  document.title = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, "0")} · Focus Timer`;\n  go.setAttribute("aria-label", running ? "" : "Start");\n}\ndraw();',
+    // As builder.ts asks, with the <title> read from the page and if/else blocks.
+    'const homeTitle = document.querySelector("title").textContent;\nconst NAMES = { home: "Home", blog: "Blog" };\nfunction route() {\n  const page = NAMES[location.hash.slice(2)] ? location.hash.slice(2) : "home";\n  if (page === "home") {\n    document.title = homeTitle;\n  } else {\n    document.title = `${NAMES[page]} · Golden Crumb`;\n  }\n}\naddEventListener("hashchange", route); route();',
+    'const { title: SITE } = document; window.onhashchange = () => { const page = location.hash.slice(2); document.title = !page || page === "home" ? SITE : NAMES[page] + " · Golden Crumb"; }; const NAMES = { home: "Home" };',
+    // A notes app that names a new note "Untitled" in the tab when New note is pressed.
+    'document.getElementById("new").addEventListener("click", () => {\n  document.getElementById("body").value = "";\n  document.title = "Untitled";\n});\nfunction newNote() { document.title = "Untitled"; } document.getElementById("again").addEventListener("click", newNote); clear.onclick = () => newNote();',
   ]) {
-    assert.equal(said(router(fine), "title"), "pass pass", fine);
+    assert.equal(said(page({ body: `${sections}<script>${fine}</script>` }), "title"), "pass pass", fine);
   }
+  assert.equal(said(page({ title: "<title>Focus Timer · Pomodoro rounds and breaks</title>", body: `${BODY}<script>let left = 1500; function draw() { document.title = \`\${Math.floor(left / 60)}:00 · Focus Timer\`; } draw();</script>` }), "title"), "pass pass");
+  // What a script sets on load for every page counts, a generic word too, whatever it's in.
+  const untitled = check(page({ body: `${BODY}<script>window.addEventListener("load", () => { document.title = "Untitled"; });</script>` }), "title")!;
+  assert.deepEqual([untitled.problem, untitled.values], ["router", { title: "Untitled", word: "Untitled" }]);
   assert.equal(said(BAKERY, "title"), "pass pass");
+  // When the <title> starts with Home too, the same fix changes it, and the check then passes.
+  const both = router(`${names} document.title = NAMES[page] + " · Golden Crumb Bakery"; } route();`, "<title>Home · Golden Crumb</title>");
+  const fix = check(both, "title")!;
+  assert.deepEqual([fix.problem, fix.values.title], ["router", "Home · Golden Crumb Bakery"]);
+  assert.ok(fix.fix?.includes('Also change the <title> ("Home · Golden Crumb") to "<site name> · <what it offers>"'), fix.fix ?? "");
+  assert.ok(!fix.fix?.endsWith("…"), "the whole instruction fits");
+  const followed = both
+    .replace("<title>Home · Golden Crumb</title>", TITLE)
+    .replace("const NAMES", "const HOME_TITLE = document.title; const NAMES")
+    .replace('document.title = NAMES[page] + " · Golden Crumb Bakery"', 'document.title = page === "home" ? HOME_TITLE : NAMES[page] + " · Golden Crumb Bakery"');
+  assert.equal(said(followed, "title"), "pass pass");
+  // Both the same: the <title>'s own fix, which asks for the router's title too.
+  const same = check(router(`${names} document.title = NAMES[page] + " · Golden Crumb"; } route();`, "<title>Home · Golden Crumb</title>"), "title")!;
+  assert.equal(same.problem, "home");
+  assert.ok(same.fix?.includes("in <title> and wherever the script sets document.title for the home page"), same.fix ?? "");
+  // A long or short <title> is asked for in the same go, and every instruction fits.
+  const long = `<title>${"Golden Crumb Bakery in Lisbon: sourdough, pastries and cakes ".repeat(2)}</title>`;
+  const longRouter = `${names} document.title = NAMES[page] + " · Golden Crumb Bakery and Café in the heart of Lisbon"; } route();`;
+  for (const [title, asks] of [
+    [long, "Also cut the <title>"],
+    ["<title>Crumb</title>", "Also make the <title>"],
+    ["<title>Home · Golden Crumb Bakery and Café in the heart of Lisbon, Portugal</title>", "Also change the <title>"],
+  ]) {
+    const both = check(router(longRouter, title), "title")!;
+    assert.equal(both.problem, "router", title);
+    assert.ok(both.fix?.includes(asks) && !both.fix.endsWith("…"), both.fix ?? "");
+  }
   const { buildSystem } = await import("../src/lib/engines/builder.ts");
   assert.ok(buildSystem("app", "").includes("set document.title: the page's own <title> on home"), "new sites keep the home page's own title");
 });
@@ -485,6 +575,15 @@ test("blanks the builder left for the owner, but not numbers, capitals or code",
   assert.deepEqual(jsx('const re = /[A-Za-z/&]+/; const m = s.match(/[Ab&]+$/); const q = x["[Cd"] + y["Ef]"];'), []);
   // A one-word blank is still one in a string, a template or JSX text, after ":" and before "," too.
   assert.deepEqual(jsx('const a = "Call: [Phone], or email us"; const b = `<li>Email: [Email]</li>`;\nconst C = () => (\n  <p>\n    Address: [Address]\n  </p>\n);'), ["[Phone]", "[Email]", "[Address]"]);
+  // On a line of its own in JSX or a template, with a , ; or ) after it: still a blank, not code.
+  const footer = (text: string) => jsx(`function Footer() {\n  return (\n    <footer className="p-6 text-sm">\n${text}\n    </footer>\n  );\n}\nReactDOM.createRoot(document.getElementById("root")).render(<Footer />);`);
+  assert.deepEqual(footer("      <address>\n        Find us: [Address], Lisbon\n      </address>"), ["[Address]"]);
+  assert.deepEqual(footer("      <p>\n        Phone: [Phone], Email: [Email]\n      </p>"), ["[Phone]", "[Email]"]);
+  assert.deepEqual(footer("      <p>\n        Visit us (near [Landmark]) today\n      </p>"), ["[Landmark]"]);
+  assert.deepEqual(
+    scanPage(page({ body: `${BODY}<footer id="f"></footer><script>document.getElementById("f").textContent = \`Golden Crumb\nPhone: [Phone], open every day\nInstagram: [Instagram]; WhatsApp: [WhatsApp]\`;</script>` })).placeholders,
+    ["[Phone]", "[Instagram]", "[WhatsApp]"],
+  );
   // And in a link's address the script writes.
   assert.deepEqual(jsx('const Contact = () => <a href="tel:[Phone number]">Call</a>; const W = () => <a href={"https://wa.me/[WhatsApp number]"}>WhatsApp</a>;'), ["[Phone number]", "[WhatsApp number]"]);
   // The page's own words in brackets aren't blanks: keys a game names (in <kbd> or not), a form's
@@ -516,6 +615,19 @@ test("blanks the builder left for the owner, but not numbers, capitals or code",
   assert.equal(said(addresses, "links"), "pass pass");
   assert.equal(said(page({ body: `${BODY}<a href="[Booking link]">Book</a>` }), "links"), "absent");
   assert.deepEqual(scanPage(page({ body: `${BODY}<a href="tel:+351210000000">Call</a><a href="https://wa.me/351210000000">WhatsApp</a>` })).placeholders, []);
+  // A message the visitor fills in and sends (mailto: and sms: body=, WhatsApp's text=) is theirs, not the owner's.
+  for (const href of [
+    "mailto:hello@goldencrumb.pt?subject=Cake%20order&amp;body=Name%3A%20[Your name]%0ACake%3A%20[Cake flavour]%0ADate%3A%20[Pickup date]",
+    "https://wa.me/351912345678?text=Hi!%20I'd%20like%20to%20order%20%5BQuantity%5D%20loaves%20for%20%5BPickup%20day%5D.",
+    "sms:+351912345678?body=Table for [Number of people] at [Time]",
+    "https://api.whatsapp.com/send?phone=351912345678&amp;text=Order:+[Your+order]",
+  ]) {
+    assert.equal(said(page({ body: `${BODY}<a href="${href}">Order a cake</a>` }), "placeholders"), "pass pass", href);
+  }
+  assert.deepEqual(
+    scanPage(page({ body: `${BODY}<a href="mailto:[Email address]?subject=Order&amp;body=[Your name]">Email</a><a href="https://api.whatsapp.com/send?phone=[WhatsApp number]&amp;text=Hi">WhatsApp</a><a href="tel:[Phone number]">Call</a>` })).placeholders,
+    ["[Email address]", "[WhatsApp number]", "[Phone number]"],
+  );
   // Every blank the page shows is listed, so the owner can give them all in one go (and the draft has a line for each).
   const ten = ["[Phone number]", "[Email address]", "[Street address]", "[Postcode]", "[Opening hours]", "[Instagram handle]", "[Owner name]", "[Year founded]", "[Parking details]", "[Wi-Fi password]"];
   const many = page({ body: `${BODY}${ten.map((b) => `<p>${b}</p>`).join("")}<script>el.textContent = "[Delivery area]";</script>` });

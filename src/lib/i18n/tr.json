@@ -155,6 +155,7 @@
  "Apps like Claude and ChatGPT can use Flash with your credits.": "Claude ve ChatGPT gibi uygulamalar Flash'ı senin kredilerinle kullanabilir.",
  "Apps you build can answer questions, write and sort things out with AI. You pay for it with your Flash credits, so it stays off until you turn it on, and it never spends more in a day than you allow here.": "Oluşturduğun uygulamalar yapay zekâyla soruları yanıtlayabilir, yazabilir ve işleri düzene sokabilir. Bunu Flash kredilerinle ödersin; bu yüzden sen açana kadar kapalı kalır ve bir günde burada izin verdiğinden fazlasını asla harcamaz.",
  "Apps, slides and research for a busy week": "Yoğun bir hafta için uygulamalar, slaytlar ve araştırma",
+ "As your page opens, its script changes the title to “{title}”, and Google shows that one. A title starting with “{word}” tells Google nothing. Keep your own title on the home page.": "Sayfan açılırken betiği başlığı “{title}” olarak değiştiriyor ve Google bunu gösteriyor. “{word}” ile başlayan bir başlık Google'a hiçbir şey söylemez. Ana sayfada kendi başlığını koru.",
  "Ask Flash": "Flash'a sor",
  "Ask Flash anything…": "Flash'a istediğini sor…",
  "Ask Flash to build a website or app, then press Publish under the preview. It shows up here with its link and any messages visitors send.": "Flash'tan bir web sitesi veya uygulama oluşturmasını iste, ardından önizlemenin altındaki Yayınla'ya bas. Bağlantısı ve ziyaretçilerin gönderdiği mesajlarla birlikte burada görünür.",

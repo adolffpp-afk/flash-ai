@@ -126,18 +126,42 @@ const fixText = (...parts: (string | false | 0 | null | undefined)[]) => {
 };
 const fold = (text: string) => text.trim().toLowerCase().replace(/\s+/g, " ");
 
-// What a site calls its home page, in the languages Flash is shown in (as a builder names it in the nav).
-const HOME_WORDS = [
-  "home", "start", "inicio", "página principal", "accueil", "startseite", "início", "página inicial", "startpagina", "pagina iniziale",
-  "strona główna", "ana sayfa", "anasayfa", "acasă", "pagina principală", "hem", "startsida", "beranda", "halaman utama", "nyumbani",
-  "mwanzo", "tahanan", "trang chủ", "akèy", "lakay", "αρχική", "αρχική σελίδα", "главная", "главная страница", "головна",
-  "головна сторінка", "الرئيسية", "الصفحة الرئيسية", "דף הבית", "בית", "ראשי", "خانه", "صفحه اصلی", "صفحهٔ اصلی", "ہوم", "صفحہ اول",
-  "مرکزی صفحہ", "होम", "मुखपृष्ठ", "मुख्य पृष्ठ", "হোম", "প্রথম পাতা", "মূল পাতা", "หน้าแรก", "หน้าหลัก", "ホーム", "トップページ", "トップ",
-  "홈", "首页", "主页", "首頁", "主頁",
-];
-// Titles that say nothing about what the site is.
+// What a site calls its home page in each language Flash is shown in (as a builder names it in the nav),
+// by the page's lang. English's "home" is used in every language. Only the page's own language's
+// words count, so a business named Lakay or Nyumbani on an English page is a name.
+const HOME_WORDS: Record<string, string[]> = {
+  es: ["inicio", "página principal"],
+  fr: ["accueil"],
+  de: ["startseite", "start"],
+  pt: ["início", "página inicial"],
+  nl: ["startpagina", "start"],
+  it: ["pagina iniziale"],
+  pl: ["strona główna", "start"],
+  tr: ["ana sayfa", "anasayfa"],
+  ro: ["acasă", "pagina principală"],
+  sv: ["hem", "startsida", "start"],
+  id: ["beranda", "halaman utama"],
+  ms: ["beranda", "halaman utama"],
+  sw: ["nyumbani", "mwanzo"],
+  tl: ["tahanan"],
+  vi: ["trang chủ"],
+  ht: ["akèy", "lakay"],
+  el: ["αρχική", "αρχική σελίδα"],
+  ru: ["главная", "главная страница"],
+  uk: ["головна", "головна сторінка"],
+  ar: ["الرئيسية", "الصفحة الرئيسية"],
+  he: ["דף הבית", "בית", "ראשי"],
+  fa: ["خانه", "صفحه اصلی", "صفحهٔ اصلی"],
+  ur: ["ہوم", "صفحہ اول", "مرکزی صفحہ"],
+  hi: ["होम", "मुखपृष्ठ", "मुख्य पृष्ठ"],
+  bn: ["হোম", "প্রথম পাতা", "মূল পাতা"],
+  th: ["หน้าแรก", "หน้าหลัก"],
+  ja: ["ホーム", "トップページ", "トップ"],
+  ko: ["홈"],
+  zh: ["首页", "主页", "首頁", "主頁"],
+};
+// Titles that say nothing about what the site is (with the home words of the page's language).
 const GENERIC_TITLES = new Set([
-  ...HOME_WORDS,
   "untitled",
   "document",
   "index",
@@ -153,8 +177,23 @@ const GENERIC_TITLES = new Set([
   "vite app",
   "made with flash",
 ]);
-// A many-page site's "Home · Name" (as site-preview.ts strips it for the share card), "Inicio · Nombre", "ホーム｜名前".
-const HOME_TITLE = new RegExp(`^(${[...HOME_WORDS].sort((a, b) => b.length - a.length).join("|")})\\s*[·|:–—\\-｜・]`, "iu");
+const homeWords = new Map<string, { starts: RegExp; generic: Set<string> }>();
+/**
+ * A many-page site's "Home · Name" (as site-preview.ts strips it for the share card), "Inicio · Nombre",
+ * "ホーム｜名前", "Главная — Пекарня", in the page's language, and the titles that say nothing in it. A
+ * dash counts only after a space: one in a word (Start-up, Hem-Tek, בית-שמש) is part of a name.
+ */
+function homeWordsOf(lang: string) {
+  const base = lang.trim().toLowerCase().split("-")[0];
+  const key = base === "fil" ? "tl" : HOME_WORDS[base] ? base : "";
+  let found = homeWords.get(key);
+  if (!found) {
+    const words = ["home", ...(HOME_WORDS[key] ?? [])].sort((a, b) => b.length - a.length);
+    found = { starts: new RegExp(`^(${words.join("|")})(?:\\s*[·|:｜・]|\\s+[-–—])`, "iu"), generic: new Set([...GENERIC_TITLES, ...words]) };
+    homeWords.set(key, found);
+  }
+  return found;
+}
 const LANG_CODE = /^[a-z]{2,3}(-[a-z0-9]{2,8})*$/i;
 const RTL = new Set(["ar", "he", "fa", "ur", "ps", "yi"]);
 const ALPHABET_OF: Record<string, Alphabet> = {};
@@ -238,14 +277,15 @@ export function evaluate(facts: SeoFacts | null | undefined, ctx: SeoContext): S
   // 1. The title, and the one a script gives the home page as it loads, which Google shows instead.
   const title = facts.titles[0]?.trim() ?? "";
   const width = facts.titleWidth;
+  const home = homeWordsOf(facts.lang ?? "");
   const router = facts.routerTitle ?? "";
-  const routerHome = router && (HOME_TITLE.exec(router)?.[1] ?? (GENERIC_TITLES.has(fold(router)) ? router.trim() : ""));
-  const homeWord = HOME_TITLE.exec(title)?.[1];
+  const routerHome = router && (home.starts.exec(router)?.[1] ?? (home.generic.has(fold(router)) ? router.trim() : ""));
+  const homeWord = home.starts.exec(title)?.[1];
   if (!facts.titleCount || !title) {
     add("title", 3, "fail", "none", {}, "Add a <title> inside <head>: the site's name plus what it offers, at most 60 characters.");
   } else if (facts.titleCount > 1) {
     add("title", 3, "fail", "several", { count: facts.titleCount, tag: "<title>" }, `The page has ${facts.titleCount} <title> elements outside SVG icons. Keep one, inside <head>.`);
-  } else if (GENERIC_TITLES.has(fold(title))) {
+  } else if (home.generic.has(fold(title))) {
     add(
       "title",
       3,
@@ -258,16 +298,24 @@ export function evaluate(facts: SeoFacts | null | undefined, ctx: SeoContext): S
       ),
     );
   } else if (routerHome) {
+    // The <title> it keeps then is the one Google shows: when that has a problem of its own, it's fixed in the same go.
+    const ownFix = homeWord
+      ? `Also change the <title> ("${sample(title)}") to "<site name> · <what it offers>", at most 60 characters.`
+      : width > 60
+        ? `Also cut the <title> ("${sample(title)}", ${width} characters) to at most 60, keeping the name and offer.`
+        : width < 20
+          ? `Also make the <title> ("${sample(title)}") the site's name plus what it offers, 20 to 60 characters.`
+          : `Keep the <title> as it is: "${sample(title)}".`;
     add(
       "title",
       3,
       "warn",
-      "home",
+      "router",
       { title: router, word: routerHome },
       fixText(
-        `As the page loads, its script sets document.title to "${sample(router)}" for the home page, and that is the title Google shows.`,
-        `Make the router keep the page's own <title> on the home page (save it in a variable when the script starts) and set "<Page> · <site name>" only for the other pages.`,
-        !homeWord && `Keep the <title> as it is: "${sample(title)}".`,
+        `As the page loads, its script sets document.title to "${sample(router)}" for the home page, which Google shows.`,
+        `Make the router keep the page's own <title> there (saved in a variable as the script starts), setting "<Page> · <site name>" only on other pages.`,
+        ownFix,
       ),
     );
   } else if (homeWord) {
@@ -296,7 +344,7 @@ export function evaluate(facts: SeoFacts | null | undefined, ctx: SeoContext): S
     add("description", 3, "fail", "none", {}, `Add <meta name="description" content="…"> inside <head>: ${describe}.`);
   } else if (facts.descriptionCount > 1) {
     add("description", 3, "fail", "several", { count: facts.descriptionCount, tag: '<meta name="description">' }, `The page has ${facts.descriptionCount} description meta tags. Keep one, 70 to 160 characters.`);
-  } else if (title && (fold(description) === fold(title) || fold(description) === fold(title.replace(HOME_TITLE, "")))) {
+  } else if (title && (fold(description) === fold(title) || fold(description) === fold(title.replace(home.starts, "")))) {
     add("description", 3, "warn", "same", {}, `The meta description repeats the title. Rewrite it as ${describe}.`);
   } else if (dWidth > 160) {
     add("description", 3, "warn", "long", { count: dWidth, max: 160 }, `The meta description is ${dWidth} characters. Shorten it to at most 160, keeping the main point first.`);

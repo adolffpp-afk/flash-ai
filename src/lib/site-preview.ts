@@ -5,18 +5,43 @@
 
 export type SitePreview = { title: string; description: string; image: string | null };
 
-/** The few named characters pages use most (&amp;, &nbsp;…), written out. Flash's search check (seo-scan.ts) reads text with it too. */
-export const decode = (text: string) =>
-  text
-    .replace(/&nbsp;/g, " ")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;|&apos;/g, "'")
-    .replace(/&amp;/g, "&");
+// The characters pages write by name (&mdash;, &rsquo;, &eacute;, &euro;), as the browser shows them:
+// HTML's Latin-1 names in the order of their code points from 160, then the others pages use.
+const CHARACTERS = new Map<string, string>([["amp", "&"], ["lt", "<"], ["gt", ">"], ["quot", '"'], ["apos", "'"]]);
+const LATIN1 =
+  "nbsp iexcl cent pound curren yen brvbar sect uml copy ordf laquo not shy reg macr deg plusmn sup2 sup3 acute micro para middot cedil sup1 ordm raquo frac14 frac12 frac34 iquest Agrave Aacute Acirc Atilde Auml Aring AElig Ccedil Egrave Eacute Ecirc Euml Igrave Iacute Icirc Iuml ETH Ntilde Ograve Oacute Ocirc Otilde Ouml times Oslash Ugrave Uacute Ucirc Uuml Yacute THORN szlig agrave aacute acirc atilde auml aring aelig ccedil egrave eacute ecirc euml igrave iacute icirc iuml eth ntilde ograve oacute ocirc otilde ouml divide oslash ugrave uacute ucirc uuml yacute thorn yuml";
+for (const [k, name] of LATIN1.split(" ").entries()) CHARACTERS.set(name, String.fromCharCode(160 + k));
+// A space, as the page's other spaces.
+CHARACTERS.set("nbsp", " ");
+for (const [name, code] of Object.entries({
+  OElig: 338, oelig: 339, Scaron: 352, scaron: 353, Yuml: 376, fnof: 402, circ: 710, tilde: 732, Cacute: 262, cacute: 263, Ccaron: 268, ccaron: 269,
+  Eogon: 280, eogon: 281, Ecaron: 282, ecaron: 283, Gbreve: 286, gbreve: 287, Idot: 304, imath: 305, inodot: 305, Lstrok: 321, lstrok: 322, Nacute: 323,
+  nacute: 324, Rcaron: 344, rcaron: 345, Sacute: 346, sacute: 347, Scedil: 350, scedil: 351, Zacute: 377, zacute: 378, Zdot: 379, zdot: 380, Zcaron: 381,
+  zcaron: 382, Aogon: 260, aogon: 261, ensp: 8194, emsp: 8195, thinsp: 8201, zwnj: 8204, zwj: 8205, lrm: 8206, rlm: 8207, ndash: 8211, mdash: 8212,
+  lsquo: 8216, rsquo: 8217, sbquo: 8218, ldquo: 8220, rdquo: 8221, bdquo: 8222, dagger: 8224, Dagger: 8225, bull: 8226, hellip: 8230, permil: 8240,
+  prime: 8242, Prime: 8243, lsaquo: 8249, rsaquo: 8250, oline: 8254, euro: 8364, trade: 8482, larr: 8592, uarr: 8593, rarr: 8594, darr: 8595,
+  harr: 8596, lArr: 8656, rArr: 8658, hArr: 8660, minus: 8722, infin: 8734, asymp: 8776, ne: 8800, le: 8804, ge: 8805, loz: 9674, starf: 9733, star: 9734,
+  spades: 9824, clubs: 9827, hearts: 9829, diams: 9830, check: 10003, cross: 10007,
+})) {
+  CHARACTERS.set(name, String.fromCodePoint(code));
+}
+
+/**
+ * Characters written as &#8217;, &#x2019; or &rsquo;, read in one pass (so &amp;mdash; stays "&mdash;"), as the
+ * browser shows them. Flash's search check (seo-scan.ts) reads text with it too, so the share card Flash adds
+ * and the check read a page alike.
+ */
+export const decodeText = (text: string) =>
+  !text.includes("&")
+    ? text
+    : text.replace(/&(?:#(\d{1,7})|#[xX]([0-9a-fA-F]{1,6})|([A-Za-z][A-Za-z0-9]{1,31}));/g, (all, dec?: string, hex?: string, name?: string) => {
+        if (name !== undefined) return CHARACTERS.get(name) ?? all;
+        const code = dec !== undefined ? Number(dec) : parseInt(hex!, 16);
+        return code <= 0x10ffff ? String.fromCodePoint(code) : all;
+      });
 
 /** A piece of HTML as the words it shows, on one line. */
-export const plain = (html: string) => decode(html.replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim();
+export const plain = (html: string) => decodeText(html.replace(/<[^>]*>/g, " ")).replace(/\s+/g, " ").trim();
 
 const clip = (text: string, max: number) => (text.length <= max ? text : `${text.slice(0, max - 1).replace(/\s+\S*$/, "")}…`);
 
@@ -46,8 +71,9 @@ export const MADE_WITH_TITLE = "Made with Flash";
  */
 export function sitePreview(page: string, untitled: string = MADE_WITH_TITLE): SitePreview {
   const html = page.slice(0, READ);
-  // A many-page site titles its first page "Home · Name": the card shows the name.
-  const named = plain(html.match(/<title[^<>]{0,200}>([^<]{0,500})<\/title>/i)?.[1] ?? "").replace(/^home\s*[·|:–—-]\s*/i, "");
+  // A many-page site titles its first page "Home · Name": the card shows the name. A dash with no
+  // space before it is part of a word (Home-Grown Farm Shop).
+  const named = plain(html.match(/<title[^<>]{0,200}>([^<]{0,500})<\/title>/i)?.[1] ?? "").replace(/^home(?:\s*[·|:｜・]|\s+[-–—])\s*/i, "");
   const title = clip(named || untitled, 90);
   const meta =
     html.match(/<meta[^<>]{1,500}?name\s*=\s*["']description["'][^<>]{0,500}?content\s*=\s*"([^"<>]{0,1000})"/i)?.[1] ??
@@ -55,16 +81,16 @@ export function sitePreview(page: string, untitled: string = MADE_WITH_TITLE): S
     html.match(/<meta[^<>]{1,500}?content\s*=\s*"([^"<>]{0,1000})"[^<>]{0,500}?name\s*=\s*["']description["']/i)?.[1];
   // No description: the first paragraph long enough to say something.
   const paragraph = [...html.matchAll(/<p(?:\s[^<>]{0,300})?>([\s\S]{0,1500}?)<\/p>/gi)].map((m) => plain(m[1])).find((t) => t.length >= 40);
-  const description = clip(decode(meta ?? "").trim() || paragraph || "", 200);
+  const description = clip(decodeText(meta ?? "").trim() || paragraph || "", 200);
   // The page's own share picture first: Flash's tags go before the page's, and share apps use the first.
   const own =
     html.match(/<meta[^<>]{1,500}?property\s*=\s*["']og:image["'][^<>]{0,500}?content\s*=\s*["'](https:\/\/[^"'\s<>]{1,2000})["']/i)?.[1] ??
     html.match(/<meta[^<>]{1,500}?content\s*=\s*["'](https:\/\/[^"'\s<>]{1,2000})["'][^<>]{0,500}?property\s*=\s*["']og:image["']/i)?.[1];
   // Otherwise the first web picture that isn't an icon: data: pictures and SVGs don't show in share cards.
   const image =
-    (own && decode(own)) ||
+    (own && decodeText(own)) ||
     ([...html.matchAll(/<img[^<>]{1,500}?src\s*=\s*["'](https:\/\/[^"'\s<>]{1,2000})["']/gi)]
-      .map((m) => decode(m[1]))
+      .map((m) => decodeText(m[1]))
       .find((src) => !/\.svg(\?|$)|icon|logo|favicon/i.test(src)) ?? null);
   return { title, description, image };
 }

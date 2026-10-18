@@ -83,6 +83,8 @@ const MESSAGES: Record<string, string> = {
   "title:several": SEVERAL,
   "title:generic": msg("Your page's title is just “{title}”, which doesn't say what you offer."),
   "title:home": msg("Your title starts with “{word}”, which tells Google nothing. Put your name and what you offer first."),
+  // The title the page's script sets as it opens, not the one Flash shows the owner everywhere else.
+  "title:router": msg("As your page opens, its script changes the title to “{title}”, and Google shows that one. A title starting with “{word}” tells Google nothing. Keep your own title on the home page."),
   "title:long": msg("Your title is {count} characters, so Google will cut it off. Keep it to about {max}."),
   "title:short": msg("Your title “{title}” is short. Say what you offer, and where if it matters."),
   "title:pass": msg("“{title}” ({count} characters)"),

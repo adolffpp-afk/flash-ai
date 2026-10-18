@@ -10,11 +10,11 @@
  * page of its size. Every list is capped and every text clipped, so the facts stay small whatever
  * the page holds. Pure, with no DOM, so the browser can check a chat's newest copy the same way.
  */
-import { hasOwnPreview, sitePreview } from "./site-preview.ts";
+import { decodeText, hasOwnPreview, sitePreview } from "./site-preview.ts";
 import { imageDimensions } from "./imageSize.ts";
 
 /** Changes when the reading changes, so facts saved before are read again (see server/seo.ts). */
-export const SEO_VERSION = 7;
+export const SEO_VERSION = 8;
 
 export type Alphabet = "latin" | "arabic" | "hebrew" | "cyrillic" | "greek" | "devanagari" | "bengali" | "thai" | "hangul" | "cjk";
 
@@ -40,9 +40,9 @@ export type SeoFacts = {
   descriptionCount: number;
   descriptionWidth: number;
   /**
-   * The title the page's script gives its home page when it loads (a router's "Home · Golden Crumb",
-   * from its { home: "Home" } names), which is what the tab and Google show; null when no script sets
-   * one, or it keeps the page's own <title> for the home page.
+   * The title the page's script gives its home page as it opens (a router's "Home · Golden Crumb" from
+   * its { home: "Home" } names or its page ids, or what it sets for home alone), which is what the tab
+   * and Google show; null when no code that runs then sets one, or it keeps the page's own <title> there.
    */
   routerTitle: string | null;
   viewport: string | null;
@@ -138,36 +138,6 @@ const addOnce = (list: string[], value: string, max: number) => {
   if (list.length < max && !list.includes(value)) list.push(value);
 };
 
-// The characters pages write by name (&mdash;, &rsquo;, &eacute;, &euro;), as the browser shows them:
-// HTML's Latin-1 names in the order of their code points from 160, then the others pages use.
-const CHARACTERS = new Map<string, string>([["amp", "&"], ["lt", "<"], ["gt", ">"], ["quot", '"'], ["apos", "'"]]);
-const LATIN1 =
-  "nbsp iexcl cent pound curren yen brvbar sect uml copy ordf laquo not shy reg macr deg plusmn sup2 sup3 acute micro para middot cedil sup1 ordm raquo frac14 frac12 frac34 iquest Agrave Aacute Acirc Atilde Auml Aring AElig Ccedil Egrave Eacute Ecirc Euml Igrave Iacute Icirc Iuml ETH Ntilde Ograve Oacute Ocirc Otilde Ouml times Oslash Ugrave Uacute Ucirc Uuml Yacute THORN szlig agrave aacute acirc atilde auml aring aelig ccedil egrave eacute ecirc euml igrave iacute icirc iuml eth ntilde ograve oacute ocirc otilde ouml divide oslash ugrave uacute ucirc uuml yacute thorn yuml";
-for (const [k, name] of LATIN1.split(" ").entries()) CHARACTERS.set(name, String.fromCharCode(160 + k));
-// A space, as the page's other spaces.
-CHARACTERS.set("nbsp", " ");
-for (const [name, code] of Object.entries({
-  OElig: 338, oelig: 339, Scaron: 352, scaron: 353, Yuml: 376, fnof: 402, circ: 710, tilde: 732, Cacute: 262, cacute: 263, Ccaron: 268, ccaron: 269,
-  Eogon: 280, eogon: 281, Ecaron: 282, ecaron: 283, Gbreve: 286, gbreve: 287, Idot: 304, imath: 305, inodot: 305, Lstrok: 321, lstrok: 322, Nacute: 323,
-  nacute: 324, Rcaron: 344, rcaron: 345, Sacute: 346, sacute: 347, Scedil: 350, scedil: 351, Zacute: 377, zacute: 378, Zdot: 379, zdot: 380, Zcaron: 381,
-  zcaron: 382, Aogon: 260, aogon: 261, ensp: 8194, emsp: 8195, thinsp: 8201, zwnj: 8204, zwj: 8205, lrm: 8206, rlm: 8207, ndash: 8211, mdash: 8212,
-  lsquo: 8216, rsquo: 8217, sbquo: 8218, ldquo: 8220, rdquo: 8221, bdquo: 8222, dagger: 8224, Dagger: 8225, bull: 8226, hellip: 8230, permil: 8240,
-  prime: 8242, Prime: 8243, lsaquo: 8249, rsaquo: 8250, oline: 8254, euro: 8364, trade: 8482, larr: 8592, uarr: 8593, rarr: 8594, darr: 8595,
-  harr: 8596, lArr: 8656, rArr: 8658, hArr: 8660, minus: 8722, infin: 8734, asymp: 8776, ne: 8800, le: 8804, ge: 8805, loz: 9674, starf: 9733, star: 9734,
-  spades: 9824, clubs: 9827, hearts: 9829, diams: 9830, check: 10003, cross: 10007,
-})) {
-  CHARACTERS.set(name, String.fromCodePoint(code));
-}
-
-/** Characters written as &#8217;, &#x2019; or &rsquo;, read in one pass (so &amp;mdash; stays "&mdash;"), as the browser shows them. */
-const decodeText = (text: string) =>
-  !text.includes("&")
-    ? text
-    : text.replace(/&(?:#(\d{1,7})|#[xX]([0-9a-fA-F]{1,6})|([A-Za-z][A-Za-z0-9]{1,31}));/g, (all, dec?: string, hex?: string, name?: string) => {
-        if (name !== undefined) return CHARACTERS.get(name) ?? all;
-        const code = dec !== undefined ? Number(dec) : parseInt(hex!, 16);
-        return code <= 0x10ffff ? String.fromCodePoint(code) : all;
-      });
 const oneLine = (text: string) => decodeText(text).replace(/\s+/g, " ").trim();
 
 // Only A to Z lowercased, so every position in it is the same position in the page.
@@ -300,6 +270,16 @@ const OTHER_SCHEME = /^[a-z][a-z0-9+.-]{0,30}:/i;
 const BOUND_TEXT = ["x-text", "x-html", "v-text", "v-html"];
 const BOUND_ALT = [":alt", "x-bind:alt", "v-bind:alt"];
 const HOME_ROUTES = new Set(["", "home", "index"]);
+// A link's settings that are a message the visitor writes and sends (mailto: and sms: body= and subject=, WhatsApp's text=).
+const MESSAGE_PARAMS = new Set(["body", "subject", "text", "message", "msg"]);
+/** A %-encoded part of an address as it reads, or as it is when it isn't encoded right. */
+const uriText = (text: string) => {
+  try {
+    return decodeURIComponent(text);
+  } catch {
+    return text;
+  }
+};
 
 type Attrs = Map<string, string>;
 // from and to: where its tag is in the page, shown as a sample only when it's needed. id: it has one;
@@ -554,16 +534,26 @@ function scan(html: string): SeoFacts {
 
   /**
    * Blanks in an address the page opens: Call us dialling tel:[Phone number], wa.me/[WhatsApp number],
-   * a map of [Address] (written as it is, or %-encoded). Whether the whole address is one.
+   * a map of [Address] (written as it is, or %-encoded). Only in the address and its other settings,
+   * never in a message the visitor fills in and sends (mailto: and sms: body= and subject=, WhatsApp's
+   * text=): "Name: [Your name]" there is theirs to write. Whether the whole address is one.
    */
   const addressBlanks = (url: string) => {
     if (codeDepth || (!url.includes("[") && !/%5b/i.test(url))) return false;
-    let plain = url;
-    try {
-      plain = decodeURIComponent(url);
-    } catch {}
-    findPlaceholders(plain, facts.placeholders);
-    if (plain.includes("+")) findPlaceholders(plain.replace(/\+/g, " "), facts.placeholders);
+    const ask = url.indexOf("?");
+    const parts = [ask === -1 ? url : url.slice(0, ask)];
+    if (ask !== -1) {
+      for (const pair of url.slice(ask + 1).split("&")) {
+        const eq = pair.indexOf("=");
+        if (!MESSAGE_PARAMS.has(uriText(eq === -1 ? pair : pair.slice(0, eq)).trim().toLowerCase())) parts.push(pair.slice(eq + 1));
+      }
+    }
+    for (const part of parts) {
+      const plain = uriText(part);
+      findPlaceholders(plain, facts.placeholders);
+      if (plain.includes("+")) findPlaceholders(plain.replace(/\+/g, " "), facts.placeholders);
+    }
+    const plain = uriText(url);
     return WHOLE_PLACEHOLDER.test(plain) && isBlank(plain);
   };
 
@@ -1174,55 +1164,622 @@ function scan(html: string): SeoFacts {
   // A blank the page shows elsewhere too is shown, whatever its lists hold.
   facts.scriptPlaceholders = facts.scriptPlaceholders.filter((p) => !facts.placeholders.includes(p));
   if (facts.scriptPlaceholders.length && html.includes("flashDB")) facts.lists = listsRead(html);
-  if (titleScripts.length) facts.routerTitle = homeTitleSet(titleScripts, facts.titles[0] ?? "");
+  if (titleScripts.length) {
+    // A script it can't make out leaves the title to the page's own <title>, and the rest of the check stands.
+    try {
+      facts.routerTitle = homeTitleSet(titleScripts, facts.titles[0] ?? "", facts.pages);
+    } catch {}
+  }
   return facts;
 }
 
-// A script setting the page's title (document.title = …), up to the end of its statement.
-const TITLE_SET = /\bdocument\.title\s*=(?!=)\s*([^;\n]{1,200})/g;
-// A script reading the title as a value (const SITE = document.title), which it may then give the home page back.
-const READS_TITLE = /(?:[=(,:?]|\breturn)\s*document\.title\b(?!\s*=(?!=))/;
-// Where the title it sets depends on whether the page is home: if (page !== "home"), page === "home" ? …, isHome.
-const HOME_CASE = /["'`](?:home|index|#?\/?)["'`]|\bis_?home\b|\bhome\s*[?)]/i;
-// The name a script's page names give the home page: { home: "Home", menu: "Menu" }, { "": "Inicio" }.
-const HOME_NAME = /(?:^|[{,\s])(?:home|(["'`])(?:home|#?\/?)\1)\s*:\s*(["'`])([^"'`\n]{1,60})\2/i;
-// The words of a string or template in a script's code ("…", '…', `… ${…} …`), in order.
-const STRING_WORDS = /"((?:\\.|[^"\\])*)"|'((?:\\.|[^'\\])*)'|`([^`]*)`/g;
+// A script setting the page's title (document.title = …).
+const TITLE_SET = /\bdocument\.title\s*=(?![=>])/g;
+// Where the title it sets may depend on whether the page is home, in a way not read: ["", "home"].some(…), a home flag.
+const HOME_CASE = /["'`](?:home|index|#?\/?)["'`]|\bis_?home\b/i;
+// A test of which page it is: page === "home", "home" !== page.
+const PAGE_TEST = /^([\w$.]+)\s*(===?|!==?)\s*(["'`])([^"'`]{0,40})\3$|^(["'`])([^"'`]{0,40})\5\s*(===?|!==?)\s*([\w$.]+)$/;
+const IS_HOME = /^(!?)\s*[\w$.]*\bis_?home(?:page)?$/i;
+const IN_LIST = /^(!?)\s*\[([^\]]{0,200})\]\.includes\(\s*[\w$.]+\s*\)$/;
+// Where a block starts: the function, if or else it belongs to (the text before its "{").
+const ELSE_HEAD = /(?:^|[^\w$])else\s*$/;
+const IF_HEAD = /(?:^|[^\w$.])if\s*\(([\s\S]*)\)\s*$/;
+const LOOP_HEAD = /(?:^|[^\w$.])(?:for|while|switch|catch|with)\s*\([\s\S]*\)\s*$|(?:^|[^\w$.])(?:do|try|finally)\s*$/;
+const FUNCTION_HEAD =
+  /(?:\bfunction\b(?:(?:\s*\*\s*|\s+)([\w$]+)|\s*\*)?\s*\([^()]*\)|(?:\([^()]*\)|(?<![\w$])[\w$]+)\s*=>|(?:^|[\s,{;(])(?:async\s+)?([A-Za-z_$][\w$]*)\s*\([^()]*\))\s*$/;
+// The name a function written as a value is given: const route = () => {, route: function () {.
+const FUNCTION_NAMED = /(?<![\w$])([A-Za-z_$][\w$]*)\s*[=:]\s*(?:async\s+)?(?:function\b[^(]{0,80}\([^()]*\)|(?:\([^()]*\)|(?<![\w$])[\w$]+)\s*=>)\s*$/;
+// A function written as what an event runs: addEventListener("click", () => {, el.onclick = function () {, JSX's onClick={() => …}.
+const EVENT_HEAD =
+  /(?:addEventListener\(\s*(["'`])([\w:-]+)\1\s*,|\bon([a-z]+)\s*=|\bon([A-Z]\w*)\s*=\s*\{)\s*(?:async\s+)?(?:function\b[^(]{0,80}\([^()]*\)|(?:\([^()]*\)|(?<![\w$])[\w$]+)\s*=>)\s*$/;
+// The same, with a call written as its whole body: addEventListener("hashchange", () => route()).
+const EVENT_ARROW = /(?:addEventListener\(\s*(["'`])([\w:-]+)\1\s*,|\bon([a-z]+)\s*=|\bon([A-Z]\w*)\s*=\s*\{)\s*(?:async\s+)?(?:\([^()]*\)|(?<![\w$])[\w$]+)\s*=>[^;{}]*$/;
+// What React and Vue run as a page shows: useEffect(() => {, onMounted(() => {.
+const EFFECT_HEAD = /\b(?:use(?:Layout)?Effect|onMounted)\(\s*(?:async\s*)?(?:\(\s*\)\s*=>|function\s*\(\s*\))\s*$/;
+// Events that come as the page opens or its page changes, not from something the visitor does.
+const LOAD_EVENTS = new Set(["hashchange", "popstate", "load", "domcontentloaded", "pageshow"]);
+// Functions a library runs as the page opens: Alpine's init(), Vue's mounted(), a web component's connectedCallback().
+const RUN_ON_START = new Set(["init", "mounted", "created", "setup", "connectedCallback", "componentDidMount"]);
+// A page id with its first letter capitalised: name.charAt(0).toUpperCase() + name.slice(1), or a helper's cap(name).
+const CAP_FIRST = /^([\w$.]+)(?:\.charAt\(\s*0\s*\)|\[\s*0\s*\])\.toUpperCase\(\)$/;
+const CAP_CALL = /^(?:cap|capitali[sz]e|ucfirst|upperfirst|titlecase|totitlecase)\w*\(\s*[\w$.]+\s*\)$/i;
+// The title kept as the script starts: const HOME_TITLE = document.title, the <title>'s textContent, { title } = document.
+const KEEPS =
+  /(?<![\w$.])([A-Za-z_$][\w$]*)\s*=\s*(?:document\.title|document\.querySelector\(\s*(["'`])title\2\s*\)\??\.(?:textContent|innerText|text)|document\.getElementsByTagName\(\s*(["'`])title\3\s*\)\[\s*0\s*\]\??\.(?:textContent|innerText|text))(?!\s*(?:=(?!=)|[.[(]))/g;
+const KEPT_BY_NAME = /\{\s*title\s*(?::\s*([A-Za-z_$][\w$]*)\s*)?\}\s*=\s*document\b/g;
+
+type Block = { open: number; close: number; parent: number };
+type TitleRead = { code: string; title: string; pages: string[]; homeId: string; keep: Set<string>; chose: boolean };
+/** What a script sets the title to on the home page: words ("Home · Golden Crumb"), the page's own <title>, or a choice for home not read. */
+type TitleValue = string | "keep" | "apart" | null;
 
 /**
- * The title a page's script gives its home page as it loads, as Google shows it: a router that sets
- * document.title to "<page name> · <site>" from page names whose home is "Home" (as builder.ts asked
- * routers to) gives "Home · <site>". null when no script sets it from those names, or one keeps the
- * page's own <title> for the home page: it reads document.title, names that title, or sets the title
- * apart for home.
+ * The title a page's script gives its home page as it loads, as Google shows it: what the router
+ * sets document.title to there ("Home · <site>" from page names whose home is "Home", as builder.ts
+ * asked routers to, a page id capitalised, or what it sets for home alone). Only code that runs as
+ * the page opens or its page changes counts (the top of a script, a hashchange or load handler, a
+ * function that reads location.hash or that they call, a React effect), never what a click or a
+ * key runs. null when none sets one that can be read, or it keeps the page's own <title> for home.
  */
-function homeTitleSet(scripts: string[], title: string): string | null {
-  let set: string | null = null;
+function homeTitleSet(scripts: string[], title: string, pages: string[]): string | null {
+  let forHome: TitleValue | undefined;
+  let forAll: TitleValue | undefined;
+  let apart = false;
   for (const code of scripts) {
-    if (READS_TITLE.test(code) || (title.length >= 10 && code.includes(title.slice(0, 24)))) return null;
+    const read: TitleRead = { code, title, pages, homeId: homeIdOf(code, pages), keep: keptTitles(code), chose: false };
+    let blocks: ReturnType<typeof blockReader> | undefined;
     let looked = 0;
     for (const m of code.matchAll(TITLE_SET)) {
-      if (++looked > 10) break;
-      const before = code.slice(Math.max(0, m.index - 160), m.index);
-      const statement = before.slice(Math.max(before.lastIndexOf(";"), before.lastIndexOf("{"), before.lastIndexOf("}")) + 1);
-      const value = m[1].trim();
-      if (HOME_CASE.test(statement) || HOME_CASE.test(value)) return null;
-      if (set !== null) continue;
-      const words: string[] = [];
-      for (const s of value.matchAll(STRING_WORDS)) words.push(...(s[3] !== undefined ? s[3].split(/\$\{[^}]*\}/) : [s[1] ?? s[2]]));
-      // One string: the title of every page.
-      if (/^(["'`])[^"'`$]*\1$/.test(value)) {
-        set = words[0] ?? "";
+      if (++looked > 20) break;
+      const lineStart = code.lastIndexOf("\n", m.index) + 1;
+      if (/(?:^|[^:"'`])\/\/|^\s*\/?\*/.test(code.slice(lineStart, m.index))) continue;
+      blocks ??= blockReader(code);
+      const inner = blocks.innermost(m.index);
+      if (!blocks.runsOnLoad(blocks.functionOf(inner))) continue;
+      const side = blocks.sideOf(inner, m.index, read);
+      if (side === "other") continue;
+      if (side === "unknown") {
+        apart = true;
         continue;
       }
-      // A name looked up in the page names: what it gives home, with the words after it.
-      const home = /[[$]/.test(value) ? HOME_NAME.exec(code)?.[3]?.trim() : undefined;
-      if (!home) continue;
-      const rest = words.find((w) => /^\s*[·|:–—\-｜・]/.test(w));
-      set = rest === undefined ? (/[+`]/.test(value) ? `${home} · …` : home) : /\p{L}/u.test(rest) ? home + rest : `${home}${rest.trimEnd()} …`;
+      const from = m.index + m[0].length;
+      read.chose = false;
+      const value = valueOf(code.slice(from, expressionEnd(code, from)), read);
+      if (value === "apart") apart = true;
+      else if (side === "home" || read.chose) {
+        if (value === null) apart = true;
+        else forHome ??= value;
+      } else if (value !== null) forAll ??= value;
     }
   }
-  return set && clip(set.replace(/\s+/g, " ").trim(), 80);
+  const value = forHome ?? (apart ? null : forAll);
+  if (!value || value === "keep" || value === "apart") return null;
+  const text = value.replace(/\s+/g, " ").trim();
+  const fold = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+  return text && fold(text) !== fold(title) ? clip(text, 80) : null;
+}
+
+/** The home page's id: what the router falls back to (|| "home") when it's one of the page's sections, else home's section. */
+function homeIdOf(code: string, pages: string[]): string {
+  for (const m of code.matchAll(/(?:\|\||\?\?)\s*(["'`])([^"'`\s]{1,40})\1/g)) {
+    const id = m[2].replace(/^#?\/?/, "");
+    if (pages.includes(id)) return id;
+  }
+  return pages.length && !pages.includes("home") ? pages[0] : "home";
+}
+
+/** The names a script keeps the page's own <title> in as it starts (see KEEPS). */
+function keptTitles(code: string): Set<string> {
+  const names = new Set<string>();
+  for (const m of code.matchAll(KEEPS)) if (names.size < 20) names.add(m[1]);
+  for (const m of code.matchAll(KEPT_BY_NAME)) if (names.size < 20) names.add(m[1] ?? "title");
+  return names;
+}
+
+/** Whether a page id or route ("home", "", "#/", "#/home") is the home page's. */
+const isHomeId = (id: string, read: TitleRead) => {
+  const name = id.replace(/^#?\/?/, "");
+  return HOME_ROUTES.has(name.toLowerCase()) || name === read.homeId;
+};
+
+/**
+ * Which pages a condition holds on: "home" (page === "home", !page || page === "", isHome),
+ * "other" (page !== "home", page === "menu" for another of its pages), "unknown" when it is about
+ * home in a way not read, null when it isn't about which page it is.
+ */
+function homeTest(condition: string, read: TitleRead): "home" | "other" | "unknown" | null {
+  const and = condition.includes("&&");
+  const or = condition.includes("||");
+  const kinds = condition.split(/&&|\|\|/).map((raw): "home" | "other" | "notOther" | "unknown" | null => {
+    const part = raw.trim().replace(/^\(+/, "").replace(/(?<!\))\)+$/, "").trim();
+    const test = PAGE_TEST.exec(part);
+    if (test) {
+      const value = test[4] ?? test[6];
+      const same = (test[2] ?? test[7]).startsWith("=");
+      if (isHomeId(value, read)) return same ? "home" : "other";
+      if (read.pages.includes(value.replace(/^#?\/?/, ""))) return same ? "other" : "notOther";
+      return null;
+    }
+    const flag = IS_HOME.exec(part);
+    if (flag) return flag[1] ? "other" : "home";
+    const list = IN_LIST.exec(part);
+    if (list) {
+      const ids = [...list[2].matchAll(/(["'`])([^"'`]{0,40})\1/g)].map((s) => s[2]);
+      if (ids.some((id) => isHomeId(id, read))) return list[1] ? "other" : "home";
+      return null;
+    }
+    return HOME_CASE.test(part) ? "unknown" : null;
+  });
+  const has = (kind: string) => (kinds as (string | null)[]).includes(kind);
+  if (has("unknown")) return "unknown";
+  if (!has("home") && !has("other") && !has("notOther")) return null;
+  // Every one of the parts, or any one of them.
+  if (and) return has("other") ? "other" : has("notOther") ? "unknown" : "home";
+  if (or) return has("home") && !has("other") && !has("notOther") ? "home" : has("other") && !has("home") && !has("notOther") ? "other" : "unknown";
+  return has("home") ? "home" : has("other") ? "other" : "unknown";
+}
+
+/** Where the string or template that starts at i ends (its closing quote, past a template's ${…}), or stop. */
+function quoteEnd(code: string, i: number, stop: number, depth = 0): number {
+  const q = code[i];
+  for (let j = i + 1; j < stop; j++) {
+    const c = code[j];
+    if (c === "\\") j++;
+    else if (c === q) return j;
+    else if (q !== "`" && c === "\n") return j;
+    else if (q === "`" && c === "$" && code[j + 1] === "{") {
+      if (depth > 20) return stop;
+      let open = 0;
+      for (j++; j < stop; j++) {
+        const d = code[j];
+        if (d === '"' || d === "'" || d === "`") j = quoteEnd(code, j, stop, depth + 1);
+        else if (d === "{") open++;
+        else if (d === "}" && --open === 0) break;
+      }
+    }
+  }
+  return stop;
+}
+
+/** Splits an expression where sep finds a separator (its length) outside brackets, strings and templates. */
+function splitTop(expr: string, sep: (i: number) => number): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let from = 0;
+  for (let i = 0; i < expr.length; i++) {
+    const c = expr[i];
+    if (c === '"' || c === "'" || c === "`") i = quoteEnd(expr, i, expr.length);
+    else if (c === "(" || c === "[" || c === "{") depth++;
+    else if (c === ")" || c === "]" || c === "}") depth--;
+    else if (depth === 0) {
+      const length = sep(i);
+      if (length) {
+        parts.push(expr.slice(from, i));
+        from = i + length;
+        i += length - 1;
+      }
+    }
+  }
+  parts.push(expr.slice(from));
+  return parts;
+}
+
+/** Where the value given at from ends: a ; or , or closing bracket outside any, or a line's end where the next line doesn't carry on. At most 400 characters. */
+function expressionEnd(code: string, from: number): number {
+  const stop = Math.min(code.length, from + 400);
+  let depth = 0;
+  for (let i = from; i < stop; i++) {
+    const c = code[i];
+    if (c === '"' || c === "'" || c === "`") i = quoteEnd(code, i, stop);
+    else if (c === "(" || c === "[" || c === "{") depth++;
+    else if (c === ")" || c === "]" || c === "}") {
+      if (depth-- === 0) return i;
+    } else if (depth === 0 && (c === ";" || c === ",")) return i;
+    else if (depth === 0 && c === "\n") {
+      const before = code.slice(from, i).trimEnd();
+      if (before && !/[-+*?:=(,|&]$/.test(before) && !/^\s*[-+*?:.|&]/.test(code.slice(i + 1, i + 80))) return i;
+    }
+  }
+  return stop;
+}
+
+/** A string literal's words, its escapes written out. */
+const literalWords = (text: string) =>
+  text.replace(/\\(?:u\{([0-9a-fA-F]{1,6})\}|u([0-9a-fA-F]{4})|x([0-9a-fA-F]{2})|([\s\S]))/g, (_, a?: string, b?: string, c?: string, d?: string) =>
+    d === undefined ? String.fromCodePoint(Math.min(parseInt((a ?? b ?? c)!, 16), 0x10ffff)) : d === "n" ? "\n" : d === "t" ? "\t" : d,
+  );
+const LITERAL = /^(["'])((?:\\[\s\S]|(?!\1)[^\\])*)\1$|^`((?:\\[\s\S]|[^`\\$]|\$(?!\{))*)`$/;
+
+/** The words a value gives the home page (see TitleValue), reading choices, page names, ids and the strings around them. */
+function valueOf(raw: string, read: TitleRead, depth = 0): TitleValue {
+  const expr = raw.trim();
+  if (!expr || depth > 6) return null;
+  // page === "home" ? A : B: the home page's side.
+  let ask = -1;
+  let colon = -1;
+  let nested = 0;
+  splitTop(expr, (i) => {
+    const c = expr[i];
+    if (c === "?" && expr[i + 1] !== "." && expr[i + 1] !== "?" && expr[i - 1] !== "?") {
+      if (ask === -1) ask = i;
+      else nested++;
+    } else if (c === ":" && ask !== -1 && colon === -1) {
+      if (nested) nested--;
+      else colon = i;
+    }
+    return 0;
+  });
+  if (ask !== -1 && colon !== -1) {
+    const side = homeTest(expr.slice(0, ask), read);
+    if (side === "unknown") return "apart";
+    if (side === null) return null;
+    read.chose = true;
+    return valueOf(side === "home" ? expr.slice(ask + 1, colon) : expr.slice(colon + 1), read, depth + 1);
+  }
+  // NAMES[page] || "Page": the first.
+  const alternatives = splitTop(expr, (i) => (expr.startsWith("||", i) || expr.startsWith("??", i) ? 2 : 0));
+  if (alternatives.length > 1) return valueOf(alternatives[0], read, depth + 1);
+  const terms = splitTop(expr, (i) => (expr[i] === "+" && expr[i + 1] !== "+" && expr[i + 1] !== "=" && expr[i - 1] !== "+" ? 1 : 0)).map((t) => t.trim());
+  if (terms.length === 1) return termOf(terms[0], read, depth);
+  const words: (string | null)[] = [];
+  for (let k = 0; k < terms.length; k++) {
+    const cap = CAP_FIRST.exec(terms[k]);
+    if (cap && terms[k + 1] !== undefined && terms[k + 1].replace(/\s+/g, "") === `${cap[1]}.slice(1)`.replace(/\s+/g, "")) {
+      words.push(capitalised(read.homeId));
+      k++;
+      continue;
+    }
+    const value = termOf(terms[k], read, depth);
+    if (value === "apart") return "apart";
+    words.push(value === "keep" ? read.title : value);
+  }
+  return joined(words);
+}
+
+/** Whether a term is one ( … ) as a whole. */
+function wrapped(term: string): boolean {
+  if (!term.startsWith("(") || !term.endsWith(")")) return false;
+  let depth = 0;
+  for (let i = 0; i < term.length; i++) {
+    const c = term[i];
+    if (c === '"' || c === "'" || c === "`") i = quoteEnd(term, i, term.length);
+    else if (c === "(" || c === "[" || c === "{") depth++;
+    else if ((c === ")" || c === "]" || c === "}") && --depth === 0 && i < term.length - 1) return false;
+  }
+  return depth === 0;
+}
+
+const capitalised = (id: string) => id.charAt(0).toUpperCase() + id.slice(1);
+
+/** Words in order, "…" for those not known; null when the first, the page's name, isn't. */
+function joined(words: (string | null)[]): string | null {
+  if (words[0] === null || words[0] === undefined) return null;
+  let text = "";
+  for (const word of words) text += word === null ? (/[\p{L}\p{N}]$/u.test(text) ? " · …" : "…") : word;
+  return /\p{L}/u.test(text) ? text : null;
+}
+
+/** One part of a value: a string, a template, a page name looked up (NAMES[page]), a page id capitalised, a name for a string or the kept <title>. */
+function termOf(term: string, read: TitleRead, depth: number): TitleValue {
+  if (wrapped(term)) return valueOf(term.slice(1, -1), read, depth + 1);
+  const literal = LITERAL.exec(term);
+  if (literal) return literalWords(literal[2] ?? literal[3]);
+  if (term.startsWith("`") && term.endsWith("`")) return templateOf(term, read, depth);
+  const lookup = /^([A-Za-z_$][\w$]*)\s*(?:\?\.)?\[[^\]]*\](?:\s*\??\.\s*([A-Za-z_$][\w$]*))?$/.exec(term);
+  if (lookup) return homeEntry(read, lookup[1], lookup[2]);
+  if (CAP_CALL.test(term)) return capitalised(read.homeId);
+  if (/^[A-Za-z_$][\w$]*$/.test(term)) {
+    if (read.keep.has(term)) return "keep";
+    const named = new RegExp(`(?<![\\w$.])${term.replace(/\$/g, "\\$")}\\s*=\\s*(["'])((?:\\\\.|(?!\\1)[^\\\\\\n]){0,100})\\1`).exec(read.code);
+    return named ? literalWords(named[2]) : null;
+  }
+  return null;
+}
+
+/** A template's words, its ${…} read as values. */
+function templateOf(template: string, read: TitleRead, depth: number): TitleValue {
+  const words: (string | null)[] = [];
+  let text = "";
+  for (let i = 1; i < template.length - 1; i++) {
+    const c = template[i];
+    if (c === "\\") {
+      text += literalWords(template.slice(i, i + 2));
+      i++;
+    } else if (c === "$" && template[i + 1] === "{") {
+      let open = 0;
+      let j = i + 1;
+      for (; j < template.length - 1; j++) {
+        const d = template[j];
+        if (d === '"' || d === "'" || d === "`") j = quoteEnd(template, j, template.length - 1);
+        else if (d === "{") open++;
+        else if (d === "}" && --open === 0) break;
+      }
+      if (text) words.push(text);
+      text = "";
+      const value = valueOf(template.slice(i + 2, j), read, depth + 1);
+      if (value === "apart") return "apart";
+      words.push(value === "keep" ? read.title : value);
+      i = j;
+    } else text += c;
+  }
+  if (text) words.push(text);
+  return words.length ? joined(words) : "";
+}
+
+/**
+ * What the object literal written for name gives the home page: its home, index, "" or "#/" key
+ * ({ home: "Home" }), or that entry's prop when it's an object ({ home: { title: "Home" } }).
+ */
+function homeEntry(read: TitleRead, name: string, prop: string | undefined): string | null {
+  const at = new RegExp(`(?<![\\w$.])${name.replace(/\$/g, "\\$")}\\s*=\\s*(?:Object\\.freeze\\(\\s*)?\\{`).exec(read.code);
+  if (!at) return null;
+  const entry = entryOf(read.code, at.index + at[0].length - 1, (key) => isHomeId(key, read));
+  if (entry === null) return null;
+  if (prop === undefined) return literalOf(entry);
+  if (!entry.startsWith("{")) return null;
+  const inner = entryOf(entry, 0, (key) => key === prop);
+  return inner === null ? null : literalOf(inner);
+}
+
+const literalOf = (text: string) => {
+  const literal = LITERAL.exec(text.trim());
+  return literal ? literalWords(literal[2] ?? literal[3]) : null;
+};
+
+/** The value of the first entry whose key is wanted in the object literal that opens at open (up to 200 entries and 20,000 characters), or null. */
+function entryOf(code: string, open: number, wanted: (key: string) => boolean): string | null {
+  const stop = Math.min(code.length, open + 20_000);
+  const match = (text: string) => {
+    const m = /^\s*(?:([A-Za-z_$][\w$]*)|(["'`])([^"'`]*)\2|\[\s*(["'`])([^"'`]*)\4\s*\])\s*:\s*([\s\S]*)$/.exec(text);
+    return m && wanted(m[1] ?? m[3] ?? m[5]) ? m[6].trim() : null;
+  };
+  let depth = 0;
+  let from = open + 1;
+  let entries = 0;
+  for (let i = open; i < stop; i++) {
+    const c = code[i];
+    if (c === '"' || c === "'" || c === "`") i = quoteEnd(code, i, stop);
+    else if (c === "/" && code[i + 1] === "/") i = code.indexOf("\n", i) === -1 ? stop : code.indexOf("\n", i);
+    else if (c === "{" || c === "[" || c === "(") depth++;
+    else if (c === "}" || c === "]" || c === ")") {
+      if (--depth === 0) return match(code.slice(from, i));
+    } else if (c === "," && depth === 1) {
+      const value = match(code.slice(from, i));
+      if (value !== null) return value;
+      if (++entries > 200) return null;
+      from = i + 1;
+    }
+  }
+  return null;
+}
+
+/**
+ * The { } blocks of a script's code, past its strings, templates, comments and patterns, read in one
+ * pass (up to 20,000 of them), and what they say about the code inside: which function it's in,
+ * whether that runs as the page opens, and which pages an if around it holds on.
+ */
+function blockReader(code: string) {
+  const blocks: Block[] = [];
+  // Open blocks: their index, -1 for a template's ${ and -2 for one past the limit; owner: the block each is in.
+  const stack: number[] = [];
+  const owner: number[] = [];
+  const n = code.length;
+  let prev = "";
+  let template = false;
+  for (let i = 0; i < n; i++) {
+    const c = code[i];
+    if (template) {
+      if (c === "\\") i++;
+      else if (c === "`") {
+        template = false;
+        prev = "`";
+      } else if (c === "$" && code[i + 1] === "{") {
+        stack.push(-1);
+        owner.push(owner.length ? owner[owner.length - 1] : -1);
+        template = false;
+        prev = "{";
+        i++;
+      }
+      continue;
+    }
+    if (c === "`") {
+      template = true;
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      let j = i + 1;
+      while (j < n && code[j] !== c && code[j] !== "\n") j += code[j] === "\\" ? 2 : 1;
+      i = j;
+      prev = c;
+      continue;
+    }
+    if (c === "/") {
+      const d = code[i + 1];
+      if (d === "/") {
+        const end = code.indexOf("\n", i);
+        i = end === -1 ? n : end - 1;
+        continue;
+      }
+      if (d === "*") {
+        const end = code.indexOf("*/", i + 2);
+        i = end === -1 ? n : end + 1;
+        continue;
+      }
+      // A pattern (/^#\//), where a value starts; never JSX's </p> or />.
+      if (d !== ">" && (!prev || "(,=:[!&|?{};+-*%~^".includes(prev) || /\b(?:return|typeof|case|void|throw)\s*$/.test(code.slice(Math.max(0, i - 8), i)))) {
+        let j = i + 1;
+        let set = false;
+        while (j < n && code[j] !== "\n") {
+          const e = code[j];
+          if (e === "\\") j++;
+          else if (e === "[") set = true;
+          else if (e === "]") set = false;
+          else if (e === "/" && !set) break;
+          j++;
+        }
+        i = j;
+        prev = "a";
+        continue;
+      }
+    }
+    if (c === "{") {
+      const parent = owner.length ? owner[owner.length - 1] : -1;
+      if (blocks.length < 20_000) {
+        blocks.push({ open: i, close: n, parent });
+        stack.push(blocks.length - 1);
+        owner.push(blocks.length - 1);
+      } else {
+        stack.push(-2);
+        owner.push(parent);
+      }
+    } else if (c === "}") {
+      const top = stack.pop();
+      owner.pop();
+      if (top === -1) {
+        template = true;
+        continue;
+      }
+      if (top !== undefined && top >= 0) blocks[top].close = i;
+    }
+    if (c > " ") prev = c;
+  }
+
+  const closedAt = new Map<number, number>();
+  for (const [k, b] of blocks.entries()) if (b.close < n) closedAt.set(b.close, k);
+  /** The text before a block's "{": the 300 characters before it, and from the statement it starts. */
+  const beforeOf = (k: number) => code.slice(Math.max(0, blocks[k].open - 300), blocks[k].open);
+  const headOf = (k: number) => {
+    const before = beforeOf(k);
+    return before.slice(Math.max(before.lastIndexOf(";"), before.lastIndexOf("{"), before.lastIndexOf("}")) + 1);
+  };
+  type Kind = { fn: boolean; name?: string; event?: string; cond?: string; otherwise?: boolean };
+  const kinds = new Map<number, Kind>();
+  const kindOf = (k: number): Kind => {
+    let kind = kinds.get(k);
+    if (kind) return kind;
+    const head = headOf(k);
+    // A function's own head may hold a "{" (JSX's onClick={() => {), so it's read in all the text before.
+    const before = beforeOf(k);
+    const iff = IF_HEAD.exec(head);
+    const fn = FUNCTION_HEAD.exec(before);
+    if (iff) kind = { fn: false, cond: iff[1], otherwise: /(?:^|[^\w$])else\s+if\s*\(/.test(head) };
+    else if (ELSE_HEAD.test(head)) kind = { fn: false, otherwise: true };
+    else if (LOOP_HEAD.test(head) || !fn) kind = { fn: false };
+    else {
+      const event = EVENT_HEAD.exec(before);
+      kind = {
+        fn: true,
+        event: event ? (event[2] ?? event[3] ?? event[4]).toLowerCase() : EFFECT_HEAD.test(before) ? "effect" : undefined,
+        name: fn[1] || fn[2] || FUNCTION_NAMED.exec(before)?.[1] || undefined,
+      };
+    }
+    kinds.set(k, kind);
+    return kind;
+  };
+  /** The innermost block around position at, or -1. */
+  const innermost = (at: number) => {
+    let lo = 0;
+    let hi = blocks.length - 1;
+    let k = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (blocks[mid].open < at) {
+        k = mid;
+        lo = mid + 1;
+      } else hi = mid - 1;
+    }
+    while (k !== -1 && blocks[k].close < at) k = blocks[k].parent;
+    return k;
+  };
+  /** The function a block is in (itself, when it is one), -1 at the top of the script, or -2 more than 64 blocks down. */
+  const functionOf = (k: number) => {
+    for (let up = 0; k >= 0 && !kindOf(k).fn; up++) k = up < 64 ? blocks[k].parent : -2;
+    return k;
+  };
+  const onLoad = new Map<number, boolean>();
+  const named = new Map<string, boolean>();
+  // Each named function is looked for in the whole script: at most 30 of them, so a script of many is read quickly.
+  let lookups = 0;
+  /** Whether the function (-1: the top of the script) runs as the page opens or its page changes. */
+  const runsOnLoad = (fn: number): boolean => {
+    if (fn === -1) return true;
+    if (fn < 0) return false;
+    const known = onLoad.get(fn);
+    if (known !== undefined) return known;
+    onLoad.set(fn, false);
+    const kind = kindOf(fn);
+    let runs: boolean;
+    if (kind.event) runs = kind.event === "effect" || LOAD_EVENTS.has(kind.event);
+    else if (kind.name) runs = nameRunsOnLoad(kind.name, fn);
+    // A function handed to another (forEach, then, setTimeout): when the one it's in runs.
+    else runs = runsOnLoad(functionOf(blocks[fn].parent));
+    onLoad.set(fn, runs);
+    return runs;
+  };
+  const nameRunsOnLoad = (name: string, fn: number): boolean => {
+    const known = named.get(name);
+    if (known !== undefined) return known;
+    named.set(name, false);
+    if (++lookups > 30) return false;
+    const word = name.replace(/\$/g, "\\$");
+    const body = code.slice(blocks[fn].open, blocks[fn].close);
+    let runs =
+      /location\.hash\b(?!\s*=(?!=))/.test(body) ||
+      RUN_ON_START.has(name) ||
+      new RegExp(`(?:addEventListener\\(\\s*["'\`](?:hashchange|popstate|load|DOMContentLoaded|pageshow)["'\`]\\s*,\\s*|\\bon(?:hashchange|popstate|load)\\s*=\\s*)${word}\\b`).test(code) ||
+      (/^[A-Z]/.test(name) && new RegExp(`<${word}\\b`).test(code));
+    if (!runs) {
+      let calls = 0;
+      for (const m of code.matchAll(new RegExp(`(?<![\\w$])${word}\\s*\\(`, "g"))) {
+        if (++calls > 50) break;
+        const before = code.slice(Math.max(0, m.index - 200), m.index);
+        if (/\bfunction(?:\s*\*)?\s*$/.test(before) || (m.index > blocks[fn].open - 300 && m.index < blocks[fn].open)) continue;
+        const event = EVENT_ARROW.exec(before);
+        if (event) {
+          if (LOAD_EVENTS.has((event[2] ?? event[3] ?? event[4]).toLowerCase())) runs = true;
+        } else {
+          const caller = functionOf(innermost(m.index));
+          if (caller !== fn && runsOnLoad(caller)) runs = true;
+        }
+        if (runs) break;
+      }
+    }
+    named.set(name, runs);
+    return runs;
+  };
+  /**
+   * Which pages the code at position at (in block k, -1 for none) runs on, by the ifs around it in its
+   * function and the if, else or case it follows: "home", "other", "unknown" (a test about home not
+   * read) or null (every page).
+   */
+  const sideOf = (k: number, at: number, read: TitleRead): "home" | "other" | "unknown" | null => {
+    const sides: ("home" | "other" | "unknown" | null)[] = [];
+    // The statement it's in: if (page !== "home") document.title = …, case "home": document.title = ….
+    const start = Math.max(code.lastIndexOf(";", at - 1), code.lastIndexOf("{", at - 1), code.lastIndexOf("}", at - 1), at - 300) + 1;
+    const statement = code.slice(start, at);
+    const iff = IF_HEAD.exec(statement);
+    if (iff) sides.push(homeTest(iff[1], read));
+    const option = /\bcase\s+(["'`])([^"'`]{0,40})\1\s*:\s*$/.exec(statement);
+    if (option) sides.push(isHomeId(option[2], read) ? "home" : "other");
+    for (let b = k, up = 0; b >= 0 && up < 64 && !kindOf(b).fn; b = blocks[b].parent, up++) {
+      const kind = kindOf(b);
+      const own = kind.cond !== undefined ? homeTest(kind.cond, read) : null;
+      if (kind.otherwise) {
+        // The if (or else if) just before: its else holds where it doesn't.
+        const end = blocks[b].open - headOf(b).length - 1;
+        const before = code[end] === "}" ? closedAt.get(end) : undefined;
+        const previous = before === undefined || kindOf(before).cond === undefined ? null : homeTest(kindOf(before).cond!, read);
+        if (previous === "home") sides.push("other");
+        else if (previous === "unknown") sides.push("unknown");
+        else if (previous === "other" && kind.cond === undefined) sides.push("home");
+      }
+      if (own !== null) sides.push(own);
+    }
+    if (sides.includes("other")) return "other";
+    if (sides.includes("unknown")) return "unknown";
+    return sides.includes("home") ? "home" : null;
+  };
+  return { innermost, functionOf, runsOnLoad, sideOf };
 }
 
 /**
@@ -1347,18 +1904,26 @@ function findScriptPlaceholders(code: string, found: string[], samples?: { blank
   }
 }
 
+// What code puts before an array as a value: a property named as code names them (plugins:, after a
+// "{", a "," or the line's start), name =, =>, a call's "(", another "[", a "," after code, or return.
+// Words before a ":" ("Find us: ", "Phone: ") are a page's text.
+const NAME_ARRAY_BEFORE = /(?:(?:^|[{,([])\s*[a-z_$][\w$]*\s*:|(?<![=!<>])=>?|[\w$)\]}]\s*,|\[|[\w$)\]]\(|(?<![\w$])return)\s*$/;
+// What code puts after one: a closing bracket, the line's end (or a comment) after an optional , or ;,
+// more code after a , (another property, argument or item) or a ; (another statement). Words after
+// it (", Lisbon", "; WhatsApp: [WhatsApp]") are a page's text.
+const NAME_ARRAY_AFTER =
+  /^[ \t]*(?:[\])}]|(?:[,;][ \t]*)?(?:\r?\n|$|\/[/*])|,[ \t]*(?:[\])}[{"'`]|\.\.\.|[a-z_$][\w$]*[ \t]*:|[\w$.]+[ \t]*(?:[=(.[\])},]|=>))|;[ \t]*(?:[}\])]|(?:const|let|var|return|if|for|while|function|class|await|new|export)\b|[\w$.]+[ \t]*(?:[=(.[]|\+\+|--)))/;
+
 /**
  * Whether a [Name] in a script is code: an array of one name (plugins: [ChartDataLabels], scene:
  * [MainScene], return [Header];), outside any string on its line and any tag, after what starts a
  * value and followed by what ends one. A blank in a string, a template or JSX text has a quote or a
- * tag on its line, or words or a tag after it.
+ * tag on its line, or words before or after it, even on a line of its own ("Find us: [Address], Lisbon").
  */
 function nameArray(code: string, inner: string, line: string, end: number): boolean {
   if (!/^[A-Za-z_$][\w$]*$/.test(inner) || /<[A-Za-z/]/.test(line)) return false;
   for (const quote of ['"', "'", "`"]) if (line.split(quote).length % 2 === 0) return false;
-  if (!/(?:[:=,[]|[\w$)\]]\(|(?<![\w$])return)\s*$/.test(line)) return false;
-  const after = /\S/.exec(code.slice(end, end + 200));
-  return !after || ",])};".includes(after[0]);
+  return NAME_ARRAY_BEFORE.test(line) && NAME_ARRAY_AFTER.test(code.slice(end, end + 200));
 }
 
 /**
