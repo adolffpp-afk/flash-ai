@@ -2045,6 +2045,7 @@
  "Why you're a good fit": "למה זו התאמה טובה",
  "Wide": "רחב",
  "Wide, open letters that are easier to tell apart": "אותיות רחבות ופתוחות שקל יותר להבחין ביניהן",
+ "With auto top-up on, it stops when your balance gets down to {level} credits, so your visitors never set off a top-up.": "כשהטעינה האוטומטית פעילה, ה-AI מפסיק לפעול כשהיתרה שלך יורדת ל-{level} קרדיטים, כדי שהמבקרים שלך אף פעם לא יגרמו לטעינה.",
  "With noindex, the page never shows up on Google, whatever else you fix. Keep it only for a page you want kept off Google.": "עם noindex הדף לעולם לא יופיע ב-Google, לא משנה מה עוד יתוקן. כדאי להשאיר אותו רק בדף שלא רוצים שיופיע ב-Google.",
  "Without display=swap, text stays blank until its font arrives.": "בלי display=swap הטקסט נשאר ריק עד שהגופן שלו מגיע.",
  "Without it, browsers fall back to a layout mode from the 1990s, and parts of the page can look broken.": "בלעדיו, דפדפנים חוזרים למצב תצוגה משנות ה-90, וחלקים מהדף עלולים להיראות שבורים.",

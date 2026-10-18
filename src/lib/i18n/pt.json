@@ -2045,6 +2045,7 @@
  "Why you're a good fit": "Por que você é a pessoa certa",
  "Wide": "Horizontal",
  "Wide, open letters that are easier to tell apart": "Letras largas e abertas, mais fáceis de distinguir",
+ "With auto top-up on, it stops when your balance gets down to {level} credits, so your visitors never set off a top-up.": "Com a recarga automática ativada, a IA para quando seu saldo cai para {level} créditos, assim seus visitantes nunca acionam uma recarga.",
  "With noindex, the page never shows up on Google, whatever else you fix. Keep it only for a page you want kept off Google.": "Com noindex, a página nunca aparece no Google, não importa o que mais você corrija. Use só em uma página que você quer manter fora do Google.",
  "Without display=swap, text stays blank until its font arrives.": "Sem display=swap, o texto fica em branco até a fonte chegar.",
  "Without it, browsers fall back to a layout mode from the 1990s, and parts of the page can look broken.": "Sem ele, os navegadores voltam a um modo de layout dos anos 1990, e partes da página podem parecer quebradas.",

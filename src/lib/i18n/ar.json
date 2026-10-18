@@ -2045,6 +2045,7 @@
  "Why you're a good fit": "لماذا أنت مناسب",
  "Wide": "عرضي",
  "Wide, open letters that are easier to tell apart": "حروف عريضة ومفتوحة يسهل التمييز بينها",
+ "With auto top-up on, it stops when your balance gets down to {level} credits, so your visitors never set off a top-up.": "مع تشغيل الشحن التلقائي، يتوقف عندما ينخفض رصيدك إلى {level} رصيد، فلا يتسبب زوارك أبدًا في شحن تلقائي.",
  "With noindex, the page never shows up on Google, whatever else you fix. Keep it only for a page you want kept off Google.": "مع noindex لن تظهر الصفحة على Google أبدًا، مهما أصلحت غير ذلك. أبقِه فقط في صفحة تريد إبعادها عن Google.",
  "Without display=swap, text stays blank until its font arrives.": "بدون display=swap يبقى النص فارغًا حتى يصل خطه.",
  "Without it, browsers fall back to a layout mode from the 1990s, and parts of the page can look broken.": "بدونه تعود المتصفحات إلى وضع عرض من تسعينيات القرن الماضي، وقد تبدو أجزاء من الصفحة معطّلة.",

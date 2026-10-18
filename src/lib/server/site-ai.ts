@@ -6,7 +6,7 @@
  */
 import Anthropic from "@anthropic-ai/sdk";
 import { one, run, now } from "./db.ts";
-import { charge, logUsage, settle, spendable } from "./credits.ts";
+import { charge, logUsage, settle, spendable, topUpLevel } from "./credits.ts";
 import { overLimit } from "./limits.ts";
 import { CHAT_MODEL, claudeConfigured, getClient } from "../engines/claude.ts";
 import { MARKUP, callMaxCents, claudeCostCents, claudePrice, creditsFor, worstTokens } from "../credits.ts";
@@ -26,8 +26,9 @@ const HOUR = 3600_000;
 // still ends here and its hold is put back. The client's own default is 10 minutes.
 export const ANSWER_TIMEOUT_MS = 40_000;
 
-// answers: about how many answers the daily budget pays for.
-export type AiSettings = { enabled: boolean; dailyCredits: number; usedToday: number; askedToday: number; answers: number };
+// answers: about how many answers the daily budget pays for. stopsAt: the owner's auto top-up level,
+// where it stops while auto top-up can buy a pack (see charge's keepTopUpLevel), else 0.
+export type AiSettings = { enabled: boolean; dailyCredits: number; usedToday: number; askedToday: number; answers: number; stopsAt: number };
 export type AiAnswer = { status: number; body: { text: string } | { error: string } };
 
 const day = (t = Date.now()) => new Date(t).toISOString().slice(0, 10);
@@ -35,7 +36,8 @@ const day = (t = Date.now()) => new Date(t).toISOString().slice(0, 10);
 /**
  * What the model is told: how to answer, then the app's own instructions, kept apart from what a
  * visitor types. It says it is an AI when asked or when that matters, whatever the app's instructions
- * say (laws such as the EU AI Act, Art. 50(1), require it of AI that people chat with).
+ * say. Laws such as the EU AI Act (Art. 50) also ask that people know from the first answer: that is
+ * up to the app, which Flash's builder tells to mark the answers as AI's (see builder.ts).
  */
 const siteSystem = (instructions: string) =>
   "You are an AI assistant inside a small web app its owner built with Flash. Answer in plain text, " +
@@ -70,7 +72,8 @@ function tokensFor(credits: number, inputChars: number, model = CHAT_MODEL): num
 // The smallest daily budget that answers a short question: less would never answer anything.
 export const MIN_DAILY_CREDITS = worstCaseCredits(CHAT_MODEL, siteSystem("").length + 1, MIN_ANSWER_TOKENS);
 
-export async function aiSettings(slug: string): Promise<AiSettings> {
+/** The app's AI settings and today's use; with ownerId (the owner reading them in Flash), where it stops. */
+export async function aiSettings(slug: string, ownerId?: string): Promise<AiSettings> {
   const row = await one<{ enabled: number; daily_credits: number }>("SELECT enabled, daily_credits FROM site_ai WHERE site_slug = ?", [slug]);
   const used = await one<{ credits: number; requests: number }>(
     "SELECT credits, requests FROM site_ai_usage WHERE site_slug = ? AND day = ?",
@@ -83,18 +86,19 @@ export async function aiSettings(slug: string): Promise<AiSettings> {
     usedToday: Number(used?.credits ?? 0),
     askedToday: Number(used?.requests ?? 0),
     answers: Math.floor(dailyCredits / TYPICAL_ANSWER_CREDITS),
+    stopsAt: ownerId ? await topUpLevel(ownerId) : 0,
   };
 }
 
 /** The owner turns the app's AI on or off and sets its daily budget, at least enough for one short answer. */
-export async function saveAiSettings(slug: string, enabled: boolean, dailyCredits: number): Promise<AiSettings> {
+export async function saveAiSettings(slug: string, enabled: boolean, dailyCredits: number, ownerId?: string): Promise<AiSettings> {
   const limit = Math.max(MIN_DAILY_CREDITS, Math.min(MAX_DAILY_CREDITS, Math.round(dailyCredits) || 0));
   await run(
     `INSERT INTO site_ai (site_slug, enabled, daily_credits, updated_at) VALUES (?, ?, ?, ?)
      ON CONFLICT (site_slug) DO UPDATE SET enabled = excluded.enabled, daily_credits = excluded.daily_credits, updated_at = excluded.updated_at`,
     [slug, enabled ? 1 : 0, limit, now()],
   );
-  return aiSettings(slug);
+  return aiSettings(slug, ownerId);
 }
 
 /**
@@ -128,12 +132,13 @@ const fail = (error: string, status: number): AiAnswer => ({ status, body: { err
 /**
  * One question from a published app. `instructions` is the app's own wording for what the AI
  * should do; `prompt` is whatever the person using the app typed, which is never trusted to
- * change those instructions.
+ * change those instructions. waitMs: how long the whole answer is waited for (ANSWER_TIMEOUT_MS).
  */
 export async function askSiteAi(
   slug: string,
   input: { prompt?: unknown; instructions?: unknown },
   ip: string,
+  waitMs = ANSWER_TIMEOUT_MS,
 ): Promise<AiAnswer> {
   const prompt = typeof input.prompt === "string" ? input.prompt.trim().slice(0, MAX_PROMPT_CHARS) : "";
   const instructions = typeof input.instructions === "string" ? input.instructions.trim().slice(0, MAX_INSTRUCTIONS_CHARS) : "";
@@ -178,15 +183,17 @@ export async function askSiteAi(
     message = await getClient().beta.messages.create(
       { model: CHAT_MODEL, max_tokens: maxTokens, system, messages: [{ role: "user", content: prompt }] },
       // One attempt: the hold pays for one call, and the client would otherwise send a failed or
-      // timed-out one twice more.
-      { timeout: ANSWER_TIMEOUT_MS, maxRetries: 0 },
+      // timed-out one twice more. The client's timeout ends when the answer starts to arrive; the
+      // signal bounds the whole call, reading the answer too.
+      { timeout: waitMs, maxRetries: 0, signal: AbortSignal.timeout(waitMs) },
     );
   } catch (err) {
     await settle(chargeId, 0);
     await giveBack(slug, reserved, hold);
-    // A call that timed out or lost its connection may still have run, and Claude bills it: Flash
-    // pays that, logged at the most it can cost. The owner never pays for a failed answer.
-    if (err instanceof Anthropic.APIConnectionError) {
+    // Only an error status says Claude made no answer. One that timed out, lost its connection or was
+    // cut off part way may still have been made, and Claude bills it: Flash pays that, logged at the
+    // most it can cost. The owner never pays for a failed answer.
+    if (!(err instanceof Anthropic.APIError) || err.status === undefined) {
       const costCents = callMaxCents(CHAT_MODEL, chars, maxTokens);
       await logUsage({ userId: site.user_id, engine: "text", model: "app AI", provider: "anthropic", credits: 0, costCents, ok: false });
     }

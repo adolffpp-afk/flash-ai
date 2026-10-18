@@ -178,9 +178,11 @@ async function readOffice(file: File, kind: "docx" | "xlsx" | "pptx", t: Transla
 async function readPdf(file: File, t: Translate): Promise<Attachment | string> {
   if (file.size > MAX_PDF_MB * 1024 * 1024) return t("PDFs must be {size} MB or smaller.", { size: MAX_PDF_MB });
   try {
-    const pdfjs = await import("pdfjs-dist");
+    // pdf.js's legacy build: its modern one needs JavaScript newer than many browsers have (a PDF with
+    // an owner password fails without Map.prototype.getOrInsertComputed, for one). The text is the same.
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
     if (!pdfjs.GlobalWorkerOptions.workerPort) {
-      pdfjs.GlobalWorkerOptions.workerPort = new Worker(new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url), { type: "module" });
+      pdfjs.GlobalWorkerOptions.workerPort = new Worker(new URL("pdfjs-dist/legacy/build/pdf.worker.min.mjs", import.meta.url), { type: "module" });
     }
     const text = await pdfText(new Uint8Array(await file.arrayBuffer()), pdfjs);
     return { name: file.name, mediaType: "text/plain", data: toBase64(text) };

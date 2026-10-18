@@ -2045,6 +2045,7 @@
  "Why you're a good fit": "Dlaczego pasujesz do tej roli",
  "Wide": "Poziom",
  "Wide, open letters that are easier to tell apart": "Szerokie, otwarte litery, łatwiejsze do rozróżnienia",
+ "With auto top-up on, it stops when your balance gets down to {level} credits, so your visitors never set off a top-up.": "Przy włączonym automatycznym doładowaniu AI zatrzymuje się, gdy Twoje saldo spadnie do {level} kredytów, więc Twoi odwiedzający nigdy nie wywołają doładowania.",
  "With noindex, the page never shows up on Google, whatever else you fix. Keep it only for a page you want kept off Google.": "Z noindex strona nigdy nie pojawi się w Google, cokolwiek innego poprawisz. Zostaw to tylko na stronie, której nie chcesz w Google.",
  "Without display=swap, text stays blank until its font arrives.": "Bez display=swap tekst jest pusty, dopóki nie dotrze jego czcionka.",
  "Without it, browsers fall back to a layout mode from the 1990s, and parts of the page can look broken.": "Bez niego przeglądarki wracają do trybu układu z lat 90. i części strony mogą wyglądać na zepsute.",

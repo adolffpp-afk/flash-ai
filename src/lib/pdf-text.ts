@@ -46,8 +46,10 @@ async function pageItems(page: PdfPage, room: number): Promise<object[]> {
     }
     return items;
   } finally {
-    // pdf.js wants an Error as the reason: without one, it goes on sending into a closed stream.
-    reader.cancel(new Error("enough text")).catch(() => {});
+    // pdf.js wants an Error as the reason: without one, it goes on sending into a closed stream. Named
+    // AbortException, its worker takes it as a stop and says nothing, as it does for its own; any other
+    // name logs a warning in the browser's console whenever the stop comes before the page's end.
+    reader.cancel(Object.assign(new Error("enough text"), { name: "AbortException" })).catch(() => {});
   }
 }
 

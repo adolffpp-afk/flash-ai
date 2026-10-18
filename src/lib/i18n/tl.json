@@ -2045,6 +2045,7 @@
  "Why you're a good fit": "Bakit bagay ka sa trabaho",
  "Wide": "Pahiga",
  "Wide, open letters that are easier to tell apart": "Malapad at bukas na mga titik na mas madaling makilala",
+ "With auto top-up on, it stops when your balance gets down to {level} credits, so your visitors never set off a top-up.": "Kapag naka-on ang awtomatikong top-up, humihinto ito kapag bumaba sa {level} credits ang balance mo, para hindi kailanman makapag-trigger ng top-up ang mga bisita mo.",
  "With noindex, the page never shows up on Google, whatever else you fix. Keep it only for a page you want kept off Google.": "Kapag may noindex, hindi kailanman lalabas sa Google ang page, kahit ano pa ang ayusin mo. Gamitin lang ito sa page na ayaw mong lumabas sa Google.",
  "Without display=swap, text stays blank until its font arrives.": "Kapag walang display=swap, blangko ang text hanggang dumating ang font nito.",
  "Without it, browsers fall back to a layout mode from the 1990s, and parts of the page can look broken.": "Kapag wala ito, bumabalik ang mga browser sa layout mode mula pa noong 1990s, at puwedeng magmukhang sira ang ilang bahagi ng page.",

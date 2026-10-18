@@ -834,6 +834,42 @@ test("a plan read that failed is kept for 30 seconds, so a database hiccup isn't
   assert.deepEqual([await visitorsOf("hiccup-app"), await peopleOf("hiccup-lite")], [3, 1_502]);
 });
 
+test("a slow plan read that fails after a fresh one worked keeps nothing: the plan read fresh is used at once", async () => {
+  forgetServerMemory();
+  await owner("race-lite", "lite");
+  await site("race-app", "race-lite");
+  await visitor("race-app");
+  await run("UPDATE owner_people SET people = 1500 WHERE user_id = 'race-lite' AND day = ?", [TODAY]);
+  forgetServerMemory();
+  // The database hiccups on one plan read: it waits a moment, then fails. Later reads work.
+  const client = await db();
+  const execute = client.execute.bind(client);
+  let slowStarted!: () => void;
+  const started = new Promise<void>((resolve) => (slowStarted = resolve));
+  let first = true;
+  client.execute = ((s: { sql: string } | string, ...rest: unknown[]) => {
+    if (first && (typeof s === "string" ? s : s.sql).includes("FROM subscriptions")) {
+      first = false;
+      slowStarted();
+      return new Promise((_, reject) => setTimeout(() => reject(new Error("database unavailable")), 50));
+    }
+    return (execute as (...a: unknown[]) => unknown)(s, ...rest);
+  }) as typeof client.execute;
+  try {
+    // A new person's visit starts the slow read; meanwhile the owner's own view reads the plan fresh.
+    const slow = recordVisit("race-app", page("race-app", person()), null, NOW + 1);
+    await started;
+    assert.equal((await peopleCap("race-lite", NOW + 2, true)).paid, true);
+    await slow;
+  } finally {
+    client.execute = execute;
+  }
+  assert.deepEqual([await visitorsOf("race-app"), await peopleOf("race-lite")], [2, 1_501], "the slow visit counts by Lite's plan too");
+  // Two seconds on, a new person counts by Lite's plan, read fresh, not by a failure kept after it.
+  await recordVisit("race-app", page("race-app", person()), null, NOW + 2_000);
+  assert.deepEqual([await visitorsOf("race-app"), await peopleOf("race-lite")], [3, 1_502]);
+});
+
 test("past the owners it keeps, a server's plan memory forgets the owner whose plan was used longest ago, not the one read first", async () => {
   forgetServerMemory();
   visits.visitTests.maxPlans = 3;

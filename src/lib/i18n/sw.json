@@ -2045,6 +2045,7 @@
  "Why you're a good fit": "Kwa nini unafaa",
  "Wide": "Pana",
  "Wide, open letters that are easier to tell apart": "Herufi pana na wazi ambazo ni rahisi kutofautisha",
+ "With auto top-up on, it stops when your balance gets down to {level} credits, so your visitors never set off a top-up.": "Kuongeza kiotomatiki kukiwa kumewashwa, inasimama salio lako likishuka hadi krediti {level}, ili wageni wako wasisababishe kamwe kuongeza salio.",
  "With noindex, the page never shows up on Google, whatever else you fix. Keep it only for a page you want kept off Google.": "Ikiwa na noindex, ukurasa hautaonekana kamwe kwenye Google, hata ukirekebisha kitu kingine chochote. Iache tu kwenye ukurasa unaotaka usionekane kwenye Google.",
  "Without display=swap, text stays blank until its font arrives.": "Bila display=swap, maandishi hubaki tupu hadi fonti yake ifike.",
  "Without it, browsers fall back to a layout mode from the 1990s, and parts of the page can look broken.": "Bila hii, vivinjari hurudi kwenye hali ya mpangilio ya miaka ya 1990, na sehemu za ukurasa zinaweza kuonekana zimeharibika.",

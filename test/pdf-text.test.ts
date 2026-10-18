@@ -21,6 +21,7 @@ function textPage(items: (i: number) => object | null, seen = { pulled: 0, cance
       },
       cancel(reason) {
         assert.ok(reason instanceof Error, "pdf.js wants an Error to stop");
+        assert.equal(reason.name, "AbortException", "the name pdf.js's worker takes as a quiet stop");
         seen.cancelled = true;
       },
     });
@@ -122,16 +123,44 @@ test("a real PDF read with pdf.js gives the text of its pages read whole and cut
   assert.equal(await pdfText(pdf.slice(), counted, 10_000_000), all, "read whole when it fits");
   assert.deepEqual(opened, [1, 2, 3]);
   const everyPiece = pieces;
-  for (const limit of [300, 2_000, 20_000, MAX_TEXT]) {
-    opened = [];
-    pieces = 0;
-    const text = await pdfText(pdf.slice(), counted, limit);
-    assert.equal(text, await readWhole(limit), `the same text at ${limit} characters`);
-    assert.ok(text.endsWith(CUT_NOTE));
-    assert.deepEqual(opened, [1, 2], "the page after the cut isn't opened");
-    assert.ok(pieces < everyPiece * (limit === MAX_TEXT ? 0.95 : 0.2), `${pieces} of ${everyPiece} pieces read at ${limit}`);
+  // What pdf.js says while the long page is cut part way (it logs to console.warn).
+  const warnings: string[] = [];
+  const warn = console.warn;
+  console.warn = (...args: unknown[]) => void warnings.push(args.map(String).join(" "));
+  try {
+    for (const limit of [300, 2_000, 20_000, MAX_TEXT]) {
+      opened = [];
+      pieces = 0;
+      const text = await pdfText(pdf.slice(), counted, limit);
+      assert.equal(text, await readWhole(limit), `the same text at ${limit} characters`);
+      assert.ok(text.endsWith(CUT_NOTE));
+      assert.deepEqual(opened, [1, 2], "the page after the cut isn't opened");
+      assert.ok(pieces < everyPiece * (limit === MAX_TEXT ? 0.95 : 0.2), `${pieces} of ${everyPiece} pieces read at ${limit}`);
+    }
+    assert.equal(await pdfText(pdf.slice(), pdfjs), await readWhole(MAX_TEXT), "a chat's usual limit");
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  } finally {
+    console.warn = warn;
   }
-  assert.equal(await pdfText(pdf.slice(), pdfjs), await readWhole(MAX_TEXT), "a chat's usual limit");
+  // The stop is one pdf.js takes as its own. Before, its worker warned "ignoring errors during
+  // GetTextContent ... UnknownErrorException: enough text" whenever the stop came before the page's end.
+  assert.deepEqual(warnings.filter((w) => w.includes("enough text")), []);
+});
+
+test("the chat reads PDFs with pdf.js's legacy build, which needs no JavaScript newer than browsers have", async () => {
+  const flash = readFileSync(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
+  const readPdf = flash.slice(flash.indexOf("async function readPdf("), flash.indexOf("function readFile("));
+  assert.match(readPdf, /await import\("pdfjs-dist\/legacy\/build\/pdf\.mjs"\)/);
+  assert.match(readPdf, /new URL\("pdfjs-dist\/legacy\/build\/pdf\.worker\.min\.mjs", import\.meta\.url\)/);
+  assert.doesNotMatch(flash, /import\("pdfjs-dist"\)|"pdfjs-dist\/build\//, "nothing loads the modern build");
+  // A PDF with only an owner password (it opens without one; AES-128, made by fpdf2). The modern build
+  // can't read it where Map.prototype.getOrInsertComputed is missing (Chromium 141 among others); the
+  // legacy build brings its own.
+  const owner = new Uint8Array(readFileSync("test/fixtures/owner-password.pdf"));
+  assert.equal(
+    await pdfText(owner, pdfjs),
+    "--- Page 1 ---\nOwner-password only, line 0: Golden Crumb, Montreal\nOwner-password only, line 1: Golden Crumb, Montreal\nOwner-password only, line 2: Golden Crumb, Montreal",
+  );
 });
 
 test("text pieces join into lines", () => {

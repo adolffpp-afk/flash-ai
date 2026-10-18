@@ -2045,6 +2045,7 @@
  "Why you're a good fit": "Neden uygun olduğun",
  "Wide": "Yatay",
  "Wide, open letters that are easier to tell apart": "Birbirinden kolayca ayırt edilen geniş, açık harfler",
+ "With auto top-up on, it stops when your balance gets down to {level} credits, so your visitors never set off a top-up.": "Otomatik yükleme açıkken bakiyen {level} krediye inince durur; böylece ziyaretçilerin hiçbir zaman bir yüklemeye yol açmaz.",
  "With noindex, the page never shows up on Google, whatever else you fix. Keep it only for a page you want kept off Google.": "noindex varken, başka neyi düzeltirsen düzelt sayfa Google'da hiç görünmez. Bunu yalnızca Google'dan uzak tutmak istediğin bir sayfada bırak.",
  "Without display=swap, text stays blank until its font arrives.": "display=swap olmadan metin, yazı tipi gelene kadar boş kalır.",
  "Without it, browsers fall back to a layout mode from the 1990s, and parts of the page can look broken.": "Bu olmadan tarayıcılar 1990'lardan kalma bir görünüm moduna geçer ve sayfanın bazı bölümleri bozuk görünebilir.",

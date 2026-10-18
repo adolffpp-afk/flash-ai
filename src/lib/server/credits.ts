@@ -4,6 +4,7 @@ import { activeSubscription, grantPlanCredits } from "./subscriptions.ts";
 import { verificationRequired } from "./email.ts";
 import { teamPool } from "./teams.ts";
 import { releaseReferralBonuses } from "./referrals.ts";
+import { paymentsEnabled } from "./stripe.ts";
 
 export async function balance(userId: string): Promise<number> {
   const row = await one<{ total: number }>(
@@ -24,11 +25,24 @@ export async function spendAccounts(userId: string): Promise<string[]> {
 
 /*
  * SQL for an account's auto top-up level (the account is its one parameter): the level while auto
- * top-up is on with a saved card, else 0. Under it, the next /api/me or chat reply buys the pack
- * the person picked (see maybeAutoTopUp), so spending the person didn't start themselves (an app's
- * AI that visitors ask, keepTopUpLevel) stops at it instead.
+ * top-up can buy a pack (on, with a saved card and a pack Flash sells, and no disputed payment, as
+ * maybeAutoTopUp asks; payments on, see keepsLevel), else 0. Under it, the next /api/me or chat reply
+ * buys the pack the person picked, so spending the person didn't start themselves (an app's AI that
+ * visitors ask, keepTopUpLevel) stops at it instead. A month's last top-up used, or one a few minutes
+ * ago, only holds a pack back for a while, so the level is still kept then.
  */
-const TOP_UP_LEVEL = "COALESCE((SELECT below FROM auto_topups WHERE user_id = ? AND enabled = 1 AND payment_method IS NOT NULL), 0)";
+const TOP_UP_LEVEL = `COALESCE((SELECT a.below FROM auto_topups a WHERE a.user_id = ? AND a.enabled = 1 AND a.payment_method IS NOT NULL
+  AND a.pack IN (${CREDIT_PACKS.map((p) => `'${p.id}'`).join(", ")})
+  AND NOT EXISTS (SELECT 1 FROM credit_ledger d WHERE d.user_id = a.user_id AND substr(d.ref, 1, 15) = 'stripe-dispute:')), 0)`;
+
+// With payments off, auto top-up never buys anything, so there is no level to keep.
+const keepsLevel = (keepTopUpLevel: boolean) => keepTopUpLevel && paymentsEnabled();
+
+/** An account's auto top-up level while auto top-up can buy a pack (see TOP_UP_LEVEL), else 0. */
+export async function topUpLevel(account: string): Promise<number> {
+  if (!keepsLevel(true)) return 0;
+  return Number((await one<{ level: number }>(`SELECT ${TOP_UP_LEVEL} AS level`, [account]))?.level ?? 0);
+}
 
 /** A balance, less the auto top-up level while auto top-up is on: what can be spent without buying a pack. */
 async function aboveTopUpLevel(account: string): Promise<number> {
@@ -49,7 +63,7 @@ export async function spendable(
   { keepTopUpLevel = false }: { keepTopUpLevel?: boolean } = {},
 ): Promise<{ largest: number; total: number; pool: number | null }> {
   const accounts = await spendAccounts(userId);
-  const balances = await Promise.all(accounts.map(keepTopUpLevel ? aboveTopUpLevel : balance));
+  const balances = await Promise.all(accounts.map(keepsLevel(keepTopUpLevel) ? aboveTopUpLevel : balance));
   return {
     largest: Math.max(...balances),
     total: balances.reduce((a, b) => a + b, 0),
@@ -110,7 +124,7 @@ async function monthlyCredits(userId: string): Promise<void> {
  * members at once) can't take a balance below zero. Returns the ledger entry's id, or null when
  * no balance covers the amount. Pass the id to settle() to lower the charge once the real cost is known.
  * keepTopUpLevel: each balance must stay at or above its own auto top-up level while auto top-up
- * is on, in the same statement, so the charge can never make Flash buy a pack.
+ * can buy a pack (see TOP_UP_LEVEL), in the same statement, so the charge can never make Flash buy one.
  */
 export async function charge(
   userId: string,
@@ -119,12 +133,13 @@ export async function charge(
   { keepTopUpLevel = false }: { keepTopUpLevel?: boolean } = {},
 ): Promise<number | null> {
   if (amount <= 0) return 0;
+  const keep = keepsLevel(keepTopUpLevel);
   for (const account of await spendAccounts(userId)) {
     const r = await run(
       `INSERT INTO credit_ledger (user_id, amount, reason, actor, created_at)
        SELECT ?, ?, ?, ?, ?
-       WHERE (SELECT COALESCE(SUM(amount), 0) FROM credit_ledger WHERE user_id = ?) >= ?${keepTopUpLevel ? ` + ${TOP_UP_LEVEL}` : ""}`,
-      [account, -amount, reason, account === userId ? null : userId, now(), account, amount, ...(keepTopUpLevel ? [account] : [])],
+       WHERE (SELECT COALESCE(SUM(amount), 0) FROM credit_ledger WHERE user_id = ?) >= ?${keep ? ` + ${TOP_UP_LEVEL}` : ""}`,
+      [account, -amount, reason, account === userId ? null : userId, now(), account, amount, ...(keep ? [account] : [])],
     );
     if (r.rowsAffected === 1) return Number(r.lastInsertRowid);
   }

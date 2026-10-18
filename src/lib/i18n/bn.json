@@ -2045,6 +2045,7 @@
  "Why you're a good fit": "আপনি কেন উপযুক্ত",
  "Wide": "চওড়া",
  "Wide, open letters that are easier to tell apart": "চওড়া, খোলামেলা অক্ষর, যা সহজে আলাদা করে চেনা যায়",
+ "With auto top-up on, it stops when your balance gets down to {level} credits, so your visitors never set off a top-up.": "অটো টপ আপ চালু থাকলে আপনার ব্যালান্স {level} ক্রেডিটে নেমে এলে এটি থেমে যায়, যাতে আপনার ভিজিটরদের কারণে কখনও টপ আপ না হয়।",
  "With noindex, the page never shows up on Google, whatever else you fix. Keep it only for a page you want kept off Google.": "noindex থাকলে আর যা-ই ঠিক করুন, পেজটি কখনো Google-এ দেখা যাবে না। শুধু সেই পেজে রাখুন যেটি Google থেকে দূরে রাখতে চান।",
  "Without display=swap, text stays blank until its font arrives.": "display=swap ছাড়া ফন্ট না আসা পর্যন্ত লেখা ফাঁকা থাকে।",
  "Without it, browsers fall back to a layout mode from the 1990s, and parts of the page can look broken.": "এটি না থাকলে ব্রাউজার ১৯৯০-এর দশকের লেআউট মোডে ফিরে যায়, আর পেজের কিছু অংশ ভাঙা দেখাতে পারে।",

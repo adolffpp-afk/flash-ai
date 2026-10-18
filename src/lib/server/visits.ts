@@ -286,13 +286,17 @@ export async function peopleCap(ownerId: string, at = Date.now(), fresh = false)
  * can't be read (the database failed): then they count by the free plan's numbers rather than not at
  * all, without the note that counting paused, which would put the free plan's number on a paid
  * owner's day. A failed read is kept for 30 seconds, so a database hiccup isn't asked again on every
- * visit (a plan read fresh meanwhile ends it), and logged at most once a minute per server.
+ * visit (a plan read meanwhile ends it, and one that worked while this one waited is used instead),
+ * and logged at most once a minute per server.
  */
 export async function countingPlan(ownerId: string, at: number): Promise<Plan | null> {
   if ((unreadPlans.get(ownerId) ?? -Infinity) > at) return null;
   try {
     return await peopleCap(ownerId, at);
   } catch (err) {
+    // A newer read that worked while this one waited (the owner's own view reads fresh) wins.
+    const known = plans.get(ownerId);
+    if (known && known.until > at) return { cap: known.cap, steps: known.steps, paid: known.paid };
     unreadPlans.delete(ownerId);
     unreadPlans.set(ownerId, at + UNREAD_PLAN_MEMORY);
     while (unreadPlans.size > maxPlans()) unreadPlans.delete(unreadPlans.keys().next().value!);
