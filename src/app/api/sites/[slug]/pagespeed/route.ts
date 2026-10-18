@@ -5,7 +5,7 @@ import { clearLimit, countOf, overLimit } from "@/lib/server/limits.ts";
 import { pointsAtFlash, siteDomains } from "@/lib/server/domains.ts";
 import { cacheGet, cacheKey, cachePut } from "@/lib/server/source-fetch.ts";
 import { appBase } from "@/lib/server/seo.ts";
-import { ownerChecks, parseRecord, REFUSED, runLock, runPageSpeed, type PageSpeedError, type PageSpeedRecord, type PageSpeedRun } from "@/lib/server/pagespeed.ts";
+import { ownerChecks, pagespeedRoom, parseRecord, REFUSED, runLock, runPageSpeed, type PageSpeedError, type PageSpeedRecord, type PageSpeedRun } from "@/lib/server/pagespeed.ts";
 import { testDomain } from "@/lib/seo-rules.ts";
 import type { Translate } from "@/lib/i18n.ts";
 
@@ -40,9 +40,9 @@ const DOMAIN_LOOKUPS = 10;
  * domain ({ address: "flash" | "domain" }: never an address from the request). A check of the same
  * version at the same address within a day is answered from the one saved, unless Google couldn't do
  * the phone's or the computer's half: then only that half is asked again. A saved check, a failure
- * remembered, Google refusing and a check already going are answered for free, before anything is
- * asked or counted. One app is checked once at a time, and each owner a few times an hour and a day
- * (ownerChecks). Free: it never charges anything.
+ * remembered, Google refusing, a check already going and Flash's daily allowance being used up are
+ * answered for free, before anything is asked or counted. One app is checked once at a time, and each
+ * owner a few times an hour and a day (ownerChecks). Free: it never charges anything.
  */
 export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug]/pagespeed">) {
   const user = await getUser(request);
@@ -82,6 +82,9 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug
     Response.json({ code: "running", error: t("Google is still checking this page. The result shows here when it's done.") }, { status: 409 });
   // Waiting for a check already going doesn't use up one of the owner's.
   if ((await countOf(lock)) > 0) return running();
+  // Flash's daily allowance for every owner together (read only) can't take what this press would ask
+  // Google, both halves or the one that failed: busy, without using one of the owner's checks.
+  if (!(await pagespeedRoom(same ? [same.mobile, same.desktop].filter((r) => !r.ok).length : 2))) return failed(t, "busy");
   const caps = ownerChecks();
   const hourly = `pagespeed:${user.id}`;
   const daily = `pagespeed-day:${user.id}`;

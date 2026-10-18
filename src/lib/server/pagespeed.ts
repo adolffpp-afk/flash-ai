@@ -1,4 +1,4 @@
-import { cacheGet, cachePut, envCount, failureNote, fetchJsonPaths, reserveDaily, SourceError, takeSlot, testBase } from "./source-fetch.ts";
+import { cacheGet, cachePut, dailyLeft, envCount, failureNote, fetchJsonPaths, reserveDaily, SourceError, takeSlot, testBase } from "./source-fetch.ts";
 import type { JsonPath } from "./json-pick.ts";
 
 /*
@@ -67,6 +67,12 @@ const pagespeedKey = (env: Record<string, string | undefined> = process.env) => 
  * hour and 5 a day: one owner uses at most 10 of them, and it takes 20 to use them up.
  */
 export const ownerChecks = (env: Record<string, string | undefined> = process.env) => (pagespeedKey(env) ? { hour: 10, day: 30 } : { hour: 3, day: 5 });
+
+/** Flash's allowance of Google's requests a day, for every owner together: 5,000 with a key, 200 without. */
+const dailyRequests = (key = pagespeedKey()) => envCount("FLASH_PAGESPEED_DAILY_REQUESTS", key ? 5000 : 200);
+
+/** Whether Flash's daily allowance has room for this many of Google's requests now, read without writing anything. */
+export const pagespeedRoom = async (requests: number) => (await dailyLeft("pagespeed", dailyRequests())) >= requests;
 
 /** Why PAGESPEED_API_KEY can't be used, for the owner dashboard: "" when it can (or isn't set). */
 export const pagespeedKeyProblem = (env: Record<string, string | undefined> = process.env) =>
@@ -145,7 +151,7 @@ export async function runPageSpeed(target: string, strategy: "mobile" | "desktop
   try {
     // A few a second across Flash, and a daily allowance (each check of an app is 2).
     if (!(await takeSlot("pagespeed", 3, 1000, { waitMs: 5000 }))) throw new SourceError("busy");
-    if (!(await reserveDaily("pagespeed", envCount("FLASH_PAGESPEED_DAILY_REQUESTS", key ? 5000 : 200)))) throw new SourceError("busy");
+    if (!(await reserveDaily("pagespeed", dailyRequests(key)))) throw new SourceError("busy");
     const query = new URLSearchParams({ url: target, strategy: strategy.toUpperCase() });
     for (const c of CATEGORIES) query.append("category", c);
     const [categories, runtimeError, loading, ...audits] = await fetchJsonPaths(

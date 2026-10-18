@@ -5,17 +5,21 @@ import { cacheGet, cachePut, fetchJson } from "./source-fetch.ts";
 /*
  * Google's page speed test (PageSpeed Insights, which runs Lighthouse) opening a published app, told
  * apart from people, so it never spends the app's AI (see the ai route) and isn't counted as a visitor
- * (see visits.ts), whoever started it and whenever. Nothing a person's browser sends is taken for it,
- * so a visitor is answered and counted as always while Google tests the app. What it rests on, from
- * other sites' logs and Google's own pages (no request of Google's to Flash was seen):
+ * (see visits.ts), whoever started it and whenever. Only what Google's test was seen sending and
+ * Lighthouse's own agents are taken for it, so a visitor is answered and counted as always while Google
+ * tests the app; a browser made to pass for Lighthouse's phone (Chrome DevTools' Moto G Power device)
+ * is taken for it too. What it rests on, from other sites' logs, Lighthouse's code and Google's own
+ * pages (no request of Google's to Flash was seen):
  * - Google's servers end the user agent with "Chrome-Lighthouse", on the phone and on the computer.
  *   The Lighthouse team said so in September 2025, and logs show it on page loads from November 2025
  *   (the computer's to February 2026, the phone's to September 2026). No browser people use says it.
  * - Without it, a request may still carry Lighthouse's own agents (core/config/constants.js), as
- *   Google's report records them. Its phone, an Android 11 moto g power (2022), is never a person's
- *   (Chrome on a real phone has named no model since 110). Its computer is any Mac's Chrome, so it
- *   counts only from an address on Google's list of its user-triggered fetchers, where every address
- *   of Google's test in those logs is (googleFetcher).
+ *   Google's report records them. Its phone, an Android 11 moto g power (2022), counts with Chrome 110
+ *   or later, as Lighthouse 11.4 and later send it (Chrome 119 or later): Chrome on a real phone has
+ *   named no model since 110. Lighthouse 10 to 11.3 sent Chrome 109, as that phone's own Chrome 101 to
+ *   109 did, so that one doesn't count. Its computer is any Mac's Chrome, so it counts only from an
+ *   address on Google's list of its user-triggered fetchers, where every address of Google's test in
+ *   those logs is (googleFetcher).
  * Whether an app's own requests, such as its AI's, carry the word as page loads do wasn't seen.
  */
 
@@ -24,12 +28,12 @@ const DAY = 24 * 60 * MINUTE;
 
 // Chrome-Lighthouse: what Google's servers add, and what Lighthouse itself said up to version 9.
 const TOKEN = /Chrome-Lighthouse/i;
-/** Lighthouse's own phone from version 10 on, with nothing after Safari. */
+/** Lighthouse's phone as version 10 on sends it, with nothing after Safari (which Chrome counts: isLighthouseAgent). */
 const PHONE = /^Mozilla\/5\.0 \(Linux; Android 11; moto g power \(2022\)\) AppleWebKit\/537\.36 \(KHTML, like Gecko\) Chrome\/(\d+)\.0\.0\.0 Mobile Safari\/537\.36$/;
 /** Lighthouse's computer from version 10 on: Chrome on a Mac, as every Mac's Chrome says it. */
 const COMPUTER = /^Mozilla\/5\.0 \(Macintosh; Intel Mac OS X 10_15_7\) AppleWebKit\/537\.36 \(KHTML, like Gecko\) Chrome\/\d+\.0\.0\.0 Safari\/537\.36$/;
 
-/** Whether a user agent is Google's test whenever it's seen: Chrome-Lighthouse, or Lighthouse's own phone. */
+/** Whether a user agent is Google's test whenever it's seen: Chrome-Lighthouse, or Lighthouse's phone with Chrome 110 or later. */
 export const isLighthouseAgent = (agent: string) => TOKEN.test(agent) || Number(PHONE.exec(agent)?.[1] ?? 0) >= 110;
 
 /** Whether a user agent could be Lighthouse's computer: then it's Google's test only from Google's own addresses. */

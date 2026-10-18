@@ -430,6 +430,48 @@ test("waiting for a running check uses none, the app's visitors are answered mea
   assert.equal(google.length, 0);
 });
 
+test("while Flash's daily allowance can't take a press, Google is busy for everyone, and the press uses none of the owner's checks and writes nothing", async () => {
+  await fresh();
+  const who = await owner("busy-free");
+  const day = new Date().toISOString().slice(0, 10);
+  const used = (requests: number) =>
+    run("INSERT INTO free_quota (day, provider, requests) VALUES (?, 'pagespeed', ?) ON CONFLICT(day, provider) DO UPDATE SET requests = excluded.requests", [day, requests]);
+  const before = await one<{ requests: number }>("SELECT requests FROM free_quota WHERE day = ? AND provider = 'pagespeed'", [day]);
+  const checksUsed = async () => [await countOf(`pagespeed:${who.id}`), await countOf(`pagespeed-day:${who.id}`)];
+  try {
+    // Without a key every owner shares 200 requests a day, all used today: pressed more often than the
+    // owner's 3 checks an hour, each press is told it's busy, for free.
+    await used(200);
+    const w = writes;
+    for (let i = 0; i < 5; i++) {
+      const busy = await check(who);
+      assert.equal(busy.status, 503, `press ${i + 1}`);
+      assert.equal(busy.body.code, "busy");
+      assert.equal(busy.body.error, "Google's free speed check is busy right now. Try again later.");
+    }
+    assert.equal(google.length, 0);
+    assert.equal(writes - w, 0, "nothing written");
+    assert.deepEqual(await checksUsed(), [0, 0]);
+    // One request left: not enough for both halves.
+    await used(199);
+    assert.equal((await check(who)).body.code, "busy");
+    assert.deepEqual(await checksUsed(), [0, 0]);
+    // Enough for the one half Google couldn't do last time (once that failure is no longer remembered).
+    await used(0);
+    googleReply = (s) => (s === "MOBILE" ? { status: 500, body: "{}" } : ok(s));
+    assert.equal((await check(who)).status, 200);
+    await run("DELETE FROM source_cache WHERE key != ?", [REFUSED]);
+    googleReply = ok;
+    await used(199);
+    assert.equal((await check(who)).status, 200);
+    assert.deepEqual(google.slice(2).map((c) => c.url.searchParams.get("strategy")), ["MOBILE"]);
+    assert.deepEqual(await checksUsed(), [2, 2], "only the presses Google was asked for used a check");
+  } finally {
+    googleReply = ok;
+    await used(Number(before?.requests ?? 0));
+  }
+});
+
 test("Google refusing stops the checks for a while, and the view says so", async () => {
   await fresh();
   const who = await owner("refused");

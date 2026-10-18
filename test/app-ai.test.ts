@@ -201,8 +201,10 @@ test("Google's page speed test (Lighthouse) never spends an app's AI, whoever st
       `203.0.113.${n + 2}`,
       `${when}: a phone's in-app browser`,
     );
-    // That phone's own Chrome before 110 still named it, as Lighthouse does.
+    // That phone's own Chrome before 110 still named it, as Lighthouse does: its 109 is also what
+    // Lighthouse 10 to 11.3 sent, which is answered too.
     await answered("Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/105.0.0.0 Mobile Safari/537.36", `203.0.113.${n + 3}`, `${when}: an old Chrome on that phone`);
+    await answered("Mozilla/5.0 (Linux; Android 11; moto g power (2022)) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/109.0.0.0 Mobile Safari/537.36", `203.0.113.${n + 3}`, `${when}: that phone's Chrome 109`);
     await answered("Mozilla/5.0 (Windows NT 10.0; rv:140.0) Gecko/20100101 Firefox/140.0", `203.0.113.${n + 4}`, `${when}: Firefox`);
   };
   await google("any time");
