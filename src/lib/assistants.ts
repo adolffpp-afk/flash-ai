@@ -105,9 +105,10 @@ export function cleanAssistant(input: unknown): AssistantFields {
 // Flash's own names, which an assistant can't take, compared without case, accents, spaces or
 // punctuation, and with the letters that look like theirs: Cyrillic "а" for "a", Cherokee "Ꮪ" for
 // "S", a small capital "ꜰ" for "f", "I" for "l". "™" and "℠" go the way "®" goes, before NFKC
-// makes them the letters "TM" and "SM".
+// makes them the letters "TM" and "SM". So do the modifier letters NFKC leaves as they are, which
+// look like punctuation: "ʼ" is an apostrophe, "ˈ" a quote, "ꓹ" a comma.
 const nameKey = (name: string) =>
-  name.replace(/[\u2120\u2122]/g, "").normalize("NFKC").toLowerCase().normalize("NFD").replace(/\p{M}+/gu, "").replace(/[^\p{L}\p{N}]+/gu, "");
+  name.replace(/[\u2120\u2122]/g, "").normalize("NFKC").toLowerCase().normalize("NFD").replace(/\p{M}+/gu, "").replace(/[^\p{L}\p{N}]+|\p{Lm}+/gu, "");
 // The letters and digits that look like each Latin letter, as nameKey leaves them: from Unicode's
 // confusables.txt (10.0), the Latin letters with a stroke, hook or curl built in (from their
 // names), and the Latin small capitals. Printed by scripts/lookalikes.ts.
@@ -140,9 +141,10 @@ const LOOKALIKES: Record<string, string> = {
   z: "\u{1b6}\u{225}\u{240}\u{290}\u{291}\u{3b6}\u{1d22}\u{1d76}\u{1d8e}\u{2c6c}\u{a4dc}\u{ab93}\u{102f5}\u{118c4}\u{118c9}\u{118e5}",
 };
 // Flash's names, alone or with words that make them read as Flash's own help or company, before
-// or after, one or many, each also with an s: "Flash support", "Official Flash ∞ AI", "AI-Flash
-// Inc. Support", "Flash Customer Support", "Contact Flash Admins". Only those: "flash" is an
-// everyday word, and "Flash sale helper" or "Flashcards support" are someone's own.
+// or after, one or many, each also with an s, and the name too, as in "Flash's": "Flash support",
+// "Official Flash ∞ AI", "AI-Flash Inc. Support", "Flash Customer Support", "Contact Flash Admins",
+// "Flash's Help Desk". Only those: "flash" is an everyday word, and "Flash sale helper" or
+// "Flashcards support" are someone's own.
 const OWN = ["Flash", PRODUCT_NAME, BRAND_NAME, LEGAL_NAME, "AI-Flash"];
 const ROLES = [
   "support", "team", "official", "help", "desk", "admin", "administrator", "moderator", "staff", "customer", "service", "contact", "billing",
@@ -150,7 +152,7 @@ const ROLES = [
 ];
 const alike = (names: string[]) => names.map((name) => [...nameKey(name)].map((ch) => `[${ch}${LOOKALIKES[ch] ?? ""}]`).join("")).join("|");
 const ROLE = `(?:${alike(ROLES)})(?:${alike(["s"])})?`;
-const KEPT = new RegExp(`^(?:${ROLE})*(?:${alike(OWN)})(?:${ROLE})*$`, "u");
+const KEPT = new RegExp(`^(?:${ROLE})*(?:${alike(OWN)})(?:${alike(["s"])})?(?:${ROLE})*$`, "u");
 
 /** Whether a name is one Flash keeps for itself ("Flash support", "FLASH ∞ AI", "flash-team", "Flаsh" with a Cyrillic "а"). */
 export const isKeptName = (name: string) => KEPT.test(nameKey(name));

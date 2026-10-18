@@ -112,26 +112,51 @@ const MARKS = /[̀-֑ͯ-ׇؐ-ؚـً-ٰٟۖ-ۭ]/g;
 // "ي", keheh "ک" as kaf "ك", teh marbuta "ة" and heh with yeh above "ۀ" as heh "ه".
 const LETTERS: Record<string, string> = { "ی": "ي", "ى": "ي", "ک": "ك", "ة": "ه", "ۀ": "ه" };
 const VARIANTS = /[ةىکۀی]/g;
+// Latin letters with a stroke or a slash, and those written as two, which have no accent to take
+// off but are typed without it: "płatność" is "platnosc", "đơn" "don", "købe" "kobe", "fiyatı"
+// "fiyati", "Größe" "grosse", "cœur" "coeur".
+const STROKES: Record<string, string> = { ł: "l", đ: "d", ð: "d", ø: "o", ı: "i", ħ: "h", ŧ: "t", ƀ: "b", ɨ: "i", ß: "ss", æ: "ae", œ: "oe" };
+const STROKED = /[łđðøıħŧƀɨßæœ]/g;
+// Digits of other scripts as the 0-9 spreadsheets and most PDFs write: a Persian keyboard types
+// "۳۰۷۰۷", an Arabic one "٣٠٧٠٧", and both are "30707", as are "३०७०७" and "๓๐๗๐๗".
+const DIGITS = /[^\P{Nd}0-9]/gu;
+const DIGIT = /\p{Nd}/u;
+/** A digit's value: Unicode keeps each script's digits together, 0 to 9 in order, and where two scripts' digits meet, each still starts at 0. */
+function digit(d: string): string {
+  const at = d.codePointAt(0)!;
+  let zero = at;
+  while (DIGIT.test(String.fromCodePoint(zero - 1))) zero--;
+  return String((at - zero) % 10);
+}
+// Everything but Thai and Lao goes to NFKC before the split, so "CO₂" is "co2" and "m²" "m2". Not
+// those two: NFKC cuts Thai and Lao "ำ" in two and writes Lao "ໜ" as two letters, which the
+// splitter doesn't expect ("สินค้า" would come out as "สิน" and "ค้า").
+const NFKC_FIRST = /[^\p{Script=Thai}\p{Script=Lao}]+/gu;
 const ASCII = /^[\x00-\x7f]*$/;
 
 /**
- * The words of a text, as the search index keeps them: lower case, split the way Intl.Segmenter
- * splits words, so Japanese, Chinese and Thai split into words too; then each in NFKC (only after
- * the split: NFKC cuts Thai "ำ" in two, which the splitter doesn't expect, and "สินค้า" would come
- * out as "สิน" and "ค้า"), split again at anything that isn't a letter, digit or mark, so an
+ * The words of a text, as the search index keeps them: in NFKC but for Thai and Lao (see
+ * NFKC_FIRST), lower case, split the way Intl.Segmenter splits words, so Japanese, Chinese and Thai
+ * split into words too; then split again at anything that isn't a letter, digit or mark, so an
  * apostrophe ("l'été") leaves two words, each of which gets its assistant's tag; and without
- * accents or vowel marks, with one form of the Arabic and Persian letters written two ways ("Café"
- * is "cafe", "يُرجى" is "يرجي", "أولًا" is "اولا", "کالا" is "كالا").
+ * accents or vowel marks, with one form of the Arabic and Persian letters written two ways, the
+ * Latin letters with a stroke as the letter without it, and every script's digits as 0-9 ("Café"
+ * is "cafe", "يُرجى" is "يرجي", "أولًا" is "اولا", "کالا" is "كالا", "łódź" is "lodz", "۱۲" is "12").
  */
 export function words(text: string): string[] {
   const out: string[] = [];
-  for (const s of segments.segment(text.normalize("NFC").toLowerCase().replace(VARIANTS, (c) => LETTERS[c]))) {
+  const folded = text
+    .normalize("NFC")
+    .replace(NFKC_FIRST, (s) => s.normalize("NFKC"))
+    .toLowerCase()
+    .replace(VARIANTS, (c) => LETTERS[c]);
+  for (const s of segments.segment(folded)) {
     if (!s.isWordLike) continue;
     const ascii = ASCII.test(s.segment);
-    // NFKD, and NFC once the marks are gone: NFKC, with one step less. Lower case again, as NFKD
-    // can make capitals ("𝐅" is "F").
+    // NFKD, and NFC once the marks are gone: NFKC, which Thai and Lao only get now that they're
+    // split. Lower case again, as NFKD can make capitals.
     for (const piece of (ascii ? s.segment : s.segment.normalize("NFKD").toLowerCase()).split(/[^\p{L}\p{N}\p{M}]+/u)) {
-      const word = ascii ? piece : piece.replace(MARKS, "").normalize("NFC");
+      const word = ascii ? piece : piece.replace(MARKS, "").normalize("NFC").replace(STROKED, (c) => STROKES[c]).replace(DIGITS, digit);
       if (word && word.length <= MAX_WORD && /[\p{L}\p{N}]/u.test(word)) out.push(word);
     }
   }

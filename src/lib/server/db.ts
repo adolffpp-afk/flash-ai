@@ -863,9 +863,10 @@ const MIGRATIONS = [
  */
 const ASSISTANT_INDEX =
   "CREATE VIRTUAL TABLE IF NOT EXISTS assistant_chunks_fts USING fts5(seg, content='', contentless_delete=1, tokenize=\"unicode61 remove_diacritics 2 categories 'L* N* Co M*'\")";
-// Deleting a chunk deletes its index rows. Made only once the index exists: with no index to
-// delete from, the trigger would make every delete of a chunk fail. Without it, the index isn't
-// used (see indexState in assistant-search.ts), and storing a file makes it.
+// Deleting a chunk deletes its index rows, which only marks them deleted until purgeIndex (in
+// assistant-search.ts) rewrites the index without them. Made only once the index exists: with no
+// index to delete from, the trigger would make every delete of a chunk fail. Without it, the index
+// isn't used (see indexState in assistant-search.ts), and storing a file makes it.
 const ASSISTANT_INDEX_TRIGGER =
   "CREATE TRIGGER IF NOT EXISTS assistant_chunks_gone AFTER DELETE ON assistant_chunks BEGIN DELETE FROM assistant_chunks_fts WHERE rowid = old.id; END";
 

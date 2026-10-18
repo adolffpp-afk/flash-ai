@@ -17,7 +17,7 @@ after(() => rmSync(dir, { recursive: true, force: true }));
 
 const { db, run, one, all } = await import("../src/lib/server/db.ts");
 const search = await import("../src/lib/server/assistant-search.ts");
-const { indexFile, passagesFor, searchChunks, searchMode, removeFileRows, storageFactor } = search;
+const { indexFile, passagesFor, purgeIndex, searchChunks, searchMode, removeFileRows, storageFactor } = search;
 const { chunkText, queryTerms, rankChunks, tagOf, tagged, words } = await import("../src/lib/assistant-chunks.ts");
 const { PASSAGE_TOKENS, MAX_PASSAGES, STORE_FACTOR } = await import("../src/lib/assistants.ts");
 type Statement = Parameters<Awaited<ReturnType<typeof db>>["batch"]>[0][number];
@@ -51,23 +51,31 @@ const indexRows = async () => Number((await one<{ n: number }>("SELECT COUNT(*) 
 type Seen = { sql: string; args: unknown[]; rows: number };
 const sqlOf = (s: Statement) => (typeof s === "string" ? s : Array.isArray(s) ? s[0] : s.sql);
 const argsOf = (s: Statement): unknown[] => (typeof s === "string" ? [] : (((Array.isArray(s) ? s[1] : s.args) ?? []) as unknown[]));
-/** What `f` asks the database: each statement and its arguments, with how many rows it gave back. */
-async function watched<T>(f: () => Promise<T>): Promise<{ result: T; seen: Seen[] }> {
+/**
+ * What `f` asks the database: each statement and its arguments, with how many rows it gave back,
+ * and the same by call, a batch being one call: each call is a round trip to Turso.
+ */
+async function watched<T>(f: () => Promise<T>): Promise<{ result: T; seen: Seen[]; calls: Seen[][] }> {
   const client = await db();
   const { execute, batch } = client;
   const seen: Seen[] = [];
+  const calls: Seen[][] = [];
   client.execute = (async (s: Statement, args?: never) => {
     const r = await execute.call(client, s as string, args);
-    seen.push({ sql: sqlOf(s), args: args ?? argsOf(s), rows: r.rows.length });
+    const one = { sql: sqlOf(s), args: args ?? argsOf(s), rows: r.rows.length };
+    seen.push(one);
+    calls.push([one]);
     return r;
   }) as typeof execute;
   client.batch = (async (ss: Statement[], mode?: "read" | "write") => {
     const rs = await batch.call(client, ss, mode);
-    ss.forEach((s, i) => seen.push({ sql: sqlOf(s), args: argsOf(s), rows: rs[i].rows.length }));
+    const these = ss.map((s, i) => ({ sql: sqlOf(s), args: argsOf(s), rows: rs[i].rows.length }));
+    seen.push(...these);
+    calls.push(these);
     return rs;
   }) as typeof batch;
   try {
-    return { result: await f(), seen };
+    return { result: await f(), seen, calls };
   } finally {
     client.execute = execute;
     client.batch = batch;
@@ -75,6 +83,8 @@ async function watched<T>(f: () => Promise<T>): Promise<{ result: T; seen: Seen[
 }
 const matching = async (assistantId: string, word: string) =>
   (await all<{ rowid: number }>("SELECT rowid FROM assistant_chunks_fts WHERE seg MATCH ?", [`"${tagOf(assistantId)}${word}"`])).map((r) => Number(r.rowid));
+/** Whether the index's own pages hold a word, searched or not: what anyone with the database file can read. */
+const inIndexPages = async (word: string) => (await all<{ block: ArrayBuffer }>("SELECT block FROM assistant_chunks_fts_data")).some((r) => Buffer.from(r.block).includes(word));
 
 // The bakery's handbook (searched: far over 6,000 tokens) and another user's assistant with the same words.
 const bakery = await assistant("owner");
@@ -326,16 +336,23 @@ test("when nothing matches nothing is read, and Read the start of each file read
   assert.deepEqual([...new Set(result.passages.map((p) => p.fileId))], ids.slice(0, MAX_PASSAGES));
 });
 
-test("a searched message reads the chunk count from the files, and counts its words in the index alone", async () => {
+test("a searched message reads the chunk count from the files, and counts its words in the index alone, in 3 round trips at most", async () => {
   for (const f of [handbook, prices, notes]) {
     assert.equal(Number((await one<{ chunks: number }>("SELECT chunks FROM assistant_files WHERE id = ?", [f]))?.chunks), (await chunksOf(f)).length);
   }
+  // Which search the database has is asked at most once every 10 minutes, not for each message.
+  await searchMode(true);
   for (const message of ["How do refunds work?", "thanks!", "and the price of the loaves in the shop"]) {
-    const { seen } = await watched(() => passagesFor({ id: bakery }, message));
+    const { seen, calls } = await watched(() => passagesFor({ id: bakery }, message));
     assert.ok(!seen.some((q) => /COUNT\(\*\)[^]*FROM assistant_chunks WHERE/.test(q.sql)), seen.map((q) => q.sql).join("\n"));
     // Not every match of "the" joined to its chunk and its file.
     const counts = seen.filter((q) => /COUNT\(\*\)/.test(q.sql));
     assert.ok(counts.length > 0 && counts.every((q) => !/JOIN|assistant_chunks\b(?!_fts)/.test(q.sql)), counts.map((q) => q.sql).join("\n"));
+    // One after the other, each waiting for the last: the files, all the word counts in one batch,
+    // then the ranked search.
+    const trips = calls.map((c) => c.map((q) => q.sql.slice(0, 40)).join(" + "));
+    assert.ok(calls.length <= 3, `${message}: ${trips.join(" | ")}`);
+    assert.equal(calls.filter((c) => c.some((q) => /COUNT\(\*\)/.test(q.sql))).length, 1, `${message}: ${trips.join(" | ")}`);
   }
 });
 
@@ -391,13 +408,54 @@ test("Korean, Arabic, Persian and Thai questions find words written with a parti
   }
 });
 
-test("explicit deletes leave no chunk or index row behind, with foreign keys off", async () => {
+test("CO2, letters typed without their stroke and digits typed on a Persian or Arabic keyboard find what the file writes, in both searches", async () => {
+  const lab = await assistant("owner", "Lab");
+  const own: Record<number, string> = {
+    2: "Scope 1 CO₂ emissions fell by a third, and so did CH₄ and N₂O.",
+    4: "The flat is 75 m² and its pump moves 30 m³/h of H₂O.",
+    // "Payment by card works in the shop", "The order was delivered in two days", "You can buy gift
+    // cards in the shop", "The product's price includes shipping", "The cake's size is 26 cm".
+    6: "Płatność kartą działa w sklepie.",
+    8: "Đơn hàng được giao trong hai ngày.",
+    9: "Du kan købe gavekort i butikken.",
+    10: "Ürün fiyatı kargo dahil.",
+    12: "Die Größe der Torte ist 26 cm.",
+  };
+  await file(lab, "Report.pdf", pdf(14, own, 12), { exact: 0 });
+  // Order numbers as a spreadsheet writes them, in 0-9.
+  const orders = await file(lab, "Orders.xlsx", sheet("Orders", [["order", "total"], ...Array.from({ length: 400 }, (_, i) => [`${30000 + 7 * i}`, `${(i % 50) + 10}.00`])]), { exact: 0 });
+  const asked = [
+    ["CO2", "2"],
+    ["N2O emissions", "2"],
+    ["m2", "4"],
+    ["H2O", "4"],
+    ["platnosc karta", "6"],
+    ["płatność", "6"],
+    ["don hang duoc giao", "8"],
+    ["kobe gavekort", "9"],
+    ["fiyati", "10"],
+    ["Grösse der Torte", "12"],
+  ];
+  for (const [question, page] of asked) {
+    for (const mode of ["index", "fallback"] as const) assert.equal((await searchChunks(lab, queryTerms(question), mode))[0]?.label, page, `${mode}: ${question}`);
+  }
+  // Order 30707, typed in 0-9 and in Persian, Arabic and Devanagari digits.
+  const holding = (await chunksOf(orders)).find((c) => c.body.includes("\n30707,"))!;
+  for (const question of ["30707", "سفارش ۳۰۷۰۷", "الطلب ٣٠٧٠٧", "ऑर्डर ३०७०७"]) {
+    for (const mode of ["index", "fallback"] as const) assert.equal((await searchChunks(lab, queryTerms(question), mode))[0]?.id, holding.id, `${mode}: ${question}`);
+  }
+});
+
+test("explicit deletes leave no chunk or index row behind, with foreign keys off, nor any of the file's words in the index's pages", async () => {
   const gone = await assistant("owner", "Going");
   const keep = await file(gone, "keep.txt", `${filler(4000, 31)}\n\nNarwhal keepsakes.`);
-  const drop = await file(gone, "drop.txt", `${filler(6000, 32)}\n\nPlatypus postcards.`);
+  // Words no other file has, nor any of the filler's: in the index's pages as written.
+  const secret = ["jacaranda", "wolframite", "4111222233334444"];
+  const drop = await file(gone, "drop.txt", `${filler(6000, 32)}\n\nPlatypus postcards. Jacaranda Wolframite, card 4111222233334444.`);
   const dropped = await chunksOf(drop);
   const before = await indexRows();
   assert.ok((await matching(gone, "platypus")).length === 1);
+  for (const word of secret) assert.ok(await inIndexPages(word), word);
 
   const client = await db();
   const version = async () => Number((await one<{ version: number }>("SELECT version FROM assistants WHERE id = ?", [gone]))?.version);
@@ -414,6 +472,13 @@ test("explicit deletes leave no chunk or index row behind, with foreign keys off
   assert.equal(await indexRows(), before - dropped.length, "the trigger took each chunk's index row");
   assert.deepEqual(await matching(gone, "platypus"), []);
   assert.equal((await matching(gone, "narwhal")).length, 1, "the other file stays");
+  // The trigger only marks the rows deleted: their words are gone from the index's pages once it
+  // has been rewritten without them.
+  await purgeIndex();
+  for (const word of secret) assert.equal(await inIndexPages(word), false, word);
+  assert.ok(await inIndexPages("narwhal"));
+  assert.equal(await indexRows(), before - dropped.length);
+  assert.equal((await matching(gone, "narwhal")).length, 1, "and search still finds the rest");
 
   // An id is never given out again, so an index row left behind can't point at new text.
   const next = await file(gone, "new.txt", "Echidna egg cups.");
@@ -609,6 +674,43 @@ test("an upload stores 100 chunks a batch, each with its index row and the file'
   for (const id of ["uploading", "stopped"]) await client.batch(removeFileRows("owner", shop, id), "write");
 });
 
+test("a file deleted while it's being stored gets no more chunks or index rows, and storing it fails", async () => {
+  const shop = await assistant("owner", "Deleting");
+  await file(shop, "Handbook.pdf", pdf(14, { 3: REFUNDS }));
+  // A returns FAQ about refunds, 300 chunks, which the owner deletes once its first batch is stored.
+  const faq = Array.from({ length: 300 }, (_, i) => `${filler(900, 900 + i)}\n\nRefund question ${i}: refunds and refund requests for order ${i}.`).join("\n\n");
+  await run(
+    "INSERT INTO assistant_files (id, assistant_id, name, kind, chars, bytes, stored, tokens, exact, hash, created_at) VALUES ('deleted-faq', ?, 'Returns FAQ.txt', 'text', ?, ?, ?, ?, 0, 'deleted-faq', ?)",
+    [shop, faq.length, bytes(faq), STORE_FACTOR * bytes(faq), Math.ceil(bytes(faq) / 4), ++files],
+  );
+  const before = await indexRows();
+  const client = await db();
+  const { batch } = client;
+  let writes = 0;
+  // The file's chunks after each write that follows the delete.
+  const left: number[] = [];
+  client.batch = (async (ss: Statement[], mode?: "read" | "write") => {
+    const rs = await batch.call(client, ss, mode);
+    if (mode === "write" && ++writes === 1) await batch.call(client, removeFileRows("owner", shop, "deleted-faq"), "write");
+    else if (mode === "write") left.push((await chunksOf("deleted-faq")).length);
+    return rs;
+  }) as typeof batch;
+  try {
+    await assert.rejects(indexFile(shop, "deleted-faq", faq, Math.ceil(bytes(faq) / 4)), /deleted while it was being stored/);
+  } finally {
+    client.batch = batch;
+  }
+  assert.ok(chunkText(faq).length > 200, "batches were left to store");
+  // Nothing for a clean-up to delete, which might fail too, or never run.
+  assert.equal(left[0], 0, "the batch after the delete stored nothing");
+  assert.deepEqual(await chunksOf("deleted-faq"), [], "no chunk of the deleted file");
+  assert.equal(await indexRows(), before, "nor any index row");
+  assert.equal(await one("SELECT 1 FROM assistant_files WHERE id = 'deleted-faq'"), null);
+  // So refunds are a word that tells again, and both searches find the handbook's page 3.
+  for (const mode of ["index", "fallback"] as const) assert.equal((await searchChunks(shop, queryTerms("How do refunds work?"), mode))[0]?.label, "3", mode);
+  assert.equal((await passagesFor({ id: shop }, "How do refunds work?")).nomatch, false);
+});
+
 test("a search ranks its matches in the index and joins only the best of them to their chunks: the same ones as joining them all", async () => {
   // Words of an ordinary question in nearly half the chunks, which tell all the same.
   const wide = await assistant("owner", "Wide");
@@ -635,4 +737,28 @@ test("a search ranks its matches in the index and joins only the best of them to
     query.args as string[],
   );
   assert.deepEqual(result.map((r) => Number(r.id)), joinedAll.map((r) => Number(r.id)));
+});
+
+test("stray index rows that outrank the assistant's own chunks don't take their places: the index finds what the fallback finds", async () => {
+  const shop = await assistant("owner", "Strays");
+  const book = await file(shop, "Handbook.pdf", pdf(70, { 3: REFUNDS }));
+  // 50 chunks of an upload that failed, when deleting them failed too, each about refunds over and
+  // over, with their index rows: until the assistant's next upload, they outrank its own.
+  const stray = "Refund refunds refund requests refund times refund cards refund receipts.";
+  for (let seq = 0; seq < 50; seq++) {
+    await run("INSERT INTO assistant_chunks (assistant_id, file_id, seq, chars, tokens, body) VALUES (?, 'failed-upload', ?, ?, 20, ?)", [shop, seq, stray.length, stray]);
+    await run("INSERT INTO assistant_chunks_fts (rowid, seg) SELECT MAX(id), ? FROM assistant_chunks", [tagged(tagOf(shop), stray)]);
+  }
+  try {
+    const terms = queryTerms("How do refunds work?");
+    assert.ok((await chunksOf(book)).length > 2 * 52, "refunds still tell");
+    const { result, seen } = await watched(() => searchChunks(shop, terms, "index"));
+    const fallback = await searchChunks(shop, terms, "fallback");
+    assert.equal(result[0]?.label, "3");
+    assert.deepEqual(result.map((r) => r.id), fallback.map((r) => r.id));
+    assert.equal(seen.filter((q) => /bm25/.test(q.sql)).length, 2, "searched again with every match");
+    assert.equal((await passagesFor({ id: shop }, "How do refunds work?")).nomatch, false);
+  } finally {
+    await run("DELETE FROM assistant_chunks WHERE file_id = 'failed-upload'");
+  }
 });

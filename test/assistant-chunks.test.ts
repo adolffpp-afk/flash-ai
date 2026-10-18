@@ -106,7 +106,7 @@ test("no chunk is over its size and none overlaps: joined, they give back the te
   for (const c of chunkText(prose).slice(0, -1)) assert.ok(c.body.endsWith("\n\n"), JSON.stringify(c.body.slice(-20)));
 });
 
-test("words are split for Japanese, Chinese and Thai, folded for accents, vowel marks and case, and each gets the tag", () => {
+test("words are split for Japanese, Chinese and Thai, folded for accents, strokes, vowel marks, digits and case, and each gets the tag", () => {
   assert.deepEqual(words("返金ポリシーについて"), ["返金", "ポリシー", "について"]);
   assert.deepEqual(words("退款政策是什么"), ["退款", "政策", "是", "什么"]);
   assert.deepEqual(words("ราคาสินค้ารวมภาษี"), ["ราคา", "สินค้า", "รวม", "ภาษี"]);
@@ -118,7 +118,16 @@ test("words are split for Japanese, Chinese and Thai, folded for accents, vowel 
   assert.deepEqual(words("ສິນຄ້າຈຳນວນ"), nfkc(["ສິນຄ້າ", "ຈຳນວນ"]));
   assert.deepEqual(words("नमस्ते दुनिया"), ["नमस्ते", "दुनिया"], "vowel signs stay in the word");
   assert.deepEqual(words("Café CAFE cafe\u0301 Naïve"), ["cafe", "cafe", "cafe", "naive"]);
-  assert.deepEqual(words("ﬁle ＡＢＣ ｶﾀｶﾅ 𝐅𝐥𝐚𝐬𝐡 -- ... !! ① ™"), ["file", "abc", "カタカナ", "flash"], "a symbol isn't a word, even one NFKC makes a letter or digit");
+  assert.deepEqual(words("ﬁle ＡＢＣ ｶﾀｶﾅ 𝐅𝐥𝐚𝐬𝐡 -- ... !! ① ™"), ["file", "abc", "カタカナ", "flash", "1", "tm"], "in NFKC before the split");
+  // Digits written small, as in CO₂, are digits of the word: as typed, "CO2".
+  assert.deepEqual(words("Scope 1 CO₂ emissions, N₂O, 75 m², 30 m³/h of H₂O"), ["scope", "1", "co2", "emissions", "n2o", "75", "m2", "30", "m3", "h", "of", "h2o"]);
+  // Latin letters with a stroke or a slash, which have no accent to take off, and those written
+  // as two: as they're typed without them.
+  assert.deepEqual(words("Płatność ŁÓDŹ đơn được købe fiyatı Größe GRÖSSE cœur Æble"), ["platnosc", "lodz", "don", "duoc", "kobe", "fiyati", "grosse", "grosse", "coeur", "aeble"]);
+  // Every script's digits as 0-9: Persian, Arabic, Devanagari, Thai, and bold ones.
+  assert.deepEqual(words("سفارش ۳۰۷۰۷ الطلب ٣٠٧٠٧ ऑर्डर ३०७०७ ๓๐๗๐๗ 𝟑𝟎𝟕"), ["سفارش", "30707", "الطلب", "30707", "ऑर्डर", "30707", "30707", "307"]);
+  // Two scripts' digits next to each other in Unicode, each from 0 (Pao and Eastern Pwo Karen).
+  assert.deepEqual(words("\u{116D3}\u{116D0}\u{116DD}\u{116E3}"), ["3039"]);
   // Arabic and Persian vowel marks, shadda, tanween, hamzas and tatweel, and Hebrew points, which
   // some words are written with and people type without.
   assert.deepEqual(words("يُرجى تعذّر أولًا جدًا لطفاً إرسال كتـــاب كِتَابٌ שָׁלוֹם"), ["يرجي", "تعذر", "اولا", "جدا", "لطفا", "ارسال", "كتاب", "كتاب", "שלום"]);

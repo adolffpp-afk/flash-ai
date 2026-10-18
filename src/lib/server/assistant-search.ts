@@ -10,10 +10,12 @@
  * Nothing here deletes by cascade: Turso runs with foreign keys off. A chunk's index rows go with
  * it through the trigger on assistant_chunks, and those left while the trigger was missing go when
  * it's made (see mendAssistantIndex in db.ts). A failed upload's chunks are deleted with it, or at
- * the assistant's next upload. Word counts are the index's own, and a file's chunk count goes up
- * with each batch of its chunks and their index rows, so the two always agree. Every result is
- * joined back to its chunk and to a file the asking assistant lists, so a stray index row or a
- * chunk left by a failed upload can only ever find nothing.
+ * the assistant's next upload, and a file deleted while it's being stored gets no more chunks.
+ * Word counts are the index's own, and a file's chunk count goes up with each batch of its chunks
+ * and their index rows, so the two always agree. Every result is joined back to its chunk and to a
+ * file the asking assistant lists, so a stray index row or a chunk left by a failed upload can only
+ * ever find nothing. Deleting a chunk only marks its index rows deleted, so every delete is
+ * followed by purgeIndex, which rewrites the index without them.
  */
 import type { InStatement } from "@libsql/client";
 import { all, db, mendAssistantIndex, one, run } from "./db.ts";
@@ -65,11 +67,13 @@ const PER_BATCH = 100;
  * also sets the file's chunk count to the chunks stored so far, so the count words are weighed
  * against (see telling) always has every chunk the index has: during an upload, and after one
  * that was stopped part way, whose chunks are then searched as they are. The file's row is written
- * first, and deleted by the caller if this throws: only the chunks of a file the assistant lists
- * are ever read. `tokens` is the file's count; each chunk gets its share, rounded up. If any part
- * fails, the file's chunks are deleted, its count set back to 0, and the error is thrown. Chunks
- * of the assistant's that no file it lists has (a failed upload's, if deleting them failed too)
- * are deleted first, so they can't make its words look common.
+ * first, and deleted by the caller if this throws, followed by purgeIndex: only the chunks of a
+ * file the assistant lists are ever read. `tokens` is the file's count; each chunk gets its share, rounded up. A chunk is
+ * stored only while its file is listed: once the file is deleted (removeFileRows), its next batch
+ * stores nothing and this throws. If any part fails, the file's chunks are deleted, its count set
+ * back to 0, and the error is thrown. Chunks of the assistant's that no file it lists has (a failed
+ * upload's, if deleting them failed too) are deleted first, so they can't make its words look
+ * common.
  */
 export async function indexFile(assistantId: string, fileId: string, text: string, tokens: number): Promise<{ chunks: number; indexed: boolean }> {
   const tag = tagOf(assistantId);
@@ -90,8 +94,9 @@ export async function indexFile(assistantId: string, fileId: string, text: strin
   if (!index) first.push({ sql: "INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')", args: [UNINDEXED] });
   const rows = (c: (typeof chunks)[number]): InStatement[] => [
     {
-      sql: "INSERT INTO assistant_chunks (assistant_id, file_id, seq, label, chars, tokens, body) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      args: [assistantId, fileId, c.seq, c.label, c.body.length, Math.ceil((tokens * c.body.length) / text.length), c.body],
+      // Its index row is made from the chunk just stored, so neither is when the file is gone.
+      sql: "INSERT INTO assistant_chunks (assistant_id, file_id, seq, label, chars, tokens, body) SELECT ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM assistant_files WHERE id = ? AND assistant_id = ?)",
+      args: [assistantId, fileId, c.seq, c.label, c.body.length, Math.ceil((tokens * c.body.length) / text.length), c.body, fileId, assistantId],
     },
     ...(index
       ? [{ sql: `INSERT INTO ${INDEX} (rowid, seg) SELECT id, ? FROM assistant_chunks WHERE file_id = ? AND seq = ? ORDER BY id DESC LIMIT 1`, args: [tagged(tag, c.body), fileId, c.seq] }]
@@ -108,7 +113,11 @@ export async function indexFile(assistantId: string, fileId: string, text: strin
   }
   const client = await db();
   try {
-    for (const batch of batches) await client.batch(batch, "write");
+    for (const batch of batches) {
+      const done = await client.batch(batch, "write");
+      // The count found no file to set: it was deleted, and this batch stored nothing.
+      if (!done.at(-1)!.rowsAffected) throw new Error("The file was deleted while it was being stored.");
+    }
   } catch (err) {
     await client
       .batch(
@@ -131,7 +140,7 @@ const OWNED = "EXISTS (SELECT 1 FROM assistants WHERE id = ? AND user_id = ?)";
  * The statements that delete one file of an assistant: its chunks (the trigger takes their index
  * rows), then the file, then a new version for the assistant, as its answers and price change.
  * Each does nothing unless the assistant is the user's. For a batch with whatever else the delete
- * changes.
+ * changes, followed by purgeIndex.
  */
 export function removeFileRows(userId: string, assistantId: string, fileId: string): InStatement[] {
   return [
@@ -139,6 +148,18 @@ export function removeFileRows(userId: string, assistantId: string, fileId: stri
     { sql: `DELETE FROM assistant_files WHERE assistant_id = ? AND id = ? AND ${OWNED}`, args: [assistantId, fileId, assistantId, userId] },
     { sql: "UPDATE assistants SET version = version + 1 WHERE id = ? AND user_id = ?", args: [assistantId, userId] },
   ];
+}
+
+/**
+ * Rewrites the index without the words of deleted chunks. Deleting a chunk only marks its index
+ * rows deleted: their words stay in the index's own pages, which search skips but anyone with the
+ * database file can read, until FTS5 happens to merge those pages, which may be never (VACUUM keeps
+ * them too). Run after deleting a file (removeFileRows) or a failed upload's (see indexFile), once
+ * the batch that deletes is done, so the delete doesn't wait for it. It rewrites the whole index:
+ * about 1 s per 20 MB of assistant text, measured locally. Does nothing where there is no index.
+ */
+export async function purgeIndex(): Promise<void> {
+  if ((await indexState()).index) await run(`INSERT INTO ${INDEX} (${INDEX}) VALUES ('optimize')`);
 }
 
 export type Passage = { fileId: string; file: string; label: string; title: string; text: string };
@@ -291,17 +312,19 @@ async function choose(ranked: Row[], files: FileRow[], o: ReadOptions): Promise<
 const LISTED = "JOIN assistant_files af ON af.id = c.file_id AND af.assistant_id = c.assistant_id";
 // The index's best matches, ranked in the index alone, and only those joined to their chunks and
 // files (CROSS JOIN keeps SQLite to this order): joining every chunk a word is in before ranking
-// would read most of an assistant's chunks for an ordinary question. Twice the candidates, so up
-// to 24 stray index rows (see LISTED) can't take a place from the assistant's own chunks.
+// would read most of an assistant's chunks for an ordinary question. Twice the candidates, so a few
+// stray index rows (see LISTED) don't take a place from the assistant's own chunks; when more do,
+// the search is run again with every match (see searchChunks).
 const RANKED = 2 * CANDIDATES;
 
 /**
  * The terms that help choose between the assistant's `total` chunks (see tells), each counted in
  * the index alone: joining every match of a common word to its chunk and file would read thousands
  * of rows a message. Its rows are its chunks', and a failed upload's chunks go at the assistant's
- * next upload (see mendAssistantIndex in db.ts, and indexFile).
+ * next upload (see mendAssistantIndex in db.ts, and indexFile). `matches` is the most index rows
+ * the terms can match together: the sum of their counts.
  */
-async function telling(terms: Term[], tag: string, total: number): Promise<Term[]> {
+async function telling(terms: Term[], tag: string, total: number): Promise<{ kept: Term[]; matches: number }> {
   const counts = await (
     await db()
   ).batch(
@@ -309,7 +332,8 @@ async function telling(terms: Term[], tag: string, total: number): Promise<Term[
     "read",
   );
   const found = counts.map((r) => Number(r.rows[0]?.n ?? 0));
-  return terms.filter((_, i) => tells(found[i], total));
+  const told = found.map((n) => tells(n, total));
+  return { kept: terms.filter((_, i) => told[i]), matches: found.reduce((sum, n, i) => sum + (told[i] ? n : 0), 0) };
 }
 
 export type ChunkRow = { id: number; file_id: string; seq: number; label: string; tokens: number; body: string };
@@ -327,16 +351,22 @@ export async function searchChunks(assistantId: string, terms: Term[], mode?: Se
   }
   const tag = tagOf(assistantId);
   const chunks = total ?? Number((await one<{ n: number }>("SELECT COALESCE(SUM(chunks), 0) AS n FROM assistant_files WHERE assistant_id = ?", [assistantId]))?.n);
-  const kept = await telling(terms, tag, chunks);
+  const { kept, matches } = await telling(terms, tag, chunks);
   if (!kept.length) return [];
-  return all<Row>(
-    `SELECT c.id, c.file_id, c.seq, c.label, c.tokens, c.body
-     FROM (SELECT rowid AS id, bm25(${INDEX}) AS score FROM ${INDEX} WHERE seg MATCH ? ORDER BY score, rowid LIMIT ${RANKED}) m
-     CROSS JOIN assistant_chunks c ON c.id = m.id ${LISTED}
-     WHERE c.assistant_id = ?
-     ORDER BY m.score, c.id LIMIT ${CANDIDATES}`,
-    [matchTerms(tag, kept), assistantId],
-  );
+  // The best `ranked` matches (-1: all of them) joined to the assistant's listed chunks.
+  const best = (ranked: number) =>
+    all<Row>(
+      `SELECT c.id, c.file_id, c.seq, c.label, c.tokens, c.body
+       FROM (SELECT rowid AS id, bm25(${INDEX}) AS score FROM ${INDEX} WHERE seg MATCH ? ORDER BY score, rowid LIMIT ${ranked}) m
+       CROSS JOIN assistant_chunks c ON c.id = m.id ${LISTED}
+       WHERE c.assistant_id = ?
+       ORDER BY m.score, c.id LIMIT ${CANDIDATES}`,
+      [matchTerms(tag, kept), assistantId],
+    );
+  const rows = await best(RANKED);
+  // Fewer than the candidates, when there can be more matches than were ranked: stray index rows
+  // took places, and the assistant's own chunks below them were left out. Then every match.
+  return rows.length < CANDIDATES && matches > RANKED ? best(-1) : rows;
 }
 
 /**

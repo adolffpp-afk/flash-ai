@@ -28,7 +28,7 @@ Sqlite3Client.prototype.execute = function (this: InstanceType<typeof Sqlite3Cli
 };
 
 const { db, run, one, all } = await import("../src/lib/server/db.ts");
-const { indexFile, passagesFor, searchChunks, searchMode, removeFileRows } = await import("../src/lib/server/assistant-search.ts");
+const { indexFile, passagesFor, purgeIndex, searchChunks, searchMode, removeFileRows } = await import("../src/lib/server/assistant-search.ts");
 const { queryTerms, rankChunks, tagOf, tagged } = await import("../src/lib/assistant-chunks.ts");
 const { STORE_FACTOR } = await import("../src/lib/assistants.ts");
 const { DELIVERY, GLUTEN, REFUNDS, TOP_PAGES, filler, pdf } = await import("./support/assistant-files.ts");
@@ -81,6 +81,7 @@ test("without the index, deleting a file still deletes all of it", async () => {
   await file("extra", "extra.txt", `${filler(5000, 3)}\n\nPlatypus postcards.`);
   assert.equal((await passagesFor({ id: BAKERY }, "platypus")).passages.length, 1);
   await (await db()).batch(removeFileRows("owner", BAKERY, "extra"), "write");
+  await purgeIndex();
   assert.equal(await one("SELECT 1 FROM assistant_chunks WHERE file_id = 'extra'"), null);
   assert.equal(await one("SELECT 1 FROM assistant_files WHERE id = 'extra'"), null);
   assert.deepEqual((await passagesFor({ id: BAKERY }, "platypus")).passages, []);
