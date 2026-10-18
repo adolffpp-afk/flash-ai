@@ -32,7 +32,10 @@ function failed(t: Translate, error: PageSpeedError): Response {
 /** Takes one of key's max in its window, or says no without writing anything once they're all used. */
 const take = async (key: string, max: number, windowMs: number) => (await countOf(key)) < max && !(await overLimit(key, max, windowMs));
 
-/** How many times an owner may have Vercel asked whether their domain points at Flash, here, in an hour. */
+/**
+ * How many times an owner may be told here, in an hour, that their domain doesn't point at Flash, and
+ * how many of their presses on a domain may run at once: a press that goes on gives its lookup back.
+ */
 const DOMAIN_LOOKUPS = 10;
 
 /**
@@ -102,16 +105,24 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug
   if ((await countOf(hourly)) >= caps.hour) return thisHour();
   const usedToday = await countOf(daily);
   if (usedToday >= caps.day) return today();
+  const lookups = `pagespeed-domain:${user.id}`;
+  /** Gives back one of each key's counts this press took. */
+  const giveBack = (...keys: string[]) => run(`UPDATE rate_limits SET count = count - 1 WHERE key IN (${keys.map(() => "?").join(", ")}) AND count > 0`, keys);
   if (domain) {
     // Asking Vercel (whose answer is noted with the domain, see domainStatus) has a limit of its own,
     // so a domain that doesn't point at Flash yet uses up none of the owner's checks. A domain that
-    // lapsed or points elsewhere would have Google test someone else's page.
-    if (!(await take(`pagespeed-domain:${user.id}`, DOMAIN_LOOKUPS, HOUR))) return Response.json({ error: t("Too many requests. Try again in an hour.") }, { status: 429 });
+    // lapsed or points elsewhere would have Google test someone else's page. One that points at Flash
+    // gives the lookup back as the press ends, so a check, or a press Flash's own limits keep from
+    // Google (another of the app's, the owner's last check taken meanwhile, or busy), uses none.
+    if (!(await take(lookups, DOMAIN_LOOKUPS, HOUR))) return Response.json({ error: t("Too many requests. Try again in an hour.") }, { status: 429 });
     if (!(await pointsAtFlash(domain))) {
       return Response.json({ code: "domain_not_connected", error: t("Your domain doesn't point at Flash yet, so Google can't check your app there.") }, { status: 409 });
     }
   }
-  if (await overLimit(lock, 1, 3 * MINUTE)) return running();
+  if (await overLimit(lock, 1, 3 * MINUTE)) {
+    if (domain) await giveBack(lookups);
+    return running();
+  }
 
   try {
     // Counted once this press holds the app's check, so a press that lost the race to another uses none.
@@ -134,7 +145,7 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug
     // Busy is the one answer that never reached Google: Flash's few requests a second, or the day's last
     // requests, were taken by other presses meanwhile. When every half asked was busy, the owner's
     // check is given back, as when the allowance had no room.
-    if (!reachedGoogle) await run("UPDATE rate_limits SET count = count - 1 WHERE key IN (?, ?) AND count > 0", [hourly, daily]);
+    if (!reachedGoogle) await giveBack(hourly, daily);
     // Google couldn't load or finish this version: the same answer for a while, without asking again.
     const error = !mobile.ok ? mobile.error : !desktop.ok ? desktop.error : null;
     if (error === "unreachable" || error === "slow") await cachePut(failKey, error, 10 * MINUTE);
@@ -146,5 +157,6 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug
     return Response.json({ pagespeed: record });
   } finally {
     await clearLimit(lock);
+    if (domain) await giveBack(lookups);
   }
 }

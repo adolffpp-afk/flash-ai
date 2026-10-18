@@ -80,6 +80,8 @@ const vercel: Record<string, boolean> = { "crumb.pt": true, "www.crumb.pt": true
 // While a press is answered (see check): each request to Vercel, and each statement that writes to the database.
 let watching = false;
 let vercelCalls = 0;
+// What else happens while Vercel is asked (another press, say).
+let duringVercel: (() => Promise<unknown>) | null = null;
 let writes = 0;
 const client = await db();
 const execute = client.execute.bind(client) as unknown as (stmt: { sql: string }) => ReturnType<typeof client.execute>;
@@ -111,6 +113,7 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
   if (url.href === FETCHERS_URL) return Response.json({ prefixes: [{ ipv4Prefix: "66.102.9.32/27" }, { ipv4Prefix: "66.249.81.64/27" }] });
   if (url.origin === "https://vercel.test") {
     if (watching) vercelCalls++;
+    await duringVercel?.();
     const domain = Object.keys(vercel).find((d) => url.pathname.includes(`/${d}`));
     if (!domain) return Response.json({ error: { code: "not_found" } }, { status: 404 });
     if (url.pathname.endsWith("/config")) return Response.json({ misconfigured: !vercel[domain] });
@@ -568,6 +571,64 @@ test("a press Flash's own limits keep from Google once it was counted gives the 
     }
   } finally {
     await used(Number(before?.requests ?? 0));
+  }
+});
+
+test("a press on a domain that points at Flash gives its Vercel lookup back, so busy presses there, or ones another press got to first, lock no one out, with a key or without", async () => {
+  await fresh();
+  const who = await owner("busy-domain", ["busy.pt"]);
+  const lookups = (by: Owner) => countOf(`pagespeed-domain:${by.id}`);
+  const hourly = `pagespeed:${who.id}`;
+  const daily = `pagespeed-day:${who.id}:${new Date().toISOString().slice(0, 10)}`;
+  const domain = (by = who, othersHoldMs = 0) => check(by, { address: "domain" }, by.slug, othersHoldMs);
+  try {
+    // Without a key. 9 answers this hour that the domain doesn't point at Flash yet: 1 of the 10 is left.
+    vercel["busy.pt"] = false;
+    for (let i = 0; i < 9; i++) assert.equal((await domain()).body.code, "domain_not_connected");
+    assert.equal(await lookups(who), 9);
+    vercel["busy.pt"] = true;
+    // Then it does, and three presses Flash's own limits keep from Google: other owners' checks hold
+    // Flash's 3 requests a second for longer than a press waits; another press of the app starts while
+    // Vercel is asked; and a press of another app takes the owner's last check this hour meanwhile.
+    const busy = await domain(who, 7000);
+    assert.deepEqual([busy.status, busy.body.code], [503, "busy"]);
+    duringVercel = () => overLimit(runLock(who.slug), 1, 180_000);
+    const raced = await domain();
+    assert.deepEqual([raced.status, raced.body.code], [409, "running"]);
+    await run("DELETE FROM rate_limits WHERE key = ?", [runLock(who.slug)]);
+    duringVercel = () => run("INSERT INTO rate_limits (key, count, reset_at) VALUES (?, 3, ?) ON CONFLICT(key) DO UPDATE SET count = 3", [hourly, Date.now() + HOUR]);
+    assert.equal((await domain()).body.error, "You've used this hour's checks with Google (3 an hour). Try again in an hour.");
+    duringVercel = null;
+    await run("DELETE FROM rate_limits WHERE key = ?", [hourly]);
+    assert.equal(google.length, 0);
+    assert.deepEqual([await countOf(hourly), await countOf(daily), await lookups(who)], [0, 0, 9], "none of them used a check or a lookup");
+    // So the owner's check there is answered, and gives its lookup back too.
+    assert.equal((await domain()).status, 200);
+    assert.equal(google.length, 2);
+    assert.deepEqual([await countOf(hourly), await lookups(who)], [1, 9]);
+    // The 10 answers that the domain doesn't point at Flash still hold.
+    await republish(who.slug);
+    vercel["busy.pt"] = false;
+    assert.equal((await domain()).body.code, "domain_not_connected");
+    vercel["busy.pt"] = true;
+    assert.deepEqual(await domain(), { status: 429, body: { error: "Too many requests. Try again in an hour." } });
+    assert.equal(google.length, 2);
+
+    // With a key: a busy press on the domain, then the hour's 10 checks there.
+    process.env.PAGESPEED_API_KEY = KEY;
+    const keyed = await owner("busy-domain-key", ["busy-key.pt"]);
+    vercel["busy-key.pt"] = true;
+    assert.equal((await domain(keyed, 7000)).body.code, "busy");
+    const statuses: number[] = [];
+    for (let i = 1; i <= 10; i++) {
+      await republish(keyed.slug);
+      statuses.push((await domain(keyed)).status);
+    }
+    assert.deepEqual(statuses, Array(10).fill(200));
+    assert.deepEqual([await countOf(`pagespeed:${keyed.id}`), await lookups(keyed)], [10, 0]);
+  } finally {
+    duringVercel = null;
+    delete process.env.PAGESPEED_API_KEY;
   }
 });
 
