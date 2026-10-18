@@ -180,6 +180,72 @@ test("only Stripe's signature over the body as sent, made in the last 5 minutes,
   assert.deepEqual(calls.at(-1), { path: "/checkout/sessions/cs_sig?expand[]=line_items", account: "acct_A" });
 });
 
+test("a body over 1 MB is refused with 413 before its signature is checked, by its Content-Length or as it comes in", async () => {
+  const MB = 1024 * 1024;
+  const CHUNK = 64 * 1024;
+  accounts.acct_A.push(paid("cs_big", "pi_big"));
+  const json = JSON.stringify(event("checkout.session.completed", sent(paid("cs_big", "pi_big"))));
+  // Exactly 1 MB (padded with the spaces JSON allows after it) is read and handled.
+  const atCap = json + " ".repeat(MB - Buffer.byteLength(json));
+  assert.equal(Buffer.byteLength(atCap), MB);
+  assert.deepEqual(await (await deliver(atCap)).json(), { received: true, outcome: "recorded" });
+  const before = { calls: calls.length, events: await n("SELECT COUNT(*) AS n FROM stripe_events") };
+  // One byte more is refused, signed or not: a bad signature would be 400, so nothing was hashed.
+  const over = JSON.stringify(event("checkout.session.completed", sent(paid("cs_big", "pi_big"))));
+  const overBody = over + " ".repeat(MB + 1 - Buffer.byteLength(over));
+  for (const header of [sign(overBody), sign(overBody, nowSec(), "whsec_someone_else"), null]) {
+    assert.equal((await deliver(overBody, header)).status, 413);
+  }
+  // The cap counts bytes, not characters: 600,000 é are 1.2 MB.
+  const wide = JSON.stringify(event("checkout.session.completed", { ...sent(paid("cs_big", "pi_big")), note: "é".repeat(600_000) }));
+  assert.ok(wide.length < MB && Buffer.byteLength(wide) > MB);
+  assert.equal((await deliver(wide)).status, 413);
+
+  /** A 4 MB body, made only as it is read, that counts what was asked of it. */
+  const streamed = () => {
+    const seen = { pulled: 0, canceled: false };
+    const body = new ReadableStream<Uint8Array>(
+      {
+        pull(controller) {
+          if (seen.pulled >= 4 * MB) return controller.close();
+          seen.pulled += CHUNK;
+          controller.enqueue(new Uint8Array(CHUNK).fill(32));
+        },
+        cancel() {
+          seen.canceled = true;
+        },
+      },
+      { highWaterMark: 0 },
+    );
+    return { body, seen };
+  };
+  const post = (body: ReadableStream<Uint8Array>, headers: Record<string, string> = {}) =>
+    connectRoute.POST(
+      new Request(`${ORIGIN}/api/stripe/connect`, {
+        method: "POST",
+        body,
+        duplex: "half",
+        headers: { "content-type": "application/json", "stripe-signature": sign("{}"), ...headers },
+      } as RequestInit),
+    );
+  // A Content-Length over the cap: refused before any of it is read.
+  const said = streamed();
+  assert.equal((await post(said.body, { "content-length": String(MB + 1) })).status, 413);
+  assert.equal(said.seen.pulled, 0, "not a byte read");
+  // No Content-Length, or a wrong one: read only until it passes the cap, and the rest is never asked for.
+  for (const headers of [{}, { "content-length": "100" }] as Record<string, string>[]) {
+    const stream = streamed();
+    assert.equal((await post(stream.body, headers)).status, 413);
+    assert.ok(stream.seen.pulled > MB && stream.seen.pulled <= MB + 2 * CHUNK, `read ${stream.seen.pulled} bytes`);
+    assert.equal(stream.seen.canceled, true);
+  }
+  assert.deepEqual(
+    { calls: calls.length, events: await n("SELECT COUNT(*) AS n FROM stripe_events") },
+    before,
+    "a refused body asks Stripe nothing, and keeps nothing",
+  );
+});
+
 test("a paid checkout is one order, new once, through the webhook, the return page and the owner's sync, in any order", async () => {
   emails.length = 0;
   // The buyer closed the tab: the webhook saves the order and emails the owner.

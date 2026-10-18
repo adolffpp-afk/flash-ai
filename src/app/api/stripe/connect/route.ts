@@ -1,6 +1,10 @@
 import { appUrl } from "@/lib/server/auth.ts";
 import { connectEvent, type ConnectEvent } from "@/lib/server/shop.ts";
 import { verifyWebhook } from "@/lib/server/stripe.ts";
+import { cappedText } from "@/lib/server/request-body.ts";
+
+/** The most of a body read: Stripe's events are a few kilobytes, far under it. */
+const MAX_BODY = 1024 * 1024;
 
 /*
  * Stripe calls this for events on sellers' connected accounts (see connectEvent in shop.ts), so an
@@ -13,8 +17,10 @@ import { verifyWebhook } from "@/lib/server/stripe.ts";
 export async function POST(request: Request) {
   const secret = process.env.STRIPE_CONNECT_WEBHOOK_SECRET?.trim();
   if (!secret) return new Response("Webhook secret not set", { status: 503 });
+  // A body over 1 MB is refused before it is hashed or parsed, by its Content-Length or as it comes in.
+  const payload = await cappedText(request, MAX_BODY);
+  if (payload === null) return new Response("Too large", { status: 413 });
   // The signature is over the body exactly as sent, and only for 5 minutes after Stripe signed it.
-  const payload = await request.text();
   if (!verifyWebhook(payload, request.headers.get("stripe-signature"), secret)) {
     return new Response("Bad signature", { status: 400 });
   }
