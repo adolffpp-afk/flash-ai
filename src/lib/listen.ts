@@ -41,25 +41,30 @@ export function newRecognition(lang = ""): Recognition | null {
 /** Errors that mean the microphone isn't allowed, as opposed to silence or a hiccup. */
 export const micBlocked = (error: string) => error === "not-allowed" || error === "service-not-allowed";
 
-let holder: { owner: string; stop: () => void } | null = null;
+// drop: what the holder heard goes nowhere once it stops (see stopMic).
+let holder: { owner: string; stop: (drop: boolean) => void } | null = null;
 
-/** Takes the microphone for owner, stopping whoever else was listening. */
-export function takeMic(owner: string, stop: () => void): void {
+/** Takes the microphone for owner, stopping whoever else was listening (who keeps what it heard). */
+export function takeMic(owner: string, stop: (drop: boolean) => void): void {
   const previous = holder;
   holder = { owner, stop };
   if (previous && previous.owner !== owner) {
     try {
-      previous.stop();
+      previous.stop(false);
     } catch {}
   }
 }
 
-/** Stops whoever is using the microphone (Add another account opening over the page). */
-export function stopMic(): void {
+/**
+ * Stops whoever is using the microphone (Add another account opening over the page). drop: what
+ * it heard goes nowhere, not even into the message box, as when the account signs out here and a
+ * clip still recording would otherwise come in for whoever signs in next.
+ */
+export function stopMic(drop = false): void {
   const previous = holder;
   holder = null;
   try {
-    previous?.stop();
+    previous?.stop(drop);
   } catch {}
 }
 

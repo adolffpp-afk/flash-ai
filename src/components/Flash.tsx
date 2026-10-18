@@ -273,7 +273,7 @@ export function Flash({
   // under way; and an invitation for another account signed in here.
   const [switching, setSwitching] = useState<string | null>(null);
   const [chooser, setChooser] = useState<Chooser | null>(null);
-  const [unsaved, setUnsaved] = useState<{ go: () => void; added?: boolean } | null>(null);
+  const [unsaved, setUnsaved] = useState<{ go: () => void; added?: boolean; writing?: boolean } | null>(null);
   const [adding, setAdding] = useState<Adding | null>(null);
   const leavingRef = useRef(false);
   const [addNext, setAddNext] = useState<string | undefined>(undefined);
@@ -434,6 +434,12 @@ export function Flash({
   useEffect(() => {
     projectsRef.current = projects;
   }, [projects]);
+  // A message being written (its words, its files, the part of the app picked for it), which going
+  // on as another account drops: Flash asks first (see leaveCheck).
+  const writingRef = useRef(false);
+  useEffect(() => {
+    writingRef.current = Boolean(input.trim() || files.length || (picked && picked.projectId === activeId));
+  }, [input, files, picked, activeId]);
 
   /** The only way the account's data reaches the page. */
   async function adoptMe(fetched: Me): Promise<Me | null> {
@@ -841,6 +847,16 @@ export function Flash({
     return kept && dirtyRef.current.size === 0 && !hasCodeDraft();
   }
 
+  /**
+   * Before this tab goes on as another account (a switch, Add another account): what Flash asks
+   * about first. "saves" when flushSaves couldn't keep everything, "writing" when all of it is
+   * saved but a message is being written, which isn't kept; null when nothing is lost by going.
+   */
+  async function leaveCheck(): Promise<"saves" | "writing" | null> {
+    if (!(await flushSaves())) return "saves";
+    return writingRef.current ? "writing" : null;
+  }
+
   // Saves changed projects shortly after a reply finishes.
   useEffect(() => {
     if (busy || !dirtyRef.current.size) return;
@@ -1160,10 +1176,11 @@ export function Flash({
   async function switchAccount(id: string, { gone = false, anyway = false } = {}): Promise<boolean> {
     if (switching && !anyway) return false;
     setSwitching(id);
-    if (!gone && !anyway && !(await flushSaves())) {
+    const ask = gone || anyway ? null : await leaveCheck();
+    if (ask) {
       // Unless this tab's account was logged out meanwhile: then the chooser asks, and nothing else.
       if (chooserRef.current) setSwitching(null);
-      else setUnsaved({ go: () => void switchAccount(id, { anyway: true }) });
+      else setUnsaved({ go: () => void switchAccount(id, { anyway: true }), writing: ask === "writing" });
       return false;
     }
     setUnsaved(null);
@@ -1237,19 +1254,24 @@ export function Flash({
       return true;
     };
     if (stayed()) return;
-    if (from.again && id && id === getPin()) {
+    // The account this tab shows: signed in to again from the chooser, or added with the tab's own
+    // email and password (as a password manager offers them). There is nothing to switch to, so the
+    // tab goes on where it was, and an add of the account it is already using says so.
+    if (id && id === getPin() && (from.again || !from.next)) {
       closeAdding();
-      if (meRef.current) void refreshMe();
+      const shown = meRef.current?.user;
+      if (shown) void refreshMe();
       else void start();
+      if (shown && !from.again && !from.back) setNotice(tNow("You're already using {email} in this tab.", { email: isolate(shown.email) }));
       return;
     }
     if (!id) return window.location.reload();
-    const saved = !meRef.current || Boolean(from.back) || (await flushSaves());
+    const ask = !meRef.current || from.back ? null : await leaveCheck();
     if (stayed()) return;
-    if (!saved) {
+    if (ask) {
       // Asked over the page, which keeps its changes if the person stays (Cancel).
       closeAdding();
-      setUnsaved({ go: () => goOnAs(id, from.next), added: true });
+      setUnsaved({ go: () => goOnAs(id, from.next), added: true, writing: ask === "writing" });
       return;
     }
     goOnAs(id, from.next);
@@ -1261,11 +1283,11 @@ export function Flash({
    * tab's account already ended). Back meanwhile, or Cancel, keeps the tab here as it was.
    */
   async function addLeave(from: Adding, go: () => void) {
-    const saved = !meRef.current || Boolean(from.back) || (await flushSaves());
+    const ask = !meRef.current || from.back ? null : await leaveCheck();
     if (!stillAdding(from)) return;
-    if (saved) return go();
+    if (!ask) return go();
     closeAdding();
-    setUnsaved({ go });
+    setUnsaved({ go, writing: ask === "writing" });
   }
 
   /** After Add another account: to the page of Flash it was for (Home when none), as that account. */
@@ -1347,6 +1369,8 @@ export function Flash({
   /** What this tab keeps of an account that's no longer signed in here: nothing. No account is, so no badge colour is kept either. */
   function signedOutHere() {
     forgetTones();
+    // The tab shows no account now: a reload asks for none, so it never opens a chooser naming this one.
+    setPin(null);
     // Nothing of this account keeps running, or runs later for whoever signs in next.
     abortRef.current?.abort();
     jobRef.current = null;
@@ -1356,17 +1380,38 @@ export function Flash({
     setProjects([]);
     setActiveId("");
     filesRef.current.clear();
-    // Nor does anything of it wait for whoever signs in next in this tab: a voice conversation (its
-    // mic off), a message being written with its files and the part picked for it, a question
-    // about a switch, or what Flash said.
+    // Nor does anything of it wait for whoever signs in next in this tab: a voice conversation, the
+    // mic (what it was recording goes nowhere), a message being written with its files, the part
+    // picked for it and the tool and model chosen, a question about a switch, or what Flash said.
     setVoice(null);
-    stopMic();
+    stopMic(true);
     setInput("");
     setFiles([]);
     setPicked(null);
+    setChoice("auto");
+    setModels({});
+    setKeepPicture(null);
     setUnsaved(null);
     setSwitching(null);
     setNotice("");
+    // Nor its search (the words, and what it found inside the chats), its connected accounts and
+    // those on in a chat, or a window it had open (Settings, Ask Flash, the menu on a phone).
+    setProjectQuery("");
+    setChatHits([]);
+    setSearchOpen(false);
+    setAccounts([]);
+    setConnectorChoice({});
+    setSettingsTab(null);
+    setShowApps(false);
+    setShowCreations("");
+    setShowAutomations(false);
+    setTemplates(null);
+    setShowShare(false);
+    setShowInstructions(false);
+    setShowCredits(false);
+    setShowInvite(false);
+    setCompanion(false);
+    setSidebar(false);
     setAuthMode(null);
     setChooser(null);
     closeAdding();
@@ -2120,16 +2165,21 @@ export function Flash({
     attachAll(list);
   }
 
-  // Looks inside the chats too, a moment after typing stops.
+  // Looks inside the chats too, a moment after typing stops. What comes back once the words have
+  // changed (or were cleared, as the account signed out here) is for nobody, so it's left out.
   useEffect(() => {
     const q = projectQuery.trim();
     if (q.length < 2) return;
+    let current = true;
     const timer = setTimeout(() => {
       api<{ results: ChatHit[] }>(`/api/projects/search?q=${encodeURIComponent(q)}`)
-        .then(({ results }) => setChatHits(results))
-        .catch(() => setChatHits([]));
+        .then(({ results }) => current && setChatHits(results))
+        .catch(() => current && setChatHits([]));
     }, 250);
-    return () => clearTimeout(timer);
+    return () => {
+      current = false;
+      clearTimeout(timer);
+    };
   }, [projectQuery]);
 
   const sorted = [...projects]
@@ -3142,6 +3192,7 @@ export function Flash({
             // Staying: the menu lists the account just added, to switch to once this is saved.
             if (unsaved.added) void checkAccounts();
           }}
+          writing={unsaved.writing}
         />
       )}
       {showInstructions && active && (
@@ -3175,10 +3226,12 @@ export function Flash({
         {/* What's said takes up to half the room it shares with the chat (or the preview), so a screen
             with little height (a phone held sideways) keeps the chat in view; beyond that it scrolls
             on its own, its edge faded. Its one column is the width it is given, never wider: a long
-            line of code, a link or a table in the chat scrolls inside it, as in the flex column it replaced. */}
+            line of code, a link or a table in the chat scrolls inside it, as in the flex column it replaced.
+            Above the chat, the room its faded edge needs reaches under the chat (-mb-2), so Home and the
+            chat sit where they did under a notice that scrolled with them. */}
         <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[fit-content(50%)_minmax(0,1fr)]">
         {said && (
-          <div className={`mx-auto w-full overflow-y-auto overscroll-contain [mask-image:linear-gradient(to_bottom,#000_calc(100%-0.5rem),transparent)] ${tab === "preview" ? "max-w-3xl space-y-2 px-3 pb-2" : `space-y-3 px-4 pb-2 pt-2 ${isHome ? "max-w-[1600px] sm:px-6 lg:px-8" : "max-w-3xl"}`}`}>{said}</div>
+          <div className={`mx-auto w-full overflow-y-auto overscroll-contain [mask-image:linear-gradient(to_bottom,#000_calc(100%-0.5rem),transparent)] ${tab === "preview" ? "max-w-3xl space-y-2 px-3 pb-2" : `-mb-2 space-y-3 px-4 pb-2 pt-2 ${isHome ? "max-w-[1600px] sm:px-6 lg:px-8" : "max-w-3xl"}`}`}>{said}</div>
         )}
         <div className="relative row-start-2 flex min-h-0 flex-col">
         {/* Under the preview on a phone, the chat keeps its place (and where it was scrolled to) out of sight. */}
@@ -3187,7 +3240,7 @@ export function Flash({
           className={`min-h-0 flex-1 overflow-y-auto ${tab === "preview" ? "invisible" : ""} ${isHome ? "[mask-image:linear-gradient(to_bottom,transparent,#000_16px)]" : ""}`}
         >
           {(!me.verified || allOff) && (
-            <div className={`mx-auto space-y-3 px-4 pt-2 ${isHome ? "max-w-[1600px] sm:px-6 lg:px-8" : "max-w-3xl"}`}>
+            <div className={`mx-auto space-y-3 px-4 ${said ? "pt-3" : "pt-2"} ${isHome ? "max-w-[1600px] sm:px-6 lg:px-8" : "max-w-3xl"}`}>
             {me && !me.verified && <VerifyBanner email={me.user.email} free={me.freeMonthly} failed={emailFailed} />}
             {allOff && (
               <div role="status" className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">

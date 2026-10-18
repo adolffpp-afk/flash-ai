@@ -207,10 +207,13 @@ export function AccountChooser({
   );
 }
 
-/** Before switching away from changes that didn't save: switch anyway, or stay. */
-export function SwitchAnyway({ onSwitch, onCancel }: { onSwitch: () => void; onCancel: () => void }) {
+/**
+ * Before switching away from changes that didn't save, or (writing) from a message being written,
+ * which the other account's page won't have: switch anyway, or stay.
+ */
+export function SwitchAnyway({ onSwitch, onCancel, writing = false }: { onSwitch: () => void; onCancel: () => void; writing?: boolean }) {
   const t = useT();
-  const question = t("Some changes in this chat haven't saved yet. Switch anyway?");
+  const question = writing ? t("Your message hasn't been sent yet. Switch anyway?") : t("Some changes in this chat haven't saved yet. Switch anyway?");
   return (
     <Sheet label={question} onEscape={onCancel}>
       <p className="text-sm leading-relaxed text-zinc-200">{question}</p>

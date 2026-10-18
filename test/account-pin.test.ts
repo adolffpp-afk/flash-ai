@@ -332,7 +332,7 @@ test("a switch names the account chosen only once the page loads, so a reload th
   const added = body(page, "async function addDone(");
   assert.doesNotMatch(added, /setPin\(/);
   assert.doesNotMatch(added, /location\.(replace|assign)\(/);
-  assert.match(added, /const saved = !meRef\.current \|\| Boolean\(from\.back\) \|\| \(await flushSaves\(\)\);\n\s+if \(stayed\(\)\) return;\n\s+if \(!saved\) \{\n(\s*\/\/.*\n)*\s+closeAdding\(\);\n\s+setUnsaved\(\{ go: \(\) => goOnAs\(id, from\.next\), added: true \}\);\n\s+return;\n\s+\}\n\s+goOnAs\(id, from\.next\);/);
+  assert.match(added, /const ask = !meRef\.current \|\| from\.back \? null : await leaveCheck\(\);\n\s+if \(stayed\(\)\) return;\n\s+if \(ask\) \{\n(\s*\/\/.*\n)*\s+closeAdding\(\);\n\s+setUnsaved\(\{ go: \(\) => goOnAs\(id, from\.next\), added: true, writing: ask === "writing" \}\);\n\s+return;\n\s+\}\n\s+goOnAs\(id, from\.next\);/);
   assert.match(body(page, "function goOnAs("), /if \(to && new URL\(to, window\.location\.href\)\.pathname !== "\/"\) return window\.location\.replace\(to\);\n\s+reloadAs\(id, undefined, to\);/);
   assert.match(page, /onDone=\{\(result\) => addDone\(adding, result\)\}/);
   assert.match(page, /onSwitch=\{unsaved\.go\}/);
@@ -498,9 +498,10 @@ test("code changed in a Code view and not saved yet makes a switch ask first", a
   const preview = await readFile(new URL("../src/components/AppPreview.tsx", import.meta.url), "utf8");
   const editor = body(preview, "function CodeEditor(");
   assert.match(editor, /const unsaved = changed && Boolean\(onSave\);\n\s+useEffect\(\(\) => \{\n\s+markCodeDraft\(editor, unsaved\);\n\s+return \(\) => markCodeDraft\(editor, false\);\n\s+\}, \[editor, unsaved\]\);/);
-  // Switch asks ("Switch anyway?") when flushSaves says something isn't saved.
+  // Switch asks ("Switch anyway?") when flushSaves says something isn't saved (see leaveCheck).
   const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
-  assert.match(body(page, "async function switchAccount("), /if \(!gone && !anyway && !\(await flushSaves\(\)\)\) \{\n(\s*\/\/.*\n)*\s+if \(chooserRef\.current\) setSwitching\(null\);\n\s+else setUnsaved\(\{ go: \(\) => void switchAccount\(id, \{ anyway: true \}\) \}\);/);
+  assert.match(body(page, "async function leaveCheck("), /\{\n\s+if \(!\(await flushSaves\(\)\)\) return "saves";/);
+  assert.match(body(page, "async function switchAccount("), /const ask = gone \|\| anyway \? null : await leaveCheck\(\);\n\s+if \(ask\) \{\n(\s*\/\/.*\n)*\s+if \(chooserRef\.current\) setSwitching\(null\);\n\s+else setUnsaved\(\{ go: \(\) => void switchAccount\(id, \{ anyway: true \}\), writing: ask === "writing" \}\);/);
   assert.match(page, /<SwitchAnyway\n\s+onSwitch=\{unsaved\.go\}/);
 });
 
@@ -541,7 +542,7 @@ test("the page around a switch: what Flash says stays in view, the menu closes w
   assert.match(page, /\{addScreen && adding && \(\n\s+<AddOver label=\{adding\.again \? t\("Welcome back"\) : t\("Add another account"\)\} onBack=\{\(\) => addBack\(adding\)\}>\n\s+\{addScreen\}\n\s+<\/AddOver>/);
   // Signing in again from the chooser to the account this tab showed goes on where it was.
   assert.equal(page.match(/again=\{chooser\.reason === "gone" && chooser\.email \? \{ email: chooser\.email, name: chooser\.name, onChoose: \(\) => signInAgain\(chooser\) \} : undefined\}/g)?.length, 2);
-  assert.match(body(page, "async function addDone("), /if \(from\.again && id && id === getPin\(\)\) \{\n\s+closeAdding\(\);\n\s+if \(meRef\.current\) void refreshMe\(\);\n\s+else void start\(\);\n\s+return;\n\s+\}/);
+  assert.match(body(page, "async function addDone("), /if \(id && id === getPin\(\) && \(from\.again \|\| !from\.next\)\) \{\n\s+closeAdding\(\);\n\s+const shown = meRef\.current\?\.user;\n\s+if \(shown\) void refreshMe\(\);\n\s+else void start\(\);\n/);
 });
 
 test("Add another account over the page: nothing under it listens on, and it is a dialog the keyboard can use", async () => {
@@ -638,15 +639,15 @@ test("Add another account saves or asks before the page goes anywhere, and Back 
   assert.match(auth, /href=\{`\/api\/auth\/oauth\/\$\{id\}.*\n\s+onClick=\{leaveBy\}/);
   // Flash's side: saved, or "Switch anyway?" over the page (Cancel keeps it), as before a switch.
   const leave = body(page, "async function addLeave(");
-  assert.match(leave, /const saved = !meRef\.current \|\| Boolean\(from\.back\) \|\| \(await flushSaves\(\)\);\n\s+if \(!stillAdding\(from\)\) return;\n\s+if \(saved\) return go\(\);\n\s+closeAdding\(\);\n\s+setUnsaved\(\{ go \}\);/);
+  assert.match(leave, /const ask = !meRef\.current \|\| from\.back \? null : await leaveCheck\(\);\n\s+if \(!stillAdding\(from\)\) return;\n\s+if \(!ask\) return go\(\);\n\s+closeAdding\(\);\n\s+setUnsaved\(\{ go, writing: ask === "writing" \}\);/);
   // Back or Escape while the form says "One moment…" (the sign-in, or the saves before going on, not
   // ended yet): nothing goes on afterwards, no reload as the other account and no question; the
   // menu lists the account signed in to meanwhile.
   assert.match(page, /const stillAdding = \(from: Adding\) => addingRef\.current\?\.opened === from\.opened;/);
   const done = body(page, "async function addDone(");
-  assert.match(done, /const stayed = \(\) => \{\n\s+if \(stillAdding\(from\)\) return false;\n\s+window\.dispatchEvent\(new Event\("flash:account-check"\)\);\n\s+return true;\n\s+\};\n\s+if \(stayed\(\)\) return;\n\s+if \(from\.again/);
-  assert.match(done, /const saved = !meRef\.current \|\| Boolean\(from\.back\) \|\| \(await flushSaves\(\)\);\n\s+if \(stayed\(\)\) return;\n\s+if \(!saved\) \{/);
-  assert.match(done, /setUnsaved\(\{ go: \(\) => goOnAs\(id, from\.next\), added: true \}\);/);
+  assert.match(done, /const stayed = \(\) => \{\n\s+if \(stillAdding\(from\)\) return false;\n\s+window\.dispatchEvent\(new Event\("flash:account-check"\)\);\n\s+return true;\n\s+\};\n\s+if \(stayed\(\)\) return;\n(\s*\/\/.*\n)*\s+if \(id && id === getPin\(\)/);
+  assert.match(done, /const ask = !meRef\.current \|\| from\.back \? null : await leaveCheck\(\);\n\s+if \(stayed\(\)\) return;\n\s+if \(ask\) \{/);
+  assert.match(done, /setUnsaved\(\{ go: \(\) => goOnAs\(id, from\.next\), added: true, writing: ask === "writing" \}\);/);
   assert.equal(done.match(/await /g)?.length, 1, "nothing else is waited on before going on");
   // Add mode is numbered each time it opens; the account check keeps that number when it updates Back.
   assert.match(body(page, "async function checkAccounts("), /const next = \{ \.\.\.signingIn, back:/);
@@ -830,7 +831,7 @@ test("a signed-out tab that opens an account signed in elsewhere reloads: nothin
   // the voice conversation ends with its mic, the message box, its files and picked part empty, no
   // question about a switch, and nothing said.
   const out = body(page, "function signedOutHere(");
-  for (const cleared of ["setVoice(null);", "stopMic();", 'setInput("");', "setFiles([]);", "setPicked(null);", "setUnsaved(null);", "setSwitching(null);", 'setNotice("");', "filesRef.current.clear();", "setQueue([]);"]) {
+  for (const cleared of ["setVoice(null);", "stopMic(true);", 'setInput("");', "setFiles([]);", "setPicked(null);", "setUnsaved(null);", "setSwitching(null);", 'setNotice("");', "filesRef.current.clear();", "setQueue([]);"]) {
     assert.ok(out.includes(cleared), cleared);
   }
 });
@@ -923,4 +924,115 @@ test("signing in from the account chooser leaves the browser tab's title plain, 
   // account isn't signed in here, so its email isn't the tab's title.
   assert.match(page, /const tabEmail = me && !chooser && !adding\?\.back && /);
   for (const opens of ["function addFromChooser(", "function signInAgain("]) assert.match(body(page, opens), /openAdding\(\{ back: from,/, opens);
+});
+
+test("the tab that signs out leaves its search, connected accounts and open windows to nobody", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
+  // Ana searched "salary" and logged out; Ben signs in on that tab's landing page, in place: his
+  // search box is empty, nothing of Ana's chats is listed under "In your chats" (Home, the sidebar,
+  // a phone's menu), none of her connected accounts is offered or on, and no window of hers is open.
+  const out = body(page, "function signedOutHere(");
+  for (const cleared of ['setProjectQuery("");', "setChatHits([]);", "setSearchOpen(false);", "setAccounts([]);", "setConnectorChoice({});", "setSettingsTab(null);", "setShowApps(false);", 'setShowCreations("");', "setShowAutomations(false);", "setTemplates(null);", "setShowShare(false);", "setShowInstructions(false);", "setShowCredits(false);", "setShowInvite(false);", "setCompanion(false);", "setSidebar(false);", 'setChoice("auto");', "setModels({});", "setKeepPicture(null);"]) {
+    assert.ok(out.includes(cleared), cleared);
+  }
+  // A search still on its way when the words change (cleared as the account signs out) is for nobody.
+  const search = page.slice(page.indexOf("  // Looks inside the chats too,"), page.indexOf("  const sorted = [...projects]"));
+  assert.match(search, /let current = true;/);
+  assert.match(search, /\.then\(\(\{ results \}\) => current && setChatHits\(results\)\)\n\s+\.catch\(\(\) => current && setChatHits\(\[\]\)\);/);
+  assert.match(search, /return \(\) => \{\n\s+current = false;\n\s+clearTimeout\(timer\);\n\s+\};\n\s+\}, \[projectQuery\]\);/);
+});
+
+test("a clip still recording when the account signs out here goes nowhere, and one stopped any other way is kept", async () => {
+  const listen = await import("../src/lib/listen.ts");
+  const told: boolean[] = [];
+  // The account signs out here (signedOutHere): the holder is told to drop what it heard.
+  listen.takeMic("dictation", (drop) => told.push(drop));
+  listen.stopMic(true);
+  assert.deepEqual(told, [true]);
+  // Add another account and the account chooser stop it too, but what it heard stays this account's.
+  listen.takeMic("dictation", (drop) => told.push(drop));
+  listen.stopMic();
+  assert.deepEqual(told, [true, false]);
+  // Another part of Flash taking the mic ("Hey Flash", a voice conversation) keeps it as well.
+  listen.takeMic("dictation", (drop) => told.push(drop));
+  listen.takeMic("voice", () => {});
+  assert.deepEqual(told, [true, false, false]);
+  listen.stopMic();
+  // The mic button: a recording (Firefox) comes in after the stop, as do the words of speech
+  // recognition, so each is let through only if the stop didn't drop it.
+  const { readFile } = await import("node:fs/promises");
+  const tools = await readFile(new URL("../src/components/ComposerTools.tsx", import.meta.url), "utf8");
+  const mic = body(tools, "export function MicButton(");
+  assert.match(mic, /let dropped = false;/);
+  assert.match(mic, /rec\.onresult = \(e\) => \{\n\s+if \(dropped\) return;/);
+  assert.match(mic, /takeMic\("dictation", \(drop\) => \{\n\s+dropped = drop;\n\s+rec\.abort\(\);\n\s+\}\);/);
+  assert.match(mic, /if \(chunks\.length && !dropped\) onRecording\(new File\(/);
+  assert.match(mic, /takeMic\("dictation", \(drop\) => \{\n\s+dropped = drop;\n\s+if \(recorder\.state !== "inactive"\) recorder\.stop\(\);\n\s+\}\);/);
+  assert.equal(mic.match(/onRecording\(/g)?.length, 1);
+  assert.equal(mic.match(/onText\(/g)?.length, 1);
+  const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
+  assert.match(body(page, "function signedOutHere("), /setVoice\(null\);\n\s+stopMic\(true\);/);
+  assert.equal(page.match(/stopMic\(true\)/g)?.length, 1, "only as the account signs out here");
+});
+
+test("going on as another account asks first about a message being written, which isn't kept", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
+  // Words in the message box, an attached file, or a part of the app picked for the open chat.
+  assert.match(page, /const writingRef = useRef\(false\);\n\s+useEffect\(\(\) => \{\n\s+writingRef\.current = Boolean\(input\.trim\(\) \|\| files\.length \|\| \(picked && picked\.projectId === activeId\)\);\n\s+\}, \[input, files, picked, activeId\]\);/);
+  // Saves first, as before; once everything is saved, a message being written still asks.
+  assert.match(body(page, "async function leaveCheck("), /\{\n\s+if \(!\(await flushSaves\(\)\)\) return "saves";\n\s+return writingRef\.current \? "writing" : null;\n\s+\}$/);
+  // A switch (the menu, an invitation), Add another account finishing, and its ways off the page
+  // (two-step sign-in's code page, "Continue with …") all ask through it; a log out doesn't ask.
+  assert.equal(page.match(/await leaveCheck\(\)/g)?.length, 3);
+  for (const name of ["async function switchAccount(", "async function addDone(", "async function addLeave("]) assert.match(body(page, name), /await leaveCheck\(\)/, name);
+  for (const name of ["async function signOut(", "async function signOutAll("]) assert.doesNotMatch(body(page, name), /leaveCheck/, name);
+  assert.equal(page.match(/writing: ask === "writing"/g)?.length, 3);
+  assert.match(page, /<SwitchAnyway\n\s+onSwitch=\{unsaved\.go\}[\s\S]*?\n\s+writing=\{unsaved\.writing\}\n\s+\/>/);
+  // The question says which: changes not saved, or the message not sent.
+  const chooser = await readFile(new URL("../src/components/AccountChooser.tsx", import.meta.url), "utf8");
+  assert.match(body(chooser, "export function SwitchAnyway("), /const question = writing \? t\("Your message hasn't been sent yet\. Switch anyway\?"\) : t\("Some changes in this chat haven't saved yet\. Switch anyway\?"\);/);
+});
+
+test("a switch that finds nobody signed in here leaves the tab on no account, so nothing names it later", async () => {
+  // Ana's tab tries Ben, but both were logged out on another device: the landing page. Once Dev
+  // signs in elsewhere, the tab reloads and opens Dev, with no chooser naming ana@… .
+  pin.setPin("acct_a");
+  pin.setPinEmail("ana@lumen-studio.test");
+  pin.setPin(null);
+  assert.equal(pin.getPin(), null);
+  assert.equal(pin.getPinEmail(), "");
+  assert.equal(storage.data.has("flash-account"), false);
+  const { readFile } = await import("node:fs/promises");
+  const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
+  // Every way to the signed-out page goes through signedOutHere, which lets the tab's account go.
+  assert.match(body(page, "function signedOutHere("), /^function signedOutHere\(\) \{\n\s+forgetTones\(\);\n(\s*\/\/.*\n)*\s+setPin\(null\);/);
+  assert.match(body(page, "async function checkAccountsFor("), /if \(!list\.accounts\.length\) return void signedOutHere\(\);/);
+  // The other two ways there name no account already: the account check found nobody (and let the
+  // pin go), or a reply was refused while the tab named none.
+  assert.equal(page.match(/setSignedOut\(true\)/g)?.length, 3);
+  assert.match(page, /if \(res\.status === 401 && !getPin\(\)\) setSignedOut\(true\);/);
+});
+
+test("adding the account the tab already uses keeps the tab where it was, and says so", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
+  // A password manager fills Add another account with Ana's own email and password: no reload to
+  // Home, no "Switch anyway?" about code not saved, and a notice that Ana is already in use here.
+  const done = body(page, "async function addDone(");
+  const same = done.slice(done.indexOf("if (id && id === getPin()"), done.indexOf("if (!id) return window.location.reload();"));
+  assert.match(same, /^if \(id && id === getPin\(\) && \(from\.again \|\| !from\.next\)\) \{\n\s+closeAdding\(\);\n\s+const shown = meRef\.current\?\.user;\n\s+if \(shown\) void refreshMe\(\);\n\s+else void start\(\);\n\s+if \(shown && !from\.again && !from\.back\) setNotice\(tNow\("You're already using \{email\} in this tab\.", \{ email: isolate\(shown\.email\) \}\)\);\n\s+return;\n\s+\}/);
+  assert.doesNotMatch(same, /leaveCheck|flushSaves|goOnAs|reloadAs/);
+  // It comes before anything is saved or asked; a link's page (Connect to Flash) still opens.
+  assert.ok(done.indexOf("if (id && id === getPin()") < done.indexOf("await leaveCheck()"));
+});
+
+test("with one account, Home and a chat sit where they did under a notice", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
+  // The room the notices' faded edge needs reaches under the chat (-mb-2), so what's under them
+  // doesn't move down 8px; the email banner keeps main's 12px below a notice.
+  assert.match(page, /\$\{tab === "preview" \? "max-w-3xl space-y-2 px-3 pb-2" : `-mb-2 space-y-3 px-4 pb-2 pt-2 \$\{isHome/);
+  assert.match(page, /\{\(!me\.verified \|\| allOff\) && \(\n\s+<div className=\{`mx-auto space-y-3 px-4 \$\{said \? "pt-3" : "pt-2"\} /);
 });
