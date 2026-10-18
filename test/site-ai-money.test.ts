@@ -7,9 +7,10 @@ import { register } from "node:module";
 /*
  * window.flashAI: one attempt per hold, the owner's auto top-up level, and saying it is an AI. A
  * stand-in Claude counts every request it is sent, keeps its system prompt, and can answer, fail
- * with an error, drop the connection, cut its answer off part way, or send its answer slowly.
+ * with an error, drop the connection, cut its answer off part way, send its answer slowly, or
+ * answer after 800 ms (late).
  */
-let mode: "answer" | "error" | "drop" | "cut" | "slow" = "answer";
+let mode: "answer" | "error" | "drop" | "cut" | "slow" | "late" = "answer";
 let hits = 0;
 let timeoutHeader = "";
 let system = "";
@@ -42,6 +43,7 @@ const server = createServer((req, res) => {
       res.on("close", () => clearTimeout(rest));
       return;
     }
+    if (mode === "late") return void setTimeout(() => res.writeHead(200, { "Content-Type": "application/json" }).end(answerBody), 800);
     res.writeHead(200, { "Content-Type": "application/json" }).end(answerBody);
   });
 });
@@ -167,7 +169,7 @@ test("an answer cut off part way, or still coming at the deadline, was made and 
   }
 });
 
-test("every paid Claude call that isn't streamed is sent once: a retry could cost more than its hold", async () => {
+test("every paid Claude call that isn't streamed is sent once, with a deadline over its whole answer: a retry or a stalled answer could cost more than its hold", async () => {
   const { readdir, readFile } = await import("node:fs/promises");
   const files = (await readdir(new URL("../src/", import.meta.url), { recursive: true })).filter((f) => /\.tsx?$/.test(f));
   const calls: string[] = [];
@@ -185,6 +187,8 @@ test("every paid Claude call that isn't streamed is sent once: a retry could cos
       const args = text.slice(at, end);
       calls.push(file);
       assert.match(args, /maxRetries: 0/, `${file}: ${args.slice(0, 80)}…`);
+      // The client's timeout ends when the answer starts to arrive; a signal bounds reading it too.
+      assert.match(args, /signal: AbortSignal\.timeout\(/, `${file}: ${args.slice(0, 80)}… has no deadline over the whole answer`);
     }
   }
   // site-ai, post-pack, and claude.ts's prompt and scene writers, router and picture check.
@@ -287,6 +291,40 @@ test("keeping the level is checked in the same statement as the charge, and othe
   assert.equal(await balance(), 100);
   assert.notEqual(await charge("owner", 3, "the owner's own chat"), null, "the owner's own spending isn't held back");
   assert.equal(await balance(), 97);
+});
+
+test("auto top-up turned on, or its level raised, while a visitor's question is answered: that question's hold doesn't make Flash buy a pack", async () => {
+  await saveAiSettings("shop", true, 5000);
+  await setBalance("owner", 1002);
+  // A saved card, with auto top-up off for now.
+  await autoTopUpOn("owner", 300);
+  await run("UPDATE auto_topups SET enabled = 0, last_at = 0 WHERE user_id = 'owner'");
+  mode = "late";
+  const asking = ask();
+  // The question's hold, taken with no level to keep, is on the ledger while Claude answers.
+  for (const until = Date.now() + 5000; (await balance()) === 1002 && Date.now() < until; ) await new Promise((r) => setTimeout(r, 20));
+  assert.ok((await balance()) < 1000, `the hold put the balance at ${await balance()}, under the new level`);
+  // What turning it on at 1,000 writes, then the owner's next /api/me.
+  await autoTopUpOn("owner", 1000);
+  stripeCalls = [];
+  assert.equal(await maybeAutoTopUp("owner"), false, "the question still running isn't counted");
+  assert.deepEqual(stripeCalls, [], "no payment was made");
+  assert.equal((await asking).status, 200);
+  mode = "answer";
+  assert.ok((await balance()) >= 1000, `settled, the answer left ${await balance()} credits, over the level`);
+  assert.equal(await maybeAutoTopUp("owner"), false);
+  // As before, the owner's own request still running counts, and so does a visitor's hold left
+  // running for longer than any request.
+  for (const own of [true, false]) {
+    await setBalance("owner", 1002);
+    await run("UPDATE auto_topups SET last_at = 0 WHERE user_id = 'owner'");
+    if (own) assert.notEqual(await charge("owner", 5, "the owner's own chat"), null);
+    else await run(`INSERT INTO credit_ledger (user_id, amount, reason, keeps_level, created_at) VALUES ('owner', -5, 'AI in "Bakery"', 1, 0)`);
+    stripeCalls = [];
+    assert.equal(await maybeAutoTopUp("owner"), true, own ? "the owner's own request" : "a hold left running");
+    assert.deepEqual(stripeCalls, ["POST /v1/payment_intents"]);
+  }
+  await run("UPDATE auto_topups SET enabled = 0 WHERE user_id = 'owner'");
 });
 
 test("a team member's app keeps the team owner's level on the shared pool, then spends the member's own credits", async () => {

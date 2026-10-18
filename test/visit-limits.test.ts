@@ -824,8 +824,9 @@ test("a plan read that failed is kept for 30 seconds, so a database hiccup isn't
   // Once it can be read, new people count by Lite's number again.
   assert.equal(await plansRead(() => visitAt(93_000)), 1);
   assert.deepEqual([await visitorsOf("hiccup-app"), await peopleOf("hiccup-lite")], [2, 1_501]);
-  // A plan read fresh (the owner's own view) ends a kept failure at once. (17 minutes on, the plan
-  // read at 93 seconds is no longer used.)
+  // A plan read fresh (the owner's own view) ends a kept failure at once. (On a server that hasn't
+  // read the plan yet, so the failure counts by the free plan's numbers: see the test after next.)
+  forgetServerMemory();
   const later = 17 * 60_000;
   await failing(subscriptions, async () => assert.equal(await plansRead(() => visitAt(later)), 1));
   assert.deepEqual([await visitorsOf("hiccup-app"), await peopleOf("hiccup-lite")], [2, 1_501], "a view, by the free plan's numbers");
@@ -868,6 +869,36 @@ test("a slow plan read that fails after a fresh one worked keeps nothing: the pl
   // Two seconds on, a new person counts by Lite's plan, read fresh, not by a failure kept after it.
   await recordVisit("race-app", page("race-app", person()), null, NOW + 2_000);
   assert.deepEqual([await visitorsOf("race-app"), await peopleOf("race-lite")], [3, 1_502]);
+});
+
+test("a failed plan read uses the plan this server read last, so a paid owner past the free plan's numbers keeps counting people and app steps", async () => {
+  forgetServerMemory();
+  await owner("blip-lite", "lite");
+  await site("blip-app", "blip-lite", ["go"]);
+  // This server reads Lite's plan and keeps it for 15 minutes.
+  const who = await visitor("blip-app");
+  // Past the free plan's 1,000 people and 100 app steps today.
+  await run("UPDATE owner_people SET people = 1500, steps = 150 WHERE user_id = 'blip-lite' AND day = ?", [TODAY]);
+  const visitAt = (later: number) => recordVisit("blip-app", page("blip-app", person()), null, NOW + later);
+  const plansRead = async (fn: () => Promise<unknown>) => (await statementsDuring(fn)).filter((sql) => sql.includes("FROM subscriptions")).length;
+  // Just past the 15 minutes the plan is read again, and that one read fails. The database works again at once.
+  const stale = 15 * 60_000 + 1_000;
+  let once = true;
+  await failing(
+    (sql) => once && sql.includes("FROM subscriptions") && !(once = false),
+    async () => assert.equal(await plansRead(() => visitAt(stale)), 1),
+  );
+  for (const later of [1_000, 5_000, 29_000]) assert.equal(await plansRead(() => visitAt(stale + later)), 0, "the failed read is kept for 30 seconds");
+  assert.deepEqual([await visitorsOf("blip-app"), await peopleOf("blip-lite")], [5, 1_504], "each new person counted by Lite's number");
+  assert.equal(await markOf("blip-app", "capped"), null);
+  // An app step in those 30 seconds counts by Lite's number too.
+  Date.now = () => NOW + stale + 10_000;
+  try {
+    assert.equal(await plansRead(() => track("blip-app", who, "go")), 0);
+  } finally {
+    Date.now = () => NOW;
+  }
+  assert.equal(await appStepsOf("blip-app"), 1, "counted, past the free plan's 100 app steps");
 });
 
 test("past the owners it keeps, a server's plan memory forgets the owner whose plan was used longest ago, not the one read first", async () => {

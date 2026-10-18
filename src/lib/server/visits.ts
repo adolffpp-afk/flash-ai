@@ -282,30 +282,40 @@ export async function peopleCap(ownerId: string, at = Date.now(), fresh = false)
 }
 
 /**
- * The owner's plan as peopleCap reads it, for counting a new person or an app step, or null when it
- * can't be read (the database failed): then they count by the free plan's numbers rather than not at
+ * The owner's plan as peopleCap reads it, for counting a new person or an app step. When it can't be
+ * read (the database failed), the last plan this server read for the owner is used, even one past
+ * its 15 minutes; with none, null: then they count by the free plan's numbers rather than not at
  * all, without the note that counting paused, which would put the free plan's number on a paid
  * owner's day. A failed read is kept for 30 seconds, so a database hiccup isn't asked again on every
  * visit (a plan read meanwhile ends it, and one that worked while this one waited is used instead),
  * and logged at most once a minute per server.
  */
 export async function countingPlan(ownerId: string, at: number): Promise<Plan | null> {
-  if ((unreadPlans.get(ownerId) ?? -Infinity) > at) return null;
+  if ((unreadPlans.get(ownerId) ?? -Infinity) > at) return lastPlan(ownerId);
   try {
     return await peopleCap(ownerId, at);
   } catch (err) {
     // A newer read that worked while this one waited (the owner's own view reads fresh) wins.
     const known = plans.get(ownerId);
-    if (known && known.until > at) return { cap: known.cap, steps: known.steps, paid: known.paid };
+    if (known && known.until > at) return lastPlan(ownerId);
     unreadPlans.delete(ownerId);
     unreadPlans.set(ownerId, at + UNREAD_PLAN_MEMORY);
     while (unreadPlans.size > maxPlans()) unreadPlans.delete(unreadPlans.keys().next().value!);
     if (at - unreadLoggedAt >= UNREAD_PLAN_LOG) {
       unreadLoggedAt = at;
-      console.error("[flash] owner's plan not read, counted by the free plan's numbers for 30 seconds. Said at most once a minute per server process.", err);
+      console.error(
+        "[flash] owner's plan not read, counted for 30 seconds by the plan last read, or the free plan's numbers. Said at most once a minute per server process.",
+        err,
+      );
     }
-    return null;
+    return lastPlan(ownerId);
   }
+}
+
+/** The last plan this server read for an owner, even one past its 15 minutes, or null when it has none. */
+function lastPlan(ownerId: string): Plan | null {
+  const known = plans.get(ownerId);
+  return known ? { cap: known.cap, steps: known.steps, paid: known.paid } : null;
 }
 
 async function readPlan(ownerId: string): Promise<Plan> {
@@ -481,7 +491,7 @@ async function countVisit(slug: string, request: Request, viewerId: string | rea
       // Always by the owner's plan (read at most every 15 minutes per server, and at once after the
       // owner's own view read it), as app steps are: the free number, read without it, would stop a
       // paid plan's loads counted at the same moment there. One that can't be read counts by the
-      // free plan's numbers (see countingPlan).
+      // plan this server read last, or else the free plan's numbers (see countingPlan).
       const plan = await countingPlan(row.owner, at);
       const cap = plan?.cap ?? freePeople();
       const pause = Number(row.people ?? 0) >= cap;

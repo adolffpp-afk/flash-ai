@@ -74,6 +74,22 @@ export async function spendable(
 // Longer than any request runs (the chat route's maxDuration is 800 seconds).
 const HOLD_MINUTES = 15;
 
+/**
+ * The balance auto top-up compares with its level (see maybeAutoTopUp). A hold still running for
+ * spending that keeps the level (keepTopUpLevel, see charge) doesn't count: it was checked against
+ * the level when it was taken, which may have been lower or off, and most of it comes back when the
+ * answer ends. So a visitor's question never sets off a top-up, even when the level was turned on
+ * or raised while it ran. A hold left running for longer than any request counts again.
+ */
+export async function topUpBalance(userId: string): Promise<number> {
+  const row = await one<{ total: number }>(
+    `SELECT COALESCE(SUM(amount), 0) AS total FROM credit_ledger
+     WHERE user_id = ? AND NOT (keeps_level = 1 AND settled_at = 0 AND created_at > ?)`,
+    [userId, now() - HOLD_MINUTES * 60_000],
+  );
+  return Number(row?.total ?? 0);
+}
+
 const monthKey = (t = new Date()) => `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, "0")}`;
 
 /**
@@ -136,10 +152,10 @@ export async function charge(
   const keep = keepsLevel(keepTopUpLevel);
   for (const account of await spendAccounts(userId)) {
     const r = await run(
-      `INSERT INTO credit_ledger (user_id, amount, reason, actor, created_at)
-       SELECT ?, ?, ?, ?, ?
+      `INSERT INTO credit_ledger (user_id, amount, reason, actor, keeps_level, created_at)
+       SELECT ?, ?, ?, ?, ?, ?
        WHERE (SELECT COALESCE(SUM(amount), 0) FROM credit_ledger WHERE user_id = ?) >= ?${keep ? ` + ${TOP_UP_LEVEL}` : ""}`,
-      [account, -amount, reason, account === userId ? null : userId, now(), account, amount, ...(keep ? [account] : [])],
+      [account, -amount, reason, account === userId ? null : userId, keepTopUpLevel ? 1 : 0, now(), account, amount, ...(keep ? [account] : [])],
     );
     if (r.rowsAffected === 1) return Number(r.lastInsertRowid);
   }

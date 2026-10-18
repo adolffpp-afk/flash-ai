@@ -32,7 +32,7 @@ process.env.VIRUS_SCAN_URL = `http://127.0.0.1:${(scanner.address() as AddressIn
 process.env.VIRUS_SCAN_KEY = "k".repeat(32);
 
 const { run, one, all } = await import("../src/lib/server/db.ts");
-const { saveUpload, uploadUse, setUploadsOn, FREE_STORAGE_BYTES, MAX_BYTES_PER_SITE, MAX_FILES_PER_SITE } = await import(
+const { saveUpload, uploadUse, setUploadsOn, FREE_STORAGE_BYTES, MAX_BYTES_PER_SITE, MAX_FILES_PER_SITE, USED_STORAGE_SQL } = await import(
   "../src/lib/server/site-files.ts"
 );
 
@@ -215,6 +215,20 @@ test("with no assistants, saveUpload and uploadUse answer as they did before #12
     ],
   ];
   assert.deepEqual(seen, before);
+});
+
+test("the storage counts read only an index, never the files' bytes, so an upload doesn't read every file its owner holds", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const source = await readFile(new URL("../src/lib/server/site-files.ts", import.meta.url), "utf8");
+  // Each app's own count (saveUpload, uploadUse) and the owner's (usedStorage, and saveUpload's INSERT again).
+  const counts = [...source.matchAll(/"(SELECT COUNT\([^"]*SUM\([^"]*site_uploads[^"]*)"/g)].map((m) => m[1]);
+  assert.equal(counts.length, 2, counts.join("\n"));
+  for (const sql of [...counts, `SELECT ${USED_STORAGE_SQL}`]) {
+    const plan = await all<{ detail: string }>(`EXPLAIN QUERY PLAN ${sql}`, Array(sql.split("?").length - 1).fill("x"));
+    const reads = plan.map((r) => r.detail).filter((d) => /\b(u|site_uploads)\b/.test(d.split(" USING ")[0]));
+    assert.ok(reads.length, `${sql}: ${JSON.stringify(plan)}`);
+    for (const read of reads) assert.match(read, /USING COVERING INDEX site_uploads_size/, sql);
+  }
 });
 
 test("two files sent at once that together pass the owner's room: one is kept, the other refused as full (before #126 both were kept)", async () => {
