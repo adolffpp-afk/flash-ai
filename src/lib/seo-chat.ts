@@ -2,7 +2,8 @@ import type { UIMessage } from "./store.ts";
 
 /*
  * Where a change the search check (SEO) asks for would go, in the chat that built the site (see
- * fixSite in Flash.tsx). Kept apart from seo-fix.ts, which reads the page and loads only when used.
+ * fixSite in Flash.tsx), and the price its panel says. Kept apart from seo-fix.ts, which reads the page
+ * and loads only when used.
  */
 
 /**
@@ -70,4 +71,43 @@ export async function chatForFix(
   if (!server || unsaved) return { messages: here, busy: stillAnswering(here) || (server ? stillAnswering(server) : false), adopt: false };
   const same = server.length === here.length && server.every((m, i) => saved(m) === saved(here[i]));
   return { messages: server, busy: stillAnswering(server), adopt: !same };
+}
+
+/**
+ * What Fix all's change would hold if it were sent now, worked out by the chat route itself from the
+ * very request Send makes (quote, see the chat route): credits is the most it can be charged, needed what
+ * it needs at least, and available the balance it's held from. Null when it can't be worked out (offline,
+ * the count failed, an error, or nothing would be held), so the panel says the usual price instead of a
+ * number Flash didn't work out. post is fetch, or a stand-in in tests.
+ */
+export type FixHold = { credits: number; needed: number; available: number };
+
+export async function fixAllHold(body: object, post: typeof fetch = fetch): Promise<FixHold | null> {
+  try {
+    const res = await post("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...body, quote: true }) });
+    if (!res.ok) return null;
+    const { held, needed, available } = (await res.json()) as Record<string, unknown>;
+    const count = (n: unknown): n is number => typeof n === "number" && Number.isSafeInteger(n) && n >= 0;
+    return count(held) && held > 0 && count(needed) && count(available) ? { credits: held, needed, available } : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The price a change's panel says before Send. Fix it and Add it say what a change typically costs
+ * (typical, the pricing table's), with the balance when it's below that (low). Fix all says the most its
+ * change can be charged once that's worked out (most), with the balance when it's below what the change
+ * needs (short), and while it's being worked out, that (pending); when it can't be, it says what Fix it
+ * says. balance is the owner's credits, when known.
+ */
+export type FixPrice =
+  | { kind: "pending" }
+  | { kind: "most"; credits: number; short?: number }
+  | { kind: "typical"; credits: number; low?: number };
+
+export function fixPrice(all: boolean, hold: FixHold | null | undefined, typical: number, balance?: number): FixPrice {
+  if (all && hold === undefined) return { kind: "pending" };
+  if (all && hold) return { kind: "most", credits: hold.credits, ...(hold.available < hold.needed && { short: hold.available }) };
+  return { kind: "typical", credits: typical, ...(balance !== undefined && balance < typical && { low: balance }) };
 }

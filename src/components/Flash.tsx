@@ -20,7 +20,8 @@ import { Templates } from "./Templates";
 import { MyApps } from "./MyApps";
 import type { FixPlan, SiteFix } from "./SeoView";
 import type { CheckId } from "@/lib/seo-rules";
-import { chatForFix, chatWithSite, newestApp, siteOf, stillAnswering } from "@/lib/seo-chat";
+import { chatForFix, chatWithSite, fixAllHold, newestApp, siteOf, stillAnswering } from "@/lib/seo-chat";
+import { chatRequestBody } from "@/lib/chat-request";
 import { chatSaves } from "@/lib/chat-saves";
 import { BuildPanel, useMedia } from "./BuildPanel";
 import { draftShown, draftStore, startsWriting } from "@/lib/live-draft";
@@ -29,7 +30,7 @@ import { MAX_PDF_MB, pdfText } from "@/lib/pdf-text";
 import { addAttachment } from "@/lib/attachments";
 import { MAX_QUEUE, recentTurns, type CompanionContext } from "@/lib/companion";
 import { TEMPLATES, type Template, type TemplateValues } from "@/lib/templates";
-import { ENGINES, ENGINE_LABELS, PENDING_LIMIT_MS, type Attachment, type ChatTurn, type Engine, type StreamEvent } from "@/lib/types";
+import { ENGINES, ENGINE_LABELS, PENDING_LIMIT_MS, type Attachment, type Engine, type StreamEvent } from "@/lib/types";
 import { applyEvent } from "@/lib/apply-event";
 import { api, newId, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
 import { PROJECT_TOO_LARGE } from "@/lib/project-size";
@@ -184,12 +185,6 @@ async function readPdf(file: File, t: Translate): Promise<Attachment | string> {
         })
       : t("Couldn't read {name}. Try saving it again as a PDF and attaching that.", { name: file.name });
   }
-}
-
-/** A message as the AI reads it: with text that came after an app, and the part of the app it's about. */
-function turnText(m: UIMessage): string {
-  const text = m.content + (m.after ?? "");
-  return m.picked ? `${text}\n\n${m.picked.context}` : text;
 }
 
 function readFile(file: File): Promise<Attachment> {
@@ -1004,12 +999,26 @@ export function Flash({
   /**
    * What Send would send for a change the search check (SEO) asks for, in the chat that built the site
    * (see fixFor): the points that fit, or why none would go. The panel lists it before Send is pressed.
+   * For Fix all (fix.all), with the most that change can be charged (see priced).
    */
   async function planFix(fix: SiteFix): Promise<FixPlan> {
     const chat = await chatToFix(fix.projectId);
     if (!chat) return { why: t("Couldn't find the chat that built this site.") };
     const plan = await fixFor(fix, chat.messages);
-    return "why" in plan ? plan : { sent: plan.sent, left: plan.left };
+    return "why" in plan ? plan : priced(fix, chat.messages, plan);
+  }
+
+  /**
+   * What the panel lists for a change that would go: its points, and for Fix all the credits the chat
+   * route would hold for exactly that message, after that chat and at the level picked, worked out by
+   * the route itself (see fixAllHold): the most Send can be charged. null when it can't be worked out,
+   * and the panel says the usual price instead. Fix it and Add it say the usual price, as before.
+   */
+  async function priced(fix: SiteFix, messages: UIMessage[], plan: { message: UIMessage; sent: CheckId[]; left: number }): Promise<FixPlan> {
+    if (!fix.all) return { sent: plan.sent, left: plan.left };
+    const project = projects.find((p) => p.id === fix.projectId) ?? { id: fix.projectId, name: "", updated_at: 0 };
+    const hold = await fixAllHold(requestFor(project, messages, plan.message, { replyId: newId() }));
+    return { sent: plan.sent, left: plan.left, hold };
   }
 
   /**
@@ -1030,11 +1039,13 @@ export function Flash({
     if (chat.busy) return busyNote;
     const plan = await fixFor(fix, chat.messages);
     if ("why" in plan) return plan;
-    if (fix.shown && plan.sent.join() !== fix.shown.join()) return { sent: plan.sent, left: plan.left };
+    // Listed again, and for Fix all priced again: what it says it costs is for what would go now.
+    if (fix.shown && plan.sent.join() !== fix.shown.join()) return priced(fix, chat.messages, plan);
     if (runningRef.current) return busyNote;
     closeApps();
     showChat(fix.projectId);
-    // Only what was listed: sendFix asks for what the chat's newest version still needs of it, never more.
+    // Only what was listed: sendFix asks for what the chat's newest version still needs of it, never more,
+    // and Fix all's change holds at most what the panel said (cap).
     setPendingFix({ ...fix, ids: plan.sent, at: Date.now() });
     return null;
   }
@@ -1095,8 +1106,9 @@ export function Flash({
     if (chat.busy) return setNotice(t(BUSY_FIX));
     const plan = await fixFor(fix, chat.messages);
     if ("why" in plan) setNotice(plan.why);
-    // On the server's copy of the chat, so the change lands after a reply asked in another tab.
-    else await respond(project, chat.messages, plan.message);
+    // On the server's copy of the chat, so the change lands after a reply asked in another tab. Fix all's
+    // holds at most what its panel said ("Up to N credits"), on Retry too (see the chat route's maxCredits).
+    else await respond(project, chat.messages, fix.cap ? { ...plan.message, cap: fix.cap } : plan.message);
   }
   const sendFixRef = useRef(sendFix);
   useEffect(() => {
@@ -1245,8 +1257,9 @@ export function Flash({
     if (lastUser === -1) return;
     const earlier = messages.slice(0, lastUser);
     const { pictureAbove: had, ...old } = messages[lastUser];
-    // Typed words replace what was heard, so they're routed and answered as typed.
-    let edited: UIMessage = { ...old, content: text, voice: undefined };
+    // Typed words replace what was heard, so they're routed and answered as typed. What Fix all said a
+    // change would hold was for its own words, not these.
+    let edited: UIMessage = { ...old, content: text, voice: undefined, cap: undefined };
     // The new words decide whether it goes with the picture above, as when typing. Files sent with
     // it stay, and a change the user sent without the picture (the ✕) doesn't gain it.
     if (had || (!old.attachmentName && !old.build && !old.template && !pictureFollowUp(old.content))) {
@@ -1298,6 +1311,37 @@ export function Flash({
       const body = request.length > 90 ? `${request.slice(0, 90)}…` : request;
       new Notification(ok ? t("Flash is done") : t("Flash stopped"), { body: body || t("Your request"), icon: "/app-icon/192", tag: "flash-done" });
     } catch {}
+  }
+
+  /**
+   * The chat request for userMsg after earlier, as respond() sends it now (see chatRequestBody): the
+   * settings are read when it's made. Fix all prices the same request before it's sent (see planFix).
+   */
+  function requestFor(
+    project: Project,
+    earlier: UIMessage[],
+    userMsg: UIMessage,
+    { replyId, files = [], confirmed = false, decided, connect }: { replyId: string; files?: Attachment[]; confirmed?: boolean; decided?: UIMessage["decided"]; connect?: { ids?: string[]; actions?: string[] } },
+  ) {
+    const level = readSetting("level");
+    return chatRequestBody(earlier, userMsg, {
+      choice,
+      // Memory can be turned off in Settings > Capabilities (on this device).
+      preferences: readSetting("memoryOff") === "1" ? "" : preferences,
+      level: isLevel(level) ? level : undefined,
+      models,
+      confirmed: confirmed || skipsCostCheck(),
+      decided: confirmed ? decided : undefined,
+      projectId: project.id,
+      name: !earlier.length && project.name !== "New project" ? project.name : undefined,
+      timeZone: deviceTimeZone() || undefined,
+      // The user's own accounts, only as they turned them on in this chat: never for a request the
+      // companion lined up, which they didn't type here.
+      connectors: !connectorsOn || userMsg.queued ? [] : (connect?.ids ?? connectorsIn(project.id)),
+      actions: connect?.actions ?? userMsg.continues ?? [],
+      replyId,
+      files,
+    });
   }
 
   /**
@@ -1354,34 +1398,7 @@ export function Flash({
       else if (!stopped) setNotice(missing);
       return { ...reply, pending: false, ...(stopped ? { stopped: true } : { error: missing }) };
     }
-    // A template's request always goes to its own engine, and one the companion lined up to Auto
-    // (the tool picked in the composer was for something else); anything else to the one picked.
-    const engine = userMsg.template?.engine ?? userMsg.build ?? (userMsg.queued || userMsg.auto ? "auto" : choice);
-    // The user's own accounts, only as they turned them on in this chat: never for a request the
-    // companion lined up, which they didn't type here.
-    const connectorIds = !connectorsOn || userMsg.queued ? [] : (connect?.ids ?? connectorsIn(projectId));
-    const continues = connect?.actions ?? userMsg.continues ?? [];
-
-    // Only the most recent app's code is sent back, so edits build on it without resending every version.
-    const lastAppId = [...earlier].reverse().find((m) => m.app)?.id;
-    // A spoken "thanks" after an app is answered in words but is still about the app, so the next
-    // follow-up can change it.
-    const lastReply = [...earlier].reverse().find((m) => m.role === "assistant" && m.engine);
-    const previous = lastReply?.about ?? lastReply?.engine;
-    // Replies that used a connected account are marked, so the chat never goes to the free lane.
-    const fromAccounts = accountReplies(earlier);
-    const history: ChatTurn[] = [
-      ...earlier
-        // A price Flash asked about stays, so "how much was it?" is answered with the real price.
-        .filter((m) => !m.error || m.content || m.app || m.errorCode === "confirm_cost")
-        .map((m) => ({
-          role: m.role,
-          content: m.errorCode === "confirm_cost" && !m.content ? (m.error ?? "") : turnText(m),
-          app: m.id === lastAppId ? m.app?.html : undefined,
-          usedConnector: fromAccounts.has(m.id) || undefined,
-        })),
-      { role: "user", content: turnText(userMsg), attachment: sent[0], more: sent.length > 1 ? sent.slice(1) : undefined },
-    ];
+    const body = requestFor(project, earlier, userMsg, { replyId: reply.id, files: sent, confirmed, decided, connect });
 
     updateProject(projectId, (p) => ({ ...p, updated_at: Date.now(), messages: [...earlier, userMsg, reply] }));
     jobRef.current = { request: userMsg.content, startedAt: Date.now(), projectId };
@@ -1400,35 +1417,7 @@ export function Flash({
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messages: history,
-          engine,
-          // Memory can be turned off in Settings > Capabilities (on this device).
-          preferences: readSetting("memoryOff") === "1" ? "" : preferences,
-          previous,
-          // Read when sent, so a queued request uses the level picked by then.
-          ...(isLevel(readSetting("level")) && { level: readSetting("level") }),
-          model: userMsg.template?.model ?? (engine === "auto" ? undefined : models[engine]),
-          template: userMsg.template?.name,
-          confirmed: confirmed || skipsCostCheck(),
-          ...(confirmed && decided && { decided }),
-          projectId,
-          ...(userMsg.voice && { voice: true }),
-          ...(userMsg.build && { build: true }),
-          // The server only needs to know it's the picture above, for the reason it shows.
-          ...(userMsg.pictureAbove ? { pictureAbove: true } : {}),
-          // The server saves the turn too, so the answer is kept if this page is closed (see turns.ts).
-          replyId: reply.id,
-          userMessage: userMsg,
-          afterId: earlier.at(-1)?.id ?? null,
-          // A new chat's name when it isn't its first message (a template's title).
-          ...(!earlier.length && project.name !== "New project" && { name: project.name }),
-          // The device's time zone, so answers use the user's own date and time.
-          ...(deviceTimeZone() && { timeZone: deviceTimeZone() }),
-          ...(connectorIds.length && { connectors: connectorIds }),
-          // Sent even with the accounts off, so the server refuses it rather than answer without the results.
-          ...(continues.length && { actions: continues }),
-        }),
+        body: JSON.stringify(body),
         signal: controller.signal,
       });
       responded = true;
