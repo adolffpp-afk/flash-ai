@@ -31,13 +31,14 @@ import { ENGINES, ENGINE_LABELS, PENDING_LIMIT_MS, type Attachment, type ChatTur
 import { applyEvent } from "@/lib/apply-event";
 import { api, authedFetch, newId, type AccountSummary, type Me, type Pricing, type ProjectSummary, type UIMessage } from "@/lib/store";
 import { PRODUCT_NAME } from "@/lib/product";
-import { adoptAccountFromUrl, announce, forgetLink, getPin, getPinEmail, isolate, isTabAccount, linkedAccount, linkTarget, onAnnounce, reloadAs, setPin, setPinEmail, takeLeftNote, type LeftNote } from "@/lib/account-pin";
+import { adoptAccountFromUrl, announce, forgetLink, getPin, getPinEmail, isolate, isTabAccount, linkedAccount, linkTarget, onAnnounce, reloadAs, setPin, setPinEmail, signedOutSince, signOutMark, signOutTab, takeLeftNote, type LeftNote } from "@/lib/account-pin";
 import { forgetTones } from "@/lib/account-tones";
 import { stopMic } from "@/lib/listen";
 import { isLocalPath } from "@/lib/local-path";
 import { forgetInvite, keepInviteInTab, leaveInviteToSignIn, saveInvite, signedInElsewhere, waitingInvite } from "@/lib/invite-keep";
 import { saveTracker } from "@/lib/save-tracker";
 import { hasCodeDraft } from "@/lib/code-drafts";
+import { hasUnsent } from "@/lib/unsent";
 import { PROJECT_TOO_LARGE } from "@/lib/project-size";
 import type { ChatHit } from "@/lib/server/search";
 import { BoltIcon, BrandMark, Wordmark } from "@/app/brand";
@@ -275,7 +276,9 @@ export function Flash({
   const [chooser, setChooser] = useState<Chooser | null>(null);
   const [unsaved, setUnsaved] = useState<{ go: () => void; added?: boolean; writing?: boolean } | null>(null);
   const [adding, setAdding] = useState<Adding | null>(null);
+  // Which log out is under way, from the profile menu or Settings: the menu and Settings say so.
   const leavingRef = useRef(false);
+  const [loggingOut, setLoggingOut] = useState<"one" | "all" | null>(null);
   const [addNext, setAddNext] = useState<string | undefined>(undefined);
   const [inviteFor, setInviteFor] = useState<{ id: string; email: string } | null>(null);
   // This page opened because another tab signed in (the landing page's reload): until its account
@@ -435,17 +438,23 @@ export function Flash({
     projectsRef.current = projects;
   }, [projects]);
   // A message being written (its words, its files, the part of the app picked for it), which going
-  // on as another account drops: Flash asks first (see leaveCheck).
+  // on as another account drops: Flash asks first (see leaveCheck), as for an Edit of a message and
+  // a question for Ask Flash (hasUnsent).
   const writingRef = useRef(false);
   useEffect(() => {
     writingRef.current = Boolean(input.trim() || files.length || (picked && picked.projectId === activeId));
   }, [input, files, picked, activeId]);
 
-  /** The only way the account's data reaches the page. */
-  async function adoptMe(fetched: Me): Promise<Me | null> {
+  /**
+   * The only way the account's data reaches the page. mark: taken as it was asked for (see
+   * signOutMark).
+   */
+  async function adoptMe(fetched: Me, mark: number): Promise<Me | null> {
     // An answer asked for before this tab moved to another account (a reply's refresh that ends
     // just as a switch reloads the tab) is left alone: it must not take the tab back to its account.
-    if (!isTabAccount(fetched.account)) return null;
+    // Nor is one asked for before this tab signed out (a reply's refresh that ends just as Log out
+    // does): it must not name that account to whoever signs in next here.
+    if (signedOutSince(mark) || !isTabAccount(fetched.account)) return null;
     // Play's billing rule: nothing is for sale inside the Android app (see android-shell.ts), whichever account.
     const data = inAndroidApp() ? { ...fetched, paymentsEnabled: false, testPurchases: false } : fetched;
     // This tab shows this account from now on (the default's, when it showed none), and remembers
@@ -457,23 +466,27 @@ export function Flash({
     if (linkedRef.current === data.account) linkedRef.current = null;
     // Flash's own words switch to the account's language before its first screen shows.
     await showLanguage(data.user.language);
+    if (signedOutSince(mark)) return null;
     setMe(data);
     setLoadError(false);
     return data;
   }
 
   async function refreshMe(): Promise<Me | null> {
+    // Once this tab signs out, whatever comes back for the account it showed is for nobody here.
+    const mark = signOutMark();
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        return await adoptMe(await api<Me>("/api/me"));
+        return await adoptMe(await api<Me>("/api/me"), mark);
       } catch (err) {
+        if (signedOutSince(mark)) return null;
         if ((err as { status?: number }).status !== 401) {
           setLoadError(true);
           return null;
         }
         const found = await checkAccounts();
         // The default when this tab had none (or a session that ended just then): tried once more.
-        if (found !== "gone" && found !== "none" && attempt === 0) continue;
+        if (found !== "gone" && found !== "none" && attempt === 0 && !signedOutSince(mark)) continue;
         // "gone": the chooser asks which account to keep going with.
         if (found !== "gone") setSignedOut(true);
         return null;
@@ -492,12 +505,15 @@ export function Flash({
    * add mode is open, the chooser never covers it: its Back leads to the chooser instead.
    */
   async function checkAccounts(): Promise<"here" | "back" | "none" | "retry" | "gone"> {
+    const mark = signOutMark();
     let list: { default: string | null; accounts: AccountSummary[] };
     try {
       list = await api<{ default: string | null; accounts: AccountSummary[] }>("/api/auth/accounts");
     } catch {
       return "here";
     }
+    // This tab signed out while it asked: who was signed in here then gives it no account now.
+    if (signedOutSince(mark)) return "here";
     let mine = getPin();
     // A page's requests name the account it shows, whatever a reload that didn't happen left behind.
     const showing = meRef.current?.user;
@@ -521,7 +537,7 @@ export function Flash({
       return "back";
     }
     if (!list.accounts.length) {
-      setPin(null);
+      signOutTab();
       forgetTones();
       return "none";
     }
@@ -576,12 +592,16 @@ export function Flash({
     const token = waitingInvite(!elsewhereRef.current);
     elsewhereRef.current = false;
     if (!token) return;
+    // Signed out while it was on its way: what the server said is for nobody here now.
+    const mark = signOutMark();
     try {
       await api("/api/team/accept", { method: "POST", json: { token } });
       forgetInvite();
+      if (signedOutSince(mark)) return;
       setNotice(t("You joined the team. Your requests now use the team's shared credits."));
       await refreshMe();
     } catch (err) {
+      if (signedOutSince(mark)) return;
       const { code, data } = err as { code?: string; data?: { forAccount?: { id: string; email: string } } };
       // For another account signed in here: kept in this tab only, so other tabs and accounts don't
       // ask too, and joined once this tab switches to it (start runs again then), or put away.
@@ -596,6 +616,7 @@ export function Flash({
   }
 
   async function start() {
+    const mark = signOutMark();
     const data = await refreshMe();
     if (!data) return;
     // Put into words in this account's language, now shown (see reloadAs).
@@ -609,9 +630,12 @@ export function Flash({
     try {
       // Flash opens on Home, which greets the user and lists their latest chats.
       const { projects: list } = await api<{ projects: ProjectSummary[] }>("/api/projects");
+      // Logged out while the list was on its way: its chats are for nobody here, whoever signs in next.
+      if (signedOutSince(mark)) return;
       setProjects(list);
       setActiveId("");
     } catch {
+      if (signedOutSince(mark)) return;
       setMe(null);
       setLoadError(true);
     }
@@ -751,9 +775,11 @@ export function Flash({
   const connectorsOn = Boolean(me?.connectorsEnabled);
   useEffect(() => {
     if (!connectorsOn || settingsTab) return;
+    // Logged out while they were on their way: they are for nobody here, whoever signs in next.
+    const mark = signOutMark();
     api<{ ready: boolean; connections: ConnectionView[] }>("/api/connect")
       // A server still waiting to be added (its tools not looked at yet) isn't one a chat can use.
-      .then((r) => setAccounts(r.ready ? r.connections.filter((c) => c.status !== "review") : []))
+      .then((r) => signedOutSince(mark) || setAccounts(r.ready ? r.connections.filter((c) => c.status !== "review") : []))
       .catch(() => {});
   }, [connectorsOn, settingsTab]);
 
@@ -850,11 +876,12 @@ export function Flash({
   /**
    * Before this tab goes on as another account (a switch, Add another account): what Flash asks
    * about first. "saves" when flushSaves couldn't keep everything, "writing" when all of it is
-   * saved but a message is being written, which isn't kept; null when nothing is lost by going.
+   * saved but a message is being written (in the message box, an Edit of a message or Ask Flash),
+   * which isn't kept; null when nothing is lost by going.
    */
   async function leaveCheck(): Promise<"saves" | "writing" | null> {
     if (!(await flushSaves())) return "saves";
-    return writingRef.current ? "writing" : null;
+    return writingRef.current || hasUnsent() ? "writing" : null;
   }
 
   // Saves changed projects shortly after a reply finishes.
@@ -1321,6 +1348,7 @@ export function Flash({
   async function signOut(everywhere = false, after: { id: string; email: string } | null = null): Promise<boolean> {
     if (leavingRef.current) return false;
     leavingRef.current = true;
+    setLoggingOut("one");
     const leaving = me?.user.email ?? "";
     const mine = getPin();
     let next = after;
@@ -1334,6 +1362,7 @@ export function Flash({
         // Nothing was logged out: this tab's account isn't the one signed in here anymore, or it named none.
         if ((err as { code?: string }).code === "account_required") {
           leavingRef.current = false;
+          setLoggingOut(null);
           setNotice(err instanceof Error ? err.message : t("Reload Flash, then log out again."));
           void checkAccounts();
           return false;
@@ -1344,7 +1373,10 @@ export function Flash({
     if (next) {
       reloadAs(next.id, { email: leaving, next: next.email });
       // Still here a few seconds on: the browser's "Leave site?" kept this page.
-      window.setTimeout(() => (leavingRef.current = false), 3000);
+      window.setTimeout(() => {
+        leavingRef.current = false;
+        setLoggingOut(null);
+      }, 3000);
       return true;
     }
     setPin(null);
@@ -1357,6 +1389,7 @@ export function Flash({
   async function signOutAll(): Promise<boolean> {
     if (leavingRef.current) return false;
     leavingRef.current = true;
+    setLoggingOut("all");
     for (const a of me?.accounts ?? []) announce({ type: "leaving", account: a.id });
     await flushSaves().catch(() => false);
     await api("/api/auth/logout", { method: "POST", json: { all: true } }).catch(() => {});
@@ -1369,8 +1402,9 @@ export function Flash({
   /** What this tab keeps of an account that's no longer signed in here: nothing. No account is, so no badge colour is kept either. */
   function signedOutHere() {
     forgetTones();
-    // The tab shows no account now: a reload asks for none, so it never opens a chooser naming this one.
-    setPin(null);
+    // The tab shows no account now: a reload asks for none, so it never opens a chooser naming this
+    // one, and an answer still on its way for it (a reply's refresh, its chats) is dropped.
+    signOutTab();
     // Nothing of this account keeps running, or runs later for whoever signs in next.
     abortRef.current?.abort();
     jobRef.current = null;
@@ -1418,6 +1452,7 @@ export function Flash({
     setInviteFor(null);
     setSignedOut(true);
     leavingRef.current = false;
+    setLoggingOut(null);
   }
 
   // Another tab logged an account out, switched or added one; or this tab comes back into view; or
@@ -3088,6 +3123,7 @@ export function Flash({
             placement="down"
             greet={isHome}
             switching={switching}
+            out={loggingOut}
             onSettings={() => setSettingsTab("general")}
             onHelp={() => setCompanion(true)}
             onPlan={() => setShowCredits(true)}
@@ -3164,9 +3200,12 @@ export function Flash({
             setSettingsTab(null);
             setShowInvite(true);
           }}
+          leaving={loggingOut !== null}
           onSignOut={(everywhere, next) => {
-            setSettingsTab(null);
-            signOut(everywhere, next);
+            // Logged out of every device already: Settings closes as the tab goes on. Log out saves
+            // what it can first: Settings stays open saying so, and closes if the tab stays.
+            if (everywhere) setSettingsTab(null);
+            void signOut(everywhere, next).then((left) => left || setSettingsTab(null));
           }}
           onCompanionShown={(shown) => setHideCompanion(!shown)}
           onWakeWord={setWakeOn}

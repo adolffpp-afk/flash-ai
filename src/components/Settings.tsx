@@ -142,6 +142,7 @@ export function Settings({
   onProfileChanged,
   onOpenCredits,
   onOpenInvite,
+  leaving = false,
   onSignOut,
   onCompanionShown,
   onWakeWord,
@@ -154,6 +155,8 @@ export function Settings({
   onProfileChanged: (user: { name: string; nickname: string; work: string; language: string }) => void;
   onOpenCredits: () => void;
   onOpenInvite: () => void;
+  // A log out under way (from here or the profile menu): Log out says so until the page changes.
+  leaving?: boolean;
   // everywhere: every device was signed out, this one included.
   // everywhere: this account was logged out of every device; next: the account this browser uses now.
   onSignOut: (everywhere?: boolean, next?: { id: string; email: string } | null) => void;
@@ -230,7 +233,7 @@ export function Settings({
               {tab === "general" && (
                 <General {...shared} preferences={preferences} onPreferences={onPreferences} onProfileChanged={onProfileChanged} onWakeWord={onWakeWord} />
               )}
-              {tab === "account" && <Account {...shared} onSignOut={onSignOut} />}
+              {tab === "account" && <Account {...shared} leaving={leaving} onSignOut={onSignOut} />}
               {tab === "privacy" && <Privacy {...shared} preferences={preferences} />}
               {tab === "billing" && <Billing {...shared} onOpenCredits={onOpenCredits} onOpenInvite={onOpenInvite} />}
               {tab === "usage" && <UsageTab {...shared} onOpenCredits={onOpenCredits} />}
@@ -602,7 +605,7 @@ function General({
   );
 }
 
-function Account({ me, busy, attempt, onSignOut }: Shared & { onSignOut: (everywhere?: boolean, next?: { id: string; email: string } | null) => void }) {
+function Account({ me, busy, attempt, leaving, onSignOut }: Shared & { leaving: boolean; onSignOut: (everywhere?: boolean, next?: { id: string; email: string } | null) => void }) {
   const t = useT();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
@@ -640,8 +643,8 @@ function Account({ me, busy, attempt, onSignOut }: Shared & { onSignOut: (everyw
           <span className="text-sm text-zinc-300">{me.user.email}</span>
         </Row>
         <Row title={t("Log out")} about={several ? t("Log out of {email} on this device.", { email }) : t("Sign out of Flash on this device.")}>
-          <button className={button} onClick={() => onSignOut()}>
-            {t("Log out")}
+          <button className={`${button} disabled:cursor-default`} disabled={leaving} aria-busy={leaving || undefined} onClick={() => onSignOut()}>
+            {leaving ? t("Logging out…") : t("Log out")}
           </button>
         </Row>
         <Row

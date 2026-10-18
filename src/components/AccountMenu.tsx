@@ -67,6 +67,7 @@ export function AccountMenu({
   placement = "up",
   greet = false,
   switching = null,
+  out = null,
   onSettings,
   onHelp,
   onPlan,
@@ -82,6 +83,9 @@ export function AccountMenu({
   greet?: boolean;
   // The account a switch is under way to, if any.
   switching?: string | null;
+  // A log out under way (from here or Settings), which first saves what it can (up to 3 seconds):
+  // its item says so, and nothing else here that leaves the account can start.
+  out?: "one" | "all" | null;
   onSettings: () => void;
   onHelp: () => void;
   onPlan: () => void;
@@ -96,8 +100,6 @@ export function AccountMenu({
   const t = useT();
   const [open, setOpen] = useState(false);
   const [more, setMore] = useState(false);
-  // A log out under way, which first saves what it can (up to 3 seconds): the menu stays open and says so.
-  const [out, setOut] = useState<"one" | "all" | null>(null);
   const box = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -125,23 +127,17 @@ export function AccountMenu({
     close();
     fn();
   };
-  // Logs out, once, with "Logging out…" on the item until the page changes; when the tab stays on
-  // its account instead, the menu closes, so what Flash says next is in view.
-  const logOut = (which: "one" | "all", fn: () => Promise<boolean>) => () => {
+  // Logs out, once, with "Logging out…" on the item until the page changes (the menu stays open);
+  // when the tab stays on its account instead, the menu closes, so what Flash says next is in view.
+  const logOut = (fn: () => Promise<boolean>) => () => {
     if (out) return;
-    setOut(which);
-    const stay = () => {
-      setOut(null);
-      close();
-    };
-    // Still here a few seconds after leaving: the browser's "Leave site?" kept the page.
-    void fn().then((left) => (left ? window.setTimeout(() => setOut(null), 3000) : stay()), stay);
+    void fn().then((left) => left || close(), close);
   };
   const outItem = (which: "one" | "all") => ({
     "aria-busy": out === which || undefined,
     disabled: Boolean(out) && out !== which,
     className: `${item} disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent`,
-    onClick: logOut(which, which === "one" ? onSignOut : onSignOutAll),
+    onClick: logOut(which === "one" ? onSignOut : onSignOutAll),
   });
   const plan = me.plan ? t("{plan} plan", { plan: me.plan.name }) : t("Free plan");
   // firstName gives "there" when there's no name to use.

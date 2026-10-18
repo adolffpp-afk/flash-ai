@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -9,6 +9,7 @@ import { ENGINE_LABELS } from "@/lib/types";
 import { authedFetch, newId } from "@/lib/store";
 import { msg } from "@/lib/i18n";
 import { useT } from "@/lib/use-t";
+import { markUnsent } from "@/lib/unsent";
 import type { CompanionAction, CompanionContext, CompanionEvent, CompanionTurn } from "@/lib/companion";
 
 type Line = CompanionTurn & { id: string; pending?: boolean; error?: boolean };
@@ -69,6 +70,14 @@ export function Companion({
   const t = useT();
   const [lines, setLines] = useState<Line[]>([]);
   const [input, setInput] = useState("");
+  // A question typed and not sent, which the panel keeps closed too: going on as another account
+  // asks first (see unsent.ts).
+  const box = useId();
+  const unsent = Boolean(input.trim());
+  useEffect(() => {
+    markUnsent(box, unsent);
+    return () => markUnsent(box, false);
+  }, [box, unsent]);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
   const bottom = useRef<HTMLDivElement>(null);

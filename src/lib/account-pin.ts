@@ -100,6 +100,30 @@ export function isTabAccount(account: string): boolean {
   return !mine || mine === account;
 }
 
+// How many times this tab has signed out (signOutTab), so an answer to a request sent before the
+// latest one is known to be for an account that has left it (see signedOutSince).
+let signOuts = 0;
+
+/**
+ * This tab is signed out (Log out, Log out of all accounts, or nobody signed in here anymore): it
+ * shows no account from now on, and nothing asked for before now is its to show, whoever signs in
+ * next. With no account, isTabAccount alone would take any answer, the one that left included.
+ */
+export function signOutTab(): void {
+  signOuts++;
+  setPin(null);
+}
+
+/** Taken as a request about this tab's account goes out, to check its answer with signedOutSince. */
+export function signOutMark(): number {
+  return signOuts;
+}
+
+/** Whether this tab signed out after the mark was taken: the answer to that request is for nobody here now. */
+export function signedOutSince(mark: number): boolean {
+  return mark !== signOuts;
+}
+
 /** The header that names this tab's account, when it has one. */
 export function accountHeaders(): Record<string, string> {
   const id = getPin();

@@ -15,7 +15,9 @@ import { AccountBadge, NAME_ALIGN, accountTone } from "./AccountMenu";
  * no account looks already chosen. It sits above everything else on the page, an app in full
  * screen too (in a portal, one layer up), so what it asks is never hidden behind what it guards.
  * Its keys are heard first (on the window, as they go down) and Escape goes no further: it is the
- * dialog's own (its Cancel, when it has one), never Ask Flash's or a preview's under it.
+ * dialog's own (its Cancel, when it has one), never Ask Flash's or a preview's under it. Once it
+ * closes, the focus goes back where it was as it opened (the message box, say), or to the profile
+ * menu's button when that is gone (the menu item that opened it), as after Add another account.
  */
 function Sheet({ label, onEscape, children }: { label: string; onEscape?: () => void; children: ReactNode }) {
   const box = useRef<HTMLDivElement>(null);
@@ -29,6 +31,7 @@ function Sheet({ label, onEscape, children }: { label: string; onEscape?: () => 
     const el = box.current;
     if (!el) return;
     const focusable = () => [...el.querySelectorAll<HTMLElement>("button:not([disabled]), a[href]")];
+    const before = document.activeElement instanceof HTMLElement && document.activeElement !== document.body ? document.activeElement : null;
     el.focus();
     const keep = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -53,7 +56,10 @@ function Sheet({ label, onEscape, children }: { label: string; onEscape?: () => 
       }
     };
     window.addEventListener("keydown", keep, true);
-    return () => window.removeEventListener("keydown", keep, true);
+    return () => {
+      window.removeEventListener("keydown", keep, true);
+      (before?.isConnected ? before : document.querySelector<HTMLElement>("[data-account-menu]"))?.focus({ preventScroll: true });
+    };
   }, []);
   return createPortal(
     <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center sm:p-4">

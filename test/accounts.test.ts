@@ -1014,6 +1014,13 @@ test("a confirmation link confirms its account when it is any account signed in 
   assert.ok(Number((await one<{ v: number }>("SELECT verified_at AS v FROM users WHERE id = ?", [b]))!.v) > 0);
   const elsewhere = await verifyRoute.GET(req(new URL(link).pathname + new URL(link).search, { cookie: (await browser(a)).cookie }));
   assert.equal(elsewhere.headers.get("location"), `${ORIGIN}/?verified=invalid`, "used once");
+  // Three accounts here, the link's neither the first in the list nor the default.
+  const [c, d, e] = [await account("vfc"), await account("vfd"), await account("vfe")];
+  await run("UPDATE users SET verified_at = 0 WHERE id = ?", [d]);
+  const middle = new URL((await sendVerification({ id: d, email: `${d}@x.io` }, ORIGIN))!);
+  const three = await verifyRoute.GET(req(middle.pathname + middle.search, { cookie: (await browser(c, d, e)).cookie }));
+  assert.equal(three.headers.get("location"), `${ORIGIN}/?verified=1&as=${d}`);
+  assert.ok(Number((await one<{ v: number }>("SELECT verified_at AS v FROM users WHERE id = ?", [d]))!.v) > 0);
 });
 
 test("an invitation for another account signed in here asks to switch, and is kept for it", async () => {
@@ -1035,6 +1042,35 @@ test("an invitation for another account signed in here asks to switch, and is ke
   // For an address no account here has: the usual answer.
   const stranger = await acceptRoute.POST(req("/api/team/accept", { cookie: (await browser(a)).cookie, json: { token } }));
   assert.equal(stranger.status, 403);
+});
+
+test("the invited account itself joins through the route, alone in its browser or as the tab's account among several", async () => {
+  const { addMonths, recordPayment } = await import("../src/lib/server/subscriptions.ts");
+  const { PLANS } = await import("../src/lib/credits.ts");
+  const { inviteMember } = await import("../src/lib/server/teams.ts");
+  const business = PLANS.find((p) => p.id === "business")!;
+  const owner = await account("tjo");
+  const start = Date.now() - 86_400_000;
+  await recordPayment({
+    subscriptionId: "sub_tj", userId: owner, planId: "business", interval: "month", customer: "cus_tj",
+    amountCents: business.priceCents, periodStart: start, periodEnd: addMonths(start, 1), ref: "stripe-invoice:in_tj", test: false,
+  });
+  const invite = async (id: string) => new URL((await inviteMember({ id: owner, email: `${owner}@x.io`, name: "Owner" }, `${id}@x.io`, ORIGIN))!).searchParams.get("invite")!;
+  const joined = (id: string) => count("SELECT COUNT(*) AS n FROM team_members WHERE user_id = ?", [id]);
+  // One account here, as before a browser could hold several: its invitation, naming no account.
+  const solo = await account("tjs");
+  const alone = await acceptRoute.POST(req("/api/team/accept", { cookie: (await browser(solo)).cookie, json: { token: await invite(solo) } }));
+  assert.equal(alone.status, 200);
+  assert.deepEqual(await alone.json(), { ok: true });
+  assert.equal(await joined(solo), 1);
+  // Two accounts here, the tab on the invited one, which isn't the default: it joins, the other doesn't.
+  const a = await account("tja");
+  const b = await account("tjb");
+  const two = await acceptRoute.POST(req("/api/team/accept", { cookie: (await browser(a, b)).cookie, account: a, json: { token: await invite(a) } }));
+  assert.equal(two.status, 200);
+  assert.deepEqual(await two.json(), { ok: true });
+  assert.equal(await joined(a), 1);
+  assert.equal(await joined(b), 0);
 });
 
 /** A connector sign-in under way for the user, as its start leaves it: the state it went out with. */

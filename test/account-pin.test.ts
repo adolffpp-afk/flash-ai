@@ -236,7 +236,7 @@ test("an answer asked for before the tab moved to another account can't move it 
   // The page takes the account's data only through adoptMe, which asks first.
   const { readFile } = await import("node:fs/promises");
   const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
-  assert.match(page, /async function adoptMe\(fetched: Me\): Promise<Me \| null> \{\n(\s*\/\/.*\n)*\s*if \(!isTabAccount\(fetched\.account\)\) return null;/);
+  assert.match(page, /async function adoptMe\(fetched: Me, mark: number\): Promise<Me \| null> \{\n(\s*\/\/.*\n)*\s*if \(signedOutSince\(mark\) \|\| !isTabAccount\(fetched\.account\)\) return null;/);
   assert.equal(page.match(/setMe\(data\)/g)?.length, 1);
   pin.setPin(null);
 });
@@ -659,8 +659,7 @@ test("a log out says it's under way while it saves what it can, and runs once", 
   // The menu stays open with "Logging out…" on the item, the other account items wait, and a
   // second log out is ignored; when the tab stays on its account, the menu closes so the reason shows.
   const logOut = menu.slice(menu.indexOf("const logOut = "), menu.indexOf("const outItem = "));
-  assert.match(logOut, /if \(out\) return;\n\s+setOut\(which\);/);
-  assert.match(logOut, /void fn\(\)\.then\(\(left\) => \(left \? window\.setTimeout\(\(\) => setOut\(null\), 3000\) : stay\(\)\), stay\);/);
+  assert.match(logOut, /if \(out\) return;\n\s+void fn\(\)\.then\(\(left\) => left \|\| close\(\), close\);/);
   assert.equal(menu.match(/\{\.\.\.outItem\("one"\)\}/g)?.length, 2, "with one account and with several");
   assert.equal(menu.match(/\{\.\.\.outItem\("all"\)\}/g)?.length, 1);
   assert.equal(menu.match(/t\("Logging out…"\)/g)?.length, 3);
@@ -715,7 +714,7 @@ test("one account signing in alone after every account here logged out has Flash
   const { readFile } = await import("node:fs/promises");
   const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
   assert.match(body(page, "function signedOutHere("), /^function signedOutHere\(\) \{\n\s+forgetTones\(\);/);
-  assert.match(body(page, "async function checkAccounts("), /if \(!list\.accounts\.length\) \{\n\s+setPin\(null\);\n\s+forgetTones\(\);\n\s+return "none";\n\s+\}/);
+  assert.match(body(page, "async function checkAccounts("), /if \(!list\.accounts\.length\) \{\n\s+signOutTab\(\);\n\s+forgetTones\(\);\n\s+return "none";\n\s+\}/);
   assert.match(page, /\n\s+if \(signedIn\) start\(\);\n\s+else forgetTones\(\);\n/);
   for (const start of ["async function signOut(", "async function signOutAll("]) assert.match(body(page, start), /setPin\(null\);\n\s+announce\(\{ type: "changed" \}\);\n\s+signedOutHere\(\);/, start);
 });
@@ -982,7 +981,7 @@ test("going on as another account asks first about a message being written, whic
   // Words in the message box, an attached file, or a part of the app picked for the open chat.
   assert.match(page, /const writingRef = useRef\(false\);\n\s+useEffect\(\(\) => \{\n\s+writingRef\.current = Boolean\(input\.trim\(\) \|\| files\.length \|\| \(picked && picked\.projectId === activeId\)\);\n\s+\}, \[input, files, picked, activeId\]\);/);
   // Saves first, as before; once everything is saved, a message being written still asks.
-  assert.match(body(page, "async function leaveCheck("), /\{\n\s+if \(!\(await flushSaves\(\)\)\) return "saves";\n\s+return writingRef\.current \? "writing" : null;\n\s+\}$/);
+  assert.match(body(page, "async function leaveCheck("), /\{\n\s+if \(!\(await flushSaves\(\)\)\) return "saves";\n\s+return writingRef\.current \|\| hasUnsent\(\) \? "writing" : null;\n\s+\}$/);
   // A switch (the menu, an invitation), Add another account finishing, and its ways off the page
   // (two-step sign-in's code page, "Continue with …") all ask through it; a log out doesn't ask.
   assert.equal(page.match(/await leaveCheck\(\)/g)?.length, 3);
@@ -1007,7 +1006,7 @@ test("a switch that finds nobody signed in here leaves the tab on no account, so
   const { readFile } = await import("node:fs/promises");
   const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
   // Every way to the signed-out page goes through signedOutHere, which lets the tab's account go.
-  assert.match(body(page, "function signedOutHere("), /^function signedOutHere\(\) \{\n\s+forgetTones\(\);\n(\s*\/\/.*\n)*\s+setPin\(null\);/);
+  assert.match(body(page, "function signedOutHere("), /^function signedOutHere\(\) \{\n\s+forgetTones\(\);\n(\s*\/\/.*\n)*\s+signOutTab\(\);/);
   assert.match(body(page, "async function checkAccountsFor("), /if \(!list\.accounts\.length\) return void signedOutHere\(\);/);
   // The other two ways there name no account already: the account check found nobody (and let the
   // pin go), or a reply was refused while the tab named none.
@@ -1035,4 +1034,110 @@ test("with one account, Home and a chat sit where they did under a notice", asyn
   // doesn't move down 8px; the email banner keeps main's 12px below a notice.
   assert.match(page, /\$\{tab === "preview" \? "max-w-3xl space-y-2 px-3 pb-2" : `-mb-2 space-y-3 px-4 pb-2 pt-2 \$\{isHome/);
   assert.match(page, /\{\(!me\.verified \|\| allOff\) && \(\n\s+<div className=\{`mx-auto space-y-3 px-4 \$\{said \? "pt-3" : "pt-2"\} /);
+});
+
+test("an answer asked for before this tab signed out is for nobody: it names no account and lists no chats for whoever signs in next", async () => {
+  // Gil, alone on a shared computer, logs out while a reply's refresh of his account, or his chats as
+  // Flash opens, is still on its way. With no account, isTabAccount alone would take his answer.
+  pin.setPin("acct_gil");
+  const mark = pin.signOutMark();
+  assert.equal(pin.signedOutSince(mark), false);
+  pin.signOutTab();
+  assert.equal(pin.getPin(), null);
+  assert.equal(pin.isTabAccount("acct_gil"), true, "any account, with none");
+  assert.equal(pin.signedOutSince(mark), true, "but it was asked for before the sign-out");
+  // Hana signs in next in that tab: what is asked for from then on is hers.
+  pin.setPin("acct_hana");
+  const next = pin.signOutMark();
+  assert.equal(pin.signedOutSince(next), false);
+  assert.equal(pin.signedOutSince(mark), true, "Gil's still isn't");
+  pin.setPin(null);
+  const { readFile } = await import("node:fs/promises");
+  const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
+  // Every way to the signed-out page signs the tab out (signedOutHere, or the account check finding nobody).
+  assert.match(body(page, "function signedOutHere("), /signOutTab\(\);/);
+  const check = body(page, "async function checkAccounts(");
+  assert.match(check, /if \(!list\.accounts\.length\) \{\n\s+signOutTab\(\);/);
+  // What comes back about the account is used only when the tab hasn't signed out since it asked:
+  // the account itself (in adoptMe, after its language too), who is signed in here, its chats as
+  // Flash opens, an invitation's answer and the connected accounts.
+  const refresh = body(page, "async function refreshMe(");
+  assert.match(refresh, /const mark = signOutMark\(\);\n\s+for \(/);
+  assert.match(refresh, /return await adoptMe\(await api<Me>\("\/api\/me"\), mark\);\n\s+\} catch \(err\) \{\n\s+if \(signedOutSince\(mark\)\) return null;/);
+  assert.match(refresh, /attempt === 0 && !signedOutSince\(mark\)\) continue;/);
+  assert.match(body(page, "async function adoptMe("), /await showLanguage\(data\.user\.language\);\n\s+if \(signedOutSince\(mark\)\) return null;\n\s+setMe\(data\);/);
+  assert.match(check, /^async function checkAccounts\(\)[^{]*\{\n\s+const mark = signOutMark\(\);[\s\S]*?\} catch \{\n\s+return "here";\n\s+\}\n(\s*\/\/.*\n)*\s+if \(signedOutSince\(mark\)\) return "here";\n\s+let mine = getPin\(\);/);
+  const opening = body(page, "async function start(");
+  assert.match(opening, /^async function start\(\) \{\n\s+const mark = signOutMark\(\);\n\s+const data = await refreshMe\(\);/);
+  assert.match(opening, /\("\/api\/projects"\);\n(\s*\/\/.*\n)*\s+if \(signedOutSince\(mark\)\) return;\n\s+setProjects\(list\);/);
+  assert.match(opening, /\} catch \{\n\s+if \(signedOutSince\(mark\)\) return;\n\s+setMe\(null\);/);
+  const invite = body(page, "async function acceptInvite(");
+  assert.match(invite, /const mark = signOutMark\(\);\n\s+try \{/);
+  assert.match(invite, /forgetInvite\(\);\n\s+if \(signedOutSince\(mark\)\) return;\n\s+setNotice/);
+  assert.match(invite, /\} catch \(err\) \{\n\s+if \(signedOutSince\(mark\)\) return;/);
+  assert.match(page, /const mark = signOutMark\(\);\n\s+api<\{ ready: boolean; connections: ConnectionView\[\] \}>\("\/api\/connect"\)\n(\s*\/\/.*\n)*\s+\.then\(\(r\) => signedOutSince\(mark\) \|\| setAccounts\(/);
+  assert.equal(page.match(/const mark = signOutMark\(\);/g)?.length, 5);
+  assert.equal(page.match(/setMe\(data\)/g)?.length, 1);
+});
+
+test("going on as another account asks first about new words in an Edit of a message, and a question for Ask Flash", async () => {
+  const unsent = await import("../src/lib/unsent.ts");
+  assert.equal(unsent.hasUnsent(), false);
+  unsent.markUnsent("edit", true);
+  unsent.markUnsent("ask", true);
+  assert.equal(unsent.hasUnsent(), true);
+  unsent.markUnsent("edit", false);
+  assert.equal(unsent.hasUnsent(), true, "Ask Flash still holds a question");
+  unsent.markUnsent("ask", false);
+  assert.equal(unsent.hasUnsent(), false);
+  const { readFile } = await import("node:fs/promises");
+  // An Edit counts while it holds words that differ from the message, whether or not it is drawn
+  // (it comes back with them); Cancel, Escape, Send or closing the page lets it go.
+  const message = await readFile(new URL("../src/components/Message.tsx", import.meta.url), "utf8");
+  const edit = message.slice(message.indexOf("function UserMessage("), message.indexOf("function AppCard("));
+  const mark = /const box = useId\(\);\n\s+const unsent = (.+);\n\s+useEffect\(\(\) => \{\n\s+markUnsent\(box, unsent\);\n\s+return \(\) => markUnsent\(box, false\);\n\s+\}, \[box, unsent\]\);/;
+  assert.equal(edit.match(mark)?.[1], 'editing && draft.trim() !== "" && draft.trim() !== m.content.trim()');
+  assert.ok(edit.indexOf("markUnsent(box, unsent)") < edit.indexOf("if (editing && onEdit)"), "before the Edit box is drawn");
+  // Ask Flash's question counts while it holds words, the panel closed too (it keeps them).
+  const companion = await readFile(new URL("../src/components/Companion.tsx", import.meta.url), "utf8");
+  assert.equal(companion.match(mark)?.[1], "Boolean(input.trim())");
+  // Flash asks as for the message box: "Your message hasn't been sent yet. Switch anyway?"
+  const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
+  assert.match(body(page, "async function leaveCheck("), /return writingRef\.current \|\| hasUnsent\(\) \? "writing" : null;/);
+});
+
+test("a dialog gives the focus back as it closes: where it was, or the profile menu's button", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const chooser = await readFile(new URL("../src/components/AccountChooser.tsx", import.meta.url), "utf8");
+  // "Switch anyway?" (Cancel, Escape) and the account chooser (gone once its account is back): the
+  // message box being written in, say, or the menu's button once the item that asked is gone.
+  const sheet = body(chooser, "function Sheet(");
+  assert.match(sheet, /const before = document\.activeElement instanceof HTMLElement && document\.activeElement !== document\.body \? document\.activeElement : null;\n\s+el\.focus\(\);/);
+  assert.match(sheet, /return \(\) => \{\n\s+window\.removeEventListener\("keydown", keep, true\);\n\s+\(before\?\.isConnected \? before : document\.querySelector<HTMLElement>\("\[data-account-menu\]"\)\)\?\.focus\(\{ preventScroll: true \}\);\n\s+\};\n\s+\}, \[\]\);/);
+  assert.match(chooser, /<Sheet label=\{title\}>/);
+  assert.match(chooser, /<Sheet label=\{question\} onEscape=\{onCancel\}>/);
+  // As Add another account's Back does.
+  assert.match(body(chooser, "export function AddOver("), /document\.querySelector<HTMLElement>\("\[data-account-menu\]"\)\?\.focus\(\{ preventScroll: true \}\);/);
+});
+
+test("a log out from Settings says it's under way there and in the profile menu, which starts nothing else meanwhile", async () => {
+  const { readFile } = await import("node:fs/promises");
+  const page = await readFile(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
+  const menu = await readFile(new URL("../src/components/AccountMenu.tsx", import.meta.url), "utf8");
+  const settings = await readFile(new URL("../src/components/Settings.tsx", import.meta.url), "utf8");
+  // Flash keeps which log out is under way, whichever started it, and lets it go wherever it lets
+  // the next one start: the tab stayed (account_required), "Leave site?" kept it, or it signed out.
+  assert.match(page, /const \[loggingOut, setLoggingOut\] = useState<"one" \| "all" \| null>\(null\);/);
+  assert.match(body(page, "async function signOut("), /leavingRef\.current = true;\n\s+setLoggingOut\("one"\);/);
+  assert.match(body(page, "async function signOutAll("), /leavingRef\.current = true;\n\s+setLoggingOut\("all"\);/);
+  assert.equal(page.match(/leavingRef\.current = false/g)?.length, 3);
+  assert.equal(page.match(/leavingRef\.current = false;\n\s+setLoggingOut\(null\);/g)?.length, 3);
+  // The menu shows it ("Logging out…", switching and adding wait), with no state of its own.
+  assert.match(page, /switching=\{switching\}\n\s+out=\{loggingOut\}/);
+  assert.match(menu, /\n {2}out = null,\n/);
+  assert.doesNotMatch(menu, /useState<"one" \| "all" \| null>|setOut\(/);
+  // Settings stays open while Log out saves what it can, its button saying so, and closes if the tab stays.
+  assert.match(page, /leaving=\{loggingOut !== null\}\n\s+onSignOut=\{\(everywhere, next\) => \{\n(\s*\/\/.*\n)*\s+if \(everywhere\) setSettingsTab\(null\);\n\s+void signOut\(everywhere, next\)\.then\(\(left\) => left \|\| setSettingsTab\(null\)\);\n\s+\}\}/);
+  assert.match(settings, /\{tab === "account" && <Account \{\.\.\.shared\} leaving=\{leaving\} onSignOut=\{onSignOut\} \/>\}/);
+  assert.match(body(settings, "function Account("), /disabled=\{leaving\} aria-busy=\{leaving \|\| undefined\} onClick=\{\(\) => onSignOut\(\)\}>\n\s+\{leaving \? t\("Logging out…"\) : t\("Log out"\)\}/);
 });
