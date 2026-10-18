@@ -27,13 +27,15 @@ export async function clearLimit(key: string): Promise<void> {
   await run("DELETE FROM rate_limits WHERE key = ?", [key]);
 }
 
+/** The client's own address, from the proxy header when there is one, or "" when there's none. */
+export const clientAddress = (request: Request) => (request.headers.get("x-forwarded-for") ?? "").split(",")[0].trim() || request.headers.get("x-real-ip") || "";
+
 /**
  * The client's address, from the proxy header when there is one. An IPv6 address counts by its
  * /64 network, the block one home or server is given, so rotating addresses inside it doesn't
  * get a fresh allowance.
  */
-export const clientIp = (request: Request) =>
-  network((request.headers.get("x-forwarded-for") ?? "").split(",")[0].trim() || request.headers.get("x-real-ip") || "local");
+export const clientIp = (request: Request) => network(clientAddress(request) || "local");
 
 export function network(ip: string): string {
   if (!ip.includes(":") || /^::ffff:\d/i.test(ip)) return ip;

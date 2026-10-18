@@ -2031,6 +2031,8 @@
  "You're unsubscribed": "آپ ان سبسکرائب ہو گئے ہیں",
  "You've made a lot of links. Try again in an hour.": "آپ نے بہت سارے لنکس بنا لیے ہیں۔ ایک گھنٹے بعد دوبارہ کوشش کریں۔",
  "You've published a lot this hour. Try again later.": "آپ نے اس گھنٹے میں بہت کچھ شائع کیا ہے۔ بعد میں دوبارہ کوشش کریں۔",
+ "You've used this hour's checks with Google ({count} an hour). Try again in an hour.": "آپ اس گھنٹے کی Google سے جانچیں استعمال کر چکے ہیں (ہر گھنٹے {count})۔ ایک گھنٹے بعد دوبارہ کوشش کریں۔",
+ "You've used today's checks with Google ({count} a day). Try again tomorrow.": "آپ آج کی Google سے جانچیں استعمال کر چکے ہیں (ہر دن {count})۔ براہ کرم کل دوبارہ کوشش کریں۔",
  "You've used today's free images and you have {credits} credits. Free use resets tomorrow, or get more credits now.": "آپ آج کی مفت تصاویر استعمال کر چکے ہیں اور آپ کے پاس {credits} کریڈٹس ہیں۔ مفت استعمال کل دوبارہ شروع ہوگا، یا ابھی مزید کریڈٹس لیں۔",
  "You've used today's free messages and you have {credits} credits. Free use resets tomorrow, or get more credits now.": "آپ آج کے مفت پیغامات استعمال کر چکے ہیں اور آپ کے پاس {credits} کریڈٹس ہیں۔ مفت استعمال کل دوبارہ شروع ہوگا، یا ابھی مزید کریڈٹس لیں۔",
  "You've used today's free messages. They reset tomorrow, or get more credits now.": "آپ آج کے مفت پیغامات استعمال کر چکے ہیں۔ یہ کل دوبارہ دستیاب ہوں گے، یا ابھی مزید کریڈٹس لیں۔",

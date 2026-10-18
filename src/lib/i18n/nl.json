@@ -2031,6 +2031,8 @@
  "You're unsubscribed": "Je bent afgemeld",
  "You've made a lot of links. Try again in an hour.": "Je hebt veel links gemaakt. Probeer het over een uur opnieuw.",
  "You've published a lot this hour. Try again later.": "Je hebt dit uur veel gepubliceerd. Probeer het later opnieuw.",
+ "You've used this hour's checks with Google ({count} an hour). Try again in an hour.": "Je hebt de tests met Google voor dit uur opgebruikt ({count} per uur). Probeer het over een uur opnieuw.",
+ "You've used today's checks with Google ({count} a day). Try again tomorrow.": "Je hebt de tests met Google voor vandaag opgebruikt ({count} per dag). Probeer het morgen opnieuw.",
  "You've used today's free images and you have {credits} credits. Free use resets tomorrow, or get more credits now.": "Je hebt de gratis afbeeldingen van vandaag gebruikt en je hebt {credits} credits. Morgen kun je weer gratis verder, of koop nu meer credits.",
  "You've used today's free messages and you have {credits} credits. Free use resets tomorrow, or get more credits now.": "Je hebt de gratis berichten van vandaag gebruikt en je hebt {credits} credits. Morgen kun je weer gratis verder, of koop nu meer credits.",
  "You've used today's free messages. They reset tomorrow, or get more credits now.": "Je hebt de gratis berichten van vandaag gebruikt. Morgen zijn er nieuwe, of koop nu meer credits.",

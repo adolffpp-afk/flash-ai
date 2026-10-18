@@ -2031,6 +2031,8 @@
  "You're unsubscribed": "你已取消訂閱",
  "You've made a lot of links. Try again in an hour.": "你建立的連結太多了，請一小時後再試。",
  "You've published a lot this hour. Try again later.": "你這一小時內發布太多次了，請稍後再試。",
+ "You've used this hour's checks with Google ({count} an hour). Try again in an hour.": "本小時用 Google 檢查的次數已用完（每小時 {count} 次）。請一小時後再試。",
+ "You've used today's checks with Google ({count} a day). Try again tomorrow.": "今天用 Google 檢查的次數已用完（每天 {count} 次）。請明天再試。",
  "You've used today's free images and you have {credits} credits. Free use resets tomorrow, or get more credits now.": "你已用完今天的免費圖片額度，目前有 {credits} 點。免費額度明天重設，你也可以現在取得更多點數。",
  "You've used today's free messages and you have {credits} credits. Free use resets tomorrow, or get more credits now.": "你已用完今天的免費訊息額度，目前有 {credits} 點。免費額度明天重設，你也可以現在取得更多點數。",
  "You've used today's free messages. They reset tomorrow, or get more credits now.": "你已用完今天的免費訊息額度。明天會重設，你也可以現在取得更多點數。",

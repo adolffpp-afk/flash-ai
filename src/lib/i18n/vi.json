@@ -2031,6 +2031,8 @@
  "You're unsubscribed": "Bạn đã hủy đăng ký",
  "You've made a lot of links. Try again in an hour.": "Bạn đã tạo quá nhiều liên kết. Hãy thử lại sau một giờ.",
  "You've published a lot this hour. Try again later.": "Bạn đã xuất bản quá nhiều lần trong giờ này. Hãy thử lại sau.",
+ "You've used this hour's checks with Google ({count} an hour). Try again in an hour.": "Bạn đã dùng hết lượt kiểm tra bằng Google của giờ này ({count} lượt mỗi giờ). Hãy thử lại sau một giờ.",
+ "You've used today's checks with Google ({count} a day). Try again tomorrow.": "Bạn đã dùng hết lượt kiểm tra bằng Google của hôm nay ({count} lượt mỗi ngày). Vui lòng thử lại vào ngày mai.",
  "You've used today's free images and you have {credits} credits. Free use resets tomorrow, or get more credits now.": "Bạn đã dùng hết lượt tạo ảnh miễn phí hôm nay và còn {credits} tín dụng. Lượt miễn phí sẽ được làm mới vào ngày mai, hoặc mua thêm tín dụng ngay.",
  "You've used today's free messages and you have {credits} credits. Free use resets tomorrow, or get more credits now.": "Bạn đã dùng hết tin nhắn miễn phí hôm nay và còn {credits} tín dụng. Lượt miễn phí sẽ được làm mới vào ngày mai, hoặc mua thêm tín dụng ngay.",
  "You've used today's free messages. They reset tomorrow, or get more credits now.": "Bạn đã dùng hết tin nhắn miễn phí hôm nay. Lượt sẽ được làm mới vào ngày mai, hoặc mua thêm tín dụng ngay.",

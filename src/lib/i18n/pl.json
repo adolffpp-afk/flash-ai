@@ -2031,6 +2031,8 @@
  "You're unsubscribed": "Wypisano Cię z listy",
  "You've made a lot of links. Try again in an hour.": "Utworzono dużo linków. Spróbuj ponownie za godzinę.",
  "You've published a lot this hour. Try again later.": "W tej godzinie opublikowano już bardzo dużo. Spróbuj ponownie później.",
+ "You've used this hour's checks with Google ({count} an hour). Try again in an hour.": "Wykorzystano limit sprawdzeń w Google na tę godzinę ({count} na godzinę). Spróbuj ponownie za godzinę.",
+ "You've used today's checks with Google ({count} a day). Try again tomorrow.": "Wykorzystano limit sprawdzeń w Google na dziś ({count} dziennie). Spróbuj ponownie jutro.",
  "You've used today's free images and you have {credits} credits. Free use resets tomorrow, or get more credits now.": "Wykorzystano dzisiejsze darmowe obrazy, a Twoje kredyty: {credits}. Darmowy limit odnowi się jutro. Możesz też dokupić kredyty teraz.",
  "You've used today's free messages and you have {credits} credits. Free use resets tomorrow, or get more credits now.": "Wykorzystano dzisiejsze darmowe wiadomości, a Twoje kredyty: {credits}. Darmowy limit odnowi się jutro. Możesz też dokupić kredyty teraz.",
  "You've used today's free messages. They reset tomorrow, or get more credits now.": "Wykorzystano dzisiejsze darmowe wiadomości. Odnowią się jutro. Możesz też dokupić kredyty teraz.",

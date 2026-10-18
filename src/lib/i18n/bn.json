@@ -2031,6 +2031,8 @@
  "You're unsubscribed": "আপনি আনসাবস্ক্রাইব করেছেন",
  "You've made a lot of links. Try again in an hour.": "আপনি অনেকগুলো লিংক তৈরি করেছেন। এক ঘণ্টা পরে আবার চেষ্টা করুন।",
  "You've published a lot this hour. Try again later.": "এই ঘণ্টায় আপনি অনেকবার প্রকাশ করেছেন। পরে আবার চেষ্টা করুন।",
+ "You've used this hour's checks with Google ({count} an hour). Try again in an hour.": "এই ঘণ্টার Google দিয়ে পরীক্ষাগুলো আপনি ব্যবহার করে ফেলেছেন (ঘণ্টায় {count}টি)। এক ঘণ্টা পরে আবার চেষ্টা করুন।",
+ "You've used today's checks with Google ({count} a day). Try again tomorrow.": "আজকের Google দিয়ে পরীক্ষাগুলো আপনি ব্যবহার করে ফেলেছেন (দিনে {count}টি)। কাল আবার চেষ্টা করুন।",
  "You've used today's free images and you have {credits} credits. Free use resets tomorrow, or get more credits now.": "আপনি আজকের ফ্রি ছবিগুলো ব্যবহার করে ফেলেছেন, আর আপনার {credits} ক্রেডিট আছে। কাল আবার ফ্রি ব্যবহার করতে পারবেন, অথবা এখনই আরও ক্রেডিট নিন।",
  "You've used today's free messages and you have {credits} credits. Free use resets tomorrow, or get more credits now.": "আপনি আজকের ফ্রি মেসেজগুলো ব্যবহার করে ফেলেছেন, আর আপনার {credits} ক্রেডিট আছে। কাল আবার ফ্রি ব্যবহার করতে পারবেন, অথবা এখনই আরও ক্রেডিট নিন।",
  "You've used today's free messages. They reset tomorrow, or get more credits now.": "আপনি আজকের ফ্রি মেসেজগুলো ব্যবহার করে ফেলেছেন। কাল আবার পাবেন, অথবা এখনই আরও ক্রেডিট নিন।",

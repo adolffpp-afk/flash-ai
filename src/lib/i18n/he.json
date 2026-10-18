@@ -2031,6 +2031,8 @@
  "You're unsubscribed": "הוסרת מהרשימה",
  "You've made a lot of links. Try again in an hour.": "יצרת הרבה קישורים. אפשר לנסות שוב בעוד שעה.",
  "You've published a lot this hour. Try again later.": "פרסמת הרבה בשעה האחרונה. אפשר לנסות שוב מאוחר יותר.",
+ "You've used this hour's checks with Google ({count} an hour). Try again in an hour.": "ניצלת את הבדיקות ב-Google של השעה הזו ({count} בשעה). אפשר לנסות שוב בעוד שעה.",
+ "You've used today's checks with Google ({count} a day). Try again tomorrow.": "ניצלת את הבדיקות ב-Google של היום ({count} ביום). אפשר לנסות שוב מחר.",
  "You've used today's free images and you have {credits} credits. Free use resets tomorrow, or get more credits now.": "ניצלת את התמונות החינמיות של היום, ויש לך {credits} קרדיטים. השימוש החינמי יתחדש מחר, או שאפשר להשיג עוד קרדיטים עכשיו.",
  "You've used today's free messages and you have {credits} credits. Free use resets tomorrow, or get more credits now.": "ניצלת את ההודעות החינמיות של היום, ויש לך {credits} קרדיטים. השימוש החינמי יתחדש מחר, או שאפשר להשיג עוד קרדיטים עכשיו.",
  "You've used today's free messages. They reset tomorrow, or get more credits now.": "ניצלת את ההודעות החינמיות של היום. הן יתחדשו מחר, או שאפשר להשיג עוד קרדיטים עכשיו.",

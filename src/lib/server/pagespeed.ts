@@ -27,8 +27,8 @@ const ERROR_BYTES = 4000;
 
 /** Set while Google refuses Flash's checks: none is sent until it expires. */
 export const REFUSED = "pagespeed:refused";
-// Held while Google checks an app: one check at a time, and its AI says no meanwhile (see lighthouse.ts).
-export { runLock } from "./lighthouse.ts";
+/** Held (in rate_limits) while Flash's check of an app with Google runs: one check at a time. */
+export const runLock = (slug: string) => `pagespeed-run:${slug}`;
 
 const AUDITS = ["largest-contentful-paint", "cumulative-layout-shift", "total-blocking-time", "first-contentful-paint"] as const;
 const PATHS: JsonPath[] = [
@@ -60,6 +60,13 @@ const pagespeedKey = (env: Record<string, string | undefined> = process.env) => 
   const key = env.PAGESPEED_API_KEY?.trim() ?? "";
   return KEY.test(key) ? key : null;
 };
+
+/**
+ * How many checks one owner may start (each is up to 2 of Google's requests). With a key, 10 an hour
+ * and 30 a day. Without one, every owner shares Flash's 200 requests a day (see runPageSpeed), so 3 an
+ * hour and 5 a day: one owner uses at most 10 of them, and it takes 20 to use them up.
+ */
+export const ownerChecks = (env: Record<string, string | undefined> = process.env) => (pagespeedKey(env) ? { hour: 10, day: 30 } : { hour: 3, day: 5 });
 
 /** Why PAGESPEED_API_KEY can't be used, for the owner dashboard: "" when it can (or isn't set). */
 export const pagespeedKeyProblem = (env: Record<string, string | undefined> = process.env) =>

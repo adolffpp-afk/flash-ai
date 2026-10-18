@@ -2031,6 +2031,8 @@
  "You're unsubscribed": "수신 거부되었어요",
  "You've made a lot of links. Try again in an hour.": "링크를 너무 많이 만들었어요. 1시간 후에 다시 시도해 주세요.",
  "You've published a lot this hour. Try again later.": "이번 시간에 너무 많이 게시했어요. 나중에 다시 시도해 주세요.",
+ "You've used this hour's checks with Google ({count} an hour). Try again in an hour.": "이번 시간의 Google 검사 횟수를 모두 사용했어요(시간당 {count}회). 1시간 후에 다시 시도해 주세요.",
+ "You've used today's checks with Google ({count} a day). Try again tomorrow.": "오늘의 Google 검사 횟수를 모두 사용했어요(하루 {count}회). 내일 다시 시도해 주세요.",
  "You've used today's free images and you have {credits} credits. Free use resets tomorrow, or get more credits now.": "오늘의 무료 이미지를 모두 사용했고 보유 크레딧은 {credits}이에요. 무료 사용량은 내일 다시 채워지며, 지금 크레딧을 더 받을 수도 있어요.",
  "You've used today's free messages and you have {credits} credits. Free use resets tomorrow, or get more credits now.": "오늘의 무료 메시지를 모두 사용했고 보유 크레딧은 {credits}이에요. 무료 사용량은 내일 다시 채워지며, 지금 크레딧을 더 받을 수도 있어요.",
  "You've used today's free messages. They reset tomorrow, or get more credits now.": "오늘의 무료 메시지를 모두 사용했어요. 내일 다시 채워지며, 지금 크레딧을 더 받을 수도 있어요.",

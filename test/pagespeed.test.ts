@@ -20,10 +20,12 @@ delete process.env.PAGESPEED_API_KEY;
 delete process.env.FLASH_PAGESPEED_DAILY_REQUESTS;
 delete process.env.FLASH_TEST_PAGESPEED_URL;
 
-const { one, run } = await import("../src/lib/server/db.ts");
-const { pagespeedKeyProblem, runPageSpeed, REFUSED } = await import("../src/lib/server/pagespeed.ts");
+const { db, one, run } = await import("../src/lib/server/db.ts");
+const { pagespeedKeyProblem, runLock, runPageSpeed, REFUSED } = await import("../src/lib/server/pagespeed.ts");
 const { adminStats } = await import("../src/lib/server/admin-stats.ts");
-const { countOf } = await import("../src/lib/server/limits.ts");
+const { countOf, overLimit } = await import("../src/lib/server/limits.ts");
+const { FETCHERS_URL } = await import("../src/lib/server/lighthouse.ts");
+const { cachePut } = await import("../src/lib/server/source-fetch.ts");
 const route = await import("../src/app/api/sites/[slug]/pagespeed/route.ts");
 const seoRoute = await import("../src/app/api/sites/[slug]/seo/route.ts");
 const aiRoute = await import("../src/app/api/sites/[slug]/ai/route.ts");
@@ -75,6 +77,16 @@ const google: { url: URL; key: string | null }[] = [];
 const elsewhere: string[] = [];
 // What Vercel says about each domain: connected, or its DNS leading somewhere else.
 const vercel: Record<string, boolean> = { "crumb.pt": true, "www.crumb.pt": true, "lapsed.pt": false };
+// While a press is answered (see check): each request to Vercel, and each statement that writes to the database.
+let watching = false;
+let vercelCalls = 0;
+let writes = 0;
+const client = await db();
+const execute = client.execute.bind(client) as unknown as (stmt: { sql: string }) => ReturnType<typeof client.execute>;
+client.execute = ((stmt: { sql: string }) => {
+  if (watching && /^\s*(?:INSERT|UPDATE|DELETE|REPLACE)\b/i.test(stmt.sql)) writes++;
+  return execute(stmt);
+}) as unknown as typeof client.execute;
 
 globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
   const url = new URL(String(input));
@@ -95,7 +107,10 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
     const { status, body } = await reply;
     return new Response(body, { status, headers: { "content-type": "application/json" } });
   }
+  // Google's list of its user-triggered fetchers' addresses (see lighthouse.ts).
+  if (url.href === FETCHERS_URL) return Response.json({ prefixes: [{ ipv4Prefix: "66.102.9.32/27" }, { ipv4Prefix: "66.249.81.64/27" }] });
   if (url.origin === "https://vercel.test") {
+    if (watching) vercelCalls++;
     const domain = Object.keys(vercel).find((d) => url.pathname.includes(`/${d}`));
     if (!domain) return Response.json({ error: { code: "not_found" } }, { status: 404 });
     if (url.pathname.endsWith("/config")) return Response.json({ misconfigured: !vercel[domain] });
@@ -123,6 +138,7 @@ type Owner = Awaited<ReturnType<typeof owner>>;
 /** The owner presses Check with Google. Each test starts with Google's per-second slots free. */
 async function check(who: Owner, body: unknown = {}, slug = who.slug) {
   await run("DELETE FROM rate_limits WHERE key LIKE 'source:pagespeed:%'");
+  watching = true;
   const res = await route.POST(
     new Request(`http://localhost/api/sites/${slug}/pagespeed`, {
       method: "POST",
@@ -130,7 +146,7 @@ async function check(who: Owner, body: unknown = {}, slug = who.slug) {
       body: JSON.stringify(body),
     }),
     { params: Promise.resolve({ slug }) } as never,
-  );
+  ).finally(() => (watching = false));
   return { status: res.status, body: (await res.json()) as Record<string, unknown> & { pagespeed?: Record<string, unknown>; code?: string; error?: string } };
 }
 const seo = async (who: Owner) =>
@@ -250,27 +266,122 @@ test("a check is kept a day for the same version and address", async () => {
   assert.equal((await check(who)).body.cached, undefined);
   assert.equal(google.length, 6, "after a day it's checked again");
 
+  await run("DELETE FROM rate_limits WHERE key = ?", [`pagespeed:${who.id}`]);
   const domain = await check(who, { address: "domain" });
   assert.equal(domain.body.cached, undefined, "the other address isn't answered with this one's result");
   assert.equal((domain.body.pagespeed as { url: string }).url, "https://crumb-cache.pt/");
   assert.equal(google.length, 8);
 });
 
-test("each owner has a few checks an hour, waiting for a running one uses none, and Flash's daily allowance holds", async () => {
+const thisHour = (n: number) => `You've used this hour's checks with Google (${n} an hour). Try again in an hour.`;
+const today = (n: number) => `You've used today's checks with Google (${n} a day). Try again tomorrow.`;
+/** The owner's hour of checks is over, as an hour on. */
+const nextHour = (who: Owner) => run("UPDATE rate_limits SET reset_at = 0 WHERE key = ?", [`pagespeed:${who.id}`]);
+
+test("without a key each owner has 3 checks an hour and 5 a day, with one 10 and 30, and a kept result uses none", async () => {
   await fresh();
+  // Without a key every owner shares Flash's 200 requests a day: one owner uses at most 10 of them.
   const who = await owner("limits");
   assert.equal((await check(who)).status, 200);
   assert.equal((await check(who)).body.cached, true, "a kept result doesn't count");
-  for (let i = 2; i <= 10; i++) {
+  for (let i = 2; i <= 3; i++) {
     await republish(who.slug);
     assert.equal((await check(who)).status, 200, `check ${i}`);
   }
   await republish(who.slug);
-  const eleventh = await check(who);
-  assert.equal(eleventh.status, 429);
-  assert.equal(eleventh.body.error, "Too many requests. Try again in an hour.");
-  assert.equal(google.length, 20);
+  const fourth = await check(who);
+  assert.equal(fourth.status, 429);
+  assert.equal(fourth.body.error, thisHour(3));
+  await nextHour(who);
+  for (let i = 4; i <= 5; i++) {
+    assert.equal((await check(who)).status, 200, `check ${i}`);
+    await republish(who.slug);
+  }
+  await nextHour(who);
+  const sixth = await check(who);
+  assert.equal(sixth.status, 429);
+  assert.equal(sixth.body.error, today(5));
+  assert.equal(google.length, 10, "two of Google's requests a check");
 
+  // With a key, Google gives Flash its own quota: 10 an hour and 30 a day.
+  process.env.PAGESPEED_API_KEY = KEY;
+  try {
+    const keyed = await owner("limits-key");
+    for (let hour = 1; hour <= 3; hour++) {
+      for (let i = 1; i <= 10; i++) {
+        await republish(keyed.slug);
+        assert.equal((await check(keyed)).status, 200, `hour ${hour}, check ${i}`);
+      }
+      await republish(keyed.slug);
+      const over = await check(keyed);
+      assert.equal(over.status, 429);
+      assert.equal(over.body.error, thisHour(10));
+      await nextHour(keyed);
+    }
+    const over = await check(keyed);
+    assert.equal(over.status, 429);
+    assert.equal(over.body.error, today(30));
+    assert.equal(google.length, 70);
+  } finally {
+    delete process.env.PAGESPEED_API_KEY;
+  }
+});
+
+test("a check on the app's domain asks Vercel only when Google is about to test it, and a kept answer, a remembered failure or a press over a limit asks and writes nothing", async () => {
+  await fresh();
+  const who = await owner("vercel", ["count.pt"]);
+  vercel["count.pt"] = true;
+  /** What some presses of Check with Google on the domain cost: Vercel's and Google's requests, and the database's writes. */
+  const presses = async (n: number, by = who) => {
+    const [v, w, g] = [vercelCalls, writes, google.length];
+    const statuses = new Set<number>();
+    for (let i = 0; i < n; i++) statuses.add((await check(by, { address: "domain" })).status);
+    return { vercel: vercelCalls - v, google: google.length - g, writes: writes - w, statuses: [...statuses] };
+  };
+  // The first: Vercel is asked once (the domain, and where its DNS leads), then Google is.
+  const first = await presses(1);
+  assert.deepEqual([first.vercel, first.google, first.statuses], [2, 2, [200]]);
+  assert.ok(first.writes > 0);
+  // Kept for the day: nothing asked or written, however often it's pressed.
+  assert.deepEqual(await presses(25), { vercel: 0, google: 0, writes: 0, statuses: [200] });
+  // A new version Google couldn't load: one check, then the same answer for free.
+  await republish(who.slug);
+  googleReply = () => ({ status: 502, body: "{}" });
+  const failing = await presses(1);
+  assert.deepEqual([failing.vercel, failing.google, failing.statuses], [2, 2, [502]]);
+  assert.deepEqual(await presses(25), { vercel: 0, google: 0, writes: 0, statuses: [502] });
+  googleReply = ok;
+  // While Google refuses, and while a check of the app runs: the same.
+  await run("DELETE FROM source_cache");
+  await cachePut(REFUSED, 1, 60_000);
+  assert.deepEqual(await presses(10), { vercel: 0, google: 0, writes: 0, statuses: [503] });
+  await run("DELETE FROM source_cache");
+  await overLimit(runLock(who.slug), 1, 180_000);
+  assert.deepEqual(await presses(10), { vercel: 0, google: 0, writes: 0, statuses: [409] });
+  await run("DELETE FROM rate_limits WHERE key = ?", [runLock(who.slug)]);
+  assert.equal(await countOf(`pagespeed:${who.id}`), 2, "none of those used one of the owner's checks");
+  // The owner's last check this hour, then presses over the limit: nothing asked or written.
+  assert.deepEqual((await presses(1)).statuses, [200]);
+  await republish(who.slug);
+  assert.deepEqual(await presses(25), { vercel: 0, google: 0, writes: 0, statuses: [429] });
+
+  // A domain that doesn't point at Flash: Google is never asked, Vercel at most 10 times an hour (each
+  // time its answer is noted with the domain), and none of the owner's checks is used.
+  const lapsed = await owner("vercel-lapsed", ["gone.pt"]);
+  vercel["gone.pt"] = false;
+  const tries = await presses(25, lapsed);
+  assert.deepEqual(tries, { vercel: 20, google: 0, writes: 20, statuses: [409, 429] });
+  assert.equal(await countOf(`pagespeed:${lapsed.id}`), 0);
+  assert.deepEqual(await presses(25, lapsed), { vercel: 0, google: 0, writes: 0, statuses: [429] });
+  // Once it points at Flash, an hour on, Google tests it.
+  vercel["gone.pt"] = true;
+  await run("UPDATE rate_limits SET reset_at = 0 WHERE key = ?", [`pagespeed-domain:${lapsed.id}`]);
+  const connected = await presses(1, lapsed);
+  assert.deepEqual([connected.vercel, connected.google, connected.statuses], [2, 2, [200]]);
+});
+
+test("waiting for a running check uses none, the app's visitors are answered meanwhile, and Flash's daily allowance holds", async () => {
+  await fresh();
   // One check of an app at a time: a second press while it runs waits for it, and doesn't count.
   const other = await owner("parallel");
   let release!: () => void;
@@ -285,21 +396,25 @@ test("each owner has a few checks an hour, waiting for a running one uses none, 
   assert.equal(second.body.code, "running");
   assert.equal(second.body.error, "Google is still checking this page. The result shows here when it's done.");
   assert.equal(await countOf(`pagespeed:${other.id}`), 1, "waiting used up no check");
-  // Meanwhile Lighthouse opens the app like a visitor, on a Mac's user agent: its AI says no, so the check spends nothing.
-  const askAi = () =>
+  // Meanwhile Lighthouse opens the app like a visitor: Google's test, as its servers were seen sending
+  // it, gets "not available", so the check spends nothing. A visitor on a Mac is answered as always
+  // (this app's AI is off: 403).
+  const askAi = (agent: string, address: string) =>
     aiRoute.POST(
       new Request(`http://localhost/api/sites/${other.slug}/ai`, {
         method: "POST",
-        headers: { "content-type": "application/json", "user-agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36" },
+        headers: { "content-type": "application/json", "user-agent": agent, "x-forwarded-for": address },
         body: JSON.stringify({ prompt: "What's fresh today?" }),
       }),
       { params: Promise.resolve({ slug: other.slug }) } as never,
     );
-  assert.equal((await askAi()).status, 503);
+  const mac = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36";
+  assert.equal((await askAi(`${mac} Chrome-Lighthouse`, "66.102.9.33")).status, 503);
+  assert.equal((await askAi(mac, "66.102.9.40")).status, 503, "Lighthouse's computer from Google's fetchers' addresses");
+  assert.equal((await askAi(mac, "203.0.113.9")).status, 403, "a visitor on a Mac");
   release();
   assert.equal((await first).status, 200);
   assert.equal((await seo(other)).pagespeedRunning, false);
-  assert.notEqual((await askAi()).status, 503, "after the check, visitors are answered as before (this app's AI is off: 403)");
   googleReply = ok;
 
   // Flash's daily allowance for everyone together: then Google isn't asked, and the owner is told it's busy.

@@ -2031,6 +2031,8 @@
  "You're unsubscribed": "Naka-unsubscribe ka na",
  "You've made a lot of links. Try again in an hour.": "Marami ka nang nagawang link. Subukan ulit pagkalipas ng isang oras.",
  "You've published a lot this hour. Try again later.": "Marami ka nang na-publish ngayong oras. Subukan ulit mamaya.",
+ "You've used this hour's checks with Google ({count} an hour). Try again in an hour.": "Nagamit mo na ang mga check sa Google para sa oras na ito ({count} kada oras). Subukan ulit pagkalipas ng isang oras.",
+ "You've used today's checks with Google ({count} a day). Try again tomorrow.": "Nagamit mo na ang mga check sa Google para sa araw na ito ({count} kada araw). Pakisubukan ulit bukas.",
  "You've used today's free images and you have {credits} credits. Free use resets tomorrow, or get more credits now.": "Nagamit mo na ang mga libreng larawan ngayong araw at {credits} credits ang meron ka. Magre-reset bukas ang libreng paggamit, o kumuha na ng dagdag na credits ngayon.",
  "You've used today's free messages and you have {credits} credits. Free use resets tomorrow, or get more credits now.": "Nagamit mo na ang mga libreng mensahe ngayong araw at {credits} credits ang meron ka. Magre-reset bukas ang libreng paggamit, o kumuha na ng dagdag na credits ngayon.",
  "You've used today's free messages. They reset tomorrow, or get more credits now.": "Nagamit mo na ang mga libreng mensahe ngayong araw. Magre-reset ito bukas, o kumuha na ng dagdag na credits ngayon.",

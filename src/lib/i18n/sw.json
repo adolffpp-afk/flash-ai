@@ -2031,6 +2031,8 @@
  "You're unsubscribed": "Umejiondoa",
  "You've made a lot of links. Try again in an hour.": "Umeunda viungo vingi. Jaribu tena baada ya saa moja.",
  "You've published a lot this hour. Try again later.": "Umechapisha mara nyingi katika saa hii. Jaribu tena baadaye.",
+ "You've used this hour's checks with Google ({count} an hour). Try again in an hour.": "Umemaliza nafasi za kukagua kwa Google kwa saa hii ({count} kwa saa). Jaribu tena baada ya saa moja.",
+ "You've used today's checks with Google ({count} a day). Try again tomorrow.": "Umemaliza nafasi za kukagua kwa Google kwa leo ({count} kwa siku). Tafadhali jaribu tena kesho.",
  "You've used today's free images and you have {credits} credits. Free use resets tomorrow, or get more credits now.": "Umetumia picha zako za bure za leo na una krediti {credits}. Matumizi ya bure yatarejeshwa kesho, au pata krediti zaidi sasa.",
  "You've used today's free messages and you have {credits} credits. Free use resets tomorrow, or get more credits now.": "Umetumia jumbe zako za bure za leo na una krediti {credits}. Matumizi ya bure yatarejeshwa kesho, au pata krediti zaidi sasa.",
  "You've used today's free messages. They reset tomorrow, or get more credits now.": "Umetumia jumbe zako za bure za leo. Zitarejeshwa kesho, au pata krediti zaidi sasa.",
