@@ -81,7 +81,8 @@ test("an app's AI is off until its owner turns it on", async () => {
   assert.equal(await balance(), 500, "nothing is charged while it's off");
 
   const settings = await saveAiSettings("shop", true, 60);
-  assert.deepEqual(settings, { enabled: true, dailyCredits: 60, usedToday: 0, askedToday: 0, answers: 30, outOfCreditsAt: 0 });
+  // stopsAt: no auto top-up level to stop at (see site-ai-money.test.ts).
+  assert.deepEqual(settings, { enabled: true, dailyCredits: 60, usedToday: 0, askedToday: 0, answers: 30, outOfCreditsAt: 0, stopsAt: 0 });
 });
 
 test("an answer costs the owner credits, and only what it really used", async () => {

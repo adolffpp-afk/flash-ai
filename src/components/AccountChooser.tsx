@@ -215,11 +215,16 @@ export function AccountChooser({
 
 /**
  * Before switching away from changes that didn't save, or (writing) from a message being written,
- * which the other account's page won't have: switch anyway, or stay.
+ * which the other account's page won't have: switch anyway, or stay. to: the email of the account
+ * an alert tapped with a dialog open over Flash is for, since nothing can check what's typed there.
  */
-export function SwitchAnyway({ onSwitch, onCancel, writing = false }: { onSwitch: () => void; onCancel: () => void; writing?: boolean }) {
+export function SwitchAnyway({ onSwitch, onCancel, writing = false, to }: { onSwitch: () => void; onCancel: () => void; writing?: boolean; to?: string }) {
   const t = useT();
-  const question = writing ? t("Your message hasn't been sent yet. Switch anyway?") : t("Some changes in this chat haven't saved yet. Switch anyway?");
+  const question = to
+    ? t("Switch to {email}? Anything you haven't saved here will be lost.", { email: isolate(to) })
+    : writing
+      ? t("Your message hasn't been sent yet. Switch anyway?")
+      : t("Some changes in this chat haven't saved yet. Switch anyway?");
   return (
     <Sheet label={question} onEscape={onCancel}>
       <p className="text-sm leading-relaxed text-zinc-200">{question}</p>
@@ -228,7 +233,7 @@ export function SwitchAnyway({ onSwitch, onCancel, writing = false }: { onSwitch
           {t("Cancel")}
         </button>
         <button onClick={onSwitch} className="h-11 rounded-lg bg-brand px-4 text-sm font-medium text-on-brand transition hover:brightness-110 sm:h-10">
-          {t("Switch anyway")}
+          {to ? t("Switch account") : t("Switch anyway")}
         </button>
       </div>
     </Sheet>

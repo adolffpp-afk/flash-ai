@@ -41,7 +41,7 @@ export async function GET(request: Request, ctx: RouteContext<"/api/sites/[slug]
   const t = await translatorFor(request, user.language);
   const { slug } = await ctx.params;
   if (!(await ownsSite(user.id, slug))) return Response.json({ error: t("Not found") }, { status: 404 });
-  return Response.json(await aiSettings(slug));
+  return Response.json(await aiSettings(slug, user.id));
 }
 
 /** The owner turns it on or off, and sets how many credits it may use in a day. */
@@ -58,6 +58,7 @@ export async function PATCH(request: Request, ctx: RouteContext<"/api/sites/[slu
       slug,
       typeof body.enabled === "boolean" ? body.enabled : current.enabled,
       typeof body.dailyCredits === "number" ? body.dailyCredits : current.dailyCredits,
+      user.id,
     ),
   );
 }

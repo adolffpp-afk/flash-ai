@@ -117,6 +117,9 @@ const SCHEMA = [
     created_at INTEGER NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS site_uploads_site ON site_uploads(site_slug, created_at)`,
+  // What an app's files and their owner's take (see site-files.ts) is read from this index alone. A
+  // file's size comes after its bytes in the row, so reading it there means reading every file.
+  `CREATE INDEX IF NOT EXISTS site_uploads_size ON site_uploads(site_slug, size)`,
   `CREATE TABLE IF NOT EXISTS site_ai_usage (
     site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
     day TEXT NOT NULL,
@@ -890,6 +893,24 @@ const SCHEMA = [
     PRIMARY KEY (assistant_id, user_id)
   )`,
   `CREATE INDEX IF NOT EXISTS assistant_visitors_user ON assistant_visitors(user_id, last_at)`,
+  // Alerts when Flash is closed (Web Push, see push.ts): one row per account in each browser that
+  // turned them on, with the browser's push address and the keys that encrypt each alert for it.
+  // session_hash is that account's sign-in in that browser (its session in the browser's accounts):
+  // logging out of it there deletes the row (dropSignIns), endAllSessions deletes all of the
+  // account's, and alerts only go where it's live. One browser signed in to several accounts has a
+  // row for each, with the push address they share, so an alert can name its account.
+  `CREATE TABLE IF NOT EXISTS push_subscriptions (
+    endpoint TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    session_hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_ok_at INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (endpoint, user_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS push_user ON push_subscriptions(user_id)`,
+  `CREATE INDEX IF NOT EXISTS push_session ON push_subscriptions(session_hash)`,
 ];
 
 let client: Client | null = null;
@@ -937,6 +958,9 @@ const MIGRATIONS = [
   "ALTER TABLE site_owner_codes ADD COLUMN host TEXT NOT NULL DEFAULT ''",
   // When a held charge was settled to what the request really cost, or 0 while it runs.
   "ALTER TABLE credit_ledger ADD COLUMN settled_at INTEGER NOT NULL DEFAULT 0",
+  // 1 for a hold that keeps the auto top-up level (an app's AI that visitors ask, see charge), which
+  // auto top-up doesn't count while it runs.
+  "ALTER TABLE credit_ledger ADD COLUMN keeps_level INTEGER NOT NULL DEFAULT 0",
   // People added to a team plan on top of its own seats, each with more monthly credits (EXTRA_SEAT).
   "ALTER TABLE subscriptions ADD COLUMN extra_seats INTEGER NOT NULL DEFAULT 0",
   // Counts every write of a project's messages, so the server saving a reply never overwrites

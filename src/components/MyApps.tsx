@@ -40,8 +40,9 @@ type DataRecord = { id: string; createdAt: number; addedBy: string; data: Record
 type ShownData = { slug: string; data: AppData };
 type Records = { slug: string; collection: string; list: DataRecord[] | null; cut: string };
 type Member = { id: string; email: string; name: string; createdAt: number };
-// answers: about how many answers the daily budget pays for.
-type Ai = { enabled: boolean; dailyCredits: number; usedToday: number; askedToday: number; answers: number };
+// answers: about how many answers the daily budget pays for. stopsAt: the auto top-up level it stops
+// at, so visitors never set off a top-up, or 0.
+type Ai = { enabled: boolean; dailyCredits: number; usedToday: number; askedToday: number; answers: number; stopsAt: number };
 type Upload = { id: string; name: string; mime: string; size: number; createdAt: number; url: string };
 type Uploads = { files: Upload[]; use: { files: number; bytes: number; maxFiles: number; maxBytes: number }; enabled: boolean };
 type Version = { id: string; title: string; createdAt: number; size: number };
@@ -1059,6 +1060,13 @@ export function MyApps({
                         limit: ai.dailyCredits.toLocaleString(t.locale),
                       })}
                 </p>
+                {ai.stopsAt > 0 && (
+                  <p className="text-sm text-zinc-400">
+                    {t("With auto top-up on, it stops when your balance gets down to {level} credits, so your visitors never set off a top-up.", {
+                      level: ai.stopsAt.toLocaleString(t.locale),
+                    })}
+                  </p>
+                )}
                 <p className="text-xs text-zinc-500">
                   {t(
                     "Anyone using your app can ask it, so keep the daily limit at what you're happy to spend. Ask Flash to “add an AI helper to this app” to put it in the app itself.",

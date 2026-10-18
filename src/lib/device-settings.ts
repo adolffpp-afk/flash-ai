@@ -9,6 +9,10 @@ export const DEVICE_KEYS = {
   // Set when the user says not to ask before costly requests.
   skipCostCheck: "flash:skip-cost-check",
   notifyDone: "flash:notify-done",
+  // The accounts (ids, space separated) that turned on alerts when Flash is closed in this browser
+  // (Settings > General > Notifications), so they come back on after Flash ends a sign-in by itself
+  // and that account signs in here again. Logging out here takes the account off (see push.ts).
+  pushAccounts: "flash:push-accounts",
   // "" for light (the default), "dark", or "system" to follow the device (Settings > General > Appearance).
   theme: "flash:theme",
   font: "flash:font",

@@ -21,6 +21,7 @@ function textPage(items: (i: number) => object | null, seen = { pulled: 0, cance
       },
       cancel(reason) {
         assert.ok(reason instanceof Error, "pdf.js wants an Error to stop");
+        assert.equal(reason.name, "AbortException", "the name pdf.js's worker takes as a quiet stop");
         seen.cancelled = true;
       },
     });
@@ -40,6 +41,126 @@ test("a PDF's text is read page by page", async () => {
   const text = await pdfText(new Uint8Array(readFileSync("test/fixtures/plan.pdf")), pdfjs);
   assert.match(text, /^--- Page 1 ---\nBakery business plan\nGolden Crumb sells fresh bread in Montréal\.\nCosts\n/);
   assert.match(text, /Item Monthly\nRent \$2,400\nFlour \$600\n/);
+});
+
+/** A real PDF in Helvetica, one page for each list of lines, made here so a big one needn't be kept. */
+function makePdf(pages: string[][]): Uint8Array {
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    `<< /Type /Pages /Kids [${pages.map((_, i) => `${4 + 2 * i} 0 R`).join(" ")}] /Count ${pages.length} >>`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>",
+  ];
+  pages.forEach((lines, i) => {
+    const height = 40 + 10 * lines.length;
+    const content = `BT /F1 8 Tf 10 TL 20 ${height - 20} Td\n${lines.map((l) => `(${l}) Tj T*`).join("\n")}\nET`;
+    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 ${height}] /Resources << /Font << /F1 3 0 R >> >> /Contents ${5 + 2 * i} 0 R >>`);
+    objects.push(`<< /Length ${content.length} >>\nstream\n${content}\nendstream`);
+  });
+  let pdf = "%PDF-1.4\n";
+  const offsets = objects.map((body, i) => {
+    const at = pdf.length;
+    pdf += `${i + 1} 0 obj\n${body}\nendobj\n`;
+    return at;
+  });
+  const xref = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, "0")} 00000 n \n`).join("")}`;
+  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return new Uint8Array(Buffer.from(pdf, "latin1"));
+}
+
+test("a real PDF read with pdf.js gives the text of its pages read whole and cut, and a long page is read only up to the limit", async () => {
+  const { CUT_NOTE, MAX_TEXT } = await import("../src/lib/office.ts");
+  // A short page, a page of 4,000 lines (about 240,000 characters, past a chat's limit), and a short page.
+  const pdf = makePdf([
+    ["Golden Crumb, Montr\\351al", "A plan for the year ahead."],
+    Array.from({ length: 4000 }, (_, n) => `Line ${n + 1}: Golden Crumb bakes rye and sourdough every morning.`),
+    ["The last page."],
+  ]);
+  // How the chat read a PDF before #126 (each page whole, then cut), at any limit.
+  const readWhole = async (limit: number) => {
+    const task = pdfjs.getDocument({ data: pdf.slice() });
+    const doc = await task.promise;
+    const pages: string[] = [];
+    let length = 0;
+    for (let n = 1; n <= doc.numPages && length < limit; n++) {
+      const text = pageText((await (await doc.getPage(n)).getTextContent()).items);
+      pages.push(`--- Page ${n} ---\n${text}`);
+      length += text.length;
+    }
+    await task.destroy();
+    const text = pages.join("\n\n");
+    return text.length > limit || pages.length < doc.numPages ? `${text.slice(0, limit)}${CUT_NOTE}` : text;
+  };
+  // pdf.js as pdfText uses it, counting the pages opened and the text pieces it sent.
+  let opened: number[] = [];
+  let pieces = 0;
+  const counted = {
+    getDocument: (src: { data: Uint8Array }) => {
+      const task = pdfjs.getDocument(src);
+      const promise = task.promise.then((doc) => ({
+        numPages: doc.numPages,
+        getPage: async (n: number) => {
+          opened.push(n);
+          const page = await doc.getPage(n);
+          const count = new TransformStream<{ items: object[] }, { items: object[] }>({
+            transform(chunk, controller) {
+              pieces += chunk.items.length;
+              controller.enqueue(chunk);
+            },
+          });
+          return { streamTextContent: () => (page.streamTextContent() as unknown as ReadableStream<{ items: object[] }>).pipeThrough(count) };
+        },
+      }));
+      return { promise, destroy: () => task.destroy() };
+    },
+  };
+  const all = await readWhole(10_000_000);
+  assert.match(all, /^--- Page 1 ---\nGolden Crumb, Montréal\nA plan for the year ahead\.\n\n--- Page 2 ---\nLine 1: Golden Crumb/);
+  assert.ok(all.endsWith("Line 4000: Golden Crumb bakes rye and sourdough every morning.\n\n--- Page 3 ---\nThe last page."));
+  assert.ok(all.length > MAX_TEXT);
+  opened = [];
+  pieces = 0;
+  assert.equal(await pdfText(pdf.slice(), counted, 10_000_000), all, "read whole when it fits");
+  assert.deepEqual(opened, [1, 2, 3]);
+  const everyPiece = pieces;
+  // What pdf.js says while the long page is cut part way (it logs to console.warn).
+  const warnings: string[] = [];
+  const warn = console.warn;
+  console.warn = (...args: unknown[]) => void warnings.push(args.map(String).join(" "));
+  try {
+    for (const limit of [300, 2_000, 20_000, MAX_TEXT]) {
+      opened = [];
+      pieces = 0;
+      const text = await pdfText(pdf.slice(), counted, limit);
+      assert.equal(text, await readWhole(limit), `the same text at ${limit} characters`);
+      assert.ok(text.endsWith(CUT_NOTE));
+      assert.deepEqual(opened, [1, 2], "the page after the cut isn't opened");
+      assert.ok(pieces < everyPiece * (limit === MAX_TEXT ? 0.95 : 0.2), `${pieces} of ${everyPiece} pieces read at ${limit}`);
+    }
+    assert.equal(await pdfText(pdf.slice(), pdfjs), await readWhole(MAX_TEXT), "a chat's usual limit");
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  } finally {
+    console.warn = warn;
+  }
+  // The stop is one pdf.js takes as its own. Before, its worker warned "ignoring errors during
+  // GetTextContent ... UnknownErrorException: enough text" whenever the stop came before the page's end.
+  assert.deepEqual(warnings.filter((w) => w.includes("enough text")), []);
+});
+
+test("the chat reads PDFs with pdf.js's legacy build, which needs no JavaScript newer than browsers have", async () => {
+  const flash = readFileSync(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
+  const readPdf = flash.slice(flash.indexOf("async function readPdf("), flash.indexOf("function readFile("));
+  assert.match(readPdf, /await import\("pdfjs-dist\/legacy\/build\/pdf\.mjs"\)/);
+  assert.match(readPdf, /new URL\("pdfjs-dist\/legacy\/build\/pdf\.worker\.min\.mjs", import\.meta\.url\)/);
+  assert.doesNotMatch(flash, /import\("pdfjs-dist"\)|"pdfjs-dist\/build\//, "nothing loads the modern build");
+  // A PDF with only an owner password (it opens without one; AES-128, made by fpdf2). The modern build
+  // can't read it where Map.prototype.getOrInsertComputed is missing (Chromium 141 among others); the
+  // legacy build brings its own.
+  const owner = new Uint8Array(readFileSync("test/fixtures/owner-password.pdf"));
+  assert.equal(
+    await pdfText(owner, pdfjs),
+    "--- Page 1 ---\nOwner-password only, line 0: Golden Crumb, Montreal\nOwner-password only, line 1: Golden Crumb, Montreal\nOwner-password only, line 2: Golden Crumb, Montreal",
+  );
 });
 
 test("text pieces join into lines", () => {

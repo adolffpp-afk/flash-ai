@@ -248,7 +248,16 @@ test("a visitor's question to an app's AI never buys its owner a pack, answered 
   stripeCalls.length = 0;
   assert.equal((await askSiteAi("bakery", { prompt: "When should I book?" }, "203.0.113.9")).status, 200);
   await afterwards();
-  assert.ok((await balance("shop")) < 100, "the answer took the balance below the auto top-up level");
+  // The app's AI only spends what is above the auto top-up level while auto top-up can buy (see
+  // site-ai-money.test.ts), so the answer leaves the balance at or over it.
+  assert.ok((await balance("shop")) >= 100, "the answer stopped at the auto top-up level");
+  // A visitor's spend that does go below the level (a hold taken before auto top-up was turned on,
+  // say), settled: it doesn't set off a top-up either.
+  const held = await charge("shop", 5, 'AI in "Bakery"', { visitor: true });
+  assert.ok(held);
+  await settle(held, 5, { visitor: true });
+  await afterwards();
+  assert.ok((await balance("shop")) < 100, "the spend took the balance below the auto top-up level");
   // One refused by charge() (another visitor's question took the credits first, say).
   assert.equal(await charge("shop", 500, 'AI in "Bakery"', { visitor: true }), null);
   await afterwards();

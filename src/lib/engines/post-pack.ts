@@ -90,7 +90,8 @@ export async function writePack(request: string, about: string, meter: Meter = n
         system,
         messages,
       },
-      { timeout: 45_000, maxRetries: 0 },
+      // The signal bounds reading the answer too, which the client's timeout doesn't.
+      { timeout: 45_000, maxRetries: 0, signal: AbortSignal.timeout(45_000) },
     )
     // Timed out or cut off, the writing may still have run: it is paid for at its most.
     .catch((err: unknown) => meterLost(err, meter, PACK_WRITING_CENTS, CHAT_MODEL));

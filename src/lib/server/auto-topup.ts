@@ -10,7 +10,7 @@
  * added on top, as at checkout.
  */
 import { CREDIT_PACKS } from "../credits.ts";
-import { addPurchase, balance, disputed } from "./credits.ts";
+import { addPurchase, disputed, topUpBalance } from "./credits.ts";
 import { one, run, now } from "./db.ts";
 import { currency, paymentsEnabled, stripe, taxOn } from "./stripe.ts";
 import { checkLowBalance } from "./low-balance.ts";
@@ -167,7 +167,8 @@ export async function maybeAutoTopUp(userId: string): Promise<boolean> {
   if (!paymentsEnabled()) return false;
   const row = await one<Row>("SELECT * FROM auto_topups WHERE user_id = ? AND enabled = 1 AND payment_method IS NOT NULL", [userId]);
   const pack = CREDIT_PACKS.find((p) => p.id === row?.pack);
-  if (!row || !pack || (await balance(userId)) >= Number(row.below)) return false;
+  // A visitor's question still being answered doesn't count (see topUpBalance).
+  if (!row || !pack || (await topUpBalance(userId)) >= Number(row.below)) return false;
   if ((await topUpsThisMonth(userId)) >= MAX_PER_MONTH || (await disputed(userId))) return false;
   const at = now();
   const claim = await run("UPDATE auto_topups SET last_at = ? WHERE user_id = ? AND enabled = 1 AND last_at < ?", [at, userId, at - GAP_MINUTES * 60_000]);

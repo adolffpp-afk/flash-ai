@@ -16,6 +16,7 @@ import { startEnv } from "./start-env.ts";
 import { alertEmailsToday } from "./low-balance.ts";
 import { EMAIL_BUDGET } from "./email.ts";
 import { providerBalances } from "./provider-balances.ts";
+import { pushBrowsers, pushSetup } from "./push.ts";
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -206,6 +207,9 @@ export async function adminStats(days: number) {
     // Virus scanning of uploads: which of its two variables are missing (never values), and whether
     // the scanner answers right now (null when it isn't set up).
     virusScan: { missing: scannerMissing(), ready: await scannerReady() },
+    // Alerts when Flash is closed: whether the three VAPID variables are set and belong together
+    // (names only, never values), and how many browsers have alerts on.
+    push: { ...pushSetup(), browsers: await pushBrowsers() },
     // Which search assistants' files get on this database: its full-text index, or ranking every chunk
     // in JavaScript when the database can't make the index (asked fresh, not this server's kept answer).
     // With the space their files take in the database for each byte of their text, once there is enough

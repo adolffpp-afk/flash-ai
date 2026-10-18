@@ -64,6 +64,8 @@ type Stats = {
   };
   // Virus scanning of uploads (see docs/virus-scan-setup.md): missing variables, and whether the scanner answers.
   virusScan?: { missing: string[]; ready: boolean | null };
+  // Alerts when Flash is closed (see push.ts): whether VAPID_* are set and belong together (names only), and browsers with alerts on.
+  push?: { setUp: boolean; keysOk: boolean; missing: string[]; problem: string; browsers: number };
   // Assistants' file search on this database (not switched on for anyone yet): the full-text index or the
   // slower fallback, and the space their files take for each byte of text (null until there is enough).
   assistantSearch?: { mode: "index" | "fallback"; factor: number | null };
@@ -273,6 +275,149 @@ function ConnectorKeyMaker({ setUp, missing, newest, skipped, older = [] }: Stat
           <li>Open Vercel, then the flash-ai project, then Settings, then Environment Variables.</li>
           <li>Add CONNECTOR_KEYS with the copied value, marked Sensitive, for Production.</li>
           <li>Redeploy. Connectors appear for everyone once the new deployment is live.</li>
+        </ol>
+      )}
+    </div>
+  );
+}
+
+const PUSH_SUBJECT = "mailto:hello@flash-app.dev";
+
+/**
+ * Makes Flash's push key pair (VAPID: ECDSA on P-256) in this browser with Web Crypto, shown once to
+ * copy into Vercel with the subject. The private key never leaves this page: nothing here sends it,
+ * and Flash reads it only from its environment.
+ */
+function PushKeyMaker({ setUp, keysOk, missing, problem, browsers }: NonNullable<Stats["push"]>) {
+  // The two keys work and only the subject is missing or wrong: the keys in Vercel stay.
+  const subjectOnly = !setUp && keysOk;
+  // The VAPID_* in Vercel already, right or wrong: new values are edited into them, since Vercel
+  // won't add a second variable of the same name.
+  const there = ["VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY", "VAPID_SUBJECT"].filter((name) => !missing.includes(name));
+  const [values, setValues] = useState<{ name: string; value: string }[]>([]);
+  const [copied, setCopied] = useState("");
+  const [error, setError] = useState("");
+  const make = async () => {
+    setError("");
+    try {
+      const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+      const raw = new Uint8Array(await crypto.subtle.exportKey("raw", pair.publicKey));
+      const { d } = await crypto.subtle.exportKey("jwk", pair.privateKey);
+      if (!d) throw new Error("no private key");
+      const publicKey = btoa(Array.from(raw, (b) => String.fromCharCode(b)).join(""))
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/, "");
+      setValues([
+        { name: "VAPID_PUBLIC_KEY", value: publicKey },
+        { name: "VAPID_PRIVATE_KEY", value: d },
+        { name: "VAPID_SUBJECT", value: PUSH_SUBJECT },
+      ]);
+      setCopied("");
+    } catch {
+      setError("This browser couldn't make the keys. Try again in Chrome, Edge, Firefox or Safari.");
+    }
+  };
+  const copy = async (name: string, value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(name);
+    } catch {
+      // Clipboard blocked: the value is selectable in its box.
+    }
+  };
+  return (
+    <div className="space-y-3 text-sm">
+      <p>
+        {setUp ? (
+          <span className="text-emerald-300">
+            Set. People can turn on alerts in Settings &gt; General &gt; Notifications. {num(browsers)}{" "}
+            {browsers === 1 ? "browser has" : "browsers have"} alerts on.
+          </span>
+        ) : problem ? (
+          <span className="text-amber-300">{problem}. Fix it in Vercel and redeploy. Until then, nobody sees the alerts setting.</span>
+        ) : (
+          <span className="text-zinc-400">
+            Not set. Missing {missing.join(", ")}. Until {missing.length === 1 ? "it is" : "they are"}, nobody sees the alerts setting and
+            Flash sends no alerts.
+          </span>
+        )}
+      </p>
+      {setUp && !values.length && (
+        <p className="text-xs text-zinc-500">
+          Keep these keys as they are. New keys stop alerts in every browser until Flash is opened there again as an account that
+          had them on, which turns them back on by itself for each account there that had them on.
+        </p>
+      )}
+      {subjectOnly ? (
+        <ol className="list-decimal space-y-1 ps-5 text-xs text-zinc-400">
+          <li>Open Vercel, then the flash-ai project, then Settings, then Environment Variables.</li>
+          <li>
+            {missing.length ? "Add VAPID_SUBJECT for Production, marked Sensitive, with the value" : "Edit VAPID_SUBJECT so its value is"}{" "}
+            <span className="font-mono text-zinc-300">{PUSH_SUBJECT}</span>. Keep the two keys as they are.
+          </li>
+          <li>Redeploy. The alerts setting appears in Settings once the new deployment is live.</li>
+        </ol>
+      ) : !values.length ? (
+        <button
+          onClick={make}
+          className={
+            setUp
+              ? "rounded-lg border border-white/10 px-3 py-1.5 text-sm text-zinc-200 hover:bg-white/[0.05]"
+              : "rounded-lg bg-brand px-3 py-1.5 text-sm font-medium text-on-brand hover:brightness-110"
+          }
+        >
+          {setUp ? "Make new push keys" : "Make push keys"}
+        </button>
+      ) : (
+        <div className="space-y-2">
+          <p className="text-xs text-zinc-400">
+            Made in this browser and shown only now. The private key never leaves this page until you paste it into Vercel.
+          </p>
+          {values.map(({ name, value }) => (
+            <div key={name}>
+              <div className="font-mono text-xs text-zinc-400">{name}</div>
+              <div className="mt-1 flex gap-2">
+                <input
+                  readOnly
+                  value={value}
+                  onFocus={(e) => e.currentTarget.select()}
+                  aria-label={`${name} value`}
+                  className="h-9 min-w-0 flex-1 rounded-lg border border-white/10 bg-white/[0.03] px-3 font-mono text-xs text-zinc-200 outline-none focus:border-primary/70"
+                />
+                <button
+                  onClick={() => copy(name, value)}
+                  className="h-9 shrink-0 rounded-lg bg-brand px-4 text-sm font-medium text-on-brand hover:brightness-110"
+                >
+                  {copied === name ? "Copied" : "Copy"}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {error && <p className="text-xs text-red-400">{error}</p>}
+      {!subjectOnly && (!setUp || values.length > 0) && (
+        <ol className="list-decimal space-y-1 ps-5 text-xs text-zinc-400">
+          <li>{values.length ? "Copy each value with its Copy button." : `Press ${setUp ? "Make new push keys" : "Make push keys"} here.`}</li>
+          <li>Open Vercel, then the flash-ai project, then Settings, then Environment Variables.</li>
+          {setUp ? (
+            <>
+              <li>Edit each of the three and paste its new value, still marked Sensitive.</li>
+              <li>Redeploy. Alerts in each browser come back the next time Flash is opened there as an account that had them on.</li>
+            </>
+          ) : (
+            <>
+              <li>
+                {!there.length
+                  ? "Add the three values for Production, each with its name as shown and marked Sensitive."
+                  : !missing.length
+                    ? "Edit each of the three and paste its new value, still marked Sensitive."
+                    : `Edit ${there.join(" and ")} and paste the new ${there.length === 1 ? "value" : "values"}, then add ${missing.join(" and ")} for Production with the name as shown. Each is marked Sensitive.`}
+              </li>
+              <li>Redeploy. The alerts setting appears in Settings once the new deployment is live. No Google project is needed.</li>
+            </>
+          )}
         </ol>
       )}
     </div>
@@ -749,6 +894,14 @@ export function AdminDashboard({ initialTab }: { initialTab?: string }) {
                     Set, but the scanner isn&apos;t answering. Files go through unscanned until it does. Check the scanner on Railway (it takes a few minutes to start).
                   </div>
                 )}
+              </Panel>
+            )}
+            {stats.push && (
+              <Panel
+                title="Push alerts"
+                note="Alerts on people's phones and computers when Flash is closed. Free: browsers' own push services carry them, signed with Flash's keys."
+              >
+                <PushKeyMaker {...stats.push} />
               </Panel>
             )}
             {stats.assistantSearch && (

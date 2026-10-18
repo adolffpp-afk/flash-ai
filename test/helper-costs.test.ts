@@ -33,6 +33,17 @@ const server = createServer((req, res) => {
     if (message.startsWith("DROP")) return req.socket.destroy();
     const system = String(body.system ?? "");
     const usage = { input_tokens: Buffer.byteLength(system + message), output_tokens: body.max_tokens };
+    // The answer starts to arrive, so Claude made it, and is then cut off (CUT) or still coming long
+    // after the helper's timeout (LATE).
+    if (/^(CUT|LATE)/.test(message)) {
+      const answer = JSON.stringify({ id: "m", type: "message", role: "assistant", model: body.model, content: [{ type: "text", text: "change" }], stop_reason: "end_turn", stop_sequence: null, usage });
+      res.writeHead(200, { "content-type": "application/json", "content-length": String(Buffer.byteLength(answer)) });
+      res.write(answer.slice(0, 40));
+      const cut = message.startsWith("CUT");
+      const later = setTimeout(() => (cut ? req.socket.destroy() : res.end(answer.slice(40))), cut ? 20 : 8000);
+      res.on("close", () => clearTimeout(later));
+      return;
+    }
     if (body.stream) {
       // A model that declines part way, and its refusal fallback answering after a `fallback` block.
       const declines = system.includes("DECLINE");
@@ -86,6 +97,7 @@ const {
   classifyRequest,
   guessEngine,
   improvePrompt,
+  meterLost,
   pictureRequest,
   streamText,
   writeScenes,
@@ -169,6 +181,46 @@ test("a helper whose connection drops is paid for at its most, since Claude may 
   // The post pack's writer too, at the most its writing may cost, which the pack's price includes.
   await assert.rejects(writePack("DROP a social media pack for my bakery", "", meter));
   assert.deepEqual(costs, [ROUTER_MAX_CENTS, PICTURE_CHECK_MAX_CENTS, PROMPT_WRITER_MAX_CENTS, SCENE_WRITER_MAX_CENTS, PACK_WRITING_CENTS]);
+});
+
+test("a helper whose answer is cut off after it started arriving is paid for at its most too, since Claude made it", async () => {
+  const { costs, meter } = metered();
+  assert.equal(await classifyRequest("CUT a jingle", meter), null);
+  assert.equal(await pictureRequest("CUT make it darker", true, meter), null);
+  await assert.rejects(improvePrompt("image", "CUT a cat", meter));
+  await assert.rejects(writeScenes("CUT a movie", 3, 10, meter));
+  await assert.rejects(writePack("CUT a social media pack for my bakery", "", meter));
+  assert.deepEqual(costs, [ROUTER_MAX_CENTS, PICTURE_CHECK_MAX_CENTS, PROMPT_WRITER_MAX_CENTS, SCENE_WRITER_MAX_CENTS, PACK_WRITING_CENTS]);
+});
+
+test("meterLost meters every failure Claude may have answered, and none it refused or that was never sent", async () => {
+  const { default: Anthropic } = await import("@anthropic-ai/sdk");
+  const cases: [string, unknown, boolean][] = [
+    ["lost connection", new Anthropic.APIConnectionError({ message: "dropped" }), true],
+    ["the client's timeout", new Anthropic.APIConnectionTimeoutError(), true],
+    ["the signal's deadline", new Anthropic.APIUserAbortError(), true],
+    ["cut off after the headers", new TypeError("terminated"), true],
+    ["the deadline while reading", new DOMException("The operation was aborted due to timeout", "TimeoutError"), true],
+    ["an error status", Anthropic.APIError.generate(529, { type: "error" }, "Overloaded", new Headers()), false],
+    ["refused by the client before sending", new Anthropic.AnthropicError("Streaming is required"), false],
+  ];
+  for (const [how, err, paid] of cases) {
+    const { costs, meter } = metered();
+    assert.throws(() => meterLost(err, meter, 7), (thrown) => thrown === err, how);
+    assert.deepEqual(costs, paid ? [7] : [], how);
+  }
+});
+
+test("a helper gives up at its timeout while its answer is still arriving, and is paid for at its most", async () => {
+  const { costs, meter } = metered();
+  let started = Date.now();
+  assert.equal(await classifyRequest("LATE a jingle", meter, { timeoutMs: 300 }), null);
+  assert.ok(Date.now() - started < 3000, `the router waited ${Date.now() - started} ms with a 300 ms timeout`);
+  // The picture check's own 4 seconds; the rest of its answer comes after 8.
+  started = Date.now();
+  assert.equal(await pictureRequest("LATE make it darker", true, meter), null);
+  assert.ok(Date.now() - started < 7000, `the picture check waited ${Date.now() - started} ms with a 4 s timeout`);
+  assert.deepEqual(costs, [ROUTER_MAX_CENTS, PICTURE_CHECK_MAX_CENTS]);
 });
 
 test("every picture, video, track and voice-over is listed, held and charged at one price that pays for its helpers", () => {
