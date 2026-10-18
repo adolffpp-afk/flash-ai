@@ -15,8 +15,8 @@ process.env.STRIPE_SECRET_KEY = "rk_test";
 process.env.FLASH_APP_URL = "https://flash.test/";
 delete process.env.FLASH_DEMO_EMAILS;
 
-const { run, one } = await import("../src/lib/server/db.ts");
-const { charge, settle } = await import("../src/lib/server/credits.ts");
+const { run, one, db } = await import("../src/lib/server/db.ts");
+const { charge, settle, recentActivity } = await import("../src/lib/server/credits.ts");
 const { EMAIL_BUDGET, EMAILS, LOW_CREDITS_LINE } = await import("../src/lib/server/email.ts");
 const { MAX_PER_MONTH } = await import("../src/lib/server/auto-topup.ts");
 const { sitesWithMessages } = await import("../src/lib/server/inbox.ts");
@@ -54,6 +54,18 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
 const errors: unknown[] = [];
 console.error = (...args: unknown[]) => errors.push(args);
 console.warn = () => {};
+
+// Makes the database fail once on the next statement that starts with failOn (a Turso hiccup).
+const database = await db();
+const execute = database.execute.bind(database);
+let failOn: string | null = null;
+(database as unknown as { execute: unknown }).execute = (stmt: string | { sql: string }) => {
+  if (failOn && typeof stmt === "object" && stmt.sql.trimStart().startsWith(failOn)) {
+    failOn = null;
+    return Promise.reject(new Error("SQLITE_BUSY: database is locked"));
+  }
+  return execute(stmt as never);
+};
 
 const to = (email: string) => sent.filter((e) => e.to === email);
 const user = (id: string) => run("INSERT INTO users (id, email, password_hash, created_at) VALUES (?, ?, 'h', 0)", [id, `${id}@x.co`]);
@@ -474,4 +486,150 @@ test("the bell's list stays on the screen: across a phone, and from the bell tow
   assert.deepEqual(menu.filter((name) => /^(sm:)?(w-|right-|left-)/.test(name)), ["sm:w-80"]);
   assert.match(bell, /const row = "flex w-full items-start gap-3 rounded-xl px-3 py-2\.5 text-start /);
   assert.doesNotMatch(bell, /\btext-(left|right)\b/);
+});
+
+const nextDayAt = (hour: number) => Math.floor(clock / DAY + 1) * DAY + hour * 3600_000;
+
+test("a check the database fails, or an email held back whose note fails, still sends the drop's email later", async () => {
+  clock = nextDayAt(1);
+  // The check's one read fails: nothing is claimed, and the next spend sends it.
+  await user("hiccup");
+  await give("hiccup", 150);
+  errors.length = 0;
+  failOn = "SELECT u.email";
+  await spend("hiccup", 60);
+  assert.equal(failOn, null, "the read failed");
+  assert.equal(errors.length, 1, "and was logged");
+  assert.equal(await state("hiccup"), null, "nothing claimed");
+  await spend("hiccup", 1);
+  assert.equal(to("hiccup@x.co").length, 1);
+
+  // The day's share used up, and noting that fails once: noted as a failed send, sent the next day.
+  await useUpAlertEmails();
+  await user("noted");
+  await give("noted", 150);
+  failOn = "UPDATE credit_alerts SET alerted_at = 0, sent_at";
+  await spend("noted", 60);
+  assert.equal(failOn, null);
+  assert.deepEqual({ ...(await state("noted")) }, { alerted_at: 0, sent_at: 0, retry_at: nextDayAt(0), app_ai_at: 0 }, "owed from the next day");
+  clock = nextDayAt(1);
+  await spend("noted", 1);
+  assert.equal(to("noted@x.co").length, 1, "the first spend the next day sends it");
+});
+
+test("an email cut off mid-send (the server stopped) counts as sent when claimed: the drop isn't lost, and the next goes a week after it", async () => {
+  clock = nextDayAt(1);
+  const claimed = clock;
+  await user("cut");
+  await give("cut", 150);
+  // Resend never answers: the server was stopped while the email was on its way.
+  gate = new Promise(() => {});
+  const reached = new Promise<void>((r) => (sending = r));
+  void spent("cut", 60);
+  await reached;
+  gate = null;
+  clock += 60_000;
+  assert.equal(await spent("cut", 1), "alerted", "being sent");
+  // Past the time a send can take: it may have gone, so it counts as the week's email.
+  clock = claimed + 16 * 60_000;
+  assert.equal(await spent("cut", 1), "weekly");
+  assert.deepEqual({ ...(await state("cut")) }, { alerted_at: 0, sent_at: claimed, retry_at: claimed + WEEK, app_ai_at: 0 });
+  assert.equal(to("cut@x.co").length, 0);
+  clock = claimed + WEEK;
+  assert.equal(await spent("cut", 1), "sent", "still low a week on: emailed");
+  assert.equal(to("cut@x.co").length, 1);
+});
+
+test("credits coming in while the email is being sent, then a new drop: one email now, the next a week after it", async () => {
+  clock = nextDayAt(1);
+  const first = clock;
+  await user("pair");
+  await give("pair", 150);
+  let release = () => {};
+  gate = new Promise((r) => (release = r));
+  const reached = new Promise<void>((r) => (sending = r));
+  const sending1 = spent("pair", 60);
+  await reached;
+  // A pack bought meanwhile (190: credit_alerts_rearm re-arms it), and a spend takes it below again.
+  await give("pair", 100, "stripe:pack:pair-1");
+  assert.equal((await state("pair"))?.alerted_at, 0, "re-armed");
+  clock += 30_000;
+  const secondSends = new Promise<string>((r) => (sending = () => r("sending")));
+  assert.equal(await Promise.race([spent("pair", 120), secondSends]), "weekly", "the first counts as this week's");
+  sending = null;
+  release();
+  gate = null;
+  assert.equal(await sending1, "sent");
+  assert.equal(to("pair@x.co").length, 1);
+  assert.deepEqual({ ...(await state("pair")) }, { alerted_at: 0, sent_at: first, retry_at: first + WEEK, app_ai_at: 0 });
+  clock = first + WEEK;
+  assert.equal(await spent("pair", 1), "sent");
+  assert.equal(to("pair@x.co").length, 2);
+});
+
+test("a level set at or under the balance re-arms the alert: the next drop below it is emailed, and one already under it isn't again", async () => {
+  clock = nextDayAt(1);
+  await user("lower");
+  await give("lower", 150);
+  await spend("lower", 60);
+  assert.equal(to("lower@x.co").length, 1, "90 is below 100");
+  clock += 8 * DAY;
+  // Lowered to 50, under the 90 left: one image of 60 takes it to 30.
+  await saveAlertSettings("lower", { enabled: true, below: 50 });
+  assert.equal((await state("lower"))?.alerted_at, 0, "re-armed");
+  await spend("lower", 60);
+  assert.equal(to("lower@x.co").length, 2, "the drop below 50 is emailed");
+  // Changed to 100 with 30 left: that drop was emailed already, so nothing goes again.
+  clock += 8 * DAY;
+  await saveAlertSettings("lower", { enabled: true, below: 100 });
+  assert.ok((await state("lower"))?.alerted_at, "still emailed");
+  assert.equal(await spent("lower", 1), "alerted");
+  assert.equal(to("lower@x.co").length, 2);
+});
+
+test("a spend that settles after its account was deleted writes no alert row back, and emails no one", async () => {
+  clock = nextDayAt(1);
+  await user("gone");
+  await give("gone", 200);
+  const running = await charge("gone", 150, "chat request");
+  assert.ok(running);
+  // Deleted by hand while the request runs (Turso has foreign keys off).
+  await run("PRAGMA foreign_keys = OFF");
+  try {
+    await deleteUserAlerts("gone");
+    await run("DELETE FROM users WHERE id = 'gone'");
+    await settle(running, 150);
+    await afterwards();
+    assert.equal(await state("gone"), null, "nothing written back");
+    assert.equal(await checkLowBalance("gone"), "off");
+    assert.equal(await state("gone"), null);
+    assert.equal(to("gone@x.co").length, 0);
+  } finally {
+    await run("DELETE FROM credit_ledger WHERE user_id = 'gone'");
+    await run("PRAGMA foreign_keys = ON");
+  }
+});
+
+test("the bell's \"AI out of credits\" stays gone once credits came in, however many spends follow", async () => {
+  clock = nextDayAt(1);
+  await user("baker");
+  await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) VALUES ('rolls', 'baker', 'Rolls', '<p>', 0, 0)");
+  await run("INSERT INTO site_ai (site_slug, enabled, updated_at) VALUES ('rolls', 1, 0)");
+  noteAppAiOutOfCredits("rolls", "baker", "Rolls");
+  await afterwards();
+  const sites = async () => (await sitesWithMessages("baker")).map((s) => ({ slug: s.slug, title: s.title, unread: s.unread, aiOutOfCredits: s.aiOutOfCredits }));
+  assert.equal((await sites())[0].aiOutOfCredits, clock, "turning visitors away");
+  clock += 3600_000;
+  await give("baker", 2000, "stripe:pack:baker");
+  assert.equal((await sites())[0].aiOutOfCredits, 0, "credits came since");
+  // More spends than the activity list /api/me sends (20), with no visitor asking the AI meanwhile.
+  for (let i = 0; i < 25; i++) {
+    clock += 60_000;
+    const held = await charge("baker", 10, "text request");
+    await settle(held!, 5);
+  }
+  await afterwards();
+  const activity = await recentActivity("baker");
+  assert.ok(!activity.some((a) => a.amount > 0), "the purchase is out of the list");
+  assert.equal(bellState({ credits: 1875, lowCredits: 100, activity }, await sites(), clock, 0, true).aiOut.length, 0);
 });

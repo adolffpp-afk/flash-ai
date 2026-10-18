@@ -39,7 +39,7 @@ process.env.DATABASE_URL = ":memory:";
 process.env.ANTHROPIC_API_KEY = "sk-fake";
 process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
 
-const { run, one } = await import("../src/lib/server/db.ts");
+const { run, one, db } = await import("../src/lib/server/db.ts");
 const { askSiteAi, aiSettings, saveAiSettings, worstCaseCredits, MAX_INSTRUCTIONS_CHARS, MAX_PROMPT_CHARS, MIN_DAILY_CREDITS } = await import(
   "../src/lib/server/site-ai.ts"
 );
@@ -319,7 +319,28 @@ test("an owner with no credits gets a message the app can show", async () => {
   await afterwards();
   assert.equal((await aiSettings("shop")).outOfCreditsAt, marked, "marked at most every few minutes");
   await run("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES ('owner', ?, 'test', 0)", [credits]);
+  // Answering again clears it, after the answer: a database error there never fails the answer or
+  // leaves its credits held.
+  const database = await db();
+  const execute = database.execute.bind(database);
+  const logged = mock.method(console, "error", () => {});
+  (database as unknown as { execute: unknown }).execute = (stmt: string | { sql: string }) =>
+    typeof stmt === "object" && stmt.sql.startsWith("UPDATE site_ai SET out_at = 0")
+      ? Promise.reject(new Error("SQLITE_BUSY: database is locked"))
+      : execute(stmt as never);
+  try {
+    assert.equal((await ask("Anything?")).status, 200);
+    const held = await one<{ n: number }>("SELECT COUNT(*) AS n FROM credit_ledger WHERE user_id = 'owner' AND amount < 0 AND settled_at = 0");
+    assert.equal(held?.n, 0, "the answer's credits are settled");
+    await afterwards();
+    assert.equal(logged.mock.callCount(), 1, "the failed clear is logged");
+    assert.equal((await aiSettings("shop")).outOfCreditsAt, marked, "and tried again on the next answer");
+  } finally {
+    (database as unknown as { execute: unknown }).execute = execute;
+    logged.mock.restore();
+  }
   assert.equal((await ask("Anything?")).status, 200);
+  await afterwards();
   assert.equal((await aiSettings("shop")).outOfCreditsAt, 0, "answering again clears it");
   await run("UPDATE credit_ledger SET amount = 0 WHERE user_id = 'owner'");
 });

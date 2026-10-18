@@ -18,9 +18,12 @@
  * slowed or failed by it. An email the day's budget (EMAIL_BUDGET.alerts) or the provider held back,
  * or the weekly limit, waits: the next spend from then on sends it, while the balance is still low,
  * and so does a request refused for lack of credits (watchRefusal), which spends nothing. A refusal
- * also lets auto top-up try again, as a spend does, once its gap between top-ups has passed.
+ * also lets auto top-up try again, as a spend does, once its gap between top-ups has passed. An
+ * email whose send never finished (the server stopped mid-send) may have gone: it counts as sent,
+ * so the next one waits a week after it, as after any email.
  *
- * Accounts are deleted by hand (see /delete-account): deleteUserAlerts removes what is kept here.
+ * Accounts are deleted by hand (see /delete-account): deleteUserAlerts removes what is kept here,
+ * and a spend that settles after the account is gone writes nothing back.
  */
 import { SITE_URL } from "../../app/site.ts";
 import { translatorIn } from "./i18n.ts";
@@ -47,6 +50,15 @@ const DAY = 86_400_000;
 const WEEK = 7 * DAY;
 // A charge held this long without settling counts as spent (credits.ts holds for its requests' longest run).
 const HOLD_MS = 15 * 60_000;
+// An email claimed this long ago and neither sent nor held back was cut off mid-send (sendEmail gives
+// the provider 15 seconds): it may have gone, so it counts as sent when it was claimed.
+const SENDING_MS = 15 * 60_000;
+/*
+ * The balance the alert goes by (two parameters: the account, and now less HOLD_MS): what is settled,
+ * and holds older than HOLD_MS. A request still running holds credits that mostly come back.
+ */
+const SETTLED_BALANCE = `(SELECT COALESCE(SUM(amount), 0) FROM credit_ledger WHERE user_id = ?
+    AND NOT (amount < 0 AND ref IS NULL AND settled_at = 0 AND created_at > ?))`;
 // How often an app's AI marks a refusal (and looks at its owner's email), at most.
 const MARK_EVERY = 10 * 60_000;
 
@@ -104,10 +116,20 @@ export async function saveAlertSettings(userId: string, choice: { enabled: boole
      ON CONFLICT(user_id) DO UPDATE SET enabled = excluded.enabled, below = excluded.below, updated_at = excluded.updated_at`,
     [userId, choice.enabled ? 1 : 0, choice.below, now()],
   );
+  // A level at or under the balance re-arms the alert, as the balance coming back up to it does: the
+  // next drop below the new level is emailed. One the balance is already under isn't emailed again.
+  await run(`UPDATE credit_alerts SET alerted_at = 0, retry_at = 0 WHERE user_id = ? AND (alerted_at > 0 OR retry_at > 0) AND ${SETTLED_BALANCE} >= below`, [
+    userId,
+    userId,
+    now() - HOLD_MS,
+  ]);
   return alertSettings(userId);
 }
 
-/** Deletes what is kept here for an account, for whoever deletes it (Turso's foreign keys are off, so nothing cascades). */
+/**
+ * Deletes what is kept here for an account, for whoever deletes it (Turso's foreign keys are off, so
+ * nothing cascades): after its users row, so nothing still running for it writes the row back.
+ */
 export async function deleteUserAlerts(userId: string): Promise<void> {
   await run("DELETE FROM credit_alerts WHERE user_id = ?", [userId]);
 }
@@ -149,6 +171,7 @@ export function watchRefusal(accounts: string[], { topUp = true }: CheckOptions 
 }
 
 type State = {
+  email: string | null;
   balance: number;
   enabled: number | null;
   below: number | null;
@@ -161,7 +184,7 @@ type State = {
 
 /**
  * What a spend did to the alert: "above" (the balance is at or above the level), "off" (turned off,
- * payments or emails off, or no such account), "alerted" (this drop was emailed already), "auto" (auto top-up
+ * payments or emails off, or no such account), "alerted" (this drop was emailed already, or is being emailed), "auto" (auto top-up
  * bought, is buying or will buy credits), "waiting" (held back until retry_at), "weekly" (an email went out less than a
  * week ago: this one waits), "budget" (the day's email budget is used up: waits for a later day),
  * "failed" (the email provider failed: waits for a later day) or "sent".
@@ -177,16 +200,18 @@ export type LowBalanceOutcome = "above" | "off" | "alerted" | "auto" | "waiting"
 export async function checkLowBalance(account: string, { topUp = true }: CheckOptions = {}): Promise<LowBalanceOutcome> {
   const t = now();
   const s = await one<State>(
-    `SELECT (SELECT COALESCE(SUM(amount), 0) FROM credit_ledger WHERE user_id = ?
-               AND NOT (amount < 0 AND ref IS NULL AND settled_at = 0 AND created_at > ?)) AS balance,
+    `SELECT u.email, ${SETTLED_BALANCE} AS balance,
             a.enabled, a.below, a.alerted_at, a.sent_at, a.retry_at,
             (p.enabled = 1 AND p.payment_method IS NOT NULL
               AND (SELECT COUNT(*) FROM credit_ledger WHERE user_id = ? AND ref LIKE 'stripe:auto:%' AND created_at >= ?) < ?
               AND NOT EXISTS (SELECT 1 FROM credit_ledger WHERE user_id = ? AND substr(ref, 1, 15) = 'stripe-dispute:')) AS auto,
             p.below AS auto_below
-     FROM (SELECT 1) LEFT JOIN credit_alerts a ON a.user_id = ? LEFT JOIN auto_topups p ON p.user_id = ?`,
-    [account, t - HOLD_MS, account, monthStart(t), MAX_PER_MONTH, account, account, account],
+     FROM (SELECT 1) LEFT JOIN users u ON u.id = ? LEFT JOIN credit_alerts a ON a.user_id = ? LEFT JOIN auto_topups p ON p.user_id = ?`,
+    [account, t - HOLD_MS, account, monthStart(t), MAX_PER_MONTH, account, account, account, account],
   );
+  // An account deleted (by hand, see deleteUserAlerts) while a spend of it was still running: nothing to
+  // email, and nothing written back for it.
+  if (!s?.email) return "off";
   const balance = Number(s?.balance ?? 0);
   const below = Number(s?.below ?? DEFAULT_LEVEL);
   const alertedAt = Number(s?.alerted_at ?? 0);
@@ -204,10 +229,11 @@ export async function checkLowBalance(account: string, { topUp = true }: CheckOp
     return "above";
   }
   if (s?.enabled === 0 || !paymentsEnabled() || !emailEnabled()) return "off";
-  // This drop was emailed (or is being emailed): only the balance back at or above the level re-arms
-  // it, here or as credits come in (credit_alerts_rearm in db.ts), so spends settling together, or
-  // checked one after another, never email one drop twice.
-  if (alertedAt) return "alerted";
+  // This drop was emailed, or is being emailed (until retry_at, SENDING_MS after its claim): only the
+  // balance back at or above the level re-arms it, here or as credits come in (credit_alerts_rearm in
+  // db.ts), or a level set at or under the balance, so spends settling together, or checked one after
+  // another, never email one drop twice. A send cut off goes on below: it counts as sent when claimed.
+  if (alertedAt && !(retryAt > 0 && retryAt <= t)) return "alerted";
   // Auto top-up bought, is buying, or will buy at its own level (one set below this one), or on the
   // account holder's own next spend or visit after a visitor's spend.
   if (auto) return "auto";
@@ -223,29 +249,32 @@ export async function checkLowBalance(account: string, { topUp = true }: CheckOp
     await tally("low-weekly");
     return "weekly";
   }
-  // Claimed in one statement, so two spends settling at once send one email.
+  // Claimed in one statement, so two spends settling at once send one email. It counts as sent from
+  // here (sent_at), so a drop after credits came in during the send waits a week like any other, and
+  // until retry_at as being sent.
   const claim = await run(
-    `INSERT INTO credit_alerts (user_id, alerted_at, updated_at) VALUES (?, ?, ?)
-     ON CONFLICT(user_id) DO UPDATE SET alerted_at = excluded.alerted_at, updated_at = excluded.updated_at
+    `INSERT INTO credit_alerts (user_id, alerted_at, sent_at, retry_at, updated_at) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(user_id) DO UPDATE SET alerted_at = excluded.alerted_at, sent_at = excluded.sent_at, retry_at = excluded.retry_at,
+       updated_at = excluded.updated_at
      WHERE credit_alerts.alerted_at = ? AND credit_alerts.retry_at <= ? AND credit_alerts.sent_at <= ?`,
-    [account, t, t, alertedAt, t, t - WEEK],
+    [account, t, t, t + SENDING_MS, t, alertedAt, t, t - WEEK],
   );
   if (claim.rowsAffected !== 1) return "alerted";
-  const user = await one<{ email: string }>("SELECT email FROM users WHERE id = ?", [account]);
-  if (!user) return "off";
   const held = async (what: "budget" | "failed") => {
-    // Still owed: the first spend from the next day on sends it, if the balance is still low.
-    await run("UPDATE credit_alerts SET alerted_at = 0, retry_at = ? WHERE user_id = ?", [nextDay(t), account]);
+    // Not sent, so still owed: the first spend from the next day on sends it, if the balance is still
+    // low. The last email sent is the one before.
+    await run("UPDATE credit_alerts SET alerted_at = 0, sent_at = ?, retry_at = ? WHERE user_id = ?", [sentAt, nextDay(t), account]);
     await tally(`low-${what}`);
     return what;
   };
   try {
-    if (!(await sendEmail(user.email, EMAILS.lowCredits(balance, creditsLink(account)), "alert"))) return held("budget");
+    if (!(await sendEmail(s.email, EMAILS.lowCredits(balance, creditsLink(account)), "alert"))) return await held("budget");
   } catch (err) {
     console.error("[flash] low-credit email failed", err);
     return held("failed");
   }
-  await run("UPDATE credit_alerts SET sent_at = ?, retry_at = 0 WHERE user_id = ?", [t, account]);
+  // Sent: no longer being sent. If credits came in meanwhile (alerted_at re-armed), what a drop since set stays.
+  await run("UPDATE credit_alerts SET retry_at = 0 WHERE user_id = ? AND alerted_at = ?", [account, t]);
   await tally("low-sent");
   return "sent";
 }

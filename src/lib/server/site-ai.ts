@@ -9,6 +9,7 @@ import { one, run, now } from "./db.ts";
 import { charge, logUsage, settle, spendable } from "./credits.ts";
 import { overLimit } from "./limits.ts";
 import { noteAppAiOutOfCredits } from "./low-balance.ts";
+import { afterResponse } from "./after-response.ts";
 import { CHAT_MODEL, claudeConfigured, getClient } from "../engines/claude.ts";
 import { MARKUP, callMaxCents, claudeCostCents, claudePrice, creditsFor, worstTokens } from "../credits.ts";
 
@@ -166,8 +167,9 @@ export async function askSiteAi(
     noteAppAiOutOfCredits(slug, site.user_id, site.title);
     return fail("This app's AI is out of credits. Its owner can add more in Flash.", 402);
   }
-  // Paid for again: the bell stops saying it turns visitors away.
-  if (settings.outOfCreditsAt) await run("UPDATE site_ai SET out_at = 0 WHERE site_slug = ?", [slug]);
+  // Paid for again: the bell stops saying it turns visitors away. After the answer, so the visitor
+  // never waits for it or loses the answer to it once credits are held.
+  if (settings.outOfCreditsAt) afterResponse(() => run("UPDATE site_ai SET out_at = 0 WHERE site_slug = ?", [slug]));
 
   let message: Anthropic.Beta.BetaMessage;
   try {

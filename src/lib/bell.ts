@@ -31,7 +31,8 @@ export function bellState(me: Account, sites: BellSite[], now: number, seen: num
   const unread = sites.filter((s) => s.unread > 0);
   const low = runningLow(me);
   const added = now ? me.activity.filter((a) => a.amount > 0 && now - a.created_at < RECENT).slice(0, 5) : [];
-  // An app's AI is still turning visitors away if no credits came since it last did.
+  // An app's AI is still turning visitors away if no credits came since it last did. The server leaves
+  // out an app whose owner got credits since (inbox.ts); this also hides it as soon as /api/me has them.
   const toppedUp = Math.max(0, ...me.activity.filter((a) => a.amount > 0).map((a) => a.created_at));
   const aiOut = now ? sites.filter((s) => (s.aiOutOfCredits ?? 0) > toppedUp && now - (s.aiOutOfCredits ?? 0) < AI_OUT_SHOWN) : [];
   const fresh =

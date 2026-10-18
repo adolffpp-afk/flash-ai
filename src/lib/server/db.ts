@@ -398,9 +398,10 @@ const SCHEMA = [
   )`,
   // Low-credit emails (see low-balance.ts): whether they're on and below what balance, and where each
   // alert is. alerted_at is when the last drop below the level was emailed (0 once the balance is back
-  // at or above it), sent_at when the last of these emails went out (one a week at most), retry_at
-  // when one held back (the day's email budget, a failed send, the week's email) may go, and
-  // app_ai_at when the last "your app's AI is out of credits" email went or was tried (one a day).
+  // at or above it), sent_at when the last of these emails went out, or started to (one a week at
+  // most), retry_at when one held back (the day's email budget, a failed send, the week's email) may
+  // go, or while one is being sent, until when that may take, and app_ai_at when the last "your app's
+  // AI is out of credits" email went or was tried (one a day).
   // No row means on, at the default level, and nothing sent yet.
   `CREATE TABLE IF NOT EXISTS credit_alerts (
     user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
