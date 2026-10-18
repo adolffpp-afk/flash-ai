@@ -584,12 +584,14 @@ test("only a change to an app or slides takes a cap: on any other request it's i
   const usageRows = async () => Number((await one<{ n: number }>("SELECT COUNT(*) AS n FROM usage WHERE user_id = ?", [who.id]))!.n);
   const ask = { messages: [{ role: "user", content: "something for my bakery's opening day" }], projectId: who.projectId, timeZone: "Europe/London", maxCredits: 1 };
   // Marked as a change (build), too: it's one only with the app or slides engine picked, so a request on
-  // Auto that says it's a build is still read by the router and isn't refused after it paid for that.
+  // Auto that says it's a build is still read by the router and isn't refused after it paid for that. And
+  // the app engine picked without that mark (a new app, not Fix all's change) is answered as without a cap.
   for (const [engine, build] of [
     ["auto", false],
     ["text", false],
     ["auto", true],
     ["text", true],
+    ["app", false],
   ] as const) {
     const helpers = helperCalls();
     const rows = await usageRows();
