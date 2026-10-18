@@ -1,7 +1,7 @@
 import { getUser, unauthorized } from "@/lib/server/auth.ts";
 import { one, run } from "@/lib/server/db.ts";
 import { translatorFor } from "@/lib/server/i18n.ts";
-import { clearLimit, countOf, overLimit } from "@/lib/server/limits.ts";
+import { clearLimit, countOf, takeOne } from "@/lib/server/limits.ts";
 import { pointsAtFlash, siteDomains } from "@/lib/server/domains.ts";
 import { cacheGet, cacheKey, cachePut } from "@/lib/server/source-fetch.ts";
 import { appBase } from "@/lib/server/seo.ts";
@@ -29,8 +29,11 @@ function failed(t: Translate, error: PageSpeedError): Response {
   return Response.json({ code: error, error: message }, { status });
 }
 
-/** Takes one of key's max in its window, or says no without writing anything once they're all used. */
-const take = async (key: string, max: number, windowMs: number) => (await countOf(key)) < max && !(await overLimit(key, max, windowMs));
+/**
+ * Takes one of key's max in its window, or says no without writing anything once they're all used: in
+ * one statement (takeOne), so of two presses at the same moment for the last one, one takes it.
+ */
+const take = async (key: string, max: number, windowMs: number) => (await countOf(key)) < max && (await takeOne(key, max, windowMs));
 
 /**
  * How many times an owner may be told here, in an hour, that their domain doesn't point at Flash, and
@@ -119,7 +122,9 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug
       return Response.json({ code: "domain_not_connected", error: t("Your domain doesn't point at Flash yet, so Google can't check your app there.") }, { status: 409 });
     }
   }
-  if (await overLimit(lock, 1, 3 * MINUTE)) {
+  // Taken in one statement: of two presses of the app at the same moment, one holds it, and only its
+  // finally lets go.
+  if (!(await takeOne(lock, 1, 3 * MINUTE))) {
     if (domain) await giveBack(lookups);
     return running();
   }
@@ -128,7 +133,10 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug
     // Counted once this press holds the app's check, so a press that lost the race to another uses none.
     if (!(await take(hourly, caps.hour, HOUR))) return thisHour();
     // Until the next UTC midnight. The owner's first check of a day clears their counts of earlier days.
-    if (!(await take(daily, caps.day, DAY - (pressed % DAY)))) return today();
+    if (!(await take(daily, caps.day, DAY - (pressed % DAY)))) {
+      await giveBack(hourly);
+      return today();
+    }
     if (!usedToday) await run("DELETE FROM rate_limits WHERE key >= ? AND key < ?", [days, daily]);
     // Both side by side, or only the half that failed last time, each with when Google ran it (a kept
     // half saved before halves had their own time is as old as its check). Never the request's

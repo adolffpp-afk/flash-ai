@@ -632,6 +632,73 @@ test("a press on a domain that points at Flash gives its Vercel lookup back, so 
   }
 });
 
+test("two presses at the same moment that reach the owner's last check this hour or today: Google is asked for one, and the other uses none", async () => {
+  await fresh();
+  // Room in Flash's daily allowance for every press here, whatever earlier tests used.
+  process.env.FLASH_PAGESPEED_DAILY_REQUESTS = "1000000";
+  const day = new Date().toISOString().slice(0, 10);
+  /** An owner with two apps, who has used `used` of one of their counts (their hour's or their day's). */
+  const racer = async (id: string, key: (who: Owner) => string, used: number) => {
+    const who = await owner(id);
+    await run("INSERT INTO sites (slug, user_id, title, html, created_at, updated_at) SELECT ?, user_id, title, html, created_at, updated_at FROM sites WHERE slug = ?", [
+      `${who.slug}-2`,
+      who.slug,
+    ]);
+    await run("INSERT INTO rate_limits (key, count, reset_at) VALUES (?, ?, ?)", [key(who), used, Date.now() + HOUR]);
+    return who;
+  };
+  const counts = (who: Owner) => Promise.all([countOf(`pagespeed:${who.id}`), countOf(`pagespeed-day:${who.id}:${day}`)]);
+  const both = async (who: Owner) => {
+    const presses = await Promise.all([check(who), check(who, {}, `${who.slug}-2`)]);
+    return presses.map((p) => [p.status, p.body.error ?? ""] as const).sort((a, b) => a[0] - b[0]);
+  };
+  try {
+    // 4 of today's 5 used: one press takes the last, the other is told today's are used, and gives
+    // back the hour's check it took.
+    const daily = await racer("race-day", (who) => `pagespeed-day:${who.id}:${day}`, 4);
+    assert.deepEqual(await both(daily), [
+      [200, ""],
+      [429, today(5)],
+    ]);
+    assert.equal(google.length, 2, "Google was asked for one press");
+    assert.deepEqual(await counts(daily), [1, 5], "the refused press used none");
+
+    // 2 of the hour's 3 used: the same.
+    google.length = 0;
+    const hourly = await racer("race-hour", (who) => `pagespeed:${who.id}`, 2);
+    assert.deepEqual(await both(hourly), [
+      [200, ""],
+      [429, thisHour(3)],
+    ]);
+    assert.equal(google.length, 2);
+    assert.deepEqual(await counts(hourly), [3, 1]);
+  } finally {
+    delete process.env.FLASH_PAGESPEED_DAILY_REQUESTS;
+  }
+});
+
+test("two presses of the same app at the same moment: Google is asked for one, the other waits for it, and the app isn't left locked", async () => {
+  await fresh();
+  process.env.FLASH_PAGESPEED_DAILY_REQUESTS = "1000000";
+  try {
+    const who = await owner("race-same");
+    const presses = (await Promise.all([check(who), check(who)])).map((p) => [p.status, p.body.code ?? ""]).sort((a, b) => Number(a[0]) - Number(b[0]));
+    assert.deepEqual(presses, [
+      [200, ""],
+      [409, "running"],
+    ]);
+    assert.equal(google.length, 2, "Google was asked for one press");
+    assert.equal(await countOf(runLock(who.slug)), 0, "the check that ran let go of the app");
+    assert.equal((await seo(who)).pagespeedRunning, false);
+    assert.equal(await countOf(`pagespeed:${who.id}`), 1, "the press that waited used none");
+    // The next version is checked straight away.
+    await republish(who.slug);
+    assert.equal((await check(who)).status, 200);
+  } finally {
+    delete process.env.FLASH_PAGESPEED_DAILY_REQUESTS;
+  }
+});
+
 test("Google refusing stops the checks for a while, and the view says so", async () => {
   await fresh();
   const who = await owner("refused");

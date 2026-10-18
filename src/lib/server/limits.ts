@@ -21,6 +21,24 @@ export async function overLimit(key: string, max: number, windowMs: number, atte
 }
 
 /**
+ * Takes one of key's max in its window in one statement, so requests at the same moment can't both
+ * take the last one: false, changing nothing, once they're all used. With max 1 it holds key until
+ * clearLimit or the window ends.
+ */
+export async function takeOne(key: string, max: number, windowMs: number): Promise<boolean> {
+  const t = now();
+  const r = await run(
+    `INSERT INTO rate_limits (key, count, reset_at) VALUES (?, 1, ?)
+     ON CONFLICT(key) DO UPDATE SET
+       count = CASE WHEN reset_at < ? THEN 1 ELSE count + 1 END,
+       reset_at = CASE WHEN reset_at < ? THEN excluded.reset_at ELSE reset_at END
+     WHERE reset_at < ? OR count < ?`,
+    [key, t + windowMs, t, t, t, max],
+  );
+  return r.rowsAffected === 1;
+}
+
+/**
  * A condition that is true while `attempts` more fit within max on key in its current window, for a
  * statement whose writes take them with takeAfter in the same transaction, so requests at the same
  * moment can't push it past max.
