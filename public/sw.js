@@ -111,9 +111,9 @@ let showing = Promise.resolve();
 // Browsers require every push to show something, so one that can't be read, or whose account's
 // sign-in here isn't live, shows Flash's name only. When that sign-in has ended, the alerts that
 // account already showed here go too (every alert, once nobody is signed in here), so the next
-// person on a shared computer doesn't see them; the other accounts' stay. Safari keeps a tag but never lets it replace anything (webkit.org/b/258922), so once the
-// new alert shows, any earlier one with its tag still there is closed; elsewhere the browser has
-// replaced it already, and there's none.
+// person on a shared computer doesn't see them; the other accounts' stay. Safari keeps a tag but
+// never lets it replace anything (webkit.org/b/258922), so once the new alert shows, any earlier one
+// with its tag still there is closed; elsewhere the browser has replaced it already, and there's none.
 self.addEventListener("push", (event) => {
   const text = (value) => (typeof value === "string" ? value : "");
   const show = async () => {
@@ -142,6 +142,9 @@ self.addEventListener("push", (event) => {
         icon: "/app-icon/192?v=3",
         data: { url: flashPage(alert.url), id },
         ...(tag ? { tag, renotify: tag !== HIDDEN } : {}),
+        // One that only says a sign-in ended carries no alert of anyone's, so it makes no sound and
+        // doesn't buzz. It still shows, as every push must, also to someone else signed in here.
+        ...(ended ? { silent: true } : {}),
       });
       if (!tag) return;
       for (const shown of await self.registration.getNotifications().catch(() => [])) {

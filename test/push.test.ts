@@ -761,7 +761,7 @@ const moment = () => new Promise((done) => setTimeout(done, 5));
  */
 function serviceWorker(endpoint: string, cookie: () => string, windows: (string | Window)[] = [], replacesByTag = true) {
   const listeners: Record<string, (event: object) => void> = {};
-  type Options = { body: string; tag?: string; renotify?: boolean; data: { url: string; id?: string } };
+  type Options = { body: string; tag?: string; renotify?: boolean; silent?: boolean; data: { url: string; id?: string } };
   const shown: { title: string; options: Options }[] = [];
   // What's on the screen now: a new alert with the tag of one there takes its place, as in Chrome,
   // Edge and Firefox; with replacesByTag false, as in Safari, it shows beside it.
@@ -1136,14 +1136,15 @@ test("a sign-in that ended takes only its own account's alerts off a screen it s
     await worker.push(laptop.open(sent.find((s) => s.url === laptop.endpoint)!.body));
   }
   assert.deepEqual(worker.tray().map((n) => n.title), ["Eli's payroll check", "Fay's weekly summary"]);
-  // Fay turns hers off there (her alert stays on the screen), then Eli presses "Log out of all
-  // devices" on his phone: the laptop, where nobody else gets alerts now, is told his sign-in ended.
-  await pushRoute.DELETE(call("DELETE", cookie, { endpoint: laptop.endpoint }, as(fay.id)));
+  // Fay's sign-in there ends by itself (30 days, with Flash closed, so her alert stays on the
+  // screen), then Eli presses "Log out of all devices" on his phone: the laptop, where nobody else
+  // gets alerts now, is told his sign-in ended.
+  await run("UPDATE sessions SET expires_at = 1 WHERE token_hash = ?", [hashOf(tokenOf(fay.cookie))]);
   sent = [];
   await logOut(phoneCookie, undefined, { everywhere: true });
   assert.deepEqual(sent.map((s) => s.url), [laptop.endpoint]);
   await worker.push(laptop.open(sent[0].body));
-  assert.deepEqual(worker.tray().map((n) => n.title), ["Fay's weekly summary", "Flash ∞ AI"], "Fay's is hers to dismiss");
+  assert.deepEqual(worker.tray().map((n) => n.title), ["Fay's weekly summary", "Flash ∞ AI"], "only Eli's go");
   assert.equal(worker.state.subscribed, false, "nobody there gets alerts by it");
 });
 
@@ -1240,6 +1241,8 @@ test("\"Log out of all devices\", a password change or a reset takes her alerts 
     // There, her alert goes and Ben's stays, with the subscription his come by, and his next one arrives.
     await atHome.push(shared.open(toldHome));
     assert.deepEqual(atHome.tray().map((n) => [n.title, n.tag]), [[bens.title, bens.tag], ["Flash ∞ AI", "flash-hidden"]], how);
+    // It holds no alert of anyone's, so it shows with no sound or buzz, for Ben too.
+    assert.deepEqual(atHome.shown.at(-1)!.options, { body: "", icon: "/app-icon/192?v=3", data: { url: `${ORIGIN}/` }, tag: "flash-hidden", renotify: false, silent: true }, how);
     assert.equal(atHome.state.subscribed, true, how);
     sent = [];
     await push.sendPush(ben.id, { ...bens, tag: "flash-run-b2" });
@@ -1249,6 +1252,7 @@ test("\"Log out of all devices\", a password change or a reset takes her alerts 
     worker.state.offline = how === "everywhere";
     await worker.push(library.open(told));
     assert.deepEqual(worker.tray(), [{ title: "Flash ∞ AI", body: "", tag: "flash-hidden" }], how);
+    assert.equal(worker.shown.at(-1)!.options.silent, true, how);
     assert.equal(worker.state.subscribed, false, how);
   }
   // Anything else that ends every sign-in, from no browser of hers, does the same to all of them.

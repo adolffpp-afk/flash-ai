@@ -988,10 +988,14 @@ test("going on as another account asks first about a message being written, whic
   for (const name of ["async function switchAccount(", "async function addDone(", "async function addLeave("]) assert.match(body(page, name), /await leaveCheck\(\)/, name);
   for (const name of ["async function signOut(", "async function signOutAll("]) assert.doesNotMatch(body(page, name), /leaveCheck/, name);
   assert.equal(page.match(/writing: ask === "writing"/g)?.length, 3);
-  assert.match(page, /<SwitchAnyway\n\s+onSwitch=\{unsaved\.go\}[\s\S]*?\n\s+writing=\{unsaved\.writing\}\n\s+\/>/);
-  // The question says which: changes not saved, or the message not sent.
+  assert.match(page, /<SwitchAnyway\n\s+onSwitch=\{unsaved\.go\}[\s\S]*?\n\s+writing=\{unsaved\.writing\}\n\s+to=\{unsaved\.to\}\n\s+\/>/);
+  // The question says which: changes not saved, or the message not sent (or, for an alert tapped
+  // with a dialog open, whose account it is, see push-client.test.ts).
   const chooser = await readFile(new URL("../src/components/AccountChooser.tsx", import.meta.url), "utf8");
-  assert.match(body(chooser, "export function SwitchAnyway("), /const question = writing \? t\("Your message hasn't been sent yet\. Switch anyway\?"\) : t\("Some changes in this chat haven't saved yet\. Switch anyway\?"\);/);
+  assert.match(
+    body(chooser, "export function SwitchAnyway("),
+    /: writing\n\s+\? t\("Your message hasn't been sent yet\. Switch anyway\?"\)\n\s+: t\("Some changes in this chat haven't saved yet\. Switch anyway\?"\);/,
+  );
 });
 
 test("a switch that finds nobody signed in here leaves the tab on no account, so nothing names it later", async () => {

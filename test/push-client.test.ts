@@ -559,6 +559,106 @@ test("the accounts signed in to one browser share its subscription, and it goes 
   setPin(null);
 });
 
+test("turning alerts off while Flash's server doesn't answer keeps the subscription, and says so", async () => {
+  const said = async (userId: string) => {
+    try {
+      await client.turnOffPush(userId);
+      return "off";
+    } catch (e) {
+      return (e as Error).message;
+    }
+  };
+  // A family laptop signed in to Vic and Wen, both with alerts on there, by one subscription.
+  await account("vic");
+  await account("wen");
+  storage.clear();
+  current = null;
+  cookie = "";
+  await signIn("vic");
+  setPin("vic");
+  await client.turnOnPush("vic", key);
+  await addAccount("wen");
+  setPin("wen");
+  await client.turnOnPush("wen", key);
+  const shared = subNow()!.endpoint;
+  // Vic turns his off while Flash's server has a hiccup (a 503 from a proxy, with no words), or the connection drops.
+  const real = globalThis.fetch;
+  setPin("vic");
+  for (const fails of [() => new Response("<html>Service Unavailable</html>", { status: 503 }), () => Promise.reject(new TypeError("Failed to fetch"))]) {
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
+      String(input) === "/api/push" && init?.method === "DELETE" ? fails() : real(input, init)) as typeof fetch;
+    try {
+      assert.equal(await said("vic"), "Couldn't turn off alerts. Please try again.", "his switch stays on, to try again");
+    } finally {
+      globalThis.fetch = real;
+    }
+    assert.equal(subNow()?.endpoint, shared, "kept: it isn't known that nobody else here gets alerts by it");
+    assert.deepEqual([await alertsHere("vic"), await alertsHere("wen")], [1, 1]);
+  }
+  setPin("wen");
+  assert.equal((await client.pushStatus()).on, true, "Wen's switch still reads On");
+  // Tried again with the server answering: his go, Wen's stay.
+  setPin("vic");
+  assert.equal(await said("vic"), "off");
+  assert.equal(subNow()?.endpoint, shared);
+  assert.deepEqual([await alertsHere("vic"), await alertsHere("wen")], [0, 1]);
+
+  // Wen's sign-in there ends (her "Log out of all devices" elsewhere) while her Settings is still
+  // open, and she turns hers off: the server answers 401 with its own words, and Vic, signed in
+  // here, could still want the subscription, so it stays.
+  setPin("vic");
+  await client.turnOnPush("vic", key);
+  await endAllSessions("wen");
+  setPin("wen");
+  assert.equal(await said("wen"), "Please sign in.");
+  assert.equal(subNow()?.endpoint, shared);
+  assert.equal(await alertsHere("vic"), 1, "Vic's alerts still arrive");
+  setPin(null);
+});
+
+test("turning alerts off here takes that account's alerts off this screen, which nothing later could reach", async () => {
+  const titles = () => tray.map((n) => n.title);
+  await account("ana");
+  await account("ben");
+  // A library computer, Ana's alone: she turns alerts off there and walks away still signed in.
+  storage.clear();
+  current = null;
+  cookie = "";
+  tray.length = 0;
+  await signIn("ana");
+  setPin("ana");
+  await client.turnOnPush("ana", key);
+  showAlert("Payroll check: Your salary of $4,210 arrived", "ana");
+  await client.turnOffPush("ana");
+  assert.deepEqual(titles(), [], "hers go with them");
+  assert.equal(current, null);
+  // Later she presses "Log out of all devices" on her phone: with her row there gone, nothing is
+  // sent there, and nothing of hers is left on its screen anyway.
+  reached.length = 0;
+  await endAllSessions("ana");
+  assert.deepEqual(reached, []);
+  assert.deepEqual(titles(), []);
+
+  // A family PC signed in to Ana and Ben, both with alerts on: she turns hers off there.
+  cookie = "";
+  await signIn("ana");
+  setPin("ana");
+  await client.turnOnPush("ana", key);
+  await addAccount("ben");
+  setPin("ben");
+  await client.turnOnPush("ben", key);
+  showAlert("Payroll check: Your salary of $4,210 arrived", "ana");
+  showAlert("Ben's build: Your app is live", "ben");
+  setPin("ana");
+  await client.turnOffPush("ana");
+  assert.deepEqual(titles(), ["Ben's build: Your app is live"], "hers go, Ben's stay");
+  await endAllSessions("ana");
+  assert.deepEqual(titles(), ["Ben's build: Your app is live"], "none of hers is left beside his");
+  assert.equal(await alertsHere("ben"), 1, "his still arrive");
+  tray.length = 0;
+  setPin(null);
+});
+
 test("logging one account out here keeps the other's alerts; logging out the last, or all of them, drops the subscription", async () => {
   const titles = () => tray.map((n) => n.title);
   for (const how of ["one by one", "all at once"]) {
@@ -680,9 +780,16 @@ test("a tap on an alert while Flash is open tells the tab the service worker bro
     const flash = readFileSync(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
     const handler = flash.slice(flash.indexOf("alertTapped.current = (account) =>"), flash.indexOf("useEffect(() => onAlertTapped("));
     assert.match(handler, /if \(adding \|\| leavingRef\.current \|\| \(!chooser && account === me\?\.user\.id\)\) return;/);
-    // Not with a dialog open over Flash (Settings, say), whose typed words a switch would lose.
-    assert.match(handler, /if \(!chooser && document\.querySelector\('\[aria-modal="true"\]'\)\) return;/);
-    assert.match(handler, /\(chooser\?\.accounts \?\? me\?\.accounts \?\? \[\]\)\.some\(\(a\) => a\.id === account\)\) void switchAccount\(account, \{ gone: Boolean\(chooser\) \}\)/);
+    assert.match(handler, /const to = \(chooser\?\.accounts \?\? me\?\.accounts \?\? \[\]\)\.find\(\(a\) => a\.id === account\);\s+if \(!to\) return;/);
+    // With a dialog open over Flash (Settings, say), whose typed words a switch would lose, it asks
+    // first, naming the account; the switch then asks again for a message being written.
+    assert.match(
+      handler,
+      /if \(!chooser && document\.querySelector\('\[aria-modal="true"\]'\)\) setUnsaved\(\{ go: \(\) => void switchAccount\(account\), to: to\.email \}\);\s+else void switchAccount\(account, \{ gone: Boolean\(chooser\) \}\);/,
+    );
+    assert.match(flash, /<SwitchAnyway[\s\S]*?to=\{unsaved\.to\}/);
+    const chooserSource = readFileSync(new URL("../src/components/AccountChooser.tsx", import.meta.url), "utf8");
+    assert.match(chooserSource, /const question = to\s+\? t\("Switch to \{email\}\? Anything you haven't saved here will be lost\.", \{ email: isolate\(to\) \}\)/);
     assert.match(flash, /useEffect\(\(\) => onAlertTapped\(\(account\) => alertTapped\.current\(account\)\), \[\]\);/);
   } finally {
     Object.defineProperty(navigator, "serviceWorker", { configurable: true, value: was.container });
@@ -752,6 +859,39 @@ test("new keys on the server bring back, from one tab, the alerts of every accou
     assert.deepEqual([await alertsHere("tam"), await alertsHere("uma")], [1, 1], "Tam's come back too");
     setPin("tam");
     assert.equal((await client.pushStatus()).on, true, "and Tam's switch reads On");
+  } finally {
+    process.env.VAPID_PUBLIC_KEY = was.pub;
+    process.env.VAPID_PRIVATE_KEY = was.priv;
+    setPin(null);
+  }
+});
+
+test("new keys bring back the alerts only of the accounts that had them on here, never one that didn't", async () => {
+  await account("vee");
+  await account("wyn");
+  storage.clear();
+  current = null;
+  cookie = "";
+  // A family PC signed in to Vee and Wyn, where only Vee turned alerts on; Wyn never did.
+  await signIn("vee");
+  setPin("vee");
+  await client.turnOnPush("vee", key);
+  await addAccount("wyn");
+  assert.equal(wanted(), "vee");
+  assert.equal(await alertsHere("wyn"), 0);
+  // Adolff makes new push keys; Flash then opens on the PC as Vee.
+  const was = { pub: process.env.VAPID_PUBLIC_KEY, priv: process.env.VAPID_PRIVATE_KEY };
+  const fresh = generateKeyPairSync("ec", { namedCurve: "prime256v1" }).privateKey.export({ format: "jwk" });
+  process.env.VAPID_PUBLIC_KEY = Buffer.concat([Buffer.from([4]), Buffer.from(fresh.x!, "base64url"), Buffer.from(fresh.y!, "base64url")]).toString("base64url");
+  process.env.VAPID_PRIVATE_KEY = fresh.d!;
+  try {
+    setPin("vee");
+    await client.syncPush("vee", ["vee", "wyn"]);
+    assert.equal(await alertsHere("vee"), 1, "Vee's are back");
+    assert.equal(await alertsHere("wyn"), 0, "Wyn's stay off: she never turned them on here");
+    setPin("wyn");
+    assert.equal((await client.pushStatus()).on, false, "and her switch reads Off");
+    assert.equal(wanted(), "vee");
   } finally {
     process.env.VAPID_PUBLIC_KEY = was.pub;
     process.env.VAPID_PRIVATE_KEY = was.priv;

@@ -271,11 +271,12 @@ export function Flash({
   // Several accounts in one browser (see account-pin.ts): the account a switch is under way to; the
   // chooser shown when this tab's account was logged out here, or a link was for another account;
   // a switch waiting on "Switch anyway" (go: what it does then; added: after Add another account,
-  // whose account is signed in here already); add mode (signing in to another account); a log out
-  // under way; and an invitation for another account signed in here.
+  // whose account is signed in here already; to: the email of an alert's account, tapped with a
+  // dialog open); add mode (signing in to another account); a log out under way; and an invitation
+  // for another account signed in here.
   const [switching, setSwitching] = useState<string | null>(null);
   const [chooser, setChooser] = useState<Chooser | null>(null);
-  const [unsaved, setUnsaved] = useState<{ go: () => void; added?: boolean; writing?: boolean } | null>(null);
+  const [unsaved, setUnsaved] = useState<{ go: () => void; added?: boolean; writing?: boolean; to?: string } | null>(null);
   const [adding, setAdding] = useState<Adding | null>(null);
   // Which log out is under way, from the profile menu or Settings: the menu and Settings say so.
   const leavingRef = useRef(false);
@@ -1530,14 +1531,16 @@ export function Flash({
   // A tap on an alert of another account signed in here, with this tab the Flash the service worker
   // brought to the front: the tab goes on as that account, as Switch (or picking it in the chooser)
   // does, asking first when something here isn't saved (see onAlertTapped). With a dialog open over
-  // Flash (Settings, say), whose typed words nothing would keep, the tab only comes to the front, as
-  // with the profile menu's Switch out of reach under it.
+  // Flash (Settings, say), which may hold typed words nothing here can check, it asks first too,
+  // naming the account; then a message being written still asks as it does.
   const alertTapped = useRef<(account: string) => void>(() => {});
   useEffect(() => {
     alertTapped.current = (account) => {
       if (adding || leavingRef.current || (!chooser && account === me?.user.id)) return;
-      if (!chooser && document.querySelector('[aria-modal="true"]')) return;
-      if ((chooser?.accounts ?? me?.accounts ?? []).some((a) => a.id === account)) void switchAccount(account, { gone: Boolean(chooser) });
+      const to = (chooser?.accounts ?? me?.accounts ?? []).find((a) => a.id === account);
+      if (!to) return;
+      if (!chooser && document.querySelector('[aria-modal="true"]')) setUnsaved({ go: () => void switchAccount(account), to: to.email });
+      else void switchAccount(account, { gone: Boolean(chooser) });
     };
   });
   useEffect(() => onAlertTapped((account) => alertTapped.current(account)), []);
@@ -3269,6 +3272,7 @@ export function Flash({
             if (unsaved.added) void checkAccounts();
           }}
           writing={unsaved.writing}
+          to={unsaved.to}
         />
       )}
       {showInstructions && active && (

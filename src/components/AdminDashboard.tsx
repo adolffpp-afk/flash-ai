@@ -375,7 +375,7 @@ function PushKeyMaker({ setUp, keysOk, missing, problem, browsers }: NonNullable
           {setUp ? (
             <>
               <li>Edit each of the three and paste its new value, still marked Sensitive.</li>
-              <li>Redeploy. Each browser moves to the new keys the next time its person opens Flash there.</li>
+              <li>Redeploy. Alerts in each browser come back the next time Flash is opened there as an account that had them on.</li>
             </>
           ) : (
             <>

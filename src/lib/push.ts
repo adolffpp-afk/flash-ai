@@ -12,7 +12,8 @@
  *    the server, or one the browser renewed), for every account signed in here that had them on;
  *  - turning them on while no other account here gets them makes a new subscription, so nothing
  *    turned on with the old one can follow;
- *  - alerts still on the screen go with the sign-in they came for (closeAlerts);
+ *  - alerts still on the screen go with the sign-in they came for, and when their account turns
+ *    alerts off here (closeAlerts);
  *  - a tap on an alert while Flash is open reaches the tab the service worker brings to the front,
  *    which goes on as the alert's account when it shows another (onAlertTapped).
  */
@@ -236,15 +237,27 @@ export async function turnOnPush(userId: string, key: string): Promise<void> {
 }
 
 /**
- * Turns alerts off for this account here. Once no other account signed in here gets them, the
- * browser's subscription goes too, and with it anything still on its way.
+ * Turns alerts off for this account here, and takes its alerts off this screen: with its row gone,
+ * nothing Flash sends later ("Log out of all devices" elsewhere, say) reaches this screen for it.
+ * Once Flash's server says no other account signed in here gets alerts, the browser's subscription
+ * goes too, and with it anything still on its way. When the server doesn't say (no answer, or an
+ * error), the subscription stays, since another account's alerts may come by it, and this throws
+ * with the words to show, so the switch stays on to try again.
  */
 export async function turnOffPush(userId: string): Promise<void> {
   want(userId, false);
+  await closeAlerts((account) => account === userId);
   const sub = await subscription();
   if (!sub) return;
-  const left = await api<{ here?: boolean }>("/api/push", { method: "DELETE", json: { endpoint: sub.endpoint } }).catch(() => null);
-  if (!left?.here) await sub.unsubscribe().catch(() => false);
+  let left: { here?: boolean };
+  try {
+    left = await api<{ here?: boolean }>("/api/push", { method: "DELETE", json: { endpoint: sub.endpoint } });
+  } catch (e) {
+    // The server's own words (too many tries, signed out), else these.
+    const said = (e as { data?: { error?: unknown } }).data?.error;
+    throw typeof said === "string" && said ? e : new Error(msg("Couldn't turn off alerts. Please try again."));
+  }
+  if (!left.here) await sub.unsubscribe().catch(() => false);
 }
 
 /**
