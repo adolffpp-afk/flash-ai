@@ -2,6 +2,7 @@ import { all, one, run, now } from "./db.ts";
 import { randomId, sha256 } from "./ids.ts";
 import { EMAILS, demoEmails, sendEmail, verificationRequired } from "./email.ts";
 import { clearScreens, screensOf } from "./push.ts";
+import { afterResponse } from "./after-response.ts";
 
 const HOUR = 3600 * 1000;
 export type TokenKind = "verify" | "reset";
@@ -125,7 +126,9 @@ export async function endAllSessions(userId: string, here = ""): Promise<void> {
   await run("DELETE FROM oauth_tokens WHERE user_id = ?", [userId]);
   await run("DELETE FROM oauth_codes WHERE user_id = ?", [userId]);
   await run("DELETE FROM push_subscriptions WHERE user_id = ?", [userId]);
-  await clearScreens(userId, screens);
+  // A push service can take up to 10 seconds to take each push (see push.ts), so the ones that clear
+  // those screens go once the response has, and signing out never waits for them.
+  if (screens.length) await afterResponse(() => clearScreens(userId, screens));
 }
 
 /** Accounts created before email keys existed get theirs filled in. */

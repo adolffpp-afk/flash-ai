@@ -50,6 +50,7 @@ const resetRoute = await import("../src/app/api/auth/reset/route.ts");
 const { createSession, hashPassword } = await import("../src/lib/server/auth.ts");
 const { endAllSessions, sendReset } = await import("../src/lib/server/account.ts");
 const { run, all, one } = await import("../src/lib/server/db.ts");
+const { afterwards } = await import("./support/next-server.mjs");
 
 const b64 = (s: string) => Buffer.from(s, "base64url");
 const hmac = (key: Buffer, ...parts: Buffer[]) => parts.reduce((h, p) => h.update(p), createHmac("sha256", key)).digest();
@@ -1273,6 +1274,51 @@ test("\"Log out of all devices\", a password change or a reset takes her alerts 
     assert.deepEqual(await rowsOf(di.id), []);
   } finally {
     setKeys(true);
+  }
+});
+
+test("\"Log out of all devices\", a password change or a reset doesn't wait for the push service: the rows go at once, and the wordless pushes after the response", async () => {
+  const standIn = globalThis.fetch;
+  for (const how of ["everywhere", "password", "reset"]) {
+    const eva = await account(`eva.slow.${how}@example.com`);
+    const phoneCookie = await signIn(eva);
+    const library = browser(`${FCM}eva-library-${how}`);
+    await pushRoute.POST(call("POST", eva.cookie, library.sub));
+    const token = how === "reset" ? new URL((await sendReset(eva, ORIGIN))!).searchParams.get("token") : "";
+    // A push service that takes 2 seconds to take each push (deliver waits up to 10).
+    let taken = 0;
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const res = await standIn(input, init);
+      if (String(input).startsWith(FCM)) {
+        await new Promise((r) => setTimeout(r, 2000));
+        taken++;
+      }
+      return res;
+    }) as typeof fetch;
+    try {
+      sent = [];
+      const fromPhone = (path: string, body: object) =>
+        new Request(`${ORIGIN}${path}`, { method: "POST", headers: { "content-type": "application/json", origin: ORIGIN, cookie: phoneCookie }, body: JSON.stringify(body) });
+      const started = Date.now();
+      const out =
+        how === "everywhere"
+          ? await logoutRoute.POST(fromPhone("/api/auth/logout", { everywhere: true }))
+          : how === "password"
+            ? await passwordRoute.POST(fromPhone("/api/me/password", { current: "old password", next: "a brand new password" }))
+            : await resetRoute.POST(fromPhone("/api/auth/reset", { token, password: "a brand new password", email: eva.email }));
+      const took = Date.now() - started;
+      assert.equal(out.status, 200, how);
+      assert.ok(took < 1500, `${how}: answered in ${took} ms, without waiting for the push service`);
+      assert.deepEqual(await rowsOf(eva.id), [], `${how}: the rows went at once`);
+      assert.equal(taken, 0, `${how}: the push is still on its way`);
+      // What Next runs once the response has gone.
+      await afterwards();
+      assert.equal(taken, 1, how);
+      assert.deepEqual(sent.map((s) => s.url), [library.endpoint], how);
+      assert.deepEqual(library.read(sent[0].body), { ended: true, as: eva.id }, how);
+    } finally {
+      globalThis.fetch = standIn;
+    }
   }
 });
 
