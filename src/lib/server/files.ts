@@ -15,10 +15,13 @@ export async function saveFile(userId: string, mime: string, name: string, data:
   return `/api/files/${id}`;
 }
 
-export async function readFile(id: string, userId: string) {
+/** A stored file of the user's, or of any of these users' (the accounts signed in to one browser). */
+export async function readFile(id: string, userId: string | readonly string[]) {
+  const ids = typeof userId === "string" ? [userId] : [...userId];
+  if (!ids.length) return null;
   return one<{ mime: string; name: string; data: ArrayBuffer }>(
-    "SELECT mime, name, data FROM files WHERE id = ? AND user_id = ?",
-    [id, userId],
+    `SELECT mime, name, data FROM files WHERE id = ? AND user_id IN (${ids.map(() => "?").join(", ")})`,
+    [id, ...ids],
   );
 }
 

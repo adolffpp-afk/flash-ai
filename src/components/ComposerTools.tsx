@@ -449,11 +449,14 @@ export function MicButton({
 
   async function start() {
     setError("");
+    // Stopped by stopMic(true), as the account signs out here: what it heard goes nowhere.
+    let dropped = false;
     const rec = newRecognition();
     if (rec) {
       rec.continuous = true;
       rec.interimResults = false;
       rec.onresult = (e) => {
+        if (dropped) return;
         for (let i = e.resultIndex; i < e.results.length; i++) {
           if (e.results[i].isFinal) onText(e.results[i][0].transcript.trim());
         }
@@ -467,7 +470,10 @@ export function MicButton({
         listen(false);
       };
       stopRef.current = () => rec.stop();
-      takeMic("dictation", () => rec.abort());
+      takeMic("dictation", (drop) => {
+        dropped = drop;
+        rec.abort();
+      });
       listen(true);
       rec.start();
       return;
@@ -489,10 +495,14 @@ export function MicButton({
         listen(false);
         const type = (recorder.mimeType || "audio/webm").split(";")[0];
         const ext = type.split("/")[1] === "mp4" ? "m4a" : type.split("/")[1];
-        if (chunks.length) onRecording(new File(chunks, `recording.${ext}`, { type }));
+        // The clip comes in after the stop, so one dropped meanwhile is attached nowhere.
+        if (chunks.length && !dropped) onRecording(new File(chunks, `recording.${ext}`, { type }));
       };
       stopRef.current = () => recorder.state !== "inactive" && recorder.stop();
-      takeMic("dictation", () => recorder.state !== "inactive" && recorder.stop());
+      takeMic("dictation", (drop) => {
+        dropped = drop;
+        if (recorder.state !== "inactive") recorder.stop();
+      });
       recorder.start();
       listen(true);
     } catch {

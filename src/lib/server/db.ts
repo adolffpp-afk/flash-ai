@@ -19,6 +19,10 @@ const SCHEMA = [
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     expires_at INTEGER NOT NULL
   )`,
+  // One browser can hold sessions for several accounts (see auth.ts), so sessions are looked up by
+  // user (logging out everywhere) and by expiry (clearing out old ones) more often.
+  `CREATE INDEX IF NOT EXISTS sessions_user ON sessions(user_id)`,
+  `CREATE INDEX IF NOT EXISTS sessions_expires ON sessions(expires_at)`,
   `CREATE TABLE IF NOT EXISTS credit_ledger (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -953,6 +957,8 @@ const MIGRATIONS = [
   "ALTER TABLE sites ADD COLUMN step_names TEXT NOT NULL DEFAULT ''",
   // The assistant a chat was started with (see assistants.ts); '' for none.
   "ALTER TABLE projects ADD COLUMN assistant_id TEXT NOT NULL DEFAULT ''",
+  // When a sign-in started, for housekeeping only (the order of a browser's accounts is its cookie's).
+  "ALTER TABLE sessions ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0",
   // What Stripe's Connect webhook said of an order since (see connectEvent in shop.ts): when it was
   // last refunded and how much in all (in the order's currency's smallest unit), and when the buyer
   // disputed it, or 0.

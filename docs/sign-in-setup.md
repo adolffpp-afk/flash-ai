@@ -55,6 +55,11 @@ Vercel variables: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`.
 
 Vercel variables: `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`.
 
+People can be signed in to up to 5 Flash accounts in one browser (profile menu → Add another account).
+So that "Continue with GitHub" doesn't quietly reuse whichever GitHub account is signed in, Flash asks
+GitHub to show its account picker. That picker lists only the accounts signed in on github.com in that
+browser; its "Use a different account" covers the rest. Google and Microsoft already ask which account.
+
 ## Microsoft (personal and work accounts)
 
 1. Go to the [Microsoft Entra admin center](https://entra.microsoft.com/) (or the Azure portal)

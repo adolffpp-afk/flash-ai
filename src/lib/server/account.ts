@@ -41,6 +41,9 @@ export async function resetLinkEmail(token: string): Promise<string | null> {
   return userId ? ((await one<{ email: string }>("SELECT email FROM users WHERE id = ?", [userId]))?.email ?? null) : null;
 }
 
+/** The account a reset link is for, without using it up, or null if wrong, used or expired. */
+export const resetLinkUser = (token: string) => tokenOwner(token, "reset");
+
 /** Whose one-time link this is, without using it up, or null if it is wrong, used or expired. */
 async function tokenOwner(token: string, kind: TokenKind): Promise<string | null> {
   if (!token) return null;
@@ -86,13 +89,21 @@ export async function sendReset(user: { id: string; email: string }, origin: str
  * signing in with an email link or Google instead clears what the stranger set up (see signin.ts).
  */
 export async function confirmEmail(token: string, signedIn: string | null): Promise<"confirmed" | "sign_in" | "invalid"> {
+  return (await confirmEmailFor(token, signedIn ? [signedIn] : [])).status;
+}
+
+/**
+ * confirmEmail for a browser signed in to several accounts (signedIn, their ids): the link confirms
+ * its own account when that is one of them, and says which (userId) so the page can show it.
+ */
+export async function confirmEmailFor(token: string, signedIn: readonly string[]): Promise<{ status: "confirmed" | "sign_in" | "invalid"; userId: string | null }> {
   const owner = await tokenOwner(token, "verify");
-  if (!owner) return "invalid";
-  if (signedIn !== owner) return "sign_in";
+  if (!owner) return { status: "invalid", userId: null };
+  if (!signedIn.includes(owner)) return { status: "sign_in", userId: null };
   const userId = await redeemToken(token, "verify");
-  if (!userId) return "invalid";
+  if (!userId) return { status: "invalid", userId: null };
   await markVerified(userId);
-  return "confirmed";
+  return { status: "confirmed", userId };
 }
 
 export async function markVerified(userId: string): Promise<void> {

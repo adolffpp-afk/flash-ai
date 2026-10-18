@@ -126,8 +126,9 @@ export async function sellerOnboardingLink(
         account: row.stripe_account,
         type: "account_onboarding",
         // Stripe's links expire after a few minutes; the refresh address makes a new one.
-        refresh_url: `${origin}/api/payments/link`,
-        return_url: `${origin}/?apps=1`,
+        // Both name the account, so they open as it in a browser signed in to several (see auth.ts).
+        refresh_url: `${origin}/api/payments/link?as=${encodeURIComponent(user.id)}`,
+        return_url: `${origin}/?apps=1&as=${encodeURIComponent(user.id)}`,
       }),
     );
     return { url: link.url };
@@ -194,8 +195,8 @@ export async function deleteProduct(slug: string, id: string): Promise<void> {
 
 /** The owner and Stripe account behind a site, when it can take payments. */
 async function shopOf(slug: string) {
-  return one<{ title: string; email: string; stripe_account: string; country: string }>(
-    `SELECT s.title, u.email, a.stripe_account, a.country FROM sites s
+  return one<{ title: string; email: string; user_id: string; stripe_account: string; country: string }>(
+    `SELECT s.title, u.email, s.user_id, a.stripe_account, a.country FROM sites s
        JOIN users u ON u.id = s.user_id
        JOIN seller_accounts a ON a.user_id = s.user_id AND a.ready = 1
      WHERE s.slug = ?`,
@@ -356,7 +357,8 @@ async function orderPaid(slug: string, session: Session, shop: Shop, appOrigin: 
     .filter(Boolean)
     .join("\n");
   // Orders aren't held to the owner's cap for form messages (see EMAIL_BUDGET), only the day's budget.
-  await sendEmail(shop.email, EMAILS.siteOrder(shop.title, summary, `${appOrigin}/?apps=1`), "other").catch((err) =>
+  // The link names the owner's account, so it opens as it in a browser signed in to several (see auth.ts).
+  await sendEmail(shop.email, EMAILS.siteOrder(shop.title, summary, `${appOrigin}/?apps=1&as=${encodeURIComponent(shop.user_id)}`), "other").catch((err) =>
     console.error("[flash] order email failed", err),
   );
   return true;

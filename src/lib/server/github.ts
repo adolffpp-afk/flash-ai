@@ -1,4 +1,4 @@
-import { db, now, all, run } from "./db.ts";
+import { db, now, all, one, run } from "./db.ts";
 import { randomId, sha256 } from "./ids.ts";
 import { pkceChallenge } from "./oauth.ts";
 import { FLOW_TTL_MS, OAuthError, flowPlace, type FlowRow, type Tokens } from "./mcp-oauth.ts";
@@ -145,6 +145,26 @@ export async function beginGithubFlow(userId: string, origin: string, { step, in
   page.searchParams.set("code_challenge", pkceChallenge(verifier));
   page.searchParams.set("code_challenge_method", "S256");
   return page.href;
+}
+
+/** Who started the GitHub sign-in for a state that is still under way (null for none). */
+export async function githubFlowOwner(state: string | null): Promise<string | null> {
+  if (!state || state.length > 200) return null;
+  const row = await one<{ user_id: string }>("SELECT user_id FROM connect_flows WHERE state_hash = ? AND provider = 'github' AND expires_at > ?", [sha256(state), now()]);
+  return row?.user_id ?? null;
+}
+
+/**
+ * Which of these accounts (those signed in here) GitHub's redirect after an installation answers
+ * to: the one Flash most recently sent to the installation page (see takeInstallFlow), else null.
+ */
+export async function installFlowOwner(userIds: readonly string[]): Promise<string | null> {
+  if (!userIds.length) return null;
+  const live = await all<FlowRow>(
+    `SELECT * FROM connect_flows WHERE user_id IN (${userIds.map(() => "?").join(", ")}) AND provider = 'github' AND expires_at > ? ORDER BY created_at DESC`,
+    [...userIds, now()],
+  );
+  return live.find((f) => githubStep(f)?.step === "install")?.user_id ?? null;
 }
 
 /** Takes the user's own GitHub flow for a state, once, before it expires (see takeFlow for the other services). */
