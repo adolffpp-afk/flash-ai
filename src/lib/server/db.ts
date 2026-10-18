@@ -694,6 +694,74 @@ const SCHEMA = [
     created_at INTEGER NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS report_actions_item ON report_actions(item_kind, item_id)`,
+  // Assistants (see assistants.ts): their settings, their files kept as text in chunks, and who came
+  // in through a shared link. The REFERENCES only say what points where: Turso runs with foreign keys
+  // off, so deleting an assistant or a file deletes from each table by hand (see assistant-search.ts).
+  `CREATE TABLE IF NOT EXISTS assistants (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    name TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    instructions TEXT NOT NULL DEFAULT '',
+    starters TEXT NOT NULL DEFAULT '[]',
+    level TEXT NOT NULL DEFAULT 'auto',
+    color TEXT NOT NULL DEFAULT '',
+    instr_tokens INTEGER NOT NULL DEFAULT 0,
+    share_id TEXT UNIQUE,
+    shared_at INTEGER NOT NULL DEFAULT 0,
+    free_ok INTEGER NOT NULL DEFAULT 0,
+    show_files INTEGER NOT NULL DEFAULT 0,
+    removed_at INTEGER NOT NULL DEFAULT 0,
+    imported TEXT NOT NULL DEFAULT '',
+    version INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS assistants_user ON assistants(user_id, updated_at)`,
+  // stored is what the file counts against its owner's storage: STORE_FACTOR times its UTF-8 bytes.
+  // tokens is the largest count over the level models when exact is 1, else an estimate; hash is
+  // the text's SHA-256, so the same file can't be added twice.
+  `CREATE TABLE IF NOT EXISTS assistant_files (
+    id TEXT PRIMARY KEY,
+    assistant_id TEXT NOT NULL REFERENCES assistants(id),
+    name TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    pages INTEGER NOT NULL DEFAULT 0,
+    chars INTEGER NOT NULL,
+    bytes INTEGER NOT NULL,
+    stored INTEGER NOT NULL,
+    tokens INTEGER NOT NULL,
+    exact INTEGER NOT NULL DEFAULT 0,
+    cut INTEGER NOT NULL DEFAULT 0,
+    hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS assistant_files_assistant ON assistant_files(assistant_id)`,
+  // A file's text in chunks with no overlap: in seq order they are the text. AUTOINCREMENT, so an id
+  // is never given to another chunk and an index row left behind can't find someone else's text.
+  `CREATE TABLE IF NOT EXISTS assistant_chunks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    assistant_id TEXT NOT NULL,
+    file_id TEXT NOT NULL,
+    seq INTEGER NOT NULL,
+    label TEXT NOT NULL DEFAULT '',
+    chars INTEGER NOT NULL,
+    tokens INTEGER NOT NULL,
+    body TEXT NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS assistant_chunks_file ON assistant_chunks(file_id, seq)`,
+  `CREATE INDEX IF NOT EXISTS assistant_chunks_assistant ON assistant_chunks(assistant_id)`,
+  // People who started a chat from an assistant's link, and the link they used: a new link ends
+  // access through the old one.
+  `CREATE TABLE IF NOT EXISTS assistant_visitors (
+    assistant_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    share_id TEXT NOT NULL,
+    first_at INTEGER NOT NULL,
+    last_at INTEGER NOT NULL,
+    PRIMARY KEY (assistant_id, user_id)
+  )`,
+  `CREATE INDEX IF NOT EXISTS assistant_visitors_user ON assistant_visitors(user_id, last_at)`,
 ];
 
 let client: Client | null = null;
@@ -781,7 +849,22 @@ const MIGRATIONS = [
   // Who recorded that a contact agreed to news: '' for a box they ticked on a form, 'owner' for the
   // owner recording that they asked for news again after unsubscribing (see recordConsent).
   "ALTER TABLE site_contacts ADD COLUMN consent_by TEXT NOT NULL DEFAULT ''",
+  // The assistant a chat was started with (see assistants.ts); '' for none.
+  "ALTER TABLE projects ADD COLUMN assistant_id TEXT NOT NULL DEFAULT ''",
 ];
+
+/*
+ * The assistants' search index (see assistant-search.ts): each chunk's words, tagged with its
+ * assistant, and no copy of the text. Its tokenizer keeps letters, digits and marks together, so
+ * Thai or Hindi words aren't split at their vowel signs. A database without FTS5 can't make it, and
+ * search falls back to reading the chunks.
+ */
+const ASSISTANT_INDEX =
+  "CREATE VIRTUAL TABLE IF NOT EXISTS assistant_chunks_fts USING fts5(seg, content='', contentless_delete=1, tokenize=\"unicode61 remove_diacritics 2 categories 'L* N* Co M*'\")";
+// Deleting a chunk deletes its index rows. Made only once the index exists: with no index to
+// delete from, the trigger would make every delete of a chunk fail.
+const ASSISTANT_INDEX_TRIGGER =
+  "CREATE TRIGGER IF NOT EXISTS assistant_chunks_gone AFTER DELETE ON assistant_chunks BEGIN DELETE FROM assistant_chunks_fts WHERE rowid = old.id; END";
 
 async function init(c: Client) {
   await c.execute("PRAGMA foreign_keys = ON");
@@ -794,6 +877,9 @@ async function init(c: Client) {
   await c.execute("CREATE INDEX IF NOT EXISTS credit_ledger_actor ON credit_ledger(actor)");
   await c.execute("CREATE INDEX IF NOT EXISTS site_records_owner ON site_records(site_slug, owner, collection, created_at)");
   await c.execute("CREATE INDEX IF NOT EXISTS site_messages_contact ON site_messages(site_slug, contact_id)");
+  // Each on its own, outside SCHEMA's one batch, so a database without FTS5 still gets everything else.
+  await c.execute("CREATE INDEX IF NOT EXISTS projects_assistant ON projects(assistant_id) WHERE assistant_id != ''").catch(() => {});
+  await c.execute(ASSISTANT_INDEX).then(() => c.execute(ASSISTANT_INDEX_TRIGGER)).catch(() => {});
 }
 
 /** Returns the database client, creating the tables on first use. */
