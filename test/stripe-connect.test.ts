@@ -65,6 +65,10 @@ const order = (id: string) =>
 type Session = Record<string, unknown> & { id: string; payment_intent?: string };
 const accounts: Record<string, Session[]> = { acct_A: [], acct_B: [], acct_C: [] };
 const charges: Record<string, string> = {};
+// What each payment carries in its metadata, by account and payment, and the checkouts Stripe's list
+// by payment doesn't show yet.
+const intents: Record<string, Record<string, string>> = {};
+const unlisted = new Set<string>();
 const calls: { path: string; account?: string }[] = [];
 const emails: { to: string[]; subject: string }[] = [];
 let stripeDown = false;
@@ -106,7 +110,11 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
   }
   if (path === "/checkout/sessions") {
     const pi = url.searchParams.get("payment_intent");
-    return Response.json({ data: pi ? sessions.filter((s) => s.payment_intent === pi).slice(0, 1) : sessions });
+    return Response.json({ data: pi ? sessions.filter((s) => s.payment_intent === pi && !unlisted.has(s.id)).slice(0, 1) : sessions });
+  }
+  if (path.startsWith("/payment_intents/")) {
+    const id = decodeURIComponent(path.split("/")[2]);
+    return Response.json({ id, object: "payment_intent", metadata: intents[`${account}:${id}`] ?? {} });
   }
   if (path.startsWith("/charges/")) {
     const pi = charges[`${account}:${path.split("/")[2]}`];
@@ -533,6 +541,77 @@ test("a payment refunded or disputed before its order was saved is saved then, a
   // A refund of a sale Flash didn't make (no session for it) changes nothing.
   assert.equal((await send(event("charge.refunded", { id: "ch_x", amount: 900, amount_refunded: 900, payment_intent: "pi_not_flash" }))).outcome, "not-ours");
   assert.equal((await send(event("charge.refunded", { id: "ch_y", amount: 900, amount_refunded: 900 }))).outcome, "not-ours");
+});
+
+test("a refund or dispute of an app's payment whose checkout Stripe doesn't list yet is answered 500 and handled when sent again, and one from outside Flash 200", async () => {
+  emails.length = 0;
+  const kept = (id: string) => n("SELECT COUNT(*) AS n FROM stripe_events WHERE id = ?", [id]);
+  // The app's checkout named the app on its payment, and Stripe's list by payment comes back empty for a moment.
+  accounts.acct_A.push(paid("cs_lag", "pi_lag"));
+  intents["acct_A:pi_lag"] = { flash_site: "cake-1" };
+  unlisted.add("cs_lag");
+  const refund = event("charge.refunded", { id: "ch_lag", object: "charge", amount: 2500, amount_refunded: 1000, payment_intent: "pi_lag" });
+  assert.deepEqual(await send(refund), { status: 500, outcome: undefined });
+  assert.deepEqual(calls.at(-1), { path: "/payment_intents/pi_lag", account: "acct_A" }, "the payment is read on the seller's account");
+  assert.equal(await order("cs_lag"), null);
+  assert.equal(await kept(refund.id!), 0, "not kept as handled, so Stripe's next try is handled");
+  // Stripe sends it again, and the checkout is listed by then.
+  unlisted.delete("cs_lag");
+  assert.deepEqual(await send(refund), { status: 200, outcome: "refunded" });
+  assert.deepEqual([(await order("cs_lag"))?.refunded_amount, (await order("cs_lag"))?.refunded_at], [1000, refund.created! * 1000]);
+  assert.equal(await kept(refund.id!), 1);
+  assert.deepEqual(await send(refund), { status: 200, outcome: "duplicate" });
+
+  // A dispute the same way, naming its payment (newer API versions) or only its charge (older ones).
+  for (const [id, object] of [
+    ["lag_disp", { id: "dp_lag", object: "dispute", charge: "ch_lag_disp", payment_intent: "pi_lag_disp" }],
+    ["lag_disp_old", { id: "dp_lag_old", object: "dispute", charge: "ch_lag_disp_old", payment_intent: null }],
+  ] as const) {
+    accounts.acct_A.push(paid(`cs_${id}`, `pi_${id}`));
+    intents[`acct_A:pi_${id}`] = { flash_site: "cake-1" };
+    charges[`acct_A:ch_${id}`] = `pi_${id}`;
+    unlisted.add(`cs_${id}`);
+    const dispute = event("charge.dispute.created", object);
+    assert.equal((await send(dispute)).status, 500, id);
+    assert.equal(await order(`cs_${id}`), null);
+    assert.equal(await kept(dispute.id!), 0);
+    unlisted.delete(`cs_${id}`);
+    assert.deepEqual(await send(dispute), { status: 200, outcome: "disputed" }, id);
+    assert.equal((await order(`cs_${id}`))?.disputed_at, dispute.created! * 1000);
+  }
+
+  // The seller's own sales outside Flash on the same account: no checkout, and nothing on the
+  // payment naming an app, so 200 at once, every time Stripe sends it, and nothing kept.
+  intents["acct_A:pi_outside"] = { order: "1001" };
+  for (const outside of [
+    event("charge.refunded", { id: "ch_outside", amount: 900, amount_refunded: 900, payment_intent: "pi_outside" }),
+    event("charge.dispute.created", { id: "dp_outside", charge: "ch_outside", payment_intent: "pi_outside" }),
+    event("charge.refunded", { id: "ch_bare", amount: 900, amount_refunded: 900, payment_intent: "pi_bare" }),
+  ]) {
+    for (let i = 0; i < 2; i++) assert.deepEqual(await send(outside), { status: 200, outcome: "not-ours" }, outside.type);
+    assert.equal(await kept(outside.id!), 0);
+  }
+  // A payment naming another owner's app, or an app that isn't there, is no app of this account's to wait for.
+  for (const [pi, slug] of [["pi_names_b", "shop-b"], ["pi_names_none", "no-such-app"]]) {
+    intents[`acct_A:${pi}`] = { flash_site: slug };
+    assert.deepEqual(await send(event("charge.refunded", { id: `ch_${pi}`, amount: 900, amount_refunded: 900, payment_intent: pi })), { status: 200, outcome: "not-ours" }, slug);
+  }
+  // Nor is one another seller's account sends naming this app.
+  intents["acct_B:pi_b_names_a"] = { flash_site: "cake-1" };
+  const fromB = event("charge.refunded", { id: "ch_b_names_a", amount: 900, amount_refunded: 900, payment_intent: "pi_b_names_a" }, { account: "acct_B" });
+  assert.deepEqual(await send(fromB), { status: 200, outcome: "not-ours" });
+  assert.deepEqual(calls.at(-1), { path: "/payment_intents/pi_b_names_a", account: "acct_B" });
+
+  // A payment from before checkouts named the app on it is answered as before: not Flash's.
+  accounts.acct_A.push(paid("cs_lag_older", "pi_lag_older"));
+  unlisted.add("cs_lag_older");
+  assert.deepEqual(await send(event("charge.refunded", { id: "ch_lag_older", amount: 2500, amount_refunded: 2500, payment_intent: "pi_lag_older" })), {
+    status: 200,
+    outcome: "not-ours",
+  });
+  assert.equal(await order("cs_lag_older"), null);
+  unlisted.delete("cs_lag_older");
+  assert.equal(emails.length, 0);
 });
 
 test("the funnel keeps Paid and Revenue as what buyers paid, and says what was refunded on its own line", async () => {

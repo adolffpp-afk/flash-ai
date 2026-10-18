@@ -247,6 +247,8 @@ export async function startCheckout(
     "line_items[0][price_data][product_data][name]": product.name,
     "payment_intent_data[application_fee_amount]": String(saleFee(total, feeBps())),
     "payment_intent_data[description]": `${shop.title.slice(0, 80)}: ${product.name}`,
+    // On the payment too, so a refund or dispute whose checkout Stripe can't list yet is still known as this app's (see chargeEvent).
+    "payment_intent_data[metadata][flash_site]": slug,
     "metadata[flash_site]": slug,
     "metadata[flash_item]": product.name,
     success_url: `${appOrigin}/api/sites/${slug}/shop/done?session={CHECKOUT_SESSION_ID}&back=${encodeURIComponent(back)}`,
@@ -497,8 +499,9 @@ const isId = (v: unknown, prefix: string): v is string => typeof v === "string" 
  * api/stripe/connect), its signature already checked: a checkout paid, or paid days later (a bank
  * debit, a voucher), saves its order and emails the owner, as the return page would have; a refund
  * or a dispute is kept with its order. Each event changes something once, and only for an app whose
- * owner's account sent it, in the key's own mode. Throws when Stripe or the database fails, so
- * Stripe sends it again later.
+ * owner's account sent it, in the key's own mode. Throws when Stripe or the database fails, or when
+ * Stripe can't list the checkout of an app's refunded or disputed payment yet, so Stripe sends it
+ * again later.
  */
 export async function connectEvent(event: ConnectEvent, appOrigin: string): Promise<ConnectOutcome> {
   const { type, account } = event;
@@ -521,12 +524,17 @@ export async function connectEvent(event: ConnectEvent, appOrigin: string): Prom
   return outcome;
 }
 
-/** The app a checkout session is for, when that app's owner's connected account is the one that sent it. */
-async function shopFor(account: string, session: Session | undefined) {
-  const slug = session?.metadata?.flash_site;
-  if (!session || !isId(session.id, "cs") || typeof slug !== "string" || !slug) return null;
+/** The app slug names, when that app's owner's connected account is the one that sent the event. */
+async function appOf(account: string, slug: unknown) {
+  if (typeof slug !== "string" || !slug) return null;
   const shop = await shopOf(slug);
   return shop && shop.stripe_account === account ? { slug, shop } : null;
+}
+
+/** The app a checkout session is for, when that app's owner's connected account is the one that sent it. */
+async function shopFor(account: string, session: Session | undefined) {
+  if (!session || !isId(session.id, "cs")) return null;
+  return appOf(account, session.metadata?.flash_site);
 }
 
 async function sessionEvent(account: string, sent: Session, appOrigin: string): Promise<ConnectOutcome> {
@@ -553,8 +561,19 @@ async function chargeEvent(type: "charge.refunded" | "charge.dispute.created", a
     account,
   );
   const session = found.data?.[0];
+  if (!session) {
+    // No checkout for the payment: a sale the seller made outside Flash, or one of an app's whose
+    // checkout Stripe's list doesn't show yet. An app's checkout names the app on its payment too
+    // (see startCheckout), so for those this throws: Stripe is answered 500 and sends the event
+    // again later, and the refund or dispute isn't lost. Any other payment is not Flash's, and is
+    // answered 200 so Stripe doesn't keep sending it.
+    const intent = await stripe<{ metadata?: Record<string, string> | null }>("GET", `/payment_intents/${encodeURIComponent(payment)}`, undefined, account);
+    const app = await appOf(account, intent.metadata?.flash_site);
+    if (app) throw new Error(`Stripe listed no checkout yet for ${payment}, a payment of the app ${app.slug}`);
+    return "not-ours";
+  }
   const mine = await shopFor(account, session);
-  if (!session || !mine) return "not-ours";
+  if (!mine) return "not-ours";
   // How much of the charge has gone back so far, with each refund. One sent late never lowers it.
   const refunded = type === "charge.refunded" ? Math.max(0, Math.floor(Number(object.amount_refunded) || 0)) : 0;
   // Refunded or disputed before its order was saved (the buyer closed the tab, an event was lost):
