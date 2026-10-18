@@ -14,7 +14,7 @@ import { decode, hasOwnPreview, sitePreview } from "./site-preview.ts";
 import { imageDimensions } from "./imageSize.ts";
 
 /** Changes when the reading changes, so facts saved before are read again (see server/seo.ts). */
-export const SEO_VERSION = 5;
+export const SEO_VERSION = 6;
 
 export type Alphabet = "latin" | "arabic" | "hebrew" | "cyrillic" | "greek" | "devanagari" | "bengali" | "thai" | "hangul" | "cjk";
 
@@ -95,8 +95,9 @@ export type SeoFacts = {
   smallTargets: string[];
   mixed: string[];
   /**
-   * Blanks like [Phone number] the page shows: in its words, title, description, templates, Alpine's
-   * and Vue's data, and its scripts' JSX, strings and template literals.
+   * Blanks like [Phone number] the page shows: in its words, title, description, share tags, alt
+   * texts, details for Google (JSON-LD), templates, Alpine's and Vue's data, and its scripts' JSX,
+   * strings and template literals. Up to MAX_BLANKS, so the owner can give them all at once.
    */
   placeholders: string[];
   /**
@@ -119,6 +120,8 @@ export type SeoFacts = {
 const MAX_FACTS = 16_000;
 const CLIP = 200;
 const SAMPLE = 80;
+// Blanks are short (40 characters at most), so every one a page shows is kept, up to this many.
+const MAX_BLANKS = 40;
 
 const clip = (text: string, max = CLIP) => (text.length <= max ? text : `${text.slice(0, max - 1)}…`);
 /** Up to max different entries. */
@@ -221,8 +224,20 @@ const CSS_HTTP = /url\(\s*["']?(http:\/\/[^"')\s]{1,200})/gi;
 // An @import's address, to its closing quote or bracket: Google Fonts puts ";" between weights (wght@400;700).
 const IMPORT = /@import\s+(?:url\(\s*(?:"([^"]{0,2000})"|'([^']{0,2000})'|([^"'()\s]{0,2000}))|"([^"]{0,2000})"|'([^']{0,2000})')/gi;
 const GOOGLE_FONTS = /^\s*(?:https?:)?\/\/fonts\.googleapis\.com\/css2?\?/i;
-// A blank like [Phone number] or [Dirección] that the builder leaves for the owner to fill in.
-const PLACEHOLDER = /\[[\p{Lu}\p{Lo}][\p{L}\p{M}\p{N} '’.-]{1,38}\]/gu;
+// A blank like [Phone number], [Dirección] or [מס׳ טלפון] that the builder leaves for the owner to fill
+// in: letters, with what Persian writes inside a word (the joiners U+200C and U+200D: [ساعت‌های کاری]) and
+// Hebrew in an abbreviation (׳ and ״: [כתובת דוא״ל]). In a script's code, nothing more, so code never looks
+// like one; in the words a page shows, also " (Hebrew's דוא"ל), / & and currency signs ([Price in €]).
+const SCRIPT_PLACEHOLDER = /\[[\p{Lu}\p{Lo}][\p{L}\p{M}\p{N} '’.\u200c\u200d\u05f3\u05f4-]{1,38}\]/gu;
+const PLACEHOLDER = /\[[\p{Lu}\p{Lo}][\p{L}\p{M}\p{N}\p{Sc} '’".\/&\u200c\u200d\u05f3\u05f4-]{1,38}\]/gu;
+// Bracketed words that are a page's own content, never blanks: keys a game or a guide names ([Space],
+// [Enter]), a form's [Optional] and [New], and a song's parts ([Chorus], [Verse 1]).
+const NOT_BLANK = new RegExp(
+  "^(?:space|spacebar|enter|return|esc|escape|tab|shift|ctrl|control|alt|cmd|command|backspace|delete|del|up|down|left|right" +
+    "|optional|opcional|optionnel|facultatif|facultativo|facoltativo|opzionale|required|new" +
+    "|chorus|pre-chorus|verse|bridge|intro|outro|hook|refrain|estribillo|coro|verso|refrão|couplet|strophe)(?: \\d{1,2})?$",
+  "iu",
+);
 // Where a blank in a script's code is in its words: after a quote, a tag's ">", a space or "(".
 const SCRIPT_TEXT_BEFORE = /[\s"'`>(]/;
 // A blank in a string that is an object's field, as a sample entry's are ({ price: "[Price]" }): the
@@ -330,8 +345,6 @@ function fit(facts: SeoFacts): SeoFacts {
   facts.mixed = short(facts.mixed);
   facts.fonts.noSwap = short(facts.fonts.noSwap);
   facts.smallTargets = short(facts.smallTargets);
-  facts.placeholders = short(facts.placeholders);
-  facts.scriptPlaceholders = short(facts.scriptPlaceholders);
   facts.sampleFields = short(facts.sampleFields);
   facts.h1Texts = short(facts.h1Texts);
   facts.headings = facts.headings.slice(0, 20);
@@ -555,6 +568,8 @@ function scan(html: string): SeoFacts {
     } else if (alt !== undefined) {
       const words = oneLine(alt);
       if (words && (FILE_ALT.test(words) || WORD_ALT.has(words.toLowerCase()))) addOnce(imgs.fileAlt, clip(words, 60), 5);
+      // What Google Images and screen readers read: [Photo of the owner] is a blank too.
+      if (!codeDepth) findPlaceholders(words, facts.placeholders);
       if (words) {
         if (link) link.label = true;
         if (button) button.label = true;
@@ -609,6 +624,8 @@ function scan(html: string): SeoFacts {
       ld.bad++;
       return;
     }
+    // What Google reads as the page's facts: "telephone": "[Phone number]" is a blank like any other.
+    if (text.includes("[")) blanksIn(value);
     const items = (Array.isArray(value) ? value : [value]).slice(0, 50);
     let context = items.length > 0;
     let typed = items.length > 0;
@@ -635,6 +652,18 @@ function scan(html: string): SeoFacts {
     }
     if (!context) ld.noContext++;
     if (!typed) ld.noType++;
+  };
+
+  /** Blanks in the strings of parsed JSON, up to 2,000 values and 20 levels down. */
+  const blanksIn = (value: unknown) => {
+    let seen = 0;
+    const walk = (v: unknown, depth: number) => {
+      if (++seen > 2000 || depth > 20) return;
+      if (typeof v === "string") findPlaceholders(v, facts.placeholders);
+      else if (Array.isArray(v)) for (const item of v) walk(item, depth + 1);
+      else if (v && typeof v === "object") for (const item of Object.values(v)) walk(item, depth + 1);
+    };
+    walk(value, 0);
   };
 
   const onScript = (attrs: Attrs, content: string, from: number, to: number) => {
@@ -701,8 +730,12 @@ function scan(html: string): SeoFacts {
     } else if (name === "og:title" || name === "og:description" || name === "og:image") {
       const key = name.slice(3) as "title" | "description" | "image";
       if (facts.og[key] === undefined) facts.og[key] = clip(content);
+      if (key !== "image") findPlaceholders(content, facts.placeholders);
     } else if (name === "twitter:card") {
       if (facts.og.twitterCard === undefined) facts.og.twitterCard = clip(content);
+    } else if (name === "og:site_name" || name === "twitter:title" || name === "twitter:description") {
+      // What share cards show on WhatsApp, Facebook and X.
+      findPlaceholders(content, facts.placeholders);
     }
   };
 
@@ -835,8 +868,11 @@ function scan(html: string): SeoFacts {
         if (!selfClosing) labels++;
         break;
       }
+      // Code, and the keys a page names (<kbd>[Space]</kbd>): never blanks.
       case "code":
       case "pre":
+      case "kbd":
+      case "samp":
         if (!selfClosing) codeDepth++;
         break;
       case "iframe":
@@ -877,7 +913,7 @@ function scan(html: string): SeoFacts {
     else if (name === "a") closeLink();
     else if (name === "button") closeButton();
     else if (/^h[1-6]$/.test(name)) closeHeading();
-    else if (name === "code" || name === "pre") codeDepth = Math.max(0, codeDepth - 1);
+    else if (name === "code" || name === "pre" || name === "kbd" || name === "samp") codeDepth = Math.max(0, codeDepth - 1);
     if (PAGE_TAGS.has(name)) {
       if (pageOverflow) pageOverflow--;
       else {
@@ -1045,7 +1081,8 @@ function scan(html: string): SeoFacts {
   for (const [id, tag] of boxes) if (!labelled.has(id)) addOnce(facts.smallTargets, tag, 5);
 
   // Links to pages and spots the page doesn't have. A target written anywhere in the file (made by
-  // its script, or in a template) counts as there: every id="…" and data-page="…" in it, found in one pass.
+  // its script, or in a template) counts as there: every id="…" and data-page="…" in it, and every id
+  // its script sets (see namesWritten), found in one pass.
   const pageSet = new Set(facts.pages.map((p) => p.toLowerCase()));
   let written: Set<string> | null = null;
   const writtenSomewhere = (target: string) => (written ??= namesWritten(lower)).has(asciiLower(target));
@@ -1101,9 +1138,18 @@ function listsRead(html: string): string[] {
 // What ends a name written without quotes: a space, ">", a quote or "/".
 const ENDS_NAME = new Set([0x20, 0x09, 0x0a, 0x0c, 0x0d, 0x3e, 0x22, 0x27, 0x60, 0x2f]);
 
+// An id a script gives an element by name (lowercased): el.id = "faq", setAttribute("id", "faq").
+const SCRIPT_ID = /\.id\s*=(?![=>])\s*(["'`])([^"'`\n]{1,100})\1|setattribute\(\s*(["'`])id\3\s*,\s*(["'`])([^"'`\n]{1,100})\4/g;
+// An id a script makes while it runs: el.id = s.key, setAttribute("id", name), id="${…}" in a template, JSX's id={…}.
+const SCRIPT_ID_MADE = /\.id\s*=(?![=>])\s*(?!["'`][^"'`$\n]{1,100}["'`])[^\s=]|setattribute\(\s*(["'`])id\1\s*,\s*(?!["'`][^"'`$\n]{1,100}["'`])\S|\bid\s*=\s*(?:\{|["'`]\$\{)/;
+// A short string in the code, which such an id may be made from ({ key: "breads" }).
+const SHORT_STRING = /(["'`])([^"'`\s<>]{1,60})\1/g;
+
 /**
  * The values of every id=, name= and data-page= written anywhere in the page (lowercased), scripts
- * and templates included, up to 20,000: one pass through it, whatever the page holds.
+ * and templates included, and the ids its scripts set (el.id = "faq", setAttribute("id", "faq")), up
+ * to 20,000: one pass through it, whatever the page holds. When a script makes ids from its data
+ * (el.id = s.key), every short string in the page may be one, so they all count.
  */
 function namesWritten(lower: string): Set<string> {
   const found = new Set<string>();
@@ -1129,23 +1175,35 @@ function namesWritten(lower: string): Set<string> {
       at = lower.indexOf(key, at + key.length);
     }
   }
+  if (lower.includes(".id") || lower.includes("setattribute(")) {
+    for (const m of lower.matchAll(SCRIPT_ID)) {
+      if (found.size >= 20_000) break;
+      found.add((m[2] ?? m[5]).trim());
+    }
+  }
+  if (SCRIPT_ID_MADE.test(lower)) {
+    for (const m of lower.matchAll(SHORT_STRING)) {
+      if (found.size >= 20_000) break;
+      found.add(m[2]);
+    }
+  }
   return found;
 }
 
-/** Whether a [bracketed] text is a blank: all-digit ones ([1]) and all-capitals words ([NEW]) aside. */
+/** Whether a [bracketed] text is a blank: all-digit ones ([1]), all-capitals words ([NEW]) and a page's own words ([Space], [Chorus]) aside. */
 function isBlank(match: string): boolean {
   const inner = match.slice(1, -1);
-  if (/^[\d\s.]+$/.test(inner)) return false;
+  if (/^[\d\s.]+$/.test(inner) || NOT_BLANK.test(inner)) return false;
   return !(/\p{Lu}/u.test(inner) && !/\p{Ll}/u.test(inner) && !/\p{Lo}/u.test(inner));
 }
 
-/** Blanks like [Phone number] in a text. */
+/** Blanks like [Phone number] in a text the page shows. */
 function findPlaceholders(text: string, found: string[]) {
-  if (found.length >= 8 || !text.includes("[")) return;
+  if (found.length >= MAX_BLANKS || !text.includes("[")) return;
   for (const m of text.matchAll(PLACEHOLDER)) {
     if (!isBlank(m[0])) continue;
-    addOnce(found, m[0], 8);
-    if (found.length >= 8) return;
+    addOnce(found, m[0], MAX_BLANKS);
+    if (found.length >= MAX_BLANKS) return;
   }
 }
 
@@ -1159,10 +1217,10 @@ function findPlaceholders(text: string, found: string[]) {
  * object's are shown: a lone one (const SPECIAL = { price: "[Price]" }), JSX's and createElement's props.
  */
 function findScriptPlaceholders(code: string, found: string[], samples?: { blanks: string[]; fields: string[] }) {
-  if ((found.length >= 8 && !samples) || !code.includes("[")) return;
+  if ((found.length >= MAX_BLANKS && !samples) || !code.includes("[")) return;
   let looked = 0;
   let sampled: [number, number][] | undefined;
-  for (const m of code.matchAll(PLACEHOLDER)) {
+  for (const m of code.matchAll(SCRIPT_PLACEHOLDER)) {
     if (++looked > 2000) return;
     const at = m.index;
     const inner = m[0].slice(1, -1);
@@ -1174,10 +1232,10 @@ function findScriptPlaceholders(code: string, found: string[], samples?: { blank
     if (NOT_SHOWN_LINE.test(line) || !isBlank(m[0])) continue;
     const field = samples && SAMPLE_FIELD.exec(line)?.[1];
     if (samples && field && (sampled ??= sampleArrays(code)).some(([from, to]) => at > from && at < to)) {
-      addOnce(samples.blanks, m[0], 8);
+      addOnce(samples.blanks, m[0], MAX_BLANKS);
       addOnce(samples.fields, field.replace(/^["']|["']$/g, ""), 8);
-    } else addOnce(found, m[0], 8);
-    if (found.length >= 8 && (!samples || samples.blanks.length >= 8)) return;
+    } else addOnce(found, m[0], MAX_BLANKS);
+    if (found.length >= MAX_BLANKS && (!samples || samples.blanks.length >= MAX_BLANKS)) return;
   }
 }
 

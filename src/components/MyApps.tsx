@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { announceRestored, announceSeoScore, announceUnpublished, api } from "@/lib/store";
 import { SELLER_COUNTRIES } from "@/lib/shop";
 import { DATA_RULES, DEFAULT_KEY, RULE_TEXT, blockProblem, dataLine, type DataRule, type DataSummary, type RuleSource } from "@/lib/data-rules";
@@ -94,7 +94,8 @@ const isOpen = (data: AppData) => data.collections.some((c) => c.rule === "open"
  * My websites and apps: every published app, its link, and the forms visitors sent to it. onPlans
  * opens the plans, for what comes with a paid one. start opens one app's search check (SEO) once the
  * list is in (from an app's own page in the chat); editCredits, onPlanFix, onFix and onDraft let that
- * check ask the builder for a change, or put the owner's own details in the chat's message box, and
+ * check ask the builder for a change (credits: the owner's balance, said when it's lower than a change
+ * usually costs), or put the owner's own details in the chat's message box, and
  * onOpenChat opens that chat from there, saying why nothing was sent (not Edit's "ask for your changes").
  * chatHere names a chat on this page that published a site, for one the server hasn't saved yet.
  */
@@ -104,6 +105,7 @@ export function MyApps({
   onPlans,
   start,
   editCredits,
+  credits,
   onPlanFix,
   onFix,
   onDraft,
@@ -115,6 +117,7 @@ export function MyApps({
   onPlans?: () => void;
   start?: { slug: string; view: "seo"; title?: string };
   editCredits?: number;
+  credits?: number;
   onPlanFix?: (fix: SiteFix) => Promise<FixPlan>;
   onFix?: (fix: SiteFix) => Promise<FixPlan | null>;
   onDraft?: (draft: { projectId: string; slug: string; text: string }) => Promise<{ why: string; chat?: string } | null>;
@@ -155,6 +158,11 @@ export function MyApps({
   // The app it was opened for (its search check, from the chat) isn't published any more: said, with
   // its title, above the list until the owner opens an app.
   const [gone, setGone] = useState<{ title?: string } | null>(null);
+  // The Link preview opened from the app's search check: its back arrow goes back there, to where it
+  // was scrolled (scrollTop), with the check already loaded. null when it was opened from the list.
+  const [fromSeo, setFromSeo] = useState<{ scrollTop: number } | null>(null);
+  const backToSeo = useRef<number | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   // Whether a contact's page, Add contact or Edit stages has changes not saved: leaving the app or
   // closing My websites & apps then asks first, as the contact's own way back does.
@@ -178,8 +186,12 @@ export function MyApps({
     }),
   );
 
+  // Focus starts on Close, once: Flash hands a new onClose on each of its renders, which mustn't move it.
   useEffect(() => {
     closeRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
     // Escape closes, except while typing: in a text field, or choosing a word with an input method.
     const typing = (e: KeyboardEvent) =>
       e.isComposing ||
@@ -207,6 +219,13 @@ export function MyApps({
     // Only the app it opened with: My websites & apps opens afresh each time.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Back on the search check from its Link preview: scrolled where it was, before it shows.
+  useLayoutEffect(() => {
+    if (view !== "seo" || backToSeo.current === null || !scrollRef.current) return;
+    scrollRef.current.scrollTop = backToSeo.current;
+    backToSeo.current = null;
+  }, [view]);
 
   async function showDomains(site: Site) {
     // Domains waiting for proof aren't saved yet, so they stay listed while this app is open.
@@ -254,7 +273,8 @@ export function MyApps({
     }
   }
 
-  async function showPreview(site: Site) {
+  async function showPreview(site: Site, seoView = false) {
+    setFromSeo(seoView ? { scrollTop: scrollRef.current?.scrollTop ?? 0 } : null);
     setOpen(site);
     setView("preview");
     setMadeWith(null);
@@ -692,11 +712,18 @@ export function MyApps({
             <button
               onClick={() => {
                 if (!mayLeave()) return;
+                if (view === "preview" && fromSeo) {
+                  // Back to the search check it was opened from, where it was.
+                  backToSeo.current = fromSeo.scrollTop;
+                  setFromSeo(null);
+                  setView("seo");
+                  return;
+                }
                 setOpen(null);
                 setGone(null);
               }}
               className="text-sm text-zinc-400 hover:text-zinc-100"
-              aria-label={t("Back to my apps")}
+              aria-label={view === "preview" && fromSeo ? t("Back") : t("Back to my apps")}
             >
               <span className="inline-block rtl:-scale-x-100" aria-hidden>
                 ←
@@ -728,7 +755,7 @@ export function MyApps({
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 sm:p-5">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 sm:p-5">
           {error && <p role="alert" className="mb-3 text-sm text-red-400">{error}</p>}
           {gone && !open && (
             <p role="status" className="mb-3 text-sm text-gold-soft">
@@ -972,22 +999,8 @@ export function MyApps({
               </ul>
             )
           ) : open && view === "seo" ? (
-            seo?.slug !== open.slug ? (
-              !error && <p className="text-sm text-zinc-500">{t("Loading…")}</p>
-            ) : (
-              <SeoView
-                key={`${open.slug}:${seo.data.checkedAt}`}
-                slug={open.slug}
-                data={seo.data}
-                editCredits={editCredits}
-                onPlanFix={onPlanFix}
-                onFix={onFix}
-                onDraft={onDraft}
-                onOpenChat={onOpenChat}
-                chatHere={chatHere}
-                onPreview={() => showPreview(open)}
-              />
-            )
+            // The check itself is below, kept while its Link preview shows.
+            seo?.slug !== open.slug && !error && <p className="text-sm text-zinc-500">{t("Loading…")}</p>
           ) : open && view === "visits" ? (
             visits === null ? (
               !error && <p className="text-sm text-zinc-500">{t("Loading…")}</p>
@@ -1450,6 +1463,26 @@ export function MyApps({
                 </li>
               ))}
             </ul>
+          )}
+          {/* The search check, kept (hidden) while the Link preview opened from it shows, so its back
+              arrow returns to it as it was: what it looked up, an open panel, where it was scrolled. */}
+          {open && seo?.slug === open.slug && (view === "seo" || (view === "preview" && fromSeo)) && (
+            <div hidden={view !== "seo"}>
+              <SeoView
+                key={`${open.slug}:${seo.data.checkedAt}`}
+                slug={open.slug}
+                data={seo.data}
+                editCredits={editCredits}
+                credits={credits}
+                onCredits={onPlans}
+                onPlanFix={onPlanFix}
+                onFix={onFix}
+                onDraft={onDraft}
+                onOpenChat={onOpenChat}
+                chatHere={chatHere}
+                onPreview={() => showPreview(open, true)}
+              />
+            </div>
           )}
         </div>
       </div>

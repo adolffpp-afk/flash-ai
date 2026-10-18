@@ -10,7 +10,7 @@ const { SEO_VERSION, scanPage, textWidth } = await import("../src/lib/seo-scan.t
 const { MAX_CONTEXT, band, evaluate, fixContext, fixableIds, issueCount, mainDomain, stillToFix, testDomain } = await import("../src/lib/seo-rules.ts");
 const { LABELS, WHY, fixMessage, listOf, messageOf } = await import("../src/lib/seo-words.ts");
 const { fixForCopy } = await import("../src/lib/seo-fix.ts");
-const { chatForFix, chatWithSite, newestApp, stillAnswering } = await import("../src/lib/seo-chat.ts");
+const { chatForFix, chatWithSite, newestApp, siteOf, stillAnswering } = await import("../src/lib/seo-chat.ts");
 const { chatSaves } = await import("../src/lib/chat-saves.ts");
 const { hasOwnCanonical, hasOwnPreview } = await import("../src/lib/site-preview.ts");
 const { cleanUserMessage } = await import("../src/lib/server/turns.ts");
@@ -157,7 +157,7 @@ test("the title: missing, more than one, generic, starting with Home, too long o
   assert.equal(said(page({ title: "<title>Home · Golden Crumb</title>" }), "title"), "warn home");
   assert.equal(said(page({ title: "<title>Home | Golden Crumb Bakery</title>" }), "title"), "warn home");
   const long = "Golden Crumb Bakery in Lisbon: sourdough, pastries, cakes and coffee every day";
-  assert.deepEqual(check(page({ title: `<title>${long}</title>` }), "title")?.values, { count: long.length, title: long });
+  assert.deepEqual(check(page({ title: `<title>${long}</title>` }), "title")?.values, { count: long.length, title: long, max: 60 });
   assert.equal(said(page({ title: "<title>Crumb</title>" }), "title"), "warn short");
   // Chinese characters count twice: 14 of them are a fine title, 31 are too long.
   assert.equal(textWidth("黄金面包店 里斯本酸面包和糕点"), 29);
@@ -177,8 +177,34 @@ test("the description: missing, more than one, the title again, too long or shor
   assert.equal(said(page({ description: '<meta name="description" content="Golden Crumb · Sourdough bakery in Lisbon">' }), "description"), "warn same");
   assert.equal(said(page({ title: "<title>Home · Golden Crumb</title>", description: '<meta name="description" content="Golden Crumb">' }), "description"), "warn same");
   assert.equal(said(page({ description: `<meta name="description" content="${"Fresh bread and cakes. ".repeat(9)}">` }), "description"), "warn long");
-  assert.deepEqual(check(page({ description: '<meta name="description" content="Fresh bread daily.">' }), "description")?.values, { count: 18, text: "Fresh bread daily." });
+  assert.deepEqual(check(page({ description: '<meta name="description" content="Fresh bread daily.">' }), "description")?.values, { count: 18, text: "Fresh bread daily.", min: 70, max: 160 });
   assert.equal(said(page({ description: `<meta content="${"Golden Crumb bakes sourdough and pastries every morning in Lisbon for the whole street."}" name="description">` }), "description"), "pass pass");
+});
+
+test("the limits a length message gives are numbers, written in the same digits as the count in every language", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { localeOf } = await import("../src/lib/i18n.ts");
+  const long = `<title>${"Golden Crumb Bakery in Lisbon: sourdough, pastries and cakes ".repeat(2)}</title>`;
+  const checks = [
+    check(page({ title: long }), "title")!,
+    check(page({ description: `<meta name="description" content="${"Fresh bread and cakes. ".repeat(9)}">` }), "description")!,
+    check(page({ description: '<meta name="description" content="Fresh bread daily.">' }), "description")!,
+  ];
+  for (const id of ["ar", "bn", "fa", "he", "ur", "de"]) {
+    const table = JSON.parse(readFileSync(new URL(`../src/lib/i18n/${id}.json`, import.meta.url), "utf8"));
+    const locale = localeOf(id);
+    for (const c of checks) {
+      // As SeoView fills them: numbers in the language's own digits, the page's own words as they are.
+      const values = Object.fromEntries(Object.entries(c.values).map(([k, v]) => [k, typeof v === "number" ? v.toLocaleString(locale) : "…"]));
+      const said = translate(table, messageOf(c)!, values);
+      assert.ok(said.includes(String(values.max)), `${id}: ${said}`);
+      // Arabic, Bengali and Persian write numbers in their own digits: none of these is left in 0 to 9.
+      if ((54).toLocaleString(locale) !== "54") assert.ok(!/[0-9]/.test(said), `${id}: ${said}`);
+    }
+  }
+  // Bengali writes the doctype's 1990s in its own digits too.
+  const bn = JSON.parse(readFileSync(new URL("../src/lib/i18n/bn.json", import.meta.url), "utf8"));
+  assert.ok(!/[0-9]/.test(bn[WHY.doctype!]), bn[WHY.doctype!]);
 });
 
 test("whether the page lets Google list it", () => {
@@ -358,6 +384,40 @@ test("blanks the builder left for the owner, but not numbers, capitals or code",
   assert.equal(said(page({ title: "<title>[Business name] · Sourdough bakery</title>" }), "placeholders"), "fail found");
   assert.equal(said(page({ description: '<meta name="description" content="[Business name] bakes sourdough, pastries and birthday cakes every morning in [City].">' }), "placeholders"), "fail found");
   assert.equal(said(page({ body: `${BODY}<p>[东京店的地址]</p>` }), "placeholders"), "fail found");
+  // As each language writes them: Persian joins words with U+200C (کسب‌وکار), Hebrew marks an
+  // abbreviation with ׳ or ״ (or a plain "), and a blank may hold / & or a currency sign.
+  const blanks = (text: string, lang = "en") => scanPage(page({ lang: `lang="${lang}"`, body: `${BODY}<p>${text}</p>` })).placeholders;
+  assert.deepEqual(blanks("نام: [نام کسب‌وکار] · ساعات: [ساعت‌های کاری]", "fa"), ["[نام کسب‌وکار]", "[ساعت‌های کاری]"]);
+  assert.deepEqual(blanks("אימייל: [כתובת דוא״ל] · טלפון: [מס׳ טלפון]", "he"), ["[כתובת דוא״ל]", "[מס׳ טלפון]"]);
+  assert.deepEqual(blanks('אימייל: [כתובת דוא"ל] · [כתובת דוא&quot;ל]', "he"), ['[כתובת דוא"ל]']);
+  assert.deepEqual(blanks("[Price in €] · [Phone number/WhatsApp] · [Straße &amp; Hausnummer]", "de"), ["[Price in €]", "[Phone number/WhatsApp]", "[Straße & Hausnummer]"]);
+  assert.equal(report(page({ lang: 'lang="fa" dir="rtl"', body: `${BODY}<p>[ساعت‌های کاری]</p>` })).score! < 100, true);
+  // In a script's words too, while code stays code.
+  const jsx = (code: string) => scanPage(page({ body: `${BODY}<div id="root"></div><script type="text/babel">${code}</script>` })).placeholders;
+  assert.deepEqual(jsx("const App = () => <p>ساعات: [ساعت‌های کاری] · טלפון: [מס׳ טלפון]</p>;"), ["[ساعت‌های کاری]", "[מס׳ טלפון]"]);
+  assert.deepEqual(jsx('const re = /[A-Za-z/&]+/; const m = s.match(/[Ab&]+$/); const q = x["[Cd"] + y["Ef]"];'), []);
+  // The page's own words in brackets aren't blanks: keys a game names (in <kbd> or not), a form's
+  // [Optional], a menu's [New] and a song's parts, in the page's words and in its script's.
+  const own = page({
+    body: `${BODY}<p>Press [Space] to jump, [Enter] to start and <kbd>[Esc]</kbd> or <kbd>[P]</kbd> to pause.</p><label>Notes [Optional] <textarea></textarea></label><p>Rye loaf [New]</p><p>[Verse 1] … [Chorus] … [Bridge]</p><script>const hint = "Press [Space] to jump";</script>`,
+  });
+  assert.equal(said(own, "placeholders"), "pass pass");
+  assert.deepEqual(scanPage(page({ body: `${BODY}<p><kbd>[Phone number]</kbd> Call [Phone number]</p>` })).placeholders, ["[Phone number]"], "outside <kbd> it's still a blank");
+  // What Google and share apps read without showing it on the page: details for Google, the share
+  // card's words and alt text.
+  const ld = '<script type="application/ld+json">{"@context":"https://schema.org","@type":"Bakery","name":"Golden Crumb","telephone":"[Phone number]","address":{"@type":"PostalAddress","streetAddress":"[Address]"},"openingHoursSpecification":[{"opens":"[Opening time]"}]}</script>';
+  assert.deepEqual(scanPage(page({ head: ld })).placeholders, ["[Phone number]", "[Address]", "[Opening time]"]);
+  assert.equal(said(page({ head: ld }), "placeholders"), "fail found");
+  const card =
+    '<meta property="og:title" content="[Business name] · Bakery"><meta property="og:description" content="Call [Phone number]."><meta property="og:image" content="https://x.example/[Image].jpg"><meta property="og:site_name" content="[Site name]"><meta name="twitter:title" content="[Shop name]"><meta name="twitter:description" content="Open [Opening hours]">';
+  assert.deepEqual(scanPage(page({ head: card })).placeholders, ["[Business name]", "[Phone number]", "[Site name]", "[Shop name]", "[Opening hours]"]);
+  assert.deepEqual(scanPage(page({ body: `${BODY}<img src="https://x.example/a.jpg" alt="[Photo of the owner]" class="h-48">` })).placeholders, ["[Photo of the owner]"]);
+  // Every blank the page shows is listed, so the owner can give them all in one go (and the draft has a line for each).
+  const ten = ["[Phone number]", "[Email address]", "[Street address]", "[Postcode]", "[Opening hours]", "[Instagram handle]", "[Owner name]", "[Year founded]", "[Parking details]", "[Wi-Fi password]"];
+  const many = page({ body: `${BODY}${ten.map((b) => `<p>${b}</p>`).join("")}<script>el.textContent = "[Delivery area]";</script>` });
+  assert.deepEqual(check(many, "placeholders")?.values, { list: [...ten, "[Delivery area]"].join(", ") });
+  const fifty = page({ body: `${BODY}<p>${Array.from({ length: 50 }, (_, k) => `[Detail ${k + 1}]`).join(" ")}</p>` });
+  assert.equal(scanPage(fifty).placeholders.length, 40);
 });
 
 test("the share card the page sets itself, and a photo for it", () => {
@@ -453,6 +513,16 @@ test("rules that must not fire on what Flash's apps do", () => {
   assert.equal(said(sections('<a href="#reviews">Reviews</a>', '<script>list.innerHTML = `<div id="reviews">${rows}</div>`;</script>'), "links"), "pass pass", "made by the script");
   assert.equal(said(sections('<a href="#/team">Team</a>', "<script>main.innerHTML += '<section data-page=\"team\"><h1>Team</h1></section>';</script>"), "links"), "pass pass");
   assert.equal(said(sections('<a href="#reviews">Reviews</a>', '<template><div id="reviews"></div></template>'), "links"), "pass pass");
+  // Ids the script gives elements: by name, or made from its data.
+  const script = (links: string, code: string) => sections(links, `<div id="menu"></div><script>${code}</script>`);
+  assert.equal(said(script('<a href="#faq">FAQ</a>', 'const s = document.createElement("section"); s.setAttribute("id", "faq"); menu.append(s);'), "links"), "pass pass");
+  assert.equal(said(script('<a href="#faq">FAQ</a>', "const s = document.createElement('section'); s.id = 'faq'; menu.append(s);"), "links"), "pass pass");
+  const made = 'const SECTIONS = [{ key: "breads", title: "Breads" }, { key: "cakes", title: "Cakes" }];\nfor (const s of SECTIONS) { const el = document.createElement("section"); el.id = s.key; el.innerHTML = "<h2>" + s.title + "</h2>"; menu.append(el); }';
+  assert.equal(said(script('<a href="#breads">Breads</a> <a href="#cakes">Cakes</a>', made), "links"), "pass pass");
+  assert.equal(said(script('<a href="#breads">Breads</a>', 'menu.innerHTML = SECTIONS.map((s) => `<section id="${s.key}"></section>`).join(""); const SECTIONS = [{ key: "breads" }];'), "links"), "pass pass");
+  // A spot no script names or makes still leads nowhere.
+  assert.equal(said(script('<a href="#faq">FAQ</a>', 'const s = document.createElement("section"); s.id = "help"; menu.append(s);'), "links"), "warn missingIds");
+  assert.equal(said(script('<a href="#pies">Pies</a>', made), "links"), "warn missingIds");
   const button = page({ body: `${BODY}<button class="p-2"><svg viewBox="0 0 24 24"><title>Menu</title><path d="M0 0"/></svg></button>` });
   assert.equal(said(button, "linkText"), "pass pass", "labelled by its icon's title");
   assert.equal(said(button, "title"), "pass pass", "and that title isn't the page's");
@@ -857,6 +927,20 @@ test("a fix waits while Flash is still writing a reply in that chat, here or on 
   const asNew = [...done.slice(0, -1), { ...done.at(-1)!, app: { ...done.at(-1)!.app!, slug: "golden-crumb-2" } }];
   assert.equal(newestApp(asNew).site, "golden-crumb-2");
   assert.equal(newestApp([]).latest, undefined);
+  // A slide deck made in that chat afterwards isn't a version of the site: nothing goes to it, and its
+  // preview offers Publish, never Update site (Flash.tsx gives AppPreview siteOf as publishedEarlier).
+  const deck = { title: "Golden Crumb · Our story", html: "<section>Our story</section>", kind: "slides" as const };
+  const withDeck: UIMessage[] = [...done, { id: "u3", role: "user", content: "Now make a presentation about my bakery", build: "slides" }, { id: "a3", role: "assistant", content: "Here's your deck.", app: deck }];
+  assert.deepEqual([newestApp(withDeck).latest?.kind, newestApp(withDeck).site], ["slides", undefined]);
+  assert.equal(siteOf(withDeck, withDeck.length - 1), undefined);
+  assert.equal(siteOf(withDeck, 3), "golden-crumb-x1", "the site's own newer version still updates it");
+  // Nor is an app built after the deck (on the deck's code): the site's newest version is the one before it.
+  const afterDeck: UIMessage[] = [...withDeck, { id: "u4", role: "user", content: "Make it a website again", build: "app" }, { id: "a4", role: "assistant", content: "Done.", app: app("<h1>Our story</h1>") }];
+  assert.equal(newestApp(afterDeck).site, undefined);
+  // A deck's own later version updates the deck once it's published.
+  const deckLive = withDeck.map((m) => (m.id === "a3" ? { ...m, app: { ...deck, slug: "golden-crumb-story" } } : m));
+  const deck2: UIMessage[] = [...deckLive, { id: "u5", role: "user", content: "Add a slide about our team", build: "slides" }, { id: "a5", role: "assistant", content: "Added.", app: { ...deck, html: "<section>Team</section>" } }];
+  assert.equal(newestApp(deck2).site, "golden-crumb-story");
 });
 
 test("a fix is decided on the server's copy of a chat this page already has open, so a reply asked in another tab comes first", async () => {
@@ -1059,6 +1143,9 @@ test("hostile pages finish quickly and never throw", () => {
     ["font-size in a style attribute", `<p style="${"font-size:1px;".repeat(8_000)}">`],
     ["text-[ × 20,000", `<p class="${"text-[".repeat(20_000)}">`],
     ["ids written in a script", `<a href="#a">x</a><script>${"id=".repeat(30_000)}</script>`],
+    ["ids a script sets", `<a href="#a">x</a><script>el.id = k;${"\"ab\" 'cd' ".repeat(10_000)}${'.id = "x"; setAttribute("id", '.repeat(5_000)}</script>`],
+    ["[ with joiners", fill("<p>", "[A\u200c\u05f4€/&\" ")],
+    ["ld+json strings", `<script type="application/ld+json">[${'"[Phone number]",'.repeat(20_000)}"x"]</script>`],
     ["nested sections", '<section data-page="a">'.repeat(30_000)],
     ["data: picture", `<img src="data:image/png;base64,${"iVBORw0KGgo".repeat(9_000)}">`],
     ["ld+json", `<script type="application/ld+json">${"[".repeat(50_000)}</script>`],

@@ -20,7 +20,7 @@ import { Templates } from "./Templates";
 import { MyApps } from "./MyApps";
 import type { FixPlan, SiteFix } from "./SeoView";
 import type { CheckId } from "@/lib/seo-rules";
-import { chatForFix, chatWithSite, newestApp, stillAnswering } from "@/lib/seo-chat";
+import { chatForFix, chatWithSite, newestApp, siteOf, stillAnswering } from "@/lib/seo-chat";
 import { chatSaves } from "@/lib/chat-saves";
 import { BuildPanel, useMedia } from "./BuildPanel";
 import { draftShown, draftStore, startsWriting } from "@/lib/live-draft";
@@ -373,6 +373,8 @@ export function Flash({
   // A change the search check asked for, sent in the chat that built the site once it's open (see sendFix).
   const [pendingFix, setPendingFix] = useState<SiteFix | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  // Details the search check put in the message box (see draftInChat): the cursor goes to their first blank once it shows.
+  const draftRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   // A request is starting or running. Set at once, before busy shows or the picture above loads,
   // so a second Enter or tap in the meantime does nothing.
@@ -706,6 +708,22 @@ export function Flash({
     el.style.height = `${Math.min(el.scrollHeight, 192)}px`;
   }, [input]);
 
+  // The search check's details, once the message box shows them (on Home the chat's box mounts with
+  // them, its cursor at the start): the cursor goes to the end of the first "[Phone number]: " line,
+  // so what the owner types fills that blank, wherever the chat was opened from.
+  useEffect(() => {
+    const text = draftRef.current;
+    const el = inputRef.current;
+    const at = text && el ? el.value.lastIndexOf(text) : -1;
+    if (!text || !el || at === -1) return;
+    draftRef.current = null;
+    const first = text.indexOf("\n");
+    const end = first === -1 ? -1 : text.indexOf("\n", first + 1);
+    const caret = at + (end === -1 ? text.length : end);
+    el.focus();
+    el.setSelectionRange(caret, caret);
+  });
+
   async function openProject(id: string) {
     showChat(id);
     if (!(await chatMessages(id))) setNotice(t("Couldn't open that project. Pick it again in the sidebar to try again."));
@@ -1028,9 +1046,9 @@ export function Flash({
     if (newestApp(chat.messages).site !== slug) return { why: t("The newest app in that chat is a different site, so Flash didn't add your details there."), chat: t(OTHER_SITE) };
     closeApps();
     showChat(projectId);
-    // After anything already typed there, never in its place.
+    // After anything already typed there, never in its place; the cursor goes to its first blank once it shows.
+    draftRef.current = text;
     setInput((typed) => (typed.trim() ? `${typed.trimEnd()}\n\n${text}` : text));
-    requestAnimationFrame(() => inputRef.current?.focus());
     return null;
   }
 
@@ -1898,7 +1916,7 @@ export function Flash({
     <BuildPanel
       drafts={drafts}
       appMsg={appMsg}
-      publishedEarlier={appMsg?.app && !appMsg.app.slug ? active?.messages?.slice(0, appIndex).findLast((x) => x.app?.slug)?.app?.slug : undefined}
+      publishedEarlier={appMsg?.app && !appMsg.app.slug && active?.messages ? siteOf(active.messages, appIndex) : undefined}
       building={building}
       drafting={drafting}
       live={Boolean(building) && building?.id === runningReply}
@@ -2620,6 +2638,7 @@ export function Flash({
             start={appsStart}
             // What a change to an app typically costs, as the pricing table says: a fix is charged like any change.
             editCredits={me.costs.app}
+            credits={me.credits}
             onFix={fixSite}
             onPlanFix={planFix}
             onDraft={draftInChat}
@@ -2797,7 +2816,7 @@ export function Flash({
                   paymentsOn={me.paymentsEnabled || me.testPurchases}
                   language={me.user.language}
                   onPublished={(slug) => setAppSlug(m.id, slug)}
-                  publishedEarlier={m.app && !m.app.slug ? all.slice(0, i).findLast((x) => x.app?.slug)?.app?.slug : undefined}
+                  publishedEarlier={m.app && !m.app.slug ? siteOf(all, i) : undefined}
                   onUseImage={busy ? undefined : editImage}
                   onReshape={busy || attachment || all[i - 1]?.attachmentName ? undefined : reshape}
                   onEditApp={m.app && !m.pending ? (html) => editAppCode(m.id, html) : undefined}

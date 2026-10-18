@@ -242,7 +242,7 @@ export function evaluate(facts: SeoFacts | null | undefined, ctx: SeoContext): S
       ),
     );
   } else if (width > 60) {
-    add("title", 3, "warn", "long", { count: width, title }, fixText(`The <title> is ${width} characters: "${sample(title)}". Shorten it to at most 60, keeping the name and the main thing the site offers.`));
+    add("title", 3, "warn", "long", { count: width, title, max: 60 }, fixText(`The <title> is ${width} characters: "${sample(title)}". Shorten it to at most 60, keeping the name and the main thing the site offers.`));
   } else if (width < 20) {
     add("title", 3, "warn", "short", { title }, fixText(`The <title> "${sample(title)}" is too short to say what the site is. Make it the site's name plus what it offers, 20 to 60 characters.`));
   } else add("title", 3, "pass", "pass", { title, count: width });
@@ -258,9 +258,9 @@ export function evaluate(facts: SeoFacts | null | undefined, ctx: SeoContext): S
   } else if (title && (fold(description) === fold(title) || fold(description) === fold(title.replace(HOME_TITLE, "")))) {
     add("description", 3, "warn", "same", {}, `The meta description repeats the title. Rewrite it as ${describe}.`);
   } else if (dWidth > 160) {
-    add("description", 3, "warn", "long", { count: dWidth }, `The meta description is ${dWidth} characters. Shorten it to at most 160, keeping the main point first.`);
+    add("description", 3, "warn", "long", { count: dWidth, max: 160 }, `The meta description is ${dWidth} characters. Shorten it to at most 160, keeping the main point first.`);
   } else if (dWidth < 70) {
-    add("description", 3, "warn", "short", { count: dWidth, text: description }, fixText(`The meta description is ${dWidth} characters ("${sample(description)}"). Rewrite it to 70 to 160 characters, saying what the site offers and for whom.`));
+    add("description", 3, "warn", "short", { count: dWidth, text: description, min: 70, max: 160 }, fixText(`The meta description is ${dWidth} characters ("${sample(description)}"). Rewrite it to 70 to 160 characters, saying what the site offers and for whom.`));
   } else add("description", 3, "pass", "pass", { text: description });
 
   // 3. Whether the page lets Google list it.

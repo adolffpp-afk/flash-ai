@@ -5,11 +5,30 @@ import type { UIMessage } from "./store.ts";
  * fixSite in Flash.tsx). Kept apart from seo-fix.ts, which reads the page and loads only when used.
  */
 
-/** A chat's newest app, and the site it updates: its own, or the one an earlier version was published as (as AppPreview does). */
+/**
+ * The site the version at messages[at] updates: the one it was published as, else the one an earlier
+ * version was (AppPreview's Update site), when it's a later version of that app: of the same kind, and
+ * every version between them too (Flash builds each on the one before). A deck made after a website, or
+ * a website made from that deck, never replaces it. Undefined when there's none.
+ */
+export function siteOf(messages: UIMessage[], at: number): string | undefined {
+  const app = messages[at]?.app;
+  if (!app) return undefined;
+  if (app.slug) return app.slug;
+  for (let i = at - 1; i >= 0; i--) {
+    const earlier = messages[i].app;
+    if (!earlier) continue;
+    if (earlier.kind !== app.kind) return undefined;
+    if (earlier.slug) return earlier.slug;
+  }
+  return undefined;
+}
+
+/** A chat's newest app, and the site it updates (see siteOf). */
 export function newestApp(messages: UIMessage[]) {
   const at = messages.findLastIndex((m) => m.app);
   const latest = at === -1 ? undefined : messages[at].app;
-  return { latest, site: latest && (latest.slug ?? messages.slice(0, at).findLast((m) => m.app?.slug)?.app?.slug) };
+  return { latest, site: latest && siteOf(messages, at) };
 }
 
 /**

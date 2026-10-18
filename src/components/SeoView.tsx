@@ -51,6 +51,8 @@ const PRICE = msg(
   "It's a normal change to your app, charged like any change you ask for: about {count} credits, depending on its length and your level. Nothing is charged until you press Send to Flash, and failed requests are free.",
 );
 const WHERE = msg("Flash makes the change in the chat that built this site. Press Update site there to put it live, and this check runs again.");
+// Said with the price when the owner has fewer credits than a change usually costs.
+const LOW = msg("You have {credits} credits, which may not be enough for this change.");
 const RUN_ERRORS: Record<PageSpeedError, string> = {
   quota: msg("Google's speed check isn't available right now. Flash's own check above still works."),
   busy: msg("Google's free speed check is busy right now. Try again later."),
@@ -164,6 +166,8 @@ export function SeoView({
   slug,
   data,
   editCredits,
+  credits,
+  onCredits,
   onPlanFix,
   onFix,
   onDraft,
@@ -175,6 +179,9 @@ export function SeoView({
   data: SeoData;
   // What a change to an app typically costs (the pricing table's number), said before anything is sent.
   editCredits?: number;
+  // The owner's balance, said with the price when it's lower, with a way to get more (onCredits, where plans can be bought).
+  credits?: number;
+  onCredits?: () => void;
   // What Flash would send for a change, from the chat's newest version of the site (which the builder changes), listed before Send.
   onPlanFix?: (fix: SiteFix) => Promise<FixPlan>;
   // Hands the change to Flash: null once it's on its way, else why nothing was sent, or what would go
@@ -206,6 +213,10 @@ export function SeoView({
   // (only when it can be).
   const [draftNote, setDraftNote] = useState<{ text: string; chat?: string } | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  // The button that opened the panel (Fix it, Add it or Fix all): focus goes back to it when the panel closes.
+  const opener = useRef<HTMLElement | null>(null);
+  // Where focus goes once the next change shows: back to that button, or to the panel when what had it went.
+  const refocus = useRef<"opener" | "panel" | null>(null);
   const lookup = useRef<Promise<string | null> | null>(null);
   // Without the chat that built the site, nothing here can change the app, so nothing offers to.
   const noChat = !!project?.missing;
@@ -220,6 +231,14 @@ export function SeoView({
   useEffect(() => {
     if (askingKey) panelRef.current?.focus();
   }, [askingKey]);
+
+  useEffect(() => {
+    const want = refocus.current;
+    refocus.current = null;
+    if (want === "opener" && opener.current?.isConnected) opener.current.focus();
+    // Send's answer replaced it with why nothing would go, or it was disabled while sending.
+    else if (want === "panel" && panelRef.current && !panelRef.current.contains(document.activeElement)) panelRef.current.focus();
+  });
 
   // The chat that built the site is looked up at once, so an app without one offers no change. What
   // Fix all would send is looked at once too, when there's a Fix all: the chat's newest version may
@@ -273,7 +292,14 @@ export function SeoView({
     }));
   }
 
-  function ask(key: string, ids: CheckId[]) {
+  /** Closes the panel, with keyboard and screen reader focus back on the button that opened it. */
+  function close() {
+    setAsking(null);
+    refocus.current = "opener";
+  }
+
+  function ask(key: string, ids: CheckId[], from: HTMLElement) {
+    opener.current = from;
     // Flash gets every point asked for: it leaves out what the chat's newest version already fixes and
     // sends what fits of the rest, so Fix all again after a change sends the points that didn't fit.
     // The panel lists exactly that, looked at in that chat now.
@@ -295,6 +321,7 @@ export function SeoView({
     const answer = await onFix({ projectId: project.id, slug, title: data.title, ids: asking.ids, ctx: data.ctx, at: Date.now(), shown: plan.sent });
     setSending(false);
     if (!answer) return;
+    refocus.current = "panel";
     if ("why" in answer) {
       // Flash is busy: what's listed still goes when it's done. Otherwise nothing would go now (that chat's
       // newest version has the fix, or is another site), so the panel says why in place of the list and Send.
@@ -353,6 +380,19 @@ export function SeoView({
               </p>
             )}
             <p className="mt-2 text-zinc-400">{t(PRICE, { count: (editCredits ?? 0).toLocaleString(t.locale) })}</p>
+            {credits !== undefined && editCredits !== undefined && credits < editCredits && (
+              <p className="mt-2 text-gold-soft">
+                {t(LOW, { credits: credits.toLocaleString(t.locale) })}
+                {onCredits && (
+                  <>
+                    {" "}
+                    <button onClick={onCredits} className="font-medium text-primary-soft hover:underline">
+                      {t("Get more credits")}
+                    </button>
+                  </>
+                )}
+              </p>
+            )}
             <p className="mt-2 text-zinc-400">{t(WHERE)}</p>
           </>
         )}
@@ -384,7 +424,7 @@ export function SeoView({
               {t("Open the chat that built this site")}
             </button>
           )}
-          <button onClick={() => setAsking(null)} className="rounded-md px-3 py-1.5 text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100">
+          <button onClick={close} className="rounded-md px-3 py-1.5 text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100">
             {t("Cancel")}
           </button>
         </div>
@@ -397,7 +437,7 @@ export function SeoView({
   function action(check: Check): ReactNode {
     if (canFix && stillToFix(report, [check.id]).length) {
       return (
-        <button onClick={() => ask(check.id, [check.id])} className={button}>
+        <button onClick={(e) => ask(check.id, [check.id], e.currentTarget)} className={button}>
           {check.status === "tip" ? t("Add it") : t("Fix it")}
         </button>
       );
@@ -507,7 +547,7 @@ export function SeoView({
             </div>
             {canFix && fixable.length >= 2 && all.sent.length > 0 && (
               <button
-                onClick={() => ask("all", fixable)}
+                onClick={(e) => ask("all", fixable, e.currentTarget)}
                 className="w-full rounded-md bg-brand px-3 py-2 text-sm font-medium text-on-brand hover:brightness-110 sm:ms-auto sm:w-auto"
               >
                 {allCount === null ? t("Fix all") : t("Fix all ({count})", { count: allCount.toLocaleString(t.locale) })}
