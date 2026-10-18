@@ -17,7 +17,7 @@
  */
 import { isPaid, NOTICES, parseSpec, RUNNER_VERSION, type Spec } from "../automations.ts";
 import { graceFor, monthStart, nextFire, nextMonthStart, utcDay } from "../schedule.ts";
-import { reapLapsed } from "./automation-runner.ts";
+import { reapLapsed, SELF_ENDING } from "./automation-runner.ts";
 import { heldElsewhere } from "./credit-holds.ts";
 import { claimLimits, cronSecret } from "./automations.ts";
 import { balance, ensureMonthlyCredits, topUpFloor } from "./credits.ts";
@@ -173,8 +173,10 @@ async function resumePaused(): Promise<number> {
     // otherwise the next one after now; a one-off keeps its slot while it is in grace.
     const next = when?.kind === "once" ? (Number(a.next_at) + grace >= now ? Number(a.next_at) : 0) : nextSlot(spec, a.time_zone, now - grace);
     if (when?.kind === "once" && !next && (await finishPassedOnce(a))) continue;
-    let turnOn = a.paused_reason === "month_cap" || a.paused_reason === "day_cap";
-    if (a.paused_reason === "credits") {
+    // A one-off is turned on at its slot whatever paused it: its run is priced then, and a one-off still
+    // short of credits or over a limit ends with a notice saying why (it has no later slot to wait for).
+    let turnOn = (when?.kind === "once" && SELF_ENDING.has(a.paused_reason)) || a.paused_reason === "month_cap" || a.paused_reason === "day_cap";
+    if (!turnOn && a.paused_reason === "credits") {
       await ensureMonthlyCredits(a.pay_account);
       // Other requests' open holds count as nothing, as Run once now's check counts them: a step they are
       // in the way of waits for them (see runAiStep), so they never keep the pause on a day longer.

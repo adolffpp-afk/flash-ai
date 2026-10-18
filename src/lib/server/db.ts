@@ -830,7 +830,8 @@ const SCHEMA = [
   `CREATE INDEX IF NOT EXISTS automation_run_steps_detail ON automation_run_steps(user_id, run_id) WHERE output IS NOT NULL`,
   // Every credit hold that must be settled even if the function holding it dies (see credit-holds.ts).
   // ref is its ledger ref (auto:<runId>:<stepId>:<attempt>). started is 1 once the provider call was
-  // sent, done 1 once it ended; spent_cents and left_cents are the meter's last checkpoint. Past
+  // sent, done 1 once it ended; spent_cents and left_cents are the meter's last checkpoint, and cap_cents
+  // the most its plan lets its calls cost (0: the hold), which the reaper never charges above. Past
   // lease_until the tick's reaper settles it; settle_token says who did, so it is settled once.
   `CREATE TABLE IF NOT EXISTS credit_holds (
     ref TEXT PRIMARY KEY,
@@ -844,6 +845,7 @@ const SCHEMA = [
     done INTEGER NOT NULL DEFAULT 0,
     spent_cents REAL NOT NULL DEFAULT 0,
     left_cents REAL NOT NULL DEFAULT 0,
+    cap_cents REAL NOT NULL DEFAULT 0,
     checked_at INTEGER NOT NULL DEFAULT 0,
     lease_until INTEGER NOT NULL,
     settle_token TEXT NOT NULL DEFAULT '',

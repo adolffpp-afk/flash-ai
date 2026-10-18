@@ -398,6 +398,7 @@ export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResul
   const waitsForHolds = async (outcome: string): Promise<boolean> => {
     if (!WAITS_FOR.has(outcome) || Number(c.waits ?? 0) >= MAX_WAITS) return false;
     const [r, other] = await Promise.all([room(), heldElsewhere(auto.pay_account, auto.id, ref)]);
+    // With nothing held elsewhere the sum below is the step's own room, which it is already short of: a shortcut.
     if (!other.account) return false;
     // (Its run limit is always met when this is asked, as a step short of it never waits: it stays in the sum all the same.)
     const fits = Math.max(0, Math.min(r.have + other.account - r.floor, r.runLeft, r.monthLeft + other.automation, r.dayLeft + other.automation));
@@ -430,8 +431,14 @@ export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResul
     const largestInput = price.tokens + results.reduce((sum, r) => sum + r, 0) + plan.maxTokens;
     return leftCents({ model, largestInput, resultsLeft: results.length - done, searchesLeft: (price.plan?.searches ?? 0) - (running?.searches ?? 0), fallback: plan.fallback });
   };
+  // The most its call may cost, which the reaper never charges above (see reaperCredits): a step with no
+  // tools and no fallback makes one call, reading its counted input and writing at most its max_tokens.
+  // Otherwise the hold is the bound: its margin is for a fallback's count, and tool results are sized by plan.
+  const capOf = (p: typeof plan) => (p.fallback || price.plan ? 0 : p.capCents);
   // Only while this worker still holds the run: one that outlived its lease stops here, for free.
-  if (!(await recordHold({ ref, userId: auto.pay_account, runId: run.id, held: plan.held, model, inputCents: readCostCents(model, price.tokens), leftCents: left(), owner: me }))) return { kind: "lost" };
+  if (!(await recordHold({ ref, userId: auto.pay_account, runId: run.id, held: plan.held, model, inputCents: readCostCents(model, price.tokens), leftCents: left(), capCents: capOf(plan), owner: me }))) {
+    return { kind: "lost" };
+  }
   await probe("after-hold", { runId: run.id, ref });
   const chargeHold = async (): Promise<ChargeOnce | null> => {
     for (let i = 0; i < 3; i++) {
@@ -472,17 +479,21 @@ export async function runAiStep(c: StepContext, step: AiStep): Promise<StepResul
   let charge = await chargeHold();
   // Refused at a limit: another run's hold (of this account, or of this automation) came between this
   // step's reads and its charge. Nothing was taken under its ref, so it is planned once more within what
-  // that hold left, and charged at that if its least still fits; if it doesn't, it waits for that hold
-  // when that is all that is in its way, and otherwise ends at the limit below.
+  // that hold left, and charged at that if its least still fits. Refused again (a third run charged
+  // between that re-plan and its charge), or with too little left to try: it waits for those holds when
+  // that is all that is in its way, and otherwise ends at the limit below.
   if (charge && "refused" in charge && charge.refused in REFUSED) {
     const availableNow = (await room()).available;
     const again = planFor(availableNow);
     if (availableNow >= again.needed) {
       plan = again;
       // A hold settled meanwhile is refused by the charge below ("hold"), which takes only while it is open.
-      await resizeHold(ref, plan.held, left());
+      await resizeHold(ref, plan.held, left(), capOf(plan));
       charge = await chargeHold();
-    } else if (await waitsForHolds(REFUSED[charge.refused as keyof typeof REFUSED])) return tryLater(HOLD_WAIT_MS, "waiting");
+    }
+    if (charge && "refused" in charge && charge.refused in REFUSED && (await waitsForHolds(REFUSED[charge.refused as keyof typeof REFUSED]))) {
+      return tryLater(HOLD_WAIT_MS, "waiting");
+    }
   }
   // Whether the charge landed is unknown: the hold stays open and unstarted, so the reaper settles it at
   // what was charged for nothing, 0, and the run is tried again.

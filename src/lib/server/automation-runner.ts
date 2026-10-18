@@ -290,6 +290,9 @@ export async function verifyReceipt(automationId: string, saved: SavedReceipt): 
   return Boolean(await one("SELECT 1 FROM automation_runs WHERE automation_id = ? AND receipt_hash = ?", [automationId, saved.hash]));
 }
 
+/** The pauses that end by themselves: the tick looks again at resume_at (see resumePaused). */
+export const SELF_ENDING = new Set(["credits", "month_cap", "day_cap"]);
+
 /** What a run's end pauses its automation for, if anything: the reason, when the tick looks again, and its notice. */
 function pauseFor(outcome: string, status: RunEnd, auto: AutoRow, now: number): { reason: string; resumeAt: number } | null {
   if (auto.trigger_kind !== "schedule" || auto.status !== "on") return null;
@@ -331,8 +334,15 @@ export async function finish(
     const prev = auto?.receipt_hash ?? "";
     const hash = receiptHash(prev, receipt);
     const now = Date.now();
-    const pause = auto ? pauseFor(outcome, status, auto, now) : null;
     const spec = o.spec ?? (await versionSpec(run.automation_id, Number(run.version)));
+    let pause = auto ? pauseFor(outcome, status, auto, now) : null;
+    // A one-off (as it is now) isn't paused for credits or a limit by a run that came up short (a Run once
+    // now, or its old slot's run after it was moved): its own slot is priced when it comes, and ends it
+    // with a notice saying why if it still doesn't fit, as any one-off's does.
+    if (pause && auto && SELF_ENDING.has(pause.reason)) {
+      const current = Number(auto.version) === Number(run.version) ? spec : await versionSpec(auto.id, Number(auto.version));
+      if (current?.trigger.type === "schedule" && current.trigger.when.kind === "once") pause = null;
+    }
     // A one-off that ran (or was skipped) is finished: while its automation is still that one-off, whose
     // slot was taken (next_at 0). Edited while this run went (into a daily, to a new time, or to run by
     // hand), it has more to run, and goes on as it is now.

@@ -21,7 +21,7 @@ import { monthStart, nextFire, nextFires, nextMonthStart, ONCE_MAX_AHEAD_MS, ONC
 import { isVerified } from "./account.ts";
 import { fromOwnPage, getUser, unauthorized, type User } from "./auth.ts";
 import { estimateSpec, type Estimate } from "./automation-estimate.ts";
-import { advanceRun, finish, savedReceipt, triesOf, verifyReceipt, versionSpec, type CompactReceipt, type SavedReceipt } from "./automation-runner.ts";
+import { advanceRun, finish, savedReceipt, SELF_ENDING, triesOf, verifyReceipt, versionSpec, type CompactReceipt, type SavedReceipt } from "./automation-runner.ts";
 import { outputText, type AutoRow, type RunRow } from "./automation-steps.ts";
 import { deleteAutomationNow } from "./automation-tick.ts";
 import { liveHealth } from "./automation-admin.ts";
@@ -330,8 +330,16 @@ export async function editAutomation(g: Gate, id: string, body: Record<string, u
   const status = body.status === "on" || body.status === "paused" ? body.status : a.status;
   const turningOn = status === "on" && a.status !== "on";
   if (status === "on" && a.status === "finished" && !edited) return json({ error: g.t(FINISHED) }, 409);
-  // A one-off paused while its run was going: turned on as it is, that run goes on (its time, taken, isn't checked again).
-  const runGoesOn = turningOn && body.spec === undefined && body.timeZone === undefined && spec?.trigger.type === "schedule" && spec.trigger.when.kind === "once" && (await scheduledRunOpen(a.id));
+  // A one-off paused while its run was going: turned on as it is, that run goes on (its time, taken, isn't
+  // checked again). Not once it was moved while paused: it has a new slot then (next_at), which it keeps.
+  const runGoesOn =
+    turningOn &&
+    body.spec === undefined &&
+    body.timeZone === undefined &&
+    Number(a.next_at) === 0 &&
+    spec?.trigger.type === "schedule" &&
+    spec.trigger.when.kind === "once" &&
+    (await scheduledRunOpen(a.id));
   const f = fieldsOf(body, g.t, { ...a, spec }, !runGoesOn && (body.spec !== undefined || body.timeZone !== undefined || turningOn));
   if (f instanceof Response) return f;
   if (turningOn || (status === "on" && edited)) {
@@ -345,15 +353,20 @@ export async function editAutomation(g: Gate, id: string, body: Record<string, u
   const capMonth = capOf(body.capMonth, Number(a.cap_month));
   if (!capRun || !capMonth || capMonth < capRun) return json({ error: g.t(SPEC_INVALID) }, 400);
   const version = body.spec !== undefined ? Number(a.version) + 1 : Number(a.version);
-  // Worked out again only when it is turned on or its schedule or zone changes: a rename or a new
-  // instruction keeps a slot that is due and not yet taken by the tick (an automation that is on has a
-  // next slot unless it is run by hand or a one-off whose slot was taken, and those have none to work out).
+  // Worked out again only when it is turned on or its schedule or zone changes (paused too, so the pause
+  // ends at its new time): a rename or a new instruction keeps a slot that is due and not yet taken by the
+  // tick (an automation that is on has a next slot unless it is run by hand or a one-off whose slot was
+  // taken, and those have none to work out).
   const moved = JSON.stringify(f.spec.trigger) !== JSON.stringify(spec?.trigger) || f.timeZone !== a.time_zone;
-  const nextAt = runGoesOn ? 0 : status === "on" && (turningOn || moved) ? nextSlot(f.spec, f.timeZone) : Number(a.next_at);
+  const nextAt = runGoesOn ? 0 : (status === "on" && (turningOn || moved)) || (status === "paused" && moved) ? nextSlot(f.spec, f.timeZone) : Number(a.next_at);
+  // A pause that ends by itself, moved, is looked at again as its run's end would have set it: a wait for
+  // credits at the new next slot, and a one-off's at its new time whatever paused it (see resumePaused).
+  const once = f.spec.trigger.type === "schedule" && f.spec.trigger.when.kind === "once";
+  const resumeAt = status === "paused" && moved && SELF_ENDING.has(a.paused_reason) && (once || a.paused_reason === "credits") ? nextAt || Date.now() + 86_400_000 : Number(a.resume_at);
   // A pause by its owner never ends by itself; turned on, every pause is over.
   const pause =
     status === a.status
-      ? { reason: a.paused_reason, at: Number(a.paused_at), resumeAt: Number(a.resume_at), need: Number(a.need_credits) }
+      ? { reason: a.paused_reason, at: Number(a.paused_at), resumeAt, need: Number(a.need_credits) }
       : status === "paused"
         ? { reason: "user", at: Date.now(), resumeAt: 0, need: 0 }
         : { reason: "", at: 0, resumeAt: 0, need: 0 };
@@ -578,8 +591,11 @@ export async function receipt(g: Gate, runId: string) {
     else if (last?.note === "waiting" && last.stepId === s.step_id) Object.assign(last, { waits: last.waits + 1, held: Math.max(last.held, Number(s.held)), finishedAt: Number(s.finished_at) });
     else shown.push({ ...view(s, 0), status: "waiting", waits: 1 });
   }
-  // Only the run's last row, while it goes on, waits now (and says why); earlier waits were waited.
-  for (const [i, s] of shown.entries()) if (s.waits > 0 && (i < shown.length - 1 || Number(r.finished_at))) Object.assign(s, { status: "waited", noteText: "" });
+  // Only the run's last row, while it goes on and isn't parked (waiting for Resume), waits now and says
+  // why; earlier waits, and one before a pause, were waited.
+  for (const [i, s] of shown.entries()) {
+    if (s.waits > 0 && (i < shown.length - 1 || Number(r.finished_at) || Number(r.parked) === 1)) Object.assign(s, { status: "waited", noteText: "" });
+  }
   return {
     run: {
       id: r.id,
@@ -599,7 +615,7 @@ export async function receipt(g: Gate, runId: string) {
       stopRequested: Number(r.stop_requested) > 0,
       parked: Number(r.parked) === 1,
       dueAt: Number(r.due_at),
-      // Its step waits for another run's hold, to try again at dueAt.
+      // Its step waits for another request's hold (a run's or a chat reply's), to try again at dueAt.
       waiting: !Number(r.finished_at) && steps.at(-1)?.note === "waiting",
       deleted: a?.status === "deleting",
       // Why it ended this way, in the reader's words, where Flash says so.
@@ -615,18 +631,31 @@ export async function receipt(g: Gate, runId: string) {
   };
 }
 
+/** A step's waits in a row as a receipt shows them (see receipt()). */
+type WaitLine = { stepId: string; waits: number; held: number; credits: number; status: string };
+
 /**
  * Whether the readable part of a downloaded receipt (its run and steps, as receipt() gives them) says
  * what its fingerprinted compact receipt says: the run's credits, status and outcome, and each attempt
- * of each step, with its output (left out of the check once compacted to nothing). A file with only
+ * of each step, with its output (left out of the check once compacted to nothing). Its wait lines
+ * (waits for other requests' holds, which aren't tries) add up to the waits the fingerprint counts,
+ * each over and free, and are the ones Flash's record shows (waits: from receipt()). A file with only
  * the compact receipt has nothing more to check.
  */
-function readableMatches(file: Record<string, unknown>, compact: CompactReceipt): boolean {
+function readableMatches(file: Record<string, unknown>, compact: CompactReceipt, waits: WaitLine[]): boolean {
   if (file.run === undefined && file.steps === undefined) return true;
   const run = file.run as Record<string, unknown> | null;
-  // Its tries: waits for other runs' holds aren't in the fingerprint (it counts them, waited).
-  const steps = Array.isArray(file.steps) ? (file.steps as Record<string, unknown>[]).filter((x) => !(x && typeof x === "object" && x.note === "waiting")) : null;
-  if (!run || typeof run !== "object" || !Array.isArray(steps) || steps.length !== compact.steps.length) return false;
+  const rows = Array.isArray(file.steps) ? (file.steps as unknown[]) : null;
+  if (!run || typeof run !== "object" || !rows || !rows.every((x) => Boolean(x) && typeof x === "object")) return false;
+  const lines = (rows as Record<string, unknown>[]).filter((x) => x.note === "waiting");
+  const counted = lines.reduce((n, x) => n + (Number.isInteger(x.waits) && Number(x.waits) > 0 ? Number(x.waits) : NaN), 0);
+  if (counted !== (compact.waited ?? 0) || lines.length !== waits.length) return false;
+  const same = (x: Record<string, unknown>, w: WaitLine) =>
+    x.stepId === w.stepId && x.waits === w.waits && x.held === w.held && x.credits === 0 && w.credits === 0 && x.status === "waited" && w.status === "waited" && !x.noteText;
+  if (!lines.every((x, i) => same(x, waits[i]))) return false;
+  // Its tries: each is one of the fingerprint's.
+  const steps = (rows as Record<string, unknown>[]).filter((x) => x.note !== "waiting");
+  if (steps.length !== compact.steps.length) return false;
   if (run.id !== compact.run || run.credits !== compact.credits || run.status !== compact.status || run.outcome !== compact.outcome) return false;
   return compact.steps.every((c) => {
     const s = steps.find((x) => x && typeof x === "object" && x.stepId === c.id && x.attempt === c.attempt);
@@ -646,8 +675,9 @@ export async function checkReceipt(g: Gate, runId: string, body: Record<string, 
   // The whole download, or just its { prev, receipt, hash }.
   const saved = (!file || typeof file !== "object" ? null : "hash" in file && "prev" in file ? file : file.receipt) as SavedReceipt | null;
   if (!saved || typeof saved !== "object" || saved.receipt?.run !== r.id) return json({ matches: false });
-  const ok = (await verifyReceipt(r.automation_id, saved).catch(() => false)) && readableMatches(file!, saved.receipt);
-  return json({ matches: ok });
+  if (!(await verifyReceipt(r.automation_id, saved).catch(() => false))) return json({ matches: false });
+  const waits = ((await receipt(g, r.id))?.steps ?? []).filter((x) => x.waits > 0);
+  return json({ matches: readableMatches(file!, saved.receipt, waits) });
 }
 
 /** Stop, Retry (a new run, its price confirmed) and read (seen) on a run; only read on one of an automation being deleted. */
@@ -719,7 +749,7 @@ export async function burnIn(g: Gate) {
   // Runs of automations being deleted stay listed (marked) until their rows go, so a delete mid-run can be checked.
   // held: the largest hold of the run (its steps' holds come one after another, never together).
   // Worked out for the 20 runs shown only, each through its own holds (credit_holds_by_run).
-  // waiting: its latest step row waits for another run's hold (read through that run's own steps).
+  // waiting: its latest step row waits for another request's hold, a run's or a chat reply's (read through that run's own steps).
   const runs = await all<{ id: string; automation_id: string; name: string; deleting: number; status: string; outcome: string; origin: string; credits: number; scheduled_at: number; started_at: number; finished_at: number; created_at: number; parked: number; due_at: number; held: number; holds: number; open: number; waiting: number }>(
     `SELECT latest.id, latest.automation_id, a.name, a.status = 'deleting' AS deleting, latest.status, latest.outcome, latest.origin, latest.credits, latest.scheduled_at,
             latest.started_at, latest.finished_at, latest.created_at, latest.parked, latest.due_at,

@@ -148,6 +148,17 @@ test("the reaper never settles above the hold, and part way it adds the most the
   assert.equal(both, creditsFor(2 + writes(backed) + writes(fallbackModel(backed)!) + 3));
 });
 
+test("the reaper never settles above what its plan let the call cost (cap_cents), when it has one: else the hold bounds it", () => {
+  // A died call priced at 150 s of writing is far more than a step whose max_tokens let it cost 5¢.
+  const open = H.reaperCredits({ ...HOLD, held: 10_000 }, true);
+  assert.ok(open > creditsFor(5));
+  assert.equal(H.reaperCredits({ ...HOLD, held: 10_000, cap_cents: 5 }, true), creditsFor(5));
+  assert.equal(H.reaperCredits({ ...HOLD, held: 10, cap_cents: 5 }, true), 10, "never above the hold either");
+  assert.equal(H.reaperCredits({ ...HOLD, held: 10_000, cap_cents: 0 }, true), open, "0: no bound but the hold");
+  // What the call is known to have cost is under its cap: the cap changes nothing.
+  assert.equal(H.reaperCredits({ ...HOLD, held: 10_000, cap_cents: 1_000 }, true), open);
+});
+
 test("what a paid step's plan still allows: a full re-read for each result to come and 1¢ per search left", () => {
   const model = LEVEL_MODELS.ascend;
   const read = readCostCents(model, 40_000);

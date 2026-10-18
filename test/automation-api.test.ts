@@ -46,7 +46,7 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
   return path === "/payment_intents" ? Response.json({ id: `pi_${stripeCalls.length}`, status: "succeeded" }) : Response.json({});
 }) as typeof fetch;
 
-const { one, run: sql } = await import("../src/lib/server/db.ts");
+const { one, all, run: sql } = await import("../src/lib/server/db.ts");
 const R = await import("../src/lib/server/automation-runner.ts");
 const { localeOf } = await import("../src/lib/i18n.ts");
 const F = await import("./support/automation-fixtures.ts");
@@ -1266,6 +1266,10 @@ test("a receipt shows a step's waits for other runs' holds in a row once, with w
   // Its last wait goes on now, and says why; the earlier ones were waited.
   assert.deepEqual(shown(r), [["a1", "waited", 0, 2], ["a1", "retried", 1, 0], ["a1", "waiting", 0, 1]]);
   assert.deepEqual(r.steps.map((s) => s.noteText), ["", "", A.NOTICES.waitingHold], "with why");
+  // Parked with its paused automation, it waits for Resume, not for a hold: its wait is over, and says nothing of a minute.
+  await sql("UPDATE automation_runs SET parked = 1 WHERE id = ?", [rid]);
+  assert.deepEqual((await get()).steps.map((s) => [s.status, s.noteText]), [["waited", ""], ["retried", ""], ["waited", ""]]);
+  await sql("UPDATE automation_runs SET parked = 0 WHERE id = ?", [rid]);
   // It runs: its waits stay out of its tries and its fingerprinted steps, which count them.
   claude.state.replies.push({ text: "Clear skies all day." });
   await sql(`UPDATE automation_runs SET due_at = 0, status = 'running', lease_owner = 'w:' || id, lease_until = ${NOW} + 120000 WHERE id = ?`, [rid]);
@@ -1283,6 +1287,28 @@ test("a receipt shows a step's waits for other runs' holds in a row once, with w
   const changed = JSON.parse(JSON.stringify(saved)) as Got;
   changed.steps[3].status = "failed";
   assert.equal(await check(changed), false, "a try changed");
+  // Its wait lines are checked too: their count against the fingerprint's, and each against Flash's record.
+  type Line = Record<string, unknown>;
+  const edit = (f: (steps: Line[]) => void) => {
+    const copy = JSON.parse(JSON.stringify(saved)) as { steps: Line[] };
+    f(copy.steps);
+    return copy;
+  };
+  assert.equal(await check(edit((x) => Object.assign(x[0], { waits: 14 }))), false, "more waits");
+  assert.equal(await check(edit((x) => Object.assign(x[0], { held: 31 }))), false, "a hold while it waited");
+  assert.equal(await check(edit((x) => Object.assign(x[0], { credits: 25 }))), false, "a charge while it waited");
+  assert.equal(await check(edit((x) => Object.assign(x[0], { status: "done" }))), false, "a wait that ran");
+  assert.equal(await check(edit((x) => Object.assign(x[0], { noteText: "Charged 25 credits while waiting." }))), false, "a note");
+  assert.equal(await check(edit((x) => void x.push({ ...x[2] }))), false, "a wait line added");
+  assert.equal(await check(edit((x) => void x.splice(2, 1))), false, "a wait line left out");
+  // Moved between lines, the count still adds up, but the lines aren't Flash's.
+  assert.equal(await check(edit((x) => Object.assign(x[0], { waits: 1 }) && Object.assign(x[2], { waits: 2 }))), false, "waits moved");
+  // A row that isn't an object makes a file that doesn't match, never an error.
+  assert.equal(await check(edit((x) => void x.splice(1, 0, null as unknown as Line))), false, "a row that isn't one");
+  // Flash's record of its waits changed after the run ended, and the file edited to say the same: the fingerprint's count still decides.
+  await sql("DELETE FROM automation_run_steps WHERE run_id = ? AND attempt = 2 AND note = 'waiting'", [rid]);
+  assert.equal(await check(edit((x) => Object.assign(x[0], { waits: 1 }))), false, "fewer waits than the fingerprint counts");
+  assert.equal(await check(edit((x) => void (Object.assign(x[0], { waits: 1 }) && x.push({ ...x[2] })))), false, "a line added to make up the count");
 });
 
 test("a blank burn-in instruction is refused (400), never priced or made with another text in its place", async () => {
@@ -1299,4 +1325,104 @@ test("a blank burn-in instruction is refused (400), never priced or made with an
   assert.equal(await count("automations", "user_id = ?", [id]), 0, "nothing made");
   // Left out, it is the card's own example.
   assert.equal((await adminRoute.POST(req("/api/admin/automations", { cookie, json: { action: "price", timeZone: "UTC" } }))).status, 200);
+});
+
+// The seventh review's regressions (each failed before its fix).
+
+const onceAt = (t: number): Spec => {
+  const iso = new Date(t).toISOString();
+  return { ...F.WRITE_SPEC, trigger: { type: "schedule", when: { kind: "once", date: iso.slice(0, 10), at: iso.slice(11, 16) } } };
+};
+const rowOf = (id: string) => one<{ status: string; next_at: number; resume_at: number; paused_reason: string }>("SELECT status, next_at, resume_at, paused_reason FROM automations WHERE id = ?", [id]);
+
+test("a paused one-off moved to a new time waits for that time: its next slot and the pause's next look move with it", async () => {
+  const T = await import("../src/lib/server/automation-tick.ts");
+  const u = await admin("rv70", 500);
+  const T1 = Math.floor((Date.now() + 10 * 60_000) / 60_000) * 60_000;
+  // Paused for credits (a daily paused so, edited into this one-off): looked at again at its time.
+  const aid = await F.automation({ userId: u.id, spec: onceAt(T1), status: "paused", pausedReason: "credits", resumeAt: T1, nextAt: T1, capRun: 100_000, capMonth: 100_000 });
+  const T2 = Math.floor((Date.now() + 2 * 86_400_000) / 60_000) * 60_000;
+  const moved = onceAt(T2);
+  assert.equal((await patch(u.cookie, aid, { spec: moved, seenMax: (await priceOf(u.cookie, moved)).worst })).status, 200);
+  assert.deepEqual(await rowOf(aid), { status: "paused", next_at: T2, resume_at: T2, paused_reason: "credits" }, "both at the new time");
+  // T1 comes and goes: nothing runs.
+  await T.runTick("tk-rv70", { dispatch: async () => {} });
+  assert.equal(await count("automation_runs", "automation_id = ?", [aid]), 0);
+  // T2 comes (moved into the past by as much, both together): its slot runs.
+  const shift = T2 - Date.now() + 1000;
+  await sql("UPDATE automations SET next_at = next_at - ?, resume_at = resume_at - ? WHERE id = ?", [shift, shift, aid]);
+  await T.runTick("tk-rv70b", { dispatch: async () => {} });
+  const keys = await all<{ run_key: string }>("SELECT run_key FROM automation_runs WHERE automation_id = ?", [aid]);
+  assert.deepEqual(keys.map((k) => k.run_key), [`sched:${T2 - shift}`], "its new time's slot");
+  // A daily paused at its month limit, edited into a one-off: its pause is looked at by that one-off's time, not next month.
+  const daily = await F.automation({ userId: u.id, spec: { ...moved, trigger: { type: "schedule", when: { kind: "daily", at: "08:00" } } }, status: "paused", pausedReason: "month_cap", resumeAt: Date.now() + 20 * 86_400_000, nextAt: Date.now() + 3_600_000, capRun: 100_000, capMonth: 100_000 });
+  assert.equal((await patch(u.cookie, daily, { spec: moved, seenMax: (await priceOf(u.cookie, moved)).worst })).status, 200);
+  assert.deepEqual(await rowOf(daily), { status: "paused", next_at: T2, resume_at: T2, paused_reason: "month_cap" });
+  // A rename keeps both as they were.
+  assert.equal((await patch(u.cookie, daily, { name: "Renamed" })).status, 200);
+  assert.deepEqual([Number((await rowOf(daily))!.next_at), Number((await rowOf(daily))!.resume_at)], [T2, T2]);
+  // A daily paused for credits, moved to another time of day: it tries again at its new next slot, not at its old one.
+  const at = (hhmm: string): Spec => ({ ...F.WRITE_SPEC, trigger: { type: "schedule", when: { kind: "daily", at: hhmm } } });
+  const old = Date.now() + 20 * 3_600_000;
+  const short = await F.automation({ userId: u.id, spec: at(new Date(old).toISOString().slice(11, 16)), status: "paused", pausedReason: "credits", resumeAt: old + 3_600_000, nextAt: old, capRun: 100_000, capMonth: 100_000 });
+  // Renamed, it keeps both.
+  assert.equal((await patch(u.cookie, short, { name: "Renamed too" })).status, 200);
+  assert.deepEqual([Number((await rowOf(short))!.next_at), Number((await rowOf(short))!.resume_at)], [old, old + 3_600_000]);
+  const evening = at(new Date(Date.now() + 2 * 3_600_000).toISOString().slice(11, 16));
+  assert.equal((await patch(u.cookie, short, { spec: evening, seenMax: (await priceOf(u.cookie, evening)).worst })).status, 200);
+  const row = (await rowOf(short))!;
+  assert.ok(Number(row.next_at) > Date.now() && Number(row.next_at) < Date.now() + 3 * 3_600_000, "its new slot, today");
+  assert.equal(Number(row.resume_at), Number(row.next_at), "its pause is looked at again then");
+});
+
+test("a one-off paused while its run is going and moved to a new time keeps that time when resumed, and isn't finished by the old run's end", async () => {
+  const { cookie } = await admin("rv71");
+  const soon = new Date(Date.now() + 10 * 60_000).toISOString();
+  const once: Spec = { ...F.WRITE_SPEC, trigger: { type: "schedule", when: { kind: "once", date: soon.slice(0, 10), at: soon.slice(11, 16) } } };
+  const aid = await create(cookie, once);
+  const gone = new Date(Date.now() - 60_000).toISOString();
+  await sql("UPDATE automation_versions SET spec = ? WHERE automation_id = ?", [JSON.stringify({ ...once, trigger: { type: "schedule", when: { kind: "once", date: gone.slice(0, 10), at: gone.slice(11, 16) } } }), aid]);
+  await sql("UPDATE automations SET next_at = ? WHERE id = ?", [Date.now() - 1000, aid]);
+  const T = await import("../src/lib/server/automation-tick.ts");
+  const sent: { id: string; owner: string }[] = [];
+  await T.runTick("tk-rv71", { dispatch: async (c) => void sent.push(c) });
+  assert.equal(sent.length, 1);
+  let release!: () => void;
+  claude.state.replies.push({ text: "First line.", hold: new Promise((r) => (release = () => r(undefined))) });
+  const going = R.advanceRun(sent[0].id, sent[0].owner, Date.now() + 760_000);
+  for (const until = Date.now() + 5000; claude.state.open < 1 && Date.now() < until; ) await new Promise((r) => setTimeout(r, 20));
+  assert.equal((await patch(cookie, aid, { status: "paused" })).status, 200);
+  release();
+  await going;
+  // While it is paused, its owner moves it to tomorrow.
+  const T2 = Math.floor((Date.now() + 27 * 3_600_000) / 60_000) * 60_000;
+  const moved = onceAt(T2);
+  const worst = (await priceOf(cookie, moved)).worst;
+  assert.equal((await patch(cookie, aid, { spec: moved, seenMax: worst })).status, 200);
+  const resumed = await patch(cookie, aid, { status: "on", seenMax: worst });
+  assert.equal(resumed.status, 200);
+  assert.deepEqual([(await rowOf(aid))!.status, Number((await rowOf(aid))!.next_at)], ["on", T2], "the new time is kept");
+  // The old run goes on and ends: the one-off stays on for its new time.
+  await T.runTick("tk-rv71b", { dispatch: async (c) => void sent.push(c) });
+  assert.equal(sent.length, 2);
+  await R.advanceRun(sent[1].id, sent[1].owner, Date.now() + 760_000);
+  assert.equal((await one<{ status: string }>("SELECT status FROM automation_runs WHERE id = ?", [sent[0].id]))!.status, "done");
+  assert.deepEqual([(await rowOf(aid))!.status, Number((await rowOf(aid))!.next_at)], ["on", T2]);
+});
+
+test("a step whose own record of its model wasn't kept shows its hold's model in the receipt, once its call was sent; never one that wasn't sent", async () => {
+  const H = await import("../src/lib/server/credit-holds.ts");
+  const u = await admin("rv72", 100);
+  const aid = await F.automation({ userId: u.id });
+  const rid = await F.runRow({ automationId: aid, userId: u.id });
+  await sql(`UPDATE automation_runs SET status = 'interrupted', outcome = 'interrupted', finished_at = ${NOW} WHERE id = ?`, [rid]);
+  for (const [attempt, started] of [[1, 1], [2, 0]] as const) {
+    const ref = `auto:${rid}:a1:${attempt}`;
+    // Its input and model write failed before the call (they are kept apart from the step's start).
+    await sql("INSERT INTO automation_run_steps (run_id, step_id, attempt, user_id, kind, status, note, hold_ref, model, started_at, finished_at) VALUES (?, 'a1', ?, ?, 'ai', 'interrupted', '', ?, '', ?, ?)", [rid, attempt, u.id, ref, attempt, attempt]);
+    assert.ok(await H.recordHold({ ref, userId: u.id, runId: rid, held: 20, model: "the-held-model", inputCents: 0.1, leftCents: 0 }));
+    await sql("UPDATE credit_holds SET started = ? WHERE ref = ?", [started, ref]);
+  }
+  const r = (await (await receiptRoute.GET(req(`/api/automations/runs/${rid}`, { cookie: u.cookie }), ctx({ runId: rid }))).json()) as { steps: { attempt: number; model: string }[] };
+  assert.deepEqual(r.steps.map((s) => s.model), ["the-held-model", ""]);
 });

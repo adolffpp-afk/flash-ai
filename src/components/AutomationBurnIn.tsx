@@ -68,9 +68,21 @@ const browserZone = () => {
 const errorOf = (err: unknown) => (err instanceof Error ? err.message : String(err));
 
 type RunState = { finishedAt: number; parked: boolean; dueAt: number; waiting: boolean };
-/** What a run not finished waits for, if anything: Resume (parked with its automation), or its next try (and why, when it waits for another run's hold). */
+/**
+ * What a run not finished waits for, if anything: Resume (parked with its automation), or its next try
+ * (and why, when it waits for another request's hold: a run's, or a chat reply's, on the same account).
+ */
 const waitNote = (r: RunState, now: number) =>
-  r.finishedAt ? "" : r.parked ? "Waiting for you to resume" : r.dueAt > now ? `${r.waiting ? "Waiting for another run's hold: tries" : "Tries"} again at ${when(r.dueAt)}` : "";
+  r.finishedAt
+    ? ""
+    : r.parked
+      ? "Waiting for you to resume"
+      : r.dueAt > now
+        ? `${r.waiting ? "Waiting for another request's hold (a run or a chat reply): tries" : "Tries"} again at ${when(r.dueAt)}`
+        : "";
+/** A step's waits in a row: going on now (its last row while the run waits), or over. */
+const waitsLabel = (status: string, waits: number) =>
+  status === "waiting" ? (waits === 1 ? " · waiting" : ` · waiting (${waits} times so far)`) : waits === 1 ? " · waited" : ` · waited ${waits} times`;
 /** A run under way or due now (not one that waits): the card and its receipt follow it every 5 s. */
 const goingNow = (r: RunState, now: number) => !r.finishedAt && !r.parked && r.dueAt <= now;
 
@@ -304,7 +316,7 @@ function TestAutomation({ a, language, ready, onChange }: { a: Card["automations
         </Theirs>
       )}
       {a.timePassed && <div className="mt-1 text-xs text-amber-300">Its time has passed, so it can&apos;t be turned on again. Make a new one-off to test again.</div>}
-      {a.status === "paused" && a.resumeAt > 0 && (
+      {a.status === "paused" && a.resumeAt > 0 && !a.timePassed && (
         <div className="mt-1 text-xs text-amber-300">
           {a.pausedReason === "credits" ? `Tries again by itself on ${when(a.resumeAt)} if the credits are there.` : `Turns back on by itself on ${when(a.resumeAt)}.`}
         </div>
@@ -490,8 +502,8 @@ function RunReceipt({ runId, language, onChange }: { runId: string; language: st
                   <span className="font-mono">{s.stepId}</span>
                   <span>
                     {STEP_KINDS[s.kind] ?? s.kind}
-                    {/* Waits for other runs' holds in a row come as one line; they aren't tries. */}
-                    {s.waits > 0 ? (s.waits === 1 ? " · waited" : ` · waited ${s.waits} times`) : s.attempt > 1 ? ` · attempt ${s.attempt}` : ""}
+                    {/* Waits for other requests' holds in a row come as one line; they aren't tries. */}
+                    {s.waits > 0 ? waitsLabel(s.status, s.waits) : s.attempt > 1 ? ` · attempt ${s.attempt}` : ""}
                   </span>
                   <Pill status={s.status} outcome={s.waits > 0 ? undefined : s.note || undefined} />
                   {s.kind === "ai" && (
@@ -510,7 +522,11 @@ function RunReceipt({ runId, language, onChange }: { runId: string; language: st
                   </details>
                 )}
                 {s.noteText && <Theirs language={language} className="mt-1 w-fit max-w-full text-amber-300">{s.noteText}</Theirs>}
-                {s.status === "waited" && <p className="mt-1 text-zinc-500">It waited for other runs&apos; holds on this account: waits are free, and aren&apos;t tries.</p>}
+                {s.status === "waited" && (
+                  <p className="mt-1 text-zinc-500">
+                    It waited for other requests&apos; holds on this account (runs or chat replies): waits are free, and aren&apos;t tries.
+                  </p>
+                )}
                 {s.output && (
                   <div dir="auto" className="mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap break-words text-zinc-300">
                     {s.output}
@@ -541,8 +557,10 @@ function RunReceipt({ runId, language, onChange }: { runId: string; language: st
               ? "None: the step didn't fit, so nothing was held."
               : r.steps.some((s) => s.waits > 0)
                 ? run.finishedAt
-                  ? "None: its step waited for other runs' holds and never held."
-                  : "None yet: its step waits for another run's hold."
+                  ? "None: its step waited for other requests' holds (runs or chat replies) and never held."
+                  : run.parked
+                    ? "None yet: it waits for you to resume."
+                    : "None yet: its step waits for another request's hold (a run or a chat reply)."
                 : "None: no AI step has priced its call."}
           </p>
         ) : (

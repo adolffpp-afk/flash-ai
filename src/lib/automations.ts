@@ -99,7 +99,7 @@ export const NOTICES = {
   capacity: msg("Skipped: Flash's automation capacity for this month is reached. It runs again on {date}."),
   noCredits: msg("Not enough credits: the step that didn't fit wasn't run, and nothing was charged for it."),
   onceSkipped: msg("Skipped: it was over its limits when it was due, so it didn't run."),
-  waitingHold: msg("Waiting: another run on this account holds the credits this step needs. It tries again in a minute, for free."),
+  waitingHold: msg("Waiting: a chat reply or another run on this account holds the credits this step needs. It tries again in a minute, for free."),
 } as const;
 
 type Obj = Record<string, unknown>;

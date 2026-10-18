@@ -34,6 +34,7 @@ export type Hold = {
   done: number;
   spent_cents: number;
   left_cents: number;
+  cap_cents: number;
   checked_at: number;
   lease_until: number;
   settled_at: number;
@@ -46,14 +47,25 @@ export type Hold = {
  * owner: only while that worker still holds the run's lease (a worker that outlived its lease, say
  * on a slow token count, records nothing, so it can't charge or call Claude next to the run's new
  * worker). False when it wasn't recorded: the lease is gone, or a hold with this ref is kept as it is.
+ * capCents: the most the step's calls may cost by its plan (0: no bound but the hold), see reaperCredits.
  */
-export async function recordHold(h: { ref: string; userId: string; runId: string; held: number; model: string; inputCents: number; leftCents: number; owner?: string }): Promise<boolean> {
+export async function recordHold(h: {
+  ref: string;
+  userId: string;
+  runId: string;
+  held: number;
+  model: string;
+  inputCents: number;
+  leftCents: number;
+  capCents?: number;
+  owner?: string;
+}): Promise<boolean> {
   const lease = h.owner === undefined ? "1 = 1" : `EXISTS (SELECT 1 FROM automation_runs WHERE id = ? AND lease_owner = ? AND lease_until > ${DB_NOW})`;
   const r = await sql(
-    `INSERT INTO credit_holds (ref, user_id, run_id, held, model, input_cents, left_cents, lease_until, created_at)
-     SELECT ?, ?, ?, ?, ?, ?, ?, ${DB_NOW} + ?, ${DB_NOW} WHERE ${lease}
+    `INSERT INTO credit_holds (ref, user_id, run_id, held, model, input_cents, left_cents, cap_cents, lease_until, created_at)
+     SELECT ?, ?, ?, ?, ?, ?, ?, ?, ${DB_NOW} + ?, ${DB_NOW} WHERE ${lease}
      ON CONFLICT(ref) DO NOTHING`,
-    [h.ref, h.userId, h.runId, h.held, h.model, h.inputCents, h.leftCents, HOLD_LEASE_MS, ...(h.owner === undefined ? [] : [h.runId, h.owner])],
+    [h.ref, h.userId, h.runId, h.held, h.model, h.inputCents, h.leftCents, h.capCents ?? 0, HOLD_LEASE_MS, ...(h.owner === undefined ? [] : [h.runId, h.owner])],
   );
   return r.rowsAffected === 1;
 }
@@ -63,11 +75,11 @@ export async function recordHold(h: { ref: string; userId: string; runId: string
  * is planned once more within what is left): only while it is open and nothing is in the ledger under
  * its ref (its charge, its charge id and its start mark all come after that row, which is never deleted).
  */
-export async function resizeHold(ref: string, held: number, leftCents: number): Promise<boolean> {
+export async function resizeHold(ref: string, held: number, leftCents: number, capCents = 0): Promise<boolean> {
   const r = await sql(
-    `UPDATE credit_holds SET held = ?, left_cents = ? WHERE ref = ? AND settled_at = 0
+    `UPDATE credit_holds SET held = ?, left_cents = ?, cap_cents = ? WHERE ref = ? AND settled_at = 0
         AND NOT EXISTS (SELECT 1 FROM credit_ledger WHERE ref = ?)`,
-    [held, leftCents, ref, ref],
+    [held, leftCents, capCents, ref, ref],
   );
   return r.rowsAffected === 1;
 }
@@ -78,7 +90,10 @@ export async function resizeHold(ref: string, held: number, leftCents: number): 
  * only, credit_holds_open), and chat replies still being written (their charge is held, unsettled and
  * with no ref, until the reply ends, as monthlyCredits counts them), each held at its worst case and
  * settled within its own time, mostly far lower. exceptRef: the asking step's own hold, left out (it has no
- * ledger row while its charge is refused, so this only matters should it ever have one).
+ * ledger row while its charge is refused, so this only matters should it ever have one). An open hold's
+ * lease_until is never 0, so "lease_until > 0" changes no answer: it lets the read use credit_holds_open.
+ * A chat reply's row counts only while negative: refund() writes the only positive rows with no ref, and
+ * nothing calls it yet.
  */
 export async function heldElsewhere(account: string, automationId: string, exceptRef = ""): Promise<{ account: number; automation: number }> {
   const [row, chat] = await Promise.all([
@@ -193,9 +208,14 @@ export async function openHolds(runId: string): Promise<Hold[]> {
  * - otherwise what it had cost at its last checkpoint (at least reading its input once), plus the most
  *   the model could have written from then to the lease's end at PEAK_TOKENS_PER_SECOND, plus the
  *   worst case of every tool round and search its plan still allowed. The worker stops its own stream
- *   before that lease ends, so this is never less than the provider could have billed.
+ *   before that lease ends, so this is never less than the provider could have billed;
+ * and never above what its plan let its calls cost (cap_cents, when the plan paid for no fallback: its
+ * max_tokens and every round within it), as a step finished at its max_tokens is charged no more.
  */
-export function reaperCredits(h: Pick<Hold, "held" | "started" | "done" | "spent_cents" | "left_cents" | "input_cents" | "checked_at" | "lease_until" | "created_at" | "model">, charged: boolean): number {
+export function reaperCredits(
+  h: Pick<Hold, "held" | "started" | "done" | "spent_cents" | "left_cents" | "input_cents" | "checked_at" | "lease_until" | "created_at" | "model"> & { cap_cents?: number },
+  charged: boolean,
+): number {
   if (!charged || !Number(h.started)) return 0;
   const held = Number(h.held);
   if (Number(h.done)) return Number(h.spent_cents) > 0 ? Math.min(held, creditsFor(Number(h.spent_cents))) : 0;
@@ -206,7 +226,8 @@ export function reaperCredits(h: Pick<Hold, "held" | "started" | "done" | "spent
   const outputPrice = claudePrice(h.model).output + (backup ? claudePrice(backup).output : 0);
   const gap = (seconds * PEAK_TOKENS_PER_SECOND * outputPrice) / 1e6;
   const incurred = Math.max(Number(h.spent_cents), Number(h.input_cents)) + gap + Number(h.left_cents);
-  return Math.min(held, creditsFor(incurred));
+  const cap = Number(h.cap_cents ?? 0) > 0 ? Number(h.cap_cents) : Infinity;
+  return Math.min(held, creditsFor(Math.min(incurred, cap)));
 }
 
 /**
