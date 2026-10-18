@@ -403,12 +403,16 @@ test("the bell: low below the person's level, with its dot until opened once; an
   assert.equal(bellState(me(500), [site(T - 3600_000)], 0, 0, true).aiOut.length, 0, "not before the browser knows the time");
 });
 
-test("the bell's list opens from the bell toward the page, in right-to-left languages too", async () => {
+test("the bell's list stays on the screen: across a phone, and from the bell toward the page in either direction", async () => {
   const { readFile } = await import("node:fs/promises");
   const bell = await readFile(new URL("../src/components/Bell.tsx", import.meta.url), "utf8");
-  // In Arabic, Hebrew, Persian and Urdu the bell sits near the left edge: a list pinned to its right
-  // side would run off the screen there.
-  assert.match(bell, /<div role="menu" aria-label=\{t\("Notifications"\)\} className="absolute end-0 top-full /);
+  const menu = bell.match(/role="menu"[\s\S]*?className="([^"]+)"/)?.[1].split(" ") ?? [];
+  // A phone: the bell sits too far in for a 20rem list pinned to it, so it spans the screen under the top bar.
+  for (const name of ["fixed", "inset-x-4", "top-16"]) assert.ok(menu.includes(name), name);
+  // Wider: from the bell's end side, which is its left in Arabic, Hebrew, Persian and Urdu, where the
+  // bell sits near the left edge and a list pinned to its right side ran off the screen.
+  for (const name of ["sm:absolute", "sm:inset-x-auto", "sm:end-0", "sm:top-full", "sm:w-80"]) assert.ok(menu.includes(name), name);
+  assert.deepEqual(menu.filter((name) => /^(sm:)?(w-|right-|left-)/.test(name)), ["sm:w-80"]);
   assert.match(bell, /const row = "flex w-full items-start gap-3 rounded-xl px-3 py-2\.5 text-start /);
-  assert.doesNotMatch(bell, /\b(right|left)-0\b|\btext-(left|right)\b/);
+  assert.doesNotMatch(bell, /\btext-(left|right)\b/);
 });
