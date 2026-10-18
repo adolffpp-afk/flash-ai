@@ -4,7 +4,7 @@ import { createServer } from "node:http";
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createRequire, register } from "node:module";
+import { register } from "node:module";
 import type { AddressInfo } from "node:net";
 
 /*
@@ -77,11 +77,12 @@ const { CUT_NOTE } = await import("../src/lib/office.ts");
 const server = await import("../src/lib/server/assistants.ts");
 const { ASSISTANT_TABLES, DAILY_TEXT_FREE, DAILY_TEXT_PAID, EXACT_CHARS, countInstructionTokens, createAssistant, deleteUserAssistants, fileTokens } = server;
 const { UPLOAD_CAP } = await import("../src/lib/server/assistant-routes.ts");
-const listRoute = await import("../src/app/api/assistants/route.ts");
-const oneRoute = await import("../src/app/api/assistants/[id]/route.ts");
-const filesRoute = await import("../src/app/api/assistants/[id]/files/route.ts");
-const fileRoute = await import("../src/app/api/assistants/[id]/files/[fileId]/route.ts");
-const chatsRoute = await import("../src/app/api/assistants/[id]/chats/route.ts");
+const { sha256 } = await import("../src/lib/server/ids.ts");
+const listRoute = await import("../src/app/api/_assistants/route.ts");
+const oneRoute = await import("../src/app/api/_assistants/[id]/route.ts");
+const filesRoute = await import("../src/app/api/_assistants/[id]/files/route.ts");
+const fileRoute = await import("../src/app/api/_assistants/[id]/files/[fileId]/route.ts");
+const chatsRoute = await import("../src/app/api/_assistants/[id]/chats/route.ts");
 const { afterwards } = await import("./support/next-server.mjs");
 
 await db();
@@ -240,6 +241,9 @@ test("making an assistant: cleaned, refused with its reason at every limit and n
     [{ name: "Flash Summit" }, "That name is kept for Flash itself. Pick another."],
     [{ name: "Official Flash Vision" }, "That name is kept for Flash itself. Pick another."],
     [{ name: "Flash Sonic support" }, "That name is kept for Flash itself. Pick another."],
+    [{ name: "Flash ∞ AI Summit" }, "That name is kept for Flash itself. Pick another."],
+    [{ name: "Flash Infinity AI Vision" }, "That name is kept for Flash itself. Pick another."],
+    [{ name: "AI-Flash Summit" }, "That name is kept for Flash itself. Pick another."],
     [{ description: "x".repeat(301) }, "Descriptions can be up to 300 characters."],
     [{ instructions: "x".repeat(8001) }, "Instructions can be up to 8,000 characters. Yours has 8,001."],
     [{ starters: ["1", "2", "3", "4", "5", "6", "7"] }, "Up to 6 conversation starters, each up to 200 characters."],
@@ -665,7 +669,7 @@ test("the day's text: 2,000,000 characters free and 10,000,000 on a paid plan, r
   assert.equal(many.body.error, "You've added a lot of files. Try again in an hour.");
 });
 
-test("the day's text is taken in the statement that counts it: two uploads at once take it one at a time, and a file that isn't kept gives it back", async () => {
+test("the day's text is taken in the statement that counts it: two uploads at once take it one at a time, and it's given back only when the file's row isn't written", async () => {
   const owner = await account();
   const a = await made(owner);
   const key = `assistant-chars:${owner.id}`;
@@ -689,8 +693,9 @@ test("the day's text is taken in the statement that counts it: two uploads at on
   assert.equal(await used(key), DAILY_TEXT_FREE - 500);
   assert.equal((await upload(owner, a.id, fresh(500))).status, 200);
 
-  // Storing fails: the upload is refused, nothing is kept, the day's text is given back, and the
-  // assistant is as the editor read it, so the editor's next save goes through.
+  // Storing fails: the upload is refused, nothing is kept, and the assistant is as the editor read
+  // it, so the editor's next save goes through. Its chunks were being written, so the day's text it
+  // took stays spent.
   const client = await db();
   const batch = client.batch;
   /** An upload whose batch with a statement starting `at` fails (its chunks, unless told), after `first` runs. */
@@ -710,7 +715,7 @@ test("the day's text is taken in the statement that counts it: two uploads at on
   assert.equal(failed.body.error, "Something went wrong. Please try again.");
   assert.equal(await count("SELECT COUNT(*) AS n FROM assistant_files WHERE assistant_id = ?", [a.id]), files, "nothing kept");
   assert.equal(await count("SELECT COUNT(*) AS n FROM assistant_chunks WHERE assistant_id = ? AND file_id NOT IN (SELECT id FROM assistant_files)", [a.id]), 0);
-  assert.equal(await used(key), 0, "the day's text it took is given back");
+  assert.equal(await used(key), 5000, "the day's text it took stays spent");
   const after = (await get(owner, a.id)).body.assistant as Made;
   assert.equal(after.version, read1.version, "no new version for a file that isn't there");
   const saved = await put(owner, a.id, { version: read1.version, description: "Saved after a failed upload" });
@@ -722,13 +727,108 @@ test("the day's text is taken in the statement that counts it: two uploads at on
   assert.equal(unversioned.status, 500);
   assert.equal(await count("SELECT COUNT(*) AS n FROM assistant_files WHERE assistant_id = ?", [a.id]), files);
   assert.equal(await count("SELECT COUNT(*) AS n FROM assistant_chunks WHERE assistant_id = ?", [a.id]), chunks);
-  assert.equal(await used(key), 0);
+  assert.equal(await used(key), 10_000);
 
-  // What's given back goes to the day it was taken from only: if the day ends while the file is
-  // stored (and the next has had 100 characters), the new day isn't given more.
-  const lost = await failing(owner, a.id, () => run("UPDATE rate_limits SET count = 100, reset_at = ? WHERE key = ?", [Date.now() + 2 * DAY, key]));
-  assert.equal(lost.status, 500);
+  // Given back only when nothing was written (here the same text was kept first by another
+  // upload), and then to the day it was taken from only: if the day ends meanwhile (and the next
+  // has had 100 characters), the new day isn't given more.
+  const twin = fresh(5000);
+  const execute = client.execute;
+  client.execute = async function (this: typeof client, ...args: Parameters<typeof execute>) {
+    if (sqlText(args[0]).trimStart().startsWith("INSERT INTO assistant_files")) {
+      client.execute = execute;
+      await run("UPDATE rate_limits SET count = 100, reset_at = ? WHERE key = ?", [Date.now() + 2 * DAY, key]);
+      await run("INSERT INTO assistant_files (id, assistant_id, name, kind, chars, bytes, stored, tokens, hash, created_at) VALUES ('twin', ?, 'twin.txt', 'text', 1, 1, 1, 1, ?, 0)", [a.id, sha256(twin)]);
+    }
+    return execute.apply(this, args);
+  } as typeof execute;
+  const lost = await upload(owner, a.id, twin).finally(() => (client.execute = execute));
+  assert.equal(lost.status, 409);
+  assert.equal(lost.body.code, "duplicate");
   assert.equal(await used(key), 100, "the new day keeps its 100");
+});
+
+test("deleting a file while it's stored stops it, and the day's text it took stays spent, so uploading and deleting can't write without end", async () => {
+  const owner = await account();
+  const a = await made(owner);
+  const key = `assistant-chars:${owner.id}`;
+  // Three batches of chunks.
+  const text = fresh(300_000);
+  const client = await db();
+  const batch = client.batch;
+  const deleted: Reply[] = [];
+  let chunkBatches = 0;
+  client.batch = async function (this: typeof client, ...args: Parameters<typeof batch>) {
+    const out = await batch.apply(this, args);
+    if (args[0].some((st) => sqlText(st).startsWith("INSERT INTO assistant_chunks")) && ++chunkBatches === 1) {
+      // The owner, on another device, sees the file being stored and deletes it.
+      const listed = (await get(owner, a.id)).body.assistant as Made;
+      deleted.push(await removeFile(owner, a.id, listed.files[0].id));
+    }
+    return out;
+  } as typeof batch;
+  const r = await upload(owner, a.id, text).finally(() => (client.batch = batch));
+  assert.equal(r.status, 500);
+  assert.equal(deleted[0].status, 200);
+  assert.equal(await count("SELECT COUNT(*) AS n FROM assistant_files WHERE assistant_id = ?", [a.id]), 0);
+  assert.equal(await count("SELECT COUNT(*) AS n FROM assistant_chunks WHERE assistant_id = ?", [a.id]), 0);
+  assert.equal(await used(key), text.length, "its characters stay spent");
+  assert.equal(Number((await row(a.id))!.version), 1, "the delete's new version, and no other");
+});
+
+test("two deletes of one file at once: one deletes it, the other finds nothing, and the assistant gets one new version", async () => {
+  const owner = await account();
+  const a = await made(owner);
+  const up = await upload(owner, a.id, fresh(3000));
+  assert.equal(up.body.version, 1);
+  const fileId = (up.body.file as { id: string }).id;
+  const both = await Promise.all([removeFile(owner, a.id, fileId), removeFile(owner, a.id, fileId)]);
+  assert.deepEqual(both.map((r) => r.status).sort(), [200, 404]);
+  assert.equal(both.find((r) => r.status === 200)!.body.version, 2);
+  assert.equal(Number((await row(a.id))!.version), 2, "one new version");
+  const saved = await put(owner, a.id, { version: 2, description: "Saved after the deletes" });
+  assert.equal(saved.status, 200, saved.body.error);
+});
+
+test("a failed upload whose delete fails too is deleted on a later try; one the database never takes stays listed, for its owner to delete", async () => {
+  const owner = await account();
+  const a = await made(owner);
+  const client = await db();
+  const batch = client.batch;
+  const files = () => count("SELECT COUNT(*) AS n FROM assistant_files WHERE assistant_id = ?", [a.id]);
+  /** An upload while the database takes no batch of writes, from its first chunk batch on, for `failures` batches. */
+  const outage = (text: string, failures: number) => {
+    let down = false;
+    let failed = 0;
+    client.batch = async function (this: typeof client, ...args: Parameters<typeof batch>) {
+      if (args[0].some((st) => sqlText(st).startsWith("INSERT INTO assistant_chunks"))) down = true;
+      if (down && args[1] === "write" && failed < failures) {
+        failed++;
+        throw new Error("database unavailable");
+      }
+      return batch.apply(this, args);
+    } as typeof batch;
+    return upload(owner, a.id, text).finally(() => (client.batch = batch));
+  };
+  // Its chunks fail, then indexFile's clean-up and the first try at deleting it; the next try takes.
+  const brief = fresh(9000);
+  assert.equal((await outage(brief, 3)).status, 500);
+  assert.equal(await files(), 0);
+  assert.equal(await count("SELECT COUNT(*) AS n FROM assistant_chunks WHERE assistant_id = ?", [a.id]), 0);
+  assert.equal(Number((await row(a.id))!.version), 0);
+  assert.equal((await upload(owner, a.id, brief)).status, 200, "so it can be added again");
+
+  // The database takes nothing for longer: the file is listed with what was stored of it, and its
+  // owner can delete it and add it again.
+  const lasting = fresh(9000);
+  assert.equal((await outage(lasting, Infinity)).status, 500);
+  const left = (await all<{ id: string }>("SELECT id FROM assistant_files WHERE assistant_id = ? AND chunks = 0", [a.id])).map((f) => f.id);
+  assert.equal(left.length, 1);
+  assert.ok(((await get(owner, a.id)).body.assistant as Made).files.some((f) => f.id === left[0]), "listed");
+  assert.equal((await upload(owner, a.id, lasting)).body.code, "duplicate");
+  assert.equal((await removeFile(owner, a.id, left[0])).status, 200);
+  assert.equal((await upload(owner, a.id, lasting)).status, 200);
+  assert.equal(await files(), 2);
 });
 
 // A body that never ends would hang a request that reads it all: this fails instead.
@@ -794,17 +894,6 @@ test("an upload over 3,000,000 bytes is refused before it's read, however it com
   assert.equal(bytes(chinese), lib.MAX_UPLOAD_BYTES);
   assert.equal((await upload(owner, a.id, chinese)).status, 200);
 
-  // Before a proxy runs, Next reads the request's whole body (see src/proxy.ts), so the upload is
-  // left out of it, as Next itself reads the matcher: the route gets the body unread.
-  const { config } = await import("../src/proxy.ts");
-  const { getMiddlewareMatchers } = createRequire(import.meta.url)("next/dist/build/analysis/get-page-static-info.js");
-  const matchers = (getMiddlewareMatchers(config.matcher, {}) as { regexp: string }[]).map((m) => new RegExp(m.regexp));
-  const proxied = (p: string) => matchers.some((m) => m.test(p));
-  assert.equal(proxied(path), false, "an upload isn't read before its route");
-  for (const p of ["/", "/api/assistants", `/api/assistants/${a.id}`, `/api/assistants/${a.id}/files/f1`, `/api/assistants/${a.id}/chats`, "/api/sites/shop/files", "/p/shop", "/oauth/authorize"]) {
-    assert.ok(proxied(p), `the proxy still runs for ${p}`);
-  }
-  assert.equal(proxied("/_next/static/app.js"), false);
 });
 
 test("deleting a file takes its chunks and their index rows, and gives the assistant a new version", async () => {
@@ -828,6 +917,7 @@ test("deleting a file takes its chunks and their index rows, and gives the assis
   assert.equal(await count("SELECT COUNT(*) AS n FROM assistant_files WHERE id = ?", [fileId]), 0);
   assert.equal(await indexed(), 0);
   assert.equal((await removeFile(owner, a.id, fileId)).status, 404, "it's gone");
+  assert.equal(Number((await row(a.id))!.version), 3, "and deleting it again gives no new version");
   assert.equal(await count("SELECT COUNT(*) AS n FROM assistant_files WHERE id = ?", [(keep.body.file as { id: string }).id]), 1);
 });
 

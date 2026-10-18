@@ -5,12 +5,13 @@ import { createAssistant, listAssistants } from "@/lib/server/assistants.ts";
 /*
  * The signed-in user's assistants (see server/assistants.ts): GET lists them, POST makes one from
  * { name, description, instructions, starters, level, color }. Nothing answers while assistants
- * are off.
+ * are off: until then these routes are in _assistants, a folder Next leaves out of routing, and
+ * the change that turns them on renames it to assistants (see assistant-routes.ts).
  */
 export const dynamic = "force-dynamic";
 
-// HEAD is GET without its body. Every other method is a 404 too while assistants are off, so this
-// route can't be told from a path Flash doesn't have, and a 405 once they're on.
+// HEAD is GET without its body. Every other method is a 405 once assistants are on (a 404 while
+// they're off), without a list of what this route takes.
 export { GET as HEAD };
 export { notTaken as PUT, notTaken as PATCH, notTaken as DELETE, notTaken as OPTIONS } from "@/lib/server/assistant-routes.ts";
 

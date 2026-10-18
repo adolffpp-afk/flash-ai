@@ -8,12 +8,12 @@ import { assistantFileText, deleteAssistantFile } from "@/lib/server/assistants.
  */
 export const dynamic = "force-dynamic";
 
-// HEAD is GET without its body. Every other method is a 404 too while assistants are off, so this
-// route can't be told from a path Flash doesn't have, and a 405 once they're on.
+// HEAD is GET without its body. Every other method is a 405 once assistants are on (a 404 while
+// they're off), without a list of what this route takes.
 export { GET as HEAD };
 export { notTaken as POST, notTaken as PUT, notTaken as PATCH, notTaken as OPTIONS } from "@/lib/server/assistant-routes.ts";
 
-type Ctx = RouteContext<"/api/assistants/[id]/files/[fileId]">;
+type Ctx = { params: Promise<{ id: string; fileId: string }> };
 
 export async function GET(request: Request, ctx: Ctx) {
   const asked = await gate(request);

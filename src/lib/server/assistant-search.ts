@@ -19,7 +19,7 @@
  */
 import { randomBytes } from "node:crypto";
 import type { InStatement } from "@libsql/client";
-import { all, db, mendAssistantIndex, one, run } from "./db.ts";
+import { all, db, mendAssistantIndex, now, one, run } from "./db.ts";
 import { MAX_PASSAGES, PASSAGE_TOKENS, type SearchMode } from "../assistants.ts";
 import { chunkText, labelEnds, matchTerms, phraseOf, queryTerms, rankChunks, tagOf, tagged, tells, type Term } from "../assistant-chunks.ts";
 
@@ -150,8 +150,8 @@ export async function catchUpIndex(o: { budgetMs?: number; span?: number; chunks
     if (Date.now() - started >= (o.budgetMs ?? 10_000)) {
       const left = await one<{ value: string }>("SELECT value FROM settings WHERE key = ?", [CATCH_UP]);
       if (!left) break;
-      const now = JSON.parse(left.value) as { to: number; from: number };
-      return { state: "behind", done: now.from, of: now.to };
+      const place = JSON.parse(left.value) as { to: number; from: number };
+      return { state: "behind", done: place.from, of: place.to };
     }
   }
   checked = null;
@@ -235,16 +235,21 @@ export async function indexFile(assistantId: string, fileId: string, text: strin
 const OWNED = "EXISTS (SELECT 1 FROM assistants WHERE id = ? AND user_id = ?)";
 
 /**
- * The statements that delete one file of an assistant: its chunks (the trigger takes their index
- * rows), then the file, then a new version for the assistant, as its answers and price change.
- * Each does nothing unless the assistant is the user's. For a batch with whatever else the delete
- * changes, followed by purgeIndex.
+ * The statements that delete one file of an assistant: a new version for the assistant, as its
+ * answers and price change, then the file's chunks (the trigger takes their index rows), then the
+ * file, last, so the batch's result for it says whether there was one. Each does nothing unless the
+ * assistant is the user's, and the version moves only while the file is there, so two deletes of
+ * one file at once give it one new version. For a batch with whatever else the delete changes,
+ * followed by purgeIndex.
  */
 export function removeFileRows(userId: string, assistantId: string, fileId: string): InStatement[] {
   return [
+    {
+      sql: "UPDATE assistants SET version = version + 1, updated_at = ? WHERE id = ? AND user_id = ? AND EXISTS (SELECT 1 FROM assistant_files WHERE id = ? AND assistant_id = ?)",
+      args: [now(), assistantId, userId, fileId, assistantId],
+    },
     { sql: `DELETE FROM assistant_chunks WHERE assistant_id = ? AND file_id = ? AND ${OWNED}`, args: [assistantId, fileId, assistantId, userId] },
     { sql: `DELETE FROM assistant_files WHERE assistant_id = ? AND id = ? AND ${OWNED}`, args: [assistantId, fileId, assistantId, userId] },
-    { sql: "UPDATE assistants SET version = version + 1 WHERE id = ? AND user_id = ?", args: [assistantId, userId] },
   ];
 }
 

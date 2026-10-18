@@ -1,8 +1,13 @@
 /*
  * What every assistant route does first, and how it says no (see server/assistants.ts for the work
- * itself). Nothing answers while ASSISTANTS_ON is false: each route is a 404 before it reads the
- * database, for every method, the ones it doesn't take too (notTaken). A write is taken only from
- * Flash's own page with its exact Origin, as connectors' are.
+ * itself). A write is taken only from Flash's own page with its exact Origin, as connectors' are.
+ *
+ * While ASSISTANTS_ON is false the routes aren't routes at all: they're in src/app/api/_assistants,
+ * a private folder, which Next leaves out of routing, so every method on every path there gets
+ * Next's own 404, the same as any path Flash doesn't have, on Flash's host and on a custom domain.
+ * The change that turns ASSISTANTS_ON on renames the folder to assistants, and leaves the upload
+ * out of the proxy's matcher (see readForm). Until then each route is also a 404 before it reads
+ * the database, for every method (notTaken for the ones it doesn't take), should it be routed early.
  */
 import { appUrl, getUser, unauthorized, type User } from "./auth.ts";
 import { translatorFor, type ServerT } from "./i18n.ts";
@@ -29,15 +34,13 @@ export function fromFlash(request: Request, body: WriteBody): boolean {
   return Boolean(origin) && origin !== "null" && own.includes(origin!);
 }
 
-// What an assistant route answers while assistants are off, whatever is asked: the same as a path
-// Flash doesn't have.
+// What an assistant route answers while assistants are off, whatever is asked.
 const notFound = async (request: Request) => Response.json({ error: (await translatorFor(request))("Not found") }, { status: 404, headers: NO_STORE });
 
 /**
  * A method an assistant route doesn't take, which each route exports for every such method (HEAD,
- * OPTIONS and PATCH among them): Next would otherwise answer OPTIONS with the route's methods and
- * the others with 405, so a route that's off could be told from a path that isn't there. The same
- * 404 as everything else while assistants are off; 405 once they're on.
+ * OPTIONS and PATCH among them): Next would otherwise answer OPTIONS with the route's methods. A
+ * 405 without them once assistants are on; the same 404 as everything else while they're off.
  */
 export async function notTaken(request: Request): Promise<Response> {
   if (!ASSISTANTS_ON) return notFound(request);
@@ -137,6 +140,12 @@ export const UPLOAD_CAP = MAX_UPLOAD_BYTES + 64 * 1024;
  * An upload's form, read only up to `cap` bytes: a request that says it's bigger is refused before
  * a byte is read, and one that goes over as it comes is stopped there, so nothing bigger is ever
  * parsed or held. "too_big" or "bad" when it can't be read.
+ *
+ * That holds only for a route the proxy doesn't run before: while a proxy runs, Next reads the
+ * request's whole body first (keeping up to 10 MB, see proxyClientMaxBodySize). So the change that
+ * routes the assistants leaves /api/assistants/[id]/files out of src/proxy.ts's matcher. The upload
+ * needs nothing from the proxy: it answers only someone signed in to Flash, whose cookie neither a
+ * custom domain nor Flash's own requests out carry.
  */
 export async function readForm(request: Request, cap = UPLOAD_CAP): Promise<FormData | "too_big" | "bad"> {
   const said = Number(request.headers.get("content-length"));

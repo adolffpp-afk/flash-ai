@@ -10,7 +10,7 @@
  * it read, and a change made since (on another device, or by an upload there) is refused, not lost.
  */
 import { randomBytes } from "node:crypto";
-import type { InStatement } from "@libsql/client";
+import type { Client, InStatement } from "@libsql/client";
 import { all, db, now, one } from "./db.ts";
 import { randomId, sha256 } from "./ids.ts";
 import { FREE_STORAGE_BYTES, USED_STORAGE_SQL, storageLimit, usedStorage } from "./site-files.ts";
@@ -362,24 +362,17 @@ export async function deleteAssistant(userId: string, id: string): Promise<boole
 }
 
 /**
- * Deletes one file of the user's assistant, its chunks and their index rows with it (see
- * removeFileRows), and gives the assistant a new version. The new version, or null when there's no
- * such file of theirs.
+ * Deletes one file of the user's assistant, its chunks and their index rows with it, and gives the
+ * assistant a new version, in one batch that checks the file is there (see removeFileRows). The
+ * new version, or null when there's no such file of theirs, or another delete took it first.
  */
 export async function deleteAssistantFile(userId: string, assistantId: string, fileId: string): Promise<number | null> {
-  const found = await one(`SELECT 1 FROM assistant_files WHERE id = ? AND assistant_id = ? AND ${OWNED}`, [fileId, assistantId, assistantId, userId]);
-  if (!found) return null;
-  const done = await (await db()).batch(
-    [
-      ...removeFileRows(userId, assistantId, fileId),
-      { sql: "UPDATE assistants SET updated_at = ? WHERE id = ? AND user_id = ?", args: [now(), assistantId, userId] },
-      { sql: "SELECT version FROM assistants WHERE id = ? AND user_id = ?", args: [assistantId, userId] },
-    ],
-    "write",
-  );
+  const rows = removeFileRows(userId, assistantId, fileId);
+  const done = await (await db()).batch([...rows, { sql: "SELECT version FROM assistants WHERE id = ? AND user_id = ?", args: [assistantId, userId] }], "write");
+  // The file's own row is deleted last.
+  if (!done[rows.length - 1].rowsAffected) return null;
   await purgeIndex().catch(() => {});
-  const row = done.at(-1)!.rows[0];
-  return row ? Number(row.version) : null;
+  return Number(done.at(-1)!.rows[0]?.version ?? 0);
 }
 
 /**
@@ -449,6 +442,34 @@ async function fileRefusal(userId: string, assistantId: string, chars: number, s
   return null;
 }
 
+// How long a failed upload waits before each new try at deleting what it stored, when the database
+// didn't take the delete (a moment's outage).
+const DROP_WAITS = [250, 1000];
+
+/**
+ * Deletes a file that isn't kept: its chunks first (their index rows go with them), then its row,
+ * tried again after each of DROP_WAITS. False when even the last try failed: the file is then
+ * listed with what was stored of it, for its owner to delete.
+ */
+async function dropFile(client: Client, assistantId: string, fileId: string): Promise<boolean> {
+  for (const wait of [0, ...DROP_WAITS]) {
+    if (wait) await new Promise((done) => setTimeout(done, wait));
+    try {
+      await client.batch(
+        [
+          { sql: "DELETE FROM assistant_chunks WHERE assistant_id = ? AND file_id = ?", args: [assistantId, fileId] },
+          { sql: "DELETE FROM assistant_files WHERE assistant_id = ? AND id = ?", args: [assistantId, fileId] },
+        ],
+        "write",
+      );
+      return true;
+    } catch {
+      // Tried again, if there's a try left.
+    }
+  }
+  return false;
+}
+
 /**
  * Adds a file's text to one of the user's assistants: refused with its reason when the text is
  * empty or over a limit (never cut), when the assistant has MAX_ASSISTANT_FILES or would go over
@@ -456,8 +477,9 @@ async function fileRefusal(userId: string, assistantId: string, chars: number, s
  * STORE_FACTOR times its bytes, or when they've added their day's text. The limits are checked
  * again in the statement that adds it. Then counted and stored in chunks with their index rows
  * (indexFile), and only then does the assistant get a new version. If storing fails, the file is
- * deleted and the assistant is as it was, version and all. A file that isn't kept, whatever the
- * reason, doesn't use the day's text. The file, and the assistant's new version.
+ * deleted (see dropFile) and the assistant keeps its version. The day's text is given back only
+ * when nothing was written; a file whose chunks were being written uses it, kept or not. The file,
+ * and the assistant's new version.
  */
 export async function addAssistantFile(userId: string, assistantId: string, upload: Upload): Promise<{ file: AssistantFile; version: number }> {
   if (!(await ownRow(userId, assistantId))) refuse({ code: "not_found" });
@@ -477,9 +499,12 @@ export async function addAssistantFile(userId: string, assistantId: string, uplo
   if (problem) refuse(problem);
 
   // The day's text, taken before the file's tokens are counted, so a day's uploads are only ever
-  // counted once, and given back when the file isn't kept after all.
+  // counted once. Given back only when the file's row isn't written (another upload took its place):
+  // once it is, its chunks are written, and its characters stay spent whether the file is kept or
+  // not (deleted while it's stored, or storing failed), or uploading and deleting again and again
+  // would write without end.
   const giveBack = (await takeDailyText(userId, limit, text.length)) ?? refuse({ code: "daily_text" });
-  let kept = false;
+  let written = false;
   try {
     const { tokens, exact } = await fileTokens(text);
     const fileId = randomId();
@@ -503,6 +528,7 @@ export async function addAssistantFile(userId: string, assistantId: string, uplo
     });
     // Another request got there first: say which limit it took.
     if (!added.rowsAffected) refuse((await fileRefusal(userId, assistantId, text.length, stored, hash, limit)) ?? { code: "failed" });
+    written = true;
     // The new version once the file is all there, so an upload that fails leaves the assistant as
     // the editor read it, version and all.
     let version = 0;
@@ -521,25 +547,16 @@ export async function addAssistantFile(userId: string, assistantId: string, uplo
       version = Number(done[1].rows[0]?.version ?? 0);
     } catch (err) {
       console.error("[flash] storing an assistant's file failed", err instanceof Error ? err.message : "error");
-      // Its chunks first (their index rows go with them), then its row; no new version.
-      await client
-        .batch(
-          [
-            { sql: "DELETE FROM assistant_chunks WHERE assistant_id = ? AND file_id = ?", args: [assistantId, fileId] },
-            { sql: "DELETE FROM assistant_files WHERE assistant_id = ? AND id = ?", args: [assistantId, fileId] },
-          ],
-          "write",
-        )
-        .catch(() => {});
+      // No new version.
+      if (!(await dropFile(client, assistantId, fileId))) console.error("[flash] deleting an assistant's file that wasn't stored failed");
       await purgeIndex().catch(() => {});
       refuse({ code: "failed" });
     }
     const file = await one<FileRow>(`SELECT ${FILE_FIELDS} FROM assistant_files WHERE id = ?`, [fileId]);
     if (!file) return refuse({ code: "failed" });
-    kept = true;
     return { file: fileOf(file), version };
   } finally {
-    if (!kept) await giveBack().catch(() => {});
+    if (!written) await giveBack().catch(() => {});
   }
 }
 

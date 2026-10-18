@@ -93,8 +93,9 @@ test("names Flash keeps for itself are refused, in any case and with any spacing
   const signs = ["Flash™", "FLASH™", "Flash ∞ AI™", "Flash™ Support", "Flash ∞ AI™ Support", "AI-Flash™", "Flash ∞ AI ™ Official", "Flash ∞ AI℠", "Flash®", "Flash ∞ AI®"];
   // Latin letters with a stroke, hook, curl or tail built in, which NFD can't take off.
   const built = ["Flⱥsh", "Flⱥsh Support", "Flᶏsh", "Fȴash", "Fɬash", "Fⱡash", "Flaȿh", "Flaꞩh", "Flaᶊh", "ᶂlash", "Fȴash ∞ AI"];
-  // The names of Flash's levels, and the top level's name before it was Summit.
-  const levels = ["Flash Summit", "Flash Vision", "Flash Ascend", "Flash Sonic", "Flash Ultra", "Official Flash Summit", "Flash Summit Support", "FLASH VISION team", "Flаsh Ascend"];
+  // The names of Flash's levels, and the top level's name before it was Summit, after any of Flash's names.
+  const levels = ["Flash Summit", "Flash Vision", "Flash Ascend", "Flash Sonic", "Flash Ultra", "Official Flash Summit", "Flash Summit Support", "FLASH VISION team", "Flаsh Ascend",
+    "Flash ∞ AI Summit", "Flash Infinity AI Vision", "AI-Flash Summit", "AI-Flash Vision", "Flash ∞ AI Vision Support", "Flash Infinity Ascend", "AI-Flash Inc. Sonic", "Flash ∞ Ultra", "Flash's Summit"];
   // Flash's own, with any apostrophe, also a modifier letter that shows as one ("ʼ"), or a comma ("ꓹ").
   // "Flash ∞" spelled out, as screen readers read it, alone or with those words.
   const spelled = ["Flash ∞", "Flash ∞ Support", "Official Flash ∞", "Flash Infinity", "Flash Infinity Support", "Official Flash Infinity", "Flash Infinity Team", "FLASH INFINITY", "Flash Infinity's Help Desk"];
