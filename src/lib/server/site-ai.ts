@@ -22,6 +22,9 @@ export const MAX_DAILY_CREDITS = 5000;
 // About what one answer costs, for the owner's "about N answers a day".
 export const TYPICAL_ANSWER_CREDITS = 2;
 const HOUR = 3600_000;
+// How long an answer is waited for: well inside the route's 60 seconds (maxDuration), so a slow one
+// still ends here and its hold is put back. The client's own default is 10 minutes.
+export const ANSWER_TIMEOUT_MS = 40_000;
 
 // answers: about how many answers the daily budget pays for.
 export type AiSettings = { enabled: boolean; dailyCredits: number; usedToday: number; askedToday: number; answers: number };
@@ -163,15 +166,21 @@ export async function askSiteAi(
 
   let message: Anthropic.Beta.BetaMessage;
   try {
-    message = await getClient().beta.messages.create({
-      model: CHAT_MODEL,
-      max_tokens: maxTokens,
-      system,
-      messages: [{ role: "user", content: prompt }],
-    });
-  } catch {
+    message = await getClient().beta.messages.create(
+      { model: CHAT_MODEL, max_tokens: maxTokens, system, messages: [{ role: "user", content: prompt }] },
+      // One attempt: the hold pays for one call, and the client would otherwise send a failed or
+      // timed-out one twice more.
+      { timeout: ANSWER_TIMEOUT_MS, maxRetries: 0 },
+    );
+  } catch (err) {
     await settle(chargeId, 0);
     await giveBack(slug, reserved, hold);
+    // A call that timed out or lost its connection may still have run, and Claude bills it: Flash
+    // pays that, logged at the most it can cost. The owner never pays for a failed answer.
+    if (err instanceof Anthropic.APIConnectionError) {
+      const costCents = callMaxCents(CHAT_MODEL, chars, maxTokens);
+      await logUsage({ userId: site.user_id, engine: "text", model: "app AI", provider: "anthropic", credits: 0, costCents, ok: false });
+    }
     return fail("The AI couldn't answer that. Please try again.", 502);
   }
   const text = message.content
