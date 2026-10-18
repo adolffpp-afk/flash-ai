@@ -24,6 +24,8 @@ const MINUTE = 60_000;
 const DAYS_SHOWN = 30;
 /** How many days of daily totals (views, people) are kept: today and the 99 before it. */
 export const KEEP_DAYS = 100;
+/** How many days a checkout's source waits beside it for its order (see funnel.ts). */
+export const CHECKOUT_DAYS = 14;
 
 // How many people are counted each UTC day across all of one owner's apps, by their plan.
 export { FREE_PEOPLE_PER_DAY, PLAN_PEOPLE };
@@ -517,8 +519,9 @@ export async function pruneDaily(at = Date.now()): Promise<boolean> {
         { sql: "DELETE FROM site_visits WHERE day < ?", args: [kept] },
         { sql: "DELETE FROM site_events WHERE day < ?", args: [kept] },
         { sql: "DELETE FROM site_revenue WHERE day < ?", args: [kept] },
-        // A checkout's source waits for its order at most 3 days (see funnel.ts).
-        { sql: "DELETE FROM site_checkouts WHERE created_at < ?", args: [at - 3 * DAY] },
+        // A checkout's source waits for its order at most 14 days, as a voucher or a bank debit can be
+        // paid days later (see funnel.ts).
+        { sql: "DELETE FROM site_checkouts WHERE created_at < ?", args: [at - CHECKOUT_DAYS * DAY] },
       ],
       "write",
     );

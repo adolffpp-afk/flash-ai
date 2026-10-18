@@ -77,17 +77,51 @@ test("a form counts once a day for the person who sent it, under where their vis
   await countSteps("form-1", await matchVisit("form-1", other, at), ["form"], at);
   assert.deepEqual((await events("form-1")).find((e) => e.source === "?"), { day: dayOf(at), step: "form", source: "?", medium: "", campaign: "", n: 2 });
 
-  // Robots count nothing, and nor does the owner.
+  // Robots count nothing. The owner's own sends count as not matched, as their test orders do, and
+  // never under a source; their app steps don't count.
   assert.deepEqual(await matchVisit("form-1", call("form-1", "inbox", { headers: { "user-agent": "curl/8.0" } }), at), { kind: "robot" });
   await countSteps("form-1", await matchVisit("form-1", call("form-1", "inbox", { headers: { "user-agent": "python-requests/2" } }), at), ["form"], at);
+  assert.equal((await events("form-1")).reduce((sum, e) => sum + e.n, 0), 3, "nothing more was counted");
   await recordVisit("form-1", page("form-1", { "x-forwarded-for": "9.9.9.9" }), "u1", at);
   const owner = await matchVisit("form-1", call("form-1", "inbox", { headers: { "x-forwarded-for": "9.9.9.9" } }), at);
   assert.deepEqual(owner, { kind: "owner" });
   await countSteps("form-1", owner, ["form", "signup", "app:booking"], at);
-  assert.equal((await events("form-1")).reduce((sum, e) => sum + e.n, 0), 3, "nothing more was counted");
+  assert.deepEqual(
+    (await events("form-1")).map((e) => [e.step, e.source, e.n]),
+    [
+      ["form", "?", 3],
+      ["form", "google.com", 1],
+      ["signup", "?", 1],
+    ],
+  );
 });
 
-test("the owner opening their app as owner after a visit counted earlier that day: their steps from then on don't count", async () => {
+test("once the owner opens their app on a shared Wi-Fi, a customer there with the same browser still has their form counted, as not matched", async () => {
+  forgetServerMemory();
+  await site("cafe-a");
+  await site("cafe-b");
+  // Safari's user agent is the same on every iPhone with the same version.
+  const iphone = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1";
+  const wifi = { "x-forwarded-for": "203.0.113.50", "user-agent": iphone };
+  const rows = async (slug: string) => (await all<{ step: string; source: string; n: number }>("SELECT step, source, n FROM site_events WHERE site_slug = ? ORDER BY step, source", [slug])).map((r) => [r.step, r.source, Number(r.n)]);
+  // cafe-b, whose owner never opened it that day: the customer from Instagram and their form.
+  await recordVisit("cafe-b", page("cafe-b", wifi, "?utm_source=instagram"));
+  await sendForm("cafe-b", wifi);
+  await afterwards();
+  assert.deepEqual(await rows("cafe-b"), [
+    ["form", "instagram.com", 1],
+    ["visit", "instagram.com", 1],
+  ]);
+  // cafe-a: the owner opens it in the morning, signed in to Flash, on the café's Wi-Fi; later a customer there does the same.
+  await recordVisit("cafe-a", page("cafe-a", wifi), "u1");
+  await recordVisit("cafe-a", page("cafe-a", wifi, "?utm_source=instagram"));
+  await sendForm("cafe-a", wifi);
+  await afterwards();
+  assert.deepEqual(await rows("cafe-a"), [["form", "?", 1]], "the customer counts as the owner, but their form isn't lost");
+  assert.equal((await funnelStats("cafe-a", 7))!.unmatched.form, 1);
+});
+
+test("the owner opening their app as owner after a visit counted earlier that day: their steps from then on count under no source", async () => {
   forgetServerMemory();
   await site("own-1");
   const at = Date.now();
@@ -102,7 +136,14 @@ test("the owner opening their app as owner after a visit counted earlier that da
   const match = await matchVisit("own-1", call("own-1", "inbox", { headers: domain }), at + 120_000);
   assert.deepEqual(match, { kind: "owner" });
   await countSteps("own-1", match, ["form", "signup", "app:booked"], at + 120_000);
-  assert.deepEqual(await events("own-1"), []);
+  assert.deepEqual(
+    (await events("own-1")).map((e) => [e.step, e.source, e.n]),
+    [
+      ["form", "?", 1],
+      ["signup", "?", 1],
+    ],
+    "as not matched, like the owner's test orders, and their app step not at all",
+  );
   // Opening it as owner again writes nothing more.
   assert.equal(await rowsWritten(() => recordOwnerVisit("own-1", page("own-1", domain, "?flash_owner=abc"), at + 180_000)), 0);
   // The same on /p/: signed in to Flash after a signed-out visit that day.
@@ -312,7 +353,7 @@ test("a checkout keeps only its buyer's source beside the session, and its order
     ["metadata[flash_site]", "metadata[flash_item]"],
   );
   assert.ok(![...forms[0].values()].some((v) => /instagram|spring|utm_|clid|mc_eid/i.test(v)), "not even in the address the buyer goes back to");
-  assert.equal(forms[0].get("cancel_url"), "https://www.flash-app.dev/p/cake-1#/shop", "only the page and its #/route, so no other tool's click ID goes either");
+  assert.equal(forms[0].get("cancel_url"), "https://www.flash-app.dev/p/cake-1?menu=cakes#/shop", "the page, the app's own menu=cakes and its #/route, without the tags and click IDs");
 
   // A buyer Flash can't match, and the owner, leave no source: their orders show as not matched.
   sessionId = "cs_test_b";
@@ -323,7 +364,7 @@ test("a checkout keeps only its buyer's source beside the session, and its order
   await afterwards();
   assert.equal(await n("SELECT COUNT(*) AS n FROM site_checkouts"), 1);
   assert.deepEqual((await events("cake-1")).map((e) => [e.step, e.source, e.n]), [
-    ["checkout", "?", 1],
+    ["checkout", "?", 2],
     ["checkout", "instagram.com", 1],
   ]);
 
@@ -354,6 +395,73 @@ test("a checkout keeps only its buyer's source beside the session, and its order
   // Orders keep no source of their own.
   const columns = (await all<{ name: string }>("PRAGMA table_info(site_orders)")).map((c) => c.name);
   assert.ok(!columns.some((c) => /source|medium|campaign/.test(c)), columns.join());
+});
+
+test("an order paid later, whose buyer never came back from Stripe, keeps its source for 14 days and is in the funnel without opening Orders", async () => {
+  forgetServerMemory();
+  await run("INSERT INTO users (id, email, password_hash, created_at, verified_at) VALUES ('u9', 'z@x.co', 'h', 0, 1)");
+  await site("cake-z", "u9");
+  await run("INSERT INTO seller_accounts (user_id, stripe_account, country, currency, ready, created_at) VALUES ('u9', 'acct_9', 'MX', 'mxn', 1, 0)");
+  await run("INSERT INTO site_products (id, site_slug, name, price, currency, delivery, created_at) VALUES ('pz', 'cake-z', 'Cake', 25000, 'mxn', 0, 0)");
+  const sessions: Record<string, unknown> = {};
+  let listed = 0;
+  globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+    const url = new URL(String(input));
+    const path = url.pathname.replace("/v1", "") + url.search;
+    if (path === "/checkout/sessions" && init?.method === "POST") return Response.json({ id: "cs_test_oxxo", url: "https://checkout.stripe.com/c/pay/cs_test_oxxo" });
+    if (path.startsWith("/checkout/sessions?")) {
+      listed++;
+      return Response.json({ data: Object.values(sessions) });
+    }
+    return Response.json({ id: "e" });
+  }) as typeof fetch;
+  const t0 = Date.now();
+  // A buyer from a newsletter starts a checkout and picks a voucher paid in a shop later (OXXO).
+  await recordVisit("cake-z", page("cake-z", { "x-forwarded-for": "5.5.5.5" }, "?utm_source=newsletter"), null, t0);
+  const r = await shopRoute.POST(
+    call("cake-z", "shop", { headers: { "x-forwarded-for": "5.5.5.5", "content-type": "application/json" }, body: JSON.stringify({ item: "Cake", page: "https://www.flash-app.dev/p/cake-z" }) }),
+    ctx("cake-z"),
+  );
+  assert.equal(r.status, 200);
+  await afterwards();
+  // Paid 3 days later; nobody comes back to the app from Stripe, and the daily prune runs the day after.
+  sessions.cs_test_oxxo = {
+    id: "cs_test_oxxo",
+    payment_status: "paid",
+    amount_total: 25000,
+    currency: "mxn",
+    created: Math.floor(t0 / 1000),
+    metadata: { flash_site: "cake-z", flash_item: "Cake" },
+    customer_details: { email: "buyer@example.com", name: "Buyer" },
+    line_items: { data: [{ quantity: 1 }] },
+  };
+  forgetServerMemory();
+  const { pruneDaily } = await import("../src/lib/server/visits.ts");
+  assert.equal(await pruneDaily(t0 + 3 * 86_400_000 + 3_600_000), true);
+  assert.equal(await n("SELECT COUNT(*) AS n FROM site_checkouts WHERE site_slug = 'cake-z'"), 1, "the checkout's source still waits for its order");
+  // The owner opens the funnel, not Orders: the order is fetched from Stripe first, under its source.
+  const cookie = (await createSession("u9", true)).split(";")[0];
+  const res = await funnelRoute.GET(new Request("https://www.flash-app.dev/api/sites/cake-z/funnel?days=7", { headers: { cookie } }), ctx("cake-z"));
+  const stats = (await res.json()) as Awaited<ReturnType<typeof funnelStats>>;
+  assert.equal(stats!.totals.orders, 1);
+  assert.deepEqual(
+    stats!.sources.map((s) => [s.source, s.orders]),
+    [["newsletter", 1]],
+  );
+  assert.equal(stats!.unmatched.orders, 0);
+  assert.equal(await n("SELECT COUNT(*) AS n FROM site_checkouts WHERE site_slug = 'cake-z'"), 0);
+  // With no checkout waiting, the funnel asks Stripe nothing.
+  const before = listed;
+  await funnelRoute.GET(new Request("https://www.flash-app.dev/api/sites/cake-z/funnel?days=7", { headers: { cookie } }), ctx("cake-z"));
+  assert.equal(listed, before);
+  // A checkout's source is kept 14 days at most.
+  await run("INSERT INTO site_checkouts (session_id, site_slug, source, medium, campaign, created_at) VALUES ('cs_old', 'cake-z', 'newsletter', '', '', ?)", [t0]);
+  forgetServerMemory();
+  assert.equal(await pruneDaily(t0 + 13 * 86_400_000), true);
+  assert.equal(await n("SELECT COUNT(*) AS n FROM site_checkouts WHERE session_id = 'cs_old'"), 1);
+  forgetServerMemory();
+  assert.equal(await pruneDaily(t0 + 15 * 86_400_000), true);
+  assert.equal(await n("SELECT COUNT(*) AS n FROM site_checkouts WHERE session_id = 'cs_old'"), 0);
 });
 
 test("the track route counts the steps an app reports, without a source, and always answers 204 at once", async () => {

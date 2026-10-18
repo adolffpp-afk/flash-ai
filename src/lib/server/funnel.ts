@@ -36,8 +36,8 @@ const DAY = 86_400_000;
 export type Step = "form" | "signup" | "checkout" | `app:${string}`;
 /**
  * Whose browser took a step: a person who visited the app that day or the day before (network is
- * their connection's code, for its app steps, see takeSteps), its owner, nobody Flash counted, or a
- * robot (whose steps count nowhere, not even as not matched).
+ * their connection's code, for its app steps, see takeSteps), its owner's address and browser that
+ * day, nobody Flash counted, or a robot (whose steps count nowhere, not even as not matched).
  */
 export type Match =
   | { kind: "visit"; day: string; visitor: string; touch: Touch; steps: string[]; network: string }
@@ -113,7 +113,9 @@ const countUp = (slug: string, day: string, step: string, t: Touch): Statement =
  * Counts steps for the person a request was matched to, each once a day (a step just after midnight
  * matched to yesterday's visit counts on yesterday). A form, sign-up or checkout from someone Flash
  * couldn't match counts under "not matched", per send; an app's own step from them doesn't count.
- * The owner's steps never count. Never throws: stats must not break a form, a sign-up or a sale.
+ * So do those from the owner's address and browser that day: the owner's own, as their test orders
+ * are not matched too, or someone's on the same Wi-Fi with the same browser, whose sends are never
+ * lost. Never under a source. Never throws: stats must not break a form, a sign-up or a sale.
  */
 export async function countSteps(slug: string, match: Match, list: Step[], at = Date.now()): Promise<void> {
   try {
@@ -124,9 +126,9 @@ export async function countSteps(slug: string, match: Match, list: Step[], at = 
 }
 
 async function count(slug: string, match: Match, list: Step[], at: number, retry: boolean): Promise<void> {
-  if (match.kind === "owner" || match.kind === "robot") return;
+  if (match.kind === "robot") return;
   const today = dayOf(at);
-  if (match.kind === "none") {
+  if (match.kind === "none" || match.kind === "owner") {
     const builtIn = [...new Set(list.filter((s) => !s.startsWith("app:")))];
     if (builtIn.length) await (await db()).batch(builtIn.map((s) => countUp(slug, today, s, { source: UNMATCHED, medium: "", campaign: "" })), "write");
     return;
@@ -251,9 +253,9 @@ async function matchByCode(slug: string, m: Extract<Match, { kind: "visit" }>): 
 
 /**
  * Keeps where a checkout's buyer came from beside its Stripe session, until its order is saved (see
- * saleBySource) or 3 days pass. Nothing about the buyer is kept, and nothing goes to Stripe. The
- * owner's own checkouts, and those Flash couldn't match, keep nothing: their orders show as not
- * matched. Never throws.
+ * saleBySource) or 14 days pass, as a voucher or a bank debit can be paid days later. Nothing about
+ * the buyer is kept, and nothing goes to Stripe. The owner's own checkouts, and those Flash couldn't
+ * match, keep nothing: their orders show as not matched. Never throws.
  */
 export async function saveCheckoutTouch(slug: string, sessionId: string, match: Match, at = Date.now()): Promise<void> {
   const touch = touchFor(match);
@@ -288,6 +290,11 @@ export async function saleBySource(slug: string, sessionId: string, at: number, 
     ],
     "write",
   );
+}
+
+/** Whether a checkout of the app still waits for its order, so the funnel fetches its orders from Stripe first (see the funnel route). */
+export async function checkoutWaiting(slug: string): Promise<boolean> {
+  return Boolean(await one("SELECT 1 FROM site_checkouts WHERE site_slug = ? LIMIT 1", [slug]));
 }
 
 /** The ranges the funnel shows, in days; any other asks for 30. */

@@ -23,10 +23,26 @@ const PERSONAL = /@|\p{Nd}{7,}|[0-9a-f]{16,}/iu;
 const DATE = /(?<!\d)(?:(?:19|20)\d\d[-_.](?:0?[1-9]|1[0-2])[-_.](?:0?[1-9]|[12]\d|3[01])|(?:0?[1-9]|[12]\d|3[01])[-_.](?:0?[1-9]|[12]\d|3[01])[-_.](?:19|20)\d\d)(?!\d)/g;
 // A year as a group of its own among digits (the 2026 in 2026-2027 or 2026-100).
 const YEAR = /(?:^|[._-])(?:19|20)\d\d(?=$|[._-])/;
-// Characters that draw nothing (variation selectors, Hangul fillers, joiners), so a tag can't pass for another.
-const INVISIBLE = /\p{Default_Ignorable_Code_Point}/gu;
-// A letter of another alphabet than Latin, Japanese, Chinese or Korean.
-const OTHER_SCRIPT = /[^\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+// An Arabic-script letter that joins the letter after it (not one like ا د ر ز ژ و), with its marks.
+const JOINS_NEXT = "[\\u0626\\u0628\\u062A-\\u062E\\u0633-\\u0647\\u0649\\u064A\\u066E\\u066F\\u0678-\\u0687\\u069A-\\u06BF\\u06C1\\u06C2\\u06CC\\u06CE\\u06D0\\u06D1\\u06FA-\\u06FC\\u06FF]\\p{M}*";
+const ARABIC_LETTER = "[\\u0622-\\u064A\\u066E-\\u06D3\\u06D5\\u06EE\\u06EF\\u06FA-\\u06FF]";
+// Characters that draw nothing (variation selectors, Hangul fillers, joiners), so a tag can't pass for
+// another. The zero-width non-joiner Persian spells with (کتاب‌فروشی) stays where it keeps a letter
+// from joining the next, as it shows there.
+const INVISIBLE = new RegExp(`(?!(?<=${JOINS_NEXT})\\u200C(?=${ARABIC_LETTER}))\\p{Default_Ignorable_Code_Point}`, "gu");
+// A letter of another alphabet than Latin, or than Japanese, Chinese, Korean, Thai, Lao, Khmer and
+// Burmese, which are written without spaces and have no letters that pass for Latin ones.
+const OTHER_SCRIPT =
+  /[^\p{Script=Latin}\p{Script=Common}\p{Script=Inherited}\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u;
+// Letters that look like a Latin one from a to z: Cyrillic, Greek and Armenian ones, and Latin's own
+// rarer forms (a script g, small capitals).
+const LIKE_LATIN: Readonly<Record<string, string>> = {
+  а: "a", е: "e", һ: "h", і: "i", ј: "j", о: "o", р: "p", с: "c", ԛ: "q", ѕ: "s", у: "y", х: "x", ԝ: "w", ӏ: "l", ԁ: "d", ү: "y", ѵ: "v",
+  α: "a", ο: "o", ρ: "p", ν: "v", ι: "i", υ: "u", γ: "y", ϲ: "c", ϳ: "j",
+  օ: "o", ս: "u", հ: "h", ո: "n", զ: "q", ց: "g",
+  ɡ: "g", ɑ: "a", ɩ: "i", ɪ: "i", ᴀ: "a", ʙ: "b", ᴄ: "c", ᴅ: "d", ᴇ: "e", ꜰ: "f", ɢ: "g", ʜ: "h", ᴊ: "j", ᴋ: "k", ʟ: "l", ᴍ: "m", ɴ: "n", ᴏ: "o", ᴘ: "p", ʀ: "r", ꜱ: "s", ᴛ: "t", ᴜ: "u", ᴠ: "v", ᴡ: "w", ʏ: "y", ᴢ: "z",
+};
+const LIKE_LATIN_LETTER = new RegExp(`[${Object.keys(LIKE_LATIN).join("")}]`, "gu");
 // What people type in utm_source, as the name a referrer from there would give. Looked up only by
 // its own names, so a tag like "constructor" is a name like any other.
 const ALIASES: Readonly<Record<string, string>> = {
@@ -49,15 +65,18 @@ const ALIASES: Readonly<Record<string, string>> = {
 };
 
 /**
- * A tag's text in small letters, with what people write between words (/ | + , ; : and dashes of
- * any length) as a space or a dash, and without other punctuation and symbols.
+ * A tag's text in small letters, with what people write between words (/ | + , ; : 、 ・ · • and
+ * dashes of any length) as a space or a dash, an i or j with a dot above as the i or j it shows, and
+ * without other punctuation and symbols.
  */
 const words = (text: string) =>
   text
     .toLowerCase()
+    .replace(/[ıi]\u0307/g, "i")
+    .replace(/[ȷj]\u0307/g, "j")
     .replace(/(?!-)\p{Pd}/gu, "-")
-    .replace(/[/\\|+,;:]/g, " ")
-    .replace(/[^\p{L}\p{M}\p{N}._ -]/gu, "");
+    .replace(/[/\\|+,;:、・·•]/g, " ")
+    .replace(/[^\p{L}\p{M}\p{N}._ \u200C-]/gu, "");
 
 /**
  * Whether a tag's text holds an email address, a phone number or an ID: looked for as it is, and
@@ -75,10 +94,14 @@ function personal(text: string): boolean {
 }
 
 /**
- * Whether a word mixes Latin letters with another alphabet's, as a lookalike of a site's name does
- * (іnstagram with a Cyrillic і, gοοgle with Greek ο). Japanese, Chinese or Korean beside Latin are words.
+ * Whether a tag would pass for a Latin name: a word in it mixes Latin letters with another
+ * alphabet's (іnstagram with a Cyrillic і, gοοgle with Greek ο), or its letters, read as the Latin
+ * ones they look like, are all from a to z (х.com and уаһоо.com in Cyrillic, ɡoogle.com with a
+ * script g). Japanese, Chinese, Korean or Thai beside Latin are words.
  */
-const lookalike = (text: string) => text.split(/[^\p{L}\p{M}]+/u).some((word) => /\p{Script=Latin}/u.test(word) && OTHER_SCRIPT.test(word));
+const lookalike = (text: string) =>
+  text.split(/[^\p{L}\p{M}]+/u).some((word) => /\p{Script=Latin}/u.test(word) && OTHER_SCRIPT.test(word)) ||
+  (text.search(LIKE_LATIN_LETTER) >= 0 && /^[a-z0-9._-]+$/.test(text.replace(LIKE_LATIN_LETTER, (c) => LIKE_LATIN[c])));
 
 /**
  * Whether a tag is a code a machine made, like an ID (a ULID, a nanoid, Stripe's or Firebase's),
@@ -134,6 +157,15 @@ function base64Text(text: string): string {
  */
 export function cleanTag(value: string | null | undefined): string {
   if (!value) return "";
+  const { cut, clean } = tidy(value);
+  // Looked for as written and as kept, so what is kept is what was looked at.
+  if (!/[\p{L}\p{N}]/u.test(clean) || personal(cut) || personal(clean) || machineCode(cut) || personal(base64Text(cut)) || lookalike(clean)) return "";
+  // A name cut in the middle doesn't end in a dot, a dash or a joiner.
+  return clean.length > MAX_TAG ? clean.slice(0, MAX_TAG).replace(/[._\u200C-]+$/, "") : clean;
+}
+
+/** A tag's value written one way, and as Flash keeps it before looking at what it holds. */
+function tidy(value: string): { cut: string; clean: string } {
   // Cut first, so no pattern runs on a long value; then written one way (ｉｇ is ig, ＠ is @, and
   // %40 left by a link encoded twice is @), without the characters that draw nothing.
   const cut = decoded(value.slice(0, 200)).normalize("NFKC").replace(INVISIBLE, "");
@@ -142,12 +174,14 @@ export function cleanTag(value: string | null | undefined): string {
     .replace(/(?<![\p{L}\p{M}])\p{M}+/gu, "")
     .trim()
     // Spaces between words, with any dashes around them (Spring - Sale), as one dash.
-    .replace(/[ -]* [ -]*/g, "-");
-  // Looked for as written and as kept, so what is kept is what was looked at.
-  if (!/[\p{L}\p{N}]/u.test(clean) || personal(cut) || personal(clean) || machineCode(cut) || personal(base64Text(cut)) || lookalike(clean)) return "";
-  // A name cut in the middle doesn't end in a dot or a dash.
-  return clean.length > MAX_TAG ? clean.slice(0, MAX_TAG).replace(/[._-]+$/, "") : clean;
+    .replace(/[ -]* [ -]*/g, "-")
+    // A joiner only between letters.
+    .replace(/\u200C+$/, "");
+  return { cut, clean };
 }
+
+/** Whether a tag is left out as it could pass for a Latin name (see lookalike), which the link maker says. */
+export const passesForLatin = (value: string): boolean => Boolean(value.trim()) && lookalike(tidy(value).clean);
 
 /** A website's name as Flash shows it: search engines and social apps by their main name (m.facebook.com is facebook.com). */
 export function foldHost(host: string): string {

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-const { touchOf, isReturnTrip, taggedLink, shareSource, share, percent, cleanTag, visitSource, stepName, stepsInHtml, DIRECT, OTHER } = await import("../src/lib/traffic.ts");
+const { touchOf, isReturnTrip, taggedLink, shareSource, share, percent, cleanTag, passesForLatin, visitSource, stepName, stepsInHtml, DIRECT, OTHER } = await import("../src/lib/traffic.ts");
 
 const APP = "https://www.flash-app.dev/p/crumb-1";
 const touch = (query: string, referer: string | null = null, host = "www.flash-app.dev") => touchOf(new URL(`${APP}${query}`), referer, host);
@@ -331,4 +331,84 @@ test("steps written as optional calls, or with spaces, are the app's steps too",
   const html = `<script>flashDB.track?.("booked"); window.flashDB?.track?.('paid'); flashDB .track ( "viewed" ); flashDB?.track("shared")</script>`;
   assert.deepEqual(stepsInHtml(html), ["booked", "paid", "viewed", "shared"]);
   assert.deepEqual(stepsInHtml(`flashDB.tracking("x"); myflashDB.trackers("y")`), []);
+});
+
+test("a tag written wholly in letters that look like Latin ones, or with Latin's own lookalikes, is no source", () => {
+  // Real sources first: X (from t.co), Yahoo, Instagram and Google.
+  assert.equal(touch("", "https://t.co/abc").source, "x.com");
+  for (const [lookalike, real] of [
+    ["х.com", "x.com"], // a Cyrillic х
+    ["уаһоо.com", "yahoo.com"], // Cyrillic у а һ о о
+    ["ɡoogle.com", "google.com"], // Latin script g (U+0261)
+    ["ᴠᴏᴡ-ꜱᴀʟᴇ", "vow-sale"], // small capitals
+    ["gօօgle.com", "google.com"], // an Armenian օ
+  ]) {
+    assert.equal(cleanTag(lookalike), "", lookalike);
+    assert.deepEqual(touch(`?utm_source=${encodeURIComponent(lookalike)}`, "https://www.bing.com/"), { source: "bing.com", medium: "", campaign: "" }, lookalike);
+    assert.notEqual(cleanTag(real), "", real);
+  }
+  // A dotless ı (or i) with a dot above it is the i it shows.
+  assert.equal(touch(`?utm_source=${encodeURIComponent("ı̇nstagram.com")}`).source, "instagram.com");
+  assert.equal(touch(`?utm_source=${encodeURIComponent("i̇nstagram.com")}`).source, "instagram.com");
+  assert.equal(cleanTag("İNDİRİM"), "indirim", "Turkish İ lowercased is i, as Turkish writes it");
+  assert.equal(cleanTag("kırmızı-indirim"), "kırmızı-indirim", "Turkish ı on its own is a letter");
+  // A campaign or medium wholly in Cyrillic letters that read as Latin ones (ѕаӏе, сра) is left out too.
+  assert.deepEqual(touch(`?utm_source=newsletter&utm_medium=${encodeURIComponent("сра")}&utm_campaign=${encodeURIComponent("ѕаӏе")}`), { source: "newsletter", medium: "", campaign: "" });
+  // Words in Cyrillic, Greek or Armenian are kept, beside Latin ones too.
+  for (const [value, kept] of [
+    ["распродажа", "распродажа"],
+    ["VK реклама", "vk-реклама"],
+    ["москва.рф", "москва.рф"],
+    ["Προσφορά", "προσφορά"],
+    ["café", "café"],
+    ["Ամառ", "ամառ"],
+  ]) {
+    assert.equal(cleanTag(value), kept, value);
+  }
+});
+
+test("Thai, Lao, Khmer and Burmese, written without spaces, may run into a Latin word", () => {
+  for (const [value, kept] of [
+    ["เพจFacebook", "เพจfacebook"],
+    ["โปรFlashSale", "โปรflashsale"],
+    ["LINEโฆษณา", "lineโฆษณา"],
+    ["ໂປຣFacebook", "ໂປຣfacebook"],
+    ["ប្រូម៉ូFacebook", "ប្រូម៉ូfacebook"],
+    ["Facebookကြော်ငြာ", "facebookကြော်ငြာ"],
+  ]) {
+    assert.equal(cleanTag(value), kept, value);
+  }
+  assert.deepEqual(touch(`?utm_source=facebook&utm_campaign=${encodeURIComponent("โปรFlashSale")}`), { source: "facebook.com", medium: "", campaign: "โปรflashsale" });
+  // Cyrillic and Greek still don't, as their letters can pass for Latin ones; the link maker says why.
+  assert.equal(cleanTag("VKреклама"), "");
+  assert.equal(passesForLatin("VKреклама"), true);
+  assert.equal(passesForLatin("х.com"), true);
+  assert.equal(passesForLatin("ana@example.com"), false, "left out for another reason");
+  assert.equal(passesForLatin("instagram"), false);
+});
+
+test("the commas and dots Japanese and Chinese write between words are a dash too", () => {
+  assert.equal(cleanTag("Facebook・Instagram"), "facebook-instagram");
+  assert.equal(cleanTag("ﾌｪｲｽﾌﾞｯｸ･ｲﾝｽﾀ"), "フェイスブック-インスタ", "a half-width middle dot");
+  assert.equal(cleanTag("春、夏セール"), "春-夏セール");
+  assert.equal(cleanTag("微信、微博"), "微信-微博");
+  assert.equal(cleanTag("微信，微博"), "微信-微博");
+  assert.equal(cleanTag("flyer · poster"), "flyer-poster");
+  assert.equal(cleanTag("flyer•poster"), "flyer-poster");
+  assert.equal(taggedLink(APP, { source: "Facebook・Instagram", campaign: "春、夏セール" }), `${APP}?utm_source=facebook-instagram&utm_campaign=${encodeURIComponent("春-夏セール")}`);
+});
+
+test("Persian keeps the zero-width non-joiner where it changes how letters join, and nowhere else", () => {
+  const ZWNJ = "‌";
+  assert.equal(cleanTag(`کتاب${ZWNJ}فروشی`), `کتاب${ZWNJ}فروشی`, "ب would join ف without it");
+  assert.equal(cleanTag(`تخفیف${ZWNJ}های پاییزی`), `تخفیف${ZWNJ}های-پاییزی`);
+  assert.equal(cleanTag(`می${ZWNJ}خواهم`), `می${ZWNJ}خواهم`);
+  assert.equal(touch(`?utm_source=${encodeURIComponent(`کتاب${ZWNJ}فروشی`)}`).source, `کتاب${ZWNJ}فروشی`);
+  // Where it draws nothing (after a letter that never joins the next, beside Latin, at an end), it goes.
+  assert.equal(cleanTag(`دیوار${ZWNJ}نوشته`), "دیوارنوشته");
+  assert.equal(cleanTag(`insta${ZWNJ}gram`), "instagram");
+  assert.equal(cleanTag(`کتاب${ZWNJ}`), "کتاب");
+  assert.equal(cleanTag(`${ZWNJ}${ZWNJ}`), "");
+  // Cut at 40 characters, a name doesn't end in one.
+  assert.equal(cleanTag(`${"ب".repeat(39)}${ZWNJ}ب`), "ب".repeat(39));
 });

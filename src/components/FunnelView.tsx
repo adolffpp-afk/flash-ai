@@ -1,11 +1,11 @@
 "use client";
 
-import { useState, type ChangeEvent, type ReactNode } from "react";
+import { useState, type ChangeEvent, type ClipboardEvent, type ReactNode } from "react";
 import type { FunnelCounts, FunnelRange, FunnelSource, FunnelStats, Money } from "@/lib/server/funnel.ts";
 import { formatMoney } from "@/lib/shop";
 import { afterSentence, msg } from "@/lib/i18n";
 import { PLAN_PEOPLE } from "@/lib/plan-limits";
-import { MAX_TAG, cleanTag, percent, share, shareSource, taggedLink } from "@/lib/traffic";
+import { MAX_TAG, cleanTag, passesForLatin, percent, share, shareSource, taggedLink } from "@/lib/traffic";
 import { useT, type T } from "@/lib/use-t";
 
 const DAY = 86_400_000;
@@ -89,15 +89,13 @@ export function FunnelNotes({ stats, onPlans }: { stats: FunnelStats; onPlans?: 
   const stepsEarlier = stats.stepsPaused.filter((p) => !(p.day === stats.today && stats.stepsPausedToday !== null));
   const more = (n: number) => (n === 1 ? t("…and on 1 other day.") : t("…and on {count} other days.", { count: count(n, t) }));
   const notes: string[] = [];
-  if (stats.stepsPausedToday !== null) {
-    // App steps start again with people, at midnight UTC.
-    const blanks = { count: count(stats.stepsPausedToday, t), time };
-    notes.push(
-      tomorrow
-        ? t("Your apps' own steps stopped counting at {count} (your plan's daily limit). They count again tomorrow at {time}.", blanks)
-        : t("Your apps' own steps stopped counting at {count} (your plan's daily limit). They count again at {time}.", blanks),
-    );
-  }
+  // App steps start again with people, at midnight UTC.
+  const steps =
+    stats.stepsPausedToday === null
+      ? ""
+      : tomorrow
+        ? t("Your apps' own steps stopped counting at {count} (your plan's daily limit). They count again tomorrow at {time}.", { count: count(stats.stepsPausedToday, t), time })
+        : t("Your apps' own steps stopped counting at {count} (your plan's daily limit). They count again at {time}.", { count: count(stats.stepsPausedToday, t), time });
   // Earlier days in one sentence per limit, so a month of them doesn't fill a phone's screen.
   for (const g of byLimit(earlier.slice(0, NOTED_DAYS), (p) => p.people)) {
     notes.push(
@@ -129,7 +127,7 @@ export function FunnelNotes({ stats, onPlans }: { stats: FunnelStats; onPlans?: 
       ),
     );
   }
-  if (stats.pausedToday === null && !notes.length) return null;
+  if (stats.pausedToday === null && !steps && !notes.length) return null;
   const paused =
     stats.pausedToday === null
       ? ""
@@ -142,26 +140,35 @@ export function FunnelNotes({ stats, onPlans }: { stats: FunnelStats; onPlans?: 
             "Counting paused at {count} people across your apps (your plan's daily limit). Your apps keep working and page visits still count. Counting people starts again at {time}.",
             { count: count(stats.pausedToday, t), time },
           );
-  const paid = t("Paid plans count more people: {count} a day on Lite, up to {most} on Agency.", { count: count(PLAN_PEOPLE.lite, t), most: count(PLAN_PEOPLE.agency, t) });
+  const numbers = { count: count(PLAN_PEOPLE.lite, t), most: count(PLAN_PEOPLE.agency, t) };
+  // A paid plan raises both daily limits: said once, after the people note, or after the steps note alone.
+  const upsell = (note: string, offer: string) =>
+    stats.free && (
+      <>
+        {afterSentence(note)}
+        {offer}
+        {onPlans && (
+          <>
+            {afterSentence(offer)}
+            <button onClick={onPlans} className="text-primary-soft hover:underline">
+              {t("Upgrade plan")}
+            </button>
+          </>
+        )}
+      </>
+    );
   return (
     <div role="status" className="space-y-2 text-sm text-gold-soft">
       {paused && (
         <p>
           {paused}
-          {stats.free && (
-            <>
-              {afterSentence(paused)}
-              {paid}
-              {onPlans && (
-                <>
-                  {afterSentence(paid)}
-                  <button onClick={onPlans} className="text-primary-soft hover:underline">
-                    {t("Upgrade plan")}
-                  </button>
-                </>
-              )}
-            </>
-          )}
+          {upsell(paused, t("Paid plans count more people: {count} a day on Lite, up to {most} on Agency.", numbers))}
+        </p>
+      )}
+      {steps && (
+        <p>
+          {steps}
+          {!paused && upsell(steps, t("Paid plans count more app steps: {count} a day on Lite, up to {most} on Agency.", numbers))}
         </p>
       )}
       {/* By place: two notes can say the same ("…and on 1 other day."), and the list is made anew each time. */}
@@ -340,9 +347,10 @@ function SourceTable({ stats }: { stats: FunnelStats }) {
               {open &&
                 r.source?.campaigns.map((c) => (
                   <div key={`${c.medium}|${c.campaign}`} className="ms-3 mt-2 border-s border-white/8 ps-3">
-                    <bdi dir="auto" className="block text-xs text-zinc-300 [overflow-wrap:anywhere]">
-                      {campaignName(c)}
-                    </bdi>
+                    {/* The line in the page's direction, the name in its own. */}
+                    <div className="text-xs text-zinc-300 [overflow-wrap:anywhere]">
+                      <bdi dir="auto">{campaignName(c)}</bdi>
+                    </div>
                     <SourceNumbers c={c} visitors={c.visitors} t={t} />
                   </div>
                 ))}
@@ -393,9 +401,9 @@ function SourceRows({
         r.source?.campaigns.map((c) => (
           <tr key={`${c.medium}|${c.campaign}`} className="text-xs text-zinc-400">
             <td className="py-1.5 pe-3 ps-8">
-              <bdi dir="auto" className="block [overflow-wrap:anywhere]">
-                {campaignName(c)}
-              </bdi>
+              <div className="[overflow-wrap:anywhere]">
+                <bdi dir="auto">{campaignName(c)}</bdi>
+              </div>
             </td>
             {numbers(c, c.visitors)}
           </tr>
@@ -429,7 +437,25 @@ export function LinkMaker({ addresses }: { addresses: string[] }) {
   // What was typed but can't be a tag, which the link leaves out.
   const droppedSource = source.trim() !== "" && !shareSource(source);
   const droppedCampaign = campaign.trim() !== "" && !cleanTag(campaign);
-  const leftOut = <span className="mt-1 block text-xs text-gold-soft">{t("Use letters or digits. Flash leaves out names with an @, 7 or more digits or a long code, as they could identify someone.")}</span>;
+  // Why a name is left out: it could identify someone, or pass for another name.
+  const leftOut = (typed: string) => (
+    <span className="mt-1 block text-xs text-gold-soft">
+      {passesForLatin(typed)
+        ? t("Put a space between Latin letters and another alphabet's, like Cyrillic or Greek. Flash leaves out words that mix them, or that only look like Latin letters, as they could pass for another name.")
+        : t("Use letters or digits. Flash leaves out names with an @, 7 or more digits or a long code, as they could identify someone.")}
+    </span>
+  );
+  // A web address pasted in is kept whole, past the 40 characters a name may have, so its site's
+  // name is read from all of it.
+  const pasteSource = (e: ClipboardEvent<HTMLInputElement>) => {
+    const text = e.clipboardData.getData("text").trim();
+    if (text.length <= MAX_TAG || shareSource(text) === cleanTag(text)) return;
+    e.preventDefault();
+    const box = e.currentTarget;
+    const [from, to] = [box.selectionStart ?? box.value.length, box.selectionEnd ?? box.value.length];
+    setSource(box.value.slice(0, from) + text + box.value.slice(to));
+    setCopied(false);
+  };
   // A campaign is read only with a source, so without one the link leaves it out.
   const noSource = source.trim() === "" && campaign.trim() !== "";
   // Shown with its words as typed, in any script; copied as the browser writes it.
@@ -461,14 +487,14 @@ export function LinkMaker({ addresses }: { addresses: string[] }) {
         <div className={`grid grid-cols-1 gap-3 ${addresses.length > 1 ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
           <label className="block min-w-0 text-xs text-zinc-500">
             {t("Where you'll share it")}
-            <input value={source} onChange={edit(setSource)} placeholder="instagram" maxLength={MAX_TAG} dir="auto" className={`mt-1 ${field}`} />
-            {droppedSource && leftOut}
+            <input value={source} onChange={edit(setSource)} onPaste={pasteSource} placeholder="instagram" maxLength={MAX_TAG} dir="auto" className={`mt-1 ${field}`} />
+            {droppedSource && leftOut(source)}
             {noSource && <span className="mt-1 block text-xs text-gold-soft">{t("Type where you'll share it too. Without it, the link leaves out the campaign.")}</span>}
           </label>
           <label className="block min-w-0 text-xs text-zinc-500">
             {t("Campaign (optional)")}
             <input value={campaign} onChange={edit(setCampaign)} maxLength={MAX_TAG} dir="auto" className={`mt-1 ${field}`} />
-            {droppedCampaign && leftOut}
+            {droppedCampaign && leftOut(campaign)}
           </label>
           {addresses.length > 1 && (
             <label className="block min-w-0 text-xs text-zinc-500">

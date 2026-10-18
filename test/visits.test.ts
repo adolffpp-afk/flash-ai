@@ -271,10 +271,10 @@ test("the daily prune runs on one server once a day, keeps codes 2 days and tota
     await run("INSERT INTO site_events (site_slug, day, step, n) VALUES ('prune-1', ?, 'visit', 1)", [day(n)]);
     await run("INSERT INTO site_revenue (site_slug, day, source, medium, campaign, currency, orders, amount) VALUES ('prune-1', ?, '', '', '', 'usd', 1, 500)", [day(n)]);
   }
-  // A checkout's source waits 3 days for its order.
+  // A checkout's source waits 14 days for its order, as a voucher or a bank debit can be paid days later.
   await run("INSERT INTO site_checkouts (session_id, site_slug, source, medium, campaign, created_at) VALUES ('cs_old', 'prune-1', 'x', '', '', ?), ('cs_new', 'prune-1', 'x', '', '', ?)", [
-    at - 3 * DAY - 1,
-    at - 3 * DAY + 60_000,
+    at - 14 * DAY - 1,
+    at - 14 * DAY + 60_000,
   ]);
   assert.equal(await pruneDaily(at), true);
   forgetServerMemory(); // another server

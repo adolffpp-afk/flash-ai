@@ -59,8 +59,8 @@ export const SITE_TABLES = [
 ];
 // The ones a new site must never take over from an old site of the same name (records, members,
 // files, messages, contacts, orders, history, settings, visits and the AI it used today), each
-// looked up by an index on site_slug. site_people, site_checkouts and site_step_names last at most
-// 3 days and hold nothing to take over.
+// looked up by an index on site_slug. site_people and site_step_names last at most 2 days, and
+// site_checkouts 14, and they hold nothing to take over.
 const INHERITABLE = [
   "site_records",
   "site_users",

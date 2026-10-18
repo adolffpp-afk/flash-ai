@@ -40,17 +40,20 @@ test("buyers only go back to the site's own addresses", () => {
   assert.equal(safeReturn("https://evil.example/p/crumb-1", sites), sites[0]);
   assert.equal(
     safeReturn("https://www.flash-app.dev/p/crumb-1?utm_source=ig&utm_campaign=spring&ref=news&gclid=Cj0x&fbclid=IwAR&page=2#/shop", sites),
-    "https://www.flash-app.dev/p/crumb-1#/shop",
-    "where the buyer came from stays out of the address Stripe gets",
+    "https://www.flash-app.dev/p/crumb-1?page=2#/shop",
+    "where the buyer came from stays out of the address Stripe gets, and the app's own page=2 stays in it",
   );
-  // Other ad networks' and email tools' click IDs too: only the page and its #/route go.
+  // Other ad networks' and email tools' click IDs too, and Flash's own notes.
   assert.equal(
     safeReturn(
-      "https://www.flash-app.dev/p/crumb-1?ttclid=E.C.P&li_fat_id=abc&twclid=2-x&dclid=CJx&mc_eid=6f1e2d3c4b&_hsenc=p2A&srsltid=AfmB&epik=dj0y&yclid=987&UTM_Source=ig#/menu",
+      "https://www.flash-app.dev/p/crumb-1?ttclid=E.C.P&li_fat_id=abc&twclid=2-x&dclid=CJx&mc_eid=6f1e2d3c4b&_hsenc=p2A&srsltid=AfmB&epik=dj0y&yclid=987&UTM_Source=ig&wbraid=1&gbraid=2&msclkid=3&igshid=4&_gl=5&mkt_tok=6&irclickid=7&rdt_cid=8&ScCid=9&flash_owner=abc&flash_paid=1#/menu",
       sites,
     ),
     "https://www.flash-app.dev/p/crumb-1#/menu",
   );
+  // The app's own query, like a table's QR code, a language or an event, comes back with the buyer.
+  assert.equal(safeReturn("https://www.flash-app.dev/p/crumb-1?table=12&utm_source=qr#/menu", sites), "https://www.flash-app.dev/p/crumb-1?table=12#/menu");
+  assert.equal(safeReturn("https://crumbbakery.com/?lang=es&event=2026-11-28&gclid=x", sites), "https://crumbbakery.com/?lang=es&event=2026-11-28");
   assert.equal(safeReturn("javascript:alert(1)", sites), sites[0]);
   assert.equal(withPaidNote("https://crumbbakery.com/#/menu"), "https://crumbbakery.com/?flash_paid=1#/menu");
   assert.deepEqual(routeHost("crumbbakery.com", "/api/sites/crumb-1/shop", "POST"), { siteApi: "crumb-1" });

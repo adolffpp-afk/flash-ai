@@ -92,6 +92,13 @@ export function itemsInHtml(html: string): string[] {
 }
 
 /**
+ * What in a page's address can say where its visitor came from: link tags (utm_…, ref), Flash's own
+ * notes (flash_…), and ad networks' and email tools' click IDs (gclid, fbclid, msclkid, mc_eid, _hsenc…).
+ */
+const SOURCE_PARAM =
+  /^(?:utm_.*|ref|ref_src|flash_.*|.*(?:clid|clkid|click_?id)|gclsrc|gbraid|wbraid|gad_.*|_ga|_gl|igshid|igsh|li_fat_id|srsltid|epik|sccid|s_cid|rdt_cid|mc_.*|_hs.*|__hs.*|hsctatracking|mkt_tok|vero_.*|oly_.*|_kx|ck_subscriber_id|wickedid|_branch_.*)$/i;
+
+/**
  * Where to send a visitor after paying: the page they bought from, if it is one of the site's own
  * addresses, else the site's first address. Stops a checkout being used to send people elsewhere.
  */
@@ -101,9 +108,9 @@ export function safeReturn(page: unknown, addresses: string[]): string {
       const url = new URL(page);
       const base = `${url.origin}${url.pathname}`.replace(/\/$/, "");
       if (url.protocol.startsWith("http") && addresses.some((a) => a.replace(/\/$/, "") === base)) {
-        // Only the page and its #/route: the rest of the address can say where the buyer came from
-        // (link tags, an ad's or an email's click ID), which mustn't go to Stripe with their name.
-        url.search = "";
+        // The page, its #/route and the app's own query (?table=12), without what can say where the
+        // buyer came from, which mustn't go to Stripe with their name.
+        for (const name of [...new Set(url.searchParams.keys())]) if (SOURCE_PARAM.test(name)) url.searchParams.delete(name);
         return url.toString();
       }
     } catch {

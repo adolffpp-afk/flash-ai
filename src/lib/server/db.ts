@@ -252,9 +252,8 @@ const SCHEMA = [
     amount INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (site_slug, day, source, medium, campaign, currency)
   ) WITHOUT ROWID`,
-  // Where an open checkout's buyer came from, until its order is saved or 3 days pass (see
-  // funnel.ts). No buyer details. No site_slug index: it holds at most 3 days of checkouts, so
-  // unpublishing reads it whole.
+  // Where an open checkout's buyer came from, until its order is saved or 14 days pass (see
+  // funnel.ts). No buyer details. Looked up by app when its funnel is read (see the funnel route).
   `CREATE TABLE IF NOT EXISTS site_checkouts (
     session_id TEXT NOT NULL PRIMARY KEY,
     site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
@@ -263,6 +262,7 @@ const SCHEMA = [
     campaign TEXT NOT NULL,
     created_at INTEGER NOT NULL
   ) WITHOUT ROWID`,
+  `CREATE INDEX IF NOT EXISTS site_checkouts_site ON site_checkouts(site_slug)`,
   // The names an app reported with flashDB.track each day: at most 10 (see funnel.ts). Kept 2 days.
   `CREATE TABLE IF NOT EXISTS site_step_names (
     site_slug TEXT NOT NULL REFERENCES sites(slug) ON DELETE CASCADE,
