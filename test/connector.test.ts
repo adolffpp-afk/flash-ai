@@ -87,6 +87,10 @@ test("the tools list only set-up models and never the Movie maker", () => {
   assert.match(video.description, /176 for 5 seconds, 526 for 15/);
   assert.match(list.find((t) => t.name === "flash_speak")!.description, /about 13 credits per 1,000 characters/);
   assert.match(list.find((t) => t.name === "flash_animate_photo")!.description, /a 5 second clip: 141 credits, or 211 with sound/);
+  // The app cap the publish tool gives is each plan's.
+  const publish = list.find((t) => t.name === "flash_publish_app")!.description;
+  assert.match(publish, /up to 20 apps on the free plan and more on paid plans \(25 on Lite, up to 500 on Agency\)/);
+  assert.doesNotMatch(publish, /20 apps per account/);
 });
 
 /** Pretends to be fal.ai: every job finishes and returns a tiny file, or fails when asked. */
@@ -151,6 +155,8 @@ test("unknown tools and models are refused", async () => {
   assert.equal(r.isError, true);
   const credits = (await callTool("flash_check_credits", {}, ctx("u2")))!;
   assert.match((credits.content[0] as { text: string }).text, /has \d+ Flash credits/);
+  // The link opens Flash as this account, even in a browser signed in to several.
+  assert.match((credits.content[0] as { text: string }).text, /\/\?credits=1&as=u2$/);
 });
 
 test("photo tools take the user's own Flash links or a photo, and charge 5 credits", async () => {

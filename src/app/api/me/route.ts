@@ -1,5 +1,5 @@
 import { after } from "next/server";
-import { appUrl, getUser, isAdmin, unauthorized } from "@/lib/server/auth.ts";
+import { appUrl, getUser, isAdmin, jarSessions, unauthorized } from "@/lib/server/auth.ts";
 import { maybeAutoTopUp } from "@/lib/server/auto-topup.ts";
 import { ensureMonthlyCredits, recentActivity, spendable } from "@/lib/server/credits.ts";
 import { one, run } from "@/lib/server/db.ts";
@@ -28,7 +28,12 @@ export async function GET(request: Request) {
   after(() => maybeAutoTopUp(user.id).catch((err) => console.error("[flash] auto top-up failed", err)));
   const credits = await spendable(user.id);
   const { code, ...referrals } = await referralStats(user.id);
+  // Every account this browser is signed in to, for the profile menu's Switch account.
+  const jar = await jarSessions(request);
+  const listed = jar.entries.length ? jar.entries.map((e) => e.user) : [user];
   return Response.json({
+    account: user.id,
+    accounts: listed.map((u) => ({ id: u.id, email: u.email, name: u.name, nickname: u.nickname ?? "" })),
     user: { id: user.id, email: user.email, name: user.name, nickname: user.nickname ?? "", work: user.work ?? "", language: user.language ?? "", preferences: user.preferences },
     // Accounts made with Google or an email link have no password until they set one.
     hasPassword: Boolean((await one<{ p: string }>("SELECT password_hash AS p FROM users WHERE id = ?", [user.id]))?.p),

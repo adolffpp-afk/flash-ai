@@ -1,6 +1,6 @@
 import { looksLikeEmail, nameFromEmail } from "../names.ts";
 import { emailKey } from "./account.ts";
-import { readCookie } from "./auth.ts";
+import { readCookie, signedInHere } from "./auth.ts";
 import { ensureMonthlyCredits } from "./credits.ts";
 import { run, now } from "./db.ts";
 import { randomId } from "./ids.ts";
@@ -32,8 +32,10 @@ export async function createUser(user: NewUser): Promise<string> {
   const email = user.email.trim().toLowerCase();
   const key = emailKey(email);
   const t = now();
-  // The referral link's code, kept in a cookie since the visitor landed. Never the same inbox.
-  const referrer = user.request ? await referrerFor(readCookie(user.request, REF_COOKIE), key) : null;
+  // The referral link's code, kept in a cookie since the visitor landed. Never the same inbox, and
+  // never while the browser is signed in to an account already: that is someone adding an account
+  // of their own (see auth.ts), whose referral link mustn't pay them for it.
+  const referrer = user.request && !(await signedInHere(user.request)) ? await referrerFor(readCookie(user.request, REF_COOKIE), key) : null;
   await run(
     `INSERT INTO users (id, email, email_key, name, password_hash, created_at, verified_at, referred_by)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,

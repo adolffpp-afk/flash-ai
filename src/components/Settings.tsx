@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { api, type Me } from "@/lib/store";
+import { isolate } from "@/lib/account-pin";
 import { ENGINE_LABELS, type Engine } from "@/lib/types";
 import { WORK_OPTIONS, firstName, fullName, initials } from "@/lib/names";
 import { AUTOMATIC_LANGUAGE, LANGUAGES, speechLang } from "@/lib/languages";
@@ -59,7 +60,7 @@ function Row({ title, about, children }: { title: string; about?: ReactNode; chi
     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
       <div className="min-w-0">
         <p className="text-sm text-zinc-200">{title}</p>
-        {about && <p className={`mt-0.5 ${hint}`}>{about}</p>}
+        {about && <p className={`mt-0.5 break-words ${hint}`}>{about}</p>}
       </div>
       {children != null && <div className="shrink-0">{children}</div>}
     </div>
@@ -142,6 +143,7 @@ export function Settings({
   onProfileChanged,
   onOpenCredits,
   onOpenInvite,
+  leaving = false,
   onSignOut,
   onCompanionShown,
   onWakeWord,
@@ -154,8 +156,11 @@ export function Settings({
   onProfileChanged: (user: { name: string; nickname: string; work: string; language: string }) => void;
   onOpenCredits: () => void;
   onOpenInvite: () => void;
+  // A log out under way (from here or the profile menu): Log out says so until the page changes.
+  leaving?: boolean;
   // everywhere: every device was signed out, this one included.
-  onSignOut: (everywhere?: boolean) => void;
+  // everywhere: this account was logged out of every device; next: the account this browser uses now.
+  onSignOut: (everywhere?: boolean, next?: { id: string; email: string } | null) => void;
   // The Ask Flash button was turned on or off in Capabilities.
   onCompanionShown: (shown: boolean) => void;
   // "Hey Flash" was turned on or off in General > Voice.
@@ -229,7 +234,7 @@ export function Settings({
               {tab === "general" && (
                 <General {...shared} preferences={preferences} onPreferences={onPreferences} onProfileChanged={onProfileChanged} onWakeWord={onWakeWord} />
               )}
-              {tab === "account" && <Account {...shared} onSignOut={onSignOut} />}
+              {tab === "account" && <Account {...shared} leaving={leaving} onSignOut={onSignOut} />}
               {tab === "privacy" && <Privacy {...shared} preferences={preferences} />}
               {tab === "billing" && <Billing {...shared} onOpenCredits={onOpenCredits} onOpenInvite={onOpenInvite} />}
               {tab === "usage" && <UsageTab {...shared} onOpenCredits={onOpenCredits} />}
@@ -711,7 +716,7 @@ function PushAlerts({ me, said, onSaid }: { me: Me; said: Said | null; onSaid: (
   );
 }
 
-function Account({ me, busy, attempt, onSignOut }: Shared & { onSignOut: (everywhere?: boolean) => void }) {
+function Account({ me, busy, attempt, leaving, onSignOut }: Shared & { leaving: boolean; onSignOut: (everywhere?: boolean, next?: { id: string; email: string } | null) => void }) {
   const t = useT();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
@@ -724,7 +729,7 @@ function Account({ me, busy, attempt, onSignOut }: Shared & { onSignOut: (everyw
       setCurrent("");
       setNext("");
       // Every device's alerts stopped with their sign-ins; this one's come back on (see push.ts).
-      syncPush(me.user.id).catch(() => {});
+      syncPush(me.user.id, me.accounts.map((a) => a.id)).catch(() => {});
       return t("Password changed. Your other devices were signed out.");
     });
 
@@ -736,10 +741,13 @@ function Account({ me, busy, attempt, onSignOut }: Shared & { onSignOut: (everyw
 
   const signOutEverywhere = () =>
     attempt(async () => {
-      await api("/api/auth/logout", { method: "POST", json: { everywhere: true } });
-      onSignOut(true);
+      const { next } = await api<{ next?: { id: string; email: string } | null }>("/api/auth/logout", { method: "POST", json: { everywhere: true } });
+      onSignOut(true, next ?? null);
       return t("Signed out everywhere.");
     });
+  // Signed in to several accounts here: these rows say which one they log out.
+  const several = (me.accounts ?? []).length > 1;
+  const email = isolate(me.user.email);
 
   return (
     <>
@@ -747,18 +755,24 @@ function Account({ me, busy, attempt, onSignOut }: Shared & { onSignOut: (everyw
         <Row title={t("Email")}>
           <span className="text-sm text-zinc-300">{me.user.email}</span>
         </Row>
-        <Row title={t("Log out")} about={t("Sign out of Flash on this device.")}>
-          <button className={button} onClick={() => onSignOut()}>
-            {t("Log out")}
+        <Row title={t("Log out")} about={several ? t("Log out of {email} on this device.", { email }) : t("Sign out of Flash on this device.")}>
+          <button className={`${button} disabled:cursor-default`} disabled={leaving} aria-busy={leaving || undefined} onClick={() => onSignOut()}>
+            {leaving ? t("Logging out…") : t("Log out")}
           </button>
         </Row>
         <Row
           title={t("Log out of all devices")}
-          about={t("Signs you out everywhere, this device included, and disconnects apps connected to Flash, like Claude.")}
+          about={
+            several
+              ? t("Logs {email} out everywhere, this device included, and disconnects apps connected to Flash, like Claude.", { email })
+              : t("Signs you out everywhere, this device included, and disconnects apps connected to Flash, like Claude.")
+          }
         >
+          {/* Not while Log out is under way: by the time it asked, the account could be gone from
+              this browser, and its other devices would stay signed in. */}
           {confirm === "everywhere" ? (
             <span className="flex gap-2">
-              <button className={danger} disabled={busy} onClick={signOutEverywhere}>
+              <button className={`${danger} disabled:cursor-default`} disabled={busy || leaving} onClick={signOutEverywhere}>
                 {t("Log out everywhere")}
               </button>
               <button className={button} onClick={() => setConfirm("")}>
@@ -766,7 +780,7 @@ function Account({ me, busy, attempt, onSignOut }: Shared & { onSignOut: (everyw
               </button>
             </span>
           ) : (
-            <button className={button} onClick={() => setConfirm("everywhere")}>
+            <button className={`${button} disabled:cursor-default`} disabled={leaving} onClick={() => setConfirm("everywhere")}>
               {t("Log out of all devices")}
             </button>
           )}

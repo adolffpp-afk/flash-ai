@@ -7,10 +7,11 @@ import { readFileSync } from "node:fs";
 /*
  * Alerts when Flash is closed, in the browser (src/lib/push.ts) against Flash's own /api/push: a
  * stand-in browser (its push subscription, notification permission, storage and session cookie) and
- * stand-in push services. Turning alerts on makes a new subscription, so no other account's alerts
- * follow; a sign-in that ends by itself keeps this device's wish for alerts, and only logging out
- * here forgets it; what the switch says when the browser asks, blocks, or has no push service; and
- * a test alert to an address the push service dropped.
+ * stand-in push services. The accounts signed in to the browser share its subscription, and turning
+ * alerts on when none of them gets alerts by it makes a new one, so no alerts of an account that
+ * isn't signed in here follow; a sign-in that ends by itself keeps this device's wish for alerts, and
+ * only logging out here forgets it; what the switch says when the browser asks, blocks, or has no
+ * push service; and a test alert to an address the push service dropped.
  */
 register("./support/route-hooks.mjs", import.meta.url);
 const HOOKS = new URL("./support/push-react.mjs", import.meta.url).href;
@@ -118,6 +119,21 @@ Object.defineProperty(globalThis, "navigator", {
   },
 });
 
+// The browser's cookies by name (flash_session, and the list of its accounts once it holds two).
+const LIST = "__Host-flash_accounts";
+const held = () => new Map(cookie.split("; ").filter(Boolean).map((c) => [c.slice(0, c.indexOf("=")), c.slice(c.indexOf("=") + 1)] as [string, string]));
+// The browser keeps what it's told to set, and drops what it's told to clear.
+function keep(res: Response) {
+  const jar = held();
+  for (const set of res.headers.getSetCookie()) {
+    const [pair] = set.split(";");
+    const name = pair.slice(0, pair.indexOf("="));
+    if (/Max-Age=0/.test(set)) jar.delete(name);
+    else jar.set(name, pair.slice(pair.indexOf("=") + 1));
+  }
+  cookie = [...jar].map(([k, v]) => `${k}=${v}`).join("; ");
+}
+
 // ---- Flash's server, and the push services ----
 const routes: Record<string, unknown> = {
   "/api/push": await import("../src/app/api/push/route.ts"),
@@ -128,11 +144,14 @@ const dropped = new Set<string>(); // addresses the push service dropped, though
 globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
   const url = String(input);
   if (url.startsWith("/")) {
-    const request = new Request(ORIGIN + url, { method: init?.method ?? "GET", headers: { ...(init?.headers as Record<string, string>), origin: ORIGIN, cookie }, body: init?.body as string | undefined });
+    // Flash's api() names the tab's account (X-Flash-Account) in the headers it gives.
+    const headers = new Headers(init?.headers);
+    headers.set("origin", ORIGIN);
+    headers.set("cookie", cookie);
+    const request = new Request(ORIGIN + url, { method: init?.method ?? "GET", headers, body: init?.body as string | undefined });
     const route = routes[new URL(request.url).pathname] as Record<string, (r: Request) => Promise<Response>>;
     const res = await route[request.method](request);
-    // The browser drops a cookie it's told to clear.
-    if (/flash_session=;/.test(res.headers.get("set-cookie") ?? "")) cookie = "";
+    keep(res);
     return res;
   }
   if (unsubscribed.has(url) || dropped.has(url)) return new Response(null, { status: 410 });
@@ -141,6 +160,9 @@ globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) =>
 }) as typeof fetch;
 
 const client = await import("../src/lib/push.ts");
+const { api } = await import("../src/lib/store.ts");
+// The account this tab shows, which Flash's requests name (see account-pin.ts).
+const { getPin, setPin } = await import("../src/lib/account-pin.ts");
 const { render } = (await import(HOOKS)) as { render: (hook: () => void) => void };
 const push = await import("../src/lib/server/push.ts");
 const { createSession, hashPassword } = await import("../src/lib/server/auth.ts");
@@ -156,6 +178,20 @@ async function account(id: string) {
   await run("INSERT INTO users (id, email, password_hash, created_at, verified_at, language) VALUES (?, ?, ?, 0, 1, '')", [id, `${id}@example.com`, await hashPassword("a password")]);
 }
 const signIn = async (id: string) => void (cookie = (await createSession(id, true)).split(";")[0]);
+/** Signs this browser in to another account as well (Add another account): it's the default now, and the list holds them all. */
+async function addAccount(id: string) {
+  const token = (await createSession(id, true)).split(";")[0].split("=")[1];
+  const before = held();
+  const list = before.get(LIST)?.slice(2).split(".") ?? [before.get("flash_session")].filter((t): t is string => Boolean(t));
+  cookie = `flash_session=${token}; ${LIST}=1.${[...list, token].join(".")}`;
+}
+/** Flash's Log out in a tab showing this account (signOut in Flash.tsx): the tab goes on as the next account here, if any. */
+async function logOut(id: string) {
+  setPin(id);
+  const { next } = await api<{ next: { id: string } | null }>("/api/auth/logout", { method: "POST", json: {} });
+  await client.logOutHere([id]);
+  setPin(next?.id ?? null);
+}
 /** What reaches this browser now when the account is sent an alert. */
 async function alertsHere(userId: string): Promise<number> {
   reached.length = 0;
@@ -165,7 +201,7 @@ async function alertsHere(userId: string): Promise<number> {
 // usePushSync's work runs after the render, as an effect's does.
 const settle = () => new Promise((done) => setTimeout(done, 100));
 
-test("turning alerts on, or back on, makes a new subscription, so no other account's alerts follow", async () => {
+test("turning alerts on, or back on, makes a new subscription, so no alerts of an account no longer signed in here follow", async () => {
   await account("ann");
   await account("bea");
   // Bea turns alerts on here; later her sign-in ends by itself, and the page drops the subscription.
@@ -193,7 +229,7 @@ test("turning alerts on, or back on, makes a new subscription, so no other accou
   assert.deepEqual(await rowsAt(anns), [], "her old address was found gone, and deleted");
   assert.equal(await alertsHere("bea"), 1);
 
-  // The switch, too: turning alerts on never reuses a subscription someone else turned on.
+  // The switch, too: turning alerts on never reuses a subscription an account no longer signed in here turned on.
   cookie = "";
   await signIn("ann");
   await client.turnOnPush("ann", key);
@@ -225,7 +261,7 @@ test("a sign-in that ends while Flash is open keeps this device's wish for alert
   assert.equal(await alertsHere("cy"), 1);
 
   // Logging out here on purpose (Flash's signOut) forgets it: signed in again, alerts stay off.
-  await client.logOutHere("cy");
+  await logOut("cy");
   assert.equal(cookie, "", "signed out");
   assert.equal((await all("SELECT 1 FROM sessions WHERE user_id = 'cy'")).length, 0);
   render(() => client.usePushSync(null));
@@ -306,7 +342,7 @@ test("logging out of all devices here forgets this device's wish too", async () 
   await client.turnOnPush("fin", key);
   // Settings already signed every device out, this one included, before Flash's signOut runs.
   await endAllSessions("fin");
-  await client.logOutHere("fin", true);
+  await client.logOutHere(["fin"]);
   assert.equal(wanted(), "");
   await signIn("fin");
   await client.syncPush("fin");
@@ -317,15 +353,16 @@ test("alerts still on the screen go when this browser stops being their account'
   await account("gus");
   await account("hal");
   storage.clear();
+  cookie = "";
   const titles = () => tray.map((n) => n.title);
   await signIn("gus");
   await client.turnOnPush("gus", key);
   showAlert("Gus's weekly money check", "gus");
   // Opening Flash while he's still signed in keeps his.
-  await client.syncPush("gus");
+  await client.syncPush("gus", ["gus"]);
   assert.deepEqual(titles(), ["Gus's weekly money check"]);
   // Logging out here takes them off the screen with the sign-in, so the next person can't read them.
-  await client.logOutHere("gus");
+  await logOut("gus");
   assert.deepEqual(titles(), []);
   // So does a sign-in that ended by itself, with nobody signed in here now.
   await signIn("gus");
@@ -333,12 +370,16 @@ test("alerts still on the screen go when this browser stops being their account'
   showAlert("Flash ∞ AI");
   await client.syncPush(null);
   assert.deepEqual(titles(), []);
-  // Someone else signed in on top: only that account's own stay.
+  // With Hal signed in here too, each account's stay, whichever account the tab shows.
   showAlert("Gus's weekly money check", "gus");
   showAlert("Hal's invoice check", "hal");
+  await addAccount("hal");
+  await client.syncPush("hal", ["gus", "hal"]);
+  assert.deepEqual(titles(), ["Gus's weekly money check", "Hal's invoice check"]);
+  // Only Hal is signed in here now (the browser lost Gus's cookie): Gus's go.
   cookie = "";
   await signIn("hal");
-  await client.syncPush("hal");
+  await client.syncPush("hal", ["hal"]);
   assert.deepEqual(titles(), ["Hal's invoice check"]);
   tray.length = 0;
 });
@@ -482,4 +523,86 @@ test("Settings opened while alerts come back on after a password change shows th
   lag = 0;
   assert.equal((await status).on, true, "the switch shows what the sync left, not what it found before");
   assert.equal(await alertsHere("ivy"), 1);
+});
+
+test("the accounts signed in to one browser share its subscription, and it goes once none of them gets alerts by it", async () => {
+  await account("jan");
+  await account("kai");
+  storage.clear();
+  current = null;
+  cookie = "";
+  await signIn("jan");
+  setPin("jan");
+  await client.turnOnPush("jan", key);
+  const shared = subNow()!.endpoint;
+  // Kai is signed in here too, and turns alerts on from his tab: the same subscription, so Jan's still come.
+  await addAccount("kai");
+  setPin("kai");
+  await client.turnOnPush("kai", key);
+  assert.equal(subNow()?.endpoint, shared);
+  assert.deepEqual([await alertsHere("jan"), await alertsHere("kai")], [1, 1]);
+  assert.equal((await client.pushStatus()).on, true, "Kai's switch reads On");
+  setPin("jan");
+  assert.equal((await client.pushStatus()).on, true, "and so does Jan's");
+  // Kai turns his off, and opens Flash again: Jan's still come by it.
+  setPin("kai");
+  await client.turnOffPush("kai");
+  await client.syncPush("kai", ["jan", "kai"]);
+  assert.equal(subNow()?.endpoint, shared);
+  assert.deepEqual([await alertsHere("jan"), await alertsHere("kai")], [1, 0]);
+  assert.equal((await client.pushStatus()).on, false);
+  // Jan turns hers off too: nobody here gets alerts by it now, so it goes.
+  setPin("jan");
+  await client.turnOffPush("jan");
+  assert.equal(current, null);
+  setPin(null);
+});
+
+test("logging one account out here keeps the other's alerts; logging out the last, or all of them, drops the subscription", async () => {
+  const titles = () => tray.map((n) => n.title);
+  for (const how of ["one by one", "all at once"]) {
+    const [lin, mia] = [`lin${how.length}`, `mia${how.length}`];
+    await account(lin);
+    await account(mia);
+    storage.clear();
+    current = null;
+    cookie = "";
+    await signIn(lin);
+    setPin(lin);
+    await client.turnOnPush(lin, key);
+    await addAccount(mia);
+    setPin(mia);
+    await client.turnOnPush(mia, key);
+    showAlert("Lin's payroll check", lin);
+    showAlert("Mia's weekly summary", mia);
+    if (how === "one by one") {
+      // Lin logs out from her tab, which goes on as Mia.
+      await logOut(lin);
+      assert.equal(getPin(), mia);
+      await client.syncPush(mia, [mia]);
+      assert.deepEqual(titles(), ["Mia's weekly summary"]);
+      assert.deepEqual([await alertsHere(lin), await alertsHere(mia)], [0, 1]);
+      assert.equal(wanted(), mia);
+      // Mia logs out too: nobody is signed in here.
+      await logOut(mia);
+    } else {
+      // Log out of all accounts (signOutAll in Flash.tsx).
+      await api("/api/auth/logout", { method: "POST", json: { all: true } });
+      await client.logOutHere([lin, mia]);
+      setPin(null);
+    }
+    assert.equal(cookie, "", how);
+    await client.syncPush(null);
+    assert.deepEqual(titles(), [], how);
+    assert.equal(current, null, how);
+    assert.equal(wanted(), "", `${how}: neither wants them when signed in here again`);
+  }
+  // Flash's own log outs do this (signOut and signOutAll), and leave the account in an alert's page
+  // (as=) to the account switcher, which opens the tab as it (adoptAccountFromUrl).
+  const flash = readFileSync(new URL("../src/components/Flash.tsx", import.meta.url), "utf8");
+  assert.match(flash, /usePushSync\(signedOut \? null : me\?\.user\.id, me\?\.accounts\.map\(\(a\) => a\.id\)\)/);
+  const signOut = flash.slice(flash.indexOf("async function signOut("), flash.indexOf("async function signOutAll("));
+  assert.match(signOut, /logOutHere\(\[gone\]\)/);
+  assert.match(flash.slice(flash.indexOf("async function signOutAll(")), /logOutHere\(\(me\?\.accounts \?\? \[\]\)\.map\(\(a\) => a\.id\)\)/);
+  assert.ok(!flash.includes('params.delete("as")'));
 });

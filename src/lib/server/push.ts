@@ -10,11 +10,12 @@
  * alerts setting (the GET in api/push has no key to give) and sendPush does nothing.
  *
  * Each row of push_subscriptions (db.ts) is one account in one browser, tied to that account's
- * sign-in there: it goes when they log out there (endSession), when someone else signs in on top of
- * it there (leaveBrowser), on endAllSessions (a password reset or change, "Log out of all devices"),
- * which also clears its alerts off those browsers' screens (clearScreens), and once that sign-in
- * expires (dropEnded). Alerts only ever go to browsers where that sign-in is still live, so on a
- * shared computer nobody who signs in next sees them.
+ * sign-in there (its session in the browser's accounts, see auth.ts): it goes when that account logs
+ * out there, alone or with the browser's other accounts (dropSignIns), on endAllSessions (a password
+ * reset or change, "Log out of all devices"), which also clears its alerts off those browsers'
+ * screens (clearScreens), and once that sign-in expires (dropEnded). Alerts only ever go to browsers
+ * where that sign-in is still live, so on a shared computer nobody who signs in next sees them. The
+ * accounts signed in to one browser share its one push subscription, each with a row of its own.
  */
 import { createCipheriv, createECDH, createHmac, createPrivateKey, randomBytes, sign, type KeyObject } from "node:crypto";
 import { all, db, one, run, now } from "./db.ts";
@@ -232,17 +233,27 @@ export async function removePush(userId: string, endpoint: string): Promise<void
   await run("DELETE FROM push_subscriptions WHERE endpoint = ? AND user_id = ?", [endpoint, userId]);
 }
 
+/** Stops the alerts these sign-ins (their hashes) turned on, as they end: a log out in their browser. */
+export async function dropSignIns(sessionHashes: string[]): Promise<void> {
+  if (!sessionHashes.length) return;
+  await run(`DELETE FROM push_subscriptions WHERE session_hash IN (${sessionHashes.map(() => "?").join(", ")})`, sessionHashes);
+}
+
 /**
- * Whether this account gets alerts in this browser: a row for its sign-in here (sessionHash) whose
- * push address has this SHA-256 (the page sends the hash, so the address stays out of server logs).
+ * The accounts signed in to a browser (each with its sign-in there, a hash of its session) that get
+ * alerts at the push address with this SHA-256 (the page and the service worker send the hash, so
+ * the address stays out of server logs): a row of theirs, tied to that sign-in, which is live.
  */
-export async function pushOnHere(userId: string, sessionHash: string, endpointHash: string): Promise<boolean> {
-  const rows = await all<{ endpoint: string }>(
-    `SELECT p.endpoint FROM push_subscriptions p JOIN sessions s ON s.token_hash = p.session_hash AND s.user_id = p.user_id
-     WHERE p.user_id = ? AND p.session_hash = ? AND s.expires_at > ?`,
-    [userId, sessionHash, now()],
+export async function pushAccountsHere(signIns: { userId: string; sessionHash: string }[], endpointHash: string): Promise<string[]> {
+  if (!signIns.length) return [];
+  const rows = await all<{ user_id: string; session_hash: string; endpoint: string }>(
+    `SELECT p.user_id, p.session_hash, p.endpoint FROM push_subscriptions p
+     JOIN sessions s ON s.token_hash = p.session_hash AND s.user_id = p.user_id
+     WHERE p.session_hash IN (${signIns.map(() => "?").join(", ")}) AND s.expires_at > ?`,
+    [...signIns.map((x) => x.sessionHash), now()],
   );
-  return rows.some((r) => sha256(r.endpoint) === endpointHash);
+  const here = rows.filter((r) => sha256(r.endpoint) === endpointHash && signIns.some((x) => x.userId === r.user_id && x.sessionHash === r.session_hash));
+  return [...new Set(here.map((r) => r.user_id))];
 }
 
 /** What an alert says, already in the account's language. */
@@ -417,8 +428,8 @@ export async function dropEnded(userId?: string): Promise<void> {
 /**
  * Before every sign-in of an account ends (endAllSessions): the browsers where it turned alerts on,
  * for clearScreens. Not the one doing it (here, its sign-in's hash), whose page clears its own
- * screen, nor one where another account turned them on too: the push would close that account's
- * alerts as well, and drop the subscription its alerts come by.
+ * screen, nor one where another account turned them on too: the push would drop the subscription
+ * that account's alerts come by.
  */
 export async function screensOf(userId: string, here = ""): Promise<Subscription[]> {
   if (!setup().keys) return [];
@@ -430,15 +441,15 @@ export async function screensOf(userId: string, here = ""): Promise<Subscription
 }
 
 /**
- * One push with no words to each of these browsers, once their rows are gone, saying the sign-in
- * there ended: the service worker takes that account's alerts still on the screen off it, shows only
- * "Flash ∞ AI" and drops the subscription (public/sw.js), without asking Flash, since nothing else
- * would come to clear them. So "Log out of all devices" or a password change leaves none of them on
- * a shared computer for the next person.
+ * One push with no words to each of these browsers, once their rows are gone, saying the account's
+ * sign-in there ended (as: its id, like the as= on its alerts' pages): the service worker takes that
+ * account's alerts still on the screen off it, shows only "Flash ∞ AI" and drops the subscription
+ * (public/sw.js), without asking Flash, since nothing else would come to clear them. So "Log out of
+ * all devices" or a password change leaves none of them on a shared computer for the next person.
  */
-export async function clearScreens(browsers: Subscription[]): Promise<void> {
+export async function clearScreens(userId: string, browsers: Subscription[]): Promise<void> {
   if (!setup().keys) return;
-  await Promise.all(browsers.map((b) => deliver(b, { ended: true }).catch(() => "failed")));
+  await Promise.all(browsers.map((b) => deliver(b, { ended: true, as: userId }).catch(() => "failed")));
 }
 
 /** For /admin: how many browsers have alerts on, counting only rows whose sign-in is still live (the only ones sent to). */

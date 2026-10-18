@@ -1,7 +1,7 @@
 import { translatorFor } from "@/lib/server/i18n.ts";
-import { SESSION_COOKIE, fromOwnPage, hashPassword, readCookie } from "@/lib/server/auth.ts";
+import { TooManyAccounts, canAdd, fromOwnPage, hashPassword, jarSessions, tooManyAccounts } from "@/lib/server/auth.ts";
+import { redeemToken, resetLinkEmail, resetLinkUser } from "@/lib/server/account.ts";
 import { sha256 } from "@/lib/server/ids.ts";
-import { redeemToken, resetLinkEmail } from "@/lib/server/account.ts";
 import { mayUse } from "@/lib/server/link-browser.ts";
 import { resetPassword } from "@/lib/server/signin.ts";
 import { signInCookie, twoFactorOn } from "@/lib/server/two-factor.ts";
@@ -20,17 +20,31 @@ export async function POST(request: Request) {
   const use = sentTo ? mayUse(sentTo, request, body.email) : "ok";
   if (use === "ask") return Response.json({ error: t("To keep your account safe, type the email address this link was sent to."), code: "confirm_email" }, { status: 400 });
   if (use === "wrong") return Response.json({ error: t("That isn't the email address this link was sent to."), code: "confirm_email" }, { status: 400 });
+  // A browser holds at most 5 accounts (see auth.ts): checked before the link is used up.
+  const owner = await resetLinkUser(body.token ?? "");
+  if (owner && !(await canAdd(request, owner))) return tooManyAccounts(t);
+  // The browser's accounts as they were, so this one keeps its place once its sessions end.
+  const prior = await jarSessions(request);
   const userId = await redeemToken(body.token ?? "", "reset");
   if (!userId) {
     return Response.json({ error: t("This link has expired or was already used. Ask for a new one.") }, { status: 400 });
   }
   // Opening the link proved they own the inbox: what an unconfirmed account had set up goes. This
-  // browser gets no wordless push (see clearScreens) when it's signed in again below, and Flash then
-  // turns its alerts back on there, as after a password change. With two-step sign-in on it's signed
-  // out until the code, which it may never get, so it gets one like every other browser.
-  const twoStep = await twoFactorOn(userId);
-  await resetPassword(userId, await hashPassword(password), twoStep ? "" : sha256(readCookie(request, SESSION_COOKIE) ?? ""));
-  // A reset link only proves the inbox, so with two-step sign-in on the code is still asked for.
-  const { cookie, twoFactor } = await signInCookie(userId, request, "/?reset=1");
-  return Response.json({ ok: true, twoFactor }, { headers: { "Set-Cookie": cookie } });
+  // browser gets no wordless push (see clearScreens) when it's signed in to the account and is
+  // signed in to it again below, and Flash then turns its alerts back on there, as after a password
+  // change. With two-step sign-in on it's signed out of the account until the code, which it may
+  // never get, so it gets one like every other browser.
+  const here = (await twoFactorOn(userId)) ? undefined : prior.entries.find((e) => e.user.id === userId)?.token;
+  await resetPassword(userId, await hashPassword(password), here ? sha256(here) : "");
+  try {
+    // A reset link only proves the inbox, so with two-step sign-in on the code is still asked for.
+    const { cookie, also, twoFactor, account } = await signInCookie(userId, request, "/?reset=1", prior);
+    const headers = new Headers();
+    for (const c of [cookie, ...also]) headers.append("Set-Cookie", c);
+    return Response.json({ ok: true, twoFactor, ...(account && { account }) }, { headers });
+  } catch (err) {
+    // The password is set; signing in waits until the browser has room.
+    if (err instanceof TooManyAccounts) return tooManyAccounts(t);
+    throw err;
+  }
 }

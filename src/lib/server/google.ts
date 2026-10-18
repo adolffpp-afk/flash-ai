@@ -133,6 +133,13 @@ export async function beginGoogleFlow(userId: string, origin: string, { connecti
   return page.href;
 }
 
+/** Who started the Google Drive sign-in for a state that is still under way (null for none). */
+export async function googleFlowOwner(state: string | null): Promise<string | null> {
+  if (!state || state.length > 200) return null;
+  const row = await one<{ user_id: string }>("SELECT user_id FROM connect_flows WHERE state_hash = ? AND provider = 'google-drive' AND expires_at > ?", [sha256(state), now()]);
+  return row?.user_id ?? null;
+}
+
 /** Takes the user's own Google flow for a state, once, before it expires (the other services' callbacks never take it). */
 export async function takeGoogleFlow(userId: string, state: string | null): Promise<FlowRow | null> {
   if (!state || state.length > 200) return null;

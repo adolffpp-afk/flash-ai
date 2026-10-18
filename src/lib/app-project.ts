@@ -20,7 +20,9 @@ export function appSlug(title: string): string {
   );
 }
 
-const STAND_IN_MARK = "Stand-in for Flash's built-in database";
+// The number goes up when the stand-in gains something (2: flashDB.track), so an app downloaded with
+// an older one gets the new one too.
+const STAND_IN_MARK = "Stand-in for Flash's built-in database (2)";
 
 // Runs only where Flash's real database isn't there, so the same page still saves for real on Flash.
 const STAND_IN = `
@@ -33,7 +35,10 @@ const STAND_IN = `
   })();
 </script>`;
 
-/** The app's page with the database stand-in at the top (once, even if it was downloaded before). */
+/**
+ * The app's page with the database stand-in at the top (once, even if it was downloaded before). A
+ * page with an older stand-in gets this one before it, which then does nothing.
+ */
 export function standalonePage(html: string): string {
   return html.includes(STAND_IN_MARK) ? html : injectHead(html, STAND_IN);
 }

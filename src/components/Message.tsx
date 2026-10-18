@@ -1,6 +1,6 @@
 "use client";
 
-import { createElement, isValidElement, useEffect, useState, useSyncExternalStore, type ReactNode } from "react";
+import { createElement, isValidElement, useEffect, useId, useState, useSyncExternalStore, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { ENGINE_LABELS } from "@/lib/types";
@@ -22,6 +22,7 @@ import { useT, type T } from "@/lib/use-t";
 import { linkHost, safeMarkdown } from "@/lib/safe-markdown";
 import { toolWords, type ActionCard as ActionCardData } from "@/lib/connectors";
 import { ActionCard } from "./ActionCard";
+import { markUnsent } from "@/lib/unsent";
 
 export type Reshape = "tall" | "square" | "wide";
 // Each shape's button, and what it says on hover.
@@ -292,6 +293,13 @@ function UserMessage({ m, onEdit }: { m: UIMessage; onEdit?: (text: string) => v
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(m.content);
   const [copied, setCopied] = useState(false);
+  // New words in its Edit, not sent: going on as another account asks first (see unsent.ts).
+  const box = useId();
+  const unsent = editing && draft.trim() !== "" && draft.trim() !== m.content.trim();
+  useEffect(() => {
+    markUnsent(box, unsent);
+    return () => markUnsent(box, false);
+  }, [box, unsent]);
   const btn = "rounded-md px-2 py-1 hover:bg-zinc-800 hover:text-zinc-200";
   if (editing && onEdit) {
     const save = () => {
@@ -560,6 +568,7 @@ export function Message({
             onEditCode={onEditApp}
             onFix={onFixApp}
             onPick={onPickApp}
+            onPlans={paymentsOn ? onBuyCredits : undefined}
           />
         )}
         {m.after?.trim() && (

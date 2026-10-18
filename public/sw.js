@@ -34,29 +34,54 @@ async function addressHash(sub) {
   return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-// Whether the sign-in that turned alerts on here is still live, asked of Flash before an alert shows
-// its words: one may have waited at the push service (a phone or laptop that was off) through a log
-// out, "Log out of all devices", a password change or the sign-in ending. "off" also drops this
-// browser's subscription, so nothing else waiting for it arrives (Flash makes a new one when that
-// account signs in here again and wants alerts); "unknown" (no answer) keeps it. ended: the push
-// itself says that sign-in ended (clearScreens in push.ts), with nothing to ask: only Flash can send
-// one this browser can read, and nothing else would come to clear the screen if Flash didn't answer.
-async function stillOn(ended) {
+// An account id, as an alert's page names it (as=, see pagePath in push.ts) and Flash's tabs do.
+const ACCOUNT = /^[A-Za-z0-9_-]{1,64}$/;
+
+// The account an alert's page is for, or "" when it names none.
+function accountOf(url) {
+  try {
+    const named = new URL(typeof url === "string" ? url : "", self.location.origin).searchParams.get("as") || "";
+    return ACCOUNT.test(named) ? named : "";
+  } catch {
+    return "";
+  }
+}
+
+// Whether the alert's account (the browser may be signed in to several, see account-pin.ts) still
+// gets alerts here, asked of Flash, as that account, before the alert shows its words: one may have
+// waited at the push service (a phone or laptop that was off) through a log out, "Log out of all
+// devices", a password change or the sign-in ending. "on": its sign-in here is live and turned them
+// on. "off": it isn't; "nobody": no account at all is signed in here. Either drops this browser's
+// subscription once no account signed in here gets alerts by it, so nothing else waiting for it
+// arrives (Flash makes a new one when an account signs in here again and wants alerts). "unknown"
+// (no answer, or an alert that names no account) keeps it. ended: the push itself says that
+// account's sign-in ended (clearScreens in push.ts), with nothing to ask: only Flash can send one
+// this browser can read, it's sent only where no other account gets alerts, and nothing else would
+// come to clear the screen if Flash didn't answer.
+async function stillOn(ended, account) {
   try {
     const sub = await self.registration.pushManager.getSubscription();
-    if (!sub) return "off";
-    let on = false;
-    if (!ended) {
-      const res = await fetch(`/api/push?e=${await addressHash(sub)}`, {
-        credentials: "same-origin",
-        cache: "no-store",
-        ...(AbortSignal.timeout ? { signal: AbortSignal.timeout(8000) } : {}),
-      });
-      if (res.status !== 401 && !res.ok) return "unknown";
-      on = res.ok && (await res.json()).on === true;
+    if (ended) {
+      await sub?.unsubscribe().catch(() => false);
+      return account ? "off" : "nobody";
     }
-    if (!on) await sub.unsubscribe().catch(() => false);
-    return on ? "on" : "off";
+    if (!sub) return "off";
+    if (!account) return "unknown";
+    const res = await fetch(`/api/push?e=${await addressHash(sub)}`, {
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: { "X-Flash-Account": account },
+      ...(AbortSignal.timeout ? { signal: AbortSignal.timeout(8000) } : {}),
+    });
+    if (res.status === 401) {
+      await sub.unsubscribe().catch(() => false);
+      return "nobody";
+    }
+    if (!res.ok) return "unknown";
+    const answer = await res.json();
+    if (answer.on === true) return "on";
+    if (answer.here !== true) await sub.unsubscribe().catch(() => false);
+    return "off";
   } catch {
     return ended ? "off" : "unknown";
   }
@@ -77,12 +102,13 @@ const HIDDEN = "flash-hidden";
 // one stays, whichever of their checks Flash answers first.
 let showing = Promise.resolve();
 
-// An alert: {title, body, url, tag}, already in the account's language, or {ended: true} once the
-// sign-in that turned alerts on here has ended. A later one with the same tag replaces it and still
-// alerts; one with none shows on its own. Browsers require every push to show something, so one that
-// can't be read, or whose sign-in here isn't live, shows Flash's name only. When that sign-in has
-// ended, the alerts it already showed here go too, so the next person on a shared computer doesn't
-// see them. Safari keeps a tag but never lets it replace anything (webkit.org/b/258922), so once the
+// An alert: {title, body, url, tag}, already in the account's language, its url naming the account
+// (as=), or {ended: true, as} once the sign-in of that account that turned alerts on here has ended.
+// A later one with the same tag replaces it and still alerts; one with none shows on its own.
+// Browsers require every push to show something, so one that can't be read, or whose account's
+// sign-in here isn't live, shows Flash's name only. When that sign-in has ended, the alerts that
+// account already showed here go too (every alert, once nobody is signed in here), so the next
+// person on a shared computer doesn't see them; the other accounts' stay. Safari keeps a tag but never lets it replace anything (webkit.org/b/258922), so once the
 // new alert shows, any earlier one with its tag still there is closed; elsewhere the browser has
 // replaced it already, and there's none.
 self.addEventListener("push", (event) => {
@@ -92,13 +118,17 @@ self.addEventListener("push", (event) => {
     try {
       alert = (event.data && event.data.json()) || {};
     } catch {}
+    const ended = alert.ended === true;
+    const account = ended ? (ACCOUNT.test(text(alert.as)) ? alert.as : "") : accountOf(alert.url);
     // Asked at once, while its place in line is taken now, before any answer comes back.
-    const asked = stillOn(alert.ended === true);
+    const asked = stillOn(ended, account);
     const turn = showing.then(async () => {
       const on = await asked;
       if (on !== "on") alert = { tag: HIDDEN };
-      if (on === "off") {
-        for (const shown of await self.registration.getNotifications().catch(() => [])) if (shown.tag !== HIDDEN) shown.close();
+      if (on === "off" || on === "nobody") {
+        for (const shown of await self.registration.getNotifications().catch(() => [])) {
+          if (shown.tag !== HIDDEN && (on === "nobody" || accountOf(shown.data && shown.data.url) === account)) shown.close();
+        }
       }
       const tag = text(alert.tag);
       // Tells this alert from the earlier ones with its tag.

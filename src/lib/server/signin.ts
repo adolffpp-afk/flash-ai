@@ -87,6 +87,24 @@ async function link(profile: Profile, userId: string): Promise<void> {
   ]);
 }
 
+/** The account an email signs in to (see findAccount), or null when a sign-in would make one. Creates nothing. */
+export async function accountIdForEmail(email: string | null | undefined): Promise<string | null> {
+  return email ? ((await findAccount(email))?.id ?? null) : null;
+}
+
+/**
+ * The account someone back from Google, GitHub or Microsoft would sign in to, without signing them
+ * in: the one their identity is linked to, else the one with the email the provider confirmed. Null
+ * when signing in would make a new account (or can't). Creates nothing, so the browser's room for
+ * another account can be checked before anything is created (see signInWithProvider).
+ */
+export async function providerAccountId(profile: Profile): Promise<string | null> {
+  const linked = await one<{ user_id: string }>("SELECT user_id FROM identities WHERE provider = ? AND subject = ?", [profile.provider, profile.subject]);
+  if (linked) return linked.user_id;
+  if (!profile.email || !profile.emailVerified) return null;
+  return accountIdForEmail(profile.email);
+}
+
 export type SignInResult = { ok: true; userId: string; created: boolean } | { ok: false; code: "no_email" | "unverified" };
 
 /** Finds, links or creates the account for someone back from Google, GitHub or Microsoft. */

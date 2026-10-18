@@ -1,26 +1,31 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api } from "@/lib/store";
+import { api, authedFetch } from "@/lib/store";
+import { withAccount } from "@/lib/account-pin";
 import { SELLER_COUNTRIES } from "@/lib/shop";
+import { OTHER } from "@/lib/traffic";
 import { DATA_RULES, DEFAULT_KEY, RULE_TEXT, blockProblem, dataLine, type DataRule, type DataSummary, type RuleSource } from "@/lib/data-rules";
-import { msg } from "@/lib/i18n";
+import { afterSentence, msg } from "@/lib/i18n";
 import { inOrder } from "@/lib/in-order";
+import { PLAN_SITES } from "@/lib/plan-limits";
 import { tNow, useT, type T } from "@/lib/use-t";
+import type { FunnelRange, FunnelStats } from "@/lib/server/funnel.ts";
 import { ContactsView } from "./ContactsView";
+import { FunnelNotes, FunnelView, LinkMaker, dayLabel } from "./FunnelView";
 
-// contacts: null until the app's contact list was first filled (see server/contacts.ts).
-type Site = {
+// messages, views, members and contacts: null until counted, as the list counts only 20 apps at a
+// time (see sitesWithMessages); contacts also until the app's contact list was first filled.
+type Counts = { messages: number | null; views: number | null; members: number | null; contacts: number | null };
+type Site = Counts & {
   slug: string;
   title: string;
   updated_at: number;
-  messages: number;
   unread: number;
-  views: number;
-  members: number;
-  contacts: number | null;
   openData?: boolean;
 };
+// The list shows this many apps at a time, the most the server counts in one go.
+const LIST_STEP = 20;
 type DataCollection = { name: string; count: number; lastAdded: number; rule: DataRule; source: RuleSource; personal: string[] };
 // block: the app names its rules in a flash-data block; bad: what Flash couldn't use in it. domains: the app's own addresses.
 type AppData = { collections: DataCollection[]; fallback: DataRule | null; guess: DataRule; block: boolean; bad?: DataSummary["bad"]; domains: string[] };
@@ -50,8 +55,6 @@ type MadeWith = { on: boolean; allowed: boolean; shown: boolean };
 
 const dateLabel = (when: number, locale: string) =>
   new Date(when).toLocaleString(locale, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-const dayLabel = (day: string, locale: string) =>
-  new Date(`${day}T12:00:00Z`).toLocaleDateString(locale, { month: "short", day: "numeric", timeZone: "UTC" });
 const fieldText = (v: unknown) => (typeof v === "string" ? v : JSON.stringify(v));
 // Written like toFixed: no thousands separator, so English reads as before.
 const plain = (n: number, locale: string, digits = 0) =>
@@ -91,6 +94,17 @@ const isOpen = (data: AppData) => data.collections.some((c) => c.rule === "open"
 export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEdit?: (projectId: string) => void; onPlans?: () => void }) {
   const t = useT();
   const [sites, setSites] = useState<Site[] | null>(null);
+  // How many apps the user may publish, how many the list shows, and what the filter box holds.
+  const [maxSites, setMaxSites] = useState<number | null>(null);
+  const [listed, setListed] = useState(LIST_STEP);
+  const [find, setFind] = useState("");
+  // What a paid plan publishes, said by the list as it nears the free number.
+  const morePaid = t("Paid plans can publish more apps: {count} on Lite, up to {most} on Agency.", {
+    count: PLAN_SITES.lite.toLocaleString(t.locale),
+    most: PLAN_SITES.agency.toLocaleString(t.locale),
+  });
+  // Apps whose counts were asked for already, so each is asked for once.
+  const asked = useRef(new Set<string>());
   const [open, setOpen] = useState<Site | null>(null);
   const [view, setView] = useState<"messages" | "contacts" | "domains" | "preview" | "payments" | "visits" | "history" | "members" | "ai" | "files" | "data">("messages");
   const [appData, setAppData] = useState<ShownData | null>(null);
@@ -103,7 +117,14 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
   const [restoring, setRestoring] = useState<string | null>(null);
   // The version brought back, with what that changed for who may see or change the app's data.
   const [restored, setRestored] = useState<{ data?: DataSummary } | null>(null);
-  const [visits, setVisits] = useState<Visits | null>(null);
+  // The Visitors view's numbers, each with the app (and range) it's for, so a late answer for
+  // another app or range never shows; and the funnel's own error, which leaves the visits shown.
+  const [visits, setVisits] = useState<{ slug: string; data: Visits } | null>(null);
+  const [funnel, setFunnel] = useState<{ slug: string; days: FunnelRange; stats: FunnelStats } | null>(null);
+  const [funnelDays, setFunnelDays] = useState<FunnelRange>(30);
+  const [funnelError, setFunnelError] = useState("");
+  const visitLoads = useRef(0);
+  const funnelLoads = useRef(0);
   const [payments, setPayments] = useState<Payments | null>(null);
   const [shop, setShop] = useState<Shop | null>(null);
   const [country, setCountry] = useState("CA");
@@ -151,8 +172,11 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
   }, [onClose, mayLeave]);
 
   useEffect(() => {
-    api<{ sites: Site[] }>("/api/sites")
-      .then(({ sites: list }) => setSites(list))
+    api<{ sites: Site[]; maxSites?: number }>("/api/sites")
+      .then(({ sites: list, maxSites: max }) => {
+        setSites(list);
+        setMaxSites(max ?? null);
+      })
       .catch(() => {
         setError(tNow("Couldn't load your apps. Please try again."));
         setSites([]);
@@ -334,11 +358,37 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
     setView("visits");
     setVisits(null);
     setError("");
+    setFunnelDays(30);
+    const asked = ++visitLoads.current;
+    await Promise.all([
+      api<Visits>(`/api/sites/${site.slug}/visits`).then(
+        (data) => asked === visitLoads.current && setVisits({ slug: site.slug, data }),
+        () => asked === visitLoads.current && setError(t("Couldn't load the visitor stats. Please try again.")),
+      ),
+      loadFunnel(site.slug, 30),
+    ]);
+  }
+
+  /** Loads a range of the funnel; when it can't, the range shown (shownDays) stays picked, with why. */
+  async function loadFunnel(slug: string, days: FunnelRange, shownDays?: FunnelRange) {
+    const asked = ++funnelLoads.current;
+    setFunnelError("");
     try {
-      setVisits(await api<Visits>(`/api/sites/${site.slug}/visits`));
-    } catch {
-      setError(t("Couldn't load the visitor stats. Please try again."));
+      const stats = await api<FunnelStats>(`/api/sites/${slug}/funnel?days=${days}`);
+      if (asked === funnelLoads.current) setFunnel({ slug, days, stats });
+    } catch (err) {
+      // Too many loads in an hour says so; the visits above still show.
+      const busy = err instanceof Error && (err as Error & { status?: number }).status === 429;
+      if (asked !== funnelLoads.current) return;
+      setFunnelError(busy ? err.message : t("Couldn't load the visitor stats. Please try again."));
+      if (shownDays) setFunnelDays(shownDays);
     }
+  }
+
+  function chooseDays(days: FunnelRange) {
+    if (!open) return;
+    setFunnelDays(days);
+    loadFunnel(open.slug, days, funnel?.slug === open.slug ? funnel.days : undefined);
   }
 
   async function markOrder(order: Order) {
@@ -520,7 +570,7 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
     const { slug, collection } = records;
     setError("");
     try {
-      const res = await fetch(`/api/sites/${slug}/records?collection=${encodeURIComponent(collection)}&format=csv`);
+      const res = await authedFetch(`/api/sites/${slug}/records?collection=${encodeURIComponent(collection)}&format=csv`);
       if (!res.ok) throw new Error();
       const name = res.headers.get("content-disposition")?.match(/filename="([^"]+)"/)?.[1] ?? "data.csv";
       const [included, total] = (res.headers.get("x-flash-truncated") ?? "").split("/").map(Number);
@@ -571,7 +621,7 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
     try {
       await api(`/api/sites/${open.slug}/members?id=${encodeURIComponent(member.id)}`, { method: "DELETE" });
       setMembers((list) => list?.filter((m) => m.id !== member.id) ?? null);
-      setSites((all) => all?.map((s) => (s.slug === open.slug ? { ...s, members: Math.max(0, s.members - 1) } : s)) ?? null);
+      setSites((all) => all?.map((s) => (s.slug === open.slug && s.members !== null ? { ...s, members: Math.max(0, s.members - 1) } : s)) ?? null);
     } catch {
       setError(t("Couldn't remove that member. Please try again."));
     }
@@ -582,21 +632,60 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
     try {
       await api(`/api/sites/${open.slug}/inbox?id=${encodeURIComponent(id)}`, { method: "DELETE" });
       setMessages((list) => list?.filter((m) => m.id !== id) ?? null);
-      setSites((all) => all?.map((s) => (s.slug === open.slug ? { ...s, messages: s.messages - 1 } : s)) ?? null);
+      setSites((all) => all?.map((s) => (s.slug === open.slug && s.messages !== null ? { ...s, messages: Math.max(0, s.messages - 1) } : s)) ?? null);
     } catch {
       setError(t("Couldn't delete that message. Please try again."));
     }
+  }
+
+  /**
+   * Asks for the counts of listed apps past the 20 the list came with, 20 at a time, each once. Until
+   * they come, those apps show no numbers.
+   */
+  function countApps(list: Site[]) {
+    const slugs = list.filter((s) => s.views === null && !asked.current.has(s.slug)).map((s) => s.slug);
+    for (let i = 0; i < slugs.length; i += LIST_STEP) {
+      const part = slugs.slice(i, i + LIST_STEP);
+      for (const slug of part) asked.current.add(slug);
+      api<{ counts: Record<string, Counts> }>(`/api/sites?counts=${encodeURIComponent(part.join(","))}`)
+        .then(({ counts }) => setSites((all) => all?.map((s) => (counts[s.slug] ? { ...s, ...counts[s.slug] } : s)) ?? null))
+        .catch(() => {
+          for (const slug of part) asked.current.delete(slug);
+        });
+    }
+  }
+  const matches = (s: Site, text: string) => {
+    const q = text.trim().toLocaleLowerCase(t.locale);
+    return !q || s.title.toLocaleLowerCase(t.locale).includes(q) || s.slug.includes(q);
+  };
+  const found = sites?.filter((s) => matches(s, find)) ?? [];
+  function showMore() {
+    countApps(found.slice(listed, listed + LIST_STEP));
+    setListed(listed + LIST_STEP);
+  }
+  function findApp(text: string) {
+    setFind(text);
+    countApps((sites ?? []).filter((s) => matches(s, text)).slice(0, listed));
   }
 
   async function unpublish(slug: string) {
     try {
       await api(`/api/sites?slug=${encodeURIComponent(slug)}`, { method: "DELETE" });
       setSites((all) => all?.filter((s) => s.slug !== slug) ?? null);
+      // The app that moves up into the list shows its numbers too.
+      countApps(found.filter((s) => s.slug !== slug).slice(0, listed));
     } catch {
       setError(t("Couldn't unpublish that. Please try again."));
     }
     setConfirming(null);
   }
+
+  // The funnel shown: only the open app's. While another range loads, the one before stays (dimmed).
+  const shownFunnel = open && funnel?.slug === open.slug ? funnel.stats : null;
+  const funnelLoading = Boolean(shownFunnel) && funnel?.days !== funnelDays;
+  // An app with no visits in 30 days shows only the link maker while no range could show more: its
+  // 90 days hold nothing, whichever range is shown.
+  const noFunnel = shownFunnel !== null && shownFunnel.empty;
 
   return (
     <div className="fixed inset-0 z-40 flex items-stretch justify-center bg-black/60 backdrop-blur-sm sm:items-center sm:p-6" onClick={() => mayLeave() && onClose()}>
@@ -604,7 +693,7 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
         role="dialog"
         aria-modal="true"
         aria-label={t("My websites and apps")}
-        className={`flex h-full w-full ${open && view === "contacts" ? "max-w-5xl" : "max-w-3xl"} flex-col bg-zinc-950 text-zinc-100 sm:h-[80vh] sm:rounded-2xl sm:border sm:border-white/8`}
+        className={`flex h-full w-full ${open && (view === "contacts" || view === "visits") ? "max-w-5xl" : "max-w-3xl"} flex-col bg-zinc-950 text-zinc-100 sm:h-[80vh] sm:rounded-2xl sm:border sm:border-white/8`}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3 border-b border-white/6 px-5 py-4">
@@ -633,7 +722,11 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 sm:p-5">
-          {error && <p role="alert" className="mb-3 text-sm text-red-400">{error}</p>}
+          {error && (
+            <p role="alert" className="mb-3 text-sm text-red-400">
+              {error}
+            </p>
+          )}
           {open && view === "data" ? (
             appData?.slug !== open.slug ? (
               !error && <p className="text-sm text-zinc-500">{t("Loading…")}</p>
@@ -698,7 +791,7 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
                           </span>
                         ) : (
                           <span className="flex items-center gap-3 text-xs">
-                            <a href={`/api/sites/${open.slug}/versions?view=${v.id}`} target="_blank" rel="noreferrer" className="text-zinc-300 hover:text-white">
+                            <a href={withAccount(`/api/sites/${open.slug}/versions?view=${v.id}`)} target="_blank" rel="noreferrer" className="text-zinc-300 hover:text-white">
                               {t("View")} ↗
                             </a>
                             <button onClick={() => setRestoring(v.id)} className="rounded-md border border-primary/40 px-2 py-0.5 text-primary-soft hover:bg-primary/10">
@@ -850,7 +943,7 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
                       ? t("1 person has signed up.")
                       : t("{count} people have signed up.", { count: members.length.toLocaleString(t.locale) })}
                   </span>
-                  <a href={`/api/sites/${open.slug}/members?format=csv`} download className="text-primary-soft hover:underline">
+                  <a href={withAccount(`/api/sites/${open.slug}/members?format=csv`)} download className="text-primary-soft hover:underline">
                     ⬇ {t("Download all (CSV)")}
                   </a>
                 </li>
@@ -869,10 +962,18 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
               </ul>
             )
           ) : open && view === "visits" ? (
-            visits === null ? (
+            visits?.slug !== open.slug ? (
               !error && <p className="text-sm text-zinc-500">{t("Loading…")}</p>
             ) : (
-              <VisitsView visits={visits} />
+              <div className="space-y-8">
+                {shownFunnel && <FunnelNotes stats={shownFunnel} onPlans={onPlans} />}
+                <VisitsView visits={visits.data} />
+                {visits.data.views === 0 && noFunnel ? (
+                  <LinkMaker addresses={shownFunnel.addresses} />
+                ) : (
+                  <FunnelView stats={shownFunnel} days={funnelDays} onDays={chooseDays} error={funnelError} loading={funnelLoading} />
+                )}
+              </div>
             )
           ) : open && view === "payments" ? (
             payments === null ? (
@@ -1010,7 +1111,7 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
                       )}
                     </h3>
                     {shop.orders.length > 0 && (
-                      <a href={`/api/sites/${open.slug}/orders`} download className="ml-auto text-xs text-primary-soft hover:underline">
+                      <a href={withAccount(`/api/sites/${open.slug}/orders`)} download className="ml-auto text-xs text-primary-soft hover:underline">
                         ⬇ {t("Download (CSV)")}
                       </a>
                     )}
@@ -1198,7 +1299,7 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
             ) : (
               <ul className="space-y-3">
                 <li className="flex justify-end">
-                  <a href={`/api/sites/${open.slug}/inbox?format=csv`} download className="text-xs text-primary-soft hover:underline">
+                  <a href={withAccount(`/api/sites/${open.slug}/inbox?format=csv`)} download className="text-xs text-primary-soft hover:underline">
                     ⬇ {t("Download all (CSV)")}
                   </a>
                 </li>
@@ -1236,88 +1337,141 @@ export function MyApps({ onClose, onEdit, onPlans }: { onClose: () => void; onEd
               </p>
             </div>
           ) : (
-            <ul className="space-y-2">
-              {sites.map((s) => (
-                <li key={s.slug} className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3">
-                  <div className="min-w-0 flex-[1_1_14rem]">
-                    <p className="truncate font-medium text-zinc-100">{s.title}</p>
-                    <a href={`/p/${s.slug}`} target="_blank" rel="noreferrer" className="block truncate text-xs text-primary-soft hover:underline">
-                      {typeof window !== "undefined" ? window.location.host : ""}/p/{s.slug}
-                    </a>
-                  </div>
-                  {confirming === s.slug ? (
-                    <div className="flex items-center gap-3 text-xs">
-                      <span className="text-zinc-400">{t("Take it offline, with its data and messages?")}</span>
-                      <button onClick={() => unpublish(s.slug)} className="text-red-400 hover:text-red-300">
-                        {t("Unpublish")}
-                      </button>
-                      <button onClick={() => setConfirming(null)} className="text-zinc-400 hover:text-zinc-100">
-                        {t("Keep")}
-                      </button>
-                    </div>
+            <>
+              {maxSites !== null && (
+                <div className="mb-3 space-y-1">
+                  {sites.length > maxSites ? (
+                    // Back on a smaller plan: every app stays, and publishing another waits until enough are unpublished.
+                    <p className="text-sm text-gold-soft">
+                      {t("You have {count} apps published and your plan allows {max}. Unpublish {extra} of them to publish another.", {
+                        count: sites.length.toLocaleString(t.locale),
+                        max: maxSites.toLocaleString(t.locale),
+                        extra: (sites.length - maxSites + 1).toLocaleString(t.locale),
+                      })}
+                    </p>
                   ) : (
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                      {onEdit && (
-                        <button onClick={() => editSite(s)} className="text-zinc-200 hover:text-white" title={t("Open the chat that built this site")}>
-                          ✏️ {t("Edit")}
-                        </button>
-                      )}
-                      <button onClick={() => showMessages(s)} className="text-zinc-200 hover:text-white">
-                        ✉️ {t("Messages")}
-                        {s.messages ? <> ({s.messages})</> : null}
-                        {s.unread > 0 && (
-                          <span className="ml-1.5 rounded-full bg-brand px-1.5 py-0.5 text-[10px] text-on-brand">{t("{count} new", { count: s.unread })}</span>
-                        )}
-                      </button>
-                      <button onClick={() => showContacts(s)} className="text-zinc-200 hover:text-white" title={t("Everyone who sent a form, signed up or paid")}>
-                        👥 {t("Contacts")}
-                        {s.contacts ? <> ({s.contacts.toLocaleString(t.locale)})</> : null}
-                      </button>
-                      <button onClick={() => showVisits(s)} className="text-zinc-200 hover:text-white" title={t("Visits in the last 30 days")}>
-                        📈 {t("Visitors")}
-                        {s.views ? <> ({s.views.toLocaleString(t.locale)})</> : null}
-                      </button>
-                      <button onClick={() => showFiles(s)} className="text-zinc-200 hover:text-white" title={t("Files people sent to this app")}>
-                        📁 {t("Files")}
-                      </button>
-                      <button onClick={() => showAi(s)} className="text-zinc-200 hover:text-white" title={t("Let this app use AI, and set what it may spend")}>
-                        🤖 {t("AI")}
-                      </button>
-                      <button onClick={() => showMembers(s)} className="text-zinc-200 hover:text-white" title={t("People signed up to this app")}>
-                        👤 {t("Members")}
-                        {s.members ? <> ({s.members.toLocaleString(t.locale)})</> : null}
-                      </button>
-                      <button onClick={() => openAsOwner(s.slug)} className="text-zinc-200 hover:text-white" title={t("Change this app's data from the app itself")}>
-                        🔑 {t("Open as owner")}
-                      </button>
-                      <button
-                        onClick={() => showData(s)}
-                        className="text-zinc-200 hover:text-white"
-                        title={s.openData ? t("Anyone can change or delete some of this app's data") : t("What this app keeps, and who may change it")}
-                      >
-                        🗄️ {t("Data")}
-                        {s.openData && <span className="ms-1 text-gold-soft">⚠</span>}
-                      </button>
-                      <button onClick={() => showDomains(s)} className="text-zinc-200 hover:text-white">
-                        🔗 {t("Domain")}
-                      </button>
-                      <button onClick={() => showPreview(s)} className="text-zinc-200 hover:text-white" title={t("What shows when this app's link is shared")}>
-                        🖼️ {t("Link preview")}
-                      </button>
-                      <button onClick={() => showPayments(s)} className="text-zinc-200 hover:text-white">
-                        💳 {t("Payments")}
-                      </button>
-                      <button onClick={() => showHistory(s)} className="text-zinc-200 hover:text-white" title={t("Earlier versions of this site")}>
-                        🕘 {t("History")}
-                      </button>
-                      <button onClick={() => setConfirming(s.slug)} className="text-zinc-500 hover:text-red-400">
-                        {t("Unpublish")}
-                      </button>
-                    </div>
+                    <p className="text-xs text-zinc-500">{t("{count} of {max} apps published", { count: sites.length.toLocaleString(t.locale), max: maxSites.toLocaleString(t.locale) })}</p>
                   )}
-                </li>
-              ))}
-            </ul>
+                  {maxSites <= LIST_STEP && sites.length >= 15 && (
+                    <p className="text-sm text-gold-soft">
+                      {morePaid}
+                      {onPlans && (
+                        <>
+                          {afterSentence(morePaid)}
+                          <button onClick={onPlans} className="text-primary-soft hover:underline">
+                            {t("Upgrade plan")}
+                          </button>
+                        </>
+                      )}
+                    </p>
+                  )}
+                </div>
+              )}
+              {/* Kept while it holds text, so a list filtered down to 20 or fewer can still be cleared. */}
+              {(sites.length > LIST_STEP || find !== "") && (
+                <input
+                  type="search"
+                  value={find}
+                  onChange={(e) => findApp(e.target.value)}
+                  placeholder={t("Find an app")}
+                  aria-label={t("Find an app")}
+                  maxLength={80}
+                  className="mb-3 h-10 w-full min-w-0 rounded-lg border border-white/10 bg-white/[0.03] px-3 text-sm text-zinc-200 outline-none focus:border-primary/70"
+                />
+              )}
+              {find.trim() && !found.length && (
+                <p className="text-sm text-zinc-500">
+                  {t("No apps match “{text}”.", { text: find.trim() })}
+                </p>
+              )}
+              <ul className="space-y-2">
+                {found.slice(0, listed).map((s) => (
+                  <li key={s.slug} className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-white/8 bg-white/[0.02] px-4 py-3">
+                    <div className="min-w-0 flex-[1_1_14rem]">
+                      <p className="truncate font-medium text-zinc-100">{s.title}</p>
+                      <a href={`/p/${s.slug}`} target="_blank" rel="noreferrer" className="block truncate text-xs text-primary-soft hover:underline">
+                        {typeof window !== "undefined" ? window.location.host : ""}/p/{s.slug}
+                      </a>
+                    </div>
+                    {confirming === s.slug ? (
+                      <div className="flex items-center gap-3 text-xs">
+                        <span className="text-zinc-400">{t("Take it offline, with its data and messages?")}</span>
+                        <button onClick={() => unpublish(s.slug)} className="text-red-400 hover:text-red-300">
+                          {t("Unpublish")}
+                        </button>
+                        <button onClick={() => setConfirming(null)} className="text-zinc-400 hover:text-zinc-100">
+                          {t("Keep")}
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                        {onEdit && (
+                          <button onClick={() => editSite(s)} className="text-zinc-200 hover:text-white" title={t("Open the chat that built this site")}>
+                            ✏️ {t("Edit")}
+                          </button>
+                        )}
+                        <button onClick={() => showMessages(s)} className="text-zinc-200 hover:text-white">
+                          ✉️ {t("Messages")}
+                          {s.messages ? <> ({s.messages})</> : null}
+                          {s.unread > 0 && (
+                            <span className="ml-1.5 rounded-full bg-brand px-1.5 py-0.5 text-[10px] text-on-brand">{t("{count} new", { count: s.unread })}</span>
+                          )}
+                        </button>
+                        <button onClick={() => showContacts(s)} className="text-zinc-200 hover:text-white" title={t("Everyone who sent a form, signed up or paid")}>
+                          👥 {t("Contacts")}
+                          {s.contacts ? <> ({s.contacts.toLocaleString(t.locale)})</> : null}
+                        </button>
+                        <button onClick={() => showVisits(s)} className="text-zinc-200 hover:text-white" title={t("Visits in the last 30 days")}>
+                          📈 {t("Visitors")}
+                          {s.views ? <> ({s.views.toLocaleString(t.locale)})</> : null}
+                        </button>
+                        <button onClick={() => showFiles(s)} className="text-zinc-200 hover:text-white" title={t("Files people sent to this app")}>
+                          📁 {t("Files")}
+                        </button>
+                        <button onClick={() => showAi(s)} className="text-zinc-200 hover:text-white" title={t("Let this app use AI, and set what it may spend")}>
+                          🤖 {t("AI")}
+                        </button>
+                        <button onClick={() => showMembers(s)} className="text-zinc-200 hover:text-white" title={t("People signed up to this app")}>
+                          👤 {t("Members")}
+                          {s.members ? <> ({s.members.toLocaleString(t.locale)})</> : null}
+                        </button>
+                        <button onClick={() => openAsOwner(s.slug)} className="text-zinc-200 hover:text-white" title={t("Change this app's data from the app itself")}>
+                          🔑 {t("Open as owner")}
+                        </button>
+                        <button
+                          onClick={() => showData(s)}
+                          className="text-zinc-200 hover:text-white"
+                          title={s.openData ? t("Anyone can change or delete some of this app's data") : t("What this app keeps, and who may change it")}
+                        >
+                          🗄️ {t("Data")}
+                          {s.openData && <span className="ms-1 text-gold-soft">⚠</span>}
+                        </button>
+                        <button onClick={() => showDomains(s)} className="text-zinc-200 hover:text-white">
+                          🔗 {t("Domain")}
+                        </button>
+                        <button onClick={() => showPreview(s)} className="text-zinc-200 hover:text-white" title={t("What shows when this app's link is shared")}>
+                          🖼️ {t("Link preview")}
+                        </button>
+                        <button onClick={() => showPayments(s)} className="text-zinc-200 hover:text-white">
+                          💳 {t("Payments")}
+                        </button>
+                        <button onClick={() => showHistory(s)} className="text-zinc-200 hover:text-white" title={t("Earlier versions of this site")}>
+                          🕘 {t("History")}
+                        </button>
+                        <button onClick={() => setConfirming(s.slug)} className="text-zinc-500 hover:text-red-400">
+                          {t("Unpublish")}
+                        </button>
+                      </div>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              {found.length > listed && (
+                <button onClick={showMore} className="mx-auto mt-4 block rounded-full border border-white/10 px-4 py-2 text-sm text-zinc-300 transition hover:bg-white/[0.05]">
+                  {t("Show more")}
+                </button>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -1543,7 +1697,10 @@ function VisitsView({ visits }: { visits: Visits }) {
   if (visits.views === 0) {
     return (
       <p className="mx-auto mt-16 max-w-sm text-center text-sm text-zinc-500">
-        {t("No visitors yet. Share your site's link and each visit shows up here. Your own visits while signed in to Flash aren't counted.")}
+        {/* An app older than the 30 days shown may have had visitors before them (see From visit to sale). */}
+        {visits.days.length < 30
+          ? t("No visitors yet. Share your site's link and each visit shows up here. Your own visits while signed in to Flash aren't counted.")
+          : t("No visits in the last 30 days. Your own visits while signed in to Flash aren't counted.")}
       </p>
     );
   }
@@ -1567,11 +1724,15 @@ function VisitsView({ visits }: { visits: Visits }) {
       </div>
       <div>
         <p className="mb-2 text-xs text-zinc-500">{t("Visits per day, last 30 days")}</p>
-        <div className="flex h-32 items-end gap-[3px]" role="img" aria-label={t("{count} visits in the last 30 days", { count: visits.views })}>
+        <div className="flex h-32 items-end gap-[3px]" role="img" aria-label={t("{count} visits in the last 30 days", { count: visits.views.toLocaleString(t.locale) })}>
           {visits.days.map((d) => (
             <div
               key={d.day}
-              title={t("{date}: {views} visits, {visitors} visitors", { date: dayLabel(d.day, t.locale), views: d.views, visitors: d.visitors })}
+              title={t("{date}: {views} visits, {visitors} visitors", {
+                date: dayLabel(d.day, t.locale),
+                views: d.views.toLocaleString(t.locale),
+                visitors: d.visitors.toLocaleString(t.locale),
+              })}
               className="min-w-0 flex-1 rounded-t-sm bg-primary/70 hover:bg-primary"
               style={{ height: d.views ? `${Math.max(4, (d.views / top) * 100)}%` : "2px", opacity: d.views ? 1 : 0.25 }}
             />
@@ -1583,12 +1744,18 @@ function VisitsView({ visits }: { visits: Visits }) {
         </div>
       </div>
       <div>
-        <p className="mb-2 text-xs text-zinc-500">{t("Where visitors came from")}</p>
+        {/* Its numbers are visits, so they aren't read as the people in By source. */}
+        <p className="mb-2 flex justify-between gap-3 px-4 text-xs text-zinc-500">
+          <span>{t("Where visitors came from")}</span>
+          <span>{t("Visits")}</span>
+        </p>
         <ul className="divide-y divide-white/6 rounded-xl border border-white/8">
           {visits.sources.map((s) => (
-            <li key={s.source} className="flex items-center justify-between px-4 py-2 text-sm">
-              <span className="min-w-0 truncate text-zinc-200">{s.source || t("Direct (typed, bookmarked or shared in a message)")}</span>
-              <span className="tabular-nums text-zinc-400">{s.views.toLocaleString(t.locale)}</span>
+            <li key={s.source} className="flex items-center justify-between gap-3 px-4 py-2 text-sm">
+              <bdi dir="auto" className="min-w-0 text-zinc-200 [overflow-wrap:anywhere]">
+                {s.source === OTHER.source ? t("Other sources") : s.source || t("Direct (typed, bookmarked or shared in a message)")}
+              </bdi>
+              <span className="shrink-0 tabular-nums text-zinc-400">{s.views.toLocaleString(t.locale)}</span>
             </li>
           ))}
         </ul>

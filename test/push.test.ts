@@ -130,6 +130,31 @@ const call = (method: string, cookie: string, body?: object, headers: Record<str
     body: body ? JSON.stringify(body) : undefined,
   });
 const rowsOf = (userId: string) => all<{ endpoint: string; session_hash: string; last_ok_at: number }>("SELECT * FROM push_subscriptions WHERE user_id = ?", [userId]);
+const tokenOf = (cookie: string) => cookie.slice(cookie.indexOf("=") + 1);
+/**
+ * One browser signed in to several accounts (Add another account, see auth.ts): each one's session
+ * in the list cookie, and the last one added the default (flash_session).
+ */
+const jarOf = (...cookies: string[]) => `flash_session=${tokenOf(cookies.at(-1)!)}; __Host-flash_accounts=1.${cookies.map(tokenOf).join(".")}`;
+// A tab showing this account, as Flash's pages name it on every request.
+const as = (userId: string) => ({ "x-flash-account": userId });
+/** Log out from Flash's page: {} logs the tab's account out of this browser, {all: true} every account here. */
+const logOut = (cookie: string, account?: string, body: object = {}) =>
+  logoutRoute.POST(
+    new Request(`${ORIGIN}/api/auth/logout`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: ORIGIN, cookie, ...(account ? as(account) : {}) },
+      body: JSON.stringify(body),
+    }),
+  );
+const hashOf = (endpoint: string) => createHash("sha256").update(endpoint).digest("hex");
+/** What GET /api/push says for this push address, as the account named (the tab's, or the alert's), or as the default. */
+const stateAt = async (cookie: string, endpoint: string, account?: string) =>
+  (await (await pushRoute.GET(new Request(`${ORIGIN}/api/push?e=${hashOf(endpoint)}`, { headers: { cookie, ...(account ? as(account) : {}) } }))).json()) as {
+    key: string | null;
+    on: boolean;
+    here: boolean;
+  };
 const FCM = "https://fcm.googleapis.com/fcm/send/";
 
 test("the VAPID header is a JWT signed with ES256 for the push service, with Flash's public key", async () => {
@@ -324,9 +349,11 @@ test("a browser signed in to several accounts names the account on its alert", a
   const dev = await account("dev@example.com");
   const shared = browser(`${FCM}shared-laptop`);
   const own = browser(`${FCM}cara-phone`);
-  // One browser where both turned alerts on (one sign-in after the other here, each with its own row).
-  assert.equal((await pushRoute.POST(call("POST", cara.cookie, shared.sub))).status, 200);
-  assert.equal((await pushRoute.POST(call("POST", dev.cookie, shared.sub))).status, 200);
+  // One browser signed in to both, where each turned alerts on from a tab of its own: one push
+  // address, a row for each.
+  const laptop = jarOf(cara.cookie, dev.cookie);
+  assert.equal((await pushRoute.POST(call("POST", laptop, shared.sub, as(cara.id)))).status, 200);
+  assert.equal((await pushRoute.POST(call("POST", laptop, shared.sub, as(dev.id)))).status, 200);
   assert.equal((await pushRoute.POST(call("POST", await signIn(cara), own.sub))).status, 200);
 
   sent = [];
@@ -339,7 +366,7 @@ test("a browser signed in to several accounts names the account on its alert", a
   assert.equal(onShared.url, `/?as=${cara.id}`);
 
   // Once Dev logs out there, Cara's alert there no longer names her.
-  assert.equal((await logoutRoute.POST(new Request(`${ORIGIN}/api/auth/logout`, { method: "POST", headers: { cookie: dev.cookie } }))).status, 200);
+  assert.equal((await logOut(laptop, dev.id)).status, 200);
   sent = [];
   await push.sendPush(cara.id, { title: "Veille", body: "Rien de neuf" });
   assert.equal(shared.read(sent.find((s) => s.url === shared.endpoint)!.body).body, "Rien de neuf");
@@ -351,12 +378,14 @@ test("logging out deletes that sign-in's rows; endAllSessions and a password cha
   const laptop = browser(`${FCM}shared`);
   const phone = browser(`${FCM}eve-phone`);
   const phoneCookie = await signIn(eve);
-  await pushRoute.POST(call("POST", eve.cookie, laptop.sub));
+  // The laptop is signed in to both of them.
+  const both = jarOf(eve.cookie, fay.cookie);
+  await pushRoute.POST(call("POST", both, laptop.sub, as(eve.id)));
   await pushRoute.POST(call("POST", phoneCookie, phone.sub));
-  await pushRoute.POST(call("POST", fay.cookie, laptop.sub));
+  await pushRoute.POST(call("POST", both, laptop.sub, as(fay.id)));
 
   // Eve logs out on the laptop: only that sign-in's row goes; her phone and Fay's row stay.
-  await logoutRoute.POST(new Request(`${ORIGIN}/api/auth/logout`, { method: "POST", headers: { cookie: eve.cookie } }));
+  assert.equal((await logOut(both, eve.id)).status, 200);
   assert.deepEqual((await rowsOf(eve.id)).map((r) => r.endpoint), [phone.endpoint]);
   assert.deepEqual((await rowsOf(fay.id)).map((r) => r.endpoint), [laptop.endpoint]);
   sent = [];
@@ -384,6 +413,16 @@ test("logging out deletes that sign-in's rows; endAllSessions and a password cha
   sent = [];
   assert.equal((await push.sendPush(fay.id, { title: "x", body: "y" })).rows, 0);
   assert.deepEqual(sent, []);
+
+  // "Log out of all accounts" on a browser signed in to two ends both sign-ins there, and both rows.
+  const gil = await account("gil@example.com");
+  const hana = await account("hana@example.com");
+  const desk = browser(`${FCM}gil-hana-desk`);
+  const desktop = jarOf(gil.cookie, hana.cookie);
+  await pushRoute.POST(call("POST", desktop, desk.sub, as(gil.id)));
+  await pushRoute.POST(call("POST", desktop, desk.sub, as(hana.id)));
+  assert.equal((await logOut(desktop, undefined, { all: true })).status, 200);
+  assert.deepEqual([await rowsOf(gil.id), await rowsOf(hana.id)], [[], []]);
 });
 
 test("a sign-in that ended by itself gets no alerts, and its rows go", async () => {
@@ -420,41 +459,83 @@ test("a busy push service or a lost connection gets one more try, and a 4xx none
   answers.delete(phone.endpoint);
 });
 
-test("a sign-in on top of another in a browser stops the alerts the one before turned on there", async () => {
+test("signing in to another account in a browser keeps the alerts of the ones signed in there", async () => {
   const kim = await account("kim@example.com");
   const lee = await account("lee@example.com");
   const laptop = browser(`${FCM}family-laptop`);
   const phone = browser(`${FCM}kim-phone`);
   await pushRoute.POST(call("POST", kim.cookie, laptop.sub));
   await pushRoute.POST(call("POST", await signIn(kim), phone.sub));
-  const cookieOf = (res: Response) => (res.headers.get("set-cookie") ?? "").split(";")[0];
-  const signInOnTop = async (route: { POST: (r: Request) => Promise<Response> }, path: string, cookie: string, body: object) => {
+  // The browser's cookies after a sign-in there: the new default, and the list of its accounts.
+  const after = (cookie: string, res: Response) => {
+    const jar = new Map(cookie.split("; ").map((c) => [c.slice(0, c.indexOf("=")), c.slice(c.indexOf("=") + 1)] as [string, string]));
+    for (const set of res.headers.getSetCookie()) {
+      const [pair] = set.split(";");
+      const name = pair.slice(0, pair.indexOf("="));
+      if (/Max-Age=0/.test(set)) jar.delete(name);
+      else jar.set(name, pair.slice(pair.indexOf("=") + 1));
+    }
+    return [...jar].map(([k, v]) => `${k}=${v}`).join("; ");
+  };
+  const signInToo = async (route: { POST: (r: Request) => Promise<Response> }, path: string, cookie: string, body: object) => {
     const res = await route.POST(
       new Request(`${ORIGIN}${path}`, { method: "POST", headers: { "content-type": "application/json", origin: ORIGIN, cookie }, body: JSON.stringify(body) }),
     );
     assert.equal(res.status, 200, path);
-    return cookieOf(res);
+    return { cookie: after(cookie, res), account: ((await res.json()) as { account?: string }).account ?? "" };
   };
   const reaches = async (userId: string) => {
     sent = [];
     await push.sendPush(userId, { title: "Payroll check", body: "Your salary arrived" });
-    return sent.map((s) => s.url);
+    return sent.map((s) => s.url).sort();
   };
+  const both = [laptop.endpoint, phone.endpoint].sort();
 
-  // Lee opens an emailed sign-in link on the laptop while Kim is still signed in there.
-  const leeCookie = await signInOnTop(linkRoute, "/api/auth/email-link", kim.cookie, { token: await createSignInLink(lee.email, "/"), email: lee.email });
-  assert.deepEqual(await reaches(kim.id), [phone.endpoint], "Kim's phone still gets hers, the laptop doesn't");
-  // Lee turns alerts on there (the same push address), then Kim signs in on top with her password.
-  await pushRoute.POST(call("POST", leeCookie, laptop.sub));
-  const kimCookie = await signInOnTop(loginRoute, "/api/auth/login", leeCookie, { email: kim.email, password: "old password" });
-  assert.deepEqual(await reaches(lee.id), []);
-  // Kim turns them on there again, and someone makes a new account on top.
-  await pushRoute.POST(call("POST", kimCookie, laptop.sub));
-  assert.deepEqual((await reaches(kim.id)).sort(), [laptop.endpoint, phone.endpoint].sort());
-  await signInOnTop(signupRoute, "/api/auth/signup", kimCookie, { email: "mo@example.com", password: "a long password", name: "Mo" });
-  assert.deepEqual(await reaches(kim.id), [phone.endpoint]);
-  // Nobody was signed out by it: only alerts stopped.
-  assert.equal((await all("SELECT 1 FROM sessions WHERE user_id = ?", [kim.id])).length, 3);
+  // Lee opens an emailed sign-in link on the laptop, with Kim still signed in there: Kim stays, and so do her alerts.
+  const withLee = await signInToo(linkRoute, "/api/auth/email-link", kim.cookie, { token: await createSignInLink(lee.email, "/"), email: lee.email });
+  assert.equal(withLee.account, lee.id);
+  assert.deepEqual(await reaches(kim.id), both, "Kim's laptop still gets hers");
+  // Lee turns alerts on there too, from her tab (the same push address), and the laptop's alerts name each.
+  await pushRoute.POST(call("POST", withLee.cookie, laptop.sub, as(lee.id)));
+  assert.deepEqual(await reaches(lee.id), [laptop.endpoint]);
+  assert.equal((await stateAt(withLee.cookie, laptop.endpoint, kim.id)).on, true, "Kim's tab there still shows hers on");
+  // Kim signs in there again with her password (it keeps her sign-in), then someone makes a new account there.
+  const again = await signInToo(loginRoute, "/api/auth/login", withLee.cookie, { email: kim.email, password: "old password" });
+  const withMo = await signInToo(signupRoute, "/api/auth/signup", again.cookie, { email: "mo@example.com", password: "a long password", name: "Mo" });
+  assert.deepEqual(await reaches(kim.id), both);
+  assert.deepEqual(await reaches(lee.id), [laptop.endpoint]);
+  assert.deepEqual(await stateAt(withMo.cookie, laptop.endpoint, lee.id), { key: KEYS.VAPID_PUBLIC_KEY, on: true, here: true });
+  // Nobody was signed out by it.
+  assert.equal((await all("SELECT 1 FROM sessions WHERE user_id = ?", [kim.id])).length, 2);
+});
+
+test("a tab showing an account that isn't the browser's default turns alerts on for that account's own sign-in there", async () => {
+  const ana = await account("ana.jar@example.com");
+  const ben = await account("ben.jar@example.com");
+  const laptop = browser(`${FCM}ana-ben-laptop`);
+  // Ana is the default; Ben's tab turns alerts on.
+  const cookie = jarOf(ben.cookie, ana.cookie);
+  assert.equal((await pushRoute.POST(call("POST", cookie, laptop.sub, as(ben.id)))).status, 200);
+  assert.deepEqual((await rowsOf(ben.id)).map((r) => r.session_hash), [createHash("sha256").update(tokenOf(ben.cookie)).digest("hex")], "tied to Ben's sign-in, not Ana's");
+  assert.deepEqual(await stateAt(cookie, laptop.endpoint, ben.id), { key: KEYS.VAPID_PUBLIC_KEY, on: true, here: true }, "his switch reads On");
+  assert.deepEqual(await stateAt(cookie, laptop.endpoint, ana.id), { key: KEYS.VAPID_PUBLIC_KEY, on: false, here: true }, "Ana's reads Off, and the address is in use here");
+  assert.deepEqual(await stateAt(cookie, laptop.endpoint), { key: KEYS.VAPID_PUBLIC_KEY, on: false, here: true }, "a question naming no account is the default's");
+  sent = [];
+  assert.deepEqual(await push.sendPush(ben.id, { title: "Weekly summary", body: "Ready" }), { rows: 1, sent: 1, gone: 0 });
+  assert.equal(laptop.read(sent[0].body).url, `/?as=${ben.id}`);
+  // A test alert from his tab reaches it; one from Ana's has nothing to reach.
+  assert.equal((await pushRoute.POST(call("POST", cookie, { action: "test", endpoint: laptop.endpoint }, as(ben.id)))).status, 200);
+  assert.equal((await pushRoute.POST(call("POST", cookie, { action: "test", endpoint: laptop.endpoint }, as(ana.id)))).status, 400);
+  // Turning them off from Ben's tab: his row goes, and nobody else here uses the address.
+  const off = await pushRoute.DELETE(call("DELETE", cookie, { endpoint: laptop.endpoint }, as(ben.id)));
+  assert.deepEqual(await off.json(), { ok: true, here: false });
+  assert.deepEqual(await rowsOf(ben.id), []);
+  // An account this browser isn't signed in to gets Off, and nothing is said of it; with nobody signed in here, 401.
+  const cy = await account("cy.jar@example.com");
+  await pushRoute.POST(call("POST", cookie, laptop.sub, as(ana.id)));
+  assert.deepEqual(await stateAt(cookie, laptop.endpoint, cy.id), { key: KEYS.VAPID_PUBLIC_KEY, on: false, here: true });
+  assert.equal((await pushRoute.POST(call("POST", cookie, laptop.sub, as(cy.id)))).status, 401);
+  assert.equal((await pushRoute.GET(new Request(`${ORIGIN}/api/push?e=${hashOf(laptop.endpoint)}`, { headers: as(ana.id) }))).status, 401);
 });
 
 test("one row per sign-in, and /admin counts only browsers alerts can still reach", async () => {
@@ -495,7 +576,10 @@ test("the route: who may turn alerts on, the switch's state, a test alert, and t
   const hal = await account("hal@example.com");
   const phone = browser(`${FCM}hal-phone`);
   const hash = createHash("sha256").update(phone.endpoint).digest("hex");
-  const state = async (cookie = hal.cookie) => (await (await pushRoute.GET(new Request(`${ORIGIN}/api/push?e=${hash}`, { headers: { cookie } }))).json()) as { key: string | null; on: boolean };
+  const state = async (cookie = hal.cookie) => {
+    const { key, on } = (await (await pushRoute.GET(new Request(`${ORIGIN}/api/push?e=${hash}`, { headers: { cookie } }))).json()) as { key: string | null; on: boolean };
+    return { key, on };
+  };
 
   assert.equal((await pushRoute.GET(new Request(`${ORIGIN}/api/push`))).status, 401);
   assert.deepEqual(await state(), { key: KEYS.VAPID_PUBLIC_KEY, on: false });
@@ -590,8 +674,9 @@ const moment = () => new Promise((done) => setTimeout(done, 5));
 
 /**
  * public/sw.js run as a browser runs it, with Flash's real GET /api/push for its questions (sent
- * with cookie(), the browser's session cookie now): what it shows, the windows a tap opens or
- * focuses, and whether its push subscription is kept.
+ * with cookie(), the browser's cookies now, and the headers the worker gives, like the account it
+ * asks as): what it shows, the windows a tap opens or focuses, and whether its push subscription is
+ * kept.
  */
 function serviceWorker(endpoint: string, cookie: () => string, windows: (string | Window)[] = [], replacesByTag = true) {
   const listeners: Record<string, (event: object) => void> = {};
@@ -653,10 +738,10 @@ function serviceWorker(endpoint: string, cookie: () => string, windows: (string 
       openWindow: async (url: string) => void opened.push(url),
     },
   };
-  const ask = async (path: string) => {
+  const ask = async (path: string, init: { headers?: Record<string, string> } = {}) => {
     if (state.offline) throw new TypeError("Failed to fetch");
     const delay = state.delays.shift() ?? 0;
-    const answer = await pushRoute.GET(new Request(new URL(path, ORIGIN), { headers: { cookie: cookie() } }));
+    const answer = await pushRoute.GET(new Request(new URL(path, ORIGIN), { headers: { ...init.headers, cookie: cookie() } }));
     if (delay) await new Promise((done) => setTimeout(done, delay));
     return answer;
   };
@@ -785,7 +870,7 @@ test("in Safari, where a tag replaces nothing, an alert closes the earlier one w
     return mac.open(sent[0].body);
   };
   // "Send a test alert" pressed three times, one automation run that alerted twice, and two without a tag.
-  const test = JSON.stringify({ title: "Flash ∞ AI", body: "Alerts work on this device.", tag: "flash-test" });
+  const test = JSON.stringify({ url: `/?as=${ana.id}`, title: "Flash ∞ AI", body: "Alerts work on this device.", tag: "flash-test" });
   for (let i = 0; i < 3; i++) await worker.push(test);
   for (let i = 0; i < 2; i++) await worker.push(await alertOf({ title: "Weekly summary", body: "Ready", tag: "flash-run-r9" }));
   for (const title of ["Invoice check", "Invoice check"]) await worker.push(await alertOf({ title, body: "Paid" }));
@@ -821,7 +906,7 @@ test("two alerts with the same tag that arrive together leave the later one on t
   };
   const started = await alertOf("Started");
   const ready = await alertOf("Ready: 3 competitors changed prices");
-  const test = JSON.stringify({ title: "Flash ∞ AI", body: "Alerts work on this device.", tag: "flash-test" });
+  const test = JSON.stringify({ url: `/?as=${ana.id}`, title: "Flash ∞ AI", body: "Alerts work on this device.", tag: "flash-test" });
   for (const replacesByTag of [true, false]) {
     const where = replacesByTag ? "Chrome, Edge and Firefox" : "Safari";
     // The laptop wakes, and the push service hands over both alerts of one run it held; or "Send a
@@ -860,6 +945,81 @@ test("an alert whose check answers late still shows before a later one that foun
   const second = worker.push(salary);
   await Promise.all([first, second]);
   assert.deepEqual(worker.tray(), [{ title: "Flash ∞ AI", body: "", tag: "flash-hidden" }], "her words don't stay after the sign-in ended there");
+});
+
+test("the service worker asks about each alert as its own account, so another account signed in there never hides it", async () => {
+  const dan = await account("dan.sw@example.com");
+  const cara = await account("cara.sw@example.com");
+  const laptop = browser(`${FCM}dan-cara-laptop`);
+  // Dan turns alerts on while he's alone in the browser; then Cara signs in there too, and she is
+  // the default now. Dan stays signed in, in his own tab.
+  await pushRoute.POST(call("POST", dan.cookie, laptop.sub));
+  let cookie = jarOf(dan.cookie, cara.cookie);
+  const worker = serviceWorker(laptop.endpoint, () => cookie);
+  const alertOf = async (user: { id: string }, notice: { title: string; body: string; tag: string }) => {
+    sent = [];
+    await push.sendPush(user.id, notice);
+    return laptop.open(sent.find((s) => s.url === laptop.endpoint)!.body);
+  };
+  const hidden = { title: "Flash ∞ AI", body: "", tag: "flash-hidden" };
+  await worker.push(await alertOf(dan, { title: "Dan's invoice check", body: "Paid", tag: "flash-run-d1" }));
+  const dans = { title: "Dan's invoice check", body: "Paid", tag: "flash-run-d1" };
+  assert.deepEqual(worker.tray(), [dans], "his words, though Cara is the default");
+  assert.equal(worker.state.subscribed, true);
+
+  // Cara turns them on too, with the same subscription; each alert there names its account now.
+  await pushRoute.POST(call("POST", cookie, laptop.sub, as(cara.id)));
+  await worker.push(await alertOf(cara, { title: "Cara's weekly summary", body: "Ready", tag: "flash-run-c1" }));
+  const caras = { title: "Cara's weekly summary", body: "For cara.sw@example.com\nReady", tag: "flash-run-c1" };
+  assert.deepEqual(worker.tray(), [dans, caras]);
+
+  // Dan logs out of the laptop, with an alert of his still on its way: it shows no words, his
+  // earlier one goes, and Cara's stays, with the subscription her alerts come by.
+  const waiting = await alertOf(dan, { title: "Dan's invoice check", body: "Overdue", tag: "flash-run-d2" });
+  assert.equal((await logOut(cookie, dan.id)).status, 200);
+  cookie = cara.cookie;
+  await worker.push(waiting);
+  assert.deepEqual(worker.tray(), [caras, hidden]);
+  assert.equal(worker.state.subscribed, true, "Cara still gets hers");
+  await worker.push(await alertOf(cara, { title: "Cara's weekly summary", body: "Ready again", tag: "flash-run-c2" }));
+  assert.deepEqual(worker.tray().at(-1), { title: "Cara's weekly summary", body: "Ready again", tag: "flash-run-c2" });
+
+  // Once nobody is signed in there, an alert still on its way takes every alert off the screen, and the subscription goes.
+  const last = await alertOf(cara, { title: "Cara's weekly summary", body: "Ready once more", tag: "flash-run-c3" });
+  assert.equal((await logOut(cookie, cara.id)).status, 200);
+  cookie = "";
+  await worker.push(last);
+  assert.deepEqual(worker.tray(), [hidden]);
+  assert.equal(worker.state.subscribed, false);
+});
+
+test("a sign-in that ended takes only its own account's alerts off a screen it shares", async () => {
+  const eli = await account("eli.ended@example.com");
+  const fay = await account("fay.ended@example.com");
+  const phoneCookie = await signIn(eli);
+  const laptop = browser(`${FCM}eli-fay-laptop`);
+  const cookie = jarOf(eli.cookie, fay.cookie);
+  await pushRoute.POST(call("POST", cookie, laptop.sub, as(eli.id)));
+  await pushRoute.POST(call("POST", cookie, laptop.sub, as(fay.id)));
+  const worker = serviceWorker(laptop.endpoint, () => cookie);
+  for (const [user, title] of [
+    [eli, "Eli's payroll check"],
+    [fay, "Fay's weekly summary"],
+  ] as const) {
+    sent = [];
+    await push.sendPush(user.id, { title, body: "Ready", tag: `flash-run-${user.id}` });
+    await worker.push(laptop.open(sent.find((s) => s.url === laptop.endpoint)!.body));
+  }
+  assert.deepEqual(worker.tray().map((n) => n.title), ["Eli's payroll check", "Fay's weekly summary"]);
+  // Fay turns hers off there (her alert stays on the screen), then Eli presses "Log out of all
+  // devices" on his phone: the laptop, where nobody else gets alerts now, is told his sign-in ended.
+  await pushRoute.DELETE(call("DELETE", cookie, { endpoint: laptop.endpoint }, as(fay.id)));
+  sent = [];
+  await logOut(phoneCookie, undefined, { everywhere: true });
+  assert.deepEqual(sent.map((s) => s.url), [laptop.endpoint]);
+  await worker.push(laptop.open(sent[0].body));
+  assert.deepEqual(worker.tray().map((n) => n.title), ["Fay's weekly summary", "Flash ∞ AI"], "Fay's is hers to dismiss");
+  assert.equal(worker.state.subscribed, false, "nobody there gets alerts by it");
 });
 
 test("a reset with two-step sign-in on takes her alerts off the screen it's opened on too, since it's signed out until the code", async () => {
@@ -929,7 +1089,7 @@ test("\"Log out of all devices\", a password change or a reset takes her alerts 
     // screen is its page's to clear, and after a password change or a reset it's signed in again and
     // turns its alerts back on), nor to the browser that's Ben's now.
     assert.deepEqual(sent.map((s) => s.url), [library.endpoint], how);
-    assert.deepEqual(library.read(sent[0].body), { ended: true });
+    assert.deepEqual(library.read(sent[0].body), { ended: true, as: ana.id });
     assert.deepEqual(await rowsOf(ana.id), []);
     // Its service worker is told her sign-in there ended: her alert leaves the screen, and so does
     // the subscription. That needs no answer from Flash, since nothing would come later to clear them.
@@ -963,7 +1123,7 @@ test("an alert puts a dot on the app's icon, unless Flash is on the screen and i
   const di = await account("di.badge@example.com");
   const phone = browser(`${FCM}di-badge`);
   await pushRoute.POST(call("POST", di.cookie, phone.sub));
-  const test = JSON.stringify({ title: "Flash ∞ AI", body: "Alerts work on this device.", tag: "flash-test" });
+  const test = JSON.stringify({ url: `/?as=${di.id}`, title: "Flash ∞ AI", body: "Alerts work on this device.", tag: "flash-test" });
   const dots = async (windows: (string | Window)[]) => {
     const worker = serviceWorker(phone.endpoint, () => di.cookie, windows);
     await worker.push(test);
@@ -992,9 +1152,9 @@ test("an alert without a tag shows on its own; one with a tag replaces the last 
   assert.equal(await tagOf("flash-run-r1"), "flash-run-r1");
 
   const worker = serviceWorker(phone.endpoint, () => cy.cookie);
-  await worker.push(JSON.stringify({ title: "Weekly summary", body: "Ready" }));
-  await worker.push(JSON.stringify({ title: "Invoice check", body: "Paused: credits ran out" }));
-  await worker.push(JSON.stringify({ title: "Flash ∞ AI", body: "Alerts work on this device.", tag: "flash-test" }));
+  await worker.push(JSON.stringify({ url: `/?as=${cy.id}`, title: "Weekly summary", body: "Ready" }));
+  await worker.push(JSON.stringify({ url: `/?as=${cy.id}`, title: "Invoice check", body: "Paused: credits ran out" }));
+  await worker.push(JSON.stringify({ url: `/?as=${cy.id}`, title: "Flash ∞ AI", body: "Alerts work on this device.", tag: "flash-test" }));
   assert.deepEqual(
     worker.shown.map((n) => [n.title, n.options.tag, n.options.renotify]),
     [

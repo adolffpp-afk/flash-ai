@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { Flash } from "@/components/Flash";
-import { SESSION_COOKIE } from "@/lib/server/auth.ts";
+import { ACCOUNTS_COOKIE, ACCOUNTS_COOKIE_HTTP, SESSION_COOKIE } from "@/lib/server/auth.ts";
 import { pricingInfo } from "@/lib/server/pricing.ts";
 import { engineStatus } from "@/lib/server/status.ts";
 
@@ -10,6 +10,8 @@ import { engineStatus } from "@/lib/server/status.ts";
  * session turns out to have expired).
  */
 export default async function Home() {
-  const signedIn = (await cookies()).has(SESSION_COOKIE);
+  const jar = await cookies();
+  // Signed in to one account or several (see the jar in auth.ts).
+  const signedIn = jar.has(SESSION_COOKIE) || jar.has(ACCOUNTS_COOKIE) || jar.has(ACCOUNTS_COOKIE_HTTP);
   return <Flash signedIn={signedIn} initialStatus={engineStatus()} pricing={signedIn ? undefined : pricingInfo()} />;
 }

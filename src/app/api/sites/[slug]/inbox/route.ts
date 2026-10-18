@@ -1,8 +1,10 @@
+import { after } from "next/server";
 import { appUrl, getUser, unauthorized } from "@/lib/server/auth.ts";
 import { translatorFor } from "@/lib/server/i18n.ts";
 import { clientIp } from "@/lib/server/limits.ts";
 import { deleteMessage, messageRows, ownsSite, readMessages, receiveMessage } from "@/lib/server/inbox.ts";
 import { one } from "@/lib/server/db.ts";
+import { countSteps, matchVisit } from "@/lib/server/funnel.ts";
 import { csvName, toCsv } from "@/lib/csv.ts";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +26,8 @@ export async function POST(request: Request, ctx: RouteContext<"/api/sites/[slug
   const body = (await request.json().catch(() => ({}))) as { form?: unknown; data?: unknown; consent?: unknown };
   const result = await receiveMessage(slug, body, clientIp(request), appUrl(request));
   if ("error" in result) return Response.json({ error: result.error }, { status: result.status, headers: CORS });
+  // A form that was taken counts for the visit its sender came on (see funnel.ts), after the answer.
+  after(async () => countSteps(slug, await matchVisit(slug, request), ["form"]));
   return Response.json({ ok: true }, { headers: CORS });
 }
 

@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import vm from "node:vm";
 import { crc32 as zlibCrc32 } from "node:zlib";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, readFileSync, readdirSync } from "node:fs";
@@ -67,6 +68,23 @@ test("a downloaded app runs anywhere: it brings its own flashDB", () => {
   assert.equal(standalonePage(page), page);
   // A page with no head still gets it.
   assert.match(standalonePage("<h1>Hi</h1>"), /^\s*<script>/);
+});
+
+test("an app downloaded with an older stand-in gets the new one, with flashDB.track", async () => {
+  // What a download before flashDB.track looked like: the old mark, and a stand-in without track.
+  const old = `<!doctype html><html><head><script>
+  /* Stand-in for Flash's built-in database (window.flashDB), so this app runs anywhere. */
+  if (!window.flashDB) (function () { window.flashDB = { async list() { return []; } }; })();
+</script><title>x</title></head><body><script>window.done = flashDB.track("booking");</script></body></html>`;
+  const page = standalonePage(old);
+  assert.ok(page.indexOf("Stand-in for Flash's built-in database (2)") < page.indexOf("Stand-in for Flash's built-in database (window.flashDB)"), "the new one goes first");
+  assert.equal(standalonePage(page), page, "and only once");
+  // Scripts run with window as their global, as in a browser.
+  const context = vm.createContext({ console: { info() {}, warn() {} }, JSON });
+  context.window = context;
+  for (const [, code] of page.matchAll(/<script>([\s\S]*?)<\/script>/g)) vm.runInContext(code, context);
+  assert.equal(typeof context.flashDB.track, "function");
+  assert.equal(await context.done, true);
 });
 
 test("file names come from the title, whatever it holds", () => {

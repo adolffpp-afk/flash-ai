@@ -1,16 +1,16 @@
 /*
  * Alerts on this phone or computer when Flash is closed (Web Push; the server side is
- * src/lib/server/push.ts, and public/sw.js shows them). The browser has one push subscription, and
- * the server keeps a row for each account that turned alerts on with it, tied to that account's
- * sign-in here. This device also remembers which accounts turned them on here (pushAccounts in
- * device-settings.ts), so that:
- *  - with nobody signed in here, the browser's subscription is dropped: nothing can arrive for
- *    someone who signed out, even if a row was missed;
+ * src/lib/server/push.ts, and public/sw.js shows them). The browser has one push subscription,
+ * shared by the accounts signed in here (see account-pin.ts), and the server keeps a row for each
+ * account that turned alerts on with it, tied to that account's sign-in here. This device also
+ * remembers which accounts turned them on here (pushAccounts in device-settings.ts), so that:
+ *  - the subscription is dropped once no account signed in here gets alerts by it, and with nobody
+ *    signed in here: nothing can arrive for someone who signed out, even if a row was missed;
  *  - after a sign-in ends by itself (every 30 days, a password change, "Log out of all devices" on
  *    another device), alerts come back on for that account when it's signed in here again, while
  *    logging out here on purpose forgets them (logOutHere);
- *  - turning them on makes a new subscription, so nothing another account turned on with the old one
- *    can follow (on main a browser holds one account);
+ *  - turning them on while no other account here gets them makes a new subscription, so nothing
+ *    turned on with the old one can follow;
  *  - alerts still on the screen go with the sign-in they came for (closeAlerts).
  */
 import { useEffect } from "react";
@@ -78,11 +78,11 @@ export function refusedWords(answer: NotificationPermission): string {
 }
 
 /**
- * Takes Flash's alerts off this screen: all of them with nobody signed in here, else every one but
- * userId's (the page an alert opens names its account, as=), so the next person on a shared
- * computer can't read the last one's.
+ * Takes Flash's alerts off this screen when close says so of their account (the page an alert
+ * opens names it, as=; null for one with no words, which names none), so the next person on a
+ * shared computer can't read the last one's.
  */
-async function closeAlerts(userId: string | null): Promise<void> {
+async function closeAlerts(close: (account: string | null) => boolean): Promise<void> {
   if (pushSupport() !== "yes") return;
   const reg = await navigator.serviceWorker.getRegistration().catch(() => undefined);
   for (const alert of (await reg?.getNotifications().catch(() => [])) ?? []) {
@@ -90,7 +90,7 @@ async function closeAlerts(userId: string | null): Promise<void> {
     try {
       account = new URL(String((alert.data as { url?: unknown } | null)?.url)).searchParams.get("as");
     } catch {}
-    if (!userId || account !== userId) alert.close();
+    if (close(account)) alert.close();
   }
 }
 
@@ -135,14 +135,15 @@ async function subscription(): Promise<PushSubscription | null> {
   return (await reg?.pushManager.getSubscription().catch(() => null)) ?? null;
 }
 
-type ServerState = { key: string | null; on: boolean };
+// on: for this tab's account; here: for any account signed in here, which then shares the subscription.
+type ServerState = { key: string | null; on: boolean; here: boolean };
 const serverState = async (sub: PushSubscription | null) =>
   api<ServerState>(`/api/push${sub ? `?e=${await endpointHash(sub.endpoint)}` : ""}`);
 
 /**
  * A new subscription with the server's key, in place of any this browser had: alerts sent to the old
- * address (another account's, or ones made with old keys) then never arrive, and the push service
- * answers "gone" for it, which deletes it on the server.
+ * address (an account's no longer signed in here, or ones made with old keys) then never arrive, and
+ * the push service answers "gone" for it, which deletes it on the server.
  */
 async function subscribe(key: string): Promise<PushSubscription> {
   const reg = await worker();
@@ -184,7 +185,7 @@ export async function turnOnPush(userId: string, key: string): Promise<void> {
   if (allowed !== "granted") throw new Error(refusedWords(allowed));
   let sub: PushSubscription;
   try {
-    sub = await subscribe(key);
+    sub = await shared(key, await subscription());
   } catch (e) {
     const name = e instanceof DOMException ? e.name : "";
     // The browser has no push service to sign up with, which can't be told before trying: a private
@@ -197,15 +198,24 @@ export async function turnOnPush(userId: string, key: string): Promise<void> {
 }
 
 /**
- * Turns alerts off for this account here. Only one account is ever signed in to Flash in a browser,
- * so the browser's subscription goes too, and with it anything still on its way.
+ * Turns alerts off for this account here. Once no other account signed in here gets them, the
+ * browser's subscription goes too, and with it anything still on its way.
  */
 export async function turnOffPush(userId: string): Promise<void> {
   want(userId, false);
   const sub = await subscription();
   if (!sub) return;
-  await api("/api/push", { method: "DELETE", json: { endpoint: sub.endpoint } }).catch(() => {});
-  await sub.unsubscribe().catch(() => false);
+  const left = await api<{ here?: boolean }>("/api/push", { method: "DELETE", json: { endpoint: sub.endpoint } }).catch(() => null);
+  if (!left?.here) await sub.unsubscribe().catch(() => false);
+}
+
+/**
+ * The subscription for this account to turn alerts on with: the browser's own when another account
+ * signed in here gets alerts by it (made with the server's key), else a new one (see subscribe).
+ */
+async function shared(key: string, sub: PushSubscription | null): Promise<PushSubscription> {
+  if (sub && madeWith(sub, key) && (await serverState(sub)).here) return sub;
+  return subscribe(key);
 }
 
 /** Sends this browser a test alert; throws with the server's words when it can't. */
@@ -215,20 +225,21 @@ export async function sendTestPush(): Promise<void> {
 }
 
 /**
- * Puts this browser in step with who is signed in (userId, or null for nobody): alerts on the screen
- * that aren't theirs go; with nobody, the subscription goes; for an account that turned alerts on
- * here, they're turned on again when the server lost them (a password change, a new sign-in, new
- * keys on the server); a subscription that no one signed in here wants goes.
+ * Puts this browser in step with who is signed in: userId is this tab's account (null for nobody
+ * signed in here), accounts every account signed in here. Alerts on the screen that aren't theirs
+ * go; with nobody, the subscription goes; for an account that turned alerts on here, they're turned
+ * on again when the server lost them (a password change, a new sign-in, new keys on the server); a
+ * subscription that no account signed in here gets alerts by goes.
  */
-export function syncPush(userId: string | null): Promise<void> {
-  const done = syncing.then(() => syncNow(userId));
+export function syncPush(userId: string | null, accounts: readonly string[] = []): Promise<void> {
+  const done = syncing.then(() => syncNow(userId, accounts));
   syncing = done.catch(() => {});
   return done;
 }
 
-async function syncNow(userId: string | null): Promise<void> {
+async function syncNow(userId: string | null, accounts: readonly string[]): Promise<void> {
   if (pushSupport() !== "yes") return;
-  await closeAlerts(userId);
+  await closeAlerts((account) => !userId || (account !== userId && !accounts.includes(account ?? "")));
   const sub = await subscription();
   if (!userId) {
     await sub?.unsubscribe().catch(() => false);
@@ -237,7 +248,7 @@ async function syncNow(userId: string | null): Promise<void> {
   const wants = wanted().includes(userId) && Notification.permission === "granted";
   // The usual case: alerts are off here, and nothing needs asking.
   if (!sub && !wants) return;
-  const { key, on } = await serverState(sub);
+  const { key, on, here } = await serverState(sub);
   // Alerts were taken off Flash's server: nothing can come, and nothing changes here.
   if (!key) return;
   if (on && sub && madeWith(sub, key)) {
@@ -247,35 +258,39 @@ async function syncNow(userId: string | null): Promise<void> {
   }
   if (!wants) {
     if (Notification.permission !== "granted") want(userId, false);
-    await sub?.unsubscribe().catch(() => false);
+    // Kept while another account signed in here gets alerts by it.
+    if (!here) await sub?.unsubscribe().catch(() => false);
     return;
   }
-  const fresh = await subscribe(key);
+  const fresh = sub && here && madeWith(sub, key) ? sub : await subscribe(key);
   await api("/api/push", { method: "POST", json: fresh.toJSON() });
 }
 
 /**
- * Logging out here on purpose (Flash's sign-out; everywhere: "Log out of all devices" in Settings,
- * which already signed out every device, this one included). This device forgets that this account
- * wanted alerts, so they stay off when it signs in here again; a sign-in that ends by itself keeps
- * the wish (usePushSync). Its alerts still on the screen go.
+ * Once these accounts were logged out here on purpose (Flash's Log out, of one account or all of
+ * them; or "Log out of all devices" in Settings, which signed out every device, this one included):
+ * this device forgets that they wanted alerts, so those stay off when they sign in here again (a
+ * sign-in that ends by itself keeps the wish, see usePushSync), and their alerts still on the screen
+ * go. The other accounts signed in here keep theirs; the next sync drops the subscription once none
+ * of them gets alerts by it.
  */
-export async function logOutHere(userId: string | undefined, everywhere = false): Promise<void> {
-  if (userId) want(userId, false);
-  await closeAlerts(null);
-  if (!everywhere) await api("/api/auth/logout", { method: "POST" }).catch(() => {});
+export async function logOutHere(userIds: readonly string[]): Promise<void> {
+  for (const id of userIds) want(id, false);
+  await closeAlerts((account) => account !== null && userIds.includes(account));
 }
 
 /**
- * Keeps this browser's alerts in step with who is signed in (see syncPush): userId is the account,
- * null once nobody is, and undefined while it's still loading. A sign-in that ends by itself, with
- * Flash open or closed, keeps this device's wish for alerts; only logOutHere forgets it. Opening
- * Flash also clears the dot alerts put on its app icon.
+ * Keeps this browser's alerts in step with who is signed in (see syncPush): userId is this tab's
+ * account, null once nobody is signed in here, and undefined while it's still loading; accounts,
+ * every account signed in here. A sign-in that ends by itself, with Flash open or closed, keeps this
+ * device's wish for alerts; only logOutHere forgets it. Opening Flash also clears the dot alerts put
+ * on its app icon.
  */
-export function usePushSync(userId: string | null | undefined): void {
+export function usePushSync(userId: string | null | undefined, accounts: readonly string[] = []): void {
+  const all = accounts.join(" ");
   useEffect(() => {
-    if (userId !== undefined) syncPush(userId).catch(() => {});
-  }, [userId]);
+    if (userId !== undefined) syncPush(userId, all.split(" ").filter(Boolean)).catch(() => {});
+  }, [userId, all]);
   useEffect(() => {
     const clear = () => {
       if (document.visibilityState === "visible") navigator.clearAppBadge?.().catch(() => {});

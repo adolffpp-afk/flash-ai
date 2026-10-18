@@ -8,6 +8,7 @@ import { LogoMark } from "@/app/brand";
 import { AdminReports } from "@/components/AdminReports";
 import type { FixedCost, ProfitReport } from "@/lib/server/profit.ts";
 import type { ReportedItem } from "@/lib/server/reports.ts";
+import { STORE_FACTOR } from "@/lib/assistants";
 
 type Stats = {
   days: number;
@@ -51,6 +52,9 @@ type Stats = {
   virusScan?: { missing: string[]; ready: boolean | null };
   // Alerts when Flash is closed (see push.ts): whether VAPID_* are set and belong together (names only), and browsers with alerts on.
   push?: { setUp: boolean; keysOk: boolean; missing: string[]; problem: string; browsers: number };
+  // Assistants' file search on this database (not switched on for anyone yet): the full-text index or the
+  // slower fallback, and the space their files take for each byte of text (null until there is enough).
+  assistantSearch?: { mode: "index" | "fallback"; factor: number | null };
   byModel: { model: string; provider: string; requests: number; costCents: number }[];
   series: { day: number; requests: number; costCents: number }[];
   topUsers: { email: string; requests: number; credits: number; costCents: number }[];
@@ -866,6 +870,22 @@ export function AdminDashboard({ initialTab }: { initialTab?: string }) {
                 note="Alerts on people's phones and computers when Flash is closed. Free: browsers' own push services carry them, signed with Flash's keys."
               >
                 <PushKeyMaker {...stats.push} />
+              </Panel>
+            )}
+            {stats.assistantSearch && (
+              <Panel title="Assistants" note="Not switched on for anyone yet. How their files will be searched on this database.">
+                {stats.assistantSearch.mode === "index" ? (
+                  <div className="text-sm text-emerald-300">Assistant search: full-text index</div>
+                ) : (
+                  <div className="text-sm text-amber-300">Assistant search: slower fallback</div>
+                )}
+                <div className="mt-1 text-xs text-zinc-500">
+                  {stats.assistantSearch.mode === "index"
+                    ? "The database finds the passages a message needs by itself."
+                    : "This database has no full-text index for assistant files, or holds files stored before it had one, so each message reads all of an assistant's file text to find its passages. It works, but is slower for big files."}
+                  {stats.assistantSearch.factor !== null &&
+                    ` Their files take ${stats.assistantSearch.factor.toFixed(1)}× their text in the database, and count ${STORE_FACTOR}× against plan storage.`}
+                </div>
               </Panel>
             )}
             <Panel title="Other bills" note="Payments and the bills you added under Net profit">
