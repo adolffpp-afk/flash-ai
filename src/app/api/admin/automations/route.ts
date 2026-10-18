@@ -1,8 +1,9 @@
-import { bodyOf, burnIn, burnInSpec, createAutomation, gate, runNow } from "@/lib/server/automation-api.ts";
+import { bodyOf, burnIn, burnInSpec, createAutomation, deleteAutomation, gate, LIMITS, overRunLimits, runNow } from "@/lib/server/automation-api.ts";
 import { estimateSpec } from "@/lib/server/automation-estimate.ts";
 import { isAdmin } from "@/lib/server/auth.ts";
 import { validTimeZone } from "@/lib/context-note.ts";
 import { randomId } from "@/lib/server/ids.ts";
+import { overLimit } from "@/lib/server/limits.ts";
 
 /*
  * The burn-in card on /admin (admins only). GET is the card: setup, cron health, the admin's test
@@ -11,7 +12,9 @@ import { randomId } from "@/lib/server/ids.ts";
  *   nothing;
  * - { action: "make", kind: "once" | "daily" | "manual", prompt?, level?, mode?, timeZone, seenMax }
  *   makes one at the price the admin saw (409 price_changed when it went up), and with kind "manual"
- *   and run: true runs it once now as well.
+ *   and run: true runs it once now as well. Making counts against Save's limit and running against
+ *   Run now's; one made to run that is refused (no credits, say) is deleted again, so a refused Run
+ *   once now leaves nothing behind.
  */
 export const maxDuration = 800;
 
@@ -49,10 +52,19 @@ export async function POST(request: Request) {
   }
   const kind = KINDS.find((k) => k === body.kind);
   if (body.action !== "make" || !kind) return Response.json({ error: "Choose one of the test automations." }, { status: 400 });
+  const run = kind === "manual" && body.run === true;
+  const [max, windowMs] = LIMITS.create;
+  if (await overLimit(`auto:create:${g.user.id}`, max, windowMs)) return Response.json({ error: g.t("Too many requests. Try again in an hour.") }, { status: 429 });
+  // A new automation has no runs of its own yet: the account's limit is the one to count.
+  const limited = run ? await overRunLimits(g, null) : null;
+  if (limited) return limited;
   const { spec, name } = burnInSpec(kind, timeZone, prompt, level, mode);
   // Saved only at the price the admin saw: createAutomation prices it again and answers 409 if it went up.
   const made = await createAutomation(g, { spec, name, timeZone, seenMax: body.seenMax });
-  if (made.status !== 201 || kind !== "manual" || body.run !== true) return made;
+  if (made.status !== 201 || !run) return made;
   const { automation } = (await made.clone().json()) as { automation: { id: string } };
-  return runNow(g, automation.id, { requestId: randomId(12), seenMax: body.seenMax });
+  const ran = await runNow(g, automation.id, { requestId: randomId(12), seenMax: body.seenMax });
+  // Refused (no credits, the month's limit, setup missing): nothing ran, so the test made for it goes again.
+  if (ran.status >= 400) await deleteAutomation(g, automation.id);
+  return ran;
 }

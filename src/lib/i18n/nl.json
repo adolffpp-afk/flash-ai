@@ -551,6 +551,8 @@
  "Exported {count} chats. Check your downloads.": "{count} chats geëxporteerd. Kijk in je downloads.",
  "Exporting chat {number} of {count}…": "Chat {number} van {count} exporteren…",
  "Extra people": "Extra mensen",
+ "Failed: Flash couldn't finish it. Charged {credits} credits for the work done.": "Mislukt: Flash kon haar niet afmaken. {credits} credits in rekening gebracht voor het gedane werk.",
+ "Failed: Flash couldn't get an answer. Nothing was charged.": "Mislukt: Flash kreeg geen antwoord. Er is niets in rekening gebracht.",
  "Families who want healthier bread": "Gezinnen die gezonder brood willen",
  "Faster": "Sneller",
  "Fastest": "Snelst",

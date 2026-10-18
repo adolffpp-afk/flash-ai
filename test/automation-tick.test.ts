@@ -378,8 +378,16 @@ const OPEN_ONLY = new Set(["automation_runs_due", "automation_runs_open", "autom
  */
 const wholeTable = (line: string) => {
   const m = /^SCAN (automation_runs|automation_run_steps|credit_holds|credit_ledger|r|s|h)(?: USING (?:COVERING )?INDEX (\w+))?$/.exec(line);
-  return Boolean(m) && !(m![2] && OPEN_ONLY.has(m![2]));
+  return (Boolean(m) && !(m![2] && OPEN_ONLY.has(m![2]))) || HISTORY.test(line);
 };
+/**
+ * A search through an index that holds an account's or an automation's whole history, with no time
+ * range (every run or charge it ever had): as costly as a scan once that history is long.
+ */
+const HISTORY = /^SEARCH \w+ USING (?:COVERING )?INDEX (?:automation_runs_user \(user_id=\?\)|automation_runs_list \(automation_id=\?\)|credit_ledger_user \(user_id=\?\))$/;
+/** A statement that reads newest first in its index's order and stops at its LIMIT (an "only if changed" step's previous result). */
+const inOrder = (sql: string) => /ORDER BY r\.created_at DESC, r\.id DESC, s\.attempt DESC LIMIT 1$/.test(sql.trim());
+const readsHistory = (p: { sql: string; plan: string[] }) => p.plan.some((line) => (inOrder(p.sql) ? wholeTable(line) && !HISTORY.test(line) : wholeTable(line)));
 /** Finished runs (and a step with detail each) for history. */
 async function history(o: { automationId: (i: number) => string; userId: (i: number) => string; count: number; at: (i: number) => number; detail?: boolean; prefix: string }) {
   const out = gzipSync(JSON.stringify({ text: "x".repeat(200) }));
@@ -460,12 +468,12 @@ test("a slot's checks and the daily job read through indexes, never an automatio
   const plans = await plansOf(() => T.runTick("tk", { dispatch: async () => {} }));
   assert.ok(plans.length > 10);
   assert.ok(plans.some((p) => p.sql.startsWith("WITH clock AS")), "the claim was planned");
-  for (const p of plans) assert.ok(!p.plan.some(wholeTable), `${p.sql}\n${p.plan.join(" | ")}`);
+  for (const p of plans) assert.ok(!readsHistory(p), `${p.sql}\n${p.plan.join(" | ")}`);
   const slot = plans.filter((p) => /outcome = 'superseded'|INSERT INTO automation_runs/.test(p.sql));
   assert.equal(slot.length, 2);
   for (const p of slot) assert.ok(p.plan.some((l) => l.includes("automation_runs_open")), `${p.sql}\n${p.plan.join(" | ")}`);
   const health = await plansOf(async () => (await import("../src/lib/server/automation-admin.ts")).cronHealth());
-  for (const p of health) assert.ok(!p.plan.some(wholeTable), `${p.sql}\n${p.plan.join(" | ")}`);
+  for (const p of health) assert.ok(!readsHistory(p), `${p.sql}\n${p.plan.join(" | ")}`);
   const writes = health.find((p) => p.sql.includes("COUNT(*) AS n FROM automation_runs WHERE created_at >= ?"));
   assert.equal(writes, undefined, "the month's writes are read from the daily job's count");
 });
@@ -494,10 +502,18 @@ test("the burn-in card, a receipt, /admin's lines and an 'only if changed' step'
     assert.equal(await previousResult(aid, "new", "a1"), "x".repeat(200));
   });
   assert.ok(plans.length > 10);
-  for (const p of plans) assert.ok(!p.plan.some(wholeTable), `${p.sql}\n${p.plan.join(" | ")}`);
+  for (const p of plans) assert.ok(!readsHistory(p), `${p.sql}\n${p.plan.join(" | ")}`);
   // The card works out each run's holds for the 20 it shows only, and a previous result is the newest run's, read in order.
   const card = plans.find((p) => p.sql.includes("FROM (SELECT * FROM automation_runs WHERE user_id = ?"))!;
   assert.ok(card.plan.some((l) => l.includes("credit_holds_by_run")), card.plan.join(" | "));
+  // The card's 20 newest runs are a range of the account's newest, an automation's unseen count reads its
+  // unseen runs only, and the account's month total its automation charges of this month only.
+  const latest = card.plan.indexOf("CO-ROUTINE latest");
+  assert.deepEqual(card.plan.slice(latest + 1, latest + 3), ["SEARCH automation_runs USING INDEX automation_runs_user_new (user_id=?)", "SCAN latest"], "read newest first, no sort");
+  const unseen = plans.find((p) => p.sql.includes("seen_at = 0 LIMIT"))!;
+  assert.ok(unseen.plan.some((l) => l.includes("automation_runs_unseen")), unseen.plan.join(" | "));
+  const month = plans.find((p) => p.sql.includes("FROM credit_ledger WHERE user_id = ? AND automation_id <> ''"))!;
+  assert.ok(month.plan.some((l) => l.includes("credit_ledger_auto_user (user_id=? AND created_at>?)")), month.plan.join(" | "));
   const previous = plans.find((p) => p.sql.includes("SELECT s.output FROM automation_runs r"))!;
   assert.ok(previous.plan.some((l) => l.includes("automation_runs_list")) && !previous.plan.includes("USE TEMP B-TREE FOR ORDER BY"), previous.plan.join(" | "));
   await sql("DELETE FROM automation_runs");
@@ -603,9 +619,9 @@ test("the daily job's version prune keeps a version a run still follows, and tha
   const aid = await F.automation({ userId: u.id });
   // Edited twice while a run of version 1 waited (released, or parked).
   const v1 = (await one<{ spec: string; runner: number }>("SELECT spec, runner FROM automation_versions WHERE automation_id = ?", [aid]))!;
-  for (const v of [2, 3]) await sql("INSERT INTO automation_versions (automation_id, version, user_id, spec, runner, created_at) VALUES (?, ?, ?, ?, ?, 0)", [aid, v, u.id, v1.spec, v1.runner]);
-  await sql("UPDATE automations SET version = 3 WHERE id = ?", [aid]);
   const rid = await F.runRow({ automationId: aid, userId: u.id });
+  for (const v of [2, 3]) await sql("INSERT INTO automation_versions (automation_id, version, user_id, spec, runner, created_at) VALUES (?, ?, ?, ?, ?, ?)", [aid, v, u.id, v1.spec, v1.runner, Date.now()]);
+  await sql("UPDATE automations SET version = 3 WHERE id = ?", [aid]);
   await sql("DELETE FROM settings");
   assert.equal(await T.dailyJob(utcDay(Date.now())), true);
   const kept = await all<{ version: number }>("SELECT version FROM automation_versions WHERE automation_id = ? ORDER BY version", [aid]);

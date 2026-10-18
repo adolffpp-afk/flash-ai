@@ -706,6 +706,35 @@ test("a personal spec with no AI step is refused", () => {
   assert.deepEqual(A.parseSpec({ v: 1, trigger: { type: "manual" }, steps: [{ id: "n1", do: "notify", text: "Drink water" }] }), { error: A.SPEC_NEEDS_AI });
 });
 
+// A notice whose next jumps over the AI step: every run would post its notices and never call Claude.
+const SKIPS_AI = {
+  v: 1,
+  trigger: { type: "schedule", when: { kind: "hourly", every: 1, from: "00:00", to: "23:00" } },
+  steps: [
+    { id: "n1", do: "notify", text: "Drink a glass of water.", next: "n2" },
+    { id: "a1", do: "ai", mode: "research", level: "ultra", prompt: "Never reached." },
+    { id: "n2", do: "notify", text: "Stretch for a minute." },
+  ],
+} as const;
+
+test("a next that jumps over a step is refused, so no run can skip its AI step and run for free; a stored one ends invalid, uncharged", async () => {
+  assert.deepEqual(A.parseSpec(SKIPS_AI), { error: A.SPEC_INVALID });
+  // A next naming the step below it is the same path, and is kept.
+  const plain = A.parseSpec({ v: 1, trigger: { type: "manual" }, steps: [{ id: "a1", do: "ai", mode: "write", level: "sonic", prompt: "Hi", next: "n1" }, { id: "n1", do: "notify" }] });
+  assert.ok("spec" in plain);
+  // A version saved before this check (or written by hand) is read through parseSpec too: its run ends invalid before anything runs.
+  const u = await F.account("run51", 0);
+  const aid = await F.automation({ userId: u.id, spec: SKIPS_AI as unknown as Spec });
+  const rid = await F.runRow({ automationId: aid, userId: u.id, origin: "schedule" });
+  const calls = claude.state.seen.length;
+  await advance(rid);
+  const run = await runOf(rid);
+  assert.deepEqual([run!.status, run!.outcome, Number(run!.credits)], ["failed", "invalid", 0]);
+  assert.equal(claude.state.seen.length, calls, "nothing sent to Claude");
+  assert.equal((await stepsOf(rid)).length, 0, "no notice posted");
+  assert.equal((await noticesOf(u.id)).filter((n) => n.kind === "run_done").length, 0);
+});
+
 test("the runner never buys credits: no automation file calls auto top-up", async () => {
   const { readFileSync, readdirSync } = await import("node:fs");
   const dir = new URL("../src/lib/server/", import.meta.url);
@@ -1208,4 +1237,204 @@ test("an automation's instructions never ask the user anything, and mention a pr
   assert.ok(system.includes("Their location is unknown"), "where it ran is unknown");
   assert.equal(system.includes("ask for their city"), false, "no question back");
   assert.equal(system.includes("previous result"), false, "no previous result is sent");
+});
+
+// The fourth review's regressions (each failed before its fix).
+
+const ULTRA_DAILY = (prompt: string): Spec => ({
+  v: 1,
+  trigger: { type: "schedule", when: { kind: "daily", at: "08:00" } },
+  steps: [{ id: "a1", do: "ai", mode: "write", level: "ultra", prompt }, { id: "n1", do: "notify" }],
+});
+/** Moves these runs on at once, each priced and its hold recorded before any of them charges (two functions at once). */
+async function together(runIds: string[]) {
+  let arrived = 0;
+  let release!: () => void;
+  const all = new Promise<void>((r) => (release = r));
+  L.probes.at = async (point) => {
+    if (point !== "after-hold") return;
+    if (++arrived === runIds.length) release();
+    await all;
+  };
+  try {
+    await Promise.all(runIds.map(async (id) => R.advanceRun(id, await lease(id), Date.now() + 760_000)));
+  } finally {
+    L.probes.at = () => {};
+  }
+}
+/** What a step of this spec holds with nothing in its way, and the least it needs to start. */
+async function sizes(name: string, spec: Spec) {
+  const E = await import("../src/lib/server/automation-estimate.ts");
+  const { userById } = await import("../src/lib/server/automations.ts");
+  const u = await F.account(name, 0);
+  const est = await E.estimateSpec(spec, (await userById(u.id))!, { name: "x", time_zone: "UTC", where_json: "{}", language: "" });
+  return { worst: est.worst, least: est.least };
+}
+
+test("two of an account's runs priced at once: the second is planned again within what the first's hold left, and runs when its least fits", async () => {
+  const { worst, least } = await sizes("run52p", ULTRA_DAILY("Morning brief."));
+  // Room for one run's whole hold and the other's least, not for two whole holds.
+  const u = await F.account("run52", worst + least + 20);
+  const x = await F.automation({ userId: u.id, spec: ULTRA_DAILY("Morning brief."), capRun: worst + 50, capMonth: 100_000 });
+  const y = await F.automation({ userId: u.id, spec: ULTRA_DAILY("Market note."), capRun: worst + 50, capMonth: 100_000 });
+  const runs = [await F.runRow({ automationId: x, userId: u.id, origin: "schedule" }), await F.runRow({ automationId: y, userId: u.id, origin: "schedule" })];
+  claude.state.replies.push({ text: "Brief." }, { text: "Markets." });
+  await together(runs);
+  for (const rid of runs) assert.deepEqual([(await runOf(rid))!.status, (await runOf(rid))!.outcome], ["done", "ok"]);
+  const held = (await all<{ held: number }>("SELECT held FROM credit_holds WHERE user_id = ? ORDER BY held DESC", [u.id])).map((h) => Number(h.held));
+  assert.ok(held[0] >= worst - 50 && held[1] < held[0] && held[1] >= least, `the second hold fits what the first left: ${held}`);
+  for (const aid of [x, y]) assert.equal((await one<{ status: string }>("SELECT status FROM automations WHERE id = ?", [aid]))!.status, "on", "nothing paused");
+  assert.ok((await F.balance(u.id)) >= 0);
+  // With less left than the second's least, it is still skipped for credits, charging nothing.
+  const v = await F.account("run53", worst + least - 10);
+  const p = await F.automation({ userId: v.id, spec: ULTRA_DAILY("Morning brief."), capRun: worst + 50, capMonth: 100_000 });
+  const q = await F.automation({ userId: v.id, spec: ULTRA_DAILY("Market note."), capRun: worst + 50, capMonth: 100_000 });
+  const two = [await F.runRow({ automationId: p, userId: v.id, origin: "schedule" }), await F.runRow({ automationId: q, userId: v.id, origin: "schedule" })];
+  claude.state.replies.push({ text: "Brief." }, { text: "Markets." });
+  await together(two);
+  const ends = (await Promise.all(two.map(runOf))).map((r) => `${r!.status}/${r!.outcome}`).sort();
+  assert.deepEqual(ends, ["done/ok", "skipped/no_credits"]);
+  assert.ok((await F.balance(v.id)) >= 0);
+});
+
+test("a scheduled run and a Run now of one automation priced at once: the second fits what the month limit leaves, nothing pauses, both deliver", async () => {
+  const { worst, least } = await sizes("run54p", ULTRA_DAILY("Morning brief."));
+  const u = await F.account("run54", 100_000);
+  const aid = await F.automation({ userId: u.id, spec: ULTRA_DAILY("Morning brief."), capRun: worst + 50, capMonth: worst + least + 20 });
+  const runs = [await F.runRow({ automationId: aid, userId: u.id, origin: "schedule" }), await F.runRow({ automationId: aid, userId: u.id, origin: "owner" })];
+  claude.state.replies.push({ text: "One." }, { text: "Two." });
+  await together(runs);
+  for (const rid of runs) assert.deepEqual([(await runOf(rid))!.status, (await runOf(rid))!.outcome], ["done", "ok"]);
+  const a = (await one<{ status: string; paused_reason: string }>("SELECT status, paused_reason FROM automations WHERE id = ?", [aid]))!;
+  assert.deepEqual([a.status, a.paused_reason], ["on", ""]);
+  assert.equal((await noticesOf(u.id)).filter((n) => n.phrase === A.NOTICES.ready).length, 2, "both answers delivered");
+  const spent = -Number((await one<{ s: number }>("SELECT COALESCE(SUM(amount), 0) AS s FROM credit_ledger WHERE automation_id = ?", [aid]))!.s);
+  assert.ok(spent <= worst + least + 20, "never past the month limit");
+});
+
+test("a worker whose hold the reaper settled under it logs only what the call cost on top, so /admin counts the call once", { timeout: 30_000 }, async () => {
+  Object.assign(S.STEP_TIMING, { heartbeatMs: 40, staleMs: 300, checkMs: 20 });
+  const u = await F.account("run55", 100);
+  const aid = await F.automation({ userId: u.id });
+  const rid = await F.runRow({ automationId: aid, userId: u.id });
+  // A long first delta, so what the call cost is well above the reaper's figure (reading its input once).
+  const words = "x".repeat(6000);
+  claude.state.replies.push({ text: words, never: true });
+  const going = R.advanceRun(rid, await lease(rid), Date.now() + 760_000);
+  await waitFor(() => claude.state.open === 1);
+  const h = (await one<Record<string, unknown>>("SELECT * FROM credit_holds WHERE run_id = ?", [rid]))!;
+  // A tick saw the hold's lease lapse while its worker was still alive, and settled it.
+  assert.equal(await R.reapHold(h as never), true);
+  await going;
+  await waitFor(() => claude.state.open === 0);
+  const rows = await all<{ cost_cents: number }>("SELECT cost_cents FROM usage WHERE automation_id = ?", [aid]);
+  const total = rows.reduce((s, r) => s + Number(r.cost_cents), 0);
+  // The call read its 1,200 tokens once and wrote 6,000 bytes (metered at 3 bytes a token): its cost, counted once.
+  const cost = Math.max(billed(LEVEL_MODELS.sonic, 1200, Buffer.byteLength(words) / 3), Number(h.input_cents));
+  assert.equal(rows.length, 2, "the reaper's row and the worker's part on top");
+  assert.ok(Math.abs(total - cost) < cost * 0.1, `${total.toFixed(4)}¢ logged for a call that cost ${cost.toFixed(4)}¢`);
+});
+
+test("a step's token count that never answers gives up at its own short time: the step is tried again later, free", { timeout: 20_000 }, async () => {
+  S.STEP_TIMING.countMs = 300;
+  const u = await F.account("run56", 100);
+  const aid = await F.automation({ userId: u.id });
+  const rid = await F.runRow({ automationId: aid, userId: u.id });
+  claude.state.count.silent = true;
+  const start = Date.now();
+  const done = await Promise.race([advance(rid).then(() => true), new Promise<false>((r) => setTimeout(() => r(false), 10_000))]);
+  assert.equal(done, true, "the step didn't wait on the count past its time");
+  assert.ok(Date.now() - start < 5000);
+  assert.deepEqual((await stepsOf(rid)).map((s) => [s.status, s.note]), [["retried", "count_failed"]]);
+  assert.equal((await ledgerOf(rid)).length, 0);
+  assert.ok(Number((await runOf(rid))!.due_at) > Date.now(), "tried again later");
+});
+
+test("Run now of a one-off before its time leaves the one-off on, its slot still to come", async () => {
+  const u = await F.account("run57", 100);
+  const slot = Math.ceil((Date.now() + 3_600_000) / 60_000) * 60_000;
+  const iso = new Date(slot).toISOString();
+  const once: Spec = { ...F.WRITE_SPEC, trigger: { type: "schedule", when: { kind: "once", date: iso.slice(0, 10), at: iso.slice(11, 16) } } };
+  const aid = await F.automation({ userId: u.id, spec: once, nextAt: slot });
+  const rid = await F.runRow({ automationId: aid, userId: u.id, origin: "owner" });
+  await advance(rid);
+  assert.equal((await runOf(rid))!.status, "done");
+  const a = (await one<{ status: string; next_at: number }>("SELECT status, next_at FROM automations WHERE id = ?", [aid]))!;
+  assert.deepEqual([a.status, Number(a.next_at)], ["on", slot]);
+});
+
+test("a one-off paused for credits by a Run now runs its own slot when the credits come back inside its grace window", async () => {
+  const u = await F.account("run58", 0);
+  // Its slot came an hour ago (a one-off's grace is a day), and the tick hasn't taken it yet.
+  const slot = Math.floor((Date.now() - 3_600_000) / 60_000) * 60_000;
+  const iso = new Date(slot).toISOString();
+  const once: Spec = { ...F.WRITE_SPEC, trigger: { type: "schedule", when: { kind: "once", date: iso.slice(0, 10), at: iso.slice(11, 16) } } };
+  const aid = await F.automation({ userId: u.id, spec: once, nextAt: slot });
+  // A Run now without the credits: skipped, and the one-off waits for credits until its slot.
+  const own = await F.runRow({ automationId: aid, userId: u.id, origin: "owner" });
+  await advance(own);
+  assert.deepEqual([(await runOf(own))!.status, (await runOf(own))!.outcome], ["skipped", "no_credits"]);
+  const paused = (await one<{ status: string; paused_reason: string; resume_at: number }>("SELECT status, paused_reason, resume_at FROM automations WHERE id = ?", [aid]))!;
+  assert.deepEqual([paused.status, paused.paused_reason, Number(paused.resume_at)], ["paused", "credits", slot]);
+  await sql("INSERT INTO credit_ledger (user_id, amount, reason, created_at) VALUES (?, 100, 'purchase', 0)", [u.id]);
+  const all: { id: string; owner: string }[] = [];
+  await T.runTick("tk58", { dispatch: async (c) => void all.push(c) });
+  // Earlier tests' runs may be sent too: this one-off's are the ones that count.
+  const sent = [];
+  for (const c of all) if ((await runOf(c.id))!.automation_id === aid) sent.push(c);
+  assert.equal(sent.length, 1, "its slot was made a run and sent");
+  claude.state.replies.push({ text: "On time." });
+  await R.advanceRun(sent[0].id, sent[0].owner, Date.now() + 760_000);
+  assert.deepEqual([(await runOf(sent[0].id))!.status, (await runOf(sent[0].id))!.origin], ["done", "schedule"]);
+  assert.equal((await one<{ status: string }>("SELECT status FROM automations WHERE id = ?", [aid]))!.status, "finished");
+});
+
+test("a one-off whose only run fails is finished and says so in a notice, with what it charged", async () => {
+  const u = await F.account("run59", 100);
+  const day = new Date(Date.now() - 60_000).toISOString();
+  const once: Spec = { ...F.WRITE_SPEC, trigger: { type: "schedule", when: { kind: "once", date: day.slice(0, 10), at: day.slice(11, 16) } } };
+  const aid = await F.automation({ userId: u.id, spec: once });
+  // Its last try: Claude busy again.
+  const rid = await F.runRow({ automationId: aid, userId: u.id, origin: "schedule", attempts: S.MAX_ATTEMPTS - 1 });
+  claude.state.replies.push({ status: 529 });
+  await advance(rid);
+  assert.deepEqual([(await runOf(rid))!.status, (await runOf(rid))!.outcome], ["failed", "failed"]);
+  assert.equal((await one<{ status: string }>("SELECT status FROM automations WHERE id = ?", [aid]))!.status, "finished");
+  const notices = await noticesOf(u.id);
+  assert.deepEqual(notices.map((n) => [n.kind, n.phrase, JSON.parse(n.blanks).credits, n.ref]), [["stopped", A.NOTICES.failed, 0, `run:${rid}:failed`]], "nothing was charged");
+  // One that failed part way was charged for the work that ran (as chat is), and says so.
+  const part = await F.automation({ userId: u.id, spec: once });
+  const r3 = await F.runRow({ automationId: part, userId: u.id, origin: "schedule" });
+  claude.state.replies.push({ text: "Half an answer that goes on", cut: true });
+  await advance(r3);
+  const charged = Number((await runOf(r3))!.credits);
+  assert.ok(charged >= 1);
+  const last = (await noticesOf(u.id)).filter((n) => n.ref === `run:${r3}:failed`);
+  assert.deepEqual(last.map((n) => [n.phrase, JSON.parse(n.blanks).credits]), [[A.NOTICES.failedCharged, charged]]);
+  // One that repeats says so after 3 failed runs, not each time.
+  const daily = await F.automation({ userId: u.id, spec: { ...F.WRITE_SPEC, trigger: { type: "schedule", when: { kind: "daily", at: "08:00" } } } });
+  const r2 = await F.runRow({ automationId: daily, userId: u.id, origin: "schedule", attempts: S.MAX_ATTEMPTS - 1 });
+  claude.state.replies.push({ status: 529 });
+  await advance(r2);
+  assert.equal((await runOf(r2))!.status, "failed");
+  assert.equal((await noticesOf(u.id)).length, 2);
+});
+
+test("a step cut short by its time ends the run cut_short, and its notice says it was cut short", { timeout: 30_000 }, async () => {
+  A.STEP_BUDGET_MS.write = 400;
+  const u = await F.account("run60", 100);
+  const aid = await F.automation({ userId: u.id });
+  const rid = await F.runRow({ automationId: aid, userId: u.id });
+  claude.state.replies.push({ text: "This goes on and on", never: true });
+  await advance(rid);
+  await waitFor(() => claude.state.open === 0);
+  const run = (await runOf(rid))!;
+  assert.deepEqual([run.status, run.outcome], ["done", "cut_short"]);
+  assert.equal(JSON.parse(String(run.receipt)).receipt.outcome, "cut_short", "its fingerprinted receipt says so");
+  assert.equal((await one<{ last_status: string }>("SELECT last_status FROM automations WHERE id = ?", [aid]))!.last_status, "cut_short");
+  const notices = await noticesOf(u.id);
+  assert.deepEqual(notices.map((n) => [n.phrase, JSON.parse(n.blanks).text]), [[A.NOTICES.cutShort, "This goes on and on"]]);
+  // A cut-short answer is never what "only if it changed" compares the next run with.
+  const next = await F.runRow({ automationId: aid, userId: u.id });
+  assert.equal(await S.previousResult(aid, next, "a1"), null);
 });

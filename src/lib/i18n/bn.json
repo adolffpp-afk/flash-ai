@@ -551,6 +551,8 @@
  "Exported {count} chats. Check your downloads.": "{count}টি চ্যাট এক্সপোর্ট হয়েছে। আপনার ডাউনলোড দেখুন।",
  "Exporting chat {number} of {count}…": "{count}টির মধ্যে {number} নম্বর চ্যাট এক্সপোর্ট হচ্ছে…",
  "Extra people": "অতিরিক্ত মানুষ",
+ "Failed: Flash couldn't finish it. Charged {credits} credits for the work done.": "ব্যর্থ হয়েছে: Flash এটি শেষ করতে পারেনি। করা কাজের জন্য {credits} ক্রেডিট নেওয়া হয়েছে।",
+ "Failed: Flash couldn't get an answer. Nothing was charged.": "ব্যর্থ হয়েছে: Flash কোনো উত্তর পায়নি। কোনো চার্জ কাটা হয়নি।",
  "Families who want healthier bread": "যে পরিবারগুলো আরও স্বাস্থ্যকর রুটি চায়",
  "Faster": "দ্রুত",
  "Fastest": "সবচেয়ে দ্রুত",

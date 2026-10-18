@@ -93,6 +93,8 @@ export const NOTICES = {
   runCap: msg("Stopped at this automation's limit of {credits} credits"),
   cutShort: msg("Cut short: it ran out of time"),
   failing: msg("Paused after 3 failed runs"),
+  failed: msg("Failed: Flash couldn't get an answer. Nothing was charged."),
+  failedCharged: msg("Failed: Flash couldn't finish it. Charged {credits} credits for the work done."),
   unconfirmed: msg("Confirm your email to use automations."),
   capacity: msg("Skipped: Flash's automation capacity for this month is reached. It runs again on {date}."),
   noCredits: msg("Not enough credits: the step that didn't fit wasn't run, and nothing was charged for it."),
@@ -212,8 +214,9 @@ function parseStep(s: unknown, earlierAi: Set<string>): Step | Refusal {
 /**
  * Checks a spec from the page (or a stored one) and rebuilds it from checked fields only. Refuses
  * unknown types and keys, kinds of steps and triggers that come in later PRs, a spec over 16 KB, more
- * than 12 steps or 3 AI steps, text over its limit, a next step that isn't later in the list (so every
- * run ends), a template field that doesn't exist, and a personal automation with no AI step.
+ * than 12 steps or 3 AI steps, text over its limit, a next step that isn't the one below it (so every
+ * run ends, through every step), a template field that doesn't exist, and a personal automation with
+ * no AI step.
  */
 export function parseSpec(input: unknown): { spec: Spec } | Refusal {
   const bad = { error: SPEC_INVALID };
@@ -237,9 +240,10 @@ export function parseSpec(input: unknown): { spec: Spec } | Refusal {
     steps.push(step);
     if (step.do === "ai") earlierAi.add(step.id);
   }
-  // A next step must come later in the list, so a run can't loop and always ends.
+  // A next step is the one below it (steps that branch come in a later PR): a run goes through every
+  // step in order, so it always ends and can't jump over its AI step to run for free.
   for (const [i, s] of steps.entries()) {
-    if (s.next !== undefined && !steps.slice(i + 1).some((later) => later.id === s.next)) return bad;
+    if (s.next !== undefined && steps[i + 1]?.id !== s.next) return bad;
   }
   const ai = steps.filter(isPaid).length;
   if (ai === 0) return { error: SPEC_NEEDS_AI };

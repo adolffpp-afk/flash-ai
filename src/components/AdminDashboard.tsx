@@ -593,7 +593,9 @@ export function AdminDashboard({ initialTab }: { initialTab?: string }) {
     else if (box.left < row.left) list.scrollLeft -= row.left - box.left;
   }, [tab, openReports]);
 
-  if (error) {
+  // The whole page says so only when there is nothing to show yet; a reload that fails (one the burn-in
+  // card asked for when a run ended, say) keeps what is shown, and the burn-in card with it.
+  if (error && !stats) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 bg-zinc-950 text-zinc-300">
         <p>{error}</p>
@@ -653,6 +655,15 @@ export function AdminDashboard({ initialTab }: { initialTab?: string }) {
             </button>
           ))}
         </div>
+
+        {error && tab !== "reports" && (
+          <p role="status" className="mt-3 flex flex-wrap items-center gap-x-2 text-xs text-red-400">
+            Not up to date: {error}
+            <button onClick={() => setReload((r) => r + 1)} className="text-zinc-300 underline hover:text-white">
+              Try again
+            </button>
+          </p>
+        )}
 
         {tab === "reports" ? (
           <AdminReports items={reports} error={reportsError} onChange={setReports} />

@@ -551,6 +551,8 @@
  "Exported {count} chats. Check your downloads.": "{count} chattar exporterades. Kolla dina nedladdningar.",
  "Exporting chat {number} of {count}…": "Exporterar chatt {number} av {count}…",
  "Extra people": "Fler personer",
+ "Failed: Flash couldn't finish it. Charged {credits} credits for the work done.": "Misslyckades: Flash kunde inte slutföra den. {credits} krediter debiterades för arbetet som gjordes.",
+ "Failed: Flash couldn't get an answer. Nothing was charged.": "Misslyckades: Flash fick inget svar. Inget debiterades.",
  "Families who want healthier bread": "Familjer som vill ha nyttigare bröd",
  "Faster": "Snabbare",
  "Fastest": "Snabbast",

@@ -400,6 +400,8 @@ async function noticesFor(
     if (outcome === "no_credits") notices.push({ ...base, kind: "credits", phrase: NOTICES.noCredits, blanks: { name }, ref });
     else if (outcome === "topup_floor") notices.push({ ...base, kind: "credits", phrase: NOTICES.topupFloor, blanks: { name, credits: await topUpFloor(auto.pay_account) }, ref });
     else if (outcome === "month_cap" || outcome === "day_cap" || outcome === "price_up") notices.push({ ...base, kind: "stopped", phrase: NOTICES.onceSkipped, blanks: { name }, ref });
+    // Its only run failed: it never runs again, so it says so (an automation that repeats says so after 3).
+    else if (status === "failed") notices.push({ ...base, kind: "stopped", phrase: o.credits > 0 ? NOTICES.failedCharged : NOTICES.failed, blanks: { name, credits: o.credits }, ref: `run:${run.id}:failed` });
   }
   return notices;
 }

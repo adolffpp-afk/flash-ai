@@ -551,6 +551,8 @@
  "Exported {count} chats. Check your downloads.": "יוצאו {count} צ'אטים. אפשר למצוא אותם בהורדות.",
  "Exporting chat {number} of {count}…": "מייצא צ'אט {number} מתוך {count}…",
  "Extra people": "אנשים נוספים",
+ "Failed: Flash couldn't finish it. Charged {credits} credits for the work done.": "נכשל: Flash לא הצליח לסיים. חויבו {credits} קרדיטים על העבודה שנעשתה.",
+ "Failed: Flash couldn't get an answer. Nothing was charged.": "נכשל: Flash לא הצליח לקבל תשובה. לא בוצע חיוב.",
  "Families who want healthier bread": "משפחות שרוצות לחם בריא יותר",
  "Faster": "מהיר יותר",
  "Fastest": "הכי מהיר",

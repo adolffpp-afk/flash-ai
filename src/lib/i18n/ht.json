@@ -551,6 +551,8 @@
  "Exported {count} chats. Check your downloads.": "{count} konvèsasyon ekspòte. Gade nan telechajman ou yo.",
  "Exporting chat {number} of {count}…": "Ap ekspòte konvèsasyon {number} sou {count}…",
  "Extra people": "Plis moun",
+ "Failed: Flash couldn't finish it. Charged {credits} credits for the work done.": "Echwe: Flash pa t ka fini l. Nou pran {credits} kredi pou travay ki fèt la.",
+ "Failed: Flash couldn't get an answer. Nothing was charged.": "Echwe: Flash pa t ka jwenn yon repons. Ou pa peye anyen.",
  "Families who want healthier bread": "Fanmi ki vle pen ki pi bon pou lasante",
  "Faster": "Pi vit",
  "Fastest": "Trè vit",

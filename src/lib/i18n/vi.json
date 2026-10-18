@@ -551,6 +551,8 @@
  "Exported {count} chats. Check your downloads.": "Đã xuất {count} cuộc trò chuyện. Hãy kiểm tra thư mục tải xuống.",
  "Exporting chat {number} of {count}…": "Đang xuất cuộc trò chuyện {number}/{count}…",
  "Extra people": "Thêm người",
+ "Failed: Flash couldn't finish it. Charged {credits} credits for the work done.": "Thất bại: Flash không thể hoàn tất. Đã tính {credits} tín dụng cho phần việc đã làm.",
+ "Failed: Flash couldn't get an answer. Nothing was charged.": "Thất bại: Flash không nhận được câu trả lời. Bạn không bị tính phí.",
  "Families who want healthier bread": "Các gia đình muốn ăn bánh mì lành mạnh hơn",
  "Faster": "Nhanh hơn",
  "Fastest": "Nhanh nhất",

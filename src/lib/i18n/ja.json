@@ -551,6 +551,8 @@
  "Exported {count} chats. Check your downloads.": "{count}件のチャットをエクスポートしました。ダウンロードフォルダを確認してください。",
  "Exporting chat {number} of {count}…": "チャットをエクスポートしています（{count}件中{number}件目）…",
  "Extra people": "追加メンバー",
+ "Failed: Flash couldn't finish it. Charged {credits} credits for the work done.": "失敗しました：Flashは最後まで完了できませんでした。完了した作業分として{credits}クレジットを請求しました。",
+ "Failed: Flash couldn't get an answer. Nothing was charged.": "失敗しました：Flashは回答を得られませんでした。料金は発生していません。",
  "Families who want healthier bread": "より健康的なパンを求める家族",
  "Faster": "速め",
  "Fastest": "最速",

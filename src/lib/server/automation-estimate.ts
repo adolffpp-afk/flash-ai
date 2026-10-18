@@ -21,7 +21,7 @@ import { countInputTokens } from "../engines/claude.ts";
 import { firesBetween } from "../schedule.ts";
 import type { ChatTurn } from "../types.ts";
 import { priceStep, type Counter } from "./automation-price.ts";
-import { COUNT_TIMEOUT_MS, PREVIOUS_CHARS, stepInputs, type AutoRow } from "./automation-steps.ts";
+import { PREVIOUS_CHARS, STEP_TIMING, stepInputs, type AutoRow } from "./automation-steps.ts";
 import { automationClient } from "./automations.ts";
 import type { User } from "./auth.ts";
 
@@ -92,7 +92,7 @@ export async function estimateSpec(
   o: { client?: Anthropic; now?: number } = {},
 ): Promise<Estimate> {
   // Counting gets the runner's short time (the SDK's default is 10 minutes): a Run once now is timed from its request.
-  const client = o.client ?? automationClient().withOptions({ timeout: COUNT_TIMEOUT_MS, maxRetries: 1 });
+  const client = o.client ?? automationClient().withOptions({ timeout: STEP_TIMING.countMs, maxRetries: 1 });
   const now = o.now ?? Date.now();
   const state = { counted: true };
   const count = estimateCounter(state);

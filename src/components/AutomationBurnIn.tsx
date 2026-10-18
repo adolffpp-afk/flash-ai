@@ -233,8 +233,16 @@ function MakeTest({ ready, onMade }: { ready: boolean; onMade: () => void }) {
       </div>
       {!counted && <p className="text-xs text-amber-300">Counting the words failed, so these are the most the text could cost.</p>}
       {!ready && <p className="text-xs text-zinc-500">Test automations can be made once the setup above is complete.</p>}
-      {note && <p className="text-xs text-emerald-300">{note}</p>}
-      {error && <p className="text-xs text-red-400">{error}</p>}
+      {note && (
+        <p dir="auto" className="text-xs text-emerald-300">
+          {note}
+        </p>
+      )}
+      {error && (
+        <p dir="auto" className="text-xs text-red-400">
+          {error}
+        </p>
+      )}
     </div>
   );
 }

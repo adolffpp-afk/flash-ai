@@ -923,3 +923,165 @@ test("a notice names its automation once: in its title, not again in its line", 
   assert.equal(notice.text.includes("A rather long"), false);
   assert.equal(notice.body, "Sunny all day.");
 });
+
+// The fourth review's regressions (each failed before its fix).
+
+test("a spec whose next jumps over its AI step is refused on create and on edit, saving nothing", async () => {
+  const { cookie } = await admin("r5skip", 0);
+  const skips = {
+    v: 1,
+    trigger: { type: "schedule", when: { kind: "hourly", every: 1, from: "00:00", to: "23:00" } },
+    steps: [
+      { id: "n1", do: "notify", text: "Drink a glass of water.", next: "n2" },
+      { id: "a1", do: "ai", mode: "research", level: "ultra", prompt: "Never reached." },
+      { id: "n2", do: "notify", text: "Stretch for a minute." },
+    ],
+  };
+  const est = await estimateRoute.POST(req("/api/automations/estimate", { cookie, json: { spec: skips, timeZone: "UTC" } }));
+  assert.equal(est.status, 400);
+  const made = await listRoute.POST(req("/api/automations", { cookie, json: { spec: skips, name: "Water", timeZone: "UTC", seenMax: 100_000 } }));
+  assert.equal(made.status, 400);
+  assert.equal((await body(made)).error, A.SPEC_INVALID);
+  const aid = await create(cookie, F.WRITE_SPEC);
+  const edit = await oneRoute.PATCH(req(`/api/automations/${aid}`, { cookie, method: "PATCH", json: { spec: skips, seenMax: 100_000 } }), ctx({ id: aid }));
+  assert.equal(edit.status, 400);
+  assert.equal(Number((await one<{ version: number }>("SELECT version FROM automations WHERE id = ?", [aid]))!.version), 1, "no new version");
+});
+
+test("an estimate whose token count never answers is priced at its most within its count's own short time, never the SDK's 10 minutes", { timeout: 20_000 }, async () => {
+  const { STEP_TIMING } = await import("../src/lib/server/automation-steps.ts");
+  const was = STEP_TIMING.countMs;
+  STEP_TIMING.countMs = 300;
+  claude.state.count.silent = true;
+  try {
+    const { cookie } = await admin("r5count");
+    const start = Date.now();
+    const r = await Promise.race([estimateRoute.POST(req("/api/automations/estimate", { cookie, json: { spec: F.WRITE_SPEC, timeZone: "UTC" } })), new Promise<null>((ok) => setTimeout(() => ok(null), 10_000))]);
+    assert.ok(r, "the estimate answered");
+    assert.equal(r.status, 200);
+    assert.equal((await body(r)).estimate.counted, false, "priced at the most the text can be");
+    assert.ok(Date.now() - start < 5000);
+  } finally {
+    STEP_TIMING.countMs = was;
+  }
+});
+
+test("/admin's function time counts a step left behind by a server that stopped at most the longest a step may take", async () => {
+  const u = await admin("r5time");
+  const aid = await F.automation({ userId: u.id });
+  const rid = await F.runRow({ automationId: aid, userId: u.id });
+  const now = Date.now();
+  // A step started 3 hours before it was closed (its server stopped; a later claim closed it).
+  await sql("INSERT INTO automation_run_steps (run_id, step_id, attempt, user_id, kind, status, started_at, finished_at) VALUES (?, 'a1', 1, ?, 'ai', 'interrupted', ?, ?)", [rid, u.id, now - 3 * 3_600_000, now]);
+  await sql("UPDATE automation_runs SET status = 'interrupted', outcome = 'interrupted', finished_at = ? WHERE id = ?", [now, rid]);
+  const before = (await automationStats(1)).functionSeconds;
+  await sql("DELETE FROM automation_run_steps WHERE run_id = ?", [rid]);
+  const without = (await automationStats(1)).functionSeconds;
+  assert.equal(before - without, Math.max(...Object.values(A.STEP_BUDGET_MS)) / 1000);
+});
+
+test("cron health: lag reads the week's newest scheduled runs, Queued counts only runs due now, and Peak spend only what was charged", async () => {
+  const u = await admin("r5health");
+  const aid = await F.automation({ userId: u.id });
+  const now = Date.now();
+  const d = await (await import("../src/lib/server/db.ts")).db();
+  // 5,000 runs six days ago that started 1 s after their slot, then 1,000 in the last hour that started 10 minutes late.
+  const rows = (count: number, at: number, lag: number, tag: string) =>
+    Array.from({ length: count }, (_, i) => ({
+      sql: `INSERT INTO automation_runs (id, automation_id, user_id, version, run_key, origin, root_origin, status, outcome, due_at, grace_until, scheduled_at, started_at, finished_at, created_at, updated_at)
+            VALUES (?, ?, ?, 1, ?, 'schedule', 'schedule', 'done', 'ok', ?, ?, ?, ?, ?, ?, ?)`,
+      args: [`${tag}${i}`, aid, u.id, `slot:${tag}${i}`, at + i, at + i + 900_000, at + i, at + i + lag, at + i + lag + 1000, at + i, at + i],
+    }));
+  await d.batch(rows(5000, now - 6 * 86_400_000, 1000, "r5old"), "write");
+  await d.batch(rows(1000, now - 3_600_000, 600_000, "r5new"), "write");
+  const h = await cronHealth();
+  assert.deepEqual([h.lagP95Sec, h.lagRuns], [600, 5000], "a tick late now shows");
+  await sql("DELETE FROM automation_runs WHERE automation_id = ?", [aid]);
+  // A run waiting for its next try (Claude was busy) isn't waiting for room; one due now is.
+  await F.runRow({ automationId: aid, userId: u.id, dueAt: Date.now() + 300_000 });
+  assert.equal((await cronHealth()).queued, h.queued);
+  await F.runRow({ automationId: aid, userId: u.id });
+  assert.equal((await cronHealth()).queued, h.queued + 1);
+  await sql("DELETE FROM automation_runs WHERE automation_id = ?", [aid]);
+  // A hold still open is a step's worst case, not spent: the peak is what was charged. (In a minute of
+  // its own, three days ago, so other tests' charges don't add to it.)
+  const minute = Math.floor((Date.now() - 3 * 86_400_000) / 60_000) * 60_000 + 30_000;
+  await sql("INSERT INTO credit_ledger (user_id, amount, reason, ref, automation_id, created_at, settled_at) VALUES (?, -100000, 'automation', 'auto:r5peak:a1:1', ?, ?, 0)", [u.id, aid, minute]);
+  assert.ok((await cronHealth()).peakCreditsPerMinute < 100_000);
+  await sql("UPDATE credit_ledger SET amount = -99999, settled_at = ? WHERE ref = 'auto:r5peak:a1:1'", [Date.now()]);
+  assert.equal((await cronHealth()).peakCreditsPerMinute, 99_999);
+  await sql("DELETE FROM credit_ledger WHERE ref = 'auto:r5peak:a1:1'");
+});
+
+test("Retry and the card's Run once now count against Run now's limits, and the card's make against Save's: 429, nothing made or started", async () => {
+  const { cookie, id } = await admin("r5limits", 100_000);
+  const aid = await create(cookie, F.WRITE_SPEC);
+  const est = await priceOf(cookie, F.WRITE_SPEC);
+  claude.state.replies = [{ cut: true }];
+  const first = await runOnce(cookie, aid, est.worst);
+  const rid = ((await body(first)).run as { id: string }).id;
+  assert.equal((await one<{ status: string }>("SELECT status FROM automation_runs WHERE id = ?", [rid]))!.status, "failed");
+  const full = (key: string, n: number) => sql("INSERT INTO rate_limits (key, count, reset_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET count = excluded.count", [key, n, Date.now() + 3_600_000]);
+  const free = (key: string) => sql("DELETE FROM rate_limits WHERE key = ?", [key]);
+  const retry = () => receiptRoute.POST(req(`/api/automations/runs/${rid}`, { cookie, json: { action: "retry", seenMax: est.worst } }), ctx({ runId: rid }));
+  const calls = claude.streamed().length;
+  for (const [key, n] of [[`auto:runUser:${id}`, 30], [`auto:runAutomation:${id}:${aid}`, 10]] as const) {
+    await full(key, n);
+    assert.equal((await retry()).status, 429, key);
+    await free(key);
+  }
+  assert.equal(await count("automation_runs", "automation_id = ?", [aid]), 1, "no run started");
+  const priced = (await body(await adminRoute.POST(req("/api/admin/automations", { cookie, json: { action: "price", timeZone: "UTC" } })))).prices as Record<"manual", Estimate>;
+  const make = () => adminRoute.POST(req("/api/admin/automations", { cookie, json: { action: "make", kind: "manual", run: true, timeZone: "UTC", seenMax: priced.manual.worst } }));
+  for (const [key, n] of [[`auto:runUser:${id}`, 30], [`auto:create:${id}`, 30]] as const) {
+    await full(key, n);
+    assert.equal((await make()).status, 429, key);
+    await free(key);
+  }
+  await afterwards();
+  assert.equal(await count("automations", "user_id = ?", [id]), 1, "nothing made");
+  assert.equal(claude.streamed().length, calls, "nothing called");
+});
+
+test("the card's Run once now refused for credits leaves no automation behind: pressing it again never fills the account", async () => {
+  const { cookie, id } = await admin("r5refused", 0);
+  const priced = (await body(await adminRoute.POST(req("/api/admin/automations", { cookie, json: { action: "price", timeZone: "UTC" } })))).prices as Record<"manual", Estimate>;
+  for (let i = 0; i < 3; i++) {
+    const r = await adminRoute.POST(req("/api/admin/automations", { cookie, json: { action: "make", kind: "manual", run: true, timeZone: "UTC", seenMax: priced.manual.worst } }));
+    assert.equal(r.status, 409);
+    assert.equal((await body(r)).code, "no_credits");
+  }
+  assert.equal(await count("automations", "user_id = ?", [id]), 0);
+  assert.equal(await count("automation_versions", "automation_id NOT IN (SELECT id FROM automations)", []), 0);
+  assert.equal(await count("automation_runs", "user_id = ?", [id]), 0);
+});
+
+test("a refusal for credits writes its number in the reader's digits, as the month's refusal does", async () => {
+  const { cookie, id } = await admin("r5digits", 0);
+  await sql("UPDATE users SET language = 'ar' WHERE id = ?", [id]);
+  const aid = await create(cookie, F.WRITE_SPEC);
+  const est = await priceOf(cookie, F.WRITE_SPEC);
+  const r = await runOnce(cookie, aid, est.worst);
+  assert.equal(r.status, 409);
+  const said = (await body(r)).error;
+  assert.ok(said.includes(est.least.toLocaleString(localeOf("ar"))) && !/[0-9]/.test(said), said);
+});
+
+test("a failed run's receipt, and a cut-short one's, say why", async () => {
+  const { cookie, id } = await admin("r5notes");
+  await sql("UPDATE users SET language = 'ar' WHERE id = ?", [id]);
+  const aid = await F.automation({ userId: id });
+  const { translatorIn } = await import("../src/lib/server/i18n.ts");
+  const ar = await translatorIn("ar");
+  for (const [outcome, status, credits, said] of [
+    ["failed", "failed", 0, ar(A.NOTICES.failed)],
+    ["failed", "failed", 3, ar(A.NOTICES.failedCharged, { credits: (3).toLocaleString(localeOf("ar")) })],
+    ["cut_short", "done", 2, ar(A.NOTICES.cutShort)],
+  ] as const) {
+    const rid = await F.runRow({ automationId: aid, userId: id, status });
+    await sql("UPDATE automation_runs SET outcome = ?, credits = ?, finished_at = ? WHERE id = ?", [outcome, credits, Date.now(), rid]);
+    const r = (await (await receiptRoute.GET(req(`/api/automations/runs/${rid}`, { cookie }), ctx({ runId: rid }))).json()) as { run: { noteText: string } };
+    assert.equal(r.run.noteText, said);
+    assert.ok(!/[A-Za-z]{4}/.test(said.replace("Flash", "")), `in the reader's words: ${said}`);
+  }
+});

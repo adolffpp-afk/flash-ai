@@ -551,6 +551,8 @@
  "Exported {count} chats. Check your downloads.": "Gumzo {count} zimehamishwa. Angalia vipakuliwa vyako.",
  "Exporting chat {number} of {count}…": "Inahamisha gumzo {number} kati ya {count}…",
  "Extra people": "Watu wa ziada",
+ "Failed: Flash couldn't finish it. Charged {credits} credits for the work done.": "Imeshindwa: Flash haikuweza kuimaliza. Krediti {credits} zimetozwa kwa kazi iliyofanyika.",
+ "Failed: Flash couldn't get an answer. Nothing was charged.": "Imeshindwa: Flash haikuweza kupata jibu. Hakuna kilichotozwa.",
  "Families who want healthier bread": "Familia zinazotaka mkate wenye afya zaidi",
  "Faster": "Haraka zaidi",
  "Fastest": "Haraka kabisa",

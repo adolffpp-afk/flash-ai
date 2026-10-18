@@ -551,6 +551,8 @@
  "Exported {count} chats. Check your downloads.": "ส่งออก {count} แชทแล้ว ดูได้ในโฟลเดอร์ดาวน์โหลด",
  "Exporting chat {number} of {count}…": "กำลังส่งออกแชทที่ {number} จาก {count}…",
  "Extra people": "สมาชิกเพิ่มเติม",
+ "Failed: Flash couldn't finish it. Charged {credits} credits for the work done.": "ล้มเหลว: Flash ทำให้เสร็จไม่ได้ เรียกเก็บ {credits} เครดิตสำหรับงานที่ทำไปแล้ว",
+ "Failed: Flash couldn't get an answer. Nothing was charged.": "ล้มเหลว: Flash ไม่ได้รับคำตอบ ไม่มีการเรียกเก็บเงิน",
  "Families who want healthier bread": "ครอบครัวที่อยากได้ขนมปังที่ดีต่อสุขภาพมากขึ้น",
  "Faster": "เร็วขึ้น",
  "Fastest": "เร็วที่สุด",

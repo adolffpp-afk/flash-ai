@@ -551,6 +551,8 @@
  "Exported {count} chats. Check your downloads.": "已匯出 {count} 段對話，請查看你的下載項目。",
  "Exporting chat {number} of {count}…": "正在匯出第 {number}/{count} 段對話…",
  "Extra people": "額外成員",
+ "Failed: Flash couldn't finish it. Charged {credits} credits for the work done.": "失敗：Flash 沒能完成它。已就完成的工作收取 {credits} 點。",
+ "Failed: Flash couldn't get an answer. Nothing was charged.": "失敗：Flash 沒能得到回答。沒有收取任何費用。",
  "Families who want healthier bread": "想吃更健康麵包的家庭",
  "Faster": "較快",
  "Fastest": "最快",

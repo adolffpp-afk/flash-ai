@@ -551,6 +551,8 @@
  "Exported {count} chats. Check your downloads.": "Chaturi exportate: {count}. Verifică descărcările.",
  "Exporting chat {number} of {count}…": "Se exportă chatul {number} din {count}…",
  "Extra people": "Persoane în plus",
+ "Failed: Flash couldn't finish it. Charged {credits} credits for the work done.": "Eșuată: Flash nu a putut s-o termine. S-au taxat {credits} credite pentru munca făcută.",
+ "Failed: Flash couldn't get an answer. Nothing was charged.": "Eșuată: Flash nu a putut obține un răspuns. Nu s-a taxat nimic.",
  "Families who want healthier bread": "Familii care vor pâine mai sănătoasă",
  "Faster": "Mai rapid",
  "Fastest": "Cel mai rapid",

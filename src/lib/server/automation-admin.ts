@@ -75,16 +75,21 @@ export async function cronHealth() {
   const run = await one<{ at: number }>(
     `SELECT MIN(due_at) AS at FROM automation_runs WHERE parked = 0 AND status IN ('queued','waiting','running','approval') AND due_at <= ${DB_NOW} AND lease_until < ${DB_NOW}`,
   );
-  // Each line reads through an index: runs of the last week by age, the live queue, the live leases.
+  // Each line reads through an index: runs of the last week by age (the newest 5,000, so a tick late
+  // now shows), the live queue, the live leases.
   const lags = await all<{ lag: number }>(
-    "SELECT started_at - scheduled_at AS lag FROM automation_runs WHERE created_at >= ? AND origin = 'schedule' AND started_at > 0 AND scheduled_at > 0 LIMIT 5000",
+    "SELECT started_at - scheduled_at AS lag FROM automation_runs WHERE created_at >= ? AND origin = 'schedule' AND started_at > 0 AND scheduled_at > 0 ORDER BY created_at DESC LIMIT 5000",
     [now - 7 * DAY],
   );
-  const queued = await one<{ n: number }>("SELECT COUNT(*) AS n FROM automation_runs WHERE parked = 0 AND status IN ('queued','waiting','running','approval') AND status = 'queued'");
+  // Runs due now that wait for room (a run waiting for its next try after Claude was busy isn't due yet).
+  const queued = await one<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM automation_runs WHERE parked = 0 AND status IN ('queued','waiting','running','approval') AND status = 'queued' AND due_at <= ${DB_NOW}`,
+  );
   const paid = await one<{ n: number }>(`SELECT COUNT(*) AS n FROM automation_runs WHERE lease_until > 0 AND lease_until > ${DB_NOW} AND next_paid = 1 AND finished_at = 0`);
+  // What was charged (settled holds only: an open one keeps a step's worst case, and settles far lower).
   const peak = await one<{ credits: number }>(
     `SELECT COALESCE(MAX(spent), 0) AS credits FROM (SELECT -SUM(amount) AS spent FROM credit_ledger
-       WHERE automation_id <> '' AND amount < 0 AND created_at >= ? GROUP BY created_at / 60000)`,
+       WHERE automation_id <> '' AND amount < 0 AND created_at >= ? AND settled_at > 0 GROUP BY created_at / 60000)`,
     [now - 7 * DAY],
   );
   const holds = await one<{ open: number; lapsed: number }>(

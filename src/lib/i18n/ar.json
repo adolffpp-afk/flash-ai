@@ -551,6 +551,8 @@
  "Exported {count} chats. Check your downloads.": "صُدّرت المحادثات ({count}). تحقق من التنزيلات.",
  "Exporting chat {number} of {count}…": "جارٍ تصدير المحادثة {number} من أصل {count}…",
  "Extra people": "أشخاص إضافيون",
+ "Failed: Flash couldn't finish it. Charged {credits} credits for the work done.": "فشل: لم يتمكن Flash من إكماله. خُصم {credits} رصيد مقابل العمل المنجز.",
+ "Failed: Flash couldn't get an answer. Nothing was charged.": "فشل: لم يتمكن Flash من الحصول على إجابة. لم يُخصم أي رصيد.",
  "Families who want healthier bread": "عائلات تريد خبزًا صحيًا أكثر",
  "Faster": "أسرع",
  "Fastest": "الأسرع",

@@ -551,6 +551,8 @@
  "Exported {count} chats. Check your downloads.": "Na-export ang {count} chat. Tingnan ang downloads mo.",
  "Exporting chat {number} of {count}…": "Ine-export ang chat {number} sa {count}…",
  "Extra people": "Dagdag na tao",
+ "Failed: Flash couldn't finish it. Charged {credits} credits for the work done.": "Pumalya: hindi ito natapos ng Flash. Siningil ang {credits} credits para sa nagawang trabaho.",
+ "Failed: Flash couldn't get an answer. Nothing was charged.": "Pumalya: hindi nakakuha ng sagot ang Flash. Walang siningil.",
  "Families who want healthier bread": "Mga pamilyang gusto ng mas masustansyang tinapay",
  "Faster": "Mas mabilis",
  "Fastest": "Pinakamabilis",

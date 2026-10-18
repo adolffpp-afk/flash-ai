@@ -551,6 +551,8 @@
  "Exported {count} chats. Check your downloads.": "Экспортировано чатов: {count}. Проверьте папку загрузок.",
  "Exporting chat {number} of {count}…": "Экспортируем чат {number} из {count}…",
  "Extra people": "Дополнительные люди",
+ "Failed: Flash couldn't finish it. Charged {credits} credits for the work done.": "Не удалось: Flash не смог её завершить. За выполненную работу списано кредитов: {credits}.",
+ "Failed: Flash couldn't get an answer. Nothing was charged.": "Не удалось: Flash не смог получить ответ. Ничего не списано.",
  "Families who want healthier bread": "Семьи, которые хотят более полезный хлеб",
  "Faster": "Быстрая",
  "Fastest": "Очень быстрая",

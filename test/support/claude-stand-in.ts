@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 
 /*
  * Claude for the automation tests, on a local server (set ANTHROPIC_BASE_URL to its url): count_tokens
- * answers with state.count (or fails with its status), and each streamed reply is the next of
+ * answers with state.count (or fails with its status, or never answers), and each streamed reply is the next of
  * state.replies, as Claude streams it. A reply can fail before it starts (status), break off after
  * its first words (cut), wait after its first words until hold ends, or never end (never: only the
  * caller closing it ends it). Every request is kept with its headers, so a test can see which key
@@ -29,7 +29,8 @@ export type Seen = { path: string; headers: IncomingMessage["headers"]; body: Re
 
 export async function claudeStandIn() {
   const state = {
-    count: { tokens: 1200, status: 0 },
+    // silent: count_tokens takes the request and never answers (Anthropic hanging).
+    count: { tokens: 1200, status: 0 } as { tokens: number; status: number; silent?: boolean },
     replies: [] as Reply[],
     seen: [] as Seen[],
     // Streams still open (a never-ending reply), and whether the caller closed each.
@@ -54,6 +55,7 @@ export async function claudeStandIn() {
         res.end(JSON.stringify({ type: "error", error: { type: status === 429 ? "rate_limit_error" : status === 529 ? "overloaded_error" : "api_error", message: "scripted" } }));
       };
       if (path.endsWith("/count_tokens")) {
+        if (state.count.silent) return;
         if (state.count.status) return fail(state.count.status);
         res.writeHead(200, { "content-type": "application/json" });
         return res.end(JSON.stringify({ input_tokens: state.count.tokens }));

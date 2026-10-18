@@ -374,11 +374,18 @@ export async function dailyJob(today = utcDay(Date.now())): Promise<boolean> {
   await part("deletes", deleteAutomations);
   await part("compaction", compactReceipts);
   await part("notices", () => sql("DELETE FROM notifications WHERE id IN (SELECT id FROM notifications WHERE read_at > 0 AND read_at < ? LIMIT 5000)", [Date.now() - 90 * DAY]));
+  // A version's runs were all made while it was the automation's own (each run takes the version in its
+  // insert): from its save to the next version's, so only the runs of that time are read (a day either
+  // side for the database's and the server's clocks), never the automation's whole history.
   await part("versions", () =>
     sql(
       `DELETE FROM automation_versions
         WHERE version < (SELECT a.version FROM automations a WHERE a.id = automation_versions.automation_id)
-          AND NOT EXISTS (SELECT 1 FROM automation_runs r WHERE r.automation_id = automation_versions.automation_id AND r.version = automation_versions.version)`,
+          AND NOT EXISTS (SELECT 1 FROM automation_runs r WHERE r.automation_id = automation_versions.automation_id
+                            AND r.created_at >= automation_versions.created_at - ?
+                            AND r.created_at <= (SELECT MIN(n.created_at) FROM automation_versions n WHERE n.automation_id = automation_versions.automation_id AND n.version > automation_versions.version) + ?
+                            AND r.version = automation_versions.version)`,
+      [DAY, DAY],
     ),
   );
   await part("rate limits", async () => {
@@ -391,8 +398,8 @@ export async function dailyJob(today = utcDay(Date.now())): Promise<boolean> {
   return true;
 }
 
-/** Nothing of this automation runs: no run holds a live lease. */
-const NOTHING_RUNS = `NOT EXISTS (SELECT 1 FROM automation_runs r WHERE r.automation_id = automations.id AND r.lease_until > 0 AND r.lease_until >= ${DB_NOW})`;
+/** Nothing of this automation runs: no run holds a live lease (only an unfinished one can, so only those are read). */
+const NOTHING_RUNS = `NOT EXISTS (SELECT 1 FROM automation_runs r WHERE r.automation_id = automations.id AND r.finished_at = 0 AND r.lease_until > 0 AND r.lease_until >= ${DB_NOW})`;
 
 /** Deletes automations marked deleting once none of their runs holds a lease (see deleteAutomationNow). */
 async function deleteAutomations() {

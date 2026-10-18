@@ -551,6 +551,8 @@
  "Exported {count} chats. Check your downloads.": "{count} sohbet dışa aktarıldı. İndirilenler klasörüne bak.",
  "Exporting chat {number} of {count}…": "Sohbet dışa aktarılıyor: {number} / {count}…",
  "Extra people": "Ek kişiler",
+ "Failed: Flash couldn't finish it. Charged {credits} credits for the work done.": "Başarısız: Flash bunu tamamlayamadı. Yapılan iş için {credits} kredi alındı.",
+ "Failed: Flash couldn't get an answer. Nothing was charged.": "Başarısız: Flash bir yanıt alamadı. Ücret alınmadı.",
  "Families who want healthier bread": "Daha sağlıklı ekmek isteyen aileler",
  "Faster": "Daha hızlı",
  "Fastest": "En hızlı",

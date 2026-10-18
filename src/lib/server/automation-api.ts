@@ -85,6 +85,19 @@ export async function gate(request: Request, o: { write?: boolean; limit: keyof 
   return { user, t, deadline };
 }
 
+/**
+ * 429 when a run started by hand (Run now, Retry, and the /admin card's Run once now) is over Run now's
+ * limits: 10 an hour per automation of this account (so another account's tries never use it up) and 30
+ * an hour per account. account: false when the route's gate counted the account's already.
+ */
+export async function overRunLimits(g: Gate, automationId: string | null, o: { account?: boolean } = {}): Promise<Response | null> {
+  const over = (name: "runUser" | "runAutomation", key: string) => overLimit(`auto:${name}:${key}`, LIMITS[name][0], LIMITS[name][1]);
+  if ((o.account !== false && (await over("runUser", g.user.id))) || (automationId !== null && (await over("runAutomation", `${g.user.id}:${automationId}`)))) {
+    return json({ error: g.t("Too many requests. Try again in an hour.") }, 429);
+  }
+  return null;
+}
+
 /** The request's JSON body, or {} when there is none or it isn't an object. */
 export async function bodyOf(request: Request): Promise<Record<string, unknown>> {
   const body = (await request.json().catch(() => null)) as unknown;
@@ -126,6 +139,9 @@ const onceTooLate = (when: When, timeZone: string) => {
 const scheduledRunOpen = async (id: string) =>
   Boolean(await one("SELECT 1 AS x FROM automation_runs WHERE automation_id = ? AND origin = 'schedule' AND finished_at = 0 LIMIT 1", [id]));
 
+/** The most runs an automation's unseen count counts (a list shows more as "99+"). */
+export const UNSEEN_MAX = 100;
+
 /** An automation as the routes return it, in the reader's language. */
 export async function automationView(a: Row, t: ServerT) {
   const spec = await versionSpec(a.id, Number(a.version));
@@ -134,7 +150,11 @@ export async function automationView(a: Row, t: ServerT) {
   const timePassed = when?.kind === "once" && (a.status === "paused" || a.status === "draft") && onceTooLate(when, a.time_zone) && !(await scheduledRunOpen(a.id));
   const schedule = when ? describeWhen(when, a.time_zone, t, t.locale) : null;
   const upcoming = when && a.status === "on" ? nextFires(when, a.time_zone, Date.now(), 3) : [];
-  const unseen = await one<{ n: number }>("SELECT COUNT(*) AS n FROM automation_runs WHERE automation_id = ? AND finished_at > 0 AND seen_at = 0", [a.id]);
+  // Runs ended and not opened yet, up to UNSEEN_MAX, read through those runs only (automation_runs_unseen).
+  const unseen = await one<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM (SELECT 1 FROM automation_runs WHERE automation_id = ? AND finished_at > 0 AND seen_at = 0 LIMIT ${UNSEEN_MAX})`,
+    [a.id],
+  );
   return {
     id: a.id,
     name: a.name,
@@ -218,7 +238,9 @@ async function creditsRefusal(t: ServerT, a: Row, estimate: Estimate): Promise<R
   await ensureMonthlyCredits(a.pay_account);
   const [have, floor] = await Promise.all([balance(a.pay_account), topUpFloor(a.pay_account)]);
   if (have - floor >= estimate.least) return null;
-  const said = floor > 0 && have >= estimate.least ? t(NOTICES.topupFloor, { credits: floor }) : t(NO_CREDITS, { credits: estimate.least });
+  // Numbers in the reader's digits, as noticeText writes them.
+  const credits = (floor > 0 && have >= estimate.least ? floor : estimate.least).toLocaleString(t.locale);
+  const said = t(floor > 0 && have >= estimate.least ? NOTICES.topupFloor : NO_CREDITS, { credits });
   return json({ error: said, code: "no_credits" }, 409);
 }
 
@@ -232,7 +254,7 @@ async function onRefusal(user: User, spec: Spec, t: ServerT, except = ""): Promi
     "SELECT a.id, v.spec FROM automations a JOIN automation_versions v ON v.automation_id = a.id AND v.version = a.version WHERE a.user_id = ? AND a.status = 'on' AND a.id <> ?",
     [user.id, except],
   );
-  if (on.length >= MAX_ON) return json({ error: t(TOO_MANY_ON, { count: MAX_ON }) }, 409);
+  if (on.length >= MAX_ON) return json({ error: t(TOO_MANY_ON, { count: MAX_ON.toLocaleString(t.locale) }) }, 409);
   const often = (s: Spec | null) => s?.trigger.type === "schedule" && subDaily(s.trigger.when);
   if (often(spec)) {
     const others = on.filter((a) => {
@@ -320,8 +342,9 @@ export async function editAutomation(g: Gate, id: string, body: Record<string, u
   if (!capRun || !capMonth || capMonth < capRun) return json({ error: g.t(SPEC_INVALID) }, 400);
   const version = body.spec !== undefined ? Number(a.version) + 1 : Number(a.version);
   // Worked out again only when it is turned on or its schedule or zone changes: a rename or a new
-  // instruction keeps a slot that is due and not yet taken by the tick.
-  const moved = JSON.stringify(f.spec.trigger) !== JSON.stringify(spec?.trigger) || f.timeZone !== a.time_zone || !Number(a.next_at);
+  // instruction keeps a slot that is due and not yet taken by the tick (an automation that is on has a
+  // next slot unless it is run by hand or a one-off whose slot was taken, and those have none to work out).
+  const moved = JSON.stringify(f.spec.trigger) !== JSON.stringify(spec?.trigger) || f.timeZone !== a.time_zone;
   const nextAt = runGoesOn ? 0 : status === "on" && (turningOn || moved) ? nextSlot(f.spec, f.timeZone) : Number(a.next_at);
   // A pause by its owner never ends by itself; turned on, every pause is over.
   const pause =
@@ -487,6 +510,8 @@ const RUN_NOTES: Record<string, string> = {
   month_cap: MONTH_LEFT,
   no_credits: NOTICES.noCredits,
   topup_floor: NOTICES.topupFloor,
+  failed: NOTICES.failed,
+  cut_short: NOTICES.cutShort,
 };
 /** The credits a run's note names: the limit it stopped at, the auto top-up level (floor), else what it was charged. */
 const noteCredits = (outcome: string, run: { credits: number }, a: { cap_run: number; cap_month: number } | null, floor: number) =>
@@ -539,7 +564,7 @@ export async function receipt(g: Gate, runId: string) {
       deleted: a?.status === "deleting",
       // Why it ended this way, in the reader's words, where Flash says so.
       noteText: RUN_NOTES[r.outcome]
-        ? noticeText({ phrase: RUN_NOTES[r.outcome], blanks: JSON.stringify({ credits: noteCredits(r.outcome, r, a, floor), date: nextMonthStart(Number(r.created_at)) }) }, g.t).text
+        ? noticeText({ phrase: r.outcome === "failed" && Number(r.credits) > 0 ? NOTICES.failedCharged : RUN_NOTES[r.outcome], blanks: JSON.stringify({ credits: noteCredits(r.outcome, r, a, floor), date: nextMonthStart(Number(r.created_at)) }) }, g.t).text
         : "",
     },
     steps: steps.map((s) => ({
@@ -552,7 +577,7 @@ export async function receipt(g: Gate, runId: string) {
       held: Number(s.held) || (s.status === "running" ? (holdOf.get(s.hold_ref) ?? 0) : 0),
       credits: Number(s.credits),
       note: s.note,
-      noteText: NOTE_PHRASES[s.note] ? g.t(NOTE_PHRASES[s.note], { credits: Number(s.credits) }) : "",
+      noteText: NOTE_PHRASES[s.note] ? g.t(NOTE_PHRASES[s.note], { credits: Number(s.credits).toLocaleString(g.t.locale) }) : "",
       input: s.input,
       output: outputText(s.output),
       sources: sourcesOf(s.output),
@@ -623,6 +648,9 @@ export async function actOnRun(g: Gate, runId: string, body: Record<string, unkn
     if (!automationsServer() || missingSetup().length) return json({ error: g.t("Something went wrong. Please try again."), missing: missingSetup() }, 503);
     const a = await ownAutomation(g.user, r.automation_id);
     if (!a || a.status === "paused") return json({ error: g.t(a ? NOTICES.paused : "Not found", { name: a?.name ?? "" }) }, a ? 409 : 404);
+    // A retried run starts a run as Run now does, so it counts against Run now's limits too.
+    const limited = await overRunLimits(g, a.id);
+    if (limited) return limited;
     const spec = await versionSpec(a.id, Number(a.version));
     if (!spec) return json({ error: g.t(SPEC_INVALID) }, 409);
     const est = await estimateSpec(spec, g.user, a);

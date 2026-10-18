@@ -551,6 +551,8 @@
  "Exported {count} chats. Check your downloads.": "{count} چیٹس ایکسپورٹ ہو گئیں۔ اپنے ڈاؤن لوڈز دیکھیں۔",
  "Exporting chat {number} of {count}…": "{count} میں سے چیٹ {number} ایکسپورٹ ہو رہی ہے…",
  "Extra people": "اضافی افراد",
+ "Failed: Flash couldn't finish it. Charged {credits} credits for the work done.": "ناکام: Flash اسے مکمل نہیں کر سکا۔ کیے گئے کام کے {credits} کریڈٹس لیے گئے۔",
+ "Failed: Flash couldn't get an answer. Nothing was charged.": "ناکام: Flash کو کوئی جواب نہیں مل سکا۔ کوئی چارج نہیں لیا گیا۔",
  "Families who want healthier bread": "صحت بخش روٹی چاہنے والے خاندان",
  "Faster": "تیز",
  "Fastest": "سب سے تیز",

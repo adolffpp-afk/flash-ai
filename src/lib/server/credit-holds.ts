@@ -57,6 +57,19 @@ export async function recordHold(h: { ref: string; userId: string; runId: string
   return r.rowsAffected === 1;
 }
 
+/**
+ * Sizes a hold again before anything was taken under it (its charge was refused at a limit, and its step
+ * is planned once more within what is left): only while it is open, uncharged and unstarted.
+ */
+export async function resizeHold(ref: string, held: number, leftCents: number): Promise<boolean> {
+  const r = await sql(
+    `UPDATE credit_holds SET held = ?, left_cents = ? WHERE ref = ? AND settled_at = 0 AND started = 0 AND charge_id = 0
+        AND NOT EXISTS (SELECT 1 FROM credit_ledger WHERE ref = ?)`,
+    [held, leftCents, ref, ref],
+  );
+  return r.rowsAffected === 1;
+}
+
 /** Keeps the id of the ledger row the hold took. */
 export async function markCharged(ref: string, chargeId: number) {
   await sql("UPDATE credit_holds SET charge_id = ? WHERE ref = ? AND settled_at = 0", [chargeId, ref]);

@@ -792,6 +792,9 @@ const SCHEMA = [
   // An automation's runs, newest first (ties broken by id, as an "only if changed" step finds its previous result).
   `CREATE INDEX IF NOT EXISTS automation_runs_list ON automation_runs(automation_id, created_at, id)`,
   `CREATE INDEX IF NOT EXISTS automation_runs_user ON automation_runs(user_id, finished_at)`,
+  // An account's newest runs (the /admin card's 20), and an automation's runs nobody opened yet (its unseen count).
+  `CREATE INDEX IF NOT EXISTS automation_runs_user_new ON automation_runs(user_id, created_at)`,
+  `CREATE INDEX IF NOT EXISTS automation_runs_unseen ON automation_runs(automation_id) WHERE finished_at > 0 AND seen_at = 0`,
   // An automation's runs still going (each slot's supersede and overlap checks, pauses), and runs by
   // age (the month's count, retention, the lag line), so neither reads an automation's whole history.
   `CREATE INDEX IF NOT EXISTS automation_runs_open ON automation_runs(automation_id) WHERE finished_at = 0`,
@@ -975,6 +978,8 @@ async function init(c: Client) {
   await c.execute("CREATE INDEX IF NOT EXISTS credit_ledger_auto ON credit_ledger(automation_id, created_at) WHERE automation_id <> ''");
   // Automations' charges by time, Flash-wide (the peak spend line on /admin).
   await c.execute("CREATE INDEX IF NOT EXISTS credit_ledger_auto_time ON credit_ledger(created_at) WHERE automation_id <> ''");
+  // An account's automation charges by time (what its automations spent this month), never its chat charges.
+  await c.execute("CREATE INDEX IF NOT EXISTS credit_ledger_auto_user ON credit_ledger(user_id, created_at) WHERE automation_id <> ''");
 }
 
 /** Returns the database client, creating the tables on first use. */

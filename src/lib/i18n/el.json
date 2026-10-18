@@ -551,6 +551,8 @@
  "Exported {count} chats. Check your downloads.": "Έγινε εξαγωγή {count} συνομιλιών. Έλεγξε τις λήψεις σου.",
  "Exporting chat {number} of {count}…": "Εξαγωγή συνομιλίας {number} από {count}…",
  "Extra people": "Επιπλέον άτομα",
+ "Failed: Flash couldn't finish it. Charged {credits} credits for the work done.": "Απέτυχε: το Flash δεν μπόρεσε να το ολοκληρώσει. Χρεώθηκαν {credits} πιστώσεις για τη δουλειά που έγινε.",
+ "Failed: Flash couldn't get an answer. Nothing was charged.": "Απέτυχε: το Flash δεν μπόρεσε να πάρει απάντηση. Δεν χρεώθηκε τίποτα.",
  "Families who want healthier bread": "Οικογένειες που θέλουν πιο υγιεινό ψωμί",
  "Faster": "Πιο γρήγορα",
  "Fastest": "Πολύ γρήγορα",
